@@ -36,12 +36,24 @@ export interface FirstPassGroups {
   queueOwn: { path: string; branch?: string; tip?: string; retired?: true }[];
 }
 
+/** A removal the first pass was about to make, and what would go with it. A report: it counts only once the ledger says the removal happened. */
+export interface FirstPassGoing {
+  /** The main checkout. */
+  main: string;
+  tip: string;
+  at: number;
+  rebuildable?: string[];
+  testCopy?: unknown;
+}
+
 export interface FirstPassRecord {
   at: number;
   /** Every branch's last commit, recorded before anything went. */
   list: { main: string; path: string; branch: string; tip: string; pinned: boolean }[];
   /** Each project's groups, by its main checkout, kept from the pass that first read it. */
   repos?: Record<string, FirstPassGroups>;
+  /** By folder, written before each removal starts: a stop in mid-pass can't lose a row or what went. Gone once the pass is done. */
+  going?: Record<string, FirstPassGoing>;
   /** Every project was read: later passes aren't the first pass. */
   done?: boolean;
   /** What the first pass did, kept until its one summary is posted. */

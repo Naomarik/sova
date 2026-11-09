@@ -24,7 +24,7 @@ import { agentRoot, stateRoot } from "./state-root";
 import { type Gate, retirementAllowed } from "./worktree-retire-gate";
 
 export { type Gate, retirementAllowed };
-import { chatInUse, QUIET_MS, type LeftoverInput, type LeftoverProof, leftoverProof, deleteProvedFolder, keepTestChats, liveRecordPid, longGit, pinRef, pinTip, removeTree, retireBranch } from "./worktree-remove";
+import { chatInUse, QUIET_MS, type LeftoverInput, type LeftoverProof, leftoverProof, deleteProvedFolder, gitPointer, keepTestChats, liveRecordPid, longGit, pinRef, pinTip, removeTree, retireBranch } from "./worktree-remove";
 import { type FinishedFacts, type Leftovers, leftovers, leftoversReason, reachableBlobs, rebuildableDir, RECORDING, type TestCopyLeft, unreadableLeftovers } from "./worktree-leftovers";
 import { appendLedger, besideGone, markLedger, readLedger, type RemovedWorktree, retiredEntryCovering } from "./removed-worktrees";
 import { scratchCopiesIn } from "./merge-queue/scratch";
@@ -494,6 +494,9 @@ function finishedFacts(d: RetireDeps, main: string, path: string): FinishedFacts
 
 // --- one tree ----------------------------------------------------------------------------------
 
+/** A pass's own note that this removal is about to start, and what goes with it. */
+type NoteGoing = (entry: RemovedWorktree, left: Leftovers | undefined) => void;
+
 export interface RetiredRowOut {
   path: string;
   branch: string;
@@ -573,7 +576,7 @@ async function proofOf(d: RetireDeps, main: string, path: string, branch: string
  * Decisions in one repository are taken one at a time and each going folder is claimed under that turn, so two
  * finished folders holding the only two copies of a recording can't each count the other as the copy that stays.
  */
-export async function retireTree(d: RetireDeps, root: string, path: string, o: { exclude?: string; atOnce?: boolean; expectHead?: string } = {}): Promise<TreeOutcome> {
+export async function retireTree(d: RetireDeps, root: string, path: string, o: { exclude?: string; atOnce?: boolean; expectHead?: string; going?: NoteGoing } = {}): Promise<TreeOutcome> {
   const repo = await d.classify(root, [path]);
   const t = repo?.trees.find((x) => x.path === path);
   if (!repo || !t) return { state: "skip" };
@@ -625,7 +628,9 @@ export async function retireTree(d: RetireDeps, root: string, path: string, o: {
     const keepBranch = !t.queueMade && !(await deleteBranchesOn(d, repo));
     const entry = (branchDeleted: boolean, extra: Partial<RemovedWorktree> = {}): RemovedWorktree => ({ v: 1, path, branch, commonDir: repo.commonDir, tip, merged: t.class === "empty" ? "empty" : t.merged ?? "ancestor", branchDeleted, at: d.now(), retired: true, pinned: true, ...(repo.target ? { target: repo.target.name } : {}), ...(t.queueMade ? { queueMade: true as const } : {}), ...(kept.length ? { keptChats: kept.length } : {}), ...(keepBranch ? { branchKept: true as const } : {}), ...extra });
     // Said before the removal: a stop in the middle can't leave a branch that nothing records (finishIntents).
-    noteIntent(d, entry(false));
+    const intent = entry(false);
+    o.going?.(intent, left);
+    noteIntent(d, intent);
     const out = await removeTree({ path, main: repo.main, git: d.gitWrite, remove: d.gitRemove, proof: async () => (await proofOf(d, repo.main, path, branch, o.exclude)).why });
     if (out.state === "refused") {
       dropIntent(d, path);
@@ -666,33 +671,100 @@ const lexists = (p: string): boolean => {
  * Folders left behind with no working branch: found only from chats' worktree records and the ledger,
  * never by looking in a directory. A folder no record names is never even stat'ed. Reads only.
  */
-export async function leftoverCandidates(d: Pick<RetireDeps, "git" | "ledger">, repo: RepoTrees, records: readonly TreeRecord[]): Promise<{ path: string; branch?: string }[]> {
+export async function leftoverCandidates(d: Pick<RetireDeps, "git" | "ledger" | "repos">, repo: RepoTrees, records: readonly TreeRecord[]): Promise<LeftoverCandidate[]> {
   const list = await d.git(["worktree", "list", "--porcelain"], { cwd: repo.main });
   if (list.code !== 0) return [];
   const listed = new Set(list.stdout.split("\n").filter((l) => l.startsWith("worktree ")).map((l) => realOr(l.slice(9))));
   const location = join(realOr(dirname(repo.main)), ".worktrees");
-  const out = new Map<string, { path: string; branch?: string }>();
+  const out = new Map<string, LeftoverCandidate>();
+  let others: OtherRepo[] | null | undefined;
+  const readOthers = async (): Promise<OtherRepo[] | null> => (others === undefined ? (others = await otherRepos(d, repo)) : others);
   const consider = (path: string, branch: string | undefined): boolean => {
     if (out.has(path) || !lexists(path)) return false;
     if (listed.has(realOr(path))) return false;
     if (dirname(realOr(path)) !== location) return false;
     return true;
   };
+  const newest = new Map<string, string>();
+  for (const e of d.ledger()) newest.set(e.path, e.commonDir);
+  // The newest entry speaks for a path: a folder another repository has since retired there isn't this one's.
   for (const e of d.ledger()) {
-    if (e.commonDir !== repo.commonDir) continue;
-    if (consider(e.path, e.branch)) out.set(e.path, { path: e.path, ...(e.branch ? { branch: e.branch } : {}) });
+    if (e.commonDir !== repo.commonDir || newest.get(e.path) !== repo.commonDir) continue;
+    if (!consider(e.path, e.branch)) continue;
+    const whose = await whoseLeftover(d, repo, e.path, undefined, await readOthers());
+    if (whose === "mine") out.set(e.path, { path: e.path, ...(e.branch ? { branch: e.branch } : {}) });
   }
   // `.worktrees` is shared by every repository beside it: a record belongs here only if this repository has its base commit.
   for (const r of records) {
     if (!consider(r.path, r.branch)) continue;
+    if (newest.has(r.path) && newest.get(r.path) !== repo.commonDir) continue;
     const mine = await d.git(["cat-file", "-e", `${r.base}^{commit}`], { cwd: repo.main });
-    if (mine.code === 0) out.set(r.path, { path: r.path, ...(r.branch ? { branch: r.branch } : {}) });
+    if (mine.code !== 0) continue;
+    const whose = await whoseLeftover(d, repo, r.path, r.base, await readOthers());
+    if (whose === "mine") out.set(r.path, { path: r.path, ...(r.branch ? { branch: r.branch } : {}), base: r.base });
+    // Claimed by one repository, so it's in one group, and with no branch: its name may mean something else in either.
+    else if (whose === "shared") out.set(r.path, { path: r.path, base: r.base, doubt: SHARED_HISTORY });
   }
   return [...out.values()];
 }
 
+export interface LeftoverCandidate {
+  path: string;
+  branch?: string;
+  /** Found by a chat's record, with this base commit. Absent: this repository's own ledger names it. */
+  base?: string;
+  /** Held, whatever it holds: why. */
+  doubt?: string;
+}
+
+const SHARED_HISTORY = "Left behind: Another project shares this one's history, so Sova can't tell whose it is.";
+
+interface OtherRepo {
+  main: string;
+  listed: string[];
+}
+
+/** Every other project's worktrees, read now. Null: one that's there couldn't be read, so nothing can be said about any folder. */
+async function otherRepos(d: Pick<RetireDeps, "git" | "repos">, repo: Pick<RepoTrees, "main">): Promise<OtherRepo[] | null> {
+  try {
+    const out = new Map<string, OtherRepo>();
+    for (const root of await d.repos()) {
+      if (!existsSync(root)) continue;
+      const list = await d.git(["worktree", "list", "--porcelain"], { cwd: root });
+      if (list.code !== 0) {
+        // A project that isn't a git repository registers nothing.
+        if (lexists(join(root, ".git"))) return null;
+        continue;
+      }
+      const listed = list.stdout.split("\n").filter((l) => l.startsWith("worktree ")).map((l) => realOr(l.slice(9)));
+      const main = listed[0];
+      if (main && main !== realOr(repo.main)) out.set(main, { main, listed });
+    }
+    return [...out.values()];
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Whether a folder not on this repository's list is this repository's leftover. "not mine": another repository registers it, its
+ * `.git` says it's another's, or something couldn't be read. "shared": a chat's record names it, it has no `.git`, and another
+ * repository has the record's base commit too, so nothing says whose it is; only the first of them answers this, so it's held once.
+ */
+async function whoseLeftover(d: Pick<RetireDeps, "git">, repo: Pick<RepoTrees, "main" | "commonDir">, path: string, base: string | undefined, others: readonly OtherRepo[] | null): Promise<"mine" | "not mine" | "shared"> {
+  const pointer = gitPointer(path, repo.commonDir);
+  if (pointer === "elsewhere" || others === null) return "not mine";
+  const real = realOr(path);
+  if (others.some((o) => o.listed.some((l) => l === real || isWithin(l, real)))) return "not mine";
+  if (pointer === "here" || base === undefined) return "mine";
+  const sharing: string[] = [];
+  for (const o of others) if ((await d.git(["cat-file", "-e", `${base}^{commit}`], { cwd: o.main })).code === 0) sharing.push(o.main);
+  if (!sharing.length) return "mine";
+  return realOr(repo.main) < [...sharing].sort()[0]! ? "shared" : "not mine";
+}
+
 /** Whether a leftover folder is proved one of the queue's own: the ledger says so, or the queue's chats' records do. A doubt is no. */
-async function leftoverQueueMade(d: RetireDeps, repo: Pick<RepoTrees, "commonDir">, c: { path: string; branch?: string }): Promise<boolean> {
+async function leftoverQueueMade(d: RetireDeps, repo: Pick<RepoTrees, "commonDir">, c: LeftoverCandidate): Promise<boolean> {
   const e = [...d.ledger()].reverse().find((x) => x.commonDir === repo.commonDir && x.path === c.path);
   if (e?.queueMade && (!c.branch || e.branch === c.branch)) return true;
   try {
@@ -702,7 +774,11 @@ async function leftoverQueueMade(d: RetireDeps, repo: Pick<RepoTrees, "commonDir
   }
 }
 
-async function retireLeftover(d: RetireDeps, repo: RepoTrees, c: { path: string; branch?: string }, madeByQueue: boolean): Promise<TreeOutcome> {
+async function retireLeftover(d: RetireDeps, repo: RepoTrees, c: LeftoverCandidate, madeByQueue: boolean, going?: NoteGoing): Promise<TreeOutcome> {
+  // Whose it is, read again right before anything goes.
+  const whose = await whoseLeftover(d, repo, c.path, c.base, await otherRepos(d, repo));
+  if (whose === "not mine") return { state: "skip" };
+  if (whose === "shared") return { state: "held", row: heldRow({ path: c.path }, { kind: "other", why: SHARED_HISTORY }) };
   const { why, left } = await turnIn(repo.commonDir, async () => {
     const p = await proofOf(d, repo.main, c.path, c.branch);
     if (p.why === null) claim(repo.commonDir, c.path);
@@ -725,6 +801,7 @@ async function retireLeftover(d: RetireDeps, repo: RepoTrees, c: { path: string;
   const keepBranch = !!tip && !madeByQueue && !(await deleteBranchesOn(d, repo));
   const line: RemovedWorktree = { v: 1, path: c.path, branch: branch ?? "", commonDir: repo.commonDir, tip, merged: "leftover", branchDeleted: !tip, at: d.now(), retired: true, ...(tip ? { pinned: true as const } : {}), ...(keptChats ? { keptChats } : {}), ...(keepBranch ? { branchKept: true as const } : {}), ...(madeByQueue ? { queueMade: true as const } : {}) };
   // A chat in this folder finds it again through the ledger: a stop right after the delete mustn't leave that unsaid (finishIntents).
+  going?.(line, left);
   noteIntent(d, line);
   const failed = deleteProvedFolder(c.path);
   if (failed) {
@@ -917,9 +994,16 @@ async function passRepo(d: RetireDeps, root: string, records: readonly TreeRecor
       writePending(pending, d.pendingFile());
     };
     report();
+    // Written before each removal starts, so a stop anywhere after it loses neither the row nor what went.
+    const going: NoteGoing | undefined = firstPass
+      ? (e, left) => {
+          pending.firstPass = { ...pending.firstPass!, going: { ...pending.firstPass?.going, [e.path]: { main: repo.main, tip: e.tip, at: e.at, ...(left ? { rebuildable: left.rebuildable, ...(left.testCopy ? { testCopy: left.testCopy } : {}) } : {}) } } };
+          writePending(pending, d.pendingFile());
+        }
+      : undefined;
     await pool(go, CONCURRENCY, async (t) => {
       // A failure on one tree holds that tree. The next pass reads everything again.
-      const r = await retireTree(d, root, t.path, { expectHead: t.head! }).catch((err: Error): TreeOutcome => ({ state: "held", row: heldRow(t, { kind: "other", why: `It failed: ${err.message.split("\n")[0]}` }) }));
+      const r = await retireTree(d, root, t.path, { expectHead: t.head!, ...(going ? { going } : {}) }).catch((err: Error): TreeOutcome => ({ state: "held", row: heldRow(t, { kind: "other", why: `It failed: ${err.message.split("\n")[0]}` }) }));
       if (r.state === "retired") out.retired.push(r.row);
       else if (t.queueMade) out.queueOwn.push({ path: t.path, ...(t.branch ? { branch: t.branch } : {}) });
       else if (r.state === "held") out.held.push(r.row);
@@ -928,13 +1012,18 @@ async function passRepo(d: RetireDeps, root: string, records: readonly TreeRecor
     await finishBranches(d, repo);
     const leftovers = await leftoverCandidates(d, repo, records);
     await pool(leftovers, CONCURRENCY, async (c) => {
+      if (c.doubt) {
+        out.held.push(heldRow({ path: c.path }, { kind: "other", why: c.doubt }));
+        return;
+      }
       const own = await leftoverQueueMade(d, repo, c);
-      const r = await retireLeftover(d, repo, c, own).catch((err: Error): TreeOutcome => ({ state: "held", row: heldRow(c, { kind: "other", why: `It failed: ${err.message.split("\n")[0]}` }) }));
+      const r = await retireLeftover(d, repo, c, own, going).catch((err: Error): TreeOutcome => ({ state: "held", row: heldRow(c, { kind: "other", why: `It failed: ${err.message.split("\n")[0]}` }) }));
       if (r.state === "retired") {
         out.retired.push(r.row);
         out.leftovers.push(c.path);
       } else if (r.state === "held") (own ? out.queueOwn.push({ path: c.path, ...(c.branch ? { branch: c.branch } : {}) }) : out.held.push(r.row));
     });
+    if (firstPass) recoverStopped(d, repo, out, pending);
     report();
     if (firstPass) {
       const groups = groupsOf(out);
@@ -945,6 +1034,28 @@ async function passRepo(d: RetireDeps, root: string, records: readonly TreeRecor
     return out;
   } finally {
     dropLock(lock);
+  }
+}
+
+/**
+ * What an earlier, stopped first pass removed here, put back into this pass's result, so the report and the summary read as if
+ * nothing had stopped it. Only what the ledger says happened counts (the note written before is a report), and anything this pass
+ * read for itself speaks for its own folder.
+ */
+function recoverStopped(d: Pick<RetireDeps, "ledger">, repo: Pick<RepoTrees, "main" | "commonDir">, out: PassRepo, pending: PendingFile): void {
+  const read = new Set([...out.retired, ...out.held, ...out.waiting, ...out.hasWork, ...out.queueOwn].map((x) => x.path));
+  const ledger = d.ledger();
+  for (const [path, g] of Object.entries(pending.firstPass?.going ?? {})) {
+    if (g.main !== repo.main || read.has(path)) continue;
+    const e = [...ledger].reverse().find((x) => x.commonDir === repo.commonDir && x.path === path && x.retired && x.tip === g.tip && x.at >= g.at);
+    if (!e) continue;
+    if (e.partial && lexists(path)) {
+      if (e.queueMade) out.queueOwn.push({ path, ...(e.branch ? { branch: e.branch } : {}) });
+      else out.held.push(heldRow({ path, ...(e.branch ? { branch: e.branch } : {}) }, { kind: "files", why: "Left behind: A stop cut its removal short." }));
+      continue;
+    }
+    out.retired.push({ path, branch: e.branch, tip: e.tip, merged: e.merged, branchDeleted: e.branchDeleted, ...(e.branchKept ? { branchKept: true as const } : {}), ...(e.queueMade ? { queueMade: true as const } : {}), ...(g.rebuildable ? { went: { rebuildable: g.rebuildable, ...(g.testCopy ? { testCopy: g.testCopy as TestCopyLeft } : {}) } } : {}) });
+    if (e.merged === "leftover") out.leftovers.push(path);
   }
 }
 
@@ -1005,6 +1116,7 @@ export async function retirePass(d: RetireDeps): Promise<PassResult> {
   if (firstPass && !failed) {
     // Marked before the post: this pass was the first, whether or not the summary gets through.
     pending.firstPass = { ...pending.firstPass, at: pending.firstPass?.at ?? d.now(), list: pending.firstPass?.list ?? [], done: true, summary: result };
+    delete pending.firstPass.going;
     writePending(pending, d.pendingFile());
     writeFirstPassReport(d, pending);
   }

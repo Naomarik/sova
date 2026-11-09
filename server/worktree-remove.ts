@@ -12,7 +12,7 @@
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 import { closeSync, constants, copyFileSync, existsSync, lstatSync, mkdirSync, openSync, readdirSync, readFileSync, readSync, realpathSync, renameSync, rmSync, statSync, unlinkSync } from "node:fs";
-import { basename, dirname, extname, join, sep } from "node:path";
+import { basename, dirname, extname, join, resolve, sep } from "node:path";
 import type { Git, GitResult } from "../pi-config/extensions/worktrees/git.ts";
 import { NO_BACKGROUND_CLEANUP } from "./git-no-background";
 import { draftNamesIn } from "./spec-drafts-state";
@@ -227,6 +227,30 @@ export function hasLiveGit(path: string): boolean {
     return !m || !/[\\/]worktrees[\\/][^\\/]+$/.test(m[1]!) || existsSync(m[1]!);
   } catch {
     return true;
+  }
+}
+
+/**
+ * Whose a folder's `.git` says it is, live or dead: "none" (it has none), "here" (a worktree pointer into this common dir) or
+ * "elsewhere" (a pointer into another repository, a repository of its own, or anything that can't be read). A doubt is "elsewhere".
+ */
+export function gitPointer(path: string, commonDir: string): "none" | "here" | "elsewhere" {
+  const at = join(path, ".git");
+  let st;
+  try {
+    st = lstatSync(at);
+  } catch (err) {
+    return (err as NodeJS.ErrnoException).code === "ENOENT" ? "none" : "elsewhere";
+  }
+  if (!st.isFile() || st.size > 4096) return "elsewhere";
+  try {
+    const m = /^gitdir: (.+)\n?$/.exec(readFileSync(at, "utf8"));
+    if (!m) return "elsewhere";
+    const admin = resolve(path, m[1]!);
+    if (basename(dirname(admin)) !== "worktrees") return "elsewhere";
+    return realOr(dirname(dirname(admin))) === realOr(commonDir) ? "here" : "elsewhere";
+  } catch {
+    return "elsewhere";
   }
 }
 

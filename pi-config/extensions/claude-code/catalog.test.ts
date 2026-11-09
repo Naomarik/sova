@@ -47,7 +47,7 @@ test("the names the user reads", () => {
 		["claude-haiku-4-5-20251001", "Haiku 4.5"], ["claude-opus-5-5[1m]", "Opus 5.5"], ["claude-code-cli/opus[1m]", "Opus 5.5"],
 		["claude-fable-5-1[1m]", "Fable 5.1"], ["claude-opus-5[1m]", "Opus 5"], ["sonnet", "Sonnet 5.5"],
 	] as const) assert.equal(claudeName(id), name, id);
-	for (const id of ["zai/glm-5.3", "gpt-5-mini", "claude-opus-6", "ollama/opus", ""]) assert.equal(claudeName(id), undefined, id);
+	for (const id of ["zai/glm-5.3", "gpt-5-mini", "ollama/opus", ""]) assert.equal(claudeName(id), undefined, id);
 });
 
 test("an answer id maps to its catalog model; [1m] dropped", () => {

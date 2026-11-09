@@ -168,6 +168,8 @@ const GLOBS = [
   "pi-config/extensions/claude-code/provider/memory-layout.test.ts",
   // Which Claude program every spawn runs (builtins only; the server imports it).
   "pi-config/extensions/claude-code/claude-executable.test.ts",
+  // Sova's Claude catalog and its name rule (import-free; the server and the web app import them).
+  "pi-config/extensions/claude-code/catalog*.test.ts",
   // The offline search A/B harness (bench/search-ab/plan.md), on synthetic sessions.
   "bench/search-ab/*.test.ts",
 ];

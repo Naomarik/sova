@@ -540,7 +540,8 @@ export async function worktreeOwnerOf(worktree: string): Promise<Owner | null> {
 async function ownersNow(): Promise<WorktreeOwners> {
   if (!owners) {
     const [{ listSessions }, { trackedWorktrees }] = await Promise.all([import("../sessions-index"), import("../merge-readiness")]);
-    owners = new WorktreeOwners({ sessions: () => listSessions(), tracked: trackedWorktrees, canonical });
+    const { sessionFacts } = await import("../insights");
+    owners = new WorktreeOwners({ sessions: () => listSessions(), tracked: trackedWorktrees, canonical, treesOfChat: async (path) => (await sessionFacts(path)).worktrees?.trees ?? [] });
   }
   return owners;
 }

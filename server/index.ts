@@ -1,6 +1,7 @@
 // The server's startup: builds the app (server/app.ts), listens, and boots everything that runs
 // in the background (mesh, share listener, loops, the usage helper child). `bun server/index.ts`.
 import "./stall-recorder-boot"; // first, so it sees the rest load
+import "./own-folder-guard-boot";
 import { rmSync } from "node:fs";
 import type { Server } from "node:http";
 import { join } from "node:path";
@@ -14,8 +15,12 @@ import { markShutdown } from "./wrapup-recovery";
 import { startBudgetRecount } from "./baton-recount";
 import { listProjects, openRegisteredProjects } from "./projects/spaces";
 import { startGitMaintenance } from "./git-maintenance";
+import { onBranchLanded } from "./nothing-left";
+import { onReadinessMoved } from "./merge-readiness";
+import { realRetireDeps, type Retirer, startWorktreeRetirer } from "./worktree-retire";
+import { firstPassSummary } from "./worktree-retire-notes";
 import { reconcileProjectServices } from "./project-services/routes";
-import { checkQueueViews, startMergeQueue, stopMergeQueue } from "./merge-queue/wire";
+import { checkQueueViews, mergeQueues, startMergeQueue, stopMergeQueue } from "./merge-queue/wire";
 import { startProjectOverseerLoop } from "./project-overseer";
 import { attachedWorkspaces, openAttachedOrgs } from "./orgs";
 import { finishImports, rollForwardCopies } from "./project-import";
@@ -28,7 +33,7 @@ import { startShareRuntime, stopShareRuntime } from "./share/runtime";
 import { startTourSweep } from "./tours/sweep";
 import { flushOpenVisits } from "./visits";
 import { pruneVisitorLogs } from "./visitor-identity";
-import { acquireChatHandle, chatHandle, chatHandles, disposeAllChats, onAgentSettled, onChatEvent, onCompacted, onReceiverIdle, warmChatRuntime } from "./chat-handle";
+import { acquireChatHandle, chatHandle, chatHandles, chatsReady, disposeAllChats, onAgentSettled, onChatEvent, onCompacted, onReceiverIdle, warmChatRuntime } from "./chat-handle";
 import { receiverSpecial, startTopicDelivery } from "./topic-delivery";
 import { projectOverseerOfPath } from "./project-overseer-store";
 import { stateRoot } from "./state-root";
@@ -52,7 +57,7 @@ import { meshApi, startMesh, stopMesh } from "./mesh";
 import { captureBootBuild } from "./mesh/build-id";
 import { meshLinks } from "./mesh/links";
 import { setLinkOrigin } from "./link-delivery";
-import { feedFrameKey, feedFrames, setOverseerDispatch, startOverseerLoop } from "./overseer";
+import { ensureOverseer, feedFrameKey, feedFrames, setOverseerDispatch, startOverseerLoop } from "./overseer";
 import { watchFeedInputs } from "./session-feed-watch";
 import { setOffersDispatch } from "./session-offers";
 import { onCardNews, setCardsDispatch } from "./transcript-cards";
@@ -180,6 +185,28 @@ startGitMaintenance(() => listProjects().map((p) => p.root));
 // root is registered, then a cheap retry each minute. Any doubt about an owner keeps its tours.
 export const tourSweep = startTourSweep();
 
+function startRetirement(): Retirer {
+  return startWorktreeRetirer({
+    deps: {
+      ...realRetireDeps(),
+      // One summary in the global Overseer's chat, starting no turn.
+      firstPassDone: async (summary) => {
+        const text = firstPassSummary(summary);
+        if (!text) return true;
+        const chat = await acquireChatHandle((await ensureOverseer()).path);
+        // False while its turn runs or another writer has the file: the next pass asks again.
+        return chat.appendNote("sova-retire-summary", text);
+      },
+    },
+    // Who is running is unknown until the chats a previous server left are taken back, and an open entry until the queue is read.
+    ready: async () => {
+      await chatsReady();
+      return mergeQueues() !== null;
+    },
+    subscribe: (wake) => [onBranchLanded(() => wake("landed")), onReadinessMoved(() => wake("readiness")), onAgentSettled(() => wake("idle"))],
+  });
+}
+
 export const server = serve({ fetch: app.fetch, port: PORT, hostname: HOST }, (info) => {
   setSovaPort(info.port);
   setAuthPort(info.port);
@@ -197,6 +224,8 @@ export const server = serve({ fetch: app.fetch, port: PORT, hostname: HOST }, (i
   void reconcileProjectServices();
   // The merge queue: its verbs, its queues recovered, the typed "land it" door (server/merge-queue/wire.ts).
   void startMergeQueue({ request: internalRequest }).catch((err) => console.error("[merge-queue] start failed:", err instanceof Error ? err.message : err));
+  // Finished branches and folders retire by themselves, on the real server only (§chat.worktrees/retirement).
+  startRetirement();
   // Updates: the daily check, on the schedule updates.json keeps across restarts.
   startUpdates(info.port, HOST);
   // Ollama Cloud's model list: the daily check, and the model list re-applied whenever its file changes (§app.model-levels/server-check).

@@ -228,6 +228,13 @@ export const METHODS: Impl = {
     await acquireChat(chat.path, true);
     return "reloaded";
   },
+  reopenHere: async (chat): Promise<"reloaded"> => {
+    assertNotLive(chat.path);
+    chat.broadcast({ type: "error", code: "reloaded", message: "This chat's worktree is back; reconnect" });
+    await chat.dispose();
+    await acquireChat(chat.path, true);
+    return "reloaded";
+  },
   // Whatever records this process's runs: the server's run ledger, or a chat process's marker.
   markResuming: (chat) => (markRunResuming(chat.path), null),
   // A worker chat's feed ring is its process's (host.ts); a chat in this process keeps none.

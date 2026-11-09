@@ -37,7 +37,7 @@ import {
 import { HOOK_TIMEOUT_MAX, parseDefinition, type ProjectDef } from "../../shared/project-contract";
 import type { ChecksOf, EstimateRun, RunInput, RunMerge, RunOutcome, ThreadEvent, WakeThread } from "./contract";
 import { countBetween, type Git, isAncestor, ownCommitsPast, realGit, revParse, statusArgs, worktreesOf } from "./guard";
-import { type BranchLeft, branchLeft, type LandingRecords, NO_LANDINGS, registerQueueReading } from "../nothing-left";
+import { type BranchLeft, branchLanded, branchLeft, type LandingRecords, NO_LANDINGS, registerQueueReading } from "../nothing-left";
 import type { GitRunner } from "../worktrees";
 import { canLand, checkoutOf, dirtyWhy, firstParents, landTip, pushTip } from "./land";
 import { recordLandedDrafts } from "./landed-drafts";
@@ -372,6 +372,11 @@ export class ProjectQueue {
     registerQueueReading(this.root, {
       landings: (branch) => this.landingsOf(branch),
       target: () => this.q?.target ?? null,
+      // Anything but landed, closed or cancelled: an entry still under way keeps its branch from retiring.
+      open: (branch) => {
+        const e = this.q?.entries.find((x) => x.branch === branch && (ENTRY_OPEN.includes(x.state) || (x.state === "needs-fix" && !superseded(this.q.entries, x))));
+        return e ? { id: e.id, state: e.state } : null;
+      },
       // In line, checking or waiting for the user, or landed: never Approved · waiting for a fix or back with its chat,
       // which still get their requests (§chat.worktrees/blocks-landing).
       approvedAt: (branch, head) => !!this.q?.entries.some((x) => x.branch === branch && x.commit === head && x.state !== "with-chat" && (ENTRY_OPEN.includes(x.state) || x.state === "landed" || x.state === "requested" || x.state === "pushed")),
@@ -4010,6 +4015,7 @@ export class ProjectQueue {
           this.log(`${e.branch}: request #${e.request.number} merged on the host at ${r.sha.slice(0, 7)}`);
           this.deps.notify?.("landed", e, { ...(run ? { run } : {}), root: this.root });
           this.wake("landed", e, run?.id);
+          branchLanded(this.root, e.branch);
         } else {
           e.state = "closed";
           e.reason = "closed on the host without merging";
@@ -4098,6 +4104,7 @@ export class ProjectQueue {
     await this.push(tip, def, e);
     this.deps.notify?.("landed", e, { run, root: this.root });
     this.wake("landed", e, run.id);
+    branchLanded(this.root, e.branch);
     this.kickSoon();
   }
 

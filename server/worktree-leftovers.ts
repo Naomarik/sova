@@ -4,7 +4,8 @@
 // uncommitted and untracked files: it deletes ignored files, and a repository nested under an
 // ignored folder with its uncommitted work, without a word. Every cleanup that removes a tree (Clean
 // Up Merged, archive with worktree removal, a project-services teardown) reads this first and keeps a
-// tree that holds any; Remove Anyway lists exactly this and removes only when it is unchanged.
+// tree that holds any; Remove Anyway lists exactly this and removes only when it is unchanged. This file
+// is the only answer in Sova to "what can't be rebuilt": no project, list or other rule adds to it.
 //
 // Read-only: git by argv under --no-optional-locks (server/worktrees.ts execGit), the folders by
 // lstat, never following a symlink. A read that fails keeps the tree (`unreadable`).
@@ -40,6 +41,18 @@ const REBUILDABLE_DIRS = new Set([
 const rebuildableDir = (name: string): boolean => REBUILDABLE_DIRS.has(name) || /^dist-[^/]+$/.test(name);
 /** Rebuildable files wherever they are. */
 const rebuildableFile = (name: string): boolean => name === ".DS_Store" || name.endsWith(".tsbuildinfo") || name.endsWith(".pyc");
+/** The spec tools' own review folders: copies of what they review, never the only copy of work. Drafts need proof. */
+const SPEC_REVIEW_DIRS = [".sova/spec/reviews/", ".sova/spec/assessments/"];
+const DRAFTS_PREFIX = ".sova/spec/drafts/";
+/** The draft a path is in (its folder under `.sova/spec/drafts`), or null: a file directly in that folder is in no draft. */
+const draftOf = (rel: string): string | null => {
+  if (!rel.startsWith(DRAFTS_PREFIX)) return null;
+  const rest = rel.slice(DRAFTS_PREFIX.length);
+  const cut = rest.indexOf("/");
+  return cut > 0 ? rest.slice(0, cut) : null;
+};
+/** Ignored video files: a recording, which goes only when the same bytes outlive this removal. */
+export const RECORDING = /\.(mp4|webm|mov|mkv)$/i;
 /** Inside a folder of the user's own, only these tools' folders count as rebuildable: a "dist" or "out" in
     someone's ignored notes isn't build output. The generic names count where git lists the folder itself. */
 const TOOL_DIRS = new Set(["node_modules", "__pycache__", ".pytest_cache", ".mypy_cache", ".ruff_cache"]);
@@ -61,6 +74,37 @@ export interface NestedRepo {
   of?: string;
 }
 
+/** What a test copy of Sova left in a finished or empty tree (§chat.worktrees/leftovers): it no longer keeps the tree. */
+export interface TestCopyLeft {
+  /** Test chats no real chat holds in full: moved aside before the folder goes. Under `.agent`. */
+  keepAside: string[];
+  /** Test chats a real chat holds in full. */
+  copies: string[];
+  /** `auth.json` and `claude-accounts/`, deleted for good. */
+  login: string[];
+  /** The rest of that `.agent`. */
+  state: string[];
+  /** Ignored `*.log` files. */
+  logs: string[];
+  /** Ignored recordings whose bytes outlive this removal. */
+  recordings: string[];
+}
+
+/** What only a finished or empty tree's removal can ask: the answers that let a test copy's leavings go. */
+export interface FinishedFacts {
+  /** Whether a real chat holds all of this test chat's bytes. A string: it can't tell, and the chat keeps the tree. */
+  heldByRealChat(abs: string): Promise<boolean | string>;
+  /** Whether the same bytes outlive this removal. Throwing, or a string, is a doubt: the recording keeps the tree. */
+  recordingElsewhere(rel: string, abs: string): Promise<boolean | string>;
+}
+
+export interface LeftoversOpts {
+  /** The spec drafts in the tree not proved landed, by name. Absent: none was proved, so every draft keeps it. */
+  unprovedDrafts?: readonly string[];
+  /** The tree is finished or empty: what a test copy left doesn't keep it. Absent: it does. */
+  finished?: FinishedFacts;
+}
+
 /** Everything in a tree that isn't committed, sorted by kind. Paths are relative to its top. */
 export interface Leftovers {
   /** Uncommitted changes and untracked files (git status), nested repositories aside. */
@@ -72,12 +116,16 @@ export interface Leftovers {
   nested: NestedRepo[];
   /** Rebuildable folders and files that go with it (a folder as "name/"). */
   rebuildable: string[];
+  /** Ignored recordings found nowhere else: the last copy of each, and so kept. Finished or empty trees only. */
+  lastRecordings?: string[];
+  /** What a test copy left, let go. Finished or empty trees only. */
+  testCopy?: TestCopyLeft;
   /** Set when anything couldn't be read: the tree is kept, Remove Anyway isn't offered. */
   unreadable?: string;
 }
 
 /** Whether removing the tree would lose anything that can't be rebuilt. */
-export const holdsWork = (l: Leftovers): boolean => !!l.unreadable || l.dirty.length > 0 || l.ignored.length > 0 || l.nested.length > 0;
+export const holdsWork = (l: Leftovers): boolean => !!l.unreadable || l.dirty.length > 0 || l.ignored.length > 0 || l.nested.length > 0 || !!l.lastRecordings?.length;
 
 const firstLine = (s: string, code: number | null): string => s.trim().split("\n")[0]?.trim() || `exit ${code}`;
 
@@ -126,7 +174,8 @@ async function walk(w: Walk, rel: string, mode: "keep" | "rebuild"): Promise<voi
     throw new Unreadable(`${rel}: ${(err as Error).message}`);
   }
   if (!st.isDirectory()) {
-    if (mode === "keep" && !rebuildableFile(rel.split("/").pop()!)) w.out.ignored.push(rel);
+    // A symlink, wherever it is: removing the link keeps its target.
+    if (mode === "keep") (st.isSymbolicLink() || rebuildableFile(rel.split("/").pop()!) ? w.out.rebuildable : w.out.ignored).push(rel);
     return;
   }
   let names: string[];
@@ -157,11 +206,12 @@ async function walk(w: Walk, rel: string, mode: "keep" | "rebuild"): Promise<voi
 }
 
 /** The ignored `.agent` folder: rebuildable when it holds only what a hermetic agent dir generates. */
-async function agentDir(w: Walk, rel: string): Promise<void> {
+async function agentDir(w: Walk, rel: string, finished?: FinishedFacts): Promise<void> {
   const files: string[] = [];
   let sessions = false;
   let auth = false;
   let other = false;
+  const isLogin = (sub: string, name: string): boolean => name === "auth.json" || sub.startsWith("claude-accounts/") || sub.includes("/claude-accounts/");
   const visit = async (sub: string): Promise<void> => {
     if (++w.entries > MAX_ENTRIES) throw new Unreadable(`more than ${MAX_ENTRIES} files to list`);
     const abs = join(w.top, rel, sub);
@@ -196,7 +246,7 @@ async function agentDir(w: Walk, rel: string): Promise<void> {
     files.push(sub);
     const name = sub.split("/").pop()!;
     if (sub.startsWith("sessions/")) sessions = true;
-    else if (name === "auth.json" || sub.startsWith("claude-accounts/") || sub.includes("/claude-accounts/")) auth = true;
+    else if (isLogin(sub, name)) auth = true;
     else if (!AGENT_GENERATED_FILES.has(sub) && !AGENT_GENERATED_DIRS.some((d) => sub.startsWith(d))) other = true;
   };
   await visit("");
@@ -204,21 +254,46 @@ async function agentDir(w: Walk, rel: string): Promise<void> {
     w.out.rebuildable.push(`${rel}/`);
     return;
   }
+  if (finished) {
+    const left = testCopyOf(w);
+    const stuck: string[] = [];
+    for (const sub of files) {
+      const abs = join(w.top, rel, sub);
+      if (sub.startsWith("sessions/") && !sub.startsWith("sessions/live/")) {
+        // A chat a real one holds in full is that real chat's copy; anything else under sessions moves aside whole.
+        const same = sub.endsWith(".jsonl") ? await finished.heldByRealChat(abs).catch((err: Error) => err.message) : false;
+        if (typeof same === "string") stuck.push(sub);
+        else (same ? left.copies : left.keepAside).push(`${rel}/${sub}`);
+      } else (isLogin(sub, sub.split("/").pop()!) ? left.login : left.state).push(`${rel}/${sub}`);
+    }
+    if (!stuck.length) {
+      w.out.rebuildable.push(`${rel}/`);
+      return;
+    }
+    w.out.agent = "sessions";
+    for (const f of stuck) w.out.ignored.push(`${rel}/${f}`);
+    return;
+  }
   w.out.agent = sessions ? "sessions" : auth ? "auth.json" : "server state";
   for (const f of files) w.out.ignored.push(`${rel}/${f}`);
 }
 
-/**
- * What removing the tree at `dir` would delete that isn't in git: read fresh every call. `git`
- * defaults to the read-only runner (no optional locks).
- */
-export async function leftovers(dir: string, git: GitRunner = execGit): Promise<Leftovers> {
-  const out: Leftovers = { dirty: [], ignored: [], nested: [], rebuildable: [] };
-  const st = await git(["status", "--porcelain=v1", "-z", "--untracked-files=all"], { cwd: dir });
-  if (st.code !== 0) return { ...out, unreadable: `Git couldn't read it: ${firstLine(st.stderr || st.stdout, st.code)}` };
+const testCopyOf = (w: Walk): TestCopyLeft => (w.out.testCopy ??= { keepAside: [], copies: [], login: [], state: [], logs: [], recordings: [] });
+
+/** What git says of a tree: its status, its ignored entries (a wholly ignored folder as "name/"), its submodules. */
+interface GitListing {
+  /** Uncommitted and untracked, as porcelain paths. */
+  status: readonly string[];
+  ignored: readonly string[];
+  submodules: readonly NestedRepo[];
+}
+
+/** One rule over what git said of a tree: everything below runs for a working tree and for a folder git forgot alike. */
+async function sorted(dir: string, listing: GitListing, opts: LeftoversOpts): Promise<Leftovers> {
+  const out: Leftovers = { dirty: [], ignored: [], nested: [...listing.submodules], rebuildable: [] };
   const w: Walk = { top: dir, entries: 0, out };
   try {
-    for (const p of porcelainPaths(st.stdout)) {
+    for (const p of listing.status) {
       // An untracked folder git lists whole is a nested repository (git doesn't look inside one).
       if (p.endsWith("/")) {
         const rel = p.slice(0, -1);
@@ -227,24 +302,15 @@ export async function leftovers(dir: string, git: GitRunner = execGit): Promise<
         else await walkDirty(w, rel);
       } else out.dirty.push(p);
     }
-    const ig = await git(["ls-files", "-z", "--others", "--ignored", "--exclude-standard", "--directory"], { cwd: dir });
-    if (ig.code !== 0) return { ...out, unreadable: `Git couldn't list its ignored files: ${firstLine(ig.stderr || ig.stdout, ig.code)}` };
-    // Initialised submodules: clean ones show nowhere else, and --force takes their git dirs with the tree.
-    const sub = await git(["submodule", "status", "--recursive"], { cwd: dir });
-    if (sub.code !== 0) return { ...out, unreadable: `Git couldn't read its submodules: ${firstLine(sub.stderr || sub.stdout, sub.code)}` };
-    for (const line of sub.stdout.split("\n")) {
-      const m = /^([ +U])[0-9a-f]+ (.+?)(?: \(.*\))?$/.exec(line);
-      if (m) out.nested.push({ path: m[2]!, kind: "repository" });
-    }
-    for (const raw of ig.stdout.split("\0")) {
+    for (const raw of listing.ignored) {
       if (!raw) continue;
       const isDir = raw.endsWith("/");
       const rel = isDir ? raw.slice(0, -1) : raw;
       const segs = rel.split("/");
       const name = segs[segs.length - 1]!;
-      if (rel === ".agent" && isDir) await agentDir(w, rel);
+      if (rel === ".agent" && isDir) await agentDir(w, rel, opts.finished);
       // A file git lists by itself is judged by itself: its folder isn't wholly ignored, whatever its name.
-      else if (isDir && rebuildableDir(name)) {
+      else if (isDir && (rebuildableDir(name) || rel === "tmp")) {
         out.rebuildable.push(`${rel}/`);
         if (!UNWALKED.has(name)) await walk(w, rel, "rebuild");
       } else if (!isDir && rebuildableFile(name)) out.rebuildable.push(rel);
@@ -254,9 +320,166 @@ export async function leftovers(dir: string, git: GitRunner = execGit): Promise<
     if (err instanceof Unreadable) return { ...out, unreadable: `Its files couldn't be read: ${err.message}` };
     throw err;
   }
+  try {
+    await letGo(w, opts);
+  } catch (err) {
+    if (err instanceof Unreadable) return { ...out, unreadable: `Its files couldn't be read: ${err.message}` };
+    throw err;
+  }
   for (const k of ["dirty", "ignored", "rebuildable"] as const) out[k] = [...new Set(out[k])].sort();
   out.nested = [...new Map(out.nested.map((n) => [n.path, n])).values()].sort((a, b) => a.path.localeCompare(b.path));
   return out;
+}
+
+/** The ignored files the rule also lets go: the review folders, proved drafts, and in a finished tree logs and recordings. */
+async function letGo(w: Walk, opts: LeftoversOpts): Promise<void> {
+  const out = w.out;
+  const kept: string[] = [];
+  const unproved = opts.unprovedDrafts ? new Set(opts.unprovedDrafts) : null;
+  for (const rel of out.ignored) {
+    if (SPEC_REVIEW_DIRS.some((d) => rel.startsWith(d))) {
+      out.rebuildable.push(rel);
+      continue;
+    }
+    const draft = draftOf(rel);
+    if (draft !== null) {
+      if (unproved && !unproved.has(draft)) out.rebuildable.push(rel);
+      else kept.push(rel);
+      continue;
+    }
+    if (opts.finished && rel !== ".agent" && !rel.startsWith(".agent/")) {
+      const name = rel.split("/").pop()!;
+      if (name.endsWith(".log")) {
+        testCopyOf(w).logs.push(rel);
+        continue;
+      }
+      if (RECORDING.test(name)) {
+        const there = await opts.finished.recordingElsewhere(rel, join(w.top, rel)).catch((err: Error) => err.message);
+        if (there === true) testCopyOf(w).recordings.push(rel);
+        else (out.lastRecordings ??= []).push(rel);
+        continue;
+      }
+    }
+    kept.push(rel);
+  }
+  out.ignored = kept;
+}
+
+/**
+ * What removing the tree at `dir` would delete that isn't in git: read fresh every call. `git`
+ * defaults to the read-only runner (no optional locks).
+ */
+export async function leftovers(dir: string, git: GitRunner = execGit, opts: LeftoversOpts = {}): Promise<Leftovers> {
+  const empty: Leftovers = { dirty: [], ignored: [], nested: [], rebuildable: [] };
+  const st = await git(["status", "--porcelain=v1", "-z", "--untracked-files=all"], { cwd: dir });
+  if (st.code !== 0) return { ...empty, unreadable: `Git couldn't read it: ${firstLine(st.stderr || st.stdout, st.code)}` };
+  const ig = await git(["ls-files", "-z", "--others", "--ignored", "--exclude-standard", "--directory"], { cwd: dir });
+  if (ig.code !== 0) return { ...empty, unreadable: `Git couldn't list its ignored files: ${firstLine(ig.stderr || ig.stdout, ig.code)}` };
+  // Initialised submodules: clean ones show nowhere else, and --force takes their git dirs with the tree.
+  const sub = await git(["submodule", "status", "--recursive"], { cwd: dir });
+  if (sub.code !== 0) return { ...empty, unreadable: `Git couldn't read its submodules: ${firstLine(sub.stderr || sub.stdout, sub.code)}` };
+  const submodules: NestedRepo[] = [];
+  for (const line of sub.stdout.split("\n")) {
+    const m = /^([ +U])[0-9a-f]+ (.+?)(?: \(.*\))?$/.exec(line);
+    if (m) submodules.push({ path: m[2]!, kind: "repository" });
+  }
+  return sorted(dir, { status: porcelainPaths(st.stdout), ignored: ig.stdout.split("\0"), submodules }, opts);
+}
+
+/** check-ignore's argv at one go. */
+const BATCH = 200;
+
+/** Which of `paths` (relative, `/`-separated) the repository's own ignore rules cover; a directory is asked with a trailing slash. */
+async function ignoredOf(git: GitRunner, main: string, paths: readonly string[]): Promise<Set<string>> {
+  const out = new Set<string>();
+  for (let i = 0; i < paths.length; i += BATCH) {
+    // Not -z (it needs stdin, and no runner here pipes one). Quoted names, a tab or newline in them, then match nothing
+    // and read as not ignored, which holds the folder.
+    const r = await git(["-c", "core.quotepath=off", "check-ignore", "--no-index", "--", ...paths.slice(i, i + BATCH)], { cwd: main });
+    if (r.code !== 0 && r.code !== 1) throw new Unreadable(`git check-ignore: ${firstLine(r.stderr || r.stdout, r.code)}`);
+    for (const p of r.stdout.split("\n")) if (p) out.add(p);
+  }
+  return out;
+}
+
+/** What git would list for a folder it has forgotten: top down, asking the repository's own ignore rules. A wholly ignored folder isn't walked. */
+async function folderListing(top: string, main: string, git: GitRunner): Promise<{ untracked: string[]; ignored: string[] }> {
+  const untracked: string[] = [];
+  const ignored: string[] = [];
+  let level: string[] = [""];
+  let entries = 0;
+  while (level.length) {
+    const next: string[] = [];
+    const here: { rel: string; dir: boolean }[] = [];
+    for (const parent of level) {
+      let names;
+      try {
+        names = await readdir(join(top, parent), { withFileTypes: true });
+      } catch (err) {
+        throw new Unreadable(`${parent || "."}/: ${(err as Error).message}`);
+      }
+      for (const e of names) {
+        if (!parent && e.name === ".git") continue; // a stale pointer: its proof already said it holds nothing
+        if (++entries > MAX_ENTRIES) throw new Unreadable(`more than ${MAX_ENTRIES} files to list`);
+        const rel = parent ? `${parent}/${e.name}` : e.name;
+        if (e.isSymbolicLink()) continue; // deleted with the folder, its target kept
+        if (!e.isDirectory() && !e.isFile()) throw new Unreadable(`${rel} isn't a regular file`);
+        here.push({ rel, dir: e.isDirectory() });
+      }
+    }
+    const listed = await ignoredOf(git, main, here.map((h) => (h.dir ? `${h.rel}/` : h.rel)));
+    for (const h of here) {
+      if (listed.has(h.dir ? `${h.rel}/` : h.rel)) ignored.push(h.dir ? `${h.rel}/` : h.rel);
+      else if (!h.dir) untracked.push(h.rel);
+      // A repository inside: `sorted` names it, as for a working tree.
+      else if (await lstat(join(top, h.rel, ".git")).catch(() => null)) untracked.push(`${h.rel}/`);
+      else next.push(h.rel);
+    }
+    level = next;
+  }
+  return { untracked, ignored };
+}
+
+/** Which of `files` (absolute) the repository has, by content: hashed unfiltered, as a filtered file would read as new. */
+async function inGit(git: GitRunner, main: string, files: readonly string[]): Promise<Set<string>> {
+  const known = new Set<string>();
+  if (!files.length) return known;
+  const tree = await git(["ls-tree", "-r", "HEAD"], { cwd: main });
+  const blobs = new Set(tree.code === 0 ? tree.stdout.split("\n").map((l) => l.split(/\s+/)[2]).filter(Boolean) : []);
+  for (let i = 0; i < files.length; i += BATCH) {
+    const batch = files.slice(i, i + BATCH);
+    const hashed = await git(["hash-object", "--no-filters", "--", ...batch], { cwd: main });
+    if (hashed.code !== 0) throw new Unreadable(`git hash-object: ${firstLine(hashed.stderr || hashed.stdout, hashed.code)}`);
+    const oids = hashed.stdout.trim().split("\n");
+    if (oids.length !== batch.length) throw new Unreadable("git hash-object: its answer didn't match the files asked about");
+    for (let j = 0; j < batch.length; j++) {
+      if (blobs.has(oids[j]!) || (await git(["cat-file", "-e", `${oids[j]}^{blob}`], { cwd: main })).code === 0) known.add(batch[j]!);
+    }
+  }
+  return known;
+}
+
+/**
+ * The same rule for a folder with no working `.git`, what a partial delete leaves (§chat.worktrees/cleanup): judged by
+ * the repository's own ignore rules from its main checkout, and a file already in git by content is no leftover. A
+ * draft is never cleared by content: only by its proof.
+ */
+export async function leftoversOfFolder(dir: string, main: string, git: GitRunner = execGit, opts: LeftoversOpts = {}): Promise<Leftovers> {
+  const empty: Leftovers = { dirty: [], ignored: [], nested: [], rebuildable: [] };
+  try {
+    const listed = await folderListing(dir, main, git);
+    // A draft's files are one kind whether or not this repository's rules ignore them: `letGo` asks its proof.
+    const isDraft = (p: string): boolean => p.startsWith(DRAFTS_PREFIX);
+    const l = await sorted(dir, { status: listed.untracked.filter((p) => !isDraft(p)), ignored: [...listed.ignored, ...listed.untracked.filter(isDraft)], submodules: [] }, opts);
+    if (l.unreadable) return l;
+    const asked = [...l.dirty, ...l.ignored].filter((rel) => !rel.startsWith(DRAFTS_PREFIX));
+    const have = await inGit(git, main, asked.map((rel) => join(dir, rel)));
+    const here = (rel: string): boolean => have.has(join(dir, rel));
+    return { ...l, dirty: l.dirty.filter((r) => !here(r)), ignored: l.ignored.filter((r) => !here(r)) };
+  } catch (err) {
+    if (err instanceof Unreadable) return { ...empty, unreadable: `Its files couldn't be read: ${err.message}` };
+    throw err;
+  }
 }
 
 /** An untracked folder git listed as "dir/" though not a repository (it does with -uall only for those): its files. */
@@ -297,8 +520,9 @@ export function leftoversReason(l: Leftovers): string | null {
   const ig = ignoredGroups(l);
   if (ig.length) parts.push(`${plural(l.ignored.length, "ignored file")}: ${some(ig)}`);
   if (l.nested.length) parts.push(`${plural(l.nested.length, "nested repository", "nested repositories")}: ${some(l.nested.map((n) => n.path))}`);
+  if (l.lastRecordings?.length) parts.push(`${plural(l.lastRecordings.length, "recording")} found nowhere else: ${l.lastRecordings[0]}${l.lastRecordings.length > 1 ? ` and ${l.lastRecordings.length - 1} more` : ""}`);
   // Only uncommitted files: worded as before.
-  if (!ig.length && !l.nested.length) return `${parts[0]}.`;
+  if (!ig.length && !l.nested.length && !l.lastRecordings?.length) return `${parts[0]}.`;
   return `Holds what can't be rebuilt: ${parts.join("; ")}.`;
 }
 

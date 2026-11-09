@@ -12,6 +12,12 @@ export const LANDING_LINES_LEAD = "From Sova (not the user's words; nothing to a
 let source: ((session: string, since: string | null) => string | null) | null = null;
 let landing: ((session: string) => Promise<string | null>) | null = null;
 
+let oneShot: ((session: string) => string | null) | null = null;
+/** Retirement's (server/worktree-retire-notes.ts): a line told once, the chat's folder coming back. */
+export function setRetireNoteSource(fn: ((session: string) => string | null) | null): void {
+  oneShot = fn;
+}
+
 /** wire.ts at start (null at stop): where the lines come from. */
 export function setMergeCardNoteSource(fn: ((session: string, since: string | null) => string | null) | null): void {
   source = fn;
@@ -37,6 +43,13 @@ export async function withMergeCardNote(cards: string | null, session: string, s
   } catch {
     lines = null;
   }
-  const blocks = [cards, lines ? `${LANDING_LINES_LEAD}\n${lines}` : null, mq ? `${MERGE_QUEUE_NOTE_LEAD}\n${mq}` : null].filter((b): b is string => !!b);
+  let told: string | null = null;
+  try {
+    told = session && oneShot ? oneShot(session) : null;
+  } catch {
+    told = null;
+  }
+  const said = [lines, told].filter(Boolean).join("\n");
+  const blocks = [cards, said ? `${LANDING_LINES_LEAD}\n${said}` : null, mq ? `${MERGE_QUEUE_NOTE_LEAD}\n${mq}` : null].filter((b): b is string => !!b);
   return blocks.length ? blocks.join("\n") : null;
 }

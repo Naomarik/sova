@@ -3,12 +3,13 @@
 // `{v: 1, entries: [...]}`, newest last, written by atomic rename. Merge readiness asks
 // `goneTreeState` so an owner whose merged worktree was removed (by the cleanup button, another
 // session's plain git, or by hand) reads merged, never in progress. Git by argv, read-only.
-import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
-import type { TrackedWorktree } from "../pi-config/extensions/worktrees/state.ts";
+import { isWithin, type TrackedWorktree } from "../pi-config/extensions/worktrees/state.ts";
 import { stateRoot } from "./state-root";
-import { trialMergeTree } from "./merge-tree-probe";
+import { mergeTreeOid, trialMergeTree } from "./merge-tree-probe";
 import { codeLeft, landingRecordsAt, queueTargetAt, trialNoOp } from "./nothing-left";
+import { hasLiveGit } from "./worktree-remove";
 import { execGit, type GitRunner } from "./worktrees";
 
 /** One removal Sova's cleanup made. */
@@ -18,9 +19,60 @@ export interface RemovedWorktree {
   branch: string;
   commonDir: string;
   tip: string;
-  merged: "ancestor" | "content" | "empty";
+  /** `leftover`: its only commits past the target were merges, or a folder left behind with its branch gone. */
+  merged: "ancestor" | "content" | "leftover" | "empty";
   branchDeleted: boolean;
   at: number;
+  /** The branch it landed on, when known: what a message would bring it back fresh from. */
+  target?: string;
+  /** Automatic retirement took it (§chat.worktrees/retirement): only such an entry brings a chat's folder back. Absent: removed by another way (archive, Remove Worktree, an older button). */
+  retired?: true;
+  /** One of the merge queue's own chats made it: on no list of yours (§app.merge-queue/resolve-copy). */
+  queueMade?: true;
+  /** Its last commit is pinned at refs/sova/retired/<tip>. */
+  pinned?: true;
+  /** Git forgot the tree but the folder stayed, and the proof didn't hold: the leftover pass looks at it again. */
+  partial?: true;
+  /** Restore put the branch and folder back at this time: it waits 7 days before it can retire again. */
+  restoredAt?: number;
+  /** A message brought the folder back at this time, fresh from the target. */
+  backAt?: number;
+  /** Test chats moved to `<state root>/retired-test-chats/<folder>/` before it went. */
+  keptChats?: number;
+}
+
+/** Really absent: a folder that can't be read may well be there. */
+const folderGone = (p: string): boolean => {
+  try {
+    lstatSync(p);
+    return false;
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code;
+    return code === "ENOENT" || code === "ENOTDIR";
+  }
+};
+
+const newestCovering = (entries: readonly RemovedWorktree[], at: string): RemovedWorktree | null => {
+  for (let i = entries.length - 1; i >= 0; i--) if (at === entries[i]!.path || isWithin(at, entries[i]!.path)) return entries[i]!;
+  return null;
+};
+
+/**
+ * The retirement a message would bring `at` (canonical) back from: the newest entry for its worktree, retired, with
+ * nothing having brought it back. A partial delete counts only once its folder is gone, however it went.
+ */
+export function retiredEntryCovering(entries: readonly RemovedWorktree[], at: string): RemovedWorktree | null {
+  const e = newestCovering(entries, at);
+  return e?.retired && (!e.partial || folderGone(e.path)) && !e.backAt && !e.restoredAt && e.branch ? e : null;
+}
+
+/**
+ * The partial delete `at` (canonical) is in, still held: git forgot it, files stayed, and nothing has proved them safe
+ * yet. No chat runs there (§chat.worktrees/retirement). A folder with a live `.git` again isn't this any more.
+ */
+export function heldPartialEntry(entries: readonly RemovedWorktree[], at: string): RemovedWorktree | null {
+  const e = newestCovering(entries, at);
+  return e?.retired && e.partial && !e.backAt && !e.restoredAt && !folderGone(e.path) && !hasLiveGit(e.path) ? e : null;
 }
 
 /** The newest this many entries are kept. */
@@ -31,7 +83,7 @@ export const ledgerFile = (): string => join(stateRoot(), "removed-worktrees.jso
 const isEntry = (e: unknown): e is RemovedWorktree => {
   const r = e as Partial<RemovedWorktree> | null;
   return !!r && r.v === 1 && typeof r.path === "string" && typeof r.branch === "string" && typeof r.commonDir === "string" && typeof r.tip === "string" &&
-    (r.merged === "ancestor" || r.merged === "content" || r.merged === "empty") && typeof r.branchDeleted === "boolean" && typeof r.at === "number";
+    (r.merged === "ancestor" || r.merged === "content" || r.merged === "leftover" || r.merged === "empty") && typeof r.branchDeleted === "boolean" && typeof r.at === "number";
 };
 
 let cached: { file: string; mtimeMs: number; size: number; entries: RemovedWorktree[] } | null = null;
@@ -67,6 +119,21 @@ export function appendLedger(add: readonly RemovedWorktree[], file = ledgerFile(
   cached = null;
 }
 
+/** Rewrites the newest entry `match` finds, adding `patch`: the mark a restore or a return leaves. False: none matched. */
+export function markLedger(match: (e: RemovedWorktree) => boolean, patch: Partial<Pick<RemovedWorktree, "restoredAt" | "backAt" | "branchDeleted">>, file = ledgerFile()): boolean {
+  const entries = [...readLedger(file)];
+  for (let i = entries.length - 1; i >= 0; i--) {
+    if (!match(entries[i]!)) continue;
+    entries[i] = { ...entries[i]!, ...patch };
+    const tmp = `${file}.${process.pid}.tmp`;
+    writeFileSync(tmp, `${JSON.stringify({ v: 1, entries }, null, 1)}\n`);
+    renameSync(tmp, file);
+    cached = null;
+    return true;
+  }
+  return false;
+}
+
 /** Merged by content: merging `tip` into `main` leaves main's tree as it is. Objects go to a throwaway directory, and
     git runs outside the checkout `cwd` (merge-tree-probe.ts). */
 const contentCache = new Map<string, boolean>();
@@ -82,7 +149,7 @@ export async function mergedByContent(git: GitRunner, cwd: string, commonDir: st
       git(["rev-parse", `${main}^{tree}`], { cwd }),
     ]);
     if (merged.code !== 0 && merged.code !== 1) return false; // can't tell: not merged (and not cached)
-    value = merged.code === 0 && tree.code === 0 && (merged.stdout.split("\n", 1)[0] ?? "").trim() === tree.stdout.trim();
+    value = merged.code === 0 && tree.code === 0 && mergeTreeOid(merged.stdout) === tree.stdout.trim();
     contentCache.set(key, value);
     if (contentCache.size > 2000) contentCache.delete(contentCache.keys().next().value!);
   } catch {

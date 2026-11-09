@@ -400,6 +400,8 @@ export interface ChatMethods {
   /** The chat is opened again while held: refused while a TUI owns the file, and on another writer's
       lines unless `force`; with `force` it is reopened from the file (every pane told to reconnect). */
   reacquire: { args: { force: boolean }; result: "ok" | "reloaded" };
+  /** Reopen in this same process, its stored folder being back (§chat.worktrees/retirement): "every open looks again". */
+  reopenHere: { args: Record<string, never>; result: "reloaded" };
   /** The chat's next run is an automatic resume (§app.overseer/auto-resume): never resumed again. */
   markResuming: { args: Record<string, never>; result: null };
   /** A worker chat's feed frames after `seq` of process `proc`, from its ring; a gap when they fell

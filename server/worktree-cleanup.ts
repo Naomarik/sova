@@ -1,43 +1,28 @@
-// Removing merged worktrees (§chat.worktrees/cleanup): one service that classifies every linked
-// worktree in git's own list for a session's repository — merged (§chat.worktrees/merged-state
-// against master, else main: ancestry, or content by a trial merge, after a commit of its own),
-// empty (no commit of its own) or unmerged — and removes the merged and empty ones nothing still
-// uses. Only when asked: the count and the dry run read, and a removal acts on the confirmed paths
-// alone, each checked again right before it goes.
-//
-// A tree that holds what can't be rebuilt (ignored files outside rebuildable folders, nested
-// repositories: server/worktree-leftovers.ts) stays like one with uncommitted files; Remove Anyway,
-// on the user's click alone, takes one such tree with a single --force when what it holds is exactly
-// what was listed.
-//
-// Removal is git's own `git worktree remove -- <path>` from the main checkout, never --force but for Remove Anyway, and
-// `git branch -d` only for a branch in the main branch by ancestry. Each removal is appended to the
-// ledger (server/removed-worktrees.ts) that readiness reads for a removed tree. Git by argv, never
-// a shell; reads under --no-optional-locks (server/worktrees.ts execGit).
+// What the worktree services read (§chat.worktrees/cleanup): every linked worktree in git's own list for a
+// repository, classified by the shared answer (§chat.worktrees/nothing-left) as finished, empty (no commit of
+// its own) or has work; the repository's count; who uses a tree; and which processes hold it. Reads only:
+// the one removal step is server/worktree-remove.ts, and only server/worktree-retire.ts decides to call it.
+// Git by argv, never a shell; reads under --no-optional-locks (server/worktrees.ts execGit).
 import { execFile } from "node:child_process";
 import { readdir, readFile, readlink, stat } from "node:fs/promises";
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
-import { homedir } from "node:os";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { isAbsolute, join } from "node:path";
-import type { SessionSummary, WorktreeCleanupKept, WorktreeCleanupPlan, WorktreeCleanupRemoved, WorktreeCleanupResult, WorktreesSummary } from "../shared/protocol";
-import { runGit } from "../pi-config/extensions/worktrees/git.ts";
+import type { SessionSummary, WorktreesSummary } from "../shared/protocol";
 import { canonical, isWithin, WORKTREES_ENTRY_TYPE } from "../pi-config/extensions/worktrees/state.ts";
 import { readStoredCwd } from "./git-summary";
 import { lineHeader, lineNeedle } from "./harness/pi/reader";
-import { worktreesRemoved } from "./merge-readiness";
 import { scratchCopiesIn } from "./merge-queue/scratch";
-import { appendLedger, mergedByContent, resetContentMerges, type RemovedWorktree } from "./removed-worktrees";
+import { branchLeft, type BranchLeft } from "./nothing-left";
+import { resetContentMerges } from "./removed-worktrees";
 import { sandboxInfo } from "./sandbox-state";
 import { parseTargetCwd } from "./targets";
 import { worktreesOf } from "./worktrees-state";
-import { leftovers, leftoversDigest, leftoversReason, removeAnywayOf, type Leftovers } from "./worktree-leftovers";
-export { REMOVE_ANYWAY_LIST, removeAnywayOf } from "./worktree-leftovers";
-import { execGit, type GitResult, type GitRunner } from "./worktrees";
+import { retirementAllowed } from "./worktree-retire-gate";
+import { retirementCounts } from "./worktree-retire-view";
+import { execGit, type GitRunner } from "./worktrees";
 
 /** How long a count stands while git's list of worktrees doesn't change. */
 export const SUMMARY_TTL_MS = 30_000;
-/** Removals running at once: each deletes a folder, often with a node_modules. */
-const REMOVE_CONCURRENCY = 3;
 const ZERO = /^0+$/;
 
 export type TreeClass = "merged" | "empty" | "unmerged";
@@ -51,11 +36,20 @@ export interface ClassifiedTree {
   /** Its folder is gone (git says prunable). */
   gone: boolean;
   class: TreeClass;
-  merged?: "ancestor" | "content";
+  /** How a finished tree has nothing left: `leftover`, its only commits past the target are merges or it is the landed commit. */
+  merged?: "ancestor" | "content" | "leftover";
   /** The branch is an ancestor of the main branch: `git branch -d` may delete it. */
   ancestor: boolean;
-  /** Why an unmerged tree stays. */
+  /** Why a tree with work stays. */
   why?: string;
+  /** The spec drafts in its folder not proved landed (§chat.worktrees/nothing-left). A tree with no code left but these has class "unmerged" and this list. */
+  drafts?: string[];
+  /** Git couldn't answer the shared question: a doubt, so it stays. */
+  unknown?: boolean;
+  /** One of the merge queue's own chats made it: it retires by the same rule, on no list of yours. */
+  queueMade?: true;
+  /** Other worktrees (or the main checkout) whose folders are inside this one: removing it would take them too. */
+  nested?: string[];
 }
 
 /** A repository and its linked worktrees, classified. */
@@ -65,23 +59,47 @@ export interface RepoTrees {
   main: string;
   /** master, else main; absent when the repository has neither. */
   mainBranch?: string;
+  /** The branch this repository lands on: the project's declared target, else mainBranch. */
+  target?: { name: string; oid: string };
   trees: ClassifiedTree[];
 }
 
-/** What a session's tracking and state say about one tree. */
-interface Tracker {
+/** One chat that uses a worktree: its folder is inside it, or it tracks it as active. */
+export interface ChatUse {
+  /** The session file. */
+  path: string;
+  id?: string;
+  /** Its title in quotes, else a short id: how a reason names it. */
   name: string;
-  live: boolean;
+  /** Its folder (header cwd, canonical); null: a remote placeholder or none. */
+  cwd: string | null;
+  /** The asked paths its folder is inside. */
+  inside: string[];
+  /** The asked paths it tracks as active. */
+  tracks: string[];
+  archived: boolean;
   running: boolean;
+  /** Open in a TUI. */
+  tui: boolean;
+  /** Workers it holds, idle ones too. */
+  workers: number;
   sandbox: boolean;
+  /** Its session file's last write, ms. */
+  lastActiveAt: number;
 }
 
-/** Everything a refusal reads besides git, taken once per plan. */
-export interface UseFacts {
-  /** Every session's folder (header cwd, canonical), with a name to say. */
-  sessionCwds: { cwd: string; name: string }[];
-  /** Tree path → the sessions tracking it active. */
-  trackers: Map<string, Tracker[]>;
+/** What a read of the chats found: `unreadable` names a session file that could not be read, so who uses what isn't known. */
+export interface ChatFacts {
+  uses: ChatUse[];
+  unreadable: string[];
+}
+
+/** One tree a chat's worktree records name, any status. */
+export interface TreeRecord {
+  path: string;
+  branch: string;
+  base: string;
+  session: string;
 }
 
 /** A live process and the paths it holds (its cwd and open files). */
@@ -96,31 +114,20 @@ export interface ProcFacts {
 export interface CleanupDeps {
   /** Reads (no optional locks, short timeout). */
   git: GitRunner;
-  /** `git worktree remove` and `git branch -d` (longer timeout). */
-  gitWrite: GitRunner;
-  /** One session's row (server/sessions-index.ts getSessionSummary), asked only for a session a
-      refusal could name: its folder is inside a candidate, or it tracks one. */
+  /** One session's row (server/sessions-index.ts getSessionSummary), asked only for a session whose folder is inside a tree asked about, or which tracks one. */
   summary: (path: string) => Promise<SessionSummary | null>;
   /** Every session file, listed or not (a new session with no message yet isn't listed). */
   sessionFiles: () => Promise<string[]>;
   /** A session file's active branch entries (read only for a changed file that holds a `worktrees` entry). */
   readBranch: (path: string) => Promise<readonly unknown[]>;
-  /** A session file's bytes, read only when it changed since the last check (useFacts' cache). */
+  /** A session file's bytes, read only when it changed since the last check (the scan's cache). */
   readFile: (path: string) => Promise<Buffer>;
-  /** The live processes and what they hold; read once per check. */
-  processes: () => Promise<ProcFacts[]>;
-  /** Whether a pid is a live process. */
-  alive: (pid: number) => boolean;
-  ledger: (entries: RemovedWorktree[]) => void;
-  /** Ends the cached readiness of every session tracking a removed tree (server/merge-readiness.ts). */
-  removed: (paths: readonly string[]) => Promise<void>;
-  now: () => number;
-  /** The worktree was made by one of the merge queue's own chats (merge-queue/wire.ts worktreeQueueMade, the test the
-      queue's Ready list uses): a conflict's scratch copy the merge thread made itself. Never listed. Absent: none is. */
+  /** The worktree was made by one of the merge queue's own chats (merge-queue/wire.ts worktreeQueueMade): hidden from every count and list, though it retires like any other. Absent: none is. */
   queueMade?: (path: string) => Promise<boolean>;
+  /** The branch a repository lands on, when its project declares one. Absent or null: master, else main. */
+  targetOf?: (main: string) => Promise<string | null>;
+  now: () => number;
 }
-
-const writeGit: GitRunner = async (args, opts) => runGit([...args], opts.cwd);
 
 /**
  * The live processes and the paths they hold: /proc/<pid>/cwd and /proc/<pid>/fd/* of every process
@@ -136,8 +143,8 @@ export async function scanProcesses(platform: NodeJS.Platform = process.platform
   let pids: string[];
   try {
     pids = (await readdir("/proc")).filter((d) => /^\d+$/.test(d));
-  } catch {
-    return [];
+  } catch (err) {
+    return [{ pid: 0, command: "proc", paths: [], unreadable: `Its processes couldn't be read (/proc: ${(err as NodeJS.ErrnoException).code ?? "error"}), so it is kept.` }];
   }
   const out: ProcFacts[] = [];
   await Promise.all(
@@ -182,7 +189,7 @@ export function parseLsof(text: string, self: number): ProcFacts[] {
   return out.filter((p) => p.paths.length);
 }
 
-function pidAlive(pid: number): boolean {
+export function pidAlive(pid: number): boolean {
   try {
     process.kill(pid, 0);
     return true;
@@ -194,14 +201,12 @@ function pidAlive(pid: number): boolean {
 let deps: CleanupDeps | null = null;
 /** index.ts wires the session list and the branch reader; tests swap anything. */
 export function configureCleanup(d: Partial<CleanupDeps> & Pick<CleanupDeps, "summary" | "sessionFiles" | "readBranch">): void {
-  deps = { git: execGit, gitWrite: writeGit, processes: scanProcesses, alive: pidAlive, ledger: (e) => appendLedger(e), removed: worktreesRemoved, now: Date.now, readFile: (p) => readFile(p), ...d };
+  deps = { git: execGit, now: Date.now, readFile: (p) => readFile(p), ...d };
 }
 const need = (): CleanupDeps => {
   if (!deps) throw new Error("worktree cleanup is not configured");
   return deps;
 };
-
-const firstLine = (r: GitResult): string => (r.stderr || r.stdout).trim().split("\n")[0]?.trim() || `exit ${r.code}`;
 
 /** `git worktree list --porcelain` blocks. */
 export function parseWorktreeList(stdout: string): { path: string; head?: string; branch?: string; bare: boolean; locked: boolean; prunable: boolean }[] {
@@ -232,8 +237,25 @@ export function createdAt(commonDir: string, branch: string): string | undefined
   }
 }
 
+export interface ClassifyOpts {
+  git?: GitRunner;
+  /** Keep the worktrees one of the queue's own chats made: retirement takes those; every count and list hides them. */
+  withQueueMade?: boolean;
+  /** Only these paths: the recheck right before a removal. */
+  only?: readonly string[];
+  /** The shared answer; tests swap it. */
+  left?: (o: Parameters<typeof branchLeft>[0]) => Promise<BranchLeft>;
+  /** Who made it, for this call: the configured seam otherwise. */
+  queueMade?: (path: string) => Promise<boolean>;
+}
+
+const LEFTOVER_KINDS = new Set(["catch-up", "landed", "past-landing"]);
+
 /** The repository `dir` is in, and its linked worktrees classified; null when it isn't in one with a main checkout. */
-export async function classifyRepo(dir: string, git: GitRunner = need().git): Promise<RepoTrees | null> {
+export async function classifyRepo(dir: string, opts: GitRunner | ClassifyOpts = {}): Promise<RepoTrees | null> {
+  const o: ClassifyOpts = typeof opts === "function" ? { git: opts } : opts;
+  const git = o.git ?? need().git;
+  const leftOf = o.left ?? branchLeft;
   if (!dir || !existsSync(dir)) return null;
   const cd = await git(["rev-parse", "--path-format=absolute", "--git-common-dir"], { cwd: dir });
   if (cd.code !== 0 || !cd.stdout.trim()) return null;
@@ -253,6 +275,13 @@ export async function classifyRepo(dir: string, git: GitRunner = need().git): Pr
       break;
     }
   }
+  let target: { name: string; oid: string } | undefined = mainBranch ? { name: mainBranch, oid: mainSha } : undefined;
+  const declared = await deps?.targetOf?.(main).catch(() => null);
+  if (declared && declared !== mainBranch) {
+    const r = await git(["rev-parse", "--verify", "-q", `refs/heads/${declared}^{commit}`], { cwd: main });
+    // A declared target that can't be read is a doubt: no target, so every tree stays.
+    target = r.code === 0 ? { name: declared, oid: r.stdout.trim() } : undefined;
+  }
   const ancestors = new Set<string>();
   if (mainSha) {
     const r = await git(["for-each-ref", `--merged=${mainSha}`, "--format=%(refname)", "refs/heads"], { cwd: main });
@@ -260,31 +289,45 @@ export async function classifyRepo(dir: string, git: GitRunner = need().git): Pr
   }
   const trees: ClassifiedTree[] = [];
   // The merge queue's scratch copies (by the mark it leaves in each one's admin dir) are its own, removed when their
-  // landing attempt ends: never listed here, so never offered or kept with a reason. So are the ones a merge queue chat
-  // created itself (queueMade).
+  // landing attempt ends: never listed, held or removed here. The ones a merge queue chat created itself leave every
+  // count and list, and retire by the same rule (withQueueMade).
   const scratch = new Set(scratchCopiesIn(commonDir).map((c) => canonical(c.path)));
-  const queueMade = deps?.queueMade;
+  const queueMade = o.queueMade ?? deps?.queueMade;
+  const only = o.only ? new Set(o.only) : null;
   for (const w of linked) {
+    if (only && !only.has(w.path)) continue;
     if (scratch.has(canonical(w.path))) continue;
-    // One the merge thread made itself (the old feat/resolve-mq_* copies): the queue's too, by who made it.
-    if (queueMade && (await queueMade(w.path).catch(() => false))) continue;
-    const base: ClassifiedTree = { path: w.path, ...(w.branch ? { branch: w.branch } : {}), ...(w.head ? { head: w.head } : {}), locked: w.locked, gone: w.prunable || !existsSync(w.path), class: "unmerged", ancestor: false };
+    const madeByQueue = !!queueMade && (await queueMade(w.path).catch(() => false));
+    if (madeByQueue && !o.withQueueMade) continue;
+    const nested = [first, ...linked].filter((x) => x.path !== w.path && isWithin(canonical(x.path), canonical(w.path))).map((x) => x.path);
+    const base: ClassifiedTree = { path: w.path, ...(w.branch ? { branch: w.branch } : {}), ...(w.head ? { head: w.head } : {}), locked: w.locked, gone: w.prunable || !existsSync(w.path), class: "unmerged", ancestor: false, ...(nested.length ? { nested } : {}), ...(madeByQueue ? { queueMade: true as const } : {}) };
     if (!w.branch || !w.head) {
       trees.push({ ...base, why: "Not on a branch." });
       continue;
     }
-    if (!mainBranch) {
+    if (!target) {
       trees.push({ ...base, why: "No master or main branch to merge into." });
       continue;
     }
     const ancestor = ancestors.has(w.branch);
-    const created = createdAt(commonDir, w.branch);
-    if (created === w.head) trees.push({ ...base, class: "empty", ancestor });
-    else if (ancestor) trees.push({ ...base, class: "merged", merged: "ancestor", ancestor });
-    else if (await mergedByContent(git, main, commonDir, mainSha, w.head)) trees.push({ ...base, class: "merged", merged: "content", ancestor });
-    else trees.push({ ...base, why: `Not merged into ${mainBranch}.` });
+    const left = await leftOf({ root: main, ...(base.gone ? {} : { folder: w.path }), branch: w.branch, head: w.head, target }).catch(() => null);
+    if (!left || left.code.kind === "unknown") {
+      trees.push({ ...base, ancestor, unknown: true, why: `Sova can't read what this branch has left${left?.code.error ? `: ${left.code.error}` : "."}` });
+      continue;
+    }
+    const drafts = left.drafts.length ? { drafts: left.drafts } : {};
+    if (left.code.left) {
+      trees.push({ ...base, ancestor, ...drafts, why: `Not merged into ${target.name}.` });
+      continue;
+    }
+    if (left.drafts.length) {
+      trees.push({ ...base, ancestor, ...drafts, why: "Its spec drafts aren't proved landed." });
+      continue;
+    }
+    if (createdAt(commonDir, w.branch) === w.head) trees.push({ ...base, class: "empty", ancestor });
+    else trees.push({ ...base, class: "merged", merged: left.code.kind === "ancestor" ? "ancestor" : LEFTOVER_KINDS.has(left.code.kind) ? "leftover" : "content", ancestor });
   }
-  return { commonDir, main, ...(mainBranch ? { mainBranch } : {}), trees };
+  return { commonDir, main, ...(mainBranch ? { mainBranch } : {}), ...(target ? { target } : {}), trees };
 }
 
 // --- the count ---------------------------------------------------------------------------------
@@ -307,6 +350,11 @@ async function folderOf(sessionPath: string): Promise<string | null> {
   return cwd;
 }
 
+const offForNow = (): { offFor?: Exclude<ReturnType<typeof retirementAllowed>, { on: true }>["offFor"] } => {
+  const gate = retirementAllowed();
+  return gate.on ? {} : { offFor: gate.offFor };
+};
+
 const countOf = (r: RepoTrees): WorktreesSummary => ({
   state: "ok",
   repo: r.main,
@@ -315,6 +363,8 @@ const countOf = (r: RepoTrees): WorktreesSummary => ({
   merged: r.trees.filter((t) => t.class === "merged").length,
   empty: r.trees.filter((t) => t.class === "empty").length,
   unmerged: r.trees.filter((t) => t.class === "unmerged").length,
+  ...retirementCounts(r.commonDir, Date.now()),
+  ...offForNow(),
 });
 
 /** GET /api/worktrees/summary: the repository's counts, cached per repository. */
@@ -335,22 +385,26 @@ export async function worktreesSummary(sessionPath: string): Promise<WorktreesSu
   return value;
 }
 
-// --- refusals ----------------------------------------------------------------------------------
+// --- who uses a tree ---------------------------------------------------------------------------
 
-/** A session as a refusal names it: its title, else (none, or a new session's "Untitled") its short id. */
+/** A session as a reason names it: its title, else (none, or a new session's "Untitled") its short id. */
 const nameOf = (s: SessionSummary | null, path: string): string => {
   const title = s?.title?.trim();
   if (title && title !== "Untitled") return `“${title.slice(0, 60)}”`;
   return s?.id?.slice(0, 8) || (/([0-9a-f]{8})[0-9a-f-]*\.jsonl$/.exec(path)?.[1] ?? "unnamed");
 };
-const runningNow = (s: SessionSummary): boolean => s.busy || s.activity?.state === "working" || (s.workers?.working ?? s.live?.workers?.working ?? 0) > 0;
+/** Working, or waiting on an answer the chat asked for: not quiet either way. */
+const runningNow = (s: SessionSummary): boolean => s.busy || s.activity?.state === "working" || s.activity?.state === "needs-input" || (s.workers?.working ?? s.live?.workers?.working ?? 0) > 0;
 
 /** What one session file says, as of one version of it: its header's folder, and, when it holds a
     `worktrees` entry, the active trees of its active branch (canonical) and whether its sandbox is on. */
 interface FileScan {
   version: string;
+  mtime: number;
   cwd: string | null;
-  tracks?: { active: Set<string>; sandbox: boolean };
+  tracks?: { active: Set<string>; sandbox: boolean; records: { path: string; branch: string; base: string }[] };
+  /** Its sandbox, read once for a session that holds no `worktrees` entry but whose folder is in a tree asked about. */
+  sandbox?: boolean;
 }
 const scans = new Map<string, FileScan>();
 const MARKER_BYTES = lineNeedle({ state: WORKTREES_ENTRY_TYPE });
@@ -369,12 +423,13 @@ function headerCwd(buf: Buffer): string | null {
 }
 
 /** One file's scan: from the cache while its (inode, size, mtime) hold; else read once, as bytes. Null: unreadable. */
-async function scanFile(path: string, d: CleanupDeps): Promise<FileScan | null> {
+async function scanFile(path: string, d: CleanupDeps, failed?: string[]): Promise<FileScan | null> {
   let st;
   try {
     st = await stat(path);
-  } catch {
+  } catch (err) {
     scans.delete(path);
+    if ((err as NodeJS.ErrnoException).code !== "ENOENT") failed?.push(path);
     return null;
   }
   const version = `${st.ino}:${st.size}:${st.mtimeMs}`;
@@ -383,19 +438,28 @@ async function scanFile(path: string, d: CleanupDeps): Promise<FileScan | null> 
   let buf: Buffer;
   try {
     buf = await d.readFile(path);
-  } catch {
+  } catch (err) {
     scans.delete(path);
+    if ((err as NodeJS.ErrnoException).code !== "ENOENT") failed?.push(path);
     return null;
   }
-  const scan: FileScan = { version, cwd: headerCwd(buf) };
+  const scan: FileScan = { version, mtime: st.mtimeMs, cwd: headerCwd(buf) };
   // Only a file that ever wrote a `worktrees` entry is parsed: the marker is searched in the raw bytes.
   if (buf.includes(MARKER_BYTES)) {
-    const branch = await d.readBranch(path).catch(() => [] as unknown[]);
+    // Its marker is there: a branch that can't be read says nothing about what it tracks, so the file counts as unreadable.
+    let branch: readonly unknown[];
+    try {
+      branch = await d.readBranch(path);
+    } catch {
+      failed?.push(path);
+      return null;
+    }
     const set = worktreesOf(branch);
     if (set) {
       scan.tracks = {
         active: new Set(set.trees.filter((t) => t.status === "active").map((t) => canonical(t.path))),
         sandbox: sandboxInfo(branch as Parameters<typeof sandboxInfo>[0]).on,
+        records: set.trees.map((t) => ({ path: t.path, branch: t.branch, base: t.base })),
       };
     }
   }
@@ -416,246 +480,77 @@ async function mapLimit<T, R>(items: readonly T[], limit: number, fn: (item: T) 
   return out;
 }
 
-/** Every session's folder that lies inside one of `paths`, and who tracks each of `paths` active.
-    Each session file is read only when it changed since the last call (per file by inode, size and
-    mtime) and parsed only when it holds a `worktrees` entry; only the few sessions a refusal could
-    name are looked up (their title, TUI, running state): a warm call costs a `stat` per file. */
-export async function useFacts(paths: readonly string[], exclude?: string): Promise<UseFacts> {
+/**
+ * Which chats use `paths`: a folder inside one, or tracking one as active. Each session file is read only
+ * when it changed since the last call (per file by inode, size and mtime) and parsed only when it holds a
+ * `worktrees` entry; only those few sessions are looked up (their title, TUI, running state): a warm call
+ * costs a `stat` per file. Fails closed: a session list that can't be read throws, and a session file that
+ * can't be read is named in `unreadable`, since it might be a chat using any of them.
+ */
+export async function chatUses(paths: readonly string[], exclude?: string): Promise<ChatFacts> {
   const d = need();
-  const all = [...new Set(await d.sessionFiles().catch(() => [] as string[]))].filter((p) => p !== exclude);
-  const scanned = await mapLimit(all, READ_CONCURRENCY, (path) => scanFile(path, d));
+  const all = [...new Set(await d.sessionFiles())].filter((p) => p !== exclude);
+  const unreadable: string[] = [];
+  const scanned = await mapLimit(all, READ_CONCURRENCY, (path) => scanFile(path, d, unreadable));
   const wanted = paths.map((p) => ({ path: p, canon: canonical(p) }));
-  const sessionCwds: UseFacts["sessionCwds"] = [];
-  const trackers = new Map<string, Tracker[]>();
-  if (!wanted.length) return { sessionCwds, trackers };
-  // Only sessions a refusal could name: a folder inside a candidate (the header's, as the row's), or tracking one.
-  const relevant = all
+  const rows = all
     .map((path, i) => {
       const scan = scanned[i];
       const cwd = scan?.cwd && isAbsolute(scan.cwd) && !parseTargetCwd(scan.cwd) ? canonical(scan.cwd) : null;
-      const inside = !!cwd && wanted.some((w) => isWithin(cwd, w.canon));
-      const tracks = scan?.tracks ? wanted.filter((w) => scan.tracks!.active.has(w.canon)) : [];
-      return { path, scan, cwd, inside, tracks };
+      return { path, scan, cwd, inside: cwd ? wanted.filter((w) => isWithin(cwd, w.canon)) : [], tracks: scan?.tracks ? wanted.filter((w) => scan.tracks!.active.has(w.canon)) : [] };
     })
-    .filter((r) => r.inside || r.tracks.length);
-  const rows = await mapLimit(relevant, READ_CONCURRENCY, async (r) => ({ ...r, s: await d.summary(r.path).catch(() => null) }));
-  for (const r of rows) {
-    const name = nameOf(r.s, r.path);
-    if (r.inside && r.cwd) sessionCwds.push({ cwd: r.cwd, name });
-    for (const w of r.tracks) {
-      const list = trackers.get(w.path) ?? [];
-      list.push({ name, live: !!r.s?.live, running: !!r.s && runningNow(r.s), sandbox: r.scan!.tracks!.sandbox });
-      trackers.set(w.path, list);
+    .filter((r) => r.inside.length || r.tracks.length);
+  const uses = await mapLimit(rows, READ_CONCURRENCY, async (r): Promise<ChatUse> => {
+    const s = await d.summary(r.path);
+    let sandbox = r.scan!.tracks?.sandbox ?? r.scan!.sandbox;
+    if (sandbox === undefined) {
+      try {
+        sandbox = sandboxInfo((await d.readBranch(r.path)) as Parameters<typeof sandboxInfo>[0]).on;
+        r.scan!.sandbox = sandbox;
+      } catch {
+        // Can't tell: a doubt counts as on, so it holds.
+        sandbox = true;
+      }
     }
-  }
-  return { sessionCwds, trackers };
-}
-
-/** A live record under the tree's own `.agent/sessions/live` naming a process still alive. */
-function liveRecordPid(tree: string, alive: (pid: number) => boolean): number | null {
-  const dir = join(tree, ".agent", "sessions", "live");
-  let names: string[];
-  try {
-    names = readdirSync(dir);
-  } catch {
-    return null;
-  }
-  for (const n of names) {
-    if (!n.endsWith(".json")) continue;
-    try {
-      const rec = JSON.parse(readFileSync(join(dir, n), "utf8")) as { session?: { pid?: unknown }; pid?: unknown };
-      const pid = typeof rec.session?.pid === "number" ? rec.session.pid : typeof rec.pid === "number" ? rec.pid : Number(/^p(\d+)-/.exec(n)?.[1]);
-      if (Number.isInteger(pid) && pid > 0 && alive(pid)) return pid;
-    } catch {
-      // a half-written record: not a live one
-    }
-  }
-  return null;
-}
-
-/** Why a merged or empty tree must stay (null: it may go), and, when what it holds is the only
-    reason, what it holds: the tree Remove Anyway may take. */
-export interface Assessment {
-  why: string | null;
-  content?: Leftovers;
-}
-
-/** Every check of one tree: its use first (git, sessions, processes), then what it holds that can't
-    be rebuilt (server/worktree-leftovers.ts), read fresh. */
-export async function assess(t: ClassifiedTree, use: UseFacts, procs: readonly ProcFacts[]): Promise<Assessment> {
-  const d = need();
-  if (t.class === "unmerged") return { why: t.why ?? "Not merged." };
-  if (t.locked) return { why: "Locked." };
-  const root = canonical(t.path);
-  for (const s of use.sessionCwds) if (isWithin(s.cwd, root)) return { why: `Session ${s.name}'s folder is inside it.` };
-  for (const tr of use.trackers.get(t.path) ?? []) {
-    if (tr.live) return { why: `Session ${tr.name} tracks it and is open in a TUI.` };
-    if (tr.running) return { why: `Session ${tr.name} tracks it and is running.` };
-    if (tr.sandbox) return { why: `Session ${tr.name} tracks it and has its sandbox on.` };
-  }
-  if (t.gone) return { why: null };
-  for (const p of procs) if (p.unreadable) return { why: p.unreadable };
-  for (const p of procs) if (p.paths.some((x) => isWithin(x, root))) return { why: `A running process is inside it: ${p.command} (${p.pid}).` };
-  const pid = liveRecordPid(t.path, d.alive);
-  if (pid) return { why: `A live session under its .agent: ${pid}.` };
-  const held = await leftovers(t.path, d.git).catch((err: Error): Leftovers => ({ dirty: [], ignored: [], nested: [], rebuildable: [], unreadable: `Its files couldn't be read: ${err.message}` }));
-  const why = leftoversReason(held);
-  if (why === null) return { why: null };
-  return held.unreadable ? { why } : { why, content: held };
-}
-
-/** Why a merged or empty tree must stay, or null when it may go. */
-export async function refusal(t: ClassifiedTree, use: UseFacts, procs: readonly ProcFacts[]): Promise<string | null> {
-  return (await assess(t, use, procs)).why;
-}
-
-// --- dry run and removal -----------------------------------------------------------------------
-
-const removedRow = (t: ClassifiedTree): WorktreeCleanupRemoved => ({ path: t.path, ...(t.branch ? { branch: t.branch } : {}), kind: t.class === "empty" ? "empty" : t.merged ?? "ancestor", branchDeleted: t.ancestor });
-
-const inFlight = new Set<string>();
-
-/** POST /api/worktrees/cleanup {dryRun: true}: what would go and what stays, with reasons. */
-export async function cleanupPlan(sessionPath: string): Promise<WorktreeCleanupPlan | null> {
-  const cwd = await folderOf(sessionPath);
-  if (!cwd) return null;
-  const d = need();
-  const repo = await classifyRepo(cwd, d.git);
-  if (!repo) return null;
-  const candidates = repo.trees.filter((t) => t.class !== "unmerged");
-  const [use, procs] = await Promise.all([useFacts(candidates.map((t) => t.path)), candidates.length ? d.processes() : Promise.resolve([])]);
-  const remove: WorktreeCleanupRemoved[] = [];
-  const keep: WorktreeCleanupKept[] = [];
-  // Each tree's checks (a git status for a candidate) a few at a time; the answer keeps git's order.
-  const found = await mapLimit(repo.trees, READ_CONCURRENCY, (t) => assess(t, use, procs));
-  repo.trees.forEach((t, i) => {
-    const { why, content } = found[i]!;
-    if (why === null) remove.push(removedRow(t));
-    // Kept only for what it holds: Remove Anyway, listing exactly that.
-    else keep.push({ path: t.path, ...(t.branch ? { branch: t.branch } : {}), reason: why, ...(content ? { removeAnyway: removeAnywayOf(content) } : {}) });
-  });
-  return { repo: repo.main, ...(repo.mainBranch ? { mainBranch: repo.mainBranch } : {}), home: homedir(), remove, keep };
-}
-
-/**
- * The same checks without removing anything: for each of `paths`, why it would stay, or null when it
- * may go. `ignoreProcesses` leaves live processes out, for a caller about to stop its own (archive
- * tears a worktree's running copy down first); `removeTrees` checks them again. Null: `dir` isn't in
- * a repository with a main checkout.
- */
-export async function checkTrees(dir: string, paths: readonly string[], opts: { exclude?: string; ignoreProcesses?: boolean } = {}): Promise<Map<string, string | null> | null> {
-  const d = need();
-  const repo = await classifyRepo(dir, d.git);
-  if (!repo) return null;
-  const byPath = new Map(repo.trees.map((t) => [t.path, t]));
-  const use = await useFacts(paths.filter((p) => byPath.get(p)?.class !== "unmerged" && byPath.has(p)), opts.exclude);
-  const procs = opts.ignoreProcesses ? [] : await d.processes();
-  const out = new Map<string, string | null>();
-  for (const p of paths) {
-    const t = byPath.get(p);
-    out.set(p, t ? await refusal(t, use, procs) : "No longer in git's worktree list.");
-  }
-  return out;
-}
-
-/**
- * The one check-and-remove (§chat.worktrees/cleanup), for the Clean Up Merged button and for
- * `sova_archive {worktrees: "remove"}` (server/archive-worktrees.ts): exactly `paths` of the
- * repository `dir` is in, each checked again right before it goes, never --force; a branch in
- * the main branch by ancestry is deleted with `git branch -d`; each removal goes into the ledger.
- * `exclude` is a session file left out of the session checks (the session archiving its own
- * trees); `changedSince` words a refusal as a change since the dry run. "busy": a removal in the
- * same repository is running; null: `dir` isn't in a repository with a main checkout.
- */
-export async function removeTrees(dir: string, paths: readonly string[], opts: { exclude?: string; changedSince?: boolean; anyway?: { path: string; digest: string } } = {}): Promise<WorktreeCleanupResult | "busy" | null> {
-  const d = need();
-  const repo = await classifyRepo(dir, d.git);
-  if (!repo) return null;
-  if (inFlight.has(repo.commonDir)) return "busy";
-  inFlight.add(repo.commonDir);
-  try {
-    const byPath = new Map(repo.trees.map((t) => [t.path, t]));
-    const asked = [...new Set(paths)];
-    const use = await useFacts(asked.filter((p) => byPath.get(p)?.class !== "unmerged" && byPath.has(p)), opts.exclude);
-    const removed: WorktreeCleanupRemoved[] = [];
-    const kept: WorktreeCleanupKept[] = [];
-    const ledger: RemovedWorktree[] = [];
-    const queue = [...asked];
-    const one = async (path: string): Promise<void> => {
-      const t = byPath.get(path);
-      if (!t) {
-        kept.push({ path, reason: "No longer in git's worktree list." });
-        return;
-      }
-      const { why, content } = await assess(t, use, t.gone ? [] : await d.processes());
-      // Remove Anyway: only a tree kept for what it holds, and only while that is exactly what was listed.
-      const anyway = opts.anyway?.path === path ? opts.anyway : null;
-      const forced = !!anyway && !!content && leftoversDigest(content) === anyway.digest;
-      if (why !== null && !forced) {
-        const prefix = anyway ? "Changed since the list, nothing was deleted: " : opts.changedSince ? "Changed since the preview: " : "";
-        kept.push({ path, ...(t.branch ? { branch: t.branch } : {}), reason: `${prefix}${why}` });
-        return;
-      }
-      // One --force deletes what was listed; a locked tree was refused above.
-      const r = await d.gitWrite(["worktree", "remove", ...(forced ? ["--force"] : []), "--", t.path], { cwd: repo.main });
-      if (r.code !== 0) {
-        kept.push({ path, ...(t.branch ? { branch: t.branch } : {}), reason: `Git refused: ${firstLine(r)}` });
-        return;
-      }
-      removed.push({ ...removedRow(t), branchDeleted: false });
-      // A worktree of another repository that went with it: its folder is gone, so the same command in its own
-      // repository only drops it from that list, by name (never a bare prune).
-      if (forced)
-        for (const n of content!.nested)
-          if (n.kind === "worktree" && n.of && existsSync(n.of)) await d.gitWrite(["worktree", "remove", "--", join(t.path, n.path)], { cwd: n.of }).catch(() => null);
+    return {
+      path: r.path,
+      ...(s?.id ? { id: s.id } : {}),
+      name: nameOf(s, r.path),
+      cwd: r.cwd,
+      inside: r.inside.map((w) => w.path),
+      tracks: r.tracks.map((w) => w.path),
+      archived: !!s?.archived,
+      running: !!s && runningNow(s),
+      tui: !!s?.live,
+      workers: s?.workers?.total ?? s?.live?.workers?.total ?? 0,
+      sandbox,
+      lastActiveAt: r.scan!.mtime,
     };
-    await Promise.all(
-      Array.from({ length: Math.min(REMOVE_CONCURRENCY, queue.length) }, async () => {
-        for (let p = queue.shift(); p !== undefined; p = queue.shift()) await one(p);
-      }),
-    );
-    // Branches one at a time: ref updates share packed-refs' lock.
-    for (const row of removed) {
-      const t = byPath.get(row.path)!;
-      if (t.ancestor && t.branch) {
-        const del = await d.gitWrite(["branch", "-d", "--", t.branch], { cwd: repo.main });
-        row.branchDeleted = del.code === 0;
-      }
-      ledger.push({ v: 1, path: t.path, branch: t.branch ?? "", commonDir: repo.commonDir, tip: t.head ?? "", merged: t.class === "empty" ? "empty" : t.merged ?? "ancestor", branchDeleted: row.branchDeleted, at: d.now() });
-    }
-    if (ledger.length) d.ledger(ledger);
-    summaries.delete(repo.commonDir);
-    // After the ledger: the re-read finds a deleted branch's merge there.
-    if (removed.length) await d.removed(removed.map((r) => r.path)).catch((err) => console.warn(`[cleanup] readiness: ${(err as Error).message}`));
-    return { removed, kept };
-  } finally {
-    inFlight.delete(repo.commonDir);
-  }
+  });
+  return { uses, unreadable };
 }
 
-/**
- * POST /api/worktrees/cleanup {expect}: remove exactly the expected paths that are still
- * removable now; every other tree is left alone.
- */
-export async function cleanupRemove(sessionPath: string, expect: readonly string[]): Promise<WorktreeCleanupResult | "busy" | null> {
-  const cwd = await folderOf(sessionPath);
-  return cwd ? removeTrees(cwd, expect, { changedSince: true }) : null;
+/** Every tree any chat's worktree records name, any status: the only way a leftover folder is found, with the ledger. Fails closed as chatUses does. */
+export async function treeRecords(): Promise<{ records: TreeRecord[]; unreadable: string[] }> {
+  const d = need();
+  const all = [...new Set(await d.sessionFiles())];
+  const unreadable: string[] = [];
+  const scanned = await mapLimit(all, READ_CONCURRENCY, (path) => scanFile(path, d, unreadable));
+  const records: TreeRecord[] = [];
+  scanned.forEach((scan, i) => {
+    for (const r of scan?.tracks?.records ?? []) records.push({ ...r, session: all[i]! });
+  });
+  return { records, unreadable };
 }
 
-/**
- * POST /api/worktrees/cleanup {force: {path, digest}}: Remove Anyway, on the user's click in the
- * dialog only. Removes that one tree when every use check still passes and what it holds is exactly
- * what the dry run listed (its digest); otherwise it stays, and nothing is deleted.
- */
-export async function cleanupRemoveAnyway(sessionPath: string, force: { path: string; digest: string }): Promise<WorktreeCleanupResult | "busy" | null> {
-  const cwd = await folderOf(sessionPath);
-  return cwd ? removeTrees(cwd, [force.path], { anyway: force }) : null;
-}
+/** A removal changed git's list: the next count reads again. */
+export const forgetSummary = (commonDir: string): void => {
+  summaries.delete(commonDir);
+};
 
 /** Tests: start over. */
 export function resetCleanup(): void {
   summaries.clear();
   scans.clear();
   resetContentMerges();
-  inFlight.clear();
 }

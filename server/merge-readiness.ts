@@ -12,6 +12,7 @@ import { canonical, normalizeMergeDetails, sharedWith, type TrackedWorktree, WOR
 import { stateRoot } from "./state-root";
 import { deferredOf, followUpFor, type FollowUpInput, type MergeFollowUps } from "./merge-followup";
 import { type AskTree, asksUserOf, isGoAsk, readSignals } from "./signals-store";
+import { removeOffered } from "./worktree-retire-gate";
 import { type AncestorCheck, draftProofVia, type DraftsHash, draftsHash, draftsLeft } from "./spec-drafts-state";
 import { queueReadingAt } from "./nothing-left";
 import { previewDocs, previewOf } from "./docs-preview";
@@ -726,6 +727,13 @@ export function servedReader(rootOf: (dir: string) => Promise<string | null>, se
   };
 }
 
+const readinessListeners = new Set<(sessionPath: string) => void>();
+/** Told when a chat's readiness reading changes (one of the wake-ups of §chat.worktrees/retirement). → unsubscribe. */
+export function onReadinessMoved(fn: (sessionPath: string) => void): () => void {
+  readinessListeners.add(fn);
+  return () => readinessListeners.delete(fn);
+}
+
 /** Per session file, what blocks each finished tree's landing, from the last published reading (nudgeSpecs). */
 const blockedBySession = new Map<string, { path: string; branch: string; commit: string; blockers: LandingBlocker[]; conflicts?: { base: string; files: number } }[]>();
 
@@ -911,7 +919,7 @@ async function computeReadinessNow(s: SessionSummary, facts: FileFacts, publishC
       ...(tf.conflicts ? { conflicts: tf.conflicts } : {}),
       ...(hasNoCommits(tf) ? { noCommits: true as const } : {}),
       ...(landing ? { landing } : {}),
-      ...(tf.readable && (tf.merged || hasNoCommits(tf)) ? (unofficial?.length ? { left: "drafts" as const, draftsLeft: unofficial.length } : { left: "nothing" as const }) : {}),
+      ...(tf.readable && (tf.merged || hasNoCommits(tf)) ? (unofficial?.length ? { left: "drafts" as const, draftsLeft: unofficial.length } : { left: "nothing" as const, ...(removeOffered("nothing") ? { removable: true as const } : {}) }) : {}),
     });
   }
   const cards = facts.merges;
@@ -1001,7 +1009,7 @@ export async function computeBranches(s: Pick<SessionSummary, "id">, facts: Pick
         ...(shared ? { sharedWith: shared } : {}),
         ...(merged ? { mergedInto: merged } : {}),
         ...(q?.fields ?? {}),
-        ...(noneLeft ? (undrafted?.length ? { left: "drafts" as const, draftsLeft: undrafted.length } : { left: "nothing" as const }) : {}),
+        ...(noneLeft ? (undrafted?.length ? { left: "drafts" as const, draftsLeft: undrafted.length } : { left: "nothing" as const, ...(removeOffered("nothing") ? { removable: true as const } : {}) }) : {}),
       };
       return q?.root ? { row, root: q.root } : { row };
     }),
@@ -1282,7 +1290,16 @@ async function refresh(input: RefreshInput): Promise<void> {
   // A new answer shows on the next listing: the session feed compares at once (§app.decisions/push)
   // instead of waiting for a listing that happens to come.
   const now = cache.get(s.path);
-  if (JSON.stringify([now?.value ?? null, now?.branches ?? null, now?.replyHeads ?? null]) !== JSON.stringify([prev?.value ?? null, prev?.branches ?? null, prev?.replyHeads ?? null])) sessionsChanged();
+  if (JSON.stringify([now?.value ?? null, now?.branches ?? null, now?.replyHeads ?? null]) !== JSON.stringify([prev?.value ?? null, prev?.branches ?? null, prev?.replyHeads ?? null])) {
+    sessionsChanged();
+    for (const fn of readinessListeners) {
+      try {
+        fn(s.path);
+      } catch (err) {
+        console.warn(`[readiness] a listener failed: ${(err as Error).message}`);
+      }
+    }
+  }
 }
 
 /** Each tracked branch's head when the session's go-ahead ask was written: the newest commit at or

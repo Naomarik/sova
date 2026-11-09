@@ -1,3 +1,4 @@
+import { longGit, removeTree, retireBranch } from "./worktree-remove";
 import { createHash, randomBytes } from "node:crypto";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
@@ -302,7 +303,7 @@ export async function mayRemove(path: string): Promise<boolean> {
 }
 
 /**
- * Remove Worktree: git's own `worktree remove`, refused, naming why, while the worktree holds what git can't bring
+ * Remove Worktree, the one removal step (§chat.worktrees/cleanup): refused, naming why, while the worktree holds what git can't bring
  * back (uncommitted or untracked files, ignored files that can't be rebuilt, a nested repository: the cleanup's
  * check), and the branch deleted only when merged; an unmerged branch keeps its commits. Remove Anyway (a digest
  * confirmed on the user's page, `withRemoveAnyway`) removes it with one --force while what it holds is exactly that
@@ -315,16 +316,31 @@ export async function removeWorktree(w: WorktreeRecord, root: string, git: Git =
     const digest = anywayFor(w.path);
     const forced = !!hold && !!digest && !!hold.content && leftoversDigest(hold.content) === digest;
     if (hold && !forced) throw new WorktreeRefusal(digest ? `Changed since the list, nothing was deleted: ${hold.reason}` : hold.words);
-    const rm = await git(["worktree", "remove", ...(forced ? ["--force"] : []), "--", w.path], root);
-    if (rm.code !== 0) throw new WorktreeRefusal(`Nothing was removed: ${firstLine(rm.stderr || rm.stdout)}`);
+    await removedOr(w, root, git, forced);
     // A worktree of another repository that went with it: dropped from that repository's list by name.
     if (forced)
       for (const n of hold!.content!.nested)
         if (n.kind === "worktree" && n.of && existsSync(n.of)) await git(["worktree", "remove", "--", join(w.path, n.path)], n.of).catch(() => null);
-  } else await git(["worktree", "remove", "--", w.path], root);
+  } else await removedOr(w, root, git, false);
   if (!(await mergedInto(git, root, w))) return { branchDeleted: false };
-  const del = await git(["branch", "-D", "--", w.branch], root);
-  return { branchDeleted: del.code === 0 };
+  const tip = await branchSha(git, root, w.branch);
+  if (!tip) return { branchDeleted: false };
+  const del = await retireBranch(git, root, { branch: w.branch, tip, onMain: false });
+  return { branchDeleted: del.deleted };
+}
+
+/** The one removal step (§chat.worktrees/cleanup), its refusals in Remove Worktree's words: a delete that stops part way is finished under proof or said, never "nothing removed". */
+async function removedOr(w: WorktreeRecord, root: string, git: Git, force: boolean): Promise<void> {
+  const out = await removeTree({
+    path: w.path,
+    main: root,
+    git,
+    ...(git === runGit ? { remove: longGit } : {}),
+    force,
+    proof: async () => (await import("./worktree-retire")).leftoverProofHere(w.path, root, w.branch),
+  });
+  if (out.state === "refused") throw new WorktreeRefusal(`Nothing was removed: ${out.reason}`);
+  if (out.state === "held") throw new WorktreeRefusal(`Git forgot the worktree, but its folder couldn't be finished: ${out.reason}`);
 }
 
 // ---- promotion commits ------------------------------------------------------------------------------

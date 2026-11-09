@@ -50,12 +50,12 @@ export class DesignLive {
 
   private onEvent(e: HarnessEvent): void {
     if (e.type === "message.start" && e.role === "assistant") {
-      this.flush();
+      this.endPage();
       this.tools = new Map();
       this.reply = new ReplyPageDecoder(DESIGN_PAGE_START, DESIGN_PAGE_END);
       return;
     }
-    if (e.type === "message.end" || e.type === "run.settled") return this.flush();
+    if (e.type === "message.end" || e.type === "run.settled") return this.endPage();
     if (e.type !== "message.update" || e.role !== "assistant" || !e.stream) return;
     const s = e.stream;
     if (s.kind === "tool-call") {
@@ -65,7 +65,7 @@ export class DesignLive {
     } else if (s.kind === "text" && this.reply) {
       this.add(this.reply.feed(s.delta));
     } else if (s.kind === "tool-call.end" || s.kind === "text.end") {
-      this.flush();
+      this.endPage();
     }
   }
 
@@ -79,6 +79,12 @@ export class DesignLive {
 
   /** Whether the next characters start a new page (a tool call or a reply ended since the last ones). */
   private isNew = false;
+
+  /** What was written goes out, and what comes next is another page. */
+  private endPage(): void {
+    this.flush();
+    this.isNew = this.page.length > 0;
+  }
 
   private begin(): void {
     this.gen++;
@@ -95,7 +101,6 @@ export class DesignLive {
       this.sent = this.page.length;
       this.send({ gen: this.gen, at, text });
     }
-    this.isNew = this.page.length > 0;
   }
 
   /** The link came back: the whole page so far, from the start. */

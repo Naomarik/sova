@@ -97,9 +97,9 @@
       "§app.projects/home-memory-bar"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-11-08T19:57Z",
-      "source": "pi-session:1e2d4212-e8f2-4d90-95f6-538201cbd3f1#5cf517d3"
+      "by": "the user (al_1 go)",
+      "at": "2026-11-09T02:04Z",
+      "source": "pi-session:01a1bdb7-6cb9-7045-be9f-f2f059380b8e#01f472b9"
     }
   },
   "§app.projects/home-glance": {
@@ -120,7 +120,12 @@
       "server/sessions-index.ts",
       "shared/commands/projects.ts",
       "server/project-services/drivers.test.ts",
-      "server/projects/glance-copies.integration.test.ts"
+      "server/projects/glance-copies.integration.test.ts",
+      "server/project-services/store.ts",
+      "server/project-services/places.ts",
+      "server/project-services/places.test.ts",
+      "server/port-owner.ts",
+      "server/port-owner.test.ts"
     ],
     "requires": [
       "§app.merge-queue/view",
@@ -134,9 +139,9 @@
       "§app.project-services/adopt"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-11-08T19:57Z",
-      "source": "pi-session:1e2d4212-e8f2-4d90-95f6-538201cbd3f1#5cf517d3"
+      "by": "the user (al_1 go)",
+      "at": "2026-11-09T02:04Z",
+      "source": "pi-session:01a1bdb7-6cb9-7045-be9f-f2f059380b8e#01f472b9"
     }
   },
   "§app.projects/home-memory-bar": {
@@ -153,9 +158,9 @@
       "§app.projects/home-glance"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-11-07T14:36Z",
-      "source": "pi-session:01a1afdd-a250-74e2-9bd4-05240ba34ff4#a9d5393f"
+      "by": "the user (al_1 go)",
+      "at": "2026-11-09T02:04Z",
+      "source": "pi-session:01a1bdb7-6cb9-7045-be9f-f2f059380b8e#01f472b9"
     }
   },
   "§app.projects/icon": {

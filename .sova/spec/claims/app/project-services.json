@@ -423,9 +423,9 @@
       "shared/project-contract.ts"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-10-23T21:38Z",
-      "source": "pi-session:01a16a5f-a5d9-73c7-8958-5e89ac30c359#6ee58735"
+      "by": "the user (al_1 go)",
+      "at": "2026-11-09T02:05Z",
+      "source": "pi-session:01a1bdb7-6cb9-7045-be9f-f2f059380b8e#01f472b9"
     }
   },
   "§app.project-services/lock": {
@@ -683,12 +683,13 @@
       "src/lib/two-step.ts",
       "server/app.ts",
       "server/project-services/copy-limit.ts",
-      "server/project-services/drivers.ts"
+      "server/project-services/drivers.ts",
+      "server/project-services/store.ts"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-11-07T14:36Z",
-      "source": "pi-session:01a1afdd-a250-74e2-9bd4-05240ba34ff4#a9d5393f"
+      "by": "the user (al_1 go)",
+      "at": "2026-11-09T02:05Z",
+      "source": "pi-session:01a1bdb7-6cb9-7045-be9f-f2f059380b8e#01f472b9"
     }
   },
   "§app.project-services/share": {

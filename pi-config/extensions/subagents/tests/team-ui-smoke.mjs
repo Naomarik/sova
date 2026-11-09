@@ -48,6 +48,8 @@ fs.writeFileSync(
 	path.join(dirs.agent, "settings.json"),
 	JSON.stringify({ quietStartup: true, defaultProvider: "harness", defaultModel: "offline" }, null, 2),
 );
+// Subagent profile Off: no profile routes the harness team's members, so they need no work kind.
+fs.writeFileSync(path.join(dirs.agent, "subagent-profiles-default.json"), JSON.stringify({ version: 1, default: "off" }));
 fs.writeFileSync(
 	path.join(tmp, "harness-extension.ts"),
 	`import fs from "node:fs";

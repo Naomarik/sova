@@ -69,7 +69,7 @@ How readily alignments open and how the agent writes them is set in **Settings �
 - **Review.** **Adversarial review** has a read-only reviewer check the plan and the diff of risky
   work. See [Adversarial review](/docs/modes/align/review/).
 
-A subagent profile can set its own eagerness, writing style and visuals (Settings → Subagents).
+A subagent profile can set its own eagerness, writing style and visuals (Settings → Profiles).
 
 ## Status
 

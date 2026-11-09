@@ -4,7 +4,7 @@ import { profilesProblem } from "./subagent-profiles-draft";
 import { claudeModelName } from "./format";
 
 /**
- * Settings → Subagents' editor, the parts that are rules rather than markup: each collapsible
+ * Settings → Profiles' editor, the parts that are rules rather than markup: each collapsible
  * section's one-line summary, which sections hold something Save waits for, and how Choose Models
  * and Use Default Model map onto the stored `teams` shape.
  */
@@ -38,7 +38,7 @@ export function delegateSummary(p: SubagentProfile): string {
 }
 
 /**
- * Teams, closed: the standing roles' models, then the members default. Every team gets both roles;
+ * Teams, closed: the standing roles' models. Every team gets both roles;
  * `teams: null` runs them on the chat's own model.
  */
 export function teamsSummary(p: SubagentProfile): string {
@@ -47,8 +47,7 @@ export function teamsSummary(p: SubagentProfile): string {
   const roles = t
     ? `Coordinator on ${model(t.coordinator.primary.model) ?? pending} · monitor on ${model(t.monitor.primary.model) ?? pending}`
     : "Coordinator + monitor on the default model";
-  const members = p.members ? `members on ${model(p.members.model) ?? pending}` : "members on the lead's model";
-  return `${roles} · ${members}`;
+  return roles;
 }
 
 /** Spec writer, closed: the writer's model, or who writes the spec without one. */
@@ -135,10 +134,7 @@ function only(p: SubagentProfile, section: EditorSection): SubagentProfile {
   const x: SubagentProfile = JSON.parse(JSON.stringify(p));
   const ok = { backend: "pi" as const, model: "a/b", effort: "low" };
   if (section !== "delegate") for (const k of Object.keys(x.delegate) as (keyof SubagentProfile["delegate"])[]) x.delegate[k] = { primary: ok, fallback: null };
-  if (section !== "teams") {
-    x.teams = null;
-    x.members = null;
-  }
+  if (section !== "teams") x.teams = null;
   if (section !== "spec") x.specWriter = null;
   if (section !== "reviewer") delete x.reviewer;
   if (section !== "alignment") delete x.alignment;

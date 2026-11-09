@@ -232,7 +232,7 @@ const LIMITS: Limit[] = [
     }),
   ),
   {
-    // Save Current As Profile: the route opens the chat, then adds the profile; the add is the check.
+    // A profile's name as yours' writer adds it (Settings → Profiles' editor and Save Current As Profile check the same rule).
     ...ruled(profileLimits.PROFILE_LABEL_RULE),
     client: (v) => problemOf(profileLimits.PROFILE_LABEL_RULE, v),
     server: async (v) => {
@@ -242,6 +242,16 @@ const LIMITS: Limit[] = [
       } catch (err) {
         return { ok: false, error: (err as Error).message };
       }
+    },
+  },
+  {
+    // A profile file's read: a name an older Sova saved, up to 60, still reads (§chat.profiles/profile-name).
+    ...ruled(profileLimits.PROFILE_READ_RULE),
+    client: (v) => problemOf(profileLimits.PROFILE_READ_RULE, v),
+    server: async (v) => {
+      const { parseProfile } = await import("../shared/profiles");
+      const r = parseProfile({ id: "named", label: v });
+      return "error" in r ? { ok: false, error: r.error } : { ok: true };
     },
   },
   {

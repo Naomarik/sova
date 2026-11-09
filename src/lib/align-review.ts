@@ -10,7 +10,7 @@ import type { AlignDocInfo, AlignReviewEntryInfo, AlignReviewPhaseInfo } from ".
 
 /**
  * Whether adversarial review is saved on (Settings → Alignment, `alignment.review`). Off until
- * something sets it. It gates the Reviewer row in Settings → Subagents; the card follows each chat's
+ * something sets it. It gates the Reviewer row in Settings → Profiles; the card follows each chat's
  * own flag (the hello's `alignReview`) and falls back to this only where no chat says one.
  */
 const [adversarialReview, setAdversarialReview] = createSignal(false);
@@ -98,4 +98,4 @@ export function reviewFoot(doc: Pick<AlignDocInfo, "phase" | "review">): { kind:
 export const planReviewRunning = (doc: Pick<AlignDocInfo, "review">): boolean => doc.review?.plan?.state === "running";
 /** Under a review button: what a review is. */
 export const REVIEW_ABOUT = "An independent reviewer reads it and reports problems. It can't change code or run anything.";
-export const NO_REVIEWER = "No reviewer is set for this chat's subagent profile (Settings → Subagents → Reviewer).";
+export const NO_REVIEWER = "No reviewer is set for this chat's profile (Settings → Profiles → Reviewer).";

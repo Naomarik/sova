@@ -15,6 +15,8 @@ export type CommandId =
   | "session.configure"
   | "session.mode.get"
   | "session.mode.set"
+  | "session.profile.switch"
+  | "session.profile.switch.cancel"
   | "session.send"
   | "session.fork"
   | "session.draft.get"
@@ -334,6 +336,18 @@ export interface CommandParams {
     "mode"?: string;
     /** Minor modes, comma-separated */
     "minor-modes"?: string[];
+  };
+  /** Switch a chat's whole Models part (its model, effort and helpers) to a profile; while a reply runs it waits for the reply's end. (changes something; needs the card's owner trusted) */
+  "session.profile.switch": {
+    /** The session, by id or by path */
+    "session"?: string;
+    /** A profile's id, or off */
+    "profile": string;
+  };
+  /** Drop a chat's profile switch that waits for its reply to end; nothing changes. (changes something; needs the card's owner trusted) */
+  "session.profile.switch.cancel": {
+    /** The session, by id or by path */
+    "session"?: string;
   };
   /** Send one message to a session, as its composer does. (changes something; needs the card's owner trusted) */
   "session.send": {
@@ -4168,9 +4182,9 @@ export interface CommandParams {
   "settings.provider-limits.get": Record<string, never>;
   /** The align mode's writing style and Visuals. (only looks; needs the card's owner trusted) */
   "settings.align.get": Record<string, never>;
-  /** Legacy Delegate routing (mode-delegate.json): the profile library's seed and fallback, not what Settings → Subagents shows. (only looks; needs the card's owner trusted) */
+  /** Legacy Delegate routing (mode-delegate.json): the profile library's seed and fallback, not what Settings → Profiles shows. (only looks; needs the card's owner trusted) */
   "settings.delegate.get": Record<string, never>;
-  /** The legacy spec writer (mode-spec.json): the profile library's seed and fallback, not what Settings → Subagents shows. (only looks; needs the card's owner trusted) */
+  /** The legacy spec writer (mode-spec.json): the profile library's seed and fallback, not what Settings → Profiles shows. (only looks; needs the card's owner trusted) */
   "settings.spec.get": Record<string, never>;
   /** The coordinator and monitor every new team gets. (only looks; needs the card's owner trusted) */
   "settings.team.get": Record<string, never>;
@@ -4392,6 +4406,8 @@ export const COMMAND_EFFECTS: Record<CommandId, "looks" | "changes"> = {
   "session.configure": "changes",
   "session.mode.get": "looks",
   "session.mode.set": "changes",
+  "session.profile.switch": "changes",
+  "session.profile.switch.cancel": "changes",
   "session.send": "changes",
   "session.fork": "changes",
   "session.draft.get": "looks",

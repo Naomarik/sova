@@ -58,4 +58,4 @@ A {"type":"event","event":{"type":"turn_end","message":{"role":"assistant","api"
 A {"type":"event","event":{"type":"agent_end","messages":[{"role":"system","elided":true},{"role":"user","content":[{"type":"text","text":"work"}],"timestamp":1000000000000},{"role":"assistant","api":"openai-completions","provider":"scripted","model":"scripted-think","usage":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"timestamp":1000000000000,"content":[{"type":"text","text":"ok"}],"stopReason":"stop","thinkingLevel":"high"}],"willRetry":false}}
 A {"type":"event","event":{"type":"agent_settled"}}
 B {"type":"event","v":2,"event":{"type":"run.settled"}}
-got new-session defaults {"model":"scripted/scripted-think","thinking":"high"}
+got new-session defaults {}

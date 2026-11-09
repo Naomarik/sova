@@ -118,12 +118,12 @@
       "sections": {
        "preamble": "You are an expert coding assistant operating inside pi, a coding agent harness. You help users by reading files, executing commands, editing code, and writing new files.",
        "tools": "@14069dc67c42c871",
-       "rules": "@432d40cfa3ee48f3",
+       "rules": "@898a2a6e09208de2",
        "docs": "@0f5fabf6c3c47c4c",
        "cwd": "<cwd>\n<ws:plain>\n</cwd>",
        "mode": "@4227f5a8a6bce075"
       },
-      "toolsAdded": "@6cb0af8c1fab8e16"
+      "toolsAdded": "@18e7e181b06584f6"
      },
      {
       "role": "user",
@@ -176,12 +176,12 @@
      "sections": {
       "preamble": "You are an expert coding assistant operating inside pi, a coding agent harness. You help users by reading files, executing commands, editing code, and writing new files.",
       "tools": "@14069dc67c42c871",
-      "rules": "@432d40cfa3ee48f3",
+      "rules": "@898a2a6e09208de2",
       "docs": "@0f5fabf6c3c47c4c",
       "cwd": "<cwd>\n<ws:plain>\n</cwd>",
       "mode": "@4227f5a8a6bce075"
      },
-     "toolsAdded": "@29d7feceb96b35bc"
+     "toolsAdded": "@80a91d9c0ac3cb27"
     }
    }
   ],
@@ -551,7 +551,7 @@
       "content": "",
       "sections": {
        "tools": "@de5e8b92a78c1467",
-       "rules": "@ea110095820517a3"
+       "rules": "@1dcdbbc00ab0b2ec"
       }
      },
      {
@@ -600,7 +600,7 @@
      "content": "",
      "sections": {
       "tools": "@de5e8b92a78c1467",
-      "rules": "@ea110095820517a3"
+      "rules": "@1dcdbbc00ab0b2ec"
      }
     }
    }

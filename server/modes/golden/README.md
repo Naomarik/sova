@@ -2,7 +2,8 @@
 
 What a chat's or a worker's model sees of its modes, recorded at master `7c4750f0a` with the pi-config mode
 extension running every mode (the team tools' wording re-taken since, when every team got Sova's coordinator and
-monitor: recorded from that tree through `withoutA1`, so a1's additions still stay out and only that wording moved), and the yardstick for Sova's engine (al_1, Settings → Experimental → "Sova
+monitor: recorded from that tree through `withoutA1`, so a1's additions still stay out and only that wording moved; and
+again, the same way, when team members got Delegate's work kinds: the team tools' `kind`, their texts and the Delegate block's team sentence), and the yardstick for Sova's engine (al_1, Settings → Experimental → "Sova
 runs chat modes"). The code is in `server/modes/tests/` (`harness.fixture.ts` says what a recording holds;
 `cases.fixture.ts` lists the cases).
 

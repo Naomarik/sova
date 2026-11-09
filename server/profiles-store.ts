@@ -111,3 +111,45 @@ export function addProfile(fields: NewProfile, file = profilesFile()): Profile {
   }
   return parsed.profiles.at(-1)!;
 }
+
+/**
+ * Change yours as one write (Settings → Profiles' editor: save, rename, add, duplicate, delete):
+ * re-reads the file, refuses (throws a sentence) when it doesn't parse, hands `change` the
+ * profiles as written (raw objects), checks the result with the readers' strict parse, and replaces
+ * the file atomically. A `change` that leaves the list as it was writes nothing, so the file stays
+ * byte for byte; `dryRun` checks all of that and writes nothing. Returns the profiles as the readers parse them.
+ */
+export function changeProfiles(change: (profiles: Record<string, unknown>[]) => Record<string, unknown>[], file = profilesFile(), dryRun = false): Profile[] {
+  let text: string | null = null;
+  try {
+    text = readFileSync(file, "utf8");
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw new Error(`${file} can't be read (${(err as Error).message}), so nothing was saved.`);
+  }
+  let raw: { version: 1; profiles: Record<string, unknown>[] } & Record<string, unknown>;
+  try {
+    raw = text === null ? { version: 1, profiles: [] } : JSON.parse(text);
+    parseProfilesFile(raw);
+  } catch (err) {
+    throw new Error(`${file} can't be read (${err instanceof Error ? err.message : String(err)}), so nothing was saved. Fix or remove it first.`);
+  }
+  const before = JSON.stringify(raw.profiles);
+  const profiles = change(raw.profiles.map((p) => ({ ...p })));
+  for (const p of profiles) {
+    const error = profileFileError(p);
+    if (error) throw new Error(error);
+  }
+  const next = { ...raw, profiles };
+  const parsed = parseProfilesFile(next);
+  if (dryRun || JSON.stringify(profiles) === before) return parsed.profiles;
+  mkdirSync(dirname(file), { recursive: true });
+  const tmp = `${file}.${process.pid}.${Date.now()}.tmp`;
+  try {
+    writeFileSync(tmp, `${JSON.stringify(next, null, 2)}\n`);
+    renameSync(tmp, file);
+  } catch (err) {
+    rmSync(tmp, { force: true });
+    throw err;
+  }
+  return parsed.profiles;
+}

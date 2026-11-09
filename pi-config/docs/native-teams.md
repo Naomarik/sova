@@ -407,7 +407,7 @@ questions fall back to the parent, and a completion then starts a turn.
   its seat released, and its successor starts at once on the role's fallback
   through the main chat's replacement path. A single 429 rate limit doesn't
   switch. The model is marked out for an hour (`subagents-dead-tuple-v1`,
-  replayed after a reload), so new teams, the members default and later
+  replayed after a reload), so new teams, members' work kinds and later
   successors skip it; the team that switched stays on its fallback. With no
   fallback a monitor is stopped and a coordinator is reported, each once.
 

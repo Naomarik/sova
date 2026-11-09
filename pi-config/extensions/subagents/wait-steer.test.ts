@@ -134,7 +134,7 @@ const stillWaiting = async (p: Promise<unknown>, ms = 700) => {
 };
 
 async function crew(h: ReturnType<typeof harness>) {
-	await h.call("team_create", { name: "Crew", objective: "Ship", members: [{ role: "dev", prompt: "build" }] });
+	await h.call("team_create", { name: "Crew", objective: "Ship", members: [{ role: "dev", prompt: "build", model: "test/model" }] });
 	const coordinator = h.worker("coordinator"), dev = h.worker("dev");
 	assert.ok(coordinator && dev, "the team has Sova's coordinator and the named worker");
 	return { coordinator, dev };

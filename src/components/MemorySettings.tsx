@@ -146,7 +146,7 @@ export function MemorySettingsSection() {
         <For each={memorySaveWarnings()}>{(w) => <Banner tone="warn" title="Saved, with notes." body={sentence(w)} />}</For>
         <p class="settings-delegate-file">
           Stored in <code>{tildePath(loaded()!.file, home())}</code>. The memory type new chats start from is saved from a
-          chat's mode menu, with Save as default.
+          chat's mode menu, with Make Default.
         </p>
       </Show>
     </section>

@@ -68,6 +68,7 @@
 //     t21       /explain, /compact-handoff, /btw each in a process of its own, no model call from the
 //               parent, counted in the usage ledger; an /explain across a parent reload settles once
 //     t21c      /btw and /explain on a claude-code-cli model (the fake claude): usage under the parent
+//     tprofile  a profile switch across backends: fake claude → the mock's pi model (idle) → back (mid-reply)
 //     t21h      /compact-handoff on a claude-code-cli parent (the fake claude): the fork resumes its CLI
 //               session, the note is saved, it compacts, the fork's usage is under the parent
 //     t21l      browser-drive F10/F11: an idle parent's /btw row reaches the open pane live; an idle
@@ -165,7 +166,7 @@ const opt = (name, fallback) => {
   const i = argv.indexOf(`--${name}`);
   return i >= 0 && argv[i + 1] !== undefined ? argv[i + 1] : fallback;
 };
-const ALL = ["t1", "t1b", "t1c", "t1d", "t1e", "t2", "t3", "t4", "t4fail", "t6", "t7", "t8", "t9", "t10", "t11", "t11b", "t11c", "t12a", "t12b", "t12c", "t12d", "t13", "t14", "t15", "t16", "t17", "t17c", "t18", "t18b", "tmodes", "t19", "t19n", "t20", "t21", "t21c", "t21h", "t21l", "t21r", "t21rx", "tsend", "t23", "t24", "t25", "t27", "trestart", "tdefault", "tserverless", "tstopchats", "tw1", "tw2", "tw3", "tw4", "tw5", "tw6", "tw7", "tw8", "tj1", "tj2", "tj3", "tj4", "tj5", "tj6", "tj6b", "hermetic", "tyourclick"];
+const ALL = ["t1", "t1b", "t1c", "t1d", "t1e", "t2", "t3", "t4", "t4fail", "t6", "t7", "t8", "t9", "t10", "t11", "t11b", "t11c", "t12a", "t12b", "t12c", "t12d", "t13", "t14", "t15", "t16", "t17", "t17c", "t18", "t18b", "tmodes", "t19", "t19n", "t20", "t21", "t21c", "t21h", "t21l", "t21r", "t21rx", "tsend", "t23", "t24", "t25", "t27", "trestart", "tdefault", "tserverless", "tstopchats", "tw1", "tw2", "tw3", "tw4", "tw5", "tw6", "tw7", "tw8", "tj1", "tj2", "tj3", "tj4", "tj5", "tj6", "tj6b", "hermetic", "tyourclick", "tprofile"];
 const valued = new Set(["--port", "--scratch", "--slice", "--model", "--auth", "--mode", "--driver"]);
 const asked = argv.filter((a, i) => !a.startsWith("--") && !valued.has(argv[i - 1]));
 for (const a of asked) if (![...ALL, "plumbing", "serve", "real", "all"].includes(a)) (console.error(`unknown check ${a}; checks: ${ALL.join(" ")} real`), process.exit(2));
@@ -2249,6 +2250,43 @@ async function t21c() {
   s.close();
 }
 
+// Tprofile (§chat.profiles/switch, across backends): a chat on a Claude Code model (the fake claude)
+// switches its profile to one on the mock's pi model while idle, then back to the Claude Code one while a
+// reply runs: the switch waits for the reply to end, then the next turn runs on the fake claude again,
+// in the same conversation, in the chat's own process.
+async function tprofile() {
+  writeFileSync(join(sova, "session-profiles.json"), JSON.stringify({ version: 1, profiles: [
+    { id: "cc", label: "On Claude", model: "claude-code-cli/claude-sonnet-5-5" },
+    { id: "mock", label: "On the mock", model: "trial/m1" },
+  ] }));
+  const { path, s } = await newChat("claude-code-cli/claude-sonnet-5-5");
+  const o = { path, s };
+  const lastReply = () => [...entries(path)].reverse().find((e) => e.type === "message" && e.message?.role === "assistant")?.message ?? null;
+  const replies = () => entries(path).filter((e) => e.type === "message" && e.message?.role === "assistant").length;
+  const sw = (profile) => post(`/api/sessions/profile-switch?path=${encodeURIComponent(path)}`, { profile });
+  await turn(o, "say ok");
+  R.check(lastReply()?.provider === "claude-code-cli", `tprofile: the first turn ran on the fake claude (${lastReply()?.provider}/${lastReply()?.model})`);
+  const toMock = await sw("mock");
+  R.check(toMock?.applies === "now" && toMock?.state?.current?.id === "mock", `tprofile: idle, the switch to the mock's profile applies now (${JSON.stringify(toMock)?.slice(0, 160)})`);
+  let n = replies();
+  await turn(o, "and now on the mock");
+  R.check(replies() > n && lastReply()?.provider === "trial" && lastReply()?.model === "m1", `tprofile: the next turn runs on the pi model, same conversation (${lastReply()?.provider}/${lastReply()?.model})`);
+  // Back to Claude Code while a reply runs: it waits for the reply's end.
+  const from = s.got.length;
+  prompt(s, "[long 6 #tprofile] a long reply");
+  await s.until(delta(/part 1\//), 60000, "the reply streams", from);
+  const back = await sw("cc");
+  R.check(back?.applies === "after-turn" && back?.state?.pending?.id === "cc", `tprofile: mid-reply, the switch back waits for the reply (${JSON.stringify(back)?.slice(0, 160)})`);
+  await settled(s, from, 60000);
+  R.check(lastReply()?.provider === "trial", `tprofile: the running reply finished on the model it started on (${lastReply()?.provider})`);
+  const applied = await s.until((m) => m.type === "chat_profile" && m.state?.current?.id === "cc" && !m.state?.pending, 30000, "the held switch applies", from).then(() => true, () => false);
+  R.check(applied, "tprofile: at the reply's end the chat is on the Claude Code profile, nothing waiting");
+  n = replies();
+  await turn(o, "back on claude");
+  R.check(replies() > n && lastReply()?.provider === "claude-code-cli", `tprofile: the turn after runs on the fake claude again (${lastReply()?.provider}/${lastReply()?.model})`);
+  s.close();
+}
+
 /** A refusal of the prompt `clientId` among `frames` (an error frame, code refused, naming it), or null. */
 const refusedFor = (frames, clientId) => frames.find((m) => m.type === "error" && m.code === "refused" && (m.clientId === clientId || JSON.stringify(m).includes(clientId))) ?? null;
 
@@ -4125,7 +4163,7 @@ async function jobWakesWorker(name, idleMs) {
 const tj6 = () => jobWakesWorker("tj6", 120000);
 const tj6b = () => jobWakesWorker("tj6b", 4000);
 
-const table = { tyourclick, t1: () => t1(), t1b, t1c, t1d, t1e, t2, t3, t4, t4fail, t6, t7, t8, t9, t10, t11, t11b, t11c, t12a, t12b, t12c, t12d, t13, t14, t15, t16, t17: () => t17(), t17c: () => t17(true), t18, t18b, tmodes, t19, t19n, t20, t21, t21c, t21h, t21l, t21r: () => t21r(), t21rx: () => t21r("either"), tsend, t23, t24, t25, t27, trestart, tdefault, tserverless, tstopchats, tw1, tw2, tw3, tw4, tw5, tw6, tw7, tw8, tj1, tj2, tj3, tj4, tj5, tj6, tj6b, hermetic, plumbing, serve, real: () => t1(opt("model")) };
+const table = { tyourclick, t1: () => t1(), t1b, t1c, t1d, t1e, t2, t3, t4, t4fail, t6, t7, t8, t9, t10, t11, t11b, t11c, t12a, t12b, t12c, t12d, t13, t14, t15, t16, t17: () => t17(), t17c: () => t17(true), t18, t18b, tmodes, t19, t19n, t20, t21, t21c, t21h, t21l, t21r: () => t21r(), t21rx: () => t21r("either"), tsend, t23, t24, t25, t27, trestart, tdefault, tserverless, tstopchats, tw1, tw2, tw3, tw4, tw5, tw6, tw7, tw8, tj1, tj2, tj3, tj4, tj5, tj6, tj6b, hermetic, tprofile, plumbing, serve, real: () => t1(opt("model")) };
 let code = 0;
 let finished = null;
 /** Stops the server, every chat process and the mock, and writes results.json; once. */

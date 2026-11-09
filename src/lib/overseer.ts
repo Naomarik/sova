@@ -1,7 +1,7 @@
 import { type SovaConfirmDetails, type SovaConfirmItem, type SovaNavigateDetails, type TranscriptItem } from "../../shared/protocol";
 import { appliedPicks, CARD_TOOL, normalizeCard, normalizeCardDetails, openCardsOf, type CardDetails, type OverseerCard } from "../../shared/overseer-card";
 import { isObj, resultDetails, str, toolResultView } from "./message";
-import { openSettings, SETTINGS_TABS, type SettingsSection, type SettingsTab } from "./settings-nav";
+import { openSettings, tabNamed, type SettingsSection, type SettingsTab } from "./settings-nav";
 
 /** The route the Overseer lives at. Its identity is this route, never a session id. */
 export const OVERSEER_HASH = "#/overseer";
@@ -231,7 +231,7 @@ export const openCards = (fold: CardFold): OverseerCard[] => openCardsOf([...fol
 export function settingsTarget(href: string): { tab: SettingsTab; section: SettingsSection | null } | null {
   const m = /^settings:([a-z]+)(?:\/([a-z-]+))?$/.exec(href);
   if (!m) return null;
-  const tab = SETTINGS_TABS.find((t) => t === m[1]);
+  const tab = tabNamed(m[1]);
   if (!tab) return null;
   return { tab, section: m[2] === "spec" ? "spec" : null };
 }

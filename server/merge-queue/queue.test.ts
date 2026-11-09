@@ -1,3 +1,4 @@
+import type { QueueFile } from "./store";
 import assert from "node:assert/strict";
 import { decisionPush } from "./rulings";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -2054,6 +2055,45 @@ describe("sent back: the tab's Ready list", () => {
       assert.deepEqual((v.ready ?? []).filter((r) => r.branch === "feat/old-back").map((r) => r.commit), [fix], "Ready at the fix");
     } finally {
       await k.done();
+    }
+  });
+});
+
+describe("a host's landing outlives its entry", () => {
+  test("a landing recorded before pins were kept is read from its entry at load, and survives the entry's pruning", async () => {
+    const { queueReadingAt } = await import("../nothing-left");
+    const repo = makeRepo();
+    const pin = "a".repeat(40);
+    const at = (s: number) => `2026-02-01T00:${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}.000Z`;
+    const landedEntry = (id: string, branch: string, commit: string, seq: number, via?: "host") =>
+      ({ id, project: "p", branch, commit, target: "master", state: "landed", seq, runs: [], notes: [], picks: [], approval: { by: "land-button", at: at(seq) }, createdAt: at(seq), updatedAt: at(seq), landed: { sha: "b".repeat(40), from: "c".repeat(40), at: at(seq), pushed: "pushed", ...(via ? { via } : {}) } }) as unknown as QueueFile["entries"][number];
+    const open = async () => {
+      const k = makeKit({ repo });
+      return { k, q: await k.q() };
+    };
+    try {
+      // The file as an older Sova left it: the host's landing in its entry, no pins kept.
+      const first = await open();
+      first.q.file.entries.push(landedEntry("host1", "feat/squashed", pin, 1, "host"));
+      delete first.q.file.hostPins;
+      first.q.save();
+      await first.k.done();
+      assert.equal((JSON.parse(readFileSync(join(first.q.store.dir, "queue.json"), "utf8")) as { hostPins?: unknown }).hostPins, undefined, "as written: no pins");
+
+      const second = await open();
+      assert.deepEqual(queueReadingAt(repo.root)!.landings("feat/squashed").pins, [pin], "seeded at load");
+      // Newer final entries past what the store keeps, then a save: the old entry goes.
+      for (let i = 0; i < 61; i++) second.q.file.entries.push(landedEntry(`n${i}`, `feat/n${i}`, "d".repeat(40), i + 2));
+      second.q.save();
+      await second.k.done();
+      const kept = JSON.parse(readFileSync(join(second.q.store.dir, "queue.json"), "utf8")) as { entries: { id: string }[] };
+      assert.ok(!kept.entries.some((e) => e.id === "host1"), "its entry was pruned");
+
+      const third = await open();
+      assert.deepEqual(queueReadingAt(repo.root)!.landings("feat/squashed").pins, [pin], "still pinned with its entry gone");
+      await third.k.done();
+    } finally {
+      repo.done();
     }
   });
 });

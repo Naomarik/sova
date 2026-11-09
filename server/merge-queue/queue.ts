@@ -380,6 +380,10 @@ export class ProjectQueue {
     this.q = this.store.read({ project: this.id, target });
     this.q.project = this.id;
     this.q.target = target;
+    // Host landings recorded before their pins were kept: read now, while their entries are still here to read.
+    for (const e of [...this.q.entries].filter((x) => x.state === "landed" && x.landed?.via === "host").sort((a, b) => a.landed!.at.localeCompare(b.landed!.at))) {
+      if (!this.q.hostPins?.[e.branch]?.includes(e.commit)) this.keepHostPin(e.branch, e.commit);
+    }
     // Entries with their chats are looked at again: a fix the merge thread wasn't told of, a block that went away.
     if (this.q.entries.some((e) => e.state === "with-chat" || !!e.fix)) this.armFixTimer();
   }

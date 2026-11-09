@@ -629,6 +629,14 @@ describe("every reader, one answer", () => {
     const b = fx.branch("only-main", { "om.txt": "m\n" });
     git(fx.project, ["branch", "main", b.commit]);
     assertAgree("on main, not the target", "work", await readAll(fx, h, b));
+    // A gone folder follows the branch it lands on, as the live row did: on main isn't landed.
+    const onTarget = fx.branch("on-develop", { "od.txt": "d\n" });
+    git(fx.project, ["merge", "-q", "--ff-only", onTarget.commit]);
+    const base = git(fx.project, ["rev-list", "--max-parents=0", fx.target]);
+    for (const x of [b, onTarget]) rmSync(x.checkout, { recursive: true, force: true });
+    git(fx.project, ["worktree", "prune"]);
+    assert.equal(await goneTreeState({ path: b.checkout, branch: b.branch, base }, [fx.project]), "unmerged", "on main only");
+    assert.equal(await goneTreeState({ path: onTarget.checkout, branch: onTarget.branch, base }, [fx.project]), "merged", "on the target only");
   });
 
   test("a head that read nothing left by content keeps that answer once the target moves and the same merge conflicts", async () => {

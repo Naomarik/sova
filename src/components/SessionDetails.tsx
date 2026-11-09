@@ -4,7 +4,8 @@ import { relativeTime, thousands, tildePath } from "../lib/format";
 import { NO_WORKTREES, type WorktreeChip, worktreeChips } from "../lib/worktrees";
 import { queueRow, rowsSummary } from "../lib/merge-queue";
 import { noteMergeChanged } from "../lib/merge-queue-client";
-import { queueHrefOf, WorktreeQueueRow, type QueueWorktree } from "./WorktreesModal";
+import { WorktreeQueueRow, type QueueWorktree } from "./WorktreesModal";
+import { queueLinksOf } from "../lib/branch-place";
 import { absoluteTime, firstLine, timelineEntries } from "../lib/spend";
 import { archivedProjectOf, unarchivedProjectOf } from "../lib/drag-archive";
 import { archiveSession } from "../lib/session-actions";
@@ -592,14 +593,16 @@ function WorktreesSection(props: { rows: QueueWorktree[]; path: string; cwd?: st
         <ul class="list worktree-list wt-queue-list">
           <For each={props.rows}>{(w) => <WorktreeRow worktree={w} path={props.path} cwd={props.cwd} />}</For>
         </ul>
-        <Show when={queueHrefOf(props.rows)}>
-          {(h) => (
-            <div class="button-row">
-              <a class="button button-sm button-ghost" href={h()}>
-                View Merge Queue
-              </a>
-            </div>
-          )}
+        <Show when={queueLinksOf(props.rows).length}>
+          <div class="button-row">
+            <For each={queueLinksOf(props.rows)}>
+              {(l) => (
+                <a class="button button-sm button-ghost" href={l.href}>
+                  {l.label}
+                </a>
+              )}
+            </For>
+          </div>
         </Show>
       </Show>
     </section>

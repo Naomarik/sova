@@ -28,6 +28,8 @@ export interface MergeRequestInfo {
   kind?: string;
   /** The branch it is about; absent for a question about no branch. */
   branch?: string;
+  /** The words of that branch's place (§chat.worktrees/place). */
+  place?: string;
   /** The queue entry it is about (Remove from Queue drops its undelivered requests). */
   entry?: string;
 }

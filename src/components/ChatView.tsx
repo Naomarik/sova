@@ -1812,7 +1812,7 @@ export function ChatView(props: {
   const heldDecision = createMemo(
     () => heldDecisionOf(queueCards?.cards() ?? [], pickedDecision(props.summary?.()?.id)),
     undefined,
-    { equals: (a, b) => a?.id === b?.id && a?.branch === b?.branch },
+    { equals: (a, b) => a?.id === b?.id && a?.branch === b?.branch && a?.place === b?.place },
   );
   /** The merge thread's own chat: its question no branch chat could carry waits for the user's answer here
       (§chat.merge-queue/asks), held above the message box; the answer names it (its `ak_…` id). */
@@ -1825,7 +1825,7 @@ export function ChatView(props: {
     const ask = v?.thread && (!id || v.thread.session === id) ? v.thread.ask : undefined;
     return ask && ask.onTab && !ask.answered ? ask : null;
   });
-  const heldNotes = () => [...(heldDecision() ? [heldComposerLine(heldDecision()!.branch)] : []), ...(threadAsk() ? [heldAskLine(threadAsk()!.question)] : [])];
+  const heldNotes = () => [...(heldDecision() ? [heldComposerLine(heldDecision()!.branch, heldDecision()!.place)] : []), ...(threadAsk() ? [heldAskLine(threadAsk()!.question)] : [])];
   /** The thread's rows with the cards raised from outside the chat placed where they were raised (lib/transcript-placement). */
   const threadItems = createOutsideCardRows(items, outsideCards);
   /** Show in Chat for an offer card (§chat.composer/waiting-dialog): its `offer` call's row (the

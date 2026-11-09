@@ -33,7 +33,7 @@ test("a repo the queue doesn't serve: Ready to merge, the plain-merge line, neve
   // Off the Projects list: no mergeProject, no mergeServed. A listed project with checks but no mergeServed
   // (the server's answer wins) reads the same: Land keys on mergeServed alone.
   for (const x of [{}, { mergeProject: { id: "prj_1", root: "/r", target: "main", checks: "declared" as const, review: false } }]) {
-    const r = queueRow(wt({ readiness: { ...ready, landing: { state: "ready", commit: SHA } }, ...x }));
+    const r = queueRow(wt({ readiness: { ...ready, landing: { state: "ready", commit: SHA } }, place: { target: "main" }, ...x }));
     assert.equal(r.key, "ready");
     assert.equal(r.label, "Ready to merge");
     assert.equal(r.tone, "success");

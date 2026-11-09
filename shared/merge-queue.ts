@@ -751,6 +751,8 @@ export interface MergeUnclear {
 
 export type WorktreeQueueInfo = Pick<MergeEntry, "id" | "state" | "position" | "commit" | "reason" | "newerCommits" | "newerRewritten" | "newerBlocked" | "eta" | "notes" | "landed" | "conflict" | "review" | "unclear" | "request" | "settled" | "redrafted" | "standing" | "decision" | "tries"> & {
   project: string;
+  /** The target this entry lands on. */
+  target?: string;
   run?: string;
   /** The run's newest reviewer chat (Open Reviewer Chat on the branch's Worktrees row), while it runs and after. */
   reviewer?: { session: string; path: string; state: "running" | "ok" | "notes" | "blocking" | "failed"; cleared?: true };
@@ -825,6 +827,19 @@ export interface WorktreeMergeStats {
   headAt?: string;
 }
 
+/** A branch's place (§chat.worktrees/place): which project it belongs to and where it merges. */
+export interface BranchPlace {
+  /** The final words: the project's name (with just enough of its folder when two listed projects share it: "Notes ·
+   *  work/notes"), else the repository's main folder from home ("~/code/tools"); the folder as last recorded when the
+   *  repository can't be worked out. */
+  label: string;
+  /** The repository's main folder, absolute. Absent: not known. */
+  root?: string;
+  /** What it merges into now: the queue's target where the queue serves it, else master, else main. Absent: not
+   *  known, never guessed. */
+  target?: string;
+}
+
 /** SessionWorktreeInfo.mergeProject: the project a worktree lands into, whatever its entry. */
 export interface WorktreeMergeProject {
   /** The registered project's id. */
@@ -838,6 +853,8 @@ export interface WorktreeMergeProject {
   invalid?: string;
   /** The queue is paused (why). */
   paused?: string;
+  /** How the queue lands its branches, where it serves the repo (the settings' effective method). */
+  how?: LandHow;
 }
 
 // ---- the verbs (POST /api/project-services/merge.<x>; shared/project-contract.ts MERGE_VERBS) ---
@@ -1054,6 +1071,8 @@ export interface MergeCard {
   head?: string;
   /** The branch's worktree, when it had one. */
   worktree?: string;
+  /** The branch's place (§chat.worktrees/place). Absent on a card written before Sova had that line: it gets none. */
+  place?: BranchPlace;
   approvedBy: ApprovalBy;
   /** Live, revised in place: the entry as the queue reads it now. */
   state: MergeEntryState;

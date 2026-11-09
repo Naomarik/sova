@@ -139,6 +139,7 @@ export interface MergeRequestPush {
   /** Its id (`rq_` and 12 hex); one is made when absent. */
   id?: string;
   branch?: string;
+  place?: string;
   entry?: string;
   kind?: string;
   text: string;
@@ -156,7 +157,7 @@ export function pushMergeRequest(receiver: { sessionId: string; path: string }, 
   const { name } = s.openMergeQueue(receiver, project);
   let body = String(req.text ?? "").trim() || "(no text)";
   if (body.length > MERGE_REQUEST_TEXT_MAX) body = `${body.slice(0, MERGE_REQUEST_TEXT_MAX - 1)}…`;
-  const request: NonNullable<TopicItem["request"]> = { id, ...(req.branch ? { branch: req.branch } : {}), ...(req.entry ? { entry: req.entry } : {}), ...(req.kind ? { kind: req.kind } : {}) };
+  const request: NonNullable<TopicItem["request"]> = { id, ...(req.branch ? { branch: req.branch } : {}), ...(req.place ? { place: req.place } : {}), ...(req.entry ? { entry: req.entry } : {}), ...(req.kind ? { kind: req.kind } : {}) };
   const r = s.push(name, { ...MERGE_QUEUE_NOTE_SENDER }, body, request);
   if (!r.ok) throw new Error(r.error); // never: the merge queue's topic takes every note
   s.audit({ sessionId: receiver.sessionId, tool: "merge_queue", topic: name, outcome: "ok", item: r.id });

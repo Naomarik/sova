@@ -2,6 +2,8 @@
 // branch from Land onward. It updates in place while queued and checking; each outcome is a new revision
 // at the bottom, and earlier copies fold to one line. Pure words: no Solid, no DOM.
 import type { MergeCard, MergeCardRevision, ReviewFinding } from "../../shared/merge-queue";
+import type { TopicBatchInfo } from "../../shared/topic-message";
+import { branchInPlace, type BranchPlaceRow } from "./branch-place";
 import { reviewFoundWords } from "./merge-review-card";
 import { newerWords, ordinal } from "../../shared/merge-queue";
 import type { CardInfo } from "../../shared/transcript-cards";
@@ -26,6 +28,16 @@ export interface QueueCardRow {
 }
 
 export type CardTone = "success" | "warn" | "error" | "info" | "accent" | "neutral";
+
+/** The card as a branch row its place line reads (§chat.worktrees/place). The card's own target is the clause, so it
+ *  can never disagree with its "{branch} into {target}"; a card written before the line has no place and draws none. */
+export function cardPlaceRow(d: Pick<MergeCard, "state" | "target" | "worktree" | "place" | "request">): BranchPlaceRow {
+  return {
+    ...(d.worktree ? { path: d.worktree } : {}),
+    queue: { state: d.state, target: d.target, ...(d.request ? { request: d.request } : {}) },
+    ...(d.place ? { place: { ...d.place, target: d.target } } : {}),
+  };
+}
 
 /** The pill, from a state and place in line; a request's from its host facts when the card has them. */
 export function cardPill(d: Pick<MergeCardRevision, "state" | "position"> & Partial<Pick<MergeCard, "request" | "reason" | "removed">> & CardAutomation & { kind?: MergeCardRevision["kind"] }): { label: string; tone: CardTone; live?: boolean } {
@@ -204,4 +216,15 @@ export function queueRowOf(card: Pick<CardInfo, "type" | "data">): QueueCardRow 
   if (card.type !== MERGE_QUEUE_CARD) return null;
   const d = card.data as Partial<QueueCardRow> | null;
   return d && d.card && d.revision && typeof d.card.branch === "string" && Array.isArray(d.card.revisions) ? (d as QueueCardRow) : null;
+}
+
+/** The merge queue's batch (§chat.merge-queue/requests, §chat.topics/row): "Merge queue · {branch} in {place} ·
+    {n} requests" ("· {k} branches ·" when several), a branch icon, never a link to a session; open,
+    each request with its id, its branch in its place and its text. */
+export function mergeQueueBatchLabel(batch: TopicBatchInfo): string {
+  const n = batch.notes.length;
+  const branches = [...new Set(batch.notes.map((it) => it.request?.branch).filter((b): b is string => !!b))];
+  const place = batch.notes.find((it) => it.request?.branch === branches[0] && it.request?.place)?.request?.place;
+  const about = branches.length === 1 ? branchInPlace(branches[0]!, place) : branches.length > 1 ? `${branches.length} branches` : null;
+  return ["Merge queue", ...(about ? [about] : []), `${n} ${n === 1 ? "request" : "requests"}`].join(" · ");
 }

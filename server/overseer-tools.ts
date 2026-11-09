@@ -214,6 +214,8 @@ export interface OverseerToolHost extends IdeaToolHost {
   };
   /** The roundup's own git reads (overseer-roundup-git.ts). Absent: none. */
   roundupGit?: Pick<RoundupGit, "facts">;
+  /** The words of the place of the branch whose folder is (or was) `path` (§chat.worktrees/place). */
+  branchPlace?: (path: string) => Promise<string | undefined>;
   /** This server's start (ms), for the roundup's restart questions. */
   serverStart?: number;
   /** The worktree cleanup's ledger (server/removed-worktrees.ts readLedger). Absent: empty. */
@@ -1146,7 +1148,17 @@ export function overseerTools(host: OverseerToolHost, shared: TurnLimits, redact
         // A Lost row names the other sessions that mention its branch (a backup, a hand-off).
         if (git) await namedElsewhere(git, covered, link).catch(() => {});
         const digest = await host.digest().catch(() => null);
+        // Each row's branch names its place: read here, the render is pure.
+        const places = new Map<string, string>();
+        if (host.branchPlace) {
+          const paths = new Set(page.flatMap((s) => [...(git?.launch.has(s.path) ? [s.cwd] : []), ...((reading(s.path) as { value?: { trees: { path: string }[] } }).value?.trees.map((t) => t.path) ?? [])]));
+          await Promise.all([...paths].map(async (path) => {
+            const words = await host.branchPlace!(path).catch(() => undefined);
+            if (words) places.set(path, words);
+          }));
+        }
         const out = renderRoundup({
+          place: (path) => places.get(path),
           sessions,
           digest,
           reading,

@@ -365,6 +365,7 @@ export function buildApp(deps: AppDeps) {
       const lock = readLock(made.path);
       if (chatHandle(made.path) || (lock && holderAlive(lock))) return c.json({ error: "That session is open in a chat process." }, 409);
       appendToClosedFile(made.path, SUBAGENT_PROFILE, { v: 1, profile: subagentProfile });
+      markOwned(made.path); // this append's fresh mtime is ours too, or the first open refuses it as a foreign write
     }
     // No profile named: the chat starts on this computer's default (§chat.profiles/default), as far as
     // the starter may give it (an Overseer start never gets powers the profile isn't marked for).

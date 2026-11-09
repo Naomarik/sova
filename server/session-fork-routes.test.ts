@@ -219,3 +219,12 @@ test("fork route: a torn tail line refuses instead of forking a partial file", a
   assert.equal(res.status, 400);
   assert.match((await res.json() as { error: string }).error, /not a readable session/);
 });
+
+test("create route: a session made with a subagent profile opens at once, its pick not read as a foreign write", async () => {
+  const { recentForeignWriteAgeSec } = await import("./write-guard");
+  const res = await request("POST", "/api/sessions", { cwd: dir, subagent_profile: "off" });
+  assert.equal(res.status, 201);
+  const { path } = (await res.json()) as { path: string };
+  assert.match(readFileSync(path, "utf8"), /"profile":"off"/, "the pick is on file");
+  assert.equal(recentForeignWriteAgeSec(path), null);
+});

@@ -124,9 +124,15 @@ session. The queue's requests never count as "land it".
 
 The project page's **Merge Queue** tab shows the main branch at its commit and whether `origin` has
 it, the queue's state with **Pause Queue** and **Queue Settings**, what is being checked now (the
-check, a meter and how long it takes), the line of waiting branches, and the recent landings with
-their notes. Every row opens its chat and has **Review Changes**, which shows the change in the
-changes viewer.
+check, a meter and how long it takes), and **Waiting**, the line of waiting branches, which opens and
+closes. Under them a strip of tabs sorts the rest: **Ready to land**, **Needs you**, **With its
+chat**, **Waiting on GitHub** or **GitLab** (for a project that lands there), **Landed**, with each
+landing's notes, and **Queue chats**. Each tab has its own address, so a reload or Back keeps it.
+Every row opens its chat and has **Review Changes**, which shows the change in the changes viewer.
+
+When the review blocks a branch, the chat that has to fix it gets a **Review found issues** card with
+the reviewer's whole report, the merge thread's note and how the fix is going. The branch's queue
+card points to it.
 
 <!-- screen: merge-queue-tab | A project's Merge Queue tab: the main branch at its commit, the branch being checked with its meter, the branches waiting in line, and the recent landings with their notes. -->
 

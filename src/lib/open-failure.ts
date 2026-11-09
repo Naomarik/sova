@@ -115,7 +115,7 @@ export interface CwdFallbackInfo {
   original: string;
   cwd: string;
   /** Its worktree retired (§chat.worktrees/retirement): a message brings it back. */
-  retired?: { branch: string; target: string };
+  retired?: { branch: string; target: string; branchKept?: true };
   /** Files stayed in its folder after the worktree retired, not yet proved safe to delete. */
   held?: true;
 }
@@ -133,7 +133,9 @@ export function cwdFallbackView(f: CwdFallbackInfo): { title: string; body: stri
   if (f.retired)
     return {
       title: "This session's worktree was retired",
-      body: `This session's worktree was retired after ${f.retired.branch} landed. Send a message to bring it back, fresh from ${f.retired.target}.`,
+      body: f.retired.branchKept
+        ? `This session's worktree was retired after ${f.retired.branch} landed. Send a message to bring it back on ${f.retired.branch} as it was. It may be behind ${f.retired.target}.`
+        : `This session's worktree was retired after ${f.retired.branch} landed. Send a message to bring it back, fresh from ${f.retired.target}.`,
     };
   return {
     title: "This session's folder is gone",

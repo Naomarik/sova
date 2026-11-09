@@ -48,7 +48,7 @@ describe("the typed word (landing.json)", () => {
       sh(k.repo.root, "branch", "feat/none");
       recordGoAhead({ branch: "feat/none", commit: k.repo.head(), session: "s2", at: "2026-11-02T00:00:02Z", by: "owner-chat" }, file);
       await ingestOnce(deps);
-      assert.match(refused[0]!, /couldn't be queued to land: nothing to land/);
+      assert.match(refused[0]!, /couldn't be queued to land: Nothing to land: everything on this branch is already on master/);
       // No project holds it.
       recordGoAhead({ branch: "feat/elsewhere", commit: "a".repeat(40), session: "s3", at: "2026-11-02T00:00:03Z", by: "owner-chat" }, file);
       await ingestOnce(deps);

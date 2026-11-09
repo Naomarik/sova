@@ -606,6 +606,7 @@ test("land records the user's go-ahead typed in this chat for the branch at its 
 		rmSync(join(tree, "c.txt"));
 		const out = await f.call(c, { action: "land" });
 		assert.match(out.content[0].text, /Queued feat\/x at [0-9a-f]{7} to land\. Sova's merge queue merges it onto the newest master in its own copy/);
+		assert.match(out.content[0].text, /Leave it alone until it lands: don't merge master into it\. The queue handles any conflict and asks for any fix it needs\. Real new commits are fine: they stay on the branch as new work for a later Land\./);
 		assert.doesNotMatch(out.content[0].text, /captain|landing card/i);
 		assert.doesNotMatch(out.content[0].text, /press|Land It/);
 		assert.deepEqual(recorded(), [{ branch: "feat/x", commit: head, session: "s1", at: "2026-10-26T10:00:00.000Z", by: "owner-chat" }]);
@@ -789,6 +790,22 @@ test("unserved: a branch editing only the release playbook folder the definition
 			await assert.rejects(f.call(c, { action: "merge", path: t }), (e: Error) => e.message === SETUP_BRANCH_REFUSED);
 			assert.equal(sh(r.main, "rev-parse", "master"), before, "nothing merged");
 		});
+	} finally {
+		r.done();
+	}
+});
+
+test("a project's main checkout can't be attached; a linked worktree beside it can", async () => {
+	const r = repo();
+	try {
+		const f = fakePi();
+		worktrees(f.pi);
+		const c = f.ctx(r.main);
+		await f.fire("session_start", c);
+		await assert.rejects(f.call(c, { action: "attach", path: r.main }), /That folder is the project's main checkout, not a worktree\. Nothing was attached\./);
+		assert.equal(f.entries.length, 0, "nothing recorded");
+		const made = await f.call(c, { action: "create", name: "beside" });
+		assert.match(made.content[0].text, /Created/);
 	} finally {
 		r.done();
 	}

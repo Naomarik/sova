@@ -64,6 +64,9 @@ export interface QueueFile {
   knownTarget?: string;
   /** Commits the queue moved the target to (tips, docs commits are inside them), newest last: the push rule reads them. */
   landed: string[];
+  /** A host's landings, per branch, newest first: its entry goes after the newest 60, but its pinned commit isn't on the
+   *  target when the host squashed, so a later reading of the branch still needs it (§chat.worktrees/nothing-left). */
+  hostPins?: Record<string, string[]>;
   heads: { pushed?: string; pushWhy?: string; targetRed?: string[]; targetBroken?: import("../../shared/merge-queue").TargetBroken[] };
   /** Machine failures in a row, per entry (retry once, then pause). */
   machineTries: Record<string, number>;

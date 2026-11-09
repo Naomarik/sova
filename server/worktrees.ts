@@ -35,7 +35,7 @@ import type { SessionWorktrees, WorktreeStatus, WorktreesInsight } from "../shar
 import { headerOf } from "./harness/pi/reader";
 import { resolveSessionPath } from "./paths";
 import { parseTargetCwd } from "./targets";
-import { trialMergeTree } from "./merge-tree-probe";
+import { codeLeft, conflictsOf, type LandingRecords, landingRecordsAt, trialNoOp } from "./nothing-left";
 
 const GIT_TIMEOUT_MS = 5_000;
 const MAX_CONCURRENT = 4;
@@ -101,15 +101,7 @@ export function porcelainFiles(stdout: string): { count: number; first: string[]
 }
 
 /** Distinct files in `merge-tree --write-tree`'s conflicted-file lines (after the tree's oid). */
-export function conflictedFiles(stdout: string): number {
-  const files = new Set<string>();
-  for (const line of stdout.split("\n").slice(1)) {
-    if (line.trim() === "") break;
-    const tab = line.indexOf("\t");
-    files.add(tab >= 0 ? line.slice(tab + 1) : line);
-  }
-  return files.size;
-}
+export const conflictedFiles = conflictsOf;
 
 function gitError(what: string, r: GitResult): string {
   const line = r.stderr.split("\n").map((s) => s.trim()).find(Boolean);
@@ -121,7 +113,7 @@ interface SessionCandidates { cwd: string | null; workerCwds: string[] }
 
 interface Comparison {
   base: string;
-  merged: "ancestor" | "content" | "no";
+  merged: "ancestor" | "content" | "catch-up" | "no";
   /** merged "no": files the trial merge conflicts on. */
   conflicts?: number;
   ahead?: number;
@@ -856,7 +848,10 @@ export class WorktreeInsights {
       const pin = await this.mergePin(layout, base.oid, head.oid);
       const tokenOf = () => (pin ? mergeToken(layout, pin, this.execPath)?.token ?? null : null);
       const scope = pin && mergeToken(layout, pin, this.execPath)?.perTree ? `tree:${layout.top}` : layout.commonDir;
-      const value = await this.contextRead(layout, `compare:${scope}:${head.oid}:${base.oid}:${base.name}`, tokenOf, () => this.compare(cwd, layout, base, head.oid), (v) => !v.error);
+      // Which landings the answer rests on (§chat.worktrees/nothing-left): a new one reads the branch again.
+      const landings = landingRecordsAt(layout.commonDir, out.branch);
+      const landed = landings.pins.length || landings.landed.includes(head.oid) ? `:${landings.pins.join(",")}:${landings.landed.includes(head.oid) ? 1 : 0}` : "";
+      const value = await this.contextRead(layout, `compare:${scope}:${head.oid}:${base.oid}:${base.name}${landed}`, tokenOf, () => this.compare(cwd, layout, base, head.oid, landings), (v) => !v.error);
       const { error, ...fields } = value;
       Object.assign(out, fields);
       if (error) errors.push(error);
@@ -968,19 +963,18 @@ export class WorktreeInsights {
     for (const k of [...this.observations.keys()]) if (k === `dirty:${layout.gitDir}` || k.startsWith(`head:${layout.gitDir}:`)) this.observations.delete(k);
   }
 
-  private async compare(cwd: string, layout: Layout, base: { name: string; oid: string }, head: string): Promise<Comparison> {
+  private async compare(cwd: string, layout: Layout, base: { name: string; oid: string }, head: string, landings: LandingRecords): Promise<Comparison> {
     this.computeCount++;
     const out: Comparison = { base: base.name, merged: "no" };
     const errors: string[] = [];
-    const anc = await this.git(cwd, ["merge-base", "--is-ancestor", head, base.oid]);
-    if (anc.code === 0) out.merged = "ancestor";
-    else if (anc.code !== 1) errors.push(gitError("merge-base --is-ancestor", anc));
-    else if (await this.supportsMergeTree()) {
-      const content = await this.mergesToBase(cwd, layout, base.oid, head);
-      if (content === true) out.merged = "content";
-      else if (typeof content === "string") errors.push(content);
-      else if (typeof content === "object") out.conflicts = content.conflicts;
-    }
+    // The one answer (nothing-left.ts); the agents' board reads a landed pin or merges past one as "catch-up" too.
+    const git: GitRunner = (args, opts) => this.git(opts.cwd, args, opts.env);
+    const trial = (await this.supportsMergeTree()) ? () => trialNoOp(git, { top: layout.top, gitDir: layout.gitDir, commonDir: layout.commonDir, target: base.oid, head, ...(this.scratchDir ? { scratchParent: this.scratchDir } : {}) }) : undefined;
+    const code = await codeLeft({ git, cwd, head, target: base, landings, trial });
+    if (code.kind === "ancestor" || code.kind === "content") out.merged = code.kind;
+    else if (!code.left) out.merged = "catch-up";
+    else if (code.error) errors.push(code.error);
+    else if (code.conflicts !== undefined) out.conflicts = code.conflicts;
     const [counts, mb] = await Promise.all([
       this.git(cwd, ["rev-list", "--left-right", "--count", `${base.oid}...${head}`]),
       this.git(cwd, ["merge-base", base.oid, head]),
@@ -996,27 +990,6 @@ export class WorktreeInsights {
     } else errors.push(mb.code === 1 ? "no common history with the base" : gitError("merge-base", mb));
     if (errors.length > 0) out.error = errors.join("; ");
     return out;
-  }
-
-  /** Whether merging HEAD into the base would leave the base's tree unchanged (a squash or rebase
-      merge already landed it). true / false, `{conflicts}` when the merge conflicts (how many
-      files), or why it couldn't tell. The merge's new objects go to a temporary object directory,
-      so the repository is not written, and git runs outside the checkout (merge-tree-probe.ts): a
-      merge driver's temp files can never be left in it. */
-  private async mergesToBase(cwd: string, layout: Layout, base: string, head: string): Promise<boolean | { conflicts: number } | string> {
-    try {
-      const git: GitRunner = (args, opts) => this.git(opts.cwd, args, opts.env);
-      const [merged, baseTree] = await Promise.all([
-        trialMergeTree(git, { top: layout.top, gitDir: layout.gitDir, commonDir: layout.commonDir, base, head, ...(this.scratchDir ? { scratchParent: this.scratchDir } : {}) }),
-        this.git(cwd, ["rev-parse", `${base}^{tree}`]),
-      ]);
-      if (merged.code === 1) return { conflicts: conflictedFiles(merged.stdout) }; // conflicts: not in the base
-      if (merged.code !== 0) return gitError("merge-tree", merged);
-      if (baseTree.code !== 0) return gitError("rev-parse base^{tree}", baseTree);
-      return (merged.stdout.split("\n", 1)[0] ?? "").trim() === baseTree.stdout.trim();
-    } catch (err) {
-      return `merge-tree: ${(err as Error).message}`;
-    }
   }
 
   /** Drop what hasn't been asked for in an hour, then the oldest past MAX_CACHED. */

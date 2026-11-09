@@ -90,7 +90,7 @@ describe("approval", () => {
       await assert.rejects(q.add({ branch: "master", by: "land-button" }), /the branch others land into/);
       await assert.rejects(q.add({ branch: "nope", by: "land-button" }), (e: unknown) => e instanceof MergeFailure && e.code === "not-found");
       sh(k.repo.root, "branch", "feat/empty");
-      await assert.rejects(q.add({ branch: "feat/empty", by: "land-button" }), /nothing to land/);
+      await assert.rejects(q.add({ branch: "feat/empty", by: "land-button" }), /^.*Nothing to land: everything on this branch is already on master\.$/);
       const t = k.repo.branch("feat/temp", { "t.txt": "t\n" }, { message: "TEMP: wip" });
       await assert.rejects(q.add({ branch: "feat/temp", by: "land-button" }), /TEMP commit/);
       void t;
@@ -2053,6 +2053,38 @@ describe("sent back: the tab's Ready list", () => {
       v = await q.view();
       assert.deepEqual((v.ready ?? []).filter((r) => r.branch === "feat/old-back").map((r) => r.commit), [fix], "Ready at the fix");
     } finally {
+      await k.done();
+    }
+  });
+});
+
+describe("the queue's reading while it loads", () => {
+  test("a read while the target is still being worked out says nothing and doesn't throw; once loaded it speaks", async () => {
+    const { NO_LANDINGS, queueReadingAt } = await import("../nothing-left");
+    let release!: () => void;
+    const gate = new Promise<void>((done) => (release = done));
+    let asked = false;
+    const k = makeKit({
+      deps: {
+        definitionAt: async () => {
+          asked = true;
+          await gate;
+          return { def: null, error: "no .sova/project.json" };
+        },
+      },
+    });
+    try {
+      const loading = k.queues.get(k.repo.root);
+      await until(() => asked, "the load reached the definition");
+      const reading = queueReadingAt(k.repo.root);
+      assert.ok(reading, "registered before the records are read");
+      assert.equal(reading.landings("feat/x"), NO_LANDINGS);
+      assert.equal(reading.approvedAt("feat/x", "a".repeat(40)), false);
+      release();
+      await loading;
+      assert.deepEqual(reading.landings("feat/x").pins, []);
+    } finally {
+      release();
       await k.done();
     }
   });

@@ -24,6 +24,7 @@ import { agentRoot } from "../state-root";
 import { draftSpecHash } from "../spec-drafts-state";
 import { readRunLogText } from "./run-logs";
 import { LANDED_DRAFTS_FILE, type LandedDraftsRecord } from "./landed-drafts";
+import { nothingToLandWords } from "./notices";
 import { blameCheck, blameFile, blameSetup, brokenOnTarget, type CheckBlame, type RedRun, summarize } from "./attribute";
 import { type CheckRun, checksOf, countsOf, type CopyScope, envOf, firstOutputLine, freshOf, isTestCheck, type PlannedCheck, picksOf, planChecks, ranNoTest, reusedWords, runCheck, templateVarsOf } from "./checks";
 import type { RunHooks, RunInput, RunMerge, RunOutcome } from "./contract";
@@ -279,11 +280,13 @@ async function runOnce(input: RunInput, hooks: RunHooks, deps: RunDeps): Promise
     if ("conflict" in r) return (ms.end("failed", { detail: `conflicts in ${r.conflict.length} file(s)` }), out({ verdict: "conflict", why: `the resolution conflicts with ${target} in ${r.conflict.join(", ")}`, conflict: { files: r.conflict }, copy }));
     if ("error" in r) return signal.aborted ? (ms.end("failed", { detail: "aborted" }), voided("aborted")) : (ms.end("failed", { detail: r.error }), out({ verdict: "machine", why: r.error, copy }));
     mergeSha = r.sha;
+  } else if (!input.entry.release && (input.landingPins?.includes(commit) || (await gitProc(copy, ["merge-base", "--is-ancestor", commit, base])).code === 0)) {
+    // Decided here from git in the merge copy, or from an exact recorded landing, never from a row's label
+    // (§app.merge-queue/run): nothing merges and only drafts can still land, on the target's own commit. Anything else,
+    // a merge holding real edits included, merges as usual: it lands, conflicts, or stops below as changing nothing.
+    ms.end("skipped", { detail: `${target} already has what ${short(commit)} holds` });
+    mergeSha = base;
   } else {
-    if ((await gitProc(copy, ["merge-base", "--is-ancestor", commit, base])).code === 0) {
-      ms.end("failed", { detail: `${target} already has ${short(commit)}` });
-      return out({ verdict: "failed", blame: "branch", why: `nothing to land: ${target} already has ${short(commit)}`, copy });
-    }
     ms.log(`$ git merge --no-ff ${commit}\n`);
     const m = await gitProc(copy, [...NO_BACKGROUND_CLEANUP, ...NO_RERERE, "merge", "--no-ff", "--no-edit", "-m", `Merge branch '${input.entry.branch}' into ${target}`, commit], { env: ident, log: ms.log, signal });
     if (m.aborted) return (ms.end("failed", { detail: "aborted" }), voided("aborted"));
@@ -299,7 +302,21 @@ async function runOnce(input: RunInput, hooks: RunHooks, deps: RunDeps): Promise
     }
     mergeSha = await gitOut(copy, ["rev-parse", "HEAD"]);
   }
-  ms.end("passed", { detail: short(mergeSha) });
+  if (ms.s.result === "running") ms.end("passed", { detail: short(mergeSha) });
+
+  // §app.merge-queue/run: a run that changes neither code nor specs stops, whatever let it through. No check, no review,
+  // and the target never moves. Before the setup when no draft can land either.
+  const sameTree = async (sha: string) => (await gitOut(copy, ["rev-parse", `${sha}^{tree}`])) === (await gitOut(copy, ["rev-parse", `${base}^{tree}`]));
+  const nothing = (): RunOutcome => out({ verdict: "nothing", why: nothingToLandWords(target), copy });
+  const carriesDrafts = !!input.draftsDir && existsSync(input.draftsDir) && readdirSync(input.draftsDir, { withFileTypes: true }).some((d) => d.isDirectory() && !d.name.startsWith("."));
+  if (await sameTree(mergeSha)) {
+    if (!carriesDrafts) return nothing();
+    // A merge that changed nothing and only carries drafts: the target moves by the spec commit alone.
+    if (mergeSha !== base && !input.resolution && !input.entry.release) {
+      await gitProc(copy, [...NO_BACKGROUND_CLEANUP, "reset", "--hard", "--quiet", base]);
+      mergeSha = base;
+    }
+  }
   hooks.merged?.(mergeSha);
 
   // The changed paths the checks read (SOVA_MERGE_CHANGED): the branch's against the target.
@@ -372,6 +389,7 @@ async function runOnce(input: RunInput, hooks: RunHooks, deps: RunDeps): Promise
     writeFileSync(changedFile, `${[...changed, ...more].join("\n")}\n`);
   }
   scope.tip = tip;
+  if (await sameTree(tip)) return nothing();
 
   // 6. checks, with the review beside them
   const list = planChecks(def, input.picks, input.releaseChecks);

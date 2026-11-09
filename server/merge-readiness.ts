@@ -12,7 +12,8 @@ import { canonical, normalizeMergeDetails, sharedWith, type TrackedWorktree, WOR
 import { stateRoot } from "./state-root";
 import { deferredOf, followUpFor, type FollowUpInput, type MergeFollowUps } from "./merge-followup";
 import { type AskTree, asksUserOf, isGoAsk, readSignals } from "./signals-store";
-import { type AncestorCheck, type DraftsHash, draftsHash, draftsLeft } from "./spec-drafts-state";
+import { type AncestorCheck, draftProofVia, type DraftsHash, draftsHash, draftsLeft } from "./spec-drafts-state";
+import { queueReadingAt } from "./nothing-left";
 import { previewDocs, previewOf } from "./docs-preview";
 export { previewOf };
 import { blockedNoteText, checkFailureOf, type DocsPreview, docsNudgeText, type Finished, type LastCheck, lastCheckWords, fileLandingStore, finishedOf, type LandingBlocker, landingBlockers, type LandingDocs, landingLive, landingOf, landingReason, type LandingStore } from "./ready-to-land";
@@ -124,6 +125,17 @@ export const NO_COMMITS = "no commits yet";
 /** A gone folder's whys (§chat.worktrees/readiness, removed). */
 export const CLEANED_UP = "cleaned up";
 export const REMOVED_EMPTY = "no commits";
+/** A folder that is there and git can't read: never called gone (§chat.worktrees/readiness). */
+export const UNREADABLE = "git can't read this worktree";
+
+/** A worktree no one lands from: the repository's main checkout (its `.git` is a folder). Such a row is dropped at read. */
+export const isMainCheckout = (path: string): boolean => {
+  try {
+    return statSync(join(path, ".git")).isDirectory();
+  } catch {
+    return false;
+  }
+};
 
 /** Why a branch whose commits git couldn't count (no base found, or the count failed): never "no
     commits yet", which would claim zero, and never ready, which needs a commit ahead. */
@@ -145,6 +157,8 @@ export const isEmptyLeftover = (t: Pick<WorktreeReadiness, "state" | "why" | "di
  */
 export function treeReadiness(t: TreeFacts, s: SessionFacts): { state: ReadinessState; why?: string; reason: string } {
   const r = treeState(t, s);
+  if (r.why === UNREADABLE) return { ...r, reason: "Git can't read this worktree" };
+  if (r.why === CLEANED_UP && r.state === "merged") return { ...r, reason: "Landed · cleaned up" };
   if (t.conflicts && r.state === "in-progress" && r.why?.startsWith("conflicts"))
     return { ...r, reason: `Conflicts with ${t.base ?? "the base"} · ${t.conflicts} file${t.conflicts === 1 ? "" : "s"}` };
   const parts = [STATE_WORDS[r.state], ...(r.why ? r.why.split(" · ") : [])];
@@ -162,7 +176,7 @@ function treeState(t: TreeFacts, s: SessionFacts): { state: ReadinessState; why?
       if (t.gone === "empty") return { state: "removed", why: REMOVED_EMPTY };
       return { state: "removed", why: "no record of a merge" };
     }
-    return t.tracked === "merged" ? { state: "merged", why: "worktree folder gone" } : { state: "in-progress", why: "worktree folder gone" };
+    return t.tracked === "merged" ? { state: "merged", why: UNREADABLE } : { state: "in-progress", why: UNREADABLE };
   }
   if (t.merged) {
     // Uncommitted work vetoes "merged": the tree is being worked on, or was left dirty.
@@ -186,7 +200,7 @@ function treeState(t: TreeFacts, s: SessionFacts): { state: ReadinessState; why?
 }
 
 /** A merged tree whose drafts aren't official: never plain Merged (§chat.worktrees/readiness). */
-export const lostDraftsReason = (n: number): string => `Nothing left to land, but its spec drafts didn't make it · ${n} draft${n === 1 ? "" : "s"}`;
+export const lostDraftsReason = (n: number): string => `Code landed · ${n} spec draft${n === 1 ? "" : "s"} not landed`;
 
 const TEMP_RE = /^(?:temp|wip)\b|^(?:fixup|squash|amend)!/i;
 /** The newest temporary commit subject, if any. */
@@ -574,6 +588,9 @@ export interface ReadinessDeps {
   /** The spec drafts a tree holds not promoted, by name: neither official in the tree nor carrying a receipt of a
       landing that is on its target (spec-drafts-state draftsLeft). */
   drafts: (dir: string) => Promise<string[] | undefined> | string[] | undefined;
+  /** The user approved exactly this commit, and it is in line, waiting or landed: the queue's now, so no note to fix it
+      (§chat.worktrees/ready-to-land). */
+  approvedAt?: (path: string, branch: string, head: string) => boolean;
   /** The drafts' hash (spec-drafts-state draftsHash): Sova's try of the drafts runs once per head and hash. */
   draftsHash?: (dir: string) => DraftsHash | undefined;
   /** Sova's try of a tree's drafts at a head and drafts hash, the way the landing will (§chat.worktrees/ready-to-land):
@@ -652,7 +669,11 @@ const defaultDeps = (): ReadinessDeps => ({
   treeStamp: (dir, together) => worktreeInsights.quietStamp(dir, together),
   inputsStamp: gitInputsStamp,
   finished: finishedOf,
-  drafts: (dir) => draftsLeft(dir, ancestorVia(execGit)),
+  drafts: (dir) => draftsLeft(dir, ancestorVia(execGit), draftProofVia(execGit)),
+  approvedAt: (path, branch, head) => {
+    const root = linkedCheckoutOf(path);
+    return !!root && !!queueReadingAt(root)?.approvedAt(branch, head);
+  },
   draftsHash,
   docsPreview: previewDocs,
   landing: fileLandingStore(),
@@ -771,12 +792,13 @@ async function treeFacts(t: TrackedWorktree, dirs: readonly string[]): Promise<T
   const st = await deps.insights.treeStatus(t.path).catch(() => null);
   if (!st || !st.exists || st.error && st.merged === undefined) {
     // Gone (not merely unreadable): what its branch came to decides (§chat.worktrees/readiness).
-    if (!st?.exists && !existsSync(t.path)) return { ...base, readable: false, gone: await goneWorkOf(t, dirs) };
+    // A folder with no `.git` left isn't a worktree: what a delete that stopped part way leaves counts as gone.
+    if (!st?.exists && (!existsSync(t.path) || !existsSync(join(t.path, ".git")))) return { ...base, readable: false, gone: await goneWorkOf(t, dirs) };
     return { ...base, readable: false };
   }
   // A branch with no commit of its own is never merged: ancestry alone would say it is.
   const own = st.head !== undefined && st.head !== t.base;
-  const merged = own && (st.merged === "ancestor" || st.merged === "content");
+  const merged = own && (st.merged === "ancestor" || st.merged === "content" || st.merged === "catch-up");
   return {
     ...base,
     branch: st.branch ?? t.branch,
@@ -812,7 +834,7 @@ export function computeReadiness(s: SessionSummary, facts: FileFacts, publishChe
 }
 
 async function computeReadinessNow(s: SessionSummary, facts: FileFacts, publishChecks: () => boolean, fresh: boolean): Promise<SessionReadiness | undefined> {
-  const own = facts.trees.filter((t) => t.status !== "dropped" && t.session === s.id);
+  const own = facts.trees.filter((t) => t.status !== "dropped" && t.session === s.id && !isMainCheckout(t.path));
   if (own.length === 0) {
     if (publishChecks()) { checksBySession.delete(s.path); blockedBySession.delete(s.path); }
     return undefined;
@@ -863,7 +885,10 @@ async function computeReadinessNow(s: SessionSummary, facts: FileFacts, publishC
       const untried = tf.head && landingLive(tf, rLand.state) && deps.setupUntried ? await deps.setupUntried(t.path, tf.head).catch(() => null) : null;
       if (untried) landing = undefined;
       // Finished but not Ready to land: what the session can fix, for Sova's once-per-commit note.
-      if (!landing && finished === "yes" && tf.head) {
+      // The commit the user approved is the queue's now, and with nothing left there is nothing to fix: no note (a real
+      // new commit past an approval or a landing is told as any other).
+      const leaveAlone = !!tf.head && !!deps.approvedAt?.(t.path, tf.branch, tf.head);
+      if (!landing && finished === "yes" && tf.head && !leaveAlone) {
         const blockers = [...(landingBlockers(tf, sf) ?? []), ...(untried ? [{ kind: "trial" as const, text: "no passing trial of its head", fix: "run a trial of its head (merge.try) and land it once that passes" }] : [])];
         if (blockers.length) blocked.push({ path: t.path, branch: tf.branch, commit: tf.head, blockers, ...(tf.conflicts ? { conflicts: { base: tf.base ?? "its base", files: tf.conflicts } } : {}) });
       }
@@ -886,6 +911,7 @@ async function computeReadinessNow(s: SessionSummary, facts: FileFacts, publishC
       ...(tf.conflicts ? { conflicts: tf.conflicts } : {}),
       ...(hasNoCommits(tf) ? { noCommits: true as const } : {}),
       ...(landing ? { landing } : {}),
+      ...(tf.readable && (tf.merged || hasNoCommits(tf)) ? (unofficial?.length ? { left: "drafts" as const, draftsLeft: unofficial.length } : { left: "nothing" as const }) : {}),
     });
   }
   const cards = facts.merges;
@@ -910,7 +936,7 @@ async function computeReadinessNow(s: SessionSummary, facts: FileFacts, publishC
   const r = sessionReadinessOf(trees, { ...(newest ? { lastMerge: { at: newest.at, branch: newest.branch } } : {}), restartPending, pushPending, followUp }, lastReplyAt);
   if (!r || !newest) return r;
   // The branch status line (§chat.worktrees/readiness): code only, for the newest merge.
-  const drafts = newest.path && existsSync(newest.path) ? (await draftsLeft(newest.path, ancestorVia(deps.git)))?.length : undefined;
+  const drafts = newest.path && existsSync(newest.path) ? (await draftsLeft(newest.path, ancestorVia(deps.git), draftProofVia(deps.git)))?.length : undefined;
   const status: BranchStatus = {
     branch: newest.branch,
     commit: newest.sha.slice(0, 7),
@@ -955,7 +981,7 @@ export interface BranchReading {
  * either. Undefined when it tracks none.
  */
 export async function computeBranches(s: Pick<SessionSummary, "id">, facts: Pick<FileFacts, "trees">): Promise<BranchReading[] | undefined> {
-  const trees = facts.trees.filter((t) => t.status !== "dropped");
+  const trees = facts.trees.filter((t) => t.status !== "dropped" && !isMainCheckout(t.path));
   if (trees.length === 0) return undefined;
   return Promise.all(
     trees.map(async (t): Promise<BranchReading> => {
@@ -963,6 +989,10 @@ export async function computeBranches(s: Pick<SessionSummary, "id">, facts: Pick
       const shared = sharedWith(t, s.id);
       const merged = t.status === "active" && exists && deps.mergedInto ? await mergedByStamp(t).catch(() => undefined) : undefined;
       const q = exists && deps.branchFields ? await deps.branchFields(t.path, t.branch).catch(() => null) : null;
+      // The shared answer, read as readiness reads it, for a row no readiness of this chat's covers too.
+      const st = exists ? await deps.insights.treeStatus(t.path).catch(() => null) : null;
+      const noneLeft = !!st && (st.merged === "ancestor" || st.merged === "content" || st.merged === "catch-up");
+      const undrafted = noneLeft ? await Promise.resolve(deps.drafts(t.path)).catch(() => undefined) : undefined;
       const row: SessionBranchRow = {
         path: t.path,
         branch: t.branch,
@@ -971,6 +1001,7 @@ export async function computeBranches(s: Pick<SessionSummary, "id">, facts: Pick
         ...(shared ? { sharedWith: shared } : {}),
         ...(merged ? { mergedInto: merged } : {}),
         ...(q?.fields ?? {}),
+        ...(noneLeft ? (undrafted?.length ? { left: "drafts" as const, draftsLeft: undrafted.length } : { left: "nothing" as const }) : {}),
       };
       return q?.root ? { row, root: q.root } : { row };
     }),
@@ -1284,6 +1315,8 @@ export function askTreesOf(s: Pick<SessionSummary, "id" | "path" | "readiness" |
     const own = s.readiness?.trees.find((r) => r.path === t.path);
     if (own && isEmptyLeftover(own)) return [];
     const reading = hit!.branches?.find((b) => b.row.path === t.path);
+    // Read, and left out of the rows: a main checkout, attached before that was refused.
+    if (hit!.branches && !reading) return [];
     const row = reading ? joinBranches([reading], deps.queueNow)[0] : undefined;
     const began = reading?.root ? deps.queueBegan?.(reading.root, t.branch) : undefined;
     return [{
@@ -1330,7 +1363,7 @@ function nudgeSpecs(s: SessionSummary, value: SessionReadiness): void {
   if (!send || s.archived || s.live) return;
   for (const t of value.trees) {
     const l = t.landing;
-    if (l?.state !== "specs" || l.specsWhy || !l.docs?.problems?.length) continue;
+    if (l?.state !== "specs" || l.specsWhy || !l.docs?.problems?.length || deps.approvedAt?.(t.path, t.branch, l.commit)) continue;
     if (!deps.landing.nudge(s.id, t.path, l.commit)) continue;
     void send(s.path, docsNudgeText(t.branch, l.commit, l.docs.problems), { kind: "drafts", branch: t.branch })
       .then((id) => (typeof id === "string" ? deps.landing.asked(s.id, t.path, l.commit, id, "drafts") : undefined))

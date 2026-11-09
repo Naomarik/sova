@@ -8,6 +8,7 @@ import { basename, dirname, join } from "node:path";
 import type { TrackedWorktree } from "../pi-config/extensions/worktrees/state.ts";
 import { stateRoot } from "./state-root";
 import { trialMergeTree } from "./merge-tree-probe";
+import { codeLeft, landingRecordsAt } from "./nothing-left";
 import { execGit, type GitRunner } from "./worktrees";
 
 /** One removal Sova's cleanup made. */
@@ -164,10 +165,12 @@ async function readGoneState(t: Pick<TrackedWorktree, "path" | "branch" | "base"
       break;
     }
     let main = "";
+    let mainName = "";
     for (const b of ["master", "main"]) {
       const r = await git(["rev-parse", "--verify", "-q", `refs/heads/${b}^{commit}`], { cwd });
       if (r.code === 0) {
         main = r.stdout.trim();
+        mainName = b;
         break;
       }
     }
@@ -178,7 +181,10 @@ async function readGoneState(t: Pick<TrackedWorktree, "path" | "branch" | "base"
     if (inMain.code === 0) value = "merged";
     else if (inMain.code === 1) {
       const cd = await git(["rev-parse", "--path-format=absolute", "--git-common-dir"], { cwd });
-      value = cd.code === 0 && (await mergedByContent(git, cwd, cd.stdout.trim(), main, sha)) ? "merged" : "unmerged";
+      // The one answer (§chat.worktrees/nothing-left): a gone folder's branch reads as a live one's would.
+      const commonDir = cd.code === 0 ? cd.stdout.trim() : null;
+      const answer = await codeLeft({ git, cwd, head: sha, target: { name: mainName, oid: main }, landings: commonDir ? landingRecordsAt(commonDir, t.branch) : undefined, trial: commonDir ? () => mergedByContent(git, cwd, commonDir, main, sha) : undefined });
+      value = answer.left ? "unmerged" : "merged";
     }
     break;
   }

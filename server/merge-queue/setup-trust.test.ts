@@ -270,6 +270,21 @@ describe("Land on a setup branch waits for a passing trial of its exact head", (
     }
   });
 
+  test("a setup branch with nothing left is refused as nothing to land, and never told to run a trial", async () => {
+    const t = realKit();
+    try {
+      setupBranch(t.repo, "setup/on", (d) => d.merge.checks.push(CHECK("lint")));
+      const land = () => t.call("merge.add", { project: t.repo.root, branch: "setup/on" }, op);
+      assert.match((await land()).error?.message ?? "", /no passing trial/, "with work left, the trial gate speaks");
+      sh(t.repo.root, "merge", "-q", "--no-ff", "--no-edit", "setup/on");
+      const r = await land();
+      assert.equal(r.ok, false);
+      assert.match(r.error?.message ?? "", new RegExp(`Nothing to land: everything on this branch is already on ${t.repo.target}\\.$`));
+    } finally {
+      await t.done();
+    }
+  });
+
   test("the gate is the change, not the chat: a target naming its own release playbook folder (ops/release) gates a branch that edits only that folder", async () => {
     const t = realKit();
     try {

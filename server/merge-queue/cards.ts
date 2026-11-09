@@ -331,6 +331,8 @@ export class MergeCards {
       if (!rec.done[key]) {
         card.revisions.push(this.revision(card, "approved", after));
         rec.done[key] = this.iso();
+        // No turn starts: the chat's model reads it at its next one (§chat.merge-queue/chat-turns).
+        rec.lines.push({ key, at: this.iso(), text: noticeText("approved", e) });
       }
       this.write(rec);
       this.publish(rec);

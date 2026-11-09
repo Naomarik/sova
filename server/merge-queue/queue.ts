@@ -37,9 +37,11 @@ import {
 import { HOOK_TIMEOUT_MAX, parseDefinition, type ProjectDef } from "../../shared/project-contract";
 import type { ChecksOf, EstimateRun, RunInput, RunMerge, RunOutcome, ThreadEvent, WakeThread } from "./contract";
 import { countBetween, type Git, isAncestor, ownCommitsPast, realGit, revParse, statusArgs, worktreesOf } from "./guard";
+import { type BranchLeft, branchLeft, type LandingRecords, NO_LANDINGS, registerQueueReading } from "../nothing-left";
+import type { GitRunner } from "../worktrees";
 import { canLand, checkoutOf, dirtyWhy, firstParents, landTip, pushTip } from "./land";
 import { recordLandedDrafts } from "./landed-drafts";
-import type { MergeNoticeKind } from "./notices";
+import { type MergeNoticeKind, nothingToLandWords } from "./notices";
 import { sanityCheck } from "./conflicts";
 import { cleanChoices, fingerprintOf, isRuling, resolveVerdict, RULING_TEXT_MAX, RULING_WAIT_MS, type Ruling, sendBackText } from "./rulings";
 import { estimateFromRuns } from "./estimate";
@@ -367,6 +369,12 @@ export class ProjectQueue {
 
   /** Load the records and work out the target. Recovery (recover.ts) runs after. */
   async load(): Promise<void> {
+    registerQueueReading(this.root, {
+      landings: (branch) => this.landingsOf(branch),
+      // In line, checking or waiting for the user, or landed: never Approved · waiting for a fix or back with its chat,
+      // which still get their requests (§chat.worktrees/blocks-landing).
+      approvedAt: (branch, head) => !!this.q?.entries.some((x) => x.branch === branch && x.commit === head && x.state !== "with-chat" && (ENTRY_OPEN.includes(x.state) || x.state === "landed" || x.state === "requested" || x.state === "pushed")),
+    });
     const target = await this.resolveTarget();
     this.q = this.store.read({ project: this.id, target });
     this.q.project = this.id;
@@ -557,7 +565,8 @@ export class ProjectQueue {
       const tip = await revParse(this.git, this.root, `refs/heads/${e.branch}`);
       const moved = !!tip && tip !== e.commit;
       const descends = moved && (await isAncestor(this.git, this.root, e.commit, tip));
-      const n = descends ? await ownCommitsPast(this.git, this.root, e.commit, tip, head || undefined) : 0;
+      // Only real work counts past an approval (§app.merge-queue/approve): a catch-up merge is nothing new.
+      const n = descends ? await ownCommitsPast(this.git, this.root, e.commit, tip, head || undefined, true) : 0;
       if (n) e.newerCommits = n;
       else delete e.newerCommits;
       // Amended or rebased after the send-back: nothing to count, and the re-land still lands the tip.
@@ -1022,27 +1031,54 @@ export class ProjectQueue {
   private async readyList(head: string, redrafted: ReadonlySet<string> = new Set()): Promise<MergeReady[]> {
     if (this.readyCache && this.readyCache.head === head && this.now() - this.readyCache.at < 15_000) return this.filterReady(this.readyCache.list, redrafted);
     const out: MergeReady[] = [];
-    for (const w of await worktreesOf(this.git, this.root)) {
+    const trees = await worktreesOf(this.git, this.root);
+    // The answers are kept per head and target, so only a move of the target reads any again: a few at a time, since
+    // the heads with work each run a trial merge.
+    const asked = trees.filter((w) => w.branch && w.head && w.path !== this.root && existsSync(w.path));
+    for (let i = 0; i < asked.length; i += 4) await Promise.all(asked.slice(i, i + 4).map((w) => this.leftOf(w.branch!, w.head!, w.path, head)));
+    for (const w of trees) {
       if (!w.branch || !w.head || w.path === this.root || w.branch === this.q.target || w.branch === "master" || w.branch === "main" || !existsSync(w.path)) continue;
       if (w.branch.startsWith("sova/")) continue;
       // The queue's own scratch copies are never work to land, whatever branch one is on.
       if (await this.queueOwned(w.path)) continue;
+      // The one answer (§chat.worktrees/nothing-left): nothing left is on no list, drafts alone keep the row, and a branch
+      // git can't read stays listed.
+      const left = await this.leftOf(w.branch, w.head, w.path, head);
+      if (left?.nothingLeft) continue;
+      const draftsOnly = left && !left.code.left ? left.drafts.length : 0;
       const ahead = await countBetween(this.git, this.root, head, w.head);
-      if (!ahead) continue;
       // Its subject and when it last changed (the head's committer date), in one read.
       const [subjectRaw = "", headAtRaw = ""] = (await this.git(["log", "-1", "--format=%s%x1f%cI", w.head], this.root)).stdout.trim().split("\u001f");
       const subject = subjectRaw.trim();
       const headAt = headAtRaw.trim();
-      if (/^temp\b/i.test(subject)) continue;
+      if (!draftsOnly && /^temp\b/i.test(subject)) continue;
       const st = await this.git(statusArgs("--porcelain"), w.path);
       if (st.code !== 0 || st.stdout.trim()) continue;
       const owner = ownerId(await this.deps.ownerOf?.(this.root, w.branch, w.path).catch(() => null));
       const short = await this.git(["diff", "--shortstat", `${head}...${w.head}`], this.root);
       const lines = short.code === 0 ? { added: Number(/(\d+) insertion/.exec(short.stdout)?.[1] ?? 0), removed: Number(/(\d+) deletion/.exec(short.stdout)?.[1] ?? 0) } : {};
-      out.push({ branch: w.branch, worktree: w.path, commit: w.head, ahead, ...lines, ...(headAt ? { headAt } : {}), ...(owner ? { session: owner.session, ...(owner.archived ? { sessionArchived: true as const } : {}) } : {}) });
+      out.push({ branch: w.branch, worktree: w.path, commit: w.head, ahead, ...lines, ...(draftsOnly ? { draftsOnly } : {}), ...(left ? { left: { whole: left.whole, code: left.codeOnly } } : { left: { whole: "unknown", code: "unknown" } }), ...(headAt ? { headAt } : {}), ...(owner ? { session: owner.session, ...(owner.archived ? { sessionArchived: true as const } : {}) } : {}) });
     }
     this.readyCache = { at: this.now(), head, list: out };
     return this.filterReady(out, redrafted);
+  }
+
+  /** The shared answer for a commit of this project's (§chat.worktrees/nothing-left), from every entry and git; null: it
+   *  couldn't be read at all, which is never nothing. */
+  private leftOf(branch: string, head: string, folder: string | undefined, targetHead: string): Promise<BranchLeft | null> {
+    const git: GitRunner = async (args, o) => {
+      const r = await this.git([...args], o.cwd, o.env ? { env: { ...process.env, ...o.env } } : undefined);
+      return { code: r.code, stdout: r.stdout, stderr: r.stderr };
+    };
+    return branchLeft({ root: this.root, folder, branch, head, target: { name: this.q.target, oid: targetHead }, git }).catch(() => null);
+  }
+
+  /** What the shared answer reads of this queue: all its entries, never the view's newest 20. */
+  private landingsOf(branch: string): LandingRecords {
+    // Still loading: the reading is registered before the records are read.
+    if (!this.q) return NO_LANDINGS;
+    const here = this.q.entries.filter((e) => e.branch === branch && e.state === "landed").sort((a, b) => (b.landed?.at ?? b.updatedAt).localeCompare(a.landed?.at ?? a.updatedAt)).map((e) => e.commit);
+    return { pins: [...new Set([...here, ...(this.q.hostPins?.[branch] ?? [])])], landed: this.q.landed };
   }
 
   /** The Ready to land, not approved rows as the view lists them, read from git only: no view is built, nothing is
@@ -1055,7 +1091,7 @@ export class ProjectQueue {
   /** A branch sent back (needs-fix) is Ready again at a newer commit, or at the same commit once it was sent back for
    *  its drafts and they are fixed (`redrafted`: changed since the approval, and Sova's docs check reads clean). */
   filterReady(list: MergeReady[], redrafted: ReadonlySet<string> = new Set()): MergeReady[] {
-    return list.filter((r) => !this.q.entries.some((e) => e.branch === r.branch && (ENTRY_OPEN.includes(e.state) || ((e.state === "landed" || (e.state === "needs-fix" && !redrafted.has(e.id))) && e.commit === r.commit))));
+    return list.filter((r) => !this.q.entries.some((e) => e.branch === r.branch && (ENTRY_OPEN.includes(e.state) || (((e.state === "landed" && !r.draftsOnly) || (e.state === "needs-fix" && !redrafted.has(e.id))) && e.commit === r.commit))));
   }
 
   /** Why a sent-back entry was sent back: as stored, else inferred once from its last run (a failed docs step: its
@@ -1121,7 +1157,7 @@ export class ProjectQueue {
     void this.redraftedFacts().catch((err) => this.log(`docs check: ${err instanceof Error ? err.message : err}`));
   }
 
-  private newestMemo = new Map<string, { at: number; why: string | null }>();
+  private newestMemo = new Map<string, { at: number; why: Promise<string | null> }>();
   /** Why the branch's newest commit `tip` isn't Ready to land (the chat's readiness reading, deps.newestReading), or
    *  null when it is. No reading: what Land would refuse (a temporary commit, uncommitted files in its folder). Read
    *  only; each answer is kept a few seconds, since view() runs often. */
@@ -1129,9 +1165,11 @@ export class ProjectQueue {
     const key = `${branch}\0${tip}`;
     const hit = this.newestMemo.get(key);
     if (hit && this.now() - hit.at < NEWEST_MEMO_MS) return hit.why;
-    const why = await this.newestBlockedNow(branch, tip);
+    // Kept from the start, so two views reading at once ask once.
+    const why = this.newestBlockedNow(branch, tip);
     if (this.newestMemo.size > 100) this.newestMemo.clear();
     this.newestMemo.set(key, { at: this.now(), why });
+    why.catch(() => this.newestMemo.delete(key));
     return why;
   }
 
@@ -1173,10 +1211,11 @@ export class ProjectQueue {
   private async addNow(req: AddRequest): Promise<{ entry: MergeEntry; changed: boolean }> {
     {
       let branch = req.branch?.replace(/^refs\/heads\//, "");
-      if (req.checkout && (await this.queueOwned(req.checkout))) throw new MergeFailure("invalid-request", scratchRefusal(req.checkout));
+      // A queue copy named by its folder is refused, but after "nothing to land" below (it says nothing about the project).
+      const scratch = req.checkout && (await this.queueOwned(req.checkout)) ? req.checkout : null;
       if (!branch && req.checkout) {
         const r = await this.git(["symbolic-ref", "--quiet", "--short", "HEAD"], req.checkout);
-        if (r.code !== 0 || !r.stdout.trim()) throw new MergeFailure("invalid-request", `${req.checkout} isn't on a branch`);
+        if (r.code !== 0 || !r.stdout.trim()) throw new MergeFailure("invalid-request", scratch ? scratchRefusal(scratch) : `${req.checkout} isn't on a branch`);
         branch = r.stdout.trim();
       }
       if (!branch) throw new MergeFailure("invalid-request", "name the branch (or a checkout of it)");
@@ -1194,10 +1233,13 @@ export class ProjectQueue {
       if (!fix && d.checks === "unset") throw new MergeFailure("unsupported", `Not set up: ${this.root} declares no checks for the merge queue yet (its merge section, a test command, or "no automated tests")`);
       const head = d.head || (await this.targetHead());
       if (!head) throw new MergeFailure("not-found", `no branch ${target} in ${this.root}`);
-      if ((await countBetween(this.git, this.root, head, commit)) === 0) throw new MergeFailure("invalid-request", `nothing to land: ${branch} at ${commit.slice(0, 7)} has no commit ${target} doesn't`);
+      const wt = (await worktreesOf(this.git, this.root)).find((w) => w.branch === branch && w.path !== this.root)?.path;
+      // First of all (§app.merge-queue/approve): nothing is recorded, nothing runs, no trial is ever asked for. Unknown isn't nothing.
+      const left = await this.leftOf(branch, commit, wt, head);
+      if (left && (left.nothingLeft || (left.codeOnly === "nothing" && req.withoutSpecs))) throw new MergeFailure("invalid-request", nothingToLandWords(target));
+      if (scratch) throw new MergeFailure("invalid-request", scratchRefusal(scratch));
       const subject = (await this.git(["log", "-1", "--format=%s", commit], this.root)).stdout.trim();
       if (/^temp\b/i.test(subject)) throw new MergeFailure("invalid-request", `${branch}'s head is a TEMP commit ("${subject.slice(0, 60)}"): it isn't finished`);
-      const wt = (await worktreesOf(this.git, this.root)).find((w) => w.branch === branch && w.path !== this.root)?.path;
       // Before the trial gate: a queue copy is never landed, so "run a trial" would be the wrong thing to tell anyone.
       if (wt && (await this.queueOwned(wt))) throw new MergeFailure("invalid-request", scratchRefusal(branch));
       // A setup branch is checked by the target's checks, not its own: it lands only once a trial of this exact commit passed.
@@ -2428,7 +2470,7 @@ export class ProjectQueue {
     const subject = (await this.git(["log", "-1", "--format=%s", commit], this.root)).stdout.trim();
     if (/^temp\b/i.test(subject)) return `its commit is a temporary commit ("${subject.slice(0, 60)}"): reword or squash it`;
     const head = await this.targetHead();
-    if (head && (await countBetween(this.git, this.root, head, commit)) === 0) return `nothing to land: ${commit.slice(0, 7)} has no commit ${this.q.target} doesn't`;
+    if (head && (await this.leftOf(e.branch, commit, wt, head))?.nothingLeft) return nothingToLandWords(this.q.target);
     // A conflict with the target never blocks here: it goes in line, and its run's merge step hands it to the merge
     // thread's conflict judgement (resolved by the thread, the chat's to fix with the thread's diagnosis, or the user's
     // to decide), never straight to the chat unjudged (q3).
@@ -3212,10 +3254,12 @@ export class ProjectQueue {
     const runId = newId("mr");
     const runDir = this.store.runDir(runId);
     mkdirSync(runDir, { recursive: true });
+    const left = await this.leftOf(e.branch, e.commit, e.worktree, base);
     let draftsDir: string | undefined;
     if (e.approval.drafts && !e.approval.withoutSpecs && e.worktree) {
       draftsDir = join(runDir, "drafts");
-      for (const n of e.approval.drafts.names) {
+      // A draft proved landed has landed: never tried again (§chat.worktrees/ready-to-land). An unread answer tries them all.
+      for (const n of e.approval.drafts.names.filter((x) => !left || left.drafts.includes(x))) {
         const from = join(e.worktree, ".sova", "spec", "drafts", n);
         if (existsSync(from)) cpSync(from, join(draftsDir, n), { recursive: true });
       }
@@ -3244,7 +3288,7 @@ export class ProjectQueue {
       project: { id: this.id, root: this.root, target: this.q.target, def: d.def },
       base,
       commit: e.commit,
-      ...(resolution ? { resolution } : {}),
+      ...(resolution ? { resolution } : { landingPins: this.landingsOf(e.branch).pins }),
       runDir,
       ...(draftsDir ? { draftsDir } : {}),
       picks: [...e.picks],
@@ -3368,6 +3412,18 @@ export class ProjectQueue {
     if (out.verdict === "failed" || out.verdict === "conflict") this.reviewEvent(e, { kind: "stopped", why: stoppedWhy(out, this.q.target) });
     else if (out.review && out.verdict !== "machine") this.reviewEvent(e, { kind: "reviewed", verdict: out.review.verdict });
     switch (out.verdict) {
+      case "nothing":
+        // A landing that changes nothing stops here: not sent back, nothing blamed, and the target never moved.
+        run.verdict = "cancelled";
+        this.store.writeRun(run);
+        e.state = "cancelled";
+        e.reason = out.why ?? nothingToLandWords(this.q.target);
+        e.updatedAt = this.iso();
+        this.save();
+        this.deps.notify?.("nothing-to-land", e, { run, root: this.root });
+        this.releaseEvent(e, "cancelled", undefined, run.id);
+        this.kickSoon();
+        return;
       case "void":
         run.verdict = "void";
         this.store.writeRun(run);
@@ -3939,6 +3995,7 @@ export class ProjectQueue {
         e.updatedAt = this.iso();
         if (r.kind === "merged") {
           for (const c of r.parents) if (!this.q.landed.includes(c)) this.q.landed.push(c);
+          this.keepHostPin(e.branch, e.commit);
           e.request.mergeCommit = r.sha;
           e.state = "landed";
           this.reviewEvent(e, { kind: "landed" });
@@ -4022,7 +4079,7 @@ export class ProjectQueue {
     e.landed = { sha: tip, from: run.base, at: this.iso(), pushed: "pending" };
     e.updatedAt = this.iso();
     const branchTip = await revParse(this.git, this.root, `refs/heads/${e.branch}`);
-    const newer = branchTip && branchTip !== e.commit && (await isAncestor(this.git, this.root, e.commit, branchTip)) ? await ownCommitsPast(this.git, this.root, e.commit, branchTip, tip) : 0;
+    const newer = branchTip && branchTip !== e.commit && (await isAncestor(this.git, this.root, e.commit, branchTip)) ? await ownCommitsPast(this.git, this.root, e.commit, branchTip, tip, true) : 0;
     if (newer) e.newerCommits = newer;
     else delete e.newerCommits;
     // Before the intent goes: a stop here finishes the landing at the next start, and with it this (idempotent) write.
@@ -4037,6 +4094,15 @@ export class ProjectQueue {
     this.deps.notify?.("landed", e, { run, root: this.root });
     this.wake("landed", e, run.id);
     this.kickSoon();
+  }
+
+  /** A host's landing, kept past its entry. Bounded: the newest branches. */
+  private keepHostPin(branch: string, commit: string): void {
+    const pins = (this.q.hostPins ??= {});
+    const had = pins[branch] ?? [];
+    delete pins[branch];
+    pins[branch] = [commit, ...had.filter((c) => c !== commit)].slice(0, 8);
+    for (const k of Object.keys(pins).slice(0, Math.max(0, Object.keys(pins).length - 500))) delete pins[k];
   }
 
   /** The drafts a landing made official stay in the branch folder, marked landed (§chat.worktrees/readiness). */

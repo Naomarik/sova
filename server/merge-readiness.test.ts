@@ -308,7 +308,7 @@ test("computeReadiness end to end with git faked: waiting for the OK, then merge
   // Merged by content, but its drafts aren't official (a catch-up merge took master's spec): never plain Merged.
   r.configureReadiness({ drafts: () => ["sidebar-scroll-stable", "sidebar-scroll-stable-2"] });
   const lost = await r.computeReadiness(summary(path), facts!);
-  assert.deepEqual([lost?.badge, lost?.trees[0]?.state, lost?.trees[0]?.reason], ["merged", "merged", "Nothing left to land, but its spec drafts didn't make it · 2 drafts"]);
+  assert.deepEqual([lost?.badge, lost?.trees[0]?.state, lost?.trees[0]?.reason], ["merged", "merged", "Code landed · 2 spec drafts not landed"]);
   r.configureReadiness({ drafts: () => undefined });
   // HEAD still at its base: never merged, whatever ancestry says (the 01a0eef8 shape).
   status = { ...status, merged: "ancestor", ahead: 0, head: "b0", dirty: true };
@@ -811,7 +811,7 @@ test("a gone folder says what its work came to: merged and cleaned up, or remove
     const s = summary("/sessions/x.jsonl", { cwd: "/home/u/webapps/sova" });
     const reason = async (status: "active" | "merged" = "active") => (await r.computeReadiness(s, facts(status)))?.trees[0];
     const merged = await r.computeReadiness(s, facts("active"));
-    assert.deepEqual(merged?.trees, [{ path: gonePath, branch: "feat/gone", state: "merged", merged: true, why: "cleaned up", reason: "Merged · cleaned up" }]);
+    assert.deepEqual(merged?.trees, [{ path: gonePath, branch: "feat/gone", state: "merged", merged: true, why: "cleaned up", reason: "Landed · cleaned up" }]);
     assert.equal(merged?.badge, "merged");
     assert.equal(merged?.cleanup, undefined, "a removed tree is no leftover to clean up");
     assert.deepEqual(asked[0]?.dirs, ["/home/u/webapps/sova"], "git is read from the session's folder");
@@ -822,7 +822,7 @@ test("a gone folder says what its work came to: merged and cleaned up, or remove
     assert.equal((await reason("merged"))?.reason, "Removed · not merged", "a branch git finds decides over the record");
     answer = null;
     assert.equal((await reason())?.reason, "Removed · no record of a merge");
-    assert.equal((await reason("merged"))?.reason, "Merged · cleaned up", "recorded merged, nothing else known: merged");
+    assert.equal((await reason("merged"))?.reason, "Landed · cleaned up", "recorded merged, nothing else known: merged");
     answer = "empty";
     const empty = await r.computeReadiness(s, facts("active"));
     assert.equal(empty?.trees[0]?.reason, "Removed · no commits");
@@ -834,7 +834,7 @@ test("a gone folder says what its work came to: merged and cleaned up, or remove
     // A folder that is there but unreadable is not "removed": the record still decides, as before.
     r.configureReadiness({ insights: { treeStatus: async () => ({ path: gonePath, source: "session", exists: true, error: "git status: boom" }) } });
     answer = "merged";
-    assert.equal((await reason())?.reason, "In progress · worktree folder gone");
+    assert.equal((await reason())?.reason, "Git can't read this worktree", "never called gone");
   } finally {
     servedReset();
   }
@@ -852,7 +852,7 @@ test("a gone folder whose branch another session deleted reads merged from that 
     r.readinessOverlay(summary(captain, { id: "captain" }));
     await r.readinessIdle();
     const after = await r.computeReadiness(s, owner);
-    assert.deepEqual([after?.trees[0]?.state, after?.trees[0]?.merged, after?.trees[0]?.reason], ["merged", true, "Merged · cleaned up"]);
+    assert.deepEqual([after?.trees[0]?.state, after?.trees[0]?.merged, after?.trees[0]?.reason], ["merged", true, "Landed · cleaned up"]);
     const other = { trees: [tracked({ path: gonePath, branch: "feat/other-branch" })], merges: [] } as unknown as FileFacts;
     assert.equal((await r.computeReadiness(s, other))?.trees[0]?.reason, "Removed · no record of a merge", "only the same path and branch count");
   } finally {
@@ -983,7 +983,7 @@ const commit = (cwd: string, file: string, msg: string) => {
 };
 
 // Right after a removal, the first look used to answer from the reading cached before it.
-test("a tree the cleanup service removes (§chat.worktrees/cleanup) reads 'Merged · cleaned up' on the first look after the removal", async () => {
+test("a tree the cleanup service removes (§chat.worktrees/cleanup) reads 'Landed · cleaned up' on the first look after the removal", async () => {
   const root = realpathSync(mkdtempSync(join(agentDir, "cleanup-")));
   const main = join(root, "repo");
   mkdirSync(main);
@@ -1018,13 +1018,14 @@ test("a tree the cleanup service removes (§chat.worktrees/cleanup) reads 'Merge
     await r.readinessIdle();
     assert.equal(r.treeReadinessOf(path, a)?.reason, "Merged · still tracked active", "cached before the removal");
     assert.equal(r.treeReadinessOf(path, b)?.state, "ready");
+    assert.equal(r.treeReadinessOf(path, a)?.left, "nothing", "the shared answer on the row");
 
     const res = await c.cleanupRemove(path, [a]);
     assert.ok(res && res !== "busy");
     assert.deepEqual(res.removed.map((x) => x.path), [a]);
 
-    assert.equal(r.treeReadinessOf(path, a)?.reason, "Merged · cleaned up", "the very first look");
-    assert.equal(r.readinessOverlay(row)?.trees.find((t) => t.path === a)?.reason, "Merged · cleaned up", "the session list too");
+    assert.equal(r.treeReadinessOf(path, a)?.reason, "Landed · cleaned up", "the very first look");
+    assert.equal(r.readinessOverlay(row)?.trees.find((t) => t.path === a)?.reason, "Landed · cleaned up", "the session list too");
     assert.equal(r.treeReadinessOf(path, b)?.state, "ready", "the other tree is untouched");
   } finally {
     await r.readinessIdle();
@@ -1453,6 +1454,77 @@ test("a finished branch that can't be queued to land: Sova names what blocks it 
     await settle();
     assert.equal(sent.length, 2, "a new head is a new moment");
   } finally {
+    servedReset();
+  }
+});
+
+test("no blocked note at the approved commit or with nothing left; a real new commit still gets it, and never to resolve its conflict", async () => {
+  const lines = chain([worktrees([tracked()], "2026-10-23T10:00:00.000Z"), assistant([{ type: "text", text: "Done." }], "stop", "2026-10-23T10:05:00.000Z")]);
+  const path = sessionFile(lines);
+  const { fileLandingStore } = await import("./ready-to-land");
+  const sent: string[] = [];
+  const PIN = "1".repeat(40);
+  let approved = PIN;
+  let status: WorktreeStatus & { head?: string } = { path: "/wt/agents-row-dropdown", source: "session", exists: true, branch: "feat/agents-row-dropdown", base: "master", merged: "no", ahead: 1, behind: 0, dirty: true, dirtyCount: 1, dirtyFiles: ["a.ts"], conflicts: 2, head: PIN };
+  let now = 3_000_000;
+  r.configureReadiness({ insights: { treeStatus: async () => status }, git: fakeGit({}), asksUser: () => undefined, now: () => now, processStart: 0, landing: fileLandingStore(() => join(agentDir, "rtl-f3.json")), drafts: () => undefined, finished: () => "yes", nudge: async (_p, text) => void sent.push(text), served: async () => true, treeStamp: () => null, approvedAt: (_p, _b, head) => head === approved });
+  const read = async () => {
+    now += r.READINESS_TTL_MS + 1;
+    r.readinessOverlay(summary(path));
+    await r.readinessIdle();
+    for (let i = 0; i < 20; i++) await new Promise((done) => setTimeout(done, 1));
+    const v = r.readinessReading(path);
+    return v.known ? v.value?.trees[0] : undefined;
+  };
+  try {
+    await read();
+    assert.deepEqual(sent, [], "at the commit the user approved, it is the queue's");
+    // Only a catch-up merge on top: nothing left, whatever conflicts, and the reading says so.
+    status = { ...status, head: "2".repeat(40), merged: "catch-up", conflicts: 0, dirty: false, dirtyCount: 0, dirtyFiles: [] };
+    const leftover = await read();
+    assert.deepEqual([leftover?.state, leftover?.merged, leftover?.left], ["merged", true, "nothing"]);
+    assert.deepEqual(sent, [], "nothing left: nothing to tell");
+    // A real commit past the landing that conflicts: as any other.
+    status = { ...status, head: "3".repeat(40), merged: "no", conflicts: 2, ahead: 2, dirty: true, dirtyCount: 1, dirtyFiles: ["a.ts"] };
+    const real = await read();
+    assert.equal(real?.left, undefined);
+    assert.equal(sent.length, 1);
+    assert.match(sent[0]!, /1 uncommitted file/);
+    assert.match(sent[0]!, /It also conflicts with master in 2 files: don't resolve them yourself/);
+    // Sent back at the same commit (approvedAt false): keeps its message; a new approval of a newer head silences it.
+    approved = "4".repeat(40);
+    status = { ...status, head: "4".repeat(40) };
+    await read();
+    assert.equal(sent.length, 1);
+  } finally {
+    servedReset();
+  }
+});
+
+test("treeFacts: a folder with no .git left reads as gone, one git can't read says so, a main checkout has no row", async () => {
+  const { mkdtempSync, mkdirSync, rmSync, writeFileSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const dir = mkdtempSync(join(tmpdir(), "tree-facts-"));
+  const leftover = join(dir, "leftover");
+  const linked = join(dir, "linked");
+  const main = join(dir, "main");
+  mkdirSync(leftover);
+  mkdirSync(linked);
+  writeFileSync(join(linked, ".git"), "gitdir: /nowhere\n");
+  mkdirSync(join(main, ".git"), { recursive: true });
+  const facts = (p: string) => ({ trees: [{ path: p, branch: "feat/x", base: "b", status: "active", session: SID, how: "created", at: 1 }], merges: [] }) as unknown as Parameters<typeof r.computeReadiness>[1];
+  r.configureReadiness({ insights: { treeStatus: async () => null }, git: fakeGit({}), asksUser: () => undefined, now: () => 0, processStart: 0, gone: async () => "merged" });
+  try {
+    const s = summary(join(dir, "s.jsonl"));
+    const gone = (await r.computeReadiness(s, facts(leftover)))?.trees[0];
+    assert.deepEqual([gone?.state, gone?.reason], ["merged", "Landed · cleaned up"], "what a stopped delete leaves");
+    const bad = (await r.computeReadiness(s, facts(linked)))?.trees[0];
+    assert.equal(bad?.reason, "Git can't read this worktree");
+    assert.equal(r.isMainCheckout(main), true);
+    assert.equal(await r.computeReadiness(s, facts(main)), undefined, "a chat that attached master has no row");
+    assert.equal(await r.computeBranches(s, facts(main)), undefined);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
     servedReset();
   }
 });

@@ -4,6 +4,7 @@ import type { AttentionDigest, SessionReadiness, SessionSummary, WorktreeReadine
 import type { ProjectSummary } from "../shared/projects";
 import { canonical } from "../pi-config/extensions/worktrees/state.ts";
 import type { RemovedWorktree } from "./removed-worktrees";
+import { UNREADABLE } from "./merge-readiness";
 import { joinedText, lineEntry, lineMay } from "./harness/pi/reader";
 import { redactPreviewLinks } from "./preview-kept";
 import { cut, hiddenFromProfiles, Refusal, UNTRUSTED_END } from "./session-guards";
@@ -129,13 +130,15 @@ export type TreeBucket = "land" | "specs" | "ready" | "built" | "at-risk" | "unc
 /** Which roundup section a worktree's readiness puts it in, or null (merged, empty, nothing to do).
     "leftover" is a merged worktree left with uncommitted files: counted, never listed. */
 export function treeBucket(t: WorktreeReadiness): TreeBucket | null {
+  // The shared answer (§chat.worktrees/nothing-left): only unproved drafts left is Landing specs; nothing left, none.
+  if (t.left === "drafts" && t.merged) return "specs";
   if (t.state === "ready" || t.state === "waiting-approval") return t.landing ? (t.landing.state === "ready" ? "land" : "specs") : "ready";
   if (t.state === "removed") {
     if (t.why === "not merged") return "at-risk";
     if (t.why === "no record of a merge") return "unconfirmed";
     return null;
   }
-  if (t.state === "in-progress" && t.why === "worktree folder gone") return "unconfirmed";
+  if (t.state === "in-progress" && t.why === UNREADABLE) return "unconfirmed";
   if (t.state === "stale" && t.merged) return "leftover";
   if ((t.state === "in-progress" || t.state === "blocked" || t.state === "stale") && !t.noCommits) return "built";
   if (t.noCommits && (t.dirtyCount ?? 0) > 0) return "uncommitted";
@@ -599,7 +602,7 @@ export function sessionHas(s: SessionSummary, f: HasFilter): boolean {
     case "ready":
       return trees.some((t) => t.state === "ready" || t.state === "waiting-approval");
     case "unmerged":
-      return trees.some((t) => (["ready", "waiting-approval", "in-progress", "blocked", "stale"] as string[]).includes(t.state) && !t.noCommits && t.why !== "worktree folder gone");
+      return trees.some((t) => (["ready", "waiting-approval", "in-progress", "blocked", "stale"] as string[]).includes(t.state) && !t.noCommits && t.why !== UNREADABLE);
     case "removed":
       return trees.some((t) => t.state === "removed" && (t.why === "not merged" || t.why === "no record of a merge"));
     case "error":

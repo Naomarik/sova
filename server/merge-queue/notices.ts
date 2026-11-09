@@ -12,9 +12,12 @@ import { type MergeEntry, type MergeRun, newerWords } from "../../shared/merge-q
 /** `approved`: Land or a typed "land it" put the branch in line (its chat's card appears). */
 /** `request`: a request of the branch's chat other than a fix (extra.request: blocked, the thread's other approach or
  *  its diagnosis), whose text is the request's own. `decision`: a decision waits for the user (entry.decision): its card moves down. */
-export type MergeNoticeKind = "approved" | "landed" | "needs-fix" | "sent-back" | "drafts-changed" | "explained" | "requested" | "pushed" | "closed" | "removed" | "request" | "decision";
+export type MergeNoticeKind = "approved" | "landed" | "needs-fix" | "sent-back" | "drafts-changed" | "explained" | "requested" | "pushed" | "closed" | "removed" | "request" | "decision" | "nothing-to-land";
 
 const short = (sha: string | undefined) => (sha ?? "").slice(0, 7);
+
+/** Land, typed words, `merge.add` and a run that finds it so all say this (§app.merge-queue/approve). */
+export const nothingToLandWords = (target: string): string => `Nothing to land: everything on this branch is already on ${target}.`;
 
 export function noticeText(kind: MergeNoticeKind, e: MergeEntry, extra: { run?: MergeRun; logDir?: string } = {}): string {
   switch (kind) {
@@ -62,7 +65,9 @@ export function noticeText(kind: MergeNoticeKind, e: MergeEntry, extra: { run?: 
       return `The merge thread on why ${e.branch} didn't land: ${n?.text ?? e.reason ?? ""}`;
     }
     case "approved":
-      return `${e.branch} at ${short(e.commit)} is in line to land on ${e.target}.`;
+      return `${e.branch} at ${short(e.commit)} is in line to land on ${e.target}. Leave it alone until it lands: don't merge ${e.target} into it. The queue handles any conflict and asks for any fix it needs. Real new commits are fine: they stay on the branch as new work for a later Land.`;
+    case "nothing-to-land":
+      return e.reason ?? nothingToLandWords(e.target);
     case "requested":
       return `${e.branch} passed Sova's checks and its request is open on the host${e.request?.url ? ` (${e.request.url})` : ""}; it lands when the host merges it.`;
     case "pushed":

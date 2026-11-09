@@ -3171,8 +3171,9 @@ export interface WorktreeStatus {
   /** The base the counts are against (`master`, else `main`, else origin/HEAD). Absent: no base found. */
   base?: string;
   /** "ancestor": the tip is in the base. "content": not an ancestor, but merging would change
-      nothing (squash or rebase merge). "no": unmerged. Absent when there is no base. */
-  merged?: "ancestor" | "content" | "no";
+      nothing (squash or rebase merge). "catch-up": nothing of its own left, every commit past the base
+      a merge or already landed (§chat.worktrees/nothing-left). "no": unmerged. Absent when there is no base. */
+  merged?: "ancestor" | "content" | "catch-up" | "no";
   /** Commits on the branch not in the base, and in the base not on the branch. */
   ahead?: number;
   behind?: number;
@@ -5130,6 +5131,9 @@ export interface SessionBranchRow {
   mergeServed?: true;
   /** Its project's merge setup as the ready row words it (SessionWorktreeInfo.mergeProject, cut). */
   mergeProject?: Pick<import("./merge-queue").WorktreeMergeProject, "target" | "checks" | "invalid">;
+  /** The shared answer (WorktreeReadiness.left), for a row no readiness of this chat's covers too. */
+  left?: "nothing" | "drafts";
+  draftsLeft?: number;
 }
 
 /** A branch's merge queue entry as the session list carries it: its state (never a precomputed key, so a new state
@@ -5173,6 +5177,11 @@ export interface WorktreeReadiness {
   noCommits?: true;
   /** Ready to land at its head commit, or Landing specs (§chat.worktrees/ready-to-land). Absent otherwise. */
   landing?: WorktreeLanding;
+  /** The shared answer (§chat.worktrees/nothing-left): "nothing" left to land, or only spec "drafts" not proved landed.
+      Absent: work is left, or it can't tell. */
+  left?: "nothing" | "drafts";
+  /** left "drafts": how many. */
+  draftsLeft?: number;
 }
 
 /** A worktree whose work is finished at its head commit (§chat.worktrees/ready-to-land). */

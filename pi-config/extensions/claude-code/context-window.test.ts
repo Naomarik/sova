@@ -5,7 +5,7 @@ import { join } from "node:path";
 import test from "node:test";
 import * as catalog from "./catalog.ts";
 import * as shim from "./context-window.ts";
-import { refreshClaudeModels, STATIC_MODELS } from "./provider/index.ts";
+import { refreshClaudeModels, providerModels } from "./provider/index.ts";
 import { registerSubagents } from "../subagents/index.ts";
 
 const catalogShape = () => catalog.claudeOffer().map((m) => [m.id, m.name]);
@@ -17,13 +17,13 @@ test("context-window.ts is the catalog's window rule, re-exported", () => {
 });
 
 test("the chat picker's models are the catalog, online or not", async () => {
-	assert.deepEqual(STATIC_MODELS.map((m) => [m.id, m.name]), catalogShape());
+	assert.deepEqual(providerModels().map((m) => [m.id, m.name]), catalogShape());
 	for (const allowNetwork of [true, false]) {
 		const models = await refreshClaudeModels({ allowNetwork, signal: new AbortController().signal });
 		assert.deepEqual(models.map((m) => [m.id, m.name]), catalogShape());
 	}
-	assert.equal(STATIC_MODELS.find((m) => m.id === "claude-haiku-4-5")?.maxTokens, 32_000, "the catalog's output cap, not a guess by id prefix");
-	assert.equal(STATIC_MODELS.find((m) => m.id === "claude-opus-5-5")?.contextWindow, 1_000_000);
+	assert.equal(providerModels().find((m) => m.id === "claude-haiku-4-5")?.maxTokens, 32_000, "the catalog's output cap, not a guess by id prefix");
+	assert.equal(providerModels().find((m) => m.id === "claude-opus-5-5")?.contextWindow, 1_000_000);
 });
 
 test("agent_models lists the catalog and never runs the CLI (a `claude` on PATH that would answer otherwise)", async (t) => {

@@ -4,6 +4,56 @@ What changed in each Sova release, newest first: the highlights, written by hand
 list. The install command installs the newest release (the `stable` tag); `SOVA_REF=vX.Y.Z` installs
 or keeps one release. How a release is cut: [CONTRIBUTING.md](CONTRIBUTING.md#releases).
 
+## v0.13.0 — 2026-11-09
+
+One Profiles tab for how a chat starts and which models it uses, a merge queue that gets fixes made
+by the branch's own chat, and charts you can look at in other ways. 191 commits since v0.12.0.
+The highlights:
+
+- **Profiles.** Settings → Profiles replaces the Subagents tab and is the one place profiles are
+  listed and edited. A profile now has two parts: **When a Chat Starts** (modes, tools, a first
+  message) and **Models** (the chat's own model and effort, and its helpers). A chat can switch its
+  whole Models part at any time from the mode menu, or from the usage-limit row when a provider runs
+  out. It either all switches or nothing does, and it waits for a running reply to end. Each
+  computer has one default profile, set with **Make Default**. It decides everything a new chat
+  starts with, and replaces the separate default modes, new-session model and default subagent
+  profile.
+- **The merge queue fixes more by itself.** After your Land, a failing check, a conflict or a review
+  finding that belongs to the branch goes back to the branch's chat as a request. The chat answers
+  Fixed, Needs you or Can't, and the branch goes back in line by itself, up to 3 tries. Your one
+  Land covers those fixes. You are only stopped for your own decisions, on the branch's card.
+- **Review cards and the Merge Queue tab.** A blocking review now shows as a Review found issues card
+  in the chat that has to fix it, with the reviewer's whole report, and Landed keeps the review's
+  notes. The Merge Queue tab shows Checking now and Waiting on every tab, over tabs for Ready to
+  land, Needs you, With its chat, Landed and Queue chats. Each tab has its own address, so reload
+  and Back keep it.
+- **Charts.** A chart in a chat or a share can be switched to another view (Bar, Line, Parts and
+  more, where they fit its data), with Log, Sort and % toggles, kept for the tab. **Copy** on a
+  drawing now copies it as a picture while the drawing shows, and the source while Source is open.
+- **Teams.** Every team now gets Sova's coordinator and monitor. Team members follow Delegate's four
+  work kinds, so a member named with a kind runs on your profile's model for that kind. A team's
+  question now reaches its chat at once, and ends the chat's wait for the team.
+- **Which branch, which project.** Each branch row in a chat has a line naming its project and where
+  it merges; tap it for the exact folders. Land's confirmation, the queue card and request cards name
+  the project too.
+- **Smaller changes.** A project card's Copies row draws one pip per place (running, stopped, used
+  elsewhere or free), so it no longer looks like there's room when there isn't. The Context tab says
+  Partly read, with the line count, for a skill that was only skimmed. The Settings dialog is bigger
+  on wide windows and no longer slides inside its frame when you click a switch low in a long list.
+  Tab strips fade at an edge only while tabs are hidden past it, in Firefox too.
+
+**What you may need to do:** Look for Settings → Subagents under **Settings → Profiles**, in a
+profile's Models part. **Make Default** replaces saving a default in each place, and a model you pick
+in a new chat's composer no longer becomes the default; until you choose one, your saved defaults
+keep working as they are. The Settings switches for a team's coordinator
+and monitor are gone. Land, a decision's answers, Cancel and Remove from Queue now pass only from
+your own page in Sova or your own words in the branch's chat, so a script or a card's command that
+pressed them is refused.
+
+Going back to `v0.12.0` (`SOVA_REF=v0.12.0`) keeps your settings, profiles and sessions. Sova also
+writes your chosen default into the older settings, so it carries over. The Models part's own model
+for a chat has no effect there, and the Subagents tab comes back in place of Settings → Profiles.
+
 ## v0.12.0 — 2026-11-07
 
 Light, Dark and Auto themes, an Extensions tab in Settings, Time Spent for each chat, shell mode

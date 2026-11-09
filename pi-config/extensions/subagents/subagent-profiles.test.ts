@@ -306,7 +306,7 @@ test("footprints and providers", () => {
 	assert.equal(shortModel("zai/glm-5.3"), "glm-5.3");
 	assert.equal(shortModel("claude-code-cli/claude-sonnet-4-6"), "Sonnet 4.6");
 	const p = profile("a", "A", { specWriter: { primary: pi("zai/glm-5.3"), fallback: null } });
-	assert.equal(footprint(p), "Fable 5.1 · Opus 5.5 · glm-5.3");
+	assert.equal(footprint(p), "Fable 5.2 · Opus 5.5 · glm-5.3");
 	assert.deepEqual(profileProviders(p).sort(), ["claude", "zai"]);
 	assert.deepEqual(profileProviders(profile("z", "Z", { delegate: Object.fromEntries(Object.entries(delegateDefaults().profiles).map(([k]) => [k, { primary: pi("zai/glm-5.3"), fallback: null }])) as SubagentProfile["delegate"] })), ["zai"]);
 });

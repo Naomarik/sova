@@ -114,6 +114,12 @@ test("itemsAhead: a newer stamp or an unseen profile is ahead; a deletion of som
   assert.equal(itemsAhead({ x: { hash: null, modifiedAt: 9, origin: "a" } }, a), true);
 });
 
+test("a Members value is part of a profile's identity: excluding it from the hash would make an older peer's stamps disagree", () => {
+  const none = profile("x", "X", "zai/glm-5.3");
+  const held = { ...none, members: { backend: "pi", model: "zai/glm-5.3", effort: "low" } } as SubagentProfile;
+  assert.notEqual(profileHash(held), profileHash(none));
+});
+
 test("a profile hashes the same whatever order its keys were written in", () => {
   const p = profile("x", "X", "zai/glm-5.3");
   const shuffled = JSON.parse(JSON.stringify({ specWriter: p.specWriter, members: p.members, teams: p.teams, delegate: p.delegate, name: p.name, id: p.id })) as SubagentProfile;

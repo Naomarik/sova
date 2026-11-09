@@ -4,7 +4,7 @@ import { fetchTranscriptLight } from "../lib/api";
 import { explainCaption, explainHref, explainInterrupted, explainState, newestFirst } from "../lib/explain";
 import { sessionIdOfPath } from "../lib/links";
 import { absoluteTime, headChipSpend, headChipWords } from "../lib/spend";
-import { activeTab, sessionContext, setActiveTab, toast } from "../lib/ui-state";
+import { activeTab, setActiveTab, toast } from "../lib/ui-state";
 import { capTitle, workerLabel, workerTeam } from "../lib/workers";
 import type { RewindControl } from "../lib/inputs";
 import { paneShares } from "../lib/pane-shares";

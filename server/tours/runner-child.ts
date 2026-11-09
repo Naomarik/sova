@@ -3,8 +3,8 @@ import { launchTourBrowser, TOUR_BROWSER_GUIDANCE, TourBrowserSetupError } from 
 import { TourBrowserAddresses } from "./browser-addresses";
 import { createTourContactSheets } from "./contact-sheet";
 import { TourCaptureFailure, TOUR_TARGET_OUTSIDE, revealTourTarget, settledBox, stableTourBox, tourLocator, tourMark, tourNearby, uniqueTourTarget } from "./targets";
-import { TOUR_LIMITS, TOUR_PROBLEM_LIMITS, TOUR_VIEWPORTS, normalizeTourScript, tourOnSignInRoute, tourSignInViewProblem, type TourFailure, type TourProblem, type TourSignInRequirement, type TourSize, type TourStep, type TourTarget } from "../../shared/tour";
-import { TOUR_DRY_RUN_BLIND, TOUR_SIGN_IN_BOX_SIGNED_IN, TOUR_SIGN_IN_HUMAN, TOUR_SIGN_IN_LANDED, TOUR_SIGN_IN_STALE, TOUR_SIGN_IN_WRONG, type TourAttemptInput, type TourChildMessage, type TourParentMessage, type TourStorageState } from "./runner-protocol";
+import { TOUR_LIMITS, TOUR_PROBLEM_LIMITS, TOUR_VIEWPORTS, normalizeTourScript, tourOnSignInRoute, tourSignInViewProblem, type TourFailure, type TourProblem, type TourSignInRequirement, type TourSize, type TourStep, type TourTarget, type TourAction } from "../../shared/tour";
+import { TOUR_DRY_RUN_BLIND, TOUR_SIGN_IN_BOX_SIGNED_IN, TOUR_SIGN_IN_HUMAN, TOUR_SIGN_IN_LANDED, TOUR_SIGN_IN_STALE, TOUR_SIGN_IN_WRONG, type TourAttemptInput, type TourChildMessage, type TourParentMessage, type TourStorageState, type TourWalkAction } from "./runner-protocol";
 import { filterTourStorage } from "./signin-store";
 import { tourLookControls, tourLookLinks, tourLookUrl, type TourLookPage, type TourLookProblem, type TourLookSize } from "./look";
 import type { Locator, Page, WebSocketRoute } from "playwright-core";
@@ -129,7 +129,7 @@ async function run(input: TourAttemptInput): Promise<void> {
     // A look (§app.tours/look): the signed-out sign-in page first, when its route is known, then each page per size.
     const lookSignInRoute = input.look ? input.look.signInRoute ?? script.signIn?.route : undefined;
     const lookPages = new Map<number, TourLookPage>();
-    if (input.look) for (const [si, step] of script.steps.entries()) { const v = step.views[0]; if (v?.kind === "page") lookPages.set(si, { route: v.route }); }
+    if (input.look || input.walk) for (const [si, step] of script.steps.entries()) { const v = step.views[0]; if (v?.kind === "page") lookPages.set(si, { route: v.route }); }
     let lookSignIn: (TourLookSize & { route: string }) | undefined;
     const passes: ("sign-in-page" | TourSize)[] = [...(lookSignInRoute ? ["sign-in-page" as const] : []), "desktop", "phone"];
     for (const pass of passes) {
@@ -463,20 +463,35 @@ async function run(input: TourAttemptInput): Promise<void> {
             await page.waitForFunction(({ w, h }) => innerWidth === w && innerHeight === h && document.readyState !== "loading" && !!document.body?.getClientRects().length, viewport, { timeout: 6000 });
             await page.waitForLoadState("networkidle", { timeout: 6000 }).catch(error => { assertSafe(); throw error; });
             assertSafe();
-            if ((view.actions[size] ?? []).length && await signedOutHere()) { await reSignIn(); continue attempt; }
-            for (const [ai, action] of (view.actions[size] ?? []).entries()) {
+            // A walk (a design coordinator's browser): its own list stands in for the script's, click included.
+            const steps_ = (input.walk?.[size] ?? view.actions[size] ?? []) as (TourAction | TourWalkAction)[];
+            if (steps_.length && await signedOutHere()) { await reSignIn(); continue attempt; }
+            for (const [ai, action] of steps_.entries()) {
               location = { stepId: step.id, viewId: view.id, size, action: ai, ...("target" in action ? { target: action.target } : {}) };
               await request("checkpoint");
               if (action.op === "scroll") await page.evaluate(({ x, y }) => scrollBy({ left: x, top: y, behavior: "instant" }), action);
               else await targeted(async () => {
                 const loc = await uniqueTourTarget(page, action.target);
                 if (action.op === "reveal") { await revealTourTarget(loc, viewport); return; }
+                if (action.op === "click") {
+                  // Only a walk clicks, and a click never submits a form. Requests stay under the route above: GETs
+                  // pass the live checks, a write the page sends is stopped, a form's navigation fails the attempt.
+                  if (!input.walk) throw new Error("A click is only allowed while walking to a screen.");
+                  const submits = await loc.evaluate(el => { const c = el.closest("button,input"); if (!c) return false; const kind = (c as HTMLButtonElement | HTMLInputElement).type; return !!(c as HTMLButtonElement | HTMLInputElement).form && ["submit", "image"].includes(kind); });
+                  if (submits) throw new TourCaptureFailure({ message: "This control submits a form, and this browser never submits forms.", guidance: "Walk to the screen by links or routes, or tell the user this screen needs them." });
+                  await loc.click();
+                  await page.waitForLoadState("networkidle", { timeout: 6000 }).catch(error => { assertSafe(); throw error; });
+                  assertSafe();
+                  return;
+                }
                 if (action.op === "open") {
+                  if (input.walk) throw new Error("A walk never opens a draft action.");
                   localDraftOnly = true;
                   const safe = await loc.evaluate(el => el.tagName === "SUMMARY" && el.parentElement?.tagName === "DETAILS" || el.tagName === "BUTTON" && el.getAttribute("type") === "button" && el.hasAttribute("aria-expanded") && !!el.getAttribute("aria-controls") && !!document.getElementById(el.getAttribute("aria-controls")!));
                   if (!safe) throw new Error("Only native details or explicit disclosure buttons with a controlled region can be opened. Use a reference view for other actions.");
                   await loc.click();
                 } else if (action.op === "fill") {
+                  if (input.walk) throw new Error("A walk never types into a page.");
                   localDraftOnly = true;
                   // Local draft only: native setter without input/change events cannot trigger an
                   // autosave handler. It is not represented as an application-accepted edit.
@@ -499,6 +514,7 @@ async function run(input: TourAttemptInput): Promise<void> {
               completed++; send({ type: "progress", progress: { completed, total, stepId: step.id, viewId: view.id, size } });
               break;
             }
+            if (input.walk) lookPages.get(si)![size] = await lookHere();
             await page.evaluate(() => document.fonts.ready);
             // Password and username boxes are always blacked out, whatever the script names (BRIEF q7).
             for (const box of await loginBoxes(page, [signInConf?.username, signInConf?.account])) await page.evaluate(b => { const mask = document.createElement("div"); Object.assign(mask.style, { position: "fixed", left: `${b.x}px`, top: `${b.y}px`, width: `${b.width}px`, height: `${b.height}px`, background: "#242a30", zIndex: "2147483647", pointerEvents: "none" }); document.documentElement.append(mask); }, box);
@@ -559,8 +575,8 @@ async function run(input: TourAttemptInput): Promise<void> {
       } finally { await context.close(); }
     }
     if (groups.size) { location = {}; throw new TourCaptureFailure(report()); }
-    const contactSheets = input.dryRun ? [] : await createTourContactSheets(browser, steps, assets, save);
-    send({ type: "result", steps, contactSheets, suspicious, publicOrigins: addresses.attestations(), sovaServer, quietAborts, ...(signInConf ? { signedIn } : {}), ...(input.look ? { look: { ...(lookSignIn ? { signInPage: lookSignIn } : {}), pages: [...lookPages.values()] } } : {}) });
+    const contactSheets = input.dryRun || input.walk ? [] : await createTourContactSheets(browser, steps, assets, save);
+    send({ type: "result", steps, contactSheets, suspicious, publicOrigins: addresses.attestations(), sovaServer, quietAborts, ...(signInConf ? { signedIn } : {}), ...(input.look || input.walk ? { look: { ...(lookSignIn ? { signInPage: lookSignIn } : {}), pages: [...lookPages.values()] } } : {}) });
   } catch (error) {
     const failure: TourFailure = error instanceof TourCaptureFailure ? error.failure : { message: error instanceof Error ? error.message.slice(0, 1800) : "Recording failed.", guidance: "Review this step's semantic targets, allowed actions, site consent and sandbox. Repair the script or use reference text, then run the dry run again." };
     // A sign-in failure is the sign-in's, never the view that led to it: it names the size alone.

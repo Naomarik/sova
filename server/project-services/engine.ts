@@ -101,6 +101,9 @@ export type Caller =
   | { kind: "assistant"; id: string; root: string; deployAct?: true; releaseAct?: true; up?: string; upMain?: true; act?: VerbAct }
   | { kind: "session"; id: string; root: string | null; own: string[] }
   | { kind: "conform"; id: string }
+  /** A chat's design coordinator: `status` of any project; `up` and `down` only when `granted`, which only
+      the server sets, as the user's click on its card runs exactly the request the card named. Never the main checkout. */
+  | { kind: "design-coordinator"; id: string; granted?: true }
   /** Sova itself, on no one's request: `on-merge` reloads the main checkout's copy when main moves (§app.project-services/on-merge). Apply only. */
   | { kind: "system"; id: string };
 
@@ -483,12 +486,15 @@ export class ProjectEngine {
   async run(verb: string, body: unknown, caller: Caller, opts: { signal?: AbortSignal } = {}): Promise<VerbResult> {
     const run: Run = { verb: (isVerb(verb) ? verb : "status") as AnyVerb, caller, req: {}, project: null, rec: null, def: null, defError: null, defHash: null, steps: [], extra: {}, ...(opts.signal ? { signal: opts.signal } : {}) };
     let release: (() => void) | null = null;
-    if (verb === "conform" && this.conformer) return this.conformer(body, caller);
-    if (isDeployVerb(verb) && this.deployer) return this.deployer(verb, body, caller, opts);
-    if (isMergeVerb(verb) && this.merger) return this.merger(verb, body, caller);
-    if (isReleaseVerb(verb) && this.releaser) return this.releaser(verb, body, caller);
+    if (caller.kind !== "design-coordinator") {
+      if (verb === "conform" && this.conformer) return this.conformer(body, caller);
+      if (isDeployVerb(verb) && this.deployer) return this.deployer(verb, body, caller, opts);
+      if (isMergeVerb(verb) && this.merger) return this.merger(verb, body, caller);
+      if (isReleaseVerb(verb) && this.releaser) return this.releaser(verb, body, caller);
+    }
     try {
       if (!isVerb(verb)) throw new VerbFailure("invalid-request", `unknown verb "${verb}"`);
+      if (caller.kind === "design-coordinator" && verb !== "status" && verb !== "up" && verb !== "down") throw new VerbFailure("forbidden", `a design coordinator only reads status and, once the user confirms on its card, starts or stops a copy; never ${verb}`);
       run.req = parseRequest(body);
       if (isDeployVerb(verb)) throw new VerbFailure("unsupported", `${verb} runs through the deployer, which this engine has not got`);
       if (isMergeVerb(verb)) throw new VerbFailure("unsupported", `${verb} runs through the merge queue, which this engine has not got`);
@@ -734,6 +740,16 @@ export class ProjectEngine {
     if (caller.kind === "conform") return;
     if (caller.kind === "system") {
       if (verb !== "apply" && !(READ_VERBS as readonly string[]).includes(verb)) throw new VerbFailure("forbidden", `Sova runs only apply on its own (${caller.id}), never ${verb}`);
+      return;
+    }
+    // A chat's design coordinator: reads every project; starts or stops a copy only on the user's click.
+    if (caller.kind === "design-coordinator") {
+      if (verb === "status") return;
+      if (!caller.granted) throw new VerbFailure("needs-confirm", `${verb} of a copy asks the user first, on the coordinator's card`);
+      const checkout = run.rec?.checkout ?? (run as Run & { target?: string }).target ?? null;
+      if (!checkout || checkout === run.project || run.rec?.slot === 0) throw new VerbFailure("forbidden", "a design coordinator never starts or stops the main checkout");
+      if (sharedNamed) throw new VerbFailure("needs-confirm", confirmShared);
+      if (linked) throw new VerbFailure("needs-confirm", confirmLinked);
       return;
     }
     const project = run.project!;

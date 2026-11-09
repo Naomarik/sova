@@ -2,7 +2,7 @@ import { execFile } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
-import { TOUR_LIMITS, isTourFile, isTourOrigin, normalizeTourScript, tourSignInOrigins, type TourFailure, type TourScript, type TourSignInRequirement, type TourStep } from "../../shared/tour";
+import { TOUR_LIMITS, isTourFile, isTourOrigin, normalizeTourScript, tourSignInOrigins, type TourFailure, type TourScript, type TourSignInRequirement, type TourSize, type TourStep } from "../../shared/tour";
 import { hostProcTable } from "../project-services/proctable";
 import { resolveTourTarget } from "../project-services/tour-target";
 import { assertTourCoverage, tourAsset, tourScriptDigest } from "./checks";
@@ -15,7 +15,7 @@ import { TourCaptureFailure } from "./targets";
 import { connectCandidates, startRunnerProxy, type RunnerProxy } from "./runner-proxy";
 import { TourJobBlocked, TourJobFailure } from "./queue";
 import { TourTargetRefused, TourTargetUnverifiable } from "../project-services/tour-target";
-import type { TourAttemptProgress, TourChildMessage, TourParentMessage, TourStorageState } from "./runner-protocol";
+import type { TourAttemptProgress, TourChildMessage, TourParentMessage, TourStorageState, TourWalkAction } from "./runner-protocol";
 import { normalizeTourLookResult, type TourLookResult } from "./look";
 
 /** A managed Sova copy signs the recorder in by its cookie only (§app.tours/recording). */
@@ -55,6 +55,8 @@ export interface TourAttemptOptions {
   limitMs?: number;
   /** A look (§app.tours/look): a dry run that lists each page's controls instead of checking marks. */
   look?: { signInRoute?: string };
+  /** A walk (a design browser): steps that replace the view's actions; each size is pictured and listed. Never with `look`. */
+  walk?: Partial<Record<TourSize, TourWalkAction[]>>;
 }
 export interface TourAttemptResult {
   steps: TourStep[];
@@ -101,6 +103,7 @@ export async function runTourAttempt(options: TourAttemptOptions): Promise<TourA
   if (!script) throw new Error("Invalid tour script. Split oversized tours or correct its semantic targets.");
   if (options.signal?.aborted) throw new Error("Recording cancelled.");
   if (options.look && !options.dryRun) throw new Error("A look takes no pictures.");
+  if (options.walk && (options.look || options.dryRun)) throw new Error("A walk takes pictures and is never a look.");
   const target = await (options.target ?? resolveTourTarget)(script.source);
   if (script.signIn && target.sova) throw new TourCaptureFailure({ message: TOUR_SOVA_SIGN_IN_REFUSAL, guidance: "Record the copy as it is: its own sign-in cookie signs the recorder in." });
   const signInOrigins = script.signIn ? tourSignInOrigins(script.signIn, target.origin) : [];
@@ -289,15 +292,16 @@ export async function runTourAttempt(options: TourAttemptOptions): Promise<TourA
   });
   try {
     const exited = new Promise<number | null>((resolve, reject) => { proc.once("error", reject); proc.once("close", resolve); });
-    write({ type: "start", input: { script, origin: target.origin, dryRun: options.dryRun, proxied, declared: [...declared], ...(browser ? { browser } : {}), ...(options.account ? { account: options.account } : {}), ...(sova ? { sova } : {}), ...(script.signIn ? { signIn: { origins: signInOrigins, ...(options.signInStorage ? { storage: options.signInStorage } : {}) } } : {}), ...(options.look ? { look: { ...(options.look.signInRoute ? { signInRoute: options.look.signInRoute } : {}) } } : {}) } });
+    write({ type: "start", input: { script, origin: target.origin, dryRun: options.dryRun, proxied, declared: [...declared], ...(browser ? { browser } : {}), ...(options.account ? { account: options.account } : {}), ...(sova ? { sova } : {}), ...(script.signIn ? { signIn: { origins: signInOrigins, ...(options.signInStorage ? { storage: options.signInStorage } : {}) } } : {}), ...(options.look ? { look: { ...(options.look.signInRoute ? { signInRoute: options.look.signInRoute } : {}) } } : {}), ...(options.walk ? { walk: options.walk } : {}) } });
     const code = await exited;
     if (policyError) throw policyError;
     if (failure) throw failure;
     if (code !== 0 || !result) throw new Error("The installed recording browser stopped before completing this attempt. Check its installation and sandbox; no partial edition was published.");
     await target.assertCurrent();
     if (typeof result.sovaServer !== "boolean" || (result.quietAborts !== undefined && !(Number.isInteger(result.quietAborts) && result.quietAborts >= 0 && result.quietAborts <= 1_000_000)) || (result.signedIn !== undefined && typeof result.signedIn !== "boolean") || (result.signedIn && !script.signIn)) throw new Error("Invalid recording result.");
-    const look = options.look ? normalizeTourLookResult(result.look) : undefined;
-    if (options.look ? !look : result.look !== undefined) throw new Error("Invalid look result.");
+    const lists = !!options.look || !!options.walk;
+    const look = lists ? normalizeTourLookResult(result.look) : undefined;
+    if (lists ? !look : result.look !== undefined) throw new Error("Invalid look result.");
     if (!Array.isArray(result.publicOrigins) || result.publicOrigins.length > 64 || !result.publicOrigins.every(isTourOrigin) || new Set(result.publicOrigins).size !== result.publicOrigins.length) throw new Error("Invalid recording address attestation.");
     if (!options.dryRun) {
       assertTourCoverage(script, result.steps);

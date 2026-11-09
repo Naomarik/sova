@@ -58,10 +58,7 @@ export function workerStartOf(o: SpawnOptions, parent: WorkerParent, key: string
 	};
 }
 
-/** pi's own session directory name for a cwd (session-manager.js getDefaultSessionDirPath). */
-export function sessionDirName(cwd: string): string {
-	return `--${path.resolve(cwd).replace(/^[/\\]/, "").replace(/[/\\:]/g, "-")}--`;
-}
+export { sessionDirName } from "./worker-load.ts";
 
 export interface ChatWorkerOptions {
 	host: WorkerHost;

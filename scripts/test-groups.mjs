@@ -75,7 +75,7 @@ export const GROUPS = [
     name: "tours",
     title: "Tours",
     // The tour tests that drive a real Chrome; the nine that start no browser stay everyday.
-    files: ["server/tours/*.integration.test.ts"],
+    files: ["server/tours/*.integration.test.ts", "server/design/browse.integration.test.ts"],
     except: [
       "server/tours/bindings-app.integration.test.ts",
       "server/tours/bindings-backup.integration.test.ts",
@@ -90,6 +90,8 @@ export const GROUPS = [
     landing: "never",
     triggers: [
       "server/tours/**",
+      "server/design/browse*",
+      "server/design/look*",
       "shared/tour*",
       "server/project-services/tour-target*",
       "server/share/tour-*",

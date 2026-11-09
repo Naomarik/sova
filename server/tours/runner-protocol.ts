@@ -1,4 +1,4 @@
-import type { TourFailure, TourJob, TourScript, TourSignInRequirement, TourStep } from "../../shared/tour";
+import type { TourFailure, TourJob, TourScript, TourSignInRequirement, TourSize, TourStep, TourTarget } from "../../shared/tour";
 import type { TourLookResult } from "./look";
 /** The sign-in's fixed outcomes (§app.tours/recording): never page text, never a value. */
 export const TOUR_SIGN_IN_WRONG = "The sign-in didn't work with those details, so recording stopped. Check them and record again.";
@@ -23,7 +23,9 @@ export interface TourStorageState {
 /** `signIn`: the script's form sign-in is usable: its origins, and the tour's stored signed-in session if any. No login rides here. */
 /** `look`: a look (§app.tours/look), a dry run that lists each page's controls; `signInRoute`: first list that page signed out. */
 /** `browser`: the executable the server chose (macOS only); absent, the child discovers its own. */
-export interface TourAttemptInput { script: TourScript; origin: string; dryRun: boolean; proxied: boolean; browser?: string; declared?: string[]; account?: { origin: string; username: string; password: string }; sova?: { origin: string; name: string; value: string; marker: string }; signIn?: { origins: string[]; storage?: TourStorageState }; look?: { signInRoute?: string } }
+/** One step of a walk to a screen: what a tour's actions allow, minus typing, plus a click that navigates (never a form submit). */
+export type TourWalkAction = { op: "click"; target: TourTarget } | { op: "reveal"; target: TourTarget } | { op: "wait"; target: TourTarget } | { op: "scroll"; x: number; y: number };
+export interface TourAttemptInput { script: TourScript; origin: string; dryRun: boolean; proxied: boolean; browser?: string; declared?: string[]; account?: { origin: string; username: string; password: string }; sova?: { origin: string; name: string; value: string; marker: string }; signIn?: { origins: string[]; storage?: TourStorageState }; look?: { signInRoute?: string }; /** A walk: these steps replace the view's actions, and each size's page is pictured and listed. */ walk?: Partial<Record<TourSize, TourWalkAction[]>> }
 export type TourChildMessage =
   | { type: "contact"; id: number; origin: string }
   | { type: "checkpoint"; id: number }

@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import { afterEach, describe, test } from "node:test";
 import { harnessEventOf } from "./harness/pi/session";
 import { attachStreamGuard, BATON_RUN_WALL_MS, capsFor, setStreamCapsForTest, type GuardClock, type StreamCaps, type StreamTrip } from "./stream-guard";
+import { DESIGN_OUTPUT_TOKENS } from "../shared/design";
 
 type Listener = (e: any) => void;
 
@@ -252,4 +253,13 @@ describe("stream guard", () => {
     assert.equal(h.aborts, 2);
     assert.equal(h.trips.length, 2);
   });
+});
+
+test("a design session is held to its page budget: a page and its thinking count together, whatever the provider ignores", () => {
+  const caps = capsFor("design");
+  assert.equal(caps.toolArgChars, DESIGN_OUTPUT_TOKENS * 4);
+  assert.equal(caps.outputChars, DESIGN_OUTPUT_TOKENS * 4);
+  // An ordinary chat's cap is the one this would have fallen through to.
+  assert.ok(capsFor(null).toolArgChars > caps.toolArgChars);
+  assert.equal(capsFor(null).outputChars, null);
 });

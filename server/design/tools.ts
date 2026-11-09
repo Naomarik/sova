@@ -13,7 +13,6 @@ import type { TourSize } from "../../shared/tour";
 import { designOf, pendingPage, readPage, viewOf } from "./store";
 import { pageInReply } from "./stream-decode";
 
-export { DESIGN_TOOL };
 export const DESIGN_GUIDE_TOOL = "design_guide";
 export const DESIGN_STREAM_TOOL = "design_stream";
 export const DESIGN_HAND_IN_TOOL = "design_hand_in";
@@ -38,7 +37,7 @@ export function mainDesignTools(parent: () => DesignParent, cwd: () => string): 
       },
     },
     {
-      name: DESIGN_TOOL,
+      name: "design",
       label: "design",
       description: `Design mode's prototypes. op "start" puts a Setup card in the chat (the user finishes it there, up to ${DESIGN_BATCH_MAX} designs). op "read" gets the coordinator's card, or one design's whole page with label. op "tell" passes text word for word to the coordinator. Read design_guide first.`,
       parameters: {

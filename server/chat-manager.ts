@@ -3143,6 +3143,22 @@ class ChatSession {
     return true;
   }
 
+  /**
+   * A hidden note for the run in progress, which a message queued behind it joins with no turn-start hook of its own: the
+   * run's next step reads the note first. False when no run is in progress (the next turn's own note hook tells the chat) or
+   * this runtime may not write.
+   */
+  async noteIntoRun(customType: string, text: string): Promise<boolean> {
+    if (this.disposed || this.foreignWrite || this.hasForeignWrites() || this.isCompacting() || !(this.harness.isRunning() || this.starting)) return false;
+    try {
+      assertNotLive(this.path);
+    } catch {
+      return false;
+    }
+    await this.harness.noteIntoRun(customType, text);
+    return true;
+  }
+
   /** The sandbox extension's /sandbox command in this runtime (server/sandbox-state.ts). */
   private sandboxCommand() {
     return this.harness.command("sandbox");

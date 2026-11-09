@@ -351,6 +351,7 @@ export interface ChatMethods {
   appendState: { args: { kind: string; data: unknown }; result: string };
   /** A note entry of `noteType` (its custom type), between turns only. */
   appendNote: { args: { noteType: string; text: string; details?: unknown }; result: boolean };
+  noteIntoRun: { args: { noteType: string; text: string }; result: boolean };
   writeProfile: { args: { data: ProfileEntryData }; result: null };
   writeLoadout: { args: { data: ChatLoadoutChoice }; result: null };
   noteMcp: { args: { note: McpNote }; result: null };

@@ -4,7 +4,7 @@
 import { existsSync } from "node:fs";
 import { basename, isAbsolute } from "node:path";
 import type { CwdFallback } from "../shared/protocol";
-import { setRetireNoteSource } from "./merge-queue/card-note";
+import { LANDING_LINES_LEAD, setRetireNoteSource } from "./merge-queue/card-note";
 import { canonical } from "../pi-config/extensions/worktrees/state.ts";
 import { heldPartialEntry, readLedger, type RemovedWorktree } from "./removed-worktrees";
 import { type BringBackResult, bringBack, type PassResult, realRetireDeps, retiredEntryFor } from "./worktree-retire";
@@ -26,6 +26,21 @@ export function tellChat(session: string, line: string): void {
   const said = lines.get(session) ?? [];
   said.push(line);
   lines.set(session, said);
+}
+
+/** The note's type when a line goes straight into a running turn. */
+const RETIRE_NOTE_MESSAGE = "sova-retire-note";
+
+/**
+ * A message queued behind a running turn joins that run, so the turn-start note that normally gives these lines never fires
+ * for it: a running chat hears them now, ahead of the message. Not running, or a chat on older code: they wait for the
+ * turn-start note, and whichever comes first gives them. Read, not taken, until the chat has them, so neither can lose them.
+ */
+async function tellRunningTurn(h: { noteIntoRun?(noteType: string, text: string): Promise<boolean> }, session: string): Promise<void> {
+  const said = lines.get(session);
+  if (!said?.length || !h.noteIntoRun) return;
+  const took = await h.noteIntoRun(RETIRE_NOTE_MESSAGE, `${LANDING_LINES_LEAD}\n${said.join("\n")}`).catch(() => false);
+  if (took) lines.delete(session);
 }
 
 /** The folder a chat means to work in: the stored one when it runs in the home folder for now. */
@@ -51,7 +66,7 @@ export function needsBringBack(mirror: { cwd?: string; cwdFallback?: CwdFallback
  * (`reopen`, "every open looks again"); one whose process opened it before it retired just finds it again.
  * Whatever happens the message goes on, and the chat is told.
  */
-export async function bringBackForChat(h: { mirror: { sessionId?: string; cwd?: string; cwdFallback?: CwdFallback | null; running?: boolean }; reopenHere(): Promise<unknown> }, deps = realRetireDeps()): Promise<BringBackResult> {
+export async function bringBackForChat(h: { mirror: { sessionId?: string; cwd?: string; cwdFallback?: CwdFallback | null; running?: boolean }; reopenHere(): Promise<unknown>; noteIntoRun?(noteType: string, text: string): Promise<boolean> }, deps = realRetireDeps()): Promise<BringBackResult> {
   const cwd = ownFolderOf(h.mirror);
   if (!cwd) return { state: "none" };
   const stranded = existsSync(cwd) ? strandedIn(h.mirror, cwd, deps.ledger) : null;
@@ -66,6 +81,7 @@ export async function bringBackForChat(h: { mirror: { sessionId?: string; cwd?: 
   if (r.state === "none") return r;
   tellChat(h.mirror.sessionId ?? "", r.line);
   if (r.state === "back" && h.mirror.cwdFallback && existsSync(cwd)) await h.reopenHere().catch((err: Error) => console.warn(`[retire] reopen: ${err.message}`));
+  await tellRunningTurn(h, h.mirror.sessionId ?? "");
   return r;
 }
 

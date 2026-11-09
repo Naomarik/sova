@@ -218,8 +218,6 @@
    "top.deploy": "project",
    "top.sources": "project",
    "top.merge": "project",
-   "top.worktrees": "project",
-   "worktrees.disposable": "project",
    "slots.cap": "project",
    "step.id": "project",
    "step.run": "project",

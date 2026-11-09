@@ -144,7 +144,7 @@ host's sender secret never leaves it. The peer's own routes and refusals apply.
   (`Topics (newest first): Merge (1m ago); Sandbox menu (2h ago)`), and what is true of it now
   (§app.overseer/session-truth); a bounded transcript read (≤40 items, ≤12,000 characters, each item ≤1,000, wrapped as
   untrusted content from another session, read with Sova's own parser so a TUI-live file is never
-  opened for writing; or how it ended, `from: "ending"`, §app.overseer/ending-view); list groups, targets, models, subagent profiles and folders; the ideas backlog (`sova_ideas`: its table of contents,
+  opened for writing; or how it ended, `from: "ending"`, §app.overseer/ending-view); list groups, targets, models, subagent and session profiles (one list, §chat.profiles/joined) and folders; the ideas backlog (`sova_ideas`: its table of contents,
   a search, one idea, an idea's scope and impact, an idea's explorer; §app.overseer/ideas); the
   user's todos (`sova_todos`: open, done or all; §app.overseer/todos); the links this host knows
   (`sova_links`, §app.overseer/links-tools); this host's live public links with their URLs
@@ -243,17 +243,42 @@ host's sender secret never leaves it. The peer's own routes and refusals apply.
   `minor_modes` replaces the profile's set), and the tool's result renders as a
   **Started from {label}** card with Open Session. A One at a time profile that is live refuses
   with a card saying "{label} is already running. It's set to One at a time, so only 1 session can
-  use it." and **Open the Running {Label}**; nothing is created and no cap is taken.
-  `sova_set_session` never changes a profile: it has no such parameter, so it can't widen one.
-- **Subagent profiles (§chat/subagent-profiles).** `sova_list_subagent_profiles` lists Off and
-  every named setup, their id, name, worker footprint and this host's default; an optional `host`
-  reads the peer's own library. `sova_create_session` and `sova_set_session` take
-  `subagent_profile` (a library id or `off`), pinning only that session's hidden ID pick, never a
-  setup snapshot or device default. The result names the pick; running workers and the main
-  model stay unchanged. An unknown id is refused before session creation or mutation; a create
-  with `host` checks the peer's list first and refuses if it cannot be read or resolve the id.
-  Create pins the pick before its first prompt. This parameter is distinct from the capability
-  session `profile` above: set-session still cannot widen a session's capabilities.
+  use it." and **Open the Running {Label}**; nothing is created and no cap is taken. A profile with
+  only a Models part (§chat.profiles/joined) needs neither mark nor approval: it starts the session
+  as naming those helpers with `subagent_profile` does (below): the chat's own model, effort and mode
+  follow this computer's default, with that profile's helpers. A session it starts naming no
+  profile starts on this computer's default (§chat.profiles/default), but the default's tool
+  removals and session powers reach it only when that profile is marked "The Overseer may start it"
+  (and, from a project, approved); otherwise only its mode and Models part do, so the default never
+  widens what an Overseer's start can do. A session it starts naming only `subagent_profile` starts
+  the same way, under the same rule for tool removals and session powers: its own model, effort and
+  mode follow this computer's default, and the named helpers win over the default's helpers.
+  A start on a target follows this computer's default by the same rule as one in a folder. A start
+  on another computer carries a mark saying an Overseer made it, so that computer's default reaches
+  it by the same rule as a local Overseer start: its mode and Models part, never its tool changes or
+  grants unless the profile is capability-neutral, or marked and approved. When the default can't be
+  applied the start still succeeds and the result says why ("Not fully on this computer's default
+  profile: {why}.", or "Not fully on {computer}'s default profile: {why}.").
+  `profile` with `subagent_profile` is refused before
+  anything ("Give profile or subagent_profile, not both: a profile brings its own helpers.").
+  `sova_set_session` takes `profile` too, and switches only that chat's Models part, all at once
+  (§chat.profiles/switch): its When a Chat Starts part, tools and powers never change, so it can't
+  widen one. It is checked first and done before anything else the call names, so a refused switch
+  changes nothing ("Couldn't switch to {name}: {reason} Nothing was changed."), and it is given alone:
+  with `model`, `thinking` or `subagent_profile` it is refused ("Give profile alone, or model,
+  thinking and subagent_profile without it: a profile switches all of its Models part at once.
+  Nothing was changed."). Mid-reply, the result says it switches when the reply ends.
+- **The models alone (§chat.subagent-profiles/overseer).** `sova_list_profiles` (its other name,
+  `sova_list_subagent_profiles`) lists Off and every profile, each a named setup: their id, name,
+  worker and chat models (the footprint), which parts
+  they have and this host's default; an optional `host` reads the peer's own list.
+  `sova_create_session` and `sova_set_session` take `subagent_profile` still (a library id or
+  `off`), pinning that session's hidden ID pick for its helpers, never the device default. On
+  `sova_set_session` that is all it moves, never the chat's own model; on `sova_create_session` the
+  rest of the start is this computer's default, as above. The result names the pick; running workers and the main model stay unchanged. An
+  unknown id is refused before session creation or mutation; a create with `host` checks the peer's
+  list first and refuses if it cannot be read or resolve the id. Create pins the pick before its
+  first prompt.
 - **Sandbox (§chat.sandbox/states).** `sova_create_session` and `sova_set_session` take
   `sandbox`: `off`, `subagents` or `on`, for that session only, never a default. Raising it (to
   On, or from Off to Subagents only) is an act like any other. **Lowering it needs the user's
@@ -580,16 +605,23 @@ conversations, workers' own sessions, project overseers' conversations and organ
 sessions are left out, and the coverage line counts them as skipped.
 
 - **Rows.** One row per session in a section: `- [title](sova://s/<id>) · <age> · <facts>`, the
-  facts joined by "; ", a session's worktrees comma-joined, each as its branch and a short state
-  ("feat/steer-keys conflicts 7 files"). The folder is named only when it is not the most common
-  folder of the rows, and never on a row that shows a branch; "idle" and reading ages are not
+  facts joined by "; ", a session's worktrees comma-joined, each as its branch in its place
+  (§chat.worktrees/place) and a short state ("feat/steer-keys in AmalMoney conflicts 7 files"). The
+  session's folder is named only when it is not the most common folder of the rows, and never on a
+  row that shows a branch, whose place already says where it is; "idle" and reading ages are not
   shown, nor "archived" on a Can't confirm merged row. A session is in as many sections as apply,
   once in each. Every row is listed, except in Can't confirm merged and Not checked yet: at most
   40 rows each, then "and {n} more".
+- **Nothing left is listed nowhere.** A worktree with nothing left (§chat.worktrees/nothing-left), a
+  catch-up merge on top included and whatever it conflicts with now, is in none of the merge sections,
+  by the same answer the rows read; one with only unproved drafts left, a branch with no commits
+included, is under Landing specs. The reads
+  below settle only what that answer leaves open.
+
 - **Sections**, in this order, each only when it has rows:
   - **Lost (on no branch)**: a session's own launch worktree (below) whose folder and branch are
     gone while a commit its transcript names is on no branch and not on the main branch: "branch
-    sova/<name> and its worktree are gone; newest commit <sha8> (<date>, '<subject>') is on no
+    sova/<name> in <place> and its worktree are gone; newest commit <sha8> (<date>, '<subject>') is on no
     branch and not on <main>, N commits past <main>; recover with `git branch <name> <sha8>` before
     gc prunes it". Each such row also names up to 2 other sessions of the window whose user or
     assistant message holds the branch name's 6 hex digits and a word of its name, with that
@@ -623,7 +655,7 @@ sessions are left out, and the coverage line counts them as skipped.
     after it, whether or not anyone has seen it: "last turn aborted" or "last turn error: <message>",
     with its age and "nothing since".
   - **Can't confirm merged**: a worktree whose folder is gone with no record of a merge, or whose
-    folder git can't read, by session and branch name. It is never counted as not merged. When
+    folder git can't read, by session, branch name and place. It is never counted as not merged. When
     the branch is gone too and no main subject names it, the commit ids the session's transcript
     (its last 8 MB) names within 300 characters of the branch name, less any that begins a
     worktree record's `base` commit there, that git still has: at least one, and every one on the
@@ -2441,7 +2473,7 @@ name is a `[title](sova://s/<id>)` link; every time is relative, as in `sova_ses
 - **`sova_org_project {org?, project}`**: the project row; its overseer: its conversation (a
   session link), working or not, unread, its powers as set and in force, with the brake's reason,
   watching and the pace, models, what a coding session started now gets (this computer's default
-  mode and subagent profile, §app.project-overseer/coding-mode), the extra instructions, both allowances used and left and the held items
+  profile and its mode, §app.project-overseer/coding-mode), the extra instructions, both allowances used and left and the held items
   (§app.project-overseer/limits); its last 10 actions; its gathering sessions and offers; decisions
   by state and area, and the open conflicts with who they are routed to; spec status (frozen, edited
   outside); its coding sessions from their statecharts (title, who started it, working or idle, branch,
@@ -2692,17 +2724,17 @@ organization write (§app.overseer/caps); a refusal takes nothing.
   (§app.overseer/caps).
 - **Coding sessions.** A project's coding sessions are ordinary sessions: `sova_list_sessions`,
   `sova_session`, `sova_read_session` and `sova_send` reach them as before. **`code {prompt?,
-  title?, item?, model?, thinking?, mode?, minor_modes?, subagent_profile?, already_agreed?}`**
+  title?, item?, model?, thinking?, mode?, minor_modes?, profile?, subagent_profile?, already_agreed?}`**
   starts one as the
   project's, the same way the project page's Start Coding Session does: its own worktree
   (§app.project-overseer/coding-worktrees), an `operator-coding` session whose statechart is marked
-  `via: "overseer"`, in any mode, minor modes and subagent profile it names, else this computer's
-  default (§app.project-overseer/coding-mode); an unknown name is refused ("… No session was
+  `via: "overseer"`, in any mode, minor modes and profile it names, else on this computer's
+  default profile (§app.project-overseer/coding-mode); an unknown name is refused ("… No session was
   started.") before anything is started or counted. `item` (a to-do or idea id) links it and gives the
   prompt when none is given; without an item, `prompt` and `title` are required. It counts against
   the Overseer's per-turn sessions created and running at once, like any session it starts, and
   never against the project overseer's limits. The result names the session, its branch and its
-  path, and the mode and subagent profile it started with. Without `already_agreed` the session
+  path, and the mode and profile it started with. Without `already_agreed` the session
   runs with align on, whatever `minor_modes` say, and first asks the operator to confirm the brief
   (§app.project-overseer/confirm-brief). Its prompt says
   a coding session's alignment questions are the user's: it never answers them, and tells the user

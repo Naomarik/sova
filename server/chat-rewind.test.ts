@@ -222,8 +222,8 @@ describe("a rewind through a real chat runtime", () => {
     await waitUntil(() => mine.some((m) => m.type === "rewound" || m.type === "rewind_refused"));
 
     // The worker set did not change, and still follows the hello that blanked it client-side.
-    assert.deepEqual(theirs.map((m) => m.type), ["hello", "workers", "mode", "claude_login"]);
-    assert.deepEqual(mine.map((m) => m.type), ["hello", "workers", "mode", "claude_login", "rewound"]);
+    assert.deepEqual(theirs.map((m) => m.type), ["hello", "workers", "mode", "chat_profile", "claude_login"]);
+    assert.deepEqual(mine.map((m) => m.type), ["hello", "workers", "mode", "chat_profile", "claude_login", "rewound"]);
     assert.deepEqual(talk(theirs[0]), ["u1", "a1:0"]);
     assert.equal((theirs[0] as Extract<ChatServerMessage, { type: "hello" }>).context?.tokens, 100); // fill follows the new branch
     assert.deepEqual(mine.at(-1), { type: "rewound", id: "r1", entryId: "u2", editorText: "second ask" });

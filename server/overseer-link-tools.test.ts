@@ -323,7 +323,7 @@ describe("sova_create_session with host", () => {
   test("link: true creates a link member session: the create itself carries it, on a peer or on this host", async () => {
     const h = harness({ peerRoutes: ok });
     const out = await h.run("sova_create_session", { host: "vps", cwd: "/srv/app", link: true, prompt: "Port the parser" });
-    assert.deepEqual(h.remote[0], { ...h.remote[0], method: "POST", path: "/api/sessions", body: { cwd: "/srv/app", link: true } }, "on the peer's own create, before its prompt");
+    assert.deepEqual(h.remote[0], { ...h.remote[0], method: "POST", path: "/api/sessions", body: { cwd: "/srv/app", link: true, byOverseer: true } }, "on the peer's own create, before its prompt");
     assert.equal(h.remote.filter((c) => c.body && "link" in (c.body as object)).length, 1, "and on nothing else");
     assert.match(out.text, /^Created "Port the parser" \(r9\) on VPS \(vps\), in .* as a link member and sent the first prompt\./);
     const here = harness({ localRoutes: { "POST /api/sessions": [201, { id: "l1", path: "/s/l1.jsonl", title: "Untitled", cwd: "/w" }] } });
@@ -333,7 +333,7 @@ describe("sova_create_session with host", () => {
     // Without it, no create says link: an ordinary session.
     const plain = harness({ peerRoutes: ok });
     await plain.run("sova_create_session", { host: "vps", cwd: "/srv/app" });
-    assert.deepEqual(plain.remote[0]!.body, { cwd: "/srv/app" });
+    assert.deepEqual(plain.remote[0]!.body, { cwd: "/srv/app", byOverseer: true });
   });
 
   test("the tools tell the Overseer that any existing session can be linked, and that link: true is the cheaper way for one it creates only to link", async () => {

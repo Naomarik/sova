@@ -3,6 +3,7 @@
 // Record of every digest kind: a new kind doesn't compile until it has its word.
 
 import type { AttentionItem, AttentionKind, SessionSummary } from "../../shared/protocol";
+import { shortestTail } from "../../shared/tell-apart";
 import { tildePath } from "./format";
 import type { NeedsYouRow } from "./needs-you";
 import { orgPlaceLabel } from "./org-region";
@@ -133,12 +134,7 @@ export function rowLabels(rows: readonly Pick<NeedsRow, "key" | "name" | "place"
   for (const r of rows) {
     const places = [...(byName.get(r.name) ?? [])];
     if (!r.place || places.length < 2) continue;
-    const parts = places.map((p) => p.split("/").filter(Boolean));
-    const tail = (p: string[], n: number) => p.slice(-n).join("/");
-    const most = Math.max(...parts.map((p) => p.length));
-    let n = 1;
-    while (n < most && new Set(parts.map((p) => tail(p, n))).size < parts.length) n++;
-    out.set(r.key, `${r.name} · ${tail(r.place.replace(/\/+$/, "").split("/").filter(Boolean), n)}`);
+    out.set(r.key, `${r.name} · ${shortestTail(places, r.place)}`);
   }
   return out;
 }

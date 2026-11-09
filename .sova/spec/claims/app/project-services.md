@@ -193,12 +193,15 @@ limit it is refused `cap-reached`: "{n} copies are running, and this machine all
 once: stop one first."; above it (the limit was lowered under what runs, which stops nothing):
 "{n} running, {k} over the limit of {cap}: no new copy starts until {k + 1} stop." (digits always). Either message goes on to name the running copies and where the limit comes from (set on
 this machine, or the project's file). A create with room under the limit but no free usable slot of 1 to
-16 is refused `slots-blocked`, naming for each slot the port and its holder: a Sova instance's id,
-or a listener's pid and folder when this user can read them.
+16 is refused `slots-blocked`. That refusal names each copy of the project holding a place, by its
+slot, its branch or id and whether it is running or stopped; names for each other slot the port and
+its holder: a Sova instance's id, or a listener's pid and folder when this user can read them; and
+ends with what to do: tear down a copy this session made, otherwise ask the user to free a place
+with Teardown on the Branches tab. It never tells a chat to tear down a copy the chat didn't make.
 
 A slot is free when
 no instance of the project holds it and none of its allocated ports is held by any other instance
-on this host (any project) or has a listener right now. The registry is
+on this host (any project), by another project's shared service, or has a listener right now. The registry is
 `<state root>/project-services/registry.json`, changed only under a file lock and written by an
 atomic rename, so two callers can never get the same slot or port. An instance's data dir is
 `<state root>/project-services/data/<id>/`, never inside a worktree.
@@ -889,7 +892,7 @@ The operator sees and drives every running copy from two places, both on this ho
   (§app.project-services/contract) and the copy has that port; and whether the main
   checkout's definition declares sensitive data; and the copy limit, `limit: {value, source (machine
   or file), file (the file's own value, or null), copies, running, over (the over-limit sentence, or
-  null), usable (how many slots of 1 to 16 the layout can use), unavailable (one sentence per unusable slot), estimate (what a copy takes, or null), host: {totalBytes, availableBytes}}`. It is read every 5 seconds while the tab shows. One row per copy: the main checkout's (slot 0) first, named
+  null), usable (how many slots of 1 to 16 the layout can use), unavailable (one sentence per unusable slot), places (how many of the usable places are stopped, used elsewhere and free, free absent where other programs were not checked), estimate (what a copy takes, or null), host: {totalBytes, availableBytes}}`. It is read every 5 seconds while the tab shows. One row per copy: the main checkout's (slot 0) first, named
   `main`, then each branch copy by slot. A row shows the branch, `slot {n}`, each checkout service's
   ports (a port with HTTP readiness is a link to the site at `http://<this page's host>:<port>/`, never the readiness check's path), the copy's
   memory (the sum of its services' memory, each process's own memory as the resource monitor
@@ -902,8 +905,11 @@ The operator sees and drives every running copy from two places, both on this ho
   Main** (`up` of the project) sits under the rows. Shared services are listed in their own block
   under the copies, once each, with their ports, state and memory, and Start and Stop of their own.
 - **The copy limit** (§app.project-services/instances) opens the tab, above the rows: "{n} copies on
-  this host, {r} running · up to {cap} at once on this machine" (the copies besides the main
-  checkout's and conformance's), then where the limit comes from, "set on this machine" or "from the
+  this host, {r} running · up to {cap} at once on this machine" ({n} counts the copies in the
+  project's usable slots, the main checkout's, conformance's and any record outside the usable slots
+  not counted; {r} is the copy limit's own count of running copies, §app.project-services/instances,
+  the same figure as the project card's, so a running record outside the usable slots counts in it),
+  then where the limit comes from, "set on this machine" or "from the
   project's file", and **Change**. Change opens an inline editor in its place: a number field (1 to
   16), **Save**, **Cancel**, and while this machine's value is set **Reset to File's Value**, with
   the hint "The project's file says {n}." (or, with no valid file, "The project's file sets none: 4
@@ -916,7 +922,10 @@ The operator sees and drives every running copy from two places, both on this ho
   limit of {cap}: no new copy starts until {k + 1} stop."; nothing is stopped. While the
   definition's layout leaves a slot of 1 to 16 unusable, a line names each ("Slot 14 is unavailable:
   its ports overlap slot 10's."), and while the usable slots number fewer than the limit, "Only {n}
-  slots are usable, so at most {n} copies run at once."
+  slots are usable, so at most {n} copies run at once." A line reports the same counts as the
+  project's card, by the same rule (§app.projects/home-glance): `{f} of {u} places free · {s}
+  stopped · {e} used elsewhere`; on a host whose other programs can't be checked, `{s} stopped · {e}
+  used elsewhere · Other programs were not checked`, with no free count.
 - **The cost line**, under the limit: "Each copy takes about {steady} (up to {peak} at peak), so {cap}
   copies need about {cap × steady}. This machine: {total}, {available} available now." in the warn
   tone when {cap × steady} is more than what is available now; a warning, never a refusal. The

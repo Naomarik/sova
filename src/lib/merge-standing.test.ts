@@ -48,6 +48,7 @@ test("a decision: its words, its answers on the queue (Remove from Queue last, o
   assert.equal(answeredInChat(d), true);
   assert.equal(answeredInChat(decision({ kind: "out-of-tries", choices: [], heldNote: undefined, actions: ["land"] })), false, "out of tries: answered by Land or Remove, not in words");
   assert.equal(HELD_NOTE_LINE, "Not sent yet: your answer goes with it");
+  assert.equal(heldComposerLine("feat/x", "AmalMoney"), "Merge queue · feat/x in AmalMoney · not sent yet: your answer goes with it");
   assert.equal(heldComposerLine("feat/x"), "Merge queue · feat/x · not sent yet: your answer goes with it");
   assert.equal(openDecision({ decision: decision({ answered: { at: "", how: "message" } }) }), null, "answered: no longer waits");
   assert.equal(decisionWords({ decision: decision({ cantSettle: true }) })?.cantSettle, true);

@@ -92,9 +92,9 @@ test("only drafts left: Drafts to land, with Land, even once git reads it merged
 });
 
 test("Land's confirm: only drafts left says the drafts, not commits", () => {
-  assert.deepEqual(landConfirmWords("feat/x", 0, "master", undefined, 2), { title: "Land feat/x?", line: "2 spec drafts go to the merge queue; master moves once checks pass.", confirm: "Land 2 Drafts" });
-  assert.equal(landConfirmWords("feat/x", 1, "master", undefined, 1).confirm, "Land 1 Draft");
-  assert.equal(landConfirmWords("feat/x", 1, "master", undefined, 1).line, "1 spec draft goes to the merge queue; master moves once checks pass.");
+  assert.deepEqual(landConfirmWords("feat/x", 0, "master", undefined, undefined, 2), { title: "Land feat/x?", line: "2 spec drafts go to the merge queue; master moves once checks pass.", confirm: "Land 2 Drafts" });
+  assert.equal(landConfirmWords("feat/x", 1, "master", undefined, undefined, 1).confirm, "Land 1 Draft");
+  assert.equal(landConfirmWords("feat/x", 1, "master", undefined, undefined, 1).line, "1 spec draft goes to the merge queue; master moves once checks pass.");
   assert.equal(landConfirmWords("feat/x", 3, "master").confirm, "Land 3 Commits");
 });
 
@@ -169,7 +169,7 @@ test("a repo the queue doesn't serve: Ready to merge, the plain-merge line, neve
   // Off the Projects list: no mergeProject, no mergeServed. A listed project with checks but no mergeServed
   // (the server's answer wins) reads the same: Land keys on mergeServed alone.
   for (const x of [{}, { mergeProject: { id: "prj_1", root: "/r", target: "main", checks: "declared" as const, review: false } }]) {
-    const r = queueRow(wt({ readiness: { ...ready, landing: { state: "ready", commit: SHA } }, ...x }));
+    const r = queueRow(wt({ readiness: { ...ready, landing: { state: "ready", commit: SHA } }, place: { target: "main" }, ...x }));
     assert.equal(r.key, "ready");
     assert.equal(r.label, "Ready to merge");
     assert.equal(r.tone, "success");

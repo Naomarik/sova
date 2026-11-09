@@ -31,7 +31,7 @@ import { claudeDrift, claudeOffer } from "../pi-config/extensions/claude-code/ca
 import { discoverClaudeModels, type ClaudeModel } from "./claude-models";
 import { CLAUDE_CODE_PROVIDER } from "./models";
 
-// Delegate routing (legacy file; Settings → Subagents now edits it per profile): which worker each
+// Delegate routing (legacy file; Settings → Profiles now edits it per profile): which worker each
 // kind of Delegate work goes to. The file (~/.pi/agent/mode-delegate.json) and its rules are the mode
 // extension's (pi-config/extensions/mode/delegate.ts, imported as one of the server's pure mode
 // modules); this module adds what only the server can: the models each backend actually

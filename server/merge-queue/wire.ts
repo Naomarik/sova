@@ -3,8 +3,9 @@ import { existsSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { LANDING_FILE_NAME } from "../../pi-config/extensions/worktrees/landing.ts";
+import { defaultTarget, runGit } from "../../pi-config/extensions/worktrees/git.ts";
 import { stateRoot } from "../state-root";
-import { type BranchSummary, branchQueueOf, type LandingSummary, type MergeChatRequest, type MergeEntry, type LandingSummaryProject, type MergeQueueView, type WorktreeMergeProject, type WorktreeMergeStats, type WorktreeQueueInfo } from "../../shared/merge-queue";
+import { type BranchPlace, type BranchSummary, branchQueueOf, type LandingSummary, type MergeChatRequest, type MergeEntry, type LandingSummaryProject, type MergeQueueView, type WorktreeMergeProject, type WorktreeMergeStats, type WorktreeQueueInfo } from "../../shared/merge-queue";
 import type { RunMerge, ThreadEvent, WakeThread } from "./contract";
 import type { ThreadEntry, ThreadEvent as ThreadMessage } from "./thread";
 import { type IngestDeps, startIngest } from "./ingest";
@@ -16,6 +17,8 @@ import { countBetween, realGit, revParse, worktreesOf } from "./guard";
 import { canonical } from "../../pi-config/extensions/worktrees/state.ts";
 import type { QueueSubject } from "../git-diff";
 import { type Owner, WorktreeOwners } from "./owners";
+import { branchPlace, placeLabel } from "./place";
+import { parseTargetCwd } from "../targets";
 import { engineServices, makeRunMerge } from "./run";
 import { queueGlanceOf, worktreeQueueInfo } from "./view";
 import type { ProjectGlanceQueue } from "../../shared/projects";
@@ -62,6 +65,50 @@ export async function worktreeQueueOf(path: string, branch: string): Promise<Row
   } catch {
     return {};
   }
+}
+
+/** What a repository's branches merge into now (§chat.worktrees/place): the queue's target where it serves the repo,
+ *  else what the worktree tool merges into. The tool's answer is kept briefly: the Session tab's rows are polled. */
+const TOOL_TARGET_MS = 10_000;
+const toolTargets = new Map<string, { at: number; v: Promise<string | undefined> }>();
+function toolTarget(root: string): Promise<string | undefined> {
+  const hit = toolTargets.get(root);
+  if (hit && Date.now() - hit.at < TOOL_TARGET_MS) return hit.v;
+  const v = defaultTarget(runGit, root).catch(() => undefined);
+  toolTargets.set(root, { at: Date.now(), v });
+  if (toolTargets.size > 500) toolTargets.delete(toolTargets.keys().next().value!);
+  return v;
+}
+
+/** The place of the branch whose folder is (or was) `path`, its target included (the Session tab's row). */
+export async function worktreePlaceOf(path: string): Promise<BranchPlace> {
+  const [rule, { projectOf }] = await Promise.all([servedRule(), import("../project-root")]);
+  return branchPlace({ listed: () => rule.everyProject(), projectOf: (p) => projectOf(p), exists: existsSync, remote: parseTargetCwd, targetOf: async (root) => (await rule.servedTarget(root)) ?? toolTarget(root) }, path);
+}
+
+/** The place as a session list row reads it: only stats while its repository's refs stay put. */
+export async function branchPlaceRead(path: string): Promise<BranchPlace | undefined> {
+  const d = listDeps;
+  if (!d) return undefined;
+  const rule = await servedRule();
+  return branchPlace({ listed: () => rule.everyProject(), projectOf: (p) => treeProject(d, p), exists: existsSync, remote: parseTargetCwd, targetOf: (root) => targetByStamp(d, root) }, path);
+}
+
+const toolTargetsSeen = new Map<string, { stamp: string; at: number; v: Promise<string | undefined> }>();
+/** branchPlaceRead's target: the queue's where it serves the repo, else the worktree tool's, asked again when the refs move. */
+async function targetByStamp(d: QueueListDeps, root: string): Promise<string | undefined> {
+  if (d.projectIdOf(root)) {
+    const s = await setupByStamp(d, root);
+    if (s.setUp) return s.target;
+  }
+  const key = servedKey(root);
+  const stamp = d.stamp(root, targetRefs(undefined));
+  const hit = toolTargetsSeen.get(key);
+  if (stamp !== null && hit?.stamp === stamp && d.now() - hit.at < VIEW_BACKSTOP_MS) return hit.v;
+  const v = toolTarget(root);
+  if (stamp !== null) toolTargetsSeen.set(key, { stamp, at: d.now(), v });
+  if (toolTargetsSeen.size > 500) toolTargetsSeen.delete(toolTargetsSeen.keys().next().value!);
+  return v;
 }
 
 /** What the session list's background reads need from the server's queues: no call here but `view` and `setupOf` runs
@@ -710,7 +757,7 @@ export async function startMergeQueue(
   const self = await projectOf(fileURLToPath(new URL("../..", import.meta.url)));
   const legacyNames = self.state === "ok" ? { root: self.root, file: join(stateRoot(), "merge-round.json") } : undefined;
   // A request to the branch's chat, on the merge queue's chat queue there (§chat.merge-queue/requests).
-  const sendTo = async (session: string, text: string, info?: { kind?: string; branch?: string; entry?: string }): Promise<void> => {
+  const sendTo = async (session: string, text: string, info?: { kind?: string; branch?: string; entry?: string; place?: string }): Promise<void> => {
     const { listSessions } = await import("../sessions-index");
     const s = (await listSessions()).find((x) => x.id === session);
     if (!s) throw new Error(`no session ${session}`);
@@ -774,6 +821,7 @@ export async function startMergeQueue(
     },
     // A hand-back: a request on the merge queue's chat queue in the branch's chat (§chat.merge-queue/requests).
     wake: sendTo,
+    placeOf: (root, target) => ({ label: placeLabel(root, served.everyProject()), root, target }),
     dropRequests: (entry) => void import("../topics").then((t) => t.dropMergeRequests(entry)),
     delivered: (request, delivery) => void stampDelivery(request, delivery),
     publish: (session, list, reviews) => publishFeed({ type: "merge_cards", session, cards: list, ...(reviews ? { reviews } : {}) }),
@@ -855,14 +903,14 @@ export async function startMergeQueue(
       cardsDo(mc.sync(view));
     },
     // A trial's end reaches the chat that started it, as a request on its merge queue chat queue (between turns).
-    trialEnded: (t, run) => {
+    trialEnded: (t, run, root) => {
       if (t.by.kind !== "chat" || !t.by.session) return;
       const session = t.by.session;
       void (async () => {
         const path = await sessionPath(session);
         if (!path) return;
         (await import("../merge-readiness")).rereadReadiness(path);
-        await (await import("./wake")).sendQueueWake(path, trialEndedText(t, run), undefined, { kind: "trial", ...(t.branch ? { branch: t.branch } : {}) });
+        await (await import("./wake")).sendQueueWake(path, trialEndedText(t, run), undefined, { kind: "trial", ...(t.branch ? { branch: t.branch, place: placeLabel(root, served.everyProject()) } : {}) });
       })().catch((err) => console.warn(`[merge-queue] trial note to ${session}: ${err instanceof Error ? err.message : err}`));
     },
     // Why a sent-back branch's newest commit isn't Ready to land: its chat's last readiness reading, never a fresh read.
@@ -1093,7 +1141,7 @@ export async function startMergeQueue(
     const summary = at ? bs.summaryOf(p.root, branch, at) : undefined;
     const owner = await worktreeOwnerOf(path).catch(() => null);
     const ownerRow = owner ? await ownerRowOf(owner) : undefined;
-    return { ...(summary ? { mergeSummary: summary } : {}), ...(ownerRow ? { mergeOwner: ownerRow } : {}), ...(queue ? { queue } : {}), mergeProject: { id, root: p.root, target: v.target, checks: v.checks, review: v.review, ...(v.invalid ? { invalid: v.invalid } : {}), ...(v.paused ? { paused: v.paused.why } : {}) }, ...(stats ? { mergeStats: stats } : {}), mergeServed: true };
+    return { ...(summary ? { mergeSummary: summary } : {}), ...(ownerRow ? { mergeOwner: ownerRow } : {}), ...(queue ? { queue } : {}), mergeProject: { id, root: p.root, target: v.target, checks: v.checks, review: v.review, ...(v.invalid ? { invalid: v.invalid } : {}), ...(v.paused ? { paused: v.paused.why } : {}), ...(v.settings?.how?.effective ? { how: v.settings.how.effective } : {}) }, ...(stats ? { mergeStats: stats } : {}), mergeServed: true };
   };
   listDeps = {
     projectOf: (path) => projectOf(path),

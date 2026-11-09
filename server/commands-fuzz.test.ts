@@ -269,6 +269,8 @@ const VALIDATE_ONLY: Record<string, string> = {
   "session.send": "starts a chat process for the turn",
   "session.configure": "acquires a chat handle, which starts the chat's process",
   "session.mode.set": "acquires a chat handle, which starts the chat's process",
+  "session.profile.switch": "acquires a chat handle, which starts the chat's process",
+  "session.profile.switch.cancel": "answers only for a chat this server holds, which needs a started chat",
   "session.mode.get": "answers only for a chat this server holds, which needs a started chat",
   ...Object.fromEntries(COMMANDS.filter((c) => c.id.startsWith("project.verb.")).map((c) => [c.id, "a project verb runs git and the supervisor"])),
   "session.sandbox.set": "acquires a chat handle, which starts the chat's process",

@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import {
+  type BranchPlace,
   type MergeCard,
   type MergeCardFailure,
   type MergeCardOutcome,
@@ -55,7 +56,9 @@ export interface CardsDeps {
   lastEntry?: (session: string) => Promise<string | null>;
   /** Start a turn in the chat with this text (a normal message, followUp); throws when not taken. */
   /** A request to the branch's chat (wake.ts sendQueueWake: a note on its merge queue chat queue); throws when it can't take one. */
-  wake?: (session: string, text: string, info?: { kind?: string; branch?: string; entry?: string }) => Promise<unknown>;
+  wake?: (session: string, text: string, info?: { kind?: string; branch?: string; entry?: string; place?: string }) => Promise<unknown>;
+  /** A branch's place in the project at `root` (§chat.worktrees/place). Absent: cards carry none. */
+  placeOf?: (root: string, target: string) => BranchPlace;
   /** Remove from Queue: drop the entry's requests not yet delivered, in every chat (topics.ts dropMergeRequests). */
   dropRequests?: (entry: string) => void;
   /** How a request reached its chat: pushed on its chat queue, or the hidden line (ProjectQueue.requestDelivered). */
@@ -324,6 +327,8 @@ export class MergeCards {
       }
       if (!card) {
         card = { id: e.id, entry: e.id, session: e.session, project: e.project, root, branch: e.branch, target: e.target, commit: e.commit, approvedBy: e.approval.by, state: e.state, notes: [], revisions: [], updatedAt: this.iso() };
+        const place = this.deps.placeOf?.(root, e.target);
+        if (place) card.place = place;
         rec.cards.push(card);
       }
       this.fill(card, e);
@@ -407,10 +412,17 @@ export class MergeCards {
       }
       this.write(rec);
       this.publish(rec);
-      if (wake) await this.sendWake(session, key, wake, { ...(extra.request ? { id: extra.request.id, kind: extra.request.kind } : { kind }), branch: e.branch, entry: e.id });
+      if (wake) await this.sendWake(session, key, wake, { ...(extra.request ? { id: extra.request.id, kind: extra.request.kind } : { kind }), branch: e.branch, ...this.requestPlace(session, e), entry: e.id });
     } finally {
       this.pending.delete(key);
     }
+  }
+
+  /** A request's place, from the branch's card: a card older than the place line still names it in the request. */
+  private requestPlace(session: string, e: MergeEntry): { place?: string } {
+    const card = this.read(session).cards.find((c) => c.entry === e.id);
+    const place = card ? (card.place?.label ?? this.deps.placeOf?.(card.root, card.target).label) : undefined;
+    return place ? { place } : {};
   }
 
   /**
@@ -434,13 +446,13 @@ export class MergeCards {
       this.waking.add(key);
       this.write(rec);
       await this.refresh(e, run);
-      await this.sendWake(session, key, text, { id: request.id, kind: request.kind, branch: e.branch, entry: e.id });
+      await this.sendWake(session, key, text, { id: request.id, kind: request.kind, branch: e.branch, ...this.requestPlace(session, e), entry: e.id });
     } finally {
       this.pending.delete(key);
     }
   }
 
-  private async sendWake(session: string, key: string, text: string, info: { id?: string; kind?: string; branch?: string; entry?: string }): Promise<void> {
+  private async sendWake(session: string, key: string, text: string, info: { id?: string; kind?: string; branch?: string; entry?: string; place?: string }): Promise<void> {
     try {
       if (!this.deps.wake) return this.fallback(session, key, text);
       try {
@@ -558,6 +570,8 @@ export class MergeCards {
     setOpt(card, "landed", e.landed ? structuredClone(e.landed) : undefined);
     setOpt(card, "request", e.request ? structuredClone(e.request) : undefined);
     setOpt(card, "worktree", e.worktree);
+    // A card with a place keeps it current (a rename, an archive); one written before the line never gets it.
+    if (card.place && this.deps.placeOf) card.place = this.deps.placeOf(card.root, card.target);
     setOpt(card, "redrafted", e.state === "needs-fix" && e.redrafted ? true : undefined);
     // Back with its chat under the standing Land (al_3) shows what went back as a final needs-fix does: why, what
     // failed, the thread's word, and that nothing is left to fix once git says so.

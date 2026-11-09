@@ -2,7 +2,7 @@
   "§app/settings-commands": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "code": [
       "shared/commands/other.ts",
       "shared/commands-ids.json",

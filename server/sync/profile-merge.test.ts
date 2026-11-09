@@ -10,8 +10,8 @@ const profile = (id: string, name: string, model?: string): SubagentProfile => (
   name,
   delegate: delegateDefaults().profiles,
   teams: null,
-  members: model ? { backend: "pi", model, effort: "low" } : null,
-  specWriter: null,
+  members: null,
+  specWriter: model ? { primary: { backend: "pi", model, effort: "low" }, fallback: null } : null,
 });
 const side = (profiles: SubagentProfile[] | null, at: Record<string, number>, origin = "a", deleted: Record<string, number> = {}): Side => {
   const items: Items = {};
@@ -36,8 +36,8 @@ test("two edits to one profile: the newer wins for that profile only", () => {
   const b = side([profile("x", "X", "zai/two"), profile("y", "Y")], { x: 20, y: 5 }, "b");
   for (const [l, r] of [[a, b], [b, a]] as const) {
     const m = mergeLibraries(l, r, "h", 100);
-    assert.equal(m.profiles.find((p) => p.id === "x")!.members?.model, "zai/two", "b's later edit of X");
-    assert.equal(m.profiles.find((p) => p.id === "y")!.members?.model, "zai/a-edit", "a's later edit of Y");
+    assert.equal(m.profiles.find((p) => p.id === "x")!.specWriter?.primary.model, "zai/two", "b's later edit of X");
+    assert.equal(m.profiles.find((p) => p.id === "y")!.specWriter?.primary.model, "zai/a-edit", "a's later edit of Y");
   }
 });
 
@@ -79,7 +79,7 @@ test("a starter-only library yields to one with any edited profile; two starters
   assert.deepEqual(ids(mergeLibraries(starter, other, "zen", 1000).profiles), ["my-setup"], "two starters keep one");
   // Same id on both sides: the real (dated) edit wins over the starter's.
   const realSetup = side([profile("my-setup", "My setup", "zai/real")], { "my-setup": 300 }, "flow");
-  assert.equal(mergeLibraries(starter, realSetup, "zen", 1000).profiles[0]!.members?.model, "zai/real");
+  assert.equal(mergeLibraries(starter, realSetup, "zen", 1000).profiles[0]!.specWriter?.primary.model, "zai/real");
 });
 
 test("names left colliding are made unique: the newer edit keeps the name, the other is renamed as a new edit", () => {
@@ -112,6 +112,12 @@ test("itemsAhead: a newer stamp or an unseen profile is ahead; a deletion of som
   assert.equal(itemsAhead(a, a), false);
   assert.equal(itemsAhead({ gone: { hash: null, modifiedAt: 9, origin: "a" } }, {}), false);
   assert.equal(itemsAhead({ x: { hash: null, modifiedAt: 9, origin: "a" } }, a), true);
+});
+
+test("a Members value is part of a profile's identity: excluding it from the hash would make an older peer's stamps disagree", () => {
+  const none = profile("x", "X", "zai/glm-5.3");
+  const held = { ...none, members: { backend: "pi", model: "zai/glm-5.3", effort: "low" } } as SubagentProfile;
+  assert.notEqual(profileHash(held), profileHash(none));
 });
 
 test("a profile hashes the same whatever order its keys were written in", () => {

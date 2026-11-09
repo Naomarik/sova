@@ -83,9 +83,34 @@
       "pi-config/extensions/subagents/inbox-lifecycle.ts"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-11-08T08:01Z",
-      "source": "pi-session:94b6e71e-3aba-4205-a03b-2fb292ea1d80#132113a8"
+      "by": "naomarik",
+      "at": "2026-11-08T22:15Z",
+      "source": "pi-session:f599f57e-519d-4f33-9088-ed8a9cd164b5#cebf8649"
+    }
+  },
+  "§teams.defaults/member-kinds": {
+    "kind": "behavior",
+    "requires": [
+      "§chat.subagent-profiles/resolution",
+      "§app.settings-dialog/modes",
+      "§teams.defaults/runtime-fallback",
+      "§teams.defaults/handover",
+      "§app.teams/requests"
+    ],
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "pi-config/extensions/subagents/index.ts",
+      "pi-config/extensions/subagents/teams.ts",
+      "pi-config/extensions/subagents/subagent-profiles.ts",
+      "pi-config/extensions/mode/prompt.ts",
+      "pi-config/extensions/subagents/index.test.ts",
+      "pi-config/extensions/subagents/teams.test.ts"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-11-08T22:15Z",
+      "source": "pi-session:f599f57e-519d-4f33-9088-ed8a9cd164b5#cebf8649"
     }
   },
   "§teams.defaults/monitor": {
@@ -169,7 +194,7 @@
       "§teams.defaults/routing"
     ],
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "unreviewed",
     "code": [
       "pi-config/extensions/subagents/index.ts",
       "pi-config/extensions/subagents/index.test.ts",
@@ -182,9 +207,9 @@
       "server/reports.test.ts"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-11-08T08:01Z",
-      "source": "pi-session:94b6e71e-3aba-4205-a03b-2fb292ea1d80#132113a8"
+      "by": "naomarik",
+      "at": "2026-11-08T22:15Z",
+      "source": "pi-session:f599f57e-519d-4f33-9088-ed8a9cd164b5#cebf8649"
     }
   },
   "§teams.defaults/team-report": {
@@ -231,7 +256,7 @@
   "§teams/defaults": {
     "kind": "surface",
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "code": [
       "pi-config/extensions/subagents/index.ts",
       "pi-config/extensions/subagents/teams.ts",
@@ -247,9 +272,9 @@
       "§app.claude-code-provider/catalog"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-11-08T08:01Z",
-      "source": "pi-session:94b6e71e-3aba-4205-a03b-2fb292ea1d80#132113a8"
+      "by": "naomarik",
+      "at": "2026-11-08T22:15Z",
+      "source": "pi-session:f599f57e-519d-4f33-9088-ed8a9cd164b5#cebf8649"
     }
   }
 }

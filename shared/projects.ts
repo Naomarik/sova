@@ -108,6 +108,23 @@ export interface ProjectGlanceRelease {
   steps: { id: string; label: string; phase: "prepare" | "sova" | "check" | "after" | "withdraw"; state: "waiting" | "running" | "done" | "failed" | "skipped" | "held" }[];
 }
 
+/** A project's copies and places as its card shows them (§app.projects/home-glance). */
+export interface ProjectGlanceSlots {
+  /** The copy limit's own count of running copies (the figure): the main checkout's and conformance's never, a running record outside the usable slots included. */
+  running: number;
+  cap: number;
+  /** The slots of 1 to 16 the project's numbering can use: one place each. */
+  usable: number;
+  /** Places a running copy of the project holds (the running pips; `running` may count more). */
+  runningPlaces: number;
+  /** Places a copy of the project holds and doesn't run. */
+  stopped: number;
+  /** Places no copy of the project holds whose ports something else has. */
+  elsewhere: number;
+  /** Places a new copy could take; null: not checked (the places left over are drawn as such). */
+  free: number | null;
+}
+
 /** One project card's runtime figures (§app.projects/home-glance). */
 export interface ProjectGlance {
   projectId: string;
@@ -116,8 +133,8 @@ export interface ProjectGlance {
   merge: "served" | "reading" | "unserved";
   /** The kept view's cut while `merge` is `served`; null otherwise. */
   queue: ProjectGlanceQueue | null;
-  /** null: the project has no project file (no copies). `running` excludes the main checkout's and conformance's. */
-  slots: { running: number; cap: number } | null;
+  /** null: the project has no project file (no copies). */
+  slots: ProjectGlanceSlots | null;
   /** Own memory now (bytes): its chats' (with their workers and tools) and its running copies' (the main checkout's included). */
   memory: { chatsBytes: number; copiesBytes: number };
   release: ProjectGlanceRelease | null;

@@ -6,7 +6,7 @@ import type { CardAnswerValue, CardInfo, ProjectCardsAnswer, SessionCardsAnswer 
 import type { ProjectSettingsInfo, SettingsApplyResult, SettingsCardView, SettingsHistoryRow, SovaCardsInfo } from "../../shared/project-settings";
 import type { ExtensionInspect, ExtensionsInstalled } from "../../shared/extension-loader";
 import type { McpNewServer, McpProjectServers, McpServerRow, McpServers, McpSignIn } from "../../shared/mcp";
-import type { ProfilesListing } from "../../shared/profiles";
+import type { ProfileSaveRequest, ProfilesListing, ProfileWriteAnswer } from "../../shared/profiles";
 import type { ProjectFilesAnswer } from "../../shared/project-files";
 import type { DeployVerb, VerbResult } from "../../shared/project-contract";
 import type { CopyLimitView, HostServicesView, ProjectServicesView, ServicesUiVerb } from "../../shared/services-view";
@@ -101,7 +101,7 @@ import type {
   PushTestResult,
 } from "../../shared/protocol";
 import type { MeshFrontDoor, MeshLocalSettings } from "../../shared/mesh-local";
-import { WIRE_PARAM, type ShellOutputPage, type ModelCheckStatus, type ProviderKeyRow, type ProviderKeysInfo, type ProviderKeyWrite } from "../../shared/protocol";
+import { WIRE_PARAM, type ChatProfileState, type ProfileSwitchResult, type ShellOutputPage, type ModelCheckStatus, type ProviderKeyRow, type ProviderKeysInfo, type ProviderKeyWrite } from "../../shared/protocol";
 import { LIST_VERSION_HEADER, parseListVersion } from "./summary-diff";
 import type { ShellDraftMode } from "./draft-save";
 import type { LanPairingAdd, LanRelayPut, LanStatus } from "../../shared/mesh-lan";
@@ -299,11 +299,11 @@ export const getSubagentProfiles = (path?: string, host?: string | null) => requ
 export const putSubagentProfiles = (settings: SubagentProfilesFile, host?: string | null) => request<SubagentProfilesInfo>(hostUrl(host, "/api/settings/subagents"), { method: "PUT", body: JSON.stringify(settings) });
 /** Restore Previous Library: put the kept copy back as a new edit (§chat.subagent-profiles/replaced). */
 export const restoreSubagentProfiles = (file: string, host?: string | null) => request<SubagentProfilesInfo>(hostUrl(host, "/api/settings/subagents/restore"), { method: "POST", body: JSON.stringify({ file }) });
-/** This device's default (never synced): Make Default in Settings → Subagents writes it alone, always locally. */
+/** This device's default (never synced): Make Default in Settings → Profiles writes it alone, always locally. */
 export const putSubagentProfileDefault = (id: string) => request<SubagentProfilesInfo>("/api/settings/subagents/default", { method: "PUT", body: JSON.stringify({ default: id }) });
 export const pickSubagentProfile = (path: string, profile: string, host?: string | null) => request<SubagentProfilesInfo>(hostUrl(host, `/api/subagents?path=${encodeURIComponent(path)}`), { method: "POST", body: JSON.stringify({ profile }) });
 
-/** Delegate mode's routing (legacy file; Settings → Subagents edits routing per profile): which worker each kind of work goes to. */
+/** Delegate mode's routing (legacy file; Settings → Profiles edits routing per profile): which worker each kind of work goes to. */
 export const getDelegateSettings = () => request<DelegateSettingsInfo>("/api/settings/delegate");
 
 /** What each worker backend offers. Slow the first time (it asks the Claude Code CLI; cached 60s);
@@ -314,7 +314,7 @@ export const getDelegateOptions = () => request<DelegateOptions>("/api/settings/
 export const putDelegateSettings = (settings: DelegateSettings) =>
   request<DelegateSaveResult>("/api/settings/delegate", { method: "PUT", body: JSON.stringify(settings) });
 
-/** The spec writer (legacy file; Settings → Subagents edits it per profile): which worker writes draft claims and evidence while spec is on. */
+/** The spec writer (legacy file; Settings → Profiles edits it per profile): which worker writes draft claims and evidence while spec is on. */
 export const getSpecSettings = () => request<SpecSettingsInfo>("/api/settings/spec");
 
 /** What each worker backend offers for the writer: the same discovery as Delegate's. */
@@ -324,7 +324,7 @@ export const getSpecOptions = () => request<DelegateOptions>("/api/settings/spec
 export const putSpecSettings = (settings: SpecSettings) =>
   request<SpecSaveResult>("/api/settings/spec", { method: "PUT", body: JSON.stringify(settings) });
 
-/** Team defaults (legacy file, read to seed Settings → Subagents): the coordinator and monitor every new team gets. */
+/** Team defaults (legacy file, read to seed Settings → Profiles): the coordinator and monitor every new team gets. */
 export const getTeamDefaults = () => request<TeamDefaultsInfo>("/api/settings/team");
 
 /** Settings → Accounts: this host's Claude logins in order, their standing, and the add-login flow. */
@@ -703,14 +703,14 @@ export const listSessionGroups = () => request<SessionGroup[]>("/api/session-gro
 
 /** Profiles (§chat/profiles): what a folder can use, one pick, approving and hiding, and saving the
     session's model, effort and subagent pick as a new profile of yours (the one profile file written). */
-export type ProfilePickRef = { source: "sova" | "user" | "project"; id: string };
-export const fetchProfiles = (cwd?: string | null) =>
-  request<ProfilesListing>(cwd ? `/api/profiles?cwd=${encodeURIComponent(cwd)}` : "/api/profiles", { cache: "no-store" });
+export type ProfilePickRef = { source: "sova" | "user" | "project" | "library"; id: string };
+export const fetchProfiles = (cwd?: string | null, host?: string | null) =>
+  request<ProfilesListing>(hostUrl(host, cwd ? `/api/profiles?cwd=${encodeURIComponent(cwd)}` : "/api/profiles"), { cache: "no-store" });
 export const pickProfile = (path: string, profile: ProfilePickRef | { remove: string[]; grant: string[]; from?: ProfilePickRef } | null) =>
   request<{ ok: true }>("/api/sessions/profile", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path, profile }) });
 /** Save Current As Profile: this session's model, effort and subagent pick as a new profile of yours; answers with the listing. */
-export const saveCurrentProfile = (path: string, label: string) =>
-  request<ProfilesListing>("/api/profiles/save-current", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path, label }) });
+export const saveCurrentProfile = (path: string, label: string, cwd?: string | null) =>
+  request<ProfilesListing & { savedKey?: string }>("/api/profiles/save-current", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path, label, ...(cwd ? { cwd } : {}) }) });
 /** Approve a project profile's powers, exactly the ones shown (§chat.profiles/trust). */
 export const approveProfile = (cwd: string, p: { id: string; grant: string[]; overseerMayStart: boolean }) =>
   request<ProfilesListing>("/api/profiles/approve", {
@@ -718,8 +718,32 @@ export const approveProfile = (cwd: string, p: { id: string; grant: string[]; ov
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ cwd, id: p.id, grant: p.grant, overseerMayStart: p.overseerMayStart }),
   });
+// ── Joined profiles, the chat side (§chat.profiles/switch, §chat.profiles/default) ──────────────
+/** Switch this chat's whole Models part to a joined profile (its id, or "off"): now, or when the
+    running reply ends. A refusal (400/409/404) carries the reason in its error and changes nothing. */
+export const switchProfile = (path: string, profile: string, host?: string | null) =>
+  request<ProfileSwitchResult>(hostUrl(host, `/api/sessions/profile-switch?path=${encodeURIComponent(path)}`), { method: "POST", body: JSON.stringify({ profile }) });
+/** Update {name}: this chat's model, effort, mode and add-on modes into its profile (the server takes
+    the chat's). Answers the fresh listing; refused for Off, a project's file or one that can't be read. */
+export const updateProfileFromChat = (path: string, cwd?: string | null) =>
+  request<ProfilesListing>("/api/profiles/update-from-chat", { method: "POST", body: JSON.stringify({ path, ...(cwd ? { cwd } : {}) }) });
+/** Cancel Switch: drop the switch waiting for the reply to end. */
+export const cancelProfileSwitch = (path: string, host?: string | null) =>
+  request<{ cancelled: boolean; state: ChatProfileState }>(hostUrl(host, `/api/sessions/profile-switch?path=${encodeURIComponent(path)}`), { method: "DELETE" });
+/** Make a joined profile (its key, or "off") this computer's default; with `path` and no key, that chat's
+    profile, the chat's strict flag and memory type saved with it. Answers the fresh listing. */
+export const putDefaultProfile = (body: { key?: string; path?: string; cwd?: string | null }) =>
+  request<ProfilesListing>("/api/profiles/default", { method: "PUT", body: JSON.stringify({ ...body, cwd: body.cwd ?? undefined }) });
+
 export const setProfileHidden = (key: string, hidden: boolean, cwd?: string | null) =>
   request<ProfilesListing>("/api/profiles/hidden", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ key, hidden, ...(cwd ? { cwd } : {}) }) });
+/** Settings → Profiles' writes (§chat.profiles/joined): one of yours, both halves, each through its own
+    writer; a new one when `key` is absent. Each answers the fresh listing for `cwd`. */
+export const saveMyProfile = (body: ProfileSaveRequest) =>
+  request<ProfileWriteAnswer>("/api/profiles/mine", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+/** Delete one of yours; refused for the default, and a library half another profile links stays. */
+export const deleteMyProfile = (key: string, cwd?: string | null) =>
+  request<ProfileWriteAnswer>("/api/profiles/mine/delete", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ key, ...(cwd ? { cwd } : {}) }) });
 /** A new session in `cwd` with a profile picked; nothing is sent (the chip's Run Again). */
 export const startProfileSession = (cwd: string, profile: ProfilePickRef) =>
   request<SessionSummary>("/api/sessions", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ cwd, profile }) });

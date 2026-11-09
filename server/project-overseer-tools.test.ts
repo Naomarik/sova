@@ -42,11 +42,37 @@ const { OrgError } = await import("./org-error");
 const { TOOL_NEEDS: MASTER_NEEDS } = await import("./statecharts-replay");
 /** Master's level of each tool, as the powers carry it over (a level allowed a tool unattended ⇔ its power is On at that level). */
 const LEVEL_OF_POWER = (p: string): string | null => (p === "always" ? "L0" : (POWER_INFO as Record<string, { oldLevel: string | null }>)[p]?.oldLevel ?? null);
-const { codingModeChoice, codingModeSwitch, confirmBriefPrompt, CONFIRM_BRIEF_PARAGRAPH } = await import("./project-coding-mode");
+const { codingModeChoice, codingModeSwitch, confirmBriefPrompt, CONFIRM_BRIEF_PARAGRAPH, withProfileModes } = await import("./project-coding-mode");
+const { codingStartRefusal, codingTakesOf } = await import("./coding-default-profile");
 
 /** This computer's subagent profiles, as the fake host has them ("house" the default). */
 const PROFILES = { profiles: [{ id: "off", name: "Off", footprint: "no workers" }, { id: "house", name: "House", footprint: "4 routes" }, { id: "big", name: "Big team", footprint: "6 routes" }], default: "house", current: { id: "house", name: "House", source: "default" } } as never;
 const profileCheck = (id: string | undefined) => (id === undefined || ["off", "house", "big"].includes(id) ? null : `Unknown subagent profile: ${id}. sova_list_subagent_profiles lists them.`);
+/** This computer's joined profiles, as the fake host has them: a pair (models + modes), a library-only profile, and a
+    pair whose When a Chat Starts part grants a session power and removes the web. */
+const SESSION = { remove: [], grant: [], singleton: false, limits: {}, overseerMayStart: false, icon: "wrench", source: "user" };
+const JOINED = [
+  { id: "off", key: "sova:default", kind: "off", group: "builtin", name: "Off", footprint: "Keeps the chat's own model", providers: [], helperRoles: 0 },
+  { id: "claude", key: "user:claude", kind: "pair", group: "yours", name: "Claude", footprint: "Opus 5.5", providers: ["claude"], helperRoles: 4, libraryId: "house", isDefault: true, session: { ...SESSION, id: "claude", label: "Claude", key: "user:claude", mode: "delegate", minorModes: ["spec"], model: "claude-code-cli/claude-opus-5-5", thinking: "high", subagents: "house" } },
+  { id: "big", key: "library:big", kind: "library", group: "yours", name: "Big team", footprint: "GPT", providers: ["openai"], helperRoles: 6, libraryId: "big" },
+  { id: "powers", key: "user:powers", kind: "pair", group: "yours", name: "Powers", footprint: "Opus 5.5", providers: ["claude"], helperRoles: 4, libraryId: "house", session: { ...SESSION, id: "powers", label: "Powers", key: "user:powers", remove: ["web"], grant: ["sessions.message"], overseerMayStart: true, subagents: "house" } },
+  { id: "messenger", key: "user:messenger", kind: "pair", group: "yours", name: "Messenger", footprint: "Opus 5.5", providers: ["claude"], helperRoles: 4, libraryId: "house", session: { ...SESSION, id: "messenger", label: "Messenger", key: "user:messenger", grant: ["sessions.read", "sessions.message"], overseerMayStart: true, subagents: "house" } },
+  { id: "unmarked", key: "user:unmarked", kind: "pair", group: "yours", name: "Unmarked", footprint: "Opus 5.5", providers: ["claude"], helperRoles: 0, session: { ...SESSION, id: "unmarked", label: "Unmarked", key: "user:unmarked", grant: ["sessions.read"] } },
+  { id: "pending", key: "project:/proj#pending", kind: "project", group: "project", name: "Pending", footprint: "Opus 5.5", providers: [], helperRoles: 0, approval: "needed", session: { ...SESSION, id: "pending", label: "Pending", key: "project:/proj#pending", source: "project", grant: ["sessions.read"], overseerMayStart: true } },
+  { id: "greeter", key: "user:greeter", kind: "pair", group: "yours", name: "Greeter", footprint: "Opus 5.5", providers: [], helperRoles: 0, session: { ...SESSION, id: "greeter", label: "Greeter", key: "user:greeter", firstMessage: "Hi" } },
+  { id: "solo", key: "user:solo", kind: "pair", group: "yours", name: "Solo", footprint: "Opus 5.5", providers: [], helperRoles: 0, session: { ...SESSION, id: "solo", label: "Solo", key: "user:solo", singleton: true } },
+] as never as import("../shared/profiles").JoinedProfile[];
+/** What the real host's withNamedProfile does, over JOINED. */
+function namedFake<M extends Partial<ProjectCodingMode>>(mode: M, req: Record<string, unknown>, start: boolean): { mode: M; name?: string } | { error: string } {
+  if (mode.profile === undefined) return { mode };
+  const row = JOINED.find((r) => r.id === mode.profile);
+  if (!row) return { error: `Unknown profile: ${mode.profile}. sova_list_profiles lists them.` };
+  const bad = start ? codingStartRefusal(row) : null;
+  if (bad) return { error: bad };
+  const takes = codingTakesOf(row);
+  const out = start ? (withProfileModes(mode as never, takes, req) as unknown as M) : { ...mode };
+  return { mode: { ...out, profile: row.id, ...(start && takes.grants ? { profileStart: takes.grants } : {}) }, name: row.name };
+}
 after(() => rmSync(root, { recursive: true, force: true }));
 
 /** The tools an organization's part contributes to a placed project's overseer (server/overseer-org-part.ts). */
@@ -95,17 +121,19 @@ function fake(opts: { attended?: boolean; autonomy?: Autonomy; settings?: Partia
     sessions: async () => sessions,
     transcript: async () => [],
     // This computer's default (opts.hostMode, else normal · spec), and its library's profiles.
-    codingMode: (req: Record<string, unknown>) => {
+    codingMode: async (req: Record<string, unknown>) => {
       const c = codingModeChoice(req, opts.hostMode ?? { mode: "normal", minorModes: ["spec"] });
       const bad = "mode" in c ? profileCheck(c.mode.subagentProfile) : null;
-      return bad ? { error: bad } : c;
+      return bad ? { error: bad } : "error" in c ? c : namedFake(c.mode, req, true);
     },
-    codingSwitch: (req: Record<string, unknown>) => {
+    codingSwitch: async (req: Record<string, unknown>) => {
       const c = codingModeSwitch(req);
       const bad = "mode" in c ? profileCheck(c.mode?.subagentProfile) : null;
-      return bad ? { error: bad } : c;
+      return bad ? { error: bad } : "error" in c || !c.mode ? c : namedFake(c.mode, req, false);
     },
     subagentProfiles: () => PROFILES,
+    profiles: async () => JOINED,
+    defaultProfileName: () => "Claude",
     playbookWaiting: async (id: string) => (opts.waiting?.[id] ? { title: "Project verbs: Portal", questions: opts.waiting[id]! } : null),
     createCoding: async (input: { cwd: string; prompt: string; mode: ProjectCodingMode; alreadyAgreed?: boolean }) => {
       // A statechart's refusal (opts.refuse): as the real host throws it.
@@ -123,7 +151,7 @@ function fake(opts: { attended?: boolean; autonomy?: Autonomy; settings?: Partia
       if (id === "gone-tree") throw new OrgError("Its worktree was removed, so it has no folder to work in.", 409);
       calls.push(`send:${id}`);
       modes.push(mode ?? null);
-      return mode ? { queued: false, modeApplies: "now" as const, modeNow: { mode: mode.mode ?? "normal", minorModes: mode.minorModes ?? [] }, profile: mode.subagentProfile === "big" ? "Big team" : "House" } : { queued: false };
+      return mode ? { queued: false, modeApplies: "now" as const, modeNow: { mode: mode.mode ?? "normal", minorModes: mode.minorModes ?? [] }, profile: mode.profile ? JOINED.find((r) => r.id === mode.profile)?.name : mode.subagentProfile === "big" ? "Big team" : "House" } : { queued: false };
     },
     coding: () => [],
     builds: async () => opts.builds ?? [],
@@ -390,11 +418,11 @@ describe("scope and caps", () => {
 describe("coding sessions' modes (any mode, this computer's default unnamed; §app.project-overseer/coding-mode)", () => {
   const N = (minorModes: string[] = []): ProjectCodingMode => ({ mode: "normal", minorModes });
 
-  test("unnamed: this computer's default, whole, with no subagent profile picked; the reply names mode and profile", async () => {
+  test("unnamed: this computer's default, whole, with no profile picked; the reply names mode and the default profile", async () => {
     const f = fake({ attended: true, hostMode: { mode: "delegate", minorModes: ["align", "spec"] } });
     const r = await f.run("sova_create_session", { gap: "none", prompt: "p" });
     assert.deepEqual(f.modes, [{ mode: "delegate", minorModes: ["align", "spec"] }]);
-    assert.match((r.content[0] as { text: string }).text, /mode delegate · align · spec, subagent profile House\. It first asks the operator to confirm the brief\.$/);
+    assert.match((r.content[0] as { text: string }).text, /mode delegate · align · spec, profile Claude\. It first asks the operator to confirm the brief\.$/);
   });
 
   test("every mode, minor mode and profile is accepted on a start and on a running session", async () => {
@@ -419,7 +447,7 @@ describe("coding sessions' modes (any mode, this computer's default unnamed; §a
     // Already agreed, so the mode is exactly as named (without it, align is added: §app.project-overseer/confirm-brief).
     const r = await f.run("sova_create_session", { gap: "none", prompt: "p", mode: "delegate", minor_modes: ["spec", "vis"], subagent_profile: "big", already_agreed: true });
     assert.deepEqual(f.modes, [{ mode: "delegate", minorModes: ["spec", "vis"], subagentProfile: "big" }]);
-    assert.match((r.content[0] as { text: string }).text, /mode delegate · spec · visuals, subagent profile Big team\. Started as already agreed\.$/);
+    assert.match((r.content[0] as { text: string }).text, /mode delegate · spec · visuals, profile Claude with subagent profile Big team\. Started as already agreed\.$/);
     const none = fake({ attended: true });
     await none.run("sova_create_session", { gap: "none", prompt: "p", minor_modes: [], already_agreed: true });
     assert.deepEqual(none.modes, [{ mode: "normal", minorModes: [] }], "[] is taken as named: no spec, nothing added");
@@ -458,20 +486,20 @@ describe("coding sessions' modes (any mode, this computer's default unnamed; §a
     const f = fake({ attended: true });
     const text = (r: { content: unknown[] }) => (r.content[0] as { text: string }).text;
     const asks = await f.run("sova_create_session", { gap: "none", prompt: "Build the API", minor_modes: ["align", "spec"] });
-    assert.match(text(asks), /, mode normal · align · spec, subagent profile House\. It first asks the operator to confirm the brief\.$/);
+    assert.match(text(asks), /, mode normal · align · spec, profile Claude\. It first asks the operator to confirm the brief\.$/);
     const agreed = await f.run("sova_create_session", { gap: "none", prompt: "Build the API", minor_modes: ["align", "spec"], already_agreed: true });
-    assert.match(text(agreed), /subagent profile House\. Started as already agreed\.$/);
+    assert.match(text(agreed), /profile Claude\. Started as already agreed\.$/);
     // Only true counts: anything else is absent, so the session asks first.
     const loose = await f.run("sova_create_session", { gap: "none", prompt: "Build the API", minor_modes: ["align", "spec"], already_agreed: "yes" });
     assert.match(text(loose), /It first asks the operator to confirm the brief\.$/);
     // Align left out of minor_modes, not already agreed: align is turned on anyway, so the session asks the operator first.
     const off = await f.run("sova_create_session", { gap: "none", prompt: "Build the API", minor_modes: ["spec"] });
-    assert.match(text(off), /, mode normal · align · spec, subagent profile House\. It first asks the operator to confirm the brief\.$/);
+    assert.match(text(off), /, mode normal · align · spec, profile Claude\. It first asks the operator to confirm the brief\.$/);
     assert.deepEqual([...(f.modes.at(-1) as ProjectCodingMode).minorModes].sort(), ["align", "spec"], "the host starts it with align on");
     assert.equal(f.prompts.at(-1), `Build the API\n\n${CONFIRM_BRIEF_PARAGRAPH}`, "its first prompt asks first");
     // Already agreed: the mode as given, align off included, and the brief as given.
     const agreedOff = await f.run("sova_create_session", { gap: "none", prompt: "Build the API", minor_modes: ["spec"], already_agreed: true });
-    assert.match(text(agreedOff), /, mode normal · spec, subagent profile House\. Started as already agreed\.$/);
+    assert.match(text(agreedOff), /, mode normal · spec, profile Claude\. Started as already agreed\.$/);
     assert.deepEqual((f.modes.at(-1) as ProjectCodingMode).minorModes, ["spec"]);
     assert.equal(f.prompts.at(-1), "Build the API");
     assert.deepEqual(f.agreedSeen, [undefined, true, undefined, undefined, true]);
@@ -519,11 +547,63 @@ describe("coding sessions' modes (any mode, this computer's default unnamed; §a
     assert.equal(waitingWords(undefined), "");
   });
 
-  test("sova_list_subagent_profiles lists this computer's profiles, the default marked; a read", async () => {
+  test("sova_list_profiles (and its older name) lists this computer's profiles, parts and the default marked; a read", async () => {
     const f = fake({ attended: false, autonomy: "L0" });
-    const r = await f.run("sova_list_subagent_profiles");
-    assert.equal((r.content[0] as { text: string }).text, "off: Off · no workers\nhouse: House · 4 routes · default\nbig: Big team · 6 routes");
+    const r = await f.run("sova_list_profiles");
+    assert.equal(
+      (r.content[0] as { text: string }).text.split("\n").slice(0, 4).join("\n"),
+      [
+        "off: Off · Keeps the chat's own model · sets nothing · needs no mark",
+        'claude: Claude · Opus 5.5 · When a Chat Starts + Models · subagent_profile house · not marked "The Overseer may start it" · default',
+        "big: Big team · GPT · Models part only · needs no mark",
+        'powers: Powers · Opus 5.5 · When a Chat Starts + Models · subagent_profile house · marked "The Overseer may start it"',
+      ].join("\n"),
+    );
+    const old = await f.run("sova_list_subagent_profiles");
+    assert.equal((old.content[0] as { text: string }).text, (r.content[0] as { text: string }).text, "the older name answers the same");
+    assert.match((r.content[0] as { text: string }).text, /^pending: Pending · .* · needs the user's approval$/m);
+    assert.equal(TOOL_POWER.sova_list_profiles, "always");
     assert.equal(TOOL_POWER.sova_list_subagent_profiles, "always");
+  });
+
+  test("profile on a coding start: its models and modes (what the call names stays); never one that changes tools or powers", async () => {
+    const f = fake({ attended: true });
+    const r = await f.run("sova_create_session", { gap: "none", prompt: "p", profile: "claude", already_agreed: true });
+    assert.deepEqual(f.modes, [{ mode: "delegate", minorModes: ["spec"], profile: "claude" }], "the profile's mode and add-ons, and its id for the switch");
+    assert.match((r.content[0] as { text: string }).text, /mode delegate · spec, profile Claude\. Started as already agreed\.$/);
+    const named = fake({ attended: true });
+    await named.run("sova_create_session", { gap: "none", prompt: "p", profile: "claude", mode: "normal", minor_modes: [], already_agreed: true });
+    assert.deepEqual(named.modes, [{ mode: "normal", minorModes: [], profile: "claude" }], "a named mode and [] win over the profile's");
+    const lib = fake({ attended: true });
+    await lib.run("sova_create_session", { gap: "none", prompt: "p", profile: "big", already_agreed: true });
+    assert.deepEqual(lib.modes, [{ mode: "normal", minorModes: ["spec"], profile: "big" }], "a library-only profile: the default's mode, its models");
+    // Removals, a first message or One at a time never fit a coding session; powers only with the mark and approval.
+    const g = fake({ attended: true, settings: { caps: { ...defaultPoSettings().caps, createPerTurn: 0 } } });
+    for (const [id, name] of [["powers", "Powers"], ["greeter", "Greeter"], ["solo", "Solo"]])
+      await assert.rejects(() => g.run("sova_create_session", { gap: "none", prompt: "p", profile: id }), new RegExp(`Coding sessions need their tools and send their own brief, so ${name} can't start one\\.`), id);
+    await assert.rejects(() => g.run("sova_create_session", { gap: "none", prompt: "p", profile: "unmarked" }), /Unmarked grants session powers and isn't marked "The Overseer may start it", so it can't start a coding session\./);
+    await assert.rejects(() => g.run("sova_create_session", { gap: "none", prompt: "p", profile: "pending" }), /Pending needs the operator's approval in Settings → Profiles first\./);
+    await assert.rejects(() => g.run("sova_create_session", { gap: "none", prompt: "p", profile: "nope" }), /Unknown profile: nope\. sova_list_profiles lists them\./);
+    await assert.rejects(() => g.run("sova_create_session", { gap: "none", prompt: "p", profile: "claude", subagent_profile: "big" }), /Give profile or subagent_profile, not both/);
+    assert.deepEqual([g.calls, g.limited], [[], []], "nothing created, no cap");
+    // Marked and approved: its powers come too, its session half written whole by the Overseer.
+    const m = fake({ attended: true });
+    await m.run("sova_create_session", { gap: "none", prompt: "p", profile: "messenger", already_agreed: true });
+    assert.deepEqual(m.modes, [{ mode: "normal", minorModes: ["spec"], profile: "messenger", profileStart: { source: "user", id: "messenger" } }]);
+    // Without already_agreed, align is added and the profile's start still rides with the mode.
+    const a = fake({ attended: true });
+    await a.run("sova_create_session", { gap: "none", prompt: "p", profile: "messenger" });
+    assert.deepEqual((a.modes[0] as ProjectCodingMode).profileStart, { source: "user", id: "messenger" });
+  });
+
+  test("profile on sova_send: only its Models part moves (any profile, even one with powers); unknown refused before sending", async () => {
+    const f = fake({ attended: true });
+    const r = await f.run("sova_send", { session: "in-root", text: "go", profile: "powers" });
+    assert.deepEqual(f.modes, [{ profile: "powers" }], "no mode rides with it");
+    assert.match((r.content[0] as { text: string }).text, /, profile Powers\.$/);
+    const g = fake({ attended: true });
+    await assert.rejects(() => g.run("sova_send", { session: "in-root", text: "go", profile: "nope" }), /Unknown profile: nope/);
+    assert.deepEqual(g.calls, []);
   });
 
   test("sova_send reaches a coding session it started in a worktree outside the root, never one whose worktree was removed", async () => {

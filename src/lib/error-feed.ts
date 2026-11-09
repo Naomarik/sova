@@ -20,6 +20,8 @@ export interface FeedEntry {
   message: string;
   /** The failed turn's own model's provider, when the server said it (live error event only). */
   provider?: string;
+  /** With `provider`: the model ref that turn actually ran (the limit row names it). */
+  model?: string;
   /** A start failure: how many messages went back to the composer with it. */
   back?: number;
   /** A newer turn started since: no banner, only a usage limit's row may still follow it. */
@@ -100,7 +102,7 @@ export function feedOnNote(feed: ErrorFeed, message: string, dedupe = false): Er
  * it came before this connection's hello, so the chat didn't start; `back`: how many messages the
  * view just put back into the composer for it.
  */
-export function feedOnFailure(feed: ErrorFeed, f: { message: string; provider?: string; beforeHello: boolean; back: number }): FeedStep {
+export function feedOnFailure(feed: ErrorFeed, f: { message: string; provider?: string; model?: string; beforeHello: boolean; back: number }): FeedStep {
   if (f.beforeHello) {
     const back = (feed.heldBack ?? 0) + f.back;
     const at = feed.entries.findIndex((e) => e.kind === "start" && shown(e));
@@ -121,7 +123,7 @@ export function feedOnFailure(feed: ErrorFeed, f: { message: string; provider?: 
   // because an announcement per retry would read as N new errors.
   if (last?.message === f.message) return { feed, says };
   return {
-    feed: { ...feed, entries: [...feed.entries, { kind: "turn", message: f.message, ...(f.provider ? { provider: f.provider } : {}) }], turnError: f.message },
+    feed: { ...feed, entries: [...feed.entries, { kind: "turn", message: f.message, ...(f.provider ? { provider: f.provider } : {}), ...(f.provider && f.model ? { model: f.model } : {}) }], turnError: f.message },
     says: [...says, { say: "turnStopped" }],
   };
 }

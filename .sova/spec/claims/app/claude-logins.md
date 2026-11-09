@@ -26,7 +26,7 @@ for the chats Sova starts in it (§app.claude-logins/project-login).
 
 The login registry, per-spawn selection and failover live in the claude-code extension
 (`pi-config/extensions/claude-code/accounts.ts`, node built-ins only); the server reads and
-writes the registry through that file, like Settings → Subagents does `subagent-profiles.json`.
+writes the registry through that file, like Settings → Profiles does `subagent-profiles.json` (through `/api/settings/subagents`).
 
 ## §app.claude-logins/registry — The registry and a login's directory
 

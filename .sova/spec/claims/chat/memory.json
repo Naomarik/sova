@@ -8,7 +8,7 @@
       "§chat.memory/settings"
     ],
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "code": [
       "server/harness/state-kinds.ts",
       "server/mode-state.ts",
@@ -18,7 +18,8 @@
       "server/memory/chat-memory.test.ts",
       "server/memory/settings.test.ts",
       "src/lib/api.ts",
-      "server/automation-session.ts"
+      "server/automation-session.ts",
+      "src/components/ModeMenu.tsx"
     ]
   },
   "§chat.memory/full-ids": {

@@ -101,7 +101,7 @@ claim is true. That is still a reading of the code.
 
 ## The spec writer
 
-A chat's [subagent profile](/docs/subagent-profiles/) can name a **spec writer**: a worker that
+A chat's [profile](/docs/subagent-profiles/) can name a **spec writer**: a worker that
 writes the spec drafts while spec is on, so the main model doesn't have to. Set it in the profile's
 **Spec writer** section ("Use a spec writer while spec is on"). The gear on spec's row in the mode
 menu opens that section for this chat's profile. With none, or with profile Off, the session writes
@@ -131,7 +131,7 @@ own agent folder has spec only while its parent has it on, too.
 ## Project coding sessions
 
 A project has no coding-mode setting of its own: its coding sessions start in this computer's
-default mode, the one **Save as default** in a chat's mode menu sets, and the project page names
+default mode, the one **Make {name} the Default** in a chat's mode menu sets, and the project page names
 it. A coding session has spec only when that default does, and you or an Overseer can turn it on or off
 in a running session, as in any chat.
 

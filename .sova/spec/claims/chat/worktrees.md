@@ -6,8 +6,9 @@ A session records the git worktrees it works in. pi's `worktrees` extension
 extension lets workers start only in the session's cwd or in one of those worktrees, and Sova
 shows the set in the session pane and each merge the session made as a card in the transcript.
 It works the same in the TUI and in Sova, for sessions Sova holds and sessions it only watches.
-Only when the user asks does Sova remove the merged worktrees of a repository
-(§chat.worktrees/cleanup).
+One shared answer says whether a branch has anything of its own left to land
+(§chat.worktrees/nothing-left). Only when the user asks does Sova remove the merged worktrees of a
+repository (§chat.worktrees/cleanup).
 
 ## §chat.worktrees/entry — The set lives in the session
 
@@ -21,7 +22,9 @@ nothing.
 Each worktree records its path, its branch, the commit it was based on, its status (`active`,
 `dropped` or `merged`; a merge adds the target branch and the resulting commit), and who put it
 there: the session id, and `created` or `attached`. Dropped and merged worktrees stay in the set
-as history.
+as history. A record whose path is a project's main checkout, attached before that was refused
+(§chat.worktrees/tool), is left out of every list, count and reading, with the session's file
+untouched: nothing can land from it, so no row ever offers it Land.
 
 ## §chat.worktrees/tool — The `worktree` tool
 
@@ -42,7 +45,8 @@ by argument list with no shell, locally only (a remote session refuses it).
   keeps its copy.
 - **attach** `{path}`: tracks an existing worktree top level (a subdirectory, or a detached HEAD,
   is refused) as `attached`; its base is its fork point from `master` (else `main`). A worktree
-  another session created may be attached.
+  another session created may be attached. A project's main checkout can't be: "That folder is the
+  project's main checkout, not a worktree. Nothing was attached."
 - **detach** `{path}`: marks it `dropped`. Nothing is deleted on disk.
 - **merge** `{path, target?, withoutDocs?}`: merges the worktree's branch into `target` (default `master`, or
   `main` in a repository without `master`, whatever its base branch) and records the merge (§chat.worktrees/merge-card). Where `target` is checked out, that checkout
@@ -85,7 +89,10 @@ by argument list with no shell, locally only (a remote session refuses it).
   worktree the session's own folder is in; it must be on a branch with no uncommitted files, since
   the go-ahead is for its head commit. In a repository the merge queue serves it merges nothing
   itself: the queue checks the branch and lands it, exactly as on the Land button, and the answer
-  says it was queued. In a repository the queue doesn't serve it records nothing and queues
+  says it was queued. Its answer also tells the chat to leave the branch alone until it lands
+  (§chat.merge-queue/chat-turns). The tool itself doesn't ask what is left: a branch with nothing left
+  and no draft to land is refused by the queue when it reads the go-ahead, as on the Land button, and
+  the chat hears that at its next turn (§app.merge-queue/approve). In a repository the queue doesn't serve it records nothing and queues
   nothing: it merges the branch into the main checkout's branch itself, exactly as `merge` would
   (spec drafts made official first; "without specs" leaves them behind), and the answer says it
   merged; asked for a pull or merge request there, it merges nothing either: the answer tells the
@@ -294,11 +301,82 @@ instead (§chat.merge-queue/chat-card).
 
 A tracked worktree counts as merged when its branch has commits beyond its base and all of them
 are in its base branch or in the repository's main branch (master, else main), whether or not a
-merge was recorded. A worktree made from another feature branch whose commits reached master but
+merge was recorded. Where the project's merge queue lands on another branch, being in master or main
+doesn't read merged, by one rule for the Session tab (§chat.worktrees/pane) and a chat's branch rows
+(§chat.worktrees/readiness). This is git's "already merged" answer, by ancestry alone. What else has nothing left
+to land reaches a row through the shared answer it carries (§chat.worktrees/nothing-left), not through
+this one. A worktree made from another feature branch whose commits reached master but
 never that branch is merged into master. The target it is merged into is its base branch when
 that branch has it, else the main branch; one merged into neither is checked against its base
 branch (the main branch when it has none). A check that names its target, such as the one after
 a turn against the target seen at the turn's start, looks at that target only.
+
+## §chat.worktrees/nothing-left — Does this branch have anything of its own left to land?
+
+Sova has one answer to this question, worked out on the server from git, the queue's landings and
+the branch's spec drafts, with no model call. These places read it and keep no rule of their own, so
+no two of them can disagree about one branch: the composer's worktrees control
+(§chat.composer/worktrees-control), the Worktrees section (§chat.worktrees/pane), the Merge Queue
+tab's Ready to land list (§app.merge-queue/view), the project card's count
+(§app.projects/home-cards), the Overseer's list (§app.overseer/roundup), the Agents board's worktree
+lines (§app.insights/subagent-cards) and Land (§app.merge-queue/approve). A further screen, a Merge
+Queue tab among them, reads this answer too and works out none of its own.
+
+**Clean Up Merged and archive's folder removal don't read it.** They keep their own reading
+(§chat.worktrees/cleanup, §app.overseer/tools) and offer exactly what they offered before: a branch
+whose leftover merge now conflicts can read Landed on its row while Clean Up Merged still says "Not
+merged into {main}". The answer decides labels, lists, counts and Land, and nothing on disk.
+
+**Three outcomes.** Every reader gets one of these for a branch's head against the branch it lands on:
+- **Nothing** is left: any of the rules below holds.
+- **Work** is left: git answered, and none of them holds.
+- **Unknown**: git failed, or the branch's history can't be connected to the target. It is never
+  nothing. A place with no way to say so reads it as something left, never as finished: a row keeps its
+  own reading and its Land, the branch stays on Ready to land, and Land is not refused as nothing to
+  land. The last stop of a landing (§app.merge-queue/run) still keeps a run that changes nothing off the
+  target.
+
+**Two readings.** The **whole** reading counts the code and the spec drafts; the **code-only**
+reading counts the commits alone. Only the whole reading can say a branch is finished. The code-only
+reading is what lets a row say its code has landed while drafts are left, and what lets Land carry
+just those drafts.
+
+**Nothing is left** when any of these holds:
+- the head is on the target;
+- every commit the target doesn't have is a merge;
+- the head is exactly the commit that landed: an entry's approved commit, or one the queue moved the
+  target to or the host merged;
+- its only commits past a landing are merges on top of it, a landing the host squashed included;
+- merging it would change nothing: a trial merge leaves the target's tree as it is.
+
+They are asked in that order, cheapest first. A head that read nothing left because merging changes
+nothing keeps that answer once the target moves on, even if the same merge would now conflict; while
+the target stays at that commit the trial still decides. Those heads are kept in
+`<state root>/nothing-left.json`, the newest 5,000.
+
+**Spec drafts not proved landed always count as something left**, whatever git says. A draft is
+proved landed when it has a landing receipt (§app.merge-queue/land), when it matches the target now
+(§tools.spec/draft-official), or when it matches the target at the commit that landed it: the commit
+whose subject says it landed that draft (`Spec: land draft <name> at …`, the newest 3 of them), or the
+branch's own tip on the target. A subject that names no draft (`Spec: land {n} drafts at …`) proves
+nothing: those drafts rest on a receipt or on matching the target now. A draft edited since is proved by
+none of them. A branch with no commit left but such a draft still has something to land, and Land
+lands just the drafts (§app.merge-queue/approve).
+
+**How recently it landed doesn't matter.** The answer doesn't depend on when the branch landed, how
+many landings came after it or which landings the queue's view still shows: it reads every entry the
+queue has, and a host's landing is kept past its entry (per branch the newest 8, for the newest 500
+branches); one from before they were kept is read in at load, from its landed entries still there. So it never changes by itself as newer landings
+arrive. Only a new commit on the branch or an edited draft changes it.
+
+**A merge that holds a hand edit reads as landed.** The answer looks at which commits exist, never
+inside a merge. Work committed normally is a real commit and reads as new work.
+
+**Nothing left isn't always Landed.** A branch that never had a commit of its own also has nothing
+left of its code. It reads No commits yet on its row, never Landed or Merged. One with a draft not
+proved landed has something left whatever else it reads, so a chat drafting before its first commit
+shows Drafts to land, with Land, and is on Ready to land. A branch fast-forwarded to the target, whose
+head moved past its base with no commit of its own, reads Merged.
 
 ## §chat.worktrees/pane — The Worktrees section
 
@@ -309,16 +387,18 @@ dropped and merged ones included. When the branch tracks none the section stays,
 "This session tracks no worktrees." While the insight's first load is out the section shows its
 heading over a placeholder line as tall as that sentence (most sessions track none), never the
 sentence itself. A row is the modal's row (§chat.composer/worktrees-control): the title of the chat
-that owns the branch, as a link, then the branch, then "archived" when that chat is archived; it
-names no worktree folder. Under its facts it shows the branch's summary once written
+that owns the branch, as a link, then the branch, then "archived" when that chat is archived; that
+line names no worktree folder. Under it comes the branch's place line, which unfolds to its folder
+(§chat.worktrees/place). Under its facts it shows the branch's summary once written
 (§app.merge-queue/branch-summary). It carries a status chip — Active, Dropped, or Merged with "into
 <target> at <sha>" — plus, when true, `.agent`, the number of this session's workers with a live
 process inside it, and "Shared with session <id>" linking the session it was inherited from. An
 active worktree whose branch git finds already in its target reads Merged too, with a title saying
 this session didn't record it. A worktree whose folder is gone never reads Active: its status chip
 says what its work came to, by the same answer readiness gives (§chat.worktrees/readiness, removed),
-the row's readiness when it has one: Merged when that work is merged, then a neutral Cleaned up
-chip; else Removed (warn; neutral for one with no commits of its own), with the reason line "Removed
+the row's readiness when it has one: Landed when that work is merged, beside the row's
+**Landed · cleaned up** and with no Land, and counted as merged in the count line; else Removed
+(warn; neutral for one with no commits of its own), with the reason line "Removed
 · not merged", "Removed · no record of a merge" or "Removed · no commits". A dropped or
 merged-recorded worktree whose folder is gone keeps its status chip and adds Removed or Cleaned up.
 A row with a readiness (§chat.worktrees/readiness) adds a chip after the status chip — Ready to
@@ -327,7 +407,13 @@ the reason as its `title` — and none while merged or removed, which the status
 Its tone follows mergeability: Ready to merge and Waiting for your OK are success, In progress
 neutral, Blocked and Stale warn. A worktree that is Ready to land (§chat.worktrees/ready-to-land)
 reads **Ready** (success) in place of Ready to merge or Waiting for your OK, and its line starts
-"Ready to land"; one Landing specs reads **Landing specs** (info; warn, with the session's reason as
+"Ready to land". No other worktree reads Ready, and in a repository the queue serves none other
+counts as ready: one with real work says its own reading (Ready to merge, Waiting for your OK,
+Conflicts with {target}, In progress, Blocked), with its reason, and keeps Land, and one with no
+reading of the branch says No reading and keeps it too. One whose code has nothing left but whose
+spec drafts aren't proved landed (§chat.worktrees/nothing-left) reads **Drafts to land** (info), with
+the line "Code landed · 2 spec drafts not landed" and Land, which lands just the drafts. One Landing
+specs reads **Landing specs** (info; warn, with the session's reason as
 its `title`, when it can't land them) with the line "Landing specs · docs don't fit" (or "· can't
 land them: <why>"). When docs land with a Ready to land worktree its line ends with them: "Ready to
 land · 3 commits ahead · docs: 2 new, 1 changed".
@@ -337,10 +423,12 @@ own (§chat.worktrees/pane-queue).
 
 **In a repository the merge queue doesn't serve** (§app.merge-queue/served) a row never reads Ready,
 Landing specs or a queue state and offers no Land: a ready branch reads Ready to merge, and its line
-ends "Say “land it” in the chat to merge it into main.". A project on the Projects list whose merge
+ends "Say “land it” in the chat to merge it into {target}.", with the repository's real target
+(§chat.worktrees/place). A project on the Projects list whose merge
 setup isn't done keeps **Set Up Queue** on such a row, which opens its Merge Queue tab
 (§app.merge-queue/setup). The section's **View Merge Queue** shows, as the modal's Merge Queue link
-does, only for a repository on the Projects list (§chat.composer/worktrees-control). The pane, the
+does, only for a repository on the Projects list, and, as there, one link per project when the chat's
+branches are in several (§chat.composer/worktrees-control). The pane, the
 composer's control and the Merge Queue view read the same state and stay in sync; nothing in the
 section shows live state or offers a restart. Under the facts, one visible muted line gives the
 reason, so a phone gets it without hover: the readiness's `reason` ("Ready to merge · checks passed
@@ -357,12 +445,17 @@ in the words the composer's worktrees control uses (§chat.composer/worktrees-co
 tell whose failure, Out of tries, Drafts changed, Approved · waiting for a fix, Back with the chat
 ("try {n} of 3"), Waiting for the merge thread, Paused: you stopped the chat, and Landed with its
 commit, the fix commits that landed with the user's Land and its notes (§app.merge-queue/note) under
-it, plus "1 newer commit not included" when the branch moved past the approved commit. **The row's
+it. A row reads Landed only while nothing is left (§chat.worktrees/nothing-left): a catch-up merge on
+top changes nothing and is never mentioned, and a real new commit brings back the branch's own
+reading, with Land and "1 newer commit not included" under it. A landed entry with no reading of the
+branch (the Overseer's rows) stays Landed; with real newer commits it keeps that line, and Land where
+the queue serves the repository: nothing of its own says otherwise. **The row's
 action** is the modal's, from the same row: Land (with its menu), which asks once before it queues
 anything, its confirmation right-aligned under the row (§chat.composer/land-confirm), laid out as
-the modal's rows are (§chat.composer/worktrees-control, "Row layout"), on Ready, Drafts changed, Out
-of tries, or a finished branch blocked for something its chat can fix (approved as Approved ·
-waiting for a fix, §app.merge-queue/approve); never while the user's Land stands and the chat fixes
+the modal's rows are (§chat.composer/worktrees-control, "Row layout"), on Ready, Drafts changed, Drafts
+to land, Out of tries, a row of real work reading Ready to merge, Waiting for your OK, Landing specs,
+Conflicts with {target}, In progress, Blocked or No reading, or a finished branch blocked for
+something its chat can fix (approved as Approved · waiting for a fix, §app.merge-queue/approve); never while the user's Land stands and the chat fixes
 it (§app.merge-queue/standing-approval). Remove from Queue on every row of an approval that stands, a queued one included, Accept (with a proposal) and Answer in Chat on Behaviour differs, Answer in
 Chat on Needs you, Land Anyway and Try Again on Can't tell whose failure. No row offers Send Back,
 Land This Commit Again or Land Newest Commit; each action counts only as the user's own click
@@ -376,6 +469,60 @@ chips. A row's Review Changes, first among its actions, is the modal's own butto
 is now against the branch it lands on, its uncommitted files included and marked as uncommitted; a
 merged branch shows what its landing or merge brought in (§chat.changes/entry).
 
+## §chat.worktrees/place — A branch's place
+
+A chat can hold branches of several projects, so every branch row in a chat says, by one rule, which
+project the branch belongs to and where it merges. Every row has it, not only another project's.
+
+**The place line.** On the composer's Worktrees modal rows (§chat.composer/worktrees-control), the
+session pane's Worktrees rows (§chat.worktrees/pane) and the chat's queue card
+(§chat.merge-queue/chat-card), one line under the branch reads `{place} · merges into {target}`: for
+example "AmalMoney · merges into master", "~/code/tools · merges into main". It wraps rather than
+cutting off.
+
+**`{place}`** is the project's name when the branch's repository is on the Projects list and not
+archived; otherwise that repository's main folder, written from home (`~/...`).
+- An archived project, a repository not on the list, or a project with a blank name: the folder.
+- Two projects with the same name: the name plus just enough of the folder to tell them apart, as
+  Needs you does ("Notes · work/notes", §app.session-list/needs-you).
+- A branch whose folder is deleted: the project's name if Sova can still work it out, else the folder
+  as last recorded. The row keeps its Removed or Cleaned up state (§chat.worktrees/pane).
+- A branch of a session on a remote target: `{target}:{folder}`, its folder there, never matched on
+  this computer's list, and its paths aren't written from this computer's home.
+
+A project's name wins over a folder because Land follows the branch's own folder, so the name always
+agrees with where Land goes.
+
+**`{target}`** is the branch the queue lands on in a repository the merge queue serves
+(§app.merge-queue/served). In any other repository it is what the `worktree` tool merges into
+(§chat.worktrees/tool): master when the repository has master, else main.
+
+**The clause changes with the branch.**
+- A merged branch says where it actually went, " · merged into {recorded target}", which can differ
+  from the project's usual target. A landed branch reads the same, and so does a branch git found
+  already merged (§chat.worktrees/merged-state), with the target git found it in.
+- A dropped branch has no clause: the line is `{place}` alone.
+- When the target can't be known the clause is left out rather than guessed, and a line that would
+  name it says less: "Say “land it” in the chat to merge it."
+
+**The exact folder is one tap away.** The line is a button with `aria-expanded`: tapping it, clicking
+it or pressing it by keyboard unfolds, under it, `Branch folder: {~/path}`, `Merges into: {target} of
+{~/main folder}` and a **Copy Folder** button, which copies the branch's folder. Hover is never the
+only way to reach the folder; the row's existing folder hover may stay. The second line follows the
+clause above: a merged branch's reads `Merged into: {recorded target} of {~/main folder}`, a line
+with no clause has no second line, and with no main folder known it names the target alone.
+
+**Beside a branch's name.** Where one line names a branch and says something about it, the place goes
+right after the branch, in one form: `{branch} in {place}`. The merge queue's requests in the
+transcript (§chat.merge-queue/requests), the "not sent yet" note above the message box
+(§chat.merge-queue/decision), the hover of a sidebar session row's branch status
+(§app.session-list/content-rules "Row line 3") and the Overseer's roundup rows that show a branch
+(§app.overseer/roundup) use it. With no place known (a card written before the line, a read that
+failed) such a line names the branch alone.
+
+**Left alone.** Pages inside one project (the Merge Queue tab's rows, run pages, the Branches tab)
+show no place line, and old merged cards in a chat's history stay as they were.
+
 ## §chat.worktrees/readiness — Is it ready to merge, and what did a merge leave
 
 Every worktree a session tracks and created or attached itself (not one it inherited, and not a
@@ -383,16 +530,17 @@ dropped one) gets a **readiness**, worked out on the server from git and the ses
 no model call (`server/merge-readiness.ts`):
 
 - **merged** — git finds the branch in its base branch, by ancestry or by content (a squash or a
-  rebased merge train), after at least one commit of its own, **and** the tree is clean. A
+  rebased merge train), or the shared answer finds none of its own commits left to land
+  (§chat.worktrees/nothing-left), after at least one commit of its own, **and** the tree is clean. A
   worktree whose folder is gone reads as what its work came to (below, **removed**). Git is the
   source, never the merge card: a branch merged by someone else reads merged, and a card whose
   branch git no longer finds merged does not. A worktree still tracked active once git finds it
   merged is merged with a **cleanup** follow-up. A merged tree whose folder still holds spec
-  drafts that aren't promoted (below), as when a catch-up merge took the base's spec and the
-  drafts were never promoted again, or the branch landed without its specs, is still merged, but
-  its reason never says plain Merged: it reads "Nothing left to land, but its spec drafts didn't
-  make it · 2 drafts", the count of those drafts. Drafts a queue landing made official stay in the
-  folder, marked landed, and never read that way.
+  drafts not proved landed (§chat.worktrees/nothing-left), as when a catch-up merge took the base's
+  spec and the drafts were never promoted again, or the branch landed without its specs, is still
+  merged, but it has something left and its reason never says plain Merged: it reads "Code landed ·
+  2 spec drafts not landed", the count of those drafts. Drafts proved landed stay in the folder and
+  never read that way.
 - **stale** — merged, but the tree has uncommitted changes while nothing runs in the session:
   never "merged". A branch with no commit of its own is never merged, dirty or not.
 - **in progress** — a turn is running or subagents are working in the session, the tree has
@@ -401,9 +549,14 @@ no model call (`server/merge-readiness.ts`):
   commit subject on the branch starts with `TEMP`, `WIP`, `fixup!`, `squash!` or `amend!`, or the
   session's newest check run (a `bash` call running a test, typecheck or build) failed.
 - **removed** — the worktree's folder is gone, and what its work came to is said plainly, never
-  "in progress" or "active". It is **merged** instead, with the reason "Merged · cleaned up", when
-  git still finds its branch in the repository's main branch (master, else main), by ancestry or
-  by content as above, after at least one commit of its own past the recorded base; when Sova's
+  "in progress" or "active". A folder with no `.git` left in it (what a delete that stopped part way
+  leaves) counts as gone. Only a folder that is gone is ever called
+  gone: one that is there and that git can't read says "Git can't read this worktree", never
+  "worktree folder gone". It is **merged** instead, with the reason "Landed · cleaned up", when
+  git still finds its branch in the project's real landing target, the one a live worktree is compared
+  against (the merge queue's target when a queue is loaded, else master, else main), by ancestry or by
+  the shared answer (§chat.worktrees/nothing-left), after at least one commit of its own past the
+  recorded base; when Sova's
   own cleanup removed it (§chat.worktrees/cleanup's ledger); when another session's file records
   the same path and branch merged (a record another chat made of a merge, which outlives a later
   `git branch -d`), as far as readiness has read that session; or when it is recorded merged. Otherwise it is removed: "Removed · not
@@ -432,7 +585,7 @@ shows it under the worktree, §chat.worktrees/pane): its state and why, joined b
 merge · checks passed · 19 commits ahead", "Ready to merge · 1 uncommitted file:
 NAIVE-RUN.txt", "Waiting for your OK · checks passed", "Conflicts with master · 17 files",
 "Blocked · 2 open questions", "In progress · 3 uncommitted files: a.ts and 2 more", "In progress ·
-working now", "Merged", "Merged · still tracked active", "Merged · cleaned up", "Removed · not merged", "Stale
+working now", "Merged", "Merged · still tracked active", "Landed · cleaned up", "Code landed · 2 spec drafts not landed", "Removed · not merged", "Stale
 · merged, with uncommitted changes". Uncommitted files are named by the first one and how many more.
 
 Routine follow-ups, also mechanical:
@@ -485,6 +638,10 @@ rows of a repo gaining service are read again then, archived ones too, and a que
 takes its facts off its rows. What this means for a row against its chat, and the known bounds, is
 in §app.session-list/content-rules "Row line 3".
 
+**What's left.** A worktree with commits and none left to land, or with no commits, also carries the
+shared answer (§chat.worktrees/nothing-left): nothing left, or only {n} drafts. The chat's other branch
+rows carry the same answer for a merged one.
+
 **Merged, clean or not.** Each worktree's readiness carries, beside its state, whether git finds
 its branch merged into its base (the merged rule above without the clean tree), clean or not, or,
 its folder gone, whether it reads merged by the removed rule above (`merged: true`). A merged tree
@@ -519,10 +676,11 @@ merge (it started after it, or the merge changed no file the server runs, the se
 restart owed; spec from
 the merged worktree's own `.sova/spec/drafts/`, while that folder still exists: a draft counts as
 promoted when it is official (§tools.spec/draft-official), the one rule the merge queue's docs
-step reads too, or when it is marked landed: it carries the receipt of a queue landing
+step reads too, when it is marked landed: it carries the receipt of a queue landing
 (§app.merge-queue/land), its `spec/` is unchanged since by hash, and the commit the receipt names
-is on the receipt's target. A draft edited after its landing counts as not promoted again, as does
-one with no receipt on a branch merged any other way, and a draft that rule can't read. The
+is on the receipt's target, or when it matches the target at the commit that landed it
+(§chat.worktrees/nothing-left). A draft edited after its landing counts as not promoted again, as does
+one none of these proves, and a draft that rule can't read. The
 line is the first line of the badge's `title` (§app.session-list/anatomy) and travels with the
 row (`SessionSummary.readiness.status`).
 
@@ -545,9 +703,13 @@ branches.
 
 ## §chat.worktrees/ready-to-land — Ready to land
 
-Ready to land is what the merge queue's **Ready** reads: the state on which Land is offered
-(§app.merge-queue/approve). Land is also offered on a finished branch blocked only for something its
-chat can fix (§chat.worktrees/blocks-landing), which it approves as Approved · waiting for a fix;
+Ready to land is the one reading behind the word **Ready**, on a chat's rows, in its counts and in
+its reason line. It is stricter than Land: Land is offered on every branch with something left
+(§chat.worktrees/nothing-left) and no uncommitted files that isn't already in the queue, whatever it
+reads, and the row says its true state beside it (§chat.composer/worktrees-control,
+§app.merge-queue/view). So a row says Ready only when this holds, and a row that doesn't say Ready can
+still be landed. A finished branch blocked only for something its chat can fix
+(§chat.worktrees/blocks-landing) is approved as Approved · waiting for a fix;
 and Sova reads Ready to land again on each fix to decide when a standing approval goes back in line
 by itself (§app.merge-queue/standing-approval). It is worked out only in a repository the merge
 queue serves (§app.merge-queue/served); in any other repository no worktree is ever Ready to land or
@@ -555,7 +717,7 @@ Landing specs, its readiness reads as it would with no queue, and Sova sends its
 messages below. A worktree a session tracks in a served repository is **Ready to land** at its head
 commit when, worked out with no model call beside its readiness (§chat.worktrees/readiness):
 
-- git can read it, it isn't merged, it has **no uncommitted files at all** (the one-or-two-file
+- git can read it, it has commits of its own left to land (§chat.worktrees/nothing-left), it has **no uncommitted files at all** (the one-or-two-file
   caveat of ready doesn't apply), at least one commit ahead and no temporary commit subject. A
   conflict with its base doesn't keep it from Ready to land, so a finished branch that only
   conflicts reads Ready to land, and its chat is never asked to resolve the conflict itself
@@ -579,7 +741,8 @@ commit when, worked out with no model call beside its readiness (§chat.worktree
 
 Once a head commit is Ready to land it **stays** so for that commit, kept per session and worktree
 in `<state root>/ready-to-land.json`, even when a later reply asks nothing or its outcome says
-something else; it goes when the branch's head moves, the branch lands, or a live condition above
+something else; it goes when the branch's head moves, it has no commit of its own left to land
+(however it landed, and whichever commit was approved), or a live condition above
 stops holding (a new uncommitted file, a failing check, an open question, a turn running).
 
 **Docs land with the branch** (§chat.worktrees/landing-specs): its spec drafts don't keep it from
@@ -603,7 +766,7 @@ readiness state, which stays ready or waiting for your OK underneath.
 
 Spec drafts in the worktree don't keep it from Ready to land: the merge queue makes them official in
 its merge copy before the checks run (§app.merge-queue/run; whether a draft is official is
-§tools.spec/draft-official). A draft marked landed (§chat.worktrees/readiness) has landed already:
+§tools.spec/draft-official). A draft proved landed (§chat.worktrees/nothing-left) has landed already:
 on a branch with newer commits it is neither tried again nor counted as docs that land. Each promise
 in them still needs its chat's own short verification note (the draft tool's `evidence --note`,
 §tools.spec/land) before the head counts as Ready to land. Once per head commit and set of drafts
@@ -617,7 +780,8 @@ in the branch's spec since its draft was made, a proposal mixed into a file that
 reads **Landing specs** instead (the Session tab's chip and its line "Landing specs · docs don't
 fit"). Sova then tells the session once per head commit, as a merge queue request in its chat
 (§chat.merge-queue/requests: marked as the queue's, never as the user's), what doesn't fit and to
-fix it in its drafts, which needs no commit; before Land it ends "Once they fit, the user presses
+fix it in its drafts, which needs no commit (never while that commit is in line or already landed,
+§chat.worktrees/blocks-landing); before Land it ends "Once they fit, the user presses
 Land; nothing has been landed or approved yet." The chat answers the request
 (§chat.merge-queue/answers): Fixed (drafts), Needs you, or Can't with its why, which is shown on the
 chip ("can't land them: <why>"); the free-text `Can't land specs: <why>` line is no longer read.
@@ -661,7 +825,14 @@ nothing blocks it. After Land, it is told the user's Land stands and the branch 
 itself, and never to ask the user to land it again. The request names no card. It goes as a merge
 queue request (§chat.merge-queue/requests), which waits for the chat's turn to end; nothing is sent
 for an archived or terminal session, or when the outcome doesn't say the work is finished (or no
-outcome is ever recorded for the session).
+outcome is ever recorded for the session). Nothing is sent, either, while the branch sits at exactly a
+commit the user approved that is in line, checking, waiting for the user's decision, open on the host
+or already landed:
+a change made now would only move the branch off that commit. And nothing is sent when no commit of
+its own is left to land (§chat.worktrees/nothing-left). A note comes again only once the branch has a
+new commit of real work. A branch that is Approved · waiting for a fix or back with its chat isn't in
+line and still gets its requests: they are how it hears what to fix. The Landing specs request
+(§chat.worktrees/landing-specs) holds back the same way.
 
 **Why a branch back with its chat isn't going back in line.** A branch back with its chat whose fix
 isn't Ready to land says why, on its row and card ("Not back in line yet: {why}.",
@@ -696,7 +867,7 @@ drops them; older records' `by` values still read.
 The merge queue reads each new typed go-ahead once (the go-aheads already in the file when it first
 starts are never taken) and turns it into an approval of that branch at
 that commit, exactly as a Land would be (§app.merge-queue/approve): the same pinned commit and
-drafts, the same refusals. A go-ahead the queue refuses (uncommitted files, nothing ahead, a repository
+drafts, the same refusals. A go-ahead the queue refuses (uncommitted files, nothing to land, a repository
 the queue doesn't serve: "not a project the merge queue serves: merge it into main from the
 chat", with no queue record made, §app.merge-queue/served; in a served repository, a commit that is
 no longer its branch's head because the branch was amended or rebased since: "{branch} at {sha}
@@ -842,7 +1013,7 @@ and a reading stands for a while before it is read again:
 - A removal through Sova's cleanup (§chat.worktrees/cleanup: the Clean Up Merged button, its
   confirm, or `sova_archive`'s removal) ends the reading at once for every session that tracks
   the removed tree: the cleanup answers only once those sessions are read again, so the very next
-  look, the Session tab's or the session list's, reads the tree as removed ("Merged · cleaned up").
+  look, the Session tab's or the session list's, reads the tree as removed ("Landed · cleaned up").
 - A change of the session's file or of its row (its running state, last activity, TUI presence,
   archived flag, open questions or attention answer) reads every tree's changes again at once.
 - An explicit look at the session's worktrees (the Session tab's Worktrees section, or

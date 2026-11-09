@@ -1,4 +1,19 @@
 {
+  "§chat.playbooks/brandmaker-install-needs-no-registration": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "unreviewed",
+    "code": [
+      "playbooks/brandmaker/phases/07-install.md",
+      "playbooks/brandmaker/PLAYBOOK.md"
+    ],
+    "requires": [],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-11-09T09:48Z",
+      "source": "pi-session:d7335d74-d7e6-49a8-9fe8-943c422d56a4#3c08e5ce"
+    }
+  },
   "§chat.playbooks/bundles": {
     "kind": "behavior",
     "authority": "accepted",

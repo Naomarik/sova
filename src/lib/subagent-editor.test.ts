@@ -45,11 +45,12 @@ test("each closed section's summary says what is inside", () => {
   none.delegate.planning.fallback = null;
   assert.equal(delegateSummary(none), "Fable 5.1 · Opus 5.5 · no fallbacks");
 
-  assert.equal(teamsSummary(profile()), "Coordinator + monitor on the default model · members on the lead's model");
-  assert.equal(teamsSummary(profile({ teams: teams(), members: claude("sonnet") })), "Coordinator on Opus 5.5 · monitor on deepseek-v4.1-flash · members on Sonnet 5.5");
+  assert.equal(teamsSummary(profile()), "Coordinator + monitor on the default model");
+  // Members follow Delegate's work kinds now: a saved members value is no part of the summary.
+  assert.equal(teamsSummary(profile({ teams: teams(), members: claude("sonnet") as never })), "Coordinator on Opus 5.5 · monitor on deepseek-v4.1-flash");
   const blank = teams();
   blank.monitor.primary = { backend: "pi", model: "", effort: "low" };
-  assert.equal(teamsSummary(profile({ teams: blank })), "Coordinator on Opus 5.5 · monitor on a model not chosen yet · members on the lead's model");
+  assert.equal(teamsSummary(profile({ teams: blank })), "Coordinator on Opus 5.5 · monitor on a model not chosen yet");
 
   assert.equal(specSummary(profile()), "Off · the session writes it");
   assert.equal(specSummary(profile({ specWriter: { primary: claude("sonnet"), fallback: null } })), "Sonnet 5.5");
@@ -84,7 +85,7 @@ test("Choose Models seeds both roles; Use Default Model puts both back on the ch
   assert.equal(teamsSeed(undefined, undefined), null);
   const kept = withChosenModels(profile({ teams: saved }), seed);
   assert.equal(kept.teams!.coordinator.instructions, "keep me", "a profile that has its roles keeps them");
-  const back = withDefaultModel(profile({ teams: teams(), members: claude("sonnet") }));
+  const back = withDefaultModel(profile({ teams: teams(), members: claude("sonnet") as never }));
   assert.equal(back.teams, null);
   assert.deepEqual(back.members, claude("sonnet"), "only the roles go back");
 });
@@ -97,7 +98,7 @@ test("a section opens itself only for what Save waits for, and only that section
   const t = teams();
   t.monitor.contextPct = 0;
   assert.deepEqual([...sectionProblems(profile({ teams: t }))], ["teams"]);
-  assert.deepEqual([...sectionProblems(profile({ members: { backend: "pi", model: "", effort: "" } }))], ["teams"]);
+  assert.deepEqual([...sectionProblems(profile({ members: { backend: "pi", model: "", effort: "" } as never }))], [], "a saved members value has no row, so nothing opens for it");
   assert.deepEqual([...sectionProblems(profile({ specWriter: { primary: claude("sonnet"), fallback: claude("sonnet") } }))], ["spec"]);
   assert.deepEqual([...sectionProblems(profile({ reviewer: { primary: { backend: "pi", model: "", effort: "" }, fallback: null } }))], ["reviewer"]);
   assert.deepEqual([...sectionProblems(profile({ reviewer: null }))], [], "None waits for nothing");

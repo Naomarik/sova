@@ -7,68 +7,13 @@ import { describe, test } from "node:test";
 if (!import.meta.resolve("solid-js").endsWith("/dist/solid.js")) throw new Error("run with --conditions=browser (the *.browser.test.ts invocation)");
 
 const solid = await import("solid-js");
-const { createModeSave } = await import("./mode-save");
 const { majorGear, menuModes } = await import("./mode-menu");
 const { majorGlyph } = await import("./mode-glyphs");
 const { applyToast, cancelHeldSave, cardCanAct, createCardLive, QUEUE_CARD_WAITS, readCard, typedInput } = await import("./settings-card-live");
-type ShownMode = import("./mode-menu").ShownMode;
 type SettingsCardView = import("../../shared/project-settings").SettingsCardView;
 type CardReads = import("./settings-card-live").CardReads;
 
 const within = <T>(run: (dispose: () => void) => T): T => solid.createRoot(run);
-
-describe("Save as default across Create", () => {
-  const profiles = { current: { id: "subs", name: "Subs", source: "library" }, default: "subs" } as never;
-  const delegate: ShownMode = { mode: "delegate", minorModes: ["align"], strict: true };
-
-  test("a saved Delegate stays saved when the chat moves to Create, and the button keeps naming Delegate", () => {
-    within((dispose) => {
-      const [shown, setShown] = solid.createSignal<ShownMode | null>(delegate);
-      const [def, setDef] = solid.createSignal<ShownMode | null>(delegate);
-      const save = createModeSave({ shown, defaultMode: def, profiles: () => profiles });
-      assert.equal(save.already(), true);
-
-      setShown({ ...delegate, mode: "create", saveMode: "delegate" });
-      assert.equal(save.already(), true, "moving to Create changes nothing a save would write");
-      assert.equal(save.savable()?.mode, "delegate");
-      assert.match(save.note(), /no default holds it\. Save as default saves delegate · strict · align\.$/);
-      assert.doesNotMatch(save.title(), /create/);
-
-      setDef({ mode: "normal", minorModes: [], strict: false });
-      assert.equal(save.already(), false, "the file moved on: the button can be pressed again");
-      assert.match(save.title(), /New sessions will start from delegate/);
-
-      setShown({ mode: "normal", minorModes: [], strict: false });
-      assert.equal(save.already(), true, "out of Create the chat's own mode is what counts");
-      assert.doesNotMatch(save.note(), /Create/);
-      dispose();
-    });
-  });
-
-  test("a chat that has been in no other mode saves normal, and unknown is never saved", () => {
-    within((dispose) => {
-      const [shown] = solid.createSignal<ShownMode | null>({ mode: "create", minorModes: ["align"], strict: false });
-      const [def, setDef] = solid.createSignal<ShownMode | null>(null);
-      const save = createModeSave({ shown, defaultMode: def, profiles: () => profiles });
-      assert.equal(save.savable()?.mode, "normal");
-      assert.equal(save.already(), false, "the file isn't read yet");
-      setDef({ mode: "normal", minorModes: ["align"], strict: false });
-      assert.equal(save.already(), true);
-      dispose();
-    });
-  });
-
-  test("a save that also writes the memory type isn't done until that matches too", () => {
-    within((dispose) => {
-      const [same, setSame] = solid.createSignal(false);
-      const save = createModeSave({ shown: () => delegate, defaultMode: () => delegate, profiles: () => profiles, alsoSaved: same });
-      assert.equal(save.already(), false);
-      setSame(true);
-      assert.equal(save.already(), true);
-      dispose();
-    });
-  });
-});
 
 describe("Create's row", () => {
   test("the global list gives a peer's chat the row; an older host gives none, and Create comes after the rest", () => {

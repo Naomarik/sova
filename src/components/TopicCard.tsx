@@ -1,6 +1,8 @@
 import { For, Show } from "solid-js";
 import type { TopicBatchInfo } from "../../shared/topic-message";
+import { placeIsFolder } from "../lib/branch-place";
 import { clockTime } from "../lib/format";
+import { mergeQueueBatchLabel } from "../lib/merge-queue-card";
 import { Icon } from "./ui";
 
 /** A topic batch (§chat.topics/row): notes other sessions pushed, reusing the `.toolcard` shell
@@ -14,16 +16,6 @@ export function TopicCard(props: { batch: TopicBatchInfo; time?: string }) {
       <MergeQueueBatchCard batch={props.batch} time={props.time} />
     </Show>
   );
-}
-
-/** The merge queue's batch (§chat.merge-queue/requests, §chat.topics/row): "Merge queue · {branch} ·
-    {n} requests" ("· {k} branches ·" when several), a branch icon, never a link to a session; open,
-    each request with its id, branch and text. */
-export function mergeQueueBatchLabel(batch: TopicBatchInfo): string {
-  const n = batch.notes.length;
-  const branches = [...new Set(batch.notes.map((it) => it.request?.branch).filter((b): b is string => !!b))];
-  const about = branches.length === 1 ? branches[0]! : branches.length > 1 ? `${branches.length} branches` : null;
-  return ["Merge queue", ...(about ? [about] : []), `${n} ${n === 1 ? "request" : "requests"}`].join(" · ");
 }
 
 function MergeQueueBatchCard(props: { batch: TopicBatchInfo; time?: string }) {
@@ -49,6 +41,14 @@ function MergeQueueBatchCard(props: { batch: TopicBatchInfo; time?: string }) {
                       <Show when={r().branch}>
                         {" · "}
                         <span class="text-mono">{r().branch}</span>
+                        <Show when={r().place}>
+                          {(place) => (
+                            <>
+                              {" in "}
+                              <span classList={{ "text-mono": placeIsFolder(place()) }}>{place()}</span>
+                            </>
+                          )}
+                        </Show>
                       </Show>
                     </>
                   )}

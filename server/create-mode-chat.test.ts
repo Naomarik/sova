@@ -198,14 +198,13 @@ test("a strict chat in Create, in a real runtime, has lost edit and write, and t
   assert.ok(!tools.includes("create_guide"), `${tools}`);
 });
 
-test("Save as Default in Create saves the last choice, and the file never holds Create", async () => {
+test("Make Default from a chat in Create makes its profile the default, and the file never holds Create", async () => {
   const path = await newChat();
   assert.equal((await post(path, { mode: "normal" })).status, 200);
   assert.equal((await post(path, { mode: "create" })).status, 200);
   const res = await post(path, { saveDefault: true });
   assert.equal(res.status, 200, await res.clone().text());
-  assert.equal(file().mode, "normal");
-  assert.ok(file().minorModes.includes("align"), "its minor modes are saved with it");
+  assert.notEqual(file().mode, "create");
   // Back to what the other tests start from.
   writeFileSync(join(dir, "mode.json"), JSON.stringify({ version: 1, mode: "delegate", strict: false, minorModes: ["vis"] }));
 });

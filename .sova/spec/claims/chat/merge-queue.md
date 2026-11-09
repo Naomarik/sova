@@ -299,7 +299,8 @@ follow card does (§chat.transcript-cards/placement):
   rebuilt, so the chat never shifts.
 - **A new revision at the bottom** only for **Landed** and for a **decision** that waits for the
   user (§chat.merge-queue/decision: Behaviour differs, Needs you, Can't tell whose failure, Out of
-  tries, a fix that needs your OK, Drafts changed), and for Removed, and on the host Request ready,
+  tries, a fix that needs your OK, Drafts changed), and for Removed, for Cancelled when a run finds
+  nothing to land, and on the host Request ready,
   Requested, Pushed and Closed. A request's host state changes in place. A conflict the merge thread
   is still judging, and everything sent back to the chat, stays in place. The newest revision is the
   full card; each earlier one folds to one line ("feat/x · Queued 2nd · earlier copy") that opens to
@@ -309,7 +310,9 @@ follow card does (§chat.transcript-cards/placement):
 
 **What it shows.** Every revision has the branch icon, the state pill in the same words as the
 composer's modal, "{branch} into {target}", the short commit (the landed one once it lands, else the
-approved one), the worktree's path, and **View Merge Queue**. While queued it says "starts in ~N min
+approved one), the worktree's path, the branch's place line, which unfolds to its folder
+(§chat.worktrees/place), and **View Merge Queue**. A card or earlier copy written before Sova had
+that line stays as it was: none is added to it. While queued it says "starts in ~N min
 · takes ~N min" and offers **Remove from Queue**; while checking, "Checking · 4 of 7 steps".
 - **Landed** looks like the Merged card a chat's own merge gets (§chat.worktrees/merge-card): a
   LANDED pill, "{branch} into {target} {sha}", "{n} commits · +{a} −{d} · {time}" (counted at the
@@ -319,8 +322,9 @@ approved one), the worktree's path, and **View Merge Queue**. While queued it sa
   card, §chat.merge-queue/review-card), the
   reason once when the push didn't happen ("Push held: {why}." when the queue's reason already says
   it is held, else "Not pushed: {why}.", or "Not pushed: this project doesn't push from the
-  queue."), and "1 newer commit not included" with **Land Again** when the branch moved past the
-  approval. **Review Changes** opens the changes viewer on exactly what landed: from the target
+  queue."), and "1 newer commit not included" with **Land Again** only when the branch's commits past
+  the approval hold real work (§app.merge-queue/after-approval): a catch-up merge on top says nothing
+  and offers nothing. **Review Changes** opens the changes viewer on exactly what landed: from the target
   before the landing to the landed commit, in the project's repository, even once the worktree is
   removed (§chat.changes/entry). When checked fix commits landed after the user's Land (never a
   rewritten one), the card lists them ("Fixes that landed with your Land:", each commit's short id
@@ -355,7 +359,7 @@ Beside Queued, Checking and Landed (§chat.merge-queue/chat-card), the card read
   §app.merge-queue/requests); then a **Landed** revision once the host merged it ("Merged on GitHub.
   Sova checked it merged with {target}; GitHub's merge is final."), or "Closed on GitHub" with
   **Land Again**. Push branch only ends at **Pushed**. Land Again also shows on an open request or a
-  pushed branch once the branch has newer commits.
+  pushed branch once the branch has newer commits that hold real work.
 - **Back with the chat** (in place) gives the reason with **See Why**, "try {n} of 3" (none for a
   conflict that was already there at the Land, which costs no try), and lists the failing checks
   ("Unit tests · 1 failed") with their failing tests and a link to each log, or the conflicting
@@ -381,6 +385,9 @@ Beside Queued, Checking and Landed (§chat.merge-queue/chat-card), the card read
 - **Drafts changed** is a decision (§chat.merge-queue/decision), offering **Land** (a new approval
   of the card's commit for the drafts as they are now, §app.merge-queue/after-approval) and Remove
   from Queue.
+- **Cancelled**, after a run that finds nothing to land (§app.merge-queue/run): the **Cancelled** pill,
+  with "Nothing to land: everything on this branch is already on {target}." as its reason, and no action.
+
 - **Removed**, after Remove from Queue: a final revision with the **Removed** pill and the reason
   "removed by you", and no queue action; approving the branch again later moves the card on as a new
   "approved" revision.
@@ -486,6 +493,12 @@ the queue turns down for that reason, said as below.
 - **The host's news doesn't start a turn.** A request opened, its host state changing, merged,
   closed, or a branch pushed: each is a hidden line, as Landed is. Host checks failing, changes
   requested and conflicts on the host are sent back by themselves, as requests (below).
+- **An approval doesn't start a turn.** The chat's model reads one hidden line at its next turn, in
+  the same block as Landed below, and a typed "land it" also reads it in `worktree land`'s answer:
+  "{branch} at {sha} is in line to land on {target}. Leave it alone until it lands: don't merge {target}
+  into it. The queue handles any conflict and asks for any fix it needs. Real new commits are fine: they
+  stay on the branch as new work for a later Land."
+
 - **Landed and Drafts changed don't start a turn.** The chat's model reads one hidden line at its
   next turn, in a block of the chat's card note (so chats started before this shipped get it too).
   The block's first line is "From Sova's merge queue (not the user's words; nothing to answer):",
@@ -521,6 +534,9 @@ the queue turns down for that reason, said as below.
   worker and the branch ("For your worker "{title}" …" before the queue's own words). When no chat
   that runs it is known, or that chat can't take them, the fact becomes the hidden line in the
   worker's own chat instead, so nothing is lost and nothing is sent twice.
+- **A run that finds nothing to land starts nothing**: its card says so (§chat.merge-queue/chat-card),
+  with no turn and no hidden line.
+
 - **Waiting for the user starts nothing by itself.** A decision (§chat.merge-queue/decision) asks
   the user on the card: its note to the chat is held, "not sent yet", and starts no turn and leaves
   no hidden line. When the user sends their answer from the message box, that one turn carries their
@@ -529,7 +545,9 @@ the queue turns down for that reason, said as below.
 - **A question from the merge thread** is a decision, once per question (§chat.merge-queue/asks):
   its note is held until the user answers, and says their own message is the answer, which Sova
   passes to the merge thread: nothing for the chat to relay.
-- **A typed "land it" the queue refuses** is told to the model the same way, as a hidden line. In a
+- **A typed "land it" the queue refuses** is told to the model the same way, as a hidden line, though
+  `worktree land` had answered that it was queued: "{branch} at {sha} couldn't be queued to land: Nothing
+  to land: everything on this branch is already on {target}." for a branch with nothing left. In a
   repository the queue doesn't serve (a chat still on code from before that rule records such a
   go-ahead), the line is "{branch} at {sha} couldn't be queued to land: not a project the merge
   queue serves: merge it into main from the chat.", so the chat, once reloaded, merges it itself.
@@ -599,7 +617,8 @@ disagree.
   a "Can't" (§app.merge-queue/needs-user), and the held note of a decision once the user answers it
   (§chat.merge-queue/decision). Landed, Drafts changed and a refused typed "land it" stay hidden
   lines (§chat.merge-queue/chat-turns).
-- **Each request has an id** (`rq_…`) and names its branch and its entry; the chat's answer names
+- **Each request has an id** (`rq_…`) and names its branch, that branch's place
+  (§chat.worktrees/place) and its entry; the chat's answer names
   that id (§chat.merge-queue/answers).
 - **Framed as requests, the user first.** A batch of them tells the model they are requests from
   Sova's merge queue it may act on, with its own user first (§chat.topics/delivery). They are never
@@ -614,8 +633,9 @@ disagree.
   message; once a request is waiting for that chat, the card reads "Paused: you stopped the chat"
   (§chat.merge-queue/chat-card). Remove from Queue still ends the entry, and drops its requests not
   yet delivered.
-- **In the transcript** a batch shows as one folded row, "Merge queue · {branch} · {n} requests",
-  with a branch icon, opening to each request (§chat.topics/row). It is never a "You" bubble and
+- **In the transcript** a batch shows as one folded row, "Merge queue · {branch} in {place} · {n}
+  requests" (§chat.worktrees/place), with a branch icon, opening to each request, which names its
+  branch the same way (§chat.topics/row). It is never a "You" bubble and
   never counted among the user's inputs.
 - **Read like a turn the user started, for attention.** A merge queue batch's turn gets a turn
   outcome and its reply is checked for a question to the user (§app.decisions/attention-signals,
@@ -668,8 +688,8 @@ Merge Queue tab's Needs you (§app.merge-queue/view) and in the landing bar
 - **Choices fill the message box.** A choice button adds its words to the chat's message box and
   puts focus there, where the user may change them; nothing is sent until the user sends.
 - **The message box says it is waiting for the user's answer.** While a decision's note is held, the
-  composer shows it above the message box ("Merge queue · {branch} · not sent yet: your answer goes
-  with it"), so the user knows their own answer is wanted there.
+  composer shows it above the message box ("Merge queue · {branch} in {place} · not sent yet: your
+  answer goes with it", §chat.worktrees/place), so the user knows their own answer is wanted there.
 - **One turn.** When the user sends, their answer and the held note reach the chat together, as one
   message: the user's message as their own words, then the note, marked as the merge queue's held
   note, never the user's (§chat.topics/delivery). Sent while the chat is working, they go together

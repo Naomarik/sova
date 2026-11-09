@@ -3,7 +3,7 @@
 // Solid, no DOM. The shapes are the queue's (shared/merge-queue.ts); the verb calls live in
 // merge-queue-client.ts.
 import type { SessionSummary, SessionWorktreeInfo, WorktreeReadiness } from "../../shared/protocol";
-import { newerWords, ordinal, type LandHow, type MergeReady } from "../../shared/merge-queue";
+import { newerWords, ordinal, type BranchPlace, type LandHow, type MergeReady } from "../../shared/merge-queue";
 import { clockTime, relativeTime } from "../../pi-config/extensions/stamp/format.ts";
 import { readinessChip } from "./worktrees";
 import type { MergeEntry, MergeNote, MergeProjectInfo, MergeQueueView, MergeRun, RunStep, WorktreeQueueInfo } from "./merge-queue-types";
@@ -146,10 +146,12 @@ export type QueueRowInput = Pick<SessionWorktreeInfo, "status" | "exists" | "rea
   Partial<Pick<WorktreeReadiness, "left" | "draftsLeft" | "removable" | "removeKeepsBranch">> & {
     queue?: RowQueueFacts;
     mergeProject?: Pick<MergeProjectInfo, "target" | "checks"> & Partial<MergeProjectInfo>;
+    place?: Partial<BranchPlace>;
   };
 
-/** A finished branch's line where the queue doesn't serve the repo: the chat merges it plainly. */
-export const PLAIN_MERGE_LINE = "Say “land it” in the chat to merge it into main.";
+/** A finished branch's line where the queue doesn't serve the repo: the chat merges it plainly, into the repository's
+    real target; with none known it names none. */
+export const plainMergeLine = (target: string | undefined): string => `Say “land it” in the chat to merge it${target ? ` into ${target}` : ""}.`;
 
 /** "3 commits · +40 −2": the branch's side against the target's head. */
 export const sizeWords = (s: { ahead: number; added: number; removed: number } | undefined): string | undefined =>
@@ -528,7 +530,7 @@ function queueRowOf(w: QueueRowInput): QueueRow {
       label: "Ready to merge",
       tone: "success",
       detail: r?.landing?.commit ? short(r.landing.commit) : undefined,
-      reason: PLAIN_MERGE_LINE,
+      reason: plainMergeLine(w.place?.target ?? w.mergeProject?.target),
       action: unset ? "setup" : "none",
     };
   }
@@ -593,21 +595,29 @@ export function rowButtons(row: Pick<QueueRow, "action" | "remove"> & Partial<Pi
   return out;
 }
 
-/** The Worktrees modal's head: the queue's intro (its target) and paused line only where some row's repo is
+/** The Worktrees modal's head: the queue's intro and one paused line per paused project, only where some row's repo is
     one the queue serves; elsewhere branches merge plainly from their chats and the queue isn't mentioned. */
-export function modalHead(rows: Pick<QueueRowInput, "mergeServed" | "mergeProject">[]): { intro: string | null; paused: string | null } {
-  const served = rows.find((w) => w.mergeServed);
-  if (!served) return { intro: null, paused: null };
-  const p = rows.find((w) => w.mergeServed && w.mergeProject)?.mergeProject;
-  return {
-    intro: "Land queues a branch; it lands as the commit that was tested.",
-    paused: p?.paused ? `The queue is paused: ${p.paused}. Land still takes your approval; it's checked once the queue resumes.` : null,
-  };
+export function modalHead(rows: Pick<QueueRowInput, "mergeServed" | "mergeProject" | "place">[]): { intro: string | null; paused: string[] } {
+  const served = rows.filter((w) => w.mergeServed);
+  if (!served.length) return { intro: null, paused: [] };
+  const seen = new Set<string>();
+  const paused: string[] = [];
+  for (const w of served) {
+    const p = w.mergeProject;
+    if (!p?.paused) continue;
+    const key = p.id ?? p.root ?? w.place?.label ?? "";
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const who = w.place?.label?.trim();
+    paused.push(`${who ? `${who}'s queue` : "The queue"} is paused: ${p.paused}. Land still takes your approval; it's checked once the queue resumes.`);
+  }
+  return { intro: "Land queues a branch; it lands as the commit that was tested.", paused };
 }
 
 /** What Land's confirm says: the branch, how many commits go to the queue (the row's own count, else none named) and
-    what moves once the checks pass, by the way of landing when the caller knows it (else the target moves). */
-export function landConfirmWords(branch: string, ahead: number | undefined, target: string | undefined, how?: LandHow, drafts?: number): { title: string; line: string; confirm: string } {
+    what moves once the checks pass, by the way of landing when the caller knows it (else the target moves). A chat's
+    rows name the branch's place; the project's own Merge Queue tab has no need to, and passes none. */
+export function landConfirmWords(branch: string, ahead: number | undefined, target: string | undefined, how?: LandHow, place?: string, drafts?: number): { title: string; line: string; confirm: string } {
   const n = typeof ahead === "number" && ahead > 0 ? ahead : undefined;
   const to = target ?? "the target branch";
   const go = drafts ? `${drafts} spec ${drafts === 1 ? "draft goes" : "drafts go"}` : n === undefined ? "Its commits go" : `${n} ${n === 1 ? "commit goes" : "commits go"}`;
@@ -621,7 +631,7 @@ export function landConfirmWords(branch: string, ahead: number | undefined, targ
           : `${to} moves once checks pass.`;
   return {
     title: `Land ${branch}?`,
-    line: `${go} to the merge queue; ${after}`,
+    line: `${go} to ${place ? `${place}'s` : "the"} merge queue; ${after}`,
     confirm: drafts ? `Land ${drafts} ${drafts === 1 ? "Draft" : "Drafts"}` : n === undefined ? "Land Branch" : `Land ${n} ${n === 1 ? "Commit" : "Commits"}`,
   };
 }

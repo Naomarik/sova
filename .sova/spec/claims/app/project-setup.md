@@ -234,7 +234,8 @@ branch's. Until then the proposal offers **Run Trial** in Land's (or Merge Branc
 "Run a trial of {sha7} first: it lands only once its own checks pass." A newer commit on the branch
 needs a new trial. Every way in asks the same rule: Land on the tabs, the banner, the Needs-you row,
 the Worktrees rows, a typed "land it", `merge.add` and Merge Branch each refuse a setup branch whose
-head has no passing trial, with "This setup branch has no passing trial at {sha7}: run a trial of
+head has no passing trial (one with nothing left and no draft to land is refused first, as nothing to
+land, §app.merge-queue/approve, and is never told to run a trial), with "This setup branch has no passing trial at {sha7}: run a trial of
 it first." (or that its trial is still running, or failed), queueing and merging nothing. Merge
 Branch checks the trial against the head it actually merges, and refuses when the branch's head moved
 since the proposal was read ("The branch has a newer commit than the one shown: look again."). When

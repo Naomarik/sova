@@ -242,16 +242,17 @@ export function OverviewProjects(props: {
                             </a>
                           )}
                         </Show>
-                        <RuntimeRow href={rt().slots ? tab("branches") : undefined} label="Running slots">
+                        <RuntimeRow href={rt().slots ? tab("branches") : undefined} label="Copies" title={rt().slots?.title}>
                           <Show when={rt().slots} fallback={<span class="overview-project-card-val overview-project-card-muted">{DASH}</span>}>
                             {(sl) => (
                               <span class="overview-project-card-val text-num" classList={{ "overview-project-card-muted": sl().muted }}>
                                 <span class="overview-project-card-pips" aria-hidden="true">
-                                  {sl().pips.map((on) => (
-                                    <i classList={{ "overview-project-card-pip-on": on }} />
+                                  {sl().pips.map((look) => (
+                                    <i class={`overview-project-card-pip-${look}`} />
                                   ))}
                                 </span>
                                 <span class="overview-project-card-fig">{sl().text}</span>
+                                <span class="visually-hidden">: {sl().title}</span>
                               </span>
                             )}
                           </Show>

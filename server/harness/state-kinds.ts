@@ -50,6 +50,7 @@ import { LINK_MEMBER_ENTRY, type LinkMemberData } from "../../shared/mesh-links"
 import { normalizeChatList, type McpChatList } from "../mcp/list-shape";
 import type { McpNote } from "../../shared/mcp";
 import { PROFILE_ENTRY, RETIRED_REMOVABLE, SESSION_SENT_ENTRY, type ProfileEntryData, type SessionSentData } from "../../shared/profiles";
+import { CHAT_PROFILE_ENTRY, normalizeChatProfile, type ChatProfileEntryData } from "../../shared/profile-switch";
 import { PROJECT_OVERSEER_ENTRY, type ProjectOverseerMarkerData } from "../../shared/project-overseer";
 import { PROJECT_ASSISTANT_ENTRY, type ProjectAssistantMarkerData } from "../../shared/project-assistant";
 import {
@@ -130,6 +131,10 @@ export const PROFILE = kind<ProfileEntryData>(PROFILE_ENTRY, "newest-on-branch",
   if (!Array.isArray(remove) || !remove.some((r) => RETIRED_REMOVABLE.includes(r))) return p;
   return { ...p, profile: { ...p.profile!, remove: remove.filter((r) => !RETIRED_REMOVABLE.includes(r)) } };
 });
+
+/** Which joined profile the chat is on after a mid-chat switch (§chat.profiles/switch): newest on the branch
+    wins, written with the switch; hidden, never LLM context. */
+export const CHAT_PROFILE = kind<ChatProfileEntryData>(CHAT_PROFILE_ENTRY, "newest-on-branch", (d) => normalizeChatProfile(d));
 
 /** A link member session's marker (§mesh.links/tools), written by its create before anything else
     (`POST /api/sessions` with `link: true`): it fixes the session's link tools for its whole life. */
@@ -300,7 +305,7 @@ export const MEMORY = kind<MemoryChoiceData>("sova-memory", "newest-on-branch", 
 /** Every registered kind, by type. */
 export const STATE_KINDS: ReadonlyMap<string, StateKind<unknown>> = new Map(
   [
-    REWIND, TOPIC_DELIVERED, SHELL_CLOSED, SHELL_RUN, FANOUT_MEMBER, PROFILE, LOADOUT, MCP_LIST, MCP_NOTE, SESSION_SENT, OVERSEER, OVERSEER_SENT, OVERSEER_DIALOG_ANSWER,
+    REWIND, TOPIC_DELIVERED, SHELL_CLOSED, SHELL_RUN, FANOUT_MEMBER, PROFILE, CHAT_PROFILE, LOADOUT, MCP_LIST, MCP_NOTE, SESSION_SENT, OVERSEER, OVERSEER_SENT, OVERSEER_DIALOG_ANSWER,
     GRANT, RULE, REVOKE, GRANT_USE, PROJECT_OVERSEER, PROJECT_ASSISTANT, LINK_MEMBER, ALIGN_LAUNCH,
     BATON, BATON_SENT, BATON_HANDOFF, BATON_OFFER, BATON_LEASE, BATON_DECISION, BATON_DONE, BATON_PROPOSAL, BATON_WRAPUP, TOUR_ATTACHMENT, TOUR_DETACHMENT,
     MODE, SUBAGENT_PROFILE, FORK_CACHE, WORKER_SESSION, SANDBOX, WORKTREES, CLAUDE_LOGIN, ALIGN_DOC, MEMORY,

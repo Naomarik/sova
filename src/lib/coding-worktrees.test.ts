@@ -24,15 +24,15 @@ const wt = (over: Partial<CodingWorktree> = {}): CodingWorktree => ({
   ...over,
 }) as CodingWorktree;
 
-test("the read-only mode line: this computer's defaults, mode words in mono, vis said as visuals", () => {
-  const h = codingModeHint({ mode: "delegate", minorModes: ["spec", "vis"], subagents: { id: "house", name: "House" } });
+test("the read-only mode line: this computer's default profile, mode words in mono, vis said as visuals", () => {
+  const h = codingModeHint({ mode: "delegate", minorModes: ["spec", "vis"], subagents: { id: "house", name: "House" }, profile: { id: "claude", name: "Claude" } });
   assert.equal(h.mode, "delegate · spec · visuals");
-  assert.equal(
-    h.before + h.mode + h.after,
-    "Coding sessions start in delegate · spec · visuals, with the House subagent profile: this computer's defaults. Save as default in any chat's mode menu changes them.",
-  );
-  const none = codingModeHint({ mode: "normal", minorModes: [], subagents: null });
-  assert.equal(none.before + none.mode + none.after, "Coding sessions start in normal: this computer's default mode. Save as default in any chat's mode menu changes it.");
+  assert.equal(h.before + h.mode + h.after, "Coding sessions start on Claude, in delegate · spec · visuals: this computer's default profile. Make Default in Settings → Profiles changes it.");
+  const off = codingModeHint({ mode: "normal", minorModes: [], subagents: null, profile: { id: "off", name: "Off" } });
+  assert.equal(off.before + off.mode + off.after, "Coding sessions start on Off, in normal: this computer's default mode. Make Default in Settings → Profiles changes it.");
+  // An older server names no profile: its default helpers stand in.
+  const older = codingModeHint({ mode: "normal", minorModes: [], subagents: { id: "house", name: "House" } });
+  assert.equal(older.before, "Coding sessions start on House, in ");
 });
 
 test("gestures: which are offered", () => {

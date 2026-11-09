@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { isStarting } from "../../shared/services-view";
-import { adoptedLine, copyChip, costLine, usableLine, gbWord, limitHint, limitInputProblem, limitLine, limitSource, copyMemory, copyName, createdByWord, endpointNotRunning, entryHref, openEntry, rowVerbs, shareOffered, endpointPort, httpHref, linkLine, notReadyLine, refusalLine, sentence, SHARE_SENSITIVE, shareBlocked, verbGroups, portLabel } from "./services-view";
+import { adoptedLine, copyChip, costLine, usableLine, gbWord, limitHint, limitInputProblem, limitLine, limitSource, placesLine, copyMemory, copyName, createdByWord, endpointNotRunning, entryHref, openEntry, rowVerbs, shareOffered, endpointPort, httpHref, linkLine, notReadyLine, refusalLine, sentence, SHARE_SENSITIVE, shareBlocked, verbGroups, portLabel } from "./services-view";
 
 test("a copy is named main at slot 0, else by its branch, else by its folder", () => {
   assert.equal(copyName({ slot: 0, branch: "master", checkout: "/p" }), "main");
@@ -154,6 +154,11 @@ test("the copy limit in words: the opening line, its source, the hint, the input
   assert.deepEqual(costLine({ value: 4, host, estimate: null }), { text: "Not measured yet: Run Again on the Software card measures it. This machine: 121 GB, 30 GB available now.", warn: false });
   assert.equal(gbWord(800e6), "0.8 GB");
   assert.equal(gbWord(40e6), "40 MB");
+});
+
+test("the places line: free of usable with what holds the rest; no free count where other programs weren't checked", () => {
+  assert.equal(placesLine({ usable: 16, places: { stopped: 2, elsewhere: 3, free: 9 } }), "9 of 16 places free · 2 stopped · 3 used elsewhere");
+  assert.equal(placesLine({ usable: 16, places: { stopped: 2, elsewhere: 3 } }), "2 stopped · 3 used elsewhere · Other programs were not checked");
 });
 
 test("fewer usable slots than the limit: the tab says what the limit can reach", () => {

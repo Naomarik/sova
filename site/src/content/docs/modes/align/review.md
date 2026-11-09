@@ -15,8 +15,8 @@ Adversarial review is off by default. Switch it on in Settings →
   with.
 - It only works with [align](/docs/modes/align/) on, with or without Delegate. A session without
   align gets no review.
-- The chat's [subagent profile](/docs/subagent-profiles/) needs a **Reviewer**. With the switch on,
-  the profile editor shows a Reviewer section after Spec writer: one switch, "Review alignments with
+- The chat's [profile](/docs/subagent-profiles/) needs a **Reviewer**. With the switch on,
+  the profile's Models part shows a Reviewer row after Spec writer: one switch, "Review alignments with
   a reviewer", and a worker row with an optional fallback.
 
 The first time you save the switch on, every profile that has no reviewer setting yet gets this

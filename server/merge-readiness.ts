@@ -608,7 +608,7 @@ export interface ReadinessDeps {
       looks at its project again (server/merge-queue/summary-sweep.ts). Absent: nothing is told. */
   treeIdle?: (t: { path: string; branch: string }) => void;
   /** Sova's message to a session (the specs nudge); absent: never sent. */
-  nudge?: (sessionPath: string, text: string, info?: { kind?: string; branch?: string }) => Promise<unknown>;
+  nudge?: (sessionPath: string, text: string, info?: { kind?: string; branch?: string; place?: string }) => Promise<unknown>;
   /** The branches the merge queue landed for a chat (its Landed cards), by session id. */
   queueLandings?: (sessionId: string) => QueueLandingFacts[];
   /** Whether the merge queue serves a tree's repo (server/merge-queue/served.ts: on the Projects list and its merge
@@ -623,6 +623,8 @@ export interface ReadinessDeps {
   /** A branch's queue fields as the Session tab reads them, cut for the list, with the root its entry joins by
       (merge-queue/wire.ts branchQueueFields). Absent: none. */
   branchFields?: (path: string, branch: string) => Promise<{ root?: string; fields: Pick<SessionBranchRow, "queue" | "mergeServed" | "mergeProject"> }>;
+  /** A branch's place, read as a list row may (wire.ts branchPlaceRead). Absent: none. */
+  branchPlace?: (path: string) => Promise<SessionBranchRow["place"]>;
   /** A branch's entry in its queue's newest view, read at listing time (wire.ts branchQueueNow): null when no view
       of that queue is known yet. Absent: the background read's answer stands. */
   queueNow?: (root: string, branch: string) => SessionBranchQueue | undefined | null;
@@ -697,6 +699,7 @@ const defaultDeps = (): ReadinessDeps => ({
   mergedInto: async (t) => (await import("./worktrees-state")).mergedInto(t, Date.now(), true),
   refsStamp: gitRefsStamp,
   branchFields: async (path, branch) => (await import("./merge-queue/wire")).branchQueueFields(path, branch),
+  branchPlace: async (path) => (await import("./merge-queue/wire")).branchPlaceRead(path),
   queueNow: (root, branch) => {
     const w = loadWire();
     return w ? w.branchQueueNow(root, branch) : null;
@@ -1014,6 +1017,7 @@ export async function computeBranches(s: Pick<SessionSummary, "id">, facts: Pick
       const st = exists ? await deps.insights.treeStatus(t.path).catch(() => null) : null;
       const noneLeft = !!st && (st.merged === "ancestor" || st.merged === "content" || st.merged === "catch-up");
       const undrafted = noneLeft ? await Promise.resolve(deps.drafts(t.path)).catch(() => undefined) : undefined;
+      const place = await deps.branchPlace?.(t.path).catch(() => undefined);
       const row: SessionBranchRow = {
         path: t.path,
         branch: t.branch,
@@ -1023,6 +1027,7 @@ export async function computeBranches(s: Pick<SessionSummary, "id">, facts: Pick
         ...(merged ? { mergedInto: merged } : {}),
         ...(q?.fields ?? {}),
         ...(noneLeft ? (undrafted?.length ? { left: "drafts" as const, draftsLeft: undrafted.length } : { left: "nothing" as const, ...(await removeFieldsOf(t.path)) }) : {}),
+        ...(place ? { place } : {}),
       };
       return q?.root ? { row, root: q.root } : { row };
     }),
@@ -1294,7 +1299,7 @@ async function refresh(input: RefreshInput): Promise<void> {
   if (!current()) return;
   const heard = replyHeads ? { replyHeads } : {};
   cache.set(s.path, { scan, facts, ...(value ? { value } : {}), ...(branches ? { branches } : {}), key: input.key, file: input.file, at: deps.now(), row: s, longDirty, ...(stamps ? { stamps } : {}), ...(watch ? { watch } : {}), ...heard });
-  if (value) nudgeSpecs(s, value);
+  if (value) await nudgeSpecs(s, value);
   if (facts && value && (await checkFollowUps(s, facts, value).catch(() => false))) {
     if (!current()) return;
     const again = await computeReadiness(s, facts, current);
@@ -1386,16 +1391,24 @@ export function checkReadinessInputs(): number {
   return n;
 }
 
+/** The place a request to a branch's chat names it in (§chat.merge-queue/requests). */
+const placeWords = async (path: string): Promise<{ place?: string }> => {
+  const label = (await deps.branchPlace?.(path).catch(() => undefined))?.label;
+  return label ? { place: label } : {};
+};
+
 /** Once per head commit, tell a session whose finished branch's drafts wouldn't land with it what doesn't fit
     (§chat.worktrees/ready-to-land): never the user, never again for that commit. */
-function nudgeSpecs(s: SessionSummary, value: SessionReadiness): void {
+async function nudgeSpecs(s: SessionSummary, value: SessionReadiness): Promise<void> {
   const send = deps.nudge;
   if (!send || s.archived || s.live) return;
+  const unfit = (t: SessionReadiness["trees"][number]) => t.landing?.state === "specs" && !t.landing.specsWhy && !!t.landing.docs?.problems?.length;
+  const places = new Map(await Promise.all(value.trees.filter(unfit).map(async (t) => [t.path, await placeWords(t.path)] as const)));
   for (const t of value.trees) {
     const l = t.landing;
     if (l?.state !== "specs" || l.specsWhy || !l.docs?.problems?.length || deps.approvedAt?.(t.path, t.branch, l.commit)) continue;
     if (!deps.landing.nudge(s.id, t.path, l.commit)) continue;
-    void send(s.path, docsNudgeText(t.branch, l.commit, l.docs.problems), { kind: "drafts", branch: t.branch })
+    void send(s.path, docsNudgeText(t.branch, l.commit, l.docs.problems), { kind: "drafts", branch: t.branch, ...places.get(t.path) })
       .then((id) => (typeof id === "string" ? deps.landing.asked(s.id, t.path, l.commit, id, "drafts") : undefined))
       .catch((err) => console.warn(`[readiness] docs nudge to ${s.path}: ${(err as Error).message}`));
   }
@@ -1407,7 +1420,7 @@ function nudgeSpecs(s: SessionSummary, value: SessionReadiness): void {
     void (async () => {
       if (!(await served(b.path).catch(() => false))) return;
       if (!deps.landing.tell(s.id, b.path, b.commit)) return;
-      const id = await send(s.path, blockedNoteText(b.branch, b.commit, b.blockers, b.conflicts), { kind: "blocked", branch: b.branch });
+      const id = await send(s.path, blockedNoteText(b.branch, b.commit, b.blockers, b.conflicts), { kind: "blocked", branch: b.branch, ...(await placeWords(b.path)) });
       if (typeof id === "string") deps.landing.asked(s.id, b.path, b.commit, id, "blocked");
     })().catch((err) => console.warn(`[readiness] landing note to ${s.path}: ${(err as Error).message}`));
   }

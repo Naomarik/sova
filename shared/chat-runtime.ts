@@ -7,6 +7,7 @@
 //   - a state mirror (`ChatStateMirror`) the server reads synchronously instead of asking the chat;
 //   - lifecycle events (`ChatLifecycleEvent`) numbered per runtime, for reconnecting `since` a seq;
 //   - browser frames (`ChatClientFrame`), passed through without the server parsing a reply.
+import type { ChatProfileState, ProfileSwitchResult, ProfileSwitchTarget } from "./profile-switch";
 import type { McpNote } from "./mcp";
 import type { ModeState } from "../pi-config/extensions/mode/state";
 import type { SandboxState } from "../pi-config/extensions/sandbox/state";
@@ -340,6 +341,10 @@ export interface ChatMethods {
   subagentProfileInfo: { args: Record<string, never>; result: SubagentProfilesInfo };
   subagentSwitchRefusal: { args: Record<string, never>; result: string | null };
   switchSubagentProfile: { args: { id: unknown }; result: SubagentProfilesInfo & { applies: "now" | "after-turn" } };
+  /** The whole Models part, all at once (§chat.profiles/switch); a refusal is data, nothing written. */
+  switchProfile: { args: { target: ProfileSwitchTarget }; result: ({ ok: true } & ProfileSwitchResult) | { ok: false; status: 400 | 409; error: string } };
+  cancelProfileSwitch: { args: Record<string, never>; result: { cancelled: boolean; state: ChatProfileState } };
+  chatProfileState: { args: Record<string, never>; result: ChatProfileState };
   /** Append a state record of a registered kind (server/harness/state-kinds.ts), refused mid-turn. */
   appendStateRow: { args: { kind: string; data: unknown }; result: string };
   /** Append a state record of a registered kind, whatever the run is doing. */

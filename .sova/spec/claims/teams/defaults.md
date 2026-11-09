@@ -5,10 +5,11 @@ Every team created with `team_create` (pi-config's subagents extension, in the T
 runtime Sova hosts) gets two standing members from Sova, never from the calling model's
 arguments: a **coordinator** that does no implementation and is the only member that talks to the
 main thread, and a **monitor** that watches the team's context and provider usage on a timer.
-Nothing turns either off. The parent chat's effective subagent profile
-(§chat.subagent-profiles/resolution) chooses their models, thresholds and names; Settings →
-Subagents edits these choices together with a members default, and is their only editor
-(§chat.subagent-profiles/settings). Where no settings name a model for them, both run on the
+Nothing turns either off. The members the chat names run on their work kinds' models
+(§teams.defaults/member-kinds). The parent chat's effective subagent profile
+(§chat.subagent-profiles/resolution) chooses their models, thresholds and names; the Models part
+of a profile in Settings → Profiles edits these choices, and is
+their only editor (§chat.subagent-profiles/settings). Where no settings name a model for them, both run on the
 chat's own model. Nothing here depends on Sova running. `team-defaults.json` remains the legacy
 seeding/fallback input.
 
@@ -123,6 +124,47 @@ seeding/fallback input.
   limit: the coordinator and monitor count only toward the chat's running limit
   (§app.teams/running-limit), whose refusal names them, so each team runs 2 more workers than the
   chat names.
+
+## §teams.defaults/member-kinds — A member names its work kind, and runs on that kind's model
+
+Every member a chat names at `team_create` or `team_add` carries a **work kind**, one of Delegate's
+four: `planning` (Planning & specs), `investigation`, `routine` (Routine implementation) or
+`complex` (Complex implementation); the labels are accepted too. Sova runs the member on that
+kind's model and effort from the chat's profile (§chat.subagent-profiles/resolution), in every major
+mode, not only Delegate. There is no separate model for members: a profile has no Members row
+(§chat.subagent-profiles/settings).
+
+- **Most specific wins.** A model named for that member; then the member's kind; then a model
+  named for the whole team (the call's `defaults.model`), only for members on its backend, which
+  also covers a member with no kind. A member's `effort` alone changes only the effort. A member
+  whose `backend` contradicts its kind's route is refused, not ignored. `defaults` takes no `kind`
+  (§app.teams/requests). Sova's coordinator and monitor keep their own models (§teams.defaults/file).
+- **Neither a kind nor a model is refused.** A member with no kind and no model, from the member or
+  the whole team, is refused at once, before any worker starts and before seats or running workers
+  are checked, and nothing in the call starts: "members[i] (builder) needs a kind: planning,
+  investigation, routine or complex (or a model you were given)."
+- **The kind's fallback.** When the kind's model can't run (Settings → Models or the model policy
+  blocks it, it isn't available, or it ran out of usage within the last hour,
+  §teams.defaults/runtime-fallback), the member runs on the kind's fallback. When the fallback can't
+  run either, or there is none, the team doesn't start: the chat asks the user which model to use, as
+  Delegate does.
+- **What the result says.** The `team_create` or `team_add` result says, for each member, which kind
+  and model it got, and whether that was the fallback (with why the model couldn't run).
+- **Planning and investigation members don't edit.** A Planning & specs or Investigation member is
+  told in its prompt not to edit files, and so is every successor of one.
+- **Successors.** A member's successor (§teams.defaults/handover) has the same kind and runs on that
+  kind's model under the chat's current profile; the kind is kept with the team, so a reload keeps it.
+  When neither the kind's model nor its fallback can run, the successor keeps its predecessor's model
+  and says so: mid-handover there is nobody to ask. A member of a team saved before members had
+  kinds has none: its successor keeps its predecessor's model and says so, and is never refused. A
+  model named for a member, or for its whole team, stays its successor's too.
+- **Off.** On Off (§chat.subagent-profiles/off) nothing routes a member: a kind is optional, a member
+  runs on the model named for it or its team, else the chat's own model, and its result line says no
+  profile routes it. A library that can't be read routes members by `mode-delegate.json`, as Delegate
+  does then.
+- **The chat is told to name one.** `team_create`'s and `team_add`'s text, the `/team <objective>`
+  planning message and Delegate's instructions each say to name a kind for every member, so the
+  refusal is rare. The planning message lists, one line per kind, what each runs on now.
 
 ## §teams.defaults/routing — Only the coordinator talks to the main thread
 
@@ -304,9 +346,10 @@ min`), and once the team has any item, `team_roster` and `team_list` end with on
   explicit member or per-call choices remain binding. A standing duty uses its current configured
   tuple: the primary, else the fallback, else the chat's own model (also when the settings name
   none), where a primary marked out of usage counts as refused and a
-  team whose duty already moved to its fallback keeps it (§teams.defaults/runtime-fallback); an ordinary successor uses the current members default when applicable. With no usable
-  applicable default it keeps the predecessor's tuple, and a denied default is reported as such
-  (§chat.subagent-profiles/members-default). Running predecessors do not change model.
+  team whose duty already moved to its fallback keeps it (§teams.defaults/runtime-fallback); an ordinary successor has its predecessor's work kind and runs on that kind's
+  route, else its fallback. When neither can run, or the member has no kind (a team saved before
+  kinds), it keeps the predecessor's tuple and says so; a Planning & specs or Investigation
+  successor is told not to edit (§teams.defaults/member-kinds). Running predecessors do not change model.
 - **A replacement from the main chat.** The main chat's `team_succeed { team, role }` (`role` is a
   role or worker ID) starts a successor only for a member with the coordinator or monitor duty,
   only when no member of that team with that duty is live (working, idle or stopping), and only
@@ -458,12 +501,13 @@ again while the team runs, not only when a coordinator or monitor starts.
   and the time, appended to the parent session as a `subagents-dead-tuple-v1` custom entry (`{version: 1, backend, model, reason,
   at, teamId?, duty?}`) and replayed from all of the session's entries at `session_start`, so a
   reload keeps it. For 1 hour from that time every tuple check treats it as refused, saying it ran
-  out and when it is tried again: a new team's coordinator and monitor, the members default at
-  `team_create`, `team_add` and a successor, and every later successor's standing tuple. After the
+  out and when it is tried again: a new team's coordinator and monitor, a member's work kind route
+  at `team_create`, `team_add` and a successor (it then runs on the kind's fallback,
+  §teams.defaults/member-kinds), and every later successor's standing tuple. After the
   hour new teams try the primary again. A team whose duty switched, for any reason (a streak
   included), stays on the fallback for that duty: its later successors of that duty skip the
   primary even after the hour. That is the team's alone: a streak switch writes no mark and no
-  `subagents-dead-tuple-v1` entry, so other teams, new teams, `team_add` and the members default
+  `subagents-dead-tuple-v1` entry, so other teams, new teams, `team_add` and members' kinds
   still use the primary; a reload reads the team's switch back from its handover event's
   `fallback: primary <tuple>` detail.
 - **A monitor never goes silent.** After a failed monitor turn that does not switch it, when the

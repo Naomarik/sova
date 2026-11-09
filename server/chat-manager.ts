@@ -7,6 +7,7 @@ import { type ChatDialogInfo, type ChatLifecycleEvent, type ChatRunEvent, type C
 import { BUILTIN_TOOLS as WORKER_BUILTIN_TOOLS, WORKER_HOST_DISCOVER_EVENT, WORKER_HOST_EVENT, type WorkerHostAnnouncement } from "../pi-config/extensions/subagents/worker-host.ts";
 import { prepareOwnerArea } from "../shared/decisions";
 import { LOGIN_UNCHANGED } from "../shared/protocol";
+import { type ChatProfileEntryData, type ChatProfileState, type ProfileSwitchResult, type ProfileSwitchTarget } from "../shared/profile-switch";
 import { type BatonSentData, OPERATOR } from "../shared/baton";
 import type { ChatClaudeLogin, ChatClientMessage, ChatModeResult, ChatServerMessage, HeldChatState, V1EventFrame, V2EventFrame, ModeApplies, ModeInfo, OverseerDialogAnswerData, ProjectModeApproval, ProjectModeApprovalNeeded, OverseerSentMarkerData, QueueItem, RegenerateRefusal, SandboxApplyResult, SandboxInfo, ShellRefusal, SlashCommand, TranscriptItem, WorkerInfo } from "../shared/protocol";
 import { COMPACT_COMMAND, COMPACT_IMAGES_REFUSAL, compactCommand } from "../shared/compact";
@@ -20,9 +21,11 @@ import { decodeWorkers } from "./insights";
 import { readLive, readOwnLiveRecords, workerCountsOf } from "./live";
 import { sessionsChanged } from "./list-generation";
 import { appliesAfter, type BranchEntries, chatModeOf, CREATE_NOT_TAKEN, defaultPatchOf, mergeMode, MINOR_MODES, modeApplyPlan, modeInfo, pinEntryFor, readMode, saveModeOf, typedMajorMode, writeMode, type ModePatch, type ModeState } from "./mode-state";
-import { loadDefaults, saveDefaults } from "./web-defaults";
+import { loadDefaults } from "./web-defaults";
 import { subagentProfilesInfo, requireSubagentProfile, saveSubagentProfileDefault } from "./subagent-profiles";
-import { restorePick, pickEntryFor } from "../pi-config/extensions/subagents/subagent-profiles.ts";
+import { restorePick, pickEntryFor, shortModel } from "../pi-config/extensions/subagents/subagent-profiles.ts";
+/** The profile a chat is on when it names none: Off (§chat.subagent-profiles/off). */
+const OFF_ON = Object.freeze({ id: "off", key: "sova:default", name: "Off" });
 import { decodeMemberContext, MEMBER_ENV } from "../pi-config/extensions/subagents/mailbox.ts";
 import { modelAllowed, modelDenial, readModelPolicy } from "./model-policy";
 import { toContextInfo, workerWindowResolver } from "./models";
@@ -39,7 +42,7 @@ import { replyTimingsOf } from "./reply-facts";
 import type { ReplyTiming } from "../shared/harness-wire";
 import { producerId } from "../pi-config/extensions/llm-inflight/tracker.ts";
 import { readDeviceId } from "../pi-config/extensions/llm-inflight/usage-record.ts";
-import type { CompactOutcome, DialogBridge, EntryId, HarnessEvent, HarnessSession, HEntry, HookCtx, ImageInput, SessionState, SessionStateWriter, StateKind, StateView, ToolCtx, ToolResult, ToolSpec, ToolUpdate } from "../shared/harness";
+import type { CompactOutcome, DialogBridge, EntryId, HarnessEvent, HarnessModel, HarnessSession, HEntry, HookCtx, ImageInput, SessionState, SessionStateWriter, StateKind, StateView, ToolCtx, ToolResult, ToolSpec, ToolUpdate } from "../shared/harness";
 import { branchOf, historyOf, lineHeader, readPi, storedAsString } from "./harness/pi/reader";
 import { stateView } from "./harness/state-view";
 import { LiveTail } from "./chat-runtime/live-tail";
@@ -54,7 +57,7 @@ import { modesEntries, workerModePaths } from "./harness/pi/own-code";
 import { modesBridgeExtension, type ModesHandle } from "./harness/pi/modes";
 import { isAlreadyProcessing } from "./harness/pi/session";
 import { isCompactionInProgress } from "./harness/pi/history-ops";
-import { ALIGN_LAUNCH, type AlignLaunchData, BATON_SENT, FANOUT_MEMBER, LINK_MEMBER, LOADOUT, MCP_NOTE, MEMORY, MODE, OVERSEER, OVERSEER_DIALOG_ANSWER, OVERSEER_SENT, PROFILE, SESSION_SENT, SHELL_CLOSED, SHELL_RUN, SUBAGENT_PROFILE, TOPIC_DELIVERED, stateKindOf } from "./harness/state-kinds";
+import { ALIGN_LAUNCH, type AlignLaunchData, BATON_SENT, FANOUT_MEMBER, LINK_MEMBER, LOADOUT, MCP_NOTE, MEMORY, MODE, CHAT_PROFILE, OVERSEER, OVERSEER_DIALOG_ANSWER, OVERSEER_SENT, PROFILE, SESSION_SENT, SHELL_CLOSED, SHELL_RUN, SUBAGENT_PROFILE, TOPIC_DELIVERED, stateKindOf } from "./harness/state-kinds";
 import { ChatShell } from "./chat-shell";
 import { piPrepare, toolCtx, toPiTool } from "./harness/pi/tools";
 import { forgetSpecial, specialLoadout, specialWriter } from "./chat-special";
@@ -1462,8 +1465,9 @@ class ChatSession {
       // line between. `queue_item_gone{reason:"failed"}` is now the single departure signal, which
       // also makes "failed" and "dropped" symmetric, and leaves `queue_cleared` meaning Stop and
       // nothing else.
-      const provider = this.harness.model()?.provider;
-      this.broadcast({ type: "error", code, message, ...(item.origin === "client" ? { clientId: item.id } : {}), ...(provider ? { provider } : {}) });
+      const failed = this.harness.model();
+      const provider = failed?.provider;
+      this.broadcast({ type: "error", code, message, ...(item.origin === "client" ? { clientId: item.id } : {}), ...(provider ? { provider, model: failed!.ref } : {}) });
     },
   });
 
@@ -2140,9 +2144,16 @@ class ChatSession {
           if (this.disposed) return;
           this.queue.onSdkEvent();
           this.releaseLinks(false);
+          // A profile switch held only by this compaction applies now (§chat.profiles/switch).
+          this.settleHeldSwitch();
         });
       if (event.type === "run.start") {
         this.releaseLinks(true);
+        // The switch's line above the composer rests until the chat's next turn starts.
+        if (this.switchOutcome.applied || this.switchOutcome.failed) {
+          this.switchOutcome = {};
+          this.broadcastChatProfile();
+        }
         emitChatEvent(this.path, "started");
         // After the fact: schedules a mode's turn.started hooks (if any) and returns.
         this.modeActions.turnStarted();
@@ -2194,6 +2205,8 @@ class ChatSession {
         emitChatEvent(this.path, "settled");
         this.modeActions.turnSettled();
       }
+      // A profile switch held for this reply applies now, checked again (§chat.profiles/switch).
+      if (event.type === "run.settled") this.settleHeldSwitch();
       if (event.type === "run.settled" && this.modeApplies === "after-turn") {
         // A mid-turn switch reaches the next prompt from here on.
         this.modeApplies = "now";
@@ -2663,9 +2676,235 @@ class ChatSession {
     if (!this.hasModeOwner()) throw new ModeRefusedError("The mode extension isn't loaded in this chat.");
     this.flushDeferredAppends();
     const entry = pickEntryFor(this.extensionBranch(), profile);
-    if (entry) this.harness.state.append(SUBAGENT_PROFILE, entry.data);
+    if (entry) {
+      // Only the helpers move (§chat.subagent-profiles/overseer): a chat that names its profile only by its
+      // helper pick (or by nothing) first records the profile it is on, so the new pick doesn't rename it.
+      if (!this.profileOnBranch()) {
+        const on = this.chatProfileOn();
+        this.harness.state.append(CHAT_PROFILE, { v: 1, id: on.id, ...(on.key ? { key: on.key } : {}), name: on.name });
+      }
+      this.harness.state.append(SUBAGENT_PROFILE, entry.data);
+    }
     markOwned(this.path);
     return { ...this.subagentProfileInfo(), applies: this.harness.isRunning() ? "after-turn" as const : "now" as const };
+  }
+
+  /** A profile switch held until the running reply ends (§chat.profiles/switch); null with none. */
+  private pendingSwitch: ProfileSwitchTarget | null = null;
+  /** The newest switch's outcome, until the chat's next turn starts: the thread's line above the composer. */
+  private switchOutcome: Pick<ChatProfileState, "applied" | "failed"> = {};
+
+  /**
+   * Which joined profile this chat is on: the newest of the switch's hidden entry and the profile entry the
+   * chat started with, else the helper pick's library profile, else Off.
+   */
+  chatProfileOn(): { id: string; key?: string; name: string; model?: string; thinking?: string } {
+    const named = this.profileOnBranch();
+    if (named) return named;
+    const pick = this.subagentPick;
+    if (pick && pick !== "off") {
+      const name = this.subagentProfileInfo().profiles.find((p) => p.id === pick)?.name ?? pick;
+      return { id: pick, key: `library:${pick}`, name };
+    }
+    return OFF_ON;
+  }
+
+  /** The profile the branch names: the newest of a switch's hidden entry and the profile entry the chat started
+      with (one that picked no profile is Off); undefined when it names none. */
+  private profileOnBranch(): { id: string; key?: string; name: string; model?: string; thinking?: string } | undefined {
+    const view = this.harness.state.branch();
+    const named = view.latest(CHAT_PROFILE);
+    const started = view.latest(PROFILE);
+    if (!named && !started) return undefined;
+    // The newer of the two on the branch wins (a pick on the empty screen after a switch, or the reverse).
+    const at = new Map(this.harness.branch().map((e, i) => [e.id, i]));
+    const pos = (r: { id: EntryId | null } | null) => (r?.id ? (at.get(r.id) ?? -1) : -1);
+    if (named && (!started || pos(named) >= pos(started))) {
+      const d = named.data;
+      return { id: d.id, ...(d.key ? { key: d.key } : {}), name: d.name, ...(d.model ? { model: d.model } : {}), ...(d.thinking ? { thinking: d.thinking } : {}) };
+    }
+    const p = started!.data.profile;
+    if (!p) return OFF_ON; // a pick of no profile: Off
+    return { id: p.id, key: keyOf(p), name: p.label, ...(p.model ? { model: p.model } : {}), ...(p.thinking ? { thinking: p.thinking } : {}) };
+  }
+
+
+  /** What the menu, the thread's line and the limit row read (the `chat_profile` message). */
+  chatProfileState(): ChatProfileState {
+    const on = this.chatProfileOn();
+    const model = this.harness.model()?.ref;
+    const p = this.pendingSwitch;
+    return {
+      current: {
+        id: on.id,
+        ...(on.key ? { key: on.key } : {}),
+        name: on.name,
+        edited: !!on.model && !!model && model !== on.model,
+        ...(model ? { model } : {}),
+        ...(on.model ? { profileModel: on.model } : {}),
+      },
+      ...(p ? { pending: { id: p.id, ...(p.key ? { key: p.key } : {}), name: p.name, helpers: p.helpers, setsModel: !!p.model } } : {}),
+      ...this.switchOutcome,
+    };
+  }
+
+  private broadcastChatProfile(): void {
+    if (!this.disposed) this.broadcast({ type: "chat_profile", state: this.chatProfileState() });
+  }
+
+  /** Why this chat can't take a profile switch at all, or null (the same refusals as a mode switch). */
+  private profileSwitchRefusal(): string | null {
+    if (this.disposed || this.overseer || this.specialRefuses("mode") || this.hasForeignWrites()) return "This chat can't switch profiles.";
+    try {
+      assertNotLive(this.path);
+    } catch (err) {
+      return err instanceof Error ? err.message : String(err);
+    }
+    if (!this.hasModeOwner()) return "The mode extension isn't loaded in this chat.";
+    return null;
+  }
+
+  /**
+   * Check a switch as a composer pick is checked, writing nothing: the model is one here, Settings → Models
+   * allows it and this computer has credentials for it; the effort is a level; the helpers are in this
+   * computer's library. Answers the model to set (undefined: the chat keeps its own), or why not.
+   */
+  private async checkProfileSwitch(t: ProfileSwitchTarget): Promise<{ ok: true; model?: HarnessModel } | { ok: false; status: 400 | 409; error: string }> {
+    const refused = this.profileSwitchRefusal();
+    if (refused) return { ok: false, status: 409, error: refused };
+    if (t.thinking !== undefined && !THINKING_LEVELS.includes(t.thinking)) return { ok: false, status: 400, error: `"${t.thinking}" isn't an effort level.` };
+    try {
+      // A profile with no helpers of its own takes the default's: the library must answer for that too.
+      requireSubagentProfile(t.subagents ?? this.subagentProfileInfo().default);
+    } catch (err) {
+      return { ok: false, status: 400, error: err instanceof Error ? err.message : String(err) };
+    }
+    if (!t.model) return { ok: true };
+    const denial = modelDenial(readModelPolicy(), t.model);
+    if (denial) return { ok: false, status: 400, error: denial };
+    const found = await this.harness.findModel(t.model).catch(() => null);
+    if (!found?.ok) return { ok: false, status: 400, error: `No credentials here for ${shortModel(t.model)}.` };
+    // The lookup was async: a TUI or another writer may have appeared meanwhile.
+    const again = this.profileSwitchRefusal();
+    if (again) return { ok: false, status: 409, error: again };
+    return { ok: true, model: found.model };
+  }
+
+  /**
+   * Switch this chat's whole Models part to a profile (§chat.profiles/switch): the chat's own model and
+   * effort where the profile sets them, its helper pick and the alignment settings that ride on it, never
+   * its tools or modes. Checked first, writing nothing on a refusal. Idle: applied at once. While a reply
+   * runs or the chat compacts: held, and applied (checked again) when that ends; Cancel Switch drops it. The model is set
+   * only between turns, never mid-turn (setModel's own rule).
+   */
+  async switchProfile(t: ProfileSwitchTarget): Promise<({ ok: true } & ProfileSwitchResult) | { ok: false; status: 400 | 409; error: string }> {
+    const checked = await this.checkProfileSwitch(t);
+    if (!checked.ok) return checked;
+    // Back to the profile it is on, unedited: nothing to wait for, and no line, busy or not. A different
+    // switch that was waiting is dropped: the chat stays as it is.
+    if (this.switchChangesNothing(t)) {
+      if (this.pendingSwitch) {
+        this.pendingSwitch = null;
+        this.broadcastChatProfile();
+      }
+      return { ok: true, applies: "now", state: this.chatProfileState() };
+    }
+    if (this.harness.isRunning() || this.isCompacting()) {
+      this.pendingSwitch = t;
+      this.switchOutcome = {};
+      this.broadcastChatProfile();
+      return { ok: true, applies: "after-turn", state: this.chatProfileState() };
+    }
+    this.pendingSwitch = null;
+    const done = await this.applyProfileSwitch(t, checked.model);
+    if (!done.ok) return done;
+    return { ok: true, applies: "now", state: this.chatProfileState() };
+  }
+
+  /** Cancel Switch: drop the switch waiting for the reply; nothing changes. */
+  cancelProfileSwitch(): { cancelled: boolean; state: ChatProfileState } {
+    const cancelled = this.pendingSwitch !== null;
+    this.pendingSwitch = null;
+    if (cancelled) this.broadcastChatProfile();
+    return { cancelled, state: this.chatProfileState() };
+  }
+
+  /**
+   * Write the switch, all of it, between turns: model, effort, helper pick, then the hidden entry naming
+   * the profile. The model goes first: if pi refuses it, nothing else was written.
+   */
+  /** The helper pick a switch writes: its own helpers; without any, the default's, pinned only when the chat
+      already has a pick (a pick can't be cleared); a chat with none keeps following the default. */
+  private switchPickOf(t: ProfileSwitchTarget): string | undefined {
+    return t.subagents ?? (this.subagentPick !== undefined ? this.subagentProfileInfo().default : undefined);
+  }
+
+  /** The chat's own profile again, unedited, with the helpers it already has: a switch that changes nothing. */
+  private switchChangesNothing(t: ProfileSwitchTarget): boolean {
+    const on = this.chatProfileOn();
+    const ref = this.harness.model()?.ref;
+    const edited = !!on.model && !!ref && ref !== on.model;
+    const pick = this.switchPickOf(t);
+    return on.id === t.id && !edited && (pick === undefined || pick === this.subagentPick);
+  }
+
+  private async applyProfileSwitch(t: ProfileSwitchTarget, model: HarnessModel | undefined): Promise<{ ok: true } | { ok: false; status: 409; error: string }> {
+    if (this.harness.isRunning()) return { ok: false, status: 409, error: "A reply started; try again when it ends." };
+    const on = this.chatProfileOn();
+    const was = { model: this.harness.model(), thinking: this.harness.thinking() };
+    const pick = this.switchPickOf(t);
+    // The same profile again while it isn't edited changes nothing, and says nothing.
+    if (this.switchChangesNothing(t)) return { ok: true };
+    this.flushDeferredAppends();
+    try {
+      if (model && model.ref !== was.model?.ref) await this.harness.setModel(model);
+      if (t.thinking && t.thinking !== this.harness.thinking()) this.harness.setThinking(t.thinking);
+      const entry = pick !== undefined ? pickEntryFor(this.extensionBranch(), pick) : null;
+      if (entry) this.harness.state.append(SUBAGENT_PROFILE, entry.data);
+      const named: ChatProfileEntryData = { v: 1, id: t.id, ...(t.key ? { key: t.key } : {}), name: t.name, ...(t.model ? { model: t.model } : {}), ...(t.thinking ? { thinking: t.thinking } : {}) };
+      this.harness.state.append(CHAT_PROFILE, named);
+    } catch (err) {
+      // All or nothing: never the new model with the old helpers. Put the model and effort back.
+      try {
+        if (was.model && this.harness.model()?.ref !== was.model.ref) {
+          const back = await this.harness.findModel(was.model.ref);
+          if (back.ok) await this.harness.setModel(back.model);
+        }
+        if (this.harness.thinking() !== was.thinking) this.harness.setThinking(was.thinking);
+      } catch (back) {
+        console.error("[chat] a failed profile switch couldn't put the model back", back);
+      }
+      this.broadcast({ type: "model", model: this.harness.model()?.ref ?? "" });
+      this.broadcast({ type: "thinking", level: this.harness.thinking() });
+      return { ok: false, status: 409, error: err instanceof Error ? err.message : String(err) };
+    }
+    markOwned(this.path);
+    this.broadcast({ type: "model", model: this.harness.model()?.ref ?? "" });
+    this.broadcast({ type: "thinking", level: this.harness.thinking() });
+    this.switchOutcome = { applied: { id: t.id, name: t.name, at: Date.now() } };
+    this.broadcastChatProfile();
+    return { ok: true };
+  }
+
+  /** At a reply's or a compaction's end: settle the held switch, if any (it checks and waits itself). */
+  private settleHeldSwitch(): void {
+    if (this.pendingSwitch) void this.settleProfileSwitch().catch((err) => console.error("[chat] held profile switch failed", err));
+  }
+
+  /** At a reply's or a compaction's end: the held switch, checked again, then applied whole or not at all.
+      While either still runs it keeps waiting; the next end settles it. */
+  private async settleProfileSwitch(): Promise<void> {
+    const t = this.pendingSwitch;
+    if (!t || this.disposed || this.harness.isRunning() || this.isCompacting()) return;
+    const checked = await this.checkProfileSwitch(t);
+    if (this.pendingSwitch !== t) return; // cancelled or replaced meanwhile
+    if (this.harness.isRunning() || this.isCompacting()) return; // a new reply or compaction started: it waits for that one's end
+    this.pendingSwitch = null;
+    const done = checked.ok ? await this.applyProfileSwitch(t, checked.model) : checked;
+    if (!done.ok) {
+      this.switchOutcome = { failed: { id: t.id, name: t.name, reason: done.error } };
+      this.broadcastChatProfile();
+    }
   }
 
   async saveModeDefault(): Promise<ModeInfo> {
@@ -3047,6 +3286,7 @@ class ChatSession {
     // would show an empty thread over a full queue.
     client.send({ type: "queue", items: this.queue.snapshot() });
     client.send(this.modeMessage());
+    client.send({ type: "chat_profile", state: this.chatProfileState() });
     // Only while memory is on (or was turned off since): absent means off (§chat.memory/status).
     if (this.memoryAvailable() && this.memory.choice().on) client.send(this.memory.statusMessage());
     this.sendSandbox((m) => client.send(m));
@@ -3429,7 +3669,8 @@ class ChatSession {
    * Switch model, the one path for the composer's `set_model`, the Overseer's `sova_set_session`
    * and Settings → Overseer. Resolves against models with configured auth (= GET /api/models)
    * BEFORE writing anything, so a rejected switch leaves the file untouched. Only `save: true`
-   * (the user's own pick in the composer) is remembered; every other caller changes this chat only.
+   * (the user's own pick in the composer) is remembered, and only by a special kind (the Overseer's
+   * overseer.json, a baton's own file); an ordinary chat's pick is its own and never a default.
    */
   async setModelRef(ref: string, opts: { save?: boolean } = {}): Promise<void> {
     assertNotLive(this.path);
@@ -3451,14 +3692,16 @@ class ChatSession {
     this.broadcast({ type: "model", model: this.harness.model()?.ref ?? ref });
     // setModel re-clamps the level to the new model's ladder; the pane needs that too.
     this.broadcast({ type: "thinking", level: this.harness.thinking() });
+    // A model picked by hand marks the chat's profile "(edited)", or clears it (§chat.profiles/edited).
+    this.broadcastChatProfile();
     // Only the user's pick saves: the Overseer's own chat records it in overseer.json, and a session
     // with no messages yet makes it the next new session's default. A programmatic switch (the
     // Overseer acting on a session, Settings → Overseer) never becomes anyone's default.
     if (opts.save !== true) return;
     // The level too: setModel re-clamped it, and the next conversation is seeded from the file.
     // A special kind keeps it as it says (a baton: in its own file only, never the host's default).
+    // Never a default otherwise: a composer pick is this chat's own (§chat.model-menu/saved-default).
     if (this.special) this.saveSpecialChoice({ model: ref, thinking: this.harness.thinking() });
-    else if (this.isPristine()) saveDefaults({ model: ref });
   }
 
   /** Change thinking level: the `set_thinking` path, shared like setModelRef (and saved, like it,
@@ -3484,9 +3727,8 @@ class ChatSession {
         items: [{ id: `thinking-${Date.now()}`, kind: "info", meta: { type: "thinking_level_change" }, text: `Thinking: ${after}` }],
       });
     if (opts.save !== true) return after;
+    // A special kind keeps it as it says; any other chat's level is its own, never a default.
     if (this.special) this.saveSpecialChoice({ thinking: after });
-    // A session with no messages yet: this level is also the next new session's default (never a special kind's).
-    else if (this.isPristine()) saveDefaults({ thinking: after });
     return after;
   }
 
@@ -3496,8 +3738,9 @@ class ChatSession {
     const code = errorCode(err);
     // The turn failed on this session's model: name its provider (this session's model cannot move
     // mid-turn — switches are idle-only), so the limit row never has to read the provider out of text.
-    const provider = this.harness.model()?.provider;
-    this.broadcast({ type: "error", code, message: err instanceof Error ? err.message : String(err), ...(provider ? { provider } : {}) });
+    const failed = this.harness.model();
+    const provider = failed?.provider;
+    this.broadcast({ type: "error", code, message: err instanceof Error ? err.message : String(err), ...(provider ? { provider, model: failed!.ref } : {}) });
   }
 
   /** A composer message its kind attributes (a baton session: only while the operator holds the
@@ -3895,6 +4138,8 @@ class ChatSession {
     }
     this.queue.onSdkEvent();
     this.releaseLinks(false);
+    // Our own /compact clears compactRunning only here, after pi's compaction_end: settle a held switch now.
+    this.settleHeldSwitch();
   }
 
   /**
@@ -3997,6 +4242,7 @@ class ChatSession {
     }
     this.modeState = chatModeOf(this.harness.state.branch());
     this.broadcast(this.modeMessage());
+    this.broadcastChatProfile(); // the new branch may name another profile
     if (this.memoryAvailable()) this.memory.changed(); // the engine re-syncs on session_tree
     this.sendSandbox((m) => this.broadcast(m)); // the extension re-restores on session_tree too
     this.broadcast(this.loginAfterHello()); // the new branch's newest entry

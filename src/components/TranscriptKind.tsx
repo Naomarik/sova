@@ -188,7 +188,7 @@ function InfoView(props: KindViewProps) {
           `${entryId}:stop`); the limit row rides beside it with that turn's own
           provider (the row's `model` — never the session's current one). */}
       <Show when={props.limitPath && isErroredTurnStop(props.item) ? { path: props.limitPath, item: props.item } : null}>
-        {(x) => <SubagentLimitRow path={x().path} message={x().item.text?.replace(/^Error: /, "") ?? ""} provider={rowProvider(x().item.model)} />}
+        {(x) => <SubagentLimitRow path={x().path} message={x().item.text?.replace(/^Error: /, "") ?? ""} provider={rowProvider(x().item.model)} model={x().item.model ?? undefined} />}
       </Show>
     </>
   );

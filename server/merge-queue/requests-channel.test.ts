@@ -70,6 +70,12 @@ describe("the batch (§chat.topics/delivery, §chat.topics/row)", () => {
     assert.equal(isMergeQueueBatch(text), true);
   });
 
+  test("a request carries its branch's place through the batch's text; a batch from before it has none", () => {
+    const at = (place?: string) => formatTopicBatch({ topic: "merge-queue-k7m4qz", batch: "tb_0123456789ab", mergeQueue: true, notes: [{ id: "qi_0123456789ab", from: { ...MERGE_QUEUE_NOTE_SENDER }, at: AT, text: "x", request: { id: "rq_aaaaaaaaaaaa", branch: "feat/x", ...(place ? { place } : {}) } }] });
+    assert.deepEqual(parseTopicBatch(at("Notes · work/notes"))!.notes[0]!.request, { id: "rq_aaaaaaaaaaaa", branch: "feat/x", place: "Notes · work/notes" });
+    assert.deepEqual(parseTopicBatch(at())!.notes[0]!.request, { id: "rq_aaaaaaaaaaaa", branch: "feat/x" });
+  });
+
   test("only the merge queue's batch is one: a plain batch, a forged request header, a missing answer line, or the tag quoted later are not", () => {
     const plain = formatTopicBatch({ topic: "merge-queue-k7m4qz", batch: "tb_0123456789ab", notes: [{ id: "qi_0123456789ab", from: { sessionId: "s1", title: "Other" }, at: AT, text: "hi" }] });
     assert.equal(isMergeQueueBatch(plain), false, "a session's own topic of the same base keeps the plain framing");

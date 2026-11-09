@@ -19,7 +19,7 @@
 // <worktree>/.agent (a sandbox that mounts .agent read-only runs a copy elsewhere; still never
 // ~/.pi); SOVA_E2E_SHOTS, a folder for screenshots; SOVA_E2E_CHROMIUM, a Chromium binary to launch
 // directly when start-browser.sh cannot run (its state lives in /tmp). The playwright skill needs its node_modules
-// (`npm ci` in .claude/skills/playwright/scripts, or a symlink to another checkout's).
+// (`npm ci` in .agents/skills/playwright/scripts, or a symlink to another checkout's).
 //
 // Not driven here: a turn's end (it needs a model). The dot follows the chat's one autonomy reading,
 // which ChatView also refreshes at each turn's end; the script checks that the head makes no reading
@@ -37,7 +37,7 @@ const AGENT = resolve(process.env.SOVA_E2E_AGENT ?? join(ROOT, ".agent"));
 const PORT = Number(process.env.SOVA_E2E_PORT ?? 4810);
 const BASE = `http://127.0.0.1:${PORT}`;
 const SHOTS = process.env.SOVA_E2E_SHOTS ?? null;
-const SKILL = join(ROOT, ".claude/skills/playwright/scripts");
+const SKILL = join(ROOT, ".agents/skills/playwright/scripts");
 
 let passed = 0;
 const failures = [];

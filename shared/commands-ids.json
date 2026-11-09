@@ -252,6 +252,8 @@
     "project.verb.merge.names",
     "project.verb.merge.rule",
     "project.verb.merge.respond",
+    "session.profile.switch",
+    "session.profile.switch.cancel",
     "session.worktree.retirement",
     "session.worktree.restore",
     "session.worktree.remove",

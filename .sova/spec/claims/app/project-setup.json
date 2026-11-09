@@ -97,16 +97,16 @@
   "§app.project-setup/land-gate": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "unreviewed",
+    "evidence": "reviewed",
     "requires": [
       "§app.project-setup/trial",
       "§app.merge-queue/approve",
       "§app.project-services/conform"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-11-05T04:37Z",
-      "source": "pi-session:3afd71cb-9954-48a8-837f-625d03a69b14#15ceea0f"
+      "by": "naomarik",
+      "at": "2026-11-09T00:22Z",
+      "source": "pi-session:01a1b2f4-86c6-73d4-9fe9-b847b27035f9#e2a66e41"
     },
     "code": [
       "server/merge-queue/setup-branch.ts",

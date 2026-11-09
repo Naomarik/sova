@@ -234,6 +234,9 @@ test("each fact has its own mark and tone; the words are the title's first line,
   // The same line the Worktrees window draws from the same row.
   const row = queueRow(chatRows([{ branch: "feat/login", queue: { state: "needs-fix", reason: "Unit tests failed on the merge" } }])[0]!);
   assert.equal(st.lines[1], branchLine("feat/login", row));
+  // Each branch comes in its place, on the row's hover and hidden words alike; a row from before has none.
+  const placed = rowBranchStatus({ branches: [{ path: "/w/x", branch: "feat/x", status: "active", exists: true, place: { label: "AmalMoney" }, queue: { state: "queued", position: 2 } } as never] })!;
+  assert.match(placed.lines[1]!, /^feat\/x in AmalMoney: Queued/);
   // A reason over several lines (behaviour differs) stays one line per branch.
   assert.equal(branchLine("x", { label: "Behaviour differs", reason: "Target: a\nBranch: b" }), "x: Behaviour differs · Target: a · Branch: b");
 });

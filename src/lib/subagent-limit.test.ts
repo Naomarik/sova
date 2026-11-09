@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { exhaustedProvider, failureHasRow, limitAlternative, providerLabel, rowProvider } from "./subagent-limit";
-import type { SubagentProfilesInfo } from "../../shared/subagent-profiles";
+import { exhaustedProvider, failureHasRow, providerLabel, rowProvider } from "./subagent-limit";
 
 test("no limit wording, no provider — whatever else the error says", () => {
   for (const text of ["401 auth required by OpenAI", "policy denied by z.ai", "Network connection failed", "429", "HTTP 429 from Upstream", "Usage 90%"])
@@ -46,21 +45,6 @@ test("the transport's own limit phrasings reach the row", () => {
   assert.equal(exhaustedProvider("Your limit will reset at 3 pm", "claude-code-cli"), "claude");
   // And never a limit for a sign-in, which the same transport separates.
   assert.equal(exhaustedProvider("not logged in, please run /login", "claude-code-cli"), null);
-});
-
-test("usage limits offer configured alternatives, never Off or the current profile", () => {
-  const info = {
-    current: { id: "current" },
-    profiles: [
-      { id: "off", name: "Off", providers: [] },
-      { id: "current", name: "Current", providers: ["zai"] },
-      { id: "mixed", name: "Mixed", providers: ["zai", "claude"] },
-      { id: "escape", name: "Escape", providers: ["zai"] },
-    ],
-  } as SubagentProfilesInfo;
-  // `providers` counts fallbacks, so an exhausted provider hiding in a fallback disqualifies too.
-  assert.equal(limitAlternative(info, "claude")?.id, "escape");
-  assert.equal(limitAlternative(info, "zai"), undefined, "no profile is zai-free: no offer");
 });
 
 test("a provider id the way the row says it", () => {

@@ -36,7 +36,7 @@ test("a stored codingMode is ignored and dropped at the next write; a patch nami
   mkdirSync(join(tmp, "ws", "projects", "prj_bbbbbbbb", "overseer"), { recursive: true });
   writeFileSync(p.settings, JSON.stringify({ version: 1, autonomy: "L2", codingMode: { mode: "delegate", minorModes: ["spec"] } }));
   assert.equal("codingMode" in store.readPoSettings(p), false);
-  assert.throws(() => store.patchPoSettings(p, { codingMode: { mode: "delegate", minorModes: [] } } as never), /^Error: Projects have no coding mode: coding sessions start in this computer's default mode. Save as default in a chat's mode menu changes it.$/);
+  assert.throws(() => store.patchPoSettings(p, { codingMode: { mode: "delegate", minorModes: [] } } as never), /^Error: Projects have no coding mode: coding sessions start on this computer's default profile. Make Default in Settings → Profiles, or in a chat's mode menu, changes it.$/);
   assert.throws(() => store.patchPoSettings(p, { codingMode: null } as never), /Projects have no coding mode/);
   store.patchPoSettings(p, { autonomy: "L1" });
   const raw = JSON.parse(readFileSync(p.settings, "utf8")) as Record<string, unknown>;

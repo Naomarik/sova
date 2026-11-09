@@ -12,7 +12,7 @@ import { createRequire } from "node:module";
 import { join, resolve } from "node:path";
 import { tokenHeaders } from "./side.mjs";
 
-const SKILL = resolve(import.meta.dirname, "../../.claude/skills/playwright/scripts");
+const SKILL = resolve(import.meta.dirname, "../../.agents/skills/playwright/scripts");
 // Hard rule 1: the skill's node_modules once was a symlink into the user's main checkout. Refuse
 // to load anything from a path that resolves outside this worktree.
 const WORKTREE = resolve(import.meta.dirname, "../..");

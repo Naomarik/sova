@@ -244,3 +244,10 @@ export function costLine(l: Pick<CopyLimitView, "value" | "estimate" | "host">):
 /** While the definition's usable slots number fewer than the limit: what the limit can reach, else null. */
 export const usableLine = (l: Pick<CopyLimitView, "usable" | "value">): string | null =>
   l.usable < l.value ? `Only ${l.usable} slot${l.usable === 1 ? " is" : "s are"} usable, so at most ${l.usable} cop${l.usable === 1 ? "y runs" : "ies run"} at once.` : null;
+
+/** The tab's line of places, by the project card's rule. Other programs not checked (macOS): no free count. */
+export function placesLine(l: Pick<CopyLimitView, "usable" | "places">): string {
+  const { stopped, elsewhere, free } = l.places;
+  const held = `${stopped} stopped · ${elsewhere} used elsewhere`;
+  return free === undefined ? `${held} · Other programs were not checked` : `${free} of ${l.usable} places free · ${held}`;
+}

@@ -34,7 +34,7 @@ A project mode lives in the checkout, so a chat in a worktree sees its own branc
 - Approves: the person, by Apply or Save Changes.
 - By: Card or Screen. Card `alignment.review`. Screen: Settings → Alignment, Adversarial review.
 - Live: new chat. Reaches their other computers with sync on.
-- Check: the Reviewer section appears on each profile in Settings → Subagents.
+- Check: the Reviewer row appears in each profile's Models part in Settings → Profiles.
 
 ## Memory settings
 

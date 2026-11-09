@@ -1576,7 +1576,8 @@ describe("can't tell whose failure", () => {
   });
 
   test("the thread rules first: its try-again settles it with no word to the user; no ruling in time raises it, and then only the user settles it", async () => {
-    const k = makeKit({ threadAnswers: true, deps: { rulingWaitMs: 80 } });
+    // Long enough that the first ruling always beats the timer; under load the steps before it took over 150 ms.
+    const k = makeKit({ threadAnswers: true, deps: { rulingWaitMs: 600 } });
     try {
       const q = await k.q();
       let calls = 0;

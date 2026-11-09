@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, afterEach, beforeEach, test } from "node:test";
@@ -321,4 +321,27 @@ test("a coordinator's process is served its tools and no others, and has no buil
   assert.deepEqual(spec.builtins, []);
   assert.equal(spec.kind, "design-coordinator");
   assert.equal(spec.appendSystemPrompt, "P");
+});
+
+test("neither a coordinator nor a design session reaches the sessions list: each loads the worker mark, and the mark is what the list hides", async () => {
+  const { realCoordinatorSpec } = await import("./coordinator");
+  const { specFor } = await import("./batch");
+  const { default: mark } = await import("../../pi-config/extensions/subagents/worker-mark.ts");
+  const { entryFacts } = await import("../worker-sessions");
+  const { toHEntry } = await import("../harness/pi/reader");
+  const parentChat = { sessionId: "p", path: "/p.jsonl" };
+  const specs = [realCoordinatorSpec(parentChat, "/cwd", "zai/glm-5.3-flash", "P"), specFor(parentChat, { label: "A", direction: "Minimalist", model: "zai/glm-5.3-flash", route: "tool", vision: true }, "/cwd", "none")];
+  for (const spec of specs) {
+    const file = spec.extensions[0]!;
+    assert.match(file, /subagents\/worker-mark\.ts$/, spec.kind);
+    assert.ok(existsSync(file), file);
+  }
+  // What the extension writes in a worker's own file is what the list reads as "a worker's".
+  let onStart: ((e: unknown, ctx: unknown) => void) | undefined;
+  const appended: { customType: string; data: unknown }[] = [];
+  mark({ on: (ev: string, fn: typeof onStart) => void (ev === "session_start" && (onStart = fn)), appendEntry: (customType: string, data: unknown) => void appended.push({ customType, data }), getActiveTools: () => [], getAllTools: () => [], setActiveTools: () => {} } as never);
+  onStart!({}, { sessionManager: { getSessionFile: () => "/w.jsonl", getEntries: () => [] } });
+  assert.equal(appended.length, 1);
+  const entry = toHEntry({ type: "custom", id: "e1", parentId: null, timestamp: "2026-01-01T00:00:00Z", customType: appended[0]!.customType, data: appended[0]!.data });
+  assert.equal(entryFacts(entry).self, true);
 });

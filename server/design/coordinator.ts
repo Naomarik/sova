@@ -4,6 +4,7 @@
 // here, and each tool decides from server-held state, never from what the model says about itself.
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import type { ToolSpec } from "../../shared/harness";
 import { DESIGN_ASK_ABOVE, DESIGN_BATCH_MAX, type DesignAsk, type DesignCoordinatorView, type DesignRecord, type DesignRun, type DesignSignInAnswer } from "../../shared/design";
 import { isTourOrigin, type TourSize } from "../../shared/tour";
@@ -114,9 +115,12 @@ function ports(): CoordinatorPorts {
   return realPorts;
 }
 
+const WORKER_MARK = fileURLToPath(new URL("../../pi-config/extensions/subagents/worker-mark.ts", import.meta.url));
+
 /** A coordinator's loadout: no file tools and no shell, so everything it may do is one of its served tools. */
 export function realCoordinatorSpec(parent: BrowseParent, cwd: string, model: string, systemPrompt: string): WorkerSpec {
-  const loaded = claudeCodeProviderLoad(model, [], undefined);
+  // The worker mark first: it is what keeps this session out of the sessions list.
+  const loaded = claudeCodeProviderLoad(model, [WORKER_MARK], undefined);
   return { kind: "design-coordinator", parent: { sessionId: parent.sessionId, path: parent.path, workerId: "design-coordinator" }, cwd, model, thinking: null, builtins: [], extensions: loaded.extensions, flags: loaded.flags ?? {}, appendSystemPrompt: systemPrompt, env: {}, agentDir: null, lowered: true };
 }
 

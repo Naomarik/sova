@@ -35,7 +35,7 @@ export function worktreeStatus(w: Pick<SessionWorktreeInfo, "status" | "merge" |
   // Tracked active, folder gone: what its work came to (§chat.worktrees/pane), never "Active".
   switch (w.gone) {
     case "merged":
-      return { label: "Merged", tone: "success", title: "Its branch is in the main branch and its folder was cleaned up. This session still lists it." };
+      return { label: "Landed", tone: "success", title: "Its branch is in the main branch and its folder was cleaned up. This session still lists it." };
     case "unmerged":
       return { label: "Removed", tone: "warn", title: "The folder is gone and its branch has commits the main branch doesn't." };
     case "unknown":
@@ -54,7 +54,7 @@ export function worktreeChips(
   const out: WorktreeChip[] = [];
   if (!w.exists) {
     const label = w.status ? worktreeStatus({ status: w.status, merge: w.merge, mergedInto: w.mergedInto, gone: w.gone }).label : "";
-    if (label === "Merged") out.push({ label: "Cleaned up", tone: "neutral", title: "The folder was removed after its work was merged." });
+    if (label === "Merged" || label === "Landed") out.push({ label: "Cleaned up", tone: "neutral", title: "The folder was removed after its work was merged." });
     else if (label !== "Removed") out.push({ label: "Removed", tone: "neutral", title: "The directory is gone. The session still lists it." });
   }
   if (w.hasAgentDir) out.push({ label: ".agent", tone: "neutral", title: "Has its own agent dir: a worker can run on it with useWorktreeConfig." });

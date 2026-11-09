@@ -1135,11 +1135,11 @@ function ReadyRow(props: { projectId: string; root: string; target?: string; how
         <Show when={act.error()}>{(m) => <p class="list-meta mq-error" role="alert">{m()}</p>}</Show>
       </div>
       {/* A confirm replaces the row's actions while it is open. */}
-      <LandConfirms confirm={confirm} branch={r().branch} ahead={r().ahead} target={props.target} how={props.how} busy={!!act.busy()} onLand={doLand} />
+      <LandConfirms confirm={confirm} branch={r().branch} ahead={r().ahead} target={props.target} how={props.how} drafts={r().draftsOnly} busy={!!act.busy()} onLand={doLand} />
       <Show when={!confirm.ask()}>
         <div class="mq-row-act">
           <QueueReview projectId={props.projectId} branch={r().branch} scope={{ kind: "queue", project: props.projectId, branch: r().branch }} session={r().session} chatOf={props.chatOf} />
-          <LandSplit branch={r().branch} review={props.review} busy={!!act.busy()} onAsk={() => confirm.open("land")} onLand={doLand} onWithoutSpecs={() => confirm.open("specs")} />
+          <LandSplit branch={r().branch} review={props.review} busy={!!act.busy()} onAsk={() => confirm.open("land")} onLand={doLand} onWithoutSpecs={() => confirm.open("specs")} draftsOnly={!!r().draftsOnly} />
         </div>
       </Show>
     </li>

@@ -48,14 +48,14 @@ const ROWS: Record<string, SessionSummary> = {
   plain: session(),
   "no model": session({ model: null }),
   "ready, beside one in progress": session({
-    readiness: { trees: [tree("feat/a", "ready"), { ...tree("feat/b", "in-progress"), dirtyCount: 2 }], since: 0 },
+    readiness: { trees: [{ ...tree("feat/a", "ready"), landing: { state: "ready", commit: SHA } }, { ...tree("feat/b", "in-progress"), dirtyCount: 2 }], since: 0 },
     branches: [branch("feat/a"), branch("feat/b")],
   }),
   "needs a fix": session({ branches: [branch("feat/login", { queue: { state: "needs-fix", commit: SHA, reason: "Unit tests failed on the merge" } })] }),
   "needs you": session({ branches: [branch("feat/a", { queue: { state: "unattributed", commit: SHA } }), branch("feat/b", { queue: { state: "needs-fix", commit: SHA } })] }),
   checking: session({ branches: [branch("feat/a", { queue: { state: "checking", commit: SHA } })] }),
   queued: session({ branches: [branch("feat/a", { queue: { state: "queued", commit: SHA, position: 2 } }), branch("feat/b", { queue: { state: "queued", commit: SHA, position: 3 } })] }),
-  "inherited, ready": session({ branches: [branch("feat/parent", { sharedWith: "s-0" })] }),
+  "inherited, no reading": session({ branches: [branch("feat/parent", { sharedWith: "s-0" })] }),
   "restart pending": session({
     readiness: { trees: [tree("feat/a", "merged", true)], badge: "restart", since: 0, restartPending: true },
     branches: [branch("feat/a", { queue: { state: "landed", commit: SHA } })],
@@ -98,10 +98,10 @@ test("with no extension adding to rows, every row is exactly the row it was", ()
     "needs you": ["session-branch-status-warn session-branch-status-you", "alert-circle", "1", "1 needs you"],
     checking: ["session-branch-status-accent session-branch-status-checking", "progress", "1", "1 checking"],
     queued: ["session-branch-status-info session-branch-status-queued", "clock", "2", "2 queued"],
-    "inherited, ready": ["session-branch-status-success session-branch-status-ready", "check-circle", "1", "1 ready"],
+    "inherited, no reading": ["session-branch-status-muted session-branch-status-worktrees", "branch", "1", "1 worktree"],
     "restart pending": ["session-branch-status-muted session-branch-status-worktrees", "branch", "1", "1 worktree"],
     // A stale tree reads Ready in the chat's rows too (its readiness isn't "merged", nothing uncommitted is counted).
-    "2 follow-ups": ["session-branch-status-success session-branch-status-ready", "check-circle", "1", "1 ready"],
+    "2 follow-ups": ["session-branch-status-muted session-branch-status-worktrees", "branch", "2", "2 worktrees"],
     "merged, no follow-up": ["session-branch-status-muted session-branch-status-worktrees", "branch", "1", "1 worktree"],
     "archived, sent back": ["session-branch-status-error session-branch-status-fix", "alert-triangle", "1", "1 needs a fix"],
   };

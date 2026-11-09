@@ -138,7 +138,9 @@ export function reviewPointer(c: Partial<Pick<MergeCard, "reviewFound" | "state"
  *  only on a decision; Land Again only on a Landed card for work after landing. */
 export type CardAction = "cancel" | "accept" | "land-anyway" | "try-again" | "land-again" | "land" | "remove";
 export function cardActions(c: Pick<MergeCard, "state" | "newerCommits"> & Partial<Pick<MergeCard, "settled" | "conflict">> & CardAutomation): CardAction[] {
-  if (c.state === "landed") return c.newerCommits ? ["land-again"] : [];
+  // The server counts only real commits past the landing: a catch-up merge is none. Settled: its head is gone or a
+  // later entry carries it.
+  if (c.state === "landed") return c.newerCommits && !c.settled ? ["land-again"] : [];
   if (c.state === "cancelled" || isRequestState(c.state)) return [];
   const d = openDecision(c);
   if (d) return decisionActions(d) as DecisionAction[] as CardAction[];

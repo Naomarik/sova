@@ -139,3 +139,9 @@ test("newer commits are said only on a landed card: while its chat fixes it, the
   assert.equal(cardActionLabel("remove"), "Remove from Queue");
   assert.equal(cardActionLabel("try-again"), "Try Again");
 });
+
+test("Land Again only for real work the server counted, never once the entry settled", () => {
+  assert.deepEqual(cardActions({ state: "landed", newerCommits: 1 }), ["land-again"]);
+  assert.deepEqual(cardActions({ state: "landed" }), []);
+  assert.deepEqual(cardActions({ state: "landed", newerCommits: 1, settled: "gone" as never }), []);
+});

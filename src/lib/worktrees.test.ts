@@ -34,7 +34,7 @@ test("summary and merge numbers", () => {
 test("a worktree tracked active whose folder is gone never reads Active: its chips and the count say what its work came to", () => {
   const gone = (g: "merged" | "unmerged" | "empty" | "unknown") => ({ status: "active" as const, exists: false, hasAgentDir: false, runningWorkers: 0, gone: g });
   const read = (w: ReturnType<typeof gone>) => [worktreeStatus(w).label, worktreeStatus(w).tone, ...worktreeChips(w).map((c) => c.label)];
-  assert.deepEqual(read(gone("merged")), ["Merged", "success", "Cleaned up"]);
+  assert.deepEqual(read(gone("merged")), ["Landed", "success", "Cleaned up"]);
   assert.deepEqual(read(gone("unmerged")), ["Removed", "warn"]);
   assert.deepEqual(read(gone("unknown")), ["Removed", "warn"]);
   assert.deepEqual(read(gone("empty")), ["Removed", "neutral"]);

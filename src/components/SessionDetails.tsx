@@ -618,7 +618,7 @@ function WorktreeRow(props: { worktree: QueueWorktree; path: string; cwd?: strin
       review={{ sessionPath: props.path, cwd: props.cwd }}
       chips={
         <>
-          <For each={worktreeChips(w())}>
+          <For each={worktreeChips(w()).filter((c) => !(c.label === "Cleaned up" && queueRow(w()).key === "cleaned-up"))}>
             {(c) => (
               <span class={`${chipTone(c)} chip-count`} title={c.title}>
                 {c.label}

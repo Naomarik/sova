@@ -25,7 +25,7 @@ The Models part holds:
   [Delegate](/docs/modes/delegate/).
 - **Teams**: the models of the **coordinator** and **monitor** every new team gets from Sova, with
   the monitor's settings and the handover timeout, or none, when both run on the chat's own model.
-  Also a **members default**: the model a team member runs on when nobody named one.
+  There is no model for members: each team member runs on its work kind's model, from Delegate.
 - **Review**: the **spec writer**, the worker that writes spec drafts while
   [spec](/docs/modes/spec/) is on (or none, when the session writes the spec itself), and the
   **reviewer**, which reviews alignments while [adversarial review](/docs/modes/align/review/) is
@@ -45,7 +45,7 @@ every worker:
 - In Delegate, the agent still delegates and still sorts the work into the 4 kinds, but chooses
   each worker's backend, model and effort itself.
 - Teams still get their coordinator and monitor, on the chat's own model with Sova's built-in
-  settings, and no members default.
+  settings. A team member runs on the model named for it, else the chat's own.
 - There is no spec writer: the session writes the spec itself.
 
 ## One default

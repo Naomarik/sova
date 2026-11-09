@@ -4,10 +4,10 @@ import { relativeTime } from "../lib/format";
 import { refusal, trySetupBranch } from "../lib/merge-queue-client";
 import { queueRow } from "../lib/merge-queue";
 import { createPoll, type Poll } from "../lib/poll";
-import { createProjectQueue } from "../lib/project-queue";
+import { createProjectQueue, type ProjectQueue } from "../lib/project-queue";
 import { mergeRunHref, projectSessionHref } from "../lib/projects-route";
 import { requestListRefresh } from "../lib/list-refresh";
-import { changedFiles, changesHead, chatLine, durationWords, landState, notSetUpWords, setupButtonLabel, trialChip, trialLine, trialStale, type SetupChatView, type SetupProposal, type SetupStatus, type SetupSurface } from "../lib/setup-chat";
+import { changedFiles, changesHead, chatLine, durationWords, landState, notSetUpWords, setupButtonLabel, standsInQueue, trialChip, trialLine, trialStale, type SetupChatView, type SetupProposal, type SetupStatus, type SetupSurface } from "../lib/setup-chat";
 import { announce, toast } from "../lib/ui-state";
 import { DeployRecipeSteps } from "./ProjectDeployPanel";
 import { ReleaseSetupSteps } from "./ReleasesTab";
@@ -423,17 +423,15 @@ function CheckRow(props: { projectId: string; name: string; id?: string; command
  * Land (a project the queue serves: the branch joins the queue at the commit the card read) or Merge Branch (one it
  * doesn't), once a trial of that exact commit passed. Until then Run Trial stands in their place, with why.
  */
-export function SetupLandButton(props: { projectId: string; proposal: SetupProposal; onDone(): void }) {
+export function SetupLandButton(props: { projectId: string; proposal: SetupProposal; onDone(): void; queue?: ProjectQueue }) {
   const p = () => props.proposal;
   const st = () => landState(p());
-  const queue = createProjectQueue(() => props.projectId);
+  // A row that reads the queue for its chip hands its read over: one read per row.
+  const queue = props.queue ?? createProjectQueue(() => props.projectId);
   const whyId = createUniqueId();
   const [busy, setBusy] = createSignal(false);
   const [error, setError] = createSignal<string | null>(null);
-  const queued = () => {
-    const e = queue.info(p().branch);
-    return e && e.state !== "needs-fix" && e.state !== "drafts-changed" ? e : undefined;
-  };
+  const queued = () => standsInQueue(queue.info(p().branch));
   const label = () => {
     const a = st().action;
     if (busy()) return a === "land" ? "Landing…" : a === "merge" ? "Merging…" : "Starting…";

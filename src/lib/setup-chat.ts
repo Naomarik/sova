@@ -2,6 +2,7 @@
 // can't find, draws the merge, release and deploy plan, trial-runs the proposed checks on its own branch, and proposes
 // the whole pipeline there for you to land. The words each surface says, and whether Land is offered. Pure.
 import type { SetupChatView, SetupProposal, SetupProposalFile, SetupStatus, SetupTrial, SetupTrialCheck } from "../../shared/setup-chat";
+import type { NeedsTone } from "./needs-you-row";
 
 export type { SetupChatView, SetupProposal, SetupProposalFile, SetupStatus, SetupTrial, SetupTrialCheck };
 
@@ -99,6 +100,22 @@ export function landState(p: SetupProposal): { action: "land" | "merge" | "trial
   if (!t || t.state !== "passed") return { action: "trial", can: true, why: `Run a trial of ${sha} first: it lands only once its own checks pass.` };
   if (!p.land.can) return { action: merge, can: false, why: p.land.why ?? "Not ready to land." };
   return { action: merge, can: true };
+}
+
+/** A queue entry that stands where the button was: one sent back to its chat doesn't, and the button returns. */
+export const standsInQueue = <T extends { state: string }>(e: T | undefined): T | undefined => (e && e.state !== "needs-fix" && e.state !== "drafts-changed" ? e : undefined);
+
+/**
+ * A Needs you row's chip on a Setup proposal: landState's reading, so the chip can't say Ready while the button says
+ * anything but Land or Merge Branch. No proposal: it is still being read, or couldn't be, and neither is Ready.
+ */
+export function setupRowChip(p: SetupProposal | null | undefined, queued: boolean): { word: string; tone: NeedsTone } {
+  if (!p) return { word: "Proposed", tone: undefined };
+  if (queued) return { word: "Queued", tone: undefined };
+  const st = landState(p);
+  if (st.action === "wait") return { word: "Running", tone: "accent" };
+  if (st.action === "trial") return !trialStale(p) && p.trial?.state === "failed" ? { word: "Failed", tone: "error" } : { word: "Your turn", tone: "warn" };
+  return st.can ? { word: "Ready", tone: "success" } : { word: "Blocked", tone: "warn" };
 }
 
 /**

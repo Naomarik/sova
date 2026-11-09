@@ -18,7 +18,7 @@ Pick normal when you want one agent that both talks with you and does the work. 
 whole conversation and its context, so nothing is handed off to a worker that starts without it.
 
 Pick [Delegate](/docs/modes/delegate/) instead when you want the work routed to workers, on the
-models your [subagent profile](/docs/subagent-profiles/) names.
+models your [profile](/docs/subagent-profiles/) names.
 
 ## Switch to it
 

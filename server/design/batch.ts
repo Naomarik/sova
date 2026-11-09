@@ -72,7 +72,7 @@ export const designCount = (setup: DesignSetup): number => {
 
 // ---- starting -----------------------------------------------------------------------------------
 
-function specFor(parent: DesignParent, d: Pick<DesignRecord, "label" | "direction" | "model" | "route" | "vision">, cwd: string, reference: "none" | "screenshot" | "description"): WorkerSpec {
+export function specFor(parent: DesignParent, d: Pick<DesignRecord, "label" | "direction" | "model" | "route" | "vision">, cwd: string, reference: "none" | "screenshot" | "description"): WorkerSpec {
   const loaded = claudeCodeProviderLoad(d.model, [WORKER_MARK], undefined);
   return {
     kind: "design",

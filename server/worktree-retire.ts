@@ -692,7 +692,8 @@ export async function leftoverCandidates(d: Pick<RetireDeps, "git" | "ledger" | 
     if (e.commonDir !== repo.commonDir || newest.get(e.path) !== repo.commonDir) continue;
     if (!consider(e.path, e.branch)) continue;
     const whose = await whoseLeftover(d, repo, e.path, undefined, await readOthers());
-    if (whose === "mine") out.set(e.path, { path: e.path, ...(e.branch ? { branch: e.branch } : {}) });
+    // An entry with no last commit never spoke for its branch: a name a record gave it stays no evidence.
+    if (whose === "mine") out.set(e.path, { path: e.path, ...(e.branch && e.tip ? { branch: e.branch } : {}) });
   }
   // `.worktrees` is shared by every repository beside it: a record belongs here only if this repository has its base commit.
   for (const r of records) {
@@ -788,7 +789,11 @@ async function retireLeftover(d: RetireDeps, repo: RepoTrees, c: LeftoverCandida
   try {
   // Its branch, when it's still there, has nothing left: the proof asked. Pinned before anything goes. A record naming a
   // branch others land on says nothing about that branch: the folder is the leftover.
-  const branch = c.branch && !(await protectedOf(d, repo)).has(c.branch) ? c.branch : undefined;
+  // Nor does a record alone, for a folder with no `.git`: the name may be another repository's. That branch isn't pinned or deleted,
+  // and with no last commit recorded nothing later treats it as this folder's: Restore refuses, and a chat comes back fresh or is told the name's in use.
+  const recordOnly = c.base !== undefined && !madeByQueue && gitPointer(c.path, repo.commonDir) === "none";
+  const named = c.branch && !(await protectedOf(d, repo)).has(c.branch) ? c.branch : undefined;
+  const branch = recordOnly ? undefined : named;
   let tip = "";
   if (branch) {
     const at = await d.git(["rev-parse", "--verify", "-q", `refs/heads/${branch}^{commit}`], { cwd: repo.main });
@@ -799,7 +804,7 @@ async function retireLeftover(d: RetireDeps, repo: RepoTrees, c: LeftoverCandida
   }
   const keptChats = left?.testCopy?.keepAside.length ?? 0;
   const keepBranch = !!tip && !madeByQueue && !(await deleteBranchesOn(d, repo));
-  const line: RemovedWorktree = { v: 1, path: c.path, branch: branch ?? "", commonDir: repo.commonDir, tip, merged: "leftover", branchDeleted: !tip, at: d.now(), retired: true, ...(tip ? { pinned: true as const } : {}), ...(keptChats ? { keptChats } : {}), ...(keepBranch ? { branchKept: true as const } : {}), ...(madeByQueue ? { queueMade: true as const } : {}) };
+  const line: RemovedWorktree = { v: 1, path: c.path, branch: named ?? "", commonDir: repo.commonDir, tip, merged: "leftover", branchDeleted: !tip && !recordOnly, at: d.now(), retired: true, ...(tip ? { pinned: true as const } : {}), ...(keptChats ? { keptChats } : {}), ...(keepBranch ? { branchKept: true as const } : {}), ...(madeByQueue ? { queueMade: true as const } : {}) };
   // A chat in this folder finds it again through the ledger: a stop right after the delete mustn't leave that unsaid (finishIntents).
   going?.(line, left);
   noteIntent(d, line);
@@ -810,13 +815,13 @@ async function retireLeftover(d: RetireDeps, repo: RepoTrees, c: LeftoverCandida
   }
   d.appendLedger([line]);
   dropIntent(d, c.path);
-  let branchDeleted = !tip;
+  let branchDeleted = line.branchDeleted;
   if (tip && !keepBranch) {
     const del = await retireBranch(d.gitWrite, repo.main, { branch: branch!, tip, onMain: (await d.git(["merge-base", "--is-ancestor", tip, repo.mainBranch ?? "HEAD"], { cwd: repo.main })).code === 0 });
     branchDeleted = del.deleted;
     if (del.deleted) d.markLedger((x) => x.commonDir === line.commonDir && x.path === line.path && x.at === line.at && x.tip === line.tip, { branchDeleted: true });
   }
-  const row: RetiredRowOut = { path: c.path, branch: branch ?? "", tip, merged: "leftover", branchDeleted, ...(keepBranch ? { branchKept: true as const } : {}), ...(madeByQueue ? { queueMade: true as const } : {}), ...(left ? { went: { rebuildable: left.rebuildable, ...(left.testCopy ? { testCopy: left.testCopy } : {}) } } : {}) };
+  const row: RetiredRowOut = { path: c.path, branch: named ?? "", tip, merged: "leftover", branchDeleted, ...(keepBranch ? { branchKept: true as const } : {}), ...(madeByQueue ? { queueMade: true as const } : {}), ...(left ? { went: { rebuildable: left.rebuildable, ...(left.testCopy ? { testCopy: left.testCopy } : {}) } } : {}) };
   forgetSummary(repo.commonDir);
   return { state: "retired", row };
   } finally {

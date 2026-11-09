@@ -103,8 +103,9 @@ function newRun(models: string[], directions: string[]): string {
 const stat = (label: string) => store.designOf(parent.sessionId, label)!;
 const finish = async (f: Fake, label: string): Promise<void> => {
   const tools = sessionDesignTools(parent, label);
-  await tools[0]!.execute("t", { label, html: PAGE }, undefined, undefined, undefined);
-  await tools[1]!.execute("t", { label, note: NOTE }, undefined, undefined, undefined);
+  const tool = (name: string) => tools.find((t) => t.name === name)!;
+  await tool("design_stream").execute("t", { label, html: PAGE }, undefined, undefined, undefined);
+  await tool("design_hand_in").execute("t", { label, note: NOTE }, undefined, undefined, undefined);
   settle(f);
 };
 

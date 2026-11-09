@@ -675,7 +675,7 @@ describe("the conflict there at the Land", () => {
       await until(async () => (await k.entry(entry.id)).state === "conflict", "conflict");
       await q.resolve(entry.id, { verdict: "chat-fixes", ours: "uno", theirs: "ONE", proposal: "merge master in" });
       const rq = lastRequest(await withChat(k, entry.id));
-      sh(b.path, "merge", "-q", "--no-edit", "-X", "theirs", "master");
+      sh(b.path, "merge", "-q", "--no-edit", "-X", "ours", "master"); // keeps the branch's edit: there is still work to land
       const fix = sh(b.path, "rev-parse", "HEAD");
       k.run.set(() => ({ verdict: "failed", blame: "branch", why: "unit tests failed" }));
       await q.respond(rq.id, "s1", { answer: "fixed", commit: fix });

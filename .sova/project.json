@@ -162,6 +162,12 @@
         "timeout": 900
       },
       {
+        "id": "claude-table",
+        "label": "Claude Code's model table",
+        "run": ["node", "scripts/merge-checks/claude-table.mjs"],
+        "timeout": 120
+      },
+      {
         "id": "spec-replay",
         "label": "Spec replay",
         "run": ["node", "scripts/merge-checks/spec-replay.mjs"],

@@ -26,7 +26,7 @@ for the chats Sova starts in it (§app.claude-logins/project-login).
 
 The login registry, per-spawn selection and failover live in the claude-code extension
 (`pi-config/extensions/claude-code/accounts.ts`, node built-ins only); the server reads and
-writes the registry through that file, like Settings → Subagents does `subagent-profiles.json`.
+writes the registry through that file, like Settings → Profiles does `subagent-profiles.json` (through `/api/settings/subagents`).
 
 ## §app.claude-logins/registry — The registry and a login's directory
 
@@ -50,7 +50,19 @@ never stored. Inside it, `projects/`, `settings.json`, `CLAUDE.md`, `agents/`, `
 `skills/` and `plugins/` are symlinks to the same names in `default`'s directory (each one only
 when it exists there; `projects/` always, created there if missing). So every login writes its
 Claude session records into the one shared `projects/`: `--resume` after a switch finds the
-session, and every transcript and usage reader keeps reading one place. The links are repaired
+session, and every transcript and usage reader keeps reading one place. A hermetic agent dir (a
+test copy, marked by its own `claude-projects/` folder, which the hermetic setup creates) keeps them
+apart from the real ones: there each added login's `projects/` links to `<agent dir>/claude-projects`
+instead of `default`'s, and a link copied in pointing at `default`'s is re-pointed. There `default`
+runs on `<agent dir>/claude-default/` (mode 0700) instead of its own directory: its `.credentials.json`
+and `.claude.json` are links to `default`'s own (read through the link, never copied or written by
+Sova), its other entries link as an added login's do and its `projects/` to `<agent dir>/claude-projects`,
+so a hermetic chat on `default` signs in as this computer's own login and still writes its Claude
+session records only inside the agent dir; nothing is added to `default`'s own directory. Two cases run
+`default` on its own directory as always: a `default` directory already inside the agent dir (a test
+fixture), and on macOS a `default` with no `.credentials.json`, whose keychain item is named for its own
+directory (§app.claude-logins/macos-keychain). An agent dir without `claude-projects/` runs `default`
+exactly as before. The links are repaired
 whenever a login is used: a repair replaces a link that points elsewhere (the link itself, never
 what it pointed to), leaves a real file or directory alone, never makes a link whose target lies
 inside the login's own directory, and refuses a `default` directory that is itself under
@@ -138,7 +150,8 @@ that account's quota. Every change is saved at once.
 
 Every `claude` process Sova or its extensions start runs on exactly one login, by setting
 `CLAUDE_CONFIG_DIR` to that login's directory (or, for `default`, leaving the environment as it
-was, less an inherited `CLAUDE_CONFIG_DIR` that names an added login's directory): the Claude Code chat provider's child for a session (a Claude Code worker's included: it is a
+was, less an inherited `CLAUDE_CONFIG_DIR` that names an added login's directory; in a hermetic agent
+dir, setting it to that dir's `claude-default/`, §app.claude-logins/registry): the Claude Code chat provider's child for a session (a Claude Code worker's included: it is a
 pi worker on that provider, §app.subagents-pane/claude-code-workers), model discovery (the
 extension's and the server's), the server's `claude --version` check, and the topic-outline
 summarizer.

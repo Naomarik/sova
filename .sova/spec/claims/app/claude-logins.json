@@ -420,8 +420,14 @@
       "src/lib/claude-login-groups.test.ts",
       "server/claude-pool/agent.test.ts",
       "server/claude-pool/pool-test-fixtures.ts",
-      "server/claude-pool/agent.integration.test.ts"
-    ]
+      "server/claude-pool/agent.integration.test.ts",
+      "scripts/hermetic-agent-dir.mjs"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-11-07T17:11Z",
+      "source": "pi-session:a08b61c6-6f44-4ae1-ace0-ced83f26f0b0#55f8e26b"
+    }
   },
   "§app.claude-logins/spawn-selection": {
     "kind": "behavior",
@@ -450,8 +456,8 @@
     ],
     "agreed": {
       "by": "naomarik",
-      "at": "2026-10-24T04:43Z",
-      "source": "pi-session:7f908742-ede6-496f-8c6c-d2b6a83e2aa5#8fa54616"
+      "at": "2026-11-07T17:40Z",
+      "source": "pi-session:a08b61c6-6f44-4ae1-ace0-ced83f26f0b0#55f8e26b"
     }
   },
   "§app.claude-logins/stuck": {
@@ -551,7 +557,7 @@
   "§app/claude-logins": {
     "kind": "surface",
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "code": [
       "pi-config/extensions/claude-code/accounts.ts",
       "pi-config/extensions/claude-code/README.md"

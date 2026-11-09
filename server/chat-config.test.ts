@@ -136,9 +136,11 @@ describe("the saved default for new sessions", () => {
   const saved = () => (existsSync(defaultsFile) ? JSON.parse(readFileSync(defaultsFile, "utf8")) : null);
   const cwd = join(agentDir, "defaults-cwd");
   mkdirSync(cwd, { recursive: true });
+  const heard: string[] = [];
   const client = {
     send: (m: { type: string; message?: string }) => {
       if (m.type === "error") throw new Error(`chat error: ${m.message}`);
+      heard.push(m.type);
     },
   };
   /** An open chat whose model switch needs no credentials: the model resolves, the SDK's switch is a no-op. */
@@ -159,13 +161,15 @@ describe("the saved default for new sessions", () => {
     }
   }
 
-  test("the composer's model and thinking on a brand-new session become the default", async () => {
+  test("the composer's model and thinking on a brand-new session stay that session's, never the default", async () => {
     rmSync(defaultsFile, { force: true });
     const chat = await chatOn();
+    heard.length = 0;
+    chat.attach(client as never);
     chat.handle(client, { type: "set_model", ref: "ollama-cloud/glm-5.3" });
-    await until(() => saved()?.model === "ollama-cloud/glm-5.3");
+    await until(() => heard.includes("model"));
     chat.handle(client, { type: "set_thinking", level: "low" });
-    assert.equal(saved()?.thinking, piSession(chat).thinkingLevel);
+    assert.equal(saved(), null);
   });
 
   test("the same switch without save: true changes that chat and never the default", async () => {

@@ -7,7 +7,7 @@ import type { SessionSummary, UploadResult } from "../../shared/protocol";
 import type { ContextState } from "./context";
 import { draftCounts } from "./draft-mark";
 import { registerPutBack } from "./chat-outbox";
-import { createDraftSaver, type DraftPayload } from "./draft-save";
+import { createDraftSaver, type DraftPayload, type ShellDraftMode } from "./draft-save";
 import { readKey, writeKey } from "./storage-keys";
 import { makeToast, placeToast, type Toast, type ToastOptions } from "./toast";
 
@@ -37,6 +37,16 @@ export function announce(text: string) {
   // Clear first so repeating the same sentence is still announced.
   setAnnouncement("");
   queueMicrotask(() => setAnnouncement(text));
+}
+
+/** Takes `text` back out of the region once it no longer holds (the reason it said cleared on
+    screen), even one `announce` is still putting in; any other sentence since stays. */
+export function unannounce(text: string) {
+  const clear = () => {
+    if (announcement() === text) setAnnouncement("");
+  };
+  clear();
+  queueMicrotask(clear); // after an `announce` of it made in this same tick lands
 }
 
 export const [home, setHome] = createSignal<string | null>(null);
@@ -95,6 +105,20 @@ export const setSessionContext = (path: string, ctx: ContextState) =>
     authority within this tab: the server copy only seeds a path this tab hasn't touched yet. */
 export const drafts = new Map<string, string>();
 
+/** The mode of a draft written in shell mode, by session path, kept apart from its text
+    (§chat.shell-mode/box): a path absent here holds a message, whatever its text starts with. */
+export const draftModes = new Map<string, ShellDraftMode>();
+
+const MARKER: Record<ShellDraftMode, string> = { shell: "!", private: "!!" };
+
+/** The draft as a message holds it: a command keeps its "!" or "!!" in view, as text. What every
+    writer that isn't the box itself (a hand-back, a put-back, a staged text) builds on. */
+export function draftMessage(path: string): string {
+  const text = drafts.get(path) ?? "";
+  const mode = draftModes.get(path);
+  return mode && text ? MARKER[mode] + text : text;
+}
+
 /** The draft's uploaded attachments by session path, stored with the text. A signal, because an
     upload can land after its composer unmounted (or remounted) and the strip must still show it. */
 const [attachmentsByPath, setAttachmentsByPath] = createSignal<Record<string, UploadResult[]>>({});
@@ -128,17 +152,20 @@ const syncPresence = (path: string) => {
 const draftKnown = new Set<string>();
 /** Set only while the page is being hidden, so that flush's writes can outlive the page. */
 let unloading = false;
-const draftSaver = createDraftSaver((path, d) => putDraft(path, d.text, d.attachments, { keepalive: unloading }).then(() => {}));
+const draftSaver = createDraftSaver((path, d) => putDraft(path, d.text, d.attachments, { keepalive: unloading, mode: d.mode }).then(() => {}));
 
 /** The whole draft goes out on every save, so a text save never drops the attachments. */
 const scheduleSave = (path: string) =>
-  draftSaver.schedule(path, { text: drafts.get(path) ?? "", attachments: draftAttachments(path) });
+  draftSaver.schedule(path, { text: drafts.get(path) ?? "", attachments: draftAttachments(path), ...(draftModes.has(path) ? { mode: draftModes.get(path) } : {}) });
 
-/** Writes the in-memory draft and schedules the server copy (debounced). */
-export function setDraftText(path: string, text: string): void {
+/** Writes the in-memory draft and schedules the server copy (debounced). `mode`: the box wrote it in
+    shell mode; without one the draft is a message (any saved mode goes), so only the box saves one. */
+export function setDraftText(path: string, text: string, mode?: ShellDraftMode): void {
   draftKnown.add(path);
   if (text) drafts.set(path, text);
   else drafts.delete(path);
+  if (text && mode) draftModes.set(path, mode);
+  else draftModes.delete(path);
   syncPresence(path);
   scheduleSave(path);
 }
@@ -156,6 +183,7 @@ export function setDraftAttachments(path: string, list: UploadResult[]): void {
 export function clearDraft(path: string): void {
   draftKnown.add(path);
   drafts.delete(path);
+  draftModes.delete(path);
   storeAttachments(path, []);
   syncPresence(path);
   scheduleSave(path);
@@ -170,12 +198,12 @@ function mergeAttachments(local: UploadResult[], stored: UploadResult[]): Upload
 
 /** The draft for `path`: this tab's copy when it has one, else the stored one. Never rejects. */
 export async function loadDraft(path: string): Promise<DraftPayload> {
-  const local = (): DraftPayload => ({ text: drafts.get(path) ?? "", attachments: draftAttachments(path) });
+  const local = (): DraftPayload => ({ text: drafts.get(path) ?? "", attachments: draftAttachments(path), ...(draftModes.has(path) ? { mode: draftModes.get(path) } : {}) });
   if (draftKnown.has(path)) return local();
   let stored: DraftPayload = { text: "", attachments: [] };
   try {
     const r = await fetchDraft(path);
-    stored = { text: r.text ?? "", attachments: r.attachments };
+    stored = { text: r.text ?? "", attachments: r.attachments, ...(r.mode ? { mode: r.mode } : {}) };
   } catch {
     // Unreachable server or a missing file: start empty; typing still saves.
   }
@@ -188,6 +216,7 @@ export async function loadDraft(path: string): Promise<DraftPayload> {
   }
   draftKnown.add(path);
   if (stored.text) drafts.set(path, stored.text);
+  if (stored.text && stored.mode) draftModes.set(path, stored.mode);
   // A load may ADD an attachment, never drop one: the server copy can be behind a save still in
   // flight, and losing a row the user can see leaves its file orphaned on disk — the worse bug.
   // (Deleting a file goes through Remove: setDraftAttachments, or clearDraft after a send.)
@@ -199,7 +228,11 @@ export async function loadDraft(path: string): Promise<DraftPayload> {
 // A message its chat refused after its view closed (lib/chat-outbox): back in that chat's draft,
 // ahead of what the draft holds, quietly (§chat.transcript/send-while-starting).
 registerPutBack((path, texts) => {
-  void loadDraft(path).then((d) => setDraftText(path, [...texts, ...(d.text.trim() ? [d.text] : [])].join("\n\n")));
+  // A command already in the draft stays as its text ("!ls"): the whole draft is a message now.
+  void loadDraft(path).then(() => {
+    const now = draftMessage(path);
+    setDraftText(path, [...texts, ...(now.trim() ? [now] : [])].join("\n\n"));
+  });
 });
 
 /** Sends every pending draft save now. */
@@ -236,8 +269,9 @@ export async function copyText(text: string, done: string): Promise<boolean> {
 }
 
 export interface LightboxState {
-  /** One row's images; the caption is each image's alt. */
-  images: { src: string; alt: string }[];
+  /** One row's images; the caption is each image's alt. `width`: shown at that CSS width (a picture
+      drawn at twice its size); `download`: a file name, and the viewer offers Save Image. */
+  images: { src: string; alt: string; width?: number; download?: string }[];
   index: number;
   /** The thumbnail that opened it, focused again on close. */
   opener: HTMLElement | null;

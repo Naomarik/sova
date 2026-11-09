@@ -109,8 +109,8 @@
     ],
     "agreed": {
       "by": "naomarik",
-      "at": "2026-10-23T01:03Z",
-      "source": "pi-session:bd672a84-d867-4505-a817-6f7e33eb8a05#0a19ba49"
+      "at": "2026-11-08T22:16Z",
+      "source": "pi-session:f599f57e-519d-4f33-9088-ed8a9cd164b5#cebf8649"
     }
   },
   "§app.teams/running-limit": {
@@ -125,9 +125,9 @@
       "pi-config/extensions/subagents/index.test.ts"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-10-23T01:03Z",
-      "source": "pi-session:bd672a84-d867-4505-a817-6f7e33eb8a05#0a19ba49"
+      "by": "user",
+      "at": "2026-11-08T08:01Z",
+      "source": "pi-session:94b6e71e-3aba-4205-a03b-2fb292ea1d80#132113a8"
     }
   },
   "§app.teams/seats": {
@@ -164,8 +164,34 @@
     "code": [
       "pi-config/extensions/subagents/index.ts",
       "pi-config/extensions/subagents/index.test.ts",
-      "pi-config/extensions/subagents/README.md"
-    ]
+      "pi-config/extensions/subagents/README.md",
+      "pi-config/docs/native-teams.md"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-08T11:11Z",
+      "source": "pi-session:94b6e71e-3aba-4205-a03b-2fb292ea1d80#99f0473c"
+    }
+  },
+  "§app.teams/wait-steer": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "requires": [
+      "§app.teams/wait-completion",
+      "§teams.defaults/routing"
+    ],
+    "code": [
+      "pi-config/extensions/subagents/index.ts",
+      "pi-config/extensions/subagents/README.md",
+      "pi-config/docs/native-teams.md",
+      "pi-config/extensions/subagents/wait-steer.test.ts"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-08T08:01Z",
+      "source": "pi-session:94b6e71e-3aba-4205-a03b-2fb292ea1d80#132113a8"
+    }
   },
   "§app/teams": {
     "kind": "surface",

@@ -10,8 +10,8 @@ import { stateRoot } from "../state-root";
  * Node builtins only.
  */
 
-export const servicesRoot = () => join(stateRoot(), "project-services");
-export const registryFile = () => join(servicesRoot(), "registry.json");
+export const servicesRoot = (root: string = stateRoot()) => join(root, "project-services");
+export const registryFile = (root?: string) => join(servicesRoot(root), "registry.json");
 export const dataRootOf = (id: string) => join(servicesRoot(), "data", id);
 export const logsDir = () => join(servicesRoot(), "logs");
 export const procsDir = () => join(servicesRoot(), "procs");
@@ -281,12 +281,42 @@ export function slugOf(path: string): string {
 export const newInstanceId = (project: string) => `${slugOf(project)}-${randomBytes(4).toString("hex")}`;
 export const sharedIdOf = (project: string) => `${slugOf(project)}-shared-${createHash("sha256").update(project).digest("hex").slice(0, 6)}`;
 
+/** What a slot's standing reads of the registry. */
+export interface SlotRegistry {
+  instances: readonly Pick<InstanceRecord, "id" | "project" | "slot" | "ports">[];
+  shared: readonly Pick<SharedRecord, "id" | "project" | "ports">[];
+}
+
+/** Where one slot stands for a new instance of the project: free, held by one of its own, or kept from it by something else. */
+export type SlotStanding = { state: "free" } | { state: "own" | "elsewhere"; why: string };
+
+/**
+ * One slot's standing for `project`, whose ports there are `ports` (§app.project-services/instances): `pickSlot`'s rule,
+ * and the project cards' (§app.projects/home-glance). A slot is free when no instance of the project holds it, and none
+ * of its ports is held by another instance on this host (running or stopped, of any project), by another project's
+ * shared service, or `listening(port)` (true, or the listener in words: "pid 4242 (/home/me/app)"). A slot past the
+ * parser's checked range may give a port past 65535 or the same port twice: it is not free either. Pure.
+ */
+export function slotStanding(r: SlotRegistry, project: string, slot: number, ports: readonly number[], listening: (port: number) => boolean | string): SlotStanding {
+  if (r.instances.some((i) => i.project === project && i.slot === slot)) return { state: "own", why: `slot ${slot} is held by another instance of this project` };
+  const claimed = new Map<number, string>();
+  for (const i of r.instances) for (const [svc, ps] of Object.entries(i.ports)) for (const [k, n] of Object.entries(ps)) claimed.set(n, `${i.id} (${svc}.${k})`);
+  for (const s of r.shared) if (s.project !== project) for (const [svc, ps] of Object.entries(s.ports)) for (const [k, n] of Object.entries(ps)) claimed.set(n, `${s.id} (${svc}.${k})`);
+  const elsewhere = (why: string): SlotStanding => ({ state: "elsewhere", why });
+  for (const [i, p] of ports.entries()) {
+    if (p > 65535) return elsewhere(`slot ${slot} would need port ${p}, past 65535`);
+    if (ports.indexOf(p) !== i) return elsewhere(`slot ${slot} gives port ${p} to two of its services`);
+    const c = claimed.get(p);
+    if (c) return elsewhere(`slot ${slot} needs port ${p}, which ${c} holds`);
+    const l = listening(p);
+    if (l) return elsewhere(`slot ${slot} needs port ${p}, which ${typeof l === "string" ? l : "something"} is listening on`);
+  }
+  return { state: "free" };
+}
+
 /**
  * The slot for a new instance of `project` (§app.project-services/instances). `want` is taken when
- * free; otherwise the lowest free slot in `range`. A slot is free when no instance of the project
- * holds it, and none of its ports is held by another instance on this host or `listening(port)`
- * (true, or the listener in words: "pid 4242 (/home/me/app)"). A slot past the parser's checked
- * range may give a port past 65535 or the same port twice: it is not free either.
+ * free; otherwise the lowest free slot in `range`. Whether a slot is free is `slotStanding`.
  */
 export function pickSlot(
   r: Registry,
@@ -296,22 +326,9 @@ export function pickSlot(
   listening: (port: number) => boolean | string,
   want?: number,
 ): { slot: number } | { refused: string } {
-  const taken = new Set(r.instances.filter((i) => i.project === project).map((i) => i.slot));
-  const claimed = new Map<number, string>();
-  for (const i of r.instances) for (const [svc, ps] of Object.entries(i.ports)) for (const [k, n] of Object.entries(ps)) claimed.set(n, `${i.id} (${svc}.${k})`);
-  for (const s of r.shared) if (s.project !== project) for (const [svc, ps] of Object.entries(s.ports)) for (const [k, n] of Object.entries(ps)) claimed.set(n, `${s.id} (${svc}.${k})`);
   const why = (slot: number): string | null => {
-    if (taken.has(slot)) return `slot ${slot} is held by another instance of this project`;
-    const ports = portsOf(slot);
-    for (const [i, p] of ports.entries()) {
-      if (p > 65535) return `slot ${slot} would need port ${p}, past 65535`;
-      if (ports.indexOf(p) !== i) return `slot ${slot} gives port ${p} to two of its services`;
-      const c = claimed.get(p);
-      if (c) return `slot ${slot} needs port ${p}, which ${c} holds`;
-      const l = listening(p);
-      if (l) return `slot ${slot} needs port ${p}, which ${typeof l === "string" ? l : "something"} is listening on`;
-    }
-    return null;
+    const s = slotStanding(r, project, slot, portsOf(slot), listening);
+    return s.state === "free" ? null : s.why;
   };
   if (want !== undefined) {
     const w = why(want);

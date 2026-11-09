@@ -11,7 +11,10 @@
       "src/components/SessionView.tsx",
       "src/lib/placeholder-fit.ts",
       "src/components/Thread.tsx",
-      "src/lib/error-feed.ts"
+      "src/lib/error-feed.ts",
+      "src/lib/shell-mode.ts",
+      "src/lib/shell-runs.ts",
+      "src/components/ShellCard.tsx"
     ],
     "about": [
       "§chat/composer"
@@ -34,7 +37,8 @@
     "evidence": "reviewed",
     "code": [
       "src/components/ConnectionBanner.tsx",
-      "src/components/ChatView.tsx"
+      "src/components/ChatView.tsx",
+      "src/lib/chat-wait.ts"
     ]
   },
   "§design.copy-deck/context-tab": {
@@ -46,8 +50,7 @@
     "evidence": "reviewed",
     "code": [
       "src/components/ContextTab.tsx",
-      "src/lib/context-parts.ts",
-      "src/components/SessionDetails.tsx"
+      "src/lib/context-parts.ts"
     ]
   },
   "§design.copy-deck/context-window": {
@@ -186,13 +189,17 @@
       "src/lib/merge-queue-settings.ts",
       "server/merge-queue/notices.ts",
       "src/components/BranchSummary.tsx",
-      "src/components/SummarizerSettings.tsx"
+      "src/components/SummarizerSettings.tsx",
+      "src/lib/merge-review-card.ts",
+      "src/components/MergeReviewCard.tsx",
+      "src/lib/branch-place.ts",
+      "src/components/BranchPlaceLine.tsx"
     ]
   },
   "§design.copy-deck/merge-queue-chats": {
     "kind": "note",
     "authority": "accepted",
-    "evidence": "unreviewed",
+    "evidence": "reviewed",
     "about": [
       "§app.merge-queue/chats",
       "§chat.merge-queue/asks",
@@ -214,6 +221,18 @@
     "evidence": "reviewed",
     "about": [
       "§chat.transcript/message-actions"
+    ]
+  },
+  "§design.copy-deck/message-labels": {
+    "kind": "note",
+    "authority": "accepted",
+    "evidence": "unreviewed",
+    "about": [
+      "§app.message-labels/time-spent-tab",
+      "§app.message-labels/labelling",
+      "§app.message-labels/crediting",
+      "§app.message-labels/what-counts",
+      "§app.message-labels/the-labels"
     ]
   },
   "§design.copy-deck/mode-menu": {
@@ -268,6 +287,22 @@
     "kind": "note",
     "authority": "accepted",
     "evidence": "reviewed"
+  },
+  "§design.copy-deck/profiles": {
+    "kind": "note",
+    "about": [
+      "§chat/profiles",
+      "§app.settings-dialog/profiles"
+    ],
+    "authority": "accepted",
+    "evidence": "reviewed",
+    "code": [
+      "src/components/ProfilesSettings.tsx",
+      "src/components/ModeMenu.tsx",
+      "src/components/ProfilePicker.tsx",
+      "src/lib/profiles-settings.ts",
+      "src/components/ProfileSwitchLine.tsx"
+    ]
   },
   "§design.copy-deck/project-coding": {
     "kind": "note",
@@ -428,6 +463,14 @@
       "§app.settings-dialog/save-bar"
     ]
   },
+  "§design.copy-deck/settings-extensions": {
+    "kind": "note",
+    "authority": "accepted",
+    "evidence": "reviewed",
+    "about": [
+      "§app.settings-dialog/extensions"
+    ]
+  },
   "§design.copy-deck/settings-mesh": {
     "kind": "note",
     "authority": "accepted",
@@ -463,7 +506,7 @@
   "§design.copy-deck/settings-themes": {
     "kind": "note",
     "authority": "accepted",
-    "evidence": "unreviewed",
+    "evidence": "reviewed",
     "about": [
       "§app.settings-dialog/themes"
     ]
@@ -503,7 +546,8 @@
       "src/lib/needs-you-row.ts",
       "src/components/NeedsYouRow.tsx",
       "src/lib/branch-status.ts",
-      "src/lib/session-row.test.ts"
+      "src/lib/session-row.test.ts",
+      "src/lib/branch-place.ts"
     ]
   },
   "§design.copy-deck/slash-commands": {
@@ -531,6 +575,15 @@
       "src/lib/background-jobs.browser.test.ts"
     ]
   },
+  "§design.copy-deck/time-spent": {
+    "kind": "note",
+    "authority": "accepted",
+    "evidence": "unreviewed",
+    "code": [
+      "src/components/TimeSpent.tsx",
+      "src/lib/time-spent-view.ts"
+    ]
+  },
   "§design.copy-deck/timeline-tab": {
     "kind": "note",
     "authority": "accepted",
@@ -544,10 +597,11 @@
   "§design.copy-deck/worktree-cleanup": {
     "kind": "note",
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "about": [
       "§chat.transcript/empty-worktrees",
-      "§chat.worktrees/cleanup"
+      "§chat.worktrees/cleanup",
+      "§chat.worktrees/leftovers"
     ]
   },
   "§design.copy-deck/your-click": {

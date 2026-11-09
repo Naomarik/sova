@@ -81,7 +81,9 @@
       "pi-config/extensions/subagents/spec-brief.test.ts",
       "pi-config/extensions/spec/docs/MODE.md",
       "pi-config/extensions/spec/docs/CHANGELOG.md",
-      "site/src/content/docs/modes/spec.md"
+      "site/src/content/docs/modes/spec.md",
+      "server/harness/pi/spec-tool-result.integration.test.ts",
+      "server/team-member-tools.test.ts"
     ],
     "evidence": "verified"
   },
@@ -124,7 +126,12 @@
       "server/overseer-org-part.test.ts",
       "server/overseer-runtime.test.ts",
       "server/project-overseer.test.ts"
-    ]
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-06T22:14Z",
+      "source": "pi-session:b406e4de-b015-4dbb-b201-14ab20b5da44#2b9be4c7"
+    }
   },
   "§app/spec-lookup": {
     "kind": "surface",

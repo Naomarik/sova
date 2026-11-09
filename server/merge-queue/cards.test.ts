@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { readdirSync, readFileSync } from "node:fs";
+import { readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { scratchRoot } from "../test-scratch";
 import { join } from "node:path";
 import { describe, test } from "node:test";
 import type { SessionSummary } from "../../shared/protocol";
@@ -14,6 +15,13 @@ import { noticeText } from "./notices";
 import { sh } from "./testing/queue-kit";
 import type { QueueDeps } from "./queue";
 import { makeKit, until, untilAborted } from "./testing/queue-kit";
+import { typedGoAhead } from "../../pi-config/extensions/worktrees/landing.ts";
+
+/** The hidden lines past the approval's own, which every approved branch has (asserted below). */
+const outcomeNote = (cards: Pick<MergeCards, "noteFor">, session: string, since: string | null = null): string | null => {
+  const lines = cards.noteFor(session, since)?.split("\n").filter((l) => !/ is in line to land on .*Leave it alone until it lands/.test(l)) ?? [];
+  return lines.length ? lines.join("\n") : null;
+};
 
 const landed = (k: ReturnType<typeof makeKit>, id: string) =>
   until(async () => {
@@ -22,9 +30,9 @@ const landed = (k: ReturnType<typeof makeKit>, id: string) =>
   }, `${id} landed`);
 
 /** A kit whose queue raises real cards: notify → cards, publish → sync; `last` is the chat's last transcript entry. */
-function cardKit(o: { deps?: Partial<QueueDeps>; threadAnswers?: boolean; wakeFails?: boolean; wakeHangs?: boolean; wake?: (session: string, text: string) => Promise<void> } = {}) {
+function cardKit(o: { placed?: () => string; deps?: Partial<QueueDeps>; threadAnswers?: boolean; wakeFails?: boolean; wakeHangs?: boolean; wake?: (session: string, text: string) => Promise<unknown>; homeOf?: (session: string) => Promise<{ id: string; path: string } | null> } = {}) {
   const chat = { last: "e1" as string | null };
-  const wakes: { session: string; text: string }[] = [];
+  const wakes: { session: string; text: string; info?: { id?: string; kind?: string; branch?: string; entry?: string } }[] = [];
   const published: { session: string; cards: MergeCard[] }[] = [];
   let cards!: MergeCards;
   const pending: Promise<void>[] = [];
@@ -34,7 +42,9 @@ function cardKit(o: { deps?: Partial<QueueDeps>; threadAnswers?: boolean; wakeFa
     deps: {
       notify: (kind, e, extra) => {
         k.notices.push({ kind, branch: e.branch, ...(e.session ? { session: e.session } : {}) });
-        track(kind === "approved" ? cards.approved(e, extra.root) : cards.outcome(kind, e, { ...(extra.run ? { run: extra.run } : {}), root: extra.root }));
+        // As wire.ts: a request that is no outcome of its own goes to the chat as itself.
+        if (extra.request && kind !== "needs-fix" && kind !== "sent-back") return track(cards.request(e, extra.request, extra.run));
+        track(kind === "approved" ? cards.approved(e, extra.root) : cards.outcome(kind as never, e, { ...(extra.run ? { run: extra.run } : {}), root: extra.root, ...(extra.request ? { request: extra.request } : {}) }));
       },
       publish: (v: MergeQueueView) => {
         k.views.push(v);
@@ -47,16 +57,18 @@ function cardKit(o: { deps?: Partial<QueueDeps>; threadAnswers?: boolean; wakeFa
     new MergeCards({
       dir: join(k.repo.state, "merge-queue", "cards"),
       lastEntry: async () => chat.last,
-      wake: async (session, text) => {
+      wake: async (session, text, info) => {
         if (o.wake) return o.wake(session, text);
         if (o.wakeFails) throw new Error("archived");
         if (o.wakeHangs) {
-          wakes.push({ session, text });
+          wakes.push({ session, text, ...(info ? { info } : {}) });
           return new Promise<void>(() => {});
         }
-        wakes.push({ session, text });
+        wakes.push({ session, text, ...(info ? { info } : {}) });
       },
       publish: (session, list) => published.push({ session, cards: list }),
+      ...(o.homeOf ? { homeOf: o.homeOf } : {}),
+      ...(o.placed ? { placeOf: (root: string, target: string) => ({ label: o.placed!(), root, target }) } : {}),
     });
   cards = make();
   return {
@@ -78,6 +90,38 @@ function cardKit(o: { deps?: Partial<QueueDeps>; threadAnswers?: boolean; wakeFa
 }
 
 describe("a branch's card in its own chat", () => {
+  test("a card names its branch's place and follows a rename; its requests name it too; a card from before the line never gets one", async () => {
+    let name = "AmalMoney";
+    const t = cardKit({ placed: () => name });
+    try {
+      const q = await t.k.q();
+      await q.pause("hold");
+      t.k.repo.branch("feat/a", { "a.txt": "a\n" });
+      t.k.repo.branch("feat/old", { "o.txt": "o\n" });
+      const { entry } = await q.add({ branch: "feat/a", by: "land-button", session: "s1" });
+      const old = await q.add({ branch: "feat/old", by: "land-button", session: "s1" });
+      await t.settle();
+      const card = () => t.cards.cardsOf("s1").find((c) => c.entry === entry.id)!;
+      assert.deepEqual(card().place, { label: "AmalMoney", root: card().root, target: card().target });
+      // A card as an older Sova wrote it.
+      const file = join(t.k.repo.state, "merge-queue", "cards", "s1.json");
+      const rec = JSON.parse(readFileSync(file, "utf8")) as { cards: MergeCard[] };
+      delete rec.cards.find((c) => c.entry === old.entry.id)!.place;
+      writeFileSync(file, JSON.stringify(rec));
+      name = "Renamed";
+      await q.note(entry.id, "any change", "operator");
+      await q.note(old.entry.id, "any change", "operator");
+      await t.settle();
+      await t.cards.sync(await q.view());
+      assert.equal(card().place?.label, "Renamed");
+      assert.equal(t.cards.cardsOf("s1").find((c) => c.entry === old.entry.id)!.place, undefined);
+      await t.cards.request(old.entry, { id: "rq_aaaaaaaaaaaa", kind: "blocked", entry: old.entry.id, branch: "feat/old", text: "x", at: "" });
+      assert.equal(t.wakes.at(-1)!.info && (t.wakes.at(-1)!.info as { place?: string }).place, "Renamed", "the request still names it");
+    } finally {
+      await t.k.done();
+    }
+  });
+
   test("Land raises one card at the chat's end; queued and checking revise it in place; Landed is a new revision lower down, with one hidden line and no turn", async () => {
     const t = cardKit();
     try {
@@ -120,7 +164,8 @@ describe("a branch's card in its own chat", () => {
       assert.equal(card.landed!.from.length, 40);
       assert.deepEqual(card.stats, { commits: 1, added: 3, removed: 0 }, "frozen at landing");
       assert.deepEqual(t.wakes, [], "a landing starts no turn");
-      const note = t.cards.noteFor("s1", null)!;
+      assert.match(t.cards.noteFor("s1", null)!, /is in line to land on master\. Leave it alone until it lands: don't merge master into it\. The queue handles any conflict and asks for any fix it needs\. Real new commits are fine: they stay on the branch as new work for a later Land\./);
+      const note = outcomeNote(t.cards, "s1")!;
       assert.match(note, /^feat\/a landed on master at [0-9a-f]{7}, 1 commit \(the commit approved, [0-9a-f]{7}\)\.$/);
       assert.equal(t.cards.noteFor("s1", new Date(Date.now() + 1000).toISOString()), null, "given once: nothing after the note");
       assert.ok(t.published.some((p) => p.session === "s1"));
@@ -144,13 +189,13 @@ describe("a branch's card in its own chat", () => {
       await fresh.approved(e, t.k.repo.root);
       const card = fresh.cardsOf("s1")[0]!;
       assert.deepEqual(card.revisions.map((r) => r.kind), ["approved", "landed"]);
-      assert.equal(fresh.noteFor("s1", null)!.split("\n").length, 1);
+      assert.equal(outcomeNote(fresh, "s1")!.split("\n").length, 1);
     } finally {
       await t.k.done();
     }
   });
 
-  test("Needs a fix starts one turn marked as the merge queue's; a wake not taken becomes the hidden line", async () => {
+  test("a failure that is the branch's goes back to its chat by itself (al_3): one request (try 1 of 3) by its recorded id, the card back with the chat; a chat that can't take notes gets the hidden line", async () => {
     for (const wakeFails of [false, true]) {
       const t = cardKit({ wakeFails });
       try {
@@ -158,18 +203,24 @@ describe("a branch's card in its own chat", () => {
         t.k.run.set(() => ({ verdict: "failed", blame: "branch", why: "unit failed: src/a.test.ts", failedSteps: [] }) as never);
         t.k.repo.branch("feat/bad", { "x.txt": "x\n" });
         const { entry } = await q.add({ branch: "feat/bad", by: "land-button", session: "s1" });
-        await until(async () => (await t.k.entry(entry.id)).state === "needs-fix", "needs-fix");
+        await until(async () => (await t.k.entry(entry.id)).state === "with-chat", "with-chat");
         await until(async () => (await t.settle(), t.cards.cardsOf("s1")[0]!.revisions.length === 2), "needs-fix revision");
         await t.cards.sync(await q.view());
         const card = t.cards.cardsOf("s1")[0]!;
         assert.deepEqual(card.revisions.map((r) => r.kind), ["approved", "needs-fix"]);
+        assert.deepEqual(card.standing, { phase: "with-chat", try: 1, of: 3, why: "unit failed: src/a.test.ts" }, "Back with the chat · try 1 of 3");
+        const e = await t.k.entry(entry.id);
+        assert.equal(e.requests?.length, 1);
         if (!wakeFails) {
           assert.equal(t.wakes.length, 1);
           assert.ok(isMergeQueueText(t.wakes[0]!.text));
-          assert.match(t.wakes[0]!.text, /^\[merge-queue\] feat\/bad didn't land: unit failed/);
-          assert.equal(t.cards.noteFor("s1", null), null);
+          assert.match(t.wakes[0]!.text, /^\[merge-queue\] feat\/bad didn't land \(try 1 of 3\): unit failed/);
+          assert.match(t.wakes[0]!.text, /merge\.respond/, "asks for an answer by id");
+          assert.doesNotMatch(t.wakes[0]!.text, /land it again|Land This Commit Again/);
+          assert.deepEqual(t.wakes[0]!.info, { id: e.requests![0]!.id, kind: "fix", branch: "feat/bad", entry: entry.id }, "the queue's own request id rides on the note");
+          assert.equal(outcomeNote(t.cards, "s1"), null);
         } else {
-          assert.match(t.cards.noteFor("s1", null)!, /^feat\/bad didn't land/);
+          assert.match(outcomeNote(t.cards, "s1")!, /^feat\/bad didn't land \(try 1 of 3\)/);
         }
       } finally {
         await t.k.done();
@@ -177,7 +228,7 @@ describe("a branch's card in its own chat", () => {
     }
   });
 
-  test("sent back for its drafts: the wake says no commit is needed and names Land; once fixed the card reads redrafted; Remove from Queue is a final Removed revision, no turn", async () => {
+  test("sent back for its drafts: the request says no commit is needed and never asks for a new Land; Remove from Queue is a final Removed revision, no turn", async () => {
     let print = "p1";
     const t = cardKit({ deps: { draftsHash: () => ({ hash: "h1", names: ["x"] }), draftsFingerprint: () => print, docsCheck: () => ({ problems: [] }) } });
     try {
@@ -185,16 +236,15 @@ describe("a branch's card in its own chat", () => {
       t.k.run.set(() => ({ verdict: "failed", blame: "branch", cause: "drafts", why: "your spec drafts don't fit, so nothing was made official: x" }));
       t.k.repo.branch("feat/doc", { "x.txt": "x\n" });
       const { entry } = await q.add({ branch: "feat/doc", by: "land-button", session: "s1" });
-      await until(async () => (await t.k.entry(entry.id)).state === "needs-fix", "needs-fix");
+      await until(async () => (await t.k.entry(entry.id)).state === "with-chat", "with-chat");
       await until(async () => (await t.settle(), t.cards.cardsOf("s1")[0]!.revisions.length === 2), "needs-fix revision");
       assert.equal(t.wakes.length, 1);
-      assert.match(t.wakes[0]!.text, /Fix them in your drafts on feat\/doc: that needs no commit/);
-      assert.match(t.wakes[0]!.text, /Land This Commit Again/);
+      assert.match(t.wakes[0]!.text, /Make them fit in your drafts \(that needs no commit\)/);
+      assert.doesNotMatch(t.wakes[0]!.text, /Land This Commit Again|land it again/);
       assert.doesNotMatch(t.wakes[0]!.text, /Fix it, commit/);
       assert.equal(t.cards.cardsOf("s1")[0]!.sentBackFor, "drafts");
       print = "p2";
       await t.cards.sync(await q.view({ fresh: true }));
-      assert.equal(t.cards.cardsOf("s1")[0]!.redrafted, true);
       await q.cancel(entry.id);
       await until(async () => (await t.settle(), t.cards.cardsOf("s1")[0]!.revisions.length === 3), "removed revision");
       const card = t.cards.cardsOf("s1")[0]!;
@@ -215,26 +265,26 @@ describe("a branch's card in its own chat", () => {
     }
   });
 
-  test("the user's Send Back: its wake names what the user will see (Land back after a committed fix, or landing its newest commit)", () => {
+  test("an entry sent back before Send Back was retired (no standing Land): its words say it needs the user's Land again, never a button that is gone", () => {
     const e = { branch: "feat/x", target: "master", commit: "a".repeat(40), notes: [], reason: "the review flagged it" } as never as MergeEntry;
     const plain = noticeText("sent-back", e);
     const review = noticeText("sent-back", { ...e, review: { verdict: "blocking", text: "a TODO" } } as never);
     const conflict = noticeText("sent-back", { ...e, conflict: { ours: "o", theirs: "t", proposal: "p" } } as never);
     for (const t of [plain, review, conflict]) {
-      assert.match(t, /Land comes back on its row once your fix is committed and finished, or the user can land its newest commit from there\./);
-      assert.doesNotMatch(t, /Land This Commit Again/, "after a fix the button reads otherwise");
+      assert.match(t, /it needs the user's Land again once your fix is committed and finished\.$/);
+      assert.doesNotMatch(t, /Land This Commit Again|Land Newest Commit|Send Back|type "land it"/, "no retired control, no typed go-ahead");
       assert.doesNotMatch(t, /ask (the user|them) to land it again/);
     }
   });
 
-  test("a Needs a fix card whose entry settled (its branch and folder gone) says so on the card: nothing left to offer", async () => {
+  test("a card back with its chat whose entry settled (its branch and folder gone) says so on the card: nothing left to offer", async () => {
     const t = cardKit();
     try {
       const q = await t.k.q();
       t.k.run.set(() => ({ verdict: "failed", blame: "branch", why: "unit failed" }));
       const b = t.k.repo.branch("feat/gone", { "g.txt": "g\n" });
       const { entry } = await q.add({ branch: "feat/gone", by: "land-button", session: "s1" });
-      await until(async () => (await t.k.entry(entry.id)).state === "needs-fix", "needs-fix");
+      await until(async () => (await t.k.entry(entry.id)).state === "with-chat", "with-chat");
       await until(async () => (await t.settle(), t.cards.cardsOf("s1")[0]!.revisions.length === 2), "needs-fix revision");
       assert.equal(t.cards.cardsOf("s1")[0]!.settled, undefined);
       sh(t.k.repo.root, "worktree", "remove", "--force", b.path);
@@ -265,17 +315,17 @@ describe("a branch's card in its own chat", () => {
         t.k.run.set(() => ({ verdict: "failed", blame: "branch", why: "unit failed: src/a.test.ts" }));
         t.k.repo.branch("feat/worker", { "w.txt": "w\n" });
         const { entry } = await q.add({ branch: "feat/worker", by: "land-button", session: "w1" });
-        await until(async () => (await t.k.entry(entry.id)).state === "needs-fix", "needs-fix");
+        await until(async () => (await t.k.entry(entry.id)).state === "with-chat", "with-chat");
         await until(async () => (await t.settle(), t.cards.cardsOf("w1")[0]?.revisions.length === 2), "needs-fix revision");
         if (!parentArchived) {
           assert.equal(sent.length, 1, "exactly one wake");
           assert.equal(sent[0]!.path, "/s/p1.jsonl", "the chat that runs the worker");
-          assert.ok(isMergeQueueText(sent[0]!.text), "marked as the queue's");
-          assert.match(sent[0]!.text, /your worker "Build the rows".*feat\/worker didn't land/);
-          assert.equal(t.cards.noteFor("w1", null), null, "nothing left over");
+          // A request on the chat queue (§chat.merge-queue/requests): the batch says whose it is, so no prefix.
+          assert.match(sent[0]!.text, /^For your worker "Build the rows".*feat\/worker didn't land \(try 1 of 3\)/);
+          assert.equal(outcomeNote(t.cards, "w1"), null, "nothing left over");
         } else {
           assert.deepEqual(sent, []);
-          assert.match(t.cards.noteFor("w1", null)!, /^feat\/worker didn't land/, "kept as the hidden line");
+          assert.match(outcomeNote(t.cards, "w1")!, /^feat\/worker didn't land/, "kept as the hidden line");
         }
       } finally {
         await t.k.done();
@@ -290,54 +340,60 @@ describe("a branch's card in its own chat", () => {
       t.k.run.set(() => ({ verdict: "failed", blame: "branch", why: "unit failed: src/a.test.ts" }));
       t.k.repo.branch("feat/stop", { "s.txt": "s\n" });
       const { entry } = await q.add({ branch: "feat/stop", by: "land-button", session: "s1" });
-      await until(async () => (await t.k.entry(entry.id)).state === "needs-fix", "needs-fix");
+      await until(async () => (await t.k.entry(entry.id)).state === "with-chat", "with-chat");
       await until(() => t.wakes.length === 1, "the wake sent (never answered)");
-      assert.equal(t.cards.noteFor("s1", null), null, "while this process still sends it, it is no line");
+      assert.equal(outcomeNote(t.cards, "s1"), null, "while this process still sends it, it is no line");
       // Sova stops here: a fresh store on the same records.
       const fresh = t.restart();
-      const note = fresh.noteFor("s1", null);
+      const note = outcomeNote(fresh, "s1");
       assert.ok(note, "the hand-back survives the stop as the hidden line");
-      assert.match(note!, /^feat\/stop didn't land: unit failed: src\/a\.test\.ts/);
-      assert.equal(fresh.noteFor("s1", null), note, "once");
+      assert.match(note!, /^feat\/stop didn't land \(try 1 of 3\): unit failed: src\/a\.test\.ts/);
+      assert.equal(outcomeNote(fresh, "s1"), note, "once");
       // A later view or outcome for the same entry sends no second wake and adds no second line.
       await fresh.sync(await q.view());
       await fresh.outcome("needs-fix", await t.k.entry(entry.id), { root: t.k.repo.root });
       assert.equal(t.wakes.length, 1, "never resent");
-      assert.equal(fresh.noteFor("s1", null)!.split("\n").filter((l) => l.startsWith("feat/stop didn't land")).length, 1);
+      assert.equal(outcomeNote(fresh, "s1")!.split("\n").filter((l) => l.startsWith("feat/stop didn't land")).length, 1);
     } finally {
       await t.k.done();
     }
   });
 
-  test("behaviour differs is a revision; Send Back is one more (not also a needs-fix) and starts one marked turn", async () => {
+  test("behaviour differs is one decision revision: the thread's question and choices on the card, no turn, no Send Back", async () => {
     const t = cardKit({ threadAnswers: true, deps: { sanity: async () => ({ ok: true, files: ["a.txt"] }) } });
     try {
       const q = await t.k.q();
       t.k.repo.branch("feat/c", { "a.txt": "one\nTWO-c\nthree\n" });
-      t.k.repo.commitOn(t.k.repo.root, { "a.txt": "one\nTWO-master\nthree\n" }, "master side");
+      // The target moves after the Land (a branch conflicting at Land waits for a fix instead, al_3 q7).
+      await q.pause("setting up a conflict");
       const c = await q.add({ branch: "feat/c", by: "land-button", session: "s1" });
+      t.k.repo.commitOn(t.k.repo.root, { "a.txt": "one\nTWO-master\nthree\n" }, "master side");
+      await q.resume();
       await until(async () => (await t.k.entry(c.entry.id)).state === "conflict", "conflict");
-      await q.resolve(c.entry.id, { verdict: "behaviour-differs", ours: "master returns 2", theirs: "the branch returns 3", proposal: "a flag" });
+      await q.resolve(c.entry.id, { verdict: "needs-user", ours: "master returns 2", theirs: "the branch returns 3", proposal: "a flag", text: "Should it return 2 or 3?", choices: ["Return 2", "Return 3"] });
       await until(async () => (await t.settle(), t.cards.cardsOf("s1")[0]!.revisions.some((r) => r.kind === "behaviour-differs")), "behaviour-differs revision");
-      assert.equal(t.cards.cardsOf("s1")[0]!.conflict!.ours, "master returns 2");
-      await q.answer(c.entry.id, "send-back");
-      await t.settle();
+      const card = t.cards.cardsOf("s1")[0]!;
+      assert.equal(card.conflict!.ours, "master returns 2");
+      assert.equal(card.decision?.question, "Should it return 2 or 3?");
+      assert.deepEqual(card.decision?.choices, ["Return 2", "Return 3"]);
+      assert.deepEqual(card.decision?.actions, [], "no resolution commit: nothing to Accept");
+      assert.ok(card.decision?.heldNote?.text, "the queue's note is held, not sent");
       await t.cards.sync(await q.view());
       await t.settle();
-      const kinds = t.cards.cardsOf("s1")[0]!.revisions.map((r) => r.kind);
-      assert.deepEqual(kinds, ["approved", "behaviour-differs", "sent-back"]);
-      assert.equal(t.wakes.length, 1);
-      assert.match(t.wakes[0]!.text, /^\[merge-queue\] The user sent feat\/c back/);
+      assert.deepEqual(t.cards.cardsOf("s1")[0]!.revisions.map((r) => r.kind), ["approved", "behaviour-differs"], "one revision for the decision");
+      assert.equal(t.wakes.length, 0, "nothing goes to the chat until the user answers");
+      await assert.rejects(q.answer(c.entry.id, "accept"), /no proposed resolution/);
     } finally {
       await t.k.done();
     }
   });
 
-  test("can't tell whose failure: a waiting revision with Land Anyway / Send Back, no turn and no line; Send Back starts one marked turn", async () => {
+  test("can't tell whose failure: one decision revision with Land Anyway / Try Again, no turn and no line; Try Again requeues without a try", async () => {
     const t = cardKit();
     try {
       const q = await t.k.q();
-      t.k.run.set(() => ({ verdict: "unattributed", why: "Unit tests failed on the merge and on master alone" }));
+      let calls = 0;
+      t.k.run.set(() => (++calls === 1 ? { verdict: "unattributed", why: "Unit tests failed on the merge and on master alone" } : { verdict: "passed" }));
       t.k.repo.branch("feat/u", { "u.txt": "u\n" });
       const u = await q.add({ branch: "feat/u", by: "land-button", session: "s1" });
       await until(async () => (await t.k.entry(u.entry.id)).state === "unattributed", "unattributed");
@@ -345,15 +401,14 @@ describe("a branch's card in its own chat", () => {
       const card = t.cards.cardsOf("s1")[0]!;
       assert.equal(card.state, "unattributed");
       assert.equal(card.reason, "Unit tests failed on the merge and on master alone");
+      assert.deepEqual(card.decision?.actions, ["land-anyway", "try-again"]);
+      assert.equal(card.decision?.kind, "unattributed");
       assert.equal(t.wakes.length, 0, "waiting for the user: no turn");
-      assert.equal(t.cards.noteFor("s1", null), null, "and no hidden line");
-      await q.answer(u.entry.id, "send-back");
-      await t.settle();
-      await t.cards.sync(await q.view());
-      await t.settle();
-      assert.deepEqual(t.cards.cardsOf("s1")[0]!.revisions.map((r) => r.kind), ["approved", "unattributed", "sent-back"]);
-      assert.equal(t.wakes.length, 1);
-      assert.match(t.wakes[0]!.text, /^\[merge-queue\] The user sent feat\/u back: a check failed on the merge and on master alone, and couldn't say whose failure it is/);
+      assert.equal(outcomeNote(t.cards, "s1"), null, "and no hidden line");
+      await q.answer(u.entry.id, "try-again");
+      await until(async () => (await t.k.entry(u.entry.id)).state === "landed", "landed on the second run");
+      assert.equal((await t.k.entry(u.entry.id)).tries?.used ?? 0, 0, "Try Again uses no try");
+      assert.equal(t.wakes.length, 0);
     } finally {
       await t.k.done();
     }
@@ -409,7 +464,7 @@ describe("a branch's card in its own chat", () => {
   });
 
 
-  test("drafts changed: a revision and a hidden line, never a turn", async () => {
+  test("drafts changed after the Land with no request: one Drafts changed decision on the card (the user's), one notice, never a turn", async () => {
     let hash = "h1";
     const t = cardKit({ deps: { draftsHash: () => ({ hash, names: ["x"] }) } });
     try {
@@ -419,11 +474,17 @@ describe("a branch's card in its own chat", () => {
       const { entry } = await q.add({ branch: "feat/d", by: "land-button", session: "s1" });
       hash = "h2";
       await q.resume();
-      await until(async () => (await t.k.entry(entry.id)).state === "drafts-changed", "drafts-changed");
+      // q8: no request of the queue's was answered for them, so they are the user's to decide.
+      await until(async () => (await t.k.entry(entry.id)).state === "needs-user", "waits for the user");
+      assert.equal((await t.k.entry(entry.id)).decision?.kind, "drafts-changed");
       await until(async () => (await t.settle(), t.cards.cardsOf("s1")[0]!.revisions.length === 2), "revision");
-      assert.equal(t.cards.cardsOf("s1")[0]!.revisions[1]!.kind, "drafts-changed");
-      assert.deepEqual(t.wakes, []);
-      assert.match(t.cards.noteFor("s1", null)!, /spec drafts changed since the user approved it/);
+      const card = t.cards.cardsOf("s1")[0]!;
+      assert.equal(card.revisions[1]!.kind, "decision", "the card moves down as the decision");
+      assert.equal(card.decision?.kind, "drafts-changed");
+      assert.deepEqual(card.decision?.actions, ["land", "remove"]);
+      assert.equal(t.k.notices.filter((n) => n.kind === "decision").length, 1, "one notice");
+      assert.ok(!t.k.notices.some((n) => n.kind === "drafts-changed"), "no separate drafts-changed line");
+      assert.deepEqual(t.wakes, [], "never a turn for the chat");
     } finally {
       await t.k.done();
     }
@@ -443,6 +504,71 @@ describe("a branch's card in its own chat", () => {
     } finally {
       await t.k.done();
     }
+  });
+});
+
+describe("a blocking review's own card", () => {
+  test("a worker's review card stands in the chat that runs it, at that chat's end, once; the queue card points to it; a notes-only landing tells the model its notes whole", async () => {
+    const t = cardKit({ homeOf: async (s) => (s === "s1" ? { id: "p1", path: "/sessions/p1.jsonl" } : null) });
+    try {
+      const tip = sh(t.k.repo.root, "rev-parse", "master");
+      const findings = [{ kind: "hack" as const, file: "a.ts", line: 3, text: "a flag only tests read" }, { kind: "naming" as const, text: "x says nothing" }];
+      let runs = 0;
+      t.k.run.set(() =>
+        ++runs === 1
+          ? { verdict: "review-flagged", review: { verdict: "blocking", summary: "Not yet.", findings, text: "Not yet.", commit: tip, at: "t" } }
+          : { review: { verdict: "notes", summary: "Fine.", findings: [findings[1]!], text: "Fine.", commit: tip, at: "t" } },
+      );
+      const q = await t.k.q();
+      const b = t.k.repo.branch("feat/w", { "w.txt": "w\n" });
+      const { entry } = await q.add({ branch: "feat/w", by: "land-button", session: "s1" });
+      await until(async () => (await t.k.entry(entry.id)).requests?.length === 1, "sent (no thread)");
+      await t.settle();
+      t.chat.last = "e9";
+      await q.republish();
+      await t.settle();
+      const [rc, ...more] = t.cards.reviewsOf("p1");
+      assert.equal(more.length, 0, "once");
+      assert.equal(t.cards.reviewsOf("s1").length, 0, "not in the worker's own session");
+      assert.deepEqual({ state: rc!.state, after: rc!.after, findings: rc!.findings, kept: rc!.reviewed.kept, try: rc!.try }, { state: "fixing", after: "e1", findings, kept: true, try: 1 });
+      const card = t.cards.cardsOf("s1").find((c) => c.entry === entry.id)!;
+      assert.deepEqual(card.reviewFound, { card: rc!.id, session: "p1", path: "/sessions/p1.jsonl", count: 2 });
+      assert.ok(!(card.failures ?? []).some((f) => f.step === "review"));
+
+      const e = await t.k.entry(entry.id);
+      const fix = t.k.repo.commitOn(b.path, { "w.txt": "fixed\n" }, "fix");
+      await q.respond(e.requests![0]!.id, "s1", { answer: "fixed", commit: fix, text: "x" });
+      await until(async () => (await t.k.entry(entry.id)).fix !== undefined, "fix recorded");
+      await q.fixRuling(entry.id, e.requests![0]!.id, true, "");
+      await landed(t.k, entry.id);
+      await t.settle();
+      await q.republish();
+      await t.settle();
+      assert.equal(t.cards.reviewsOf("p1")[0]!.state, "passed");
+      assert.equal(t.cards.cardsOf("s1").find((c) => c.entry === entry.id)!.reviewFound, undefined);
+      assert.ok(outcomeNote(t.cards, "s1")!.includes("Review notes: Fine.\n- [naming] x says nothing"));
+    } finally {
+      await t.k.done();
+    }
+  });
+});
+
+describe("a review card's reviewed commit", () => {
+  test("is read as kept or gone at each read, not only when the queue revises the card", async () => {
+    const dir = scratchRoot("rc-kept-");
+    const present = new Set(["t".repeat(40), "b".repeat(40)]);
+    let now = 0;
+    const cards = new MergeCards({
+      dir,
+      now: () => now,
+      git: async (args) => ({ code: args[0] === "cat-file" && present.has(String(args[2]).replace("^{commit}", "")) ? 0 : 1, stdout: "", stderr: "" }),
+    });
+    const rec = { id: "mq_1:mr_1", run: "mr_1", commit: "c".repeat(40), tip: "t".repeat(40), base: "b".repeat(40), summary: "S.", findings: [{ kind: "hack" as const, text: "x" }], try: 1, of: 3, state: "passed" as const, at: "t", updatedAt: "t" };
+    await cards.reviews({ id: "mq_1", session: "s1", project: "p", branch: "feat/x", target: "master", reviews: [rec] } as unknown as MergeEntry, "/repo");
+    assert.equal((await cards.reviewsRead("s1"))[0]!.reviewed.kept, true);
+    present.delete("t".repeat(40)); // gone at a gc: no queue event, and a passed card is never revised again
+    now += 60_000;
+    assert.equal((await cards.reviewsRead("s1"))[0]!.reviewed.kept, false);
   });
 });
 
@@ -485,15 +611,16 @@ describe("no fake message is left", () => {
     // Readiness's ready-to-land messages ask the chat to act: marked wakes too, never a "Sova: …" bubble.
     const server = new URL("../", dir);
     for (const f of ["merge-readiness.ts", "ready-to-land.ts"]) assert.doesNotMatch(readFileSync(new URL(f, server), "utf8"), /[`"']Sova(?: \([^)]*\))?: /, `${f}: a "Sova: …" text`);
-    assert.match(readFileSync(new URL("merge-readiness.ts", server), "utf8"), /nudge: async \(path, text\) => \(await import\("\.\/merge-queue\/wake"\)\)\.sendQueueWake\(path, text\)/);
+    assert.match(readFileSync(new URL("merge-readiness.ts", server), "utf8"), /nudge: async \(path, text, info\) => \(await import\("\.\/merge-queue\/wake"\)\)\.sendQueueWake\(path, text, undefined, info\)/);
     // The wake carries the "another session" marker the worktree tool's land refuses, in old chats too.
     // One name each, shared with the page (shared/senders.ts), and the worktree tool's own spelling agrees.
     assert.equal(MERGE_QUEUE_SENDER.sessionId, MERGE_QUEUE_SESSION);
-    // landing.ts's NOT_TYPED regex literal spells the prefix with its brackets escaped: \[merge-queue\]
-    const escaped = MERGE_QUEUE_SENT_PREFIX.replace(/[[\]]/g, (c) => `\\${c}`);
-    assert.equal(escaped, "\\[merge-queue\\]");
-    assert.ok(readFileSync(new URL("../../pi-config/extensions/worktrees/landing.ts", dir), "utf8").includes(escaped), "the worktree tool refuses the same prefix");
+    // The worktree tool refuses a message with the same prefix, whatever follows it; the same words typed still pass.
+    for (const t of [`${MERGE_QUEUE_SENT_PREFIX} land it`, `${MERGE_QUEUE_SENT_PREFIX}\nmerge it`]) assert.equal(typedGoAhead(t), null, t);
+    assert.ok(typedGoAhead("land it"), "the check can tell the two apart");
     const wake = read("wake.ts");
-    assert.match(wake, /sentBySession: \{ \.\.\.MERGE_QUEUE_SENDER \}/);
+    // Every request goes onto the merge queue's chat queue (§chat.merge-queue/requests), never as a chat message.
+    assert.match(wake, /pushMergeRequest\(/);
+    assert.doesNotMatch(wake, /acquireChatHandle|\.send\(\{/);
   });
 });

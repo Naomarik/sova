@@ -35,7 +35,7 @@ export function worktreeStatus(w: Pick<SessionWorktreeInfo, "status" | "merge" |
   // Tracked active, folder gone: what its work came to (§chat.worktrees/pane), never "Active".
   switch (w.gone) {
     case "merged":
-      return { label: "Merged", tone: "success", title: "Its branch is in the main branch and its folder was cleaned up. This session still lists it." };
+      return { label: "Landed", tone: "success", title: "Its branch is in the main branch and its folder was cleaned up. This session still lists it." };
     case "unmerged":
       return { label: "Removed", tone: "warn", title: "The folder is gone and its branch has commits the main branch doesn't." };
     case "unknown":
@@ -54,7 +54,7 @@ export function worktreeChips(
   const out: WorktreeChip[] = [];
   if (!w.exists) {
     const label = w.status ? worktreeStatus({ status: w.status, merge: w.merge, mergedInto: w.mergedInto, gone: w.gone }).label : "";
-    if (label === "Merged") out.push({ label: "Cleaned up", tone: "neutral", title: "The folder was removed after its work was merged." });
+    if (label === "Merged" || label === "Landed") out.push({ label: "Cleaned up", tone: "neutral", title: "The folder was removed after its work was merged." });
     else if (label !== "Removed") out.push({ label: "Removed", tone: "neutral", title: "The directory is gone. The session still lists it." });
   }
   if (w.hasAgentDir) out.push({ label: ".agent", tone: "neutral", title: "Has its own agent dir: a worker can run on it with useWorktreeConfig." });
@@ -121,8 +121,8 @@ export function readinessReason(w: Pick<SessionWorktreeInfo, "readiness">): stri
 /** A row offers Review Changes (§chat.changes/entry): an active worktree whose folder is there,
     unless its readiness says the branch has no commit of its own (the fact behind "no commits
     yet"). Commits that cancel out keep it; until readiness is read it shows. */
-export function canReviewChanges(w: Pick<SessionWorktreeInfo, "status" | "exists" | "readiness">): boolean {
-  return w.status === "active" && w.exists && !w.readiness?.noCommits;
+export function canReviewChanges(w: Pick<SessionWorktreeInfo, "status" | "exists" | "readiness"> & Partial<Pick<SessionWorktreeInfo, "gone">>): boolean {
+  return w.status === "active" && w.exists && !w.gone && !w.readiness?.noCommits;
 }
 
 /** The Session tab's line for a branch that tracks none: the section stays, and says so. */

@@ -15,7 +15,7 @@ import type { WorkerChoice } from "../shared/protocol";
 import type { TeamDefaults, TeamDefaultsInfo, TeamDefaultsSaveResult } from "../shared/team-defaults";
 import { delegateOptions, verifySlots, type DelegateSources } from "./delegate";
 
-// Team defaults (legacy file; Settings → Subagents now edits teams per profile): the standing coordinator and monitor every new team gets. The file
+// Team defaults (legacy file; Settings → Profiles now edits teams per profile): the standing coordinator and monitor every new team gets. The file
 // (~/.pi/agent/team-defaults.json) and what the members do are the subagents extension's
 // (pi-config/extensions/subagents/team-defaults.ts); the offer and the save check are Delegate's
 // (server/delegate.ts), since each member's model is the same backend · model · effort tuple. The
@@ -34,12 +34,9 @@ const toWire = (f: TeamDefaultsFile): TeamDefaults => ({
   handover: { ...f.handover },
 });
 
-/** The built-in values with both members off: what a missing file means, and what the screen starts from. */
+/** The built-in values: what a missing file means, and what the screen starts from. */
 export function teamDefaultsOff(): TeamDefaults {
-  const off = toWire(DEFAULT_TEAM_DEFAULTS);
-  off.coordinator.enabled = false;
-  off.monitor.enabled = false;
-  return off;
+  return toWire(DEFAULT_TEAM_DEFAULTS);
 }
 
 export function teamDefaultsInfo(agentDir = agentRoot()): TeamDefaultsInfo {

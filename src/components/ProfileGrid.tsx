@@ -14,7 +14,7 @@ const focusAfterPick = new Map<string, string>();
 const CUSTOM_KEY = "custom";
 
 /**
- * The empty screen's profile cards: one radio group, My settings first under no label, a card per
+ * The empty screen's profile cards: one radio group, Off first under no label, a card per
  * profile in the picker's groups, then Custom…. Arrow keys move focus between cards (Home and End
  * to the ends); Enter, Space or a click picks. A card that can't be used here is disabled with its
  * reason, and picking it does nothing. A One at a time profile live in another session is a link
@@ -27,8 +27,12 @@ export function ProfileGrid(props: {
   /** The checked card's key: a profile's, CUSTOM for a board pick. */
   checked: string | null;
   subagents: readonly { id: string; footprint: string; models?: number }[];
-  /** My settings' caption (mySettingsCaptionParts). */
+  /** Off's caption ("Keeps the chat's own model"). */
   mineCaption: CardCaption;
+  /** What Off keeps, in words, added to its accessible name and hover text. */
+  mineKeeps?: string;
+  /** This computer's default profile: its card carries a Default chip. */
+  isDefault?: (p: ListedProfile) => boolean;
   /** The live session holding a One at a time profile elsewhere, or null. */
   holder: (p: ListedProfile) => { id: string; title: string } | null;
   unusable: (p: ListedProfile) => string | null;
@@ -117,7 +121,9 @@ export function ProfileGrid(props: {
                           checked={props.checked === p.key}
                           tabbable={tabbable() === p.key}
                           off={!!props.unusable(p)}
+                          {...(s.id === "mine" && props.mineKeeps ? { keeps: props.mineKeeps } : {})}
                           chips={[
+                            ...(props.isDefault?.(p) ? [{ text: "Default" }] : []),
                             ...(p.approval === "needed" ? [{ text: "Needs approval", tone: "warn" as const }] : []),
                             ...(p.singleton ? [{ text: "One at a time" }] : []),
                           ]}
@@ -159,6 +165,8 @@ function ProfileTile(props: {
   caption: CardCaption;
   checked: boolean;
   tabbable: boolean;
+  /** Off's "what it keeps": added to the accessible name and the hover text. */
+  keeps?: string;
   /** It can't be picked here: its caption says why. */
   off: boolean;
   chips: { text: string; tone?: "warn" }[];
@@ -173,7 +181,7 @@ function ProfileTile(props: {
       aria-checked={props.checked}
       aria-disabled={props.off ? "true" : undefined}
       tabIndex={props.tabbable ? 0 : -1}
-      title={captionWords(props.caption) || props.label}
+      title={[captionWords(props.caption) || props.label, props.keeps].filter(Boolean).join(" · ")}
       data-key={props.key}
       onClick={() => props.onPick()}
     >
@@ -185,6 +193,7 @@ function ProfileTile(props: {
         </Show>
       </span>
       <Caption caption={props.caption} />
+      <Show when={props.keeps}>{(k) => <span class="visually-hidden">. {k()}</span>}</Show>
       <Show when={props.chips.length}>
         <span class="profile-tile-chips">
           <For each={props.chips}>{(c) => <span class={`chip${c.tone === "warn" ? " chip-warn" : ""}`}>{c.text}</span>}</For>

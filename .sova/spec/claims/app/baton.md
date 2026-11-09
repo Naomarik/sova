@@ -508,7 +508,9 @@ Tour pictures and public explanation follow the same active-branch, offer cut an
   A reply's markdown reads as §app.session-share/reading describes.
 - **Drawings.** A `vis` fence in a reply whose kind is `chart`, `flow`, `matrix`, `timeline`,
   `tree`, `steps`, `wireframe`, `layers`, `state` or `sequence` is drawn as in the chat
-  (§chat.markdown/visuals): the same figure, title, notes and caption, with no Source or Copy. A
+  (§chat.markdown/visuals): the same figure, title, notes and caption, with no Source or Copy; a
+  chart carries the same view switch and Log, Sort and % toggles as in the chat, its reader's
+  choices kept only in that browser tab (§chat.markdown/vis-chart-views). A
   `vis svg` is drawn as a still image (an `<img>` of the parsed document, never the document
   itself in the page) in that same figure, title above and caption below, so none of its script
   or links run and it fetches nothing. It shows at its own size (a `viewBox` width with no `width`

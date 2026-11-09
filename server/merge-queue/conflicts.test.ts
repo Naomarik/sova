@@ -2,9 +2,10 @@
 import { describe, test } from "node:test";
 import { expect } from "./testing/expect";
 import { execFileSync } from "node:child_process";
-import { chmodSync, mkdirSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { scratchRoot } from "../test-scratch";
+import { gitProc } from "./copy";
 import { conflictRegions, conflictsBetween, hunksInside, hunksOf, sanityCheck } from "./conflicts";
 
 const ENV = { ...process.env, GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@example.invalid", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@example.invalid" };
@@ -124,5 +125,36 @@ describe("sanityCheck", () => {
     expect((await sanityCheck(r.root, { base: r.base, commit: r.commit, resolution: wrong })).ok).toBe(false);
     expect(side).toBeTruthy();
     expect((await sanityCheck(r.root, { base: r.base, commit: r.commit, resolution: "f".repeat(40) })).why).toMatch(/isn't a commit/);
+  });
+});
+
+describe("conflictsBetween", () => {
+  test("a merge driver with a relative command runs as in a real merge: the probe runs in the checkout", async () => {
+    const root = join(scratchRoot("mq-conf-drv-"), "r");
+    mkdirSync(join(root, "scripts"), { recursive: true });
+    const git = (...a: string[]) => execFileSync("git", ["-c", "commit.gpgsign=false", ...a], { cwd: root, encoding: "utf8", env: ENV }).trim();
+    git("init", "-q", "-b", "master");
+    writeFileSync(join(root, ".gitattributes"), "*.md merge=mine\n");
+    writeFileSync(join(root, "scripts", "drv.sh"), "cat \"$3\" > \"$2\"\n"); // takes theirs: no conflict
+    writeFileSync(join(root, "x.md"), "a\n");
+    git("add", "-A");
+    git("commit", "-qm", "1");
+    git("checkout", "-qb", "b");
+    writeFileSync(join(root, "x.md"), "b\n");
+    git("commit", "-qam", "2");
+    git("checkout", "-q", "master");
+    writeFileSync(join(root, "x.md"), "c\n");
+    git("commit", "-qam", "3");
+    git("config", "merge.mine.driver", "sh scripts/drv.sh %O %A %B");
+    expect(await conflictsBetween(root, "master", "b")).toMatchObject({ files: [] });
+    expect(readdirSync(root).filter((f) => f.startsWith(".merge_file_"))).toEqual([]);
+  });
+
+  test("git cut off at its time limit is sent SIGTERM first (it removes its temp files then), not SIGKILL", async () => {
+    const dir = scratchRoot("mq-conf-term-");
+    // A git alias stands in for a git that takes too long; it says when it got SIGTERM.
+    const r = await gitProc(dir, ["-c", "alias.hang=!trap 'echo cleaned; exit 3' TERM; while :; do sleep 0.05; done", "hang"], { timeoutMs: 1_000 });
+    expect(r.timedOut).toBe(true);
+    expect(r.out).toContain("cleaned");
   });
 });

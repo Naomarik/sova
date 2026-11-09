@@ -2,6 +2,7 @@
 // (WorktreesControl: needs you > needs a fix > ready > checking > queued > "N worktrees"), from the same rule
 // (merge-queue.ts rowKeyOf, queueRow, headline) over the same rows. Pure: no Solid, no DOM.
 import type { SessionBranchRow, SessionSummary } from "../../shared/protocol";
+import { branchInPlace, placeOf } from "./branch-place";
 import { headline, queueRow, type HeadlineKind, type QueueRow, type QueueRowInput } from "./merge-queue";
 import { afterMergeLines, branchStatusLine } from "./readiness";
 
@@ -36,9 +37,11 @@ export interface RowBranchStatus {
   lines: string[];
 }
 
-/** One branch in the Worktrees window's words: "feat/login: Needs a fix · <reason>". */
+/** One branch in the Worktrees window's words: "feat/login in AmalMoney: Needs a fix · <reason>"; `branch` comes with its place. */
 export const branchLine = (branch: string, r: Pick<QueueRow, "label" | "reason">): string => {
-  const reason = r.reason?.replace(/\s*\n\s*/g, " · ").trim();
+  const whole = r.reason?.replace(/\s*\n\s*/g, " · ").trim();
+  // A readiness reason often opens with the chip's own word ("Ready to merge · checks passed"): said once.
+  const reason = whole?.startsWith(`${r.label} · `) ? whole.slice(r.label.length + 3) : whole === r.label ? undefined : whole;
   return `${branch}: ${r.label}${reason ? ` · ${reason}` : ""}`;
 };
 
@@ -49,6 +52,6 @@ export function rowBranchStatus(s: Pick<SessionSummary, "branches" | "readiness"
   const h = headline(rows);
   if (!h) return null;
   const status = branchStatusLine(s.readiness?.status);
-  const lines = [h.text, ...inputs.map((w, i) => branchLine(w.branch, rows[i]!)), ...(status ? [status] : []), ...afterMergeLines(s.readiness)];
+  const lines = [h.text, ...inputs.map((w, i) => branchLine(branchInPlace(w.branch, placeOf(s.branches?.[i] ?? {})), rows[i]!)), ...(status ? [status] : []), ...afterMergeLines(s.readiness)];
   return { kind: h.kind, n: h.n, text: h.text, ...STATUS_MARK[h.kind], lines };
 }

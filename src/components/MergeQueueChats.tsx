@@ -4,7 +4,7 @@
 import { createSignal, For, Show } from "solid-js";
 import type { MergeQueueChat, MergeQueueView } from "../../shared/merge-queue";
 import { relativeTime } from "../lib/format";
-import { answerThread, clearQueueChats, startFreshThread } from "../lib/merge-queue-client";
+import { clearQueueChats, startFreshThread } from "../lib/merge-queue-client";
 import { clearableRows, historyRows, historyWords, lastEventWords, memoryWords, reviewersOfRun, reviewerLinkWords, reviewingWords, threadStateChip, type HistoryFilter } from "../lib/merge-queue-chats";
 import { projectSessionHref } from "../lib/projects-route";
 import { type ChatOf, chatHref, useAct } from "./MergeQueueTab";
@@ -32,7 +32,6 @@ export function ReviewRunningButton(props: { projectId: string; view: MergeQueue
 export function MergeThreadCard(props: { projectId: string; view: MergeQueueView; chatOf?: ChatOf; onChanged(): void }) {
   const act = useAct(props.onChanged);
   const [confirm, setConfirm] = createSignal(false);
-  const [answer, setAnswer] = createSignal("");
   const t = () => props.view.thread;
   return (
     <Show
@@ -78,27 +77,12 @@ export function MergeThreadCard(props: { projectId: string; view: MergeQueueView
                   <Show
                     when={a().askedIn}
                     fallback={
-                      <form
-                        class="mq-thread-answer"
-                        onSubmit={(e) => {
-                          e.preventDefault();
-                          const text = answer().trim();
-                          if (text) void act.run("answer", () => answerThread(props.view.root, a().id, text), "Sent your answer to the merge thread.").then(() => setAnswer(""));
-                        }}
-                      >
-                        <label class="field-label" for="mq-thread-answer">
-                          Your answer
-                        </label>
-                        <textarea id="mq-thread-answer" class="input" rows={2} value={answer()} onInput={(e) => setAnswer(e.currentTarget.value)} />
-                        <span class="button-row">
-                          <button type="submit" class="button button-sm button-primary" disabled={!answer().trim() || !!act.busy()}>
-                            Send Answer
-                          </button>
-                          <a class="button button-sm button-ghost" href={chatLink(props.projectId, th())}>
-                            Answer in Merge Thread
-                          </a>
-                        </span>
-                      </form>
+                      // No branch chat can carry it: answered in the merge thread's own message box, never a text box here.
+                      <span class="button-row">
+                        <a class="button button-sm button-primary" href={chatLink(props.projectId, th())}>
+                          Answer in Merge Thread
+                        </a>
+                      </span>
                     }
                   >
                     {(where) => (
@@ -112,7 +96,7 @@ export function MergeThreadCard(props: { projectId: string; view: MergeQueueView
             </Show>
             <Show when={confirm()}>
               <div class="mq-confirm" role="group" aria-label="Start a fresh merge thread">
-                <p class="field-hint">This thread is archived once its turn ends, and its memory of past landings goes with it. The next event starts a new one. The old thread stays readable in History.</p>
+                <p class="field-hint">This thread is archived once its turn ends, and its memory of past landings goes with it. The next event starts a new one. The old thread stays readable in Queue chats.</p>
                 <span class="button-row">
                   <button type="button" class="button button-sm button-ghost" onClick={() => setConfirm(false)}>
                     Cancel
@@ -177,7 +161,7 @@ const FILTERS: { id: HistoryFilter; label: string }[] = [
   { id: "reviews", label: "Reviews" },
 ];
 
-/** The History section: every chat the queue has had, each opening its chat; Clear and Clear All… delete for good. */
+/** The Queue chats tab: every chat the queue has had, each opening its chat; Clear and Clear All… delete for good. */
 export function QueueHistory(props: { projectId: string; view: MergeQueueView; onChanged(): void }) {
   const act = useAct(props.onChanged);
   const [filter, setFilter] = createSignal<HistoryFilter>("all");
@@ -188,8 +172,9 @@ export function QueueHistory(props: { projectId: string; view: MergeQueueView; o
     <Show when={(props.view.chats ?? []).length > 0}>
       <div class="stack-2 mq-history">
         <div class="spread">
-          <h3 class="text-heading-s" id="mq-history-title">
-            History
+          {/* It is the Queue chats tab: the tab names it, so its title is for a screen reader only. */}
+          <h3 class="visually-hidden" id="mq-history-title">
+            Queue chats
           </h3>
           <div class="button-row">
             <div class="segmented" role="group" aria-label="Show">

@@ -382,6 +382,11 @@ export async function viewCodeAt(src: Source, have?: string | null, waitMs = 0, 
   return entry.building ? await entry.building : (entry.build ?? current);
 }
 
+/** What is active changed: every page waiting on a view asks again now, and hears the new state. */
+export function releaseViewWaiters(): void {
+  for (const e of views.values()) for (const done of [...e.waiters]) done();
+}
+
 /** Tests: stop watching every view. */
 export function resetCardViewsForTest(): void {
   for (const k of [...views.keys()]) drop(k);

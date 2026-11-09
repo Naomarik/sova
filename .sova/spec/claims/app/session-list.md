@@ -454,7 +454,9 @@ label a person reads says "sessions pane".
   and reply error, before it cuts any of them, so no part of one is ever listed.
   `Untitled` renders in `--color-ink-muted`. A session with a profile has its icon just before the
   title, in accent ink, with "Profile: {label}" as its `title` (§chat.profiles/after-first-message).
-- **Draft rows.** An empty husk — a session whose file holds no user message anywhere — is never
+- **Draft rows.** An empty husk — a session whose file holds no user message and no command run
+  from shell mode anywhere (§chat.shell-mode/card: a chat holding only commands is listed, as `Untitled`,
+  and the empty-husk cleanup keeps it) — is never
   listed, with two exceptions: **a husk with a stored draft is** (§chat.composer/behavior, Drafts),
   and so is a husk that carries a profile (§chat.profiles/singleton), as an ordinary `Untitled` row. The server sends it
   with `SessionSummary.draftPreview`, the draft's first non-empty line cut to about 80 characters.
@@ -513,12 +515,12 @@ label a person reads says "sessions pane".
 - **Row line 3.** The session's **branch status leads the facts after the time**: the same status
   its chat shows in the composer's run-status row (§chat.composer/worktrees-control), worked out by
   the same rule from the rows the list last read. A row says what its chat says once it has caught
-  up, and it can lag its chat only as far as "How far a row can lag its chat" below says. A sent-back
-  branch counts as needing a fix only while its chat's row reads Needs a fix: never once the queue
-  has settled that entry, once the branch reads ready again at a newer commit (or, sent back for its
-  drafts, at the same commit once they changed and fit), once it is removed from the queue, or once
-  it is merged or its worktree folder removed (§chat.composer/worktrees-control "Land comes back
-  once its chat fixes it"). It is the
+  up, and it can lag its chat only as far as "How far a row can lag its chat" below says. A branch
+  counts as needing a fix only while its chat's row reads back with the chat, approved and waiting
+  for a fix, or paused: never once its fix is checked and it is back in line, once it waits for the
+  user's decision (that is needs you), once it is removed from the queue, or once it is merged or
+  its worktree folder removed (§chat.composer/worktrees-control "Your Land stands while its chat
+  fixes it"). It is the
   control's headline, the first that holds: needs you, needs a fix, ready, checking, queued, else
   the fallback, "{n} worktrees". Ready means exactly what it means there (a served branch Ready to
   land, an unserved one Ready to merge), and the branches are counted as the chat counts them:
@@ -541,8 +543,9 @@ label a person reads says "sessions pane".
   The figure is the headline's own number: 2 for "2 ready", 1 for "1 checking", the count of
   branches for the fallback. The symbol and figure are `aria-hidden`. The status's `title`, and the
   row link's accessible name, carry it in words: the chat's words first ("2 ready", "1 needs a
-  fix"), then each branch in the Worktrees window's words, its branch, state and detail or reason
-  ("feat/x: Queued · 2nd", "feat/y: Needs a fix · {reason}"), then the after-merge lines
+  fix"), then each branch in the Worktrees window's words, its branch in its place
+  (§chat.worktrees/place), state and detail or reason ("feat/x in AmalMoney: Queued · 2nd", "feat/y
+  in ~/code/tools: Needs a fix · {reason}"), then the after-merge lines
   the row carried before: the branch status line and each routine follow-up in words
   (§chat.worktrees/readiness). The status replaces the "{merged} of {total}" count rows used to
   show; nothing on the row counts merged worktrees any more. A session with no such worktree shows
@@ -840,6 +843,9 @@ new.
   session rows, held acts first and soonest on top, each with **Cancel** (§app.project-overseer/holds),
   a standalone project's held act (one with no organization, such as the release power's waiting
   period, §app.release/power) included.
+- **A question stays a question.** When a session's newest item is a waiting card or offer and it also has
+  open alignment questions, its row is still that question: the chip reads Question and that sentence comes
+  first. On its own, or beside anything else, a card or offer row reads as it did.
 - **Every row reads the same**, here and in the Organizations region's Needs you
   (§app.session-list/organizations), whatever it is about (words: §design.copy-deck/sidebar):
   - the **name**, muted: the project, "{org} · {project}" for an organization's, else the folder's last
@@ -2377,7 +2383,8 @@ sessions in bulk. It uses `POST /api/sessions/cleanup` (`cleanupSessions` in `sr
 
 - **Actions.** `{ mode: "age", minAgeDays: 7 }`, `{ mode: "age", minAgeDays: 30 }`, and
   `{ mode: "husks" }` (sessions nothing was ever sent in — drafted ones included, and deleting
-  one drops its stored draft too). The server decides what matches and
+  one drops its stored draft too; a chat holding or running a command from shell mode is none, and
+  is kept). The server decides what matches and
   what it protects. The UI shows its numbers and never counts on its own. None of them ever
   matches a session in an attached organization's workspace `sessions/` (baton transcripts,
   project-overseer conversations), however old or empty; those are left out silently and are not
@@ -2473,7 +2480,9 @@ transcript is gone.
 ## §app.session-list/archive-org-guard — Archiving never deletes organization sessions
 
 Archiving an empty husk (a session nothing was ever sent in, with no stored draft) deletes its
-file, since the list never shows a husk and an archive mark on it could never render. A session
+file, since the list never shows a husk and an archive mark on it could never render. A chat that
+holds a command run from shell mode, or is running one, is no husk: it is archived, and the command
+its close stops is kept (§chat.shell-mode/lifecycle). A session
 file inside an attached organization's workspace `sessions/` is the exception: `POST
 /api/sessions/archive` never deletes one. A fresh baton still waiting on its first link is a husk
 by shape, and the organization's statecharts name those files, so deleting one leaves a
@@ -2793,3 +2802,14 @@ next listing afresh: no caller joins or reuses a list built before them, except 
 above, which the further one then follows. So a caller that archives,
 renames, creates a session or gives one a One at a time profile sees that change in the very next
 listing it asks for, and so does the One at a time check that follows it.
+
+## §app.session-list/first-listing — A cold listing reads a few files at a time
+
+A listing that has session files to read (the first one after a start, a full build, a file the
+cache doesn't hold; §app.session-list/listing-reuse) reads at most 24 of them at once, never every
+file together, and its scan for worker marks has a limit of 24 of its own, so the memory a cold
+listing takes stays bounded however many sessions there are. It reads every session that isn't
+archived first: an archived session's file is opened only once every other session's file has been
+read, and the worker-mark scan follows the same order. A listing still answers once, with every
+session, archived ones included, once all are read: no caller ever gets a list with the archived
+ones missing.

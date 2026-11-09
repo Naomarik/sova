@@ -15,7 +15,7 @@ import type {
 } from "../shared/protocol";
 import type { PeerStateView } from "../shared/mesh-access";
 import { hostState, WIRE_AREAS, type WireAreas } from "../shared/wire-areas";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { fixedNameRefusal } from "../shared/fixed-names";
 import { relativeTime } from "../pi-config/extensions/stamp/format.ts";
@@ -62,8 +62,9 @@ import { approvalRefusal } from "./profile-trust";
 import { singletonHolder } from "./session-profile";
 import { keyOf, singletonRunningText, titleCase } from "../shared/profiles";
 import { MEMORY_CODING_REFUSAL } from "../shared/memory";
-import { alignDropRefusal, codingSpecRefusal, SPEC_ALWAYS_ON } from "./project-coding-mode";
-import { projectCodingIds } from "./project-sessions";
+import { alignDropRefusal } from "./project-coding-mode";
+import { modelsOnly, profileLine, profileSwitchWords, unknownProfile, type JoinedRow } from "./overseer-profiles";
+import { findJoined } from "./joined-profiles";
 import { listProjects } from "./projects/spaces";
 import { copyApproval, copyItem, leftoverItem, liveLeftoverHost, nameOr, realCopyRowHost, starterWorking } from "./overseer-copies";
 import type { ClickChoice } from "../shared/overseer-card";
@@ -213,6 +214,8 @@ export interface OverseerToolHost extends IdeaToolHost {
   };
   /** The roundup's own git reads (overseer-roundup-git.ts). Absent: none. */
   roundupGit?: Pick<RoundupGit, "facts">;
+  /** The words of the place of the branch whose folder is (or was) `path` (§chat.worktrees/place). */
+  branchPlace?: (path: string) => Promise<string | undefined>;
   /** This server's start (ms), for the roundup's restart questions. */
   serverStart?: number;
   /** The worktree cleanup's ledger (server/removed-worktrees.ts readLedger). Absent: empty. */
@@ -382,10 +385,22 @@ export class TurnLimits {
     if (!this.file) return;
     try {
       mkdirSync(dirname(this.file), { recursive: true });
-      writeFileSync(this.file, `${JSON.stringify({ version: 1, used: this.used })}\n`);
+      writeWhole(this.file, `${JSON.stringify({ version: 1, used: this.used })}\n`);
     } catch (err) {
       console.warn("[overseer] turn counters not saved:", err instanceof Error ? err.message : String(err));
     }
+  }
+}
+
+/** Write `text` to `file` whole or not at all: a temp file beside it, then a rename over it. */
+function writeWhole(file: string, text: string, mode?: number): void {
+  const tmp = `${file}.${process.pid}.${Math.random().toString(36).slice(2)}.tmp`;
+  try {
+    writeFileSync(tmp, text, mode === undefined ? {} : { mode });
+    renameSync(tmp, file);
+  } catch (err) {
+    try { rmSync(tmp, { force: true }); } catch { /* gone */ }
+    throw err;
   }
 }
 
@@ -560,7 +575,9 @@ function row(s: SessionSummary, now = Date.now()): string {
   return `- ${parts.join(" · ")}${gist ? `\n  ${cut(gist, 160)}` : ""}`;
 }
 
-export const SETTINGS_TABS = ["general", "models", "subagents", "overseer", "summaries", "themes", "experimental"] as const;
+export const SETTINGS_TABS = ["general", "models", "profiles", "overseer", "summaries", "themes", "experimental"] as const;
+/** The retired Subagents tab: its screen is Profiles' Models part, so an older prompt naming it opens Profiles. */
+const RETIRED_TABS: Readonly<Record<string, (typeof SETTINGS_TABS)[number]>> = { subagents: "profiles" };
 
 // ---- the tools ---------------------------------------------------------------------------------
 
@@ -758,7 +775,7 @@ export function overseerTools(host: OverseerToolHost, shared: TurnLimits, redact
     if (p.page === "overseer") return { href: "#/overseer", label: "Open the Overseer" };
     if (p.page === "orgs") return { href: "#/orgs", label: "Open Organizations" };
     if (p.page === "settings") {
-      const tab = p.settings_tab ?? "general";
+      const tab = RETIRED_TABS[p.settings_tab ?? ""] ?? p.settings_tab ?? "general";
       if (!(SETTINGS_TABS as readonly string[]).includes(tab)) throw new Refusal(`settings_tab must be one of ${SETTINGS_TABS.join(", ")}.`);
       return { href: `settings:${tab}`, label: `Open Settings → ${tab[0]!.toUpperCase()}${tab.slice(1)}` };
     }
@@ -853,6 +870,29 @@ export function overseerTools(host: OverseerToolHost, shared: TurnLimits, redact
     if (typeof id !== "string" || !r.json.profiles.some((p: any) => p.id === id)) throw new Refusal(`Unknown subagent profile "${String(id)}". Nothing was changed.`);
   }
 
+  /** Every profile this host (or a peer) has, as the joined list forms them (§chat.profiles/joined), or, from a
+      peer on an older build without one, its helper library as profiles with only a Models part. */
+  async function listProfiles(peer: PeerRef | null = null, cwd?: string): Promise<JoinedRow[]> {
+    const q = cwd ? `?cwd=${encodeURIComponent(cwd)}` : "";
+    const r = peer ? await peerCall(peer, "GET", `/api/profiles${q}`) : await call("GET", `/api/profiles${q}`);
+    if (r.status === 200 && Array.isArray(r.json?.joined)) return r.json.joined as JoinedRow[];
+    const lib = peer ? await peerCall(peer, "GET", "/api/settings/subagents") : await call("GET", "/api/settings/subagents");
+    if (lib.status !== 200 || lib.json?.error || !Array.isArray(lib.json?.profiles)) throw failed(lib.status === 200 ? r : lib, "Listing profiles");
+    const def = typeof lib.json.default === "string" && lib.json.default ? lib.json.default : "off";
+    return (lib.json.profiles as { id: string; name: string; footprint: string }[]).map((p) =>
+      p.id === "off"
+        ? { id: "off", kind: "off", name: "Off", footprint: p.footprint, ...(def === "off" ? { isDefault: true as const } : {}) }
+        : { id: p.id, kind: "library", name: p.name, footprint: p.footprint, libraryId: p.id, ...(def === p.id ? { isDefault: true as const } : {}) },
+    );
+  }
+
+  /** sova_list_profiles, and its older name. */
+  async function listProfilesTool(p: any): Promise<{ content: ReturnType<typeof text>; details: unknown }> {
+    const peer = p.host ? await peerOf(p.host) : null;
+    const rows = await listProfiles(peer, typeof p.cwd === "string" && p.cwd ? p.cwd : undefined);
+    return { content: text(rows.map(profileLine).join("\n")), details: { profiles: rows } };
+  }
+
   /** sova_create_session after its caps: create, title, group, model, thinking, mode and minor
       modes, first prompt. */
   async function createSession(p: any, hasPrompt: boolean): Promise<{ content: ReturnType<typeof text>; details: unknown }> {
@@ -871,6 +911,7 @@ export function overseerTools(host: OverseerToolHost, shared: TurnLimits, redact
     const created = await call("POST", "/api/sessions", body);
     if (created.status !== 201) throw failed(created, "Creating the session");
     const s = created.json as SessionSummary;
+    if (typeof created.json?.defaultNotApplied === "string") notes.push(`Not fully on this computer's default profile: ${created.json.defaultNotApplied}.`);
     host.started(s.path);
     if (typeof p.title === "string" && p.title.trim()) {
       const r = await call("POST", "/api/sessions/title", { path: s.path, title: p.title.trim(), source: "overseer" });
@@ -914,7 +955,7 @@ export function overseerTools(host: OverseerToolHost, shared: TurnLimits, redact
       await host.open(s.path);
       const r = await call("POST", `/api/subagents?path=${encodeURIComponent(s.path)}`, { profile: p.subagent_profile });
       if (r.status !== 200) throw new Refusal(`Created ${link(s)}, but its subagent profile was not set; its first prompt was not sent (${r.json?.error ?? r.status}).`);
-      notes.push(`Subagent profile: ${p.subagent_profile} (this session only).`);
+      notes.push(typeof p.profileModels === "string" ? `Profile: ${p.profileModels}, its models and helpers (this session only).` : `Subagent profile: ${p.subagent_profile} (this session only).`);
     }
     if (hasPrompt) await sendPrompt(s, p.prompt);
     // Before its first reply a new session's derived title is "Untitled"; its first prompt is
@@ -944,9 +985,11 @@ export function overseerTools(host: OverseerToolHost, shared: TurnLimits, redact
     if (p.subagent_profile !== undefined) body.subagent_profile = p.subagent_profile;
     // A peer on an earlier build ignores it: every session there has the link tools.
     if (p.link === true) body.link = true;
+    body.byOverseer = true; // the sender header never crosses hosts, and without this the peer's default applies whole
     const created = await peerCall(peer, "POST", "/api/sessions", body);
     if (created.status !== 201) throw failed(created, `Creating the session ${on}`);
     const s = created.json as SessionSummary;
+    if (typeof created.json?.defaultNotApplied === "string") notes.push(`Not fully on ${peer.label}'s default profile: ${created.json.defaultNotApplied}.`);
     host.startedOnPeer(peer.id, s.id, false);
     const where = `${on}, in ${whereOf(s)}`;
     const named = (title: string) => `"${cut(title.replace(/"/g, "'"), 60)}" (${s.id})`;
@@ -1105,7 +1148,17 @@ export function overseerTools(host: OverseerToolHost, shared: TurnLimits, redact
         // A Lost row names the other sessions that mention its branch (a backup, a hand-off).
         if (git) await namedElsewhere(git, covered, link).catch(() => {});
         const digest = await host.digest().catch(() => null);
+        // Each row's branch names its place: read here, the render is pure.
+        const places = new Map<string, string>();
+        if (host.branchPlace) {
+          const paths = new Set(page.flatMap((s) => [...(git?.launch.has(s.path) ? [s.cwd] : []), ...((reading(s.path) as { value?: { trees: { path: string }[] } }).value?.trees.map((t) => t.path) ?? [])]));
+          await Promise.all([...paths].map(async (path) => {
+            const words = await host.branchPlace!(path).catch(() => undefined);
+            if (words) places.set(path, words);
+          }));
+        }
         const out = renderRoundup({
+          place: (path) => places.get(path),
           sessions,
           digest,
           reading,
@@ -1395,16 +1448,19 @@ export function overseerTools(host: OverseerToolHost, shared: TurnLimits, redact
       }),
     },
     {
+      name: "sova_list_profiles",
+      label: "List profiles",
+      description:
+        "List this host's profiles: Off and each profile's id (what `profile` takes), name, footprint (its models), which parts it has, the library id `subagent_profile` takes when it differs, whether it is marked \"The Overseer may start it\", and which is the default. With cwd, a project's own profiles too.",
+      parameters: obj({ host: str("Optional mesh peer id."), cwd: str("A folder, to include its project's profiles.") }),
+      execute: read(listProfilesTool),
+    },
+    {
       name: "sova_list_subagent_profiles",
-      label: "List subagent profiles",
-      description: "List subagent setups (Off, names, worker footprints, this host's default). Not capability/session profiles.",
-      parameters: obj({ host: str("Optional mesh peer id.") }),
-      execute: read(async p => {
-        const peer = p.host ? await peerOf(p.host) : null;
-        const r = peer ? await peerCall(peer, "GET", "/api/settings/subagents") : await call("GET", "/api/settings/subagents");
-        if (r.status !== 200 || r.json?.error) throw failed(r, "Listing subagent profiles");
-        return { content: text((r.json.profiles ?? []).map((p: any) => `${p.id}: ${p.name} · ${p.footprint}${r.json?.default === p.id ? " · default" : ""}`).join("\n")), details: r.json };
-      }),
+      label: "List profiles",
+      description: "The same list as sova_list_profiles (its older name).",
+      parameters: obj({ host: str("Optional mesh peer id."), cwd: str("A folder, to include its project's profiles.") }),
+      execute: read(listProfilesTool),
     },
     {
       name: "sova_list_folders",
@@ -1449,7 +1505,7 @@ export function overseerTools(host: OverseerToolHost, shared: TurnLimits, redact
         project_modes: { type: "array", items: { type: "string" }, description: PROJECT_MODES_PARAM },
         title: str(`A title for the list: ${SESSION_TITLE_HINT}`),
         group: str("Group id to add it to."),
-        profile: str('A profile id (§ profiles: what the session can do), this host only, looked up in the new session\'s project, then the user\'s, then built in. Only profiles marked "The Overseer may start it", and a project\'s profile only once the user approved it. Its mode, minor modes and model apply unless you give your own.'),
+        profile: str('A profile id (sova_list_profiles), this host only, looked up in the new session\'s project, then the user\'s, then built in: the session starts on it, both parts. One with a When a Chat Starts part only when marked "The Overseer may start it", and a project\'s profile only once the user approved it; one with only a Models part needs neither. Its mode, minor modes and model apply unless you give your own. Not with subagent_profile.'),
       }),
       execute: act("sova_create_session", async (p) => {
         const caps = host.caps();
@@ -1481,8 +1537,18 @@ export function overseerTools(host: OverseerToolHost, shared: TurnLimits, redact
           if (onPeer) throw new Refusal("A profile can't be given with host: profiles belong to this host. No session was created.");
           // Resolved in the new session's own project (§chat.profiles/projects); a target's cwd has none.
           const where = typeof p.cwd === "string" && p.cwd ? p.cwd : null;
+          if (p.subagent_profile !== undefined) throw new Refusal("Give profile or subagent_profile, not both: a profile brings its own helpers. No session was created.");
           const prof = await findProfile(p.profile, where);
-          if (!prof) throw new Refusal(`${(await profileRefusedWhy(p.profile, where)) ?? `No profile "${p.profile}" for that folder.`} No session was created.`);
+          // A profile with only a Models part (a library profile no session profile links to, or Off) starts as Off with
+          // its helpers: no mark or approval, since it changes no tool or power (§chat.subagent-profiles/overseer).
+          const row = prof ? undefined : await findJoined(p.profile, where);
+          if (!prof && row && modelsOnly(row)) p = { ...p, profile: undefined, subagent_profile: row.kind === "off" ? "off" : (row.libraryId ?? row.id), profileModels: row.name };
+          else if (!prof) throw new Refusal(`${(await profileRefusedWhy(p.profile, where)) ?? unknownProfile(p.profile)} No session was created.`);
+        }
+        if (typeof p.profile === "string" && p.profile) {
+          const where = typeof p.cwd === "string" && p.cwd ? p.cwd : null;
+          const prof = await findProfile(p.profile, where);
+          if (!prof) throw new Refusal(`${(await profileRefusedWhy(p.profile, where)) ?? unknownProfile(p.profile)} No session was created.`);
           if (!prof.overseerMayStart)
             throw new Refusal(`The ${prof.label} profile isn't marked "The Overseer may start it" (in its file), so you can't start it. No session was created; ask the user to start it or to allow it.`);
           if (prof.approval === "needed") throw new Refusal(`${approvalRefusal(prof)} No session was created.`);
@@ -1584,7 +1650,8 @@ export function overseerTools(host: OverseerToolHost, shared: TurnLimits, redact
           model: str('Model ref "provider/model".'),
           thinking: str("off | minimal | low | medium | high | xhigh | max"),
           mode: str("normal | delegate"),
-          subagent_profile: str("Subagent profile id or off. Changes only this chat's later work, not running workers or the default."),
+          profile: str("A profile id or off (sova_list_profiles): switches this chat's whole Models part at once (its own model and effort, its helpers, alignment settings), checked first, all or nothing; mid-reply, when the reply ends. Its tools, powers and modes never change, nor the default. Not with model, thinking or subagent_profile."),
+          subagent_profile: str("Subagent profile id or off. Changes only this chat's helpers (later work, not running workers), never its own model or the default."),
           sandbox: str('"on" (its tools and its subagents confined), "subagents" (only its subagents in its worktrees, write-only) or "off" (nothing confined). From its next tool call, and for subagents started or resumed afterwards. Lowering it needs the user\'s click on a card listing the session, in the turn that click opened.', { enum: ["off", "subagents", "on"] }),
           minor_modes: { type: "array", items: { type: "string" }, description: 'Minor modes to have on, e.g. ["spec"]; [] turns them all off.' },
           project_modes: { type: "array", items: { type: "string" }, description: PROJECT_MODES_PARAM },
@@ -1600,8 +1667,11 @@ export function overseerTools(host: OverseerToolHost, shared: TurnLimits, redact
         // A session waiting on the user's alignment answers keeps align on (§app.project-overseer/coding-mode): checked first.
         const drop = alignDropRefusal(!!s.align, p.minor_modes);
         if (drop) throw new Refusal(`${drop} Nothing was changed.`);
-        // A project's coding session keeps spec on (§app.project-overseer/coding-mode).
-        if (Array.isArray(p.minor_modes) && codingSpecRefusal(p.minor_modes) && projectCodingIds().has(s.id)) throw new Refusal(`${SPEC_ALWAYS_ON} Nothing was changed.`);
+        // A profile switch moves the whole Models part (§chat.profiles/switch): nothing else of that part rides with it.
+        if (p.profile !== undefined) {
+          if (typeof p.profile !== "string" || !p.profile.trim()) throw new Refusal("profile is a profile id or off (sova_list_profiles). Nothing was changed.");
+          if (p.model || p.thinking || p.subagent_profile !== undefined) throw new Refusal("Give profile alone, or model, thinking and subagent_profile without it: a profile switches all of its Models part at once. Nothing was changed.");
+        }
         if (p.subagent_profile !== undefined) await checkSubagentProfile(p.subagent_profile);
         // The sandbox is checked before anything changes: lowering it needs this turn to be the user's
         // click on a card that lists this session (§app.overseer/tools), never an approval for later.
@@ -1616,6 +1686,14 @@ export function overseerTools(host: OverseerToolHost, shared: TurnLimits, redact
           if (lowers(sandbox, now) && !host.confirmed()?.some((i) => i.kind === "session" && i.id === s.id)) throw new Refusal(SANDBOX_LOWER_REFUSAL);
         }
         const done: string[] = [];
+        // First, so a refused switch leaves everything else as it was too.
+        if (typeof p.profile === "string") {
+          await host.open(s.path);
+          const r = await call("POST", `/api/sessions/profile-switch?path=${encodeURIComponent(s.path)}`, { profile: p.profile.trim() });
+          if (r.status === 404) throw new Refusal(`${unknownProfile(p.profile.trim())} Nothing was changed.`);
+          if (r.status !== 200) throw new Refusal(`Couldn't switch to ${r.json?.name ?? p.profile}: ${r.json?.error ?? `HTTP ${r.status}`} Nothing was changed.`);
+          done.push(profileSwitchWords(r.json));
+        }
         if (p.title !== undefined) {
           const t = typeof p.title === "string" && p.title.trim() ? p.title.trim() : null;
           const r = await call("POST", "/api/sessions/title", { path: s.path, title: t, source: "overseer" });
@@ -1658,7 +1736,7 @@ export function overseerTools(host: OverseerToolHost, shared: TurnLimits, redact
           await setSandbox(s, sandbox);
           done.push(`sandbox ${SANDBOX_LABEL[sandbox]} (from its next tool call; running subagents keep theirs until resumed)`);
         }
-        if (!done.length) throw new Refusal("Nothing to change: give title, alias, model, thinking, mode, minor_modes, subagent_profile or sandbox.");
+        if (!done.length) throw new Refusal("Nothing to change: give title, alias, model, thinking, mode, minor_modes, profile, subagent_profile or sandbox.");
         return { content: text(`${link(s)}: ${done.join(", ")}.`), details: { id: s.id, path: s.path } };
       }),
     },

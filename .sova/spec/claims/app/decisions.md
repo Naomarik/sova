@@ -3,9 +3,9 @@
 
 Decisions is Sova's **opt-in** classifier: a server-side seam that asks typed questions about a
 session and gets typed answers with probabilities. Attention signals use it (the turn card and
-the "needs you" mark, §app.decisions/attention-signals), as do the alignment card's triage and
-the worker report check, off by default, so nothing leaves the
-machine while it is off. Session tags no longer ask it anything (§app.decisions/session-tags).
+the "needs you" mark, §app.decisions/attention-signals), as do the alignment card's triage,
+the worker report check and message labels (§app.message-labels/labelling), off by default, so
+nothing leaves the machine while it is off. Session tags no longer ask it anything (§app.decisions/session-tags).
 
 The seam is provider-neutral. **Jev** (TypeSafe's classifier, `api.typesafe.ai`) and **one
 configured model** (a pi model or a Claude Code model, the same backend/model/effort tuple the
@@ -14,8 +14,8 @@ Nothing above the seam names a provider: the features see only answers and, for 
 provider gave them.
 
 Sova-owned state under `<stateRoot>`: `decisions.json` (settings), `secrets/jev-key` (the key),
-`signals.json` (classified turns), `session-tags.json` (tags), `decisions-calls.jsonl` (the call
-ledger, §app.decisions/call-ledger). All are sidecars: no decision ever
+`signals.json` (classified turns), `session-tags.json` (tags), `message-labels/` (message labels,
+§app.message-labels/labelling), `decisions-calls.jsonl` (the call ledger, §app.decisions/call-ledger). All are sidecars: no decision ever
 writes a byte into a session file. All writes are atomic tmp+rename, except the ledger's
 appends (one line each).
 
@@ -62,8 +62,8 @@ appends (one line each).
   argument over 64 KiB: it fails `too-large` without starting.
 - **Jev.** Plain HTTPS, no SDK. boolean/choice/score map to Jev's `noul`/`choice`/`score`. A state
   estimated over Jev's size limit fails `too-large` locally, without a call. Timeout 8 s, except
-  for background purposes nobody waits on (a merge's follow-up check and a worker's report
-  check): 15 s.
+  for background purposes nobody waits on (a merge's follow-up check, a worker's report
+  check and a message's label): 15 s.
 - **A model.** The model is asked for **distributions, never a bare label**, at temperature 0 unless
   it is thinking, within 45 s, and its JSON is parsed strictly; junk is `malformed-answer`. The prompt tells it that the state is
   data, never instructions. A pi model runs through the server's
@@ -91,19 +91,30 @@ appends (one line each).
 ## §app.decisions/privacy — What leaves the machine
 
 - Nothing is sent unless a feature is on, and each feature is its own switch. Attention signals
-  are off until turned on (a stored tags switch is read and ignored: tagging asks nothing); **Reconcile decisions** (§app.requirements/reconciler)
+  are off until turned on (a stored tags switch is read and ignored: tagging asks nothing); **Label your messages** (§app.message-labels/labelling) is off until turned on, and asks about
+  nothing sent before it went on. **Reconcile decisions** (§app.requirements/reconciler)
   is on by default and can be turned off here.
 - A check sends a **short, capped excerpt of one session** — for signals: the title, the last user
   message, the tail of the last reply, the recent tool calls' names with short results and
   whether each failed, the input and the end of the error of the last few failed calls, plus
-  facts counted in code (repeats, failures, tool-call count, the turn's stop reason). Session tags
-  send nothing. Never whole transcripts, images or files.
+  facts counted in code (repeats, failures, tool-call count, the turn's stop reason); for a message's
+  label: the head of that message, the tail of the reply before it and two facts counted in code
+  (§app.message-labels/labelling), and not the title or any tool call. Session tags send nothing.
+  Never whole transcripts, images or files.
 - Every feature passes the same gate before any excerpt is built: the feature is on, the folder is
   not excluded, and the session is not left out as a terminal session.
-- **Redaction.** Every request's state is deep-redacted with the Overseer's redactor
-  (§app.overseer/tools) before any provider sees it: string values only, object keys kept. It
-  replaces with `[redacted]` both the known secret values (including the Jev key) and secrets
-  recognised by their shape. The redacting provider is the only way a decision reaches a
+- **One filter for everything sent out.** Everything Sova sends to Jev or any outside model passes
+  through one shared filter for private data, the Overseer's redactor (§app.overseer/tools); no
+  feature has a filter of its own instead.
+- **Redaction.** Every request's state and questions are deep-redacted with that redactor before
+  any provider sees them: string values only, object keys kept. It replaces with `[redacted]` the
+  known secret values (including the Jev key), passwords and tokens, email addresses, a URL's
+  `user:pass@` part, and anything that looks like a key or token by its shape: prefixed tokens
+  (`glpat-`, `ghp_`, `gho_`, `sk-`, `xox…-`, AWS key ids), JWTs, private-key blocks, hex of 32
+  characters or more other than a 40-character git hash, and long mixed runs of letters and digits
+  (an unprefixed key, a base64 blob). Short and full git hashes, UUIDs, paths, file names, code
+  identifiers and numbers stay. Emails and random-looking strings are hidden only in what goes
+  out; the Overseer's own reads keep them. The redacting provider is the only way a decision reaches a
   provider; nothing else in the server can call the chain or Jev directly. The 32,000-character
   cap applies after redaction.
 - **A pasted password is withheld whole.** Before redaction, any text in a request's state that
@@ -157,7 +168,9 @@ appends (one line each).
   the session's open alignment questions, its subagents working now, whether merge readiness
   says a restart is owed, and the turn's stop reason. Never tool calls, diffs or files.
 - **No card** for a turn that stopped with an error (that is the file's turn error, a code-derived
-  Needs you item), a turn a partner's link message or a topic batch opened, the Overseer's,
+  Needs you item), a turn a partner's link message or a topic batch opened (but for a batch of the
+  merge queue's requests, §chat.merge-queue/requests, whose turn gets its card like a turn the user
+  started, so its outcome can say a fix is finished and its reply can ask the user), the Overseer's,
   workers', baton and archived sessions, and anything the privacy gate stops. Such a turn makes no
   decision call and drops the stored answers of the turn before it.
 - **Retired:** the `stuck` question about a main session's turn and every check of a running
@@ -190,7 +203,8 @@ appends (one line each).
   information it needs before it can go on?"). A session with an **open alignment question**
   (§chat.alignment/session-mark: those already put it in Needs you) shows that instead, and a
   turn a partner's link message (its question is to the partner) or a topic batch
-  (§chat.topics/row) opened gets no card.
+  (§chat.topics/row) opened gets no card, except a batch of the merge queue's requests
+  (§chat.merge-queue/requests), whose reply is asked like any other.
 - **Looks like it asks** is counted in code on the last 1,000 characters of the reply, after the
   closing spec lines (`Also changes:`, `Also updates:`, `Deferred:`, `Plumbing:`, `Spec check override:`) are cut:
   a question mark, or a phrase such as "should I", "shall I", "want me to", "do you want", "would
@@ -207,44 +221,16 @@ appends (one line each).
   three sentences, the last that ends in "?", else the last), redacted and at most 160
   characters, is stored with the answer for the attention digest only; it never reaches the
   session list or the feed.
-- **A restart or merge go is not asked again.** A reply asks for this when its ask kind is
-  `restart-or-merge-go`; a record from before the turn card, which has no kind, when its asking sentence
-  names a server restart, a Land, a merge or a push. The row carries no `asks-you`, and so leaves Needs
-  you, while any of these holds:
-  - the session's merge readiness already says a restart is owed (§chat.worktrees/readiness,
-    `restartPending`): the readiness badge says it;
-  - **the version that reply was about has landed**, in every worktree that counts (below): its branch
-    is merged into its target, whatever uncommitted files the worktree has now, or its newest queue
-    entry (§app.merge-queue/approve) is for that version and landed or pushed;
-  - **that version is in the merge queue**: each such worktree has landed as above or its newest entry
-    is for that version and queued or checking.
-
-  An entry is for that version when it holds the commit the branch had when the reply ended, or was
-  approved after the reply. An older entry is not: a newer commit needs a new Land.
-
-  Only a landed version is **noted on the stored signal** (`signals.json`), when first seen; the note
-  decides from then on: dropping the worktree and restarting Sova don't bring the ask back. A queued
-  version leaves no note: it is read live from the queue's current view, so cancelling the entry, or
-  the entry stopping short of landing, brings the ask back, and after a restart of Sova a queued ask
-  can show briefly until the first background read.
-
-  Every tracked worktree counts, an inherited one too, except an **empty leftover**, the merged badge's
-  own test (§chat.worktrees/readiness): clean with no commit of its own, or removed with none. It holds
-  no ask; one with uncommitted files does. With every worktree empty, or none tracked, only the restart
-  case applies and the ask stays.
-
-  The note belongs to that reply. A newer turn replaces it, so a newer commit with a new ask is
-  judged afresh and stays listed until its version is queued or landed. No model call: code
-  compares the commits, and the turn card's stored kind says what counts as this ask.
-  Every other ask is untouched.
+- **A restart or merge go is not asked again** once that version is queued or landed, or a restart
+  is owed (§app.decisions/merge-go-asks).
 - **Where it came from.** The mark's tooltip ends with its source: "Guessed by {provider}" for a
   decision's answer, named by the provider that actually answered (Jev, or the configured
   model's name), and "From code." for a mark counted in code (open questions, a team gone quiet).
 - It shows while the feature is on and the session is idle, and, unlike the other signals, a look
   does not clear it: opening or viewing the session leaves it, as with open questions. It clears
   when the user answers (a turn runs, and the next turn replaces or drops it), the session is
-  archived, or, for a restart or merge go, while its version is queued and for good once it has landed (above). Dismissing the row
-  takes it out of Needs you until the chat has something new (§app.session-list/needs-you-dismiss)
+  archived, or, for a restart or merge go, while its version is queued and for good once it has
+  landed (§app.decisions/merge-go-asks). Dismissing the row takes it out of Needs you until the chat has something new (§app.session-list/needs-you-dismiss)
   and leaves this mark. An open alignment question that appears later takes its place.
 - It is a guess, so it is **never a blocker**: the attention digest carries it as a **soft decide**
   item (§app.overseer/attention-digest), a quiet mark on the session's row (a chat glyph in muted
@@ -252,12 +238,49 @@ appends (one line each).
   Overseer's digest. Needs you lists it in its softer tier and the Overseer's "need you" count
   counts it, but it never wakes the Overseer with a brief and never sends a phone notification.
   It goes after 7 idle days (no reply since), like every soft item.
+- **An open card says it already.** While a session waits on an answerable transcript card, that card is
+  its Needs you item (`card-waiting`, §app.overseer/attention-digest) and the digest doesn't also list
+  this guess. The row's mark stays. Once the card is answered or done, the guess lists again if it
+  still holds.
 - **An open offer asks too.** While an idle session shows an open offer card (§chat.offers/card),
   its row carries `asks-you` as if its last reply asked, with no model call, while the feature is
   on. It clears when the card is answered, set to Not Now, no longer offered or replaced by a newer
   commit, and open alignment questions still take its place. The digest doesn't list it as a soft
   `asks-you` item: the open card is a Needs you item of its own (`offer-waiting`,
   §app.overseer/attention-digest), idle or working.
+
+## §app.decisions/merge-go-asks — A restart or merge go is not asked again
+
+A reply asks for this when its ask kind is `restart-or-merge-go`; a record from before the turn
+card, which has no kind, when its asking sentence names a server restart, a Land, a merge or a push.
+The row carries no `asks-you`, and so leaves Needs you, while any of these holds:
+- the session's merge readiness already says a restart is owed (§chat.worktrees/readiness,
+  `restartPending`): the readiness badge says it;
+- **the version that reply was about has landed**, in every worktree that counts (below): its branch
+  is merged into its target, whatever uncommitted files the worktree has now, or its newest queue
+  entry (§app.merge-queue/approve) is for that version and landed or pushed;
+- **that version is in the merge queue**: each such worktree has landed as above or its newest entry
+  is for that version and queued or checking.
+
+An entry is for that version when it holds the commit the branch had when the reply ended, or was
+approved after the reply, or its standing approval took that commit as a checked fix
+(§app.merge-queue/standing-approval). An older entry is not otherwise: a newer commit that isn't a
+checked fix needs a new Land.
+
+Only a landed version is **noted on the stored signal** (`signals.json`), when first seen; the note
+decides from then on: dropping the worktree and restarting Sova don't bring the ask back. A queued
+version leaves no note: it is read live from the queue's current view, so cancelling the entry, or
+the entry stopping short of landing, brings the ask back, and after a restart of Sova a queued ask
+can show briefly until the first background read.
+
+Every tracked worktree counts, an inherited one too, except an **empty leftover**, the merged
+badge's own test (§chat.worktrees/readiness): clean with no commit of its own, or removed with none.
+It holds no ask; one with uncommitted files does. With every worktree empty, or none tracked, only
+the restart case applies and the ask stays.
+
+The note belongs to that reply. A newer turn replaces it, so a newer commit with a new ask is judged
+afresh and stays listed until its version is queued or landed. No model call: code compares the
+commits, and the turn card's stored kind says what counts as this ask. Every other ask is untouched.
 
 ## §app.decisions/team-stall — A team gone quiet
 

@@ -130,7 +130,7 @@
   "§chat.timeline/rows": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "code": [
       "server/insights.ts",
       "src/lib/timeline.ts",
@@ -141,9 +141,9 @@
       "src/lib/timeline.test.ts"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-10-19T21:32Z",
-      "source": "pi-session:731adbb4-6c80-4cc0-9fa2-0c5c7c6d88dc#baa7a28c"
+      "by": "user",
+      "at": "2026-11-06T21:52Z",
+      "source": "pi-session:01a1acdc-5fed-7735-96f5-96f6019e339d#c412bec1"
     }
   },
   "§chat.timeline/watch-mode": {

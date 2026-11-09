@@ -88,8 +88,16 @@
       "server/chat-config.test.ts",
       "server/overseer-runtime.test.ts",
       "server/baton-runtime.test.ts",
-      "server/test-wait.ts"
-    ]
+      "server/test-wait.ts",
+      "server/web-defaults.ts",
+      "server/default-start.ts",
+      "server/harness/pi/session-golden.test.ts"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-11-08T19:46Z",
+      "source": "pi-session:f599f57e-519d-4f33-9088-ed8a9cd164b5#33385786"
+    }
   },
   "§chat.model-menu/states": {
     "kind": "behavior",

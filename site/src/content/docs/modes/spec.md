@@ -35,9 +35,10 @@ The short part has the agent:
    procedure.
 
 In Sova the agent does these look-ups with its `spec` tool, which every chat you code in and every
-worker has, whether or not spec is on. The tool only reads: the project's spec or one of its drafts,
-in the chat's own folder or a worktree it tracks. In a project with no spec it answers "This project
-has no spec here."
+worker but a team's monitor has, whether or not spec is on. The tool only reads: the project's spec or
+one of its drafts, in the chat's own folder or a worktree it tracks. In a project with no spec it
+answers "This project has no spec here." For a folder that doesn't exist it answers with an error
+saying so.
 
 ## Before coding
 
@@ -100,7 +101,7 @@ claim is true. That is still a reading of the code.
 
 ## The spec writer
 
-A chat's [subagent profile](/docs/subagent-profiles/) can name a **spec writer**: a worker that
+A chat's [profile](/docs/subagent-profiles/) can name a **spec writer**: a worker that
 writes the spec drafts while spec is on, so the main model doesn't have to. Set it in the profile's
 **Spec writer** section ("Use a spec writer while spec is on"). The gear on spec's row in the mode
 menu opens that section for this chat's profile. With none, or with profile Off, the session writes
@@ -123,16 +124,16 @@ guide gets a brief quoting the rules from both parts. The note says:
 When a worker that wrote code finishes, its summary carries one line naming the claims its changes
 landed in, and the changed files no claim covers.
 
-A worker gets the modes its parent has when it starts, so turning spec on later doesn't reach a
-worker that's already running. A team's monitor gets no guide. A worker that runs on its worktree's
-own agent folder always has spec on.
+A worker gets the modes its parent has when it starts, so turning spec on or off later doesn't reach
+a worker that's already running. A team's monitor gets no guide. A worker that runs on its worktree's
+own agent folder has spec only while its parent has it on, too.
 
 ## Project coding sessions
 
 A project has no coding-mode setting of its own: its coding sessions start in this computer's
-default mode, the one **Save as default** in a chat's mode menu sets, and the project page names
-it. An Overseer can start or switch a coding session with spec on or off, and in a project with a
-spec it's told to keep spec on unless you say otherwise.
+default mode, the one **Make {name} the Default** in a chat's mode menu sets, and the project page names
+it. A coding session has spec only when that default does, and you or an Overseer can turn it on or off
+in a running session, as in any chat.
 
 ## A spec review
 

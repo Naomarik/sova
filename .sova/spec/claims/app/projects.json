@@ -63,7 +63,7 @@
   "§app.projects/home-cards": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "code": [
       "src/components/OverviewProjects.tsx",
       "src/lib/home-projects.ts",
@@ -93,12 +93,14 @@
       "§app.projects/home-glance",
       "§app.merge-queue/view",
       "§app.release/tab",
-      "§app.project-services/instances"
+      "§app.project-services/instances",
+      "§app.projects/home-memory-bar",
+      "§chat.worktrees/nothing-left"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-11-05T13:41Z",
-      "source": "pi-session:01a1ab30-f643-72b7-9a70-76331f9c7523#21128e50"
+      "by": "naomarik",
+      "at": "2026-11-09T15:52Z",
+      "source": "pi-session:01a1b2f4-86c6-73d4-9fe9-b847b27035f9#02c2fa31"
     }
   },
   "§app.projects/home-glance": {
@@ -117,7 +119,14 @@
       "server/project-services/release-wire.ts",
       "server/project-services/release.ts",
       "server/sessions-index.ts",
-      "shared/commands/projects.ts"
+      "shared/commands/projects.ts",
+      "server/project-services/drivers.test.ts",
+      "server/projects/glance-copies.integration.test.ts",
+      "server/project-services/store.ts",
+      "server/project-services/places.ts",
+      "server/project-services/places.test.ts",
+      "server/port-owner.ts",
+      "server/port-owner.test.ts"
     ],
     "requires": [
       "§app.merge-queue/view",
@@ -127,12 +136,32 @@
       "§app.projects/folder-sessions",
       "§app.resource-monitor/sampling-and-history",
       "§app.resource-monitor/attribution",
-      "§app.resource-monitor/lightness-budget"
+      "§app.resource-monitor/lightness-budget",
+      "§app.project-services/adopt"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-11-05T13:41Z",
-      "source": "pi-session:01a1ab30-f643-72b7-9a70-76331f9c7523#21128e50"
+      "by": "the user (al_1 go)",
+      "at": "2026-11-09T02:04Z",
+      "source": "pi-session:01a1bdb7-6cb9-7045-be9f-f2f059380b8e#01f472b9"
+    }
+  },
+  "§app.projects/home-memory-bar": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "reviewed",
+    "code": [
+      "src/lib/home-glance.ts",
+      "src/components/OverviewProjects.tsx",
+      "src/home.css",
+      "src/lib/home-glance.test.ts"
+    ],
+    "requires": [
+      "§app.projects/home-glance"
+    ],
+    "agreed": {
+      "by": "the user (al_1 go)",
+      "at": "2026-11-09T02:04Z",
+      "source": "pi-session:01a1bdb7-6cb9-7045-be9f-f2f059380b8e#01f472b9"
     }
   },
   "§app.projects/icon": {
@@ -252,7 +281,7 @@
   "§app.projects/registration": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "code": [
       "server/projects/registry.ts",
       "server/projects/registry.test.ts",
@@ -263,11 +292,17 @@
       "src/components/SessionDetails.tsx",
       "src/lib/projects.ts",
       "src/lib/projects.test.ts",
-      "server/overseer-folders.ts"
+      "server/overseer-folders.ts",
+      "server/project-services/tool-offered.test.ts"
     ],
     "requires": [
       "§app.organizations/registry"
-    ]
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-11-06T23:21Z",
+      "source": "pi-session:4f394f82-707c-4335-a9f0-dfacbbbe4a11#5709e705"
+    }
   },
   "§app.projects/seam": {
     "kind": "behavior",

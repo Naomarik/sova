@@ -12,7 +12,7 @@
       "§app.project-assistant/feature-chats"
     ],
     "authority": "accepted",
-    "evidence": "unreviewed",
+    "evidence": "verified",
     "code": [
       "pi-config/extensions/mode/prompt.ts",
       "pi-config/extensions/mode/minor.ts",
@@ -24,15 +24,15 @@
       "site/src/content/docs/teams.md"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-11-07T01:25Z",
-      "source": "pi-session:01a1b2d6-bea7-73d4-9fe9-b82dc23ae834#541da9cc"
+      "by": "naomarik",
+      "at": "2026-11-08T22:16Z",
+      "source": "pi-session:f599f57e-519d-4f33-9088-ed8a9cd164b5#cebf8649"
     }
   },
   "§chat.mode-menu/how-a-switch-reaches-the-chat": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "reviewed",
+    "evidence": "verified",
     "code": [
       "server/chat-manager.ts",
       "server/index.ts",
@@ -44,12 +44,14 @@
       "server/mode-state.ts",
       "server/modes/engine.ts",
       "server/harness/pi/modes.ts",
-      "server/sova-modes-owner.test.ts"
+      "server/sova-modes-owner.test.ts",
+      "server/profile-editor-routes.ts",
+      "server/create-mode-chat.test.ts"
     ],
     "agreed": {
       "by": "naomarik",
-      "at": "2026-11-05T05:46Z",
-      "source": "pi-session:144e6ae4-8742-4902-b7f2-31eecad9142b#5844cea0"
+      "at": "2026-11-08T19:46Z",
+      "source": "pi-session:f599f57e-519d-4f33-9088-ed8a9cd164b5#33385786"
     },
     "requires": [
       "§app.access/your-click",
@@ -78,9 +80,9 @@
       "src/app.css"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-11-03T15:12Z",
-      "source": "pi-session:2795e843-1adb-4247-bc12-31f6489eb179#7bab1946"
+      "by": "naomarik",
+      "at": "2026-11-08T19:46Z",
+      "source": "pi-session:f599f57e-519d-4f33-9088-ed8a9cd164b5#33385786"
     }
   },
   "§chat.mode-menu/menu": {
@@ -100,8 +102,8 @@
     ],
     "agreed": {
       "by": "naomarik",
-      "at": "2026-11-05T05:46Z",
-      "source": "pi-session:144e6ae4-8742-4902-b7f2-31eecad9142b#5844cea0"
+      "at": "2026-11-08T19:46Z",
+      "source": "pi-session:f599f57e-519d-4f33-9088-ed8a9cd164b5#33385786"
     },
     "requires": [
       "§chat/create-mode",
@@ -174,7 +176,9 @@
       "shared/protocol.ts",
       "src/components/ModeMenu.tsx",
       "src/lib/mode-menu.ts",
-      "src/lib/mode-menu-actions.test.ts"
+      "src/lib/mode-menu-actions.test.ts",
+      "server/harness/pi/modes-project-tools-worker.ts",
+      "server/modes/personal-worker-root.integration.test.ts"
     ],
     "evidence": "verified"
   },
@@ -275,9 +279,9 @@
     ],
     "authority": "accepted",
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-11-05T03:06Z",
-      "source": "pi-session:144e6ae4-8742-4902-b7f2-31eecad9142b#5844cea0"
+      "by": "user",
+      "at": "2026-11-06T21:56Z",
+      "source": "pi-session:01a1acdc-5fed-7735-96f5-96f6019e339d#c412bec1"
     },
     "code": [
       "pi-config/extensions/mode/project-tools.ts",
@@ -317,7 +321,7 @@
       "server/mode-commands.ts",
       "src/lib/mode-menu-actions.test.ts"
     ],
-    "evidence": "verified"
+    "evidence": "reviewed"
   },
   "§chat.mode-menu/prompt-holds-across-turn-starters": {
     "kind": "behavior",
@@ -447,7 +451,11 @@
       "server/modes/golden/cases/w05-delegate-align-worker.json",
       "server/modes/golden/cases/w06-claude-worker.json",
       "server/modes/golden/cases/w07-tree-config-bare.json",
-      "server/modes/golden/cases/w08-tree-config-mode.json"
+      "server/modes/golden/cases/w08-tree-config-mode.json",
+      "server/chat-runtime/warm-modes.test.ts",
+      "server/harness/pi/session.ts",
+      "server/harness/pi/session.test.ts",
+      "server/modes/tool-source-word.test.ts"
     ],
     "evidence": "verified"
   },
@@ -457,11 +465,11 @@
       "src/components/ModeMenu.tsx"
     ],
     "authority": "accepted",
-    "evidence": "reviewed",
+    "evidence": "verified",
     "agreed": {
-      "by": "omar (user)",
-      "at": "2026-10-27T09:48Z",
-      "source": "pi-session:1ae40f4c-6da9-448a-b26b-9a1e99076f16#db36b4af"
+      "by": "naomarik",
+      "at": "2026-11-08T19:46Z",
+      "source": "pi-session:f599f57e-519d-4f33-9088-ed8a9cd164b5#33385786"
     }
   },
   "§chat.mode-menu/strict": {
@@ -481,12 +489,15 @@
       "server/transcript.ts",
       "src/components/ModeMenu.tsx",
       "src/lib/mode-menu.ts",
-      "pi-config/extensions/mode/index.test.ts"
+      "pi-config/extensions/mode/index.test.ts",
+      "server/modes/engine.ts",
+      "server/modes/engine-parity.test.ts",
+      "pi-config/extensions/mode/tests/smoke.mjs"
     ],
     "agreed": {
       "by": "naomarik",
-      "at": "2026-11-05T05:46Z",
-      "source": "pi-session:144e6ae4-8742-4902-b7f2-31eecad9142b#5844cea0"
+      "at": "2026-11-08T19:46Z",
+      "source": "pi-session:f599f57e-519d-4f33-9088-ed8a9cd164b5#33385786"
     }
   },
   "§chat.mode-menu/terminal": {
@@ -555,8 +566,8 @@
     "authority": "accepted",
     "agreed": {
       "by": "naomarik",
-      "at": "2026-11-05T03:06Z",
-      "source": "pi-session:144e6ae4-8742-4902-b7f2-31eecad9142b#5844cea0"
+      "at": "2026-11-08T19:46Z",
+      "source": "pi-session:f599f57e-519d-4f33-9088-ed8a9cd164b5#33385786"
     },
     "code": [
       "server/modes/engine.ts",
@@ -566,7 +577,7 @@
       "server/modes/engine-parity.test.ts",
       "server/harness/pi/golden/session/S15-mode-command.trace"
     ],
-    "evidence": "verified"
+    "evidence": "reviewed"
   },
   "§chat.mode-menu/workers": {
     "kind": "behavior",
@@ -607,12 +618,13 @@
       "pi-config/extensions/sessions/test.mjs",
       "server/insights-workers.test.ts",
       "server/insights-restored.test.ts",
-      "pi-config/extensions/mode/project-tools-worker.ts"
+      "pi-config/extensions/mode/project-tools-worker.ts",
+      "server/team-member-tools.test.ts"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-11-05T05:46Z",
-      "source": "pi-session:144e6ae4-8742-4902-b7f2-31eecad9142b#5844cea0"
+      "by": "user",
+      "at": "2026-11-06T22:14Z",
+      "source": "pi-session:b406e4de-b015-4dbb-b201-14ab20b5da44#2b9be4c7"
     }
   },
   "§chat/mode-menu": {
@@ -635,8 +647,8 @@
     ],
     "agreed": {
       "by": "naomarik",
-      "at": "2026-11-05T05:46Z",
-      "source": "pi-session:144e6ae4-8742-4902-b7f2-31eecad9142b#5844cea0"
+      "at": "2026-11-08T19:46Z",
+      "source": "pi-session:f599f57e-519d-4f33-9088-ed8a9cd164b5#33385786"
     },
     "notOwned": [
       "§chat/subagent-profiles",

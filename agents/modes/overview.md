@@ -60,7 +60,7 @@ the chat's own process, from the copy on the branch, re-checking approval (hooks
 `site/src/content/docs/modes/project-modes.md`: a change to the format changes its worked example too.
 
 **Settings files** (agent dir), each with one strict parse, a tolerant reader and an atomic writer here, synced by
-`server/sync/docs.ts` and edited per profile by Settings → Subagents
+`server/sync/docs.ts` and edited per profile in Settings → Profiles' Models part
 ([subagents](../extensions/subagents/overview.md)): `mode-delegate.json` ([delegate](delegate/overview.md)),
 `mode-spec.json` ([spec](spec/overview.md)), `mode-align.json` ([align](align/overview.md)). Each is re-read at every
 turn boundary, never snapshotted into a session (align's Visuals only at session start).

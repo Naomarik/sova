@@ -3,25 +3,30 @@ import { randomUUID } from "node:crypto";
 import { closeSync, existsSync, openSync, readFileSync, readSync } from "node:fs";
 import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
-import { type ChatDialogInfo, type ChatLifecycleEvent, type ChatRunEvent, type ChatSpecialKind, type RunStartAnswer, type ServerToolCall, type ServerToolDecl, type ServerToolOutcome, type SpecialSpec, unsentRefusal, type WorkerHost, type WorkerSpec } from "../shared/chat-runtime";
+import { type ChatDialogInfo, type ChatLifecycleEvent, type ChatRunEvent, type ChatSpecialKind, type RunStartAnswer, type ServerToolCall, type ServerToolDecl, type ServerToolOutcome, type SpecialSpec, SHELL_CLOSING_TEXT, unsentRefusal, type WorkerHost, type WorkerSpec } from "../shared/chat-runtime";
 import { BUILTIN_TOOLS as WORKER_BUILTIN_TOOLS, WORKER_HOST_DISCOVER_EVENT, WORKER_HOST_EVENT, type WorkerHostAnnouncement } from "../pi-config/extensions/subagents/worker-host.ts";
 import { prepareOwnerArea } from "../shared/decisions";
 import { LOGIN_UNCHANGED } from "../shared/protocol";
+import { type ChatProfileEntryData, type ChatProfileState, type ProfileSwitchResult, type ProfileSwitchTarget } from "../shared/profile-switch";
 import { type BatonSentData, OPERATOR } from "../shared/baton";
-import type { ChatClaudeLogin, ChatClientMessage, ChatModeResult, ChatServerMessage, HeldChatState, V1EventFrame, V2EventFrame, ModeApplies, ModeInfo, OverseerDialogAnswerData, ProjectModeApproval, ProjectModeApprovalNeeded, OverseerSentMarkerData, QueueItem, RegenerateRefusal, SandboxApplyResult, SandboxInfo, SlashCommand, TranscriptItem, WorkerInfo } from "../shared/protocol";
+import type { ChatClaudeLogin, ChatClientMessage, ChatModeResult, ChatServerMessage, HeldChatState, V1EventFrame, V2EventFrame, ModeApplies, ModeInfo, OverseerDialogAnswerData, ProjectModeApproval, ProjectModeApprovalNeeded, OverseerSentMarkerData, QueueItem, RegenerateRefusal, SandboxApplyResult, SandboxInfo, ShellRefusal, SlashCommand, TranscriptItem, WorkerInfo } from "../shared/protocol";
 import { COMPACT_COMMAND, COMPACT_IMAGES_REFUSAL, compactCommand } from "../shared/compact";
 import type { LinkedAgentInfo } from "../shared/mesh-links";
 import { isLinkMessage, parseLinkMessage } from "../shared/link-message";
 import { isTopicBatch } from "../shared/topic-message";
 import { parseWakeNudge } from "../shared/wake";
+import { recordPress, recordProgram } from "./message-labels";
 import { inputSourceOf, type QueueImage, type QueueKind, WebQueue, type WebQueueItem } from "./queue";
 import { decodeWorkers } from "./insights";
 import { readLive, readOwnLiveRecords, workerCountsOf } from "./live";
 import { sessionsChanged } from "./list-generation";
 import { appliesAfter, type BranchEntries, chatModeOf, CREATE_NOT_TAKEN, defaultPatchOf, mergeMode, MINOR_MODES, modeApplyPlan, modeInfo, pinEntryFor, readMode, saveModeOf, typedMajorMode, writeMode, type ModePatch, type ModeState } from "./mode-state";
-import { loadDefaults, saveDefaults } from "./web-defaults";
+import { loadDefaults } from "./web-defaults";
 import { subagentProfilesInfo, requireSubagentProfile, saveSubagentProfileDefault } from "./subagent-profiles";
-import { restorePick, pickEntryFor } from "../pi-config/extensions/subagents/subagent-profiles.ts";
+import { restorePick, pickEntryFor, shortModel } from "../pi-config/extensions/subagents/subagent-profiles.ts";
+/** The profile a chat is on when it names none: Off (§chat.subagent-profiles/off). */
+const OFF_ON = Object.freeze({ id: "off", key: "sova:default", name: "Off" });
+import { decodeMemberContext, MEMBER_ENV } from "../pi-config/extensions/subagents/mailbox.ts";
 import { modelAllowed, modelDenial, readModelPolicy } from "./model-policy";
 import { toContextInfo, workerWindowResolver } from "./models";
 import { claudeSpawnModels, WorkerContextReader, withWorkerContext } from "./worker-context";
@@ -30,18 +35,19 @@ import { applySandbox, onSandboxAppend, sandboxInfo, sandboxMessage, type Sandbo
 import type { SandboxState } from "../pi-config/extensions/sandbox/state.ts";
 import { chatClaudeLogin, claudeLoginAfterHello, claudeLoginMessage, isClaudeLoginEntry, LoginPick, loginName } from "./claude-login-state";
 import { rowsOf, rowsOfEntry } from "./transcript";
-import { onWire, onWire1, withRows, type ReplyLookup } from "./wire-rows";
+import { isShellMessage, onWire, onWire1, rowFor, withRows, type ReplyLookup } from "./wire-rows";
 import { perfRecordOf, ReplyTimer, type ReplyOutcome } from "./reply-timing";
 import { appendPerfRecord, replyTimingOf, type PerfKind } from "./perf-record";
 import { replyTimingsOf } from "./reply-facts";
 import type { ReplyTiming } from "../shared/harness-wire";
 import { producerId } from "../pi-config/extensions/llm-inflight/tracker.ts";
 import { readDeviceId } from "../pi-config/extensions/llm-inflight/usage-record.ts";
-import type { CompactOutcome, DialogBridge, EntryId, HarnessEvent, HarnessSession, HEntry, HookCtx, ImageInput, SessionState, SessionStateWriter, StateKind, StateView, ToolCtx, ToolResult, ToolSpec, ToolUpdate } from "../shared/harness";
+import type { CompactOutcome, DialogBridge, EntryId, HarnessEvent, HarnessModel, HarnessSession, HEntry, HookCtx, ImageInput, SessionState, SessionStateWriter, StateKind, StateView, ToolCtx, ToolResult, ToolSpec, ToolUpdate } from "../shared/harness";
 import { branchOf, historyOf, lineHeader, readPi, storedAsString } from "./harness/pi/reader";
 import { stateView } from "./harness/state-view";
 import { LiveTail } from "./chat-runtime/live-tail";
 import { takeWriterLock, type WriterLock, WriterLockHeld } from "./chat-runtime/writer-lock";
+import { sovaNamedKind } from "../shared/fixed-names";
 import { extensionFlagValues, getModelRuntime, openPiSession, type OpenFlags, type OpenRead, type PiBuild, type PiModelRuntime, warmClaudeCodeProvider as warmPiProvider } from "./harness/pi/open";
 import type { PiExtensionAPI, PiLoaderOptions, PiToolDefinition } from "./harness/pi/extension-types";
 import { PiChatHost } from "./harness/pi/host";
@@ -51,7 +57,8 @@ import { modesEntries, workerModePaths } from "./harness/pi/own-code";
 import { modesBridgeExtension, type ModesHandle } from "./harness/pi/modes";
 import { isAlreadyProcessing } from "./harness/pi/session";
 import { isCompactionInProgress } from "./harness/pi/history-ops";
-import { ALIGN_LAUNCH, type AlignLaunchData, BATON_SENT, FANOUT_MEMBER, LINK_MEMBER, LOADOUT, MCP_NOTE, MEMORY, MODE, OVERSEER, OVERSEER_DIALOG_ANSWER, OVERSEER_SENT, PROFILE, SESSION_SENT, SUBAGENT_PROFILE, TOPIC_DELIVERED, stateKindOf } from "./harness/state-kinds";
+import { ALIGN_LAUNCH, type AlignLaunchData, BATON_SENT, FANOUT_MEMBER, LINK_MEMBER, LOADOUT, MCP_NOTE, MEMORY, MODE, CHAT_PROFILE, OVERSEER, OVERSEER_DIALOG_ANSWER, OVERSEER_SENT, PROFILE, SESSION_SENT, SHELL_CLOSED, SHELL_RUN, SUBAGENT_PROFILE, TOPIC_DELIVERED, stateKindOf } from "./harness/state-kinds";
+import { ChatShell } from "./chat-shell";
 import { piPrepare, toolCtx, toPiTool } from "./harness/pi/tools";
 import { forgetSpecial, specialLoadout, specialWriter } from "./chat-special";
 import { cutTail, helloAfterHave, type HistoryPart, pullFields } from "./tail-hello";
@@ -66,6 +73,7 @@ import { SHELL_GUARD_FACTORY } from "./shell-guard-extension";
 import { forkCacheExtension } from "../pi-config/extensions/subagents/fork/cache.ts";
 import { VIS_CHECK_TOOL, visCheckExtension, type VisCheckHost } from "./vis-check";
 import { MEMORY_COMPACTION_REFUSAL, memoryExtension, type MemoryHost } from "./harness/pi/memory";
+import { shellModelExtension } from "./harness/pi/shell";
 import { deeperContextExtension } from "./harness/pi/deeper-context";
 import { backgroundJobsExtension } from "./harness/pi/background-jobs";
 import { mcpExtension } from "./harness/pi/mcp";
@@ -101,8 +109,8 @@ import { PROJECT_MODE_PREFIX, type ProjectModeRef } from "../shared/project-mode
 import { overseerMemoryOf, type OverseerMemoryInForce, parseOverseerMemory, saveDefaultMemoryType } from "./memory/settings";
 import { MEMORY_TOOLS } from "../shared/memory";
 import { projectEngine } from "./project-services/routes";
-import { projectVerbsExtension, sessionInstanceNote } from "./project-services/tools";
-import { servedToolsExtension, servedVisToolsExtension } from "./served-tools";
+import { projectVerbsExtension, projectVerbsOffered, sessionInstanceNote } from "./project-services/tools";
+import { offeredToolExtension, servedToolsExtension, servedVisToolsExtension } from "./served-tools";
 import { specCodingTool } from "./spec-coding-tool";
 import { BACKGROUND_JOB_TOOL } from "./background-jobs-request";
 import { JOB_CARDS_ENV } from "./background-jobs";
@@ -110,7 +118,7 @@ import { JOB_CARDS_ENV } from "./background-jobs";
 const JOB_CARDS_EXTENSION = fileURLToPath(new URL("../pi-config/extensions/wake-nudge.ts", import.meta.url));
 import { TOUR_TOOLS } from "../shared/tour";
 import { tourTools } from "./tours/tools";
-import { excludedTools, GRANT_TOOLS, keyOf, KNOWN_REMOVABLE_TOOLS, parseMine, singletonRaceText, type ProfileEntryData, type SessionSentData } from "../shared/profiles";
+import { excludedTools, GRANT_TOOLS, keyOf, KNOWN_REMOVABLE_TOOLS, parseMine, searchToolsFor, singletonRaceText, type ProfileEntryData, type SessionSentData } from "../shared/profiles";
 import { loadoutOverrides, type LoadoutEntryData, type LoadoutState } from "./session-loadout";
 import { RunState, SessionLimits, sessionPowersExtension } from "./session-powers";
 import { QUEUE_OPEN_TOOL, queuePushExtension, topicStore } from "./topics";
@@ -247,6 +255,9 @@ export const markRunResuming = (path: string): void => runRecorder.markResuming(
  *   what it began with across every later start. Without a record (a caller with no chat), the review
  *   switch as saved now, and no Visuals flag (the extension then reads mode-align.json itself).
  */
+/** The merge thread's sandbox flags: On, read-only level, the cwd never writable. */
+export const MERGE_THREAD_FLAGS = { sandboxOn: true, sandboxReadOnly: true, cwdNotWritable: true } as const satisfies Partial<OpenFlags>;
+
 function sessionFlags(cwd: string, outline = true, linkTools: "member" | "legacy" = "legacy", launch?: AlignLaunchData): OpenFlags {
   const flags: OpenFlags = { outline };
   const target = targetOfCwd(cwd);
@@ -301,9 +312,11 @@ const mcpTellHere: NonNullable<ChatHosts["mcpTell"]> = (parent, note) => void im
 
 /** Register the Claude Code provider without waiting for the user to open a session: a throwaway
     session with the default extensions and the provider flag alone (server/harness/pi/open.ts).
-    Best-effort; never throws. `onStep` hears each step as it begins (§app.chat-processes/boot-log). */
+    Best-effort; never throws. `onStep` hears each step as it begins (§app.chat-processes/boot-log). Its modes
+    owner is the saved switch as this warm-up finds it, as a chat's open reads it (§chat.mode-menu/sova-runs-modes);
+    nothing of that owner outlives the throwaway session, so a later flip has nothing here to follow. */
 export function warmClaudeCodeProvider(modelRuntime: PiModelRuntime, cwd: string, onStep?: (step: string) => void): Promise<void> {
-  return warmPiProvider(modelRuntime, cwd, DEFAULT_EXTENSION_FACTORIES, onStep);
+  return warmPiProvider(modelRuntime, cwd, DEFAULT_EXTENSION_FACTORIES, onStep, sovaRunsModesSaved() ? modesEntries().entry : null);
 }
 
 let runtimeWarm: Promise<void> | null = null;
@@ -552,7 +565,7 @@ export interface CutHello {
 
 /** `history`: false when only `?tail=rest` clients get it, who are never pushed any. */
 export function cutHello(hello: Extract<ChatServerMessage, { type: "hello" }>, history = true): CutHello {
-  const cut = cutTail(hello.items, { history });
+  const cut = cutTail(hello.items, { history, v1: (it) => rowFor(it, 1) });
   return { hello: cut.older > 0 ? { ...hello, items: cut.items, older: cut.older } : hello, history: cut.history, all: hello.items };
 }
 
@@ -579,7 +592,7 @@ function sendHistory(cut: CutHello | null, clients: readonly ChatClient[], still
     const parts = c.wire === 2 ? (cut.history2 ??= cut.history.map((p) => historyOnWire2(p, replies))) : cut.history;
     for (const part of parts) {
       if (c.sendRaw) c.sendRaw(part.raw);
-      else c.send(part.msg);
+      else c.send(c.wire === 2 ? part.msg : withRows(part.msg, 1));
     }
   }
 }
@@ -814,13 +827,23 @@ export function modesStamped(host: WorkerHost, sovaModes: boolean): WorkerHost {
 /** The coding agent's `spec` tool, run in the chat's own process: it reads only. */
 const specToolExtension = () => servedToolsExtension("sova-spec", [specCodingTool()]);
 
+/** project_verbs and its instance note, in a chat that is offered it (§app.project-services/tool-offered): served when the server declared it, else in this process. */
+const projectVerbsLoad = (path: string) =>
+  offeredToolExtension(
+    servedDecls
+      ? servedToolsExtension("sova-project-verbs", servedSpecs(path, (n) => n === "project_verbs"), chatHosts.instanceNote ?? ((ctx) => sessionInstanceNote(projectEngine, ctx)))
+      : projectVerbsExtension(projectEngine),
+    "project_verbs",
+    projectVerbsOffered,
+  );
+
 /**
  * A worker chat's own inline extensions: every one, hidden chats included, gets the macOS kill guard
  * (server/shell-guard.ts); a worker or team member (never a hidden chat) also gets project_verbs and its
  * instance note, as an ordinary chat does (§app.project-services/callers), served when the server declared it, else
- * in this process.
+ * in this process; and the spec look-up, a team's monitor excepted (§app.spec-lookup/spec-tool): it does no project work.
  */
-export function workerExtensionFactories(w: Pick<WorkerSpec, "kind"> & { builtins?: string[] | null } & Partial<Pick<WorkerSpec, "mcp" | "parent">>, path: string) {
+export function workerExtensionFactories(w: Pick<WorkerSpec, "kind"> & { builtins?: string[] | null } & Partial<Pick<WorkerSpec, "mcp" | "parent" | "env">>, path: string) {
   // Subfolder instruction files load for every kind whose loadout has a file tool (server/deeper-context.ts).
   // A subfolder's skills too, for one that can also read a skill's file (§chat.subfolder-skills/offering).
   const files = !w.builtins || w.builtins.some((t) => LOADING_TOOLS.has(t)) ? [deeperContextExtension({ skills: !w.builtins || w.builtins.includes("read") || w.builtins.includes("bash") })] : [];
@@ -835,13 +858,12 @@ export function workerExtensionFactories(w: Pick<WorkerSpec, "kind"> & { builtin
     ...(mcp?.servers.length
       ? [mcpExtension({ list: async () => mcp, label: () => w.parent?.workerId ?? "A worker", tellParent: (note) => (chatHosts.mcpTell ?? mcpTellHere)(w.parent?.path ?? "", note) })]
       : []),
-    servedDecls
-      ? servedToolsExtension("sova-project-verbs", servedSpecs(path, (n) => n === "project_verbs"), chatHosts.instanceNote ?? ((ctx) => sessionInstanceNote(projectEngine, ctx)))
-      : projectVerbsExtension(projectEngine),
+    projectVerbsLoad(path),
     // background_job: a job under the worker's own confinement, run by the server (§app.background-jobs/request).
     ...(servedDecls && (!w.builtins || w.builtins.includes("bash")) ? [servedToolsExtension("sova-background-job", servedSpecs(path, (n) => n === BACKGROUND_JOB_TOOL))] : []),
-    // spec: the read-only spec look-up, last of all so nothing else moves.
-    specToolExtension(),
+    // spec: the read-only spec look-up, last of all so nothing else moves. By its duty, never by its built-ins:
+    // any other worker with no file tools keeps it.
+    ...(decodeMemberContext(w.env?.[MEMBER_ENV])?.duty === "monitor" ? [] : [specToolExtension()]),
   ];
 }
 
@@ -863,6 +885,14 @@ export function workerBuild(w: WorkerSpec, path: string): PiBuild {
     },
     flags: () => ({ extra: w.flags }),
     exclude: () => (w.builtins === null ? [] : WORKER_BUILTIN_TOOLS.filter((t) => !w.builtins!.includes(t))),
+    // Its listed built-ins on: excluding the rest only filters pi's default set (read, bash, edit, write), so a
+    // listed grep, find or ls would otherwise never be active.
+    built: (session) => {
+      if (w.builtins === null) return;
+      const active = session.activeTools();
+      const missing = w.builtins.filter((t) => WORKER_BUILTIN_TOOLS.includes(t) && !active.includes(t));
+      if (missing.length) session.setActiveTools([...active, ...missing]);
+    },
     // A worker trusts its project's local files as every Sova chat does.
     opening: () => ({
       ...(w.model ? { model: w.model } : {}),
@@ -1049,7 +1079,15 @@ type Sender = { kind: "overseer"; overseerId?: string } | { kind: "baton"; by: s
     message may still be in the SDK's queue). `sender` null: a queue item with no sender, marked only
     to keep its place, so a later item with the same text (several are in pi at once when steers land
     together) never takes this one's message: marks match in hand-off order, first in, first out. */
-type SenderMark = { text: string; sender: Sender | null; itemId?: string; held?: boolean };
+type SenderMark = {
+  text: string;
+  sender: Sender | null;
+  itemId?: string;
+  held?: boolean;
+  pressedAt?: number;
+  /** No person sent it, whatever its row looks like: Time Spent neither labels nor counts it (§app.message-labels/labelling). */
+  program?: boolean;
+};
 
 /** `customType` of the invisible marker beside a delivered topic batch (§chat.topics/delivery). */
 export const TOPIC_DELIVERED_ENTRY = "sova-topic-delivered";
@@ -1339,6 +1377,34 @@ class ChatSession {
   /** A pick is landing (a borrow can take up to 30 s): the web queue holds its items meanwhile. */
   private get loginApplying() { return this.loginPick.applying; }
 
+  /** The user's commands from shell mode (server/chat-shell.ts, §chat.shell-mode/running). */
+  readonly shell: ChatShell = new ChatShell({
+    harness: () => this.harness,
+    broadcast: (msg) => this.broadcast(msg),
+    refusal: () => this.shellRefusal(),
+    beforeWrite: () => this.flushDeferredAppends(),
+    rowsOf: (entry, stopped, durationMs) =>
+      rowsOfEntry(entry, "?", entry.id ? { ...(stopped ? { stoppedShell: new Map([[entry.id, stopped]]) } : {}), ...(durationMs !== undefined ? { shellDurations: new Map([[entry.id, durationMs]]) } : {}) } : undefined),
+    markRun: (entryId, facts) => {
+      if (facts.durationMs !== undefined) this.harness.state.append(SHELL_RUN, { targetId: entryId, durationMs: facts.durationMs });
+      if (facts.stopped) this.harness.state.append(SHELL_CLOSED, { targetId: entryId, ...(facts.stopped !== "closed" ? { why: facts.stopped } : {}) });
+    },
+  });
+
+  /** Why this chat runs no command from shell mode now, or null (§chat.shell-mode/box, /who). */
+  private shellRefusal(): { reason: ShellRefusal; message: string } | null {
+    if (this.disposed) return { reason: "unavailable", message: SHELL_CLOSING_TEXT };
+    // The Overseer, project overseers and assistants, gathering sessions: their agents have no shell.
+    if (this.special) return { reason: "unavailable", message: "This chat has no shell mode." };
+    try {
+      assertNotLive(this.path);
+      this.assertNoForeignWrites();
+    } catch (err) {
+      return { reason: err instanceof BusyError && err.code === "recent" ? "recent" : "busy", message: err instanceof Error ? err.message : String(err) };
+    }
+    return null;
+  }
+
   /**
    * Sova's own outgoing queue (server/queue.ts). Every message that would have gone straight
    * into the SDK's queue goes here first: one follow-up of ours inside the SDK at a time, or every
@@ -1395,8 +1461,9 @@ class ChatSession {
       // line between. `queue_item_gone{reason:"failed"}` is now the single departure signal, which
       // also makes "failed" and "dropped" symmetric, and leaves `queue_cleared` meaning Stop and
       // nothing else.
-      const provider = this.harness.model()?.provider;
-      this.broadcast({ type: "error", code, message, ...(item.origin === "client" ? { clientId: item.id } : {}), ...(provider ? { provider } : {}) });
+      const failed = this.harness.model();
+      const provider = failed?.provider;
+      this.broadcast({ type: "error", code, message, ...(item.origin === "client" ? { clientId: item.id } : {}), ...(provider ? { provider, model: failed!.ref } : {}) });
     },
   });
 
@@ -1498,7 +1565,7 @@ class ChatSession {
     // until the message ends (markSend) or the item departs undelivered (onGone). An item with no
     // sender gets a place-keeping mark: marks match first in, first out (SenderMark).
     const sender = senderOfItem(item);
-    const mark: SenderMark = { text: item.text, sender, itemId: item.id, held: true };
+    const mark: SenderMark = { text: item.text, sender, itemId: item.id, held: true, ...(item.pressedAt !== undefined ? { pressedAt: item.pressedAt } : {}), ...(source === "queued" || item.notUser ? { program: true } : {}) };
     this.senderMarks.push(mark);
     if (sender?.kind === "session") this.profileState?.run?.expectHop(item.text, sender.hop);
     if (!streaming) {
@@ -1573,6 +1640,7 @@ class ChatSession {
       byPerson?: WebQueueItem["byPerson"];
       notUser?: WebQueueItem["notUser"];
       key?: string;
+      pressedAt?: number;
     },
   ): boolean {
     if (!isCompactionInProgress(err) || this.disposed) return false;
@@ -1591,6 +1659,7 @@ class ChatSession {
       ...(item.byPerson ? { byPerson: true as const } : {}),
       ...(item.notUser ? { notUser: true as const } : {}),
       ...(item.key !== undefined ? { key: item.key } : {}),
+      ...(item.pressedAt !== undefined ? { pressedAt: item.pressedAt } : {}),
     });
     return true;
   }
@@ -2073,9 +2142,16 @@ class ChatSession {
           if (this.disposed) return;
           this.queue.onSdkEvent();
           this.releaseLinks(false);
+          // A profile switch held only by this compaction applies now (§chat.profiles/switch).
+          this.settleHeldSwitch();
         });
       if (event.type === "run.start") {
         this.releaseLinks(true);
+        // The switch's line above the composer rests until the chat's next turn starts.
+        if (this.switchOutcome.applied || this.switchOutcome.failed) {
+          this.switchOutcome = {};
+          this.broadcastChatProfile();
+        }
         emitChatEvent(this.path, "started");
         // After the fact: schedules a mode's turn.started hooks (if any) and returns.
         this.modeActions.turnStarted();
@@ -2127,6 +2203,8 @@ class ChatSession {
         emitChatEvent(this.path, "settled");
         this.modeActions.turnSettled();
       }
+      // A profile switch held for this reply applies now, checked again (§chat.profiles/switch).
+      if (event.type === "run.settled") this.settleHeldSwitch();
       if (event.type === "run.settled" && this.modeApplies === "after-turn") {
         // A mid-turn switch reaches the next prompt from here on.
         this.modeApplies = "now";
@@ -2597,9 +2675,235 @@ class ChatSession {
     if (!this.hasModeOwner()) throw new ModeRefusedError("The mode extension isn't loaded in this chat.");
     this.flushDeferredAppends();
     const entry = pickEntryFor(this.extensionBranch(), profile);
-    if (entry) this.harness.state.append(SUBAGENT_PROFILE, entry.data);
+    if (entry) {
+      // Only the helpers move (§chat.subagent-profiles/overseer): a chat that names its profile only by its
+      // helper pick (or by nothing) first records the profile it is on, so the new pick doesn't rename it.
+      if (!this.profileOnBranch()) {
+        const on = this.chatProfileOn();
+        this.harness.state.append(CHAT_PROFILE, { v: 1, id: on.id, ...(on.key ? { key: on.key } : {}), name: on.name });
+      }
+      this.harness.state.append(SUBAGENT_PROFILE, entry.data);
+    }
     markOwned(this.path);
     return { ...this.subagentProfileInfo(), applies: this.harness.isRunning() ? "after-turn" as const : "now" as const };
+  }
+
+  /** A profile switch held until the running reply ends (§chat.profiles/switch); null with none. */
+  private pendingSwitch: ProfileSwitchTarget | null = null;
+  /** The newest switch's outcome, until the chat's next turn starts: the thread's line above the composer. */
+  private switchOutcome: Pick<ChatProfileState, "applied" | "failed"> = {};
+
+  /**
+   * Which joined profile this chat is on: the newest of the switch's hidden entry and the profile entry the
+   * chat started with, else the helper pick's library profile, else Off.
+   */
+  chatProfileOn(): { id: string; key?: string; name: string; model?: string; thinking?: string } {
+    const named = this.profileOnBranch();
+    if (named) return named;
+    const pick = this.subagentPick;
+    if (pick && pick !== "off") {
+      const name = this.subagentProfileInfo().profiles.find((p) => p.id === pick)?.name ?? pick;
+      return { id: pick, key: `library:${pick}`, name };
+    }
+    return OFF_ON;
+  }
+
+  /** The profile the branch names: the newest of a switch's hidden entry and the profile entry the chat started
+      with (one that picked no profile is Off); undefined when it names none. */
+  private profileOnBranch(): { id: string; key?: string; name: string; model?: string; thinking?: string } | undefined {
+    const view = this.harness.state.branch();
+    const named = view.latest(CHAT_PROFILE);
+    const started = view.latest(PROFILE);
+    if (!named && !started) return undefined;
+    // The newer of the two on the branch wins (a pick on the empty screen after a switch, or the reverse).
+    const at = new Map(this.harness.branch().map((e, i) => [e.id, i]));
+    const pos = (r: { id: EntryId | null } | null) => (r?.id ? (at.get(r.id) ?? -1) : -1);
+    if (named && (!started || pos(named) >= pos(started))) {
+      const d = named.data;
+      return { id: d.id, ...(d.key ? { key: d.key } : {}), name: d.name, ...(d.model ? { model: d.model } : {}), ...(d.thinking ? { thinking: d.thinking } : {}) };
+    }
+    const p = started!.data.profile;
+    if (!p) return OFF_ON; // a pick of no profile: Off
+    return { id: p.id, key: keyOf(p), name: p.label, ...(p.model ? { model: p.model } : {}), ...(p.thinking ? { thinking: p.thinking } : {}) };
+  }
+
+
+  /** What the menu, the thread's line and the limit row read (the `chat_profile` message). */
+  chatProfileState(): ChatProfileState {
+    const on = this.chatProfileOn();
+    const model = this.harness.model()?.ref;
+    const p = this.pendingSwitch;
+    return {
+      current: {
+        id: on.id,
+        ...(on.key ? { key: on.key } : {}),
+        name: on.name,
+        edited: !!on.model && !!model && model !== on.model,
+        ...(model ? { model } : {}),
+        ...(on.model ? { profileModel: on.model } : {}),
+      },
+      ...(p ? { pending: { id: p.id, ...(p.key ? { key: p.key } : {}), name: p.name, helpers: p.helpers, setsModel: !!p.model } } : {}),
+      ...this.switchOutcome,
+    };
+  }
+
+  private broadcastChatProfile(): void {
+    if (!this.disposed) this.broadcast({ type: "chat_profile", state: this.chatProfileState() });
+  }
+
+  /** Why this chat can't take a profile switch at all, or null (the same refusals as a mode switch). */
+  private profileSwitchRefusal(): string | null {
+    if (this.disposed || this.overseer || this.specialRefuses("mode") || this.hasForeignWrites()) return "This chat can't switch profiles.";
+    try {
+      assertNotLive(this.path);
+    } catch (err) {
+      return err instanceof Error ? err.message : String(err);
+    }
+    if (!this.hasModeOwner()) return "The mode extension isn't loaded in this chat.";
+    return null;
+  }
+
+  /**
+   * Check a switch as a composer pick is checked, writing nothing: the model is one here, Settings → Models
+   * allows it and this computer has credentials for it; the effort is a level; the helpers are in this
+   * computer's library. Answers the model to set (undefined: the chat keeps its own), or why not.
+   */
+  private async checkProfileSwitch(t: ProfileSwitchTarget): Promise<{ ok: true; model?: HarnessModel } | { ok: false; status: 400 | 409; error: string }> {
+    const refused = this.profileSwitchRefusal();
+    if (refused) return { ok: false, status: 409, error: refused };
+    if (t.thinking !== undefined && !THINKING_LEVELS.includes(t.thinking)) return { ok: false, status: 400, error: `"${t.thinking}" isn't an effort level.` };
+    try {
+      // A profile with no helpers of its own takes the default's: the library must answer for that too.
+      requireSubagentProfile(t.subagents ?? this.subagentProfileInfo().default);
+    } catch (err) {
+      return { ok: false, status: 400, error: err instanceof Error ? err.message : String(err) };
+    }
+    if (!t.model) return { ok: true };
+    const denial = modelDenial(readModelPolicy(), t.model);
+    if (denial) return { ok: false, status: 400, error: denial };
+    const found = await this.harness.findModel(t.model).catch(() => null);
+    if (!found?.ok) return { ok: false, status: 400, error: `No credentials here for ${shortModel(t.model)}.` };
+    // The lookup was async: a TUI or another writer may have appeared meanwhile.
+    const again = this.profileSwitchRefusal();
+    if (again) return { ok: false, status: 409, error: again };
+    return { ok: true, model: found.model };
+  }
+
+  /**
+   * Switch this chat's whole Models part to a profile (§chat.profiles/switch): the chat's own model and
+   * effort where the profile sets them, its helper pick and the alignment settings that ride on it, never
+   * its tools or modes. Checked first, writing nothing on a refusal. Idle: applied at once. While a reply
+   * runs or the chat compacts: held, and applied (checked again) when that ends; Cancel Switch drops it. The model is set
+   * only between turns, never mid-turn (setModel's own rule).
+   */
+  async switchProfile(t: ProfileSwitchTarget): Promise<({ ok: true } & ProfileSwitchResult) | { ok: false; status: 400 | 409; error: string }> {
+    const checked = await this.checkProfileSwitch(t);
+    if (!checked.ok) return checked;
+    // Back to the profile it is on, unedited: nothing to wait for, and no line, busy or not. A different
+    // switch that was waiting is dropped: the chat stays as it is.
+    if (this.switchChangesNothing(t)) {
+      if (this.pendingSwitch) {
+        this.pendingSwitch = null;
+        this.broadcastChatProfile();
+      }
+      return { ok: true, applies: "now", state: this.chatProfileState() };
+    }
+    if (this.harness.isRunning() || this.isCompacting()) {
+      this.pendingSwitch = t;
+      this.switchOutcome = {};
+      this.broadcastChatProfile();
+      return { ok: true, applies: "after-turn", state: this.chatProfileState() };
+    }
+    this.pendingSwitch = null;
+    const done = await this.applyProfileSwitch(t, checked.model);
+    if (!done.ok) return done;
+    return { ok: true, applies: "now", state: this.chatProfileState() };
+  }
+
+  /** Cancel Switch: drop the switch waiting for the reply; nothing changes. */
+  cancelProfileSwitch(): { cancelled: boolean; state: ChatProfileState } {
+    const cancelled = this.pendingSwitch !== null;
+    this.pendingSwitch = null;
+    if (cancelled) this.broadcastChatProfile();
+    return { cancelled, state: this.chatProfileState() };
+  }
+
+  /**
+   * Write the switch, all of it, between turns: model, effort, helper pick, then the hidden entry naming
+   * the profile. The model goes first: if pi refuses it, nothing else was written.
+   */
+  /** The helper pick a switch writes: its own helpers; without any, the default's, pinned only when the chat
+      already has a pick (a pick can't be cleared); a chat with none keeps following the default. */
+  private switchPickOf(t: ProfileSwitchTarget): string | undefined {
+    return t.subagents ?? (this.subagentPick !== undefined ? this.subagentProfileInfo().default : undefined);
+  }
+
+  /** The chat's own profile again, unedited, with the helpers it already has: a switch that changes nothing. */
+  private switchChangesNothing(t: ProfileSwitchTarget): boolean {
+    const on = this.chatProfileOn();
+    const ref = this.harness.model()?.ref;
+    const edited = !!on.model && !!ref && ref !== on.model;
+    const pick = this.switchPickOf(t);
+    return on.id === t.id && !edited && (pick === undefined || pick === this.subagentPick);
+  }
+
+  private async applyProfileSwitch(t: ProfileSwitchTarget, model: HarnessModel | undefined): Promise<{ ok: true } | { ok: false; status: 409; error: string }> {
+    if (this.harness.isRunning()) return { ok: false, status: 409, error: "A reply started; try again when it ends." };
+    const on = this.chatProfileOn();
+    const was = { model: this.harness.model(), thinking: this.harness.thinking() };
+    const pick = this.switchPickOf(t);
+    // The same profile again while it isn't edited changes nothing, and says nothing.
+    if (this.switchChangesNothing(t)) return { ok: true };
+    this.flushDeferredAppends();
+    try {
+      if (model && model.ref !== was.model?.ref) await this.harness.setModel(model);
+      if (t.thinking && t.thinking !== this.harness.thinking()) this.harness.setThinking(t.thinking);
+      const entry = pick !== undefined ? pickEntryFor(this.extensionBranch(), pick) : null;
+      if (entry) this.harness.state.append(SUBAGENT_PROFILE, entry.data);
+      const named: ChatProfileEntryData = { v: 1, id: t.id, ...(t.key ? { key: t.key } : {}), name: t.name, ...(t.model ? { model: t.model } : {}), ...(t.thinking ? { thinking: t.thinking } : {}) };
+      this.harness.state.append(CHAT_PROFILE, named);
+    } catch (err) {
+      // All or nothing: never the new model with the old helpers. Put the model and effort back.
+      try {
+        if (was.model && this.harness.model()?.ref !== was.model.ref) {
+          const back = await this.harness.findModel(was.model.ref);
+          if (back.ok) await this.harness.setModel(back.model);
+        }
+        if (this.harness.thinking() !== was.thinking) this.harness.setThinking(was.thinking);
+      } catch (back) {
+        console.error("[chat] a failed profile switch couldn't put the model back", back);
+      }
+      this.broadcast({ type: "model", model: this.harness.model()?.ref ?? "" });
+      this.broadcast({ type: "thinking", level: this.harness.thinking() });
+      return { ok: false, status: 409, error: err instanceof Error ? err.message : String(err) };
+    }
+    markOwned(this.path);
+    this.broadcast({ type: "model", model: this.harness.model()?.ref ?? "" });
+    this.broadcast({ type: "thinking", level: this.harness.thinking() });
+    this.switchOutcome = { applied: { id: t.id, name: t.name, at: Date.now() } };
+    this.broadcastChatProfile();
+    return { ok: true };
+  }
+
+  /** At a reply's or a compaction's end: settle the held switch, if any (it checks and waits itself). */
+  private settleHeldSwitch(): void {
+    if (this.pendingSwitch) void this.settleProfileSwitch().catch((err) => console.error("[chat] held profile switch failed", err));
+  }
+
+  /** At a reply's or a compaction's end: the held switch, checked again, then applied whole or not at all.
+      While either still runs it keeps waiting; the next end settles it. */
+  private async settleProfileSwitch(): Promise<void> {
+    const t = this.pendingSwitch;
+    if (!t || this.disposed || this.harness.isRunning() || this.isCompacting()) return;
+    const checked = await this.checkProfileSwitch(t);
+    if (this.pendingSwitch !== t) return; // cancelled or replaced meanwhile
+    if (this.harness.isRunning() || this.isCompacting()) return; // a new reply or compaction started: it waits for that one's end
+    this.pendingSwitch = null;
+    const done = checked.ok ? await this.applyProfileSwitch(t, checked.model) : checked;
+    if (!done.ok) {
+      this.switchOutcome = { failed: { id: t.id, name: t.name, reason: done.error } };
+      this.broadcastChatProfile();
+    }
   }
 
   async saveModeDefault(): Promise<ModeInfo> {
@@ -2941,6 +3245,7 @@ class ChatSession {
     const harness = this.harness;
     const branch = harness.branch();
     const tail = live ? this.liveTail.snapshot() : undefined;
+    const shell = this.shell.snapshot();
     return {
       type: "hello",
       items: rowsOf(branch),
@@ -2952,6 +3257,9 @@ class ChatSession {
       ...(this.alignLaunch?.data ? { alignReview: this.alignLaunch.data.review } : {}),
       ...(this.cwdFallback ? { cwdFallback: this.cwdFallback } : {}),
       ...(tail ? { live: tail } : {}),
+      ...(shell ? { shell } : {}),
+      // Its own agent and folder (§chat.shell-mode/box): a special kind's agent has no shell.
+      ...(this.special ? {} : { shellMode: true as const }),
     };
   }
 
@@ -2986,6 +3294,7 @@ class ChatSession {
     // would show an empty thread over a full queue.
     client.send({ type: "queue", items: this.queue.snapshot() });
     client.send(this.modeMessage());
+    client.send({ type: "chat_profile", state: this.chatProfileState() });
     // Only while memory is on (or was turned off since): absent means off (§chat.memory/status).
     if (this.memoryAvailable() && this.memory.choice().on) client.send(this.memory.statusMessage());
     this.sendSandbox((m) => client.send(m));
@@ -3124,10 +3433,11 @@ class ChatSession {
         : opts?.sentBySession
           ? { kind: "session", ...opts.sentBySession }
           : null;
-    const send: SenderMark | null = sender ? { text, sender } : null;
+    const source = inputSourceOf({ origin, ...(opts?.sentByOverseer ? { overseer: opts.sentByOverseer } : {}), ...(opts?.sentByBaton ? { baton: opts.sentByBaton } : {}), ...(opts?.byPerson ? { byPerson: true as const } : {}) });
+    const program = source === "queued" || !!opts?.notUser;
+    const send: SenderMark | null = sender || program ? { text, sender, ...(program ? { program } : {}) } : null;
     if (send) this.senderMarks.push(send);
     if (opts?.sentBySession) this.profileState?.run?.expectHop(text, opts.sentBySession.hop);
-    const source = inputSourceOf({ origin, ...(opts?.sentByOverseer ? { overseer: opts.sentByOverseer } : {}), ...(opts?.sentByBaton ? { baton: opts.sentByBaton } : {}), ...(opts?.byPerson ? { byPerson: true as const } : {}) });
     const turn = this.sendKeys.run(key, () => this.toSdk(opts?.notUser ? "server" : origin, () => this.tracked(opts?.replay ? "" : text, () => this.harness.send(text, { images, source, ...(opts?.replay ? { expand: false } : {}) })), opts?.confirm, !!opts?.sentByOverseer));
     this.noteStarting(turn);
     // Whoever sent it: a `/mode …` that reaches the extension (strict, a minor mode) is read back, so the menu never lags.
@@ -3184,6 +3494,8 @@ class ChatSession {
     const i = this.senderMarks.findIndex((s) => s.text === text);
     if (i < 0) return;
     const [send] = this.senderMarks.splice(i, 1);
+    const { pressedAt, program } = send!;
+    if (pressedAt !== undefined || program) queueMicrotask(() => this.noteEntered(pressedAt, !!program));
     const sender = send!.sender;
     if (!sender) return; // a place-keeping mark: this message has no sender
     queueMicrotask(() => {
@@ -3199,6 +3511,15 @@ class ChatSession {
         if (items.length) this.broadcast({ type: "append", items });
       }
     });
+  }
+
+  /** What Time Spent needs of the message that just entered, beside the session: when a person's was pressed, or that no person sent it. */
+  private noteEntered(pressedAt: number | undefined, program: boolean): void {
+    const leaf = this.harness.leafId();
+    const entry = leaf ? this.harness.entry(leaf) : undefined;
+    if (entry?.kind !== "user" || !entry.id) return;
+    if (program) recordProgram(this.path, entry.id);
+    else if (pressedAt !== undefined) recordPress(this.path, entry.id, pressedAt);
   }
 
   /**
@@ -3269,6 +3590,8 @@ class ChatSession {
       const marks = this.senderMarks.filter((m) => m.itemId === item.id);
       for (const m of marks) this.dropSenderMark(m);
       const id = this.harness.appendUserMessage(item.text, item.images);
+      if (inputSourceOf(item) === "queued" || item.notUser) recordProgram(this.path, id);
+      else if (item.pressedAt !== undefined) recordPress(this.path, id, item.pressedAt);
       const sender = senderOfItem(item);
       const markerId = sender ? appendSenderMarker(this.harness.state, id, sender) : null;
       const items = [id, markerId].flatMap((eid) => {
@@ -3354,7 +3677,8 @@ class ChatSession {
    * Switch model, the one path for the composer's `set_model`, the Overseer's `sova_set_session`
    * and Settings → Overseer. Resolves against models with configured auth (= GET /api/models)
    * BEFORE writing anything, so a rejected switch leaves the file untouched. Only `save: true`
-   * (the user's own pick in the composer) is remembered; every other caller changes this chat only.
+   * (the user's own pick in the composer) is remembered, and only by a special kind (the Overseer's
+   * overseer.json, a baton's own file); an ordinary chat's pick is its own and never a default.
    */
   async setModelRef(ref: string, opts: { save?: boolean } = {}): Promise<void> {
     assertNotLive(this.path);
@@ -3376,14 +3700,16 @@ class ChatSession {
     this.broadcast({ type: "model", model: this.harness.model()?.ref ?? ref });
     // setModel re-clamps the level to the new model's ladder; the pane needs that too.
     this.broadcast({ type: "thinking", level: this.harness.thinking() });
+    // A model picked by hand marks the chat's profile "(edited)", or clears it (§chat.profiles/edited).
+    this.broadcastChatProfile();
     // Only the user's pick saves: the Overseer's own chat records it in overseer.json, and a session
     // with no messages yet makes it the next new session's default. A programmatic switch (the
     // Overseer acting on a session, Settings → Overseer) never becomes anyone's default.
     if (opts.save !== true) return;
     // The level too: setModel re-clamped it, and the next conversation is seeded from the file.
     // A special kind keeps it as it says (a baton: in its own file only, never the host's default).
+    // Never a default otherwise: a composer pick is this chat's own (§chat.model-menu/saved-default).
     if (this.special) this.saveSpecialChoice({ model: ref, thinking: this.harness.thinking() });
-    else if (this.isPristine()) saveDefaults({ model: ref });
   }
 
   /** Change thinking level: the `set_thinking` path, shared like setModelRef (and saved, like it,
@@ -3409,9 +3735,8 @@ class ChatSession {
         items: [{ id: `thinking-${Date.now()}`, kind: "info", meta: { type: "thinking_level_change" }, text: `Thinking: ${after}` }],
       });
     if (opts.save !== true) return after;
+    // A special kind keeps it as it says; any other chat's level is its own, never a default.
     if (this.special) this.saveSpecialChoice({ thinking: after });
-    // A session with no messages yet: this level is also the next new session's default (never a special kind's).
-    else if (this.isPristine()) saveDefaults({ thinking: after });
     return after;
   }
 
@@ -3421,8 +3746,9 @@ class ChatSession {
     const code = errorCode(err);
     // The turn failed on this session's model: name its provider (this session's model cannot move
     // mid-turn — switches are idle-only), so the limit row never has to read the provider out of text.
-    const provider = this.harness.model()?.provider;
-    this.broadcast({ type: "error", code, message: err instanceof Error ? err.message : String(err), ...(provider ? { provider } : {}) });
+    const failed = this.harness.model();
+    const provider = failed?.provider;
+    this.broadcast({ type: "error", code, message: err instanceof Error ? err.message : String(err), ...(provider ? { provider, model: failed!.ref } : {}) });
   }
 
   /** A composer message its kind attributes (a baton session: only while the operator holds the
@@ -3492,7 +3818,7 @@ class ChatSession {
     // A message after a model switch or a rewind still under way waits for it, so what the person
     // asked first is applied first (§chat.transcript/send-while-starting). A dialog's answer and a
     // Stop never wait.
-    if (this.behind && msg.type !== "ui_response" && msg.type !== "abort") {
+    if (this.behind && msg.type !== "ui_response" && msg.type !== "abort" && msg.type !== "shell_stop") {
       const tail = this.behind.then(() => this.handleNow(client, msg));
       this.behind = tail;
       void tail.then(() => {
@@ -3679,6 +4005,12 @@ class ChatSession {
           else client.send({ type: "code", state: "current" });
           return;
         }
+        case "shell":
+          this.shell.start(client, msg);
+          return;
+        case "shell_stop":
+          this.shell.stop(String(msg.id ?? ""), (msg as { by?: unknown }).by === "other");
+          return;
         case "ui_response": {
           const pending = this.pendingUi.get(msg.id);
           if (pending) {
@@ -3814,6 +4146,8 @@ class ChatSession {
     }
     this.queue.onSdkEvent();
     this.releaseLinks(false);
+    // Our own /compact clears compactRunning only here, after pi's compaction_end: settle a held switch now.
+    this.settleHeldSwitch();
   }
 
   /**
@@ -3916,6 +4250,7 @@ class ChatSession {
     }
     this.modeState = chatModeOf(this.harness.state.branch());
     this.broadcast(this.modeMessage());
+    this.broadcastChatProfile(); // the new branch may name another profile
     if (this.memoryAvailable()) this.memory.changed(); // the engine re-syncs on session_tree
     this.sendSandbox((m) => this.broadcast(m)); // the extension re-restores on session_tree too
     this.broadcast(this.loginAfterHello()); // the new branch's newest entry
@@ -3939,8 +4274,9 @@ class ChatSession {
     let on1: ChatServerMessage | undefined;
     for (const c of this.clients) {
       if (c.wire === 2) for (const m of (on2 ??= onWire(msg, 2, this.replyLookup))) c.send(m);
-      // Wire 1 stays byte for byte: a message_end's reply timing rides wire 2 only.
-      else c.send((on1 ??= onWire1(msg)));
+      // Wire 1 stays byte for byte: a message_end's reply timing rides wire 2 only, and so does shell mode
+      // (a command's row and its live messages).
+      else if (!isShellMessage(msg)) c.send((on1 ??= withRows(onWire1(msg), 1)));
     }
   }
 
@@ -4040,6 +4376,10 @@ class ChatSession {
   }
 
   async dispose(): Promise<void> {
+    if (this.disposed) return;
+    // A command running stops and is saved as stopped by the close, before anything goes
+    // (§chat.shell-mode/lifecycle); a run waiting for the reply to end is saved first.
+    await this.shell.close().catch((err) => console.warn(`[chat] shell run not saved at close: ${err instanceof Error ? err.message : String(err)}`));
     if (this.disposed) return;
     // A baton session closing cleanly (archive, shutdown, reload) keeps every message still
     // waiting in its queue, as its sender's: nothing sent is dropped (§app.baton/hand-off). A
@@ -4554,7 +4894,10 @@ async function openLocked(path: string, onDisposed: () => void, onStep: (step: s
   const build = async ({ cwd, read }: { cwd: string; read: OpenRead }): Promise<PiBuild> => {
     // A worker chat (§app.chat-processes/workers) is its loadout and nothing else, its messages labelled
     // with the keys of the sends they came from (§app.chat-processes/worker-instructions).
-    if (worker) return { ...workerBuild(worker, path), built: (session) => sendKeys.watch(session) };
+    if (worker) {
+      const b = workerBuild(worker, path);
+      return { ...b, built: (session) => (sendKeys.watch(session), b.built?.(session)) };
+    }
     if (!launch.recorded) {
       const now = alignLaunchOf(read.state);
       if (now.recorded || launch.data === null) Object.assign(launch, now);
@@ -4650,14 +4993,14 @@ async function openLocked(path: string, onDisposed: () => void, onStep: (step: s
               // Sova's mode engine's handle, for this chat (only a runtime whose modes Sova runs has one to announce).
               ...(modes.sova ? [modesBridgeExtension((handle) => (modes.handle = handle))] : []),
               visCheckExtension(() => (visHost.chat && !visHost.chat.disposed ? visHost.chat.visCheckHost() : null)),
+              // What the model is sent of a `!` command (§chat.shell-mode/model): before memory, which sees it so too.
+              shellModelExtension(),
               // The memory minor mode's engine (§chat/memory): idle until memory is turned on.
               memory(),
               // playbook_read, once a schedule's fire delivered a playbook here (§chat.schedules/playbook-read).
               playbookExtension(chatHosts.playbook ?? playbookHost),
               // project_verbs: its own worktrees' running instances (server/project-services/tools.ts).
-              servedDecls
-                ? servedToolsExtension("sova-project-verbs", servedSpecs(path, (n) => n === "project_verbs"), chatHosts.instanceNote ?? ((ctx) => sessionInstanceNote(projectEngine, ctx)))
-                : projectVerbsExtension(projectEngine),
+              projectVerbsLoad(path),
               // queue_push: every ordinary session can answer on a topic (§chat.topics/push).
               servedDecls
                 ? servedToolsExtension("sova-topics", servedSpecs(path, (n) => n !== "project_verbs" && n !== QUEUE_OPEN_TOOL && n !== OFFER_TOOL && n !== CARD_TOOL && n !== CREATE_SETTINGS_TOOL && !TOUR_TOOLS.has(n)))
@@ -4676,7 +5019,9 @@ async function openLocked(path: string, onDisposed: () => void, onStep: (step: s
             ],
             ...overrides,
           },
-      flags: () => sessionFlags(cwd, outline, linkTools, launch.data ?? undefined),
+      // The merge thread (its Sova profile): its sandbox On from its start, at the read-only level (its tools write only
+      // in their tmp) and the main checkout it starts in never a writable root; the rest goes through the merge verbs.
+      flags: () => ({ ...sessionFlags(cwd, outline, linkTools, launch.data ?? undefined), ...(sovaNamedKind(snap) === "merge-thread" ? MERGE_THREAD_FLAGS : {}) }),
       // Sova's engine in the discovered mode extension's slot, when Sova runs this chat's modes.
       modesEntry: modes.sova ? modesEntries().entry : null,
       // Removals: the SDK's excludeTools, a filter on the registry itself, so no extension's
@@ -4703,6 +5048,11 @@ async function openLocked(path: string, onDisposed: () => void, onStep: (step: s
       forkCacheRouting: !special,
       built: (session) => {
         sendKeys.watch(session);
+        // A profile without the shell can still search: pi's read-only grep, find and ls on, beside read (pi's
+        // built-ins, so never in the extension registry; a name the runtime lacks is ignored by pi).
+        const search = snap ? searchToolsFor(snap.remove) : [];
+        const active = session.activeTools();
+        if (search.some((t) => !active.includes(t))) session.setActiveTools([...active, ...search.filter((t) => !active.includes(t))]);
         if (profile.run) {
           const run = profile.run;
           run.turns.watch(session);

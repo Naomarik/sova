@@ -282,6 +282,11 @@ describe("PiHarnessSession (§app.harness/session)", () => {
     assert.deepEqual(toolSource("/x/pi-config/extensions/mode/index.ts"), { source: "extension", origin: "mode" });
     assert.deepEqual(toolSource("/x/.pi/extensions/btw.ts"), { source: "extension", origin: "btw" });
     assert.deepEqual(toolSource(undefined), { source: "extension" });
+    const entries = { entry: "/own/modes-entry.ts", specWorker: "/own/modes-spec-worker.ts", projectToolsWorker: "/own/modes-project-tools-worker.ts" };
+    assert.deepEqual(toolSource(entries.entry, entries), { source: "extension", origin: "mode" }, "Sova's module goes by the file it stands in for");
+    assert.deepEqual(toolSource(entries.projectToolsWorker, entries), { source: "extension", origin: "project-tools-worker" });
+    assert.deepEqual(toolSource(entries.specWorker, entries), { source: "extension", origin: "spec-worker" });
+    assert.deepEqual(toolSource("/home/me/.pi/extensions/modes-entry.ts", entries), { source: "extension", origin: "modes-entry" }, "someone else's file of that name keeps its own");
   });
 
   test("declaredTools: the agent's declared tools in order, the loadout's descriptions, hidden declarations left out, each with its source (P22)", async () => {

@@ -1,5 +1,6 @@
 // POST /api/chat/action?path=&wait= (§app/chat-actions): one in-chat action from a script (Stop,
-// Compact, Rewind, Regenerate, Remove a queued message, Reload Now) with its outcome to wait for.
+// Compact, Rewind, Regenerate, Remove a queued message, Reload Now, List Commands, Stop Command) with its
+// outcome to wait for. Commands from shell mode are only listed and stopped here, never started.
 //
 // The action takes a chat socket's own path (server/ws.ts recordFrame → handleChat), on a recording
 // socket that hears what the chat sends it, so the chat handles it exactly as it handles the button
@@ -39,7 +40,9 @@ export type ChatAction =
   | { type: "rewind"; entryId: string }
   | { type: "regenerate"; entryId: string }
   | { type: "queue_remove"; itemId: string }
-  | { type: "reload_code" };
+  | { type: "reload_code" }
+  | { type: "shell_list" }
+  | { type: "shell_stop"; id: string };
 
 /** The keys each action takes, `type` included. */
 const KEYS: Record<ChatAction["type"], Record<string, "required" | "optional">> = {
@@ -49,7 +52,24 @@ const KEYS: Record<ChatAction["type"], Record<string, "required" | "optional">> 
   regenerate: { type: "required", entryId: "required" },
   queue_remove: { type: "required", itemId: "required" },
   reload_code: { type: "required" },
+  shell_list: { type: "required" },
+  shell_stop: { type: "required", id: "required" },
 };
+
+/** A running command as List Commands shows it: a `!!` command's text stays out (§chat.shell-mode/model). */
+export interface ListedCommand {
+  id: string;
+  command?: string;
+  private?: true;
+  startedAt: number;
+}
+/** The running commands a hello's `shell` holds. */
+function runningOf(shell: unknown): ListedCommand[] {
+  if (!Array.isArray(shell)) return [];
+  return shell
+    .filter((r): r is { id: string; command: string; private?: true; startedAt: number; state: string } => !!r && typeof r === "object" && (r as { state?: unknown }).state === "running")
+    .map((r) => ({ id: r.id, ...(r.private ? { private: true as const } : { command: r.command }), startedAt: r.startedAt }));
+}
 const TYPES = Object.keys(KEYS).join(", ");
 
 /** The body as an action, or the sentence that refuses it. */
@@ -151,6 +171,11 @@ export function createMatcher(action: ChatAction, requestId: string) {
           compacting = msg.isCompacting === true;
           if (msg.isStreaming !== true && !compacting) return answer(200, { outcome: "stopped", wasRunning: false });
         }
+        // The hello holds the chat's commands: a list needs no frame, and a stop of one not running sends none.
+        if (action.type === "shell_list") return answer(200, { outcome: "listed", commands: runningOf(msg.shell) });
+        if (action.type === "shell_stop" && !runningOf(msg.shell).some((c) => c.id === action.id)) {
+          return answer(200, { outcome: "not-running", commands: runningOf(msg.shell) });
+        }
         return { kind: "emit" };
       }
       if (type === "closed") return gone;
@@ -158,7 +183,7 @@ export function createMatcher(action: ChatAction, requestId: string) {
       // one before the requester's own reply (chat-manager afterBranchMove): those wait for their id.
       // Stop and Reload Now cause none, so one there is the chat reconnecting or reattaching, which
       // may have dropped the frame: unknown, never a stop that didn't happen.
-      if (type === "hello") return action.type === "abort" || action.type === "reload_code" ? gone : { kind: "wait" };
+      if (type === "hello") return action.type === "abort" || action.type === "reload_code" || action.type === "shell_stop" ? gone : { kind: "wait" };
       if (type === "error") {
         if (msg.code === "reloaded") return gone;
         if (emitted && msg.clientId === requestId) {
@@ -191,6 +216,10 @@ export function createMatcher(action: ChatAction, requestId: string) {
         const event = msg.event as { type?: string; what?: string; phase?: string } | undefined;
         const ended = event?.type === "run.settled" || (compacting && event?.type === "activity" && event.what === "compaction" && event.phase === "end");
         return ended ? answer(200, { outcome: "stopped", wasRunning: true, ...(cleared ? { cleared } : {}) }) : { kind: "wait" };
+      }
+      if (action.type === "shell_stop") {
+        if (type !== "shell_end" || msg.id !== action.id) return { kind: "wait" };
+        return answer(200, { outcome: "stopped", ...(msg.cancelReason ? { cancelReason: msg.cancelReason } : { exitCode: msg.exitCode }) });
       }
       // reload_code: the reply, past the greeting (above).
       if (type !== "code") return { kind: "wait" };
@@ -280,7 +309,7 @@ export function runAction(path: string, action: ChatAction, waitMs: number, deps
       if (done) return;
       // The chat closed this client. An error before it already answered; anything else is unknown.
       unknown();
-    }, who);
+    }, who, action.type === "shell_stop" ? { stopsCommand: true } : {});
   });
 }
 
@@ -299,12 +328,15 @@ export async function beforeChat(path: string, action: ChatAction): Promise<Acti
     if (err instanceof BusyError) return { status: 409, body: { error: err.message, outcome: "refused", code: err.code } };
     throw err;
   }
-  const cold = action.type === "abort" || action.type === "reload_code";
+  const cold = action.type === "abort" || action.type === "reload_code" || action.type === "shell_list" || action.type === "shell_stop";
   // An archived chat starts for nothing a script asks (§chat.transcript/instant-open, "An archived chat");
   // Stop and Reload Now answer as for any chat that isn't open.
   if (!cold && isArchived(idOf(path))) return { status: 409, body: { error: ARCHIVED_REFUSAL, outcome: "refused", code: "archived" } };
   if (!cold) return null;
   if (await chatHandleTakenBack(path)) return null;
+  // A chat that isn't open runs no command: a command keeps its chat open (§chat.shell-mode/lifecycle).
+  if (action.type === "shell_list") return { status: 200, body: { outcome: "listed", commands: [] } };
+  if (action.type === "shell_stop") return { status: 200, body: { outcome: "not-running", commands: [] } };
   return { status: 200, body: action.type === "abort" ? { outcome: "stopped", wasRunning: false } : { outcome: "not-running" } };
 }
 

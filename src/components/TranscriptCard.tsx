@@ -1,5 +1,5 @@
 import { createSignal, createUniqueId, Show, useContext, type JSX } from "solid-js";
-import { answerOf, raiserText, type CardAnswerValue, type CardInfo } from "../../shared/transcript-cards";
+import { answerOf, raiserText, trustAskBody, type CardAnswerValue, type CardInfo } from "../../shared/transcript-cards";
 import { checkCardData, letterIndex, type ChecklistCard, type DataCardKind, type QuestionCard } from "../../shared/view-cards";
 import { CardContext, type CardControls } from "../lib/card-controls";
 import type { KindViewProps } from "../lib/transcript-kinds";
@@ -9,6 +9,8 @@ import { DataCard, type DataCardAnswer } from "./DataCards";
 import { Icon } from "./ui";
 import { MergeQueueCard } from "./MergeQueueCard";
 import { MERGE_QUEUE_CARD } from "../lib/merge-queue-card";
+import { MergeReviewCard } from "./MergeReviewCard";
+import { MERGE_REVIEW_CARD } from "../lib/merge-review-card";
 
 /**
  * A transcript card a project declared (§chat/transcript-cards), drawn by the toolkit as one of
@@ -24,13 +26,15 @@ export default function TranscriptCard(props: KindViewProps<CardInfo>) {
   const newest = () => ctx?.newest(card()) ?? true;
   return (
     <div class="transcript-card" data-card-id={card().id}>
-      {/* The merge queue's own card is Sova's built-in: drawn by Sova, never a data card or a view. */}
+      {/* The merge queue's own cards (a branch's, a blocking review's) are Sova's built-ins: drawn by Sova, never a data card or a view. */}
       <Show
         when={card().type !== MERGE_QUEUE_CARD}
         fallback={<MergeQueueCard card={props.value} onReload={() => ctx?.refresh()} />}
       >
-        <Show when={newest()} fallback={<Revision card={card()} />}>
-          <CardBody card={card()} ctx={ctx} />
+        <Show when={card().type !== MERGE_REVIEW_CARD} fallback={<MergeReviewCard card={props.value} onReload={() => ctx?.refresh()} />}>
+          <Show when={newest()} fallback={<Revision card={card()} />}>
+            <CardBody card={card()} ctx={ctx} />
+          </Show>
         </Show>
       </Show>
     </div>
@@ -60,6 +64,10 @@ const titleOf = (c: CardInfo): string => {
   return typeof t === "string" && t.trim() ? t : c.title;
 };
 
+/** Why an extension's card can't draw. */
+const extensionDownWords = (title: string, down: "off" | "blocked" | null): string =>
+  down === "off" ? `${title} is turned off` : down === "blocked" ? `${title} can't run right now. Settings → Extensions says why.` : `${title} is no longer installed`;
+
 function CardBody(props: { card: CardInfo; ctx: CardControls | undefined }) {
   const from = () => raiserText(props.card.by);
   const answering = () => answeringFor(props.card, props.ctx);
@@ -72,7 +80,7 @@ function CardBody(props: { card: CardInfo; ctx: CardControls | undefined }) {
       <Show when={from()}>
         <p class="transcript-card-from text-muted">{from()}</p>
       </Show>
-      <Show when={!props.ctx?.gone(props.card.type)} fallback={<CardErrorBox why={`${props.ctx?.type(props.card.type)?.ext?.title ?? props.card.title} is no longer installed`} reload={() => props.ctx?.refresh()} />}>
+      <Show when={!props.ctx?.gone(props.card.type) && !props.ctx?.down(props.card.type)} fallback={<CardErrorBox why={extensionDownWords(props.ctx?.type(props.card.type)?.ext?.title ?? props.card.title, props.ctx?.down(props.card.type) ?? null)} reload={() => props.ctx?.refresh()} />}>
       <Show
         when={props.card.draws === "view"}
         fallback={<DataCard draws={props.card.draws as DataCardKind} data={props.card.data} id={props.card.id} answer={answering()} answered={!!props.card.answer} />}
@@ -94,7 +102,7 @@ function CardBody(props: { card: CardInfo; ctx: CardControls | undefined }) {
             <Icon name="attention" class="banner-icon" />
             <div class="banner-main">
               <p class="banner-title">Let {a().name}'s cards act for you?</p>
-              <p class="banner-body">They can then run any Sova command, such as sending messages or merging, without asking again.</p>
+              <p class="banner-body">{trustAskBody(a().owner, false)}</p>
             </div>
             <div class="banner-action">
               <button type="button" class="button button-sm button-primary" onClick={() => props.ctx?.trust(true)}>

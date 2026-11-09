@@ -25,20 +25,45 @@ export interface ReadyRow {
   muted: boolean;
 }
 
+/** What one usable place is, as its pip draws it. `unchecked`: other programs couldn't be looked at, so never "free". */
+export type PlaceLook = "running" | "stopped" | "elsewhere" | "free" | "unchecked";
+
 export interface SlotsRow {
-  /** One per slot of the copy limit: lit per running copy. */
-  pips: boolean[];
-  /** "3 of 12". */
+  /** One per usable place, grouped: running, stopped, used elsewhere, then free (or not checked). */
+  pips: PlaceLook[];
+  /** "3 running", "12 at limit". */
   text: string;
+  /** The hover's sentences, which the row's accessible name carries too. */
+  title: string;
   muted: boolean;
 }
 
 export interface MemoryRow {
   /** "640 MB", "2.4 GB", "0 MB idle", or "—". */
   text: string;
-  /** The bar's fill, 0–1: the project's share of this machine's memory. null: no bar ("—"). */
-  share: number | null;
+  /** The bar's two parts, each 0–1 of the bar's width: the mix of chats and running copies in the total, filling the
+   *  whole bar whenever anything is used, a nonzero part never thinner than MIN_BAR_PART. Idle: both 0 (an empty bar);
+   *  null: no bar (not read). */
+  bar: { chats: number; slots: number } | null;
+  /** The exact parts, for hover and the row's accessible name: "Chats 1.5 GB · Copies 2.7 GB"; null when nothing is used or not read. */
+  parts: string | null;
   muted: boolean;
+}
+
+/** A nonzero part of the memory bar is never drawn thinner than this share of the bar, so a small part stays visible. */
+export const MIN_BAR_PART = 0.12;
+
+const partWord = (n: number): string => (n > 0 ? bytesWord(n) : "0 MB");
+
+/** The memory bar's two parts from each one's bytes: the mix, chats/total and slots/total, so the bar is full whenever
+ *  the total is above 0; a nonzero part at least MIN_BAR_PART wide, taken from the larger part. Total 0: both 0. */
+export function memoryBar(chatsBytes: number, copiesBytes: number): { chats: number; slots: number } {
+  const total = chatsBytes + copiesBytes;
+  if (total <= 0) return { chats: 0, slots: 0 };
+  let chats = chatsBytes / total;
+  if (chatsBytes > 0 && copiesBytes > 0) chats = Math.min(1 - MIN_BAR_PART, Math.max(MIN_BAR_PART, chats));
+  const round = (w: number) => Math.round(w * 1000) / 1000;
+  return { chats: round(chats), slots: round(1 - chats) };
 }
 
 export interface ProgressRow {
@@ -66,7 +91,7 @@ export interface CardRuntime {
   /** null: "—" (no project file, or not read yet). */
   slots: SlotsRow | null;
   memory: MemoryRow;
-  /** Whether the project has a project file (Running slots and Memory then open the Branches tab). */
+  /** Whether the project has a project file (Copies and Memory then open the Branches tab). */
   hasSetup: boolean;
   progress: ProgressRow[];
 }
@@ -75,7 +100,7 @@ const UNREAD: CardRuntime = {
   caption: "",
   ready: { count: DASH, link: false, inLine: null, dot: false, muted: true },
   slots: null,
-  memory: { text: DASH, share: null, muted: true },
+  memory: { text: DASH, bar: null, parts: null, muted: true },
   hasSetup: false,
   progress: [],
 };
@@ -157,21 +182,42 @@ export function releaseRow(r: ProjectGlanceRelease): ProgressRow {
   };
 }
 
+/** The Copies row: `running` is the copy limit's own count (the figure and hover), `runningPlaces` the running pips. */
+function slotsRow({ running, cap, usable, runningPlaces, stopped, elsewhere, free }: NonNullable<ProjectGlance["slots"]>): SlotsRow {
+  const unchecked = free === null ? Math.max(0, usable - runningPlaces - stopped - elsewhere) : 0;
+  const pips: PlaceLook[] = [
+    ...Array<PlaceLook>(runningPlaces).fill("running"),
+    ...Array<PlaceLook>(stopped).fill("stopped"),
+    ...Array<PlaceLook>(elsewhere).fill("elsewhere"),
+    ...Array<PlaceLook>(free ?? 0).fill("free"),
+    ...Array<PlaceLook>(unchecked).fill("unchecked"),
+  ];
+  const counts = `${running} running, ${stopped} stopped but holding a place, ${elsewhere} used elsewhere${free === null ? "" : `, ${free} free`}.`;
+  const title = [
+    `${counts} Up to ${cap} can run at once.`,
+    elsewhere > 0 ? "Used elsewhere: another program has the ports these places need, so a new copy can't go there. Stopping this project's copies won't free them." : null,
+    free === null ? "Other programs were not checked." : null,
+  ]
+    .filter(Boolean)
+    .join(" ");
+  return { pips, text: running >= cap ? `${running} at limit` : `${running} running`, title, muted: running === 0 };
+}
+
 /** A card's Runtime rows and progress zone from its glance; `undefined` (not read yet, or the read failed) reads "—". */
-export function cardRuntime(g: ProjectGlance | undefined, hostTotalBytes: number | null, now: number): CardRuntime {
+export function cardRuntime(g: ProjectGlance | undefined, now: number): CardRuntime {
   if (!g) return UNREAD;
   const q = g.queue;
   const ready: ReadyRow =
     g.merge === "served" && q
       ? { count: String(q.ready), link: true, inLine: q.inLine > 0 ? `· ${q.inLine} in line` : null, dot: q.ready > 0, muted: q.ready === 0 }
       : { count: g.merge === "reading" ? READING : DASH, link: g.merge === "reading", inLine: null, dot: false, muted: true };
-  const slots: SlotsRow | null = g.slots
-    ? { pips: Array.from({ length: g.slots.cap }, (_, i) => i < g.slots!.running), text: `${g.slots.running} of ${g.slots.cap}`, muted: g.slots.running === 0 }
-    : null;
-  const total = g.memory.chatsBytes + g.memory.copiesBytes;
+  const slots = g.slots ? slotsRow(g.slots) : null;
+  const { chatsBytes, copiesBytes } = g.memory;
+  const total = chatsBytes + copiesBytes;
   const memory: MemoryRow = {
     text: total > 0 ? bytesWord(total) : "0 MB idle",
-    share: hostTotalBytes && hostTotalBytes > 0 ? Math.min(1, total / hostTotalBytes) : total > 0 ? null : 0,
+    bar: memoryBar(chatsBytes, copiesBytes),
+    parts: total > 0 ? `Chats ${partWord(chatsBytes)} · Copies ${partWord(copiesBytes)}` : null,
     muted: total === 0,
   };
   const progress = [q ? landingRow(q, now) : null, q ? frozenRow(q) : null, g.release ? releaseRow(g.release) : null].filter((r): r is ProgressRow => !!r);

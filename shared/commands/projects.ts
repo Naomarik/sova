@@ -11,7 +11,8 @@ function verbParam(flag: string, deploy: boolean): [string, CommandParam] {
   const p = VERB_PARAMS.find((r) => r.cli?.flag === flag);
   if (!p || !p.cli) throw new Error(`no verb param with the flag --${flag}`);
   const def = deploy ? p.cli.deployDefault : undefined;
-  return [flag, { type: p.type, description: p.cli.description, in: "body", ...(p.wire !== flag ? { key: p.wire } : {}), ...(def !== undefined ? { default: def } : {}) }];
+  // A `map` param is the tools' only (no flag), so never reaches here.
+  return [flag, { type: p.type as Exclude<typeof p.type, "map">, description: p.cli.description, in: "body", ...(p.wire !== flag ? { key: p.wire } : {}), ...(def !== undefined ? { default: def } : {}) }];
 }
 
 /** The keys scripts/sova-project.mjs sends for an instance verb, as params. */
@@ -32,10 +33,14 @@ export const VERB_ENTRIES: CommandEntry[] = [...VERBS, ...DEPLOY_VERBS, ...MERGE
   const merge = (MERGE_VERBS as readonly string[]).includes(verb);
   const release = (RELEASE_VERBS as readonly string[]).includes(verb);
   const reads = (READ_VERBS as readonly string[]).includes(verb) || (DEPLOY_READ_VERBS as readonly string[]).includes(verb) || (MERGE_READ_VERBS as readonly string[]).includes(verb) || (RELEASE_READ_VERBS as readonly string[]).includes(verb);
+  // A merge act (al_3, q12): the user's own page, or the chat the verb is for; never a script holding the token.
+  const pageOnly = merge && !reads && verb !== "merge.try";
   return {
     id: `project.verb.${verb}`,
     label: `Project ${verb}`,
-    summary: `The project verb ${verb}, as the operator (sova-project ${verb}).`,
+    summary: pageOnly
+      ? `The project verb ${verb} (sova-project ${verb}): the user's own page, or the merge thread's or branch chat's own call where the verb is theirs; a script is refused.`
+      : `The project verb ${verb}, as the operator (sova-project ${verb}).`,
     effect: reads ? "looks" : "changes",
     params: deploy ? DEPLOY_PARAMS : merge ? MERGE_PARAMS : release ? RELEASE_PARAMS : INSTANCE_PARAMS,
     route: { method: "POST", path: `/api/project-services/${verb}` },
@@ -179,6 +184,31 @@ const MERGE_SUMMARY: CommandEntry[] = [
     sessionFile: "never",
     meshNeed: "sessions",
   },
+  {
+    id: "project.merge-queue.run-logs",
+    label: "Show Run Logs Size",
+    summary: "How much room a project's merge queue run folders take, how many runs are packed, and what Clean Logs would free.",
+    effect: "looks",
+    params: { project: { type: "string", description: "The project's id", in: "query", required: true } },
+    route: { method: "GET", path: "/api/merge-queue/run-logs" },
+    sessionKey: null,
+    sessionFile: "never",
+    meshNeed: "sessions",
+  },
+  {
+    id: "project.merge-queue.run-logs.clean",
+    label: "Clean Logs",
+    summary: "Delete the logs of a project's old finished merge runs (past the newest 10; never a run still checking or one an open or sent-back entry names). Each run keeps its record, verdict and steps. Your own page only.",
+    effect: "changes",
+    params: {
+      project: { type: "string", description: "The project's id", in: "body", required: true },
+      confirm: { type: "boolean", description: "Confirm the deletion (needed)", in: "body", required: true },
+    },
+    route: { method: "POST", path: "/api/merge-queue/run-logs/clean" },
+    sessionKey: null,
+    sessionFile: "never",
+    meshNeed: "admin",
+  },
 ];
 
 /** How a branch lands (al_3): Update Local Main, a request's Publish, How it lands. The operator's own page only. */
@@ -319,7 +349,7 @@ const PROJECTS_SWEEP: CommandEntry[] = [
   changes("project.unarchive", "Unarchive Project", "Bring an archived project back.", "POST", "/api/projects/:pid/unarchive", { pid }),
   changes("project.preview.off", "Turn Off Preview Link", "Turn a preview link off at once.", "POST", "/api/previews/:id/off", { id: previewId }),
   looks("project.worktree.list", "List Project Worktrees", "A project's coding sessions' worktrees and their branches.", "/api/projects/:pid/overseer/worktrees"),
-  changes("project.worktree.merge", "Merge Worktree", "Merge a coding session's worktree branch into its target.", "POST", "/api/projects/:pid/overseer/worktrees/merge", { pid, "session-id": codingSession }),
+  changes("project.worktree.merge", "Merge Worktree", "Merge a coding session's worktree branch into its target. The user's own page only: a chat, an Overseer or a script is refused.", "POST", "/api/projects/:pid/overseer/worktrees/merge", { pid, "session-id": codingSession }),
   changes("project.worktree.remove", "Remove Worktree", "Remove a coding session's worktree; its branch goes too only when merged.", "POST", "/api/projects/:pid/overseer/worktrees/remove", { pid, "session-id": codingSession }),
   looks("project.files.list", "List Project Files", "The files a project keeps.", "/api/projects/:pid/files"),
   looks("project.offers.list", "List Project Offers", "A project's offers file, read now: each offer, its buttons, run approval and shown/used counts.", "/api/projects/:pid/offers"),

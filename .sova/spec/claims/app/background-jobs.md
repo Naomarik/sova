@@ -88,6 +88,7 @@ When a job ends, Sova records it and, unless Stop ended it, sends its chat a car
   and a worker through its main chat (§chat.wake-nudges/tries, §chat.wake-nudges/kinds). The card is
   kept until it is delivered. A chat that can't be brought back gets it when it next opens.
 - **A busy chat** gets it after its current reply.
+- **A worker's reply to it** is a report to its parent (§app.chat-processes/worker-reports).
 - **Late, once.** If Sova was off when the job ended, the card arrives once, with the line
   `Late by {late} (Sova was not running).`
 - **It counts toward the limit of 30.** Each card is one wake (§chat.wake-nudges/wake-limit), so a loop

@@ -87,8 +87,8 @@ export const TEAM_EVENT_TYPE = "subagents-team-event-v1";
 
 /** "[Team report from coordinator coordinator (ag_01), team_01 — e2e-file-test · milestone]" */
 export const TEAM_REPORT_HEADER = /^\[Team report from coordinator (.+?) \((ag_\d+)\), (team_\d+) — (.+?)(?: · (milestone|concern))?\]$/;
-/** "[Team question from writer, orchestrator (ag_02), team_01 — e2e-file-test]" */
-export const TEAM_QUESTION_HEADER = /^\[Team question from (.+?)(, orchestrator)? \((ag_\d+)\), (team_\d+) — (.+)\]$/;
+/** "[Team question from coordinator (ag_01), team_01 — e2e-file-test]"; an older header's ", orchestrator" after the role still parses. */
+export const TEAM_QUESTION_HEADER = /^\[Team question from (.+?)(?:, orchestrator)? \((ag_\d+)\), (team_\d+) — (.+)\]$/;
 const REPORT_TRAILER = /^\(Informational: no action is requested\..*\)$/;
 /** A body cut at QUESTION_CHARS ends in this line. */
 const CUT = "[truncated]";
@@ -135,12 +135,12 @@ export function parseTeamMessage(customType: string, text: string): TeamMessage 
   if (customType === TEAM_QUESTION_TYPE) {
     const m = TEAM_QUESTION_HEADER.exec(first);
     if (!m) return null;
-    const workerId = m[3]!;
+    const workerId = m[2]!;
     while (lines.length && !lines[lines.length - 1]!.trim()) lines.pop();
     // Only the answer line that names this asker is the trailer.
     if ((lines[lines.length - 1] ?? "").startsWith(`Answer with agent_steer { id: "${workerId}"`)) lines.pop();
     const truncated = peelCut(lines);
-    const team: TeamMessageInfo = { kind: "question", role: m[1]!, workerId, teamId: m[4]!, teamName: m[5]!, ...(m[2] ? { orchestrator: true } : {}) };
+    const team: TeamMessageInfo = { kind: "question", role: m[1]!, workerId, teamId: m[3]!, teamName: m[4]! };
     return { team, body: lines.join("\n").replace(/^\n+/, ""), truncated };
   }
   return null;

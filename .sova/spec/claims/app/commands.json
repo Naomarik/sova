@@ -27,12 +27,12 @@
       "server/create-guide-growth.json"
     ],
     "authority": "accepted",
+    "evidence": "verified",
     "agreed": {
-      "by": "user",
-      "at": "2026-11-06T03:12Z",
-      "source": "pi-session:01a1ac4a-4cc0-77e8-b78d-580fabeebc2e#30549fa4"
-    },
-    "evidence": "verified"
+      "by": "naomarik",
+      "at": "2026-11-07T12:38Z",
+      "source": "pi-session:01a1b2ec-ac6a-73d4-9fe9-b83cb85cdc7f#008f8e00"
+    }
   },
   "§app.commands/cli": {
     "kind": "behavior",
@@ -71,9 +71,9 @@
     ],
     "authority": "accepted",
     "agreed": {
-      "by": "user",
-      "at": "2026-10-27T21:10Z",
-      "source": "pi-session:01a15967-632c-7701-8650-889f96aa9f4c#e877e3be"
+      "by": "Omar (user)",
+      "at": "2026-11-06T21:56Z",
+      "source": "pi-session:01a1acdc-5fed-7735-96f5-96f6019e339d#537ac0e8"
     },
     "evidence": "verified"
   },

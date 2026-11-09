@@ -1,7 +1,7 @@
 {
   "families": {
     "overseer": {
-      "bytes": 94566,
+      "bytes": 95943,
       "tools": [
         {
           "name": "sova_attention",
@@ -313,15 +313,39 @@
           }
         },
         {
-          "name": "sova_list_subagent_profiles",
-          "label": "List subagent profiles",
-          "description": "List subagent setups (Off, names, worker footprints, this host's default). Not capability/session profiles.",
+          "name": "sova_list_profiles",
+          "label": "List profiles",
+          "description": "List this host's profiles: Off and each profile's id (what `profile` takes), name, footprint (its models), which parts it has, the library id `subagent_profile` takes when it differs, whether it is marked \"The Overseer may start it\", and which is the default. With cwd, a project's own profiles too.",
           "parameters": {
             "type": "object",
             "properties": {
               "host": {
                 "type": "string",
                 "description": "Optional mesh peer id."
+              },
+              "cwd": {
+                "type": "string",
+                "description": "A folder, to include its project's profiles."
+              }
+            },
+            "required": [],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "sova_list_subagent_profiles",
+          "label": "List profiles",
+          "description": "The same list as sova_list_profiles (its older name).",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "host": {
+                "type": "string",
+                "description": "Optional mesh peer id."
+              },
+              "cwd": {
+                "type": "string",
+                "description": "A folder, to include its project's profiles."
               }
             },
             "required": [],
@@ -426,7 +450,7 @@
               },
               "profile": {
                 "type": "string",
-                "description": "A profile id (§ profiles: what the session can do), this host only, looked up in the new session's project, then the user's, then built in. Only profiles marked \"The Overseer may start it\", and a project's profile only once the user approved it. Its mode, minor modes and model apply unless you give your own."
+                "description": "A profile id (sova_list_profiles), this host only, looked up in the new session's project, then the user's, then built in: the session starts on it, both parts. One with a When a Chat Starts part only when marked \"The Overseer may start it\", and a project's profile only once the user approved it; one with only a Models part needs neither. Its mode, minor modes and model apply unless you give your own. Not with subagent_profile."
               }
             },
             "required": [],
@@ -497,9 +521,13 @@
                 "type": "string",
                 "description": "normal | delegate"
               },
+              "profile": {
+                "type": "string",
+                "description": "A profile id or off (sova_list_profiles): switches this chat's whole Models part at once (its own model and effort, its helpers, alignment settings), checked first, all or nothing; mid-reply, when the reply ends. Its tools, powers and modes never change, nor the default. Not with model, thinking or subagent_profile."
+              },
               "subagent_profile": {
                 "type": "string",
-                "description": "Subagent profile id or off. Changes only this chat's later work, not running workers or the default."
+                "description": "Subagent profile id or off. Changes only this chat's helpers (later work, not running workers), never its own model or the default."
               },
               "sandbox": {
                 "type": "string",
@@ -669,11 +697,11 @@
               },
               "settings_tab": {
                 "type": "string",
-                "description": "With page settings: general | models | subagents | overseer | summaries | themes | experimental",
+                "description": "With page settings: general | models | profiles | overseer | summaries | themes | experimental",
                 "enum": [
                   "general",
                   "models",
-                  "subagents",
+                  "profiles",
                   "overseer",
                   "summaries",
                   "themes",
@@ -2461,7 +2489,7 @@
         {
           "name": "sova_project_overseer",
           "label": "Project overseer",
-          "description": "A project's overseer, for the user (only in a turn the user started). start (create it, as Start Overseer). settings {powers?: {overseer?: {<power>: true|false}, assistant?: {…}}, resume?: true, model?, thinking?, coding_model?, coding_thinking?, gathering_model?, gathering_thinking?, watch?, watch_gap_min?, soon_look_sec?, caps?, extra_instructions?}: one change, refused whole as the page's is. run_now (Run Now). clear (a new conversation; only in the turn a confirm card's click opened, listing the project). idea {action: add|edit, id?, title?, text?, status?} and todo {action: add|edit|tick|untick|remove, id?, text?, idea?}: the project's ideas and to-dos. message {text}: send words into the overseer's conversation as the user (idle it starts a turn; mid-turn it waits as a follow-up); it counts as a prompt to another session. Never a /command, never the About text or a cost figure. code {prompt?, title?, item?, model?, thinking?, mode?, minor_modes?, subagent_profile?, already_agreed?}: start a coding session as the project's (its own worktree; any mode, minor modes and subagent profile you name, else this computer's default), from an item (a td_ to-do or an § idea) or from prompt and title; it counts as a session created. Unless you pass already_agreed: true (only when the user said, in their own words, they want exactly this built), align is turned on in its mode (whatever minor_modes says) and its first turn asks the user whether this is what they want built and waits for their answer. Talk to a coding session with sova_send; never answer its alignment questions: they are the user's. Its reply names the mode and profile it started with.",
+          "description": "A project's overseer, for the user (only in a turn the user started). start (create it, as Start Overseer). settings {powers?: {overseer?: {<power>: true|false}, assistant?: {…}}, resume?: true, model?, thinking?, coding_model?, coding_thinking?, gathering_model?, gathering_thinking?, watch?, watch_gap_min?, soon_look_sec?, caps?, extra_instructions?}: one change, refused whole as the page's is. run_now (Run Now). clear (a new conversation; only in the turn a confirm card's click opened, listing the project). idea {action: add|edit, id?, title?, text?, status?} and todo {action: add|edit|tick|untick|remove, id?, text?, idea?}: the project's ideas and to-dos. message {text}: send words into the overseer's conversation as the user (idle it starts a turn; mid-turn it waits as a follow-up); it counts as a prompt to another session. Never a /command, never the About text or a cost figure. code {prompt?, title?, item?, model?, thinking?, mode?, minor_modes?, profile?, subagent_profile?, already_agreed?}: start a coding session as the project's (its own worktree; any mode, minor modes and profile you name, else this computer's default profile), from an item (a td_ to-do or an § idea) or from prompt and title; it counts as a session created. Unless you pass already_agreed: true (only when the user said, in their own words, they want exactly this built), align is turned on in its mode (whatever minor_modes says) and its first turn asks the user whether this is what they want built and waits for their answer. Talk to a coding session with sova_send; never answer its alignment questions: they are the user's. Its reply names the mode and profile it started with.",
           "promptSnippet": "start, set up, run, clear, message or give ideas/to-dos to a project's overseer; start a coding session as the project's",
           "parameters": {
             "type": "object",
@@ -2592,9 +2620,13 @@
                 },
                 "description": "code: the minor modes on, the whole set: any of align, spec, vis; [] turns them all off. Omitted: this computer's default."
               },
+              "profile": {
+                "type": "string",
+                "description": "code: a profile id or off (sova_list_profiles), for that session only: its models, helpers and modes (never its tools or powers). Omitted: this computer's default profile."
+              },
               "subagent_profile": {
                 "type": "string",
-                "description": "code: a subagent profile id or off (sova_list_subagent_profiles), for that session only. Omitted: this computer's default."
+                "description": "code: a subagent profile id or off (sova_list_subagent_profiles), for that session only: only its helpers. Omitted: the profile's."
               },
               "already_agreed": {
                 "type": "boolean",
@@ -2957,7 +2989,7 @@
       ]
     },
     "overseer+copies": {
-      "bytes": 100351,
+      "bytes": 101728,
       "tools": [
         {
           "name": "sova_attention",
@@ -3269,15 +3301,39 @@
           }
         },
         {
-          "name": "sova_list_subagent_profiles",
-          "label": "List subagent profiles",
-          "description": "List subagent setups (Off, names, worker footprints, this host's default). Not capability/session profiles.",
+          "name": "sova_list_profiles",
+          "label": "List profiles",
+          "description": "List this host's profiles: Off and each profile's id (what `profile` takes), name, footprint (its models), which parts it has, the library id `subagent_profile` takes when it differs, whether it is marked \"The Overseer may start it\", and which is the default. With cwd, a project's own profiles too.",
           "parameters": {
             "type": "object",
             "properties": {
               "host": {
                 "type": "string",
                 "description": "Optional mesh peer id."
+              },
+              "cwd": {
+                "type": "string",
+                "description": "A folder, to include its project's profiles."
+              }
+            },
+            "required": [],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "sova_list_subagent_profiles",
+          "label": "List profiles",
+          "description": "The same list as sova_list_profiles (its older name).",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "host": {
+                "type": "string",
+                "description": "Optional mesh peer id."
+              },
+              "cwd": {
+                "type": "string",
+                "description": "A folder, to include its project's profiles."
               }
             },
             "required": [],
@@ -3382,7 +3438,7 @@
               },
               "profile": {
                 "type": "string",
-                "description": "A profile id (§ profiles: what the session can do), this host only, looked up in the new session's project, then the user's, then built in. Only profiles marked \"The Overseer may start it\", and a project's profile only once the user approved it. Its mode, minor modes and model apply unless you give your own."
+                "description": "A profile id (sova_list_profiles), this host only, looked up in the new session's project, then the user's, then built in: the session starts on it, both parts. One with a When a Chat Starts part only when marked \"The Overseer may start it\", and a project's profile only once the user approved it; one with only a Models part needs neither. Its mode, minor modes and model apply unless you give your own. Not with subagent_profile."
               }
             },
             "required": [],
@@ -3453,9 +3509,13 @@
                 "type": "string",
                 "description": "normal | delegate"
               },
+              "profile": {
+                "type": "string",
+                "description": "A profile id or off (sova_list_profiles): switches this chat's whole Models part at once (its own model and effort, its helpers, alignment settings), checked first, all or nothing; mid-reply, when the reply ends. Its tools, powers and modes never change, nor the default. Not with model, thinking or subagent_profile."
+              },
               "subagent_profile": {
                 "type": "string",
-                "description": "Subagent profile id or off. Changes only this chat's later work, not running workers or the default."
+                "description": "Subagent profile id or off. Changes only this chat's helpers (later work, not running workers), never its own model or the default."
               },
               "sandbox": {
                 "type": "string",
@@ -3625,11 +3685,11 @@
               },
               "settings_tab": {
                 "type": "string",
-                "description": "With page settings: general | models | subagents | overseer | summaries | themes | experimental",
+                "description": "With page settings: general | models | profiles | overseer | summaries | themes | experimental",
                 "enum": [
                   "general",
                   "models",
-                  "subagents",
+                  "profiles",
                   "overseer",
                   "summaries",
                   "themes",
@@ -5509,7 +5569,7 @@
         {
           "name": "sova_project_overseer",
           "label": "Project overseer",
-          "description": "A project's overseer, for the user (only in a turn the user started). start (create it, as Start Overseer). settings {powers?: {overseer?: {<power>: true|false}, assistant?: {…}}, resume?: true, model?, thinking?, coding_model?, coding_thinking?, gathering_model?, gathering_thinking?, watch?, watch_gap_min?, soon_look_sec?, caps?, extra_instructions?}: one change, refused whole as the page's is. run_now (Run Now). clear (a new conversation; only in the turn a confirm card's click opened, listing the project). idea {action: add|edit, id?, title?, text?, status?} and todo {action: add|edit|tick|untick|remove, id?, text?, idea?}: the project's ideas and to-dos. message {text}: send words into the overseer's conversation as the user (idle it starts a turn; mid-turn it waits as a follow-up); it counts as a prompt to another session. Never a /command, never the About text or a cost figure. code {prompt?, title?, item?, model?, thinking?, mode?, minor_modes?, subagent_profile?, already_agreed?}: start a coding session as the project's (its own worktree; any mode, minor modes and subagent profile you name, else this computer's default), from an item (a td_ to-do or an § idea) or from prompt and title; it counts as a session created. Unless you pass already_agreed: true (only when the user said, in their own words, they want exactly this built), align is turned on in its mode (whatever minor_modes says) and its first turn asks the user whether this is what they want built and waits for their answer. Talk to a coding session with sova_send; never answer its alignment questions: they are the user's. Its reply names the mode and profile it started with.",
+          "description": "A project's overseer, for the user (only in a turn the user started). start (create it, as Start Overseer). settings {powers?: {overseer?: {<power>: true|false}, assistant?: {…}}, resume?: true, model?, thinking?, coding_model?, coding_thinking?, gathering_model?, gathering_thinking?, watch?, watch_gap_min?, soon_look_sec?, caps?, extra_instructions?}: one change, refused whole as the page's is. run_now (Run Now). clear (a new conversation; only in the turn a confirm card's click opened, listing the project). idea {action: add|edit, id?, title?, text?, status?} and todo {action: add|edit|tick|untick|remove, id?, text?, idea?}: the project's ideas and to-dos. message {text}: send words into the overseer's conversation as the user (idle it starts a turn; mid-turn it waits as a follow-up); it counts as a prompt to another session. Never a /command, never the About text or a cost figure. code {prompt?, title?, item?, model?, thinking?, mode?, minor_modes?, profile?, subagent_profile?, already_agreed?}: start a coding session as the project's (its own worktree; any mode, minor modes and profile you name, else this computer's default profile), from an item (a td_ to-do or an § idea) or from prompt and title; it counts as a session created. Unless you pass already_agreed: true (only when the user said, in their own words, they want exactly this built), align is turned on in its mode (whatever minor_modes says) and its first turn asks the user whether this is what they want built and waits for their answer. Talk to a coding session with sova_send; never answer its alignment questions: they are the user's. Its reply names the mode and profile it started with.",
           "promptSnippet": "start, set up, run, clear, message or give ideas/to-dos to a project's overseer; start a coding session as the project's",
           "parameters": {
             "type": "object",
@@ -5640,9 +5700,13 @@
                 },
                 "description": "code: the minor modes on, the whole set: any of align, spec, vis; [] turns them all off. Omitted: this computer's default."
               },
+              "profile": {
+                "type": "string",
+                "description": "code: a profile id or off (sova_list_profiles), for that session only: its models, helpers and modes (never its tools or powers). Omitted: this computer's default profile."
+              },
               "subagent_profile": {
                 "type": "string",
-                "description": "code: a subagent profile id or off (sova_list_subagent_profiles), for that session only. Omitted: this computer's default."
+                "description": "code: a subagent profile id or off (sova_list_subagent_profiles), for that session only: only its helpers. Omitted: the profile's."
               },
               "already_agreed": {
                 "type": "boolean",
@@ -6198,7 +6262,7 @@
       ]
     },
     "project-overseer": {
-      "bytes": 39703,
+      "bytes": 40514,
       "tools": [
         {
           "name": "sova_project",
@@ -6213,10 +6277,21 @@
           }
         },
         {
+          "name": "sova_list_profiles",
+          "label": "List profiles",
+          "description": "List this computer's profiles (Off, each one's id, name, footprint, its parts, the library id subagent_profile takes when it differs, the default marked), for profile and subagent_profile on sova_create_session and sova_send.",
+          "promptSnippet": "list this computer's profiles",
+          "parameters": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+            "additionalProperties": false
+          }
+        },
+        {
           "name": "sova_list_subagent_profiles",
-          "label": "List subagent profiles",
-          "description": "List this computer's subagent setups (Off, each profile's id, name and worker footprint, the default marked), for subagent_profile on sova_create_session and sova_send.",
-          "promptSnippet": "list this computer's subagent profiles",
+          "label": "List profiles",
+          "description": "The same list as sova_list_profiles (its older name).",
           "parameters": {
             "type": "object",
             "properties": {},
@@ -6847,7 +6922,7 @@
         {
           "name": "sova_create_session",
           "label": "Start coding session",
-          "description": "Start an ordinary coding session in the project (its root, or a folder inside it) with a first prompt. When the project root is in git it runs in its own worktree and branch, cut from the root's HEAD; the operator merges it back. It starts in this computer's default mode and subagent profile unless you name others: `mode`, `minor_modes` and `subagent_profile` take any mode, minor modes and profile this computer has. Unless you pass already_agreed: true, align is turned on in its mode (whatever minor_modes says) and its first turn asks the operator one question, whether this is what they want built, and waits for their answer before any plan. Counts against your coding caps.",
+          "description": "Start an ordinary coding session in the project (its root, or a folder inside it) with a first prompt. When the project root is in git it runs in its own worktree and branch, cut from the root's HEAD; the operator merges it back. It starts on this computer's default profile unless you name others: `mode`, `minor_modes`, `profile` (its models, helpers and modes; never its tools or powers) and `subagent_profile` (only its helpers) take any mode, minor modes and profile this computer has. Unless you pass already_agreed: true, align is turned on in its mode (whatever minor_modes says) and its first turn asks the operator one question, whether this is what they want built, and waits for their answer before any plan. Counts against your coding caps.",
           "promptSnippet": "start a coding session in the project with a first prompt",
           "parameters": {
             "type": "object",
@@ -6883,9 +6958,13 @@
                 },
                 "description": "The minor modes on, the whole set: any of align, spec, vis, e.g. [\"spec\"]; [] turns them all off. Omitted: this computer's default."
               },
+              "profile": {
+                "type": "string",
+                "description": "A profile id or off (sova_list_profiles), for this session only: its models, helpers and modes; never its tools or powers. Omitted: this computer's default profile."
+              },
               "subagent_profile": {
                 "type": "string",
-                "description": "A subagent profile id or off (sova_list_subagent_profiles), for this session only. Omitted: this computer's default profile."
+                "description": "A subagent profile id or off (sova_list_subagent_profiles), for this session only: only its helpers."
               },
               "already_agreed": {
                 "type": "boolean",
@@ -6901,7 +6980,7 @@
         {
           "name": "sova_send",
           "label": "Send to coding session",
-          "description": "Send a message to one of the project's coding sessions (never a gathering session: people answer those). `mode`, `minor_modes` and `subagent_profile` change what they name of its mode and profile first, any mode (mid-turn, the change applies after the running turn). Never answer a session's alignment questions: they are the operator's; a verb playbook's run waiting on them is refused. Counts against your prompt cap.",
+          "description": "Send a message to one of the project's coding sessions (never a gathering session: people answer those). `mode`, `minor_modes`, `profile` (its whole Models part: model, helpers, alignment settings) and `subagent_profile` (only its helpers) change what they name of its mode and profile first, any mode (mid-turn, the change applies after the running turn). Never answer a session's alignment questions: they are the operator's; a verb playbook's run waiting on them is refused. Counts against your prompt cap.",
           "promptSnippet": "send a message to a coding session in the project (optionally changing its mode or subagent profile)",
           "parameters": {
             "type": "object",
@@ -6925,9 +7004,13 @@
                 },
                 "description": "Its minor modes on, the whole set, first: any of align, spec, vis, e.g. [\"spec\"]; [] turns them all off."
               },
+              "profile": {
+                "type": "string",
+                "description": "Switch it to a profile first: an id or off (sova_list_profiles). Moves its model, helpers and alignment settings at once; its tools, powers and modes stay."
+              },
               "subagent_profile": {
                 "type": "string",
-                "description": "Change its subagent profile first: an id or off (sova_list_subagent_profiles)."
+                "description": "Change only its helpers first: a subagent profile id or off (sova_list_subagent_profiles)."
               }
             },
             "required": [
@@ -7592,7 +7675,7 @@
       ]
     },
     "project-overseer+onboard": {
-      "bytes": 40099,
+      "bytes": 40910,
       "tools": [
         {
           "name": "sova_project",
@@ -7607,10 +7690,21 @@
           }
         },
         {
+          "name": "sova_list_profiles",
+          "label": "List profiles",
+          "description": "List this computer's profiles (Off, each one's id, name, footprint, its parts, the library id subagent_profile takes when it differs, the default marked), for profile and subagent_profile on sova_create_session and sova_send.",
+          "promptSnippet": "list this computer's profiles",
+          "parameters": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+            "additionalProperties": false
+          }
+        },
+        {
           "name": "sova_list_subagent_profiles",
-          "label": "List subagent profiles",
-          "description": "List this computer's subagent setups (Off, each profile's id, name and worker footprint, the default marked), for subagent_profile on sova_create_session and sova_send.",
-          "promptSnippet": "list this computer's subagent profiles",
+          "label": "List profiles",
+          "description": "The same list as sova_list_profiles (its older name).",
           "parameters": {
             "type": "object",
             "properties": {},
@@ -8241,7 +8335,7 @@
         {
           "name": "sova_create_session",
           "label": "Start coding session",
-          "description": "Start an ordinary coding session in the project (its root, or a folder inside it) with a first prompt. When the project root is in git it runs in its own worktree and branch, cut from the root's HEAD; the operator merges it back. It starts in this computer's default mode and subagent profile unless you name others: `mode`, `minor_modes` and `subagent_profile` take any mode, minor modes and profile this computer has. Unless you pass already_agreed: true, align is turned on in its mode (whatever minor_modes says) and its first turn asks the operator one question, whether this is what they want built, and waits for their answer before any plan. Counts against your coding caps.",
+          "description": "Start an ordinary coding session in the project (its root, or a folder inside it) with a first prompt. When the project root is in git it runs in its own worktree and branch, cut from the root's HEAD; the operator merges it back. It starts on this computer's default profile unless you name others: `mode`, `minor_modes`, `profile` (its models, helpers and modes; never its tools or powers) and `subagent_profile` (only its helpers) take any mode, minor modes and profile this computer has. Unless you pass already_agreed: true, align is turned on in its mode (whatever minor_modes says) and its first turn asks the operator one question, whether this is what they want built, and waits for their answer before any plan. Counts against your coding caps.",
           "promptSnippet": "start a coding session in the project with a first prompt",
           "parameters": {
             "type": "object",
@@ -8277,9 +8371,13 @@
                 },
                 "description": "The minor modes on, the whole set: any of align, spec, vis, e.g. [\"spec\"]; [] turns them all off. Omitted: this computer's default."
               },
+              "profile": {
+                "type": "string",
+                "description": "A profile id or off (sova_list_profiles), for this session only: its models, helpers and modes; never its tools or powers. Omitted: this computer's default profile."
+              },
               "subagent_profile": {
                 "type": "string",
-                "description": "A subagent profile id or off (sova_list_subagent_profiles), for this session only. Omitted: this computer's default profile."
+                "description": "A subagent profile id or off (sova_list_subagent_profiles), for this session only: only its helpers."
               },
               "already_agreed": {
                 "type": "boolean",
@@ -8295,7 +8393,7 @@
         {
           "name": "sova_send",
           "label": "Send to coding session",
-          "description": "Send a message to one of the project's coding sessions (never a gathering session: people answer those). `mode`, `minor_modes` and `subagent_profile` change what they name of its mode and profile first, any mode (mid-turn, the change applies after the running turn). Never answer a session's alignment questions: they are the operator's; a verb playbook's run waiting on them is refused. Counts against your prompt cap.",
+          "description": "Send a message to one of the project's coding sessions (never a gathering session: people answer those). `mode`, `minor_modes`, `profile` (its whole Models part: model, helpers, alignment settings) and `subagent_profile` (only its helpers) change what they name of its mode and profile first, any mode (mid-turn, the change applies after the running turn). Never answer a session's alignment questions: they are the operator's; a verb playbook's run waiting on them is refused. Counts against your prompt cap.",
           "promptSnippet": "send a message to a coding session in the project (optionally changing its mode or subagent profile)",
           "parameters": {
             "type": "object",
@@ -8319,9 +8417,13 @@
                 },
                 "description": "Its minor modes on, the whole set, first: any of align, spec, vis, e.g. [\"spec\"]; [] turns them all off."
               },
+              "profile": {
+                "type": "string",
+                "description": "Switch it to a profile first: an id or off (sova_list_profiles). Moves its model, helpers and alignment settings at once; its tools, powers and modes stay."
+              },
               "subagent_profile": {
                 "type": "string",
-                "description": "Change its subagent profile first: an id or off (sova_list_subagent_profiles)."
+                "description": "Change only its helpers first: a subagent profile id or off (sova_list_subagent_profiles)."
               }
             },
             "required": [
@@ -8789,7 +8891,7 @@
       ]
     },
     "project-overseer+gaps": {
-      "bytes": 40144,
+      "bytes": 40955,
       "tools": [
         {
           "name": "sova_project",
@@ -8804,10 +8906,21 @@
           }
         },
         {
+          "name": "sova_list_profiles",
+          "label": "List profiles",
+          "description": "List this computer's profiles (Off, each one's id, name, footprint, its parts, the library id subagent_profile takes when it differs, the default marked), for profile and subagent_profile on sova_create_session and sova_send.",
+          "promptSnippet": "list this computer's profiles",
+          "parameters": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+            "additionalProperties": false
+          }
+        },
+        {
           "name": "sova_list_subagent_profiles",
-          "label": "List subagent profiles",
-          "description": "List this computer's subagent setups (Off, each profile's id, name and worker footprint, the default marked), for subagent_profile on sova_create_session and sova_send.",
-          "promptSnippet": "list this computer's subagent profiles",
+          "label": "List profiles",
+          "description": "The same list as sova_list_profiles (its older name).",
           "parameters": {
             "type": "object",
             "properties": {},
@@ -9438,7 +9551,7 @@
         {
           "name": "sova_create_session",
           "label": "Start coding session",
-          "description": "Start an ordinary coding session in the project (its root, or a folder inside it) with a first prompt. When the project root is in git it runs in its own worktree and branch, cut from the root's HEAD; the operator merges it back. It starts in this computer's default mode and subagent profile unless you name others: `mode`, `minor_modes` and `subagent_profile` take any mode, minor modes and profile this computer has. Unless you pass already_agreed: true, align is turned on in its mode (whatever minor_modes says) and its first turn asks the operator one question, whether this is what they want built, and waits for their answer before any plan. Counts against your coding caps.",
+          "description": "Start an ordinary coding session in the project (its root, or a folder inside it) with a first prompt. When the project root is in git it runs in its own worktree and branch, cut from the root's HEAD; the operator merges it back. It starts on this computer's default profile unless you name others: `mode`, `minor_modes`, `profile` (its models, helpers and modes; never its tools or powers) and `subagent_profile` (only its helpers) take any mode, minor modes and profile this computer has. Unless you pass already_agreed: true, align is turned on in its mode (whatever minor_modes says) and its first turn asks the operator one question, whether this is what they want built, and waits for their answer before any plan. Counts against your coding caps.",
           "promptSnippet": "start a coding session in the project with a first prompt",
           "parameters": {
             "type": "object",
@@ -9474,9 +9587,13 @@
                 },
                 "description": "The minor modes on, the whole set: any of align, spec, vis, e.g. [\"spec\"]; [] turns them all off. Omitted: this computer's default."
               },
+              "profile": {
+                "type": "string",
+                "description": "A profile id or off (sova_list_profiles), for this session only: its models, helpers and modes; never its tools or powers. Omitted: this computer's default profile."
+              },
               "subagent_profile": {
                 "type": "string",
-                "description": "A subagent profile id or off (sova_list_subagent_profiles), for this session only. Omitted: this computer's default profile."
+                "description": "A subagent profile id or off (sova_list_subagent_profiles), for this session only: only its helpers."
               },
               "already_agreed": {
                 "type": "boolean",
@@ -9504,7 +9621,7 @@
         {
           "name": "sova_send",
           "label": "Send to coding session",
-          "description": "Send a message to one of the project's coding sessions (never a gathering session: people answer those). `mode`, `minor_modes` and `subagent_profile` change what they name of its mode and profile first, any mode (mid-turn, the change applies after the running turn). Never answer a session's alignment questions: they are the operator's; a verb playbook's run waiting on them is refused. Counts against your prompt cap.",
+          "description": "Send a message to one of the project's coding sessions (never a gathering session: people answer those). `mode`, `minor_modes`, `profile` (its whole Models part: model, helpers, alignment settings) and `subagent_profile` (only its helpers) change what they name of its mode and profile first, any mode (mid-turn, the change applies after the running turn). Never answer a session's alignment questions: they are the operator's; a verb playbook's run waiting on them is refused. Counts against your prompt cap.",
           "promptSnippet": "send a message to a coding session in the project (optionally changing its mode or subagent profile)",
           "parameters": {
             "type": "object",
@@ -9528,9 +9645,13 @@
                 },
                 "description": "Its minor modes on, the whole set, first: any of align, spec, vis, e.g. [\"spec\"]; [] turns them all off."
               },
+              "profile": {
+                "type": "string",
+                "description": "Switch it to a profile first: an id or off (sova_list_profiles). Moves its model, helpers and alignment settings at once; its tools, powers and modes stay."
+              },
               "subagent_profile": {
                 "type": "string",
-                "description": "Change its subagent profile first: an id or off (sova_list_subagent_profiles)."
+                "description": "Change only its helpers first: a subagent profile id or off (sova_list_subagent_profiles)."
               }
             },
             "required": [
@@ -9992,7 +10113,7 @@
       ]
     },
     "project-overseer+copies": {
-      "bytes": 45721,
+      "bytes": 46532,
       "tools": [
         {
           "name": "sova_project",
@@ -10007,10 +10128,21 @@
           }
         },
         {
+          "name": "sova_list_profiles",
+          "label": "List profiles",
+          "description": "List this computer's profiles (Off, each one's id, name, footprint, its parts, the library id subagent_profile takes when it differs, the default marked), for profile and subagent_profile on sova_create_session and sova_send.",
+          "promptSnippet": "list this computer's profiles",
+          "parameters": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+            "additionalProperties": false
+          }
+        },
+        {
           "name": "sova_list_subagent_profiles",
-          "label": "List subagent profiles",
-          "description": "List this computer's subagent setups (Off, each profile's id, name and worker footprint, the default marked), for subagent_profile on sova_create_session and sova_send.",
-          "promptSnippet": "list this computer's subagent profiles",
+          "label": "List profiles",
+          "description": "The same list as sova_list_profiles (its older name).",
           "parameters": {
             "type": "object",
             "properties": {},
@@ -10725,7 +10857,7 @@
         {
           "name": "sova_create_session",
           "label": "Start coding session",
-          "description": "Start an ordinary coding session in the project (its root, or a folder inside it) with a first prompt. When the project root is in git it runs in its own worktree and branch, cut from the root's HEAD; the operator merges it back. It starts in this computer's default mode and subagent profile unless you name others: `mode`, `minor_modes` and `subagent_profile` take any mode, minor modes and profile this computer has. Unless you pass already_agreed: true, align is turned on in its mode (whatever minor_modes says) and its first turn asks the operator one question, whether this is what they want built, and waits for their answer before any plan. Counts against your coding caps.",
+          "description": "Start an ordinary coding session in the project (its root, or a folder inside it) with a first prompt. When the project root is in git it runs in its own worktree and branch, cut from the root's HEAD; the operator merges it back. It starts on this computer's default profile unless you name others: `mode`, `minor_modes`, `profile` (its models, helpers and modes; never its tools or powers) and `subagent_profile` (only its helpers) take any mode, minor modes and profile this computer has. Unless you pass already_agreed: true, align is turned on in its mode (whatever minor_modes says) and its first turn asks the operator one question, whether this is what they want built, and waits for their answer before any plan. Counts against your coding caps.",
           "promptSnippet": "start a coding session in the project with a first prompt",
           "parameters": {
             "type": "object",
@@ -10761,9 +10893,13 @@
                 },
                 "description": "The minor modes on, the whole set: any of align, spec, vis, e.g. [\"spec\"]; [] turns them all off. Omitted: this computer's default."
               },
+              "profile": {
+                "type": "string",
+                "description": "A profile id or off (sova_list_profiles), for this session only: its models, helpers and modes; never its tools or powers. Omitted: this computer's default profile."
+              },
               "subagent_profile": {
                 "type": "string",
-                "description": "A subagent profile id or off (sova_list_subagent_profiles), for this session only. Omitted: this computer's default profile."
+                "description": "A subagent profile id or off (sova_list_subagent_profiles), for this session only: only its helpers."
               },
               "already_agreed": {
                 "type": "boolean",
@@ -10779,7 +10915,7 @@
         {
           "name": "sova_send",
           "label": "Send to coding session",
-          "description": "Send a message to one of the project's coding sessions (never a gathering session: people answer those). `mode`, `minor_modes` and `subagent_profile` change what they name of its mode and profile first, any mode (mid-turn, the change applies after the running turn). Never answer a session's alignment questions: they are the operator's; a verb playbook's run waiting on them is refused. Counts against your prompt cap.",
+          "description": "Send a message to one of the project's coding sessions (never a gathering session: people answer those). `mode`, `minor_modes`, `profile` (its whole Models part: model, helpers, alignment settings) and `subagent_profile` (only its helpers) change what they name of its mode and profile first, any mode (mid-turn, the change applies after the running turn). Never answer a session's alignment questions: they are the operator's; a verb playbook's run waiting on them is refused. Counts against your prompt cap.",
           "promptSnippet": "send a message to a coding session in the project (optionally changing its mode or subagent profile)",
           "parameters": {
             "type": "object",
@@ -10803,9 +10939,13 @@
                 },
                 "description": "Its minor modes on, the whole set, first: any of align, spec, vis, e.g. [\"spec\"]; [] turns them all off."
               },
+              "profile": {
+                "type": "string",
+                "description": "Switch it to a profile first: an id or off (sova_list_profiles). Moves its model, helpers and alignment settings at once; its tools, powers and modes stay."
+              },
               "subagent_profile": {
                 "type": "string",
-                "description": "Change its subagent profile first: an id or off (sova_list_subagent_profiles)."
+                "description": "Change only its helpers first: a subagent profile id or off (sova_list_subagent_profiles)."
               }
             },
             "required": [
@@ -11621,7 +11761,7 @@
       ]
     },
     "project-verbs:session": {
-      "bytes": 8829,
+      "bytes": 10577,
       "tools": [
         {
           "name": "project_verbs",
@@ -11673,6 +11813,12 @@
                   "merge.clear",
                   "merge.hold",
                   "merge.try",
+                  "merge.restart",
+                  "merge.live",
+                  "merge.test",
+                  "merge.names",
+                  "merge.rule",
+                  "merge.respond",
                   "release.status",
                   "release.logs",
                   "release.request",
@@ -11834,7 +11980,7 @@
               },
               "verdict": {
                 "type": "string",
-                "description": "merge.resolve: no-behaviour-change | behaviour-differs; merge.review: ok | notes | blocking."
+                "description": "merge.resolve: no-behaviour-change (contents: the merged files) | chat-fixes (the branch's chat fixes it; your diagnosis in proposal; no contents) | needs-user (the user decides; question in text, choices; no contents); merge.review: ok | notes | blocking."
               },
               "files": {
                 "type": "array",
@@ -11855,9 +12001,32 @@
                 "type": "string",
                 "description": "merge.resolve: what the resolution does, in plain words."
               },
+              "answer": {
+                "type": "string",
+                "description": "merge.respond (the branch's chat, answering a merge queue request by its id): fixed | needs-you | cant."
+              },
+              "request": {
+                "type": "string",
+                "description": "merge.respond / merge.rule: a merge queue request, by its id (rq_…, in the merge queue's note)."
+              },
+              "drafts": {
+                "type": "boolean",
+                "description": "merge.respond with fixed: you changed the branch's spec drafts (that needs no commit)."
+              },
+              "ruling": {
+                "type": "string",
+                "description": "merge.rule (the merge thread's): chat-fixes (text: your diagnosis, sent to the branch's chat) | try-again (back in line; after a chat's Can't, text: the other approach, once) | needs-user (text: the question, choices: its options; only for what is the user's) | checked | beyond (a chat's fix, by its request: only what was asked, or text: what more it changes)."
+              },
+              "choices": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "merge.rule / merge.resolve with needs-user, merge.respond with needs-you: the options for the user, short, at most 4 (each fills the chat's message box when picked)."
+              },
               "text": {
                 "type": "string",
-                "description": "merge.review: the reviewer's notes, short; merge.ask: the merge thread's question for the user; merge.reply: the user's answer, in their words; release.notes: the release notes, in full."
+                "description": "merge.review: the reviewer's notes, short; merge.ask: the merge thread's question for the user; merge.reply: the user's answer, in their words; merge.respond: what you changed (fixed), the question for your user (needs-you) or why you can't (cant); release.notes: the release notes, in full."
               },
               "action": {
                 "type": "string",
@@ -11865,7 +12034,14 @@
               },
               "ask": {
                 "type": "string",
-                "description": "merge.reply: the merge thread's question you relay the user's answer to, by its id (ak_…, in the merge queue's message)."
+                "description": "merge.reply (the user's page only): the merge thread's question the user answers, by its id (ak_…)."
+              },
+              "contents": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "description": "merge.resolve, verdict no-behaviour-change only: each conflicted file's merged text, by its path in the repository; Sova merges the approved commit in the entry's scratch copy, writes these files and commits the resolution there. chat-fixes and needs-user carry none."
               }
             },
             "required": [

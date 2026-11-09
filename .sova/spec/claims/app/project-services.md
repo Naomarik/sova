@@ -193,12 +193,15 @@ limit it is refused `cap-reached`: "{n} copies are running, and this machine all
 once: stop one first."; above it (the limit was lowered under what runs, which stops nothing):
 "{n} running, {k} over the limit of {cap}: no new copy starts until {k + 1} stop." (digits always). Either message goes on to name the running copies and where the limit comes from (set on
 this machine, or the project's file). A create with room under the limit but no free usable slot of 1 to
-16 is refused `slots-blocked`, naming for each slot the port and its holder: a Sova instance's id,
-or a listener's pid and folder when this user can read them.
+16 is refused `slots-blocked`. That refusal names each copy of the project holding a place, by its
+slot, its branch or id and whether it is running or stopped; names for each other slot the port and
+its holder: a Sova instance's id, or a listener's pid and folder when this user can read them; and
+ends with what to do: tear down a copy this session made, otherwise ask the user to free a place
+with Teardown on the Branches tab. It never tells a chat to tear down a copy the chat didn't make.
 
 A slot is free when
 no instance of the project holds it and none of its allocated ports is held by any other instance
-on this host (any project) or has a listener right now. The registry is
+on this host (any project), by another project's shared service, or has a listener right now. The registry is
 `<state root>/project-services/registry.json`, changed only under a file lock and written by an
 atomic rename, so two callers can never get the same slot or port. An instance's data dir is
 `<state root>/project-services/data/<id>/`, never inside a worktree.
@@ -431,13 +434,14 @@ these through project_verbs, never by hand."; and, when the session's sandbox is
 sandboxed and cannot reach these ports: use project_verbs." A checkout with a definition but no
 instance gets one line saying it has no running copy yet and that project_verbs up gives it its own
 ports; one whose definition is invalid, one line naming the problem. A project without a definition
-gets no note.
+gets no note, even where something else offers the tool (§app.project-services/tool-offered). Every
+checkout the note covers has a definition, valid or not, so a chat with a note always has the tool.
 
 The note reaches the model as a hidden message (`sova-instance-note`, never shown in the
 transcript) at the start of a turn, only when its text differs from the last such message on the
 branch: the text holds no live state (no pids, no running or stopped), so it changes only when a
 slot, port, data ref, `about`, the test command or the sandbox does. After a
-compaction the current note is sent again. The system prompt never changes. The same text follows
+compaction the current note is sent again. The system prompt never carries the note. The same text follows
 the result of `project_verbs` and `sova_project_verbs` for create, up, apply and status of one
 instance, so a turn that just ran up learns its ports at once, and status is the note on demand.
 
@@ -455,8 +459,9 @@ An adopted slot 0 refuses `reset` (`refused-slot0`); see §app.project-services/
 The only verb that deletes. First every share link of the instance is revoked, each person's
 sibling of one included (§app.project-services/share, a `links` step), then down (every service down
 covers, those that left the definition included), then each data resource deprovisioned and the data dir removed
-(unless `keepData`), then the worktree removed only when Sova cut it and it is clean (a dirty one
-stays, named in a skipped step), then the slot freed. The branch is never deleted. Slot 0 is
+(unless `keepData`), then the worktree removed only when Sova cut it, it is clean and it holds nothing that can't be
+rebuilt (the same check as §chat.worktrees/cleanup, §chat.worktrees/leftovers); otherwise it stays,
+named with the reason in a skipped step, then the slot freed. The branch is never deleted. Slot 0 is
 refused (`refused-slot0`). An instance that is absent answers `ok` with state `absent`.
 An adopted slot 0 is refused the same way, naming its unit; see §app.project-services/adopt.
 
@@ -607,7 +612,7 @@ same engine in-process, never over HTTP:
 
 - **`project_verbs`**, in every ordinary hosted session and in every worker and team member a
   chat starts (an `agent_spawn` worker, a team member, coordinator, monitor or successor; never a
-  hidden chat), each under the same rules: reads (status, logs, doctor) on its own
+  hidden chat) that is offered it (§app.project-services/tool-offered), each under the same rules: reads (status, logs, doctor) on its own
   project; create, up, down, apply and test on instances of checkouts that are its own (its tracked
   worktrees, and its cwd's checkout unless that is the main checkout); reset and teardown only on
   instances it created; conform of its project. Anything else is `forbidden`. A create, up or test
@@ -649,82 +654,153 @@ verbs have callers of their own (§app.project-services/deploy-callers), and so 
 session's `project_verbs` reads its project's releases and nothing more, and the release chat's
 reports its own release's steps.
 
+## §app.project-services/tool-offered — Which chats are offered `project_verbs`
+
+An ordinary chat, a worker, a team member and a restored worker, Claude Code's included, follow one
+rule: the tool is offered where the project has something for it to work on. A folder with no Project
+Verbs setup never sees it, and it appears on its own the moment setup exists. A hidden chat never has
+it, and the Overseers' `sova_project_verbs` is outside this rule.
+
+- **What offers it.** A chat is offered the tool when any of these is true:
+  - the folder it works in has a `.sova/project.json`, valid or not;
+  - the project's main folder has one;
+  - a worktree the chat tracks has one;
+  - the merge queue serves the project (§app/merge-queue);
+  - a copy is registered for the project (§app.project-services/instances);
+  - the chat is running a playbook that proposes setup, one whose frontmatter says `proposes:
+    definition`, `deploy`, `release` or `pipeline` (§app.project-runtime/verb-playbooks), however it
+    was started, by hand included.
+
+  A chat whose folder is on another computer is not offered it, whatever that folder holds.
+- **With none of these.** A new chat opens without the tool, at no cost, and the tool count in its
+  profile picker (§chat.profiles/picker) is one lower.
+- **When Sova looks.** As a chat opens, at each message and after each step of a reply. A chat or
+  worker that writes a definition has the tool on its next step. When setup lands on the project's
+  main folder, or a chat merges it in, every open chat of the project has the tool at its next message
+  or step, without reopening.
+- **What arriving costs.** That one change costs one uncached message, and in a Claude Code chat one
+  condensed restart (§app.claude-code-provider/continuity). A project with setup sees no change: the
+  same tools, in the same order, the same prompt and no restart.
+- **Once offered, kept.** A chat keeps the tool as long as it stays open, even when the definition
+  disappears; it is judged again only when the chat reopens. A chat in strict mode when setup arrives
+  keeps the tool after strict mode ends, with no second tool change (§chat.mode-menu/strict).
+- **What Sova says stays true without it.** The macOS kill guard's reply says "If you have the
+  project_verbs tool, use project_verbs down for a project's services." (§chat.kill-guard/refusal),
+  and the Create guide says a chat with every group removed can start its project's copies only where
+  the project has setup.
+
 ## §app.project-services/merge-verbs — The merge verbs
 
 The merge queue (§app/merge-queue) is worked through verbs beside the deploy verbs, the same way:
 the same route (`POST /api/project-services/<verb>`), the same CLI and the same tools, each
-answering
-the one result shape with its own `merge` key (§app.project-services/result).
+answering the one result shape with its own `merge` key (§app.project-services/result).
 
-- **Reads**: `merge.status` (a project: the queue's view, its state and why it is paused, the
+- **Reads**: `merge.status` (a project, or one entry, which narrows the view to it: the queue's view, its state and why it is paused, the
   current run, the waiting line with estimates, what needs the user, what needs a fix, recent
   landings with their runs, the target's and pushed heads, and the test checks flagged broken on the
-  target) and `merge.logs` (a run, optionally
-  one step and a line count).
+  target) and `merge.logs` (a run, optionally one step and a line count).
 - **Setting it up**: `merge.setup` (a project's checks, one test command with its time and what
   starts first, or no automated tests; a dry run tries them, and a save commits them), the
   operator's only, from the routes and the CLI: no chat may call it, with or without a dry run
   (§app.merge-queue/setup).
-- **Trying a setup**: `merge.try` (a branch, by default the caller's own, or a commit, and the release check ids to run though unchanged): runs that commit's own
-  proposed merge checks and release-only checks in the merge copy, merging and saving nothing
-  (§app.project-setup/trial).
-- **The user's**: `merge.add` (a branch or checkout, its commit by default the head, and the
-  options without its specs and without review: §app.merge-queue/approve; at a sent-back branch's
-  head it is the re-land button, Land This Commit Again or Land Newest Commit), `merge.cancel` (an
-  entry: one in line, checking or
-  waiting is taken out of the line; a Needs a fix one is Remove from Queue, cancelled as
-  "removed by you", deleting nothing), `merge.pause` and `merge.resume` (a project, with an optional
-  why), and `merge.answer`
-  (an entry waiting for the user: `accept` a resolution, `land-anyway` over a blocking review or a
-  failure
-  whose owner can't be told, or `send-back`), `merge.reply` (a merge thread's question by its id
-  and the user's answer: §chat.merge-queue/asks), `merge.fresh` (a project: Start Fresh,
-  §chat.merge-queue/thread-life) and `merge.clear` (a queue chat's id, or `all`:
-  §app.merge-queue/chats).
-- **The merge thread's**: `merge.note` (an entry and at most 300 characters; empty clears it),
+- **Trying a setup**: `merge.try` (a branch, by default the caller's own, or a commit, and the
+  release check ids to run though unchanged): runs that commit's own proposed merge checks and
+  release-only checks in the merge copy, merging and saving nothing (§app.project-setup/trial).
+- **The user's**: `merge.add` (a branch or checkout, its commit by default the head, and the options
+  without its specs and without review: §app.merge-queue/approve; on a finished branch blocked for
+  something its chat can fix it records Approved · waiting for a fix; on Out of tries it is Land, a
+  new standing approval), `merge.cancel` (an entry: one in line, checking or waiting is taken out of
+  the line; one back with its chat, approved and waiting for a fix, paused or waiting for the user's
+  decision is Remove from Queue, cancelled as "removed by you", deleting nothing), `merge.pause` and
+  `merge.resume` (a project, with an optional why), and `merge.answer` (an entry waiting for the
+  user's decision: `accept` a resolution, `land-anyway` over a failure whose owner can't be told,
+  `try-again` for such a failure, or `land` for a fix that needs the user's OK or drafts changed
+  beyond fitting; there is no `send-back`, and no `land-anyway` over a review), `merge.reply` (a
+  merge thread's question by its id and the user's answer: §chat.merge-queue/asks), `merge.fresh` (a
+  project: Start Fresh, §chat.merge-queue/thread-life) and `merge.clear` (a queue chat's id, or
+  `all`: §app.merge-queue/chats).
+- **The merge thread's**: `merge.note` (an entry and at most 300 characters; an empty note clears it,
+  sent from the thread's tool as from the routes or the CLI),
   `merge.extend` (an entry, the check ids it adds, why, and a selection, `select`, for a check that
   takes one: the slow test group, files or walkthroughs it runs; never removes one; the tool's help
   for `checks` and `select` names the full pick and says a check that takes a selection runs bare
-  without one and fails), `merge.resolve` (an
-  entry, its judgement, no behaviour change or behaviour differs, the files, both sides and the
-  proposal in plain words, and the commit of its resolution), `merge.retry` (a project or entry
-  paused for the machine), `merge.ask` (the question for the user, and the entry it is about:
-  §chat.merge-queue/asks) and `merge.hold` (a project and `action`: `set` holds the queue's new
-  starts for 5 minutes, set again renewing them, and `clear` lifts the hold; it answers the hold
-  now: §app.merge-queue/empty). Each but `merge.hold`, which names no entry, takes an optional
-  `note`, recorded on the entry.
+  without one and fails), `merge.resolve` (an entry, its judgement, `no-behaviour-change` (with
+  `contents`, each resolved file's text, which Sova commits in the scratch copy, or the commit of
+  its resolution), `chat-fixes` (with its diagnosis), or `needs-user` (with its question and
+  choices for the user; `behaviour-differs` is taken as the old word for it), the files, both sides
+  and the proposal in plain words; `chat-fixes` and `needs-user` carry no contents and are refused
+  with them), `merge.rule` (an entry, its
+  ruling and the text: `chat-fixes` with its diagnosis (on a blocking review, optional: the
+  thread's note, §chat.merge-queue/thread-powers, §app.merge-queue/send-back), `try-again`, also its
+  other approach after a
+  "Can't", or `needs-user` with the question and at most 4 choices, on a failure, a blocking review
+  or a "Can't", §app.merge-queue/needs-user; and, naming the request, `checked` or `beyond` for a
+  fix, with what it changes beyond the request, §app.merge-queue/standing-approval), `merge.retry`
+  (a project paused for the machine, or an entry whose user's Land still stands, put back in line
+  and counted against its tries, §app.merge-queue/tries; never an entry the user removed, out of
+  tries or waiting for the user's decision), `merge.restart`, `merge.live`, `merge.test` and
+  `merge.names` (§chat.merge-queue/thread-sandbox), `merge.ask` (the question for the user, its choices,
+  and the entry it is about: §chat.merge-queue/asks) and `merge.hold` (a project and `action`: `set`
+  holds the queue's new starts for 5 minutes, set again renewing them, and `clear` lifts the hold;
+  it answers the hold now: §app.merge-queue/empty). Each but `merge.hold`, which names no entry,
+  takes an optional `note`, recorded on the entry.
 - **The review step's**: `merge.review` (a run, its verdict `ok`, `notes` or `blocking`, and the
-  reviewer's text).
+  reviewer's text, whole up to the longest its format allows).
+- **The branch's chat's**: `merge.respond` (a request by its id, `rq_…`, and the answer: `fixed`
+  with what changed, a commit, drafts or both; `needs-you` with the question and its `choices`; or
+  `cant` with why: §chat.merge-queue/answers).
+
+**Who may call each verb, and only where the queue serves**: §app.project-services/merge-callers.
+The user's verbs are the operator's, and pass only on the user's own click in Sova's page or a
+proven click from another of their computers.
+
+The Land, Cancel, Remove from Queue, Pause, Resume, Accept, Land Anyway, Try Again, Start Fresh,
+Clear, Clear All and Run Trial actions are catalogue commands pointing at these verbs
+(§app/commands). Send Back, Land This Commit Again, Land Newest Commit and Send Answer are retired
+from every screen. Catalogue ids are append-only (§app.commands/catalogue): the verbs' entries
+(`project.verb.merge.answer`, `project.verb.merge.reply`) keep their ids, and an entry retired with
+these actions keeps its id in the catalogue's retired list, never reused.
+
+## §app.project-services/merge-callers — Who calls the merge verbs, and where
 
 **Callers.**
 - The operator (the routes, the CLI, the Land and Cancel controls) calls the user's verbs (add,
   cancel, pause, resume, answer, reply, fresh, clear, setup), `merge.try` (Run Trial) and the reads,
-  and may write a note
-  or hold the queue (`merge.hold`).
-  Only the operator calls the user's verbs, with one exception: the chat a merge thread's question
-  was asked in may call `merge.reply` for that question only, to pass on the user's answer.
+  and may write a note or hold the queue (`merge.hold`). Only the operator calls the user's verbs:
+  no chat relays the user's answer with `merge.reply`, which a chat's script is refused; a question
+  asked in a branch's chat is answered by the user's own next message there
+  (§chat.merge-queue/asks). On the user's route every merge verb but the reads and `merge.try`
+  (`merge.add`, `merge.cancel`, `merge.answer`, pause, resume, fresh, clear, setup and the rest)
+  passes only on the user's own click in Sova's page, by its cookie, or a proven click from another
+  of their computers (§app.access/your-click): a request marked as from a chat, any caller key
+  (blank included), the token in a header (a script, a chat's terminal, a tool), a card's command,
+  an in-process call, an extension's key or a mesh peer is refused with where to click, and nothing
+  changes; the route never runs it as the operator. A chat's own scripts calling the operator's
+  route never act as the user on the queue: every verb but the reads (`merge.status`, `merge.logs`,
+  `merge.live`) and `merge.try` is refused to them. A typed "land it" through `worktree land` stays the other way
+  in.
 - A typed "land it" reaches `merge.add` as the user's approval through `worktree land`
   (§chat.worktrees/tool); no session can call `merge.add` as a tool.
 - The project's merge thread (§chat.merge-queue/thread) calls the reads and its own verbs (note,
-  extend, resolve, retry, ask, hold), for its own project only.
+  extend, resolve, rule, retry, ask, hold, restart, live, test, names), for its own project only;
+  every merge verb's answer stays under 24,000 characters (§chat.merge-queue/thread-sandbox).
+- A branch's chat calls `merge.respond` for a request the queue sent it (§chat.merge-queue/answers),
+  once per request and only that chat (a worker's branch: the chat that runs the worker); never for
+  a merge thread's question, and it is never an approval.
 - A review step's reviewer calls `merge.review` for its own run only (§app.merge-queue/review).
 - Any chat, the project's Setup chat included (§app.project-setup/trust), calls `merge.try` for its
   own project; `merge.setup` and every other user's verb is `forbidden` to it, as to every chat. The
   Overseers' `merge.try` is `forbidden`.
 - Any other chat reads its own project's queue; anything else is `forbidden`.
 
-**Only where the queue serves** (§app.merge-queue/served). Every verb, the operator's too, asks
-the rule first, whichever way it names the project (a project, an entry, a run, a checkout or the
+**Only where the queue serves** (§app.merge-queue/served). Every verb, the operator's too, asks the
+rule first, whichever way it names the project (a project, an entry, a run, a checkout or the
 caller's folder). For a repository not on the Projects list every verb is refused with the error
 `unsupported` and "not a project the merge queue serves: merge it into main from the chat", and
 nothing is recorded or loaded. For a listed project whose merge setup isn't done only `merge.status`
 (its view says it isn't served, §app.merge-queue/view), `merge.setup` (the operator's,
 §app.merge-queue/setup) and `merge.try` (§app.project-setup/trial) are taken; every other verb gets
 that same refusal.
-
-The Land, Land This Commit Again, Cancel, Remove from Queue, Pause, Resume, Accept, Send Back, Land
-Anyway, Start Fresh, Send Answer, Clear, Clear All and Run Trial actions are catalogue commands
-pointing at these verbs (§app/commands).
 
 ## §app.project-services/self-host — When the project is Sova itself
 
@@ -816,12 +892,12 @@ The operator sees and drives every running copy from two places, both on this ho
   (§app.project-services/contract) and the copy has that port; and whether the main
   checkout's definition declares sensitive data; and the copy limit, `limit: {value, source (machine
   or file), file (the file's own value, or null), copies, running, over (the over-limit sentence, or
-  null), usable (how many slots of 1 to 16 the layout can use), unavailable (one sentence per unusable slot), estimate (what a copy takes, or null), host: {totalBytes, availableBytes}}`. It is read every 5 seconds while the tab shows. One row per copy: the main checkout's (slot 0) first, named
+  null), usable (how many slots of 1 to 16 the layout can use), unavailable (one sentence per unusable slot), places (how many of the usable places are stopped, used elsewhere and free, free absent where other programs were not checked), estimate (what a copy takes, or null), host: {totalBytes, availableBytes}}`. It is read every 5 seconds while the tab shows. One row per copy: the main checkout's (slot 0) first, named
   `main`, then each branch copy by slot. A row shows the branch, `slot {n}`, each checkout service's
   ports (a port with HTTP readiness is a link to the site at `http://<this page's host>:<port>/`, never the readiness check's path), the copy's
   memory (the sum of its services' memory, each process's own memory as the resource monitor
-  measures it, so it reads what a project card's Memory in use counts for that copy,
-  §app.projects/home-glance; "—" when none reports one), its state as a chip
+  measures it, as a project card counts a copy, §app.projects/home-glance, which leaves out Sova's
+  own server; "—" when none reports one), its state as a chip
   (Running, Starting, Degraded, Stopped, Absent; Starting while the copy is degraded only because a
   service is still starting, none failed or degraded; a service that is not ready is named under the
   row with its state), and who created it ("by you", "by a coding session", "by its overseer", "by the Overseer",
@@ -829,8 +905,11 @@ The operator sees and drives every running copy from two places, both on this ho
   Main** (`up` of the project) sits under the rows. Shared services are listed in their own block
   under the copies, once each, with their ports, state and memory, and Start and Stop of their own.
 - **The copy limit** (§app.project-services/instances) opens the tab, above the rows: "{n} copies on
-  this host, {r} running · up to {cap} at once on this machine" (the copies besides the main
-  checkout's and conformance's), then where the limit comes from, "set on this machine" or "from the
+  this host, {r} running · up to {cap} at once on this machine" ({n} counts the copies in the
+  project's usable slots, the main checkout's, conformance's and any record outside the usable slots
+  not counted; {r} is the copy limit's own count of running copies, §app.project-services/instances,
+  the same figure as the project card's, so a running record outside the usable slots counts in it),
+  then where the limit comes from, "set on this machine" or "from the
   project's file", and **Change**. Change opens an inline editor in its place: a number field (1 to
   16), **Save**, **Cancel**, and while this machine's value is set **Reset to File's Value**, with
   the hint "The project's file says {n}." (or, with no valid file, "The project's file sets none: 4
@@ -843,7 +922,10 @@ The operator sees and drives every running copy from two places, both on this ho
   limit of {cap}: no new copy starts until {k + 1} stop."; nothing is stopped. While the
   definition's layout leaves a slot of 1 to 16 unusable, a line names each ("Slot 14 is unavailable:
   its ports overlap slot 10's."), and while the usable slots number fewer than the limit, "Only {n}
-  slots are usable, so at most {n} copies run at once."
+  slots are usable, so at most {n} copies run at once." A line reports the same counts as the
+  project's card, by the same rule (§app.projects/home-glance): `{f} of {u} places free · {s}
+  stopped · {e} used elsewhere`; on a host whose other programs can't be checked, `{s} stopped · {e}
+  used elsewhere · Other programs were not checked`, with no free count.
 - **The cost line**, under the limit: "Each copy takes about {steady} (up to {peak} at peak), so {cap}
   copies need about {cap × steady}. This machine: {total}, {available} available now." in the warn
   tone when {cap × steady} is more than what is available now; a warning, never a refusal. The

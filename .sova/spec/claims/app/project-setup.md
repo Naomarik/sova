@@ -77,7 +77,7 @@ Once its branch lands or merges, or its worktree is removed, its next change sta
 branch from the target's newest commit. It starts in the normal mode with align and vis on (vis to draw
 the plan, §app.project-setup/drawing) and no other minor mode, whatever this computer's default modes
 are, so the spec minor mode is off: setting up the
-pipeline is configuration, not a change to the product. The project's other chats keep spec on.
+pipeline is configuration, not a change to the product.
 A chat Start Fresh starts gets the same modes before its first message.
 
 **One open proposal.** The project has at most one setup branch proposed at a time
@@ -234,7 +234,8 @@ branch's. Until then the proposal offers **Run Trial** in Land's (or Merge Branc
 "Run a trial of {sha7} first: it lands only once its own checks pass." A newer commit on the branch
 needs a new trial. Every way in asks the same rule: Land on the tabs, the banner, the Needs-you row,
 the Worktrees rows, a typed "land it", `merge.add` and Merge Branch each refuse a setup branch whose
-head has no passing trial, with "This setup branch has no passing trial at {sha7}: run a trial of
+head has no passing trial (one with nothing left and no draft to land is refused first, as nothing to
+land, §app.merge-queue/approve, and is never told to run a trial), with "This setup branch has no passing trial at {sha7}: run a trial of
 it first." (or that its trial is still running, or failed), queueing and merging nothing. Merge
 Branch checks the trial against the head it actually merges, and refuses when the branch's head moved
 since the proposal was read ("The branch has a newer commit than the one shown: look again."). When
@@ -249,8 +250,8 @@ land reading offers no Land meanwhile, and its note names the missing trial
 
 The Setup chat may:
 - read and edit anything in its own worktree, and run the project's commands there;
-- use the project verbs on its own copies, as any project chat does
-  (§app.project-services/callers);
+- use the project verbs on its own copies, as any project chat with the tool does
+  (§app.project-services/callers); it is always offered the tool (§app.project-services/tool-offered);
 - start trials with `merge.try`, for its own project only;
 - read the queue, releases and deploys (`merge.status`, `merge.logs`, `release.status`,
   `deploy.status`, `deploy.logs`) and prove a recipe offline with `deploy.check`;

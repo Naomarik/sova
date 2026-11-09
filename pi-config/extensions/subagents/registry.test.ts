@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 import { registerSubagents } from "./index.ts";
 import { WORKER_MANIFEST_ENTRY_TYPE, WorkerRegistryRecorder } from "./registry.ts";
 import { MANIFEST_TASK_CHARS, readWorkerManifests, type WorkerManifestRecord } from "./worker-transcript.ts";
+import { profileOff } from "./tests/profile-off.ts";
 
 const worker = (over: Record<string, unknown> = {}): any => ({
 	id: "ag_01", groupId: "run_01", name: "w", backend: "claude-code", task: "do it", cwd: "/tmp", wake: true,
@@ -112,6 +113,8 @@ test("recorder: lost/killed statuses; untracked workers write nothing; a throwin
 /** The manager over fake workers, with a private agent dir. */
 function harness() {
 	const root = fs.mkdtempSync(path.join(os.tmpdir(), "pi-registry-test-"));
+	// Beside root, which the durable-record test expects to stay empty.
+	const agentDir = profileOff(fs.mkdtempSync(path.join(os.tmpdir(), "pi-registry-agent-")));
 	const tools = new Map<string, any>();
 	const events = new Map<string, any>();
 	const appended: any[] = [];
@@ -144,11 +147,11 @@ function harness() {
 		};
 		workers.push(w);
 		return w;
-	}, { agentDir: path.join(root, "agent") });
+	}, { agentDir });
 	const call = (name: string, params: any) => tools.get(name).execute("t", params, undefined, () => {}, ctx);
 	return {
 		appended, workers, call, root, start: () => events.get("session_start")({}, ctx),
-		close: async () => { await events.get("session_shutdown")({}, ctx); fs.rmSync(root, { recursive: true, force: true }); },
+		close: async () => { await events.get("session_shutdown")({}, ctx); fs.rmSync(root, { recursive: true, force: true }); fs.rmSync(agentDir, { recursive: true, force: true }); },
 	};
 }
 
@@ -177,7 +180,7 @@ test("manager: team members carry teamId and role in their registry spec", async
 	h.start();
 	await h.call("team_create", { name: "alpha", objective: "ship", members: [{ role: "lead", prompt: "lead it" }, { role: "dev", prompt: "build it" }] });
 	const teams = h.appended.filter((e) => e.customType === WORKER_MANIFEST_ENTRY_TYPE).map((e) => e.data.team);
-	assert.deepEqual(teams.map((t: any) => [t.teamId, t.role]), [["team_01", "lead"], ["team_01", "dev"]]);
+	assert.deepEqual(teams.map((t: any) => [t.teamId, t.role]), [["team_01", "coordinator"], ["team_01", "lead"], ["team_01", "dev"], ["team_01", "monitor"]], "Sova's coordinator first, its monitor last");
 	await h.close();
 });
 

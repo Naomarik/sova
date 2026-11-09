@@ -3,7 +3,7 @@
 
 What the user's pi extensions publish, read-only except for one cache: subscription usage, provider-reported credits and activity
 (usage-status), which this server also keeps fresh itself (§app.insights/usage-refresh), teams and
-subagents (subagents + sessions live records), the LLM calls in flight and their output-token ring
+subagents (from the subagents + sessions live records), the LLM calls in flight and their output-token ring
 (the server's own count with its chat processes' reports, and each connected host's own count,
 §app.insights/llm-inflight, §app.insights/token-velocity), and
 per-session summaries (topic-outline, compaction). Data shapes are `UsageInsight`, `AgentsInsight`, and `SessionInsight` in
@@ -1802,8 +1802,8 @@ toast.
 - **Open row.** One line per worktree whenever the session has any, most useful first:
   unmerged, then those with uncommitted changes, then merged, then the rest, then gone (each kind
   in the session's own order). A line: the branch in mono (`detached` on a detached HEAD, the
-  folder name when it's gone), then **merged** (a success chip) when the tip is in the base or
-  merging would change nothing, else **unmerged** in words; "uncommitted" in words when it has
+  folder name when it's gone), then **merged** (a success chip) when the tip is in the base or the
+  shared answer finds no commit of its own left to land (§chat.worktrees/nothing-left), else **unmerged** in words; "uncommitted" in words when it has
   uncommitted changes; "a worker's" when a worker's cwd is the source; and the path in mono. A
   tree that's gone reads "gone"; a git failure "unreadable"; no base "no base". The line's
   `title` says the same in a sentence (the base it is or isn't merged into).
@@ -1880,10 +1880,13 @@ source wins. A folder that no longer exists is listed with `exists: false` and n
 folder that exists but is not in a git worktree, a relative path, and a remote session's
 placeholder are not listed.
 
-**What each tree says,** against its repository's base: local `master`, else `main`, else what
+**What each tree says,** against its repository's base: the project's merge-queue target when a queue
+is loaded and that branch exists, else local `master`, else `main`, else what
 `origin/HEAD` points at; with none, no base fields at all. `merged` is `ancestor` when the tree's
 HEAD is already in the base, `content` when it isn't but merging it would leave the base's tree
-exactly as it is (a squash or rebase merge landed it), otherwise `no`. `ahead`/`behind` count
+exactly as it is (a squash or rebase merge landed it), `catch-up` when nothing of its own is left for
+another reason (§chat.worktrees/nothing-left: every commit past the base a merge or already landed),
+otherwise `no`. `ahead`/`behind` count
 commits each side has that the other hasn't; `added`/`removed` are the lines the branch changed
 since it left the base (binary files count 0). `branch` is absent on a detached HEAD. `dirty` says
 whether anything is uncommitted, untracked files included.
@@ -1900,7 +1903,7 @@ Every git runs without a shell under a 5-second limit,
 at most four at a time. The comparison is kept until the tree's HEAD or its base moves, or what its
 trial merge rests on changes (the configuration, attribute files and merge drivers' code,
 §app/idle-git-cache); `dirty` is kept for ten seconds, and what hasn't been asked for in an hour is dropped. With git older than 2.38 there
-is no trial merge, and `merged` is only ever `ancestor` or `no`.
+is no trial merge, and `merged` is only ever `ancestor`, `catch-up` or `no`.
 
 ## §app.insights/explanations-page — Explanations page (`#/explanations`)
 
@@ -1965,7 +1968,10 @@ fetched except the lookups below.
   the thumbnail at 768px and up, the topic, `{relative time} · {model}`, the summary clamped to 3
   lines, and the advisory note when there is one. The thumbnail, topic, caption, summary and note
   are one plain link to `/explain/{id}` with no `target` (the same-tab rule of
-  §app.insights/insight-strip). Under it, a foot line says where the page came from:
+  §app.insights/insight-strip). The thumbnail and the link wear the theme the window wears now,
+  and follow it when it changes while the page is open (an Auto switch, §app.settings-dialog/themes),
+  so a page opened after the switch opens in the theme on screen. Under it, a foot line says where
+  the page came from:
   - The session in the session list: `From {title}`, an `Archived` chip when it is archived,
     then `· Open in Session`, a separate link to `#/s/{path}`.
   - A session the list doesn't carry (it has no user message, for one): the page asks this host

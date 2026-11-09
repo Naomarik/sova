@@ -30,7 +30,7 @@ if (!tree) {
   process.exit(2);
 }
 const here = import.meta.dirname;
-const skills = resolve(here, "..", "..", ".claude", "skills", "playwright", "scripts");
+const skills = resolve(here, "..", "..", ".agents", "skills", "playwright", "scripts");
 const agentDir = join(tree, ".agent");
 const rate = args.get("rate") ?? "1";
 const windowSec = args.get("window") ?? "30";

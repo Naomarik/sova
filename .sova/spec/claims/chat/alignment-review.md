@@ -12,8 +12,8 @@ Everything here is behind one boolean pi flag the mode extension registers, `adv
 (default off), read at `session_start` like the other launch flags. With it off a session is
 exactly as before: no review guidance in the system prompt, the `align` tool's schema, description
 and guidelines byte-identical to the flag's absence, no `review` or `close_blocker` op accepted
-(the op list in the error names neither), no `/review` command, no Reviewer row in Settings →
-Subagents, no review buttons or review lines on the card, and nothing written to the profiles.
+(the op list in the error names neither), no `/review` command, no Reviewer row in a profile's
+Models part (Settings → Profiles), no review buttons or review lines on the card, and nothing written to the profiles.
 Review exists only in sessions with align on (with or without Delegate); a Delegate-only or plain
 session gets none.
 
@@ -27,7 +27,7 @@ the same chat — a reopen, a server restart, a CLI restart — gets `--adversar
 record, never from the setting as it is now. So a chat already open keeps what it started with,
 across restarts too. The web shows the card's review lines and buttons by that chat's own flag
 (the hello's `alignReview`; a server that sends none falls back to the saved setting), and the
-Reviewer section in Settings → Subagents while the setting is saved on.
+Reviewer row in a profile's Models part (Settings → Profiles) while the setting is saved on.
 
 ## §chat.alignment-review/record — The review record
 
@@ -123,7 +123,7 @@ without the key still parses, and a parse never adds it. The mode extension reso
 profile at each turn boundary, assessed against discovery and the model policy like the spec
 writer (§chat.subagent-profiles/resolution), and the code uses only what the profile lists, never
 a model of its own: the primary, else the fallback once (disclosed), else `incomplete`. With the
-flag on, Settings → Subagents' profile editor shows a **Reviewer** section under Spec writer
+flag on, the Models part of Settings → Profiles' editor (§app.settings-dialog/profile-editor) shows a **Reviewer** row (the old tab's section) under Spec writer
 (§chat.subagent-profiles/settings), with the same rows, validation and save rules (a toggle "Review
 alignments with a reviewer", off = None, "No review.").
 

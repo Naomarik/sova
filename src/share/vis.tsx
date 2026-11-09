@@ -2,12 +2,16 @@ import { lazy, type Component } from "solid-js";
 import { render } from "solid-js/web";
 import type { VisBase } from "../vis/core/grammar";
 import { Figure } from "../vis/Figure";
+import { ChartControls, createChartState } from "../vis/kinds/chart/ChartControls";
+import type { ChartSpec } from "../vis/kinds/chart/parse";
 import { setVisIcons } from "../vis/icons";
 import type { ViewProps } from "../vis/types";
 import type { ShareVisual } from "./markdown";
 
 // Drawings on the share and owner pages (§app.baton/outsider-view): the chat's figure without
-// Source or Copy, for the kinds markdown.ts lets through (it decides which fences get here).
+// Source or Copy, for the kinds markdown.ts lets through (it decides which fences get here). A
+// chart keeps the chat's view switch and toggles, its choice kept in this tab only, per drawing
+// (the placeholder's key: a hash of the fence).
 
 // The share listener serves only this build's assets, so the icons a drawing uses come with it, in
 // the Views' chunk (vis-icons.ts), loaded before any drawing mounts.
@@ -40,4 +44,8 @@ function viewFor(kind: string): Component<ViewProps<VisBase>> {
 
 /** hydrate.tsx's `mount` for a share page. */
 export const mountShareVisual = (placeholder: HTMLElement, v: ShareVisual): (() => void) =>
-  render(() => <Figure kind={v.kind} spec={v.spec} view={viewFor(v.kind)} />, placeholder);
+  render(() => {
+    if (v.kind !== "chart") return <Figure kind={v.kind} spec={v.spec} view={viewFor(v.kind)} />;
+    const chart = createChartState(v.spec as ChartSpec, `share:${placeholder.dataset.visKey ?? ""}`);
+    return <Figure kind={v.kind} spec={chart.drawn()} view={viewFor(v.kind)} actions={<ChartControls state={chart} />} />;
+  }, placeholder);

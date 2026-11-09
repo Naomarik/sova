@@ -193,8 +193,8 @@ export function DecisionSettingsSection() {
         </h3>
       </div>
       <p class="settings-intro">
-        Sova can ask a small classifier about your sessions — whether a finished turn is waiting on you, and what a session
-        is about. Everything here is off until you turn it on.
+        Sova can ask a small classifier about your sessions, for the features switched on below. Nothing is sent until Jev
+        or a fallback model can answer.
       </p>
 
       <Show when={info.error}>
@@ -208,7 +208,7 @@ export function DecisionSettingsSection() {
 
       <Show when={loaded() && draft()}>
         <p class="decisions-privacy" data-testid="decisions-privacy">
-          Each check sends a short, redacted excerpt of one session — its title, the last exchange, and recent tool names —
+          Each check sends a short, redacted excerpt of one session — at most its title, the last exchange, and recent tool names —
           to Jev (TypeSafe) or your fallback model; never whole transcripts, images, or files. The Overseer's own sessions
           are never checked.
         </p>
@@ -404,6 +404,14 @@ export function DecisionSettingsSection() {
             "Compares decisions recorded in hand-off sessions and sends contradictions to whoever decides. Only the decision text is sent.",
             () => reconcileOn(draft()!.features),
             (on) => edit((c) => (c.features.reconcile = on)),
+            unanswered,
+          )}
+          {switchRow(
+            "decisions-message-labels",
+            "Label your messages",
+            "Labels each message you type or dictate by what it asks for, and shows the time on each in the session's Time Spent tab. Only messages sent while this is on. The agent never sees a label.",
+            () => draft()!.features.messageLabels === true,
+            (on) => edit((c) => (c.features.messageLabels = on)),
             unanswered,
           )}
           {/* The switches already say it when nobody can answer; the server's note covers the other reasons. */}

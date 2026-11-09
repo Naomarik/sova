@@ -5,15 +5,17 @@ The composer is the form pinned to the foot of a chat where you write its next m
 Steer and Stop beside the textarea and the model indicator and mode switch in the foot below it.
 In Focus (§chat.transcript/focus-view) it is hidden but kept, draft and all.
 
-Owns: its markup, the textarea's keys and placeholder, sending, steering and stopping, drafts, the
+Owns: its markup, the textarea's keys and placeholder, a character typed outside a text field
+(§chat.composer/type-anywhere), sending, steering and stopping, drafts, the
 disabled reasons, the waiting badge and its dialog, the `plus` button (it opens the Commands palette, §app/command-palette), the
 flyout that holds the model, login and sandbox panels, the sandbox shield, the worktrees control and its modal
 (§chat.composer/worktrees-control), the @ menu's folder read,
 and what the foot shows from a switch's first frame. Not here: the mode menu (§chat/mode-menu), the
 model picker (§chat/model-menu), the slash menu (§chat/slash-commands), attaching images
 (§chat.images/composer-attachments), dictation (§chat/voice), staged alignment answers
-(§chat.alignment/card), the Overseer's Quick Actions (§app.overseer/quick-actions), and a
-workspace's group composer (§workspace/groups).
+(§chat.alignment/card), shell mode, where a line runs as a command (§chat/shell-mode), the
+Overseer's Quick Actions (§app.overseer/quick-actions), and a workspace's group composer
+(§workspace/groups).
 
 ## §chat.composer/anatomy — Anatomy
 
@@ -71,16 +73,20 @@ pending attachments, then the input row (mic, `plus` trigger, textarea, Send, St
       <div class="model-menu composer-flyout" id="composer-flyout" popover="auto">…see "Composer flyout"…</div>
       <input class="visually-hidden" type="file" multiple tabindex="-1" aria-hidden="true"
              accept="image/png,image/jpeg,image/gif,image/webp">
-      <label class="visually-hidden" for="composer-input">Message</label>
+      <label class="visually-hidden" for="composer-input">Message</label>   <!-- shell mode: "Shell command" -->
       <div class="composer-field">
         <!-- with an open alignment or option card: the waiting badge, at the box's left edge on its
              last line (§chat.composer/waiting-badge) -->
         <button class="waiting-badge" type="button" aria-haspopup="dialog" aria-label="…">…</button>
+        <!-- in shell mode only (§chat.shell-mode/box): the marker, "!" or "!!", at the box's left;
+             the box's edge in the caution tone, the placeholder "Run a command in {folder}…" -->
+        <span class="composer-shell-marker" aria-hidden="true">!</span>
         <textarea class="input textarea composer-input" id="composer-input" rows="1"
                   placeholder="Enter sends" enterkeyhint="send"
                   aria-describedby="composer-reason"></textarea>   <!-- touch mode: no placeholder, enterkeyhint="enter" -->
       </div>
       <div class="composer-actions">
+        <!-- Send; in shell mode it reads Run (§chat.shell-mode/box) -->
         <button class="button button-primary" type="submit">
           <span class="icon" style="--icon: url(/icons/arrow-right.svg)" aria-hidden="true"></span><span class="button-label">Send</span>
         </button>
@@ -107,6 +113,9 @@ pending attachments, then the input row (mic, `plus` trigger, textarea, Send, St
         <span class="composer-login-avatar" aria-hidden="true">o</span>   <!-- round letter avatar -->
         <span class="composer-login-full" aria-hidden="true">own@example.com</span>  <!-- only at a composer 620px or wider -->
       </button>
+      <!-- in shell mode only (§chat.shell-mode/box): the Shell mode chip, the terminal icon and its
+           words in the caution tone -->
+      <span class="chip chip-warn composer-shell-chip"><span class="icon icon-sm" style="--icon: url(/icons/terminal.svg)" aria-hidden="true"></span>Shell mode</span>
       <span class="composer-reason" id="composer-reason"><!-- reason when disabled; else empty --></span>
       <!-- chat sessions only: the mode switch, pushed to the right edge; see §chat/mode-menu -->
       <button class="button button-ghost mode-trigger" type="button" aria-haspopup="menu" …>…</button>
@@ -164,7 +173,8 @@ are kept, and what the foot and its model indicator show.
   - **The key hint is in the placeholder** exactly when `Enter` sends (touch mode off): "Enter
     sends", and while streaming "Steer the current turn… Enter sends". In touch mode it's the
     short string alone (none / "Steer the current turn…"), swapped in place when the mode
-    changes. A read-only composer keeps the short string.
+    changes. A read-only composer keeps the short string. In shell mode the verb is Run: "Run a
+    command in {folder}… Enter runs" (§chat.shell-mode/box).
   - **The placeholder fits its box.** One line, never wrapped, never scrolled sideways and never
     cut mid-glyph: the string and the textarea's own text width are measured whenever either
     changes, and the first of these that fits is the one shown, in this order — the whole string
@@ -177,6 +187,8 @@ are kept, and what the foot and its model indicator show.
     body line height, so it stays centred in the box.
   - Empty or whitespace-only text doesn't send, and Send is `aria-disabled` with no reason text,
     because the reason is obvious.
+  - **`!` in the empty box** switches it to shell mode, where what you write runs as a command
+    instead of going to the model (§chat.shell-mode/box).
 - **Send.** Sends `{type:"steer"}`, as every message typed here does, whether or not a reply runs:
   idle, the server starts a turn with it exactly as with a prompt (the same checks, the same holds
   while a turn is starting or a compaction runs, the message marked as yours); busy, it is a steer,
@@ -184,17 +196,19 @@ are kept, and what the foot and its model indicator show.
   not typed here stay `{type:"prompt"}`, a follow-up mid-turn: a playbook (§chat/playbooks), a quick
   action, a review button and a card's confirm click. `/compact` is still Sova's own request, never a
   message. Clear the textarea only after the socket accepts the message.
-  Show the user bubble optimistically and resume auto-follow.
+  Show the user bubble optimistically and resume auto-follow. A command run from shell mode is no
+  message: it never sends a steer or a prompt (§chat/shell-mode).
 - **While streaming.** Send stays available and its label changes to `Steer`. Steers sent while
   the turn runs land together: each reaches the agent at its next step, in the order sent, each its
   own message, and the one reply after them answers them all (§chat.transcript/a-queued-message).
   The placeholder becomes "Steer the current turn…" (plus the key hint when Enter sends, see Keys).
   `Stop`
   (`.button-destructive`, outlined, never filled, one word so the button stays narrow) sends
-  `{type:"abort"}`. Show it only while streaming, after Steer. `Esc` does **not** abort, to prevent
-  accidental stops. While a dictation is recording, `Esc` cancels the recording and nothing else
-  (§chat.voice/states).
-- **After Stop.** The status reads "Stopping…" until the turn settles. Then the run status
+  `{type:"abort"}`. Show it only while streaming, after Steer. A plain `Esc` in the composer
+  stops too (§chat.composer/esc-stop).
+- **After Stop.** The messages Stop takes back go into the composer ahead of what you typed, and
+  the cursor goes to the end, scrolled into view, so your words stay in sight under long ones.
+  The status reads "Stopping…" until the turn settles. Then the run status
   disappears, and an info row says "Stopped by you at `1:43 PM`." (the transcript's stamp: a
   12-hour clock, with the date in front on another day).
 - **Focus.** Where focus and the on-screen keyboard go after a send, and why the mic never moves
@@ -212,9 +226,12 @@ are kept, and what the foot and its model indicator show.
   The stored draft is `{ text, attachments }`: pending images persist with the words, as
   `attachments: [{ path, name, mimeType, size }]`, at most 8 per session. Each is a file already
   uploaded into the session's attachments folder (§chat/images), so a reload restores the words and the
-  images. A draft is deleted only when it has neither text nor attachments. A send clears the
+  images. A draft written in shell mode keeps its mode (`!` or `!!`) apart from its text, so it
+  opens in shell mode again; a draft's text is only ever text, and only your page saves a mode
+  (§chat.shell-mode/box). A draft is deleted only when it has neither text nor attachments. A send clears the
   draft in both places. A draft on a session nothing was ever sent in — images alone included — also keeps that session in the list (§app/session-list).
-- **The foot** reads left to right: the model indicator, the disabled reason, then the mode switch
+- **The foot** reads left to right: the model indicator, the Claude login, in shell mode the
+  `Shell mode` chip (§chat.shell-mode/box), the disabled reason, then the mode switch
   (§chat/mode-menu) pushed to the right edge. It is a row of icons at every width: the effort ring,
   the login's avatar (§app.claude-logins/active-login), the sandbox shield and the mode icons
   (§chat.mode-menu/trigger). Where the composer is at least 620px wide, words come back beside the
@@ -255,6 +272,35 @@ are kept, and what the foot and its model indicator show.
   click, like the flyout's own rows. It stays at every width, because it's the only place the
   model is on screen.
 
+## §chat.composer/esc-stop — Esc stops the reply
+
+A plain `Esc` (no Shift, Ctrl, Alt or ⌘) in the composer does what pressing Stop does whenever
+Stop is on screen and usable: during a reply and during a compaction. Stop's hover text says so,
+`Stop · Esc in the composer`; its accessible name stays "Stop".
+
+- **Esc keeps its other jobs first.** A dictation that is recording or starting takes it and only
+  cancels (§chat.voice/states). In shell mode it never stops the reply (§chat.shell-mode/box): in
+  the empty `!` or `!!` box it leaves shell mode for a message box, and with a command typed it does
+  nothing, so the reply keeps running. An open `/` or `@` menu takes it and only closes. An IME
+  composition keeps it (`isComposing`, or Safari's composition-ending key, keyCode 229). An open
+  popover that `Esc` closes, such as the composer flyout or a mode menu, takes it. A card that
+  opens on hover is not one: `Esc` stops the reply. Of those cards only a reply's timing card
+  stays open; the sidebar's hover peek closes, as it does on every `Esc`.
+- **Never right after another Esc.** An `Esc` less than 500 ms after the previous `Esc` anywhere
+  on the page does nothing here, whatever that one did: the press that closed a menu, the command
+  palette, the model picker, a pane or a dictation, and a quick second press to be sure, never stop
+  the reply. A held `Esc` counts as just pressed until it is released, and its repeats never stop.
+- **Otherwise nothing** where Stop is missing (nothing runs, a read-only box) or `aria-disabled`
+  (already stopping, the socket isn't open). Once per press: after it Stop is `aria-disabled`
+  until the turn settles.
+- **Everything after is Stop's.** The run status reads "Stopping…", the queued messages come back
+  to the composer as on every Stop (your queued steers, then your queued follow-ups, ahead of what
+  you typed), the transcript notes the stop, and the chat announces it as it does for Stop. Nothing
+  else comes back: the reply's text stays in the transcript only.
+- **Focus stays in the composer.** Only the composer acts on `Esc`; the page only notes when each
+  `Esc` was pressed, for the rule above. Nowhere else, the group composer included, does `Esc`
+  stop a reply.
+
 ## §chat.composer/focus — Focus after a send
 
 - Focus returns to the textarea after Send, Steer, or Stop pressed with a mouse or pen, and after
@@ -272,16 +318,79 @@ are kept, and what the foot and its model indicator show.
 - The mic never moves focus: its press keeps the textarea's focus and selection, and dictated text
   lands at the caret (§chat.voice/insertion) as part of the draft.
 
+## §chat.composer/type-anywhere — Typing anywhere starts a message
+
+When focus isn't in a text field and you type a character, the message box you can see takes focus
+and the character goes into it at the box's caret: where the caret was when you last left the box,
+which is the end of the draft unless you had clicked inside the text. Nothing is sent: the draft
+keeps the character like any typing (§chat.composer/behavior, Drafts), and typing continues in the
+box. The browser types the character itself, so an accent key's composition, the `@` file menu and
+Undo treat it exactly as a character typed in the box. So does shell mode: a `!` that lands in an
+empty box that has shell mode enters it, as one typed in the box would (§chat.shell-mode/box). It
+is always on: there is no switch.
+
+- **A character** is any key that types one: a letter, a digit, punctuation, Shift for capitals and
+  symbols, an Option (Mac) or AltGr character (`@`, `€`), and an accent key, whose character comes
+  out in the box (´ then e gives é). A held key goes on repeating into the box.
+- **Keys that keep their jobs.** Space, Enter, Tab, Esc, the arrows, Page Up/Down, Home/End,
+  Backspace and Delete; every Ctrl or ⌘ chord (Ctrl/⌘+C still copies), Ctrl+Alt with a letter or a
+  digit included (an AltGr character, which Windows reports as Ctrl+Alt, still types); plain Alt
+  on Windows and Linux; and the app's own keys (§app/command-palette): `/`
+  session search, `?` Keyboard Shortcuts and Alt+O the Overseer. So `/` from outside the box never
+  starts a slash command: click in the box first.
+- **Which box.** The open chat's, the Overseer's or a project overseer's. In a workspace, the
+  focused pane's box, or the group box (§workspace.groups/the-group-composer) while Send to All is
+  on (§workspace.groups/keyboard).
+- **In Focus.** With Focus on (§chat.transcript/focus-view), a character turns Focus off and lands
+  in the box, which comes back with its draft and caret as they were.
+- **The box takes it while it can't send yet** (§chat.composer/disabled-states): connecting,
+  reconnecting, a model switch, a compaction, an archived chat, and while a reply runs, where the
+  message becomes a steer as usual.
+- **When nothing moves.** The key does what it did before, and no message starts:
+  - while a dialog, a sheet, a menu or the command palette is open, wherever focus is (the Context
+    tab's sheet and the landing popovers count, even after a click on an empty part of them; a
+    tooltip doesn't), or while focus is in a select, a menu or a list that jumps to the item you
+    type (the mode menu, the model menu, the folder picker);
+  - while Session details covers the box: in a window under 1280 wide, where it is a drawer over
+    the chat or fills the screen (§app.subagents-pane/shell-a-third-column). Focus stays as it
+    was; close the panel or click the box to write. From 1280 up it sits beside the chat, and the
+    character goes to the box;
+  - while the box can't take typing (the session is open in the TUI, an earlier Overseer
+    conversation, a baton you don't hold); in a workspace whose focused pane is read-only, nothing
+    goes to another pane instead;
+  - before the chat's saved draft has loaded, so a character typed right after opening a chat can't
+    replace it;
+  - on a page with no message box (projects, settings, insights, organizations);
+  - during an input method's composition;
+  - when a part of the page already used the key: with focus inside a diff, `n` and `p` move between
+    changes (right after a diff card opens, focus is on its toggle, outside the diff, so `n` starts
+    a message);
+  - inside an extension's frame, whose keys the page never sees.
+
+  A button or a link with focus doesn't stop it, since neither uses letter keys. Text highlighted in
+  the conversation doesn't either: the highlight clears, as a click would.
+- **Any real keyboard.** It follows key presses, not the device: a laptop's, a desktop's, or a
+  tablet's attached keyboard (an iPad with a Magic Keyboard) all start a message. An on-screen
+  keyboard is unchanged: it types only into a field that already has focus.
+- **Listed.** The Keyboard Shortcuts sheet has its row (§app.command-palette/shortcut-sheet): "A
+  character", "Starts typing in the chat's message box, from outside a text field."
+- **Screen readers.** In reading mode, a screen reader keeps its single-letter keys (h, k, b…): it
+  takes them before the page sees them. The move into the box is a real focus move, announced as
+  the message box.
+
 ## §chat.composer/disabled-states — Disabled states
 
-While the composer can't send (the session is open in a TUI, the chat is connecting or starting,
-the socket dropped, or a model switch is pending), the reason goes in `.composer-reason` and the
+While the composer can't send (the session is open in a TUI, the chat is reconnecting after its
+socket dropped, or a model switch is pending), the reason goes in `.composer-reason` and the
 control is disabled. The reason is one line, per
-the skill's copy ladder. While the chat is connecting, starting or reconnecting, the reason there is
+the skill's copy ladder. While the chat is reconnecting, the reason there is
 for assistive technology only (visually hidden): what the eye reads is the note floating over the
 transcript's end (§chat.transcript/instant-open), so nothing is added to the composer. A chat
 closed for being quiet while its tab is open is none of these: its tab holds no socket, Send and
-the controls work and wake it, and they wait as "Chat connecting or starting" only from then on.
+the controls work and wake it, and from then on they work as the "Chat connecting or starting" row
+says. A new session, or any chat this tab is opening for the first time, is none of these either:
+until its first `hello`, Send and the controls work the same way, and what they ask waits for the
+chat (§chat.transcript/send-while-starting).
 A peer session whose host is Read only or Display may be wrong (§mesh.compatibility/states) is not
 one of the rows below: a notice takes the composer's place, Stop included
 (§mesh.compatibility/read-only).
@@ -289,7 +398,7 @@ one of the rows below: a notice takes the composer's place, Stop included
 | Condition | Textarea | Buttons | Reason (with icon) |
 |---|---|---|---|
 | Session is live in a TUI | `disabled` | Send hidden | `attention` — "Read only while this session is open in the TUI." |
-| Chat connecting or starting (first connect, until this connection's `hello`) | enabled (typing is fine) | Send `aria-disabled` until the `hello`, Stop until the socket is open; the model, mode, sandbox and login controls too | `clock` — "Connecting to chat…" (hidden; shown as the floating note) |
+| Chat connecting or starting (a new session or a chat this tab opens, on its first connect; a chat this tab woke; until this connection's `hello`) | enabled (typing is fine) | Send and the model, thinking, mode, sandbox and login controls work: a message shows at once as `Sending…` and what each asks goes to the chat in the order asked; Stop is `aria-disabled` until the socket is open, then takes a waiting message back (§chat.transcript/send-while-starting) | none in the composer; the "Connecting to chat…" note floats over the transcript (§chat.transcript/instant-open) |
 | Chat socket dropped, or its chat failed to start for now (until the next `hello`) | enabled | Send `aria-disabled` until the `hello`, Stop until the socket is open | `clock` — "Reconnecting. Your draft is kept." (hidden; shown as the floating note) |
 | Model switch pending (§chat/model-menu) | enabled | Send `aria-disabled` until `{type:"model"}` or an error | `clock` — "Switching model…" |
 | Session is archived (§chat.transcript/instant-open, "An archived chat"; no socket is held) | enabled (typing and the draft kept) | `Unarchive` in place of Send; the model, mode, sandbox and login controls wait | `archive` — "This session is archived. Unarchive it to send." |
@@ -303,12 +412,23 @@ with that reason in its `title` rather than in `.composer-reason`.
 The first connect's "Connecting to chat…" note (the socket's first connect, the chat starting, or
 the session's list not here yet) fades in after a short delay, about 300 ms, so a quick switch never
 flashes it; under reduced motion it appears after the same delay without the fade. "Reconnecting"
-and every other reason show at once, and the controls are disabled from the first frame either way.
+and every other reason show at once, and their controls are disabled from the first frame; on a
+first connect the controls work from the first frame.
 
 Send is enabled by typed text, an attachment, **or answers picked on an alignment card or a
 gathering transcript card alone** (§chat.alignment/card, §chat.transcript-cards/answering): with
 picks and no text it sends just their lines. With picks staged, a
 typed local command (`/new`, `/tree`, `/agents`…) is sent as text after them, not run.
+
+In shell mode (§chat.shell-mode/box) Send reads Run and follows the rows above. Only a typed command
+enables it: an attachment or staged picks alone don't, because a command never carries them. A
+command already running in this chat doesn't disable it: several run at once
+(§chat.shell-mode/running). A Run the chat refuses shows the reason in `.composer-reason` with the
+draft kept, and so do a Run with no open connection, and a Run pressed before the chat's `hello`
+("Not connected yet. Run it again once the chat connects."): unlike a message, a command never
+waits for the chat. A refusal takes a line of its own under the foot's controls
+(`.composer-foot[data-reason-wide]`). While a Run waits for the chat's answer, Run is
+`aria-disabled` (§chat.shell-mode/box).
 
 Use `aria-disabled="true"` rather than `disabled` on buttons whose reason matters. That keeps them
 focusable, so the reason (tied to them with `aria-describedby="composer-reason"`) gets read. The
@@ -550,8 +670,8 @@ menu keeps its own 360px cap.
 The composer has a real label, measured contrast, a named mic button and a Stop that reads as the
 smaller, secondary action.
 
-- **Label.** The textarea has a real (visually hidden) `<label>`. The placeholder is never the
-  label.
+- **Label.** The textarea has a real (visually hidden) `<label>`, `Shell command` in shell mode.
+  The placeholder is never the label.
 - **Contrast.** On-accent on accent (Send) is 5.61 (dark) and 6.81 (light). The control border
   (border-strong on surface) is 3.47 and 3.61, clearing 3:1. Error on surface (Stop) is 5.42
   and 6.01.
@@ -618,9 +738,11 @@ indicator's rule for omitting the effort ring applies. A remembered mode
 says nothing about when a switch applies: until the socket's `mode` message the trigger makes no
 "applies after this turn" promise and the menu shows neither the mid-turn nor the can't-switch
 banner. A remembered running turn shows as one (Steer, Stop, the run status, and the sidebar's
-Busy mark stays on), but until the socket is open Send and Stop are both `aria-disabled` (Send until
-the chat's `hello`) with the "Connecting to chat…" reason, so nothing goes into a closed socket or
-a chat still starting, and it counts as no turn starting (no list refresh). Answering an alignment card, "Switching model…" and the other pending states still
+Busy mark stays on), but until the socket is open Stop is `aria-disabled` and can't stop it, and on a reconnect Send is
+`aria-disabled` too, until the chat's `hello`, with the "Reconnecting. Your draft is kept." reason,
+so nothing goes into a closed socket or a chat still starting; on a first connect Send works and
+what it sends waits for the chat as `Sending…` (§chat.transcript/send-while-starting), and once
+the socket is open Stop takes that back. It counts as no turn starting (no list refresh). Answering an alignment card, "Switching model…" and the other pending states still
 wait for the socket's own word.
 
 ## §chat.composer/waiting-badge — What's waiting on you, inside the message box
@@ -717,10 +839,13 @@ When the chat tracks at least one worktree that isn't dropped (§chat/worktrees)
 run-status row has a **worktrees control** just left of the "N inputs" trigger, in the same quiet
 link style. It shows a branch icon, a dot and the one most useful fact with its count, the first
 that holds:
-- "1 needs you" / "{n} need you" (warn dot): behaviour differs, review flagged, can't tell whose failure,
-  drafts changed, or a request waiting for you to review it (§app.merge-queue/requests);
-- "1 needs a fix" / "{n} need a fix" (error dot);
-- "{n} ready" (success dot);
+- "1 needs you" / "{n} need you" (warn dot): a decision waiting for the user (behaviour differs, a
+  question raised, can't tell whose failure, out of tries, a fix that needs your OK, drafts changed;
+  §app.merge-queue/needs-user), or a request waiting for you to review it (§app.merge-queue/requests);
+- "1 needs a fix" / "{n} need a fix" (error dot): back with the chat, approved and waiting for a
+  fix, or paused by Stop (its chat fixes it; nothing for the user to press);
+- "{n} ready" (success dot), counting only rows that read Ready: truly Ready to land
+  (§chat.worktrees/ready-to-land), or Ready to merge where the queue doesn't serve the repository;
 - "1 checking";
 - "{n} queued";
 - "{n} worktrees" (no dot).
@@ -733,21 +858,36 @@ Escape closes that first).
 
 **The Worktrees modal** is titled "Worktrees", with the chat's title and a summary under it ("2 ready
 · 1 queued · 1 landed"), and the header's ✕, which closes it. The body explains nothing about Land;
-while a served row's queue is paused, one line says so with its why, and that Land still takes the
-approval. Then comes one row per worktree
+while a served row's queue is paused, one line says so, naming its project (one line for each paused
+project), with its why, and that Land still takes the approval. Then comes one row per worktree
 (dropped ones left out):
 - first, the title of the chat that owns the branch (§app.merge-queue/owner), a link to that chat,
   then the branch in small mono, then an "archived" tag when that chat is archived (a row whose
-  chat isn't known leads with its branch); the row names no worktree folder and carries no "Chat"
-  label;
-- on the line under it, its state, in the one vocabulary the pane and the Merge Queue view also use: **Ready** (with its
+  chat isn't known leads with its branch); that line names no worktree folder and the row carries no
+  "Chat" label;
+- on the line under it, the branch's place line, which unfolds to its folder
+  (§chat.worktrees/place);
+- on the line under that, its state, in the one vocabulary the pane and the Merge Queue view also use: **Ready** (with its
   short commit) · **Uncommitted** ("{n} files not committed", and to commit it in its chat) · **No
   commits yet** · **Queued · 2nd** (with "starts in ~N min · takes ~N min") · **Checking** ·
-  **Conflict** · **Behaviour differs** (the target's side, the branch's side and the proposal) ·
-  **Review flagged** (the review's text) · **Can't tell whose failure** (the check that failed on
-  the merge and on the target alone) · **Drafts changed** · **Needs a fix** (its reason, and
-  **See Why**) · **Landed** ("as {sha}", "· not pushed" when it wasn't, and every note, named by its
-  writer: "Merge thread: …", "You: …", "Flaky: …") · **Merged** · **Removed**;
+  **Conflict** · **Behaviour differs** (the target's side, the branch's side, the question and the
+  proposal) · **Can't tell whose failure** (the check that failed on
+  the merge and on the target alone) · **Needs you** (the question and its choices) · **Out of
+  tries** · **Drafts changed** · **Approved · waiting for a fix** · **Back with the chat** ("try
+  {n} of 3", its reason, the chat's answer, and **See Why**) · **Waiting for the merge thread** (a
+  fix waiting for the thread to come back and check it) · **Paused: you stopped the chat** ·
+  **Ready to merge** · **Waiting for your OK** · **Landing specs** · **Conflicts with
+  {target}** · **In progress** · **Blocked** · **Stale** (each with the readiness reason,
+  §chat.worktrees/readiness) · **No reading** · **Drafts to land** ("Code landed · 2 spec drafts not
+  landed") · **Landed** ("as {sha}", "· not pushed" when it wasn't, and every note, named by its
+  writer: "Merge thread: …", "You: …", "Flaky: …") · **Landed · cleaned up** · **Merged** · **Removed**.
+  **Ready** only when the branch is truly Ready to land; a served Ready to merge or Waiting for your OK
+  keeps Land and doesn't count in "{n} ready". **Landed** only while nothing is left
+  (§chat.worktrees/nothing-left), however old the landing: a catch-up merge on top doesn't change it,
+  and a real new commit ends it and brings back the branch's own reading with Land. A landed entry with
+  no reading of the branch (the Overseer's rows) stays Landed; with real newer commits it keeps its "{n}
+  newer commit not included" line, and Land where the queue serves the repository. With no queue entry to speak for it, a
+  branch with nothing left reads Merged;
 - on a live row (ready, uncommitted, in the queue or waiting), its commits ahead of the target's
   head, lines added and removed, and when the branch last changed (its head commit's committer
   date, relative to now: "2h ago", "yesterday", "3d ago", then the day, "Nov 2", after a week; the
@@ -755,9 +895,15 @@ approval. Then comes one row per worktree
   merged and removed rows show none of these, the date included;
 - under those facts, the branch's summary in up to 5 bullets, once written
   (§app.merge-queue/branch-summary);
-- "1 newer commit not included" when the branch moved past the approved commit;
+- "1 newer commit not included" only when the branch's commits past the approved one hold real work
+  (§app.merge-queue/after-approval);
 - its action, where one applies:
-  - **Land** on a Ready or Drafts changed row (on Needs a fix only as below), which asks once (§chat.composer/land-confirm),
+  - **Land** on a Ready, Drafts changed or Drafts to land row, on Out of tries, on a row of real work
+    that reads Ready to merge, Waiting for your OK, Landing specs, Conflicts with {target}, In
+    progress, Blocked or No reading, which says its true state and keeps Land, and on a row whose chat
+    says its work is finished but that is blocked for something the chat can fix (it approves it as
+    Approved · waiting for a fix, §app.merge-queue/approve); never on Uncommitted, No commits yet,
+    Stale, Landed, Landed · cleaned up, Merged or Removed. It asks once (§chat.composer/land-confirm),
     a compact button with a ▾ menu, a narrow tab of its own beside it, holding **Land Without
     Review** (only when the project has a review kit) and **Land Without Its Specs…**, which asks
     first: "Its spec drafts stay drafts in this worktree. Only the code lands.";
@@ -766,63 +912,47 @@ approval. Then comes one row per worktree
     Set Up Queue), and the row reads "This project's .sova/project.json doesn't parse: {path:
     message}. Fix it on the target, or land a branch that fixes it; nothing else lands until it
     parses.";
-  - **Cancel** on a queued row;
-  - **Accept** and **Send Back** on Behaviour differs;
-  - **Land Anyway** and **Send Back** on Review flagged and on Can't tell whose failure;
-  - the re-land button (**Land This Commit Again**, or **Land Newest Commit** once the branch moved
-    on) and **Remove from Queue** on every Needs a fix row (below);
+  
+  - **Accept** on Behaviour differs with a proposal, and **Answer in Chat** on a decision answered
+    in words, which closes the modal and puts focus in the message box (§chat.merge-queue/decision);
+  - **Land Anyway** and **Try Again** on Can't tell whose failure;
+  - **Remove from Queue** on every row of an approval that stands (below);
 - its reviewer line while the branch's review runs and after it ends, with **Open Reviewer Chat**,
   the same row as the pane's (§chat.worktrees/pane);
 - **Review Changes**, first among the row's actions, on every row of an active worktree whose folder
   exists and that has commits of its own (Ready, Uncommitted with commits, queued, checking, waiting
-  for you, Needs a fix), the same button as the pane's rows (§chat.worktrees/pane). It opens the
+  for you, with its chat), the same button as the pane's rows (§chat.worktrees/pane). It opens the
   changes viewer over the modal on the branch as it is now against its merge-base with the branch it
   lands on, with the worktree's uncommitted files included and marked as uncommitted
   (§chat.changes/endpoint). Close or Esc
   closes the viewer alone, never the modal behind it, and focus returns to the row's Review Changes.
 
-**Land comes back once its chat fixes it.** A branch the queue sent back to its chat (Needs a fix,
-after Send Back or a failed check) offers no Land and no Land menu, here, in the session pane and on
-the Merge Queue tab, until its chat has fixed it. Its line is the queue's reason, else "Sent back to
-its chat. Land comes back once its chat fixes it, or land its newest commit now." What counts as
-fixed depends on why it was sent back:
-- **Sent back for its spec drafts** (the docs step found drafts that don't fit,
-  §app.merge-queue/run): fixing them needs no commit. Once its drafts have changed since it was sent
-  back (a verification note added is a change) and Sova's try of them finds nothing left that doesn't fit
-  (§chat.worktrees/ready-to-land), the row reads Ready again at the same commit, with Land and its
-  menu. Until then it keeps the queue's reason. The rows change by themselves when the drafts are
-  edited, with no reload.
-- **Sent back for anything else** (a check it broke, a conflict, Send Back): Land never comes back
-  at the sent-back commit, whatever that commit reads. Once the branch reads ready again at a newer
-  commit (clean, no conflicts, its chat idle, §chat.worktrees/ready-to-land), that commit wins: the
-  row reads Ready, with Land, at the new commit. A new commit does the same for a drafts send-back.
+**Your Land stands while its chat fixes it.** A branch the queue sent back to its chat
+(§app.merge-queue/send-back) keeps the user's approval (§app.merge-queue/standing-approval): it
+offers no Land, no re-land and no send-back, here, in the session pane and on the Merge Queue tab.
+Its line is the card's ("Back with the chat · try 2 of 3 · Unit tests failed"), then "Your Land
+stands: it goes back in line by itself once its chat's fix is checked." Once the fix is checked the
+row reads Queued, with no click. It leaves that state only by landing, Remove from Queue, a
+decision that waits for the user (the row then reads it, with its answers), Out of tries, the branch
+merged into the target (**Merged**) or its worktree folder removed (**Removed**). Send Back, Land
+This Commit Again and Land Newest Commit are on no row.
 
-It stays Needs a fix until one of those, or until the branch is merged into the target (the row
-reads **Merged**) or its worktree folder is removed (**Removed**); after that, a later note on the
-old sent-back entry never brings Needs a fix back. No row says whether its chat is working on the
-fix meanwhile.
-
-**The re-land button and Remove from Queue.** Every Needs a fix row, here, in the session pane,
-on the Merge Queue tab and on the chat's queue card (§chat.merge-queue/chat-card), offers both,
-whatever it was sent back for:
-- **The re-land button** is a new approval of the branch's **newest commit**, with the branch's
-  drafts as they are now (§app.merge-queue/approve): the entry joins the end of the line and runs
-  every check from the start. It reads **Land This Commit Again** until the branch moved, then **Land
-  Newest Commit**. Once it moved the row adds, joined by " · ", "{n} newer commits included" (the
-  branch's own commits past the sent-back one, never the target's a merge brought in) or "the branch
-  was rewritten since it was sent back", and, when that newest commit isn't Ready to land, "The newest
-  commit isn't Ready to land: {why}." (§chat.worktrees/ready-to-land). It is one button: none is
-  offered for the old commit.
-- **Remove from Queue** takes the entry off the queue at once, with no confirm. It deletes nothing:
-  the branch, its folder, its commits, its drafts and its run's logs all stay. The entry ends as
-  cancelled, "removed by you", the chat's queue card gets a final **Removed** revision, and the row
-  then reads as the branch itself does (Ready with Land when it is ready to land, else its
-  readiness).
+**Remove from Queue** is on every row of an approval that stands (approved and waiting for a fix,
+queued, checking, back with its chat, paused, waiting for the user's decision, out of tries), here,
+in the session pane, on the Merge Queue tab and on the chat's queue card
+(§chat.merge-queue/chat-card). It takes the entry off the queue at once, with no confirm. It deletes
+nothing: the branch, its folder, its commits, its drafts and its run's logs all stay. The entry ends
+as cancelled, "removed by you", the chat's queue card gets a final **Removed** revision, and the row
+then reads as the branch itself does (Ready with Land when it is ready to land, else its readiness).
+Land, Remove from Queue and every answer on a row count only as the user's own click
+(§app.access/your-click).
 
 **In a repository the merge queue doesn't serve** (§app.merge-queue/served) no row reads Ready,
 Landing specs or a queue state, and none offers Land: a ready branch reads **Ready to merge**, with
-"Say “land it” in the chat to merge it into main.". Such a row counts as ready all the same:
-the control reads "1 ready" with its success dot, and the summary says so.
+"Say “land it” in the chat to merge it into {target}.", with the repository's real target
+(§chat.worktrees/place). Such a row counts as ready all the same:
+the control reads "1 ready" with its success dot, and the summary says so. One that isn't ready says
+its true state, also with no Land.
 
 **Land asks once** (§chat.composer/land-confirm): a row's Land queues nothing until its confirmation's
 Land {n} Commits.
@@ -835,8 +965,8 @@ column's right edge, never stretched to the column's width. Folded (narrower), t
 sit on their own line under the bullets, right-aligned. Land's confirmation is right-aligned under
 the row in both.
 
-Every row action (Land and its ▾, Cancel, Accept, Land Anyway, Send Back, Land This Commit Again
-or Land Newest Commit, Remove from Queue, See Why, Set Up Queue, Review Changes) and both buttons of Land's confirmation
+Every row action (Land and its ▾, Accept, Land Anyway, Try Again, Answer in Chat, Remove
+from Queue, See Why, Set Up Queue, Review Changes) and both buttons of Land's confirmation
 are one size on every screen, a phone and a touch screen included: a small button's height (36px),
 only as wide as its label.
 
@@ -848,9 +978,10 @@ stays right-aligned.
 The modal has no Close button in its footer (the header's ✕ closes it). The footer holds, on the
 left, one line, "Land queues a branch; it lands as the commit that was tested.", shown only when a
 row's repository is one the merge queue serves, and, on the right, **View Merge Queue**, which
-opens the project's Merge Queue view (§app.merge-queue/view). View Merge Queue shows only when a
-row's repository is a project on the Projects list, set up or not; in a repository that isn't on
-the list it is left out. With neither, the modal has no footer.
+opens the project's Merge Queue view (§app.merge-queue/view). It is one link per project: when the
+chat's rows are in one project it reads as here, and with several each is named for its project,
+"View {project}'s Merge Queue". A link shows only for a row's repository that is a project on the
+Projects list, set up or not; a repository that isn't on the list gets none. With neither, the modal has no footer.
 
 The actions are the merge verbs (§app.project-services/merge-verbs). Land sends the commit the row
 showed, so a branch that moved meanwhile lands what the user saw (§app.merge-queue/approve). After one, the row is read again
@@ -863,15 +994,23 @@ words in its hover; how far it can lag is §app.session-list/content-rules "Row 
 ## §chat.composer/land-confirm — Land asks once
 
 Everywhere Land appears (the composer's Worktrees modal, §chat.composer/worktrees-control, the
-session pane's Worktrees rows, §chat.worktrees/pane, and the Merge Queue tab, §app.merge-queue/view) the button reads **Land**, a
-compact button with its ▾ menu as a narrow tab beside it, and pressing it queues nothing: it replaces the row's actions with a confirmation, right-aligned
-under the row: "Land {branch}?", then "{n} commits go to the merge queue; {target} moves once checks
-pass.", with **Not Yet** on the left and **Land {n} Commits** rightmost. One commit reads "1 commit
-goes" and **Land 1 Commit**; a row whose count isn't known reads "Its commits go" and **Land
-Branch**. A project that lands by pull request, merge request or pushing the branch
-(§app.merge-queue/strategies) ends the line with what happens instead: "a pull request opens on
+session pane's Worktrees rows, §chat.worktrees/pane, and the Merge Queue tab, §app.merge-queue/view)
+the button reads **Land**, a compact button with its ▾ menu as a narrow tab beside it, and pressing
+it queues nothing: it replaces the row's actions with a confirmation, right-aligned under the row:
+"Land {branch}?", then, from a chat's rows (the modal and the pane), "{n} commits go to {project}'s
+merge queue; {target} moves once checks pass.", {project} being the branch's place
+(§chat.worktrees/place); on the project's own Merge Queue tab, "{n} commits go to the merge queue;
+{target} moves once checks pass.". Under it, **Not Yet** on the left and **Land {n} Commits**
+rightmost. One commit reads "1 commit goes" and **Land 1 Commit**; a row whose count isn't known
+reads "Its commits go" and **Land Branch**; a Drafts to land row reads "{n} spec drafts go"
+("1 spec draft goes") and **Land {n} Drafts** (**Land 1 Draft**), and its ▾ menu has no Land Without
+Its Specs…. A project that lands by pull request, merge request or
+pushing the branch (§app.merge-queue/strategies) ends the line with what happens instead, on a
+chat's rows and on the Merge Queue tab alike: "a pull request opens on
 GitHub once checks pass.", "a merge request opens on GitLab once checks pass.", "the branch is
-pushed once checks pass.". The confirmation's action takes focus when it opens. Only Land {n} Commits
-approves the branch, at the commit the row showed. Not Yet, or Escape, puts the row's actions back
-and queues nothing. The ▾ menu stays as it was, a narrow tab distinct from Land: its items act
-without this confirmation (Land Without Its Specs… keeps its own question).
+pushed once checks pass.". The confirmation's action takes focus when it opens. Only Land {n}
+Commits approves the branch, at the commit the row showed. Not Yet, or Escape, puts the row's
+actions back and queues nothing. A decision's Land (Out of tries, a fix that needs your OK, Drafts
+changed) in the Worktrees modal opens the same confirmation first; on the queue card and the Merge
+Queue tab's Needs you it acts at once, as before. The ▾ menu stays as it was, a narrow tab distinct
+from Land: its items act without this confirmation (Land Without Its Specs… keeps its own question).

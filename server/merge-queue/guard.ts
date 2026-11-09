@@ -38,10 +38,11 @@ export async function countBetween(git: Git, cwd: string, from: string, to: stri
 /**
  * The branch's own commits after `from` up to `to` (a branch's newer commits past the one the queue pinned): its
  * first-parent line only, so a merge of the target into the branch counts once and the target's commits it brought
- * in never count; any commit already on `exclude` (the target's head) is left out too.
+ * in never count; any commit already on `exclude` (the target's head) is left out too. `realOnly`: merges don't count
+ * at all (§app.merge-queue/approve), so a catch-up merge past an approved commit is nothing new.
  */
-export async function ownCommitsPast(git: Git, cwd: string, from: string, to: string, exclude?: string): Promise<number> {
-  const r = await git(["rev-list", "--count", "--first-parent", to, `^${from}`, ...(exclude ? [`^${exclude}`] : [])], cwd);
+export async function ownCommitsPast(git: Git, cwd: string, from: string, to: string, exclude?: string, realOnly = false): Promise<number> {
+  const r = await git(["rev-list", "--count", "--first-parent", ...(realOnly ? ["--no-merges"] : []), to, `^${from}`, ...(exclude ? [`^${exclude}`] : [])], cwd);
   return r.code === 0 ? Number(r.stdout.trim()) || 0 : 0;
 }
 

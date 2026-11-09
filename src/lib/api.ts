@@ -4,8 +4,9 @@ import type { ModelPick, WorkModels } from "../../shared/powers";
 import type { OfferCard, ProjectOffersAnswer, SessionOffersAnswer } from "../../shared/session-offers";
 import type { CardAnswerValue, CardInfo, ProjectCardsAnswer, SessionCardsAnswer } from "../../shared/transcript-cards";
 import type { ProjectSettingsInfo, SettingsApplyResult, SettingsCardView, SettingsHistoryRow, SovaCardsInfo } from "../../shared/project-settings";
+import type { ExtensionInspect, ExtensionsInstalled } from "../../shared/extension-loader";
 import type { McpNewServer, McpProjectServers, McpServerRow, McpServers, McpSignIn } from "../../shared/mcp";
-import type { ProfilesListing } from "../../shared/profiles";
+import type { ProfileSaveRequest, ProfilesListing, ProfileWriteAnswer } from "../../shared/profiles";
 import type { ProjectFilesAnswer } from "../../shared/project-files";
 import type { DeployVerb, VerbResult } from "../../shared/project-contract";
 import type { CopyLimitView, HostServicesView, ProjectServicesView, ServicesUiVerb } from "../../shared/services-view";
@@ -101,8 +102,9 @@ import type {
   PushTestResult,
 } from "../../shared/protocol";
 import type { MeshFrontDoor, MeshLocalSettings } from "../../shared/mesh-local";
-import { WIRE_PARAM, type ModelCheckStatus, type ProviderKeyRow, type ProviderKeysInfo, type ProviderKeyWrite } from "../../shared/protocol";
+import { WIRE_PARAM, type ChatProfileState, type ProfileSwitchResult, type ShellOutputPage, type ModelCheckStatus, type ProviderKeyRow, type ProviderKeysInfo, type ProviderKeyWrite } from "../../shared/protocol";
 import { LIST_VERSION_HEADER, parseListVersion } from "./summary-diff";
+import type { ShellDraftMode } from "./draft-save";
 import type { LanPairingAdd, LanRelayPut, LanStatus } from "../../shared/mesh-lan";
 import type {
   MeshAccessPut,
@@ -149,6 +151,7 @@ import type { TargetInfo } from "./remote-session";
 import type { CommandEntry } from "../../shared/commands-catalog";
 import type { BackgroundJob } from "../../shared/protocol";
 import type { AlignTriage, WorkerChecks, DecisionKeyInfo, DecisionProbeResult, DecisionSaveResult, DecisionSettings, DecisionSettingsInfo } from "../../shared/protocol";
+import { TIME_SPENT_READ_ROUTE, type TimeSpentRecord } from "../../shared/time-spent";
 import { hostOf, hostUrl, meshReadInit, noteHost, peerBase, routeUrl } from "./mesh";
 import { upgradeLegacyRows } from "./legacy-rows";
 import { COMPOSER_QUERY } from "./wire-stamp";
@@ -297,11 +300,11 @@ export const getSubagentProfiles = (path?: string, host?: string | null) => requ
 export const putSubagentProfiles = (settings: SubagentProfilesFile, host?: string | null) => request<SubagentProfilesInfo>(hostUrl(host, "/api/settings/subagents"), { method: "PUT", body: JSON.stringify(settings) });
 /** Restore Previous Library: put the kept copy back as a new edit (§chat.subagent-profiles/replaced). */
 export const restoreSubagentProfiles = (file: string, host?: string | null) => request<SubagentProfilesInfo>(hostUrl(host, "/api/settings/subagents/restore"), { method: "POST", body: JSON.stringify({ file }) });
-/** This device's default (never synced): Make Default in Settings → Subagents writes it alone, always locally. */
+/** This device's default (never synced): Make Default in Settings → Profiles writes it alone, always locally. */
 export const putSubagentProfileDefault = (id: string) => request<SubagentProfilesInfo>("/api/settings/subagents/default", { method: "PUT", body: JSON.stringify({ default: id }) });
 export const pickSubagentProfile = (path: string, profile: string, host?: string | null) => request<SubagentProfilesInfo>(hostUrl(host, `/api/subagents?path=${encodeURIComponent(path)}`), { method: "POST", body: JSON.stringify({ profile }) });
 
-/** Delegate mode's routing (legacy file; Settings → Subagents edits routing per profile): which worker each kind of work goes to. */
+/** Delegate mode's routing (legacy file; Settings → Profiles edits routing per profile): which worker each kind of work goes to. */
 export const getDelegateSettings = () => request<DelegateSettingsInfo>("/api/settings/delegate");
 
 /** What each worker backend offers. Slow the first time (it asks the Claude Code CLI; cached 60s);
@@ -312,7 +315,7 @@ export const getDelegateOptions = () => request<DelegateOptions>("/api/settings/
 export const putDelegateSettings = (settings: DelegateSettings) =>
   request<DelegateSaveResult>("/api/settings/delegate", { method: "PUT", body: JSON.stringify(settings) });
 
-/** The spec writer (legacy file; Settings → Subagents edits it per profile): which worker writes draft claims and evidence while spec is on. */
+/** The spec writer (legacy file; Settings → Profiles edits it per profile): which worker writes draft claims and evidence while spec is on. */
 export const getSpecSettings = () => request<SpecSettingsInfo>("/api/settings/spec");
 
 /** What each worker backend offers for the writer: the same discovery as Delegate's. */
@@ -322,7 +325,7 @@ export const getSpecOptions = () => request<DelegateOptions>("/api/settings/spec
 export const putSpecSettings = (settings: SpecSettings) =>
   request<SpecSaveResult>("/api/settings/spec", { method: "PUT", body: JSON.stringify(settings) });
 
-/** Team defaults (legacy file, read to seed Settings → Subagents): the coordinator and monitor every new team gets. */
+/** Team defaults (legacy file, read to seed Settings → Profiles): the coordinator and monitor every new team gets. */
 export const getTeamDefaults = () => request<TeamDefaultsInfo>("/api/settings/team");
 
 /** Settings → Accounts: this host's Claude logins in order, their standing, and the add-login flow. */
@@ -701,14 +704,14 @@ export const listSessionGroups = () => request<SessionGroup[]>("/api/session-gro
 
 /** Profiles (§chat/profiles): what a folder can use, one pick, approving and hiding, and saving the
     session's model, effort and subagent pick as a new profile of yours (the one profile file written). */
-export type ProfilePickRef = { source: "sova" | "user" | "project"; id: string };
-export const fetchProfiles = (cwd?: string | null) =>
-  request<ProfilesListing>(cwd ? `/api/profiles?cwd=${encodeURIComponent(cwd)}` : "/api/profiles", { cache: "no-store" });
+export type ProfilePickRef = { source: "sova" | "user" | "project" | "library"; id: string };
+export const fetchProfiles = (cwd?: string | null, host?: string | null) =>
+  request<ProfilesListing>(hostUrl(host, cwd ? `/api/profiles?cwd=${encodeURIComponent(cwd)}` : "/api/profiles"), { cache: "no-store" });
 export const pickProfile = (path: string, profile: ProfilePickRef | { remove: string[]; grant: string[]; from?: ProfilePickRef } | null) =>
   request<{ ok: true }>("/api/sessions/profile", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path, profile }) });
 /** Save Current As Profile: this session's model, effort and subagent pick as a new profile of yours; answers with the listing. */
-export const saveCurrentProfile = (path: string, label: string) =>
-  request<ProfilesListing>("/api/profiles/save-current", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path, label }) });
+export const saveCurrentProfile = (path: string, label: string, cwd?: string | null) =>
+  request<ProfilesListing & { savedKey?: string }>("/api/profiles/save-current", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path, label, ...(cwd ? { cwd } : {}) }) });
 /** Approve a project profile's powers, exactly the ones shown (§chat.profiles/trust). */
 export const approveProfile = (cwd: string, p: { id: string; grant: string[]; overseerMayStart: boolean }) =>
   request<ProfilesListing>("/api/profiles/approve", {
@@ -716,8 +719,32 @@ export const approveProfile = (cwd: string, p: { id: string; grant: string[]; ov
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ cwd, id: p.id, grant: p.grant, overseerMayStart: p.overseerMayStart }),
   });
+// ── Joined profiles, the chat side (§chat.profiles/switch, §chat.profiles/default) ──────────────
+/** Switch this chat's whole Models part to a joined profile (its id, or "off"): now, or when the
+    running reply ends. A refusal (400/409/404) carries the reason in its error and changes nothing. */
+export const switchProfile = (path: string, profile: string, host?: string | null) =>
+  request<ProfileSwitchResult>(hostUrl(host, `/api/sessions/profile-switch?path=${encodeURIComponent(path)}`), { method: "POST", body: JSON.stringify({ profile }) });
+/** Update {name}: this chat's model, effort, mode and add-on modes into its profile (the server takes
+    the chat's). Answers the fresh listing; refused for Off, a project's file or one that can't be read. */
+export const updateProfileFromChat = (path: string, cwd?: string | null) =>
+  request<ProfilesListing>("/api/profiles/update-from-chat", { method: "POST", body: JSON.stringify({ path, ...(cwd ? { cwd } : {}) }) });
+/** Cancel Switch: drop the switch waiting for the reply to end. */
+export const cancelProfileSwitch = (path: string, host?: string | null) =>
+  request<{ cancelled: boolean; state: ChatProfileState }>(hostUrl(host, `/api/sessions/profile-switch?path=${encodeURIComponent(path)}`), { method: "DELETE" });
+/** Make a joined profile (its key, or "off") this computer's default; with `path` and no key, that chat's
+    profile, the chat's strict flag and memory type saved with it. Answers the fresh listing. */
+export const putDefaultProfile = (body: { key?: string; path?: string; cwd?: string | null }) =>
+  request<ProfilesListing>("/api/profiles/default", { method: "PUT", body: JSON.stringify({ ...body, cwd: body.cwd ?? undefined }) });
+
 export const setProfileHidden = (key: string, hidden: boolean, cwd?: string | null) =>
   request<ProfilesListing>("/api/profiles/hidden", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ key, hidden, ...(cwd ? { cwd } : {}) }) });
+/** Settings → Profiles' writes (§chat.profiles/joined): one of yours, both halves, each through its own
+    writer; a new one when `key` is absent. Each answers the fresh listing for `cwd`. */
+export const saveMyProfile = (body: ProfileSaveRequest) =>
+  request<ProfileWriteAnswer>("/api/profiles/mine", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+/** Delete one of yours; refused for the default, and a library half another profile links stays. */
+export const deleteMyProfile = (key: string, cwd?: string | null) =>
+  request<ProfileWriteAnswer>("/api/profiles/mine/delete", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ key, ...(cwd ? { cwd } : {}) }) });
 /** A new session in `cwd` with a profile picked; nothing is sent (the chip's Run Again). */
 export const startProfileSession = (cwd: string, profile: ProfilePickRef) =>
   request<SessionSummary>("/api/sessions", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ cwd, profile }) });
@@ -950,25 +977,33 @@ export async function fetchTranscriptForCache(
 /** The composer draft stored for a session; `text: null` when there is none. The server has
     already dropped attachments whose file is gone. */
 export const fetchDraft = (path: string) =>
-  request<{ text: string | null; attachments?: UploadResult[]; updatedAt: string | null }>(
+  request<{ text: string | null; attachments?: UploadResult[]; mode?: ShellDraftMode; updatedAt: string | null }>(
     `/api/sessions/draft?path=${encodeURIComponent(path)}`,
     { cache: "no-store" },
   ).then((r) => {
     const attachments = r.attachments ?? [];
     const host = hostOf(path);
     if (host) for (const a of attachments) noteHost(a.path, host);
-    return { text: r.text, attachments, updatedAt: r.updatedAt };
+    return { text: r.text, attachments, ...(r.mode === "shell" || r.mode === "private" ? { mode: r.mode } : {}), updatedAt: r.updatedAt };
   });
 
 /** Stores a session's draft; blank text with no attachments deletes it. `keepalive` lets the
-    write outlive a page that is being hidden or closed. */
-export const putDraft = (path: string, text: string, attachments: UploadResult[], opts: { keepalive?: boolean } = {}) =>
+    write outlive a page that is being hidden or closed; `mode` keeps a shell-mode command's mode. */
+export const putDraft = (path: string, text: string, attachments: UploadResult[], opts: { keepalive?: boolean; mode?: ShellDraftMode } = {}) =>
   request<{ ok: true }>("/api/sessions/draft", {
     method: "PUT",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ path, text, attachments }),
+    body: JSON.stringify({ path, text, attachments, ...(opts.mode ? { mode: opts.mode } : {}) }),
     keepalive: opts.keepalive,
   });
+
+/** A page of a saved shell row's whole output (ShellOutputPage); a 404 `gone` once its file is deleted
+    (its chat was archived). */
+export const fetchShellOutput = (path: string, entry: string, from = 0) =>
+  request<ShellOutputPage>(
+    `/api/sessions/shell-output?path=${encodeURIComponent(path)}&entry=${encodeURIComponent(entry)}&from=${from}`,
+    { cache: "no-store" },
+  );
 
 /** Stores an image in the session's attachments folder the moment it's attached, so it survives
     a reload as part of the draft; the prompt text then names its path. */
@@ -1052,6 +1087,9 @@ export const stopSessionJob = (path: string, id: string, sessionId?: string) =>
 export const fetchGitSummary = (path: string, fresh = false) =>
   request<GitSummary>(`/api/sessions/git?path=${encodeURIComponent(path)}${fresh ? "&fresh=1" : ""}`);
 
+/** A session's Time Spent record, from the computer hosting it (§app.subagents-pane/time-spent-record). */
+export const fetchTimeSpent = (path: string) => request<TimeSpentRecord>(`${TIME_SPENT_READ_ROUTE}?path=${encodeURIComponent(path)}`);
+
 /** What pi loads for a session (context files, offered skills, system-prompt files), read for its
     folder. `fresh` skips the server's cache. */
 export const fetchSessionSetup = (path: string, fresh = false) =>
@@ -1076,6 +1114,9 @@ export const previewWorktreeCleanup = (path: string) =>
 /** Remove exactly `expect` (the dry run's paths), each only if still removable. */
 export const removeWorktrees = (path: string, expect: string[]) =>
   request<WorktreeCleanupResult>("/api/worktrees/cleanup", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path, expect }) });
+/** Remove Anyway: one kept tree, only while what it holds is still the listing confirmed (its digest). */
+export const removeWorktreeAnyway = (path: string, tree: string, digest: string) =>
+  request<WorktreeCleanupResult>("/api/worktrees/cleanup", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path, force: { path: tree, digest } }) });
 
 /**
  * `force` (chat only) lets the server open a session whose file was written recently by
@@ -1567,7 +1608,7 @@ export async function runReleaseVerb(project: string, verb: `release.${string}`,
   }
 }
 /** A chat's merge queue cards: one per branch it owns, from its approval on (`session.merge-cards`). */
-export const getMergeCards = (sessionId: string) => request<{ cards: import("../../shared/merge-queue").MergeCard[] }>(`/api/merge-queue/cards?session=${encodeURIComponent(sessionId)}`);
+export const getMergeCards = (sessionId: string) => request<{ cards: import("../../shared/merge-queue").MergeCard[]; reviews?: import("../../shared/merge-queue").ReviewCard[] }>(`/api/merge-queue/cards?session=${encodeURIComponent(sessionId)}`);
 /** Every project's queue and releases in one quick read: the landing bar's starting picture (page open, reconnect). */
 export const getLandingSummary = () => request<import("../../shared/merge-queue").LandingSummary>("/api/merge-queue/landing-summary");
 /** What runs on this host now, every project's (Running branches on `#/projects`). */
@@ -1630,6 +1671,12 @@ export const mergeCodingWorktree = (projectId: string, sessionId: string) =>
   request<ProjectWorktrees>(`${overseerBase(projectId)}/worktrees/merge`, jsonInit("POST", { sessionId }));
 export const removeCodingWorktree = (projectId: string, sessionId: string) =>
   request<ProjectWorktrees>(`${overseerBase(projectId)}/worktrees/remove`, jsonInit("POST", { sessionId }));
+/** Why Remove Worktree would keep the folder, and what Remove Anyway would delete (§chat.worktrees/leftovers). */
+export const codingWorktreeHold = (projectId: string, sessionId: string) =>
+  request<import("../../shared/protocol").CodingWorktreeHold>(`${overseerBase(projectId)}/worktrees/remove`, jsonInit("POST", { sessionId, dryRun: true }));
+/** Remove Anyway: removed only while the folder holds exactly the listing confirmed (its digest). */
+export const removeCodingWorktreeAnyway = (projectId: string, sessionId: string, digest: string) =>
+  request<ProjectWorktrees>(`${overseerBase(projectId)}/worktrees/remove`, jsonInit("POST", { sessionId, digest }));
 
 // ---- voice input (§chat/voice, §app.settings-dialog/voice) ---------------------------------------
 
@@ -1790,6 +1837,20 @@ export const saveMergeSettings = (projectId: string, changes: import("../../shar
 /** Cancels a save waiting for the current branch. */
 export const cancelMergeSettings = (projectId: string) => request<unknown>(`/api/merge-queue/projects/${encodeURIComponent(projectId)}/settings/pending`, { method: "DELETE" });
 
+// -- Settings → Extensions --
+const extPath = (id: string, tail = "") => `/api/extensions/${encodeURIComponent(id)}${tail}`;
+const extPost = <T = { ok: true },>(path: string, body: unknown = {}) => request<T>(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+export const getExtensionsInstalled = () => request<ExtensionsInstalled>("/api/extensions/installed", { cache: "no-store" });
+export const getExtensionLog = (id: string) => request<{ lines: { t: string; text: string }[] }>(extPath(id, "/log"), { cache: "no-store" });
+export const inspectExtension = (what: { folder?: string; id?: string }) => extPost<ExtensionInspect>("/api/extensions/inspect", what);
+export const installExtension = (folder: string, version: string) => extPost<{ id: string }>("/api/extensions/install", { folder, version });
+export const approveExtension = (id: string, version: string) => extPost(extPath(id, "/approve"), { version });
+export const chooseExtensionFolder = (id: string, folder: string, version: string) => extPost(extPath(id, "/folder"), { folder, version });
+export const turnExtensionOn = (id: string) => extPost(extPath(id, "/on"));
+export const turnExtensionOff = (id: string) => extPost(extPath(id, "/off"));
+export const extensionProgram = (id: string, action: "start" | "restart" | "stop") => extPost(extPath(id, "/program"), { action });
+export const removeExtension = (id: string, deleteData: boolean) => request<{ ok: true }>(extPath(id), { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ deleteData }) });
+
 // -- MCP servers (§app/mcp) --
 const mcpRow = (id: string, tail = "") => `/api/mcp/rows/${encodeURIComponent(id)}${tail}`;
 export const getMcpServers = () => request<McpServers>("/api/mcp/servers");
@@ -1809,3 +1870,10 @@ export const startMcpSignIn = (id: string) => request<McpSignIn>(mcpRow(id, "/si
 export const readMcpSignIn = (id: string) => request<McpSignIn>(mcpRow(id, "/sign-in"));
 export const finishMcpSignIn = (id: string, address: string) => request<McpSignIn>(mcpRow(id, "/sign-in/address"), jsonInit("POST", { address }));
 export const cancelMcpSignIn = (id: string) => request<unknown>(mcpRow(id, "/sign-in"), { method: "DELETE" });
+
+// ---- the merge thread's Run Logs chip (§app.merge-queue/run-logs, shared/merge-run-logs.ts) ----
+/** The run folders' size of the project whose merge thread is `session` (404: it isn't one). */
+export const fetchRunLogsOfThread = (session: string) =>
+  request<import("../../shared/merge-run-logs").RunLogsInfo>(`/api/merge-queue/run-logs?session=${encodeURIComponent(session)}`, { cache: "no-store" });
+/** Clean Logs: the user's own click, confirmed. */
+export const cleanRunLogs = (project: string) => request<import("../../shared/merge-run-logs").RunLogsCleaned>("/api/merge-queue/run-logs/clean", jsonInit("POST", { project, confirm: true }));

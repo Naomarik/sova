@@ -5,7 +5,7 @@ import { createSignal } from "solid-js";
  * App state so a control deep in a pane — the mode menu's "Configure Delegate" — can open Settings
  * straight at the screen it's about, without threading a callback through every pane between.
  */
-export const SETTINGS_TABS = ["general", "models", "accounts", "mcp-servers", "subagents", "alignment", "profiles", "overseer", "notifications", "decisions", "summaries", "memory", "organizations", "merge-queue", "themes", "mesh", "public-links", "outreach", "voice", "experimental"] as const;
+export const SETTINGS_TABS = ["general", "models", "accounts", "mcp-servers", "extensions", "alignment", "profiles", "overseer", "notifications", "decisions", "summaries", "memory", "organizations", "merge-queue", "themes", "mesh", "public-links", "outreach", "voice", "experimental"] as const;
 export type SettingsTab = (typeof SETTINGS_TABS)[number];
 
 /** Accounts' provider tabs, in order (§app.provider-keys/tabs): `#/settings/accounts/<tab>`. */
@@ -16,15 +16,15 @@ const [accountTab, setAccountTab] = createSignal<AccountTab | null>(null);
 export const accountTabRequest = accountTab;
 
 const [openTab, setOpenTab] = createSignal<SettingsTab | null>(null);
-/** Settings → Subagents' view of "current": the chat the mode menu opened it for, so that chat's
-    profile can be saved as its own. Cleared on close: a reopened dialog is nobody's chat. */
+/** Settings → Profiles' view of "current": the chat the mode menu or the limit row opened it for,
+    so the editor opens on that chat's profile. Cleared on close: a reopened dialog is nobody's chat. */
 const [subagentPath, setSubagentPath] = createSignal<string | undefined>();
 export const subagentSettingsPath = subagentPath;
 export const setSubagentSettingsPath = setSubagentPath;
 
-/** A section inside a tab to bring into view once it renders ("spec": Subagents → Spec writer;
-    "overseer-limits": Overseer → Limits); null = the tab's top. */
-export type SettingsSection = "spec" | "overseer-limits";
+/** A section inside a tab to bring into view once it renders ("spec": Profiles → Models → Spec writer;
+    "overseer-limits": Overseer → Limits; "server": General → Server · this machine); null = the tab's top. */
+export type SettingsSection = "spec" | "overseer-limits" | "server";
 const [section, setSection] = createSignal<SettingsSection | null>(null);
 
 /** The section the last openSettings asked for, until that section has scrolled itself into view. */
@@ -41,6 +41,27 @@ export const settingsOpenAt = openTab;
 const [project, setProject] = createSignal<string | null>(null);
 export const settingsProject = project;
 
+/** Which part of a profile's editor (§app.settings-dialog/profile-editor) Profiles opens at. */
+export type ProfilesPart = "models" | "start";
+/** The profile Profiles is asked to open: a joined key or id, else the chat at `subagentSettingsPath`'s, else the default. */
+const [profileAsk, setProfileAsk] = createSignal<{ profile?: string; part: ProfilesPart } | null>(null);
+export const profilesRequest = profileAsk;
+export const clearProfilesRequest = (): void => {
+  setProfileAsk(null);
+};
+
+/**
+ * Open Settings → Profiles on one profile, at its Models part unless `part` says otherwise
+ * (§chat.subagent-profiles/settings): the mode menu's gears and Manage Profiles…, the limit row.
+ * `profile` is a joined key or id; without it, the chat at `path`'s profile; without either, the
+ * default. `section` "spec" brings the Spec writer's row into view.
+ */
+export function openProfiles(opts: { profile?: string; path?: string; part?: ProfilesPart; section?: "spec" } = {}): void {
+  setSubagentPath(opts.path);
+  setProfileAsk({ ...(opts.profile ? { profile: opts.profile } : {}), part: opts.part ?? "models" });
+  openSettings("profiles", opts.section ?? null);
+}
+
 /** Open Settings at `tab` (General by default), optionally at one of its sections, and for a
     project-scoped tab on one project (its id). Opening it changes nothing else — no mode switch. */
 export function openSettings(tab: SettingsTab = "general", at: SettingsSection | null = null, opts: { project?: string; account?: AccountTab } = {}): void {
@@ -55,8 +76,11 @@ export function settingsTabFromHash(hash: string): SettingsTab | null {
   const m = /^#\/settings\/([a-z-]+)$/.exec(hash);
   if (!m && settingsProjectFromHash(hash)) return "merge-queue";
   if (!m && settingsAccountFromHash(hash)) return "accounts";
-  return SETTINGS_TABS.find((t) => t === m?.[1]) ?? null;
+  return tabNamed(m?.[1]);
 }
+
+/** A tab by its id, the retired Subagents tab's id included: its screen is Profiles now. */
+export const tabNamed = (id: string | undefined): SettingsTab | null => (id === "subagents" ? "profiles" : (SETTINGS_TABS.find((t) => t === id) ?? null));
 
 /** `#/settings/merge-queue/<project id>` (the project Settings tab's All settings row): that project, else null. */
 export function settingsProjectFromHash(hash: string): string | null {
@@ -71,6 +95,7 @@ export function settingsAccountFromHash(hash: string): AccountTab | null {
 
 export function closeSettings(): void {
   setSubagentPath(undefined);
+  setProfileAsk(null);
   setProject(null);
   setAccountTab(null);
   setOpenTab(null);

@@ -29,6 +29,8 @@ export interface SessionPolicyInput {
 	parent?: ParentScope;
 	/** false: the cwd is a stand-in (a home folder for a folder that is gone), never a writable root. */
 	cwdWritable?: boolean;
+	/** true: the read-only level whatever the policy file says (`--sandbox-read-only`); only ever tightens. */
+	readOnly?: boolean;
 	/** The session tmp, when the caller chose it; else `sessionTmpDir(sessionId)`. prepareSessionCommand keeps its proxy socket in its parent, and removes that parent on dispose. */
 	tmpDir?: string;
 	home?: string;
@@ -76,6 +78,7 @@ export function resolveSessionPolicy(input: SessionPolicyInput): Result<Resolved
 		git: gitProtectedPaths,
 		parent: input.parent,
 		...(input.cwdWritable === false ? { cwdWritable: false } : {}),
+		...(input.readOnly === true ? { readOnly: true } : {}),
 		extraWritable: roots,
 		extraReadOnly: roots.map((r) => join(r, ".agent")),
 	});

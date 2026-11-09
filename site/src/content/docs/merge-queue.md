@@ -21,9 +21,17 @@ A branch enters the queue only on your word, in one of two ways:
   "land it, skip review" are taken as said. Only your own typed message counts: one the Overseer,
   a baton or another chat sent never does.
 
-Land approves exactly the commit the screen showed you. A branch that moved on since lands that
-commit, with "1 newer commit not included"; land again for the newer one. Land refuses a branch
-with uncommitted files, nothing ahead of the main branch, or a temporary commit (`WIP`, `fixup!`).
+Land approves exactly the commit the screen showed you. Work you do on the branch after that isn't
+included ("1 newer commit not included"): land again for it. Land refuses a branch with uncommitted
+files, nothing ahead of the main branch, or a temporary commit (`WIP`, `fixup!`). A branch whose chat
+says it's finished but that is held up by something the chat can fix (a failing check, spec drafts
+that don't fit) can still be landed: it reads **Approved · waiting for a fix**, its chat is told what
+blocks it, and it joins the line by itself once nothing does. One that only conflicts with the main
+branch joins the line at once, and the merge thread takes the conflict.
+
+**One Land is enough.** Your Land stands until the branch lands, you remove it, or it waits for a
+decision only you can make. While it stands, the queue and the branch's chat fix landing problems
+between them, and you never press Land again for their fixes.
 
 Branches run one at a time, in the order you approved them, and each row shows its place: "Queued
 · 2nd", with when it starts and how long it takes.
@@ -42,7 +50,10 @@ Branches run one at a time, in the order you approved them, and each row shows i
    Settings → Merge Queue).
 
 The branch's chat gets one card for its branch, from Land on, updated in place as it moves:
-queued, checking, landed. The worktree stays where it is: Sova never removes it.
+"Queued · 2nd", "Checking · 4 of 7 steps", "Back with the chat · try 2 of 3 · Unit tests failed",
+"Waiting for the merge thread". It moves to the bottom of the chat only when the branch lands or a
+decision waits for you. The Landed card lists the chat's fixes that landed with your Land. The
+worktree stays where it is: Sova never removes it.
 
 <!-- screen: landing-progress | A branch's card in its own chat, updated in place as the queue checks it: its place in line, the check running now and how long it takes. -->
 
@@ -52,25 +63,76 @@ A red check is blamed on the branch only once the same check has passed on the m
 in the same copy. A failure that also happens on the main branch is noted on the landing and
 doesn't hold the branch; a test that passes when run again is noted as flaky.
 
-- **Needs a fix**: the failure is the branch's. Its chat is told what failed and why, and the row
-  offers **Land This Commit Again** and **Remove from Queue**. Once the chat has fixed it, Land it
-  again.
-- **Can't tell whose failure**: a check failed on both sides in a way that can't be pinned on
-  either. It waits for you: **Land Anyway** or **Send Back**.
-- **Conflict**: the merge thread resolves a conflict that changes no behaviour, such as both sides
-  adding to a list, and the full checks run on its resolution. When the two sides want different
-  behaviour, the row reads **Behaviour differs** with both sides in plain words and a proposed
-  resolution: **Accept** or **Send Back**.
-- **Review flagged**: the review found a problem. **Land Anyway** or **Send Back**.
-- **Drafts changed**: the branch's spec drafts changed after you approved it. Land it again.
+### Sent back to the chat, by itself
+
+When the problem is the branch's (a check it broke, a conflict the merge thread can't resolve
+safely, review findings, spec drafts that don't fit), the queue sends it back to the branch's chat
+on its own, with the merge thread's diagnosis. There is no Send Back button to press. The request
+arrives on a chat queue Sova opens in that chat, from **Merge queue**, between turns and after your
+own messages; it shows in the chat as one folded row, "Merge queue · feat/x · 2 requests". Your own
+messages come first, and the requests are never your words or your go-ahead.
+
+The chat answers each request in one of three ways:
+
+- **Fixed**, with what changed: a commit, its spec drafts, or both. The merge thread checks that
+  the fix changes only what was asked, and the branch goes back in line by itself, with the fix
+  carried by your Land. A fix of the drafts alone needs no commit.
+- **Needs you**: something only you can decide. It becomes a decision (below).
+- **Can't**, with why. The merge thread may try one other approach; if that fails too, it comes to
+  you as "can't be settled without you".
+
+The card shows where it stands, in place: "Back with the chat · try 2 of 3 · Unit tests failed",
+the chat's answer ("Fixed: commit a1b2c3d"), "Waiting for the merge thread" while a fix waits to be
+checked (a fix is never landed unchecked), and "Paused: you stopped the chat" after you press Stop
+there; your next message lets the requests through again.
+
+Each Land has **3 tries**. A run that fails the same way twice stops early. Out of tries, the card
+reads **Out of tries** with the reason, and waits for you: **Land** tries again with three new
+tries, or **Remove from Queue**.
+
+**Remove from Queue** is on the branch's card and row at every stage. It takes the branch off the
+queue at once and deletes nothing: the branch, its folder, its commits and its drafts stay.
+
+### Decisions that wait for you
+
+Only what is yours to decide stops for you: anything a person sees or does differently (wording,
+layout, controls, defaults, notifications, noticeable timing, data kept or deleted, permissions and
+safety), a change of meaning to something you agreed, or anything the branch's task never decided.
+Either the merge thread or the branch's chat can raise it, and neither can overrule the other.
+Each decision sends one notification, and shows on the branch's card at the bottom of its chat, in
+the Merge Queue tab's **Needs you** and in the sidebar's landing bar:
+
+- **Behaviour differs**: the main branch's side, the branch's side and the merge thread's
+  proposal, with **Accept** when it proposed a resolution.
+- **Needs you**: a question from the merge thread or the chat, with its choices.
+- **Can't tell whose failure**: a check failed on the merge and on the main branch alone.
+  **Land Anyway** lands the commit it tested; **Try Again** checks it afresh and uses no try.
+- **Out of tries**, **A fix needs your OK** (a fix on top of work you asked for, or wider than
+  asked) and **Drafts changed** beyond making them fit: **Land**.
+
+No card has a text box. A question is answered in the chat's own message box: its choice buttons
+put their words there for you to change or send, and the queue's note to the chat waits on the card
+marked **Not sent yet**. The message box says so too ("Merge queue · feat/x · not sent yet: your
+answer goes with it"). When you send, your answer and the queue's note reach the chat together, in
+one turn. On the Merge Queue tab, **Answer in Chat** opens the branch's chat to answer there.
+
+Land, the answers on a decision and Remove from Queue count only as your own click in Sova's page
+(or, for Land, "land it" in your own words): never a chat's script, the merge thread or another
+session. The queue's requests never count as "land it".
 
 ## The Merge Queue tab
 
 The project page's **Merge Queue** tab shows the main branch at its commit and whether `origin` has
 it, the queue's state with **Pause Queue** and **Queue Settings**, what is being checked now (the
-check, a meter and how long it takes), the line of waiting branches, and the recent landings with
-their notes. Every row opens its chat and has **Review Changes**, which shows the change in the
-changes viewer.
+check, a meter and how long it takes), and **Waiting**, the line of waiting branches, which opens and
+closes. Under them a strip of tabs sorts the rest: **Ready to land**, **Needs you**, **With its
+chat**, **Waiting on GitHub** or **GitLab** (for a project that lands there), **Landed**, with each
+landing's notes, and **Queue chats**. Each tab has its own address, so a reload or Back keeps it.
+Every row opens its chat and has **Review Changes**, which shows the change in the changes viewer.
+
+When the review blocks a branch, the chat that has to fix it gets a **Review found issues** card with
+the reviewer's whole report, the merge thread's note and how the fix is going. The branch's queue
+card points to it.
 
 <!-- screen: merge-queue-tab | A project's Merge Queue tab: the main branch at its commit, the branch being checked with its meter, the branches waiting in line, and the recent landings with their notes. -->
 
@@ -87,8 +149,16 @@ Queue** starts it again.
 Each project has one **merge thread**, a chat Sova starts to help the queue: it writes a note on
 each landing, picks extra tests the change could break, judges conflicts and explains failures. It
 acts only through the queue, never moves the main branch itself, and a missing or slow thread
-never delays a landing. When it has a question for you, it shows on its card on the Merge Queue
-tab.
+never delays a landing. When it has a question about a branch, it asks in that branch's chat.
+A question no branch's chat can carry shows on its card on the Merge Queue tab with one button,
+**Answer in Merge Thread**, which opens the thread's chat: you answer in its message box.
+
+The thread works read-only: its sandbox lets it write only in its own temp folder, never in your
+project's folders, with no network. Everything beyond reading, such as restarting Sova after
+landings, writing a conflict's resolution or running a test, it asks Sova to do. Its chat's head has
+a **Run logs** chip with their size: Sova packs a run's logs a day after it ends and never deletes
+them, unless you press **Clean Logs…**, which says what goes and asks first. The newest 10 runs, the
+run checking now and the runs of entries still open keep theirs.
 
 The thread and every review chat are the queue's own: they stay out of your session lists and are
 opened from the Merge Queue tab, which keeps their history until you clear it. **Start Fresh…**

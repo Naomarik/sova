@@ -113,6 +113,13 @@ list, or an extension, by default, without anyone re-implementing it. Spec: `§a
 | An in-chat action reaches its chat at most once; past the wait it is `unknown` (202, exit 5), never a retry; one that never reached its chat is `not-sent` (503, exit 1); only a reply naming its request id answers it | `server/chat-actions.test.ts`, `server/chat-actions.integration.test.ts`, `scripts/sova-unknown.integration.test.ts`, `scripts/sova-not-sent.test.ts` |
 | A chat's key says who called and never lets anything in: every request gets the same answer with any `x-sova-caller` or none; only a call showing the token adds a row; no param value is recorded; neither step can change an answer | `server/caller-auth.test.ts`, `server/command-audit.test.ts`, `server/sova-caller.integration.test.ts`, `scenarios/audit.json` |
 | An extension's key opens what the token opens but `/api/auth/*`, only in `x-sova-token`, is its extension's row, never reaches another backend or a peer, never appears in a page, and dies with its entry or file (its sockets too) but never with a bad save | `server/extension-keys.test.ts`, `server/extension-key-auth.integration.test.ts`, `server/extension-keys.integration.test.ts`, `scenarios/extension-key.json` |
+| A key is never the user: `session.send` and a new chat's first message are marked from the key alone (`server/extension-sender.ts`), never a body or a header; a key's prompt, steer, dialog answer, rewind and regenerate are refused on every road; every door in `server/extension-doors.ts` is refused at the gate, with any `x-sova-caller` beside the key; a new write route that looks like a promise fails until it is on that table or named in the test with its reason | `server/extension-doors.test.ts`, `server/extension-openings.integration.test.ts` |
+| "land it" sent by a key is never the user's word on any road, read with the landing code off the chat's file; an extension's message doesn't end an alignment's wait | `server/extension-openings.integration.test.ts`, `server/extension-doors.test.ts`, `server/align-state.test.ts` |
+| A click on an extension's card opens no door its key can't, and what it sends is marked; a key touches only its own cards | `server/extension-cards.test.ts` |
+| Card news is ids and type, never data or answers; one event per act, from the raise, revise and answer sites, never from `saveRecord`; `sova watch` prints none | `server/extension-cards.test.ts`, `server/events.test.ts`, `server/extension-openings.integration.test.ts` |
+| A chat's open pane hears its cards change at once by a `cards_changed` frame with no content, and only for its own chat; a key-raised card names its extension's title | `server/extension-openings.integration.test.ts` |
+| A page's Referer under `/ext/<id>/` badges a send only for an installed extension on this host: an accident guard, never a proof | `server/extension-openings.integration.test.ts` |
+| With no extension installed nothing moves: same tools, prompts, goldens and loadouts | `server/harness/pi/golden/golden.test.ts`, `server/agent-loadouts.test.ts` |
 | A key names its chat only while its process runs; a take-back's prune runs only after a whole take-back; a loadout can't choose a key | `server/caller-keys.test.ts`, `server/chat-host-caller-key.test.ts` |
 | `command.ran` reaches only a socket that asked; the stream's ring, seqs and resumes are the same with it as without | `server/command-audit-events.test.ts` |
 | `list`/`describe` use the served list and print the copy's output exactly when the server has none; `watch` hears hosted turns through the stream and falls back to the diff | `server/commands-served.integration.test.ts`, `scenarios/served.json` |
@@ -125,6 +132,20 @@ When a rule changes, change its test in the same change; a rule without a test i
   and the Overseer's `sova_answer_dialog` records who chose; `POST /api/chat/action` refuses
   `ui_response` with a 400. (Stop, Compact, Rewind, Regenerate, Remove and Reload Now are `chat.*`
   entries now, above.)
+- Adding, approving, turning on or off and removing an extension (`POST /api/extensions/inspect|install`,
+  `/api/extensions/:id/approve|folder|on|off|program`, `DELETE /api/extensions/:id`, §app.extensions/loader): Trust
+  grants, each at the `extensions` door of `server/page-only.ts`. `GET /api/extensions/installed` and `:id/log` are
+  page plumbing, `full` from another computer. `extensions.list` stays the only command here.
+- Running a command from shell mode (`!`/`!!` in a chat's message box, §chat.shell-mode/who): the `shell` frame
+  goes only over a live `/ws/chat` socket. `POST /api/chat/action` refuses it with a 400, `POST /api/chat/frames`
+  drops it and `shell_stop` (`postedFrames`/`deliverFrames`, `server/ws.ts`), and no route, entry or
+  `session.send` text runs one: the server never reads a leading `!` in text, and a draft saved from anywhere
+  but the page is a message. One chat can't make another run a command as the user; a person at the composer
+  does. Seeing and stopping them are entries (the user's decision): `chat.shell.list` and `chat.shell.stop`
+  (`shell_list`/`shell_stop` on `POST /api/chat/action`, the Stop Command entry's own socket the one non-page
+  socket whose `shell_stop` goes through), so the Overseer or a script can free a chat a forgotten command
+  holds; and `session.shell.output` reads a finished command's whole output. A `!!` command's text stays out
+  of the list.
 - Anything at a door the operator keeps closed: the peer listener's routes, `/api/auth/*`, the
   share pages, `/ext/*` (an extension's own actions are `ext.*`, reached through the proxy).
 - Settings writes that grant power, trust or reach, or that show a secret: autonomy and permits,
@@ -225,4 +246,6 @@ of retired ids that must stay listed.
 | the in-chat actions' route or outcomes (`server/chat-actions.ts`) | `shared/commands/chat.ts`, `§app/chat-actions`, exit 5 in `scripts/sova.mjs` |
 | what the command line prints or exits with | its header in `scripts/sova.mjs`, `§app.commands/cli`, `§app/served-commands` |
 | the audit row's fields, the caller key's header or lifetime (`server/command-audit.ts`, `server/caller-keys.ts`) | `§app/command-audit`, `COMMAND_HEADER` in `scripts/sova.mjs`, `CALLER_HEADER` in `scripts/sova-token.mjs`, `CommandFrame` in `shared/events.ts` |
+| a write route that counts as the user, approves, writes rules, reaches an overseer or changes Sova's own action | a row in `server/extension-doors.ts`, or its reason in `server/extension-doors.test.ts`; `docs/customization.md` |
+| the extension contract | `EXTENSION_CONTRACT` in `shared/extension-contract.ts`, `ext-contract-v1.N` in `server/extensions.ts`, `agents/extensions/overview.md`, `docs/customization.md`, `§app/extensions` |
 | what `GET /api/commands` answers | `server/commands-routes.ts`, `isServedList` in `scripts/sova.mjs`, `§app.served-commands/route` |

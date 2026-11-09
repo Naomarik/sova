@@ -240,7 +240,21 @@
     "session.pairs.unpair",
     "session.pairs.resume",
     "attention.dismiss",
-    "attention.undismiss"
+    "attention.undismiss",
+    "session.time-spent",
+    "chat.shell.list",
+    "chat.shell.stop",
+    "session.shell.output",
+    "project.merge-queue.run-logs",
+    "project.merge-queue.run-logs.clean",
+    "project.verb.merge.restart",
+    "project.verb.merge.live",
+    "project.verb.merge.test",
+    "project.verb.merge.names",
+    "project.verb.merge.rule",
+    "project.verb.merge.respond",
+    "session.profile.switch",
+    "session.profile.switch.cancel"
   ],
   "retired": [
     "settings.agents.get",

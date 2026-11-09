@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { TOPIC_NAME_RE } from "../shared/topic-message";
+import { MERGE_QUEUE_TOPIC_BASE, TOPIC_NAME_RE } from "../shared/topic-message";
 import { stateRoot } from "./state-root";
 
 /**
@@ -28,6 +28,9 @@ export interface TopicRecord {
   invited?: string[];
   /** The Overseer's pairing this topic was opened for (§app.overseer/pairs): never reused by base. */
   pairing?: string;
+  /** The merge queue's topic (§chat.merge-queue/requests): Sova's server opens it and is its one
+      sender; never handed out by base, never counted toward TOPICS_PER_SESSION, never capped. */
+  mergeQueue?: true;
 }
 
 /** Notes each way a pairing takes before that direction pauses (§app.overseer/pairs). */
@@ -63,6 +66,8 @@ export interface TopicItem {
   at: string;
   from: { sessionId: string; title: string };
   text: string;
+  /** A merge queue request's id, branch, its place's words and entry (§chat.merge-queue/requests). */
+  request?: { id: string; branch?: string; place?: string; entry?: string; kind?: string };
 }
 
 type Line =
@@ -160,7 +165,7 @@ export class TopicStore {
     const base = topicBase(name);
     const mine = this.openTopics().filter(([, t]) => t.receiver.sessionId === receiver.sessionId);
     // A pairing's topic is never handed out by base (§chat.topics/open): only its pairing has it.
-    const same = mine.find(([, t]) => t.base === base && !t.pairing);
+    const same = mine.find(([, t]) => t.base === base && !t.pairing && !t.mergeQueue);
     if (same) {
       if (same[1].receiver.path !== receiver.path) {
         same[1].receiver.path = receiver.path;
@@ -168,8 +173,9 @@ export class TopicStore {
       }
       return { name: same[0], reused: true };
     }
-    if (mine.length >= TOPICS_PER_SESSION)
-      throw new Error(`This session already has ${TOPICS_PER_SESSION} topics open (${mine.map(([n]) => n).join(", ")}); reuse one of them.`);
+    const counted = mine.filter(([, t]) => !t.mergeQueue);
+    if (counted.length >= TOPICS_PER_SESSION)
+      throw new Error(`This session already has ${TOPICS_PER_SESSION} topics open (${counted.map(([n]) => n).join(", ")}); reuse one of them.`);
     const all = this.all();
     const made = this.freshName(base);
     all[made] = { receiver: { ...receiver }, base, ...(project ? { project } : {}), createdAt: new Date(this.now()).toISOString() };
@@ -189,9 +195,34 @@ export class TopicStore {
     return made;
   }
 
-  /** Open topics `sessionId` receives on, pairings' included. */
+  /** Open topics `sessionId` receives on, pairings' included; the merge queue's never counts. */
   openCount(sessionId: string): number {
-    return this.openTopics().filter(([, t]) => t.receiver.sessionId === sessionId).length;
+    return this.openTopics().filter(([, t]) => t.receiver.sessionId === sessionId && !t.mergeQueue).length;
+  }
+
+  /** The merge queue's open topic on `sessionId`, by name; null when it has none. */
+  mergeQueueTopic(sessionId: string): string | null {
+    return this.openTopics().find(([, t]) => t.receiver.sessionId === sessionId && t.mergeQueue)?.[0] ?? null;
+  }
+
+  /**
+   * The merge queue's topic on `receiver` (§chat.merge-queue/requests): the one it has, its path
+   * brought up to date, or a new one on base `merge-queue`. Never refused for the chat's count.
+   */
+  openMergeQueue(receiver: { sessionId: string; path: string }, project?: string | null): { name: string; reused: boolean } {
+    const had = this.mergeQueueTopic(receiver.sessionId);
+    if (had) {
+      const t = this.all()[had]!;
+      if (t.receiver.path !== receiver.path) {
+        t.receiver.path = receiver.path;
+        this.saveTopics();
+      }
+      return { name: had, reused: true };
+    }
+    const made = this.freshName(MERGE_QUEUE_TOPIC_BASE);
+    this.all()[made] = { receiver: { ...receiver }, base: MERGE_QUEUE_TOPIC_BASE, ...(project ? { project } : {}), createdAt: new Date(this.now()).toISOString(), mergeQueue: true };
+    this.saveTopics();
+    return { name: made, reused: false };
   }
 
   // ---- pairings (§app.overseer/pairs) ----------------------------------------------------------
@@ -402,7 +433,8 @@ export class TopicStore {
         continue; // a torn last line
       }
       lines++;
-      if (l?.t === "item" && typeof l.id === "string" && typeof l.text === "string") items.set(l.id, { id: l.id, at: l.at, from: l.from, text: l.text });
+      if (l?.t === "item" && typeof l.id === "string" && typeof l.text === "string")
+        items.set(l.id, { id: l.id, at: l.at, from: l.from, text: l.text, ...(l.request && typeof l.request.id === "string" ? { request: l.request } : {}) });
       else if (l?.t === "ack" && Array.isArray(l.ids)) for (const id of l.ids) items.delete(id);
     }
     const loaded = { pending: [...items.values()], dead: lines - items.size, torn: raw.length > 0 && !raw.endsWith("\n") };
@@ -422,11 +454,12 @@ export class TopicStore {
     return this.topic(name) ? this.load(name).pending : [];
   }
 
-  /** Keep a note. The caller has checked the topic is open and the text's size. */
-  push(name: string, from: { sessionId: string; title: string }, text: string): { ok: true; id: string } | { ok: false; error: string } {
+  /** Keep a note. The caller has checked the topic is open and the text's size. The merge queue's
+      topic takes every note (§chat.topics/push): its requests are never refused for their number. */
+  push(name: string, from: { sessionId: string; title: string }, text: string, request?: TopicItem["request"]): { ok: true; id: string } | { ok: false; error: string } {
     const l = this.load(name);
-    if (l.pending.length >= TOPIC_PENDING_CAP) return { ok: false, error: `"${name}" already holds ${TOPIC_PENDING_CAP} undelivered notes; tell the user.` };
-    const item: TopicItem = { id: `qi_${this.random(6).toString("hex")}`, at: new Date(this.now()).toISOString(), from: { ...from }, text };
+    if (l.pending.length >= TOPIC_PENDING_CAP && !this.topic(name)?.mergeQueue) return { ok: false, error: `"${name}" already holds ${TOPIC_PENDING_CAP} undelivered notes; tell the user.` };
+    const item: TopicItem = { id: `qi_${this.random(6).toString("hex")}`, at: new Date(this.now()).toISOString(), from: { ...from }, text, ...(request ? { request: { ...request } } : {}) };
     this.append(name, { t: "item", v: 1, ...item });
     l.pending.push(item);
     return { ok: true, id: item.id };
@@ -458,6 +491,17 @@ export class TopicStore {
     if (l.dead > 50 && l.dead > l.pending.length) this.compact(name, l);
   }
 
+  /** Drop undelivered notes `which` picks, never delivering them (the merge queue's: an entry
+      removed from the queue, §app.merge-queue/approve). Kept as an ack line; returns how many. */
+  drop(name: string, which: (it: TopicItem) => boolean, why: string): number {
+    if (!this.topic(name)) return 0;
+    const ids = this.load(name).pending.filter(which).map((it) => it.id);
+    if (!ids.length) return 0;
+    const rec = this.topic(name)!;
+    this.ack(name, ids, `dropped:${why}`, rec.receiver.sessionId);
+    return ids.length;
+  }
+
   /** Rewrite the file with only the undelivered notes, by atomic rename. */
   private compact(name: string, l: Loaded): void {
     const file = this.notesFile(name);
@@ -471,7 +515,7 @@ export class TopicStore {
   /** One audit line (§chat.topics/push), never a note's text. */
   audit(line: {
     sessionId: string;
-    tool: "queue_open" | "queue_push" | "session_send" | "sova_pair";
+    tool: "queue_open" | "queue_push" | "session_send" | "sova_pair" | "merge_queue";
     topic?: string;
     outcome: "ok" | "refused" | "closed" | "invited";
     item?: string;

@@ -178,6 +178,62 @@ export function redactPatterns(text: string): string {
 }
 
 /**
+ * Private data and unnamed secrets, for what leaves the machine for a model Sova itself asks (a decision: Jev or the
+ * fallback model), on top of `redactPatterns`. Not applied to the Overseer's own reads, where an author's email or a
+ * sha256 digest is the point: there `redactPatterns` alone decides.
+ * - email addresses;
+ * - a URL's `user:pass@` part (the host stays);
+ * - strings that look random (`looksRandom`): long hex other than a 40-character git hash, and long mixed runs of
+ *   letters and digits such as an unprefixed API key or a base64 blob.
+ * Left alone: UUIDs (session ids), short and full git hashes, paths, file names, code identifiers, numbers.
+ */
+const EMAIL = /(?<![A-Za-z0-9._%+-])[A-Za-z0-9._%+-]+@[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)*\.[A-Za-z]{2,}\b/g;
+const URL_USERINFO = /(\b[a-z][a-z0-9+.-]*:\/\/)[^\s/@]+@/gi;
+/** A run of token characters, not inside a longer word, a path's file name or a dotted name (`a.b`). */
+const TOKEN_RUN = /(?<![A-Za-z0-9_+/=.-])[A-Za-z0-9_+/-]{24,}={0,2}(?![A-Za-z0-9_+/=-]|\.[A-Za-z0-9])/g;
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** Shannon entropy, bits per character. */
+function entropy(s: string): number {
+  const counts = new Map<string, number>();
+  for (const c of s) counts.set(c, (counts.get(c) ?? 0) + 1);
+  let h = 0;
+  for (const n of counts.values()) h -= (n / s.length) * Math.log2(n / s.length);
+  return h;
+}
+
+/** Does this run of token characters look like a key rather than a word, a name or a path? */
+export function looksRandom(run: string): boolean {
+  const core = run.replace(/=+$/, "");
+  if (core.length < 24 || UUID.test(core) || /^\d+$/.test(core)) return false;
+  // Hex: a key or a digest; a 40-character one is a git commit, kept.
+  if (/^[0-9a-f]+$/i.test(core) && /\d/.test(core) && /[a-f]/i.test(core)) return core.length >= 32 && core.length !== 40 && entropy(core) >= 3;
+  // A path or a slashed name made of words (`src/components/Button2Group`): each segment judged on its own.
+  if (core.includes("/") && core.split("/").every((seg) => seg.length < 24)) return false;
+  const digits = (core.match(/\d/g) ?? []).length;
+  const upper = /[A-Z]/.test(core);
+  const lower = /[a-z]/.test(core);
+  if (!digits || !(upper || lower)) return false;
+  // Letters and digits interleaved: an identifier has few switches (`utf8ToBase64v2`), a random string many.
+  let switches = 0;
+  for (let i = 1; i < core.length; i++) if (/\d/.test(core[i - 1]!) !== /\d/.test(core[i]!) && /[A-Za-z0-9]/.test(core[i - 1]!) && /[A-Za-z0-9]/.test(core[i]!)) switches++;
+  if (upper && lower) return switches >= 4 && entropy(core) >= 3.8;
+  return switches >= 6 && entropy(core) >= 3.5;
+}
+
+/** `text` with emails, URL credentials and random-looking strings replaced (see above). The same string when none is found. */
+export function redactPrivate(text: string): string {
+  const out = text
+    .replace(URL_USERINFO, `$1${REDACTED}@`)
+    .replace(EMAIL, REDACTED)
+    .replace(TOKEN_RUN, (m) => (looksRandom(m) ? REDACTED : m));
+  return out === text ? text : out;
+}
+
+/** `outside: true`: also hide private data (`redactPrivate`), for what Sova sends to an outside model itself. */
+export type RedactOptions = { outside?: boolean };
+
+/**
  * Knows the secret values and replaces each occurrence with REDACTED. The values are read from the
  * credential files and the server's environment, cached, and read again only when a file's mtime,
  * size or inode (or the environment's secret values) change. They are never logged or sent anywhere.
@@ -231,8 +287,13 @@ export class Redactor {
   /** `text` with every secret value replaced, and a secret cut short at either end (a truncated line,
       `sk-abc…`) too, from its first or last MIN_FRAGMENT_LENGTH characters on; then every secret
       the patterns recognise by shape (`redactPatterns`), known or not. */
-  redact(text: string): string {
+  redact(text: string, opts: RedactOptions = {}): string {
     if (!text) return text;
+    const out = this.redactSecrets(text);
+    return opts.outside ? redactPrivate(out) : out;
+  }
+
+  private redactSecrets(text: string): string {
     if (!this.matcher) return redactPatterns(text);
     let out = text.replace(this.matcher, REDACTED);
     if (this.fragments) {
@@ -274,17 +335,17 @@ export class Redactor {
   }
 
   /** Every string in `value` (arrays and plain objects, deeply) redacted; the same object when nothing changed. */
-  redactDeep<T>(value: T): T {
-    if (typeof value === "string") return this.redact(value) as T;
+  redactDeep<T>(value: T, opts: RedactOptions = {}): T {
+    if (typeof value === "string") return this.redact(value, opts) as T;
     if (Array.isArray(value)) {
-      const next = value.map((v) => this.redactDeep(v));
+      const next = value.map((v) => this.redactDeep(v, opts));
       return (next.some((v, i) => v !== value[i]) ? next : value) as T;
     }
     if (value && typeof value === "object" && (Object.getPrototypeOf(value) === Object.prototype || Object.getPrototypeOf(value) === null)) {
       let changed = false;
       const next: Record<string, unknown> = {};
       for (const [k, v] of Object.entries(value)) {
-        next[k] = this.redactDeep(v);
+        next[k] = this.redactDeep(v, opts);
         if (next[k] !== v) changed = true;
       }
       return (changed ? next : value) as T;

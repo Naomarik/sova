@@ -1,22 +1,24 @@
 /**
  * When the merge thread needs the user (§chat/merge-queue): it never waits in its own chat. Its question (merge.ask)
- * goes to the chat that owns the entry's branch, as one marked merge-queue message (wake.ts), naming the question's
- * id; that chat's agent asks the user and relays their answer with merge.reply. The owner is the entry's recorded
- * chat, a worker resolved up to the chat that runs it (SessionSummary.workerOf). No chat that can take it (none
- * recorded, archived, gone, open in a terminal, a queue chat) or a refused wake: the question is held on the Merge
- * Queue tab (`onTab`) and one notification opens the tab.
+ * waits as a decision on the card of the entry's branch in the chat that owns it (al_3 v7, queue.ts askDecision): the
+ * user answers in that chat's message box, and their own message, sent with the held note, is the answer the thread
+ * gets (decisionAnswered). No chat ever relays it. The owner is the entry's recorded chat, a worker resolved up to the
+ * chat that runs it (SessionSummary.workerOf). No chat that can show it (none recorded, archived, gone, open in a
+ * terminal, a queue chat) or a decision that couldn't be raised: the question is held on the Merge Queue tab
+ * (`onTab`), answered in the merge thread, and one notification opens the tab.
  *
  * Harness-neutral: sessions, the wake and the notification are injected (the live ones are Sova's own helpers).
  */
-import { MERGE_QUEUE_SENT_PREFIX, type MergeEntry, type MergeThreadAsk } from "../../shared/merge-queue";
+import type { MergeEntry, MergeThreadAsk } from "../../shared/merge-queue";
 import type { SessionSummary } from "../../shared/protocol";
 import { newAskId, type MergeThread } from "./thread";
 
 export interface AskDeps {
   /** The session list (each row's id, path, workerOf, archived, live, queueChat). */
   sessions(): Promise<readonly SessionSummary[]>;
-  /** One marked merge-queue message to `path` (wake.ts sendQueueWake); throws when the chat can't take it. */
-  send(path: string, text: string): Promise<void>;
+  /** The question as a decision on the entry's card in that chat (queue.ts askDecision): its held note goes with the
+   *  user's answer, which reaches the thread (al_3 v7). False, or absent: the question is held on the tab. */
+  decide?(ask: { id: string; question: string; choices: string[] }, chat: { session: string; path: string }): Promise<boolean>;
   /** One notification that opens the project's Merge Queue tab. */
   notify(n: { title: string; body: string; hash: string; tag: string }): Promise<void>;
   /** The project's id and name, for the tab's link and the notification's words. */
@@ -36,27 +38,20 @@ export function askTarget(entry: Pick<MergeEntry, "session"> | undefined, sessio
   return s;
 }
 
-/** The message the owning chat gets: the question, its id, and how to relay the answer. */
-export function askText(ask: Pick<MergeThreadAsk, "id" | "question" | "branch">): string {
-  return [
-    `${MERGE_QUEUE_SENT_PREFIX} The merge thread needs the user${ask.branch ? ` (about ${ask.branch})` : ""}:`,
-    ask.question,
-    "",
-    `Ask the user this, in plain words, and wait for their answer: never answer it yourself. When they answer, relay their words with the project verbs tool: merge.reply {ask: "${ask.id}", text: "<their answer>"}. The merge thread takes it from there.`,
-  ].join("\n");
-}
-
-/** merge.ask: send the question to the branch's chat, else hold it on the tab with one notification. */
-export async function askUser(keeper: MergeThread, root: string, q: { question: string; entry?: MergeEntry }, deps: AskDeps): Promise<MergeThreadAsk> {
+/** merge.ask: a decision on the branch's card in its chat, else held on the tab with one notification. */
+export async function askUser(keeper: MergeThread, root: string, q: { question: string; entry?: MergeEntry; choices?: string[] }, deps: AskDeps): Promise<MergeThreadAsk> {
   const id = newAskId();
   const base = { id, question: q.question, ...(q.entry ? { entry: q.entry.id, branch: q.entry.branch } : {}) };
   const target = askTarget(q.entry, await deps.sessions().catch(() => []));
   if (target) {
-    try {
-      await deps.send(target.path, askText(base));
-      return keeper.recordAsk(root, base, { session: target.id, path: target.path });
-    } catch (err) {
-      deps.log?.(`${root}: the question went to the tab: ${target.id} refused it (${err instanceof Error ? err.message : String(err)})`);
+    const chat = { session: target.id, path: target.path };
+    if (q.entry && deps.decide) {
+      const decided = await deps.decide({ id, question: q.question, choices: q.choices ?? [] }, chat).catch((err) => {
+        deps.log?.(`${root}: the question wasn't raised as a decision (${err instanceof Error ? err.message : String(err)})`);
+        return false;
+      });
+      if (decided) return keeper.recordAsk(root, base, chat);
+      deps.log?.(`${root}: the question went to the tab: it couldn't wait on ${q.entry.branch}'s card in ${target.id}`);
     }
   }
   const ask = keeper.recordAsk(root, base, null);

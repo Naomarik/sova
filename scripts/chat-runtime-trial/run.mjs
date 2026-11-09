@@ -60,7 +60,7 @@
 //     t18b      kill -9 of the parent mid-run: its crash resume; the worker keeps its process; one
 //               completion
 //     t19       a team across a restart: alpha's team_msg to beta just before it arrives once; a
-//               team_ask reaches the parent once; after a parent reload alpha's inbox keeps beta's message
+//               team_ask reaches the parent once (its coordinator stopped); after a parent reload alpha's inbox keeps beta's message
 //               (closed automatically by then: listed with `limit`, which shows closed items)
 //     t19n      a monitor's wake_nudge set before a parent reload fires once after it (team-defaults.json)
 //     t20       kill -9 of a worker mid-run: the continue once, the run finishes, one completion; a
@@ -68,6 +68,7 @@
 //     t21       /explain, /compact-handoff, /btw each in a process of its own, no model call from the
 //               parent, counted in the usage ledger; an /explain across a parent reload settles once
 //     t21c      /btw and /explain on a claude-code-cli model (the fake claude): usage under the parent
+//     tprofile  a profile switch across backends: fake claude → the mock's pi model (idle) → back (mid-reply)
 //     t21h      /compact-handoff on a claude-code-cli parent (the fake claude): the fork resumes its CLI
 //               session, the note is saved, it compacts, the fork's usage is under the parent
 //     t21l      browser-drive F10/F11: an idle parent's /btw row reaches the open pane live; an idle
@@ -165,7 +166,7 @@ const opt = (name, fallback) => {
   const i = argv.indexOf(`--${name}`);
   return i >= 0 && argv[i + 1] !== undefined ? argv[i + 1] : fallback;
 };
-const ALL = ["t1", "t1b", "t1c", "t1d", "t1e", "t2", "t3", "t4", "t4fail", "t6", "t7", "t8", "t9", "t10", "t11", "t11b", "t11c", "t12a", "t12b", "t12c", "t12d", "t13", "t14", "t15", "t16", "t17", "t17c", "t18", "t18b", "tmodes", "t19", "t19n", "t20", "t21", "t21c", "t21h", "t21l", "t21r", "t21rx", "tsend", "t23", "t24", "t25", "t27", "trestart", "tdefault", "tserverless", "tstopchats", "tw1", "tw2", "tw3", "tw4", "tw5", "tw6", "tw7", "tw8", "tj1", "tj2", "tj3", "tj4", "tj5", "hermetic", "tyourclick"];
+const ALL = ["t1", "t1b", "t1c", "t1d", "t1e", "t2", "t3", "t4", "t4fail", "t6", "t7", "t8", "t9", "t10", "t11", "t11b", "t11c", "t12a", "t12b", "t12c", "t12d", "t13", "t14", "t15", "t16", "t17", "t17c", "t18", "t18b", "tmodes", "t19", "t19n", "t20", "t21", "t21c", "t21h", "t21l", "t21r", "t21rx", "tsend", "t23", "t24", "t25", "t27", "trestart", "tdefault", "tserverless", "tstopchats", "tw1", "tw2", "tw3", "tw4", "tw5", "tw6", "tw7", "tw8", "tj1", "tj2", "tj3", "tj4", "tj5", "tj6", "tj6b", "hermetic", "tyourclick", "tprofile"];
 const valued = new Set(["--port", "--scratch", "--slice", "--model", "--auth", "--mode", "--driver"]);
 const asked = argv.filter((a, i) => !a.startsWith("--") && !valued.has(argv[i - 1]));
 for (const a of asked) if (![...ALL, "plumbing", "serve", "real", "all"].includes(a)) (console.error(`unknown check ${a}; checks: ${ALL.join(" ")} real`), process.exit(2));
@@ -1931,6 +1932,7 @@ async function t18b() {
 }
 
 // T19: a team across a restart: alpha's team_msg to beta, made just before the restart, arrives once;
+// with Sova's coordinator stopped (no live coordinator: questions fall back to the main chat),
 // alpha's team_ask reaches the parent once; after a parent reload alpha's inbox still lists beta's
 // earlier message. Beta's message reached alpha as a one-item wake, which showed it in full, and the
 // safety net closed it when that turn ended (§app.teams/inbox-zero), so it is no longer open: the
@@ -1943,7 +1945,6 @@ async function t19() {
   const team = {
     name: "t19",
     objective: "trial team",
-    defaults: { coordinator: false },
     members: [
       { role: "alpha", model: "trial/m1", prompt: '[call bash {"command":"sleep 8; echo ALPHA-READY"}] [call team_msg {"to":"beta","message":"MSG-T19 from alpha"}] [call team_ask {"question":"ASK-T19 from alpha"}]' },
       { role: "beta", model: "trial/m1", prompt: `[call team_msg {"to":"alpha","message":"HELLO-T19 from beta"}] [call bash ${betaBash}]` },
@@ -1953,8 +1954,14 @@ async function t19() {
   const p = { path, s };
   const r = await turn(p, `[call team_create ${JSON.stringify(team)}]`);
   R.check(r.length === 1 && !r[0].message.isError, `t19: team_create answered (${resultText(r[0])})`);
-  const alpha = await workerWith(path, "ALPHA-READY");
-  const beta = await workerWith(path, "BETA-DONE");
+  // Sova's coordinator is ag_01 (this chat's first worker): stopped while alpha still sleeps, so alpha's
+  // team_ask takes the no-live-coordinator path to the parent.
+  const killed = await turn(p, '[call agent_kill {"id":"ag_01"}]');
+  R.check(killed.length === 1 && !killed[0].message.isError, `t19: the coordinator stopped (${resultText(killed[0])})`);
+  // By worker id: the coordinator's header quotes both prompts, so a marker would find its file too.
+  const memberFile = (id, marker) => workerOf(path, (x) => x.parent?.workerId === id && existsSync(x.path) && readFileSync(x.path, "utf8").includes(marker));
+  const alpha = await memberFile("ag_02", "ALPHA-READY");
+  const beta = await memberFile("ag_03", "BETA-DONE");
   if (!R.check(alpha && beta, `t19: both members are worker chats (${workerRecords(path).map((x) => x.parent?.workerId).join(", ")})`)) return;
   const apid = chatPid(alpha.path);
   const bpid = chatPid(beta.path);
@@ -2005,8 +2012,8 @@ async function t19n() {
   // default profile gets the teams setting; when not (t19n alone), the legacy team-defaults.json
   // does, and the seed copies it. Both are put back after.
   const teams = {
-    coordinator: { enabled: true, role: "coordinator", primary: { backend: "pi", model: "trial/m1" }, fallback: null, instructions: "" },
-    monitor: { enabled: true, role: "monitor", primary: { backend: "pi", model: "trial/m1" }, fallback: null, contextPct: 60, everyMinutes: 10, usage: { enabled: false, pausePct: 90, resumeMarginMinutes: 5 }, instructions: '[call wake_nudge {"action":"schedule","delay":"30s","reason":"NUDGE-T19"}]' },
+    coordinator: { role: "coordinator", primary: { backend: "pi", model: "trial/m1" }, fallback: null, instructions: "" },
+    monitor: { role: "monitor", primary: { backend: "pi", model: "trial/m1" }, fallback: null, contextPct: 60, everyMinutes: 10, usage: { enabled: false, pausePct: 90, resumeMarginMinutes: 5 }, instructions: '[call wake_nudge {"action":"schedule","delay":"30s","reason":"NUDGE-T19"}]' },
     handover: { retireTimeoutMinutes: 10 },
   };
   const file = join(agent, "subagent-profiles.json");
@@ -2240,6 +2247,43 @@ async function t21c() {
   R.check(by(btId).length >= 1, `t21c: /btw's Claude Code usage is recorded under the parent as its hidden chat ${btId} (${by(btId).length})`);
   R.check(by(exId).length >= 1, `t21c: /explain's Claude Code usage is recorded under the parent as its hidden chat ${exId} (${by(exId).length})`);
   noRpc("t21c");
+  s.close();
+}
+
+// Tprofile (§chat.profiles/switch, across backends): a chat on a Claude Code model (the fake claude)
+// switches its profile to one on the mock's pi model while idle, then back to the Claude Code one while a
+// reply runs: the switch waits for the reply to end, then the next turn runs on the fake claude again,
+// in the same conversation, in the chat's own process.
+async function tprofile() {
+  writeFileSync(join(sova, "session-profiles.json"), JSON.stringify({ version: 1, profiles: [
+    { id: "cc", label: "On Claude", model: "claude-code-cli/claude-sonnet-5-5" },
+    { id: "mock", label: "On the mock", model: "trial/m1" },
+  ] }));
+  const { path, s } = await newChat("claude-code-cli/claude-sonnet-5-5");
+  const o = { path, s };
+  const lastReply = () => [...entries(path)].reverse().find((e) => e.type === "message" && e.message?.role === "assistant")?.message ?? null;
+  const replies = () => entries(path).filter((e) => e.type === "message" && e.message?.role === "assistant").length;
+  const sw = (profile) => post(`/api/sessions/profile-switch?path=${encodeURIComponent(path)}`, { profile });
+  await turn(o, "say ok");
+  R.check(lastReply()?.provider === "claude-code-cli", `tprofile: the first turn ran on the fake claude (${lastReply()?.provider}/${lastReply()?.model})`);
+  const toMock = await sw("mock");
+  R.check(toMock?.applies === "now" && toMock?.state?.current?.id === "mock", `tprofile: idle, the switch to the mock's profile applies now (${JSON.stringify(toMock)?.slice(0, 160)})`);
+  let n = replies();
+  await turn(o, "and now on the mock");
+  R.check(replies() > n && lastReply()?.provider === "trial" && lastReply()?.model === "m1", `tprofile: the next turn runs on the pi model, same conversation (${lastReply()?.provider}/${lastReply()?.model})`);
+  // Back to Claude Code while a reply runs: it waits for the reply's end.
+  const from = s.got.length;
+  prompt(s, "[long 6 #tprofile] a long reply");
+  await s.until(delta(/part 1\//), 60000, "the reply streams", from);
+  const back = await sw("cc");
+  R.check(back?.applies === "after-turn" && back?.state?.pending?.id === "cc", `tprofile: mid-reply, the switch back waits for the reply (${JSON.stringify(back)?.slice(0, 160)})`);
+  await settled(s, from, 60000);
+  R.check(lastReply()?.provider === "trial", `tprofile: the running reply finished on the model it started on (${lastReply()?.provider})`);
+  const applied = await s.until((m) => m.type === "chat_profile" && m.state?.current?.id === "cc" && !m.state?.pending, 30000, "the held switch applies", from).then(() => true, () => false);
+  R.check(applied, "tprofile: at the reply's end the chat is on the Claude Code profile, nothing waiting");
+  n = replies();
+  await turn(o, "back on claude");
+  R.check(replies() > n && lastReply()?.provider === "claude-code-cli", `tprofile: the turn after runs on the fake claude again (${lastReply()?.provider}/${lastReply()?.model})`);
   s.close();
 }
 
@@ -3589,8 +3633,8 @@ async function tw6() {
   await wakeBoot();
   const monitorText = '[call team_msg {"to":"coordinator","message":"zai 5h at 95%","notice":"pause"}][call wake_nudge {"action":"schedule","delay":"20s","reason":"NUDGE-TW6"}]';
   const teams = {
-    coordinator: { enabled: true, role: "coordinator", primary: { backend: "pi", model: "trial/m1" }, fallback: null, instructions: "" },
-    monitor: { enabled: true, role: "monitor", primary: { backend: "pi", model: "trial/m1" }, fallback: null, contextPct: 60, everyMinutes: 10, usage: { enabled: false, pausePct: 90, resumeMarginMinutes: 5 }, instructions: monitorText },
+    coordinator: { role: "coordinator", primary: { backend: "pi", model: "trial/m1" }, fallback: null, instructions: "" },
+    monitor: { role: "monitor", primary: { backend: "pi", model: "trial/m1" }, fallback: null, contextPct: 60, everyMinutes: 10, usage: { enabled: false, pausePct: 90, resumeMarginMinutes: 5 }, instructions: monitorText },
     handover: { retireTimeoutMinutes: 10 },
   };
   const file = join(agent, "subagent-profiles.json");
@@ -4025,7 +4069,103 @@ async function tj5() {
   await nextServer();
 }
 
-const table = { tyourclick, t1: () => t1(), t1b, t1c, t1d, t1e, t2, t3, t4, t4fail, t6, t7, t8, t9, t10, t11, t11b, t11c, t12a, t12b, t12c, t12d, t13, t14, t15, t16, t17: () => t17(), t17c: () => t17(true), t18, t18b, tmodes, t19, t19n, t20, t21, t21c, t21h, t21l, t21r: () => t21r(), t21rx: () => t21r("either"), tsend, t23, t24, t25, t27, trestart, tdefault, tserverless, tstopchats, tw1, tw2, tw3, tw4, tw5, tw6, tw7, tw8, tj1, tj2, tj3, tj4, tj5, hermetic, plumbing, serve, real: () => t1(opt("model")) };
+// tj6 / tj6b: a worker that finished, woken by its own job's end, reports again (§app.background-jobs/end-card).
+// A real worker process, a real job held until the worker's first report is in, and the parent's view of it:
+// its second completion with that reply, the worker idle, a wait that ends at once, the job still running
+// named. tj6: every process stays up, so the wake comes from inside the worker's own process: the lost report.
+// tj6b: short idle times, so the worker's and the parent's processes have stopped by then; the job's end reopens
+// the worker and the parent, reopened, picks it back up. Before the fix the outcome there depended on timing: a
+// parent attached while the run went got the reply from the feed; one attached after the settle sent "(no output
+// for this task)". worker-settle-order.test.ts forces each ordering; this one runs whichever comes.
+async function jobWakesWorker(name, idleMs) {
+  if (!needSystemd(name)) return;
+  await teardown();
+  await boot({ idleMs, extra: JOB_KNOBS });
+  const a = await newChat();
+  const go = join(scratch, `${name}-go`);
+  const out = join(scratch, `${name}.out`);
+  const held = `until [ -f ${go} ]; do sleep 0.2; done; echo DONE > ${out}`;
+  const task = `[call background_job ${JSON.stringify({ command: held })}] [call background_job ${JSON.stringify({ command: "sleep 300" })}] #${name}w`;
+  const sp = await turn(a, `[call agent_spawn ${JSON.stringify({ prompt: task, model: "trial/m1", name: `trial-${name}` })}]`);
+  R.check(sp.length === 1 && !sp[0].message.isError, `${name}: spawned (${resultText(sp[0])})`);
+  const w = await workerWith(a.path, `#${name}w`);
+  if (!R.check(w, `${name}: the server records the worker`)) return;
+  const wid = w.parent?.workerId;
+  await wakeWait(() => jobsOf(w.path).length === 2, 60000);
+  await waitFor(() => completions(a.path, w.path) >= 1, 60000);
+  R.check(completions(a.path, w.path) === 1, `${name}: the task's own report reached the parent (${completions(a.path, w.path)})`);
+  R.check(!jobById(w.path, "j1")?.ended && !existsSync(out), `${name}: its job is still held, so the wake comes after the report`);
+  const manifests = () => entries(a.path).filter((e) => e.customType === "subagents-worker-manifest" && e.data?.workerId === wid && e.data.status).map((e) => e.data);
+  const lastStatus = () => manifests().at(-1)?.status;
+  await waitFor(() => lastStatus() === "waiting", 15000);
+  R.check(lastStatus() === "waiting", `${name}: the worker is idle after its first report (${lastStatus()})`);
+  const pid1 = chatPid(w.path);
+  if (idleMs < 30000) {
+    await waitFor(() => !chatPid(w.path), 30000);
+    R.check(!chatPid(w.path), `${name}: the worker's process stopped idle (it was ${pid1})`);
+  } else R.check(pid1 && alive(pid1), `${name}: the worker's process stays up, idle (${pid1})`);
+
+  // The worker's reply to the card is scripted by the untagged-message rule: the card names no tag.
+  await mock.plain(`[long 2 #${name}card]`);
+  writeFileSync(go, "");
+  const reply = `REPLY-DONE ${name}card`;
+  await wakeWait(() => jobCards(w.path, "j1").length > 0, 60000);
+  const said = () => entries(w.path).some((e) => e.type === "message" && e.message?.role === "assistant" && fullText(e).includes(reply));
+  await wakeWait(said, 60000);
+  R.check(said(), `${name}: the worker replied to its job's end`);
+  if (idleMs >= 30000) R.check(chatPid(w.path) === pid1, `${name}: in the same process (${pid1} → ${chatPid(w.path)})`);
+  else if (!chatPid(a.path)) {
+    // The parent's process stopped too: opening it picks the worker back up and delivers what it missed.
+    a.s.close();
+    a.s = await chat(c, a.path);
+  }
+
+  await waitFor(() => completions(a.path, w.path, reply) >= 1, 60000);
+  R.check(completions(a.path, w.path, reply) === 1, `${name}: the parent got a second completion with the reply (${completions(a.path, w.path)} completions, ${completions(a.path, w.path, reply)} with it)`);
+  const second = entries(a.path).filter((e) => e.customType === "subagent-complete").at(-1);
+  const text = fullText({ message: { content: second?.content } });
+  R.check(!text.includes("(no output for this task)"), `${name}: never "(no output for this task)" (${text.slice(0, 300)})`);
+  R.check(/Still running: j2 \(sleep 300\)/.test(text) && text.indexOf(reply) < text.indexOf("Still running"), `${name}: it names the job still running, after the reply (${text.slice(-300)})`);
+  await waitFor(() => lastStatus() === "waiting", 15000);
+  R.check(lastStatus() === "waiting", `${name}: status waiting in the parent's record (${JSON.stringify(manifests().slice(-3).map((r) => r.status))})`);
+  // The parent's file, not the mock's log: that keeps a request's first 300 characters, and the report's header
+  // (its session path, as long as the scratch dir makes it) can push the reply past them. The turn that report
+  // started: the next message after it is the parent's answer, with the scripted reply, no prompt between.
+  const turnOnReport = () => {
+    const es = entries(a.path);
+    const at = es.findLastIndex((e) => e.customType === "subagent-complete" && JSON.stringify(e).includes(reply));
+    const next = at >= 0 ? es.slice(at + 1).find((e) => e.type === "message") : undefined;
+    return next?.message?.role === "assistant" && fullText(next).includes(reply);
+  };
+  await waitFor(turnOnReport, 30000);
+  R.check(turnOnReport(), `${name}: the reply started a turn in the parent`);
+  R.note(`${name}: the reply starts ${text.indexOf(reply)} characters into the report; the mock's 300-character log held it: ${asksWith(reply).length > 0}`);
+
+  // The parent's own turn on that report ends with its scripted reply in its file. Only then is the script
+  // cleared. With short idle times its process then stops: a prompt sent as it stops reaches nobody, so wait
+  // for the stop and open the chat again, as tj3 does.
+  const parentReplied = () => entries(a.path).some((e) => e.type === "message" && e.message?.role === "assistant" && fullText(e).includes(reply));
+  if (turnOnReport()) await wakeWait(parentReplied, 60000);
+  await mock.plain("");
+  if (idleMs < 30000) {
+    await wakeWait(() => !chatPid(a.path), 30000);
+    a.s.close();
+    a.s = await chat(c, a.path);
+  }
+  a.s.send({ type: "set_model", ref: "trial/m1" });
+  await a.s.until((m) => m.type === "model" || m.type === "error", 15000, "set_model answer");
+  const waited = await turn(a, `[call agent_wait ${JSON.stringify({ ids: [wid], timeoutSeconds: 5 })}]`);
+  R.check(/All requested tasks settled/.test(fullText(waited[0])), `${name}: a wait on the worker ends at once (${fullText(waited[0]).slice(0, 200)})`);
+  R.check(fullText(waited[0]).includes(reply) && /Still running: j2/.test(fullText(waited[0])), `${name}: and carries the reply and the job's line (${fullText(waited[0]).slice(0, 500)})`);
+  await turn(a, `[call agent_kill ${JSON.stringify({ id: wid })}]`);
+  await wakeWait(() => jobById(w.path, "j2")?.ended, 40000);
+  a.s.close();
+  await nextServer();
+}
+const tj6 = () => jobWakesWorker("tj6", 120000);
+const tj6b = () => jobWakesWorker("tj6b", 4000);
+
+const table = { tyourclick, t1: () => t1(), t1b, t1c, t1d, t1e, t2, t3, t4, t4fail, t6, t7, t8, t9, t10, t11, t11b, t11c, t12a, t12b, t12c, t12d, t13, t14, t15, t16, t17: () => t17(), t17c: () => t17(true), t18, t18b, tmodes, t19, t19n, t20, t21, t21c, t21h, t21l, t21r: () => t21r(), t21rx: () => t21r("either"), tsend, t23, t24, t25, t27, trestart, tdefault, tserverless, tstopchats, tw1, tw2, tw3, tw4, tw5, tw6, tw7, tw8, tj1, tj2, tj3, tj4, tj5, tj6, tj6b, hermetic, tprofile, plumbing, serve, real: () => t1(opt("model")) };
 let code = 0;
 let finished = null;
 /** Stops the server, every chat process and the mock, and writes results.json; once. */

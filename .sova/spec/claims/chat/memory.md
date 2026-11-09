@@ -11,7 +11,7 @@ Owns: the two memory types and their credit, where memory can be turned on, each
 the Summary size each type uses, the message log, the summary tree and the view, the summarizer, what a turn sends, the
 recall tools and their rows, preparing an existing chat, recovering from failed summaries, zoomable compaction, the memory status and
 outline the web shows, Settings → Memory and the overseers' switches. Not here: the mode menu's rows
-and Save as default (§chat/mode-menu), and how a Claude Code chat's CLI takes a request
+and Make {name} the Default (§chat/mode-menu), and how a Claude Code chat's CLI takes a request
 (§app/claude-code-provider).
 
 The engine is Sova's, server-side and harness-neutral (`server/memory/`): the mode extension only
@@ -100,7 +100,7 @@ holds is ignored, never erased; so is a `memory.size` in a `POST /api/mode` body
 pick changes nothing and is not refused). The type is kept while memory is off, survives reopen,
 rewind (a rewind past the record falls back to the one before it) and restart, and reaches every tab
 in the chat's `mode` message (`memory`: the type and the size it resolves to), so a change of type
-alone is a new `mode` message. `Save as default` saves the type with the chat's modes, and a `POST
+alone is a new `mode` message. Save as default's successor, the mode menu's `Make {name} the Default`, saves the type with the chat's profile, and a `POST
 /api/mode` without a path saves only a type. An automation's `settings.memory` sets a session's type
 the same way; a size it names is ignored. Only a chat whose menu can turn
 memory on gets `memory` in its `mode` message and in a switch's result (`ChatModeResult`): a runtime
@@ -114,7 +114,8 @@ The engine logs the chat's **active branch**, read through the neutral reader, a
 of six kinds: `user` (the user's words, an image as `[image]`), `sova` (the model's reply text),
 `tool` (one per tool call: its name and JSON arguments, `record_tour`'s supplied credentials as "[hidden]",
 §app.tours/sites), `echo` (its result, clipped to its first and
-last 15,000 characters; a failed one says so), `work` (a message an extension shows in the
+last 15,000 characters; a failed one says so; a command run with `!` is one too, as the model gets
+it, §chat.shell-mode/model, and a `!!` command is never logged), `work` (a message an extension shows in the
 transcript, such as a worker's report) and `note` (a branch summary). Thinking, hidden notes (mode
 notes, alignment state, nudges), system and state entries are not logged. A text longer than 16,000
 characters is logged as several messages in a row, never cut.

@@ -113,7 +113,11 @@ terminal has the session open, `new` makes a new one) and a `meshNeed`.
   New Chat, and the `project.icon.*` entries read and set a project's icon
   (§app.project-commands/projects-sweep, §app.projects/icon). The `session.pairs.*` entries list the
   Overseer's pairings in force, end one and resume a paused one, as a paired chat's line does
-  (§app.overseer/pairs); making a pairing is the Overseer's alone and no entry.
+  (§app.overseer/pairs); making a pairing is the Overseer's alone and no entry. Running a command from a chat's message box
+  is no entry either: only that box starts one, so no script or chat can (§chat.shell-mode/who).
+  Listing and stopping them are entries, `chat.shell.list` and `chat.shell.stop` (§app/chat-actions),
+  so the Overseer and scripts can find a chat's running commands and stop a hung one; they only list
+  and stop. `session.shell.output` reads a finished command's whole output (§chat.shell-mode/card).
 - **Its mesh reach is its route's.** Each entry's `meshNeed` is the capability the peer listener's
   classifier gives its method and path (§mesh.peers/grants), and a test fails when they differ.
 - **Never a door the operator keeps closed.** No entry targets the peer routes (`/api/peer`,
@@ -200,7 +204,8 @@ with `effect: changes`. Its optional `menu` key puts it in a menu of Sova's too
   Sova's extension proxy (§app.extensions/serving), which takes Sova's token off before the
   backend sees the request. The answer is the backend's, printed as it came.
 - The command line reads the manifest file itself (`SOVA_EXTENSIONS_FILE`, else
-  `<agent dir>/sova/extensions.json`). The server applies the same rules to list them in
+  `<agent dir>/sova/extensions.json`), leaving out an entry marked `off`; the proxy still refuses any
+  entry that isn't active (§app.extensions/loader). The server applies the same rules to list them in
   `GET /api/extensions`'s `offers` (§app.extensions/offers), where a reply chip's action is checked
   against them (§app.commands/reply-slot).
 

@@ -1,5 +1,6 @@
 import { queueQuietWork } from "./card-port";
-import { cpSync, existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { hostProblem } from "./host-sendback";
+import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { join } from "node:path";
 import {
@@ -7,9 +8,16 @@ import {
   type CheckPick,
   type ChecksDeclared,
   ENTRY_OPEN,
+  WAITING_FOR_USER,
   type LandingQueueCut,
   type MergeAnswer,
   type MergeApproval,
+  type MergeChatAnswer,
+  type MergeChatRequest,
+  type MergeRequestKind,
+  type MergeStanding,
+  MERGE_TRIES,
+  type MergeDecision,
   type MergeEntry,
   type MergeNote,
   type MergeQueueView,
@@ -21,19 +29,24 @@ import {
   type PauseInfo,
   type PauseKind,
   type PushState,
+  type ReviewFinding,
   type ReviewVerdict,
   type RunStep,
   type SentBackFor,
 } from "../../shared/merge-queue";
 import { HOOK_TIMEOUT_MAX, parseDefinition, type ProjectDef } from "../../shared/project-contract";
-import type { ChecksOf, EstimateRun, RunInput, RunMerge, RunOutcome, WakeThread } from "./contract";
+import type { ChecksOf, EstimateRun, RunInput, RunMerge, RunOutcome, ThreadEvent, WakeThread } from "./contract";
 import { countBetween, type Git, isAncestor, ownCommitsPast, realGit, revParse, statusArgs, worktreesOf } from "./guard";
+import { type BranchLeft, branchLeft, type LandingRecords, NO_LANDINGS, registerQueueReading } from "../nothing-left";
+import type { GitRunner } from "../worktrees";
 import { canLand, checkoutOf, dirtyWhy, firstParents, landTip, pushTip } from "./land";
 import { recordLandedDrafts } from "./landed-drafts";
-import type { MergeNoticeKind } from "./notices";
+import { type MergeNoticeKind, nothingToLandWords } from "./notices";
 import { sanityCheck } from "./conflicts";
+import { cleanChoices, fingerprintOf, isRuling, resolveVerdict, RULING_TEXT_MAX, RULING_WAIT_MS, type Ruling, sendBackText } from "./rulings";
 import { estimateFromRuns } from "./estimate";
 import { deliverReview } from "./review-step";
+import { applyReviewEvent, openReview, reportText, reviewNoteText, reviewRecord, type ReviewEvent } from "./review-record";
 import { invalidOf, resolveTarget, setUpOf } from "./served";
 import { isFinal, newId, type QueueFile, QueueStore } from "./store";
 import { hasOrigin, publishGit, revertCommit, withdrawGit } from "./release-git";
@@ -53,7 +66,8 @@ import { gitlabAdapter } from "./hosts/gitlab";
 import { suggestLanding } from "./hosts/repo";
 import { changeWords, editSettingsText, isEmptyChange, REVIEW_KIT_DIR, SettingsEditError } from "./settings-edit";
 import { PROJECT_PLAYBOOK } from "./thread";
-import { dropScratch, isScratchCopy, makeScratchCopy, pinResolution, sweepScratch } from "./scratch";
+import { dropScratch, isScratchCopy, makeScratchCopy, pinResolution, scratchCopyPath, scratchMarkOf, sweepScratch } from "./scratch";
+import { commitResolution } from "./resolve-content";
 import { isSetupChange, SETUP_UNREADABLE, setupChangeOf, trialReleaseChecks, untriedWhy } from "./setup-branch";
 
 /** Land's refusal of a worktree the merge queue made for itself (a conflict's scratch copy). */
@@ -75,10 +89,59 @@ export const PUSH_WAITS_NEXT_LANDING = "not pushed yet: goes out with the next l
 export const PUSH_HELD_NAMES = "push held: private names not set up yet";
 /** How long the merge thread's hold (merge.hold) lasts unless it is set again or cleared. */
 export const HOLD_MS = 5 * 60_000;
+
+/** A ruling's text (a question, a diagnosis, an approach), trimmed and clipped. */
+const clip = (t?: string): string => (t ?? "").trim().slice(0, RULING_TEXT_MAX);
 /** How long one answer to "why isn't the newest commit Ready to land" is kept (view() runs often). */
 const NEWEST_MEMO_MS = 5_000;
 /** The reason a waiting entry shows while the merge thread holds the queue. */
 export const HOLD_WORDS = "Waiting: Sova is restarting";
+/** Requests kept per entry (the newest). */
+const REQUESTS_KEPT = 30;
+/** entry.fix.request while a conflict waits for the merge thread (no request of the chat's is involved). */
+const CONFLICT_WAIT = "conflict";
+/** The states Remove from Queue ends as "removed by you" under a standing approval (out of line, waiting on someone). */
+/** A merge thread's note on a blocking review: short, and never the findings again (Sova sends them as written). */
+export const REVIEW_NOTE_MAX = 500;
+function reviewNoteOk(r: { summary: string; findings: { text: string }[] }, note: string): void {
+  if (!note) return;
+  const said = "the findings already go to the chat as the reviewer wrote them; add only what they don't say";
+  if (note.length > REVIEW_NOTE_MAX) throw new MergeFailure("invalid-request", `a note on a review is at most ${REVIEW_NOTE_MAX} characters: ${said}`);
+  const flat = (t: string) => t.toLowerCase().replace(/\s+/g, " ").trim();
+  const n = flat(note);
+  // Any 40 characters of the summary or a finding, repeated: refused (a short finding may still be named by its words).
+  const repeats = [r.summary, ...r.findings.map((f) => f.text)].some((t) => {
+    const f = flat(t);
+    if (f.length < 40) return false;
+    for (let i = 0; i + 40 <= f.length; i += 20) if (n.includes(f.slice(i, i + 40))) return true;
+    return false;
+  });
+  if (repeats) throw new MergeFailure("invalid-request", `the note repeats the review: ${said}`);
+}
+
+/** Blocking reviews kept per entry (each its own card); the tries bound them well below this. */
+const REVIEWS_KEPT = 10;
+/** Why a run stopped before its review, one line (the review card's Stopped). */
+function stoppedWhy(out: { verdict: string; cause?: string; why?: string }, target: string): string {
+  if (out.verdict === "conflict") return `a conflict with ${target}`;
+  if (out.cause === "drafts") return "its spec drafts didn't fit";
+  return `a check failed${out.why ? `: ${out.why.split("\n")[0]!.slice(0, 160)}` : ""}`;
+}
+const REMOVABLE: readonly string[] = ["needs-user", "drafts-changed", "behaviour-differs", "unattributed", "review-flagged", "conflict"];
+/** The states a chat's answer is taken in: back with it, its drafts changed, or in line (a fix then waits for the run). */
+const ANSWERABLE: readonly string[] = ["with-chat", "queued", "checking"];
+/** How often entries with their chats are looked at again (a block gone, a thread back). */
+export const FIX_RECHECK_MS = 60_000;
+/** A fix the merge thread was told of but hasn't ruled on is handed to it again after this long. */
+export const FIX_REWAKE_MS = 15 * 60_000;
+
+/** A request telling the chat what still keeps its approved branch out of line (§app.merge-queue/approve, q7). */
+export function blockedText(e: Pick<MergeEntry, "branch" | "target" | "commit">, why: string): string {
+  return (
+    `The user pressed Land on ${e.branch} at ${e.commit.slice(0, 7)}, and their Land stands, but it can't join the line yet: ${why}. ` +
+    `Fix it, then answer this request. Once nothing blocks it and the merge thread has checked your fix, Sova puts ${e.branch} in line by itself: the user doesn't press Land again.`
+  );
+}
 
 export class MergeFailure extends Error {
   constructor(
@@ -111,7 +174,16 @@ export interface QueueDeps {
    *  can be started to fix the target. Called once per check until a later run lifts it. */
   flagBroken?: (b: import("../../shared/merge-queue").TargetBroken, root: string) => void;
   /** Tell the branch's chat (server/merge-queue/notices.ts). */
-  notify?: (kind: MergeNoticeKind, entry: MergeEntry, extra: { run?: MergeRun; root: string; logDir?: string }) => void;
+  /** `press`: the time of the user's own Land press this notice reports (add, a decision's Land); never on an automatic re-queue. */
+  notify?: (kind: MergeNoticeKind, entry: MergeEntry, extra: { run?: MergeRun; root: string; logDir?: string; request?: MergeChatRequest; press?: string }) => void;
+  /** The user's answer to a merge thread question, sent from the branch's chat with its decision: the question is
+   *  closed and the answer goes to the thread (thread.ts MergeThread.answer). */
+  answerAsk?: (root: string, ask: string, text: string, session?: string) => void;
+  /** A new decision waits for the user: its one notification (rulings.ts decisionPush; wire.ts sends it). */
+  decided?: (e: MergeEntry, root: string) => void;
+  /** The chat's own newest check run fails (Ready to land's "the session's newest check run isn't failing"): its
+   *  words ("this chat's last test run failed: …"), else null. Absent: not read. */
+  chatCheckFailing?: (session: string, worktree: string | undefined) => Promise<string | null>;
   /** A trial (merge.try) ended: the chat that started it is told (wire.ts). */
   trialEnded?: (trial: MergeTrial, run: MergeRun, root: string) => void;
   /** Wake the merge thread; false: none was asked. */
@@ -132,6 +204,9 @@ export interface QueueDeps {
   retryDelayMs?: number;
   /** A conflict waits this long for the thread's judgement before it is handed back (default 20 min). */
   conflictWaitMs?: number;
+  /** A failure blamed on the branch waits this long for the thread's diagnosis before it goes back without one, and a
+   *  chat's Can't this long for the thread's ruling before it is raised to the user (default RULING_WAIT_MS). */
+  rulingWaitMs?: number;
   /** How often a running run checks the target hasn't moved (default 2 s). */
   watchMs?: number;
   /** Runs kept per project (default 200). */
@@ -244,6 +319,8 @@ export class ProjectQueue {
   private holdKick = false;
   private timers = new Set<ReturnType<typeof setTimeout>>();
   private conflictTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  /** Send-backs waiting for the merge thread's ruling (rulings.ts RULING_WAIT_MS), and Can'ts it is ruling on. */
+  private rulingTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private reviewWaiters = new Map<string, { resolve: (v: ReviewVerdict) => void; reject: (e: Error) => void }>();
   private landing = false;
   private publishTimer: ReturnType<typeof setTimeout> | null = null;
@@ -272,13 +349,43 @@ export class ProjectQueue {
   private log(line: string): void {
     (this.deps.log ?? ((l) => console.log(l)))(`[merge-queue] ${this.id}: ${line}`);
   }
+  /** A line in this queue's log (restart.ts). */
+  logLine(line: string): void {
+    this.log(line);
+  }
+
+  /** What merge.restart reads (restart.ts): anything queued or checking (or a run, trial or landing going on), the
+   *  release holding the queue, and the newest landing. */
+  restartFacts(): { busy: boolean; release: boolean; landed: { id: string; branch: string } | null } {
+    const busy = !!this.current || !!this.trying || !!this.landing || this.q.entries.some((e) => e.state === "queued" || e.state === "checking");
+    const l = this.newestLanded();
+    return { busy, release: !!this.q.release, landed: l ? { id: l.id, branch: l.branch } : null };
+  }
+
+  /** The thread's or operator's note on an entry now ("" when none). */
+  entryNote(entryId: string): string {
+    return this.entry(entryId)?.notes.find((n) => n.kind === "thread" || n.kind === "operator")?.text ?? "";
+  }
 
   /** Load the records and work out the target. Recovery (recover.ts) runs after. */
   async load(): Promise<void> {
+    registerQueueReading(this.root, {
+      landings: (branch) => this.landingsOf(branch),
+      target: () => this.q?.target ?? null,
+      // In line, checking or waiting for the user, or landed: never Approved · waiting for a fix or back with its chat,
+      // which still get their requests (§chat.worktrees/blocks-landing).
+      approvedAt: (branch, head) => !!this.q?.entries.some((x) => x.branch === branch && x.commit === head && x.state !== "with-chat" && (ENTRY_OPEN.includes(x.state) || x.state === "landed" || x.state === "requested" || x.state === "pushed")),
+    });
     const target = await this.resolveTarget();
     this.q = this.store.read({ project: this.id, target });
     this.q.project = this.id;
     this.q.target = target;
+    // Host landings recorded before their pins were kept: read now, while their entries are still here to read.
+    for (const e of [...this.q.entries].filter((x) => x.state === "landed" && x.landed?.via === "host").sort((a, b) => a.landed!.at.localeCompare(b.landed!.at))) {
+      if (!this.q.hostPins?.[e.branch]?.includes(e.commit)) this.keepHostPin(e.branch, e.commit);
+    }
+    // Entries with their chats are looked at again: a fix the merge thread wasn't told of, a block that went away.
+    if (this.q.entries.some((e) => e.state === "with-chat" || !!e.fix)) this.armFixTimer();
   }
 
   get target(): string {
@@ -321,14 +428,20 @@ export class ProjectQueue {
   /** Each entry whose attempt ended (final: landed, sent back, cancelled, superseded) loses its copy and its ref. */
   private tidyScratch(): void {
     for (const id of [...this.scratchIds]) {
-      const e = this.entry(id);
-      if (e && !isFinal(e)) continue;
+      if (this.keepsScratch(id)) continue;
       this.scratchIds.delete(id);
       void this.scratchStep(async () => {
         const r = await dropScratch(this.git, this.root, id);
         if (r.copy || r.ref) this.log(`removed ${[r.copy ? "the scratch copy" : "", r.ref ? "the pinned resolution" : ""].filter(Boolean).join(" and ")} of ${id}`);
       });
     }
+  }
+
+  /** A scratch copy (and its pinned resolution) lasts while its attempt does: the thread judging the conflict, the user
+   *  deciding on it, or the resolution in line or checking. Sent back to the chat, decided otherwise or final: it goes. */
+  private keepsScratch(id: string): boolean {
+    const e = this.entry(id);
+    return !!e && (e.state === "conflict" || e.state === "behaviour-differs" || e.state === "queued" || e.state === "checking");
   }
 
   /** The conflict's scratch copy for the merge thread, at the target's head: its path, or why it couldn't be made. */
@@ -345,12 +458,21 @@ export class ProjectQueue {
     });
   }
 
+  /** Where the sanity probe runs: the entry's scratch copy, made at `base` if it isn't there; never the main
+   *  checkout. Throws when no copy can be made (the resolution then isn't judged). */
+  private async probeDir(e: Entry, base: string): Promise<string> {
+    const path = scratchCopyPath(this.root, e.id);
+    if (scratchMarkOf(path)?.entry === e.id) return path;
+    const made = await this.makeScratch(e, base);
+    if ("scratchError" in made) throw new MergeFailure("busy", `the resolution can't be checked: its scratch copy couldn't be made (${made.scratchError})`);
+    return made.scratch;
+  }
+
   /** At start: drop every copy and ref whose entry is final or gone from the queue file (pruned: final); keep the
    *  open ones', and remember them for when they end. */
   async sweepScratch(): Promise<string[]> {
     const open = (id: string) => {
-      const e = this.entry(id);
-      const keep = !!e && !isFinal(e);
+      const keep = this.keepsScratch(id);
       if (keep) this.scratchIds.add(id);
       return keep;
     };
@@ -448,7 +570,8 @@ export class ProjectQueue {
       const tip = await revParse(this.git, this.root, `refs/heads/${e.branch}`);
       const moved = !!tip && tip !== e.commit;
       const descends = moved && (await isAncestor(this.git, this.root, e.commit, tip));
-      const n = descends ? await ownCommitsPast(this.git, this.root, e.commit, tip, head || undefined) : 0;
+      // Only real work counts past an approval (§app.merge-queue/approve): a catch-up merge is nothing new.
+      const n = descends ? await ownCommitsPast(this.git, this.root, e.commit, tip, head || undefined, true) : 0;
       if (n) e.newerCommits = n;
       else delete e.newerCommits;
       // Amended or rebased after the send-back: nothing to count, and the re-land still lands the tip.
@@ -913,27 +1036,54 @@ export class ProjectQueue {
   private async readyList(head: string, redrafted: ReadonlySet<string> = new Set()): Promise<MergeReady[]> {
     if (this.readyCache && this.readyCache.head === head && this.now() - this.readyCache.at < 15_000) return this.filterReady(this.readyCache.list, redrafted);
     const out: MergeReady[] = [];
-    for (const w of await worktreesOf(this.git, this.root)) {
+    const trees = await worktreesOf(this.git, this.root);
+    // The answers are kept per head and target, so only a move of the target reads any again: a few at a time, since
+    // the heads with work each run a trial merge.
+    const asked = trees.filter((w) => w.branch && w.head && w.path !== this.root && existsSync(w.path));
+    for (let i = 0; i < asked.length; i += 4) await Promise.all(asked.slice(i, i + 4).map((w) => this.leftOf(w.branch!, w.head!, w.path, head)));
+    for (const w of trees) {
       if (!w.branch || !w.head || w.path === this.root || w.branch === this.q.target || w.branch === "master" || w.branch === "main" || !existsSync(w.path)) continue;
       if (w.branch.startsWith("sova/")) continue;
       // The queue's own scratch copies are never work to land, whatever branch one is on.
       if (await this.queueOwned(w.path)) continue;
+      // The one answer (§chat.worktrees/nothing-left): nothing left is on no list, drafts alone keep the row, and a branch
+      // git can't read stays listed.
+      const left = await this.leftOf(w.branch, w.head, w.path, head);
+      if (left?.nothingLeft) continue;
+      const draftsOnly = left && !left.code.left ? left.drafts.length : 0;
       const ahead = await countBetween(this.git, this.root, head, w.head);
-      if (!ahead) continue;
       // Its subject and when it last changed (the head's committer date), in one read.
       const [subjectRaw = "", headAtRaw = ""] = (await this.git(["log", "-1", "--format=%s%x1f%cI", w.head], this.root)).stdout.trim().split("\u001f");
       const subject = subjectRaw.trim();
       const headAt = headAtRaw.trim();
-      if (/^temp\b/i.test(subject)) continue;
+      if (!draftsOnly && /^temp\b/i.test(subject)) continue;
       const st = await this.git(statusArgs("--porcelain"), w.path);
       if (st.code !== 0 || st.stdout.trim()) continue;
       const owner = ownerId(await this.deps.ownerOf?.(this.root, w.branch, w.path).catch(() => null));
       const short = await this.git(["diff", "--shortstat", `${head}...${w.head}`], this.root);
       const lines = short.code === 0 ? { added: Number(/(\d+) insertion/.exec(short.stdout)?.[1] ?? 0), removed: Number(/(\d+) deletion/.exec(short.stdout)?.[1] ?? 0) } : {};
-      out.push({ branch: w.branch, worktree: w.path, commit: w.head, ahead, ...lines, ...(headAt ? { headAt } : {}), ...(owner ? { session: owner.session, ...(owner.archived ? { sessionArchived: true as const } : {}) } : {}) });
+      out.push({ branch: w.branch, worktree: w.path, commit: w.head, ahead, ...lines, ...(draftsOnly ? { draftsOnly } : {}), ...(left ? { left: { whole: left.whole, code: left.codeOnly } } : { left: { whole: "unknown", code: "unknown" } }), ...(headAt ? { headAt } : {}), ...(owner ? { session: owner.session, ...(owner.archived ? { sessionArchived: true as const } : {}) } : {}) });
     }
     this.readyCache = { at: this.now(), head, list: out };
     return this.filterReady(out, redrafted);
+  }
+
+  /** The shared answer for a commit of this project's (§chat.worktrees/nothing-left), from every entry and git; null: it
+   *  couldn't be read at all, which is never nothing. */
+  private leftOf(branch: string, head: string, folder: string | undefined, targetHead: string): Promise<BranchLeft | null> {
+    const git: GitRunner = async (args, o) => {
+      const r = await this.git([...args], o.cwd, o.env ? { env: { ...process.env, ...o.env } } : undefined);
+      return { code: r.code, stdout: r.stdout, stderr: r.stderr };
+    };
+    return branchLeft({ root: this.root, folder, branch, head, target: { name: this.q.target, oid: targetHead }, git }).catch(() => null);
+  }
+
+  /** What the shared answer reads of this queue: all its entries, never the view's newest 20. */
+  private landingsOf(branch: string): LandingRecords {
+    // Still loading: the reading is registered before the records are read.
+    if (!this.q) return NO_LANDINGS;
+    const here = this.q.entries.filter((e) => e.branch === branch && e.state === "landed").sort((a, b) => (b.landed?.at ?? b.updatedAt).localeCompare(a.landed?.at ?? a.updatedAt)).map((e) => e.commit);
+    return { pins: [...new Set([...here, ...(this.q.hostPins?.[branch] ?? [])])], landed: this.q.landed };
   }
 
   /** The Ready to land, not approved rows as the view lists them, read from git only: no view is built, nothing is
@@ -946,7 +1096,7 @@ export class ProjectQueue {
   /** A branch sent back (needs-fix) is Ready again at a newer commit, or at the same commit once it was sent back for
    *  its drafts and they are fixed (`redrafted`: changed since the approval, and Sova's docs check reads clean). */
   filterReady(list: MergeReady[], redrafted: ReadonlySet<string> = new Set()): MergeReady[] {
-    return list.filter((r) => !this.q.entries.some((e) => e.branch === r.branch && (ENTRY_OPEN.includes(e.state) || ((e.state === "landed" || (e.state === "needs-fix" && !redrafted.has(e.id))) && e.commit === r.commit))));
+    return list.filter((r) => !this.q.entries.some((e) => e.branch === r.branch && (ENTRY_OPEN.includes(e.state) || (((e.state === "landed" && !r.draftsOnly) || (e.state === "needs-fix" && !redrafted.has(e.id))) && e.commit === r.commit))));
   }
 
   /** Why a sent-back entry was sent back: as stored, else inferred once from its last run (a failed docs step: its
@@ -1012,7 +1162,7 @@ export class ProjectQueue {
     void this.redraftedFacts().catch((err) => this.log(`docs check: ${err instanceof Error ? err.message : err}`));
   }
 
-  private newestMemo = new Map<string, { at: number; why: string | null }>();
+  private newestMemo = new Map<string, { at: number; why: Promise<string | null> }>();
   /** Why the branch's newest commit `tip` isn't Ready to land (the chat's readiness reading, deps.newestReading), or
    *  null when it is. No reading: what Land would refuse (a temporary commit, uncommitted files in its folder). Read
    *  only; each answer is kept a few seconds, since view() runs often. */
@@ -1020,9 +1170,11 @@ export class ProjectQueue {
     const key = `${branch}\0${tip}`;
     const hit = this.newestMemo.get(key);
     if (hit && this.now() - hit.at < NEWEST_MEMO_MS) return hit.why;
-    const why = await this.newestBlockedNow(branch, tip);
+    // Kept from the start, so two views reading at once ask once.
+    const why = this.newestBlockedNow(branch, tip);
     if (this.newestMemo.size > 100) this.newestMemo.clear();
     this.newestMemo.set(key, { at: this.now(), why });
+    why.catch(() => this.newestMemo.delete(key));
     return why;
   }
 
@@ -1058,12 +1210,17 @@ export class ProjectQueue {
 
   /** merge.add: approve a branch at a commit (the Land button, or a typed "land it" ingested). */
   add(req: AddRequest): Promise<{ entry: MergeEntry; changed: boolean }> {
-    return this.serial(async () => {
+    return this.serial(() => this.addNow(req));
+  }
+
+  private async addNow(req: AddRequest): Promise<{ entry: MergeEntry; changed: boolean }> {
+    {
       let branch = req.branch?.replace(/^refs\/heads\//, "");
-      if (req.checkout && (await this.queueOwned(req.checkout))) throw new MergeFailure("invalid-request", scratchRefusal(req.checkout));
+      // A queue copy named by its folder is refused, but after "nothing to land" below (it says nothing about the project).
+      const scratch = req.checkout && (await this.queueOwned(req.checkout)) ? req.checkout : null;
       if (!branch && req.checkout) {
         const r = await this.git(["symbolic-ref", "--quiet", "--short", "HEAD"], req.checkout);
-        if (r.code !== 0 || !r.stdout.trim()) throw new MergeFailure("invalid-request", `${req.checkout} isn't on a branch`);
+        if (r.code !== 0 || !r.stdout.trim()) throw new MergeFailure("invalid-request", scratch ? scratchRefusal(scratch) : `${req.checkout} isn't on a branch`);
         branch = r.stdout.trim();
       }
       if (!branch) throw new MergeFailure("invalid-request", "name the branch (or a checkout of it)");
@@ -1081,10 +1238,13 @@ export class ProjectQueue {
       if (!fix && d.checks === "unset") throw new MergeFailure("unsupported", `Not set up: ${this.root} declares no checks for the merge queue yet (its merge section, a test command, or "no automated tests")`);
       const head = d.head || (await this.targetHead());
       if (!head) throw new MergeFailure("not-found", `no branch ${target} in ${this.root}`);
-      if ((await countBetween(this.git, this.root, head, commit)) === 0) throw new MergeFailure("invalid-request", `nothing to land: ${branch} at ${commit.slice(0, 7)} has no commit ${target} doesn't`);
+      const wt = (await worktreesOf(this.git, this.root)).find((w) => w.branch === branch && w.path !== this.root)?.path;
+      // First of all (§app.merge-queue/approve): nothing is recorded, nothing runs, no trial is ever asked for. Unknown isn't nothing.
+      const left = await this.leftOf(branch, commit, wt, head);
+      if (left && (left.nothingLeft || (left.codeOnly === "nothing" && req.withoutSpecs))) throw new MergeFailure("invalid-request", nothingToLandWords(target));
+      if (scratch) throw new MergeFailure("invalid-request", scratchRefusal(scratch));
       const subject = (await this.git(["log", "-1", "--format=%s", commit], this.root)).stdout.trim();
       if (/^temp\b/i.test(subject)) throw new MergeFailure("invalid-request", `${branch}'s head is a TEMP commit ("${subject.slice(0, 60)}"): it isn't finished`);
-      const wt = (await worktreesOf(this.git, this.root)).find((w) => w.branch === branch && w.path !== this.root)?.path;
       // Before the trial gate: a queue copy is never landed, so "run a trial" would be the wrong thing to tell anyone.
       if (wt && (await this.queueOwned(wt))) throw new MergeFailure("invalid-request", scratchRefusal(branch));
       // A setup branch is checked by the target's checks, not its own: it lands only once a trial of this exact commit passed.
@@ -1110,6 +1270,8 @@ export class ProjectQueue {
         ...(drafts ? { drafts: { hash: drafts.hash, names: drafts.names } } : {}),
         ...(req.withoutSpecs ? { withoutSpecs: true as const } : {}),
         ...(req.withoutReview ? { withoutReview: true as const } : {}),
+        // The user's one Land stands until the branch lands, they remove it, or it waits for their decision (al_3).
+        ...(req.by !== "release" ? { standing: true as const, userCommit: commit } : {}),
       };
       // How it lands, pinned now (a later settings edit never redirects it); local is recorded as nothing, as before.
       const how = effectiveHow(d.def?.merge?.land, this.store.dir).effective;
@@ -1143,7 +1305,7 @@ export class ProjectQueue {
         if (!this.current && !this.q.entries.some((x) => x.state === "queued" || x.state === "checking")) this.q.knownTarget = head;
         this.save();
         this.wake("queued", onHost);
-        this.deps.notify?.("approved", this.withPosition(onHost), { root: this.root });
+        this.deps.notify?.("approved", this.withPosition(onHost), { root: this.root, press: onHost.approval.at });
         this.kickSoon();
         return { entry: this.withPosition(onHost), changed: true };
       }
@@ -1160,7 +1322,7 @@ export class ProjectQueue {
           delete open.reason;
           this.save();
           this.wake("queued", open);
-          this.deps.notify?.("approved", this.withPosition(open), { root: this.root });
+          this.deps.notify?.("approved", this.withPosition(open), { root: this.root, press: open.approval.at });
           return { entry: this.withPosition(open), changed: true };
         }
         if (open.state === "checking" && this.current?.entry === open.id) {
@@ -1192,15 +1354,33 @@ export class ProjectQueue {
         updatedAt: this.iso(),
         seq: ++this.q.seq,
       };
+      // Land on a finished branch blocked only for what its chat can fix (conflicts, its failing check, drafts that
+      // don't fit): Approved · waiting for a fix. It joins the line by itself once nothing blocks it (al_3 q7).
+      const blocked = approval.standing && wt ? await this.fixBlocked(e, commit, approval.drafts) : null;
+      // Already conflicting at the Land: it goes in line for the merge thread to judge, and sending it back for that
+      // conflict counts no try (it is the wait Land on a blocked branch is, not a failed try).
+      if (approval.standing && (await this.git(["merge-tree", "--write-tree", "--name-only", "--no-messages", head, commit], this.root)).code === 1) e.approval.conflictAtLand = true;
+      if (blocked) {
+        e.state = "with-chat";
+        e.approval.blocked = true;
+        e.standing = { phase: "waiting-fix", why: blocked };
+        e.reason = blocked;
+      }
       this.q.entries.push(e);
       // Approved again while checking: the newer commit goes first.
-      if (open && this.current?.entry === open.id) this.toFront(e);
+      if (open && this.current?.entry === open.id && !blocked) this.toFront(e);
       this.save();
+      if (blocked) {
+        this.deps.notify?.("approved", this.withPosition(e), { root: this.root, press: e.approval.at });
+        this.tellBlocked(e, blocked);
+        this.armFixTimer();
+        return { entry: this.withPosition(e), changed: true };
+      }
       this.wake("queued", e);
-      this.deps.notify?.("approved", this.withPosition(e), { root: this.root });
+      this.deps.notify?.("approved", this.withPosition(e), { root: this.root, press: e.approval.at });
       this.kickSoon();
       return { entry: this.withPosition(e), changed: true };
-    });
+    }
   }
 
   /** A copy of the entry with its place in line (queued). */
@@ -1226,14 +1406,32 @@ export class ProjectQueue {
       const e = this.mustEntry(entryId);
       // Remove from Queue: a sent-back entry leaves the queue; nothing of the branch's is deleted (its folder, commits,
       // drafts and run logs stay), and its chat's card gets a Removed revision.
-      if (e.state === "needs-fix") {
+      // Under the user's standing Land, an entry out of line (with its chat, waiting for their decision) is Removed too.
+      // Remove from Queue is one act at every stage of a standing Land, in line and checking too (a release's isn't).
+      const removable = e.state === "needs-fix" || e.state === "with-chat" || (!!e.approval.standing && !e.release && (REMOVABLE.includes(e.state) || e.state === "queued" || e.state === "checking"));
+      if (removable) {
+        const inLine = e.state === "queued" || e.state === "checking";
+        if (inLine) this.idleOwed = e.id;
+        if (this.current?.entry === e.id) {
+          this.current.voidWhy = "cancelled";
+          this.current.ac.abort();
+        }
+        this.clearConflictTimer(e.id);
+        this.clearRulingTimer(e.id);
+        this.answerDecision(e, "remove");
+        // The standing approval ends with it: a fix arriving later revives nothing (al_3).
+        delete e.standing;
+        delete e.fix;
+        delete e.pausedFrom;
         e.state = "cancelled";
         e.reason = "removed by you";
+        this.reviewEvent(e, { kind: "removed" });
         e.updatedAt = this.iso();
         if (note !== undefined) this.setNote(e, note, "thread");
         this.save();
         this.deps.notify?.("removed", e, { root: this.root });
         this.releaseEvent(e, "cancelled");
+        if (inLine) this.kickSoon();
         return e;
       }
       if (isFinal(e)) throw new MergeFailure("invalid-request", `${e.branch} is ${e.state === "landed" ? "landed" : e.state === "cancelled" ? "already cancelled" : "handed back already"}`);
@@ -1330,68 +1528,580 @@ export class ProjectQueue {
     });
   }
 
-  /** merge.resolve: the merge thread's judgement of a conflict. */
-  resolve(entryId: string, j: { verdict: string; files?: string[]; ours: string; theirs: string; proposal: string; commit?: string; note?: string }): Promise<MergeEntry> {
+  /**
+   * merge.resolve: the merge thread's judgement of a conflict, one of three: no behaviour change (the thread's merged
+   * file contents, which Sova commits in the entry's scratch copy, land through the full checks), the chat fixes it
+   * (sent back with the conflict as it is now and the thread's diagnosis), or it needs the user (a decision with the
+   * thread's question and choices; "behaviour-differs" is the old word for it). Only "no-behaviour-change" carries
+   * contents. A decision a chat raised can't be overruled.
+   */
+  resolve(entryId: string, j: { verdict: string; files?: string[]; ours: string; theirs: string; proposal: string; commit?: string; contents?: Record<string, string>; note?: string; text?: string; choices?: string[] }): Promise<MergeEntry> {
     return this.serial(async () => {
       const e = this.mustEntry(entryId);
       if (e.state !== "conflict" && e.state !== "behaviour-differs") throw new MergeFailure("invalid-request", `${e.branch} has no conflict to resolve (it is ${e.state})`);
-      if (j.verdict !== "no-behaviour-change" && j.verdict !== "behaviour-differs") throw new MergeFailure("invalid-request", 'verdict is "no-behaviour-change" or "behaviour-differs"');
-      for (const k of ["ours", "theirs", "proposal"] as const) if (!j[k]?.trim()) throw new MergeFailure("invalid-request", `say ${k === "ours" ? "what the target's side does" : k === "theirs" ? "what the branch's side does" : "what the resolution does"}, in plain words`);
+      const asked = resolveVerdict(j.verdict);
+      if (!asked) throw new MergeFailure("invalid-request", 'verdict is "no-behaviour-change", "chat-fixes" or "needs-user"');
+      this.mustNotOverrule(e, "resolve");
+      for (const k of ["ours", "theirs", "proposal"] as const) if (!j[k]?.trim()) throw new MergeFailure("invalid-request", `say ${k === "ours" ? "what the target's side does" : k === "theirs" ? "what the branch's side does" : asked === "chat-fixes" ? "your diagnosis: what the chat should change" : "what the resolution does"}, in plain words`);
       const head = (await this.targetHead()) ?? "";
-      const files = j.files?.length ? j.files : (e.conflict?.files ?? e.conflictFiles ?? []);
-      let verdict = j.verdict as "no-behaviour-change" | "behaviour-differs";
+      const files = j.files?.length ? j.files : (e.conflictFiles ?? e.conflict?.files ?? []);
+      let verdict = asked;
       let sanity: { ok: boolean; why?: string } | undefined;
       let commit: string | undefined;
-      if (j.commit) {
+      if (j.contents && j.commit) throw new MergeFailure("invalid-request", "give the merged contents or a commit, not both");
+      if (j.contents && asked !== "no-behaviour-change") throw new MergeFailure("invalid-request", 'only verdict "no-behaviour-change" carries contents: "chat-fixes" and "needs-user" carry none');
+      if (j.contents) {
+        // The thread's merged files, committed by Sova in the entry's scratch copy (no branch moves).
+        const contents = j.contents;
+        const made = await this.scratchStep(() =>
+          commitResolution(this.git, { copy: scratchCopyPath(this.root, e.id), entry: e.id, base: head, commit: e.commit, target: this.q.target, branch: e.branch, contents }),
+        ).catch((err: unknown) => {
+          throw new MergeFailure("invalid-request", err instanceof Error ? err.message : String(err));
+        });
+        j = { ...j, commit: made };
+      }
+      if (j.commit && asked !== "chat-fixes") {
         commit = (await revParse(this.git, this.root, j.commit)) ?? undefined;
         if (!commit) throw new MergeFailure("not-found", `no commit ${j.commit} in ${this.root}`);
-        const s = await (this.deps.sanity ?? sanityCheck)(this.root, { base: head, commit: e.commit, resolution: commit });
+        // The probe's content merge runs git's merge drivers in its working directory, and git leaves their
+        // .merge_file_* temp files behind when it is cut off: so it runs in the entry's scratch copy (made now
+        // if it is gone), a work tree with the project's files that isn't the main checkout, never in this.root.
+        const probe = await this.probeDir(e, head);
+        const s = await (this.deps.sanity ?? sanityCheck)(probe, { base: head, commit: e.commit, resolution: commit });
         sanity = { ok: s.ok, ...(s.why ? { why: s.why } : {}) };
-        if (!s.ok) verdict = "behaviour-differs";
-      } else if (verdict === "no-behaviour-change") throw new MergeFailure("invalid-request", "a resolution judged to change no behaviour names its commit (a merge of the target and the approved commit)");
+        if (!s.ok) verdict = "needs-user";
+      } else if (verdict === "no-behaviour-change") throw new MergeFailure("invalid-request", "a resolution judged to change no behaviour gives its contents: each conflicted file's whole merged text by its path");
       this.clearConflictTimer(e.id);
       // The resolution stays reachable under a hidden ref until the run uses it (or the attempt ends).
       if (commit) {
         this.scratchIds.add(e.id);
         await this.scratchStep(() => pinResolution(this.git, this.root, e.id, commit!)).catch((err) => this.log(`pinning the resolution of ${e.id} failed: ${err instanceof Error ? err.message : err}`));
       }
-      e.conflict = { files, verdict, ours: j.ours.trim(), theirs: j.theirs.trim(), proposal: j.proposal.trim(), ...(commit ? { commit } : {}), ...(sanity ? { sanity } : {}), at: this.iso() };
+      const stored = verdict === "needs-user" ? "behaviour-differs" : verdict;
+      e.conflict = { files, verdict: stored, ours: j.ours.trim(), theirs: j.theirs.trim(), proposal: j.proposal.trim(), ...(commit ? { commit } : {}), ...(sanity ? { sanity } : {}), at: this.iso() };
       if (j.note !== undefined) this.setNote(e, j.note, "thread");
+      if (e.ruling?.resolutionFailed) delete e.ruling.resolutionFailed;
+      // The thread judged it: no longer waiting for the thread.
+      if (e.fix?.request === CONFLICT_WAIT) delete e.fix;
       if (verdict === "no-behaviour-change") {
+        // Resolved by the thread: the conflict there at the Land never went back to the chat; a later one counts.
+        delete e.approval.conflictAtLand;
         e.notes = e.notes.filter((n) => n.kind !== "resolved");
         e.notes.push({ kind: "resolved", text: `Resolved a conflict in ${files.join(", ") || "the branch"}: ${j.proposal.trim()}`.slice(0, NOTE_MAX), at: this.iso() });
         delete e.reason;
+        // A waiting-for-a-fix mark from the Land, if any, goes: it joins the line by itself.
+        delete e.approval.blocked;
+        delete e.standing;
         this.toFront(e);
         this.kickSoon();
+      } else if (verdict === "chat-fixes") {
+        // The chat merges the newest target itself: no resolution of the thread's is kept for it.
+        delete e.conflict.commit;
+        const diagnosis = [j.proposal.trim(), j.text?.trim()].filter(Boolean).join("\n");
+        this.sendBack(e, { cause: "conflict", why: this.conflictWhy(files), files, diagnosis, ...(e.run ? { runId: e.run } : {}) });
       } else {
-        e.state = "behaviour-differs";
-        e.reason = sanity && !sanity.ok ? `the resolution needs your look: ${sanity.why}` : "the two sides want different behaviour";
-        e.updatedAt = this.iso();
+        const why = sanity && !sanity.ok ? `the resolution needs your look: ${sanity.why}` : "the two sides want different behaviour";
+        this.raiseDecision(
+          e,
+          {
+            kind: "behaviour-differs",
+            question: clip(j.text) || `${e.branch} and ${e.target} want different behaviour in ${files.join(", ") || "the same code"}: which should it do?`,
+            choices: cleanChoices(j.choices),
+            // The thread judged it safe and Sova's mechanical check didn't: the thread may still bring a resolution that passes.
+            raisedBy: asked === "no-behaviour-change" ? "queue" : "merge-thread",
+            actions: commit ? ["accept"] : [],
+            sides: { ours: j.ours.trim(), theirs: j.theirs.trim(), proposal: j.proposal.trim() },
+            heldNote: {
+              request: newId("rq"),
+              text: `The user decides how ${e.branch}'s conflict with ${e.target} in ${files.join(", ") || "its files"} is resolved; their answer comes with this note.\n${e.target}'s side: ${j.ours.trim()}\nThis branch's side: ${j.theirs.trim()}\nThe merge thread proposed: ${j.proposal.trim()}\nMerge ${e.target} into ${e.branch}, resolve it the way the user says, and commit; then answer this request Fixed.`,
+            },
+          },
+          "behaviour-differs",
+          why,
+        );
       }
+      e.updatedAt = this.iso();
       this.save();
       return e;
     });
   }
 
-  /** merge.answer: the user's Accept / Send Back / Land Anyway. */
+  /**
+   * merge.rule: the merge thread's ruling on anything but a conflict's resolution (rulings.ts RULINGS). A decision
+   * waiting for the user (raised by the thread or the chat) is never overruled: only "needs-user" is taken then.
+   * `checked` / `beyond` rule on a chat's fix (the standing approval's, by its request).
+   */
+  async rule(entryId: string, r: { ruling: string; text?: string; choices?: string[]; request?: string; note?: string }): Promise<MergeEntry> {
+    if (!isRuling(r.ruling)) throw new MergeFailure("invalid-request", 'ruling is "chat-fixes", "try-again", "needs-user", "checked" or "beyond"');
+    const ruling: Ruling = r.ruling;
+    if (ruling === "checked" || ruling === "beyond") {
+      if (!r.request) throw new MergeFailure("invalid-request", "name the fix's request (rq_…) the ruling checks");
+      if (ruling === "beyond" && !r.text?.trim()) throw new MergeFailure("invalid-request", "say what more the fix changes than was asked (text)");
+      this.mustNotOverrule(this.mustEntry(entryId), "rule");
+      if (r.note !== undefined) await this.note(entryId, r.note, "thread");
+      await this.fixRuling(entryId, r.request, ruling === "checked", r.text?.trim() ?? "");
+      return this.mustEntry(entryId);
+    }
+    return this.serial(async () => {
+      const e = this.mustEntry(entryId);
+      if (isFinal(e) || e.state === "checking") throw new MergeFailure("invalid-request", `${e.branch} is ${e.state}: nothing to rule on`);
+      this.mustNotOverrule(e, "rule");
+      const text = clip(r.text);
+      if (r.note !== undefined) this.setNote(e, r.note, "thread");
+      switch (ruling) {
+        case "chat-fixes": {
+          // A blocking review is handed on with no text (Sova sends the reviewer's words); its text is the thread's note.
+          const review = e.ruling?.pending?.cause === "review" ? openReview(e) : undefined;
+          const later = !e.ruling?.pending && e.state === "with-chat" && e.sentBackFor === "review" ? openReview(e) : undefined;
+          if (review || later) reviewNoteOk(review ?? later!, text);
+          if (review) {
+            const p = e.ruling!.pending!;
+            this.sendBack(e, { cause: "review", why: p.why, ...(p.run ? { runId: p.run } : {}), ...(p.review ? { review: p.review } : {}), ...(text ? { diagnosis: text } : {}) });
+            break;
+          }
+          if (later) {
+            if (!text) throw new MergeFailure("invalid-request", "the review went to the chat already: give your note (text) to add to it");
+            // A note after the hand-off: on that review's record and card, and to the chat as a short request, no try.
+            later.note = { text, at: this.iso() };
+            later.updatedAt = this.iso();
+            this.request(e, "fix", reviewNoteText(e, later, text), {});
+            break;
+          }
+          if (!text) throw new MergeFailure("invalid-request", "give your diagnosis (text): what failed, what in the branch causes it, what to change");
+          if (e.state === "conflict") {
+            const files = e.conflictFiles ?? [];
+            this.sendBack(e, { cause: "conflict", why: this.conflictWhy(files), files, diagnosis: text, ...(e.run ? { runId: e.run } : {}) });
+          } else if (e.ruling?.pending) {
+            // The failure waiting for this diagnosis goes back now, with it.
+            const p = e.ruling.pending;
+            this.sendBack(e, { cause: p.cause, why: p.why, ...(p.run ? { runId: p.run } : {}), ...(p.files ? { files: p.files } : {}), ...(p.review ? { review: p.review } : {}), diagnosis: text });
+          } else if (e.state === "unattributed" && e.ruling?.unattributed) {
+            // Ruled before it reached the user: the logs show the branch's own errors, so it is the branch's after all.
+            delete e.ruling.unattributed;
+            this.sendBack(e, { cause: "checks", why: e.reason ?? "a check failed with the branch", ...(e.run ? { runId: e.run } : {}), diagnosis: text });
+          } else if (e.state === "with-chat") {
+            // Sent back already, without it: the diagnosis follows as its own request (no try counted).
+            this.request(e, "fix", `The merge thread's diagnosis for ${e.branch}'s last request: ${text}`, {});
+          } else throw new MergeFailure("invalid-request", `${e.branch} is ${e.state}: nothing waits for a diagnosis`);
+          break;
+        }
+        case "try-again": {
+          if (e.ruling?.cant) {
+            if (!text) throw new MergeFailure("invalid-request", "say the other approach (text), for the chat");
+            if (e.ruling.otherTried) throw new MergeFailure("invalid-request", "you already tried another approach for it: rule needs-user");
+            const cant = e.ruling.cant;
+            delete e.ruling.cant;
+            e.ruling.otherTried = true;
+            this.clearRulingTimer(e.id);
+            this.request(e, "other-approach", `The merge thread has another approach for what you answered Can't (${cant.why}):\n${text}\nTry it, then answer this request Fixed, Needs you or Can't.`, {});
+          } else if (e.state === "unattributed" && e.ruling?.unattributed) {
+            // Ruled before it reached the user: not the branch's failure (the machine, a flake), so rerun it, counting no try.
+            this.clearRulingTimer(e.id);
+            delete e.ruling.unattributed;
+            delete e.unclear;
+            delete e.reason;
+            this.toFront(e);
+            this.kickSoon();
+          } else if (e.state === "with-chat") {
+            // A failure waiting for the thread's diagnosis counted its try already (awaitDiagnosis): never twice.
+            const t = e.ruling?.pending?.counted ? { tries: e.ruling.pending.counted.tries, max: e.ruling.pending.counted.max } : this.countTry(e, `retry:${this.now()}`);
+            if ("out" in t && t.out) {
+              this.outOfTries(e, `tried ${t.tries} times`);
+              break;
+            }
+            this.backInLine(e);
+          } else throw new MergeFailure("invalid-request", `${e.branch} is ${e.state}: nothing to try again`);
+          break;
+        }
+        case "needs-user": {
+          if (!text) throw new MergeFailure("invalid-request", "give the question for the user (text) and its choices");
+          if (e.state === "unattributed" && e.ruling?.unattributed) {
+            this.raiseUnattributed(e, e.ruling.unattributed.run, text);
+            break;
+          }
+          const cant = e.ruling?.cant;
+          this.raiseDecision(e, {
+            kind: "needs-you",
+            question: text,
+            choices: cleanChoices(r.choices),
+            raisedBy: "merge-thread",
+            actions: [],
+            ...(cant ? { cantSettle: true as const } : {}),
+            heldNote: { request: newId("rq"), text: `The user decided this for ${e.branch}: ${text}\nTheir answer comes with this note. Do it their way, then answer this request Fixed (or Can't).` },
+          });
+          break;
+        }
+      }
+      e.updatedAt = this.iso();
+      this.save();
+      return e;
+    });
+  }
+
+  /** A decision waiting for the user stands until they answer it: neither the thread nor the chat overrules it. */
+  /** The queue's own waits that the thread may still settle from the logs: Can't tell whose failure, and a resolution
+   *  the mechanical check turned down (another resolution may pass it). Everything else raised is the user's alone. */
+  private mustNotOverrule(e: Entry, by: "resolve" | "rule"): void {
+    const d = e.decision && !e.decision.answered ? e.decision : null;
+    if (!d) return;
+    // Only a resolution the mechanical check turned down may still be replaced by another resolution of the thread's.
+    // Every other raised decision (the thread's, the chat's, Can't tell whose failure once it reached the user) is the
+    // user's alone: no ruling replaces it, another "needs-user" included.
+    const settleable = d.raisedBy === "queue" && d.kind === "behaviour-differs" && e.state === "behaviour-differs" && by === "resolve";
+    if (!settleable) throw new MergeFailure("invalid-request", `${e.branch} already waits for the user's decision ("${d.question.split("\n")[0]!.slice(0, 120)}"): neither the merge thread nor the chat overrules it or adds another`);
+  }
+
+  /** Can't tell whose failure, raised to the user: one decision (Land Anyway, Try Again, Remove from Queue). */
+  private raiseUnattributed(e: Entry, run: string, question?: string): void {
+    if (e.ruling) delete e.ruling.unattributed;
+    this.raiseDecision(e, { kind: "unattributed", question: question || `Can't tell whose failure: ${e.reason}. Land it anyway, try again, or remove it from the queue?`, choices: [], raisedBy: question ? "merge-thread" : "queue", actions: ["land-anyway", "try-again"], run }, "unattributed", e.reason);
+  }
+
+  /** The thread's try-again on an entry back with its chat: in line again at its commit (its try already counted). */
+  private backInLine(e: Entry): void {
+    this.reviewEvent(e, { kind: "checked" });
+    this.clearRulingTimer(e.id);
+    delete e.ruling;
+    delete e.standing;
+    delete e.reason;
+    delete e.sentBackFor;
+    delete e.sentBackDrafts;
+    this.toFront(e);
+    this.kickSoon();
+  }
+
+  private conflictWhy(files: string[]): string {
+    return `conflicts with ${this.q.target}${files.length ? ` in ${files.length} file${files.length === 1 ? "" : "s"}: ${files.slice(0, 3).join(", ")}${files.length > 3 ? ", …" : ""}` : ""}`;
+  }
+
+  /**
+   * The one way a problem that is the branch's goes back to its chat (al_3): counts a try (the same failure twice, or
+   * out of tries, waits for the user instead), sets the entry back with the chat, and puts one request on the chat's
+   * merge queue chat queue with what failed, its log and the thread's diagnosis. Built from this send-back's facts
+   * only: no earlier conflict's or review's text. Entries with no standing approval (a release's) keep handBack.
+   */
+  private sendBack(e: Entry, f: { cause: SentBackFor; why: string; runId?: string; files?: string[]; review?: string; diagnosis?: string }): void {
+    this.clearConflictTimer(e.id);
+    this.clearRulingTimer(e.id);
+    const run = f.runId ? (this.store.readRun(f.runId) ?? undefined) : undefined;
+    if (e.release || !e.approval.standing) {
+      this.handBack(e, run, f.why, f.cause);
+      return;
+    }
+    // A failure that waited for the thread's diagnosis had its try counted when it happened (awaitDiagnosis).
+    const counted = e.ruling?.pending?.counted && e.ruling.pending.run === f.runId ? e.ruling.pending.counted : undefined;
+    const diagnosis = f.diagnosis ?? e.ruling?.diagnosis;
+    // A review's request is Sova's, from its saved record: the reviewer's words whole, the thread's note after them.
+    const rec = f.cause === "review" ? openReview(e) : undefined;
+    if (rec) {
+      f = { ...f, review: reportText(rec) };
+      if (diagnosis?.trim()) rec.note = { text: diagnosis.trim(), at: this.iso() };
+    }
+    const fingerprint = counted?.fingerprint ?? this.failurePrint(f, run, rec?.findings);
+    const ruling = e.ruling ? { ...(e.ruling.otherTried ? { otherTried: true as const } : {}) } : undefined;
+    if (ruling && Object.keys(ruling).length) e.ruling = ruling;
+    else delete e.ruling;
+    // Stale facts of an earlier attempt never ride along: a conflict's judgement only with this conflict.
+    if (f.cause !== "conflict") {
+      // The resolution was of the merge at the old commit: the chat's fix is merged afresh, so its note goes with it.
+      if (e.conflict) e.notes = e.notes.filter((n) => n.kind !== "resolved");
+      delete e.conflict;
+      delete e.conflictFiles;
+    }
+    if (f.cause !== "review") delete e.review;
+    const t = counted ? { tries: counted.tries, max: counted.max } : this.countTry(e, fingerprint);
+    if (rec) {
+      rec.try = t.tries;
+      rec.of = t.max;
+    }
+    if ("out" in t && t.out) {
+      this.outOfTries(e, t.out === "same-twice" ? `Failed the same way twice: ${f.why}` : `Tried ${t.tries} times: ${f.why}`);
+      return;
+    }
+    e.state = "with-chat";
+    e.sentBackFor = f.cause;
+    e.reason = f.why;
+    e.standing = { phase: "with-chat", try: t.tries, of: t.max, why: f.why };
+    e.updatedAt = this.iso();
+    const text = sendBackText(e, { cause: f.cause, why: f.why, ...(run ? { run, logDir: this.store.runDir(run.id) } : {}), ...(f.files ? { files: f.files } : {}), ...(f.review ? { review: f.review } : {}), ...(diagnosis ? { diagnosis } : {}), attempt: { try: t.tries, of: t.max } });
+    // Every send-back reaches the newest review's card: Fixing for its own, a Stopped card's cause keeps it Stopped.
+    this.reviewEvent(e, { kind: "handed" });
+    this.save();
+    const req = this.request(e, "fix", text, { try: t.tries, fingerprint, ...(run ? { run } : {}) });
+    if (rec) {
+      rec.request = req.id;
+      this.save();
+    }
+  }
+
+  /** The entry's newest review record takes an event (review-record.ts): its card follows; the caller saves. */
+  private reviewEvent(e: Entry, ev: ReviewEvent): void {
+    applyReviewEvent(e, ev, this.iso());
+  }
+
+  /** A send-back's same-failure fingerprint (rulings.ts fingerprintOf). */
+  private failurePrint(f: { cause: SentBackFor; why: string; files?: string[]; review?: string }, run: MergeRun | undefined, findings?: readonly ReviewFinding[]): string {
+    return fingerprintOf({ cause: f.cause, ...(run ? { run, tails: this.failedTails(run) } : {}), ...(f.files ? { files: f.files } : {}), ...(f.review ? { review: f.review } : {}), ...(findings?.length ? { findings } : {}), why: f.why });
+  }
+
+  /** The last lines of each failed step's log that names no failing test (a typecheck, a build): what tells two such
+   *  failures apart (rulings.ts fingerprintOf). */
+  private failedTails(run: MergeRun): Record<string, string> {
+    const out: Record<string, string> = {};
+    for (const s of run.steps) {
+      if (s.result !== "failed" || s.failures?.length || !s.log) continue;
+      try {
+        out[s.id] = readFileSync(join(this.store.runDir(run.id), s.log), "utf8").split("\n").filter(Boolean).slice(-20).join("\n");
+      } catch {
+        /* no log: its detail stands alone */
+      }
+    }
+    return out;
+  }
+
+  /** A failure blamed on the branch waits for the thread's diagnosis (at most rulingWaitMs), then goes back as it is:
+   *  with the thread's note as its diagnosis when it wrote one, else without. */
+  private awaitDiagnosis(e: Entry, p: NonNullable<NonNullable<MergeEntry["ruling"]>["pending"]>): void {
+    // The failure is the branch's: its try counts now, whatever the thread rules (a diagnosis, or a decision for the
+    // user), and the same failure twice, or out of tries, stops here (q2): the user decides, nothing more to the chat.
+    const run = p.run ? (this.store.readRun(p.run) ?? undefined) : undefined;
+    const rec = p.cause === "review" ? openReview(e) : undefined;
+    const fingerprint = p.counted?.fingerprint ?? this.failurePrint(p, run, rec?.findings);
+    // Re-armed after a restart (recover): counted already, never twice.
+    const t = p.counted ? { tries: p.counted.tries, max: p.counted.max } : this.countTry(e, fingerprint);
+    if (rec) {
+      rec.try = t.tries;
+      rec.of = t.max;
+    }
+    if ("out" in t && t.out) {
+      this.clearRulingTimer(e.id);
+      if (e.ruling) delete e.ruling.pending;
+      this.outOfTries(e, t.out === "same-twice" ? `Failed the same way twice: ${p.why}` : `Tried ${t.tries} times: ${p.why}`);
+      return;
+    }
+    p = { ...p, counted: { tries: t.tries, max: t.max, fingerprint } };
+    e.ruling = { ...(e.ruling ?? {}), pending: p };
+    e.state = "with-chat";
+    e.reason = p.why;
+    e.standing = { phase: "with-chat", try: t.tries, of: t.max, why: p.why };
+    e.updatedAt = this.iso();
+    this.save();
+    this.armRulingTimer(e.id, () => {
+      const x = this.entry(e.id);
+      const q = x?.ruling?.pending;
+      if (!x || !q) return;
+      // Only a note the thread wrote for this failure (after it was called in), never the landing note it wrote earlier.
+      // A review goes without one: the thread's note on a review is its hand-off's (merge.note stays the landing note).
+      const note = q.cause === "review" ? undefined : x.notes.find((n) => n.kind === "thread" && n.at >= q.at)?.text;
+      this.sendBack(x, { cause: q.cause, why: q.why, ...(q.run ? { runId: q.run } : {}), ...(q.files ? { files: q.files } : {}), ...(q.review ? { review: q.review } : {}), ...(note ? { diagnosis: note } : {}) });
+    });
+  }
+
+  private armRulingTimer(id: string, fn: () => void): void {
+    this.clearRulingTimer(id);
+    const t = setTimeout(() => {
+      this.rulingTimers.delete(id);
+      void this.serial(async () => fn()).catch((err) => this.log(`ruling wait of ${id}: ${err instanceof Error ? err.message : err}`));
+    }, this.deps.rulingWaitMs ?? RULING_WAIT_MS);
+    t.unref?.();
+    this.rulingTimers.set(id, t);
+  }
+  private clearRulingTimer(id: string): void {
+    const t = this.rulingTimers.get(id);
+    if (t) clearTimeout(t);
+    this.rulingTimers.delete(id);
+  }
+
+  /**
+   * One decision waiting for the user (§app.merge-queue/needs-user): the only writer of `entry.decision`. Sets the
+   * entry waiting (`needs-user`, or the named state), stops whatever waited for a ruling, and raises one card revision
+   * and exactly one notification (notify "decision"); raising the same open question again changes nothing.
+   */
+  raiseDecision(e: Entry, d: Omit<MergeDecision, "id" | "at">, state: "needs-user" | "behaviour-differs" | "unattributed" | "keep" = "needs-user", reason?: string): void {
+    const keep = state === "keep";
+    if (!keep) {
+      this.clearConflictTimer(e.id);
+      this.clearRulingTimer(e.id);
+      if (e.ruling) {
+        delete e.ruling.pending;
+        delete e.ruling.cant;
+      }
+    }
+    const open = e.decision && !e.decision.answered ? e.decision : null;
+    if (open && open.kind === d.kind && open.question === d.question && (keep || e.state === state)) return;
+    // A decision already waits (q3: neither the thread nor the chat overrules the other's raise): the later question
+    // joins it, with its choices, and no second notification. Only a resolution the mechanical check turned down is
+    // replaced, by the thread's next judgement of it.
+    if (open && !(open.raisedBy === "queue" && open.kind === "behaviour-differs")) {
+      const who = d.raisedBy === "chat" ? "the branch's chat" : d.raisedBy === "merge-thread" ? "the merge thread" : "the queue";
+      const question = open.question.includes(d.question) ? open.question : `${open.question}\nAlso, from ${who}: ${d.question}`;
+      // Its click-only answers join too (a later Land, say), so the answer it needs is never refused.
+      const actions = [...new Set([...open.actions, ...d.actions])];
+      const choices = [...new Set([...open.choices, ...d.choices])].slice(0, 6);
+      if (question !== open.question || actions.length !== open.actions.length || choices.length !== open.choices.length || (d.cantSettle && !open.cantSettle)) {
+        e.decision = { ...open, question, choices, actions, ...(d.cantSettle ? { cantSettle: true as const } : {}) };
+        e.updatedAt = this.iso();
+        this.save();
+        this.republish();
+      }
+      return;
+    }
+    e.decision = { ...d, id: newId("dc"), at: this.iso() };
+    this.reviewEvent(e, { kind: "waiting" });
+    if (!keep) {
+      e.state = state;
+      e.reason = reason ?? d.question.split("\n")[0]!.slice(0, 200);
+    }
+    e.updatedAt = this.iso();
+    this.save();
+    // Exactly one notification per decision (a question joining an open one sent none above).
+    this.deps.decided?.(structuredClone(e), this.root);
+    // behaviour-differs and unattributed raise their own revision from the view (cards.ts sync); the rest raise
+    // "decision" here, once per decision.
+    if (state === "needs-user" || keep) this.deps.notify?.("decision", e, { ...(d.run ? { run: this.store.readRun(d.run) ?? undefined } : {}), root: this.root } as { run?: MergeRun; root: string });
+    else this.republish();
+  }
+
+  /**
+   * merge.ask about an entry whose branch chat can take it (asks.ts decide, al_3 v7): the thread's question waits as a
+   * decision on that entry's card, answered from the chat's message box; the answer reaches the thread
+   * (decisionAnswered). The entry keeps its state (landed, in line, back with its chat): only its card asks.
+   */
+  askDecision(entryId: string, a: { id: string; question: string; choices: string[] }): Promise<boolean> {
+    return this.serial(async () => {
+      const e = this.entry(entryId);
+      // A decision already waits on its card: the question is held on the tab instead, its answer kept apart.
+      if (!e || (e.decision && !e.decision.answered)) return false;
+      this.raiseDecision(
+        e,
+        {
+          kind: "needs-you",
+          question: clip(a.question),
+          choices: cleanChoices(a.choices),
+          raisedBy: "merge-thread",
+          actions: [],
+          ask: a.id,
+          heldNote: { request: newId("rq"), text: `The merge thread asked the user (question ${a.id}): ${clip(a.question)}\nTheir answer is the message with this note; Sova passed it to the merge thread too. Nothing to relay: go on with your own work.` },
+        },
+        // The entry keeps its state: the question is the thread's, not a stop of the landing.
+        "keep",
+      );
+      return true;
+    });
+  }
+
+  /** The user answered the entry's decision (a click on it, or their message sent with its held note). */
+  private answerDecision(e: Entry, how: NonNullable<MergeDecision["answered"]>["how"]): void {
+    if (e.decision && !e.decision.answered) e.decision = { ...e.decision, answered: { at: this.iso(), how } };
+  }
+
+  /**
+   * The user sent their answer to a decision from the chat's message box (channel: the held note went with it, in one
+   * turn). The decision is answered and the entry is back with the chat; the held note is its request now.
+   * Answers the held note (to record as delivered), or null when nothing waits.
+   */
+  decisionAnswered(entryId: string, decisionId: string, text?: string, from?: { session?: string }): Promise<{ request: string; text: string } | null> {
+    return this.serial(async () => {
+      const e = this.entry(entryId);
+      if (!e?.decision || e.decision.id !== decisionId || e.decision.answered) return null;
+      const held = e.decision.heldNote ?? null;
+      const ask = e.decision.ask;
+      this.answerDecision(e, "message");
+      // A merge thread question: its answer goes to the thread, and the entry stays where it was.
+      if (ask) {
+        if (text?.trim()) this.deps.answerAsk?.(this.root, ask, text.trim(), from?.session);
+        e.updatedAt = this.iso();
+        this.save();
+        this.republish();
+        return held;
+      }
+      if (e.ruling) delete e.ruling.cant;
+      e.state = "with-chat";
+      e.standing = { phase: "with-chat", try: e.tries?.used ?? 1, of: e.tries?.max ?? 3, why: e.reason ?? "your answer went to the chat" };
+      // A blocking review the user decided before it ever reached the chat: its report goes with their answer, as Sova
+      // wrote it from the saved record (the reviewer's words, then the thread's note); its card is Fixing from here.
+      const rec = openReview(e);
+      let note = held;
+      if (rec && held && !rec.request) {
+        note = { ...held, text: `${held.text}\nThe review's findings, as the reviewer wrote them:\n${reportText(rec)}${rec.note ? `\nMerge thread: ${rec.note.text}` : ""}` };
+        e.decision = { ...e.decision, heldNote: note };
+      }
+      if (rec && held) {
+        rec.request ??= held.request;
+        this.reviewEvent(e, { kind: "handed" });
+      }
+      // The held note is a request from now on, under the id the chat answers it by (merge.respond): recorded here,
+      // delivered with the user's message (channel stamps its delivery), never sent a second time.
+      if (note && !e.requests?.some((r) => r.id === note.request)) {
+        const req = this.addRequest(e, { kind: "decision", text: note.text, ...(e.sentBackFor ? { cause: e.sentBackFor } : {}) });
+        req.id = note.request;
+        req.delivery = "delivered";
+      }
+      e.updatedAt = this.iso();
+      this.save();
+      return note;
+    });
+  }
+
+  /** The branch's chat answered a request "Needs you" (merge.respond, carry): a decision the thread can't overrule. */
+  chatNeedsYou(e: Entry, request: string, question: string, options: string[]): void {
+    const q = clip(question) || "The branch's chat needs your decision.";
+    this.raiseDecision(e, {
+      kind: "needs-you",
+      question: q,
+      choices: cleanChoices(options),
+      raisedBy: "chat",
+      actions: [],
+      heldNote: { request: newId("rq"), text: `The user's answer to what you asked (request ${request}): it comes with this note. Do it their way, then answer this request Fixed (or Can't).` },
+    });
+    this.wake("chat-answer", e, undefined, { request, answer: "needs-you", text: q });
+  }
+
+  /**
+   * The branch's chat answered a request "Can't" (merge.respond, carry): the merge thread rules first and may try one
+   * other approach; with no thread, after its other approach, or with no ruling in time, it is the user's: "can't be
+   * settled without you".
+   */
+  chatCant(e: Entry, request: string, why: string): void {
+    const w = clip(why) || "it gave no reason";
+    const otherTried = !!e.ruling?.otherTried;
+    const asked = this.wake("chat-answer", e, undefined, { request, answer: "cant", text: w, ...(otherTried ? { otherTried: true } : {}) });
+    if (!asked || otherTried) {
+      this.raiseCant(e, request, w);
+      return;
+    }
+    e.ruling = { ...(e.ruling ?? {}), cant: { request, why: w, at: this.iso() } };
+    e.updatedAt = this.iso();
+    this.save();
+    this.armRulingTimer(e.id, () => {
+      const x = this.entry(e.id);
+      if (x?.ruling?.cant) this.raiseCant(x, x.ruling.cant.request, x.ruling.cant.why);
+    });
+  }
+
+  /** A Can't the thread couldn't settle: the user's, "can't be settled without you". */
+  private raiseCant(e: Entry, request: string, why: string): void {
+    this.raiseDecision(e, {
+      kind: "needs-you",
+      question: `${e.branch}'s chat can't fix it: ${why}. This can't be settled without you: how should it go?`,
+      choices: [],
+      raisedBy: "chat",
+      actions: [],
+      cantSettle: true,
+      heldNote: { request: newId("rq"), text: `The user's answer to what you couldn't do (request ${request}): it comes with this note. Do it their way, then answer this request Fixed (or Can't).` },
+    });
+  }
+
+  /** The user's click on a decision (merge.answer, their own click only): Accept, Land Anyway, Try Again or Land.
+   *  Remove from Queue is merge.cancel. Nothing goes to the chat. */
   answer(entryId: string, answer: MergeAnswer, why?: string): Promise<MergeEntry> {
     return this.serial(async () => {
       const e = this.mustEntry(entryId);
-      if (answer === "send-back") {
-        if (!["behaviour-differs", "review-flagged", "unattributed", "conflict", "drafts-changed", "request-review", "requested"].includes(e.state)) throw new MergeFailure("invalid-request", `${e.branch} isn't waiting for you (it is ${e.state})`);
-        this.clearConflictTimer(e.id);
-        const was = e.state;
-        e.state = "needs-fix";
-        e.sentBackFor = "user";
-        e.reason = why?.trim() || (was === "unattributed" ? `a check failed on the merge and on ${e.target} alone, and couldn't say whose failure it is${e.reason ? ` (${e.reason})` : ""}` : was === "review-flagged" ? `the review flagged it: ${e.review?.text ?? ""}`.trim() : was === "drafts-changed" ? "its spec drafts changed since you approved" : was === "request-review" || was === "requested" ? `its request needs another look${e.request?.facts?.checks === "fail" ? ": the host's checks failed" : e.request?.facts?.review === "changes-requested" ? ": changes were requested on the host" : e.request?.facts?.mergeable === "conflicts" ? `: it conflicts with ${e.target} on the host` : ""}` : `conflicts with ${e.target}${e.conflict?.files.length ? ` in ${e.conflict.files.join(", ")}` : ""}`);
-        e.updatedAt = this.iso();
-        this.save();
-        this.deps.notify?.("sent-back", e, { root: this.root });
-        return e;
-      }
+      void why;
       if (answer === "accept") {
         if (e.state !== "behaviour-differs") throw new MergeFailure("invalid-request", `Accept answers a conflict whose sides differ; ${e.branch} is ${e.state}`);
-        if (!e.conflict?.commit) throw new MergeFailure("invalid-request", "there is no proposed resolution to accept yet: Send Back, or wait for the merge thread's proposal");
+        if (!e.conflict?.commit) throw new MergeFailure("invalid-request", "there is no proposed resolution to accept: answer in the branch's chat, or Remove from Queue");
+        this.answerDecision(e, "accept");
         e.notes = e.notes.filter((n) => n.kind !== "resolved");
         e.notes.push({ kind: "resolved", text: `You accepted the resolution of ${e.conflict.files.join(", ") || "its conflict"}: ${e.conflict.proposal}`.slice(0, NOTE_MAX), at: this.iso() });
         delete e.reason;
@@ -1400,16 +2110,23 @@ export class ProjectQueue {
         this.kickSoon();
         return e;
       }
+      if (answer === "try-again") {
+        if (e.state !== "unattributed") throw new MergeFailure("invalid-request", `Try Again answers a failure no one can be blamed for; ${e.branch} is ${e.state}`);
+        // Not the branch's: back in line at the same commit, every check afresh, counting no try.
+        this.answerDecision(e, "try-again");
+        delete e.unclear;
+        delete e.reason;
+        this.toFront(e);
+        this.save();
+        this.kickSoon();
+        return e;
+      }
+      if (answer === "land") return this.answerLand(e);
       if (answer === "land-anyway") {
-        if (e.state !== "review-flagged" && e.state !== "unattributed") throw new MergeFailure("invalid-request", `Land Anyway answers a flagged review or a failure no one can be blamed for; ${e.branch} is ${e.state}`);
-        if (e.state === "unattributed") {
-          e.notes.push({ kind: "master-red", text: `Landed anyway: ${e.reason ?? "a check failed on the merge and on the target alone"}`.slice(0, NOTE_MAX), at: this.iso() });
-          e.approval.overUnattributed = true;
-        } else {
-          e.notes = e.notes.filter((n) => n.kind !== "review");
-          e.notes.push({ kind: "review", text: `Landed over the review: ${e.review?.text ?? "flagged"}`.slice(0, NOTE_MAX), at: this.iso() });
-          e.approval.withoutReview = true;
-        }
+        if (e.state !== "unattributed") throw new MergeFailure("invalid-request", `Land Anyway answers a failure no one can be blamed for; ${e.branch} is ${e.state}`);
+        this.answerDecision(e, "land-anyway");
+        e.notes.push({ kind: "master-red", text: `Landed anyway: ${e.reason ?? "a check failed on the merge and on the target alone"}`.slice(0, NOTE_MAX), at: this.iso() });
+        e.approval.overUnattributed = true;
         const run = e.run ? this.store.readRun(e.run) : null;
         // The tested tip lands only onto the target it was tested on; the line moved on meanwhile: rerun it first.
         if (run?.tip && !this.current && (await this.targetHead()) === run.base) {
@@ -1424,20 +2141,556 @@ export class ProjectQueue {
         }
         return e;
       }
-      throw new MergeFailure("invalid-request", 'answer is "accept", "send-back" or "land-anyway"');
+      throw new MergeFailure("invalid-request", 'answer is "accept", "land-anyway", "try-again" or "land"');
     });
   }
 
+  // ---- al_3 carry: the standing approval and the chat's answers (§app.merge-queue/standing-approval,
+  // §app.merge-queue/tries, §chat.merge-queue/answers, §chat.worktrees/ready-to-land) ----------------------------
+
+  /** A new request of the branch's chat, recorded on its entry (oldest first). The caller saves. */
+  addRequest(e: Entry, r: { kind: MergeRequestKind; text: string; cause?: SentBackFor; try?: number; fingerprint?: string }): MergeChatRequest {
+    const req: MergeChatRequest = {
+      id: newId("rq"),
+      kind: r.kind,
+      entry: e.id,
+      branch: e.branch,
+      ...(e.session ? { session: e.session } : {}),
+      text: r.text,
+      ...(r.cause ? { cause: r.cause } : {}),
+      ...(r.try ? { try: r.try } : {}),
+      ...(r.fingerprint ? { fingerprint: r.fingerprint } : {}),
+      at: this.iso(),
+      delivery: "queued",
+    };
+    e.requests = [...(e.requests ?? []), req].slice(-REQUESTS_KEPT);
+    e.updatedAt = this.iso();
+    return req;
+  }
+
+  /** A request recorded, saved and sent to the branch's chat (deps.notify with `{request}`: a fix as "needs-fix",
+   *  anything else as "request"). */
+  private request(e: Entry, kind: MergeRequestKind, text: string, o: { try?: number; fingerprint?: string; run?: MergeRun; cause?: SentBackFor }): MergeChatRequest {
+    const req = this.addRequest(e, { kind, text, ...(o.try ? { try: o.try } : {}), ...(o.fingerprint ? { fingerprint: o.fingerprint } : {}), ...(o.cause ?? e.sentBackFor ? { cause: o.cause ?? e.sentBackFor } : {}) });
+    this.save();
+    this.deps.notify?.(kind === "fix" ? "needs-fix" : "request", e, { ...(o.run ? { run: o.run, logDir: this.store.runDir(o.run.id) } : {}), root: this.root, request: req });
+    return req;
+  }
+
+  /** How a request reached its chat (the chat queue, or the fallback for a chat that can't take notes). */
+  requestDelivered(requestId: string, delivery: NonNullable<MergeChatRequest["delivery"]>, to?: string): void {
+    const r = this.requestOf(requestId)?.request;
+    if (!r || (r.delivery === delivery && (!to || r.to === to))) return;
+    r.delivery = delivery;
+    if (to) r.to = to;
+    this.save();
+  }
+
+  /** The request `id` and its entry, wherever it is. */
+  requestOf(id: string): { entry: Entry; request: MergeChatRequest } | undefined {
+    for (const e of this.q.entries) {
+      const r = e.requests?.find((x) => x.id === id);
+      if (r) return { entry: e, request: r };
+    }
+    return undefined;
+  }
+
+  /**
+   * A run that ends sent back to the chat counts one of the standing approval's tries (§app.merge-queue/tries). `out`:
+   * this was the last try, or the run failed the same way as the one before it (`fingerprint`, rulings.ts). Callers
+   * count only runs whose failure is the branch's (never a void run, a machine failure, or one nobody can be blamed for).
+   */
+  /** Whether a try counted now with `fingerprint` would run out (countTry's rule, changing nothing). */
+  private triesOut(e: Entry, fingerprint: string): "out-of-tries" | "same-twice" | undefined {
+    const t = e.tries ?? { used: 0, max: MERGE_TRIES, fingerprints: [] };
+    if (t.fingerprints.length > 0 && t.fingerprints[t.fingerprints.length - 1] === fingerprint) return "same-twice";
+    return t.used + 1 >= t.max ? "out-of-tries" : undefined;
+  }
+
+  countTry(e: Entry, fingerprint?: string): { tries: number; max: number; out?: "out-of-tries" | "same-twice" } {
+    const t = e.tries ?? { used: 0, max: MERGE_TRIES, fingerprints: [] };
+    const same = !!fingerprint && t.fingerprints.length > 0 && t.fingerprints[t.fingerprints.length - 1] === fingerprint;
+    // The conflict that was already there at the Land counts no try, once.
+    const free = !!e.approval.conflictAtLand && !!fingerprint?.startsWith("conflict:");
+    if (free) {
+      delete e.approval.conflictAtLand;
+      if (fingerprint) t.fingerprints = [...t.fingerprints, fingerprint].slice(-t.max);
+      e.tries = t;
+      // Counts no try, and shows none: the chat's next send-back that counts reads "try 1 of 3".
+      return { tries: t.used, max: t.max };
+    }
+    t.used += 1;
+    if (fingerprint) t.fingerprints = [...t.fingerprints, fingerprint].slice(-t.max);
+    e.tries = t;
+    const out = same ? ("same-twice" as const) : t.used >= t.max ? ("out-of-tries" as const) : undefined;
+    return { tries: t.used, max: t.max, ...(out ? { out } : {}) };
+  }
+
+  /** Out of tries: the entry waits for the user (Land, a new standing approval with 3 new tries, or Remove from
+   *  Queue); nothing more goes to its chat; one notification (raiseDecision). */
+  private outOfTries(e: Entry, reason: string): void {
+    delete e.standing;
+    delete e.fix;
+    delete e.pausedFrom;
+    this.raiseDecision(e, { kind: "out-of-tries", question: reason, choices: [], raisedBy: "queue", actions: ["land", "remove"] });
+  }
+
+  /**
+   * merge.respond: the branch's chat answers a request by its id, once: Fixed (a commit, drafts, or both), Needs you
+   * (a question and its options for the user), or Can't (why). Only the chat the request went to answers it; a merge
+   * thread's question is the user's (merge.reply). An answer never approves anything: it moves only an entry whose
+   * standing approval still holds, and a fix lands only once the merge thread checked it.
+   */
+  respond(requestId: string, from: string | null, a: { answer: string; text?: string; commit?: string; drafts?: boolean; options?: string[] }): Promise<{ entry: MergeEntry; request: MergeChatRequest }> {
+    return this.serial(async () => {
+      const found = this.requestOf(requestId);
+      if (!found) throw new MergeFailure("not-found", `no merge queue request ${requestId}`);
+      const e = found.entry;
+      const r = found.request;
+      if (r.kind === "thread-ask") throw new MergeFailure("forbidden", "that is the merge thread's question to your user: they answer it with their own next message; nothing for you to answer or relay");
+      if (!from || (r.session !== from && r.to !== from)) throw new MergeFailure("forbidden", "only the chat the request was sent to answers it");
+      if (r.answer) throw new MergeFailure("invalid-request", `request ${requestId} is answered already (${r.answer.kind})`);
+      const text = a.text?.trim() ?? "";
+      if (text.length > 2000) throw new MergeFailure("invalid-request", "keep the answer under 2000 characters");
+      if (a.answer !== "fixed" && a.answer !== "needs-you" && a.answer !== "cant") throw new MergeFailure("invalid-request", 'answer is "fixed", "needs-you" or "cant"');
+      // The user's Land must still stand: one they ended, that landed, or that waits for their decision is never moved
+      // by an answer.
+      if (!e.approval.standing || !ANSWERABLE.includes(e.state))
+        throw new MergeFailure(
+          "invalid-request",
+          `${e.branch} ${e.state === "landed" ? "landed already: a newer commit is later work, landed only by the user's Land Again" : e.state === "cancelled" ? "was removed from the queue by the user: nothing to answer" : e.state === "needs-user" || e.state === "needs-fix" ? "waits for the user's decision now: nothing to answer" : `is ${e.state}: nothing to answer`}`,
+        );
+      if (a.answer === "needs-you") {
+        if (!text) throw new MergeFailure("invalid-request", "say the question for your user (text)");
+        const options = (a.options ?? []).map((o) => o.trim()).filter(Boolean);
+        r.answer = { kind: "needs-you", question: text, options, at: this.iso() };
+        delete e.fix;
+        delete e.pausedFrom;
+        this.chatNeedsYou(e, r.id, text, options);
+        this.save();
+        return { entry: this.withPosition(e), request: structuredClone(r) };
+      }
+      if (a.answer === "cant") {
+        if (!text) throw new MergeFailure("invalid-request", "say why you can't (text)");
+        r.answer = { kind: "cant", why: text, at: this.iso() };
+        delete e.fix;
+        if (e.state === "with-chat") this.setPhase(e, { phase: "waiting-thread", answer: r.answer });
+        this.chatCant(e, r.id, text);
+        this.save();
+        return { entry: this.withPosition(e), request: structuredClone(r) };
+      }
+      // Fixed: what changed, read from the branch itself (the chat never sends a hash).
+      const tip = await revParse(this.git, this.root, `refs/heads/${e.branch}`);
+      if (!tip) throw new MergeFailure("not-found", `no branch ${e.branch} in ${this.root}`);
+      let commit: string | undefined;
+      if (a.commit) {
+        const c = await revParse(this.git, this.root, a.commit);
+        if (!c) throw new MergeFailure("not-found", `no commit ${a.commit} in ${this.root}`);
+        if (c !== tip && !(await isAncestor(this.git, this.root, c, tip))) throw new MergeFailure("invalid-request", `${c.slice(0, 7)} isn't on ${e.branch}`);
+        if (c !== e.commit) commit = c;
+      } else if (!a.drafts && tip !== e.commit) commit = tip;
+      const wt = e.worktree && existsSync(e.worktree) ? e.worktree : undefined;
+      const drafts = !e.approval.withoutSpecs && wt ? await this.branchDrafts(wt, commit ?? e.commit) : undefined;
+      const draftsMoved = (drafts?.hash ?? null) !== (e.approval.drafts?.hash ?? null);
+      const draftsFix = !!a.drafts || (draftsMoved && !commit);
+      if (!commit && !draftsFix) throw new MergeFailure("invalid-request", `nothing changed on ${e.branch} since the request: name the commit you made (commit), or say drafts: true once you changed its spec drafts`);
+      const answer: MergeChatAnswer = {
+        kind: "fixed",
+        changed: commit && draftsFix ? "both" : commit ? "commit" : "drafts",
+        ...(commit ? { commit } : {}),
+        ...(draftsFix && drafts ? { drafts: { hash: drafts.hash, names: drafts.names } } : {}),
+        summary: text || (commit ? `commit ${commit.slice(0, 7)}` : "its spec drafts"),
+        at: this.iso(),
+      };
+      r.answer = answer;
+      e.updatedAt = this.iso();
+      // A fix that arrives while the entry's run is checking waits for that run: never voided for it. If the run lands,
+      // the fix is later work (Land Again); if not, the merge thread is handed it once the run ends (recheckWithChat).
+      if (e.state === "checking") {
+        e.fix = { request: r.id, told: false, at: this.iso() };
+        this.save();
+        this.armFixTimer();
+        return { entry: this.withPosition(e), request: structuredClone(r) };
+      }
+      // In line, not started: out of line until the thread has checked the fix (it goes back in at the fix's commit).
+      if (e.state === "queued") e.state = "with-chat";
+      // The merge thread checks it changes only what was asked; until it rules (or while it isn't running) it waits.
+      const fixBase = commit ? await this.mergeBase(commit) : undefined;
+      const told = this.wake("fix", e, undefined, { request: r.id, asked: r.text, ...(commit ? { fixCommit: commit } : {}), ...(draftsFix ? { drafts: true } : {}), summary: answer.summary, ...(fixBase ? { base: fixBase } : {}) });
+      e.fix = { request: r.id, told, at: this.iso() };
+      if (e.state === "with-chat") this.setPhase(e, { phase: "waiting-thread", answer });
+      this.save();
+      this.armFixTimer();
+      return { entry: this.withPosition(e), request: structuredClone(r) };
+    });
+  }
+
+  /** Set a with-chat entry's phase; while the user's Stop pauses it, the phase it returns to. */
+  private setPhase(e: Entry, s: MergeStanding): void {
+    if (e.standing?.phase === "paused") e.pausedFrom = s;
+    else e.standing = s;
+    e.updatedAt = this.iso();
+  }
+
+  /**
+   * The merge thread's ruling on a fix (merge.rule checked | beyond): `request` is the fix it checked. Checked: Sova
+   * runs Land's checks on the fix and, when they pass, re-pins the approval's commit and drafts and puts it back in
+   * line, with no new Land. Beyond: it changes more than was asked, so it waits for the user. A drafts-changed entry
+   * (drafts changed since the Land, with no request) is ruled by its entry: checked re-pins its drafts.
+   */
+  fixRuling(entryId: string, request: string | undefined, ok: boolean, text: string): Promise<MergeEntry> {
+    return this.serial(async () => {
+      const found = request ? this.requestOf(request) : undefined;
+      if (request && !found) throw new MergeFailure("not-found", `no merge queue request ${request}`);
+      const e = found?.entry ?? this.mustEntry(entryId);
+      if (found && found.entry.id !== entryId) throw new MergeFailure("invalid-request", `request ${request} is ${found.entry.branch}'s, not entry ${entryId}'s`);
+      const r = found?.request;
+      if (!e.approval.standing || e.state !== "with-chat") throw new MergeFailure("invalid-request", `${e.branch} is ${e.state}: no fix waits for your check`);
+      if (r && r.answer?.kind !== "fixed") throw new MergeFailure("invalid-request", `request ${r.id} wasn't answered Fixed${r.answer ? ` (it was ${r.answer.kind})` : ""}: nothing to check`);
+      if (!r) throw new MergeFailure("invalid-request", "name the request (rq_…) whose fix you checked");
+      const answer = r?.answer?.kind === "fixed" ? r.answer : undefined;
+      delete e.fix;
+      if (!ok) {
+        const what = text.trim() || "more than the request asked";
+        this.raiseDecision(e, { kind: answer ? "fix-ok" : "drafts-changed", question: `${answer ? "The fix changes" : "Its spec drafts change"} more than was asked: ${what}`, choices: [], raisedBy: "merge-thread", actions: ["land", "remove"] });
+        this.save();
+        return this.withPosition(e);
+      }
+      // A fix that rewrote the branch (a rebase, an amend): the approved commit isn't under it, so nothing can tell its
+      // commits from work the user asked for (a rebase rewrites their dates too). Never covered by the Land: the user
+      // decides once.
+      if (answer?.commit && r && !(await isAncestor(this.git, this.root, e.commit, answer.commit))) {
+        this.raiseDecision(e, { kind: "fix-ok", question: `The fix rewrote ${e.branch}'s history (a rebase or an amend), so Sova can't tell the fix from other work on it: Land takes ${e.branch} at ${answer.commit.slice(0, 7)} as it is now`, choices: [], raisedBy: "queue", actions: ["land", "remove"] });
+        e.fix = { request: r.id, told: true, at: this.iso() };
+        this.save();
+        return this.withPosition(e);
+      }
+      // A fix on top of work the user asked for meanwhile (their commit came first): the card asks them once.
+      if (answer?.commit && r) {
+        // Counted from the newest commit the Land already covers: the pinned commit, or an earlier request's fix the
+        // thread checked (its requeue may have been held, so the pin didn't move) that this fix builds on.
+        let from = e.commit;
+        for (const x of [...(e.requests ?? [])].reverse()) {
+          const c = x.id !== r.id && x.checkedAt && x.answer?.kind === "fixed" ? x.answer.commit : undefined;
+          if (c && c !== answer.commit && (await isAncestor(this.git, this.root, c, answer.commit)) && (await isAncestor(this.git, this.root, from, c))) {
+            from = c;
+            break;
+          }
+        }
+        const unasked = await this.unaskedWork(from, answer.commit, r.at);
+        if (unasked) {
+          this.raiseDecision(e, { kind: "fix-ok", question: `The fix sits on top of ${unasked} the merge queue didn't ask for: Land takes ${e.branch} at ${answer.commit.slice(0, 7)}, that work included`, choices: [], raisedBy: "queue", actions: ["land", "remove"] });
+          e.fix = { request: r.id, told: true, at: this.iso() };
+          this.save();
+          return this.withPosition(e);
+        }
+      }
+      // Only what the thread checked is pinned: the drafts as the answer recorded them (a commit-only fix: as the approval
+      // pinned them). Drafts edited since the answer are a change nobody checked: the user's to decide (q8), never
+      // landed on the standing Land.
+      if (answer) {
+        const wt = e.worktree && existsSync(e.worktree) ? e.worktree : undefined;
+        const now = !e.approval.withoutSpecs && wt ? await this.branchDrafts(wt, answer.commit ?? e.commit) : undefined;
+        const checked = answer.changed === "commit" ? e.approval.drafts?.hash : answer.drafts?.hash;
+        if ((now?.hash ?? null) !== (checked ?? null)) {
+          this.raiseDecision(e, { kind: "drafts-changed", question: `${e.branch}'s spec drafts changed after its chat answered Fixed, so the merge thread never checked them as they are now: Land takes them as they are now`, choices: [], raisedBy: "queue", actions: ["land", "remove"] });
+          this.save();
+          return this.withPosition(e);
+        }
+      }
+      // Checked: covered by the Land from here on, whether or not it goes back in line now.
+      if (r) r.checkedAt = this.iso();
+      await this.requeueFix(e, answer?.commit ?? e.commit, r?.id);
+      return this.withPosition(e);
+    });
+  }
+
+  /** The fix's merge base with the target: what the merge thread diffs the fix against (never two-dot from the old
+   *  approved commit, which after a rebase holds the target's own changes). */
+  private async mergeBase(commit: string): Promise<string | undefined> {
+    const r = await this.git(["merge-base", `refs/heads/${this.q.target}`, commit], this.root);
+    return r.code === 0 ? r.stdout.trim() || undefined : undefined;
+  }
+
+  /** How many commits in `from..to` were made before the request (`since`): work the user asked for, not the fix. */
+  private async unaskedWork(from: string, to: string, since: string): Promise<string | null> {
+    // The branch's own commits only: a merge of the target into the branch (the fix for a conflict) brings the target's
+    // commits, which are nobody's unasked work; the merge commit itself is the fix's.
+    // Author dates: a rebase or a cherry-pick keeps them (it rewrites committer dates).
+    const r = await this.git(["log", "--first-parent", "--format=%at", `${from}..${to}`, "--not", `refs/heads/${this.q.target}`], this.root);
+    if (r.code !== 0) return null;
+    const at = Math.floor(Date.parse(since) / 1000);
+    const n = r.stdout.split("\n").filter(Boolean).filter((t) => Number(t) < at).length;
+    return n ? `${n} commit${n === 1 ? "" : "s"}` : null;
+  }
+
+  /**
+   * Land on a decision (the user's own click): out of tries, a new standing approval at the branch's newest commit
+   * with 3 new tries; a fix that needs their OK (on top of their own work, or changing more than was asked), it goes
+   * back in line at the fix's commit, that work included; drafts changed beyond fitting, re-pinned as they are now.
+   * The caller is inside serial.
+   */
+  private async answerLand(e: Entry): Promise<MergeEntry> {
+    const d = e.decision && !e.decision.answered ? e.decision : null;
+    if (!d || !d.actions.includes("land")) throw new MergeFailure("invalid-request", `Land answers a decision that offers it; ${e.branch} is ${e.state}`);
+    if (d.kind === "out-of-tries") {
+      this.answerDecision(e, "land");
+      e.state = "cancelled";
+      e.reason = "landed again by you";
+      e.updatedAt = this.iso();
+      this.save();
+      const r = await this.addNow({ branch: e.branch, by: "land-button", ...(e.session ? { session: e.session } : {}), ...(e.approval.withoutSpecs ? { withoutSpecs: true } : {}), ...(e.approval.withoutReview ? { withoutReview: true } : {}), ...(e.approval.via ? { via: e.approval.via } : {}) });
+      return r.entry;
+    }
+    // fix-ok / drafts-changed: the fix's commit (the newest Fixed answer's), else the commit as pinned.
+    const r = [...(e.requests ?? [])].reverse().find((x) => x.answer?.kind === "fixed");
+    const a = r?.answer?.kind === "fixed" ? r.answer : undefined;
+    this.answerDecision(e, "land");
+    delete e.fix;
+    e.state = "with-chat";
+    // A fix that rewrote the branch: the user's Land takes the branch as it is now, as their own approval of it (not a
+    // fix the Land carried), so the Landed card lists no rewritten commits as fixes.
+    if (a?.commit && !(await isAncestor(this.git, this.root, e.commit, a.commit))) {
+      e.approval.userCommit = a.commit;
+      await this.requeueFix(e, a.commit, undefined, this.iso());
+      return this.withPosition(e);
+    }
+    await this.requeueFix(e, a?.commit ?? e.commit, r?.id, this.iso());
+    return this.withPosition(e);
+  }
+
+  /**
+   * What keeps the commit from going back in line by itself (Land's refusals, and what Ready to land checks itself:
+   * conflicts with the target, the chat's own failing check run, drafts that don't fit), in words; null when nothing.
+   */
+  private async fixBlocked(e: Pick<Entry, "branch" | "worktree" | "session" | "approval">, commit: string, drafts: { hash: string; names: string[] } | undefined): Promise<string | null> {
+    const tip = await revParse(this.git, this.root, `refs/heads/${e.branch}`);
+    if (!tip) return `${e.branch} is gone`;
+    const wt = e.worktree && existsSync(e.worktree) ? e.worktree : undefined;
+    if (wt && commit === tip) {
+      const st = await this.git(statusArgs("--porcelain"), wt);
+      const n = st.code === 0 ? st.stdout.split("\n").filter(Boolean).length : 0;
+      if (n) return `${n} uncommitted file${n === 1 ? "" : "s"} in its folder: commit or remove them`;
+    }
+    const subject = (await this.git(["log", "-1", "--format=%s", commit], this.root)).stdout.trim();
+    if (/^temp\b/i.test(subject)) return `its commit is a temporary commit ("${subject.slice(0, 60)}"): reword or squash it`;
+    const head = await this.targetHead();
+    if (head && (await this.leftOf(e.branch, commit, wt, head))?.nothingLeft) return nothingToLandWords(this.q.target);
+    // A conflict with the target never blocks here: it goes in line, and its run's merge step hands it to the merge
+    // thread's conflict judgement (resolved by the thread, the chat's to fix with the thread's diagnosis, or the user's
+    // to decide), never straight to the chat unjudged (q3).
+    if (e.session) {
+      const failing = await this.deps.chatCheckFailing?.(e.session, wt).catch(() => null);
+      if (failing) return `${failing}: fix it and run it again`;
+    }
+    if (wt && drafts && !e.approval.withoutSpecs && this.deps.docsCheck) {
+      const d = this.deps.docsCheck(wt, commit, drafts.hash, () => this.armFixTimer(1000));
+      if (d !== "pending" && d.problems.length) return `its spec drafts don't fit: ${d.problems.slice(0, 4).join("; ")}${d.problems.length > 4 ? `; and ${d.problems.length - 4} more` : ""}. Fix them in the drafts: that needs no commit`;
+    }
+    return null;
+  }
+
+  /** Tell the chat, as a request, what still keeps its approved branch out of line (once per reason). */
+  private tellBlocked(e: Entry, why: string): void {
+    const last = e.requests?.[e.requests.length - 1];
+    if (last?.kind === "blocked" && !last.answer && last.text.includes(why)) return;
+    this.request(e, "blocked", blockedText(e, why), {});
+  }
+
+  /**
+   * A checked fix (or an approval nothing blocks any more) goes back in line by itself at `commit`: Land's checks
+   * first; then the approval's commit and drafts are re-pinned, its options and tries kept, and it joins the end of
+   * the line. Still blocked: it stays with the chat, told what blocks it. The caller is inside serial.
+   */
+  /** `press`: the user's Land on a decision put it back (its time), else an automatic re-queue of a checked fix. */
+  private async requeueFix(e: Entry, commit: string, request?: string, press?: string): Promise<void> {
+    const wt = e.worktree && existsSync(e.worktree) ? e.worktree : undefined;
+    const drafts = !e.approval.withoutSpecs && wt ? await this.branchDrafts(wt, commit) : undefined;
+    const blocked = await this.fixBlocked(e, commit, drafts);
+    if (blocked) {
+      e.state = "with-chat";
+      this.setPhase(e, { phase: "waiting-fix", why: blocked });
+      e.reason = blocked;
+      this.save();
+      this.tellBlocked(e, blocked);
+      this.armFixTimer();
+      return;
+    }
+    this.reviewEvent(e, { kind: "checked" });
+    const moved = commit !== e.commit;
+    e.commit = commit;
+    e.approval.commit = commit;
+    if (drafts) e.approval.drafts = { hash: drafts.hash, names: drafts.names };
+    else delete e.approval.drafts;
+    delete e.approval.blocked;
+    if (request) e.approval.fixes = [...(e.approval.fixes ?? []), { request, ...(moved ? { commit } : {}), ...(drafts ? { drafts: drafts.hash } : {}), checkedAt: this.iso() }];
+    // A resolution of the old commit's conflict doesn't fit the new one: the next run judges afresh.
+    if (moved) {
+      delete e.conflict;
+      delete e.conflictFiles;
+      e.notes = e.notes.filter((n) => n.kind !== "resolved");
+    }
+    delete e.standing;
+    delete e.fix;
+    delete e.pausedFrom;
+    delete e.reason;
+    delete e.sentBackFor;
+    delete e.sentBackDrafts;
+    delete e.newerCommits;
+    delete e.ruling;
+    this.clearRulingTimer(e.id);
+    e.state = "queued";
+    e.seq = ++this.q.seq;
+    e.updatedAt = this.iso();
+    if (!this.current && !this.q.entries.some((x) => x !== e && (x.state === "queued" || x.state === "checking"))) this.q.knownTarget = (await this.targetHead()) ?? this.q.knownTarget;
+    this.save();
+    this.wake("queued", e);
+    this.deps.notify?.("approved", this.withPosition(e), { root: this.root, ...(press ? { press } : {}) });
+    this.kickSoon();
+  }
+
+  /**
+   * Stop in the branch's chat pauses its requests (q11): the card reads "Paused: you stopped the chat" and nothing
+   * of it moves until the user's next message (`paused` false), when the phase it had comes back.
+   */
+  chatPaused(session: string, paused: boolean): Promise<void> {
+    return this.serial(async () => {
+      let changed = false;
+      for (const e of this.q.entries) {
+        // The branch's chat, or the chat its requests reach (a worker's branch: the chat running the worker).
+        if (e.state !== "with-chat" || (e.session !== session && !e.requests?.some((r) => r.to === session))) continue;
+        if (paused && e.standing?.phase !== "paused") {
+          if (e.standing) e.pausedFrom = e.standing;
+          e.standing = { phase: "paused" };
+        } else if (!paused && e.standing?.phase === "paused") {
+          e.standing = e.pausedFrom ?? { phase: "waiting-fix", why: e.reason ?? "" };
+          delete e.pausedFrom;
+        } else continue;
+        e.updatedAt = this.iso();
+        changed = true;
+      }
+      if (!changed) return;
+      this.save();
+      if (!paused) this.armFixTimer(0);
+    });
+  }
+
+  private fixTimer: ReturnType<typeof setTimeout> | null = null;
+  private fixTimerAt = 0;
+  /** Look at the entries with their chats again in `ms` (default a minute): a blocked approval nothing blocks any
+   *  more goes in line; a fix or Can't the merge thread wasn't told of is handed to it once it runs (q14). */
+  private armFixTimer(ms = FIX_RECHECK_MS): void {
+    if (this.stopped) return;
+    const at = this.now() + ms;
+    if (this.fixTimer && this.fixTimerAt <= at) return;
+    if (this.fixTimer) clearTimeout(this.fixTimer);
+    this.fixTimerAt = at;
+    this.fixTimer = setTimeout(() => {
+      this.fixTimer = null;
+      void this.serial(() => this.recheckWithChat()).catch((err) => this.log(`recheck failed: ${err instanceof Error ? err.message : err}`));
+    }, ms);
+    this.fixTimer.unref?.();
+  }
+
+  /** A conflict no merge thread took (none running, or no ruling in time): it waits for the thread, and recheckWithChat
+   *  hands it over again once the thread runs (threadActed, or every minute). The caller saves after. */
+  private waitForThread(e: Entry): void {
+    this.clearConflictTimer(e.id);
+    e.fix = { request: CONFLICT_WAIT, told: false, at: this.iso() };
+    if (!/waiting for the merge thread/.test(e.reason ?? "")) e.reason = `${e.reason ?? `conflicts with ${this.q.target}`}; waiting for the merge thread`;
+    e.updatedAt = this.iso();
+    this.save();
+    this.armFixTimer();
+  }
+
+  /** Look at the entries with their chats again now (tests; a thread that just started). */
+  recheckNow(): Promise<void> {
+    return this.serial(() => this.recheckWithChat());
+  }
+
+  /** The project's merge thread called a merge verb: it runs, so a fix it wasn't told of is handed to it now (q14). */
+  threadActed(): void {
+    if (this.q.entries.some((e) => e.fix && !e.fix.told)) this.armFixTimer(0);
+  }
+
+  private async recheckWithChat(): Promise<void> {
+    let more = false;
+    for (const e of this.q.entries) {
+      // A conflict's wait for the thread ends once the thread judged it (or it left the conflict state any other way).
+      if (e.fix?.request === CONFLICT_WAIT && e.state !== "conflict") {
+        delete e.fix;
+        this.save();
+      }
+      // A conflict waiting for the merge thread: handed to it (with a fresh scratch copy) once it runs.
+      if (e.state === "conflict" && e.fix?.request === CONFLICT_WAIT && e.approval.standing) {
+        more = true;
+        if (e.fix.told) continue;
+        const scratch = this.deps.thread ? await this.makeScratch(e, (await this.targetHead()) ?? e.commit) : {};
+        const told = this.wake("conflict", e, e.run, { files: e.conflictFiles ?? [], ...scratch });
+        if (told) {
+          e.fix = { ...e.fix, told: true, at: this.iso() };
+          this.save();
+          this.armConflictTimer(e, e.run ? { id: e.run } : undefined);
+        }
+        continue;
+      }
+      if (!e.approval.standing || (e.state !== "with-chat" && !((e.state === "queued" || e.state === "checking") && e.fix))) continue;
+      more = true;
+      // A fix that came while its run was checking waits for that run to end.
+      if (e.state === "checking") continue;
+      // That run ended in line again (voided, a machine failure): the fix comes out of line until the thread checks it.
+      if (e.state === "queued" && e.fix) {
+        e.state = "with-chat";
+        e.fix = { ...e.fix, told: false };
+        const a = e.requests?.find((x) => x.id === e.fix!.request)?.answer;
+        e.standing = { phase: "waiting-thread", ...(a ? { answer: a } : {}) };
+        e.updatedAt = this.iso();
+      }
+      if (e.standing?.phase === "paused") continue;
+      // The merge thread wasn't running when the chat answered Fixed, or hasn't ruled for a while (a wake into a thread
+      // that crashed still reads as told): hand it the fix again. Never land unchecked, never ask the user for this.
+      if (e.fix && e.fix.told && this.now() - Date.parse(e.fix.at) >= FIX_REWAKE_MS) e.fix = { ...e.fix, told: false, at: this.iso() };
+      if (e.fix && !e.fix.told) {
+        const r = e.requests?.find((x) => x.id === e.fix!.request);
+        const a = r?.answer;
+        if (r && a?.kind === "fixed") {
+          const fixBase = a.commit ? await this.mergeBase(a.commit) : undefined;
+          e.fix.told = this.wake("fix", e, undefined, { request: r.id, asked: r.text, ...(a.commit ? { fixCommit: a.commit } : {}), ...(a.changed !== "commit" ? { drafts: true } : {}), summary: a.summary, ...(fixBase ? { base: fixBase } : {}) });
+          if (e.fix.told) this.save();
+        }
+        continue;
+      }
+      // Approved · waiting for a fix, at the same commit and drafts: once nothing blocks it, in line it goes.
+      if (e.standing?.phase === "waiting-fix" && !e.fix) {
+        const tip = await revParse(this.git, this.root, `refs/heads/${e.branch}`);
+        if (tip !== e.commit) continue; // a new commit is a fix only once the chat answers for it
+        const wt = e.worktree && existsSync(e.worktree) ? e.worktree : undefined;
+        const drafts = !e.approval.withoutSpecs && wt ? await this.branchDrafts(wt, e.commit) : undefined;
+        if ((drafts?.hash ?? null) !== (e.approval.drafts?.hash ?? null)) continue;
+        const blocked = await this.fixBlocked(e, e.commit, drafts);
+        if (!blocked) await this.requeueFix(e, e.commit);
+        else if (blocked !== e.reason) {
+          this.setPhase(e, { phase: "waiting-fix", why: blocked });
+          e.reason = blocked;
+          this.save();
+        }
+      }
+    }
+    if (more) this.armFixTimer();
+  }
+
   /** merge.review: the review step's agent posts its verdict on the run. */
-  review(runId: string, v: { verdict: string; text?: string }): Promise<MergeRun> {
+  review(runId: string, v: { verdict: string; text?: string; summary?: string; findings?: ReviewFinding[] }): Promise<MergeRun> {
     return this.serial(async () => {
       if (!["ok", "notes", "blocking"].includes(v.verdict)) throw new MergeFailure("invalid-request", 'verdict is "ok", "notes" or "blocking"');
       const cur = this.current?.run.id === runId ? this.current.run : null;
       if (!cur) throw new MergeFailure("invalid-request", `run ${runId} isn't checking now`);
       if ((v.verdict === "notes" || v.verdict === "blocking") && !v.text?.trim()) throw new MergeFailure("invalid-request", "say what the review found (text)");
-      const verdict: ReviewVerdict = { verdict: v.verdict as ReviewVerdict["verdict"], ...(v.text?.trim() ? { text: v.text.trim().slice(0, 2000) } : {}), commit: cur.mergeSha ?? cur.commit, at: this.iso() };
+      // Whole: merge.review checked its shape, and the format bounds it (§app.merge-queue/review-report).
+      const report = v.text?.trim() ? { text: v.text.trim(), ...(v.summary !== undefined ? { summary: v.summary } : {}), ...(v.findings ? { findings: v.findings } : {}) } : {};
+      const verdict: ReviewVerdict = { verdict: v.verdict as ReviewVerdict["verdict"], ...report, commit: cur.mergeSha ?? cur.commit, at: this.iso() };
       // The review step (review-step.ts) waits on its own; the run's awaitReview() is the other door.
-      if ((this.deps.deliverReview ?? deliverReview)(runId, { verdict: verdict.verdict, ...(verdict.text ? { text: verdict.text } : {}) })) return cur;
+      if ((this.deps.deliverReview ?? deliverReview)(runId, { verdict: verdict.verdict, ...report })) return cur;
       const w = this.reviewWaiters.get(runId);
       if (!w) throw new MergeFailure("invalid-request", `run ${runId} isn't waiting for a review`);
       this.reviewWaiters.delete(runId);
@@ -1446,13 +2699,32 @@ export class ProjectQueue {
     });
   }
 
-  /** merge.retry: rerun now (after a machine pause, or an entry's failed run when asked). */
+  /**
+   * merge.retry: rerun now: after a machine pause, or an entry whose user's Land still stands (back with its chat),
+   * put back in line at its commit and counted against its tries. Never an entry the user removed, one out of tries
+   * (needs-fix) or one waiting for the user's decision: those are the user's.
+   */
   retry(entryId?: string, note?: string): Promise<void> {
     return this.serial(async () => {
       if (entryId) {
         const e = this.mustEntry(entryId);
-        if (e.state !== "needs-fix" && e.state !== "queued") throw new MergeFailure("invalid-request", `${e.branch} is ${e.state}: nothing to retry`);
+        if (e.state !== "with-chat" && e.state !== "queued") {
+          const whose = WAITING_FOR_USER.includes(e.state) ? "it waits for the user's decision" : e.state === "needs-fix" ? "it is out of tries or its Land no longer stands: only the user's Land puts it back" : e.state === "cancelled" ? "the user removed it" : `it is ${e.state}`;
+          throw new MergeFailure("invalid-request", `${e.branch} can't be retried: ${whose}`);
+        }
+        // A failure waiting for the thread's diagnosis counted its try already (awaitDiagnosis): never twice.
+        if (e.state === "with-chat" && !e.ruling?.pending?.counted) {
+          const t = this.countTry(e, `retry:${this.now()}`);
+          if (t.out) {
+            this.outOfTries(e, `Tried ${t.tries} times: ${e.reason ?? "it failed each time"}`);
+            this.save();
+            return;
+          }
+        }
         if (note !== undefined) this.setNote(e, note, "thread");
+        this.clearRulingTimer(e.id);
+        delete e.ruling;
+        delete e.standing;
         delete e.reason;
         delete e.sentBackFor;
         delete e.sentBackDrafts;
@@ -1797,7 +3069,8 @@ export class ProjectQueue {
    *  thread's judgement does. */
   private wakeIdle(): void {
     if (!this.idleOwed || this.stopped || this.current || this.trying || this.landing) return;
-    if (this.q.entries.some((e) => e.state === "queued" || e.state === "checking" || e.state === "conflict")) return;
+    // A conflict the thread is judging holds the idle back; one waiting for a thread that isn't there doesn't.
+    if (this.q.entries.some((e) => e.state === "queued" || e.state === "checking" || (e.state === "conflict" && e.fix?.request !== CONFLICT_WAIT))) return;
     const last = this.entry(this.idleOwed);
     this.idleOwed = null;
     if (!last) return;
@@ -1861,7 +3134,7 @@ export class ProjectQueue {
         changed = true;
       } else {
         changed = this.liftHold();
-        if (changed) this.log("the merge thread lifted its hold");
+        if (changed) this.log("lifted the merge thread's hold");
       }
       this.kickSoon();
       return { changed, hold: this.holdNow() };
@@ -1908,6 +3181,13 @@ export class ProjectQueue {
           e.state = "drafts-changed";
           e.reason = now ? "drafts changed since you approved" : "its worktree is gone, so its approved drafts can't be copied";
           e.updatedAt = this.iso();
+          // Under the user's standing Land (q8): drafts re-pin with no new Land only as a fix the chat answered Fixed to
+          // the queue's request and the thread checked. Drafts that changed with no such answer (the user's edit, or the
+          // chat's own) wait for the user: one decision, Land taking them as they are now.
+          if (now && e.approval.standing && !e.release) {
+            this.raiseDecision(e, { kind: "drafts-changed", question: `${e.branch}'s spec drafts changed since your Land, and not as a fix the merge queue asked for: Land takes them as they are now`, choices: [], raisedBy: "queue", actions: ["land", "remove"] });
+            continue;
+          }
           this.save();
           this.deps.notify?.("drafts-changed", e, { root: this.root });
           continue;
@@ -1979,10 +3259,12 @@ export class ProjectQueue {
     const runId = newId("mr");
     const runDir = this.store.runDir(runId);
     mkdirSync(runDir, { recursive: true });
+    const left = await this.leftOf(e.branch, e.commit, e.worktree, base);
     let draftsDir: string | undefined;
     if (e.approval.drafts && !e.approval.withoutSpecs && e.worktree) {
       draftsDir = join(runDir, "drafts");
-      for (const n of e.approval.drafts.names) {
+      // A draft proved landed has landed: never tried again (§chat.worktrees/ready-to-land). An unread answer tries them all.
+      for (const n of e.approval.drafts.names.filter((x) => !left || left.drafts.includes(x))) {
         const from = join(e.worktree, ".sova", "spec", "drafts", n);
         if (existsSync(from)) cpSync(from, join(draftsDir, n), { recursive: true });
       }
@@ -1990,6 +3272,9 @@ export class ProjectQueue {
     const run: MergeRun = { id: runId, entry: e.id, project: this.id, branch: e.branch, base, commit: e.commit, steps: [], checks: [], verdict: "running", startedAt: this.iso() };
     e.state = "checking";
     e.run = runId;
+    this.reviewEvent(e, { kind: "checking" });
+    // Only the first run meets the conflict that was there at the Land; a later run (another target, a fix) counts.
+    if (e.runs.length > 0) delete e.approval.conflictAtLand;
     e.runs = [...e.runs, runId];
     delete e.reason;
     delete e.unclear;
@@ -2008,7 +3293,7 @@ export class ProjectQueue {
       project: { id: this.id, root: this.root, target: this.q.target, def: d.def },
       base,
       commit: e.commit,
-      ...(resolution ? { resolution } : {}),
+      ...(resolution ? { resolution } : { landingPins: this.landingsOf(e.branch).pins }),
       runDir,
       ...(draftsDir ? { draftsDir } : {}),
       picks: [...e.picks],
@@ -2127,7 +3412,23 @@ export class ProjectQueue {
       this.kickSoon();
       return;
     }
+    // The review card of the entry's last blocking review follows this run (never a voided one): a new review answered,
+    // or the run stopped before one.
+    if (out.verdict === "failed" || out.verdict === "conflict") this.reviewEvent(e, { kind: "stopped", why: stoppedWhy(out, this.q.target) });
+    else if (out.review && out.verdict !== "machine") this.reviewEvent(e, { kind: "reviewed", verdict: out.review.verdict });
     switch (out.verdict) {
+      case "nothing":
+        // A landing that changes nothing stops here: not sent back, nothing blamed, and the target never moved.
+        run.verdict = "cancelled";
+        this.store.writeRun(run);
+        e.state = "cancelled";
+        e.reason = out.why ?? nothingToLandWords(this.q.target);
+        e.updatedAt = this.iso();
+        this.save();
+        this.deps.notify?.("nothing-to-land", e, { run, root: this.root });
+        this.releaseEvent(e, "cancelled", undefined, run.id);
+        this.kickSoon();
+        return;
       case "void":
         run.verdict = "void";
         this.store.writeRun(run);
@@ -2173,9 +3474,13 @@ export class ProjectQueue {
         e.reason = `conflicts with ${this.q.target}${files.length ? ` in ${files.length} file${files.length === 1 ? "" : "s"}: ${files.slice(0, 3).join(", ")}${files.length > 3 ? ", …" : ""}` : ""}`;
         e.updatedAt = this.iso();
         this.save();
+        if (e.ruling?.resolutionFailed) delete e.ruling.resolutionFailed;
         const asked = this.wake("conflict", e, run.id, { files, ...scratch });
-        // No thread took it: the copy goes with the hand-back below (tidyScratch).
-        if (!asked) this.handBack(e, run, `${e.reason}; no merge thread is there to judge it`, "conflict");
+        // No thread took it: under the user's standing Land the conflict waits for the merge thread (q14), never sent to the
+        // chat unjudged (q3); it is handed to the thread again once it runs. An approval from before the standing Land
+        // goes back to its chat at once, as it did.
+        if (!asked && e.approval.standing) this.waitForThread(e);
+        else if (!asked) this.sendBack(e, { cause: "conflict", why: `${e.reason}; no merge thread is there to judge it`, runId: run.id, files });
         else this.armConflictTimer(e, run);
         this.kickSoon();
         return;
@@ -2183,15 +3488,17 @@ export class ProjectQueue {
       case "failed": {
         run.verdict = "failed";
         this.store.writeRun(run);
-        if (out.blame === "resolution") {
-          e.state = "behaviour-differs";
-          e.reason = `the resolution judged safe failed: ${out.why ?? "a check"}; your branch isn't blamed`;
-          if (e.conflict) e.conflict = { ...e.conflict, verdict: "behaviour-differs" };
-          e.updatedAt = this.iso();
-          this.save();
-        } else {
-          this.handBack(e, run, out.why ?? "a check failed with your branch and passes on the target", out.cause ?? "checks");
+        const why = out.why ?? "a check failed with your branch and passes on the target";
+        if (out.blame === "resolution") await this.resolutionFailed(e, run, out.why ?? "a check");
+        else if (e.release || !e.approval.standing) {
+          this.handBack(e, run, why, out.cause ?? "checks");
           this.wake("failed", e, run.id, { why: out.why ?? "failed" });
+        } else {
+          // The branch's: the thread is asked for its diagnosis first; the request waits for it (at most rulingWaitMs).
+          const cause: SentBackFor = out.cause ?? "checks";
+          const asked = this.wake("failed", e, run.id, { why: out.why ?? "failed" });
+          if (asked) this.awaitDiagnosis(e, { cause, why, run: run.id, at: this.iso() });
+          else this.sendBack(e, { cause, why, runId: run.id });
         }
         delete this.q.machineTries[e.id];
         this.kickSoon();
@@ -2216,10 +3523,48 @@ export class ProjectQueue {
         e.updatedAt = this.iso();
         this.save();
         this.releaseEvent(e, "waiting", e.reason, run.id);
+        if (!e.release) {
+          // Never the branch's, and nothing goes to its chat. The thread rules first (q3), within the same wait as a
+          // send-back's diagnosis: chat-fixes or try-again settle it with no word to the user. No ruling, no thread, or
+          // needs-user: the user decides, one decision and one notification, and from then on only the user settles it.
+          const asked = this.wake("unattributed", e, run.id, { why: e.reason });
+          if (asked) {
+            e.ruling = { ...(e.ruling ?? {}), unattributed: { run: run.id, at: this.iso() } };
+            this.save();
+            this.armRulingTimer(e.id, () => {
+              const x = this.entry(e.id);
+              if (x?.state === "unattributed" && x.ruling?.unattributed) this.raiseUnattributed(x, x.ruling.unattributed.run);
+            });
+          } else this.raiseUnattributed(e, run.id);
+        }
         this.kickSoon();
         return;
       }
       case "review-flagged": {
+        if (!e.release && e.approval.standing) {
+          // Its whole report goes to the merge thread first, which hands it on (merge.rule chat-fixes, its note optional);
+          // Sova writes the request from the saved record. With no thread, or after the wait, it goes by itself.
+          run.verdict = "failed";
+          this.store.writeRun(run);
+          if (out.review) e.review = out.review;
+          this.addNotes(e, out.notes);
+          const rec = reviewRecord({ entry: e.id, run: run.id, commit: e.commit, base: run.base, verdict: out.review ?? { verdict: "blocking", text: "the review flagged it", commit: run.tip ?? e.commit, at: this.iso() }, at: this.iso() });
+          e.reviews = [...(e.reviews ?? []), rec].slice(-REVIEWS_KEPT);
+          const why = `the review flagged it: ${rec.summary.slice(0, 160) || "see its findings"}`;
+          const report = reportText(rec);
+          // Its try would run out (the last one, or the same findings twice): it waits for the user, nothing to hand on.
+          const waits = this.triesOut(e, this.failurePrint({ cause: "review", why, review: report }, run, rec.findings));
+          if (waits) {
+            this.sendBack(e, { cause: "review", why, runId: run.id, review: report });
+            this.wake("review", e, run.id, { findings: report, waits });
+          } else {
+            const asked = this.wake("review", e, run.id, { findings: report });
+            if (asked) this.awaitDiagnosis(e, { cause: "review", why, run: run.id, review: report, at: this.iso() });
+            else this.sendBack(e, { cause: "review", why, runId: run.id, review: report });
+          }
+          this.kickSoon();
+          return;
+        }
         run.verdict = "waiting";
         this.store.writeRun(run);
         e.state = "review-flagged";
@@ -2293,18 +3638,70 @@ export class ProjectQueue {
     this.releaseEvent(e, "failed", why, run?.id);
   }
 
-  private armConflictTimer(e: Entry, run: MergeRun): void {
+  private armConflictTimer(e: Entry, run?: Pick<MergeRun, "id">): void {
     this.clearConflictTimer(e.id);
     const ms = this.deps.conflictWaitMs ?? 20 * 60_000;
     const t = setTimeout(() => {
       this.conflictTimers.delete(e.id);
       void this.serial(async () => {
         const x = this.entry(e.id);
-        if (x?.state === "conflict") this.handBack(x, run, `${x.reason ?? "a conflict"}; the merge thread didn't judge it in time`, "conflict");
+        if (x?.state !== "conflict") return;
+        // The thread's own resolution failed and it didn't rule again: never the branch's, so the user decides.
+        if (x.ruling?.resolutionFailed && run) this.raiseResolutionFailed(x, run.id);
+        // No ruling in time: the thread is handed it again (q14); under the standing Land it never goes to the chat unjudged.
+        else if (x.approval.standing) {
+          this.waitForThread(x);
+          this.armFixTimer(0);
+        } else this.sendBack(x, { cause: "conflict", why: `${x.reason ?? "a conflict"}; the merge thread didn't judge it in time`, ...(run ? { runId: run.id } : {}), files: x.conflictFiles ?? [] });
       });
     }, ms);
     t.unref?.();
     this.conflictTimers.set(e.id, t);
+  }
+
+  /**
+   * A resolution the thread judged safe failed a check: never the branch's, and nothing goes to its chat. The thread is
+   * told, with a fresh scratch copy, and rules again (another resolution, the chat fixes it, or the user); with no
+   * thread, or none in time, the user decides.
+   */
+  private async resolutionFailed(e: Entry, run: MergeRun, why: string): Promise<void> {
+    const files = e.conflict?.files ?? e.conflictFiles ?? [];
+    e.conflictFiles = files;
+    e.reason = `the merge thread's resolution failed: ${why}; your branch isn't blamed`;
+    if (e.release) {
+      this.raiseResolutionFailed(e, run.id);
+      return;
+    }
+    const scratch = this.deps.thread ? await this.makeScratch(e, (await this.targetHead()) ?? run.base) : {};
+    e.state = "conflict";
+    e.ruling = { ...(e.ruling ?? {}), resolutionFailed: true };
+    e.updatedAt = this.iso();
+    this.save();
+    const asked = this.wake("resolution-failed", e, run.id, { files, why, ...scratch });
+    if (asked) this.armConflictTimer(e, run);
+    else this.raiseResolutionFailed(e, run.id);
+  }
+
+  private raiseResolutionFailed(e: Entry, run: string): void {
+    const c = e.conflict;
+    if (e.ruling) delete e.ruling.resolutionFailed;
+    if (c) e.conflict = { ...c, verdict: "behaviour-differs" };
+    delete e.conflict?.commit;
+    this.raiseDecision(
+      e,
+      {
+        kind: "behaviour-differs",
+        question: `The merge thread's resolution of ${e.branch}'s conflict with ${e.target}${c?.files.length ? ` in ${c.files.join(", ")}` : ""} failed a check. How should it be resolved?`,
+        choices: [],
+        raisedBy: "queue",
+        actions: [],
+        run,
+        ...(c ? { sides: { ours: c.ours, theirs: c.theirs, proposal: c.proposal } } : {}),
+        heldNote: { request: newId("rq"), text: `The user decides how ${e.branch}'s conflict with ${e.target} is resolved; their answer comes with this note. Merge ${e.target} into ${e.branch}, resolve it their way, and commit; then answer this request Fixed.` },
+      },
+      "behaviour-differs",
+      e.reason,
+    );
   }
   private clearConflictTimer(id: string): void {
     const t = this.conflictTimers.get(id);
@@ -2517,7 +3914,8 @@ export class ProjectQueue {
       case "refused":
         drop();
         if (out.blame === "branch") {
-          this.handBack(e, run ?? undefined, out.why, "host");
+          // The branch's to fix: back to its chat by itself, as a request (al_3), through the one send-back.
+          this.sendBack(e, { cause: "host", why: out.why, ...(run ? { runId: run.id } : {}) });
           return;
         }
         e.state = "request-review";
@@ -2583,6 +3981,16 @@ export class ProjectQueue {
         e.request = requestInfo(e.request, r.request, this.iso());
         const run = e.run ? this.store.readRun(e.run) : null;
         if (r.kind === "open") {
+          // What the host says is the branch's (conflicts, its checks failed, changes requested) goes back to the
+          // chat by itself under the standing Land, once per problem and head (§app.merge-queue/send-back).
+          // Only a requested entry is polled (never one checking); one with an open decision waits for the user.
+          const problem = e.approval.standing && !(e.decision && !e.decision.answered) ? hostProblem(e.request.facts, e.request, this.q.target) : null;
+          if (problem && problem.key !== e.request.hostSentBack) {
+            e.request.hostSentBack = problem.key;
+            this.log(`${e.branch}: request #${e.request.number}: ${problem.why}`);
+            this.sendBack(e, { cause: "host", why: problem.why });
+            continue;
+          }
           if (JSON.stringify(e.request.facts) !== before) {
             e.updatedAt = this.iso();
             this.save();
@@ -2592,8 +4000,10 @@ export class ProjectQueue {
         e.updatedAt = this.iso();
         if (r.kind === "merged") {
           for (const c of r.parents) if (!this.q.landed.includes(c)) this.q.landed.push(c);
+          this.keepHostPin(e.branch, e.commit);
           e.request.mergeCommit = r.sha;
           e.state = "landed";
+          this.reviewEvent(e, { kind: "landed" });
           delete e.reason;
           e.landed = { sha: r.sha, from: run?.base ?? from ?? "", at: this.iso(), pushed: "pushed", via: "host" };
           this.save();
@@ -2669,11 +4079,12 @@ export class ProjectQueue {
     for (const c of parents.length ? parents : [tip]) if (!this.q.landed.includes(c)) this.q.landed.push(c);
     this.q.knownTarget = tip;
     e.state = "landed";
+    this.reviewEvent(e, { kind: "landed" });
     delete e.reason;
     e.landed = { sha: tip, from: run.base, at: this.iso(), pushed: "pending" };
     e.updatedAt = this.iso();
     const branchTip = await revParse(this.git, this.root, `refs/heads/${e.branch}`);
-    const newer = branchTip && branchTip !== e.commit && (await isAncestor(this.git, this.root, e.commit, branchTip)) ? await ownCommitsPast(this.git, this.root, e.commit, branchTip, tip) : 0;
+    const newer = branchTip && branchTip !== e.commit && (await isAncestor(this.git, this.root, e.commit, branchTip)) ? await ownCommitsPast(this.git, this.root, e.commit, branchTip, tip, true) : 0;
     if (newer) e.newerCommits = newer;
     else delete e.newerCommits;
     // Before the intent goes: a stop here finishes the landing at the next start, and with it this (idempotent) write.
@@ -2688,6 +4099,15 @@ export class ProjectQueue {
     this.deps.notify?.("landed", e, { run, root: this.root });
     this.wake("landed", e, run.id);
     this.kickSoon();
+  }
+
+  /** A host's landing, kept past its entry. Bounded: the newest branches. */
+  private keepHostPin(branch: string, commit: string): void {
+    const pins = (this.q.hostPins ??= {});
+    const had = pins[branch] ?? [];
+    delete pins[branch];
+    pins[branch] = [commit, ...had.filter((c) => c !== commit)].slice(0, 8);
+    for (const k of Object.keys(pins).slice(0, Math.max(0, Object.keys(pins).length - 500))) delete pins[k];
   }
 
   /** The drafts a landing made official stay in the branch folder, marked landed (§chat.worktrees/readiness). */
@@ -2737,16 +4157,16 @@ export class ProjectQueue {
   }
 
   private wake(
-    kind: "queued" | "conflict" | "failed" | "paused" | "landed" | "names" | "idle",
+    kind: ThreadEvent["kind"],
     e: Entry,
     run?: string,
-    extra: { files?: string[]; why?: string; namesFile?: string; lastLanded?: { id: string; branch: string; sha: string }; head?: string; scratch?: string; scratchError?: string } = {},
+    extra: Omit<Partial<ThreadEvent>, "kind" | "project" | "root" | "target" | "entry" | "run"> = {},
   ): boolean {
     if (!this.deps.thread) return false;
     // What the thread diffs against: the run's base, else the target as the queue last saw it.
     const runBase = run ? (this.current?.run.id === run ? this.current.run.base : this.store.readRun(run)?.base) : undefined;
     const base = runBase ?? this.q.knownTarget;
-    if (base) (extra as { base?: string }).base = base;
+    if (base && !(extra as { base?: string }).base) (extra as { base?: string }).base = base;
     try {
       return this.deps.thread({ kind, project: this.id, root: this.root, target: this.q.target, entry: structuredClone(e), ...(run ? { run } : {}), ...extra });
     } catch (err) {
@@ -3143,9 +4563,27 @@ export class ProjectQueue {
       }
     }
     this.armPoll();
-    for (const e of this.q.entries) if (e.state === "conflict" && e.run) {
-      const run = this.store.readRun(e.run);
-      if (run) this.armConflictTimer(e, run);
+    for (const e of this.q.entries) if (e.state === "conflict") {
+      // One whose run is gone is still judged: its timer runs with no run.
+      const run = e.run ? this.store.readRun(e.run) : null;
+      this.armConflictTimer(e, run ?? undefined);
+    }
+    // A send-back that waited for the thread's diagnosis, or a Can't waiting for its ruling, when Sova stopped: each
+    // waits its full time again (the thread may still answer), then goes on as it would have.
+    for (const e of this.q.entries) {
+      const p = e.ruling?.pending;
+      if (p && e.state === "with-chat") this.awaitDiagnosis(e, p);
+      const u = e.ruling?.unattributed;
+      if (u && e.state === "unattributed")
+        this.armRulingTimer(e.id, () => {
+          const x = this.entry(e.id);
+          if (x?.state === "unattributed" && x.ruling?.unattributed) this.raiseUnattributed(x, x.ruling.unattributed.run);
+        });
+      const c = e.ruling?.cant;
+      if (c && e.state === "with-chat") this.armRulingTimer(e.id, () => {
+        const x = this.entry(e.id);
+        if (x?.ruling?.cant) this.raiseCant(x, x.ruling.cant.request, x.ruling.cant.why);
+      });
     }
     if (did.length) this.save();
     return did;
@@ -3157,7 +4595,10 @@ export class ProjectQueue {
     for (const t of this.timers) clearTimeout(t);
     if (this.pollTimer) clearTimeout(this.pollTimer);
     for (const t of this.conflictTimers.values()) clearTimeout(t);
+    for (const t of this.rulingTimers.values()) clearTimeout(t);
+    this.rulingTimers.clear();
     if (this.publishTimer) clearTimeout(this.publishTimer);
+    if (this.fixTimer) clearTimeout(this.fixTimer);
     if (this.trying) {
       this.trying.ac.abort();
       await this.trying.done.catch(() => {});
@@ -3230,6 +4671,11 @@ export class MergeQueues {
   /** Find the queue holding an entry or a run, among the loaded ones. */
   async findEntry(id: string): Promise<ProjectQueue | null> {
     for (const q of await this.loaded()) if (q.entry(id)) return q;
+    return null;
+  }
+  /** The queue holding a request of a branch's chat (rq_…), by id. */
+  async findRequest(id: string): Promise<ProjectQueue | null> {
+    for (const q of await this.loaded()) if (q.requestOf(id)) return q;
     return null;
   }
   async findRun(id: string): Promise<ProjectQueue | null> {

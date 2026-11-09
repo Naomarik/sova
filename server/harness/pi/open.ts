@@ -22,6 +22,7 @@ import { steerAllAtOnce } from "./queue-modes";
 import { agentRoot } from "../../state-root";
 import type { PiExtensionFactory, PiLoaderOptions, PiToolDefinition } from "./extension-types";
 import { installOwnCode, ownCodeLoader, withModesEntry } from "./own-code";
+import { sandboxBus } from "./shell";
 import { liveRead } from "./reader";
 import { withSkillSources } from "./skill-sources";
 import { PiHarnessSession } from "./session";
@@ -59,6 +60,10 @@ export interface OpenFlags {
   /** The cwd is the home folder standing in for a stored folder that is gone: the sandbox must not
       make it a writable root (§app.shell/missing-folder-home). */
   cwdNotWritable?: boolean;
+  /** The sandbox's read-only level whatever the policy file says (the merge thread: its tools write only in their tmp). */
+  sandboxReadOnly?: boolean;
+  /** Start with the sandbox On, which the chat can't lower (the sandbox extension's `--sandbox on`). */
+  sandboxOn?: boolean;
   /** A worker chat's own extension flags (`--name value` on an RPC worker's argv), set last. */
   extra?: Record<string, string | true>;
 }
@@ -76,6 +81,8 @@ export function extensionFlagValues(f: OpenFlags): Map<string, boolean | string>
     flags.set("sova-link-tools", f.link.tools);
   }
   if (f.cwdNotWritable) flags.set("sandbox-cwd-not-writable", true);
+  if (f.sandboxReadOnly) flags.set("sandbox-read-only", true);
+  if (f.sandboxOn) flags.set("sandbox", "on");
   for (const [name, value] of Object.entries(f.extra ?? {})) flags.set(name, value);
   return flags;
 }
@@ -168,7 +175,9 @@ async function servicesForCwd(cwd: string, modelRuntime: ModelRuntime, flags: ()
   // listed alike (§app.chat-processes/code-generations). The server: nothing.
   installOwnCode();
   // A worker's and an ordinary chat's alike; the same as the setup card's read of a folder (resources.ts).
-  const resourceLoaderOptions = ownCodeLoader(withSkillSources(cwd, loader));
+  // The extensions' bus is Sova's, so the user's own commands see the sandbox's state (shell.ts, P40).
+  const sandbox = sandboxBus();
+  const resourceLoaderOptions = { ...ownCodeLoader(withSkillSources(cwd, loader)), eventBus: sandbox.bus };
   // Who runs this runtime's modes (§chat.mode-menu/sova-runs-modes): Sova's entry takes the discovered
   // mode extension's slot for this build's package manager, for the runtime's whole life (own-code.ts).
   const services = await withModesEntry(modesEntry, () =>
@@ -180,6 +189,7 @@ async function servicesForCwd(cwd: string, modelRuntime: ModelRuntime, flags: ()
       resourceLoaderOptions,
     }),
   );
+  sandbox.attach(services);
   lowerToolCommands(services.settingsManager);
   // Steers sent while the chat is busy land together, at the agent's next step (P28 steer-all).
   steerAllAtOnce(services.settingsManager);
@@ -198,20 +208,31 @@ async function servicesForCwd(cwd: string, modelRuntime: ModelRuntime, flags: ()
  * fail startup. A failure just means the models are absent until a session opens.
  *
  * `onStep` hears Sova's own name for each step as it begins (a chat process's start-up trail,
- * §app.chat-processes/boot-log); by default nothing does.
+ * §app.chat-processes/boot-log); by default nothing does. `modesEntry` is who runs this throwaway
+ * session's modes, in PiBuild.modesEntry's terms (§chat.mode-menu/sova-runs-modes): the discovered
+ * extensions load here, so the warm-up takes the same owner a chat would or the pi mode extension loads
+ * with the switch on.
  */
-export async function warmClaudeCodeProvider(modelRuntime: ModelRuntime, cwd: string, extensionFactories: PiExtensionFactory[], onStep: (step: string) => void = () => {}): Promise<void> {
+export async function warmClaudeCodeProvider(
+  modelRuntime: ModelRuntime,
+  cwd: string,
+  extensionFactories: PiExtensionFactory[],
+  onStep: (step: string) => void = () => {},
+  modesEntry: string | null = null,
+): Promise<void> {
   try {
     onStep("extensions load");
     installOwnCode();
     // The provider flag alone: the throwaway session needs nothing else, and the link flags would
     // read the access token, which throws (and logs its problem again) when the token file is damaged.
-    const services = await createAgentSessionServices({
-      cwd,
-      modelRuntime,
-      extensionFlagValues: extensionFlagValues({ claudeCode: true }),
-      resourceLoaderOptions: { extensionFactories: [...extensionFactories] },
-    });
+    const services = await withModesEntry(modesEntry, () =>
+      createAgentSessionServices({
+        cwd,
+        modelRuntime,
+        extensionFlagValues: extensionFlagValues({ claudeCode: true }),
+        resourceLoaderOptions: { extensionFactories: [...extensionFactories] },
+      }),
+    );
     for (const d of services.diagnostics) console.warn(`[chat] claude-code warm-up ${d.type}: ${d.message}`);
     // The flag is only visible from session_start, and session_start is emitted by
     // AgentSession.bindExtensions (dist/core/agent-session.js:2029) — NOT by creating the session.

@@ -1,7 +1,7 @@
 // Words for a new session's worktrees line and its Clean Up Merged dialog
 // (§chat.transcript/empty-worktrees, §design.copy-deck/worktree-cleanup). Pure: the component
 // renders these.
-import type { WorktreeCleanupRemoved, WorktreesSummary } from "../../shared/protocol";
+import type { WorktreeCleanupRemoved, WorktreeRemoveAnyway, WorktreesSummary } from "../../shared/protocol";
 
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 
@@ -41,3 +41,37 @@ export function branchFate(r: WorktreeCleanupRemoved): string {
 /** After a removal: the dialog's title, and the toast and screen-reader line. */
 export const doneTitle = (removed: number, kept: number): string => `Removed ${removed} · kept ${kept}`;
 export const doneText = (removed: number, kept: number): string => `Removed ${plural(removed, "worktree")}. Kept ${kept}.`;
+
+// ---- Remove Anyway (§chat.worktrees/cleanup): a tree kept only for what it holds ----------------
+
+/** How many entries Remove Anyway deletes that git can't bring back (files and nested repositories). */
+export const anywayCount = (a: WorktreeRemoveAnyway): number => a.counts.uncommitted + a.counts.ignored + a.counts.nested;
+
+/** The listing's title. */
+export const anywayTitle = (path: string): string => `Remove ${path} anyway?`;
+
+/** The listing's first sentence: what goes that git can't bring back. */
+export function anywayBody(a: WorktreeRemoveAnyway): string {
+  const parts: string[] = [];
+  const files = a.counts.uncommitted + a.counts.ignored;
+  if (files) parts.push(plural(files, "file"));
+  if (a.counts.nested) parts.push(plural(a.counts.nested, "nested repository", "nested repositories"));
+  const one = files + a.counts.nested === 1;
+  return `${parts.join(" and ")} ${one ? "is" : "are"} deleted with it. Git can't bring ${one ? "it" : "them"} back.`;
+}
+
+/** A list's heading with its exact total. */
+export const anywayHeading = (label: string, n: number): string => `${label} · ${n}`;
+
+/** Below a list cut at the server's limit. */
+export const anywayMore = (shown: number, total: number): string | null => (total > shown ? `and ${total - shown} more` : null);
+
+/** A nested repository's row: its path, and the repository a worktree belongs to. */
+export const nestedLine = (n: WorktreeRemoveAnyway["nested"][number]): string =>
+  n.kind === "worktree" ? `Worktree${n.of ? ` of ${n.of}` : ""}: its uncommitted work goes, its commits stay there.` : "Repository: deleted whole, its commits and uncommitted work with it.";
+
+/** The confirm button. */
+export const anywayLabel = "Delete and Remove Worktree";
+
+/** After it: toast and screen reader. */
+export const anywayDone = (path: string): string => `Removed ${path}.`;

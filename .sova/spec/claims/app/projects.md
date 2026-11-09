@@ -41,7 +41,8 @@ for a project held on a peer (§mesh.remote-sessions/org-pages). API: `/api/proj
   starts its watch loop.
 - **Nothing registers on its own.** Starting a session in a folder registers nothing; an
   unregistered folder keeps everything root-keyed exactly as before (its playbooks list
-  "This folder", its profiles, schedules and `project_verbs`; §app/project-services).
+  "This folder", its profiles and schedules, and `project_verbs` where it is offered,
+  §app.project-services/tool-offered; §app/project-services).
 
 ## §app.projects/clone — Clone from GitHub
 
@@ -157,22 +158,41 @@ and a chat in any of them is one press away.
   - A chat that is done but not archived (an ended terminal chat) counts in neither row.
 - **Runtime**, a caption with the project's memory in use at its right, `idle` while that is 0, or
   `no project setup` for a project with no project file (`.sova/project.json`), over three rows:
-  - **Ready to merge**: how many branches the project's Merge Queue tab lists under `Ready to land,
-    not approved` (§app.merge-queue/view), with a success dot while above 0, then `· {k} in line`
-    while approved branches wait or are being checked. It opens the Merge Queue tab,
+  - **Ready to merge**: how many branches the project's Merge Queue tab lists on its `Ready to
+    land` tab (§app.merge-queue/view), with a success dot while above 0, then `· {k} in line`
+    while approved branches wait or are being checked. It opens the Merge Queue tab at Ready to land,
     `#/projects/<pid>/merge-queue`. A muted `…` while the queue serves the project but its first
     view since Sova started is still being read. `—` for a project the merge queue doesn't serve,
-    and then the row is not a link.
-  - **Running slots**: one pip per slot of the copy limit, one lit per running copy, and `{r} of
-    {cap}`: the running copies against the copy limit, as the Branches tab counts them (the main
-    checkout's and conformance's copies never count, §app.project-services/instances). `0 of 4`
-    while none runs. `—` for a project with no project file. It opens the Branches tab,
-    `#/projects/<pid>/branches`.
-  - **Memory in use**: a thin bar and the figure (`640 MB`, `2.4 GB`): what the project's chats
-    and running copies use now (§app.projects/home-glance). The bar fills by the project's share of
-    this machine's total memory. `0 MB idle` while nothing of it runs. A
-    project with no project file still shows what its chats use. It opens the Branches tab while
-    the project has a project file; otherwise it is not a link.
+    and then the row is not a link. A branch with nothing left is never counted here
+    (§chat.worktrees/nothing-left).
+  - **Copies**: one pip per usable place of this project (the slots of 1 to 16 its port numbering
+    can use, §app.project-services/instances, so normally 16; a place the numbering rules out is
+    never drawn), and a figure. The pips are grouped, not in slot order: running first, then
+    stopped, then used elsewhere, then free (what each counts: §app.projects/home-glance). Each look
+    differs in shape as well as color: running solid, stopped half-filled, used elsewhere narrow,
+    free hollow; a place that was not checked (a host with no list of listening ports,
+    §app.projects/home-glance) is hollow with a dashed outline, drawn where the free ones would be,
+    never as free. The main checkout's slot 0, conformance's scratch copies and any record outside
+    the usable slots are never drawn.
+    - **The figure** reads `{r} running`, or `{r} at limit` once {r} has reached the limit in force.
+      {r}, here and in the hover, is the copy limit's own count of running copies, the one a start
+      is refused by (§app.project-services/instances), so the figure is true whenever the limit
+      refuses: a running record outside the usable slots counts in it though no pip draws it.
+      `0 running` while none runs.
+    - **Hover** on the row gives `{r} running, {s} stopped but holding a place, {e} used elsewhere,
+      {f} free. Up to {cap} can run at once.` While any place is used elsewhere it adds `Used
+      elsewhere: another program has the ports these places need, so a new copy can't go there.
+      Stopping this project's copies won't free them.` On a host with no list of listening ports the
+      free count is unknown: the `{f} free` part is left out and it adds `Other programs were not
+      checked.`
+    - The pips are hidden from a screen reader; the row's accessible name carries the hover's words.
+    - `—` for a project with no project file. It opens the Branches tab,
+      `#/projects/<pid>/branches`.
+  - **Memory in use**: a thin bar and the figure (`2.4 GB`): what its chats and running copies use
+    now (§app.projects/home-glance). The bar fills its whole width with the mix of the two, in
+    two tones (§app.projects/home-memory-bar). `0 MB idle` while nothing of it runs. A
+    project with no project file still shows what its chats use. With a project file it opens the
+    Branches tab, else is no link.
   - A row that opens something tints on hover and carries a chevron; a row with nothing to open
     has neither.
 - **The progress zone**, thin rows just above the foot bar, shown only while something moves; each
@@ -209,8 +229,8 @@ and a chat in any of them is one press away.
   queue and the release hold; approving a branch stays with the places that show the commit
   approved (§app.merge-queue/approve), and publishing a release with the Releases tab.
 - **What updates when.** The head's count and the Chats group come from the session list and the
-  attention digest the page already has: they add no read and update live. Ready to merge, Running
-  slots, Memory in use and the progress zone come from one read of every card's figures
+  attention digest the page already has: they add no read and update live. Ready to merge, Copies,
+  Memory in use and the progress zone come from one read of every card's figures
   (§app.projects/home-glance), made when the section shows and every 30 seconds while it is shown,
   with the project list's own read (also after Add Project). Until that read first answers, and
   while it fails, those three rows read `—` and the zone is absent; the next poll tries again.
@@ -241,15 +261,15 @@ and a chat in any of them is one press away.
 
 ## §app.projects/home-glance — What the project cards' runtime figures read, and what they cost
 
-The project cards' Ready to merge, Running slots, Memory in use and progress zone
+The project cards' Ready to merge, Copies, Memory in use and progress zone
 (§app.projects/home-cards) come from one read of every listed project at once, made by the
 overview every 30 seconds while its Projects section shows and never otherwise. The read only
-gathers what Sova already keeps (but for a served queue's first view, below); it lands nothing and
-changes nothing.
+gathers what Sova already keeps (but for a served queue's first view and one look at the host's
+listening ports, both below); it lands nothing and changes nothing.
 
 - **Ready to merge, in line, landing and frozen** come only from the merge queue's newest view of
   that project, the one it already keeps for the Merge Queue tab and the landing bar
-  (§app.merge-queue/view, §app.merge-queue/landing-bar): its `Ready to land, not approved` list, its
+  (§app.merge-queue/view, §app.merge-queue/landing-bar): its `Ready to land` list, its
   waiting and checking entries, its Checking now check and estimates, and whether a release holds
   it. A project the queue doesn't serve (not listed, or its merge setup not done, as the queue
   last named its served projects) reads `unserved`: nothing is read for it and no queue is made. A
@@ -262,10 +282,30 @@ changes nothing.
   keeps them in memory: as the releaser last published them to the Releases tab, or as its start
   read them; the read opens no record file. The record shown is the one the Releases tab shows:
   the open one, else a published or withdrawn one while its after-steps still have work.
-- **Running slots** come from the copies' records and the copy limit's one rule
-  (§app.project-services/instances): the running copies, the main checkout's and conformance's
-  never counted, against the limit in force. No service is asked or probed for it. A project with
-  no project file has none.
+- **Copies** come from the copies' records, the copy limit's one rule and the project's usable
+  places (§app.project-services/instances). A project with no project file has none. Each usable
+  place is exactly one of:
+  - **running**: a copy of the project holds it, asked to run and not stopped since (the meaning
+    the copy limit counts by);
+  - **stopped**: a copy of the project holds it and is not running, one created but never started
+    included. A stopped copy keeps holding its place and nothing frees it automatically;
+  - **used elsewhere**: no copy of the project holds it and one of its ports is held by another
+    Sova instance on this host (running or stopped), another project's shared service, or a
+    listening program. This is the rule a new copy's start uses, so the free places are exactly
+    those a start would accept, apart from the moments between refreshes;
+  - **free**: none of those.
+
+  The main checkout's slot 0, conformance's scratch copies and any record outside the usable slots
+  are never counted among the places. The figure's running count is not a count of places: it is
+  the copy limit's own count of running copies, the rule a start is refused by, so it includes a
+  running record outside the usable slots, and the main checkout's and conformance's never. The
+  limit and the places stay two separate numbers: the limit is how many may
+  run at once, the places how many can exist.
+- **One look at the listening ports.** On Linux the read also takes one look at the host's list of
+  listening ports, the kernel's table, once per read for all projects; nothing is spawned and no
+  program is contacted. On a host without that table (macOS) the read spawns nothing: other Sova
+  instances still count as used elsewhere, a place with no known holder is **not checked** rather
+  than free, and the free count is unknown.
 - **A project's memory in use** is two parts, each process counted once, each by its own memory as
   the resource monitor measures it (§app.resource-monitor/sampling-and-history: on Linux resident
   less shared pages; on macOS resident memory):
@@ -277,12 +317,41 @@ changes nothing.
     checkout's included (an adopted main is its adopted unit, §app.project-services/adopt), and of
     its shared services, found from each unit's own process list (its cgroup's `cgroup.procs`) and
     measured as the monitor measures a chat's process (§app.resource-monitor/lightness-budget: no
-    `smaps`, no PSS, nothing spawned). On a host without a systemd user manager to read (macOS),
-    this part is not read and counts 0: the read never spawns `ps` for it.
+    `smaps`, no PSS, nothing spawned). A unit is looked for where systemd puts it: a copy's or a
+    shared service's unit in Sova's services slice, which systemd nests in Sova's own slice
+    (`sova.slice/sova-services.slice/<unit>` under the user manager), and an adopted unit in
+    `app.slice` or at the manager's top. So a copy that runs, its process alive, never counts 0.
+  - **Sova's own server is left out.** The unit Sova's own project adopts as its main checkout's
+    copy (`sova-runtime.service`), and whatever unit the server making this read runs in, are never
+    counted on any card, even when a copy's record names one: it is the server the card is read
+    from, not a copy of the project's work. The merge queue's
+    landing checks run inside that server, so they aren't counted either. Another project's
+    adopted main is counted as any other running copy.
+  - **Linux only, for now.** On a host without a systemd user manager to read (macOS), the running
+    copies part is not read and counts 0: the read never spawns `ps` for it.
+  - **Not counted, by choice:** containers and databases that no project's file declares, and
+    copies run by another Sova server, which are not in this server's registry.
 - **Cost.** No command is spawned and no service is probed by the read itself; the one background
   view of a served queue that has none kept is the queue's own view read. Its cost is the copies'
-  memory reads, bounded by how many copies run, and a few in-memory lookups; several overviews open
-  at once share one answer, reused for up to 10 seconds.
+  memory reads, bounded by how many copies run, the one look at the listening ports where the host
+  has that table, and a few in-memory lookups; several overviews open at once share one answer,
+  reused for up to 10 seconds.
+
+## §app.projects/home-memory-bar — A project card's memory bar shows its two parts
+
+A project card's Memory in use row (§app.projects/home-cards) keeps one figure, the total of the
+project's two parts (§app.projects/home-glance), and splits its thin bar by them:
+
+- **Two tones.** The chats' part keeps the bar's own tone, the info tone it fills with today; the
+  running copies' part, beside it, is in a second tone, a neutral one, clearly distinct from it.
+- **Full width, split by the mix.** Whenever the project uses anything, the bar fills its whole
+  width: the chats' part is chats / total of it and the running copies' part copies / total, not
+  a share of this machine's memory; the figure beside it gives the size. A part above 0 keeps a
+  minimum width, so it never vanishes beside a larger one; a part at 0 draws nothing, and while
+  the project uses nothing the bar is empty.
+- **Tone is never the only signal.** Hovering the row gives the exact parts in words as its
+  title, `Chats {chats} · Copies {copies}` (`Chats 1.5 GB · Copies 2.7 GB`), and the
+  row's accessible name carries the same words.
 
 ## §app.projects/icon — A project's icon: a picture, or its letters
 

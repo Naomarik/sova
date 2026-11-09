@@ -1,10 +1,24 @@
 import { createEffect, createSignal, For, on, onMount, Show } from "solid-js";
 import { Portal } from "solid-js/web";
 import type { WorktreeCleanupKept, WorktreeCleanupPlan, WorktreeCleanupResult, WorktreesSummary } from "../../shared/protocol";
-import { fetchWorktreesSummary, previewWorktreeCleanup, removeWorktrees } from "../lib/api";
+import { fetchWorktreesSummary, previewWorktreeCleanup, removeWorktreeAnyway, removeWorktrees } from "../lib/api";
 import { tildePath } from "../lib/format";
 import { announce, home, toast } from "../lib/ui-state";
-import { branchFate, confirmBody, confirmTitle, doneText, doneTitle, offersCleanup, removeLabel, showsLine, summaryLine } from "../lib/worktree-cleanup";
+import {
+  anywayDone,
+  anywayLabel,
+  anywayTitle,
+  branchFate,
+  confirmBody,
+  confirmTitle,
+  doneText,
+  doneTitle,
+  offersCleanup,
+  removeLabel,
+  showsLine,
+  summaryLine,
+} from "../lib/worktree-cleanup";
+import { RemoveAnywayListing } from "./RemoveAnywayListing";
 import { trapFocus } from "./ui";
 
 /**
@@ -88,7 +102,8 @@ export function EmptyWorktrees(props: { path: string }) {
   );
 }
 
-function KeptRows(props: { rows: WorktreeCleanupKept[]; home: string | null }) {
+/** The kept rows; one kept only for what it holds offers Remove Anyway (`onAnyway`, before a removal only). */
+function KeptRows(props: { rows: WorktreeCleanupKept[]; home: string | null; onAnyway?: (k: WorktreeCleanupKept) => void }) {
   return (
     <ul class="worktree-cleanup-list">
       <For each={props.rows}>
@@ -96,6 +111,11 @@ function KeptRows(props: { rows: WorktreeCleanupKept[]; home: string | null }) {
           <li>
             <code class="worktree-cleanup-path">{tildePath(k.path, props.home)}</code>
             <span class="text-caption text-muted">{k.reason}</span>
+            <Show when={props.onAnyway && k.removeAnyway}>
+              <button type="button" class="button button-sm button-destructive worktree-cleanup-anyway" aria-haspopup="dialog" onClick={() => props.onAnyway!(k)}>
+                Remove Anyway
+              </button>
+            </Show>
           </li>
         )}
       </For>
@@ -107,14 +127,58 @@ function KeptRows(props: { rows: WorktreeCleanupKept[]; home: string | null }) {
 function CleanupDialog(props: { path: string; plan: WorktreeCleanupPlan; onClose(attempted: boolean): void }) {
   const [pending, setPending] = createSignal(false);
   const [result, setResult] = createSignal<WorktreeCleanupResult | null>(null);
+  // The kept rows: a tree Remove Anyway took leaves them, one it couldn't take shows its new reason.
+  const [keep, setKeep] = createSignal(props.plan.keep);
+  // The tree whose listing is open (Remove Anyway), and whether anything was removed that way.
+  const [anyway, setAnyway] = createSignal<WorktreeCleanupKept | null>(null);
+  const [took, setTook] = createSignal(false);
   let cancel!: HTMLButtonElement;
+  let back: HTMLButtonElement | undefined;
   // Destructive: focus starts on Cancel, never on Remove.
   onMount(() => cancel.focus());
   const n = () => props.plan.remove.length;
   /** Paths with `~`: the server's home, else the one the app found. */
   const homeDir = () => props.plan.home ?? home();
 
-  const close = () => !pending() && props.onClose(result() !== null);
+  const close = () => {
+    if (pending()) return;
+    if (anyway()) return leaveAnyway();
+    props.onClose(result() !== null || took());
+  };
+  const openAnyway = (k: WorktreeCleanupKept) => {
+    setAnyway(k);
+    queueMicrotask(() => back?.focus());
+  };
+  const leaveAnyway = () => {
+    setAnyway(null);
+    queueMicrotask(() => cancel.focus());
+  };
+  /** Remove Anyway, confirmed: exactly the listing shown; a tree whose contents changed since stays. */
+  const confirmAnyway = async () => {
+    const k = anyway();
+    if (pending() || !k?.removeAnyway) return;
+    setPending(true);
+    try {
+      const r = await removeWorktreeAnyway(props.path, k.path, k.removeAnyway.digest);
+      setTook(true);
+      if (r.removed.some((x) => x.path === k.path)) {
+        setKeep((rows) => rows.filter((x) => x.path !== k.path));
+        const text = anywayDone(tildePath(k.path, homeDir()));
+        toast(text);
+        announce(text);
+      } else {
+        const why = r.kept.find((x) => x.path === k.path)?.reason ?? "It wasn't removed.";
+        setKeep((rows) => rows.map((x) => (x.path === k.path ? { path: x.path, ...(x.branch ? { branch: x.branch } : {}), reason: why } : x)));
+        toast(why);
+        announce(why);
+      }
+    } catch (err) {
+      toast(`Couldn't remove ${tildePath(k.path, homeDir())}. It may be gone; the count is read again. ${(err as Error).message}`);
+      setTook(true);
+    }
+    setPending(false);
+    leaveAnyway();
+  };
   const confirm = async () => {
     if (pending() || n() === 0) return;
     setPending(true);
@@ -122,7 +186,7 @@ function CleanupDialog(props: { path: string; plan: WorktreeCleanupPlan; onClose
       // Exactly the previewed paths: a tree that changed since is kept, never removed.
       const r = await removeWorktrees(props.path, props.plan.remove.map((x) => x.path));
       setResult(r);
-      const text = doneText(r.removed.length, r.kept.length + props.plan.keep.length);
+      const text = doneText(r.removed.length, r.kept.length + keep().length);
       toast(text);
       announce(text);
     } catch (err) {
@@ -151,10 +215,18 @@ function CleanupDialog(props: { path: string; plan: WorktreeCleanupPlan; onClose
       >
         <div class="modal-head">
           <h2 class="modal-title" id="worktree-cleanup-title">
-            {result() ? doneTitle(result()!.removed.length, result()!.kept.length + props.plan.keep.length) : confirmTitle(n())}
+            {anyway() ? anywayTitle(tildePath(anyway()!.path, homeDir())) : result() ? doneTitle(result()!.removed.length, result()!.kept.length + keep().length) : confirmTitle(n())}
           </h2>
         </div>
         <div class="modal-body" id="worktree-cleanup-body">
+          <Show when={anyway()?.removeAnyway}>
+            {(a) => (
+              <>
+                <RemoveAnywayListing listing={a()} home={homeDir()} />
+              </>
+            )}
+          </Show>
+          <Show when={!anyway()}>
           <Show
             when={result()}
             fallback={
@@ -177,25 +249,40 @@ function CleanupDialog(props: { path: string; plan: WorktreeCleanupPlan; onClose
                     </ul>
                   </section>
                 </Show>
-                <Show when={props.plan.keep.length > 0}>
-                  <section aria-label={`Stays · ${props.plan.keep.length}`}>
-                    <h3 class="text-eyebrow">Stays · {props.plan.keep.length}</h3>
-                    <KeptRows rows={props.plan.keep} home={homeDir()} />
+                <Show when={keep().length > 0}>
+                  <section aria-label={`Stays · ${keep().length}`}>
+                    <h3 class="text-eyebrow">Stays · {keep().length}</h3>
+                    <KeptRows rows={keep()} home={homeDir()} onAnyway={openAnyway} />
                   </section>
                 </Show>
               </>
             }
           >
             {(r) => (
-              <Show when={r().kept.length + props.plan.keep.length > 0}>
+              <Show when={r().kept.length + keep().length > 0}>
                 <section aria-label="Kept">
-                  <h3 class="text-eyebrow">Stays · {r().kept.length + props.plan.keep.length}</h3>
-                  <KeptRows rows={[...r().kept, ...props.plan.keep]} home={homeDir()} />
+                  <h3 class="text-eyebrow">Stays · {r().kept.length + keep().length}</h3>
+                  <KeptRows rows={[...r().kept, ...keep()]} home={homeDir()} />
                 </section>
               </Show>
             )}
           </Show>
+          </Show>
         </div>
+        <Show when={anyway()?.removeAnyway}>
+          {(_a) => (
+            <div class="modal-foot">
+              <button type="button" class="button button-destructive" aria-disabled={pending() ? "true" : undefined} onClick={() => void confirmAnyway()}>
+                {pending() ? "Removing…" : anywayLabel}
+              </button>
+              <span class="modal-spacer" />
+              <button ref={back} type="button" class="button button-ghost" aria-disabled={pending() ? "true" : undefined} onClick={() => !pending() && leaveAnyway()}>
+                Back
+              </button>
+            </div>
+          )}
+        </Show>
+        <Show when={!anyway()}>
         <div class="modal-foot">
           <Show when={!result() && n() > 0}>
             <button type="button" class="button button-destructive" aria-disabled={pending() ? "true" : undefined} onClick={() => void confirm()}>
@@ -207,6 +294,7 @@ function CleanupDialog(props: { path: string; plan: WorktreeCleanupPlan; onClose
             {!result() && n() > 0 ? "Cancel" : "Close"}
           </button>
         </div>
+        </Show>
       </div>
     </>
   );

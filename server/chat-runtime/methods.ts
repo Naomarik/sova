@@ -149,6 +149,9 @@ export const METHODS: Impl = {
   subagentProfileInfo: (chat) => chat.subagentProfileInfo(),
   subagentSwitchRefusal: (chat) => chat.subagentSwitchRefusal(),
   switchSubagentProfile: (chat, { id }) => chat.switchSubagentProfile(id),
+  switchProfile: (chat, { target }) => chat.switchProfile(target),
+  cancelProfileSwitch: (chat) => chat.cancelProfileSwitch(),
+  chatProfileState: (chat) => chat.chatProfileState(),
   appendStateRow: (chat, { kind, data }) => chat.appendStateRow(kindOf(kind), data),
   appendState: (chat, { kind: type, data }) => {
     // The kind the registry has under that type: SessionState refuses any other (server/harness/pi/state.ts).

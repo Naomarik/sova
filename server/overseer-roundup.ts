@@ -4,6 +4,7 @@ import type { AttentionDigest, SessionReadiness, SessionSummary, WorktreeReadine
 import type { ProjectSummary } from "../shared/projects";
 import { canonical } from "../pi-config/extensions/worktrees/state.ts";
 import type { RemovedWorktree } from "./removed-worktrees";
+import { UNREADABLE } from "./merge-readiness";
 import { joinedText, lineEntry, lineMay } from "./harness/pi/reader";
 import { redactPreviewLinks } from "./preview-kept";
 import { cut, hiddenFromProfiles, Refusal, UNTRUSTED_END } from "./session-guards";
@@ -129,13 +130,15 @@ export type TreeBucket = "land" | "specs" | "ready" | "built" | "at-risk" | "unc
 /** Which roundup section a worktree's readiness puts it in, or null (merged, empty, nothing to do).
     "leftover" is a merged worktree left with uncommitted files: counted, never listed. */
 export function treeBucket(t: WorktreeReadiness): TreeBucket | null {
+  // The shared answer (§chat.worktrees/nothing-left): only unproved drafts left is Landing specs; nothing left, none.
+  if (t.left === "drafts") return "specs";
   if (t.state === "ready" || t.state === "waiting-approval") return t.landing ? (t.landing.state === "ready" ? "land" : "specs") : "ready";
   if (t.state === "removed") {
     if (t.why === "not merged") return "at-risk";
     if (t.why === "no record of a merge") return "unconfirmed";
     return null;
   }
-  if (t.state === "in-progress" && t.why === "worktree folder gone") return "unconfirmed";
+  if (t.state === "in-progress" && t.why === UNREADABLE) return "unconfirmed";
   if (t.state === "stale" && t.merged) return "leftover";
   if ((t.state === "in-progress" || t.state === "blocked" || t.state === "stale") && !t.noCommits) return "built";
   if (t.noCommits && (t.dirtyCount ?? 0) > 0) return "uncommitted";
@@ -168,14 +171,18 @@ function canonicalLoose(p: string): string {
 
 const plural = (n: number, w: string, ws = `${w}s`) => `${n} ${n === 1 ? w : ws}`;
 
-/** A worktree as one short fact: its branch and state ("feat/steer-keys conflicts 7 files"). */
-export function treeFact(t: WorktreeReadiness, bucket: TreeBucket): string {
-  if (bucket === "at-risk") return `${t.branch} folder gone, not merged`;
-  if (bucket === "unconfirmed") return t.branch;
-  if (bucket === "uncommitted") return `${t.branch} ${plural(t.dirtyCount ?? 0, "uncommitted file")}, no commits`;
-  if (t.conflicts) return `${t.branch} conflicts ${plural(t.conflicts, "file")}`;
+/** A branch as a line names it: "{branch} in {place}" (§chat.worktrees/place), the bare branch while no place is known. */
+const branchIn = (branch: string, place: string | undefined): string => (place ? `${branch} in ${place}` : branch);
+
+/** A worktree as one short fact: its branch in its place and its state ("feat/steer-keys in AmalMoney conflicts 7 files"). */
+export function treeFact(t: WorktreeReadiness, bucket: TreeBucket, place?: string): string {
+  const b = branchIn(t.branch, place);
+  if (bucket === "at-risk") return `${b} folder gone, not merged`;
+  if (bucket === "unconfirmed") return b;
+  if (bucket === "uncommitted") return `${b} ${plural(t.dirtyCount ?? 0, "uncommitted file")}, no commits`;
+  if (t.conflicts) return `${b} conflicts ${plural(t.conflicts, "file")}`;
   const rest = (t.reason ?? "").split(" · ").slice(1).join(", ") || t.why || t.state;
-  return `${t.branch} ${t.state === "waiting-approval" ? "waits for your OK, " : ""}${rest}`;
+  return `${b} ${t.state === "waiting-approval" ? "waits for your OK, " : ""}${rest}`;
 }
 
 const ASK_RE = /\b(?:tell me|let me know|say ["“]|your go-ahead|waiting (?:on|for) you|if you(?:'|’)?d like)/i;
@@ -277,6 +284,8 @@ export interface RoundupInput {
   /** How a session is named and placed in a row. */
   link(s: SessionSummary): string;
   where(s: SessionSummary): string;
+  /** The words of the place of the branch whose folder is (or was) `path` (§chat.worktrees/place), read beforehand. */
+  place?(path: string): string | undefined;
   state(s: SessionSummary): string;
 }
 
@@ -424,12 +433,12 @@ export function renderRoundup(input: RoundupInput): { text: string; details: Rec
       }
       const named = input.git?.named.get(key);
       if (named && (bucket === "built" || bucket === "at-risk" || bucket === "unconfirmed")) {
-        tree("unconfirmed", s, `${t.branch} (${named})`);
+        tree("unconfirmed", s, `${branchIn(t.branch, input.place?.(t.path))} (${named})`);
         continue;
       }
       const nom = input.git?.namedOnMain.get(key);
       if (nom && bucket === "unconfirmed") {
-        tree("unconfirmed", s, `${t.branch} (its named commits are on ${nom})`);
+        tree("unconfirmed", s, `${branchIn(t.branch, input.place?.(t.path))} (its named commits are on ${nom})`);
         continue;
       }
       if (bucket === "uncommitted") {
@@ -438,13 +447,13 @@ export function renderRoundup(input: RoundupInput): { text: string; details: Rec
           mostly++;
           continue;
         }
-        tree(bucket, s, `${treeFact(t, bucket)}${sup?.hedge ? `; ${sup.hedge}` : ""}`);
+        tree(bucket, s, `${treeFact(t, bucket, input.place?.(t.path))}${sup?.hedge ? `; ${sup.hedge}` : ""}`);
         continue;
       }
-      tree(bucket, s, treeFact(t, bucket));
+      tree(bucket, s, treeFact(t, bucket, input.place?.(t.path)));
     }
     const launch = input.git?.launch.get(s.path);
-    if (launch) tree(launch.bucket, s, launch.text);
+    if (launch) tree(launch.bucket, s, launch.text.replace(launch.branch, () => branchIn(launch.branch, input.place?.(s.cwd))));
     // Whether every branch the session tracks is on main (H5): undefined when it tracks none.
     const trees = r.value?.trees ?? [];
     const tracked = trees.length + (launch || input.git?.launchSettled.has(s.path) ? 1 : 0);
@@ -599,7 +608,7 @@ export function sessionHas(s: SessionSummary, f: HasFilter): boolean {
     case "ready":
       return trees.some((t) => t.state === "ready" || t.state === "waiting-approval");
     case "unmerged":
-      return trees.some((t) => (["ready", "waiting-approval", "in-progress", "blocked", "stale"] as string[]).includes(t.state) && !t.noCommits && t.why !== "worktree folder gone");
+      return trees.some((t) => (["ready", "waiting-approval", "in-progress", "blocked", "stale"] as string[]).includes(t.state) && !t.noCommits && t.why !== UNREADABLE);
     case "removed":
       return trees.some((t) => t.state === "removed" && (t.why === "not merged" || t.why === "no record of a merge"));
     case "error":

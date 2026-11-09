@@ -12,9 +12,9 @@ you need, and it finds the way. These are its topics, in its order.
 
 | You want | Where |
 |---|---|
-| Colours, type and how this browser shows Sova | Settings → Themes. A theme of your own is a JSON file in `~/.pi/agent/sova/themes/` |
+| Colours, type and how this browser shows Sova | [Themes](/docs/themes/), in Settings → Themes: Light, Dark or Auto, a dark and a light pick, and a theme of your own as a JSON file in `~/.pi/agent/sova/themes/` |
 | Which models you can use, what new chats start on, and the sign-ins behind them | Settings → Models and Settings → Accounts |
-| Which models your workers and teams run on, and named worker personas | [Subagent profiles](/docs/subagent-profiles/), in Settings → Subagents |
+| Which models your workers and teams run on, and named worker personas | [Profiles](/docs/subagent-profiles/), in Settings → Profiles |
 
 ## Teach your chats
 
@@ -30,7 +30,7 @@ you need, and it finds the way. These are its topics, in its order.
 | You want | Where |
 |---|---|
 | A new tool for the agent to call, and how it gets approved | [Project modes](/docs/modes/project-modes/) first, an [MCP server](/docs/mcp-servers/), or an [add-on](/docs/extending/add-ons/) for all your chats |
-| Your own page, buttons and cards inside Sova | A Sova extension: see [Make Sova yours](https://github.com/Naomarik/sova/blob/master/docs/customization.md#sova-extensions) in the repository |
+| Your own page, buttons and cards inside Sova | A [Sova extension](/docs/extending/extensions/), added and approved in Settings → Extensions |
 | Add-ons that change what a chat can do, from a file or a package | [Add-ons in a Sova chat](/docs/extending/add-ons/) |
 | Drive Sova from your own program, and follow what happens | [Scripting Sova](/docs/extending/scripting/) |
 

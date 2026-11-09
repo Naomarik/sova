@@ -91,13 +91,26 @@ in order, the text and thinking of the rejected attempt and then everything the 
   valid JSON; nothing ran") and never runs.
 - An abort while the CLI is between the rejected attempt and its retry interrupts the CLI, as any
   abort does.
+- **A tool the CLI doesn't have.** A call under a name the CLI doesn't have is handled the same
+  way. Every tool the model can reach is pi's under its `mcp__sova__` name, so a call under any
+  other name (a bare `bash` or `project_verbs` the model copied from prose) is one the CLI answers
+  itself ("No such tool available") and asks the model again. The provider never runs it: it is
+  left out of pi's message, never matched to a `tools/call`, and recorded only as a
+  `claude-code.invalid-tool-input` diagnostic whose reason says the tool is unknown. The retry
+  continues the same pi message on the same CLI child, with no restart and no out-of-step mark, and
+  the bound below counts it like a call with invalid arguments (its error then says the tool isn't
+  one Claude has).
 - **Bound.** After 3 CLI messages in a row within one pi message whose tool calls were all rejected,
   the provider interrupts the CLI turn. It ends the pi message as an error: `Claude sent invalid
   JSON arguments for tool "<name>" 3 times in a row`. The next prompt restarts the child with
   folded history.
 - **Diagnostic only.** A rejected call is recorded only as a diagnostic on the pi message
   (`claude-code.invalid-tool-input`: the tool's name, the call's id, the arguments' length in bytes,
-  and where parsing failed). It is never shown and never sent to a model. Its raw arguments are not
+  and where parsing failed). Where parsing failed is the same on Bun as on Node for the two shapes
+  seen live: for arguments cut off it is the end of the input, and for a complete object or array
+  with characters after it, the first character left over. For any other fault it is given only
+  when the runtime's JSON parser names it (Node does, Bun does not). It is never shown and never
+  sent to a model. Its raw arguments are not
   kept. The CLI's own transcript keeps their first 2048 bytes.
 - **Usage.** The pi message's usage is the last CLI message's, as for every message, so context
   fill and compaction stay right: the retry's input already includes the rejected attempt. When a
@@ -265,8 +278,8 @@ the model that answered, marked ⚠ with the same `title`, never merged into eit
 ## §app.claude-code-provider/catalog-drift — The CLI's model list only notifies
 
 The `claude` initialize model list (an initialize-only call, cached 60 s, no model request) is read
-only to notice drift, never to build a list. Settings → Subagents shows one quiet note under its
-intro when the list names a model the catalog doesn't know ("Claude Code offers {name}
+only to notice drift, never to build a list. Settings → Profiles (which took the place of Settings →
+Subagents) shows one quiet note under its Models part's first line when the list names a model the catalog doesn't know ("Claude Code offers {name}
 ({id}), which Sova's catalog doesn't know yet.") or resolves a family's alias to another model than
 the catalog's current one ("Claude Code now runs {family} as {id}; Sova's catalog still says
 {current}."). Nothing changes when the list omits a catalog model or can't be read.

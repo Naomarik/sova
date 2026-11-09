@@ -2,14 +2,15 @@ import { join } from "node:path";
 import { agentRoot } from "./state-root";
 import { LIBRARY_KEY, listKept, markRestored } from "./sync/kept";
 import {
-  loadSubagentProfiles, legacyProfile, parseSubagentProfiles, readProfilesDefault, resolveSubagents, profilesDefaultOf,
+  loadSubagentProfiles, legacyProfile, parseSubagentProfiles, readProfilesDefault, readSubagentProfiles, resolveSubagents, profilesDefaultOf,
   footprint, profileProviders, profileSlots, writeSubagentProfiles, writeProfilesDefault, OFF_FOOTPRINT,
   profileWorkers, shortModel as workerModelName,
 } from "../pi-config/extensions/subagents/subagent-profiles.ts";
-import type { SubagentProfile, SubagentProfilesInfo, SubagentProfilesReplaced } from "../shared/subagent-profiles";
+import type { SubagentProfile, SubagentProfilesFile, SubagentProfilesInfo, SubagentProfilesReplaced } from "../shared/subagent-profiles";
 import { firstIssue } from "../shared/form-rules";
 import { profileFields } from "../shared/subagent-profile-checks";
 import { delegateOptions, verifySlots, type DelegateSources } from "./delegate";
+import { profileHash } from "./sync/profile-merge";
 
 export function subagentProfilesInfo(pick?: string, dir = agentRoot()): SubagentProfilesInfo {
   const state = loadSubagentProfiles(dir);
@@ -43,7 +44,7 @@ export function profileModelCount(info: Pick<SubagentProfilesInfo, "settings">, 
   return p ? new Set(profileWorkers(p, false).map((w) => workerModelName(w.model))).size : 0;
 }
 
-/** How long Settings → Subagents offers a kept library back (§chat.subagent-profiles/replaced). */
+/** How long Settings → Profiles offers a kept library back (§chat.subagent-profiles/replaced). */
 export const REPLACED_NOTICE_MS = 24 * 60 * 60_000;
 const stateDirOf = (dir: string) => join(dir, "sova");
 
@@ -90,6 +91,30 @@ export function requireSubagentProfile(id: unknown, dir = agentRoot()): string {
 }
 
 export async function saveSubagentProfiles(body: unknown, sources: DelegateSources, dir = agentRoot()): Promise<SubagentProfilesInfo | { error: string }> {
+  const checked = await checkSubagentProfiles(body, sources, dir);
+  if ("error" in checked) return checked;
+  try {
+    writeCheckedProfiles(checked, dir);
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : String(err) };
+  }
+  const info = subagentProfilesInfo(undefined, dir);
+  return { ...info, warnings: [...(info.warnings ?? []), ...checked.warnings] };
+}
+
+/** A library that passed the save's checks, and the library it was checked against (read before the model check's await). */
+export interface CheckedProfiles {
+  value: SubagentProfilesFile;
+  warnings: string[];
+  base: SubagentProfile[];
+}
+
+/**
+ * Everything saveSubagentProfiles checks, without writing: the editor's box rules, the strict parse,
+ * and every changed worker slot against this host's models. Settings → Profiles' save checks its
+ * library half this way before it writes either half.
+ */
+export async function checkSubagentProfiles(body: unknown, sources: DelegateSources, dir = agentRoot(), copiedFrom: Readonly<Record<string, string>> = {}): Promise<CheckedProfiles | { error: string }> {
   const old = subagentProfilesInfo(undefined, dir);
   if (old.error) return { error: old.error };
   // The editor's boxes' rules first, so a bad box is refused in the words the editor shows it in.
@@ -103,15 +128,43 @@ export async function saveSubagentProfiles(body: unknown, sources: DelegateSourc
   // Teams editor did. `stored` is the tuple this very slot of this profile already holds: a slot
   // left as it was stored never blocks the save; anything else is checked as changed.
   const slots = parsed.value.profiles.flatMap((p) => {
-    const previous = old.settings.profiles.find(o => o.id === p.id);
+    // A copy (Duplicate, Save Current As Profile) is checked as the profile it was copied from.
+    const previous = old.settings.profiles.find(o => o.id === (copiedFrom[p.id] ?? p.id));
     const stored = new Map((previous ? profileSlots(previous) : []).map(s => [s.label, s.choice]));
     return profileSlots(p).map(s => ({ label: `${p.name}: ${s.label}`, choice: s.choice, stored: stored.get(s.label) }));
   });
   const checked = verifySlots(slots, options, "Subagents", "refuse affected work");
   if ("error" in checked) return checked;
-  writeSubagentProfiles(dir, parsed.value);
-  const info = subagentProfilesInfo(undefined, dir);
-  return { ...info, warnings: [...(info.warnings ?? []), ...checked.warnings] };
+  return { value: parsed.value, warnings: checked.warnings, base: old.settings.profiles };
+}
+
+/**
+ * What a save changed, put on the library as it stands now, profile by profile. `base` is the library
+ * the save started from, `saved` what it asks for, `now` the file at the moment of writing. A profile
+ * the save changed or added is the save's; one it left as it was stays as it is now (or gone, if it
+ * went meanwhile); one it dropped from `base` is deleted; one that arrived since is kept.
+ */
+export function rebaseProfiles(base: readonly SubagentProfile[], saved: readonly SubagentProfile[], now: readonly SubagentProfile[]): SubagentProfile[] {
+  const started = new Map(base.map((p) => [p.id, profileHash(p)]));
+  const current = new Map(now.map((p) => [p.id, p]));
+  const asked = new Set(saved.map((p) => p.id));
+  const out = saved.flatMap((p) => {
+    if (started.get(p.id) !== profileHash(p)) return [p];
+    const c = current.get(p.id);
+    return c ? [c] : [];
+  });
+  return [...out, ...now.filter((p) => !asked.has(p.id) && !started.has(p.id))];
+}
+
+/**
+ * Write what checkSubagentProfiles passed. The model check awaits, and the mesh can change the file
+ * during it: a list read before that would drop what arrived, and the sync would then record the
+ * drop as a deletion everywhere. So the file is read again here, with no await before the write.
+ */
+export function writeCheckedProfiles(checked: CheckedProfiles, dir = agentRoot()): SubagentProfilesFile {
+  const now = readSubagentProfiles(dir);
+  if (now.state === "malformed") throw new Error(`${now.file} can't be read (${now.errors.join("; ")}), so nothing was saved. Fix or remove it first.`);
+  return writeSubagentProfiles(dir, { version: 1, profiles: rebaseProfiles(checked.base, checked.value.profiles, now.state === "ok" ? now.value.profiles : []) });
 }
 
 /** Set this device's default (writes the default file only; the library and no other chat move). */

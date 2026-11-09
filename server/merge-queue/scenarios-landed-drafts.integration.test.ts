@@ -64,7 +64,7 @@ async function rowOf(checkout: string, branch: string, base: string, target: str
     r.resetReadiness();
   }
 }
-const LOST = /spec drafts didn't make it/;
+const LOST = /spec drafts? not landed/;
 
 /** The host merges the request (or, push branch only, the user merges the branch there): on the bare origin. */
 function mergeOnOrigin(fx: Fixture, branch: string): string {

@@ -428,7 +428,7 @@ the URL, and opens on its Projects (§app.organizations/org-page); each roster p
   `#/projects/<pid>` is Overview, `…/requirements`, `…/branches`, `…/merge-queue` (the project's
   merge queue, or, while the queue doesn't serve the project, its "No merge queue settings are
   set up" note with Set Up with a Chat, §app.merge-queue/view,
-  §app.merge-queue/setup; a run's page is `…/merge-queue/<run>`), `…/releases` (the project's releases, or,
+  §app.merge-queue/setup; its status tabs but Ready to land add their word, `…/merge-queue/<tab>`, and a run's page is `…/merge-queue/<run>`, or `…/merge-queue/<tab>/<run>` when opened from one of them), `…/releases` (the project's releases, or,
   while they aren't set up, how to set them up, §app.release/tab), `…/cost`, `…/settings` the others
   (`…/overseer` stays the overseer's door). Picking a tab or a chip adds a history entry, so Back
   returns to the previous tab and a reload opens the same one; the page is not reloaded and its
@@ -579,6 +579,22 @@ the URL, and opens on its Projects (§app.organizations/org-page); each roster p
   Profiles are personal data: the page says the remote must be private. Sova never creates a
   remote.
 - **Restore** = clone the repo onto a host and attach it (§app.organizations/portability).
+
+## §app.organizations/backup-guard — Backups scan for secrets before a push
+
+- **Transcripts stay in the backup.** The workspace's backup commits keep its chat transcripts
+  (`sessions/*.jsonl`) as they always have (§app.organizations/workspace-repo), so a clone and
+  attach still brings them (§app.organizations/portability); the secret scan below checks them, like
+  every other committed file, before any push.
+- **A secret scan before every push.** Before any push of the workspace repo (the hourly committer,
+  Commit Now, the shutdown commit, a retried push), Sova scans every commit the remote lacks for
+  secrets (all of HEAD when the remote's ref is unknown), with the publication scan's secret
+  patterns (workspaces have no private-names list): commit messages, file names and every added
+  line, up to 20,000 commits (more is refused). A hit holds the push: nothing is uploaded, the
+  commit stays local, and the repo's last error names the commit, the file and line and the kind of
+  secret, never the matched text: "upload held: commit {sha7} · {file}:{line} · looks like a
+  {kind}" (with "(and {n} more)"). A held push is tried again at the next due look, and scanned
+  again.
 
 ## §app.organizations/statechart-migration — The one-time move to the statechart names
 

@@ -322,7 +322,7 @@ describe("what a chat lists", () => {
   test("settled at the first message: a server added since the chat opened counts, one added after doesn't", async () => {
     approve([server("early", join(root, "early.log"))]);
     const { say, declared, path } = await open(project("settle"));
-    assert.deepEqual(declared(), []);
+    assert.ok(!declared().includes("mcp__late__echo"), "the control: not there before it is added");
     const late = server("late", join(root, "late.log"));
     approve([server("early", join(root, "early.log")), late]);
     await say("first", call("mcp__late__echo"), { text: "done" });

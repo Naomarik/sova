@@ -1,10 +1,10 @@
 import type { HEntry } from "../shared/harness";
 import type { DecisionSettings, SessionSummary, TeamDuty, WorkerInfo } from "../shared/protocol";
 import { isLinkMessage } from "../shared/link-message";
-import { isTopicBatch } from "../shared/topic-message";
+import { isMergeQueueBatch, isTopicBatch } from "../shared/topic-message";
 import { redactTourToolArgs } from "../shared/tour";
 import { DecisionError, type DecisionProvider, type DecisionResult, type JsonObject, type Question } from "./decide";
-import { maySend, terminalSession } from "./decide-settings";
+import { maySend, terminalSession, type DecisionFeature } from "./decide-settings";
 import type { RawLiveRecord } from "./live";
 import { readSignals, signalsFile, type StoredStall, updateSignals } from "./signals-store";
 import { pruneTurnOutcomes, recordTurnOutcome } from "./turn-outcomes";
@@ -298,8 +298,11 @@ export const CARD_QUESTIONS: Record<string, Question> = { asks_user: ASKS_USER, 
 /**
  * A main session's questions: the whole turn card, unless a partner's link message or a topic batch
  * opened the turn (its question is to the partner, or to an orchestrator): then none, and no call.
+ * The merge queue's batch is the exception (§chat.merge-queue/requests): its turn is read as one the
+ * user started, so a finished fix reads Ready to land and a question to the user shows in Needs you.
  */
 export function turnQuestions(f: TurnFacts): Record<string, Question> {
+  if (isMergeQueueBatch(f.lastUser)) return CARD_QUESTIONS;
   return isLinkMessage(f.lastUser) || isTopicBatch(f.lastUser) ? {} : CARD_QUESTIONS;
 }
 
@@ -335,6 +338,7 @@ export function exclusionReason(
   settings: DecisionSettings,
   held: boolean,
   home?: string,
+  feature: DecisionFeature = "attention",
 ): string | null {
   if (s.overseer) return "overseer";
   if (s.projectOverseer) return "project overseer";
@@ -344,7 +348,7 @@ export function exclusionReason(
   if (s.workerSession) return "worker session";
   if (s.queueChat) return "merge queue chat";
   if (s.archived) return "archived";
-  const gate = maySend(settings, "attention", { cwd: s.cwd, terminal: terminalSession(s, held) }, home);
+  const gate = maySend(settings, feature, { cwd: s.cwd, terminal: terminalSession(s, held) }, home);
   return gate.ok ? null : gate.reason;
 }
 

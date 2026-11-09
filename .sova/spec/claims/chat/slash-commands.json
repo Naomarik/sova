@@ -33,14 +33,17 @@
       "pi-config/extensions/btw/chat.ts",
       "pi-config/extensions/btw/child.ts",
       "pi-config/extensions/btw/btw.ts",
-      "pi-config/extensions/btw/btw.test.ts"
+      "pi-config/extensions/btw/btw.test.ts",
+      "server/chat-manager.ts",
+      "server/harness/pi/worker-tools.test.ts"
     ],
     "requires": [
       "§app.chat-processes/workers"
     ],
     "agreed": {
       "by": "naomarik",
-      "at": "2026-10-13T00:17Z"
+      "at": "2026-11-07T17:04Z",
+      "source": "pi-session:a08b61c6-6f44-4ae1-ace0-ced83f26f0b0#55f8e26b"
     },
     "evidence": "verified"
   },
@@ -143,7 +146,9 @@
       "src/lib/change-rows.ts",
       "src/components/ChatView.tsx",
       "src/lib/slash.test.ts",
-      "server/harness/pi/modes.ts"
+      "server/harness/pi/modes.ts",
+      "src/lib/command-wait.ts",
+      "src/lib/command-wait.test.ts"
     ],
     "agreed": {
       "by": "naomarik",

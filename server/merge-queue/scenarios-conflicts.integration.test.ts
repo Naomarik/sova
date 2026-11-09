@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { describe, test } from "node:test";
 import { APP, LIST_PLUS, STATE, mergeCopyOf, mergesOnto, resolution, reversedResolution, reviewer, settled, setup, testedHead } from "./testing/scenario-kit";
 import { Fixture, git, until } from "./testing/repo";
-import type { HarnessOptions } from "./testing/harness";
+import type { HarnessOptions, QueueHarness } from "./testing/harness";
 import type { MergeEntry } from "../../shared/merge-queue";
 import type { ThreadEvent } from "./contract";
 import { resolveRef, scratchCopyPath, scratchMarkOf } from "./scratch";
@@ -18,18 +18,33 @@ void [APP, LIST_PLUS, STATE, mergeCopyOf, mergesOnto, resolution, reviewer, sett
 export type _H = HarnessOptions | MergeEntry;
 
 describe("conflicts", () => {
+  /**
+   * `a` lands, then `b` conflicts in the queue. Both are approved before `a` lands (a branch that already conflicts at
+   * its Land waits for a fix instead, al_3 q7), and `b` waits, paused, until the test asks for it (`addB`).
+   */
+  async function landFirst(h: QueueHarness, a: { branch: string }, b: { branch: string }): Promise<() => Promise<MergeEntry>> {
+    const ea = await h.add({ branch: a.branch });
+    await h.pause("b waits until the test asks for it");
+    const eb = await h.add({ branch: b.branch });
+    const la = await h.waitEntry(ea.id, settled);
+    assert.equal(la.state, "landed", `${la.state}: ${la.reason}`);
+    return async () => {
+      await h.resume();
+      return h.entry(eb.id);
+    };
+  }
+
   async function twoAppenders(ho: HarnessOptions, fo: ConstructorParameters<typeof Fixture>[0] = {}) {
     const { fx, h } = await setup(fo, ho);
     const a = fx.branch("a", { "src/list.txt": LIST_PLUS("delta") });
     const b = fx.branch("b", { "src/list.txt": LIST_PLUS("echo") });
-    const la = await h.waitEntry((await h.add({ branch: a.branch })).id, settled);
-    assert.equal(la.state, "landed");
-    return { fx, h, a, b };
+    const addB = await landFirst(h, a, b);
+    return { fx, h, a, b, addB };
   }
 
   test("S2: no behaviour change (both sides extend a list): the thread resolves, the approval carries, full checks run on it, it lands with a note saying what and why", async () => {
     let called = 0;
-    const { fx, h, b } = await twoAppenders({
+    const { fx, h, b, addB } = await twoAppenders({
       thread: {
         conflict: async (h, e, ev) => {
           called++;
@@ -40,7 +55,7 @@ describe("conflicts", () => {
       },
     });
     const mark = fx.calls().length;
-    const eb = await h.add({ branch: b.branch });
+    const eb = await addB();
     const landed = await h.waitEntry(eb.id, settled);
     assert.equal(landed.state, "landed", `${landed.state}: ${landed.reason}`);
     assert.equal(called, 1);
@@ -50,7 +65,7 @@ describe("conflicts", () => {
   });
 
   test("S2b: a 'safe' resolution that changes lines outside the conflict is treated as behaviour differs (mechanical sanity)", async () => {
-    const { fx, h, b } = await twoAppenders({
+    const { fx, h, b, addB } = await twoAppenders({
       thread: {
         conflict: async (h, e) => {
           const c = resolution(h.fx, e.commit, "src/list.txt", "ALPHA\nbravo\ncharlie\ndelta\necho\n");
@@ -59,7 +74,7 @@ describe("conflicts", () => {
       },
     });
     const before = fx.head();
-    const eb = await h.add({ branch: b.branch });
+    const eb = await addB();
     const s = await h.waitEntry(eb.id, settled);
     assert.equal(s.state, "behaviour-differs", `${s.state}: ${s.reason}`);
     assert.equal(s.conflict?.sanity?.ok, false);
@@ -70,8 +85,8 @@ describe("conflicts", () => {
     const { fx, h } = await setup({}, ho);
     const a = fx.branch("a", { "src/app.txt": APP("THREE-A") });
     const b = fx.branch("b", { "src/app.txt": APP("THREE-B") });
-    assert.equal((await h.waitEntry((await h.add({ branch: a.branch })).id, settled)).state, "landed");
-    return { fx, h, b };
+    const addB = await landFirst(h, a, b);
+    return { fx, h, b, addB };
   }
   const differs: HarnessOptions = {
     thread: {
@@ -83,9 +98,9 @@ describe("conflicts", () => {
   };
 
   test("S3: behaviour differs: waits for the user with both sides; Accept runs the proposed resolution and lands it", async () => {
-    const { fx, h, b } = await differing(differs);
+    const { fx, h, b, addB } = await differing(differs);
     const before = fx.head();
-    const eb = await h.add({ branch: b.branch });
+    const eb = await addB();
     const w = await h.waitEntry(eb.id, settled);
     assert.equal(w.state, "behaviour-differs", `${w.state}: ${w.reason}`);
     assert.match(w.conflict?.ours ?? "", /THREE-A/);
@@ -99,20 +114,26 @@ describe("conflicts", () => {
     assert.match(fx.fileAt(fx.head(), "src/app.txt") ?? "", /THREE-B/);
   });
 
-  test("S3b: behaviour differs, Send Back: the entry goes back to its chat; master unmoved", async () => {
-    const { fx, h, b } = await differing(differs);
+  test("S3b: behaviour differs: no Send Back; the user's answer from the chat takes the held note with it and the entry is back with its chat; master unmoved", async () => {
+    const { fx, h, b, addB } = await differing(differs);
     const before = fx.head();
-    const eb = await h.add({ branch: b.branch });
-    assert.equal((await h.waitEntry(eb.id, settled)).state, "behaviour-differs");
-    await h.answer(eb.id, "send-back");
-    const s = await h.waitEntry(eb.id, ["needs-fix"]);
-    assert.equal(s.state, "needs-fix");
+    const eb = await addB();
+    const w = await h.waitEntry(eb.id, settled);
+    assert.equal(w.state, "behaviour-differs");
+    assert.equal(w.decision?.kind, "behaviour-differs");
+    assert.ok(w.decision?.heldNote?.text, "the queue's note waits, not sent");
+    await assert.rejects(h.answer(eb.id, "send-back" as never), /answer is/);
+    assert.equal(h.notices.filter((n) => n.branch === b.branch && n.kind !== "approved").length, 0, "nothing reached the chat yet");
+    const held = await h.decisionAnswered(eb.id, "Keep THREE-B");
+    assert.match(held?.text ?? "", /resolve it the way the user says/);
+    const s = await h.entry(eb.id);
+    assert.equal(s.state, "with-chat");
+    assert.ok(s.decision?.answered, "answered");
     assert.equal(fx.head(), before);
-    assert.ok(h.notices.some((n) => n.branch === b.branch && n.kind === "sent-back"), "its chat is told");
   });
 
   test("S2c: a resolution judged safe that then fails a test comes back to the user; the branch is not blamed", async () => {
-    const { fx, h, b } = await twoAppenders(
+    const { fx, h, b, addB } = await twoAppenders(
       {
         thread: {
           conflict: async (h, e) => {
@@ -125,29 +146,30 @@ describe("conflicts", () => {
       { files: { "tests/combo.txt": "forbid delta echo\n" } },
     );
     const before = fx.head();
-    const eb = await h.add({ branch: b.branch });
+    const eb = await addB();
     const s = await h.waitEntry(eb.id, (x) => settled(x) && x.state !== "landed" || x.state === "landed");
     assert.notEqual(s.state, "landed");
     assert.equal(fx.head(), before);
     assert.equal(h.run(s.run!).blame, "resolution", `blamed on the resolution (${h.run(s.run!).blame})`);
-    assert.ok((["behaviour-differs", "conflict"] as string[]).includes(s.state) || s.state === "needs-fix", `back to the user: ${s.state}`);
+    assert.ok((["behaviour-differs", "conflict"] as string[]).includes(s.state), `back to the user: ${s.state}`);
     assert.equal(h.notices.filter((n) => n.kind === "needs-fix").length, 0, "the branch's chat isn't told to fix it");
   });
 
-  test("S2d: no thread (down): a conflict is handed back to its chat after the wait, nothing else held up", async () => {
-    const { fx, h, b } = await twoAppenders({ conflictWaitMs: 500 });
+  test("S2d: no thread (down): a conflict waits for the merge thread (never sent to the chat unjudged), nothing else held up", async () => {
+    const { fx, h, b, addB } = await twoAppenders({ conflictWaitMs: 500 });
     const c = fx.branch("c", { "c.txt": "c\n" });
-    const eb = await h.add({ branch: b.branch });
+    const eb = await addB();
     const ec = await h.add({ branch: c.branch });
     const lc = await h.waitEntry(ec.id, settled);
     assert.equal(lc.state, "landed", "the line moved on past the conflict");
-    const s = await h.waitEntry(eb.id, ["needs-fix", "behaviour-differs"]);
-    assert.equal(s.state, "needs-fix", `${s.state}: ${s.reason}`);
-    assert.match(s.reason ?? "", /conflict/i);
+    const s = await h.waitEntry(eb.id, (e) => /waiting for the merge thread/.test(e.reason ?? "") || e.state === "with-chat");
+    assert.equal(s.state, "conflict", `${s.state}: ${s.reason}`);
+    assert.match(s.reason ?? "", /conflicts with .*waiting for the merge thread/);
+    assert.equal(s.requests, undefined, "nothing went to the chat");
   });
 
   test("S2e: a resolution with its parents reversed ([pinned, target]) is never landed: it waits for the user with a clear why", async () => {
-    const { fx, h, b } = await twoAppenders({
+    const { fx, h, b, addB } = await twoAppenders({
       thread: {
         conflict: async (h, e) => {
           const c = reversedResolution(h.fx, e.commit, "src/list.txt", LIST_PLUS("delta\necho"));
@@ -156,7 +178,7 @@ describe("conflicts", () => {
       },
     });
     const before = fx.head();
-    const s = await h.waitEntry((await h.add({ branch: b.branch })).id, settled);
+    const s = await h.waitEntry((await addB()).id, settled);
     assert.equal(s.state, "behaviour-differs", `${s.state}: ${s.reason}`);
     assert.match(s.reason ?? JSON.stringify(s.conflict?.sanity), /second parent|approved commit/);
     assert.equal(fx.head(), before);
@@ -164,7 +186,7 @@ describe("conflicts", () => {
 
   test("S2f: git rerere on (the user's global config has it) and the conflict resolved by hand before: still a conflict the thread judges, never a machine pause", async () => {
     let called = 0;
-    const { fx, h, b } = await twoAppenders({
+    const { fx, h, b, addB } = await twoAppenders({
       conflictWaitMs: 500,
       thread: {
         conflict: async () => {
@@ -184,11 +206,11 @@ describe("conflicts", () => {
     git(tmp, ["-c", "user.name=t", "-c", "user.email=t@t.invalid", "commit", "-q", "--no-edit"]);
     git(fx.project, ["worktree", "remove", "--force", tmp]);
     const before = fx.head();
-    const eb = await h.add({ branch: b.branch });
+    const eb = await addB();
     const v = await h.waitView((v) => v.state === "paused" || [...v.needsYou, ...v.needsFix, ...v.recent.map((r) => r.entry)].some((x) => x.id === eb.id), "the conflict judged, or a pause", 60_000);
     assert.notEqual(v.state, "paused", `the queue paused: ${JSON.stringify(v.paused)}`);
     const s = await h.entry(eb.id);
-    assert.ok(["conflict", "needs-fix"].includes(s.state), `${s.state}: ${s.reason}`);
+    assert.ok(["conflict", "with-chat"].includes(s.state), `${s.state}: ${s.reason}`);
     assert.equal(called, 1, "the thread was asked to judge it");
     assert.equal(fx.head(), before);
     assert.match(`${s.reason ?? ""} ${JSON.stringify(s.conflict ?? {})}`, /src\/list\.txt|conflict/i, `${s.state}: ${s.reason} ${JSON.stringify(s.conflict)}`);
@@ -247,7 +269,7 @@ describe("conflicts", () => {
     let seen: Seen | null = null;
     let pinned = "";
     let res = "";
-    const { fx, h, b } = await twoAppenders({
+    const { fx, h, b, addB } = await twoAppenders({
       thread: {
         conflict: async (h, e, ev) => {
           seen = await look(h, ev);
@@ -263,7 +285,7 @@ describe("conflicts", () => {
         },
       },
     });
-    const eb = await h.add({ branch: b.branch });
+    const eb = await addB();
     const landed = await h.waitEntry(eb.id, settled);
     assert.equal(landed.state, "landed", `${landed.state}: ${landed.reason}`);
     assertSeen(seen, eb.id, fx);
@@ -272,9 +294,56 @@ describe("conflicts", () => {
     await scratchGone(fx, eb.id);
   });
 
-  test("S3c: behaviour differs, Send Back: the scratch copy and the proposal's pin go", async () => {
+  test("S2j: the thread sends merged contents (it can't write the copy): Sova commits them in the detached scratch copy; no branch and not the main checkout moves; refusals name the file", async () => {
+    let res = "";
+    let before = "";
+    let after = "";
+    let mainHead = "";
+    const refused: string[] = [];
+    const { fx, h, addB } = await twoAppenders({
+      thread: {
+        conflict: async (h, e, ev) => {
+          const heads = () => git(h.fx.project, ["for-each-ref", "--format=%(refname) %(objectname)", "refs/heads"]);
+          before = heads();
+          mainHead = git(h.fx.project, ["rev-parse", "HEAD"]);
+          const base = { verdict: "no-behaviour-change" as const, files: ["src/list.txt"], ours: "master adds delta", theirs: "the branch adds echo", proposal: "keep both" };
+          for (const contents of <Record<string, string>[]>[{ "../outside.txt": "x" }, { "src/other.txt": "no conflict here\n" }, { "src/list.txt": "<<<<<<< ours\ndelta\n=======\necho\n>>>>>>> theirs\n" }])
+            await h.resolve(e.id, { ...base, contents }).then(
+              () => assert.fail(`contents ${JSON.stringify(Object.keys(contents))} were taken`),
+              (err: Error) => refused.push(err.message),
+            );
+          // Only a no-behaviour-change resolution carries contents: chat-fixes and needs-user carry none.
+          for (const verdict of ["chat-fixes", "needs-user"] as const)
+            await h.resolve(e.id, { ...base, verdict, text: "Which?", contents: { "src/list.txt": LIST_PLUS("delta\necho") } }).then(
+              () => assert.fail(`${verdict} took contents`),
+              (err: Error) => assert.match(err.message, /only verdict "no-behaviour-change" carries contents/),
+            );
+          const r = await h.resolve(e.id, { ...base, contents: { "src/list.txt": LIST_PLUS("delta\necho") } });
+          res = r.conflict!.commit!;
+          after = heads();
+          assert.equal(git(h.fx.project, ["rev-parse", "HEAD"]), mainHead, "the main checkout didn't move");
+          assert.equal(git(ev.scratch!, ["rev-parse", "HEAD"]), res, "the copy holds Sova's commit");
+          assert.equal(git(ev.scratch!, ["symbolic-ref", "-q", "HEAD"], { allowFail: true }), "", "still on no branch");
+          assert.deepEqual(git(h.fx.project, ["rev-list", "--parents", "-n", "1", res]).split(" ").slice(1), [git(h.fx.project, ["rev-parse", `refs/heads/${h.fx.target}`]), e.commit], "first parent the target's head, second the approved commit");
+          assert.equal(refOf(h.fx, e.id), res, "pinned under the hidden ref");
+        },
+      },
+    });
+    const eb = await addB();
+    const landed = await h.waitEntry(eb.id, settled);
+    assert.equal(landed.state, "landed", `${landed.state}: ${landed.reason}`);
+    assert.equal(before, after, "no branch moved while Sova committed the resolution");
+    assert.match(refused[0]!, /isn't a path inside the repository/);
+    assert.match(refused[1]!, /still conflicted, with no content given: src\/list\.txt/);
+    assert.match(refused[2]!, /conflict markers are still in: src\/list\.txt/);
+    assert.equal(fx.head(), res, "the resolution Sova committed is what landed");
+    assert.equal(fx.fileAt(fx.head(), "src/list.txt"), LIST_PLUS("delta\necho"));
+    await scratchGone(fx, eb.id);
+  });
+
+  test("S3c: behaviour differs, answered from the chat: the scratch copy and the proposal's pin go", async () => {
     let seen: Seen | null = null;
-    const { fx, h, b } = await differing({
+    const { fx, h, b, addB } = await differing({
       thread: {
         conflict: async (h, e, ev) => {
           seen = await look(h, ev);
@@ -283,26 +352,26 @@ describe("conflicts", () => {
         },
       },
     });
-    const eb = await h.add({ branch: b.branch });
+    const eb = await addB();
     assert.equal((await h.waitEntry(eb.id, settled)).state, "behaviour-differs");
     assertSeen(seen, eb.id, fx);
     assert.ok(refOf(fx, eb.id), "the proposal is pinned while it waits for the user");
     assert.ok(existsSync(scratchCopyPath(fx.project, eb.id)), "the copy stays while the attempt is open");
-    await h.answer(eb.id, "send-back");
-    assert.equal((await h.waitEntry(eb.id, ["needs-fix"])).state, "needs-fix");
+    await h.decisionAnswered(eb.id, "Keep THREE-B");
+    assert.equal((await h.entry(eb.id)).state, "with-chat");
     await scratchGone(fx, eb.id);
   });
 
   test("S2h: a conflict cancelled while the thread works: the scratch copy goes", async () => {
     let seen: Seen | null = null;
-    const { fx, h, b } = await twoAppenders({
+    const { fx, h, b, addB } = await twoAppenders({
       thread: {
         conflict: async (h, _e, ev) => {
           seen = await look(h, ev);
         },
       },
     });
-    const eb = await h.add({ branch: b.branch });
+    const eb = await addB();
     await h.waitEntry(eb.id, (x) => x.state === "conflict");
     await until("the thread was told", () => seen);
     assertSeen(seen, eb.id, fx);
@@ -312,14 +381,14 @@ describe("conflicts", () => {
 
   test("S2i: approved again at a newer commit while in conflict (superseded): the old attempt's copy goes", async () => {
     const seen: Seen[] = [];
-    const { fx, h, b } = await twoAppenders({
+    const { fx, h, b, addB } = await twoAppenders({
       thread: {
         conflict: async (h, _e, ev) => {
           seen.push(await look(h, ev));
         },
       },
     });
-    const eb = await h.add({ branch: b.branch });
+    const eb = await addB();
     await h.waitEntry(eb.id, (x) => x.state === "conflict");
     await until("the thread was told", () => seen.length > 0 || null);
     assertSeen(seen[0]!, eb.id, fx);
@@ -332,14 +401,14 @@ describe("conflicts", () => {
 
   test("S2j: Sova restarts while a conflict waits: the open attempt keeps its copy; once it ends, it goes", async () => {
     let seen: Seen | null = null;
-    const { fx, h, b } = await twoAppenders({
+    const { fx, h, b, addB } = await twoAppenders({
       thread: {
         conflict: async (h, _e, ev) => {
           seen = await look(h, ev);
         },
       },
     });
-    const eb = await h.add({ branch: b.branch });
+    const eb = await addB();
     await h.waitEntry(eb.id, (x) => x.state === "conflict");
     await until("the thread was told", () => seen);
     await h.restart();

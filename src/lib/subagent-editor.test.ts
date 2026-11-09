@@ -3,14 +3,14 @@ import { test } from "node:test";
 import type { SubagentProfile, TeamsSetting } from "../../shared/subagent-profiles";
 import type { WorkerChoice } from "../../shared/protocol";
 import { readFileSync } from "node:fs";
-import { coordinatorOn, delegateSummary, footprintModel, monitorOn, reviewerSummary, roleProblem, sectionProblems, specSummary, teamsSummary, withCoordinator, withMonitor } from "./subagent-editor";
+import type { TeamDefaults } from "../../shared/team-defaults";
+import { delegateSummary, footprintModel, reviewerSummary, sectionProblems, specSummary, teamsSeed, teamsSummary, withChosenModels, withDefaultModel } from "./subagent-editor";
 
 const claude = (model: string, effort = "medium"): WorkerChoice => ({ backend: "claude-code", model, effort });
 
 const teams = (): TeamsSetting => ({
-  coordinator: { enabled: true, role: "coordinator", primary: { backend: "claude-code", model: "opus[1m]", effort: "medium" }, fallback: null, instructions: "" },
+  coordinator: { role: "coordinator", primary: { backend: "claude-code", model: "opus[1m]", effort: "medium" }, fallback: null, instructions: "" },
   monitor: {
-    enabled: true,
     role: "monitor",
     primary: { backend: "pi", model: "ollama-cloud/deepseek-v4.1-flash", effort: "low" },
     fallback: null,
@@ -45,15 +45,12 @@ test("each closed section's summary says what is inside", () => {
   none.delegate.planning.fallback = null;
   assert.equal(delegateSummary(none), "Fable 5.1 · Opus 5.5 · no fallbacks");
 
-  assert.equal(teamsSummary(profile()), "No standing roles · members on the lead's model");
-  assert.equal(teamsSummary(profile({ teams: teams(), members: claude("sonnet") })), "Coordinator + monitor · members on Sonnet 5.5");
-  const lone = teams();
-  lone.monitor.enabled = false;
-  assert.equal(teamsSummary(profile({ teams: lone })), "Coordinator only · members on the lead's model");
-  // A stored shape with the coordinator off adds nobody, monitor included (teams.ts reads it so).
-  const off = teams();
-  off.coordinator.enabled = false;
-  assert.equal(teamsSummary(profile({ teams: off })), "No standing roles · members on the lead's model");
+  assert.equal(teamsSummary(profile()), "Coordinator + monitor on the default model");
+  // Members follow Delegate's work kinds now: a saved members value is no part of the summary.
+  assert.equal(teamsSummary(profile({ teams: teams(), members: claude("sonnet") as never })), "Coordinator on Opus 5.5 · monitor on deepseek-v4.1-flash");
+  const blank = teams();
+  blank.monitor.primary = { backend: "pi", model: "", effort: "low" };
+  assert.equal(teamsSummary(profile({ teams: blank })), "Coordinator on Opus 5.5 · monitor on a model not chosen yet");
 
   assert.equal(specSummary(profile()), "Off · the session writes it");
   assert.equal(specSummary(profile({ specWriter: { primary: claude("sonnet"), fallback: null } })), "Sonnet 5.5");
@@ -74,27 +71,23 @@ test("a summary names a model the way the list's footprint does", () => {
   for (const line of ["const name = claudeName(model);", "if (name) return name;", 'model.includes("/") ? model.slice(model.lastIndexOf("/") + 1) : model']) assert.ok(body.includes(line), `the extension's shortModel still has ${line}`);
 });
 
-test("the coordinator switch: off stores no roles, on restores the seed with the coordinator on", () => {
-  const seed = teams();
-  seed.coordinator.enabled = false; // a seed whose coordinator was off still turns on
-  const on = withCoordinator(profile(), true, seed);
-  assert.ok(coordinatorOn(on) && monitorOn(on));
-  assert.equal(on.teams!.monitor.everyMinutes, 10, "the seed's settings come back whole");
-  assert.equal(seed.coordinator.enabled, false, "the seed itself is not touched");
-  assert.equal(withCoordinator(on, false, seed).teams, null, "off is teams: null, the shape the old master switch stored");
-  assert.equal(withCoordinator(profile(), true, null).teams, null, "with nothing to restore, nothing turns on");
-  const stored = teams();
-  stored.coordinator.enabled = false;
-  stored.coordinator.instructions = "keep me";
-  const back = withCoordinator(profile({ teams: stored }), true, seed);
-  assert.equal(back.teams!.coordinator.instructions, "keep me", "a stored shape is turned on, not replaced by the seed");
-});
-
-test("the monitor switch needs a coordinator", () => {
-  const p = profile({ teams: teams() });
-  assert.equal(monitorOn(withMonitor(p, false)), false);
-  assert.equal(withMonitor(p, false).teams!.coordinator.enabled, true, "the coordinator stays");
-  assert.equal(withMonitor(profile(), true).teams, null, "no coordinator: nothing to turn on");
+test("Choose Models seeds both roles; Use Default Model puts both back on the chat's model", () => {
+  const legacy = { version: 1, ...teams() } as TeamDefaults;
+  const seed = teamsSeed(null, legacy)!;
+  assert.deepEqual(seed, teams(), "the legacy defaults' roles and handover, without the file's version");
+  const chosen = withChosenModels(profile(), seed);
+  assert.deepEqual(chosen.teams, teams());
+  assert.ok(chosen.teams !== seed, "the seed itself is not shared");
+  assert.equal(withChosenModels(profile(), null).teams, null, "with nothing to seed from, nothing is chosen");
+  const saved = teams();
+  saved.coordinator.instructions = "keep me";
+  assert.equal(teamsSeed(saved, legacy)!.coordinator.instructions, "keep me", "the profile's saved roles come back before the legacy defaults");
+  assert.equal(teamsSeed(undefined, undefined), null);
+  const kept = withChosenModels(profile({ teams: saved }), seed);
+  assert.equal(kept.teams!.coordinator.instructions, "keep me", "a profile that has its roles keeps them");
+  const back = withDefaultModel(profile({ teams: teams(), members: claude("sonnet") as never }));
+  assert.equal(back.teams, null);
+  assert.deepEqual(back.members, claude("sonnet"), "only the roles go back");
 });
 
 test("a section opens itself only for what Save waits for, and only that section", () => {
@@ -105,23 +98,11 @@ test("a section opens itself only for what Save waits for, and only that section
   const t = teams();
   t.monitor.contextPct = 0;
   assert.deepEqual([...sectionProblems(profile({ teams: t }))], ["teams"]);
-  assert.deepEqual([...sectionProblems(profile({ members: { backend: "pi", model: "", effort: "" } }))], ["teams"]);
+  assert.deepEqual([...sectionProblems(profile({ members: { backend: "pi", model: "", effort: "" } as never }))], [], "a saved members value has no row, so nothing opens for it");
   assert.deepEqual([...sectionProblems(profile({ specWriter: { primary: claude("sonnet"), fallback: claude("sonnet") } }))], ["spec"]);
   assert.deepEqual([...sectionProblems(profile({ reviewer: { primary: { backend: "pi", model: "", effort: "" }, fallback: null } }))], ["reviewer"]);
   assert.deepEqual([...sectionProblems(profile({ reviewer: null }))], [], "None waits for nothing");
   assert.deepEqual([...sectionProblems(profile({ name: "" }))], [], "the name sits above the sections");
-});
-
-test("a role whose fields need fixing is said per role", () => {
-  const t = teams();
-  t.monitor.role = " ";
-  assert.equal(roleProblem(profile({ teams: t }), "monitor"), true);
-  assert.equal(roleProblem(profile({ teams: t }), "coordinator"), false);
-  const same = teams();
-  same.monitor.role = "Coordinator";
-  assert.equal(roleProblem(profile({ teams: same }), "coordinator"), true, "the clash is both roles'");
-  assert.equal(roleProblem(profile({ teams: same }), "monitor"), true);
-  assert.equal(roleProblem(profile(), "monitor"), false);
 });
 
 test("Alignment: the summary says what the profile overrides; Use host default stores no field, both store no key", async () => {

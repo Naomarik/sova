@@ -159,6 +159,12 @@ export function numberedPorts(def: Pick<ProjectDef, "services">, numbering: Pick
   return out;
 }
 
+/** The ports a checkout-scoped copy of `def` needs in `slot`, numbered by `numbering`: the ports a slot's standing checks. */
+export function checkoutPortsAt(def: Pick<ProjectDef, "services">, numbering: Pick<ProjectDef, "services"> | null, slot: number): number[] {
+  const all = numberedPorts(def, numbering, slot);
+  return def.services.filter((s) => s.scope === "checkout").flatMap((s) => Object.values(all[s.name] ?? {}));
+}
+
 /**
  * The sentence a start or create meets when `running` copies already run and the limit is `cap`
  * (§app.project-services/instances), or null: there is room. At the limit: "{n} copies are running, and

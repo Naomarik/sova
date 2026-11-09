@@ -14,7 +14,7 @@ const html = (fn: () => unknown) => renderToString(fn as never).replaceAll(/<!--
 
 const HREF = "#/projects/prj_a/merge-queue";
 const glance = (x: Partial<ProjectGlance>): ProjectGlance => ({ projectId: "prj_a", merge: "unserved", queue: null, slots: null, memory: { chatsBytes: 0, copiesBytes: 0 }, release: null, ...x });
-const row = (g: ProjectGlance | undefined) => html(() => ReadyToMerge({ ready: cardRuntime(g, null, 0).ready, href: HREF }));
+const row = (g: ProjectGlance | undefined) => html(() => ReadyToMerge({ ready: cardRuntime(g, 0).ready, href: HREF }));
 
 test("unserved: — and not a link; before the first glance likewise", () => {
   for (const out of [row(glance({})), row(undefined)]) {

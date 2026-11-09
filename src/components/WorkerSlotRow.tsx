@@ -5,7 +5,7 @@ import { effortSelectOptions, modelSelectOptions, slotIssue, withBackend, withMo
 
 /**
  * One worker row — backend, model, effort, and what the row has to say about the pick — shared by
- * Settings → Subagents (Delegate's routes, the team roles, the spec writer) and the other screens
+ * Settings → Profiles (Delegate's routes, the team roles, the spec writer) and the other screens
  * that pick a worker. The choices come from what each backend actually offers; nothing here is free text. `idPrefix` keeps the rows' element ids unique;
  * `owner` names what reroutes a policy-denied pick ("Delegate").
  */

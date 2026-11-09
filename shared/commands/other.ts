@@ -590,7 +590,7 @@ export const OTHER_ENTRIES: CommandEntry[] = [
   {
     id: "settings.delegate.get",
     label: "Delegate Settings",
-    summary: "Legacy Delegate routing (mode-delegate.json): the profile library's seed and fallback, not what Settings → Subagents shows.",
+    summary: "Legacy Delegate routing (mode-delegate.json): the profile library's seed and fallback, not what Settings → Profiles shows.",
     effect: "looks",
     params: {},
     route: { method: "GET", path: "/api/settings/delegate" },
@@ -601,7 +601,7 @@ export const OTHER_ENTRIES: CommandEntry[] = [
   {
     id: "settings.spec.get",
     label: "Spec Settings",
-    summary: "The legacy spec writer (mode-spec.json): the profile library's seed and fallback, not what Settings → Subagents shows.",
+    summary: "The legacy spec writer (mode-spec.json): the profile library's seed and fallback, not what Settings → Profiles shows.",
     effect: "looks",
     params: {},
     route: { method: "GET", path: "/api/settings/spec" },

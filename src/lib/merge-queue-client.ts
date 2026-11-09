@@ -3,7 +3,7 @@
 // action bumps `mergeChanged`, which the session view reads to reload the worktree rows and the tab
 // reads to read the queue again, so the modal, the pane and the tab agree.
 import { createSignal } from "solid-js";
-import type { MergeAnswer, MergeCard, MergeReport } from "../../shared/merge-queue";
+import type { MergeAnswer, MergeCard, MergeReport, ReviewCard as MergeReviewCard } from "../../shared/merge-queue";
 import type { VerbResult } from "../../shared/project-contract";
 import { runMergeVerb } from "./api";
 import type { MergeEntry, MergeQueueView } from "./merge-queue-types";
@@ -36,10 +36,11 @@ export function noteMergeFeed(msg: { project: string; view: MergeQueueView }): v
   noteMergeChanged();
 }
 
-const [cardsFeed, setCardsFeed] = createSignal<{ session: string; cards: MergeCard[] } | null>(null);
-/** The newest cards the session feed pushed for one chat (`merge_cards`). */
+const [cardsFeed, setCardsFeed] = createSignal<{ session: string; cards: MergeCard[]; reviews?: MergeReviewCard[] } | null>(null);
+/** The newest cards (and review cards) the session feed pushed for one chat (`merge_cards`). */
 export const mergeCardsFeed = cardsFeed;
-export const noteMergeCards = (msg: { session: string; cards: MergeCard[] }): void => void setCardsFeed({ session: msg.session, cards: msg.cards });
+export const noteMergeCards = (msg: { session: string; cards: MergeCard[]; reviews?: MergeReviewCard[] }): void =>
+  void setCardsFeed({ session: msg.session, cards: msg.cards, ...(msg.reviews ? { reviews: msg.reviews } : {}) });
 
 const report = (r: VerbResult): MergeReport | undefined => r.merge;
 
@@ -80,15 +81,13 @@ export const landBranch = (project: string, branch: string, o: LandOptions = {})
     checks, from setup on, logged); it saves, merges and moves nothing. */
 export const trySetupBranch = (project: string, branch: string, commit: string) => act(project, "merge.try", { branch, commit });
 export const cancelEntry = (e: Pick<MergeEntry, "id">) => act(null, "merge.cancel", { entry: e.id });
-/** The user's answer to an entry that waits for them: Accept, Send Back, Land Anyway. */
+/** The user's answer to an entry that waits for them, a click on Sova's page: Accept, Land Anyway, Try Again. */
 export const answerEntry = (e: Pick<MergeEntry, "id">, answer: MergeAnswer) => act(null, "merge.answer", { entry: e.id, answer });
 export const pauseQueue = (project: string) => act(project, "merge.pause", {});
 /** Start Fresh: the merge thread is retired (archived once its turn ends); the next event starts a new one. */
 export const startFreshThread = (project: string) => act(project, "merge.fresh", {});
 /** The History's Clear (a session id) and Clear All ("all"): those chats are deleted for good. */
 export const clearQueueChats = (project: string, chat: string) => act(project, "merge.clear", { chat });
-/** The user's answer to the merge thread's question, typed on the tab. */
-export const answerThread = (project: string, ask: string, text: string) => act(project, "merge.reply", { ask, text });
 export const resumeQueue = (project: string) => act(project, "merge.resume", {});
 
 /** One run, its steps and their order (merge.logs answers the run with its lines). */

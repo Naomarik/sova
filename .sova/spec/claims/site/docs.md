@@ -77,20 +77,31 @@ start and the limits of 24 running workers per chat and 24 seats per team; how m
 (`team_msg`, `team_inbox`, `team_ask`) with examples of members settling things between themselves;
 the inbox (idle members woken, busy ones never interrupted, urgent items at the next step, questions
 waiting for an answer, a replaced member's messages going to its successor, inbox zero and the
-safety net, open items returned to their senders, nothing lost to a restart); the coordinator (from
-the subagent profile's Teams section; sees every assignment and the roster, steers by role, answers
-members' questions, the one voice back to the user's chat with `team_report` and `team_ask`, its own
-result starting a turn only once no member works, successors and handover notes, a team with no live
-coordinator reporting to the chat directly, and none under Off); the monitor (context wrap-up, the
+safety net, open items returned to their senders, nothing lost to a restart); the coordinator and
+the monitor every team gets from Sova (the chat names only the members who do the work, so a team
+runs 2 more workers than it names and small independent jobs are cheaper as separate workers; their
+models from the subagent profile's Teams section, else the chat's own model, Off included; each
+member the chat names runs on its work kind's model, a planning or investigation member never edits,
+and a member named with neither a kind nor a model is refused); the
+coordinator (sees every assignment and the roster, steers by role, answers members' questions, the
+one voice back to the user's chat with `team_report` and `team_ask`, its questions reaching a
+working chat after its current step and ending an `agent_wait`, its own result starting a turn only
+once no member works, successors and handover notes, a team with no live coordinator reporting to
+the chat directly); the monitor (context wrap-up, the
 usage pause and resume with an early resume refused, no checks while the team is idle); watching a
 team (the composer's count, the Session detail pane's member rows, the Inbox tab, read-only, and
 the Agents page's team chips).
 
-## §site.docs/subagent-profiles — Subagent profiles (`/docs/subagent-profiles/`)
+## §site.docs/subagent-profiles — Profiles (`/docs/subagent-profiles/`)
 
-What a subagent profile holds (its alignment override included), how a chat picks one, editing them in Settings, switching a chat's
-profile after a usage limit, and Off. A profile never turns on a project mode. The page sits in
-the Features group, not under Modes: a profile is not a mode.
+What a profile holds, in its two parts: When a Chat Starts (the mode and add-ons a chat starts in,
+its tools and session powers) and Models (the chat's own model and its helpers', its alignment
+override included; its Teams section chooses the models of the coordinator and monitor every team
+gets, else they run on the chat's own model). How a new chat starts on this computer's one default
+profile, how a chat switches its profile after a usage limit, or any time, all at once (its Models part), what "(edited)"
+means, editing profiles in Settings → Profiles (there is no Subagents tab), and Off. A profile never
+turns on a project mode. The page sits in the Features group, not under Modes: a profile is not a
+mode.
 
 ## §site.docs/align — Align and alignments (`/docs/modes/align/`)
 
@@ -112,7 +123,7 @@ route, when it runs, blockers, and what the card shows.
 The spec minor mode: its guide's two parts (finding your way on every turn, the writing procedure
 once, before the first behavior-changing edit or with the first census note or an alignment's
 go-ahead), working from the project's spec, the read-only `spec` tool every chat you code in and
-every worker has for those look-ups, spec on or off (§app.spec-lookup/spec-tool), the census note and its one unread line before
+every worker but a team's monitor has for those look-ups, spec on or off (§app.spec-lookup/spec-tool), the census note and its one unread line before
 finishing, updating a claim the task didn't create without asking and listing it in the reply's one
 spec line ("Also updates …"), the Agree step when align is on too, drafts and promotion, the spec
 writer, what workers get (and the claims a finished worker's changes landed in), and project coding
@@ -262,6 +273,19 @@ that the installed `sova` launcher runs no commands (it starts the server); the 
 stream; sending to a chat and raising a card; who ran what; and what no script can do, the
 approvals only your click passes among them, and how far that holds.
 
+## §site.docs/extensions — Sova extensions (`/docs/extending/extensions/`)
+
+What a Sova extension is, in Extending, and where to learn to build one; adding one from a folder in
+Settings → Extensions, the description file and the plain reasons a folder can't be used; the review
+before anything is on (the exact program running as you with no sandbox, its page on Sova's address,
+its cards, commands and Overseer offers, the rules it needs, what was left out); each row's one state
+and what it offers; approval following the code, Changed within seconds of an edit, and data and logs
+never asking again; an entry added outside the tab waiting for you, and existing ones approved once
+at the first start; only your own click adding, approving or removing; the program Sova starts,
+restarts at most 5 times a minute and logs, which keeps running through a restart or stop of Sova;
+an extension as a guest with a name badge that can never act as you; and other computers'
+extensions shown but not installable from here.
+
 ## §site.docs/add-ons — Add-ons in a Sova chat (`/docs/extending/add-ons/`)
 
 Which features of a pi add-on work in a Sova chat and which don't: tools, commands, events, providers
@@ -277,15 +301,29 @@ that each worktree's copy is approved on its own; what a server costs in tokens 
 trim it; workers and profiles; and what the sandbox and remote chats change. It says a server stays
 on its computer, and that chats don't ask before a tool runs.
 
+## §site.docs/themes — Themes (`/docs/themes/`)
+
+Settings → Themes, in Features: Light, Dark or Auto, and Auto following the system setting at once;
+the two lists, Dark theme first in every mode, each heading saying when it shows; a pick applying at
+once in the list that's showing and waiting in the other; the choice kept per browser, painted before
+the first frame, followed by other open tabs, and a theme picked before two lists carrying over; a
+theme of your own as one JSON file in the themes folder (its base, vars and colors), appearing
+without a restart; a file Sova can't use staying in the list with its reason; a pick that goes away
+falling back with a notice; the Text and Code fonts, Theme default and Use Theme Fonts, and Text size;
+and the `?theme=default` reset.
+
 ## §site.docs/merge-queue — Merge queue (`/docs/merge-queue/`)
 
 Which projects have a merge queue and that it is the only way a branch reaches their main branch;
 the two ways to land a branch (Land, with its menu, and "land it" typed in the branch's own chat,
 your own words only) and what Land refuses; one branch at a time in approval order; the merge in a
 copy, the checks, the optional review and landing exactly the tested commit, or a pull or merge
-request; the branch's card in its chat; whose failure a red check is and each waiting state (Needs a
-fix, Can't tell whose failure, Conflict and Behaviour differs, Review flagged, Drafts changed) with
-its actions; the Merge Queue tab; the merge thread and the queue's own chats; setting it up and
+request; the branch's card in its chat; whose failure a red check is; that one Land stands while the queue
+sends problems back to the branch's chat by itself and the chat's checked fixes go back in line,
+up to three tries; the requests and the chat's Fixed, Needs you and Can't answers; each decision
+that waits for you (Behaviour differs, a question, Can't tell whose failure, Out of tries, a fix
+that needs your OK, Drafts changed) with its answers, from the card's buttons or the chat's message
+box; the Merge Queue tab; the merge thread and the queue's own chats; setting it up and
 Settings → Merge Queue, linking to its own page (§site.docs/merge-queue-settings); each run's page; the freeze while a release is open. Screenshots of the Merge Queue tab, a run's page and the branch's card in its chat, once captured.
 
 ## §site.docs/merge-queue-settings — Merge queue settings (`/docs/merge-queue-settings/`)

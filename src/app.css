@@ -702,8 +702,12 @@ html, body { overflow: clip; overscroll-behavior: none; }
    dialog that fits it and a tall one doesn't get a dialog with a field floating in space. */
 .settings-modal {
   /* Tall enough for the Models tab's provider list without a scrollbar on a laptop. */
-  --settings-height: 640px;
+  --settings-height: 880px;
   height: min(var(--settings-height), calc(100dvh - var(--space-8)));
+}
+/* Unfolded, a wide window gets a wide dialog: Profiles sets a list beside an editor. Still a modal. */
+@media (min-width: 768px) {
+  .settings-modal.modal-wide { width: min(1120px, calc(100vw - var(--space-8))); }
 }
 /* base.css floors the body at 320px so the rail always has room. On a short viewport that floor
    plus the head and foot is taller than the dialog, and the foot's Close button goes under the
@@ -733,7 +737,7 @@ html, body { overflow: clip; overscroll-behavior: none; }
 }
 /* A section heading's own action (Reset to Defaults), and the hint that goes with it. */
 .settings-head-actions { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; justify-content: flex-end; }
-.settings-modal .settings-tabs { overflow-y: auto; }
+.settings-modal .settings-tabs { overflow-y: auto; position: relative; }
 @media (max-width: 767px) {
   /* Folded, the modal is a sheet pinned to the bottom edge and base.css caps it at 85dvh. Same
      rule, same reason: one height, whichever tab is open. */
@@ -926,6 +930,10 @@ html, body { overflow: clip; overscroll-behavior: none; }
 .message-images-single > li.thumb-sized .thumb img { width: 100%; aspect-ratio: var(--thumb-ratio); }
 
 /* ---- Session profiles (§chat/profiles) ---------------------------------------------------- */
+/* A profile switch's line in the thread, just above the composer (§chat.profiles/switch): the
+   session column, empty when there is nothing to say. */
+.profile-switch-line { display: flex; flex-direction: column; gap: var(--space-2); width: 100%; max-width: var(--measure); }
+.profile-switch-line:empty { display: none; }
 /* The empty screen's picker: left-aligned, the session column (--measure), above the setup card. */
 .profile-picker {
   display: flex;
@@ -1163,6 +1171,13 @@ html, body { overflow: clip; overscroll-behavior: none; }
 .worktree-cleanup-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-2); }
 .worktree-cleanup-list li { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .worktree-cleanup-path { font-family: var(--font-mono); font-size: var(--fs-mono); overflow-wrap: anywhere; color: var(--color-ink); }
+/* Remove Anyway (§chat.worktrees/cleanup): the kept row's action, and the listing's file lists (scroll past ~12 rows). */
+.worktree-cleanup-anyway { align-self: flex-start; margin-top: var(--space-1); }
+.remove-anyway-listing { display: flex; flex-direction: column; gap: var(--space-3); min-width: 0; }
+.remove-anyway-listing section { display: flex; flex-direction: column; gap: var(--space-2); }
+.remove-anyway-listing h3 { margin: 0; }
+.worktree-cleanup-files { list-style: none; margin: 0; padding: 0; max-height: 16rem; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; }
+.worktree-cleanup-files code { font-family: var(--font-mono); font-size: var(--fs-mono); overflow-wrap: anywhere; color: var(--color-ink); }
 /* After the first message: the thread's muted profile row, the head chip and its popover. */
 .profile-row { display: flex; align-items: center; gap: var(--space-2); margin: 0 0 var(--space-2); font-size: var(--fs-caption); color: var(--color-ink-muted); }
 .profile-chip-wrap { position: relative; display: inline-flex; flex: none; }
@@ -1613,6 +1628,18 @@ html, body { overflow: clip; overscroll-behavior: none; }
 .wt-queue-row { align-items: flex-start; flex-wrap: wrap; row-gap: var(--space-2); }
 .wt-queue-row > .list-main { flex: 1 1 16rem; min-width: 0; }
 .wt-queue-row .list-title { font-weight: var(--fw-medium); white-space: normal; overflow-wrap: anywhere; }
+/* A branch's place: a whole-line button that wraps, at the 44px touch target; it unfolds to the folder under it. */
+.branch-place { min-width: 0; }
+.branch-place-line { display: inline-flex; align-items: center; gap: var(--space-1); max-width: 100%; min-height: var(--tap-min); padding: 0; border: 0; background: none; color: var(--color-ink-2); text-align: start; cursor: pointer; }
+.branch-place-line:hover { color: var(--color-ink); }
+.branch-place-line:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
+.branch-place-line .icon { flex: none; }
+.branch-place-words { min-width: 0; white-space: normal; overflow-wrap: anywhere; }
+.branch-place-fold { display: grid; justify-items: start; gap: var(--space-1); margin-bottom: var(--space-1); padding-inline-start: 20px; }
+.branch-place-fold[hidden] { display: none; }
+/* Copy Folder lines up with the facts: a ghost button gives back its own side padding. */
+.branch-place-fold > .button-ghost { margin-inline-start: calc(-1 * var(--space-3)); }
+.branch-place-fact { margin: 0; max-width: 100%; overflow-wrap: anywhere; color: var(--color-ink-2); }
 .wt-queue-facts { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1) var(--space-2); margin-top: var(--space-1); }
 .wt-queue-reason,
 .wt-queue-note,
@@ -1645,7 +1672,8 @@ html, body { overflow: clip; overscroll-behavior: none; }
 /* The foot: the queue's one line on the left (muted), View Merge Queue a small link on the right. */
 .wt-queue-foot { justify-content: space-between; }
 .wt-queue-intro { margin: 0; min-width: 0; color: var(--color-ink-muted); }
-.wt-queue-foot-link { flex: none; margin-inline-start: auto; display: inline-flex; align-items: center; min-height: var(--tap-min); }
+.wt-queue-foot-links { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 0 var(--space-3); margin-inline-start: auto; min-width: 0; }
+.wt-queue-foot-link { display: inline-flex; align-items: center; min-height: var(--tap-min); }
 .wt-queue-paused { margin: 0; padding: var(--space-2) var(--space-3); border-radius: var(--r-md); background: var(--status-warn-bg); color: var(--color-ink); }
 
 /* The tab. */
@@ -1694,6 +1722,22 @@ html, body { overflow: clip; overscroll-behavior: none; }
 .mq-now { color: var(--color-ink); font-weight: var(--fw-medium); }
 .mq-empty { margin: 0; padding: var(--space-3) var(--space-4); border: 1px dashed var(--color-border-strong); border-radius: var(--r-lg); color: var(--color-ink-2); }
 .mq-list { margin: 0; padding: 0; border: 1px solid var(--color-border); border-radius: var(--r-lg); background: var(--color-surface); }
+/* Waiting (§app.merge-queue/view): a header that opens and closes its rows, closed each time the tab is shown. */
+/* No louder than the tabs under it: the tab's size and weight. With nothing in line it is a plain line, no toggle. */
+.mq-waiting-head { margin: 0; font-size: var(--fs-body); font-weight: var(--fw-medium); line-height: var(--lh-body); color: var(--color-ink); }
+.mq-waiting-none { display: flex; align-items: center; min-height: var(--tap-min); color: var(--color-ink-2); }
+.mq-waiting-toggle { display: inline-flex; align-items: center; gap: var(--space-2); min-height: var(--tap-min); max-width: 100%; padding: 0 var(--space-2); margin-inline-start: calc(-1 * var(--space-2)); border: 0; border-radius: var(--r-md); background: transparent; color: inherit; font: inherit; text-align: start; cursor: pointer; }
+.mq-waiting-toggle:hover { background: var(--color-sunken); }
+.mq-waiting-toggle:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
+.mq-waiting-toggle .mq-twist { flex: none; transition: transform var(--dur-fast) var(--ease-standard); }
+.mq-waiting-toggle[aria-expanded="true"] .mq-twist { transform: rotate(90deg); }
+@media (prefers-reduced-motion: reduce) { .mq-waiting-toggle .mq-twist { transition: none; } }
+/* The status tabs under Waiting: the skill's strip, one line that scrolls sideways when it can't fit, never the page.
+   A label's count is muted; Needs you's is the warn colour while it has anything (its word and count say it too). */
+.mq-tabs { flex: none; flex-wrap: nowrap; scrollbar-width: thin; }
+.mq-tabs > .tab { flex: none; }
+.mq-tab-count { color: var(--color-ink-muted); font-weight: var(--fw-regular); }
+.mq-tab-count.mq-tab-count-warn { color: var(--status-warn); font-weight: var(--fw-medium); }
 .mq-row { align-items: flex-start; flex-wrap: wrap; gap: var(--space-2) var(--space-3); }
 .mq-row > .list-main { flex: 1 1 16rem; min-width: 0; }
 .mq-row .list-title { flex-wrap: wrap; white-space: normal; }
@@ -1735,6 +1779,8 @@ html, body { overflow: clip; overscroll-behavior: none; }
   /* The page's own side padding (.insights-inner) is given back: the hairlines reach the pane's edges. */
   .card.mq-tab { border: 0; border-radius: 0; background: none; box-shadow: none; overflow: visible; margin-inline: calc(-1 * var(--space-4)); padding: var(--space-3) 12px; }
   .mq-tab :is(.mq-list, .mq-card, .mq-strip, .mq-thread-card) { margin-inline: -12px; border-inline: 0; border-radius: 0; }
+  /* The status strip reaches the pane's edges too, so its last tab scrolls in from the edge. */
+  .mq-tab .mq-tabs { margin-inline: -12px; padding-inline: 12px; }
   .mq-tab :is(.mq-card, .mq-strip, .mq-thread-card) { padding-inline: 12px; }
   .mq-tab .mq-row { flex-direction: column; flex-wrap: nowrap; align-items: stretch; padding: var(--space-3) 12px; }
   .mq-tab .mq-row > .list-main { flex: none; }
@@ -1784,6 +1830,8 @@ html, body { overflow: clip; overscroll-behavior: none; }
 }
 .mq-sides { display: grid; gap: var(--space-2); margin: var(--space-2) 0 0; }
 .mq-sides > div { padding: var(--space-2) var(--space-3); border-radius: var(--r-md); background: var(--color-sunken); }
+/* A row's hover fill is the boxes' own: on hover they take the surface, so they never melt into it. */
+.mq-tap:hover .mq-sides > div { background: var(--color-surface); }
 .mq-sides dt { margin: 0 0 var(--space-1); }
 .mq-sides dd { margin: 0; white-space: normal; overflow-wrap: anywhere; }
 .mq-note { color: var(--color-ink-2); }
@@ -1895,8 +1943,43 @@ html, body { overflow: clip; overscroll-behavior: none; }
 .mq-card-failures li { overflow-wrap: anywhere; }
 .mq-card-actions { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-2); margin-top: var(--space-1); }
 .mq-card-actions .button-destructive { margin-left: var(--space-2); }
+/* A decision on the card (§chat.merge-queue/decision): the question, choices that fill the message box, and the
+   queue's note held "not sent yet". No text box: the answer is typed in the chat's own message box. */
+.mq-chat-card .mq-card-decision { display: flex; flex-direction: column; gap: var(--space-2); margin: var(--space-1) 0; padding: var(--space-2) var(--space-3); border-radius: var(--r-md); background: var(--status-warn-bg); }
+.mq-chat-card .mq-card-question { margin: 0; font-weight: var(--fw-medium); overflow-wrap: anywhere; }
+.mq-chat-card .mq-card-choices { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.mq-chat-card .mq-card-choices-list { margin: 0; padding-left: var(--space-4); }
+.mq-chat-card .mq-card-held { display: flex; flex-direction: column; gap: var(--space-1); padding-top: var(--space-2); border-top: 1px solid var(--color-border); }
+.mq-chat-card .mq-card-held-mark { margin: 0; display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-2); }
+.mq-chat-card .mq-card-standing, .mq-chat-card .mq-card-fixes { display: flex; flex-direction: column; gap: var(--space-1); }
+.mq-chat-card .mq-card-fixes ul { margin: 0; padding-left: var(--space-4); }
+@media (pointer: coarse) { .mq-chat-card .mq-card-choices .button { min-height: var(--tap-min); } }
 @media (pointer: coarse) { .mq-card-actions .button { min-height: var(--tap-min); } }
 .mq-card-folded .disclosure-label { overflow-wrap: anywhere; }
+.mq-chat-card .mq-card-pointer { display: inline; }
+/* A blocking review's own card (§chat.merge-queue/review-card): every finding whole, one row each. */
+.mq-review-card { padding: var(--space-3) var(--space-4); display: grid; gap: var(--space-2); scroll-margin-top: var(--space-3); }
+.mq-review-card p { margin: 0; }
+.mq-review-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+.mq-review-title { font-size: var(--fs-heading-s); line-height: var(--lh-heading-s); font-weight: var(--fw-semibold); }
+.mq-review-facts { color: var(--color-ink-muted); overflow-wrap: anywhere; }
+.mq-review-summary { overflow-wrap: anywhere; }
+.mq-review-findings { margin: 0; padding: 0; list-style: none; display: grid; gap: var(--space-1); }
+.mq-review-finding { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-1) var(--space-2); padding: var(--space-2) 0; border-top: 1px solid var(--color-border); }
+.mq-review-finding:first-child { border-top: 0; }
+.mq-review-kind { flex: none; }
+.mq-review-place { overflow-wrap: anywhere; text-align: left; }
+.mq-review-text { flex: 1 1 100%; min-width: 0; overflow-wrap: anywhere; white-space: pre-wrap; }
+.mq-review-state { display: flex; align-items: center; gap: var(--space-2); overflow-wrap: anywhere; }
+.mq-review-dot { flex: none; width: 8px; height: 8px; border-radius: var(--r-full); background: var(--color-ink-muted); }
+.mq-review-dot-info { background: var(--status-info); }
+.mq-review-dot-warn { background: var(--status-warn); }
+.mq-review-dot-success { background: var(--status-success); }
+.mq-review-dot-accent { background: var(--color-accent); }
+.mq-review-actions { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-2); }
+@media (pointer: coarse) { .mq-review-actions .button, .mq-review-place, .mq-review-state .button-link { min-height: var(--tap-min); } }
+.mq-review-folded .disclosure-label { overflow-wrap: anywhere; }
+.mq-card-review-notes .disclosure-body { padding-top: var(--space-1); }
 /* Can't tell whose failure: the checks that failed on both sides, each with its log. */
 .mq-unclear { margin: var(--space-1) 0 0; padding-left: var(--space-4); }
 .mq-unclear li { overflow-wrap: anywhere; }
@@ -1913,3 +1996,75 @@ html, body { overflow: clip; overscroll-behavior: none; }
    chip and time stay in. */
 .toolcard-summary:has(> .chip-count) > .toolcard-name { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .toolcard-summary > .chip-count { flex: none; }
+
+/* The Time Spent tab. Three text weights, by place and never by a figure's size or value:
+   ink for what the tab is read for (You, Agent, each row's time, each document's title), ink-2 for what
+   names it (You and Agent, row labels, the sub-headings, the word), muted for detail (a row's parts, a message's
+   excerpt, a count, a document's figures). One spacing scale: 16px between blocks, 8px between rows as Identity's, 4px inside
+   an opened row. Every row is one line tall; a row that opens keeps a 44px target in a hit area that
+   adds no height, so the rhythm stays even. */
+.time-spent-expander {
+  position: relative;
+  width: 100%;
+  padding: 0;
+  background: none;
+  border: 0;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+.time-spent-expander::after {
+  content: "";
+  position: absolute;
+  inset: 50% 0 auto;
+  height: var(--tap-min);
+  transform: translateY(-50%);
+}
+.time-spent-expander:hover { color: var(--color-ink); }
+.time-spent-expander:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); border-radius: var(--r-xs); }
+.time-spent .icon-twist { transition: transform var(--dur-fast) var(--ease-standard); }
+.time-spent .time-spent-twist-open { transform: rotate(90deg); }
+.time-spent-body { display: flex; flex-direction: column; gap: var(--space-4); }
+/* The word sits on the figures' line, as their third item. */
+.time-spent-head { display: flex; flex-wrap: wrap; align-items: flex-end; align-items: last baseline; gap: var(--space-2) var(--space-5); }
+.time-spent-figures { display: flex; flex-wrap: wrap; gap: var(--space-2) var(--space-5); margin: 0; min-width: 0; }
+.time-spent-figures dt { color: var(--color-ink-2); }
+.time-spent-figure { margin: 0; color: var(--color-ink); font-size: var(--fs-heading-s); line-height: var(--lh-heading-s); font-weight: var(--fw-medium); white-space: nowrap; }
+.time-spent-word { margin: 0; color: var(--color-ink-2); white-space: nowrap; }
+.time-spent-sub { margin: 0; font-weight: var(--fw-medium); color: var(--color-ink-2); }
+.time-spent-rows,
+.time-spent-parts,
+.time-spent-docs { display: flex; flex-direction: column; margin: 0; padding: 0; list-style: none; }
+.time-spent-rows { gap: var(--space-2); }
+.time-spent-docs { gap: var(--space-3); }
+.time-spent-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  font-size: var(--fs-caption);
+  line-height: var(--lh-caption);
+  color: var(--color-ink-2);
+}
+.time-spent-row > .text-num { flex: none; color: var(--color-ink); white-space: nowrap; }
+.time-spent-row-label { display: inline-flex; align-items: center; gap: var(--space-1); min-width: 0; }
+/* Reading's parts hang from it: one 12px indent on a guide rule, closer to Reading than to the row below. */
+.time-spent-parts { gap: var(--space-1); margin-top: var(--space-1); padding-left: var(--space-3); border-left: var(--stroke-thin) solid var(--color-border); }
+.time-spent-part { color: var(--color-ink-muted); }
+.time-spent-part > .text-num { color: var(--color-ink-2); }
+/* Your Messages: the count in a column of its own, quieter than the time; the time column holds its width so the counts line up. */
+.time-spent-row > .time-spent-count { margin-left: auto; color: var(--color-ink-muted); }
+.time-spent-message-rows .time-spent-row > .text-num:last-child { min-width: 10ch; text-align: right; }
+/* Rows that open sit next to each other here: each answers across its own row and half the gap on either side, so a press never lands on its neighbour. */
+.time-spent-message-rows .time-spent-expander::after { inset: calc(var(--space-2) / -2) 0; height: auto; transform: none; }
+.time-spent-messages { gap: var(--space-2); }
+.time-spent-message { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 0 var(--space-3); }
+.time-spent-excerpt { margin: 0; color: var(--color-ink-muted); overflow-wrap: anywhere; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
+.time-spent-message-time { color: var(--color-ink-2); white-space: nowrap; }
+.time-spent-labelled-by { grid-column: 1 / -1; margin: var(--space-1) 0 0; font-family: var(--font-mono); font-size: var(--fs-mono); }
+.time-spent-doc-title { margin: 0; color: var(--color-ink); overflow-wrap: anywhere; }
+.time-spent-docs .text-muted { margin: 0; overflow-wrap: anywhere; }
+.time-spent-skeleton { display: flex; flex-direction: column; gap: var(--space-4); }
+.time-spent-skeleton .time-spent-rows .text-skeleton { flex: none; }
+

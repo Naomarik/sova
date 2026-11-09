@@ -472,16 +472,18 @@
       "server/feature-chat-view.test.ts",
       "src/share/theme.ts",
       "src/share/owner-view.tsx",
-      "server/owner-page.ts"
+      "server/owner-page.ts",
+      "src/vis/kinds/chart/ChartControls.tsx",
+      "src/vis/kinds/chart/memory.ts"
     ],
     "requires": [
       "§app.organizations/privacy",
       "§app/tours"
     ],
     "agreed": {
-      "by": "omar (user)",
-      "at": "2026-10-25T18:32Z",
-      "source": "pi-session:01a173c3-7183-70d4-a656-e47ab7fd7392#cbe59d9a"
+      "by": "Omar (user)",
+      "at": "2026-11-07T21:30Z",
+      "source": "pi-session:fb6b7a43-4aea-4bb6-b919-3302f164b7b9#458ede51"
     }
   },
   "§app.baton/read-link": {

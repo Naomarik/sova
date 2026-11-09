@@ -1,8 +1,8 @@
 /**
  * Which changed files the live server only picks up at its restart, which need the packages installed again, and
  * which change the built page. One rule for the session readiness (merge-readiness.ts needsRestart) and for Sova's own
- * merge thread, whose playbook script (.sova/playbooks/merge-queue/scripts/restart-sova.mjs) imports this file from
- * the main checkout. Imports nothing, and uses only syntax Node runs with its type stripping.
+ * restart after landings (server/merge-queue/restart.ts: merge.live and merge.restart). Imports nothing, and uses only
+ * syntax Node runs with its type stripping.
  */
 
 /**

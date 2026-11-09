@@ -138,10 +138,13 @@ async function script(f: ReturnType<typeof fakePi>) {
   await f.run("mode", "spec on");
   await turn("next", "ok");
   await f.run("mode", "strict on");
+  // A tool that arrives while strict is on (§chat.mode-menu/strict) stays through the rest of this.
+  f.pi.setActiveTools([...f.pi.getActiveTools(), "arrived"]);
   await f.run("mode", "delegate");
   await turn("go", "done");
   await f.run("mode", "align off");
   await f.run("mode", "normal");
+  assert.ok(f.pi.getActiveTools().includes("arrived"), "leaving strict keeps it");
   await f.run("mode", "strict off");
   await f.run("mode", "bogus on");
   await f.run("align", "on");

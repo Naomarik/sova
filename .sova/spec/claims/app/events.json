@@ -10,6 +10,37 @@
     "requires": [],
     "evidence": "verified"
   },
+  "§app.events/card-news": {
+    "kind": "behavior",
+    "requires": [
+      "§app.events/names",
+      "§app.events/idle",
+      "§app.served-commands/watch",
+      "§chat.transcript-cards/raise-command",
+      "§chat.transcript-cards/answering",
+      "§mesh.compatibility/declare-a-change"
+    ],
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "shared/events.ts",
+      "server/events.ts",
+      "server/transcript-cards.ts",
+      "docs/customization.md",
+      "server/index.ts",
+      "server/ws.ts",
+      "shared/protocol.ts",
+      "src/components/ChatView.tsx",
+      "server/events.test.ts",
+      "server/extension-cards.test.ts",
+      "server/extension-openings.integration.test.ts"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-06T21:52Z",
+      "source": "pi-session:01a1acdc-5fed-7735-96f5-96f6019e339d#c412bec1"
+    }
+  },
   "§app.events/idle": {
     "kind": "behavior",
     "authority": "accepted",
@@ -53,7 +84,12 @@
     "requires": [
       "§app.decisions/push"
     ],
-    "evidence": "verified"
+    "evidence": "verified",
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-06T21:52Z",
+      "source": "pi-session:01a1acdc-5fed-7735-96f5-96f6019e339d#c412bec1"
+    }
   },
   "§app.events/resume": {
     "kind": "behavior",

@@ -5,6 +5,7 @@ import type { PromoteCommit } from "../shared/decisions";
 import { type Git, probeMerge, runGit } from "../pi-config/extensions/worktrees/git.ts";
 import { canonical } from "../pi-config/extensions/worktrees/state.ts";
 import { NO_BACKGROUND_CLEANUP } from "./git-no-background";
+import { leftovers, leftoversDigest, leftoversReason, unreadableLeftovers, type Leftovers } from "./worktree-leftovers";
 
 /**
  * The project's coding sessions each run in their own git worktree and branch of the client
@@ -262,19 +263,64 @@ export async function mergeBack(w: WorktreeRecord, root: string, title: string, 
   return { sha: sha.stdout.trim() };
 }
 
+/** Remove Anyway's one-shot permission per worktree folder: the digest of the listing the user confirmed, set by
+    the route for the length of its act (the build's remove-worktree effect reads it). */
+const anyway = new Map<string, string>();
+export async function withRemoveAnyway<T>(path: string, digest: string, fn: () => Promise<T>): Promise<T> {
+  const key = canonical(path);
+  anyway.set(key, digest);
+  try {
+    return await fn();
+  } finally {
+    anyway.delete(key);
+  }
+}
+const anywayFor = (path: string): string | undefined => anyway.get(canonical(path));
+
+/** Why Remove Worktree must leave the folder (server/worktree-leftovers.ts, the cleanup's check): null when it may
+    go. `content` is set when what it holds is the reason (Remove Anyway may take it); a failed read keeps it too. */
+export async function removalHold(path: string): Promise<{ reason: string; words: string; content?: Leftovers } | null> {
+  if (!existsSync(path)) return null;
+  const l = await leftovers(path).catch(unreadableLeftovers);
+  const reason = leftoversReason(l);
+  if (!reason) return null;
+  const n = l.dirty.length;
+  const words =
+    !l.unreadable && !l.ignored.length && !l.nested.length
+      ? `The worktree has uncommitted changes in ${n} file${n === 1 ? "" : "s"} (${l.dirty[0]}). Nothing was removed. Commit or discard them first.`
+      : `${reason} Nothing was removed.`;
+  return { reason, words, ...(l.unreadable ? {} : { content: l }) };
+}
+
+/** Whether Remove Worktree would go ahead now (Remove Anyway's confirmed listing counted): its running copy is
+    torn down only then. */
+export async function mayRemove(path: string): Promise<boolean> {
+  const hold = await removalHold(path);
+  if (!hold) return true;
+  const digest = anywayFor(path);
+  return !!digest && !!hold.content && leftoversDigest(hold.content) === digest;
+}
+
 /**
- * Remove Worktree: git's own `worktree remove` (refused with uncommitted changes, naming them), and
- * the branch deleted only when merged; an unmerged branch keeps its commits. A folder already gone
- * is dropped from git's list by the same command, naming it: never a bare `worktree prune`, which
- * forgets every worktree whose folder is missing. Returns whether the branch was deleted.
+ * Remove Worktree: git's own `worktree remove`, refused, naming why, while the worktree holds what git can't bring
+ * back (uncommitted or untracked files, ignored files that can't be rebuilt, a nested repository: the cleanup's
+ * check), and the branch deleted only when merged; an unmerged branch keeps its commits. Remove Anyway (a digest
+ * confirmed on the user's page, `withRemoveAnyway`) removes it with one --force while what it holds is exactly that
+ * listing. A folder already gone is dropped from git's list by the same command, naming it: never a bare `worktree
+ * prune`, which forgets every worktree whose folder is missing. Returns whether the branch was deleted.
  */
 export async function removeWorktree(w: WorktreeRecord, root: string, git: Git = runGit): Promise<{ branchDeleted: boolean }> {
   if (existsSync(w.path)) {
-    const files = await uncommitted(git, w.path);
-    if (files.length)
-      throw new WorktreeRefusal(`The worktree has uncommitted changes in ${files.length} file${files.length === 1 ? "" : "s"} (${files[0]}). Nothing was removed. Commit or discard them first.`);
-    const rm = await git(["worktree", "remove", "--", w.path], root);
+    const hold = await removalHold(w.path);
+    const digest = anywayFor(w.path);
+    const forced = !!hold && !!digest && !!hold.content && leftoversDigest(hold.content) === digest;
+    if (hold && !forced) throw new WorktreeRefusal(digest ? `Changed since the list, nothing was deleted: ${hold.reason}` : hold.words);
+    const rm = await git(["worktree", "remove", ...(forced ? ["--force"] : []), "--", w.path], root);
     if (rm.code !== 0) throw new WorktreeRefusal(`Nothing was removed: ${firstLine(rm.stderr || rm.stdout)}`);
+    // A worktree of another repository that went with it: dropped from that repository's list by name.
+    if (forced)
+      for (const n of hold!.content!.nested)
+        if (n.kind === "worktree" && n.of && existsSync(n.of)) await git(["worktree", "remove", "--", join(w.path, n.path)], n.of).catch(() => null);
   } else await git(["worktree", "remove", "--", w.path], root);
   if (!(await mergedInto(git, root, w))) return { branchDeleted: false };
   const del = await git(["branch", "-D", "--", w.branch], root);

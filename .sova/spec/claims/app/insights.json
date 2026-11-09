@@ -517,18 +517,19 @@
   "§app.insights/subagent-cards": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "code": [
       "src/components/AgentsView.tsx",
       "src/agents-board.css",
       "src/lib/agents-board.ts",
       "src/lib/agents-board.test.ts",
-      "src/lib/api.ts"
+      "src/lib/api.ts",
+      "server/landed-branch-agreement.integration.test.ts"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-10-25T20:41Z",
-      "source": "pi-session:5e21b0e4-1ae9-4f78-a787-4425529986b0#90d2ad0b"
+      "by": "naomarik",
+      "at": "2026-11-09T00:21Z",
+      "source": "pi-session:01a1b2f4-86c6-73d4-9fe9-b847b27035f9#e2a66e41"
     }
   },
   "§app.insights/summary-sections": {
@@ -904,7 +905,7 @@
     "kind": "behavior",
     "requires": [],
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "code": [
       "server/worktrees.ts",
       "server/worktrees.test.ts",
@@ -912,12 +913,13 @@
       "server/app.ts",
       "shared/protocol.ts",
       "server/merge-tree-probe.ts",
-      "server/merge-tree-probe.test.ts"
+      "server/merge-tree-probe.test.ts",
+      "server/landed-branch-agreement.integration.test.ts"
     ],
     "agreed": {
       "by": "naomarik",
-      "at": "2026-11-05T16:44Z",
-      "source": "pi-session:01a1ac85-7019-77e8-b78d-58217842f2ef#e4f5f750"
+      "at": "2026-11-09T00:21Z",
+      "source": "pi-session:01a1b2f4-86c6-73d4-9fe9-b847b27035f9#e2a66e41"
     }
   },
   "§app/insights": {

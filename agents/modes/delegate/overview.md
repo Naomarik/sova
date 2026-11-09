@@ -18,7 +18,7 @@ shares all of this: its block follows Delegate's and changes nothing in it.
 ## What Sova relies on
 
 - `mode-delegate.json` (agent dir) is Delegate's global routing: four profiles, each backend, model and effort plus an
-  optional fallback. Sova no longer writes it: Settings → Subagents edits routing per profile, and this file seeds and
+  optional fallback. Sova no longer writes it: Settings → Profiles edits routing per profile, in its Models part, and this file seeds and
   backs that library ([subagents](../../extensions/subagents/overview.md), "Subagent profiles").
 - Every Delegate session re-reads its routing at each turn boundary, never snapshotted into a session. With a
   subagent profile picked, the routes come from `resolveSubagents`.

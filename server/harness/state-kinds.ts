@@ -50,6 +50,7 @@ import { LINK_MEMBER_ENTRY, type LinkMemberData } from "../../shared/mesh-links"
 import { normalizeChatList, type McpChatList } from "../mcp/list-shape";
 import type { McpNote } from "../../shared/mcp";
 import { PROFILE_ENTRY, RETIRED_REMOVABLE, SESSION_SENT_ENTRY, type ProfileEntryData, type SessionSentData } from "../../shared/profiles";
+import { CHAT_PROFILE_ENTRY, normalizeChatProfile, type ChatProfileEntryData } from "../../shared/profile-switch";
 import { PROJECT_OVERSEER_ENTRY, type ProjectOverseerMarkerData } from "../../shared/project-overseer";
 import { PROJECT_ASSISTANT_ENTRY, type ProjectAssistantMarkerData } from "../../shared/project-assistant";
 import {
@@ -96,6 +97,28 @@ export const TOPIC_DELIVERED = kind<TopicDeliveredData>("sova-topic-delivered", 
   isRecord(d) && d.v === 1 && filled(d.targetId) ? (d as TopicDeliveredData) : null,
 );
 
+/** A command from shell mode that Sova stopped (§chat.shell-mode/lifecycle, /running): written after the
+    command's own entry, `targetId`. No `why` (every older marker): its chat's close stopped it, read as
+    "Stopped when the chat closed"; `limit`: its output passed SHELL_OUTPUT_MAX_BYTES; `other`: the Stop Command
+    entry stopped it, from outside the chat's pages. */
+export interface ShellClosedData {
+  targetId: string;
+  why?: "limit" | "other";
+}
+export const SHELL_CLOSED = kind<ShellClosedData>("sova-shell-closed", "branch-list", (d) =>
+  isRecord(d) && filled(d.targetId) ? { targetId: d.targetId, ...(d.why === "limit" || d.why === "other" ? { why: d.why } : {}) } : null,
+);
+
+/** A finished command from shell mode (§chat.shell-mode/card): how long it ran, written after its own entry,
+    `targetId`, which pi's record doesn't say (it has the end only). Its row reads "took m:ss" from it. */
+export interface ShellRunData {
+  targetId: string;
+  durationMs: number;
+}
+export const SHELL_RUN = kind<ShellRunData>("sova-shell-run", "branch-list", (d) =>
+  isRecord(d) && filled(d.targetId) && typeof d.durationMs === "number" && Number.isFinite(d.durationMs) && d.durationMs >= 0 ? { targetId: d.targetId, durationMs: d.durationMs } : null,
+);
+
 /** The marker an older build wrote into every member of a group it created; read so they keep opening as before. */
 export const FANOUT_MEMBER = kind<Record<string, unknown>>("sova-fanout-member", "presence", (d) => (isRecord(d) ? d : null));
 
@@ -108,6 +131,10 @@ export const PROFILE = kind<ProfileEntryData>(PROFILE_ENTRY, "newest-on-branch",
   if (!Array.isArray(remove) || !remove.some((r) => RETIRED_REMOVABLE.includes(r))) return p;
   return { ...p, profile: { ...p.profile!, remove: remove.filter((r) => !RETIRED_REMOVABLE.includes(r)) } };
 });
+
+/** Which joined profile the chat is on after a mid-chat switch (§chat.profiles/switch): newest on the branch
+    wins, written with the switch; hidden, never LLM context. */
+export const CHAT_PROFILE = kind<ChatProfileEntryData>(CHAT_PROFILE_ENTRY, "newest-on-branch", (d) => normalizeChatProfile(d));
 
 /** A link member session's marker (§mesh.links/tools), written by its create before anything else
     (`POST /api/sessions` with `link: true`): it fixes the session's link tools for its whole life. */
@@ -278,7 +305,7 @@ export const MEMORY = kind<MemoryChoiceData>("sova-memory", "newest-on-branch", 
 /** Every registered kind, by type. */
 export const STATE_KINDS: ReadonlyMap<string, StateKind<unknown>> = new Map(
   [
-    REWIND, TOPIC_DELIVERED, FANOUT_MEMBER, PROFILE, LOADOUT, MCP_LIST, MCP_NOTE, SESSION_SENT, OVERSEER, OVERSEER_SENT, OVERSEER_DIALOG_ANSWER,
+    REWIND, TOPIC_DELIVERED, SHELL_CLOSED, SHELL_RUN, FANOUT_MEMBER, PROFILE, CHAT_PROFILE, LOADOUT, MCP_LIST, MCP_NOTE, SESSION_SENT, OVERSEER, OVERSEER_SENT, OVERSEER_DIALOG_ANSWER,
     GRANT, RULE, REVOKE, GRANT_USE, PROJECT_OVERSEER, PROJECT_ASSISTANT, LINK_MEMBER, ALIGN_LAUNCH,
     BATON, BATON_SENT, BATON_HANDOFF, BATON_OFFER, BATON_LEASE, BATON_DECISION, BATON_DONE, BATON_PROPOSAL, BATON_WRAPUP, TOUR_ATTACHMENT, TOUR_DETACHMENT,
     MODE, SUBAGENT_PROFILE, FORK_CACHE, WORKER_SESSION, SANDBOX, WORKTREES, CLAUDE_LOGIN, ALIGN_DOC, MEMORY,

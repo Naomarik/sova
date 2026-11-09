@@ -24,7 +24,7 @@
   "§app.decisions/asks-user": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "reviewed",
+    "evidence": "verified",
     "code": [
       "server/attention-signals.ts",
       "server/signals-store.ts",
@@ -51,12 +51,14 @@
       "§chat.alignment/session-mark",
       "§chat.offers/card",
       "§app.merge-queue/approve",
-      "§chat.worktrees/readiness"
+      "§chat.worktrees/readiness",
+      "§chat.transcript-cards/answering",
+      "§app.decisions/merge-go-asks"
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-06T01:40Z",
-      "source": "pi-session:01a1ac4a-4cc0-77e8-b78d-580fabeebc2e#f924065b"
+      "at": "2026-11-07T16:57Z",
+      "source": "pi-session:01a1b63e-6ef3-71fd-af21-1389de50cc23#e142ea9f"
     }
   },
   "§app.decisions/attention-signals": {
@@ -83,9 +85,9 @@
       "§app.overseer/seen"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-10-23T14:32Z",
-      "source": "pi-session:b12fa70a-e8d8-40c1-89f1-d1099cc1d8de#730a540e"
+      "by": "user",
+      "at": "2026-11-07T16:08Z",
+      "source": "pi-session:01a1b63e-6ef3-71fd-af21-1389de50cc23#92eb7761"
     }
   },
   "§app.decisions/backfill": {
@@ -197,10 +199,35 @@
       "source": "pi-session:01a18cc7-de77-77ee-b9d9-74931ef12371#107e6fc0"
     }
   },
+  "§app.decisions/merge-go-asks": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "requires": [
+      "§app.decisions/asks-user",
+      "§chat.worktrees/readiness",
+      "§app.merge-queue/approve",
+      "§app.merge-queue/standing-approval"
+    ],
+    "code": [
+      "server/attention-signals.ts",
+      "server/signals-store.ts",
+      "server/signals-store.test.ts",
+      "server/merge-readiness.ts",
+      "server/merge-readiness.test.ts",
+      "server/session-branches.test.ts",
+      "server/merge-queue/wire.ts"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-07T16:57Z",
+      "source": "pi-session:01a1b63e-6ef3-71fd-af21-1389de50cc23#e142ea9f"
+    }
+  },
   "§app.decisions/privacy": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "reviewed",
+    "evidence": "unreviewed",
     "code": [
       "server/decide-settings.ts",
       "server/decide-runtime.ts",
@@ -211,15 +238,20 @@
       "server/overseer-redact.test.ts",
       "server/search-tools-fake.ts",
       "server/reconcile.ts",
-      "shared/decisions.ts"
+      "shared/decisions.ts",
+      "server/message-labels.ts",
+      "server/message-labeller.ts",
+      "server/decide-outgoing.test.ts",
+      "server/time-spent-routes.ts",
+      "server/index.ts"
     ],
     "requires": [
       "§app.decisions/providers"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-10-23T14:32Z",
-      "source": "pi-session:b12fa70a-e8d8-40c1-89f1-d1099cc1d8de#730a540e"
+      "by": "omar",
+      "at": "2026-11-07T11:19Z",
+      "source": "pi-session:b06e603a-07aa-4e97-9efa-361431fbfd1c#e3aeae48"
     }
   },
   "§app.decisions/providers": {
@@ -241,9 +273,9 @@
       "§app.settings-dialog/models"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-10-23T14:32Z",
-      "source": "pi-session:b12fa70a-e8d8-40c1-89f1-d1099cc1d8de#730a540e"
+      "by": "omar",
+      "at": "2026-11-07T03:53Z",
+      "source": "pi-session:b06e603a-07aa-4e97-9efa-361431fbfd1c#77903386"
     }
   },
   "§app.decisions/push": {
@@ -361,9 +393,9 @@
       "§chat.alignment/session-mark"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-10-23T14:32Z",
-      "source": "pi-session:b12fa70a-e8d8-40c1-89f1-d1099cc1d8de#730a540e"
+      "by": "omar",
+      "at": "2026-11-07T03:53Z",
+      "source": "pi-session:b06e603a-07aa-4e97-9efa-361431fbfd1c#77903386"
     }
   }
 }

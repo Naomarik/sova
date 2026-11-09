@@ -18,6 +18,9 @@ export const EVENT_NAMES = [
   "turn.started",
   "turn.ended",
   "attention.changed",
+  "card.raised",
+  "card.changed",
+  "card.answered",
 ] as const;
 export type EventName = (typeof EVENT_NAMES)[number];
 
@@ -50,7 +53,9 @@ export type StreamEvent =
   | (Base & OfSession & { name: "session.tagged"; source: "observed"; tags: EventTags | null })
   | (Base & OfSession & { name: "session.archived"; source: "observed"; archived: boolean })
   | (Base & OfSession & { name: "turn.started" | "turn.ended"; source: EventSource })
-  | (Base & { name: "attention.changed" });
+  | (Base & { name: "attention.changed" })
+  /** Ids and type only, never the card's data or answer (§app.events/card-news). */
+  | (Base & OfSession & { name: "card.raised" | "card.changed" | "card.answered"; source: "hosted"; card: string; cardType: string });
 
 /** An event before the hub numbers it. */
 export type StreamEventBody = StreamEvent extends infer E ? (E extends StreamEvent ? Omit<E, "type" | "seq" | "at"> : never) : never;

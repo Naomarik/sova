@@ -23,12 +23,14 @@
       "server/sync/index.test.ts",
       "server/sync/docs-grants.test.ts",
       "server/wire-gate.ts",
-      "server/mesh/index.ts"
+      "server/mesh/index.ts",
+      "shared/wire-areas.json",
+      "scripts/mesh-lab/e2e/m3.test.mjs"
     ],
     "agreed": {
-      "by": "user (omar)",
-      "at": "2026-11-03T22:12Z",
-      "source": "pi-session:6413deaf-6a52-4216-a1d2-16b457f0680d#b04f2c84"
+      "by": "Omar (user)",
+      "at": "2026-11-06T21:56Z",
+      "source": "pi-session:01a1acdc-5fed-7735-96f5-96f6019e339d#537ac0e8"
     }
   },
   "§mesh.sync/kept-copies": {
@@ -73,6 +75,26 @@
       "source": "pi-session:81302e3d-7b15-4fa0-95f1-97e31f1f4300#2783ea91"
     }
   },
+  "§mesh.sync/profile-documents": {
+    "kind": "behavior",
+    "requires": [
+      "§mesh.sync/categories",
+      "§mesh.sync/profile-library",
+      "§chat.profiles/joined"
+    ],
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "server/sync/docs.ts",
+      "server/sync/docs.test.ts",
+      "server/default-profile.ts"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-11-08T19:46Z",
+      "source": "pi-session:f599f57e-519d-4f33-9088-ed8a9cd164b5#33385786"
+    }
+  },
   "§mesh.sync/profile-library": {
     "kind": "behavior",
     "requires": [
@@ -85,11 +107,14 @@
       "server/sync/docs.ts",
       "server/sync/profile-merge.ts",
       "server/sync/profile-merge.test.ts",
-      "server/sync/docs.test.ts"
+      "server/sync/docs.test.ts",
+      "server/profile-editor.ts",
+      "server/subagent-profiles.ts"
     ],
     "agreed": {
       "by": "naomarik",
-      "at": "2026-10-11T18:49Z"
+      "at": "2026-11-09T01:19Z",
+      "source": "pi-session:f599f57e-519d-4f33-9088-ed8a9cd164b5#b97414c4"
     }
   },
   "§mesh/sync": {

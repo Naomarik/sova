@@ -328,6 +328,32 @@ test("tracked worktrees: writable roots of the session, their .agent read-only; 
 	rmSync(ws, { recursive: true, force: true });
 });
 
+test("readOnly (--sandbox-read-only, the merge thread): the read-only level whatever the file says; only the tmp is writable, no policy root or worktree, and its workers get no more", () => {
+	const ws = tmp();
+	const agentDir = join(ws, "agent");
+	mkdirSync(join(agentDir, "sandbox-policy", "linux"), { recursive: true });
+	const extra = join(ws, "extra");
+	writeFileSync(join(agentDir, "sandbox-policy", "linux", "policy.json"), JSON.stringify({ ...template(), level: "workspace-write", writable: [extra], shadowed: [] }));
+	const repo = join(ws, "repo");
+	const wt = join(ws, "wt");
+	mkdirSync(join(wt, ".agent"), { recursive: true });
+	mkdirSync(repo);
+	mkdirSync(extra);
+	const tmpDir = join(ws, "t");
+	const r = resolvePolicy({ agentDir, cwd: repo, tmpDir, platform: "linux", extraWritable: [wt], cwdWritable: false, readOnly: true });
+	assert.ok(r.ok, r.ok ? "" : r.error);
+	assert.equal(r.value.level, "read-only");
+	assert.deepEqual(r.value.writable, [r.value.tmpDir], "the tmp alone");
+	for (const p of [join(repo, "a.txt"), join(extra, "x"), join(wt, "src", "a.ts"), join(repo, ".git", "refs", "heads", "master")]) assert.match(writeDenial(r.value, p, { creating: true }) ?? "", /outside the sandbox's writable roots|read-only/, p);
+	assert.equal(writeDenial(r.value, join(tmpDir, "clone", "x"), { creating: true }), undefined);
+	assert.equal(parentScopeOf(r.value).level, "read-only");
+	// Without the flag the same file gives workspace-write: the flag only tightens.
+	const plain = resolvePolicy({ agentDir, cwd: repo, tmpDir, platform: "linux" });
+	assert.ok(plain.ok);
+	assert.equal(plain.value.level, "workspace-write");
+	rmSync(ws, { recursive: true, force: true });
+});
+
 test("a stand-in cwd (cwdWritable: false) is never a writable root; tmp, policy roots and worktrees still are, and its workers get no more", () => {
 	const ws = tmp();
 	const agentDir = join(ws, "agent");

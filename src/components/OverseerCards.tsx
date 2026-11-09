@@ -720,7 +720,7 @@ export function PairCard(props: { op: "pair" | "unpair"; pair: PairView; existin
   return (
     <section class="card overseer-link" aria-label={`${title()}: ${props.pair.id}`}>
       <div class="card-head">
-        <Icon name="network" small />
+        <Icon name="link" small />
         <h3 class="card-title">{title()}</h3>
         <span class="overseer-link-id">{props.pair.id}</span>
       </div>

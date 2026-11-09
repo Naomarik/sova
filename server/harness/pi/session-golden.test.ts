@@ -102,6 +102,9 @@ mkdirSync(sessionsDir, { recursive: true });
 mkdirSync(join(agentDir, "sessions", "live"), { recursive: true });
 const cwd = join(root, "cwd");
 mkdirSync(cwd, { recursive: true });
+// A copy registered for the folder: its chats are offered project_verbs (§app.project-services/tool-offered), as the goldens have it.
+mkdirSync(join(agentDir, "sova", "project-services"), { recursive: true });
+writeFileSync(join(agentDir, "sova", "project-services", "registry.json"), JSON.stringify({ version: 1, instances: [{ project: cwd }], shared: [] }));
 // pi's system prompt names its README, docs and examples by the package's path, and the compaction's
 // `estimatedTokensAfter` counts the system prompt's characters: from node_modules, that path's length
 // is the checkout's. PI_PACKAGE_DIR (pi's own override) points pi at a link under the root instead.
@@ -676,7 +679,8 @@ test("S14: set_model and set_thinking idle (flush first, the synthesized thinkin
   trace.step("release the reply");
   release();
   await idle(chat);
-  // The pristine session's picks became the new-session defaults; later scenarios open on the default.
+  // A composer pick never becomes a default, not even in a pristine chat (§chat.model-menu/saved-default):
+  // the new-session defaults stay as they were.
   trace.got("new-session defaults", loadDefaults());
   rmSync(join(stateRoot(), "defaults.json"), { force: true });
   chat.detach(a);

@@ -18,7 +18,7 @@
   "§chat.alignment-review/flag": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "code": [
       "pi-config/extensions/mode/index.ts",
       "pi-config/extensions/mode/align-tool.ts",
@@ -116,7 +116,7 @@
   "§chat.alignment-review/route": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "code": [
       "pi-config/extensions/subagents/subagent-profiles.ts",
       "pi-config/extensions/subagents/subagent-profiles.test.ts",

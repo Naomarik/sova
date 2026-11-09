@@ -1,6 +1,7 @@
+import { execFile } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
-import { existsSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
-import { hostname } from "node:os";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { hostname, tmpdir } from "node:os";
 import { join } from "node:path";
 import { draftOfficial } from "../pi-config/extensions/spec/core/official.mjs";
 
@@ -233,12 +234,128 @@ export function draftSpecHash(draftsDir: string, name: string): string | undefin
   return eachHash(draftsDir, name);
 }
 
+/** Which of a folder's drafts git shows landed, though no receipt says so: of `names`, those proved. */
+export type DraftProof = (dir: string, names: readonly string[]) => Promise<ReadonlySet<string>>;
+
+/** The git a proof needs (a GitRunner). */
+type ProofGit = (args: readonly string[], opts: { cwd: string }) => Promise<{ code: number | null; stdout: string }>;
+
+/** One scratch folder per process for the specs of old commits; each commit's is kept a while (reading one is 100 ms or
+    so, and a pass asks for the same few). */
+let specScratch: string | null = null;
+const specsAt = new Map<string, Promise<string | null>>();
+const MAX_SPECS_AT = 16;
+function scratchDir(): string {
+  if (specScratch && existsSync(specScratch)) return specScratch;
+  specScratch = mkdtempSync(join(tmpdir(), `sova-spec-at-${process.pid}-`));
+  const made = specScratch;
+  process.once("exit", () => rmSync(made, { recursive: true, force: true }));
+  return specScratch;
+}
+
+/** Git, for the two reads below: with an index of its own, so the checkout's and the repository's are never touched. */
+const gitIn = (args: string[], cwd: string, index: string): Promise<boolean> =>
+  new Promise((done) => {
+    execFile("git", args, { cwd, timeout: 60_000, env: { ...process.env, GIT_INDEX_FILE: index, GIT_OPTIONAL_LOCKS: "0" } }, (err) => done(!err));
+  });
+
+/** The target's `.sova/spec` at `commit`, unpacked: its folder, or null when it has none. */
+function specAt(commit: string, cwd: string): Promise<string | null> {
+  const hit = specsAt.get(commit);
+  if (hit) return hit;
+  const dest = join(scratchDir(), commit);
+  const read = (async (): Promise<string | null> => {
+    mkdirSync(dest, { recursive: true });
+    const index = `${dest}.index`;
+    const ok = (await gitIn(["read-tree", `${commit}:.sova/spec`], cwd, index)) && (await gitIn(["checkout-index", "-a", `--prefix=${join(dest, ".sova", "spec")}/`], cwd, index));
+    rmSync(index, { force: true });
+    return ok ? join(dest, ".sova", "spec") : null;
+  })().catch(() => null);
+  specsAt.set(commit, read);
+  while (specsAt.size > MAX_SPECS_AT) {
+    const oldest = specsAt.keys().next().value!;
+    specsAt.delete(oldest);
+    rmSync(join(scratchDir(), oldest), { recursive: true, force: true });
+  }
+  return read;
+}
+
+/** Subjects naming a draft's landing on one target head, by draft, newest first (`Spec: land draft <name> at <sha>`). */
+const landingSubjects = new Map<string, Promise<Map<string, string[]>>>();
+function landingCommits(git: ProofGit, cwd: string, oid: string): Promise<Map<string, string[]>> {
+  const hit = landingSubjects.get(oid);
+  if (hit) return hit;
+  const read = git(["log", "--format=%H%x1f%s", "--grep=^Spec: land draft ", oid], { cwd }).then((r) => {
+    const by = new Map<string, string[]>();
+    if (r.code !== 0) return by;
+    for (const line of r.stdout.split("\n")) {
+      const [sha, subject] = line.split("\u001f");
+      const name = sha ? /^Spec: land draft (\S+) at /.exec(subject ?? "")?.[1] : undefined;
+      if (name) by.set(name, [...(by.get(name) ?? []), sha!]);
+    }
+    return by;
+  });
+  landingSubjects.set(oid, read);
+  while (landingSubjects.size > 8) landingSubjects.delete(landingSubjects.keys().next().value!);
+  return read;
+}
+
+/** How many of a draft's landing commits to look at: a name landed more than this often isn't a draft still in a folder. */
+const MAX_LANDINGS = 3;
+
 /**
- * The drafts readiness counts as not landed (§chat.worktrees/readiness): those the draft tool's rule says aren't
- * official in the folder (unofficialDrafts), less each carrying a landing receipt that still speaks for it: its
- * `spec/` unchanged since (by hash) and its spec commit on `refs/heads/<target>`. undefined: the folder has none.
+ * A draft is proved landed when it matches the target now, or matches the target at the commit that landed it: the
+ * commit whose subject says it landed that draft, or the branch's own tip on the target (§chat.worktrees/nothing-left).
+ * A draft edited since matches none. Only the drafts' own files and the spec at those commits are read: no spec tool.
+ * Each answer stands while the drafts folder, the head and the target stay put. `target` is the branch it lands on, or
+ * how to name it for a folder; none named or none there: master, else main.
  */
-export async function draftsLeft(dir: string, isAncestor: AncestorCheck): Promise<string[] | undefined> {
+export function draftProofVia(git: ProofGit, target?: { name: string; oid: string } | ((dir: string) => string | null)): DraftProof {
+  return async (dir, names) => {
+    const proved = new Set<string>();
+    if (!names.length) return proved;
+    const fixed = typeof target === "object" ? target : null;
+    const landsOn = typeof target === "function" ? target(dir) : null;
+    const refs = fixed ? null : await git(["for-each-ref", "--format=%(refname) %(objectname)", "refs/heads/master", "refs/heads/main", ...(landsOn ? [`refs/heads/${landsOn}`] : [])], { cwd: dir });
+    const lines = refs?.code === 0 ? refs.stdout.split("\n").map((l) => l.split(" ")) : [];
+    const oid = fixed?.oid ?? ((landsOn ? lines.find((l) => l[0] === `refs/heads/${landsOn}`) : undefined) ?? lines.find((l) => l[0] === "refs/heads/master") ?? lines.find((l) => l[0] === "refs/heads/main"))?.[1];
+    const head = oid ? (await git(["rev-parse", "HEAD"], { cwd: dir })).stdout.trim() : "";
+    if (!oid || !head) return proved;
+    const key = `${oid}\0${head}\0${names.join(",")}\0${draftsStamp(dir)}`;
+    const memo = proofMemo.get(dir);
+    if (memo?.key === key) return memo.proved;
+    const draftsDir = join(dir, ".sova", "spec", "drafts");
+    const subjects = await landingCommits(git, dir, oid);
+    const tipOnTarget = (await git(["merge-base", "--is-ancestor", head, oid], { cwd: dir })).code === 0;
+    const at = async (name: string, commit: string): Promise<boolean> => {
+      const spec = await specAt(commit, dir);
+      if (!spec) return false;
+      const r = draftOfficial(spec, join(draftsDir, name), draftsDir, draftPass(new Set()));
+      return !!r?.official;
+    };
+    for (const n of names) {
+      const commits = [oid, ...(subjects.get(n) ?? []).slice(0, MAX_LANDINGS), ...(tipOnTarget ? [head] : [])];
+      for (const c of commits) {
+        if (await at(n, c).catch(() => false)) {
+          proved.add(n);
+          break;
+        }
+      }
+    }
+    if (proofMemo.size > 500) proofMemo.clear();
+    proofMemo.set(dir, { key, proved });
+    return proved;
+  };
+}
+const proofMemo = new Map<string, { key: string; proved: ReadonlySet<string> }>();
+
+/**
+ * The drafts not proved landed (§chat.worktrees/nothing-left): those the draft tool's rule says aren't official in the
+ * folder (unofficialDrafts), less each carrying a landing receipt that still speaks for it (its `spec/` unchanged since,
+ * by hash, and its spec commit on `refs/heads/<target>`), and, given a `proof`, each git shows landed.
+ * undefined: the folder has none.
+ */
+export async function draftsLeft(dir: string, isAncestor: AncestorCheck, proof?: DraftProof): Promise<string[] | undefined> {
   const left = unofficialDrafts(dir);
   if (!left?.length) return left;
   const draftsDir = join(dir, ".sova", "spec", "drafts");
@@ -248,7 +365,9 @@ export async function draftsLeft(dir: string, isAncestor: AncestorCheck): Promis
     const landed = !!r && draftSpecHash(draftsDir, n) === r.hash && (await isAncestor(r.commit, `refs/heads/${r.target}`, dir).catch(() => false));
     if (!landed) out.push(n);
   }
-  return out;
+  if (!out.length || !proof) return out;
+  const proved = await proof(dir, out).catch(() => new Set<string>());
+  return out.filter((n) => !proved.has(n));
 }
 
 /** The spec drafts as an approval pins them (§chat.worktrees/landing-answers): one hash over every file under each

@@ -305,6 +305,7 @@ export function treeMerge(t: WorktreeStatus): TreeMerge {
   if (t.error && t.merged === undefined) return { kind: "unknown", text: "unreadable" };
   if (t.merged === "ancestor") return { kind: "merged", text: "merged", title: `Its tip is in ${t.base ?? "the base"}.` };
   if (t.merged === "content") return { kind: "merged", text: "merged", title: `Merging into ${t.base ?? "the base"} would change nothing (a squash or rebase merge).` };
+  if (t.merged === "catch-up") return { kind: "merged", text: "merged", title: `Nothing of its own left to land: every commit past ${t.base ?? "the base"} is a merge or already landed.` };
   if (t.merged === "no") return { kind: "unmerged", text: "unmerged", title: `Not merged into ${t.base ?? "the base"}.` };
   return { kind: "unknown", text: "no base" };
 }
@@ -321,7 +322,7 @@ function treeRank(t: WorktreeStatus): number {
   if (!t.exists) return 4;
   if (t.merged === "no") return 0;
   if (t.dirty) return 1;
-  if (t.merged === "ancestor" || t.merged === "content") return 2;
+  if (t.merged === "ancestor" || t.merged === "content" || t.merged === "catch-up") return 2;
   return 3;
 }
 

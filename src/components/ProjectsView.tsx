@@ -7,7 +7,7 @@ import { ApiError, getHostServices, getProject, listProjects, openProjectOversee
 import { relativeTime } from "../lib/format";
 import { placementOf, sortProjects } from "../lib/projects";
 import { createPoll } from "../lib/poll";
-import { projectHref, projectSessionHref, projectTabHref, type ProjectsRoute, type ProjectTab } from "../lib/projects-route";
+import { projectHref, projectSessionHref, projectTabHref, type ProjectsRoute, type ProjectTab, type QueueTab } from "../lib/projects-route";
 import { adoptedLine, copyChip, copyName, entryHref, entryTitle, memoryOf, openEntry, refusalLine, SERVICE_CHIP } from "../lib/services-view";
 import { projectHostOf } from "../lib/mesh";
 import { announce, toast } from "../lib/ui-state";
@@ -30,6 +30,7 @@ const errText = (err: unknown) => (err instanceof ApiError || err instanceof Err
 export function ProjectsView(props: { route: ProjectsRoute; titleRef(el: HTMLHeadingElement): void; /** The sidebar's session list. */ sessions?: () => readonly SessionSummary[] | undefined }) {
   const tab = createMemo((): ProjectTab => (props.route.kind === "project" ? (props.route.tab ?? "overview") : "overview"));
   const run = createMemo(() => (props.route.kind === "project" ? props.route.run : undefined));
+  const queueTab = createMemo(() => (props.route.kind === "project" ? props.route.queueTab : undefined));
   return (
     <Switch>
       <Match when={props.route.kind === "list"}>
@@ -37,7 +38,7 @@ export function ProjectsView(props: { route: ProjectsRoute; titleRef(el: HTMLHea
       </Match>
       {/* Keyed on the project alone: a tab change keeps the page and what it fetched. */}
       <Match when={props.route.kind === "project" && props.route.projectId} keyed>
-        {(pid) => <ProjectRoute projectId={pid} tab={tab()} run={run()} titleRef={props.titleRef} sessions={props.sessions} />}
+        {(pid) => <ProjectRoute projectId={pid} tab={tab()} run={run()} queueTab={queueTab()} titleRef={props.titleRef} sessions={props.sessions} />}
       </Match>
       <Match when={props.route.kind === "overseer" && props.route.projectId} keyed>
         {(pid) => <OverseerDoor projectId={pid} titleRef={props.titleRef} />}
@@ -47,7 +48,7 @@ export function ProjectsView(props: { route: ProjectsRoute; titleRef(el: HTMLHea
 }
 
 /** One project's page, once its read lands: the org's part composed in only while one places it. */
-function ProjectRoute(props: { projectId: string; tab: ProjectTab; run?: string; titleRef(el: HTMLHeadingElement): void; sessions?: () => readonly SessionSummary[] | undefined }) {
+function ProjectRoute(props: { projectId: string; tab: ProjectTab; run?: string; queueTab?: QueueTab; titleRef(el: HTMLHeadingElement): void; sessions?: () => readonly SessionSummary[] | undefined }) {
   // What this tab last read of it (here, or the sidebar's project list) draws the page at once; the read updates it.
   const [project, { refetch, mutate }] = createResource(
     () => props.projectId,
@@ -77,12 +78,13 @@ function ProjectRoute(props: { projectId: string; tab: ProjectTab; run?: string;
         </InsightsPage>
       }
     >
-      <Show when={space()} keyed fallback={<ProjectPage project={latest()!} tab={props.tab} run={props.run} titleRef={props.titleRef} onProject={mutate} refetchProject={() => void refetch()} sessions={props.sessions} />}>
+      <Show when={space()} keyed fallback={<ProjectPage project={latest()!} tab={props.tab} run={props.run} queueTab={props.queueTab} titleRef={props.titleRef} onProject={mutate} refetchProject={() => void refetch()} sessions={props.sessions} />}>
         {(orgId) => (
           <ProjectPage
             project={latest()!}
             tab={props.tab}
             run={props.run}
+            queueTab={props.queueTab}
             titleRef={props.titleRef}
             onProject={mutate}
             refetchProject={() => void refetch()}

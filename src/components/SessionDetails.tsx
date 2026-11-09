@@ -1,11 +1,11 @@
 import { createEffect, createMemo, createResource, createSignal, For, Match, on, onCleanup, Show, Switch, type JSX } from "solid-js";
-import type { CompactionInfo, ContextInfo, GitFileChange, GitRepoSummary, GitSummary, SessionInsight, SessionSummary, TranscriptItem } from "../../shared/protocol";
-import { contextSentence, contextStateFor } from "../lib/context";
+import type { CompactionInfo, GitFileChange, GitRepoSummary, GitSummary, SessionInsight, SessionSummary, TranscriptItem } from "../../shared/protocol";
 import { relativeTime, thousands, tildePath } from "../lib/format";
 import { NO_WORKTREES, type WorktreeChip, worktreeChips } from "../lib/worktrees";
 import { queueRow, rowsSummary } from "../lib/merge-queue";
 import { noteMergeChanged } from "../lib/merge-queue-client";
-import { queueHrefOf, WorktreeQueueRow, type QueueWorktree } from "./WorktreesModal";
+import { WorktreeQueueRow, type QueueWorktree } from "./WorktreesModal";
+import { queueLinksOf } from "../lib/branch-place";
 import { absoluteTime, firstLine, timelineEntries } from "../lib/spend";
 import { archivedProjectOf, unarchivedProjectOf } from "../lib/drag-archive";
 import { archiveSession } from "../lib/session-actions";
@@ -32,7 +32,7 @@ import {
   upstreamLabel,
   visiblePath,
 } from "../lib/git-summary";
-import { announce, copyText, home, setActiveTab, toast } from "../lib/ui-state";
+import { announce, copyText, home, toast } from "../lib/ui-state";
 import { sessionWorking } from "../lib/workers";
 import { Banner, CopyButton, Icon } from "./ui";
 import { BackgroundJobsSection } from "./BackgroundJobs";
@@ -59,8 +59,7 @@ const wrapMono = { margin: 0, "overflow-wrap": "anywhere" } as const;
  *   error     a failed first insight load to report, or null (the poll retries on its own)
  *   pending   the first insight load is still out: Worktrees shows a placeholder, never its empty line
  *   summary   App-level session list row (undefined before the list loads)
- *   context   the transcript's context fill from the server (ContextGauge's source)
- *   items     transcript rows (the model/thinking/mode timeline, and "compacted" for context)
+ *   items     transcript rows (the model/thinking/mode timeline)
  *   now       the clock relative times are measured against
  *   onArchiveChanged  after Archive/Unarchive succeeds: re-read the session list, with the
  *                     session's path and its new archived state
@@ -74,7 +73,6 @@ export function SessionDetails(props: {
   error: string | null;
   pending: boolean;
   summary: SessionSummary | undefined;
-  context: ContextInfo | null;
   items: TranscriptItem[];
   now: number;
   onArchiveChanged(path: string, archived: boolean): void;
@@ -88,8 +86,6 @@ export function SessionDetails(props: {
   const working = () => (insight()?.workers ?? []).filter((w) => w.working).length;
   const compactions = () => insight()?.compactions ?? [];
   const timeline = () => timelineEntries(props.items);
-  /** The gauge's own state, so the sentence here and the one in the head can't disagree. */
-  const context = () => contextStateFor(props.context, props.items);
   const live = () => summary()?.live ?? null;
   /** What Archive/Unarchive just did, until the list row catches up (or without a refresh). */
   const [archivedNow, setArchivedNow] = createSignal<boolean | null>(null);
@@ -143,28 +139,11 @@ export function SessionDetails(props: {
         </div>
       </section>
 
-      {/* 2 · Context. The gauge's own sentence, so the two never drift. */}
-      <Show when={context()}>
-        {(state) => (
-          <section class="stack-2" aria-labelledby={id("context")}>
-            <h3 class="text-eyebrow" id={id("context")}>
-              Context
-            </h3>
-            <p class="usage-note">
-              {contextSentence(state())}{" "}
-              <button type="button" class="button-link" onClick={() => setActiveTab(props.path, "context")}>
-                See what fills it
-              </button>
-            </p>
-          </section>
-        )}
-      </Show>
-
-      {/* 3 · Repository. The git state of the folder the session works in, read on its own
+      {/* 2 · Repository. The git state of the folder the session works in, read on its own
           schedule: never part of the insight poll. */}
       <RepositorySection path={props.path} cwd={summary()?.cwd} now={now()} changed={props.gitChanged} labelId={id("repository")} />
 
-      {/* 4 · Worktrees. The ones this session tracks (the worktrees extension's entry on the
+      {/* 3 · Worktrees. The ones this session tracks (the worktrees extension's entry on the
           branch), read with the insight; the pane only shows them, the agent's tool changes them.
           Present from the first paint: a placeholder while the insight loads, as tall as the empty
           line (most sessions track none), then the rows or that line. Only a failed first load (the
@@ -614,14 +593,16 @@ function WorktreesSection(props: { rows: QueueWorktree[]; path: string; cwd?: st
         <ul class="list worktree-list wt-queue-list">
           <For each={props.rows}>{(w) => <WorktreeRow worktree={w} path={props.path} cwd={props.cwd} />}</For>
         </ul>
-        <Show when={queueHrefOf(props.rows)}>
-          {(h) => (
-            <div class="button-row">
-              <a class="button button-sm button-ghost" href={h()}>
-                View Merge Queue
-              </a>
-            </div>
-          )}
+        <Show when={queueLinksOf(props.rows).length}>
+          <div class="button-row">
+            <For each={queueLinksOf(props.rows)}>
+              {(l) => (
+                <a class="button button-sm button-ghost" href={l.href}>
+                  {l.label}
+                </a>
+              )}
+            </For>
+          </div>
         </Show>
       </Show>
     </section>
@@ -640,7 +621,7 @@ function WorktreeRow(props: { worktree: QueueWorktree; path: string; cwd?: strin
       review={{ sessionPath: props.path, cwd: props.cwd }}
       chips={
         <>
-          <For each={worktreeChips(w())}>
+          <For each={worktreeChips(w()).filter((c) => !(c.label === "Cleaned up" && queueRow(w()).key === "cleaned-up"))}>
             {(c) => (
               <span class={`${chipTone(c)} chip-count`} title={c.title}>
                 {c.label}

@@ -134,7 +134,7 @@ function LiveEndRow(props: LiveKindViewProps<Extract<LiveInput, { kind: "stopped
       <TurnError message={end.message} />
       {/* The failure's own row carries its own provider (its producing model): never a worker's,
           never the chat model of right now. */}
-      <Show when={rows.limitPath()}>{(p) => <SubagentLimitRow path={p()} message={end.message} provider={rowProvider(end.model)} />}</Show>
+      <Show when={rows.limitPath()}>{(p) => <SubagentLimitRow path={p()} message={end.message} provider={rowProvider(end.model)} model={end.model ?? undefined} />}</Show>
     </>
   );
 }

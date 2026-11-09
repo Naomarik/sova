@@ -29,6 +29,8 @@ import {
 } from "../lib/message-actions";
 import { shareHref } from "../lib/share-slice";
 import { Banner } from "./ui";
+import { createMergeCards } from "../lib/merge-cards";
+import { createOutsideCardRows } from "../lib/outside-card-rows";
 
 /** SR announcements of appended entries are throttled to one per this interval. */
 const ANNOUNCE_MS = 5000;
@@ -76,6 +78,10 @@ export function WatchView(props: {
   const olderRows = createOlderRows({ path: props.path, items, setItems, kept: () => keptOlder(cached, items()), prefetch: props.prefetch });
   const { older, whole } = olderRows;
   createEffect(on([items, older], ([list, o]) => list && cacheItems(cacheKey, list, o)));
+  // The merge queue's cards for this chat (its branches' queue cards, its blocking reviews' cards): a chat open in a
+  // terminal can't take the queue's requests, so these are the only place its findings show. Read-only here.
+  const queueCards = createMergeCards(() => props.sessionId);
+  const threadItems = createOutsideCardRows(items, queueCards.rows);
   /** The last snapshot's first row: rows that arrive above it are history, never "N new". */
   const [newFrom, setNewFrom] = createSignal<string | null>(null);
   // "Open in Session" from an Explanations card: land on that explanation's row once the snapshot
@@ -251,7 +257,7 @@ export function WatchView(props: {
               <ChangesSession.Provider value={{ get path() { return props.path; }, get cwd() { return props.cwd; } }}>
               <ToolSourceContext.Provider value={{ kind: "pi", path: props.path }}>
               <HistoryItems
-                items={list()}
+                items={threadItems() ?? list()}
                 author={props.author}
                 streaming={props.streaming}
                 hideTools={hideTools(props.path)}

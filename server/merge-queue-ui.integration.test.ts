@@ -16,6 +16,7 @@ import type { ProjectSummary } from "../shared/projects";
 import type { SetupProposal, SetupStatus } from "../shared/setup-chat";
 import { launchTourBrowser } from "./tours/browser";
 import { scratchRoot } from "./test-scratch";
+import { formatHeldNote } from "../shared/topic-message";
 
 const ROOT = join(import.meta.dirname, "..");
 const ORIGIN = "http://sova.test";
@@ -90,6 +91,18 @@ const wt = (branch: string, x: Partial<SessionWorktreeInfo> = {}): SessionWorktr
   ...x,
 });
 
+/** A decision only the user can make (§chat.merge-queue/decision): its question, choices that fill the message box,
+ *  and the queue's note held until the user's answer goes with it. */
+const DECISION = {
+  id: "dc_1",
+  kind: "needs-you" as const,
+  question: "Keep the Save button at the top, or move it under the form?",
+  choices: ["Keep it at the top", "Move it under the form"],
+  heldNote: { request: "rq_0123456789ab", text: "Place the Save button where the user says, then answer Fixed." },
+  raisedBy: "merge-thread" as const,
+  actions: [],
+  at: iso(2),
+};
 /** Every state a row can be in. */
 const ALL_ROWS = [
   wt("feat/composer-drafts", {
@@ -110,8 +123,12 @@ const ALL_ROWS = [
   wt("fix/conflict-chip", {
     queue: qi({ id: "me_b", state: "behaviour-differs", conflict: { files: ["src/a.ts"], verdict: "behaviour-differs", ours: "Master retries the save twice.", theirs: "The branch never retries.", proposal: "Keep master's retry.", at: iso(3) } }),
   }),
-  wt("feat/hack", { queue: qi({ id: "me_r", state: "review-flagged", review: { verdict: "blocking", text: "Leaves a workaround in land.ts with no test.", commit: sha("e"), at: iso(2) } }) }),
-  wt("feat/composer-hints", { queue: qi({ id: "me_l", state: "landed", landed: { sha: sha("b"), from: sha("a"), at: iso(30), pushed: "pushed" }, notes: [{ kind: "thread", text: NOTE, at: iso(29) }] }) }),
+  wt("feat/hack", { queue: qi({ id: "me_r", state: "needs-user", decision: DECISION } as Partial<WorktreeQueueInfo>) }),
+  // Landed, with nothing left on the branch: the shared answer says so. A reading of real work would bring its own state back.
+  wt("feat/composer-hints", {
+    queue: qi({ id: "me_l", state: "landed", landed: { sha: sha("b"), from: sha("a"), at: iso(30), pushed: "pushed" }, notes: [{ kind: "thread", text: NOTE, at: iso(29) }] }),
+    readiness: { path: "", branch: "feat/composer-hints", state: "merged", merged: true, left: "nothing" },
+  }),
 ];
 const READY_ROWS = [ALL_ROWS[0]!, ALL_ROWS[1]!, ALL_ROWS[2]!, ALL_ROWS[7]!];
 
@@ -189,7 +206,7 @@ function viewOf(x: Partial<MergeQueueView> = {}): MergeQueueView {
     ],
     needsYou: [
       entry({ id: "me_b", branch: "fix/conflict-chip", state: "behaviour-differs", conflict: { files: ["src/a.ts"], verdict: "behaviour-differs", ours: "Master retries the save twice.", theirs: "The branch never retries.", proposal: "Keep master's retry.", at: iso(3) } }),
-      entry({ id: "me_r", branch: "feat/hack", state: "review-flagged", review: { verdict: "blocking", text: "Leaves a workaround in land.ts with no test.", commit: sha("e"), at: iso(2) } }),
+      entry({ id: "me_r", branch: "feat/hack", state: "needs-user", decision: DECISION }),
     ],
     needsFix: [entry({ id: "me_f", branch: "fix/draft-autosave-race", state: "needs-fix", reason: "unit failed: src/lib/drafts.test.ts", run: "mr_fail" })],
     recent: [
@@ -452,7 +469,7 @@ const mc = (id: string, branch: string, x: Partial<MergeCard>): MergeCard => ({
   ...x,
 });
 const LANDED_AT = iso(5);
-/** Six branches, six cards: one landed (its approval folded above), one of every other kind. */
+/** Seven branches, seven cards: one landed (its approval folded above), one of every other kind. */
 const CARDS: MergeCard[] = [
   mc("me_a", "feat/settle-cpu", {
     state: "landed",
@@ -478,10 +495,16 @@ const CARDS: MergeCard[] = [
     ],
   }),
   mc("me_c", "feat/hack", {
-    state: "review-flagged",
-    review: { verdict: "blocking", text: "Leaves a workaround in land.ts with no test.", commit: sha("e"), at: iso(3) },
-    revisions: [{ id: "me_c:1", kind: "review-flagged", at: iso(3), after: "a2", state: "review-flagged" }],
+    state: "needs-user",
+    decision: DECISION,
+    revisions: [{ id: "me_c:1", kind: "needs-fix", at: iso(3), after: "a2", state: "needs-user" }],
   }),
+  // Back with the chat: one card in place, the try and the reason, the chat's answer, and only Remove from Queue.
+  mc("me_g", "feat/save-hint", {
+    state: "with-chat",
+    standing: { phase: "with-chat", try: 2, of: 3, why: "Unit tests failed", answer: { kind: "cant", why: "the test needs a network", at: iso(1) } },
+    revisions: [{ id: "me_g:1", kind: "approved", at: iso(39), after: "a1", state: "queued", position: 3 }],
+  } as Partial<MergeCard>),
   mc("me_d", "fix/worker-restore", { state: "checking", progress: { done: 4, total: 7 }, revisions: [{ id: "me_d:1", kind: "approved", at: iso(39), after: "a1", state: "queued", position: 1 }] }),
   mc("me_e", "feat/pending-chip", { state: "queued", position: 2, eta: { startsInMs: 6 * 60_000, takesMs: 9 * 60_000 }, revisions: [{ id: "me_e:1", kind: "approved", at: iso(39), after: "a1", state: "queued", position: 2 }] }),
   mc("me_f", "fix/draft-autosave-race", {
@@ -543,7 +566,37 @@ const READY: MergeQueueView["ready"] = [
   { branch: "feat/search-ab-with-a-much-longer-branch-name", worktree: "/w/.worktrees/sova-search-ab", commit: sha("7"), ahead: 12, added: 310, removed: 88, session: "c3", sessionArchived: true, summary: { commit: sha("7"), state: "failed", bullets: ["Searches the archive"], stale: { commit: sha("6") } } },
 ];
 const hashOf = (page: Page) => page.evaluate(() => location.hash);
+/** One of the Merge Queue tab's own tabs, by its label (its count after it): picked, then shown. */
+async function showTab(page: Page, label: string) {
+  const t = page.getByRole("tablist", { name: "Merge queue" }).getByRole("tab", { name: new RegExp(`^${label}( · \\d+)?$`) });
+  await t.click();
+  await until(`${label} shown`, async () => (await t.getAttribute("aria-selected")) === "true");
+}
+/** The Merge Queue tab's Waiting, which starts closed: opened. */
+async function openWaiting(page: Page) {
+  const b = page.locator(".mq-tab").getByRole("button", { name: /^Waiting · / });
+  await b.click();
+  await until("Waiting open", async () => (await b.getAttribute("aria-expanded")) === "true");
+}
 const box = async (l: { boundingBox(): Promise<{ x: number; y: number; width: number; height: number } | null> }) => (await l.boundingBox())!;
+/** Which edges of a tab strip fade (the design system's .tabs mask, its edge widths read from the strip), and whether
+    it overflows. */
+const stripFade = (strip: Locator) =>
+  strip.evaluate((el) => {
+    const cs = getComputedStyle(el);
+    const w = (p: string) => parseFloat(cs.getPropertyValue(p)) || 0;
+    return { start: w("--tabs-fade-start") > 0, end: w("--tabs-fade-end") > 0, overflows: el.scrollWidth > el.clientWidth };
+  });
+/** The strip's top against the top of the pane that scrolls it, and that pane's scroll. `toTop`: scroll it there first. */
+const stripAtTop = (strip: Locator, toTop = false) =>
+  strip.evaluate((el, toTop) => {
+    let p = el.parentElement;
+    while (p && !/auto|scroll/.test(getComputedStyle(p).overflowY)) p = p.parentElement;
+    const pane = p ?? (document.scrollingElement as HTMLElement);
+    const top = () => (p ? p.getBoundingClientRect().top : 0);
+    if (toTop) pane.scrollTop += el.getBoundingClientRect().top - top();
+    return { gap: el.getBoundingClientRect().top - top(), y: el.getBoundingClientRect().top, scroll: pane.scrollTop, atEnd: pane.scrollTop + pane.clientHeight >= pane.scrollHeight - 1 };
+  }, toTop);
 
 for (const width of [1280, 390]) {
   describe(`${width}px`, () => {
@@ -595,9 +648,9 @@ for (const width of [1280, 390]) {
       const modal = page.getByRole("dialog", { name: "Worktrees" });
       await modal.waitFor();
       const text = await words(modal);
-      for (const word of ["Ready", "Queued · 2nd", "Uncommitted", "Needs a fix", "Behaviour differs", "Review flagged", "Landed"]) assert.match(text, new RegExp(word), word);
+      for (const word of ["Ready", "Queued · 2nd", "Uncommitted", "Needs a fix", "Behaviour differs", "Needs you", "Landed"]) assert.match(text, new RegExp(word), word);
       assert.match(text, /Master retries the save twice\./);
-      assert.match(text, /Leaves a workaround in land\.ts/);
+      assert.match(text, /Keep the Save button at the top, or move it under the form\?/);
       // A live row's size, then when the branch last changed; in full on hover. A landed row has neither.
       const sized = modal.locator('[data-branch="feat/composer-drafts"] .wt-queue-size');
       assert.equal((await words(sized)).trim(), "3 commits · +40 −2 · 3h ago");
@@ -656,7 +709,7 @@ for (const width of [1280, 390]) {
       await until("a Land Without Specs", () => o.calls.filter((c) => c.verb === "merge.add").length === 3);
       assert.equal(lastCall(o, "merge.add").body.withoutSpecs, true);
 
-      await modal.getByRole("button", { name: "Cancel landing fix/paste-images" }).click();
+      await modal.getByRole("button", { name: "Remove fix/paste-images from the merge queue" }).click();
       await called(o, "merge.cancel");
       assert.deepEqual(lastCall(o, "merge.cancel").body, { entry: "me_q" });
 
@@ -664,11 +717,17 @@ for (const width of [1280, 390]) {
       await until("an accept", () => o.calls.some((c) => c.verb === "merge.answer" && c.body.answer === "accept"));
       assert.equal(lastCall(o, "merge.answer").body.entry, "me_b");
 
-      await modal.getByRole("button", { name: "Land feat/hack anyway" }).click();
-      await until("a land-anyway", () => o.calls.some((c) => c.verb === "merge.answer" && c.body.answer === "land-anyway"));
-
-      await modal.getByRole("button", { name: "Send feat/hack back to its chat" }).click();
-      await until("a send-back", () => o.calls.some((c) => c.verb === "merge.answer" && c.body.answer === "send-back" && c.body.entry === "me_r"));
+      // A decision: its question and choices, answered in the chat (no text box), and Remove from Queue.
+      const hack = modal.locator('[data-branch="feat/hack"]');
+      assert.match(await words(hack), /Keep the Save button at the top, or move it under the form\?/);
+      assert.match(await words(hack), /Choices: Keep it at the top · Move it under the form/);
+      assert.equal(await hack.getByRole("button", { name: "Answer about feat/hack in the chat" }).count(), 1);
+      assert.equal(await modal.locator("textarea, input[type=text]").count(), 0, "no text box in any row");
+      await hack.getByRole("button", { name: "Remove feat/hack from the merge queue" }).click();
+      await until("a remove", () => o.calls.some((c) => c.verb === "merge.cancel" && c.body.entry === "me_r"));
+      // Sent back: Remove from Queue only. No row anywhere offers Send Back or a re-land (al_3).
+      await modal.locator('[data-branch="fix/draft-autosave-race"]').getByRole("button", { name: "Remove fix/draft-autosave-race from the merge queue" }).waitFor();
+      for (const gone of [/Send Back/, /Send .* back to its chat/, /Land This Commit Again/, /Land Newest Commit/, /at its newest commit/]) assert.equal(await modal.getByRole("button", { name: gone }).count(), 0, String(gone));
 
       // An uncommitted row has no Land.
       assert.equal(await modal.getByRole("button", { name: "Land feat/draft-sync-tabs", exact: true }).count(), 0);
@@ -695,13 +754,122 @@ for (const width of [1280, 390]) {
       await rowActionsSized(modal, "Set Up Queue");
       assert.equal(await modal.getByRole("button", { name: "Land feat/other", exact: true }).count(), 0);
       // Listed, not set up: it merges plainly (al_1 a5).
-      assert.match(await words(modal.locator('[data-branch="feat/other"]')), /Ready to merge.*Say “land it” in the chat to merge it into main[.]/);
+      assert.match(await words(modal.locator('[data-branch="feat/other"]')), /Ready to merge.*Say “land it” in the chat to merge it into master[.]/);
       await noRestartOrLive(o.page, ".wt-queue-modal");
       await o.ctx.close();
     });
 
+    test("a branch's place: each row says its project and target, unfolds to its folder, and several projects are each named", async () => {
+      const long = "/home/u/.worktrees/a-really-long-worktree-folder-name-that-has-to-wrap-on-a-phone/and/some/more/of/it/feat-other";
+      const tools = { ...mergeProject, id: "prj_tools", root: "/w/tools", target: "main", how: "github-pr" as const };
+      const rows = [
+        wt("feat/composer-drafts", { place: { label: "sova", root: ROOT_DIR, target: "master" }, mergeProject: { ...mergeProject, paused: "you paused it" }, mergeOwner: { session: "s1", path: PATH, title: "Composer drafts survive reload" } }),
+        wt("feat/other", { path: long, place: { label: "Tools", root: "/w/tools", target: "main" }, mergeProject: tools }),
+        wt("feat/done", { status: "merged", merge: { target: "feat/parent", sha: sha("e"), how: "tool", at: T0 }, place: { label: "sova", root: ROOT_DIR, target: "master" } }),
+        wt("feat/plain", { mergeProject: undefined, place: { label: "~/code/a-repository-off-the-projects-list-with-a-long-name", root: "/w/code/x", target: "trunk" } }),
+      ];
+      // A session under a real home, so paths are written from it (the app infers $HOME from its first listed session).
+      const homed = { ...SESSION, id: "s-home", path: "/home/u/.pi/agent/sessions/s-home.jsonl", title: "Homed", lastActiveAt: iso(1) } as SessionSummary;
+      const o = await open(width, `#/s/${encodeURIComponent(PATH)}`, { rows, sessions: [homed, SESSION] });
+      const { page } = o;
+      const hash = await page.evaluate(() => location.hash);
+      // What bubbles past the line (a clickable row or card above it would act on it), and what Copy Folder hands the clipboard.
+      await page.evaluate(() => {
+        const w = window as unknown as { placeEscaped: number; placeCopied: string[] };
+        w.placeEscaped = 0;
+        w.placeCopied = [];
+        window.addEventListener("click", (e) => { if ((e.target as Element).closest?.(".branch-place")) w.placeEscaped++; });
+        Object.defineProperty(navigator, "clipboard", { value: { writeText: async (t: string) => void w.placeCopied.push(t) }, configurable: true });
+      });
+      const escaped = () => page.evaluate(() => (window as unknown as { placeEscaped: number }).placeEscaped);
+      await page.getByRole("button", { name: /^Worktrees: / }).click({ timeout: 20_000 });
+      const modal = page.getByRole("dialog", { name: "Worktrees" });
+      await modal.waitFor();
+      const line = (branch: string) => modal.locator(`[data-branch="${branch}"] .branch-place-line`);
+      const tap = (l: Locator) => (width < 768 ? l.tap() : l.click());
+      assert.equal(await words(line("feat/composer-drafts")), "sova · merges into master");
+      assert.equal(await words(line("feat/other")), "Tools · merges into main");
+      assert.equal(await words(line("feat/done")), "sova · merged into feat/parent");
+      assert.match(await words(modal), /sova's queue is paused: you paused it\./);
+      assert.match(await words(modal.locator('[data-branch="feat/plain"]')), /merge it into trunk\./);
+      assert.deepEqual(await modal.locator(".wt-queue-foot-link").allTextContents(), ["View sova's Merge Queue", "View Tools's Merge Queue"]);
+      assert.equal(await modal.locator(".wt-queue-foot-link").nth(1).getAttribute("href"), "#/projects/prj_tools/merge-queue");
+      await shot(page, `${width}-place-modal-folded`);
+      // The 44px target, a real button, closed at first.
+      const box = await line("feat/other").boundingBox();
+      assert.ok(box && box.height >= 44, `the line is ${box?.height}px tall`);
+      assert.equal(await line("feat/other").getAttribute("aria-expanded"), "false");
+      // It wraps; it never cuts off.
+      const plainWords = modal.locator('[data-branch="feat/plain"] .branch-place-words');
+      assert.equal(await plainWords.evaluate((el) => getComputedStyle(el).textOverflow), "clip");
+      assert.equal(await plainWords.evaluate((el) => el.scrollWidth <= el.clientWidth + 1), true, "no line runs past its box");
+      if (width < 768) assert.ok((await plainWords.boundingBox())!.height > 22, "the long place wraps onto a second line at phone width");
+      // By keyboard: Enter unfolds, Space folds, and the focus stays on the line.
+      await line("feat/composer-drafts").focus();
+      await page.keyboard.press("Enter");
+      assert.equal(await line("feat/composer-drafts").getAttribute("aria-expanded"), "true", "Enter unfolds");
+      // Copy Folder is the next stop, and the keyboard works it too.
+      await page.keyboard.press("Tab");
+      assert.equal(await page.evaluate(() => document.activeElement?.textContent?.trim()), "Copy Folder");
+      await page.keyboard.press("Enter");
+      await until("the keyboard copied the folder", async () => (await page.evaluate(() => (window as unknown as { placeCopied: string[] }).placeCopied.length)) === 1);
+      await page.keyboard.press("Shift+Tab");
+      await page.keyboard.press("Space");
+      assert.equal(await line("feat/composer-drafts").getAttribute("aria-expanded"), "false", "Space folds");
+      // A tap unfolds it in place and goes nowhere.
+      await tap(line("feat/other"));
+      assert.equal(await line("feat/other").getAttribute("aria-expanded"), "true");
+      const fold = modal.locator('[data-branch="feat/other"] .branch-place-fold');
+      const longFromHome = long.replace("/home/u", "~");
+      assert.equal((await words(fold.locator(".branch-place-fact").first())).replace(/\s+/g, " ").trim(), `Branch folder: ${longFromHome}`);
+      assert.match(await words(fold), /Merges into: main of \/w\/tools/);
+      // Copy Folder hands over the real folder, not the words on screen.
+      await tap(fold.getByRole("button", { name: "Copy Folder" }));
+      await until("the folder was copied", async () => (await page.evaluate(() => (window as unknown as { placeCopied: string[] }).placeCopied.length)) === 2);
+      assert.deepEqual(await page.evaluate(() => (window as unknown as { placeCopied: string[] }).placeCopied), ["/w/.worktrees/sova-composer-drafts", long]);
+      assert.equal(await escaped(), 0, "no click on the line or Copy Folder bubbles past it");
+      assert.equal(await page.evaluate(() => location.hash), hash, "unfolding and copying don't navigate");
+      assert.equal(await modal.count(), 1, "the modal stays open");
+      await tap(line("feat/done"));
+      assert.match(await words(modal.locator('[data-branch="feat/done"] .branch-place-fold')), /Merged into: feat\/parent of \/w\/sova/);
+      assert.equal(await escaped(), 0);
+      await noSideScroll(page);
+      await shot(page, `${width}-place-modal-unfolded`);
+      // Land's confirm names the place, and a GitHub project's ending.
+      await modal.getByRole("button", { name: "Land feat/other", exact: true }).click();
+      assert.match(await words(modal.locator('[data-branch="feat/other"] .wt-queue-confirm')), /3 commits go to Tools's merge queue; a pull request opens on GitHub once checks pass\./);
+      await shot(page, `${width}-place-land-confirm`);
+      await modal.getByRole("button", { name: "Not Yet" }).click();
+      await page.keyboard.press("Escape");
+      // The pane: the same rows and one link per project, and no paused line of its own.
+      await page.getByRole("button", { name: "Session details" }).first().click();
+      const section = page.locator("section", { has: page.getByRole("heading", { name: "Worktrees" }) }).last();
+      await section.locator(".wt-queue-row").first().waitFor({ timeout: 10_000 });
+      assert.equal(await words(section.locator('[data-branch="feat/other"] .branch-place-line')), "Tools · merges into main");
+      const paneLine = section.locator('[data-branch="feat/other"] .branch-place-line');
+      await paneLine.focus();
+      await page.keyboard.press("Space");
+      assert.equal(await paneLine.getAttribute("aria-expanded"), "true", "Space unfolds in the pane");
+      await page.keyboard.press("Enter");
+      assert.equal(await paneLine.getAttribute("aria-expanded"), "false", "Enter folds in the pane");
+      await tap(paneLine);
+      assert.ok((await paneLine.boundingBox())!.height >= 44, "the pane's line is a 44px target");
+      const paneFold = section.locator('[data-branch="feat/other"] .branch-place-fold');
+      assert.match(await words(paneFold), /Copy Folder/);
+      await tap(paneFold.getByRole("button", { name: "Copy Folder" }));
+      await until("the pane copied it", async () => (await page.evaluate(() => (window as unknown as { placeCopied: string[] }).placeCopied.length)) === 3);
+      assert.equal(await page.evaluate(() => (window as unknown as { placeCopied: string[] }).placeCopied[2]), long);
+      assert.equal(await escaped(), 0, "the pane's clicks stay in the line too");
+      assert.equal(await page.evaluate(() => location.hash), hash);
+      assert.deepEqual((await section.getByRole("link", { name: /Merge Queue$/ }).allTextContents()).map((t) => t.trim()), ["View sova's Merge Queue", "View Tools's Merge Queue"]);
+      assert.doesNotMatch(await words(section), /queue is paused/);
+      await noSideScroll(page);
+      await shot(page, `${width}-place-pane-unfolded`);
+      await o.ctx.close();
+    });
+
     test("a repo off the Projects list (no mergeProject, no mergeServed): no Land, no Ready to land, no Set Up Queue; it reads Ready to merge", async () => {
-      const o = await open(width, `#/s/${encodeURIComponent(PATH)}`, { rows: [wt("feat/build", { mergeProject: undefined })] });
+      const o = await open(width, `#/s/${encodeURIComponent(PATH)}`, { rows: [wt("feat/build", { mergeProject: undefined, place: { label: "~/code/build", root: "/w/code/build", target: "main" } })] });
       await o.page.getByRole("button", { name: /^Worktrees: / }).click({ timeout: 20_000 });
       const modal = o.page.getByRole("dialog", { name: "Worktrees" });
       await modal.waitFor();
@@ -735,12 +903,12 @@ for (const width of [1280, 390]) {
       const section = page.locator("section", { has: page.getByRole("heading", { name: "Worktrees" }) }).last();
       await section.locator(".wt-queue-row").first().waitFor({ timeout: 10_000 });
       const text = await words(section);
-      for (const word of ["Ready", "Queued · 2nd", "Uncommitted", "Needs a fix", "Behaviour differs", "Review flagged", "Landed"]) assert.match(text, new RegExp(word), word);
-      assert.match(text, /2 ready · 1 queued · 1 behaviour differs · 1 review flagged · 1 needs a fix · 1 uncommitted · 1 landed/);
+      for (const word of ["Ready", "Queued · 2nd", "Uncommitted", "Needs a fix", "Behaviour differs", "Needs you", "Landed"]) assert.match(text, new RegExp(word), word);
+      assert.match(text, /2 ready · 1 queued · 1 behaviour differs · 1 needs you · 1 needs a fix · 1 uncommitted · 1 landed/);
       assert.match(await words(section.locator('[data-branch="feat/composer-drafts"]')), /3 commits · \+40 −2/);
       assert.equal(await section.getByRole("button", { name: "Land fix/draft-autosave-race", exact: true }).count(), 0, "sent back: no Land (al_4)");
       assert.equal(await section.getByRole("button", { name: "More ways to land fix/draft-autosave-race" }).count(), 0, "sent back: no Land menu (al_4)");
-      await section.getByRole("button", { name: "Cancel landing fix/paste-images" }).click();
+      await section.getByRole("button", { name: "Remove fix/paste-images from the merge queue" }).click();
       await called(o, "merge.cancel");
       await confirmLand(o, section, "feat/composer-drafts", "Land 3 Commits");
       await called(o, "merge.add");
@@ -761,27 +929,126 @@ for (const width of [1280, 390]) {
       assert.match(text, /Pushed to origin/);
       assert.match(text, /fix\/worker-restore/);
       assert.match(text, /Unit tests · check 2 of 4/);
+      // Waiting starts closed: its header line only, a button over its rows.
       assert.match(text, /Waiting · 2 · the last one done in ~37 min/);
-      assert.match(text, /starts in ~6 min · takes ~9 min/);
-      assert.match(text, /2 newer commits not included/);
-      assert.match(text, /typed in its chat/);
-      assert.match(text, /Behaviour differs · waiting for you/);
-      assert.match(text, /Review flagged · waiting for you/);
-      assert.match(text, /Keep master's retry\./);
-      assert.match(text, /Sent back to its chat/);
-      assert.match(text, new RegExp(NOTE.replace(/[.;]/g, "\\$&")));
+      const waiting = tab.getByRole("button", { name: /^Waiting · 2/ });
+      assert.equal(await waiting.getAttribute("aria-expanded"), "false");
+      assert.doesNotMatch(text, /starts in ~6 min/);
+      assert.equal(await tab.locator('[data-state="queued"]').count(), 0, "no waiting row while closed");
+      // The strip: every tab with its count but Landed; Ready to land shown first; no host tab on a local project.
+      const strip = tab.getByRole("tablist", { name: "Merge queue" });
+      assert.deepEqual(await strip.getByRole("tab").evaluateAll((els) => els.map((e) => e.getAttribute("aria-label"))), ["Ready to land · 1", "Needs you · 2", "With its chat · 1", "Landed", "Queue chats · 0"]);
+      assert.equal(await strip.getByRole("tab", { selected: true }).getAttribute("aria-label"), "Ready to land · 1");
+      assert.equal(await strip.locator(".mq-tab-count-warn").count(), 1, "one count warns");
+      assert.equal(await strip.locator('[data-tab="needs-you"] .mq-tab-count-warn').count(), 1, "Needs you's, while it has anything");
+      const panel = tab.getByRole("tabpanel");
+      assert.equal(await panel.getAttribute("aria-labelledby"), "mq-tab-ready");
+      assert.equal(await panel.locator('[data-state="ready"]').count(), 1);
+      assert.equal(await panel.getAttribute("tabindex"), null, "a panel with rows takes no focus of its own");
+      // The design system's edge fade: on a phone the strip overflows and its end fades; with room, nothing does.
+      assert.deepEqual(await stripFade(strip), width < 600 ? { start: false, end: true, overflows: true } : { start: false, end: false, overflows: false });
+      await waiting.click();
+      assert.equal(await waiting.getAttribute("aria-expanded"), "true");
+      const line = tab.getByRole("region", { name: "Waiting" });
+      const lt = await words(line);
+      assert.match(lt, /starts in ~6 min · takes ~9 min/);
+      assert.match(lt, /2 newer commits not included/);
+      assert.match(lt, /typed in its chat/);
+      assert.deepEqual(await line.locator("[data-state=queued]").evaluateAll((els) => els.map((e) => e.getAttribute("data-branch"))), ["feat/pending-chip", "feat/replay-timeouts"], "in line order");
+      // The page's Refresh Project closes it, as a fresh visit shows it.
+      await page.getByRole("button", { name: "Refresh Project" }).click();
+      await until("Waiting closed by Refresh Project", async () => (await waiting.getAttribute("aria-expanded")) === "false");
+      assert.equal(await tab.locator('[data-state="queued"]').count(), 0, "no waiting row after Refresh Project");
+      await waiting.click();
+      await until("Waiting open again", async () => (await waiting.getAttribute("aria-expanded")) === "true");
       await shot(page, `${width}-queue`);
-      await rowActionsSized(tab, "the tab");
       await tab.getByRole("button", { name: "Pause Queue" }).click();
       await called(o, "merge.pause");
-      await tab.getByRole("button", { name: "Cancel landing feat/replay-timeouts" }).click();
+      await tab.getByRole("button", { name: "Remove feat/replay-timeouts from the merge queue" }).click();
       await until("a cancel", () => o.calls.some((c) => c.verb === "merge.cancel" && c.body.entry === "me_w2"));
+
+      // Needs you: its own address; the rows it always had.
+      await showTab(page, "Needs you");
+      assert.equal(await hashOf(page), `#/projects/${PID}/merge-queue/needs-you`);
+      const nt = await words(panel);
+      assert.match(nt, /Behaviour differs · waiting for you/);
+      assert.match(nt, /Needs you · feat\/hack/);
+      assert.match(nt, /Keep the Save button at the top, or move it under the form\?/);
+      assert.match(nt, /isn't sent yet: it goes with your answer/);
+      assert.match(nt, /Keep master's retry\./);
+      assert.equal(await waiting.getAttribute("aria-expanded"), "true", "Waiting stays as it was while you change tabs");
+      await rowActionsSized(panel, "the Needs you tab");
       await tab.getByRole("button", { name: "Accept the resolution for fix/conflict-chip" }).click();
       await until("an accept", () => o.calls.some((c) => c.verb === "merge.answer" && c.body.answer === "accept"));
-      await tab.getByRole("button", { name: "Send fix/conflict-chip back to its chat" }).click();
-      await until("a send-back", () => o.calls.some((c) => c.verb === "merge.answer" && c.body.answer === "send-back" && c.body.entry === "me_b"));
-      await tab.getByRole("button", { name: "Land feat/hack anyway" }).click();
-      await until("a land-anyway", () => o.calls.some((c) => c.verb === "merge.answer" && c.body.answer === "land-anyway"));
+      // A decision answered in words: Answer in Chat opens its chat; no row has a text box, a Send Back or a re-land.
+      assert.equal(await tab.locator('.mq-needs[data-branch="feat/hack"]').getByRole("link", { name: "Answer about feat/hack in its chat" }).count(), 1);
+      assert.equal(await tab.locator(".mq-list textarea, .mq-list input[type=text]").count(), 0, "no text box in any row");
+      for (const gone of [/Send Back/, /back to its chat/, /Land This Commit Again/, /Land Newest Commit/, /at its newest commit/]) assert.equal(await tab.getByRole("button", { name: gone }).count(), 0, String(gone));
+      await tab.locator('.mq-needs[data-branch="feat/hack"]').getByRole("button", { name: "Remove feat/hack from the merge queue" }).click();
+      await until("a remove", () => o.calls.some((c) => c.verb === "merge.cancel" && c.body.entry === "me_r"));
+
+      // A pick never moves the strip under the pointer: scrolled toward the strip as far as the pane goes (at its end,
+      // where a shorter page would pull the strip down), a shorter tab keeps it there.
+      const atTop = await stripAtTop(strip, true);
+      assert.ok(atTop.scroll > 0 && (Math.abs(atTop.gap) < 1 || atTop.atEnd), `the pane scrolled to the strip: ${JSON.stringify(atTop)}`);
+      // With its chat, Landed, and an empty tab saying so in one line.
+      await showTab(page, "With its chat");
+      const after = await stripAtTop(strip);
+      assert.ok(Math.abs(after.y - atTop.y) < 1, `the strip stays put: ${atTop.y} → ${after.y}`);
+      assert.equal(await hashOf(page), `#/projects/${PID}/merge-queue/with-its-chat`);
+      assert.match(await words(panel), /Your Land stands: it goes back in line by itself once its chat's fix is checked\./);
+      await showTab(page, "Landed");
+      assert.equal(await hashOf(page), `#/projects/${PID}/merge-queue/landed`);
+      assert.match(await words(panel), new RegExp(NOTE.replace(/[.;]/g, "\\$&")));
+      await showTab(page, "Queue chats");
+      // An empty tab: the live fact, then what shows there; its panel takes focus, so Tab from the strip reaches the line.
+      assert.equal((await words(panel)).trim(), "1 being checked, 2 waiting. Each chat the queue starts shows here.");
+      assert.equal(await panel.getAttribute("tabindex"), "0");
+      await strip.getByRole("tab", { selected: true }).focus();
+      await page.keyboard.press("Tab");
+      assert.equal(await page.evaluate(() => document.activeElement?.id), "mq-tabpanel", "Tab from the strip lands on the empty panel");
+      if (width < 600) {
+        // The strip scrolls sideways by itself, never the page, and the tab shown is scrolled into view, clear of the
+        // fade, which is now at the start only (the last tab is shown).
+        assert.ok(await strip.evaluate((el) => el.scrollWidth > el.clientWidth), "the strip overflows at a phone's width");
+        const picked = await box(strip.getByRole("tab", { selected: true }));
+        assert.ok(picked.x >= -1 && picked.x + picked.width <= width + 1, "the tab shown is in view");
+        await until("the strip scrolled to its end", async () => JSON.stringify(await stripFade(strip)) === JSON.stringify({ start: true, end: false, overflows: true }));
+      }
+      await noSideScroll(page);
+      // The tab is in the address: Back, and a reload, keep it; Waiting is closed again after the reload.
+      await page.goBack();
+      await until("Back to Landed", async () => (await strip.getByRole("tab", { selected: true }).getAttribute("aria-label")) === "Landed");
+      await page.reload();
+      await strip.waitFor({ timeout: 20_000 });
+      assert.equal(await strip.getByRole("tab", { selected: true }).getAttribute("aria-label"), "Landed");
+      assert.equal(await tab.getByRole("button", { name: /^Waiting · / }).getAttribute("aria-expanded"), "false");
+      // Keys move along the strip (wrapping); Enter picks.
+      await strip.getByRole("tab", { selected: true }).focus();
+      await page.keyboard.press("ArrowLeft");
+      await page.keyboard.press("Enter");
+      await until("With its chat by key", async () => (await hashOf(page)) === `#/projects/${PID}/merge-queue/with-its-chat`);
+      // A run opened from a tab returns there: Back to Queue names it; the run's own address does too.
+      const why = panel.locator('[data-branch="fix/draft-autosave-race"]').getByRole("link", { name: "See Why" });
+      assert.equal(await why.getAttribute("href"), `#/projects/${PID}/merge-queue/with-its-chat/mr_fail`);
+      await why.click();
+      const back = page.getByRole("link", { name: "Back to Queue" });
+      await back.waitFor({ timeout: 20_000 });
+      assert.equal(await back.getAttribute("href"), `#/projects/${PID}/merge-queue/with-its-chat`);
+      await back.click();
+      await until("back on With its chat", async () => (await strip.getByRole("tab", { selected: true }).getAttribute("aria-label").catch(() => null)) === "With its chat · 1");
+      assert.equal(await tab.getByRole("button", { name: /^Waiting · / }).getAttribute("aria-expanded"), "false", "closed again after a run");
+      // Back from a run, the strip is at the top of the pane, over the rows the run was opened from.
+      await until("the strip at the pane's top after a run", async () => Math.abs((await stripAtTop(strip)).gap) < 1);
+      assert.ok((await stripAtTop(strip)).scroll > 0, "the pane scrolled to it");
+      // The project's own Merge Queue tab opens Ready to land.
+      assert.equal(await page.getByRole("tab", { name: "Merge Queue" }).count(), 1);
+      await page.getByRole("tab", { name: "Branches" }).click();
+      await until("on Branches", async () => (await hashOf(page)) === `#/projects/${PID}/branches`);
+      await page.getByRole("tab", { name: "Merge Queue" }).click();
+      await until("on Ready to land", async () => (await strip.getByRole("tab", { selected: true }).getAttribute("aria-label").catch(() => null)) === "Ready to land · 1");
+      assert.equal(await hashOf(page), `#/projects/${PID}/merge-queue`);
+      await rowActionsSized(tab, "the tab");
       // Once, in the Merge thread card; the head has Queue Settings and Pause Queue only.
       assert.equal(await tab.getByRole("link", { name: "Open Merge Thread" }).count(), 1);
       assert.equal(await tab.locator(".mq-thread-card").getByRole("link", { name: "Open Merge Thread" }).count(), 1);
@@ -796,7 +1063,7 @@ for (const width of [1280, 390]) {
           else assert.ok(b[i]!.top - b[i - 1]!.bottom >= 7.5, `${scope}: button ${i} wraps ≥ 7.5px below button ${i - 1}`);
         }
       }
-      // Ready to land, not approved: Land and its ▾, on the queue's own page.
+      // Ready to land: Land and its ▾, on the queue's own page.
       const ready = tab.locator('[data-branch="feat/ready-one"]');
       assert.match(await words(ready), /3 commits ahead/);
       await confirmLand(o, ready, "feat/ready-one", "Land 3 Commits");
@@ -872,8 +1139,8 @@ for (const width of [1280, 390]) {
       const { page } = o;
       const landed = page.locator('.mq-chat-card[data-branch="feat/settle-cpu"]').last();
       await landed.waitFor({ timeout: 20_000 });
-      // Six branches, six whole cards; the two approvals that moved on are folded lines.
-      await until("six cards", async () => (await page.locator(".transcript-card > .mq-chat-card").count()) === 6);
+      // Seven branches, seven whole cards; the two approvals that moved on are folded lines.
+      await until("seven cards", async () => (await page.locator(".transcript-card > .mq-chat-card").count()) === 7);
       const folded = page.locator(".mq-card-folded");
       assert.equal(await folded.count(), 2);
       assert.deepEqual(await folded.locator(".disclosure-label").allTextContents(), ["feat/settle-cpu · Queued 1st", "fix/conflict-chip · Queued 2nd"]);
@@ -936,12 +1203,23 @@ for (const width of [1280, 390]) {
       assert.match(await words(card("fix/conflict-chip")), /Master retries the save twice\..*The branch never retries\..*Keep master's retry\./);
       await card("fix/conflict-chip").getByRole("button", { name: "Accept fix/conflict-chip" }).click();
       await until("accept", () => o.calls.some((c) => c.verb === "merge.answer" && c.body.entry === "me_b" && c.body.answer === "accept"));
-      await card("fix/conflict-chip").getByRole("button", { name: "Send Back fix/conflict-chip" }).click();
-      await until("send back", () => o.calls.some((c) => c.verb === "merge.answer" && c.body.entry === "me_b" && c.body.answer === "send-back"));
-      assert.match(await words(card("feat/hack")), /Review: Leaves a workaround in land\.ts with no test\./);
-      await card("feat/hack").getByRole("button", { name: "Land Anyway feat/hack" }).click();
-      await until("land anyway", () => o.calls.some((c) => c.verb === "merge.answer" && c.body.entry === "me_c" && c.body.answer === "land-anyway"));
-      await card("feat/pending-chip").getByRole("button", { name: "Cancel feat/pending-chip" }).click();
+      assert.equal(await page.getByRole("button", { name: /^Send Back/ }).count(), 0, "no Send Back on any card");
+      // Back with the chat, in place: the try and its reason, the chat's answer, Remove from Queue only.
+      const bt = await words(card("feat/save-hint"));
+      assert.match(bt, /Back with the chat/);
+      assert.match(bt, /try 2 of 3 · Unit tests failed/);
+      assert.match(bt, /Chat: Can't: the test needs a network/);
+      assert.deepEqual(await card("feat/save-hint").locator(".mq-card-actions button").allInnerTexts(), ["Remove from Queue"]);
+      // A decision: the question, its choices, the queue's note held "not sent yet"; no text box on the card.
+      const dt = await words(card("feat/hack"));
+      assert.match(dt, /Needs you/);
+      assert.match(dt, /Keep the Save button at the top, or move it under the form\?/);
+      assert.match(dt, /Merge queue: Place the Save button where the user says, then answer Fixed\./);
+      assert.match(dt, /Not sent yet your answer goes with it/);
+      assert.equal(await card("feat/hack").locator("textarea, input").count(), 0, "no text box in a card");
+      // The message box says it waits for the user's answer.
+      assert.match(await words(page.locator(".mq-held-line").first()), /Merge queue · feat\/hack · not sent yet: your answer goes with it/);
+      await card("feat/pending-chip").getByRole("button", { name: "Remove from Queue feat/pending-chip" }).click();
       await until("cancel", () => o.calls.some((c) => c.verb === "merge.cancel" && c.body.entry === "me_e"));
       await card("feat/settle-cpu").getByRole("button", { name: "Land Again feat/settle-cpu" }).click();
       await until("land again", () => o.calls.some((c) => c.verb === "merge.add" && c.body.branch === "feat/settle-cpu"));
@@ -950,7 +1228,67 @@ for (const width of [1280, 390]) {
       const sent = o.frames.slice(before).filter((f) => POSTS.test(f));
       assert.deepEqual(sent, [], "a queue button posted to the chat");
       assert.equal(await page.locator("textarea[id$='composer-input']").first().inputValue(), "");
+      // A choice fills the message box, and nothing is sent until the user sends.
+      await card("feat/hack").getByRole("button", { name: "Move it under the form" }).click();
+      await until("the choice in the message box", async () => (await page.locator("textarea[id$='composer-input']").first().inputValue()) === "Move it under the form");
+      assert.deepEqual(o.frames.slice(before).filter((f) => POSTS.test(f)), [], "a choice sends nothing");
+      // Sent: the user's own message, naming the decision whose held note goes with it.
+      await page.locator("textarea[id$='composer-input']").first().press("Enter");
+      await until("the answer sent with its decision", () => o.frames.slice(before).some((f) => POSTS.test(f) && f.includes('"decision":"dc_1"') && f.includes("Move it under the form")));
       await shot(page, `${width}-chat-waiting-card`);
+      await o.ctx.close();
+    });
+
+    test("an extension's message reads as the extension's: its name, no link, no hop, never yours (§app.extensions/name-badge)", async () => {
+      const items = [
+        ...CHAT_ITEMS,
+        { id: "u3", kind: "user", text: '[from session "Alpha Bot" (ext:alpha), hop 0]\nThe build failed.', at: iso(1) },
+        { id: "mark-u3", kind: "info", at: iso(1), sessionMark: { kind: "sent", targetId: "u3", from: { sessionId: "ext:alpha", title: "Alpha Bot" }, hop: 0 } },
+      ];
+      const o = await open(width, `#/s/${encodeURIComponent(PATH)}`, { items });
+      const { page } = o;
+      const row = page.locator(".message-from-session").last();
+      await row.waitFor({ timeout: 20_000 });
+      const t = await words(row);
+      assert.match(t, /From an extension/);
+      assert.match(t, /The build failed\./);
+      assert.doesNotMatch(t, /from session/, "the header line is the model's");
+      const sender = page.locator(".session-sender").last();
+      assert.match(await words(sender), /From Alpha Bot/);
+      assert.doesNotMatch(await words(sender), /hop/);
+      assert.equal(await sender.locator("a").count(), 0, "no session to link to");
+      await o.ctx.close();
+    });
+
+    test("two decisions in one chat: a choice on the older one is sent as its answer, not the newest's", async () => {
+      const older = mc("me_o", "feat/older", { state: "needs-user", decision: { ...DECISION, id: "dc_old", at: iso(10), question: "Older question?", choices: ["Older choice"] }, revisions: [{ id: "me_o:1", kind: "needs-fix", at: iso(10), after: "a2", state: "needs-user" }] });
+      const newer = mc("me_n", "feat/newer", { state: "needs-user", decision: { ...DECISION, id: "dc_new", at: iso(2), question: "Newer question?", choices: ["Newer choice"] }, revisions: [{ id: "me_n:1", kind: "needs-fix", at: iso(2), after: "a2", state: "needs-user" }] });
+      const o = await open(width, `#/s/${encodeURIComponent(PATH)}`, { rows: READY_ROWS, cards: [older, newer], items: CHAT_ITEMS });
+      const { page } = o;
+      const line = page.locator(".mq-held-line");
+      await line.waitFor({ timeout: 20_000 });
+      assert.match(await words(line), /feat\/newer/, "typed alone: the newest");
+      await page.locator('.mq-chat-card[data-branch="feat/older"]').getByRole("button", { name: "Older choice" }).click();
+      await until("the line names the picked one", async () => /feat\/older/.test(await words(line)));
+      await page.locator("textarea[id$='composer-input']").first().press("Enter");
+      await until("sent as the older decision's answer", () => o.frames.some((f) => POSTS.test(f) && f.includes('"decision":"dc_old"') && f.includes("Older choice")));
+      assert.ok(!o.frames.some((f) => POSTS.test(f) && f.includes('"decision":"dc_new"')));
+      await o.ctx.close();
+    });
+
+    test("a decision's answer: your words in your bubble, the queue's held note folded under them, never yours", async () => {
+      const text = formatHeldNote("Move it under the form, please.", { request: "rq_0123456789ab", branch: "feat/hack", text: "Place the Save button where the user says, then answer Fixed." });
+      const o = await open(width, `#/s/${encodeURIComponent(PATH)}`, { items: [...CHAT_ITEMS, { id: "u3", kind: "user", text, at: iso(1) }] });
+      const { page } = o;
+      const fold = page.locator(".mq-held-sent");
+      await fold.waitFor({ timeout: 20_000 });
+      const bubble = page.locator(".message-user", { has: fold });
+      assert.equal(await bubble.locator(".message-body").first().innerText(), "Move it under the form, please.");
+      assert.match(await words(fold.locator("summary")), /Merge queue · feat\/hack · sent with your answer/);
+      assert.equal(await fold.evaluate((d) => (d as HTMLDetailsElement).open), false, "folded");
+      await fold.locator("summary").click();
+      assert.match(await words(fold), /Place the Save button where the user says, then answer Fixed\./);
+      assert.doesNotMatch(await words(bubble.locator(".message-body").first()), /held note/);
       await o.ctx.close();
     });
 
@@ -1009,7 +1347,7 @@ for (const width of [1280, 390]) {
       await o.ctx.close();
     });
 
-    test("can't tell whose failure: in the modal, the tab's needs-you, the run page and the chat card, with Land Anyway / Send Back posting nothing", async () => {
+    test("can't tell whose failure: in the modal, the tab's needs-you, the run page and the chat card, with Land Anyway / Try Again posting nothing", async () => {
       const qe = entry({ id: "me_u", branch: "feat/slow-build", state: "unattributed", run: "mr_unclear", reason: UNCLEAR_WHY, unclear: UNCLEAR });
       const view = viewOf({ needsYou: [qe] });
       const row = wt("feat/slow-build", { queue: qi({ id: "me_u", state: "unattributed", run: "mr_unclear", reason: UNCLEAR_WHY, unclear: UNCLEAR }) });
@@ -1047,14 +1385,14 @@ for (const width of [1280, 390]) {
       assert.match(mt, /Can't tell whose failure/);
       assert.match(mt, /1 can't tell whose failure/);
       await expectWhy(mt);
-      await modal.getByRole("button", { name: "Send feat/slow-build back to its chat" }).click();
-      await until("send back from the modal", () => o.calls.some((x) => x.verb === "merge.answer" && x.body.answer === "send-back" && x.body.entry === "me_u"));
+      await modal.getByRole("button", { name: "Try feat/slow-build again" }).click();
+      await until("try again from the modal", () => o.calls.some((x) => x.verb === "merge.answer" && x.body.answer === "try-again" && x.body.entry === "me_u"));
       await noRestartOrLive(page, ".wt-queue-modal");
       await shot(page, `${width}-unclear-modal`);
       await page.keyboard.press("Escape");
       assert.equal(o.frames.filter((f) => POSTS.test(f)).length, 0, "nothing posted to the chat");
-      // The tab's needs-you row.
-      await page.goto(`${ORIGIN}/#/projects/${PID}/merge-queue`);
+      // The tab's needs-you row, on the Needs you tab's own address.
+      await page.goto(`${ORIGIN}/#/projects/${PID}/merge-queue/needs-you`);
       const needs = page.locator('.mq-needs[data-branch="feat/slow-build"]');
       await needs.waitFor({ timeout: 20_000 });
       const nt = await words(needs);
@@ -1074,8 +1412,10 @@ for (const width of [1280, 390]) {
       assert.match(await words(page.locator(".mq-run .cluster").first()), /Can't tell whose failure · waiting for you/);
       assert.equal(await page.getByText("Nothing has merged from this run.").count(), 0, "the banner says it, once");
       await expectWhy(bt);
-      await ban.getByRole("button", { name: "Send feat/slow-build back to its chat" }).click();
-      await until("send back from the run page", () => o.calls.filter((x) => x.verb === "merge.answer" && x.body.answer === "send-back").length >= 2);
+      await ban.getByRole("button", { name: "Try feat/slow-build again" }).click();
+      await until("try again from the run page", () => o.calls.filter((x) => x.verb === "merge.answer" && x.body.answer === "try-again").length >= 2);
+      await ban.getByRole("button", { name: "Remove feat/slow-build from the merge queue" }).click();
+      await until("remove from the run page", () => o.calls.some((x) => x.verb === "merge.cancel" && x.body.entry === "me_u"));
       await noRestartOrLive(page, ".mq-run");
       await noSideScroll(page);
       await shot(page, `${width}-unclear-run`);
@@ -1111,6 +1451,72 @@ for (const width of [1280, 390]) {
       assert.match(t, /Not pushed/);
       assert.match(t, /Push held: private names not set up yet\./);
       await shot(o.page, `${width}-push-held`);
+      await o.ctx.close();
+    });
+
+    test("a project that lands on GitHub: Waiting on GitHub with its requests; a check broken on master heads Needs you and counts", async () => {
+      const req = entry({ id: "me_h", branch: "feat/on-github", state: "requested", request: { how: "github-pr", host: "github", branch: "feat/on-github", base: "master", number: 12, url: "https://github.com/example/app/pull/12" } });
+      const broken = { check: "unit", label: "Unit tests", why: "Unit tests is broken on master: no test ran (cannot find module)", run: "mr_broke", step: "check:unit", at: iso(5) };
+      const view = viewOf({ settings: { landing: { target: "master", push: true, names: { setUp: true, count: 0 } }, checks: { mode: "declared", list: [] }, review: { on: false }, how: { effective: "github-pr", from: "project" } } as unknown as MergeQueueView["settings"], waitingOnHost: [req], heads: { target: sha("1"), pushed: sha("1"), targetBroken: [broken] } });
+      const o = await open(width, `#/projects/${PID}/merge-queue/waiting-on-host`, { view });
+      const { page } = o;
+      const strip = page.getByRole("tablist", { name: "Merge queue" });
+      await strip.waitFor({ timeout: 20_000 });
+      assert.deepEqual(await strip.getByRole("tab").evaluateAll((els) => els.map((e) => e.getAttribute("aria-label"))), ["Ready to land · 1", "Needs you · 3", "With its chat · 1", "Waiting on GitHub · 1", "Landed", "Queue chats · 0"]);
+      assert.equal(await strip.getByRole("tab", { selected: true }).getAttribute("aria-label"), "Waiting on GitHub · 1");
+      const panel = page.getByRole("tabpanel");
+      await panel.locator('li[data-branch="feat/on-github"]').waitFor({ timeout: 20_000 });
+      assert.doesNotMatch(await words(page.locator(".mq-tab")), /Waiting on the host/, "the tab names the host; no section heading of its own");
+      // An address naming a tab moves nothing up or down: only the strip scrolls, sideways, to the tab shown.
+      assert.deepEqual(await strip.evaluate((el) => { const moved: string[] = []; for (let n = el.parentElement; n; n = n.parentElement) if (n.scrollTop) moved.push(`${n.className}: ${n.scrollTop}`); return moved; }), [], "no page scroll");
+      const shownBox = await box(strip.getByRole("tab", { selected: true }));
+      const stripBox = await box(strip);
+      assert.ok(shownBox.x >= stripBox.x - 1 && shownBox.x + shownBox.width <= stripBox.x + stripBox.width + 1, "the tab shown is in the strip's view");
+      // The broken check first, apart from the entries, with View the Log on its run (opened from Needs you).
+      await showTab(page, "Needs you");
+      const rows = panel.locator(":scope > ul > li");
+      assert.equal(await rows.first().getAttribute("data-state"), "target-broken");
+      assert.match(await words(rows.first()), /Broken on master/);
+      assert.equal(await rows.first().getByRole("link", { name: "View the log of Unit tests on master" }).getAttribute("href"), `#/projects/${PID}/merge-queue/needs-you/mr_broke`);
+      await noSideScroll(page);
+      await shot(page, `${width}-queue-host`);
+      await o.ctx.close();
+      // A local project's address for that tab shows Ready to land.
+      const l = await open(width, `#/projects/${PID}/merge-queue/waiting-on-host`);
+      const ls = l.page.getByRole("tablist", { name: "Merge queue" });
+      await ls.waitFor({ timeout: 20_000 });
+      assert.equal(await ls.getByRole("tab", { selected: true }).getAttribute("aria-label"), "Ready to land · 1");
+      assert.equal(await ls.getByRole("tab", { name: /Waiting on/ }).count(), 0);
+      await l.ctx.close();
+    });
+
+    test("an empty queue: Waiting is a plain line; each empty tab says the live fact, then what shows there; a typed …/ready opens Ready to land", async () => {
+      const view = viewOf({ current: undefined, checking: [], waiting: [], needsYou: [], needsFix: [], recent: [], ready: [] });
+      const o = await open(width, `#/projects/${PID}/merge-queue/ready`, { view });
+      const { page } = o;
+      const tab = page.locator(".mq-tab");
+      const strip = tab.getByRole("tablist", { name: "Merge queue" });
+      await strip.waitFor({ timeout: 20_000 });
+      // `…/ready` is Ready to land, put back as its one address with no history entry.
+      assert.equal(await strip.getByRole("tab", { selected: true }).getAttribute("aria-label"), "Ready to land · 0");
+      await until("the bare address", async () => (await hashOf(page)) === `#/projects/${PID}/merge-queue`);
+      // Nothing in line: a plain line, no toggle, and nothing that repeats Checking now's line.
+      assert.equal(await tab.getByRole("button", { name: /^Waiting/ }).count(), 0, "no Waiting toggle");
+      assert.equal((await words(tab.locator(".mq-waiting-head"))).trim(), "Waiting · 0");
+      assert.equal(await tab.getByText(/A branch joins when you press Land/).count(), 0);
+      const panel = tab.locator(".mq-tabpanel");
+      for (const [label, line] of [
+        ["Ready to land", "The queue is idle. A finished branch shows here until you land it."],
+        ["Needs you", "The queue is idle. A branch shows here when it needs your decision."],
+        ["With its chat", "The queue is idle. A branch shows here while its chat fixes what the queue sent back."],
+        ["Landed", "The queue is idle. Each landing shows here."],
+        ["Queue chats", "The queue is idle. Each chat the queue starts shows here."],
+      ] as const) {
+        if (label !== "Ready to land") await showTab(page, label);
+        assert.equal((await words(panel)).trim(), line, label);
+        assert.equal(await panel.getAttribute("tabindex"), "0", `${label}: its panel takes focus`);
+      }
+      await shot(page, `${width}-queue-empty`);
       await o.ctx.close();
     });
 
@@ -1281,6 +1687,7 @@ for (const width of [1280, 390]) {
       await none.locator(".mq-facts").click();
       assert.equal(await hashOf(page), start, "a row with no chat opens nothing");
       // The queued rows' chat links open the chat by its route (they used to point where nothing resolved them).
+      await openWaiting(page);
       const waitingChat = tab.locator('[data-branch="feat/pending-chip"] .mq-chat-link');
       assert.equal(await waitingChat.getAttribute("href"), `#/s/${encodeURIComponent(PATH)}`);
       assert.equal(await words(waitingChat), SESSION.title);
@@ -1300,13 +1707,24 @@ for (const width of [1280, 390]) {
       await viewer.getByRole("button", { name: "Close" }).click();
       await until("the viewer closed", async () => (await viewer.count()) === 0);
       await until("focus back on Review Changes", () => review.evaluate((el) => el === document.activeElement));
-      // Every row of the tab has it: checking, waiting, needs you, ready, sent back, recent.
-      for (const b of ["fix/worker-restore", "feat/pending-chip", "feat/replay-timeouts", "fix/conflict-chip", "feat/hack", "feat/ready-one", "feat/no-chat", "fix/draft-autosave-race", "feat/composer-hints"])
-        assert.equal(await tab.getByRole("button", { name: `Review Changes on ${b}` }).count(), 1, b);
+      // Every row of the tab has it: checking and waiting above the tabs, then each tab's (ready, needs you, with its
+      // chat, landed).
+      const reviews = async (branches: string[]) => {
+        for (const b of branches) assert.equal(await tab.getByRole("button", { name: `Review Changes on ${b}` }).count(), 1, b);
+      };
+      await reviews(["fix/worker-restore", "feat/pending-chip", "feat/replay-timeouts", "feat/ready-one", "feat/no-chat"]);
+      await showTab(page, "Needs you");
+      await reviews(["fix/conflict-chip", "feat/hack"]);
+      await showTab(page, "With its chat");
+      await reviews(["fix/draft-autosave-race"]);
+      await showTab(page, "Landed");
+      await reviews(["feat/composer-hints"]);
       await tab.getByRole("button", { name: "Review Changes on feat/composer-hints" }).click();
       await until("a landed row's read", () => o.diffs.some((d) => d.kind === "summary" && d.query.get("entry") === "me_l"));
       await page.keyboard.press("Escape");
       await until("the viewer closed", async () => (await viewer.count()) === 0);
+      await showTab(page, "Ready to land");
+      assert.equal(await hashOf(page), start, "back on Ready to land's address");
 
       // Land: its confirm, then queued, nothing opened; a tap on the confirm's words opens nothing either.
       await ready.getByRole("button", { name: "Land feat/ready-one", exact: true }).click();
@@ -1425,18 +1843,19 @@ for (const width of [1280, 390]) {
       void card;
       await page.locator(".mq-thread-card").getByRole("button", { name: "Start Fresh…" }).click();
       const confirm = page.getByRole("group", { name: "Start a fresh merge thread" });
-      assert.match(await words(confirm), /stays readable in History/);
+      assert.match(await words(confirm), /stays readable in Queue chats/);
       assert.equal(o.calls.filter((c) => c.verb === "merge.fresh").length, 0, "nothing until the confirm");
       await confirm.getByRole("button", { name: "Start Fresh", exact: true }).click();
       await called(o, "merge.fresh");
       await o.ctx.close();
     });
 
-    test("History: every chat, filters, each row opens its chat; Clear and Clear All… call merge.clear; never the current thread or a running review", async () => {
-      const o = await open(width, `#/projects/${PID}/merge-queue`, { view: viewOf(ASKED) });
+    test("Queue chats: every chat, filters, each row opens its chat; Clear and Clear All… call merge.clear; never the current thread or a running review", async () => {
+      const o = await open(width, `#/projects/${PID}/merge-queue/queue-chats`, { view: viewOf(ASKED) });
       const { page } = o;
       const history = page.locator(".mq-history");
       await history.waitFor({ timeout: 20_000 });
+      assert.equal(await page.getByRole("tab", { selected: true, name: /^Queue chats/ }).getAttribute("aria-label"), "Queue chats · 5");
       await history.scrollIntoViewIfNeeded();
       assert.equal(await history.locator("li").count(), 5);
       assert.equal(await history.locator('li[data-session="01a0mergethread"]').getByRole("button", { name: /^Clear/ }).count(), 0, "the current thread has no Clear");
@@ -1460,8 +1879,8 @@ for (const width of [1280, 390]) {
       await o.ctx.close();
     });
 
-    test("runs link their reviewer chats: Recent's row, and the run page per attempt", async () => {
-      const o = await open(width, `#/projects/${PID}/merge-queue`, { view: viewOf(ASKED) });
+    test("runs link their reviewer chats: Landed's row, and the run page per attempt", async () => {
+      const o = await open(width, `#/projects/${PID}/merge-queue/landed`, { view: viewOf(ASKED) });
       const { page } = o;
       const recent = page.locator('[data-state="landed"][data-branch="feat/composer-hints"]');
       await recent.waitFor({ timeout: 20_000 });
@@ -1479,18 +1898,34 @@ for (const width of [1280, 390]) {
       await r.ctx.close();
     });
 
-    test("a question with no chat to ask: answered on the tab with merge.reply", async () => {
+    test("a question with no chat to ask: the tab shows it with one button, Answer in Merge Thread, and no text box (q15)", async () => {
       const view = viewOf({ ...ASKED, thread: { ...ASKED.thread, ask: { ...ASKED.thread.ask, askedIn: undefined, onTab: true as const } } });
       const o = await open(width, `#/projects/${PID}/merge-queue`, { view });
       const { page } = o;
-      const box = page.getByLabel("Your answer");
-      await box.waitFor({ timeout: 20_000 });
-      assert.equal(await page.locator(".mq-thread-card").getByRole("link", { name: "Answer in Merge Thread" }).count(), 1);
-      await box.fill("The lab's hostnames and the office IPs.");
-      await page.getByRole("button", { name: "Send Answer" }).click();
-      await called(o, "merge.reply");
-      assert.deepEqual(o.calls.find((c) => c.verb === "merge.reply")!.body, { ask: "ak_1", text: "The lab's hostnames and the office IPs.", project: ROOT_DIR });
+      const ask = page.locator(".mq-thread-ask");
+      await ask.waitFor({ timeout: 20_000 });
+      const answer = ask.getByRole("link", { name: "Answer in Merge Thread" });
+      assert.equal(await answer.count(), 1);
+      assert.equal(await ask.locator("button, a").count(), 1, "one button only");
+      assert.equal(await ask.locator("textarea, input").count(), 0, "no Your answer box");
+      assert.equal(await page.getByRole("button", { name: "Send Answer" }).count(), 0);
+      assert.equal(await answer.getAttribute("href"), await page.locator(".mq-thread-card").getByRole("link", { name: "Open Merge Thread" }).getAttribute("href"), "it opens the merge thread's chat");
+      assert.equal(o.calls.filter((c) => c.verb === "merge.reply").length, 0);
       await shot(page, `${width}-thread-asking-tab`);
+      await o.ctx.close();
+    });
+
+    test("the merge thread's own chat holds its tab question above the message box; the answer names it", async () => {
+      const view = viewOf({ ...ASKED, thread: { ...ASKED.thread, session: SESSION.id, path: PATH, ask: { ...ASKED.thread.ask, askedIn: undefined, onTab: true as const } } });
+      const o = await open(width, `#/s/${encodeURIComponent(PATH)}`, { view, sessions: [{ ...SESSION, queueChat: { role: "thread" } } as SessionSummary] });
+      const { page } = o;
+      const line = page.locator(".mq-held-line");
+      await line.waitFor({ timeout: 20_000 });
+      assert.match(await words(line), /Merge thread asks: What else must never reach the public repo\? · not sent yet: your answer goes with it/);
+      const box = page.locator("textarea[id$='composer-input']").first();
+      await box.fill("The lab's hostnames.");
+      await box.press("Enter");
+      await until("the answer names the question", () => o.frames.some((f) => POSTS.test(f) && f.includes('"decision":"ak_1"')));
       await o.ctx.close();
     });
 

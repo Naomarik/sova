@@ -106,7 +106,8 @@ test("the glance: shape, Ready from the served queue's kept view, null for the u
   assert.ok(s && p, JSON.stringify(g));
   assert.equal(s.queue?.ready, 1, "the served queue's Ready list: feat/ready");
   assert.equal(s.queue?.inLine, 0);
-  assert.deepEqual(s.slots, { running: 0, cap: 4 }, "a project file, no copies: 0 of the default 4");
+  assert.deepEqual([s.slots?.running, s.slots?.cap, s.slots?.usable, s.slots?.runningPlaces, s.slots?.stopped], [0, 4, 16, 0, 0], "a project file, no copies: 0 of the default 4, every slot a place");
+  assert.equal(typeof s.slots?.free, "number", "this host has a list of listening ports, read through the real path");
   assert.equal(s.merge, "served");
   assert.deepEqual([p.merge, p.queue], ["unserved", null], "the queue doesn't serve the plain repo: —");
   assert.equal(p.slots, null, "no project file: no slots");

@@ -88,8 +88,8 @@ refuses, since Sova never writes to a session a terminal holds.
 ## Raise a card
 
 `session.card.post` puts a [card](/docs/extending/card-types/) in a chat, so your script can ask a question
-and read the answer with `session.card.get`. It takes a type in that chat's set, and it's refused
-while an alignment question is open. The card says who raised it: "From a script".
+and read the answer with `session.card.get`. It takes a type in that chat's set, and an open alignment
+question doesn't stop it. The card says who raised it: "From a script".
 
 ## Who ran what
 
@@ -117,7 +117,9 @@ refusal says where to click.
 | Lowering a chat's sandbox | The Sandbox rows in that chat's composer. A `/sandbox` sent as a message is refused too, and so is a rewind or regenerate that goes back past a raise. In the page, that rewind still lowers it |
 | Approving a project tool | **Approve and Turn On** in that chat's mode menu |
 | Trusting a project's or an extension's cards | **Trust {name}'s Cards** on the card |
+| Adding, approving or changing an extension | Settings → Extensions |
 | Restarting or updating Sova | **Restart Sova** and the update controls in Settings → General, or Apply on the Sova project's Branches tab |
+| The merge queue's Land, a decision's answers, Cancel and Remove from Queue | Those buttons in Sova's page, or your own words in the branch's chat |
 
 Only the widening closes. Turning a power off, raising a sandbox, turning a mode off, turning on a mode at
 a version already approved and turning a card owner's trust off stay open to scripts.

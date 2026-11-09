@@ -139,7 +139,7 @@ export function ContextTab(props: { path: string; workers: WorkerInfo[]; teams?:
   // ---- Rows ---------------------------------------------------------------------------------
   /** One row, the same for a group and a part: name, short line, share of the window, ≈ size, and an
       arrow only when it opens. */
-  const Row = (r: { key: string; name: string; mono?: boolean; chip?: { word: string; done: boolean }; meta?: string; share: number | null; size: string; opens: boolean; onOpen?: () => void }) => {
+  const Row = (r: { key: string; name: string; mono?: boolean; chip?: { word: string; done: boolean }; beside?: string; meta?: string; share: number | null; size: string; opens: boolean; onOpen?: () => void }) => {
     const inner = () => (
       <>
         <span class="list-main context-row-main">
@@ -155,6 +155,9 @@ export function ContextTab(props: { path: string; workers: WorkerInfo[]; teams?:
                     {c().word}
                   </span>
                 )}
+              </Show>
+              <Show when={r.beside}>
+                <span class="context-row-beside">{r.beside}</span>
               </Show>
               <Show when={r.meta}>
                 <span class="context-row-meta-text">{r.meta}</span>
@@ -191,6 +194,7 @@ export function ContextTab(props: { path: string; workers: WorkerInfo[]; teams?:
           name={p().label}
           mono={monoName(p())}
           chip={partMeta(p()).chip}
+          beside={partMeta(p()).beside}
           meta={partMeta(p()).text || undefined}
           share={shareOf(p().tokens, windowSize(), inWindow(p()))}
           size={sizeOf(p())}

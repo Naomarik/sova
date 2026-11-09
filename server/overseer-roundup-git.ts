@@ -391,7 +391,7 @@ export class RoundupGit {
         const nc = nameCheck(rp.v.subjects, t.branch, removedNoRecord ? undefined : tip?.sha);
         if (nc === "landed") facts.landed.add(key);
         else if (nc && !ready) facts.named.set(key, `${rp.v.main} names it in ${nc.named}`);
-        else if (!nc && !tip && (removedNoRecord || (t.state === "in-progress" && t.why === "worktree folder gone")) && (await this.namedCommitsOnMain(rp.v, await transcript(), t.branch, await rp.landed))) facts.namedOnMain.set(key, rp.v.main);
+        else if (!nc && !tip && removedNoRecord && (await this.namedCommitsOnMain(rp.v, await transcript(), t.branch, await rp.landed))) facts.namedOnMain.set(key, rp.v.main);
       }
       // The branches its final ask names: on main when git has them there, or main's subjects say so.
       const asked = askBranches(s);

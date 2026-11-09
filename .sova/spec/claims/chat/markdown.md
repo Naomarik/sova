@@ -217,7 +217,7 @@ own Solid/SVG code (`src/vis/`): no diagram or chart dependency, and **model HTM
 enters the app's DOM**. Assistant-text rows only (§chat/markdown's scope), and the replies on share
 and owner pages, which draw `chart`, `flow`, `matrix`, `timeline`, `tree`, `steps`, `wireframe`,
 `layers`, `state` and `sequence`, an `svg` as a still image in the same figure, and an `html` in a frame only when the
-session allows it, with no Source or Copy, and show one quiet line instead of any other kind's or a
+session allows it, with no Source or Copy (a chart keeps its view switch and toggles), and show one quiet line instead of any other kind's or a
 broken block's source (§app.baton/outsider-view).
 
 - **Kinds.** One registry (`src/vis/registry.ts`) lists every fence word; nothing else is drawn:
@@ -230,7 +230,7 @@ broken block's source (§app.baton/outsider-view).
   | `vis layers` | a stack of labelled layers | layer label |
   | `vis tree` | an indented hierarchy | item name |
   | `vis flow` sections | side-by-side panels (§chat.markdown/vis-flow-sections) | node id or label |
-  | `vis chart` | bar (grouped via `series:`, stacked), line, scatter; linear or log axis; parts (§chat.markdown/vis-parts) | row label |
+  | `vis chart` | bar (grouped via `series:`, stacked), line, scatter; linear or log axis; parts (§chat.markdown/vis-parts); the reader switches between the views that fit (§chat.markdown/vis-chart-views) | row label |
   | `vis timeline` | dated events in order | the row's date or label |
   | `vis steps` | scenario chains with a status per row; up to 4 rows stand side by side, equal steps merged (§chat.markdown/vis-steps) | row label, or a step's text (every row with it) |
   | `vis wireframe` | low-fi screens: phone or desktop frames, wireflow arrows between screens (§chat.markdown/vis-wireframe) | a block's first text, a screen name or a block word |
@@ -246,10 +246,25 @@ broken block's source (§app.baton/outsider-view).
   kind); its examples are parsed by the renderer's own parser in tests, so the guide and the
   renderer can't drift.
 - **The figure.** Every kind sits in one shell (`Visual.tsx`): a head with the `title:` (wrapping,
-  never ellipsized) or, without one, the kind's name as an eyebrow; a **Source** toggle
-  (`aria-pressed`, shows the fence as written, without ligatures) and **Copy** (copies the whole
-  fence, announced like Copy Code); the drawing; the numbered notes; the `caption:`. Backticks in a
+  never ellipsized, except beside a chart's controls, where a long one stops at a few lines; a
+  chart's title carries its whole text as a hover title, §chat.markdown/vis-chart-views) or, without one, the kind's name as an eyebrow; a **Source** toggle
+  (`aria-pressed`, shows the fence as written, without ligatures) and **Copy** (below); on a chart, between the title and them, the reader's **view
+  switch** and its Log, Sort and % toggles (§chat.markdown/vis-chart-views); the drawing; the numbered notes; the `caption:`. Backticks in a
   caption or note render as inline code; everything else is text.
+  **Copy** follows the card, in the chat only (share and owner pages have no Copy). While Source is
+  open it copies the whole fence as text, announced like Copy Code. While the drawing shows it puts
+  a PNG picture on the clipboard: the card as shown, with its title (an untitled card's picture
+  has no head), the drawing in its current state (a chart's view and toggles included), its
+  numbered notes and its caption, and no buttons, toggles, warning line, step-through controls or
+  wireframe screen picker; in the theme on screen; in pixels 1.5 times the card's size, at most
+  1280 pixels wide (a card 480 px wide or narrower at twice its size), whatever the screen's
+  density; a wide drawing whole. Beside the PNG the clipboard holds the same picture as HTML at the
+  card's size, so documents and mail still paste it at the card's size. Copy's accessible name says which it will take ("Copy picture", "Copy source"). A `vis html`
+  drawing and a chat's own drawing kind (`vis <owner>.<name>`, §chat.transcript-cards/drawing-kinds),
+  both sealed from the page, keep copying their fence as text. Where the clipboard won't take a
+  picture, the picture opens in Sova's image viewer (§chat.images/lightbox) to save or copy by
+  hand, with a message saying so; if no picture can be made, the fence is copied as text and the
+  message says so.
 - **Emphasis.** `mark <target>[, <target>…] [tone] ["note"]`, at most 8 mark lines per block,
   notes ≤ 120 characters, works in every kind. Commas outside quotes separate targets (`a, b`,
   `a,b`; a `"quoted, label"` is one target); a stray or trailing comma drops the mark (below). A marked item
@@ -334,7 +349,8 @@ broken block's source (§app.baton/outsider-view).
   it when the fence closes. A re-render keeps an unchanged drawing's DOM (and a frame's state); a
   drawing's identity is a hash of its fence.
 - **No layout shift.** A drawing reserves its height before it draws: each kind estimates it from
-  its parsed spec at the body's width, and the figure holds a blank box of that height until the
+  its parsed spec at the body's width (a chart at the view its reader chose,
+  §chat.markdown/vis-chart-views), and the figure holds a blank box of that height until the
   View mounts. All kinds' Views load together, the first time any visual appears. A frame starts
   at the last height it reported for the same source and width (kept for the tab), else a default.
   A drawing is never the scroll anchor, so one growing above the reader leaves their text in place.
@@ -389,7 +405,9 @@ broken block's source (§app.baton/outsider-view).
 - **No regression.** A block that drew before soft warnings, inline flow labels
   (§chat.markdown/vis-flow-sections), panel-local ids, label marks in sequences and the character
   budget draws exactly as before (`src/vis/golden.json`, a fixed set of synthetic blocks and the
-  guide's earlier examples with the specs the earlier parser gave).
+  guide's earlier examples with the specs the earlier parser gave), except that a chart's values
+  written like `92%` keep their sign in every view the chart offers, and a chart's labels and a marked part's colour
+  follow §chat.markdown/vis-chart-views and §chat.markdown/vis-parts.
 
 ## §chat.markdown/vis-parts — `vis chart` `type: parts`: a whole and its parts
 
@@ -408,15 +426,108 @@ context window, a share of a limit). HTML, drawn by `src/vis/kinds/chart/PartsVi
   in mono columns; with `of:` a last "Free" row (dashed swatch, muted label) for the unused rest.
   Shares are of the capacity, else of the total: `<1%` under 1, one decimal under 10, else whole.
   Once the whole reaches 10k every value from 1000 reads in k (9k beside 14k).
-- **Colour.** A part's tone colours it; parts without one take the chart's series colours in turn
-  (accent, warn, success, error, info, muted). A mark tints the part's legend row, adds the note's
-  number there and outlines the segment; it never recolours the part.
+- **Colour.** A tone written on a part colours it; a marked part without one takes its mark's tone
+  (a mark with no tone: accent); the other parts take the chart's series colours in turn (accent,
+  warn, success, error, info, muted). A mark also tints the part's legend row, adds the note's
+  number there and outlines the segment.
 - **Past `of:`.** Parts adding up to more than `of:` draw as without `of:`, with a warning
   (§chat.markdown/vis-lenience).
+- **No view switch with `of:`.** A parts chart with `of:` offers no view switch
+  (§chat.markdown/vis-chart-views): a capacity is a part-of-whole question only Parts answers. One
+  whose parts exceed `of:`, drawn without it (below), offers views as any one-series chart does.
+  Without `of:`, Parts is one of the views a reader may switch to and from.
 - **Errors.** A negative part, a part without a number, parts adding up to 0, `of:` on any other
   type or not a number above 0, `series:`,
   `scale: log`, `x:`/`y:`, more than 12 parts.
 - **Height.** Estimated from the same metrics before it draws (§chat.markdown/visuals, No layout shift).
+
+## §chat.markdown/vis-chart-views — `vis chart` views: the reader switches Bar, Stacked, Line and Parts
+
+A chart's reader can look at the same numbers another way. The model's fence (`type:`, `scale:`)
+is the default view; the drawing language is unchanged, so a fence written before parses the same
+and draws as before until the reader picks something else, except where these rules hold in every
+view: values written like `92%` keep their sign (Percent values, below), the Labels below, and a
+mark's tone colouring its part (§chat.markdown/vis-parts).
+
+- **The switch.** In the figure's head (§chat.markdown/visuals) a segmented view switch offers
+  Bar, Stacked, Line and Parts, in that order, and only the views that fit this chart (below). It
+  is hidden when only one view fits. A small dot marks the model's view, in a colour different from
+  the selected view's, with the hover hint "As drawn by the reply"; there is no Reset (picking the
+  dotted view is the way back). The switch and its toggles are hidden while Source is shown.
+- **Two-row head.** At a figure 660 px wide or less the head has two rows: the title with Source
+  and Copy, as on every drawing; below it the view switch and one menu button, Options, with a
+  chevron, holding the chart's toggles. Below about 290 px Options wraps under the views. In the
+  menu a set option carries a tick, and one the view can't use is greyed with its hint; the trigger
+  shows how many are set, one greyed but still set included.
+- **A long title.** Beside a chart's controls a title wraps to at most 3 lines on the one-row head
+  and 2 on the two-row head, then ends in an ellipsis. It reads whole on hover and in a picture.
+- **The head stays put.** Wider than 660 px, the view switch sits on the left, right after the
+  title area; the toggles, in a fixed order (Log, Sort, %), and then Source and Copy sit to its right, each in a
+  fixed place. A chart shows every toggle it could offer in any of its views, always; a toggle
+  that doesn't apply in the current view (Sort on Line, % on Parts, Log on Stacked or Parts, Log
+  while % is in effect and % while Log is in effect) stays in its place, greyed out, with a short
+  hint saying why. A greyed toggle stays reachable by keyboard, and its hint can be read (by
+  pointer and by a screen reader). A toggle the chart can never use (below) is not shown.
+  Switching views moves no control.
+- **What fits.** Bar always fits (any chart but a scatter or a capacity parts chart). Line needs at
+  least 2 rows that look ordered: every label a date, a time, a year, a number, a month or weekday,
+  a quarter, a week, or a shared word plus a number (`Turn 1`), or a numbered list (`1. Parse`);
+  a leading `#` and a trailing `(…)` or `: …` are set aside when reading a label. Stacked needs at least 2 series and
+  no negative value (gaps are fine). Parts needs one series, 2 to 12 rows, no gaps, no negative
+  value, a sum above 0, no `of:`, and numbers not already in percent (as under %, below). A scatter
+  offers no view switch. A parts chart with `of:` offers nothing (§chat.markdown/vis-parts), except
+  when its parts exceed `of:` and it draws without it: then it offers views as a one-series chart,
+  and the warning that it drew without `of:` shows only in the model's view.
+  The model's own view is always offered, even where these rules alone would leave it out (a
+  1-row line, a line over labels that don't look ordered, a 1-series stacked, parts of percentages).
+- **Log.** A chart has a Log toggle only when every value is above 0 (gaps ignored) and the largest
+  value is at least 10 times the smallest; a chart whose model wrote `scale: log` always has it. It
+  applies on Bar and Line, and starts on when the model wrote `scale: log`. A scatter has a Log
+  toggle (both axes) on the same terms, every x and every y above 0 and x or y spanning that factor
+  of 10 (or `scale: log` written), and no view switch.
+- **Sort.** A Sort toggle orders the rows largest first, by what is drawn: without %, a row's value,
+  or with several series its total (on Stacked, each bar's total); with % on and one series, the
+  percentage; with % on and several series, the first series' share. Ties keep their source order. It applies
+  on Bar, Stacked and Parts and is greyed out on Line. A chart with one row has no Sort. Off by
+  default.
+- **%.** A % toggle shows each value as its share of the total: with one series, its share of the
+  sum of all values; with several, its share of its row (each row sums to 100 %), so on Stacked
+  each bar fills to 100 %. A chart has it when no value is negative, there is something to share
+  (not an all-zero chart, nor one row of one series) and it is not already in percent (`unit:` `%`, `percent` or `pct`, or
+  rows written like `12%`); it applies on Bar, Stacked and Line and is greyed out on Parts. % and
+  Log exclude each other only where the one that is on applies: while it is in effect in the
+  current view the other is greyed out (a Log kept on while visiting Stacked doesn't grey out %).
+  Off by default.
+- **Percent values.** Rows written like `92%` keep the % sign in every view the chart offers, the
+  model's included (a scatter, which offers no views, is unchanged). This changes the drawing only: the fence still parses identically.
+- **Labels.** A marked row always keeps its value label (a line with several series labels no
+  points) and its badge, by its own bar or point, also after Sort. At phone width grouped bars'
+  value labels never run together: a chart too tight for all of them shows only its marked rows'.
+  A negative bar's value label that would run into the category labels sits just above zero. Line
+  category labels thin evenly (marked rows first, then the ends, then an even step), wrap to two
+  lines, are never cut at the card edge, and a marked row keeps its label. A marked group's value
+  label wider than its bar goes over the group. With % on, Stacked names no total over a column.
+  Stacked's inside labels are judged once for the chart by its widest label, at every width:
+  segments of one size all show theirs or none do, and a segment too small for it stays unlabelled.
+- **Leaving a view.** Log, Sort and % all stay set in a view that can't use them: greyed out, still
+  shown as set (a dashed, faint outline, no tint), and applied again on return to a view that uses them. If both Log and % end up
+  set and the reader returns to a view where both apply, the one turned on most recently wins and
+  the other turns off (Log, when a choice kept for the tab doesn't say which came last); in a view
+  where at most one of them applies, both stay set.
+- **Rows keep what is theirs.** A colour the model set on a row (its tone), its marks and its
+  numbered notes follow it in every view and every order; the caption and the notes read the same
+  after a switch. Otherwise each view colours as it always has: Bar and Line draw one series in a
+  single colour, and Parts colours in turn the rows with no tone and no mark
+  (§chat.markdown/vis-parts).
+- **Source** always shows the fence as the model wrote it, never the reader's view. **Copy**, while
+  the drawing shows, puts the chart as the reader has it on the clipboard as a picture, its view and
+  toggles included; while Source is open it copies the fence as written (§chat.markdown/visuals).
+- **Kept for the tab.** The reader's view and toggles are kept only in that browser tab, per
+  drawing: they survive scrolling, streaming, a re-render and a reload of the tab. A new tab,
+  another device or another reader sees the model's default. The same holds on share and owner
+  pages (§app.baton/outsider-view).
+- **No layout shift.** The space reserved for a drawing before it draws matches the view the
+  reader chose (§chat.markdown/visuals, No layout shift), so nothing jumps on load.
 
 ## §chat.markdown/vis-flow-sections — `vis flow` sections: panels side by side
 
@@ -587,7 +698,8 @@ line with a warning.
 - **Chart parts past `of:`.** A `type: parts` chart whose parts add up to more than `of:` draws
   exactly as the same fence without its `of:` line (no capacity, no free rest, shares of the
   total, "… in total"), with the warning "line N: the parts add up to 4.41, more than of: 4.19:
-  drawn without of:" at the `of:` line (§chat.markdown/visuals, Warnings). Parts up to `of:` are
+  drawn without of:" at the `of:` line (§chat.markdown/visuals, Warnings), shown only in the
+  model's view when a reader switches it (§chat.markdown/vis-chart-views). Parts up to `of:` are
   unchanged.
 - **Mark targets with spaces** (every kind). In a `mark` line, bare words after a target, up to a
   comma, a tone word or a string, are one run with it: `mark Sep 30 "…"`. A one-word run is the
@@ -659,7 +771,8 @@ is dropped, so no warning); where it has two, the error stands. Each rule below 
   as `-` is. A chart's rows share one unit: with no `unit:` it becomes the chart's unit (a currency
   as its symbol); with `unit:` a row's unit must be one of its words (a currency is always fine).
   Two units are an error: "mixed units ms and s: write every value in one unit", unless they are
-  sizes or durations (below). `12%` reads as before and sets no unit.
+  sizes or durations (below). `12%` reads as before and sets no unit; every view a chart offers
+  still draws such a value with its % sign (§chat.markdown/vis-chart-views).
 - **Chart sizes and durations.** Outside a scatter, rows whose units (and the words of `unit:`) are
   all sizes (`B`, `byte`, `bytes`; `KB`/`kB`, `MB`, `GB`, `TB`, `PB` in powers of 1000; `KiB`,
   `MiB`, `GiB`, `TiB` in powers of 1024; `G` and `T` as GB and TB when another of them is a size)

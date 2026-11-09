@@ -8,6 +8,14 @@ Choose a built-in theme in **Settings → Themes**, or save a JSON file in
 `~/.pi/agent/sova/themes/`. While the Themes tab is open, the picker refreshes every 2 seconds—no
 rebuild or restart.
 
+Pick one dark theme and one light theme (the Dark list comes first, then the Light list), then set
+**Appearance** to Light, Dark, or Auto. Auto shows your light theme while your system is set to
+light and your dark theme while it's dark, switching the moment the system does; Sova starts in
+Dark. A pick in the list that's showing applies at once; the other list's pick shows when its mode
+does. The choice is remembered in this browser, and other Sova tabs open in it follow a change at
+once. The same holds for the font and text size picks under Typography: each is remembered in this
+browser, a change in one tab never erases a pick made in another, and every open tab follows it.
+
 For example, save this as `desk-lamp.json`:
 
 ```json
@@ -33,8 +41,13 @@ the app; a theme does not bundle font files. Invalid values appear with an error
 rather than being applied.
 
 A custom theme with the same id as a built-in replaces it. If a theme becomes unreadable, fix or
-remove its file and reopen Settings → Themes. For a browser-side reset, clear `sova:theme` from
-local storage, then reload.
+remove its file and reopen Settings → Themes; only the list that wore it goes back to its built-in
+(Dark or Light), and the other list keeps its pick. If a theme leaves the page unreadable, open Sova
+with `?theme=default` on its address (for example `http://127.0.0.1:4800/?theme=default`): it goes
+back to the starting setup, Dark mode with the built-in Dark and Light themes, the theme's own fonts
+and Medium text size, and Sova removes the parameter from the address. By hand, remove
+`sova:theme` (the mode and both picks), `sova:typography` and `sova:text-size` from this site's local
+storage, then reload.
 
 ## Model choices
 
@@ -76,7 +89,8 @@ project's main checkout (a branch's own copy is never read, so a branch can't gi
   button needs your approval on the project page (Settings tab, **Offers**): **Approve Run Buttons**.
   Changing a run button asks again.
 - **Limits**: at most 8 offers and 4 buttons each; `onlyIf` takes `branch-ready`,
-  `waiting-for-ok`, `tree-clean`, `no-open-alignment` and `specs-promoted`; `repeat` is
+  `waiting-for-ok`, `tree-clean`, `no-open-alignment` and `specs-promoted` (an offer that doesn't name
+  `no-open-alignment` shows beside an open alignment question); `repeat` is
   `once-per-commit` (the default), `once-per-reply` or `once-per-session`. `"disabled": true` turns
   one off; `"shownBy": "another-chat"` keeps it for another chat to show
   (`node scripts/sova.mjs run session.offers.show --session <path> --offer <name> --from <its own session>`). A
@@ -140,13 +154,62 @@ configuration before opting in. For the default Sova installation, the script is
 
 ## Sova extensions
 
-A Sova extension is a small web app of your own that runs inside Sova: a card on the landing page,
-and a page at `#/ext/<id>` that shows the extension's UI beside the sessions list. Unlike the pi
-extensions above, it adds nothing to the agent. It is a built UI (a folder with an `index.html`)
-plus a backend you run yourself, on this machine.
+A Sova extension is something of your own that you add to Sova from a folder on this computer: a card on
+the landing page, a page at `#/ext/<id>` beside the sessions list, a program that runs on this machine, and
+what it adds to Sova's screens and chats. All but the card are optional. Unlike the pi extensions above, it
+adds nothing to the agent.
 
-Install one by listing it in `~/.pi/agent/sova/extensions.json` (set `SOVA_EXTENSIONS_FILE` to use
-another file). Sova reads the file on every request and never writes it:
+### Adding one from a folder (extension contract v1.20)
+
+Choose the folder in **Settings → Extensions → Add Extension**. Sova points at the folder and never copies,
+moves, changes or deletes it. A folder is an extension when it holds `sova-extension.json` at its root:
+
+```json
+{ "version": 1, "id": "notes", "title": "Notes", "description": "Scratch notes per project", "icon": "file",
+  "needsContract": "1.20",
+  "page": "dist",
+  "backend": { "run": ["node", "backend/server.mjs"], "folder": "backend" },
+  "commands": [], "screens": [], "cards": [], "drawings": [] }
+```
+
+- Required: `version: 1`, `id`, `title` and `needsContract`, the rules it needs, a string `"<major>.<minor>"`.
+  A key Sova doesn't know is refused. `commands`, `screens`, `cards` and `drawings` mean what they mean in a list
+  entry below, with `dist` read as `page`.
+- `page`: a folder holding its `index.html`. `backend.run`: the program as words, never a shell line.
+  `backend.folder`: the program's own code; with none, the whole extension folder. Both stay inside the folder,
+  and neither may lie in `.git`, `node_modules`, `.worktrees` or `.agent`, anywhere, or in `data` or `logs` directly
+  in the extension's folder: approval skips those.
+- **Nothing runs until you press Install and Turn On**, after a review of the exact program, what its page and
+  key can do, and what it adds. **It runs as you, with no sandbox.** No restart is needed. Its page, chips and
+  commands work everywhere at once; its cards reach new chats, and open chats keep what they started with.
+- **Approval is per version:** the entry, the description file, the page folder and the program folder, every
+  file by its bytes, skipping those same folders and files ending `.log`. So libraries, and data and logs kept in
+  `SOVA_EXTENSION_DATA_DIR` or that top-level `data/` and `logs/`, never ask again. A file its program writes
+  anywhere else in what counts, say `./state.json`, is a code change like any other. When its code changes, within about 3 s the row reads **Changed**: its page and its views stop, its
+  program goes on with the old code and won't start again until you approve.
+- **Only your own page** adds, approves, turns on, turns off and removes. A chat, a script, an extension's key and
+  another computer are refused and told where to click. A request whose `Referer` is under `/ext/` is refused too,
+  but that stops accidents, not a hostile page: a page you installed can do what you can.
+- **Its program** starts from its folder with a small environment and no Sova token, plus `PORT` (listen on
+  `127.0.0.1` there), `SOVA_URL`, `SOVA_EXTENSION_ID`, `SOVA_EXTENSION_KEY_FILE` and `SOVA_EXTENSION_DATA_DIR`,
+  its folder for what it keeps. It must answer `GET /api/health`. Bare `node` runs under Sova's own runtime if
+  this computer has no other. Sova restarts it after a crash, at most 5 starts in 60 s. If it stops while Sova
+  isn't running, it comes back when Sova starts.
+- **Stopping Sova for good leaves an extension's program running; it stops when you stop it or Turn It Off.**
+- **Turn Off** stops its program and refuses its key at once, and keeps its place, data and approval. **Remove**
+  does that too, forgets its approval and card trust, and closes its open cards. Your folder stays, and so does its
+  data, `<state root>/extension-data/<id>`, unless you tick **Also delete its data**.
+- **An older Sova ignores `off`: after a downgrade it serves an off entry that has a `dist` and an `api`.** It also
+  drops an entry with no `dist` or no `api`, on that computer's list and from what a peer shares.
+
+### The list
+
+Everything above writes one entry in `~/.pi/agent/sova/extensions.json` (set `SOVA_EXTENSIONS_FILE` to use another
+file). Sova reads it on every request. You can still edit it by hand, but what is added or edited outside the
+screen reads **Waiting for You** and runs nothing until you approve it. Entries already there when you first start
+this version are approved once as they stand. A server started with `SOVA_EXTENSIONS_FILE` counts its entries as
+approved, and they never read Changed: its own environment named that file, and test copies use it. An entry with a
+`dist` and an `api` is the shape a hand-written one has, where you run the backend yourself:
 
 ```json
 {
@@ -211,6 +274,8 @@ same way: `SOVA_TOKEN=$key node scripts/sova.mjs list` (or `run <id>`, or `watch
   backend can run any of Sova's commands, keep `/ws/events` open to hear what happens (a rename, a
   turn that ends), and run its own `ext.<id>.*` actions. The only exception is `/api/auth/*`, which
   answers `403`: a key never pairs a device, reveals the token or unlocks a browser.
+- It is never the user. Since extension contract v1.19 it is refused where it would count as them
+  (below), and what it says in a chat carries your name.
 - Sova accepts it only in that header: never as a cookie and never as an `Authorization`.
 - Every call your backend makes with it is recorded as `ext:<id>` in Sova's record of who ran what
   (`node scripts/sova.mjs run audit.list --caller ext:<id>`). `x-sova-caller` is ignored beside it.
@@ -280,6 +345,56 @@ transcript row's `id` up to its first `:`:
   32 to 320 px high, at most 64 KB.
 - A late, malformed or oversized answer is dropped. After 3 in a row Sova stops asking until the
   page reloads. The user can hide what an extension adds from its page (`Hide Under Replies`).
+
+### Speaking in a chat, and what a key can't do (extension contract v1.19)
+
+An extension is a guest with a name badge. It hears what happens, shows things, asks with a card and
+says things to a chat, always under its own name. Your backend can read the contract's number from
+`GET /api/commands`: `server.extensionContract` is `19` or higher. If it's missing or lower, that Sova is too
+old: say so instead of half working.
+
+- **`session.send` (`POST /api/sessions/prompt`) is the one way to speak.** Sova marks the message with
+  your name, from the key: the chat shows "From {title}" and the model reads a first line
+  `[from session "the extension {title}, not this chat or its name" (ext:{id}), hop 0]`. No field or header can name another sender. It starts a turn in
+  an idle chat and is a queued row the user can remove in a busy one.
+- **It is never the user's word.** A message of yours can't land a branch and doesn't end a chat's wait
+  on its alignment answers. The limit: your message can ask that chat's agent to use `session_send`, and
+  what the agent then sends arrives under that chat's mark, not yours, so it can end another chat's wait
+  on its alignment answers. Sova doesn't trace an extension through an agent's relay.
+- **What a key is refused**, with a `403` and `extensionRefused: true`, or an `error` frame with code
+  `refused`:
+  - prompt, steer and dialog-answer frames, and rewind, regenerate and compact-with-instructions, on
+    a chat socket, `POST /api/chat/frames` and `POST /api/chat/action`. Stop, plain compact, remove
+    from queue and Reload Now still run;
+  - every frame into an overseer's, a baton's or the merge queue's own chat, and `session.send` to the
+    merge queue's;
+  - `merge.*`, `release.*` and `deploy.*` writes (their status and logs still answer), all of
+    `/api/merge-queue`;
+  - writes to `/api/overseer`, a project overseer's routes, to-dos and ideas included, `/api/settings`,
+    `/api/mode`, `/api/baton`, `/api/orgs`, `/api/outreach` and `/api/mesh`;
+  - `session.group.send`, a new chat's first prompt (`prompt` on `POST /api/sessions`: open it, then
+    `session.send`), an offer's button, dismissing a Needs You item, and approving anything.
+- **Its own cards only.** A key raises and changes only your card types, and answers only your cards,
+  never pressing a button that acts. A click on one of your trusted cards can't run any command a key
+  is refused, and what its `send` button sends goes out under your name.
+- **Send from your backend, with its key.** Your page runs on Sova's address with the user's login, and
+  Sova doesn't tell it apart from the user. A `session.send` from a page under `/ext/<id>/` gets your
+  badge when its `Referer` says so. That guards against accidents and nothing more: a page can leave it
+  out, and a socket has none. With that `Referer`, `POST /api/chat/frames`, a group send and a new
+  chat's first prompt are answered as your key would be. A page's chat socket isn't spotted at all. Installing an extension stays a trust decision: none of this stops a
+  hostile one, and any program on this computer can read Sova's token.
+
+**Hearing about cards.** On `/ws/events`, `card.raised`, `card.changed` and `card.answered` carry
+`id`, `path`, `card` (`cd_N`), `cardType` and `source: "hosted"`: never the card's data or its answer.
+Read those with `session.card.get`, and read again after a `gap` frame. `sova watch` doesn't print them.
+
+**Cards that update.** A card whose type takes no answer starts open: `session.card.post` with `card`
+and new `data` changes it in place, and `done: true` ends it. Nobody waits on it and it's no Needs You
+item. The merge queue's own chats take none of an extension's card types.
+
+**Beside an open alignment question.** Cards and offers can be raised, changed and answered while one
+is open. Answering one never answers the question or ends the chat's wait on it: the question stays
+open and in Needs You.
 
 **In a session's ⋯ menu** (extension contract v1.16). A command with `"menu": "session"`
 is also an entry in the ⋯ menu of each Agents board row for a session on this machine, after

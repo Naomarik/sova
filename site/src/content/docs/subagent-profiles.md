@@ -1,130 +1,158 @@
 ---
-title: Subagent profiles
-description: A subagent profile is one named set of every model your subagents use. When a provider hits its usage limit, you switch the whole set at once instead of editing four screens.
+title: Profiles
+description: "A profile is one named setup for a chat, in two parts: how a chat starts, and every model it and its helpers use. When a provider hits its usage limit, you switch a chat's whole Models part at once."
 group: Features
 order: 16
 ---
 
-## What a profile holds
+## Two parts
 
-Most of the work in a session runs in subagents: Delegate's workers, team members, the spec
-writer. A profile names the model for each of them:
+A profile is one named setup for a chat, in two parts:
 
-- **Delegate routing**: a worker (backend · model · effort, plus an optional fallback) for each of
-  Delegate's 4 work kinds: Planning & specs, Investigation, Routine implementation and Complex
-  implementation. See [Delegate](/docs/modes/delegate/).
-- **Teams**: the standing **coordinator** and **monitor** every new team gets, with the monitor's
-  settings and the handover timeout, or none. Also a **members default**: the model a team member
-  runs on when nobody named one.
-- **Spec writer**: the worker that writes spec drafts while [spec](/docs/modes/spec/) is on, or
-  none, when the session writes the spec itself.
-- **Reviewer**: the worker that reviews alignments, only while
-  [adversarial review](/docs/modes/align/review/) is switched on.
-- **Alignment**: optionally, the [align](/docs/modes/align/) eagerness, writing style and Visuals for chats on
-  this profile, in place of this computer's own align settings.
+- **When a Chat Starts**: the mode and add-on modes a chat starts in, which of the default tools it
+  loses, which session powers it gains, One at a time, a first message, and whether the Overseer
+  may start it. This part is fixed once the chat's first message is sent. You can still change the
+  modes in the chat's mode menu.
+- **Models**: the chat's own model and effort, and the models of its helpers. A chat can switch this
+  part at any time, all at once.
 
-The chat's own model is not part of a profile, and neither is a project's own
-[project mode](/docs/modes/project-modes/): a profile never turns one on. You can have as many profiles as you like, each with
-a name you choose.
+The Models part holds:
 
-Subagent profiles are not the same thing as session profiles. Where Sova means these, it says
-"Subagent profiles" or "Subagents".
+- **This chat**: the model and effort the chat itself runs on. Without one, a chat keeps its own
+  model.
+- **Delegate**: a worker (backend · model · effort, plus an optional fallback) for each of
+  Delegate's 4 work kinds: Planning, Investigation, Routine and Complex. See
+  [Delegate](/docs/modes/delegate/).
+- **Teams**: the models of the **coordinator** and **monitor** every new team gets from Sova, with
+  the monitor's settings and the handover timeout, or none, when both run on the chat's own model.
+  There is no model for members: each team member runs on its work kind's model, from Delegate.
+- **Review**: the **spec writer**, the worker that writes spec drafts while
+  [spec](/docs/modes/spec/) is on (or none, when the session writes the spec itself), and the
+  **reviewer**, which reviews alignments while [adversarial review](/docs/modes/align/review/) is
+  switched on.
+- **Alignment**: optionally, the [align](/docs/modes/align/) eagerness, writing style and Visuals
+  for chats on this profile, in place of this computer's own align settings.
+
+A profile never turns on a project's own [project mode](/docs/modes/project-modes/). You can have
+as many profiles as you like, each with a name you choose.
 
 ## Off
 
 **Off** is built in. It's always first in every list, and it can't be edited, renamed or deleted.
-It configures nothing, so the agent picks every model:
+It sets nothing in either part: a chat on it keeps its own model and modes, and the agent picks
+every worker:
 
 - In Delegate, the agent still delegates and still sorts the work into the 4 kinds, but chooses
   each worker's backend, model and effort itself.
-- Teams get no standing coordinator or monitor, and no members default.
+- Teams still get their coordinator and monitor, on the chat's own model with Sova's built-in
+  settings. A team member runs on the model named for it, else the chat's own.
 - There is no spec writer: the session writes the spec itself.
 
-## Which profile a chat uses
+## One default
 
-Each chat has its own pick. In order, a chat uses:
+Each computer has one **default profile**, and it decides everything a new chat starts with: both
+parts. A new chat's empty screen opens with the default picked, its card marked **Default**;
+picking another card is for that chat only. A project's coding sessions and any chat the Overseer
+starts without naming a profile start on the default too (a project's own coding model, where it
+sets one, is still that session's model). Off can be the default.
 
-1. **its own pick**, made in its mode menu (or by an Overseer, the usage-limit row, or
-   `/mode subagents` in a terminal);
-2. otherwise **this device's default**, read again each time, so a new default reaches the chat
-   too;
-3. and only when the profile library itself can't be read, the older settings files from before
-   profiles.
+Choose it with **Make Default** in Settings → Profiles, or **Make {name} the Default** in a chat's
+mode menu. Nothing else moves it. The default stays on this computer: with [Mesh](/mesh) on, your
+profiles sync to your other devices, but each keeps its own default.
 
-A pick that names a deleted profile falls through to the default. A missing default reads as
-**Off**; so does a default that is broken or names no profile, and then Sova says why where it
-shows the current profile.
+## Switch a chat's profile
 
-The profile is read in every major mode: normal mode uses its teams and spec writer too. Only the
-Delegate routing is Delegate's own, and [Create](/docs/modes/create/)'s, which shares it.
+The mode menu's **Profile · {name}** row opens a picker: Off, then every profile the chat can use,
+each with its **footprint**, the distinct models it uses with the chat's own first, for example
+`Opus 5.5 + GPT-6.1 Sol` (at most 3, then "+N"). Off reads "Keeps the chat's own model".
 
-A switch reaches the chat from its next turn and its next team action. A running team adds members
-and starts successors under the chat's current profile; a worker that's already running keeps the
-model it started with.
+Picking one switches **this chat's whole Models part**, at any time, before or after its first
+message: its own model and effort, its helpers and its alignment settings. Its tools, session powers
+and modes stay as they are.
 
-## Pick one in the mode menu
+- **All or nothing.** Sova checks the new model first, as a model pick in the composer is checked:
+  it exists here, Settings → Models allows it, and this computer has credentials for it. If not,
+  nothing switches and the menu says why. A chat is never left with its helpers on one profile and
+  its own model on another.
+- **During a reply**, the switch waits until the reply ends. A line above the composer says so,
+  with **Cancel Switch**. Once it applies, the line says "This chat and its helpers are on {name}."
+- **Across backends.** A chat can switch between a Claude Code model and an OpenAI Codex or pi model
+  and keep the same conversation.
+- From the next turn and team action on, the chat and every new worker use the new profile; a
+  worker that's already running keeps the model it started with.
 
-The mode menu's **Subagents · {profile}** row opens the picker in the same menu: a search field,
-then **Off** and every profile. Each profile shows its **footprint**, the distinct models it routes
-to, for example `Opus 5.5 · Fable 5.1 · Sonnet 5.5` (at most 3, then "+N"). Off reads "the agent
-picks". Picking one switches **this chat only**.
+Under the list, **Manage Profiles…** opens Settings → Profiles on this chat's profile, and **Save
+Current as Profile** saves what this chat uses now as a new profile of yours. The menu's footer has
+**Make {name} the Default**, and, while this chat's model or modes differ from its profile,
+**Update {name}**, which saves them into the profile.
 
-Under the list:
+## "(edited)"
 
-- **Manage Profiles…** opens Settings → Subagents.
-- **Save Current as Profile** asks for a name and saves what this chat uses now as a new profile. It
-  isn't offered while the chat is on Off.
+Choosing another model for a chat in the composer keeps its profile picked and marks it edited:
+the mode menu then reads, for example, **Claude (edited)**. It reads so while the chat runs a model
+other than the one its profile sets; choosing that model again, or picking the profile again, clears
+it. An edit changes only the chat's own model: its helpers, the profile and the default stay as they
+are.
 
-The menu's **Save as default** covers the profile too: it saves this chat's modes and its subagent
-profile as what new sessions start from.
+## Edit them in Settings → Profiles
 
-## Edit them in Settings → Subagents
+**Settings → Profiles** is the one place profiles are listed and edited, both parts; there is no
+Subagents tab. The list has **New Profile**, then **Yours**, **This project** and **Built in** (Off),
+each row with its name and footprint, and a **Default** chip on the default.
 
-Settings → **Subagents** is the one place these settings are edited: "Which models your subagents
-use. A chat picks a profile in its mode menu; new chats start on the default."
+A profile's editor has its name, **Make Default** (or the Default chip), and two tabs:
 
-- **The list** shows Off and every profile, each with its name, its footprint, and a **Default**
-  chip on the one new sessions start from. A profile has **Edit**, **Duplicate**, **Delete** and
-  **Make Default**; Off has only Make Default. The list's head has **New Profile** and **Save
-  Current as Profile**. With more than six rows, the list gains a search field. You can't delete
-  the default: make another one the default first. A chat
-  whose profile you delete follows the default.
-- **The editor** has a section per part of the profile, each showing a one-line summary while
-  closed: **Delegate routing** (open first), **Teams**, **Spec writer**, **Reviewer** while
-  adversarial review is on, and **Alignment** last, whose Eagerness, Writing style and Visuals each start on
-  **Use host default**. The spec gear in a chat's mode menu opens that chat's profile at Spec
-  writer. Every worker is a row of Backend, Model and Effort, with **Add
-  Fallback** and **Remove Fallback** on its head line.
-- **Save Changes** saves the whole library at once. Unsaved edits are kept while you switch tabs, and
-  closing the dialog over them asks first: "Your Subagents changes aren't saved."
+- **Models**, first: **Set All To**, which changes every model row at once and keeps each row's
+  effort, then a compact row per role (This chat, Delegate, Teams, Review) and Alignment. Each row
+  expands to the rest of its controls: backend, fallback, and for the coordinator and monitor their
+  instructions, thresholds and handover. If another profile shares these models, it says "Also used
+  by {name}": an edit changes it for both.
+- **When a Chat Starts**: Mode, Add-ons, Tools, Session powers, One at a time, the first message and
+  whether the Overseer may start it.
 
-Each section says once what happens without a fallback:
+**Save Changes** saves it. A change to Models reaches every chat on that profile from its next turn;
+a change to When a Chat Starts reaches new chats. Your profiles also have **Duplicate**, **Delete**
+(not for the default) and **Hide From Picker**. A project's profiles are files in the project,
+read-only here; one that asks for session powers or Overseer starts needs your **Approve Profile**
+first.
 
-| Section | Without a fallback, when the primary can't run |
+Each worker without a fallback says what happens when its model can't run:
+
+| Role | Without a fallback, when the primary can't run |
 |---|---|
-| Delegate routing | The agent asks you which model to use. |
-| Teams | The team isn't created. With one, a coordinator or monitor whose primary runs out of usage while the team runs moves to it. |
+| Delegate | The agent asks you which model to use. |
+| Teams | The coordinator or monitor runs on the chat's own model, and the team's start says so. With one, a coordinator or monitor whose primary runs out of usage while the team runs moves to it. |
 | Spec writer | The session writes the spec itself. |
 | Reviewer | The review is recorded incomplete. |
 
 ## After a usage limit
 
-When a chat's turn ends on a usage limit, Sova reads which provider is exhausted from the error.
-Under the error, a row offers one press: **Switch This Chat to {profile}**, naming the first profile
-whose footprint uses no model from that provider (never the chat's current one, and never Off). It
-switches this chat only. A worker's failure inside the thread, or an error that isn't a usage
-limit, shows no row. If no profile fits,
-the row links to Settings → Subagents instead. Nothing switches by itself.
+When a chat's turn ends on a usage limit, Sova reads which provider is exhausted from the error, and
+judges the model the chat was actually running, even when it was edited away from its profile's.
+Under the error, a row says "{model} is at its usage limit." (and when it resets, only when the
+provider said so) and offers up to two presses, **Switch This Chat to {profile}**, for your first
+profiles that use no model from that provider, the chat's own model included. Pressing one switches
+the chat's Models part, as a pick in the menu does. A worker's failure inside the thread, or an error
+that isn't a usage limit, shows no row. If no profile fits, the row links to Settings → Profiles
+instead. Nothing switches by itself.
+
+## The Overseer
+
+The [Overseer](/docs/overseer/) can list your profiles, start a session on one, and switch a chat's
+Models part. Switching never changes a chat's tools or powers, and no Overseer call changes your
+default. It can start a profile with a When a Chat Starts part only when that profile allows the
+Overseer to start it.
 
 ## Where they're stored
 
-| File | What it is |
+Each profile is saved as two linked halves, so an older Sova and pi in the terminal keep reading
+them as before:
+
+| File | What it holds |
 |---|---|
-| `~/.pi/agent/subagent-profiles.json` | The library of profiles, shared with pi in the terminal |
-| `~/.pi/agent/subagent-profiles-default.json` | This device's default profile |
+| `session-profiles.json` | Your profiles' When a Chat Starts part and the chat's own model |
+| `subagent-profiles.json` | Their helpers and alignment settings, shared with pi in the terminal |
+| `default-profile.json` | This computer's default profile; never synced |
 
-With [Mesh](/mesh) on, the library syncs between your hosts like your other settings. The default
-never syncs: each device keeps its own, just as each chat keeps its own pick.
-
-The first time Sova finds no library, it makes one profile, **My setup**, from your earlier
-Delegate, team and spec writer settings, and makes it the default.
+A project's profiles are files in its `.sova/profiles/` folder. The file format is in the
+repository's `docs/profiles.md`.

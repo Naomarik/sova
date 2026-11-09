@@ -38,13 +38,13 @@ test("a complete draft has no problem to say", () => {
 });
 
 test("names: unique, single-line, never Off — each form of badness is its own", () => {
-  assert.equal(profilesProblem(file([validProfile({ name: "off" })])), `Subagents: Profile name can't be "Off", the built-in profile's.`);
+  assert.equal(profilesProblem(file([validProfile({ name: "off" })])), `Profiles: Profile name can't be "Off", the built-in profile's.`);
   assert.match(profilesProblem(file([validProfile({ name: "  padded" })]))!, /one line, with no spaces/);
   assert.match(profilesProblem(file([validProfile({ name: "two\nlines" })]))!, /one line, with no spaces/);
-  assert.equal(profilesProblem(file([validProfile({ name: "x".repeat(49) })])), "Subagents: Profile name can be at most 48 characters.");
-  assert.equal(profilesProblem(file([validProfile({ name: "" })])), "Subagents: Profile name can't be empty.");
+  assert.equal(profilesProblem(file([validProfile({ name: "x".repeat(49) })])), "Profiles: Profile name can be at most 48 characters.");
+  assert.equal(profilesProblem(file([validProfile({ name: "" })])), "Profiles: Profile name can't be empty.");
   const two = file([validProfile(), validProfile({ id: "other", name: "my SETUP" })]);
-  assert.equal(profilesProblem(two), "Subagents: Another profile has this name.", "uniqueness ignores case, like the file's own rule");
+  assert.equal(profilesProblem(two), "Profiles: Another profile has this name.", "uniqueness ignores case, like the file's own rule");
 });
 
 test("a fallback that is its primary is refused in the form, as the server refuses it", () => {
@@ -61,12 +61,13 @@ test("every chosen row needs a model and an effort, whichever section it sits in
   const delegated = validProfile();
   delegated.delegate.complex.primary = claude("", "");
   assert.match(profilesProblem(file([delegated]))!, /model and an effort/);
-  const members = validProfile({ members: { backend: "pi", model: "zai/glm-5.3", effort: "" } });
-  assert.match(profilesProblem(file([members]))!, /members default needs a model and an effort/);
+  // Members have no row (they follow Delegate's work kinds): a saved incomplete value never holds Save.
+  const members = validProfile({ members: { backend: "pi", model: "zai/glm-5.3", effort: "" } as never });
+  assert.equal(profilesProblem(file([members])), null);
   const teams = validProfile({
     teams: {
-      coordinator: { enabled: true, role: "coordinator", primary: tclaude("opus[1m]", "" as TupleEffort), fallback: null, instructions: "" },
-      monitor: { enabled: true, role: "monitor", primary: tpi("zai/glm-5.3", "low"), fallback: null, contextPct: 60, everyMinutes: 10, usage: { enabled: true, pausePct: 90, resumeMarginMinutes: 5 }, instructions: "" },
+      coordinator: { role: "coordinator", primary: tclaude("opus[1m]", "" as TupleEffort), fallback: null, instructions: "" },
+      monitor: { role: "monitor", primary: tpi("zai/glm-5.3", "low"), fallback: null, contextPct: 60, everyMinutes: 10, usage: { enabled: true, pausePct: 90, resumeMarginMinutes: 5 }, instructions: "" },
       handover: { retireTimeoutMinutes: 10 },
     },
   });
@@ -75,8 +76,8 @@ test("every chosen row needs a model and an effort, whichever section it sits in
 
 test("teams thresholds and role names are checked before the server ever sees them", () => {
   const teams = {
-    coordinator: { enabled: true, role: "coordinator", primary: tclaude("opus[1m]", "medium"), fallback: null, instructions: "" },
-    monitor: { enabled: true, role: "monitor", primary: tpi("zai/glm-5.3", "low"), fallback: null, contextPct: 60, everyMinutes: 10, usage: { enabled: true, pausePct: 90, resumeMarginMinutes: 5 }, instructions: "" },
+    coordinator: { role: "coordinator", primary: tclaude("opus[1m]", "medium"), fallback: null, instructions: "" },
+    monitor: { role: "monitor", primary: tpi("zai/glm-5.3", "low"), fallback: null, contextPct: 60, everyMinutes: 10, usage: { enabled: true, pausePct: 90, resumeMarginMinutes: 5 }, instructions: "" },
     handover: { retireTimeoutMinutes: 10 },
   };
   assert.equal(profilesProblem(file([validProfile({ teams: structuredClone(teams) })])), null, "the defaults themselves pass");
@@ -93,12 +94,12 @@ test("teams thresholds and role names are checked before the server ever sees th
   }
   const blank = structuredClone(teams);
   (blank.monitor as unknown as Record<string, string>).everyMinutes = ""; // the draft holds the box's text
-  assert.equal(profilesProblem(file([validProfile({ teams: blank })])), "Subagents: Check every (minutes) must be a whole number from 1 to 1,440.");
+  assert.equal(profilesProblem(file([validProfile({ teams: blank })])), "Profiles: Check every (minutes) must be a whole number from 1 to 1,440.");
   const role = structuredClone(teams);
   role.monitor.role = "  ";
-  assert.equal(profilesProblem(file([validProfile({ teams: role })])), "Subagents: Name the role.");
+  assert.equal(profilesProblem(file([validProfile({ teams: role })])), "Profiles: Name the role.");
   role.monitor.role = "x".repeat(65);
-  assert.equal(profilesProblem(file([validProfile({ teams: role })])), "Subagents: Monitor role name can be at most 64 characters.");
+  assert.equal(profilesProblem(file([validProfile({ teams: role })])), "Profiles: Monitor role name can be at most 64 characters.");
   const same = structuredClone(teams);
   same.monitor.role = "Coordinator";
   assert.match(profilesProblem(file([validProfile({ teams: same })]))!, /different role names/, "coordinator and monitor are two roles, never one");
@@ -111,7 +112,7 @@ test("the editor's worker rows are wired live, never as a mount-time snapshot", 
   const src = readFileSync(new URL("../components/SubagentProfilesSettings.tsx", import.meta.url), "utf8");
   assert.match(src, /const tuple = \(\s*role: string,\s*choice: \(\) => WorkerChoice/, "tuple's choice is a thunk");
   assert.match(src, /const pair = \(role: string, choice: \(\) => \{/, "pair's choice is a thunk");
-  assert.match(src, /\(m\) => tuple\("members", m,/, "members hands over the Show's accessor");
+  assert.doesNotMatch(src, /tuple\("members"|\.members\b|"Members"/, "no Members row, switch or read in the editor");
   assert.match(src, /\(w\) => \([^()]*?<>[\s\S]{0,400}?pair\("spec", w,/, "spec writer hands over the Show's accessor");
   assert.match(src, /\(f\) => \(\s*<>[\s\S]{0,120}?\{tuple\(role, f,/, "pair's fallback row hands over the Show's accessor");
   assert.doesNotMatch(src, /\((\w)\) => (?:tuple|pair)\([^)]*?\1\(\)/, "no callback reads its accessor at mount time");
@@ -130,7 +131,7 @@ test("the name box says why its name holds Save (Settings QA D11): the edited pr
 test("a pasted name over 48 characters stays whole in the draft, and Save waits (Settings QA D10)", () => {
   const d = file([validProfile({ name: "x".repeat(300) })]);
   assert.equal(d.profiles[0]!.name.length, 300, "nothing cuts it");
-  assert.equal(profilesProblem(d), "Subagents: Profile name can be at most 48 characters.");
+  assert.equal(profilesProblem(d), "Profiles: Profile name can be at most 48 characters.");
   // The box is not capped by the browser: a cut there is silent.
   assert.doesNotMatch(readFileSync(new URL("../components/SubagentProfilesSettings.tsx", import.meta.url), "utf8"), /maxlength/);
 });

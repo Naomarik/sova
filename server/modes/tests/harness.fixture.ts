@@ -265,11 +265,23 @@ export function workspace(name: string, opts: { git?: boolean; files?: Record<st
       writeFileSync(join(cwd, rel), text);
     }
     if (opts.git) gitInit(cwd);
+    registerCopy(cwd);
     mkdirSync(dir, { recursive: true });
     place(cwd, `<ws:${name}>`);
     place(dir, `<sessions:${name}>`);
   }
   return { cwd, dir };
+}
+/**
+ * A copy registered for the folder, so its chats are offered project_verbs (§app.project-services/tool-offered) as
+ * the recordings have it. A registered copy rather than a definition: a definition would add an instance note,
+ * and its commit would move the base commit the census names.
+ */
+function registerCopy(cwd: string): void {
+  const file = join(agentDir, "sova", "project-services", "registry.json");
+  mkdirSync(dirname(file), { recursive: true });
+  const instances = existsSync(file) ? (JSON.parse(readFileSync(file, "utf8")) as { instances: unknown[] }).instances : [];
+  writeFileSync(file, JSON.stringify({ version: 1, instances: [...instances, { project: realpathSync(cwd) }], shared: [] }));
 }
 function gitInit(cwd: string): void {
   const git = (...args: string[]) => {

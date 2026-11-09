@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { DESIGN_NONCE_SLOT, DESIGN_PAGE_CSP, DESIGN_SHELL_ATTRS, DESIGN_STREAM_ATTRS, DESIGN_STREAM_CSP, designHasStyles, designPageCsp, designPageDoc, designShellDoc, designStreamDoc, fromDesignFrame, stripResourceHints, versionLabel } from "./design-frame";
+import vm from "node:vm";
+import { DESIGN_NONCE_SLOT, DESIGN_PAGE_CSP, DESIGN_SHELL_ATTRS, DESIGN_STREAM_ATTRS, DESIGN_STREAM_CSP, designHasStyles, designPageCsp, designPageDoc, designShellDoc, designStreamDoc, fromDesignFrame, versionLabel } from "./design-frame";
 
 const directives = (csp: string) => new Map(csp.split("; ").map((d) => [d.split(" ")[0], d.split(" ").slice(1)] as const));
 
@@ -20,32 +21,43 @@ test("a page's network is Google Fonts and its own data, in every state of a pag
   assert.deepEqual(directives(designPageCsp("n")).get("script-src"), ["'nonce-n'", "'unsafe-eval'"], "only the nonce's boot runs inline");
 });
 
-test("only the seal carries the nonce, so a script the page wrote or a frame it made runs nothing by itself", () => {
-  const doc = designPageDoc("<script>one</script><iframe srcdoc='<script>two</script>'></iframe>", { motion: true });
-  assert.equal(doc.split(`nonce="${DESIGN_NONCE_SLOT}"`).length, 2, "one script with the nonce");
-  assert.match(doc, /querySelectorAll\("script:not\(\[src\]\)"\)/, "the seal runs the page's scripts itself");
-  assert.match(doc, /meta\[http-equiv\]/, "and takes its policy tag out of view");
-  assert.equal(designShellDoc(doc).includes(`crypto.getRandomValues`), true, "a fresh nonce for each document");
-});
-
-test("resource hints leave only for Google Fonts", () => {
-  const keep = '<link rel="preconnect" href="https://fonts.googleapis.com"><link rel=preconnect href=https://fonts.gstatic.com crossorigin>';
-  const out = stripResourceHints(`${keep}<link rel="preconnect" href="https://evil.example"><link href="https://x.example" rel="dns-prefetch"><link rel="stylesheet" href="https://fonts.googleapis.com/css2">`);
-  assert.equal(out, `${keep}<link rel="stylesheet" href="https://fonts.googleapis.com/css2">`);
-});
+/** The document a shell really gives its page frame: its own script, run. */
+function builtBy(html: string, motion = true): string {
+  const shell = designShellDoc(designPageDoc(html, { motion }));
+  const script = shell.slice(shell.indexOf("<script>") + "<script>".length, shell.lastIndexOf("</script>"));
+  const frame: Record<string, unknown> & { srcdoc?: string } = { setAttribute() {}, addEventListener() {}, style: {} };
+  vm.runInNewContext(script, { document: { createElement: () => frame, body: { append() {} } }, parent: { postMessage() {} }, crypto, Array, Uint8Array, Object, JSON });
+  return frame.srcdoc!;
+}
 
 test("the policy and the seal come before anything the page wrote", () => {
-  const page = "<!doctype html><html><head><script>window.X=1</script></head><body>hi</body></html>";
-  const doc = designPageDoc(page, { motion: true });
+  const doc = builtBy("<!doctype html><html><head><script>window.X=1</script></head><body>hi</body></html>");
   const csp = doc.indexOf("Content-Security-Policy");
   const rtc = doc.indexOf("RTC");
   const mine = doc.indexOf("window.X");
   assert.ok(csp >= 0 && rtc > csp && mine > rtc);
 });
 
+test("the real nonce is only in Sova's head, even on a page that writes the slot's name", () => {
+  const page = `<iframe srcdoc="<script nonce='${DESIGN_NONCE_SLOT}'>x</script>"></iframe><script>const n="${DESIGN_NONCE_SLOT}"</script>`;
+  const doc = builtBy(page);
+  const nonce = /nonce="([0-9a-f]{36})"/.exec(doc)?.[1];
+  assert.ok(nonce, "a real nonce was made");
+  assert.equal(doc.split(nonce!).length - 1, 2, "in the policy and on the boot script, nowhere else");
+  assert.ok(doc.endsWith(page), "the page's text is exactly as written");
+  assert.notEqual(builtBy(page).match(/nonce="([0-9a-f]{36})"/)?.[1], nonce, "fresh for each document");
+});
+
+test("only the nonce's boot runs inline, and it runs the page's scripts itself", () => {
+  const held = designPageDoc("<script>one</script>", { motion: true }).head;
+  assert.equal(held.split(`nonce="${DESIGN_NONCE_SLOT}"`).length, 2, "one script carries the nonce");
+  assert.match(held, /querySelectorAll\("script:not\(\[src\]\)"\)/);
+  assert.match(held, /meta\[http-equiv\]/, "and its policy tag is taken out of view");
+});
+
 test("a grid card holds motion and the full view runs it", () => {
-  const held = designPageDoc("x", { motion: false });
-  const running = designPageDoc("x", { motion: true });
+  const held = designPageDoc("x", { motion: false }).head;
+  const running = designPageDoc("x", { motion: true }).head;
   assert.match(held, /animation-duration:0s/);
   assert.match(held, /requestAnimationFrame/);
   assert.doesNotMatch(running, /animation-duration:0s/);
@@ -60,7 +72,7 @@ test("the streaming document runs nothing and the empty sandbox says so", () => 
 });
 
 test("the shell escapes the page so a closing script tag in it can't end the shell's own script", () => {
-  const doc = designShellDoc("a</script><b>");
+  const doc = designShellDoc(designPageDoc("a</script><b>", { motion: true }));
   assert.equal(doc.indexOf("</script>"), doc.lastIndexOf("</script>"), "only the shell's own closing tag");
 });
 

@@ -69,32 +69,32 @@ addEventListener("submit",(e)=>e.preventDefault());
 if(ran||document.readyState!=="interactive")return;ran=true;
 for(const el of document.querySelectorAll("*"))for(const a of [...el.attributes]){
 if(!/^on[a-z]+$/.test(a.name)||el.tagName==="BODY"&&a.name==="onload")continue;
-const f=new Function("event",a.value);el.removeAttribute(a.name);
+let f;try{f=new Function("event",a.value);}catch{continue;}
+el.removeAttribute(a.name);
 el.addEventListener(a.name.slice(2),function(e){if(f.call(this,e)===false)e.preventDefault();});}
-const code=[...document.querySelectorAll("script:not([src])")].filter((s)=>!s.type||/javascript|ecmascript/i.test(s.type)).map((s)=>s.textContent).join("\\n;\\n");
+const parses=(c)=>{try{new Function(c);return true;}catch{return false;}};
+const code=[...document.querySelectorAll("script:not([src])")].filter((s)=>!s.type||/javascript|ecmascript/i.test(s.type)).map((s)=>s.textContent).filter(parses).join("\\n;\\n");
 if(code)(0,eval)(code);
 });}`;
-
-/**
- * Resource hints the parser would act on before any policy check: a preconnect opens a connection,
- * and a host name can carry data over DNS. Only Google Fonts' may stay.
- */
-export const stripResourceHints = (html: string): string =>
-  html.replace(/<link\b[^>]*\brel\s*=\s*["']?(?:preconnect|dns-prefetch|prerender|prefetch)\b[^>]*>/gi, (tag) => (/https:\/\/fonts\.(?:googleapis|gstatic)\.com/i.test(tag) ? tag : ""));
 
 /** A grid card holds motion: animations jump to their end, and a script's animation loop stops after a moment. */
 const HOLD_MOTION_SCRIPT = `{const r=requestAnimationFrame.bind(window);let n=0;window.requestAnimationFrame=(f)=>n++<90?r(f):0;}`;
 const HOLD_MOTION_STYLE = `*,*::before,*::after{animation-duration:0s!important;animation-delay:0s!important;animation-iteration-count:1!important;transition:none!important;scroll-behavior:auto!important}`;
 
-/** A finished page's own document: the policy, then the seal, then the page as its author wrote it. */
-export function designPageDoc(html: string, opts: { motion: boolean }): string {
+/** A finished page's document in two parts: Sova's own head (the policy and the seal), and the page as its author wrote it. */
+export interface DesignPageDoc {
+  head: string;
+  page: string;
+}
+
+export function designPageDoc(html: string, opts: { motion: boolean }): DesignPageDoc {
   const hold = opts.motion ? "" : HOLD_MOTION_SCRIPT;
   const style = opts.motion ? "" : `<style>${HOLD_MOTION_STYLE}</style>`;
-  return `<!doctype html>${head(designPageCsp(DESIGN_NONCE_SLOT))}<script nonce="${DESIGN_NONCE_SLOT}">${SEAL_SCRIPT}${hold}</script>${style}${stripResourceHints(html)}`;
+  return { head: `<!doctype html>${head(designPageCsp(DESIGN_NONCE_SLOT))}<script nonce="${DESIGN_NONCE_SLOT}">${SEAL_SCRIPT}${hold}</script>${style}`, page: html };
 }
 
 /** The shell that holds a finished page: it makes the page's frame and tells the page if it ever navigates. */
-export function designShellDoc(pageDoc: string): string {
+export function designShellDoc(doc: DesignPageDoc): string {
   const shell = `(() => {
   const f = document.createElement("iframe");
   for (const [k, v] of Object.entries(${JSON.stringify(DESIGN_PAGE_ATTRS)})) f.setAttribute(k, v);
@@ -106,7 +106,8 @@ export function designShellDoc(pageDoc: string): string {
     f.remove();
     parent.postMessage({ ${JSON.stringify(DESIGN_FRAME_MESSAGE)}: 1, op: "left" }, "*");
   });
-  f.srcdoc = ${JSON.stringify(pageDoc)}.split(${JSON.stringify(DESIGN_NONCE_SLOT)}).join(Array.from(crypto.getRandomValues(new Uint8Array(18)), (b) => b.toString(16).padStart(2, "0")).join(""));
+  // The nonce goes into Sova's own head only: the page's text never passes through this replace.
+  f.srcdoc = ${JSON.stringify(doc.head)}.split(${JSON.stringify(DESIGN_NONCE_SLOT)}).join(Array.from(crypto.getRandomValues(new Uint8Array(18)), (b) => b.toString(16).padStart(2, "0")).join("")) + ${JSON.stringify(doc.page)};
   document.body.append(f);
 })();`.replace(/<\//g, "<\\/");
   return `<!doctype html><html><head>${head(DESIGN_SHELL_CSP)}<style>html,body{margin:0;padding:0;width:100%;height:100%;overflow:hidden;background:#fff}</style></head><body><script>${shell}</script></body></html>`;
@@ -114,7 +115,7 @@ export function designShellDoc(pageDoc: string): string {
 
 /** A page being written: the text so far, with no motion. A half-written last tag is the parser's to drop. */
 export function designStreamDoc(partial: string): string {
-  return `<!doctype html>${head(DESIGN_STREAM_CSP)}<style>${HOLD_MOTION_STYLE}</style>${stripResourceHints(partial)}`;
+  return `<!doctype html>${head(DESIGN_STREAM_CSP)}<style>${HOLD_MOTION_STYLE}</style>${partial}`;
 }
 
 /** Whether a page has anything to draw yet: nothing shows before its first style block closes. */

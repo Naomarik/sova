@@ -89,7 +89,10 @@ export interface ProjectGlanceQueue {
     /** How long its run takes, estimated (ms), or null. */
     takesMs: number | null;
     steps: GlanceRunStep[];
-    checks: { id: string; label: string }[];
+    checks: { id: string; label: string   /** Worktrees retirement took and holds here (§chat.worktrees/retirement). Absent at 0. */
+  retired?: number;
+  held?: number;
+}[];
     /** It is the release's own entry. */
     release?: true;
   };

@@ -221,8 +221,8 @@ test("a merge driver writes to stdout before the tree's id, so the first line is
   git(r.dir, "config", "merge.u.driver", "echo DRIVER-SAYS-HI");
   resetContentMerges();
   const common = join(r.dir, ".git");
-  // Guard (a): cleanup's own reader keeps its first-line rule, so it reads the same merge as not merged and the offer doesn't widen.
-  assert.equal(await mergedByContent(execGit, r.dir, common, r.head("master"), d), false, "removed-worktrees");
+  // Retirement's reader asks the shared answer, so it reads the same merge the same way.
+  assert.equal(await mergedByContent(execGit, r.dir, common, r.head("master"), d), true, "removed-worktrees");
   const a = await ask(r, d);
   assert.equal(a.code.kind, "content", "the shared answer");
   git(r.dir, "worktree", "add", "-q", join(root, `wt${n}`), "feat/x");

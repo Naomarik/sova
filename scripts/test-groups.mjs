@@ -33,15 +33,6 @@ const RETIRE_LAB = JSON.parse(readFileSync(new URL("../shared/retire-lab.json", 
 
 export const GROUPS = [
   {
-    name: "retire-lab",
-    title: "Automatic cleanup",
-    // Retirement's scenarios on made-up state: the same ones the rehearsal runs on a copy of the real state, which the queue never reads.
-    files: ["server/worktree-retire-*.integration.test.ts"],
-    except: [],
-    landing: "triggered",
-    triggers: [...RETIRE_LAB, ...PACKAGES, ...TEST_SETUP, ...SELF],
-  },
-  {
     name: "trial",
     title: "Chat processes",
     // The end-to-end trial: Sova and its chats started as real programs and driven from outside, so
@@ -181,6 +172,15 @@ export const GROUPS = [
       ...TEST_SETUP,
       ...SELF,
     ],
+  },
+  {
+    name: "retire-lab",
+    title: "Automatic cleanup",
+    // Retirement's scenarios on made-up state: the same ones the rehearsal runs on a copy of the real state, which the queue never reads.
+    files: ["server/worktree-retire-*.integration.test.ts"],
+    except: [],
+    landing: "triggered",
+    triggers: [...RETIRE_LAB, ...TEST_SETUP, ...SELF],
   },
 ];
 

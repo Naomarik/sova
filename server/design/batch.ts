@@ -374,6 +374,19 @@ function commitVersion(parent: DesignParent, label: string, html: string, note: 
   return version;
 }
 
+/** Looks one message allows: two rounds of looking and fixing, at two widths each (q7). */
+export const DESIGN_LOOKS_PER_MESSAGE = 4;
+
+/** Count one design_look against the message that asked for it; throws when its rounds are used up. */
+export function takeLook(sessionId: string, label: string): void {
+  changeDesigns(sessionId, (s) => {
+    const i = s.internal?.[label];
+    if (!i) return;
+    i.looks = (i.looks ?? 0) + 1;
+    if (i.looks > DESIGN_LOOKS_PER_MESSAGE) throw new Error("You have used your two rounds of looking and fixing for this request. Call design_hand_in with what you have.");
+  });
+}
+
 /** Whether `html` is a complete page: truncated or empty output never counts as a design. */
 export function pageProblem(html: string): string | null {
   const t = html.trim();
@@ -437,7 +450,10 @@ export async function deliverDesign(parent: DesignParent, label: string, send: D
   const by = send.version ?? (send.by === "coordinator" ? "coordinator" : "chat");
   changeDesigns(sid, (s) => {
     const i = s.internal?.[label];
-    if (i) i.by = by;
+    if (i) {
+      i.by = by;
+      i.looks = 0;
+    }
   });
   const undelivered = (error: string): never => {
     changeDesign(sid, label, (x) => void (x.delivery = { state: "undelivered", key, at: new Date().toISOString(), error }));

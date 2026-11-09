@@ -6,8 +6,10 @@ import { DESIGN_ASK_ABOVE, DESIGN_BATCH_MAX, DESIGN_TOOL, isDesignLabel, type De
 import { DESIGN_PAGE_END, DESIGN_PAGE_START, DESIGN_GUIDE_TOPICS, designGuide } from "../../pi-config/extensions/mode/design-guide.ts";
 import { coordinatorCard, tellCoordinator } from "./coordinator";
 import { createRun } from "./setup";
-import { handIn, pageProblem, savePage, type DesignParent } from "./batch";
+import { handIn, pageProblem, savePage, takeLook, type DesignParent } from "./batch";
 import { livePage } from "./live";
+import { lookAtDesign } from "./look";
+import type { TourSize } from "../../shared/tour";
 import { designOf, pendingPage, readPage, viewOf } from "./store";
 import { pageInReply } from "./stream-decode";
 
@@ -15,6 +17,7 @@ export { DESIGN_TOOL };
 export const DESIGN_GUIDE_TOOL = "design_guide";
 export const DESIGN_STREAM_TOOL = "design_stream";
 export const DESIGN_HAND_IN_TOOL = "design_hand_in";
+export const DESIGN_LOOK_TOOL = "design_look";
 /** The main chat's tools: active only while Design mode is on. */
 export const DESIGN_TOOLS: ReadonlySet<string> = new Set([DESIGN_GUIDE_TOOL, DESIGN_TOOL]);
 
@@ -119,6 +122,21 @@ export function sessionDesignTools(parent: DesignParent, label: string): ToolSpe
     if (asked !== label) throw new Error(`You are design ${label}; label must be ${label}.`);
   };
   return [
+    {
+      name: DESIGN_LOOK_TOOL,
+      label: "design look",
+      description: "Open your finished page in a real browser at a width and see it: 1440 for desktop, 390 for phone.",
+      parameters: { type: "object", properties: { label: str("Your label."), width: { type: "number", description: "The viewport width: 1440 or 390." } }, required: ["label", "width"] },
+      async execute(_id, params: { label?: string; width?: number }) {
+        own(params?.label);
+        const size: TourSize = (params.width ?? 1440) < 768 ? "phone" : "desktop";
+        takeLook(parent.sessionId, label);
+        const d = designOf(parent.sessionId, label);
+        const look = await lookAtDesign(parent, label, { sizes: [size] });
+        const images = d?.vision ? look.shots.map((s) => ({ type: "image" as const, data: Buffer.from(s.png).toString("base64"), mimeType: "image/png" })) : [];
+        return { content: [...images, { type: "text", text: d?.vision ? `Your page at ${size} width.` : `An outline of your page at ${size} width (this model can't read images):\n${look.outline}` }], details: {} };
+      },
+    },
     {
       name: DESIGN_STREAM_TOOL,
       label: "design stream",

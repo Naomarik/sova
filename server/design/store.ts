@@ -31,6 +31,8 @@ export interface DesignInternal {
   /** The coordinator's words for a design made from others. */
   instructions?: string;
   parentPath?: string;
+  /** design_look calls since the last message to the session. */
+  looks?: number;
   /** The last settle already acted on. */
   settleKey?: string;
 }

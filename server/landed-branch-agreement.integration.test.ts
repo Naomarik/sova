@@ -780,7 +780,7 @@ describe("Land reads the same answer, and never moves the target for nothing", (
       assert.equal(done.reason, NOTHING_TO_LAND(fx.target));
       assert.equal(fx.head(), head, "the target didn't move");
       assert.equal(fx.originHead(), origin, "nothing pushed");
-      assert.equal(fx.callsSince(mark).filter((c) => c.script === "unit").length, 0, "no check ran");
+      assert.deepEqual(fx.callsSince(mark).map((c) => c.script), [], "no drafts to land, so no setup or check ever ran");
     });
   }
 });

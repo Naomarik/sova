@@ -79,7 +79,8 @@ function specFor(parent: DesignParent, d: Pick<DesignRecord, "label" | "directio
     parent: { sessionId: parent.sessionId, path: parent.path, workerId: workerIdOf(d.label) },
     cwd,
     model: d.model,
-    thinking: null,
+    // Low: a page is written, not reasoned about; at higher levels a model spends its minutes and money on thinking.
+    thinking: "low",
     // No file tools and no shell: a design session has only the design tools the server gives it.
     builtins: [],
     extensions: loaded.extensions,
@@ -223,6 +224,7 @@ async function startSession(parent: DesignParent, label: string, seed?: { text: 
 const viewCwd = (sessionId: string): string => readDesigns(sessionId).cwd ?? agentRoot();
 
 function fail(parent: DesignParent, label: string, why: string): void {
+  stopWatching(parent.sessionId, label);
   clearLivePage(parent.sessionId, label);
   setPendingPage(parent.sessionId, label, null);
   changeDesign(parent.sessionId, label, (d) => {
@@ -248,6 +250,40 @@ function finishRun(parent: DesignParent, label: string): void {
 
 const following = new Map<string, () => void>();
 
+/** How long a session at work may say nothing before its card stops claiming it is writing. Long enough for a
+    slow provider's whole-page wait, thinking included. */
+let quietMs = 10 * 60_000;
+export const setDesignQuietMsForTest = (ms: number): void => void (quietMs = ms);
+const watchdogs = new Map<string, NodeJS.Timeout>();
+
+function stopWatching(sessionId: string, label: string): void {
+  const key = `${sessionId}\0${label}`;
+  const t = watchdogs.get(key);
+  if (t) clearTimeout(t);
+  watchdogs.delete(key);
+}
+
+/** The session did something: its watch restarts. */
+function heard(parent: DesignParent, label: string): void {
+  stopWatching(parent.sessionId, label);
+  const t = setTimeout(() => {
+    watchdogs.delete(`${parent.sessionId}\0${label}`);
+    const d = designOf(parent.sessionId, label);
+    if (!d || (d.status !== "writing" && d.status !== "queued") || !d.sessionId) return;
+    void workers(parent).abort(d.sessionId).catch(() => {});
+    if (d.versions.length) {
+      clearLivePage(parent.sessionId, label);
+      changeDesign(parent.sessionId, label, (x) => {
+        x.status = "ready";
+        delete x.live;
+      });
+      finishRun(parent, label);
+    } else fail(parent, label, "Its session went quiet and stopped responding.");
+  }, quietMs);
+  t.unref?.();
+  watchdogs.set(`${parent.sessionId}\0${label}`, t);
+}
+
 /** Watch a design's session: its status, its queue, and how its turns end. */
 function follow(parent: DesignParent, label: string, chatId: string): void {
   const key = `${parent.sessionId}\0${label}`;
@@ -258,6 +294,7 @@ function follow(parent: DesignParent, label: string, chatId: string): void {
     const off = workers(parent).watch(chatId, null, (f) => {
       const d = designOf(parent.sessionId, label);
       if (!d || d.sessionId !== chatId) return;
+      if (f.t === "event" || (f.t === "state" && f.state.status === "running")) heard(parent, label);
       if (f.t === "state") {
         setWorkerState(parent, label, f.state);
         const k = f.state.lastSettled?.key;
@@ -290,6 +327,7 @@ function follow(parent: DesignParent, label: string, chatId: string): void {
       }
     });
     following.set(key, off);
+    if (designOf(parent.sessionId, label)?.status !== "ready") heard(parent, label);
   } catch (err) {
     fail(parent, label, err instanceof Error ? err.message : String(err));
   }
@@ -303,8 +341,11 @@ function setWorkerState(parent: DesignParent, label: string, s: WorkerState): vo
 
 async function settled(parent: DesignParent, label: string, state: WorkerState): Promise<void> {
   const sid = parent.sessionId;
-  const pending = pendingPage(sid, label);
-  if (pending) commitVersion(parent, label, pending, undefined);
+  stopWatching(sid, label);
+  // A page that was written whole but never handed in (its session lost its tools, or stopped short) is still a page.
+  const live = livePage(sid, label)?.text;
+  const page = pendingPage(sid, label) ?? (live && !pageProblem(live) ? live : null);
+  if (page) commitVersion(parent, label, page, undefined);
   const d = designOf(sid, label);
   if (!d) return;
   if (d.sessionFile) await noteUsage(sid, label, d.sessionFile);
@@ -412,6 +453,7 @@ export function onLiveFrame(chatId: string, f: { gen: number; at: number; text: 
   const sid = owner.parent.sessionId;
   const d = designOf(sid, label);
   if (!d) return;
+  heard(owner.parent, label);
   const version = (d.versions.at(-1)?.n ?? 0) + 1;
   const began = applySlice(sid, label, version, f);
   if (began)

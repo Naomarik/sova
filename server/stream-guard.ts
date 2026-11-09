@@ -32,6 +32,8 @@ export interface StreamCaps {
   toolArgChars: number;
   /** Text + thinking + tool-argument characters of one assistant message; null = none. */
   outputChars: number | null;
+  /** Thinking characters of one assistant message, counted apart from `outputChars`. Absent: thinking counts in `outputChars`. */
+  thinkingChars?: number;
   /** A run's start → its end; null = none. */
   runWallMs: number | null;
   /** How stale the heartbeat may be (the loop starved)… */
@@ -52,9 +54,9 @@ const CAPS: Record<StreamKind, StreamCaps> = {
   "project-assistant": { ...COMMON, toolArgChars: 64 * K, outputChars: 256 * K, runWallMs: 10 * 60_000 },
   chat: { ...COMMON, toolArgChars: K * K, outputChars: null, runWallMs: null },
   // A design session's page budget: 32K tokens at four characters each (t30). Models and providers ignore an
-  // output cap, so this is where it holds. Page, thinking and reply count together, and a page written in the
-  // reply (q15) is held to it as one written through the tool is.
-  design: { ...COMMON, toolArgChars: DESIGN_OUTPUT_CHARS, outputChars: DESIGN_OUTPUT_CHARS, runWallMs: null },
+  // output cap, so this is where it holds. A page written in the reply (q15) is held to it as one written through
+  // the tool is. Thinking has its own, larger budget: a model that thinks long still has its whole page to write.
+  design: { ...COMMON, toolArgChars: DESIGN_OUTPUT_CHARS, outputChars: DESIGN_OUTPUT_CHARS, thinkingChars: 2 * DESIGN_OUTPUT_CHARS, runWallMs: null },
 };
 
 let override: Partial<StreamCaps> | null = null;
@@ -124,6 +126,7 @@ export function attachStreamGuard(
   let runStart = 0;
   let timer: unknown = null;
   let output = 0;
+  let thinking = 0;
   /** Per tool call (content index): argument characters, and the whitespace run at its end. */
   const args = new Map<number, { chars: number; run: number }>();
 
@@ -154,6 +157,7 @@ export function attachStreamGuard(
       tripped = false;
       runStart = clock.now();
       output = 0;
+      thinking = 0;
       args.clear();
       disarm();
       const wall = caps().runWallMs;
@@ -172,6 +176,7 @@ export function attachStreamGuard(
     if (tripped) return;
     if (type === "message.start") {
       output = 0;
+      thinking = 0;
       args.clear();
       return;
     }
@@ -185,6 +190,11 @@ export function attachStreamGuard(
     // A part's start or end carries no characters.
     if (!("delta" in e)) return;
     const delta = e.delta;
+    if (e.kind === "thinking" && c.thinkingChars !== undefined) {
+      thinking += delta.length;
+      if (thinking > c.thinkingChars) trip("output", `the model's thinking passed ${n(c.thinkingChars)} characters`, thinking);
+      return;
+    }
     output += delta.length;
     if (c.outputChars !== null && output > c.outputChars) return trip("output", `the reply passed ${n(c.outputChars)} characters`, output);
     if (e.kind !== "tool-call") return;

@@ -170,7 +170,13 @@ const cwdOf = (p: DesignParent): string => readDesigns(p.sessionId).cwd ?? chatH
 async function recordRun(p: DesignParent, runId: string): Promise<void> {
   const run = runOf(p.sessionId, runId);
   if (!run) return;
-  await (await acquireChatHandle(p.path)).appendState(DESIGN_RUN, { v: 1, runId, at: run.updatedAt, setup: run.setup });
+  await (await acquireChatHandle(p.path)).appendState(DESIGN_RUN, {
+    v: 1,
+    runId,
+    at: run.updatedAt,
+    // What was chosen, never the whole model list.
+    setup: { brief: run.setup.brief, models: run.setup.models.filter((m) => m.design).map((m) => m.ref), coordinator: run.setup.models.find((m) => m.coordinator)?.ref ?? null, directions: run.setup.directions.filter((d) => d.on).map((d) => d.name) },
+  });
 }
 
 /** What Refine hands a design's session: the person's words, and how far to go. */

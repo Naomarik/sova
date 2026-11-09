@@ -135,6 +135,12 @@ export function workerServed(worker: { kind: string; flags?: WorkerSpec["flags"]
   return worker.kind === "worker" ? servedWorkerTools(path, worker.flags && worker.parent ? { flags: worker.flags, parent: worker.parent } : undefined) : [];
 }
 
+/** A worker chat a new server takes back gets its tools served again: from its record's whole loadout, since the
+    mirror names no parent path (a design session's tools need it); the mirror only for a process no record names. */
+export function servedOnTakeBack(record: { spec: WorkerSpec } | undefined, mirrored: Parameters<typeof workerServed>[0], path: string): ServerToolDecl[] {
+  return workerServed(record?.spec ?? mirrored, path);
+}
+
 /** What a test swaps (a fake driver, links over in-memory streams); the server uses the real ones. */
 export interface RouterDeps {
   driver?: Driver;
@@ -645,7 +651,7 @@ export class ChatHostRouter {
         const state = await awaitFrame(link, "state", 5_000);
         // A worker chat is the registry's: only a worker's or team member's project_verbs runs here again.
         if (state.mirror.worker) {
-          workerServed(state.mirror.worker, rec.sessionPath);
+          servedOnTakeBack(this.workers.record(rec.chatId), state.mirror.worker, rec.sessionPath);
           this.workerPaths.add(rec.sessionPath);
           const h = this.adoptHandle(rec, link, state.mirror, held);
           if (!this.workers.adopt(h)) log(`${rec.chatId}: a worker chat no worker record names`);

@@ -8,11 +8,12 @@ import { after, beforeEach, test } from "node:test";
 
 process.env.PI_CODING_AGENT_DIR = mkdtempSync(join(tmpdir(), "design-batch-"));
 const { DESIGN_CONCURRENT } = await import("../../shared/design");
-const { assertLaunchAllowed, deleteDesign, deliverDesign, DesignLimitError, installDesignHost, launchDesigns, pageProblem, retryDesign, onDesignHandIn, onLiveFrame } = await import("./batch");
+const { assertLaunchAllowed, deleteDesign, deliverDesign, DesignLimitError, installDesignHost, launchDesigns, pageProblem, retryDesign, onDesignHandIn, onLiveFrame, setDesignQuietMsForTest } = await import("./batch");
 const store = await import("./store");
 const { sessionDesignTools } = await import("./tools");
 const { WorkerRegistry } = await import("../chat-workers");
 const { livePage } = await import("./live");
+const { servedOnTakeBack } = await import("../chat-host");
 
 const PAGE = "<!doctype html><html><body>hi</body></html>";
 const NOTE = { layout: "l", sections: "s", type: "t", color: "c" };
@@ -80,6 +81,11 @@ function settle(f: Fake, outcome: "success" | "error" = "success", error?: strin
 const tick = () => new Promise<void>((r) => setTimeout(r, 0));
 async function ticks(): Promise<void> {
   for (let i = 0; i < 20; i++) await tick();
+}
+
+async function waitFor(ok: () => boolean): Promise<void> {
+  for (let i = 0; i < 400 && !ok(); i++) await new Promise((r) => setTimeout(r, 5));
+  assert.ok(ok(), "never happened");
 }
 
 function newRun(models: string[], directions: string[]): string {
@@ -284,6 +290,56 @@ test("a chat's designs are what they were after a restart, an archive leaves the
   assert.equal(store.designFolderExists(parent.sessionId), false);
   store.setCoordinator(parent.sessionId, null);
   assert.equal(store.designFolderExists(parent.sessionId), false, "a late write doesn't bring it back");
+});
+
+test("a design session a new server takes back keeps its tools: its record names the parent, the mirror doesn't", () => {
+  const mirror = { parentSessionId: parent.sessionId, workerId: "design-A", kind: "design", proc: "p" };
+  const spec = { kind: "design", parent: { ...parent, workerId: "design-A" } };
+  const names = (decls: { name: string }[]) => decls.map((d) => d.name);
+  assert.deepEqual(names(servedOnTakeBack(undefined, mirror as never, "/x.jsonl")), [], "the mirror alone is the bad state");
+  assert.ok(names(servedOnTakeBack({ spec } as never, mirror as never, "/x.jsonl")).includes("design_stream"));
+});
+
+test("a page written whole but never handed in is kept when the turn ends", async () => {
+  // A session that lost its tools (seen after a server restart) still wrote the page.
+  const run = newRun(["zai/a"], ["Minimalist"]);
+  launchDesigns(parent, run, {});
+  await ticks();
+  onLiveFrame(fakes[0]!.rec.chatId, { gen: 1, at: 0, text: PAGE });
+  settle(fakes[0]!);
+  await ticks();
+  assert.equal(stat("A").status, "ready");
+  assert.equal(store.readPage(parent.sessionId, "A"), PAGE);
+});
+
+test("a half-written page with no hand-in is no version: the turn fails", async () => {
+  const run = newRun(["zai/a"], ["Minimalist"]);
+  launchDesigns(parent, run, {});
+  await ticks();
+  onLiveFrame(fakes[0]!.rec.chatId, { gen: 1, at: 0, text: "<!doctype html><html><body>cut" });
+  settle(fakes[0]!);
+  await ticks();
+  assert.equal(stat("A").status, "failed");
+});
+
+test("a session that goes quiet stops claiming to write, and hears any sign of life first", async () => {
+  setDesignQuietMsForTest(25);
+  try {
+    const run = newRun(["zai/a"], ["Minimalist"]);
+    launchDesigns(parent, run, {});
+    await ticks();
+    // Slices keep it alive past the quiet time...
+    for (let i = 0; i < 4; i++) {
+      await new Promise((r) => setTimeout(r, 15));
+      onLiveFrame(fakes[0]!.rec.chatId, { gen: 1, at: i, text: "x" });
+    }
+    assert.notEqual(stat("A").status, "failed");
+    // ...and silence ends it.
+    await waitFor(() => stat("A").status === "failed");
+    assert.match(stat("A").error ?? "", /quiet/);
+  } finally {
+    setDesignQuietMsForTest(10 * 60_000);
+  }
 });
 
 test("a page that is empty or cut off is no page", () => {

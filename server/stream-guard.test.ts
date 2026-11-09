@@ -255,11 +255,26 @@ describe("stream guard", () => {
   });
 });
 
-test("a design session is held to its page budget: a page and its thinking count together, whatever the provider ignores", () => {
+test("a design session is held to its page budget: whatever the provider ignores", () => {
   const caps = capsFor("design");
   assert.equal(caps.toolArgChars, DESIGN_OUTPUT_TOKENS * 4);
   assert.equal(caps.outputChars, DESIGN_OUTPUT_TOKENS * 4);
+  assert.equal(caps.thinkingChars, DESIGN_OUTPUT_TOKENS * 8, "thinking is budgeted apart from the page");
   // An ordinary chat's cap is the one this would have fallen through to.
   assert.ok(capsFor(null).toolArgChars > caps.toolArgChars);
   assert.equal(capsFor(null).outputChars, null);
+});
+
+test("thinking with a budget of its own never spends the page's, and is stopped at its own", () => {
+  const h = harness({ outputChars: 100, thinkingChars: 300 });
+  h.start();
+  h.emit({ type: "message_start", message: { role: "assistant" } });
+  const think = (n: number) => h.emit({ type: "message_update", message: { role: "assistant" }, assistantMessageEvent: { type: "thinking_delta", contentIndex: 0, delta: "t".repeat(n) } });
+  const text = (n: number) => h.emit({ type: "message_update", message: { role: "assistant" }, assistantMessageEvent: { type: "text_delta", contentIndex: 1, delta: "x".repeat(n) } });
+  think(250);
+  text(90);
+  assert.equal(h.trips.length, 0, "250 of thinking left the page its 100");
+  think(60);
+  assert.equal(h.trips.length, 1);
+  assert.match(h.trips[0]!.detail, /thinking/);
 });

@@ -14,7 +14,7 @@ you need, and it finds the way. These are its topics, in its order.
 |---|---|
 | Colours, type and how this browser shows Sova | [Themes](/docs/themes/), in Settings → Themes: Light, Dark or Auto, a dark and a light pick, and a theme of your own as a JSON file in `~/.pi/agent/sova/themes/` |
 | Which models you can use, what new chats start on, and the sign-ins behind them | Settings → Models and Settings → Accounts |
-| Which models your workers and teams run on, and named worker personas | [Subagent profiles](/docs/subagent-profiles/), in Settings → Profiles |
+| Which models your workers and teams run on, and named worker personas | [Profiles](/docs/subagent-profiles/), in Settings → Profiles |
 
 ## Teach your chats
 

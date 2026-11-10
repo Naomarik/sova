@@ -10,8 +10,9 @@ import { lookAtDesign } from "./look";
 import { discoverTourBrowser } from "../tours/browser";
 import { chooseBrowserTemp } from "../settings-browser-temp.test.helper";
 
-// Chrome's sockets need a short temp path, whatever TMPDIR this run was given.
-const temp = chooseBrowserTemp();
+// Chrome's sockets need a short temp path, whatever TMPDIR this run was given. Shortest first: an attempt
+// nests its own folder below this one, so a temp dir that only just fits Chrome's limit doesn't.
+const temp = chooseBrowserTemp(["/tmp", "/dev/shm", tmpdir()]);
 if ("dir" in temp) {
   process.env.TMPDIR = temp.dir;
   after(() => temp.cleanup());

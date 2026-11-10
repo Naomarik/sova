@@ -4,7 +4,7 @@ import type { TranscriptItem } from "../../shared/protocol";
 import type { DesignRecord, DesignSetup } from "../../shared/design";
 import type { LiveTool } from "./live";
 import { designFold, liveDesignCalls, newestDesignRows, normalizeDesignCard } from "./design-rows";
-import { batchLine, briefTitle, designGroups, designFixLine, designIsBusy, designMeta, designNoteLine, designUnchangedLine, designStatusWord, moveCoordinator, parentsLine, setupBlocked, setupCount, setupSummary, statusCounts, toggleDirection, toggleGroup, toggleModel } from "./design-ui";
+import { batchLine, briefTitle, designGroups, designFixLine, designCanOpen, designHoldEnds, designIsBusy, designMeta, designOpenFollowsLive, designNoteLine, designUnchangedLine, designStatusWord, moveCoordinator, parentsLine, setupBlocked, setupCount, setupSummary, statusCounts, toggleDirection, toggleGroup, toggleModel } from "./design-ui";
 
 const caps = { batchDefault: 6, askAbove: 12, batchMax: 24, concurrent: 6 };
 const m = (ref: string, design = true, coordinator = false) => ({ ref, name: ref, design, coordinator, vision: true, route: "tool" as const });
@@ -160,4 +160,28 @@ test("a page being written shows its cost as an estimate, and a model with no pr
   assert.equal(designMeta({ ...d, live: { version: 1, chars: 3600, estimateUsd: 0.001 } }), "Opus · under $0.01");
   assert.equal(designMeta({ ...d, live: { version: 1, chars: 3600 } }), "Opus");
   assert.equal(designMeta({ ...d, status: "ready", usage: { input: 1, output: 1000, cost: 0 } }), "Opus · 1.0k tokens");
+});
+
+test("a design opens once it has a page or one is being written, never while it only waits", () => {
+  const v1 = { n: 1, at: "", chars: 1 } as DesignRecord["versions"][number];
+  assert.equal(designCanOpen(rec("A", "queued")), false);
+  assert.equal(designCanOpen(rec("A", "failed")), false);
+  assert.equal(designCanOpen(rec("A", "writing")), true, "its first page, watched full size");
+  assert.equal(designCanOpen(rec("A", "fixing")), true);
+  assert.equal(designCanOpen({ ...rec("A", "ready"), versions: [v1] }), true);
+});
+
+test("the open view follows the page being written unless a version was picked by hand", () => {
+  const writing = { ...rec("A", "writing"), live: { version: 2, chars: 10 } };
+  assert.equal(designOpenFollowsLive(writing, null), true);
+  assert.equal(designOpenFollowsLive(writing, 1), false, "an older version picked stays on show");
+  assert.equal(designOpenFollowsLive(rec("A", "ready"), null), false);
+});
+
+test("a held page being written gives way at once when no new version came of it, else only once the new one draws", () => {
+  const v = (n: number) => ({ n, at: "", chars: 1 }) as DesignRecord["versions"][number];
+  assert.equal(designHoldEnds({ ...rec("A", "ready"), versions: [v(1)] }, 1), true, "a Refine that changed nothing");
+  assert.equal(designHoldEnds({ ...rec("A", "ready"), versions: [v(1), v(2)] }, 1), false, "v2 came: wait for it to draw");
+  assert.equal(designHoldEnds({ ...rec("A", "writing"), versions: [v(1)] }, 1), false, "still writing");
+  assert.equal(designHoldEnds(rec("A", "failed"), 0), true, "a first page that failed");
 });

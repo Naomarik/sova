@@ -654,7 +654,7 @@ export function DesignTile(props: {
             title={
               designCanOpen(props.d)
                 ? undefined
-                : "Opens once the page is finished."
+                : "Opens once a page is being written."
             }
             onClick={() => props.onOpen()}
           >

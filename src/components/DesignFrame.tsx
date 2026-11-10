@@ -130,8 +130,10 @@ const FIRST_PAINT_MS = 250;
  * A page shows nothing until its styles are closed and its body has begun, so that wait reads as
  * progress, and the note goes only once the frame has had time to paint. When the response ends the connection is
  * given back and the document stays, so the last picture holds until the finished page has drawn.
+ * `over`: an earlier version is on show beneath, so instead of the note the frame stays see-through
+ * until the new page has something to see, and the earlier picture holds until then.
  */
-export function DesignStreamFrame(props: { api: DesignApi; label: string; version: number | undefined; text: string; title: string; waiting?: string; priority?: boolean }) {
+export function DesignStreamFrame(props: { api: DesignApi; label: string; version: number | undefined; text: string; title: string; waiting?: string; priority?: boolean; over?: boolean }) {
   const [src, setSrc] = createSignal("");
   const [turn, setTurn] = createSignal(false);
   const [painted, setPainted] = createSignal(false);
@@ -214,9 +216,9 @@ export function DesignStreamFrame(props: { api: DesignApi; label: string; versio
   return (
     <>
       <Show when={src()} keyed>
-        {(url) => <iframe class="design-frame" title={props.title} ref={(el) => seal(el, url)} onLoad={giveBack} />}
+        {(url) => <iframe class="design-frame" style={{ opacity: props.over && !painted() ? 0 : 1 }} title={props.title} ref={(el) => seal(el, url)} onLoad={giveBack} />}
       </Show>
-      <Show when={!painted()}>
+      <Show when={!painted() && !props.over}>
         <div class="design-frame-note" role="status">
           {note()}
         </div>

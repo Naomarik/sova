@@ -2,7 +2,7 @@ import { createEffect, createMemo, createSignal, For, on, onCleanup, onMount, Sh
 import type { DesignRecord } from "../../shared/design";
 import { versionLabel } from "../lib/design-frame";
 import { designPageText, type DesignStore } from "../lib/design-store";
-import { coordinatorOf, designCanRefine, designIsBusy, designNoteLine, designLatest, designMeta, designStatusWord, parentsLine, QUICK_PROMPTS } from "../lib/design-ui";
+import { coordinatorOf, designCanRefine, designHoldEnds, designIsBusy, designIsWriting, designNoteLine, designLatest, designMeta, designStatusWord, parentsLine, QUICK_PROMPTS } from "../lib/design-ui";
 import { designStatusTone, DesignTile, designGrid, designWaiting, type DesignOpenTarget } from "./DesignCard";
 import { DesignCoordinatorPanel, designKey, DesignMessageBox } from "./DesignCoordinator";
 import { DesignSealedFrame, DesignStreamFrame } from "./DesignFrame";
@@ -75,7 +75,7 @@ export function DesignRefinePanel(props: { d: DesignRecord; store: DesignStore; 
   );
 }
 
-function PageFrame(props: { d: DesignRecord; version: number; store: DesignStore; cacheKey: string }) {
+function PageFrame(props: { d: DesignRecord; version: number; following: boolean; store: DesignStore; cacheKey: string }) {
   const [html, setHtml] = createSignal<string | null>(null);
   const [error, setError] = createSignal("");
   createEffect(
@@ -94,12 +94,16 @@ function PageFrame(props: { d: DesignRecord; version: number; store: DesignStore
   );
   const title = () => `Design ${versionLabel(props.d.label, props.version)}`;
   const live = () => props.store.live(props.d.label);
-  const streaming = () => (!!props.d.live || props.d.status === "writing" || props.d.status === "fixing") && props.version === 0;
-  // The page being written stays on show until the finished one has drawn over it.
+  const streaming = () => props.following && designIsWriting(props.d);
+  // The page being written stays on show until the finished one has drawn over it; the version it
+  // started from says whether a new one is coming at all.
   const [held, setHeld] = createSignal(false);
+  let from = 0;
   createEffect(() => {
-    if (streaming()) setHeld(true);
-    else if (props.version === 0) setHeld(false);
+    if (streaming()) {
+      if (!held()) from = designLatest(props.d);
+      setHeld(true);
+    } else if (!props.following || designHoldEnds(props.d, from)) setHeld(false);
   });
   return (
     <div class="design-open-frame">
@@ -108,10 +112,10 @@ function PageFrame(props: { d: DesignRecord; version: number; store: DesignStore
       </Show>
       <Show when={streaming() || held()}>
         <div inert class="design-frame-layer" style={{ "z-index": 3 }}>
-          <DesignStreamFrame api={props.store.api} label={props.d.label} version={live()?.version} text={live()?.text ?? ""} title={title()} waiting={designWaiting(props.d)} priority />
+          <DesignStreamFrame api={props.store.api} label={props.d.label} version={live()?.version} text={live()?.text ?? ""} title={title()} waiting={designWaiting(props.d)} over={props.version > 0} priority />
         </div>
       </Show>
-      <Show when={props.version === 0 && !props.d.live && props.d.status !== "writing" && props.d.status !== "fixing"}>
+      <Show when={props.version === 0 && !designIsWriting(props.d)}>
         <div class="design-frame-note">No page has been written yet.</div>
       </Show>
       <Show when={error()}>
@@ -188,7 +192,7 @@ export function DesignOpen(props: { target: DesignOpenTarget; store: DesignStore
                 </Chip>
               </span>
               {/* Always there, so a new version arriving moves nothing beside it. */}
-              <Select class="design-open-version" label="Version" hideLabel disabled={x().versions.length < 2} value={String(version())} options={x().versions.map((v) => ({ value: String(v.n), label: versionLabel(x().label, v.n) }))} onChange={(v) => setPick(Number(v))} />
+              <Select class="design-open-version" label="Version" hideLabel disabled={x().versions.length < 2} value={String(version())} options={x().versions.length ? x().versions.map((v) => ({ value: String(v.n), label: versionLabel(x().label, v.n) })) : [{ value: "0", label: x().label }]} onChange={(v) => setPick(Number(v))} />
               <button type="button" class="button button-sm" disabled={!designCanRefine(x())} onClick={() => setRefine(!refine())}>
                 Refine
               </button>
@@ -208,7 +212,7 @@ export function DesignOpen(props: { target: DesignOpenTarget; store: DesignStore
           {(x) => (
             <>
               <div class="design-open-page">
-                <PageFrame d={x()} version={version()} store={props.store} cacheKey={props.path} />
+                <PageFrame d={x()} version={version()} following={pick() === null} store={props.store} cacheKey={props.path} />
                 <Show when={refine()}>
                   <div class="design-open-refine">
                     <DesignRefinePanel d={x()} store={props.store} onClose={() => setRefine(false)} />

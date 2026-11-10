@@ -154,8 +154,18 @@ export function designMeta(d: DesignRecord, liveChars?: number): string {
   return parts.join(" · ");
 }
 
-/** The stream started and is still blank: there's no Open until a finished page exists. */
-export const designCanOpen = (d: DesignRecord): boolean => d.versions.length > 0;
+/** A page is being written for it: a first page, a Refine's next version, or a repair. */
+export const designIsWriting = (d: DesignRecord): boolean => !!d.live || d.status === "writing" || d.status === "fixing";
+/** It opens once it has a page, or one is being written to watch full size. */
+export const designCanOpen = (d: DesignRecord): boolean => d.versions.length > 0 || designIsWriting(d);
+/** The open view shows the page being written while it follows the newest version, not one picked by hand. */
+export const designOpenFollowsLive = (d: DesignRecord, picked: number | null): boolean => designIsWriting(d) && picked === null;
+/**
+ * The page being written stays on show after its writing ends until the finished one has drawn. When
+ * no new version came of it (a Refine that changed nothing, or one that failed), the hold ends at once:
+ * the version on show is still the right one.
+ */
+export const designHoldEnds = (d: DesignRecord, latestAtStart: number): boolean => !designIsWriting(d) && designLatest(d) === latestAtStart;
 export const designCanRefine = (d: DesignRecord): boolean => d.versions.length > 0 && d.status === "ready";
 export const designLatest = (d: DesignRecord): number => d.versions.at(-1)?.n ?? 0;
 

@@ -1,4 +1,4 @@
-import { createEffect, createMemo, createSignal, For, on, onCleanup, onMount, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, For, on, onCleanup, onMount, Show, untrack } from "solid-js";
 import { Portal } from "solid-js/web";
 import { designDirectionLine, type DesignRecord } from "../../shared/design";
 import { versionLabel } from "../lib/design-frame";
@@ -171,17 +171,6 @@ export function DesignOpen(props: { target: DesignOpenTarget; store: DesignStore
   const [refine, setRefine] = createSignal(false);
   const [pick, setPick] = createSignal<number | null>(null);
   const version = () => pick() ?? (d() ? designLatest(d()!) : 0);
-  // Another view in the same dialog (Back, Forward, a design opened from the coordinator) starts afresh.
-  createEffect(
-    on(
-      () => (props.target.kind === "design" ? `d:${props.target.label}` : "c"),
-      () => {
-        setPick(null);
-        setRefine(false);
-      },
-      { defer: true },
-    ),
-  );
   const title = () => (d() ? `${d()!.label} · ${designDirectionLine(d()!)}` : "Coordinator");
   return (
     <dialog
@@ -293,13 +282,22 @@ export function DesignOpenSlot(props: { nav: DesignOpener; store: DesignStore; p
     const t = shown();
     return props.nav.draws() && t && t !== "gone" ? t : null;
   };
+  // Each view is its own dialog: going from the coordinator to a design (or Back) never reflows
+  // one in place, so nothing in it moves; the next one opens where the last one was.
+  const key = createMemo(() => {
+    const t = target();
+    return t ? (t.kind === "design" ? `design:${t.label}` : "coordinator") : null;
+  });
   return (
-    <Show when={target()}>
-      {(t) => (
-        <Portal>
-          <DesignOpen target={t()} store={props.store} path={props.path} onClose={() => props.nav.close()} onSwitch={(x) => props.nav.open(x)} />
-        </Portal>
-      )}
+    <Show when={key()} keyed>
+      {(_view) => {
+        const t = untrack(target)!;
+        return (
+          <Portal>
+            <DesignOpen target={t} store={props.store} path={props.path} onClose={() => props.nav.close()} onSwitch={(x) => props.nav.open(x)} />
+          </Portal>
+        );
+      }}
     </Show>
   );
 }

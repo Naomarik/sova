@@ -441,13 +441,57 @@ test("a page with a script error goes back once, naming it, and spends no coordi
   setCoordinatorPorts(null);
 });
 
-test("a page a tool refused goes back with the refusal's reason when the turn stops there", async () => {
+const streamTool = (label: string) => sessionDesignTools(parent, label).find((t) => t.name === "design_stream")!;
+const refuse = (label: string) => streamTool(label).execute("t", { label, html: BROKEN }, undefined, undefined, undefined);
+
+test("a page a tool refuses spends a try and reads Fixing, and if the turn stops there the reason goes back", async () => {
   const f = await start();
-  const stream = sessionDesignTools(parent, "A").find((t) => t.name === "design_stream")!;
-  await assert.rejects(stream.execute("t", { label: "A", html: BROKEN }, undefined, undefined, undefined), /script 1, line 2/);
+  await assert.rejects(refuse("A"), /script 1, line 2/);
+  assert.equal(stat("A").status, "fixing");
+  assert.equal(stat("A").fix?.attempt, 1);
+  assert.equal(fixSends(f).length, 0, "the tool's own answer told it");
   settle(f);
-  await waitFor(() => stat("A").status === "fixing");
+  await waitFor(() => stat("A").fix?.attempt === 2);
   assert.match(lastSend(f).text, /script 1, line 2/);
+});
+
+test("a refused page later replaced by one that lands sends nothing back", async () => {
+  const f = await start();
+  await assert.rejects(refuse("A"));
+  await finish(f, "A");
+  await ticks();
+  await new Promise((r) => setTimeout(r, 20));
+  assert.equal(stat("A").status, "ready");
+  assert.equal(stat("A").fix, undefined);
+  assert.equal(fixSends(f).length, 0, "the old refusal is over");
+});
+
+test("refusals spend the same two tries: a third ends the turn in Failed, and a stopped session isn't asked again", async () => {
+  const f = await start();
+  const aborted: string[] = [];
+  const call = f.call;
+  f.call = async (m, a) => (m === "abort" && aborted.push(m), call(m, a));
+  await assert.rejects(refuse("A"));
+  await assert.rejects(refuse("A"));
+  assert.equal(stat("A").status, "fixing");
+  assert.equal(aborted.length, 0);
+  await assert.rejects(refuse("A"), /used up/);
+  assert.equal(stat("A").status, "failed");
+  assert.match(stat("A").error ?? "", /script 1, line 2/);
+  await ticks();
+  assert.equal(aborted.length, 1, "the turn is stopped");
+  settle(f);
+  await ticks();
+  assert.equal(stat("A").status, "failed");
+  assert.equal(fixSends(f).length, 0);
+});
+
+test("a refused edit and a hand-in with no page count too", async () => {
+  await start();
+  const edits = streamTool("A").execute("t", { label: "A", edits: [{ find: "a", replace: "b" }] }, undefined, undefined, undefined);
+  await assert.rejects(edits, /no page to edit/);
+  await assert.rejects(sessionDesignTools(parent, "A").find((t) => t.name === "design_hand_in")!.execute("t", { label: "A", note: NOTE }, undefined, undefined, undefined), /no page to hand in/);
+  assert.equal(stat("A").fix?.attempt, 2);
 });
 
 test("a fix that lands ends Fixing as an ordinary version, keeping who asked for the page", async () => {

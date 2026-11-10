@@ -138,9 +138,9 @@ function allSessionTools(parent: DesignParent, label: string): ToolSpec[] {
         if (html === undefined) {
           if (!params.edits?.length) throw new Error("Send html, or edits.");
           const current = pendingPage(parent.sessionId, label) ?? readPage(parent.sessionId, label);
-          if (!current) throw new Error("You have no page to edit yet; send html.");
+          if (!current) refusedPage(parent, label, "You have no page to edit yet; send html.");
           const out = applyEdits(current, params.edits);
-          if ("error" in out) throw new Error(out.error);
+          if ("error" in out) refusedPage(parent, label, out.error);
           html = out.html;
         }
         const problem = pageProblem(html);
@@ -175,7 +175,7 @@ function allSessionTools(parent: DesignParent, label: string): ToolSpec[] {
           html = ctx ? replyPageThisTurn(ctx.branch()) : null;
           if (html === null) html = livePage(parent.sessionId, label)?.text ?? null;
         }
-        if (html === null) throw new Error("You have no page to hand in yet.");
+        if (html === null) refusedPage(parent, label, "You have no page to hand in yet.");
         const problem = pageProblem(html);
         if (problem) refusedPage(parent, label, problem);
         const v = handIn(parent, label, html, note);

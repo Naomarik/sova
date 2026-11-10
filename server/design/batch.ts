@@ -417,6 +417,28 @@ async function settled(parent: DesignParent, label: string, state: WorkerState):
   finishRun(parent, label);
 }
 
+/** One of the design's tries, or null when they are used up. */
+function takeFixTry(sid: string, label: string): { attempt: number; session: number } | null {
+  return changeDesigns(sid, (s) => {
+    const i = s.internal?.[label];
+    if (!i || (i.fixes ?? 0) >= DESIGN_FIX_TRIES) return null;
+    i.fixes = (i.fixes ?? 0) + 1;
+    return { attempt: i.fixes, session: i.attempt };
+  });
+}
+
+function showFixing(sid: string, label: string, problem: string, attempt: number): DesignRecord {
+  const d = changeDesign(sid, label, (x) => {
+    x.status = "fixing";
+    x.fix = { reason: problem, attempt, of: DESIGN_FIX_TRIES };
+    delete x.error;
+    delete x.live;
+    delete x.thinking;
+  });
+  noteDesignEvent(sid, { label, kind: "fixing", reason: problem });
+  return d;
+}
+
 function fixMessage(route: DesignRecord["route"], problem: string, attempt: number): string {
   const how = route === "reply" ? "in your reply, between the two marker lines" : "with `design_stream`";
   return `Your page didn't land, so nobody can see it yet (fix ${attempt} of ${DESIGN_FIX_TRIES}). What is wrong: ${problem}\n\nFix exactly that and change nothing else. Then deliver the complete page again, ${how}, and call \`${DESIGN_HAND_IN_TOOL}\`.`;
@@ -425,22 +447,10 @@ function fixMessage(route: DesignRecord["route"], problem: string, attempt: numb
 /** Send a page that didn't land back to its session, while this design has tries left. False when it can't. */
 async function sendBack(parent: DesignParent, label: string, problem: string): Promise<boolean> {
   const sid = parent.sessionId;
-  const tried = changeDesigns(sid, (s) => {
-    const i = s.internal?.[label];
-    if (!i || (i.fixes ?? 0) >= DESIGN_FIX_TRIES) return null;
-    i.fixes = (i.fixes ?? 0) + 1;
-    return { attempt: i.fixes, session: i.attempt };
-  });
+  const tried = takeFixTry(sid, label);
   if (!tried) return false;
   clearLivePage(sid, label);
-  const d = changeDesign(sid, label, (x) => {
-    x.status = "fixing";
-    x.fix = { reason: problem, attempt: tried.attempt, of: DESIGN_FIX_TRIES };
-    delete x.error;
-    delete x.live;
-    delete x.thinking;
-  });
-  noteDesignEvent(sid, { label, kind: "fixing", reason: problem });
+  const d = showFixing(sid, label, problem, tried.attempt);
   try {
     await deliverDesign(parent, label, { text: fixMessage(d.route, problem, tried.attempt), key: `fix:${tried.session}:${tried.attempt}`, by: "server" });
     heard(parent, label);
@@ -527,6 +537,7 @@ function commitVersion(parent: DesignParent, label: string, html: string, note: 
   const version: DesignVersion = { n, at: new Date().toISOString(), chars: html.length, by, ...(note ? { note } : {}) };
   setPendingPage(sid, label, null);
   clearLivePage(sid, label);
+  clearRefused(sid, label);
   changeDesign(sid, label, (d) => {
     d.versions.push(version);
     d.status = "ready";
@@ -555,17 +566,47 @@ export function takeLook(sessionId: string, label: string): void {
 
 export { pageProblem };
 
-/** A design tool turning a page away: the model hears why at once, and the turn's end knows why if it stops there. */
+/** A design tool turning a page away. The model hears why at once, which spends one of the design's tries, and the
+    card says Fixing; the turn's end knows why if it stops there. With its tries used up the turn is over. */
 export function refusedPage(parent: DesignParent, label: string, problem: string): never {
-  changeDesigns(parent.sessionId, (s) => {
-    const i = s.internal?.[label];
-    if (i) i.refused = problem;
-  });
-  throw new Error(problem);
+  const sid = parent.sessionId;
+  const tried = takeFixTry(sid, label);
+  clearLivePage(sid, label);
+  if (tried) {
+    changeDesigns(sid, (s) => {
+      const i = s.internal?.[label];
+      if (i) i.refused = problem;
+    });
+    showFixing(sid, label, problem, tried.attempt);
+    heard(parent, label);
+    throw new Error(problem);
+  }
+  const d = designOf(sid, label);
+  if (d?.sessionId) void workers(parent).abort(d.sessionId).catch(() => {});
+  if (d?.versions.length) {
+    stopWatching(sid, label);
+    changeDesign(sid, label, (x) => {
+      x.status = "ready";
+      delete x.fix;
+      delete x.live;
+      delete x.thinking;
+    });
+    noteDesignEvent(sid, { label, kind: "failed", reason: problem });
+    finishRun(parent, label);
+  } else if (d) fail(parent, label, problem);
+  throw new Error(`${problem} Your tries for this page are used up, so stop now.`);
 }
+
+/** A page that passed: whatever an earlier call was refused for is over. */
+const clearRefused = (sid: string, label: string): void =>
+  changeDesigns(sid, (s) => {
+    const i = s.internal?.[label];
+    if (i) delete i.refused;
+  });
 
 export function savePage(parent: DesignParent, label: string, html: string): void {
   setPendingPage(parent.sessionId, label, html);
+  clearRefused(parent.sessionId, label);
 }
 
 export function handIn(parent: DesignParent, label: string, html: string, note: DesignNote): DesignVersion {

@@ -18,6 +18,7 @@ import { createSetupPoll, SetupChatButton, SetupChatState, SetupNotSetUp, type S
 import { Banner, Icon } from "./ui";
 import { createLandConfirm, LandConfirms, LandSplit, QueueChip, UnclearChecks } from "./WorktreesModal";
 import { createDiscard } from "./DiscardBranch";
+import { discardMenuLine } from "../lib/discard-branch";
 import type { LandHow, MergeReady, TargetBroken } from "../../shared/merge-queue";
 import { BranchSummaryView } from "./BranchSummary";
 import type { DiffScope, WorktreeReadiness } from "../../shared/protocol";
@@ -1169,7 +1170,7 @@ function ReadyRow(props: { projectId: string; root: string; target?: string; how
       <Show when={!confirm.ask()}>
         <div class="mq-row-act">
           <QueueReview projectId={props.projectId} branch={r().branch} scope={{ kind: "queue", project: props.projectId, branch: r().branch }} session={r().session} chatOf={props.chatOf} />
-          <LandSplit branch={r().branch} review={props.review} busy={!!act.busy()} onAsk={() => confirm.open("land")} onLand={doLand} onWithoutSpecs={() => confirm.open("specs")} draftsOnly={!!r().draftsOnly} onDiscard={openDiscard} discardWhy={discard.refused()} onMenuOpen={() => void discard.check()} />
+          <LandSplit branch={r().branch} review={props.review} busy={!!act.busy()} onAsk={() => confirm.open("land")} onLand={doLand} onWithoutSpecs={() => confirm.open("specs")} draftsOnly={!!r().draftsOnly} onDiscard={openDiscard} discardWhy={discard.refused()} discardLine={discardMenuLine(discard.preview())} onMenuOpen={() => void discard.check()} />
         </div>
       </Show>
     </li>

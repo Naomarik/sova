@@ -17,7 +17,7 @@ import { placeOf, queueLinksOf } from "../lib/branch-place";
 import { BranchPlaceLine } from "./BranchPlaceLine";
 import { ReviewChangesButton } from "./ReviewChanges";
 import { paneScopedId, usePaneScope } from "../lib/pane-scope";
-import { DISCARD_LINE } from "../lib/discard-branch";
+import { DISCARD_LINE, discardMenuLine } from "../lib/discard-branch";
 import { createDiscard, DiscardConfirm, type Discard } from "./DiscardBranch";
 
 /** A tracked worktree with the queue's facts (SessionWorktreeInfo.queue, filled by the server). */
@@ -56,6 +56,8 @@ export function LandSplit(props: {
   onDiscard?(): void;
   /** Why Discard Branch… can't run (the dry run's reason), shown as its line. */
   discardWhy?: string | null;
+  /** Discard Branch…'s line (what the dry run found); the decided line until it answers. */
+  discardLine?: string;
   /** The ▾ opened: the row asks its dry run then. */
   onMenuOpen?(): void;
 }) {
@@ -81,7 +83,7 @@ export function LandSplit(props: {
                   <Show when={props.review || !props.draftsOnly}>
                     <div class="popover-sep" role="separator" />
                   </Show>
-                  <menu.Item label="Discard Branch…" aria={`Discard ${props.branch}`} description={DISCARD_LINE} disabled={props.discardWhy ?? undefined} onRun={() => discard()()} />
+                  <menu.Item label="Discard Branch…" aria={`Discard ${props.branch}`} description={props.discardLine ?? DISCARD_LINE} disabled={props.discardWhy ?? undefined} onRun={() => discard()()} />
                 </>
               )}
             </Show>
@@ -429,7 +431,7 @@ export function WorktreeQueueRow(props: {
           </button>
         </Show>
         <Show when={buttons().includes("Land") && !row().decision}>
-          <LandSplit branch={w().branch} review={review()} busy={busy()} onAsk={() => confirm.open("land")} onLand={doLand} onWithoutSpecs={() => confirm.open("specs")} draftsOnly={!!onlyDrafts()} onDiscard={discard.target() ? openDiscard : undefined} discardWhy={discard.refused()} onMenuOpen={() => void discard.check()} />
+          <LandSplit branch={w().branch} review={review()} busy={busy()} onAsk={() => confirm.open("land")} onLand={doLand} onWithoutSpecs={() => confirm.open("specs")} draftsOnly={!!onlyDrafts()} onDiscard={discard.target() ? openDiscard : undefined} discardWhy={discard.refused()} discardLine={discardMenuLine(discard.preview())} onMenuOpen={() => void discard.check()} />
         </Show>
         <Show when={buttons().includes("Set Up Queue")}>
           <a class="button button-sm" href={projectTabHref(projectId()!, "merge-queue")} title="This project's merge queue isn't set up yet.">

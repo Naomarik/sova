@@ -4,7 +4,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { DiscardBranchPreview, DiscardBranchResult } from "../../shared/merge-queue";
-import { discardConfirmWords, discardDoneToast, discardFileCount, discardPartialLine } from "./discard-branch";
+import { DISCARD_LINE, discardMenuLine, discardConfirmWords, discardDoneToast, discardFileCount, discardPartialLine } from "./discard-branch";
 
 const files = (uncommitted: string[], extra: Partial<{ ignored: string[]; nested: number }> = {}) => ({
   uncommitted,
@@ -100,4 +100,12 @@ test("a partial stop says what was done and what stayed, with the failed step's 
   assert.equal(discardPartialLine(steps("done", "failed", "not-run", "Another folder has this branch checked out."), { folder: true, chat: false }), "Removed its folder. The branch stayed: Another folder has this branch checked out.");
   // A skipped step (no folder) names nothing.
   assert.equal(discardPartialLine(steps("skipped", "done", "failed")), "Deleted the branch. Its chat stayed.");
+});
+
+test("the menu line promises only what the dry run found", () => {
+  assert.equal(discardMenuLine(undefined), DISCARD_LINE);
+  assert.equal(discardMenuLine(preview()), "Deletes the branch and its folder, and archives its chat.");
+  assert.equal(discardMenuLine(preview({ chat: null })), "Deletes the branch and its folder.");
+  assert.equal(discardMenuLine(preview({ folder: null })), "Deletes the branch and archives its chat.");
+  assert.equal(discardMenuLine(preview({ folder: null, chat: null })), "Deletes the branch.");
 });

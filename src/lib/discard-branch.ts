@@ -10,6 +10,15 @@ const list = (xs: string[]) => (xs.length <= 1 ? (xs[0] ?? "") : xs.length === 2
 /** The menu item's one line when it may run. */
 export const DISCARD_LINE = "Deletes the branch and its folder, and archives its chat.";
 
+/** The menu item's line, by what the dry run found: the decided line until it answers, then only the parts it has. */
+export function discardMenuLine(p: Pick<DiscardBranchPreview, "folder" | "chat"> | undefined): string {
+  if (!p) return DISCARD_LINE;
+  if (p.folder && p.chat) return DISCARD_LINE;
+  if (p.folder) return "Deletes the branch and its folder.";
+  if (p.chat) return "Deletes the branch and archives its chat.";
+  return "Deletes the branch.";
+}
+
 /** The files Discard deletes with the folder that git can't bring back (uncommitted, untracked, ignored, nested
     repositories): Remove Anyway's listing shows them, its rebuildable folders with them. */
 export const discardFileCount = (p: Pick<DiscardBranchPreview, "files">): number => (p.files ? p.files.counts.uncommitted + p.files.counts.ignored + p.files.counts.nested : 0);

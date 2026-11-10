@@ -16,7 +16,7 @@ as they are written, on a card in the chat and in the session pane's **Gallery**
 Designs keep the labels they start with (A, B, C), so you can talk about them by name.
 
 Your chat stays out of the work. It fills in the Setup card and passes on what you tell it to. It
-reads a design only when you ask, and a page costs it 16,000 to 24,000 tokens.
+reads a design only when you ask, and a page typically costs it 5,000 to 15,000 tokens, and a long one more.
 
 ## Turn it on
 
@@ -31,7 +31,9 @@ opens with what you said filled in. Change anything on it. Your clicks don't go 
 - **What Do You Want to Design**: your request, in your words. Paste a link here to use a page's
   images or its feel.
 - **Models**: tick whole groups or single models to design. Each model also has a **Coordinator**
-  checkbox, and one model holds it at a time. It can coordinate without designing. A model marked
+  checkbox, and one model holds it at a time. It can coordinate without designing. On a later run, picking a different
+  coordinator starts a new one on that model. It keeps the notes, not the conversation, and Setup
+  says so. A model marked
   "text only" can't read pictures and works from a written outline instead.
 - **Directions**: pick from 20.
 - **Links**: each link gets a row to choose how it's used:
@@ -66,7 +68,8 @@ Images from a link on Use Its Images show in a grid on the brief. Paste your own
 coordinator's box, or into your chat, which passes them on. Each image is described for the
 designers. Untick one to leave it out, or open it to read what it shows, add a note, or describe it
 again. While a page using these images is being written, their spots show a plain placeholder. The
-real images appear when the page is finished.
+real images appear when the page is finished. Start waits while a link's images are still being
+captured or described.
 
 ## Start
 
@@ -78,14 +81,16 @@ appear.
 ## Watching and working with designs
 
 The card shows a grid of designs, each with its label, direction, model, status and cost. A design
-waiting for a free session says so. While a page is being written it is a still picture. Its buttons
-and animations work once it's finished. A page loads only Google Fonts from the web.
+waiting for a free session says so. While a page is being written it fills in as it arrives, with its
+scripts off, so its buttons and animations work once it's finished. Up to four pages show live at
+once; others say "Waiting for a free preview". A page loads only Google Fonts from the web.
 
-- **Refine** hands a design back with your guidance and any quick prompts. The session opens the
+- **Refine** hands a design back with your guidance and any quick prompts (Check Phone Width,
+  Tighten Spacing, Fix Contrast, Make Content Real). The session opens the
   page at desktop and phone widths, looks at it, and fixes what it sees, up to two times. Every
   version is kept (A, A2).
-- **Chat** opens a design full size with its own conversation beside it. **Hide Chat** gives the
-  page the room. A session that has shut down starts again when you message it.
+- **Open** (or **Chat**) shows a design full size with its own conversation beside it, even while
+  its first page is being written. **Hide Chat** gives the page the room. A session that has shut down starts again when you message it.
 - **Retry** tries a failed design again in a fresh session.
 - The **coordinator** has its own card and box. It knows what each design is, but not its code.
   Tell it what you want, such as "the header from A with the cards from C", and it starts a new

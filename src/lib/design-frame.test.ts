@@ -107,3 +107,8 @@ test("a page being written has something to see only once its body has text", ()
   assert.equal(designHasFirstPaint(`${styles}</head><body><header><a href="#">Tea`), true);
   assert.equal(designHasFirstPaint(`${styles}${" ".repeat(4000)}`), true);
 });
+
+test("a page being written is inert in its own frame, whatever holds it: a click can't follow a link out", () => {
+  assert.equal(DESIGN_STREAM_ATTRS.inert, "");
+  assert.equal(DESIGN_STREAM_ATTRS.sandbox, "");
+});

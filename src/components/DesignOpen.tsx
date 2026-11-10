@@ -182,13 +182,13 @@ export function DesignOpen(props: { target: DesignOpenTarget; store: DesignStore
                 {designNoteLine(x()) || designMeta(x())}
                 <Show when={x().parents.length && !designNoteLine(x())}> · {parentsLine(x().parents)}</Show>
               </span>
-              <Chip tone={designStatusTone(x())} live={designIsBusy(x())}>
-                {designStatusWord(x())}
-              </Chip>
-
-              <Show when={x().versions.length > 1}>
-                <Select class="design-open-version" label="Version" hideLabel value={String(version())} options={x().versions.map((v) => ({ value: String(v.n), label: versionLabel(x().label, v.n) }))} onChange={(v) => setPick(Number(v))} />
-              </Show>
+              <span class="design-open-chip">
+                <Chip tone={designStatusTone(x())} live={designIsBusy(x())}>
+                  {designStatusWord(x())}
+                </Chip>
+              </span>
+              {/* Always there, so a new version arriving moves nothing beside it. */}
+              <Select class="design-open-version" label="Version" hideLabel disabled={x().versions.length < 2} value={String(version())} options={x().versions.map((v) => ({ value: String(v.n), label: versionLabel(x().label, v.n) }))} onChange={(v) => setPick(Number(v))} />
               <button type="button" class="button button-sm" disabled={!designCanRefine(x())} onClick={() => setRefine(!refine())}>
                 Refine
               </button>

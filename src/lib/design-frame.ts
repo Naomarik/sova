@@ -37,7 +37,8 @@ export const DESIGN_STREAM_CSP = `default-src 'none'; ${STYLES}; ${NETWORK_REST}
 
 export const DESIGN_SHELL_ATTRS = { sandbox: "allow-scripts allow-forms", csp: DESIGN_SHELL_CSP, referrerpolicy: "no-referrer" } as const;
 export const DESIGN_PAGE_ATTRS = { sandbox: "allow-scripts allow-forms", csp: DESIGN_PAGE_CSP, referrerpolicy: "no-referrer" } as const;
-export const DESIGN_STREAM_ATTRS = { sandbox: "", csp: DESIGN_STREAM_CSP, referrerpolicy: "no-referrer" } as const;
+/** A page being written: no scripts, and inert, so a click can't follow a link out of it (the sandbox lets a person's click navigate the frame). */
+export const DESIGN_STREAM_ATTRS = { sandbox: "", csp: DESIGN_STREAM_CSP, referrerpolicy: "no-referrer", inert: "" } as const;
 
 /** The width every prototype is drawn at, whatever box it is scaled into. */
 export const DESIGN_PAGE_WIDTH = 1280;

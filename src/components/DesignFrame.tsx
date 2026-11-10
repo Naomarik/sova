@@ -202,9 +202,7 @@ export function DesignStreamFrame(props: { api: DesignApi; label: string; versio
   });
   // The policy and sandbox have to be on the element before its document is named.
   const seal = (el: HTMLIFrameElement, url: string) => {
-    el.setAttribute("sandbox", DESIGN_STREAM_ATTRS.sandbox);
-    el.setAttribute("csp", DESIGN_STREAM_ATTRS.csp);
-    el.setAttribute("referrerpolicy", DESIGN_STREAM_ATTRS.referrerpolicy);
+    for (const [k, v] of Object.entries(DESIGN_STREAM_ATTRS)) el.setAttribute(k, v);
     el.src = url;
   };
   const tokens = () => tokensOfText(props.text.length).toLocaleString("en-US");

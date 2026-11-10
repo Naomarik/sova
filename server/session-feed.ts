@@ -2,7 +2,7 @@ import type { SessionFeedMessage, SessionMarks, SessionSummary } from "../shared
 import { randomBytes } from "node:crypto";
 import { rowEntry, rowsDigest } from "../src/lib/summary-diff";
 import { attentionChanged } from "./attention-memo";
-import { feedHeard, listInputsMoved } from "./list-generation";
+import { feedConnected, feedHeard, listInputsMoved } from "./list-generation";
 
 /**
  * The session feed: WS /ws/watch?feed=sessions (shared/protocol.ts SessionFeedMessage). The server
@@ -221,8 +221,10 @@ export class SessionFeed {
       rows listener its `rows_hello` before that). */
   add(send: Send, opts: { rows?: boolean } = {}): () => void {
     let gone = false;
-    // A new connection (a window loading) reads no kept list and keeps no row: its first list is built afresh.
+    // A new connection (a window loading) reads no kept list and keeps no row: its first list is built
+    // afresh, every folder and file read, so a change no watch heard shows on a refresh.
     listInputsMoved();
+    feedConnected();
     feedHeard();
     this.joining++;
     if (!this.timer) {

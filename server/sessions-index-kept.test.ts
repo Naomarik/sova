@@ -140,6 +140,7 @@ test("watched: each change is heard and shows in the next listing; with nothing 
       assert.deepEqual(got, await fresh(), `${c.name}: the next listing is a fresh build's`);
     }
   } finally {
+    await feed.idle();
     stop();
   }
 });
@@ -166,6 +167,8 @@ test("watched: a branch state's answer, a nudge, a new connection and the safety
       assert.equal(listStats.listed, listed + 1, `${name}: the next listing is built`);
     }
   } finally {
+    // A listener leaving while its first comparison runs keeps the feed on: wait it out first.
+    await feed.idle();
     for (const leave of leaves) leave();
     stop();
   }
@@ -180,6 +183,7 @@ test("watched: a branch state's answer, a nudge, a new connection and the safety
     await later();
     assert.equal(listStats.listed, listed + 1, "the safety net: the next listing is built");
   } finally {
+    await net.feed.idle();
     net.stop();
   }
 });
@@ -195,6 +199,7 @@ test("a change no watch hears shows by the age limit; unwatched, a list serves 1
     skew += KEEP_UNHEARD_MS;
     assert.equal(byId(await listSessions(), b.id)?.title, "From elsewhere", "past KEEP_UNHEARD_MS it shows");
   } finally {
+    await feed.idle();
     stop();
   }
   // Unwatched: nothing is kept past the second.
@@ -236,6 +241,7 @@ test("watched: a write to one file builds that row only; one row's change, that 
     await feed.idle();
     assert.ok(keptStats.rowsBuilt - before2 >= all.length, "every row is built");
   } finally {
+    await feed.idle();
     stop();
   }
 });

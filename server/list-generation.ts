@@ -41,6 +41,16 @@ export function heardGeneration(): number {
   return heard;
 }
 
+/** One more per new session feed connection (a window loading): the feed's next comparison reads
+    every folder and every file, whatever the watch heard (sessions-index's tracked build). */
+let connects = 0;
+export function feedConnected(): void {
+  connects++;
+}
+export function connectGeneration(): number {
+  return connects;
+}
+
 /** The generation every bump but a session file write or one row's change moves. */
 export function storesGeneration(): number {
   return stores;

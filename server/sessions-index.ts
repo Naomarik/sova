@@ -34,7 +34,7 @@ import { readSignals, settleGoAsk, type SignalsFile, signalsOverlay } from "./si
 import { withOpenOffer } from "./session-offers";
 import { dropSessionTags, tagsFor, tagsReader } from "./session-tags";
 import { askTreesOf, branchesOverlay, pruneReadiness, readinessDue, readinessOverlay } from "./merge-readiness";
-import { heardGeneration, listGeneration, rowChangedSince, rowChangeSeq, storesGeneration } from "./list-generation";
+import { connectGeneration, heardGeneration, listGeneration, rowChangedSince, rowChangeSeq, storesGeneration } from "./list-generation";
 import { projectOf, projectOverseerOfPath, readPoState } from "./project-overseer-store";
 import { memoSovaChatNames, readSovaChatNames, setSovaChatName, type SovaChatName } from "./sova-chat-names";
 import { rebuildSovaName } from "./sova-chat-origin";
@@ -1240,6 +1240,22 @@ export function listSessions(): Promise<SessionSummary[]> {
 }
 
 /**
+ * The list a window loading reads (GET /api/sessions): always a build of its own, every folder and
+ * file read, never a kept list nor a build started before it, so a refresh shows a change no watch
+ * heard at once. Callers after it within the second share it, as any build.
+ */
+export function listSessionsAfresh(): Promise<SessionSummary[]> {
+  const now = Date.now();
+  const mine: Listing = { generation: listGeneration(), heard: heardGeneration(), watch: tracker.run, startedAt: now, stamp: ++listStamp, built: buildSessions() };
+  listing = mine;
+  listStats.listed++;
+  mine.built.catch(() => {
+    if (listing === mine) listing = null;
+  });
+  return mine.built.then((b) => [...b.rows]);
+}
+
+/**
  * The age limit for a change no watch hears (§app.session-list/listing-reuse): the longest a kept
  * list stands, and a row is kept, without anything telling of a change. Everything Sova hears drops
  * them at once; this bounds only what it can't hear (another server's stores, a write outside the
@@ -1476,7 +1492,7 @@ export const STAT_SWEEP_MS = 60_000;
  * file set and cached summaries and reads only the files named since its last build. `all`: the
  * watch could not say (or nothing is known yet), so the next build reads every folder.
  */
-const tracker = { run: 0, active: 0, all: true, dirty: new Set<string>(), files: null as string[] | null, sweptAt: 0, statAt: 0, listed: 0, chain: Promise.resolve() as Promise<unknown> };
+const tracker = { run: 0, connects: 0, active: 0, all: true, dirty: new Set<string>(), files: null as string[] | null, sweptAt: 0, statAt: 0, listed: 0, chain: Promise.resolve() as Promise<unknown> };
 
 /** Start tracking (the feed's watch starts it with itself); returns the note sink and its stop. */
 export function trackSessionFiles(): { note: (path: string | null) => void; stop: () => void } {
@@ -1563,7 +1579,10 @@ async function buildTracked(): Promise<SessionSummary[]> {
   const now = Date.now();
   tracker.listed = ++listStamp;
   trackedStats.builds++;
-  const full = tracker.all || tracker.files === null || now - tracker.sweptAt >= SWEEP_MS || now < tracker.sweptAt;
+  // A new feed connection (a window loading) reads everything: a change no watch heard shows on a refresh.
+  const connected = connectGeneration();
+  const full = tracker.all || tracker.files === null || now - tracker.sweptAt >= SWEEP_MS || now < tracker.sweptAt || connected !== tracker.connects;
+  tracker.connects = connected;
   // Taken before any await: what is noted during this build is the next build's.
   const dirty = tracker.dirty;
   tracker.dirty = new Set();

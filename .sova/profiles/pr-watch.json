@@ -1,0 +1,31 @@
+{
+  "id": "pr-watch",
+  "label": "PR watch",
+  "icon": "eye",
+  "description": "Checks the project's open GitHub pull requests every 30 minutes and pings the session that owns each one when something needs doing.",
+  "remove": [
+    "edit",
+    "workers",
+    "web",
+    "worktrees",
+    "timers"
+  ],
+  "grant": [
+    "sessions.read",
+    "sessions.message"
+  ],
+  "singleton": true,
+  "limits": {
+    "hops": 3,
+    "perMessage": 10,
+    "perDay": 60,
+    "targetsPerRun": 10,
+    "perPair": 2
+  },
+  "mode": "normal",
+  "minorModes": [],
+  "model": "claude-code/claude-sonnet-5-5",
+  "thinking": "low",
+  "subagents": "off",
+  "overseerMayStart": false
+}

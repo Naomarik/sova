@@ -12,6 +12,7 @@ import { join } from "node:path";
 import { after, before, test } from "node:test";
 import { authCookieName } from "./auth";
 import { SHELL_NOT_PAGE_TEXT } from "./chat-shell";
+import { refusalSkip, sandboxRoot, stopSandboxed } from "./shell-mode-sandbox.test.helper";
 import { startHermeticServer, type HermeticServer } from "./testing/hermetic-server";
 
 let s: HermeticServer;
@@ -185,22 +186,26 @@ test("a cut command's whole output reads back in pages; archiving deletes its fi
 });
 
 test("a ! command in a chat with its sandbox On runs confined: its folder is writable, the home folder and the network are not (§chat.shell-mode/running)", async (t) => {
-  // Its own server, whose chats load the sandbox extension (this file's other server loads none).
-  const sb = await startHermeticServer({ extensions: ["sandbox"] });
+  // Its own server, whose chats load the sandbox extension (this file's other server loads none), off /tmp on Linux.
+  const sb = await startHermeticServer({ extensions: ["sandbox"], root: sandboxRoot() });
   const prev = s;
   s = sb;
   try {
-    const skipped = await sandboxed();
-    // A computer whose sandbox can't be proven (its probe fails, as inside another sandbox): the command is refused,
-    // fail-closed, and this check can't run. Reported as skipped, never as passed.
-    if (skipped) t.skip(`the sandbox's probe can't run here: ${skipped}`);
+    const refused = await sandboxed();
+    // A computer whose sandbox can't run (no bwrap; a probe that fails, as inside another sandbox): the command is
+    // refused, fail-closed, and this check can't run. Reported as skipped, never as passed; on Linux with bwrap, a failure.
+    if (refused) {
+      const why = refusalSkip(refused);
+      if (!why) assert.fail(`the sandbox refused the command: ${refused}`);
+      t.skip(why);
+    }
   } finally {
     s = prev;
-    await sb.stop();
+    await stopSandboxed(sb);
   }
 });
 /** The sandboxed run, after the same checks with the sandbox Off show they can tell the two apart. Returns why
-    it couldn't run, when the sandbox's own probe refused, else nothing. */
+    it couldn't run, when the sandbox refused it, else nothing. */
 async function sandboxed(): Promise<string | undefined> {
   const ses = await newSession();
   const a = await chatSocket(ses);
@@ -224,7 +229,7 @@ async function sandboxed(): Promise<string | undefined> {
   assert.equal(on.status, 200, JSON.stringify(on.body));
   assert.notEqual(on.body.outcome, "unsupported", JSON.stringify(on.body));
   const inside = await run("touch ./inside-ok && echo wrote", "in");
-  if ("refused" in inside && /sandbox probe failed/.test(inside.refused)) {
+  if ("refused" in inside) {
     a.close();
     return inside.refused;
   }

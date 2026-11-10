@@ -4,17 +4,21 @@
 // the shell config), so the config's alias and function and the profile's variable work, and nothing the setup
 // prints shows; the command is saved exactly as typed; a setup that fails still runs the command; Stop ends what
 // the command started; a sandbox On chat loads the same setup, confined; and with bash as the login shell nothing
-// of it loads, as before. Skipped, saying so, where /bin/zsh isn't installed. Every wait is on a frame or a
-// condition, never a sleep.
+// of it loads, as before. With ZDOTDIR set for the server, a confined command reads the setup there, not the home
+// folder's, while the agent's own confined commands never see ZDOTDIR. zsh is the one on PATH; skipped, saying so,
+// where there is none. The sandbox cases run off /tmp on Linux (shell-mode-sandbox.test.helper.ts) and fail there
+// when the sandbox refuses, unless bwrap is missing. Every wait is on a frame or a condition, never a sleep.
 import assert from "node:assert/strict";
-import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, test } from "node:test";
 import { authCookieName } from "./auth";
+import { onPath, refusalSkip, sandboxRoot, stopSandboxed } from "./shell-mode-sandbox.test.helper";
 import { startHermeticServer, type HermeticServer } from "./testing/hermetic-server";
 
-const ZSH = "/bin/zsh";
-const noZsh = existsSync(ZSH) ? false : `no ${ZSH} on this computer`;
+const ZSH = onPath("zsh");
+const noZsh = ZSH ? false : "no zsh on PATH on this computer";
 
 /** The stand-in setup: each file prints to stdout and stderr, which must never show. */
 const PROFILE = `export ORDER=profile\necho profile-noise\necho profile-noise-err >&2\n`;
@@ -29,13 +33,13 @@ function writeSetup(home: string, config = CONFIG): void {
 let zsh: HermeticServer | undefined;
 before(async () => {
   if (noZsh) return;
-  zsh = await startHermeticServer({ env: { SHELL: ZSH }, extensions: ["sandbox"] });
+  zsh = await startHermeticServer({ env: { SHELL: ZSH! }, extensions: ["sandbox"], root: sandboxRoot() });
   writeSetup(zsh.home);
 });
 after(async () => {
   // The sentinel home as it was, so the server's stop finds it unchanged.
   if (zsh) for (const f of setupFiles(zsh.home)) rmSync(f, { force: true });
-  await zsh?.stop();
+  if (zsh) await stopSandboxed(zsh);
 });
 
 async function api(s: HermeticServer, method: string, path: string, body?: unknown): Promise<{ status: number; body: any }> {
@@ -161,12 +165,53 @@ test("with the sandbox On, the command loads the same setup and runs confined", 
   const homeFile = join(s.home, `zsh-on-${Date.now()}`);
   const r = await a.run(`${TYPED.replace("; exit 3", "")}; touch ${homeFile} 2>/dev/null || echo home-closed`);
   a.close();
-  // A computer whose sandbox can't be proven (its probe fails, as inside another sandbox): refused, fail-closed.
-  // Reported as skipped, never as passed.
-  if ("refused" in r && /sandbox probe failed/.test(r.refused)) return t.skip(`the sandbox's probe can't run here: ${r.refused}`);
+  // A computer whose sandbox can't run (no bwrap; a probe that fails, as inside another sandbox): refused, fail-closed.
+  // Reported as skipped, never as passed; on Linux with bwrap, a failure (ran's).
+  const why = "refused" in r ? refusalSkip(r.refused) : undefined;
+  if (why) return t.skip(why);
   const done = ran(r);
   assert.equal(existsSync(homeFile), false, "the home folder is closed to it");
   assert.deepEqual([done.end.output, done.end.exitCode], ["hi-from-alias\nfn-out\nprofile,config\nhome-closed\n", 0]);
+});
+
+test("with ZDOTDIR set for the server, a confined command reads the setup there; the agent's own confined command never sees ZDOTDIR", { skip: noZsh }, async (t) => {
+  const base = sandboxRoot() ?? tmpdir();
+  mkdirSync(base, { recursive: true });
+  const zdotdir = realpathSync(mkdtempSync(join(base, "zdot-")));
+  // ZDOTDIR's config and the home folder's define the alias apart: a run that reads the home folder's shows it.
+  writeFileSync(join(zdotdir, ".zshrc"), "alias hi='echo hi-from-zdotdir'\n");
+  const s = await startHermeticServer({ env: { SHELL: ZSH!, ZDOTDIR: zdotdir }, extensions: ["sandbox"], root: sandboxRoot() });
+  const homeRc = join(s.home, ".zshrc");
+  writeFileSync(homeRc, "alias hi='echo hi-from-home'\n");
+  try {
+    const ses = await newSession(s);
+    const a = await page(s, ses);
+    const off = ran(await a.run("hi"));
+    assert.equal(off.end.output, "hi-from-zdotdir\n", "with the sandbox Off zsh reads ZDOTDIR's setup: the check below can fail");
+    const on = await api(s, "POST", `/api/sandbox?path=${encodeURIComponent(ses.path)}`, { state: "on" });
+    assert.equal(on.status, 200, JSON.stringify(on.body));
+    const homeFile = join(s.home, `zdot-on-${Date.now()}`);
+    const r = await a.run(`hi; touch ${homeFile} 2>/dev/null || echo home-closed`);
+    const why = "refused" in r ? refusalSkip(r.refused) : undefined;
+    if (why) {
+      a.close();
+      return t.skip(why);
+    }
+    assert.equal(ran(r).end.output, "hi-from-zdotdir\nhome-closed\n", "confined, and still ZDOTDIR's setup");
+    // The agent's own command, confined by the same sandbox: its environment stays the sandbox's, no ZDOTDIR.
+    a.send({ type: "prompt", text: `[[bash:printenv ZDOTDIR || echo no-zdotdir; touch ${homeFile} 2>/dev/null || echo home-closed]]`, clientId: "p1" });
+    const result = await until("the agent's bash result", () =>
+      readFileSync(ses.path, "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l)).find((e) => e.type === "message" && e.message?.role === "toolResult" && e.message.toolName === "bash"),
+    );
+    const text = (result.message.content as { type: string; text?: string }[]).map((c) => c.text ?? "").join("");
+    assert.equal(text.trim(), "no-zdotdir\nhome-closed", JSON.stringify(result.message));
+    assert.equal(existsSync(homeFile), false, "both ran confined");
+    a.close();
+  } finally {
+    rmSync(homeRc, { force: true });
+    await stopSandboxed(s);
+    rmSync(zdotdir, { recursive: true, force: true });
+  }
 });
 
 test("with bash as the login shell, nothing of the zsh setup loads: the command runs in bash, as before", { skip: noZsh }, async () => {

@@ -216,6 +216,13 @@ Each is data a change may regenerate only on purpose, never to hide a regression
   model, sentinel HOME) and drives it only through `scripts/sova.mjs`. The step format is in
   `scripts/sova-scenario.mjs`'s header; `pnpm run scenario [<file>…]` runs them by hand. A new
   scenario file is picked up with no other change.
+- **A sandboxed command on a hermetic server, on Linux.** `startHermeticServer` puts its scratch root
+  (home, agent dir, work folder) in the OS temp dir, and bwrap gives a confined command a private
+  `/tmp`: there the sandbox's probe refuses ("wrote outside the policy"). A test that runs a command
+  with the sandbox On passes `root` (`sandboxRoot()` in `server/shell-mode-sandbox.test.helper.ts`:
+  `.cache/sm` in the checkout on Linux, the temp dir elsewhere); git's repository search stops at
+  `root`, so the checkout around it never counts. On Linux with bwrap on PATH a sandbox refusal fails
+  such a case; it skips, saying why, only with no bwrap (`refusalSkip`).
 
 ## Writing tests
 

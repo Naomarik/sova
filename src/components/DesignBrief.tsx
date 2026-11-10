@@ -1,13 +1,15 @@
 import { createEffect, createMemo, createSignal, For, on, Show, type Accessor } from "solid-js";
 import type { DesignBriefQuestion, DesignLinkUse, DesignLook } from "../../shared/design";
+import type { DesignAssetCatalogue } from "../../shared/design-assets";
 import { designBriefBlock } from "../../shared/design";
 import type { DesignSpendAsk } from "../lib/design-api";
-import { answerLine, pickIsRecommended, recommendedPick, stagedAnswers, startLabel, type StagedPick } from "../lib/design-brief";
+import { answerLine, assetsOfRun, pickIsRecommended, recommendedPick, stagedAnswers, startLabel, usedCount, type StagedPick, type WithUnused } from "../lib/design-brief";
 import type { DesignStore } from "../lib/design-store";
 import { coordinatorOf, setupCount, setupSummary, type DesignRunView } from "../lib/design-ui";
 import { Inline, QuestionChoices, type QuestionPicker } from "./AlignDocCard";
 import { DesignAskPanel, DesignCoordinatorPanel } from "./DesignCoordinator";
 import { createSetupDraft, DesignLinkRow, DesignSetupPickers, type SetupDraft } from "./DesignSetupControls";
+import { createAssetCatalogue, DesignBriefImageDetail, DesignBriefImages } from "./DesignBriefImages";
 import { TextArea, TextField } from "./form";
 import { Chip, Icon } from "./ui";
 import "./DesignBrief.css";
@@ -237,6 +239,9 @@ export function DesignBriefStep(props: { run: DesignRunView; store: DesignStore;
   const [busy, setBusy] = createSignal(false);
   const [error, setError] = createSignal("");
   const [ask, setAsk] = createSignal<DesignSpendAsk | null>(null);
+  const [openImage, setOpenImage] = createSignal<string | null>(null);
+  const catalogue = createAssetCatalogue(props.store);
+  const opened = () => catalogue()?.assets.find((a) => a.name === openImage());
   let scroller: HTMLDivElement | undefined;
   const brief = () => props.run.brief!;
   const urls = createMemo(() => (props.run.setup.links ?? []).map((l) => l.url), undefined, { equals: (a, b) => a.length === b.length && a.every((x, i) => x === b[i]) });
@@ -350,17 +355,17 @@ export function DesignBriefStep(props: { run: DesignRunView; store: DesignStore;
             <Show when={anyLinks() || brief().screen}>
               <BriefScreen run={props.run} store={props.store} />
             </Show>
-            <Show when={anyLinks()}>
+            <Show when={anyLinks() || assetsOfRun(catalogue(), props.run).length > 0}>
               <div class="design-brief-material">
-                <Show when={feelLinks().length > 0 || imageLinks().length > 0} fallback={<p class="text-muted">Choose how to use your link, and what it gives the designers shows here.</p>}>
-                  <For each={feelLinks()}>{(url) => <LookText url={url} look={brief().looks[url]} run={props.run} store={props.store} many={urls().length > 1} />}</For>
-                  <Show when={imageLinks().length > 0}>
-                    <section aria-label="Images designers will use">
-                      <h4 class="design-brief-title">Images designers will use</h4>
-                      <p class="text-muted">The page's images show here once they're captured.</p>
-                    </section>
+                <div class="design-brief-material-scroll">
+                  <Show when={feelLinks().length > 0 || imageLinks().length > 0 || assetsOfRun(catalogue(), props.run).length > 0} fallback={<p class="text-muted">Choose how to use your link, and what it gives the designers shows here.</p>}>
+                    <For each={feelLinks()}>{(url) => <LookText url={url} look={brief().looks[url]} run={props.run} store={props.store} many={urls().length > 1} />}</For>
+                    <Show when={imageLinks().length > 0 || assetsOfRun(catalogue(), props.run).length > 0}>
+                      <DesignBriefImages run={props.run} store={props.store} catalogue={catalogue()} onOpen={setOpenImage} />
+                    </Show>
                   </Show>
-                </Show>
+                </div>
+                <Show when={opened()}>{(a) => <DesignBriefImageDetail asset={a()} store={props.store} onClose={() => setOpenImage(null)} />}</Show>
               </div>
             </Show>
             <Show when={brief().questions.length > 0}>
@@ -487,9 +492,12 @@ export function DesignBriefStep(props: { run: DesignRunView; store: DesignStore;
 }
 
 /** The brief once designs are being made: one line, and Expand to read what they were started from. */
-export function DesignBriefCollapsed(props: { run: DesignRunView }) {
+export function DesignBriefCollapsed(props: { run: DesignRunView; store: DesignStore }) {
   const [open, setOpen] = createSignal(false);
+  const [catalogue, setCatalogue] = createSignal<DesignAssetCatalogue | null>(null);
+  void props.store.api.assets().then(setCatalogue, () => {});
   const brief = () => props.run.brief;
+  const imagesUsed = () => usedCount(assetsOfRun(catalogue(), props.run), {}, (brief() as WithUnused | undefined)?.unused ?? []);
   return (
     <Show when={brief()}>
       {(b) => (
@@ -497,6 +505,7 @@ export function DesignBriefCollapsed(props: { run: DesignRunView }) {
           <button type="button" class="design-brief-fold" aria-expanded={open()} aria-label={`${open() ? "Collapse" : "Expand"} the Design Brief`} onClick={() => setOpen(!open())}>
             <Icon name="chevron-right" small class={`icon-twist${open() ? " design-brief-twist-open" : ""}`} />
             <span class="design-brief-title">Design Brief</span>
+            <span class="text-caption text-muted design-brief-used">{imagesUsed() > 0 ? `${imagesUsed()} image${imagesUsed() === 1 ? "" : "s"} used` : ""}</span>
             <span class="text-caption text-muted">{open() ? "Collapse" : "Expand"}</span>
           </button>
           <Show when={open()}>

@@ -1,5 +1,6 @@
 /** Pure derivations behind the Design Brief on the Design card: no DOM, no Solid, so they are unit-tested. */
-import type { DesignBriefQuestion, DesignLink, DesignLinkUse, DesignRun, DesignSetup } from "../../shared/design";
+import type { DesignBrief, DesignBriefQuestion, DesignLink, DesignLinkUse, DesignRun, DesignSetup } from "../../shared/design";
+import type { DesignAsset, DesignAssetCatalogue } from "../../shared/design-assets";
 import { designBriefBlock, designLinksIn } from "../../shared/design";
 import { recommendedOption } from "./align";
 
@@ -65,4 +66,39 @@ export function answerLine(q: DesignBriefQuestion): string {
   if (!a) return "Not answered";
   const picked = a.option !== undefined ? q.options?.[a.option]?.label : undefined;
   return `${[picked, a.text].filter(Boolean).join(": ") || q.recommendation.choice} · ${a.by === "you" ? "you" : "recommended"}`;
+}
+
+/** The brief as the image grid reads it: the images unticked for this run, named. */
+export type WithUnused = DesignBrief & { unused?: string[] };
+
+/** A run's grid: what its link's captures brought back, plus every image you added to the chat. */
+export function assetsOfRun(catalogue: Pick<DesignAssetCatalogue, "assets" | "captures"> | null, run: Pick<DesignRun, "setup"> & { brief?: DesignBrief }): DesignAsset[] {
+  if (!catalogue) return [];
+  const urls = new Set([...(run.setup.links ?? []).filter((l) => l.use === "images").map((l) => l.url), ...(run.brief?.screen?.url ? [run.brief.screen.url] : [])]);
+  const ranked = catalogue.captures.filter((c) => urls.has(c.url)).flatMap((c) => c.names);
+  const seen = new Set<string>();
+  const out: DesignAsset[] = [];
+  const add = (a: DesignAsset | undefined) => {
+    if (!a || seen.has(a.name)) return;
+    seen.add(a.name);
+    out.push(a);
+  };
+  for (const name of ranked) add(catalogue.assets.find((a) => a.name === name));
+  for (const a of catalogue.assets) if (a.source === "yours") add(a);
+  return out;
+}
+
+/** How many images are in use, with a click not yet confirmed counted as made. */
+export function usedCount(assets: readonly DesignAsset[], held: Readonly<Record<string, boolean>>, unused: readonly string[]): number {
+  return assets.filter((a) => held[a.name] ?? !unused.includes(a.name)).length;
+}
+
+export const assetKindWord = (a: DesignAsset): string => a.chosenKind ?? a.description?.kind ?? (a.source === "yours" ? "Yours" : "Image");
+
+/** The one line under an image: what's said about it, or where its description stands. */
+export function assetStateLine(a: DesignAsset): string {
+  if (a.note) return a.note;
+  if (a.describeError) return a.describeError;
+  if (a.describeAgain || !a.description) return "Being described";
+  return a.description.description;
 }

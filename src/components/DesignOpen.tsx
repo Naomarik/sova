@@ -247,7 +247,7 @@ export function DesignOpen(props: { target: DesignOpenTarget; store: DesignStore
               </div>
               <Show when={!hideChat()}>
                 <ChatPane sessionFile={c().sessionFile} host={hostOf()} name="the coordinator" author="Coordinator" streaming={c().status === "running"} note="It knows what each design is, not its code.">
-                  <DesignMessageBox label="Message the coordinator" placeholder="Message the coordinator" delivery={c().delivery} name="the coordinator" send={(text, key) => props.store.api.coordinatorMessage(text, key)} onSent={() => props.store.refresh()} />
+                  <DesignMessageBox label="Message the coordinator" placeholder="Message the coordinator" delivery={c().delivery} name="the coordinator" send={(text, key, images) => props.store.api.coordinatorMessage(text, key, images)} upload={props.store.api.uploadImage} onSent={() => props.store.refresh()} />
                 </ChatPane>
               </Show>
             </>

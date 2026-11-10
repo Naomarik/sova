@@ -204,7 +204,7 @@ function DesignRunBody(props: { run: DesignRunView; store: DesignStore; newest: 
           <p class="empty-body">The coordinator is preparing your brief. Nothing is designed until you press Start.</p>
         </div>
       </Show>
-      <DesignBriefCollapsed run={props.run} />
+      <DesignBriefCollapsed run={props.run} store={props.store} />
       <Show when={designs().length > 0}>
         <div class="design-card-body">
           <div class="design-grid">

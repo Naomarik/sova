@@ -82,6 +82,7 @@
 .design-message-field { flex: 1 1 0; min-width: 0; }
 .design-card .design-message-box .composer-input { max-height: 96px; }
 .design-box-status { position: relative; flex: none; height: 18px; font-size: var(--fs-caption); }
+.design-box-link { padding: 0; border: 0; background: none; color: var(--color-accent); cursor: pointer; font: inherit; text-decoration: underline; }
 .design-box-status p { position: absolute; left: 0; right: 0; bottom: 0; margin: 0; background: var(--color-surface); line-height: 18px; }
 .design-message-box .design-box-status { position: static; height: 0; }
 .design-message-box .design-box-status p { bottom: 100%; z-index: 2; padding-block: var(--space-1); }

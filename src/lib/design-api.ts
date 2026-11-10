@@ -1,5 +1,6 @@
 import type { DesignChatView, DesignLinkUse, DesignSetup } from "../../shared/design";
-import { ApiError, withJsonType } from "./api";
+import type { DesignAssetCatalogue, DesignAssetShown } from "../../shared/design-assets";
+import { ApiError, uploadImage, withJsonType } from "./api";
 import { onAuthorized, onUnauthorized } from "./auth";
 import { hostUrl, routeUrl } from "./mesh";
 
@@ -61,7 +62,9 @@ export function designApi(path: string, host: string | null) {
     message: (l: string, text: string, key: string) => json<{ queued?: boolean }>(url(`${label(l)}/message`), post({ text, key })),
     refine: (l: string, text: string, quick: readonly string[], key: string) => json<{ queued?: boolean }>(url(`${label(l)}/refine`), post({ text, quick, key })),
     retry: (l: string) => json<unknown>(url(`${label(l)}/retry`), post()),
-    coordinatorMessage: (text: string, key: string) => json<{ queued?: boolean }>(url("/coordinator/message"), post({ text, key })),
+    coordinatorMessage: (text: string, key: string, images?: readonly string[]) => json<{ queued?: boolean }>(url("/coordinator/message"), post({ text, key, ...(images?.length ? { images } : {}) })),
+    /** Stores a pasted image where the coordinator's box can name it. */
+    uploadImage: (file: File) => uploadImage(file, path),
     coordinatorAnswer: (id: string, answer: unknown) => json<unknown>(url("/coordinator/answer"), post({ id, answer })),
     /** What has been written so far of the page in progress; null when there is none. */
     live: async (l: string): Promise<{ version: number; text: string } | null> => {
@@ -89,6 +92,12 @@ export function designApi(path: string, host: string | null) {
       if (!res.ok) throw new ApiError(res.status === 404 ? "This page isn't there." : `This page couldn't be loaded (${res.status}).`, res.status);
       return res.text();
     },
+    assets: () => json<DesignAssetCatalogue>(url("/assets")),
+    /** A captured image as the page may show it; only "original" downloads. */
+    assetUrl: (name: string, part: DesignAssetShown | "original") => routeUrl(url(`/assets/${encodeURIComponent(name)}/${part}`)),
+    imageNote: (name: string, change: { note?: string | null; kind?: string | null }) => json<unknown>(url(`/images/${encodeURIComponent(name)}`), { method: "PATCH", body: JSON.stringify(change) }),
+    imageDescribe: (name: string) => json<unknown>(url(`/images/${encodeURIComponent(name)}/describe`), post()),
+    briefImage: (runId: string, name: string, use: boolean) => json<unknown>(url(`${run(runId)}/brief/image`), post({ name, use })),
     /** A coordinator screenshot, as an image URL the page may load. */
     shotUrl: (src: string) => routeUrl(src),
   };

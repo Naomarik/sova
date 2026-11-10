@@ -36,8 +36,9 @@
 .design-brief-redirect { position: absolute; inset: auto 0 0 0; z-index: 2; display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-3); background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--r-md); box-shadow: var(--shadow-2); }
 
 /* Where the look in words and the images go: one size, whichever it holds. */
-.design-brief-material { flex: none; height: 300px; box-sizing: border-box; overflow-y: auto; scrollbar-width: thin; display: flex; flex-direction: column; gap: var(--space-3); padding-right: var(--space-1); }
-.design-brief-material > * { flex: none; }
+.design-brief-material { position: relative; flex: none; height: 300px; }
+.design-brief-material-scroll { height: 100%; box-sizing: border-box; overflow-y: auto; scrollbar-width: thin; display: flex; flex-direction: column; gap: var(--space-3); padding-right: var(--space-1); }
+.design-brief-material-scroll > * { flex: none; }
 .design-brief-material p { margin: 0; }
 
 .design-brief-questions { min-width: 0; }
@@ -74,8 +75,32 @@
 
 .design-brief-collapsed { border-bottom: 1px solid var(--color-border); padding: var(--space-1) var(--space-4); }
 .design-brief-collapsed > .design-brief-fold { width: 100%; }
-.design-brief-collapsed > .design-brief-fold .text-muted { margin-left: auto; }
+.design-brief-used { margin-left: var(--space-2); }
+.design-brief-collapsed > .design-brief-fold > .text-muted:last-child { margin-left: auto; }
 .design-brief-frozen { display: flex; flex-direction: column; gap: var(--space-2); padding-bottom: var(--space-3); }
 .design-brief-frozen p { margin: 0; }
 .design-brief-frozen .design-brief-read { height: auto; padding: 0; overflow: visible; }
 .design-brief-frozen-prompt summary { cursor: pointer; font-weight: var(--fw-semibold); font-size: var(--fs-caption); min-height: 36px; display: flex; align-items: center; }
+
+/* The image grid: every card one size, so one arriving or being described moves no other. */
+.design-asset-error { margin: 0; min-height: 18px; }
+.design-assets { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: var(--space-2); }
+.design-asset { display: flex; flex-direction: column; min-width: 0; height: 178px; box-sizing: border-box; padding: var(--space-1); border: 1px solid var(--color-border); border-radius: var(--r-md); }
+.design-asset-off img { opacity: .42; }
+.design-asset-open { flex: 1 1 0; min-height: 0; padding: 0; border: 0; background: var(--color-sunken); border-radius: var(--r-sm); overflow: hidden; cursor: pointer; }
+.design-asset-open img { display: block; width: 100%; height: 100%; object-fit: contain; }
+.design-asset-use { flex: none; justify-content: flex-start; min-height: 36px; }
+.design-asset-kind { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-caption); font-weight: var(--fw-medium); }
+.design-asset-state { flex: none; height: 18px; line-height: 18px; margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.design-asset-notes { margin: var(--space-2) 0 0; overflow-wrap: anywhere; }
+.design-asset-skipped { margin-top: var(--space-2); font-size: var(--fs-caption); }
+.design-asset-skipped summary { cursor: pointer; min-height: 36px; display: flex; align-items: center; }
+.design-asset-skipped ul { margin: 0; padding-left: var(--space-4); }
+.design-asset-detail { position: absolute; inset: 0; z-index: 2; display: flex; flex-direction: column; box-sizing: border-box; padding: 0 var(--space-3) var(--space-2); background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--r-md); }
+.design-asset-detail-body { flex: 1 1 0; min-height: 0; overflow-y: auto; scrollbar-width: thin; display: flex; flex-direction: column; gap: var(--space-2); }
+.design-asset-detail-body > * { flex: none; }
+.design-asset-detail-body img { max-height: 120px; max-width: 100%; align-self: flex-start; object-fit: contain; border-radius: var(--r-sm); background: var(--color-sunken); }
+.design-asset-detail-body dl { margin: 0; display: grid; gap: 2px; }
+.design-asset-detail-body dt { font-size: var(--fs-caption); font-weight: var(--fw-semibold); }
+.design-asset-detail-body dd { margin: 0; }
+.design-asset-detail-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); }

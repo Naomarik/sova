@@ -1258,7 +1258,7 @@ describe("pi contract", () => {
     session.dispose();
   });
 
-  test("P40 user-bash: executeBash emits no user_bash, runs the operations with the prefixed command, defers its record while streaming until the run settles, and cuts the tail at pi's limits; the loader's event bus is the extensions'; each run has its own abort controller", async () => {
+  test("P40 user-bash: executeBash emits no user_bash, runs the operations with the prefixed command, defers its record while streaming until the run settles, and cuts the tail at pi's limits; the loader's event bus is the extensions'; each run has its own abort controller; a shell path that isn't bash runs as `<shell> -c <command>`", async () => {
     const { sandboxBus, sandboxOf } = await import("./shell");
     const { PI_SHELL_MAX_BYTES, PI_SHELL_MAX_LINES, shellTruncation } = await import("./reader");
     const hooked: string[] = [];
@@ -1347,6 +1347,11 @@ describe("pi contract", () => {
     assert.equal(signals[1]!.aborted, false, "the other run's signal is untouched");
     gate[1]!();
     assert.deepEqual([(await two).cancelled, (await two).exitCode], [false, 0]);
+
+    // A shell path that isn't bash (the user's zsh: zshOperations) is spawned as `<path> -c <command>`, the argv the
+    // sandbox's zsh run builds itself. pi only checks the path exists, so any existing file stands in for zsh here.
+    const notBash = process.execPath;
+    assert.deepEqual(pi.agent.getShellConfig(notBash), { shell: notBash, args: ["-c"] }, "pi runs a shell path differently now: zshOperations and the sandbox's zsh argv must follow");
 
     // dispose stops a running command (its operations see the abort).
     let aborted = false;

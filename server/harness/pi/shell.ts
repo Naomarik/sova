@@ -3,9 +3,13 @@
 // extension's hook answers it with the target's operations), then the operations are picked in a fixed
 // order whatever the extensions' load order: the hook's (a remote target, where the sandbox isn't enforced),
 // else the sandbox's whole-command confinement when the chat's sandbox is On (prepared before anything runs;
-// it fails closed), else pi's own local shell. pi records the result itself, deferred while the agent streams
-// (P40); `saved` finds the entry once it is written.
+// it fails closed), else pi's own local shell. When the user's login shell is zsh, the sandbox's and pi's local
+// shell run it in zsh with the user's setup loaded first (zshCommand); pi still records the command as typed.
+// pi records the result itself, deferred while the agent streams (P40); `saved` finds the entry once it is written.
 import { spawn } from "node:child_process";
+import { existsSync } from "node:fs";
+import { userInfo } from "node:os";
+import { basename } from "node:path";
 import { createEventBus, createLocalBashOperations, getShellConfig, type AgentSession, type BashOperations, type EventBus } from "@earendil-works/pi-coding-agent";
 import type { HEntry, HarnessShell, ShellResult } from "../../../shared/harness";
 import type { ParentScope } from "../../../pi-config/extensions/sandbox/policy.ts";
@@ -51,6 +55,53 @@ export function pickOperations(hook: { operations?: BashOperations } | undefined
   if (hook?.operations) return { kind: "hook", operations: hook.operations };
   if (sandbox.on) return { kind: "sandbox" };
   return { kind: "local" };
+}
+
+/** The account's login shell as the system records it (getpwuid on Linux and macOS); undefined when it can't be read. */
+function accountShell(): string | undefined {
+  try {
+    return userInfo().shell ?? undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** The user's login shell when it is zsh and pi's settings name no shell of their own (`shellPath`): a user command
+    runs there, with the user's setup loaded first. Otherwise undefined: pi's own pick, as for the agent's commands.
+    The login shell is SHELL, else (a server started with no SHELL, as a service can be) the account's own.
+    Exported for its test. */
+export function loginZsh(
+  shellPath: string | undefined,
+  env: { SHELL?: string } = process.env,
+  exists: (path: string) => boolean = existsSync,
+  account: () => string | undefined = accountShell,
+): string | undefined {
+  const login = env.SHELL || account();
+  if (shellPath || !login?.startsWith("/") || basename(login) !== "zsh" || !exists(login)) return undefined;
+  return login;
+}
+
+/** The user's terminal setup as a login zsh reads it (its login profile, then its config, under ZDOTDIR or the home
+    folder), with no input and everything it prints hidden. */
+const ZSH_SETUP = '{ [[ -r "${ZDOTDIR:-$HOME}/.zprofile" ]] && source "${ZDOTDIR:-$HOME}/.zprofile"; [[ -r "${ZDOTDIR:-$HOME}/.zshrc" ]] && source "${ZDOTDIR:-$HOME}/.zshrc"; } >/dev/null 2>&1 </dev/null';
+
+/** What a confined zsh needs beyond the sandbox's own environment: ZDOTDIR, where the user keeps the setup, when the
+    server has one (the sandbox's environment leaves it out, and zsh would read the home folder's setup instead). Only
+    this command gets it, never the agent's own commands. Exported for its test. */
+export function zshEnv(env: { ZDOTDIR?: string } = process.env): Record<string, string> | undefined {
+  return env.ZDOTDIR ? { ZDOTDIR: env.ZDOTDIR } : undefined;
+}
+
+/** `command` as `zsh -c` runs it: the setup, then the command through eval. zsh parses the whole -c text before it
+    runs any of it, so an alias the setup defines expands only in text parsed after it, eval's. Exported for its test. */
+export function zshCommand(command: string): string {
+  return `${ZSH_SETUP}\neval '${command.replaceAll("'", "'\\''")}'`;
+}
+
+/** pi's own local shell, running each command in `zsh` with the user's setup loaded first. */
+function zshOperations(zsh: string): BashOperations {
+  const local = createLocalBashOperations({ shellPath: zsh });
+  return { exec: (command, cwd, o) => local.exec(zshCommand(command), cwd, o) };
 }
 
 /** A confined whole command, spawned as pi's local shell spawns its own: streamed, the process group killed
@@ -164,6 +215,7 @@ export function piShell(session: () => AgentSession, sandbox: () => SandboxSeen)
       }
       const pick = pickOperations(hook, sandbox());
       let operations: BashOperations | undefined = pick.kind === "hook" ? pick.operations : undefined;
+      const zsh = loginZsh(s.settingsManager.getShellPath());
       let prepared: PreparedSessionCommand | undefined;
       if (pick.kind === "sandbox") {
         // What executeBash will hand its operations: the settings' prefix, then the command (P40).
@@ -185,7 +237,9 @@ export function piShell(session: () => AgentSession, sandbox: () => SandboxSeen)
             ...(scope?.cwdWritable === false ? { cwdWritable: false } : {}),
             ...(scope?.readOnly === true ? { readOnly: true } : {}),
           },
-          [shell.shell, ...shell.args, resolved],
+          // In zsh with the user's setup; `resolved` stays what the confinement accepts, the one text pi hands it.
+          zsh ? [zsh, "-c", zshCommand(resolved)] : [shell.shell, ...shell.args, resolved],
+          { env: zsh ? zshEnv() : undefined },
         );
         if (!ready.ok) return { refused: `The sandbox couldn't be prepared, so nothing ran: ${ready.error}`, why: "sandbox" };
         prepared = ready.value;
@@ -196,8 +250,8 @@ export function piShell(session: () => AgentSession, sandbox: () => SandboxSeen)
         await prepared?.dispose().catch(() => {});
         return stopped;
       }
-      // pi's own local shell when nothing else runs it, as executeBash would pick it.
-      const base = operations ?? createLocalBashOperations({ shellPath: s.settingsManager.getShellPath() });
+      // pi's own local shell when nothing else runs it, as executeBash would pick it (in the user's zsh when that is theirs).
+      const base = operations ?? (zsh ? zshOperations(zsh) : createLocalBashOperations({ shellPath: s.settingsManager.getShellPath() }));
       o.onStart();
       try {
         const r = await s.executeBash(command, o.onOutput, { excludeFromContext, id: o.id, operations: ownStop(s, base, o, () => (limited = true)) });

@@ -4,8 +4,9 @@
 // pi's local shell, and a sandbox that can't be prepared runs nothing (no start, no record). A hook that ran
 // the command itself is recorded as given. Several run at once, each stopped alone by its own signal (one
 // stopped before it starts never starts); a run whose output passes its limit is stopped, `limited`; a
-// malformed worker scope refuses rather than widening. Nothing here spawns a process (the unit tier refuses it): the
-// commands run on the hook's operations; real local and sandboxed runs are the integration tests'.
+// malformed worker scope refuses rather than widening. A user whose login shell is zsh gets zsh unless pi names a shell,
+// and the command reaches zsh's eval exactly as typed. Nothing here spawns a process (the unit tier refuses it): the
+// commands run on the hook's operations; real local and sandboxed runs, zsh's included, are the integration tests'.
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -13,7 +14,7 @@ import { join } from "node:path";
 import { after, describe, test } from "node:test";
 import { loadPi } from "./testing/load-pi.ts";
 import { ScriptedModel } from "./testing/scripted-model.ts";
-import { pickOperations, piShell, sandboxBus, sandboxOf } from "./shell.ts";
+import { loginZsh, pickOperations, piShell, sandboxBus, sandboxOf, zshCommand } from "./shell.ts";
 
 const dir = realpathSync(mkdtempSync(join(tmpdir(), "sova-pi-shell-")));
 after(() => rmSync(dir, { recursive: true, force: true }));
@@ -106,6 +107,47 @@ describe("the user's own commands on pi", () => {
     assert.deepEqual(pickOperations({ operations: ops as never }, { on: true }), { kind: "hook", operations: ops });
     assert.deepEqual(pickOperations(undefined, { on: true }), { kind: "sandbox" });
     assert.deepEqual(pickOperations({}, { on: false }), { kind: "local" });
+  });
+
+  test("loginZsh: the login shell (SHELL, else the account's) when it is an existing zsh and pi names no shell; otherwise pi's own pick", () => {
+    const zshes = ["/bin/zsh", "/usr/local/bin/zsh", "/usr/bin/zsh"];
+    const others = ["/bin/bash", "/usr/bin/fish", "zsh", "/bin/zsh5"];
+    for (const shellPath of [undefined, "/bin/bash", "/bin/zsh"])
+      for (const SHELL of [undefined, "", ...zshes, ...others])
+        for (const account of [undefined, "/usr/bin/zsh", "/bin/bash"])
+          for (const exists of [true, false]) {
+            // SHELL when it names one; only a server started without it falls back to the account's.
+            const login = SHELL || account;
+            const want = !shellPath && exists && zshes.includes(login!) ? login : undefined;
+            assert.equal(loginZsh(shellPath, { SHELL }, () => exists, () => account), want, JSON.stringify({ shellPath, SHELL, account, exists }));
+          }
+  });
+
+  test("zshCommand: the setup on its own line, then eval of exactly the typed command, however it is quoted", () => {
+    /** The eval word as a shell reads it: '…' runs taken literally, a backslash escapes one character; anything else unquoted is a failure. */
+    const evalArg = (script: string): string => {
+      const [setup, ...rest] = script.split("\n");
+      assert.match(setup!, /\.zprofile.*\.zshrc.*\} >\/dev\/null 2>&1 <\/dev\/null$/, "the setup: the profile, then the config, its output hidden, no input");
+      const word = rest.join("\n");
+      assert.ok(word.startsWith("eval "), word);
+      let out = "";
+      for (let i = 5; i < word.length; ) {
+        if (word[i] === "'") {
+          const end = word.indexOf("'", i + 1);
+          assert.ok(end > i, `an unclosed quote in ${word}`);
+          out += word.slice(i + 1, end);
+          i = end + 1;
+        } else if (word[i] === "\\") {
+          out += word[i + 1];
+          i += 2;
+        } else assert.fail(`an unquoted ${JSON.stringify(word[i])} in ${word}`);
+      }
+      return out;
+    };
+    const commands = ["gst", "echo 'it'\\''s' \"$HOME\" $((1+2))", "it's", "''", "'", "cat <<'EOF'\n$HOME 'quoted'\nEOF", "printf '%s\\n' \"a b\" ; exit 7", ""];
+    for (const c of commands) assert.equal(evalArg(zshCommand(c)), c, JSON.stringify(c));
+    // The check can fail: a quoting that leaves an embedded quote as it is.
+    assert.throws(() => evalArg(zshCommand("x").replace("'x'", "'it's'")));
   });
 
   for (const order of ["remote hook first", "sandbox first"] as const) {

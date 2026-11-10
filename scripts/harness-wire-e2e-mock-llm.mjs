@@ -17,7 +17,9 @@
 //
 // Opt-in, for a test that needs a reply still streaming (server/chat-actions.integration.test.ts): a
 // request whose last user message contains `[[slow]]` gets a text-only reply in 60 parts, 500 ms
-// apart (half a minute), and stops writing when the caller hangs up. Every other request is
+// apart (half a minute), and stops writing when the caller hangs up. One whose last user message contains
+// `[[bash:<command>]]` and whose history has no tool result gets a `bash` call running <command> instead of the
+// `read` (server/shell-mode-zsh.integration.test.ts: what the agent's own command sees). Every other request is
 // answered exactly as above.
 import { createServer } from "node:http";
 
@@ -53,7 +55,15 @@ const server = createServer(async (req, res) => {
     res.end("data: [DONE]\n\n");
     return;
   }
-  if (!toolDone) {
+  const bash = /\[\[bash:([\s\S]*?)\]\]/.exec(lastUserText);
+  if (!toolDone && bash) {
+    // The text came through JSON.stringify when the content is parts: undo its escapes.
+    const command = lastUser && typeof lastUser.content === "string" ? bash[1] : JSON.parse(`"${bash[1]}"`);
+    chunk({ role: "assistant", content: "Running it." });
+    chunk({ tool_calls: [{ index: 0, id: `call_${n}`, type: "function", function: { name: "bash", arguments: JSON.stringify({ command }) } }] });
+    chunk({}, { finish_reason: "tool_calls" });
+    usage(900, 20);
+  } else if (!toolDone) {
     chunk({ role: "assistant", content: "Reading it." });
     chunk({ tool_calls: [{ index: 0, id: `call_${n}`, type: "function", function: { name: "read", arguments: "" } }] });
     chunk({ tool_calls: [{ index: 0, function: { arguments: '{"path":"package.json"}' } }] });

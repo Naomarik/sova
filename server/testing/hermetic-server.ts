@@ -1,7 +1,8 @@
 // Test-only: one throwaway Sova server, as a child process, for a scenario (scripts/sova-scenario.mjs)
 // or an integration test. Never imported by product code.
 //
-// What it starts, all under one scratch root in the OS temp dir (never in a repository, never in ~/.pi):
+// What it starts, all under one scratch root in the OS temp dir or the caller's `root` (never in a repository,
+// never in ~/.pi):
 // - the scripted stand-in model (scripts/harness-wire-e2e-mock-llm.mjs) on a free loopback port;
 // - the server (scripts/start-server.sh: Bun, as the service runs it) on PORT=0, with
 //   - PI_CODING_AGENT_DIR a fresh agent dir whose models.json names only the stand-in and whose
@@ -33,6 +34,10 @@ export interface HermeticServerOptions {
   /** pi-config extensions the chats load, by directory name (default none). `sandbox` also gets this tree's
       sandbox policy for the platform, so a chat can turn its sandbox On. */
   extensions?: string[];
+  /** The folder the scratch root is made in (default the OS temp dir); made if missing, and git's repository search
+      stops there, so a folder inside a checkout (its gitignored .cache) never makes the root a repository. A
+      sandboxed command on Linux needs one off /tmp: bwrap gives it a private /tmp, hiding a root there. */
+  root?: string;
 }
 
 export interface HermeticServer {
@@ -261,7 +266,9 @@ function startWatchdog(agent: string, pids: number[]): ChildProcess {
 }
 
 export async function startHermeticServer(opts: HermeticServerOptions = {}): Promise<HermeticServer> {
-  const scratch = realpathSync(mkdtempSync(join(tmpdir(), "sova-scenario-")));
+  if (opts.root) mkdirSync(opts.root, { recursive: true });
+  const base = realpathSync(opts.root ?? tmpdir());
+  const scratch = realpathSync(mkdtempSync(join(base, "sova-scenario-")));
   notRealPi(scratch);
   const home = join(scratch, "home");
   const agent = join(scratch, "agent");
@@ -332,7 +339,7 @@ export async function startHermeticServer(opts: HermeticServerOptions = {}): Pro
       SOVA_TEST_DATA: scratch,
       SOVA_CHAT_DRIVER: "detached",
       SOVA_CHAT_CODE: "live",
-      GIT_CEILING_DIRECTORIES: tmpdir(),
+      GIT_CEILING_DIRECTORIES: opts.root ? `${tmpdir()}:${base}` : tmpdir(),
       // Bun's transpiler cache stays the caller's (warm, and outside the sentinel home): Bun keeps it
       // in $HOME/.bun/install/cache/@t@ by default.
       BUN_RUNTIME_TRANSPILER_CACHE_PATH: process.env.BUN_RUNTIME_TRANSPILER_CACHE_PATH || join(homedir(), ".bun", "install", "cache", "@t@"),

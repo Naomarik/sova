@@ -189,3 +189,13 @@
 .design-open-transcript .message-user { min-width: min(100%, 17rem); }
 .design-open-transcript .message-user .message-head { justify-content: flex-start; }
 .design-open-transcript .message-head .live-dot { order: 1; }
+/* Its message box is one size, three lines tall, and scrolls past that: a box that grew with the text
+   would move its own top on every line typed and back on sending. */
+.design-open-composer .composer-input,
+.design-open-composer .composer-input:placeholder-shown {
+  field-sizing: fixed;
+  height: calc(var(--control-md) + 2 * var(--fs-body) * var(--lh-body));
+  min-height: calc(var(--control-md) + 2 * var(--fs-body) * var(--lh-body));
+  max-height: calc(var(--control-md) + 2 * var(--fs-body) * var(--lh-body));
+  overflow-y: auto;
+}

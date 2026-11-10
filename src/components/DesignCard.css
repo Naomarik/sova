@@ -22,7 +22,7 @@
 .design-directions { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
 .design-toggle-inline { justify-content: flex-start; }
 .design-model-list { border: 1px solid var(--color-border); border-radius: var(--r-md); }
-.design-model-row { display: flex; align-items: center; flex-wrap: wrap; gap: 0 var(--space-4); padding: 0 var(--space-3); border-bottom: 1px solid var(--color-border); }
+.design-model-row { min-height: 45px; box-sizing: border-box; display: flex; align-items: center; flex-wrap: wrap; gap: 0 var(--space-4); padding: 0 var(--space-3); border-bottom: 1px solid var(--color-border); }
 .design-model-row:last-child { border-bottom: 0; }
 .design-model-name { flex: 1 1 180px; min-width: 0; font-weight: var(--fw-medium); overflow-wrap: anywhere; padding: var(--space-2) 0; }
 .design-model-note { font-weight: var(--fw-regular); font-size: var(--fs-caption); }
@@ -81,7 +81,8 @@
 .design-card-coordinator { flex: none; height: 236px; box-sizing: border-box; padding: var(--space-2) var(--space-4); border-top: 1px solid var(--color-border); overflow: hidden; }
 /* Refine lays over the card's foot instead of pushing it. */
 .design-card-refine { position: absolute; inset: auto 0 0 0; z-index: 4; padding: var(--space-3) var(--space-4); background: var(--color-surface); border-top: 1px solid var(--color-border); box-shadow: var(--shadow-2); }
-.design-coordinator-head { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-2); }
+.design-coordinator-head { display: grid; grid-template-columns: minmax(0, 1fr) 190px auto; align-items: center; gap: var(--space-2); height: 36px; }
+.design-coordinator-head .chip { justify-self: start; }
 .design-coordinator-title { flex: 1 1 auto; font-weight: var(--fw-semibold); }
 .design-coordinator-card { height: 64px; overflow-y: auto; scrollbar-gutter: stable; font-size: var(--fs-body); overflow-wrap: anywhere; }
 .design-coordinator-card-bare { height: auto; min-height: 96px; max-height: 240px; }

@@ -26,14 +26,15 @@ import { contextWindow } from "./models";
 import { parseTargetCwd } from "./targets";
 import { firstText, headerOf, joinedText, lineEntry, lineMay, toHEntry } from "./harness/pi/reader";
 import { contextStep } from "./harness/pi/usage";
-import { type AlignScan, readAlignScan } from "./align-state";
+import { type AlignScan, leanAlignScan, readAlignScan } from "./align-state";
+import { isOldFile } from "./old-scans";
 import { type WorkerParents, WorkerSessions } from "./worker-sessions";
 import { isOverseerId, overseerDir, readOverseerState } from "./overseer-store";
 import { readDecisionSettings } from "./decide-settings";
 import { readSignals, settleGoAsk, type SignalsFile, signalsOverlay } from "./signals-store";
 import { withOpenOffer } from "./session-offers";
 import { dropSessionTags, tagsFor, tagsReader } from "./session-tags";
-import { askTreesOf, branchesOverlay, pruneReadiness, readinessOverlay } from "./merge-readiness";
+import { askTreesOf, branchesOverlay, pruneReadiness, readinessOverlay, releaseOldReadinessScans } from "./merge-readiness";
 import { listGeneration } from "./list-generation";
 import { projectOf, projectOverseerOfPath, readPoState } from "./project-overseer-store";
 import { memoSovaChatNames, readSovaChatNames, setSovaChatName, type SovaChatName } from "./sova-chat-names";
@@ -323,6 +324,15 @@ function storeEntry(path: string, entry: CacheEntry): void {
 function dropEntry(path: string): void {
   if (entries.delete(path)) idIndex = null;
 }
+
+/** Old files (old-scans.ts) let go of their align scan's stored entries; summaries, rows and every
+    answer stay. Each listing runs it, so a file that ages past the mark while cached is caught too. */
+export function releaseOldScans(now: number = Date.now()): void {
+  for (const [path, e] of entries) if (e.align?.entries && isOldFile(e.mtimeMs, now)) storeEntry(path, { ...e, align: leanAlignScan(e.align) });
+  releaseOldReadinessScans(now);
+}
+/** Tests: the align scan the cache holds for a file. */
+export const cachedAlignScan = (path: string): AlignScan | null => cache.get(path)?.align ?? null;
 
 /** Worker-session detection (a subagent's / team member's own file). Kept apart from `cache` on
  *  purpose: the flag depends on OTHER files (owners append refs) and on the live registry, so it
@@ -1018,7 +1028,7 @@ async function summarize(path: string, resolveWindow?: WindowResolver): Promise<
       lastReply,
       ending,
       marked: head.overseer,
-      align,
+      align: isOldFile(st.mtimeMs) ? leanAlignScan(align) : align,
       zeroInput: st.size <= MAX_HEAD && !head.input,
     };
     storeEntry(path, entry);
@@ -1554,6 +1564,7 @@ async function buildSessionsNow(track?: { files: string[]; dirty: ReadonlySet<st
     out.push(redactPreviewLinksDeep(settled.row, previewLabels));
   }
   pruneReadiness(out);
+  releaseOldScans();
   for (let i = 0; i < out.length; i++) out[i] = await withUnreadReplies(out[i]!);
   // A row equal to the last listing's (same keys, in order, same values) is that object itself:
   // rows are shared and never mutated, and a reader that keys work by row (the session feed's

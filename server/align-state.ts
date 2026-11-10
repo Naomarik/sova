@@ -153,6 +153,12 @@ export interface AlignScan {
   entries?: ScanEntry[];
 }
 
+/** The scan without its stored entries: the same answer, but the next read of the grown file starts
+    from the beginning (readAlignScan). The scan itself when it holds none. */
+export function leanAlignScan(scan: AlignScan): AlignScan {
+  return scan.entries ? { size: scan.size, found: scan.found, summary: scan.summary } : scan;
+}
+
 /** Whether [from, size) of the file contains the marker, reading raw bytes (no JSON parse). */
 async function hasMarker(path: string, from: number, size: number): Promise<boolean> {
   const fh = await open(path, "r");

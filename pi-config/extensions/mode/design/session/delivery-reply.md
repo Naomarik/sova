@@ -5,5 +5,5 @@ Your label is {{label}}. The user watches your page appear as you write it, and 
 {{pageEnd}}
 - Write nothing before the first marker. No code fences around the page
 - Right after the end marker, in the same reply, call `design_hand_in`. That call is what finishes the page
-- On a first version, call neither `design_look` nor `design_stream`, and do not write files
-- For a later small change, you may call `design_stream` with find-and-replace edits instead of writing the page again
+- On a first version, do not call `design_look`, and do not write files
+- Every version, Refine and fixes included, is the complete page written between the markers, then `design_hand_in`

@@ -75,7 +75,7 @@ function make(path: string, host: string | null): Entry {
       try {
         const next = await api.view();
         if (mine !== run) return;
-        setView(next);
+        setView((prev) => keepEstimates(prev, next));
         setError(null);
         // A page already being written when this browser arrived: fetch what's there.
         for (const d of next.designs) if (d.live && pageOf(d.label)[0]()?.version !== d.live.version) resync(d.label);
@@ -97,7 +97,7 @@ function make(path: string, host: string | null): Entry {
       lastEvent = Date.now();
       if (event.type === "design.state") {
         run++;
-        setView(event.state);
+        setView((prev) => keepEstimates(prev, event.state));
         setError(null);
         return schedule();
       }
@@ -141,6 +141,24 @@ export function useDesignStore(path: string, host: string | null): DesignStore {
 /** The chat socket's way in. A chat nobody is drawing has no store, and its next read fetches the state. */
 export function designEvent(path: string, host: string | null, event: DesignEvent): void {
   entries.get(`${host ?? ""}|${path}`)?.apply(event);
+}
+
+/**
+ * A writing design's cost estimate holds until a newer one arrives: a view that names the page being
+ * written but no estimate (one taken between two of the server's figures) keeps the last, so the cost
+ * never blinks out mid-write. It goes with the page: a new page or none starts afresh.
+ */
+export function keepEstimates(prev: DesignChatView | null, next: DesignChatView): DesignChatView {
+  if (!prev) return next;
+  let changed = false;
+  const designs = next.designs.map((d) => {
+    if (!d.live || d.live.estimateUsd !== undefined) return d;
+    const was = prev.designs.find((p) => p.label === d.label)?.live;
+    if (was?.version !== d.live.version || was.estimateUsd === undefined) return d;
+    changed = true;
+    return { ...d, live: { ...d.live, estimateUsd: was.estimateUsd } };
+  });
+  return changed ? { ...next, designs } : next;
 }
 
 const pageCache = new Map<string, Promise<string>>();

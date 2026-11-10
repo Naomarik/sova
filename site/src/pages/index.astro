@@ -409,7 +409,7 @@ const beyond = [
           </div>
           <dl class="touches">
             <div class="touch"><dt>Install</dt><dd><code>~/.local/share/sova</code> and a <code>~/.local/bin/sova</code> launcher. No <code>sudo</code>, no system packages, no shell-profile edits, no settings.</dd></div>
-            <div class="touch"><dt>App entry</dt><dd>A <strong>Sova</strong> entry in your app launcher that runs <code>sova app</code>: <code>sova.desktop</code> and its icon on Linux, <code>~/Applications/Sova.app</code> on macOS. Its window keeps a browser profile of its own, in <code>~/.config/sova-browser</code> (macOS: <code>~/Library/Application Support/sova-browser</code>). <code>--no-app-entry</code> skips the entry.</dd></div>
+            <div class="touch"><dt>App entry</dt><dd>A <strong>Sova</strong> entry in your app launcher that runs <code>sova app</code>: <code>sova.desktop</code> and its icon on Linux, <code>~/Applications/Sova.app</code> on macOS. Its window opens in your own browser profile, so links open there with your logins. <code>--no-app-entry</code> skips the entry.</dd></div>
             <div class="touch"><dt>pi extensions</dt><dd>One link per Sova extension in <code>~/.pi/agent/extensions/</code>. <code>--no-extensions</code> skips this.</dd></div>
             <div class="touch"><dt>Login service</dt><dd>Only if you say yes, or pass <code>--service</code>.</dd></div>
             <div class="touch"><dt>Access</dt><dd>Loopback by default, and <strong>one token per install</strong>. Delete <code>~/.pi/agent/sova/auth-token</code> and restart to sign every browser out.</dd></div>

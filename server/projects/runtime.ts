@@ -207,8 +207,9 @@ onOrgChange((engine, change) => {
 });
 
 const setupTimers = new Map<string, ReturnType<typeof setTimeout>>();
-/** Read the project's Setup proposal again soon (several moves in a row read once). */
-function setupSoon(projectId: string): void {
+/** Read the project's Setup proposal again soon (several moves in a row read once). The project page's read of its
+    builds calls it too: a Setup branch's head may move with the same git counts, which steps no build. */
+export function setupSoon(projectId: string): void {
   if (setupTimers.has(projectId)) return;
   const t = setTimeout(() => {
     setupTimers.delete(projectId);
@@ -571,6 +572,17 @@ export function resetRuntimeForTest(): void {
   timers.clear();
   for (const t of setupTimers.values()) clearTimeout(t);
   setupTimers.clear();
+}
+
+/** Tests: run every Setup read a settle timer holds now, and wait for them. */
+export async function settleSetupForTest(): Promise<void> {
+  const due = [...setupTimers.keys()];
+  for (const pid of due) {
+    clearTimeout(setupTimers.get(pid));
+    setupTimers.delete(pid);
+  }
+  const m = await import("./setup-chat");
+  await Promise.all(due.map((pid) => m.refreshSetupReview(pid)));
 }
 
 /**

@@ -5,6 +5,7 @@
 import { captureDesignPage } from "./capture";
 import { noteSignedInConsent, readAssets } from "./assets";
 import { askVision, assetBlock, assetsForCoordinator, describerModels, describing, onAssetsSettled, onDescribingStarted } from "./describe";
+import { randomBytes } from "node:crypto";
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -374,13 +375,15 @@ export function modelWords(text: string): string {
 }
 
 /** A person's own words, labelled by who sent them, so nothing above or below can pass as theirs. */
-/** What the coordinator writes for people (the brief, its card) loses the break userWords put in a closing mark, so copied words match what was typed. */
-const unbroken = (text: string): string => (typeof text === "string" ? text.replace(/>\u200b>>/g, ">>>") : text);
-
 const USER_LABEL = { box: "The user wrote in your box", main: "The main chat passed this on from the user, word for word", card: "The user wrote on the Design Brief", setup: "The user wrote on the Setup card" } as const;
-/** Their own fence can't be closed from inside, so nothing after it can pass as theirs either; only a closing mark changes, by an invisible break after its first character. */
-const userWords = (who: keyof typeof USER_LABEL, text: string): string => `${USER_LABEL[who]}:\n<<<\n${text.replace(/>>>/g, ">\u200b>>")}\n>>>`;
-
+/** A person's words exactly as typed, between marks drawn for this message that their text doesn't contain, so nothing
+    inside can close the fence and nothing outside can pass as theirs. */
+export function userWords(who: keyof typeof USER_LABEL, text: string): string {
+  let token: string;
+  do token = `u-${randomBytes(6).toString("hex")}`;
+  while (text.includes(token));
+  return `${USER_LABEL[who]}:\n<<<${token}\n${text}\n${token}>>>`;
+}
 /** A design's hand-in, as a line of context: metadata only, and it wakes nothing. */
 export function noteHandIn(sessionId: string, a: { label: string; version: number; note?: { layout: string; sections: string; type: string; color: string } | null }): void {
   const st = load(sessionId);
@@ -1064,7 +1067,7 @@ export function coordinatorTools(sessionId: string): ToolSpec[] {
       const outcome = changeDesigns(parent.sessionId, (s) => {
         const r = s.runs.find((x) => x.id === st.runId)!;
         const b = r.brief ?? newBrief();
-        const why = coordinatorWrote(b, { ...(typeof params.summary === "string" ? { summary: unbroken(params.summary) } : {}), ...(typeof params.prompt === "string" ? { prompt: unbroken(params.prompt) } : {}), ...(Array.isArray(params.promptEdits) ? { promptEdits: params.promptEdits.map((e) => ({ find: unbroken(e.find), replace: unbroken(e.replace) })) } : {}), ...(questions ? { questions } : {}) });
+        const why = coordinatorWrote(b, { ...(typeof params.summary === "string" ? { summary: params.summary } : {}), ...(typeof params.prompt === "string" ? { prompt: params.prompt } : {}), ...(Array.isArray(params.promptEdits) ? { promptEdits: params.promptEdits } : {}), ...(questions ? { questions } : {}) });
         if (why) return { why };
         r.brief = b;
         mergeLinks(r.setup, sources);
@@ -1239,7 +1242,7 @@ export function coordinatorTools(sessionId: string): ToolSpec[] {
     async execute(_id, params: { text?: string }) {
       const st = state();
       if (isResult(st)) return st;
-      const text = typeof params?.text === "string" ? unbroken(params.text) : "";
+      const text = typeof params?.text === "string" ? params.text : "";
       if (!text.trim() || text.length > COORDINATOR_LIMITS.cardChars) return refuse(`the card must be text of at most ${COORDINATOR_LIMITS.cardChars} characters.`);
       st.revision++;
       st.card = text;

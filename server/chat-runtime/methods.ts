@@ -159,6 +159,7 @@ export const METHODS: Impl = {
     return chat.harness.state.append(kind, data);
   },
   appendNote: (chat, { noteType, text, details }) => chat.appendNote(noteType, text, details),
+  noteIntoRun: (chat, { noteType, text }) => chat.noteIntoRun(noteType, text),
   writeProfile: (chat, { data }) => (chat.writeProfile(data), null),
   writeLoadout: (chat, { data }) => (chat.writeLoadout(data), null),
   noteMcp: (chat, { note }) => (chat.noteMcp(note), null),
@@ -228,6 +229,13 @@ export const METHODS: Impl = {
     assertNotLive(chat.path);
     if (!chat.hasForeignWrites()) return "ok";
     if (!force) throw new BusyError(chat.busyMessage(), "recent");
+    await acquireChat(chat.path, true);
+    return "reloaded";
+  },
+  reopenHere: async (chat): Promise<"reloaded"> => {
+    assertNotLive(chat.path);
+    chat.broadcast({ type: "error", code: "reloaded", message: "This chat's worktree is back; reconnect" });
+    await chat.dispose();
     await acquireChat(chat.path, true);
     return "reloaded";
   },

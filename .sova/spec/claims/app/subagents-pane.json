@@ -6,8 +6,11 @@
   },
   "§app.subagents-pane/body-list-transcript": {
     "kind": "behavior",
-    "authority": "migrated",
-    "evidence": "unreviewed"
+    "authority": "accepted",
+    "evidence": "unreviewed",
+    "code": [
+      "src/components/SessionPane.tsx"
+    ]
   },
   "§app.subagents-pane/claude-code-workers": {
     "kind": "behavior",
@@ -93,12 +96,13 @@
       "server/skill-lines.ts",
       "server/skill-lines.test.ts",
       "server/skills.ts",
-      "server/skills.test.ts"
+      "server/skills.test.ts",
+      "server/subfolder-skills.ts"
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-08T22:24Z",
-      "source": "pi-session:1e2d4212-e8f2-4d90-95f6-538201cbd3f1#a87554fb"
+      "at": "2026-11-09T22:07Z",
+      "source": "pi-session:ec2cf9b2-17a4-4635-b2f1-e4ed27c9735d#7f215cda"
     }
   },
   "§app.subagents-pane/head": {
@@ -291,12 +295,14 @@
       "src/lib/cost-history.ts",
       "src/components/ContextTab.tsx",
       "src/components/BackgroundJobs.tsx",
-      "src/components/TimeSpent.tsx"
+      "src/components/TimeSpent.tsx",
+      "src/lib/pane-tabs.ts",
+      "src/lib/pane-tabs.test.ts"
     ],
     "agreed": {
-      "by": "omar",
-      "at": "2026-11-07T13:38Z",
-      "source": "pi-session:b06e603a-07aa-4e97-9efa-361431fbfd1c#4ad7d02d"
+      "by": "user",
+      "at": "2026-11-09T22:07Z",
+      "source": "pi-session:ec2cf9b2-17a4-4635-b2f1-e4ed27c9735d#7f215cda"
     }
   },
   "§app.subagents-pane/time-spent": {

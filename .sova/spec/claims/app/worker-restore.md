@@ -134,7 +134,9 @@ next prompt, and not for team members.
   spec is re-applied (cwd, model, effort, tools, system prompt, its worktree's agent dir), and the sandbox
   follows the **parent's current** state, exactly as at spawn (§chat.sandbox/workers), and so do the modes it is given: the parent's **current** worker
   modes, not the ones it first started with (§chat.mode-menu/workers). So does where it may start: its cwd must still be the session's
-  cwd or inside an active tracked worktree of the current branch (§chat.worktrees/workers).
+  cwd or inside an active tracked worktree of the current branch (§chat.worktrees/workers). A retired
+  worktree holding the session's own folder comes back first, as a message brings it back
+  (§chat.worktrees/retirement), fresh from the target, or on its branch as it was where the branch was kept.
 - **A team member rejoins its team.** Its team, kept as history since the restart, becomes live
   again, with a fresh identity in the team's kept mailbox: a member gets its team tools back and keeps its inbox, and an orchestrator keeps its roster and steer tools. Requests a member wrote while its parent was away are handled once the parent is back. What the restart destroyed stays gone: the team's create-time defaults, so a later `team_add` to that team applies none. Its teammates are not told.
 - **It comes back idle** (`waiting`, the Idle chip). Resume sends no prompt and never continues the interrupted turn on
@@ -156,7 +158,7 @@ next prompt, and not for team members.
   Claude Code session {old file}; nothing was sent to it. Give it work with agent_steer."
 - **Refusals are said, not guessed.** Resume answers with the reason and changes nothing for:
   a worker that is live (give it work with `agent_steer`), one already being resumed, an ID this
-  session file has no record of, a cwd outside the session's cwd and its active worktrees, a backend whose adapter declares no resume or that is not
+  session file has no record of, a cwd outside the session's cwd and its active worktrees, or in a retired worktree of a session working elsewhere (it opens a new worktree instead), a backend whose adapter declares no resume or that is not
   loaded (an older Claude Code worker excepted, above), and a worker whose backend session was never recorded. When the reopen itself fails,
   or the worker isn't idle within 180 seconds, the restored entry stays as it was and the reason
   is returned.

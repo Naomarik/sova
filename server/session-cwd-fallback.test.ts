@@ -20,6 +20,7 @@ const { canonicalPath } = await import("./paths");
 const { markOwned } = await import("./write-guard");
 const { targetDir } = await import("./targets");
 const { probeFolder, cwdFallbackNote } = await import("./session-cwd");
+const { appendLedger } = await import("./removed-worktrees");
 const { extensionFlagValues, withPromptNotes } = await import("./harness/pi/open");
 
 after(() => {
@@ -70,6 +71,18 @@ describe("probeFolder: only a genuinely missing folder is missing", () => {
 });
 
 describe("resolveOpenCwd", () => {
+  test("what a retirement's stopped delete left, still held: the home folder, saying so; gone, it reads as any retired folder", () => {
+    const left = folder("held-partial");
+    mkdirSync(left, { recursive: true });
+    appendLedger([{ v: 1, path: canonicalPath(left), branch: "feat/x", commonDir: "/nowhere/.git", tip: "a".repeat(40), merged: "ancestor", branchDeleted: false, at: 1, retired: true, partial: true }]);
+    const fallback = resolveOpenCwd("/s.jsonl", left);
+    assert.deepEqual(fallback, { cwd: home, fallback: { original: left, cwd: home, held: true } });
+    assert.match(cwdFallbackNote(fallback.fallback!), /files stayed/);
+    assert.deepEqual(resolveOpenCwd("/s.jsonl", left, { overridden: true }), { cwd: left, fallback: null }, "a folder Sova chose stays its own");
+    rmSync(left, { recursive: true });
+    assert.deepEqual(resolveOpenCwd("/s.jsonl", left).fallback?.retired, { branch: "feat/x", target: "master" });
+  });
+
   test("an existing cwd is used unchanged, with no fallback", () => {
     const here = folder("kept");
     mkdirSync(here, { recursive: true });

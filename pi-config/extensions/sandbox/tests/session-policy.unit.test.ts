@@ -78,6 +78,17 @@ test("a tracked worktree whose folder was removed never reaches the mounts: the 
 	assert.equal(run.status, 0, run.stderr);
 });
 
+test("a worktree whose folder is gone is no writable root, and its .agent no read-only path, whichever backend runs", (t) => {
+	const { agentDir, home, ws, wt, root } = rig(t);
+	const gone = join(root, "retired");
+	const r = resolveSessionPolicy({ agentDir, cwd: ws, sessionId: "s-gone", home, platform: "darwin", worktreeRoots: [wt, gone] });
+	assert.ok(r.ok);
+	if (!r.ok) return;
+	assert.ok(r.value.writable.some((p) => p === wt || p === realpathSync(wt)), "the one that's there is a root");
+	assert.equal(r.value.writable.some((p) => p.startsWith(gone)), false);
+	assert.equal(r.value.readOnlyWithinWritable.some((p) => p.startsWith(gone)), false);
+});
+
 test("fails closed without a policy file, and never creates the session tmp", (t) => {
 	const { root, home, ws } = rig(t);
 	const r = resolveSessionPolicy({ agentDir: join(root, "no-agent"), cwd: ws, sessionId: "never-made", home, platform: "linux" });

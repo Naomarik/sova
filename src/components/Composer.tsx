@@ -169,8 +169,7 @@ export function Composer(props: {
   /** The pane is open for this session on the TIMELINE tab with Inputs Only on: the inputs
       trigger's aria-expanded, and its only authority — a tab name can't say whether the filter is on. */
   inputsOpen?: boolean;
-  /** The pane's active tab while it is open for THIS session ("session" | "timeline" | "agents" |
-      "skills" | "gallery"), else null. The authority for the subagents trigger's aria-expanded;
+  /** The pane's active tab while it is open for THIS session (a `TabId`), else null. The authority for the subagents trigger's aria-expanded;
       `workersOpen` answers only until App passes it. */
   paneTab?: string | null;
   /** Runs a bare "/new": resolves to the new session's folder label, or null if none was made. */

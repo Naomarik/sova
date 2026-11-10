@@ -99,14 +99,14 @@
     ],
     "agreed": {
       "by": "naomarik",
-      "at": "2026-11-09T15:52Z",
-      "source": "pi-session:01a1b2f4-86c6-73d4-9fe9-b847b27035f9#02c2fa31"
+      "at": "2026-11-09T16:22Z",
+      "source": "pi-session:01a1b2f4-86c6-73d4-9fe9-b847b27035f9#950bc2c9"
     }
   },
   "§app.projects/home-glance": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "code": [
       "server/projects/glance.ts",
       "server/projects/glance.test.ts",
@@ -140,9 +140,9 @@
       "§app.project-services/adopt"
     ],
     "agreed": {
-      "by": "the user (al_1 go)",
-      "at": "2026-11-09T02:04Z",
-      "source": "pi-session:01a1bdb7-6cb9-7045-be9f-f2f059380b8e#01f472b9"
+      "by": "naomarik",
+      "at": "2026-11-09T16:22Z",
+      "source": "pi-session:01a1b2f4-86c6-73d4-9fe9-b847b27035f9#950bc2c9"
     }
   },
   "§app.projects/home-memory-bar": {

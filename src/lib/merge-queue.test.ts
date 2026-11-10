@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { MergeEntry, MergeRun, RunStep, WorktreeQueueInfo } from "../../shared/merge-queue";
 import type { WorktreeReadiness } from "../../shared/protocol";
-import { landConfirmWords, readyFactsWords, readyRowChip, type RowKey, type Tone, entryLandBlock, SENT_BACK_LINE, stillSentBack, rowButtons, attribution, clock, controlWords, mins, notesOf, pausedTitle, pushedWords, queueRow, queueStateChip, rowsSummary, runProgress, sourceTag, stepCounts, stepDetail, stepMark, stepTime, tildeIn, verdictChip, waitingHead, type QueueRowInput } from "./merge-queue";
+import { landConfirmWords, readyFactsWords, rehearsalWhy, readyRowChip, type RowKey, type Tone, entryLandBlock, SENT_BACK_LINE, stillSentBack, rowButtons, attribution, clock, controlWords, mins, notesOf, pausedTitle, pushedWords, queueRow, queueStateChip, rowsSummary, runProgress, sourceTag, stepCounts, stepDetail, stepMark, stepTime, tildeIn, verdictChip, waitingHead, type QueueRowInput } from "./merge-queue";
 
 const SHA = "a".repeat(40);
 const wt = (x: Partial<QueueRowInput> = {}): QueueRowInput => ({ status: "active", exists: true, branch: "feat/x", readiness: undefined, ...x });
@@ -552,4 +552,23 @@ test("a Ready row's chip is its chat's readiness reading, in the Worktrees rows'
   ] as never;
   assert.equal(readyRowChip({ ...r, session: "wk" }, chatTreesOf("wk", sessions)).label, "Waiting for your OK");
   assert.equal(chatTreesOf("nobody", sessions), undefined);
+});
+
+test("Remove Worktree only where the server offers it, with no rule of the row's own", () => {
+  const nothing = { ...ready, state: "merged" as const, merged: true as const, left: "nothing" as const };
+  assert.deepEqual(rowButtons(queueRow(wt({ readiness: { ...nothing, removable: true }, mergeServed: true })), "prj_1"), ["Remove Worktree"]);
+  assert.deepEqual(rowButtons(queueRow(wt({ removable: true, left: "nothing" })), undefined), ["Remove Worktree"]);
+  // Nothing left and finished, with no field: the real install and test servers never show it.
+  for (const w of [wt({ readiness: nothing, mergeServed: true }), wt({ readiness: { ...ready, landing: { state: "ready", commit: SHA } }, mergeServed: true }), wt({ exists: false, gone: "merged" })]) assert.equal(rowButtons(queueRow(w), "prj_1").includes("Remove Worktree"), false);
+});
+
+test("a row says when Remove Worktree keeps the branch, only as the server says", () => {
+  assert.equal(queueRow(wt({ readiness: { ...ready, removeKeepsBranch: true } })).removeKeepsBranch, true);
+  assert.equal(queueRow(wt({ removeKeepsBranch: true })).removeKeepsBranch, true);
+  assert.equal(queueRow(wt({ readiness: ready })).removeKeepsBranch, undefined);
+});
+
+test("Rehearsal needed says what Land waits for, at the branch's short commit", () => {
+  assert.equal(rehearsalWhy("a1b2c3d4e5f6"), "This branch changes automatic cleanup. Land opens once a rehearsal has passed at a1b2c3d on a copy of your state taken today.");
+  assert.match(rehearsalWhy(undefined), /passed at its newest commit on a copy/);
 });

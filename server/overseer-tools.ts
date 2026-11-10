@@ -1751,7 +1751,7 @@ export function overseerTools(host: OverseerToolHost, shared: TurnLimits, redact
           sessions: { type: "array", items: { type: "string" }, description: "Session ids.", minItems: 1, maxItems: 50 },
           archived: bool("true to archive, false to unarchive (default true)."),
           worktrees: str(
-            'With "remove" (archiving only): also remove each session\'s own git worktrees after archiving it: git worktree remove, the branch deleted only when merged. A session with uncommitted changes in one is refused whole. Omit to leave worktrees alone.',
+            'With "remove" (archiving only): after archiving each session, also remove its own git worktrees that have nothing left to land or no commits of their own: the folder, then the branch if its project deletes branches, its last commit kept and restorable. One that has work to land or anything using it is kept, with the reason. A session with uncommitted changes in one is refused whole. On a test copy of Sova, a worktree outside its own test data is kept, and says so, and it can\'t refuse the session. Omit to leave worktrees alone.',
             { enum: ["remove"] },
           ),
         },

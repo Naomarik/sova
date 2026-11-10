@@ -83,7 +83,7 @@
   "§chat.transcript/empty-worktrees": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "code": [
       "src/components/EmptyWorktrees.tsx",
       "src/components/ChatView.tsx",
@@ -95,7 +95,12 @@
     "requires": [
       "§chat.worktrees/cleanup",
       "§chat.transcript/states"
-    ]
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-11-09T16:22Z",
+      "source": "pi-session:01a1b2f4-86c6-73d4-9fe9-b847b27035f9#950bc2c9"
+    }
   },
   "§chat.transcript/focus-view": {
     "kind": "behavior",
@@ -443,9 +448,9 @@
       "server/harness/pi/golden/expected/synthetic/workers/transcript-rows.json"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-10-23T21:57Z",
-      "source": "pi-session:9fc149bf-e001-4a3b-8e47-eb5d66c0e509#4e42752d"
+      "by": "user",
+      "at": "2026-11-06T13:59Z",
+      "source": "pi-session:01a1b07d-be49-727f-8989-d4d0378c61bb#0056bb79"
     }
   },
   "§chat.transcript/runaway-stream": {
@@ -604,9 +609,9 @@
       "§app/markdown-viewer"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-11-04T00:35Z",
-      "source": "pi-session:7a7258e9-bad0-4fcd-9d36-2acd1d3e9527#1e870985"
+      "by": "user",
+      "at": "2026-11-06T20:05Z",
+      "source": "pi-session:01a1b07d-be49-727f-8989-d4d0378c61bb#55377061"
     }
   },
   "§chat.transcript/setup-card-repository": {
@@ -629,7 +634,14 @@
   "§chat.transcript/setup-card-skills": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "verified"
+    "evidence": "verified",
+    "code": [
+      "server/session-setup.ts",
+      "server/harness/pi/resources.ts",
+      "src/lib/session-setup.ts",
+      "src/lib/session-setup.test.ts",
+      "src/components/SessionSetup.tsx"
+    ]
   },
   "§chat.transcript/setup-card-toggles": {
     "kind": "behavior",
@@ -714,9 +726,9 @@
       "src/lib/first-connect-send.browser.test.ts"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-11-04T22:53Z",
-      "source": "pi-session:01a1a881-85c2-72d2-b9d3-5a1d4c60dbfe#b1ee7dfc"
+      "by": "naomarik",
+      "at": "2026-11-09T16:22Z",
+      "source": "pi-session:01a1b2f4-86c6-73d4-9fe9-b847b27035f9#950bc2c9"
     }
   },
   "§chat.transcript/streaming": {

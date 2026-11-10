@@ -185,16 +185,17 @@
       "§chat/subagent-profiles"
     ],
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "code": [
       "src/components/SettingsDialog.tsx",
       "src/components/SubagentProfilesSettings.tsx",
-      "server/subagent-profiles.ts"
+      "server/subagent-profiles.ts",
+      "pi-config/extensions/mode/delegate.ts"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-11-08T22:16Z",
-      "source": "pi-session:f599f57e-519d-4f33-9088-ed8a9cd164b5#cebf8649"
+      "by": "user",
+      "at": "2026-11-09T23:07Z",
+      "source": "pi-session:11c2d12a-bd23-4062-86b0-4bda053a8931#e9d77662"
     }
   },
   "§app.settings-dialog/number-boxes": {

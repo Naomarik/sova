@@ -61,6 +61,8 @@ export interface QueueReading {
   landings(branch: string): LandingRecords;
   /** The branch this queue lands on, once known. */
   target?(): string | null;
+  /** The branch's entry that is still under way: in line, checking, waiting on the user or with its chat. */
+  open?(branch: string): { id: string; state: string } | null;
   /** The user approved exactly this commit, and that approval is in line, checking, waiting or landed (not with its chat). */
   approvedAt(branch: string, head: string): boolean;
 }
@@ -96,6 +98,28 @@ export function queueTargetAt(rootOrCommonDir: string): string | null {
 
 export function landingRecordsAt(rootOrCommonDir: string, branch: string | undefined): LandingRecords {
   return branch ? (queueReadingAt(rootOrCommonDir)?.landings(branch) ?? NO_LANDINGS) : NO_LANDINGS;
+}
+
+/** The branch's open entry at `root`, from the loaded queue's every entry; null: none, or no queue. */
+export function openQueueEntry(root: string, branch: string): { id: string; state: string } | null {
+  return queueReadingAt(root)?.open?.(branch) ?? null;
+}
+
+type LandedListener = (root: string, branch: string) => void;
+const landedListeners = new Set<LandedListener>();
+/** Told at every landing, local or on the host. → unsubscribe. */
+export function onBranchLanded(fn: LandedListener): () => void {
+  landedListeners.add(fn);
+  return () => landedListeners.delete(fn);
+}
+export function branchLanded(root: string, branch: string): void {
+  for (const fn of landedListeners) {
+    try {
+      fn(root, branch);
+    } catch (err) {
+      console.warn(`[nothing-left] a landing listener failed: ${(err as Error).message}`);
+    }
+  }
 }
 
 // ---- heads whose trial merge changed nothing, kept ---------------------------------------------------------------

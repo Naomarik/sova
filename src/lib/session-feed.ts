@@ -4,6 +4,7 @@
 // It also carries the sidebar's one live figure, the LLM calls in flight across this host and every
 // connected host, which the server adds up itself.
 
+import { loadClaudeCatalog } from "./claude-catalog";
 import { noteMergeCards, noteMergeFeed } from "./merge-queue-client";
 import { noteReleaseFeed } from "./releases-client";
 import { noteLandingQueue, noteLandingRelease, refreshLandingSummary } from "./landing-bar-store";
@@ -105,6 +106,8 @@ export function openSessionFeed(refreshList: () => void): void {
         void loadSessionGroups();
       }
       for (const l of listeners) l.resync();
+      // The learned Claude list, at the app's start and after a socket gap (a change meanwhile was never pushed).
+      void loadClaudeCatalog();
       // Frames are never sent on connect: the landing bar reads its starting picture once per open.
       void refreshLandingSummary();
     },
@@ -118,6 +121,8 @@ export function openSessionFeed(refreshList: () => void): void {
         void loadSessionGroups();
         nudges.nudge();
       }
+      // A new Claude model, or one Claude Code dropped: no restart, no reload (§app.claude-code-provider/catalog).
+      else if (msg.type === "claude_models_changed") void loadClaudeCatalog();
       // Never a reason to re-read the list: the count is its own fact.
       else if (msg.type === "llm_inflight") setInflight(msg.inflight);
       else if (msg.type === "attention") for (const l of listeners) l.attention(msg.digest);

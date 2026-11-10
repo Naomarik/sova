@@ -105,11 +105,22 @@ export interface HarnessToolInfo {
 
 /** What a runtime loaded for its prompt, as paths: the context files, the skills, the system prompt's
     source file and the files appended to it. */
+/** A skill the loader dropped or passed over, and why. */
+export interface HarnessSkillProblem {
+  name: string;
+  path: string;
+  reason: "no-description" | "front-matter" | "unreadable" | "same-name";
+  /** `same-name`: the file that loaded under that name. */
+  winnerPath?: string;
+}
+
 export interface HarnessResources {
   context: readonly { path: string }[];
-  skills: readonly { name: string; filePath: string; description?: string }[];
+  skills: readonly { name: string; filePath: string; description?: string; manualOnly?: boolean }[];
   systemPrompt?: string;
   appendSystemPrompt: readonly string[];
+  /** Skills that didn't load. Absent or empty: none. */
+  skillProblems?: readonly HarnessSkillProblem[];
 }
 
 /** A live event's wire-1 frame, the shape every consumer that didn't ask for wire 2 reads
@@ -351,6 +362,8 @@ export interface HarnessSession extends SessionRead {
   /** A note for the model, shown in the chat, that starts no turn (idle: written now). `details`: data the
       transcript reads (HEntry note `details`), never sent to the model. */
   appendNote(noteType: string, text: string, details?: unknown): Promise<void>;
+  /** A hidden note for the run in progress, read at its next step, ahead of anything queued behind the turn. Idle: written now. */
+  noteIntoRun(noteType: string, text: string): Promise<void>;
 
   // ── attribution
   /** `claim` sees the input each user-message entry point hands the agent (prompt, steer, follow-up)

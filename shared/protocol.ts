@@ -1651,6 +1651,17 @@ export const CHARS_PER_TOKEN = 4;
 export interface SessionSetupSkill extends SessionSetupFile {
   name: string;
   description?: string;
+  /** Only `/skill:name` runs it: the model is never offered it. */
+  manualOnly?: true;
+}
+
+/** A skill that didn't load, and why (§chat.transcript/setup-card-skills). */
+export interface SessionSetupSkillProblem {
+  name: string;
+  path: string;
+  reason: "no-description" | "front-matter" | "unreadable" | "same-name";
+  /** `same-name`: the file that loaded under that name. */
+  winnerPath?: string;
 }
 
 export type SessionSetup =
@@ -1664,6 +1675,8 @@ export type SessionSetup =
       /** Skills, in the order pi lists them to the model. A skill is OFFERED, not loaded: it loads
           when it is used. */
       skills: SessionSetupSkill[];
+      /** Skills that didn't load; absent when none. */
+      skillProblems?: SessionSetupSkillProblem[];
       /** A `.pi/SYSTEM.md` that replaces the default prompt, when one is loaded. */
       systemPrompt?: SessionSetupFile;
       /** APPEND_SYSTEM.md sources, in the order they are appended. */
@@ -1722,6 +1735,12 @@ export interface SessionContextPart {
   /** Skills only: the agent loaded the whole skill (read all of its SKILL.md as it is now, or it was
       invoked) since the latest compaction, so its text is in the window now. */
   read?: boolean;
+  /** Skills only: only `/skill:name` runs it, so the model isn't offered it. `tokens` is its whole text. */
+  manualOnly?: true;
+  /** A skill of a folder below the chat's (`nestedSkills`): that folder, relative to cwd. */
+  folder?: string;
+  /** A skill of a folder below the chat's: the model has been offered it, on what it sees now. */
+  offered?: boolean;
   /** Skills only, when the agent loaded part of its SKILL.md: how many of its lines (a union of every
       read since the latest compaction), and `lines`, the file's length now. Absent when it read none or
       all; `lines` is absent too when the file couldn't be measured. */
@@ -1783,6 +1802,8 @@ export type SessionContextView =
       /** `conversation` by kind of message. Absent from an older server. */
       talk?: SessionContextTalk;
       nested: SessionContextNested[];
+      /** Skills of folders below cwd, offered or not; absent from an older server. */
+      nestedSkills?: SessionContextPart[];
       /** The walk below cwd stopped at its cap: the list may be incomplete. */
       nestedIncomplete?: true;
       checkedAt: number;
@@ -2085,15 +2106,18 @@ export interface DelegateBackendOptions {
       provider, `claude-code-cli`, registered only in sessions started with it on). A model of one
       of these that `models` doesn't list is NOT VERIFIED, never "not offered". */
   sessionScopedProviders?: string[];
-  /** claude-code only: what the CLI's own list says that Sova's Claude catalog doesn't (models it
-      names that the catalog doesn't know; a family alias it now runs as another model). Absent when
-      the list agrees or couldn't be read. Never changes `models`. */
-  drift?: ClaudeCatalogDrift;
 }
 
-export interface ClaudeCatalogDrift {
-  unknown: { id: string; name?: string }[];
-  moved: { family: string; id: string; current: string }[];
+/** GET /api/claude/catalog: the Claude models Sova has learned, for the web app's lookups. */
+export interface ClaudeCatalogInfo {
+  /** What claude-code/catalog.ts merges (mergeClaudeCatalog); all empty before anything is learned. */
+  data: {
+    models: { id: string; window?: number; maxOutput?: number; efforts?: string[]; apiIds?: string[] }[];
+    dropped?: string[];
+    tested?: string[];
+  };
+  /** Claude Code's model table couldn't be read: the list is the last one Sova knows. */
+  lastKnown: boolean;
 }
 
 export interface DelegateOptions {
@@ -3215,15 +3239,66 @@ export type WorktreesSummary =
       /** Empty leftovers: a branch with no commit of its own. */
       empty: number;
       unmerged: number;
+      /** Worktrees retirement holds in this repository, with a reason (§chat.worktrees/retirement). Absent at 0. */
+      held?: number;
+      /** Worktrees it retired here in the last 7 days. Absent at 0. */
+      retired?: number;
+      /** Why retirement doesn't run here (RetirementView.offFor). Absent: it runs. */
+      offFor?: "install" | "test" | "setting" | "unknown";
     };
-/** POST /api/worktrees/cleanup's body: `dryRun` previews; `expect` removes exactly those paths
-    that are still removable; `force` is Remove Anyway for one kept tree, with the digest of the
-    listing the user confirmed (exactly one of the three). */
-export interface WorktreeCleanupRequest {
+
+/** One branch retirement took (§chat.worktrees/retirement). */
+export interface RetiredRow {
   path: string;
-  dryRun?: boolean;
-  expect?: string[];
-  force?: { path: string; digest: string };
+  branch: string;
+  /** Its last commit, pinned; empty for a folder whose branch was already gone. */
+  tip: string;
+  merged: "ancestor" | "content" | "leftover" | "empty";
+  /** ms. */
+  at: number;
+  branchDeleted: boolean;
+  /** The project keeps branches, and this one stayed (§chat.worktrees/retirement). */
+  branchKept?: true;
+  /** Restore can put it back. */
+  restorable: boolean;
+}
+
+/** One worktree retirement can't take, and why (the Held list). */
+export interface HeldRow {
+  path: string;
+  branch?: string;
+  session?: { id: string; path?: string; title?: string };
+  /** A sentence. */
+  reason: string;
+  /** "drafts": its row is also under Ready to land, where Land lands just the drafts. */
+  kind: "drafts" | "files" | "process" | "other";
+}
+
+/** GET /api/worktrees/retirement?root=<main checkout>[&all=1], and MergeQueueView.retirement: read with no git. */
+export interface RetirementView {
+  /** Newest first: the newest 20, or every one with all=1. */
+  retired: RetiredRow[];
+  retiredTotal: number;
+  held: HeldRow[];
+  /** How many only wait until quiet. */
+  waiting: number;
+  /** Their reasons, for the line's hover. */
+  waitingWhy?: string;
+  /** Cleanup couldn't start for this project: its lock looks taken by {who} ("Sova, process 123"). The tab leads with one line; it isn't a row and isn't counted. */
+  lockTaken?: string;
+  /** The service doesn't run here: the sentence to show. Absent: it runs. */
+  off?: string;
+  /** Why: "install", an install on a PI_CODING_AGENT_DIR of its own, where worktrees go only by Remove Worktree or
+      archiving; "test", a test copy of Sova; "setting", SOVA_RETIRE=off; "unknown", Sova couldn't tell. */
+  offFor?: "install" | "test" | "setting" | "unknown";
+}
+
+/** POST /api/worktrees/restore's body. 200 {ok: true, path, branch}; 409 {error}, shown under the row. */
+export interface WorktreeRestoreRequest {
+  root: string;
+  path: string;
+  branch: string;
+  tip: string;
 }
 /** What Remove Anyway would delete from a tree kept only for what it holds: paths relative to the
     tree's top, each list its first 500 entries, `counts` the exact totals, `digest` the whole list's. */
@@ -3239,40 +3314,11 @@ export interface WorktreeRemoveAnyway {
   counts: { uncommitted: number; ignored: number; nested: number; rebuildable: number };
   digest: string;
 }
-/** A worktree that goes (dry run) or went: how it is merged, and whether its branch is deleted. */
-export interface WorktreeCleanupRemoved {
-  path: string;
-  branch?: string;
-  kind: "ancestor" | "content" | "empty";
-  branchDeleted: boolean;
-}
 /** POST /api/projects/:pid/overseer/worktrees/remove {dryRun: true}: why Remove Worktree keeps a coding
     session's folder (null: it may go), and, when what it holds is the reason, what Remove Anyway would delete. */
 export interface CodingWorktreeHold {
   reason: string | null;
   removeAnyway?: WorktreeRemoveAnyway;
-}
-/** A worktree that stays, and the one reason why. */
-export interface WorktreeCleanupKept {
-  path: string;
-  branch?: string;
-  reason: string;
-  /** Dry run only: present when what it holds is the only reason it stays (§chat.worktrees/cleanup). */
-  removeAnyway?: WorktreeRemoveAnyway;
-}
-/** The dry run's answer. */
-export interface WorktreeCleanupPlan {
-  repo: string;
-  mainBranch?: string;
-  /** The server's home folder, so the dialog shows paths with `~`. */
-  home?: string;
-  remove: WorktreeCleanupRemoved[];
-  keep: WorktreeCleanupKept[];
-}
-/** A removal's answer, per expected path (other trees are never touched). */
-export interface WorktreeCleanupResult {
-  removed: WorktreeCleanupRemoved[];
-  kept: WorktreeCleanupKept[];
 }
 
 /** POST /api/workers/resume's answer: the worker as the runtime now lists it. */
@@ -5146,6 +5192,10 @@ export interface SessionBranchRow {
   /** The shared answer (WorktreeReadiness.left), for a row no readiness of this chat's covers too. */
   left?: "nothing" | "drafts";
   draftsLeft?: number;
+  /** The row offers Remove (POST /api/worktrees/remove): retirement is off for this install and nothing is left. Absent everywhere else. */
+  removable?: true;
+  /** With `removable`: this project keeps branches, so its confirm says the branch stays. */
+  removeKeepsBranch?: true;
   /** Its place, for "{branch} in {place}" (§chat.worktrees/place). Additive. */
   place?: BranchPlace;
 }
@@ -5161,6 +5211,10 @@ export type SessionBranchQueue = import("./merge-queue").BranchQueueFacts;
 export interface CwdFallback {
   original: string;
   cwd: string;
+  /** The folder retired (§chat.worktrees/retirement): a message brings it back, fresh from `target`, or with `kept` on its branch as it was. */
+  retired?: { branch: string; target: string; kept?: true };
+  /** The folder is still there: what a retirement's stopped delete left, not yet proved safe to delete (§chat.worktrees/retirement). */
+  held?: true;
 }
 
 /** "removed": the worktree's folder is gone and its work isn't known merged (§chat.worktrees/readiness). */
@@ -5191,11 +5245,17 @@ export interface WorktreeReadiness {
   noCommits?: true;
   /** Ready to land at its head commit, or Landing specs (§chat.worktrees/ready-to-land). Absent otherwise. */
   landing?: WorktreeLanding;
+  /** This worktree changes automatic cleanup and no rehearsal passed at its head today: Land reads Rehearsal needed, disabled (§app.merge-queue/approve). */
+  rehearsal?: true;
   /** The shared answer (§chat.worktrees/nothing-left): "nothing" left to land, or only spec "drafts" not proved landed.
       Absent: work is left, or it can't tell. */
   left?: "nothing" | "drafts";
   /** left "drafts": how many. */
   draftsLeft?: number;
+  /** The row offers Remove (POST /api/worktrees/remove): retirement is off for this install and nothing is left. Absent everywhere else. */
+  removable?: true;
+  /** With `removable`: this project keeps branches, so its confirm says the branch stays. */
+  removeKeepsBranch?: true;
 }
 
 /** A worktree whose work is finished at its head commit (§chat.worktrees/ready-to-land). */
@@ -5322,6 +5382,9 @@ export type SessionFeedMessage =
       payload: the client re-reads GET /api/session-groups and the list. Never on connect. Additive:
       a client that predates it ignores it. */
   | { type: "groups_changed" }
+  /** Sova's Claude model list changed (server/claude-models-sync.ts). No payload: the client re-reads
+      GET /api/claude/catalog and its model list. Additive: a client that predates it ignores it. */
+  | { type: "claude_models_changed" }
   /** The logical LLM calls in flight on this host and every connected host: sent once on every
       connect, then on each change of the total or its coverage. Never a reason to re-read the
       list. */

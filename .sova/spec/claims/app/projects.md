@@ -165,6 +165,9 @@ and a chat in any of them is one press away.
     view since Sova started is still being read. `—` for a project the merge queue doesn't serve,
     and then the row is not a link. A branch with nothing left is never counted here
     (§chat.worktrees/nothing-left).
+    Under it, whenever the project has any, a muted line counts what retirement did
+    (§chat.worktrees/retirement): `{retired} retired · {held} held`, the retired ones those of the last 7
+    days, as a new session's line counts them, either part left out at 0, opening the same tab.
   - **Copies**: one pip per usable place of this project (the slots of 1 to 16 its port numbering
     can use, §app.project-services/instances, so normally 16; a place the numbering rules out is
     never drawn), and a figure. The pips are grouped, not in slot order: running first, then
@@ -278,6 +281,9 @@ listening ports, both below); it lands nothing and changes nothing.
   once kept, the view is kept up to date as every other kept view is, with no Merge Queue tab
   visit. Past that one first view the read asks the queue for no view and runs no git. So a card
   is never fresher than that view.
+- **Retired and held** come from the retirement service's own ledger and saved list as it last wrote
+  them (§chat.worktrees/retirement), for every listed project, served or not; the read runs no git for
+  them.
 - **Release progress** comes from the project's release records (§app.release/record) as Sova
   keeps them in memory: as the releaser last published them to the Releases tab, or as its start
   read them; the read opens no record file. The record shown is the one the Releases tab shows:

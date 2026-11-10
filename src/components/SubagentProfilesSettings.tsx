@@ -6,6 +6,7 @@ import { INSTRUCTIONS_RULE, ROLE_RULE, TEAM_NUMBERS, TEAM_RULES, type TeamNumber
 import { teamNumber } from "../../shared/subagent-profile-checks";
 import { NumberField, Select, TextArea, TextField, Toggle } from "./form";
 import { effortSelectOptions, fallbackFor, modelSelectOptions, slotIssue, withModel } from "../lib/delegate-form";
+import { claudeListIsLastKnown, LAST_KNOWN_LIST_LINE } from "../lib/claude-catalog";
 import { claudeModelName } from "../lib/format";
 import { CLAUDE_PROVIDER } from "../lib/profiles-settings";
 import { sectionProblems, withAlignment, withChosenModels, withDefaultModel, ALIGN_STYLE_NAMES, ALIGN_EAGERNESS_NAMES } from "../lib/subagent-editor";
@@ -516,6 +517,9 @@ export function ProfileModelsPart(props: {
             <For each={setAllOptions()}>{(o) => <option value={o.value}>{o.label}</option>}</For>
           </Select>
         </div>
+      </Show>
+      <Show when={claudeListIsLastKnown()}>
+        <p class="field-hint">{LAST_KNOWN_LIST_LINE}</p>
       </Show>
 
       <div class="profile-model-rows">

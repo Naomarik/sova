@@ -8,6 +8,7 @@
 // Anything else it refuses with (an older server's wording) is shown
 // verbatim with the same way back.
 
+import type { CwdFallback } from "../../shared/protocol";
 import { remotePlaceOf, type TargetInfo } from "./remote-session";
 
 export type OpenFailureKind =
@@ -111,16 +112,25 @@ export function openFailureView(summary: OpenFailureSession | undefined, error: 
 }
 
 /** A chat running in the home folder because its stored local folder is gone (hello `cwdFallback`). */
-export interface CwdFallbackInfo {
-  original: string;
-  cwd: string;
-}
+export type CwdFallbackInfo = CwdFallback;
 
 /**
  * The warning while a chat runs in the home folder instead of its own (§app.shell/missing-folder-home):
  * the stored folder by name, where the chat runs now, and that nothing in the session file changed.
  */
 export function cwdFallbackView(f: CwdFallbackInfo): { title: string; body: string } {
+  if (f.held)
+    return {
+      title: "This session's worktree is being cleaned up",
+      body: `This session's worktree was retired, but files stayed in ${f.original}, so this chat runs in your home folder, ${f.cwd}, for now. Once Sova has proved those files safe to delete, a message brings the worktree back.`,
+    };
+  if (f.retired)
+    return {
+      title: "This session's worktree was retired",
+      body: f.retired.kept
+        ? `This session's worktree was retired after ${f.retired.branch} landed. Send a message to bring it back on ${f.retired.branch} as it was. It may be behind ${f.retired.target}.`
+        : `This session's worktree was retired after ${f.retired.branch} landed. Send a message to bring it back, fresh from ${f.retired.target}.`,
+    };
   return {
     title: "This session's folder is gone",
     body:

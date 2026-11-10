@@ -10,10 +10,8 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSy
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, test } from "node:test";
-import type { SessionSummary } from "../shared/protocol";
-import * as c from "./worktree-cleanup";
-import { leftovers, leftoversDigest } from "./worktree-leftovers";
-import type { RemovedWorktree } from "./removed-worktrees";
+import { removeWorktree, withRemoveAnyway, WorktreeRefusal, type WorktreeRecord } from "./project-worktrees";
+import { leftovers, leftoversDigest, leftoversReason, removeAnywayOf } from "./worktree-leftovers";
 
 const root = realpathSync(mkdtempSync(join(tmpdir(), "sova-leftovers-int-")));
 const main = join(root, "umb");
@@ -27,8 +25,10 @@ const write = (path: string, text: string) => {
 };
 /** A linked worktree on feat/<name> with no commit of its own: an empty one, removable as far as git's history goes. */
 const add = (name: string) => git(main, "worktree", "add", "-q", "-b", `feat/${name}`, wt(name));
-const session = join(root, "sessions", "s.jsonl");
-let ledger: RemovedWorktree[] = [];
+/** The one removal a user's page can ask for by name (§app.project-overseer/coding-worktrees): the tree as Remove Worktree sees it. */
+const record = (name: string): WorktreeRecord => ({ path: wt(name), branch: `feat/${name}`, target: "master", base: git(main, "rev-parse", "master") }) as unknown as WorktreeRecord;
+const remove = (name: string) => removeWorktree(record(name), main);
+const removeAnyway = (name: string, digest: string) => withRemoveAnyway(wt(name), digest, () => remove(name));
 
 before(() => {
   mkdirSync(main, { recursive: true });
@@ -42,19 +42,6 @@ before(() => {
   write(join(be, "canary.txt"), "be\n");
   git(be, "add", "-A");
   git(be, "commit", "-q", "-m", "be");
-  // The session the dialog runs from: its folder is the main checkout, outside every tree.
-  write(session, `${JSON.stringify({ type: "session", version: 3, id: "s", timestamp: "", cwd: main })}\n`);
-  c.configureCleanup({
-    summary: async (): Promise<SessionSummary | null> => null,
-    sessionFiles: async () => [session],
-    readBranch: async () => [],
-    processes: async () => [],
-    ledger: (e) => {
-      ledger.push(...e);
-    },
-    removed: async () => {},
-    now: () => 1000,
-  });
 });
 
 after(() => {
@@ -84,55 +71,33 @@ test("the old blind spot: git calls the tree clean, and its own remove would tak
   assert.equal(readFileSync(join(be, "canary.txt"), "utf8"), "be\n");
 });
 
-test("Clean Up Merged keeps such a tree, names what it holds, and lists exactly what Remove Anyway would delete", async () => {
+test("the keep rule keeps such a tree, names what it holds, and lists exactly what Remove Anyway would delete", async () => {
   lossy("lossy");
-  const plan = await c.cleanupPlan(session);
-  assert.ok(plan);
-  assert.equal(plan.remove.some((r) => r.path === wt("lossy")), false, "not offered for removal");
-  const kept = plan.keep.find((k) => k.path === wt("lossy"));
-  assert.ok(kept, JSON.stringify(plan));
-  assert.match(kept.reason, /^Holds what can't be rebuilt: /);
-  assert.match(kept.reason, /local\.env/);
-  assert.match(kept.reason, /\.agent \(sessions\)/);
-  assert.match(kept.reason, /1 nested repository: backend/);
-  const a = kept.removeAnyway;
-  assert.ok(a, "kept only for what it holds: Remove Anyway is offered");
+  const held = await leftovers(wt("lossy"));
+  const why = leftoversReason(held) ?? "";
+  assert.match(why, /^Holds what can't be rebuilt: /);
+  assert.match(why, /local\.env/);
+  assert.match(why, /\.agent \(sessions\)/);
+  assert.match(why, /1 nested repository: backend/);
+  const a = removeAnywayOf(held);
   assert.deepEqual(a.uncommitted, []);
   assert.deepEqual(a.ignored, [".agent/auth.json", ".agent/sessions/--x--/s1.jsonl", ".agent/settings.json", "local.env"]);
   assert.deepEqual(a.nested, [{ path: "backend", kind: "worktree", of: be }]);
   assert.deepEqual(a.counts, { uncommitted: 0, ignored: 4, nested: 1, rebuildable: 0 });
-  // Removal of the confirmed path re-checks and still keeps it: nothing on disk changes.
-  const r = await c.removeTrees(main, [wt("lossy")]);
-  assert.ok(r && r !== "busy");
-  assert.deepEqual(r.removed, []);
-  assert.match(r.kept[0]!.reason, /Holds what can't be rebuilt/);
+  // A removal re-checks and still keeps it: nothing on disk changes.
+  await assert.rejects(remove("lossy"), /Holds what can't be rebuilt/);
   for (const f of ["local.env", ".agent/auth.json", ".agent/sessions/--x--/s1.jsonl", "backend/wip.txt"]) assert.ok(existsSync(join(wt("lossy"), f)), `${f} kept`);
 });
 
 test("Remove Anyway with a listing that no longer matches deletes nothing; with the current one it removes the tree", async () => {
-  const before = await leftovers(wt("lossy"));
-  const digest = leftoversDigest(before);
+  const digest = leftoversDigest(await leftovers(wt("lossy")));
   write(join(wt("lossy"), "local2.env"), "new\n");
-  const stale = await c.removeTrees(main, [wt("lossy")], { anyway: { path: wt("lossy"), digest } });
-  assert.ok(stale && stale !== "busy");
-  assert.deepEqual(stale.removed, []);
-  assert.match(stale.kept[0]!.reason, /^Changed since the list, nothing was deleted: /);
-  assert.match(stale.kept[0]!.reason, /local2\.env/, "the new file is named: it is untracked");
+  await assert.rejects(removeAnyway("lossy", digest), (err: Error) => err instanceof WorktreeRefusal && /^Changed since the list, nothing was deleted: /.test(err.message) && /local2\.env/.test(err.message));
   assert.ok(existsSync(join(wt("lossy"), "backend", "wip.txt")));
-  // Another tree's digest never removes this one.
-  const other = await c.removeTrees(main, [wt("lossy")], { anyway: { path: wt("elsewhere"), digest } });
-  assert.ok(other && other !== "busy");
-  assert.deepEqual(other.removed, []);
-
-  const plan = await c.cleanupPlan(session);
-  const a = plan!.keep.find((k) => k.path === wt("lossy"))!.removeAnyway!;
-  assert.deepEqual(a.uncommitted, ["local2.env"]);
-  ledger = [];
-  const r = await c.removeTrees(main, [wt("lossy")], { anyway: { path: wt("lossy"), digest: a.digest } });
-  assert.ok(r && r !== "busy");
-  assert.deepEqual(r.removed.map((x) => [x.path, x.kind, x.branchDeleted]), [[wt("lossy"), "empty", true]]);
+  const now = await leftovers(wt("lossy"));
+  assert.deepEqual(removeAnywayOf(now).uncommitted, ["local2.env"]);
+  await removeAnyway("lossy", leftoversDigest(now));
   assert.equal(existsSync(wt("lossy")), false, "the folder is gone");
-  assert.deepEqual(ledger.map((e) => e.path), [wt("lossy")], "in the ledger like any removal");
   assert.equal(readFileSync(join(be, "canary.txt"), "utf8"), "be\n", "the nested worktree's repository is untouched");
   assert.equal(git(be, "worktree", "list", "--porcelain").includes(join(wt("lossy"), "backend")), false, "and no longer lists the nested worktree that went");
   assert.match(git(be, "branch", "--list", "wip-lossy"), /wip-lossy/, "its branch, and so its commits, stay");
@@ -149,11 +114,7 @@ test("a tree holding only rebuildable folders and a generated .agent is removed"
   const l = await leftovers(wt("rebuild"));
   assert.deepEqual([l.dirty, l.ignored, l.nested, l.unreadable], [[], [], [], undefined]);
   assert.deepEqual(l.rebuildable, [".agent/", "dist/", "node_modules/"]);
-  const plan = await c.cleanupPlan(session);
-  assert.ok(plan!.remove.some((r) => r.path === wt("rebuild")), JSON.stringify(plan!.keep));
-  const r = await c.removeTrees(main, [wt("rebuild")]);
-  assert.ok(r && r !== "busy");
-  assert.deepEqual(r.removed.map((x) => x.path), [wt("rebuild")]);
+  await remove("rebuild");
   assert.equal(existsSync(wt("rebuild")), false);
   assert.equal(readFileSync(join(main, "a.txt"), "utf8"), "a\n", "a symlink's target stays");
 });
@@ -169,9 +130,8 @@ test("a nested repository inside a rebuildable folder still keeps the tree; a .a
   const s = await leftovers(wt("agent-state"));
   assert.equal(s.agent, "server state");
   assert.deepEqual(s.ignored, [".agent/sova/chats/c.json"]);
-  const plan = await c.cleanupPlan(session);
-  assert.match(plan!.keep.find((k) => k.path === wt("nested-dist"))!.reason, /nested repository: dist\/vendor/);
-  assert.match(plan!.keep.find((k) => k.path === wt("agent-state"))!.reason, /\.agent \(server state\)/);
+  assert.match(leftoversReason(l) ?? "", /nested repository: dist\/vendor/);
+  assert.match(leftoversReason(s) ?? "", /\.agent \(server state\)/);
 });
 
 test("a folder that can't be read keeps the tree, with no Remove Anyway", { skip: process.getuid?.() === 0 && "root reads everything" }, async () => {
@@ -181,32 +141,20 @@ test("a folder that can't be read keeps the tree, with no Remove Anyway", { skip
   mkdirSync(join(wt("unreadable"), "backend", "private"), { recursive: true });
   chmodSync(join(wt("unreadable"), "backend", "private"), 0o000);
   try {
-    const plan = await c.cleanupPlan(session);
-    const k = plan!.keep.find((x) => x.path === wt("unreadable"));
-    assert.ok(k);
-    assert.match(k.reason, /^Its files couldn't be read: /);
-    assert.equal(k.removeAnyway, undefined);
-    const r = await c.removeTrees(main, [wt("unreadable")]);
-    assert.ok(r && r !== "busy");
-    assert.deepEqual(r.removed, []);
+    const held = await leftovers(wt("unreadable"));
+    assert.match(leftoversReason(held) ?? "", /^Its files couldn't be read: /);
+    await assert.rejects(remove("unreadable"), /couldn't be read/);
     assert.ok(existsSync(join(wt("unreadable"), "local.env")));
   } finally {
     chmodSync(join(wt("unreadable"), "backend", "private"), 0o700);
   }
 });
 
-test("a tree kept for its use never gets Remove Anyway, and a forced request can't take it", async () => {
+test("a locked tree: git refuses even Remove Anyway's one force, and nothing goes", async () => {
   add("locked");
   write(join(wt("locked"), "local.env"), "x\n");
   git(main, "worktree", "lock", wt("locked"));
-  const plan = await c.cleanupPlan(session);
-  const k = plan!.keep.find((x) => x.path === wt("locked"))!;
-  assert.equal(k.reason, "Locked.");
-  assert.equal(k.removeAnyway, undefined);
-  const digest = leftoversDigest(await leftovers(wt("locked")));
-  const r = await c.removeTrees(main, [wt("locked")], { anyway: { path: wt("locked"), digest } });
-  assert.ok(r && r !== "busy");
-  assert.deepEqual(r.removed, []);
+  await assert.rejects(removeAnyway("locked", leftoversDigest(await leftovers(wt("locked")))), /Nothing was removed/);
   assert.ok(existsSync(join(wt("locked"), "local.env")));
 });
 

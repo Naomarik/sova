@@ -34,7 +34,6 @@ const { LIBRARY_KEY } = await import("./sync/kept");
 // No model list: every worker is "not verified", a warning, never a refusal.
 const sources = {
   piModels: async () => { throw new Error("offline"); },
-  claudeModels: async () => { throw new Error("offline"); },
   policy: () => ({ version: 1 as const, disabledProviders: [], disabledModels: [], subagentDisabledProviders: [], subagentDisabledModels: [] }),
 };
 const deps = { sources };

@@ -1,5 +1,5 @@
 ---
-watches: ["pi-config/extensions/claude-code/**", "server/claude-accounts.ts", "server/claude-login-state.ts", "server/auth-status.ts", "server/claude-pool/**", "server/claude-models.ts", "server/claude-transcript.ts", "scripts/fake-claude.mjs", "scripts/claude-pool-e2e/**"]
+watches: ["pi-config/extensions/claude-code/**", "server/claude-accounts.ts", "server/claude-login-state.ts", "server/auth-status.ts", "server/claude-pool/**", "server/claude-transcript.ts", "scripts/fake-claude.mjs", "scripts/claude-pool-e2e/**"]
 alsoUpdate: ["pi-config/extensions/claude-code/README.md"]
 ---
 # claude-code
@@ -37,10 +37,10 @@ logins and the pool's marks, and holds Sova's Claude model catalog.
 - `claude-executable.ts` (builtins only): the one Claude program every `claude` spawn runs, an absolute path
   resolved from the host's own `PATH` (never a chat's cwd), else `~/.local/bin/claude`, or a plain-words "Claude
   program not found" (§app.claude-code-provider/one-program). The provider, `accounts.ts`, `server/decide-llm.ts`,
-  `claude-models.ts`, `claude-status.ts` and `claude-accounts.ts` take their default from it.
+  `claude-status.ts` and `claude-accounts.ts` take their default from it.
 - `fixed-settings.ts` (imports nothing): the `--settings` every `claude` spawn gets: no attribution, auto-memory
-  off (§app.claude-code-provider/no-memory). `server/decide-llm.ts`, `session-autotitle.ts`, `claude-models.ts`
-  and `memory/summarizer.ts` import it.
+  off (§app.claude-code-provider/no-memory). `server/decide-llm.ts`, `session-autotitle.ts` and
+  `memory/summarizer.ts` import it.
 - `provider/memory-view.ts` (imports nothing): the memory view message's declared shape (the guide, the stable
   prefix, the newest lines), which `server/memory/engine.ts` builds and the bridge sends as written
   (§chat.memory/turn).
@@ -48,8 +48,6 @@ logins and the pool's marks, and holds Sova's Claude model catalog.
   protocol (see [subagents](../subagents/overview.md)).
 - `provider/fork-point.ts`, through `subagents/fork/claude.ts`: seeding a UI fork with its Claude Code
   source's live CLI session.
-- Test only: `server/claude-models.test.ts` imports `transport.ts` (builtins only) to pin the server's
-  model-discovery argv to the extension's.
 
 claude-code imports nothing outside its own directory. For worker niceness it calls the server's
 `Symbol.for("sova:lower-worker")` hook (§app.load-priority/workers); unset, as in the TUI, nothing changes.

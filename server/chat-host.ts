@@ -3,6 +3,8 @@
 // (server/chat-runtime/supervisor.ts) and talked to through a RemoteChatHandle. Installed into chat-handle.ts as
 // its router (setChatRouter), so ws.ts and every caller of acquireChatHandle/chatHandle/chatHandles
 // reach a chat the same way wherever it runs.
+import { bringBackForChat, needsBringBack } from "./worktree-retire-notes";
+import { processEnded } from "./worktree-retire-gate";
 import { randomUUID } from "node:crypto";
 import { statSync } from "node:fs";
 import { homedir } from "node:os";
@@ -393,6 +395,9 @@ export class ChatHostRouter {
   }
 
   private readonly hooks: RemoteHooks = {
+    // A chat's retired folder comes back before a message reaches it (§chat.worktrees/retirement).
+    needsBeforeMessage: (h) => needsBringBack(h.mirror),
+    beforeMessage: async (h) => void (await bringBackForChat(h)),
     state: (h) => {
       const m = h.mirror;
       const sup = this.sup;
@@ -426,6 +431,7 @@ export class ChatHostRouter {
       }
     },
     exit: (h, cause) => {
+      processEnded("chat");
       const id = h.mirror.sessionId;
       this.sup.expectExit(id, cause);
       // A reload's replacement takes the handle over (rollout's open); anything else is done.

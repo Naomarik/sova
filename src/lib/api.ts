@@ -42,8 +42,7 @@ import type {
   FileIndex,
   FolderListing,
   GitSummary,
-  WorktreeCleanupPlan,
-  WorktreeCleanupResult,
+  RetirementView,
   WorktreesSummary,
   ModeInfo,
   ModelFavoriteResult,
@@ -102,7 +101,7 @@ import type {
   PushTestResult,
 } from "../../shared/protocol";
 import type { MeshFrontDoor, MeshLocalSettings } from "../../shared/mesh-local";
-import { WIRE_PARAM, type ChatProfileState, type ProfileSwitchResult, type ShellOutputPage, type ModelCheckStatus, type ProviderKeyRow, type ProviderKeysInfo, type ProviderKeyWrite } from "../../shared/protocol";
+import { WIRE_PARAM, type ClaudeCatalogInfo, type ChatProfileState, type ProfileSwitchResult, type ShellOutputPage, type ModelCheckStatus, type ProviderKeyRow, type ProviderKeysInfo, type ProviderKeyWrite } from "../../shared/protocol";
 import { LIST_VERSION_HEADER, parseListVersion } from "./summary-diff";
 import type { ShellDraftMode } from "./draft-save";
 import type { LanPairingAdd, LanRelayPut, LanStatus } from "../../shared/mesh-lan";
@@ -309,6 +308,7 @@ export const getDelegateSettings = () => request<DelegateSettingsInfo>("/api/set
 
 /** What each worker backend offers. Slow the first time (it asks the Claude Code CLI; cached 60s);
     a backend that can't answer comes back with `models: null`, which is not "offers nothing". */
+export const getClaudeCatalog = () => request<ClaudeCatalogInfo>("/api/claude/catalog");
 export const getDelegateOptions = () => request<DelegateOptions>("/api/settings/delegate/options");
 
 /** Replace the whole routing. Delegate sessions everywhere pick it up at their next turn. */
@@ -1108,15 +1108,15 @@ export const setSessionLoadout = (path: string, offContext: string[], offSkills:
 
 /** The worktrees of a session's repository, counted (§chat.worktrees/cleanup). */
 export const fetchWorktreesSummary = (path: string) => request<WorktreesSummary>(`/api/worktrees/summary?path=${encodeURIComponent(path)}`);
-/** The cleanup's dry run: what would go and what stays, with reasons. */
-export const previewWorktreeCleanup = (path: string) =>
-  request<WorktreeCleanupPlan>("/api/worktrees/cleanup", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path, dryRun: true }) });
-/** Remove exactly `expect` (the dry run's paths), each only if still removable. */
-export const removeWorktrees = (path: string, expect: string[]) =>
-  request<WorktreeCleanupResult>("/api/worktrees/cleanup", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path, expect }) });
-/** Remove Anyway: one kept tree, only while what it holds is still the listing confirmed (its digest). */
-export const removeWorktreeAnyway = (path: string, tree: string, digest: string) =>
-  request<WorktreeCleanupResult>("/api/worktrees/cleanup", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path, force: { path: tree, digest } }) });
+/** What retirement did and holds in a project (§chat.worktrees/retirement): every retired row with `all`. */
+export const fetchRetirement = (root: string, all = false) => request<RetirementView>(`/api/worktrees/retirement?root=${encodeURIComponent(root)}${all ? "&all=1" : ""}`);
+/** Removes a finished worktree's folder and branch, pinning its last commit (an install that retires nothing: the row
+    offers it only when the server says `removable`). A refusal throws its reason. */
+export const removeWorktree = (path: string) =>
+  request<{ ok: true; path: string; branch: string; branchDeleted: boolean }>("/api/worktrees/remove", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path }) });
+/** Puts a retired branch back at its last commit and its folder at its old place. A refusal throws its reason. */
+export const restoreWorktree = (root: string, row: { path: string; branch: string; tip: string }) =>
+  request<{ ok: true; path: string; branch: string }>("/api/worktrees/restore", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ root, ...row }) });
 
 /**
  * `force` (chat only) lets the server open a session whose file was written recently by

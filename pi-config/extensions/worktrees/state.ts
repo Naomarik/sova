@@ -8,7 +8,7 @@
  * mode/state.ts and sandbox/state.ts, so tree navigation, forks and rewinds move the set with the
  * branch and the server and the extension cannot disagree.
  */
-import { realpathSync } from "node:fs";
+import { existsSync, realpathSync } from "node:fs";
 import { dirname, isAbsolute, resolve, sep } from "node:path";
 
 /** The custom-entry type the extension appends on every change. */
@@ -204,7 +204,10 @@ export function treeOf(set: WorktreesActive | undefined, cwd: string): TrackedWo
 export function workerCwdRefusal(req: { sessionCwd: string; cwd: string; set: WorktreesActive | undefined }): string | undefined {
 	const c = canonical(req.cwd);
 	if (isWithin(c, canonical(req.sessionCwd))) return undefined;
-	if (treeOf(req.set, c)) return undefined;
+	if (treeOf(req.set, c)) {
+		// Tracked, with its folder gone: it retired or was removed (§chat.worktrees/workers). A chat working elsewhere opens a new one.
+		return existsSync(c) ? undefined : `Worktrees: ${c} is gone: its branch landed or the folder was removed. Open a new worktree with the worktree tool, and start the worker there.`;
+	}
 	const names = activeTrees(req.set).map((t) => t.path);
 	return `Worktrees: worker cwd ${c} is outside this session's cwd and its worktrees (${names.length ? names.join(", ") : "none tracked"}). Start it in the session cwd or inside an active worktree; the parent agent can track one with the worktree tool.`;
 }

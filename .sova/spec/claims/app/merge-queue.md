@@ -170,7 +170,28 @@ on as any other does.
   GitHub: change How it lands" (or the reverse); or this computer not signed in to that host
   (§app.merge-queue/hosts). Push branch only isn't checked here.
 
+- a change to automatic cleanup with no passing rehearsal at that commit (below), a release's own
+  entry aside: "Rehearsal needed: {branch} changes automatic cleanup and has no passing rehearsal at
+  {sha7} on a copy of your state taken today. Nothing was queued."
+
 An approval is still taken while the queue is paused; a pause stops runs, not approvals.
+
+**A change to automatic cleanup waits for its rehearsal.** A branch of Sova's own repository whose
+commits change a file the `retire-lab` test group is triggered by (the list in `shared/retire-lab.json`:
+the code that retires and removes worktrees) lands only once a rehearsal has passed at exactly that
+commit, on a private copy of the user's real state taken the same day as the approval. Where git can't
+say what the branch changes, it waits too. Until a pass at that commit is recorded (`<state
+root>/retire-rehearsals.json`, `passes`: commit, when the copy was taken, when it passed), Land reads
+**Rehearsal needed**, disabled, on the Merge Queue tab's Ready to land rows and the Worktrees rows, with
+what it needs as its hover and for a screen reader. Every option of Land waits the same way, and so does
+a typed "land it" or any other way in, such as the project page's Land (refused as above). A fix commit
+under a standing Land (§app.merge-queue/standing-approval) that changes one of those files needs its own
+pass: the entry reads **Approved · waiting for a fix**, "Rehearsal needed", and goes in line by itself
+once that pass is recorded. It is asked at each approval
+and each fix; an entry already in line isn't stopped by the date changing. The rehearsal runs outside
+the queue, started by the user, in a container with the network off and nothing real mounted: a queue
+check must never read the user's real state, so the queue's own checks run `retire-lab`, the same
+scenarios built on made-up state, whenever those files change (§app.merge-queue/checks).
 
 **Its options.** Each is set once per approval, on the Land control's menu or in the typed words:
 - **Land without review** ("land it, skip review") skips the review step (§app.merge-queue/review)
@@ -767,7 +788,8 @@ work (a catch-up merge isn't that), and "Not
 pushed: {why}" when the push didn't happen (§chat.merge-queue/chat-card). The landing starts no turn
 there: the chat's model reads one hidden line about it at its next turn
 (§chat.merge-queue/chat-turns).
-Removing the worktree stays the user's choice (§chat.worktrees/cleanup).
+A landing wakes retirement: the branch and its folder go by themselves once nothing is left and
+nothing is using them (§chat.worktrees/retirement).
 
 ## §app.merge-queue/push — Pushing after each landing
 
@@ -1049,13 +1071,13 @@ branch was switched to in it:
   (§app.merge-queue/branch-summary);
 - in any chat's Worktrees section or worktrees control, the merge thread's own included
   (§chat.worktrees/pane);
-- on Clean Up Merged, in its counts or its lists, even once its folder is gone
-  (§chat.worktrees/cleanup).
+- in a new session's worktrees line, on the tab's Held or Retired lists or in any count of them, even
+  once its folder is gone (§chat.worktrees/cleanup).
 
 An old branch a merge thread made to fix a conflict, whether or not it counts as a scratch copy below,
 has nothing of its own left (every commit it has but a merge is on the target), so it is off the Ready
-to land list by that answer alone (§chat.worktrees/nothing-left). It stays where it is: nothing here
-removes it.
+to land list by that answer alone (§chat.worktrees/nothing-left). Nothing in the queue removes it: it
+retires by the rule below.
 
 An approval of one, by Land, typed words or `merge.add`, naming its branch or its folder, is
 refused with nothing queued: "{branch} is a scratch copy the merge queue made to resolve a
@@ -1070,7 +1092,8 @@ for an attempt (by a mark Sova keeps in git's own record of the worktree, never 
 branch name), or when one of the queue's own chats (§app.merge-queue/chats) created it, whatever it
 or its branch is called. One a queue chat only attached is not one. So a copy a merge thread made
 itself, on a branch of its own, before Sova made them, leaves every list above as soon as this
-ships. A worktree of yours is never taken for one because of its name.
+ships. Sova reads who made it from the queue chats' own files, since those chats are left out of
+every ordinary list: one the chat created counts, one it dropped doesn't. A worktree of yours is never taken for one because of its name.
 
 **Removed when its attempt ends.** As soon as the attempt the copy was made for ends (it lands, is
 sent back, is cancelled or removed from the queue, or a newer approval of the branch replaces it),
@@ -1081,9 +1104,13 @@ attempt starts from the newest target.
 **Tidied when Sova starts.** At startup Sova also removes every scratch copy it made and every kept
 fix whose attempt has ended, or that the queue no longer has a record of, so one missed while Sova
 was stopped isn't left behind. It never touches a copy or a fix that an attempt still in line,
-checking or waiting for you needs, and removes those once that attempt ends. Sova removes only
-copies it made itself: a copy a merge thread made on a branch of its own is never removed by Sova
-on its own, only hidden.
+checking or waiting for you needs, and removes those once that attempt ends. This tidying takes only
+copies Sova made itself. A copy a merge thread made on a branch of its own (`feat/resolve-mq_*`) is
+hidden as above, and retires like any other branch, folder and branch whatever the project's Delete
+branches when cleaning up says, when the same rule allows,
+those that look unmerged included: every commit it has but a merge is on the target
+(§chat.worktrees/retirement). Its last commit stays restorable. The first pass's report lists these in
+a group of their own, the queue's own, whether they retired or are held.
 
 ## §app.merge-queue/master-moved — The target moved outside the queue
 
@@ -1196,7 +1223,8 @@ up, branches land here only through the queue.", with
 **Set Up with a Chat**, which opens the project's Setup chat (§app.merge-queue/setup,
 §app.project-setup/start). While a setup branch is proposed or the Setup chat is working, the tab
 shows the proposal, its newest trial and the chat's state in that banner's place
-(§app.project-setup/proposal). For a project it serves, it
+(§app.project-setup/proposal). **Held** and **Retired** (below) show under it as well, as two plain
+sections, since retirement covers every listed project. For a project it serves, it
 shows, top to bottom:
 
 - **The strip**: the target at its commit, and the commit `origin` has for it
@@ -1262,7 +1290,7 @@ Under them, the same whatever tab is chosen:
 **The status tabs.** Under Waiting, a strip of tabs, in this order: **Ready to land**, **Needs
 you**, **With its chat**, **Waiting on GitHub** (or **Waiting on GitLab**, or **Waiting on the host** for a project that
 only pushes its branches; only on a project that lands on its host, or while an entry still waits
-on one, §app.merge-queue/requests), **Landed** and **Queue chats**. One tab shows at a time, under the strip; **Ready to land** is chosen
+on one, §app.merge-queue/requests), **Held**, **Landed** and **Queue chats**. One tab shows at a time, under the strip; **Ready to land** is chosen
 first. Each tab shows exactly the rows its section showed before the tabs (Ready to land was "Ready
 to land, not approved", Landed was "Recent", Queue chats was "History"), with the same contents and
 actions, nothing more and nothing fewer. A tab with nothing in it stays in the strip and, when
@@ -1278,7 +1306,7 @@ and is in the warn colour while it is above 0. Landed shows at most the newest 2
 **The tab is in the address.** The chosen tab is part of the page's address, so a reload, Back and
 Forward, and a link copied from the page keep it: Ready to land is the plain
 `#/projects/<pid>/merge-queue`, and each other tab adds its word (`…/merge-queue/needs-you`,
-`with-its-chat`, `waiting-on-host`, `landed`, `queue-chats`). A run opened from a tab keeps the tab
+`with-its-chat`, `waiting-on-host`, `held`, `landed`, `queue-chats`). A run opened from a tab keeps the tab
 in its address (`…/merge-queue/needs-you/<run>`; from Ready to land, `…/merge-queue/<run>`), and
 its **Back to Queue** returns there. Coming back from a run's page (Back to Queue, the path's
 "Merge queue" or the browser's Back) scrolls the page so the tab strip is at its top, where the
@@ -1296,6 +1324,11 @@ since the tab was opened.
 **On narrow room** (below), the strip keeps every tab on one line and scrolls sideways, fading at an
 edge while tabs are hidden past it, as every tab strip does (§design/deviations); the tab chosen is
 scrolled into view, clear of that fade.
+
+Where retirement is off (§chat.worktrees/retirement), its sentence shows once, above the strip or, on a
+project the queue doesn't serve, above Held and Retired, for every reason (a custom agent directory, a test
+copy, `SOVA_RETIRE=off`, or a server that can't tell) and even with no rows. Remove on a Worktrees row
+(§chat.worktrees/pane) is only for the custom agent directory; the other reasons offer nothing.
 
 The tabs' rows:
 
@@ -1370,11 +1403,25 @@ The tabs' rows:
   GitHub** (or GitLab), and **Land Again** where it applies; host checks failing, changes requested
   and conflicts read "Back with the chat" while its chat fixes them (§app.merge-queue/requests).
   Opening the Merge Queue tab checks them on the host.
+- **Held**: worktrees retirement can't take (§chat.worktrees/retirement), each with its chat as the
+  other rows name it, its branch, and its reason in a sentence: "2 spec drafts not proved landed", "3
+  uncommitted files: a.ts and 2 more", "A process is running in it: {command} ({pid}).". A row has no
+  action: a branch held for its drafts also has its row under Ready to land, with Land, which lands
+  just the drafts. Under the rows, a line counts those that only wait, with their reasons as its hover and
+  for a screen reader: "{n} more waiting until quiet". They leave by themselves. If cleanup can't
+  start for this project because its lock looks taken, the tab leads with one line saying so; it isn't a
+  row and isn't counted. Branches a queue chat made never show here.
 - **Landed**: landings, each with a **Landed** chip, "Landed as {sha} · {when} · pushed" (or "not
   pushed: {why}"), "No checks
   declared" when so, every note, and **View Checks**. A request the host merged has, in place of
   Landed, a **Merged on GitHub** (or **Merged on GitLab**) chip, then "as {sha} · {when}", and never
-  says pushed or not pushed; a pushed branch reads "Pushed {branch} at {sha}".
+  says pushed or not pushed; a pushed branch reads "Pushed {branch} at {sha}". Under the landings, in this
+  same tab, the **Retired · {n}** list: branches that retired, newest first by date, the newest 20 and
+  then **Show All**, each only its branch, "Retired {when}", whether its branch was kept or deleted where the ledger knows, and
+  **Restore** where a last commit is pinned, which puts its folder back at its old place and the branch
+  back at that commit, or leaves a branch still there as it stands (§chat.worktrees/retirement). A refusal shows under the row. A branch that came back, by Restore or
+  a message, leaves the list and every count. If it retires again only the newest entry shows Restore;
+  the older commit stays pinned with no row. Branches a queue chat made never show here.
 - **Queue chats**: every chat the queue has had for the project, each opening its chat,
   with **Clear** and **Clear All…** (§app.merge-queue/chats). Each run's row in Checking now, Needs
   you, With its chat and Landed also shows its review with **Open Reviewer Chat**.
@@ -1428,7 +1475,7 @@ closing the sidebar can change it.
   under its title. Nothing scrolls sideways at 360px but the strip of status tabs, which keeps its
   tabs on one line and scrolls by itself, never the page.
 - **With room**, every row of the tab alike (Checking now, Waiting, Ready to land, Needs you, With its
-  chat, Landed and Queue chats) puts its actions in a column at its top right,
+  chat, Held, Landed and Queue chats) puts its actions in a column at its top right,
   each button at its own width; an open Land confirmation spans the row, at its right. A card's head
   keeps its title and its buttons on one line.
 
@@ -1495,7 +1542,8 @@ stops following; scrolling back to the end resumes it.
 Every action here is a catalogue command: Land, Remove from Queue,
 Pause, Resume, Accept, Land Anyway, Try Again, Start Fresh, Clear and Clear All over
 the merge verbs (§app.project-services/merge-verbs), Update Local Main, Publish and a
-branch summary's Try Again over the queue's own routes, which the merge thread can't call. Queue
+branch summary's Try Again over the queue's own routes, which the merge thread can't call, and
+Restore over `session.worktree.restore` (§app.session-commands/sessions-sweep). Queue
 Settings and Open on GitHub only
 open a place. The view follows the queue live,
 from the session feed's merge-queue frames, at desktop and phone widths. The same frames, every
@@ -1903,8 +1951,11 @@ queue uses."
 **Its groups**, each row tagged where its value lives: **Project file**, **This computer** or
 **Set by Sova**.
 - **Landing**: How it lands (§app.merge-queue/strategies), Lands into (the target), Push after each
-  landing (only under Merge locally, §app.merge-queue/push), and Private names: "Set up · {n}
-  names" or "Not set up", never the names themselves.
+  landing (only under Merge locally, §app.merge-queue/push), Private names: "Set up · {n}
+  names" or "Not set up", never the names themselves, and Delete branches when cleaning up (On or Off,
+  Project file, off by default), with "Automatic cleanup removes a landed branch's folder and keeps the
+  branch." while off and "Automatic cleanup removes a landed branch's folder, then the branch. Its last
+  commit stays restorable." while on (§chat.worktrees/retirement).
 - **Checks**: "{n} always, {m} when the merge thread picks them", then each check with its time
   limit, whether it reruns failed files, and whether it always runs or only when picked
   (§app.merge-queue/checks), "Reuse passes from identical code" (On or Off, Project file, on by
@@ -1933,7 +1984,9 @@ queue uses."
   only while that folder is on the target;
 - each check's time limit (at most 30 min), whether it reruns failed files, and whether it always
   runs or only when the merge thread picks it;
-- reuse of passes from identical code on or off.
+- reuse of passes from identical code on or off;
+- Delete branches when cleaning up on or off. A project the queue doesn't serve, a project with no
+  definition among them, can't turn it on and keeps its branches.
 
 Everything else is read only: check commands, setup, install, the kit's folder, and every value
 Set by Sova. A command is changed in a branch, where the queue tests it.
@@ -1971,13 +2024,16 @@ with no commit, and applies from the next review, the next fresh merge thread or
 confirms. Changes are gathered on the tab ("{n}
 changes to the project file.", with **Discard Changes** and **Save to {target}…**), and the
 confirm lists each one and says "Save these changes to .sova/project.json as 1 commit on {target}?"
-and "It applies from the next landing and isn't checked first." These saves are the tab's own,
+and "It applies from the next landing and isn't checked first." (Delete branches when cleaning up applies
+from the next cleanup, and the confirm says so.) These saves are the tab's own,
 not Settings' Save Changes (§app.settings-dialog/save-bar). This is the one exception to the rule
 that everything reaches the target through the queue: the change itself is not checked first.
 - Only the changed values of the `merge` section are rewritten (`push`; `review`; `reuse`, written
   `false` when turned off and its key removed when turned back on, listed as "Reuse passes from
   identical code: off" and titled "reuse passes from identical code off"; each check's `timeout`, `rerun`
-  and `optional`, a switch turned off removing its key); every other byte of
+  and `optional`, a switch turned off removing its key; `deleteBranches`, written `true` when turned on and
+  its key removed when turned off, a project with no `merge` section getting one for it, listed as "Delete
+  branches when cleaning up: on" and titled "delete branches on"); every other byte of
   `.sova/project.json` stays as it was. The result must parse as a definition with exactly those
   changes, or nothing is saved.
 - The commit is titled "Merge queue settings: {what changed}" ("Merge queue settings: push off;
@@ -2231,8 +2287,8 @@ changes requested that ask for something the user must decide wait for them
 as today (§chat.merge-queue/chat-turns). The host's merge counts as the queue's own
 (§app.merge-queue/master-moved). The host may squash or rebase, so it says what Sova checked and
 that the host's merge is final ("Merged on GitHub. Sova checked it merged with {target}; GitHub's
-merge is final."). Deleting the branch on the host is left to the host's own setting; removing the
-worktree stays yours.
+merge is final."). Deleting the branch on the host is left to the host's own setting; the worktree
+retires by itself once nothing is left and nothing uses it (§chat.worktrees/retirement).
 
 **Closed without merging** reads "Closed on GitHub", with **Land Again** while the queue still
 serves the project; a repository it no longer serves shows no Land at all, even on an old closed

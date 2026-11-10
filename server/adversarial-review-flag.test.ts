@@ -15,7 +15,7 @@ process.env.PI_CODING_AGENT_DIR = agentDir; // before the modules below compute 
 
 const { writeWebSettings } = await import("./web-settings");
 const { extensionFlagsFor } = await import("./chat-manager");
-const { DEFAULT_REVIEWER, readSubagentProfiles, writeSubagentProfiles } = await import("../pi-config/extensions/subagents/subagent-profiles.ts");
+const { defaultReviewer, readSubagentProfiles, writeSubagentProfiles } = await import("../pi-config/extensions/subagents/subagent-profiles.ts");
 const { delegateDefaults } = await import("../pi-config/extensions/mode/delegate.ts");
 
 test("only alignment.review: true stored: the session flag is on and the reviewer is seeded", () => {
@@ -28,7 +28,7 @@ test("only alignment.review: true stored: the session flag is on and the reviewe
   assert.equal(extensionFlagsFor(agentDir, false, false).get("adversarial-review"), true);
   const library = readSubagentProfiles(agentDir);
   assert.ok(library.state === "ok" && library.value.profiles[0]!.reviewer !== undefined);
-  assert.deepEqual(library.state === "ok" ? library.value.profiles[0]!.reviewer : null, DEFAULT_REVIEWER, "the first save that turns it on seeds the default reviewer");
+  assert.deepEqual(library.state === "ok" ? library.value.profiles[0]!.reviewer : null, defaultReviewer(), "the first save that turns it on seeds the default reviewer");
   assert.deepEqual([...extensionFlagsFor(agentDir, false, true)], [], "a loadout with no extension gets no flag at all");
   writeWebSettings({ alignment: { review: false } });
   assert.equal(extensionFlagsFor(agentDir, false, false).has("adversarial-review"), false);

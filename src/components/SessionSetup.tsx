@@ -20,6 +20,7 @@ import {
   offSets,
   OPEN_FILE_FAILED,
   openFileLabel,
+  skillProblemsLine,
   skillsHeading,
   skillsNone,
   skillsNote,
@@ -290,6 +291,9 @@ export function SessionSetupCard(props: { path: string; editable?: boolean; tool
                                   <button class="setup-path setup-open" type="button" aria-label={openFileLabel(k.name)} onClick={() => void openFile(k.name, k.path)}>
                                     {k.name}
                                   </button>
+                                  <Show when={k.manualOnly}>
+                                    <span class="setup-manual">Manual only</span>
+                                  </Show>
                                 </span>
                                 <span class="setup-facts">{fileFacts(k)}</span>
                                 <Show when={switchable()}>
@@ -309,6 +313,7 @@ export function SessionSetupCard(props: { path: string; editable?: boolean; tool
                           </For>
                         </ul>
                       </Show>
+                      <Show when={skillProblemsLine(s())}>{(line) => <p class="setup-note">{line()}</p>}</Show>
                     </div>
                   </>
                 );

@@ -190,7 +190,6 @@
     "session.title.auto",
     "session.title.shorten",
     "session.worktree.summary",
-    "session.worktree.cleanup",
     "session.diff.summary",
     "overseer.get",
     "overseer.memory.get",
@@ -255,6 +254,10 @@
     "project.verb.merge.respond",
     "session.profile.switch",
     "session.profile.switch.cancel",
+    "session.worktree.retirement",
+    "session.worktree.restore",
+    "session.worktree.remove",
+    "session.worktree.status",
     "design.list",
     "design.page",
     "design.setup.set",
@@ -269,6 +272,7 @@
     "settings.agents.get",
     "session.tags.backfill",
     "session.tags.backfill.status",
-    "session.tags.backfill.cancel"
+    "session.tags.backfill.cancel",
+    "session.worktree.cleanup"
   ]
 }

@@ -937,7 +937,7 @@ for (const width of [1280, 390]) {
       assert.equal(await tab.locator('[data-state="queued"]').count(), 0, "no waiting row while closed");
       // The strip: every tab with its count but Landed; Ready to land shown first; no host tab on a local project.
       const strip = tab.getByRole("tablist", { name: "Merge queue" });
-      assert.deepEqual(await strip.getByRole("tab").evaluateAll((els) => els.map((e) => e.getAttribute("aria-label"))), ["Ready to land · 1", "Needs you · 2", "With its chat · 1", "Landed", "Queue chats · 0"]);
+      assert.deepEqual(await strip.getByRole("tab").evaluateAll((els) => els.map((e) => e.getAttribute("aria-label"))), ["Ready to land · 1", "Needs you · 2", "With its chat · 1", "Held · 0", "Landed", "Queue chats · 0"]);
       assert.equal(await strip.getByRole("tab", { selected: true }).getAttribute("aria-label"), "Ready to land · 1");
       assert.equal(await strip.locator(".mq-tab-count-warn").count(), 1, "one count warns");
       assert.equal(await strip.locator('[data-tab="needs-you"] .mq-tab-count-warn').count(), 1, "Needs you's, while it has anything");
@@ -1025,6 +1025,7 @@ for (const width of [1280, 390]) {
       assert.equal(await tab.getByRole("button", { name: /^Waiting · / }).getAttribute("aria-expanded"), "false");
       // Keys move along the strip (wrapping); Enter picks.
       await strip.getByRole("tab", { selected: true }).focus();
+      await page.keyboard.press("ArrowLeft");
       await page.keyboard.press("ArrowLeft");
       await page.keyboard.press("Enter");
       await until("With its chat by key", async () => (await hashOf(page)) === `#/projects/${PID}/merge-queue/with-its-chat`);
@@ -1462,7 +1463,7 @@ for (const width of [1280, 390]) {
       const { page } = o;
       const strip = page.getByRole("tablist", { name: "Merge queue" });
       await strip.waitFor({ timeout: 20_000 });
-      assert.deepEqual(await strip.getByRole("tab").evaluateAll((els) => els.map((e) => e.getAttribute("aria-label"))), ["Ready to land · 1", "Needs you · 3", "With its chat · 1", "Waiting on GitHub · 1", "Landed", "Queue chats · 0"]);
+      assert.deepEqual(await strip.getByRole("tab").evaluateAll((els) => els.map((e) => e.getAttribute("aria-label"))), ["Ready to land · 1", "Needs you · 3", "With its chat · 1", "Waiting on GitHub · 1", "Held · 0", "Landed", "Queue chats · 0"]);
       assert.equal(await strip.getByRole("tab", { selected: true }).getAttribute("aria-label"), "Waiting on GitHub · 1");
       const panel = page.getByRole("tabpanel");
       await panel.locator('li[data-branch="feat/on-github"]').waitFor({ timeout: 20_000 });

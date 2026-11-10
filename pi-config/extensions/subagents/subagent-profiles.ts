@@ -400,10 +400,12 @@ export function writeProfilesDefault(agentDir: string, value: unknown): Subagent
 // ── The reviewer's default (adversarial review) ──────────────────────────────
 
 /** The reviewer the seeding writes: Sol on pi, with Claude Code's Opus as its fallback. */
-export const DEFAULT_REVIEWER: ReviewerRoute = {
-	primary: { backend: "pi", model: "openai-codex/gpt-6.1-sol", effort: "high" },
-	fallback: { backend: "claude-code", model: latestClaude("opus").id, effort: "high" },
-};
+export function defaultReviewer(): ReviewerRoute {
+	return {
+		primary: { backend: "pi", model: "openai-codex/gpt-6.1-sol", effort: "high" },
+		fallback: { backend: "claude-code", model: latestClaude("opus").id, effort: "high" },
+	};
+}
 
 /**
  * Give every library profile WITHOUT a `reviewer` key the default reviewer, once adversarial review
@@ -412,7 +414,7 @@ export const DEFAULT_REVIEWER: ReviewerRoute = {
  * mesh's watcher syncs the library like any save. A malformed library is left alone (`ok: false`):
  * the caller retries at a later save. Returns the ids it gave the default.
  */
-export function seedReviewer(agentDir: string, reviewer: ReviewerRoute = DEFAULT_REVIEWER): { ok: boolean; seeded: string[] } {
+export function seedReviewer(agentDir: string, reviewer: ReviewerRoute = defaultReviewer()): { ok: boolean; seeded: string[] } {
 	const state = loadSubagentProfiles(agentDir);
 	if (state.state !== "ok") return { ok: false, seeded: [] };
 	const seeded = state.value.profiles.filter((p) => !("reviewer" in p)).map((p) => p.id);

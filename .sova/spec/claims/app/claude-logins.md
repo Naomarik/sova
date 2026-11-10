@@ -152,8 +152,8 @@ Every `claude` process Sova or its extensions start runs on exactly one login, b
 `CLAUDE_CONFIG_DIR` to that login's directory (or, for `default`, leaving the environment as it
 was, less an inherited `CLAUDE_CONFIG_DIR` that names an added login's directory; in a hermetic agent
 dir, setting it to that dir's `claude-default/`, §app.claude-logins/registry): the Claude Code chat provider's child for a session (a Claude Code worker's included: it is a
-pi worker on that provider, §app.subagents-pane/claude-code-workers), model discovery (the
-extension's and the server's), the server's `claude --version` check, and the topic-outline
+pi worker on that provider, §app.subagents-pane/claude-code-workers), a learned model's one-word test
+(§app.claude-code-provider/default-test), the server's `claude --version` check, and the topic-outline
 summarizer.
 
 The login is **this host's first usable login in its order**: enabled, assigned here, neither
@@ -392,7 +392,7 @@ one Claude login of this host that its new chats start on.
   fallback) gets none and keeps this computer's order. The Project Assistant's and the gathering sessions' chats
   run in the organization's workspace repo, in no project, and so are not covered. Work started from
   a terminal outside Sova, and background jobs (titles, memory summaries, topic outlines, Decisions,
-  model discovery), keep this computer's order (§app.claude-logins/spawn-selection).
+  a learned model's one-word test), keep this computer's order (§app.claude-logins/spawn-selection).
 - **How a chat starts.** A new chat in the project starts on the project's login while that login
   is usable here; with the mesh on and the login free at the keeper, the device first borrows it by
   name, as a composer pick does (§app.claude-logins/borrow-return). The chat's own login (recorded,
@@ -537,7 +537,7 @@ login unused, and is retried when the keeper comes back.
 ## §app.claude-logins/drain — Every process on a login stops before it leaves
 
 Every process that runs `claude` on an added login — a chat's child (in Sova or in a TUI,
-a Claude Code worker's included), model discovery, the topic summarizer — is tracked per login, with whether it
+a Claude Code worker's included), the topic summarizer — is tracked per login, with whether it
 is in the middle of a turn. On Linux, a `claude` process that keeps no such record (one started
 before this version, or by hand with `CLAUDE_CONFIG_DIR` set to the login's directory) is found by
 that variable (the process list is read again at least once a minute, and at once before a login is

@@ -149,7 +149,7 @@
   "§app.project-services/contract": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "requires": [],
     "code": [
       "shared/project-contract.ts",
@@ -174,9 +174,9 @@
       "shared/project-contract-release.test.ts"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-11-05T03:58Z",
-      "source": "pi-session:4c2be31e-b72f-4e3c-ae0b-8e551d522e03#18bf7727"
+      "by": "naomarik",
+      "at": "2026-11-09T16:22Z",
+      "source": "pi-session:01a1b2f4-86c6-73d4-9fe9-b847b27035f9#950bc2c9"
     }
   },
   "§app.project-services/create": {
@@ -786,7 +786,7 @@
   "§app.project-services/teardown": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "requires": [
       "§app.project-services/down",
       "§app.project-services/instances"
@@ -806,8 +806,8 @@
     ],
     "agreed": {
       "by": "naomarik",
-      "at": "2026-11-07T15:21Z",
-      "source": "pi-session:a08b61c6-6f44-4ae1-ace0-ced83f26f0b0#40313700"
+      "at": "2026-11-09T16:22Z",
+      "source": "pi-session:01a1b2f4-86c6-73d4-9fe9-b847b27035f9#950bc2c9"
     }
   },
   "§app.project-services/test": {

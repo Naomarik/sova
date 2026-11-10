@@ -152,7 +152,7 @@ test("the first write stores it as alignment.review, and from then on the old ke
 });
 
 // ── Adversarial review (§chat.alignment-review/flag, /route) ─────────────────────────────────
-const { readSubagentProfiles, writeSubagentProfiles, DEFAULT_REVIEWER } = await import("../pi-config/extensions/subagents/subagent-profiles.ts");
+const { readSubagentProfiles, writeSubagentProfiles, defaultReviewer } = await import("../pi-config/extensions/subagents/subagent-profiles.ts");
 const { delegateDefaults } = await import("../pi-config/extensions/mode/delegate.ts");
 const profile = (id: string, extra: Record<string, unknown> = {}) => ({ id, name: id, delegate: delegateDefaults().profiles, teams: null, members: null, specWriter: null, ...extra });
 const library = () => {
@@ -184,7 +184,7 @@ test("the first save that turns it on seeds keyless profiles once; None and own 
   writeSubagentProfiles(agentDir, { version: 1, profiles: [profile("bare"), profile("none", { reviewer: null }), profile("own", { reviewer: own })] });
   assert.deepEqual(writeWebSettings({ alignment: { review: true } }), REVIEW_ON);
   const [bare, none, mine] = library();
-  assert.deepEqual(bare!.reviewer, DEFAULT_REVIEWER);
+  assert.deepEqual(bare!.reviewer, defaultReviewer());
   assert.equal(none!.reviewer, null);
   assert.deepEqual(mine!.reviewer, own);
   assert.deepEqual(stored().seeded, { adversarialReview: true });
@@ -214,6 +214,6 @@ test("a malformed library is never overwritten, and the seeding waits for a late
   assert.equal(stored().alignment.review, true, "the switch itself saved");
   writeSubagentProfiles(agentDir, { version: 1, profiles: [profile("fixed")] });
   writeWebSettings({ alignment: { review: true } });
-  assert.deepEqual(library()[0]!.reviewer, DEFAULT_REVIEWER);
+  assert.deepEqual(library()[0]!.reviewer, defaultReviewer());
   assert.deepEqual(stored().seeded, { adversarialReview: true });
 });

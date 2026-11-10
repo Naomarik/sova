@@ -197,7 +197,7 @@ the Usage tab stays one tap away in the strip.
 
 The pane is Session detail: a head, the remote controls row (§app.shell/remote-session-chips), a
 tab strip, and one tab's panel, which scrolls on its own. The tabs, in this order: **Session ·
-Timeline · Agents · Usage · Time Spent · Context · Sharing · Skills · Explain** (`.tabs.session-tabs`, `role="tablist"`, one
+Timeline · Agents · Usage · Time Spent · Context · Sharing · Explain** (`.tabs.session-tabs`, `role="tablist"`, one
 `role="tabpanel"`; roving `tabindex`, Left/Right wrapping, Home/End). Every tab is always in the
 strip, empty or not, so the strip never shifts under the reader.
 
@@ -207,7 +207,8 @@ strip, empty or not, so the strip never shifts under the reader.
   §chat.timeline/opening-it; the head's token chip: Usage). The pane keeps the chosen tab per
   session path, in memory only. With none kept, it opens on Agents when a worker is working at
   open, else on Session, settled once at open so the tab never moves when the last worker
-  finishes. Usage, Time Spent, Context and Sharing are never the default.
+  finishes. Usage, Time Spent, Context and Sharing are never the default. A kept tab the strip
+  doesn't have opens as if none were kept.
 - **The strip never wraps** (§app.subagents-pane/tab-strip).
 - **Session** is what the session is, in this order: Path (with Copy Session Path and Copy Resume
   Command), Repository, Worktrees (§chat.worktrees/pane), Background jobs while it has any
@@ -254,8 +255,8 @@ strip, empty or not, so the strip never shifts under the reader.
   tab, "Open in a tab", never counts), the tab carries a count chip, and its accessible name is
   "Sharing, {n} viewing now"; at zero there is no chip and the name is "Sharing".
 - **Context** is what fills this chat's context window (§app.subagents-pane/context-tab).
-- **Time Spent** is §app.message-labels/time-spent-tab, **Timeline** §chat/timeline, **Agents** the list and transcript below; **Skills** says which
-  skills loaded and when, and **Explain** lists the session's /explain pages.
+- **Time Spent** is §app.message-labels/time-spent-tab, **Timeline** §chat/timeline, **Agents** the list and transcript below, and **Explain** lists
+  the session's /explain pages. Which skills the chat has read is Context's Skills offered.
 
 ## §app.subagents-pane/tab-strip — The tab strip never wraps
 
@@ -479,7 +480,7 @@ sent. Each part is read as the chat's folder and the chat hold it now (`GET
   **Conversation** (the messages since the latest compaction, its kept part included, less the
   loaded subfolder files, which count under Instruction files; a command kept from the model with
   `!!` counts nothing, §chat.shell-mode/model). A line at 0 is left out, except
-  Instruction files while it lists a file not yet loaded. Once a reply has given a total, **Other**
+  Instruction files while it lists a file not yet loaded and Skills offered while it has any row. Once a reply has given a total, **Other**
   sits apart below them: the total minus every other line, never below 0, what the estimates don't
   explain (Claude Code's own prompt, for example), with that explanation on its row. Free has no
   line: the room left is the headline's `{free} left` and the fill bar's empty end. Every size is an
@@ -511,7 +512,35 @@ sent. Each part is read as the chat's folder and the chat hold it now (`GET
   pipes through them); one it can't follow (`grep`, a pipe into another filter) counts none. When
   the file can't be measured, a read with no bounds shows Read and any other Not read yet. The
   line's `{r} read` counts whole reads only. A skill loaded before the latest compaction shows Not
-  read yet; its text has left the window.
+  read yet; its text has left the window. The line's own short line stays `{n} skills · {r} read`,
+  `{n}` the skills in the window. Its sheet is laid out as Instruction files' is: on top `{r} read`,
+  then `· {p} partly read` while some are and `· {m} not read yet` while some are, then a card of
+  the skills read, biggest first, then those partly read, biggest first, then the rest, biggest
+  first, under **Not read yet**. `{p}` counts only the skills above the Not offered yet section: a
+  partly read skill that isn't offered yet (a subfolder's or a manual-only one) stays in that section
+  with its Partly read chip, and is counted among the not offered yet, never in `{p}`. A group with
+  none isn't shown.
+  Unlike a file not yet loaded, a skill not read yet is already in the window: its name and
+  description are what the line counts, so it keeps its `≈{n}` size and its share bar, stays in every
+  total, and the heading doesn't say "not counted". A note under the heading says so. Any skill, read
+  or not, opens to its text.
+
+  A last section, **Not offered yet · not counted**, lists the skills of folders below the chat's own
+  that the model hasn't been offered (§chat.subfolder-skills/offering), and manual-only skills
+  (§chat.skill-sources/manual-only), walked as the instruction files below the chat's folder are, under
+  the same cap and its "This list may be incomplete." Each row shows the skill's name, its folder when
+  it is below the chat's, its description, what it would add (`+≈{n}`) and no share bar, and opens to
+  its text. It adds nothing to any total. Once a subfolder's skill is offered, it moves to Not read yet
+  with its size counted, then to Read, and the conversation is counted less its listing, so it isn't
+  counted twice. Its folder stays on its row, so two skills of one name can be told apart. A manual-only
+  skill is never offered, so it stays in this section, chipped **Manual only** (**Partly read** once
+  part of its text has loaded), and what it would add is its whole text. A skill whose whole text loaded
+  without being offered (`/skill:` ran it, or the agent read its file) counts as Read with a size of
+  `≈0`, last in the card, a manual-only skill included: its text is under Conversation, and no listing
+  of it is in the window. The line's short line adds `· {k} not offered yet` while there are some, and
+  the sheet's top line does too. The line stays while it has any row, even at `≈0`. A chat that loads no
+  skills, or a worker whose tools can't touch and read a file, lists no skill of a folder below its own
+  here.
 - **Conversation** opens to its parts: **Tool results**, **Replies** and **Your messages**, each
   with its count and ≈ size, then **Other messages** (an extension's messages and branch summaries)
   only while there are some, and, once the chat has compacted, the **Compaction summary** the
@@ -563,7 +592,7 @@ list/detail. From 1280 the column is 40vw and asks its own box, so it's side by 
 - **Which half opens.** It's settled once, when the first workers arrive: 1 worker opens on
   that worker, and more open on the list. A second worker starting later doesn't swap the half
   under the reader. The pane (`SessionPane`) keeps the half across tab switches for as long as
-  it's open. Skills' "show this worker" opens the worker. With nothing selected (no workers, or
+  it's open. With nothing selected (no workers, or
   the list couldn't load), the view half shows, since it holds those empty and error states.
 - **Stacking was rejected.** Putting the list on top of the transcript gave each one a strip,
   with no visible line between them, and at 30vh a list of 7 workers still scrolled.

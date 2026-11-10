@@ -16,6 +16,7 @@
 // when this build is that one; SOVA_CHAT_TEST_HOLD_BOOT=<build> holds the start, its code loaded, until
 // a server has taken control (so that control is the one handed over as the boot ends);
 // SOVA_CHAT_TEST_BEAT_MS beats faster than every 10 s.
+import "../own-folder-guard-boot";
 import { spawn, type ChildProcess } from "node:child_process";
 import type { ExitCause, FrameOf } from "../../shared/chat-runtime-wire";
 import { BEAT_MS, BootTrail, childPrograms, stoppedText } from "./boot-steps";

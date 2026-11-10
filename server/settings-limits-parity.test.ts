@@ -24,8 +24,6 @@ after(() => rmSync(agentDir, { recursive: true, force: true }));
 
 const { testApp } = await import("./mesh/app-test-fixtures");
 const app = await testApp();
-const { cachedClaudeModels } = await import("./delegate");
-const primeClaude = () => cachedClaudeModels(async () => []);
 
 const overseer = await import("../src/lib/overseer-draft");
 const providerLimits = await import("../src/lib/provider-limits");
@@ -47,7 +45,6 @@ async function get(url: string): Promise<Json> {
 }
 /** The route's verdict: taken (2xx) or refused (4xx, with its words). Never a 5xx. */
 async function putStatus(url: string, body: unknown): Promise<{ ok: boolean; error?: string }> {
-  await primeClaude();
   const res = await app.request(url, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
   assert.ok(res.status < 500, `PUT ${url} answered ${res.status}`);
   const json = (await res.json().catch(() => ({}))) as { error?: string };

@@ -134,7 +134,6 @@ function fakeJev(opts: { goodKey?: string; decideStatus?: number } = {}) {
 const noLlm = { runtime: async () => { throw new Error("no runtime in tests"); } };
 const sources = {
   piModels: async () => [{ ref: "prov/m", id: "m", provider: "prov", thinkingLevels: ["off", "low"] }],
-  claudeModels: async () => [{ id: "claude-haiku-4-5", name: "Haiku", efforts: ["low", "medium"] }],
   policy: () => ({ disabledProviders: [], disabledModels: [], subagentDisabledProviders: [], subagentDisabledModels: [] }),
 } as unknown as import("./delegate").DelegateSources;
 

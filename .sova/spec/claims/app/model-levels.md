@@ -112,7 +112,9 @@ check went (§app.model-levels/settings-line).
 - Whenever the metadata file changes, whichever process wrote it, the server applies it again, so
   Sova's model list (`GET /api/models`, the picker, Settings → Models) follows a finished check with
   no restart. Thinking levels and retired-model hiding hold the same for a model `models.json` lists
-  and one the check added.
+  and one the check added. Sova's Claude model list follows the same way: whenever
+  `<stateRoot>/claude-models.json` changes, the server applies it again
+  (§app.claude-code-provider/model-table).
 - At boot Sova also refreshes pi's own built-in catalogs from the network once, in the background,
   as pi's TUI does at its start, so built-in providers' levels follow pi.dev rather than only what a
   TUI last stored.

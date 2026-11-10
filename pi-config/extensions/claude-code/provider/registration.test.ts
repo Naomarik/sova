@@ -15,7 +15,7 @@ import {
 	REGISTERED_MARKER,
 	refreshClaudeModels,
 	registerProviderIfEnabled,
-	STATIC_MODELS,
+	providerModels,
 	toProviderModel,
 } from "./index.ts";
 import { claudeContextWindow } from "../context-window.ts";
@@ -131,6 +131,22 @@ test("a worker's id the catalog doesn't know is registered beside the catalog (-
 	}
 });
 
+test("a worker's own id registers after the process's warm-up already registered the provider", async () => {
+	const warmUp = fakePi(true);
+	registerProviderIfEnabled(warmUp.pi, bridge);
+	warmUp.startSession();
+	assert.deepEqual(warmUp.state.registered.get(CLAUDE_PROVIDER_ID)!.models?.map((m) => m.id), claudeOffer().map((m) => m.id));
+	const worker = fakePi(true);
+	registerProviderIfEnabled(worker.pi, bridge);
+	worker.state.values.set(CLAUDE_MODEL_FLAG, "claude-opus-6");
+	worker.startSession();
+	const config = worker.state.registered.get(CLAUDE_PROVIDER_ID);
+	assert.ok(config, "the worker's session registers again, or its model is unknown");
+	assert.equal(config.models?.at(-1)?.id, "claude-opus-6");
+	const refreshed = await config.refreshModels!({ allowNetwork: false, signal: new AbortController().signal } as any);
+	assert.equal(refreshed.at(-1)?.id, "claude-opus-6", "pi's refresh after the registration keeps it");
+});
+
 test("registration happens once per process, and is never undone", () => {
 	const { pi, state, startSession } = fakePi(true);
 	registerProviderIfEnabled(pi, bridge);
@@ -150,15 +166,15 @@ test("registration happens once per process, and is never undone", () => {
 });
 
 test("static models are zero cost, cache-free, and sized by the shared window rule", () => {
-	for (const model of STATIC_MODELS) {
+	for (const model of providerModels()) {
 		assert.deepEqual(model.cost, { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 });
 		assert.equal(model.promptCache, undefined, "promptCache would turn on cache warming pi cannot address");
 		assert.deepEqual(model.input, ["text", "image"]);
 		assert.equal(model.contextWindow, claudeContextWindow(model.id));
 		assert.ok(model.maxTokens > 0);
 	}
-	assert.equal(STATIC_MODELS.find((m) => m.id === "claude-haiku-4-5")?.contextWindow, 200_000);
-	assert.equal(STATIC_MODELS.find((m) => m.id === "claude-opus-5-5")?.contextWindow, 1_000_000);
+	assert.equal(providerModels().find((m) => m.id === "claude-haiku-4-5")?.contextWindow, 200_000);
+	assert.equal(providerModels().find((m) => m.id === "claude-opus-5-5")?.contextWindow, 1_000_000);
 });
 
 test("the registered models are the catalog, by name and window, with no aliases", async () => {
@@ -168,10 +184,10 @@ test("the registered models are the catalog, by name and window, with no aliases
 });
 
 test("thinking levels follow the CLI's effort list", () => {
-	const sonnet = STATIC_MODELS.find((model) => model.id === "claude-sonnet-5-5") as ProviderModelConfig;
+	const sonnet = providerModels().find((model) => model.id === "claude-sonnet-5-5") as ProviderModelConfig;
 	assert.equal(sonnet.reasoning, true);
 	assert.deepEqual(sonnet.thinkingLevelMap, { minimal: null, low: "low", medium: "medium", high: "high", xhigh: "xhigh", max: "max" });
-	const haiku = STATIC_MODELS.find((model) => model.id === "claude-haiku-4-5") as ProviderModelConfig;
+	const haiku = providerModels().find((model) => model.id === "claude-haiku-4-5") as ProviderModelConfig;
 	assert.equal(haiku.reasoning, false, "Haiku 4.5 takes no effort");
 	assert.equal(haiku.thinkingLevelMap, undefined);
 	const partial = toProviderModel({ id: "someday", name: "Someday", efforts: ["low", "high"] });
@@ -180,10 +196,10 @@ test("thinking levels follow the CLI's effort list", () => {
 
 test("refreshModels stays offline until pi allows network work", async () => {
 	const models = await refreshClaudeModels({ allowNetwork: false, signal: new AbortController().signal });
-	assert.equal(models, STATIC_MODELS);
+	assert.deepEqual(models, providerModels());
 });
 
 test("refreshModels never asks the CLI: the same list with an aborted signal", async () => {
 	const models = await refreshClaudeModels({ allowNetwork: true, signal: AbortSignal.abort() });
-	assert.equal(models, STATIC_MODELS);
+	assert.deepEqual(models, providerModels());
 });

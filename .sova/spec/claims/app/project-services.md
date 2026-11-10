@@ -121,7 +121,8 @@ shell string is accepted anywhere: every command is an argv array of non-empty s
   this computer's own choice overrides (§app.merge-queue/strategies); and `request` (optional): the
   folder of the project's request kit (§app.merge-queue/request-kit); and `reuse` (optional boolean,
   absent: true): whether checks may reuse passes from identical code (§app.merge-queue/checks),
-  `false` making every check run every file. With no `merge` section the queue
+  `false` making every check run every file; and `deleteBranches` (optional boolean, absent: false): whether
+automatic cleanup deletes a landed branch as well as its folder (§chat.worktrees/retirement). With no `merge` section the queue
   uses `test` (§app.merge-queue/checks); with neither, the project's queue isn't set up
   (§app.merge-queue/setup). A check runs with `SOVA_VERB=merge`, `SOVA_STEP` (its id), `SOVA_OUT`,
   `SOVA_MERGE_BASE`, `SOVA_MERGE_TIP` and `SOVA_MERGE_CHANGED` (a file listing the changed paths),
@@ -460,8 +461,11 @@ The only verb that deletes. First every share link of the instance is revoked, e
 sibling of one included (§app.project-services/share, a `links` step), then down (every service down
 covers, those that left the definition included), then each data resource deprovisioned and the data dir removed
 (unless `keepData`), then the worktree removed only when Sova cut it, it is clean and it holds nothing that can't be
-rebuilt (the same check as §chat.worktrees/cleanup, §chat.worktrees/leftovers); otherwise it stays,
-named with the reason in a skipped step, then the slot freed. The branch is never deleted. Slot 0 is
+rebuilt, through Sova's one removal step (§chat.worktrees/cleanup, §chat.worktrees/leftovers). Unlike
+retirement it lets none of what a test copy left go, nor any spec draft, proved or not; otherwise it
+stays, named with the reason in a skipped step, with no Remove Anyway, and so does a delete that stopped part way and can't be
+finished under proof, with what remains named. Then the slot is freed. Retirement's own teardown leaves a
+cut worktree in place for the removal that follows it. The branch is never deleted. Slot 0 is
 refused (`refused-slot0`). An instance that is absent answers `ok` with state `absent`.
 An adopted slot 0 is refused the same way, naming its unit; see §app.project-services/adopt.
 

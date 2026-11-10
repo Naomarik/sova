@@ -21,14 +21,16 @@ const BACKENDS: readonly SummarizerBackend[] = ["claude-code", "pi"];
 
 /**
  * The extension's own chain when the file is missing or names no usable summarizer — a copy of
- * DEFAULT_CONFIG.summarizers in pi-config/extensions/topic-outline/config.ts. Keep them equal:
+ * defaultConfig().summarizers in pi-config/extensions/topic-outline/config.ts. Keep them equal:
  * the screen shows these as the current choice, and a save that keeps one carries its timeout and
  * budget over, so the written file behaves like the defaults did.
  */
-const DEFAULT_SUMMARIZERS: Record<string, unknown>[] = [
-  { backend: "pi", model: "ollama-cloud/deepseek-v4.1-flash", timeoutMs: 60_000 },
-  { backend: "claude-code", model: latestClaude("sonnet").id, timeoutMs: 45_000, maxBudgetUsd: 0.05 },
-];
+function defaultSummarizers(): Record<string, unknown>[] {
+  return [
+    { backend: "pi", model: "ollama-cloud/deepseek-v4.1-flash", timeoutMs: 60_000 },
+    { backend: "claude-code", model: latestClaude("sonnet").id, timeoutMs: 45_000, maxBudgetUsd: 0.05 },
+  ];
+}
 
 const isRecord = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === "object" && !Array.isArray(v);
 
@@ -79,7 +81,7 @@ function readStored(file: string): Stored {
 /** The chain the extension runs today, and whether it is the defaults because the file named none. */
 function effectiveChain(stored: Stored): { chain: Record<string, unknown>[]; usingDefaults: boolean } {
   const listed = stored.kind === "ok" ? usableEntries(stored.data.summarizers) : undefined;
-  return listed ? { chain: listed, usingDefaults: false } : { chain: DEFAULT_SUMMARIZERS, usingDefaults: true };
+  return listed ? { chain: listed, usingDefaults: false } : { chain: defaultSummarizers(), usingDefaults: true };
 }
 
 /** GET: what the extension would run, read tolerantly — a file it would ignore reads as the defaults, as it does there. */
@@ -88,7 +90,7 @@ export function readSummarizerSettings(file = topicOutlineFile()): SummarizerSet
   const { chain, usingDefaults } = effectiveChain(stored);
   const info: SummarizerSettingsInfo = {
     settings: toSettings(chain),
-    defaults: toSettings(DEFAULT_SUMMARIZERS),
+    defaults: toSettings(defaultSummarizers()),
     usingDefaults,
     beyond: Math.max(0, chain.length - 2),
     file,
@@ -176,7 +178,7 @@ export function writeSummarizerSettings(raw: unknown, file = topicOutlineFile())
       return { ...kept, model: choice.model };
     }
     // A default model picked back (Reset to Defaults, or by hand) comes back as the default entry.
-    const builtIn = DEFAULT_SUMMARIZERS.find((e) => match(e, choice));
+    const builtIn = defaultSummarizers().find((e) => match(e, choice));
     return builtIn ? { ...builtIn } : { backend: choice.backend, model: choice.model };
   };
   const summarizers = [entryFor(parsed.primary)];

@@ -27,6 +27,7 @@ import {
   threadFolderCaption,
   toProjectDraft,
   type ProjectDraft,
+  deleteBranchesHint,
 } from "../../lib/merge-queue-settings";
 import { discardStaged, stagedDirty, stagedEdit, stageEdit } from "../../lib/merge-queue-settings-draft";
 import { sortProjects } from "../../lib/projects";
@@ -349,6 +350,9 @@ function SettingsBody(props: { projectId: string; settings: MergeQueueSettings; 
         <Row label="Private names" end={<Tag source="computer" />}>
           {s().landing.names.setUp ? `Set up · ${s().landing.names.count} name${s().landing.names.count === 1 ? "" : "s"}` : "Not set up"}
         </Row>
+        <Row label="Delete branches when cleaning up" end={<Tag source="project" />} hint={deleteBranchesHint(draft().deleteBranches)}>
+          <Toggle label={draft().deleteBranches ? "On" : "Off"} checked={draft().deleteBranches} disabled={locked()} onChange={(on) => setDraft({ ...draft(), deleteBranches: on })} />
+        </Row>
       </Group>
 
       <Group title="Checks" caption={checksCaption(s().checks)}>
@@ -563,6 +567,7 @@ function SettingsBody(props: { projectId: string; settings: MergeQueueSettings; 
                   </ul>
                   <p class="text-caption text-muted">
                     {byRequest() ? `It applies once it's merged into ${target()}.` : "It applies from the next landing and isn't checked first."}
+                    {changes()?.deleteBranches !== undefined ? " It applies from the next cleanup." : ""}
                     {props.running && !byRequest() ? " A branch is being checked now, so it saves when that branch finishes." : ""}
                     {pushesAfter() && !byRequest() ? " It goes to origin with the next landing." : ""}
                   </p>

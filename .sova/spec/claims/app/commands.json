@@ -27,11 +27,11 @@
       "server/create-guide-growth.json"
     ],
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "agreed": {
       "by": "naomarik",
-      "at": "2026-11-07T12:38Z",
-      "source": "pi-session:01a1b2ec-ac6a-73d4-9fe9-b83cb85cdc7f#008f8e00"
+      "at": "2026-11-09T16:22Z",
+      "source": "pi-session:01a1b2f4-86c6-73d4-9fe9-b847b27035f9#950bc2c9"
     }
   },
   "§app.commands/cli": {

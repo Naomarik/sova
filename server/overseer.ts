@@ -53,7 +53,7 @@ import { listModels, contextWindow } from "./models";
 import { modelDenial, readModelPolicy } from "./model-policy";
 import {
   DEFAULT_CAPS,
-  DEFAULT_EXPLORER,
+  defaultExplorer,
   DEFAULT_QUICK_ACTIONS,
   overseerDir,
   overseerSettingsFile,
@@ -454,7 +454,7 @@ export function feedFrameKey(f: SessionFeedMessage): string {
 export function overseerSettingsInfo(): OverseerSettingsInfo {
   return {
     settings: readOverseerSettings(),
-    defaults: { quickActions: DEFAULT_QUICK_ACTIONS.map((a) => ({ ...a })), caps: { ...DEFAULT_CAPS }, explorer: { ...DEFAULT_EXPLORER } },
+    defaults: { quickActions: DEFAULT_QUICK_ACTIONS.map((a) => ({ ...a })), caps: { ...DEFAULT_CAPS }, explorer: { ...defaultExplorer() } },
     file: overseerSettingsFile(),
   };
 }

@@ -328,6 +328,8 @@ export async function startHermeticServer(opts: HermeticServerOptions = {}): Pro
       SOVA_USAGE_POLL: "off",
       SOVA_UPDATES_CHECK: "off",
       SOVA_GIT_MAINTENANCE: "off",
+      // Its own test data (server/worktree-retire-gate.ts): what `sova_archive` may remove worktrees from.
+      SOVA_TEST_DATA: scratch,
       SOVA_CHAT_DRIVER: "detached",
       SOVA_CHAT_CODE: "live",
       GIT_CEILING_DIRECTORIES: tmpdir(),

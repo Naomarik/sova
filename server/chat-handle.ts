@@ -229,6 +229,9 @@ export abstract class ChatHandle {
   appendNote(noteType: string, text: string, details?: unknown): Promise<boolean> {
     return this.call("appendNote", { noteType, text, ...(details !== undefined ? { details } : {}) });
   }
+  noteIntoRun(noteType: string, text: string): Promise<boolean> {
+    return this.call("noteIntoRun", { noteType, text });
+  }
   writeProfile(data: ChatMethods["writeProfile"]["args"]["data"]): Promise<null> {
     return this.call("writeProfile", { data });
   }

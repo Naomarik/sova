@@ -108,6 +108,10 @@ export interface QueueRow {
   answer?: string;
   /** A run to See Why on. */
   run?: string;
+  /** Remove Worktree beside the action: the server offers it (an install that retires nothing, nothing left). */
+  removable?: true;
+  /** Removing keeps the branch: the project's Delete branches when cleaning up is off, or unreadable. */
+  removeKeepsBranch?: true;
 }
 
 /** The label a note's kind reads with. */
@@ -139,7 +143,7 @@ export type RowQueueFacts = Pick<WorktreeQueueInfo, "state" | "commit"> & Partia
 export type QueueRowInput = Pick<SessionWorktreeInfo, "status" | "exists" | "readiness" | "branch"> &
   // mergeServed: the repo is one the merge queue serves (listed, merge setup done): only then does a row offer Land.
   Partial<Pick<SessionWorktreeInfo, "merge" | "mergedInto" | "gone" | "mergeStats" | "mergeServed">> &
-  Partial<Pick<WorktreeReadiness, "left" | "draftsLeft">> & {
+  Partial<Pick<WorktreeReadiness, "left" | "draftsLeft" | "removable" | "removeKeepsBranch">> & {
     queue?: RowQueueFacts;
     mergeProject?: Pick<MergeProjectInfo, "target" | "checks"> & Partial<MergeProjectInfo>;
     place?: Partial<BranchPlace>;
@@ -373,7 +377,7 @@ export const rowKeyOf = (w: RowKeyInput): RowKey => entryKeyOf(w) ?? treeKeyOf(w
 
 /** The words for one worktree, from its tracked state, its readiness and its queue entry. */
 export function queueRow(w: QueueRowInput): QueueRow {
-  const r = queueRowOf(w);
+  const r = { ...queueRowOf(w), ...(w.readiness?.removable || w.removable ? { removable: true as const } : {}), ...(w.readiness?.removeKeepsBranch || w.removeKeepsBranch ? { removeKeepsBranch: true as const } : {}) };
   if (!SIZED.includes(r.key)) return r;
   const size = sizeWords(w.mergeStats);
   const when = headWhen(w.mergeStats?.headAt);
@@ -577,8 +581,8 @@ function trueState(key: RowKey, r: QueueRowInput["readiness"], target: string | 
 
 /** A row's buttons, as the Worktrees modal and the session pane draw them, in order. Set Up Queue needs the
     project to link to. No row has Send Back or a re-land: the user's Land stands while its chat fixes it (al_3). */
-export type RowButton = "Land" | "Set Up Queue" | "Accept" | "Land Anyway" | "Try Again" | "Answer in Chat" | "Remove from Queue";
-export function rowButtons(row: Pick<QueueRow, "action" | "remove"> & Partial<Pick<QueueRow, "tryAgain" | "answerInChat">>, projectId: string | undefined): RowButton[] {
+export type RowButton = "Land" | "Set Up Queue" | "Accept" | "Land Anyway" | "Try Again" | "Answer in Chat" | "Remove from Queue" | "Remove Worktree";
+export function rowButtons(row: Pick<QueueRow, "action" | "remove"> & Partial<Pick<QueueRow, "tryAgain" | "answerInChat" | "removable">>, projectId: string | undefined): RowButton[] {
   const one: Partial<Record<RowAction, RowButton>> = { land: "Land", accept: "Accept", "land-anyway": "Land Anyway" };
   const out: RowButton[] = [];
   if (row.action === "setup") {
@@ -587,6 +591,7 @@ export function rowButtons(row: Pick<QueueRow, "action" | "remove"> & Partial<Pi
   if (row.tryAgain) out.push("Try Again");
   if (row.answerInChat) out.push("Answer in Chat");
   if (row.remove) out.push("Remove from Queue");
+  if (row.removable) out.push("Remove Worktree");
   return out;
 }
 
@@ -638,6 +643,9 @@ export const unattributedWhy = (reason: string | undefined, target?: string): st
 /** One unclear check's line: "Unit tests: fails with this branch and on master alone", or the queue's own why. */
 export const unclearLine = (u: { label: string; why?: string }, target?: string): string =>
   u.why?.trim() ? `${u.label}: ${u.why.trim().replace(/[.]$/, "")}` : `${u.label}: fails with this branch and on ${target ?? "the target"} alone, naming no tests`;
+
+/** Why Land reads Rehearsal needed (§app.merge-queue/approve): its hover and what a screen reader hears. */
+export const rehearsalWhy = (commit: string | undefined): string => `This branch changes automatic cleanup. Land opens once a rehearsal has passed at ${commit ? short(commit) : "its newest commit"} on a copy of your state taken today.`;
 
 /** The order the summary counts in. */
 const ORDER: RowKey[] = ["ready", "ready-to-merge", "waiting-ok", "landing-specs", "drafts-to-land", "conflicting", "in-progress", "blocked", "stale", "no-reading", "queued", "checking", "conflict", "behaviour-differs", "needs-you", "review-flagged", "unattributed", "needs-fix", "with-chat", "drafts-changed", "request-review", "requested", "uncommitted", "no-commits", "landed", "pushed", "closed", "merged", "cleaned-up", "removed", "dropped"];

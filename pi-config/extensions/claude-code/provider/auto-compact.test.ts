@@ -7,7 +7,7 @@ import { beforeEach, test } from "node:test";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { Message } from "@earendil-works/pi-ai";
 import { registerAutoCompact } from "./auto-compact.ts";
-import { CLAUDE_PROVIDER_FLAG, CLAUDE_PROVIDER_ID, REGISTERED_MARKER, registerProviderIfEnabled, STATIC_MODELS, toProviderModel } from "./index.ts";
+import { CLAUDE_PROVIDER_FLAG, CLAUDE_PROVIDER_ID, REGISTERED_MARKER, registerProviderIfEnabled, providerModels, toProviderModel } from "./index.ts";
 import { foldBudgetChars, foldSizeEstimate } from "./session-bridge.ts";
 import type { ClaudeSessionBridge } from "./types.ts";
 
@@ -64,7 +64,7 @@ function conversation(chars: number): Message[] {
 const SMALL = "claude-opus-4-6";
 
 function model(id: string, provider = CLAUDE_PROVIDER_ID) {
-	return { ...(STATIC_MODELS.find((m) => m.id === id) ?? toProviderModel({ id, name: id })), provider, api: provider, baseUrl: "x" };
+	return { ...(providerModels().find((m) => m.id === id) ?? toProviderModel({ id, name: id })), provider, api: provider, baseUrl: "x" };
 }
 
 function fakeCtx(messages: Message[], options: { model?: ReturnType<typeof model>; leaf?: string; branchTypes?: string[]; idle?: boolean; pending?: boolean; session?: string } = {}) {

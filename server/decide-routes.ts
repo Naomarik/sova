@@ -3,7 +3,7 @@ import { CLAUDE_EFFORTS, DELEGATE_BACKENDS, PI_EFFORTS, sameChoice } from "../pi
 import { DecisionError, failureMessage, type Question } from "./decide";
 import { decisionRuntime, type DecisionRuntime } from "./decide-runtime";
 import { cleanKey, deleteJevKey, readJevKey, writeJevKey } from "./decide-secret";
-import { decisionDefaults, decisionsFile, DECISION_SUGGESTIONS, parseDecisionSettings, readDecisionSettings, writeDecisionSettings } from "./decide-settings";
+import { decisionDefaults, decisionsFile, decisionSuggestions, parseDecisionSettings, readDecisionSettings, writeDecisionSettings } from "./decide-settings";
 import { delegateOptions, verifySlots, type DelegateSources } from "./delegate";
 import { noteLabelSwitch } from "./message-labels";
 
@@ -20,7 +20,7 @@ export function decisionsInfo(rt: DecisionRuntime = decisionRuntime()): Decision
     defaults: decisionDefaults(),
     key: rt.keyInfo(),
     chain: rt.chain.status(),
-    suggestions: DECISION_SUGGESTIONS,
+    suggestions: decisionSuggestions(),
     backends: DELEGATE_BACKENDS.map((id) => ({ id, label: BACKEND_LABELS[id], efforts: [...(id === "pi" ? PI_EFFORTS : CLAUDE_EFFORTS)] })),
     file: decisionsFile(),
   };

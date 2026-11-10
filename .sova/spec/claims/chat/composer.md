@@ -917,6 +917,8 @@ project), with its why, and that Land still takes the approval. Then comes one r
     in words, which closes the modal and puts focus in the message box (§chat.merge-queue/decision);
   - **Land Anyway** and **Try Again** on Can't tell whose failure;
   - **Remove from Queue** on every row of an approval that stands (below);
+  - **Remove Worktree**, last, where the server offers it: an install where automatic cleanup is off
+    (§chat.worktrees/pane);
 - its reviewer line while the branch's review runs and after it ends, with **Open Reviewer Chat**,
   the same row as the pane's (§chat.worktrees/pane);
 - **Review Changes**, first among the row's actions, on every row of an active worktree whose folder

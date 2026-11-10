@@ -28,7 +28,8 @@ import { restorePick, pickEntryFor, shortModel } from "../pi-config/extensions/s
 const OFF_ON = Object.freeze({ id: "off", key: "sova:default", name: "Off" });
 import { decodeMemberContext, MEMBER_ENV } from "../pi-config/extensions/subagents/mailbox.ts";
 import { modelAllowed, modelDenial, readModelPolicy } from "./model-policy";
-import { toContextInfo, workerWindowResolver } from "./models";
+import { forgetModelCaches, toContextInfo, workerWindowResolver } from "./models";
+import { startClaudeModelsSync } from "./claude-models-sync";
 import { claudeSpawnModels, WorkerContextReader, withWorkerContext } from "./worker-context";
 import { resumeWorker, type ResumeOutcome } from "./worker-resume";
 import { applySandbox, onSandboxAppend, sandboxInfo, sandboxMessage, type SandboxHost } from "./sandbox-state";
@@ -48,7 +49,7 @@ import { stateView } from "./harness/state-view";
 import { LiveTail } from "./chat-runtime/live-tail";
 import { takeWriterLock, type WriterLock, WriterLockHeld } from "./chat-runtime/writer-lock";
 import { sovaNamedKind } from "../shared/fixed-names";
-import { extensionFlagValues, getModelRuntime, openPiSession, type OpenFlags, type OpenRead, type PiBuild, type PiModelRuntime, warmClaudeCodeProvider as warmPiProvider } from "./harness/pi/open";
+import { extensionFlagValues, getModelRuntime, openPiSession, type OpenFlags, type OpenRead, type PiBuild, type PiModelRuntime, reapplyClaudeModels, warmClaudeCodeProvider as warmPiProvider } from "./harness/pi/open";
 import type { PiExtensionAPI, PiLoaderOptions, PiToolDefinition } from "./harness/pi/extension-types";
 import { PiChatHost } from "./harness/pi/host";
 import { contextOfBranch } from "./harness/pi/usage";
@@ -65,7 +66,7 @@ import { cutTail, helloAfterHave, type HistoryPart, pullFields } from "./tail-he
 import { isOverseerId } from "./overseer-store";
 import { attachStreamGuard, capsFor, type StreamTrip } from "./stream-guard";
 import { targetOfCwd } from "./targets";
-import { cwdFallbackNote, probeFolder, type CwdFallback } from "./session-cwd";
+import { cwdFallbackNote, inHeldPartialFolder, probeFolder, retiredFallbackFacts, type CwdFallback } from "./session-cwd";
 import { sovaToken } from "./auth";
 import { ForeignWriteGuard, markOwned, markOwnedStat, recentForeignWriteAgeSec } from "./write-guard";
 import { monitorExtension } from "./resource-monitor";
@@ -332,6 +333,11 @@ let runtimeWarm: Promise<void> | null = null;
  */
 export function warmChatRuntime(onStep: (step: string) => void = () => {}): Promise<void> {
   if (runtimeWarm) return runtimeWarm;
+  // Before the provider registers: the learned Claude list, and its watch for this process's runtime.
+  startClaudeModelsSync(() => {
+    forgetModelCaches();
+    return reapplyClaudeModels();
+  });
   onStep("model setup");
   runtimeWarm = getModelRuntime().then(
     (runtime) => warmClaudeCodeProvider(runtime, agentRoot(), onStep),
@@ -425,13 +431,20 @@ export interface OpenCwd {
  */
 export function resolveOpenCwd(path: string, sessionCwd: string, opts: { overridden?: boolean; home?: string } = {}): OpenCwd {
   const probe = probeFolder(sessionCwd);
-  if (probe.state === "present") return { cwd: sessionCwd, fallback: null };
+  if (probe.state === "present") {
+    // What a retirement's stopped delete left: no chat runs among those files. With nowhere else to go it opens where it was.
+    const home = opts.home ?? homedir();
+    if (!opts.overridden && !targetOfCwd(sessionCwd) && home && home !== sessionCwd && probeFolder(home).state === "present" && inHeldPartialFolder(sessionCwd)) return { cwd: home, fallback: { original: sessionCwd, cwd: home, held: true } };
+    return { cwd: sessionCwd, fallback: null };
+  }
   if (probe.state === "unreachable")
     throw new ConfigError(`Stored session working directory can't be reached (${probe.code}): ${sessionCwd}\nSession file: ${path}`, sessionCwd);
   if (opts.overridden || targetOfCwd(sessionCwd)) throw goneError(path, sessionCwd);
   const home = opts.home ?? homedir();
   if (!home || home === sessionCwd || probeFolder(home).state !== "present") throw goneError(path, sessionCwd);
-  return { cwd: home, fallback: { original: sessionCwd, cwd: home } };
+  // A folder that retired says so (reading only: viewing never brings it back, §chat.worktrees/retirement).
+  const retired = retiredFallbackFacts(sessionCwd);
+  return { cwd: home, fallback: { original: sessionCwd, cwd: home, ...(retired ? { retired } : {}) } };
 }
 
 /** The cached permanent failure for `path`, if it still applies. Exported because it is the whole
@@ -846,7 +859,8 @@ const projectVerbsLoad = (path: string) =>
  */
 export function workerExtensionFactories(w: Pick<WorkerSpec, "kind"> & { builtins?: string[] | null } & Partial<Pick<WorkerSpec, "mcp" | "parent" | "env">>, path: string) {
   // Subfolder instruction files load for every kind whose loadout has a file tool (server/deeper-context.ts).
-  const files = !w.builtins || w.builtins.some((t) => LOADING_TOOLS.has(t)) ? [deeperContextExtension()] : [];
+  // A subfolder's skills too, for one that can also read a skill's file (§chat.subfolder-skills/offering).
+  const files = !w.builtins || w.builtins.some((t) => LOADING_TOOLS.has(t)) ? [deeperContextExtension({ skills: !w.builtins || w.builtins.includes("read") || w.builtins.includes("bash") })] : [];
   // A design session or coordinator has only the tools the server serves it: every one it was declared.
   if ((w.kind === "design" || w.kind === "design-coordinator" || w.kind === "design-describer") && servedDecls) return [SHELL_GUARD_FACTORY, servedToolsExtension(`sova-${w.kind}`, servedSpecs(path, () => true))];
   // A hidden chat keeps no job: nothing would deliver its card or stop it.
@@ -1287,6 +1301,8 @@ class ChatSession {
   /** The `sova-loadout` entry this runtime was built with, and the loader's unfiltered lists
       (§chat.transcript/setup-card-toggles). Null for a special session, which keeps its own loadout. */
   loadoutState: LoadoutState | null = null;
+  /** What refreshCommands last told clients; a bind tells them regardless. */
+  private lastCommands: string | null = null;
   /** The One at a time check passed for this runtime's first message. */
   private singletonCleared = false;
   /**
@@ -2098,6 +2114,8 @@ class ChatSession {
       // process), start the next session listing afresh (§app.session-list/listing-reuse). A call
       // another tool made (nested) doesn't: its caller's end does, once.
       if ((event.type === "tool.end" && !event.nested) || event.type === "run.start" || event.type === "run.settled") sessionsChanged();
+      // A subfolder's skills join the / menu once offered, and leave with the block (§chat.subfolder-skills/command).
+      if (event.type === "run.settled" || event.type === "compaction.end") this.refreshCommands();
       // A Claude login picked during the reply goes in now, before the queue wake below can start
       // the next turn: applyLoginPick holds the web queue until it has landed
       // (§app.claude-logins/switch-queue).
@@ -2209,7 +2227,8 @@ class ChatSession {
         this.broadcast(this.modeMessage());
       }
     });
-    this.broadcast(this.commands()); // extension commands exist only after bindExtensions
+    this.lastCommands = null;
+    this.refreshCommands(); // extension commands exist only after bindExtensions
     this.sendSandbox((m) => this.broadcast(m));
     // The same rule the extension's own session_start runs, so both agree on this session's mode.
     this.modeState = chatModeOf(harness.state.branch());
@@ -3139,6 +3158,22 @@ class ChatSession {
     return true;
   }
 
+  /**
+   * A hidden note for the run in progress, which a message queued behind it joins with no turn-start hook of its own: the
+   * run's next step reads the note first. False when no run is in progress (the next turn's own note hook tells the chat) or
+   * this runtime may not write.
+   */
+  async noteIntoRun(customType: string, text: string): Promise<boolean> {
+    if (this.disposed || this.foreignWrite || this.hasForeignWrites() || this.isCompacting() || !(this.harness.isRunning() || this.starting)) return false;
+    try {
+      assertNotLive(this.path);
+    } catch {
+      return false;
+    }
+    await this.harness.noteIntoRun(customType, text);
+    return true;
+  }
+
   /** The sandbox extension's /sandbox command in this runtime (server/sandbox-state.ts). */
   private sandboxCommand() {
     return this.harness.command("sandbox");
@@ -3217,6 +3252,15 @@ class ChatSession {
   /** POST /api/sandbox?path=: set this chat's sandbox state from its next tool call (applySandbox). */
   applySandbox(state: SandboxState): Promise<SandboxApplyResult> {
     return applySandbox(this.sandboxHost, state);
+  }
+
+  /** Tells every client the command list, when it changed since they were last told. */
+  private refreshCommands(): void {
+    const next = this.commands();
+    const key = JSON.stringify(next);
+    if (key === this.lastCommands) return;
+    this.lastCommands = key;
+    this.broadcast(next);
   }
 
   commands(): ChatServerMessage {

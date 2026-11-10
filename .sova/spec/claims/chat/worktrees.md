@@ -7,8 +7,9 @@ extension lets workers start only in the session's cwd or in one of those worktr
 shows the set in the session pane and each merge the session made as a card in the transcript.
 It works the same in the TUI and in Sova, for sessions Sova holds and sessions it only watches.
 One shared answer says whether a branch has anything of its own left to land
-(§chat.worktrees/nothing-left). Only when the user asks does Sova remove the merged worktrees of a
-repository (§chat.worktrees/cleanup).
+(§chat.worktrees/nothing-left). Once a branch has nothing left to land and nothing is using it, Sova
+retires the branch and its folder by itself (§chat.worktrees/retirement), through one removal step
+(§chat.worktrees/cleanup).
 
 ## §chat.worktrees/entry — The set lives in the session
 
@@ -112,6 +113,10 @@ by argument list with no shell, locally only (a remote session refuses it).
 `detach`, `merge` and `land` take the worktree's path or its branch name. Every answer lists the
 resulting set.
 
+The tool never removes a worktree: `detach` deletes nothing and `merge` leaves the worktree where it
+is. A branch with nothing left retires by itself once nothing is using it
+(§chat.worktrees/retirement), and it stays in the set with no folder.
+
 ## §chat.worktrees/land-own-word — `worktree land` takes only the user's own word
 
 - `worktree land` (§chat.worktrees/tool) never records a go-ahead when the chat's newest user
@@ -170,7 +175,11 @@ first, with the path and branch named, and so does `land` where it merges plainl
 the merge queue doesn't serve, §chat.worktrees/tool); a declined or unanswerable request (no UI) changes
 nothing. Every active worktree of the set is a writable root of the session and of its workers
 while the sandbox is on (one under a shadowed cache stays a real root, like the session's cwd),
-and its `.agent` directory stays read-only inside it, like the session's own agent dir. A
+and its `.agent` directory stays read-only inside it, like the session's own agent dir. A worktree
+whose folder is gone is left out as a root, on every platform, so a missing root doesn't stop a command
+from starting. A real Bubblewrap start with one is proved on Linux; Seatbelt hasn't been run with one, so
+it isn't proved on macOS. So on Linux an idle chat with its sandbox on doesn't hold its worktree from
+retirement, and on macOS it still does (§chat.worktrees/retirement). A
 worker's sandbox scope also carries the parent's hidden list, proxy and environment
 allowlists and `browser` setting (§chat.sandbox/policy-file), so a worker on a worktree's own agent dir (§chat.worktrees/worktree-config) is never
 looser than its parent because of that dir's policy file.
@@ -179,7 +188,12 @@ looser than its parent because of that dir's policy file.
 
 A worker may start only in the session's own cwd (or below it), or inside one of the set's
 **active** worktrees; any other cwd is refused at spawn with a message naming the session's
-worktrees. The check is one gate every start goes through: `agent_spawn`, `team_create`,
+worktrees. A retired worktree (§chat.worktrees/retirement) stays active in the set with no folder. A
+session whose own folder is in it has it back already: the message that began its turn brought it back,
+and a resume brings it back by its own check (§app.worker-restore/resume). A session working elsewhere
+that starts a worker in a tracked worktree whose folder is gone, retired or not, is refused:
+"Worktrees: {path} is gone: its branch landed or the folder was removed. Open a new worktree with the
+worktree tool, and start the worker there." The check is one gate every start goes through: `agent_spawn`, `team_create`,
 `team_add`, a team successor and `agent_resume`, for pi and Claude Code workers alike. A remote
 session is not checked (its worker cwds are paths on the target). A worker the parent picks back up after a reload or a server restart is kept even if its cwd is no longer allowed: `agent_list` flags it "outside this
 session's worktrees", and nothing kills it.
@@ -322,10 +336,13 @@ tab's Ready to land list (§app.merge-queue/view), the project card's count
 lines (§app.insights/subagent-cards) and Land (§app.merge-queue/approve). A further screen, a Merge
 Queue tab among them, reads this answer too and works out none of its own.
 
-**Clean Up Merged and archive's folder removal don't read it.** They keep their own reading
-(§chat.worktrees/cleanup, §app.overseer/tools) and offer exactly what they offered before: a branch
-whose leftover merge now conflicts can read Landed on its row while Clean Up Merged still says "Not
-merged into {main}". The answer decides labels, lists, counts and Land, and nothing on disk.
+**Automatic retirement and archive's folder removal read it too** (§chat.worktrees/retirement,
+§app.overseer/tools), through §chat.worktrees/cleanup's one reading of which trees are finished, so a
+branch whose leftover merge now conflicts reads Landed on its row and retires like any other. Clean Up
+Merged is gone. Beside labels, lists, counts and Land, the answer now decides which branches may go from
+disk, and everything §chat.worktrees/retirement holds a folder for still comes on top. An answer of unknown
+never retires anything. A project page's Remove Worktree and a copy's teardown don't read it: they keep
+their own rules (§app.project-overseer/coding-worktrees, §app.project-services/teardown).
 
 **Three outcomes.** Every reader gets one of these for a branch's head against the branch it lands on:
 - **Nothing** is left: any of the rules below holds.
@@ -435,7 +452,19 @@ reason, so a phone gets it without hover: the readiness's `reason` ("Ready to me
 · 19 commits ahead", "Conflicts with master · 17 files"), else the chip's word and the why joined by
 " · ", and no line when there is neither. It wraps; it never truncates. The section follows the file
 and the queue: it updates as the session's file changes and as the queue moves, and its only
-controls are the queue actions above.
+controls are the queue actions above and, where the server offers it, Remove Worktree (below).
+
+**Remove Worktree**, last among a row's actions, shows only when the server sends `removable`, and the
+row keeps no rule of its own: only on an install where automatic cleanup is off because it runs on an
+agent directory of its own (§chat.worktrees/retirement), for a worktree with nothing left, no-commit
+ones included. It asks once, as Land does and in the same place: "Remove {branch}?", "The folder {path}
+and its branch go away. Its last commit stays, and Restore brings them back." (with the project's
+**Delete branches when cleaning up** off, §chat.worktrees/retirement: "The folder {path} goes away and
+its branch stays. Restore brings the folder back."), with Cancel, which takes
+focus, and **Remove Worktree**, outlined. `POST /api/worktrees/remove` refuses it everywhere else, and
+there goes through the same refusals and holds as retirement and the one removal step
+(§chat.worktrees/cleanup), at once: only the 7-day wait, a restored branch's wait, the 10-minute wait
+on a new folder and the hold for a test copy on a no-commit branch don't apply. A refusal shows under the row.
 
 ## §chat.worktrees/pane-queue — A Worktrees row in the merge queue
 
@@ -566,7 +595,10 @@ no model call (`server/merge-readiness.ts`):
   a merge. Git is read from the session's folder, another of its trees still there, or a folder
   beside the gone one (a sibling worktree, or the main checkout the `worktree` tool's layout
   names), only in a repository that has the recorded base and where the branch descends from it;
-  a branch git finds there decides over every record.
+  a branch git finds there decides over every record, but for one automatic cleanup kept
+  (§chat.worktrees/retirement): while it stays at the commit it retired at, its ledger entry decides,
+  merged however git reads the merge now (or no commits, for one that never had any). Once it moves, git
+  reads it as any other.
 - **blocked** — the session waits on open alignment questions (§chat.alignment/session-mark).
 - **ready** — at least one commit ahead, and none of the above. One or two uncommitted files do
   not stop it: it is ready with a caveat that names them (a regenerated report file is the usual
@@ -883,77 +915,123 @@ Land and approves the branch in the queue (§app.project-overseer/coding-worktre
 any other branch needs no go-ahead. A commit made to the target from outside the queue is allowed,
 and the queue pauses on it (§app.merge-queue/master-moved).
 
-## §chat.worktrees/cleanup — Removing merged worktrees
+## §chat.worktrees/cleanup — The one removal step
 
-Sova removes merged worktrees only when asked: by the user from a new session's empty state
-(§chat.transcript/empty-worktrees), or by `sova_archive` with `worktrees: "remove"` for the
-archived session's own worktrees (§app.overseer/tools), both through one service on the server
-(`server/worktree-cleanup.ts`). Nothing else removes a worktree on its own, but for the merge
-queue's own scratch copies (below), and the `worktree` tool's merge stays non-destructive.
+Every way Sova removes one of your worktrees goes through one removal step on the server
+(`server/worktree-cleanup.ts`): automatic retirement (§chat.worktrees/retirement), `sova_archive`
+with `worktrees: "remove"` (§app.overseer/tools), a project page's Remove Worktree
+(§app.project-overseer/coding-worktrees), a Worktrees row's Remove Worktree where retirement is off
+for the install (§chat.worktrees/pane), the teardown of a copy whose worktree Sova cut
+(§app.project-services/teardown) and a Setup chat's empty worktree (§app.project-setup/chat). No
+button removes worktrees in bulk, nobody confirms a list of them, and a chat never decides what to
+delete. Only the merge queue's own scratch copies go by another way (below), and the `worktree`
+tool's merge stays non-destructive. Deleting archived work that never landed is a separate feature
+and isn't this step.
 
-- **Which trees.** Git's own list (`git worktree list`) for the repository the session's folder is
-  in: every linked worktree in it, wherever its folder is; the main checkout is never one. A remote
-  session's folder has none. Each is **merged** (§chat.worktrees/merged-state, against the
-  repository's main branch, master else main: its branch's tip is in it by ancestry, or by content
-  — a trial merge that leaves the main branch's tree unchanged — after at least one commit of its
-  own), **empty** (its branch has no commit of its own: its tip is still the commit git's reflog
-  says the branch was created at; with no reflog, a branch in the main branch counts as merged), or
-  **unmerged** (anything else, a tree on no branch included). The merge queue's own scratch copies
-  (§app.merge-queue/resolve-copy) are none of these: they are never counted, listed, kept or
-  removed here.
-- **Nothing left in the folders, on a git that can do it.** The trial merge behind "by content"
-  normally runs outside the project, so nothing it writes, a merge driver's temporary files included,
-  is left in the main checkout or any worktree, even when git is stopped at its time limit. The
-  exception is a project with a `.gitattributes` file on a git older than 2.43, or one whose version
-  can't be read: that git can't read the attributes from outside, so the merge runs in the checkout.
-  Its answers stay right, and a merge stopped at its time limit can still leave git's temporary files
-  there.
-- **The count.** `GET /api/worktrees/summary?path=<session>` answers the repository's linked
-  total and its merged, empty and unmerged counts, from git alone. It is cached per repository for
-  about 30 seconds, and a change to git's list of worktrees or a removal drops it.
-- **What is kept, and why.** A merged or empty tree is removed only when none of these holds, each
-  checked again right before its removal: it is locked; it has any uncommitted change or untracked
-  file; it holds what can't be rebuilt (an ignored file outside the rebuildable folders, or a nested
-  repository or worktree), or its files can't be read (§chat.worktrees/leftovers); a session's folder (its header cwd),
-  archived or not, is inside it; a session tracking it as active (§chat.worktrees/entry) is open in
-  a TUI, running (a turn in flight or workers working), or has its sandbox on; a live process's
-  working directory or an open file is inside it; a live record under its own
-  `.agent/sessions/live` names a process that is still alive. A tree tracked active only by idle,
-  sandbox-off sessions whose folders are elsewhere is removed: git says its work is in the main
-  branch. Each kept tree carries one reason. An unmerged tree is always kept.
-- **Dry run first, then only what was confirmed.** `POST /api/worktrees/cleanup {path, dryRun:
-  true}` answers what would go (path, branch, merged or empty, and whether its branch would be
-  deleted) and what stays, each with its reason. A removal posts `{path, expect: [paths]}` and acts
-  only on those paths, each only if it is still removable at that moment; every other tree is left
-  alone. A `dryRun` that is present and not a boolean ("dryRun must be true or false"), or an
-  `expect` that is not a list of absolute paths, is a 400 before anything is removed. The answer says, per path, removed or kept and why.
-- **Removal.** From the main checkout, `git worktree remove -- <path>`, never `--force`, so git
-  refuses a tree that changed under it; for a folder already gone the same command only drops it
-  from git's list. The branch is deleted with `git branch -d` only when it is an ancestor of the
-  main branch (merged by ancestry, or empty); a content-merged branch is kept, so its commits keep
-  a ref. Git's refusals are reported, never forced. Nothing else on disk is touched, and no
-  session file is written.
-- **The ledger.** Each removal appends `{v: 1, path, branch, commonDir, tip, merged: "ancestor" |
-  "content" | "empty", branchDeleted, at}` to `<state root>/removed-worktrees.json`, written by
-  atomic rename, the newest 2,000 kept. Readiness reads it for a removed tree whose branch was
-  deleted (§chat.worktrees/readiness).
-- **The merge queue** never removes a worktree of yours: a landed branch's worktree stays until the
-  user cleans it up here. It removes only its own scratch copies, itself, once their attempt ends
-  (§app.merge-queue/resolve-copy).
+- **Which trees.** Git's own list (`git worktree list`) for the repository: every linked worktree in
+  it, wherever its folder is; the main checkout is never one. A remote session's folder has none.
+  Each is **finished** (the shared answer's whole reading says nothing is left,
+  §chat.worktrees/nothing-left, after at least one commit of its own), **empty** (its branch has no
+  commit of its own: its tip is still the commit git's reflog says the branch was created at; with
+  no reflog, a branch in the main branch counts as finished), or **has work** (anything else, a tree
+  on no branch included). The merge queue's own scratch copies (§app.merge-queue/resolve-copy) are
+  none of these: they are never counted, listed, held or removed here.
+- **Nothing left in the folders, on a git that can do it.** The trial merge behind "merging would
+  change nothing" normally runs outside the project, so nothing it writes, a merge driver's temporary
+  files included, is left in the main checkout or any worktree, even when git is stopped at its time
+  limit. The exception is a project with a `.gitattributes` file on a git older than 2.43, or one
+  whose version can't be read: that git can't read the attributes from outside, so the merge runs in
+  the checkout. Its answers stay right, and a merge stopped at its time limit can still leave git's
+  temporary files there.
+- **The count.** `GET /api/worktrees/summary?path=<session>` answers the repository's linked total,
+  how many are finished, empty or have work, how many are held, how many retired in the last 7 days,
+  and why retirement is off here if it is (§chat.worktrees/retirement). Worktrees a queue chat made
+  are in no count. It is cached per repository for about 30 seconds, and a change to git's list of
+  worktrees or a removal drops it.
+- **What holds a tree.** What can't be rebuilt, by the one rule in §chat.worktrees/leftovers, and what
+  is using it, by §chat.worktrees/retirement, each checked again right before its removal. Each tree
+  held carries one reason. A tree with work is never removed.
+- **No dry run, no list to confirm.** Nothing posts a list of paths any more. For one release
+  `POST /api/worktrees/cleanup` removes nothing and answers "Sova retires finished worktrees on its
+  own now. Nothing was removed.", so a page still open gets a plain answer, and then the route goes.
+- **Removal.** The folder goes first, from the main checkout, with `git worktree remove -- <path>`,
+  never `--force`, so git refuses a tree that changed under it; for a folder already gone the same
+  command only drops it from git's list. The one `--force` in Sova is Remove Anyway's, at the user's own
+  click, on exactly the listing they confirmed (§chat.worktrees/leftovers). What happened is read back
+  from what git and the disk say, not from git's exit code. A folder with another registered worktree
+  or the main checkout inside it is held. Then its last commit is pinned, whatever becomes of the
+  branch: under a private reference of Sova's, which no branch list or screen shows and git's own tidy-up
+  can't drop, so that commit stays restorable for good. Whether the branch then goes is the project's
+  **Delete branches when cleaning up** (§chat.worktrees/retirement): off, it stays, and the ledger says it
+  was kept. A project page's Remove Worktree and a copy's teardown don't read that setting. With no pin a
+  branch stays. A branch on the main branch
+  goes with `git branch -d`; any other, or one `-d` won't take, goes only at exactly the commit just
+  pinned. A branch that moved in between, or that another folder has checked out, stays. A project
+  page's Remove Worktree deletes only a merged branch, and a copy's teardown keeps it always. Git's
+  refusals are reported, never forced. No session file is written.
+- **A delete that stops part way.** Git can drop a tree from its list and still leave files behind, a
+  writer inside it having refilled the folder. That is never reported as refused or kept. The step
+  finishes it only under the proof for a leftover folder (below); otherwise the folder is held, with
+  what remains named ("Git stopped part way ({git's words}). {why} Still in it: {files}."). A partial
+  entry's branch finishes at its recorded commit once the folder is gone, unless the setting kept it or
+  something newer in the ledger speaks for that path.
+
+  Git can also die with `.git` gone and the tree still on its list. What is left then goes only under the
+  same proof, and then that one registration is dropped, by `git worktree remove` of the gone folder,
+  never `--force` and never a prune, which would forget every other worktree whose folder is missing. A
+  stop mid-removal is finished this way at the next pass only from the removal's own intent, for that
+  exact path, branch and tip, on a tree that isn't locked: a branch that moved, or a lock, holds with the
+  reason. A folder git lists with no working `.git` and no intent of Sova's behind it is left untouched,
+  and its Held row says how to mend it with `git worktree repair`. A removal killed before `.git` goes,
+  with tracked files already gone, is a working tree with deletions: it holds as uncommitted files.
+- **A leftover folder**, one left behind with no working branch, is found only from chats' worktree
+  records and the ledger, never by sweeping a directory. A folder with no record is never touched. It
+  is deleted only when all of this holds: a chat's worktree record or the ledger names its path; it
+  is this repository's (§chat.worktrees/leftovers, "A folder left behind belongs to one repository"); it
+  is a real folder directly inside the worktrees location, `<parent of the main checkout>/.worktrees`;
+  it holds no `.git`, or only a stale pointer file whose admin directory is gone, which is what a
+  partial delete leaves; git has no registration of it, or of another worktree or the main checkout
+  inside it (a removal's intent for that exact path, branch and tip stands in for this and for being
+  inside the worktrees location, while a project page's Remove Worktree and a copy's teardown, which
+  have no intent, still need the location); its branch is gone, or has nothing left, with no open queue entry; no process's working
+  directory or open file is inside it, and no live record; no chat with its folder there or tracking
+  it is using it now; and every file in it is already in git, by content, or of a kind
+  §chat.worktrees/leftovers lets go, judged by the repository's own ignore rules, and a spec draft not
+  proved landed is never one. In git means a blob some ref reaches: a dangling one doesn't outlive git's
+  own tidy-up. A chat is using it when it is running, open in a TUI, holding workers,
+  active in the last 10 minutes, or, on macOS, has its sandbox on (§chat.worktrees/retirement). An
+  archived or long-idle chat doesn't hold it: its next message brings the worktree back. A chat file
+  that can't be read holds it, as any doubt does. A partial delete, a project page's Remove Worktree
+  and a copy's teardown ask this same proof. Symlinks inside are deleted, not followed. Its branch's
+  last commit is pinned before the folder goes, and the branch follows the project's setting. A chat's record or a ledger entry naming a branch that is
+  never retired (§chat.worktrees/retirement) says nothing about that branch: only the folder goes, and
+  that branch is neither pinned nor deleted.
+- **The ledger.** Each removal by retirement, archive or a row's Remove Worktree appends `{v: 1, path,
+  branch, commonDir, tip, merged: "ancestor" | "content" | "leftover" | "empty", branchDeleted, at}`,
+  with when it applies `target`, `retired`, `queueMade`, `pinned`, `partial`, `keptChats`, `branchKept`, `restoredAt`
+  and `backAt`, to `<state root>/removed-worktrees.json`, written by atomic rename, the newest 2,000
+  kept. `tip` is the last commit; `keptChats` is how many test chats moved aside before it went
+  (§chat.worktrees/leftovers); `branchKept` says the setting kept the branch, so nothing later deletes it;
+  `leftover` is a branch whose only commits past the target were
+  merges, one at the commit that landed, or a folder left behind. A partial entry is what the next
+  pass looks at again, until its folder is gone. Readiness reads the ledger for a removed tree whose
+  branch was deleted (§chat.worktrees/readiness). An entry trimmed from it loses the name, never the
+  pinned commit. A project page's Remove Worktree and a copy's teardown write no entry.
+- **The merge queue** removes no worktree of yours. A landing wakes retirement, and retirement asks
+  the queue only whether a branch has an open entry. The queue removes only its own scratch copies,
+  itself, once their attempt ends (§app.merge-queue/resolve-copy).
 
 ## §chat.worktrees/leftovers — What can't be rebuilt keeps a worktree, and Remove Anyway
 
 Git's own `worktree remove` deletes, without asking, every file the tree ignores and every
-repository nested in its folder, uncommitted work included. So wherever Sova removes a worktree of
-yours (Clean Up Merged and `sova_archive` with `worktrees: "remove"`, §chat.worktrees/cleanup;
-project services' teardown of a worktree Sova cut, §app.project-services/teardown; a coding
-session's Remove Worktree on the project page or by the build's effect,
-§app.project-overseer/coding-worktrees), it reads what
-the tree holds, at the dry run and again right before the removal, after the use checks (unmerged,
-locked, a session's folder, a tracking session, a live process or record).
+repository nested in its folder, uncommitted work included. So at the one removal step
+(§chat.worktrees/cleanup) Sova first reads what the tree holds, again right before the removal,
+after the use checks. This section is the only answer anywhere in Sova to "what can't be rebuilt":
+no project, list or other rule adds to it.
 
-- **The read.** Git's status of every uncommitted and untracked file, and its list of ignored
-  files, then a walk of the folder that never follows a symlink.
+- **The read.** Git's status of every uncommitted and untracked file, its list of files flagged
+  skip-worktree or assume-unchanged, which status doesn't show, and its list of ignored files, then a
+  walk of the folder that never follows a symlink.
 - **Rebuildable.** A file git lists by itself is judged by itself (an ignored `build/.env` in a
   tracked `build/` is work). The folders `node_modules`, `__pycache__`, `.pytest_cache`,
   `.mypy_cache` and `.ruff_cache` count at any depth, inside your own ignored folders too; `dist`,
@@ -966,32 +1044,261 @@ locked, a session's folder, a tracking session, a live process or record).
   `sova/auth-token`, anything under `sandbox-policy/` or `extensions/`); otherwise its files are
   listed and it is named `.agent (sessions)`, `.agent (auth.json)` (an `auth.json` or
   `claude-accounts/` in it) or `.agent (server state)`.
-- **What keeps it**: any ignored file that isn't rebuildable, any uncommitted or untracked file, and
-  any nested repository or worktree, a folder below the top holding a `.git`, untracked, ignored or
+- **Also lets a tree go**, and nothing else does:
+  - a spec draft positively proved landed (§chat.worktrees/nothing-left), by its name; one not proved
+    landed always keeps the tree, and so does a folder under the drafts that no proof can name, a
+    dot-named one among them;
+  - the spec tools' own review folders, `.sova/spec/reviews` and `.sova/spec/assessments`;
+  - a folder `tmp` at the top of the tree, where git lists that folder itself as ignored;
+  - a symlink, wherever it is: removing a link keeps its target;
+  - in a finished or empty tree (§chat.worktrees/cleanup), or a folder left behind, what a test copy
+    of Sova left (below).
+- **What keeps it**: any ignored file that isn't let go above, any uncommitted or untracked file, a
+  file flagged skip-worktree or assume-unchanged, which counts as uncommitted since an edit under the
+  flag would go with the tree, and any nested repository or worktree, a folder below the top holding a `.git`, untracked, ignored or
   inside a rebuildable folder (never under `node_modules`), and any initialised submodule. Its one reason names them (copy:
   §design.copy-deck/worktree-cleanup); a tree with only uncommitted files keeps today's reason.
-- **A failed read keeps it**: git's status, ignored list or submodule list fails, a folder can't be
+- **A sparse-checkout worktree holds until someone clears it.** The files it leaves out read as
+  skip-worktree, so it never goes by itself.
+- **A failed read keeps it**: git's status, flagged-file list, ignored list or submodule list fails, a folder can't be
   read, or the tree holds more than 200,000 entries.
+- **Remove Worktree and teardown are stricter.** A project page's Remove Worktree and a copy's teardown let
+  neither go: a spec draft, proved or not, and everything a test copy left keep the worktree there
+  (§app.project-overseer/coding-worktrees, §app.project-services/teardown). Only a delete of theirs that
+  stops part way is finished under a leftover folder's proof, which does let them go.
 
-**Remove Anyway.** In the Clean Up Merged dialog (and on the project page's Remove Worktree,
-§app.project-overseer/coding-worktrees), on a Stays row whose only reason is what it
-holds (never after a failed read, and never for a use reason); `sova_archive` and teardown only name
-the reason, and a merged or empty tree they keep shows in Clean Up Merged. It first lists in the
-dialog exactly what goes: the uncommitted files, the ignored files that can't be rebuilt, each
+**What a test copy of Sova left.** In a finished or empty tree, and a folder left behind, these no
+longer keep it:
+- **Test chats**, under a top-level ignored `.agent` (`.agent/sessions`, its live records aside). Before
+  the folder goes, each one no real chat holds in full is moved into one kept place,
+  `<state root>/retired-test-chats/<folder name>/`, under its own path, and read back. A name taken there
+  by other bytes gets `.2`, and the same bytes already there move nothing. A real chat holds a test chat
+  in full when it has the same first line, whatever either file is called, and begins with every byte of
+  it: the same file or one that continues it. Anything else under `sessions` moves too. Nothing Sova runs
+  deletes that place. A test chat that can't be compared or moved, or real chats that can't be listed,
+  keep the folder.
+- **Login copies**, an `auth.json` or `claude-accounts/` in that `.agent`: deleted for good.
+- **The rest of that `.agent`**, what the test copy's own server wrote (its state, usage records and
+  caches): deleted for good.
+- **Test logs**, ignored `*.log` files: deleted for good.
+- **Recordings**, ignored video files (`.mp4`, `.webm`, `.mov`, `.mkv`). One goes for good only when
+  the same bytes outlive this removal: as a blob some ref reaches, or as a file in the main checkout or
+  in another of the repository's folders this removal isn't taking. A blob no ref reaches doesn't count,
+  and nor does a copy in a queue's scratch copy, or under `.git`, `.agent`, a folder `tmp` or a rebuildable
+  folder, since each of those goes with its own folder for free. Copies are counted one removal at a
+  time, so the last copy of a recording is found nowhere else, and that holds its folder, with the reason
+  naming it.
+
+**A folder left behind belongs to one repository.** `.worktrees` is shared by every repository beside
+it, so a folder another repository registers, or whose `.git` isn't this repository's (a pointer, live or
+dead, into another repository, a repository of its own, or one that can't be read) is never this
+repository's leftover. Neither is any folder while another project's list of worktrees can't be read. A
+folder with no `.git` that only a chat's record names, whose base commit another project has too, can't
+be told apart: exactly one of those repositories holds it, "Left behind: Another project shares this
+one's history, so Sova can't tell whose it is.", and nothing is removed.
+
+**A record alone says nothing about a branch.** A folder with no `.git` that only a chat's record names
+(not this repository's ledger, and not proved the queue's own) goes under the proof above, but a branch of
+the name that record gives is never pinned or deleted, whatever the project's Delete branches setting says.
+Its ledger entry has the name and no last commit. So if a branch of that name exists, that chat's next
+message gets "The branch name {branch} is in use." and it stays in the home folder; if none does, it comes
+back fresh from the target. Restore refuses, "Sova has no last commit recorded for it.", and the Retired
+list offers no Restore for it.
+
+**Remove Anyway.** On the project page's Remove Worktree (§app.project-overseer/coding-worktrees), on
+a worktree whose only reason is what it holds (never after a failed read, and never for a use
+reason). Retirement, `sova_archive` and teardown only name the reason, and no Held row offers it. It
+first lists exactly what goes: the uncommitted files, the ignored files that can't be rebuilt, each
 nested repository (deleted whole) or worktree (its uncommitted work goes, its commits stay in its
 repository), and the rebuildable folders that go with it, each list its first 500 and then the
 count; focus starts on Back.
-- The removal, `POST /api/worktrees/cleanup {path, force: {path, digest}}` (exactly one of
-  `dryRun`, `expect` and `force`; a malformed `force` is a 400), answers only your own page: any
-  other caller gets 403 and nothing is deleted. The dry run gives each such row `removeAnyway:
-  {uncommitted, ignored, nested, rebuildable, counts, digest}`.
+- The removal, the project page's route with the listing's digest (§app.project-overseer/coding-worktrees),
+  answers only your own page: any other caller gets 403 and nothing is deleted.
 - Sova runs every check again and removes the tree only when the use checks pass and the digest of
   the full listing now equals the one you confirmed, with `git worktree remove --force -- <path>`
-  (one `--force`) from the main checkout; the branch and the ledger are as for any removal
+  (one `--force`) from the main checkout; the branch is as for any removal
   (§chat.worktrees/cleanup). A nested worktree of another repository that went with it is then
   dropped from that repository's worktree list by name (`git worktree remove -- <path>` there, never
   a bare prune); its branch and commits stay. Otherwise nothing is deleted and the row shows why; a tree that is clean
   by then is removed as usual.
+
+## §chat.worktrees/retirement — A finished branch and its folder retire by themselves
+
+After a branch lands, Sova retires the branch and its folder once nothing is left and nothing is
+using them, with no button and no chat involved.
+
+**One service, every listed project.** One background service in Sova does this for every project on
+the Projects list, whatever its merge setup, apart from the merge queue; a repository no project lists
+isn't read. It runs once per machine, with a lock per repository. It reads git and the chats again each
+time and trusts no memory of its own, so a branch that landed long ago or by another route is treated
+the same. If a repository's lock looks taken, nothing there is removed and it tries again at the next
+wake-up; the Held list says so in one line (§app.merge-queue/view).
+
+**When it looks.** It wakes when a branch lands, here or on its host, when a chat goes idle, when a
+session's reading changes, when a process Sova started ends (a chat's or a test copy's), every 5 minutes, and about a minute after Sova
+starts, once the chats a previous server left are taken back and the queue is read. Wake-ups within a
+minute share one pass. Any other process ending has no signal of its own: the 5-minute pass notices it.
+
+**Only on the real install.** It runs only with the agent directory `~/.pi/agent`, no test signal, and
+not from a linked worktree. Anything else is off, and fails closed: off, it reads, writes and removes
+nothing.
+- **An install on a `PI_CODING_AGENT_DIR` of its own**, with nothing saying it's a test, is off, and no
+  setting turns it on: it sees its own chats, but it can't tell which repositories others use. "Automatic
+  cleanup is off for this install, because it runs on an agent directory of its own." A new session's
+  line and the Merge Queue tab say so. Only there a Worktrees row offers Remove Worktree
+  (§chat.worktrees/pane), through the one removal step, for a tree with nothing left.
+- **A test copy of Sova** never retires anything: a hermetic server sees only its own chats but shares
+  git's list with the real repository, so every real worktree would look unused to it. "This is a test
+  copy of Sova, so it retires nothing."
+- **A server that can't tell which it is** counts as a test copy. "Sova couldn't tell which install this
+  is, so it retires nothing."
+- **`SOVA_RETIRE=off`** turns it off on the real install too: "Automatic cleanup is turned off here
+  (SOVA_RETIRE=off)." Nothing turns it on anywhere else.
+
+**A test copy stops itself when its folder disappears.** A server or chat process on an agent directory
+named `.agent`, in a folder holding a `.git`, checks that folder at its start and every second, before
+anything writes state, and ends itself with a signal so no exit handler writes back into the folder. So
+it can't refill a folder being deleted. The real `~/.pi/agent` is never one.
+
+**What must hold.** A branch retires only when all of this holds, checked again right before anything
+is removed:
+- it has nothing left, by the shared answer's whole reading (§chat.worktrees/nothing-left), so every
+  spec draft in its folder is proved landed;
+- it has no queue entry in line, checking, waiting for you or still needing a fix;
+- every chat whose folder is in it or that tracks it as active has been idle for 10 minutes, has no
+  workers, isn't waiting on an answer it asked for and isn't open in a TUI, and any chat file or list
+  that can't be read counts against it ("Chat {name} couldn't be read.");
+- no process is running in it: no live process's working directory or open file is inside it, this
+  server's own direct git children aside (a git with any other parent counts), no live
+  record under its own `.agent/sessions/live` names a process still alive, and a process list that
+  can't be read counts against it;
+- it isn't locked, it has no uncommitted change or untracked file (a skip-worktree or assume-unchanged
+  file counts, so a sparse-checkout worktree holds until someone clears it), and no other registered
+  worktree, nor the main checkout, is inside its folder;
+- every ignored file in it is one the keep rule lets go (§chat.worktrees/leftovers).
+
+**Never retired, whatever they read:** the branch its project lands on, `master` and `main`, the branch
+`origin/HEAD` names, the main checkout's branch, and a tree on no branch. They are on neither list.
+
+**A new folder waits 10 minutes.** Any folder under 10 minutes old waits, so a chat that made one and
+hasn't recorded it yet can't make it look unused. This only delays a retirement and never deletes
+anything. Archive and a row's Remove Worktree don't wait for it.
+
+**A worktree with no commits of its own** waits longer, since its chat may have just made it and be
+waiting on your answer: 7 days with every such chat idle. When no live chat uses it, meaning no chat
+that isn't archived has its folder in it or tracks it as active, it has no wait beyond the 10 minutes
+every new folder waits. All the rest above still applies.
+
+**A test copy on the branch.** A copy registered with Sova (§app.project-services/instances), on a
+branch with commits and nothing left, is stopped and its slot freed (§app.project-services/teardown) once
+its chat has been quiet for 10 minutes, and everything above is asked again before the folder goes. Its
+test data goes with it. Three kinds hold the folder instead: a copy with an active share link, a copy a
+conformance run made, and a copy on a branch with no commits of its own, which may be someone trying the
+main branch, unless Sova made that copy bringing the folder back. A copy started by hand in a terminal
+is a plain running process: Sova never stops it, it holds the folder, and the Held list names it by its
+command and pid.
+
+**The sandbox.** On Linux an idle chat with its sandbox on no longer holds its folder: a missing root
+is left out of its next command (§chat.worktrees/sandbox). On macOS and any other platform it still
+holds, as a chat whose sandbox can't be read does, because a missing root isn't proved on Seatbelt. A
+running command holds everywhere, as a running process.
+
+A branch with commits of its own left to land is none of this: it neither waits nor is held.
+
+**Not ready yet: it waits.** A branch with nothing left that isn't ready waits in a saved list, with
+its reason, in `<state root>/retire-pending.json`, which survives a restart. Sova tries it again at each
+wake-up and never forces it. The list is a report: the reading above decides, and losing the list loses
+nothing. A removal cut off by a stop is finished at the next pass from the intents saved beside it
+(`retire-pending.json.intents`), read back by what git and the disk say, never taken as authority.
+
+**Anything unique: it's held.** A folder holding something that exists only there (uncommitted or
+untracked files, an ignored file the keep rule keeps, a draft not proved landed, a recording found
+nowhere else), or something Sova won't stop, is held with its reason shown (§app.merge-queue/view). What
+holds is asked before what only waits, so the Held list says what needs someone even while a chat is
+busy. A folder retires at the next wake-up after its reason clears. A branch held for its drafts keeps
+Land, which lands just the drafts.
+
+**The branch stays unless the project says otherwise.** Each project has one setting, **Delete branches
+when cleaning up** (`merge.deleteBranches`, §app.merge-queue/settings), off unless turned on, read from the
+project's definition at the target's head, never the main checkout's working copy, right before each removal. A definition that is missing or can't be read counts as
+off, so a project with no definition keeps its branches. Off: the folder goes, the branch stays, and its
+last commit is still pinned; the row reads the same. On: the branch goes after its folder. It applies from
+when it changes: a branch kept while it was off stays kept when it is turned on later. The merge queue's
+own copies, `feat/resolve-mq_*` among them, always lose their branch, since they aren't anyone's. Archive
+and a row's Remove Worktree follow the setting too.
+
+**What retiring does.** Every pass pins each last commit it is about to retire first, then retires at
+most 3 at a time. Test chats that differ from the user's real ones move to their
+kept place first (§chat.worktrees/leftovers). The removal step takes the folder, then, where the setting
+says so, the branch, and writes the ledger (§chat.worktrees/cleanup). It never forces past git's checks.
+The commit stays restorable for good. A branch the setting meant to delete and git kept is tried again at
+each wake-up, at exactly that commit. Archive's
+removals and a row's Remove Worktree go through this same step and count as retired: they get Restore,
+and a message brings them back.
+
+**The row afterwards** reads **Landed · cleaned up**, with no Land (§chat.worktrees/pane,
+§chat.composer/worktrees-control). One that never had a commit of its own reads Removed · no commits.
+
+**Reading a chat never brings a folder back; a message does.** An old chat with a retired folder opens
+as any chat whose folder is gone (§app.shell/missing-folder-home). A message, a steer or a delivery to a
+chat whose own folder is in a retired worktree brings it back before the chat receives it, and so does
+a worker's resume there, at the same place. Where its branch was deleted it comes back on the same branch
+name, fresh from the newest target. Where its branch was kept it comes back on that branch as it was,
+not moved. The
+project's setup runs through `create` where its definition declares one, which registers a copy and
+holds the message until it ends. A chat running in the home folder reopens there; one whose process was
+already open just finds the folder again. The chat is told, once, in a line that isn't the user's words: at its next
+turn or, when a turn is already running and the message queues behind it, as a hidden note that reaches
+the model ahead of the message: "Your worktree was retired after {branch} landed. It's back at {path}, on {branch}, fresh
+from {target} at {sha}." or, for a kept branch, "Your worktree was retired after {branch} landed. It's back
+at {path}, on {branch} as it was at {sha}. It may be behind {target}.", adding "Its setup failed: {why}"
+when it did. A kept branch that has been deleted since counts as deleted. A folder or a branch name in use by
+then, or git refusing, leaves the chat in the home folder as before, and the message still goes on: "Your
+worktree was retired after {branch} landed, and it couldn't be brought back: {why} You're in the home
+folder." A chat that works from elsewhere and only tracked the worktree gets nothing back: it opens a new
+worktree when it needs one. Only a retirement recorded in the ledger brings a folder back; one deleted by
+hand doesn't.
+
+**A partial delete still held keeps no chat among its files.** While files a stopped delete left wait for
+their proof, a chat whose folder is there opens in the home folder instead (§app.shell/missing-folder-home),
+and a quiet chat still open there moves to the home folder at its next message, told in a line that isn't
+the user's words: "Your worktree was retired after {branch} landed, but files stayed in {path}, so you're in
+the home folder for now." Once the proof holds and the folder is gone, however it went, that chat's next
+message brings the worktree back like any other, an archived or long-idle chat's included, since neither
+holds a leftover or partial folder (§chat.worktrees/cleanup). A folder with a live `.git` again isn't one of
+these.
+
+**Restore** (§app.merge-queue/view) is the other way back, for the old work itself: it puts the branch
+back at its recorded last commit and its folder at its old place, and changes nothing else. A branch the
+setting kept is still there, so Restore puts the folder back on it as it stands, never moving it, and
+puts it back at its recorded commit only if it has gone since. A branch that was deleted and exists again,
+one of a kept name that no longer holds the recorded commit, or a folder already there, refuses it, naming
+which, with nothing changed. A restored branch waits 7 days, so
+it doesn't retire again at the next wake-up; archive and a row's Remove Worktree don't wait for that.
+
+**Old conflict-fixing branches.** Branches a merge thread made for itself, `feat/resolve-mq_*` among
+them, retire under this same rule, folder and branch whatever the setting says, those that look unmerged included: every commit
+they have but a merge is on the target (§app.merge-queue/resolve-copy). They appear on neither list and
+in no count.
+
+**The first pass.** Worktrees already finished when this ships clear by the same rule, on the first pass
+after the restart that brings it, with no off step. The full list and every pinned commit are recorded
+before anything goes, and it retires 3 at a time. Its report, `<state root>/retire-first-pass.json`,
+puts every worktree and leftover folder in exactly one group: **retired**, **held**, **waiting**, **has
+work** or **the queue's own**, and lists what went from each and what was moved aside. A repository
+whose lock looked taken, or a pass that failed, isn't read, so the first pass goes on at the next pass
+until every project has been. A stop in mid-pass ends with exactly the report an unbroken pass makes: each
+removal is noted before it starts, and the next pass counts it only if the ledger says it happened. One
+cut off with files left reads "Left behind: A stop cut its removal short." Nothing is migrated and no history is rewritten. A rehearsal of this pass on a private copy of the user's real
+state comes before the landing that brings it (§app.merge-queue/approve).
+
+**What you see.** The Merge Queue tab has a **Held** tab, and a **Retired** list in its **Landed** tab
+(§app.merge-queue/view). The project card counts held and recently retired worktrees
+(§app.projects/home-cards), and so does a new session's line (§chat.transcript/empty-worktrees). After the
+first pass, when it looked at any worktree, Sova posts one summary in the global Overseer's chat, starting
+no turn: "Sova retired finished worktrees for the first time. Every branch's last commit stays restorable
+from each project's Merge Queue tab.", then per project how many went in each group. It is saved and tried
+again at each later pass until it is posted, and only one ever is.
 
 ## §chat.worktrees/dirty-freshness — How old a tree's uncommitted-changes reading may be
 
@@ -1010,8 +1317,8 @@ and a reading stands for a while before it is read again:
   reading at once: the tree's index and HEAD are part of what it was read from. While the session
   feed runs (§app.decisions/push), such a change, or its base branch moving, is noticed within
   5 s with no session-file write: that row alone is read again and the list says so.
-- A removal through Sova's cleanup (§chat.worktrees/cleanup: the Clean Up Merged button, its
-  confirm, or `sova_archive`'s removal) ends the reading at once for every session that tracks
+- A removal through Sova's one removal step (§chat.worktrees/cleanup: retirement, or
+  `sova_archive`'s removal) ends the reading at once for every session that tracks
   the removed tree: the cleanup answers only once those sessions are read again, so the very next
   look, the Session tab's or the session list's, reads the tree as removed ("Landed · cleaned up").
 - A change of the session's file or of its row (its running state, last activity, TUI presence,

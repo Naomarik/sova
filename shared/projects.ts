@@ -138,6 +138,9 @@ export interface ProjectGlance {
   /** Own memory now (bytes): its chats' (with their workers and tools) and its running copies' (the main checkout's included). */
   memory: { chatsBytes: number; copiesBytes: number };
   release: ProjectGlanceRelease | null;
+  /** Worktrees retirement took and holds here (§chat.worktrees/retirement). Absent at 0. */
+  retired?: number;
+  held?: number;
 }
 
 export interface ProjectGlanceList {

@@ -1,6 +1,7 @@
 import { createEffect, createMemo, createResource, createSignal, For, Index, on, onCleanup, Show } from "solid-js";
 import type { OverseerAutonomy, OverseerCaps, OverseerProactivity, OverseerQuickAction, OverseerSettings } from "../../shared/protocol";
-import { getDelegateOptions, getDelegateSettings, getOverseerAutonomy, getOverseerNotes, getOverseerSettings } from "../lib/api";
+import { liveDelegateOptions } from "../lib/claude-catalog";
+import { getDelegateSettings, getOverseerAutonomy, getOverseerNotes, getOverseerSettings } from "../lib/api";
 import { tildePath } from "../lib/format";
 import { loadModelPolicy, usableModels } from "../lib/model-policy";
 import { loadModels, modelList, thinkingLevelsFor } from "../lib/models";
@@ -54,7 +55,7 @@ export function OverseerSettingsSection() {
   // The idea explorer's row: Delegate's backends and discovered models (it is a subagent, so the
   // same "off for subagents" policy marks apply).
   const [backends] = createResource(getDelegateSettings);
-  const [workerOptions, { refetch: refetchWorkerOptions }] = createResource(getDelegateOptions);
+  const [workerOptions, { refetch: refetchWorkerOptions }] = liveDelegateOptions();
   const knownBackends = () => (backends.state === "ready" ? backends() : undefined);
   const knownOptions = () => (workerOptions.state === "ready" ? workerOptions() : undefined);
   // The model list and the policy that trims it, the composer picker's sources.

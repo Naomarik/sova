@@ -26,6 +26,8 @@ export interface GlanceInstance {
 }
 
 export interface GlanceDeps {
+  /** What retirement took and holds here, as it last wrote them (no git). Absent: none. */
+  retirementOf?: (root: string) => { retired: number; held: number };
   projects: readonly Pick<ProjectSummary, "id" | "root" | "archived">[];
   /** The same folder, whatever its spelling (a symlink, a trailing slash). */
   sameRoot(a: string, b: string): boolean;
@@ -104,6 +106,8 @@ export function buildGlance(d: GlanceDeps): ProjectGlanceList {
         copiesBytes += d.ownMemory(pid) ?? 0;
       }
     const q = d.queueOf(p.root);
+    const counts = d.retirementOf?.(p.root);
+    const retired = { ...(counts?.retired ? { retired: counts.retired } : {}), ...(counts?.held ? { held: counts.held } : {}) };
     const places = def && countPlaces({ registry: d, project: p.root, isProject: (x) => d.sameRoot(x, p.root), def: def.def, numbering: def.def, listening: d.listeningPorts });
     return {
       projectId: p.id,
@@ -112,6 +116,7 @@ export function buildGlance(d: GlanceDeps): ProjectGlanceList {
       slots: places ? { running: mine.filter(countsAsRunning).length, cap: d.capOf(p.root), usable: places.usable, runningPlaces: places.running, stopped: places.stopped, elsewhere: places.elsewhere, free: places.free } : null,
       memory: { chatsBytes: chats.get(p.id) ?? 0, copiesBytes },
       release: releaseGlanceOf(d.releaseOf(p.root)),
+      ...retired,
     };
   });
   return { glances, hostTotalBytes: d.hostTotalBytes, at: d.now.toISOString() };
@@ -152,6 +157,7 @@ export function readGlance(now = Date.now()): Promise<ProjectGlanceList> {
 }
 
 async function gatherGlance(): Promise<ProjectGlanceList> {
+  const { retirementGlance } = await import("../worktree-retire-view");
   const [{ listProjects }, { queueGlanceState }, { keptReleases }, { readRegistry, stateHash }, { copyLimitOf }, { machineCopyLimit }, drivers, { resourceMonitor }, { lastListedRows }, { canonicalPath }, os, { SOVA_LIVE_UNIT }, { unitOfCgroup }, { listeningPortTable }] = await Promise.all([
     import("./spaces"),
     import("../merge-queue/wire"),
@@ -191,6 +197,7 @@ async function gatherGlance(): Promise<ProjectGlanceList> {
   // The one look at the listening ports, for every project of this read.
   const listeningPorts = listeningPortTable();
   return buildGlance({
+    retirementOf: (root) => retirementGlance(root),
     projects: listProjects(),
     sameRoot: (a, b) => c(a) === c(b),
     queueOf: (root) => queueGlanceState(root),

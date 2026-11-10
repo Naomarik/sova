@@ -154,8 +154,8 @@ if (args[0] === "auth" && args[1] === "login") {
         record({ argv: args, initialize: frame.request });
         sdkServers = Array.isArray(frame.request.sdkMcpServers) ? frame.request.sdkMcpServers : [];
       }
-      // Discovery (buildDiscoveryArgv) reads the initialize answer's model list; the fake offers
-      // exactly one so a hermetic server can put a session on claude-code-cli without Anthropic.
+      // The initialize answer carries a model list, as the real CLI's does; the fake offers exactly
+      // one so a hermetic server can put a session on claude-code-cli without Anthropic.
       const models = frame.request?.subtype === "initialize" ? [{ value: "fake-opus", displayName: "Fake Opus", supportedEffortLevels: ["low", "medium", "high"] }] : undefined;
       out({ type: "control_response", response: { subtype: "success", request_id: frame.request_id, response: models ? { models } : {} } });
       return;

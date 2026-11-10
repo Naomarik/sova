@@ -13,9 +13,9 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 
 | What | Count |
 | --- | ---: |
-| Routes registered | 611 |
-| Routes a catalogue entry points at | 193 |
-| Catalogue entries | 263 |
+| Routes registered | 615 |
+| Routes a catalogue entry points at | 195 |
+| Catalogue entries | 266 |
 | Class: Peer protocol | 39 |
 | Class: Auth | 4 |
 | Class: Share pages | 0 |
@@ -27,8 +27,8 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | Class: Trust grants | 25 |
 | Class: A card view's own calls | 4 |
 | Class: Middleware and fallbacks | 2 |
-| Class: Left as is, by choice | 266 |
-| Class: Page plumbing | 21 |
+| Class: Left as is, by choice | 267 |
+| Class: Page plumbing | 22 |
 | Class: Steps of starting a chat | 2 |
 | Class: Live capability links | 1 |
 | Class: Approvals and grants | 17 |
@@ -88,8 +88,11 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | `session.cleanup` | Clean Up Sessions | changes | `POST /api/sessions/cleanup` | sessions |
 | `session.title.auto` | Name Sessions | changes | `POST /api/sessions/auto-title` | sessions |
 | `session.title.shorten` | Shorten Long Titles | changes | `POST /api/sessions/shorten-titles` | sessions |
-| `session.worktree.summary` | Count Merged Worktrees | looks | `GET /api/worktrees/summary` | sessions |
-| `session.worktree.cleanup` | Clean Up Worktrees | changes | `POST /api/worktrees/cleanup` | sessions |
+| `session.worktree.summary` | Count Worktrees | looks | `GET /api/worktrees/summary` | sessions |
+| `session.worktree.status` | Worktree Status | looks | `GET /api/worktrees/summary` | sessions |
+| `session.worktree.retirement` | Retired and Held Worktrees | looks | `GET /api/worktrees/retirement` | sessions |
+| `session.worktree.remove` | Remove Finished Worktree | changes | `POST /api/worktrees/remove` | sessions |
+| `session.worktree.restore` | Restore Retired Worktree | changes | `POST /api/worktrees/restore` | sessions |
 | `session.diff.summary` | Show Changes | looks | `GET /api/diff/summary` | sessions |
 | `session.job.list` | List Background Jobs | looks | `GET /api/sessions/jobs` | sessions |
 | `session.job.stop` | Stop Background Job | changes | `POST /api/sessions/jobs/stop` | sessions |
@@ -501,7 +504,7 @@ What a transcript card's or a drawing's sealed view asks through its box, for it
 | `ALL /*` | full |
 | `ALL /api/*` | full |
 
-### Left as is, by choice (266)
+### Left as is, by choice (267)
 
 Areas the user chose not to make scriptable (`OPTED_OUT` in `server/commands-inventory/scan.ts`). A route there that a catalogue entry points at stays a command; the rest are not pending, and a new route there needs no entry.
 
@@ -533,6 +536,7 @@ Areas the user chose not to make scriptable (`OPTED_OUT` in `server/commands-inv
 | `POST /api/claude/accounts/flow` | admin |
 | `POST /api/claude/accounts/flow/code` | admin |
 | `PUT /api/claude/accounts/order` | admin |
+| `GET /api/claude/catalog` | sessions |
 | `PATCH /api/claude/pool/:id` | admin |
 | `POST /api/claude/pool/:id/return` | admin |
 | `PUT /api/claude/pool/keeper` | admin |
@@ -774,7 +778,7 @@ Areas the user chose not to make scriptable (`OPTED_OUT` in `server/commands-inv
 | `POST /api/voice/transcribe` | admin |
 | `POST /api/voice/warm` | admin |
 
-### Page plumbing (21)
+### Page plumbing (22)
 
 Requests a view, the composer or a link card makes to draw itself (attachments and uploads, a tool row's contents, a link's thread and seen mark, the remote folder picker's listing, the explanations feed, the empty list's folder name, a project's icon picture). Exactly these routes (`PAGE_PLUMBING`).
 
@@ -801,6 +805,7 @@ Requests a view, the composer or a link card makes to draw itself (attachments a
 | `POST /api/time-spent/report` | sessions |
 | `GET /api/transcript/tool` | sessions |
 | `POST /api/upload` | sessions |
+| `POST /api/worktrees/cleanup` | sessions |
 
 ### Steps of starting a chat (2)
 
@@ -1038,8 +1043,10 @@ Approving a schedule or a draft spec, the Overseer's permits and their revoke: a
 | `POST /api/usage/sessions` | admin | `usage.sessions` |
 | `GET /api/usage/today` | sessions | `usage.today` |
 | `POST /api/workers/resume` | sessions | `worker.resume` |
-| `POST /api/worktrees/cleanup` | sessions | `session.worktree.cleanup` |
-| `GET /api/worktrees/summary` | sessions | `session.worktree.summary` |
+| `POST /api/worktrees/remove` | sessions | `session.worktree.remove` |
+| `POST /api/worktrees/restore` | sessions | `session.worktree.restore` |
+| `GET /api/worktrees/retirement` | sessions | `session.worktree.retirement` |
+| `GET /api/worktrees/summary` | sessions | `session.worktree.status`, `session.worktree.summary` |
 
 ## Chat socket frames
 

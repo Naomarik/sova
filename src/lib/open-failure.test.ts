@@ -79,3 +79,16 @@ test("an unreachable stored folder is shown verbatim, never as a folder that is 
   assert.equal(v.kind, "unknown");
   assert.ok(v.detail.startsWith("Stored session working directory can't be reached (EACCES): /srv/locked/repo"));
 });
+
+test("a chat in the home folder says why: its worktree retired, or files of a stopped delete are still held", () => {
+  const held = cwdFallbackView({ original: "/w/feat-x", cwd: "/home/user", held: true });
+  assert.equal(held.title, "This session's worktree is being cleaned up");
+  assert.match(held.body, /files stayed in \/w\/feat-x, so this chat runs in your home folder, \/home\/user, for now/);
+  const retired = cwdFallbackView({ original: "/w/feat-x", cwd: "/home/user", retired: { branch: "feat/x", target: "master" } });
+  assert.equal(retired.title, "This session's worktree was retired");
+  assert.equal(retired.body, "This session's worktree was retired after feat/x landed. Send a message to bring it back, fresh from master.");
+  const kept = cwdFallbackView({ original: "/w/feat-x", cwd: "/home/user", retired: { branch: "feat/x", target: "master", kept: true } });
+  assert.equal(kept.title, "This session's worktree was retired");
+  assert.equal(kept.body, "This session's worktree was retired after feat/x landed. Send a message to bring it back on feat/x as it was. It may be behind master.");
+  assert.doesNotMatch(cwdFallbackView({ original: "/w/feat-x", cwd: "/home/user" }).body, /retired/);
+});

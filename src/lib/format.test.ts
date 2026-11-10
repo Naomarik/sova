@@ -19,8 +19,9 @@ test("compactModel names a Claude model by its catalog name, under any provider 
 });
 
 test("compactModel shortens other ids: no provider, no dated build, a dotted version", () => {
-  assert.equal(compactModel("anthropic/claude-sonnet-4-5-20250929"), "sonnet-4.5", "a Claude id the catalog doesn't list keeps the short form");
-  assert.equal(compactModel("claude-opus-6[1m]"), "opus-6 1M");
+  assert.equal(compactModel("anthropic/claude-sonnet-4-5-20250929"), "Sonnet 4.5", "a standard Claude id reads by the rule, listed or not");
+  assert.equal(compactModel("claude-opus-6[1m]"), "Opus 6");
+  assert.equal(compactModel("ollama/mistral-large-3-1[256k]"), "mistral-large-3.1 256K", "anything else keeps the short form");
 });
 
 test("modelLabel: the catalog name, of the model that answered when known; else the short id", () => {
@@ -28,7 +29,8 @@ test("modelLabel: the catalog name, of the model that answered when known; else 
   assert.equal(modelLabel("claude-code-cli/opus[1m]", "claude-opus-4-8"), "Opus 4.8", "the answer wins");
   assert.equal(modelLabel("claude-code-cli/claude-haiku-4-5", "claude-haiku-4-5-20251001"), "Haiku 4.5");
   assert.equal(modelLabel("zai/glm-5.3"), "glm-5.3");
-  assert.equal(modelLabel("claude-code-cli/claude-opus-6"), "claude-opus-6", "an id the catalog doesn't know");
+  assert.equal(modelLabel("claude-code-cli/claude-opus-6"), "Opus 6", "an id the catalog doesn't know reads by the rule");
+  assert.equal(modelLabel("claude-code-cli/claude-3-5-sonnet"), "claude-3-5-sonnet", "an old-order id keeps its plain id");
   assert.equal(modelLabel(null), null);
 });
 

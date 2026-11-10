@@ -6,6 +6,7 @@ import type { NeedsYouRow } from "./needs-you";
 import { itemRow, NEEDS_KINDS, rowLabels, sessionRow } from "./needs-you-row";
 
 const HOME = "/h/me";
+const NEEDS_KINDS_CHIP = (k: keyof typeof NEEDS_KINDS) => ({ word: NEEDS_KINDS[k].word, tone: NEEDS_KINDS[k].tone });
 const item = (x: Partial<AttentionItem>): AttentionItem => ({ id: "i", path: "", title: "Notes", where: "/h/me/w/notes", tier: "act", kind: "release-failed", since: 1, detail: "v0.4.0: Publish failed: origin refused", href: "#/projects/prj_1/releases", ...x });
 const row = (x: Omit<Partial<NeedsYouRow>, "session"> & { session?: Partial<SessionSummary> } = {}): NeedsYouRow =>
   ({ detail: "2 open questions in al_3", details: ["2 open questions in al_3"], since: 1, kind: "open-questions", soft: false, ...x, session: { path: "/s/a.jsonl", cwd: "/h/me/w/notes", title: "Fix the build", ...x.session } }) as NeedsYouRow;
@@ -38,6 +39,15 @@ test("a chat's row: its project or folder, its title, its sentences as hover tex
   assert.equal(sessionRow(row({ session: { project: { projectId: "p", projectName: "Notes", kind: "folder" } } }), { href: "#", home: HOME }).name, "Notes");
   assert.equal(sessionRow(row({ session: { org: { orgId: "o", orgName: "Acme", projectId: "p", projectName: "Shop", kind: "coding" } as SessionSummary["org"] } }), { href: "#", home: HOME }).name, "Acme · Shop");
   assert.equal(sessionRow(row(), { href: "#", home: HOME, host: "laptop" }).name, "notes · laptop");
+});
+
+test("a proposal row's chip: Ready with something to merge, Blocked with nothing, a Setup one still being read", () => {
+  const pb = { projectId: "p", label: "Project deploy", branch: "sova/d", target: "main", proposes: "deploy" } as NonNullable<NeedsYouRow["playbook"]>;
+  const chip = (kind: NeedsYouRow["kind"], playbook: NeedsYouRow["playbook"]) => sessionRow(row({ kind, playbook }), { href: "#", home: HOME }).chip;
+  assert.deepEqual(chip("playbook-review", { ...pb, hash: "h" }), { word: "Ready", tone: "success" });
+  assert.deepEqual(chip("playbook-review", pb), { word: "Blocked", tone: "warn" });
+  for (const hash of ["h", undefined]) assert.deepEqual(chip("playbook-review", { ...pb, proposes: "pipeline", ...(hash ? { hash } : {}) }), { word: "Proposed", tone: undefined }, "Ready waits for the proposal's own reading");
+  assert.deepEqual(chip("error", pb), NEEDS_KINDS_CHIP("error"), "a row that is first about something else keeps that word");
 });
 
 test("a project's item: the project's name, what it is, its sentence as hover text; the folder leaves the row", () => {

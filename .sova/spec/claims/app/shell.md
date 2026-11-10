@@ -387,9 +387,9 @@ the browser (§app.installer/app-entry).
 
 ## §app.shell/window-controls-overlay — The installed window without a title bar
 
-When the installed app's window hides its title bar (`display-mode: window-controls-overlay`: how
-the installer leaves it on macOS, §app.installer/app-entry, or the browser's own toggle anywhere),
-Sova draws a title band of its own in its place.
+When the installed app's window hides its title bar (`display-mode: window-controls-overlay`: the
+browser's own toggle, in an app the person installed from the browser), Sova draws a title band of
+its own in its place.
 
 - **One band, the window's width.** A band runs across the whole top of the window, as tall as the
   title-bar area the browser reports (`env(titlebar-area-height)`, never a fixed number), in the

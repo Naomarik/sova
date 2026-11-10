@@ -151,7 +151,7 @@ Sessions, settings and chats are never touched by an upgrade.
   a staging directory, swaps the build into `dist/` and `dist-share/`, and restarts the unit. A
   rollback moves the branch back to the commit it was at, reinstalls and puts the previous build
   back. Local branches, other worktrees, stashes and untracked files are never touched. It runs no
-  installer, so the launcher and the app entry stay as they are (§app.installer/mac-app).
+  installer, so the launcher and the app entry stay as they are (§app.installer/app-entry).
 
 Only one upgrade runs at a time, and Check Now waits while it does. No upgrade starts while a
 restart is scheduled (§app.updates/restart). A finished upgrade's outcome

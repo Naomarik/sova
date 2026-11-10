@@ -71,6 +71,8 @@ export interface DesignRecord {
   fix?: DesignFix;
   /** The last request for a change ended with no new version: why, in plain words. Gone with the next message or version. */
   unchanged?: { reason: string; at: string };
+  /** The last request for a change ended with no new version: why, in plain words. Gone with the next message or version. */
+  unchanged?: { reason: string; at: string };
   route: DesignStreamRoute;
   /** Finished versions, oldest first; empty until the first hand-in. */
   versions: DesignVersion[];

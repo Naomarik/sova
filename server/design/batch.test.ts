@@ -486,6 +486,71 @@ test("refusals spend the same two tries: a third ends the turn in Failed, and a 
   assert.equal(fixSends(f).length, 0);
 });
 
+const spend = async (): Promise<void> => {
+  for (const _ of [1, 2, 3]) await assert.rejects(refuse("A"));
+};
+
+test("a design with no tries left: a person's Refine gets fresh ones and a bad page goes back; the card said why the last did nothing", async () => {
+  const f = await start();
+  await finish(f, "A");
+  await ticks();
+  await spend();
+  assert.equal(stat("A").status, "ready");
+  assert.match(stat("A").unchanged?.reason ?? "", /script 1, line 2/);
+  await deliverDesign(parent, "A", { text: "darker", key: "r1", by: "user", version: "refine" });
+  assert.equal(stat("A").unchanged, undefined, "a new message starts clean");
+  onLiveFrame(f.rec.chatId, { gen: 2, at: 0, text: BROKEN });
+  settle(f);
+  await waitFor(() => stat("A").status === "fixing");
+  assert.equal(stat("A").fix?.attempt, 1);
+  assert.equal(fixSends(f).length, 1);
+});
+
+test("only a person's message gives fresh tries: the coordinator's and the main chat's don't", async () => {
+  for (const by of ["coordinator", "main"] as const) {
+    const before = fakes.length;
+    const [label] = launchDesigns(parent, newRun(["zai/a"], ["Heritage"]), {});
+    await ticks();
+    const f = fakes[before]!;
+    await finish(f, label!);
+    await ticks();
+    await assert.rejects(refuse(label!));
+    await assert.rejects(refuse(label!));
+    await deliverDesign(parent, label!, { text: "go", key: `c-${by}`, by });
+    await assert.rejects(refuse(label!), /used up/, by);
+    deleteDesign(parent, label!);
+    await ticks();
+  }
+});
+
+test("a Refine that ends with no new version says so; a question in Chat doesn't; a new version clears it", async () => {
+  const f = await start();
+  await finish(f, "A");
+  await ticks();
+  await deliverDesign(parent, "A", { text: "why blue?", key: "q", by: "user", version: "chat" });
+  settle(f);
+  await ticks();
+  await new Promise((r) => setTimeout(r, 15));
+  assert.equal(stat("A").unchanged, undefined, "a question changes nothing, rightly");
+  await deliverDesign(parent, "A", { text: "darker", key: "r", by: "user", version: "refine" });
+  settle(f);
+  await waitFor(() => stat("A").unchanged !== undefined);
+  assert.match(stat("A").unchanged!.reason, /without changing the page/);
+  assert.equal(stat("A").status, "ready");
+  // It isn't said twice for a later turn nobody asked to change anything in.
+  store.changeDesign(parent.sessionId, "A", (d) => void delete d.unchanged);
+  settle(f);
+  await ticks();
+  await new Promise((r) => setTimeout(r, 15));
+  assert.equal(stat("A").unchanged, undefined);
+  await deliverDesign(parent, "A", { text: "darker", key: "r2", by: "user", version: "refine" });
+  settle(f, "error", "the provider is down");
+  await waitFor(() => stat("A").unchanged?.reason === "the provider is down");
+  assert.equal(fixSends(f).length, 0, "a provider's error spends no try");
+  await finish(f, "A");
+  assert.equal(stat("A").unchanged, undefined);
+});
+
 test("a refused edit and a hand-in with no page count too", async () => {
   await start();
   const edits = streamTool("A").execute("t", { label: "A", edits: [{ find: "a", replace: "b" }] }, undefined, undefined, undefined);

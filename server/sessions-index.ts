@@ -1209,6 +1209,8 @@ type Listing = {
   startedAt: number;
   stamp: number;
   built: Promise<{ rows: SessionSummary[]; files: string[] }>;
+  /** Its rows, once built. */
+  done?: SessionSummary[];
 };
 let listing: Listing | null = null;
 /** One more per build started, of either kind: a higher stamp is a build that started later. */
@@ -1226,12 +1228,14 @@ export function listSessions(): Promise<SessionSummary[]> {
   if (l && now - l.startedAt >= LIST_REUSE_MS) {
     keptStats.kept++;
     // What a build would set off: a readiness read due by age or by its trees' Git stamps.
-    void l.built.then((b) => readinessDue(b.rows)).catch(() => {});
+    if (l.done) readinessDueKept(l.done);
+    else void l.built.then((b) => readinessDueKept(b.rows)).catch(() => {});
   }
   if (!l) {
     const mine: Listing = { generation: listGeneration(), heard: heardGeneration(), watch: tracker.run, startedAt: now, stamp: ++listStamp, built: buildSessions() };
     listing = l = mine;
     listStats.listed++;
+    void mine.built.then((b) => void (mine.done = b.rows), () => {});
     mine.built.catch(() => {
       if (listing === mine) listing = null;
     });
@@ -1249,6 +1253,7 @@ export function listSessionsAfresh(): Promise<SessionSummary[]> {
   const mine: Listing = { generation: listGeneration(), heard: heardGeneration(), watch: tracker.run, startedAt: now, stamp: ++listStamp, built: buildSessions() };
   listing = mine;
   listStats.listed++;
+  void mine.built.then((b) => void (mine.done = b.rows), () => {});
   mine.built.catch(() => {
     if (listing === mine) listing = null;
   });
@@ -1759,6 +1764,18 @@ function rowReads(isWorker: (path: string) => boolean): RowReads {
   };
 }
 
+/**
+ * Each listed file's row as rowFor handed it to readiness, before settleGoAsk: readiness keys its
+ * answer by that row (a settled go-ahead ask's turn included), so a row a listing keeps is handed
+ * to readiness as this, exactly as a build of it would hand it, never as the settled row the list shows.
+ */
+const readinessRows = new Map<string, SessionSummary>();
+
+/** readinessDue for rows a listing keeps, each as its build handed it to readiness. */
+function readinessDueKept(rows: readonly SessionSummary[]): void {
+  readinessDue(rows.map((r) => readinessRows.get(r.path) ?? r));
+}
+
 /** One file's row as the list shows it, or null when the list leaves it out (an empty husk). */
 async function rowFor(s: BaseSummary, r: RowReads): Promise<SessionSummary | null> {
   // Empty husks — no user message anywhere in the file — are never listed, so abandoned
@@ -1807,6 +1824,8 @@ async function rowFor(s: BaseSummary, r: RowReads): Promise<SessionSummary | nul
   };
   // Merge readiness (§chat.worktrees/readiness): the last background answer; git is never awaited here.
   const readiness = readinessOverlay(row);
+  // What readiness read this row as: before settleGoAsk drops a settled go-ahead ask, which its key reads.
+  readinessRows.set(s.path, row);
   // The branches its chat's status row counts, each queue entry as the queue has it now (no Git here either).
   const branches = branchesOverlay(row);
   const withMerge = readiness || branches ? { ...row, ...(readiness ? { readiness } : {}), ...(branches ? { branches } : {}) } : row;
@@ -1886,8 +1905,9 @@ async function buildSessionsNow(track?: { files: string[]; dirty?: ReadonlySet<s
   keptStats.rowsKept += out.length - built.size;
   keptStats.rowsBuilt += built.size;
   // What building a kept row would have set off: a readiness read due by age or Git stamps.
-  readinessDue(out.filter((r) => !built.has(r)));
+  readinessDueKept(out.filter((r) => !built.has(r)));
   pruneReadiness(out);
+  for (const p of readinessRows.keys()) if (!present.has(p)) readinessRows.delete(p);
   for (let i = 0; i < out.length; i++) if (built.has(out[i]!)) out[i] = await withUnreadReplies(out[i]!);
   // A row equal to the last listing's (same keys, in order, same values) is that object itself:
   // rows are shared and never mutated, and a reader that keys work by row (the session feed's

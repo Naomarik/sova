@@ -40,6 +40,9 @@ const { setArchived } = await import("./archived-sessions");
 const { setSessionTitle } = await import("./session-titles");
 const { stateRoot } = await import("./state-root");
 const { canonicalPath } = await import("./paths");
+const { configureReadiness, readinessIdle } = await import("./merge-readiness");
+const { readDecisionSettings, writeDecisionSettings } = await import("./decide-settings");
+const { updateSignals } = await import("./signals-store");
 
 /** Another live process: the live registry keeps only records of a pid that is alive. */
 const otherPid = process.ppid;
@@ -240,6 +243,137 @@ test("watched: a write to one file builds that row only; one row's change, that 
     const all = await later();
     await feed.idle();
     assert.ok(keptStats.rowsBuilt - before2 >= all.length, "every row is built");
+  } finally {
+    await feed.idle();
+    stop();
+  }
+});
+
+// ---- readiness on kept rows: no more Git than a build of every row (master) starts --------------------------
+
+/** Readiness's Git, counted: each tree read (`git status` and the merged check go through it) and every git call. */
+const git = { trees: 0, calls: 0 };
+configureReadiness({
+  served: async () => true,
+  insights: {
+    treeStatus: async (t: { path: string }) => {
+      git.trees++;
+      return { path: t.path, source: "session", exists: true, branch: "feat/x", base: "master", merged: "yes", ahead: 0, behind: 0, dirty: false, head: "h1", subjects: [] };
+    },
+  } as never,
+  git: async () => {
+    git.calls++;
+    return { code: 0, stdout: "", stderr: "" };
+  },
+  asksUser: () => undefined,
+});
+const gitNow = () => git.trees + git.calls;
+
+/** A chat that tracked a worktree whose branch has merged, its last reply asking for the merge go-ahead. */
+function tracking(name: string, opts: { archived?: boolean; settledAsk?: boolean } = {}): { id: string; path: string } {
+  const s = session(name);
+  const tree = { path: `/wt/${name}`, branch: `feat/${name}`, base: "b0", baseBranch: "master", status: "active", session: s.id, how: "created", at: 1 };
+  const replyId = `r-${s.id}`;
+  appendFileSync(
+    s.path,
+    [
+      { type: "custom", customType: "worktrees", data: { version: 1, trees: [tree] }, timestamp: "2026-09-29T15:36:00.000Z", id: `w-${s.id}`, parentId: null },
+      { type: "message", id: replyId, parentId: `w-${s.id}`, timestamp: new Date(realNow() - 60_000).toISOString(), message: { role: "assistant", content: [{ type: "text", text: "Done. Shall I merge it?" }], stopReason: "stop" } },
+    ].map((e) => `${JSON.stringify(e)}\n`).join(""),
+  );
+  if (opts.archived) setArchived(s.id, true);
+  if (opts.settledAsk) settledAsks[s.id] = replyId;
+  return s;
+}
+/** Go-ahead asks (asks-you, restart-or-merge-go) whose version Sova already found landed: the list leaves them off. */
+const settledAsks: Record<string, string> = {};
+function writeSettledAsks(): void {
+  const sessions: Record<string, unknown> = {};
+  for (const [id, turnId] of Object.entries(settledAsks))
+    sessions[id] = {
+      turnId,
+      replyAt: realNow() - 60_000,
+      at: realNow() - 50_000,
+      provider: "pi",
+      model: "m",
+      schema: 3,
+      settled: realNow() - 40_000,
+      answers: {
+        asks_user: { type: "boolean", p: 0.95 },
+        ask_kind: { type: "choice", choice: "restart-or-merge-go", probabilities: { "restart-or-merge-go": 0.95 }, confidence: 0.95 },
+      },
+    };
+  // Through the store, as the classifier writes it: its short read cache is never left behind.
+  updateSignals((d) => Object.assign(d.sessions, sessions));
+  const d = readDecisionSettings();
+  writeDecisionSettings({ ...d, features: { ...d.features, attention: true } });
+  sessionsChanged();
+}
+/** Whatever a listing set off in readiness, finished: a turn of the event loop (a kept list's reads may be queued
+    after its rows are handed out), then the reads. */
+async function readsDone(): Promise<void> {
+  await new Promise((r) => setTimeout(r, 0));
+  await readinessIdle();
+}
+
+/** Listings until readiness has read everything once and settles. */
+async function settleReadiness(): Promise<void> {
+  for (let i = 0; i < 3; i++) {
+    await fresh();
+    await readsDone();
+  }
+}
+
+test("a merged, archived chat whose go-ahead ask settled, listed three times with nothing changed, starts no readiness re-read", async () => {
+  const { feed, stop } = connect();
+  try {
+    const c = tracking("settled-merged", { archived: true, settledAsk: true });
+    writeSettledAsks();
+    await feed.idle();
+    await settleReadiness();
+    const row = byId(await listSessions(), c.id);
+    assert.ok(row?.readiness, "readiness has read it");
+    assert.equal(row?.signals, undefined, "the settled ask is left off the row");
+    const before = gitNow();
+    for (let i = 0; i < 3; i++) {
+      await later();
+      await readsDone();
+    }
+    assert.equal(gitNow() - before, 0, "no readiness re-read, no Git, after the first");
+  } finally {
+    await feed.idle();
+    stop();
+  }
+});
+
+test("over unchanged listings, readiness reads and Git are no more than a build of every row (master) starts, for the same rows", async () => {
+  const { feed, stop } = connect();
+  try {
+    tracking("rule-settled-archived", { archived: true, settledAsk: true });
+    tracking("rule-settled-open", { settledAsk: true });
+    tracking("rule-merged-archived", { archived: true });
+    tracking("rule-merged-open");
+    writeSettledAsks();
+    await feed.idle();
+    await settleReadiness();
+    const N = 5;
+    // This branch: unchanged listings, kept lists and kept rows.
+    const kept0 = gitNow();
+    for (let i = 0; i < N; i++) {
+      await later();
+      await readsDone();
+    }
+    const keptGit = gitNow() - kept0;
+    // Master: every listing builds every row.
+    await settleReadiness();
+    const all0 = gitNow();
+    for (let i = 0; i < N; i++) {
+      sessionsChanged();
+      await later();
+      await readsDone();
+    }
+    const allGit = gitNow() - all0;
+    assert.ok(keptGit <= allGit, `kept listings started ${keptGit} Git reads, a build of every row ${allGit}`);
   } finally {
     await feed.idle();
     stop();

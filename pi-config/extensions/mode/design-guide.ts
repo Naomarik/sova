@@ -65,9 +65,6 @@ export const DESIGN_DEFAULT_DIRECTION_SETS: readonly (readonly string[])[] = [
 	["Heritage", "Immersive", "Minimalist"],
 ];
 
-/** The page budget the brief states. A provider may ignore an output cap, so the guard enforces it. */
-export const DESIGN_PAGE_CHARS = 100_000;
-
 /**
  * The reply-route markers (a model marked no-tool-stream writes its page between them), each alone on
  * its line. Sova's decoder reads the same pair from shared/design.ts; a test keeps the two equal.
@@ -113,7 +110,6 @@ export function designSessionPrompt(options: DesignSessionPromptOptions): string
 		delivery,
 		direction: direction.name,
 		definition: direction.definition,
-		pageBudget: DESIGN_PAGE_CHARS.toLocaleString("en-US"),
 	});
 }
 

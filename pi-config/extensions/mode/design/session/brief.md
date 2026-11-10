@@ -7,7 +7,6 @@ OUTPUT REQUIREMENTS:
 - The page is ONE valid HTML document - no markdown, no explanation, no code fences inside it
 - Start with <!DOCTYPE html> and end with </html>
 - The page must be COMPLETE and INTERACTIVE - not a design system showcase
-- Keep the whole document under {{pageBudget}} characters
 
 INTERACTIVITY REQUIREMENTS (inline JavaScript):
 - Form validation with clear error/success messages

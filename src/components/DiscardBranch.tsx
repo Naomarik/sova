@@ -30,8 +30,9 @@ export function createDiscard(target: () => DiscardTarget | undefined, onChanged
   const [checking, setChecking] = createSignal(false);
   const [busy, setBusy] = createSignal(false);
   const [error, setError] = createSignal<string | null>(null);
-  /** The discard was refused because its files changed: the confirm shows the new list and asks again. */
-  const [changed, setChanged] = createSignal(false);
+  /** The discard was refused because something changed since the dry run (its files, a chat now working in its
+      folder): the server's words, over the new list it asks again with. */
+  const [changed, setChanged] = createSignal<string | null>(null);
   /** A partial stop: what was done and what stayed, on the row. */
   const partial = () => {
     const t = target();
@@ -75,7 +76,8 @@ export function createDiscard(target: () => DiscardTarget | undefined, onChanged
     try {
       const r = await discardBranch(t.project, { branch: t.branch, commit: t.commit, digest: p.digest });
       if (r.kind === "changed") {
-        setChanged(true);
+        // "…Nothing was deleted. Look again.": the confirm shows the new list itself, so it ends on that instead.
+        setChanged(r.message.replace(/\s*Look again\.?\s*$/, ""));
         announce(r.message);
         await check();
         return false;
@@ -100,7 +102,7 @@ export function createDiscard(target: () => DiscardTarget | undefined, onChanged
         toast(`Discard of ${p.branch} stopped. ${line}`);
         announce(`Discard of ${p.branch} stopped. ${line}`);
       }
-      setChanged(false);
+      setChanged(null);
       setPreview(undefined);
       return true;
     } catch (err) {
@@ -113,7 +115,7 @@ export function createDiscard(target: () => DiscardTarget | undefined, onChanged
 
   /** The confirm opens on the preview the menu fetched (asking again when none came yet). */
   const opened = () => {
-    setChanged(false);
+    setChanged(null);
     if (!preview() && !checking()) void check();
   };
   /** Why it can't run now (the dry run's reason), for the menu item and the confirm. */
@@ -147,9 +149,11 @@ export function DiscardConfirm(props: { discard: Discard; branch: string; onClos
     <div class="wt-queue-confirm wt-discard-confirm" role="group" aria-label={`Discard ${props.branch}`} aria-busy={d.checking() ? "true" : undefined} on:keydown={onKey}>
       <p class="wt-queue-confirm-title">{`Discard ${props.branch}?`}</p>
       <Show when={d.changed()}>
-        <p class="text-caption wt-queue-confirm-line" role="status">
-          Its files changed since you looked, and nothing was deleted. This is what goes now.
-        </p>
+        {(m) => (
+          <p class="text-caption wt-queue-confirm-line" role="status">
+            {m()} This is what goes now.
+          </p>
+        )}
       </Show>
       <Show when={words()} fallback={<p class="text-caption wt-queue-confirm-line">{d.error() ?? "Checking what goes…"}</p>}>
         {(w) => (

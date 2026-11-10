@@ -200,6 +200,19 @@ await commands.get("mode").handler("normal", ctx);
 assert.deepEqual(getTools(), ["read", "bash", "edit", "write", "grep"], "tools restored on leaving heavy");
 assert.equal(store.status.get("mode"), "<dim>normal</dim>");
 
+// A tool that arrives while strict is on stays when strict ends, and strict putting edit/write back doesn't move it;
+// one removed while strict is on stays removed (§chat.mode-menu/strict).
+await commands.get("mode").handler("delegate", ctx);
+assert.deepEqual(getTools(), ["read", "bash", "grep"], "strict is still on");
+api.setActiveTools(["read", "bash", "project_verbs", "grep"]);
+await commands.get("mode").handler("strict off", ctx);
+assert.deepEqual(getTools(), ["read", "bash", "project_verbs", "edit", "write", "grep"], "strict off: the arrival stays, once");
+await commands.get("mode").handler("strict on", ctx);
+assert.deepEqual(getTools(), ["read", "bash", "project_verbs", "grep"], "strict removes only edit/write");
+api.setActiveTools(["read", "bash", "grep"]);
+await commands.get("mode").handler("normal", ctx);
+assert.deepEqual(getTools(), ["read", "bash", "edit", "write", "grep"], "removed during strict: it doesn't come back");
+
 // Planner fallback: fable listed without medium → warning status + prompt names opus/high.
 // (An alias the CLI's varying list omits is unverified and stays in use; see the routing tests.)
 offered = [{ id: "claude-fable-5-1", name: "Fable", efforts: ["low"] }, { id: "claude-opus-5-5", name: "Opus" }];

@@ -6,7 +6,9 @@
  * or a timeout is retried once with a fresh reviewer, then reported as the reviewer's failure (the queue pauses; the
  * branch is never blamed).
  */
-import type { ReviewVerdict } from "../../shared/merge-queue";
+import type { ReviewFinding, ReviewVerdict } from "../../shared/merge-queue";
+import type { ReviewChange } from "./review-change";
+import { REVIEW_KINDS } from "./review-verdict";
 
 export interface ReviewerStart {
   runId: string;
@@ -20,6 +22,8 @@ export interface ReviewerStart {
   branch: string;
   /** The review kit's folder, relative to the copy. */
   kit: string;
+  /** The change, written for it (review-change.ts): it has no shell to run git. */
+  change?: ReviewChange;
   /** The reviewer's first message. */
   text: string;
   attempt: number;
@@ -64,9 +68,14 @@ export function setReviewerStarter(fn: StartReviewer | null): void {
   starter = fn;
 }
 
+/** A reviewer's answer as merge.review checked it: the text whole, its summary and parsed findings beside it. */
+export type ReviewAnswer = { verdict: ReviewVerdict["verdict"]; text?: string; summary?: string; findings?: ReviewFinding[] };
+/** The answer's report, whole: never cut, never re-parsed later. */
+const reportOf = (v: ReviewAnswer) => ({ ...(v.text ? { text: String(v.text) } : {}), ...(v.summary !== undefined ? { summary: v.summary } : {}), ...(v.findings ? { findings: v.findings } : {}) });
+
 interface Waiting {
   sessionId: string | null;
-  resolve: (v: { verdict: ReviewVerdict["verdict"]; text?: string }) => void;
+  resolve: (v: ReviewAnswer) => void;
 }
 const waiting = new Map<string, Waiting>();
 
@@ -80,11 +89,11 @@ export const isReviewerChat = (sessionId: string): boolean => [...waiting.values
 export const activeReviewers = (): Set<string> => new Set([...waiting.values()].map((w) => w.sessionId).filter((id): id is string => !!id));
 
 /** merge.review's verdict for `runId`. False when no review of that run is waiting (late, or a stranger's). */
-export function deliverReview(runId: string, v: { verdict: ReviewVerdict["verdict"]; text?: string }): boolean {
+export function deliverReview(runId: string, v: ReviewAnswer): boolean {
   const w = waiting.get(runId);
   if (!w || !["ok", "notes", "blocking"].includes(v.verdict)) return false;
   waiting.delete(runId);
-  w.resolve({ verdict: v.verdict, ...(v.text ? { text: String(v.text).slice(0, 2000) } : {}) });
+  w.resolve({ verdict: v.verdict, ...reportOf(v) });
   return true;
 }
 
@@ -94,10 +103,12 @@ export function reviewerText(o: Omit<ReviewerStart, "text" | "attempt">, target 
     `Review one change before it lands, with the review kit at ${o.kit}/ (read its PLAYBOOK.md first and follow it).`,
     "",
     `- Commit under review: ${o.commit} (branch ${o.branch} merged onto ${target} at ${o.base}).`,
-    `- The change: git diff ${o.base}...${o.commit} (and git log ${o.base}..${o.commit}). Read files at that commit (git show ${o.commit}:<path>); the working folder may move while you read.`,
-    "- You only read: change nothing, commit nothing, start nothing.",
-    `- Answer once, with the merge.review verb: {run: "${o.runId}", verdict: "ok" | "notes" | "blocking", text: "<short; for notes or blocking, what and where>"}.`,
-    "  ok: nothing to say. notes: worth knowing, never stops the landing. blocking: it should not land as is (the user decides).",
+    o.change
+      ? `- The change, written for you: ${o.change.summary} (the commits and the changed paths) and ${o.change.diff} (the whole diff, git diff ${o.base}...${o.commit}). Your working folder is the merge copy at that commit: read the files around each hunk there.`
+      : `- The change: git diff ${o.base}...${o.commit}. Your working folder is the merge copy at that commit: read the files there.`,
+    "- You only read files (by path; the changed paths are listed for you): you have no shell. Change nothing, run nothing.",
+    `- Answer once, with the merge.review verb: {run: "${o.runId}", verdict: "ok" | "notes" | "blocking", text}. text: a one-sentence summary, then one line per finding, "- [kind] file:line: text" (kinds: ${REVIEW_KINDS.join(", ")}; at most 10). Sova checks it and refuses a malformed one, saying what to fix: fix it and answer again.`,
+    "  ok: nothing to say, no findings. notes: worth knowing, never stops the landing. blocking: it should not land as is (the user decides).",
   ].join("\n");
 }
 
@@ -121,7 +132,7 @@ export async function reviewStep(
     let timer: ReturnType<typeof setTimeout> | null = null;
     let onAbort: (() => void) | null = null;
     const w: Waiting = { sessionId: null, resolve: () => {} };
-    const answer = new Promise<{ verdict: ReviewVerdict["verdict"]; text?: string } | { failed: string }>((resolve) => {
+    const answer = new Promise<ReviewAnswer | { failed: string }>((resolve) => {
       w.resolve = resolve;
       timer = setTimeout(() => resolve({ failed: `no verdict within ${Math.round(timeoutMs / 60_000)} min` }), timeoutMs);
       onAbort = () => resolve({ failed: "aborted" });
@@ -131,7 +142,7 @@ export async function reviewStep(
     // map has none) answers too.
     waiting.set(o.runId, w);
     o.awaitReview?.().then(
-      (v) => w.resolve({ verdict: v.verdict, ...(v.text ? { text: v.text } : {}) }),
+      (v) => w.resolve({ verdict: v.verdict, ...reportOf(v) }),
       () => undefined,
     );
     try {
@@ -150,7 +161,7 @@ export async function reviewStep(
         continue;
       }
       o.log(`verdict: ${a.verdict}${a.text ? `\n${a.text}` : ""}\n`);
-      return { ok: true, verdict: { verdict: a.verdict, ...(a.text ? { text: a.text } : {}), commit: o.commit, at: new Date().toISOString() } };
+      return { ok: true, verdict: { verdict: a.verdict, ...reportOf(a), commit: o.commit, at: new Date().toISOString() } };
     } catch (err) {
       why = `the reviewer couldn't start: ${err instanceof Error ? err.message : String(err)}`;
       o.log(`${why}\n`);

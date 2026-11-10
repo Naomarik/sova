@@ -1,8 +1,9 @@
 // One Needs you row, whatever it is about (§app.session-list/needs-you): where it is, a state chip that always says a
-// word, what it is, one line of why, and what opening it does. Pure, so the rules run under tsx --test. The table is a
+// word and what it is; why is hover text. Pure, so the rules run under tsx --test. The table is a
 // Record of every digest kind: a new kind doesn't compile until it has its word.
 
 import type { AttentionItem, AttentionKind, SessionSummary } from "../../shared/protocol";
+import { shortestTail } from "../../shared/tell-apart";
 import { tildePath } from "./format";
 import type { NeedsYouRow } from "./needs-you";
 import { orgPlaceLabel } from "./org-region";
@@ -16,13 +17,7 @@ interface KindWords {
   tone: NeedsTone;
   /** A row of no session: what it is about. Absent: the item's own title (an owner's request), or the session's. */
   title?: string;
-  /** What opening the row does; absent: Open Chat. */
-  action?: string;
 }
-
-const OPEN_PROJECT = "Open Project";
-const OPEN_RELEASE = "Open Release";
-const OPEN_REQUEST = "Open Request";
 
 /** Every kind's chip and words. Failed is the one error word of a step; Your turn waits on you and on nothing else. */
 export const NEEDS_KINDS: Record<AttentionKind, KindWords> = {
@@ -39,34 +34,34 @@ export const NEEDS_KINDS: Record<AttentionKind, KindWords> = {
   looping: { word: "Looping", tone: "warn" },
   "baton-needs-you": { word: "Your turn", tone: "warn" },
   "roster-proposal": { word: "Your turn", tone: "warn" },
-  "project-stakeholder": { word: "Your turn", tone: "warn", title: "Pick a main stakeholder", action: OPEN_PROJECT },
-  "held-act": { word: "Held", tone: "warn", title: "Waiting to start", action: OPEN_PROJECT },
+  "project-stakeholder": { word: "Your turn", tone: "warn", title: "Pick a main stakeholder" },
+  "held-act": { word: "Held", tone: "warn", title: "Waiting to start" },
   "offer-waiting": { word: "Your turn", tone: "warn" },
   "card-waiting": { word: "Your turn", tone: "warn" },
   "tour-sign-in": { word: "Sign in", tone: "warn" },
-  "playbook-review": { word: "Ready", tone: "success", action: "Read Report" },
-  "deploy-failed": { word: "Failed", tone: "error", title: "Deploy failed", action: "Open Deploy" },
-  "deploy-request": { word: "Asked", tone: "warn", title: "Asked to deploy", action: "Open Deploy" },
-  "release-ready": { word: "Ready", tone: "success", title: "Ready to publish", action: "Review and Publish" },
-  "release-request": { word: "Asked", tone: "warn", title: "Asked to release", action: OPEN_RELEASE },
-  "release-quiet": { word: "Quiet", tone: "warn", title: "Release chat gone quiet", action: OPEN_RELEASE },
-  "release-held": { word: "Your turn", tone: "warn", title: "Release step held", action: OPEN_RELEASE },
-  "release-failed": { word: "Failed", tone: "error", title: "Release step failed", action: OPEN_RELEASE },
-  "outreach-not-sent": { word: "Not sent", tone: "error", title: "Message not sent", action: "Open Person" },
-  "whatsapp-down": { word: "Down", tone: "error", title: "Sending is down", action: "Open Outreach Settings" },
-  "conflict-to-operator": { word: "Your turn", tone: "warn", title: "Settle a conflict", action: OPEN_PROJECT },
+  "playbook-review": { word: "Ready", tone: "success" },
+  "deploy-failed": { word: "Failed", tone: "error", title: "Deploy failed" },
+  "deploy-request": { word: "Asked", tone: "warn", title: "Asked to deploy" },
+  "release-ready": { word: "Ready", tone: "success", title: "Ready to publish" },
+  "release-request": { word: "Asked", tone: "warn", title: "Asked to release" },
+  "release-quiet": { word: "Quiet", tone: "warn", title: "Release chat gone quiet" },
+  "release-held": { word: "Your turn", tone: "warn", title: "Release step held" },
+  "release-failed": { word: "Failed", tone: "error", title: "Release step failed" },
+  "outreach-not-sent": { word: "Not sent", tone: "error", title: "Message not sent" },
+  "whatsapp-down": { word: "Down", tone: "error", title: "Sending is down" },
+  "conflict-to-operator": { word: "Your turn", tone: "warn", title: "Settle a conflict" },
   "asks-you": { word: "Question", tone: "info" },
   unverified: { word: "Unchecked", tone: "info" },
   "ready-to-merge": { word: "Ready", tone: "success" },
   "merged-open-work": { word: "Open work", tone: "info" },
-  "restart-pending": { word: "Restart", tone: "info", title: "Restart waiting", action: OPEN_PROJECT },
+  "restart-pending": { word: "Restart", tone: "info", title: "Restart waiting" },
   "team-stalled": { word: "Quiet", tone: "warn" },
-  "owner-request": { word: "Request", tone: "warn", action: OPEN_REQUEST },
-  "owner-outage": { word: "Outage", tone: "error", action: OPEN_REQUEST },
-  "owner-link-request": { word: "Request", tone: "warn", action: "Open People" },
-  "owner-version-request": { word: "Request", tone: "warn", action: "Open Branches" },
-  "owner-request-closed": { word: "Closed", tone: undefined, action: OPEN_REQUEST },
-  "owner-feature-ended": { word: "Ended", tone: "warn", action: OPEN_REQUEST },
+  "owner-request": { word: "Request", tone: "warn" },
+  "owner-outage": { word: "Outage", tone: "error" },
+  "owner-link-request": { word: "Request", tone: "warn" },
+  "owner-version-request": { word: "Request", tone: "warn" },
+  "owner-request-closed": { word: "Closed", tone: undefined },
+  "owner-feature-ended": { word: "Ended", tone: "warn" },
 };
 
 /** One row, ready to draw. */
@@ -80,10 +75,8 @@ export interface NeedsRow {
   title: string;
   /** "Untitled": drawn muted, as the session list does. */
   titleMuted?: boolean;
-  detail: string;
-  /** Every sentence, for the tooltip. */
-  detailTip: string;
-  action: string;
+  /** The row's hover text: its whole title, then every sentence it has, newest first, a line each. */
+  tip: string;
   href: string;
   /** A chat's path: the row is current while it's open. */
   sessionPath?: string;
@@ -92,12 +85,14 @@ export interface NeedsRow {
 const folderName = (p: string): string => p.replace(/\/+$/, "").split("/").pop() || p;
 const isFolder = (s: string): boolean => s.startsWith("/") || s.startsWith("~");
 
-/** A session's row: its project or folder, its title, the digest's sentence; Open Chat. */
-export function sessionRow(r: NeedsYouRow, o: { href: string; home: string | null; host?: string | null; detail?: { text: string; title: string } | null }): NeedsRow {
+const tipOf = (title: string, sentences: readonly string[]): string => [title, ...sentences.filter(Boolean)].join("\n");
+
+/** A session's row: its project or folder, its title, its sentences as hover text. `sentences`: the Organizations region's,
+    which say more than the digest's. */
+export function sessionRow(r: NeedsYouRow, o: { href: string; home: string | null; host?: string | null; sentences?: readonly string[] }): NeedsRow {
   const s: SessionSummary = r.session;
   const k = NEEDS_KINDS[r.kind];
   const where = s.org ? orgPlaceLabel(s) : (s.project?.projectName ?? (s.cwd ? folderName(s.cwd) : "This host"));
-  const text = o.detail?.text ?? r.detail ?? "";
   return {
     key: s.path,
     name: o.host ? `${where} · ${o.host}` : where,
@@ -105,24 +100,14 @@ export function sessionRow(r: NeedsYouRow, o: { href: string; home: string | nul
     chip: { word: k.word, tone: k.tone },
     title: s.title,
     ...(s.title === "Untitled" ? { titleMuted: true } : {}),
-    detail: text,
-    detailTip: o.detail?.title ?? r.details.join(" "),
-    action: k.action ?? "Open Chat",
+    tip: tipOf(s.title, o.sentences ?? r.details),
     href: o.href,
     sessionPath: s.path,
   };
 }
 
-/** A row's detail after its title: the title isn't said twice ("Ready to publish · v0.4.0" under "Ready to publish"). */
-function afterTitle(detail: string, title: string): string {
-  return detail.startsWith(`${title} · `) ? detail.slice(title.length + 3) : detail;
-}
-
-/** A failed Publish is titled as the Releases tab says it, and its reason keeps the line: "v0.4.0: origin refused". */
-function failedPublish(it: AttentionItem): { title: string; detail: string } | null {
-  const m = it.kind === "release-failed" ? /^(.+?): Publish failed(?:: (.*))?$/s.exec(it.detail ?? "") : null;
-  return m ? { title: "Publish failed", detail: m[2] ? `${m[1]}: ${m[2]}` : m[1]! } : null;
-}
+/** A failed Publish is titled as the Releases tab says it. */
+const publishFailed = (it: AttentionItem): boolean => it.kind === "release-failed" && /^.+?: Publish failed(?:: .*)?$/s.test(it.detail ?? "");
 
 /** A row of no session. An owner's item has the request as its title and lives under its org and project; any other's
     title is the project's name, and the kind says what it is. A held act names what waits and recounts its minutes. */
@@ -131,12 +116,10 @@ export function itemRow(it: AttentionItem, o: { home: string | null; now: number
   const held = it.held;
   const place = isFolder(it.where) ? tildePath(it.where, o.home) : null;
   const inOrg = it.org?.projectName ? `${it.org.orgName} · ${it.org.projectName}` : null;
-  const publish = failedPublish(it);
-  const title = held ? held.what.replace(/[.]$/, "") : (publish?.title ?? k.title ?? it.title);
+  const title = held ? held.what.replace(/[.]$/, "") : publishFailed(it) ? "Publish failed" : (k.title ?? it.title);
   const name = k.title ? (inOrg ?? it.title) : (inOrg ?? it.where);
   const sentence = held ? heldWaitLine(held, o.now) : (it.detail ?? "");
-  const detail = publish?.detail ?? afterTitle(sentence, title);
-  return { key: it.id, name, place, chip: { word: k.word, tone: k.tone }, title, detail, detailTip: sentence, action: k.action ?? OPEN_PROJECT, href: it.href };
+  return { key: it.id, name, place, chip: { word: k.word, tone: k.tone }, title, tip: tipOf(title, [sentence]), href: it.href };
 }
 
 /**
@@ -151,12 +134,7 @@ export function rowLabels(rows: readonly Pick<NeedsRow, "key" | "name" | "place"
   for (const r of rows) {
     const places = [...(byName.get(r.name) ?? [])];
     if (!r.place || places.length < 2) continue;
-    const parts = places.map((p) => p.split("/").filter(Boolean));
-    const tail = (p: string[], n: number) => p.slice(-n).join("/");
-    const most = Math.max(...parts.map((p) => p.length));
-    let n = 1;
-    while (n < most && new Set(parts.map((p) => tail(p, n))).size < parts.length) n++;
-    out.set(r.key, `${r.name} · ${tail(r.place.replace(/\/+$/, "").split("/").filter(Boolean), n)}`);
+    out.set(r.key, `${r.name} · ${shortestTail(places, r.place)}`);
   }
   return out;
 }

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { listeningInodes } from "./port-owner";
+import { listeningInodes, listeningPortTable } from "./port-owner";
 
 const HEAD = "  sl  local_address                         remote_address                        st tx_queue rx_queue tr tm->when retrnsmt   uid  timeout inode";
 const row = (addr: string, port: number, inode: string, st = "0A") =>
@@ -28,4 +28,19 @@ test("listeners a loopback start collides with: 127.x, ::1, any, and their IPv4-
   assert.deepEqual(at(9152), ["24"], "::");
   assert.deepEqual(at(9153), [], "::ffff:192.168.1.1");
   assert.deepEqual(at(9154), [], "an established socket is no listener");
+});
+
+test("the listening-port table holds exactly the ports listeningInodes finds, from one read of each kernel table", () => {
+  const tcp = [HEAD, row("0100007F", 4384, "11"), row("00000000", 4386, "13"), row("0101A8C0", 4387, "14"), row("0100007F", 4388, "15", "01")].join("\n");
+  const tcp6 = [HEAD, row("00000000000000000000000001000000", 7900, "21"), row("0000000000000000FFFF00000101A8C0", 9153, "25")].join("\n");
+  const reads: string[] = [];
+  const table = listeningPortTable({ read: (p) => (reads.push(p), p.endsWith("6") ? tcp6 : tcp) }, "linux")!;
+  for (const port of [4384, 4386, 4387, 4388, 7900, 9153, 1]) assert.equal(table.has(port), listeningInodes([tcp, tcp6], port).size > 0, `port ${port}`);
+  assert.deepEqual([...table].sort((a, b) => a - b), [4384, 4386, 7900]);
+  assert.deepEqual(reads, ["/proc/net/tcp", "/proc/net/tcp6"]);
+  assert.equal(listeningPortTable({ read: () => null }, "linux"), null, "no /proc: unknown, not empty");
+});
+
+test("a host with no kernel table: unknown, with nothing read; the tier guard refuses this file if anything is spawned", () => {
+  assert.equal(listeningPortTable({ read: () => assert.fail("no table to read") }, "darwin"), null);
 });

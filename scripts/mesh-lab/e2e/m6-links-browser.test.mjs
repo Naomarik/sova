@@ -5,7 +5,7 @@
 //   b. "not reachable from here": A doesn't list C (removed from A's peers.json only);
 //   c. "host offline": A lists C, and C's Sova is stopped.
 // Screenshots: ~/.cache/mesh-links-lab-*.png. Needs Playwright: the playwright skill's install
-// (.claude/skills/playwright/scripts/node_modules, or PLAYWRIGHT_MODULE=<path to playwright/index.mjs>) and a
+// (.agents/skills/playwright/scripts/node_modules, or PLAYWRIGHT_MODULE=<path to playwright/index.mjs>) and a
 // Chromium (CHROMIUM_BIN, else the newest in Playwright's cache).
 //   LAB_STATE=… scripts/mesh-lab/lab e2e m6-links-browser
 // Takes the lab LOCK; restores A's peers.json (lab pair a,b,c), C's Sova and ends its link at the end.
@@ -19,7 +19,7 @@ import { chaos, hostUrl, lab, labTokenHeaders, readAgentFile, requireLab, unlock
 import { api, byId, link, newSession, prompt, releaseLock, send, takeLock, unlink, waitIdle, waitInbox } from "./links-lib.mjs";
 
 const REPO = fileURLToPath(new URL("../../..", import.meta.url));
-const PW = process.env.PLAYWRIGHT_MODULE ?? join(REPO, ".claude/skills/playwright/scripts/node_modules/playwright/index.mjs");
+const PW = process.env.PLAYWRIGHT_MODULE ?? join(REPO, ".agents/skills/playwright/scripts/node_modules/playwright/index.mjs");
 const SHOTS = join(homedir(), ".cache");
 /** Chromium as the playwright skill's start-browser.sh finds it: CHROMIUM_BIN, else the newest in
     Playwright's cache (the module's own pinned build may not be downloaded). */

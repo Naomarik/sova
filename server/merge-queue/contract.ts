@@ -13,6 +13,9 @@ import type { Blame, CheckPick, MergeEntry, MergeNote, ReviewVerdict, RunStep } 
 export interface RunInput {
   /** mr_… */
   runId: string;
+  /** Every commit the queue has recorded landing for this branch. The run skips its merge for a commit exactly on this
+      list, or one the merge copy finds on the base (§app.merge-queue/run); absent on a resolved conflict's run. */
+  landingPins?: readonly string[];
   entry: MergeEntry;
   project: {
     id: string;
@@ -88,7 +91,9 @@ export type RunOutcomeVerdict =
    *  the check. Never auto-landed, never handed back, and the queue doesn't pause: it waits for the user. */
   | "unattributed"
   /** Aborted (signal), or a timeout of the run as a whole: nothing blamed, run again. */
-  | "void";
+  | "void"
+  /** Changes neither code nor specs (§app.merge-queue/run): no check ran, the target doesn't move, nothing is blamed. */
+  | "nothing";
 
 export interface RunOutcome {
   verdict: RunOutcomeVerdict;
@@ -137,7 +142,7 @@ export type EstimateRun = (projectId: string, root: string) => number | null;
  *  cancel); `entry` is the one that changed last, `lastLanded` the newest landing. Answers whether a thread was asked:
  *  false (none, or off) never delays anything. */
 export interface ThreadEvent {
-  kind: "queued" | "conflict" | "failed" | "paused" | "landed" | "names" | "idle";
+  kind: "queued" | "conflict" | "failed" | "paused" | "landed" | "names" | "idle" | ThreadRulingKind;
   project: string;
   root: string;
   target: string;
@@ -158,5 +163,25 @@ export interface ThreadEvent {
   /** conflict: the scratch copy Sova made for the thread to resolve in (scratch.ts), or why it couldn't. */
   scratch?: string;
   scratchError?: string;
+  /** review: the blocking verdict's whole report. */
+  findings?: string;
+  /** review: it already waits for the user (out of tries, or the same findings twice): nothing to hand on. */
+  waits?: "out-of-tries" | "same-twice";
+  /** fix / chat-answer / drafts-changed: the request (rq_…) it is about; fix: what it asked. */
+  request?: string;
+  asked?: string;
+  /** fix: the fix's commit, and whether it changed the drafts; its one-line summary. */
+  fixCommit?: string;
+  drafts?: boolean;
+  summary?: string;
+  /** drafts-changed: the drafts' names now. */
+  names?: string[];
+  /** chat-answer: which answer, its text, and whether the thread already tried another approach for it. */
+  answer?: "cant" | "needs-you";
+  text?: string;
+  otherTried?: boolean;
 }
+/** The moments the thread rules on (al_3): a failure whose owner can't be told, a blocking review, its own resolution
+ *  that failed a check, drafts changed since the Land, a chat's fix to check, a chat's Can't or Needs you. */
+export type ThreadRulingKind = "unattributed" | "review" | "resolution-failed" | "drafts-changed" | "fix" | "chat-answer";
 export type WakeThread = (ev: ThreadEvent) => boolean;

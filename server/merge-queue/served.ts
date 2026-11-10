@@ -49,7 +49,7 @@ export const setUpOf = (checks: ChecksDeclared, invalid: string | undefined): bo
 export interface ServedDeps {
   /** Sova's Projects list (server/projects/spaces.ts listProjects): every project's main-checkout root. An archived
    *  project isn't served. */
-  listed: () => { root: string; id?: string; archived?: unknown }[];
+  listed: () => { root: string; id?: string; name?: string; archived?: unknown }[];
   definitionAt: DefinitionAt;
   checksOf: ChecksOf;
   git?: Git;
@@ -78,6 +78,15 @@ export class ServedRule {
   private rows(): { root: string; id?: string }[] {
     try {
       return this.deps.listed().filter((r) => !r.archived && typeof r.root === "string" && r.root);
+    } catch {
+      return [];
+    }
+  }
+
+  /** Every project on the list as it stands, archived ones and all: a branch's place reads names here. */
+  everyProject(): { root: string; name?: string; archived?: unknown }[] {
+    try {
+      return this.deps.listed();
     } catch {
       return [];
     }

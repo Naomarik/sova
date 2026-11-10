@@ -517,18 +517,19 @@
   "§app.insights/subagent-cards": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "code": [
       "src/components/AgentsView.tsx",
       "src/agents-board.css",
       "src/lib/agents-board.ts",
       "src/lib/agents-board.test.ts",
-      "src/lib/api.ts"
+      "src/lib/api.ts",
+      "server/landed-branch-agreement.integration.test.ts"
     ],
     "agreed": {
-      "by": "gabriel",
-      "at": "2026-11-06T02:58Z",
-      "source": "pi-session:38176bc1-07a0-4ad6-8e14-15590d26f814#0c5f3510"
+      "by": "naomarik",
+      "at": "2026-11-09T00:21Z",
+      "source": "pi-session:01a1b2f4-86c6-73d4-9fe9-b847b27035f9#e2a66e41"
     }
   },
   "§app.insights/summary-sections": {
@@ -563,10 +564,7 @@
       "§app.subagents-pane/tabs",
       "§app.session-list/session-titles",
       "§chat.alignment/session-mark",
-      "§chat.context-window/sidebar-ring",
-      "§mesh.remote-sessions/list",
-      "§mesh.remote-sessions/host-filter",
-      "§mesh.remote-sessions/row-host-state"
+      "§chat.context-window/sidebar-ring"
     ],
     "authority": "accepted",
     "evidence": "verified",
@@ -578,16 +576,12 @@
       "src/components/TitleField.tsx",
       "src/components/SessionRowMenu.tsx",
       "src/lib/session-row-menu.test.ts",
-      "src/lib/session-row-menu.snapshot.json",
-      "src/App.tsx",
-      "src/components/Sidebar.tsx",
-      "src/lib/mesh.ts",
-      "src/lib/mesh.test.ts"
+      "src/lib/session-row-menu.snapshot.json"
     ],
     "agreed": {
-      "by": "gabriel",
-      "at": "2026-11-06T02:57Z",
-      "source": "pi-session:38176bc1-07a0-4ad6-8e14-15590d26f814#0c5f3510"
+      "by": "omar",
+      "at": "2026-10-27T08:51Z",
+      "source": "pi-session:5e21b0e4-1ae9-4f78-a787-4425529986b0#bbe646fd"
     }
   },
   "§app.insights/token-velocity": {
@@ -821,9 +815,9 @@
       "src/design/base.css"
     ],
     "agreed": {
-      "by": "gabriel",
-      "at": "2026-11-06T02:57Z",
-      "source": "pi-session:38176bc1-07a0-4ad6-8e14-15590d26f814#0c5f3510"
+      "by": "user",
+      "at": "2026-10-25T20:41Z",
+      "source": "pi-session:5e21b0e4-1ae9-4f78-a787-4425529986b0#90d2ad0b"
     }
   },
   "§app.insights/usage-refresh": {
@@ -911,7 +905,7 @@
     "kind": "behavior",
     "requires": [],
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "code": [
       "server/worktrees.ts",
       "server/worktrees.test.ts",
@@ -919,12 +913,13 @@
       "server/app.ts",
       "shared/protocol.ts",
       "server/merge-tree-probe.ts",
-      "server/merge-tree-probe.test.ts"
+      "server/merge-tree-probe.test.ts",
+      "server/landed-branch-agreement.integration.test.ts"
     ],
     "agreed": {
       "by": "naomarik",
-      "at": "2026-11-05T16:44Z",
-      "source": "pi-session:01a1ac85-7019-77e8-b78d-58217842f2ef#e4f5f750"
+      "at": "2026-11-09T00:21Z",
+      "source": "pi-session:01a1b2f4-86c6-73d4-9fe9-b847b27035f9#e2a66e41"
     }
   },
   "§app/insights": {

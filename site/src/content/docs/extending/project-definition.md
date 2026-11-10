@@ -60,9 +60,11 @@ The `merge` section says how the project's branches land through its merge queue
 - `land`: how a branch lands: `local` (the default), `github-pr`, `gitlab-mr` or `push-branch`. This
   computer's own choice overrides it.
 - `request`: the folder of the project's request kit.
+- `reuse`: `false` runs every check in full. Absent or `true` lets a check's runner reuse passes from
+  identical code.
 
 With no `merge` section the queue uses `test`. With neither, the queue isn't set up: the project's
-Merge Queue tab offers **Initialize**.
+Merge Queue tab offers **Set Up with a Chat**.
 
 The checks are read from the target's copy of the file, never the branch's. A branch that changes them
 is checked with the old list, and its own list counts once it lands.

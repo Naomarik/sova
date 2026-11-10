@@ -1,0 +1,1 @@
+"merge.resolve, verdict no-behaviour-change only: each conflicted file's merged text, by its path in the repository; Sova merges the approved commit in the entry's scratch copy, writes these files and commits the resolution there. chat-fixes and needs-user carry none."

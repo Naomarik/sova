@@ -35,7 +35,7 @@ import type { SessionWorktrees, WorktreeStatus, WorktreesInsight } from "../shar
 import { headerOf } from "./harness/pi/reader";
 import { resolveSessionPath } from "./paths";
 import { parseTargetCwd } from "./targets";
-import { trialMergeTree } from "./merge-tree-probe";
+import { codeLeft, conflictsOf, type LandingRecords, landingRecordsAt, queueTargetAt, trialNoOp } from "./nothing-left";
 
 const GIT_TIMEOUT_MS = 5_000;
 const MAX_CONCURRENT = 4;
@@ -101,15 +101,7 @@ export function porcelainFiles(stdout: string): { count: number; first: string[]
 }
 
 /** Distinct files in `merge-tree --write-tree`'s conflicted-file lines (after the tree's oid). */
-export function conflictedFiles(stdout: string): number {
-  const files = new Set<string>();
-  for (const line of stdout.split("\n").slice(1)) {
-    if (line.trim() === "") break;
-    const tab = line.indexOf("\t");
-    files.add(tab >= 0 ? line.slice(tab + 1) : line);
-  }
-  return files.size;
-}
+export const conflictedFiles = conflictsOf;
 
 function gitError(what: string, r: GitResult): string {
   const line = r.stderr.split("\n").map((s) => s.trim()).find(Boolean);
@@ -121,7 +113,7 @@ interface SessionCandidates { cwd: string | null; workerCwds: string[] }
 
 interface Comparison {
   base: string;
-  merged: "ancestor" | "content" | "no";
+  merged: "ancestor" | "content" | "catch-up" | "no";
   /** merged "no": files the trial merge conflicts on. */
   conflicts?: number;
   ahead?: number;
@@ -478,6 +470,18 @@ function plainLayout(dir: string): Layout | "gone" | null {
   }
 }
 
+/** The branch this repository's merge queue lands on, when one is loaded and it can be a ref. */
+function landTarget(commonDir: string): string | null {
+  const t = queueTargetAt(commonDir);
+  return t && /^[\w./-]+$/.test(t) && !t.includes("..") ? t : null;
+}
+
+/** The queue's target for a linked worktree's top folder, read without Git; null: no queue, or not a linked worktree. */
+export function queueTargetOfTree(dir: string): string | null {
+  const root = linkedCheckoutOf(dir);
+  return root ? queueTargetAt(root) : null;
+}
+
 /** The main checkout of a linked worktree's top folder, read from its `.git` without Git (the
  * answer `project-root.ts` gets from `rev-parse`); null for anything else, which that reads. */
 export function linkedCheckoutOf(dir: string): string | null {
@@ -522,6 +526,8 @@ export function gitInputsStamp(dir: string, baseBranch?: string): string | null 
   };
   const refs = new Set(["refs/heads/master", "refs/heads/main", "refs/remotes/origin/HEAD", "packed-refs"]);
   if (baseBranch && /^[\w./-]+$/.test(baseBranch) && !baseBranch.includes("..")) refs.add(`refs/heads/${baseBranch}`);
+  const landsOn = landTarget(layout.commonDir);
+  if (landsOn) refs.add(`refs/heads/${landsOn}`);
   try {
     const origin = /^ref: (refs\/[^\r\n]+)/.exec(readFileSync(join(layout.commonDir, "refs/remotes/origin/HEAD"), "utf8"))?.[1];
     if (origin) refs.add(origin);
@@ -731,7 +737,7 @@ export class WorktreeInsights {
     const at = Number(ct) * 1000;
     const out: WorktreeStatus & { head?: string; headAt?: number; subjects?: string[] } = { ...st, ...(sha ? { head: sha } : {}), ...(sha && at > 0 ? { headAt: at } : {}) };
     if (st.base && st.merged === "no" && (st.ahead ?? 0) > 0) {
-      const base = metadata.refs.code === 0 ? pickBase(metadata.refs.stdout) : null;
+      const base = metadata.refs.code === 0 ? pickBase(metadata.refs.stdout, landTarget(layout.commonDir)) : null;
       if (!base || !metadata.head) return out;
       const log = await this.observedGit(layout, ["log", "--format=%s", "-n", "50", `${base.oid}..${metadata.head.oid}`], () => historyToken(layout));
       if (log.code === 0) out.subjects = log.stdout.split("\n").filter(Boolean);
@@ -828,6 +834,7 @@ export class WorktreeInsights {
   }
 
   private async metadata(layout: Layout) {
+    const landsOn = landTarget(layout.commonDir);
     const [head, refs] = await Promise.all([
       this.contextRead(layout, `head:${layout.gitDir}`,  () => refsToken(layout, true), async () => {
         const oid = await this.git(layout.top, ["rev-parse", "--verify", "-q", "HEAD"]);
@@ -835,7 +842,7 @@ export class WorktreeInsights {
         const ref = await this.git(layout.top, ["symbolic-ref", "-q", "HEAD"]);
         return { oid: oid.stdout.trim(), ref: ref.stdout.trim(), valid: ref.code === 0 || ref.code === 1 };
       }, (v) => v !== null && v.valid),
-      this.observedGit(layout, ["for-each-ref", "--format=%(refname)%00%(objectname)%00%(symref)", "refs/heads/master", "refs/heads/main", "refs/remotes/origin/HEAD"], () => refsToken(layout, false)),
+      this.observedGit(layout, ["for-each-ref", "--format=%(refname)%00%(objectname)%00%(symref)", "refs/heads/master", "refs/heads/main", "refs/remotes/origin/HEAD", ...(landsOn ? [`refs/heads/${landsOn}`] : [])], () => refsToken(layout, false)),
     ]);
     return { head, refs };
   }
@@ -849,14 +856,17 @@ export class WorktreeInsights {
     if (dirty.dirty && dirty.files) Object.assign(out, { dirtyCount: dirty.files.count, dirtyFiles: dirty.files.first });
     if (dirty.error) errors.push(dirty.error);
     if (head?.ref.startsWith("refs/heads/")) out.branch = head.ref.slice("refs/heads/".length);
-    const base = refs.code === 0 ? pickBase(refs.stdout) : null;
+    const base = refs.code === 0 ? pickBase(refs.stdout, landTarget(layout.commonDir)) : null;
     if (refs.code !== 0) errors.push(gitError("reading the base branch", refs));
     if (!head) errors.push("no commits on HEAD");
     else if (base) {
       const pin = await this.mergePin(layout, base.oid, head.oid);
       const tokenOf = () => (pin ? mergeToken(layout, pin, this.execPath)?.token ?? null : null);
       const scope = pin && mergeToken(layout, pin, this.execPath)?.perTree ? `tree:${layout.top}` : layout.commonDir;
-      const value = await this.contextRead(layout, `compare:${scope}:${head.oid}:${base.oid}:${base.name}`, tokenOf, () => this.compare(cwd, layout, base, head.oid), (v) => !v.error);
+      // Which landings the answer rests on (§chat.worktrees/nothing-left): a new one reads the branch again.
+      const landings = landingRecordsAt(layout.commonDir, out.branch);
+      const landed = landings.pins.length || landings.landed.includes(head.oid) ? `:${landings.pins.join(",")}:${landings.landed.includes(head.oid) ? 1 : 0}` : "";
+      const value = await this.contextRead(layout, `compare:${scope}:${head.oid}:${base.oid}:${base.name}${landed}`, tokenOf, () => this.compare(cwd, layout, base, head.oid, landings), (v) => !v.error);
       const { error, ...fields } = value;
       Object.assign(out, fields);
       if (error) errors.push(error);
@@ -930,7 +940,8 @@ export class WorktreeInsights {
     try {
       const known = this.driverCommands.get(realpathSync(layout.gitDir));
       if (!known || existsSync(join(layout.commonDir, "reftable"))) return null;
-      const refs = ["refs/heads/master", "refs/heads/main", "refs/remotes/origin/HEAD", "packed-refs"].map((p) => join(layout.commonDir, p));
+      const landsOn = landTarget(layout.commonDir);
+      const refs = ["refs/heads/master", "refs/heads/main", "refs/remotes/origin/HEAD", "packed-refs", ...(landsOn ? [`refs/heads/${landsOn}`] : [])].map((p) => join(layout.commonDir, p));
       const origin = /^ref: (refs\/[^\r\n]+)/.exec(existsSync(refs[2]!) ? readFileSync(refs[2]!, "utf8") : "")?.[1];
       if (origin) refs.push(join(layout.commonDir, origin));
       const setup = [join(layout.commonDir, "config"), join(layout.gitDir, "config.worktree"), ...globalConfigs(), join(layout.commonDir, "info/attributes"), join(layout.commonDir, "info/grafts"), join(layout.commonDir, "shallow"), join(layout.commonDir, "refs/replace"), xdgAttributes(), "/etc/gitattributes"];
@@ -968,19 +979,18 @@ export class WorktreeInsights {
     for (const k of [...this.observations.keys()]) if (k === `dirty:${layout.gitDir}` || k.startsWith(`head:${layout.gitDir}:`)) this.observations.delete(k);
   }
 
-  private async compare(cwd: string, layout: Layout, base: { name: string; oid: string }, head: string): Promise<Comparison> {
+  private async compare(cwd: string, layout: Layout, base: { name: string; oid: string }, head: string, landings: LandingRecords): Promise<Comparison> {
     this.computeCount++;
     const out: Comparison = { base: base.name, merged: "no" };
     const errors: string[] = [];
-    const anc = await this.git(cwd, ["merge-base", "--is-ancestor", head, base.oid]);
-    if (anc.code === 0) out.merged = "ancestor";
-    else if (anc.code !== 1) errors.push(gitError("merge-base --is-ancestor", anc));
-    else if (await this.supportsMergeTree()) {
-      const content = await this.mergesToBase(cwd, layout, base.oid, head);
-      if (content === true) out.merged = "content";
-      else if (typeof content === "string") errors.push(content);
-      else if (typeof content === "object") out.conflicts = content.conflicts;
-    }
+    // The one answer (nothing-left.ts); the agents' board reads a landed pin or merges past one as "catch-up" too.
+    const git: GitRunner = (args, opts) => this.git(opts.cwd, args, opts.env);
+    const trial = (await this.supportsMergeTree()) ? () => trialNoOp(git, { top: layout.top, gitDir: layout.gitDir, commonDir: layout.commonDir, target: base.oid, head, ...(this.scratchDir ? { scratchParent: this.scratchDir } : {}) }) : undefined;
+    const code = await codeLeft({ git, cwd, head, target: base, landings, trial });
+    if (code.kind === "ancestor" || code.kind === "content") out.merged = code.kind;
+    else if (!code.left) out.merged = "catch-up";
+    else if (code.error) errors.push(code.error);
+    else if (code.conflicts !== undefined) out.conflicts = code.conflicts;
     const [counts, mb] = await Promise.all([
       this.git(cwd, ["rev-list", "--left-right", "--count", `${base.oid}...${head}`]),
       this.git(cwd, ["merge-base", base.oid, head]),
@@ -996,27 +1006,6 @@ export class WorktreeInsights {
     } else errors.push(mb.code === 1 ? "no common history with the base" : gitError("merge-base", mb));
     if (errors.length > 0) out.error = errors.join("; ");
     return out;
-  }
-
-  /** Whether merging HEAD into the base would leave the base's tree unchanged (a squash or rebase
-      merge already landed it). true / false, `{conflicts}` when the merge conflicts (how many
-      files), or why it couldn't tell. The merge's new objects go to a temporary object directory,
-      so the repository is not written, and git runs outside the checkout (merge-tree-probe.ts): a
-      merge driver's temp files can never be left in it. */
-  private async mergesToBase(cwd: string, layout: Layout, base: string, head: string): Promise<boolean | { conflicts: number } | string> {
-    try {
-      const git: GitRunner = (args, opts) => this.git(opts.cwd, args, opts.env);
-      const [merged, baseTree] = await Promise.all([
-        trialMergeTree(git, { top: layout.top, gitDir: layout.gitDir, commonDir: layout.commonDir, base, head, ...(this.scratchDir ? { scratchParent: this.scratchDir } : {}) }),
-        this.git(cwd, ["rev-parse", `${base}^{tree}`]),
-      ]);
-      if (merged.code === 1) return { conflicts: conflictedFiles(merged.stdout) }; // conflicts: not in the base
-      if (merged.code !== 0) return gitError("merge-tree", merged);
-      if (baseTree.code !== 0) return gitError("rev-parse base^{tree}", baseTree);
-      return (merged.stdout.split("\n", 1)[0] ?? "").trim() === baseTree.stdout.trim();
-    } catch (err) {
-      return `merge-tree: ${(err as Error).message}`;
-    }
   }
 
   /** Drop what hasn't been asked for in an hour, then the oldest past MAX_CACHED. */
@@ -1038,14 +1027,15 @@ export class WorktreeInsights {
   }
 }
 
-/** master, else main, else origin/HEAD's target, from for-each-ref's `refname\0oid\0symref` lines. */
-export function pickBase(stdout: string): { name: string; oid: string } | null {
+/** The branch the project's queue lands on (`landsOn`), else master, else main, else origin/HEAD's target, from
+    for-each-ref's `refname\0oid\0symref` lines. */
+export function pickBase(stdout: string, landsOn?: string | null): { name: string; oid: string } | null {
   const refs = new Map<string, { oid: string; symref: string }>();
   for (const line of stdout.split("\n")) {
     const [ref, oid, symref] = line.split("\0");
     if (ref && oid) refs.set(ref, { oid, symref: symref ?? "" });
   }
-  for (const name of ["master", "main"]) {
+  for (const name of [...(landsOn ? [landsOn] : []), "master", "main"]) {
     const r = refs.get(`refs/heads/${name}`);
     if (r) return { name, oid: r.oid };
   }

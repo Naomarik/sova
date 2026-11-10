@@ -3,7 +3,7 @@
 
 What the user's pi extensions publish, read-only except for one cache: subscription usage, provider-reported credits and activity
 (usage-status), which this server also keeps fresh itself (§app.insights/usage-refresh), teams and
-subagents (subagents + sessions live records), the LLM calls in flight and their output-token ring
+subagents (from the subagents + sessions live records), the LLM calls in flight and their output-token ring
 (the server's own count with its chat processes' reports, and each connected host's own count,
 §app.insights/llm-inflight, §app.insights/token-velocity), and
 per-session summaries (topic-outline, compaction). Data shapes are `UsageInsight`, `AgentsInsight`, and `SessionInsight` in
@@ -968,16 +968,11 @@ Both pages share one shell: a `.session-head` and a `.insights.pane` containing
   and §app.insights/team-cards describe), Costs (§app.insights/cost-history) and Performance
   (§app.insights/performance-tab), at `#/agents`, `#/agents/costs` and `#/agents/performance`.
 - **Head meta (Agents).** `{w} working · {l} live · {$} today · {u} unmerged`: sessions in the
-  Working state and live sessions among the board's default scope, every computer's row it
-  shows counted (another computer's too, §app.insights/team-cards), this device's spend since
-  local midnight at API prices, every call of every kind (§app.insights/usage-ledger, `GET
-  /api/usage/today`; left out before its first answer and while nothing was spent today), and
-  distinct unmerged branches among this computer's worktrees read so far (left out before the
-  first reading). The spend and the unmerged branches stay this computer's. The line's `title`
-  says what each figure counts, in one sentence: "Sessions working and sessions live on the
-  board, whichever computer they're on; what this computer has spent since midnight at API
-  prices (every call, subscriptions included); and unmerged branches in this computer's
-  worktrees read so far." It shows once at every width: on the Board tab
+  Working state, live sessions, this device's spend since local midnight at API prices, every
+  call of every kind (§app.insights/usage-ledger, `GET /api/usage/today`; left out before its
+  first answer and while nothing was spent today), and distinct
+  unmerged branches among the worktrees read so far (left out before the first reading). The
+  line's `title` says what each figure counts. It shows once at every width: on the Board tab
   only on the count line directly above the board (§app.insights/team-cards), never in the head;
   on the Costs and Performance tabs, which have no count line, in the head.
 - **Rows (Usage).** The Usage page lists provider types as separate `.card.usage-rows` surfaces in
@@ -1617,14 +1612,7 @@ over time on this device. Activity-only Ollama readings are not quota windows: t
 
 `#/agents` is one board of sessions. Its rows come from the session list the sidebar loads
 (main threads only: never a worker's own session or an Overseer file), joined by path with
-`GET /api/insights/agents` (host sessions only: a headless worker pi owns no row). With the mesh
-on that list is this computer's sessions and every connected computer's, under the sidebar's own
-rules (§mesh.remote-sessions/list): a computer that is down is left out of the rows, the chip
-counts, the totals and the search, unless the host filter names it, and a computer that hides its
-sessions from this one shows none. The sidebar's host filter (§mesh.remote-sessions/host-filter)
-narrows the board too: one choice narrows both lists, and a change in the sidebar reaches the
-board at once, with no reload. Picked there, a down computer's last known sessions show on the
-board, marked down. The default
+`GET /api/insights/agents` (host sessions only: a headless worker pi owns no row). The default
 scope, with no chip on, is what the sidebar keeps on top: live sessions, and sessions started in
 Sova that aren't archived. An archived session is in it only while it is open in a TUI or Working
 (below); otherwise it shows only under Archived and in a search.
@@ -1637,7 +1625,7 @@ Sova that aren't archived. An archived session is in it only while it is open in
     …Needs you · Has workers · Unmerged · Archived…
   </div>
   <div class="board-caption">
-    <p class="board-count-line" aria-live="polite">5 sessions live or open in Sova</p>   <!-- host filter on a computer: "5 sessions on {computer} live or open in Sova" -->
+    <p class="board-count-line" aria-live="polite">5 sessions live or open in Sova</p>
     <p class="board-totals">2 working · 5 live · $3.40 today · 3 unmerged</p>   <!-- every width; the only copy on the Board tab -->
   </div>
 </div>
@@ -1648,7 +1636,7 @@ Sova that aren't archived. An archived session is in it only while it is open in
     <li class="board-row" data-state="needs-you">          <!-- working | needs-you | idle | archived; a click on it opens the session -->
       <div class="board-line">
         <div class="board-cell board-session">rail · twist (aria-expanded; only when the open row has something to say) · <a class="board-title" href="#/s/…">title</a> (+ visually hidden ", Needs you") / gist</div>
-        <div class="board-cell board-activity">model · context ring · 5m ago · {computer}</div>   <!-- one muted line; the computer only on another computer's row -->
+        <div class="board-cell board-activity">model · context ring · 5m ago</div>   <!-- one muted line -->
         <div class="board-cell board-workers">2/5 working · $1.20 / team chip · team chip · +3 → its Session details pane, on Agents</div>
         <div class="board-cell board-tokens">48k tok/min</div>   <!-- §app.insights/session-token-rate; idle or unmeasurable: a muted dash -->
         <div class="board-cell board-actions">Session details (aria-expanded) · ⋯</div>
@@ -1684,25 +1672,6 @@ Sova that aren't archived. An archived session is in it only while it is open in
   what was asked), **Idle** and **Archived**. Broken, Working and Working (team) are counted in
   code; only the waiting kind and the done words come from the turn card. The open row says why
   a row needs you, in a line that ends with its source ("Guessed by Jev.", "From code.").
-- **Another computer's row.** A row from another computer carries that computer's name after last
-  active, in the Activity line (at every width that shows it) and on the folded micro line, in the
-  sidebar row's place and words (§mesh.remote-sessions/row-host-state): a dot and its state's word
-  after the name when that computer can't be fully used ("read only", "display may be wrong",
-  "update needed", "hidden", "down", "refused"); the name gives way (ellipsis) before the word. From
-  1000 to 1599px, where the ring and the age fill the 5.5rem Activity track, the mark takes the
-  Activity cell's second line, the track's whole width, and a long name ellipsizes there; the row
-  stays 2 lines. A screen reader hears ", on {computer}" after the state's word (", on {computer},
-  which can't be reached" when it is down). Such a row shows only what that computer's session list
-  brings: its state, its workers' count, its gist, its model and context. Nothing else is read from
-  that computer for it: it has no worktree lines and no team chips, its Workers cell has no spend
-  (`GET /api/usage/sessions`, this computer's ledger, names only this computer's rows), and
-  Tokens/min shows the "On another host" dash (§app.insights/session-token-rate). Its title link and
-  a click on the row open the session on its computer (§mesh.remote-sessions/routing).
-- **Count line.** "{n} sessions live or open in Sova" with no chip and no search, "{n} sessions
-  across every session" with a search and no chip, "{n} sessions" under a chip. While the host
-  filter names a computer, the count names it: "{n} sessions on {computer} live or open in Sova",
-  and under a chip or a search "{n} sessions on {computer}"; this computer is named as the host
-  menu names it.
 - **Sort.** Needs you first, then Working, then the rest; within each, last active first.
 - **Groups.** The rendered rows sit under a heading per state, in that order: "Needs you · {n}",
   "Working · {n}", "Idle · {n}" (the rest; "Archived · {n}" when every one of them is archived),
@@ -1782,21 +1751,15 @@ Sova that aren't archived. An archived session is in it only while it is open in
   closes it: on that session already, it only switches the tab. The pane follows the shell's
   bands, so from 1280px it takes a column and the board beside it reflows, usually to its folded
   layout, where ⋯ is the door; below 1280px it covers the actions, and its own close comes first.
-  Leaving the page closes it. Every row the board shows has it, another computer's too: the pane
-  then reads from and acts on the session's own computer (§mesh.remote-sessions/host-scope).
-  With no chat on screen, workers come from the polled
+  Leaving the page closes it. With no chat on screen, workers come from the polled
   insight, the Timeline can't rewind ("Only a chat open in Sova can rewind."), and a row's jump
   says the message isn't in the transcript on screen.
 - **⋯ menu.** Session Details (Close Session Details while that row's pane is open), Open
   Subagents (opens the session with its pane on the Agents tab), Rename…, Use Gist as Title (the gist on one line,
   cut to the title limit; off, with the reason, when there's none or it already is the title),
   Reset to Original Title (off when not renamed), Move to Group… (a screen of the groups, with
-  "No group"; off on another computer's row, with the sidebar's reason: "Groups hold this host's
-  sessions only. That one lives on {computer}."), Archive or Unarchive, Copy Path. After them,
-  for a session on this host, comes what extensions add to the menu (§app.extensions/session-menu).
-  After Rename, Use Gist as Title, Reset to Original Title, Archive or Unarchive on another
-  computer's row, and after the page's Refresh, the other computers' session lists are read
-  again at once, as the sidebar does, not at the next poll.
+  "No group"), Archive or Unarchive, Copy Path. After them, for a session on this host, comes
+  what extensions add to the menu (§app.extensions/session-menu).
 - **Rename.** Only ⋯ → Rename… renames on the board: nothing on the row starts it. In place, a
   title field (Sova's title store, §app.session-list/session-titles): Enter saves, Escape cancels, an empty field restores the derived title,
   and leaving the field saves what's in it (empty: cancels). A value equal to the title the field
@@ -1830,10 +1793,7 @@ Sova that aren't archived. An archived session is in it only while it is open in
 
 The board reads `GET /api/insights/worktrees?paths=…` for the rendered rows only (under
 Unmerged, for the default scope, which that chip needs a reading to decide), every 15s and
-whenever that set of rows changes, and names only this computer's rows: another computer's row
-(§app.insights/team-cards) is never asked about, has no worktree lines, and never shows under
-Unmerged, and this computer's rows keep their readings and the Unmerged count beside it.
-Readings are kept per session across requests. They feed the
+whenever that set of rows changes. Readings are kept per session across requests. They feed the
 Unmerged chip and its count, the totals line's unmerged figure, the search's branch and path
 words, and the open row's worktree lines; no column and no folded chip shows them. A failed or
 missing route (an older server) leaves those as unread, and says nothing else: no banner, no
@@ -1842,8 +1802,8 @@ toast.
 - **Open row.** One line per worktree whenever the session has any, most useful first:
   unmerged, then those with uncommitted changes, then merged, then the rest, then gone (each kind
   in the session's own order). A line: the branch in mono (`detached` on a detached HEAD, the
-  folder name when it's gone), then **merged** (a success chip) when the tip is in the base or
-  merging would change nothing, else **unmerged** in words; "uncommitted" in words when it has
+  folder name when it's gone), then **merged** (a success chip) when the tip is in the base or the
+  shared answer finds no commit of its own left to land (§chat.worktrees/nothing-left), else **unmerged** in words; "uncommitted" in words when it has
   uncommitted changes; "a worker's" when a worker's cwd is the source; and the path in mono. A
   tree that's gone reads "gone"; a git failure "unreadable"; no base "no base". The line's
   `title` says the same in a sentence (the base it is or isn't merged into).
@@ -1920,10 +1880,13 @@ source wins. A folder that no longer exists is listed with `exists: false` and n
 folder that exists but is not in a git worktree, a relative path, and a remote session's
 placeholder are not listed.
 
-**What each tree says,** against its repository's base: local `master`, else `main`, else what
+**What each tree says,** against its repository's base: the project's merge-queue target when a queue
+is loaded and that branch exists, else local `master`, else `main`, else what
 `origin/HEAD` points at; with none, no base fields at all. `merged` is `ancestor` when the tree's
 HEAD is already in the base, `content` when it isn't but merging it would leave the base's tree
-exactly as it is (a squash or rebase merge landed it), otherwise `no`. `ahead`/`behind` count
+exactly as it is (a squash or rebase merge landed it), `catch-up` when nothing of its own is left for
+another reason (§chat.worktrees/nothing-left: every commit past the base a merge or already landed),
+otherwise `no`. `ahead`/`behind` count
 commits each side has that the other hasn't; `added`/`removed` are the lines the branch changed
 since it left the base (binary files count 0). `branch` is absent on a detached HEAD. `dirty` says
 whether anything is uncommitted, untracked files included.
@@ -1940,7 +1903,7 @@ Every git runs without a shell under a 5-second limit,
 at most four at a time. The comparison is kept until the tree's HEAD or its base moves, or what its
 trial merge rests on changes (the configuration, attribute files and merge drivers' code,
 §app/idle-git-cache); `dirty` is kept for ten seconds, and what hasn't been asked for in an hour is dropped. With git older than 2.38 there
-is no trial merge, and `merged` is only ever `ancestor` or `no`.
+is no trial merge, and `merged` is only ever `ancestor`, `catch-up` or `no`.
 
 ## §app.insights/explanations-page — Explanations page (`#/explanations`)
 
@@ -2005,7 +1968,10 @@ fetched except the lookups below.
   the thumbnail at 768px and up, the topic, `{relative time} · {model}`, the summary clamped to 3
   lines, and the advisory note when there is one. The thumbnail, topic, caption, summary and note
   are one plain link to `/explain/{id}` with no `target` (the same-tab rule of
-  §app.insights/insight-strip). Under it, a foot line says where the page came from:
+  §app.insights/insight-strip). The thumbnail and the link wear the theme the window wears now,
+  and follow it when it changes while the page is open (an Auto switch, §app.settings-dialog/themes),
+  so a page opened after the switch opens in the theme on screen. Under it, a foot line says where
+  the page came from:
   - The session in the session list: `From {title}`, an `Archived` chip when it is archived,
     then `· Open in Session`, a separate link to `#/s/{path}`.
   - A session the list doesn't carry (it has no user message, for one): the page asks this host

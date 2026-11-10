@@ -8,7 +8,7 @@ import type { ProfileChanges } from "./profile-merge";
  * Kept copies (§mesh.sync/kept-copies): before sync replaces, changes or removes a settings
  * document with another host's version, the version this host had is kept under
  * `<state dir>/sync-kept/<document>/`, newest 10 per document. Never synced, never offered to a
- * peer; Settings → Subagents reads the library's to offer it back.
+ * peer; Settings → Profiles reads the library's to offer it back.
  */
 
 export const KEPT_PER_DOC = 10;

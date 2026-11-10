@@ -431,9 +431,9 @@ user row.
   lists its active ones too, under "Previews"), `sova_send_status` (below), `sova_whatsapp` status
   (its WhatsApp sender's state; its `start`, of a stopped or failed sender, in the operator's turns
   only, §app.outreach/overseer-sender), `sova_history` (its
-  project's history, §app.org-history/readers), `sova_list_subagent_profiles` (this computer's
-  subagent profiles: Off and each profile's id, name and worker footprint, the default marked, for
-  `subagent_profile`, §app.project-overseer/coding-mode), `spec_lookup {op, words?, ref?, more?}` (its own project's spec on the main line, full view, §app.spec-lookup/tool).
+  project's history, §app.org-history/readers), `sova_list_profiles` (this computer's
+  profiles: Off and each profile's id, name and footprint, the default marked, for `profile` and
+  `subagent_profile`, §app.project-overseer/coding-mode; `sova_list_subagent_profiles` is its other name), `spec_lookup {op, words?, ref?, more?}` (its own project's spec on the main line, full view, §app.spec-lookup/tool).
 - **Whether a message arrived.** `sova_send_status {person?, limit?, hours?}` (read) lists the
   project's WhatsApp sends from the send log (§app.outreach/log), newest first: each send's id,
   the person's name, what went (a gathering link, a preview, a note), who sent it (you, the
@@ -513,12 +513,12 @@ user row.
   §app.project-overseer/previews). `promote`: `sova_promote`. `roster`:
   `sova_roster` approve/decline (history records the overseer as the writer; its read is always allowed).
   `codingStart`: `sova_create_session` (the root or a folder inside it, with a first prompt, an optional `mode`,
-  `minor_modes`, `subagent_profile` and `already_agreed`, §app.project-overseer/confirm-brief; in its own worktree, §app.project-overseer/coding-worktrees). `codingPrompt`: `sova_send` (its
+  `minor_modes`, `profile`, `subagent_profile` and `already_agreed`, §app.project-overseer/confirm-brief; in its own worktree, §app.project-overseer/coding-worktrees). `codingPrompt`: `sova_send` (its
   project's coding sessions only, and an ordinary session whose folder is inside the project root,
   which is the project's own act: counted as a prompt, held like one; never a
-  gathering session; an optional `mode`, `minor_modes` and `subagent_profile` too). Both take any
-  mode but Create, any minor modes and any subagent profile; only Create, unknown names and the alignment refusals are
-  refused (§app.project-overseer/coding-mode).
+  gathering session; an optional `mode`, `minor_modes`, `profile` and `subagent_profile` too). Both take any
+  mode but Create, any minor modes and any profile; only Create, unknown names, a start's profile that
+  changes tools or powers, and the alignment refusals are refused (§app.project-overseer/coding-mode).
   `copiesRun`: `sova_project_verbs` create, up, apply, test and conform; `copiesReset`: its reset and
   teardown (always: its `down`, `revoke`, status, logs and doctor; `share`: its `share`, held; above).
   `onboard`: its `onboard {why}`, the project's `verbs/onboard`
@@ -745,13 +745,20 @@ user row.
 - **No project mode.** A project has no coding-mode setting: the project page has no picker for
   it, and `overseer.json` holds none (an older file's `codingMode` is ignored, and dropped at the
   file's next write). A `PATCH …/overseer` naming `codingMode`, `null` included, is refused (400)
-  and writes nothing: "Projects have no coding mode: coding sessions start in this computer's
-  default mode. Save as default in a chat's mode menu changes it."
-- **Unnamed, this computer's default.** A coding session started with no mode named starts in this
-  computer's default mode (`mode.json`, the default every new session starts from, read when the
-  session starts), with no subagent profile picked, so it runs on this computer's default profile.
-  That covers the operator's Start Coding Session and New Coding Session, New Session's Project tab
-  (§app/new-session-dialog), an Overseer's start that names none, and a build a gap's statechart
+  and writes nothing: "Projects have no coding mode: coding sessions start on this computer's
+  default profile. Make Default in Settings → Profiles, or in a chat's mode menu, changes it."
+- **Unnamed, this computer's default.** A coding session started with no profile or mode named
+  starts on this computer's default profile (§chat.profiles/default, read when the session starts),
+  with no other profile picked,
+  as a new chat does: its mode and add-on modes and its helpers, and the chat's own model and
+  effort where the project names no coding model and thinking (a project's coding model and thinking,
+  where set, stay the session's own model; the default's come before the overseer's own model). It
+  takes what the three older defaults gave a coding session and no more: never the profile's tool
+  removals, session powers, One at a time or first message, so a computer's default never widens what
+  a session an Overseer starts can do. With Off as the default it starts in the default mode
+  `mode.json` holds, as every new session starts under Off, with its helpers on Off. That covers the operator's Start Coding Session and New Coding Session, New Session's Project tab
+  (§app/new-session-dialog), a Build from a conversation's draft (§app.requirements/draft-approval), an
+  Overseer's start that names none, and a build a gap's statechart
   starts by itself with `codingStart` On (§app.project-overseer/drive), which also gets the project's coding model,
   as Start Coding Session does, before its first prompt. The mode is applied, and written into the
   session file as its `mode` entry (§chat/mode-menu), before the first prompt, even when it equals
@@ -761,43 +768,64 @@ user row.
   page's error) says "Started, but not prompted: its mode could not be set." New Coding Session
   sends no prompt anyway; its page error says "Started, but its mode could not be set. Set it from
   the chat's mode menu before you send." Neither has a mode picker; the chat's own mode menu can
-  switch it afterwards, like any chat, except that spec stays on.
-- **Spec is always on.** Every project coding session runs with the `spec` minor mode, in every
-  project, whatever this computer's default says: a start adds it to the default's minor modes,
-  and nothing turns it off. An Overseer's `minor_modes` that leave `spec` out (on a start or on
-  `sova_send`) are refused before anything else, as an unknown name is: "Spec is always on for
-  coding sessions; it can't be turned off. Name spec among minor_modes." The web mode menu's
-  switch of a project coding session that leaves `spec` out is refused (409) with "Spec is always
-  on for coding sessions; it can't be turned off." A verb playbook's run keeps it too.
+  switch it afterwards, like any chat.
+- **Spec is a minor mode like the others.** A project coding session has the `spec` minor mode only
+  when this computer's default profile, an Overseer's `minor_modes` or someone's switch in that chat
+  puts it on; a start adds nothing. A computer that never saved a default starts its coding sessions
+  without spec, the same as any other new chat there. The chat's mode menu, a typed `/mode` and
+  either Overseer can turn spec on or off in a running coding session, and none of them is refused
+  for it. This holds in every project, an organization's and Sova's own included: the composer offers
+  what it does in any chat, with no row hidden, and a chat with spec off writes no drafts and no
+  notes. Its workers follow it (§chat.mode-menu/workers).
 - **What the page says.** The project page's Settings tab keeps a read-only "Coding sessions'
   mode" line beside the coding sessions' model and thinking, naming what a session started now
-  gets and how to change it: "Coding sessions start in {mode}, with the {profile} subagent profile:
-  this computer's defaults. Save as default in any chat's mode menu changes them." (with no default
-  profile: "Coding sessions start in {mode}: this computer's default mode. Save as default in any
-  chat's mode menu changes it."), `{mode}` in mono: the mode and its minor modes joined by " · ",
+  gets and how to change it: "Coding sessions start on {profile}, in {mode}: this computer's default
+  profile. Make Default in Settings → Profiles changes it." (with Off as the default: "Coding
+  sessions start on Off, in {mode}: this computer's default mode. Make Default in Settings → Profiles
+  changes it."), `{mode}` in mono: the mode and its minor modes joined by " · ",
   `vis` said as "visuals". `GET …/overseer` answers it as `codingModeNow` `{mode, minorModes,
-  subagents: {id, name} | null}`, and the overseer's prompt names it.
+  subagents: {id, name} | null}`, with the default profile's `{id, name}` as `profile`, and the
+  overseer's prompt names it.
 - **Any mode but Create, for both Overseers.** The project overseer's `sova_create_session` and `sova_send`,
   and the Overseer's `sova_project_overseer` `code` (§app.overseer/org-project-overseers), take
   `mode` (`normal` or `delegate`), `minor_modes` (the whole set on: any of `align`, `spec`, `vis`,
-  never `memory` (§chat.memory/where); `[]` turns them all off) and `subagent_profile` (an id in this computer's subagent
-  profiles, or `off`; the project overseer's `sova_list_subagent_profiles` lists them). There is no
-  ceiling but spec (above) and Create, which only a chat picks for itself
-  (§chat.create-mode/per-chat-only): any other mode, any minor modes with `spec` among them and any
+  never `memory` (§chat.memory/where); `[]` turns them all off), `profile` (a profile of this
+  computer's, as `sova_list_profiles` lists them, §chat.subagent-profiles/overseer) and, as before,
+  `subagent_profile` (a library id or `off`: only the helpers; `sova_list_subagent_profiles` is the
+  list's other name; a call gives `profile`, `subagent_profile` or neither). There is no
+  ceiling but Create, which only a chat picks for itself
+  (§chat.create-mode/per-chat-only): any other mode, any minor modes and any
   profile are taken. On a start, what the call names
-  replaces that part of this computer's default and the rest is the default's, except that a start
+  replaces that part of this computer's default profile and the rest is the default's, except that a start
   without `already_agreed` also gets align on (§app.project-overseer/confirm-brief); a named profile is
-  picked for that session only. Only an unknown name is refused: "Unknown mode {x}: use normal or
-  delegate.", "Unknown minor mode {x}: use align, spec or vis.", "Unknown subagent
-  profile: {x}. sova_list_subagent_profiles lists them." Each refusal happens before anything
+  picked for that session only, never as the default. On a start its Models part and its mode and
+  add-ons (where the call names none) always apply, its model, effort and helpers all at once
+  (§chat.profiles/switch). A start naming a profile that removes tools, has a first message or is One
+  at a time is refused, because a coding session needs its tools, sends its own brief and is counted by
+  its build ("Coding sessions need their tools and send their own brief, so {name} can't start one.").
+  A profile that grants session powers starts one only when marked "The Overseer may start it", a mark
+  that counts for both Overseers' coding starts ("{name} grants session powers and isn't marked "The
+  Overseer may start it", so it can't start a coding session."), and, from a project's files, approved
+  ("{name} needs the operator's approval in Settings → Profiles first."); then its session half is
+  written whole as the session's profile, by the Overseer, before the first prompt. In an
+  organization's project its coding sessions never take a profile's session powers, so such a start is
+  refused before anything ("{name} grants session powers, which an organization's coding sessions never
+  take, so it can't start one."); their Models part still switches. `profile` and
+  `subagent_profile` together are refused ("Give profile or subagent_profile, not both: a profile brings its own
+  helpers."). Otherwise only an unknown name is refused: "Unknown mode {x}: use normal or
+  delegate.", "Unknown minor mode {x}: use align, spec or vis.", "Unknown profile: {x}.
+  sova_list_profiles lists them.", "Unknown subagent profile: {x}. sova_list_subagent_profiles lists
+  them." Each refusal happens before anything
   else: no session is created, nothing is sent, and no cap or counter is taken, attended or not.
-  The reply names the mode and the subagent profile the session started with ("…, mode delegate ·
-  visuals, subagent profile Big team."). Both prompts say Delegate suits large, multi-part work,
-  and that spec is always on. Both starts also take `already_agreed` (§app.project-overseer/confirm-brief).
+  The reply names the mode and the profile the session started with ("…, mode delegate ·
+  visuals, profile Big team."; with only `subagent_profile`: "…, profile Claude with subagent profile
+  Big team."). Both prompts say Delegate suits large, multi-part work.
+  Both starts also take `already_agreed` (§app.project-overseer/confirm-brief).
 - **`sova_send` with a mode** switches only what it names (the session keeps the rest of its own
-  mode and its profile), pins the mode and picks a named profile for that session, then sends the
+  mode and its profile), pins the mode and switches to a named profile for that session (its Models
+  part, all at once, §chat.profiles/switch; `subagent_profile`, only its helpers), then sends the
   text. Mid-turn, the change applies from the session's next turn, and the result says so. The
-  result says what the session now runs ("It now runs normal · spec, subagent profile House.").
+  result says what the session now runs ("It now runs normal · spec, profile House.").
   A terminal-owned session is refused, as today.
 - **Alignment questions are the operator's.** Neither Overseer answers them, and both prompts say
   so. A message either Overseer sends into a session on this host is marked as an Overseer's
@@ -818,7 +846,8 @@ user row.
   way, in its own words: "{title} is waiting on the user's answers to its alignment questions. Tell
   the user; never answer them. Nothing was sent."
 - **A verb playbook's run** starts with align on beside this computer's default mode, set by Sova
-  (§app.project-runtime/onboard), because the operator answers its questions.
+  (§app.project-runtime/onboard), because the operator answers its questions. Align is all it adds:
+  the run has spec only when that default does.
 - `strict` is never set or offered; a session keeps the strict flag it started with.
 - A gathering session loads no extensions, so it has no mode; what it can do is the project's
   gathering abilities (§app.baton/abilities).
@@ -833,7 +862,7 @@ that they want this built; both prompts say so, and say never to set it on the O
 judgement.
 
 - **Without it**, Sova turns align on in the session's mode beside what the Overseer named, whatever
-  its `minor_modes` say (spec stays on; align is never added twice), so the operator's check-in
+  its `minor_modes` say (align is never added twice), so the operator's check-in
   never rests on the Overseer's choice of minor modes; the start's reply names that mode. The
   session's first turn opens one small alignment before any plan, investigation or edit: one
   question, topic "What to build", asking "Is this what you want built?", its context the brief
@@ -975,7 +1004,9 @@ judgement.
   its session, and never rebuilds the list: an open **⋯** menu stays open and the page keeps its
   scroll position and keyboard focus, while a row's text, chips and menu entries still change as
   they arrive, and a menu entry acts on what its row shows when it is chosen.
-- **Merge Branch** is the operator's gesture; the overseer has no tool for it. It merges
+- **Merge Branch** is the operator's gesture; the overseer has no tool for it, and it passes only on
+  the user's own click in Sova's page or a proven click from another of their computers
+  (§app.access/your-click): a script, a chat's shell or an in-process call is refused 403. It merges
   `sova/<name>` into `target` in the project root's checkout, which must have `target` checked
   out, no tracked changes and no merge, rebase or cherry-pick in progress: a fast-forward when
   possible, else a merge commit ("Merge sova/<name>: <title>"). A conflict is aborted and reported,
@@ -989,24 +1020,12 @@ judgement.
   (§app.merge-queue/approve) instead of merging it in the project root; once it has an entry the row
   reads its queue state in the chips the composer's modal uses (§chat.composer/worktrees-control),
   with its estimates or reason, and while it is queued, checking or waiting for the user its Land is
-  disabled: "Already in the merge queue.". While it is sent back to its chat (Needs a fix) its Land
-  is disabled too, "Sent back to its chat. Land comes back once its chat fixes it, or land its
-  newest
-  commit now." (§chat.composer/worktrees-control), and beside it the menu offers the re-land item, a
-  new approval of the head this page read (§app.merge-queue/approve), disabled while the session is
-  working. While that head is the sent-back commit it is **Land This Commit Again** ("Approves {sha}
-  again: every check runs from the start."); once the branch moved it is **Land Newest Commit**
-  ("Approves {head}: every check runs from the start."), with what it brings in and why that commit
-  isn't Ready to land after those words. A branch sent
-  back for its spec drafts gets Land back here at the same commit once its drafts changed and fit,
-  as
-  on the other screens, and the re-land item leaves the menu. An entry that no longer needs a
-  fix (approved again later, already in the target, or its branch or folder gone) blocks neither:
-  the re-land item leaves and Land reads as for any branch. After a fix that needed a commit
-  this menu, which reads no readiness, keeps Land off; the branch lands by Land Newest Commit
-  here, or from the Worktrees modal, the session pane, the Merge Queue tab, or "land it" typed in
-  its
-  chat. Remove from Queue isn't in this menu.
+  disabled: "Already in the merge queue.". While it is back with its chat, its Land is disabled too,
+  "Your Land stands: it goes back in line by itself once its chat's fix is checked."
+  (§chat.composer/worktrees-control, §app.merge-queue/standing-approval); this menu offers no
+  re-land item and no send-back. Out of tries, and an entry that no longer stands (removed, already
+  in the target, or its branch or folder gone), read Land as for any branch. Remove from Queue isn't
+  in this menu.
   Drafts changed keeps Land. The queue's refusals are shown under the row as Merge
   Branch's are. A project whose queue isn't set up keeps Merge Branch as above, and its Merge Queue
   tab shows the note "No merge queue settings are set up for this project" with Set Up with a Chat
@@ -1023,8 +1042,22 @@ judgement.
   branch gone, git's own failure) is also a reason for the overseer to look
   (§app.project-overseer/watch-loop), so it can tell the session to commit or fix it; a refusal
   about the project root's own checkout, or a busy session, is the operator's and is not.
-- **Remove Worktree** removes the worktree folder (git's own `worktree remove`; one with
-  uncommitted changes is refused, naming them) and deletes the branch only when it is merged; an
+- **Remove Worktree** removes the worktree folder (git's own `worktree remove`) and deletes the
+  branch only when it is merged. Before its running copy is torn down, it runs the same check as
+  Clean Up Merged (§chat.worktrees/leftovers), whoever sets it off (the page's button, or the build's
+  remove-worktree effect, the Project Overseer's included): a worktree holding uncommitted or
+  untracked files, ignored files that can't be rebuilt or a nested repository stays, as does one
+  whose files can't be read; nothing is torn down or removed, and the refusal gives the reason
+  (uncommitted files only, in today's words, otherwise "{reason} Nothing was removed."). On the
+  project page the Remove confirmation asks first (`POST /api/projects/:pid/overseer/worktrees/remove
+  {sessionId, dryRun: true}` answers the reason and the listing): a held worktree shows its reason
+  in place of the "folder goes away" sentence, and, when what it holds is the reason, offers `Remove
+  Anyway` with the cleanup dialog's listing and buttons. Confirming (the same route with `{sessionId,
+  digest}`, your own click only; both together is a 400) re-reads the worktree and removes it with one `--force` only when the listing is
+  unchanged and every other check still passes, tearing its running copy down only then; otherwise
+  nothing is deleted: "Changed since the list, nothing was deleted: {reason}". A worktree cut for a
+  session that then fails to start is removed the same way, so it stays if it holds anything. The
+  branch rule is unchanged; an
   unmerged branch keeps its commits, and Merge Branch stays on its row. It is refused while the
   session is working or has workers running. When the worktree has a running copy of the project
   (an instance, §app.project-services/instances), Remove Worktree first tears that copy down
@@ -1281,7 +1314,7 @@ judgement.
   `{path, sessionId, worktree?, note?, modeNotSet?}` (404 for an unknown project). It starts the
   same kind of session Start Coding Session does: in its own worktree and branch
   (§app.project-overseer/coding-worktrees; `sova/coding-<hex>` with no title), on the project's
-  coding model and thinking, in this computer's default mode with no subagent profile picked, pinned
+  coding model and thinking, on this computer's default profile with no other profile picked, pinned
   (§app.project-overseer/coding-mode), recorded as an `operator-coding` row (listed under Coding
   sessions as "Started by you", in the sidebar's Builds and the Cost card, never counted by the
   overseer's caps). It links no to-do or idea.
@@ -1517,11 +1550,11 @@ judgement.
   {n} min unless you cancel it." (`what` names the act, whom it reaches and about what, never a gap's id: "A gathering with Sam
   Okafor: Pricing tier names", "A gathering with you: …", "An offer to 3 people: …", "A coding
   session for {gap title}"; an act that reaches no one keeps the statechart's own words). The Organizations region's Needs you lists them first, soonest
-  on top, each a row naming the project, the sentence recounted as time passes and the org, opening
-  the project page, with **Cancel** beside it; the project page's Pipeline card lists the
+  on top, each a row naming the project and the org, the sentence, recounted as time passes, its hover text,
+  opening the project page, with **Cancel** beside it; the project page's Pipeline card lists the
   project's held acts first, under "Waiting to start", soonest first, the go-ahead time as each
   one's title ("Goes ahead at {stamp}."), each with **Cancel** ("Cancel: {what}"); the operator's Cancel needs no reason. Once its time is up and until it has
-  gone, a held act's row reads "{what} is starting now." instead. Cancel (`POST /api/projects/:pid/held/:holdId/cancel`)
+  gone, a held act's hover text reads "{what} is starting now." instead. Cancel (`POST /api/projects/:pid/held/:holdId/cancel`)
   drops it and it never runs; it says "Cancelled. {what} won't happen.", or the server's sentence
   when it can't (404 for an unknown hold; 409 once it already went ahead), and Needs you is read
   again at once. A held act's id is its session's id and the statechart's hold id (`<session>:<hold>`),

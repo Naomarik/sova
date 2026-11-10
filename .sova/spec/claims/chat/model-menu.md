@@ -234,19 +234,24 @@ The body depends on the server message (the server sends free text, so match on 
 The banner goes away on Dismiss, after the next successful switch, or when you leave the session.
 It never auto-dismisses, because it's the only record of the failure.
 
-## §chat.model-menu/saved-default — The default for new sessions
+## §chat.model-menu/saved-default — The model new chats start on
 
-A new session starts on the saved default model and thinking level (`defaults.json` in Sova's
-state directory; a model since turned off in Settings → Models is skipped). **Only an explicit
-pick in a brand-new session's composer becomes that default**: choosing a model in this picker, or
-a level in the flyout's Thinking group, while the session's branch has no message from the user
-yet. After the first message a pick is that session's alone. A switch the user did not pick in
-the composer never saves: one the Overseer makes on a session it creates or acts on
-(§app.overseer/tools), or Settings → Overseer applying its choice to the Overseer's own
-conversation. The Overseer's own composer saves to `overseer.json` instead, never to this default
-(§app.overseer/hosting). Another special session's composer (a baton or project overseer session,
-§app/baton, §app/project-overseer) never saves this default either: its pick stays that session's
-own, or goes where that kind keeps it.
+A new chat starts on the model and thinking level of this computer's default profile
+(§chat.profiles/default). Where that profile sets none (Off, or a profile with no This chat row), it
+starts on the saved new-session model and level (`defaults.json` in Sova's state directory, kept
+written when a default is chosen; a model since turned off in Settings → Models is skipped), as a new
+session starts when no profile sets one. **A pick in the composer never becomes a default**: an
+explicit pick in a brand-new session's composer becomes that session's own, like any other, even
+while its branch has no message from the user yet. After the first message, as before, a pick is
+that session's alone: choosing a model in this picker, or a level in the flyout's Thinking group, is
+that chat's own, and in a chat on a profile it reads as "(edited)" (§chat.profiles/edited). A switch
+the user did not pick in the composer never saves either: one the Overseer makes on a session it
+creates or acts on (§app.overseer/tools), or Settings → Overseer applying its choice to the
+Overseer's own conversation. The default moves only when a default profile is chosen. The Overseer's
+own composer saves to `overseer.json` instead, never to this default (§app.overseer/hosting).
+Another special session's composer (a baton or project overseer session, §app/baton,
+§app/project-overseer) never saves this default either: its pick stays that session's own, or goes
+where that kind keeps it.
 
 ## §chat.model-menu/favorites — Starring a favorite
 
@@ -306,4 +311,3 @@ The picker's ids, captions and active marker measured against each ground, in da
 | Accent ring on sunken (active marker) | 5.08 | 5.63 |
 
 ---
-

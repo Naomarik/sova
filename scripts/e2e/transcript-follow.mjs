@@ -61,7 +61,7 @@ const exit = async (code) => {
   await SELF?.stop();
   process.exit(code);
 };
-const SKILL = join(ROOT, ".claude/skills/playwright/scripts");
+const SKILL = join(ROOT, ".agents/skills/playwright/scripts");
 
 let passed = 0;
 const failures = [];

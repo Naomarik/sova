@@ -119,7 +119,7 @@ const questionSchema = (visual: boolean) =>
 const Rejected = Type.Object({ option: S("The alternative you considered."), why: S("Why not.") }, Strict);
 const items = (visual: boolean) => ({
 	findings: Type.Array(S(), { description: "Facts you established that shape the plan; each becomes fN." }),
-	approach: Type.Array(S(), { description: "The plan's steps, in order; each becomes aN." }),
+	approach: Type.Array(S(), { description: "The plan's steps; each becomes aN. Say which can run at the same time." }),
 	rejected: Type.Array(Rejected, { description: "Alternatives you ruled out; each becomes xN." }),
 	technical: Type.Array(S(), { description: "Technical notes: the files, code and technical detail the other fields leave out (the writing style says when); each becomes tN." }),
 	questions: Type.Array(questionSchema(visual), { description: "Decisions the user must make; each becomes qN." }),

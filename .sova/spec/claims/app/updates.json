@@ -144,12 +144,14 @@
       "server/updates/restart-route.test.ts",
       "server/updates/disk-ahead.test.ts",
       "server/updates/install-kind.test.ts",
-      "src/lib/restart.test.ts"
+      "src/lib/restart.test.ts",
+      "server/merge-queue/restart.ts",
+      "server/merge-queue/restart.test.ts"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-11-04T22:57Z",
-      "source": "pi-session:01a1a87a-1991-72d2-b9d3-5a131e125dc1#f6b2ecc1"
+      "by": "naomarik",
+      "at": "2026-11-07T15:25Z",
+      "source": "pi-session:a08b61c6-6f44-4ae1-ace0-ced83f26f0b0#40313700"
     }
   },
   "§app.updates/running": {

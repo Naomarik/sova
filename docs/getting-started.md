@@ -159,14 +159,14 @@ For example, `PORT=4801 sova` changes the port. The `SOVA_SHARE_*` variables are
 [public links](public-links.md#pin-it-with-environment-variables); leave them unset to use Settings → Public links.
 
 Sova keeps its app state under `~/.pi/agent/sova/`, including groups, archive metadata, drafts,
-attachments, and themes. The embedded pi runtime also reads and writes pi sessions; model policy
-and remote-target configuration live in the shared agent directory. Back up that directory before
+attachments, and themes. Each chat's process also reads and writes pi sessions; model policy and
+remote-target configuration live in the shared agent directory. Back up that directory before
 experimenting with configuration. Never commit credentials, transcripts, or personal targets.
 
 ## Reinstall or remove
 
 Running the install command again updates to the newest stable release (or the latest of the
-`SOVA_REF` you set; `SOVA_REF=v0.10.2` stays on that release). An install already at that commit isn't rebuilt;
+`SOVA_REF` you set; `SOVA_REF=v0.13.0` stays on that release). An install already at that commit isn't rebuilt;
 `--reinstall` rebuilds it anyway. Pass the same options again: without `--port`, a re-run goes back
 to 4800. The installer stages the build before replacing the installation and refuses tracked
 local changes. Don't store your own files in the install directory: untracked files do not prevent

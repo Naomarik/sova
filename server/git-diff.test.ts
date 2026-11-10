@@ -1020,6 +1020,16 @@ describe("queue scope (a Merge Queue row, no session)", () => {
     assert.ok(tip);
   });
 
+  it("a review: the commit its reviewer read against the target it was merged onto, and the route passes the review's id", async () => {
+    const { dir, tip, base } = queueRepo();
+    const seen: unknown[] = [];
+    const s = await queueDiffs({ kind: "reviewed", root: dir, target: "master", branch: "feat/q", tip, base }, seen).summary({ kind: "queue", project: "p", review: "mq_1:mr_1", paths: ["q.txt"] });
+    assert.deepEqual(seen, [{ project: "p", review: "mq_1:mr_1" }]);
+    assert.equal(s.base.oid, base);
+    assert.equal(s.head.oid, tip);
+    assert.deepEqual(s.files.map((f) => f.path), ["q.txt"]);
+  });
+
   it("refuses what the queue's records don't name, and a worktree no longer on the branch", async () => {
     const { dir, wt } = queueRepo();
     await rejects(queueDiffs(null).summary({ kind: "queue", project: "p", branch: "feat/q" }), 404, /not checked out in a worktree of that project/);
@@ -1034,6 +1044,9 @@ describe("queue scope (a Merge Queue row, no session)", () => {
     assert.deepEqual(q({ kind: "queue", project: "prj_1", entry: "mq_ab-1" }), { kind: "queue", project: "prj_1", entry: "mq_ab-1" });
     assert.throws(() => q({ kind: "queue", project: "prj_1" }), /exactly one/);
     assert.throws(() => q({ kind: "queue", project: "prj_1", entry: "mq_1", branch: "b" }), /exactly one/);
+    assert.deepEqual(q({ kind: "queue", project: "p", review: "mq_1:mr_2" }), { kind: "queue", project: "p", review: "mq_1:mr_2" });
+    assert.throws(() => q({ kind: "queue", project: "p", review: "mq_1:mr_2", entry: "mq_1" }), /exactly one/);
+    assert.throws(() => q({ kind: "queue", project: "p", review: "../x" }), /review/);
     assert.throws(() => q({ kind: "queue", branch: "b" }), /project/);
     assert.throws(() => q({ kind: "queue", project: "p", branch: "--output=x" }), /branch/);
     assert.throws(() => q({ kind: "queue", project: "p", branch: "a..b" }), /branch/);

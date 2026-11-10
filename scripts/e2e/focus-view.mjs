@@ -34,7 +34,7 @@ const AGENT = SELF ? SELF.agent : resolve(process.env.SOVA_E2E_AGENT ?? join(ROO
 const PORT = SELF ? SELF.port : Number(process.env.SOVA_E2E_PORT);
 const BASE = `http://127.0.0.1:${PORT}`;
 const SHOTS = process.env.SOVA_E2E_SHOTS ? resolve(process.env.SOVA_E2E_SHOTS) : null;
-const SKILL = join(ROOT, ".claude/skills/playwright/scripts");
+const SKILL = join(ROOT, ".agents/skills/playwright/scripts");
 const exit = async (code) => {
   await SELF?.stop();
   process.exit(code);

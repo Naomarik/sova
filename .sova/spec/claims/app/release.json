@@ -279,9 +279,9 @@
       "server/needs-you-rows-ui.integration.test.ts"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-11-04T20:51Z",
-      "source": "pi-session:01a1a84e-e311-72d2-b9d3-59eb21917ab5#6c08d14e"
+      "by": "user",
+      "at": "2026-11-06T01:40Z",
+      "source": "pi-session:01a1ac4a-4cc0-77e8-b78d-580fabeebc2e#f924065b"
     }
   },
   "§app.release/record": {

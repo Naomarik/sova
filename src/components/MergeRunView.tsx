@@ -1,11 +1,11 @@
 import { createEffect, createMemo, createSignal, For, on, onCleanup, Show, type Accessor } from "solid-js";
 import { relativeTime } from "../lib/format";
 import { attribution, clock, sentence, short, sourceTag, stepCounts, stepDetail, stepMark, stepTime, unattributedWhy, verdictChip, type MergeEntry, type MergeQueueView, type MergeRun, type RunStep } from "../lib/merge-queue";
-import { answerEntry, mergeChanged, readLog, readRun, refusal } from "../lib/merge-queue-client";
+import { answerEntry, cancelEntry, mergeChanged, readLog, readRun, refusal } from "../lib/merge-queue-client";
 import { createFollowedRead, createRunRead, logFollow } from "../lib/merge-run";
 import type { MergeAnswer } from "../../shared/merge-queue";
 import { announce, home, toast } from "../lib/ui-state";
-import { projectSessionHref, projectTabHref } from "../lib/projects-route";
+import { mergeQueueTabHref, projectSessionHref, type QueueTab } from "../lib/projects-route";
 import { Banner, Icon } from "./ui";
 import { type ChatOf, FromChat } from "./MergeQueueTab";
 import { ReviewerLinks } from "./MergeQueueChats";
@@ -18,9 +18,10 @@ const LOG_FOLLOW_MS = 3000;
 /**
  * One run of the queue (`#/projects/<pid>/merge-queue/<run>`): what was merged onto what and what it
  * tested, whose failure it was when it failed (checked against the target alone), and every step —
- * the copy and setup included — with where each check came from, why, its time and its log.
+ * the copy and setup included — with where each check came from, why, its time and its log. `from`: the queue's tab
+ * it was opened from (`…/merge-queue/<tab>/<run>`), which Back to Queue returns to; absent, Ready to land.
  */
-export function MergeRunView(props: { projectId: string; view: MergeQueueView; runId: string; chatOf?: ChatOf }) {
+export function MergeRunView(props: { projectId: string; view: MergeQueueView; runId: string; chatOf?: ChatOf; from?: QueueTab }) {
   // A running run moves: it's read again while it runs, and on any queue change. Each read is reconciled into
   // the last (lib/merge-run), so the step rows stay put and an open log stays open.
   const read = createRunRead(() => props.runId, readRun, RUN_POLL_MS);
@@ -45,10 +46,10 @@ export function MergeRunView(props: { projectId: string; view: MergeQueueView; r
     <div class="stack mq-run" aria-labelledby="mq-run-title">
       {/* Back to Queue is the arrow before the path, never a third action that wraps onto a line of its own. */}
       <nav class="mq-crumbs text-caption" aria-label="Breadcrumb">
-        <a class="button button-sm button-ghost button-icon mq-back" href={projectTabHref(props.projectId, "merge-queue")} aria-label="Back to Queue" title="Back to Queue">
+        <a class="button button-sm button-ghost button-icon mq-back" href={mergeQueueTabHref(props.projectId, props.from)} aria-label="Back to Queue" title="Back to Queue">
           <Icon name="chevron-left" small />
         </a>
-        <a href={projectTabHref(props.projectId, "merge-queue")}>Merge queue</a>
+        <a href={mergeQueueTabHref(props.projectId, props.from)}>Merge queue</a>
         <span aria-hidden="true"> › </span>
         <span>{run()?.branch ?? props.runId}</span>
       </nav>
@@ -150,16 +151,18 @@ export function MergeRunView(props: { projectId: string; view: MergeQueueView; r
   );
 }
 
-/** Can't tell whose failure: what failed on both sides, and your two answers (merge verbs; nothing goes to the chat). */
+/** Can't tell whose failure: what failed on both sides, and your answers (merge verbs; nothing goes to the chat):
+ *  Land Anyway, Try Again and Remove from Queue. */
 function Unattributed(props: { projectId: string; entry: MergeEntry; target: string }) {
   const [busy, setBusy] = createSignal(false);
   const [error, setError] = createSignal<string | null>(null);
-  const answer = async (a: MergeAnswer, done: string) => {
+  const remove = () => answer(null, `Removed ${props.entry.branch} from the merge queue.`);
+  const answer = async (a: MergeAnswer | null, done: string) => {
     if (busy()) return;
     setBusy(true);
     setError(null);
     try {
-      const no = refusal(await answerEntry(props.entry, a));
+      const no = refusal(a === null ? await cancelEntry(props.entry) : await answerEntry(props.entry, a));
       if (no) setError(no);
       else {
         toast(done);
@@ -176,15 +179,18 @@ function Unattributed(props: { projectId: string; entry: MergeEntry; target: str
       <Icon name="alert-circle" class="banner-icon" />
       <div class="banner-main">
         <p class="banner-title">Can't tell whose failure. Nothing landed; {props.target} didn't move.</p>
-        <p class="banner-body">{unattributedWhy(props.entry.reason, props.target)} Nobody is blamed. Land Anyway lands the commit it tested; Send Back hands it to its chat.</p>
+        <p class="banner-body">{unattributedWhy(props.entry.reason, props.target)} Nobody is blamed. Land Anyway lands the commit it tested; Try Again checks it afresh.</p>
         <UnclearChecks projectId={props.projectId} unclear={props.entry.unclear} target={props.target} />
         <Show when={error()}>{(m) => <p class="text-caption mq-error" role="alert">{m()}</p>}</Show>
         <div class="button-row mq-card-actions">
           <button type="button" class="button button-sm button-primary" aria-label={`Land ${props.entry.branch} anyway`} disabled={busy()} onClick={() => void answer("land-anyway", `Landing ${props.entry.branch} anyway.`)}>
             Land Anyway
           </button>
-          <button type="button" class="button button-sm button-destructive" aria-label={`Send ${props.entry.branch} back to its chat`} disabled={busy()} onClick={() => void answer("send-back", `Sent ${props.entry.branch} back to its chat.`)}>
-            Send Back
+          <button type="button" class="button button-sm" aria-label={`Try ${props.entry.branch} again`} disabled={busy()} onClick={() => void answer("try-again", `Checking ${props.entry.branch} again.`)}>
+            Try Again
+          </button>
+          <button type="button" class="button button-sm" aria-label={`Remove ${props.entry.branch} from the merge queue`} disabled={busy()} onClick={() => void remove()}>
+            Remove from Queue
           </button>
         </div>
       </div>

@@ -48,6 +48,8 @@ fs.writeFileSync(
 	path.join(dirs.agent, "settings.json"),
 	JSON.stringify({ quietStartup: true, defaultProvider: "harness", defaultModel: "offline" }, null, 2),
 );
+// Subagent profile Off: no profile routes the harness team's members, so they need no work kind.
+fs.writeFileSync(path.join(dirs.agent, "subagent-profiles-default.json"), JSON.stringify({ version: 1, default: "off" }));
 fs.writeFileSync(
 	path.join(tmp, "harness-extension.ts"),
 	`import fs from "node:fs";
@@ -432,7 +434,8 @@ async function teamPhase() {
 		});
 		team = r.details;
 		assert.match(team.teamId, /^team_\d+$/);
-		assert.equal(team.members.length, 2);
+		// Sova's coordinator first and its monitor last, on the chat's own model.
+		assert.deepEqual(team.members.map((m) => m.role), ["coordinator", "builder", "reviewer", "monitor"]);
 		const ws = await control("workers");
 		const builder = ws.find((w) => w.id === team.members.find((m) => m.role === "builder").workerId);
 		for (const needle of ["harness-team", "HARNESS_OBJECTIVE", "builder", "src/owned-a", "HARNESS build"])

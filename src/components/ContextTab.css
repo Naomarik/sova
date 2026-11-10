@@ -53,6 +53,8 @@
   color: var(--color-ink-muted);
 }
 .context-row-meta-text { min-width: 0; overflow-wrap: anywhere; }
+/* A skill's line count beside its Partly read chip: plain muted words, kept on one line. */
+.context-row-beside { white-space: nowrap; }
 .context-share {
   display: block;
   height: 3px;
@@ -171,6 +173,9 @@
   gap: var(--space-3);
   padding: var(--space-4) var(--space-4) calc(var(--space-6) + env(safe-area-inset-bottom, 0px));
 }
+/* The body scrolls, so nothing in it shrinks: a card clips its rows (overflow: hidden), which takes away a flex
+   item's minimum height, and it would collapse to its borders once the body overflows. */
+.context-sheet-body > * { flex-shrink: 0; }
 .context-sheet-body:focus-visible { outline: var(--focus-ring); outline-offset: calc(var(--focus-offset) * -1); }
 .context-sheet-sub { margin: 0; font-size: var(--fs-caption); line-height: var(--lh-caption); color: var(--color-ink-muted); overflow-wrap: anywhere; }
 .context-sheet-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }

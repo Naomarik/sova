@@ -6,6 +6,10 @@ import { readOverseerState } from "./overseer-store";
 import { projectOverseerOfPath } from "./project-overseer-store";
 import { getSessionSummary, idOf, indexedSessionPaths, listSessionFiles } from "./sessions-index";
 import { ARCHIVED_REFUSAL } from "./archived-sessions";
+import { EXTENSION_CARD_DOORS } from "./extension-doors";
+import type { ExtensionSender } from "./extension-sender";
+import { queueChatRole } from "../shared/merge-queue";
+import { outsideSentHeader } from "../shared/profiles";
 
 /**
  * Prompting one session and finding sessions by id, as every caller does it (the Overseer, a project
@@ -72,6 +76,8 @@ export async function promptSession(
   opts?: { projectOverseer: string | undefined },
   /** The send's key (§app.chat-processes/server-messages): sent again, it is accepted once. */
   key?: string,
+  /** The extension it is from (server/extension-sender.ts), never from a body: its header line and marker go on here (§app.extensions/name-badge). */
+  fromExtension?: ExtensionSender | null,
 ): Promise<PromptResult> {
   if (!text.trim()) return { ok: false, status: 400, error: "text must not be blank" };
   // Only a chat's own composer or mode menu picks Create: refused here, or the extension's refusal reaches nobody and the
@@ -84,6 +90,7 @@ export async function promptSession(
   if (projectOverseerOfPath(path)) return { ok: false, status: 409, error: "That is a project overseer's own conversation." };
   // Only a baton session's participants write in it, each through their own channel (§app.baton/attribution).
   if (s.baton) return { ok: false, status: 409, error: "That is a baton session: only its participants write in it." };
+  if (fromExtension && queueChatRole(s.profile)) return { ok: false, status: 409, error: EXTENSION_CARD_DOORS.sendToQueueChat };
   if (s.live) return { ok: false, status: 409, error: `It is open in a terminal (pid ${s.live.pid}), so this server must not write to it.` };
   // An archived chat starts for no message (§chat.transcript/instant-open, "An archived chat").
   if (s.archived) return { ok: false, status: 409, error: ARCHIVED_REFUSAL };
@@ -97,7 +104,8 @@ export async function promptSession(
   let queued: boolean;
   const compacting = !chat.mirror.running && chat.mirror.compacting;
   try {
-    const r = await chat.send({ text, origin: "server", checkModel: true, delivery, ...(key ? { key } : {}), ...(overseerId ? { sentByOverseer: { overseerId } } : opts ? { sentByOverseer: opts.projectOverseer ? { overseerId: opts.projectOverseer } : {} } : {}) });
+    const stamped = fromExtension ? `${outsideSentHeader(fromExtension, fromExtension.hop)}\n${text}` : text;
+    const r = await chat.send({ text: stamped, origin: "server", checkModel: true, delivery, ...(key ? { key } : {}), ...(fromExtension ? { sentBySession: fromExtension } : {}), ...(overseerId ? { sentByOverseer: { overseerId } } : opts ? { sentByOverseer: opts.projectOverseer ? { overseerId: opts.projectOverseer } : {} } : {}) });
     queued = r.queued;
   } catch (err) {
     return { ok: false, status: 409, error: err instanceof Error ? err.message : String(err) };

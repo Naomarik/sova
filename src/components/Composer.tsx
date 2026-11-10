@@ -2,10 +2,11 @@ import { createEffect, createMemo, createSignal, For, Match, on, onCleanup, onMo
 import { releaseControl } from "../lib/release-control";
 import type { ChatClaudeLogin, SlashCommand, UploadResult } from "../../shared/protocol";
 import { avatarLogins, composerLogin } from "../lib/claude-login";
-import { runControls } from "../lib/compact";
-import { createTouchMode, enterSends, notePress as pressAt, refocusAfterSend, type SendPress } from "../lib/input-mode";
+import { runControls, stopButton } from "../lib/compact";
+import { composerKey, createEscTimes, createTouchMode, enterSends, notePress as pressAt, refocusAfterSend, toEnd, type SendPress } from "../lib/input-mode";
 import { watchKeyboard } from "../lib/voice/keyboard";
 import { enterRunsLocal, insertCommand, localCommand, menuCommands, rankCommands, slashMenuSuppressed, slashTokenAt, type SlashToken } from "../lib/slash";
+import { canRun, codeSpans, folderName, SHELL_MARKER, shellPlaceholder, type ShellControl, type ShellMode } from "../lib/shell-mode";
 import { commandOptionIds, SlashMenu } from "./SlashMenu";
 import { registerComposer } from "../commands/composers";
 import { openPaletteFrom } from "../commands/palette-open";
@@ -43,6 +44,7 @@ import { ensureModels, modelList, thinkingLevelsFor } from "../lib/models";
 import {
   clearDraft,
   draftAttachments,
+  draftModes,
   drafts,
   flushDrafts,
   focusView,
@@ -50,8 +52,10 @@ import {
   openLightbox,
   setDraftAttachments,
   setDraftText,
+  setFocusView,
 } from "../lib/ui-state";
-import { paneScopedId, usePaneAnnounce, usePaneScope } from "../lib/pane-scope";
+import { takeTyping } from "../lib/type-anywhere";
+import { paneScopedId, usePaneAnnounce, usePaneScope, usePaneUnannounce } from "../lib/pane-scope";
 import { inputsText } from "../lib/input-count";
 import { createWaiting, WaitingBadge, type WaitingSource } from "./WaitingBadge";
 import { runStatusEnd } from "../lib/run-status";
@@ -68,6 +72,8 @@ import { hostOf } from "../lib/mesh";
 import { createVoiceInput, VoiceButton, VoiceStrip } from "./VoiceInput";
 import { WorktreesControl } from "./WorktreesControl";
 import type { QueueWorktree } from "./WorktreesModal";
+import "../shell-mode.css";
+import { createShellBox, type ShellBox } from "../lib/shell-box";
 
 /** The session pane's element id: ONE pane, five tabs, so every trigger controls the same id. */
 const PANE_ID = "session-pane";
@@ -107,6 +113,10 @@ export interface ComposerReason {
   /** Said elsewhere for the eye (the note over the transcript's end while a chat connects or starts,
       §chat.transcript/instant-open): here for assistive technology only, visually hidden. */
   quiet?: boolean;
+  /** Its backticked quotes are drawn as code (a shell-mode refusal, §chat.shell-mode/box). */
+  code?: boolean;
+  /** Long: on a line of its own under the foot's controls, which keep their size. */
+  wide?: boolean;
 }
 
 /** `KB` under 1 MB, rounded; otherwise one decimal. */
@@ -220,6 +230,12 @@ export function Composer(props: {
   undo?: UndoControl | null;
   /** Chat sessions with the sandbox extension: the flyout's Sandbox row and the foot's shield. */
   sandbox?: SandboxControl | null;
+  /** Shell mode (§chat.shell-mode/box): only a chat with its own agent and folder gives it. Absent,
+      the box has no shell mode and a leading "!" is text, as ever. */
+  shell?: ShellControl | null;
+  /** The chat hasn't said yet whether it offers shell mode (no hello so far): a "!" typed meanwhile is
+      a command that waits, never a message (lib/shell-box). */
+  shellUnknown?: boolean;
   /** `text` already names each attachment's path; `running`: a reply runs, as this pane sees it (the
       frame is the chat's choice, sendFrame); `attachments` are for the optimistic row. */
   onSend(text: string, running: boolean, attachments: UploadResult[]): boolean;
@@ -239,8 +255,20 @@ export function Composer(props: {
   } | null;
   /** Whether the draft holds anything to send (text or an attachment), as it changes. */
   onDraft?(has: boolean): void;
+  /** The merge queue's note held "not sent yet" for the user's next message (§chat.merge-queue/decision), or the merge
+      thread's question held in its own chat (§chat.merge-queue/asks): the line above the box, in full. */
+  heldNotes?: string[];
 }) {
-  const [text, setText] = createSignal(drafts.get(props.path) ?? "");
+  // The box's text and shell mode (lib/shell-box): a draft written in shell mode was saved with its
+  // mode, apart from its text, so a leading "!" is only ever text (§chat.shell-mode/box). Made below,
+  // once the pane's announcer is known.
+  let box!: ShellBox;
+  const text = () => box.text();
+  const mode = () => box.mode();
+  const shellMode = () => box.shellMode();
+  const pendingRun = () => box.pending();
+  const shellReason = () => box.reason();
+  const setShellReason = (r: string | null) => box.setReason(r);
   const localOpts = () => ({ clear: !!props.onClear, mode: !!props.onMode });
   /** One row object per stored file, so the strip keeps its rows (and focus) as the list changes. */
   const rows = new Map<string, PendingImage>();
@@ -300,6 +328,14 @@ export function Composer(props: {
   const scope = usePaneScope();
   const paneId = (base: string) => paneScopedId(scope, base);
   const announce = usePaneAnnounce();
+  const unannounce = usePaneUnannounce();
+  // A shell reason said aloud goes with it from the screen: the live region never keeps a reason
+  // the line under the box no longer shows (connected, the command changed, the mode left).
+  createEffect(
+    on(shellReason, (now, before) => {
+      if (before && before !== now) unannounce(before);
+    }),
+  );
   /** Dictation into this box (§chat/voice): the mic in the row, its strip above it. */
   const voice = createVoiceInput({
     input: () => input,
@@ -307,24 +343,28 @@ export function Composer(props: {
     announce,
   });
 
-  /** Any local write (typing, send's clear, a restore) makes this tab's text the authority, so a
-      stored draft still on its way from the server must not replace it. */
-  let touched = false;
-  const setDraft = (v: string) => {
-    touched = true;
-    setText(v);
-    setDraftText(props.path, v);
-  };
-  // Nothing in memory (a reload, or another device wrote it): seed from the stored draft. The
-  // attachments seed themselves through the store, which only takes them if this tab has none.
-  void loadDraft(props.path).then((stored) => {
-    if (stored.text && !touched && !text()) setText(stored.text);
+  box = createShellBox({
+    shell: () => props.shell,
+    unknown: () => !!props.shellUnknown,
+    stored: () => ({ text: drafts.get(props.path) ?? "", mode: draftModes.get(props.path) }),
+    load: () => loadDraft(props.path),
+    write: (v, m) => setDraftText(props.path, v, m),
+    announce,
+    cleared: () => {
+      input.value = "";
+    },
   });
+  const setDraft = (v: string) => box.setDraft(v);
+  const switchMode = (next: ShellMode, say?: string) => box.switchMode(next, say);
   let disposed = false;
   /** Listeners Solid can't delegate (paste), added by hand so closing can take them off. */
   const listening = new AbortController();
+  /** The page's Esc times: an Esc right after another never stops the reply, so the press that
+      closes a menu, a pane or a dictation can't (createEscTimes, escTooSoon). */
+  const escs = createEscTimes();
   onCleanup(() => {
     disposed = true;
+    escs.dispose();
     flushDrafts();
     // A delegated event can keep this textarea alive after the view closes (lib/release-control):
     // make it a dead end, so what is kept is the textarea, not the closed session's transcript.
@@ -334,17 +374,41 @@ export function Composer(props: {
 
   const reason = () => props.readOnly ?? props.blocked ?? null;
   const controls = () => runControls(props.running, !!props.compacting);
+  /** Stop: hidden, aria-disabled or usable. Esc in the box asks the same question. */
+  const stopState = () =>
+    stopButton({
+      running: props.running,
+      compacting: !!props.compacting,
+      readOnly: !!props.readOnly,
+      stopping: props.stopping,
+      stopBlocked: !!props.stopBlocked,
+    });
   /** TUI-live, connecting, reconnecting: nothing attaches and nothing sends. */
   const disabled = () => !!reason();
   /** What the foot says: the state's reason, else that an attachment is still uploading. */
-  const shownReason = (): ComposerReason | null => reason() ?? (uploading() > 0 ? { icon: "clock", text: "Uploading…" } : null);
+  const shownReason = (): ComposerReason | null => {
+    const refused = shellMode() ? shellReason() : null;
+    const state = reason();
+    // A Run's refusal shows over a wait said only to the ear (connecting), never over a reason on
+    // screen; it may be long and quote code (the kill guard's reply), so it gets its own line.
+    if (refused && (!state || state.quiet)) return { icon: "attention", text: refused, code: true, wide: true };
+    return state ?? (uploading() > 0 && !shellMode() ? { icon: "clock", text: "Uploading…" } : null);
+  };
+  // "Not connected yet" answers a Run pressed while the chat connects: once it has, it is moot.
+  createEffect(
+    on(disabled, (off) => {
+      if (!off) box.connected();
+    }),
+  );
   // Tapped, Enter adds a line and Send sends; the placeholder's key hint shows exactly when
   // Enter sends, so it swaps in place when the mode does.
   const { touch, onPointerDown } = createTouchMode();
   /** The placeholder in reading order: the sentence, then the key hint a narrow box can spare. */
-  const placeholderParts = () =>
-    [props.running ? "Steer the current turn…" : "", !touch() && !props.readOnly ? "Enter sends" : ""]
-      .filter(Boolean);
+  const placeholderParts = () => {
+    const m = mode();
+    if (m !== "off") return shellPlaceholder(m, folderName(props.cwd), !touch() && !props.readOnly).filter(Boolean);
+    return [props.running ? "Steer the current turn…" : "", !touch() && !props.readOnly ? "Enter sends" : ""].filter(Boolean);
+  };
   /** The fitted placeholder, or null until this box has been measured. */
   const [fitted, setFitted] = createSignal<FittedPlaceholder | null>(null);
   /** What the box shows: the whole string while it fits, else the fitted one (§chat.composer/behavior). */
@@ -362,7 +426,10 @@ export function Composer(props: {
     void document.fonts.ready.then(() => fit());
     onCleanup(() => observer.disconnect());
   });
-  const canSend = () => !disabled() && uploading() === 0 && (text().trim().length > 0 || images().length > 0 || !!props.picks);
+  // In shell mode Run follows Send's rows, and only a typed command enables it: images and picks
+  // wait for the next message (§chat.composer/disabled-states).
+  const canSend = () =>
+    shellMode() ? canRun(text(), disabled(), pendingRun() !== null) : !disabled() && uploading() === 0 && (text().trim().length > 0 || images().length > 0 || !!props.picks);
   createEffect(() => props.onDraft?.(text().trim().length > 0 || images().length > 0));
 
   // ---- Model indicator: this session's model and thinking level, and
@@ -494,6 +561,7 @@ export function Composer(props: {
     return (
       !!token &&
       !disabled() &&
+      !shellMode() &&
       (props.commands?.length ?? 0) > 0 &&
       slashDismissed() !== tokenKey(token) &&
       !slashMenuSuppressed(text(), localOpts())
@@ -551,7 +619,7 @@ export function Composer(props: {
   /** Never while disabled. Streaming is fine: a completed path is ordinary prompt text. */
   const mentionOpen = () => {
     const token = mentionToken();
-    return !!token && !disabled() && !!props.cwd && mentionDismissed() !== mentionKey(token);
+    return !!token && !disabled() && !shellMode() && !!props.cwd && mentionDismissed() !== mentionKey(token);
   };
   /** Re-reads the token under the caret; call after input, clicks, and caret keys. */
   const updateMention = () => {
@@ -643,11 +711,25 @@ export function Composer(props: {
       insert: (name) => {
         if (disabled()) return;
         const next = `/${name} `;
+        switchMode("off"); // "/name " is a message's, never a command
         setDraft(next);
         input.value = next;
         input.focus();
         input.setSelectionRange(next.length, next.length);
         updateSlash();
+      },
+      // Focus hides only the single view's composer (the footer's inert, below).
+      take: () => {
+        // The browser types the key into the box in this same keydown, as if typed there: a "!"
+        // into the empty box enters shell mode as it would in the box (Enter still runs it).
+        return takeTyping({
+          readOnly: !!props.readOnly,
+          draftLoaded: box.loaded(),
+          el: input,
+          active: () => document.activeElement,
+          hiddenByFocus: focusView() && scope.id === null,
+          endFocus: () => setFocusView(false),
+        });
       },
       attach: () => {
         if (!disabled()) picker?.click(); // no await before it: the picker needs the gesture
@@ -769,17 +851,27 @@ export function Composer(props: {
     input.style.height = `${input.scrollHeight}px`;
   };
   createEffect(on(text, () => queueMicrotask(grow)));
+  const asMessage = () => box.asMessage();
+  /** Text came back to the box: set it, then, once the box has grown (grow is a microtask) and
+      before the frame paints, show the caret at its end. */
+  const comeBack = (v: string) => {
+    setDraft(v);
+    requestAnimationFrame(() => !disposed && toEnd(input));
+  };
+  // A message handed back or staged (a refused or queued message) is a message: the box
+  // leaves shell mode for it, and a command already typed stays in it as its text ("!ls"), so
+  // nothing typed is lost and a returned text starting with "!" is never a runnable command.
   createEffect(
     on(
       () => props.restored,
-      (r) => r?.text && setDraft([r.text, text()].filter((t) => t.trim()).join("\n\n")),
+      (r) => r?.text && comeBack([r.text, asMessage()].filter((t) => t.trim()).join("\n\n")),
       { defer: true },
     ),
   );
   createEffect(
     on(
       () => props.staged,
-      (r) => r?.text && setDraft([text(), r.text].filter((t) => t.trim()).join("\n\n")),
+      (r) => r?.text && comeBack([asMessage(), r.text].filter((t) => t.trim()).join("\n\n")),
       { defer: true },
     ),
   );
@@ -809,6 +901,12 @@ export function Composer(props: {
     // Only a click on Send itself carries its press; Enter and Ctrl/⌘+Enter have none.
     const sendPress = takePress();
     const p = e instanceof SubmitEvent && e.submitter === sendButton ? sendPress : null;
+    // Shell mode: the line is a command, never a message (lib/shell-box). Images and picks stay.
+    const ran = box.run({ canSend: canSend(), blocked: reason(), readOnly: !!props.readOnly });
+    if (ran !== "message") {
+      if (ran === "sent" || ran === "refused") settleFocus(p);
+      return;
+    }
     if (!canSend()) return;
     // "/agents" is ours: it opens the subagents pane instead of reaching a runtime whose own
     // monitor is TUI-only. With images attached it's a message like any other.
@@ -882,10 +980,9 @@ export function Composer(props: {
     const attachments = pending.map((a) => ({ ...a, name: a.path.slice(a.path.lastIndexOf("/") + 1) }));
     const picks = props.picks;
     if (props.onSend(withImagePaths(picks ? picks.compose(text().trim()) : text().trim(), pending), props.running, attachments)) {
-      touched = true;
+      box.sent();
       picks?.sent?.();
       picks?.clear();
-      setText("");
       clearDraft(props.path);
       rows.clear();
       setRejected([]);
@@ -1087,6 +1184,16 @@ export function Composer(props: {
         </Show>
         {runStatus()}
 
+        <For each={props.heldNotes ?? []}>
+          {(line) => (
+            <div class="align-picks mq-held-line" role="note" aria-label={line}>
+              <Icon name="branch" small />
+              <span class="align-picks-text" title={line}>
+                {line}
+              </span>
+            </div>
+          )}
+        </For>
         <Show when={props.picks}>
           {(p) => (
             <div class="align-picks" role="group" aria-label="Staged answers">
@@ -1182,11 +1289,19 @@ export function Composer(props: {
             />
           </Show>
           <label class="visually-hidden" for={paneId("composer-input")}>
-            Message
+            {shellMode() ? "Shell command" : "Message"}
           </label>
-          {/* The message box, and inside it at its left edge the waiting badge (§chat.composer/waiting-badge). */}
-          <div class="composer-field" data-waiting={waiting.look() !== "hidden" ? "" : undefined}>
+          {/* The message box, and inside it at its left edge the waiting badge (§chat.composer/waiting-badge);
+              in shell mode the marker after it, and the box's edge in the caution tone (§chat.shell-mode/box). */}
+          <div class="composer-field" data-waiting={waiting.look() !== "hidden" ? "" : undefined} data-shell={shellMode() ? "" : undefined}>
             <Show when={props.waiting}>{(w) => <WaitingBadge source={w()} counts={waiting.counts()} look={waiting.look()} />}</Show>
+            <Show when={mode() !== "off" && mode()}>
+              {(m) => (
+                <span class="composer-shell-marker" aria-hidden="true">
+                  {SHELL_MARKER[m() as Exclude<ShellMode, "off">]}
+                </span>
+              )}
+            </Show>
             <textarea
               ref={input}
               class="input textarea composer-input"
@@ -1202,7 +1317,14 @@ export function Composer(props: {
               value={text()}
               disabled={!!props.readOnly}
               onInput={(e) => {
-                setDraft(e.currentTarget.value);
+                const value = e.currentTarget.value;
+                // A "!" typed into the empty box, or pasted text starting with one: shell mode.
+                const ev = e as InputEvent;
+                const entered = box.input(value, ev.inputType ?? "", !!ev.isComposing);
+                if (entered !== null) {
+                  e.currentTarget.value = entered;
+                  e.currentTarget.setSelectionRange(entered.length, entered.length);
+                }
                 updateSlash();
                 updateMention();
               }}
@@ -1225,36 +1347,47 @@ export function Composer(props: {
               }}
               onKeyDown={(e) => {
                 press = null;
+                // Backspace or Esc in the empty box leaves shell mode (from "!!", Backspace goes back to "!").
+                if (box.key(e.key, e.isComposing)) {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  return;
+                }
                 // A bare local command runs on the Enter that would send; in touch mode it's a newline.
                 const runsLocal = enterSends(e, touch()) && enterRunsLocal(text(), e.key, e.shiftKey, localOpts());
-                if (slashOpen() && !e.isComposing && !runsLocal) {
-                  const hasMatches = slashMatches().length > 0;
-                  if (e.key === "ArrowDown" || e.key === "ArrowUp") {
-                    if (!hasMatches) return;
+                const slash = slashOpen();
+                const mention = mentionOpen();
+                // One rule says what the key does (lib/input-mode composerKey): the / menu, then the @
+                // menu, then Esc stops (after a dictation, its window capture listener, and any popover
+                // Esc closes have had their turn, and never right after another Esc), then Enter sends.
+                switch (
+                  composerKey(e, {
+                    slash: { open: slash, matches: slash ? slashMatches().length : 0 },
+                    mention: { open: mention, matches: mention ? mentionMatches().length : 0 },
+                    runsLocal,
+                    touch: touch(),
+                    stop: stopState(),
+                    popoverOpen: () => !!document.querySelector(":popover-open:not([popover=manual])"),
+                    escs,
+                    shell: shellMode(),
+                  })
+                ) {
+                  case "slash-move":
                     e.preventDefault();
                     moveSlash(e.key === "ArrowDown" ? 1 : -1);
                     return;
-                  }
-                  if ((e.key === "Enter" && !e.shiftKey) || e.key === "Tab") {
-                    if (hasMatches) {
-                      e.preventDefault();
-                      pickSlash(slashActive());
-                      return;
-                    }
-                    if (e.key === "Tab") return; // nothing to insert: Tab moves focus as usual
-                  }
-                  if (e.key === "Escape") {
+                  case "slash-pick":
+                    e.preventDefault();
+                    pickSlash(slashActive());
+                    return;
+                  case "slash-close": {
                     e.preventDefault();
                     const token = slashToken();
                     setSlashDismissed(token ? tokenKey(token) : null);
                     updateSlash();
                     return;
                   }
-                }
-                if (mentionOpen() && !e.isComposing) {
-                  const hasMatches = mentionMatches().length > 0;
-                  if (e.key === "ArrowDown" || e.key === "ArrowUp") {
-                    if (!hasMatches) return;
+                  case "mention-move": {
                     e.preventDefault();
                     const n = mentionMatches().length;
                     setMentionActive((i) => (i + (e.key === "ArrowDown" ? 1 : -1) + n) % n);
@@ -1262,23 +1395,28 @@ export function Composer(props: {
                   }
                   // Enter and Tab both complete: the next Enter, menu closed, does what Enter does.
                   // With no match, Enter falls through to that rule with the typed text as-is.
-                  if ((e.key === "Enter" && !e.shiftKey) || e.key === "Tab") {
-                    if (hasMatches) {
-                      e.preventDefault();
-                      pickMention(mentionActive());
-                      return;
-                    }
-                    if (e.key === "Tab") return; // nothing to complete: Tab moves focus as usual
-                  }
-                  if (e.key === "Escape") {
+                  case "mention-pick":
+                    e.preventDefault();
+                    pickMention(mentionActive());
+                    return;
+                  case "mention-close": {
                     e.preventDefault();
                     const token = mentionToken();
                     setMentionDismissed(token ? mentionKey(token) : null);
                     updateMention();
                     return;
                   }
+                  // What Stop does. The box's text and focus stay.
+                  case "stop":
+                    e.preventDefault();
+                    props.onAbort();
+                    return;
+                  case "send":
+                    void send(e);
+                    return;
+                  case "default":
+                    return;
                 }
-                if (enterSends(e, touch())) void send(e);
               }}
             />
           </div>
@@ -1307,10 +1445,10 @@ export function Composer(props: {
                 aria-describedby={paneId("composer-reason")}
               >
                 <Icon name="arrow-right" small />
-                <span class="button-label">{controls().steer ? "Steer" : "Send"}</span>
+                <span class="button-label">{shellMode() ? "Run" : controls().steer ? "Steer" : "Send"}</span>
               </button>
             </Show>
-            <Show when={controls().stop && !props.readOnly}>
+            <Show when={stopState() !== "hidden"}>
               {/* Icon only, at every width: the 44px square is the form the actions row already
                   collapses to under 480px, and the run-status row above says "Stopping…" — so the
                   word was repeating what the status row and the glyph already say. */}
@@ -1318,13 +1456,13 @@ export function Composer(props: {
                 type="button"
                 class="button button-destructive button-icon"
                 aria-label="Stop"
-                title="Stop"
-                aria-disabled={props.stopping || props.stopBlocked ? "true" : undefined}
+                title="Stop · Esc in the composer"
+                aria-disabled={stopState() === "disabled" ? "true" : undefined}
                 aria-describedby={props.stopBlocked ? paneId("composer-reason") : undefined}
                 onPointerDown={notePress}
                 onClick={() => {
                   const p = takePress();
-                  if (!props.stopping && !props.stopBlocked) props.onAbort();
+                  if (stopState() === "usable") props.onAbort();
                   settleFocus(p);
                 }}
               >
@@ -1336,6 +1474,7 @@ export function Composer(props: {
 
         <div
           class="composer-foot"
+          data-reason-wide={shownReason()?.wide ? "" : undefined}
           ref={(foot) => {
             // The model's short name is the foot's last part to shrink:
             // where the row doesn't fit once its gaps narrow, the mode switch's icons fold first.
@@ -1407,12 +1546,22 @@ export function Composer(props: {
               </button>
             )}
           </Show>
+          <Show when={shellMode()}>
+            <span class="chip chip-warn composer-shell-chip">
+              <Icon name="terminal" small />
+              Shell mode
+            </span>
+          </Show>
           <span class="composer-reason" id={paneId("composer-reason")} data-soft={shownReason()?.soft && !shownReason()?.quiet ? "" : undefined}>
             <Show when={shownReason()}>
               {(r) => (
                 <Show when={!r().quiet} fallback={<span class="visually-hidden">{r().text}</span>}>
                   <Icon name={r().icon} small />
-                  {r().text}
+                  <Show when={r().code} fallback={r().text}>
+                    <span>
+                      <For each={codeSpans(r().text)}>{(s) => (s.code ? <code>{s.text}</code> : s.text)}</For>
+                    </span>
+                  </Show>
                 </Show>
               )}
             </Show>

@@ -1,7 +1,7 @@
 import { createSignal, For, Show, type JSX } from "solid-js";
 import "./MergeQueueRequests.css";
 import { short } from "../lib/merge-queue";
-import { answerEntry, landBranch, refusal } from "../lib/merge-queue-client";
+import { landBranch, refusal } from "../lib/merge-queue-client";
 import {
   behindWords,
   publishBlocked,
@@ -11,7 +11,6 @@ import {
   requestChecksWords,
   requestChip,
   requestReason,
-  waitingOnHostHead,
   type RequestView,
   type RequestAction,
   type RequestState,
@@ -67,7 +66,6 @@ export function RequestStatus(props: { entry: RequestEntry; root: string; target
   const act = useRun();
   const doAct = (a: RequestAction) => {
     if (a === "review") return props.onReview?.();
-    if (a === "send-back") return void act.run(a, async () => refusal(await answerEntry(e(), "send-back")), `Sent ${e().branch} back to its chat.`, props.onChanged);
     if (a === "land-again")
       return void act.run(a, async () => refusal(await landBranch(props.root, e().branch, props.head ? { commit: props.head } : {})), `Queued ${e().branch} again.`, props.onChanged);
   };
@@ -192,14 +190,6 @@ export function RequestReview(props: { entry: RequestEntry; target: string; onDo
         <button type="submit" class="button button-sm button-primary" disabled={!!act.busy() || !!held()} aria-busy={act.busy() === "publish" ? "true" : undefined}>
           {publishLabel(how(), draft())}
         </button>
-        <button
-          type="button"
-          class="button button-sm button-destructive"
-          disabled={!!act.busy()}
-          onClick={() => void act.run("send-back", async () => refusal(await answerEntry(props.entry, "send-back")), `Sent ${props.entry.branch} back to its chat.`, props.onDone)}
-        >
-          Send Back to Chat
-        </button>
         <Show when={props.onCancel}>
           <button type="button" class="button button-sm button-ghost" disabled={!!act.busy()} onClick={() => props.onCancel?.()}>
             Cancel
@@ -283,19 +273,5 @@ export function RequestRow(props: { root: string; target: string; entry: Request
         </Show>
       </div>
     </li>
-  );
-}
-
-/** The tab's Waiting on the host group: requests open on the host, closed ones and pushed branches. */
-export function WaitingOnHost(props: { root: string; target: string; entries: RequestEntry[]; from?(e: RequestEntry): JSX.Element; onChanged?(): void }) {
-  return (
-    <Show when={props.entries.length > 0}>
-      <div class="stack-2" role="group" aria-label="Waiting on the host">
-        <h3 class="text-heading-s">{waitingOnHostHead(props.entries.length)}</h3>
-        <ul class="list mq-list">
-          <For each={props.entries}>{(e) => <RequestRow root={props.root} target={props.target} entry={e} from={props.from?.(e)} onChanged={props.onChanged} />}</For>
-        </ul>
-      </div>
-    </Show>
   );
 }

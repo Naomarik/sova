@@ -89,6 +89,25 @@ describe("GET /api/orgs: needsYou and lastActivityAt", async () => {
     const q = (await (await app.request(`/api/orgs/${quiet.id}`)).json()) as OrgDetail;
     assert.deepEqual(q.projectConflicts, {});
   });
+
+  test("a dismissed session counts in none of these until it has something new; what belongs to no session always counts (§app.session-list/needs-you-dismiss)", async () => {
+    const { dismissChat, undoDismissal } = await import("./needs-you-dismissed");
+    const row = baton.allBatons().find((r) => r.orgId === busy.id && r.publicTitle === "No link")!;
+    const path = baton.sessionPathOf(((await (await app.request(`/api/orgs/${busy.id}`)).json()) as OrgDetail).dir, row);
+    const since = baton.batonSummaryField(path)!.sendLink!.since;
+    const before = (await list()).find((o) => o.id === busy.id)!.needsYou!;
+    assert.equal(before.links, 1, "control");
+    dismissChat(path, since);
+    const card = (await list()).find((o) => o.id === busy.id)!.needsYou!;
+    assert.deepEqual(card, { ...before, links: 0 }, "the conflict and the proposed person stay");
+    const page = (await (await app.request(`/api/orgs/${busy.id}`)).json()) as OrgDetail;
+    assert.equal(page.needsYou!.links, 0);
+    assert.equal(page.batons.find((b) => b.publicTitle === "No link")!.waiting, undefined);
+    undoDismissal(path);
+    dismissChat(path, since - 1);
+    assert.equal((await list()).find((o) => o.id === busy.id)!.needsYou!.links, 1, "a wait newer than what it covered counts");
+    undoDismissal(path);
+  });
 });
 
 test("a project whose main stakeholder left counts once in its org's needsYou, until the operator saves the select", async () => {

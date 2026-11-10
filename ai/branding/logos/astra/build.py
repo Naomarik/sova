@@ -4,7 +4,7 @@ import xml.etree.ElementTree as ET
 
 OUT = Path(__file__).resolve().parent
 ROOT = OUT.parents[3]
-SKILL = ROOT / '.claude/skills/fold-ai-dev-design'
+SKILL = ROOT / '.agents/skills/fold-ai-dev-design'
 concepts = [
  ('sova-vigil', 'SOVA', 'Vigil', 'A single watchful silhouette. Two cut-out glances and a descending center suggest an owl without drawing a mascot.', '<path fill="currentColor" fill-rule="evenodd" d="M4 5 16 10 28 5V17C28 23 23 27 16 29 9 27 4 23 4 17ZM8 12V17H13V14ZM24 12 19 14V17H24Z"/>'),
  ('sova-duet', 'SOVA', 'Duet', 'Two open eye chambers share a quiet center. The opposing cuts suggest independent sessions held in one field of attention.', '<path fill="currentColor" d="M15 8C12 5 7 5 4 8 0 12 2 20 8 23L15 27V20L10 18C6 16 6 12 9 11 11 10 13 11 15 13ZM17 8C20 5 25 5 28 8 32 12 30 20 24 23L17 27V20L22 18C26 16 26 12 23 11 21 10 19 11 17 13Z"/>'),

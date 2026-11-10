@@ -21,7 +21,8 @@ import { installWorkerNice, lowerToolCommands } from "../../process-priority";
 import { steerAllAtOnce } from "./queue-modes";
 import { agentRoot } from "../../state-root";
 import type { PiExtensionFactory, PiLoaderOptions, PiToolDefinition } from "./extension-types";
-import { installOwnCode, ownCodeLoader } from "./own-code";
+import { installOwnCode, ownCodeLoader, withModesEntry } from "./own-code";
+import { sandboxBus } from "./shell";
 import { liveRead } from "./reader";
 import { PiHarnessSession } from "./session";
 import { piSessionState } from "./state";
@@ -58,6 +59,10 @@ export interface OpenFlags {
   /** The cwd is the home folder standing in for a stored folder that is gone: the sandbox must not
       make it a writable root (§app.shell/missing-folder-home). */
   cwdNotWritable?: boolean;
+  /** The sandbox's read-only level whatever the policy file says (the merge thread: its tools write only in their tmp). */
+  sandboxReadOnly?: boolean;
+  /** Start with the sandbox On, which the chat can't lower (the sandbox extension's `--sandbox on`). */
+  sandboxOn?: boolean;
   /** A worker chat's own extension flags (`--name value` on an RPC worker's argv), set last. */
   extra?: Record<string, string | true>;
 }
@@ -75,6 +80,8 @@ export function extensionFlagValues(f: OpenFlags): Map<string, boolean | string>
     flags.set("sova-link-tools", f.link.tools);
   }
   if (f.cwdNotWritable) flags.set("sandbox-cwd-not-writable", true);
+  if (f.sandboxReadOnly) flags.set("sandbox-read-only", true);
+  if (f.sandboxOn) flags.set("sandbox", "on");
   for (const [name, value] of Object.entries(f.extra ?? {})) flags.set(name, value);
   return flags;
 }
@@ -160,20 +167,27 @@ export function getModelRuntime(): Promise<ModelRuntime> {
  * no extension gets no flag at all (a flag nobody registered only logs "Unknown option"), and its
  * `flags` are never read.
  */
-async function servicesForCwd(cwd: string, modelRuntime: ModelRuntime, flags: () => OpenFlags, loader: PiLoaderOptions) {
+async function servicesForCwd(cwd: string, modelRuntime: ModelRuntime, flags: () => OpenFlags, loader: PiLoaderOptions, modesEntry: string | null = null) {
   // Its workers and tool commands start below the server (§app.load-priority/workers).
   installWorkerNice();
   // A chat process on a code generation loads Sova's extensions from its own copy, discovered and
   // listed alike (§app.chat-processes/code-generations). The server: nothing.
   installOwnCode();
-  const resourceLoaderOptions = ownCodeLoader(loader);
-  const services = await createAgentSessionServices({
-    cwd,
-    modelRuntime,
-    // A loader that loads no extension reads no flag; a worker's loads only its own sources, which do.
-    extensionFlagValues: resourceLoaderOptions.noExtensions && !resourceLoaderOptions.additionalExtensionPaths?.length ? new Map() : extensionFlagValues(flags()),
-    resourceLoaderOptions,
-  });
+  // The extensions' bus is Sova's, so the user's own commands see the sandbox's state (shell.ts, P40).
+  const sandbox = sandboxBus();
+  const resourceLoaderOptions = { ...ownCodeLoader(loader), eventBus: sandbox.bus };
+  // Who runs this runtime's modes (§chat.mode-menu/sova-runs-modes): Sova's entry takes the discovered
+  // mode extension's slot for this build's package manager, for the runtime's whole life (own-code.ts).
+  const services = await withModesEntry(modesEntry, () =>
+    createAgentSessionServices({
+      cwd,
+      modelRuntime,
+      // A loader that loads no extension reads no flag; a worker's loads only its own sources, which do.
+      extensionFlagValues: resourceLoaderOptions.noExtensions && !resourceLoaderOptions.additionalExtensionPaths?.length ? new Map() : extensionFlagValues(flags()),
+      resourceLoaderOptions,
+    }),
+  );
+  sandbox.attach(services);
   lowerToolCommands(services.settingsManager);
   // Steers sent while the chat is busy land together, at the agent's next step (P28 steer-all).
   steerAllAtOnce(services.settingsManager);
@@ -192,20 +206,31 @@ async function servicesForCwd(cwd: string, modelRuntime: ModelRuntime, flags: ()
  * fail startup. A failure just means the models are absent until a session opens.
  *
  * `onStep` hears Sova's own name for each step as it begins (a chat process's start-up trail,
- * §app.chat-processes/boot-log); by default nothing does.
+ * §app.chat-processes/boot-log); by default nothing does. `modesEntry` is who runs this throwaway
+ * session's modes, in PiBuild.modesEntry's terms (§chat.mode-menu/sova-runs-modes): the discovered
+ * extensions load here, so the warm-up takes the same owner a chat would or the pi mode extension loads
+ * with the switch on.
  */
-export async function warmClaudeCodeProvider(modelRuntime: ModelRuntime, cwd: string, extensionFactories: PiExtensionFactory[], onStep: (step: string) => void = () => {}): Promise<void> {
+export async function warmClaudeCodeProvider(
+  modelRuntime: ModelRuntime,
+  cwd: string,
+  extensionFactories: PiExtensionFactory[],
+  onStep: (step: string) => void = () => {},
+  modesEntry: string | null = null,
+): Promise<void> {
   try {
     onStep("extensions load");
     installOwnCode();
     // The provider flag alone: the throwaway session needs nothing else, and the link flags would
     // read the access token, which throws (and logs its problem again) when the token file is damaged.
-    const services = await createAgentSessionServices({
-      cwd,
-      modelRuntime,
-      extensionFlagValues: extensionFlagValues({ claudeCode: true }),
-      resourceLoaderOptions: { extensionFactories: [...extensionFactories] },
-    });
+    const services = await withModesEntry(modesEntry, () =>
+      createAgentSessionServices({
+        cwd,
+        modelRuntime,
+        extensionFlagValues: extensionFlagValues({ claudeCode: true }),
+        resourceLoaderOptions: { extensionFactories: [...extensionFactories] },
+      }),
+    );
     for (const d of services.diagnostics) console.warn(`[chat] claude-code warm-up ${d.type}: ${d.message}`);
     // The flag is only visible from session_start, and session_start is emitted by
     // AgentSession.bindExtensions (dist/core/agent-session.js:2029) — NOT by creating the session.
@@ -377,6 +402,9 @@ export interface PiBuild {
   /** Notes appended to the system prompt after every other append (the user's APPEND_SYSTEM.md and the
       loadout's own parts), each as given. */
   promptNotes?: string[];
+  /** Sova's mode entry module when Sova runs this runtime's modes (§chat.mode-menu/sova-runs-modes): it
+      takes the discovered pi mode extension's slot. Null or missing: the extension, as discovered. */
+  modesEntry?: string | null;
 }
 
 /** The loader with `notes` appended to its system prompt appends, after whatever its own override keeps
@@ -434,7 +462,7 @@ export async function openPiSession(path: string, cwdOverride: string | undefine
       onStep("loadout");
       const plan = await build({ cwd, read: openRead(sessionManager) });
       onStep("extensions load");
-      const services = await servicesForCwd(cwd, modelRuntime, plan.flags, plan.promptNotes?.length ? withPromptNotes(plan.loader, plan.promptNotes) : plan.loader);
+      const services = await servicesForCwd(cwd, modelRuntime, plan.flags, plan.promptNotes?.length ? withPromptNotes(plan.loader, plan.promptNotes) : plan.loader, plan.modesEntry ?? null);
       const present = services.resourceLoader.getExtensions().extensions.flatMap((e) => [...e.tools.keys()]);
       const excluded = plan.exclude(present);
       for (const d of services.diagnostics) console.warn(`[chat] runtime ${d.type}: ${d.message}`);

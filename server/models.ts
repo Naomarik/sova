@@ -119,7 +119,7 @@ export async function listModels(): Promise<ModelInfo[]> {
 
 /**
  * Every model the shared runtime holds with credentials: what a worker could be spawned from
- * (Settings → Subagents' worker rows). Today the same list as listModels, kept apart because the two
+ * (Settings → Profiles' worker rows). Today the same list as listModels, kept apart because the two
  * questions differ. The Claude Code provider's models are registered per runtime, so
  * this is still not the whole truth for them — see DelegateBackendOptions.sessionScopedProviders.
  */
@@ -181,4 +181,23 @@ export function supportedThinkingLevels(m: {
     if (level === "xhigh" || level === "max") return mapped !== undefined;
     return true;
   });
+}
+
+/**
+ * The display names pi's registry gives the models with credentials here, by ref ("openai-codex/gpt-6.1-sol"
+ * → "GPT-6.1 Sol"): what a profile's footprint shows (§chat.profiles/joined). Empty when the registry
+ * can't be read; a model it doesn't name keeps its id.
+ */
+export async function modelNames(): Promise<Map<string, string>> {
+  try {
+    const runtime = await getModelRuntime();
+    const out = new Map<string, string>();
+    for (const m of await runtime.getAvailable()) {
+      const name = (m as { name?: unknown }).name;
+      if (typeof name === "string" && name.trim() && name !== m.id) out.set(`${m.provider}/${m.id}`, name.trim());
+    }
+    return out;
+  } catch {
+    return new Map();
+  }
 }

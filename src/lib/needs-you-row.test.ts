@@ -29,20 +29,22 @@ test("a no-session kind listed in Needs you has a title or is an owner's item, w
   assert.equal(itemRow(item({ kind: "owner-request", title: "The page is slow", where: "Acme", org: { orgId: "o", orgName: "Acme", projectId: "p", projectName: "Shop" }, href: "#/orgs/o/requests/r" }), { home: HOME, now: 0 }).title, "The page is slow");
 });
 
-test("a chat's row: its project or folder, its title, the digest's sentence, Open Chat; the path only for the tooltip", () => {
+test("a chat's row: its project or folder, its title, its sentences as hover text, newest first; no word for what it opens", () => {
   const r = sessionRow(row(), { href: "#/s/a", home: HOME });
-  assert.deepEqual({ name: r.name, place: r.place, title: r.title, detail: r.detail, action: r.action, word: r.chip.word }, { name: "notes", place: "~/w/notes", title: "Fix the build", detail: "2 open questions in al_3", action: "Open Chat", word: "Question" });
+  assert.deepEqual({ name: r.name, place: r.place, title: r.title, tip: r.tip, word: r.chip.word }, { name: "notes", place: "~/w/notes", title: "Fix the build", tip: "Fix the build\n2 open questions in al_3", word: "Question" });
+  assert.deepEqual(Object.keys(r).filter((k) => /action|detail/i.test(k)), [], "a slim row has no line for it");
+  assert.equal(sessionRow(row({ details: ["Waiting on a dialog.", "429 rate limited"] }), { href: "#", home: HOME }).tip, "Fix the build\nWaiting on a dialog.\n429 rate limited");
+  assert.equal(sessionRow(row({ details: [] }), { href: "#", home: HOME }).tip, "Fix the build", "an item with no sentence adds nothing");
   assert.equal(sessionRow(row({ session: { project: { projectId: "p", projectName: "Notes", kind: "folder" } } }), { href: "#", home: HOME }).name, "Notes");
   assert.equal(sessionRow(row({ session: { org: { orgId: "o", orgName: "Acme", projectId: "p", projectName: "Shop", kind: "coding" } as SessionSummary["org"] } }), { href: "#", home: HOME }).name, "Acme · Shop");
   assert.equal(sessionRow(row(), { href: "#", home: HOME, host: "laptop" }).name, "notes · laptop");
-  assert.equal(sessionRow(row({ kind: "playbook-review" }), { href: "#", home: HOME }).action, "Read Report");
 });
 
-test("a project's item: the project's name, what it is, its sentence, what opens; the folder leaves the row", () => {
+test("a project's item: the project's name, what it is, its sentence as hover text; the folder leaves the row", () => {
   const r = itemRow(item({}), { home: HOME, now: 0 });
-  assert.deepEqual({ name: r.name, place: r.place, title: r.title, detail: r.detail, action: r.action, word: r.chip.word }, { name: "Notes", place: "~/w/notes", title: "Publish failed", detail: "v0.4.0: origin refused", action: "Open Release", word: "Failed" });
+  assert.deepEqual({ name: r.name, place: r.place, title: r.title, tip: r.tip, word: r.chip.word }, { name: "Notes", place: "~/w/notes", title: "Publish failed", tip: "Publish failed\nv0.4.0: Publish failed: origin refused", word: "Failed" });
   const ready = itemRow(item({ kind: "release-ready", detail: "Ready to publish · v0.4.0" }), { home: HOME, now: 0 });
-  assert.deepEqual({ title: ready.title, detail: ready.detail, action: ready.action }, { title: "Ready to publish", detail: "v0.4.0", action: "Review and Publish" });
+  assert.deepEqual({ title: ready.title, tip: ready.tip }, { title: "Ready to publish", tip: "Ready to publish\nReady to publish · v0.4.0" });
   assert.equal(itemRow(item({ kind: "whatsapp-down", title: "WhatsApp sending", where: "Settings → Outreach" }), { home: HOME, now: 0 }).place, null, "not a folder");
 });
 
@@ -51,8 +53,8 @@ test("a held act names what waits and recounts its minutes", () => {
   const it = item({ kind: "held-act", title: "Notes", where: "Projects", detail: "stale", held: { id: "h", goesAt, what: "Publishing v0.4.0." } });
   const r = itemRow(it, { home: HOME, now: 0 });
   assert.equal(r.title, "Publishing v0.4.0");
-  assert.match(r.detail, /10 min/);
-  assert.match(itemRow(it, { home: HOME, now: 6 * 60_000 }).detail, /4 min/);
+  assert.match(r.tip, /10 min/);
+  assert.match(itemRow(it, { home: HOME, now: 6 * 60_000 }).tip, /4 min/);
 });
 
 test("two listed projects of one name show just enough of the path to tell them apart", () => {
@@ -76,10 +78,10 @@ test("two items of one project are one project: no path; a row with no folder ke
   assert.deepEqual([l.get("a"), l.get("b"), l.get("c")], ["Notes", "Notes", "Notes"]);
 });
 
-test("a failed Publish is titled as the tab says it; any other failed step keeps the kind's title and its sentence", () => {
+test("a failed Publish is titled as the tab says it; any other failed step keeps the kind's title; the hover text keeps the whole sentence", () => {
   const publish = itemRow(item({}), { home: HOME, now: 0 });
-  assert.equal(publish.detailTip, "v0.4.0: Publish failed: origin refused", "the tooltip keeps the whole sentence");
-  assert.deepEqual({ title: itemRow(item({ detail: "The open release: Publish failed" }), { home: HOME, now: 0 }).title, detail: itemRow(item({ detail: "The open release: Publish failed" }), { home: HOME, now: 0 }).detail }, { title: "Publish failed", detail: "The open release" });
+  assert.equal(publish.tip, "Publish failed\nv0.4.0: Publish failed: origin refused");
+  assert.equal(itemRow(item({ detail: "The open release: Publish failed" }), { home: HOME, now: 0 }).title, "Publish failed");
   const step = itemRow(item({ detail: "v0.4.0: Smoke test failed: 500 on /search" }), { home: HOME, now: 0 });
-  assert.deepEqual({ title: step.title, detail: step.detail }, { title: "Release step failed", detail: "v0.4.0: Smoke test failed: 500 on /search" });
+  assert.deepEqual({ title: step.title, tip: step.tip }, { title: "Release step failed", tip: "Release step failed\nv0.4.0: Smoke test failed: 500 on /search" });
 });

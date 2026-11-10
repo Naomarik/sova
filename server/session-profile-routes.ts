@@ -1,15 +1,18 @@
 import { yourClickRefusal } from "./page-only";
 import type { Hono } from "hono";
 import { QUEUE_CHAT_MODE_REFUSAL } from "../shared/merge-queue";
-import { DEFAULT_PROFILE, keyOf, parseMine, THINKING_LEVELS, type ListedProfile, type Profile, type ProfileMine, type ProfilesListing } from "../shared/profiles";
+import { DEFAULT_PROFILE, keyOf, OFF_ID, parseMine, THINKING_LEVELS, type ListedProfile, type Profile, type ProfileMine, type ProfilesListing } from "../shared/profiles";
 import type { SessionSummary } from "../shared/protocol";
 import { acquireChatHandle, chatHandle, type ChatHandle, closeChat, setOpeningChoice, setSingletonCheck } from "./chat-handle";
 import { modelDenial, readModelPolicy } from "./model-policy";
 import { parseModePatch, readMode, type ModePatch } from "./mode-state";
-import { listModels } from "./models";
-import { addProfile } from "./profiles-store";
+import { listModels, modelNames } from "./models";
 import { profileModelCount, subagentProfilesInfo } from "./subagent-profiles";
 import { getSessionInsight } from "./insights";
+import { loadSubagentProfiles } from "../pi-config/extensions/subagents/subagent-profiles.ts";
+import { resolveDefaultProfile } from "./default-profile";
+import { buildJoined, joinedProfiles } from "./joined-profiles";
+import { agentRoot } from "./state-root";
 import { resolveSessionPath } from "./paths";
 import { findProfile, profileRefusedWhy, profileSources, readHidden, setHidden } from "./profile-sources";
 import { approve } from "./profile-trust";
@@ -57,8 +60,18 @@ async function applyNow(path: string, choice: ProfileChoice, by?: "overseer" | "
   // lift their mode lock and put them back in every list. The server's own start applies to a session not yet marked.
   if (s.queueChat) return { ok: false, status: 409, error: QUEUE_CHAT_MODE_REFUSAL };
   if (s.live) return { ok: false, status: 409, error: `It is open in a terminal (pid ${s.live.pid}), so this server must not write to it.` };
-  const r = await resolveChoice(choice, s.cwd);
+  // A library profile no session profile links (§chat.profiles/joined) is picked as Off with its helpers.
+  let libraryPick = libraryPickOf(choice);
+  let r = await resolveChoice(libraryPick ? null : choice, s.cwd);
+  if (!r.ok && typeof choice === "string" && !r.approval) {
+    const row = (await joinedProfiles(s.cwd)).find((x) => x.kind === "library" && x.id === choice);
+    if (row) (libraryPick = { id: row.id, name: row.name }), (r = { ok: true, profile: null });
+  }
   if (!r.ok) return { ok: false, status: r.approval ? 409 : 400, error: r.error, ...(r.approval ? { approval: true as const } : {}) };
+  if (libraryPick) {
+    const why = subagentsUnusable(libraryPick.id);
+    if (why) return { ok: false, status: 400, error: `${libraryPick.name} can't be picked here: ${why}` };
+  }
   if (r.profile?.singleton) {
     const holder = singletonHolder(snapshotKey(r.profile), await listSessions(), path);
     if (holder) return { ok: false, status: 409, error: new SingletonRefusal(r.profile.label, holderOf(holder)).message, running: holderOf(holder) };
@@ -84,15 +97,20 @@ async function applyNow(path: string, choice: ProfileChoice, by?: "overseer" | "
   }
   if (next?.thinking && !(THINKING_LEVELS as readonly string[]).includes(next.thinking))
     return { ok: false, status: 400, error: `${next.label} can't be picked here: "${next.thinking}" isn't an effort level.` };
-  // Switching back from a profile that set subagents pins the remembered pick, else the device
-  // default, since a pick can't be cleared; a chat that never had a pick gets none.
+  // Off pins the helpers to off (the agent picks every worker), and a library profile picked alone
+  // pins its own. Switching back from a profile that set subagents, to one that sets none, pins this
+  // computer's default profile's helpers ("off" when it links none), since a pick can't be cleared;
+  // a chat that never had a pick gets none.
   let subagents = next?.subagents;
-  const own = restore?.subagents && !subagentsUnusable(restore.subagents) ? restore.subagents : undefined;
-  if (!subagents && own) subagents = own !== chat.mirror.subagentPick ? own : undefined;
-  else if (!subagents && prev?.subagents && chat.mirror.subagentPick !== undefined) subagents = subagentProfilesInfo().default;
+  if (libraryPick) subagents = libraryPick.id;
+  else if (!next) subagents = OFF_ID;
+  else if (!subagents && prev?.subagents && chat.mirror.subagentPick !== undefined) subagents = (await resolveDefaultProfile(s.cwd)).row.library?.id ?? OFF_ID;
+  if (subagents && subagents === chat.mirror.subagentPick) subagents = undefined;
   if (subagents) {
     const why = (next?.subagents ? subagentsUnusable(next.subagents) : null) ?? (await chat.subagentSwitchRefusal());
-    if (why) return { ok: false, status: 400, error: `${next?.label ?? DEFAULT_PROFILE.label} can't be picked here: ${why}` };
+    // Off still applies in a chat whose helpers can't be pinned (no mode extension): it has none to move.
+    if (why && !next && !libraryPick) subagents = undefined;
+    else if (why) return { ok: false, status: 400, error: `${next?.label ?? libraryPick?.name ?? "Off"} can't be picked here: ${why}` };
   }
   // A profile without a model or effort, after one that set it: back to what a new session opens on
   // (the new-session default when usable, else pi's own; read, never written), by a fresh reopen
@@ -157,7 +175,17 @@ async function applyNow(path: string, choice: ProfileChoice, by?: "overseer" | "
   return { ok: true };
 }
 
-/** What a session has now, as My settings remembers it at its first profile pick. */
+/** A library-only pick: `{source: "library", id}` or the joined key "library:<id>". */
+function libraryPickOf(choice: ProfileChoice): { id: string; name: string } | undefined {
+  const id =
+    typeof choice === "string" && choice.startsWith("library:") ? choice.slice("library:".length)
+    : choice && typeof choice === "object" && (choice as { source?: unknown }).source === "library" && typeof (choice as { id?: unknown }).id === "string" ? (choice as { id: string }).id
+    : undefined;
+  if (!id) return undefined;
+  return { id, name: subagentProfilesInfo().profiles.find((p) => p.id === id)?.name ?? id };
+}
+
+/** What a session has now, as Off remembers it at its first profile pick. */
 function mineOf(chat: Pick<ChatHandle, "mirror">): ProfileMine {
   const m = chat.mirror;
   const ref = m.model?.ref;
@@ -195,36 +223,6 @@ async function unusableProfiles(profiles: readonly ListedProfile[], info = subag
   return out;
 }
 
-/**
- * Save Current As Profile: the session's model, effort and its own subagent pick (none when it
- * follows the device default) as a new capability-neutral profile in yours. The session itself
- * doesn't change. Answers with the session's listing, the new profile in it.
- */
-export async function saveCurrentProfile(path: string, label: string): Promise<{ ok: true; profile: Profile; listing: ProfilesListing } | { ok: false; status: 400 | 404 | 409; error: string }> {
-  const s = await getSessionSummary(path);
-  if (!s) return { ok: false, status: 404, error: "Session file not found" };
-  let chat = chatHandle(path);
-  try {
-    chat ??= await acquireChatHandle(path);
-  } catch (err) {
-    return { ok: false, status: 409, error: err instanceof Error ? err.message : String(err) };
-  }
-  const thinking = chat.mirror.thinking;
-  const ref = chat.mirror.model?.ref;
-  const pick = chat.mirror.subagentPick;
-  try {
-    const profile = addProfile({
-      label,
-      ...(ref ? { model: ref } : {}),
-      ...((THINKING_LEVELS as readonly string[]).includes(thinking) ? { thinking: thinking as Profile["thinking"] } : {}),
-      ...(pick ? { subagents: pick } : {}),
-    });
-    return { ok: true, profile, listing: await profilesListing(s.cwd) };
-  } catch (err) {
-    return { ok: false, status: 409, error: err instanceof Error ? err.message : String(err) };
-  }
-}
-
 /** GET /api/profiles?cwd=: every profile a session in `cwd` can use (§chat.profiles/projects). */
 export async function profilesListing(cwd?: string | null): Promise<ProfilesListing> {
   const [src, all] = await Promise.all([profileSources(cwd), listSessions()]);
@@ -237,6 +235,12 @@ export async function profilesListing(cwd?: string | null): Promise<ProfilesList
   }
   const info = subagentProfilesInfo();
   const unusable = await unusableProfiles([...src.builtins, ...src.yours, ...src.project.profiles], info);
+  // The one list (§chat.profiles/joined) and this computer's default (§chat.profiles/default).
+  const library = loadSubagentProfiles(agentRoot());
+  const joined = buildJoined({ sources: src, library, hidden: readHidden(), running, unusable, names: await modelNames() });
+  const def = await resolveDefaultProfile(cwd, joined);
+  for (const r of joined) if (r.key === def.row.key) r.isDefault = true;
+  const { id: _id, name: _name, ...template } = info.template;
   return {
     builtins: src.builtins,
     yours: src.yours,
@@ -247,6 +251,10 @@ export async function profilesListing(cwd?: string | null): Promise<ProfilesList
     running,
     unusable,
     subagents: info.profiles.map((p) => ({ id: p.id, name: p.name, footprint: p.footprint, models: profileModelCount(info, p.id) })),
+    joined,
+    defaultProfile: def.info,
+    library: { file: library.file, ...(library.state === "malformed" ? { error: library.errors.join("; ") } : {}) },
+    template,
     ...(src.yoursError ? { error: src.yoursError } : {}),
   };
 }
@@ -285,15 +293,6 @@ export function registerProfileRoutes(app: Hono): void {
       return c.json({ error: err instanceof Error ? err.message : String(err) }, 400);
     }
     return c.json(await profilesListing(str(body.cwd)));
-  });
-  // Save Current As Profile: this session's model, effort and subagent pick as a new profile of yours.
-  app.post("/api/profiles/save-current", async (c) => {
-    const body = (await c.req.json().catch(() => null)) as { path?: unknown; label?: unknown } | null;
-    const path = resolveSessionPath(typeof body?.path === "string" ? body.path : null);
-    const label = str(body?.label);
-    if (!path || !label) return c.json({ error: "Expected {path, label}" }, 400);
-    const r = await saveCurrentProfile(path, label);
-    return r.ok ? c.json(r.listing) : c.json({ error: r.error }, r.status);
   });
   app.post("/api/sessions/profile", async (c) => {
     const body = (await c.req.json().catch(() => null)) as { path?: unknown; profile?: unknown } | null;

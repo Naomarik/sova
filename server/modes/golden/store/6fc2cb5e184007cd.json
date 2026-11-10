@@ -1,0 +1,84 @@
+{
+ "topic": {
+  "type": "string",
+  "minLength": 1,
+  "description": "Short label, e.g. \"Counter store\"."
+ },
+ "ask": {
+  "type": "string",
+  "minLength": 1,
+  "description": "The question to the user, one sentence."
+ },
+ "context": {
+  "type": "string",
+  "minLength": 1,
+  "description": "What the user needs to know to answer it (optional)."
+ },
+ "options": {
+  "type": "array",
+  "items": {
+   "type": "object",
+   "required": [
+    "label",
+    "tradeoff"
+   ],
+   "properties": {
+    "label": {
+     "type": "string",
+     "minLength": 1,
+     "description": "The choice, short."
+    },
+    "tradeoff": {
+     "type": "string",
+     "minLength": 1,
+     "description": "What happens if the user picks this, in one plain line: what they will see, what it costs and what it buys (e.g. \"Old rows are deleted for good; the export runs twice as fast\")."
+    }
+   },
+   "additionalProperties": false
+  },
+  "description": "The real choices, each with a one-line consequence of picking it (optional)."
+ },
+ "recommendation": {
+  "type": "object",
+  "required": [
+   "choice",
+   "why"
+  ],
+  "properties": {
+   "choice": {
+    "type": "string",
+    "minLength": 1,
+    "description": "The answer you recommend (one of the options' labels when there are options)."
+   },
+   "why": {
+    "type": "string",
+    "minLength": 1,
+    "description": "Why, in a sentence."
+   }
+  },
+  "additionalProperties": false,
+  "description": "Your recommended answer. Required: the user can accept it as is."
+ },
+ "visual": {
+  "type": "object",
+  "required": [
+   "kind",
+   "source"
+  ],
+  "properties": {
+   "kind": {
+    "type": "string",
+    "minLength": 1,
+    "description": "The vis kind, e.g. \"wireframe\", \"flow\", \"state\", \"steps\" (call vis_guide with it first).",
+    "pattern": "^[a-z]+$"
+   },
+   "source": {
+    "type": "string",
+    "minLength": 1,
+    "description": "The drawing's source, exactly what the vis fence's body would be, in the syntax vis_guide returned."
+   }
+  },
+  "additionalProperties": false,
+  "description": "A drawing on the alignment card, only when it explains faster than words; at most 3 per alignment."
+ }
+}

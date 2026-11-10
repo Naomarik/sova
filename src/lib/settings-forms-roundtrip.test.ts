@@ -58,6 +58,7 @@ after(() => {
 });
 
 const api = await import("./api");
+const { teamsSeed } = await import("./subagent-editor");
 const { gatedForms, resetAllDrafts } = await import("./settings-draft");
 const alignment = await import("./alignment-draft");
 const baton = await import("./baton-settings-draft");
@@ -74,7 +75,10 @@ const push = await import("./push-draft");
 const titles = await import("./session-title-settings-draft");
 const titleForm = await import("./session-title-settings-form");
 const { TITLE_RULES } = await import("../../shared/session-title-limits");
-const profiles = await import("./subagent-profiles-draft");
+const profiles = await import("./profiles-draft");
+const { OFF_KEY } = await import("../../shared/profiles");
+/** The first library half's id in the Profiles draft. */
+const lib0 = (d: Json): string => Object.keys(d.library)[0]!;
 const summarizer = await import("./summarizer-draft");
 const summarizerForm = await import("./summarizer-form");
 const updates = await import("./updates-draft");
@@ -186,16 +190,21 @@ const ROWS: Row[] = [
     },
   },
   {
-    label: "Subagents",
-    load: async () => profiles.profilesDraft.setSaved(profiles.savedOf(await api.getSubagentProfiles())),
+    label: "Profiles",
+    load: async () => profiles.takeListing(await api.fetchProfiles(null), true),
     draft: () => profiles.profilesDraft.draft(),
     setDraft: profiles.profilesDraft.setDraft,
     fields: {
-      version: { fixed: "the file's version" },
-      default: { valid: "off" },
-      profiles: {
-        valid: (cur: Json) => [{ ...cur[0], name: "Mine" }],
+      default: { valid: OFF_KEY },
+      rows: {
+        valid: (cur: Json) => [{ ...cur[0], name: "Mine" }, ...cur.slice(1)],
         invalid: [(cur: Json) => [{ ...cur[0], name: "" }], (cur: Json) => [{ ...cur[0], name: long(49) }], (cur: Json) => [{ ...cur[0], name: "Off" }]],
+      },
+      library: {
+        valid: (cur: Json) => {
+          const k = Object.keys(cur)[0]!;
+          return { ...cur, [k]: { ...cur[k], alignment: { eagerness: "careful" } } };
+        },
       },
     },
   },
@@ -407,7 +416,8 @@ const ROWS: Row[] = [
     load: async () => experimental.setExperimentalSaved((await api.getWebSettings()).experimental),
     draft: () => experimental.experimentalDraft(),
     setDraft: experimental.setExperimentalDraft,
-    fields: {},
+    // On unless saved off, so the edit that changes something is off.
+    fields: { sovaModes: { valid: false } },
   },
   // Last: the providers it turns off would refuse the model picks of the forms above.
   {
@@ -599,7 +609,7 @@ describe("every number box: each raw string stays as typed, is a problem, and cl
 // Each raw string is a problem and Save waits; the bound saves and reads back. The coverage check
 // walks the whole profile, arrays and all: a new number anywhere in a profile with no row fails.
 const { TEAM_RULES } = await import("../../shared/subagent-limits");
-describe("Subagents: every team number inside a profile", () => {
+describe("Profiles: every team number inside a profile's library half", () => {
   const TEAM_BOXES: Record<string, keyof typeof TEAM_RULES> = {
     "teams.monitor.contextPct": "contextPct",
     "teams.monitor.everyMinutes": "everyMinutes",
@@ -614,44 +624,44 @@ describe("Subagents: every team number inside a profile", () => {
       : typeof o === "number"
         ? [prefix.slice(0, -1)]
         : [];
-  /** The profile list with profile 0's teams switched on, as the editor's switch seeds them. */
+  /** The profile list with profile 0's teams models chosen, as the editor's Choose Models seeds them. */
   const withTeams = async (): Promise<Json> => {
-    const seed = (await api.getTeamDefaults()).defaults;
+    const seed: Json = teamsSeed(null, (await api.getTeamDefaults()).defaults);
     const d: Json = clone(profiles.profilesDraft.draft());
     // On Claude Code picks: the seed's pi model isn't in this process's registry.
     const claude = { primary: pick("claude-code", "claude-sonnet-5-5", "low"), fallback: null };
-    d.profiles[0].teams = { coordinator: { ...seed.coordinator, ...claude }, monitor: { ...seed.monitor, ...claude }, handover: seed.handover };
+    d.library[lib0(d)].teams = { coordinator: { ...seed.coordinator, ...claude }, monitor: { ...seed.monitor, ...claude }, handover: seed.handover };
     return d;
   };
   const load = async () => {
     resetAllDrafts();
     await primeClaude();
-    profiles.profilesDraft.setSaved(profiles.savedOf(await api.getSubagentProfiles()));
+    profiles.takeListing(await api.fetchProfiles(null), true);
   };
 
   test("the table names every number in a profile (its teams seeded), and every team number field", async () => {
     await load();
     const d = await withTeams();
-    assert.deepEqual(numbers(d.profiles[0]).sort(), Object.keys(TEAM_BOXES).sort());
+    assert.deepEqual(numbers(d.library[lib0(d)]).sort(), Object.keys(TEAM_BOXES).sort());
     assert.deepEqual(Object.values(TEAM_BOXES).sort(), Object.keys(TEAM_RULES).sort());
   });
   for (const [path, field] of Object.entries(TEAM_BOXES)) {
     test(`profiles[0].${path}: "1." (half-typed) is a problem, as in every other number box (D14)`, async () => {
       await load();
       const d = await withTeams();
-      put(d.profiles[0], path, "1.");
+      put(d.library[lib0(d)], path, "1.");
       profiles.profilesDraft.setDraft(d);
-      assert.notEqual(form("Subagents").problem(), null, `${path}: "1." is no problem`);
-      form("Subagents").discard();
+      assert.notEqual(form("Profiles").problem(), null, `${path}: "1." is no problem`);
+      form("Profiles").discard();
     });
     test(`profiles[0].${path}: each raw string is a problem; its bounds save and read back`, async () => {
       await load();
-      const f = form("Subagents");
+      const f = form("Profiles");
       const { min, max } = TEAM_RULES[field];
       const base = await withTeams();
       const at0 = (v: unknown) => {
         const d = clone(base);
-        put(d.profiles[0], path, v);
+        put(d.library[lib0(d)], path, v);
         return d;
       };
       for (const raw of [...RAW, String(max + 1), String(min - 1)]) {
@@ -668,7 +678,7 @@ describe("Subagents: every team number inside a profile", () => {
         assert.equal(f.error(), null, `${path} = ${v}: the save failed`);
         f.reset();
         await load();
-        assert.equal(at(profiles.profilesDraft.draft()!.profiles[0], path), v, `${path} = ${v}: a fresh read holds it`);
+        assert.equal(at(profiles.profilesDraft.draft()!.library[lib0(profiles.profilesDraft.draft())], path), v, `${path} = ${v}: a fresh read holds it`);
       }
     });
   }

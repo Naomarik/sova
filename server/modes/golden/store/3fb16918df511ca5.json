@@ -1,0 +1,1 @@
+"Mode change: the user turned the project minor mode checks on. Its instructions follow and apply from now on, as if they were part of your system prompt.\n\n# Project minor mode: checks\nFolder: <ws:project>/.sova/minor-modes/checks\nEvery relative path in this mode is relative to that folder.\n\nBefore you tag a release, read checklist.md and go through it item by item."

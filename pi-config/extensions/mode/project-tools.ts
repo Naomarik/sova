@@ -299,6 +299,10 @@ export interface ProjectToolOptions {
 	sandboxOn(): boolean;
 	/** Whether the mode is on in this chat now (default: always). An off mode's tools refuse even if still active. */
 	isOn?(modeId: string): boolean;
+	/** The project root this mode's programs are told (default: the checkout its folder sits in). Sova sets it for a
+	    mode from the user's own folder, whose programs still work in the chat's checkout. A function is asked at each
+	    call, for a caller that registers before it knows the session's cwd (a worker). */
+	projectRoot?: string | (() => string);
 	/** Test overrides of the tool's limits. */
 	timeoutMs?: number;
 	maxOutputBytes?: number;
@@ -343,7 +347,8 @@ export function refuseCall(snapshot: Pick<ProjectModeSnapshot, "id" | "dir" | "t
  * whatever its exit code, the code stated first.
  */
 export function projectToolDefinitions(snapshot: Pick<ProjectModeSnapshot, "id" | "dir" | "tools" | "toolsHash" | "commands" | "hooks">, opts: ProjectToolOptions) {
-	const projectRoot = projectRootOfModeDir(snapshot.dir);
+	const projectRoot = opts.projectRoot ?? projectRootOfModeDir(snapshot.dir);
+	const rootNow = typeof projectRoot === "function" ? projectRoot : () => projectRoot;
 	return snapshot.tools.map((tool) => {
 		const name = projectToolName(snapshot.id, tool.name);
 		return {
@@ -358,7 +363,7 @@ export function projectToolDefinitions(snapshot: Pick<ProjectModeSnapshot, "id" 
 				if (refusal) throw new Error(refusal);
 				const timeoutMs = opts.timeoutMs ?? toolTimeoutMs(tool);
 				const cap = opts.maxOutputBytes ?? PROJECT_TOOL_OUTPUT_MAX;
-				const run = await runProjectTool({ dir: snapshot.dir, modeId: snapshot.id, projectRoot, cwd: opts.cwd(), tool, args: params, timeoutMs, maxOutputBytes: cap, signal });
+				const run = await runProjectTool({ dir: snapshot.dir, modeId: snapshot.id, projectRoot: rootNow(), cwd: opts.cwd(), tool, args: params, timeoutMs, maxOutputBytes: cap, signal });
 				const text = formatToolRun(run, timeoutMs, cap);
 				if (run.spawnError || run.timedOut || run.aborted) throw new Error(text);
 				return {

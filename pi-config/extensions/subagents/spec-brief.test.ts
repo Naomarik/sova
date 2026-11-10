@@ -11,6 +11,7 @@ import { CARRIED_RULES, carriedText, missingRules, SPEC_BRIEF_SOURCE, SPEC_WRITI
 const PINNED = `## Spec discipline (the spawning session has spec mode on)
 This project documents behavior in \`.sova/spec/\`. The rules below are quoted from its spec mode; they bind your part of the task.
 Trusted tools: start each bash command that runs them with exactly \`core=/agent/extensions/spec/core\`. <project root> is \`git rev-parse --show-toplevel\` of your working directory. Read-only: \`node "$core/sova-spec.mjs" <command> --root <project root> --json\`, where <command> is \`where <path|name|topic words>\`, \`map\`, \`toc '<§id>' --dir out|in|down|up|mentions\`, \`read '<§id>' [--whole] [--no-frame]\`, \`impact '<§id>' [--near]\`, \`check\`, \`census\` or \`scope '<§id>'\`.
+A \`spec\` tool, if offered, runs the read-only commands (where, map, toc, read, impact) without a shell; its root defaults to your working directory.
 - never put \`§\` IDs or spec annotations in source code.
 - Search with \`where\` and 3–5 of the task's words, never one (\`where password reset email expiry\`), or a path or name; if no hit fits, try other words once, then \`map\`.
 - \`read\` what fits (later reads add \`--no-frame\`); \`toc '<§id>' --dir out\` lists its neighbours, \`impact --near\` what relies on one you will change. An unread link isn't absent.

@@ -8,7 +8,7 @@
 
 This is a point-in-time snapshot. The copy in the rakiba repo remains the authority, and re-vendoring is how this copy is updated. Divergence between this copy and rakiba's is expected and is not itself a defect.
 
-`LOCAL-DELTAS.md`, beside this file, records the intentional divergences between this playbook and the skill Sova ships at `.claude/skills/fold-ai-dev-design/`, and (row 7) between this copy and rakiba's — read it before auditing that skill against `PARITY.md`.
+`LOCAL-DELTAS.md`, beside this file, records the intentional divergences between this playbook and the skill Sova ships at `.agents/skills/fold-ai-dev-design/`, and (row 7) between this copy and rakiba's — read it before auditing that skill against `PARITY.md`.
 
 **Moved 2026-09-23** from `ai/playbooks/brandmaker/` to `playbooks/brandmaker/`, the catalog Sova ships (`server/playbooks.ts` lists every `playbooks/<id>/PLAYBOOK.md`). The move added one thing to the snapshot: a `---`-fenced frontmatter block (`title`, `description`, `promptHint`) at the top of `PLAYBOOK.md`, which the catalog reads and strips before the body is sent. Everything below that block was still the byte-for-byte copy at the move, 6 lines lower than in rakiba's — see the divergence below.
 

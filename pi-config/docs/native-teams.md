@@ -6,9 +6,10 @@ Pi session through the `team_create`, `team_add` and `team_list` tools and the
 native `/team` workspace and compact status widget. Teams reuse the existing subagents manager and runners — the same
 validation, caps, rollback, permission prompts and shutdown behavior as
 `agent_spawn`. There is no separate process manager and no tmux automation.
-Members can message each other and ask the operator questions, and one member
-can be flagged as the team's orchestrator, but every such action is mediated
-by the parent extension ("Member messaging" below); no member ever gets a
+Every team also gets two standing members from Sova, a **coordinator** and a
+**monitor** (see "Standing roles" below); the chat names only the members who
+do the work. Members can message each other and ask questions, but every such
+action is mediated by the parent extension ("Member messaging" below); no member ever gets a
 direct channel into another process or the power to create or stop workers.
 
 This document is the user-facing reference for milestone 1 (`docs/native-teams-plan.md`),
@@ -106,7 +107,6 @@ TeamMember {
   role,                                    // unique in team; becomes the worker name
   prompt,                                  // self-contained; the team header is prepended
   ownedPaths?,                             // ≤ 32 entries, ≤ 512 chars each, single line
-  orchestrator?,                           // true: sibling-scoped team_roster/team_steer; pi or claude-code backend
   backend?, model?, effort?, tools?, systemPrompt?, cwd?, wake?, backendOptions?,
   extensions?                              // agent_spawn's rules; loaded beside the team tools
 }
@@ -116,7 +116,8 @@ TeamMember {
   words that name the setting: `count` with "one member per role", `fork` and
   `agentType` with a pointer to `agent_spawn` (which stays the tool for ad hoc
   workers and those options). Any other unknown setting is refused the same
-  way, never dropped. A member takes `extensions` by `agent_spawn`'s rules.
+  way, never dropped, `orchestrator` included: no member the chat names is
+  the lead. A member takes `extensions` by `agent_spawn`'s rules.
 - `members` given as a JSON string of a list of objects is read as that list.
   A missing role, prompt, name or objective is refused, never filled in. These
   checks run before pi's schema check, so no refusal is in the schema's words.
@@ -127,10 +128,9 @@ TeamMember {
 - **Defaults** apply only to members whose resolved backend equals
   `defaults.backend` (default `pi`); member fields win; `backendOptions` merge
   shallowly (member keys win).
-- `orchestrator: true` is rejected for any backend other than `pi` (the
-  orchestrator tools are a Pi extension); the flag is persisted with the
-  member and shown by `team_list`/`team_roster` as `(orchestrator)`.
-- Result details: `{ teamId, groupId, members: [{ workerId, role, backend, model, orchestrator? }] }`.
+- `defaults` takes only `backend`, `model`, `effort` and `backendOptions`;
+  `coordinator`, `monitor` and any other key are refused, naming it.
+- Result details: `{ teamId, groupId, members: [{ workerId, role, backend, model }] }`.
 
 ### `team_add`
 
@@ -172,7 +172,7 @@ Team: <name> (<team_NN>)
 Objective: <objective>
 Your role: <role>
 Your declared ownership: <paths or "none declared">
-Other members at team creation (or "when you joined"): <roles and ownership, orchestrators marked>
+Other members at team creation (or "when you joined"): <roles and ownership>
 Declared ownership is advisory coordination, not a lock: …
 <coordination paragraph, one of three>
 
@@ -185,14 +185,14 @@ The coordination paragraph states exactly what that worker really has:
 - **Pi member:** `team_msg`, `team_inbox`, `team_ask` are described; "you
   cannot spawn, add or stop workers … the parent session remains the
   authority; your final answer is your report."
-- **Pi orchestrator:** the above plus `team_roster` and `team_steer`, with the
+- **Coordinator (Sova's):** the above plus `team_roster` and `team_steer`, with the
   reminder that acceptance is not execution and that its final answer is the
   team's report.
-- **Claude member / orchestrator:** the same two paragraphs as the Pi variants,
+- **Claude member / coordinator:** the same two paragraphs as the Pi variants,
   preceded by one line naming the real call names, since the tools come from
   the `team` MCP server: `mcp__team__team_msg`, `mcp__team__team_inbox`,
   `mcp__team__team_ask` (plus `mcp__team__team_roster`, `mcp__team__team_steer`
-  for an orchestrator).
+  for the coordinator).
 - **Any other backend:** messages may arrive as new instructions; there is no
   tool to reply, so anything for teammates goes in the final answer.
 
@@ -227,7 +227,7 @@ control audit trail; mediated member actions are recorded in it too, with
 sources `member` / `orchestrator` and kinds `message` / `question` / `steer` /
 `followUp` / `redirect`.
 
-## Member messaging, orchestrators and operator questions
+## Member messaging and operator questions
 
 Every member gets an identity in `PI_SUBAGENTS_TEAM_MEMBER` (team, worker ID,
 role, orchestrator flag, private mailbox directory) and a mailbox directory.
@@ -243,15 +243,15 @@ without a valid identity, never import the manager, and expose only:
 | --- | --- | --- |
 | `team_msg { to, message, subject?, urgent?, replyTo? }` | any member | an item in each recipient's inbox (`to` = sibling role, `ag_NN`, or `all` = every live sibling), answered at once with its id; the recipient is woken with a short list (idle: after ~3 s, urgent at once; busy: urgent at its next step, the rest when its turn ends); a succeeded recipient's successor gets it |
 | `team_inbox { action?, ids?, note?, limit? }` | any member | the member's inbox, served by the parent (its only writer): `list` open items, `open` ids in full, `done` ids (addressed, optional note), `sent` (status of what it sent) |
-| `team_ask { question, subject? }` | any member | in a coordinated team, a `question` item for the coordinator (answered with `team_msg` `replyTo`); otherwise a displayed `team-question` message in the parent session (`followUp`, `triggerTurn: true`); the parent answers with `agent_steer { id, message }` |
-| `team_roster {}` | orchestrator | live roster of its own team, states, ownership, recent actions |
-| `team_steer { to, message, mode? }` | orchestrator | `agent_steer`-equivalent for one sibling of its own team; `[Instruction from orchestrator …]` prefix; delivered in full on the sibling's serial delivery lane (never refused for being busy) |
+| `team_ask { question, subject? }` | any member | a `question` item for the routing coordinator (answered with `team_msg` `replyTo`); from the coordinator itself, or while no coordinator is live, a displayed `team-question` message in the parent session, sent as a steer (`triggerTurn: true`): it reaches a working chat after its current step and ends an `agent_wait`, and an idle chat gets it as a new turn; the parent answers with `agent_steer { id, message }` |
+| `team_roster {}` | coordinator, monitor | live roster of its own team, states, ownership, recent actions |
+| `team_steer { to, message, mode? }` | coordinator | `agent_steer`-equivalent for one sibling of its own team; `[Instruction from coordinator …]` prefix; delivered in full on the sibling's serial delivery lane (never refused for being busy) |
 
 Transport: request files in the member's own directory under the parent
 session's mailbox root (kept across reloads); the parent polls (250ms), takes the sender's identity from the
-directory, validates scope (same team, not itself, orchestrator-only powers)
+directory, validates scope (same team, not itself, coordinator-only powers)
 and answers with a response file the tool waits for (45s cap; a timeout reports
-"may still be handled", never success). Orchestrators cannot add or stop
+"may still be handled", never success). Coordinators cannot add or stop
 members and nothing reaches outside their team: adding and stopping remain
 parent-only (`team_add`, `agent_kill`), so depth stays capped.
 
@@ -354,14 +354,26 @@ Guarantees, enforced by `team-widget.test.ts`:
 | Declared paths | 32 × 512 chars, single line |
 | Action/error previews | 200 / 500 chars |
 
-## Wake behavior (and its cost)
+## Standing roles, wake behavior and cost
 
-Each member has `wake` (default `true`, same as `agent_spawn`): when it
-settles while the parent is idle, it posts its result and **starts a parent
-turn** — which costs tokens on the parent model. A six-member team can wake
-the parent six times. Set `wake: false` per member to deliver results with
-your next turn instead (use `agent_wait` when you need them sooner). This is
-the existing wake mechanism, not an orchestrator loop.
+Every `team_create` adds Sova's coordinator first and its monitor last; no
+setting or call option leaves either out. Their models come from the chat's
+subagent profile (its Teams section); where it names none (Off, `teams: null`,
+no or a malformed `team-defaults.json`) both run on the chat's own model and
+effort with Sova's built-in thresholds. A named model and its fallback that
+can't run fall back to the chat's own model too, and the result says so; only
+a model policy that refuses the chat's own model refuses the team.
+
+So a team runs **2 more workers than it names**: a two-member team is four
+workers, the coordinator's and monitor's turns included in its cost. Small
+jobs that don't depend on each other are cheaper as separate workers
+(`agent_spawn`).
+
+Every member but the coordinator is spawned with `wake: false`: completions
+and questions go to the coordinator, and only the coordinator's own result
+(once no other member is working), its `team_report` and its `team_ask` reach
+the parent. If the coordinator ends with no successor, completions and
+questions fall back to the parent, and a completion then starts a turn.
 
 ## Model, effort and permission defaults
 
@@ -387,7 +399,7 @@ the existing wake mechanism, not an orchestrator loop.
   Coordinate genuinely conflicting files through separate tasks or sequential
   follow-ups, not parallel members.
 
-- **Standing roles fall back at runtime.** A coordinated team's coordinator or
+- **Standing roles fall back at runtime.** A team's coordinator or
   monitor whose turn fails because its model ran out of usage (credits,
   quota, a monthly, weekly or 5-hour limit, a failed sign-in; one shared
   classifier, `../extensions/provider-limits/usage-out.ts`), or that fails 3
@@ -395,7 +407,7 @@ the existing wake mechanism, not an orchestrator loop.
   its seat released, and its successor starts at once on the role's fallback
   through the main chat's replacement path. A single 429 rate limit doesn't
   switch. The model is marked out for an hour (`subagents-dead-tuple-v1`,
-  replayed after a reload), so new teams, the members default and later
+  replayed after a reload), so new teams, members' work kinds and later
   successors skip it; the team that switched stays on its fallback. With no
   fallback a monitor is stopped and a coordinator is reported, each once.
 

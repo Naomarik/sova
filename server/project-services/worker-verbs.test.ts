@@ -31,11 +31,22 @@ after(() => {
 /** A pi stand-in that records what an extension registers. */
 function fakePi() {
   const tools: string[] = [];
-  const hooks = new Map<string, (event: unknown, ctx: unknown) => Promise<unknown>>();
+  const handlers = new Map<string, ((event: unknown, ctx: unknown) => Promise<unknown>)[]>();
+  // Every handler of an event in order; the answer is the last one that gave one, as pi folds them.
+  const hooks = {
+    get: (event: string) => async (e: unknown, ctx: unknown) => {
+      let out: unknown;
+      for (const fn of handlers.get(event) ?? []) out = (await fn(e, ctx)) ?? out;
+      return out;
+    },
+  };
   const pi = {
     registerTool: (t: { name: string }) => void tools.push(t.name),
-    on: (event: string, fn: (event: unknown, ctx: unknown) => Promise<unknown>) => void hooks.set(event, fn),
+    on: (event: string, fn: (event: unknown, ctx: unknown) => Promise<unknown>) => void handlers.set(event, [...(handlers.get(event) ?? []), fn]),
     sendMessage: () => {},
+    getActiveTools: () => tools.slice(),
+    getAllTools: () => tools.map((name) => ({ name })),
+    setActiveTools: (next: string[]) => void tools.splice(0, tools.length, ...next),
   };
   return { pi, tools, hooks };
 }
@@ -52,7 +63,11 @@ test("a worker chat loads project_verbs with its instance note; a hidden chat ne
   setChatHosts({ instanceNote: async () => "Your copy: slot 1." });
   const factories = workerExtensionFactories({ kind: "worker" }, path);
   // A worker with bash keeps what its commands leave running, and may ask for a job (background jobs).
-  assert.deepEqual(factories.map((f) => f.name), ["sova-shell-guard", "sova-deeper-context", "sova-background-jobs", "sova-project-verbs", "sova-background-job"]);
+  // The spec tool comes last, after background_job, so nothing before it moves.
+  assert.deepEqual(factories.map((f) => f.name), ["sova-shell-guard", "sova-deeper-context", "sova-background-jobs", "sova-project-verbs", "sova-background-job", "sova-spec"]);
+  const spec = fakePi();
+  factories.find((f) => f.name === "sova-spec")!.factory(spec.pi as never);
+  assert.deepEqual(spec.tools, ["spec"], "a worker or team member has the spec tool");
   const { pi, tools, hooks } = fakePi();
   factories.find((f) => f.name === "sova-project-verbs")!.factory(pi as never);
   assert.deepEqual(tools, ["project_verbs"]);
@@ -65,6 +80,24 @@ test("a worker chat loads project_verbs with its instance note; a hidden chat ne
     assert.deepEqual(workerExtensionFactories({ kind: hidden }, path).map((f) => f.name), ["sova-shell-guard", "sova-deeper-context"], `${hidden}: the guard and the subfolder instruction loader`);
     assert.deepEqual(workerExtensionFactories({ kind: hidden, builtins: ["bash", "grep"] }, path).map((f) => f.name), ["sova-shell-guard"], `${hidden} without file tools: the guard alone`);
   }
+});
+
+test("a worker follows the one rule: no tool in a folder with nothing, and the step after it writes a definition has it (§app.project-services/tool-offered)", async () => {
+  const path = join(agentDir, "worker-rule.jsonl");
+  setServedTools(workerServed({ kind: "worker" }, path));
+  const cwd = realpathSync(mkdtempSync(join(tmpdir(), "sova-worker-rule-")));
+  roots.push(cwd);
+  const { pi, tools, hooks } = fakePi();
+  workerExtensionFactories({ kind: "worker" }, path).find((f) => f.name === "sova-project-verbs")!.factory(pi as never);
+  let active = [...tools];
+  Object.assign(pi, { getActiveTools: () => [...active], setActiveTools: (next: string[]) => void (active = [...next]) });
+  const ctx = { cwd, sessionManager: { getSessionId: () => "w1", getLeafId: () => null, getBranch: () => [], getSessionFile: () => path } };
+  await hooks.get("session_start")({}, ctx);
+  assert.deepEqual(active, []);
+  mkdirSync(join(cwd, ".sova"));
+  writeFileSync(join(cwd, ".sova", "project.json"), "{}\n");
+  await hooks.get("turn_end")({}, ctx);
+  assert.deepEqual(active, ["project_verbs"]);
 });
 
 test("a bare up from a worktree's cwd aims at that worktree; from the main checkout no checkout is filled", async () => {

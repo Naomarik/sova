@@ -1,4 +1,30 @@
 {
+  "§chat.worktrees/blocks-landing": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "reviewed",
+    "requires": [
+      "§chat.worktrees/ready-to-land",
+      "§chat.merge-queue/requests",
+      "§chat.merge-queue/answers",
+      "§chat.worktrees/tool",
+      "§app.merge-queue/view"
+    ],
+    "code": [
+      "server/merge-readiness.ts",
+      "server/merge-readiness.test.ts",
+      "server/ready-to-land.ts",
+      "server/ready-to-land.test.ts",
+      "server/merge-queue/wake.ts",
+      "server/merge-queue/queue.ts",
+      "server/merge-queue/queue-newest-blocked.test.ts"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-11-09T00:22Z",
+      "source": "pi-session:01a1b2f4-86c6-73d4-9fe9-b847b27035f9#e2a66e41"
+    }
+  },
   "§chat.worktrees/cleanup": {
     "kind": "behavior",
     "authority": "accepted",
@@ -17,7 +43,9 @@
       "server/merge-tree-probe.test.ts",
       "server/merge-queue/scratch.ts",
       "server/merge-queue/wire.ts",
-      "server/merge-queue/owners.ts"
+      "server/merge-queue/owners.ts",
+      "server/worktree-leftovers.ts",
+      "server/archive-worktrees.test.ts"
     ],
     "requires": [
       "§chat.worktrees/merged-state",
@@ -25,14 +53,14 @@
     ],
     "agreed": {
       "by": "naomarik",
-      "at": "2026-11-05T16:44Z",
-      "source": "pi-session:01a1ac85-7019-77e8-b78d-58217842f2ef#e4f5f750"
+      "at": "2026-11-07T15:21Z",
+      "source": "pi-session:a08b61c6-6f44-4ae1-ace0-ced83f26f0b0#40313700"
     }
   },
   "§chat.worktrees/dirty-freshness": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "code": [
       "server/worktrees.ts",
       "server/worktrees.test.ts",
@@ -50,22 +78,29 @@
     ],
     "agreed": {
       "by": "naomarik",
-      "at": "2026-10-22T23:48Z",
-      "source": "pi-session:09630622-80b3-4537-b2ca-569a55a7ad6b#24177c8f"
+      "at": "2026-11-09T00:22Z",
+      "source": "pi-session:01a1b2f4-86c6-73d4-9fe9-b847b27035f9#e2a66e41"
     }
   },
   "§chat.worktrees/entry": {
     "kind": "behavior",
     "requires": [],
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "code": [
       "pi-config/extensions/worktrees/state.ts",
       "pi-config/extensions/worktrees/index.ts",
       "pi-config/extensions/worktrees/state.test.ts",
       "server/worktrees-state.ts",
-      "server/insights.ts"
-    ]
+      "server/insights.ts",
+      "server/merge-readiness.ts",
+      "server/landed-branch-agreement.integration.test.ts"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-11-09T00:22Z",
+      "source": "pi-session:01a1b2f4-86c6-73d4-9fe9-b847b27035f9#e2a66e41"
+    }
   },
   "§chat.worktrees/inherit": {
     "kind": "behavior",
@@ -89,7 +124,8 @@
       "pi-config/extensions/worktrees/index.test.ts",
       "pi-config/extensions/worktrees/landing.ts",
       "pi-config/extensions/worktrees/landing.test.ts",
-      "server/overseer-markers.test.ts"
+      "server/overseer-markers.test.ts",
+      "server/held-note-landing.test.ts"
     ],
     "requires": [
       "§chat.worktrees/tool",
@@ -98,14 +134,14 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-03T11:27Z",
-      "source": "pi-session:01a1a0ef-d11c-75b6-8a92-b5f9fc2f951f#11ba6150"
+      "at": "2026-11-07T16:59Z",
+      "source": "pi-session:01a1b63e-6ef3-71fd-af21-1389de50cc23#e142ea9f"
     }
   },
   "§chat.worktrees/landing-answers": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "code": [
       "pi-config/extensions/worktrees/landing.ts",
       "pi-config/extensions/worktrees/landing.test.ts",
@@ -130,9 +166,9 @@
       "§app.merge-queue/approve"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-11-03T11:36Z",
-      "source": "pi-session:01a1a0ef-d11c-75b6-8a92-b5f9fc2f951f#11ba6150"
+      "by": "naomarik",
+      "at": "2026-11-09T00:22Z",
+      "source": "pi-session:01a1b2f4-86c6-73d4-9fe9-b847b27035f9#e2a66e41"
     }
   },
   "§chat.worktrees/landing-note": {
@@ -154,6 +190,63 @@
       "at": "2026-11-03T11:27Z",
       "source": "pi-session:01a1a0ef-d11c-75b6-8a92-b5f9fc2f951f#11ba6150"
     }
+  },
+  "§chat.worktrees/landing-specs": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "reviewed",
+    "requires": [
+      "§chat.worktrees/ready-to-land",
+      "§app.merge-queue/run",
+      "§tools.spec/draft-official",
+      "§tools.spec/land",
+      "§chat.merge-queue/requests",
+      "§chat.merge-queue/answers",
+      "§app.merge-queue/standing-approval"
+    ],
+    "code": [
+      "server/ready-to-land.ts",
+      "server/spec-drafts-state.ts",
+      "server/docs-preview.ts",
+      "server/ready-to-land.landing.test.ts",
+      "server/merge-queue/queue.ts",
+      "server/merge-queue/scenarios-landed-drafts.integration.test.ts"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-11-09T00:22Z",
+      "source": "pi-session:01a1b2f4-86c6-73d4-9fe9-b847b27035f9#e2a66e41"
+    }
+  },
+  "§chat.worktrees/leftovers": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "requires": [
+      "§chat.worktrees/cleanup"
+    ],
+    "code": [
+      "server/worktree-leftovers.ts",
+      "server/worktree-cleanup.ts",
+      "server/project-services/engine.ts",
+      "server/app.ts",
+      "shared/protocol.ts",
+      "src/lib/api.ts",
+      "src/lib/worktree-cleanup.ts",
+      "src/components/EmptyWorktrees.tsx",
+      "src/app.css",
+      "server/worktree-leftovers.integration.test.ts",
+      "server/project-services/engine.test.ts",
+      "server/cleanup-dry-run.test.ts",
+      "src/lib/worktree-cleanup.test.ts",
+      "server/project-worktrees.ts",
+      "src/components/RemoveAnywayListing.tsx"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-11-07T15:24Z",
+      "source": "pi-session:a08b61c6-6f44-4ae1-ace0-ced83f26f0b0#40313700"
+    },
+    "evidence": "verified"
   },
   "§chat.worktrees/merge-card": {
     "kind": "behavior",
@@ -191,11 +284,45 @@
       "§chat.worktrees/entry"
     ],
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "code": [
       "pi-config/extensions/worktrees/git.ts",
-      "pi-config/extensions/worktrees/git.test.ts"
-    ]
+      "pi-config/extensions/worktrees/git.test.ts",
+      "server/merge-readiness.ts",
+      "server/landed-branch-agreement.integration.test.ts",
+      "server/worktrees-state.ts"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-11-09T00:22Z",
+      "source": "pi-session:01a1b2f4-86c6-73d4-9fe9-b847b27035f9#e2a66e41"
+    }
+  },
+  "§chat.worktrees/nothing-left": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "reviewed",
+    "requires": [
+      "§chat.worktrees/merged-state",
+      "§app.merge-queue/land",
+      "§tools.spec/draft-official"
+    ],
+    "code": [
+      "server/nothing-left.ts",
+      "server/nothing-left.test.ts",
+      "server/spec-drafts-state.ts",
+      "server/landed-labels-guards.test.ts",
+      "server/merge-queue/scenarios-nothing-left.integration.test.ts",
+      "server/landed-branch-agreement.integration.test.ts",
+      "server/landed-labels-no-removal.integration.test.ts",
+      "server/merge-queue/queue.ts",
+      "server/merge-queue/queue.test.ts"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-11-09T00:22Z",
+      "source": "pi-session:01a1b2f4-86c6-73d4-9fe9-b847b27035f9#e2a66e41"
+    }
   },
   "§chat.worktrees/pane": {
     "kind": "behavior",
@@ -206,7 +333,10 @@
       "§app.merge-queue/approve",
       "§chat.changes/entry",
       "§chat.composer/land-confirm",
-      "§app.merge-queue/branch-summary"
+      "§app.merge-queue/branch-summary",
+      "§chat.worktrees/pane-queue",
+      "§chat.worktrees/place",
+      "§chat.worktrees/nothing-left"
     ],
     "authority": "accepted",
     "evidence": "reviewed",
@@ -231,18 +361,91 @@
       "src/lib/merge-queue-sent-back.test.ts",
       "shared/merge-queue.ts",
       "server/merge-queue/view.ts",
-      "src/components/BranchSummary.tsx"
+      "src/components/BranchSummary.tsx",
+      "src/lib/branch-place.ts",
+      "src/components/BranchPlaceLine.tsx"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-11-05T19:18Z",
-      "source": "pi-session:01a1acf3-91f6-7735-96f5-970a0699e9c9#85bf6ed9"
+      "by": "naomarik",
+      "at": "2026-11-09T15:52Z",
+      "source": "pi-session:01a1b2f4-86c6-73d4-9fe9-b847b27035f9#02c2fa31"
+    }
+  },
+  "§chat.worktrees/pane-queue": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "reviewed",
+    "requires": [
+      "§chat.worktrees/pane",
+      "§chat.composer/worktrees-control",
+      "§chat.composer/land-confirm",
+      "§app.merge-queue/approve",
+      "§app.merge-queue/standing-approval",
+      "§app.access/your-click",
+      "§app.merge-queue/chats",
+      "§chat.changes/entry"
+    ],
+    "code": [
+      "src/components/SessionDetails.tsx",
+      "src/components/SessionPane.tsx",
+      "src/components/WorktreesModal.tsx",
+      "src/lib/merge-queue.ts",
+      "src/lib/merge-queue.test.ts",
+      "src/lib/worktrees.ts",
+      "server/merge-queue/wire.ts",
+      "shared/merge-queue.ts",
+      "src/components/ReviewChanges.tsx",
+      "server/merge-queue-ui.integration.test.ts",
+      "src/lib/merge-standing.ts"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-11-09T00:22Z",
+      "source": "pi-session:01a1b2f4-86c6-73d4-9fe9-b847b27035f9#e2a66e41"
+    }
+  },
+  "§chat.worktrees/place": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "reviewed",
+    "requires": [
+      "§chat/worktrees",
+      "§chat.worktrees/entry",
+      "§chat.worktrees/tool",
+      "§chat.worktrees/merged-state",
+      "§app.merge-queue/served",
+      "§app.session-list/needs-you"
+    ],
+    "code": [
+      "shared/protocol.ts",
+      "shared/merge-queue.ts",
+      "server/merge-queue/wire.ts",
+      "server/merge-queue/served.ts",
+      "server/worktrees-state.ts",
+      "src/lib/branch-place.ts",
+      "src/components/WorktreesModal.tsx",
+      "src/components/SessionDetails.tsx",
+      "src/components/MergeQueueCard.tsx",
+      "src/app.css",
+      "src/components/BranchPlaceLine.tsx",
+      "server/merge-queue/place.ts",
+      "server/merge-queue/place.test.ts",
+      "src/lib/branch-place.test.ts",
+      "shared/tell-apart.ts",
+      "server/merge-queue/view.ts",
+      "server/merge-queue/wire.integration.test.ts",
+      "src/lib/worktrees-served.test.ts"
+    ],
+    "agreed": {
+      "by": "the user (al_2 go)",
+      "at": "2026-11-09T10:27Z",
+      "source": "pi-session:01a1bdb7-6cb9-7045-be9f-f2f059380b8e#b9a60247"
     }
   },
   "§chat.worktrees/readiness": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "code": [
       "server/merge-readiness.ts",
       "server/spec-drafts-state.ts",
@@ -268,24 +471,27 @@
       "server/restart-paths.ts",
       "server/restart-paths.test.ts",
       "server/merge-queue/scenarios-landed-drafts.integration.test.ts",
-      "server/merge-queue/scenarios-landed-drafts-edges.integration.test.ts"
+      "server/merge-queue/scenarios-landed-drafts-edges.integration.test.ts",
+      "server/nothing-left.ts",
+      "server/landed-branch-agreement.integration.test.ts"
     ],
     "requires": [
       "§chat.worktrees/entry",
       "§chat.worktrees/merge-card",
       "§chat.alignment/session-mark",
-      "§app.decisions/attention-signals"
+      "§app.decisions/attention-signals",
+      "§chat.worktrees/nothing-left"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-11-05T10:48Z",
-      "source": "pi-session:01a1a0ef-d11c-75b6-8a92-b5f9fc2f951f#7ee12135"
+      "by": "naomarik",
+      "at": "2026-11-09T00:22Z",
+      "source": "pi-session:01a1b2f4-86c6-73d4-9fe9-b847b27035f9#e2a66e41"
     }
   },
   "§chat.worktrees/ready-to-land": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "code": [
       "server/merge-readiness.ts",
       "server/ready-to-land.ts",
@@ -311,12 +517,15 @@
       "§chat.worktrees/readiness",
       "§app.decisions/attention-signals",
       "§chat.composer/worktrees-control",
-      "§app.project-setup/land-gate"
+      "§app.project-setup/land-gate",
+      "§chat.worktrees/landing-specs",
+      "§chat.worktrees/blocks-landing",
+      "§chat.worktrees/nothing-left"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-11-05T19:18Z",
-      "source": "pi-session:01a1acf3-91f6-7735-96f5-970a0699e9c9#85bf6ed9"
+      "by": "naomarik",
+      "at": "2026-11-09T00:22Z",
+      "source": "pi-session:01a1b2f4-86c6-73d4-9fe9-b847b27035f9#e2a66e41"
     }
   },
   "§chat.worktrees/sandbox": {
@@ -348,7 +557,7 @@
       "§app.project-setup/land-gate"
     ],
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "code": [
       "pi-config/extensions/worktrees/index.ts",
       "pi-config/extensions/worktrees/git.ts",
@@ -365,9 +574,9 @@
       "pi-config/extensions/worktrees/setup-rule.ts"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-11-05T06:57Z",
-      "source": "pi-session:3afd71cb-9954-48a8-837f-625d03a69b14#15ceea0f"
+      "by": "naomarik",
+      "at": "2026-11-09T00:22Z",
+      "source": "pi-session:01a1b2f4-86c6-73d4-9fe9-b847b27035f9#e2a66e41"
     }
   },
   "§chat.worktrees/workers": {
@@ -418,13 +627,24 @@
       "pi-config/extensions/subagents/index.test.ts",
       "pi-config/extensions/subagents/README.md",
       "scripts/hermetic-agent-dir.mjs",
-      "pi-config/extensions/sandbox/env.ts"
-    ]
+      "pi-config/extensions/sandbox/env.ts",
+      "pi-config/extensions/subagents/worker-host.ts",
+      "pi-config/extensions/subagents/fork/background.ts",
+      "server/chat-manager.ts",
+      "server/harness/pi/own-code.ts",
+      "server/sova-modes-workers.test.ts",
+      "server/modes/worker-slots.golden.test.ts"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-06T22:14Z",
+      "source": "pi-session:b406e4de-b015-4dbb-b201-14ab20b5da44#2b9be4c7"
+    }
   },
   "§chat/worktrees": {
     "kind": "surface",
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "code": [
       "pi-config/extensions/worktrees/index.ts",
       "pi-config/extensions/worktrees/state.ts",

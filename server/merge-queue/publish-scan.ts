@@ -40,6 +40,8 @@ export interface ScanInput {
   namesFile?: string | undefined;
   /** Text published beside the commits (a request's title and body). */
   texts?: { label: string; text: string }[];
+  /** Secrets only, no private names (an org workspace backup has no names list). */
+  secretsOnly?: boolean;
   /** At most this many commits (default 2000): more is refused, never partly scanned. */
   maxCommits?: number;
 }
@@ -64,7 +66,7 @@ function readNames(file: string | undefined): { names: string[] } | { why: strin
 
 export async function scanPublication(git: Git, o: ScanInput): Promise<ScanResult> {
   const refuse = (why: string, hits: string[] = []): ScanResult => ({ ok: false, why, hits });
-  const n = readNames(o.namesFile);
+  const n = o.secretsOnly ? { names: [] as string[] } : readNames(o.namesFile);
   if ("why" in n) return refuse(n.why);
   const terms = n.names;
   const escape = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");

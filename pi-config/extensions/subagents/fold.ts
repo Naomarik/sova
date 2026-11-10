@@ -32,9 +32,15 @@ export interface FoldHandlers {
 	onChange: () => void;
 	/** The agent finished its current instructions (or the attempt definitively failed). Fires again after a steer. */
 	onSettled: (worker: Worker) => void;
+	/** A run the worker started on its own ended well with nothing written: idle again, with no report to send. */
+	onQuietSettled?: (worker: Worker) => void;
 	/** The worker ended. Fires exactly once. */
 	onExit: (worker: Worker) => void;
 }
+
+/** How many unsent final answers a report may carry, and their total size: the oldest go first. */
+const MAX_FINAL_ANSWERS = 32;
+const MAX_FINAL_ANSWER_CHARS = 2 * 1024 * 1024;
 
 const DEFAULT_LIMITS: RunnerLimits = {
 	maxTranscriptBytes: 2 * 1024 * 1024,
@@ -164,7 +170,12 @@ export abstract class WorkerFold implements Worker {
 	private taskBoundarySeq = 0;
 	private armedBoundarySeq = 0;
 	/** Latest assistant text and its seq; kept even if its transcript item is trimmed. */
-	private lastAssistant: { seq: number; text: string } | null = null;
+	private lastAssistant: { seq: number; text: string; final: boolean } | null = null;
+	/** Final answers a later message followed, oldest first: a report carries those past its boundary (finalOutput). */
+	private finalAnswers: { seq: number; text: string }[] = [];
+	/** A run the worker started on its own, with no final answer yet. The task boundary stays put until
+	    one comes, so the last report stays readable; if none comes and the run ends well, nothing is sent. */
+	private selfRun: { seq: number; taskOutcome: TaskOutcome | undefined; error: string | undefined } | null = null;
 	/** The next agent_start continues the same task (auto-retry or overflow compaction). */
 	private recoveryPending = false;
 	/** Failures of earlier runs in this unannounced task. Pi continues queued messages after a failed run. */
@@ -223,9 +234,12 @@ export abstract class WorkerFold implements Worker {
 				// previous run ended, which it does even when that run failed. Keep that failure.
 				const recovery = this.recoveryPending;
 				this.recoveryPending = false;
+				if (!recovery) this.keepFinalAnswer();
 				if (!recovery && !this.settleAnnounced && (this.taskError || this.taskAborted)) this.carryFailure();
-				// Picked back up: a run after a settle this worker never armed was steered by an earlier manager. A fresh task.
-				if (this.adopted && !recovery && this.settleAnnounced && !this.armedAwaitingRun) this.beginAdoptedRun();
+				// A run after an announced settle that no armed instruction accounts for: a job's end woke the
+				// worker, or an earlier manager steered it. A retry's run lands here too: processSettled clears
+				// recoveryPending, so a recovery with the settle announced is a real run after it. A fresh task.
+				if (this.settleAnnounced && !this.armedAwaitingRun) this.beginSelfStartedRun();
 				this.status = "running";
 				this.runActive = true;
 				// LEGACY (no keys): the next run is taken as the armed steer's. A keyed feed names it on its message.
@@ -260,6 +274,9 @@ export abstract class WorkerFold implements Worker {
 					if (text.trim()) {
 						this.push("assistant", text.trim());
 						this.unreadCount++;
+						const final = message.stopReason !== "toolUse";
+						this.lastAssistant!.final = final;
+						if (final) this.commitSelfRun();
 					}
 					// A failed assistant turn is a failed TASK, not a dying worker: reported via
 					// taskOutcome at settle time while it parks in `waiting`, still steerable.
@@ -270,17 +287,21 @@ export abstract class WorkerFold implements Worker {
 				} else if (message.role === "toolResult") {
 					// Tool-reported usage is nested LLM work; it contributes to totals.
 					this.addUsage(message.usage);
-				} else if (message.role === "user" && (this.keyed || typeof event.sendKey === "string")) {
-					this.setKeyed(true);
-					this.keyedDelivery(typeof event.sendKey === "string" ? event.sendKey : undefined, textOf(message.content));
-				} else if (message.role === "user" && this.isSupersededDelivery(textOf(message.content))) {
-					this.beginSupersededRun();
-				} else if (message.role === "user" && this.armedAwaitingRun && this.isArmedDelivery(textOf(message.content))) {
-					// A steer can be delivered inside the running run without a new agent_start. Its user message is the task boundary.
-					this.beginArmedRun();
-				} else if (message.role === "user" && this.adopted && this.settleAnnounced === false && !this.armedAwaitingRun) {
-					// Picked back up mid-run: a later instruction an earlier manager sent.
-					this.push("steer", textOf(message.content));
+				} else if (message.role === "user") {
+					// The answer before any user message stands: it was no failed attempt a retry replaces.
+					this.keepFinalAnswer();
+					if (this.keyed || typeof event.sendKey === "string") {
+						this.setKeyed(true);
+						this.keyedDelivery(typeof event.sendKey === "string" ? event.sendKey : undefined, textOf(message.content));
+					} else if (this.isSupersededDelivery(textOf(message.content))) {
+						this.beginSupersededRun();
+					} else if (this.armedAwaitingRun && this.isArmedDelivery(textOf(message.content))) {
+						// A steer can be delivered inside the running run without a new agent_start. Its user message is the task boundary.
+						this.beginArmedRun();
+					} else if (this.adopted && this.settleAnnounced === false && !this.armedAwaitingRun) {
+						// Picked back up mid-run: a later instruction an earlier manager sent.
+						this.push("steer", textOf(message.content));
+					}
 				}
 				break;
 			}
@@ -354,6 +375,8 @@ export abstract class WorkerFold implements Worker {
 	/** A keyed feed's user message: the instruction whose key it names begins here (exact, never by text). */
 	private keyedDelivery(sendKey: string | undefined, text: string): void {
 		if (sendKey !== undefined) this.outstanding.delete(sendKey);
+		// Some manager's instruction, not the worker's own doing: this run owes a report, whatever it writes.
+		if (sendKey !== undefined) this.commitSelfRun();
 		const s = this.superseded;
 		if (sendKey !== undefined && s && !s.begunSeq && this.steerPending && sendKey === s.key) this.beginSupersededRun();
 		else if (sendKey !== undefined && this.armedAwaitingRun && sendKey === this.armedKey) this.beginArmedRun();
@@ -469,6 +492,7 @@ export abstract class WorkerFold implements Worker {
 
 	/** The superseded steer's run began inside the running run: output from here on is not the predecessor's. */
 	private beginSupersededRun(): void {
+		this.selfRun = null;
 		this.superseded!.begunSeq = this.taskBoundarySeq = ++this.pushSeq;
 		this.markTaskBegun(this.superseded!.no);
 		this.taskError = undefined;
@@ -477,7 +501,11 @@ export abstract class WorkerFold implements Worker {
 
 	/** Complete the current task: park in `waiting`, record the outcome, announce once. */
 	protected processSettled(): void {
-		if (this.settleAnnounced) return;
+		if (this.settleAnnounced) {
+			// A run with nothing owed ended. With an armed instruction still due, the worker stays running.
+			if (this.status === "running" && !this.armedAwaitingRun && !this.steerPending) this.status = "waiting";
+			return;
+		}
 		if (this.steerPending) this.pendingSettled = true;
 		// The armed steer has not started: this settle completes its predecessor.
 		if (this.armedAwaitingRun) this.armedPredecessorSettled = true;
@@ -487,6 +515,17 @@ export abstract class WorkerFold implements Worker {
 		this.settleAnnounced = true;
 		let outcome: TaskOutcome = this.taskAborted ? "aborted" : this.taskError ? "error" : "success";
 		let error = outcome === "error" ? this.taskError : undefined;
+		const self = this.selfRun;
+		const quiet = self !== null && outcome === "success" && !this.carriedFailures.length && !this.neverRan.length;
+		if (quiet) {
+			// It ended well and wrote nothing: the last report, with its outcome, still stands.
+			this.selfRun = null;
+			this.taskOutcome = self.taskOutcome;
+			this.error = self.error;
+			this.handlers.onQuietSettled?.(this);
+			return;
+		}
+		this.commitSelfRun();
 		if (this.carriedFailures.length) {
 			// Queued continuation ran after an earlier failure; do not report success.
 			const earlier = this.carriedFailures.map((f) => `${f.outcome}: ${f.message}`).join("; ");
@@ -506,9 +545,10 @@ export abstract class WorkerFold implements Worker {
 		this.handlers.onSettled(this);
 	}
 
-	/** Picked back up: an unarmed run after a settled task (steered by an earlier manager) starts a new task. */
-	private beginAdoptedRun(): void {
-		this.taskBoundarySeq = ++this.pushSeq;
+	/** An unarmed run after a settled task: a new task, whose boundary waits for its first final answer. */
+	private beginSelfStartedRun(): void {
+		this.keepFinalAnswer();
+		this.selfRun = { seq: ++this.pushSeq, taskOutcome: this.taskOutcome, error: this.error };
 		this.markTaskBegun(0);
 		this.settleAnnounced = false;
 		this.taskError = undefined;
@@ -516,6 +556,52 @@ export abstract class WorkerFold implements Worker {
 		this.taskOutcome = undefined;
 		this.error = undefined;
 		this.carriedFailures = [];
+	}
+
+	/** A run found going after a gap: what the last report carried is no longer current. Its settle is owed all the same. */
+	protected startUnseenRun(): void {
+		if (!this.settleAnnounced || this.armedAwaitingRun) return;
+		this.keepFinalAnswer();
+		this.taskBoundarySeq = ++this.pushSeq;
+	}
+
+	/** The self-started run owes a report: what the last one carried is no longer current. */
+	private commitSelfRun(): void {
+		if (!this.selfRun) return;
+		this.taskBoundarySeq = this.selfRun.seq;
+		this.selfRun = null;
+	}
+
+	/** The latest assistant message, if a final answer, stays in the report whatever is written after it. */
+	private keepFinalAnswer(): void {
+		const last = this.lastAssistant;
+		if (!last?.final || this.finalAnswers[this.finalAnswers.length - 1]?.seq === last.seq) return;
+		this.finalAnswers.push({ seq: last.seq, text: last.text });
+		let chars = 0;
+		for (const answer of this.finalAnswers) chars += answer.text.length;
+		while (this.finalAnswers.length > 1 && (this.finalAnswers.length > MAX_FINAL_ANSWERS || chars > MAX_FINAL_ANSWER_CHARS)) chars -= this.finalAnswers.shift()!.text.length;
+	}
+
+	/** Replace what the report holds with these answers, oldest first, with no transcript items (a reload
+	    or a gap read them from the session file). Replaces, so a gap can't double an answer the feed showed;
+	    the boundary stays. An empty list changes nothing. */
+	protected restoreReport(answers: string[]): void {
+		if (!answers.length) return;
+		this.commitSelfRun();
+		this.finalAnswers = answers.slice(0, -1).map((text) => ({ seq: ++this.pushSeq, text }));
+		this.lastAssistant = { seq: ++this.pushSeq, text: answers[answers.length - 1]!, final: true };
+	}
+
+	/** A run found from outside the feed (a reload or a gap) that no instruction started and that wrote nothing: it ends
+	    as a self-started one does. Ended well, nothing is sent and the last report stands; failed, it reports. */
+	protected foundSelfRun(): void {
+		this.selfRun = { seq: ++this.pushSeq, taskOutcome: this.taskOutcome, error: this.error };
+	}
+
+	/** A settled run read from outside the feed (a reload or a gap): how it ended, for the settle that announces it. */
+	protected restoreOutcome(outcome: "success" | "error" | "aborted", error?: string): void {
+		this.taskAborted = outcome === "aborted";
+		this.taskError = outcome === "error" ? (error ?? "assistant turn failed (stopReason: error)") : undefined;
 	}
 
 	/** A new task began; it carries every steer numbered up to `steerNo` that had not begun. */
@@ -553,6 +639,7 @@ export abstract class WorkerFold implements Worker {
 
 	/** The armed steer's run has begun: re-arm the announcement and make its marker the output boundary. */
 	private beginArmedRun(): void {
+		this.selfRun = null;
 		this.markTaskBegun(this.armedNo);
 		this.armedAwaitingRun = false;
 		this.armedPredecessorSettled = false;
@@ -680,6 +767,10 @@ export abstract class WorkerFold implements Worker {
 		const steerItem = this.transcript[this.transcript.length - 1]!;
 		this.armedSteerItem = steerItem;
 		this.armedBoundarySeq = this.pushSeq;
+		const armBoundary = this.armedBoundarySeq;
+		// From idle with its last report sent: nothing before this marker is owed to any later report.
+		const idleArm = !wasRunning && snapshot.settleAnnounced && !snapshot.armedAwaitingRun;
+		if (idleArm) this.taskBoundarySeq = armBoundary;
 		this.touch();
 
 		const res = await this.deliver(message, mode, wasRunning, key);
@@ -726,10 +817,14 @@ export abstract class WorkerFold implements Worker {
 			this.armedMessage = snapshot.armedMessage;
 			this.armedQueued = snapshot.armedQueued;
 			this.armedKey = snapshot.armedKey;
-			this.taskBoundarySeq = snapshot.taskBoundarySeq;
+			if (!(idleArm && this.pendingSettled)) this.taskBoundarySeq = snapshot.taskBoundarySeq;
 			this.armedBoundarySeq = snapshot.armedBoundarySeq;
 			this.armedPredecessorSettled = snapshot.armedPredecessorSettled || this.pendingSettled;
-			if (!this.pendingSettled) {
+			if (idleArm && !this.pendingSettled && this.runActive) {
+				// A run started during the wait and it wasn't this message's: the worker's own, running on.
+				this.selfRun = { seq: armBoundary, taskOutcome: snapshot.taskOutcome, error: snapshot.error };
+				if (this.lastAssistant?.final && this.lastAssistant.seq > armBoundary) this.commitSelfRun();
+			} else if (!this.pendingSettled) {
 				this.status = snapshot.status;
 				this.taskOutcome = snapshot.taskOutcome;
 				this.error = snapshot.error;
@@ -765,6 +860,7 @@ export abstract class WorkerFold implements Worker {
 		else if (this.status !== "killed" && this.status !== "error") this.status = "done";
 		if (!this.settleAnnounced) {
 			this.settleAnnounced = true;
+			this.commitSelfRun();
 			if (this.carriedFailures.some((f) => f.outcome === "error") && this.taskOutcome !== "error") this.taskOutcome = "error";
 			this.carriedFailures = [];
 			this.taskOutcome ??= this.killInitiated && this.status !== "error" ? "aborted" : "error";
@@ -805,13 +901,21 @@ export abstract class WorkerFold implements Worker {
 	}
 
 	/**
-	 * Latest assistant text from the CURRENT task only: until an accepted steer's task produces output
-	 * this is "", never the previous task's answer. A steer marker pushed before its predecessor settled
-	 * is no boundary until the steer's run begins.
+	 * The report text, the one thing every report and read-back quotes: each final answer of the CURRENT
+	 * task, oldest first. Until an accepted steer's task produces output this is "", never the previous
+	 * task's answer. A steer marker pushed before its predecessor settled is no boundary until the steer's
+	 * run begins. Narration before a tool call counts only when the task has nothing else to show, and
+	 * never in a self-started run that has written no final answer: the last report still stands then.
 	 */
 	finalOutput(): string {
 		const boundary = this.armedAwaitingRun && !this.armedPredecessorSettled ? this.armedBoundarySeq : this.taskBoundarySeq;
-		return this.lastAssistant && this.lastAssistant.seq > boundary ? this.lastAssistant.text : "";
+		const answers = this.finalAnswers.filter((a) => a.seq > boundary);
+		const last = this.lastAssistant;
+		if (last && last.seq > boundary && answers[answers.length - 1]?.seq !== last.seq) {
+			if (last.final) answers.push(last);
+			else if (!answers.length && !this.selfRun) return last.text;
+		}
+		return answers.map((a) => a.text).join("\n\n");
 	}
 
 	// ── transcript ───────────────────────────────────────────────────────────
@@ -822,7 +926,7 @@ export abstract class WorkerFold implements Worker {
 		this.transcript.push(summary ? { ts: Date.now(), kind, text, toolName, summary } : { ts: Date.now(), kind, text, toolName });
 		const seq = ++this.pushSeq;
 		if (kind === "task") this.taskBoundarySeq = seq;
-		else if (kind === "assistant") this.lastAssistant = { seq, text };
+		else if (kind === "assistant") this.lastAssistant = { seq, text, final: true };
 		this.lastActivity = Date.now();
 		this.trimTranscript();
 		this.transcriptRevision++;

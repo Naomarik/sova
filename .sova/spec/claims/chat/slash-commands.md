@@ -30,6 +30,7 @@ without a command list or while the composer is disabled.
   - No `commands` message has arrived yet, or the list is empty.
   - The composer is disabled (read-only, connecting, reconnecting, or a model switch is pending).
     If it becomes disabled while the menu is open, close it.
+  - The box is in shell mode (§chat.shell-mode/box).
 - **While streaming it works as usual.** Sending `/name args` with **Steer** is fine. pi runs
   extension commands immediately, even mid-turn, and queues `skill:` and prompt templates as a
   steer with expansion. A turn starting or ending doesn't close the menu. The "Ran" row (below)
@@ -161,7 +162,9 @@ answered by Sova itself and never sent.
   while streaming, pi runs it as it does a steered command.
 - **No optimistic bubble.** When the first token is a known command, don't add the optimistic
   user bubble. The command isn't a message to the model, and a template or skill expands into
-  different text.
+  different text. A `/word` sent before the chat has listed its commands goes at once and shows
+  nothing until the list comes: then its "Ran" row if the chat knows it, else its bubble
+  (§chat.transcript/send-while-starting).
 - **Local row instead.** Append a local `.info-row`:
 
   ```html
@@ -209,7 +212,7 @@ answered by Sova itself and never sent.
 - **`/mode`.** In the Overseer only (§app.overseer/hosting), `/mode`, with or without arguments,
   is a local command that switches nothing: it clears the draft's text and says "The Overseer is
   always in normal mode." in a toast and to assistive technology. `mode` is not in its menu.
-  Anywhere else it's the mode extension's command, as before.
+  Anywhere else Sova answers it, and `/align` and `/review` too (§chat.mode-menu/typed-commands).
 - **`/new`.** Bare `/new` is a local command too, as in the TUI: it creates an empty session in
   the chat's folder, opens it with the composer focused, and archives the session it left (only
   once the new one exists). A session that isn't web-spawned, or whose subagents are working,
@@ -334,16 +337,29 @@ device alike. A failed question says why in a notification and keeps the thread.
 The side thread runs as a hidden chat in a process of its own, started by Sova's worker host
 like any worker (§app.chat-processes/workers), never inside the main chat's process; its session
 is kept out of every session list. It starts from the main thread's conversation (none for a
-tangent) and the thread's earlier answers, with the read, bash, edit and write tools, no other
-extensions, the main thread's system prompt followed by the aside instructions, and the /btw
-model and thinking level. It is not sandboxed. Its model calls are counted like any chat's,
+tangent) and the thread's earlier answers, with the read-only tools read, grep, find and ls only:
+it reads and answers, and never runs a command or changes a file. It has no other extensions but
+the sandbox's while that is On, the main thread's system prompt followed by the aside instructions,
+and the /btw model and thinking level. While the main chat's sandbox is On, the side thread runs
+inside it: it starts under the main chat's sandbox scope through the same one call a worker's start
+goes through (§chat.sandbox/workers), and when that sandbox refuses or can give it no launch, /btw
+doesn't start the thread and says why. With the main chat's sandbox Off or Subagents only, it starts
+unconfined (it has no tool that writes or runs anything). The side thread follows the main chat's
+sandbox, not only the state it started under: when the main chat's sandbox turns On, turns off (to
+Off or Subagents only), or changes its enforcement while a side thread is kept, the thread is
+restarted under the new state before its next answer (a switch between Off and Subagents only
+alone doesn't restart it: it runs unconfined under both), seeded with the same side conversation so far, so nothing said in it
+is lost and a thread started unconfined never answers from outside a sandbox turned On since. A
+thread picked up again after a reload, whose starting state isn't known, is restarted the same way
+when the main chat's sandbox is On. Its model calls are counted like any chat's,
 under the main thread.
 
 The chat is kept between questions, so a follow-up continues it, and it outlives a reload, a
 crash or new code of the main chat: the reopened session picks the thread up again, and a
 question it was answering then is still answered and recorded once. A new thread, a cleared
 one, a switch between contextual and tangent, a model or thinking change, and navigating the
-session tree stop it; the next question starts a new one from the thread as recorded.
+session tree stop it; the next question starts a new one from the thread as recorded. A change of
+the main chat's sandbox restarts it (above).
 `/btw:summarize` writes its summary in a second hidden chat with no tools and only the summary
 instructions, stopped when it answers.
 

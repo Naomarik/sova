@@ -4,7 +4,7 @@ import base64, re, xml.etree.ElementTree as ET
 
 root = Path(__file__).resolve().parent
 repo = root.parents[4]
-skill = repo / '.claude/skills/fold-ai-dev-design'
+skill = repo / '.agents/skills/fold-ai-dev-design'
 tokens = (skill / 'tokens.css').read_text()
 def embed_font(m):
     path = skill / m.group(1)

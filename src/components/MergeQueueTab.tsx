@@ -1,16 +1,17 @@
-import { createEffect, createSignal, For, on, Show, type JSX } from "solid-js";
+import { createContext, createEffect, createMemo, createSignal, For, on, onCleanup, onMount, Show, useContext, type JSX } from "solid-js";
 import { MergeThreadCard, QueueHistory, ReviewerLinks, ReviewRunningButton } from "./MergeQueueChats";
 import type { ChatRef } from "../lib/merge-chat";
 import type { MergeAnswer } from "../../shared/merge-queue";
 import { relativeTime } from "../lib/format";
-import { headWhen, mins, notesOf, readyFactsWords, readyRowChip, unattributedWhy, sentence, pausedTitle, pushedWords, queueStateChip, runProgress, short, waitingHead, type MergeEntry, type MergeQueueView, SENT_BACK_LINE, stillSentBack, landAgainOf } from "../lib/merge-queue";
+import { headWhen, mins, notesOf, readyFactsWords, readyRowChip, unattributedWhy, sentence, pausedTitle, pushedWords, queueStateChip, runProgress, short, waitingHead, type MergeEntry, type MergeQueueView, needsYouOf, withItsChat } from "../lib/merge-queue";
+import { DECISION_ACTION_LABEL, DECISION_LABEL, decisionActions, openDecision, STANDING_LINE, standingWords, answeredInChat, type DecisionAction } from "../lib/merge-standing";
 import { answerEntry, cancelEntry, landBranch, type LandOptions, mergeChanged, mergeFeed, pauseQueue, readQueue, refusal, resumeQueue } from "../lib/merge-queue-client";
 import { createPoll } from "../lib/poll";
-import { mergeRunHref, projectSessionHref, projectTabHref } from "../lib/projects-route";
+import { mergeQueueTabHref, mergeRunHref, projectSessionHref, projectTabHref, type QueueTab } from "../lib/projects-route";
 import { announce, toast } from "../lib/ui-state";
 import { MergeRunView } from "./MergeRunView";
-import { LocalBehind, RequestRow, WaitingOnHost, type RequestEntry } from "./MergeQueueRequests";
-import { introWords, isRequestState } from "../lib/merge-queue-requests";
+import { LocalBehind, RequestRow, type RequestEntry } from "./MergeQueueRequests";
+import { HOST_NAME, introWords, isRequestState } from "../lib/merge-queue-requests";
 import { QueueSettingsButton, QueueSummaryLine } from "./settings/MergeQueueSummary";
 import { notSetUp } from "../lib/merge-queue";
 import { createSetupPoll, SetupChatButton, SetupChatState, SetupNotSetUp, type SetupPoll } from "./SetupChat";
@@ -29,9 +30,11 @@ const POLL_MS = 4000;
  * the merge thread's chat, what's being checked now, the line with its estimates, what waits for you,
  * what went back to its chat, and recent landings with their notes, with Change Setup and the Setup chat. A project
  * with no merge setup gets what the queue does and Set Up with a Chat instead. `run`: one run's page
- * (`…/merge-queue/<run>`). `setup`: the page's read of the Setup chat (one of its own when absent).
+ * (`…/merge-queue/<run>`). `queueTab`: which of the queue's tabs the address names (on a run's page, the one it was
+ * opened from). `setup`: the page's read of the Setup chat (one of its own when absent). `refreshed`: the page's
+ * Refresh tick (each press closes Waiting, as a fresh visit shows it).
  */
-export function MergeQueueTab(props: { projectId: string; root: string; name: string; run?: string; chatOf?: ChatOf; treesOf?: TreesOf; setup?: SetupPoll }) {
+export function MergeQueueTab(props: { projectId: string; root: string; name: string; run?: string; queueTab?: QueueTab; refreshed?: () => number; chatOf?: ChatOf; treesOf?: TreesOf; setup?: SetupPoll }) {
   const setup = props.setup ?? createSetupPoll(props.projectId);
   const poll = createPoll(() => readQueue(props.root), POLL_MS, { cacheKey: `project:${props.projectId}:merge-queue` });
   createEffect(on(mergeChanged, () => poll.refetch(), { defer: true }));
@@ -42,6 +45,15 @@ export function MergeQueueTab(props: { projectId: string; root: string; name: st
     }, { defer: true }),
   );
   const view = () => poll.data();
+  // Back from a run's page (Back to Queue, the breadcrumb or the browser's Back): the queue opens with its tab strip
+  // at the top of the pane, where the rows the run was opened from are.
+  let was = props.run;
+  const fromRun = createMemo(() => {
+    const run = props.run;
+    const back = !run && !!was;
+    was = run;
+    return back;
+  });
   return (
     <section class="card orgs-section mq-tab" aria-labelledby="mq-title">
       <Show
@@ -51,11 +63,11 @@ export function MergeQueueTab(props: { projectId: string; root: string; name: st
         {(v) => (
           <Show
             when={!props.run}
-            fallback={<MergeRunView projectId={props.projectId} view={v()} runId={props.run!} chatOf={props.chatOf} />}
+            fallback={<MergeRunView projectId={props.projectId} view={v()} runId={props.run!} chatOf={props.chatOf} from={props.queueTab} />}
           >
             {/* An invalid definition reads "unset" too: its error is said, never the not-set-up words. */}
             <Show when={!notSetUp(v())} fallback={<NotSetUp projectId={props.projectId} view={v()} setup={setup} />}>
-              <QueueBody projectId={props.projectId} view={v()} chatOf={props.chatOf} treesOf={props.treesOf} setup={setup} onChanged={() => poll.refetch()} />
+              <QueueBody projectId={props.projectId} view={v()} tab={props.queueTab} refreshed={props.refreshed} toStrip={fromRun} chatOf={props.chatOf} treesOf={props.treesOf} setup={setup} onChanged={() => poll.refetch()} />
             </Show>
           </Show>
         )}
@@ -233,12 +245,18 @@ export function useAct(onChanged: () => void) {
   return { busy, error, run };
 }
 
-function QueueBody(props: { projectId: string; view: MergeQueueView; chatOf?: ChatOf; treesOf?: TreesOf; setup: SetupPoll; onChanged(): void }) {
+function QueueBody(props: { projectId: string; view: MergeQueueView; tab?: QueueTab; refreshed?: () => number; toStrip(): boolean; chatOf?: ChatOf; treesOf?: TreesOf; setup: SetupPoll; onChanged(): void }) {
   const v = () => props.view;
+  const onHost = createMemo(() => hostOf(v()) !== null);
+  const tabs = createMemo(() => queueTabs(props.projectId, v, onHost(), props.chatOf, props.treesOf, props.onChanged));
+  // An address naming a tab this project doesn't show (Waiting on GitHub on a local project) shows Ready to land.
+  const tab = (): QueueTab => (tabs().some((t) => t.id === props.tab) ? props.tab! : "ready");
+  const runHref = (projectId: string, run: string) => mergeRunHref(projectId, run, tab());
   const chip = () => (v().release && v().state !== "paused" && !v().invalid ? { label: "Frozen for a release", tone: "warn" as const } : queueStateChip(v()));
   const head = useAct(props.onChanged);
   const paused = () => v().state === "paused";
   return (
+    <RunFrom.Provider value={tab}>
     <div class="stack mq-body">
       <HeadsStrip view={v()} />
       <LocalBehind project={props.projectId} target={v().target} behind={v().heads.behind} blocked={v().heads.behindBlocked} onChanged={props.onChanged} />
@@ -290,7 +308,7 @@ function QueueBody(props: { projectId: string; view: MergeQueueView; chatOf?: Ch
                 {(r) => (
                   <>
                     {" "}
-                    <a href={mergeRunHref(props.projectId, r())}>View the Run</a>
+                    <a href={runHref(props.projectId, r())}>View the Run</a>
                   </>
                 )}
               </Show>
@@ -319,103 +337,349 @@ function QueueBody(props: { projectId: string; view: MergeQueueView; chatOf?: Ch
         )}
       </Show>
       <CheckingNow projectId={props.projectId} view={v()} chatOf={props.chatOf} />
-      <Waiting projectId={props.projectId} view={v()} chatOf={props.chatOf} onChanged={props.onChanged} />
-      <Show when={v().needsYou.length > 0 || (v().heads.targetBroken?.length ?? 0) > 0}>
-        <div class="stack-2">
-          <h3 class="text-heading-s">Needs you</h3>
-          <ul class="list mq-list">
-            <For each={v().heads.targetBroken ?? []}>{(b) => <BrokenRow projectId={props.projectId} target={v().target} broken={b} />}</For>
-            <For each={v().needsYou}>
-              {(e) =>
-                isRequestState(e.state) ? (
-                  <RequestRow root={v().root} target={v().target} entry={e as RequestEntry} from={<FromChat projectId={props.projectId} entry={e} chatOf={props.chatOf} />} onChanged={props.onChanged} />
-                ) : (
-                  <NeedsYouRow projectId={props.projectId} root={v().root} entry={e} target={v().target} chatOf={props.chatOf} view={v()} onChanged={props.onChanged} />
-                )
-              }
-            </For>
-          </ul>
-        </div>
-      </Show>
-      <WaitingOnHost
-        root={v().root}
-        target={v().target}
-        entries={(v().waitingOnHost ?? []) as RequestEntry[]}
-        from={(e) => <FromChat projectId={props.projectId} entry={e as unknown as MergeEntry} chatOf={props.chatOf} />}
-        onChanged={props.onChanged}
-      />
-      <Show when={(v().ready ?? []).length > 0}>
-        <div class="stack-2">
-          <h3 class="text-heading-s">Ready to land, not approved</h3>
-          <ul class="list mq-list">
-            <For each={v().ready}>{(r) => <ReadyRow projectId={props.projectId} root={v().root} target={v().target} how={v().settings?.how?.effective} ready={r} review={v().review} chatOf={props.chatOf} treesOf={props.treesOf} onChanged={props.onChanged} />}</For>
-          </ul>
-        </div>
-      </Show>
-      <Show when={stillSentBack(v()).length > 0}>
-        <div class="stack-2">
-          <h3 class="text-heading-s">Sent back to its chat</h3>
-          <ul class="list mq-list">
-            <For each={stillSentBack(v())}>
-              {(e) => <SentBackRow projectId={props.projectId} root={v().root} entry={e} view={v()} chatOf={props.chatOf} onChanged={props.onChanged} />}
-            </For>
-          </ul>
-        </div>
-      </Show>
-      <div class="stack-2">
-        <h3 class="text-heading-s">Recent</h3>
-        <Show when={v().recent.length > 0} fallback={<p class="text-caption text-muted">Nothing has landed through the queue yet.</p>}>
-          <ul class="list mq-list">
-            <For each={v().recent}>
-              {(l) => (
-                <li class="list-row mq-row" classList={{ "mq-tap": !!l.entry.session }} data-branch={l.entry.branch} data-state="landed" onClick={rowOpens(() => l.entry.session && chatHref(props.projectId, l.entry.session, props.chatOf))}>
-                  <div class="list-main">
-                    <RowHead projectId={props.projectId} branch={l.entry.branch} session={l.entry.session} chatOf={props.chatOf} />
-                    <p class="mq-facts">
-                      <QueueChip row={{ label: l.entry.landed?.via === "host" ? `Merged on ${l.entry.request?.host === "gitlab" ? "GitLab" : "GitHub"}` : "Landed", tone: "success" }} />
-                      <Show when={l.entry.landed}>
-                        {(ld) => (
-                          <span>
-                            as <span class="text-mono">{short(ld().sha)}</span> · {relativeTime(ld().at)}
-                            <Show when={ld().via !== "host"}>{ld().pushed === "not-pushed" ? ` · not pushed${ld().pushWhy ? `: ${ld().pushWhy}` : ""}` : ld().pushed === "pushed" ? " · pushed" : ""}</Show>
-                            <Show when={l.run?.noChecks}> · No checks declared</Show>
-                          </span>
-                        )}
-                      </Show>
-                    </p>
-                    <BranchSummaryView summary={l.entry.summary} branch={l.entry.branch} />
-                    <ReviewerLinks projectId={props.projectId} view={v()} run={l.entry.run ?? l.run?.id} />
-                    <For each={notesOf(l.entry.notes)}>
-                      {(n) => (
-                        <p class="list-meta mq-note">
-                          <span class="text-muted">{n.label}:</span> {n.text}
-                        </p>
-                      )}
-                    </For>
-                  </div>
-                  <div class="button-row mq-row-act">
-                    <QueueReview projectId={props.projectId} branch={l.entry.branch} scope={{ kind: "queue", project: props.projectId, entry: l.entry.id }} session={l.entry.session} chatOf={props.chatOf} />
-                    <Show when={l.run}>
-                      {(r) => (
-                        <a class="button button-sm button-ghost" href={mergeRunHref(props.projectId, r().id)} aria-label={`View checks for ${l.entry.branch}`}>
-                          View Checks
-                        </a>
-                      )}
-                    </Show>
-                  </div>
-                </li>
-              )}
-            </For>
-          </ul>
+      <Waiting projectId={props.projectId} view={v()} refreshed={props.refreshed} chatOf={props.chatOf} onChanged={props.onChanged} />
+      <QueueTabs projectId={props.projectId} tabs={tabs()} tab={tab()} toStrip={props.toStrip} />
+    </div>
+    </RunFrom.Provider>
+  );
+}
+
+/**
+ * The queue's tab strip and the tab shown under it, as the project page's own strip: each tab is an address (each pick
+ * a history entry), Left/Right move focus along it (wrapping), Home/End jump, Enter or Space picks. A label carries its
+ * count; Needs you's warns while it has anything. A tab with no rows says so in one line.
+ */
+function QueueTabs(props: { projectId: string; tabs: QueueTabDef[]; tab: QueueTab; toStrip(): boolean }) {
+  const els: HTMLButtonElement[] = [];
+  const at = () => Math.max(0, props.tabs.findIndex((t) => t.id === props.tab));
+  const shown = createMemo(() => props.tabs[at()]!);
+  let strip: HTMLDivElement | undefined;
+  let panel: HTMLDivElement | undefined;
+  // Back from a run: the pane scrolls so the strip is at its top (its own scrollTop: scrollIntoView would move every
+  // scroller up the tree), the panel at least the rest of the pane's height so a short tab can be scrolled that far.
+  onMount(() => {
+    if (!props.toStrip()) return;
+    requestAnimationFrame(() => {
+      const pane = strip && scrollerOf(strip);
+      if (!pane || !strip || !panel) return;
+      const top = pane === document.scrollingElement ? 0 : pane.getBoundingClientRect().top;
+      panel.style.minHeight = `${Math.max(panel.offsetHeight, pane.clientHeight - strip.offsetHeight)}px`;
+      pane.scrollTop += strip.getBoundingClientRect().top - top;
+    });
+  });
+  // A pick never moves the strip under the pointer: the panel keeps at least the tallest height it had this visit, so
+  // a shorter tab can't shorten the page under the scroll position.
+  const keepHeight = () => {
+    if (panel) panel.style.minHeight = `${Math.max(panel.offsetHeight, parseFloat(panel.style.minHeight) || 0)}px`;
+  };
+  // On a narrow strip the tab shown is scrolled into view, clear of the strip's edge fade: the strip scrolls sideways,
+  // never the page (the strip sits low on it, so scrollIntoView would move the page to it on an address that names a
+  // tab).
+  createEffect(
+    on(
+      () => props.tab,
+      () =>
+        queueMicrotask(() => {
+          const el = els[at()];
+          if (!strip || !el) return;
+          const left = el.offsetLeft - strip.offsetLeft - TAB_FADE_PX;
+          const right = el.offsetLeft - strip.offsetLeft + el.offsetWidth + TAB_FADE_PX;
+          if (left < strip.scrollLeft) strip.scrollLeft = left;
+          else if (right > strip.scrollLeft + strip.clientWidth) strip.scrollLeft = right - strip.clientWidth;
+        }),
+    ),
+  );
+  const onKey = (e: KeyboardEvent, i: number) => {
+    const last = props.tabs.length - 1;
+    const next = e.key === "ArrowRight" ? (i === last ? 0 : i + 1) : e.key === "ArrowLeft" ? (i === 0 ? last : i - 1) : e.key === "Home" ? 0 : e.key === "End" ? last : -1;
+    if (next < 0) return;
+    e.preventDefault();
+    els[next]?.focus();
+  };
+  return (
+    <div class="stack-2 mq-tabs-area">
+      <div class="tabs mq-tabs" role="tablist" aria-label="Merge queue" ref={strip}>
+        <For each={props.tabs}>
+          {(t, i) => (
+            <button
+              type="button"
+              role="tab"
+              class="tab"
+              id={`mq-tab-${t.id}`}
+              data-tab={t.id}
+              aria-selected={props.tab === t.id ? "true" : "false"}
+              aria-controls={props.tab === t.id ? "mq-tabpanel" : undefined}
+              tabindex={props.tab === t.id ? 0 : -1}
+              // The name as it reads: "Needs you · 2".
+              aria-label={t.count !== null ? `${t.label} · ${t.count}` : t.label}
+              ref={(el) => (els[i()] = el)}
+              onClick={() => {
+                if (props.tab === t.id) return;
+                keepHeight();
+                location.hash = mergeQueueTabHref(props.projectId, t.id);
+              }}
+              onKeyDown={(e) => onKey(e, i())}
+            >
+              {t.label}
+              <Show when={t.count !== null}>
+                <span class="text-num mq-tab-count" classList={{ "mq-tab-count-warn": !!t.warn }}>
+                  · {t.count}
+                </span>
+              </Show>
+            </button>
+          )}
+        </For>
+      </div>
+      {/* An empty tab's panel takes focus itself, so its one line is in the tab order (its rows' links are otherwise). */}
+      <div class="stack-2 mq-tabpanel" role="tabpanel" id="mq-tabpanel" aria-labelledby={`mq-tab-${shown().id}`} data-tab={shown().id} tabindex={shown().rows > 0 ? undefined : 0} ref={panel}>
+        <Show when={shown().rows > 0} fallback={<p class="mq-empty text-caption">{shown().empty}</p>}>
+          <Show when={shown()} keyed>
+            {(t) => t.panel()}
+          </Show>
         </Show>
       </div>
-      <QueueHistory projectId={props.projectId} view={v()} onChanged={props.onChanged} />
     </div>
+  );
+}
+
+/** The width of a tab strip's edge fade (the design system's `.tabs`): a tab scrolled into view clears it. */
+const TAB_FADE_PX = 32;
+
+/** The nearest ancestor that scrolls vertically: the page's pane. */
+function scrollerOf(el: HTMLElement): HTMLElement | null {
+  for (let p = el.parentElement; p; p = p.parentElement) {
+    const y = getComputedStyle(p).overflowY;
+    if (y === "auto" || y === "scroll") return p;
+  }
+  return document.scrollingElement as HTMLElement | null;
+}
+
+/**
+ * The live fact an empty tab's line starts with (the design system's empty state: the fact, then what will show
+ * there): what the queue is doing now.
+ */
+export function queueFact(v: MergeQueueView): string {
+  const n = v.waiting.length;
+  if (v.state === "paused") return n ? `The queue is paused with ${n} waiting.` : "The queue is paused.";
+  if (v.current) return n ? `1 being checked, ${n} waiting.` : "1 being checked.";
+  return n ? `${n} waiting.` : "The queue is idle.";
+}
+
+/** The tab a run's page is opened from: its Back to Queue returns there (`…/merge-queue/<tab>/<run>`). */
+const RunFrom = createContext<() => QueueTab | undefined>(() => undefined);
+/** A run's page, from the queue's tab shown now. Call at a component's top (it reads the context). */
+const useRunHref = () => {
+  const from = useContext(RunFrom);
+  return (projectId: string, run: string) => mergeRunHref(projectId, run, from());
+};
+
+/**
+ * One of the queue's tabs, under Checking now and Waiting: its address word, its label, its count (null: none shown),
+ * whether the count warns, how many rows it has, the one line it says with none, and its rows. A new tab is one more
+ * entry in queueTabs (and its word in QUEUE_TABS).
+ */
+interface QueueTabDef {
+  id: QueueTab;
+  label: string;
+  count: number | null;
+  warn?: boolean;
+  rows: number;
+  empty: string;
+  panel(): JSX.Element;
+}
+
+/** The project's host by name, for a project that lands on one: its landing choice's, else an entry's request's. */
+function hostOf(v: MergeQueueView): string | null {
+  const how = v.settings?.how?.effective;
+  if (how === "github-pr") return HOST_NAME.github;
+  if (how === "gitlab-mr") return HOST_NAME.gitlab;
+  const kind = (v.waitingOnHost ?? []).find((e) => e.request?.host)?.request?.host;
+  if (kind) return HOST_NAME[kind];
+  return how === "push-branch" || (v.waitingOnHost ?? []).length ? "the host" : null;
+}
+
+/**
+ * The queue's tabs, in the strip's order; each shows exactly the rows its section always showed. Built once (again
+ * only when the host's tab comes or goes): labels, counts and rows are read as the view changes, so a poll keeps the
+ * strip's buttons and the rows shown, focus and open confirms with them.
+ */
+function queueTabs(projectId: string, v: () => MergeQueueView, onHost: boolean, chatOf: ChatOf | undefined, treesOf: TreesOf | undefined, onChanged: () => void): QueueTabDef[] {
+  const ready = () => v().ready ?? [];
+  const needsCount = () => (v().heads.targetBroken ?? []).length + needsYouOf(v()).length;
+  const tabs: (QueueTabDef | null)[] = [
+    {
+      id: "ready",
+      label: "Ready to land",
+      get count() {
+        return ready().length;
+      },
+      get rows() {
+        return ready().length;
+      },
+      get empty() {
+        return `${queueFact(v())} A finished branch shows here until you land it.`;
+      },
+      panel: () => (
+        <ul class="list mq-list">
+          <For each={v().ready}>{(r) => <ReadyRow projectId={projectId} root={v().root} target={v().target} how={v().settings?.how?.effective} ready={r} review={v().review} chatOf={chatOf} treesOf={treesOf} onChanged={onChanged} />}</For>
+        </ul>
+      ),
+    },
+    {
+      id: "needs-you",
+      label: "Needs you",
+      get count() {
+        return needsCount();
+      },
+      get warn() {
+        return needsCount() > 0;
+      },
+      get rows() {
+        return needsCount();
+      },
+      get empty() {
+        return `${queueFact(v())} A branch shows here when it needs your decision.`;
+      },
+      panel: () => (
+        <ul class="list mq-list">
+          <For each={v().heads.targetBroken ?? []}>{(b) => <BrokenRow projectId={projectId} target={v().target} broken={b} />}</For>
+          <For each={needsYouOf(v())}>
+            {(e) =>
+              isRequestState(e.state) ? (
+                <RequestRow root={v().root} target={v().target} entry={e as RequestEntry} from={<FromChat projectId={projectId} entry={e} chatOf={chatOf} />} onChanged={onChanged} />
+              ) : (
+                <NeedsYouRow projectId={projectId} root={v().root} entry={e} target={v().target} chatOf={chatOf} view={v()} onChanged={onChanged} />
+              )
+            }
+          </For>
+        </ul>
+      ),
+    },
+    {
+      id: "with-its-chat",
+      label: "With its chat",
+      get count() {
+        return withItsChat(v()).length;
+      },
+      get rows() {
+        return withItsChat(v()).length;
+      },
+      get empty() {
+        return `${queueFact(v())} A branch shows here while its chat fixes what the queue sent back.`;
+      },
+      panel: () => (
+        <ul class="list mq-list">
+          <For each={withItsChat(v())}>{(e) => <WithChatRow projectId={projectId} entry={e} view={v()} chatOf={chatOf} onChanged={onChanged} />}</For>
+        </ul>
+      ),
+    },
+    onHost
+      ? {
+          id: "waiting-on-host",
+          get label() {
+            return `Waiting on ${hostOf(v()) ?? "the host"}`;
+          },
+          get count() {
+            return (v().waitingOnHost ?? []).length;
+          },
+          get rows() {
+            return (v().waitingOnHost ?? []).length;
+          },
+          get empty() {
+            return `${queueFact(v())} A branch shows here while its request waits on ${hostOf(v()) ?? "the host"}.`;
+          },
+          panel: () => (
+            <ul class="list mq-list" aria-label={`Waiting on ${hostOf(v()) ?? "the host"}`}>
+              <For each={(v().waitingOnHost ?? []) as RequestEntry[]}>
+                {(e) => <RequestRow root={v().root} target={v().target} entry={e} from={<FromChat projectId={projectId} entry={e as unknown as MergeEntry} chatOf={chatOf} />} onChanged={onChanged} />}
+              </For>
+            </ul>
+          ),
+        }
+      : null,
+    {
+      id: "landed",
+      label: "Landed",
+      // At most the newest 20 come: a count would read as all of them.
+      count: null,
+      get rows() {
+        return v().recent.length;
+      },
+      get empty() {
+        return `${queueFact(v())} Each landing shows here.`;
+      },
+      panel: () => (
+        <ul class="list mq-list">
+          <For each={v().recent}>{(l) => <LandedRow projectId={projectId} view={v()} landed={l} chatOf={chatOf} />}</For>
+        </ul>
+      ),
+    },
+    {
+      id: "queue-chats",
+      label: "Queue chats",
+      get count() {
+        return (v().chats ?? []).length;
+      },
+      get rows() {
+        return (v().chats ?? []).length;
+      },
+      get empty() {
+        return `${queueFact(v())} Each chat the queue starts shows here.`;
+      },
+      panel: () => <QueueHistory projectId={projectId} view={v()} onChanged={onChanged} />,
+    },
+  ];
+  return tabs.filter((t): t is QueueTabDef => !!t);
+}
+
+/** A landing: its chip, its commit, when and whether it was pushed, its summary, review and notes, Review Changes and
+ *  View Checks. */
+function LandedRow(props: { projectId: string; view: MergeQueueView; landed: MergeQueueView["recent"][number]; chatOf?: ChatOf }) {
+  const l = () => props.landed;
+  const runHref = useRunHref();
+  return (
+    <li class="list-row mq-row" classList={{ "mq-tap": !!l().entry.session }} data-branch={l().entry.branch} data-state="landed" onClick={rowOpens(() => l().entry.session && chatHref(props.projectId, l().entry.session!, props.chatOf))}>
+      <div class="list-main">
+        <RowHead projectId={props.projectId} branch={l().entry.branch} session={l().entry.session} chatOf={props.chatOf} />
+        <p class="mq-facts">
+          <QueueChip row={{ label: l().entry.landed?.via === "host" ? `Merged on ${l().entry.request?.host === "gitlab" ? "GitLab" : "GitHub"}` : "Landed", tone: "success" }} />
+          <Show when={l().entry.landed}>
+            {(ld) => (
+              <span>
+                as <span class="text-mono">{short(ld().sha)}</span> · {relativeTime(ld().at)}
+                <Show when={ld().via !== "host"}>{ld().pushed === "not-pushed" ? ` · not pushed${ld().pushWhy ? `: ${ld().pushWhy}` : ""}` : ld().pushed === "pushed" ? " · pushed" : ""}</Show>
+                <Show when={l().run?.noChecks}> · No checks declared</Show>
+              </span>
+            )}
+          </Show>
+        </p>
+        <BranchSummaryView summary={l().entry.summary} branch={l().entry.branch} />
+        <ReviewerLinks projectId={props.projectId} view={props.view} run={l().entry.run ?? l().run?.id} />
+        <For each={notesOf(l().entry.notes)}>
+          {(n) => (
+            <p class="list-meta mq-note">
+              <span class="text-muted">{n.label}:</span> {n.text}
+            </p>
+          )}
+        </For>
+      </div>
+      <div class="button-row mq-row-act">
+        <QueueReview projectId={props.projectId} branch={l().entry.branch} scope={{ kind: "queue", project: props.projectId, entry: l().entry.id }} session={l().entry.session} chatOf={props.chatOf} />
+        <Show when={l().run}>
+          {(r) => (
+            <a class="button button-sm button-ghost" href={runHref(props.projectId, r().id)} aria-label={`View checks for ${l().entry.branch}`}>
+              View Checks
+            </a>
+          )}
+        </Show>
+      </div>
+    </li>
   );
 }
 
 function CheckingNow(props: { projectId: string; view: MergeQueueView; chatOf?: ChatOf }) {
   const cur = () => props.view.current;
+  const runHref = useRunHref();
   /** The entry the run checks, from whichever list holds it. */
   const entry = () => {
     const r = cur();
@@ -456,7 +720,7 @@ function CheckingNow(props: { projectId: string; view: MergeQueueView; chatOf?: 
               </div>
               <div class="button-row mq-row-act">
                 <QueueReview projectId={props.projectId} branch={r().branch} scope={{ kind: "queue", project: props.projectId, entry: r().entry }} session={entry()?.session} chatOf={props.chatOf} />
-                <a class="button button-sm" href={mergeRunHref(props.projectId, r().id)}>
+                <a class="button button-sm" href={runHref(props.projectId, r().id)}>
                   View Checks
                 </a>
               </div>
@@ -494,11 +758,27 @@ function CheckingNow(props: { projectId: string; view: MergeQueueView; chatOf?: 
   );
 }
 
-function Waiting(props: { projectId: string; view: MergeQueueView; chatOf?: ChatOf; onChanged(): void }) {
+function Waiting(props: { projectId: string; view: MergeQueueView; refreshed?: () => number; chatOf?: ChatOf; onChanged(): void }) {
+  // Closed each time it is shown: whether it was open is never kept. The page's Refresh and a page restored from the
+  // browser's back-forward cache close it too; the queue's own live reads keep it as it is.
+  const [open, setOpen] = createSignal(false);
+  if (props.refreshed) createEffect(on(props.refreshed, () => setOpen(false), { defer: true }));
+  const onShow = (e: PageTransitionEvent) => e.persisted && setOpen(false);
+  window.addEventListener("pageshow", onShow);
+  onCleanup(() => window.removeEventListener("pageshow", onShow));
   return (
-    <div class="stack-2">
-      <h3 class="text-heading-s">{waitingHead(props.view.waiting)}</h3>
-      <Show when={props.view.waiting.length > 0} fallback={<p class="text-caption text-muted">Nothing waiting. A branch joins when you press Land or type "land it" in its chat.</p>}>
+    <div class="stack-2 mq-waiting">
+      {/* With nothing in line, a plain line: nothing to open. */}
+      <Show when={props.view.waiting.length > 0} fallback={<h3 class="mq-waiting-head mq-waiting-none">{waitingHead(props.view.waiting)}</h3>}>
+      <h3 class="mq-waiting-head">
+        <button type="button" class="mq-waiting-toggle" aria-expanded={open() ? "true" : "false"} aria-controls="mq-waiting-rows" onClick={() => setOpen(!open())}>
+          <Icon name="chevron-right" small class="mq-twist" />
+          <span>{waitingHead(props.view.waiting)}</span>
+        </button>
+      </h3>
+      </Show>
+      <div id="mq-waiting-rows" role="region" aria-label="Waiting" hidden={!open() || props.view.waiting.length === 0}>
+      <Show when={open() && props.view.waiting.length > 0}>
         <ul class="list mq-list">
           <For each={props.view.waiting}>
             {(e) => {
@@ -537,8 +817,8 @@ function Waiting(props: { projectId: string; view: MergeQueueView; chatOf?: Chat
                   </div>
                   <div class="button-row mq-row-act">
                     <QueueReview projectId={props.projectId} branch={e.branch} scope={{ kind: "queue", project: props.projectId, entry: e.id }} session={e.session} chatOf={props.chatOf} />
-                    <button type="button" class="button button-sm button-ghost" aria-label={`Cancel landing ${e.branch}`} disabled={!!act.busy()} onClick={() => void act.run("cancel", () => cancelEntry(e), `Cancelled landing ${e.branch}.`)}>
-                      Cancel Landing
+                    <button type="button" class="button button-sm button-ghost" aria-label={`Remove ${e.branch} from the merge queue`} title="Takes it off the queue. Its branch, folder, commits and drafts stay." disabled={!!act.busy()} onClick={() => void act.run("cancel", () => cancelEntry(e), `Removed ${e.branch} from the merge queue.`)}>
+                      Remove from Queue
                     </button>
                   </div>
                 </li>
@@ -547,15 +827,75 @@ function Waiting(props: { projectId: string; view: MergeQueueView; chatOf?: Chat
           </For>
         </ul>
       </Show>
+      </div>
     </div>
   );
 }
 
-/** An entry that waits for you, with its two actions; or a conflict the merge thread is judging. */
+/** An entry that waits for you: a decision (its question, its choices, its answers on the queue, Answer in Chat when
+ *  it is answered in words), or a state that waits from before decisions; or a conflict the merge thread is judging.
+ *  Remove from Queue on each. No row has a text box, a Send Back or a re-land. */
 function NeedsYouRow(props: { projectId: string; root: string; target: string; entry: MergeEntry; chatOf?: ChatOf; view?: MergeQueueView; onChanged(): void }) {
   const e = () => props.entry;
   const act = useAct(props.onChanged);
+  const runHref = useRunHref();
   const answer = (a: MergeAnswer, done: string) => void act.run(a, () => answerEntry(e(), a), done);
+  const decision = () => openDecision(e());
+  /** The answers on the queue: the decision's, else the state's own. Remove from Queue always last. */
+  const actions = (): DecisionAction[] => {
+    const d = decision();
+    if (d) return decisionActions(d);
+    switch (e().state) {
+      case "behaviour-differs":
+        return e().conflict?.proposal ? ["accept", "remove"] : ["remove"];
+      case "unattributed":
+        return ["land-anyway", "try-again", "remove"];
+      case "drafts-changed":
+        return ["land", "remove"];
+      default:
+        return ["remove"];
+    }
+  };
+  const inChat = () => {
+    const d = decision();
+    return d ? answeredInChat(d) : e().state === "behaviour-differs" || e().state === "needs-user";
+  };
+  const chip = (): { label: string; tone: "warn" } => {
+    const d = decision();
+    if (d) return { label: d.kind === "needs-you" ? `Needs you · ${e().branch}` : `${DECISION_LABEL[d.kind]} · waiting for you`, tone: "warn" };
+    switch (e().state) {
+      case "behaviour-differs":
+        return { label: "Behaviour differs · waiting for you", tone: "warn" };
+      case "review-flagged":
+        return { label: "Review flagged · waiting for you", tone: "warn" };
+      case "unattributed":
+        return { label: "Can't tell whose failure · waiting for you", tone: "warn" };
+      case "drafts-changed":
+        return { label: "Drafts changed since you approved", tone: "warn" };
+      case "needs-user":
+        return { label: `Needs you · ${e().branch}`, tone: "warn" };
+      default:
+        return { label: "Conflict", tone: "warn" };
+    }
+  };
+  const sides = () => decision()?.sides ?? (e().state === "behaviour-differs" ? e().conflict : undefined);
+  const doAct = (a: DecisionAction) => {
+    const b = e().branch;
+    switch (a) {
+      case "accept":
+        return answer("accept", `Accepted the resolution for ${b}.`);
+      case "land-anyway":
+        return answer("land-anyway", `Landing ${b} anyway.`);
+      case "try-again":
+        return answer("try-again", `Checking ${b} again.`);
+      case "land":
+        // A decision's Land is answered on the queue (out of tries: a new standing approval at the newest commit); a
+        // Drafts changed entry from before decisions re-approves at the commit it waits at.
+        return void act.run("land", () => (decision() ? answerEntry(e(), "land") : landBranch(props.root, b, { commit: e().commit })), `Queued ${b}.`);
+      case "remove":
+        return void act.run("remove", () => cancelEntry(e()), `Removed ${b} from the merge queue.`);
+    }
+  };
   return (
     <li
       class="list-row mq-row mq-row-grid mq-needs"
@@ -567,30 +907,38 @@ function NeedsYouRow(props: { projectId: string; root: string; target: string; e
       <div class="list-main">
         <RowHead projectId={props.projectId} branch={e().branch} session={e().session} chatOf={props.chatOf} />
         <p class="mq-facts">
-          <QueueChip
-            row={
-              e().state === "behaviour-differs"
-                ? { label: "Behaviour differs · waiting for you", tone: "warn" }
-                : e().state === "review-flagged"
-                  ? { label: "Review flagged · waiting for you", tone: "warn" }
-                  : e().state === "unattributed"
-                    ? { label: "Can't tell whose failure · waiting for you", tone: "warn" }
-                  : e().state === "drafts-changed"
-                    ? { label: "Drafts changed since you approved", tone: "warn" }
-                    : { label: "Conflict", tone: "warn" }
-            }
-          />
+          <QueueChip row={chip()} />
           <span class="text-mono text-muted">{short(e().commit)}</span>
           <Show when={e().run}>
             {(r) => (
-              <a href={mergeRunHref(props.projectId, r())} onClick={(ev) => ev.stopPropagation()}>
+              <a href={runHref(props.projectId, r())} onClick={(ev) => ev.stopPropagation()}>
                 See Why
               </a>
             )}
           </Show>
         </p>
         <BranchSummaryView summary={e().summary} projectId={props.projectId} branch={e().branch} />
-        <Show when={e().state === "behaviour-differs" && e().conflict}>
+        <Show when={decision()}>
+          {(d) => (
+            <>
+              <p class="list-meta mq-question">
+                {d().question}
+                <Show when={d().cantSettle}>
+                  <span class="text-muted"> · can't be settled without you</span>
+                </Show>
+              </p>
+              <Show when={d().choices.length}>
+                <p class="list-meta">
+                  <span class="text-muted">Choices:</span> {d().choices.join(" · ")}
+                </p>
+              </Show>
+              <Show when={d().heldNote}>
+                <p class="list-meta text-muted">The merge queue's note to the chat isn't sent yet: it goes with your answer.</p>
+              </Show>
+            </>
+          )}
+        </Show>
+        <Show when={sides()}>
           {(c) => (
             <dl class="mq-sides">
               <div>
@@ -608,17 +956,17 @@ function NeedsYouRow(props: { projectId: string; root: string; target: string; e
             </dl>
           )}
         </Show>
-        <Show when={e().state === "review-flagged"}>
+        <Show when={!decision() && e().state === "review-flagged"}>
           <p class="list-meta">{e().review?.text ?? e().reason ?? "The review found something that blocks it."}</p>
         </Show>
-        <Show when={e().state === "unattributed"}>
-          <p class="list-meta">{unattributedWhy(e().reason, props.target)} Land Anyway lands the commit it tested; Send Back hands it to its chat.</p>
+        <Show when={e().state === "unattributed" || decision()?.kind === "unattributed"}>
+          <p class="list-meta">{unattributedWhy(e().reason, props.target)} Land Anyway lands the commit it tested; Try Again checks it afresh.</p>
           <UnclearChecks projectId={props.projectId} unclear={e().unclear} target={props.target} class="list-meta" />
         </Show>
-        <Show when={e().state === "drafts-changed"}>
+        <Show when={!decision() && e().state === "drafts-changed"}>
           <p class="list-meta">{e().reason ?? "Its spec drafts changed after you approved. Land again to approve them as they are now."}</p>
         </Show>
-        <Show when={e().state === "conflict"}>
+        <Show when={!decision() && (e().state === "conflict" || e().state === "needs-user")}>
           <p class="list-meta">{e().reason ?? "The merge thread is judging the conflict. The line moves on meanwhile."}</p>
         </Show>
         <Show when={props.view}>{(pv) => <ReviewerLinks projectId={props.projectId} view={pv()} run={e().run} />}</Show>
@@ -626,29 +974,41 @@ function NeedsYouRow(props: { projectId: string; root: string; target: string; e
       </div>
       <div class="button-row mq-row-act">
         <QueueReview projectId={props.projectId} branch={e().branch} scope={{ kind: "queue", project: props.projectId, entry: e().id }} session={e().session} chatOf={props.chatOf} />
-        <Show when={e().state === "behaviour-differs"}>
-          <button type="button" class="button button-sm button-primary" aria-label={`Accept the resolution for ${e().branch}`} disabled={!!act.busy()} onClick={() => answer("accept", `Accepted the resolution for ${e().branch}.`)}>
-            Accept
-          </button>
+        <For each={actions().filter((a) => a !== "remove")}>
+          {(a) => (
+            <button
+              type="button"
+              class={`button button-sm${a === "try-again" ? "" : " button-primary"}`}
+              aria-label={a === "accept" ? `Accept the resolution for ${e().branch}` : a === "land-anyway" ? `Land ${e().branch} anyway` : a === "try-again" ? `Try ${e().branch} again` : `Land ${e().branch}`}
+              disabled={!!act.busy()}
+              aria-busy={act.busy() === a ? "true" : undefined}
+              onClick={(ev) => {
+                ev.stopPropagation();
+                doAct(a);
+              }}
+            >
+              {DECISION_ACTION_LABEL[a]}
+            </button>
+          )}
+        </For>
+        <Show when={inChat() && e().session}>
+          <a class="button button-sm" href={chatHref(props.projectId, e().session!, props.chatOf)} aria-label={`Answer about ${e().branch} in its chat`} title="You answer in the chat's message box." onClick={(ev) => ev.stopPropagation()}>
+            Answer in Chat
+          </a>
         </Show>
-        <Show when={e().state === "review-flagged" || e().state === "unattributed"}>
-          <button type="button" class="button button-sm button-primary" aria-label={`Land ${e().branch} anyway`} disabled={!!act.busy()} onClick={() => answer("land-anyway", `Landing ${e().branch} anyway.`)}>
-            Land Anyway
-          </button>
-        </Show>
-        <Show when={e().state === "drafts-changed"}>
-          <button type="button" class="button button-sm button-primary" aria-label={`Land ${e().branch}`} disabled={!!act.busy()} onClick={() => void act.run("land", () => landBranch(props.root, e().branch), `Queued ${e().branch}.`)}>
-            Land
-          </button>
-          <button type="button" class="button button-sm" aria-label={`Cancel landing ${e().branch}`} disabled={!!act.busy()} onClick={() => void act.run("cancel", () => cancelEntry(e()), `Cancelled landing ${e().branch}.`)}>
-            Cancel
-          </button>
-        </Show>
-        <Show when={e().state === "behaviour-differs" || e().state === "review-flagged" || e().state === "unattributed"}>
-          <button type="button" class="button button-sm button-destructive" aria-label={`Send ${e().branch} back to its chat`} disabled={!!act.busy()} onClick={() => answer("send-back", `Sent ${e().branch} back to its chat.`)}>
-            Send Back
-          </button>
-        </Show>
+        <button
+          type="button"
+          class="button button-sm"
+          aria-label={`Remove ${e().branch} from the merge queue`}
+          title="Takes it off the queue. Its branch, folder, commits and drafts stay."
+          disabled={!!act.busy()}
+          onClick={(ev) => {
+            ev.stopPropagation();
+            doAct("remove");
+          }}
+        >
+          Remove from Queue
+        </button>
       </div>
     </li>
   );
@@ -658,6 +1018,7 @@ function NeedsYouRow(props: { projectId: string; root: string; target: string; e
  *  to fix it there. It leaves once a later run of that check runs tests again. */
 function BrokenRow(props: { projectId: string; target: string; broken: TargetBroken }) {
   const b = () => props.broken;
+  const runHref = useRunHref();
   return (
     <li class="list-row mq-row" data-state="target-broken" data-check={b().check}>
       <div class="list-main">
@@ -669,7 +1030,7 @@ function BrokenRow(props: { projectId: string; target: string; broken: TargetBro
         <p class="list-meta text-muted">Every branch skips it until it's fixed, and lands without it. Start a chat in this project to fix it on {props.target}.</p>
       </div>
       <div class="button-row mq-row-act">
-        <a class="button button-sm button-ghost" href={mergeRunHref(props.projectId, b().run)} aria-label={`View the log of ${b().label} on ${props.target}`}>
+        <a class="button button-sm button-ghost" href={runHref(props.projectId, b().run)} aria-label={`View the log of ${b().label} on ${props.target}`}>
           View the Log
         </a>
       </div>
@@ -677,32 +1038,34 @@ function BrokenRow(props: { projectId: string; target: string; broken: TargetBro
   );
 }
 
-/** A branch sent back to its chat (Needs a fix): its reason, Land This Commit Again (a new approval of the branch's
- *  newest commit, every check from the start; Land Newest Commit once the branch has commits past the one sent back) and Remove from Queue (it leaves the queue; nothing is deleted). Once its chat
- *  fixes it (a newer finished commit, or its drafts fixed at the same commit) the Ready to land row stands for it. */
-function SentBackRow(props: { projectId: string; root: string; entry: MergeEntry; view: MergeQueueView; chatOf?: ChatOf; onChanged(): void }) {
+/** A branch with its chat: the user's Land stands while its chat fixes something ("Back with the chat · try 2 of 3 ·
+ *  Unit tests failed", "Waiting for the merge thread", "Paused: you stopped the chat", "Approved · waiting for a
+ *  fix"), or one still sent back from before. See Why and Remove from Queue; never Land, a re-land or a send-back. */
+function WithChatRow(props: { projectId: string; entry: MergeEntry; view: MergeQueueView; chatOf?: ChatOf; onChanged(): void }) {
   const e = () => props.entry;
   const act = useAct(props.onChanged);
-  /** It lands the branch's newest commit: the label and lines say what that brings in. */
-  const again = () => landAgainOf(e());
+  const runHref = useRunHref();
+  const words = (): { label: string; tone: "info" | "warn" | "neutral" | "error"; detail?: string; answer?: string } => standingWords(e()) ?? { label: "Needs a fix", tone: "error" };
   return (
-    <li class="list-row mq-row" classList={{ "mq-tap": !!e().session }} data-branch={e().branch} data-state="needs-fix" onClick={rowOpens(() => e().session && chatHref(props.projectId, e().session!, props.chatOf))}>
+    <li class="list-row mq-row" classList={{ "mq-tap": !!e().session }} data-branch={e().branch} data-state={e().state} onClick={rowOpens(() => e().session && chatHref(props.projectId, e().session!, props.chatOf))}>
       <div class="list-main">
         <RowHead projectId={props.projectId} branch={e().branch} session={e().session} chatOf={props.chatOf} />
         <p class="mq-facts">
-          <QueueChip row={{ label: "Needs a fix", tone: "error" }} />
-          {/* Once the branch moved, this is the commit sent back, not the one the button lands. */}
-          <span class="text-muted">
-            <Show when={again().included}>sent back at </Show>
-            <span class="text-mono">{short(e().commit)}</span>
-          </span>
+          <QueueChip row={{ label: words().label, tone: words().tone }} />
+          <Show when={words().detail}>{(x) => <span class="text-muted">{x()}</span>}</Show>
+          <span class="text-mono text-muted">{short(e().commit)}</span>
           <span class="text-muted">{relativeTime(e().updatedAt)}</span>
         </p>
         <BranchSummaryView summary={e().summary} projectId={props.projectId} branch={e().branch} />
-        <p class="list-meta">{e().reason ?? "It failed a check that passes on the target."}</p>
-        <Show when={again().included}>{(n) => <p class="list-meta">{n()}</p>}</Show>
-        <Show when={again().blocked}>{(why) => <p class="list-meta mq-error">{why()}</p>}</Show>
-        <p class="list-meta text-muted">{SENT_BACK_LINE}</p>
+        <Show when={e().reason}>{(r) => <p class="list-meta">{r()}</p>}</Show>
+        <Show when={words().answer}>
+          {(x) => (
+            <p class="list-meta">
+              <span class="text-muted">Chat:</span> {x()}
+            </p>
+          )}
+        </Show>
+        <p class="list-meta text-muted">{STANDING_LINE}</p>
         <ReviewerLinks projectId={props.projectId} view={props.view} run={e().run} />
         <Show when={act.error()}>{(m) => <p class="list-meta mq-error" role="alert">{m()}</p>}</Show>
       </div>
@@ -710,7 +1073,7 @@ function SentBackRow(props: { projectId: string; root: string; entry: MergeEntry
         <QueueReview projectId={props.projectId} branch={e().branch} scope={{ kind: "queue", project: props.projectId, entry: e().id }} session={e().session} chatOf={props.chatOf} />
         <Show when={e().run}>
           {(r) => (
-            <a class="button button-sm button-ghost" href={mergeRunHref(props.projectId, r())}>
+            <a class="button button-sm button-ghost" href={runHref(props.projectId, r())} onClick={(ev) => ev.stopPropagation()}>
               See Why
             </a>
           )}
@@ -718,20 +1081,13 @@ function SentBackRow(props: { projectId: string; root: string; entry: MergeEntry
         <button
           type="button"
           class="button button-sm"
-          aria-label={`Land ${e().branch} at its newest commit`}
-          title={again().included ? "Approve the branch's newest commit: every check runs from the start." : "Approve the same commit again: every check runs from the start."}
-          disabled={!!act.busy()}
-          onClick={() => void act.run("land", () => landBranch(props.root, e().branch, {}), `Queued ${e().branch} at its newest commit.`)}
-        >
-          {again().label}
-        </button>
-        <button
-          type="button"
-          class="button button-sm"
           aria-label={`Remove ${e().branch} from the merge queue`}
           title="Takes it off the queue. Its branch, folder, commits and drafts stay."
           disabled={!!act.busy()}
-          onClick={() => void act.run("cancel", () => cancelEntry(e()), `Removed ${e().branch} from the merge queue.`)}
+          onClick={(ev) => {
+            ev.stopPropagation();
+            void act.run("cancel", () => cancelEntry(e()), `Removed ${e().branch} from the merge queue.`);
+          }}
         >
           Remove from Queue
         </button>
@@ -779,11 +1135,11 @@ function ReadyRow(props: { projectId: string; root: string; target?: string; how
         <Show when={act.error()}>{(m) => <p class="list-meta mq-error" role="alert">{m()}</p>}</Show>
       </div>
       {/* A confirm replaces the row's actions while it is open. */}
-      <LandConfirms confirm={confirm} branch={r().branch} ahead={r().ahead} target={props.target} how={props.how} busy={!!act.busy()} onLand={doLand} />
+      <LandConfirms confirm={confirm} branch={r().branch} ahead={r().ahead} target={props.target} how={props.how} drafts={r().draftsOnly} busy={!!act.busy()} onLand={doLand} />
       <Show when={!confirm.ask()}>
         <div class="mq-row-act">
           <QueueReview projectId={props.projectId} branch={r().branch} scope={{ kind: "queue", project: props.projectId, branch: r().branch }} session={r().session} chatOf={props.chatOf} />
-          <LandSplit branch={r().branch} review={props.review} busy={!!act.busy()} onAsk={() => confirm.open("land")} onLand={doLand} onWithoutSpecs={() => confirm.open("specs")} />
+          <LandSplit branch={r().branch} review={props.review} busy={!!act.busy()} onAsk={() => confirm.open("land")} onLand={doLand} onWithoutSpecs={() => confirm.open("specs")} draftsOnly={!!r().draftsOnly} />
         </div>
       </Show>
     </li>

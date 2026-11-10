@@ -2316,11 +2316,11 @@ test("a resume the CLI refuses falls back to a fold in the same turn", { timeout
 // ---------------------------------------------------------------------------
 
 /** One streamed CLI message of tool_use blocks, each with its raw input_json, ending in tool_use. */
-function rawToolFrames(blocks: { id: string; name: string; json: string }[], extra: (index: number) => unknown[] = () => []): unknown[] {
+function rawToolFrames(blocks: { id: string; name: string; json: string; asIs?: boolean }[], extra: (index: number) => unknown[] = () => []): unknown[] {
 	return [
 		{ type: "stream_event", event: { type: "message_start", message: { usage: { input_tokens: 10, output_tokens: 0 } } } },
 		...blocks.flatMap((block, index) => [
-			{ type: "stream_event", event: { type: "content_block_start", index, content_block: { type: "tool_use", id: block.id, name: `mcp__sova__${block.name}`, input: {} } } },
+			{ type: "stream_event", event: { type: "content_block_start", index, content_block: { type: "tool_use", id: block.id, name: block.asIs ? block.name : `mcp__sova__${block.name}`, input: {} } } },
 			{ type: "stream_event", event: { type: "content_block_delta", index, delta: { type: "input_json_delta", partial_json: block.json } } },
 			{ type: "stream_event", event: { type: "content_block_stop", index } },
 			...extra(index),
@@ -2494,6 +2494,59 @@ test("three rejected-only messages in a row interrupt the CLI, fail the message,
 		cli.emitFrame({ type: "result", subtype: "success", is_error: false, result: "ok" });
 	});
 	assert.equal(children.length, 2);
+	await bridge.disposeAll();
+});
+
+// A tool call under a name the CLI has no tool for (a bare `bash`): the CLI answers it
+// itself ("No such tool available") and asks the model again, as for invalid arguments.
+
+test("a call under a bare tool name and the CLI's retry: pi runs only the retry, on the same child, no desync", { timeout: 8000 }, async () => {
+	const { bridge, children, debug } = harness();
+	const m1 = [user("list")];
+	const [first] = await Promise.all([
+		piMessage(bridge, m1),
+		(async () => {
+			const cli = await started(children);
+			// The model copied a bare name: the CLI never dispatches it.
+			for (const frame of rawToolFrames([{ id: "toolu_BARE", name: "bash", json: "{\"command\":\"ls\"}", asIs: true }])) cli.emitFrame(frame);
+			cli.emitFrame({ type: "assistant", message: { content: [{ type: "tool_use", id: "toolu_BARE", name: "bash", input: { command: "ls" } }], stop_reason: null } });
+			// Its retry under the CLI's name, dispatched as every valid call is.
+			for (const frame of rawToolFrames([{ id: "toolu_RETRY", name: "bash", json: "{\"command\":\"ls\"}" }])) cli.emitFrame(frame);
+			cli.toolCall("bash", { command: "ls" }, "retry-bash");
+		})(),
+	]);
+	assert.equal(first.stopReason, "toolUse", first.errorMessage);
+	assert.deepEqual(first.content.flatMap((b) => b.type === "toolCall" ? [b.id] : []), ["toolu_RETRY"], "pi must not run the call the CLI answered itself");
+	const cli = children[0]!;
+	const [final] = await Promise.all([
+		piMessage(bridge, [...m1, first as Message, toolResult("toolu_RETRY", "bash", "a.txt")]),
+		(async () => {
+			assert.deepEqual(await mcpAnswer(cli, "retry-bash"), { content: [{ type: "text", text: "a.txt" }] });
+			for (const frame of finalTextFrames("One file.")) cli.emitFrame(frame);
+		})(),
+	]);
+	assert.equal(final.stopReason, "stop", final.errorMessage);
+	assert.equal(children.length, 1, "a bare tool name must not restart the CLI");
+	assert.ok(!debug.some((e) => e.event === "desynced"), JSON.stringify(debug));
+	assert.deepEqual(debug.filter((e) => e.event === "tool-name-rejected").map((e) => [e.tool, e.id]), [["bash", "toolu_BARE"]]);
+	await bridge.disposeAll();
+});
+
+test("three messages in a row of bare tool names fail the message saying the tool is unknown", { timeout: 8000 }, async () => {
+	const { bridge, children } = harness();
+	const [message] = await Promise.all([
+		piMessage(bridge, [user("status")]),
+		(async () => {
+			const cli = await started(children);
+			for (let n = 1; n <= 3; n++) for (const frame of rawToolFrames([{ id: `toolu_P${n}`, name: "project_verbs", json: "{\"verb\":\"status\"}", asIs: true }])) cli.emitFrame(frame);
+			await cli.waitFor((f) => f.request?.subtype === "interrupt");
+			cli.emitFrame({ type: "result", subtype: "error_during_execution", is_error: true, terminal_reason: "aborted_streaming" });
+		})(),
+	]);
+	assert.equal(message.stopReason, "error");
+	assert.equal(message.errorMessage, "Claude called tool \"project_verbs\", which it does not have, 3 times in a row");
+	assert.ok(!message.content.some((b) => b.type === "toolCall"));
+	assert.equal(message.diagnostics?.filter((d) => d.type === "claude-code.invalid-tool-input" && d.details?.reason === "unknown-tool").length, 3);
 	await bridge.disposeAll();
 });
 

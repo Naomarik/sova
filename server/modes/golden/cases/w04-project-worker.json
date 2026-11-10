@@ -1,0 +1,449 @@
+{
+ "parent": [
+  {
+   "step": "open",
+   "calls": [],
+   "activeTools": [
+    "read",
+    "bash",
+    "edit",
+    "write",
+    "agent_resume",
+    "agent_models",
+    "agent_spawn",
+    "agent_list",
+    "agent_transcript",
+    "agent_steer",
+    "agent_kill",
+    "agent_wait",
+    "team_create",
+    "team_add",
+    "team_eject",
+    "team_succeed",
+    "team_list",
+    "project_verbs",
+    "queue_push"
+   ],
+   "entries": [],
+   "extensions": [
+    "<mode-slot:index>",
+    "<repo>/pi-config/extensions/subagents/index.ts",
+    "<inline:sova-resource-monitor>",
+    "<inline:sova-fork-cache>",
+    "<inline:sova-shell-guard>",
+    "<inline:sova-deeper-context>",
+    "<inline:sova-background-jobs>",
+    "<inline:sova-mcp>",
+    "<inline:sova-worker-host>",
+    "<inline:sova-vis-check>",
+    "<inline:sova-shell-model>",
+    "<inline:sova-memory>",
+    "<inline:sova-playbook>",
+    "<inline:sova-project-verbs>",
+    "<inline:sova-topics>",
+    "<inline:sova-tours>",
+    "<inline:sova-create-settings>",
+    "<inline:sova-transcript-cards>"
+   ]
+  },
+  {
+   "step": "switch {\"projectModes\":[\"checks\",\"rel\"],\"minorModes\":[\"spec\"]}",
+   "calls": [],
+   "activeTools": [
+    "read",
+    "bash",
+    "edit",
+    "write",
+    "agent_resume",
+    "agent_models",
+    "agent_spawn",
+    "agent_list",
+    "agent_transcript",
+    "agent_steer",
+    "agent_kill",
+    "agent_wait",
+    "team_create",
+    "team_add",
+    "team_eject",
+    "team_succeed",
+    "team_list",
+    "project_verbs",
+    "queue_push",
+    "rel__status"
+   ],
+   "entries": [
+    {
+     "type": "custom",
+     "customType": "mode",
+     "data": {
+      "minor": "spec",
+      "on": true,
+      "active": {
+       "version": 1,
+       "mode": "normal",
+       "strict": false,
+       "minorModes": [
+        "spec"
+       ]
+      }
+     }
+    },
+    {
+     "type": "custom",
+     "customType": "mode-project-snapshot",
+     "data": {
+      "v": 1,
+      "dir": "<ws:project>/.sova/minor-modes/checks",
+      "description": "Check the release list",
+      "workers": true,
+      "tools": [],
+      "text": "# Project minor mode: checks\nFolder: <ws:project>/.sova/minor-modes/checks\nEvery relative path in this mode is relative to that folder.\n\nBefore you tag a release, read checklist.md and go through it item by item.",
+      "toolsHash": "",
+      "sha": "<sha:1>"
+     }
+    },
+    {
+     "type": "custom",
+     "customType": "mode",
+     "data": {
+      "project": "checks",
+      "on": true,
+      "active": {
+       "version": 1,
+       "mode": "normal",
+       "strict": false,
+       "minorModes": [
+        "spec"
+       ],
+       "projectModes": [
+        {
+         "sha": "<sha:1>"
+        }
+       ]
+      }
+     }
+    },
+    {
+     "type": "custom",
+     "customType": "mode-project-snapshot",
+     "data": {
+      "v": 1,
+      "dir": "<ws:project>/.sova/minor-modes/rel",
+      "description": "Release status",
+      "workers": true,
+      "tools": [
+       {
+        "name": "status",
+        "description": "Print the release status.",
+        "params": {
+         "type": "object",
+         "properties": {
+          "verbose": {
+           "type": "boolean"
+          }
+         }
+        },
+        "command": [
+         "node",
+         "./status.mjs"
+        ],
+        "timeoutS": 60
+       }
+      ],
+      "text": "# Project minor mode: rel\nFolder: <ws:project>/.sova/minor-modes/rel\nEvery relative path in this mode is relative to that folder.\n\nUse rel__status before tagging.",
+      "toolsHash": "da907b56715d9e8c71cdaec52f471effb4679288983c44904da62e8521ff92f1",
+      "sha": "<sha:2>"
+     }
+    },
+    {
+     "type": "custom",
+     "customType": "mode",
+     "data": {
+      "project": "rel",
+      "on": true,
+      "active": {
+       "version": 1,
+       "mode": "normal",
+       "strict": false,
+       "minorModes": [
+        "spec"
+       ],
+       "projectModes": [
+        {
+         "sha": "<sha:1>"
+        },
+        {
+         "sha": "<sha:2>"
+        }
+       ]
+      }
+     }
+    }
+   ]
+  },
+  {
+   "step": "prompt \"spawn\"",
+   "calls": [
+    {
+     "keep": 0,
+     "add": [
+      {
+       "role": "system",
+       "content": "",
+       "sections": {
+        "preamble": "You are an expert coding assistant operating inside pi, a coding agent harness. You help users by reading files, executing commands, editing code, and writing new files.",
+        "tools": "@4638ec08e2a6ed45",
+        "rules": "@9514ae33e1ebc3e7",
+        "docs": "@0f5fabf6c3c47c4c",
+        "cwd": "<cwd>\n<ws:project>\n</cwd>",
+        "mode": "@2f8f600eeb60d291"
+       },
+       "toolsAdded": "@4bdd321f191d5406"
+      },
+      {
+       "role": "user",
+       "content": [
+        {
+         "type": "text",
+         "text": "spawn"
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "keep": 2,
+     "add": [
+      {
+       "role": "assistant",
+       "api": "openai-completions",
+       "provider": "scripted",
+       "model": "scripted",
+       "usage": {
+        "input": 0,
+        "output": 0,
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "totalTokens": 0,
+        "cost": {
+         "input": 0,
+         "output": 0,
+         "cacheRead": 0,
+         "cacheWrite": 0,
+         "total": 0
+        }
+       },
+       "content": [
+        {
+         "type": "toolCall",
+         "id": "call-1",
+         "name": "agent_spawn",
+         "arguments": {
+          "prompt": "do the task",
+          "name": "w",
+          "model": "scripted/scripted"
+         }
+        }
+       ],
+       "stopReason": "toolUse",
+       "thinkingLevel": "off"
+      },
+      {
+       "role": "toolResult",
+       "toolCallId": "call-1",
+       "toolName": "agent_spawn",
+       "content": [
+        {
+         "type": "text",
+         "text": "@43eb6daf3c1faca4"
+        }
+       ],
+       "details": {
+        "groupId": "run_01",
+        "label": "run 1 · w",
+        "spawned": [
+         {
+          "id": "ag_01",
+          "name": "w",
+          "backend": "pi",
+          "model": "scripted/scripted"
+         }
+        ],
+        "retention": {
+         "maxFinished": 50,
+         "evictedWorkers": 0,
+         "evictedRuns": 0
+        }
+       },
+       "isError": false
+      }
+     ]
+    }
+   ],
+   "activeTools": [
+    "read",
+    "bash",
+    "edit",
+    "write",
+    "agent_resume",
+    "agent_models",
+    "agent_spawn",
+    "agent_list",
+    "agent_transcript",
+    "agent_steer",
+    "agent_kill",
+    "agent_wait",
+    "team_create",
+    "team_add",
+    "team_eject",
+    "team_succeed",
+    "team_list",
+    "project_verbs",
+    "queue_push",
+    "rel__status"
+   ],
+   "entries": [
+    {
+     "type": "message",
+     "message": {
+      "role": "system",
+      "content": "",
+      "sections": {
+       "preamble": "You are an expert coding assistant operating inside pi, a coding agent harness. You help users by reading files, executing commands, editing code, and writing new files.",
+       "tools": "@4638ec08e2a6ed45",
+       "rules": "@9514ae33e1ebc3e7",
+       "docs": "@0f5fabf6c3c47c4c",
+       "cwd": "<cwd>\n<ws:project>\n</cwd>",
+       "mode": "@2f8f600eeb60d291"
+      },
+      "toolsAdded": "@7f86c710a4499486"
+     }
+    }
+   ],
+   "headers": {
+    "# Minor mode: spec": 1,
+    "# Project minor mode: checks": 1,
+    "# Project minor mode: rel": 1
+   }
+  }
+ ],
+ "start": {
+  "spec": {
+   "kind": "worker",
+   "parent": {
+    "sessionId": "<sid:1>",
+    "path": "<sessions:project>/2026-10-06T00-00-00-000Z_<sid:1>.jsonl",
+    "workerId": "ag_01"
+   },
+   "cwd": "<ws:project>",
+   "model": "scripted/scripted",
+   "thinking": "off",
+   "builtins": [
+    "read",
+    "bash",
+    "edit",
+    "write"
+   ],
+   "extensions": [
+    "<repo>/pi-config/extensions/subagents/worker-mark.ts",
+    "<repo>/pi-config/extensions/provider-limits/index.ts",
+    "<repo>/pi-config/extensions/model-levels/index.ts",
+    "<repo>/pi-config/extensions/mode/spec-worker.ts",
+    "<repo>/pi-config/extensions/mode/project-tools-worker.ts"
+   ],
+   "flags": {},
+   "appendSystemPrompt": "@6bf0319e93ebfd53",
+   "env": {
+    "SPEC_AGREE_SOURCE": "pi-session:<sid:1>#<entry>",
+    "SPEC_AGREE_GIVEN": "pi-session:<sid:1>#<entry>",
+    "SOVA_SPEC_LANDED_FILE": "<file>",
+    "SOVA_PROJECT_TOOLS_FILE": "<file>",
+    "PI_SUBAGENT_BUILTIN_TOOLS": "read,bash,edit,write"
+   },
+   "agentDir": null,
+   "lowered": true
+  },
+  "session": {
+   "new": {
+    "dir": "<agent>/sessions/--_ws_project_--"
+   }
+  },
+  "task": "do the task"
+ },
+ "worker": [
+  {
+   "step": "prompt \"do the task\"",
+   "calls": [
+    {
+     "keep": 0,
+     "add": [
+      {
+       "role": "system",
+       "content": "",
+       "sections": {
+        "preamble": "You are an expert coding assistant operating inside pi, a coding agent harness. You help users by reading files, executing commands, editing code, and writing new files.",
+        "tools": "@da87b165576f1968",
+        "rules": "@367a111ecea93121",
+        "docs": "@0f5fabf6c3c47c4c",
+        "addendum": "@fb6d1792828f25c1",
+        "cwd": "<cwd>\n<ws:project>\n</cwd>"
+       },
+       "toolsAdded": "@9ae39c7528acc27a"
+      },
+      {
+       "role": "user",
+       "content": [
+        {
+         "type": "text",
+         "text": "do the task"
+        }
+       ]
+      }
+     ]
+    }
+   ],
+   "activeTools": [
+    "read",
+    "bash",
+    "edit",
+    "write",
+    "project_verbs",
+    "rel__status"
+   ],
+   "entries": [
+    {
+     "type": "message",
+     "message": {
+      "role": "system",
+      "content": "",
+      "sections": {
+       "preamble": "You are an expert coding assistant operating inside pi, a coding agent harness. You help users by reading files, executing commands, editing code, and writing new files.",
+       "tools": "@da87b165576f1968",
+       "rules": "@367a111ecea93121",
+       "docs": "@0f5fabf6c3c47c4c",
+       "addendum": "@fb6d1792828f25c1",
+       "cwd": "<cwd>\n<ws:project>\n</cwd>"
+      },
+      "toolsAdded": "@9ae39c7528acc27a"
+     }
+    }
+   ],
+   "headers": {
+    "# Minor mode: spec": 1,
+    "# Project minor mode: checks": 1,
+    "# Project minor mode: rel": 1
+   },
+   "extensions": [
+    "<repo>/pi-config/extensions/subagents/worker-mark.ts",
+    "<repo>/pi-config/extensions/provider-limits/index.ts",
+    "<repo>/pi-config/extensions/model-levels/index.ts",
+    "<mode-slot:spec-worker>",
+    "<mode-slot:project-tools-worker>",
+    "<inline:sova-shell-guard>",
+    "<inline:sova-deeper-context>",
+    "<inline:sova-background-jobs>",
+    "<inline:sova-project-verbs>"
+   ]
+  }
+ ]
+}

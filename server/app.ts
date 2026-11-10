@@ -13,6 +13,7 @@ import { fileURLToPath } from "node:url";
 import { serveStatic } from "@hono/node-server/serve-static";
 import { type Context, Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
+import { registerTimeSpentRoutes } from "./time-spent-routes";
 import { compress } from "hono/compress";
 import { isDirectLocal } from "./compression";
 import { replyTimingsOf, sessionIdOfPath } from "./reply-facts";
@@ -26,6 +27,7 @@ import { registerProjectOverseerRoutes } from "./project-overseer-routes";
 import { registerProjectCostRoutes } from "./project-costs-routes";
 import { registerProjectFileRoutes } from "./project-files-routes";
 import { registerMcpRoutes } from "./mcp/routes";
+import { registerExtensionRoutes } from "./extension-routes";
 import { registerSessionOfferRoutes } from "./session-offers-routes";
 import { registerTranscriptCardRoutes } from "./transcript-cards-routes";
 import { registerPairRoutes } from "./topic-pairs";
@@ -53,7 +55,7 @@ import { deliverFrames, framesDraft, postedFrames, POSTED_FRAMES_MAX } from "./w
 import { COMPOSER_HEADER, type NewSessionBody, type SessionPromptBody } from "../shared/wire-areas";
 import { mountWritingGate, refusedAnswer, writingRefused } from "./wire-gate";
 import { mountChatActions } from "./chat-actions";
-import { acquireChatHandle, type ChatHandle, chatHandle, chatHandleById, chatHandles, getModelRuntime, ModeRefusedError, setOpeningChoice } from "./chat-handle";
+import { acquireChatHandle, type ChatHandle, chatHandle, chatHandleById, chatHandles, chatModesSwitched, getModelRuntime, ModeRefusedError, setOpeningChoice } from "./chat-handle";
 import { restorePick } from "../pi-config/extensions/subagents/subagent-profiles.ts";
 import { canonicalPath, resolveSessionPath, SESSIONS_DIR } from "./paths";
 import { agentRoot, stateRoot } from "./state-root";
@@ -62,7 +64,8 @@ import { claudeCodeModelCount, listModels, listRegistryModels, resolveContext } 
 import { setFavorite } from "./model-favorites";
 import { markOwned } from "./write-guard";
 import { addWebSession } from "./web-sessions";
-import { draftForClient, putBackDraft, setDraft } from "./drafts";
+import { draftForClient, isDraftMode, markerOf, putBackDraft, setDraft } from "./drafts";
+import { shellOutputPage } from "./shell-output";
 import { worktreeInsights } from "./worktrees";
 import { DiffError, gitDiffs, scopeFromQuery } from "./git-diff";
 import { getAgentsInsight, getHiddenWorkers, getMemberInbox, getSessionInsight, setInsightLinks, getUsageHistory, getUsageInsight, getUsageStrip, refreshUsageInsight } from "./insights";
@@ -84,7 +87,7 @@ import { checkTmpImage, deleteAttachment, MAX_ATTACHMENT_BYTES, readTmpImage, sa
 import { listFolders } from "./folders";
 import { listProjectFiles } from "./files";
 import { getGitSummary } from "./git-summary";
-import { cleanupPlan, cleanupRemove, configureCleanup, worktreesSummary } from "./worktree-cleanup";
+import { cleanupPlan, cleanupRemove, cleanupRemoveAnyway, configureCleanup, worktreesSummary } from "./worktree-cleanup";
 import { applyLoadout, getSessionSetup, readSetupFile } from "./session-setup";
 import { getContextView } from "./context-tab";
 import { getSessionTools } from "./session-tools";
@@ -95,10 +98,11 @@ import { AUTO_TITLE_MAX_PATHS, TOOL_CONTENT_MAX_IDS, type SessionsDirInfo, type 
 import { findTarget, isTargetName, listRemoteFolders, listTargets, normalizeRemotePath, targetDir, targetsFile, validateNewSessionCwd } from "./targets";
 import { isExplanationId, listExplanations, readExplanationPage } from "./explanations";
 import { switchMode } from "./mode";
-import { codingSpecRefusal } from "./project-coding-mode";
-import { projectCodingIds } from "./project-sessions";
 import { configureSession } from "./sessions-configure";
 import { applyProfile, registerProfileRoutes } from "./session-profile-routes";
+import { registerProfileSwitchRoutes } from "./profile-switch";
+import { makeChatDefault, registerProfileEditorRoutes } from "./profile-editor-routes";
+import { startOnDefault } from "./default-start";
 import { resolveChoice, singletonHolder, snapshotKey } from "./session-profile";
 import type { ProfilePick } from "./profile-sources";
 import { CREATE_NO_DEFAULT, createNotNamed, singletonRunningText, THINKING_LEVELS } from "../shared/profiles";
@@ -169,6 +173,8 @@ import { tagRoutes } from "./tags-backfill";
 import { pushRoutes } from "./push-routes";
 import { chatTrialRoutes } from "./chat-trial-routes";
 import { sessionsChanged } from "./list-generation";
+import { attentionChanged } from "./attention-memo";
+import { dismissChat, undoDismissal } from "./needs-you-dismissed";
 import { resourceMonitor } from "./resource-monitor";
 import { routeOpName } from "./stall-recorder-route";
 import { opEnd, opStart, stallRecording } from "./stall-recorder";
@@ -182,6 +188,8 @@ import { setCreateSettingsRun } from "./create-settings-tool";
 import { runCreateSettings } from "./create-settings-run";
 import { isProjectModeId } from "../shared/project-modes";
 import { extensionKeys } from "./extension-keys";
+import { actsAsExtension, EXTENSION_FIRST_PROMPT, extensionDoorRefusal, extensionFrameRefusal } from "./extension-doors";
+import { extensionSenderOf } from "./extension-sender";
 import { registerUpdatesRoutes } from "./updates/routes";
 
 /** The built frontend; SOVA_DIST: another build (a test's scratch one), as SOVA_SHARE_DIST is for the share page. */
@@ -254,6 +262,12 @@ export function buildApp(deps: AppDeps) {
     // Who ran what (server/command-audit.ts, §app.command-audit/record): only a call that shows the
     // token; noted once answered, off the answer's path. Neither step can change the answer.
     const audited = auditStart(c);
+    // A door an extension's key never opens (server/extension-doors.ts, §app.extensions/not-you).
+    const closed = extensionDoorRefusal(c);
+    if (closed) {
+      audited?.(403, closed.route);
+      return c.json({ error: closed.error, extensionRefused: true }, 403, { [SERVER_HEADER]: "sova" });
+    }
     await next();
     try {
       c.res.headers.set(SERVER_HEADER, "sova");
@@ -322,11 +336,13 @@ export function buildApp(deps: AppDeps) {
     return c.json(body);
   });
   registerProfileRoutes(app);
+  registerProfileSwitchRoutes(app);
+  registerTimeSpentRoutes(app);
 
   /** Create a new empty webapp-owned session in `cwd` (an existing absolute directory) → 201 SessionSummary.
       With `start`, it is made with that profile (§chat.profiles/after-first-message) and, given one, its
       first message is sent; a One at a time profile live elsewhere refuses before anything is made. */
-  async function createWebSession(c: Context, cwd: string, start?: { profile: ProfilePick; prompt?: string; by?: "overseer" | "start"; opening?: { model?: string; thinking?: string } }, subagentProfile?: string, linkMember = false) {
+  async function createWebSession(c: Context, cwd: string, start?: { profile: ProfilePick; prompt?: string; by?: "overseer" | "start"; opening?: { model?: string; thinking?: string } }, subagentProfile?: string, linkMember = false, useDefault: false | "user" | "overseer" = false) {
     let pick: ProfilePick | undefined = start?.profile;
     if (start) {
       // Resolved against the new session's own project (§chat.profiles/projects); unapproved refuses.
@@ -349,6 +365,16 @@ export function buildApp(deps: AppDeps) {
       const lock = readLock(made.path);
       if (chatHandle(made.path) || (lock && holderAlive(lock))) return c.json({ error: "That session is open in a chat process." }, 409);
       appendToClosedFile(made.path, SUBAGENT_PROFILE, { v: 1, profile: subagentProfile });
+      markOwned(made.path); // this append's fresh mtime is ours too, or the first open refuses it as a foreign write
+    }
+    // No profile named: the chat starts on this computer's default (§chat.profiles/default), as far as
+    // the starter may give it (an Overseer start never gets powers the profile isn't marked for).
+    // Helpers named alone stay the chat's pick over the default's.
+    if (!start && useDefault && !linkMember) {
+      const r = await startOnDefault(made.path, cwd, useDefault === "overseer", subagentProfile);
+      if (!r.ok) console.warn(`[profiles] ${made.path}: ${r.error}`);
+      const summary = (await getSessionSummary(made.path)) ?? made;
+      return c.json(r.ok ? summary : { ...summary, defaultNotApplied: r.error }, 201);
     }
     if (!start || !pick) return c.json(made, 201);
     // The model and effort it starts on, instead of the new-chat default (the merge queue's reviewer and thread),
@@ -410,6 +436,8 @@ export function buildApp(deps: AppDeps) {
     } catch {
       return c.json({ error: "Expected JSON body { cwd } or { target, remoteCwd }" }, 400);
     }
+    // An extension speaks through session.send, which names it: nothing is created (§app.extensions/not-you).
+    if (typeof body.prompt === "string" && body.prompt.trim() && actsAsExtension(c)) return c.json({ error: EXTENSION_FIRST_PROMPT, extensionRefused: true }, 403);
     let subagentProfile: string | undefined;
     if (body.subagent_profile !== undefined) {
       try { subagentProfile = requireSubagentProfile(body.subagent_profile); }
@@ -419,7 +447,13 @@ export function buildApp(deps: AppDeps) {
     if (body.model !== undefined && (typeof body.model !== "string" || !/^[^/\s]+\/\S+$/.test(body.model) || body.model.length > 200)) return c.json({ error: 'model is "provider/model"' }, 400);
     if (body.thinking !== undefined && !(THINKING_LEVELS as readonly unknown[]).includes(body.thinking)) return c.json({ error: `thinking is one of ${THINKING_LEVELS.join(", ")}` }, 400);
     if ((body.model !== undefined || body.thinking !== undefined) && body.profile === undefined) return c.json({ error: "model and thinking come with a profile" }, 400);
+    if (body.byOverseer !== undefined && typeof body.byOverseer !== "boolean") return c.json({ error: "byOverseer must be true or false" }, 400);
     const linkMember = body.link === true;
+    const byOverseer = !!overseerSender(c.req.header(OVERSEER_SENDER_HEADER));
+    // An Overseer's start: this host's own (the sender header), or another host's, which can only say so in the
+    // body (the header never crosses hosts). The mark only narrows what the default gives, so a peer may send it.
+    // With helpers named, any other starter's stays off the default.
+    const useDefault = byOverseer || body.byOverseer === true ? "overseer" : subagentProfile === undefined ? "user" : false;
     if (body.target !== undefined) {
       if (!isTargetName(body.target)) return c.json({ error: "target must be a target name" }, 400);
       const remoteCwd = normalizeRemotePath(typeof body.remoteCwd === "string" ? body.remoteCwd.trim() : "");
@@ -428,12 +462,12 @@ export function buildApp(deps: AppDeps) {
       if (!target) return c.json({ error: `Unknown target: ${body.target}` }, 404);
       const dir = targetDir(body.target, remoteCwd);
       mkdirSync(dir, { recursive: true });
-      return createWebSession(c, dir, startOf(body, !!overseerSender(c.req.header(OVERSEER_SENDER_HEADER))), subagentProfile, linkMember);
+      return createWebSession(c, dir, startOf(body, byOverseer), subagentProfile, linkMember, useDefault);
     }
     const cwd = typeof body.cwd === "string" ? body.cwd.trim() : "";
     const cwdError = await validateNewSessionCwd(cwd);
     if (cwdError) return c.json({ error: cwdError }, 400);
-    return createWebSession(c, cwd, startOf(body, !!overseerSender(c.req.header(OVERSEER_SENDER_HEADER))), subagentProfile, linkMember);
+    return createWebSession(c, cwd, startOf(body, byOverseer), subagentProfile, linkMember, useDefault);
   });
 
   /** POST /api/sessions's optional `profile` (an id or `{source, id}`) and `prompt`: the chip's Run Again, the Overseer. */
@@ -481,6 +515,7 @@ export function buildApp(deps: AppDeps) {
   registerSessionOfferRoutes(app);
   // MCP servers: the Settings tab, the project page's section, Check, approval and sign-in (§app/mcp).
   registerMcpRoutes(app);
+  registerExtensionRoutes(app);
   registerTranscriptCardRoutes(app);
   // The Overseer's pairings (§app.overseer/pairs): each paired chat's line, Unpair and Resume.
   registerPairRoutes(app, {
@@ -831,7 +866,7 @@ export function buildApp(deps: AppDeps) {
   });
 
   app.put("/api/sessions/draft", async (c) => {
-    let body: { path?: unknown; text?: unknown; attachments?: unknown };
+    let body: { path?: unknown; text?: unknown; attachments?: unknown; mode?: unknown };
     try {
       body = await c.req.json();
     } catch {
@@ -843,9 +878,29 @@ export function buildApp(deps: AppDeps) {
     if (!existsSync(path)) return c.json({ error: "Session file not found" }, 404);
     if (body.text.length > MAX_DRAFT_CHARS) return c.json({ error: "Draft too long" }, 400);
     if (body.attachments !== undefined && !Array.isArray(body.attachments)) return c.json({ error: "attachments must be an array" }, 400);
+    if (body.mode !== undefined && !isDraftMode(body.mode)) return c.json({ error: 'mode must be "shell" or "private"' }, 400);
+    // Only the person's own page saves a command (§chat.shell-mode/box): any other writer's draft is a message,
+    // so a script, a chat, a card or a page over the peer listener can never leave the box one Enter from
+    // running something. A refused mode stays in view as its marker ("!ls"), as a hand-back's does.
+    const keep = body.mode !== undefined && notPage(c) === null;
+    const text = body.mode !== undefined && !keep ? `${markerOf(body.mode)}${body.text}` : body.text;
     // Invalid entries are dropped by the store rather than failing the whole write.
-    setDraft(idOf(path), body.text, body.attachments);
+    setDraft(idOf(path), text, body.attachments, keep ? body.mode : undefined);
     return c.json({ ok: true });
+  });
+
+  // A finished command's whole output, a page at a time (server/shell-output.ts, §chat.shell-mode/card).
+  app.get("/api/sessions/shell-output", async (c) => {
+    const path = resolveSessionPath(c.req.query("path"));
+    if (!path) return c.json({ error: "Invalid or missing ?path= (must be a .jsonl under the pi sessions dir)" }, 400);
+    if (!existsSync(path)) return c.json({ error: "Session file not found" }, 404);
+    const entry = c.req.query("entry");
+    if (!entry) return c.json({ error: "Missing ?entry= (the command's row id)" }, 400);
+    const from = Number(c.req.query("from") ?? 0);
+    if (!Number.isSafeInteger(from) || from < 0) return c.json({ error: "from must be a byte offset, 0 or more" }, 400);
+    const r = await shellOutputPage(path, entry, from);
+    if (r.status !== 200) return c.json({ error: r.error, code: r.code }, r.status);
+    return c.json(r.body, 200, { "Cache-Control": "no-store" });
   });
 
   app.get("/api/cwds", async (c) => c.json(await listCwds()));
@@ -887,7 +942,7 @@ export function buildApp(deps: AppDeps) {
 
   // Merged worktrees of the session's repository (server/worktree-cleanup.ts, §chat.worktrees/cleanup):
   // the count for a new session's empty state, the dry run, and a removal of exactly the confirmed
-  // paths that are still removable. Only when asked; never --force.
+  // paths that are still removable. Only when asked; --force only for Remove Anyway of one kept tree.
   configureCleanup({
     summary: (path) => getSessionSummary(path),
     sessionFiles: listSessionFiles,
@@ -902,7 +957,7 @@ export function buildApp(deps: AppDeps) {
     return c.json(await worktreesSummary(path), 200, { "Cache-Control": "no-store" });
   });
   app.post("/api/worktrees/cleanup", async (c) => {
-    const body = (await c.req.json().catch(() => null)) as { path?: unknown; dryRun?: unknown; expect?: unknown } | null;
+    const body = (await c.req.json().catch(() => null)) as { path?: unknown; dryRun?: unknown; expect?: unknown; force?: unknown } | null;
     const path = resolveSessionPath(typeof body?.path === "string" ? body.path : null);
     if (!path) return c.json({ error: "Invalid or missing path" }, 400);
     if (!existsSync(path)) return c.json({ error: "Session file not found" }, 404);
@@ -910,6 +965,24 @@ export function buildApp(deps: AppDeps) {
     const expect = body?.expect;
     if (expect !== undefined && !(Array.isArray(expect) && expect.every((p) => typeof p === "string" && p.startsWith("/"))))
       return c.json({ error: "expect must be a list of absolute paths" }, 400);
+    // Remove Anyway (§chat.worktrees/cleanup): one kept tree, with the digest of the listing the user confirmed.
+    if (body?.force !== undefined) {
+      const f = body.force as { path?: unknown; digest?: unknown } | null;
+      if (body.dryRun !== undefined || expect !== undefined || !f || typeof f.path !== "string" || !f.path.startsWith("/") || typeof f.digest !== "string" || !/^[0-9a-f]{8,64}$/.test(f.digest))
+        return c.json({ error: "force must be {path: absolute path, digest}, sent alone" }, 400);
+      // It deletes what git can't bring back: only the person's own click in the dialog (§app.access/your-click's test).
+      const notYou = pageOnlyRefusal(c, {
+        overseer: "Only the user removes a kept worktree anyway. Ask them to press Remove Anyway in Clean Up Merged. Nothing was deleted.",
+        local: "A kept worktree is removed anyway only on the page of the computer it is on. Nothing was deleted.",
+        chat: "Only the user removes a kept worktree anyway. Ask them to press Remove Anyway in Clean Up Merged. Nothing was deleted.",
+        script: "Only the user removes a kept worktree anyway. Ask them to press Remove Anyway in Clean Up Merged. Nothing was deleted.",
+        extension: "Only the user removes a kept worktree anyway. Ask them to press Remove Anyway in Clean Up Merged. Nothing was deleted.",
+      });
+      if (notYou) return c.json({ error: notYou, yourClick: true }, 403);
+      const r = await cleanupRemoveAnyway(path, { path: f.path, digest: f.digest });
+      if (r === "busy") return c.json({ error: "A cleanup of this repository is already running." }, 409);
+      return r ? c.json(r) : c.json({ error: "This session's folder isn't in a local git repository." }, 409);
+    }
     const dryRun = body?.dryRun === true;
     if (dryRun === Array.isArray(expect) || (Array.isArray(expect) && !expect.every((p) => typeof p === "string" && p.startsWith("/"))))
       return c.json({ error: "Send either dryRun: true or expect: [absolute paths]" }, 400);
@@ -1091,8 +1164,12 @@ export function buildApp(deps: AppDeps) {
     } catch {
       return c.json({ error: "Expected JSON body { experimental?: { ... }, alignment?: { ... } }" }, 400);
     }
+    const before = readWebSettings().experimental.sovaModes;
     const result = writeWebSettings(body);
-    return "error" in result ? c.json({ error: result.error }, 400) : c.json(result);
+    if ("error" in result) return c.json({ error: result.error }, 400);
+    // "Sova runs chat modes" changed (§chat.mode-menu/sova-runs-modes): open chats follow at their next quiet moment.
+    if (result.experimental.sovaModes !== before) chatModesSwitched(result.experimental.sovaModes);
+    return c.json(result);
   });
 
   // The align mode's writing style and Visuals (mode-align.json, server/align-settings.ts): Settings →
@@ -1111,7 +1188,7 @@ export function buildApp(deps: AppDeps) {
   });
 
   // Legacy Delegate routing (mode-delegate.json): which worker each kind of Delegate work goes to.
-  // Sova's UI no longer PUTs it (Settings → Subagents edits routing per profile); it seeds the profile
+  // Sova's UI no longer PUTs it (Settings → Profiles edits routing per profile); it seeds the profile
   // library and is its fallback. The file is the mode extension's; every Delegate session re-reads it
   // at its next turn boundary.
   const delegateSources: DelegateSources = {
@@ -1120,6 +1197,8 @@ export function buildApp(deps: AppDeps) {
     policy: () => readModelPolicy(),
   };
   setSovaSettingsDeps({ sources: delegateSources, titlesChanged: () => autoTitleSweep.reschedule() });
+  // Settings → Profiles' writes and the default (§chat.profiles/joined, /default).
+  registerProfileEditorRoutes(app, delegateSources);
   app.get("/api/settings/delegate", (c) => c.json(delegateInfo()));
   app.get("/api/settings/delegate/options", async (c) => c.json(await delegateOptions(delegateSources)));
   app.get("/api/settings/subagents", async (c) => {
@@ -1144,7 +1223,7 @@ export function buildApp(deps: AppDeps) {
     const result = restoreReplacedProfiles(file);
     return c.json(result, "error" in result ? 400 : 200);
   });
-  // This device's default (Make Default in Settings → Subagents): writes subagent-profiles-default.json only.
+  // This device's default (Make Default in Settings → Profiles): writes subagent-profiles-default.json only.
   app.put("/api/settings/subagents/default", async (c) => {
     const body: unknown = await c.req.json().catch(() => null);
     const id = body && typeof body === "object" && !Array.isArray(body) ? (body as Record<string, unknown>).default : undefined;
@@ -1173,7 +1252,7 @@ export function buildApp(deps: AppDeps) {
   });
 
   // Legacy spec writer (mode-spec.json): which worker writes the spec while the spec minor mode is on.
-  // Sova's UI no longer PUTs it (Settings → Subagents edits it per profile); it seeds the profile
+  // Sova's UI no longer PUTs it (Settings → Profiles edits it per profile); it seeds the profile
   // library and is its fallback. The file is the mode extension's; every session with spec on re-reads it at its next turn boundary, in either
   // major mode. Discovery and the save check are Delegate's.
   // The memory minor mode (§chat/memory): the Session pane's outline, Settings → Memory, the Overseer's switch.
@@ -1199,7 +1278,7 @@ export function buildApp(deps: AppDeps) {
   });
 
   // Legacy team defaults (team-defaults.json): the coordinator and monitor every new team gets.
-  // Sova's UI only reads it now (Settings → Subagents seeds a profile's roles from it); the file is the
+  // Sova's UI only reads it now (Settings → Profiles seeds a profile's roles from it); the file is the
   // subagents extension's, read when a team is created, so a save applies to teams created after it.
   // Discovery and the save check are Delegate's; a file that can't be read is never overwritten (409).
   app.get("/api/settings/team", (c) => c.json(teamDefaultsInfo()));
@@ -1374,10 +1453,19 @@ export function buildApp(deps: AppDeps) {
     if (request.kind === "saveDefault") {
       // A chat's own mode is what is saved, so there has to be a chat: no path is a 400, not a write
       // of whatever the file already says.
-      if (path === null) return c.json({ error: "saveDefault needs ?path=: it saves that chat's own mode" }, 400);
-      const got = await chatFor(path);
-      if ("error" in got) return c.json({ error: got.error }, got.status);
-      return modeRefusal(c, () => got.chat.saveModeDefault());
+      if (path === null) return c.json({ error: "saveDefault needs ?path=: it saves that chat's own profile" }, 400);
+      const summary = await getSessionSummary(path);
+      if (!summary) return c.json({ error: "Session file not found" }, 404);
+      if (summary.overseer) return c.json({ error: "The Overseer is always in normal mode." }, 409);
+      if (summary.projectOverseer || summary.baton || summary.workerSession || summary.queueChat || (summary.org && summary.org.kind !== "coding")) return c.json({ error: "This chat's profile can't be the default." }, 409);
+      // Make {name} the Default (§chat.profiles/default): this chat's profile becomes this computer's
+      // default, with its strict flag and memory type; the older default files are kept written.
+      try {
+        const defaultProfile = await makeChatDefault(path);
+        return c.json({ ...modeInfo(readMode()), defaultProfile });
+      } catch (err) {
+        return c.json({ error: err instanceof Error ? err.message : String(err) }, 409);
+      }
     }
     if (request.kind === "approveHooks") {
       // Hooks run with no one watching, so only you approve them, here (§chat.mode-menu/project-mode-hooks).
@@ -1412,9 +1500,6 @@ export function buildApp(deps: AppDeps) {
     if (queueChatRole((await getSessionSummary(path).catch(() => null))?.profile)) return c.json({ error: QUEUE_CHAT_MODE_REFUSAL }, 409);
     const got = await chatFor(path);
     if ("error" in got) return c.json({ error: got.error }, got.status);
-    // A project's coding session keeps spec on (§app.project-overseer/coding-mode).
-    const specOff = codingSpecRefusal(request.patch.minorModes);
-    if (specOff && projectCodingIds().has(got.chat.mirror.sessionId)) return c.json({ error: specOff }, 409);
     // The Overseer's own call turns a project mode on as its approval (q7); a body never says so itself.
     // Who approves (§chat.mode-menu/project-mode-hooks): the Overseer's turn-on, the operator's own page (`user`, the
     // only approval hooks run on), or any other caller (`caller`: tools and commands run on it, as today, hooks don't).
@@ -1442,14 +1527,22 @@ export function buildApp(deps: AppDeps) {
     if (!existsSync(path)) return c.json({ error: "Session file not found" }, 404);
     const frames = postedFrames(await c.req.json().catch(() => null));
     if (!frames) return c.json({ error: `Expected { frames: [...] }, 1 to ${POSTED_FRAMES_MAX} objects with a type` }, 400);
+    // A key's prompt or steer: nothing runs and nothing goes back as a draft (§app.extensions/not-you).
+    const asExtension = actsAsExtension(c);
+    if (asExtension) {
+      const why = frames.map((f) => extensionFrameRefusal(f as { type?: unknown })).find((w) => w);
+      if (why) return c.json({ error: why, extensionRefused: true }, 403);
+    }
     // The page is going, so nobody hears a refusal: what it carried goes back as the draft.
     const refused = writingRefused(c.req.header(COMPOSER_HEADER));
     if (refused) {
       putBackDraft(idOf(path), framesDraft(frames));
       return refusedAnswer(c, refused);
     }
+    // Only shell-mode frames, all dropped: nothing to deliver, so the chat isn't opened for it.
+    if (!frames.length) return c.json({ accepted: 0 }, 202);
     sessionsChanged();
-    deliverFrames(path, frames, notPage(c));
+    deliverFrames(path, frames, asExtension ? "extension" : notPage(c));
     return c.json({ accepted: frames.length }, 202);
   });
 
@@ -1708,6 +1801,37 @@ export function buildApp(deps: AppDeps) {
   app.get("/api/overseer", async (c) => c.json(await overseerInfo(), 200, { "Cache-Control": "no-store" }));
   app.post("/api/overseer/clear", async (c) => c.json(await clearOverseer()));
   app.get("/api/overseer/attention", async (c) => c.json(await attentionForWire(), 200, { "Cache-Control": "no-store" }));
+  // Dismiss a chat's Needs you row until it has something new, and Undo (§app.session-list/needs-you-dismiss).
+  // A chat's only: an item of no session has no session file to name. Each write drops the 3 s digest and pushes.
+  app.post("/api/attention/dismiss", async (c) => {
+    const body = (await c.req.json().catch(() => null)) as { path?: unknown; since?: unknown } | null;
+    const since = body?.since;
+    if (typeof since !== "number" || !Number.isFinite(since) || since < 0) return c.json({ error: "since must be the newest item's time, in ms" }, 400);
+    const path = resolveSessionPath(typeof body?.path === "string" ? body.path : null);
+    if (!path) return c.json({ error: "Invalid or missing path (must be a .jsonl under the pi sessions dir)" }, 400);
+    if (!existsSync(path)) return c.json({ error: "Session file not found" }, 404);
+    try {
+      const d = dismissChat(path, since);
+      attentionChanged();
+      sessionsChanged();
+      return c.json({ path, since: d.since });
+    } catch (err) {
+      return c.json({ error: err instanceof Error ? err.message : String(err) }, 500);
+    }
+  });
+  app.delete("/api/attention/dismiss", async (c) => {
+    const path = resolveSessionPath(c.req.query("path") ?? null);
+    if (!path) return c.json({ error: "Invalid or missing path (must be a .jsonl under the pi sessions dir)" }, 400);
+    if (!existsSync(path)) return c.json({ error: "Session file not found" }, 404);
+    try {
+      const undone = undoDismissal(path);
+      attentionChanged();
+      sessionsChanged();
+      return c.json({ path, undone });
+    } catch (err) {
+      return c.json({ error: err instanceof Error ? err.message : String(err) }, 500);
+    }
+  });
   // What it can do, for its About panel (§app.overseer/about): the same reading of extension commands as sova_ext.
   app.get("/api/overseer/abilities", async (c) => c.json(await overseerAbilities(), 200, { "Cache-Control": "no-store" }));
   // Approvals for later, standing rules and the running count (§app.overseer/approvals, §app.overseer/caps).
@@ -1923,7 +2047,7 @@ export function buildApp(deps: AppDeps) {
       if ("error" in got) return c.json({ error: got.error }, got.status);
       if (sandboxLowers((await got.chat.sandboxInfo())?.state, asked)) return c.json(yourClickBody("sandbox", notPage(c) ?? "script"), 403);
     }
-    const r = await promptSession(path, body.text, overseerSender(c.req.header(OVERSEER_SENDER_HEADER)), body.delivery);
+    const r = await promptSession(path, body.text, overseerSender(c.req.header(OVERSEER_SENDER_HEADER)), body.delivery, undefined, undefined, extensionSenderOf(c));
     return r.ok ? c.json({ ok: true, queued: r.queued, kind: r.kind, ...(r.compacting ? { compacting: true } : {}) }) : c.json({ error: r.error }, r.status);
   });
   // Installed extensions (server/extensions.ts), with each backend's cached health.

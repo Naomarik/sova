@@ -252,6 +252,8 @@ const SESSION_PREFIXES = [
   "links",
   "baton",
   "health",
+  // Time Spent (§app.subagents-pane/time-spent-record): a page reports and reads a session's record with the session.
+  "time-spent",
 ];
 // Read with `sessions` (GET/HEAD: the remote session pane and an org page on a peer read them);
 // every write needs `admin`.
@@ -292,7 +294,9 @@ const READ_PREFIXES = [
 // `commands`: the catalogue a script reads (server/commands-routes.ts), this machine's own door only.
 // `mcp`: this computer's servers (§app.mcp/this-computer): a peer's own page is where they're read and changed.
 // `audit`: the record of who ran what (server/command-audit.ts): the operator's, never below `full`.
-const FULL_PREFIXES = ["auth", "h", "i", "s", "t", "updates", "commands", "audit", "draft-specs", "mcp"];
+const FULL_PREFIXES = [
+  // A chat dismissed from Needs you (§app.session-list/needs-you-dismiss): the operator's own list.
+  "attention","auth", "h", "i", "s", "t", "updates", "commands", "audit", "draft-specs", "mcp"];
 // A project mode's command (§chat.mode-menu/project-mode-commands) runs one of the project's own programs: `full`,
 // whatever method, though it sits under `mode`, which stays `sessions`.
 const MODE_COMMAND_PATH = "/api/mode/command";
@@ -372,6 +376,8 @@ export function classifyRequest(method: string, pathname: string): Classified {
     return { need: "full", rule: "default" };
   }
   if (path === MODE_COMMAND_PATH) return { need: "full", rule: "full:mode-command" };
+  // Settings → Extensions: every entry names its folder and commands, and a change is your own page's. GET /api/extensions itself stays a read.
+  if (path.startsWith("/api/extensions/")) return { need: "full", rule: "full:extensions-loader" };
   if (path === "/api/tours" || path.startsWith("/api/tours/")) return tourRequest(method, path);
   const read = method === "GET" || method === "HEAD";
   if (PROJECT_DRAFT_SPECS_RE.test(path)) return { need: "full", rule: "full:project-draft-specs" };

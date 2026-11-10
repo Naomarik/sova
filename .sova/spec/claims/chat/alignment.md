@@ -533,7 +533,18 @@ active branch and their open questions) while an alignment is open, **align is o
 `mode` entry on the branch), and **the session waits**: the newest align result that changed a
 document comes after the user's last prompt (a wake nudge, a partner's link message or a topic
 batch, §chat.topics/row, is not one, and neither is a message an Overseer sent, the one its
-`sova-overseer-sent` mark names, §app.overseer/sent-marker: alignment questions are the user's).
+`sova-overseer-sent` mark names, §app.overseer/sent-marker, nor an extension's, the one a
+`sova-session-sent` mark names with a sender id starting `ext:`, §app.extensions/name-badge: alignment
+questions are the user's).
+An answer on a transcript card or an offer isn't one either (§chat.transcript-cards/answering,
+§chat.offers/card): not the answer, and not a message holding only gathered card answers, one `cd_N: …`
+line each. A press's message isn't one: while the chat waits, a project's card or an offer sends with the
+`sova-session-sent` mark `card:<type>` (`card:offer.<name>` for an offer) and the first line `[from session
+"a card's button, {title}, not this chat or its name" (card:<type>), hop 0]`. Its row reads "From a card"
+with "From {title}" above it, no link and no hop, and it is not the user's word to land. With nothing
+waiting, a press sends as it did. A marked press still starts a turn, and the model can act on its words:
+Sova holds only that the question stays open and the wait doesn't end. Another session's `session_send`,
+the merge queue's messages and Sova's own nudge to a session still count as a prompt here.
 Once the user has spoken again and the agent moved on without touching an alignment, or align is
 turned off (nothing could record an answer), the questions stay on the card and the composer's badge but leave
 the row mark, Needs you and push; the next align result that changes a document brings them back.
@@ -558,16 +569,11 @@ change parses only the lines appended since (a file that shrank or was rewritten
 
 ## §chat.alignment/tui — In the TUI
 
-The TUI draws each `align` call as one dim line naming the document and its ops, and its result as
-a compact card: the id, title, status and open count, the change line, and the open questions with
-their recommendations, by letter and label when one names an option (the whole document, options
-lettered, with its technical notes and each visual as its source text, when the tool row is
-expanded). The TUI reads the Eagerness, writing style and Visuals from `mode-align.json` like Sova
-(§chat.alignment/settings-file); adversarial review stays `pi --adversarial-review` only. A widget above the editor
-lists the open alignments ("◇ align · al_3 2/7 open · al_2 implementing · alt+a view") while align is
-on. The viewer (`/align`, the viewer key) shows one document at a time as markdown, ←/→ switching
-between them; `/align status` lists them and `/align export [path]` writes them as markdown. An
-older session's `align-doc` entries keep their one-line transcript marker.
+A pi terminal has no align from Sova (§chat.mode-menu/terminal): no `align` call line or result card
+drawn by the mode, no widget above the editor, no alignments viewer, and no `/align status` or
+`/align export`. In a Sova chat, typed `/align on|off` turns align on or off, and anything else after
+`/align` is answered with its usage line (§chat.mode-menu/typed-commands). An older session's
+`align-doc` entries keep their one-line transcript marker.
 
 ## §chat.alignment/settings-file — `mode-align.json`
 

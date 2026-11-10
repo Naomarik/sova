@@ -71,7 +71,12 @@ Each drawing has a title (or its kind's name), the drawing itself, its numbered 
 caption. Two buttons sit in its head:
 
 - **Source** shows the block as the agent wrote it.
-- **Copy** copies the whole block.
+- **Copy** copies the drawing as a picture while it shows, and the block as text while Source is
+  open.
+
+A chart can be looked at another way. Its head offers **Bar**, **Stacked**, **Line** and **Parts**,
+only the views that fit its numbers, with **Log**, **Sort** and **%** toggles where the chart can use
+them. A small dot marks the view the agent drew. Your pick lasts for that tab.
 
 A sequence starts complete. **Step Through** walks it one message at a time with Previous and
 Next ("Step 3 of 8"), dimming the later steps, and **Show All** ends the walk. Nothing plays by

@@ -1,5 +1,5 @@
 import { execFile, execFileSync, spawn } from "node:child_process";
-import { closeSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, readSync, rmSync, statSync, writeFileSync, writeSync } from "node:fs";
+import { closeSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, readSync, renameSync, rmSync, statSync, writeFileSync, writeSync } from "node:fs";
 import { setPriority } from "node:os";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { hostProcTable, procfsTable, unitMembers, type ProcTable } from "./proctable";
@@ -251,14 +251,26 @@ export function userManagerCgroup(uid = process.getuid?.() ?? -1, root = "/sys/f
 }
 
 /**
+ * A slice's cgroup folder below its manager's, the way systemd nests it: a dash in a slice's name is a level, so
+ * `sova-services.slice` lives at `sova.slice/sova-services.slice` and `a-b-c.slice` at `a.slice/a-b.slice/a-b-c.slice`.
+ * The root slice (`-.slice`) is the manager's own folder: "".
+ */
+export function sliceCgroupPath(slice: string): string {
+  const name = slice.endsWith(".slice") ? slice.slice(0, -".slice".length) : slice;
+  if (!name || name === "-") return "";
+  const parts = name.split("-");
+  return parts.map((_, i) => `${parts.slice(0, i + 1).join("-")}.slice`).join("/");
+}
+
+/**
  * A systemd user unit's processes from its own cgroup's `cgroup.procs` (one file, no process scan, nothing spawned):
- * looked for in Sova's services slice, then `app.slice`, then the manager's top. `unit` is the whole name
- * (`sova-runtime.service`). [] when the unit has no cgroup (it isn't running); null when the host has no user
- * manager cgroup to read.
+ * looked for in Sova's services slice (nested the systemd way, `sova.slice/sova-services.slice`), then `app.slice`,
+ * then the manager's top. `unit` is the whole name (`sova-runtime.service`). [] when the unit has no cgroup (it isn't
+ * running); null when the host has no user manager cgroup to read.
  */
 export function unitCgroupPids(unit: string, manager: string | null = userManagerCgroup()): number[] | null {
   if (!manager) return null;
-  for (const slice of [SLICE, "app.slice", ""]) {
+  for (const slice of [sliceCgroupPath(SLICE), "app.slice", ""]) {
     let text: string;
     try {
       text = readFileSync(join(manager, slice, unit, "cgroup.procs"), "utf8");
@@ -654,7 +666,7 @@ export class DetachedDriver implements Driver {
   private async spawnRecorded(spec: UnitSpec): Promise<void> {
     const rec = await this.spawnUnit(spec);
     // The record holds the unit's env: only its owner reads it.
-    writeFileSync(this.recFile(spec.unit), `${JSON.stringify(rec)}\n`, { mode: 0o600 });
+    writeWhole(this.recFile(spec.unit), `${JSON.stringify(rec)}\n`, 0o600);
     const now = Date.now();
     this.starts.set(spec.unit, [...(this.starts.get(spec.unit) ?? []).filter((t) => now - t < RESTART_WINDOW_MS), now]);
     this.down.delete(spec.unit);
@@ -863,5 +875,17 @@ export class DetachedDriver implements Driver {
   /** Tests only: remove a unit's log. */
   clearLog(unit: string) {
     if (existsSync(this.logFile(unit))) rmSync(this.logFile(unit));
+  }
+}
+
+/** Write `text` to `file` whole or not at all: a temp file beside it, then a rename over it. */
+function writeWhole(file: string, text: string, mode?: number): void {
+  const tmp = `${file}.${process.pid}.${Math.random().toString(36).slice(2)}.tmp`;
+  try {
+    writeFileSync(tmp, text, mode === undefined ? {} : { mode });
+    renameSync(tmp, file);
+  } catch (err) {
+    try { rmSync(tmp, { force: true }); } catch { /* gone */ }
+    throw err;
   }
 }

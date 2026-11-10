@@ -2,12 +2,14 @@ import type { IconName } from "../components/ui";
 import {
   CAPABILITY_LABEL,
   CAPABILITY_TOOLS,
+  DEFAULT_LIMITS,
   DEFAULT_PROFILE_ID,
   GRANTABLE,
   limitsLine,
   REMOVABLE,
   toolRemoved,
   type Grantable,
+  type JoinedProfile,
   type ListedProfile,
   type Profile,
   type ProfilesListing,
@@ -262,3 +264,56 @@ export function profileSettingsLine(
 
 /** Why a card can't be picked on this host now (the listing's sentence), or null. */
 export const cardUnusable = (l: ProfilesListing | undefined, p: Pick<ListedProfile, "key">): string | null => l?.unusable?.[p.key] ?? null;
+
+// ── The joined list on the new chat's cards (§chat.profiles/picker, §chat.profiles/joined) ─────────
+
+/** A card: the session half the picker always drew, with the joined row it stands for. A library
+    profile no session profile links to gets a capability-neutral stand-in that sets only its helpers. */
+export type JoinedCard = ListedProfile & { joined?: JoinedProfile };
+
+/** Off's card label (the built-in profile with no settings, §chat.subagent-profiles/off). */
+export const OFF_LABEL = "Off";
+
+/**
+ * The picker's groups from the joined list: Off first (in place of My settings), then Yours
+ * (pairs, library-only profiles and unlinked session profiles), This project, then Built in; hidden
+ * rows left out, Off never. Without a joined list (an older server) the old groups, as before.
+ */
+export function joinedPickerProfiles(l: ProfilesListing | undefined): ReturnType<typeof pickerProfiles> {
+  const old = pickerProfiles(l);
+  if (!l?.joined) return old;
+  const card = (r: JoinedProfile): JoinedCard | null => {
+    if (r.kind === "off") return old.mine ? { ...old.mine, label: OFF_LABEL, joined: r } : null;
+    if (r.session) return { ...r.session, label: r.name, joined: r };
+    return {
+      id: r.id,
+      key: r.key,
+      source: "user",
+      label: r.name,
+      icon: "wrench",
+      description: r.footprint,
+      remove: [],
+      grant: [],
+      singleton: false,
+      limits: DEFAULT_LIMITS,
+      ...(r.libraryId ? { subagents: r.libraryId } : {}),
+      overseerMayStart: false,
+      joined: r,
+    };
+  };
+  const shown = l.joined.filter((r) => r.kind === "off" || !r.hidden);
+  const of = (g: JoinedProfile["group"]) => shown.filter((r) => r.kind !== "off" && r.group === g).map(card).filter((c): c is JoinedCard => c !== null);
+  const off = shown.find((r) => r.kind === "off");
+  return { mine: off ? card(off) : old.mine, yours: of("yours"), project: of("project"), projectName: old.projectName, builtins: of("builtin") };
+}
+
+/** Whether a card is this computer's default (§chat.profiles/default): its Default chip. */
+export const isDefaultCard = (l: ProfilesListing | undefined, p: Pick<ListedProfile, "key">): boolean => {
+  const d = l?.defaultProfile;
+  if (!d) return false;
+  const row = (p as JoinedCard).joined;
+  return row ? row.key === d.key : p.key === d.key;
+};
+
+/** Whether a card stands for a library profile no session profile links to: picked as Off with its helpers. */
+export const isLibraryCard = (p: Pick<ListedProfile, "key">): boolean => (p as JoinedCard).joined?.kind === "library";

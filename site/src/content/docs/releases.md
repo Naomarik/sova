@@ -18,11 +18,12 @@ while the release is open, the release checks, Publish and Withdraw.
 ## Set up releases
 
 Releases are off until a project is set up for them. On the project page's **Releases** tab,
-**Set Up Releases** starts a chat that reads the project (its version tags, the files that hold its
+**Set Up with a Chat** opens the project's Setup chat, which reads the project (its version tags, the files that hold its
 version, its changelog, its remotes and checks) and asks you how it releases: the version rule, the
 notes, the channel, each step and who does it, the checks only a release runs, a live try-out, and
 what happens after publishing. It then proposes a release playbook and a `release` section of the
-project's `.sova/project.json` on a branch, which you review and **Land**. [Release
+project's `.sova/project.json` on a branch, which you review and **Land** once a trial of that
+commit has passed. [Release
 settings](/docs/release-settings/) says what each holds.
 
 ## Start a release

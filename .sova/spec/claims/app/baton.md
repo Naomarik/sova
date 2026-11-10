@@ -508,7 +508,9 @@ Tour pictures and public explanation follow the same active-branch, offer cut an
   A reply's markdown reads as §app.session-share/reading describes.
 - **Drawings.** A `vis` fence in a reply whose kind is `chart`, `flow`, `matrix`, `timeline`,
   `tree`, `steps`, `wireframe`, `layers`, `state` or `sequence` is drawn as in the chat
-  (§chat.markdown/visuals): the same figure, title, notes and caption, with no Source or Copy. A
+  (§chat.markdown/visuals): the same figure, title, notes and caption, with no Source or Copy; a
+  chart carries the same view switch and Log, Sort and % toggles as in the chat, its reader's
+  choices kept only in that browser tab (§chat.markdown/vis-chart-views). A
   `vis svg` is drawn as a still image (an `<img>` of the parsed document, never the document
   itself in the page) in that same figure, title above and caption below, so none of its script
   or links run and it fetches nothing. It shows at its own size (a `viewBox` width with no `width`
@@ -607,8 +609,8 @@ Tour pictures and public explanation follow the same active-branch, offer cut an
   "{name} · waiting until {time} your time (in {n})" (the operator's time, with a weekday when it
   isn't today), "{name} · waiting for their working hours" when no window is found, or, while the
   offer is leased, "{name} · waiting: nobody new is reached while {holder} is answering". In the
-  Organizations region's Needs you, the offer session's row adds "{name} waiting until {time} your
-  time (in {n})" after its own detail, joined by "; " and ending with ".". On an invitee's person
+  Organizations region's Needs you, the offer session's hover text adds "{name} waiting until {time} your
+  time (in {n})" after its own sentence, joined by "; " and ending with ".". On an invitee's person
   page, the session row's who-has-it line adds " · not reached yet, waiting until {time} your time
   (in {n})" (or "…, waiting: nobody new is reached while {holder} is answering"), and there is no
   New Link or Get Link for them. The session list shows "N
@@ -885,7 +887,7 @@ The allowed public paths also include token-scoped reads for visible bound tour 
   the session **needs the operator**: an act-tier attention item `baton-needs-you`, "<from> → you:
   <question>" (≤ 200 characters), in the digest (§app.overseer/attention-digest) and so the
   Organizations region's Needs you (§app.session-list/organizations), never the global one, as a row
-  with the state word **Your turn** and that sentence as its detail. The operator's reply clears it.
+  with the state word **Your turn** and that sentence as its hover text. The operator's reply clears it.
 - When a person holds the baton through a hand-off with no live link, the same item says "Send
   <name> their link: <question>"; getting the link, or sending it (§app.outreach/send), clears it.
   Never for the owner holding their own feature request chat: they answer on their owner page
@@ -896,9 +898,10 @@ The allowed public paths also include token-scoped reads for visible bound tour 
 - A person proposed from the session and still waiting (§app.organizations/referrals) is a
   decide-tier item `roster-proposal`, "Approve Bob Smith (IT lead) proposed by Tony Reyes?", listed
   in the Organizations region's Needs you.
-- Nothing puts these rows away but answering them: every wait is listed, in the digest, the
-  session list's `baton` field and the organization card's waiting counts
-  (§app.organizations/org-cards), until it is answered.
+- Only answering them ends these waits: every wait is listed, in the digest, the session list's
+  `baton` field and the organization card's waiting counts (§app.organizations/org-cards), until it is
+  answered. Dismissing a session's row (§app.session-list/needs-you-dismiss) takes it off the list and
+  the counts until it has something new; the wait and the baton strip stay.
 - Any change to a baton session's statechart or its links (Get Link, a reply, Extend, Take back, a
   hand-off, approve, decline, close) re-diffs the session list at once (a baton session's state is
   part of what the list compares), and that comparison pushes the changed attention digest to

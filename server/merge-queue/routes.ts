@@ -7,7 +7,17 @@ import type { RunMerge, WakeThread } from "./contract";
 import { MergeFailure, type MergeQueues, type ProjectQueue } from "./queue";
 import { registerLiveMergeSettingsRoutes } from "./settings-routes";
 import { registerLiveMergeLandingRoutes } from "./routes-landing";
+import { registerLiveRunLogsRoutes } from "./run-logs-routes";
 import { NOT_SERVED } from "./served";
+import type { MergeNamesReport } from "../../shared/merge-queue";
+import type { Proc } from "./copy";
+import { liveOf, type RestartDeps, restartQueueOf as restartQueue, restartSelf } from "./restart";
+import { CONTENTS_MAX_FILES, testInCopy } from "./resolve-content";
+import { scratchCopyPath } from "./scratch";
+import { envOf } from "./checks";
+import { mergeSlotOf } from "./run";
+
+import { checkReviewText, REVIEW_TEXT_LIMIT } from "./review-verdict";
 
 /**
  * The merge verbs (POST /api/project-services/merge.<x>, through the engine's `merger` hook; the merge thread's tool
@@ -40,9 +50,9 @@ export interface MergerDeps {
   /** The reviewer chat run `run` waits on. */
   reviewerOf?: (run: string) => string | null;
   /** Hand a reviewer's verdict to the review step (review-step.ts deliverReview); false: none waits. */
-  deliverReview?: (run: string, v: { verdict: "ok" | "notes" | "blocking"; text?: string }) => boolean;
+  deliverReview?: (run: string, v: import("./review-step").ReviewAnswer) => boolean;
   /** The thread's question: asked in the owning chat of `entry`'s branch (else held on the tab, one notification). */
-  threadAsk?: (root: string, q: { question: string; entry?: MergeEntry }) => Promise<MergeThreadAsk>;
+  threadAsk?: (root: string, q: { question: string; entry?: MergeEntry; choices?: string[]; decide?: import("./asks").AskDeps["decide"] }) => Promise<MergeThreadAsk>;
   /** A recorded question of `root`'s thread, by id. */
   askOf?: (root: string, id: string) => MergeThreadAsk | undefined;
   /** The user's answer to a question: closed, and handed to the thread. */
@@ -51,10 +61,16 @@ export interface MergerDeps {
   threadFresh?: (root: string) => Promise<boolean>;
   /** The History's clear: one queue chat by session id, or "all" the ended ones; how many were deleted. */
   clearChats?: (root: string, which: string) => Promise<number>;
+  /** merge.live and merge.restart (restart.ts): the running server, its unit and its delayed restart. */
+  restart?: RestartDeps;
+  /** merge.names (names-verb.ts): the names step, Sova's own, on the project's names file. */
+  names?: (q: ProjectQueue, action: "discover" | "add" | "show", text?: string) => Promise<MergeNamesReport>;
+  /** merge.test: run a command in a scratch copy (tests stand one in). */
+  runInCopy?: (argv: string[], cwd: string, env: Record<string, string>, timeoutMs: number) => Promise<Proc>;
   now?: () => number;
 }
 
-const THREAD_VERBS: readonly MergeVerb[] = ["merge.status", "merge.logs", "merge.note", "merge.extend", "merge.resolve", "merge.retry", "merge.ask", "merge.hold"];
+const THREAD_VERBS: readonly MergeVerb[] = ["merge.status", "merge.logs", "merge.note", "merge.extend", "merge.resolve", "merge.retry", "merge.ask", "merge.hold", "merge.rule", "merge.restart", "merge.test", "merge.names"];
 const REVIEWER_VERBS: readonly MergeVerb[] = ["merge.status", "merge.logs", "merge.review"];
 
 interface Req {
@@ -89,9 +105,14 @@ interface Req {
   requires?: string[];
   dryRun?: boolean;
   action?: string;
+  ruling?: string;
+  choices?: string[];
+  request?: string;
+  drafts?: boolean;
+  contents?: Record<string, string>;
 }
 
-const KEYS: Record<keyof Req, "string" | "boolean" | "number" | "strings"> = {
+const KEYS: Record<keyof Req, "string" | "boolean" | "number" | "strings" | "map"> = {
   project: "string",
   ask: "string",
   branch: "string",
@@ -123,9 +144,19 @@ const KEYS: Record<keyof Req, "string" | "boolean" | "number" | "strings"> = {
   requires: "strings",
   dryRun: "boolean",
   action: "string",
+  ruling: "string",
+  choices: "strings",
+  request: "string",
+  drafts: "boolean",
+  contents: "map",
 };
 
-function parse(body: unknown): Req {
+/** A string key's length limit. merge.review's `text` carries a whole review, whose own format bounds it below this
+ *  (review-verdict.ts REVIEW_TEXT_LIMIT); every other text, of every other verb, is shorter. */
+const STRING_MAX = 4000;
+
+function parse(body: unknown, verb = ""): Req {
+  const stringMax = (k: string) => (verb === "merge.review" && k === "text" ? REVIEW_TEXT_LIMIT : STRING_MAX);
   if (body === undefined || body === null) return {};
   if (typeof body !== "object" || Array.isArray(body)) throw new MergeFailure("invalid-request", "the body is a JSON object");
   const out: Record<string, unknown> = {};
@@ -134,14 +165,16 @@ function parse(body: unknown): Req {
     const want = KEYS[k as keyof Req];
     if (!want) continue; // the engine's own keys (confirm, …) and the CLI's extras ride along
     const ok =
-      want === "strings"
+      want === "map"
+        ? typeof v === "object" && !Array.isArray(v) && Object.keys(v as object).length <= CONTENTS_MAX_FILES && Object.entries(v as object).every(([p, t]) => p.length > 0 && p.length <= 500 && typeof t === "string")
+        : want === "strings"
         ? Array.isArray(v) && v.length <= 50 && v.every((x) => typeof x === "string" && x.length > 0 && x.length <= 500)
         : want === "number"
           ? typeof v === "number" && Number.isInteger(v) && v > 0 && v <= 5000
           : want === "string"
-            ? typeof v === "string" && v.length <= 4000
+            ? typeof v === "string" && v.length <= stringMax(k)
             : typeof v === "boolean";
-    if (!ok) throw new MergeFailure("invalid-request", `"${k}" must be ${want === "strings" ? "a list of names" : want === "number" ? "a whole number (1–5000)" : `a ${want}`}`);
+    if (!ok) throw new MergeFailure("invalid-request", `"${k}" must be ${want === "map" ? `an object of file texts by path (at most ${CONTENTS_MAX_FILES})` : want === "strings" ? "a list of names" : want === "number" ? "a whole number (1–5000)" : typeof v === "string" ? `at most ${stringMax(k)} characters` : `a ${want}`}`);
     out[k] = v;
   }
   return out as Req;
@@ -160,7 +193,7 @@ export function merger(deps: MergerDeps): (verb: string, body: unknown, caller: 
     let report: MergeReport | undefined;
     try {
       if (!isMergeVerb(verb)) throw new MergeFailure("invalid-request", `unknown verb "${verb}"`);
-      const req = parse(body);
+      const req = parse(body, verb);
       const got = await queueFor(deps, verb, req, caller);
       if ("bare" in got) {
         // A listed project with no merge setup: its status is read from Git alone, no queue made (a4).
@@ -212,6 +245,32 @@ function result(verb: AnyVerb, root: string | null, ok: boolean, changed: boolea
 /** merge.setup's refusal to every caller but the user's own page: a chat proposes its setup on a branch instead. */
 export const SETUP_IS_THE_USERS = "only the user saves the checks, from their own page: a chat proposes the setup on its branch and runs a trial with merge.try";
 
+/** The operator's route called by a process a chat runs (its `x-sova-caller` key): never the user's act, whatever it
+    asks (§app.access/your-click). Land, the answers, Remove from Queue and Cancel come only from the user's own click in
+    Sova's page or their own word in the branch's chat (typed "land it", read by the worktree tool, not this route). */
+/** merge.respond's refusal to anyone but a branch's chat (the queue then checks it is the chat the request went to). */
+export const RESPOND_IS_THE_CHATS = "only the branch's chat a merge queue request was sent to answers it, with its own tool";
+
+export const CLICK_IS_THE_USERS =
+  "a chat's own scripts never act as the user: landing, answering, removing from the queue, cancelling, pausing and the queue's other acts come only from the user's own click in Sova's page or their own word in the branch's chat. Nothing was done; ask the user";
+
+/** merge.reply from any chat: the user's own next message is the answer, never a chat's relay. */
+export const REPLY_IS_THE_USERS =
+  "no chat answers the merge thread's question, not even by relaying: your user's own next message in this chat is the answer, and Sova sends it with the question. Ask them in your reply and wait; never answer it yourself";
+
+/** The merge queue's acts only the user's own page takes (§app.access/your-click): every verb but the reads and a trial.
+    Routes ask the page check (notPageNorProven) for these, as for `apply`. */
+export const pageOnlyMergeVerb = (verb: string): boolean => isMergeVerb(verb) && !MERGE_READ_VERBS.includes(verb) && verb !== "merge.try";
+
+/** An act on the merge queue from the user's route that isn't their own page: a token in a header (any script, a chat's
+    shell that left its key out), an in-process dispatch. */
+export const PAGE_IS_THE_USERS =
+  "only the user's own click in Sova's page lands, answers, removes from the queue, cancels or pauses: a request that shows the token in a header (a script, a terminal, a chat's shell) never acts as the user here. Nothing was done; ask the user";
+
+/** A card's command (server/transcript-cards.ts) on the merge queue: refused for every act. */
+export const CARD_IS_NOT_THE_USERS =
+  "a card's commands never act as the user on the merge queue: landing, answering, removing from the queue and the queue's other acts come only from Sova's own controls in the page or the user's own word in the branch's chat. Nothing was done";
+
 /** The verbs a project on the Projects list may call before its merge setup is done. */
 const SETUP_VERBS: readonly MergeVerb[] = ["merge.status", "merge.setup", "merge.try"];
 
@@ -240,6 +299,12 @@ async function queueFor(deps: MergerDeps, verb: MergeVerb, req: Req, caller: Cal
     if (!q) throw new MergeFailure("not-found", `no queue entry ${req.entry}`);
     return gated(deps, verb, q.root);
   }
+  // A request of a branch's chat names its queue (merge.respond, merge.rule); one Sova made before any Land has none,
+  // and the caller's own project answers for it below.
+  if (req.request) {
+    const q = await deps.queues.findRequest(req.request);
+    if (q) return gated(deps, verb, q.root);
+  }
   if (req.run) {
     const q = await deps.queues.findRun(req.run);
     if (!q) throw new MergeFailure("not-found", `no merge run ${req.run}`);
@@ -257,6 +322,19 @@ async function queueFor(deps: MergerDeps, verb: MergeVerb, req: Req, caller: Cal
 function authorize(deps: MergerDeps, verb: MergeVerb, caller: Caller, root: string, req: Req): void {
   // merge.setup saves to the target: the user's own page only, never a chat's script on the operator's route (any dryRun).
   if (caller.kind === "operator" && caller.fromChat && verb === "merge.setup") throw new MergeFailure("forbidden", SETUP_IS_THE_USERS);
+  // A chat's script on the operator's route never restarts Sova, runs a branch's tests or writes the names file: the
+  // merge thread's own tool or the user's page does.
+  if (caller.kind === "operator" && caller.fromChat && (verb === "merge.restart" || verb === "merge.test" || verb === "merge.names")) throw new MergeFailure("forbidden", `${verb} is the merge thread's (its own tool) or the user's page, never a chat's script`);
+  // Any other act from a chat's script on the operator's route: refused (the merge thread and a run's reviewer use their
+  // own tool, a session caller, below). It still reads, and still runs a trial, as any chat on its project may.
+  if (caller.kind === "operator" && caller.fromChat && !MERGE_READ_VERBS.includes(verb) && verb !== "merge.try") throw new MergeFailure("forbidden", CLICK_IS_THE_USERS);
+  // A command a card ran (its view's code or its button's): a chat's or an extension's code, never the user's act here.
+  if (caller.kind === "operator" && caller.fromCard && !MERGE_READ_VERBS.includes(verb)) throw new MergeFailure("forbidden", CARD_IS_NOT_THE_USERS);
+  // Not the user's own page (nor a proven click from another of their computers): never the user's act, whatever it
+  // says of itself. A chat whose shell leaves its key out is caught here, by what it can't show (the page's cookie).
+  if (caller.kind === "operator" && caller.notPage && pageOnlyMergeVerb(verb)) throw new MergeFailure("forbidden", PAGE_IS_THE_USERS);
+  // merge.respond is the branch's chat's own answer to a request: never the user's page, never a script.
+  if (caller.kind === "operator" && verb === "merge.respond") throw new MergeFailure("forbidden", RESPOND_IS_THE_CHATS);
   if (caller.kind === "operator") return;
   const reads = MERGE_READ_VERBS.includes(verb);
   const sid = sessionId(caller);
@@ -265,7 +343,11 @@ function authorize(deps: MergerDeps, verb: MergeVerb, caller: Caller, root: stri
   if (caller.kind === "session" || caller.kind === "project-overseer" || caller.kind === "assistant") {
     if (caller.root !== root) throw new MergeFailure("forbidden", `this caller acts only on its own project${caller.root ? ` (${caller.root})` : ""}`);
   }
-  if (sid && deps.isThreadChat?.(root, sid) && THREAD_VERBS.includes(verb)) return;
+  if (sid && deps.isThreadChat?.(root, sid) && THREAD_VERBS.includes(verb)) {
+    // The thread acting at all proves it runs: fixes that waited for it are handed to it again (q14).
+    void deps.queues.peek(root)?.then((q) => q.threadActed()).catch(() => {});
+    return;
+  }
   if (reads && caller.kind !== "conform") return;
   // A trial saves and merges nothing: any chat on its own project may run one (the setup chat does); never merge.setup.
   // Never the merge thread or a run's reviewer: neither sets anything up.
@@ -275,13 +357,15 @@ function authorize(deps: MergerDeps, verb: MergeVerb, caller: Caller, root: stri
     if (caller.kind === "session") return;
     throw new MergeFailure("forbidden", "only the user or a chat on this project runs a trial");
   }
-  // The chat a question was asked in relays the user's answer; nobody else does (the operator may, from the tab).
-  if (verb === "merge.reply") {
-    const ask = req.ask ? deps.askOf?.(root, req.ask) : undefined;
-    if (sid && ask?.askedIn?.session === sid) return;
-    throw new MergeFailure("forbidden", "only the chat the merge thread asked in relays the user's answer");
-  }
+  // No chat relays the user's answer to a thread question, not even the chat it was asked in: Sova takes the user's own
+  // next message there as the answer (server/merge-queue/channel.ts takeHeldNote), so no model can answer for them.
+  if (verb === "merge.reply") throw new MergeFailure("forbidden", REPLY_IS_THE_USERS);
   if (verb === "merge.setup") throw new MergeFailure("forbidden", SETUP_IS_THE_USERS);
+  // A branch's chat answers the requests sent to it (the queue checks it is the one); never the merge thread or a reviewer.
+  if (verb === "merge.respond") {
+    if (sid && caller.kind === "session" && !deps.isThreadChat?.(root, sid) && !deps.isReviewerChat?.(sid)) return;
+    throw new MergeFailure("forbidden", RESPOND_IS_THE_CHATS);
+  }
   if (verb === "merge.add" || verb === "merge.answer" || verb === "merge.cancel" || verb === "merge.pause" || verb === "merge.resume" || verb === "merge.fresh" || verb === "merge.clear")
     throw new MergeFailure("forbidden", "only the user lands, cancels, pauses, answers or sets up the checks: their Land button or their own word in the branch's chat");
   if (verb === "merge.review") throw new MergeFailure("forbidden", "only the run's reviewer posts its review");
@@ -292,8 +376,22 @@ async function dispatch(deps: MergerDeps, verb: MergeVerb, req: Req, q: ProjectQ
   const by = caller.kind === "operator" ? ("operator" as const) : ("thread" as const);
   const viewOf = async () => q.view();
   switch (verb) {
-    case "merge.status":
-      return { changed: false, report: { view: await viewOf() } };
+    case "merge.status": {
+      const view = await viewOf();
+      if (!req.entry) return { changed: false, report: { view } };
+      // One entry: the rest of the view stays (counts, hold, settings), its lists narrowed to that entry.
+      const one = (xs: MergeEntry[]): MergeEntry[] => xs.filter((x) => x.id === req.entry);
+      const narrowed: MergeQueueView = {
+        ...view,
+        checking: one(view.checking),
+        waiting: one(view.waiting),
+        needsYou: one(view.needsYou),
+        needsFix: one(view.needsFix),
+        ...(view.waitingOnHost ? { waitingOnHost: one(view.waitingOnHost) } : {}),
+        recent: view.recent.filter((x) => x.entry.id === req.entry),
+      };
+      return { changed: false, report: { view: narrowed } };
+    }
     case "merge.logs": {
       const runId = req.run ?? (req.entry ? q.entry(req.entry)?.run : undefined);
       if (!runId) throw new MergeFailure("invalid-request", "name the run (or an entry that had one)");
@@ -352,13 +450,44 @@ async function dispatch(deps: MergerDeps, verb: MergeVerb, req: Req, q: ProjectQ
         theirs: req.theirs ?? "",
         proposal: req.proposal ?? "",
         ...(req.commit ? { commit: req.commit } : {}),
+        ...(req.contents ? { contents: req.contents } : {}),
+        ...(req.note !== undefined ? { note: req.note } : {}),
+        ...(req.text !== undefined ? { text: req.text } : {}),
+        ...(req.choices ? { choices: req.choices } : {}),
+      });
+      return { changed: true, report: { entry: e, view: await viewOf() } };
+    }
+    case "merge.respond": {
+      const sid = sessionId(caller);
+      const id = need(req.request, "request (rq_…)");
+      // A request Sova made before any Land (drafts that don't fit, what blocks a finished branch): no entry holds it.
+      if (!q.requestOf(id)) {
+        const { answerLoose, isLooseRequest } = await import("./answers");
+        if (isLooseRequest(id)) return { changed: true, report: { request: answerLoose(id, sid, { answer: need(req.answer, 'answer ("fixed", "needs-you" or "cant")'), ...(req.text !== undefined ? { text: req.text } : {}) }) } };
+      }
+      const r = await q.respond(id, sid, {
+        answer: need(req.answer, 'answer ("fixed", "needs-you" or "cant")'),
+        ...(req.text !== undefined ? { text: req.text } : {}),
+        ...(req.commit ? { commit: req.commit } : {}),
+        ...(req.drafts ? { drafts: true } : {}),
+        ...(req.choices ? { options: req.choices } : {}),
+      });
+      return { changed: true, report: { entry: r.entry, request: r.request } };
+    }
+    case "merge.rule": {
+      const request = (req as { request?: string }).request;
+      const e = await q.rule(need(req.entry, "entry"), {
+        ruling: need(req.ruling, "ruling"),
+        ...(req.text !== undefined ? { text: req.text } : {}),
+        ...(req.choices ? { choices: req.choices } : {}),
+        ...(request ? { request } : {}),
         ...(req.note !== undefined ? { note: req.note } : {}),
       });
       return { changed: true, report: { entry: e, view: await viewOf() } };
     }
     case "merge.answer": {
       const a = need(req.answer, "answer");
-      if (!(MERGE_ANSWERS as readonly string[]).includes(a)) throw new MergeFailure("invalid-request", 'answer is "accept", "send-back" or "land-anyway"');
+      if (!(MERGE_ANSWERS as readonly string[]).includes(a)) throw new MergeFailure("invalid-request", 'answer is "accept", "land-anyway", "try-again" or "land"');
       const e = await q.answer(need(req.entry, "entry"), a as MergeAnswer, req.why);
       return { changed: true, report: { entry: e, view: await viewOf() } };
     }
@@ -367,7 +496,10 @@ async function dispatch(deps: MergerDeps, verb: MergeVerb, req: Req, q: ProjectQ
       const v = need(req.verdict, "verdict");
       if (!["ok", "notes", "blocking"].includes(v)) throw new MergeFailure("invalid-request", 'verdict is "ok", "notes" or "blocking"');
       if ((v === "notes" || v === "blocking") && !req.text?.trim()) throw new MergeFailure("invalid-request", "say what the review found (text)");
-      const verdict = { verdict: v as "ok" | "notes" | "blocking", ...(req.text?.trim() ? { text: req.text.trim() } : {}) };
+      // The verdict's shape is checked here (the reviewer has no shell to run a kit script): a malformed one is refused.
+      const checked = checkReviewText(v as "ok" | "notes" | "blocking", req.text);
+      if ("why" in checked) throw new MergeFailure("invalid-request", `review refused: ${checked.why}; fix it and answer again`);
+      const verdict = { verdict: v as "ok" | "notes" | "blocking", ...(checked.text ? { text: checked.text, summary: checked.summary, findings: checked.findings } : {}) };
       if (deps.deliverReview?.(runId, verdict)) return { changed: true, report: {} };
       const run = await q.review(runId, verdict);
       return { changed: true, report: { run } };
@@ -381,7 +513,9 @@ async function dispatch(deps: MergerDeps, verb: MergeVerb, req: Req, q: ProjectQ
       if (!deps.threadAsk) throw new MergeFailure("unsupported", "nothing here can ask the user for the merge thread");
       const e = req.entry ? q.entry(req.entry) : undefined;
       if (req.entry && !e) throw new MergeFailure("not-found", `no queue entry ${req.entry}`);
-      const ask = await deps.threadAsk(q.root, { question, ...(e ? { entry: e } : {}) });
+      // A question about an entry whose branch chat can take it waits as a decision on that entry's card (al_3 v7).
+      const decide: import("./asks").AskDeps["decide"] = (a) => q.askDecision(e!.id, a);
+      const ask = await deps.threadAsk(q.root, { question, ...(e ? { entry: e, decide } : {}), ...(req.choices ? { choices: req.choices } : {}) });
       return { changed: true, report: { ask } };
     }
     case "merge.reply": {
@@ -416,6 +550,39 @@ async function dispatch(deps: MergerDeps, verb: MergeVerb, req: Req, q: ProjectQ
         by: caller.kind === "operator" && !caller.fromChat ? { kind: "operator" } : { kind: "chat", ...(sessionId(caller) ? { session: sessionId(caller)! } : {}) },
       });
       return { changed: true, report: { trial: r.trial, run: r.run } };
+    }
+    case "merge.live": {
+      if (!deps.restart) throw new MergeFailure("unsupported", "this server can't say what it runs");
+      return { changed: false, report: { live: await liveOf(restartQueue(q), deps.restart) } };
+    }
+    case "merge.restart": {
+      if (!deps.restart) throw new MergeFailure("unsupported", "this server can't restart itself");
+      const r = await restartSelf(restartQueue(q), deps.restart);
+      return { changed: r.outcome !== "nothing", report: { restart: r } };
+    }
+    case "merge.test": {
+      const e = q.entry(need(req.entry, "entry"));
+      if (!e) throw new MergeFailure("not-found", `no queue entry ${req.entry}`);
+      if (e.state !== "conflict" && e.state !== "behaviour-differs") throw new MergeFailure("invalid-request", `${e.branch} has no conflict and so no scratch copy (it is ${e.state})`);
+      const d = await q.declared();
+      const test = d.def?.test?.run;
+      if (!test?.length) throw new MergeFailure("unsupported", "the project declares no test command");
+      const install = d.def?.merge?.install?.run ?? null;
+      const copy = scratchCopyPath(q.root, e.id);
+      // The queue's checks' environment, at the merge copy's slot, with data of the test's own.
+      const data = join(q.store.dir, "scratch-tests", e.id);
+      const env = envOf(d.def!, { project: q.root, projectId: q.id, copy, slot: mergeSlotOf(d.def!), data, target: q.target, base: (await q.targetHead()) ?? "", tip: e.commit });
+      const r = await testInCopy({ copy, entry: e.id, install, test, env, ...(req.select ? { select: req.select } : {}), timeoutMs: (d.def?.test?.timeout ?? 1200) * 1000, ...(deps.runInCopy ? { run: deps.runInCopy } : {}) }).catch((err: unknown) => {
+        throw new MergeFailure("invalid-request", err instanceof Error ? err.message : String(err));
+      });
+      return { changed: false, report: { test: r } };
+    }
+    case "merge.names": {
+      const action = need(req.action, 'action ("discover", "add" or "show")');
+      if (action !== "discover" && action !== "add" && action !== "show") throw new MergeFailure("invalid-request", '"action" is "discover", "add" or "show"');
+      if (action === "add" && !req.text?.trim()) throw new MergeFailure("invalid-request", "say the names to add (text: one `<kind>: <value>` per line)");
+      if (!deps.names) throw new MergeFailure("unsupported", "this server runs no names step");
+      return { changed: action !== "show", report: { names: await deps.names(q, action, req.text) } };
     }
     case "merge.setup": {
       const r = await q.setup({
@@ -473,6 +640,8 @@ export function registerMergeCardRoutes(app: import("hono").Hono): void {
   registerLiveMergeSettingsRoutes(app);
   // How a branch lands (al_3): Update Local Main, a request's Publish, How it lands (routes-landing.ts).
   registerLiveMergeLandingRoutes(app);
+  // The merge thread's Run Logs chip: the run folders' size and Clean Logs (run-logs-routes.ts).
+  registerLiveRunLogsRoutes(app);
   // Try Again on a branch summary that failed (branch-summaries.ts): {branch, commit}; refused for one that worked.
   app.post("/api/merge-queue/projects/:project/branch-summary", async (c) => {
     const b = (await c.req.json().catch(() => null)) as { branch?: unknown; commit?: unknown } | null;
@@ -502,8 +671,8 @@ export function registerMergeCardRoutes(app: import("hono").Hono): void {
     const s = isAbsolute(raw) ? await getSessionSummary(raw).catch(() => null) : raw.length <= 200 ? ((await listSessions().catch(() => [])).find((x) => x.id === raw) ?? null) : null;
     if (!s) return c.json({ error: "No such session (name it by its file path or id)" }, 404);
     const id = s.id;
-    const { mergeCardsOf } = await import("./wire");
-    return c.json({ cards: mergeCardsOf(id) });
+    const { mergeCardsOf, mergeReviewCardsOf } = await import("./wire");
+    return c.json({ cards: mergeCardsOf(id), reviews: await mergeReviewCardsOf(id) });
   });
 }
 

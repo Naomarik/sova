@@ -1,4 +1,4 @@
-import { For, Show, createMemo, createSignal, onCleanup, onMount } from "solid-js";
+import { For, Match, Show, Switch, createMemo, createSignal, onCleanup, onMount } from "solid-js";
 import { emphasisMap } from "../../core/emphasis";
 import { canvasMeasure } from "../../core/text";
 import { emClass, SvgEmBadge } from "../../emphasis";
@@ -14,11 +14,24 @@ import "./chart.css";
  * layout.ts at the width the figure has. Colours are CSS classes (`vis-chart-s<n>` per series, a
  * tone class per row), so a theme switch needs no re-render. Series never rely on hue alone: lines
  * add a dash and a marker shape, and the legend names every series. `type: parts` is its own HTML
- * View (PartsView.tsx).
+ * View (PartsView.tsx). The reader's view switch (switch.ts) changes the spec's type while the
+ * drawing is mounted, so the two are swapped reactively.
  */
 export default function ChartView(props: ViewProps<ChartSpec>) {
-  // A spec never changes type while mounted (a new fence is a new drawing).
-  if (props.spec.type === "parts") return <PartsView {...props} />;
+  const parts = () => props.spec.type === "parts";
+  return (
+    <Switch>
+      <Match when={parts()}>
+        <PartsView spec={props.spec} label={props.label} />
+      </Match>
+      <Match when={!parts()}>
+        <SvgChart spec={props.spec} label={props.label} />
+      </Match>
+    </Switch>
+  );
+}
+
+function SvgChart(props: ViewProps<ChartSpec>) {
   let box!: HTMLDivElement;
   // The first layout happens in onMount, before the browser paints: the box is in the page by then.
   const [width, setWidth] = createSignal(560);

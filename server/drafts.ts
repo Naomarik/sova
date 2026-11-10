@@ -1,3 +1,4 @@
+import type { ShellDraftMode } from "../shared/protocol";
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { stateRoot } from "./state-root";
@@ -24,8 +25,17 @@ export interface DraftAttachment {
   size: number;
 }
 
+/** A draft written in shell mode (§chat.shell-mode/box): `shell` a `!` command, `private` a `!!` one. Kept
+    apart from the text, which never holds the marker: a leading `!` in the text is only ever text. */
+export type DraftMode = ShellDraftMode;
+/** The marker a command's mode is typed with, shown when it turns into text. */
+export const markerOf = (mode: DraftMode): string => (mode === "private" ? "!!" : "!");
+export const isDraftMode = (v: unknown): v is DraftMode => v === "shell" || v === "private";
+
 export interface Draft {
   text: string;
+  /** Absent: a message. Only the person's own page writes one (PUT /api/sessions/draft). */
+  mode?: DraftMode;
   /** ISO time of the last write. */
   updatedAt: string;
   /** Absent on disk when there are none. */
@@ -83,7 +93,7 @@ function load(): Record<string, Draft> {
       const e = d as Partial<Draft> | null;
       if (!e || typeof e.text !== "string" || typeof e.updatedAt !== "string") continue;
       const attachments = wellFormed(e.attachments);
-      out[id] = { text: e.text, updatedAt: e.updatedAt, ...(attachments.length ? { attachments } : {}) };
+      out[id] = { text: e.text, updatedAt: e.updatedAt, ...(isDraftMode(e.mode) ? { mode: e.mode } : {}), ...(attachments.length ? { attachments } : {}) };
     }
   } catch {
     // missing or corrupt: start empty
@@ -93,11 +103,11 @@ function load(): Record<string, Draft> {
 
 let drafts = load();
 
-/** Atomic (tmp + rename), then the in-memory map is refreshed to what was written. */
+/** Atomic (tmp + rename), readable only by this account (a draft can hold a typed secret), then the in-memory map is refreshed to what was written. */
 function save(next: Record<string, Draft>): void {
   mkdirSync(dirname(FILE), { recursive: true });
   const tmp = `${FILE}.${process.pid}.tmp`;
-  writeFileSync(tmp, JSON.stringify({ version: 1, drafts: next }));
+  writeFileSync(tmp, JSON.stringify({ version: 1, drafts: next }), { mode: 0o600 });
   renameSync(tmp, FILE);
   sessionsChanged();
   drafts = next;
@@ -116,10 +126,10 @@ export function getDraft(id: string): Draft | null {
 
 /** GET /api/sessions/draft's body: nulls and [] when none. An image whose file is gone (deleted,
     or /tmp cleaned) is no longer part of the draft, so it is left out. */
-export function draftForClient(id: string): { text: string | null; attachments: DraftAttachment[]; updatedAt: string | null } {
+export function draftForClient(id: string): { text: string | null; mode?: DraftMode; attachments: DraftAttachment[]; updatedAt: string | null } {
   const d = getDraft(id);
   const attachments = (d?.attachments ?? []).filter((a) => checkTmpImage(a.path).ok);
-  return { text: d?.text ?? null, attachments, updatedAt: d?.updatedAt ?? null };
+  return { text: d?.text ?? null, ...(d?.mode ? { mode: d.mode } : {}), attachments, updatedAt: d?.updatedAt ?? null };
 }
 
 /**
@@ -128,12 +138,13 @@ export function draftForClient(id: string): { text: string | null; attachments: 
  * web-sessions.ts: re-read the file and change only this id, so drafts written by another
  * server instance survive. A removed attachment's file is not deleted here: the client deletes
  * a chip's file itself (DELETE /api/attachment), and a sent draft's files must stay, since the
- * prompt names them and the transcript renders them.
+ * prompt names them and the transcript renders them. `mode` is the caller's to have checked: only the page's
+ * write passes one; every other write, a hand-back included, stores a message (no mode, clearing any).
  */
-export function setDraft(id: string, text: string, rawAttachments?: unknown): void {
+export function setDraft(id: string, text: string, rawAttachments?: unknown, mode?: DraftMode): void {
   const next = load();
   const attachments = cleanAttachments(rawAttachments);
-  if (text.trim() || attachments.length) next[id] = { text, updatedAt: new Date().toISOString(), ...(attachments.length ? { attachments } : {}) };
+  if (text.trim() || attachments.length) next[id] = { text, updatedAt: new Date().toISOString(), ...(mode ? { mode } : {}), ...(attachments.length ? { attachments } : {}) };
   else if (id in next) delete next[id];
   else {
     drafts = next; // absent already: nothing to write
@@ -144,12 +155,15 @@ export function setDraft(id: string, text: string, rawAttachments?: unknown): vo
 
 /** Messages a chat couldn't take while no tab was left to hear it (§chat.transcript/send-while-starting):
     their texts go back as the session's draft, ahead of any draft already saved (the order a tab
-    puts a refused send back in), its attachments kept. Blank texts are skipped. */
+    puts a refused send back in), its attachments kept. Blank texts are skipped. The result is a message: a
+    saved command's mode is dropped, and its text stays as it was typed. */
 export function putBackDraft(id: string, texts: readonly string[]): void {
   const back = texts.filter((t) => t.trim());
   if (!back.length) return;
   const current = load()[id];
-  const text = [...back, ...(current?.text.trim() ? [current.text] : [])].join("\n\n");
+  // A saved command joins as text with its marker shown, so nothing is lost and nothing runs on Enter.
+  const kept = current?.text.trim() ? [`${current.mode ? markerOf(current.mode) : ""}${current.text}`] : [];
+  const text = [...back, ...kept].join("\n\n");
   setDraft(id, text, current?.attachments);
 }
 

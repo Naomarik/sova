@@ -1,0 +1,99 @@
+{
+ "op": {
+  "type": "string",
+  "const": "edit_question"
+ },
+ "q": {
+  "type": "string",
+  "minLength": 1,
+  "description": "A question id, e.g. \"q3\".",
+  "pattern": "^q[1-9][0-9]*$"
+ },
+ "topic": {
+  "type": "string",
+  "minLength": 1
+ },
+ "ask": {
+  "type": "string",
+  "minLength": 1
+ },
+ "context": {
+  "type": "string",
+  "description": "New context; \"\" removes it."
+ },
+ "options": {
+  "type": "array",
+  "items": {
+   "type": "object",
+   "required": [
+    "label",
+    "tradeoff"
+   ],
+   "properties": {
+    "label": {
+     "type": "string",
+     "minLength": 1,
+     "description": "The choice, short."
+    },
+    "tradeoff": {
+     "type": "string",
+     "minLength": 1,
+     "description": "What happens if the user picks this, in one plain line: what they will see, what it costs and what it buys (e.g. \"Old rows are deleted for good; the export runs twice as fast\")."
+    }
+   },
+   "additionalProperties": false
+  },
+  "description": "Replaces all options; [] removes them."
+ },
+ "recommendation": {
+  "type": "object",
+  "required": [
+   "choice",
+   "why"
+  ],
+  "properties": {
+   "choice": {
+    "type": "string",
+    "minLength": 1,
+    "description": "The answer you recommend (one of the options' labels when there are options)."
+   },
+   "why": {
+    "type": "string",
+    "minLength": 1,
+    "description": "Why, in a sentence."
+   }
+  },
+  "additionalProperties": false,
+  "description": "Your recommended answer. Required: the user can accept it as is."
+ },
+ "visual": {
+  "anyOf": [
+   {
+    "type": "object",
+    "required": [
+     "kind",
+     "source"
+    ],
+    "properties": {
+     "kind": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The vis kind, e.g. \"wireframe\", \"flow\", \"state\", \"steps\" (call vis_guide with it first).",
+      "pattern": "^[a-z]+$"
+     },
+     "source": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The drawing's source, exactly what the vis fence's body would be, in the syntax vis_guide returned."
+     }
+    },
+    "additionalProperties": false,
+    "description": "A drawing on the alignment card, only when it explains faster than words; at most 3 per alignment."
+   },
+   {
+    "type": "null"
+   }
+  ],
+  "description": "The question's drawing; null removes it."
+ }
+}

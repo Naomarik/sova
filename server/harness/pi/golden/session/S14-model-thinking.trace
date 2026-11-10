@@ -14,8 +14,6 @@ write {"id":"00000003","type":"custom","customType":"sova-align-launch"}
 sdk setModel ["scripted/scripted-think"]
 write {"id":"00000004","type":"model_change"}
 sdk setThinkingLevel ["off"]
-A {"type":"ui_request","id":"00000000-0000-7000-8000-000000000002","request":{"method":"setStatus","statusKey":"mode","statusText":"\u001b[38;5;102mnormal\u001b[39m","fireAndForget":true}}
-B {"type":"ui_request","id":"00000000-0000-7000-8000-000000000002","request":{"method":"setStatus","statusKey":"mode","statusText":"\u001b[38;5;102mnormal\u001b[39m","fireAndForget":true}}
 A {"type":"model","model":"scripted/scripted-think"}
 B {"type":"model","model":"scripted/scripted-think"}
 A {"type":"thinking","level":"off"}
@@ -24,8 +22,6 @@ step B sends {"type":"set_thinking","level":"high"}
 sdk setThinkingLevel ["high"]
 write {"id":"00000005","type":"thinking_level_change"}
 A {"type":"event","event":{"type":"thinking_level_changed","level":"high"}}
-A {"type":"ui_request","id":"00000000-0000-7000-8000-000000000003","request":{"method":"setStatus","statusKey":"mode","statusText":"\u001b[38;5;102mnormal\u001b[39m","fireAndForget":true}}
-B {"type":"ui_request","id":"00000000-0000-7000-8000-000000000003","request":{"method":"setStatus","statusKey":"mode","statusText":"\u001b[38;5;102mnormal\u001b[39m","fireAndForget":true}}
 A {"type":"thinking","level":"high"}
 B {"type":"thinking","level":"high"}
 A {"type":"append","items":[{"id":"thinking-<ms>","kind":"info","meta":{"type":"thinking_level_change"},"text":"Thinking: high"}]}
@@ -62,4 +58,4 @@ A {"type":"event","event":{"type":"turn_end","message":{"role":"assistant","api"
 A {"type":"event","event":{"type":"agent_end","messages":[{"role":"system","elided":true},{"role":"user","content":[{"type":"text","text":"work"}],"timestamp":1000000000000},{"role":"assistant","api":"openai-completions","provider":"scripted","model":"scripted-think","usage":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"timestamp":1000000000000,"content":[{"type":"text","text":"ok"}],"stopReason":"stop","thinkingLevel":"high"}],"willRetry":false}}
 A {"type":"event","event":{"type":"agent_settled"}}
 B {"type":"event","v":2,"event":{"type":"run.settled"}}
-got new-session defaults {"model":"scripted/scripted-think","thinking":"high"}
+got new-session defaults {}

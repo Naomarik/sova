@@ -114,6 +114,16 @@ async function readEntry(dir: string): Promise<{ entry: PlaybookEntry; text: str
   throw last;
 }
 
+/** Whether the playbook in folder `dir` proposes setup (its frontmatter's `proposes:`, §app.project-runtime/verb-playbooks); false when it can't be read. */
+export async function playbookProposes(dir: string): Promise<boolean> {
+  try {
+    const { fields } = parseFrontmatter((await readEntry(dir)).text);
+    return (PLAYBOOK_PROPOSES as readonly string[]).includes(fields.proposes?.trim() ?? "");
+  } catch {
+    return false;
+  }
+}
+
 async function readOne(dir: string, id: string, source: Source): Promise<{ info: PlaybookInfo; fields: Record<string, string> }> {
   const { entry, text } = await readEntry(dir);
   const { fields, body } = parseFrontmatter(text);

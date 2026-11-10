@@ -60,6 +60,37 @@
       "source": "pi-session:33293739-4bbd-4563-a110-edb5562c0699#d0b1f86c"
     }
   },
+  "§chat.markdown/vis-chart-views": {
+    "kind": "behavior",
+    "requires": [
+      "§chat.markdown/visuals",
+      "§chat.markdown/vis-parts",
+      "§app.baton/outsider-view"
+    ],
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "src/vis/kinds/chart/switch.ts",
+      "src/vis/kinds/chart/switch.test.ts",
+      "src/vis/kinds/chart/ChartControls.tsx",
+      "src/vis/kinds/chart/memory.ts",
+      "src/vis/kinds/chart/memory.test.ts",
+      "src/vis/kinds/chart/View.tsx",
+      "src/vis/kinds/chart/parse.ts",
+      "src/vis/kinds/chart/layout.test.ts",
+      "src/vis/Figure.tsx",
+      "src/vis/Visual.tsx",
+      "src/vis/vis.css",
+      "src/share/vis.tsx",
+      "src/vis/kinds/chart/layout.ts",
+      "src/vis/snapshot.ts"
+    ],
+    "agreed": {
+      "by": "Omar (user)",
+      "at": "2026-11-07T21:30Z",
+      "source": "pi-session:fb6b7a43-4aea-4bb6-b919-3302f164b7b9#458ede51"
+    }
+  },
   "§chat.markdown/vis-flow-focus": {
     "kind": "behavior",
     "requires": [
@@ -189,7 +220,8 @@
       "src/vis/kinds/chart/parse.test.ts",
       "src/vis/kinds/layers/parse.test.ts",
       "src/vis/kinds/wireframe/parse.ts",
-      "src/vis/kinds/wireframe/parse.test.ts"
+      "src/vis/kinds/wireframe/parse.test.ts",
+      "src/vis/kinds/chart/switch.ts"
     ]
   },
   "§chat.markdown/vis-lenience-content": {
@@ -227,11 +259,13 @@
       "src/vis/guide.test.ts",
       "src/vis/lenience.test.ts",
       "src/vis/markdown.test.ts",
-      "server/vis-check.test.ts"
+      "server/vis-check.test.ts",
+      "src/vis/kinds/chart/switch.ts"
     ],
     "agreed": {
-      "by": "omar",
-      "at": "2026-10-15T21:59Z"
+      "by": "Omar (user)",
+      "at": "2026-11-08T08:07Z",
+      "source": "pi-session:fb6b7a43-4aea-4bb6-b919-3302f164b7b9#458ede51"
     }
   },
   "§chat.markdown/vis-matrix-tones": {
@@ -267,8 +301,15 @@
       "src/vis/kinds/chart/parse.ts",
       "src/vis/kinds/chart/View.tsx",
       "src/vis/kinds/chart/layout.ts",
-      "pi-config/extensions/mode/vis/chart.md"
-    ]
+      "pi-config/extensions/mode/vis/chart.md",
+      "src/vis/kinds/chart/switch.ts",
+      "src/vis/kinds/chart/switch.test.ts"
+    ],
+    "agreed": {
+      "by": "Omar (user)",
+      "at": "2026-11-07T21:30Z",
+      "source": "pi-session:fb6b7a43-4aea-4bb6-b919-3302f164b7b9#458ede51"
+    }
   },
   "§chat.markdown/vis-steps": {
     "kind": "behavior",
@@ -502,7 +543,12 @@
       "src/vis/multimark.test.ts",
       "shared/vis-frame-host.ts",
       "server/vis-tools-sync.test.ts",
-      "pi-config/extensions/mode/vis/tour.md"
+      "pi-config/extensions/mode/vis/tour.md",
+      "src/vis/kinds/chart/ChartControls.tsx",
+      "src/vis/copy.ts",
+      "src/vis/copy-plan.ts",
+      "src/vis/copy-plan.test.ts",
+      "src/vis/snapshot.ts"
     ],
     "requires": [
       "§chat.markdown/code-blocks",
@@ -511,8 +557,8 @@
     ],
     "agreed": {
       "by": "Omar (user)",
-      "at": "2026-10-28T13:24Z",
-      "source": "pi-session:01a18245-0e17-7289-9604-86d2cebcb150#f4852ec2"
+      "at": "2026-11-07T21:30Z",
+      "source": "pi-session:fb6b7a43-4aea-4bb6-b919-3302f164b7b9#458ede51"
     }
   },
   "§chat.markdown/working-notes": {

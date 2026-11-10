@@ -58,7 +58,11 @@ claude-code imports nothing outside its own directory. For worker niceness it ca
 - The registry `claude-accounts.json` `{version: 1, logins, devices}`. Each login's directory
   `claude-accounts/<id>/` (0700) symlinks `projects/`, `settings.json`, `CLAUDE.md`, `agents`, `commands`,
   `skills` and `plugins` to Claude Code's own directory, so `--resume` and every transcript reader keep one
-  `projects/`.
+  `projects/`. An agent dir with its own `claude-projects/` (the hermetic `.agent` makes one) links every
+  login's `projects` there instead, and `default` runs on `<agent dir>/claude-default/` (`ownDefaultTarget`,
+  `ensureOwnDefaultDir`: links to `default`'s `.credentials.json`, `.claude.json` and shared entries, `projects`
+  into `claude-projects/`), so no test chat writes into `~/.claude/projects`. Skipped for a `default` already
+  inside the agent dir (a fixture) and on macOS for a keychain-only `default` (its item is named for its dir).
 - `claude-accounts-state.json`: this host's standing of each login.
 - The per-device order: each account's logins together (`groupByAccount`, which the pool's order reads too),
   `default` (Claude Code's own login) always last.

@@ -200,10 +200,10 @@ test("the tab's limit view: only running copies count, the main checkout's and c
       instances: [rec("main", 0, true), rec("a", 1, true), rec("b", 2, true), rec("c", 3, true), rec("d", 4, false), rec("conf", 17, true, "conform:x")].map((r) => ({ ...r, desired: { ...r.desired } })),
     };
     const host = { totalBytes: 121e9, availableBytes: 30e9 };
-    const v = limitView(root, registry, { host, stamps: {} });
+    const v = limitView(root, registry, { host, stamps: {}, listening: new Set() });
     assert.deepEqual(
       { ...v },
-      { value: 2, source: "file", file: 2, copies: 4, running: 3, over: "3 running, 1 over the limit of 2: no new copy starts until 2 stop.", usable: 16, unavailable: [], estimate: null, host },
+      { value: 2, source: "file", file: 2, copies: 4, running: 3, over: "3 running, 1 over the limit of 2: no new copy starts until 2 stop.", usable: 16, unavailable: [], places: { stopped: 1, elsewhere: 0, free: 12 }, estimate: null, host },
     );
     setMachineCopyLimit(root, 12);
     const m = limitView(root, registry, { host: null, stamps: {} });
@@ -214,13 +214,29 @@ test("the tab's limit view: only running copies count, the main checkout's and c
   }
 });
 
+test("the tab's limit view: a record outside the usable slots is no copy but still counts as running; places by the card's rule, free absent when not checked", () => {
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "sova-view-stale-")));
+  try {
+    mkdirSync(join(root, ".sova"));
+    writeFileSync(join(root, ".sova", "project.json"), JSON.stringify({ version: 1, slots: { cap: 1 }, services: { web: { cmd: ["x"], ports: { http: { base: 4300 } } } } }));
+    const rec = (id: string, slot: number) => ({ id, project: root, checkout: `${root}/${id}`, branch: id, slot, generation: 1, createdBy: "operator", createdAt: "", cutWorktree: false, desired: { web: "running" as const }, prints: {}, data: {}, ports: {} });
+    const registry = { version: 1 as const, shared: [], instances: [rec("a", 1), rec("stale", 19)] };
+    const v = limitView(root, registry, { host: null, stamps: {}, listening: new Set([4302]) });
+    assert.deepEqual([v.copies, v.running, v.over, v.places], [1, 2, "2 running, 1 over the limit of 1: no new copy starts until 2 stop.", { stopped: 0, elsewhere: 1, free: 14 }]);
+    assert.deepEqual(limitView(root, registry, { host: null, stamps: {}, listening: null }).places, { stopped: 0, elsewhere: 0 });
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("the tab's limit view names the slots the main checkout's definition can't use", () => {
   const root = realpathSync(mkdtempSync(join(tmpdir(), "sova-view-places-")));
   try {
     mkdirSync(join(root, ".sova"));
     writeFileSync(join(root, ".sova", "project.json"), JSON.stringify({ version: 1, slots: { cap: 4 }, services: { web: { cmd: ["x"], ports: { http: { base: 3000 } } }, api: { cmd: ["y"], ports: { http: { base: 3010 } } } } }));
-    const v = limitView(root, { version: 1, shared: [], instances: [] }, { host: null, stamps: {} });
+    const v = limitView(root, { version: 1, shared: [], instances: [] }, { host: null, stamps: {}, listening: new Set() });
     assert.equal(v.usable, 9);
+    assert.equal(v.places.free, 9, "the places counted are only the usable ones");
     assert.deepEqual(v.unavailable.slice(0, 2), ["Slot 10 is unavailable: its ports overlap slot 0's.", "Slot 11 is unavailable: its ports overlap slot 1's."]);
   } finally {
     rmSync(root, { recursive: true, force: true });

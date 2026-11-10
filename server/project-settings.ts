@@ -462,7 +462,7 @@ const PATCH_REFUSED: Record<string, string> = {
   autonomy: "Levels are gone: set the powers (patch.powers) instead.",
   confirmKinds: "confirmKinds is gone: the hold is what waits now.",
   powersNoteSeen: "The one-time note is the operator's to dismiss on the page.",
-  codingMode: "Projects have no coding mode: coding sessions start in this computer's default mode.",
+  codingMode: "Projects have no coding mode: coding sessions start on this computer's default profile.",
 };
 const PATCH_KNOWN = new Set(["model", "thinking", "codingModel", "codingThinking", "gatheringModel", "gatheringThinking", "gatheringAbilities", "watchGapMin", "soonLookSec", "watch", "holdMin", "extraSystemPrompt", "powers", "resume", "assistantModels", "caps"]);
 

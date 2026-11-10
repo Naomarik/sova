@@ -21,6 +21,7 @@ import { SPEECH_RMS } from "../lib/voice/wav";
 import { Icon } from "./ui";
 import { VoiceSheet } from "./VoiceSetup";
 import "../design/voice.css";
+import { holdDictating } from "../lib/time-spent";
 
 /** What a composer hands its mic: the box the text goes into, and how it speaks. */
 export interface VoiceTarget {
@@ -65,6 +66,18 @@ export function createVoiceInput(target: VoiceTarget): VoiceControl {
 
   ensureVoiceStatus();
   watchKeyboard();
+
+  // The idle cutoff doesn't stop the count while this records: it makes no keystrokes.
+  let release: (() => void) | null = null;
+  const holdCount = (on: boolean) => {
+    if (on && !release) release = holdDictating(target.input());
+    else if (!on && release) {
+      release();
+      release = null;
+    }
+  };
+  createEffect(() => holdCount(phase() === "recording"));
+  onCleanup(() => holdCount(false));
 
   const stopClock = () => {
     clearInterval(clockTimer);

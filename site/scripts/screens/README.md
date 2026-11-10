@@ -184,7 +184,7 @@ pnpm run screens:verify                # before committing
 
 They need the repository's root install and build (`pnpm install && pnpm run build` at the root):
 the server, the pi workers and the align check come from there. The browser is the playwright
-skill's (`.claude/skills/playwright/scripts`, its `node_modules` installed inside this worktree;
+skill's (`.agents/skills/playwright/scripts`, its `node_modules` installed inside this worktree;
 a link to another checkout is refused). Where its start-browser.sh can't run (it writes to `/tmp`,
 which a sandbox may make read-only), the same Chromium is started directly with its profile in the
 run's root; the videos always start their own, its window forced to 2x so the screencast films at

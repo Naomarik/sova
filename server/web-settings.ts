@@ -7,8 +7,8 @@ import type { AlignmentWebSettings, ExperimentalSettings, WebSettings } from "..
 /**
  * Sova's own settings — the ones that belong to the webapp rather than to pi or to an
  * extension's shared file. Today that is Settings → Alignment's Adversarial review switch
- * (`alignment.review`, §chat.alignment-review/flag) and Settings → Experimental's switches, of which
- * there are none right now. Adversarial review used to be Experimental's `adversarialReview`: a file
+ * (`alignment.review`, §chat.alignment-review/flag) and Settings → Experimental's switches: today
+ * `sovaModes`, "Sova runs chat modes" (§chat.mode-menu/sova-runs-modes). Adversarial review used to be Experimental's `adversarialReview`: a file
  * that has no `alignment.review` reads that value instead, and the first write stores it as
  * `alignment.review` (the old key is left as it was, never read again). The Claude Code provider used
  * to be an Experimental switch too; it is always on now, and an old file's
@@ -24,19 +24,22 @@ const FILE = join(stateRoot(), "settings.json");
 type ExperimentalKey = keyof ExperimentalSettings;
 
 /**
- * The experimental switches Sova knows, each a boolean, off unless stored `true`. A new switch is
- * one key here and in ExperimentalSettings (shared/protocol.ts); reading, validating and the
- * merge-write all follow this list. Any other key in the file or in a request is ignored. Empty
- * while there is no experiment (the tab says so).
+ * The experimental switches Sova knows, each a boolean, off unless stored `true`, except a key in
+ * ON_BY_DEFAULT, which is on unless stored `false`. A new switch is one key here and in
+ * ExperimentalSettings (shared/protocol.ts); reading, validating and the merge-write all follow this
+ * list. Any other key in the file or in a request is ignored.
  */
-const EXPERIMENTAL_KEYS: readonly ExperimentalKey[] = [];
+const EXPERIMENTAL_KEYS: readonly ExperimentalKey[] = ["sovaModes"];
+/** The switches that are on unless stored `false`: a missing key, a missing or broken file reads on. */
+const ON_BY_DEFAULT: ReadonlySet<ExperimentalKey> = new Set(["sovaModes"]);
 
 const isObject = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === "object" && !Array.isArray(v);
 
-/** The known switches out of a stored or requested `experimental` object: `true` is on, anything else off. */
+/** The known switches out of a stored or requested `experimental` object: `true` is on, anything else
+    off; for an ON_BY_DEFAULT key, `false` is off, anything else on. */
 function knownSwitches(experimental: Record<string, unknown>): ExperimentalSettings {
   const out: Record<string, boolean> = {};
-  for (const key of EXPERIMENTAL_KEYS) out[key] = experimental[key] === true;
+  for (const key of EXPERIMENTAL_KEYS) out[key] = ON_BY_DEFAULT.has(key) ? experimental[key] !== false : experimental[key] === true;
   return out as unknown as ExperimentalSettings;
 }
 
@@ -50,7 +53,7 @@ function storedReview(data: Record<string, unknown>): boolean {
   return isObject(data.experimental) && data.experimental.adversarialReview === true;
 }
 
-/** Everything off: what a missing, unreadable or foreign-shaped file reads as. */
+/** The defaults (every switch off but the ON_BY_DEFAULT ones): what a missing, unreadable or foreign-shaped file reads as. */
 const defaults = (): WebSettings => ({ experimental: knownSwitches({}), alignment: { review: false } });
 
 /**
@@ -63,7 +66,7 @@ export function readWebSettings(): WebSettings {
     if (!isObject(data) || data.version !== 1) return defaults();
     return { experimental: knownSwitches(isObject(data.experimental) ? data.experimental : {}), alignment: { review: storedReview(data) } };
   } catch {
-    return defaults(); // missing or corrupt: everything off
+    return defaults(); // missing or corrupt: the defaults
   }
 }
 
@@ -127,3 +130,10 @@ export function writeWebSettings(raw: unknown): WebSettings | { error: string } 
 
 /** The review switch as saved now, for a chat's first start (chat-manager.ts sessionFlags). */
 export const reviewSaved = (): AlignmentWebSettings["review"] => readWebSettings().alignment.review;
+
+/**
+ * Who runs a chat's modes, as saved now (§chat.mode-menu/sova-runs-modes): Sova (`true`), or the pi
+ * mode extension. Read at a chat's runtime build (its start or reload); a worker never reads it, it
+ * takes its parent's owner at spawn or resume.
+ */
+export const sovaRunsModesSaved = (): boolean => readWebSettings().experimental.sovaModes;

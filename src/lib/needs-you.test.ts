@@ -1,8 +1,8 @@
 // Run: npx tsx --test src/lib/needs-you.test.ts
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import type { AttentionItem, SessionSummary } from "../../shared/protocol";
-import { isReleaseItem, needsYouCut, needsYouItems, needsYouOpen, needsYouRows, needsYouShown, needsYouTitle, storedNeedsYouOpen } from "./needs-you";
+import type { AttentionDigest, AttentionItem, SessionSummary } from "../../shared/protocol";
+import { isReleaseItem, needsYouCut, needsYouItems, needsYouOpen, needsYouRows, needsYouShown, needsYouTitle, storedNeedsYouOpen, withPressedDismissals } from "./needs-you";
 
 const session = (id: string): SessionSummary =>
   ({
@@ -55,6 +55,20 @@ test("one row per session with an act item, newest first; decide and fyi items n
   assert.equal(a.since, 200, "a session's time is its NEWEST act item, not its first");
   assert.equal(a.detail, "1 subagent ended in an error.", "line 2 is the newest act item's sentence");
   assert.deepEqual(a.details, ["1 subagent ended in an error.", "The last turn stopped with an error."], "the tooltip has every sentence, newest first");
+});
+
+test("a card or offer raised during an alignment leaves the row a question; on its own, or beside anything else, it is what it was", () => {
+  const rowOf = (...items: ReturnType<typeof item>[]) => needsYouRows(digest(items), [session("a")])[0]!;
+  const question = item("a", "act", "open-questions", 100, "3 open questions in al_1 Ship it");
+  for (const kind of ["card-waiting", "offer-waiting"] as const) {
+    const r = rowOf(question, item("a", "act", kind, 200, "Waiting on your answer: Ship it?"));
+    assert.equal(r.kind, "open-questions", kind);
+    assert.equal(r.detail, "3 open questions in al_1 Ship it");
+    assert.deepEqual(r.details, ["3 open questions in al_1 Ship it", "Waiting on your answer: Ship it?"], "the card's sentence stays in the tooltip");
+    assert.equal(r.since, 200, "its time is still the newest");
+    assert.equal(rowOf(item("a", "act", kind, 200, "Waiting on your answer: Ship it?")).kind, kind, "no question: the card's own word");
+  }
+  assert.equal(rowOf(question, item("a", "act", "error", 200, "It stopped with an error.")).kind, "error", "an error beside it is still the error");
 });
 
 test("a session the hit list doesn't carry is dropped, so the count is the rows on screen", () => {
@@ -189,4 +203,22 @@ test("a project's own Setup chat joins only for its proposal: its other items st
   assert.deepEqual(rows[0]!.playbook, playbook);
   assert.deepEqual(rows[0]!.details, ["Project setup: merge sova/setup-1 into main"], "the failed turn stays with its project");
   assert.equal(rows[0]!.kind, "playbook-review");
+});
+
+test("a press hides a chat's listed items ahead of the server; a newer item, or no press, shows them; project items never go", () => {
+  const d: AttentionDigest = { ...digest([item("a", "act", "error", 10, "boom"), item("b", "act", "error", 20, "boom"), { ...item("p", "act", "deploy-failed", 5, "x"), path: "" }, { ...item("a", "decide", "finished", 11, "done") }]) };
+  assert.equal(withPressedDismissals(d, new Map()), d, "no press: the same digest");
+  const hidden = withPressedDismissals(d, new Map([["/s/a.jsonl", 10]]))!;
+  assert.deepEqual(hidden.items.map((i) => `${i.id}:${i.kind}`), ["b:error", "p:deploy-failed", "a:finished"]);
+  assert.deepEqual(hidden.dismissed, { "/s/a.jsonl": 10 });
+  assert.deepEqual(needsYouRows(hidden, ["a", "b"].map(session)).map((r) => r.session.id), ["b"]);
+  const newer = withPressedDismissals(d, new Map([["/s/a.jsonl", 9]]))!;
+  assert.ok(newer.items.some((i) => i.id === "a" && i.kind === "error"), "newer than the press: it stays");
+  assert.equal(newer.dismissed?.["/s/a.jsonl"], undefined);
+});
+
+test("a row's since is the wire's newest listed item when the digest's cap cut it, or the row would send a time that ends its own dismissal", () => {
+  const items = [item("a", "act", "error", 100, "boom")];
+  assert.equal(needsYouRows({ items, newestListed: { "/s/a.jsonl": 900 } }, [session("a")])[0]!.since, 900);
+  assert.equal(needsYouRows({ items }, [session("a")])[0]!.since, 100, "an older server's digest: the items' own");
 });

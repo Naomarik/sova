@@ -14,6 +14,8 @@ import type { OverseerCard } from "./overseer-card";
 import type { ReplyTiming, RowFacts, SovaEvent, SovaPart } from "./harness-wire";
 import type { OwnerRequestCard } from "./project-assistant";
 import type { CardInfo } from "./transcript-cards";
+import type { ChatProfileState } from "./profile-switch";
+export type { ChatProfileState, ProfileSwitchResult, ProfileSwitchTarget } from "./profile-switch";
 export type { WakeInfo };
 
 /** One running background job, as `GET /api/sessions/jobs?path=` lists it (§app.background-jobs/pane):
@@ -273,6 +275,9 @@ export type EntryKind =
   | "card" // a transcript card raised from outside the chat (§chat.transcript-cards/raise-command): the page
            // places it after the entry it was raised after (`card.after`); the server sends no such row. See `card`.
   | "spec-turn" // legacy: the retired spec card; no longer produced, older mesh peers may still send it (renders nothing)
+  | "shell" // a command the user ran: from shell mode (`!`/`!!`, §chat.shell-mode/card) or in pi's own terminal (pi's
+            // bashExecution message). Renders as the command's card, never a "You" bubble; never an input (inputs
+            // count, Timeline, rewind targets, titles). See `shell`. An older server sends it as an "info" row.
   | "unknown";
 
 /**
@@ -467,6 +472,8 @@ export interface TranscriptItem {
       call, whose tool-call row renders nothing once this row is there. A failed call, a `get`, or
       details that don't check out stay an ordinary tool-result. */
   align?: AlignRowInfo;
+  /** kind "shell" only: the saved command (§chat.shell-mode/card). `text` is `$ {command}`. */
+  shell?: ShellRowInfo;
   /** kind "card": the card, as GET /api/session-cards reads it (§chat/transcript-cards). */
   card?: CardInfo;
   /** The entry's timestamp (ISO), on every row whose entry has one. */
@@ -630,7 +637,7 @@ export interface ReportInfo {
 
 /** A coordinated team's message to the operator, parsed from its header:
     `[Team report from coordinator <role> (<ag_NN>), <team_NN> — <team name>[ · milestone|concern]]` or
-    `[Team question from <role>[, orchestrator] (<ag_NN>), <team_NN> — <team name>]`.
+    `[Team question from <role> (<ag_NN>), <team_NN> — <team name>]`.
     Informational (report) or answered by the main thread (question); never an input of its own. */
 export interface TeamMessageInfo {
   kind: "report" | "question";
@@ -638,8 +645,6 @@ export interface TeamMessageInfo {
   workerId: string; // "ag_01"
   teamId: string; // "team_01"
   teamName: string;
-  /** Question only: the asker is its team's orchestrator (a coordinator always is). */
-  orchestrator?: boolean;
   /** Report only: the header's ` · <kind>` suffix, else a leading "Milestone:" / "Concern:" line
       (removed from `body`); absent when neither says. */
   label?: "milestone" | "concern";
@@ -716,6 +721,10 @@ export interface OutboundImage {
 /** A web-uploaded image, stored like a TUI clipboard paste (POST /api/upload: raw bytes,
     Content-Type image/png|jpeg|webp|gif -> 201). The prompt text references `path`. Also the
     shape of a composer draft's `attachments` entry (GET/PUT /api/sessions/draft). */
+/** A composer draft written in shell mode (§chat.shell-mode/box): `shell` a `!` command, `private` a `!!` one.
+    GET/PUT /api/sessions/draft carry it beside the text; absent, the draft is a message. */
+export type ShellDraftMode = "shell" | "private";
+
 export interface UploadResult {
   path: string; // /tmp/sova-<uuid>.<ext>, or <agent dir>/sova/attachments/<session id>/sova-<uuid>.<ext> with ?draft=
   name: string; // basename
@@ -806,10 +815,14 @@ export interface SessionsDirInfo {
 //     session files, only ones carrying the archive mark — an unarchived session is refused with a
 //     reason to archive it first, as is anything outside the sessions dir, gone, or unreadable; each
 //     refusal is returned in refused with its reason. refused is paths-mode-only, additive)
-// GET  /api/sessions/draft?path=… -> { text: string | null, attachments: UploadResult[], updatedAt: string | null }
+// GET  /api/sessions/draft?path=… -> { text: string | null, mode?: ShellDraftMode, attachments: UploadResult[], updatedAt: string | null }
 //                                  (the stored composer draft, ~/.pi/agent/sova/drafts.json; nulls and [] when
 //                                  none; attachments whose file is gone are left out. 400 bad path, 404 missing)
-// PUT  /api/sessions/draft { path, text, attachments?: UploadResult[] } -> { ok: true }   (stores it; blank text
+// PUT  /api/sessions/draft { path, text, mode?: ShellDraftMode, attachments?: UploadResult[] } -> { ok: true }
+//                                  (`mode`: a draft written in shell mode, kept apart from the text, which holds no
+//                                  marker; absent, a message. Kept only from the person's own page: any other
+//                                  writer's draft is stored as a message, mode dropped; 400 for any other value.
+//                                  A draft handed back by Sova (a send it couldn't take) is a message too. Stores it; blank text
 //                                  with no attachments deletes it. At most 8 attachments; an entry that isn't
 //                                  an existing image in /tmp or the attachments folder is dropped, not an error;
 //                                  name/mimeType/size are re-derived from the file. Never writes the session file.
@@ -1095,11 +1108,17 @@ export interface WebSettings {
   alignment: AlignmentWebSettings;
 }
 
-/** Settings → Experimental's switches, each a boolean, off unless stored `true`. None right now:
-    adversarial review moved to `alignment.review`, and the Claude Code provider is always on (an old
-    file's `claudeCodeProvider` and `adversarialReview` are ignored here). A new switch is a key here
-    and in server/web-settings.ts EXPERIMENTAL_KEYS. */
-export interface ExperimentalSettings {}
+/** Settings → Experimental's switches, each a boolean, off unless stored `true`, except `sovaModes`,
+    which is on unless stored `false` (a missing key reads on). Adversarial review moved to
+    `alignment.review`, and the Claude Code provider is always on (an old file's `claudeCodeProvider`
+    and `adversarialReview` are ignored here). A new switch is a key here and in
+    server/web-settings.ts EXPERIMENTAL_KEYS. */
+export interface ExperimentalSettings {
+  /** "Sova runs chat modes" (§chat.mode-menu/sova-runs-modes): Sova's own mode engine runs every chat's
+      modes and its workers'; off, the pi mode extension does. ON BY DEFAULT. Read at each chat's start
+      or reload; a worker takes its parent's owner at spawn or resume. */
+  sovaModes: boolean;
+}
 
 /** Settings → Alignment's switch stored in Sova's settings. */
 export interface AlignmentWebSettings {
@@ -1700,9 +1719,14 @@ export interface SessionContextPart {
   tokens: number;
   path?: string;
   text?: string;
-  /** Skills only: the agent loaded the skill (read its SKILL.md, or it was invoked) since the latest
-      compaction, so its text is in the window now. */
+  /** Skills only: the agent loaded the whole skill (read all of its SKILL.md as it is now, or it was
+      invoked) since the latest compaction, so its text is in the window now. */
   read?: boolean;
+  /** Skills only, when the agent loaded part of its SKILL.md: how many of its lines (a union of every
+      read since the latest compaction), and `lines`, the file's length now. Absent when it read none or
+      all; `lines` is absent too when the file couldn't be measured. */
+  linesRead?: number;
+  lines?: number;
 }
 
 /** One kind of message in the conversation since the latest compaction: how many, and ≈ their tokens. */
@@ -2191,6 +2215,10 @@ export interface ProjectMinorInfo {
   hooksNeedApproval?: true;
   /** One of its hooks is over its run budget now ("Hooks paused: …"). */
   hookNote?: string;
+  /** From your own modes folder (§chat.mode-menu/personal-modes), listed under "Your modes"; approved once for every project. */
+  personal?: true;
+  /** A personal mode that replaces this project's mode of the same id ("yours wins"). */
+  replaces?: true;
 }
 
 /** POST /api/mode/command's answer (§chat.mode-menu/project-mode-commands): how its program ended (it ran, whatever its exit code). */
@@ -2470,8 +2498,11 @@ export type ChatClientMessage =
           card listed, while the card is open and the text is exactly what the click composes
           (§app.overseer/org-people-facing). A tool call id (a card from before card ids) approves
           nothing. Ignored anywhere else. */
-      confirm?: string }
-  | { type: "steer"; text: string; images?: OutboundImage[]; clientId?: string }
+      confirm?: string;
+      /** The merge queue decision (`dc_…`), or in the merge thread's own chat a question held on its tab (`ak_…`), this message answers (§chat.merge-queue/decision): its held note goes with
+          it. Absent: the newest decision waiting in this chat. Only the operator's own page is heard. */
+      decision?: string }
+  | { type: "steer"; text: string; images?: OutboundImage[]; clientId?: string; decision?: string }
   | { type: "abort" }
   | { type: "set_model"; ref: string }   // calls session.setModel; server replies {type:"model"} or error
   | { type: "set_thinking"; level: string } // calls session.setThinkingLevel (clamped to the model); server replies {type:"thinking"}
@@ -2510,7 +2541,108 @@ export type ChatClientMessage =
   /** Reload this chat on its server's current code (§app.chat-processes/code-pickup, "Reload Now"):
       at once when it is quiet, else at its next quiet moment (`code.pending`). A chat already on the
       current code, or hosted in the server itself, answers the sender with `code{state:"current"}`. */
-  | { type: "reload_code" };
+  | { type: "reload_code" }
+  /** Run `command` from shell mode (§chat.shell-mode/running): the composer sends it only from shell mode,
+      over this live socket (POST /api/chat/frames drops it; POST /api/chat/action takes none), and the server
+      never reads a leading `!` in any text. `private` (`!!`): its output never reaches the model.
+      `clientId` is the sender's own id: the run's `shell_start` carries it (the composer clears its draft),
+      or its `shell_refused` does (the draft stays). */
+  | { type: "shell"; command: string; private?: boolean; clientId: string }
+  /** Stop one command running in this chat (its card's Stop Command); `id` names the run, and a stop for a
+      run that already ended does nothing. Never stops another command or the model's reply (that is `abort`). */
+  | { type: "shell_stop"; id: string };
+  // (A page's `shell_stop` carries nothing else: who stopped it is the server's to say, never the frame's.)
+
+/** Why a command from shell mode was cut short (§chat.shell-mode/card): `user` = Stop Command, or
+    pi's own Stop in its terminal; `closed` = its chat closed (archived, restarted, reloaded onto new code,
+    switched or anything else that closes it) and the run was stopped as it went; `limit` = its output passed
+    SHELL_OUTPUT_MAX_BYTES and Sova stopped it (the card says so); `other` = stopped from outside this chat's
+    pages, by the Stop Command entry (a script, a chat, the Overseer: chat.shell.stop), read as plain "Stopped". */
+export type ShellCancelReason = "user" | "closed" | "limit" | "other";
+
+/** A command whose output passes this many bytes (about 1 GB) is stopped (§chat.shell-mode/running), so a
+    runaway command can't fill the computer's temporary folder with its full-output file. */
+export const SHELL_OUTPUT_MAX_BYTES = 1_000_000_000;
+
+/** What a cut output kept (§chat.shell-mode/card): its last `max` lines, or its last `max` bytes, whichever
+    limit cut it (the harness's, pi's: 2,000 lines or 50 KB). The whole output is at `fullOutputPath`. */
+export type ShellTruncation = { by: "lines"; max: number } | { by: "bytes"; max: number };
+
+/** How a command ended. Every field is absent when it doesn't apply. */
+export interface ShellOutcome {
+  /** The exit code; absent when the command was killed (stopped) or the harness gave none. */
+  exitCode?: number;
+  /** It was stopped before it ended on its own; `cancelReason` says by what. */
+  cancelled?: true;
+  cancelReason?: ShellCancelReason;
+  /** The output was cut to what it kept. */
+  truncated?: ShellTruncation;
+  /** Where the whole output was saved, on the chat's machine (when it was cut). */
+  fullOutputPath?: string;
+  /** How long it ran, ms, from its start to its end (a row saved before this existed has none). */
+  durationMs?: number;
+}
+
+/** A saved command's row (TranscriptItem `shell`): its command, the output as saved (already cut to
+    `truncated`), how it ended, and `private` for a `!!` command, which the model never sees. Rows are in
+    branch order: a command that ended while the model replied is saved after that reply, so its row is
+    already below it. */
+export interface ShellRowInfo extends ShellOutcome {
+  command: string;
+  output: string;
+  private?: true;
+}
+
+/** GET /api/sessions/shell-output?path=<session>&entry=<the command's row id>&from=<byte offset, default 0>
+    (§chat.shell-mode/card): one page of a finished command's WHOLE output, at most about 1 MB, starting at
+    byte `from` of its full-output file (or of its saved output when it was never cut). `next`: where the
+    next page starts, null at the end; `bytes`: the whole output's size. Read as the transcript is (any
+    computer granted Sessions). 404 `{ error, code }`: `no-command` (no such command row in the chat) or
+    `gone` (the file was deleted, which archiving its chat does). 400 a bad path or `from`. */
+export interface ShellOutputPage {
+  output: string;
+  from: number;
+  next: number | null;
+  bytes: number;
+}
+
+/** At most this many characters of a running command's output are kept live, the newest (the hello's
+    `shell[].output` and what a client keeps from `shell_output` deltas). The saved output is the harness's. */
+export const SHELL_LIVE_MAX = 100_000;
+
+/**
+ * A command from shell mode that is not a saved row yet (§chat.shell-mode/card): running, or ended and
+ * waiting for the harness to save it (one that ends while the model replies is saved after that reply).
+ * The hello carries each such run (`hello.shell`), so every device, a reconnect and a server restart show
+ * it with its output so far; `shell_saved` retires it in favour of its row.
+ */
+export interface ShellRun extends ShellOutcome {
+  /** Sova's id for the run: its events', and `shell_stop`'s. */
+  id: string;
+  command: string;
+  private?: true;
+  /** Running: the newest SHELL_LIVE_MAX characters so far. Ended: the output as it will be saved. */
+  output: string;
+  state: "running" | "ended";
+  /** When it started, ms epoch. */
+  startedAt: number;
+  /** The model was replying while it ran: it gets the output after that reply, and the run is saved below
+      it (the card sits under the streaming reply, and reads "The model gets this after its reply."). */
+  underReply?: true;
+  /** The sender's `shell` frame's id, so a tab whose socket dropped before `shell_start` finds its run. */
+  clientId?: string;
+}
+
+/** Why a command from shell mode was refused: it never ran, was never saved and never reaches the model
+    (§chat.shell-mode/running). The composer shows `message` under the box and keeps the draft.
+    `kill-guard` = the macOS kill guard refused it
+    (§chat.kill-guard/refusal); `sandbox` = the chat's sandbox is On and couldn't be prepared; `failed` = an
+    extension's command hook failed before it could start;
+    `busy` = a terminal owns the session; `recent` = an unknown process wrote it (reconnect with force);
+    `unavailable` = this chat has no shell mode (the Overseer, a project overseer or assistant, a gathering
+    session), the chat is closing, or the socket is neither the page's nor a peer's (a script's, a chat's, an
+    extension's, the Overseer's: §chat.shell-mode/who); `empty` = no command. */
+export type ShellRefusal = "kill-guard" | "sandbox" | "failed" | "busy" | "recent" | "unavailable" | "empty";
 
 /** Why a rewind was refused: busy = a TUI owns the session; recent = an unknown process wrote it
     (reconnect with force); not_on_branch = the id is unknown, not a user message, or not on the
@@ -2744,7 +2876,12 @@ export type ChatServerMessage =
       none); `olderSummary` sums up all `older` of them, the client's own included. */
   /** `cwdFallback` (§app.shell/missing-folder-home): the chat runs in the home folder because its stored
       local folder is gone; absent when it runs in its own folder. */
-  | { type: "hello"; items: TranscriptItem[]; isStreaming: boolean; isCompacting?: boolean; model: string | null; thinking: string; context: ContextInfo | null; older?: number; olderSummary?: OlderSummary; prefetch?: boolean; alignReview?: boolean; live?: HelloLive; after?: string; cwdFallback?: CwdFallback }
+  /** `shell` (§chat.shell-mode/card): the chat's commands from shell mode not yet saved as rows (running, or
+      ended and waiting to be saved after the reply in flight), oldest first; absent when there are none.
+      Wire 2 only, as every shell_* message is (a wire-1 consumer gets neither). `shellMode` (§chat.shell-mode/box): this chat runs commands from shell mode (it
+      has its own agent and folder: not the Overseer, a project overseer or assistant, or a gathering
+      session); absent where it doesn't, and from servers that predate shell mode. */
+  | { type: "hello"; items: TranscriptItem[]; isStreaming: boolean; isCompacting?: boolean; model: string | null; thinking: string; context: ContextInfo | null; older?: number; olderSummary?: OlderSummary; prefetch?: boolean; alignReview?: boolean; live?: HelloLive; after?: string; cwdFallback?: CwdFallback; shell?: ShellRun[]; shellMode?: true }
   /** Which code a chat in its own process runs (§app.chat-processes/code-pickup). Sent after the
       hello when not current, and to every client on each change; none received = current. A chat
       hosted in the server sends it only to answer `reload_code`. See ChatCodeState. */
@@ -2808,6 +2945,8 @@ export type ChatServerMessage =
       (raw text) and the SDK's own (expanded) — in delivery order, SDK's first, and is followed by
       a `{ type: "queue", items: [] }`. */
   | { type: "queue_cleared"; steering: string[]; followUp: string[] }
+  /** A transcript card of this chat changed: read them again. No content (§app.events/card-news). */
+  | { type: "cards_changed" }
   /** A rewind landed. Every client of the chat first got a fresh `hello` (the new branch) and a
       `mode` (re-resolved from it); only the requester then gets this, with the input's text for
       its composer (images are not handed back, as in pi's /tree). A rewind to the first input
@@ -2878,6 +3017,20 @@ export type ChatServerMessage =
       opened it (§chat.transcript/instant-open). A client that doesn't know it reconnects on the
       close, as before. */
   | { type: "closed"; reason: "idle" | "archived" }
+  /** A command from shell mode started (§chat.shell-mode/card), to every client: its card shows at once.
+      `clientId`: the sender's `shell` frame's, so that composer clears its draft. */
+  | { type: "shell_start"; run: ShellRun; clientId?: string }
+  /** More of a running command's output, to every client, throttled (a few per second at most): append
+      `delta` to the run's output, keeping its newest SHELL_LIVE_MAX characters. */
+  | { type: "shell_output"; id: string; delta: string }
+  /** The command ended, to every client: the run is `ended` (its output now the harness's own, already cut)
+      and waits to be saved (`shell_saved`). `underReply`: it is saved after the reply in flight. */
+  | ({ type: "shell_end"; id: string; output: string; underReply?: true } & ShellOutcome)
+  /** The run is saved, to every client: an `append` carrying its row (TranscriptItem kind "shell") came
+      just before; the live card goes. `entryId` is that row's id. */
+  | { type: "shell_saved"; id: string; entryId: string }
+  /** The sender's `shell` frame was refused and nothing ran (ShellRefusal), to the sender only. */
+  | { type: "shell_refused"; clientId: string; reason: ShellRefusal; message: string }
   // Codes: "busy" = a TUI owns the session (never retry with force); "recent" = file written by an
   // unknown process, at connect or mid-chat (client may reconnect with &force=1);
   // "reloaded" = runtime reloaded by another client, or message sent to a closed runtime (reconnect);
@@ -2896,7 +3049,11 @@ export type ChatServerMessage =
       profileRunning?: { id: string; path: string; title: string };
       /** The provider of the model whose turn failed, when the error IS the turn's failure (never a worker's or a guessed one); absent otherwise. */
       provider?: string;
-    };
+      /** With `provider`: the model ref that turn actually ran (§chat.subagent-profiles/limit-row), even when it differs from the chat's profile's. */
+      model?: string;
+    }
+  /** Which profile the chat is on, "(edited)", and a switch waiting for the reply to end (§chat.profiles/switch). Sent at hello and on every change. */
+  | { type: "chat_profile"; state: ChatProfileState };
 
 /** WS /ws/watch?path= — read-only live view. Safe for sessions a TUI currently owns. Never writes.
     `&tail=1` cuts the snapshot as `/ws/chat` cuts its hello (`older`, then `history`); `&tail=rest`
@@ -3020,8 +3177,9 @@ export interface WorktreeStatus {
   /** The base the counts are against (`master`, else `main`, else origin/HEAD). Absent: no base found. */
   base?: string;
   /** "ancestor": the tip is in the base. "content": not an ancestor, but merging would change
-      nothing (squash or rebase merge). "no": unmerged. Absent when there is no base. */
-  merged?: "ancestor" | "content" | "no";
+      nothing (squash or rebase merge). "catch-up": nothing of its own left, every commit past the base
+      a merge or already landed (§chat.worktrees/nothing-left). "no": unmerged. Absent when there is no base. */
+  merged?: "ancestor" | "content" | "catch-up" | "no";
   /** Commits on the branch not in the base, and in the base not on the branch. */
   ahead?: number;
   behind?: number;
@@ -3059,11 +3217,27 @@ export type WorktreesSummary =
       unmerged: number;
     };
 /** POST /api/worktrees/cleanup's body: `dryRun` previews; `expect` removes exactly those paths
-    that are still removable (never both). */
+    that are still removable; `force` is Remove Anyway for one kept tree, with the digest of the
+    listing the user confirmed (exactly one of the three). */
 export interface WorktreeCleanupRequest {
   path: string;
   dryRun?: boolean;
   expect?: string[];
+  force?: { path: string; digest: string };
+}
+/** What Remove Anyway would delete from a tree kept only for what it holds: paths relative to the
+    tree's top, each list its first 500 entries, `counts` the exact totals, `digest` the whole list's. */
+export interface WorktreeRemoveAnyway {
+  /** Uncommitted changes and untracked files. */
+  uncommitted: string[];
+  /** Ignored files outside the rebuildable folders. */
+  ignored: string[];
+  /** Repositories and worktrees nested inside it, each deleted whole (`of`: a worktree's repository). */
+  nested: { path: string; kind: "repository" | "worktree"; of?: string }[];
+  /** Rebuildable folders and files that go with it (a folder ends in "/"). */
+  rebuildable: string[];
+  counts: { uncommitted: number; ignored: number; nested: number; rebuildable: number };
+  digest: string;
 }
 /** A worktree that goes (dry run) or went: how it is merged, and whether its branch is deleted. */
 export interface WorktreeCleanupRemoved {
@@ -3072,11 +3246,19 @@ export interface WorktreeCleanupRemoved {
   kind: "ancestor" | "content" | "empty";
   branchDeleted: boolean;
 }
+/** POST /api/projects/:pid/overseer/worktrees/remove {dryRun: true}: why Remove Worktree keeps a coding
+    session's folder (null: it may go), and, when what it holds is the reason, what Remove Anyway would delete. */
+export interface CodingWorktreeHold {
+  reason: string | null;
+  removeAnyway?: WorktreeRemoveAnyway;
+}
 /** A worktree that stays, and the one reason why. */
 export interface WorktreeCleanupKept {
   path: string;
   branch?: string;
   reason: string;
+  /** Dry run only: present when what it holds is the only reason it stays (§chat.worktrees/cleanup). */
+  removeAnyway?: WorktreeRemoveAnyway;
 }
 /** The dry run's answer. */
 export interface WorktreeCleanupPlan {
@@ -3607,6 +3789,9 @@ export interface SessionHiddenWorkers {
   total: number;
 }
 
+/** Which project a branch belongs to and where it merges (§chat.worktrees/place). */
+export type BranchPlace = import("./merge-queue").BranchPlace;
+
 /** One tracked worktree as the Session tab shows it. */
 export interface SessionWorktreeInfo {
   /** Canonical top level. */
@@ -3654,6 +3839,9 @@ export interface SessionWorktreeInfo {
       "Ready to land" and "Landing specs" key on it, never on `mergeProject` being missing. Absent: the repo merges
       plainly (the chat merges it into main). Additive. */
   mergeServed?: true;
+  /** Which project it belongs to and where it merges (§chat.worktrees/place), on every row, a deleted folder's too.
+      Additive. */
+  place?: BranchPlace;
 }
 
 // ---------------------------------------------------------------------------
@@ -3984,6 +4172,14 @@ export interface AttentionDigest {
   generatedAt: number;
   counts: { act: number; decide: number; fyi: number };
   items: AttentionItem[];
+  /** The chats dismissed from Needs you right now, session path → the newest item each dismissal covers
+      (§app.session-list/needs-you-dismiss). Their items are already left out of `items` and `counts`: this is for
+      what reads waits from the session list instead (the Organizations region's baton waits). Absent: none. */
+  dismissed?: Record<string, number>;
+  /** Each chat with an item that lists in Needs you, session path → that chat's newest such item, taken before the
+      30-item cap (§app.session-list/needs-you-dismiss): what a Dismiss covers, whatever the cap cut. Absent: none, or
+      an older server. */
+  newestListed?: Record<string, number>;
 }
 
 /** One line of `<stateRoot>/overseer-actions.jsonl`. */
@@ -4391,6 +4587,10 @@ export interface ExtensionInfo {
   status: "ok" | "down";
   error?: string;
   offers?: ExtensionOffers;
+  /** v1.20: it has no page of its own. */
+  page?: false;
+  /** v1.20: its code changed since you approved it, so its page is off. */
+  changed?: true;
 }
 /** What an extension offers Sova (ext-contract-v1.15): only the keys it declared something valid
     under, each non-empty. */
@@ -4722,8 +4922,9 @@ export interface DecisionSettings {
       nothing is ever picked for the user. */
   fallback: WorkerChoice | null;
   /** `reconcile`: compare a project's recorded decisions (§app.requirements/reconciler); absent =
-      RECONCILE_DEFAULT (shared/decisions.ts). */
-  features: { attention: boolean; tags: boolean; reconcile?: boolean };
+      RECONCILE_DEFAULT (shared/decisions.ts). `messageLabels`: label each message the user types
+      (§app.subagents-pane/time-spent-messages); absent = off. */
+  features: { attention: boolean; tags: boolean; reconcile?: boolean; messageLabels?: boolean };
   /** Absolute cwd prefixes (a leading `~/` is allowed) whose sessions are never sent. */
   exclusions: string[];
   /** Never send terminal sessions: open in a TUI now, or started outside Sova (origin "external")
@@ -4942,6 +5143,11 @@ export interface SessionBranchRow {
   mergeServed?: true;
   /** Its project's merge setup as the ready row words it (SessionWorktreeInfo.mergeProject, cut). */
   mergeProject?: Pick<import("./merge-queue").WorktreeMergeProject, "target" | "checks" | "invalid">;
+  /** The shared answer (WorktreeReadiness.left), for a row no readiness of this chat's covers too. */
+  left?: "nothing" | "drafts";
+  draftsLeft?: number;
+  /** Its place, for "{branch} in {place}" (§chat.worktrees/place). Additive. */
+  place?: BranchPlace;
 }
 
 /** A branch's merge queue entry as the session list carries it: its state (never a precomputed key, so a new state
@@ -4985,6 +5191,11 @@ export interface WorktreeReadiness {
   noCommits?: true;
   /** Ready to land at its head commit, or Landing specs (§chat.worktrees/ready-to-land). Absent otherwise. */
   landing?: WorktreeLanding;
+  /** The shared answer (§chat.worktrees/nothing-left): "nothing" left to land, or only spec "drafts" not proved landed.
+      Absent: work is left, or it can't tell. */
+  left?: "nothing" | "drafts";
+  /** left "drafts": how many. */
+  draftsLeft?: number;
 }
 
 /** A worktree whose work is finished at its head commit (§chat.worktrees/ready-to-land). */
@@ -5234,8 +5445,10 @@ export type DiffScope = (
       brought in (the target before it to the landing commit). `branch`: a branch checked out in a
       worktree of that project's main checkout (never the checkout itself), its tip against its
       merge-base with the target, its uncommitted files included and marked as the worktree
-      scope's `uncommitted` does. Exactly one of the two. */
-  | { kind: "queue"; project: string; entry?: string; branch?: string; sessionPath?: undefined }
+      scope's `uncommitted` does. `review`: a blocking review's record (`${entry}:${run}`), the
+      commit its reviewer read against the target it was merged onto; once that commit is no longer
+      kept, the branch as it is now against its merge-base with the target. Exactly one of the three. */
+  | { kind: "queue"; project: string; entry?: string; branch?: string; review?: string; sessionPath?: undefined }
   /** One commit against its first parent (a root commit: against the empty tree). `sha` is hex,
       4–64 chars, resolved to a commit in that repository; a merge card's sha, typically. */
   | { kind: "commit"; sessionPath: string; repoPath: string; sha: string }
@@ -5254,6 +5467,7 @@ export function diffScopeQuery(s: DiffScope): string {
     const out = new URLSearchParams({ kind: s.kind, project: s.project });
     if (s.entry) out.set("entry", s.entry);
     if (s.branch) out.set("branch", s.branch);
+    if (s.review) out.set("review", s.review);
     for (const p of s.paths ?? []) out.append("paths", p);
     return out.toString();
   }

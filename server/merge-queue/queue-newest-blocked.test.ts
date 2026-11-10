@@ -61,14 +61,23 @@ describe("the live reading: a worktree's owning chat, through its last readiness
   });
 });
 
+// al_3: a branch sent back under the user's standing Land stays with its chat (with-chat) and is never offered Land at
+// a newer commit: its checked fix goes back in line by itself (queue-standing.test.ts). The newest-commit reading below
+// is for a hand-back that is final: an approval from before the standing Land.
 describe("the sent-back row in the queue's view", () => {
-  /** A branch sent back, then moved on by one commit. */
+  /** A branch sent back (approved before the standing Land, so the hand-back is final), then moved on by one commit. */
   async function sentBackMoved(deps: Parameters<typeof makeKit>[0]) {
     const k = makeKit(deps);
     k.run.set(() => ({ verdict: "failed", blame: "branch", why: "unit failed" }));
     const b = k.repo.branch("feat/x", { "x.txt": "x\n" });
     const q = await k.q();
+    await q.pause("an approval from before the standing Land");
     const { entry } = await q.add({ branch: "feat/x", by: "land-button" });
+    const legacy = q.entry(entry.id)!;
+    delete legacy.approval.standing;
+    delete legacy.approval.userCommit;
+    q.save();
+    await q.resume();
     await until(async () => (await k.entry(entry.id)).state === "needs-fix", "sent back");
     const tip = k.repo.commitOn(b.path, { "y.txt": "y\n" }, "the fix");
     return { k, q, b, tip, id: entry.id };

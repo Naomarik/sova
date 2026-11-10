@@ -21,7 +21,7 @@
   "§app/new-session-dialog": {
     "kind": "surface",
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "code": [
       "src/components/NewSessionDialog.tsx",
       "src/components/FolderPicker.tsx",

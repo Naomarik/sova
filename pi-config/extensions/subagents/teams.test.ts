@@ -24,9 +24,23 @@ import {
 	memberTooling,
 	resolveMemberSpec,
 	type PersistedMember,
+	type TeamMemberInput,
 	type WorkerObservation,
 } from "./teams.ts";
+import { DEFAULT_TEAM_DEFAULTS, type TeamDefaultsFile } from "./team-defaults.ts";
 
+/** Sova's coordinator, which every team has (index.ts adds it first; here it goes last, so the named members keep ag_01, ag_02…). */
+const COORDINATOR: TeamMemberInput = { role: "coordinator", prompt: "coordinate", duty: "coordinator", orchestrator: true };
+/** prepareCreate as index.ts calls it: with the coordinator and the team defaults, unless the input brings its own. */
+const createIn = (store: TeamStore, input: Omit<Parameters<TeamStore["prepareCreate"]>[0], "coordination"> & { coordination?: { defaults?: TeamDefaultsFile } }) =>
+	store.prepareCreate({
+		...input,
+		members: input.members.some((m) => m.duty === "coordinator") ? input.members : [...input.members, COORDINATOR],
+		coordination: { defaults: input.coordination?.defaults ?? DEFAULT_TEAM_DEFAULTS },
+	});
+/** prepareAdd as index.ts calls it, with the team defaults read now. */
+const addTo = (store: TeamStore, ref: string, members: TeamMemberInput[], observe?: (workerId: string) => WorkerObservation | undefined) =>
+	store.prepareAdd(ref, members, observe, DEFAULT_TEAM_DEFAULTS);
 const member = (i: number, extra: Partial<PersistedMember> = {}): PersistedMember => ({
 	workerId: `ag_${String(i).padStart(2, "0")}`, role: `role ${i}`, ownedPaths: [], backend: "pi", groupId: "run_01", addedAt: 1, ...extra,
 });
@@ -35,8 +49,8 @@ const create = (id: string, name: string, members: PersistedMember[]) =>
 	entry({ version: 1, op: "create", team: { id, name, objective: `objective of ${name}`, createdAt: 1 }, members });
 /** Commit a prepared create the way index.ts does after a successful spawn. */
 function commit(store: TeamStore, name: string, roles: string[], firstWorker = 1) {
-	const prepared = store.prepareCreate({ name, objective: "obj", members: roles.map((role) => ({ role, prompt: "task" })) });
-	const members = prepared.members.map((m, i) => member(firstWorker + i, { role: m.role, ownedPaths: m.ownedPaths }));
+	const prepared = createIn(store, { name, objective: "obj", members: roles.map((role) => ({ role, prompt: "task" })) });
+	const members = prepared.members.map((m, i) => member(firstWorker + i, { role: m.role, ownedPaths: m.ownedPaths, ...(m.duty ? { duty: m.duty, orchestrator: true } : {}) }));
 	store.commitCreate(prepared, 1, members);
 	prepared.release();
 	return { prepared, members };
@@ -45,8 +59,10 @@ const running: WorkerObservation = { status: "running", processAlive: true, sett
 
 test("composed member header is exact and deterministic", () => {
 	const team = { id: "team_03", name: "Auth", objective: "Fix login\nKeep API stable" };
+	const coordination = { coordinatorRole: "coordinator", handoff: (role: string) => `/notes/${role}.md`, defaults: DEFAULT_TEAM_DEFAULTS };
+	const others = [{ role: "coordinator", ownedPaths: [], duty: "coordinator" as const }, { role: "tests", ownedPaths: [] }, { role: "monitor", ownedPaths: [], duty: "monitor" as const }];
 	assert.equal(
-		composeMemberPrompt(team, { role: "backend", ownedPaths: ["src/api", "src/db"] }, [{ role: "tests", ownedPaths: [] }], "Do the thing.", "creation"),
+		composeMemberPrompt(team, { role: "backend", ownedPaths: ["src/api", "src/db"] }, others, "Do the thing.", "creation", "none", coordination),
 		[
 			"[Team assignment from the parent Pi session]",
 			"Team: Auth (team_03)",
@@ -54,29 +70,28 @@ test("composed member header is exact and deterministic", () => {
 			"Your role: backend",
 			"Your declared ownership: src/api, src/db",
 			"Other members at team creation:",
+			"- coordinator (coordinator): none declared",
 			"- tests: none declared",
+			"- monitor (monitor): none declared",
 			"Declared ownership is advisory coordination, not a lock: all members share one filesystem, so avoid editing paths another member owns unless your task says to.",
-			"Messages from teammates, an orchestrator or the parent session can arrive as new instructions in your session. You have no tool to reply to teammates directly, so put anything meant for them in your final answer; the parent session coordinates, and your final answer is your report.",
+			"Messages from teammates or the coordinator coordinator can arrive as new instructions in your session. You have no tool to reply directly, so put anything meant for them in your final answer; it is delivered to the coordinator.",
 			"If your final answer would run past about 3,500 characters, write the full report to a file and make your final message that file's path plus a short summary.",
 			"",
 			"[Your task]",
 			"Do the thing.",
 		].join("\n"),
-		"default tooling is none (a non-pi backend): the header never promises tools the worker lacks",
+		"tooling none (a non-pi backend): the header never promises tools the worker lacks",
 	);
-	const alone = composeMemberPrompt(team, { role: "solo", ownedPaths: [] }, [], "x", "addition");
+	const alone = composeMemberPrompt(team, { role: "solo", ownedPaths: [] }, [], "x", "addition", "none", coordination);
 	assert.match(alone, /Your declared ownership: none declared\nOther members when you joined:\n- none\n/);
-	// pi members are told exactly which team tools they have; orchestrators get the sibling powers and the no-spawn rule.
-	const pi = composeMemberPrompt(team, { role: "dev", ownedPaths: [] }, [{ role: "lead", ownedPaths: ["src"], orchestrator: true }], "x", "creation", "pi");
+	// pi members are told exactly which team tools they have, and that the coordinator is who they report to; no lead mark.
+	const pi = composeMemberPrompt(team, { role: "dev", ownedPaths: [] }, [{ role: "lead", ownedPaths: ["src"] }, ...others], "x", "creation", "pi", coordination);
 	assert.match(pi, /^Your role: dev$/m);
-	assert.match(pi, /^- lead \(orchestrator\): src$/m);
-	assert.match(pi, /^Team tools: team_msg .*team_inbox .*team_ask /m);
+	assert.match(pi, /^- lead: src$/m);
+	assert.match(pi, /^Team tools: team_msg .*team_inbox .*team_ask sends a question to your team's coordinator/m);
+	assert.match(pi, /^This team has a coordinator, coordinator: report to it, not to the operator\. .*Your handover note path: \/notes\/dev\.md\./m);
 	assert.match(pi, /^You cannot spawn, add or stop workers, and nothing you do reaches outside this team; the parent session remains the authority\. Your final answer is your report\.$/m);
-	assert.doesNotMatch(pi, /team_roster|team_steer|orchestrator:/);
-	const lead = composeMemberPrompt(team, { role: "lead", ownedPaths: ["src"], orchestrator: true }, [{ role: "dev", ownedPaths: [] }], "x", "creation", "pi");
-	assert.match(lead, /^Your role: lead \(orchestrator\)$/m);
-	assert.match(lead, /^You are this team's orchestrator: .*team_roster .*team_steer .*team_msg .*team_ask /m);
-	assert.match(lead, /You cannot spawn, add or stop workers.*Acceptance of a steer or message is not execution.*report of the team's outcome\.$/m);
+	assert.doesNotMatch(pi, /team_roster|team_steer|orchestrator/);
 	// A pi header never claims the worker cannot message; a none header never claims tools.
 	assert.doesNotMatch(pi, /cannot message/);
 	assert.doesNotMatch(alone, /team_msg/);
@@ -86,41 +101,22 @@ test("composed member header is exact and deterministic", () => {
 	assert.equal(memberTooling("codex"), "none");
 });
 
-test("orchestrator flag: pi or claude-code only, carried through prepare, persisted entries, views and sibling lookup", () => {
+test("Sova's coordinator's orchestrator field is carried through prepare, persisted entries, views and sibling lookup", () => {
 	const store = new TeamStore();
 	const base = { name: "Crew", objective: "obj" };
-	assert.throws(
-		() => store.prepareCreate({ ...base, members: [{ role: "lead", prompt: "t", orchestrator: true, backend: "codex" }] }),
-		/Orchestrator lead must use the pi or claude-code backend.*codex worker cannot load/,
-	);
-	assert.throws(
-		() => store.prepareCreate({ ...base, defaults: { backend: "codex" }, members: [{ role: "lead", prompt: "t", orchestrator: true }] }),
-		/must use the pi or claude-code backend/,
-	);
-	assert.throws(() => store.prepareCreate({ ...base, members: [{ role: "lead", prompt: "t", orchestrator: "yes" as any }] }), /must be a boolean/);
-	assert.equal(store.teamCounter, 0);
-	// A claude-code orchestrator is accepted (it loads the member extension like a pi member) and its header is a pi member's.
-	const claude = new TeamStore().prepareCreate({ ...base, defaults: { backend: "claude-code" }, members: [{ role: "lead", prompt: "t", orchestrator: true }, { role: "dev", prompt: "t" }] });
-	assert.deepEqual(claude.members.map((m) => [m.orchestrator, m.spec.backend]), [[true, "claude-code"], [false, "claude-code"]]);
-	assert.match(claude.members[0].spec.prompt, /\nYou are this team's orchestrator/);
-	assert.match(claude.members[1].spec.prompt, /\nTeam tools: team_msg/);
-	assert.doesNotMatch(claude.members[0].spec.prompt + claude.members[1].spec.prompt, /mcp__team__/);
-	claude.release();
-	// An explicit pi member under Claude defaults is fine; the flag survives into the prepared member and its header.
-	const prepared = store.prepareCreate({
+	// Only the manager sets it (on the coordinator it adds); a codex member is never given it.
+	const prepared = createIn(store, {
 		...base, defaults: { backend: "claude-code", model: "opus" },
-		members: [{ role: "lead", prompt: "t", orchestrator: true, backend: "pi" }, { role: "dev", prompt: "t" }, { role: "qa", prompt: "t", orchestrator: false, backend: "pi" }],
+		members: [{ role: "lead", prompt: "t", orchestrator: true, duty: "coordinator", backend: "pi" }, { role: "dev", prompt: "t" }, { role: "qa", prompt: "t", backend: "pi" }],
 	});
 	assert.deepEqual(prepared.members.map((m) => [m.role, m.orchestrator, m.spec.backend]), [["lead", true, "pi"], ["dev", false, "claude-code"], ["qa", false, "pi"]]);
-	assert.match(prepared.members[0].spec.prompt, /Your role: lead \(orchestrator\)/);
-	assert.match(prepared.members[1].spec.prompt, /- lead \(orchestrator\): none declared/);
+	assert.doesNotMatch(prepared.members.map((m) => m.spec.prompt).join("\n"), /\(orchestrator\)|You are this team's orchestrator/, "no header marks or addresses an orchestrator");
 	assert.match(prepared.members[1].spec.prompt, /\nTeam tools: team_msg/, "a Claude member's header is a pi member's");
-	assert.doesNotMatch(prepared.members[1].spec.prompt, /no tool to reply/);
-	assert.match(prepared.members[2].spec.prompt, /Team tools: team_msg/);
-	const members = prepared.members.map((m, i) => member(i + 1, { role: m.role, backend: m.spec.backend, ...(m.orchestrator ? { orchestrator: true } : {}) }));
+	assert.doesNotMatch(prepared.members[1].spec.prompt, /no tool to reply|mcp__team__/);
+	const members = prepared.members.map((m, i) => member(i + 1, { role: m.role, backend: m.spec.backend, ...(m.orchestrator ? { orchestrator: true } : {}), ...(m.duty ? { duty: m.duty } : {}) }));
 	store.commitCreate(prepared, 1, members);
 	prepared.release();
-	// Persisted entries keep the flag strictly optional/boolean.
+	// Persisted entries keep the field strictly optional/boolean (restored teams decode through it).
 	const entry = store.createEntry(prepared, 1, members);
 	assert.equal(decodeTeamEntry(entry)!.members[0].orchestrator, true);
 	assert.equal("orchestrator" in decodeTeamEntry(entry)!.members[1], false);
@@ -138,15 +134,11 @@ test("orchestrator flag: pi or claude-code only, carried through prepare, persis
 	assert.throws(() => store.resolveSibling("ag_01", "ag_42"), /not a member of team_01/);
 	assert.throws(() => store.resolveSibling("ag_01", "ghost"), /No member with role ghost in team_01\. Known roles: dev, qa\./);
 	assert.throws(() => store.resolveSibling("ag_42", "dev"), /not a member of a session team/);
-	// team_add applies the same rule with the team's defaults and marks existing orchestrators in the newcomer's header.
-	const add = store.prepareAdd("Crew", [{ role: "docs", prompt: "t", backend: "pi" }]);
-	assert.match(add.members[0].spec.prompt, /- lead \(orchestrator\): none declared\n- dev: none declared\n- qa: none declared/);
+	// A newcomer's header lists the members unmarked.
+	const add = addTo(store, "Crew", [{ role: "docs", prompt: "t", backend: "pi" }]);
+	assert.match(add.members[0].spec.prompt, /- lead \(coordinator\): none declared\n- dev: none declared\n- qa: none declared/);
 	add.release();
-	assert.throws(() => store.prepareAdd("Crew", [{ role: "boss", prompt: "t", orchestrator: true, backend: "codex" }]), /must use the pi or claude-code backend/);
-	const boss = store.prepareAdd("Crew", [{ role: "boss", prompt: "t", orchestrator: true }]);
-	assert.deepEqual([boss.members[0].orchestrator, boss.members[0].spec.backend], [true, "claude-code"], "team defaults (claude-code) now admit an orchestrator");
-	boss.release();
-	// Actions from members and orchestrators are recorded with their own sources and kinds.
+	// Actions from members and the coordinator are recorded with their own sources and kinds.
 	const action = store.recordAction("ag_02", "message", "member", "hello")!;
 	assert.deepEqual([action.kind, action.source, action.role], ["message", "member", "dev"]);
 	assert.equal(store.recordAction("ag_02", "question", "orchestrator")!.kind, "question");
@@ -180,30 +172,33 @@ test("create validation: labels, roles, paths, objective, uniqueness and limits"
 		[{ ...ok, objective: " " }, /objective must not be blank/],
 		[{ ...ok, objective: "x".repeat(4001) }, /exceeds 4000/],
 		[{ ...ok, objective: "a\u0000" }, /control/],
-		[{ ...ok, members: [] }, /at least one/],
 		[{ ...ok, members: [{ role: "Dev", prompt: "t" }, { role: " dev ", prompt: "t" }] }, /Duplicate role/],
 		[{ ...ok, members: [{ role: "ag_01", prompt: "t" }] }, /looks like a worker ID/],
 		[{ ...ok, members: [{ role: "a", prompt: "  " }] }, /Task for a must not be blank/],
 		[{ ...ok, members: [{ role: "a", prompt: "t", ownedPaths: [" "] }] }, /blank entries/],
 		[{ ...ok, members: [{ role: "a", prompt: "t", ownedPaths: ["a\nb"] }] }, /one line/],
 		[{ ...ok, members: [{ role: "a", prompt: "t", ownedPaths: Array.from({ length: 33 }, (_, i) => `p${i}`) }] }, /exceeds 32/],
-	] as const) assert.throws(() => store.prepareCreate(input as any), pattern);
+	] as const) assert.throws(() => createIn(store, input as any), pattern);
+	const coordination = { defaults: DEFAULT_TEAM_DEFAULTS };
+	assert.throws(() => store.prepareCreate({ ...ok, members: [], coordination }), /at least one/);
+	assert.throws(() => store.prepareCreate({ ...ok, coordination }), /^Error: A team needs exactly one coordinator\.$/, "a team without Sova's coordinator is never prepared");
+	assert.throws(() => store.prepareCreate({ ...ok, members: [COORDINATOR, { ...COORDINATOR, role: "second" }], coordination }), /^Error: A team needs exactly one coordinator\.$/);
 	assert.equal(store.teamCounter, 0, "rejected input never consumes a team ID");
-	const prepared = store.prepareCreate({ ...ok, name: "  Auth   Team ", members: [{ role: " lead  dev ", prompt: "t", ownedPaths: [" src ", "src"] }] });
+	const prepared = createIn(store, { ...ok, name: "  Auth   Team ", members: [{ role: " lead  dev ", prompt: "t", ownedPaths: [" src ", "src"] }] });
 	assert.equal(prepared.teamId, "team_01");
 	assert.equal(prepared.name, "Auth Team");
-	assert.deepEqual(prepared.members.map((m) => [m.role, m.ownedPaths]), [["lead dev", ["src"]]]);
+	assert.deepEqual(prepared.members.map((m) => [m.role, m.ownedPaths]), [["lead dev", ["src"]], ["coordinator", []]]);
 	// Pending reservation blocks a concurrent duplicate; release frees it.
-	assert.throws(() => store.prepareCreate({ ...ok, name: "auth team" }), /already exists .* being created/);
+	assert.throws(() => createIn(store, { ...ok, name: "auth team" }), /already exists .* being created/);
 	prepared.release(); prepared.release();
-	const again = store.prepareCreate({ ...ok, name: "AUTH TEAM" });
+	const again = createIn(store, { ...ok, name: "AUTH TEAM" });
 	assert.equal(again.teamId, "team_02", "IDs are never reused within a session");
 	store.commitCreate(again, 1, [member(1, { role: "a" })]);
 	again.release();
-	assert.throws(() => store.prepareCreate({ ...ok, name: "auth team" }), /already exists/);
+	assert.throws(() => createIn(store, { ...ok, name: "auth team" }), /already exists/);
 	const limited = new TeamStore();
 	for (let i = 0; i < MAX_SESSION_TEAMS; i++) commit(limited, `t${i}`, ["a"], i + 1);
-	assert.throws(() => limited.prepareCreate({ ...ok, name: "one more" }), /Team limit reached/);
+	assert.throws(() => createIn(limited, { ...ok, name: "one more" }), /Team limit reached/);
 });
 
 test("add validation: history is read-only, roles unique across committed and pending members, bounded size", () => {
@@ -215,26 +210,26 @@ test("add validation: history is read-only, roles unique across committed and pe
 	store.restoreHistory(branch);
 	const { prepared } = commit(store, "Live", ["Lead"], 5);
 	assert.equal(prepared.teamId, "team_02", "session teams never reuse an ID reserved from history");
-	assert.throws(() => store.prepareAdd("team_01", [{ role: "x", prompt: "t" }]), /history from an earlier session/);
-	assert.throws(() => store.prepareAdd("old", [{ role: "x", prompt: "t" }]), /history/);
-	assert.throws(() => store.prepareAdd("team_09", [{ role: "x", prompt: "t" }]), /No such team: team_09/);
-	assert.throws(() => store.prepareAdd("missing", [{ role: "x", prompt: "t" }]), /No such team: missing/);
-	assert.throws(() => store.prepareAdd(prepared.teamId, [{ role: " lead ", prompt: "t" }]), /already exists in this team/);
-	const pending = store.prepareAdd("live", [{ role: "tests", prompt: "t" }]);
+	assert.throws(() => addTo(store, "team_01", [{ role: "x", prompt: "t" }]), /history from an earlier session/);
+	assert.throws(() => addTo(store, "old", [{ role: "x", prompt: "t" }]), /history/);
+	assert.throws(() => addTo(store, "team_09", [{ role: "x", prompt: "t" }]), /No such team: team_09/);
+	assert.throws(() => addTo(store, "missing", [{ role: "x", prompt: "t" }]), /No such team: missing/);
+	assert.throws(() => addTo(store, prepared.teamId, [{ role: " lead ", prompt: "t" }]), /already exists in this team/);
+	const pending = addTo(store, "live", [{ role: "tests", prompt: "t" }]);
 	assert.equal(pending.teamId, prepared.teamId);
 	assert.equal(pending.name, "Live");
-	assert.throws(() => store.prepareAdd(prepared.teamId, [{ role: "Tests", prompt: "t" }]), /being added concurrently/);
+	assert.throws(() => addTo(store, prepared.teamId, [{ role: "Tests", prompt: "t" }]), /being added concurrently/);
 	// The new member's header lists the current roster plus fellow new members.
-	assert.match(pending.members[0].spec.prompt, /Other members when you joined:\n- Lead: none declared\n\n?Declared/);
+	assert.match(pending.members[0].spec.prompt, /Other members when you joined:\n- Lead: none declared\n- coordinator \(coordinator\): none declared\nDeclared/);
 	pending.release();
-	const retry = store.prepareAdd(prepared.teamId, [{ role: "tests", prompt: "t" }, { role: "docs", prompt: "t" }]);
-	assert.match(retry.members[0].spec.prompt, /- Lead: none declared\n- docs: none declared\n/);
+	const retry = addTo(store, prepared.teamId, [{ role: "tests", prompt: "t" }, { role: "docs", prompt: "t" }]);
+	assert.match(retry.members[0].spec.prompt, /- Lead: none declared\n- coordinator \(coordinator\): none declared\n- docs: none declared\n/);
 	retry.release();
 	const big = new TeamStore();
 	const created = commit(big, "Big", ["r0"]);
-	const members = Array.from({ length: MAX_TEAM_MEMBERS - 1 }, (_, i) => member(i + 10, { role: `m${i}` }));
+	const members = Array.from({ length: MAX_TEAM_MEMBERS - 2 }, (_, i) => member(i + 10, { role: `m${i}` })); // r0 and the coordinator hold 2
 	big.commitAdd({ ...created.prepared, members: [] } as any, members);
-	assert.throws(() => big.prepareAdd("Big", [{ role: "extra", prompt: "t" }, { role: "extra2", prompt: "t" }]), /exceed 24 members/);
+	assert.throws(() => addTo(big, "Big", [{ role: "extra", prompt: "t" }, { role: "extra2", prompt: "t" }]), /exceed 24 members/);
 });
 
 test("entries decode strictly; branch restore folds create/add and never exceeds bounds", () => {
@@ -267,7 +262,7 @@ test("entries decode strictly; branch restore folds create/add and never exceeds
 	// IDs from other branches are reserved, but those teams are not displayed.
 	store.reserveCounter([...branch, create("team_11", "Elsewhere", [])]);
 	assert.equal(store.teamCounter, 11);
-	assert.equal(store.prepareCreate({ name: "New", objective: "o", members: [{ role: "a", prompt: "t" }] }).teamId, "team_12");
+	assert.equal(createIn(store, { name: "New", objective: "o", members: [{ role: "a", prompt: "t" }] }).teamId, "team_12");
 	const many = new TeamStore();
 	many.restoreHistory(Array.from({ length: MAX_HISTORY_TEAMS + 3 }, (_, i) => create(`team_${i + 1}`, `T${i}`, [])));
 	assert.equal(many.views(() => undefined).length, MAX_HISTORY_TEAMS);
@@ -290,12 +285,13 @@ test("views: retained members show live state; pruned members keep last known st
 	store.recordEviction("ag_02", { status: "done", taskOutcome: "error", error: "e".repeat(900) });
 	store.recordEviction("ag_99", { status: "done" }); // not a member: ignored
 	const views = store.views((id) => id === "ag_01" ? { ...running, model: "m" } : undefined);
-	const [a, b, c] = views[0].members;
+	const [a, b, c, coordinator] = views[0].members;
 	assert.deepEqual([a.available, a.availability, a.state, a.status, a.model], [true, "retained", "working", "running", "m"]);
 	assert.deepEqual([b.available, b.availability, b.state, b.status, b.taskOutcome, b.reason], [false, "pruned", "unavailable", "done", "error", PRUNED_REASON]);
 	assert.equal(b.error!.length, 500);
 	assert.deepEqual([c.availability, c.status], ["pruned", undefined]);
-	assert.deepEqual(views[0].counts, { working: 1, idle: 0, failed: 0, done: 0, stopping: 0, stopped: 0, unavailable: 2 });
+	assert.equal(coordinator.role, "coordinator");
+	assert.deepEqual(views[0].counts, { working: 1, idle: 0, failed: 0, done: 0, stopping: 0, stopped: 0, unavailable: 3 }, "c and the unobserved coordinator count too");
 	// Views are detached copies.
 	(views[0].members[0].ownedPaths as string[]).push("mutated");
 	views[0].actions.push({} as any);
@@ -340,8 +336,8 @@ test("action history is bounded, member-only, previewed and settles once", () =>
 /** A full session team: r0 (ag_01) plus m0..m22 (ag_10..ag_32), all 24 seats taken. */
 function fullTeam() {
 	const store = new TeamStore();
-	const created = commit(store, "Big", ["r0"]);
-	const members = Array.from({ length: MAX_TEAM_MEMBERS - 1 }, (_, i) => member(i + 10, { role: `m${i}` }));
+	const created = commit(store, "Big", ["r0"]); // r0 ag_01, the coordinator ag_02
+	const members = Array.from({ length: MAX_TEAM_MEMBERS - 2 }, (_, i) => member(i + 10, { role: `m${i}` }));
 	store.commitAdd({ ...created.prepared, members: [] } as any, members);
 	return { store, teamId: created.prepared.teamId };
 }
@@ -350,12 +346,12 @@ const idle: WorkerObservation = { status: "waiting", taskOutcome: "success", pro
 
 test("eject frees a seat at the cap; the cap error names ejectable members; roles stay reserved", () => {
 	const { store, teamId } = fullTeam();
-	// ag_10 has ended, ag_11 is idle, the rest are gone from the manager (unavailable).
-	const observe = (id: string) => (id === "ag_10" ? ended : id === "ag_11" ? idle : id === "ag_01" ? running : undefined);
-	const full = (() => { try { store.prepareAdd("Big", [{ role: "extra", prompt: "t" }], observe); } catch (e) { return String(e); } return ""; })();
+	// ag_10 has ended, ag_11 is idle, r0 and the coordinator work, the rest are gone from the manager (unavailable).
+	const observe = (id: string) => (id === "ag_10" ? ended : id === "ag_11" ? idle : id === "ag_01" || id === "ag_02" ? running : undefined);
+	const full = (() => { try { addTo(store, "Big", [{ role: "extra", prompt: "t" }], observe); } catch (e) { return String(e); } return ""; })();
 	assert.match(full, /would exceed 24 members/);
 	assert.match(full, /team_eject: ag_10 \(m0\), ag_12 \(m2\)/, "ended and unavailable members are named");
-	assert.doesNotMatch(full, /ag_01|ag_11 /, "working and idle members are not ejectable");
+	assert.doesNotMatch(full, /ag_01|ag_02|ag_11 /, "working and idle members are not ejectable");
 
 	const target = store.checkEject("Big", "m0", observe);
 	assert.deepEqual(target, { teamId, workerId: "ag_10", role: "m0" });
@@ -367,13 +363,13 @@ test("eject frees a seat at the cap; the cap error names ejectable members; role
 	assert.equal(store.ejectedAt("ag_10"), 5000);
 
 	// The seat is free: one addition fits, two do not.
-	const added = store.prepareAdd("Big", [{ role: "extra", prompt: "t" }], observe);
+	const added = addTo(store, "Big", [{ role: "extra", prompt: "t" }], observe);
 	assert.doesNotMatch(added.members[0].spec.prompt, /- m0:/, "an ejected member is not among Other members");
 	assert.match(added.members[0].spec.prompt, /- m1:/);
 	added.release();
-	assert.throws(() => store.prepareAdd("Big", [{ role: "x1", prompt: "t" }, { role: "x2", prompt: "t" }], observe), /exceed 24 members/);
+	assert.throws(() => addTo(store, "Big", [{ role: "x1", prompt: "t" }, { role: "x2", prompt: "t" }], observe), /exceed 24 members/);
 	// Its role stays taken, in any case or spacing.
-	assert.throws(() => store.prepareAdd("Big", [{ role: " M0 ", prompt: "t" }], observe), /Role M0 already exists/);
+	assert.throws(() => addTo(store, "Big", [{ role: " M0 ", prompt: "t" }], observe), /Role M0 already exists/);
 });
 
 test("eject refusals: unknown team or member, already ejected, still occupied; a history team ejects too", () => {
@@ -392,7 +388,7 @@ test("eject refusals: unknown team or member, already ejected, still occupied; a
 	// unavailable member's seat can be released, and the eject folds back from the branch.
 	const history = new TeamStore();
 	history.restoreHistory([create("team_05", "Old", [member(1), member(2)])]);
-	assert.throws(() => history.prepareAdd("Old", [{ role: "x", prompt: "t" }]), /history from an earlier session/);
+	assert.throws(() => addTo(history, "Old", [{ role: "x", prompt: "t" }]), /history from an earlier session/);
 	assert.throws(() => history.checkEject("Old", "ag_02", () => running), /is still working/, "a history member whose worker was resumed and works is refused like any other");
 	const target = history.checkEject("Old", "ag_01", () => undefined);
 	assert.deepEqual(target, { teamId: "team_05", workerId: "ag_01", role: "role 1" });
@@ -438,8 +434,8 @@ test("eject entries decode strictly and fold on restore: eject then add past 24 
 	// Adopting the history team keeps its released seats.
 	assert.ok(store.adoptHistoryTeam("team_02"));
 	assert.equal(store.ejectedAt("ag_05"), 40);
-	assert.throws(() => store.prepareAdd("Full", [{ role: "more", prompt: "t" }]), /exceed 24 members/);
-	assert.throws(() => store.prepareAdd("Full", [{ role: "s4", prompt: "t" }]), /Role s4 already exists/);
+	assert.throws(() => addTo(store, "Full", [{ role: "more", prompt: "t" }]), /exceed 24 members/);
+	assert.throws(() => addTo(store, "Full", [{ role: "s4", prompt: "t" }]), /Role s4 already exists/);
 });
 
 test("views carry ejectedAt and leave ejected members out of the state counts", () => {
@@ -447,16 +443,16 @@ test("views carry ejectedAt and leave ejected members out of the state counts", 
 	const { prepared } = commit(store, "T", ["a", "b", "c"]);
 	store.commitEject(prepared.teamId, "ag_02", 77, "system");
 	const [view] = store.views((id) => (id === "ag_01" ? running : ended));
-	assert.deepEqual(view.members.map((m) => m.ejectedAt), [undefined, 77, undefined]);
-	assert.deepEqual(view.counts, { working: 1, idle: 0, failed: 0, done: 1, stopping: 0, stopped: 0, unavailable: 0 });
+	assert.deepEqual(view.members.map((m) => m.ejectedAt), [undefined, 77, undefined, undefined]);
+	assert.deepEqual(view.counts, { working: 1, idle: 0, failed: 0, done: 2, stopping: 0, stopped: 0, unavailable: 0 }, "c and the coordinator are done");
 	assert.equal(view.ejected, 1);
 	assert.equal(view.members[1].state, "done", "an ejected member keeps its observed state");
 	assert.deepEqual([view.actions[0].kind, view.actions[0].source], ["eject", "system"]);
 	// Siblings: an ejected member is out of broadcasts, and addressing it says why.
-	assert.deepEqual(store.memberInfo("ag_01")!.siblings.map((m) => m.role), ["c"]);
+	assert.deepEqual(store.memberInfo("ag_01")!.siblings.map((m) => m.role), ["c", "coordinator"]);
 	assert.throws(() => store.resolveSibling("ag_01", "B"), /b \(ag_02\) was ejected from team_01 at 1970-01-01T00:00:00Z; it no longer receives team messages/);
 	assert.throws(() => store.resolveSibling("ag_01", "ag_02"), /was ejected/);
-	assert.throws(() => store.resolveSibling("ag_01", "zzz"), /Known roles: c\./);
+	assert.throws(() => store.resolveSibling("ag_01", "zzz"), /Known roles: c, coordinator\./);
 	assert.equal(store.resolveSibling("ag_01", "c").workerId, "ag_03");
 });
 
@@ -474,7 +470,7 @@ test("assignments: cut with a marker, kept per member in memory, the main thread
 	assert.equal(qa.steers[0], `${"x".repeat(STEER_KEEP_CHARS)} […100 more chars]`);
 	assert.equal(store.taskOf(members[0].workerId), "task");
 	// A successor-style add carries an explicit assignment instead of its prompt.
-	const added = store.prepareAdd("team_01", [{ role: "dev-2", prompt: "Continue the work of dev", assignment: "task" }]);
+	const added = addTo(store, "team_01", [{ role: "dev-2", prompt: "Continue the work of dev", assignment: "task" }]);
 	assert.equal(added.members[0].task, "task");
 	added.release();
 	assert.deepEqual(store.assignments("team_99"), []);
@@ -488,14 +484,14 @@ test("N2: steers past the cap drop the oldest and count them; a successor inheri
 	assert.equal(dev.steers.length, MAX_OPERATOR_STEERS);
 	assert.deepEqual([dev.steers[0], dev.steersOmitted], ["step 3", 2]);
 	// team_succeed: the successor record names its predecessor's worker ID and inherits its steers.
-	const added = store.prepareAdd("team_01", [{ role: "dev-2", prompt: "Continue", assignment: "task", successorOf: "dev", successorOfId: "ag_01" }]);
+	const added = addTo(store, "team_01", [{ role: "dev-2", prompt: "Continue", assignment: "task", successorOf: "dev", successorOfId: "ag_01" }]);
 	assert.equal(added.members[0].successorOfId, "ag_01");
-	const successor = member(2, { role: "dev-2", successorOf: "ag_01" });
+	const successor = member(3, { role: "dev-2", successorOf: "ag_01" }); // ag_02 is the coordinator
 	store.commitAdd(added, [successor]);
 	added.release();
-	assert.deepEqual(store.steersOf("ag_02"), { steers: dev.steers, omitted: 2 });
-	assert.equal(store.memberInfo("ag_02")!.member.successorOf, "ag_01", "the record carries successorOf");
-	store.recordOperatorSteer("ag_02", "one more");
+	assert.deepEqual(store.steersOf("ag_03"), { steers: dev.steers, omitted: 2 });
+	assert.equal(store.memberInfo("ag_03")!.member.successorOf, "ag_01", "the record carries successorOf");
+	store.recordOperatorSteer("ag_03", "one more");
 	[, dev] = store.assignments("team_01");
 	assert.deepEqual([dev.role, dev.task, dev.steers.at(-1)], ["dev-2", "task", "one more"]);
 	assert.equal(store.steersOf("ag_01").steers.at(-1), `step ${MAX_OPERATOR_STEERS + 2}`, "the predecessor's own list is untouched");
@@ -527,7 +523,7 @@ test("N4/N5: a worker successor's task starts from the note, redoes nothing it m
 test("N1: a store keys its handover directory by the parent session, so two sessions' team_01 never share one", () => {
 	const create = (key: string) => {
 		const store = new TeamStore("/agent/sova/teams", () => key);
-		const prepared = store.prepareCreate({
+		const prepared = createIn(store, {
 			name: "Crew", objective: "o", coordination: {},
 			members: [{ role: "coordinator", prompt: "c", duty: "coordinator", orchestrator: true }, { role: "dev", prompt: "d" }],
 		});
@@ -546,7 +542,7 @@ test("restart: tasks, every steer and a successor's inheritance rebuild from ses
 	const event = (teamId: string, kind: string) => ({ type: "custom", customType: TEAM_EVENT_ENTRY_TYPE, data: { version: 1, teamId, kind, workerId: "ag_03", role: "monitor", at: 1 } });
 	// What a live store writes is exactly what a reloaded one reads.
 	const live = new TeamStore();
-	const prepared = live.prepareCreate({
+	const prepared = createIn(live, {
 		name: "Crew", objective: "o", coordination: {},
 		members: [{ role: "coordinator", prompt: "c", duty: "coordinator", orchestrator: true }, { role: "dev", prompt: "Write f01-f10." }, { role: "monitor", prompt: "m", duty: "monitor", tools: [] }],
 	});
@@ -557,7 +553,7 @@ test("restart: tasks, every steer and a successor's inheritance rebuild from ses
 	assert.equal(written.length, 2, "one task entry: duty members have none");
 	written.push(assignment(live.recordOperatorSteer("ag_02", "after f10, also write summary.txt")));
 	assert.equal(live.recordOperatorSteer("ag_03", "monitor steer"), undefined, "never for a duty member");
-	const add = live.prepareAdd("team_01", [{ role: "dev-2", prompt: "Continue", assignment: "Write f01-f10.", successorOf: "dev", successorOfId: "ag_02" }]);
+	const add = addTo(live, "team_01", [{ role: "dev-2", prompt: "Continue", assignment: "Write f01-f10.", successorOf: "dev", successorOfId: "ag_02" }]);
 	const successor = [member(4, { role: "dev-2", successorOf: "ag_02" })];
 	live.commitAdd(add, successor);
 	add.release();
@@ -585,30 +581,20 @@ test("contract: subagents-team-v1 members keep an optional successorOf worker ID
 	assert.equal(decodeTeamEntry({ version: 1, op: "add", teamId: "team_01", members: [{ ...member(4), successorOf: "dev" }] }), undefined);
 });
 
-test("planTeamDefaults names the standing roles Sova adds and each one turned off, and by what", async () => {
-	const { planTeamDefaults } = await import("./teams.ts");
-	const file = {
-		version: 1,
-		coordinator: { enabled: true, role: "lead", primary: { backend: "pi", model: "a/b" }, fallback: null, instructions: "" },
-		monitor: { enabled: true, role: "watch", primary: { backend: "pi", model: "a/b" }, fallback: null, contextPct: 60, everyMinutes: 10, usage: { enabled: true, pausePct: 90, resumeMarginMinutes: 5 }, instructions: "" },
-		handover: { retireTimeoutMinutes: 10 },
-	} as any;
-	const ok = (value: any) => ({ state: "ok", file: "f.json", value } as any);
-	const members = [{ role: "dev", prompt: "p" }];
-	assert.equal(planTeamDefaults({ state: "absent" } as any, members).standing, "Standing roles: none; this chat's subagent settings give teams no coordinator or monitor.");
-	assert.equal(planTeamDefaults(ok(file), members).standing, `Standing roles — coordinator: "lead", added by Sova; monitor: "watch", added by Sova.`);
-	assert.equal(planTeamDefaults(ok(file), members, { monitor: false }).standing, `Standing roles — coordinator: "lead", added by Sova; monitor: off for this team (defaults.monitor: false).`);
-	assert.equal(planTeamDefaults(ok({ ...file, monitor: { ...file.monitor, enabled: false } }), members).standing, `Standing roles — coordinator: "lead", added by Sova; monitor: off in this chat's subagent settings.`);
-	assert.equal(planTeamDefaults(ok(file), members, { coordinator: false }).standing, "Standing roles: none; the coordinator and monitor are off for this team (defaults.coordinator: false).");
-	assert.equal(planTeamDefaults(ok({ ...file, coordinator: { ...file.coordinator, enabled: false } }), members).standing, "Standing roles: none; the coordinator, and with it the monitor, is off in this chat's subagent settings.");
-	assert.equal(planTeamDefaults(ok(file), [{ role: "boss", prompt: "p", orchestrator: true }]).standing, `Standing roles — coordinator: your orchestrator boss (none added); monitor: "watch", added by Sova.`);
-	assert.throws(() => planTeamDefaults(ok(file), [{ role: "a", prompt: "p", orchestrator: true }, { role: "b", prompt: "p", orchestrator: true }]),
-		/only the coordinator is a team's orchestrator, so at most one member may have orchestrator: true \(got a, b\)\. Mark only the member that should coordinate: it becomes the coordinator, and hands members \(itself included\) over to successors with team_succeed\. A member that only watches or reports needs no orchestrator mark\./);
+test("checkStandingRoles: a member the chat names on the coordinator's or monitor's role is refused, saying the role is Sova's", async () => {
+	const { checkStandingRoles } = await import("./teams.ts");
+	const { DEFAULT_TEAM_DEFAULTS } = await import("./team-defaults.ts");
+	const d = { ...DEFAULT_TEAM_DEFAULTS, coordinator: { ...DEFAULT_TEAM_DEFAULTS.coordinator, role: "lead" }, monitor: { ...DEFAULT_TEAM_DEFAULTS.monitor, role: "watch" } };
+	assert.doesNotThrow(() => checkStandingRoles(d, [{ role: "dev", prompt: "p" }]));
+	assert.throws(() => checkStandingRoles(d, [{ role: " LEAD ", prompt: "p" }]), /^Error: Role LEAD is the role of the coordinator Sova adds to every team \(lead\); give that member another role\.$/);
+	assert.throws(() => checkStandingRoles(d, [{ role: "watch", prompt: "p" }]), /the role of the monitor Sova adds to every team \(watch\)/);
+	for (const role of ["lead", "watch"])
+		try { checkStandingRoles(d, [{ role, prompt: "p" }]); } catch (e) { assert.doesNotMatch((e as Error).message, /defaults\.|: false|orchestrator/, "no way out is offered"); }
 });
 
 test("checkReplacement: only the newest coordinator or monitor, only while none with that duty is live", () => {
 	const store = new TeamStore("/tmp/teams", () => "s");
-	const prepared = store.prepareCreate({
+	const prepared = createIn(store, {
 		name: "Crew", objective: "o", coordination: {},
 		members: [{ role: "lead", prompt: "c", orchestrator: true, duty: "coordinator" }, { role: "dev", prompt: "d" }, { role: "watch", prompt: "m", duty: "monitor", tools: [] }],
 	});
@@ -625,11 +611,36 @@ test("checkReplacement: only the newest coordinator or monitor, only while none 
 	assert.throws(() => store.checkReplacement("Crew", "dev", isLive), /No coordinator is live: replace the coordinator first, and it can then succeed dev\./);
 	assert.throws(() => store.checkReplacement("Crew", "watch", isLive), /watch \(ag_03\) is team_01's live monitor/);
 	// A newer coordinator (a successor) that has ended too: only it may be replaced.
-	const add = store.prepareAdd("Crew", [{ role: "lead-2", prompt: "c", orchestrator: true, duty: "coordinator", successorOf: "lead", successorOfId: "ag_01" }]);
+	const add = addTo(store, "Crew", [{ role: "lead-2", prompt: "c", orchestrator: true, duty: "coordinator", successorOf: "lead", successorOfId: "ag_01" }]);
 	store.commitAdd(add, [member(4, { role: "lead-2", orchestrator: true, duty: "coordinator", successorOf: "ag_01", addedAt: 2 })]);
 	add.release();
 	assert.throws(() => store.checkReplacement("Crew", "lead", isLive), /lead \(ag_01\) is not team_01's newest coordinator; replace lead-2 \(ag_04\) instead\./);
 	assert.equal(store.checkReplacement("Crew", "lead-2", isLive).target.workerId, "ag_04");
 	live.add("ag_04");
 	assert.throws(() => store.checkReplacement("Crew", "lead", isLive), /lead-2 \(ag_04\) is team_01's live coordinator/);
+});
+
+test("contract: a member's work kind goes from the prepared member to its record and back through the entry; a record without one stays without", () => {
+	const store = new TeamStore();
+	const prepared = createIn(store, { name: "Crew", objective: "obj", members: [{ role: "scout", prompt: "look", kind: "investigation" }, { role: "dev", prompt: "build" }] });
+	assert.deepEqual(prepared.members.map((m) => [m.role, m.kind]), [["scout", "investigation"], ["dev", undefined], ["coordinator", undefined]]);
+	const members = prepared.members.map((m, i) => member(i + 1, { role: m.role, ...(m.kind ? { kind: m.kind } : {}), ...(m.duty ? { duty: m.duty, orchestrator: true } : {}) }));
+	const data = { version: 1, op: "create", team: { id: prepared.teamId, name: "Crew", objective: "obj", createdAt: 1 }, members };
+	const decoded = decodeTeamEntry(JSON.parse(JSON.stringify(data)));
+	assert.deepEqual(decoded?.members.map((m) => m.kind), ["investigation", undefined, undefined]);
+	assert.equal("kind" in decoded!.members[1], false, "no kind is no key, as a record written before kinds");
+	const restored = new TeamStore();
+	restored.restoreHistory([entry(data)]);
+	assert.equal(restored.adoptHistoryTeam(prepared.teamId), true);
+	assert.equal(restored.memberInfo("ag_01")?.member.kind, "investigation", "the kind survives a reload");
+	assert.equal(decodeTeamEntry({ ...data, members: [member(1, { kind: "quick" as never })] }), undefined, "an unknown kind rejects the member");
+	prepared.release();
+});
+
+test("a Planning & specs or Investigation successor's task says not to edit; an implementation one's does not", () => {
+	const base = { oldRole: "scout", oldId: "ag_02", note: "/n.md", oldLive: false, steers: [], steersOmitted: 0 };
+	assert.match(workerSuccessorTask({ ...base, kind: "investigation" }), /\n\nYour work kind is Investigation: do not edit, create or delete project files\./);
+	assert.match(workerSuccessorTask({ ...base, kind: "planning" }), /Your work kind is Planning & specs: do not edit/);
+	assert.doesNotMatch(workerSuccessorTask({ ...base, kind: "complex" }), /do not edit/);
+	assert.doesNotMatch(workerSuccessorTask(base), /do not edit/);
 });

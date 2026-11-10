@@ -29,6 +29,31 @@
       "source": "pi-session:5b3349ca-a4e6-4bb7-8a78-16e639eb61df#e85d747a"
     }
   },
+  "§app.access/click-limits": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "requires": [
+      "§app.access/your-click",
+      "§app.extensions/page-badge",
+      "§app.extensions/loader",
+      "§chat.sandbox/what-on-enforces",
+      "§chat.worktrees/land-own-word"
+    ],
+    "code": [
+      "server/page-only.ts",
+      "server/auth.ts",
+      "server/testing/page.ts",
+      "server/extension-routes.ts",
+      "server/extension-doors.test.ts",
+      "server/merge-queue/routes.ts"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-07T16:57Z",
+      "source": "pi-session:01a1b63e-6ef3-71fd-af21-1389de50cc23#e142ea9f"
+    }
+  },
   "§app.access/devices": {
     "kind": "behavior",
     "requires": [
@@ -75,6 +100,46 @@
       "server/caller-keys.ts",
       "server/tours/runner-header.ts"
     ]
+  },
+  "§app.access/other-roads": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "requires": [
+      "§app.access/your-click",
+      "§app.overseer/tools",
+      "§app.overseer/org-project-overseers",
+      "§chat.sandbox/toggle",
+      "§app.updates/restart",
+      "§app.commands/catalogue",
+      "§chat.merge-queue/sova-restart"
+    ],
+    "code": [
+      "server/chat-manager.ts",
+      "server/ws.ts",
+      "server/sandbox-state.ts",
+      "server/chat-runtime/methods.ts",
+      "server/chat-runtime/host.ts",
+      "server/chat-handle-remote.ts",
+      "server/queue.ts",
+      "server/overseer-tools.ts",
+      "server/mesh/click-proof.ts",
+      "server/mesh/proxy.ts",
+      "server/mesh/index.ts",
+      "server/mesh/access.ts",
+      "server/mesh/access.test.ts",
+      "server/updates/routes.ts",
+      "server/updates/restart-route.test.ts",
+      "server/project-services/self-host.ts",
+      "server/project-services/routes.ts",
+      "server/your-click.test.ts",
+      "server/your-click-sandbox.test.ts"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-07T16:57Z",
+      "source": "pi-session:01a1b63e-6ef3-71fd-af21-1389de50cc23#e142ea9f"
+    }
   },
   "§app.access/token": {
     "kind": "behavior",
@@ -129,7 +194,9 @@
       "§app.commands/catalogue",
       "§chat.transcript-cards/trust",
       "§app.updates/restart",
-      "§app.updates/operator"
+      "§app.updates/operator",
+      "§app.access/other-roads",
+      "§app.access/click-limits"
     ],
     "authority": "accepted",
     "evidence": "verified",
@@ -175,12 +242,20 @@
       "server/chat-actions.ts",
       "server/chat-actions.test.ts",
       "server/chat-runtime/trial-your-click.integration.test.ts",
-      "scripts/chat-runtime-trial/run.mjs"
+      "scripts/chat-runtime-trial/run.mjs",
+      "server/extension-routes.ts",
+      "server/extension-doors.test.ts",
+      "server/mesh/access.test.ts",
+      "server/merge-queue/routes.ts",
+      "server/merge-queue/verbs.test.ts",
+      "server/projects/runtime-routes.ts",
+      "server/project-overseer-merge-gate.test.ts",
+      "server/projects/playbook-review.integration.test.ts"
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-04T22:57Z",
-      "source": "pi-session:01a1a87a-1991-72d2-b9d3-5a131e125dc1#f6b2ecc1"
+      "at": "2026-11-07T16:57Z",
+      "source": "pi-session:01a1b63e-6ef3-71fd-af21-1389de50cc23#e142ea9f"
     }
   },
   "§app/access": {

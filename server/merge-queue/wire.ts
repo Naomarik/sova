@@ -1,10 +1,13 @@
+import { recordLand } from "../message-labels";
 import { existsSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { LANDING_FILE_NAME } from "../../pi-config/extensions/worktrees/landing.ts";
+import { defaultTarget, runGit } from "../../pi-config/extensions/worktrees/git.ts";
 import { stateRoot } from "../state-root";
-import { type BranchSummary, branchQueueOf, type LandingSummary, type LandingSummaryProject, type MergeQueueView, type WorktreeMergeProject, type WorktreeMergeStats, type WorktreeQueueInfo } from "../../shared/merge-queue";
+import { type BranchPlace, type BranchSummary, branchQueueOf, type LandingSummary, type MergeChatRequest, type MergeEntry, type LandingSummaryProject, type MergeQueueView, type WorktreeMergeProject, type WorktreeMergeStats, type WorktreeQueueInfo } from "../../shared/merge-queue";
 import type { RunMerge, ThreadEvent, WakeThread } from "./contract";
+import type { ThreadEntry, ThreadEvent as ThreadMessage } from "./thread";
 import { type IngestDeps, startIngest } from "./ingest";
 import { setLandingNoteSource, setMergeCardNoteSource } from "./card-note";
 import { MergeCards } from "./cards";
@@ -14,6 +17,8 @@ import { countBetween, realGit, revParse, worktreesOf } from "./guard";
 import { canonical } from "../../pi-config/extensions/worktrees/state.ts";
 import type { QueueSubject } from "../git-diff";
 import { type Owner, WorktreeOwners } from "./owners";
+import { branchPlace, placeLabel } from "./place";
+import { parseTargetCwd } from "../targets";
 import { engineServices, makeRunMerge } from "./run";
 import { queueGlanceOf, worktreeQueueInfo } from "./view";
 import type { ProjectGlanceQueue } from "../../shared/projects";
@@ -34,10 +39,15 @@ import { gitRefsStamp } from "../worktrees";
  */
 
 let queues: MergeQueues | null = null;
+/** A request's delivery stamped on its entry (ProjectQueue.requestDelivered), once the queues exist. */
+let stampDelivery: (request: string, delivery: "queued" | "delivered" | "fallback-tab" | "fallback-line", session?: string) => Promise<void> = async () => {};
+type ProjectQueueOf<Q> = Q extends { loaded(): Promise<(infer P)[]> } ? P : never;
 /** The branch summaries (branch-summaries.ts), one store for every queue. */
 let summaries: BranchSummaries | null = null;
 /** The summaries' background sweep (summary-sweep.ts): every Ready row's bullets once its chat is idle. */
 let sweep: SummarySweep | null = null;
+/** The run logs' packing (run-logs.ts): finished runs' logs gzipped a day after they ended, hourly. */
+let logSweep: { stop(): void } | null = null;
 type RowFields = { queue?: WorktreeQueueInfo; mergeProject?: WorktreeMergeProject; mergeStats?: WorktreeMergeStats; mergeServed?: true; mergeSummary?: BranchSummary; mergeOwner?: SessionWorktreeInfo["mergeOwner"] };
 let servedWriter: { refresh(): Promise<void>; stop(): void } | null = null;
 /** The served roots as last computed (the writer's pass): the thread wake's synchronous check. */
@@ -55,6 +65,50 @@ export async function worktreeQueueOf(path: string, branch: string): Promise<Row
   } catch {
     return {};
   }
+}
+
+/** What a repository's branches merge into now (§chat.worktrees/place): the queue's target where it serves the repo,
+ *  else what the worktree tool merges into. The tool's answer is kept briefly: the Session tab's rows are polled. */
+const TOOL_TARGET_MS = 10_000;
+const toolTargets = new Map<string, { at: number; v: Promise<string | undefined> }>();
+function toolTarget(root: string): Promise<string | undefined> {
+  const hit = toolTargets.get(root);
+  if (hit && Date.now() - hit.at < TOOL_TARGET_MS) return hit.v;
+  const v = defaultTarget(runGit, root).catch(() => undefined);
+  toolTargets.set(root, { at: Date.now(), v });
+  if (toolTargets.size > 500) toolTargets.delete(toolTargets.keys().next().value!);
+  return v;
+}
+
+/** The place of the branch whose folder is (or was) `path`, its target included (the Session tab's row). */
+export async function worktreePlaceOf(path: string): Promise<BranchPlace> {
+  const [rule, { projectOf }] = await Promise.all([servedRule(), import("../project-root")]);
+  return branchPlace({ listed: () => rule.everyProject(), projectOf: (p) => projectOf(p), exists: existsSync, remote: parseTargetCwd, targetOf: async (root) => (await rule.servedTarget(root)) ?? toolTarget(root) }, path);
+}
+
+/** The place as a session list row reads it: only stats while its repository's refs stay put. */
+export async function branchPlaceRead(path: string): Promise<BranchPlace | undefined> {
+  const d = listDeps;
+  if (!d) return undefined;
+  const rule = await servedRule();
+  return branchPlace({ listed: () => rule.everyProject(), projectOf: (p) => treeProject(d, p), exists: existsSync, remote: parseTargetCwd, targetOf: (root) => targetByStamp(d, root) }, path);
+}
+
+const toolTargetsSeen = new Map<string, { stamp: string; at: number; v: Promise<string | undefined> }>();
+/** branchPlaceRead's target: the queue's where it serves the repo, else the worktree tool's, asked again when the refs move. */
+async function targetByStamp(d: QueueListDeps, root: string): Promise<string | undefined> {
+  if (d.projectIdOf(root)) {
+    const s = await setupByStamp(d, root);
+    if (s.setUp) return s.target;
+  }
+  const key = servedKey(root);
+  const stamp = d.stamp(root, targetRefs(undefined));
+  const hit = toolTargetsSeen.get(key);
+  if (stamp !== null && hit?.stamp === stamp && d.now() - hit.at < VIEW_BACKSTOP_MS) return hit.v;
+  const v = toolTarget(root);
+  if (stamp !== null) toolTargetsSeen.set(key, { stamp, at: d.now(), v });
+  if (toolTargetsSeen.size > 500) toolTargetsSeen.delete(toolTargetsSeen.keys().next().value!);
+  return v;
 }
 
 /** What the session list's background reads need from the server's queues: no call here but `view` and `setupOf` runs
@@ -154,6 +208,8 @@ export async function branchQueueFields(path: string, branch: string): Promise<{
 interface KeptView {
   at: string;
   byBranch: Map<string, SessionBranchQueue>;
+  /** When each branch's newest entry was approved (ms epoch): never on the wire. */
+  began: Map<string, number>;
   project: BranchProject;
   digest: string;
   /** What a change no `save()` tells of would move (checkQueueViews): the target and the sent-back branches. */
@@ -210,16 +266,22 @@ export function noteQueueView(view: Pick<MergeQueueView, "root" | "at" | "projec
   const prev = latestViews.get(key);
   if (prev && prev.at > view.at) return;
   const branches = new Set([...view.checking, ...view.waiting, ...view.needsYou, ...view.needsFix, ...(view.waitingOnHost ?? []), ...view.recent.map((r) => r.entry)].map((e) => e.branch));
+  const entries = [...view.checking, ...view.waiting, ...view.needsYou, ...view.needsFix, ...(view.waitingOnHost ?? []), ...view.recent.map((r) => r.entry)];
   const byBranch = new Map<string, SessionBranchQueue>();
+  const began = new Map<string, number>();
   for (const b of branches) {
     const q = worktreeQueueInfo(view, b);
-    if (q) byBranch.set(b, branchQueueOf(q));
+    if (!q) continue;
+    byBranch.set(b, branchQueueOf(q));
+    const at = Date.parse(entries.find((e) => e.id === q.id)?.approval?.at ?? "");
+    if (Number.isFinite(at)) began.set(b, at);
   }
   const project = projectCut(view);
   const digest = JSON.stringify([project, ...[...byBranch].sort(([a], [b]) => a.localeCompare(b))]);
   latestViews.set(key, {
     at: view.at,
     byBranch,
+    began,
     project,
     digest,
     refs: [...targetRefs(view.target), ...view.needsFix.map((e) => `refs/heads/${e.branch}`)],
@@ -287,6 +349,11 @@ export function branchQueueNow(root: string, branch: string): SessionBranchQueue
   return v ? v.byBranch.get(branch) : null;
 }
 
+/** When a branch's newest entry in its queue's newest view was approved (ms epoch). Synchronous, no Git. */
+export function branchQueueBegan(root: string, branch: string): number | undefined {
+  return latestViews.get(servedKey(root))?.began.get(branch);
+}
+
 /** A queue's project facts in its newest view; null when none has been seen yet. Synchronous, no Git. */
 export function branchProjectNow(root: string): BranchProject | null {
   return latestViews.get(servedKey(root))?.project ?? null;
@@ -352,6 +419,11 @@ export function mergeBareSettings(root: string): Promise<import("../../shared/me
 /** A chat's merge queue cards (server/merge-queue/cards.ts); [] while the queue isn't started. */
 export function mergeCardsOf(session: string): import("../../shared/merge-queue").MergeCard[] {
   return cards?.cardsOf(session) ?? [];
+}
+
+/** A chat's review cards (§chat.merge-queue/review-card); [] while the queue isn't started. */
+export async function mergeReviewCardsOf(session: string): Promise<import("../../shared/merge-queue").ReviewCard[]> {
+  return (await cards?.reviewsRead(session)) ?? [];
 }
 
 /** The merge queue's hidden lines for a chat's next turn since its last card note; null: none. */
@@ -454,7 +526,7 @@ async function threadVerbDeps(served: { projectIdOf(root: string): string | null
   };
   return {
     async threadAsk(root, q) {
-      const [{ askUser }, { listSessions }, { sendQueueWake }, { notifyOnce }, { listProjects }] = await Promise.all([import("./asks"), import("../sessions-index"), import("./wake"), import("../push"), import("../projects/spaces")]);
+      const [{ askUser }, { listSessions }, { notifyOnce }, { listProjects }] = await Promise.all([import("./asks"), import("../sessions-index"), import("../push"), import("../projects/spaces")]);
       let projects: { id: string; name: string }[] = [];
       try {
         projects = listProjects();
@@ -462,8 +534,8 @@ async function threadVerbDeps(served: { projectIdOf(root: string): string | null
         projects = [];
       }
       return askUser(keeper(), root, q, {
+        ...(q.decide ? { decide: q.decide } : {}),
         sessions: () => listSessions(),
-        send: (path, text) => sendQueueWake(path, text),
         notify: async (n) => void (await notifyOnce(n)),
         project: (r) => {
           const id = served.projectIdOf(r);
@@ -544,7 +616,7 @@ async function projectRootOf(id: string): Promise<string | null> {
 
 /** What a queue diff scope names (server/git-diff.ts), from this queue's records only: an entry of project `id`, or a
  *  branch checked out in a worktree of its main checkout (its own `git worktree list`, never the checkout itself). */
-export async function queueSubjectOf(id: string, sel: { entry?: string; branch?: string }): Promise<QueueSubject | null> {
+export async function queueSubjectOf(id: string, sel: { entry?: string; branch?: string; review?: string }): Promise<QueueSubject | null> {
   if (!queues) return null;
   // A queue already read (the tab's own read loads it), else the registered project's.
   let q = (await queues.loaded()).find((x) => x.id === id);
@@ -563,6 +635,16 @@ export async function queueSubjectOf(id: string, sel: { entry?: string; branch?:
     q = await queues.get(root);
   }
   const root = q.root;
+  if (sel.review) {
+    // A finding's file (§chat.merge-queue/review-card): what that review read, while its commit is kept; then the branch now.
+    const e = q.entry(sel.review.split(":")[0]!);
+    const r = e?.project === q.id ? e.reviews?.find((x) => x.id === sel.review) : undefined;
+    if (!e || !r) return null;
+    const kept = async (sha: string) => (await realGit(["cat-file", "-e", `${sha}^{commit}`], root).catch(() => null))?.code === 0;
+    if ((await kept(r.tip)) && (await kept(r.base))) return { kind: "reviewed", root, target: e.target, branch: e.branch, tip: r.tip, base: r.base };
+    const w = (await worktreesOf(realGit, root)).find((x) => x.branch === e.branch && canonical(x.path) !== canonical(root));
+    return w ? { kind: "ready", root, target: e.target, branch: e.branch, worktree: w.path } : { kind: "entry", root, target: e.target, branch: e.branch, commit: e.commit };
+  }
   if (sel.entry) {
     const e = q.entry(sel.entry);
     if (!e || e.project !== q.id) return null;
@@ -673,11 +755,33 @@ export async function startMergeQueue(
   // Sova's own project keeps its old private-names file (merge-round.json) until it has its own.
   const self = await projectOf(fileURLToPath(new URL("../..", import.meta.url)));
   const legacyNames = self.state === "ok" ? { root: self.root, file: join(stateRoot(), "merge-round.json") } : undefined;
-  const sendTo = async (session: string, text: string): Promise<void> => {
+  // A request to the branch's chat, on the merge queue's chat queue there (§chat.merge-queue/requests).
+  const sendTo = async (session: string, text: string, info?: { kind?: string; branch?: string; entry?: string; place?: string }): Promise<void> => {
     const { listSessions } = await import("../sessions-index");
     const s = (await listSessions()).find((x) => x.id === session);
     if (!s) throw new Error(`no session ${session}`);
-    await (await import("./wake")).sendQueueWake(s.path, text);
+    await (await import("./wake")).sendQueueWake(s.path, text, undefined, info);
+  };
+  // The moments the thread rules on (rulings.ts): the queue's event as the thread's message reads it.
+  const rulingEvent = (ev: ThreadEvent, entry: ThreadEntry, base: { base?: string }): ThreadMessage | null => {
+    const run = ev.run ?? "";
+    const why = ev.why ? { summary: ev.why } : {};
+    switch (ev.kind) {
+      case "unattributed":
+        return { kind: "unattributed", entry, run, ...why, ...base };
+      case "review":
+        return { kind: "review", entry, run, findings: ev.findings ?? "", ...(ev.waits ? { waits: ev.waits } : {}), ...base };
+      case "resolution-failed":
+        return { kind: "resolution-failed", entry, run, files: ev.files ?? [], ...why, ...base, ...(ev.scratch ? { scratch: ev.scratch } : {}), ...(ev.scratchError ? { scratchError: ev.scratchError } : {}) };
+      case "drafts-changed":
+        return { kind: "drafts-changed", entry, ...(ev.names ? { names: ev.names } : {}), ...(ev.request ? { request: ev.request } : {}), ...base };
+      case "fix":
+        return { kind: "fix", entry, request: ev.request ?? "", asked: ev.asked ?? "", ...(ev.fixCommit ? { commit: ev.fixCommit } : {}), ...(ev.drafts ? { drafts: true } : {}), ...(ev.summary ? { summary: ev.summary } : {}), ...base };
+      case "chat-answer":
+        return { kind: "chat-answer", entry, request: ev.request ?? "", answer: ev.answer ?? "cant", text: ev.text ?? "", ...(ev.otherTried ? { otherTried: true } : {}) };
+      default:
+        return null;
+    }
   };
   const thread: WakeThread = (ev: ThreadEvent) => {
     const keeper = threadMod.mergeThread();
@@ -696,7 +800,7 @@ export async function startMergeQueue(
                 ? { kind: "names" as const, file: ev.namesFile ?? "", target: ev.target }
                 : ev.kind === "idle"
                   ? { kind: "idle" as const, entry, ...(ev.lastLanded ? { lastLanded: ev.lastLanded } : {}), ...(ev.head ? { head: ev.head } : {}) }
-                  : null;
+                  : rulingEvent(ev, entry, base);
     if (!mapped) return false;
     if (!servedNow.has(servedKey(ev.root))) return false;
     if (!threadMod.hasMergeThread()) return false;
@@ -714,9 +818,28 @@ export async function startMergeQueue(
       if (!path) return null;
       return (await import("../transcript-cards")).lastRowEntry(path);
     },
-    // A hand-back's wake: a normal message (queued after a turn in flight), its text marked as the queue's.
+    // A hand-back: a request on the merge queue's chat queue in the branch's chat (§chat.merge-queue/requests).
     wake: sendTo,
-    publish: (session, list) => publishFeed({ type: "merge_cards", session, cards: list }),
+    placeOf: (root, target) => ({ label: placeLabel(root, served.everyProject()), root, target }),
+    dropRequests: (entry) => void import("../topics").then((t) => t.dropMergeRequests(entry)),
+    delivered: (request, delivery) => void stampDelivery(request, delivery),
+    publish: (session, list, reviews) => publishFeed({ type: "merge_cards", session, cards: list, ...(reviews ? { reviews } : {}) }),
+    // A review card stands where its request goes: a worker's in the chat that runs it (wake.ts sendQueueWake).
+    homeOf: async (session) => {
+      const { getSessionSummary, workerParentOf } = await import("../sessions-index");
+      let path = await sessionPath(session);
+      for (let hops = 0; path && hops <= 8; hops++) {
+        const s = await getSessionSummary(path).catch(() => null);
+        if (!s) return null;
+        if (!s.workerSession) return { id: s.id, path: s.path };
+        path = await workerParentOf(path);
+      }
+      return null;
+    },
+    reviewerOf: (root, run) => {
+      const r = reviewerOfRun(root, run);
+      return r ? { session: r.session, path: r.path, ...(r.cleared ? { cleared: true as const } : {}) } : undefined;
+    },
     log: (line) => console.warn(line),
   });
   cards = mc;
@@ -778,18 +901,26 @@ export async function startMergeQueue(
       publishFeed({ type: "merge_queue", project: view.project, view });
       cardsDo(mc.sync(view));
     },
-    // A trial's end reaches the chat that started it, as a queue wake (it ends its turn and is woken).
-    trialEnded: (t, run) => {
+    // A trial's end reaches the chat that started it, as a request on its merge queue chat queue (between turns).
+    trialEnded: (t, run, root) => {
       if (t.by.kind !== "chat" || !t.by.session) return;
       const session = t.by.session;
       void (async () => {
         const path = await sessionPath(session);
         if (!path) return;
         (await import("../merge-readiness")).rereadReadiness(path);
-        await (await import("./wake")).sendQueueWake(path, trialEndedText(t, run));
+        await (await import("./wake")).sendQueueWake(path, trialEndedText(t, run), undefined, { kind: "trial", ...(t.branch ? { branch: t.branch, place: placeLabel(root, served.everyProject()) } : {}) });
       })().catch((err) => console.warn(`[merge-queue] trial note to ${session}: ${err instanceof Error ? err.message : err}`));
     },
     // Why a sent-back branch's newest commit isn't Ready to land: its chat's last readiness reading, never a fresh read.
+    // The chat's own newest check run, as its last readiness reading saw it (never a fresh read): a failing one keeps a
+    // fix out of line (§app.merge-queue/standing-approval), in the words Ready to land uses.
+    chatCheckFailing: async (session) => {
+      const [{ listSessions }, { readinessChecksOf }, { lastCheckWords }] = await Promise.all([import("../sessions-index"), import("../merge-readiness"), import("../ready-to-land")]);
+      const path = (await listSessions()).find((s) => s.id === session)?.path;
+      const c = path ? readinessChecksOf(path)?.lastCheck : undefined;
+      return c && !c.ok ? lastCheckWords(c) : null;
+    },
     newestReading: async (worktree, tip) => {
       const [{ listSessions }, { readinessReading }, { newestReadingOf }] = await Promise.all([import("../sessions-index"), import("../merge-readiness"), import("../ready-to-land")]);
       return newestReadingOf(worktree, tip, { owner: worktreeOwnerOf, pathOf: async (id) => (await listSessions()).find((s) => s.id === id)?.path, reading: readinessReading, canonical });
@@ -805,11 +936,33 @@ export async function startMergeQueue(
         .catch((err) => console.warn(`[merge-queue] ${root}: notification not sent: ${err instanceof Error ? err.message : String(err)}`));
     },
     // The branch's card in its own chat: raised at the approval, a revision at each outcome (cards.ts).
+    // A decision's one notification: a tap opens the branch's chat at its card (the tab when no chat shows it).
+    decided: (e, root) => {
+      // The chat that shows the decision (a worker's: the chat running it); none that can (archived, open in a terminal,
+      // an Overseer, a baton chat): the decision waits on the tab, and the tap opens the tab.
+      void Promise.all([import("../push"), import("./rulings"), import("./asks"), import("../sessions-index")])
+        .then(async ([{ notifyOnce }, { decisionPush }, { askTarget }, { listSessions }]) => {
+          const chat = askTarget(e, await listSessions().catch(() => []));
+          return notifyOnce(decisionPush(chat ? { ...e, session: chat.id } : e, projectIdOf(root), { onTab: !chat }));
+        })
+        .catch((err) => console.warn(`[merge-queue] ${root}: decision notification not sent: ${err instanceof Error ? err.message : String(err)}`));
+    },
+    // A merge thread question answered from the branch's chat with its decision: closed, and handed to the thread.
+    answerAsk: (root, ask, text, session) => {
+      const r = threadMod.mergeThreadKeeper()?.answer(root, ask, text, { kind: "chat", ...(session ? { session } : {}), from: "the user, in the branch's chat" });
+      if (r && !r.ok) console.warn(`[merge-queue] ${root}: answer to ${ask} not passed on: ${r.error}`);
+    },
     notify: (kind, e, extra) => {
       // An approved branch was Ready to land at its commit: its summary is written if it has none yet.
       // An approval's goes to the front of the line.
       if (kind === "approved") summaryFor(extra.root, e.branch, e.commit, true);
-      cardsDo(kind === "approved" ? mc.approved(e, extra.root) : mc.outcome(kind, e, { ...(extra.run ? { run: extra.run } : {}), root: extra.root }));
+      const request = (extra as { request?: MergeChatRequest }).request;
+      // A request that is no outcome of its own goes to the chat as itself (§chat.merge-queue/requests).
+      if (request && kind !== "needs-fix" && kind !== "sent-back") return cardsDo(mc.request(e, request, extra.run));
+      // A Land press closes the stretch before it (§app.message-labels/labelling), at the press's time; a typed "land it" is a
+      // message of its own, and an automatic re-queue of a checked fix is no press.
+      if (kind === "approved" && extra.press && e.approval.by === "land-button" && e.session) recordLand(e.session, Date.parse(extra.press));
+      cardsDo(kind === "approved" ? mc.approved(e, extra.root) : mc.outcome(kind as never, e, { ...(extra.run ? { run: extra.run } : {}), root: extra.root, ...(request ? { request } : {}) }));
     },
     summaryOf: (root, branch, commit): BranchSummary | undefined => bs.summaryOf(root, branch, commit),
     pruneSummaries: (root, live, shown) => void bs.prune(root, live, shown),
@@ -839,6 +992,53 @@ export async function startMergeQueue(
     releaseEvent: (ev) => releaseWire.releaseEvent(ev),
   });
   const q = queues;
+  // The merge queue's chat queue (§chat.merge-queue/requests, channel.ts): delivery stamps, Stop's pause, and the held
+  // note of a decision going with the user's own message.
+  stampDelivery = async (request, delivery, session) => {
+    for (const pq of await q.loaded()) if (pq.requestOf(request)) return pq.requestDelivered(request, delivery, session);
+    // A before-Land request (readiness's notes, no entry): the chat it reached may answer it (answers.ts).
+    if (delivery === "delivered" && session) (await import("./answers")).looseDelivered(request, session);
+  };
+  const { setChannelHooks } = await import("./channel");
+  setChannelHooks({
+    requestDelivered: (request, delivery, session) => void stampDelivery(request, delivery, session).catch(() => {}),
+    chatPaused: (sessionId, paused) =>
+      void q
+        .loaded()
+        .then((all) => Promise.all(all.map((pq) => pq.chatPaused(sessionId, paused))))
+        .catch((err) => console.warn(`[merge-queue] pause of ${sessionId}: ${err instanceof Error ? err.message : err}`)),
+    takeHeldNote: async (chat, userText, decision) => {
+      const loaded = await q.loaded();
+      // A question held on the tab (q15): the user answers in the merge thread's own chat; their message carries it.
+      const keeper = threadMod.mergeThreadKeeper();
+      for (const pq of loaded) {
+        if (!keeper?.isThreadChat(pq.root, chat.sessionId)) continue;
+        // The question the composer named (`ak_…`), else the newest one held on the tab; a decision id is no question.
+        if (decision && !decision.startsWith("ak_")) break;
+        const ask = decision ? keeper.asks(pq.root).find((x) => x.id === decision && !x.answered) : keeper.openAsk(pq.root);
+        if (!ask?.onTab) continue;
+        const r = keeper.answer(pq.root, ask.id, userText, { kind: "operator", from: "the user, in the merge thread", quiet: true });
+        if (r.ok) return { request: ask.id, ...(ask.branch ? { branch: ask.branch } : {}), text: `The question you asked the user (${ask.id}${ask.branch ? `, about ${ask.branch}` : ""}): ${ask.question}\nTheir message above is their answer.` };
+      }
+      const waiting: { pq: ProjectQueueOf<typeof q>; e: MergeEntry }[] = [];
+      for (const pq of loaded) for (const e of pq.entries()) if (e.decision && !e.decision.answered && e.decision.heldNote) waiting.push({ pq, e });
+      if (!waiting.length) return null;
+      const [{ listSessions }, { askTarget }] = await Promise.all([import("../sessions-index"), import("./asks")]);
+      const sessions = await listSessions();
+      // The decision the user answered: the one their composer named, else the newest waiting here (the card nearest
+      // the message box). Never another chat's, never an older one by queue order.
+      const { pickHeldDecision } = await import("./channel");
+      const pick = pickHeldDecision(waiting, chat.sessionId, decision, (e) => askTarget(e, sessions)?.id);
+      for (const { pq, e } of pick ? [pick] : []) {
+        const d = e.decision!;
+        const held = await pq.decisionAnswered(e.id, d.id, userText, { session: chat.sessionId });
+        if (!held) continue;
+        void stampDelivery(held.request, "delivered", chat.sessionId).catch(() => {});
+        return { request: held.request, branch: e.branch, text: held.text };
+      }
+      return null;
+    },
+  });
   // A served tree that reads Ready to land at a commit (merge-readiness.ts): its branch summary is written.
   const { configureReadiness } = await import("../merge-readiness");
   configureReadiness({
@@ -900,6 +1100,9 @@ export async function startMergeQueue(
     isReviewerChat: review.isReviewerChat,
     deliverReview: review.deliverReview,
     ...(await threadVerbDeps(served)),
+    // merge.live / merge.restart (restart.ts) and merge.names (names-verb.ts): what the sandboxed thread can't reach.
+    restart: await (await import("./restart")).liveRestartDeps(),
+    names: async (pq, action, text) => (await import("./names-verb")).namesStep(pq, action, text, join(threadMod.DEFAULT_PLAYBOOK_DIR, "scripts", "discover-names.mjs")),
   });
   // A setup run changes the answer: the chats' file follows at once.
   projectEngine().merger = async (verb, body, caller) => {
@@ -930,7 +1133,7 @@ export async function startMergeQueue(
     const summary = at ? bs.summaryOf(p.root, branch, at) : undefined;
     const owner = await worktreeOwnerOf(path).catch(() => null);
     const ownerRow = owner ? await ownerRowOf(owner) : undefined;
-    return { ...(summary ? { mergeSummary: summary } : {}), ...(ownerRow ? { mergeOwner: ownerRow } : {}), ...(queue ? { queue } : {}), mergeProject: { id, root: p.root, target: v.target, checks: v.checks, review: v.review, ...(v.invalid ? { invalid: v.invalid } : {}), ...(v.paused ? { paused: v.paused.why } : {}) }, ...(stats ? { mergeStats: stats } : {}), mergeServed: true };
+    return { ...(summary ? { mergeSummary: summary } : {}), ...(ownerRow ? { mergeOwner: ownerRow } : {}), ...(queue ? { queue } : {}), mergeProject: { id, root: p.root, target: v.target, checks: v.checks, review: v.review, ...(v.invalid ? { invalid: v.invalid } : {}), ...(v.paused ? { paused: v.paused.why } : {}), ...(v.settings?.how?.effective ? { how: v.settings.how.effective } : {}) }, ...(stats ? { mergeStats: stats } : {}), mergeServed: true };
   };
   listDeps = {
     projectOf: (path) => projectOf(path),
@@ -957,6 +1160,7 @@ export async function startMergeQueue(
     draftsStamp: (worktree) => draftsStamp(worktree),
     now: Date.now,
   };
+  logSweep = (await import("./run-logs")).startRunLogSweep({ queues: async () => (queues ? queues.loaded() : []) });
   // Rows read before this line have no queue fields, and nothing else re-reads an archived one.
   void rereadUnrooted();
   // The chats' file is current before the typed go-ahead door opens.
@@ -966,6 +1170,8 @@ export async function startMergeQueue(
     void served
       .served(root)
       .then((yes) => (yes ? q.get(root) : null))
+      // A restart this queue asked for: checked against the commit this start runs (restart.ts).
+      .then(async (pq) => (pq ? (await import("./restart")).checkRestartAtStart((await import("./restart")).restartQueueOf(pq), await (await import("./restart")).liveRestartDeps()) : null))
       .catch((err) => console.warn(`[merge-queue] ${root}: ${err instanceof Error ? err.message : err}`));
   ingest = startIngest(
     ingestDepsFor({
@@ -1046,6 +1252,8 @@ export const branchSummariesNow = (): BranchSummaries | null => summaries;
 export async function stopMergeQueue(): Promise<void> {
   sweep?.stop();
   sweep = null;
+  logSweep?.stop();
+  logSweep = null;
   summaries = null;
   rowsOf = null;
   listDeps = null;

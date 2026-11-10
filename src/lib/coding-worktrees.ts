@@ -10,9 +10,11 @@ import type { SessionSummary } from "../../shared/protocol";
     defaults) and how to change it, split so the mode words go in mono. */
 export function codingModeHint(now: CodingModeNow): { before: string; mode: string; after: string } {
   const mode = codingModeWords(now);
-  return now.subagents
-    ? { before: "Coding sessions start in ", mode, after: `, with the ${now.subagents.name} subagent profile: this computer's defaults. Save as default in any chat's mode menu changes them.` }
-    : { before: "Coding sessions start in ", mode, after: ": this computer's default mode. Save as default in any chat's mode menu changes it." };
+  // An older server sends no profile: its default helpers' name stands in, as before.
+  const profile = now.profile ?? (now.subagents ? { id: now.subagents.id, name: now.subagents.name } : { id: "off", name: "Off" });
+  return profile.id === "off"
+    ? { before: "Coding sessions start on Off, in ", mode, after: ": this computer's default mode. Make Default in Settings → Profiles changes it." }
+    : { before: `Coding sessions start on ${profile.name}, in `, mode, after: ": this computer's default profile. Make Default in Settings → Profiles changes it." };
 }
 
 // ---- coding sessions and their worktrees ------------------------------------------------------------

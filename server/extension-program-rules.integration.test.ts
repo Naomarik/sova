@@ -1,0 +1,256 @@
+// Run: pnpm test:int -- server/extension-program-rules.integration.test.ts
+// What an approval does to a program, in this process: on both drivers where the host has both, a version with no
+// program stops the old one and the pass keeps it stopped, and Choose Folder gives a new program a port as Install and
+// Approve do. On the detached driver, whose paths they read: an id reaches no file outside what the list and units name.
+import assert from "node:assert/strict";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
+import { after, beforeEach, test } from "node:test";
+import { Hono } from "hono";
+
+const root = realpathSync(mkdtempSync(join(tmpdir(), "sova-ext-rules-")));
+process.env.PI_CODING_AGENT_DIR = join(root, "agent");
+process.env.SOVA_PROJECT_NO_SYSTEMD = "1";
+delete process.env.SOVA_EXTENSIONS_FILE;
+mkdirSync(join(root, "agent", "sessions", "live"), { recursive: true });
+mkdirSync(join(root, "agent", "sova"), { recursive: true });
+
+const loader = await import("./extension-loader");
+const program = await import("./extension-program");
+const ext = await import("./extensions");
+const gate = await import("./extension-gate");
+const { registerExtensionRoutes } = await import("./extension-routes");
+const { ExtensionKeys, keyFileName } = await import("./extension-keys");
+gate.migrateTrust(() => ({}));
+
+const DRIVERS = ["detached", "systemd"] as const;
+type DriverName = (typeof DRIVERS)[number];
+let driverNow: DriverName = "detached";
+function use(driver: DriverName): void {
+  driverNow = driver;
+  if (driver === "detached") process.env.SOVA_PROJECT_NO_SYSTEMD = "1";
+  else delete process.env.SOVA_PROJECT_NO_SYSTEMD;
+  program.resetProgramDriverForTest();
+}
+// The driver this host really selects, not whether systemctl answers: a fallback must never pass as a systemd run.
+use("systemd");
+const hasSystemd = !(await program.noServiceManager());
+use("detached");
+// Each test says its driver; those that don't are the detached driver's, whose paths they read.
+beforeEach(() => use("detached"));
+
+const started = new Map<string, DriverName>();
+after(async () => {
+  for (const [id, driver] of started) {
+    use(driver);
+    await program.stopProgram(id).catch(() => {});
+  }
+  rmSync(root, { recursive: true, force: true });
+});
+
+const PROGRAM = `import { createServer } from "node:http";
+createServer((q, r) => r.end(JSON.stringify({ pid: process.pid }))).listen(Number(process.env.PORT), "127.0.0.1");
+`;
+let n = 0;
+function folder(id: string, kind: "program" | "page"): string {
+  const d = join(root, `f${++n}`);
+  mkdirSync(d, { recursive: true });
+  const desc: Record<string, unknown> = { version: 1, id, title: id, needsContract: "1.20" };
+  if (kind === "program") {
+    desc.backend = { run: ["node", "s.mjs"] };
+    writeFileSync(join(d, "s.mjs"), PROGRAM);
+  } else {
+    desc.page = "dist";
+    mkdirSync(join(d, "dist"));
+    writeFileSync(join(d, "dist", "index.html"), "<p>");
+  }
+  writeFileSync(join(d, "sova-extension.json"), JSON.stringify(desc));
+  started.set(id, driverNow);
+  return d;
+}
+const install = async (d: string): Promise<string> => {
+  const r = await loader.reviewFolder(d);
+  assert.ok(r.ok, JSON.stringify(r));
+  return loader.installFolder(d, r.review.version);
+};
+const state = async (id: string): Promise<string> => (await program.programStatus(id)).state;
+const up = (s: string) => s === "active" || s === "activating";
+const until = async (what: string, ok: () => Promise<boolean> | boolean, ms = 15_000): Promise<void> => {
+  const end = Date.now() + ms;
+  while (!(await ok())) {
+    if (Date.now() > end) assert.fail(`${what}: never`);
+    await new Promise((r) => setTimeout(r, 50));
+  }
+};
+const pageOnly = (d: string, id: string) => {
+  rmSync(join(d, "s.mjs"), { force: true });
+  mkdirSync(join(d, "dist"), { recursive: true });
+  writeFileSync(join(d, "dist", "index.html"), "<p>");
+  writeFileSync(join(d, "sova-extension.json"), JSON.stringify({ version: 1, id, title: id, needsContract: "1.20", page: "dist" }));
+};
+
+for (const driver of DRIVERS) {
+  test(`approving a version with no program stops the old one, on ${driver}`, { timeout: 60_000, skip: driver === "systemd" && !hasSystemd ? "no systemd user manager" : false }, async () => {
+    use(driver);
+    const d = folder(`dropapprove-${driver}`, "program");
+    await install(d);
+    await until("started", async () => up(await state(`dropapprove-${driver}`)));
+    pageOnly(d, `dropapprove-${driver}`);
+    const r = await loader.reviewEntry(`dropapprove-${driver}`);
+    assert.ok(r.ok, JSON.stringify(r));
+    await loader.approveExtension(`dropapprove-${driver}`, r.review.version);
+    assert.ok(!up(await state(`dropapprove-${driver}`)), "the approve stopped it");
+  });
+
+  test(`choosing a folder with no program stops the old one, on ${driver}`, { timeout: 60_000, skip: driver === "systemd" && !hasSystemd ? "no systemd user manager" : false }, async () => {
+    use(driver);
+    const d = folder(`dropchoose-${driver}`, "program");
+    await install(d);
+    await until("started", async () => up(await state(`dropchoose-${driver}`)));
+    const to = folder(`dropchoose-${driver}`, "page");
+    const r = await loader.reviewFolder(to, `dropchoose-${driver}`);
+    assert.ok(r.ok, JSON.stringify(r));
+    await loader.chooseFolder(`dropchoose-${driver}`, to, r.review.version);
+    assert.ok(!up(await state(`dropchoose-${driver}`)), "the choice stopped it");
+  });
+
+  test(`a pass, and a restart of the pass, stop a unit whose active entry has no program, on ${driver}`, { timeout: 60_000, skip: driver === "systemd" && !hasSystemd ? "no systemd user manager" : false }, async () => {
+    use(driver);
+    const d = folder(`leftover-${driver}`, "page");
+    await install(d);
+    const spec = { id: `leftover-${driver}`, run: [process.execPath, join(d, "left.mjs")], folder: d, api: `http://127.0.0.1:${await program.freePort()}` };
+    writeFileSync(spec.run[1]!, PROGRAM);
+    await program.startProgram(spec);
+    assert.ok(up(await state(`leftover-${driver}`)), "a leftover unit runs");
+    assert.equal(ext.listedExtension(`leftover-${driver}`)?.state, "on");
+    await loader.loaderPass();
+    assert.ok(!up(await state(`leftover-${driver}`)), "the pass stopped it");
+
+    await program.startProgram(spec);
+    assert.ok(up(await state(`leftover-${driver}`)), "a leftover unit runs again");
+    loader.resetLoaderForTest();
+    const stop = loader.startExtensionLoader();
+    try {
+      await until("a restart of the pass stops it", async () => !up(await state(`leftover-${driver}`)));
+    } finally {
+      stop();
+    }
+  });
+
+  test(`Choose Folder gives a new program a port; Start and Restart Program work, on ${driver}`, { timeout: 60_000, skip: driver === "systemd" && !hasSystemd ? "no systemd user manager" : false }, async () => {
+    use(driver);
+    const d = folder(`gainsprogram-${driver}`, "page");
+    await install(d);
+    assert.equal(await state(`gainsprogram-${driver}`).then(up), false);
+    const to = folder(`gainsprogram-${driver}`, "program");
+    const r = await loader.reviewFolder(to, `gainsprogram-${driver}`);
+    assert.ok(r.ok, JSON.stringify(r));
+    await loader.chooseFolder(`gainsprogram-${driver}`, to, r.review.version);
+    const api = ext.listedExtension(`gainsprogram-${driver}`)?.raw.api;
+    assert.equal(typeof api, "string", "the entry has an address");
+    assert.ok(up(await state(`gainsprogram-${driver}`)), "the unit runs");
+    const pid = async () => ((await (await fetch(`${api}/api/health`)).json()) as { pid: number }).pid;
+    let first = 0;
+    await until("it answers", async () => {
+      first = await pid().catch(() => 0);
+      return first > 0;
+    });
+    await loader.programAction(`gainsprogram-${driver}`, "restart");
+    let second = 0;
+    await until("Restart Program runs a new process", async () => {
+      second = await pid().catch(() => 0);
+      return second > 0 && second !== first;
+    });
+    await loader.programAction(`gainsprogram-${driver}`, "stop");
+    await until("stopped", async () => !up(await state(`gainsprogram-${driver}`)));
+    await loader.programAction(`gainsprogram-${driver}`, "start");
+    await until("Start runs it", async () => (await pid().catch(() => 0)) > 0);
+  });
+}
+
+test("the log route answers only for an id on the list or among the units", async () => {
+  const app = new Hono();
+  registerExtensionRoutes(app);
+  const log = (id: string) => app.request(`/api/extensions/${encodeURIComponent(id)}/log`);
+  // The unit's name is `<prefix>../../../secret`: the prefix's segment and two more above the driver's log folder.
+  const secret = join(root, "agent", "sova", "extension-programs", "secret.log");
+  mkdirSync(dirname(secret), { recursive: true });
+  writeFileSync(secret, "SECRET LINE\n");
+  const res = await log("../../../secret");
+  const text = await res.text();
+  assert.equal(res.status, 404, `an encoded ../ answered ${res.status}: ${text}`);
+  assert.ok(!text.includes("SECRET"), text);
+  assert.equal((await log("nobody")).status, 404);
+
+  const d = folder("logged", "page");
+  await install(d);
+  assert.equal((await log("logged")).status, 200, "one on the list");
+  const orphan = folder("orphan", "program");
+  await program.startProgram({ id: "orphan", run: ["node", "s.mjs"], folder: orphan, api: `http://127.0.0.1:${await program.freePort()}` });
+  assert.equal(ext.listedExtension("orphan"), undefined);
+  assert.equal((await log("orphan")).status, 200, "one among the units");
+});
+
+test("removing a broken entry named with a path deletes nothing outside its data", async () => {
+  const victim = join(root, "agent", "victim");
+  mkdirSync(victim, { recursive: true });
+  writeFileSync(join(victim, "keep"), "1");
+  const listFile = join(root, "agent", "sova", "extensions.json");
+  const list = JSON.parse(readFileSync(listFile, "utf8"));
+  list.extensions.push({ id: "../../victim", title: "Broken" });
+  writeFileSync(listFile, JSON.stringify(list));
+  await loader.removeExtension("../../victim", true);
+  assert.ok(existsSync(join(victim, "keep")), "what lies outside extension-data is untouched");
+  assert.ok(!JSON.parse(readFileSync(listFile, "utf8")).extensions.some((e: { id: string }) => e.id === "../../victim"), "the entry left the list");
+});
+
+test("removing a broken entry named .. deletes no state", async () => {
+  const listFile = join(root, "agent", "sova", "extensions.json");
+  const list = JSON.parse(readFileSync(listFile, "utf8"));
+  list.extensions.push({ id: "..", title: "Broken" });
+  writeFileSync(listFile, JSON.stringify(list));
+  await loader.removeExtension("..", true);
+  assert.ok(existsSync(listFile), "the state folder is still there");
+  assert.ok(!JSON.parse(readFileSync(listFile, "utf8")).extensions.some((e: { id: string }) => e.id === ".."), "the entry left the list");
+});
+
+test("a ../ id in the trust file stops and deletes nothing, and its approval is forgotten", async () => {
+  // A real unit's record, copied where the bad id's unit name would lead: stopping that name would kill this process.
+  const d = folder("bystander", "program");
+  await program.startProgram({ id: "bystander", run: ["node", "s.mjs"], folder: d, api: `http://127.0.0.1:${await program.freePort()}` });
+  assert.ok(up(await state("bystander")));
+  const programs = join(root, "agent", "sova", "extension-programs");
+  const record = join(programs, "procs", `${program.unitPrefix()}bystander.json`);
+  const planted = join(programs, "victim.json");
+  writeFileSync(planted, readFileSync(record));
+  const bad = "../../../victim";
+  gate.recordApproval(bad, { version: "v", entry: "e", code: "c", sig: "s" });
+  for (let i = 0; i < 4; i++) await loader.loaderPass();
+  assert.ok(existsSync(planted), "the file the id leads to is still there");
+  assert.ok(up(await state("bystander")), "the process its record names still runs");
+  assert.equal(gate.approvedIds().includes(bad), false, "the approval is forgotten");
+});
+
+test("a program's unit name and data folder refuse an id that isn't one", () => {
+  for (const bad of ["..", ".", "../x", "a/b", ""]) {
+    assert.throws(() => program.unitOf(bad), /Not an extension.s id/, `unitOf(${bad})`);
+    assert.throws(() => program.extensionDataDir(bad), /Not an extension.s id/, `extensionDataDir(${bad})`);
+  }
+  assert.ok(program.unitOf("a.b_c-D").endsWith("a.b_c-D"));
+  assert.ok(program.extensionDataDir("a.b").endsWith(join("extension-data", "a.b")));
+});
+
+test("a ../ id in the key hashes loses its record and deletes no file", () => {
+  const hashFile = join(root, "agent", "sova", "bad-key-hashes.json");
+  const dir = join(root, "agent", "sova", "bad-keys", "inner");
+  mkdirSync(dir, { recursive: true });
+  const bad = "../outside";
+  const leads = join(dir, keyFileName(bad));
+  writeFileSync(leads, "keep\n");
+  writeFileSync(hashFile, JSON.stringify({ version: 1, keys: { [bad]: { hash: "a".repeat(64), issuedAt: "2026-01-01T00:00:00.000Z" } } }));
+  const keys = new ExtensionKeys({ dir: () => dir, hashFile: () => hashFile, installed: () => [] });
+  for (let i = 0; i < 4; i++) keys.sync();
+  assert.ok(existsSync(leads), "the file the id leads to is still there");
+  assert.ok(!readFileSync(hashFile, "utf8").includes("outside"), "its record is gone");
+});

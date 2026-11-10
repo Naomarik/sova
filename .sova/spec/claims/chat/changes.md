@@ -130,10 +130,16 @@ comparison has only that one.
   on what that merge brought in: the merge commit against its first parent, or, for a
   fast-forward, the branch from the tracked worktree's base (§chat.changes/endpoint).
 - An agent's `show_changes` result (§chat.changes/show-changes-card).
+- A finding's file on a merge queue review card (§chat.merge-queue/review-card) opens the viewer on
+  that file in the change that was reviewed (a queue comparison): the commit the reviewer read
+  against the target it was merged onto ("{branch} as reviewed ({sha})" against "{target} at {sha}");
+  once either commit is no longer kept, the branch as it is now in its worktree against the target
+  (else its queued commit), and the review card says the lines may have moved. It opens on that
+  file, not at its line.
 
 Nothing of the viewer exists until it is shown: a Review Changes control whose viewer isn't open,
 on the session pane, the Worktrees modal, the Merge Queue view, a merge card or a `show_changes`
-card, reads nothing from the server and
+card, or a review card's file link, reads nothing from the server and
 parses, diffs, places and highlights nothing; closing the viewer drops it.
 
 From the session pane, the Worktrees modal, the Merge Queue view and a transcript's card the viewer

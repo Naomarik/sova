@@ -1,15 +1,17 @@
 /**
- * Team defaults: the one reader and writer of `<agent dir>/team-defaults.json`, the global file
- * that gives every coordinated team a coordinator and a monitor (index.ts applies it at
- * team_create). Sova's Settings writes it; this extension re-reads it at every team_create,
- * team_add, roster answer and team_succeed, and never snapshots it into a session.
+ * Team defaults: the one reader and writer of `<agent dir>/team-defaults.json`, the legacy file
+ * that chooses the models, thresholds and names of the coordinator and monitor Sova gives every
+ * team (index.ts adds both at team_create). Sova's Settings writes it; this extension re-reads it
+ * at every team_create, team_add, roster answer and team_succeed, and never snapshots it into a
+ * session.
  *
  * Node built-ins only: Sova's server imports this file directly (like ../mode/delegate.ts), so it
  * must never import the pi runtime or another pi-config module.
  *
- * Absent file = feature off. Malformed file = feature off plus the error list, and the file is
- * never overwritten by a reader. A key the file leaves out takes DEFAULT_TEAM_DEFAULTS' value;
- * a key it states must be valid, and an unknown key is an error.
+ * Absent file = both roles on the chat's own model with the built-in values; malformed = the same
+ * plus the error list, and the file is never overwritten by a reader (effectiveTeamDefaults). A key
+ * the file leaves out takes DEFAULT_TEAM_DEFAULTS' value; a key it states must be valid, and an
+ * unknown key is an error. `coordinator.enabled` and `monitor.enabled` are accepted and ignored.
  */
 import * as fs from "node:fs";
 import * as os from "node:os";
@@ -33,7 +35,6 @@ export interface WorkerTuple {
 	effort?: TeamDefaultEffort;
 }
 export interface CoordinatorDefaults {
-	enabled: boolean;
 	role: string;
 	primary: WorkerTuple;
 	fallback: WorkerTuple | null;
@@ -45,7 +46,6 @@ export interface MonitorUsageDefaults {
 	resumeMarginMinutes: number;
 }
 export interface MonitorDefaults {
-	enabled: boolean;
 	role: string;
 	primary: WorkerTuple;
 	fallback: WorkerTuple | null;
@@ -66,9 +66,9 @@ export interface TeamDefaultsFile {
 
 export const DEFAULT_TEAM_DEFAULTS: TeamDefaultsFile = {
 	version: 1,
-	coordinator: { enabled: true, role: "coordinator", primary: { backend: "claude-code", model: latestClaude("opus").id, effort: "medium" }, fallback: null, instructions: "" },
+	coordinator: { role: "coordinator", primary: { backend: "claude-code", model: latestClaude("opus").id, effort: "medium" }, fallback: null, instructions: "" },
 	monitor: {
-		enabled: true, role: "monitor", primary: { backend: "pi", model: "ollama-cloud/deepseek-v4.1-flash", effort: "low" },
+		role: "monitor", primary: { backend: "pi", model: "ollama-cloud/deepseek-v4.1-flash", effort: "low" },
 		fallback: { backend: "claude-code", model: latestClaude("sonnet").id, effort: "low" },
 		contextPct: 60, everyMinutes: 10, usage: { enabled: true, pausePct: 90, resumeMarginMinutes: 5 }, instructions: "",
 	},
@@ -109,6 +109,10 @@ class Checker {
 		}
 		for (const key of Object.keys(value)) if (!keys.includes(key)) this.fail(at ? `${at}.${key}` : key, "unknown key");
 		return value;
+	}
+	/** A switch that turns nothing off: a boolean when present, never part of the value. */
+	ignoredBoolean(at: string, value: unknown): void {
+		if (value !== undefined && typeof value !== "boolean") this.fail(at, "must be true or false");
 	}
 	boolean(at: string, value: unknown, fallback: boolean): boolean {
 		if (value === undefined) return fallback;
@@ -188,17 +192,17 @@ export function parseTeamDefaults(input: unknown): TeamDefaultsParse {
 	const mo = root.monitor === undefined ? {} : c.object("monitor", root.monitor, ["enabled", "role", "primary", "fallback", "contextPct", "everyMinutes", "usage", "instructions"]) ?? {};
 	const us = mo.usage === undefined ? {} : c.object("monitor.usage", mo.usage, ["enabled", "pausePct", "resumeMarginMinutes"]) ?? {};
 	const ho = root.handover === undefined ? {} : c.object("handover", root.handover, ["retireTimeoutMinutes"]) ?? {};
+	c.ignoredBoolean("coordinator.enabled", co.enabled);
+	c.ignoredBoolean("monitor.enabled", mo.enabled);
 	const value: TeamDefaultsFile = {
 		version: 1,
 		coordinator: {
-			enabled: c.boolean("coordinator.enabled", co.enabled, d.coordinator.enabled),
 			role: c.role("coordinator.role", co.role, d.coordinator.role),
 			primary: c.tuple("coordinator.primary", co.primary, d.coordinator.primary),
 			fallback: c.fallbackTuple("coordinator.fallback", co.fallback),
 			instructions: c.instructions("coordinator.instructions", co.instructions),
 		},
 		monitor: {
-			enabled: c.boolean("monitor.enabled", mo.enabled, d.monitor.enabled),
 			role: c.role("monitor.role", mo.role, d.monitor.role),
 			primary: c.tuple("monitor.primary", mo.primary, d.monitor.primary),
 			fallback: c.fallbackTuple("monitor.fallback", mo.fallback),
@@ -255,20 +259,53 @@ export function writeTeamDefaults(agentDir: string, value: unknown): TeamDefault
 
 const tupleText = (t: WorkerTuple | null): string => (t ? `${t.backend} · ${t.model}${t.effort ? ` · ${t.effort}` : ""}` : "none");
 
-/** What `/team defaults` prints: the effective defaults, or why they are off. */
-export function describeTeamDefaults(state: TeamDefaultsState): string {
-	if (state.state === "absent") return `Team defaults: off (${state.note ?? `no file at ${state.file}`}). Teams get no coordinator or monitor.`;
-	if (state.state === "malformed")
-		return [`Team defaults: off — ${state.file} is malformed (it is never overwritten here):`, ...state.errors.map((e) => `  - ${e}`)].join("\n");
-	const { coordinator: c, monitor: m, handover: h } = state.value;
+export const malformedWarning = (state: { file: string; errors: string[] }): string =>
+	`Warning: ${state.file} is malformed (${state.errors.join("; ")}), so this team's coordinator and monitor run on this chat's own model with Sova's built-in values. Fix it in Sova's Settings; it is never overwritten here.`;
+
+/** Team defaults as every team action uses them: always a full value (effectiveTeamDefaults). */
+export interface TeamDefaultsNow {
+	value: TeamDefaultsFile;
+	/** The settings name no model for the roles: both tuples are the chat's own model, with no fallback. */
+	chatsOwn: boolean;
+	/** Set when resolution fell to a malformed legacy file. */
+	warning?: string;
+	/** Where the value came from, for /team defaults. */
+	state: TeamDefaultsState;
+}
+
+/**
+ * The one resolver: the settings' value when they name one, else DEFAULT_TEAM_DEFAULTS with both
+ * roles on `chat` (the chat's own model and effort) and no fallback, plus the malformed warning
+ * when there is one. `chat` is undefined only for a chat with no model, which keeps the built-in tuples.
+ */
+export function effectiveTeamDefaults(state: TeamDefaultsState, chat: WorkerTuple | undefined): TeamDefaultsNow {
+	if (state.state === "ok") return { value: state.value, chatsOwn: false, state };
+	const value = clone(DEFAULT_TEAM_DEFAULTS);
+	if (chat) {
+		value.coordinator = { ...value.coordinator, primary: { ...chat }, fallback: null };
+		value.monitor = { ...value.monitor, primary: { ...chat }, fallback: null };
+	}
+	return { value, chatsOwn: chat !== undefined, ...(state.state === "malformed" ? { warning: malformedWarning(state) } : {}), state };
+}
+
+/** What `/team defaults` prints: both roles, the model each will use, the thresholds, and where they come from. */
+export function describeTeamDefaults(now: TeamDefaultsNow): string {
+	const { state, value } = now;
+	const { coordinator: c, monitor: m, handover: h } = value;
+	const head =
+		state.state === "ok"
+			? `Team defaults (${state.file}):`
+			: state.state === "malformed"
+				? [`Team defaults: ${state.file} is malformed (it is never overwritten here), so both roles use this chat's own model with Sova's built-in values:`, ...state.errors.map((e) => `  - ${e}`)].join("\n")
+				: `Team defaults: ${state.note ?? `no file at ${state.file}`}, so both roles use this chat's own model with Sova's built-in values:`;
+	const model = (t: { primary: WorkerTuple; fallback: WorkerTuple | null }) =>
+		now.chatsOwn ? `this chat's own model (${tupleText(t.primary)})` : `primary ${tupleText(t.primary)}, fallback ${tupleText(t.fallback)}`;
 	return [
-		`Team defaults (${state.file}):`,
-		`  Coordinator: ${c.enabled ? `on — role "${c.role}", primary ${tupleText(c.primary)}, fallback ${tupleText(c.fallback)}` : "off"}${c.enabled && c.instructions ? " · extra instructions set" : ""}`,
-		`  Monitor: ${m.enabled ? `on — role "${m.role}", primary ${tupleText(m.primary)}, fallback ${tupleText(m.fallback)}` : "off"}${m.enabled && m.instructions ? " · extra instructions set" : ""}`,
-		...(m.enabled
-			? [`    every ${m.everyMinutes} min · wrap-up at ${m.contextPct}% context · usage ${m.usage.enabled ? `pause at ${m.usage.pausePct}%, resume ${m.usage.resumeMarginMinutes} min after reset` : "not watched"}`]
-			: []),
+		head,
+		"  Every team gets this coordinator and monitor from Sova; the chat names only the workers.",
+		`  Coordinator: role "${c.role}", ${model(c)}${c.instructions ? " · extra instructions set" : ""}`,
+		`  Monitor: role "${m.role}", ${model(m)}${m.instructions ? " · extra instructions set" : ""}`,
+		`    every ${m.everyMinutes} min · wrap-up at ${m.contextPct}% context · usage ${m.usage.enabled ? `pause at ${m.usage.pausePct}%, resume ${m.usage.resumeMarginMinutes} min after reset` : "not watched"}`,
 		`  Handover: a replaced member is retired when its successor confirms, or after ${h.retireTimeoutMinutes} min.`,
-		"  Per team: team_create defaults.coordinator: false / defaults.monitor: false turn them off.",
 	].join("\n");
 }

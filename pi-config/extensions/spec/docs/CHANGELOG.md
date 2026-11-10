@@ -1128,6 +1128,31 @@ Changed: `draftOfficial(specDir, draftDir, draftsDir, io)` takes `read`, `hash`,
 
 Numbers: on a copy of 70 real worktrees with drafts, the same 70 answers; every draft judged cold 4.3 s to 1.25 s; the costliest folder (46 drafts) cold 2.8 s to 0.35 s, and after one `draft.json` changes 1.5 s to 0.17 s. Not from a scorecard: `~/.cache` scratch benches, deleted.
 
+### 2026-11-05
+
+**The spec tools' reading commands as a tool: `spec` in every Sova coding chat and worker** (branch `feat/sova-modes`, alignment al_1; not on master yet).
+
+- Goal: 6, the builder chooses what it reads (and 2): the same reading commands, with no shell recipe to
+  get right first, in every chat and worker whether or not spec mode is on. No constraint moves: the tools
+  stay standalone (Sova runs them as a child process with an argument list), the shell line stays for the
+  write tools and for any project outside Sova, and the mode text grows by one sentence.
+- Changed:
+  - Sova's `spec` tool (`server/spec-coding-tool.ts`, runner `server/spec-runner.ts`): `op` where, map,
+    toc, read or impact with the commands' own arguments, `cursor`, and `draft` (a draft's name). Read only;
+    root confined to the chat's folder or its tracked worktrees; refused on a remote target; "This project
+    has no spec here." where there is none.
+  - `mode/spec-guard.ts`: `SPEC_TOOL_NAME`; `bashCommands` spells each `spec` tool `read` as the shell read
+    it stands for, so `specReads` counts it for the unread line; `CENSUS_SKIP_TOOLS` gains `spec`.
+  - `mode/spec-mode.md`: one sentence after the reading commands, "A `spec` tool, if offered, runs these
+    same reads without a shell." 306 → 318 words, cap 320 unchanged; hash bd4831dc… → 3fc86bdb…. The
+    pins (`mode/index.test.ts`) and the review-smoke fixture follow.
+  - `subagents/spec-brief.ts`: the worker brief names the tool after its Trusted tools line; no carried
+    rule or anchor moved (`missingRules` stays empty).
+- §: computed at landing with `sova-spec.mjs foreign` (expected + §app.spec-lookup/spec-tool,
+  §tools.spec/unread-landed, §tools.spec/census-note, §tools.spec/mode-reading).
+- Numbers: **not measured.** The al_3 rule asks for a context-test arm for any `spec-mode.md` change; the
+  main chat chose to land this one sentence without it. Round 3's verdict covers bd4831dc… only.
+
 ## Integration → master
 
 The integration merges after 96ab3014 and the master commits that re-applied them. The integration
@@ -1352,3 +1377,8 @@ The tools are Node standard library only. Nothing is installed.
     promotion; `agree` no longer promotes, so a project with no landing step runs `land --write` once before
     its last commit. Scripts parsing `Landing specs`, `docs not promoted`, `agree-not-promoted` or the
     orphaned-evidence warning change.
+18. **The `spec` tool sentence** (2026-11-05, branch `feat/sova-modes`). A project that points its agents
+    at `mode/spec-mode.md` gets one more sentence: "A `spec` tool, if offered, runs these same reads
+    without a shell." Outside Sova no such tool is offered and the shell line works as before; nothing to
+    copy. A hook of your own that counts `sova-spec.mjs read` in shell commands may also count a `spec`
+    tool call with `op: "read"` (`specToolReadCommand` in `mode/spec-guard.ts`).

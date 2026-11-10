@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { after, test } from "node:test";
 import type { HEntry } from "../shared/harness";
 import type { SessionSetup } from "../shared/protocol";
-import { conversationTalk, conversationTokens, getContextView, labelOf, skillsRead, type ContextViewDeps } from "./context-tab";
+import { conversationTalk, conversationTokens, getContextView, labelOf, skillReadState, skillsRead, type ContextViewDeps } from "./context-tab";
 import { splitSystemPrompt } from "./harness/pi/session";
 import { scratchRoot } from "./test-scratch";
 
@@ -171,16 +171,42 @@ test("a skill is read when what the model still sees loads it: a read of its SKI
     ),
     "/w",
   );
-  assert.deepEqual([...read.names].sort(), ["pdf", "sh", "vis"]);
+  assert.deepEqual([...read.names.keys()].sort(), ["pdf", "sh", "vis"]);
   assert.ok(read.paths.has("/w/skills/pdf/SKILL.md"), "a relative path resolves against the chat's folder");
 });
 
+test("a skill reads as Read only when its whole SKILL.md loaded, as it is now; else the count of its lines that did", () => {
+  const call = (name: string, args: unknown) => ({ kind: "assistant", blocks: [{ type: "toolCall", id: "c", name, arguments: args }] }) as Partial<HEntry>;
+  const text = Array.from({ length: 510 }, (_, i) => `l${i}`).join("\n");
+  const state = (...calls: Partial<HEntry>[]) => skillReadState(skillsRead(branch(...calls), "/w").names.get("pdf") ?? [], text, 510);
+  const P = "/s/pdf/SKILL.md";
+  assert.deepEqual(state(), { read: false });
+  assert.deepEqual(state(call("bash", { command: `sed -n 1,140p ${P}` })), { read: false, linesRead: 140, lines: 510 });
+  assert.deepEqual(state(call("read", { path: P, limit: 20 })), { read: false, linesRead: 20, lines: 510 });
+  assert.deepEqual(state(call("bash", { command: `sed -n 1,600p ${P}` })), { read: true });
+  assert.deepEqual(state(call("read", { path: P })), { read: true });
+  // Paged reads add up, each line once.
+  assert.deepEqual(state(call("read", { path: P, limit: 300 }), call("read", { path: P, offset: 200 })), { read: true });
+  assert.deepEqual(state(call("read", { path: P, limit: 300 }), call("bash", { command: `sed -n 200,400p ${P}` })), { read: false, linesRead: 400, lines: 510 });
+  // A form not recognised counts nothing; an invocation is the whole skill.
+  assert.deepEqual(state(call("bash", { command: `grep -n tab ${P}` })), { read: false });
+  assert.deepEqual(state({ kind: "user", blocks: [{ type: "text", text: `<skill name="pdf" location="${P}">\nbody\n</skill>` }] }), { read: true });
+  // Counted against the file now: a file that grew past what was read is no longer Read.
+  const grown = skillReadState(skillsRead(branch(call("read", { path: P })), "/w").names.get("pdf")!, `${text}\n`.repeat(5), 2550);
+  assert.deepEqual(grown, { read: false, linesRead: 2000, lines: 2550 });
+});
+
 test("the view carries each skill's read state and the conversation's tallies", async () => {
-  const v = await getContextView("/s.jsonl", deps({ branch: async () => branch({ kind: "assistant", blocks: [{ type: "toolCall", id: "c", name: "read", arguments: { path: "/s/pdf/SKILL.md" } }] }) }));
+  const readOf = (args: object) => async () => branch({ kind: "assistant", blocks: [{ type: "toolCall", id: "c", name: "read", arguments: { path: "/s/pdf/SKILL.md", ...args } }] });
+  const readText = async () => "a\n".repeat(80);
+  const v = await getContextView("/s.jsonl", deps({ branch: readOf({}), readText }));
   assert.ok(v.state === "ok");
   if (v.state !== "ok") return;
   assert.deepEqual(v.skills.map((p) => [p.label, p.read]), [["pdf", true]]);
   assert.equal(v.talk?.replies.count, 1);
+  const part = await getContextView("/s.jsonl", deps({ branch: readOf({ limit: 30 }), readText }));
+  assert.ok(part.state === "ok");
+  assert.deepEqual(part.state === "ok" && part.skills.map((p) => [p.read, p.linesRead, p.lines]), [[false, 30, 80]]);
   const none = await getContextView("/s.jsonl", deps());
   assert.ok(none.state === "ok" && none.skills[0]!.read === false);
 });

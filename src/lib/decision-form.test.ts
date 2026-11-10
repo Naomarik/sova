@@ -274,3 +274,18 @@ test("reconcile rides through the form: absent reads as the default, a change is
   assert.equal(unansweredIssue(draftOf(defaults), noKey), null, "all three off: no warning");
   assert.notEqual(unansweredIssue(on, noKey), null, "reconcile on with nobody to answer warns like the other features");
 });
+
+test("the message labels switch rides through the form: absent reads as off, a change is a change, and it survives a rebase", () => {
+  const off = draftOf(defaults);
+  assert.equal(off.features.messageLabels, undefined, "a file without it reads as off and saves as it was");
+  assert.equal(settingsOf(off).features.messageLabels, undefined);
+  const on = { ...off, features: { ...off.features, messageLabels: true } };
+  assert.equal(sameDecision(on, defaults), false, "turning it on is a change to save");
+  assert.equal(settingsOf(on).features.messageLabels, true, "and is what the save sends");
+  const saved = settingsOf(on);
+  assert.equal(draftOf(saved).features.messageLabels, true, "it loads back on");
+  assert.equal(sameDecision({ ...draftOf(saved), features: { ...draftOf(saved).features, messageLabels: false } }, defaults), true, "off again matches a file without it");
+  assert.equal(rebaseDecision(on, defaults, defaults).features.messageLabels, true, "a rebase keeps the user's change");
+  assert.equal(rebaseDecision(off, defaults, saved).features.messageLabels, true, "and takes another page's when this one left it alone");
+  assert.notEqual(unansweredIssue({ ...on, jev: { enabled: false } }, noKey), null, "on with nobody to answer gets the warning");
+});

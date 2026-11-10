@@ -1,5 +1,5 @@
 // Run: pnpm test server/merge-queue/chats.test.ts
-// The queue's own chats as the tab's History lists them: threads (current and replaced) and reviewer chats with
+// The queue's own chats as the tab's Queue chats lists them: threads (current and replaced) and reviewer chats with
 // run, attempt and verdict; the running reviewer for the head's button; Clear and Clear All delete for good, never
 // the current thread or a running reviewer, and a cleared reviewer's row keeps its verdict.
 import assert from "node:assert/strict";

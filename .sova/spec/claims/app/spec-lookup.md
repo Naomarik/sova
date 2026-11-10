@@ -4,6 +4,8 @@
 Every chat that works on a project can look up that project's spec and starts with a short
 overview of it. Chats that talk to people outside the operator's team (gathering, settle and the
 Project Assistant) get a cleaned view, and can also read the project's code without changing it.
+Every chat you code in, and every worker but a team's monitor, has its own read-only `spec` tool for
+the spec of the folder it works in, drafts included (§app.spec-lookup/spec-tool).
 None of it has a switch: no project, conversation or setting turns it off.
 
 ## §app.spec-lookup/tool — Looking up the spec
@@ -142,7 +144,10 @@ The cleaning happens in the look-up itself, so the chat never sees what it must 
 | Project Assistant | outsider view, per org project | yes | yes, each org project |
 | Project overseer | full view, its own project | no (reads files) | yes |
 | Global Overseer | full view, the project it names | no (reads files) | — |
-| Coding session | spec mode always on (§app.project-overseer/coding-mode) | — | — |
+| Coding session | no: the `spec` tool (below) | — | — |
+
+Every chat you code in, a coding session included, and every worker but a team's monitor has the
+coding agent's `spec` tool instead of `spec_lookup` (§app.spec-lookup/spec-tool), whatever its modes.
 
 - Gathering and settle sessions have both tools whatever their abilities, whoever holds the
   conversation (the operator included), and whatever the project's settings; open conversations
@@ -155,3 +160,45 @@ The cleaning happens in the look-up itself, so the chat never sees what it must 
 - Both overseers' prompts tell them to look the spec up before they start or brief a gathering or
   a coding session, and, asked "what are the draft specs?", to call `sova_draft_specs`; approving
   or building a draft is the operator's (§app.requirements/draft-specs).
+
+## §app.spec-lookup/spec-tool — The coding agent's spec tool
+
+Every chat you code in (an ordinary chat, a project's coding session included) and every worker, pi
+or Claude Code, but a team's monitor has a read-only tool for the spec of the project it works in: **`spec`**.
+
+- **Always there.** It is in the tool list from the chat's or worker's start, in every major mode,
+  whatever its minor modes and whether or not spec is on, with or without the switch of
+  §chat.mode-menu/sova-runs-modes. No switch adds or removes it, so it never changes a chat's tool
+  set (§chat.mode-menu/minor-toggle-keeps-prompt). The chats with a loadout of their own in
+  §app.spec-lookup/who-gets-what keep theirs and don't get it.
+- **The spec tools' reading commands.** `op` is `where` (a path, a name or a few words of a topic),
+  `map`, `toc` (a § id and a direction: out, in, down, up or mentions), `read` (a § id, optionally
+  whole and without the frame) or `impact` (a § id, optionally near), with a `cursor` that continues a
+  cut answer and an optional `draft`, the name of one of the root's drafts to read instead of its
+  current spec. It runs the spec tools of the code the chat runs (`sova-spec.mjs`, no copy of them),
+  as a child process with an argument list, never a shell, under a time limit, and answers what that
+  command answers in a shell.
+- **Read only.** It writes nothing: no draft, note, agreement, census state or file. Writing (drafts,
+  `agree`, evidence, the census by hand) stays the shell commands the spec guide names. It runs
+  outside the chat's sandbox, which it doesn't need, since it only reads.
+- **Inside the session's own work.** `root` is the chat's own folder by default, and may name only that
+  folder (or below it) or one of the session's tracked worktrees, the folders a worker may start in
+  (§chat.worktrees/workers); any other path is refused with a sentence naming those folders. A
+  `draft` names only a draft of that root.
+- **No spec here.** An existing folder without a spec answers "This project has no spec here." as a
+  plain answer, never an error.
+- **No such folder.** A root that doesn't exist, the chat's own folder included, is never answered as
+  a project with no spec: the call is an error result that names the folder and says it does not
+  exist, and tells the chat to call again once whatever is creating it has finished, or to check the
+  path. A root that is not a folder is an error saying that. The spec tools don't run for either. A
+  path outside the session's own work is refused as above, whether or not it exists.
+- **A team's monitor has none.** A monitor, first or successor, does no project work and holds only the
+  tools §teams.defaults/monitor lists. That goes by its duty, never by its built-ins: a coordinator and
+  every other member keep `spec`, and so does any other worker started with no file tools.
+- **Not on a remote target.** In a chat or worker on a remote target it is still listed, and refuses
+  every call: the files are on the target.
+- **It counts as reading.** A `read` call counts for the census as `sova-spec.mjs read` in a shell does
+  (§tools.spec/unread-landed), and the census skips the tool like any tool that can't write
+  (§tools.spec/census-note).
+- **Taught.** The spec guide's short part and a code-writing worker's spec brief point their
+  lookups at it, and keep the one shell line for the write tools (§tools.spec/mode-reading).

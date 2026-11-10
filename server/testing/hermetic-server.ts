@@ -7,7 +7,7 @@
 //   - PI_CODING_AGENT_DIR a fresh agent dir whose models.json names only the stand-in and whose
 //     settings make it the default model, so no turn can reach a real provider;
 //   - HOME a sentinel home whose every file is recorded at the start and compared at the stop;
-//   - a pinned random token (SOVA_TOKEN), a stand-in `claude` first on PATH, and none of the caller's
+//   - a pinned random token (SOVA_TOKEN), a stand-in `claude` and `vulkaninfo` first on PATH, and none of the caller's
 //     SOVA_*, PI_*, CLAUDE* or *_API_KEY / *_AUTH_TOKEN variables;
 //   - the price fetch, usage poll and update check off, chats on the detached driver from this tree.
 // stop() stops the server, every chat process it left (scripts/stop-chats.ts, then any process that
@@ -17,7 +17,7 @@
 // type stripping, the integration tier through Bun.
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
-import { existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join, relative, resolve } from "node:path";
 
@@ -30,6 +30,9 @@ export interface HermeticServerOptions {
   keep?: boolean;
   /** Extra variables for the server (a test's time knobs, e.g. SOVA_RELEASE_QUIET_MS), set over the hermetic ones. */
   env?: Record<string, string>;
+  /** pi-config extensions the chats load, by directory name (default none). `sandbox` also gets this tree's
+      sandbox policy for the platform, so a chat can turn its sandbox On. */
+  extensions?: string[];
 }
 
 export interface HermeticServer {
@@ -129,6 +132,17 @@ function writeAgentDir(agent: string, mockPort: number): void {
   writeFileSync(join(agent, "settings.json"), JSON.stringify({ defaultProvider: provider, defaultModel: model }, null, 2));
   // The Overseer on the stand-in too, its memory off: nothing the server starts on its own reaches a real model.
   writeFileSync(join(agent, "sova", "overseer.json"), JSON.stringify({ version: 1, model: STAND_IN_MODEL, explorer: { backend: "pi", model: STAND_IN_MODEL, effort: "medium" }, memory: { on: false, type: "uniichat", size: 128 } }, null, 2));
+}
+
+/** Only the named pi-config extensions, each a link to this tree's own; the sandbox's policy beside it. */
+function linkExtensions(agent: string, names: readonly string[]): void {
+  if (!names.length) return;
+  mkdirSync(join(agent, "extensions"), { recursive: true });
+  for (const name of names) symlinkSync(join(ROOT, "pi-config", "extensions", name), join(agent, "extensions", name));
+  if (names.includes("sandbox")) {
+    mkdirSync(join(agent, "sandbox-policy", process.platform), { recursive: true });
+    copyFileSync(join(ROOT, "pi-config", "sandbox-policy", process.platform, "policy.json"), join(agent, "sandbox-policy", process.platform, "policy.json"));
+  }
 }
 
 /** The caller's environment minus anything that names a real login, key, agent dir or Sova knob. */
@@ -260,6 +274,9 @@ export async function startHermeticServer(opts: HermeticServerOptions = {}): Pro
   const homeBefore = recordTree(home);
   // A `claude` that is never the installed one: the stand-in CLI, whatever PATH held.
   writeFileSync(join(bin, "claude"), `#!/bin/sh\nexec node ${JSON.stringify(join(ROOT, "scripts", "fake-claude.mjs"))} "$@"\n`, { mode: 0o755 });
+  // And no `vulkaninfo`: Voice's status runs it to name the GPU (server/voice/platform.ts), and on a machine
+  // with one Mesa and RADV write their caches under HOME, the sentinel. A real write to it still fails a test.
+  writeFileSync(join(bin, "vulkaninfo"), "#!/bin/sh\nexit 1\n", { mode: 0o755 });
 
   const mock = spawn(process.execPath.includes("bun") ? "node" : process.execPath, [join(ROOT, "scripts", "harness-wire-e2e-mock-llm.mjs"), "0"], { stdio: ["ignore", "pipe", "inherit"] });
   let server: ChildProcess | null = null;
@@ -296,11 +313,14 @@ export async function startHermeticServer(opts: HermeticServerOptions = {}): Pro
   try {
     const mockPort = Number((await lineFrom(mock, /^listening (\d+)$/m, 10_000, "stand-in model port"))[1]);
     writeAgentDir(agent, mockPort);
+    linkExtensions(agent, opts.extensions ?? []);
     const token = randomBytes(24).toString("hex");
     env = {
       ...env,
       HOME: home,
       PATH: `${bin}:${process.env.PATH ?? ""}`,
+      // Named, so what a scenario writes there counts as approved as it appears: what a test copy does, never a person's server.
+      SOVA_EXTENSIONS_FILE: join(agent, "sova", "extensions.json"),
       PORT: "0",
       PI_CODING_AGENT_DIR: agent,
       SOVA_TOKEN: token,

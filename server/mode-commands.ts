@@ -15,8 +15,9 @@
 // HOME. A command's env is the chat's own, as a tool's is. Bounds: one run per hook at a time with at most one
 // waiting, HOOK_BUDGET runs per HOOK_WINDOW_MS per hook, in each chat (checked when a run would start; over it
 // the run is dropped, never saved), each hook's own time limit, and COMMANDS_RUNNING_MAX commands running per chat.
-import { checkoutRootOf, toolsHashOf } from "../pi-config/extensions/mode/project-discovery.ts";
-import { formatToolRun, projectRootOfModeDir, runProjectTool, toolTimeoutMs, type ProjectToolRun } from "../pi-config/extensions/mode/project-tools.ts";
+import { toolsHashOf } from "../pi-config/extensions/mode/project-discovery.ts";
+import { approvalRootOfDir, projectRootForDir } from "./modes/personal";
+import { formatToolRun, runProjectTool, toolTimeoutMs, type ProjectToolRun } from "../pi-config/extensions/mode/project-tools.ts";
 import type { ProjectHookEvent, ProjectModeHook, ProjectModeRef, ProjectModeSnapshot } from "../shared/project-modes";
 import type { ModeCommandOutcome, ModeCommandResult } from "../shared/protocol";
 
@@ -140,7 +141,8 @@ export class ModeActions {
     const notHere = this.host.notHere();
     if (notHere) return `${what} wasn't run: ${notHere}`;
     if (this.host.sandboxOn()) return `${what} wasn't run: project mode programs don't run while the sandbox is on. Turn the sandbox off to use ${copy.id}'s ${kind}s.`;
-    const root = checkoutRootOf(projectRootOfModeDir(copy.dir)) ?? projectRootOfModeDir(copy.dir);
+    // A personal mode's approvals are kept for the user's folder, a project mode's for its checkout.
+    const root = approvalRootOfDir(copy.dir);
     if (kind === "hook" ? !this.host.approvedByUser(root, copy.id, copy.toolsHash) : !this.host.approved(root, copy.id, copy.toolsHash))
       return kind === "hook"
         ? `${what} wasn't run: ${copy.id}'s hooks need your own approval in the mode menu.`
@@ -179,7 +181,7 @@ export class ModeActions {
     this.commandAborts.add(abort);
     try {
       const timeoutMs = toolTimeoutMs(command);
-      const run = await this.run({ dir: copy.dir, modeId, projectRoot: projectRootOfModeDir(copy.dir), cwd, tool: command, args: args ?? {}, signal: abort.signal, env: this.env });
+      const run = await this.run({ dir: copy.dir, modeId, projectRoot: projectRootForDir(copy.dir, cwd), cwd, tool: command, args: args ?? {}, signal: abort.signal, env: this.env });
       if (run.spawnError) return { ok: false, status: 409, error: `${id} wasn't run: ${run.spawnError}.` };
       return { ok: true, result: resultOf(id, run, formatToolRun(run, timeoutMs)) };
     } finally {
@@ -268,7 +270,7 @@ export class ModeActions {
       h.starts.push(t);
       h.abort = new AbortController();
       const input = { event: ev.event, sessionId: this.host.sessionId(), at: ev.at, mode: copy.id };
-      const run = await this.run({ dir: copy.dir, modeId: copy.id, projectRoot: projectRootOfModeDir(copy.dir), cwd, tool: hook, args: input, hookEvent: ev.event, signal: h.abort.signal, env: hookEnv(this.env) });
+      const run = await this.run({ dir: copy.dir, modeId: copy.id, projectRoot: projectRootForDir(copy.dir, cwd), cwd, tool: hook, args: input, hookEvent: ev.event, signal: h.abort.signal, env: hookEnv(this.env) });
       if (run.spawnError) this.log(`${what} didn't run: ${run.spawnError}`);
       else if (run.timedOut) this.log(`${what} stopped at its ${hook.timeoutS} s limit`);
       else if (run.aborted) this.log(`${what} stopped: the chat closed`);

@@ -12,7 +12,10 @@ actions beyond listing, reading, starting, renaming, tagging, archiving, configu
 control sends to the route named, so every answer and refusal is the route's own, word for word:
 
 - `session.fork` (`POST /api/sessions/fork`): fork a session at one of its entries; makes a new session.
-- `session.draft.get`, `session.draft.set` (`GET`/`PUT /api/sessions/draft`): read or replace a session's composer draft.
+- `session.draft.get`, `session.draft.set` (`GET`/`PUT /api/sessions/draft`): read or replace a session's composer draft;
+  a draft set this way is a message, never a command (§chat.shell-mode/box).
+- `session.shell.output` (`GET /api/sessions/shell-output`): one page, about 1 MB, of a finished
+  command's whole output (§chat.shell-mode/card).
 - `session.sandbox.set` (`POST /api/sandbox`): set a held chat's sandbox state.
 - `session.tools.get` (`GET /api/sessions/tools`): the tools a held chat declares to its model.
 - `session.context` (`GET /api/sessions/context`): what pi loads for a session's folder.

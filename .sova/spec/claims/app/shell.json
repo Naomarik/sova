@@ -169,7 +169,9 @@
     "authority": "accepted",
     "evidence": "reviewed",
     "code": [
-      "src/App.tsx"
+      "src/App.tsx",
+      "src/design/base.css",
+      "server/forms-dialog-frame-browser.integration.test.ts"
     ],
     "notOwned": [
       "§app/session-list",
@@ -177,9 +179,9 @@
       "§app/access"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-10-22T00:49Z",
-      "source": "pi-session:aaa55e42-efea-4624-8d25-f08fbba7fb25#e92e5471"
+      "by": "user",
+      "at": "2026-11-08T11:14Z",
+      "source": "pi-session:45cc9bb9-bace-4ea1-9191-77bbe8ec8e40#e21c19a7"
     }
   }
 }

@@ -29,6 +29,9 @@ export class LiveMirror implements ChatStateMirror {
   get running() {
     return this.chat.harness.isRunning();
   }
+  get shell() {
+    return this.chat.shell.inFlight();
+  }
   get compacting() {
     return this.chat.isCompacting();
   }
@@ -107,13 +110,16 @@ export class LiveMirror implements ChatStateMirror {
   get confirmedCard() {
     return this.chat.userTurns?.confirmedCard() ?? null;
   }
+  get modesOwner() {
+    return this.chat.modesOwner;
+  }
 }
 
 /** The fields of a mirror, every one read once, now. */
 const FIELDS = [
-  "chatId", "sessionId", "cwd", "cwdFallback", "closed", "special", "running", "compacting", "starting", "model", "thinking", "leafId",
+  "chatId", "sessionId", "cwd", "cwdFallback", "closed", "special", "running", "shell", "compacting", "starting", "model", "thinking", "leafId",
   "lastStop", "queue", "dialogs", "mode", "held", "memory", "streamTrip", "foreignWrite", "pendingSends", "pristine",
-  "subagentPick", "profile", "loadout", "attended", "confirmedCard",
+  "subagentPick", "profile", "loadout", "attended", "confirmedCard", "modesOwner",
 ] as const satisfies readonly (keyof ChatStateMirror)[];
 /** Every field of the mirror is in FIELDS (a field added to ChatStateMirror and left out fails here). */
 const everyField: [Exclude<keyof ChatStateMirror, (typeof FIELDS)[number]>] extends [never] ? true : never = true;

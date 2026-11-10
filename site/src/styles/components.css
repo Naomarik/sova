@@ -1,5 +1,5 @@
 /* Components the page's mock-ups are built from: a subset of the design system's
-   fold-ai-dev.css (.claude/skills/fold-ai-dev-design/), copied as-is, plus the app's own
+   fold-ai-dev.css (.agents/skills/fold-ai-dev-design/), copied as-is, plus the app's own
    tool card and composer rules from src/design/base.css. Tokens only; no raw values. */
 
 /* =============================================================================

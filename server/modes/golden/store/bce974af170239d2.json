@@ -1,0 +1,1 @@
+"merge.rule (the merge thread's): chat-fixes (text: your diagnosis, sent to the branch's chat) | try-again (back in line; after a chat's Can't, text: the other approach, once) | needs-user (text: the question, choices: its options; only for what is the user's) | checked | beyond (a chat's fix, by its request: only what was asked, or text: what more it changes)."

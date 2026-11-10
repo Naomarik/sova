@@ -5,6 +5,7 @@
 // lifecycle events numbered per runtime; browser frames passed through. Today the chat runs in this
 // process: a call runs the chat's method at once (its guards run at the moment of the call, exactly
 // as a direct call did) and its answer comes back as a reply.
+import type { ProfileSwitchTarget } from "../shared/profile-switch";
 import { createSettingsTool } from "./create-settings-tool";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { appendFileSync, mkdirSync } from "node:fs";
@@ -204,6 +205,15 @@ export abstract class ChatHandle {
   }
   switchSubagentProfile(id: unknown) {
     return this.call("switchSubagentProfile", { id });
+  }
+  switchProfile(target: ProfileSwitchTarget) {
+    return this.call("switchProfile", { target });
+  }
+  cancelProfileSwitch() {
+    return this.call("cancelProfileSwitch", {});
+  }
+  chatProfileState() {
+    return this.call("chatProfileState", {});
   }
   /** A state record outside any turn, with the row it renders as sent to every pane; refused mid-turn. */
   appendStateRow<T>(kind: StateKind<T>, data: T): Promise<string> {
@@ -475,6 +485,9 @@ export interface ChatRouter {
   close(path: string, message: string, opts?: CloseOpts): Promise<boolean>;
   /** A special chat's composer may have changed: each in a process of its own is told. */
   composersChanged?(): void;
+  /** A save changed "Sova runs chat modes" (§chat.mode-menu/sova-runs-modes): every open chat whose mode owner
+      differs reloads at its next quiet moment; a flip back first cancels it. */
+  modesSwitched?(on: boolean): void;
   /** Resolves once this path's chat, if a previous server left it running, is taken back (bounded),
       so `get` can be trusted for it; at once when none of it was left running. */
   takenBack?(path: string): Promise<void>;
@@ -490,6 +503,9 @@ export function setChatRouter(r: ChatRouter | null): void {
 
 /** A special chat's composer may have changed (a project archived or not): each chat in a process of its own is told. */
 export const specialComposersChanged = (): void => router?.composersChanged?.();
+
+/** A save changed "Sova runs chat modes": the router has each open chat follow at its next quiet moment. */
+export const chatModesSwitched = (on: boolean): void => router?.modesSwitched?.(on);
 
 /** Set by a server that will install a router (server/index.ts, before its orgs open): until it is
     installed, chatsReady waits for it, so a reader at boot never mistakes "not taken back yet" for "none". */
@@ -527,6 +543,12 @@ export async function closeChat(path: string, message: string, opts: CloseOpts =
 export function isSessionBusy(path: string): boolean {
   const h = chatHandle(path);
   return !!h && h.mirror.running;
+}
+
+/** This server holds the chat and a command from shell mode runs in it, or ran and isn't saved yet
+    (§chat.shell-mode/lifecycle): its file may hold nothing yet, but it is no empty husk. */
+export function shellInFlight(path: string): boolean {
+  return chatHandle(path)?.mirror.shell === true;
 }
 
 /** SessionSummary.pendingDialogs: the waiting extension dialogs of a chat this server holds. */

@@ -24,6 +24,17 @@ const base: Omit<import("./push").PushDecisionInput, "current" | "announced"> = 
 const keysOf = (d: { send: { id: string; kind: string }[] }) => d.send.map((x) => `${x.id}:${x.kind}`);
 
 describe("pushDecision", () => {
+  test("Undo sends nothing: the row a dismissal took away is back as told; something new in it is a new blocker", () => {
+    const told = new Set(["a:error"]);
+    const away = pushDecision({ ...base, current: [], announced: told });
+    assert.equal(away.announced.has("a:error"), false, "dismissed: out of the digest, so out of the told-set");
+    assert.equal(pushDecision({ ...base, current: [b("a", "error")], announced: away.announced }).send.length, 1, "control: back with no word from Undo, it reads as new");
+    const undone = pushDecision({ ...base, current: [b("a", "error")], announced: away.announced, told: ["a:error"] });
+    assert.deepEqual(undone.send, []);
+    assert.equal(undone.announced.has("a:error"), true);
+    assert.equal(pushDecision({ ...base, current: [b("a", "error")], announced: away.announced, told: [] }).send.length, 1, "something new: no Undo names it, so it goes out");
+  });
+
   test("the first reading is the baseline: nothing already there is sent", () => {
     const d = pushDecision({ ...base, current: [b("a", "error")], announced: null });
     assert.deepEqual(d.send, []);
@@ -288,4 +299,15 @@ test("a proposed playbook run is a push kind, on by default, worded \"Playbook n
   const b = { id: "s1", kind: "playbook-review" as const, title: "Project verbs: site", detail: "Project verbs: approve 0123456789ab and merge into main" };
   const out = pushDecision({ current: [b], announced: new Set(), settings, devices: 1, now: 100_000, lastSentAt: 0, quiet: false, viewing: () => false });
   assert.deepEqual(out.send.map((x) => x.kind), ["playbook-review"]);
+});
+
+// A reply that asks the user (the asks_user verdict, a soft "asks-you" item) is never pushed, so a merge queue batch
+// turn read for attention (§chat.merge-queue/requests) adds no second notification to its decision's one
+// (§chat.merge-queue/decision, §app.notifications/delivery).
+test("an asks-you item is never pushed; a blocker of a push kind in the same reading still is", () => {
+  const first = pushDecision({ ...base, current: [], announced: new Set() });
+  const asks = pushDecision({ ...base, current: [b("a", "asks-you", "Keep the old label or the new?")], announced: first.announced });
+  assert.deepEqual(asks.send, [], "asks-you: told, never sent");
+  const control = pushDecision({ ...base, current: [b("a", "asks-you"), b("a", "error")], announced: new Set() });
+  assert.deepEqual(keysOf(control), ["a:error"], "control: the push path is on for this reading");
 });

@@ -31,6 +31,9 @@ import {
 	SpecWriteGuard,
 	viewChanged,
 	specReads,
+	bashCommands,
+	SPEC_TOOL_NAME,
+	specToolReadCommand,
 	unreadLine,
 	UNREAD_PREFIX,
 	PROCEDURE_HEAD,
@@ -983,6 +986,23 @@ test("specReads: the § a shell command `read`s, a flag before the id or a loop 
 	assert.deepEqual(specReads(["node sova-spec.mjs toc '§a/b' --dir out"]), [], "toc isn't a read");
 	assert.deepEqual(specReads(["cat > notes.md <<'EOF'\nnode sova-spec.mjs read '§a/b'\nEOF"]), [], "a heredoc body is data");
 	assert.deepEqual(specReads(["node sova-spec.mjs read '§a/b'", "node sova-spec.mjs read '§c/d' --no-frame"]), ["§a/b", "§c/d"], "across commands");
+});
+
+test("the spec tool: a `read` counts as the shell read it runs (aliases as the tools read them); other ops, other tools and bad ids don't; the census skips it", () => {
+	const call = (name: string, args: unknown) => ({ type: "message", message: { role: "assistant", content: [{ type: "toolCall", name, arguments: args }] } });
+	const branch = [
+		call("bash", { command: "node sova-spec.mjs read '§a/b'" }),
+		call(SPEC_TOOL_NAME, { op: "read", id: "§c/d", noFrame: true }),
+		call(SPEC_TOOL_NAME, { op: "read", id: "§app.shell" }),
+		call(SPEC_TOOL_NAME, { op: "toc", id: "§e/f" }),
+		call(SPEC_TOOL_NAME, { op: "read", id: "§x/y'; rm -rf ." }),
+		call("other", { op: "read", id: "§g/h" }),
+	];
+	assert.deepEqual(specReads(bashCommands(branch)), ["§a/b", "§app/shell", "§c/d"]);
+	assert.equal(specToolReadCommand(SPEC_TOOL_NAME, { op: "read", id: "§c/d" }), "sova-spec.mjs read '§c/d'");
+	assert.deepEqual(draftsCreated(bashCommands(branch)), [], "a tool read is never taken for a draft");
+	assert.equal(SPEC_TOOL_NAME, "spec");
+	assert.ok(CENSUS_SKIP_TOOLS.has(SPEC_TOOL_NAME), "it can't write: the census neither looks nor moves its baseline after it");
 });
 
 test("unreadLine: at most 10 § read first, those at relevance ≥ 0.036 or with a stale literal, in rank order; the rest left, uncounted, to the command that lists them; read § and § the session's files didn't land in are left out", () => {

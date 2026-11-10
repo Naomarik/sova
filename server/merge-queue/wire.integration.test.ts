@@ -18,7 +18,7 @@ const DEF = {
 let agentDir = "";
 const repo = makeRepo({ prefix: "mq-wire-" });
 /** The Projects list as the served rule reads it (stood in; the second test adds to it). */
-const listedRows: { root: string; id?: string }[] = [{ root: repo.root }];
+const listedRows: { root: string; id?: string; name?: string }[] = [{ root: repo.root }];
 const others: { done(): void }[] = [];
 
 before(() => {
@@ -97,6 +97,14 @@ test("only a listed project with its setup done is served: a listed one with no 
   const st2 = repo.branch("feat/c", { "c.txt": "c\n" });
   assert.equal((await worktreeQueueOf(st2.path, "feat/c")).mergeServed, true, "the served project's row");
 
+  // Every row has a place, by the rule Land follows: the queue's target where it serves, else master then main.
+  const { worktreePlaceOf } = await import("./wire");
+  const servedPlace = await worktreePlaceOf(st2.path);
+  assert.deepEqual([servedPlace.root, servedPlace.target], [servedKey(repo.root), "master"]);
+  assert.equal((await worktreePlaceOf(lt.path)).root, servedKey(loose.root), "unlisted: its main folder");
+  assert.equal((await worktreePlaceOf(lt.path)).target, "master", "unlisted: what the worktree tool merges into");
+  assert.equal((await worktreePlaceOf(bt.path)).target, "master", "listed, setup not done: not the queue's");
+
   for (const [root, path] of [[bare.root, bt.path], [loose.root, lt.path]] as const) {
     const r = await projectEngine().run("merge.add", { checkout: path }, op);
     assert.equal(r.error?.message, NOT_SERVED, root);
@@ -105,4 +113,14 @@ test("only a listed project with its setup done is served: a listed one with no 
   }
   assert.equal(await queueManages(repo.root, "master"), true);
   assert.deepEqual(readServed(join(agentDir, "sova", "merge-served.json"))?.roots, [{ root: servedKey(repo.root), target: "master" }]);
+
+  // A named project's row: its name reaches the place, and how the project lands reaches Land's confirmation.
+  const pr = makeRepo({ prefix: "mq-wire-pr-" });
+  others.push(pr);
+  pr.commitOn(pr.root, { ".sova/project.json": `${JSON.stringify({ ...DEF, merge: { ...DEF.merge, land: "github-pr" } }, null, 2)}\n` }, "lands by pull request");
+  listedRows.push({ root: pr.root, id: "prj_pr", name: "Pull Project" });
+  await refreshServed();
+  const pullTree = pr.branch("feat/pr", { "p.txt": "p\n" });
+  assert.equal((await worktreePlaceOf(pullTree.path)).label, "Pull Project");
+  assert.equal((await worktreeQueueOf(pullTree.path, "feat/pr")).mergeProject?.how, "github-pr");
 });

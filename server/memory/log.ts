@@ -1,5 +1,6 @@
 // The memory log (§chat.memory/log): a chat's active branch as numbered messages, derived again from the
 // neutral history whenever it is needed, never kept as a second append-only log. Pure.
+import { modelOutput, ownOutputPath } from "../shell-model";
 import type { HBlock, HEntry } from "../../shared/harness";
 import type { MemoryMessageKind } from "../../shared/protocol";
 import { redactTourToolArgs } from "../../shared/tour";
@@ -74,7 +75,13 @@ export function entryMessages(h: HEntry): { kind: MemoryMessageKind; text: strin
     case "tool-result":
       return [{ kind: "echo", text: clipTool(`${h.tool ?? "tool"}${h.isError ? " (failed)" : ""}: ${blocksText(h.blocks)}`) }];
     case "shell":
-      return [{ kind: "echo", text: clipTool(`user ran: $ ${h.command ?? ""}\n${h.output ?? ""}`) }];
+      // A `!!` command is kept from the model: never a line, a summary or a zoom (§chat.shell-mode/model).
+      if (h.private) return [];
+      // As the model gets it in the chat (server/shell-model.ts): the tail, and where the whole output is.
+      const cut = modelOutput(h.output ?? "", h.truncated !== undefined);
+      // The path only: the chat's context hook writes Sova's file when the harness wrote none.
+      const full = cut.cut ? (h.fullOutputPath ?? ownOutputPath(h.sentAt, h.command ?? "", h.output ?? "")) : null;
+      return [{ kind: "echo", text: clipTool(`user ran: $ ${h.command ?? ""}\n${cut.output}${full ? `\n[Full output: ${full}]` : ""}`) }];
     case "note": {
       // A message an extension shows in the transcript (a worker's report, a topic delivery) is logged;
       // a hidden note (mode notes, alignment state, nudges) is per-turn state, never memory.

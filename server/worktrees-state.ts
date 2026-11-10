@@ -17,6 +17,7 @@ import {
 } from "../pi-config/extensions/worktrees/state.ts";
 import { stateViewOf } from "./harness/pi/state";
 import { WORKTREES } from "./harness/state-kinds";
+import { queueTargetOfTree } from "./worktrees";
 
 export { WORKTREE_MERGE_MESSAGE };
 
@@ -49,13 +50,15 @@ const mergeCache = new Map<string, { at: number; value: SessionWorktreeInfo["mer
     Session tab's rows and the session list's branches (merge-readiness.ts) ask the one cache. `fresh` asks git past
     the cache: a caller that keeps the answer until the refs move must not keep one read before they moved. */
 export async function mergedInto(t: TrackedWorktree, now = Date.now(), fresh = false): Promise<SessionWorktreeInfo["mergedInto"] | undefined> {
-  const key = `${t.path}\0${t.branch}\0${t.base}\0${t.baseBranch ?? ""}`;
+  const landsOn = queueTargetOfTree(t.path);
+  const key = `${t.path}\0${t.branch}\0${t.base}\0${t.baseBranch ?? ""}\0${landsOn ?? ""}`;
   const hit = mergeCache.get(key);
   if (!fresh && hit && now - hit.at < MERGE_TTL_MS) return hit.value ?? undefined;
   let value: SessionWorktreeInfo["mergedInto"] | null = null;
   try {
     const p = await probeMerge(runGit, t);
-    if (p?.merged) value = { target: p.target, sha: p.targetSha };
+    // Where the queue lands on another branch, being in master or main says nothing about landing (§chat.worktrees/merged-state).
+    if (p?.merged && !(landsOn && p.target !== landsOn && (p.target === "master" || p.target === "main"))) value = { target: p.target, sha: p.targetSha };
   } catch {
     value = null;
   }
@@ -104,7 +107,10 @@ export async function describeWorktrees(
         runningWorkers: alive.filter((c) => isWithin(c, root)).length,
       };
       // Its merge queue entry and project (server/merge-queue/wire.ts); nothing while the queue isn't started.
-      if (exists) Object.assign(row, await (await import("./merge-queue/wire")).worktreeQueueOf(t.path, t.branch));
+      const wire = await import("./merge-queue/wire");
+      if (exists) Object.assign(row, await wire.worktreeQueueOf(t.path, t.branch));
+      const place = await wire.worktreePlaceOf(t.path).catch(() => undefined);
+      if (place) row.place = place;
       return row;
     }),
   );

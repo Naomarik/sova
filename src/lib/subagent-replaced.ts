@@ -2,7 +2,7 @@ import type { SubagentProfilesReplaced } from "../../shared/subagent-profiles";
 import { stampTime } from "./format";
 
 /**
- * The notice Settings → Subagents shows when another device's copy changed this library
+ * The notice Settings → Profiles shows when another device's copy changed this library
  * (§chat.subagent-profiles/replaced): "Replaced by Zen's copy at 2:01 PM." when a profile here was
  * changed or removed, "Zen's copy added Fast at 2:01 PM." when it only added profiles.
  */

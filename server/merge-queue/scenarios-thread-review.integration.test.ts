@@ -123,25 +123,22 @@ describe("review", () => {
     assert.ok(l.notes.some((n) => n.kind === "review" && /name x is unclear/.test(n.text)), JSON.stringify(l.notes));
   });
 
-  test("S17c: review blocking: Review flagged, waiting for you; Land Anyway lands; Send Back on another returns it", async () => {
-    const { fx, h } = await setup({ review: true }, { reviewer });
+  test("S17c: review blocking: its whole report goes to the thread, which hands it on with a note; the chat gets the reviewer's words; Land Anyway is never offered over a review", async () => {
+    let told = "";
+    const { fx, h } = await setup({ review: true }, { reviewer, thread: { review: async (hh, e, ev) => void ((told = ev.findings ?? ""), await hh.rule(e.id, { ruling: "chat-fixes", text: "Delete it rather than hide it." })) } });
     const base = fx.head();
     const b = fx.branch("b", { "review.conf": "blocking: dead code left in\n" });
     const e = await h.add({ branch: b.branch });
-    const w = await h.waitEntry(e.id, settled);
-    assert.equal(w.state, "review-flagged", `${w.state}: ${w.reason}`);
-    assert.match(w.reason ?? w.review?.text ?? "", /dead code/);
+    const w = await h.waitEntry(e.id, (x) => x.state === "with-chat" && !!x.requests?.length);
+    assert.match(w.reason ?? "", /dead code/);
+    const text = w.requests!.at(-1)!.text;
+    assert.match(text, /review found problems[\s\S]*- \[other\] dead code left in[\s\S]*Merge thread: Delete it rather than hide it\./);
+    assert.match(told, /dead code/);
+    assert.deepEqual({ state: w.reviews?.at(-1)?.state, note: w.reviews?.at(-1)?.note?.text, findings: w.reviews?.at(-1)?.findings.length }, { state: "fixing", note: "Delete it rather than hide it.", findings: 1 });
+    assert.ok(h.notices.some((n) => n.branch === b.branch && n.kind === "needs-fix"), "its chat is sent the request");
     assert.equal(fx.head(), base);
-    await h.answer(e.id, "land-anyway");
-    const l = await h.waitEntry(e.id, ["landed", "needs-fix"]);
-    assert.equal(l.state, "landed");
-    const c = fx.branch("c", { "review.conf": "blocking: duplication\n", "c.txt": "c\n" });
-    const ec = await h.add({ branch: c.branch });
-    assert.equal((await h.waitEntry(ec.id, settled)).state, "review-flagged");
-    const before = fx.head();
-    await h.answer(ec.id, "send-back");
-    assert.equal((await h.waitEntry(ec.id, ["needs-fix"])).state, "needs-fix");
-    assert.equal(fx.head(), before);
+    await assert.rejects(h.answer(e.id, "land-anyway"), /Land Anyway answers a failure no one can be blamed for/);
+    assert.equal(fx.head(), base);
   });
 
   test("S17d: reviewer crash: retried, then the queue pauses; never blamed on the branch, no chat told", async () => {

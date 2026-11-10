@@ -183,7 +183,7 @@ test("inbox gate (§app.teams/inbox-gate): a gated wake that starts the turn ref
 	// The turn ends; the next turn starts with something else: no gate.
 	h.emit("agent_end", {});
 	h.emit("agent_start", {});
-	h.emit("message_end", user("[Instruction from orchestrator lead (ag_01), team_01]\nRun the tests"));
+	h.emit("message_end", user("[Instruction from coordinator lead (ag_01), team_01]\nRun the tests"));
 	assert.equal(call("bash"), undefined, "a turn started by anything else is never gated");
 	// A direct instruction mid-turn lifts the gate; a mid-turn wake never sets it.
 	h.emit("agent_start", {});

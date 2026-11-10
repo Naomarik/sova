@@ -217,21 +217,36 @@ Each is data a change may regenerate only on purpose, never to hide a regression
   `scripts/sova-scenario.mjs`'s header; `pnpm run scenario [<file>…]` runs them by hand. A new
   scenario file is picked up with no other change.
 
-## Writing tests: wait on conditions
+## Writing tests
 
-- Wait on the event that ends a window, never on the clock: poll for it with a deadline (`until`,
-  `waitFor`, a loop of short `setTimeout`s with a bound). Make the deadline generous; it costs nothing
-  when the event comes, and a busy machine needs it.
-- A fixed wait over 2 s only proves an absence (nothing doubled, nothing restarted, no second
-  delivery). Start it after the event a repeat would follow, keep it as short as that event's own
-  timing allows, and name that event in a comment: "the feed re-diffs at most once a second, so 2 s
-  holds a re-diff or two".
-- A scripted model reply that must stay open through a step is held, not made long: the
-  chat-runtime trial's stand-in model keeps a `[long N #tag]` reply streaming while the trial holds
-  its tag (`mock.hold(tag)`, then `mock.hold(tag, false)`), however long the step takes under load.
-- `node scripts/fixed-wait-scan.mjs --base <rev> [--json]` lists the setTimeout/sleep/delay
-  literals over 2000 ms a change adds to test files since the merge base. It is a note for a person
-  to check, never a failure.
+A test earns its place by stating a requirement and failing when it breaks. Before adding one, ask
+what it would catch that the suite doesn't already; before removing one, what the suite would lose.
+A change that adds no behaviour needs no new test.
+
+- **Check the rule, not an instance.** When a result should hold however its inputs combine (in any
+  order, sent twice, a stop at any step), state the rule once and check it in a plain loop: over
+  every combination when that is cheap, otherwise over each part of the input at its edges and ties,
+  in every order. Where no rule exists, or it would read the same as the code, one example per edge
+  is enough.
+- **The assertion is the requirement.** Word it as the promise reads, never as the code's branches.
+  Write the expected answer by hand, or, when the promise is that a change makes no difference, take
+  the code's answer before that change. A rule check also shows it can fail: where that costs a line
+  or two, assert that it catches a stand-in broken the way the promise forbids; elsewhere break the
+  code in a scratch copy, never in the tree, and say in a comment what you broke to see it fail.
+- **Smaller, not just smarter.** In the files you change, first delete what only restates the code
+  or repeats another test; a repeat's one unique check moves into the smaller test. Keep an example
+  only where the rule stays green if what it pins breaks; a rule check retires the rest and takes
+  their inputs, and the file doesn't grow. If those inputs turn the rule red on a real bug, don't
+  weaken it silently: record the bug, narrow the inputs, and say in a comment what is left out.
+- **Once, in the smallest harness that can see it.** Decide logic in-process; give a real process,
+  server or browser only what only it can show. Assert wording, exactly or by pattern, only where
+  the wording is the requirement, and then once.
+- **Quick by construction.** A unit file runs in under 2 s from fresh: build costly setup once per
+  file; a cheap fresh object per case is fine. Wait on the event with a generous deadline, not the
+  clock; a scripted reply that must stay open is held, not made long. A fixed wait over 2 s only
+  proves something doesn't happen: start it after the event that would set it off, keep it as short
+  as that event allows, and name the event in a comment. `node scripts/fixed-wait-scan.mjs` lists
+  those a change adds (`--base <rev>`), for a person to check, never a failure.
 
 ## When you change X, also update Y
 

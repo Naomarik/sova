@@ -91,8 +91,8 @@ export const landingLive = (t: LandingTree, state: ReadinessState): boolean =>
 
 /** One thing that keeps a finished branch from Ready to land, as Sova's note counts it, and what fixes it. */
 export interface LandingBlocker {
-  kind: "uncommitted" | "conflicts" | "temp" | "check" | "trial";
-  /** "1 uncommitted folder", "conflicts with master in 2 files". */
+  kind: "uncommitted" | "temp" | "check" | "trial";
+  /** "1 uncommitted folder", "a temporary commit (…)". */
   text: string;
   /** What the session does about it. */
   fix: string;
@@ -102,8 +102,9 @@ const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? o
 
 /**
  * What still blocks a finished branch's landing (§chat.worktrees/ready-to-land), each counted, for the
- * things the session can fix itself: uncommitted files, conflicts with its base, a
- * temporary commit, a failing check. undefined when the rule doesn't ask (nothing to land, merged, a turn
+ * things the session can fix itself: uncommitted files, a temporary commit, a failing check. A conflict with its base
+ * is none of them: it doesn't block the Land, and the merge thread judges it in line (al_3 q7), so the chat never
+ * resolves it on its own (a behaviour the user must decide would be settled without them). undefined when the rule doesn't ask (nothing to land, merged, a turn
  * running, an open question: none of those is the session's to fix now). Pure.
  */
 export function landingBlockers(t: LandingTree, s: LandingSession): LandingBlocker[] | undefined {
@@ -116,7 +117,6 @@ export function landingBlockers(t: LandingTree, s: LandingSession): LandingBlock
     const what = files && folders === dirty ? plural(dirty, "uncommitted folder") : files && folders === 0 ? plural(dirty, "uncommitted file") : `${dirty} uncommitted ${dirty === 1 ? "file or folder" : "files and folders"}`;
     out.push({ kind: "uncommitted", text: what, fix: "commit or remove what is uncommitted" });
   }
-  if (t.conflicts) out.push({ kind: "conflicts", text: `conflicts with ${t.base ?? "its base"} in ${plural(t.conflicts, "file")}`, fix: `merge ${t.base ?? "its base"} in and resolve them` });
   if (t.tempCommit) out.push({ kind: "temp", text: `a temporary commit ("${t.tempCommit.slice(0, 60)}")`, fix: "reword or squash the temporary commit" });
   if (s.lastCheck && !s.lastCheck.ok) out.push({ kind: "check", text: lastCheckWords(s.lastCheck), fix: "fix what the check reports and run it again" });
   return out;
@@ -126,10 +126,12 @@ export function landingBlockers(t: LandingTree, s: LandingSession): LandingBlock
     marked as the merge queue's (MERGE_QUEUE_SENT_PREFIX), never drawn as the user's message.
     It names what blocks the landing. Once nothing blocks it, the user's go-ahead lands it: Land, or "land it" typed in
     the chat, which the session records with `worktree land`. */
-export function blockedNoteText(branch: string, commit: string, blockers: readonly LandingBlocker[]): string {
+export function blockedNoteText(branch: string, commit: string, blockers: readonly LandingBlocker[], conflicts?: { base: string; files: number }): string {
   const list = blockers.map((b) => b.text).join(", ");
   const fixes = blockers.map((b) => b.fix).join("; ");
-  return `${MERGE_QUEUE_SENT_PREFIX} ${branch} is finished at ${commit.slice(0, 7)}, but it can't be queued to land yet: ${list}. On ${branch}, ${fixes}. Once nothing blocks it, the user's go-ahead lands it through the merge queue: they press Land, or type "land it" in this chat, which you record with the worktree tool's land action.`;
+  // A conflict is no blocker and never the chat's to resolve before the Land: the merge thread judges it in line.
+  const also = conflicts?.files ? ` It also conflicts with ${conflicts.base} in ${plural(conflicts.files, "file")}: don't resolve them yourself; once the user presses Land, the merge thread judges them.` : "";
+  return `${MERGE_QUEUE_SENT_PREFIX} ${branch} is finished at ${commit.slice(0, 7)}, but it can't be queued to land yet: ${list}. On ${branch}, ${fixes}. Fix that; once nothing blocks it, the user presses Land (or types "land it" in this chat, which you record with the worktree tool's land action).${also} Nothing has been landed or approved yet.`;
 }
 
 /**
@@ -163,13 +165,6 @@ export async function newestReadingOf(worktree: string, tip: string, d: { owner(
   return newestBlockedOf(reading.value?.trees.find((t) => t.path === tree), tip);
 }
 
-/** The line a session answers with when it can't land its specs. */
-const SPECS_WHY_RE = /^\s*(?:[-*]\s*)?\**Can(?:'|’)t land specs:?\**:?\s*(.+?)\s*$/im;
-export const specsWhyOf = (reply: string | undefined): string | undefined => {
-  const m = reply ? SPECS_WHY_RE.exec(reply) : null;
-  const why = m?.[1]?.replace(/[.\s]+$/, "");
-  return why ? why.slice(0, 300) : undefined;
-};
 
 /** Sova's try of a head's drafts the way the landing will (the draft tool's `land` without writing): what would land,
     or why it wouldn't. "pending" while it runs. */
@@ -259,7 +254,23 @@ interface StoreFile {
   trees: Record<string, HeldLanding>;
   /** Per session and tree, the head commit Sova last told the session what blocks its landing at. */
   told?: Record<string, string>;
+  /** The merge queue's requests Sova made of a finished branch's chat before any Land (its drafts that don't fit, what
+   *  blocks it), by request id, and the chat's answer (merge.respond). */
+  asks?: Record<string, LooseRequest>;
 }
+
+/** A request made of a finished branch's chat before any Land (§chat.worktrees/ready-to-land), and its answer. */
+export interface LooseRequest {
+  session: string;
+  path: string;
+  commit: string;
+  kind: "drafts" | "blocked";
+  at: number;
+  /** The chat it reached (a worker's: the chat running it), once delivered. */
+  to?: string;
+  answer?: { kind: "fixed" | "needs-you" | "cant"; text: string; at: number };
+}
+const ASKS_KEPT = 300;
 
 export const readyToLandFile = () => join(stateRoot(), "ready-to-land.json");
 const keyOf = (sessionId: string, path: string) => `${sessionId}\n${path}`;
@@ -277,7 +288,15 @@ function load(file: string): StoreFile {
     const told: Record<string, string> = {};
     const rawTold = (raw as { told?: unknown }).told;
     if (rawTold && typeof rawTold === "object") for (const [k, v] of Object.entries(rawTold as Record<string, unknown>)) if (typeof v === "string" && SHA.test(v)) told[k] = v;
-    return { v: 1, trees, ...(Object.keys(told).length ? { told } : {}) };
+    const asks: Record<string, LooseRequest> = {};
+    const rawAsks = (raw as { asks?: unknown }).asks;
+    if (rawAsks && typeof rawAsks === "object")
+      for (const [k, v] of Object.entries(rawAsks as Record<string, Partial<LooseRequest>>)) {
+        if (typeof v?.session !== "string" || typeof v.path !== "string" || typeof v.commit !== "string" || (v.kind !== "drafts" && v.kind !== "blocked") || typeof v.at !== "number") continue;
+        const a = v.answer;
+        asks[k] = { session: v.session, path: v.path, commit: v.commit, kind: v.kind, at: v.at, ...(typeof v.to === "string" ? { to: v.to } : {}), ...(a && typeof a.text === "string" && typeof a.at === "number" && (a.kind === "fixed" || a.kind === "needs-you" || a.kind === "cant") ? { answer: { kind: a.kind, text: a.text, at: a.at } } : {}) };
+      }
+    return { v: 1, trees, ...(Object.keys(told).length ? { told } : {}), ...(Object.keys(asks).length ? { asks } : {}) };
   } catch {
     return { v: 1, trees: {} };
   }
@@ -305,6 +324,16 @@ export interface LandingStore {
   nudge(sessionId: string, path: string, commit: string): boolean;
   /** Mark that Sova told the session what blocks its landing at this commit; false when it already had. */
   tell(sessionId: string, path: string, commit: string): boolean;
+  /** Record a request Sova made of the session before any Land (its id, from the chat queue). */
+  asked(sessionId: string, path: string, commit: string, id: string, kind: LooseRequest["kind"]): void;
+  /** The request `id`, if it is one of these. */
+  ask(id: string): LooseRequest | undefined;
+  /** The chat the request reached (a worker's: the chat running it). */
+  delivered(id: string, to: string): void;
+  /** The chat's answer to it (merge.respond): recorded once. */
+  answer(id: string, answer: NonNullable<LooseRequest["answer"]>): void;
+  /** The session's own reason it can't land its drafts at this commit: its Can't answer to the drafts request. */
+  cantWhy(sessionId: string, path: string, commit: string): string | undefined;
 }
 
 /** The file store (tests pass their own file). */
@@ -343,6 +372,31 @@ export function fileLandingStore(file: () => string = readyToLandFile): LandingS
       save(file(), d);
       return true;
     },
+    asked(sid, path, commit, id, kind) {
+      const d = load(file());
+      if (d.asks?.[id]) return;
+      d.asks = Object.fromEntries(Object.entries({ ...(d.asks ?? {}), [id]: { session: sid, path, commit, kind, at: Date.now() } }).slice(-ASKS_KEPT));
+      save(file(), d);
+    },
+    ask: (id) => load(file()).asks?.[id],
+    delivered(id, to) {
+      const d = load(file());
+      const r = d.asks?.[id];
+      if (!r || r.to === to) return;
+      r.to = to;
+      save(file(), d);
+    },
+    answer(id, a) {
+      const d = load(file());
+      const r = d.asks?.[id];
+      if (!r || r.answer) return;
+      r.answer = { kind: a.kind, text: a.text.slice(0, 300), at: a.at };
+      save(file(), d);
+    },
+    cantWhy(sid, path, commit) {
+      const asks = Object.values(load(file()).asks ?? {}).filter((r) => r.session === sid && r.path === path && r.commit === commit && r.kind === "drafts" && r.answer?.kind === "cant");
+      return asks.sort((a, b) => b.at - a.at)[0]?.answer?.text;
+    },
   };
 }
 
@@ -354,6 +408,6 @@ export function docsNudgeText(branch: string, commit: string, problems: readonly
   return (
     `${MERGE_QUEUE_SENT_PREFIX} ${branch} is finished at ${commit.slice(0, 7)}, but its spec drafts wouldn't land with it: ${shown}. ` +
     `Fix them in your drafts on ${branch}: that needs no commit (a promise with no note: record what you verified with the draft tool's evidence <draft> --id '<§id>' --by <you> --verification "<what you checked>" --note --write; a promise changed in the spec since the draft was made: run the draft tool's refresh <draft> --write and rewrite what it marks). ` +
-    "If you can't, answer with one line: Can't land specs: <why>."
+    "Then answer this request with merge.respond: Fixed (drafts: true), or Can't with why. Once they fit, the user presses Land; nothing has been landed or approved yet."
   );
 }

@@ -57,7 +57,7 @@ const peers = (): [string, Record<string, string>, Record<string, unknown> | und
 ];
 
 const call = (method: string, url: string, body: unknown, headers: Record<string, string>, env?: Record<string, unknown>) =>
-  app.request(url, { method, headers: { ...json, ...headers }, body: JSON.stringify(body) }, env);
+  app.request(url, { method, headers: { ...json, ...headers }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) }, env);
 
 async function refuses(door: () => Response | Promise<Response>, words: RegExp, who: string, peer: boolean | string = false) {
   const r = await door();
@@ -255,6 +255,52 @@ describe("trusting cards to act", async () => {
   });
 });
 
+describe("adding or changing an extension", () => {
+  const routes: [string, string, unknown][] = [
+    ["POST", "/api/extensions/inspect", { folder: "/nope" }],
+    ["POST", "/api/extensions/install", { folder: "/nope", version: "v" }],
+    ["POST", "/api/extensions/x/approve", { version: "v" }],
+    ["POST", "/api/extensions/x/folder", { folder: "/nope", version: "v" }],
+    ["POST", "/api/extensions/x/on", {}],
+    ["POST", "/api/extensions/x/off", {}],
+    ["POST", "/api/extensions/x/program", { action: "start" }],
+    ["DELETE", "/api/extensions/x", {}],
+  ];
+  const words = /^Only the user changes extensions\. Ask them to do it in Settings → Extensions\. Nothing was changed\.$/;
+  test("every route is refused to everyone but the page, and says where to click", async () => {
+    setExtensionKeyCheck({ isKey: (v: string) => v === "ext-key", idOf: (v: string) => (v === "ext-key" ? "notes" : null), socket() {} } as never);
+    try {
+      for (const [method, url, b] of routes) {
+        const others = [...notTheUser(), ["the Overseer", { [OVERSEER_SENDER_HEADER]: senderSecret() }, undefined] as ReturnType<typeof notTheUser>[number]];
+        for (const [who, headers, env] of others) await refuses(() => call(method, url, b, headers, env), words, `${url}: ${who}`);
+        await refuses(() => call(method, url, b, { [TOKEN]: "ext-key" }), words, `${url}: an extension's key`);
+        for (const [who, headers, env] of peers()) await refuses(() => call(method, url, b, headers, env), /./, `${url}: ${who}`, true);
+      }
+    } finally {
+      setExtensionKeyCheck(extensionKeys);
+    }
+  });
+  test("from an extension's own page or a frame it is refused too, in its own words; the page itself passes the door", async () => {
+    for (const [method, url, b] of routes) {
+      const r = await call(method, url, b, { ...pageHeaders(), referer: "http://127.0.0.1:1/ext/notes/index.html" });
+      assert.equal(r.status, 403, url);
+      assert.equal(((await r.json()) as { error: string }).error, "An extension's page can't change extensions. Open Settings → Extensions in Sova itself. Nothing was changed.");
+      assert.equal((await call(method, url, b, { ...pageHeaders(), "sec-fetch-dest": "iframe" })).status, 403, url);
+    }
+    const own = await call("POST", "/api/extensions/inspect", { folder: join(root, "no-such-folder") }, { ...pageHeaders(), referer: "http://127.0.0.1:1/#/settings/extensions" });
+    assert.equal(own.status, 200);
+    assert.deepEqual(await own.json(), { ok: false, reason: "This folder has no extension description (sova-extension.json), so it can't be added." });
+  });
+  test("the list reads for anyone the gate let in; through another computer it says so, and the page's own doesn't", async () => {
+    const mine = (await (await call("GET", "/api/extensions/installed", undefined, pageHeaders())).json()) as { through?: string; rows: unknown[] };
+    assert.equal(mine.through, undefined);
+    assert.equal(typeof (mine as { home?: unknown }).home, "string", "a row can say ~ before the picker has opened");
+    assert.deepEqual(mine.rows, []);
+    const seen = (await (await call("GET", "/api/extensions/installed", undefined, pageHeaders(), { meshPeer: { id: "other", nodeId: "n" } })).json()) as { through?: string };
+    assert.equal(typeof seen.through, "string");
+  });
+});
+
 describe("applying Sova's own main copy", async () => {
   const p = await project("apply");
   test("both routes tell the engine when the caller isn't the page; the engine refuses it on this server's own checkout", async () => {
@@ -295,6 +341,46 @@ describe("applying Sova's own main copy", async () => {
     assert.equal(await clickProofFor(seen(clicked()), "b", "/api/project-services/down"), undefined);
     assert.equal(await clickProofFor(seen(clicked()), "b", "/api/projects/pid/services/down"), undefined);
     assert.equal(await clickProofFor(seen(new Request("http://x", { method: "POST", headers: { [TOKEN]: "t" }, body: "{}" })), "b", "/api/project-services/apply"), undefined, "a script gets none");
+  });
+});
+
+describe("the merge queue's acts from another computer's page", () => {
+  const seenReq = (r: Request) => ({ req: { method: r.method, raw: r, header: (n: string) => r.headers.get(n) ?? undefined } }) as never;
+  const clicked = (body = "{}") => new Request("http://x/peer/b/api/x", { method: "POST", headers: pageHeaders(), body });
+
+  test("a page click mints a proof for every merge act the page alone takes, and for none of the reads or a trial", async () => {
+    for (const door of ["/api/project-services/merge.add", "/api/project-services/merge.cancel", "/api/project-services/merge.answer", `/api/projects/pid/services/merge.add`, "/api/projects/pid/overseer/worktrees/merge", "/api/projects/pid/runtime/merge"])
+      assert.ok(await clickProofFor(seenReq(clicked()), "b", door), door);
+    for (const door of ["/api/project-services/merge.status", "/api/project-services/merge.logs", "/api/project-services/merge.try", "/api/project-services/merge.nope", "/api/projects/pid/overseer/worktrees/other"])
+      assert.equal(await clickProofFor(seenReq(clicked()), "b", door), undefined, door);
+    assert.equal(await clickProofFor(seenReq(new Request("http://x", { method: "POST", headers: { [TOKEN]: "t" }, body: "{}" })), "b", "/api/project-services/merge.add"), undefined, "a script gets none");
+  });
+
+  test("a peer's merge.add passes with the proof its sender's host minted for that body; without one, replayed, or for another body it is no page", async () => {
+    const engine = projectEngine();
+    const real = engine.run;
+    const seen: unknown[] = [];
+    engine.run = (async (_verb: string, _body: unknown, caller: { notPage?: boolean }) => (seen.push(caller.notPage), { v: 1, ok: true })) as never;
+    // The sender's host answers the peer's question with the real one-time check.
+    setClickAskForTest(async (_peer, _path, init) => {
+      const q = JSON.parse(String(init?.body ?? "{}")) as { proof?: string; digest?: string };
+      return Response.json({ ok: takeClick(q.proof, "other", q.digest) });
+    });
+    try {
+      // The engine is stood in: only who called reaches it, so the project needs no registration.
+      const body = { project: "/stand-in/project", branch: "feat/x" };
+      const proof = (await clickProofFor(seenReq(clicked(JSON.stringify(body))), "other", "/api/project-services/merge.add"))!;
+      const peer = { meshPeer: { id: "other" } };
+      await call("POST", "/api/project-services/merge.add", body, { "X-Sova-Click-Proof": proof, "X-Forwarded-Host": "h" }, peer);
+      await call("POST", "/api/project-services/merge.add", body, { "X-Sova-Click-Proof": proof, "X-Forwarded-Host": "h" }, peer);
+      await call("POST", "/api/project-services/merge.add", body, { "X-Forwarded-Host": "h" }, peer);
+      const other = (await clickProofFor(seenReq(clicked(JSON.stringify(body))), "other", "/api/project-services/merge.add"))!;
+      await call("POST", "/api/project-services/merge.add", { ...body, branch: "feat/y" }, { "X-Sova-Click-Proof": other, "X-Forwarded-Host": "h" }, peer);
+      assert.deepEqual(seen, [undefined, true, true, true], "proven once; then a replay, no proof, another body: no page");
+    } finally {
+      engine.run = real;
+      setClickAskForTest(null);
+    }
   });
 });
 
@@ -397,5 +483,69 @@ describe("a click on this page that approves on another computer", () => {
     assert.equal(await peerClickProven(c(proofed), "{}", async () => Response.json({ ok: false })), false);
     assert.equal(await peerClickProven(c(proofed), "{}", async () => new Response("x", { status: 500 })), false);
     assert.equal(await peerClickProven(c(proofed), "{}", async () => { throw new Error("down"); }), false);
+  });
+});
+
+describe("landing and answering the merge queue: the user's own page, or a proven click from another of their computers", async () => {
+  const p = await project("merge-acts");
+  const doors = (): [string, string, Record<string, unknown>][] => [
+    ["the Overseer's Merge on a coding worktree", `/api/projects/${p.id}/overseer/worktrees/merge`, { sessionId: "s1" }],
+    ["Merge Branch on a proposed run", `/api/projects/${p.id}/runtime/merge`, { hash: "sha256:x" }],
+  ];
+  test("every caller that isn't the user is refused 403; the page passes the gate (the route's own checks answer)", async () => {
+    for (const [door, url, body] of doors()) {
+      for (const [who, headers, env] of [...notTheUser(), ["a blank chat key", { "x-sova-caller": "" }, undefined] as const]) {
+        const r = await call("POST", url, body, headers as Record<string, string>, env as Record<string, unknown> | undefined);
+        assert.equal(r.status === 403 || (r.status === 200 && (await r.clone().json() as { error?: { code?: string } }).error?.code === "forbidden"), true, `${door}, ${who}: ${r.status} ${await r.clone().text()}`);
+      }
+      const page = await call("POST", url, body, pageHeaders());
+      const t = await page.text();
+      assert.equal(page.status !== 403 && !/"code":"forbidden"/.test(t), true, `${door}, the page: ${page.status} ${t.slice(0, 300)}`);
+    }
+  });
+  test("both services routes tell the queue who calls: the page (or a proven peer click) only is the user; a chat's key, blank too, is a chat", async () => {
+    const engine = projectEngine();
+    const real = engine.run;
+    const seen: { notPage?: boolean; fromChat?: true }[] = [];
+    engine.run = (async (_verb: string, _body: unknown, caller: { notPage?: boolean; fromChat?: true }) => (seen.push({ notPage: caller.notPage, fromChat: caller.fromChat }), { v: 1, ok: true })) as never;
+    const token = pageHeaders().cookie!.split("=")[1]!;
+    try {
+      for (const url of ["/api/project-services/merge.add", "/api/project-services/merge.answer", "/api/project-services/merge.cancel"]) {
+        seen.length = 0;
+        for (const headers of [{ [TOKEN]: token }, { "x-sova-caller": "k" }, { "x-sova-caller": "" }, {}, pageHeaders()]) await call("POST", url, { project: p.dir, branch: "feat/x", entry: "mq_x", answer: "accept" }, headers);
+        assert.deepEqual(seen, [{ notPage: true, fromChat: undefined }, { notPage: true, fromChat: true }, { notPage: true, fromChat: true }, { notPage: true, fromChat: undefined }, { notPage: undefined, fromChat: undefined }], url);
+        seen.length = 0;
+        const relayed = { "X-Sova-Click-Proof": "p", "X-Forwarded-Host": "h" };
+        setClickAskForTest(async () => Response.json({ ok: true }));
+        await call("POST", url, { project: p.dir, branch: "feat/x" }, relayed, { meshPeer: { id: "other" } });
+        setClickAskForTest(async () => Response.json({ ok: false }));
+        await call("POST", url, { project: p.dir, branch: "feat/x" }, relayed, { meshPeer: { id: "other" } });
+        assert.deepEqual(seen.map((x) => x.notPage), [undefined, true], `${url}: a proven peer click is the user; a denied one isn't`);
+      }
+      // The reads ask nothing of the page.
+      seen.length = 0;
+      await call("POST", "/api/project-services/merge.status", { project: p.dir }, { [TOKEN]: token });
+      assert.deepEqual(seen, [{ notPage: undefined, fromChat: undefined }]);
+    } finally {
+      engine.run = real;
+      setClickAskForTest(null);
+    }
+  });
+  test("a click from another of the user's computers: passes when its host confirms the proof, refused when it doesn't or there is none", async () => {
+    const relayed = { "X-Sova-Click-Proof": "p", "X-Forwarded-Host": "h" };
+    const peer = { meshPeer: { id: "other" } };
+    const forbidden = async (r: Response) => r.status === 403 || /"code":"forbidden"/.test(await r.clone().text());
+    try {
+      for (const [door, url, body] of doors()) {
+        setClickAskForTest(async () => Response.json({ ok: true }));
+        assert.equal(await forbidden(await call("POST", url, body, relayed, peer)), false, `${door}: a proven click`);
+        setClickAskForTest(async () => Response.json({ ok: false }));
+        assert.equal(await forbidden(await call("POST", url, body, relayed, peer)), true, `${door}: a proof its host denies`);
+        setClickAskForTest(async () => Response.json({ ok: true }));
+        assert.equal(await forbidden(await call("POST", url, body, { "X-Forwarded-Host": "h" }, peer)), true, `${door}: a relay with no proof`);
+      }
+    } finally {
+      setClickAskForTest(null);
+    }
   });
 });

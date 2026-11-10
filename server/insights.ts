@@ -54,7 +54,7 @@ import { extensionEntries } from "./harness/pi/state";
 import { REWIND, WORKTREES } from "./harness/state-kinds";
 import { stateView } from "./harness/state-view";
 import { describeWorktrees, worktreesOf } from "./worktrees-state";
-import { goneWorkOf, REMOVED_EMPTY, treeReadinessOf } from "./merge-readiness";
+import { goneWorkOf, isMainCheckout, REMOVED_EMPTY, treeReadinessOf } from "./merge-readiness";
 import { LAST_KNOWN_REASON, lastKnownUsage, rememberUsage } from "./usage-last-known";
 import { workerSkills } from "./worker-skills";
 import { addInboxCounts, inboxBody, inboxView, itemsFileOf, mailboxRootOf, readItems, validSegment } from "./team-inbox";
@@ -1444,7 +1444,9 @@ async function worktreeRows(facts: SessionFacts, workers: WorkerInfo[] | null, p
   // A merge queue chat's own trees are the conflicts' scratch copies the thread made itself: never work to land or
   // clean up from its Worktrees section.
   const { queueChatOf } = await import("./sessions-index");
-  const set = (await queueChatOf(path).catch(() => undefined)) ? { ...facts.worktrees, trees: facts.worktrees.trees.filter((t) => t.how !== "created") } : facts.worktrees;
+  const queueChat = await queueChatOf(path).catch(() => undefined);
+  // A main checkout attached before that was refused is left out here as everywhere else (§chat.worktrees/entry).
+  const set = { ...facts.worktrees, trees: facts.worktrees.trees.filter((t) => !isMainCheckout(t.path) && !(queueChat && t.how === "created")) };
   if (!set.trees.length) return {};
   const cwds = workerCwds(facts.workerRecords.all);
   const rows = await describeWorktrees(set, facts.sessionId, (workers ?? []).map((w) => ({ status: w.status, cwd: cwds.get(w.id) })));

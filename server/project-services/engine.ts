@@ -40,7 +40,7 @@ import {
   type TestsReport,
   type VerbResult,
 } from "../../shared/project-contract";
-import { numberedPorts, overLimitSentence, slotLayoutOf, unavailableSentence, type CopyLimit } from "../../shared/project-slots";
+import { checkoutPortsAt, numberedPorts, overLimitSentence, slotLayoutOf, unavailableSentence, type CopyLimit } from "../../shared/project-slots";
 import { COPY_SLOT_TOP } from "../../shared/project-contract";
 import { inheritedEnv } from "./env-allow";
 import { countsAsRunning, limitInForce, runningCopies } from "./copy-limit";
@@ -54,6 +54,7 @@ import type { NoteFacts } from "./note";
 import { RESTART_DELAY_SEC, scheduleRestart, SELF_APPLY_REFUSAL, serverCheckout, serverStart } from "./self-host";
 import { checkShare, instanceOfLink, linksOf, revokeLinks, ShareFailure, shareInstance, shareRefusal } from "./share";
 import { publishedPorts, publisherOf, type ContainerQuery } from "./container-ports";
+import { leftovers, leftoversReason, type Leftovers } from "../worktree-leftovers";
 import {
   dataRootOf,
   hostVars,
@@ -82,8 +83,9 @@ import { defHashOf } from "./def-hash";
 export type Caller =
   /** `notPage`: a route's caller that isn't the user's own page (a script, a chat's terminal): it never restarts this server.
       `fromChat`: the operator's route called by a process a chat runs (its `x-sova-caller` key): never the operator's
-      acts on a release: a chat's own scripts never act as the operator there. */
-  | { kind: "operator"; confirm?: boolean; notPage?: boolean; fromChat?: true }
+      acts on a release: a chat's own scripts never act as the operator there. `fromCard`: a command a card in the page ran (its code, not Sova's own control):
+      never the user's act on the merge queue. */
+  | { kind: "operator"; confirm?: boolean; notPage?: boolean; fromChat?: true; fromCard?: true }
   /** `approved`: whether the user's click that opened this turn approved `verb` on that copy (§app.overseer/copies).
       `word`: whether the user started this turn (typed or a click), read per call; absent: never. `working`: whether
       the conversation (session id) that started a copy is working now; absent: always (a click is needed). */
@@ -988,7 +990,7 @@ export class ProjectEngine {
       if (off) throw new VerbFailure("invalid-request", `${unavailableSentence(off)} No copy takes it; ask for another slot, or none`);
     }
     const numbered = (slot: number) => numberedPorts(def, limit.numbering, slot);
-    const checkoutPorts = (slot: number) => def.services.filter((s) => s.scope === "checkout").flatMap((s) => Object.values(numbered(slot)[s.name] ?? {}));
+    const checkoutPorts = (slot: number) => checkoutPortsAt(def, limit.numbering, slot);
     // No slot's allocation gives an adopted unit's port (§app.project-services/adopt).
     const adopted = adoptedService(def);
     const adoptedPorts = new Set(adopted ? Object.values(adopted.adopt!.ports) : []);
@@ -1004,14 +1006,15 @@ export class ProjectEngine {
         // Only running copies count; the main checkout's and conformance's scratch copies never do.
         if (!main && !conforming) this.refuseOverLimit(runningCopies(r, project), limit);
         const copies = r.instances.filter((i) => i.project === project && i.slot !== 0 && !i.createdBy.startsWith("conform:")).sort((x, y) => x.slot - y.slot);
-        const held = copies.length ? copies.map((i) => `slot ${i.slot} (${i.id}, ${i.checkout})`).join(", ") : "none";
+        const held = copies.length ? copies.map((i) => `slot ${i.slot} (${i.branch ?? i.id}, ${countsAsRunning(i) ? "running" : "stopped"})`).join(", ") : "none";
+        const nextAction = "Tear down a copy this session made; otherwise ask the user to free a place with Teardown on the Branches tab.";
         const pick = main ? pickSlot(r, project, checkoutPorts, [], () => false, 0) : pickSlot(r, project, checkoutPorts, layout.ordinary, listening, run.req.slot);
         if ("refused" in pick)
           throw new VerbFailure(
             "slots-blocked",
             run.req.slot !== undefined
-              ? `${pick.refused} (the project's copies hold: ${held})`
-              : `no usable slot of 1 to ${COPY_SLOT_TOP} is free for a copy (${scratchWords}${layout.unavailable.length ? `; ${layout.unavailable.map(unavailableSentence).join(" ").replace(/\.$/, "")}` : ""}; the project's copies hold: ${held}): ${pick.refused.replace(/^no free slot: /, "")}. Free one of those ports, or tear down a copy`,
+              ? `${pick.refused} (the project's copies hold: ${held}). ${nextAction}`
+              : `no usable slot of 1 to ${COPY_SLOT_TOP} is free for a copy (${scratchWords}${layout.unavailable.length ? `; ${layout.unavailable.map(unavailableSentence).join(" ").replace(/\.$/, "")}` : ""}; the project's copies hold: ${held}): ${pick.refused.replace(/^no free slot: /, "")}. ${nextAction}`,
           );
         const all = numbered(pick.slot);
         const ports: Record<string, Record<string, number>> = {};
@@ -1804,6 +1807,11 @@ export class ProjectEngine {
     } else if (Object.keys(rec.data).length) run.steps.push({ id: "data", kind: "data", result: "skipped", ms: 0, detail: `kept: ${Object.values(rec.data).join(", ")}` });
     if (rec.cutWorktree && existsSync(rec.checkout)) {
       await this.step(run, "worktree", "worktree", async () => {
+        // What git's own remove would delete silently: ignored files that can't be rebuilt and nested
+        // repositories keep it, as with Clean Up Merged (server/worktree-leftovers.ts). A failed read keeps it.
+        const held = await leftovers(rec.checkout).catch((err: Error): Leftovers => ({ dirty: [], ignored: [], nested: [], rebuildable: [], unreadable: `Its files couldn't be read: ${err.message}` }));
+        const why = leftoversReason(held);
+        if (why) return { result: "skipped", detail: `kept ${rec.checkout}: ${why}` };
         const r = await this.git(["worktree", "remove", "--", rec.checkout], rec.project);
         if (r.code !== 0) return { result: "skipped", detail: `kept ${rec.checkout}: ${firstLine(r.stderr || r.stdout)}` };
         return { result: "done", detail: `removed ${rec.checkout} (branch ${rec.branch} kept)` };

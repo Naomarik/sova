@@ -16,7 +16,8 @@ const served = row({ branch: "feat/served", mergeServed: true, mergeProject: pro
 const unlisted = row({ branch: "feat/plain" });
 const listedUnset = row({ branch: "feat/listed", mergeProject: project({ checks: "unset", target: "main" }) });
 const unlistedDirty = row({ branch: "feat/dirty", readiness: { ...finished, state: "in-progress", dirtyCount: 2 } });
-const PLAIN = "Say “land it” in the chat to merge it into main.";
+const PLAIN = "Say “land it” in the chat to merge it.";
+const PLAIN_MAIN = "Say “land it” in the chat to merge it into main.";
 const QUEUE_WORDS = /Ready to land|Landing specs|\bLand\b|queue/;
 
 /** What a row draws: its chip, its line and its buttons (projectIdOf: mergeProject, else the entry's). */
@@ -36,7 +37,13 @@ test("an unlisted repo's finished branch: Ready to merge, the plain-merge line, 
 });
 
 test("a listed project with no merge setup: Ready to merge, the plain-merge line, and Set Up Queue (never Land)", () => {
-  assert.deepEqual(drawn(listedUnset), { chip: "Ready to merge", line: PLAIN, buttons: ["Set Up Queue"] });
+  assert.deepEqual(drawn(listedUnset), { chip: "Ready to merge", line: PLAIN_MAIN, buttons: ["Set Up Queue"] });
+});
+
+test("the plain-merge line says the repository's real target, and none it can't know", () => {
+  assert.equal(drawn({ ...unlisted, place: { target: "trunk" } }).line, "Say “land it” in the chat to merge it into trunk.");
+  assert.equal(drawn({ ...listedUnset, place: { target: "trunk" } }).line, "Say “land it” in the chat to merge it into trunk.");
+  assert.equal(drawn(unlisted).line, PLAIN);
 });
 
 test("uncommitted work in an unserved repo: commit it in the chat, no mention of Land", () => {
@@ -49,21 +56,27 @@ test("Land keys on mergeServed alone: a listed project with checks but no mergeS
 });
 
 test("the modal's head: the queue's intro and paused line only where some row is served", () => {
-  assert.deepEqual(modalHead([unlisted, listedUnset, unlistedDirty]), { intro: null, paused: null });
-  const both = modalHead([unlisted, { ...served, mergeProject: project({ paused: "you paused it" }) }]);
+  assert.deepEqual(modalHead([unlisted, listedUnset, unlistedDirty]), { intro: null, paused: [] });
+  const named = (id: string, label: string, paused?: string) => ({ ...served, place: { label }, mergeProject: project({ id, ...(paused ? { paused } : {}) }) });
+  const both = modalHead([unlisted, named("prj_1", "AmalMoney", "you paused it")]);
   // One line in the dialog's foot (fold layout): what Land does and what lands, no target named.
   assert.equal(both.intro, "Land queues a branch; it lands as the commit that was tested.");
-  assert.equal(both.paused, "The queue is paused: you paused it. Land still takes your approval; it's checked once the queue resumes.");
+  assert.deepEqual(both.paused, ["AmalMoney's queue is paused: you paused it. Land still takes your approval; it's checked once the queue resumes."]);
+  // Each paused project once, the one that isn't paused not at all, whichever row comes first.
+  const a = named("prj_a", "A", "maintenance");
+  assert.deepEqual(modalHead([named("prj_c", "C"), a, a, named("prj_b", "B", "tests are red")]).paused.map((l) => l.split(" is paused")[0]), ["A's queue", "B's queue"]);
   // A listed-not-set-up project's paused facts never speak for the queue: no row there is served.
-  assert.equal(modalHead([{ ...listedUnset, mergeProject: project({ checks: "unset", paused: "x" }) }]).paused, null);
+  assert.deepEqual(modalHead([{ ...listedUnset, mergeProject: project({ checks: "unset", paused: "x" }) }]).paused, []);
 });
 
 test("the modal draws exactly these: every row button and the head come from rowButtons and modalHead", async () => {
   const { readFile } = await import("node:fs/promises");
   const src = await readFile(new URL("../components/WorktreesModal.tsx", import.meta.url), "utf8");
-  // No button decides on its own: a check on row().action or row().sendBack would bypass rowButtons.
-  assert.doesNotMatch(src, /row\(\)\.(action|sendBack)/);
-  for (const b of ["Land", "Set Up Queue", "Cancel", "Accept", "Land Anyway", "Send Back"]) assert.ok(src.includes(`buttons().includes("${b}")`), b);
+  // No button decides on its own: a check on row().action or row().tryAgain would bypass rowButtons.
+  assert.doesNotMatch(src, /row\(\)\.(action|tryAgain|answerInChat|remove)\b/);
+  for (const b of ["Land", "Set Up Queue", "Accept", "Land Anyway", "Try Again", "Answer in Chat", "Remove from Queue"]) assert.ok(src.includes(`buttons().includes("${b}")`), b);
+  // The retired buttons are drawn nowhere in the modal (al_3).
+  for (const gone of ["Send Back", "Land This Commit Again", "Land Newest Commit"]) assert.ok(!src.includes(gone), gone);
   assert.ok(src.includes("modalHead(props.rows)") && !/Land queues a branch/.test(src), "the intro's words live in modalHead only");
 });
 

@@ -21,9 +21,9 @@ A chat in Create works as a chat in [Delegate](/docs/modes/delegate/) does: the 
 the same routes, workers and teams, and the same rule that the chat orchestrates and checks instead of
 doing the work itself.
 
-Create has no settings of its own. The Subagents picker and every profile are Delegate's, and
-moving a chat between Delegate and Create keeps its subagent profile. **Configure Create**, the gear
-on Create's row, opens the same Settings → Subagents as Delegate's gear. The [strict](/docs/modes/#strict)
+Create has no settings of its own. The Profile picker and every profile's Models part are Delegate's, and
+moving a chat between Delegate and Create keeps its profile. **Configure Create**, the gear
+on Create's row, opens the same Settings → Profiles as Delegate's gear. The [strict](/docs/modes/#strict)
 flag does the same in both: while it's on, the chat has no `edit` or `write` tool. `bash` and every other
 tool stay, so a chat can still write a file with `bash`.
 
@@ -86,7 +86,7 @@ on where the chat is.
 | Where the chat is | Topics about this computer | Topics about the project |
 |---|---|---|
 | A project with a merge queue | Work | Work, by card and Land |
-| A project with no merge queue | Work | The chat or a worker works on a branch in a worktree, and the chat merges it on your word. Create says what's missing and offers **Initialize** |
+| A project with no merge queue | Work | The chat or a worker works on a branch in a worktree, and the chat merges it on your word. Create says what's missing and offers **Set Up with a Chat** |
 | A folder that isn't a project | Work | Create says what's missing and offers **Add as Project** |
 | A folder that isn't in Git | Work | Create says project changes are made by hand |
 
@@ -160,8 +160,9 @@ Create is chosen per chat, from that chat's mode menu or by typing `/mode create
 on and moves no other minor mode. Align is an ordinary minor mode from then on: you can turn it
 off in Create, and leaving Create leaves it as it is.
 
-**No default holds Create.** Save as default in a Create chat saves the chat's last normal or Delegate
-choice, with its strict flag, minor modes and subagent profile. A chat that has been in no other mode
+**No default holds Create.** **Update {name}** in a Create chat saves the chat's last normal or Delegate
+choice, with its minor modes, into its profile. **Make {name} the Default** makes its profile the
+default, never Create, and saves the chat's strict flag. A chat that has been in no other mode
 saves normal. Nothing else can name it either: a profile, a playbook or schedule through a profile, an
 automation and both Overseers are refused, and nothing is created or changed. So it never spreads to
 your other computers as a default.

@@ -2,7 +2,7 @@
   "§app.settings-dialog/alignment": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "code": [
       "src/components/AlignmentSettings.tsx",
       "src/lib/alignment-draft.ts",
@@ -59,9 +59,9 @@
       "§design.copy-deck/settings-decisions"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-10-23T14:32Z",
-      "source": "pi-session:b12fa70a-e8d8-40c1-89f1-d1099cc1d8de#730a540e"
+      "by": "omar",
+      "at": "2026-11-07T03:53Z",
+      "source": "pi-session:b06e603a-07aa-4e97-9efa-361431fbfd1c#77903386"
     }
   },
   "§app.settings-dialog/decisions-autosave": {
@@ -85,6 +85,36 @@
       "by": "naomarik",
       "at": "2026-10-23T14:32Z",
       "source": "pi-session:b12fa70a-e8d8-40c1-89f1-d1099cc1d8de#730a540e"
+    }
+  },
+  "§app.settings-dialog/extensions": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "requires": [
+      "§app/settings-dialog",
+      "§app.settings-dialog/save-bar",
+      "§app.extensions/folder",
+      "§app.extensions/loader",
+      "§app.extensions/program",
+      "§app.updates/restart",
+      "§design.copy-deck/settings-extensions"
+    ],
+    "code": [
+      "src/components/ExtensionsSettings.tsx",
+      "src/lib/extensions-settings.ts",
+      "src/components/SettingsDialog.tsx",
+      "src/components/McpServers.css",
+      "src/lib/settings-nav.ts",
+      "src/lib/settings-nav.test.ts",
+      "src/lib/api.ts",
+      "src/components/ServerSettings.tsx",
+      "src/lib/extensions-settings.test.ts"
+    ],
+    "agreed": {
+      "by": "Omar (user)",
+      "at": "2026-11-06T21:55Z",
+      "source": "pi-session:01a1acdc-5fed-7735-96f5-96f6019e339d#537ac0e8"
     }
   },
   "§app.settings-dialog/general": {
@@ -155,21 +185,22 @@
       "§chat/subagent-profiles"
     ],
     "authority": "accepted",
-    "evidence": "reviewed",
+    "evidence": "verified",
     "code": [
       "src/components/SettingsDialog.tsx",
       "src/components/SubagentProfilesSettings.tsx",
       "server/subagent-profiles.ts"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-10-15T04:52Z"
+      "by": "naomarik",
+      "at": "2026-11-08T22:16Z",
+      "source": "pi-session:f599f57e-519d-4f33-9088-ed8a9cd164b5#cebf8649"
     }
   },
   "§app.settings-dialog/number-boxes": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "code": [
       "src/components/BatonSettings.tsx",
       "src/components/PublicLinksSettings.tsx",
@@ -213,8 +244,15 @@
     "evidence": "verified",
     "code": [
       "src/components/SettingsDialog.tsx",
-      "src/app.css"
-    ]
+      "src/app.css",
+      "src/design/base.css",
+      "server/forms-dialog-frame-browser.integration.test.ts"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-11-08T21:15Z",
+      "source": "pi-session:f599f57e-519d-4f33-9088-ed8a9cd164b5#23e1787a"
+    }
   },
   "§app.settings-dialog/organizations": {
     "kind": "behavior",
@@ -331,6 +369,58 @@
       "source": "pi-session:01a1a855-6f5f-72d2-b9d3-59fb661e925b#0f628483"
     }
   },
+  "§app.settings-dialog/profile-editor": {
+    "kind": "behavior",
+    "requires": [
+      "§chat.profiles/joined",
+      "§app.settings-dialog/save-bar",
+      "§chat.subagent-profiles/settings",
+      "§chat.profiles/trust"
+    ],
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "src/components/ProfilesSettings.tsx",
+      "src/components/SubagentProfilesSettings.tsx",
+      "src/lib/subagent-profiles-draft.ts",
+      "server/session-profile-routes.ts",
+      "server/subagent-profiles.ts",
+      "server/profiles-store.ts",
+      "src/lib/profiles-settings.ts",
+      "src/lib/profiles-settings.test.ts",
+      "src/lib/profiles-draft.ts",
+      "src/components/SubagentProfilesSettings.css",
+      "server/profile-editor.ts",
+      "server/profile-editor-routes.ts",
+      "src/lib/settings-nav.ts"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-11-08T22:16Z",
+      "source": "pi-session:f599f57e-519d-4f33-9088-ed8a9cd164b5#cebf8649"
+    }
+  },
+  "§app.settings-dialog/profile-set-all": {
+    "kind": "behavior",
+    "requires": [
+      "§app.settings-dialog/profile-editor",
+      "§app.settings-dialog/modes"
+    ],
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "src/components/SubagentProfilesSettings.tsx",
+      "src/lib/subagent-editor.ts",
+      "src/lib/profiles-settings.ts",
+      "src/lib/profiles-settings.test.ts",
+      "src/components/ProfilesSettings.tsx"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-11-08T19:45Z",
+      "source": "pi-session:f599f57e-519d-4f33-9088-ed8a9cd164b5#33385786"
+    }
+  },
   "§app.settings-dialog/profiles": {
     "kind": "behavior",
     "authority": "accepted",
@@ -343,7 +433,11 @@
       "src/lib/settings-nav.test.ts",
       "src/App.tsx",
       "src/lib/profiles.ts",
-      "src/lib/profile-cards.test.ts"
+      "src/lib/profile-cards.test.ts",
+      "src/lib/profiles-settings.ts",
+      "src/lib/profiles-settings.test.ts",
+      "src/lib/profiles-draft.ts",
+      "src/components/SubagentProfilesSettings.css"
     ],
     "requires": [
       "§chat.profiles/model",
@@ -352,13 +446,14 @@
     ],
     "agreed": {
       "by": "naomarik",
-      "at": "2026-10-11T08:41Z"
+      "at": "2026-11-08T19:45Z",
+      "source": "pi-session:f599f57e-519d-4f33-9088-ed8a9cd164b5#33385786"
     }
   },
   "§app.settings-dialog/save-bar": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "code": [
       "src/lib/settings-draft.ts",
       "src/lib/settings-draft.test.ts",
@@ -388,7 +483,13 @@
       "src/components/AlignmentSettings.tsx",
       "src/lib/updates-draft.ts",
       "src/lib/settings-forms-roundtrip.test.ts",
-      "server/settings-roundtrip.integration.test.ts"
+      "server/settings-roundtrip.integration.test.ts",
+      "src/lib/experimental-draft.test.ts",
+      "server/web-settings.ts",
+      "server/web-settings.test.ts",
+      "src/lib/profiles-draft.ts",
+      "src/components/ProfilesSettings.tsx",
+      "server/settings-browser.integration.test.ts"
     ],
     "requires": [
       "§app/settings-dialog",
@@ -396,9 +497,9 @@
       "§design.copy-deck/settings-modes-delegate"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-11-04T02:26Z",
-      "source": "pi-session:5b3349ca-a4e6-4bb7-8a78-16e639eb61df#8fb59837"
+      "by": "Omar (user)",
+      "at": "2026-11-06T21:56Z",
+      "source": "pi-session:01a1acdc-5fed-7735-96f5-96f6019e339d#537ac0e8"
     }
   },
   "§app.settings-dialog/summaries": {
@@ -444,8 +545,15 @@
     "code": [
       "src/lib/theme.ts",
       "src/lib/typography.ts",
-      "shared/theme.ts"
-    ]
+      "shared/theme.ts",
+      "src/lib/theme-prepaint.ts",
+      "src/components/SettingsDialog.tsx"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-11-07T15:04Z",
+      "source": "pi-session:01a1b66a-16fd-74ac-bf53-6357788d4cf1#ba273ed2"
+    }
   },
   "§app.settings-dialog/toggle-target": {
     "kind": "behavior",
@@ -453,11 +561,16 @@
       "§app/settings-dialog"
     ],
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "code": [
       "src/design/base.css",
       "src/components/SubagentProfilesSettings.tsx"
-    ]
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-08T08:01Z",
+      "source": "pi-session:94b6e71e-3aba-4205-a03b-2fb292ea1d80#132113a8"
+    }
   },
   "§app.settings-dialog/voice": {
     "kind": "behavior",
@@ -578,9 +691,9 @@
       "src/lib/settings-nav.test.ts"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-11-04T02:27Z",
-      "source": "pi-session:5b3349ca-a4e6-4bb7-8a78-16e639eb61df#8fb59837"
+      "by": "Omar (user)",
+      "at": "2026-11-06T21:56Z",
+      "source": "pi-session:01a1acdc-5fed-7735-96f5-96f6019e339d#537ac0e8"
     },
     "notOwned": [
       "§chat.voice/runtime",

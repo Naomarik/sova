@@ -29,7 +29,7 @@ curl -fsSL https://raw.githubusercontent.com/Naomarik/sova/stable/scripts/instal
 
 This installs Sova's newest stable release (the `stable` tag, which each release moves to itself); running it again updates to the newest stable release then.
 
-The whole script is one function that runs only after bash has read its last line, so a download cut short runs nothing. To install another tag, branch or commit, end the command with `| SOVA_REF=<ref> bash` instead (`SOVA_REF=v0.10.2` stays on that release, `SOVA_REF=master` follows the latest commit); one that doesn't exist stops it before it changes anything. It builds Sova in a staging folder and only replaces your install once the build has succeeded; if anything fails, the previous install stays.
+The whole script is one function that runs only after bash has read its last line, so a download cut short runs nothing. To install another tag, branch or commit, end the command with `| SOVA_REF=<ref> bash` instead (`SOVA_REF=v0.13.0` stays on that release, `SOVA_REF=master` follows the latest commit); one that doesn't exist stops it before it changes anything. It builds Sova in a staging folder and only replaces your install once the build has succeeded; if anything fails, the previous install stays.
 
 What it puts on your machine:
 
@@ -100,7 +100,7 @@ With your yes, or `--service`, the installer adds a per-user service that starts
 
 With neither option it asks, defaulting to no. With no terminal to ask on, it installs none and says how to add one. A service it installed before is kept and updated without asking, unless you pass `--no-service`, which leaves it as it is. If something already listens on the port, such as a `sova` you started by hand, it installs the service without starting it, and says so.
 
-The service restarts Sova whenever it exits, but a stop you ask for stays stopped, and a stop gives Sova up to 90 seconds (60 on macOS) to let running agents finish. On Linux it stops at logout unless lingering is on (`loginctl enable-linger`).
+The service restarts Sova whenever it exits, but a stop you ask for stays stopped, and a stop gives Sova up to 90 seconds (60 on macOS) to finish its own work. Running chats aren't stopped. On Linux it stops at logout unless lingering is on (`loginctl enable-linger`).
 
 It needs launchd or systemd. Where there's neither (a container, say), the installer doesn't ask and installs none; run `sova` yourself instead. `--service` there stops the install before it changes anything. Where `systemctl` exists but no systemd user manager is running (no login session, say), the installer writes the unit but doesn't enable or start it, and its closing message gives the command to start it: `systemctl --user enable --now sova.service`. To remove such a unit, see the note under Remove it.
 

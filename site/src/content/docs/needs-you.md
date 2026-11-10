@@ -5,7 +5,7 @@ group: Features
 order: 11
 ---
 
-**Needs you** sits at the top of the session list, above Recent. It lists the sessions that are blocked on you right now. With phone notifications on, the same news reaches your lock screen, even with Sova closed. Neither one makes a model call or costs tokens.
+**Needs you** sits at the top of the session list, above Recent. It lists the sessions that are blocked on you right now and, under them, the ones that may be waiting on you. With phone notifications on, the blockers reach your lock screen too, even with Sova closed. Neither one makes a model call or costs tokens of its own. The guesses in the softer group come from the short check Sova runs on each finished turn.
 
 ## What counts as needing you
 
@@ -20,22 +20,35 @@ A session is listed when one of these holds:
 - A playbook run proposes a branch to merge. Its row carries a **Merge Branch** button.
 - A card in its chat waits for your answer, such as an option card or a question card.
 
+A session with a waiting card and open alignment questions too still reads as a question: answering the card doesn't answer the alignment.
+
 A project's failed deploy or open deploy request, its release items (a release ready to publish, a step held for you, a failed step or Publish, a release chat that has gone quiet, or a request to release), and a WhatsApp sender that stopped sending, belong to no session: they list under the session rows as rows of their own, each opening the page where you deal with it (the Deploy panel, the Releases tab, Settings → Outreach). So does each open request an organization's owner files through its Project Assistant. A report, question or request opens the organization's **Requests** tab at it, and stays until work on it starts or you **Mark Done** or **Decline** it. A request to try a version opens the project's **Branches** tab, and an ask for a new owner link opens the **People** tab.
 
-Some things are worth a look but don't block anything, so they never get a row here: a reply that seems to ask you something, a team that has gone quiet, a worktree that's ready to merge, or a stuck subagent. The first two show as a quiet mark on the session's own row, a ready worktree shows on the row's branch status (a green check and how many are ready, the same status the chat shows beside its composer), and a stuck subagent is an item the Overseer reads under its parent session. A worktree ready to land waits for you: it lands once you press **Land** (beside the composer, in the session's Worktrees section, or on the project's Merge Queue tab) or type "land it" in its chat, through the project's merge queue.
+Under the blockers, a softer group named **Maybe waiting on you** lists Sova's guesses from a chat's last reply: a reply that seems to wait on you, or one that says it's done without checking. A guess never sends a phone notification. It goes when the next turn replaces it or the chat is archived, or after 7 idle days. A reply asking you to press Land, merge or restart also leaves on its own while that version is in the merge queue, comes back if the entry is cancelled or stops short, and leaves for good once that version has landed. A newer change with a new ask stays listed.
+
+Some things are worth a look but don't get a row here: a team that has gone quiet shows as a quiet mark on the session's own row, and a worktree that's ready to merge shows on the row's branch status (a green check and how many are ready, the same status the chat shows beside its composer). A worktree ready to land waits for you: it lands once you press **Land** (beside the composer, in the session's Worktrees section, or on the project's Merge Queue tab) or type "land it" in its chat, through the project's merge queue.
 
 A subagent you killed yourself isn't listed. A server restart ends no subagent, since each runs in a process of its own, so a subagent error is always a real one. A subagent error stops counting once you've opened the session, or once the session has finished a turn since.
 
 ## How the list reads
 
-- **One row per session**, newest first, however many things it's waiting on.
-- **Every row reads the same**, whatever it is about: the project's or folder's name with a state word, the title (the session's, or what the item is, such as "Deploy failed"), one line of detail saying why ("3 open questions in al_3 Autonomy settings", "Waiting on a dialog.", "429 rate limited"), and what it opens ("Open Chat", "Open Deploy", "Review and Publish"). Hover the detail for every reason it has. Two projects with the same name are told apart by a bit of their folder path.
-- **The whole row is one link.** The only buttons on a row are **Merge Branch** on a proposed playbook run and **Cancel** on an act the Overseer holds; pressing one doesn't navigate.
-- **A shortcut, not a place.** A row here has none of a session row's marks, menu or dragging. Every session listed here is still in its usual place: Folders or the Archive, its group, and Recent when it moved lately. Nothing on the list puts a row away: it goes when the thing it waits on is done.
+- **One row per session**, newest first within each group, however many things it's waiting on.
+- **Every row reads the same**, whatever it is about, in two lines: the project's or folder's name with a state word, then the title (the session's, or what the item is, such as "Deploy failed"). The reason ("3 open questions in al_3 Autonomy settings", "Waiting on a dialog.", "429 rate limited") is hover text on the row, with every reason it has. On a phone, open the row to see why. Two projects with the same name are told apart by a bit of their folder path.
+- **The whole row is one link.** The buttons on a row are the **×** on a chat's row (see [Dismiss](#dismiss)), **Merge Branch** on a proposed playbook run and **Cancel** on an act the Overseer holds; pressing one doesn't navigate.
+- **A shortcut, not a place.** A row here has none of a session row's marks, menu or dragging. Every session listed here is still in its usual place: Folders or the Archive, its group, and Recent when it moved lately. A row goes when the thing it waits on is done, or when you dismiss it.
 - **Only while it has rows.** An empty list isn't shown at all, so the list appearing is the signal. You can collapse it; a search opens it again so every hit shows.
 - **Refreshed every 10 seconds** while the tab is visible, and at once when you come back to it.
 
 Organization sessions wait in the Organizations section's own Needs you, not in this one. The Overseer counts them too, so its "need you" number can be higher than this list's.
+
+## Dismiss
+
+Every chat's row has a **×** at its right, shown when you hover the row or reach it with the keyboard on a computer, and always shown on a phone. Press it when you've read a row and don't mean to act on it now.
+
+- **It stops counting everywhere.** The row leaves the list, and the chat leaves the Overseer's "need you" number, project cards, the phone app's badge and notifications, on all your devices. The chat itself doesn't change: a dialog stays open and a question stays unanswered, and its row elsewhere keeps its marks.
+- **Undo, briefly.** A "Dismissed." toast with **Undo** shows for a few seconds. There is no list of dismissed rows.
+- **Something new brings it back.** The row returns when that chat has something new: a new reply, question, error or dialog.
+- **Only chats.** A row of no session (a failed deploy, a release item, a WhatsApp sender, an owner's request) has no ×. It closes where it lives.
 
 ## Proactivity
 

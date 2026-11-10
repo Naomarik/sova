@@ -454,7 +454,9 @@ label a person reads says "sessions pane".
   and reply error, before it cuts any of them, so no part of one is ever listed.
   `Untitled` renders in `--color-ink-muted`. A session with a profile has its icon just before the
   title, in accent ink, with "Profile: {label}" as its `title` (§chat.profiles/after-first-message).
-- **Draft rows.** An empty husk — a session whose file holds no user message anywhere — is never
+- **Draft rows.** An empty husk — a session whose file holds no user message and no command run
+  from shell mode anywhere (§chat.shell-mode/card: a chat holding only commands is listed, as `Untitled`,
+  and the empty-husk cleanup keeps it) — is never
   listed, with two exceptions: **a husk with a stored draft is** (§chat.composer/behavior, Drafts),
   and so is a husk that carries a profile (§chat.profiles/singleton), as an ordinary `Untitled` row. The server sends it
   with `SessionSummary.draftPreview`, the draft's first non-empty line cut to about 80 characters.
@@ -502,8 +504,7 @@ label a person reads says "sessions pane".
   topic-outline off) omit the line entirely — the row is then title over meta, as before. So does
   every row while Settings → General's **Summary line** switch is off
   (§app.settings-dialog/general): this browser then draws no summary line on any row. A draft
-  row's preview, which is not a summary, stays, and so does a Needs you row's reason
-  (§app.session-list/needs-you).
+  row's preview, which is not a summary, stays.
 
   The line also carries the session's **topic count**, at its right end: a
   `.chip.chip-count.session-topics` holding a bare figure, `title` "{n} topics in this session",
@@ -514,12 +515,12 @@ label a person reads says "sessions pane".
 - **Row line 3.** The session's **branch status leads the facts after the time**: the same status
   its chat shows in the composer's run-status row (§chat.composer/worktrees-control), worked out by
   the same rule from the rows the list last read. A row says what its chat says once it has caught
-  up, and it can lag its chat only as far as "How far a row can lag its chat" below says. A sent-back
-  branch counts as needing a fix only while its chat's row reads Needs a fix: never once the queue
-  has settled that entry, once the branch reads ready again at a newer commit (or, sent back for its
-  drafts, at the same commit once they changed and fit), once it is removed from the queue, or once
-  it is merged or its worktree folder removed (§chat.composer/worktrees-control "Land comes back
-  once its chat fixes it"). It is the
+  up, and it can lag its chat only as far as "How far a row can lag its chat" below says. A branch
+  counts as needing a fix only while its chat's row reads back with the chat, approved and waiting
+  for a fix, or paused: never once its fix is checked and it is back in line, once it waits for the
+  user's decision (that is needs you), once it is removed from the queue, or once it is merged or
+  its worktree folder removed (§chat.composer/worktrees-control "Your Land stands while its chat
+  fixes it"). It is the
   control's headline, the first that holds: needs you, needs a fix, ready, checking, queued, else
   the fallback, "{n} worktrees". Ready means exactly what it means there (a served branch Ready to
   land, an unserved one Ready to merge), and the branches are counted as the chat counts them:
@@ -542,8 +543,9 @@ label a person reads says "sessions pane".
   The figure is the headline's own number: 2 for "2 ready", 1 for "1 checking", the count of
   branches for the fallback. The symbol and figure are `aria-hidden`. The status's `title`, and the
   row link's accessible name, carry it in words: the chat's words first ("2 ready", "1 needs a
-  fix"), then each branch in the Worktrees window's words, its branch, state and detail or reason
-  ("feat/x: Queued · 2nd", "feat/y: Needs a fix · {reason}"), then the after-merge lines
+  fix"), then each branch in the Worktrees window's words, its branch in its place
+  (§chat.worktrees/place), state and detail or reason ("feat/x in AmalMoney: Queued · 2nd", "feat/y
+  in ~/code/tools: Needs a fix · {reason}"), then the after-merge lines
   the row carried before: the branch status line and each routine follow-up in words
   (§chat.worktrees/readiness). The status replaces the "{merged} of {total}" count rows used to
   show; nothing on the row counts merged worktrees any more. A session with no such worktree shows
@@ -785,18 +787,18 @@ region's own Needs you (§app.session-list/organizations). A registered project'
 overseer's conversations and its builds, which live in its project's block) joins only for a
 proposal waiting on you, a `playbook-review` item such as its Setup chat's
 (§app.project-runtime/review), with that proposal's button (on a Setup proposal Run Trial, then Land
-or Merge Branch) and Read Report; its other items, a
+or Merge Branch); its other items, a
 failed turn included, stay in its project's block. **The Overseer's count still includes
 them, deliberately**: the Overseer reads the whole digest, like the org and project pages, so its
 "{a} need you" can be higher than this region's count by the org sessions waiting on you. The digest, not the
-session list, is the source: a hosted pending dialog, a worker error and every detail sentence
+session list, is the source: a hosted pending dialog, a worker error and every row's sentence
 reach only the digest.
 
 Needs you is a **shortcut, not a place a session lives**, exactly like Recent: every row is still in
 Recent (when it moved lately), Folders, its project's block or the Archive, and its group. An organization session is
-never a row here. Nothing is moved or hidden,
-and the region has **no actions of its own** beyond its twist: nothing puts a row away but the
-thing it waits on being done.
+never a row here. Nothing is moved or hidden elsewhere. A row goes when the thing it waits on is done,
+or when you dismiss a chat's row (§app.session-list/needs-you-dismiss), until that chat has something
+new.
 
 ```html
 <!-- First in .sidebar-list, above Recent. Only while it has rows and proactivity is not Off. -->
@@ -808,7 +810,7 @@ thing it waits on being done.
       Needs you <span class="sidebar-region-count">· 2</span>
     </h2>
   </summary>
-  <ul class="list">…one row each: name and state word, title, detail, what it opens…</ul>
+  <ul class="list">…one row each: place and state chip, title, Dismiss on a chat's row…</ul>
   <!-- only when the digest's 30-item cap dropped act items -->
   <p class="sidebar-region-note">Some sessions may not be listed: this list stops at the 30 most urgent items.</p>
 </details>
@@ -841,30 +843,35 @@ thing it waits on being done.
   session rows, held acts first and soonest on top, each with **Cancel** (§app.project-overseer/holds),
   a standalone project's held act (one with no organization, such as the release power's waiting
   period, §app.release/power) included.
+- **A question stays a question.** When a session's newest item is a waiting card or offer and it also has
+  open alignment questions, its row is still that question: the chip reads Question and that sentence comes
+  first. On its own, or beside anything else, a card or offer row reads as it did.
 - **Every row reads the same**, here and in the Organizations region's Needs you
   (§app.session-list/organizations), whatever it is about (words: §design.copy-deck/sidebar):
   - the **name**, muted: the project, "{org} · {project}" for an organization's, else the folder's last
     name ("{name} · {host}" for a session on another host), with a **state chip that always has a word**;
-  - the **title**, semibold: the session's title; on a row of no session what it is, by kind ("Deploy
-    failed"), an owner's item its own request, a held act what waits;
-  - one line of **detail**: the digest's sentence for the session's newest item ("3 open questions in
-    al_3 Autonomy settings", "Waiting on a dialog.", "429 rate limited"), shown even with summaries
-    hidden in Settings › General, and dropping the title where it would repeat it ("Ready to publish ·
-    v0.4.0" reads "v0.4.0"). Its `title` is the whole text: every act sentence the session has, newest
-    first. An item with no sentence has no detail line;
-  - **what it opens**, with an arrow ("Open Chat", "Read Report", "Open Deploy", "Review and Publish").
+  - the **title** under it, semibold: the session's title; on a row of no session what it is, by kind
+    ("Deploy failed"), an owner's item its own request, a held act what waits.
+
+  **Two lines, and the buttons below when there are any.** **The sentence is hover text only**, on every
+  row: the link's `title` is the row's whole title, then every sentence the session has, newest first
+  ("3 open questions in al_3 Autonomy settings", "Waiting on a dialog.", "429 rate limited"), with
+  summaries hidden in Settings › General too. An item with no sentence adds nothing to it. **No words
+  say what the row opens**: "Open Chat", "Read Report", "Open Deploy", their like and the arrow are
+  gone; pressing the row opens the same place.
 
   The rules live in `src/lib/needs-you.ts` and `src/lib/needs-you-row.ts`.
 - **Folder paths leave the row** and go to the name's `title`. Two listed projects of one name in
   different folders read "Notes · work/notes", with only as many path segments as tell them apart; two
   items of one project stay plain.
-- **The whole row is one link.** It is stretched over the row, one tab stop, and what it opens is words
-  inside it, never a second control. Two things act and are real buttons, each its own tab stop beside
-  the link in the row's last line, and pressing one doesn't navigate: **Merge Branch** on a proposed
+- **The whole row is one link.** It is stretched over the row, one tab stop, with no `aria-label`: its
+  name is its text and the sentence its description. What acts is a real
+  button, its own tab stop beside the link, and pressing one doesn't navigate: **Dismiss** on a chat's
+  row (§app.session-list/needs-you-dismiss) and, on a line of their own under the title, **Merge Branch** on a proposed
   playbook run (`playbook-review`, §app.project-runtime/review; on a Setup proposal, the proposal's own
   button: Run Trial, then Land or Merge Branch), which acts at once and says a refusal's
   reason, and **Cancel** on a held act (§app.project-overseer/holds).
-- **Not a session row, no put-away.** A row here has none of a session row's marks or gestures: no rail,
+- **Not a session row.** A row here has none of a session row's marks or gestures: no rail,
   unread dot, time, model, context ring or merge badge, no press-and-hold, lift or drag, and no menu; a
   right-click is the browser's. The session's own row elsewhere keeps them all.
 - **The open session stays listed**, drawn with the current tint like any row: the count is the
@@ -885,6 +892,71 @@ thing it waits on being done.
   after one says what it changed.
 - **The spine** carries its door, "Needs you · {n} sessions", shown exactly when the region is
   (§app.session-list/spine).
+
+## §app.session-list/needs-you-dismiss — Dismiss a chat from Needs you
+
+A chat's row in Needs you can be put away by hand, when you've read it and don't mean to act on it
+now. **Dismiss** takes the row out of Needs you and out of every count until the chat has something
+new. Nothing about the chat itself changes: its dialog stays open, its question stays unanswered, its
+own row elsewhere (Recent, Folders, its project's block, Organizations) keeps every mark, and opening
+it shows what it showed before.
+
+```html
+<li class="ny-row ny-row-dismissable">
+  <!-- No aria-label: the link's name is its text, and its title, the sentence, its description. -->
+  <a class="ny-link" href="#/s/…" title="{the chat's title}&#10;{every sentence, newest first}">…place, state chip, title…</a>
+  <!-- A chat's row only, both tiers, both lists. A direct child of the row, above the link: it stays at the
+       row's right when Merge Branch takes its line. Tab order: link, ×, Merge Branch. -->
+  <button class="button button-icon button-ghost ny-dismiss" type="button"
+          aria-label="Dismiss {the chat's title}" title="Dismiss">…close…</button>
+  <div class="ny-acts">…Merge Branch or Run Trial…</div>
+</li>
+```
+
+- **Which rows.** Every row of a chat, in the global Needs you and the Organizations region's, above
+  "Maybe waiting on you" and under it: a chat with a dialog, an error or a proposal included (its Merge
+  Branch or Run Trial stays), and the open chat's row too.
+- **Which don't.** A row of no session has no Dismiss: a deploy, a release, WhatsApp sending, an owner's
+  request, a held act, a conflict, a stakeholder, a message not sent. Each stays until what it says no
+  longer holds.
+- **Showing it.** On a computer the × shows while the pointer is on the row or keyboard focus is on
+  the row's link or the × itself, and showing it moves nothing else in the row: its lane is always kept. It is a real button:
+  its own tab stop, and pressing it doesn't navigate. On a phone, or any screen with no hover, it is
+  always shown, at the full tap size (`--tap-min`).
+- **Pressing it.** The row leaves at once and focus goes to the next row's link, else the previous
+  row's, else the region's head, else the pane's first head. Once Sova has saved it, the toast
+  "Dismissed." with `Undo` shows for the app's action-toast time. If it can't be saved the row comes back
+  and the toast says "Couldn't dismiss it." with the reason, with no Undo. The row sends what it covers:
+  the chat's newest listed time (§app.overseer/attention-digest), so what the cap cut is covered too.
+- **Undo.** Undo puts that row back at once, where its order puts it, as if it was never dismissed: no
+  new phone notification or brief comes of what it covered. If the Undo can't be saved the row leaves
+  again and the toast says "Couldn't undo it." with the reason. **There is no list of dismissed rows**: once the toast
+  has gone, a dismissed row stays away until the chat has something new.
+- **Something new brings it back.** A dismissal covers what was waiting when it was pressed, and only
+  that. The row returns by itself as soon as the chat has an item that lists in Needs you and is new
+  against what was covered: a new reply, more open questions, a new error, a subagent's new error, a
+  dialog, a new option or transcript card, a new proposal, a new sign-in wait, the baton coming to you
+  again. Looking at the chat, restarting Sova, a covered item going on waiting and a covered item ending
+  never bring it back. A reply that adds nothing that lists has no row to bring back: the dismissal
+  stands until something does. Once the row is back the dismissal is gone: pressing Dismiss again
+  covers what waits then.
+- **Archiving.** An archived chat can still raise a blocker, so archiving alone ends no dismissal. A
+  record goes when the session's file is gone, or when an archived chat has nothing left that lists.
+- **Sova remembers it, not the browser.** The dismissal is saved on the server (`POST` and `DELETE
+  /api/attention/dismiss`, a session's path only), in
+  `<stateRoot>/needs-you-dismissed.json` (atomic; tolerant on read: a missing or unreadable file hides
+  nothing), so it holds across a restart and every window and device agree: a dismissal or an Undo
+  drops the server's 3-second digest and reaches the others with the next `attention` push
+  (§app.decisions/push), within about 5 seconds. A tab's own press holds only until the first digest
+  after the save, so another window's Undo holds there too.
+- **Counted nowhere.** The digest itself leaves out what's dismissed
+  (§app.overseer/attention-digest), so one filter serves every count: this region's head and the
+  spine's door, the Organizations region's `{k} waiting`, its org dot and its spine mark, the
+  Overseer's "{a} need you", the overview's Sessions card and project cards, the phone app badge and
+  the "{n} sessions need you" notification (§app.notifications/delivery). What reads waits from
+  elsewhere than the digest honours it too: the baton's own waits in the Organizations region and an
+  organization card's `Needs you · {n}` (§app.organizations/org-cards). With nothing left the region is
+  omitted, like any empty Needs you.
 
 ## §app.session-list/recent — Recent
 
@@ -1932,7 +2004,7 @@ projects (§app.projects/list).
   <section class="org-needs-you" aria-labelledby="r-orgs-needs">
     <h3 class="list-group-label" id="r-orgs-needs"
         title="The 2 organization sessions waiting on you, newest first."><span class="org-needs-dot" aria-hidden="true"></span>Needs you <span class="text-num">2</span></h3>
-    <ul class="list">…Needs you rows, §app.session-list/needs-you: "{org} · {project}", state word, title, what it waits on, what it opens…</ul>
+    <ul class="list">…Needs you rows, §app.session-list/needs-you: "{org} · {project}", state chip, title, Dismiss on a chat's row…</ul>
   </section>
 
   <!-- 2. One per org, by name A→Z, ties on id. Open by default, memory only. -->
@@ -2019,16 +2091,17 @@ projects (§app.projects/list).
   one of `proposals` (a referral to approve) — read from the session list, so it holds whatever
   Overseer proactivity is — or when the attention digest has an **act** item for it (a dialog open, an
   errored turn, a worker error; §app.overseer/attention-digest). Its row is a Needs you row
-  (§app.session-list/needs-you). Its **detail** is the sentence of its newest waiting item: the digest's, verbatim, else the same words built from the baton — "{from} → you:
-  {question}", "Send {to} their link: {question}", "Approve {name} ({role}) proposed by {by}?" — with
-  every sentence, newest first, in its `title`. Its **name** reads "{org} · {project}" (no project:
+  (§app.session-list/needs-you). Its **hover text** carries every waiting sentence, newest first: the digest's, verbatim, else the same words built from the baton — "{from} → you:
+  {question}", "Send {to} their link: {question}", "Approve {name} ({role}) proposed by {by}?". Its **name** reads "{org} · {project}" (no project:
   "{org}"). Order: newest waiting item first (`since`), ties on path.
   Like the global Needs you, it is a **shortcut, not a place a session lives**: each row is still under
   its project. Not collapsible (the region's own twist collapses it); omitted when it has no rows. The
   global Needs you never lists these sessions (§app.session-list/needs-you). Like a global Needs you
-  row, a row here has no menu of its own: it leaves when what it waits on is answered.
+  row, a row here has no menu of its own: it leaves when what it waits on is answered, or when you
+  dismiss it (§app.session-list/needs-you-dismiss). A dismissed session is out of this list and of every
+  `{k}` this region counts, the baton's own waits included, until it has something new.
 - **A project's items, too.** The same block lists the digest's items that belong to a project
-  rather than a session, each a row opening the project page with the digest's sentence: first each
+  rather than a session, each a row opening the project page, the digest's sentence as its hover text: first each
   held act (§app.project-overseer/holds), the one going ahead soonest on top, its sentence recounted
   on the list's clock and **Cancel** beside the row's link; then, newest first, each conflict for the
   operator to settle (`conflict-to-operator`, §app.requirements/routing) and each project whose main
@@ -2310,7 +2383,8 @@ sessions in bulk. It uses `POST /api/sessions/cleanup` (`cleanupSessions` in `sr
 
 - **Actions.** `{ mode: "age", minAgeDays: 7 }`, `{ mode: "age", minAgeDays: 30 }`, and
   `{ mode: "husks" }` (sessions nothing was ever sent in — drafted ones included, and deleting
-  one drops its stored draft too). The server decides what matches and
+  one drops its stored draft too; a chat holding or running a command from shell mode is none, and
+  is kept). The server decides what matches and
   what it protects. The UI shows its numbers and never counts on its own. None of them ever
   matches a session in an attached organization's workspace `sessions/` (baton transcripts,
   project-overseer conversations), however old or empty; those are left out silently and are not
@@ -2406,7 +2480,9 @@ transcript is gone.
 ## §app.session-list/archive-org-guard — Archiving never deletes organization sessions
 
 Archiving an empty husk (a session nothing was ever sent in, with no stored draft) deletes its
-file, since the list never shows a husk and an archive mark on it could never render. A session
+file, since the list never shows a husk and an archive mark on it could never render. A chat that
+holds a command run from shell mode, or is running one, is no husk: it is archived, and the command
+its close stops is kept (§chat.shell-mode/lifecycle). A session
 file inside an attached organization's workspace `sessions/` is the exception: `POST
 /api/sessions/archive` never deletes one. A fresh baton still waiting on its first link is a husk
 by shape, and the organization's statecharts name those files, so deleting one leaves a
@@ -2726,3 +2802,14 @@ next listing afresh: no caller joins or reuses a list built before them, except 
 above, which the further one then follows. So a caller that archives,
 renames, creates a session or gives one a One at a time profile sees that change in the very next
 listing it asks for, and so does the One at a time check that follows it.
+
+## §app.session-list/first-listing — A cold listing reads a few files at a time
+
+A listing that has session files to read (the first one after a start, a full build, a file the
+cache doesn't hold; §app.session-list/listing-reuse) reads at most 24 of them at once, never every
+file together, and its scan for worker marks has a limit of 24 of its own, so the memory a cold
+listing takes stays bounded however many sessions there are. It reads every session that isn't
+archived first: an archived session's file is opened only once every other session's file has been
+read, and the worker-mark scan follows the same order. A listing still answers once, with every
+session, archived ones included, once all are read: no caller ever gets a list with the archived
+ones missing.

@@ -1,6 +1,7 @@
 import { createHash, randomBytes } from "node:crypto";
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { readRunLogText } from "./run-logs";
 import { ENTRY_FINAL, type LandHow, type MergeEntry, type MergeRun, type PauseInfo } from "../../shared/merge-queue";
 
 /**
@@ -63,6 +64,9 @@ export interface QueueFile {
   knownTarget?: string;
   /** Commits the queue moved the target to (tips, docs commits are inside them), newest last: the push rule reads them. */
   landed: string[];
+  /** A host's landings, per branch, newest first: its entry goes after the newest 60, but its pinned commit isn't on the
+   *  target when the host squashed, so a later reading of the branch still needs it (§chat.worktrees/nothing-left). */
+  hostPins?: Record<string, string[]>;
   heads: { pushed?: string; pushWhy?: string; targetRed?: string[]; targetBroken?: import("../../shared/merge-queue").TargetBroken[] };
   /** Machine failures in a row, per entry (retry once, then pause). */
   machineTries: Record<string, number>;
@@ -80,7 +84,9 @@ const KEEP_LANDED = 500;
 
 export const projectKey = (root: string): string => createHash("sha256").update(root).digest("hex").slice(0, 16);
 
-export function newId(prefix: "mq" | "mr"): string {
+export function newId(prefix: "mq" | "mr" | "rq" | "dc"): string {
+  // A request's id is the chat queue's own form (shared/topic-message.ts MERGE_REQUEST_ID_RE): the chat answers by it.
+  if (prefix === "rq") return `rq_${randomBytes(6).toString("hex")}`;
   return `${prefix}_${Date.now().toString(36)}${randomBytes(4).toString("hex")}`;
 }
 
@@ -165,7 +171,10 @@ export class QueueStore {
   readLog(run: string, log: string, lines = 200): string[] | null {
     if (!/^mr_[0-9a-z]+$/.test(run) || log.includes("..") || log.startsWith("/")) return null;
     try {
-      const all = readFileSync(join(this.runDir(run), log), "utf8").split("\n");
+      // Packed or not (run-logs.ts): a finished run's logs are gzipped a day after it ended.
+      const text = readRunLogText(this.runDir(run), log);
+      if (text === null) return null;
+      const all = text.split("\n");
       if (all.at(-1) === "") all.pop();
       return all.slice(-lines);
     } catch {

@@ -615,3 +615,9 @@ test("the cell: the sidebar's format, a sentence with both windows and the split
   assert.equal(sameRateCell(c, rateCell(live, { ...rate }, { reported: true, remote: false })), true);
   assert.equal(sameRateCell(c, partial), false);
 });
+
+test("a branch with only catch-up merges past its base reads merged, and ranks with the merged", () => {
+  const t = { path: "/w", source: "session", exists: true, base: "master", merged: "catch-up" } as const;
+  assert.deepEqual(treeMerge(t), { kind: "merged", text: "merged", title: "Nothing of its own left to land: every commit past master is a merge or already landed." });
+  assert.deepEqual(orderTrees([{ ...t, path: "/a" }, { path: "/b", source: "session", exists: true, merged: "no" }]).map((x) => x.path), ["/b", "/a"]);
+});

@@ -503,6 +503,9 @@ export interface ResolveInput {
 	 * the home folder must not become writable by being the cwd). Default true.
 	 */
 	cwdWritable?: boolean;
+	/** true: the session runs at the read-only level whatever the policy file says (only its tmp is writable). It only
+	 *  ever tightens. */
+	readOnly?: boolean;
 	/** Where a shadowed path's private copy lives (backend `shadowSource`). Without it nothing is shadowed. */
 	shadowSource?: (agentDir: string, path: string) => string;
 }
@@ -577,7 +580,8 @@ export function resolvePolicy(input: ResolveInput): Result<ResolvedPolicy> {
 	const tmpDir = canonicalize(input.tmpDir);
 	const d = input.defaults ?? { hidden: [], writable: [], readOnlyWithinWritable: [] };
 	// A worker never gets a wider level than its parent (the policy file may still lower it).
-	const level: SandboxLevel = input.parent?.level === "read-only" ? "read-only" : policy.level;
+	// A session started read-only (`--sandbox-read-only`) never gets a wider one either.
+	const level: SandboxLevel = input.parent?.level === "read-only" || input.readOnly === true ? "read-only" : policy.level;
 	// No real writable root at or inside a shadowed path: the file's own entries fail closed (they
 	// passed validation only in their written spelling), a platform default is just dropped. The
 	// session cwd may sit inside a shadow; there the real cwd wins, as in the mounts.

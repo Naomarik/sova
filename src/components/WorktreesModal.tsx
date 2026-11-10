@@ -10,7 +10,10 @@ import { ActionMenu } from "./ActionMenu";
 import type { LandHow, MergeUnclear } from "../../shared/merge-queue";
 import { Icon, trapFocus } from "./ui";
 import { canReviewChanges } from "../lib/worktrees";
+import { placeOf, queueLinksOf } from "../lib/branch-place";
+import { BranchPlaceLine } from "./BranchPlaceLine";
 import { ReviewChangesButton } from "./ReviewChanges";
+import { paneScopedId, usePaneScope } from "../lib/pane-scope";
 
 /** A tracked worktree with the queue's facts (SessionWorktreeInfo.queue, filled by the server). */
 export type QueueWorktree = SessionWorktreeInfo & { queue?: WorktreeQueueInfo; mergeProject?: MergeProjectInfo };
@@ -36,22 +39,27 @@ export function QueueChip(props: { row: Pick<QueueRow, "label" | "tone" | "live"
 
 /** Land and its ▾: Land asks first (onAsk opens the row's confirm); the ▾ holds Land Without Review (only with a
     review kit), which lands at once, and Land Without Its Specs…, which asks first. */
-export function LandSplit(props: { branch: string; review: boolean; busy: boolean; onAsk(): void; onLand(o?: LandOptions): void; onWithoutSpecs(): void }) {
+export function LandSplit(props: { branch: string; review: boolean; busy: boolean; onAsk(): void; onLand(o?: LandOptions): void; onWithoutSpecs(): void; draftsOnly?: boolean }) {
   return (
     <div class="button-split wt-queue-split">
       <button type="button" class="button button-sm wt-queue-land" data-land="" aria-label={`Land ${props.branch}`} disabled={props.busy} aria-busy={props.busy ? "true" : undefined} onClick={() => props.onAsk()}>
         Land
       </button>
+      {/* Only drafts left: Land lands just them, so the ▾ has nothing to offer without a review kit. */}
+      <Show when={props.review || !props.draftsOnly}>
       <ActionMenu label={`More ways to land ${props.branch}`} title="More ways to land" icon="chevron-down" ghost={false} menuName={`Land ${props.branch}`} returnFocus>
         {(menu) => (
           <>
             <Show when={props.review}>
               <menu.Item label="Land Without Review" aria={`Land ${props.branch} without review`} description="Skips the review step for this merge only." onRun={() => props.onLand({ withoutReview: true })} />
             </Show>
-            <menu.Item label="Land Without Its Specs…" aria={`Land ${props.branch} without its specs`} description="Its spec drafts stay drafts." onRun={() => props.onWithoutSpecs()} />
+            <Show when={!props.draftsOnly}>
+              <menu.Item label="Land Without Its Specs…" aria={`Land ${props.branch} without its specs`} description="Its spec drafts stay drafts." onRun={() => props.onWithoutSpecs()} />
+            </Show>
           </>
         )}
       </ActionMenu>
+      </Show>
     </div>
   );
 }
@@ -116,8 +124,8 @@ export function createLandConfirm() {
 export type LandConfirm = ReturnType<typeof createLandConfirm>;
 
 /** The open confirm, if any, for a row whose Land runs `onLand`. */
-export function LandConfirms(props: { confirm: LandConfirm; branch: string; ahead?: number; target?: string; how?: LandHow; busy: boolean; onLand(o?: LandOptions): void }) {
-  const words = () => landConfirmWords(props.branch, props.ahead, props.target, props.how);
+export function LandConfirms(props: { confirm: LandConfirm; branch: string; ahead?: number; target?: string; how?: LandHow; place?: string; drafts?: number; busy: boolean; onLand(o?: LandOptions): void }) {
+  const words = () => landConfirmWords(props.branch, props.ahead, props.target, props.how, props.place, props.drafts);
   return (
     <Switch>
       <Match when={props.confirm.ask() === "land"}>
@@ -177,22 +185,16 @@ export function UnclearChecks(props: { projectId?: string; unclear?: MergeUnclea
   );
 }
 
-/** "View Merge Queue": the worktree's project's Merge Queue tab. */
-export const queueHrefOf = (rows: QueueWorktree[]): string | null => {
-  const id = rows.map(projectIdOf).find(Boolean);
-  return id ? projectTabHref(id, "merge-queue") : null;
-};
-
 /**
  * One worktree in the queue's words, with its one action (§ the composer modal and the session pane
  * draw the same rows from the same state, so they always agree): Land on a ready one, which asks first (its ▾
- * holds Land Without Review and Land Without Its Specs…), Cancel on a queued one, Accept or Land Anyway
- * beside Send Back where it waits for you, Land This Commit Again and Remove from Queue where it was
- * sent back, Set Up Queue where the project has none.
+ * holds Land Without Review and Land Without Its Specs…), Cancel on a queued one, a decision's answers (Accept,
+ * Land Anyway, Try Again, Answer in Chat) where one waits for you, Remove from Queue on every stage of an
+ * approval that stands, Set Up Queue where the project has none. Nothing sends it back or lands it again: the user's
+ * Land stands while its chat fixes it.
  */
 export function WorktreeQueueRow(props: {
   worktree: QueueWorktree;
-  showPath?: boolean;
   onChanged?(): void;
   /** More chips after the state (the pane's: workers, .agent). */
   chips?: JSX.Element;
@@ -201,9 +203,18 @@ export function WorktreeQueueRow(props: {
   /** The chat whose worktree it is: the row gets Review Changes (an active worktree with commits of its own), the
       branch against where it lands with its uncommitted files marked (§chat.changes/entry). */
   review?: { sessionPath: string; cwd?: string };
+  /** Answer in Chat: before focus goes to the chat's message box (the modal closes). */
+  onAnswerInChat?(): void;
 }) {
   const w = () => props.worktree;
+  const scope = usePaneScope();
+  const answerInChat = () => {
+    props.onAnswerInChat?.();
+    queueMicrotask(() => document.getElementById(paneScopedId(scope, "composer-input"))?.focus());
+  };
   const row = () => queueRow(w());
+  /** Only spec drafts left: Land lands just them. */
+  const onlyDrafts = () => (row().key === "drafts-to-land" ? (w().readiness?.draftsLeft ?? 1) : undefined);
   const projectId = () => projectIdOf(w());
   const buttons = () => rowButtons(row(), projectId());
   const entry = () => w().queue;
@@ -234,8 +245,12 @@ export function WorktreeQueueRow(props: {
       setBusy(false);
     }
   };
+  // A decision's Land (out of tries, a fix that needs your OK, drafts changed) is its answer on the queue, after the
+  // same confirmation as every Land.
   const doLand = (o: LandOptions = {}) =>
-    void run("Land", () => land(w().path, { ...o, commit: shownCommit(w()) }), `Queued ${w().branch}${o.withoutReview ? " without review" : ""}${o.withoutSpecs ? " without its specs" : ""}.`);
+    row().decision
+      ? void run("Land", () => answerEntry(e(), "land"), `Queued ${w().branch}.`)
+      : void run("Land", () => land(w().path, { ...o, commit: shownCommit(w()) }), `Queued ${w().branch}${o.withoutReview ? " without review" : ""}${o.withoutSpecs ? " without its specs" : ""}.`);
   const e = () => entry()!;
 
   return (
@@ -262,6 +277,7 @@ export function WorktreeQueueRow(props: {
             </p>
           )}
         </Show>
+        <BranchPlaceLine row={w()} />
         <div class="wt-queue-facts">
           <QueueChip row={row()} />
           <Show when={row().detail}>{(d) => <span class="text-caption text-mono">{d()}</span>}</Show>
@@ -298,6 +314,18 @@ export function WorktreeQueueRow(props: {
             </p>
           )}
         </Show>
+        <Show when={row().decision?.choices.length}>
+          <p class="list-meta wt-queue-reason">
+            <span class="text-muted">Choices:</span> {row().decision!.choices.join(" · ")}
+          </p>
+        </Show>
+        <Show when={row().answer}>
+          {(a) => (
+            <p class="list-meta wt-queue-reason">
+              <span class="text-muted">Chat:</span> {a()}
+            </p>
+          )}
+        </Show>
         <Show when={row().key === "unattributed"}>
           <UnclearChecks projectId={projectId()} unclear={w().queue?.unclear} target={w().mergeProject?.target} />
         </Show>
@@ -322,7 +350,7 @@ export function WorktreeQueueRow(props: {
         <Show when={error()}>{(m) => <p class="list-meta wt-queue-error" role="alert">{m()}</p>}</Show>
       </div>
       {/* A confirm replaces the row's actions while it is open. */}
-      <LandConfirms confirm={confirm} branch={w().branch} ahead={w().mergeStats?.ahead} target={w().mergeProject?.target} busy={busy()} onLand={doLand} />
+      <LandConfirms confirm={confirm} branch={w().branch} ahead={w().mergeStats?.ahead} target={w().mergeProject?.target} how={w().mergeProject?.how} place={placeOf(w())} drafts={onlyDrafts()} busy={busy()} onLand={doLand} />
       <Show when={!confirm.ask()}>
       <div class="wt-queue-act">
         <Show when={props.review && canReviewChanges(w())}>
@@ -333,18 +361,19 @@ export function WorktreeQueueRow(props: {
             cwd={props.review!.cwd}
           />
         </Show>
-        <Show when={buttons().includes("Land")}>
-          <LandSplit branch={w().branch} review={review()} busy={busy()} onAsk={() => confirm.open("land")} onLand={doLand} onWithoutSpecs={() => confirm.open("specs")} />
+        {/* A decision's Land is its answer on the queue (out of tries, a fix that needs your OK, drafts changed). */}
+        <Show when={buttons().includes("Land") && row().decision}>
+          <button type="button" class="button button-sm button-primary" aria-label={`Land ${w().branch}`} disabled={busy()} onClick={() => confirm.open("land")}>
+            Land
+          </button>
+        </Show>
+        <Show when={buttons().includes("Land") && !row().decision}>
+          <LandSplit branch={w().branch} review={review()} busy={busy()} onAsk={() => confirm.open("land")} onLand={doLand} onWithoutSpecs={() => confirm.open("specs")} draftsOnly={!!onlyDrafts()} />
         </Show>
         <Show when={buttons().includes("Set Up Queue")}>
           <a class="button button-sm" href={projectTabHref(projectId()!, "merge-queue")} title="This project's merge queue isn't set up yet.">
             Set Up Queue
           </a>
-        </Show>
-        <Show when={buttons().includes("Cancel")}>
-          <button type="button" class="button button-sm" aria-label={`Cancel landing ${w().branch}`} disabled={busy()} onClick={() => void run("Cancel", () => cancelEntry(e()), `Cancelled landing ${w().branch}.`)}>
-            Cancel
-          </button>
         </Show>
         <Show when={buttons().includes("Accept")}>
           <button type="button" class="button button-sm button-primary" aria-label={`Accept the resolution for ${w().branch}`} disabled={busy()} onClick={() => void run("Accept", () => answerEntry(e(), "accept"), `Accepted the resolution for ${w().branch}.`)}>
@@ -356,24 +385,15 @@ export function WorktreeQueueRow(props: {
             Land Anyway
           </button>
         </Show>
-        <Show when={buttons().includes("Send Back")}>
-          <button type="button" class="button button-sm button-destructive" aria-label={`Send ${w().branch} back to its chat`} disabled={busy()} onClick={() => void run("Send Back", () => answerEntry(e(), "send-back"), `Sent ${w().branch} back to its chat.`)}>
-            Send Back
+        <Show when={buttons().includes("Try Again")}>
+          <button type="button" class="button button-sm" aria-label={`Try ${w().branch} again`} title="Checks it afresh; it uses no try." disabled={busy()} onClick={() => void run("Try Again", () => answerEntry(e(), "try-again"), `Checking ${w().branch} again.`)}>
+            Try Again
           </button>
         </Show>
-        <Show when={buttons().find((b) => b === "Land This Commit Again" || b === "Land Newest Commit")}>
-          {(label) => (
-            <button
-              type="button"
-              class="button button-sm"
-              aria-label={`Land ${w().branch} at its newest commit`}
-              title={label() === "Land Newest Commit" ? "Approve the branch's newest commit: every check runs from the start." : "Approve the same commit again: every check runs from the start."}
-              disabled={busy()}
-              onClick={() => void run(label(), () => land(w().path, {}), `Queued ${w().branch} at its newest commit.`)}
-            >
-              {label()}
-            </button>
-          )}
+        <Show when={buttons().includes("Answer in Chat")}>
+          <button type="button" class="button button-sm" aria-label={`Answer about ${w().branch} in the chat`} title="Your answer goes in the chat's message box." onClick={answerInChat}>
+            Answer in Chat
+          </button>
         </Show>
         <Show when={buttons().includes("Remove from Queue")}>
           <button
@@ -395,10 +415,10 @@ export function WorktreeQueueRow(props: {
 }
 
 /** The rows, in the order the chat tracks them. */
-export function WorktreeQueueList(props: { rows: QueueWorktree[]; showPath?: boolean; onChanged?(): void; review?: { sessionPath: string; cwd?: string } }) {
+export function WorktreeQueueList(props: { rows: QueueWorktree[]; onChanged?(): void; review?: { sessionPath: string; cwd?: string }; onAnswerInChat?(): void }) {
   return (
     <ul class="list wt-queue-list">
-      <For each={props.rows}>{(w) => <WorktreeQueueRow worktree={w} showPath={props.showPath} onChanged={props.onChanged} review={props.review} />}</For>
+      <For each={props.rows}>{(w) => <WorktreeQueueRow worktree={w} onChanged={props.onChanged} review={props.review} onAnswerInChat={props.onAnswerInChat} />}</For>
     </ul>
   );
 }
@@ -408,7 +428,7 @@ export function WorktreesModal(props: { title: string; rows: QueueWorktree[]; on
   const summary = () => rowsSummary(props.rows.map((w) => queueRow(w)));
   /** The queue's intro and paused line: only where some row's repo is one the queue serves. */
   const head = () => modalHead(props.rows);
-  const href = () => queueHrefOf(props.rows);
+  const links = () => queueLinksOf(props.rows);
   // Escape closes it wherever focus is (an action's button goes busy and can drop focus to the page),
   // unless a menu inside is open (the key is that menu's: it closes itself) or the changes viewer is open over it
   // (the key closes the viewer, and this stays).
@@ -441,19 +461,23 @@ export function WorktreesModal(props: { title: string; rows: QueueWorktree[]; on
           </button>
         </div>
         <div class="modal-body">
-          <Show when={head().paused}>{(t) => <p class="text-caption wt-queue-paused">{t()}</p>}</Show>
-          <WorktreeQueueList rows={props.rows} onChanged={props.onChanged} review={props.review} />
+          <For each={head().paused}>{(t) => <p class="text-caption wt-queue-paused">{t}</p>}</For>
+          <WorktreeQueueList rows={props.rows} onChanged={props.onChanged} review={props.review} onAnswerInChat={props.onClose} />
         </div>
         {/* The queue's one line on the left, its link on the right; the head's ✕ closes. */}
-        <Show when={head().intro || href()}>
+        <Show when={head().intro || links().length}>
           <div class="modal-foot wt-queue-foot">
             <Show when={head().intro}>{(t) => <p class="text-caption wt-queue-intro">{t()}</p>}</Show>
-            <Show when={href()}>
-              {(h) => (
-                <a class="wt-queue-foot-link text-caption" href={h()} onClick={() => props.onClose()}>
-                  View Merge Queue
-                </a>
-              )}
+            <Show when={links().length}>
+              <div class="wt-queue-foot-links">
+                <For each={links()}>
+                  {(l) => (
+                    <a class="wt-queue-foot-link text-caption" href={l.href} onClick={() => props.onClose()}>
+                      {l.label}
+                    </a>
+                  )}
+                </For>
+              </div>
             </Show>
           </div>
         </Show>

@@ -229,7 +229,7 @@ export function fitThinking(next: ProjectOverseerSettings, patch: ProjectOversee
   }
 }
 
-export const CODING_MODE_GONE = "Projects have no coding mode: coding sessions start in this computer's default mode. Save as default in a chat's mode menu changes it.";
+export const CODING_MODE_GONE = "Projects have no coding mode: coding sessions start on this computer's default profile. Make Default in Settings → Profiles, or in a chat's mode menu, changes it.";
 
 /** A PATCH: strict (the first problem is the answer, as a sentence), then merged and written.
     `check` runs on the merged settings before anything is written (a throw writes nothing). */

@@ -100,11 +100,12 @@
       "§chat.mode-menu/minor-toggle-keeps-prompt"
     ],
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "code": [
       "pi-config/extensions/mode/prompt.ts",
       "pi-config/extensions/mode/index.ts",
-      "pi-config/extensions/mode/delegate.ts"
+      "pi-config/extensions/mode/delegate.ts",
+      "src/components/ModeMenu.tsx"
     ],
     "agreed": {
       "by": "user",
@@ -226,14 +227,14 @@
       "server/sessions-configure.ts",
       "shared/settings-reference.ts",
       "server/create-mode-refusals.test.ts",
-      "src/lib/mode-save.ts",
       "server/create-mode-chat.test.ts",
-      "pi-config/extensions/mode/create-mode.test.ts"
+      "pi-config/extensions/mode/create-mode.test.ts",
+      "src/lib/mode-menu.ts"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-11-04T06:59Z",
-      "source": "pi-session:5b3349ca-a4e6-4bb7-8a78-16e639eb61df#40d50679"
+      "by": "naomarik",
+      "at": "2026-11-05T05:46Z",
+      "source": "pi-session:144e6ae4-8742-4902-b7f2-31eecad9142b#5844cea0"
     }
   },
   "§chat.create-mode/settings-cards": {
@@ -296,9 +297,9 @@
       "pi-config/extensions/mode/create/extensions.md"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-11-04T00:57Z",
-      "source": "pi-session:5b3349ca-a4e6-4bb7-8a78-16e639eb61df#0390f531"
+      "by": "Omar (user)",
+      "at": "2026-11-06T21:56Z",
+      "source": "pi-session:01a1acdc-5fed-7735-96f5-96f6019e339d#537ac0e8"
     }
   },
   "§chat.create-mode/where-offered": {

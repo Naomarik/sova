@@ -1,0 +1,224 @@
+{
+ "parent": [
+  {
+   "step": "open",
+   "calls": [],
+   "activeTools": [
+    "read",
+    "bash",
+    "edit",
+    "write",
+    "agent_resume",
+    "agent_models",
+    "agent_spawn",
+    "agent_list",
+    "agent_transcript",
+    "agent_steer",
+    "agent_kill",
+    "agent_wait",
+    "team_create",
+    "team_add",
+    "team_eject",
+    "team_succeed",
+    "team_list",
+    "project_verbs",
+    "queue_push"
+   ],
+   "entries": [],
+   "extensions": [
+    "<mode-slot:index>",
+    "<repo>/pi-config/extensions/subagents/index.ts",
+    "<repo>/pi-config/extensions/sandbox/index.ts",
+    "<inline:sova-resource-monitor>",
+    "<inline:sova-fork-cache>",
+    "<inline:sova-shell-guard>",
+    "<inline:sova-deeper-context>",
+    "<inline:sova-background-jobs>",
+    "<inline:sova-mcp>",
+    "<inline:sova-worker-host>",
+    "<inline:sova-vis-check>",
+    "<inline:sova-shell-model>",
+    "<inline:sova-memory>",
+    "<inline:sova-playbook>",
+    "<inline:sova-project-verbs>",
+    "<inline:sova-topics>",
+    "<inline:sova-tours>",
+    "<inline:sova-create-settings>",
+    "<inline:sova-transcript-cards>"
+   ]
+  },
+  {
+   "step": "switch {\"minorModes\":[\"spec\"]}",
+   "calls": [],
+   "activeTools": [
+    "read",
+    "bash",
+    "edit",
+    "write",
+    "agent_resume",
+    "agent_models",
+    "agent_spawn",
+    "agent_list",
+    "agent_transcript",
+    "agent_steer",
+    "agent_kill",
+    "agent_wait",
+    "team_create",
+    "team_add",
+    "team_eject",
+    "team_succeed",
+    "team_list",
+    "project_verbs",
+    "queue_push"
+   ],
+   "entries": [
+    {
+     "type": "custom",
+     "customType": "mode",
+     "data": {
+      "minor": "spec",
+      "on": true,
+      "active": {
+       "version": 1,
+       "mode": "normal",
+       "strict": false,
+       "minorModes": [
+        "spec"
+       ]
+      }
+     }
+    }
+   ]
+  },
+  {
+   "step": "prompt \"spawn\"",
+   "calls": [
+    {
+     "keep": 0,
+     "add": [
+      {
+       "role": "system",
+       "content": "",
+       "sections": {
+        "preamble": "You are an expert coding assistant operating inside pi, a coding agent harness. You help users by reading files, executing commands, editing code, and writing new files.",
+        "tools": "@4638ec08e2a6ed45",
+        "rules": "@9514ae33e1ebc3e7",
+        "docs": "@0f5fabf6c3c47c4c",
+        "cwd": "<cwd>\n<ws:tree-bare>\n</cwd>",
+        "mode": "@d4cf9a33be021005"
+       },
+       "toolsAdded": "@ed596a5985c5d307"
+      },
+      {
+       "role": "user",
+       "content": [
+        {
+         "type": "text",
+         "text": "spawn"
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "keep": 2,
+     "add": [
+      {
+       "role": "assistant",
+       "api": "openai-completions",
+       "provider": "scripted",
+       "model": "scripted",
+       "usage": {
+        "input": 0,
+        "output": 0,
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "totalTokens": 0,
+        "cost": {
+         "input": 0,
+         "output": 0,
+         "cacheRead": 0,
+         "cacheWrite": 0,
+         "total": 0
+        }
+       },
+       "content": [
+        {
+         "type": "toolCall",
+         "id": "call-1",
+         "name": "agent_spawn",
+         "arguments": {
+          "prompt": "do the task",
+          "name": "w",
+          "model": "scripted/scripted",
+          "cwd": "<ws:tree-bare>",
+          "useWorktreeConfig": true
+         }
+        }
+       ],
+       "stopReason": "toolUse",
+       "thinkingLevel": "off"
+      },
+      {
+       "role": "toolResult",
+       "toolCallId": "call-1",
+       "toolName": "agent_spawn",
+       "content": [
+        {
+         "type": "text",
+         "text": "useWorktreeConfig: <ws:tree-bare>/.agent/extensions/mode is not a mode extension."
+        }
+       ],
+       "details": {},
+       "isError": true
+      }
+     ]
+    }
+   ],
+   "activeTools": [
+    "read",
+    "bash",
+    "edit",
+    "write",
+    "agent_resume",
+    "agent_models",
+    "agent_spawn",
+    "agent_list",
+    "agent_transcript",
+    "agent_steer",
+    "agent_kill",
+    "agent_wait",
+    "team_create",
+    "team_add",
+    "team_eject",
+    "team_succeed",
+    "team_list",
+    "project_verbs",
+    "queue_push"
+   ],
+   "entries": [
+    {
+     "type": "message",
+     "message": {
+      "role": "system",
+      "content": "",
+      "sections": {
+       "preamble": "You are an expert coding assistant operating inside pi, a coding agent harness. You help users by reading files, executing commands, editing code, and writing new files.",
+       "tools": "@4638ec08e2a6ed45",
+       "rules": "@9514ae33e1ebc3e7",
+       "docs": "@0f5fabf6c3c47c4c",
+       "cwd": "<cwd>\n<ws:tree-bare>\n</cwd>",
+       "mode": "@d4cf9a33be021005"
+      },
+      "toolsAdded": "@619362e2e44edede"
+     }
+    }
+   ],
+   "headers": {
+    "# Minor mode: spec": 1
+   }
+  }
+ ],
+ "start": null,
+ "worker": null
+}

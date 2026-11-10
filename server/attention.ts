@@ -28,6 +28,8 @@ export interface AttentionRow {
   summary: SessionSummary;
   /** Titles of live-pending dialogs of a hosted chat (a browser is attached and can answer). */
   dialogs: string[];
+  /** ms epoch the newest of those dialogs opened; 0 or absent: unknown. */
+  dialogAt?: number;
   /** Items waiting in the hosted chat's outgoing queue. */
   queued: number;
   /** Subagent workers that ended in an error (presence.workerCounts.error). */
@@ -132,7 +134,7 @@ export function sessionItems(row: AttentionRow, now: number, home?: string): Att
   // decide: a referral from this session waits for the operator (§app.organizations/referrals).
   for (const p of s.baton?.proposals ?? [])
     add("decide", "roster-proposal", p.since || lastActive, `Approve ${p.name}${p.role ? ` (${p.role})` : ""}${p.by ? ` proposed by ${p.by}` : ""}?`);
-  if (row.dialogs.length) add("act", "needs-input", row.activitySince || lastActive, `Waiting on: ${row.dialogs.join("; ")}`);
+  if (row.dialogs.length) add("act", "needs-input", Math.max(row.dialogAt ?? 0, row.activitySince) || lastActive, `Waiting on: ${row.dialogs.join("; ")}`);
   else if (state === "needs-input")
     add("act", "needs-input", row.activitySince || lastActive, s.live ? "Waiting on a dialog in the terminal." : "Waiting on a dialog.");
   // An errored turn: the file's last finished reply (turnError, already seen-gated by the list),
@@ -151,7 +153,7 @@ export function sessionItems(row: AttentionRow, now: number, home?: string): Att
     row.viewing === true ||
     (row.workerErrorAt !== undefined && ((s.seenAt !== undefined && s.seenAt >= row.workerErrorAt) || (row.lastReplyAt !== undefined && row.lastReplyAt > row.workerErrorAt)));
   if (row.failedWorkers > 0 && !errorSeen)
-    add("act", "worker-error", lastActive, `${row.failedWorkers} subagent${row.failedWorkers === 1 ? "" : "s"} ended in an error.`);
+    add("act", "worker-error", row.workerErrorAt ?? lastActive, `${row.failedWorkers} subagent${row.failedWorkers === 1 ? "" : "s"} ended in an error.`);
   // Open alignment questions (§chat.alignment/session-mark): a fact of the file, no model. Waiting
   // on the user only while nothing runs; an archived session is out of the way on purpose. A merged
   // branch (readiness from git) has moved on: the questions stay visible as a decide item, never a
@@ -191,7 +193,8 @@ export function sessionItems(row: AttentionRow, now: number, home?: string): Att
   const at = s.signals?.at ?? lastActive;
   // An open offer card is its own item above, so the asks-you mark it gives an idle row adds no soft item.
   const asks = sig.includes("asks-you") && !questions && !s.archived && !offer;
-  if (asks) {
+  // An open card is its own item above too, so the guess beside it would list the chat twice (§app.decisions/asks-user).
+  if (asks && !row.cards?.length) {
     const sentence = row.signalText?.sentence;
     add("decide", "asks-you", at, sentence ? `${askLead(row.signalText?.askKind)}: ${sentence}` : "The last reply asks you something.", true);
   }
@@ -234,13 +237,31 @@ export function sessionItems(row: AttentionRow, now: number, home?: string): Att
   return out;
 }
 
+/** The chats dismissed from Needs you (server/needs-you-dismissed.ts), for one digest. */
+export interface DigestDismissals {
+  /** Session path → the newest item each dismissal covers. */
+  of: Readonly<Record<string, { since: number }>>;
+  /** Dismissals this digest found over: the chat has something new, or it is archived with nothing left that lists. */
+  ended?: (paths: string[]) => void;
+}
+
 /**
  * The digest: every session's items, tier first, then newest first; `counts` cover everything,
  * `items` ≤30. `badge` counts SESSIONS, not items, and each session once, at its most urgent tier:
  * a session with a dialog and an error is one "needs you", not two.
+ *
+ * What's dismissed is left out here and only here, before the cap (§app.session-list/needs-you-dismiss): a dismissed
+ * chat's items that list in Needs you are dropped while none is newer than what the dismissal covered, so every reader
+ * agrees with no filter of its own. Any newer one brings them all back and ends the dismissal. Its other lines stay, and
+ * `extra` (no session's) can't be dismissed. `dismissed` on the wire says what's in force, for the baton waits the
+ * Organizations region reads from the session list; `dismissedKeys`, never on the wire, the blockers left out.
  */
-export function buildDigest(rows: AttentionRow[], now = Date.now(), home?: string, extra: AttentionItem[] = []): AttentionDigest & { badge: { act: number; decide: number; needsYou: number } } {
+export function buildDigest(rows: AttentionRow[], now = Date.now(), home?: string, extra: AttentionItem[] = [], dismissals?: DigestDismissals): AttentionDigest & { badge: { act: number; decide: number; needsYou: number }; dismissedKeys: string[] } {
   const badge = { act: 0, decide: 0, needsYou: 0 };
+  const dismissed: Record<string, number> = {};
+  const newestListed: Record<string, number> = {};
+  const dismissedKeys: string[] = [];
+  const ended: string[] = [];
   // Items of no session (an org project's missing main stakeholder): each counts once in the badge.
   const all: AttentionItem[] = [...extra];
   for (const it of extra) {
@@ -249,17 +270,32 @@ export function buildDigest(rows: AttentionRow[], now = Date.now(), home?: strin
     if (listsInNeedsYou(it)) badge.needsYou++;
   }
   for (const r of rows) {
-    const items = sessionItems(r, now, home);
+    let items = sessionItems(r, now, home);
+    const covered = dismissals?.of[r.summary.path];
+    if (covered) {
+      const listed = items.filter(listsInNeedsYou);
+      if (listed.some((i) => i.since > covered.since) || (r.summary.archived && !listed.length)) ended.push(r.summary.path);
+      else {
+        dismissed[r.summary.path] = covered.since;
+        for (const i of listed) if (i.tier === "act") dismissedKeys.push(blockerKey(i));
+        items = items.filter((i) => !listsInNeedsYou(i));
+      }
+    }
     if (items.some((i) => i.tier === "act")) badge.act++;
     else if (items.some((i) => i.tier === "decide")) badge.decide++;
     // The same rule Needs you lists by (shared/needs-you.ts): the two counts agree.
-    if (items.some(listsInNeedsYou)) badge.needsYou++;
+    const listed = items.filter(listsInNeedsYou);
+    if (listed.length) {
+      badge.needsYou++;
+      newestListed[r.summary.path] = Math.max(...listed.map((i) => i.since));
+    }
     all.push(...items);
   }
   all.sort((a, b) => TIER_ORDER[a.tier] - TIER_ORDER[b.tier] || b.since - a.since);
   const counts = { act: 0, decide: 0, fyi: 0 };
   for (const it of all) counts[it.tier]++;
-  return { generatedAt: now, counts, items: capKeepingKinds(all), badge };
+  if (ended.length) dismissals?.ended?.(ended);
+  return { generatedAt: now, counts, items: capKeepingKinds(all), ...(Object.keys(dismissed).length ? { dismissed } : {}), ...(Object.keys(newestListed).length ? { newestListed } : {}), badge, dismissedKeys };
 }
 
 /**

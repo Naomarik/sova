@@ -16,6 +16,7 @@ import { WORKER_MANIFEST_ENTRY_TYPE } from "./registry.ts";
 import { resolvedModel } from "./worker-transcript.ts";
 import { MODE_WORKER_EVENT } from "../mode/events.ts";
 import { WAKE_DIR_ENV, cancelWakesBefore, readWakeRecords } from "./wake-store.ts";
+import { profileOff } from "./tests/profile-off.ts";
 
 const SNAPSHOT = "subagents:workers-snapshot";
 const NO_POLICY_FILE = path.join(os.tmpdir(), "subagents-tests-absent-policy.json");
@@ -98,7 +99,7 @@ function manager(file: ReturnType<typeof sessionFile>, options: Options = {}) {
 		sendMessage: (...m: any[]) => messages.push(m),
 	} as any, factory as any, {
 		policyFile: NO_POLICY_FILE,
-		...(options.agentDir ? { agentDir: options.agentDir } : {}), ...(options.mailboxRoot ? { mailboxRoot: options.mailboxRoot, mailboxPollMs: 10 } : {}),
+		...(options.agentDir ? { agentDir: profileOff(options.agentDir) } : {}), ...(options.mailboxRoot ? { mailboxRoot: options.mailboxRoot, mailboxPollMs: 10 } : {}),
 	});
 	const call = (name: string, params: any) => tools.get(name).execute("t", params, undefined, () => {}, ctx);
 	return {
@@ -277,23 +278,24 @@ test("an older Claude Code worker (it ran the CLI's own tools) resumes on Sova's
 	try {
 		first.start();
 		await first.call("team_create", { name: "Crew", objective: "Ship", members: [{ role: "rev", prompt: "Review f01." }] });
-		const [member] = first.workers;
+		const member = first.workers[1]; // after Sova's coordinator (ag_01)
 		member.settle();
 		await first.shutdown();
 		// What an older Sova recorded for that seat: a native Claude worker, with options and tools only its CLI had.
 		file.append(WORKER_MANIFEST_ENTRY_TYPE, {
-			v: 1, kind: "worker-manifest", workerId: "ag_01", backend: "claude-code", at: Date.now(), status: "running",
+			v: 1, kind: "worker-manifest", workerId: "ag_02", backend: "claude-code", at: Date.now(), status: "running",
 			spec: { cwd: proj, model: "opus[1m]", effort: "high", taskPreview: "Review f01.", wake: true },
 			ref: { v: 1, backend: "claude-code", kind: "claude-session-id", locator: sid, cwd: proj },
 			launch: { backend: "claude-code", model: "opus[1m]", effort: "high", tools: ["Read", "Bash", "WebFetch", "MultiEdit"], systemPrompt: "be terse", cwd: proj, backendOptions: { permissionMode: "acceptEdits" } },
 		});
 		second.start();
-		await until(() => (second.snapshot()?.workers ?? []).length === 1, "the restored claude worker");
-		assert.deepEqual([second.snapshot().workers[0].restored, second.snapshot().workers[0].resumable], [true, true]);
-		const out = await second.call("agent_resume", { id: "ag_01" });
+		const rev = () => second.snapshot().workers.find((w: any) => w.id === "ag_02");
+		await until(() => (second.snapshot()?.workers ?? []).length === 3, "the restored claude worker");
+		assert.deepEqual([rev().restored, rev().resumable], [true, true]);
+		const out = await second.call("agent_resume", { id: "ag_02" });
 		const runner = second.workers.at(-1);
 		// Same id, group and seat; today's Claude worker: the provider's ref, its effort, Sova's tools, no CLI options.
-		assert.deepEqual([runner.id, runner.groupId, runner.backend, runner.cwd], ["ag_01", "run_01", "pi", proj]);
+		assert.deepEqual([runner.id, runner.groupId, runner.backend, runner.cwd], ["ag_02", "run_01", "pi", proj]);
 		assert.equal(runner.model, "claude-code-cli/claude-opus-5-5");
 		assert.equal(runner.effort, "high");
 		assert.deepEqual(runner.tools, ["read", "bash"], "WebFetch and MultiEdit have no equivalent: dropped, not refused");
@@ -307,22 +309,23 @@ test("an older Claude Code worker (it ran the CLI's own tools) resumes on Sova's
 		assert.deepEqual([header.type, header.cwd], ["session", proj]);
 		const text: string = first_.message.content[0].text;
 		assert.equal(first_.message.role, "user");
-		assert.match(text, /continue the work of ag_01, a Claude Code worker whose run ended/);
+		assert.match(text, /continue the work of ag_02, a Claude Code worker whose run ended/);
 		assert.ok(text.includes(transcript), "the old transcript's absolute path");
 		assert.match(text, /Its task:\nReview f01\./);
 		assert.match(text, /FINAL-WORDS/);
-		assert.ok(text.length < 2600, "only the last 2,000 characters of its last answer");
+		const last = text.slice(text.indexOf("Its last answer:\n") + "Its last answer:\n".length, text.indexOf("\n\nWait for your next instruction"));
+		assert.ok(last.startsWith("…") && last.length <= 2001 && last.endsWith("FINAL-WORDS"), "only the last 2,000 characters of its last answer (the temp home's path length plays no part)");
 		assert.equal(runner.status, "waiting");
 		assert.equal(runner.lastSteer, undefined, "nothing is sent to it");
-		assert.match(out.content[0].text, /^Resumed ag_01 \(rev\) on Sova's tools in a new session .*, continuing its Claude Code session .*6c852daa-6abf-4bbd-9ef5-8950d9330968\.jsonl; nothing was sent to it/);
+		assert.match(out.content[0].text, /^Resumed ag_02 \(rev\) on Sova's tools in a new session .*, continuing its Claude Code session .*6c852daa-6abf-4bbd-9ef5-8950d9330968\.jsonl; nothing was sent to it/);
 		// The record now names the new session and keeps the old one as continuedFrom; the old transcript is untouched.
-		const resumed = file.entries.filter((e) => e.customType === WORKER_MANIFEST_ENTRY_TYPE && e.data.workerId === "ag_01" && e.data.resumedAt).at(-1)!.data;
+		const resumed = file.entries.filter((e) => e.customType === WORKER_MANIFEST_ENTRY_TYPE && e.data.workerId === "ag_02" && e.data.resumedAt).at(-1)!.data;
 		assert.equal(resumed.backend, "pi");
 		assert.deepEqual([resumed.ref.kind, resumed.ref.locator], ["pi-session-file", seeded]);
 		assert.deepEqual([resumed.continuedFrom.backend, resumed.continuedFrom.ref.locator], ["claude-code", sid]);
 		assert.equal(resumed.launch.model, "claude-code-cli/claude-opus-5-5", "a later resume reopens the new session as a pi worker");
 		assert.ok(fs.readFileSync(transcript, "utf8").includes("FINAL-WORDS"));
-		assert.equal(second.snapshot().workers[0].teamId, "team_01");
+		assert.equal(rev().teamId, "team_01");
 	} finally {
 		await second.shutdown();
 		fs.rmSync(root, { recursive: true, force: true });
@@ -420,7 +423,7 @@ test("restart: a paused team stays paused (its resumed monitor is sent the resum
 test("restart: a restored team member's row names its saved team, and still does once resumed", async () => {
 	const root = fs.mkdtempSync(path.join(os.tmpdir(), "pi-subagents-restore-teamid-"));
 	const agentDir = path.join(root, "agent");
-	fs.mkdirSync(agentDir); // no team-defaults.json: no coordinator or monitor
+	fs.mkdirSync(agentDir); // no team-defaults.json: Sova's coordinator and monitor on the chat's own model
 	const file = sessionFile();
 	const first = manager(file, { agentDir, mailboxRoot: path.join(root, "mail1") });
 	const second = manager(file, { agentDir, mailboxRoot: path.join(root, "mail2") });
@@ -431,22 +434,23 @@ test("restart: a restored team member's row names its saved team, and still does
 		for (const w of first.workers) w.identify(`/nowhere/${w.id}.jsonl`);
 		await new Promise((r) => setTimeout(r, 150)); // the throttled refresh writes the refs
 		const live = Object.fromEntries(first.snapshot().workers.map((w: any) => [w.name, w.teamId]));
-		assert.deepEqual(live, { dev: "team_01", qa: "team_01", loner: undefined });
+		assert.deepEqual(live, { coordinator: "team_01", dev: "team_01", qa: "team_01", monitor: "team_01", loner: undefined });
 		for (const w of first.workers) w.settle();
 		await first.shutdown();
 		second.start();
-		await until(() => (second.snapshot()?.workers ?? []).length === 3, "restored workers");
+		await until(() => (second.snapshot()?.workers ?? []).length === 5, "restored workers");
 		const rows = () => Object.fromEntries(second.snapshot().workers.map((w: any) => [w.id, { restored: w.restored, teamId: w.teamId }]));
 		// Its team is history until a resume adopts it; the row still names it, from the durable record.
+		const restored = { restored: true, teamId: "team_01" };
 		assert.deepEqual(rows(), {
-			ag_01: { restored: true, teamId: "team_01" }, ag_02: { restored: true, teamId: "team_01" },
-			ag_03: { restored: true, teamId: undefined },
+			ag_01: restored, ag_02: restored, ag_03: restored, ag_04: restored,
+			ag_05: { restored: true, teamId: undefined },
 		});
-		await second.call("agent_resume", { id: "ag_01" });
-		await until(() => second.snapshot().workers.find((w: any) => w.id === "ag_01")?.restored === undefined, "ag_01 resumed");
+		await second.call("agent_resume", { id: "ag_02" });
+		await until(() => second.snapshot().workers.find((w: any) => w.id === "ag_02")?.restored === undefined, "ag_02 resumed");
 		assert.deepEqual(rows(), {
-			ag_01: { restored: undefined, teamId: "team_01" }, ag_02: { restored: true, teamId: "team_01" },
-			ag_03: { restored: true, teamId: undefined },
+			ag_01: restored, ag_02: { restored: undefined, teamId: "team_01" }, ag_03: restored, ag_04: restored,
+			ag_05: { restored: true, teamId: undefined },
 		});
 	} finally {
 		await second.shutdown();

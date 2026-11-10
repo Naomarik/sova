@@ -76,6 +76,8 @@ export interface Worker {
 export interface WorkerHandlers {
 	onChange(): void;
 	onSettled(worker: Worker): void;
+	/** A run the worker started on its own ended well with nothing written: idle again, with no report to send. */
+	onQuietSettled?(worker: Worker): void;
 	onExit(worker: Worker): void;
 }
 export type WorkerFactory = (options: SpawnOptions, handlers: WorkerHandlers) => Worker;

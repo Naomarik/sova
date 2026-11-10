@@ -40,6 +40,10 @@ test("the confirm's words: the row's commit count, what moves once the checks pa
   // A project that lands by request: nothing moves on its own, so the line says what happens instead.
   assert.equal(landConfirmWords("feat/x", 2, "main", "github-pr").line, "2 commits go to the merge queue; a pull request opens on GitHub once checks pass.");
   assert.doesNotMatch(landConfirmWords("feat/x", 2, "main", "push-branch").line, /main moves/);
+  // A chat's rows name the place; the way of landing still ends the line.
+  assert.equal(landConfirmWords("feat/x", 3, "master", undefined, "AmalMoney").line, "3 commits go to AmalMoney's merge queue; master moves once checks pass.");
+  assert.equal(landConfirmWords("feat/x", 1, "main", "github-pr", "AmalMoney").line, "1 commit goes to AmalMoney's merge queue; a pull request opens on GitHub once checks pass.");
+  assert.equal(landConfirmWords("feat/x", undefined, "main", undefined, "~/code/tools").line, "Its commits go to ~/code/tools's merge queue; main moves once checks pass.");
 });
 
 test("Land reads Land (no ellipsis) and only asks; its ▾ is a separate button", () => {
@@ -104,7 +108,7 @@ test("the Worktrees dialog: its foot carries the queue's one line and View Merge
   const modal = src.slice(src.indexOf("export function WorktreesModal("));
   const foot = modal.slice(modal.indexOf('class="modal-foot'));
   assert.match(foot, /head\(\)\.intro/);
-  assert.match(foot, /View Merge Queue/);
+  assert.match(foot, /links\(\)/, "its links are the per-project ones");
   assert.doesNotMatch(foot, />\s*Close\s*</, "the head's ✕ is the one close");
   assert.doesNotMatch(modal.slice(modal.indexOf('class="modal-body"'), modal.indexOf("</div>", modal.indexOf('class="modal-body"'))), /head\(\)\.intro/, "not in the body too");
 });

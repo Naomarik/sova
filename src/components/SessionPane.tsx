@@ -5,7 +5,7 @@ import { explainCaption, explainHref, explainInterrupted, explainState, newestFi
 import { relativeTime } from "../lib/format";
 import { sessionIdOfPath } from "../lib/links";
 import { absoluteTime, headChipSpend, headChipWords } from "../lib/spend";
-import { activeTab, sessionContext, setActiveTab, toast } from "../lib/ui-state";
+import { activeTab, setActiveTab, toast } from "../lib/ui-state";
 import { capTitle, workerLabel, workerTeam } from "../lib/workers";
 import type { RewindControl } from "../lib/inputs";
 import { jumpWhenArrived } from "../lib/jump";
@@ -18,7 +18,9 @@ import { MemoryOutlineSection } from "./MemoryOutline";
 import { SessionTimeline } from "./SessionTimeline";
 import { createSessionSpend, SessionUsageTab } from "./SessionUsage";
 import { type AgentsView, SubagentPane } from "./SubagentPane";
+import { TimeSpentTab } from "./TimeSpent";
 import { Chip, Icon } from "./ui";
+import { trackSessionPane } from "../lib/time-spent";
 
 /** The open session's insight, loaded once in App.tsx for the head, the strip and this pane. */
 export interface PaneInsight {
@@ -32,12 +34,13 @@ export interface PaneInsight {
   changed: number;
 }
 
-export type TabId = "session" | "timeline" | "agents" | "usage" | "context" | "sharing" | "skills" | "explain";
+export type TabId = "session" | "timeline" | "agents" | "usage" | "time" | "context" | "sharing" | "skills" | "explain";
 const TABS: readonly { id: TabId; label: string }[] = [
   { id: "session", label: "Session" },
   { id: "timeline", label: "Timeline" },
   { id: "agents", label: "Agents" },
   { id: "usage", label: "Usage" },
+  { id: "time", label: "Time Spent" },
   { id: "context", label: "Context" },
   { id: "sharing", label: "Sharing" },
   { id: "skills", label: "Skills" },
@@ -48,10 +51,10 @@ const isTab = (id: string | null): id is TabId => TABS.some((t) => t.id === id);
 /**
  * The session detail pane: a head, a tab strip, and one tab's panel. Session is what the session
  * is (SessionDetails); Timeline is the session's one time axis; Agents is the subagents pane it grew
- * out of; Usage is what the session has spent (SessionUsage); Context is what fills its window now (ContextTab); Sharing is its share links, with a
+ * out of; Usage is what the session has spent (SessionUsage); Time Spent is where your time and the agent's went (TimeSpent); Context is what fills its window now (ContextTab); Sharing is its share links, with a
  * viewing-now badge on the tab; Skills says which skills loaded and when, here and in each worker; Explain lists this session's /explain pages. The tab is kept per
  * session path; with none kept, it opens on Agents while a worker is working, else on Session —
- * never on Usage, which its tab and the head's token chip open. Read-only throughout, except the
+ * never on Usage, which its tab and the head's token chip open, or on Time Spent. Read-only throughout, except the
  * Timeline's rewind, which goes through the chat.
  */
 export function SessionPane(props: {
@@ -163,8 +166,10 @@ export function SessionPane(props: {
     tabEls[next]?.focus();
   };
 
+  trackSessionPane(props.path, () => aside);
+
   return (
-    <aside class="app-subagents" id="session-pane" aria-label="Session detail" ref={aside} onKeyDown={onKeyDown}>
+    <aside class="app-subagents" id="session-pane" data-time-session={props.path} aria-label="Session detail" ref={aside} onKeyDown={onKeyDown}>
       <header class="subagents-head">
         <h2 class="subagents-title">Session detail</h2>
         <Show when={working() > 0}>
@@ -250,6 +255,11 @@ export function SessionPane(props: {
               onClose={props.onClose}
             />
           </Match>
+          <Match when={tab() === "time"}>
+            <div class="session-panel-scroll" tabindex="0">
+              <TimeSpentTab path={props.path} />
+            </div>
+          </Match>
           <Match when={tab() === "agents"}>
             <SubagentPane
               path={props.path}
@@ -301,7 +311,7 @@ export function SessionPane(props: {
 
 /**
  * The Session tab, fed from App's shared insight and the pane's shared transcript read, which the
- * Changes list and the context sentence need — no fetch of its own.
+ * Changes list needs — no fetch of its own.
  */
 function SessionTab(props: {
   path: string;
@@ -314,11 +324,6 @@ function SessionTab(props: {
   /** Closes the pane: a memory line's jump from the drawer band would otherwise land behind it. */
   onClose?: () => void;
 }) {
-  /** The gauge's reading; "compacted" is re-derived from the items. */
-  const context = () => {
-    const c = sessionContext()[props.path];
-    return c && c !== "compacted" ? c : null;
-  };
   /** The poller keeps the last insight through a failure, so only a first-load failure shows;
       it retries on its own, so the banner offers no Retry. */
   const failure = () => (props.insight.data ? null : props.insight.error);
@@ -331,7 +336,6 @@ function SessionTab(props: {
         error={failure()}
         pending={props.insight.pending}
         summary={props.summary}
-        context={context()}
         items={props.items ?? []}
         now={props.now}
         onArchiveChanged={props.onArchiveChanged}

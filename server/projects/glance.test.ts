@@ -1,12 +1,15 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { MergeQueueView } from "../../shared/merge-queue";
+import { parseDefinition } from "../../shared/project-contract";
 import type { ReleaseRecord } from "../../shared/release";
 import { queueGlanceOf } from "../merge-queue/view";
 import { queueGlanceNow } from "../merge-queue/wire";
 import { buildGlance, releaseGlanceOf, type GlanceDeps, type GlanceInstance } from "./glance";
 
-const inst = (x: Partial<GlanceInstance> & Pick<GlanceInstance, "id" | "slot">): GlanceInstance => ({ project: "/w/a", createdBy: "operator", desired: { web: "running" }, ...x });
+const inst = (x: Partial<GlanceInstance> & Pick<GlanceInstance, "id" | "slot">): GlanceInstance => ({ project: "/w/a", createdBy: "operator", desired: { web: "running" }, ports: {}, ...x });
+
+const WEB = parseDefinition(JSON.stringify({ version: 1, services: { web: { cmd: ["x"], ports: { http: { base: 5000 } } } } }));
 
 const deps = (x: Partial<GlanceDeps> = {}): GlanceDeps => ({
   projects: [
@@ -17,10 +20,11 @@ const deps = (x: Partial<GlanceDeps> = {}): GlanceDeps => ({
   sameRoot: (a, b) => a.replace(/\/$/, "") === b.replace(/\/$/, ""),
   queueOf: () => ({ state: "unserved" }),
   releaseOf: () => undefined,
-  definitionOf: (root) => (root === "/w/a" ? { adoptedUnit: null, adoptedService: null } : null),
+  definitionOf: (root) => (root === "/w/a" ? { adoptedUnit: null, adoptedService: null, def: WEB } : null),
   capOf: () => 4,
   instances: [],
   shared: [],
+  listeningPorts: new Set(),
   unitOf: (scope, svc) => `sova-svc-abc-${scope}-${svc}`,
   unitPids: () => [],
   ownMemory: () => null,
@@ -55,7 +59,7 @@ test("chats' memory: the monitor's sessions (each total with its workers and too
   );
 });
 
-test("slots: running copies against the cap, the main checkout's and conformance's never counted; no project file → null", () => {
+test("slots: the figure is the copy limit's count, the places only the usable slots; the main checkout's and conformance's in neither; no project file → null", () => {
   const g = buildGlance(
     deps({
       instances: [
@@ -63,18 +67,30 @@ test("slots: running copies against the cap, the main checkout's and conformance
         inst({ id: "c1", slot: 1 }),
         inst({ id: "c2", slot: 2, desired: { web: "stopped" } }),
         inst({ id: "c3", slot: 3, project: "/w/a/" }),
-        inst({ id: "conf", slot: 9, createdBy: "conform:run1" }),
+        inst({ id: "conf", slot: 17, createdBy: "conform:run1" }),
+        inst({ id: "stale", slot: 19 }),
         inst({ id: "other", slot: 1, project: "/w/b" }),
       ],
+      capOf: () => 3,
+      listeningPorts: new Set([5004]),
     }),
   );
-  assert.deepEqual(g.glances[0]!.slots, { running: 2, cap: 4 });
+  assert.deepEqual(g.glances[0]!.slots, { running: 3, cap: 3, usable: 16, runningPlaces: 2, stopped: 1, elsewhere: 1, free: 12 }, "the stale slot 19 is at the limit's count and on no place");
   assert.equal(g.glances[1]!.slots, null, "prj_b has no project file");
+});
+
+test("slots: no list of listening ports → free unknown, the places Sova knows still counted; a file that doesn't parse likewise", () => {
+  const instances = [inst({ id: "c1", slot: 1 }), inst({ id: "b1", slot: 1, project: "/w/b", desired: { web: "stopped" }, ports: { web: { http: 5002 } } })];
+  assert.deepEqual(buildGlance(deps({ instances, listeningPorts: null })).glances[0]!.slots, { running: 1, cap: 4, usable: 16, runningPlaces: 1, stopped: 0, elsewhere: 1, free: null });
+  const everyPlaceHeld = [...Array(16)].map((_, i) => inst({ id: `h${i + 1}`, slot: i + 1 }));
+  assert.equal(buildGlance(deps({ instances: everyPlaceHeld, listeningPorts: null })).glances[0]!.slots!.free, null, "every place held is still not 0 free");
+  const broken = buildGlance(deps({ instances, definitionOf: () => ({ adoptedUnit: null, adoptedService: null, def: null }) })).glances[0]!.slots!;
+  assert.deepEqual([broken.usable, broken.runningPlaces, broken.elsewhere, broken.free], [16, 1, 0, null], "no ports known: not called free");
 });
 
 test("copies' memory: every running unit of the project (slot 0's adopted unit, shared services), each process once", () => {
   const units: Record<string, number[]> = {
-    "sova-runtime.service": [10, 11],
+    "shop-web.service": [10, 11],
     "sova-svc-abc-c1-web.service": [20, 11],
     "sova-svc-abc-c1-db.service": [],
     "sova-svc-abc-a-shared-123-bus.service": [30],
@@ -83,9 +99,9 @@ test("copies' memory: every running unit of the project (slot 0's adopted unit, 
   const asked: string[] = [];
   const g = buildGlance(
     deps({
-      definitionOf: (root) => (root === "/w/a" ? { adoptedUnit: "sova-runtime.service", adoptedService: "web" } : null),
+      definitionOf: (root) => (root === "/w/a" ? { adoptedUnit: "shop-web.service", adoptedService: "web", def: null } : null),
       instances: [inst({ id: "main", slot: 0 }), inst({ id: "c1", slot: 1, desired: { web: "running", db: "running", cache: "stopped" } }), inst({ id: "c9", slot: 1, project: "/w/b" })],
-      shared: [{ id: "a-shared-123", project: "/w/a", desired: { bus: "running" } }],
+      shared: [{ id: "a-shared-123", project: "/w/a", desired: { bus: "running" }, ports: {} }],
       unitPids: (u) => (asked.push(u), units[u] ?? []),
       ownMemory: (pid) => pid * 1000,
     }),
@@ -93,6 +109,28 @@ test("copies' memory: every running unit of the project (slot 0's adopted unit, 
   assert.equal(g.glances[0]!.memory.copiesBytes, (10 + 11 + 20 + 30) * 1000);
   assert.ok(!asked.includes("sova-svc-abc-c1-cache.service"), "a service wanted stopped isn't read");
   assert.ok(!asked.includes("sova-svc-abc-main-web.service"), "the adopted unit stands for slot 0's service");
+});
+
+test("copies' memory: Sova's own server is never counted, its live unit nor the unit this server runs in; other copies are", () => {
+  const units: Record<string, number[]> = {
+    "sova-runtime.service": [10],
+    "sova-svc-abc-self-server.service": [40],
+    "sova-svc-abc-c1-web.service": [20],
+  };
+  const asked: string[] = [];
+  const g = buildGlance(
+    deps({
+      definitionOf: (root) => (root === "/w/a" ? { adoptedUnit: "sova-runtime.service", adoptedService: "web", def: null } : null),
+      instances: [inst({ id: "main", slot: 0 }), inst({ id: "c1", slot: 1 }), inst({ id: "self", slot: 2, desired: { server: "running" } })],
+      ownUnits: ["sova-runtime.service", "sova-svc-abc-self-server.service"],
+      unitPids: (u) => (asked.push(u), units[u] ?? []),
+      ownMemory: (pid) => pid * 1000,
+    }),
+  );
+  assert.equal(g.glances[0]!.memory.copiesBytes, 20 * 1000, "only the other copy's unit");
+  assert.ok(!asked.includes("sova-runtime.service") && !asked.includes("sova-svc-abc-self-server.service"), "Sova's own units aren't even read");
+  // Without the exclusion the same records would count them: the test can tell the two apart.
+  assert.equal(buildGlance(deps({ definitionOf: (root) => (root === "/w/a" ? { adoptedUnit: "sova-runtime.service", adoptedService: "web", def: null } : null), instances: [inst({ id: "main", slot: 0 }), inst({ id: "c1", slot: 1 })], unitPids: (u) => units[u] ?? [], ownMemory: (pid) => pid * 1000 })).glances[0]!.memory.copiesBytes, 30 * 1000);
 });
 
 test("ready to merge: the queue's kept cut while served; reading and unserved are told apart, neither with a cut", () => {

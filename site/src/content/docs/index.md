@@ -13,15 +13,15 @@ agent works: **normal** is pi as usual, **delegate** has the agent route its wor
 Sova for you. Minor modes add one thing each on top of that, such as
 agreeing on a plan before building (**align**) or working from the project's spec (**spec**). You
 switch them per chat from the mode menu in the composer, and a switch applies from that chat's next
-message. [How modes work](/docs/modes/) covers the menu, the default for new chats, and the terminal
-commands.
+message. [How modes work](/docs/modes/) covers the menu, the default for new chats, the mode
+commands you can type in a chat, and your own personal modes.
 
 ## The modes
 
 | Mode | Kind | What it does |
 |---|---|---|
 | [normal](/docs/modes/normal/) | Major | Pi as usual. The agent does the work itself, and can still start workers and teams. |
-| [delegate](/docs/modes/delegate/) | Major | The agent plans and routes 4 kinds of work to workers, each on the model your subagent profile names. |
+| [delegate](/docs/modes/delegate/) | Major | The agent plans and routes 4 kinds of work to workers, each on the model your profile names. |
 | [create](/docs/modes/create/) | Major | Everything Delegate does, plus every way to make Sova yours. You say what you need, and it makes the change on a card, by Land, or with your OK. |
 | [align](/docs/modes/align/) | Minor | The agent agrees with you on what to build first, and records each agreement as an alignment you answer in chat. |
 | [spec](/docs/modes/spec/) | Minor | The agent reads the project's spec before coding, and proposes changes to it in drafts that become official when its branch lands. |
@@ -29,8 +29,8 @@ commands.
 | [memory](/docs/modes/memory/) | Minor | A cheap model folds the chat's messages into one-line summaries the agent can open back up, so a long chat outgrows its context. Only Sova's mode menu turns it on. |
 | [project modes](/docs/modes/project-modes/) | Minor | A project's own modes, with its instructions, command-line tools, commands and hooks. None is on until someone turns it on in a chat, and only you approve its hooks. |
 
-[Subagent profiles](/docs/subagent-profiles/) hold the models every subagent uses: Delegate's
-workers, [team](/docs/teams/) members, the spec writer and the reviewer. Each chat picks one in its mode menu.
+[Profiles](/docs/subagent-profiles/) hold how a chat starts and the models it and its helpers use:
+Delegate's workers, [team](/docs/teams/) members, the spec writer and the reviewer. Each chat picks one in its mode menu.
 
 ## Around the modes
 

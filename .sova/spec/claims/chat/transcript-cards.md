@@ -95,13 +95,17 @@ own components and its design: the author writes only data.
   others show the ticks as data.
 - **Status**: a title, a tone (`ok`, `warn`, `error`, `info`, `muted`, as the reply chips', with
   the dot and the word: OK, Warning, Error, Info, Note) and one line, with an optional detail line.
+  A status with no answer can change in place, so one card can go from "running" to "passed"
+  (§chat.transcript-cards/updating-cards).
 - **Table**: an optional title, 1 to 12 column heads and up to 200 rows of plain-text cells; past
   10 rows it shows the first 10 and **Show All {n} Rows**.
 - **Buttons**: a title, an optional note and 1 to 4 buttons, each a label (at most 32
   characters), an optional one-line `about` (its tooltip), and what a press does: answer the card
   with that button, send a text as the user, or run one catalogue command (as
   §chat.offers/buttons; a send, or a run of a command that changes something, needs the card's
-  owner trusted, §chat.transcript-cards/trust). An optional `confirm` sentence asks first, as an
+  owner trusted, §chat.transcript-cards/trust). A card an extension owns sends under that extension's
+  name, never as the user (§app.extensions/name-badge). While the chat waits on alignment answers, a
+  project's card sends marked too (§chat.alignment/session-mark). An optional `confirm` sentence asks first, as an
   offer card does. Once answered, the card keeps no buttons: only its answer line ("You chose
   {label}"), as Sova's own confirm cards. Until then, where it can't be answered, it reads
   "Waiting for an answer:" and its buttons' labels.
@@ -147,8 +151,9 @@ nothing else in it is markup.
 - **Fixed per chat.** The types a chat may raise, and their shapes, answer modes and placements,
   are snapshotted the first time Sova builds the chat's tools, as offers are (§chat.offers/tool,
   "One set per session"), in Sova's own state keyed by session id, never in the session's file:
-  the project's types from that checkout, then the types the installed extensions declare
-  (§app.extensions/views), each name once. A reload, a resume, a reconnect after a restart and a
+  the project's types from that checkout, then the types the active extensions declare
+  (§app.extensions/views), each name once (a queue chat takes none of an extension's,
+  §chat.transcript-cards/queue-chats). A reload, a resume, a reconnect after a restart and a
   resumed Claude Code chat read that snapshot; a fork starts with its parent's; a session with no
   snapshot that already holds a user message records none. Editing, adding or removing a
   `card.json` never changes a running chat; new chats get the new set. Only a view's own code is
@@ -208,13 +213,15 @@ that card only. Its types ship with the toolkit (`import { card, mount } from "s
   one is refused); a session parameter it leaves out is its card's own session. It is the same
   request the web app makes, answered with the route's own status and body, and recorded in the
   record of who ran what (§app.command-audit/list) with the card's type as the caller
-  (`card:<type>`). Until the card's owner is trusted (§chat.transcript-cards/trust), **every**
+  (`card:<type>`). A view of a card an extension owns is refused what its key is refused, trusted or
+  not (§app.extensions/not-you). Until the card's owner is trusted (§chat.transcript-cards/trust), **every**
   command is refused before any request is made, reads included (a read such as `session.read`
   would hand it the whole chat, or another by its session parameter): the card asks for trust, and
   Trust runs the command, Not Now refuses it. It runs only from this machine's own page: a script's
   token and the peer listener are refused.
 - **Stage text into the draft**: put text at the end of the chat's draft in the composer, where
-  the user sees and edits it before sending. It never sends. Refused in a view that can't act on
+  the user sees and edits it before sending, with the cursor after it and scrolled into view.
+  It never sends. Refused in a view that can't act on
   the session.
 - **Record an answer on its own card** (§chat.transcript-cards/answering), never on another card:
   one line of 1 to 200 characters, with an optional JSON value of at most 16 KB. An at-once card
@@ -240,7 +247,11 @@ that card only. Its types ship with the toolkit (`import { card, mount } from "s
   again on its next try.
 - **Then every command works.** Once trusted, every command any of that owner's cards runs works
   without another prompt, after edits and updates of its card files or views included. A
-  project's trust never covers an extension's cards, nor the reverse.
+  project's trust never covers an extension's cards, nor the reverse. An extension's trust stops at the
+  doors its key is refused (§app.extensions/not-you), so its ask leaves out "or merging" and says what
+  it sends goes under its name: "They can then run Sova's commands, such as sending messages under
+  their name, without asking again."; a view's says "such as reading your chats or sending messages
+  under their name".
 - **Only the user grants it, in the page.** Trust is kept in Sova's own state
   (`<state root>/card-trust.json`), outside every repository, so no branch, clone, chat or card can
   trust itself. It is a trust grant: no catalogue command and no agent tool reaches it, and
@@ -248,6 +259,8 @@ that card only. Its types ship with the toolkit (`import { card, mount } from "s
   stays open to any caller, the token included. The project page's Cards section says whether its cards are
   trusted, and the extension's page says so while they are, each with **Stop Trusting Cards**
   while they are, which takes effect on the next command.
+- **Removing an extension forgets it.** Its trust goes with it (§app.extensions/loader), so another
+  extension using the id later asks again. Turning an extension off keeps it.
 - Sova's own card types never ask.
 
 ## §chat.transcript-cards/answering — Answering a card
@@ -267,7 +280,14 @@ A type that takes an answer declares how:
   Picks drops them.
 - **Needs you.** Either way, while an answerable card is open in a session it is a Needs you item
   (`card-waiting`, §app.overseer/attention-digest), idle or working, until it is answered or its
-  raiser marks it done. It never sends a phone notification and never briefs the Overseer.
+  raiser marks it done. An extension's card leaves Needs you while its extension isn't active, or while its
+  view can't draw because the extension reads Changed, and returns when that ends; Removing the extension
+  closes it (§app.extensions/loader). It never sends a phone notification and never briefs the Overseer. A card that
+  takes no answer is never one (§chat.transcript-cards/updating-cards).
+- **Never an alignment's answer.** A card can stand open beside an open alignment question. Answering it
+  answers no alignment question and doesn't end the chat's wait on them
+  (§chat.alignment/session-mark), and neither does a message its button sends or a message holding only
+  gathered card answers. What the user types is their own message, as ever.
 - **The agent learns at its next turn.** An answer given at once reaches the agent as one hidden
   note at the start of its next turn, naming the card, the answer and who gave it, with the outcome
   of any command it ran; a gathered answer is in the message itself.
@@ -287,7 +307,7 @@ A type that takes an answer declares how:
   characters), which a `follow` type requires and no other type takes: the same key raises a new
   revision of that card (§chat.transcript-cards/placement). The tool's description is built
   only from each type's `when` and its data shape.
-- **Each call.** Refused, raising nothing, when the session has an open alignment question, the
+- **Each call.** Refused, raising nothing, when the
   type isn't one the agent may raise, the key is missing or not wanted, or the data doesn't fit;
   each refusal starts "Nothing was raised:" and says which. Otherwise the card is raised with an
   id `cd_N` and the call answers "Raised {cd_N} ({type})", with how its answer will reach the
@@ -300,20 +320,50 @@ with catalogue commands (§app.commands/catalogue), at any time:
 
 - `session.card.post` raises a card of a type in the target session's snapshot, with its data, or
   with `card` gives an open card a new revision of its data (an anchored card redraws in place,
-  keeping its answer and picks) or marks it done. A `follow` type's card is raised with its `key`,
+  keeping its answer and picks) or marks it done. A card that takes no answer is open until it is marked
+  done (§chat.transcript-cards/updating-cards). A `follow` type's card is raised with its `key`,
   and the same key raises its next revision where it is raised (§chat.transcript-cards/placement).
-  The card says who raised it: "From {extension id}", "From {chat title}" or "From a script".
+  The card says who raised it: "From {title}", an extension's manifest title (its id when it has none
+  usable), "From {chat title}" or "From a script". An extension's key raises and changes only its own types
+  (§app.extensions/not-you).
 - `session.card.get` reads a session's cards, their data and their answers.
 - `session.card.answer` records an answer on an open card, as a press on it would, recorded as
-  given by its caller.
+  given by its caller. An extension's key is held to its own limits here (§app.extensions/not-you).
 - **Only an ordinary chat**: a card is never raised into an archived session, a worker, the
   Overseer, a project overseer or a baton chat ("Nothing was raised: cards show only in ordinary
   chats.").
+- **An extension's type, never into a queue chat**: §chat.transcript-cards/queue-chats.
 - **Never into a terminal session**: a session open in a terminal is refused with the catalogue's
   own words (§app.chat-actions/terminal-open), and a card is never written into its file.
-- **Never over an alignment**: while the session has an open alignment question, raising is refused
-  ("Nothing was raised: an alignment question is open."), and no card ever hides or replaces an
-  alignment card. The same data and type rules as the tool apply.
+- **Beside an alignment**: a card can be raised or updated while the session has an open alignment
+  question. The alignment card stays in the transcript, and no card ever hides or replaces it. The same
+  data and type rules as the tool apply.
+
+## §chat.transcript-cards/updating-cards — A card that updates
+
+A card whose type takes no answer starts open, so whoever raised it from outside can change it where it
+stands: a build goes from "running" to "passed" on one card.
+
+- **Until it is done.** `session.card.post` with `card` gives it new data in place, as often as needed,
+  and `done: true` ends it. After that it takes no more (§chat.transcript-cards/raise-command). One never
+  marked done simply stays as it is.
+- **Nobody waits on it.** It is no Needs you item, draws no "Waiting for an answer" line, takes no picks
+  and leaves the composer alone. `session.card.get` and a view read its state as `open` until it is done.
+- **Every such card.** A project's and an extension's alike. One stored as done before this stays done.
+- **The raising rules hold.** An update is a raise: an archived chat refuses it, and an open alignment
+  question doesn't (§chat.transcript-cards/raise-command).
+
+## §chat.transcript-cards/queue-chats — The merge queue's own chats
+
+The merge thread and a run's reviewer, known by the profile Sova started them on, keep clear of what
+extensions add.
+
+- **Not offered.** Their set of card types leaves out every extension's type, whenever it was recorded, so
+  their `card` tool and its instructions never list one. With no other type they have no `card` tool at
+  all (§chat.transcript-cards/card-tool).
+- **Can't be raised.** Raising an extension's type in one of them is refused, whoever asks: "Nothing was
+  raised: the merge queue's own chats take no extension's cards."
+- **A project's own types are unaffected**, in these chats too.
 
 ## §chat.transcript-cards/redraw — Redrawn on save
 
@@ -321,6 +371,10 @@ with catalogue commands (§app.commands/catalogue), at any time:
   built view module or a file beside it that it imports) redraws every card that uses it, in every
   open browser, within about a second, with no restart and no reload of the page or the chat. Each
   card keeps the data it was raised with, its answer, its picks and its state.
+- **Not over an extension's approval.** Where an extension's approval applies, a saved view makes it read
+  Changed, and its cards wait for your approval rather than redraw (§app.extensions/views). Approving
+  draws them with the new code. On a server started with `SOVA_EXTENSIONS_FILE` it redraws as above
+  (§app.extensions/loader).
 - **A broken save.** A view that no longer builds, fails to load or throws shows the card's error
   box with what is wrong (the file, line and column when known) and **Reload**; the rest of the
   chat is unaffected, and the next good save draws the card again on its own.
@@ -390,7 +444,8 @@ of its own:
   confirm, link and profile cards), orphan tool results, the alignment card and the old alignment
   report, offer cards, tours, show changes, settings change cards, worktree merge cards, the
   Overseer's and team cards, reports, briefs, explanations, owner requests, hand-off runs, baton
-  cards, the merge queue's cards (§chat.merge-queue/chat-card), and the info, topic, wake and
+  cards, the merge queue's cards (§chat.merge-queue/chat-card) and review cards
+  (§chat.merge-queue/review-card), and the info, topic, wake and
   compaction rows. None is drawn any other way; a tool result
   shown in its call's card is a type that draws nothing.
 - **Nothing a user sees changes.** Each looks, reads aloud, takes the keyboard, lays out on a phone

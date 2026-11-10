@@ -1,0 +1,198 @@
+{
+  "§app.message-labels/crediting": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "requires": [
+      "§app.message-labels/what-counts",
+      "§chat.transcript/a-queued-message",
+      "§app.subagents-pane/time-spent",
+      "§app.subagents-pane/time-spent-counting",
+      "§app.subagents-pane/time-spent-record"
+    ],
+    "code": [
+      "server/time-spent-messages.ts",
+      "server/time-spent.ts",
+      "server/time-spent-routes.ts",
+      "server/message-input.ts",
+      "server/message-labels.ts",
+      "server/message-labels.test.ts",
+      "server/message-labels-chat.test.ts",
+      "server/queue.ts",
+      "server/chat-manager.ts",
+      "src/lib/time-spent-view.ts",
+      "src/lib/time-spent-view.test.ts",
+      "server/session-offers.ts"
+    ],
+    "agreed": {
+      "by": "omar",
+      "at": "2026-11-07T13:38Z",
+      "source": "pi-session:b06e603a-07aa-4e97-9efa-361431fbfd1c#4ad7d02d"
+    }
+  },
+  "§app.message-labels/labelling": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "unreviewed",
+    "requires": [
+      "§app.decisions/interface",
+      "§app.decisions/providers",
+      "§app.decisions/privacy",
+      "§app.settings-dialog/decisions",
+      "§app.session-list/archive-cleanup",
+      "§app.message-labels/what-counts",
+      "§app.message-labels/the-labels",
+      "§app.subagents-pane/time-spent",
+      "§app.subagents-pane/time-spent-counting",
+      "§app.subagents-pane/time-spent-record"
+    ],
+    "code": [
+      "server/message-labels.ts",
+      "server/message-labeller.ts",
+      "server/message-input.ts",
+      "server/message-labels.test.ts",
+      "server/message-labels-chat.test.ts",
+      "server/time-spent-messages.ts",
+      "server/time-spent.ts",
+      "server/time-spent-routes.ts",
+      "server/decide.ts",
+      "server/decide-jev.ts",
+      "server/decide-routes.ts",
+      "server/decide-settings.ts",
+      "server/attention-signals.ts",
+      "server/chat-manager.ts",
+      "server/queue.ts",
+      "server/session-offers.ts",
+      "server/merge-queue/wire.ts",
+      "server/index.ts",
+      "server/sessions-index.ts",
+      "shared/protocol.ts",
+      "shared/time-spent.ts",
+      "src/components/DecisionSettings.tsx",
+      "src/lib/decision-form.ts",
+      "src/lib/decision-form.test.ts"
+    ],
+    "agreed": {
+      "by": "omar",
+      "at": "2026-11-07T13:38Z",
+      "source": "pi-session:b06e603a-07aa-4e97-9efa-361431fbfd1c#4ad7d02d"
+    }
+  },
+  "§app.message-labels/the-labels": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "unreviewed",
+    "requires": [
+      "§app.decisions/interface"
+    ],
+    "code": [
+      "server/message-labeller.ts",
+      "server/message-labels.ts",
+      "server/message-labels.test.ts",
+      "server/time-spent-messages.ts",
+      "shared/time-spent.ts",
+      "src/lib/time-spent-view.ts",
+      "src/lib/time-spent-view.test.ts"
+    ],
+    "agreed": {
+      "by": "omar",
+      "at": "2026-11-07T13:38Z",
+      "source": "pi-session:b06e603a-07aa-4e97-9efa-361431fbfd1c#4ad7d02d"
+    }
+  },
+  "§app.message-labels/time-spent-tab": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "unreviewed",
+    "requires": [
+      "§app.subagents-pane/tabs",
+      "§app.message-labels/labelling",
+      "§app.decisions/privacy",
+      "§app.settings-dialog/decisions",
+      "§design.copy-deck/message-labels",
+      "§mesh.peers/grants",
+      "§app.commands/catalogue",
+      "§app.session-share/page",
+      "§app.message-labels/crediting",
+      "§app.message-labels/what-counts",
+      "§app.message-labels/the-labels",
+      "§app.subagents-pane/time-spent",
+      "§app.subagents-pane/time-spent-counting",
+      "§app.subagents-pane/time-spent-record"
+    ],
+    "code": [
+      "src/components/TimeSpent.tsx",
+      "src/components/SessionPane.tsx",
+      "src/components/SessionDetails.tsx",
+      "src/lib/time-spent-view.ts",
+      "src/lib/time-spent-view.test.ts",
+      "src/lib/time-spent-section.ts",
+      "src/app.css",
+      "shared/time-spent.ts",
+      "shared/commands/sessions.ts",
+      "src/card-toolkit/commands.gen.ts",
+      "server/time-spent-messages.ts",
+      "server/time-spent-routes.ts",
+      "server/time-spent-tab.integration.test.ts",
+      "server/time-spent-section.integration.test.ts",
+      "server/message-labels-browser.integration.test.ts"
+    ],
+    "agreed": {
+      "by": "omar",
+      "at": "2026-11-07T13:38Z",
+      "source": "pi-session:b06e603a-07aa-4e97-9efa-361431fbfd1c#4ad7d02d"
+    }
+  },
+  "§app.message-labels/what-counts": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "requires": [
+      "§chat.transcript/a-queued-message",
+      "§app.overseer/quick-actions",
+      "§chat/playbooks",
+      "§chat.alignment-review/card",
+      "§chat.offers/buttons",
+      "§app.merge-queue/approve",
+      "§chat.transcript/message-actions",
+      "§chat/slash-commands",
+      "§app.subagents-pane/time-spent",
+      "§app.subagents-pane/time-spent-counting",
+      "§app.subagents-pane/time-spent-record"
+    ],
+    "code": [
+      "server/message-input.ts",
+      "server/message-labeller.ts",
+      "server/message-labels.ts",
+      "server/message-labels.test.ts",
+      "server/message-labels-chat.test.ts",
+      "server/time-spent-messages.ts",
+      "server/chat-manager.ts",
+      "server/queue.ts",
+      "server/session-offers.ts",
+      "server/merge-queue/wire.ts",
+      "server/merge-queue/queue.ts",
+      "server/merge-queue/queue-standing.test.ts"
+    ],
+    "agreed": {
+      "by": "omar",
+      "at": "2026-11-07T13:38Z",
+      "source": "pi-session:b06e603a-07aa-4e97-9efa-361431fbfd1c#4ad7d02d"
+    }
+  },
+  "§app/message-labels": {
+    "kind": "surface",
+    "authority": "accepted",
+    "evidence": "unreviewed",
+    "code": [
+      "src/components/TimeSpent.tsx",
+      "server/message-labels.ts",
+      "server/message-labeller.ts"
+    ],
+    "agreed": {
+      "by": "omar",
+      "at": "2026-11-07T12:17Z",
+      "source": "pi-session:b06e603a-07aa-4e97-9efa-361431fbfd1c#2fc822f7"
+    }
+  }
+}

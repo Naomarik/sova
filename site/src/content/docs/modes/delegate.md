@@ -1,6 +1,6 @@
 ---
 title: Delegate
-description: In Delegate, the agent orchestrates. It sorts the work into 4 kinds and hands each to a worker on the model your subagent profile names for it.
+description: In Delegate, the agent orchestrates. It sorts the work into 4 kinds and hands each to a worker on the model your profile names for it.
 group: Modes
 subgroup: Major
 order: 2
@@ -23,7 +23,7 @@ doing it all itself. Delegate routes 4 kinds of work:
 
 Each kind has a **route**: a worker described by its backend (`pi` or `Claude Code`), its model and
 its effort, plus an optional **fallback**. The routes come from the chat's
-[subagent profile](/docs/subagent-profiles/), so two chats can route the same kind of work to
+[profile](/docs/subagent-profiles/), so two chats can route the same kind of work to
 different models.
 
 ## When a route can't run
@@ -33,7 +33,7 @@ Delegate uses that route's fallback. **Without a fallback, the agent asks you wh
 
 ## Off: the agent picks
 
-A chat whose subagent profile is **Off** still delegates, and the agent still sorts the work into
+A chat whose profile is **Off** still delegates, and the agent still sorts the work into
 the 4 kinds. But no route is set, so the agent chooses each worker's backend, model and effort
 itself.
 
@@ -70,20 +70,22 @@ routes, all on Claude Code:
 
 ## Teams
 
-Besides single workers, the agent can start a **team**, in any major mode. It starts one when
-you ask for a team, or when parts of the work depend on each other: they change the same files or
-interfaces at the same time, or one worker builds while another checks. Otherwise it uses single
+Besides single workers, the agent can start a **team**, in any major mode. It splits work into
+parts and starts what can run at once. It starts a team when you ask for one, or when parts change
+the same files or interfaces, stack on each other, feed each other findings, or have a checker
+sending findings straight to builders. Focused jobs that don't depend on each other go to single
 workers.
 
-From the chat's subagent profile, a new team can get two standing members:
+Every team gets two standing members from Sova, on the models the chat's profile names, else the chat's own:
 
 - a **coordinator**, which does no implementation and is the only member that talks to your chat;
 - a **monitor**, which watches the team's context and provider usage on a timer, and reports to the
   coordinator.
 
-The profile's **members default** is the model a team member runs on when nobody named one. Without
-it, such a member runs on the chat's own model. Profile **Off** gives teams no standing members and
-no members default. All of this is edited in the profile's **Teams** section.
+The members the chat names follow these same 4 work kinds: each runs on the model its kind routes to.
+A model named for a member wins over its kind. A member with neither a kind nor a model is refused,
+except under profile **Off**, where it runs on the chat's own model. The coordinator's and monitor's
+models are edited in the profile's **Teams** section.
 
 Members message each other by role through their own inboxes, and the coordinator speaks for
 them. [Teams](/docs/teams/) covers how a team talks, the coordinator, the monitor and handovers.
@@ -123,7 +125,7 @@ with its transcript and its spend, but not running.
 ## Strict
 
 With the chat's **strict** flag on, Delegate also takes the agent's `edit` and `write` tools away;
-`bash` and every other tool stay. Set it in a terminal with `/mode strict on`; the mode menu shows
+`bash` and every other tool stay. Set it by typing `/mode strict on` in the chat; the mode menu shows
 it read-only. See [strict](/docs/modes/#strict).
 
 ## Where Delegate isn't available

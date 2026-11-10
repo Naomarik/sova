@@ -121,7 +121,7 @@ export function unmergedPaths(z: string): string[] {
 	const parts = z.split("\0");
 	const paths: string[] = [];
 	for (let i = 0; i < parts.length; i++) {
-		const entry = parts[i];
+		const entry = parts[i]!;
 		if (entry.length < 4) continue;
 		if (UNMERGED.has(entry.slice(0, 2))) paths.push(entry.slice(3));
 		if (entry[0] === "R" || entry[0] === "C") i++;
@@ -176,9 +176,9 @@ export function specConflictNote(top: string, conflict: { manifest?: string; cla
 	const { manifest, claims } = conflict;
 	const records = recordConflicts(claims), layout = conflict.layout ?? (records.length ? 2 : 1);
 	const tail = setup ? ` ${setup}` : "";
-	if (!manifest && !records.length) return `${DIGEST_TAG} ${capped(claims, FILE_CAP)} ${claims.length === 1 ? "is" : "are"} in conflict: ${mergeRecovery(branch, specDirOf(claims[0]), layout, claims)}.${tail}`;
+	if (!manifest && !records.length) return `${DIGEST_TAG} ${capped(claims, FILE_CAP)} ${claims.length === 1 ? "is" : "are"} in conflict: ${mergeRecovery(branch, specDirOf(claims[0]!), layout, claims)}.${tail}`;
 	// The records (the one records list, or layout 2's per-area record files) merge per record with merge-manifest, across layouts too.
-	const first = manifest ?? records[0], specDir = specDirOf(first);
+	const first = manifest ?? records[0]!, specDir = specDirOf(first);
 	const root = join(top, specDir === SPEC_REL ? "" : specDir.slice(0, -SPEC_REL.length - 1));
 	const what = manifest && !records.length ? manifest : capped([...(manifest ? [manifest] : []), ...records], FILE_CAP);
 	const one = !!manifest !== !!records.length ? (manifest ? true : records.length === 1) : false;
@@ -212,7 +212,7 @@ export function parsePorcelain(z: string): string[] {
 	const parts = z.split("\0");
 	const paths: string[] = [];
 	for (let i = 0; i < parts.length; i++) {
-		const entry = parts[i];
+		const entry = parts[i]!;
 		if (entry.length < 4) continue;
 		paths.push(entry.slice(3));
 		if (entry[0] === "R" || entry[0] === "C") i++;
@@ -266,14 +266,31 @@ export function draftsCreated(commands: readonly string[]): string[] {
 	return names;
 }
 
-/** The bash commands the assistant ran on a pi session branch (pi's message entries, read structurally). */
+/** Sova's read-only spec tool (server/spec-coding-tool.ts): its `read` counts as the shell read it runs. */
+export const SPEC_TOOL_NAME = "spec";
+
+/** The shell read a `spec` tool call stands for (`sova-spec.mjs read '<§id>'`), or undefined for any other call. */
+export function specToolReadCommand(name: unknown, args: unknown): string | undefined {
+	if (name !== SPEC_TOOL_NAME) return undefined;
+	const a = (args ?? {}) as { op?: unknown; id?: unknown };
+	if (a.op !== "read" || typeof a.id !== "string" || !/^§[a-z][a-z.\/-]*$/.test(a.id.trim())) return undefined;
+	// An alias (§app.shell) names §app/shell, as the spec tools read it.
+	const id = a.id.trim();
+	return `sova-spec.mjs read '${/^§[a-z][a-z-]*\.[a-z][a-z-]*$/.test(id) ? id.replace(".", "/") : id}'`;
+}
+
+/**
+ * The bash commands the assistant ran on a pi session branch (pi's message entries, read structurally),
+ * with each `spec` tool read as the shell read it stands for, so specReads counts both.
+ */
 export function bashCommands(branch: readonly unknown[]): string[] {
 	const commands: string[] = [];
 	for (const entry of branch) {
 		const message = (entry as { type?: string; message?: { role?: string; content?: unknown } }).message;
 		if ((entry as { type?: string }).type !== "message" || message?.role !== "assistant" || !Array.isArray(message.content)) continue;
 		for (const part of message.content as { type?: string; name?: string; arguments?: { command?: unknown } }[]) {
-			const command = part?.type === "toolCall" && part.name === "bash" ? part.arguments?.command : undefined;
+			if (part?.type !== "toolCall") continue;
+			const command = part.name === "bash" ? part.arguments?.command : specToolReadCommand(part.name, part.arguments);
 			if (typeof command === "string") commands.push(command);
 		}
 	}
@@ -732,8 +749,8 @@ export async function censusStep(state: CensusState, call: CensusCall, core: str
 		note = `${DIGEST_TAG} ${capped(files, FILE_CAP)} ${files.length === 1 ? "is" : "are"} in conflict. ${REBASE_CONFLICT_NOTE}`;
 	} else {
 		const branch = (await defaultBranch(top, io).catch(() => undefined)) ?? "master";
-		const [attr, driver] = claims.length ? await claimsDriverState(top, claims[0], io, call.signal).catch((): [boolean, boolean] => [true, true]) : [true, true];
-		const setup = attr && driver ? undefined : claimsDriverSetup(core, specDirOf(claims[0]), attr, driver);
+		const [attr, driver] = claims.length ? await claimsDriverState(top, claims[0]!, io, call.signal).catch((): [boolean, boolean] => [true, true]) : [true, true];
+		const setup = attr && driver ? undefined : claimsDriverSetup(core, specDirOf(claims[0]!), attr, driver);
 		// The spec's layout as committed at HEAD, through the core (the working tree's copy may hold conflict markers).
 		const specDir = specDirOf(manifest ?? claims[0]!);
 		const layout = await layoutAt(join(top, specDir === SPEC_REL ? "" : specDir.slice(0, -SPEC_REL.length - 1)), "HEAD", core, io, call.signal);
@@ -967,7 +984,7 @@ function failed(next: CensusState, why: string): { state: CensusState; result: C
  * baseline after them, so the next call that can write reports every change since. Bash is never here.
  */
 export const CENSUS_SKIP_TOOLS: ReadonlySet<string> = new Set([
-	"read", "grep", "find", "ls", "align",
+	"read", "grep", "find", "ls", "align", SPEC_TOOL_NAME,
 	"agent_list", "agent_models", "agent_transcript", "agent_wait", "team_list", "team_inbox", "team_roster",
 	"link_inbox", "link_members", "link_offers",
 ]);
@@ -1546,7 +1563,7 @@ function jsonArrayAt(text: string, i: number): unknown[] | undefined {
 export function driftWarningsIn(text: string): string[] {
 	const out: string[] = [];
 	for (const m of text.matchAll(/"driftWarnings"\s*:\s*\[/g)) for (const w of jsonArrayAt(text, m.index + m[0].length - 1) ?? []) if (typeof w === "string") out.push(w);
-	for (const m of text.matchAll(/^\s*warn drift: (.+)$/gm)) out.push(m[1].trim());
+	for (const m of text.matchAll(/^\s*warn drift: (.+)$/gm)) out.push(m[1]!.trim());
 	return [...new Set(out)];
 }
 

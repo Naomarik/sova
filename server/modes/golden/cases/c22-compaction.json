@@ -1,0 +1,991 @@
+[
+ {
+  "step": "open",
+  "calls": [],
+  "activeTools": [
+   "read",
+   "bash",
+   "edit",
+   "write",
+   "agent_resume",
+   "agent_models",
+   "agent_spawn",
+   "agent_list",
+   "agent_transcript",
+   "agent_steer",
+   "agent_kill",
+   "agent_wait",
+   "team_create",
+   "team_add",
+   "team_eject",
+   "team_succeed",
+   "team_list",
+   "project_verbs",
+   "queue_push"
+  ],
+  "entries": [],
+  "extensions": [
+   "<mode-slot:index>",
+   "<repo>/pi-config/extensions/subagents/index.ts",
+   "<inline:sova-resource-monitor>",
+   "<inline:sova-fork-cache>",
+   "<inline:sova-shell-guard>",
+   "<inline:sova-deeper-context>",
+   "<inline:sova-background-jobs>",
+   "<inline:sova-mcp>",
+   "<inline:sova-worker-host>",
+   "<inline:sova-vis-check>",
+   "<inline:sova-shell-model>",
+   "<inline:sova-memory>",
+   "<inline:sova-playbook>",
+   "<inline:sova-project-verbs>",
+   "<inline:sova-topics>",
+   "<inline:sova-tours>",
+   "<inline:sova-create-settings>",
+   "<inline:sova-transcript-cards>"
+  ]
+ },
+ {
+  "step": "switch {\"minorModes\":[\"align\"]}",
+  "calls": [],
+  "activeTools": [
+   "read",
+   "bash",
+   "edit",
+   "write",
+   "agent_resume",
+   "agent_models",
+   "agent_spawn",
+   "agent_list",
+   "agent_transcript",
+   "agent_steer",
+   "agent_kill",
+   "agent_wait",
+   "team_create",
+   "team_add",
+   "team_eject",
+   "team_succeed",
+   "team_list",
+   "project_verbs",
+   "queue_push",
+   "align"
+  ],
+  "entries": [
+   {
+    "type": "custom",
+    "customType": "mode",
+    "data": {
+     "minor": "align",
+     "on": true,
+     "active": {
+      "version": 1,
+      "mode": "normal",
+      "strict": false,
+      "minorModes": [
+       "align"
+      ]
+     }
+    }
+   }
+  ]
+ },
+ {
+  "step": "prompt \"build an export\"",
+  "calls": [
+   {
+    "keep": 0,
+    "add": [
+     {
+      "role": "system",
+      "content": "",
+      "sections": {
+       "preamble": "You are an expert coding assistant operating inside pi, a coding agent harness. You help users by reading files, executing commands, editing code, and writing new files.",
+       "tools": "@14069dc67c42c871",
+       "rules": "@898a2a6e09208de2",
+       "docs": "@0f5fabf6c3c47c4c",
+       "cwd": "<cwd>\n<ws:plain>\n</cwd>",
+       "mode": "@fca6267e5f208d96"
+      },
+      "toolsAdded": "@18e7e181b06584f6"
+     },
+     {
+      "role": "user",
+      "content": [
+       {
+        "type": "text",
+        "text": "build an export"
+       }
+      ]
+     }
+    ]
+   },
+   {
+    "keep": 2,
+    "add": [
+     {
+      "role": "assistant",
+      "api": "openai-completions",
+      "provider": "scripted",
+      "model": "scripted",
+      "usage": {
+       "input": 0,
+       "output": 0,
+       "cacheRead": 0,
+       "cacheWrite": 0,
+       "totalTokens": 0,
+       "cost": {
+        "input": 0,
+        "output": 0,
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "total": 0
+       }
+      },
+      "content": [
+       {
+        "type": "toolCall",
+        "id": "call-1",
+        "name": "align",
+        "arguments": {
+         "ops": [
+          {
+           "op": "change_request"
+          },
+          {
+           "op": "create",
+           "title": "Export",
+           "summary": "Download a session.",
+           "questions": [
+            {
+             "topic": "Format",
+             "ask": "JSONL or markdown?",
+             "recommendation": {
+              "choice": "JSONL",
+              "why": "lossless"
+             }
+            }
+           ]
+          }
+         ]
+        }
+       }
+      ],
+      "stopReason": "toolUse",
+      "thinkingLevel": "off"
+     },
+     {
+      "role": "toolResult",
+      "toolCallId": "call-1",
+      "toolName": "align",
+      "content": [
+       {
+        "type": "text",
+        "text": "Marked as a change request.\nal_1 \"Export\" · aligning · 1 of 1 open · v1 · created\n  q1 Format — open (rec: JSONL)"
+       }
+      ],
+      "details": {
+       "v": 1,
+       "changes": [
+        {
+         "kind": "created"
+        }
+       ],
+       "line": "created",
+       "doc": {
+        "id": "al_1",
+        "title": "Export",
+        "summary": "Download a session.",
+        "findings": [],
+        "approach": [],
+        "rejected": [],
+        "questions": [
+         {
+          "id": "q1",
+          "topic": "Format",
+          "ask": "JSONL or markdown?",
+          "recommendation": {
+           "choice": "JSONL",
+           "why": "lossless"
+          }
+         }
+        ],
+        "phase": "open",
+        "next": {
+         "f": 0,
+         "a": 0,
+         "x": 0,
+         "q": 1
+        },
+        "rev": 1,
+        "createdAt": "<time>",
+        "updatedAt": "<time>",
+        "style": "pm"
+       }
+      },
+      "isError": false
+     }
+    ]
+   }
+  ],
+  "activeTools": [
+   "read",
+   "bash",
+   "edit",
+   "write",
+   "agent_resume",
+   "agent_models",
+   "agent_spawn",
+   "agent_list",
+   "agent_transcript",
+   "agent_steer",
+   "agent_kill",
+   "agent_wait",
+   "team_create",
+   "team_add",
+   "team_eject",
+   "team_succeed",
+   "team_list",
+   "project_verbs",
+   "queue_push",
+   "align"
+  ],
+  "entries": [
+   {
+    "type": "custom",
+    "customType": "mode-head",
+    "data": {
+     "v": 1,
+     "style": "pm"
+    }
+   },
+   {
+    "type": "message",
+    "message": {
+     "role": "system",
+     "content": "",
+     "sections": {
+      "preamble": "You are an expert coding assistant operating inside pi, a coding agent harness. You help users by reading files, executing commands, editing code, and writing new files.",
+      "tools": "@14069dc67c42c871",
+      "rules": "@898a2a6e09208de2",
+      "docs": "@0f5fabf6c3c47c4c",
+      "cwd": "<cwd>\n<ws:plain>\n</cwd>",
+      "mode": "@fca6267e5f208d96"
+     },
+     "toolsAdded": "@80a91d9c0ac3cb27"
+    }
+   }
+  ],
+  "headers": {
+   "# Minor mode: align": 1
+  }
+ },
+ {
+  "step": "switch {\"minorModes\":[\"align\",\"vis\"]}",
+  "calls": [],
+  "activeTools": [
+   "read",
+   "bash",
+   "edit",
+   "write",
+   "agent_resume",
+   "agent_models",
+   "agent_spawn",
+   "agent_list",
+   "agent_transcript",
+   "agent_steer",
+   "agent_kill",
+   "agent_wait",
+   "team_create",
+   "team_add",
+   "team_eject",
+   "team_succeed",
+   "team_list",
+   "project_verbs",
+   "queue_push",
+   "align",
+   "vis_guide",
+   "vis_check",
+   "record_tour",
+   "show_tour"
+  ],
+  "entries": [
+   {
+    "type": "custom",
+    "customType": "mode",
+    "data": {
+     "minor": "vis",
+     "on": true,
+     "active": {
+      "version": 1,
+      "mode": "normal",
+      "strict": false,
+      "minorModes": [
+       "align",
+       "vis"
+      ]
+     },
+     "head": [
+      "align"
+     ]
+    }
+   }
+  ]
+ },
+ {
+  "step": "prompt \"two\"",
+  "calls": [
+   {
+    "keep": 4,
+    "add": [
+     {
+      "role": "assistant",
+      "api": "openai-completions",
+      "provider": "scripted",
+      "model": "scripted",
+      "usage": {
+       "input": 0,
+       "output": 0,
+       "cacheRead": 0,
+       "cacheWrite": 0,
+       "totalTokens": 0,
+       "cost": {
+        "input": 0,
+        "output": 0,
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "total": 0
+       }
+      },
+      "content": [
+       {
+        "type": "text",
+        "text": "Recorded."
+       }
+      ],
+      "stopReason": "stop",
+      "thinkingLevel": "off"
+     },
+     "@aa3d7eb6fd96b946",
+     {
+      "role": "user",
+      "content": [
+       {
+        "type": "text",
+        "text": "two"
+       }
+      ]
+     },
+     {
+      "role": "user",
+      "content": [
+       {
+        "type": "text",
+        "text": "@7433bb97fbe2edaa"
+       }
+      ]
+     },
+     {
+      "role": "user",
+      "content": [
+       {
+        "type": "text",
+        "text": "@ae524d99e15092fe"
+       }
+      ]
+     }
+    ]
+   }
+  ],
+  "activeTools": [
+   "read",
+   "bash",
+   "edit",
+   "write",
+   "agent_resume",
+   "agent_models",
+   "agent_spawn",
+   "agent_list",
+   "agent_transcript",
+   "agent_steer",
+   "agent_kill",
+   "agent_wait",
+   "team_create",
+   "team_add",
+   "team_eject",
+   "team_succeed",
+   "team_list",
+   "project_verbs",
+   "queue_push",
+   "align",
+   "vis_guide",
+   "vis_check",
+   "record_tour",
+   "show_tour"
+  ],
+  "entries": [
+   {
+    "type": "message",
+    "message": {
+     "role": "system",
+     "content": "",
+     "sections": {
+      "tools": "@7b61ccc4990a2ee1"
+     },
+     "toolsAdded": [
+      {
+       "name": "vis_guide",
+       "description": "@4e03995211272eb1",
+       "parameters": {
+        "type": "object",
+        "required": [
+         "kind"
+        ],
+        "properties": {
+         "kind": {
+          "type": "string",
+          "enum": [
+           "flow",
+           "sequence",
+           "state",
+           "layers",
+           "tree",
+           "chart",
+           "timeline",
+           "steps",
+           "wireframe",
+           "matrix",
+           "code",
+           "html",
+           "svg",
+           "tour",
+           "tour-signin",
+           "tour-sites",
+           "tour-sova",
+           "tour-sharing"
+          ],
+          "description": "The drawing kind or tool-backed tour entry, as the vis minor mode lists it, or a part the tour guide names"
+         }
+        },
+        "additionalProperties": false
+       }
+      },
+      {
+       "name": "vis_check",
+       "description": "@2327d56265ca0751",
+       "parameters": {
+        "type": "object",
+        "properties": {
+         "kind": {
+          "type": "string",
+          "enum": [
+           "html",
+           "svg",
+           "wireframe"
+          ],
+          "description": "The fence's kind: html, svg or wireframe"
+         },
+         "source": {
+          "type": "string",
+          "description": "The fence body, without the ``` lines"
+         }
+        },
+        "required": [
+         "kind",
+         "source"
+        ],
+        "additionalProperties": false
+       }
+      },
+      {
+       "name": "record_tour",
+       "description": "@f2a84afb9f865e94",
+       "parameters": {
+        "type": "object",
+        "properties": "@852078159a752148",
+        "required": [
+         "op"
+        ],
+        "additionalProperties": false
+       }
+      },
+      {
+       "name": "show_tour",
+       "description": "Present one complete checked tour edition from this chat. Record and visually check it first; never records on display. Read vis_guide with tour for the workflow.",
+       "parameters": {
+        "type": "object",
+        "properties": {
+         "tourId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+         },
+         "editionId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+         }
+        },
+        "required": [
+         "tourId"
+        ],
+        "additionalProperties": false
+       }
+      }
+     ]
+    }
+   },
+   {
+    "type": "custom_message",
+    "customType": "mode-note",
+    "content": "@7433bb97fbe2edaa",
+    "display": false,
+    "details": {
+     "v": 1,
+     "minorModes": [
+      "align",
+      "vis"
+     ],
+     "guides": [
+      "vis"
+     ]
+    }
+   },
+   {
+    "type": "custom_message",
+    "customType": "align-state",
+    "content": "@ae524d99e15092fe",
+    "display": false
+   }
+  ],
+  "headers": {
+   "# Minor mode: align": 1
+  }
+ },
+ {
+  "step": "compact",
+  "calls": [
+   {
+    "keep": 0,
+    "add": [
+     {
+      "role": "system",
+      "content": "@b909d497c68a7221"
+     },
+     {
+      "role": "user",
+      "content": [
+       {
+        "type": "text",
+        "text": "@1753c3f7a58a67da"
+       }
+      ]
+     }
+    ]
+   },
+   {
+    "keep": 1,
+    "add": [
+     {
+      "role": "user",
+      "content": [
+       {
+        "type": "text",
+        "text": "@58ca2a03d18ea63e"
+       }
+      ]
+     }
+    ]
+   }
+  ],
+  "activeTools": [
+   "read",
+   "bash",
+   "edit",
+   "write",
+   "agent_resume",
+   "agent_models",
+   "agent_spawn",
+   "agent_list",
+   "agent_transcript",
+   "agent_steer",
+   "agent_kill",
+   "agent_wait",
+   "team_create",
+   "team_add",
+   "team_eject",
+   "team_succeed",
+   "team_list",
+   "project_verbs",
+   "queue_push",
+   "align",
+   "vis_guide",
+   "vis_check",
+   "record_tour",
+   "show_tour"
+  ],
+  "entries": [
+   {
+    "type": "custom_message",
+    "customType": "align-state",
+    "content": "@f29331d1fe5723b6",
+    "display": false
+   }
+  ],
+  "headers": {}
+ },
+ {
+  "step": "prompt \"three\"",
+  "calls": [
+   {
+    "keep": 0,
+    "add": [
+     {
+      "role": "system",
+      "content": "",
+      "sections": {
+       "preamble": "You are an expert coding assistant operating inside pi, a coding agent harness. You help users by reading files, executing commands, editing code, and writing new files.",
+       "tools": "@7b61ccc4990a2ee1",
+       "rules": "@898a2a6e09208de2",
+       "docs": "@0f5fabf6c3c47c4c",
+       "cwd": "<cwd>\n<ws:plain>\n</cwd>",
+       "mode": "@fca6267e5f208d96"
+      },
+      "toolsAdded": "@5eeba4aa299b7d5d"
+     },
+     {
+      "role": "user",
+      "content": [
+       {
+        "type": "text",
+        "text": "The conversation history before this point was compacted into the following summary:\n\n<summary>\nEarlier: an export was aligned.\n\n---\n\n**Turn Context (split turn):**\n\nok\n</summary>"
+       }
+      ]
+     },
+     {
+      "role": "assistant",
+      "api": "openai-completions",
+      "provider": "scripted",
+      "model": "scripted",
+      "usage": {
+       "input": 0,
+       "output": 0,
+       "cacheRead": 0,
+       "cacheWrite": 0,
+       "totalTokens": 0,
+       "cost": {
+        "input": 0,
+        "output": 0,
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "total": 0
+       }
+      },
+      "content": [
+       {
+        "type": "text",
+        "text": "ok"
+       }
+      ],
+      "stopReason": "stop",
+      "thinkingLevel": "off"
+     },
+     {
+      "role": "user",
+      "content": [
+       {
+        "type": "text",
+        "text": "@f29331d1fe5723b6"
+       }
+      ]
+     },
+     {
+      "role": "system",
+      "content": "",
+      "sections": {
+       "mode": "@165fd69f243da0e7"
+      }
+     },
+     {
+      "role": "user",
+      "content": [
+       {
+        "type": "text",
+        "text": "three"
+       }
+      ]
+     },
+     {
+      "role": "user",
+      "content": [
+       {
+        "type": "text",
+        "text": "@ae524d99e15092fe"
+       }
+      ]
+     }
+    ]
+   }
+  ],
+  "activeTools": [
+   "read",
+   "bash",
+   "edit",
+   "write",
+   "agent_resume",
+   "agent_models",
+   "agent_spawn",
+   "agent_list",
+   "agent_transcript",
+   "agent_steer",
+   "agent_kill",
+   "agent_wait",
+   "team_create",
+   "team_add",
+   "team_eject",
+   "team_succeed",
+   "team_list",
+   "project_verbs",
+   "queue_push",
+   "align",
+   "vis_guide",
+   "vis_check",
+   "record_tour",
+   "show_tour"
+  ],
+  "entries": [
+   {
+    "type": "custom",
+    "customType": "mode-head",
+    "data": {
+     "v": 1,
+     "style": "pm"
+    }
+   },
+   {
+    "type": "message",
+    "message": {
+     "role": "system",
+     "content": "",
+     "sections": {
+      "mode": "@165fd69f243da0e7"
+     }
+    }
+   },
+   {
+    "type": "custom_message",
+    "customType": "align-state",
+    "content": "@ae524d99e15092fe",
+    "display": false
+   }
+  ],
+  "headers": {
+   "# Minor mode: align": 1,
+   "# Minor mode: vis": 1
+  }
+ },
+ {
+  "step": "switch {\"minorModes\":[\"align\"]}",
+  "calls": [],
+  "activeTools": [
+   "read",
+   "bash",
+   "edit",
+   "write",
+   "agent_resume",
+   "agent_models",
+   "agent_spawn",
+   "agent_list",
+   "agent_transcript",
+   "agent_steer",
+   "agent_kill",
+   "agent_wait",
+   "team_create",
+   "team_add",
+   "team_eject",
+   "team_succeed",
+   "team_list",
+   "project_verbs",
+   "queue_push",
+   "align"
+  ],
+  "entries": [
+   {
+    "type": "custom",
+    "customType": "mode",
+    "data": {
+     "minor": "vis",
+     "on": false,
+     "active": {
+      "version": 1,
+      "mode": "normal",
+      "strict": false,
+      "minorModes": [
+       "align"
+      ]
+     },
+     "head": [
+      "align",
+      "vis"
+     ]
+    }
+   }
+  ]
+ },
+ {
+  "step": "prompt \"four\"",
+  "calls": [
+   {
+    "keep": 7,
+    "add": [
+     {
+      "role": "assistant",
+      "api": "openai-completions",
+      "provider": "scripted",
+      "model": "scripted",
+      "usage": {
+       "input": 0,
+       "output": 0,
+       "cacheRead": 0,
+       "cacheWrite": 0,
+       "totalTokens": 0,
+       "cost": {
+        "input": 0,
+        "output": 0,
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "total": 0
+       }
+      },
+      "content": [
+       {
+        "type": "text",
+        "text": "ok"
+       }
+      ],
+      "stopReason": "stop",
+      "thinkingLevel": "off"
+     },
+     {
+      "role": "system",
+      "content": "",
+      "sections": {
+       "tools": "@14069dc67c42c871"
+      },
+      "toolsRemoved": [
+       {
+        "name": "vis_guide"
+       },
+       {
+        "name": "vis_check"
+       },
+       {
+        "name": "record_tour"
+       },
+       {
+        "name": "show_tour"
+       }
+      ]
+     },
+     {
+      "role": "user",
+      "content": [
+       {
+        "type": "text",
+        "text": "four"
+       }
+      ]
+     },
+     {
+      "role": "user",
+      "content": [
+       {
+        "type": "text",
+        "text": "Mode change: the user turned the vis minor mode off. Its instructions (the \"# Minor mode: vis\" block in your system prompt) no longer apply; do not follow them unless a later note turns it back on."
+       }
+      ]
+     },
+     {
+      "role": "user",
+      "content": [
+       {
+        "type": "text",
+        "text": "@ae524d99e15092fe"
+       }
+      ]
+     }
+    ]
+   }
+  ],
+  "activeTools": [
+   "read",
+   "bash",
+   "edit",
+   "write",
+   "agent_resume",
+   "agent_models",
+   "agent_spawn",
+   "agent_list",
+   "agent_transcript",
+   "agent_steer",
+   "agent_kill",
+   "agent_wait",
+   "team_create",
+   "team_add",
+   "team_eject",
+   "team_succeed",
+   "team_list",
+   "project_verbs",
+   "queue_push",
+   "align"
+  ],
+  "entries": [
+   {
+    "type": "message",
+    "message": {
+     "role": "system",
+     "content": "",
+     "sections": {
+      "tools": "@14069dc67c42c871"
+     },
+     "toolsRemoved": [
+      {
+       "name": "vis_guide"
+      },
+      {
+       "name": "vis_check"
+      },
+      {
+       "name": "record_tour"
+      },
+      {
+       "name": "show_tour"
+      }
+     ]
+    }
+   },
+   {
+    "type": "custom_message",
+    "customType": "mode-note",
+    "content": "Mode change: the user turned the vis minor mode off. Its instructions (the \"# Minor mode: vis\" block in your system prompt) no longer apply; do not follow them unless a later note turns it back on.",
+    "display": false,
+    "details": {
+     "v": 1,
+     "minorModes": [
+      "align"
+     ],
+     "guides": []
+    }
+   },
+   {
+    "type": "custom_message",
+    "customType": "align-state",
+    "content": "@ae524d99e15092fe",
+    "display": false
+   }
+  ],
+  "headers": {
+   "# Minor mode: align": 1,
+   "# Minor mode: vis": 1
+  }
+ }
+]

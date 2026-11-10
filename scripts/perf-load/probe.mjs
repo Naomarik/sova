@@ -43,7 +43,7 @@ const switchPaths = args.get("switch")?.split(",") ?? null;
 // The Overseer check (`--overseer <rows in its branch>`, `--overseer-earlier <id>`): see overseerCheck.
 const overseerRows = Number(args.get("overseer") ?? 0);
 const overseerEarlier = args.get("overseer-earlier") ?? null;
-const skills = resolve(args.get("skills") ?? join(import.meta.dirname, "..", "..", ".claude", "skills", "playwright", "scripts"));
+const skills = resolve(args.get("skills") ?? join(import.meta.dirname, "..", "..", ".agents", "skills", "playwright", "scripts"));
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 /** Run a command to completion, returning { code, stdout, stderr }. */

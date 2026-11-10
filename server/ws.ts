@@ -7,6 +7,8 @@ import { cappedWebSocketServer, streamWebSocketServer } from "./runtime-quirks";
 import type { ChatClientMessage, ChatServerMessage, LlmFeedMessage, SessionFeedMessage, V2EventFrame, WatchServerMessage } from "../shared/protocol";
 import { refuseUpgrade } from "./auth";
 import { type NotPage, notPageSocket, yourClickBody } from "./page-only";
+import { onCardNews } from "./transcript-cards";
+import { chatClosedToKeys, EXTENSION_CHAT_DOOR, extensionFrameRefusal } from "./extension-doors";
 import { sandboxAfterRewind, sandboxCommand, sandboxLowers } from "./sandbox-state";
 import { isDirectLocal } from "./compression";
 import { acquireChatHandle, ArchivedError, BusyError, ConfigError, type ChatClient } from "./chat-handle";
@@ -30,6 +32,7 @@ import { CHAT_CLOSED_CLOSE_CODE, HAVE_MAX_CHARS, HAVE_PARAM, type WireVersion } 
 import { unsentRefusal } from "../shared/chat-runtime";
 import { draftTexts, HeldSends, type Unsent } from "../shared/held-sends";
 import { putBackDraft } from "./drafts";
+import { SHELL_NOT_PAGE_TEXT } from "./chat-shell";
 import { COMPOSER_PARAM } from "../shared/wire-areas";
 import { writingRefused } from "./wire-gate";
 import { opNote, stallGauge } from "./stall-recorder";
@@ -60,6 +63,14 @@ function sendRaw(ws: WebSocket, json: string): void {
   }
 }
 
+/** The user's message as it goes to the chat: with a decision's held note when one waits for their answer there. */
+export async function withHeldNote(sessionId: string, path: string, text: string, decision?: string): Promise<string> {
+  const [{ topicStore }, { chatPaused, takeHeldNote }, { formatHeldNote }] = await Promise.all([import("./topics"), import("./merge-queue/channel"), import("../shared/topic-message")]);
+  if (topicStore().mergeQueueTopic(sessionId)) chatPaused(sessionId, false);
+  const note = await takeHeldNote({ sessionId, path }, text, decision);
+  return note ? formatHeldNote(text, note) : text;
+}
+
 /** What a client asked of the transcript: all of it (legacy), newest rows first with the rest
     pushed (`?tail=1`), or newest rows alone, the rest fetched over REST (`?tail=rest`, with
     `prefetch` for a browser on this machine connecting directly: it may as well fetch it all). */
@@ -81,6 +92,8 @@ interface ChatSocketOpts {
   refused?: string;
   /** Who this socket is when it isn't the operator's page; only a socket the main listener judged leaves it null. */
   notPage?: NotPage | null;
+  /** The Stop Command entry's recording socket: its one `shell_stop` goes through, whoever asked. */
+  stopsCommand?: boolean;
 }
 
 async function handleChat(ws: WebSocket, path: string, force: boolean, ask: TailAsk, wire: WireVersion, have?: string, opts: ChatSocketOpts = {}): Promise<void> {
@@ -92,12 +105,77 @@ async function handleChat(ws: WebSocket, path: string, force: boolean, ask: Tail
   /** One frame into the chat. `/sandbox` typed in the page's composer runs; from anything else a lowering is refused
       (§app.access/your-click), the send's refusal reaching this socket like any other. */
   const toChat = (open: NonNullable<typeof chat>, msg: ChatClientMessage) => {
+    // A command from shell mode is typed at a message box: the page's here, or a page on another computer through a
+    // peer (§chat.shell-mode/who). A script's, a chat's, an extension's or the Overseer's socket runs none and stops
+    // none: `shell` hears why, so nothing waits on it; `shell_stop` has no answer of its own and does nothing.
+    // Stop Command's entry (chat.shell.stop, server/chat-actions.ts) is the one exception: it only stops.
+    if (who !== null && who !== "local" && (msg.type === "shell" || (msg.type === "shell_stop" && !opts.stopsCommand))) {
+      if (msg.type === "shell") client.send({ type: "shell_refused", clientId: String(msg.clientId ?? ""), reason: "unavailable", message: SHELL_NOT_PAGE_TEXT });
+      return;
+    }
+    // Who stopped a command is the socket's to say, never the frame's: the entry's stop reads "Stopped", a page's "Stopped by you".
+    if (msg.type === "shell_stop") {
+      const { by: _by, ...stop } = msg as typeof msg & { by?: unknown };
+      return passOn(open, (opts.stopsCommand && who !== null ? { ...stop, by: "other" } : stop) as ChatClientMessage);
+    }
+    // A key sends no frame at all into an overseer's, a baton's or the merge queue's chat (§app.extensions/not-you).
+    if (who === "extension") {
+      checking++;
+      chatClosedToKeys(path)
+        .then(
+          (closed) => {
+            if (!closed) return passOn(open, msg);
+            const clientId = (msg as { clientId?: unknown }).clientId;
+            client.send({ type: "error", code: "refused", message: EXTENSION_CHAT_DOOR, ...(typeof clientId === "string" && clientId ? { clientId } : {}) });
+          },
+          (err) => client.send({ type: "error", code: "internal", message: err instanceof Error ? err.message : String(err) }),
+        )
+        .finally(() => {
+          checking--;
+          if (gone && held.size === 0 && checking === 0) leave();
+        });
+      return;
+    }
+    passOn(open, msg);
+  };
+  /** While a page message waits for its held note, later frames wait behind it, so they go on in the order sent. */
+  let lane: Promise<void> = Promise.resolve();
+  let inLane = 0;
+  const later = (fn: () => void) => {
+    inLane++;
+    lane = lane.then(fn).finally(() => void inLane--);
+  };
+  const passOn = (open: NonNullable<typeof chat>, msg: ChatClientMessage) => {
     // A card's click opens a turn that may act on what the card names, so it is the person's, never a script's or a
     // chat's (§app.access/your-click). A click relayed by a peer stays as it was: a page on another computer sends one.
     if (who !== null && who !== "local" && msg.type === "prompt" && msg.confirm) {
       client.send({ type: "error", code: "refused", message: yourClickBody("cardClick", who).error, ...(msg.clientId ? { clientId: msg.clientId } : {}) });
       return;
     }
+    // The user's own message from this machine's page (§chat.merge-queue/decision): it lets the merge queue's requests
+    // through after a Stop, and a decision's held note waiting for their answer here goes with it, in one turn. Never a
+    // card's click, a script's, a chat's or a key's frame.
+    if (who === null && (msg.type === "prompt" || msg.type === "steer") && !(msg.type === "prompt" && msg.confirm) && typeof msg.text === "string" && msg.text.trim()) {
+      checking++;
+      const sent = msg;
+      inLane++;
+      lane = lane
+        .then(() => withHeldNote(id, path, sent.text, typeof sent.decision === "string" && sent.decision ? sent.decision : undefined))
+        .then(
+          (text) => route(open, text === sent.text ? sent : { ...sent, text }),
+          () => route(open, sent),
+        )
+        .finally(() => {
+          inLane--;
+          checking--;
+          if (gone && held.size === 0 && checking === 0) leave();
+        });
+      return;
+    }
+    if (inLane > 0) return later(() => route(open, msg));
+    route(open, msg);
+  };
+  const route = (open: NonNullable<typeof chat>, msg: ChatClientMessage) => {
     // Going back past a raise lowers the sandbox: the extension restores the state of the branch it lands on.
     if (who !== null && (msg.type === "rewind" || msg.type === "regenerate")) {
       // The socket may close meanwhile (`wait=0`): it stays in the chat until the frame went over.
@@ -181,22 +259,46 @@ async function handleChat(ws: WebSocket, path: string, force: boolean, ask: Tail
     }
     if (opts.refused) {
       const clientId = (msg as { clientId?: unknown }).clientId;
-      client.send({ type: "error", code: "refused", message: opts.refused, ...(typeof clientId === "string" && clientId ? { clientId } : {}) });
+      // A command from shell mode hears its own refusal, so its box stops waiting and keeps it (§chat.shell-mode/running).
+      if (msg.type === "shell") client.send({ type: "shell_refused", clientId: String(clientId ?? ""), reason: "unavailable", message: opts.refused });
+      else client.send({ type: "error", code: "refused", message: opts.refused, ...(typeof clientId === "string" && clientId ? { clientId } : {}) });
+      return;
+    }
+    // An extension speaks only through session.send, which names it (§app.extensions/not-you). Before it is held: a
+    // refusal the socket can't hear must not come back as the chat's draft.
+    const keyRefused = who === "extension" ? extensionFrameRefusal(msg) : null;
+    if (keyRefused) {
+      const clientId = (msg as { clientId?: unknown }).clientId;
+      client.send({ type: "error", code: "refused", message: keyRefused, ...(typeof clientId === "string" && clientId ? { clientId } : {}) });
       return;
     }
     sessionsChanged(); // a prompt, abort or rename: the next listing is built afresh
     held.sent(msg);
     if (chat) toChat(chat, msg);
-    else early.push(msg);
+    else if (!retractEarly(msg)) early.push(msg);
   });
+  /** A removal of a send still waiting here for the chat to open (a Stop before the chat's hello):
+      the send never reaches the chat, and the removal is answered as the chat's queue would. */
+  const retractEarly = (msg: ChatClientMessage): boolean => {
+    if (msg.type !== "queue_remove") return false;
+    const i = early.findIndex((m) => (m.type === "prompt" || m.type === "steer") && m.clientId === msg.itemId);
+    if (i === -1) return false;
+    const [sent] = early.splice(i, 1);
+    held.forget(msg.itemId);
+    client.send({ type: "queue_removed", id: msg.id, itemId: msg.itemId, text: sent && (sent.type === "prompt" || sent.type === "steer") ? sent.text : "" });
+    return true;
+  };
   // Seen: a pane is on screen while its socket is open (server/seen.ts). Stamped at attach and at
   // detach, whether or not the runtime opens — a refused chat is still a session the user looked at.
   if (viewer) {
     trackViewer(id, 1);
     nudgeMarks(); // a mark clears once its session is on screen (server/session-feed.ts)
   }
+  // A pane on screen hears its chat's cards change at once (§chat.transcript-cards/answering); a script's socket doesn't ask.
+  const offCards = viewer ? onCardNews((e) => e.id === id && client.send({ type: "cards_changed" })) : null;
   ws.on("close", () => {
     gone = true;
+    offCards?.();
     if (viewer) trackViewer(id, -1);
     if (chat) stayToHear();
   });
@@ -281,7 +383,8 @@ export function deliverFrames(path: string, frames: readonly ChatClientMessage[]
   const gone = Object.assign(new EventEmitter(), { readyState: 3, OPEN: 1, close() {}, send() {} });
   const ws = gone as unknown as WebSocket;
   handleChat(ws, path, false, { tail: true, pull: true, prefetch: false }, 2, undefined, { notPage }).catch((err) => console.error("[chat/frames]", err));
-  for (const f of frames) gone.emit("message", JSON.stringify(f));
+  // A command from shell mode is never run from here (§chat.shell-mode/who): only a live chat socket starts one.
+  for (const f of frames) if (!isShellFrame(f)) gone.emit("message", JSON.stringify(f));
   gone.emit("close");
 }
 
@@ -300,7 +403,7 @@ export interface RecordedChat {
  * `onFrame`, parsed. Nothing is sent until `emit()`; the caller emits once it has the hello.
  * Never a viewer (no seen stamp); never forced.
  */
-export function recordFrame(path: string, frame: ChatClientMessage, onFrame: (msg: Record<string, unknown>) => void, onClose: () => void, notPage: NotPage | null = "script"): RecordedChat {
+export function recordFrame(path: string, frame: ChatClientMessage, onFrame: (msg: Record<string, unknown>) => void, onClose: () => void, notPage: NotPage | null = "script", opts: { stopsCommand?: boolean } = {}): RecordedChat {
   let open = true;
   let sent = false;
   const rec = Object.assign(new EventEmitter(), {
@@ -326,7 +429,7 @@ export function recordFrame(path: string, frame: ChatClientMessage, onFrame: (ms
     },
   });
   const ws = rec as unknown as WebSocket;
-  handleChat(ws, path, false, { tail: true, pull: true, prefetch: false }, 2, undefined, { viewer: false, notPage }).catch((err) => {
+  handleChat(ws, path, false, { tail: true, pull: true, prefetch: false }, 2, undefined, { viewer: false, notPage, ...(opts.stopsCommand && frame.type === "shell_stop" ? { stopsCommand: true } : {}) }).catch((err) => {
     console.error("[chat/action]", err);
     rec.close();
   });
@@ -347,12 +450,17 @@ export function recordFrame(path: string, frame: ChatClientMessage, onFrame: (ms
   };
 }
 
-/** The frames of a POST /api/chat/frames body (`{ frames: [...] }`), or null when malformed. */
+/** A shell-mode frame (`shell`, `shell_stop`): the frames path drops it. */
+const isShellFrame = (f: { type?: unknown }) => f.type === "shell" || f.type === "shell_stop";
+
+/** The frames of a POST /api/chat/frames body (`{ frames: [...] }`), or null when malformed. Shell-mode
+    frames are dropped (§chat.shell-mode/who, §chat.transcript/send-while-starting): a command runs only
+    from a live chat socket. */
 export function postedFrames(body: unknown): ChatClientMessage[] | null {
   const frames = (body as { frames?: unknown } | null)?.frames;
   if (!Array.isArray(frames) || frames.length === 0 || frames.length > POSTED_FRAMES_MAX) return null;
   for (const f of frames) if (!f || typeof f !== "object" || Array.isArray(f) || typeof (f as { type?: unknown }).type !== "string") return null;
-  return frames as ChatClientMessage[];
+  return (frames as ChatClientMessage[]).filter((f) => !isShellFrame(f));
 }
 
 /** The texts in posted frames that go back as a draft when the frames are refused unrun. */

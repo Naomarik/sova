@@ -113,15 +113,20 @@
       "server/tours/sign-in-notice.ts",
       "server/tours/sign-in-notice.test.ts",
       "server/project-services/release-wire.ts",
-      "server/projects/setup-chat.ts"
+      "server/projects/setup-chat.ts",
+      "server/needs-you-dismissed.ts",
+      "src/lib/needs-you.ts",
+      "src/lib/needs-you.test.ts",
+      "src/lib/org-region.ts",
+      "src/lib/org-region.test.ts"
     ],
     "requires": [
       "§app.overseer/seen"
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-05T07:46Z",
-      "source": "pi-session:3afd71cb-9954-48a8-837f-625d03a69b14#15ceea0f"
+      "at": "2026-11-06T21:52Z",
+      "source": "pi-session:01a1acdc-5fed-7735-96f5-96f6019e339d#c412bec1"
     }
   },
   "§app.overseer/auto-resume": {
@@ -963,7 +968,8 @@
       "server/search-tools-fake.ts",
       "shared/project-overseer.ts",
       "server/project-coding-mode.ts",
-      "server/overseer-prompt.md"
+      "server/overseer-prompt.md",
+      "server/coding-default-profile.ts"
     ],
     "requires": [
       "§app.project-overseer/identity",
@@ -1219,7 +1225,10 @@
       "server/overseer-roundup.test.ts",
       "server/overseer-runtime.test.ts",
       "server/overseer-roundup-git.ts",
-      "server/sessions-index.ts"
+      "server/sessions-index.ts",
+      "server/merge-queue/wire.ts",
+      "server/merge-queue/place.ts",
+      "server/landed-branch-agreement.integration.test.ts"
     ],
     "requires": [
       "§app.overseer/tools",
@@ -1228,19 +1237,21 @@
       "§chat.worktrees/cleanup",
       "§chat.alignment/session-mark",
       "§app.overseer/session-truth",
-      "§app.project-overseer/coding-worktrees"
+      "§app.project-overseer/coding-worktrees",
+      "§chat.worktrees/place",
+      "§chat.worktrees/nothing-left"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-10-25T22:33Z",
-      "source": "pi-session:299cd046-42df-4026-9a8d-950b1cec2ffb#a18554af"
+      "by": "naomarik",
+      "at": "2026-11-09T15:52Z",
+      "source": "pi-session:01a1b2f4-86c6-73d4-9fe9-b847b27035f9#02c2fa31"
     },
-    "evidence": "verified"
+    "evidence": "reviewed"
   },
   "§app.overseer/run-note": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "code": [
       "server/overseer.ts",
       "server/overseer-run-note.ts",
@@ -1249,7 +1260,8 @@
       "server/overseer-opening.test.ts",
       "server/harness/pi/golden/session/S11-overseer.jsonl",
       "server/harness/pi/golden/state/G7-overseer-cleared.jsonl",
-      "server/harness/pi/golden/state/G7-overseer-first.jsonl"
+      "server/harness/pi/golden/state/G7-overseer-first.jsonl",
+      "server/attention.ts"
     ],
     "requires": [
       "§app.overseer/confirm",
@@ -1260,8 +1272,8 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-10-27T21:10Z",
-      "source": "pi-session:01a15967-632c-7701-8650-889f96aa9f4c#e877e3be"
+      "at": "2026-11-06T02:49Z",
+      "source": "pi-session:01a1ac4a-4cc0-77e8-b78d-580fabeebc2e#f924065b"
     }
   },
   "§app.overseer/seen": {
@@ -1312,15 +1324,16 @@
       "server/build-loadout.ts",
       "src/lib/overseer.ts",
       "shared/senders.ts",
-      "pi-config/extensions/worktrees/index.ts"
+      "pi-config/extensions/worktrees/index.ts",
+      "server/align-state.ts"
     ],
     "requires": [
       "§chat.transcript/message-actions"
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-10-27T09:33Z",
-      "source": "pi-session:01a16fb6-1014-7539-b91a-750b94daff7d#6f6f4e53"
+      "at": "2026-11-06T21:52Z",
+      "source": "pi-session:01a1acdc-5fed-7735-96f5-96f6019e339d#c412bec1"
     }
   },
   "§app.overseer/session-names": {
@@ -1514,7 +1527,10 @@
       "server/project-previews.ts",
       "server/overseer-pair-tools.ts",
       "server/overseer-pair-tools.test.ts",
-      "server/harness/pi/golden/special-model-view.json"
+      "server/harness/pi/golden/special-model-view.json",
+      "server/overseer-profiles.ts",
+      "server/session-profiles-runtime.test.ts",
+      "server/default-start.ts"
     ],
     "requires": [
       "§app.overseer/caps",
@@ -1525,9 +1541,9 @@
       "§chat.create-mode/per-chat-only"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-11-05T18:37Z",
-      "source": "pi-session:01a1ab3a-26bd-72b7-9a70-7646430041e9#af35e45f"
+      "by": "naomarik",
+      "at": "2026-11-09T01:20Z",
+      "source": "pi-session:f599f57e-519d-4f33-9088-ed8a9cd164b5#b97414c4"
     }
   },
   "§app.overseer/transcript-window": {

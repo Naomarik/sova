@@ -63,8 +63,7 @@ A pick applies to this chat only and keeps the panel open. The foot says so: "Th
 while memory is off." The type survives a reload, a rewind and a server restart. On a short window
 the rows scroll, so none is cut off.
 
-**Save as default** in the menu saves the chat's type with its modes, and reads
-**Already the default** only when it matches too. Each new chat starts from that default type, and
+**Make {name} the Default** in the menu saves the chat's type with its profile. Each new chat starts from that default type, and
 before you've saved one, from UniiChat.
 
 ## Recalling a line
@@ -138,14 +137,14 @@ with two small drawings each, and what the summary size and the summarizer's mod
 The summarizer makes one-off model calls, never a session. They go through this device's model
 policy, run on this machine's Claude login, and count as the chat's own spend.
 
-The type new chats start from isn't set here. It comes from the mode menu's Save as default.
+The type new chats start from isn't set here. It comes from the mode menu's **Make {name} the Default**.
 
 ## Where memory can't be on
 
-- **The terminal.** pi's terminal UI can turn memory off, but never on: `/mode memory on` and
-  `pi --minor memory` are refused, and the palette has no memory row. A terminal session that starts
-  from a default with memory on drops it. A Sova chat later opened in a terminal keeps memory in its
-  saved mode, but nothing runs it there.
+- **Typed.** `/mode memory on` typed in a chat is refused: only the mode menu turns memory on.
+  `/mode memory off` works.
+- **The terminal.** A pi terminal session has no modes from Sova, so nothing runs memory there. A
+  Sova chat later opened in a terminal keeps memory in its saved mode for when Sova opens it again.
 - **Workers.** A worker never gets memory: it starts fresh from its brief.
 - **Coding sessions.** Neither Overseer can start or set a coding session with memory, and a coding
   session that names no minor modes starts without it, even when your default has it on.

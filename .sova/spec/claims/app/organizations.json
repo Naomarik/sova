@@ -68,6 +68,26 @@
       "§app.project-overseer/new-coding-session"
     ]
   },
+  "§app.organizations/backup-guard": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "requires": [
+      "§app.organizations/workspace-repo",
+      "§app.organizations/portability"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-11-07T15:21Z",
+      "source": "pi-session:a08b61c6-6f44-4ae1-ace0-ced83f26f0b0#40313700"
+    },
+    "code": [
+      "server/workspace-git.ts",
+      "server/org-effects.ts",
+      "server/merge-queue/publish-scan.ts",
+      "server/workspace-commits.test.ts"
+    ],
+    "evidence": "verified"
+  },
   "§app.organizations/decisions": {
     "kind": "note",
     "authority": "accepted",
@@ -173,7 +193,7 @@
   "§app.organizations/org-cards": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "code": [
       "shared/orgs.ts",
       "server/org-routes.ts",
@@ -184,12 +204,18 @@
       "src/orgs.css",
       "server/orgs.ts",
       "src/lib/org-tabs.ts",
-      "src/lib/org-tabs.test.ts"
+      "src/lib/org-tabs.test.ts",
+      "server/needs-you-dismissed.ts"
     ],
     "requires": [
       "§app.organizations/registry",
       "§app.organizations/referrals"
-    ]
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-06T01:40Z",
+      "source": "pi-session:01a1ac4a-4cc0-77e8-b78d-580fabeebc2e#f924065b"
+    }
   },
   "§app.organizations/org-page": {
     "kind": "behavior",
@@ -417,9 +443,9 @@
       "src/components/InsightsPage.tsx"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-11-05T03:54Z",
-      "source": "pi-session:4ff7a076-864d-4370-9783-4c5b6119e95c#5bc9ed14"
+      "by": "user",
+      "at": "2026-11-08T21:00Z",
+      "source": "pi-session:1e2d4212-e8f2-4d90-95f6-538201cbd3f1#5cf517d3"
     }
   },
   "§app.organizations/projects": {

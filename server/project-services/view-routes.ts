@@ -3,20 +3,24 @@ import { freemem, totalmem } from "node:os";
 import { basename, join } from "node:path";
 import type { Context, Hono } from "hono";
 import { adoptedService, CONTRACT_FILE, httpStatusOf, parseDefinition, type InstanceSummary, type ProjectDef, type ServiceView } from "../../shared/project-contract";
-import { COPY_SLOT_TOP } from "../../shared/project-contract";
 import { copyLimitOf, overLimitSentence, slotLayoutOf, unavailableSentence } from "../../shared/project-slots";
 import { isStarting, SERVICES_UI_VERBS, type CopyLimitView, type CopyView, type EntryView, type HostServicesView, type ProjectServicesView, type RunningProject, type ServiceRowView } from "../../shared/services-view";
 import { OrgError } from "../org-error";
 import { canonicalPath } from "../paths";
+import { listeningPortTable } from "../port-owner";
 import { listProjects, readProject } from "../projects/spaces";
 import { projectEngine } from "./routes";
 import { notPageNorProven } from "../mesh/click-proof";
+import { CALLER_HEADER } from "../caller-keys";
+import { isCardRun } from "../extension-sender";
+import { pageOnlyMergeVerb } from "../merge-queue/routes";
 import { pageOnlyRefusal } from "../page-only";
 import { setCopyLimit } from "../project-settings";
 import { parseMeminfo } from "../resource-monitor-proc";
 import { stampsOf, type Stamp } from "./conform";
 import { countsAsRunning, machineCopyLimit } from "./copy-limit";
 import { defHashOf } from "./def-hash";
+import { countPlaces, placeSlots } from "./places";
 import { readRegistry, type Registry } from "./store";
 
 /**
@@ -140,24 +144,26 @@ function hostMemory(): CopyLimitView["host"] {
 }
 
 /** The tab's copy limit for the project at `root`: the limit in force (one rule, copyLimitOf), its copies and their cost. */
-export function limitView(root: string, registry: Registry, opts: { host?: CopyLimitView["host"]; stamps?: Record<string, Stamp> } = {}): CopyLimitView {
+export function limitView(root: string, registry: Registry, opts: { host?: CopyLimitView["host"]; stamps?: Record<string, Stamp>; listening?: ReadonlySet<number> | null } = {}): CopyLimitView {
   const project = canonicalPath(root);
   const limit = copyLimitOf(project, { machine: machineCopyLimit(project) });
   const mine = registry.instances.filter((i) => canonicalPath(i.project) === project && i.slot !== 0 && !i.createdBy.startsWith("conform:"));
   const running = mine.filter(countsAsRunning).length;
   const main = definitionAt(project);
+  const layout = main ? slotLayoutOf(main, limit.numbering) : null;
+  const places = countPlaces({ registry, project, isProject: (p) => canonicalPath(p) === project, def: main, numbering: limit.numbering, listening: opts.listening !== undefined ? opts.listening : listeningPortTable() });
+  const usableSlots = new Set(placeSlots(layout));
   const stamps = opts.stamps ?? { ...stampsOf(root), ...stampsOf(project) };
   return {
     value: limit.cap,
     source: limit.source === "machine" ? "machine" : "file",
     file: limit.fileCap,
-    copies: mine.length,
+    copies: mine.filter((i) => usableSlots.has(i.slot)).length,
     running,
     over: running > limit.cap ? overLimitSentence(running, limit.cap) : null,
-    ...(() => {
-      const layout = main ? slotLayoutOf(main, limit.numbering) : null;
-      return { usable: layout ? layout.ordinary.length : COPY_SLOT_TOP, unavailable: (layout?.unavailable ?? []).map(unavailableSentence) };
-    })(),
+    usable: places.usable,
+    unavailable: (layout?.unavailable ?? []).map(unavailableSentence),
+    places: { stopped: places.stopped, elsewhere: places.elsewhere, ...(places.free === null ? {} : { free: places.free }) },
     estimate: copyEstimate(stamps, main ? defHashOf(main) : null),
     host: opts.host !== undefined ? opts.host : hostMemory(),
   };
@@ -256,7 +262,12 @@ export function registerServicesViewRoutes(app: Hono<any>): void {
       }
       const b = body && typeof body === "object" && !Array.isArray(body) ? (body as Record<string, unknown>) : {};
       // Your page, here or on another of your computers with its proof (server/mesh/click-proof.ts).
-      const r = await projectEngine().run(verb, { ...b, project: root }, { kind: "operator", ...(verb === "apply" && (await notPageNorProven(c, raw)) ? { notPage: true } : {}) });
+      // The same marks as /api/project-services: a chat's key (blank included), a card's command, and the page check for
+      // apply and the merge queue's acts (§app.access/your-click).
+      const fromChat = c.req.header(CALLER_HEADER) !== undefined;
+      const fromCard = isCardRun((n) => c.req.header(n));
+      const notPage = (verb === "apply" || pageOnlyMergeVerb(verb)) && (await notPageNorProven(c, raw));
+      const r = await projectEngine().run(verb, { ...b, project: root }, { kind: "operator", ...(fromChat ? { fromChat: true as const } : {}), ...(fromCard ? { fromCard: true as const } : {}), ...(notPage ? { notPage: true } : {}) });
       return c.json(r, httpStatusOf(r) as 200, NO_STORE);
     }),
   );

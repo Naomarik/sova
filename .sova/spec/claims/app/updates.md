@@ -232,8 +232,9 @@ command exists, and it answers anything but the page with 403 ("Only the user re
 press Restart Sova in Settings → General. Nothing was restarted."): a script, a chat's terminal, a call from
 the peer listener, a call with no socket (the Overseer's in-process dispatch, a schedule), the Overseer's
 sender header and an extension's backend. No agent tool offers it. The one chat that restarts Sova,
-its own merge thread after a landing (§chat.merge-queue/sova-restart), does it with the service
-manager, as the operator's terminal does, and this request refuses it too. Every restart asked for is recorded with its origin: the server's
+its own merge thread after a landing (§chat.merge-queue/sova-restart), does it through the merge
+verb `merge.restart`, which Sova runs and which restarts the unit as Apply does; this request
+refuses it too. Every restart asked for is recorded with its origin: the server's
 log names who asked (`browser`, `command server.restart (<caller>)` or `script (<caller>)`, the
 caller as §app.command-audit/attribution names it), the unit, and whether it was scheduled or
 refused; a script's call also leaves its row in Sova's record of who ran what

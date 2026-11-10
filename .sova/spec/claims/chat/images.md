@@ -270,7 +270,9 @@ touched.
 ## §chat.images/lightbox — Lightbox
 
 Clicking an image opens it full size in a modal lightbox that steps only through its own row's
-images.
+images. A `vis` drawing's Copy opens its picture here too, where the clipboard won't take a picture
+(§chat.markdown/visuals): at the card's width, with a **Save Image** button before Close Image that
+downloads it as a PNG named after the drawing. No other image has that button.
 
 **There is a lightbox.** Clicking or pressing Enter/Space on a `.thumb` opens that image full
 size. It's one native `<dialog>`, opened with `showModal()`. That puts it in the top layer (it

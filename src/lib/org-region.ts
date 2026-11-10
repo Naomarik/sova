@@ -248,14 +248,16 @@ export function batonWaitDetail(s: Pick<SessionSummary, "baton">): { text: strin
  * (a dialog, an errored turn, a question) joined to the org hits, plus any baton wait the digest
  * didn't carry. Newest first, like the global list.
  */
-export function orgNeedsYouRows(digest: Pick<AttentionDigest, "items"> | undefined, sessions: readonly SessionSummary[]): NeedsYouRow[] {
+export function orgNeedsYouRows(digest: Pick<AttentionDigest, "items" | "dismissed" | "newestListed"> | undefined, sessions: readonly SessionSummary[]): NeedsYouRow[] {
   const org = sessions.filter(isOrgSession);
   const rows = needsYouRows(digest, org);
   const listed = new Set(rows.map((r) => r.session.path));
   for (const s of org) {
     if (listed.has(s.path) || orgDone(s)) continue;
     const w = batonWaitDetail(s);
-    if (w) rows.push({ session: s, detail: w.text, details: [w.text], since: w.since, kind: "baton-needs-you", soft: false });
+    // A wait the operator dismissed (§app.session-list/needs-you-dismiss): the digest left it out, and so does this.
+    if (w && w.since <= (digest?.dismissed?.[s.path] ?? -1)) continue;
+    if (w) rows.push({ session: s, detail: w.text, details: [w.text], since: Math.max(w.since, digest?.newestListed?.[s.path] ?? 0), kind: "baton-needs-you", soft: false });
   }
   return rows.sort((a, b) => b.since - a.since || a.session.path.localeCompare(b.session.path));
 }

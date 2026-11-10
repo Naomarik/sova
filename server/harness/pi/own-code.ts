@@ -1,5 +1,6 @@
+import { AsyncLocalStorage } from "node:async_hooks";
 import { existsSync, realpathSync } from "node:fs";
-import { dirname, join, relative, resolve, sep } from "node:path";
+import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import { DefaultPackageManager } from "@earendil-works/pi-coding-agent";
 import type { PiLoaderOptions } from "./extension-types";
 
@@ -70,6 +71,92 @@ export function ownCode(path: string, o: OwnCode): string | null {
 /** The copy's name for messages: its id under the code root, else its path. */
 const idOf = (o: OwnCode) => (o.codeRoot && under(o.own, o.codeRoot) ? relative(o.codeRoot, o.own).split(sep)[0]! : o.own);
 
+/**
+ * Who runs a runtime's chat modes (Settings → Experimental "Sova runs chat modes"): the build that
+ * creates a runtime's services runs inside this scope, naming Sova's mode entry module when Sova
+ * owns them, or null when the pi-config mode extension does. The package manager that build creates
+ * keeps the answer for its whole life (boundOwner), so a later pi reload of the same runtime keeps
+ * the same owner whatever the setting says by then.
+ */
+const modesScope = new AsyncLocalStorage<string | null>();
+const boundOwner = new WeakMap<object, string | null>();
+
+/** Run a runtime build (`fn`, the services creation) with its modes owner: `entry` is Sova's mode
+    entry module, null keeps the extension. */
+export function withModesEntry<T>(entry: string | null, fn: () => T): T {
+  return modesScope.run(entry, fn);
+}
+
+/** Whether a resolved extension path is a Sova checkout's pi-config mode extension (its directory or
+    its index.ts), through any link: the extension the mode entry takes the place of. */
+export function isModeExtension(path: string): boolean {
+  let p = real(path);
+  if (basename(p) === "index.ts") p = dirname(p);
+  return basename(p) === "mode" && basename(dirname(p)) === "extensions" && basename(dirname(dirname(p))) === "pi-config" && existsSync(join(p, "index.ts"));
+}
+
+/** Sova's modules that take the place of the mode extension's files in a worker's list. */
+export interface ModesEntries {
+  /** For the extension itself (its directory or index.ts). */
+  entry: string;
+  /** For mode/spec-worker.ts. */
+  specWorker: string;
+  /** For mode/project-tools-worker.ts. */
+  projectToolsWorker: string;
+}
+
+/** This copy's mode entry modules (lead's server/harness/pi/modes-*.ts), the paths that take the mode
+    extension's slots when Sova runs a chat's modes. */
+export function modesEntries(own = OWN_ROOT): ModesEntries {
+  const dir = join(own, "server", "harness", "pi");
+  return { entry: join(dir, "modes-entry.ts"), specWorker: join(dir, "modes-spec-worker.ts"), projectToolsWorker: join(dir, "modes-project-tools-worker.ts") };
+}
+
+/** Which of the mode extension's files a listed path is, through any link, or null. */
+export function modeFileOf(path: string): keyof ModesEntries | null {
+  if (isModeExtension(path)) return "entry";
+  const p = real(path);
+  const dir = dirname(p);
+  if (basename(dir) !== "mode" || basename(dirname(dir)) !== "extensions") return null;
+  if (basename(p) === "spec-worker.ts") return "specWorker";
+  if (basename(p) === "project-tools-worker.ts") return "projectToolsWorker";
+  return null;
+}
+
+/**
+ * A worker's listed extensions with the mode extension's files in Sova's hands, each in its own slot
+ * (never dropped and appended: load order is hook and tool order). `sova`: its parent's modes run on
+ * Sova, so every one of them maps. Otherwise only a worker file this copy no longer has (listed by a
+ * parent on older code) maps, instead of failing the start; the extension itself stays.
+ */
+export function workerModePaths(paths: readonly string[], sova: boolean, entries: ModesEntries, o: OwnCode | null = ownCodeOf()): string[] {
+  return paths.map((p) => {
+    if (/^[a-z]+:/.test(p)) return p;
+    const kind = modeFileOf(p) ?? (sova && isAnyModeExtension(p) ? "entry" : null);
+    if (kind === null) return p;
+    if (sova) return entries[kind];
+    if (kind === "entry") return p;
+    const mine = (o && ownCode(p, o)) ?? p;
+    return existsSync(mine) ? p : entries[kind];
+  });
+}
+
+/** Any mode extension a worker may list as its mode slot (a worktree's `.agent/extensions/mode`, wherever its
+    link leads): a directory named `mode` with an index.ts, or that index.ts. Wider than isModeExtension, used only
+    for a Sova-owned worker, so no tree's copy ever loads beside Sova's engine. */
+function isAnyModeExtension(path: string): boolean {
+  let p = real(path);
+  if (basename(p) === "index.ts") p = dirname(p);
+  return basename(p) === "mode" && existsSync(join(p, "index.ts"));
+}
+
+/** The mode entry the package manager `pm` was built under (bound at its first resolve()), or null. */
+function ownerOf(pm: unknown): string | null {
+  if (pm === null || typeof pm !== "object") return modesScope.getStore() ?? null;
+  if (!boundOwner.has(pm)) boundOwner.set(pm, modesScope.getStore() ?? null);
+  return boundOwner.get(pm) ?? null;
+}
+
 type Resolve = (this: unknown, ...args: never[]) => Promise<{ extensions: { path: string }[] }>;
 interface ResolvesPaths {
   prototype: { resolve: Resolve };
@@ -77,15 +164,20 @@ interface ResolvesPaths {
 
 /**
  * Rewrite the extension paths `cls`'s resolve() answers (pi's DefaultPackageManager, or a test's
- * copy of pi): each Sova one to its place in this copy; one this copy lacks (added to the checkout
- * since it was made) is left out until the chat reloads onto newer code, never loaded live. The call
- * puts resolve() back.
+ * copy of pi). The mode extension becomes Sova's mode entry, in the same slot, when the build that made
+ * this package manager ran under withModesEntry(entry) (one owner, in the extension's own place, so
+ * tool and prompt-section order stay as they were). On a code generation (`o`), each other Sova one goes
+ * to its place in this copy; one this copy lacks (added to the checkout since it was made) is left out
+ * until the chat reloads onto newer code, never loaded live. The call puts resolve() back.
  */
-export function patchResolve(cls: ResolvesPaths, o: OwnCode, log: (line: string) => void = (l) => console.warn(`[own-code] ${l}`)): () => void {
+export function patchResolve(cls: ResolvesPaths, o: OwnCode | null, log: (line: string) => void = (l) => console.warn(`[own-code] ${l}`)): () => void {
   const original = cls.prototype.resolve;
   const mapped: Resolve = async function (this: unknown, ...args) {
     const out = await original.apply(this, args);
+    const entry = ownerOf(this);
     out.extensions = out.extensions.flatMap((r) => {
+      if (entry !== null && isModeExtension(r.path)) return [{ ...r, path: entry }];
+      if (!o) return [r];
       const m = ownCode(r.path, o);
       if (m === null) return [r];
       if (existsSync(m)) return [{ ...r, path: m }];
@@ -137,14 +229,17 @@ export function extensionDepDrift(extensionsDir: string, codeDir: string = impor
 }
 
 let installed = false;
-/** Once per process, and only in a chat process on a code generation: never in the server. Called at a
+/** Once per process. Every process gets the modes owner's slot rewrite (a build outside withModesEntry
+    sees no change); only a chat process on a code generation gets the copy mapping, never the server. Called at a
     services build, never at import: a server deletes the chat-process variables it inherited (from a
     chat's own tools) at boot, after its imports ran. Logs each package the copy's extensions would get
     from another copy than pi's (they still load, through pi's slow fallback). */
 export function installOwnCode(o: OwnCode | null = ownCodeOf(), log: (line: string) => void = (l) => console.warn(`[own-code] ${l}`)): void {
-  if (installed || !o) return;
+  if (installed) return;
   installed = true;
+  // In every process: the modes owner's slot rewrite (withModesEntry); the copy mapping only on a generation.
   patchResolve(DefaultPackageManager as unknown as ResolvesPaths, o);
+  if (!o) return;
   for (const d of extensionDepDrift(join(o.own, "pi-config", "extensions")))
     log(`extensions get ${d.name} from ${d.extensions ?? "nowhere"}, pi from ${d.pi ?? "nowhere"}: they load through pi's slow fallback`);
 }

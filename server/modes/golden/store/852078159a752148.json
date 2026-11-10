@@ -1,0 +1,103 @@
+{
+ "op": {
+  "type": "string",
+  "enum": [
+   "look",
+   "dry-run",
+   "record",
+   "status",
+   "cancel",
+   "inspect",
+   "check"
+  ],
+  "description": "@d7607a9f9ba7e505"
+ },
+ "script": {
+  "type": "object",
+  "description": "dry-run only: the whole declarative tour script from vis_guide with tour."
+ },
+ "tourId": {
+  "type": "string",
+  "minLength": 1,
+  "maxLength": 100,
+  "description": "look and dry-run, optional: the tour to use; reuse the look's tourId for the dry run so it starts signed in."
+ },
+ "source": {
+  "type": "object",
+  "description": "look only: the source the script will name."
+ },
+ "sites": {
+  "type": "array",
+  "items": {
+   "type": "string"
+  },
+  "description": "look only, optional: the script's sites."
+ },
+ "signIn": {
+  "type": "object",
+  "description": "look only, optional: the script's signIn, when known."
+ },
+ "signInRoute": {
+  "type": "string",
+  "description": "look only, optional, before signIn is known: the sign-in page's route; the look lists that page signed out."
+ },
+ "pages": {
+  "type": "array",
+  "maxItems": 10,
+  "items": {
+   "type": "object"
+  },
+  "description": "look only: up to 10 {route, actions?} (actions: a list for both sizes, or {desktop?, phone?}); [] with signInRoute lists only the sign-in page."
+ },
+ "credentials": {
+  "type": "object",
+  "description": "@aea00371844c6841"
+ },
+ "dryRunId": {
+  "type": "string",
+  "minLength": 1,
+  "maxLength": 100,
+  "description": "record only: the job id of a successful dry run."
+ },
+ "jobId": {
+  "type": "string",
+  "minLength": 1,
+  "maxLength": 100,
+  "description": "status, cancel, inspect and check: the job id."
+ },
+ "capture": {
+  "type": "string",
+  "maxLength": 124,
+  "description": "inspect only, optional: an exact capture filename from the report."
+ },
+ "verification": {
+  "type": "object",
+  "properties": {
+   "overviewReviewed": {
+    "type": "boolean",
+    "description": "true only after actually looking at every overview cell."
+   },
+   "suspiciousCapturesReviewed": {
+    "type": "array",
+    "maxItems": 672,
+    "items": {
+     "type": "string",
+     "maxLength": 124
+    },
+    "description": "Every capture you opened closely, including each reported suspicious one."
+   },
+   "notes": {
+    "type": "string",
+    "minLength": 1,
+    "maxLength": 2000,
+    "description": "What you checked and resolved."
+   }
+  },
+  "required": [
+   "overviewReviewed",
+   "suspiciousCapturesReviewed",
+   "notes"
+  ],
+  "additionalProperties": false
+ }
+}

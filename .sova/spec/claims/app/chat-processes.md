@@ -209,7 +209,8 @@ starts a chat again.
 ## §app.chat-processes/idle-stop — An idle chat process stops
 
 A chat's process with nothing in flight (no reply, compaction, queued message, open dialog,
-working worker or server action) is asked to close after 30 minutes like that
+working worker, server action or command run from its message box, §chat.shell-mode/lifecycle)
+is asked to close after 30 minutes like that
 (`SOVA_CHAT_IDLE_MIN`, in minutes, fractions allowed; 0 is never), whether or not a browser tab
 has it open: an open tab doesn't keep it running, and neither does a pending wake nudge or a
 running background job. The chat checks again that it is still quiet,
@@ -239,8 +240,10 @@ by itself as an idle stop, so the next server reads its end as orderly: no death
 does a process started for a chat that never opened it (a server that stopped mid-start, or a
 reload's replacement it never moved the chat into); such a process never touches the chat's record
 of a run in flight, which belongs to the process that has the chat open.
-A reply in flight or an open dialog keeps it running until that ends; a pane left attached when
-the server went does not. To stop them at once instead, `bun scripts/stop-chats.ts [--agent-dir <dir>]` stops every chat
+A reply in flight or an open dialog keeps it running until that ends; a pane left attached when the
+server went does not, and neither does a command run from its message box: a chat with no server
+linked for its idle time stops its running commands, as its close does (§chat.shell-mode/lifecycle),
+and exits. While a server is linked, a running command keeps its chat as long as it runs. To stop them at once instead, `bun scripts/stop-chats.ts [--agent-dir <dir>]` stops every chat
 process the install's state root records, through its records and driver (never a process found by
 name), each as an operator stop, and every background job of that state root
 (§app.background-jobs/stopping).
@@ -252,7 +255,9 @@ generation (§app.chat-processes/code-generations), and carries that generation'
 plus a digest of uncommitted changes and untracked files when the tree is dirty (`SOVA_BUILD`
 overrides it for tests; an unknown build means no badge). A chat whose build differs from the server's, both known, is on older code. It asks
 to reload at a quiet moment: when nobody is attached, or after 5 minutes quiet. "Reload Now" asks at
-once when the chat is quiet, else when its reply ends. Its workers don't hold a reload: they run in
+once when the chat is quiet, else when its reply ends. A command run from its message box keeps the
+chat from being quiet, for both, until it ends (§chat.shell-mode/lifecycle).
+Its workers don't hold a reload: they run in
 processes of their own, keep working through it and are reattached (§app.chat-processes/workers);
 only a working worker of another backend, which runs inside the chat's process, still holds it. Nor
 do its background jobs, which keep running through it (§app.background-jobs/keeping). Reloads run one
@@ -277,9 +282,11 @@ A chat running in its own process on older code than its server says so in its h
 `On older code` chip (tooltip: "This chat keeps the code it started with until its next quiet
 moment.") and a ghost `Reload Now` button beside it, in the chat's own head and in its workspace
 pane's. On a chat head narrower than 720px the button is its refresh icon, a 44px target, with
-its words as its name and tooltip, so the head's share and details buttons stay in view. Pressed while a reply runs, the button reads `Reloads after this reply` (`Reloads when its
-workers finish` when only another backend's workers, which run inside the chat's process, are working) and the reload waits for that moment; it never
-cuts a reply off. While the chat reloads, the chip reads `Reloading`; the pane then reconnects
+its words as its name and tooltip, so the head's share and details buttons stay in view. Pressed while the chat isn't quiet, the button reads `Reloads after this reply` while a reply runs,
+`Reloads when its command ends` while no reply runs but a command run from its message box does
+(§chat.shell-mode/lifecycle), and `Reloads when its workers finish` when only another backend's
+workers, which run inside the chat's process, are working; the reload waits for that moment, and it
+never cuts a reply or a command off. While the chat reloads, the chip reads `Reloading`; the pane then reconnects
 quietly, the draft kept, and on the current code the chip and the button are gone. If the new code
 fails to start, the chat keeps running on older code: the chip stays `On older code`, and a warning
 banner over the thread says "Couldn't start this chat on new code." with "It keeps running on older
@@ -314,7 +321,10 @@ the chat's copy was made is left out of that chat until it reloads onto newer co
 process logs it. Installed packages, a project's own
 extensions and a worktree's own agent dir load from where they are. A worker whose extension is
 missing from its copy (renamed since its parent's copy was made) does not start, and says
-"<file> is not in this chat's code (<id>); reload the parent chat". Settings, models, skills,
+"<file> is not in this chat's code (<id>); reload the parent chat", except the mode extension's own
+worker files (`spec-worker.ts`, `project-tools-worker.ts`), which Sova's modules take the place of
+so the worker starts (§chat.mode-menu/sova-runs-modes). While Sova runs chat modes, the mode
+extension a chat or worker would load is Sova's own, in the same place in its list. Settings, models, skills,
 prompts, themes and the agent dir's other files are read live.
 
 When the copy can't be made (a checkout whose Git fails, no space, no tree), chats run from the checkout as before;
@@ -404,9 +414,10 @@ hidden chat: `/explain`'s fork, a compaction's hand-off fork and `/btw`'s side t
 starts each from the loadout its parent computed (model, effort, tools, MCP servers, extensions, flags,
 system prompt, sandbox, remote target, modes, team identity, agent dir), with nothing of an ordinary chat
 added (no profile, mode menu, memory, topics, links or session powers, and of the Sova-served tools
-only `project_verbs` with its instance note, which a worker or team member gets and a hidden chat
-doesn't, §app.project-services/callers; each, hidden or not, gets the kill guard, §chat/kill-guard), and
-opens it the way it opens any chat. The parent never starts a worker's process and never talks to
+only `project_verbs` with its instance note, on the rule of §app.project-services/tool-offered, never
+for a hidden chat; each, hidden or not, gets the kill guard, §chat/kill-guard), and
+opens it the way it opens any chat. A worker chat has exactly the built-in tools its loadout lists:
+the rest are excluded and the listed ones are on (no list keeps pi's default set). The parent never starts a worker's process and never talks to
 it directly: the server passes it the parent's task, steers, follow-ups, aborts and stops, and
 passes its events back. A worker never runs inside the server's process.
 
@@ -423,7 +434,7 @@ passes its events back. A worker never runs inside the server's process.
   never stops its workers. When the parent's chat opens again it reattaches every worker of its
   that still runs: `agent_list` and the pane show it with its live status, its transcript so far
   comes from its file, and a run that finished while the parent was away is announced to the parent
-  once (waking it under the worker's `wake`), never twice and never lost. A steer sent after the
+  once, never twice and never lost (§app.chat-processes/worker-reports). A steer sent after the
   reattach reaches the worker once. When a worker's run finishes and no parent chat picks it up
   within 10 seconds, the server opens the parent chat once so that it takes the report, unless the
   parent is archived: archiving cancels a report's pending open, and an archived parent is never
@@ -513,6 +524,7 @@ link (§app.chat-processes/workers) carry the same keys, and the task moves once
 - **Several in one step.** Instructions that land together (steers sent while the worker's reply
   runs reach it at its next step together) each name their own key. The worker's current task starts
   at the last of them, and the reply after them is that task's.
+- **A reply no instruction started** is a report of its own (§app.chat-processes/worker-reports).
 - **Accepted but never ran.** An instruction the worker accepted whose turn never started (Stop
   pressed while it was queued, the worker's process died, a message taken off the queue, a turn that
   failed before it began) is reported plainly: one line in the worker's transcript, "This
@@ -523,6 +535,41 @@ link (§app.chat-processes/workers) carry the same keys, and the task moves once
   (§app.chat-processes/code-generations) has a feed that names no keys, and its parent tells which
   instruction started which reply as it did before: best-effort, from pi's queue and the message
   text.
+
+## §app.chat-processes/worker-reports — What a worker reports after finishing
+
+- **A reply of its own is a new report.** Any reply a worker makes on its own after finishing, whatever
+  woke it (a job's end or anything else), is a report: the worker returns to idle and the report is
+  sent. It is routed like any other report: it starts a turn in the main chat unless the worker was
+  spawned with `wake: false`, and a team member's goes to its coordinator, which wakes the parent only
+  once no teammate is working (§teams.defaults/routing). No rule about jobs quiets it. A reply on the
+  way to a queued instruction isn't one: it behaves as §app.chat-processes/worker-instructions says.
+- **Nothing written.** A run of its own that ends well with nothing written returns the worker to
+  idle, sends nothing and leaves the last report readable. A failed run always reports. If such a run
+  leaves a coordinated team with no one working (the monitor aside) and the coordinator's last finish
+  held back its wake, the main chat gets that wake once, with a one-line note. A quiet coordinator run
+  while a teammate works leaves it owed; a normal wake or a report routed to the coordinator clears it.
+  A main chat mid-run gets no such wake, and a reload forgets one owed.
+- **What it carries.** Every final answer since the last report, oldest first; commentary on the way
+  to a tool isn't an answer, unless a report that is owed has nothing else to show. It keeps its newest
+  answer and the 32 before it, those at most 2 MB; older ones drop with no note. Its first line stays
+  the earlier answer's. A long report is a preview with a pointer to the whole text. The preview, the
+  whole text, the coordinator's subject and the read-back (`agent_transcript`) show the same answers.
+  The read-back shows the latest report, even a short one.
+- **After a reload.** A missed report (§app.chat-processes/workers) carries everything written since
+  the last recorded report, with no limit on how many, and is routed the same way, however old; a
+  missed failed run reports as a failure. A reload also restores every idle worker's whole latest
+  report, so the read-back never says "(no output for this task)" when the worker answered its latest
+  instruction; an older record, or a restored worker with no process, gives its newest answer. Past
+  records are not rewritten. A worker mid-run during a reload includes answers written before it in
+  its next report, each exactly once, unless a steer's run comes first. If the file can't place that
+  settle, the report is what the feed showed or, with nothing shown, what the file holds up to its end.
+- **Jobs still running.** A report made while the worker has jobs running gets a line after the answer
+  naming them and their commands, for example "Still running: j2 (npm run serve), 8m. It wakes this
+  worker when it ends." A job that has ended but still owes its wake card reads "Just ended: j3 (npm
+  test). Its end card wakes this worker." Durations read like the end cards: `8m`, `8m12s`. The line
+  doesn't imply the work is unfinished. It appears in the completion, the read-back (with `full`, in
+  its header) and `agent_wait`, and on screen only inside the report's own text.
 
 ## §app.chat-processes/boot-log — A chat's start leaves a trail
 

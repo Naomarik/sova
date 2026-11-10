@@ -403,6 +403,10 @@ input.input { text-overflow: ellipsis; }
 .banner-main  { flex: 1 1 12rem; min-width: 0; }
 .banner-title { font-weight: var(--fw-semibold); margin: 0 0 var(--space-1); color: var(--color-ink); }
 .banner-body  { margin: 0; color: var(--color-ink-2); }
+.banner-title:last-child { margin-bottom: 0; }
+.banner-compact { padding: var(--space-2) var(--space-3); align-items: center; gap: var(--space-2); }
+.banner-compact .banner-icon { margin-top: 0; }
+@media (pointer: fine) { .banner-compact .banner-action .button-sm { min-height: 28px; } } /* touch keeps the full 36px target */
 .banner-icon  { flex: none; margin-top: 1px; }
 .banner-action{ flex: none; align-self: center; }
 
@@ -672,6 +676,12 @@ input.input { text-overflow: ellipsis; }
   color: inherit;
 }
 .list-row:last-child { border-bottom: 0; }
+/* A list given a rounded edge: its end rows take its corners, so a row's hover or selected fill never pokes past
+   them (radius, not overflow, so nothing the row opens is clipped). A paragraph in a row keeps no margin of its
+   own: the row's gaps space it. */
+.list > .list-row:first-child { border-start-start-radius: inherit; border-start-end-radius: inherit; }
+.list > .list-row:last-child { border-end-start-radius: inherit; border-end-end-radius: inherit; }
+:where(.list-row) p { margin: 0; }
 /* A row that acts instead of navigating is a <button> wearing the row: undo the UA's
    button box so it sits in the list like the links around it. */
 button.list-row { width: 100%; border: 0; background: none; text-align: left; }
@@ -764,12 +774,18 @@ button.list-row { width: 100%; border: 0; background: none; text-align: left; }
   border-radius: var(--r-xl);
   background: var(--color-surface);
   box-shadow: var(--shadow-3);
-  overflow: hidden;
+  /* clip, not hidden (as .app): a hidden box still scrolls programmatically, so focusing a
+     control whose box overflows it (a visually hidden input) slid the head, body and foot up
+     inside the frame, left a blank under the foot, and nothing scrolled it back. Only the
+     dialog's own scroll areas (.modal-body, .settings-panel) ever scroll. */
+  overflow: clip;
   animation: enter-fade var(--dur-base) var(--ease-standard);
 }
 .modal-head { padding: var(--space-4); border-bottom: var(--stroke-thin) solid var(--color-border); }
 .modal-title{ font-size: var(--fs-heading-m); line-height: var(--lh-heading-m); font-weight: var(--fw-semibold); margin: 0; }
-.modal-body { padding: var(--space-4); color: var(--color-ink-2); overflow-y: auto; display: flex; flex-direction: column; gap: var(--space-4); }
+/* `relative`: anything absolute inside with no nearer positioned ancestor (.visually-hidden) stays
+   in this scroller's content, so focusing it scrolls this, never the frame. */
+.modal-body { position: relative; padding: var(--space-4); color: var(--color-ink-2); overflow-y: auto; display: flex; flex-direction: column; gap: var(--space-4); }
 .modal-foot {
   display: flex;
   gap: var(--space-2);
@@ -949,6 +965,10 @@ button.list-row { width: 100%; border: 0; background: none; text-align: left; }
   min-height: var(--tap-min);
   cursor: pointer;
   font-size: var(--fs-body);
+  /* The hidden box's containing block: without it the box resolved against the nearest positioned
+     ancestor (a dialog's frame), sat at its row's un-scrolled place, and focusing it scrolled
+     that ancestor instead of bringing its row into view. */
+  position: relative;
 }
 .toggle input { position: absolute; opacity: 0; width: 0; height: 0; }
 .toggle-box {
@@ -1066,6 +1086,8 @@ button.list-row { width: 100%; border: 0; background: none; text-align: left; }
 .settings-tab:focus-visible { outline: var(--focus-ring); outline-offset: calc(var(--focus-offset) * -1); }
 
 .settings-panel {
+  /* As .modal-body: a hidden box inside stays in the panel's scroll content. */
+  position: relative;
   padding: var(--space-4);
   overflow-y: auto;
   display: flex;
@@ -5592,6 +5614,37 @@ button.subagents-usage:focus-visible { outline: var(--focus-ring); outline-offse
   gap: var(--space-1);
   border-bottom: var(--stroke-thin) solid var(--color-border);
   overflow-x: auto;
+  scroll-padding-inline: var(--space-7);
+}
+/* While tabs are hidden past an edge, that edge fades, and only then: a mask driven by the strip's own sideways
+   scroll, no script. A browser without scroll timelines (Firefox) draws the same mask from data-overflow-start and
+   data-overflow-end, which one shared script sets on every strip (Sova: src/lib/tabs-overflow.ts). The bottom 3px
+   stay whole, so the selected tab's underline and the strip's rule never fade; scroll-padding keeps a tab scrolled
+   into view clear of it. */
+@property --tabs-fade-start { syntax: "<length>"; inherits: false; initial-value: 0px; }
+@property --tabs-fade-end { syntax: "<length>"; inherits: false; initial-value: 0px; }
+@keyframes tabs-fade {
+  from { --tabs-fade-start: 0px; --tabs-fade-end: var(--space-7); }
+  10%, 90% { --tabs-fade-start: var(--space-7); --tabs-fade-end: var(--space-7); }
+  to { --tabs-fade-start: var(--space-7); --tabs-fade-end: 0px; }
+}
+@supports (animation-timeline: scroll()) {
+  .tabs {
+    mask: linear-gradient(to right, transparent, black var(--tabs-fade-start), black calc(100% - var(--tabs-fade-end)), transparent) 0 0 / 100% 100% no-repeat,
+      linear-gradient(black, black) 0 100% / 100% 3px no-repeat;
+    animation: tabs-fade linear both;
+    animation-timeline: scroll(self inline);
+  }
+}
+@supports not (animation-timeline: scroll()) {
+  .tabs:is([data-overflow-start], [data-overflow-end]) {
+    --tabs-fade-start: 0px;
+    --tabs-fade-end: 0px;
+    mask: linear-gradient(to right, transparent, black var(--tabs-fade-start), black calc(100% - var(--tabs-fade-end)), transparent) 0 0 / 100% 100% no-repeat,
+      linear-gradient(black, black) 0 100% / 100% 3px no-repeat;
+  }
+  .tabs[data-overflow-start] { --tabs-fade-start: var(--space-7); }
+  .tabs[data-overflow-end] { --tabs-fade-end: var(--space-7); }
 }
 .tab {
   min-height: var(--tap-min);

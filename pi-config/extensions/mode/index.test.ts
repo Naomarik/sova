@@ -512,6 +512,8 @@ test("spec: the prompt names the trusted tools, their real flags, and the draft 
 	}
 	// Task reading pulls: contents, then one passage; whole-chain packet/scope remain machine inspection.
 	assert.match(short, /only reads: `where <path\|name\|topic words>`, `map`, `toc '<§id>' --dir out\|in\|down\|up\|mentions`, `read '<§id>' \[--whole\] \[--no-frame\]`, `impact '<§id>' \[--near\]`; `--cursor <next>` continues a page\./);
+	// Sova's read-only `spec` tool runs the same reads; the shell line stays for the write tools and other projects.
+	assert.match(short, /`--cursor <next>` continues a page\. A `spec` tool, if offered, runs these same reads without a shell\./);
 	assert.match(writing, /also takes `check`, `census`, and whole-chain `packet`\/`scope '<§id>'` \(machine inspection\); `--spec <dir>` reads a draft\./, "machine inspection rides with the writing procedure");
 	for (const cmd of ["foreign", "map", "where", "toc", "read"]) assert.doesNotMatch(usage("sova-spec.mjs", cmd), /unknown command/, `${cmd} is a core command`);
 	assert.doesNotMatch(spec, /--budget/, "every default budget fits a passage: the guide spends no words on it");
@@ -803,6 +805,15 @@ test("delegate prompt names every profile's exact worker and leaves no placehold
 	assert.match(prompt, /never substitute one of your own/);
 	assert.match(prompt, /When the user names a backend, model or effort for a task, that choice wins over the profile/);
 	assert.match(prompt, /a spawn they refuse is reported to the user, not rerouted/);
+});
+
+test("delegate prompt: every team member is named with a kind under a routing profile; under Off the kind is optional", () => {
+	const routed = buildDelegatePrompt(ALL_OK);
+	assert.match(routed, /Name a kind for every team member \(kind: planning, investigation, routine or complex\), picked by these same rules: Sova runs it on that kind's model above, or its fallback, and tells its Planning & specs and Investigation members not to edit; name a member model only when the user gave one\./);
+	assert.doesNotMatch(routed, /kind[^.]*is optional here/);
+	const off = buildDelegatePrompt([]);
+	assert.match(off, /A team member's kind \(kind: planning, investigation, routine or complex\) is optional here: no profile routes it/);
+	assert.doesNotMatch(off, /Name a kind for every team member/, "Off never says a kind is required");
 });
 
 test("delegate prompt discloses a fallback and asks when a profile has no worker", () => {

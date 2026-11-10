@@ -45,7 +45,8 @@
       "server/harness/pi/contract.test.ts",
       "server/chat-runtime/supervisor.test.ts",
       "server/chat-runtime/trial-s5-generations.integration.test.ts",
-      "server/chat-host.test.ts"
+      "server/chat-host.test.ts",
+      "server/harness/pi/own-code-modes.test.ts"
     ],
     "requires": [
       "§app.chat-processes/supervision",
@@ -53,7 +54,8 @@
     ],
     "agreed": {
       "by": "naomarik",
-      "at": "2026-10-13T12:56Z"
+      "at": "2026-11-05T05:46Z",
+      "source": "pi-session:144e6ae4-8742-4902-b7f2-31eecad9142b#5844cea0"
     }
   },
   "§app.chat-processes/code-pickup": {
@@ -78,18 +80,22 @@
       "src/lib/unacked-sends.ts",
       "src/lib/unacked-sends.test.ts",
       "server/background-jobs-capture.ts",
-      "server/chat-runtime/trial-jobs-tj2.integration.test.ts"
+      "server/chat-runtime/trial-jobs-tj2.integration.test.ts",
+      "server/chat-runtime/mirror.ts",
+      "shared/chat-runtime.ts",
+      "server/chat-shell.ts",
+      "server/chat-runtime/host.test.ts"
     ],
     "requires": [
       "§app/chat-processes",
       "§app.chat-processes/supervision"
     ],
+    "evidence": "verified",
     "agreed": {
-      "by": "omar",
-      "at": "2026-11-04T10:59Z",
-      "source": "pi-session:05fd96dc-df16-4b9a-83b9-6ddf700c2ffc#8ffa61c9"
-    },
-    "evidence": "verified"
+      "by": "naomarik",
+      "at": "2026-11-07T12:38Z",
+      "source": "pi-session:01a1b2ec-ac6a-73d4-9fe9-b83cb85cdc7f#008f8e00"
+    }
   },
   "§app.chat-processes/crash": {
     "kind": "behavior",
@@ -159,19 +165,22 @@
       "server/chat-runtime/trial-wake-tw1.integration.test.ts",
       "server/background-jobs-capture.ts",
       "server/chat-runtime/trial-jobs-tj1.integration.test.ts",
-      "server/chat-runtime/trial-jobs-tj2.integration.test.ts"
+      "server/chat-runtime/trial-jobs-tj2.integration.test.ts",
+      "server/chat-runtime/mirror.ts",
+      "shared/chat-runtime.ts",
+      "server/chat-shell.ts"
     ],
     "requires": [
       "§app/chat-processes",
       "§app.worker-restore/restore",
       "§app.chat-processes/supervision"
     ],
+    "evidence": "verified",
     "agreed": {
-      "by": "omar",
-      "at": "2026-11-04T11:02Z",
-      "source": "pi-session:05fd96dc-df16-4b9a-83b9-6ddf700c2ffc#a22a19ea"
-    },
-    "evidence": "verified"
+      "by": "naomarik",
+      "at": "2026-11-07T12:38Z",
+      "source": "pi-session:01a1b2ec-ac6a-73d4-9fe9-b83cb85cdc7f#008f8e00"
+    }
   },
   "§app.chat-processes/no-terminal-drawing": {
     "kind": "behavior",
@@ -451,14 +460,50 @@
     "requires": [
       "§app.chat-processes/workers",
       "§app.chat-processes/code-generations",
-      "§app.chat-processes/worker-crash"
+      "§app.chat-processes/worker-crash",
+      "§app.chat-processes/worker-reports"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-10-25T15:55Z",
-      "source": "pi-session:4805896b-dd1c-464a-a653-c071229c3d1c#1f1f2b81"
+      "by": "user",
+      "at": "2026-11-07T03:59Z",
+      "source": "pi-session:01a1b2d6-bea7-73d4-9fe9-b82dc23ae834#98dba469"
     },
     "evidence": "verified"
+  },
+  "§app.chat-processes/worker-reports": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "code": [
+      "pi-config/extensions/subagents/chat-worker.ts",
+      "pi-config/extensions/subagents/contracts.ts",
+      "pi-config/extensions/subagents/fold.ts",
+      "pi-config/extensions/subagents/index.ts",
+      "pi-config/extensions/subagents/job-store.ts",
+      "pi-config/extensions/subagents/worker-transcript.ts",
+      "pi-config/extensions/subagents/README.md",
+      "pi-config/extensions/subagents/chat-worker.test.ts",
+      "pi-config/extensions/subagents/index.test.ts",
+      "pi-config/extensions/subagents/still-running.test.ts",
+      "pi-config/extensions/subagents/worker-settle.test.ts",
+      "pi-config/extensions/subagents/worker-settle-order.test.ts",
+      "pi-config/extensions/subagents/worker-settle-reload.test.ts",
+      "pi-config/extensions/subagents/worker-settle-report.test.ts",
+      "scripts/chat-runtime-trial/run.mjs",
+      "server/chat-runtime/trial-jobs-tj6.integration.test.ts",
+      "server/reports.test.ts"
+    ],
+    "requires": [
+      "§app.chat-processes/workers",
+      "§app.chat-processes/worker-instructions",
+      "§teams.defaults/routing",
+      "§app.background-jobs/end-card"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-07T03:59Z",
+      "source": "pi-session:01a1b2d6-bea7-73d4-9fe9-b82dc23ae834#98dba469"
+    },
+    "evidence": "reviewed"
   },
   "§app.chat-processes/workers": {
     "kind": "behavior",
@@ -507,7 +552,8 @@
       "server/wake-keeper-live.ts",
       "server/chat-runtime/trial-wake-tw5.integration.test.ts",
       "server/background-jobs.ts",
-      "server/chat-runtime/trial-jobs-tj3.integration.test.ts"
+      "server/chat-runtime/trial-jobs-tj3.integration.test.ts",
+      "server/harness/pi/worker-tools.test.ts"
     ],
     "requires": [
       "§app/chat-processes",
@@ -515,12 +561,13 @@
       "§app.load-priority/workers",
       "§app/worker-restore",
       "§app.mcp/who-gets",
-      "§chat/kill-guard"
+      "§chat/kill-guard",
+      "§app.chat-processes/worker-reports"
     ],
     "agreed": {
-      "by": "omar",
-      "at": "2026-11-04T11:02Z",
-      "source": "pi-session:05fd96dc-df16-4b9a-83b9-6ddf700c2ffc#a22a19ea"
+      "by": "naomarik",
+      "at": "2026-11-07T17:25Z",
+      "source": "pi-session:4f394f82-707c-4335-a9f0-dfacbbbe4a11#d57957c0"
     },
     "evidence": "verified"
   },

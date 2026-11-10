@@ -11,6 +11,7 @@ import { after } from "node:test";
 import type { MergeEntry } from "../../../shared/merge-queue";
 import { type HarnessOptions, type QueueHarness, startHarness } from "./harness";
 import { Fixture, git } from "./repo";
+import { checkReviewText } from "../review-verdict";
 
 process.env.PI_CODING_AGENT_DIR = realpathSync(mkdtempSync(join(tmpdir(), "sova-mq-agent-")));
 export const STATE = process.env.PI_CODING_AGENT_DIR;
@@ -36,7 +37,8 @@ export async function setup(fo: ConstructorParameters<typeof Fixture>[0] = {}, h
 export const LIST_PLUS = (extra: string) => `alpha\nbravo\ncharlie\n${extra}\n`;
 export const APP = (three: string) => `line 1\nline 2\n${three}\nline 4\nline 5\nline 6\nline 7\nline 8\n`;
 export const mergeCopyOf = (fx: Fixture) => join(fx.parent, ".worktrees", `${fx.name}-merge`);
-export const FINAL = ["landed", "needs-fix", "behaviour-differs", "review-flagged", "unattributed", "drafts-changed", "cancelled"] as const;
+/** with-chat: back with its chat (al_3), until the chat answers; needs-user: a decision waits for the user. */
+export const FINAL = ["landed", "needs-fix", "with-chat", "needs-user", "behaviour-differs", "review-flagged", "unattributed", "drafts-changed", "cancelled"] as const;
 /** Settled: a state the entry won't leave by itself, and a landing's push decided (pushed, held, refused). */
 export const settled = (e: MergeEntry) => (FINAL as readonly string[]).includes(e.state) && (e.state !== "landed" || (!!e.landed && e.landed.pushed !== "pending"));
 /** The newest whole run of `script` (no selectors) since `mark`: the commit the check ran on. */
@@ -75,7 +77,13 @@ export const reviewer: HarnessOptions["reviewer"] = async ({ commit, copy }) => 
   const c = git(copy, ["show", `${commit}:review.conf`]).trim();
   if (c === "crash") return "crash";
   if (c === "hang") return "hang";
-  if (c.startsWith("blocking")) return { verdict: "blocking", text: c.slice(9).trim() };
-  if (c.startsWith("notes")) return { verdict: "notes", text: c.slice(6).trim() };
+  // As merge.review takes it (routes.ts): checked, its findings parsed; a bare text is its summary and one finding.
+  const said = (verdict: "notes" | "blocking", t: string) => {
+    const r = checkReviewText(verdict, t.includes("\n- [") ? t : `${t}\n- [other] ${t}`);
+    if ("why" in r) throw new Error(`the stand-in review is malformed: ${r.why}`);
+    return { verdict, text: r.text, summary: r.summary, findings: r.findings };
+  };
+  if (c.startsWith("blocking")) return said("blocking", c.slice(9).trim());
+  if (c.startsWith("notes")) return said("notes", c.slice(6).trim());
   return { verdict: "ok" };
 };

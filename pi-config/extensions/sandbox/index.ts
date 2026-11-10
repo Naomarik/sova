@@ -55,6 +55,8 @@ const FLAG = "sandbox";
 const PARENT_FLAG = "sandbox-parent";
 /** Set by Sova when the session runs in the home folder because its own folder is gone: the cwd is not a writable root. */
 const CWD_NOT_WRITABLE_FLAG = "sandbox-cwd-not-writable";
+/** Set by Sova on a chat whose tools may write nowhere but their tmp (the merge thread): the read-only level, whatever the policy file says. */
+const READ_ONLY_FLAG = "sandbox-read-only";
 const STATUS_KEY = "sandbox";
 /** remote/workers.ts: a session on a target runs its tools there, and remote owns the seven names. */
 const REMOTE_SESSION_EVENT = "remote:session";
@@ -88,6 +90,11 @@ export default function sandbox(pi: ExtensionAPI) {
 
 	pi.registerFlag(CWD_NOT_WRITABLE_FLAG, {
 		description: "The session's cwd is a stand-in for a folder that is gone (Sova sets it): never a writable root while the sandbox is on",
+		type: "boolean",
+	});
+
+	pi.registerFlag(READ_ONLY_FLAG, {
+		description: "Run at the read-only level whatever the policy file says (Sova sets it): while the sandbox is on, only the session tmp is writable. It only tightens",
 		type: "boolean",
 	});
 
@@ -182,7 +189,7 @@ export default function sandbox(pi: ExtensionAPI) {
 		if (typeof parentScope === "string") return { ok: false, reason: parentScope };
 		// The same resolution Sova's server makes for this session (session-policy.ts).
 		const cwdWritable = pi.getFlag(CWD_NOT_WRITABLE_FLAG) !== true;
-		const resolved = resolveSessionPolicy({ agentDir: agentDir(), cwd, sessionId, tmpDir, parent: parentScope, worktreeRoots, backend, ...(cwdWritable ? {} : { cwdWritable: false }) });
+		const resolved = resolveSessionPolicy({ agentDir: agentDir(), cwd, sessionId, tmpDir, parent: parentScope, worktreeRoots, backend, ...(cwdWritable ? {} : { cwdWritable: false }), ...(pi.getFlag(READ_ONLY_FLAG) === true ? { readOnly: true } : {}) });
 		if (!resolved.ok) return { ok: false, reason: resolved.error };
 		const policy = resolved.value;
 		if (policy.outsideParent) {
@@ -233,13 +240,22 @@ export default function sandbox(pi: ExtensionAPI) {
 		registered = "stock";
 	}
 
-	function emitState(): void {
-		const on = active.on && !remote;
+	/** `starting`: the sandbox is being turned on, so a command the session starts itself is confined (or
+	 *  refused) from now on, before the snapshot that confines the tools (§chat.sandbox/states). */
+	function emitState(starting = false): void {
+		const on = (starting || active.on) && !remote;
 		const workersOff = !on && active.workers === "off" && !remote;
 		const event: SandboxStateEvent = { version: 1, on, ...(workersOff ? { workers: "off" as const } : {}), extensionPath: SELF_DIR, enforcement: on ? active.enforcement : "none" };
 		// Every worker start asks this (§chat.sandbox/workers, §chat.worktrees/workers); a remote session has none.
 		if (!remote) event.workerLaunch = (req) => workerLaunch(on, workersOff, req);
-		if (!remote) event.scope = { worktreeRoots: [...worktreeRoots], ...(parentScope && typeof parentScope === "object" ? { parent: parentScope } : {}) };
+		if (!remote)
+			event.scope = {
+				worktreeRoots: [...worktreeRoots],
+				...(parentScope && typeof parentScope === "object" ? { parent: parentScope } : {}),
+				...(typeof parentScope === "string" ? { invalid: parentScope } : {}),
+				...(pi.getFlag(CWD_NOT_WRITABLE_FLAG) === true ? { cwdWritable: false as const } : {}),
+				...(pi.getFlag(READ_ONLY_FLAG) === true ? { readOnly: true as const } : {}),
+			};
 		pi.events?.emit(SANDBOX_STATE_EVENT, event);
 	}
 
@@ -327,6 +343,7 @@ export default function sandbox(pi: ExtensionAPI) {
 				registerConfined();
 				active = { version: 1, on: true, level: active.level, backend: "none", enforcement: "none", reasons: [NOT_ON_REMOTE] };
 			} else {
+				emitState(true);
 				const provisional = record === true || (record === "if-changed" && !active.on);
 				if (provisional) {
 					active = { version: 1, on: true, level: active.level, backend: backend.id, enforcement: "unavailable", reasons: [SANDBOX_STARTING] };

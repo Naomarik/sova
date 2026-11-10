@@ -1,6 +1,7 @@
 // /explain artifacts: what the report row, the per-session strip and the Explanations page's cards
 // need to know about them. No fetching here — the transcript carries `explain`, the app polls the store.
 
+import { createSignal } from "solid-js";
 import type { ExplanationInfo, ReportInfo, TranscriptItem } from "../../shared/protocol";
 import { modelLabel, relativeTime } from "./format";
 
@@ -13,8 +14,24 @@ export const THUMB_WIDTH = 1280;
  */
 export const appTheme = (): "dark" | "light" => (document.documentElement.dataset.theme === "light" ? "light" : "dark");
 
-/** The standalone page for one explanation, in the theme the app is wearing. */
-export const explainHref = (id: string) => `/explain/${encodeURIComponent(id)}?theme=${appTheme()}`;
+/** `appTheme` as a signal: it follows `<html data-theme>` as it changes (an Auto switch, a pick),
+    so a link or thumbnail drawn before the switch wears the theme on screen now. One observer for
+    the page, made on first use; a document without `MutationObserver` reads the attribute once. */
+let watched: (() => "dark" | "light") | undefined;
+export function liveAppTheme(): "dark" | "light" {
+  if (!watched) {
+    const [theme, setTheme] = createSignal(appTheme());
+    if (typeof MutationObserver === "function") {
+      new MutationObserver(() => setTheme(appTheme())).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+    }
+    watched = theme;
+  }
+  return watched();
+}
+
+/** The standalone page for one explanation, in the theme the app is wearing — read live, so an
+    href drawn in JSX follows a switch. */
+export const explainHref = (id: string) => `/explain/${encodeURIComponent(id)}?theme=${liveAppTheme()}`;
 
 /** The explanation a report row carries, when it is an explain-doc row. */
 export const explainOf = (r: ReportInfo): ExplanationInfo | undefined => r.explain;

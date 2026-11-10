@@ -352,6 +352,33 @@ test("a definition edited in a session's worktree runs as written, and reconcile
   git(["worktree", "remove", "--force", wt]);
 });
 
+test("teardown keeps a worktree it cut while it holds what can't be rebuilt: an ignored file or a nested repository", async () => {
+  // The ignore rule lives in the repository's own exclude file, so the fixture's tracked files stay as they are.
+  writeFileSync(join(project, ".git", "info", "exclude"), "local.env\nnode_modules\n");
+  const k = shaped(await engine.run("create", { project, branch: "sova/keep" }, op));
+  assert.equal(k.ok, true, JSON.stringify(k.error));
+  writeFileSync(join(k.checkout!, "local.env"), "TOKEN=x\n");
+  mkdirSync(join(k.checkout!, "node_modules", "pkg"), { recursive: true });
+  const td = shaped(await engine.run("teardown", { instance: k.instance }, op));
+  assert.equal(td.ok, true, JSON.stringify(td.error));
+  const step = td.steps.find((s) => s.id === "worktree");
+  assert.equal(step?.result, "skipped");
+  assert.match(step!.detail ?? "", /^kept .*: Holds what can't be rebuilt: 1 ignored file: local\.env\.$/);
+  assert.ok(existsSync(join(k.checkout!, "local.env")), "the ignored file stays");
+  // Only rebuildable folders left: the next teardown of a copy there removes it, as before.
+  rmSync(join(k.checkout!, "local.env"));
+  const k2 = shaped(await engine.run("create", { project, branch: "sova/keep" }, op));
+  assert.equal(k2.checkout, k.checkout, "the kept worktree is reused");
+  mutateRegistry((r) => {
+    const rec = r.instances.find((i) => i.id === k2.instance);
+    if (rec) rec.cutWorktree = true;
+  });
+  const td2 = shaped(await engine.run("teardown", { instance: k2.instance }, op));
+  assert.equal(td2.steps.find((s) => s.id === "worktree")?.result, "done", JSON.stringify(td2.steps));
+  assert.ok(!existsSync(k.checkout!));
+  writeFileSync(join(project, ".git", "info", "exclude"), "");
+});
+
 test("reset gives fresh data; down keeps it; teardown deletes it and keeps the branch", async () => {
   const rec = readRegistry().instances.find((i) => i.id === a.instance)!;
   assert.equal(await engine.probeHook(rec, ["write", "tok"]), 0);

@@ -4,6 +4,159 @@ What changed in each Sova release, newest first: the highlights, written by hand
 list. The install command installs the newest release (the `stable` tag); `SOVA_REF=vX.Y.Z` installs
 or keeps one release. How a release is cut: [CONTRIBUTING.md](CONTRIBUTING.md#releases).
 
+## v0.13.0 — 2026-11-09
+
+One Profiles tab for how a chat starts and which models it uses, a merge queue that gets fixes made
+by the branch's own chat, and charts you can look at in other ways. 191 commits since v0.12.0.
+The highlights:
+
+- **Profiles.** Settings → Profiles replaces the Subagents tab and is the one place profiles are
+  listed and edited. A profile now has two parts: **When a Chat Starts** (modes, tools, a first
+  message) and **Models** (the chat's own model and effort, and its helpers). A chat can switch its
+  whole Models part at any time from the mode menu, or from the usage-limit row when a provider runs
+  out. It either all switches or nothing does, and it waits for a running reply to end. Each
+  computer has one default profile, set with **Make Default**. It decides everything a new chat
+  starts with, and replaces the separate default modes, new-session model and default subagent
+  profile.
+- **The merge queue fixes more by itself.** After your Land, a failing check, a conflict or a review
+  finding that belongs to the branch goes back to the branch's chat as a request. The chat answers
+  Fixed, Needs you or Can't, and the branch goes back in line by itself, up to 3 tries. Your one
+  Land covers those fixes. You are only stopped for your own decisions, on the branch's card.
+- **Review cards and the Merge Queue tab.** A blocking review now shows as a Review found issues card
+  in the chat that has to fix it, with the reviewer's whole report, and Landed keeps the review's
+  notes. The Merge Queue tab shows Checking now and Waiting on every tab, over tabs for Ready to
+  land, Needs you, With its chat, Landed and Queue chats. Each tab has its own address, so reload
+  and Back keep it.
+- **Charts.** A chart in a chat or a share can be switched to another view (Bar, Line, Parts and
+  more, where they fit its data), with Log, Sort and % toggles, kept for the tab. **Copy** on a
+  drawing now copies it as a picture while the drawing shows, and the source while Source is open.
+- **Teams.** Every team now gets Sova's coordinator and monitor. Team members follow Delegate's four
+  work kinds, so a member named with a kind runs on your profile's model for that kind. A team's
+  question now reaches its chat at once, and ends the chat's wait for the team.
+- **Which branch, which project.** Each branch row in a chat has a line naming its project and where
+  it merges; tap it for the exact folders. Land's confirmation, the queue card and request cards name
+  the project too.
+- **Smaller changes.** A project card's Copies row draws one pip per place (running, stopped, used
+  elsewhere or free), so it no longer looks like there's room when there isn't. The Context tab says
+  Partly read, with the line count, for a skill that was only skimmed. The Settings dialog is bigger
+  on wide windows and no longer slides inside its frame when you click a switch low in a long list.
+  Tab strips fade at an edge only while tabs are hidden past it, in Firefox too.
+
+**What you may need to do:** Look for Settings → Subagents under **Settings → Profiles**, in a
+profile's Models part. **Make Default** replaces saving a default in each place, and a model you pick
+in a new chat's composer no longer becomes the default; until you choose one, your saved defaults
+keep working as they are. The Settings switches for a team's coordinator
+and monitor are gone. Land, a decision's answers, Cancel and Remove from Queue now pass only from
+your own page in Sova or your own words in the branch's chat, so a script or a card's command that
+pressed them is refused.
+
+Going back to `v0.12.0` (`SOVA_REF=v0.12.0`) keeps your settings, profiles and sessions. Sova also
+writes your chosen default into the older settings, so it carries over. The Models part's own model
+for a chat has no effect there, and the Subagents tab comes back in place of Settings → Profiles.
+
+## v0.12.0 — 2026-11-07
+
+Light, Dark and Auto themes, an Extensions tab in Settings, Time Spent for each chat, shell mode
+in the composer, and Sova running chat modes itself. 329 commits since v0.11.0.
+The highlights:
+
+- **Light, Dark and Auto.** Settings → Themes now has Appearance at the top: Light, Dark or Auto,
+  where Auto follows your system and switches with it, no reload. Pick one dark theme and one light
+  theme from two lists shown as card grids, Dark first. A pick takes effect at once in the list
+  that's showing. Each pick is saved per browser and painted before the first frame, so a reload
+  never flashes the other theme. Open tabs follow a change made in another tab, fonts and text size
+  included.
+- **Settings → Extensions.** A new tab lists this computer's extensions, one state per row
+  (Waiting for You, Changed, Running, Stopped and the rest). **Add Extension** picks a folder.
+  Nothing runs until you approve it after a Review. Sova starts each extension's program itself and
+  offers Start, Restart Program and View Log. When an extension's code changes, its page goes off
+  until you approve the new version. A message an extension sends shows its name badge, and an
+  extension can never act as you.
+- **Time Spent.** The session pane has a Time Spent tab, between Usage and Context. It shows how
+  long you've been with the chat and how long its agent has worked, split into Reading, Typing, Dictating, Reviewing
+  Changes and more, with a line per alignment. With **Label your messages** turned on in Settings →
+  Decisions (off by default), each message you send gets a label (Specifying, Directing, Reworking,
+  Asking), and **Your Messages** shows where your time went.
+- **Type anywhere, shell mode and Esc.** Typing a character while focus isn't in a text field puts
+  it in the composer, at its caret; nothing is sent. Type `!` in an empty composer to switch it to
+  shell mode: the line runs as a command in the chat's folder instead of going to the model, and
+  Send reads Run. A running command shows in a bar with Show Output. A plain **Esc** in the composer
+  now stops the reply, like Stop, and leaves what you've typed alone.
+- **Chat modes.** Sova now runs chat modes and minor modes itself. Settings → Experimental has the
+  switch, **Sova runs chat modes**, on by default; turn it off to go back to the old way. Spec is now
+  an ordinary minor mode you turn on or off in a project chat's mode menu. Mode commands such as
+  `/mode delegate` are typed in a chat's composer and Sova answers them; you can keep personal modes
+  of your own in `~/.pi/agent/sova/minor-modes/`. Sova no longer supports modes in a pi terminal session.
+- **Merge queue.** The merge thread runs read-only in a sandbox. Restarts, live checks, conflict
+  fixes and test runs are done by Sova for it. The merge thread's chat has a Run Logs chip with its
+  size and Clean Logs… (asks first). Removing a worktree now keeps it when it holds something git
+  can't bring back, such as an ignored file or a nested repository, and offers Remove Anyway.
+- **Smaller changes.** Home's project cards show memory as one bar: chats and running copies
+  together. A message typed before a new chat has connected is sent, not lost. Only chats whose
+  project has a running-copy setup are offered the project tools. The Context sheet keeps loaded
+  rows when its list is long. Worker reports after a reload or a gap now arrive once and in full.
+  The Docs explain that each chat runs in a process of its own, and new Docs pages cover Themes and
+  Sova extensions. A contributor guide is in the repo.
+
+**What you may need to do:** Esc in the composer now stops a running reply. Switch modes in a Sova
+chat: Sova no longer supports `/mode`, `alt+m` or the mode launch flags in pi's terminal. Extensions you already
+had are approved once at the first start. After that, an extension added or edited outside Settings
+→ Extensions waits for your Review. Your theme choice carries over as your Dark or Light pick.
+
+Going back to `v0.11.0` (`SOVA_REF=v0.11.0`) keeps your settings and sessions as they are, with
+three costs. Each browser goes back to the built-in Dark theme until you pick one again. Extensions
+that Sova was starting from their folder no longer have their program started. Time Spent figures
+and message labels are kept, but v0.11.0 doesn't show them.
+
+## v0.11.0 — 2026-11-06
+
+A Setup chat for your project's pipeline, reminders and jobs that don't need a tab open, a new Home,
+and OpenAI sign-in. 352 commits since v0.10.2. The highlights:
+
+- **Set up with a chat.** A project's merge queue, releases and deploys are now set up by one
+  standing Setup chat per project, in its own worktree. It reads the project, asks what it can't
+  find, and proposes the checks on a branch. A trial of that exact commit must pass before you can
+  Land or Merge Branch it. **Set Up with a Chat** replaces the old form: Initialize, Try It on Main
+  and Save Checks are gone. Any other chat's branch that changes the same setup follows the same
+  rule.
+- **Nothing waits on a tab.** A chat's reminder now fires with no tab open, and Sova brings the chat
+  back for it. Background jobs outlive the chat that started them, and a job's end wakes its chat.
+- **A new Home.** Projects come first, as a grid of cards with icons, each with what needs you, its
+  chats, its running copies and what's in progress.
+- **The landing bar.** A branch's progress through the queue sits in one row at the foot of the
+  sidebar, with its step count, a hover card and a detail panel. On a phone it's one strip.
+- **Merge queue.** Settings → Merge Queue shows every setting for each project. Checks reuse passes
+  from identical code, so landings go faster; the Reuse passes from identical code setting turns
+  that off for a project, and a release always runs in full. Sova makes each conflict's scratch copy
+  itself and removes it. Landed spec drafts stay in their branch's folder and read as landed. After
+  landings the merge thread restarts Sova once the queue is idle, so a landed change goes live on
+  its own.
+- **Needs you.** Every chat's row has a × that dismisses it on all your devices until that chat has
+  something new. Guesses from a chat's last reply now sit in their own group, **Maybe waiting on
+  you**, and never send a phone notification.
+- **Accounts.** Sign in to your ChatGPT subscription from Settings → Accounts, which now has one tab
+  per provider. Each API key is checked before it saves, with Show, Test and Remove. Ollama Cloud's
+  model list is checked daily (or with Check Now), and its included credit is on the usage glance.
+- **The Overseer.** It can pair two chats, which then send each other short notes between turns.
+  Chats Sova names itself, such as a merge or release chat, keep a fixed name.
+- **The mesh.** A copied or moved `peers.json` now keeps the mesh off, so a copy of Sova can't pose
+  as the original. The Mesh page says why, and **Reconnect Here** turns it back on when the move was
+  yours. Mixed versions are refused writes in the areas where they don't match.
+- **Smaller changes.** The Context tab has one row per item with a drill-in sheet, and shows each
+  skill's read state. Settings forms keep focus while you type. On a Mac, dictation gives up on a
+  mic that never starts after 10 seconds, and Sova's window starts through macOS's launcher so the
+  mic permission is the browser's own. The installer runs on your own tools when a mise shim is on
+  your PATH. New Docs pages cover Usage, Teams, Merge queue settings and Release settings.
+
+**What you may need to do:** if the mesh goes off after you moved or restored Sova's state folder,
+press Reconnect Here on the Mesh page. A project not set up yet now starts from Set Up with a Chat.
+
+Going back to `v0.10.2` (`SOVA_REF=v0.10.2`) keeps your settings and sessions as they are, with two
+costs. A project where you turned Reuse passes from identical code off has `"reuse": false` in
+`.sova/project.json`, which v0.10.2 refuses as an unknown key: remove that line first, or the
+project's file won't load there. Reminders and jobs need a tab or a running chat again, and rows you
+dismissed in Needs you come back.
+
 ## v0.10.2 — 2026-11-05
 
 Branch summaries in the merge queue, a Land that asks first, and Tailscale on a Mac with no

@@ -19,10 +19,10 @@ The Overseer is always in the normal mode, with no minor modes, so its composer 
 
 ## What it reads
 
-- **What needs you.** The same news as the sidebar's [Needs you](/docs/needs-you/) list, plus the items worth a decision (a branch ready to land, a reply that seems to ask you something) and what's just for your information (what's running, a session close to its context limit). For a branch ready to land it points you to **Land**: it never lands a branch itself.
+- **What needs you.** The same news as the sidebar's [Needs you](/docs/needs-you/) list, plus the items worth a decision (a branch ready to land) and what's just for your information (what's running, a session close to its context limit). For a branch ready to land it points you to **Land**: it never lands a branch itself.
 - **What's outstanding.** Ask "anything outstanding?" or "what needs me?" and it answers itself, from one roundup of the last 14 days, without starting a session to look: work lost or at risk because its worktree was removed before it merged (with the command that recovers lost commits), questions waiting for you, branches ready to merge, work built but not merged, uncommitted work, and turns that ended in an error. It names every session, and lists what it couldn't check instead of counting it as fine.
 - **Sessions.** The list, narrowed by date or by what a session has (open questions, a branch ready or not merged, an error, a reply that asks you something), with how each one ended; one session's details and what's true of it now; its alignments; and a bounded slice of its transcript, such as your last message through the final reply. It can also search your sessions' messages for a few words. Text it reads from another session is treated as untrusted.
-- **Your setup.** Groups, remote targets, models, subagent profiles, and recent folders.
+- **Your setup.** Groups, remote targets, models, profiles, and recent folders.
 - **Code history and the server log.** Read-only git in any project registered in Sova (status, log, diff, show, branch listing and merge-base), and Sova's own server log. It needs no session to look.
 - **Links.** Every live share, hand-off, owner and preview link, with what it serves and when it expires.
 
@@ -35,9 +35,10 @@ The Overseer is always in the normal mode, with no minor modes, so its composer 
 - **Run extension commands** that an installed extension offers to the Overseer, while that extension is running. Turn the extension off to take its commands away.
 - **Start WhatsApp sending again** when the sender stopped, in a turn you started.
 - **Archive and unarchive** sessions (never a permanent delete), rename them, and move them between groups.
-- **Change a session's** model, mode, or subagent profile.
+- **Change a session's** model, mode, or profile.
 - **Turn a project's own modes on or off** in a session it starts or changes, from the modes that session's checkout ships ([Project modes](/docs/modes/project-modes/)), though not in a session it starts on another Sova host. When it turns on a mode that runs tools or commands, that counts as the approval of them: nothing waits for you, and the approval is recorded as the Overseer's. It never approves a mode's hooks: they wait until you approve them yourself, from the mode menu's **Approve Hooks**.
 - **Answer a dialog** that's waiting in a session Sova runs. The session's transcript shows "Overseer chose: …". It never answers in a session that's open in a terminal.
+- **Pair two chats** on this computer, in the global Overseer. Each may then send the other short notes, which arrive between turns. Nothing else about either chat changes, and you can ask it to end the pairing.
 - **Keep notes for itself.** Standing notes are instructions it reads every turn; it can add to them, and you can edit them in Settings → Overseer.
 - **Keep your ideas and todos.** Say "it'd be nice if…" and it files an idea; say "remind me to…" and it adds a todo. It says what it filed in one line and starts nothing. The **Ideas** and **Todos** buttons in its head open each list.
 - **Write and edit files** wherever it can read, for small changes such as an automation in a project's `.sova/` folder. It leaves code changes to coding sessions, and says what it changed. It never writes Sova's or pi's own files (its settings, your approvals, schedules or sessions), an organization's workspace, or a credentials file. An automation it edits keeps running, as after your own edit.

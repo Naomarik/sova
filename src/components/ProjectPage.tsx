@@ -6,7 +6,7 @@ import type { SessionSummary } from "../../shared/protocol";
 import { ApiError, archiveProject, getProjectPreviews, unarchiveProject } from "../lib/api";
 import { relativeTime } from "../lib/format";
 import { createPoll } from "../lib/poll";
-import { PROJECT_TABS, PROJECTS_HREF, projectTabHref, type ProjectTab } from "../lib/projects-route";
+import { PROJECT_TABS, PROJECTS_HREF, projectTabHref, type ProjectTab, type QueueTab } from "../lib/projects-route";
 import { summaryChips } from "../lib/project-page";
 import { isGap, openIdeas } from "../lib/project-overseer-view";
 import { projectHostOf } from "../lib/mesh";
@@ -91,6 +91,8 @@ export function ProjectPage(props: {
   tab: ProjectTab;
   /** On the Merge Queue tab: one run's page. */
   run?: string;
+  /** On the Merge Queue tab: which of its tabs (on a run's page, the one it was opened from). */
+  queueTab?: QueueTab;
   titleRef(el: HTMLHeadingElement): void;
   onProject(p: ProjectSummary): void;
   refetchProject(): void;
@@ -361,6 +363,8 @@ export function ProjectPage(props: {
               root={project().root}
               name={project().name}
               run={props.run}
+              queueTab={props.queueTab}
+              refreshed={costTick}
               setup={setup}
               // The queue records a chat by its id (an older record by its path); a worker is named as its chat's.
               chatOf={(id) => chatRefOf(id, props.sessions?.())}

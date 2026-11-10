@@ -8,7 +8,8 @@ import { Portal } from "solid-js/web";
 import type { AgentsInsight, AttentionDigest, AttentionItem, ContextInfo, OverseerInfo, SessionGroup, SessionSummary, UsageInsight } from "../../shared/protocol";
 import { OVERSEER_HASH, overseerButtonLabel } from "../lib/overseer";
 import { openOverview } from "../lib/overview-route";
-import { autoTitleSessions, fetchTargets, listProjects, sessionsDir as fetchSessionsDir, setSessionArchived } from "../lib/api";
+import { autoTitleSessions, dismissNeedsYou, fetchTargets, listProjects, sessionsDir as fetchSessionsDir, setSessionArchived, undoDismissNeedsYou } from "../lib/api";
+import { requestListRefresh } from "../lib/list-refresh";
 import { nameableRows, nameLabel, nameSessions, namingIn, setNaming } from "../lib/auto-title";
 import { type ArchiveGroupId, foldersWord, groupByArchiveDate, sessionsWord, startOfDay } from "../lib/archive";
 import { modelLabel, relativeTime, tildePath } from "../lib/format";
@@ -46,7 +47,7 @@ import { cwdLabel, remotePlaceOf, type TargetInfo } from "../lib/remote-session"
 import { recentCount, recentSessions } from "../lib/recent";
 import { itemRow, rowLabels, sessionRow } from "../lib/needs-you-row";
 import { NeedsYouRowView } from "./NeedsYouRow";
-import { isReleaseItem, NEEDS_YOU_KEY, type NeedsYouRow, needsYouCut, needsYouItems, needsYouOpen as needsYouOpenRule, needsYouRows, needsYouShown, needsYouTitle, storedNeedsYouOpen } from "../lib/needs-you";
+import { isReleaseItem, NEEDS_YOU_KEY, type NeedsYouRow, needsYouCut, needsYouItems, needsYouOpen as needsYouOpenRule, needsYouRows, needsYouShown, needsYouTitle, storedNeedsYouOpen, withPressedDismissals } from "../lib/needs-you";
 import { byActivity, type CwdGroup, groupByActivity, groupByCreation } from "../lib/session-order";
 import {
   createGroup,
@@ -1190,6 +1191,18 @@ export function BrandLink(props: { onClick?(e: MouseEvent): void } = {}) {
   );
 }
 
+/** Where focus goes when a Needs you row leaves (§app.session-list/needs-you-dismiss): read before it leaves, moved after. The
+    next row's link, else the previous row's, else the region's head; with the region gone too, the pane's first head. */
+function needsYouFocusAfter(button: HTMLElement): () => void {
+  const region = button.closest<HTMLElement>(".sidebar-needs-you, .org-needs");
+  const links = [...(region?.querySelectorAll<HTMLElement>(".ny-link") ?? [])];
+  const at = links.indexOf(button.closest("li")?.querySelector<HTMLElement>(".ny-link") as HTMLElement);
+  const row = links[at + 1] ?? links[at - 1];
+  const head = region?.closest("details")?.querySelector<HTMLElement>("summary");
+  const pane = button.closest<HTMLElement>(".sidebar-list");
+  return () => (row?.isConnected ? row : head?.isConnected ? head : pane?.querySelector<HTMLElement>("summary"))?.focus();
+}
+
 export function Sidebar(props: {
   sessions: SessionSummary[] | undefined;
   loading: boolean;
@@ -1458,9 +1471,24 @@ export function Sidebar(props: {
    * too, so the search narrows it and its count is always its rows. The open session stays listed.
    */
   // A project's own session joins only for a proposal waiting on you (its Setup chat's): the row with its button.
-  const needsYou = createMemo(() => needsYouRows(props.attention, ordinaryHits(), hits().filter((s) => !isOrdinarySession(s) && here(s))));
+  /** This tab's Dismiss presses, ahead of the server's next digest (§app.session-list/needs-you-dismiss). */
+  const [pressedDismissals, setPressedDismissals] = createSignal<ReadonlyMap<string, number>>(new Map());
+  const attention = createMemo(() => withPressedDismissals(props.attention, pressedDismissals()));
+  /** Presses the server has saved: the first digest after that speaks for them, so another window's Undo holds here too. */
+  const savedPresses = new Set<string>();
+  createEffect(
+    on(
+      () => props.attention,
+      () => {
+        for (const path of savedPresses) setPressed(path, null);
+        savedPresses.clear();
+      },
+      { defer: true },
+    ),
+  );
+  const needsYou = createMemo(() => needsYouRows(attention(), ordinaryHits(), hits().filter((s) => !isOrdinarySession(s) && here(s))));
   /** Its items of no session: a project's failed deploy or an overseer's request to deploy (§app.project-services/deploy-status). */
-  const needsYouProject = createMemo(() => needsYouItems(props.attention, query()));
+  const needsYouProject = createMemo(() => needsYouItems(attention(), query()));
   const needsYouCount = () => needsYou().length + needsYouProject().length;
   /** The blockers, then the softer tier (the turn card's guesses) under its own label. */
   const needsYouHard = createMemo(() => needsYou().filter((r) => !r.soft));
@@ -1468,19 +1496,56 @@ export function Sidebar(props: {
   createEffect(() => setStalled(stalledPaths(props.attention)));
   /** ONE rule for the region and its spine door: rows, and proactivity known and not Off. */
   const showNeedsYou = () => !!props.sessions && needsYouShown(props.overseer?.proactivity, needsYouCount());
-  const needsYouCutNote = () => needsYouCut(props.attention);
+  const needsYouCutNote = () => needsYouCut(attention());
   const needsYouPlaybook = (path: string) => needsYou().find((row) => row.session.path === path)?.playbook;
-  const needsYouDetail = (path: string) => {
-    const r = needsYou().find((row) => row.session.path === path);
-    return r?.detail ? { text: r.detail, title: r.details.join(" ") } : null;
-  };
   /** Needs you's rows as drawn (lib/needs-you-row): a held act's minutes on the list's clock, read at the real time. */
   const needsItemRow = (it: AttentionItem) => itemRow(it, { home: home(), now: Math.max(props.now, Date.now()) });
-  const chatRow = (r: NeedsYouRow, detail: { text: string; title: string } | null) => {
+  const chatRow = (r: NeedsYouRow, sentences?: readonly string[]) => {
     const host = hostOf(r.session.path);
-    return sessionRow(r, { href: sessionHref(r.session.path), home: home(), host: host ? hostLabel(host) : null, detail });
+    return sessionRow(r, { href: sessionHref(r.session.path), home: home(), host: host ? hostLabel(host) : null, ...(sentences ? { sentences } : {}) });
   };
-  const needsChatRow = (r: NeedsYouRow) => chatRow(r, needsYouDetail(r.session.path));
+  const needsChatRow = (r: NeedsYouRow) => chatRow(r);
+  const setPressed = (path: string, since: number | null) =>
+    setPressedDismissals((m) => {
+      const next = new Map(m);
+      if (since === null) next.delete(path);
+      else next.set(path, since);
+      return next;
+    });
+  /** The × (§app.session-list/needs-you-dismiss): the row leaves at once, focus moves on, and the toast outlives the region. */
+  const dismissRow = (r: NeedsYouRow, button: HTMLButtonElement) => {
+    const path = r.session.path;
+    const since = r.since;
+    const refocus = needsYouFocusAfter(button);
+    setPressed(path, since);
+    refocus();
+    dismissNeedsYou(path, since)
+      .then(() => {
+        savedPresses.add(path);
+        requestListRefresh();
+        toast("Dismissed.", {
+          key: `needs-you-dismiss:${path}`,
+          action: {
+            label: "Undo",
+            run: async () => {
+              savedPresses.delete(path);
+              setPressed(path, null);
+              try {
+                await undoDismissNeedsYou(path);
+                requestListRefresh();
+              } catch (err) {
+                setPressed(path, since);
+                toast(`Couldn't undo it. ${err instanceof Error ? err.message : String(err)}`);
+              }
+            },
+          },
+        });
+      })
+      .catch((err) => {
+        setPressed(path, null);
+        toast(`Couldn't dismiss it. ${err instanceof Error ? err.message : String(err)}`);
+      });
+  };
   const needsLabels = createMemo(() => rowLabels([...needsYou().map(needsChatRow), ...needsYouProject().map(needsItemRow)]));
   // The Archive splits by date first (Today … Older), then by cwd inside each date section.
   // The date sections move only when the calendar day does, so they read the start of today,
@@ -1617,18 +1682,15 @@ export function Sidebar(props: {
   /** The region counts rows: a project's eye is not one. */
   const orgRowCount = () => regionCount(orgs());
   const orgTotal = () => regionCount(orgSections(all().filter(inOrgs)));
-  const orgNeedsYou = createMemo(() => orgNeedsYouRows(props.attention, orgHits()));
+  const orgNeedsYou = createMemo(() => orgNeedsYouRows(attention(), orgHits()));
   /** Its Needs you items that are no session: projects to pick a main stakeholder for. */
-  const orgItems = createMemo(() => orgProjectItems(props.attention, query()));
+  const orgItems = createMemo(() => orgProjectItems(attention(), query()));
   const orgWaitingCount = () => orgNeedsYou().length + orgItems().length;
-  const orgNeedsYouDetail = (path: string) => {
-    const r = orgNeedsYou().find((row) => row.session.path === path);
-    // r12: an open offer's invitees not reached yet (their hours haven't come) are said after the row's own detail.
-    const waiting = waitingWords(props.attention?.items.find((it) => it.path === path && it.waiting?.length)?.waiting ?? r?.session.baton?.waiting, props.now);
-    const text = [r?.detail, waiting].filter(Boolean).join(" · ");
-    return text ? { text, title: [...(r?.details ?? []), waiting ?? ""].filter(Boolean).join(" ") } : null;
+  /** r12: an open offer's invitees not reached yet (their hours haven't come) are said after the row's own sentences. */
+  const orgChatRow = (r: NeedsYouRow) => {
+    const waiting = waitingWords(attention()?.items.find((it) => it.path === r.session.path && it.waiting?.length)?.waiting ?? r.session.baton?.waiting, props.now);
+    return chatRow(r, [...r.details, waiting ?? ""]);
   };
-  const orgChatRow = (r: NeedsYouRow) => chatRow(r, orgNeedsYouDetail(r.session.path));
   const orgLabels = createMemo(() => rowLabels([...orgNeedsYou().map(orgChatRow), ...orgItems().map(needsItemRow)]));
   const waitingTitle = (k: number) => (k === 1 ? "1 session waiting on you." : `${k} sessions waiting on you.`);
   const orgNeedsTitle = (k: number) =>
@@ -2578,7 +2640,7 @@ export function Sidebar(props: {
                 {/* Keyed by path (lib/for-key): a row is updated in place, never remounted, by a refresh. */}
                 <ForKey each={needsYouHard()} by={(r) => r.session.path}>
                   {(r) => (
-                    <NeedsYouRowView row={needsChatRow(r())} label={needsLabels().get(r().session.path)} current={props.selected === r().session.path}>
+                    <NeedsYouRowView row={needsChatRow(r())} label={needsLabels().get(r().session.path)} current={props.selected === r().session.path} onDismiss={(b) => dismissRow(r(), b)}>
                       {/* A proposed playbook run: its one button, beside the row's link (§app.project-runtime/review). */}
                       <Show when={needsYouPlaybook(r().session.path)}>{(pb) => <MergeRunButton projectId={pb().projectId} run={pb()} />}</Show>
                     </NeedsYouRowView>
@@ -2596,7 +2658,7 @@ export function Sidebar(props: {
                 </p>
                 <ul class="list" aria-labelledby="r-needs-you-soft">
                   <ForKey each={needsYouSoft()} by={(r) => r.session.path}>
-                    {(r) => <NeedsYouRowView row={needsChatRow(r())} label={needsLabels().get(r().session.path)} current={props.selected === r().session.path} />}
+                    {(r) => <NeedsYouRowView row={needsChatRow(r())} label={needsLabels().get(r().session.path)} current={props.selected === r().session.path} onDismiss={(b) => dismissRow(r(), b)} />}
                   </ForKey>
                 </ul>
               </Show>
@@ -2841,7 +2903,7 @@ export function Sidebar(props: {
                   </h3>
                   <ul class="list">
                     <ForKey each={orgNeedsYou()} by={(r) => r.session.path}>
-                      {(r) => <NeedsYouRowView row={orgChatRow(r())} label={orgLabels().get(r().session.path)} current={props.selected === r().session.path} />}
+                      {(r) => <NeedsYouRowView row={orgChatRow(r())} label={orgLabels().get(r().session.path)} current={props.selected === r().session.path} onDismiss={(b) => dismissRow(r(), b)} />}
                     </ForKey>
                     {/* A project's own item (a held act, a conflict to settle, a stakeholder to pick): no session, the row
                         opens the project page. A held act recounts its minutes, and Cancel stands beside the row's link. */}

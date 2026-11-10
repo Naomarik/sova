@@ -9,6 +9,7 @@ import {
 	TEAM_DEFAULTS_FILE_NAME,
 	defaultAgentDir,
 	describeTeamDefaults,
+	effectiveTeamDefaults,
 	parseTeamDefaults,
 	readTeamDefaults,
 	teamDefaultsPath,
@@ -17,8 +18,8 @@ import {
 
 /** The pinned contract, byte for byte as the Settings side writes it. */
 const CONTRACT = `{"version":1,
- "coordinator":{"enabled":true,"role":"coordinator","primary":{"backend":"claude-code","model":"claude-opus-5-5","effort":"medium"},"fallback":null,"instructions":""},
- "monitor":{"enabled":true,"role":"monitor","primary":{"backend":"pi","model":"ollama-cloud/deepseek-v4.1-flash","effort":"low"},"fallback":{"backend":"claude-code","model":"claude-sonnet-5-5","effort":"low"},"contextPct":60,"everyMinutes":10,"usage":{"enabled":true,"pausePct":90,"resumeMarginMinutes":5},"instructions":""},
+ "coordinator":{"role":"coordinator","primary":{"backend":"claude-code","model":"claude-opus-5-5","effort":"medium"},"fallback":null,"instructions":""},
+ "monitor":{"role":"monitor","primary":{"backend":"pi","model":"ollama-cloud/deepseek-v4.1-flash","effort":"low"},"fallback":{"backend":"claude-code","model":"claude-sonnet-5-5","effort":"low"},"contextPct":60,"everyMinutes":10,"usage":{"enabled":true,"pausePct":90,"resumeMarginMinutes":5},"instructions":""},
  "handover":{"retireTimeoutMinutes":10}}`;
 
 const tempDir = () => fs.mkdtempSync(path.join(os.tmpdir(), "pi-subagents-team-defaults-"));
@@ -120,16 +121,44 @@ test("defaultAgentDir follows PI_CODING_AGENT_DIR with ~ expansion, else ~/.pi/a
 	assert.equal(defaultAgentDir({ PI_CODING_AGENT_DIR: "~/x/agent" }), path.join(os.homedir(), "x/agent"));
 });
 
-test("describeTeamDefaults says off, malformed (with every error) or the effective values", () => {
-	assert.match(describeTeamDefaults({ state: "absent", file: "/a/team-defaults.json" }), /^Team defaults: off \(no file at \/a\/team-defaults\.json\)/);
-	const malformed = describeTeamDefaults({ state: "malformed", file: "/a/t.json", errors: ["x: bad", "y: worse"] });
-	assert.match(malformed, /off — \/a\/t\.json is malformed/);
-	assert.match(malformed, /- x: bad\n {2}- y: worse$/);
-	const on = describeTeamDefaults({ state: "ok", file: "/a/t.json", value: DEFAULT_TEAM_DEFAULTS });
-	assert.match(on, /Coordinator: on — role "coordinator", primary claude-code · claude-opus-5-5 · medium, fallback none/);
-	assert.match(on, /Monitor: on — role "monitor", primary pi · ollama-cloud\/deepseek-v4\.1-flash · low, fallback claude-code · claude-sonnet-5-5 · low/);
-	assert.match(on, /every 10 min · wrap-up at 60% context · usage pause at 90%, resume 5 min after reset/);
+test("a saved enabled is accepted when boolean and ignored: it is not part of the value, and false turns nothing off", () => {
+	const parsed = parseTeamDefaults({ version: 1, coordinator: { enabled: false }, monitor: { enabled: false } });
+	assert.ok(parsed.ok, JSON.stringify(parsed));
+	assert.deepEqual(parsed.value, parseTeamDefaults({ version: 1, coordinator: {}, monitor: {} }).value, "the same value as without the key");
+	assert.equal("enabled" in parsed.value.coordinator || "enabled" in parsed.value.monitor, false);
+	assert.equal(parsed.value.monitor.usage.enabled, true, "the usage pause's own switch stays");
+	assert.equal(parseTeamDefaults({ version: 1, monitor: { usage: { enabled: false } } }).ok && parseTeamDefaults({ version: 1, monitor: { usage: { enabled: false } } }).value?.monitor.usage.enabled, false);
+});
+
+const chat = { backend: "pi" as const, model: "test/model", effort: "high" as const };
+
+test("effectiveTeamDefaults always gives a full value: no settings or malformed ones put both roles on the chat's own model with the built-ins", () => {
+	for (const state of [{ state: "absent", file: "/a/team-defaults.json" } as const, { state: "malformed", file: "/a/t.json", errors: ["x: bad"] } as const]) {
+		const now = effectiveTeamDefaults(state, chat);
+		assert.equal(now.chatsOwn, true, state.state);
+		assert.deepEqual(now.value.coordinator, { ...DEFAULT_TEAM_DEFAULTS.coordinator, primary: chat, fallback: null });
+		assert.deepEqual(now.value.monitor, { ...DEFAULT_TEAM_DEFAULTS.monitor, primary: chat, fallback: null });
+		assert.deepEqual([now.value.monitor.contextPct, now.value.monitor.everyMinutes, now.value.monitor.usage, now.value.handover], [60, 10, { enabled: true, pausePct: 90, resumeMarginMinutes: 5 }, { retireTimeoutMinutes: 10 }]);
+	}
+	assert.equal(effectiveTeamDefaults({ state: "absent", file: "/a" }, chat).warning, undefined);
+	assert.match(effectiveTeamDefaults({ state: "malformed", file: "/a/t.json", errors: ["x: bad", "y: worse"] }, chat).warning ?? "", /^Warning: \/a\/t\.json is malformed \(x: bad; y: worse\), so this team's coordinator and monitor run on this chat's own model/);
+	const ok = effectiveTeamDefaults({ state: "ok", file: "/a/t.json", value: DEFAULT_TEAM_DEFAULTS }, chat);
+	assert.deepEqual([ok.chatsOwn, ok.value, ok.warning], [false, DEFAULT_TEAM_DEFAULTS, undefined], "named settings are used as they are");
+});
+
+test("describeTeamDefaults names both roles and the model each uses, never says off", () => {
+	const absent = describeTeamDefaults(effectiveTeamDefaults({ state: "absent", file: "/a/team-defaults.json" }, chat));
+	assert.match(absent, /^Team defaults: no file at \/a\/team-defaults\.json, so both roles use this chat's own model with Sova's built-in values:/);
+	assert.match(absent, /Every team gets this coordinator and monitor from Sova; the chat names only the workers\./);
+	assert.match(absent, /Coordinator: role "coordinator", this chat's own model \(pi · test\/model · high\)/);
+	assert.match(absent, /Monitor: role "monitor", this chat's own model \(pi · test\/model · high\)/);
+	assert.match(absent, /every 10 min · wrap-up at 60% context · usage pause at 90%, resume 5 min after reset/);
+	const malformed = describeTeamDefaults(effectiveTeamDefaults({ state: "malformed", file: "/a/t.json", errors: ["x: bad", "y: worse"] }, chat));
+	assert.match(malformed, /\/a\/t\.json is malformed .*this chat's own model/);
+	assert.match(malformed, /- x: bad\n {2}- y: worse\n/);
+	const on = describeTeamDefaults(effectiveTeamDefaults({ state: "ok", file: "/a/t.json", value: DEFAULT_TEAM_DEFAULTS }, chat));
+	assert.match(on, /Coordinator: role "coordinator", primary claude-code · claude-opus-5-5 · medium, fallback none/);
+	assert.match(on, /Monitor: role "monitor", primary pi · ollama-cloud\/deepseek-v4\.1-flash · low, fallback claude-code · claude-sonnet-5-5 · low/);
 	assert.match(on, /after 10 min/);
-	const off = describeTeamDefaults({ state: "ok", file: "/a/t.json", value: { ...DEFAULT_TEAM_DEFAULTS, coordinator: { ...DEFAULT_TEAM_DEFAULTS.coordinator, enabled: false } } });
-	assert.match(off, /Coordinator: off/);
+	for (const text of [absent, malformed, on]) assert.doesNotMatch(text, /\boff\b/);
 });

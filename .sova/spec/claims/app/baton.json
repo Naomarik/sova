@@ -312,7 +312,7 @@
   "§app.baton/needs-you": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "code": [
       "server/attention.ts",
       "server/baton.ts",
@@ -334,15 +334,16 @@
       "server/baton-links.ts",
       "src/components/Sidebar.tsx",
       "shared/baton.ts",
-      "src/lib/needs-you-row.ts"
+      "src/lib/needs-you-row.ts",
+      "src/lib/org-region.test.ts"
     ],
     "requires": [
       "§app.overseer/attention-digest"
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-04T00:57Z",
-      "source": "pi-session:01a1a10e-e34d-75b6-8a92-b6101087b33f#38f36ba9"
+      "at": "2026-11-06T01:40Z",
+      "source": "pi-session:01a1ac4a-4cc0-77e8-b78d-580fabeebc2e#f924065b"
     }
   },
   "§app.baton/offers-and-leases": {
@@ -398,7 +399,12 @@
     "requires": [
       "§app.baton/links",
       "§app.baton/outsider-view"
-    ]
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-06T01:40Z",
+      "source": "pi-session:01a1ac4a-4cc0-77e8-b78d-580fabeebc2e#f924065b"
+    }
   },
   "§app.baton/outsider-view": {
     "kind": "behavior",
@@ -466,16 +472,18 @@
       "server/feature-chat-view.test.ts",
       "src/share/theme.ts",
       "src/share/owner-view.tsx",
-      "server/owner-page.ts"
+      "server/owner-page.ts",
+      "src/vis/kinds/chart/ChartControls.tsx",
+      "src/vis/kinds/chart/memory.ts"
     ],
     "requires": [
       "§app.organizations/privacy",
       "§app/tours"
     ],
     "agreed": {
-      "by": "omar (user)",
-      "at": "2026-10-25T18:32Z",
-      "source": "pi-session:01a173c3-7183-70d4-a656-e47ab7fd7392#cbe59d9a"
+      "by": "Omar (user)",
+      "at": "2026-11-07T21:30Z",
+      "source": "pi-session:fb6b7a43-4aea-4bb6-b919-3302f164b7b9#458ede51"
     }
   },
   "§app.baton/read-link": {

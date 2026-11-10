@@ -26,7 +26,7 @@ let s: typeof h.s;
 // After the harness's own before (registered first): its server and page.
 before(() => ({ page, s } = h));
 
-const NAMES: Record<string, string> = { general: "General", models: "Models", subagents: "Subagents", alignment: "Alignment", overseer: "Overseer", notifications: "Notifications", decisions: "Decisions", summaries: "Summaries", memory: "Memory", organizations: "Organizations", mesh: "Mesh", "public-links": "Public links" };
+const NAMES: Record<string, string> = { general: "General", models: "Models", alignment: "Alignment", profiles: "Profiles", overseer: "Overseer", notifications: "Notifications", decisions: "Decisions", summaries: "Summaries", memory: "Memory", organizations: "Organizations", mesh: "Mesh", "public-links": "Public links" };
 /** The Settings dialog (the close-hold asks in a dialog of its own). */
 const dialog = () => page.locator('[role="dialog"]:has(#settings-foot-status)');
 const status = async () => ((await page.locator("#settings-foot-status").textContent()) ?? "").replace(/\s+/g, " ").trim();
@@ -181,12 +181,13 @@ describe("Settings in a browser: edit, save, reload, invalid, reset", { timeout:
     assert.equal(await recent().inputValue(), "7", "a reload keeps the repaired count");
   });
 
-  test("Subagents: a pasted 60-character name stays whole and red with its count, Save waits, and shortening it clears that (D10)", async () => {
-    const edit = () => box("#subagents-edit-my-setup");
-    await open("subagents", edit);
-    await edit().click();
-    const name = box("#subagents-name");
-    await name.waitFor({ timeout: 15_000 });
+  test("Profiles: a pasted 60-character name stays whole and red with its count, Save waits, and shortening it clears that (D10)", async () => {
+    // The Subagents tab's rows are Profiles' Models part now (§chat.subagent-profiles/settings).
+    const row = (name: string) => box(".profiles-pick").filter({ hasText: name });
+    await open("profiles", () => row("My setup"));
+    await row("My setup").first().click();
+    const name = box("#profile-name");
+    await until("My setup is in the editor", async () => (await name.inputValue()) === "My setup");
     const sixty = "P".repeat(60);
     await name.fill("");
     await name.focus();
@@ -194,32 +195,33 @@ describe("Settings in a browser: edit, save, reload, invalid, reset", { timeout:
     await page.keyboard.insertText(sixty);
     await until("the 60-character name turns its box red", async () => (await name.getAttribute("aria-invalid")) === "true");
     assert.equal(await name.inputValue(), sixty, "the pasted name was cut");
-    assert.equal(((await box("#subagents-name-count").textContent()) ?? "").trim(), "60 / 48");
-    assert.match(await status(), /Subagents/, "the footer names Subagents");
+    assert.equal(((await box("#profile-name-count").textContent()) ?? "").trim(), "60 / 48");
+    assert.match(await status(), /Profiles/, "the footer names Profiles");
     assert.equal(await saveButton().isDisabled(), true, "Save Changes is enabled over a 60-character name");
     await name.fill("P".repeat(48));
     await until("a 48-character name clears the red box", async () => (await name.getAttribute("aria-invalid")) === null);
-    assert.equal(((await box("#subagents-name-count").textContent()) ?? "").trim(), "48 / 48");
-    await save("Subagents");
-    await open("subagents", edit);
-    await edit().click();
-    await box("#subagents-name").waitFor({ timeout: 15_000 });
-    assert.equal(await box("#subagents-name").inputValue(), "P".repeat(48));
+    assert.equal(((await box("#profile-name-count").textContent()) ?? "").trim(), "48 / 48");
+    await save("Profiles");
+    await open("profiles", () => row("P".repeat(48)));
+    await row("P".repeat(48)).first().click();
+    await until("the saved name reads back", async () => (await box("#profile-name").inputValue()) === "P".repeat(48));
   });
 
-  test("Subagents → Teams: a cleared or 'abc' Wrap-up context % stays as typed and red; Save waits (D14)", async () => {
-    const edit = () => box("#subagents-edit-my-setup");
-    await open("subagents", edit);
-    await edit().click();
-    await dialog().locator("summary", { hasText: "Teams" }).first().click();
-    await setSwitch("Add a coordinator to new teams", true);
-    await setSwitch("Add a monitor to new teams", true);
-    const pct = box("#subagents-my-setup-contextPct");
+  test("Profiles → Models → Teams: a cleared or 'abc' Wrap-up context % stays as typed and red; Save waits (D14)", async () => {
+    // The test above renamed My setup; either name is the same library half.
+    const mine = () => box(".profiles-pick").filter({ hasText: /^(My setup|P{48})/ });
+    await open("profiles", mine);
+    await mine().first().click();
+    await until("My setup is in the editor", async () => /^(My setup|P{48})$/.test(await box("#profile-name").inputValue()));
+    await dialog().getByRole("button", { name: "Monitor", exact: true }).click();
+    const choose = dialog().getByRole("button", { name: "Choose Models" });
+    if (await choose.count()) await choose.first().click();
+    const pct = box('[id$="-contextPct"]').first();
     await pct.waitFor({ timeout: 15_000 });
-    for (const f of ["contextPct", "everyMinutes"]) await keepsFocus(box(`#subagents-my-setup-${f}`), `Teams' ${f}`);
-    await keepsFocus(box("#subagents-name"), "Subagents' name");
-    for (const t of ["", "abc", "1.", "500"]) await refused(pct, t, "Subagents");
-    for (const t of ["-3", "2.5"]) await refused(pct, t, "Subagents", true);
+    for (const f of ["contextPct", "everyMinutes"]) await keepsFocus(box(`[id$="-${f}"]`).first(), `Teams' ${f}`);
+    await keepsFocus(box("#profile-name"), "Profiles' name");
+    for (const t of ["", "abc", "1.", "500"]) await refused(pct, t, "Profiles");
+    for (const t of ["-3", "2.5"]) await refused(pct, t, "Profiles", true);
   });
 
   test("Merge Queue: a bad time limit stays as typed and red, holds Save to master and the close; what's committed is what's on screen (D13)", async () => {

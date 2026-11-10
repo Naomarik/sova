@@ -660,7 +660,7 @@ describe("9. a phone-style host (identity by address)", () => {
 
 // ---- 10. the Agents tab in a real browser -------------------------------------------------------------
 
-const PW = process.env.PLAYWRIGHT_MODULE ?? join(REPO, ".claude/skills/playwright/scripts/node_modules/playwright/index.mjs");
+const PW = process.env.PLAYWRIGHT_MODULE ?? join(REPO, ".agents/skills/playwright/scripts/node_modules/playwright/index.mjs");
 function chromiumBin() {
   if (process.env.CHROMIUM_BIN) return process.env.CHROMIUM_BIN;
   const cache = join(homedir(), ".cache/ms-playwright");

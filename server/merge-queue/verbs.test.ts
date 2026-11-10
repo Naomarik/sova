@@ -3,12 +3,14 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, test } from "node:test";
 import { recordGoAhead, typedGoAhead } from "../../pi-config/extensions/worktrees/landing.ts";
-import { isVerbResult, MERGE_VERBS } from "../../shared/project-contract";
+import { isVerbResult, MERGE_READ_VERBS, MERGE_VERBS } from "../../shared/project-contract";
 import { COMMANDS } from "../../shared/commands-catalog";
 import type { Caller } from "../project-services/engine";
 import { ingestOnce } from "./ingest";
 import { noticeText } from "./notices";
 import { merger } from "./routes";
+import type { ReviewAnswer } from "./review-step";
+import { FINDING_MAX, MAX_FINDINGS, PATH_MAX, REVIEW_TEXT_LIMIT, SUMMARY_MAX } from "./review-verdict";
 import { makeKit, makeRepo, sh, until } from "./testing/queue-kit";
 
 const op: Caller = { kind: "operator" };
@@ -46,7 +48,7 @@ describe("the typed word (landing.json)", () => {
       sh(k.repo.root, "branch", "feat/none");
       recordGoAhead({ branch: "feat/none", commit: k.repo.head(), session: "s2", at: "2026-11-02T00:00:02Z", by: "owner-chat" }, file);
       await ingestOnce(deps);
-      assert.match(refused[0]!, /couldn't be queued to land: nothing to land/);
+      assert.match(refused[0]!, /couldn't be queued to land: Nothing to land: everything on this branch is already on master/);
       // No project holds it.
       recordGoAhead({ branch: "feat/elsewhere", commit: "a".repeat(40), session: "s3", at: "2026-11-02T00:00:03Z", by: "owner-chat" }, file);
       await ingestOnce(deps);
@@ -63,16 +65,17 @@ describe("the verbs and who may call them", () => {
     const k = makeKit();
     const thread = "thread-1";
     const reviewer = "reviewer-1";
+    const delivered: ReviewAnswer[] = [];
     const call = merger({
       queues: k.queues,
       served: { isListed: () => true, served: async () => true, bareView: async () => { throw new Error("every root here is served"); } },
       rootOf: async (p) => (p.startsWith(k.repo.scratch) ? k.repo.root : null),
       isThreadChat: (root, sid) => root === k.repo.root && sid === thread,
       reviewerOf: (run) => (run === "mr_0rev" ? reviewer : null),
-      deliverReview: (run) => run === "mr_0rev",
+      deliverReview: (run, v) => (delivered.push(v), run === "mr_0rev"),
     });
     const session = (id: string, root: string | null = k.repo.root): Caller => ({ kind: "session", id, root, own: [] });
-    return { k, call, thread, reviewer, session };
+    return { k, call, thread, reviewer, session, delivered };
   };
 
   test("the operator lands, cancels, pauses and answers; results are verb results with the merge key", async () => {
@@ -132,7 +135,7 @@ describe("the verbs and who may call them", () => {
   });
 
   test("the merge thread notes, extends, resolves and retries, never adds, cancels or answers; the reviewer only reviews its run", async () => {
-    const { k, call, thread, reviewer, session } = setup();
+    const { k, call, thread, reviewer, session, delivered } = setup();
     try {
       const q = await k.q();
       await q.pause("hold");
@@ -149,9 +152,140 @@ describe("the verbs and who may call them", () => {
       assert.equal((await call("merge.review", { project: k.repo.root, run: "mr_0rev", verdict: "ok" }, session(reviewer))).ok, true);
       assert.equal((await call("merge.review", { project: k.repo.root, run: "mr_0rev", verdict: "ok" }, t)).error!.code, "forbidden");
       assert.equal((await call("merge.review", { project: k.repo.root, run: "mr_0rev", verdict: "blocking" }, session(reviewer))).error!.code, "invalid-request");
+      // The verdict's shape is Sova's check now (the reviewer has no shell): a malformed one is refused, saying what is wrong.
+      const bare = await call("merge.review", { project: k.repo.root, run: "mr_0rev", verdict: "notes", text: "Looks a bit off." }, session(reviewer));
+      assert.equal(bare.error!.code, "invalid-request");
+      assert.match(bare.error!.message, /needs at least one finding/);
+      const kind = await call("merge.review", { project: k.repo.root, run: "mr_0rev", verdict: "blocking", text: "Bad.\n- [style] a.ts:3: tabs" }, session(reviewer));
+      assert.match(kind.error!.message, /kind must be one of/);
+      // The longest review the format allows passes the verb whole (ten findings of the longest text, with long paths).
+      const longest = ["S".repeat(SUMMARY_MAX), ...Array.from({ length: MAX_FINDINGS }, (_, i) => `- [missing-test] ${`d${i}/`.padEnd(PATH_MAX - 6, "p")}.ts:9999: ${"t".repeat(FINDING_MAX)}`)].join("\n");
+      const big = await call("merge.review", { project: k.repo.root, run: "mr_0rev", verdict: "blocking", text: longest }, session(reviewer));
+      assert.equal(big.ok, true, JSON.stringify(big.error));
+      assert.equal(delivered.at(-1)!.text, longest);
+      assert.equal(delivered.at(-1)!.findings!.length, MAX_FINDINGS);
+      assert.match((await call("merge.review", { project: k.repo.root, run: "mr_0rev", verdict: "blocking", text: "x".repeat(REVIEW_TEXT_LIMIT + 1) }, session(reviewer))).error!.message, /at most \d+ characters/);
+      // Only merge.review's text is that long: every other verb's stays at 4000.
+      assert.match((await call("merge.rule", { entry: id, ruling: "chat-fixes", text: "x".repeat(4001) }, t)).error!.message, /"text" must be at most 4000 characters/);
+      // merge.rule is the thread's alone; a ruling on an entry in line is refused for what it is, not for who asks.
+      assert.equal((await call("merge.rule", { entry: id, ruling: "needs-user", text: "Which wording?" }, session("someone"))).error!.code, "forbidden");
+      assert.equal((await call("merge.rule", { entry: id, ruling: "chat-fixes", text: "d" }, t)).error!.code, "invalid-request");
+      assert.equal((await call("merge.rule", { entry: id, ruling: "overrule" }, t)).error!.code, "invalid-request");
+      const raised = await call("merge.rule", { entry: id, ruling: "needs-user", text: "Which wording should the button use?", choices: ["Land", "Merge"] }, t);
+      assert.equal(raised.ok, true, JSON.stringify(raised.error));
+      assert.equal(raised.merge!.entry!.decision?.question, "Which wording should the button use?");
+      assert.deepEqual(raised.merge!.entry!.decision?.choices, ["Land", "Merge"]);
+      // Raised, the thread can't take it back: only the user's answer moves it on.
+      assert.equal((await call("merge.retry", { entry: id }, t)).error!.code, "invalid-request");
       const e = q.entry(id)!;
       assert.equal(e.notes[0]!.text, "changes server code");
       assert.equal(e.picks[0]!.id, "statecharts");
+    } finally {
+      await k.done();
+    }
+  });
+
+  test("a chat's script on the operator's route never lands, answers, removes or cancels: only the user's click does, and the merge thread's own verbs still work", async () => {
+    const { k, call, thread, session } = setup();
+    try {
+      const q = await k.q();
+      await q.pause("hold");
+      const b = k.repo.branch("feat/a", { "b.txt": "b\n" });
+      k.repo.branch("feat/b", { "c.txt": "c\n" });
+      const script: Caller = { kind: "operator", fromChat: true };
+      // Land from a chat's script: refused, nothing queued.
+      for (const body of [{ checkout: b.path, chat: "s1" }, { project: k.repo.root, branch: "feat/b" }]) {
+        const r = await call("merge.add", body, script);
+        assert.equal(r.error?.code, "forbidden", JSON.stringify(r.error));
+        assert.match(r.error!.message, /never act as the user/);
+      }
+      assert.equal(q.entries().length, 0, "nothing was queued");
+      // The same Land from the user's page: queued (the refusal is the caller's, not the body's).
+      const added = await call("merge.add", { checkout: b.path, chat: "s1" }, op);
+      assert.equal(added.ok, true, JSON.stringify(added.error));
+      const id = added.merge!.entry!.id;
+      // Every other act from a chat's script is refused too, and changes nothing.
+      for (const [verb, body] of [
+        ["merge.cancel", { entry: id }],
+        ["merge.answer", { entry: id, answer: "accept" }],
+        ["merge.answer", { entry: id, answer: "land-anyway" }],
+        ["merge.retry", { entry: id }],
+        ["merge.resume", { project: k.repo.root }],
+        ["merge.pause", { project: k.repo.root }],
+        ["merge.fresh", { project: k.repo.root }],
+        ["merge.clear", { project: k.repo.root }],
+        ["merge.reply", { project: k.repo.root, ask: "ak_x", text: "yes" }],
+        ["merge.respond", { project: k.repo.root, request: "rq_0123456789ab", answer: "fixed", text: "x" }],
+        ["merge.answer", { entry: id, answer: "try-again" }],
+        ["merge.answer", { entry: id, answer: "land" }],
+        ["merge.note", { entry: id, note: "x" }],
+        ["merge.resolve", { entry: id }],
+        ["merge.hold", { project: k.repo.root, action: "set" }],
+      ] as const) {
+        const r = await call(verb, body, script);
+        assert.equal(r.error?.code, "forbidden", `${verb}: ${JSON.stringify(r.error)}`);
+      }
+      assert.equal(q.entry(id)!.notes.length, 0);
+      assert.equal(q.entries().some((e) => e.id === id), true, "still queued: no cancel went through");
+      // It still reads.
+      assert.equal((await call("merge.status", { project: k.repo.root }, script)).ok, true);
+      // The merge thread's own verbs, through its own tool, still work.
+      assert.equal((await call("merge.note", { entry: id, note: "changes server code" }, session(thread))).ok, true);
+      // A card's command (its view's code or its button's) is never the user's act either, reads aside.
+      const card: Caller = { kind: "operator", fromCard: true };
+      for (const [verb, body] of [
+        ["merge.add", { project: k.repo.root, branch: "feat/b" }],
+        ["merge.cancel", { entry: id }],
+        ["merge.answer", { entry: id, answer: "accept" }],
+        ["merge.retry", { entry: id }],
+        ["merge.resume", { project: k.repo.root }],
+        ["merge.try", { project: k.repo.root, branch: "feat/b" }],
+      ] as const) {
+        const r = await call(verb, body, card);
+        assert.equal(r.error?.code, "forbidden", `card ${verb}: ${JSON.stringify(r.error)}`);
+        assert.match(r.error!.message, /a card's commands never act as the user/);
+      }
+      assert.equal(q.entries().length, 1, "the card queued nothing and removed nothing");
+      assert.equal((await call("merge.status", { project: k.repo.root }, card)).ok, true, "a card still reads");
+      // The user's Remove from Queue, from their page, still works.
+      const removed = await call("merge.cancel", { entry: id }, op);
+      assert.equal(removed.ok, true, JSON.stringify(removed.error));
+    } finally {
+      await k.done();
+    }
+  });
+
+  test("the user's route acts only for their own page: a request that isn't the page (a chat's shell that left its key out, any script) is refused every act, still reads", async () => {
+    const { k, call } = setup();
+    try {
+      const q = await k.q();
+      await q.pause("hold");
+      const b = k.repo.branch("feat/a", { "b.txt": "b\n" });
+      // What the route makes of a token in a header with no chat key: the operator, but not the page.
+      const script: Caller = { kind: "operator", notPage: true };
+      const land = await call("merge.add", { checkout: b.path, chat: "s1" }, script);
+      assert.equal(land.error?.code, "forbidden", JSON.stringify(land.error));
+      assert.match(land.error!.message, /only the user's own click in Sova's page/);
+      assert.equal(q.entries().length, 0, "nothing was queued");
+      // The same Land from the page: queued (the refusal is the caller's, not the body's).
+      const added = await call("merge.add", { checkout: b.path, chat: "s1" }, op);
+      assert.equal(added.ok, true, JSON.stringify(added.error));
+      const id = added.merge!.entry!.id;
+      for (const [verb, body] of [
+        ["merge.cancel", { entry: id }],
+        ["merge.answer", { entry: id, answer: "accept" }],
+        ["merge.retry", { entry: id }],
+        ["merge.resume", { project: k.repo.root }],
+        ["merge.pause", { project: k.repo.root }],
+        ["merge.reply", { project: k.repo.root, ask: "ak_x", text: "yes" }],
+        ["merge.setup", { project: k.repo.root, command: "true", dryRun: true }],
+      ] as const) {
+        const r = await call(verb, body, script);
+        assert.equal(r.error?.code, "forbidden", `${verb}: ${JSON.stringify(r.error)}`);
+      }
+      assert.equal(q.entries().some((e) => e.id === id), true, "still queued: no cancel went through");
+      assert.equal((await call("merge.status", { project: k.repo.root }, script)).ok, true, "it still reads");
+      assert.equal((await call("merge.cancel", { entry: id }, op)).ok, true, "the page removes it");
     } finally {
       await k.done();
     }
@@ -185,13 +319,51 @@ describe("the verbs and who may call them", () => {
     }
   });
 
+  test("merge.restart, merge.test and merge.names are the merge thread's (and the user's page's): never another chat, a reviewer or a chat's script on the operator route; merge.live is a read", async () => {
+    const { k, call, thread, reviewer, session } = setup();
+    try {
+      await k.q();
+      const fromChat = { kind: "operator", fromChat: true } as unknown as Caller;
+      for (const verb of ["merge.restart", "merge.test", "merge.names"]) {
+        for (const who of [session("someone"), session(reviewer), { kind: "project-overseer", root: k.repo.root } as unknown as Caller, fromChat]) {
+          const r = await call(verb, { project: k.repo.root, entry: "mq_x", action: "show" }, who);
+          assert.equal(r.error?.code, "forbidden", `${verb} by ${JSON.stringify(who)}`);
+        }
+        const t = await call(verb, { project: k.repo.root, entry: "mq_x", action: "show" }, session(thread));
+        assert.notEqual(t.error?.code, "forbidden", `${verb} is the thread's: ${t.error?.message}`);
+      }
+      // No restart deps wired here: the thread is told so, and nothing restarts.
+      assert.equal((await call("merge.restart", { project: k.repo.root }, session(thread))).error?.code, "unsupported");
+      assert.equal((await call("merge.live", { project: k.repo.root }, session("someone"))).error?.code, "unsupported", "a read anyone on the project may make (unwired here)");
+    } finally {
+      await k.done();
+    }
+  });
+
+  test("merge.status {entry} answers that entry's rows only", async () => {
+    const { k, call } = setup();
+    try {
+      const q = await k.q();
+      await q.pause("hold");
+      const a = await call("merge.add", { checkout: k.repo.branch("feat/a", { "a.txt": "a\n" }).path }, op);
+      await call("merge.add", { checkout: k.repo.branch("feat/b", { "b.txt": "b\n" }).path }, op);
+      const all = (await call("merge.status", { project: k.repo.root }, op)).merge!.view!;
+      const one = (await call("merge.status", { project: k.repo.root, entry: a.merge!.entry!.id }, op)).merge!.view!;
+      const ids = (v: typeof all) => [...v.checking, ...v.waiting, ...v.needsYou, ...v.needsFix].map((e) => e.id);
+      assert.equal(ids(all).length, 2);
+      assert.deepEqual(ids(one), [a.merge!.entry!.id]);
+    } finally {
+      await k.done();
+    }
+  });
+
   test("every merge verb is on the catalogue, at its route, as the admin's", () => {
     for (const v of MERGE_VERBS) {
       const c = COMMANDS.find((x) => x.id === `project.verb.${v}`);
       assert.ok(c, v);
       assert.equal(c!.route.path, `/api/project-services/${v}`);
       assert.equal(c!.meshNeed, "admin");
-      assert.equal(c!.effect, v === "merge.status" || v === "merge.logs" ? "looks" : "changes");
+      assert.equal(c!.effect, (MERGE_READ_VERBS as readonly string[]).includes(v) ? "looks" : "changes");
     }
   });
 });
@@ -216,6 +388,20 @@ describe("what the branch's chat is told", () => {
     assert.match(t, /expected 2$/m);
     const s = noticeText("sent-back", { ...base, state: "needs-fix", reason: "the two sides want different behaviour", conflict: { files: ["a.ts"], verdict: "behaviour-differs", ours: "returns 2", theirs: "returns 3", proposal: "a flag", at: "t" } });
     assert.match(s, /master's side: returns 2\nThis branch's side: returns 3\nProposed: a flag/);
+    // Under a standing Land (al_3) no text that reaches the chat asks for another Land; only one with none does.
+    const askAgain = /land it|Land This Commit Again|land its newest commit|Land comes back|Land again|Land on feat\/a again/i;
+    const standing = { ...base, approval: { ...base.approval, standing: true as const } };
+    for (const sentBackFor of ["drafts", "checks", "conflict"] as const) {
+      const r = sentBackFor === "conflict" ? { ...run, verdict: "conflict" as const } : run;
+      const st = noticeText("needs-fix", { ...standing, state: "with-chat", reason: "x", sentBackFor }, { run: r });
+      assert.doesNotMatch(st, askAgain, `${sentBackFor}: ${st}`);
+      assert.match(st, /the user's Land stands/i);
+      const old = noticeText("needs-fix", { ...base, state: "needs-fix", reason: "x", sentBackFor }, { run: r });
+      assert.match(old, /needs the user's Land again/, "no standing Land (a release's hand-back): the user lands it again");
+      assert.doesNotMatch(old, /Land This Commit Again|land it again|type "land it"/);
+    }
+    const d = noticeText("decision", { ...base, state: "needs-user", decision: { id: "dc_1", kind: "needs-you", question: "Which wording?", choices: [], raisedBy: "chat", actions: [], at: "t" } });
+    assert.match(d, /waits for the user's decision: Which wording\?/);
   });
 });
 

@@ -35,7 +35,7 @@ const cards = [
   },
   {
     icon: "file", title: "Playbooks and schedules",
-    body: "Markdown recipes an agent runs against a project, picked from the composer or run on a schedule. Sova ships 8.",
+    body: "Markdown recipes an agent runs against a project, picked from the composer or run on a schedule. Sova ships 6.",
     limit: "A schedule fires only after you approve it.",
   },
   {
@@ -73,7 +73,7 @@ const beyond = [
   {
     icon: "network", title: "Mesh: all your machines, one sidebar", href: "/mesh", more: "About Mesh",
     body: "Run Sova on several machines on your tailnet and use them all from one page.",
-    limit: "Needs Tailscale, and the same Sova build on every host.",
+    limit: "Needs Tailscale. A host on another version can be read-only until it updates.",
   },
   {
     icon: "chat", title: "Organizations: ask the people who know", href: "/orgs", more: "About Organizations",
@@ -152,7 +152,7 @@ const beyond = [
             <div class="prose">
               <p>In Delegate, a session's agent becomes an orchestrator: it sends each kind of work to the model you routed it to. Every worker opens in the side pane with its own transcript.</p>
             </div>
-            <p class="limit"><Icon name="info" size={18} /><span><strong>The shipped routes use Claude Code models</strong>, so install the <code>claude</code> CLI or pick your own in Settings → Subagents.</span></p>
+            <p class="limit"><Icon name="info" size={18} /><span><strong>The shipped routes use Claude Code models</strong>, so install the <code>claude</code> CLI or pick your own in Settings → Profiles.</span></p>
             <p class="feature-more"><a href="/docs/modes/delegate/">Delegate docs<Icon name="arrow-right" size={14} /></a></p>
           </div>
           <div class="feature-visual"><ScreenFrame at="feature.delegate" /></div>
@@ -177,7 +177,7 @@ const beyond = [
             <div class="prose">
               <p>Ask what changed and the agent lays it out as numbered steps, each with a line on why, and no hunk left out. A session also keeps track of the git worktrees it works in.</p>
             </div>
-            <p class="limit"><Icon name="info" size={18} /><span>The changes viewer only reads, and Sova never removes a worktree on its own.</span></p>
+            <p class="limit"><Icon name="info" size={18} /><span>The changes viewer only reads, and Sova never removes a worktree of yours on its own.</span></p>
             <p class="feature-more"><a href="/docs/worktrees-and-changes/">Worktrees and changes docs<Icon name="arrow-right" size={14} /></a></p>
           </div>
           <div class="feature-visual"><ScreenFrame at="feature.changes" /></div>
@@ -228,7 +228,7 @@ const beyond = [
               <p>A message to a busy teammate waits in its inbox instead of failing; an urgent one reaches it at its next step, and an idle one wakes it within seconds.</p>
               <p>Members close what they handle. In the side pane, beside each member's transcript, you can read its inbox: who sent what, and what's still open.</p>
             </div>
-            <p class="limit"><Icon name="info" size={18} /><span>The coordinator and monitor come from your subagent profile's <strong>Teams</strong> section; <strong>Off</strong> gives a team neither. File ownership is a plan, not a lock: members share one folder.</span></p>
+            <p class="limit"><Icon name="info" size={18} /><span>Every team gets a coordinator and a monitor, on the models your profile's <strong>Teams</strong> section names, else your chat's own; that's 2 more workers than you name. File ownership is a plan, not a lock: members share one folder.</span></p>
             <p class="feature-more"><a href="/docs/teams/">Teams docs<Icon name="arrow-right" size={14} /></a><a href="/docs/modes/delegate/">Delegate docs<Icon name="arrow-right" size={14} /></a></p>
           </div>
           <div class="feature-visual"><Team /></div>
@@ -271,7 +271,7 @@ const beyond = [
               <p>The project's Merge Queue tab shows what is being checked now, the branches waiting in line, and the recent landings. A red check counts against the branch only once the same check has passed on the main branch alone.</p>
               <p>The merge thread, a chat of the queue's own, notes each landing, picks extra tests and judges conflicts. It never moves the main branch itself.</p>
             </div>
-            <p class="limit"><Icon name="info" size={18} /><span>A project joins the queue once you set up its checks, from <strong>Initialize</strong> on its Merge Queue tab. It can land by pull or merge request instead.</span></p>
+            <p class="limit"><Icon name="info" size={18} /><span>A project joins the queue once you set up its checks, with <strong>Set Up with a Chat</strong> on its Merge Queue tab. It can land by pull or merge request instead.</span></p>
             <p class="feature-more"><a href="/docs/merge-queue/">Merge queue docs<Icon name="arrow-right" size={14} /></a><a href="/docs/merge-queue-settings/">Its settings<Icon name="arrow-right" size={14} /></a></p>
           </div>
           <div class="feature-visual"><ShotFrame shot="merge-queue-tab" focus="80%" alt="A project's Merge Queue tab: the main branch at its commit, the branch being checked with its meter, the branches waiting in line, and the recent landings with their notes." /></div>
@@ -285,7 +285,7 @@ const beyond = [
               <p><strong>Start Release</strong> opens a chat that follows the project's release playbook: it picks the version, writes the notes and makes the release commit. The queue holds every other branch while it runs, the release checks run on its commit, and a held step, such as trying it on your live server, waits for your Continue.</p>
               <p><strong>Publish</strong> tags the release, moves its channel and pushes them to <code>origin</code> in one step, or changes nothing.</p>
             </div>
-            <p class="limit"><Icon name="info" size={18} /><span>Off until you set them up (<strong>Set Up Releases</strong>). A numbered tag is never moved or deleted; Withdraw moves only the channel back.</span></p>
+            <p class="limit"><Icon name="info" size={18} /><span>Off until you set them up (<strong>Set Up with a Chat</strong> on the Releases tab). A numbered tag is never moved or deleted; Withdraw moves only the channel back.</span></p>
             <p class="feature-more"><a href="/docs/releases/">Releases docs<Icon name="arrow-right" size={14} /></a><a href="/docs/release-settings/">Release settings<Icon name="arrow-right" size={14} /></a></p>
           </div>
           <div class="feature-visual"><ShotFrame shot="release-in-progress" alt="A release in progress: v0.4.0 at step 5 of 9, its version, notes, release commit and gating checks done, Try it on the staging copy held for you with Continue, a failed smoke test with Retry Step, a docs check running, Publish waiting, and Abandon Release." /></div>
@@ -370,8 +370,8 @@ const beyond = [
       <div class="wrap">
         <div class="section-head section-head-center">
           <span class="eyebrow">How it works</span>
-          <h2 class="h-section" id="how-title">One process that runs pi, on your machine.</h2>
-          <p class="lead">A server with the pi coding agent embedded, plus a web app. It uses pi's own agent directory: your sessions, logins, and extensions.</p>
+          <h2 class="h-section" id="how-title">A server, and a process for every chat, on your machine.</h2>
+          <p class="lead">A server and a web app, plus a process per chat that runs the pi coding agent. Chats use pi's own agent directory: your sessions, logins, and extensions.</p>
         </div>
         <div class="arch">
           <div class="arch-node">
@@ -381,21 +381,22 @@ const beyond = [
           <div class="arch-link"><span>REST + WebSocket</span></div>
           <div class="arch-node arch-node-core">
             <h3><Mark size={18} />sova server</h3>
-            <p>Hono and the pi SDK, on <code>127.0.0.1:4800</code> by default.</p>
-            <ul class="arch-list"><li>runs pi sessions</li><li>runs workers and the Overseer</li><li>checks the install's token</li></ul>
+            <p>Hono, on <code>127.0.0.1:4800</code> by default.</p>
+            <ul class="arch-list"><li>starts and reconnects chats</li><li>lists and reads sessions</li><li>checks the install's token</li></ul>
           </div>
-          <div class="arch-link"><span>same files</span></div>
+          <div class="arch-link"><span>one socket per chat</span></div>
+          <div class="arch-node">
+            <h3><Icon name="worker" size={18} />Chat processes</h3>
+            <p>One per chat, on Bun, running pi through its SDK. Restarting Sova stops none of them, and each moves to new code between replies.</p>
+            <ul class="arch-list"><li>each chat and worker</li><li>the Overseer</li><li>pi extensions</li></ul>
+          </div>
+          <div class="arch-link arch-link-down"><span>reads and writes</span></div>
           <div class="arch-node">
             <h3><Icon name="folder" size={18} />~/.pi/agent</h3>
             <p>pi's agent directory. Sova's own state lives in <code>sova/</code>.</p>
-            <ul class="arch-list"><li>sessions/*.jsonl</li><li>auth.json</li><li>extensions/</li><li>sova/</li></ul>
+            <ul class="arch-list"><li>sessions/</li><li>auth.json</li><li>extensions/</li><li>sova/</li></ul>
           </div>
-          <div class="arch-link arch-link-down"><span>same files</span></div>
-          <div class="arch-node arch-node-tui">
-            <h3><Icon name="terminal" size={18} />pi's terminal UI</h3>
-            <p>Optional. A session it has open streams into Sova live, and stays read-only there.</p>
-          </div>
-          <div class="arch-provider"><Icon name="external" size={16} /><span>Model requests go from Sova to your configured provider. Tools and extensions may use the network too.</span></div>
+          <div class="arch-provider"><Icon name="external" size={16} /><span>Model requests go from each chat's process to your configured provider. Tools and extensions may use the network too.</span></div>
         </div>
 
         <!-- WHAT IT TOUCHES -->
@@ -404,13 +405,15 @@ const beyond = [
             <h3 class="h-feature">What it touches.</h3>
             <ul class="not-list" aria-label="What Sova is not">
               <li>Not a hosted service. It runs on your machine.</li>
-              <li>Not a team app. One person runs it; others see only what you share.</li>
+              <li>Not a team app. One person runs it; others reach only what you share with them.</li>
             </ul>
           </div>
           <dl class="touches">
             <div class="touch"><dt>Install</dt><dd><code>~/.local/share/sova</code> and a <code>~/.local/bin/sova</code> launcher. No <code>sudo</code>, no system packages, no shell-profile edits, no settings.</dd></div>
             <div class="touch"><dt>App entry</dt><dd>A <strong>Sova</strong> entry in your app launcher that runs <code>sova app</code>: <code>sova.desktop</code> and its icon on Linux, <code>~/Applications/Sova.app</code> on macOS. Its window keeps a browser profile of its own, in <code>~/.config/sova-browser</code> (macOS: <code>~/Library/Application Support/sova-browser</code>). <code>--no-app-entry</code> skips the entry.</dd></div>
             <div class="touch"><dt>pi extensions</dt><dd>One link per Sova extension in <code>~/.pi/agent/extensions/</code>. <code>--no-extensions</code> skips this.</dd></div>
+            <div class="touch"><dt>Chats</dt><dd>Each runs as a background process of its own, a user service on Linux where one is available and a detached process elsewhere. Stopping the server doesn't stop them; each exits once it has been idle for 30 minutes.</dd></div>
+            <div class="touch"><dt>Git upkeep</dt><dd>Git's own scheduled maintenance, turned on for each project's repository, with git's timers started once per machine. Sova records what it set and puts it back when a project goes. <code>SOVA_GIT_MAINTENANCE=off</code> skips it.</dd></div>
             <div class="touch"><dt>Login service</dt><dd>Only if you say yes, or pass <code>--service</code>.</dd></div>
             <div class="touch"><dt>Access</dt><dd>Loopback by default, and <strong>one token per install</strong>. Delete <code>~/.pi/agent/sova/auth-token</code> and restart to sign every browser out.</dd></div>
             <div class="touch"><dt>Off by default</dt><dd>The share listener and Mesh, until you set them up.</dd></div>
@@ -436,7 +439,7 @@ const beyond = [
           <div class="oss-copy">
             <span class="eyebrow">Open source</span>
             <h3 class="h-feature">Apache-2.0, built in the open.</h3>
-            <p class="prose">TypeScript end to end: a SolidJS web app and a Hono server with the pi SDK embedded. Read the code, file an issue, or run a checkout.</p>
+            <p class="prose">TypeScript end to end: a SolidJS web app, a Hono server, and a process per chat running the pi SDK. Read the code, file an issue, or run a checkout.</p>
             <div class="oss-actions">
               <a class="button" href={site.repo}><Icon name="external" size={16} />View on GitHub</a>
               <a class="button button-ghost" href={site.contributing}>Read CONTRIBUTING</a>
@@ -448,7 +451,7 @@ const beyond = [
 <span class="k">pnpm install</span> --frozen-lockfile
 <span class="k">pnpm run</span> build
 <span class="k">pnpm start</span>   <span class="c"># http://127.0.0.1:4800, on Bun</span>
-<span class="k">pnpm start</span> --node   <span class="c"># the same, on Node</span></pre>
+<span class="k">pnpm start</span> --node   <span class="c"># server only, on Node: no chats</span></pre>
         </div>
       </div>
     </section>

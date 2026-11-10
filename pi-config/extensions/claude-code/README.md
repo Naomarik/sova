@@ -50,6 +50,11 @@ Claude Code worker's included, and model discovery) runs on one Claude login, ch
   `<agent dir>/claude-accounts/<id>/` (0700), with `projects/`, `settings.json`,
   `CLAUDE.md`, `agents`, `commands`, `skills` and `plugins` symlinked to
   `default`'s, so every login writes its session records into one `projects/`.
+  An agent dir with its own `claude-projects/` (a hermetic test copy) links every
+  login's `projects` there instead, and runs `default` on `<agent dir>/claude-default/`,
+  whose `.credentials.json`, `.claude.json` and shared entries link to `default`'s
+  own (`projects` into `claude-projects/`), so a test chat writes no transcript into
+  `~/.claude`. On macOS a `default` whose token is only in the keychain runs as it is.
   The registry is `<agent dir>/claude-accounts.json`; Sova's Settings → Accounts
   writes it (adding a login runs `claude auth login` for a new directory).
 - A spawn uses this host's first usable login in its device's order (enabled,
@@ -198,7 +203,11 @@ into one user message. Prior tool calls and results are flattened to prose in
 that fold: the CLI never pairs a replayed `tool_result` to a `tool_use`
 (investigation invariant 1). Tools are named in the fold as the CLI exposes them
 (`mcp__sova__bash`, not `bash`): a model that copies a bare name from the
-replay gets "No such tool available".
+replay gets "No such tool available". A bare name the model copies from
+anywhere else is handled like invalid tool arguments: the CLI answers that call
+itself and asks the model again, so the provider never runs it and its retry
+continues the same pi message on the same child (`cliHasTool` in
+`provider/types.ts`).
 
 The fold is sized from the model's context window: the window, less pi's
 compaction reserve (16,384), the system prompt, the tool declarations, the

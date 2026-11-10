@@ -81,7 +81,7 @@ describe("the settings tests see: one list, covering every switch they read", ()
     POOL_TEST_LOG: "debug log", SOVA_REPLAY_DEBUG: "debug log", SOVA_AUTOTITLE_TRACE: "debug log", SOVA_STALL_RECORDER: "debug log", SOVA_STALL_STACKS: "debug log", SOVA_INSPECT_BWRAP: "debug log",
     // Production knobs of the code under test: tests get the defaults (a shell's value must not reach them).
     SOVA_SCHEDULE_SPEED: "production knob", SOVA_SCHEDULE_TICK_MS: "production knob", SOVA_CHAT_TEST_ACT_DELAY_AT: "trial-only knob, set by the trial itself", SOVA_CHAT_TEST_ACT_DELAY_MS: "trial-only knob, set by the trial itself",
-    SOVA_LINK_OFFER_TTL_MS: "production knob", SOVA_BATON_UPLOADS_FREE_MB: "production knob", SOVA_VOICE_DIR: "production knob", SOVA_VOICE_IMPORT_DIRS: "production knob", SOVA_VOICE_MODEL: "production knob", SOVA_VOICE_PATH: "production knob",
+    SOVA_LINK_OFFER_TTL_MS: "production knob", SOVA_SHELL_OUTPUT_MAX_BYTES: "production knob (a hermetic copy sets its own, startHermeticServer env)", SOVA_BATON_UPLOADS_FREE_MB: "production knob", SOVA_VOICE_DIR: "production knob", SOVA_VOICE_IMPORT_DIRS: "production knob", SOVA_VOICE_MODEL: "production knob", SOVA_VOICE_PATH: "production knob",
     GIT_ATTR_GLOBAL: "git's own, scrubbed", GIT_ATTR_SOURCE: "git's own, scrubbed", GIT_ATTR_SYSTEM: "git's own, scrubbed", GIT_CONFIG_PARAMETERS: "git's own, scrubbed", GIT_REPLACE_REF_BASE: "git's own, scrubbed", GIT_SHALLOW_FILE: "git's own, scrubbed",
     POSIXLY_CORRECT: "a shell setting, not a test switch", HTTP_PROXY: "the sandbox's proxy: never a test's", HTTPS_PROXY: "the sandbox's proxy: never a test's",
     // Given by the engine under test to the processes it starts, never by the runner.
@@ -107,7 +107,7 @@ describe("the settings tests see: one list, covering every switch they read", ()
   });
 
   test("the documented developer switches reach tests", () => {
-    for (const n of ["SOVA_GOLDEN_MODE", "SOVA_GOLDEN_RECORD", "SOVA_GOLDEN_REAL_DIR", "SOVA_GOLDEN_SETS", "SOVA_LOADOUT_UPDATE", "SOVA_INVENTORY_OUT", "SOVA_TOUR_BROWSER", "SLOW", "WRITE_ROW_SNAPSHOT", "SOVA_MQ_UI_DIST", "CHAT_TRIAL_ROOT"])
+    for (const n of ["SOVA_GOLDEN_MODE", "SOVA_GOLDEN_RECORD", "SOVA_GOLDEN_REAL_DIR", "SOVA_GOLDEN_SETS", "SOVA_MODES_GOLDEN", "SOVA_MODES_DUMP", "SOVA_LOADOUT_UPDATE", "SOVA_INVENTORY_OUT", "SOVA_TOUR_BROWSER", "SLOW", "WRITE_ROW_SNAPSHOT", "SOVA_MQ_UI_DIST", "CHAT_TRIAL_ROOT"])
       expect({ n, unit: testEnvMod.passesToTests(n, "unit"), int: testEnvMod.passesToTests(n, "integration") }).toEqual({ n, unit: true, int: true });
   });
 

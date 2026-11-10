@@ -10,9 +10,9 @@ It applies to every agent chat that has `bash`: a pi chat and a Claude Code chat
 Code chat's `bash` is pi's, §app/claude-code-provider), sandboxed or not, and to every worker, team
 member, coordinator, monitor and hidden chat (§app.chat-processes/workers). The special chats (the
 Overseer, a project overseer, a project assistant, a baton) have no `bash`. It checks the agent's
-`bash` tool and nothing else. Sova's composer has no `!` command: a message starting with `!` goes to
-the agent like any other, and a command the agent runs for it is checked. pi's own terminal interface,
-outside Sova, doesn't load the guard, for its `!` (pi's `user_bash` event) or its agent. Sova never rewrites a command; it runs it as
+`bash` tool and the commands you run from a chat's message box in shell mode
+(§chat.shell-mode/running), and nothing else. pi's own terminal interface, outside Sova, doesn't
+load the guard, for its `!` (pi's `user_bash` event) or its agent. Sova never rewrites a command; it runs it as
 written or refuses it whole.
 
 On Linux and every other platform the check never runs and nothing changes: there, `pkill` and
@@ -56,14 +56,18 @@ Heredoc bodies, inside a `$( )` too (a commit message written with `$(cat <<'EOF
 are not read as commands; a redirection's target is not an argument.
 
 The reply is the tool's own result in the transcript, an error, with no separate notice to the
-user. It reads `Sova refused this bash command before it ran; nothing ran.`, the command part at
+user; for a command you ran in shell mode, nothing of it ran and no card is made: the reply shows
+under the message box, which keeps the command (§chat.shell-mode/running). It reads as the agent's
+below, but `Sova refused this command before it ran; nothing ran.`, with the fix on the same line and no
+`project_verbs` hint.
+It reads `Sova refused this bash command before it ran; nothing ran.`, the command part at
 fault and the reason (`on macOS, pkill reads every argument after the first pattern as another
 pattern…`; `killall takes its options before the name, and what it does with one after the name isn't
 documented, so Sova refuses it`; `a PID of -1 signals every process you own…`; `` `node` is a name this broad: it would
 also kill the user's own apps… ``), then the fix: put every option before the pattern or name, match
 something specific (a script path, a port, a unique marker), or kill by PID
-(`lsof -ti :PORT | xargs kill`, `kill $(cat app.pid)`), and `project_verbs down` for a project's
-services.
+(`lsof -ti :PORT | xargs kill`, `kill $(cat app.pid)`), and last, true whether or not the chat has the
+tool (§app.project-services/tool-offered): `If you have the project_verbs tool, use project_verbs down for a project's services.`
 
 ## §chat.kill-guard/broad-names — The broad names
 
@@ -97,8 +101,8 @@ A pattern with anything more in it (`bun --watch src/server/main.ts`, `node serv
   file and killed by a later command, another program that runs it (`find -exec kill`, `watch`,
   `parallel`), and a kill through another language (`python -c
   "os.kill(…)"`, `node -e "process.kill(…)"`).
-- **Other tools.** Only the `bash` tool is checked; a tool that runs a process some other way is
-  not.
+- **Other tools.** Only the `bash` tool and your own commands from shell mode
+  (§chat.shell-mode/running) are checked; a tool that runs a process some other way is not.
 - **The host's platform decides.** A remote session's commands run on its target but are checked
   by the platform Sova's chat runs on: from a Mac they are checked, even against a Linux target.
 - **Words, not meaning.** It reads the command's words with a small shell reader; an odd shape it

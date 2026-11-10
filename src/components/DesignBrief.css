@@ -136,3 +136,6 @@
 .design-brief-collapsed { position: relative; z-index: 3; }
 .design-brief-collapsed > .design-brief-frozen { position: absolute; top: 100%; left: 0; right: 0; max-height: 420px; overflow-y: auto; scrollbar-width: thin; box-sizing: border-box; padding: var(--space-3) var(--space-4); background: var(--color-surface); border-bottom: 1px solid var(--color-border); box-shadow: var(--shadow-2); }
 .design-brief-toggle-word { margin-left: auto; }
+/* Page Assets' head is one line of one height, whatever the count and cost say. */
+.design-page-assets .gallery-head { flex-wrap: nowrap; height: 24px; }
+.design-page-assets .gallery-head > * { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 24px; }

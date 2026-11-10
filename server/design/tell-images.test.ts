@@ -44,7 +44,7 @@ test("the main chat's image goes to the coordinator by name: neither chat's file
   mkdirSync(dir, { recursive: true });
   const file = join(dir, "sova-0f8f7c3e-1111-4222-8333-444455556666.png");
   writeFileSync(file, original);
-  const tell = mainDesignTools(() => parent, () => agentDir).find((t) => t.name === "design")!;
+  const tell = mainDesignTools(() => parent, () => agentDir).find((t) => t.name === "lookbook")!;
   const result = await tell.execute("t1", { op: "tell", text: "use this photo for the hero", images: [file] }, undefined, undefined, undefined as never);
 
   const asset = readAssets(sessionId).assets.find((a) => a.source === "yours");

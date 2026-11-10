@@ -4413,7 +4413,7 @@ export interface CommandParams {
     /** The version number */
     "version"?: number;
   };
-  /** Replace a run's Setup card before it starts. Takes the whole setup. (changes something; needs the card's owner trusted) */
+  /** Replace a run's Lookbook Setup card before it starts. Takes the whole setup. (changes something; needs the card's owner trusted) */
   "design.setup.set": {
     /** The chat the designs belong to, by id or by path */
     "session"?: string;
@@ -4422,7 +4422,7 @@ export interface CommandParams {
     /** The whole setup: brief, models, directions */
     "setup": unknown;
   };
-  /** Start a run's coordinator, which writes its Design Brief. The designs start from the brief, by the user's click. (changes something; needs the card's owner trusted) */
+  /** Start a Lookbook run's coordinator, which writes its Design Brief. The designs start from the brief, by the user's click. (changes something; needs the card's owner trusted) */
   "design.start": {
     /** The chat the designs belong to, by id or by path */
     "session"?: string;
@@ -4460,7 +4460,7 @@ export interface CommandParams {
     /** The design's label (A, B, … AA) */
     "label": string;
   };
-  /** Send a chat's design coordinator a message. It waits if the coordinator is busy. (changes something; needs the card's owner trusted) */
+  /** Send a chat's Lookbook coordinator a message. It waits if the coordinator is busy. (changes something; needs the card's owner trusted) */
   "design.coordinator.message": {
     /** The chat the designs belong to, by id or by path */
     "session"?: string;

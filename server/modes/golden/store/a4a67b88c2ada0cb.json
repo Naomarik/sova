@@ -126,13 +126,7 @@
    "required": [
     "id"
    ],
-   "properties": {
-    "id": {
-     "type": "string",
-     "pattern": "^ag_\\d+$",
-     "description": "Exact worker ID (ag_NN)."
-    }
-   },
+   "properties": {},
    "additionalProperties": false
   }
  },
@@ -183,10 +177,6 @@
     "id"
    ],
    "properties": {
-    "id": {
-     "type": "string",
-     "minLength": 1
-    },
     "full": {
      "type": "boolean"
     },
@@ -214,10 +204,6 @@
     "message"
    ],
    "properties": {
-    "id": {
-     "type": "string",
-     "minLength": 1
-    },
     "message": {
      "type": "string",
      "minLength": 1
@@ -238,10 +224,6 @@
   "parameters": {
    "type": "object",
    "properties": {
-    "id": {
-     "type": "string",
-     "minLength": 1
-    },
     "group": {
      "type": "string",
      "minLength": 1
@@ -513,7 +495,7 @@
     "ops": {
      "type": "array",
      "items": {
-      "anyOf": "@8f0d66a627303464"
+      "anyOf": "@f484e0977544ee34"
      },
      "description": "Operations, applied in order. change_request, when given, comes before every other op; create or import comes next (else first) and appears once.",
      "minItems": 1
@@ -524,7 +506,7 @@
  },
  {
   "name": "vis_guide",
-  "description": "@4e03995211272eb1",
+  "description": "@b90c146a99d490af",
   "parameters": {
    "type": "object",
    "required": [
@@ -548,12 +530,16 @@
       "html",
       "svg",
       "tour",
+      "lookbook",
       "tour-signin",
       "tour-sites",
       "tour-sova",
-      "tour-sharing"
+      "tour-sharing",
+      "lookbook-setup",
+      "lookbook-directions",
+      "lookbook-passing-on"
      ],
-     "description": "The drawing kind or tool-backed tour entry, as the vis minor mode lists it, or a part the tour guide names"
+     "description": "The drawing kind or tool-backed entry (tour, lookbook), as the vis minor mode lists it, or a part its guide names"
     }
    },
    "additionalProperties": false
@@ -582,83 +568,6 @@
    "required": [
     "kind",
     "source"
-   ],
-   "additionalProperties": false
-  }
- },
- {
-  "name": "record_tour",
-  "description": "@f2a84afb9f865e94",
-  "parameters": {
-   "type": "object",
-   "properties": "@852078159a752148",
-   "required": [
-    "op"
-   ],
-   "additionalProperties": false
-  }
- },
- {
-  "name": "show_tour",
-  "description": "Present one complete checked tour edition from this chat. Record and visually check it first; never records on display. Read vis_guide with tour for the workflow.",
-  "parameters": {
-   "type": "object",
-   "properties": {
-    "tourId": {
-     "type": "string",
-     "minLength": 1,
-     "maxLength": 100
-    },
-    "editionId": {
-     "type": "string",
-     "minLength": 1,
-     "maxLength": 100
-    }
-   },
-   "required": [
-    "tourId"
-   ],
-   "additionalProperties": false
-  }
- },
- {
-  "name": "zoom",
-  "description": "@9fb1f34e406e16f8",
-  "parameters": {
-   "type": "object",
-   "properties": {
-    "id": {
-     "type": "integer",
-     "minimum": 0,
-     "description": "The line's first message id"
-    },
-    "n": {
-     "type": "integer",
-     "minimum": 1,
-     "description": "How many messages the line covers (a power of 2)"
-    }
-   },
-   "required": [
-    "id",
-    "n"
-   ],
-   "additionalProperties": false
-  }
- },
- {
-  "name": "date",
-  "description": "The date and time of message id in the memory view.",
-  "parameters": {
-   "type": "object",
-   "properties": {
-    "id": {
-     "type": "integer",
-     "minimum": 0,
-     "description": "The message id"
-    }
-   },
-   "required": [
-    "id"
    ],
    "additionalProperties": false
   }

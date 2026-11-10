@@ -13,7 +13,9 @@ Open a Lookbook only when the user asks for one: by its name ("make a Lookbook o
 
 ## Starting
 
-Call `lookbook` with `{"op":"start"}` and only what the user said: `brief`, `modelGroups` ("all Ollama, all Claude"), `models`, `directions` (styles), `layouts`, `coordinator`. Leave out whatever they did not say; never pick models, styles or layouts for them. It returns the card's id at once. Say the card is up, in a sentence, and stop: the user chooses on the card, and their clicks never come back to you.
+If the user hasn't said what page to design, ask that one question first and open the card once they answer. Then call `lookbook` with `{"op":"start"}` and only what the user said: `brief`, `modelGroups` ("all Ollama, all Claude"), `models`, `directions` (styles), `layouts`, `coordinator`. Leave out whatever they did not say; never pick models, styles or layouts for them. It returns the card's id at once. Say the card is up, in a sentence, and stop: the user chooses on the card, and their clicks never come back to you.
+
+One card per ask: details the user adds once the card is up (a model, a style, a link) go on the card. Tell them to set it there; never open a second card for it, and never `tell` the coordinator, which hasn't started.
 
 ## Reading and passing on
 

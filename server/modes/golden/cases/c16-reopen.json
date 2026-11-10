@@ -278,7 +278,14 @@
       "stopReason": "stop",
       "thinkingLevel": "off"
      },
-     "@aa3d7eb6fd96b946",
+     {
+      "role": "system",
+      "content": "",
+      "sections": {
+       "tools": "@7b61ccc4990a2ee1"
+      },
+      "toolsAdded": "@5234280a30e169f3"
+     },
      {
       "role": "user",
       "content": [
@@ -293,7 +300,7 @@
       "content": [
        {
         "type": "text",
-        "text": "@7433bb97fbe2edaa"
+        "text": "@0b445a55f1f44e01"
        }
       ]
      }
@@ -335,113 +342,13 @@
      "sections": {
       "tools": "@7b61ccc4990a2ee1"
      },
-     "toolsAdded": [
-      {
-       "name": "vis_guide",
-       "description": "@4e03995211272eb1",
-       "parameters": {
-        "type": "object",
-        "required": [
-         "kind"
-        ],
-        "properties": {
-         "kind": {
-          "type": "string",
-          "enum": [
-           "flow",
-           "sequence",
-           "state",
-           "layers",
-           "tree",
-           "chart",
-           "timeline",
-           "steps",
-           "wireframe",
-           "matrix",
-           "code",
-           "html",
-           "svg",
-           "tour",
-           "tour-signin",
-           "tour-sites",
-           "tour-sova",
-           "tour-sharing"
-          ],
-          "description": "The drawing kind or tool-backed tour entry, as the vis minor mode lists it, or a part the tour guide names"
-         }
-        },
-        "additionalProperties": false
-       }
-      },
-      {
-       "name": "vis_check",
-       "description": "@2327d56265ca0751",
-       "parameters": {
-        "type": "object",
-        "properties": {
-         "kind": {
-          "type": "string",
-          "enum": [
-           "html",
-           "svg",
-           "wireframe"
-          ],
-          "description": "The fence's kind: html, svg or wireframe"
-         },
-         "source": {
-          "type": "string",
-          "description": "The fence body, without the ``` lines"
-         }
-        },
-        "required": [
-         "kind",
-         "source"
-        ],
-        "additionalProperties": false
-       }
-      },
-      {
-       "name": "record_tour",
-       "description": "@f2a84afb9f865e94",
-       "parameters": {
-        "type": "object",
-        "properties": "@852078159a752148",
-        "required": [
-         "op"
-        ],
-        "additionalProperties": false
-       }
-      },
-      {
-       "name": "show_tour",
-       "description": "Present one complete checked tour edition from this chat. Record and visually check it first; never records on display. Read vis_guide with tour for the workflow.",
-       "parameters": {
-        "type": "object",
-        "properties": {
-         "tourId": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 100
-         },
-         "editionId": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 100
-         }
-        },
-        "required": [
-         "tourId"
-        ],
-        "additionalProperties": false
-       }
-      }
-     ]
+     "toolsAdded": "@5234280a30e169f3"
     }
    },
    {
     "type": "custom_message",
     "customType": "mode-note",
-    "content": "@7433bb97fbe2edaa",
+    "content": "@0b445a55f1f44e01",
     "display": false,
     "details": {
      "v": 1,

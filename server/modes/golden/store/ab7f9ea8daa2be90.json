@@ -126,7 +126,13 @@
    "required": [
     "id"
    ],
-   "properties": {},
+   "properties": {
+    "id": {
+     "type": "string",
+     "pattern": "^ag_\\d+$",
+     "description": "Exact worker ID (ag_NN)."
+    }
+   },
    "additionalProperties": false
   }
  },
@@ -177,6 +183,10 @@
     "id"
    ],
    "properties": {
+    "id": {
+     "type": "string",
+     "minLength": 1
+    },
     "full": {
      "type": "boolean"
     },
@@ -204,6 +214,10 @@
     "message"
    ],
    "properties": {
+    "id": {
+     "type": "string",
+     "minLength": 1
+    },
     "message": {
      "type": "string",
      "minLength": 1
@@ -224,6 +238,10 @@
   "parameters": {
    "type": "object",
    "properties": {
+    "id": {
+     "type": "string",
+     "minLength": 1
+    },
     "group": {
      "type": "string",
      "minLength": 1
@@ -479,7 +497,7 @@
  },
  {
   "name": "vis_guide",
-  "description": "@4e03995211272eb1",
+  "description": "@b90c146a99d490af",
   "parameters": {
    "type": "object",
    "required": [
@@ -503,12 +521,16 @@
       "html",
       "svg",
       "tour",
+      "lookbook",
       "tour-signin",
       "tour-sites",
       "tour-sova",
-      "tour-sharing"
+      "tour-sharing",
+      "lookbook-setup",
+      "lookbook-directions",
+      "lookbook-passing-on"
      ],
-     "description": "The drawing kind or tool-backed tour entry, as the vis minor mode lists it, or a part the tour guide names"
+     "description": "The drawing kind or tool-backed entry (tour, lookbook), as the vis minor mode lists it, or a part its guide names"
     }
    },
    "additionalProperties": false

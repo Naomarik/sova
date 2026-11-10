@@ -210,8 +210,9 @@ async function sandboxed(): Promise<string | undefined> {
     if (got.type === "shell_refused") return { refused: got.message as string };
     return a.find(`${clientId}'s end`, (f) => f.type === "shell_end" && f.id === got.run.id);
   };
-  // Dial this server's own port: reachable whatever the machine's network, unless the sandbox cuts it off.
-  const dial = `(exec 3<>/dev/tcp/127.0.0.1/${new URL(s.base).port}) 2>/dev/null && echo reached || echo blocked`;
+  // Dial this server's own port: reachable whatever the machine's network, unless the sandbox cuts it off. In bash
+  // (/dev/tcp is bash's), whatever the login shell the command runs in.
+  const dial = `bash -c 'exec 3<>/dev/tcp/127.0.0.1/${new URL(s.base).port}' 2>/dev/null && echo reached || echo blocked`;
   const homeOff = join(s.home, `shell-off-${Date.now()}`);
   const homeOn = join(s.home, `shell-on-${Date.now()}`);
   // Off: the same lines write the home folder and reach the port.

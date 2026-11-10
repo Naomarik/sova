@@ -62,6 +62,8 @@ The `merge` section says how the project's branches land through its merge queue
 - `request`: the folder of the project's request kit.
 - `reuse`: `false` runs every check in full. Absent or `true` lets a check's runner reuse passes from
   identical code.
+- `deleteBranches`: `true` lets automatic cleanup delete a landed branch after removing its folder.
+  Absent, the branch is kept.
 
 With no `merge` section the queue uses `test`. With neither, the queue isn't set up: the project's
 Merge Queue tab offers **Set Up with a Chat**.
@@ -69,7 +71,8 @@ Merge Queue tab offers **Set Up with a Chat**.
 The checks are read from the target's copy of the file, never the branch's. A branch that changes them
 is checked with the old list, and its own list counts once it lands.
 
-Settings → Merge Queue saves `push`, `review` and each check's limits as one commit, which you confirm.
+Settings → Merge Queue saves `push`, `review`, `reuse`, `deleteBranches` and each check's limits as one
+commit, which you confirm.
 Check commands, the install step, the target and the kits change by a branch and Land.
 
 ## Conformance

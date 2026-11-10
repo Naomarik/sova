@@ -17,6 +17,8 @@ import { notSetUp } from "../lib/merge-queue";
 import { createSetupPoll, SetupChatButton, SetupChatState, SetupNotSetUp, type SetupPoll } from "./SetupChat";
 import { Banner, Icon } from "./ui";
 import { createLandConfirm, LandConfirms, LandSplit, QueueChip, UnclearChecks } from "./WorktreesModal";
+import { createDiscard } from "./DiscardBranch";
+import { discardMenuLine } from "../lib/discard-branch";
 import type { LandHow, MergeReady, TargetBroken } from "../../shared/merge-queue";
 import { BranchSummaryView } from "./BranchSummary";
 import type { DiffScope, WorktreeReadiness } from "../../shared/protocol";
@@ -1124,6 +1126,11 @@ function ReadyRow(props: { projectId: string; root: string; target?: string; how
   const r = () => props.ready;
   const act = useAct(props.onChanged);
   const confirm = createLandConfirm();
+  const discard = createDiscard(() => ({ project: props.projectId, branch: r().branch, commit: r().commit }), props.onChanged);
+  const openDiscard = () => {
+    discard.opened();
+    confirm.open("discard");
+  };
   // Land names no chat: the server records the branch's owner by the same rule that put this row's chat here
   // (server/merge-queue/owners.ts).
   const doLand = (o: LandOptions = {}) =>
@@ -1156,13 +1163,14 @@ function ReadyRow(props: { projectId: string; root: string; target?: string; how
         </p>
         <BranchSummaryView summary={r().summary} projectId={props.projectId} branch={r().branch} />
         <Show when={act.error()}>{(m) => <p class="list-meta mq-error" role="alert">{m()}</p>}</Show>
+        <Show when={discard.partial()}>{(m) => <p class="list-meta mq-error" role="alert">{m()}</p>}</Show>
       </div>
       {/* A confirm replaces the row's actions while it is open. */}
-      <LandConfirms confirm={confirm} branch={r().branch} ahead={r().ahead} target={props.target} how={props.how} drafts={r().draftsOnly} busy={!!act.busy()} onLand={doLand} />
+      <LandConfirms confirm={confirm} branch={r().branch} ahead={r().ahead} target={props.target} how={props.how} drafts={r().draftsOnly} busy={!!act.busy()} onLand={doLand} discard={discard} />
       <Show when={!confirm.ask()}>
         <div class="mq-row-act">
           <QueueReview projectId={props.projectId} branch={r().branch} scope={{ kind: "queue", project: props.projectId, branch: r().branch }} session={r().session} chatOf={props.chatOf} />
-          <LandSplit branch={r().branch} review={props.review} busy={!!act.busy()} onAsk={() => confirm.open("land")} onLand={doLand} onWithoutSpecs={() => confirm.open("specs")} draftsOnly={!!r().draftsOnly} />
+          <LandSplit branch={r().branch} review={props.review} busy={!!act.busy()} onAsk={() => confirm.open("land")} onLand={doLand} onWithoutSpecs={() => confirm.open("specs")} draftsOnly={!!r().draftsOnly} onDiscard={openDiscard} discardWhy={discard.refused()} discardLine={discardMenuLine(discard.preview())} onMenuOpen={() => void discard.check()} />
         </div>
       </Show>
     </li>

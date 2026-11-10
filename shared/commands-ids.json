@@ -258,6 +258,7 @@
     "session.worktree.restore",
     "session.worktree.remove",
     "session.worktree.status",
+    "project.merge-queue.discard-branch",
     "design.list",
     "design.page",
     "design.setup.set",

@@ -201,7 +201,8 @@ test("q4: the Land menu offers no per-landing way of landing; the project's sett
   assert.ok(start >= 0, "LandSplit is where the Land menu is built");
   const body = src.slice(start, src.indexOf("\nexport function", start + 1));
   const items = [...body.matchAll(/<menu\.Item\s+label="([^"]+)"/g)].map((m) => m[1]);
-  assert.deepEqual(items, ["Land Without Review", "Land Without Its Specs…"], "exactly today's two items");
+  // Its ways of landing are these two; Discard Branch… (after them) lands nothing.
+  assert.deepEqual(items, ["Land Without Review", "Land Without Its Specs…", "Discard Branch…"], "exactly today's two ways of landing, then Discard Branch…");
   assert.doesNotMatch(body, /pull request|merge request|locally|\bPR\b|\bMR\b|github|gitlab|push branch/i, "no strategy choice anywhere in the menu");
 });
 

@@ -299,6 +299,7 @@ const VALIDATE_ONLY: Record<string, string> = {
   "project.merge-queue.settings.save": "a valid call commits onto a git project's target through its started merge queue",
   "project.merge-queue.settings.cancel": "a valid call needs the server's merge queue started on a git project, which the unit tier's app doesn't start",
   "project.merge-queue.update-local-main": "a valid call needs the server's merge queue started on a git project with an origin, which the unit tier's app doesn't start",
+  "project.merge-queue.discard-branch": "a valid call is the page's own click, which the fuzz's in-process caller never is; the act is driven in server/worktree-remove-discard*.test.ts",
   "project.merge-queue.request.publish": "a valid call needs a queue entry checked and waiting for its request's text, which the unit tier's app doesn't start",
   "project.merge-queue.land-how.set": "a valid call needs the server's merge queue started on a git project, which the unit tier's app doesn't start",
   "project.merge-queue.land-how.clear": "a valid call needs the server's merge queue started on a git project, which the unit tier's app doesn't start",

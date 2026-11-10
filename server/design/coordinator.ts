@@ -4,7 +4,7 @@
 // here, and each tool decides from server-held state, never from what the model says about itself.
 import { captureDesignPage } from "./capture";
 import { noteSignedInConsent, readAssets } from "./assets";
-import { askVision, assetBlock, describerModels, describing, onAssetsSettled, onDescribingStarted } from "./describe";
+import { askVision, assetBlock, assetsForCoordinator, describerModels, describing, onAssetsSettled, onDescribingStarted } from "./describe";
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -129,7 +129,10 @@ function ports(): CoordinatorPorts {
   if (!hooked) {
     hooked = true;
     onDesignHandIn((e) => noteHandIn(e.sessionId, { label: e.label, version: e.version, note: e.note }));
-    onAssetsSettled((sid) => syncBriefImages(sid));
+    onAssetsSettled((sid) => {
+      syncBriefImages(sid);
+      void tellImagesSettled(sid);
+    });
     onDescribingStarted((sid) => syncBriefImages(sid));
   }
   return realPorts;
@@ -346,7 +349,7 @@ export function noteDesignEvent(sessionId: string, a: { label: string; kind: "fi
 async function revive(st: CoordinatorState, text: string, key: string): Promise<void> {
   const p = ports();
   const parent = { sessionId: st.sessionId, path: st.parentPath };
-  const task = [`Your earlier session in this chat ended, so you are starting again. Your card said:\n${st.card || "(nothing yet)"}`, `The designs so far:\n${JSON.stringify(p.designsFor(st.sessionId).map(metadata))}`, ...briefForRevival(st), text].join("\n\n");
+  const task = [`Your earlier session in this chat ended, so you are starting again. Your card said:\n${st.card || "(nothing yet)"}`, `The designs so far:\n${modelWords(JSON.stringify(p.designsFor(st.sessionId).map(metadata)))}`, ...briefForRevival(st), text].join("\n\n");
   const ref = await p.workers(parent).start({ key: `${st.sessionId}:design-coordinator:revive:${++st.revived}:${key}`, spec: p.specFor(parent, st.cwd, st.model, p.systemPrompt()), session: { new: { dir: p.sessionDir(st.cwd) } }, task });
   following.get(st.chatId)?.();
   following.delete(st.chatId);
@@ -369,8 +372,9 @@ export function modelWords(text: string): string {
 }
 
 /** A person's own words, labelled by who sent them, so nothing above or below can pass as theirs. */
-const userWords = (who: "box" | "main", text: string): string =>
-  `${who === "box" ? "The user wrote in your box" : "The main chat passed this on from the user, word for word"}:\n<<<\n${text}\n>>>`;
+const USER_LABEL = { box: "The user wrote in your box", main: "The main chat passed this on from the user, word for word", card: "The user wrote on the Design Brief", setup: "The user wrote on the Setup card" } as const;
+/** Their own fence can't be closed from inside, so nothing after it can pass as theirs either. */
+const userWords = (who: keyof typeof USER_LABEL, text: string): string => `${USER_LABEL[who]}:\n<<<\n${text.replace(/<<<|>>>/g, "\u2039\u2039\u2039")}\n>>>`;
 
 /** A design's hand-in, as a line of context: metadata only, and it wakes nothing. */
 export function noteHandIn(sessionId: string, a: { label: string; version: number; note?: { layout: string; sections: string; type: string; color: string } | null }): void {
@@ -388,7 +392,7 @@ function firstMessage(run: DesignRun): string {
   const designers = run.setup.models.filter((m) => m.design).map((m) => m.name);
   const directions = run.setup.directions.filter((d) => d.on).map((d) => d.name);
   const links = (run.setup.links ?? []).map((l) => `${l.url}: ${l.use === "images" ? "Use Its Images" : l.use === "feel" ? "Just Its Feel" : l.use === "content" ? "Not a Reference: an address in the page's content, never to be opened" : "not chosen: set it in design_brief's sources from their words (content when it's only an address the page links to, such as a contact or booking link), or ask"}`);
-  return [`What the user wants to design, as they left it on the Setup card:\n${run.setup.brief}`, ...(links.length ? [`Links, and how each is used:\n${links.join("\n")}`] : []), `Models that will design: ${designers.join(", ") || "none"}.`, `Directions: ${directions.join(", ") || "none"}.`, `That is ${designers.length * directions.length} designs. Your run's id is ${run.id}. Prepare the Design Brief; the designs start only when the user presses Start on it.`].join("\n\n");
+  return [`What the user wants to design.\n${userWords("setup", run.setup.brief)}`, ...(links.length ? [`Links, and how each is used:\n${links.join("\n")}`] : []), `Models that will design: ${designers.join(", ") || "none"}.`, `Directions: ${directions.join(", ") || "none"}.`, `That is ${designers.length * directions.length} designs. Your run's id is ${run.id}. Prepare the Design Brief; the designs start only when the user presses Start on it.`].join("\n\n");
 }
 
 /** One coordinator works on one brief: a run still being prepared or waiting on its brief stops when a newer one starts,
@@ -567,11 +571,11 @@ export async function editBrief(parent: BrowseParent, runId: string, a: { field:
   const key = `${runId}:brief:edit:${a.field}:${run.brief.rev}`;
   if (a.field === "prompt") {
     const rev = changeBrief(st, (b) => (userEditedPrompt(b, text), b.textRev));
-    await wakeForBrief(st, `The user saved their own Full Prompt. It launches as they left it, and you can't change it. Bring only the summary in line with it, with design_brief (summary, baseRev ${rev}):\n<<<\n${text}\n>>>`, key);
+    await wakeForBrief(st, `The user saved their own Full Prompt. It launches as they left it, and you can't change it. Bring only the summary in line with it, with design_brief (summary, baseRev ${rev}). Their Full Prompt:\n${userWords("card", text)}`, key);
     return;
   }
   const after = changeBrief(st, (b) => (userEditedSummary(b, text), { rev: b.textRev, conflict: !!b.conflict, open: openQuestions(b).length }));
-  const line = `The user edited the summary. It now reads:\n<<<\n${text}\n>>>`;
+  const line = `The user edited the summary. It now reads:\n${userWords("card", text)}`;
   if (after.conflict || after.open) return noteForNextTurn(st, line);
   await wakeForBrief(st, `${line}\nRewrite the Full Prompt to match it, with design_brief (prompt or promptEdits, baseRev ${after.rev}). Don't change the summary.`, key);
 }
@@ -585,11 +589,11 @@ export async function answerBrief(parent: BrowseParent, runId: string, picks: Br
   });
   if ("error" in out) throw new BriefRefused(out.error);
   // Partial answers wait with the rest, so a long prompt is never rewritten per answer.
-  if (!out.allAnswered) return noteForNextTurn(st, `The user answered:\n${out.lines.join("\n")}`);
+  if (!out.allAnswered) return noteForNextTurn(st, `The user answered:\n${userWords("card", out.lines.join("\n"))}`);
   const next = out.theirs
     ? `The Full Prompt is the user's own, so don't change it. Bring the summary in line if these answers change it, with design_brief (baseRev ${out.rev}); the brief asks them whether to keep their prompt or have it rewritten.`
     : `${out.unwritten ? "Write" : "Rewrite"} the Full Prompt now, with design_brief (prompt, baseRev ${out.rev}).`;
-  await wakeForBrief(st, `The user answered:\n${out.lines.join("\n")}\n\n${next}`, `${runId}:brief:answers:${run.brief.rev}`);
+  await wakeForBrief(st, `The user answered:\n${userWords("card", out.lines.join("\n"))}\n\n${next}`, `${runId}:brief:answers:${run.brief.rev}`);
 }
 
 /** Keep My Prompt or Rewrite It. Works with the coordinator stopped: a prompt you kept can still start. */
@@ -667,7 +671,15 @@ export async function notThisScreen(parent: BrowseParent, runId: string, text?: 
     delete b.screen;
     userTold(b, "screen");
   });
-  await wakeForBrief(st, `The user pressed Not This Screen.${text ? ` They said: ${text}` : " Ask on your card which screen they mean."} Update the brief with design_brief once you have the right one.`, `${runId}:brief:not-this:${run.brief.rev}`);
+  await wakeForBrief(st, `The user pressed Not This Screen.${text ? ` They said:\n${userWords("card", text)}\n` : " Ask on your card which screen they mean."} Update the brief with design_brief once you have the right one.`, `${runId}:brief:not-this:${run.brief.rev}`);
+}
+
+/** The images are all described: the coordinator hears them once, as data, to judge which suit the brief. */
+export async function tellImagesSettled(sessionId: string, words = assetsForCoordinator(sessionId)): Promise<void> {
+  const st = load(sessionId);
+  const run = st && runOf(sessionId, st.runId);
+  if (!st || !words || (run?.phase !== "researching" && run?.phase !== "brief")) return;
+  await wakeSafely(st, `The chat's images are described:\n${words}\nLeave out any that don't suit the brief with design_brief's images; the rest go to the designers.`, `${run.id}:images-settled:${Date.now()}`);
 }
 
 const capturing = new Set<string>();

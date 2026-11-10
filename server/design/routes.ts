@@ -5,17 +5,22 @@ import type { Context, Hono } from "hono";
 import { DESIGN_ASK_ABOVE, isDesignLabel, type DesignSetup } from "../../shared/design";
 import { DESIGN_RUN } from "../harness/state-kinds";
 import { chatHandle, acquireChatHandle } from "../chat-handle";
+import { notPage } from "../page-only";
 import { resolveSessionPath } from "../paths";
 import { idOf } from "../sessions-index";
-import { startCoordinator } from "./coordinator";
+import { BriefRefused, startBrief, startCoordinator } from "./coordinator";
 import { mountCoordinatorRoutes } from "./coordinator-routes";
 import { mountDesignLiveRoutes } from "./live-route";
+import { mountDesignAssetRoutes } from "./asset-routes";
+import { showAssets } from "./assets";
+import { mountDescribeRoutes } from "./describe-routes";
 import { assertLaunchAllowed, deleteDesign, deliverDesign, DesignLimitError, designCount, retryDesign, type DesignParent } from "./batch";
 import { designView, livePage } from "./live";
 import { cleanSetup, estimateUsd } from "./setup";
 import { changeDesigns, designOf, readDesigns, readPage, runOf } from "./store";
 
 const BAD_PATH = "Invalid or missing ?path= (must be a .jsonl under the pi sessions dir)";
+const ONLY_YOUR_CLICK = "Only your own click on the Design Brief in Sova's page starts the designs.";
 
 function parentOf(c: Context): DesignParent | null {
   const path = resolveSessionPath(c.req.query("path"));
@@ -38,6 +43,8 @@ export function mountDesignRoutes(app: Hono): void {
   // First: `/api/design/coordinator/...` would otherwise read as a design's own routes.
   mountCoordinatorRoutes(app);
   mountDesignLiveRoutes(app, parentOf);
+  mountDesignAssetRoutes(app, parentOf);
+  mountDescribeRoutes(app, parentOf);
   app.get("/api/design", (c) => {
     const p = parentOf(c);
     if (!p) return c.json({ error: BAD_PATH }, 400);
@@ -52,14 +59,22 @@ export function mountDesignRoutes(app: Hono): void {
     const runId = c.req.param("run");
     const run = runOf(p.sessionId, runId);
     if (!run) return c.json({ error: "No such design run." }, 404);
-    if (run.phase !== "setup") return c.json({ error: "This run has started, so its Setup is closed." }, 409);
-    const next = cleanSetup(run.setup, sent);
+    const briefOpen = run.phase === "brief";
+    if (run.phase !== "setup" && !briefOpen) return c.json({ error: "This run has started, so its Setup is closed." }, 409);
+    const next = cleanSetup(run.setup, sent, briefOpen);
     if (typeof next === "string") return c.json({ error: next }, 400);
     changeDesigns(p.sessionId, (s) => {
       const r = s.runs.find((x) => x.id === runId);
       if (r) {
         r.setup = next;
         r.updatedAt = new Date().toISOString();
+        if (briefOpen && r.brief) {
+          // On the card, so what Start starts from has moved; and so has what it should cost.
+          r.brief.rev++;
+          const estimate = estimateUsd(next);
+          if (estimate === null) delete r.brief.estimateUsd;
+          else r.brief.estimateUsd = estimate;
+        }
       }
     });
     return c.json(designView(p.sessionId));
@@ -68,24 +83,19 @@ export function mountDesignRoutes(app: Hono): void {
   app.post("/api/design/runs/:run/start", async (c) => {
     const p = parentOf(c);
     if (!p) return c.json({ error: BAD_PATH }, 400);
-    const b = await body(c);
-    if (b.confirmSpend !== undefined && typeof b.confirmSpend !== "boolean") return c.json({ error: "confirmSpend must be true or false." }, 400);
+    const run = runOf(p.sessionId, c.req.param("run"));
     const runId = c.req.param("run");
-    const run = runOf(p.sessionId, runId);
     if (!run) return c.json({ error: "No such design run." }, 404);
     if (run.phase !== "setup") return c.json({ error: "This run has already started." }, 409);
     const n = designCount(run.setup);
     if (!n) return c.json({ error: "Pick at least one model and one direction first." }, 400);
+    // The hard stop only: the spending question waits for Start on the brief, when the plan is known.
     try {
-      assertLaunchAllowed(n, b.confirmSpend === true);
+      assertLaunchAllowed(n, true);
     } catch (err) {
-      if (err instanceof DesignLimitError) return c.json({ error: err.message, ...(err.needsConfirm ? { needsConfirm: true, designs: err.designs, askAbove: DESIGN_ASK_ABOVE, ...priced(run.setup) } : {}) }, err.needsConfirm ? 409 : 400);
+      if (err instanceof DesignLimitError) return c.json({ error: err.message }, 400);
       throw err;
     }
-    changeDesigns(p.sessionId, (s) => {
-      const r = s.runs.find((x) => x.id === runId);
-      if (r) r.confirmedSpend = b.confirmSpend === true;
-    });
     const started = runOf(p.sessionId, runId)!;
     try {
       await startCoordinator(p, started, cwdOf(p));
@@ -95,6 +105,27 @@ export function mountDesignRoutes(app: Hono): void {
     // The run's mark on the chat's own file; best effort, the store is what the card reads.
     void recordRun(p, runId).catch((err) => console.warn(`[design] the run's record was not written: ${message(err)}`));
     return c.json(designView(p.sessionId));
+  });
+
+  app.post("/api/design/runs/:run/brief/start", async (c) => {
+    if (notPage(c)) return c.json({ error: ONLY_YOUR_CLICK }, 403);
+    const p = parentOf(c);
+    if (!p) return c.json({ error: BAD_PATH }, 400);
+    const b = await body(c);
+    if (typeof b.rev !== "number" || (b.confirmSpend !== undefined && typeof b.confirmSpend !== "boolean")) return c.json({ error: "Expected { rev, confirmSpend? }." }, 400);
+    const runId = c.req.param("run");
+    try {
+      await startBrief(p, runId, { rev: b.rev, confirmSpend: b.confirmSpend === true });
+      void recordRun(p, runId).catch((err) => console.warn(`[design] the run's record was not written: ${message(err)}`));
+      return c.json(designView(p.sessionId));
+    } catch (err) {
+      if (err instanceof DesignLimitError) {
+        const run = runOf(p.sessionId, runId);
+        return c.json({ error: err.message, ...(err.needsConfirm && run ? { needsConfirm: true, designs: err.designs, askAbove: DESIGN_ASK_ABOVE, ...priced(run.setup) } : {}) }, err.needsConfirm ? 409 : 400);
+      }
+      if (err instanceof BriefRefused) return c.json({ error: err.message, ...err.detail }, 409);
+      return c.json({ error: message(err) }, 500);
+    }
   });
 
   const send = (name: "message" | "refine") =>
@@ -148,8 +179,12 @@ export function mountDesignRoutes(app: Hono): void {
     const v = c.req.query("v");
     const n = v === undefined ? undefined : Number(v);
     if (n !== undefined && (!Number.isInteger(n) || n < 1)) return c.json({ error: "?v= must be a version number" }, 400);
-    const page = readPage(p.sessionId, label, n);
-    if (page === null) return c.json({ error: "No such page." }, 404);
+    const stored = readPage(p.sessionId, label, n);
+    if (stored === null) return c.json({ error: "No such page." }, 404);
+    const images = c.req.query("images");
+    if (images !== undefined && images !== "small" && images !== "full") return c.json({ error: "?images= must be small or full." }, 400);
+    // Only drawing asks for pictures; every other reader, a model's included, gets the page as it was written, names and all.
+    const page = images ? showAssets(p.sessionId, stored, images) : stored;
     // As text, never as a page of Sova's origin: the web app seals it in its own frames.
     return c.text(page, 200, { "Content-Type": "text/plain; charset=utf-8", "X-Content-Type-Options": "nosniff", "Cache-Control": "no-store" });
   });

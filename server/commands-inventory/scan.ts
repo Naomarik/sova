@@ -72,8 +72,8 @@ export const CAPABILITY_LINKS: readonly RouteKey[] = ["GET /api/projects/:pid/pr
 export const GRANTS: readonly RouteKey[] = [
   "POST /api/schedules/approve", "POST /api/schedules/revoke", "GET /api/overseer/autonomy", "POST /api/overseer/autonomy/revoke",
   "POST /api/projects/:pid/draft-specs/:sid/approve",
-  // A coordinator's questions: a yes launches, starts a copy or opens a site. Only the person's own click.
-  "POST /api/design/runs/:run/confirm", "POST /api/design/coordinator/answer",
+  // A coordinator's questions and the Design Brief: a yes launches, spends, starts a copy or opens a site. Only the person's own click.
+  "POST /api/design/runs/:run/brief/start", "POST /api/design/runs/:run/brief/edit", "POST /api/design/runs/:run/brief/answers", "POST /api/design/runs/:run/brief/conflict", "POST /api/design/runs/:run/brief/link", "POST /api/design/runs/:run/brief/not-this-screen", "POST /api/design/coordinator/answer",
 ];
 
 export const ROUTE_CLASSES: readonly RouteClass[] = [

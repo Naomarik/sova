@@ -32,6 +32,8 @@ export interface DesignHost {
 }
 
 let host: DesignHost | null = null;
+/** The worker host of a chat, for the design module's other hidden sessions. */
+export const designWorkers = (parent: DesignParent): WorkerHost => workers(parent);
 export const installDesignHost = (h: DesignHost | null): void => void (host = h);
 const workers = (parent: DesignParent): WorkerHost => {
   if (!host) throw new Error("Design sessions need Sova's chat runtime.");
@@ -122,7 +124,7 @@ function loadRefs(sessionId: string, runId: string): DesignReference[] {
 }
 
 /** Whether a run's own batch has been started. Its labels can't say: a design made from others joins them too. */
-export const designRunLaunched = (run: Pick<DesignRun, "phase">): boolean => run.phase !== "setup" && run.phase !== "researching" && run.phase !== "confirm";
+export const designRunLaunched = (run: Pick<DesignRun, "phase">): boolean => run.phase !== "setup" && run.phase !== "researching" && run.phase !== "brief";
 
 /** A run's designs: one queued record per model and direction, within what the Setup card holds. */
 export function launchDesigns(parent: DesignParent, runId: string, input: { brief?: string; references?: DesignReference[] }): string[] {
@@ -290,6 +292,7 @@ function heard(parent: DesignParent, label: string): void {
         delete x.fix;
         delete x.live;
       });
+      noteUnchanged(parent.sessionId, label, "Its session went quiet and stopped responding.");
       finishRun(parent, label);
     } else fail(parent, label, "Its session went quiet and stopped responding.");
   }, quietMs);
@@ -334,6 +337,7 @@ function follow(parent: DesignParent, label: string, chatId: string): void {
           x.workerState = "ended";
         });
         clearLivePage(parent.sessionId, label);
+        if (d.versions.length && (atWork(d) || readDesigns(parent.sessionId).internal?.[label]?.by === "refine")) noteUnchanged(parent.sessionId, label, f.detail ?? "Its session stopped before it finished.");
         if (atWork(d)) {
           if (d.versions.length)
             changeDesign(parent.sessionId, label, (x) => {
@@ -399,6 +403,12 @@ async function settled(parent: DesignParent, label: string, state: WorkerState):
   // The model can't act on these: a stop, or a provider's or login's failure.
   const fixable = !state.trip && s?.outcome === "success";
   if (problem && fixable && (await sendBack(parent, label, problem))) return;
+  // Asked for a change and got none: a page that didn't land, or a turn that wrote nothing or stopped.
+  if (d.versions.length && !wrote.page) {
+    const asked = readDesigns(sid).internal?.[label]?.by === "refine";
+    const stopped = state.trip ? `It was stopped: ${state.trip}.` : s?.outcome === "error" ? (s.error ?? "The model's reply failed.") : s?.outcome === "aborted" ? "It was stopped before it finished." : null;
+    if (problem || asked) noteUnchanged(sid, label, problem ?? stopped ?? "It finished without changing the page.");
+  }
   if (atWork(d)) {
     if (d.versions.length) {
       clearLivePage(sid, label);
@@ -437,6 +447,15 @@ function showFixing(sid: string, label: string, problem: string, attempt: number
   });
   noteDesignEvent(sid, { label, kind: "fixing", reason: problem });
   return d;
+}
+
+/** A request for a change ended with no new version: the card says so. A Refine must never just appear to do nothing. */
+function noteUnchanged(sid: string, label: string, reason: string): void {
+  changeDesigns(sid, (s) => {
+    const i = s.internal?.[label];
+    if (i) i.by = "chat";
+  });
+  changeDesign(sid, label, (x) => void (x.unchanged = { reason, at: new Date().toISOString() }));
 }
 
 function fixMessage(route: DesignRecord["route"], problem: string, attempt: number): string {
@@ -543,6 +562,7 @@ function commitVersion(parent: DesignParent, label: string, html: string, note: 
     d.status = "ready";
     delete d.error;
     delete d.fix;
+    delete d.unchanged;
     delete d.live;
     delete d.thinking;
   });
@@ -591,6 +611,7 @@ export function refusedPage(parent: DesignParent, label: string, problem: string
       delete x.live;
       delete x.thinking;
     });
+    noteUnchanged(sid, label, problem);
     noteDesignEvent(sid, { label, kind: "failed", reason: problem });
     finishRun(parent, label);
   } else if (d) fail(parent, label, problem);
@@ -670,6 +691,8 @@ export async function deliverDesign(parent: DesignParent, label: string, send: D
     const i = s.internal?.[label];
     if (i) {
       if (send.by !== "server") i.by = by;
+      // A person's new request can be fixed like the first one was; the coordinator's or the server's can't reset it.
+      if (send.by === "user") delete i.fixes;
       i.looks = 0;
     }
   });
@@ -685,6 +708,7 @@ export async function deliverDesign(parent: DesignParent, label: string, send: D
     changeDesign(sid, label, (x) => {
       // A failed design's reason stays until a Retry: a message doesn't make it not have failed.
       if (x.status !== "failed") delete x.error;
+      if (send.by !== "server") delete x.unchanged;
       if (queued) x.delivery = { state: "queued", key, at: new Date().toISOString() };
       else delete x.delivery;
     });

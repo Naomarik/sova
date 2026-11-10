@@ -4,17 +4,19 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { periodAt, resolvePriceRef, type Aliases, type PriceTable } from "../../shared/model-prices/prices";
 import { stateRoot } from "../state-root";
-import { designRouteOf, type DesignRun, type DesignSetup } from "../../shared/design";
+import { designLinksIn, designRouteOf, type DesignRun, type DesignSetup } from "../../shared/design";
 import { DESIGN_DEFAULT_DIRECTION_SETS, DESIGN_DIRECTIONS } from "../../pi-config/extensions/mode/design-guide.ts";
 import { listModels } from "../models";
 import { modelAllowed, readModelPolicy } from "../model-policy";
 import type { ModelPolicy } from "../../shared/protocol";
 import type { DesignParent } from "./batch";
+import { linksFromText } from "./brief";
 import { changeDesigns } from "./store";
 
 const PRICES_DIR = join(import.meta.dirname, "..", "..", "shared", "model-prices");
 const PAGE_OUTPUT_TOKENS = 18_000;
-const PAGE_INPUT_TOKENS = 4_000;
+/** A page's first message is a Full Prompt plus Sova's additions, around 8 to 10 thousand tokens. */
+const PAGE_INPUT_TOKENS = 10_000;
 const priceFile = <T>(f: string): T | null => {
   try {
     return JSON.parse(readFileSync(f, "utf8")) as T;
@@ -73,7 +75,8 @@ export async function setupFrom(input: SetupInput): Promise<DesignSetup> {
   const asked = (input.directions ?? []).map((d) => d.toLowerCase());
   const known = DESIGN_DIRECTIONS.filter((d) => asked.includes(d.name.toLowerCase())).map((d) => d.name);
   const on = known.length ? known : [...DESIGN_DEFAULT_DIRECTION_SETS[Math.floor(Math.random() * DESIGN_DEFAULT_DIRECTION_SETS.length)]!];
-  return { brief: input.brief?.trim() ?? "", models, directions: DESIGN_DIRECTIONS.map((d) => ({ name: d.name, on: on.includes(d.name) })) };
+  const brief = input.brief?.trim() ?? "";
+  return { brief, models, directions: DESIGN_DIRECTIONS.map((d) => ({ name: d.name, on: on.includes(d.name) })), links: linksFromText(brief, undefined, designLinksIn(brief)) };
 }
 
 export async function createRun(parent: DesignParent, cwd: string, input: SetupInput): Promise<DesignRun> {
@@ -88,15 +91,18 @@ export async function createRun(parent: DesignParent, cwd: string, input: SetupI
   return run;
 }
 
-/** Replace a run's Setup with what the card holds, keeping only models and directions the server offered. */
-export function cleanSetup(previous: DesignSetup, next: unknown): DesignSetup | string {
+/** Replace a run's Setup with what the card holds, keeping only models and directions the server offered.
+    With the brief open (`briefOpen`) only the models and directions change: Change on its summary line reopens just those. */
+export function cleanSetup(previous: DesignSetup, next: unknown, briefOpen = false): DesignSetup | string {
   const n = next as Partial<DesignSetup> | null;
   if (!n || typeof n !== "object" || typeof n.brief !== "string" || !Array.isArray(n.models) || !Array.isArray(n.directions)) return "Expected a whole Setup { brief, models, directions }.";
   if (n.brief.length > 20_000) return "The brief is too long.";
   const offered = new Map(previous.models.map((m) => [m.ref, m]));
   const models = previous.models.map((m) => {
     const sent = (n.models as unknown[]).find((x) => (x as { ref?: unknown })?.ref === m.ref) as { design?: unknown; coordinator?: unknown } | undefined;
-    return sent ? { ...m, design: !!sent.design, coordinator: !!sent.coordinator } : m;
+    if (!sent) return m;
+    // The coordinator is already running by then: its seat stays where it is.
+    return { ...m, design: !!sent.design, coordinator: briefOpen ? m.coordinator : !!sent.coordinator };
   });
   if (n.models.some((x) => !offered.has((x as { ref?: string })?.ref ?? ""))) return "That model isn't on this card.";
   if (models.filter((m) => m.coordinator).length > 1) return "Only one model can be the coordinator.";
@@ -104,7 +110,8 @@ export function cleanSetup(previous: DesignSetup, next: unknown): DesignSetup | 
     const sent = (n.directions as unknown[]).find((x) => (x as { name?: unknown })?.name === d.name) as { on?: unknown } | undefined;
     return sent ? { ...d, on: !!sent.on } : d;
   });
-  return { brief: n.brief, models, directions };
+  if (briefOpen) return { ...previous, models, directions };
+  return { brief: n.brief, models, directions, links: linksFromText(n.brief, previous.links, designLinksIn(n.brief), n.links) };
 }
 
 /** About what one page costs on `ref`, in dollars, or null when its price isn't known (report E1: output dominates). */

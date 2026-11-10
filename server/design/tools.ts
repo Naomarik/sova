@@ -1,11 +1,13 @@
 // The tools Sova serves for Design mode. The main chat's: `design_guide` (the mode's reference text)
 // and `design` (put up a Setup card, read the coordinator's card or one page, pass words on). A design
 // session's: `design_stream` (the page, whole or as edits) and `design_hand_in` (it is done).
+import { assetNamesProblem } from "./assets";
 import type { ToolResult, ToolSpec } from "../../shared/harness";
 import { DESIGN_ASK_ABOVE, DESIGN_BATCH_MAX, DESIGN_TOOL, isDesignLabel, type DesignNote } from "../../shared/design";
 import { DESIGN_GUIDE_TOPICS, designGuide } from "../../pi-config/extensions/mode/design-guide.ts";
 import { coordinatorCard, tellCoordinator } from "./coordinator";
 import { createRun } from "./setup";
+import { ownImagesLine } from "./asset-routes";
 import { DESIGN_HAND_IN_TOOL, handIn, pageProblem, refusedPage, replyPageThisTurn, savePage, takeLook, type DesignParent } from "./batch";
 import { livePage } from "./live";
 import { lookAtDesign } from "./look";
@@ -41,7 +43,7 @@ export function mainDesignTools(parent: () => DesignParent, cwd: () => string): 
     {
       name: "design",
       label: "design",
-      description: `Design mode's prototypes. op "start" puts a Setup card in the chat (the user finishes it there, up to ${DESIGN_BATCH_MAX} designs). op "read" gets the coordinator's card, or one design's whole page with label. op "tell" passes text word for word to the coordinator. Read design_guide first.`,
+      description: `Design mode's prototypes. op "start" puts a Setup card in the chat (the user finishes it there, up to ${DESIGN_BATCH_MAX} designs). op "read" gets the coordinator's card, or one design's whole page with label. op "tell" passes text word for word to the coordinator, and images (the paths of images the user attached) join its image set. Read design_guide first.`,
       parameters: {
         type: "object",
         properties: {
@@ -51,12 +53,13 @@ export function mainDesignTools(parent: () => DesignParent, cwd: () => string): 
           modelGroups: list('start: whole groups the user named, such as "ollama-cloud" or "claude".'),
           directions: list("start: direction names the user named."),
           coordinator: str("start: the model id to coordinate, only when the user named one."),
+          images: list("tell: the paths of images the user attached, to add to the design's images."),
           label: str("read: a design's label, for its whole page."),
           text: str("tell: the words to pass on, exactly as the user said them."),
         },
         required: ["op"],
       },
-      async execute(toolCallId, params: { op?: string; brief?: string; models?: string[]; modelGroups?: string[]; directions?: string[]; coordinator?: string; label?: string; text?: string }) {
+      async execute(toolCallId, params: { op?: string; brief?: string; models?: string[]; modelGroups?: string[]; directions?: string[]; coordinator?: string; label?: string; text?: string; images?: unknown }) {
         const p = parent();
         if (params?.op === "start") {
           const run = await createRun(p, cwd(), params);
@@ -75,9 +78,12 @@ export function mainDesignTools(parent: () => DesignParent, cwd: () => string): 
           return say([card?.card || "The coordinator has no card yet.", lines.length ? `Designs:\n${lines.join("\n")}` : ""].filter(Boolean).join("\n\n"));
         }
         if (params?.op === "tell") {
-          if (!params.text?.trim()) throw new Error("tell needs the text to pass on.");
-          await tellCoordinator(p, params.text, `tell:${toolCallId}`);
-          return say("Passed on.");
+          const paths = Array.isArray(params.images) ? params.images.filter((x): x is string => typeof x === "string").slice(0, 20) : [];
+          if (!params.text?.trim() && !paths.length) throw new Error("tell needs the text to pass on, or images.");
+          // By reference: the pictures go straight into the chat's set, and only their names reach anyone's memory.
+          const added = paths.length ? await ownImagesLine(p, paths) : "";
+          await tellCoordinator(p, [params.text?.trim(), added].filter(Boolean).join("\n\n"), `tell:${toolCallId}`);
+          return say(added ? `Passed on. ${added}` : "Passed on.");
         }
         throw new Error('op must be "start", "read" or "tell".');
       },
@@ -143,7 +149,7 @@ function allSessionTools(parent: DesignParent, label: string): ToolSpec[] {
           if ("error" in out) refusedPage(parent, label, out.error);
           html = out.html;
         }
-        const problem = pageProblem(html);
+        const problem = pageProblem(html) ?? assetNamesProblem(parent.sessionId, html);
         if (problem) refusedPage(parent, label, problem);
         savePage(parent, label, html);
         return say("Saved. Now call design_hand_in, then stop: the user is looking at your page.");
@@ -176,7 +182,7 @@ function allSessionTools(parent: DesignParent, label: string): ToolSpec[] {
           if (html === null) html = livePage(parent.sessionId, label)?.text ?? null;
         }
         if (html === null) refusedPage(parent, label, "You have no page to hand in yet.");
-        const problem = pageProblem(html);
+        const problem = pageProblem(html) ?? assetNamesProblem(parent.sessionId, html);
         if (problem) refusedPage(parent, label, problem);
         const v = handIn(parent, label, html, note);
         return say(`Handed in as version ${v.n}. Stop now.`, { label, version: v.n });

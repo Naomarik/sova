@@ -8,7 +8,9 @@ import { notPage } from "../page-only";
 import { resolveSessionPath } from "../paths";
 import { idOf } from "../sessions-index";
 import type { BrowseParent } from "./browse";
-import { answerCoordinator, confirmRun, messageCoordinator, shotsDir } from "./coordinator";
+import { ownImagesLine } from "./asset-routes";
+import { answerBrief, answerCoordinator, editBrief, messageCoordinator, notThisScreen, resolveBriefConflict, setBriefLink, shotsDir } from "./coordinator";
+import { designView } from "./live";
 
 const BAD_PATH = "Invalid or missing ?path= (must be a .jsonl under the pi sessions dir)";
 
@@ -26,34 +28,58 @@ const bodyOf = async (c: Context): Promise<Record<string, unknown>> => {
     return {};
   }
 };
-const YOUR_CLICK = "Only your own click on the coordinator's card in Sova's page answers this.";
+const YOUR_CLICK = "Only your own click on the coordinator's card or the Design Brief in Sova's page answers this.";
 const text = (v: unknown): string => (typeof v === "string" ? v : "");
 const message = (e: unknown): string => (e instanceof Error ? e.message : String(e));
 
 export function mountCoordinatorRoutes(app: Hono): void {
-  app.post("/api/design/runs/:run/confirm", async (c) => {
-    if (notPage(c)) return c.json({ error: YOUR_CLICK }, 403);
-    const p = parentOf(c);
-    if (!p) return c.json({ error: BAD_PATH }, 400);
-    const b = await bodyOf(c);
-    if (b.verdict !== "design" && b.verdict !== "not-this") return c.json({ error: 'verdict must be "design" or "not-this".' }, 400);
-    try {
-      await confirmRun(p, c.req.param("run"), b.verdict, text(b.text).trim() || undefined);
-      return c.json({ ok: true });
-    } catch (err) {
-      return c.json({ error: message(err) }, 409);
-    }
+  const onBrief = (name: string, fn: (p: BrowseParent, run: string, b: Record<string, unknown>) => Promise<void> | string) =>
+    app.post(`/api/design/runs/:run/brief/${name}`, async (c) => {
+      if (notPage(c)) return c.json({ error: YOUR_CLICK }, 403);
+      const p = parentOf(c);
+      if (!p) return c.json({ error: BAD_PATH }, 400);
+      try {
+        const out = await fn(p, c.req.param("run"), await bodyOf(c));
+        if (typeof out === "string") return c.json({ error: out }, 400);
+        return c.json(designView(p.sessionId));
+      } catch (err) {
+        return c.json({ error: message(err) }, 409);
+      }
+    });
+
+  onBrief("edit", (p, run, b) => {
+    if (b.field !== "summary" && b.field !== "prompt" && b.field !== "look") return 'field must be "summary", "prompt" or "look".';
+    if (typeof b.text !== "string") return "An edit needs its text.";
+    return editBrief(p, run, { field: b.field, text: b.text, ...(typeof b.url === "string" ? { url: b.url } : {}) });
   });
+
+  onBrief("answers", (p, run, b) => {
+    if (b.recommended === true) return answerBrief(p, run, "recommended");
+    if (!Array.isArray(b.picks) || !b.picks.length) return "Answers need picks, or recommended: true.";
+    const picks = (b.picks as Record<string, unknown>[]).map((x) => ({ id: text(x?.id), ...(typeof x?.option === "number" ? { option: x.option } : {}), ...(typeof x?.text === "string" ? { text: x.text } : {}) }));
+    return answerBrief(p, run, picks);
+  });
+
+  onBrief("conflict", (p, run, b) => (b.choice === "keep" || b.choice === "rewrite" ? resolveBriefConflict(p, run, b.choice) : 'choice must be "keep" or "rewrite".'));
+
+  onBrief("link", (p, run, b) => (typeof b.url === "string" && (b.use === "images" || b.use === "feel") ? setBriefLink(p, run, b.url, b.use) : "A link needs its url and a use."));
+
+  onBrief("not-this-screen", (p, run, b) => notThisScreen(p, run, text(b.text).trim() || undefined));
 
   app.post("/api/design/coordinator/message", async (c) => {
     const p = parentOf(c);
     if (!p) return c.json({ error: BAD_PATH }, 400);
     const b = await bodyOf(c);
     const words = text(b.text).trim();
-    if (!words || !text(b.key)) return c.json({ error: "A message needs its text and a key." }, 400);
+    const images = Array.isArray(b.images) ? b.images.filter((x): x is string => typeof x === "string").slice(0, 20) : [];
+    if ((!words && !images.length) || !text(b.key)) return c.json({ error: "A message needs its text or an image, and a key." }, 400);
     try {
+      // Your own images join the chat's set here; the coordinator hears their names, never their bytes.
+      if (images.length && notPage(c)) return c.json({ error: YOUR_CLICK }, 403);
+      const added = images.length ? await ownImagesLine(p, images) : "";
+      const said = [words, added].filter(Boolean).join("\n\n");
       // Only the person's own page vouches for an address it names (a script's or a chat's call still delivers).
-      return c.json(await messageCoordinator(p, words, `user:${text(b.key)}`, notPage(c) === null));
+      return c.json(await messageCoordinator(p, said, `user:${text(b.key)}`, notPage(c) === null));
     } catch (err) {
       return c.json({ error: message(err) }, 409);
     }

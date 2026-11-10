@@ -26,7 +26,7 @@ row in the mode table plus guide text. Every tool is served by Sova's server, so
 - **Web-only.** `MINOR_SURFACES.design` is `"web"`. The switch in `server/chat-manager.ts` permits it through
   `withWebMinors` (`server/memory/permit.ts`), the same way as memory. `MINOR_WORKER.design` is false.
 - **Text names the tools.** The prompts name `design`, `design_guide`, `design_stream`, `design_hand_in`,
-  `design_look`, `coordinator_card`, `design_launch`, `design_confirm`, `design_status`, `design_new`, `design_send`, `design_browse`
+  `design_look`, `coordinator_card`, `design_brief`, `design_status`, `design_new`, `design_send`, `design_browse`
   and their arguments. A renamed tool or argument changes the text in the same branch.
 - **Reply markers.** `DESIGN_PAGE_START` and `DESIGN_PAGE_END` equal `DESIGN_PAGE_OPEN` and `DESIGN_PAGE_CLOSE` in
   `shared/design.ts` (pi-config can't import `shared/`). `server/design-guide.test.ts` keeps them equal.

@@ -11,7 +11,7 @@ Nothing is pushed to you: no note arrives when a design lands, or when the user 
 
 ## Passing on
 
-`{"op":"tell","text":"…"}` delivers the text word for word to the coordinator, which directs the design sessions. It returns only an acknowledgement.
+`{"op":"tell","text":"…"}` delivers the text word for word to the coordinator, which directs the design sessions and writes the brief. It returns only an acknowledgement.
 
 - Pass on what the user said, exactly as they said it: for "tell B to go darker" the text is "tell B to go darker". Never expand it, add your own advice, or describe a page.
 - Requests for a new design made from others go the same way: "the header from A with the cards from C".

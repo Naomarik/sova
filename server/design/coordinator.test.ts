@@ -8,18 +8,20 @@ import type { ToolSpec } from "../../shared/harness";
 
 const agentDir = mkdtempSync(join(tmpdir(), "sova-coordinator-"));
 process.env.PI_CODING_AGENT_DIR = agentDir;
-const { answerCoordinator, confirmRun, coordinatorCard, coordinatorTools, messageCoordinator, noteHandIn, originsIn, setCoordinatorPorts, startCoordinator, tellCoordinator } = await import("./coordinator");
+const { answerBrief, answerCoordinator, BriefRefused, coordinatorCard, coordinatorTools, editBrief, messageCoordinator, noteHandIn, notThisScreen, originsIn, resolveBriefConflict, setBriefLink, setCoordinatorPorts, startBrief, startCoordinator, tellCoordinator } = await import("./coordinator");
 const { changeDesigns, forgetDesignCache, runOf } = await import("./store");
 after(() => rmSync(agentDir, { recursive: true, force: true }));
 
 const PNG = new Uint8Array([137, 80, 78, 71]);
 let n = 0;
 let parent = { sessionId: "", path: "" };
-let log: { sends: { text: string; key: string }[]; launches: unknown[]; news: unknown[]; verbs: { verb: string; body: unknown; caller: { granted?: true } }[]; sites: string[]; delivered: unknown[] };
+let log: { sends: { text: string; key: string }[]; launches: { brief: string; references: { outline: string; mime: string }[] }[]; looks: unknown[]; news: unknown[]; verbs: { verb: string; body: unknown; caller: { granted?: true } }[]; sites: string[]; delivered: unknown[] };
 type Outcome = Awaited<ReturnType<typeof import("./browse").designBrowse>>;
 let nextBrowse: Outcome;
 let workerState: "running" | "idle" | "ended";
 let lastTask = "";
+let readLook: (a: { key: string; png: Uint8Array; url: string }) => Promise<{ text: string; model: string } | "none">;
+let turnListener: (() => void) | null = null;
 
 const model = (ref: string, over: Partial<DesignModelChoice> = {}): DesignModelChoice => ({ ref, name: ref, design: true, coordinator: false, vision: true, route: "tool", ...over });
 const runWith = (designers: number, directions: number, over: Partial<DesignRun> = {}): DesignRun => ({
@@ -30,18 +32,25 @@ const runWith = (designers: number, directions: number, over: Partial<DesignRun>
 
 beforeEach(() => {
   parent = { sessionId: `sid${++n}`, path: join(agentDir, `p${n}.jsonl`) };
-  log = { sends: [], launches: [], news: [], verbs: [], sites: [], delivered: [] };
+  log = { sends: [], launches: [], looks: [], news: [], verbs: [], sites: [], delivered: [] };
   workerState = "idle";
+  turnListener = null;
+  readLook = async () => ({ text: "Calm navy on white.", model: "zai/vision" });
   nextBrowse = { kind: "pictures", url: "/settings", origin: "http://127.0.0.1:4810", outline: "OUTLINE", signedIn: false, shots: [{ size: "desktop", png: PNG, viewport: { w: 1440, h: 960 } }] };
   setCoordinatorPorts({
     workers: () => ({
-      start: async (req) => ((lastTask = req.task ?? ""), { chatId: "worker-1", sessionFile: "/w.jsonl" }),
+      start: async (req) => ((lastTask = req.task ?? ""), { chatId: `worker-${parent.sessionId}`, sessionFile: "/w.jsonl" }),
       send: async (_c, i) => (log.sends.push(i), { queued: false }),
       state: () => workerState,
-      watch: () => () => {},
+      watch: (_c, fn) => ((turnListener = fn), () => {}),
     }),
     designsFor: () => [{ label: "A", direction: "D0", model: "zai/m0", parents: [], status: "ready", route: "tool", versions: [{ n: 1, at: "t", chars: 50000, note: { layout: "l", sections: "s", type: "t", color: "c" } }], vision: true, createdAt: "", updatedAt: "", runId: "r" } as unknown as DesignRecord],
-    launchDesigns: async (_p, _r, a) => (log.launches.push(a), ["A", "B"]),
+    launchDesigns: async (_p, r, a) => {
+      log.launches.push(a);
+      changeDesigns(parent.sessionId, (s) => void (s.runs.find((x) => x.id === r)!.phase = "generating"));
+      return ["A", "B"];
+    },
+    readLook: async (_p, a) => (log.looks.push(a), readLook(a)),
     newDesign: async (_p, a) => (log.news.push(a), "G"),
     deliverDesign: async (_p, label, a) => (log.delivered.push({ label, ...a }), { queued: true }),
     lookAtDesign: async () => ({ shots: [{ size: "desktop", png: PNG }], outline: "O" }),
@@ -62,7 +71,7 @@ afterEach(() => {
 });
 
 type Tool = (args: unknown) => Promise<{ content: { type: string; text?: string }[]; details: any }>;
-type Tools = Record<"design_status" | "design_launch" | "design_confirm" | "design_browse" | "design_send" | "design_new" | "coordinator_card" | "project_verbs", Tool>;
+type Tools = Record<"design_status" | "design_brief" | "design_browse" | "design_send" | "design_new" | "coordinator_card" | "project_verbs", Tool>;
 async function started(run: DesignRun) {
   changeDesigns(parent.sessionId, (s) => {
     s.runs.push(run);
@@ -80,61 +89,314 @@ async function launched() {
 const textOf = (r: { content: { type: string; text?: string }[] }): string => r.content.filter((b) => b.type === "text").map((b) => b.text).join("\n");
 const refused = (r: { content: { type: string; text?: string }[] }) => assert.match(textOf(r), /^Refused:/);
 
-test("launch stays inside the Setup card: over 24, or over 12 unapproved, never reaches the runner", async () => {
-  for (const [designers, directions, over] of [[5, 5, {}], [4, 4, {}]] as const) {
-    const t = await started(runWith(designers, directions, over));
-    refused(await t.design_launch({ briefFinal: "x" }));
-  }
+// ---- the brief ------------------------------------------------------------------------------------
+
+const brief = (runId: string) => runOf(parent.sessionId, runId)!.brief!;
+/** A brief on the card with a settled Full Prompt: the state Start is pressed from. */
+async function ready(run = runWith(2, 3), words = { summary: "S", prompt: "The whole prompt." }) {
+  const t = await started(run);
+  await t.design_brief({ baseRev: 0, ...words });
+  log.sends.length = 0;
+  return t;
+}
+const startRefused = async (run: DesignRun, label: RegExp) => {
+  await assert.rejects(startBrief(parent, run.id, { rev: brief(run.id).rev, confirmSpend: false }), (e: unknown) => e instanceof BriefRefused && label.test(e.message) && !!e.detail.block);
+  assert.equal(log.launches.length, 0);
+};
+const start = (run: DesignRun) => startBrief(parent, run.id, { rev: brief(run.id).rev, confirmSpend: false });
+const ask = (over: Record<string, unknown> = {}) => ({ topic: "Which prices?", ask: "Lead with which?", options: [{ label: "Monthly", tradeoff: "as today" }, { label: "Yearly", tradeoff: "cheaper" }], recommendation: { choice: "Monthly", why: "matches" }, ...over });
+const turnEnds = () => {
+  workerState = "running";
+  turnListener!();
+  workerState = "idle";
+  turnListener!();
+};
+
+test("Start launches exactly what's on the card, with no coordinator turn, and freezes the brief", async () => {
+  const run = runWith(2, 3);
+  const t = await ready(run);
+  assert.deepEqual(await start(run), ["A", "B"]);
+  assert.equal(log.launches.length, 1);
+  assert.equal(log.launches[0]!.brief, "The whole prompt.");
+  assert.equal(log.sends.length, 0, "no coordinator turn");
+  assert.equal(brief(run.id).startedRev, brief(run.id).rev);
+  refused(await t.design_brief({ baseRev: brief(run.id).textRev, summary: "changed" }));
+  await assert.rejects(editBrief(parent, run.id, { field: "summary", text: "changed" }), /frozen/);
+  assert.equal(brief(run.id).summary, "S");
+});
+
+test("Start names the version it was pressed on: a stale one launches nothing", async () => {
+  const run = runWith(2, 3);
+  await ready(run);
+  await assert.rejects(startBrief(parent, run.id, { rev: brief(run.id).rev - 1, confirmSpend: false }), (e: unknown) => e instanceof BriefRefused && e.detail.stale === true);
   assert.equal(log.launches.length, 0);
 });
 
-test("a run approved above 12 launches; a second launch of the run is refused", async () => {
-  const run = runWith(4, 4, { confirmedSpend: true });
+test("Start waits, by name, for an open question and then for the prompt", async () => {
+  const run = runWith(2, 3);
   const t = await started(run);
-  assert.deepEqual((await t.design_launch({ briefFinal: "Final" })).details.labels, ["A", "B"]);
-  changeDesigns(parent.sessionId, (s) => void (s.runs.find((r) => r.id === run.id)!.phase = "generating"));
-  refused(await t.design_launch({ briefFinal: "Final" }));
-  assert.equal(log.launches.length, 1);
+  await t.design_brief({ baseRev: 0, summary: "S", questions: [ask()] });
+  await startRefused(run, /Answer 1 Question First/);
+  await answerBrief(parent, run.id, "recommended");
+  await startRefused(run, /Writing the Full Prompt/);
+  assert.match(log.sends.at(-1)!.text, /q1 \(Which prices\?\): Monthly/);
+  await t.design_brief({ baseRev: brief(run.id).textRev, prompt: "Now written." });
+  await start(run);
+  assert.equal(log.launches[0]!.brief, "Now written.");
 });
 
-test("a brief with nothing to look at launches with no confirm", async () => {
+test("every question's answer goes straight to the coordinator, partial ones with the last", async () => {
+  const run = runWith(2, 3);
+  const t = await started(run);
+  await t.design_brief({ baseRev: 0, summary: "S", questions: [ask(), ask({ topic: "Audience" })] });
+  await answerBrief(parent, run.id, [{ id: "q1", option: 1 }]);
+  assert.equal(log.sends.length, 0, "no rewrite per answer");
+  await answerBrief(parent, run.id, [{ id: "q2", text: "Small teams" }]);
+  assert.equal(log.sends.length, 1);
+  assert.match(log.sends[0]!.text, /Yearly/);
+  assert.match(log.sends[0]!.text, /q2 \(Audience\): Small teams/);
+  await assert.rejects(answerBrief(parent, run.id, [{ id: "q1", option: 0 }]), /already/);
+});
+
+test("the Full Prompt waits until every question is answered", async () => {
   const t = await started(runWith(2, 3));
-  assert.deepEqual((await t.design_launch({ briefFinal: "Final" })).details.labels, ["A", "B"]);
+  refused(await t.design_brief({ baseRev: 0, summary: "S", prompt: "too soon", questions: [ask()] }));
 });
 
-test("working from an existing screen waits for Design This Screen, and references must be the approved ones", async () => {
+test("a saved prompt, then a summary edit: the prompt stands and Start waits for Keep My Prompt or Rewrite It", async () => {
   const run = runWith(2, 3);
-  const t = await started(run);
-  const shot = (await t.design_browse({ url: "http://127.0.0.1:4810/settings" })).details.shots[0];
-  refused(await t.design_launch({ briefFinal: "x" }));
-  await t.design_confirm({ text: "Found it", shots: [shot] });
-  assert.equal(runOf(parent.sessionId, run.id)!.phase, "confirm");
-  refused(await t.design_launch({ briefFinal: "x", references: [shot] }));
-  await confirmRun(parent, run.id, "design");
-  refused(await t.design_launch({ briefFinal: "x", references: ["s999"] }));
-  await t.design_launch({ briefFinal: "x", references: [shot] });
+  await ready(run);
+  await editBrief(parent, run.id, { field: "prompt", text: "My own words." });
+  await editBrief(parent, run.id, { field: "summary", text: "A different summary." });
+  assert.equal(brief(run.id).prompt, "My own words.");
+  assert.equal(brief(run.id).conflict?.cause, "summary");
+  await startRefused(run, /Keep My Prompt or Rewrite It/);
+  await resolveBriefConflict(parent, run.id, "keep");
+  await start(run);
+  assert.equal(log.launches[0]!.brief, "My own words.");
+});
+
+for (const [cause, act] of [
+  ["told", async (run: DesignRun) => void (await messageCoordinator(parent, "make it shorter", "k1"), run)],
+  ["told", async (run: DesignRun) => void (await tellCoordinator(parent, "make it shorter", "k1"), run)],
+] as const) {
+  test(`a saved prompt, then the coordinator told something (${cause}): the same choice stands, and Rewrite It hands the prompt back`, async () => {
+    const run = runWith(2, 3);
+    const t = await ready(run);
+    await editBrief(parent, run.id, { field: "prompt", text: "My own words." });
+    await act(run);
+    assert.equal(brief(run.id).conflict?.cause, "told");
+    await startRefused(run, /Keep My Prompt/);
+    await resolveBriefConflict(parent, run.id, "rewrite");
+    assert.equal(brief(run.id).promptBy, "coordinator");
+    await startRefused(run, /Writing the Full Prompt/);
+    await t.design_brief({ baseRev: brief(run.id).textRev, prompt: "Rewritten." });
+    await start(run);
+    assert.equal(log.launches[0]!.brief, "Rewritten.");
+  });
+}
+
+test("answers to a question after a saved prompt ask the same choice", async () => {
+  const run = runWith(2, 3);
+  const t = await ready(run);
+  await editBrief(parent, run.id, { field: "prompt", text: "Mine." });
+  await t.design_brief({ baseRev: brief(run.id).textRev, questions: [ask()] });
+  await answerBrief(parent, run.id, "recommended");
+  assert.equal(brief(run.id).conflict?.cause, "answer");
+  assert.equal(brief(run.id).prompt, "Mine.");
+});
+
+test("the coordinator can't overwrite what the user saved", async () => {
+  const run = runWith(2, 3);
+  const t = await ready(run);
+  await editBrief(parent, run.id, { field: "prompt", text: "Mine." });
+  refused(await t.design_brief({ baseRev: brief(run.id).textRev, prompt: "Theirs." }));
+  refused(await t.design_brief({ baseRev: brief(run.id).textRev, promptEdits: [{ find: "Mine", replace: "Theirs" }] }));
+  assert.equal(brief(run.id).prompt, "Mine.");
+  const held = runWith(2, 3);
+  changeDesigns(parent.sessionId, (s) => void s.runs.push(held));
+  await startCoordinator(parent, held, "/cwd");
+  await t.design_brief({ baseRev: 0, summary: "S", prompt: "P" });
+  await editBrief(parent, held.id, { field: "summary", text: "My summary." });
+  refused(await t.design_brief({ baseRev: brief(held.id).textRev, summary: "Its summary." }));
+  assert.equal(brief(held.id).summary, "My summary.");
+  await t.design_brief({ baseRev: brief(held.id).textRev, prompt: "P matching my summary" });
+  assert.equal(brief(held.id).promptBy, "coordinator");
+});
+
+test("an edit wakes the coordinator with the layer it may touch; saving the same text changes nothing", async () => {
+  const run = runWith(2, 3);
+  await ready(run);
+  await editBrief(parent, run.id, { field: "summary", text: "S" });
+  assert.equal(log.sends.length, 0);
+  await editBrief(parent, run.id, { field: "summary", text: "New" });
+  assert.match(log.sends[0]!.text, /Rewrite the Full Prompt/);
+  await startRefused(run, /Writing the Full Prompt/);
+  await editBrief(parent, run.id, { field: "prompt", text: "Mine" });
+  assert.match(log.sends[1]!.text, /Bring only the summary in line/);
+});
+
+test("a stale baseRev is refused and gives the text as it stands", async () => {
+  const run = runWith(2, 3);
+  const t = await ready(run);
+  const r = await t.design_brief({ baseRev: 0, summary: "late" });
+  assert.equal(r.details.refused, true);
+  assert.match(textOf(r), /Summary: S/);
+  assert.equal(brief(run.id).summary, "S");
+});
+
+test("told with the prompt still its own: Start waits for the turn, and a turn that changes nothing settles it", async () => {
+  const run = runWith(2, 3);
+  await ready(run);
+  await messageCoordinator(parent, "how are you doing", "k1");
+  await startRefused(run, /Writing the Full Prompt/);
+  turnEnds();
+  await start(run);
   assert.equal(log.launches.length, 1);
-  const ref = (log.launches[0] as { references: { outline: string; mime: string }[] }).references[0]!;
-  assert.deepEqual([ref.outline, ref.mime], ["OUTLINE", "image/png"]);
 });
 
-test("a brief naming an address needs a confirm even before any look", async () => {
+test("a rewrite that doesn't come is reminded once, then Start says the coordinator hasn't written it", async () => {
   const run = runWith(2, 3);
-  run.setup.brief = "Redesign https://example.test/pricing";
+  await ready(run);
+  await editBrief(parent, run.id, { field: "summary", text: "New" });
+  log.sends.length = 0;
+  turnEnds();
+  assert.equal(log.sends.length, 1);
+  assert.match(log.sends[0]!.text, /not written/);
+  turnEnds();
+  assert.equal(log.sends.length, 1, "only once");
+  await startRefused(run, /Hasn't Written the Prompt/);
+  await editBrief(parent, run.id, { field: "prompt", text: "Mine." });
+  await start(run);
+  assert.equal(log.launches[0]!.brief, "Mine.");
+});
+
+test("no brief after a whole turn is reminded once, and a question on its card isn't", async () => {
+  await started(runWith(2, 3));
+  turnEnds();
+  assert.equal(log.sends.length, 1);
+  assert.match(log.sends[0]!.text, /no Design Brief/);
+  turnEnds();
+  assert.equal(log.sends.length, 1);
+});
+
+test("the spending question moves to Start: Start Coordinator never asks", async () => {
+  const run = runWith(4, 4);
+  const t = await ready(run);
+  await assert.rejects(start(run), /needs your confirmation/);
+  assert.equal(log.launches.length, 0);
+  await startBrief(parent, run.id, { rev: brief(run.id).rev, confirmSpend: true });
+  assert.equal(log.launches.length, 1);
+  refused(await t.design_brief({ baseRev: brief(run.id).textRev, summary: "x" }));
+});
+
+test("no model writes a design before Start, and the launch tools are gone", async () => {
+  const t = await ready();
+  refused(await t.design_new({ parents: ["A"], instructions: "mix", model: "zai/m0" }));
+  assert.equal(log.news.length, 0);
+  assert.equal((t as Record<string, unknown>).design_launch, undefined);
+  assert.equal((t as Record<string, unknown>).design_confirm, undefined);
+});
+
+// ---- links -----------------------------------------------------------------------------------------
+
+const withLink = (use: "images" | "feel" | null, by?: "user") => {
+  const run = runWith(2, 3);
+  run.setup.brief = "Redo https://example.test/pricing";
+  run.setup.links = [{ url: "https://example.test/pricing", use, ...(by ? { by } : {}) }];
+  return run;
+};
+const URL_ = "https://example.test/pricing";
+const looked = async (run: DesignRun) => {
   const t = await started(run);
-  refused(await t.design_launch({ briefFinal: "x" }));
+  nextBrowse = { ...(nextBrowse as Extract<Outcome, { kind: "pictures" }>), url: URL_, origin: "https://example.test" };
+  const shot = (await t.design_browse({ url: URL_ })).details.shots[0];
+  return { t, shot };
+};
+
+test("Just Its Feel: the look goes in words, the screen's picture doesn't", async () => {
+  const run = withLink("feel");
+  const { t, shot } = await looked(run);
+  await t.design_brief({ baseRev: 0, summary: "S", prompt: "Build it.", text: "Found", shots: [shot], url: URL_ });
+  await new Promise((r) => setImmediate(r));
+  assert.deepEqual(brief(run.id).looks[URL_], { state: "ready", text: "Calm navy on white.", by: "vision", model: "zai/vision" });
+  await start(run);
+  assert.equal(log.launches[0]!.references.length, 0);
+  assert.match(log.launches[0]!.brief, /^Build it\.\n\nThe look to follow, from https:\/\/example\.test\/pricing/);
+  assert.match(log.launches[0]!.brief, /Calm navy on white\.$/);
+});
+
+test("Just Its Feel with a coordinator that can't read pictures still gets a look, from one quick call", async () => {
+  const run = withLink("feel");
+  run.setup.models[0]!.vision = false;
+  const { t, shot } = await looked(run);
+  await t.design_brief({ baseRev: 0, summary: "S", prompt: "P", text: "F", shots: [shot] });
+  await new Promise((r) => setImmediate(r));
+  assert.equal(log.looks.length, 1);
+  assert.equal(brief(run.id).looks[URL_]!.state, "ready");
+});
+
+test("Just Its Feel with no model that reads pictures says so, and makes nothing up", async () => {
+  readLook = async () => "none";
+  const run = withLink("feel");
+  const { t, shot } = await looked(run);
+  await t.design_brief({ baseRev: 0, summary: "S", prompt: "P", text: "F", shots: [shot] });
+  await new Promise((r) => setImmediate(r));
+  assert.deepEqual(brief(run.id).looks[URL_], { state: "unread", reason: "None of your models can read pictures, so this page's look couldn't be read." });
+  await start(run);
+  assert.equal(log.launches[0]!.brief, "P");
+});
+
+test("Start waits while a look is being read", async () => {
+  let release!: (v: { text: string; model: string }) => void;
+  readLook = () => new Promise((r) => (release = r));
+  const run = withLink("feel");
+  const { t, shot } = await looked(run);
+  await t.design_brief({ baseRev: 0, summary: "S", prompt: "P", text: "F", shots: [shot] });
+  await startRefused(run, /Reading the Page's Look/);
+  release({ text: "Look.", model: "m" });
+  await new Promise((r) => setImmediate(r));
+  await start(run);
+  assert.equal(log.launches.length, 1);
+});
+
+test("Just Its Feel needs the page opened first", async () => {
+  const t = await started(withLink("feel"));
+  const r = await t.design_brief({ baseRev: 0, summary: "S" });
+  refused(r);
+  assert.match(textOf(r), /design_browse/);
+});
+
+test("Use Its Images gives the screen to the designers", async () => {
+  const run = withLink("images");
+  const { t, shot } = await looked(run);
+  await t.design_brief({ baseRev: 0, summary: "S", prompt: "P", text: "F", shots: [shot], url: URL_ });
+  await start(run);
+  assert.equal(log.launches[0]!.references.length, 1);
+  assert.equal(log.launches[0]!.references[0]!.outline, "OUTLINE");
+});
+
+test("a link with no use waits on the person; their click stands against the coordinator", async () => {
+  const run = withLink(null);
+  const { t, shot } = await looked(run);
+  await t.design_brief({ baseRev: 0, summary: "S", prompt: "P", text: "F", shots: [shot], url: URL_ });
+  await startRefused(run, /Choose How to Use Your Link/);
+  await setBriefLink(parent, run.id, URL_, "images");
+  await t.design_brief({ baseRev: brief(run.id).textRev, sources: [{ url: URL_, use: "feel" }] });
+  assert.deepEqual(runOf(parent.sessionId, run.id)!.setup.links, [{ url: URL_, use: "images", by: "user" }]);
 });
 
 test("Not This Screen sends the user's words on, clears the screen, and an address in them counts as theirs", async () => {
   const run = runWith(2, 3);
   const t = await started(run);
   const shot = (await t.design_browse({ url: "http://127.0.0.1:4810/" })).details.shots[0];
-  await t.design_confirm({ text: "Here", shots: [shot] });
-  await confirmRun(parent, run.id, "not-this", "use https://other.test/x instead");
-  assert.equal(runOf(parent.sessionId, run.id)!.confirm, undefined);
+  await t.design_brief({ baseRev: 0, summary: "S", prompt: "P", text: "Here", shots: [shot] });
+  await notThisScreen(parent, run.id, "use https://other.test/x instead");
+  assert.equal(brief(run.id).screen, undefined);
   assert.match(log.sends.at(-1)!.text, /other\.test/);
-  nextBrowse = { kind: "needs-site", origin: "https://third.test" };
-  await t.design_browse({ url: "https://third.test/" });
+  await startRefused(run, /Writing the Full Prompt/);
+  const named = JSON.parse(readFileSync(join(agentDir, "design", parent.sessionId, "coordinator.json"), "utf8")).named as string[];
+  assert.ok(named.includes("https://other.test"));
 });
 
 test("up and down of a project wait for the user's yes, which runs exactly what the card named", async () => {
@@ -309,18 +571,6 @@ test("a session that ended for good is started again from its card and the desig
   assert.match(lastTask, /make it darker$/);
 });
 
-test("a brief from an earlier run that named an address doesn't hold up a later new idea", async () => {
-  const first = runWith(2, 3);
-  first.setup.brief = "Redesign https://example.test/x";
-  await started(first);
-  const second = runWith(2, 3);
-  changeDesigns(parent.sessionId, (s) => void s.runs.push(second));
-  await startCoordinator(parent, second, "/cwd");
-  const t = Object.fromEntries(coordinatorTools(parent.sessionId).map((x) => [x.name, x])) as Record<string, ToolSpec>;
-  await t.design_launch!.execute("c", { briefFinal: "x" }, undefined, undefined, undefined as never);
-  assert.equal(log.launches.length, 1);
-});
-
 test("a sign-in answer never reaches the session's text", async () => {
   const t = await started(runWith(2, 3));
   nextBrowse = { kind: "needs-sign-in", origin: "https://app.test", fields: ["username", "password"] };
@@ -335,7 +585,7 @@ test("the card's yes is the person's: a chat's key or the token in a header is r
   const { mountCoordinatorRoutes } = await import("./coordinator-routes");
   const app = new Hono();
   mountCoordinatorRoutes(app);
-  for (const path of ["/api/design/coordinator/answer?path=x", "/api/design/runs/r/confirm?path=x"]) {
+  for (const path of ["/api/design/coordinator/answer?path=x", ...["edit", "answers", "conflict", "link", "not-this-screen"].map((n) => `/api/design/runs/r/brief/${n}?path=x`)]) {
     for (const headers of [{ "x-sova-caller": "k" }, { "x-sova-token": "t" }, {} as Record<string, string>]) {
       const r = await app.request(path, { method: "POST", headers, body: "{}" });
       assert.equal(r.status, 403, JSON.stringify(headers));
@@ -346,7 +596,7 @@ test("the card's yes is the person's: a chat's key or the token in a header is r
 test("a coordinator's process is served its tools and no others, and has no built-in tools at all", async () => {
   const { workerServed } = await import("../chat-host");
   const decls = workerServed({ kind: "design-coordinator", parent: { sessionId: "p", path: "/p.jsonl", workerId: "design-coordinator" } }, "/w.jsonl");
-  assert.deepEqual(decls.map((d) => d.name).sort(), ["coordinator_card", "design_browse", "design_confirm", "design_launch", "design_new", "design_send", "design_status", "project_verbs"]);
+  assert.deepEqual(decls.map((d) => d.name).sort(), ["coordinator_card", "design_brief", "design_browse", "design_capture", "design_new", "design_send", "design_status", "project_verbs"]);
   // After a restart its mirror names only the parent's id: the same tools come back.
   assert.equal(workerServed({ kind: "design-coordinator", parentSessionId: "p" }, "/w2.jsonl").length, decls.length);
   const spec = (await import("./coordinator")).realCoordinatorSpec({ sessionId: "p", path: "/p.jsonl" }, "/cwd", "zai/glm-5.3-flash", "P");

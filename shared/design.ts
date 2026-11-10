@@ -69,6 +69,8 @@ export interface DesignRecord {
   error?: string;
   /** Set while status is "fixing". */
   fix?: DesignFix;
+  /** The last request for a change ended with no new version: why, in plain words. Gone with the next message or version. */
+  unchanged?: { reason: string; at: string };
   route: DesignStreamRoute;
   /** Finished versions, oldest first; empty until the first hand-in. */
   versions: DesignVersion[];
@@ -114,22 +116,35 @@ export interface DesignSetup {
   brief: string;
   models: DesignModelChoice[];
   directions: DesignDirection[];
+  /** The addresses in what the person wants, each with how it is used. Absent on a run made before links. */
+  links?: DesignLink[];
 }
 
-export type DesignRunPhase = "setup" | "researching" | "confirm" | "generating" | "done" | "stopped";
+/** How a link's page is used. images: its images are used (and the screen goes to designers that can read
+    pictures); feel: only its look, put into words, reaches the designers. */
+export type DesignLinkUse = "images" | "feel";
+
+export interface DesignLink {
+  url: string;
+  /** null until someone chooses; a person's choice is never replaced by the coordinator's. */
+  use: DesignLinkUse | null;
+  by?: "user" | "coordinator";
+}
+
+export type DesignRunPhase = "setup" | "researching" | "brief" | "generating" | "done" | "stopped";
 
 /** One run: a Setup card and the batch started from it. */
 export interface DesignRun {
   id: string;
   setup: DesignSetup;
-  /** setup: the card is being filled in; researching: the coordinator is looking for the screen;
-      confirm: it waits for Design This Screen; generating: the team is at work; done: every design has
+  /** setup: the card is being filled in; researching: the coordinator is preparing the brief;
+      brief: the brief is on the card, waiting for Start; generating: the team is at work; done: every design has
       reached Ready or Failed; stopped: the run was ended before it finished. */
   phase: DesignRunPhase;
   /** The labels this run produced, in order. */
   labels: string[];
-  /** The screen the coordinator asks you to confirm (q14): set in phase confirm, kept for the card. */
-  confirm?: DesignConfirm;
+  /** What will be built, agreed on the card before any design runs: the coordinator's first design_brief creates it. */
+  brief?: DesignBrief;
   /** Why the coordinator stopped, in plain words. */
   error?: string;
   /** The person's approval of a run above the free limit (q2). */
@@ -165,7 +180,7 @@ export interface DesignCoordinatorView {
   ask?: DesignAsk;
 }
 
-/** What the coordinator found, for Design This Screen / Not This Screen. */
+/** The screen the coordinator found, on the brief. */
 export interface DesignConfirm {
   text: string;
   /** Picture addresses, served by this Sova. */
@@ -182,6 +197,8 @@ export type DesignAsk = { id: string; text: string } & (
   | { kind: "site"; origin: string }
   | { kind: "sign-in"; origin: string; fields: string[]; reason?: string }
   | { kind: "test-account"; origin: string; fields: string[] }
+  /** Capturing a signed-in page's images: asked once per site, saying what's saved and which model reads it. */
+  | { kind: "capture-signed-in"; origin: string }
   /** `design_new` in one turn is one launch: above the free limit it asks first. */
   | { kind: "spend"; count: number }
 );
@@ -199,6 +216,103 @@ export function isDesignSignInAnswer(v: unknown): v is DesignSignInAnswer {
   if (!v || typeof v !== "object" || Array.isArray(v)) return false;
   const e = Object.entries(v);
   return e.length > 0 && e.every(([k, x]) => ["username", "password", "account", "code"].includes(k) && typeof x === "string" && x.length <= 4096);
+}
+
+/** One of the coordinator's questions on the brief, the same shape as an alignment card's. */
+export interface DesignBriefQuestion {
+  /** q1, q2 ...: never reused within a run. */
+  id: string;
+  topic: string;
+  ask: string;
+  context?: string;
+  options?: { label: string; tradeoff: string }[];
+  recommendation: { choice: string; why: string };
+  /** Set once answered; the question is open until then. */
+  answer?: DesignBriefAnswer;
+}
+
+export interface DesignBriefAnswer {
+  /** The option picked, by index into options. */
+  option?: number;
+  /** The person's own words, instead of or as well as an option. */
+  text?: string;
+  /** recommended: Go With Recommendations answered it. */
+  by: "you" | "recommended";
+  at: string;
+}
+
+/** What Just Its Feel gives designers: one look at the page, in words. */
+export type DesignLook =
+  /** One quick look is under way, or the coordinator has still to open the page. */
+  | { state: "reading" }
+  | { state: "ready"; text: string; by: "vision" | "user"; model?: string }
+  /** None of the person's models could read it: said plainly, never made up. */
+  | { state: "unread"; reason: string };
+
+export type DesignBriefWriting = "first" | "summary" | "answers" | "told" | "rewrite" | "screen";
+
+export interface DesignBrief {
+  /** The version on the card: every change raises it, and Start names the one it was pressed on. */
+  rev: number;
+  /** Raised when the summary, Full Prompt or questions change: what the coordinator's baseRev is held to. */
+  textRev: number;
+  summary: string;
+  /** What the design sessions get, word for word; null until written. */
+  prompt: string | null;
+  /** user: saved by the person, so nothing else may change it. */
+  promptBy: "coordinator" | "user" | null;
+  /** The person edited the summary and hasn't told the coordinator anything since: it may not change it. */
+  summaryHeld?: boolean;
+  /** The Full Prompt is being written, and why; null when it is settled. */
+  writing: { cause: DesignBriefWriting; stalled?: true; nudged?: true } | null;
+  /** Something would change a Full Prompt the person saved: Keep My Prompt or Rewrite It, and Start waits. */
+  conflict: { cause: "summary" | "told" | "answer" | "screen" } | null;
+  questions: DesignBriefQuestion[];
+  /** The look in words per link on Just Its Feel, by the link's address. */
+  looks: Record<string, DesignLook>;
+  /** The screen found, when there is one: Not This Screen clears it. */
+  screen?: DesignConfirm;
+  /** What the designs are estimated to cost in dollars, with the models and directions chosen now; absent when a price isn't known. */
+  estimateUsd?: number;
+  /** Set at Start: the brief is frozen from then on. */
+  startedRev?: number;
+  startedAt?: string;
+}
+
+/** Why Start can't be pressed: code to branch on, label for the button. */
+export interface DesignBriefBlock {
+  code: "question" | "writing" | "stalled" | "conflict" | "link-use" | "look" | "no-designs";
+  label: string;
+}
+
+/** The brief's named reason Start waits, or null: the server refuses Start by exactly this. */
+export function designBriefBlock(run: Pick<DesignRun, "brief" | "setup">): DesignBriefBlock | null {
+  const b = run.brief;
+  if (!b) return { code: "writing", label: "Writing the Brief" };
+  const open = b.questions.filter((q) => !q.answer).length;
+  if (open) return { code: "question", label: `Answer ${open} Question${open === 1 ? "" : "s"} First` };
+  if (b.conflict) return { code: "conflict", label: "Choose Keep My Prompt or Rewrite It" };
+  if (b.writing?.stalled || (b.prompt === null && !b.writing)) return { code: "stalled", label: "The Coordinator Hasn't Written the Prompt" };
+  if (b.writing || b.prompt === null) return { code: "writing", label: "Writing the Full Prompt" };
+  const links = run.setup.links ?? [];
+  if (links.some((l) => l.use === null)) return { code: "link-use", label: "Choose How to Use Your Link" };
+  if (links.some((l) => l.use === "feel" && b.looks[l.url]?.state === "reading")) return { code: "look", label: "Reading the Page's Look" };
+  const models = run.setup.models.filter((m) => m.design).length;
+  const directions = run.setup.directions.filter((d) => d.on).length;
+  if (!models || !directions) return { code: "no-designs", label: "Pick a Model and a Direction" };
+  return null;
+}
+
+/** The full addresses a person's text names, in order, once each: what Setup's link rows come from. */
+export function designLinksIn(text: string): string[] {
+  const out: string[] = [];
+  const add = (raw: string): void => {
+    const url = raw.replace(/[.,;:!?]+$/, "");
+    if (!out.includes(url)) out.push(url);
+  };
+  for (const m of text.matchAll(/\bhttps?:\/\/[^\s<>"'`)\]]+/gi)) add(m[0]);
+  for (const m of text.matchAll(/(?<![\w./-])(localhost|127\.0\.0\.1):\d{2,5}\b[^\s<>"'`)\]]*/g)) add(`http://${m[0]}`);
+  return out;
 }
 
 export interface DesignCaps {

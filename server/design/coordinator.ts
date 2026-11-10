@@ -163,8 +163,8 @@ const realPorts: CoordinatorPorts = {
   designsFor: (sessionId) => viewOf(sessionId).designs,
   launchDesigns: async (parent, runId, a) => launchDesigns(parent, runId, a),
   readLook: (parent, a) => readPageLook(parent, a),
-  capture: captureDesignPage,
-  describing,
+  capture: (...a) => captureDesignPage(...a),
+  describing: (sessionId) => describing(sessionId),
   newDesign: async (parent, a) => newDesign(parent, a),
   deliverDesign: (parent, label, a) => deliverDesign(parent, label, a),
   lookAtDesign,
@@ -1020,7 +1020,7 @@ export function coordinatorTools(sessionId: string): ToolSpec[] {
       syncBriefImages(parent.sessionId);
       let out: Awaited<ReturnType<typeof captureDesignPage>>;
       try {
-        out = await p().capture(parent, params, { stores: p().stores(parent.sessionId) }, signal);
+        out = await p().capture(parent, params, { stores: p().stores(parent.sessionId), runId: st.runId }, signal);
       } finally {
         capturing.delete(parent.sessionId);
         syncBriefImages(parent.sessionId);

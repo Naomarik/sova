@@ -9,7 +9,7 @@ import { after, beforeEach, test } from "node:test";
 process.env.PI_CODING_AGENT_DIR = mkdtempSync(join(tmpdir(), "design-batch-"));
 const { DESIGN_CONCURRENT, DESIGN_FIX_TRIES } = await import("../../shared/design");
 const { setCoordinatorPorts } = await import("./coordinator");
-const { assertLaunchAllowed, deleteDesign, deliverDesign, DesignLimitError, installDesignHost, launchDesigns, newDesign, pageProblem, retryDesign, onDesignHandIn, onLiveFrame, setDesignQuietMsForTest } = await import("./batch");
+const { assertLaunchAllowed, deleteDesign, deliverDesign, DesignLimitError, installDesignHost, launchDesigns, newDesign, pageProblem, pump, retryDesign, onDesignHandIn, onLiveFrame, setDesignQuietMsForTest } = await import("./batch");
 const store = await import("./store");
 const { sessionDesignTools } = await import("./tools");
 const { WorkerRegistry } = await import("../chat-workers");
@@ -31,6 +31,18 @@ interface Fake {
 }
 
 let n = 0;
+/** Starts the registry asked the host for; while a gate is set they wait for it, and the numbered ones then fail. */
+let startCalls = 0;
+let startGate: Promise<void> | null = null;
+let failingStarts = new Set<number>();
+function holdStarts(): () => void {
+  let open!: () => void;
+  startGate = new Promise<void>((r) => (open = r));
+  return () => {
+    startGate = null;
+    open();
+  };
+}
 let parentOpens = 0;
 let fakes: Fake[];
 let registry: InstanceType<typeof WorkerRegistry>;
@@ -41,6 +53,9 @@ function makeRegistry(): void {
   registry = new WorkerRegistry(
     {
       start: async (rec) => {
+        const call = ++startCalls;
+        if (startGate) await startGate;
+        if (failingStarts.has(call)) throw new Error(`start ${call} failed`);
         const f: Fake = {
           rec: rec as unknown as Rec,
           mirror: { sessionId: rec.chatId, running: false, starting: false, compacting: false, model: null, thinking: "low", worker: { proc: `p${++n}`, seq: 0, lastSettled: null } },
@@ -123,6 +138,9 @@ const finishInto = async (label: string): Promise<void> => {
 };
 
 beforeEach(() => {
+  startCalls = 0;
+  startGate = null;
+  failingStarts = new Set();
   dir = mkdtempSync(join(tmpdir(), "design-batch-w-"));
   fakes = [];
   parentOpens = 0;
@@ -154,6 +172,40 @@ test("a design made from others waits for the launch, and can't stand in for it"
   const labels = launchDesigns(parent, run, {});
   assert.equal(labels.length, 6);
   assert.deepEqual(launchDesigns(parent, run, {}), labels, "a second launch starts nothing");
+});
+
+test("a pump while sessions are starting starts none of them again, and they count against the cap", async () => {
+  const release = holdStarts();
+  launchDesigns(parent, newRun(["zai/a", "zai/b"], ["Minimalist"]), {});
+  await ticks();
+  assert.equal(startCalls, 2);
+  // Anything that pumps meanwhile: a failure elsewhere, a Retry, a Delete, a new design.
+  pump(parent);
+  pump(parent);
+  await ticks();
+  assert.equal(startCalls, 2, "each label starts once");
+  release();
+  await ticks();
+  assert.equal(startCalls, 2);
+  assert.deepEqual(store.viewOf(parent.sessionId).designs.map((d) => !!d.sessionId), [true, true]);
+  assert.equal(new Set(store.viewOf(parent.sessionId).designs.map((d) => d.sessionId)).size, 2);
+});
+
+test("a start that fails while others are pending starts none of those again, and its place goes to the next queued", async () => {
+  const release = holdStarts();
+  failingStarts = new Set([1]);
+  launchDesigns(parent, newRun(["zai/a", "zai/b", "zai/c", "zai/d", "zai/e", "zai/f", "zai/g"], ["Minimalist"]), {});
+  await ticks();
+  assert.equal(startCalls, DESIGN_CONCURRENT, "the cap holds while none has a session yet");
+  pump(parent);
+  await ticks();
+  assert.equal(startCalls, DESIGN_CONCURRENT);
+  release();
+  await ticks();
+  // A's failure pumped while B to F were still starting: only G, the one queued, starts.
+  assert.equal(stat("A").status, "failed");
+  assert.equal(startCalls, DESIGN_CONCURRENT + 1);
+  assert.equal(store.viewOf(parent.sessionId).designs.filter((d) => d.sessionId).length, DESIGN_CONCURRENT);
 });
 
 test("labels never repeat in a chat, even after one is deleted", async () => {

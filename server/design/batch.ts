@@ -183,16 +183,22 @@ export function newDesign(parent: DesignParent, input: { parents: string[]; inst
 }
 
 const atWork = (d: DesignRecord): boolean => d.status === "writing" || d.status === "fixing" || d.status === "queued";
-const working = (d: DesignRecord): boolean => d.status === "writing" || d.status === "fixing" || (d.status === "queued" && !!d.sessionId && !d.sessionEnded);
+/** Designs whose session is being started: no session id until the start answers, and a pump meanwhile must neither
+    start them again nor count them as free room. In memory: a restart ends every start in flight with it. */
+const starting = new Set<string>();
+const startKey = (sid: string, label: string): string => `${sid}\0${label}`;
+
+const working = (sid: string, d: DesignRecord): boolean =>
+  d.status === "writing" || d.status === "fixing" || (d.status === "queued" && ((!!d.sessionId && !d.sessionEnded) || starting.has(startKey(sid, d.label))));
 
 /** Start queued designs while the chat has room. */
 export function pump(parent: DesignParent): void {
   const sid = parent.sessionId;
   const view = viewOf(sid);
-  let room = DESIGN_CONCURRENT - view.designs.filter(working).length;
+  let room = DESIGN_CONCURRENT - view.designs.filter((d) => working(sid, d)).length;
   for (const d of view.designs) {
     if (room <= 0) return;
-    if (d.status !== "queued" || d.sessionId) continue;
+    if (d.status !== "queued" || d.sessionId || starting.has(startKey(sid, d.label))) continue;
     room--;
     void startSession(parent, d.label);
   }
@@ -201,13 +207,16 @@ export function pump(parent: DesignParent): void {
 async function startSession(parent: DesignParent, label: string, seed?: { text: string; images?: NonNullable<WorkerStart["images"]> }): Promise<void> {
   const sid = parent.sessionId;
   const d = designOf(sid, label);
-  if (!d) return;
+  const key = startKey(sid, label);
+  if (!d || starting.has(key)) return;
   const st = changeDesigns(sid, (s) => {
     const i = (s.internal ??= {})[label] ?? { attempt: 0, brief: "", by: "first" as const, parentPath: parent.path };
     i.attempt++;
     s.internal[label] = i;
     return { attempt: i.attempt, brief: i.brief, instructions: i.instructions };
   });
+  // Marked before the first await: every pump from here until the start answers sees it.
+  starting.add(key);
   try {
     const cwd = viewCwd(sid);
     const refs = loadRefs(sid, d.runId);
@@ -221,6 +230,9 @@ async function startSession(parent: DesignParent, label: string, seed?: { text: 
       task: first.text,
       ...(first.images?.length ? { images: first.images } : {}),
     });
+    starting.delete(key);
+    // Deleted while it started: its session goes too.
+    if (!designOf(sid, label)) return void workers(parent).stop(ref.chatId, "design deleted").catch(() => {});
     changeDesign(sid, label, (x) => {
       x.sessionId = ref.chatId;
       x.sessionFile = ref.sessionFile;
@@ -229,7 +241,8 @@ async function startSession(parent: DesignParent, label: string, seed?: { text: 
     });
     follow(parent, label, ref.chatId);
   } catch (err) {
-    fail(parent, label, err instanceof Error ? err.message : String(err));
+    starting.delete(key);
+    if (designOf(sid, label)) fail(parent, label, err instanceof Error ? err.message : String(err));
   }
 }
 

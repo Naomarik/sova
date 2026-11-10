@@ -1,4 +1,5 @@
 import { retirementViewOf } from "../worktree-retire-view";
+import { pendingWhileOff, viewWhileOff } from "../cleanup-switch";
 import { needsRehearsal, REHEARSAL_NEEDED, rehearsalRefusal } from "./rehearsal";
 import { queueQuietWork } from "./card-port";
 import { hostProblem } from "./host-sendback";
@@ -649,7 +650,8 @@ export class ProjectQueue {
     const chats = this.deps.chatsOf?.(this.root) ?? {};
     const readyRows = this.attachSummaries(v, ready.filter((r) => !heldBack.has(r.branch)));
     // What retirement did here, as it last wrote it: no git (§chat.worktrees/retirement).
-    const retirement = retirementViewOf(this.root);
+    // Switched off (../cleanup-switch.ts): the ledger only, never the saved list.
+    const retirement = viewWhileOff(retirementViewOf(this.root, pendingWhileOff()));
     return { ...v, served, ...(hold ? { release: structuredClone(hold) } : {}), ...(d.invalid ? { invalid: d.invalid } : {}), ...(readyRows.length ? { ready: readyRows } : {}), ...(thread ? { thread } : {}), ...chats, ...(tryRun ? { tryRun: structuredClone(tryRun) } : {}), ...(this.q.trials?.length ? { trials: structuredClone(this.q.trials) } : {}), ...(settings ? { settings } : {}), ...(retirement ? { retirement } : {}) };
   }
 

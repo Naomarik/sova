@@ -120,6 +120,9 @@ refusal says where to click.
 | Adding, approving or changing an extension | Settings → Extensions |
 | Restarting or updating Sova | **Restart Sova** and the update controls in Settings → General, or Apply on the Sova project's Branches tab |
 | The merge queue's Land, a decision's answers, Cancel and Remove from Queue | Those buttons in Sova's page, or your own words in the branch's chat |
+| A Lookbook's brief | **Start**, **Edit**, **Go With Recommendations** or **Send Answers**, **Keep My Prompt** or **Rewrite It**, a link's use, an image's Use tick and **Not This Screen**, on the Lookbook's brief |
+| Answering a Lookbook coordinator's question | The question on the coordinator's card (starting or stopping a copy, opening a site, a sign-in or more than 12 designs in a turn), and images pasted into its box |
+| A Lookbook's images | Bringing your own image in, the yes to capturing a signed-in page, an image's kind or note, and **Describe Again**, on the Lookbook card |
 
 Only the widening closes. Turning a power off, raising a sandbox, turning a mode off, turning on a mode at
 a version already approved and turning a card owner's trust off stay open to scripts.

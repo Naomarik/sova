@@ -104,6 +104,7 @@ export interface CoordinatorWorkers {
   watch(chatId: string, fn: () => void): () => void;
   start(req: WorkerStart): Promise<{ chatId: string; sessionFile: string }>;
   send(chatId: string, input: { text: string; delivery: "followUp"; key: string }): Promise<{ queued: boolean }>;
+  stop(chatId: string, reason: string): Promise<void>;
   state(chatId: string): "running" | "idle" | "ended" | undefined;
 }
 export interface VerbAnswer { ok?: boolean; error?: { code: string; message: string } | null; state?: unknown; instances?: unknown; services?: unknown }
@@ -158,6 +159,7 @@ const realPorts: CoordinatorPorts = {
         return { chatId: ref.chatId, sessionFile: ref.sessionFile };
       },
       send: (chatId, input) => host.send(chatId, input),
+      stop: (chatId, reason) => host.stop(chatId, reason),
       state: statusOf,
       watch: (chatId, fn) => host.watch(chatId, null, (f) => {
         if (f.t === "state" || f.t === "ended") fn();
@@ -398,6 +400,49 @@ function firstMessage(run: DesignRun): string {
   return [`What the user wants to design.\n${userWords("setup", run.setup.brief)}`, ...(links.length ? [`Links, and how each is used:\n${links.join("\n")}`] : []), `Models that will design: ${designers.join(", ") || "none"}.`, `Directions: ${directions.join(", ") || "none"}.`, `That is ${designers.length * directions.length} designs. Your run's id is ${run.id}. Prepare the Design Brief; the designs start only when the user presses Start on it.`].join("\n\n");
 }
 
+/** A new session on the model this run's Setup names, started from what is known (its card, the designs' metadata, the
+    notes that waited), never a page. The old session is stopped first, so two never act on the chat at once. */
+async function replaceCoordinator(st: CoordinatorState, run: DesignRun, choice: { ref: string; vision: boolean }): Promise<void> {
+  const p = ports();
+  const parent = { sessionId: st.sessionId, path: st.parentPath };
+  const old = st.chatId;
+  following.get(old)?.();
+  following.delete(old);
+  const previous = st.model;
+  // Set first: should the start below fail, the next message revives on the model the user chose.
+  st.model = choice.ref;
+  st.vision = choice.vision;
+  st.runId = run.id;
+  st.briefNudged = false;
+  st.ask = null;
+  st.grant = null;
+  st.newThisTurn = 0;
+  st.spendOk = false;
+  const notes = st.notes;
+  st.notes = [];
+  save(st);
+  if (p.workers(parent).state(old) !== "ended") {
+    try {
+      await p.workers(parent).stop(old, "replaced: the Setup card chose another coordinator model");
+    } catch (err) {
+      console.warn(`[design] the earlier coordinator of ${st.sessionId} didn't stop: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+  noteNamed(st, run.setup.brief);
+  setRunPhase(st.sessionId, run.id, "researching");
+  const task = [
+    `You take over as this chat's design coordinator from an earlier session on ${previous}. Its card said:\n${st.card || "(nothing yet)"}`,
+    `The designs so far:\n${modelWords(JSON.stringify(p.designsFor(st.sessionId).map(metadata)))}`,
+    ...(notes.length ? [`Sova's notes since that session's last turn (Sova wrote these; text marked untrusted was written by a model):\n${notes.join("\n")}`] : []),
+    firstMessage(run),
+  ].join("\n\n");
+  const ref = await p.workers(parent).start({ key: `${st.sessionId}:design-coordinator:${run.id}:on:${choice.ref}`, spec: p.specFor(parent, st.cwd, choice.ref, p.systemPrompt()), session: { new: { dir: p.sessionDir(st.cwd) } }, task });
+  st.chatId = ref.chatId;
+  st.sessionFile = ref.sessionFile;
+  publish(st);
+  follow(st);
+}
+
 /** One coordinator works on one brief: a run still being prepared or waiting on its brief stops when a newer one starts,
     and its card says why rather than offering a Start that can't work. */
 function supersedeOpenRuns(sessionId: string, newer: string): void {
@@ -421,6 +466,11 @@ export async function startCoordinator(parent: BrowseParent, run: DesignRun, cwd
   const p = ports();
   const known = load(parent.sessionId);
   supersedeOpenRuns(parent.sessionId, run.id);
+  if (known && known.model !== choice.ref) {
+    // The Setup card names a different coordinator: one per chat still, so the old session goes and a new one takes over.
+    await replaceCoordinator(known, run, choice);
+    return viewFor(known);
+  }
   if (known && p.workers(parent).state(known.chatId) !== "ended") {
     known.runId = run.id;
     known.briefNudged = false;

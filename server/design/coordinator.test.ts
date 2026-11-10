@@ -15,7 +15,7 @@ after(() => rmSync(agentDir, { recursive: true, force: true }));
 const PNG = new Uint8Array([137, 80, 78, 71]);
 let n = 0;
 let parent = { sessionId: "", path: "" };
-let log: { sends: { text: string; key: string }[]; launches: { brief: string; references: { outline: string; mime: string }[] }[]; looks: unknown[]; news: unknown[]; verbs: { verb: string; body: unknown; caller: { granted?: true } }[]; sites: string[]; delivered: unknown[] };
+let log: { starts: { key: string; model: string }[]; stops: string[]; sends: { text: string; key: string }[]; launches: { brief: string; references: { outline: string; mime: string }[] }[]; looks: unknown[]; news: unknown[]; verbs: { verb: string; body: unknown; caller: { granted?: true } }[]; sites: string[]; delivered: unknown[] };
 type Outcome = Awaited<ReturnType<typeof import("./browse").designBrowse>>;
 let nextBrowse: Outcome;
 let workerState: "running" | "idle" | "ended";
@@ -35,7 +35,7 @@ const runWith = (designers: number, directions: number, over: Partial<DesignRun>
 
 beforeEach(() => {
   parent = { sessionId: `sid${++n}`, path: join(agentDir, `p${n}.jsonl`) };
-  log = { sends: [], launches: [], looks: [], news: [], verbs: [], sites: [], delivered: [] };
+  log = { starts: [], stops: [], sends: [], launches: [], looks: [], news: [], verbs: [], sites: [], delivered: [] };
   workerState = "idle";
   turnListener = null;
   describingNow = false;
@@ -45,7 +45,8 @@ beforeEach(() => {
   nextBrowse = { kind: "pictures", url: "/settings", origin: "http://127.0.0.1:4810", outline: "OUTLINE", signedIn: false, shots: [{ size: "desktop", png: PNG, viewport: { w: 1440, h: 960 } }] };
   setCoordinatorPorts({
     workers: () => ({
-      start: async (req) => ((lastTask = req.task ?? ""), { chatId: `worker-${parent.sessionId}`, sessionFile: "/w.jsonl" }),
+      start: async (req) => ((lastTask = req.task ?? ""), log.starts.push({ key: req.key, model: (req.spec as { model?: string }).model ?? "" }), { chatId: `worker-${parent.sessionId}-${log.starts.length}`, sessionFile: "/w.jsonl" }),
+      stop: async (c) => void log.stops.push(c),
       send: async (_c, i) => (log.sends.push(i), { queued: false }),
       state: () => workerState,
       watch: (_c, fn) => ((turnListener = fn), () => {}),
@@ -63,7 +64,7 @@ beforeEach(() => {
     deliverDesign: async (_p, label, a) => (log.delivered.push({ label, ...a }), { queued: true }),
     lookAtDesign: async () => ({ shots: [{ size: "desktop", png: PNG }], outline: "O" }),
     systemPrompt: () => "PROMPT",
-    specFor: () => ({}) as never,
+    specFor: (_p, _c, model) => ({ model }) as never,
     sessionDir: () => "/s",
     browse: async () => (browseCalls++, nextBrowse),
     stores: () => ({}) as never,
@@ -648,6 +649,37 @@ test("described images reach the coordinator once, fenced as data", async () => 
   await start(run);
   await tellImagesSettled(parent.sessionId, "x");
   assert.equal(log.sends.length, 1, "nothing once the brief is frozen");
+});
+
+test("a later run naming another coordinator model replaces the session, carrying its card and notes; the same model keeps it", async () => {
+  const first = runWith(2, 3);
+  const t = await started(first);
+  await t.coordinator_card({ text: "Two designs so far." });
+  assert.deepEqual(log.starts.map((s) => s.model), ["zai/coord"]);
+  const same = runWith(2, 3);
+  changeDesigns(parent.sessionId, (s) => void s.runs.push(same));
+  await startCoordinator(parent, same, "/cwd");
+  assert.equal(log.starts.length, 1, "the same model keeps the session");
+  assert.equal(log.stops.length, 0);
+  noteHandIn(parent.sessionId, { label: "A", version: 1, note: { layout: "grid", sections: "s", type: "t", color: "c" } });
+  const other = runWith(2, 3);
+  other.setup.models[0] = model("zai/other", { design: false, coordinator: true, vision: false });
+  changeDesigns(parent.sessionId, (s) => void s.runs.push(other));
+  const before = log.sends.length;
+  await startCoordinator(parent, other, "/cwd");
+  assert.deepEqual(log.starts.map((s) => s.model), ["zai/coord", "zai/other"]);
+  assert.deepEqual(log.stops, [`worker-${parent.sessionId}-1`], "the old session stops");
+  assert.equal(log.sends.length, before, "the new one is started with its task, not sent to");
+  assert.match(lastTask, /from an earlier session on zai\/coord/);
+  assert.match(lastTask, /Two designs so far\./);
+  assert.match(lastTask, /A handed in/, "the notes that waited carry over");
+  assert.match(lastTask, /<<untrusted content/);
+  assert.equal(log.launches.length, 0, "nothing launches before Start");
+  assert.equal(log.news.length, 0);
+  assert.equal((await import("./store")).viewOf(parent.sessionId).coordinator!.model, "zai/other");
+  const tools = Object.fromEntries(coordinatorTools(parent.sessionId).map((x) => [x.name, (a: unknown) => x.execute("c", a, undefined, undefined, undefined as never)])) as Tools;
+  const r = await tools.design_browse({ url: "http://127.0.0.1:4810/" });
+  assert.deepEqual(r.content.map((b: { type: string }) => b.type), ["text"], "a model that can't read pictures gets no image parts");
 });
 
 test("Not This Screen sends the user's words on, clears the screen, and an address in them counts as theirs", async () => {

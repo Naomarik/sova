@@ -25,7 +25,7 @@ commands you can type in a chat, and your own personal modes.
 | [create](/docs/modes/create/) | Major | Everything Delegate does, plus every way to make Sova yours. You say what you need, and it makes the change on a card, by Land, or with your OK. |
 | [align](/docs/modes/align/) | Minor | The agent agrees with you on what to build first, and records each agreement as an alignment you answer in chat. |
 | [spec](/docs/modes/spec/) | Minor | The agent reads the project's spec before coding, and proposes changes to it in drafts that become official when its branch lands. |
-| [vis](/docs/modes/vis/) | Minor | The agent can draw small diagrams and charts in its replies, which Sova renders itself, and record checked tours of a real interface. |
+| [vis](/docs/modes/vis/) | Minor | The agent can draw small diagrams and charts in its replies, which Sova renders itself, record checked tours of a real interface, and open a [Lookbook](/docs/modes/vis/lookbook/) of one page from several models when you ask. |
 | [memory](/docs/modes/memory/) | Minor | A cheap model folds the chat's messages into one-line summaries the agent can open back up, so a long chat outgrows its context. Only Sova's mode menu turns it on. |
 | [project modes](/docs/modes/project-modes/) | Minor | A project's own modes, with its instructions, command-line tools, commands and hooks. None is on until someone turns it on in a chat, and only you approve its hooks. |
 

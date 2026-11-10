@@ -4422,14 +4422,12 @@ export interface CommandParams {
     /** The whole setup: brief, models, directions */
     "setup": unknown;
   };
-  /** Start a run's coordinator, which then launches the designs. (changes something; needs the card's owner trusted) */
+  /** Start a run's coordinator, which writes its Design Brief. The designs start from the brief, by the user's click. (changes something; needs the card's owner trusted) */
   "design.start": {
     /** The chat the designs belong to, by id or by path */
     "session"?: string;
     /** The design run's id */
     "run": string;
-    /** Confirm a run above the free limit */
-    "confirm"?: boolean;
   };
   /** Send a design's session a message. It waits if the session is busy. (changes something; needs the card's owner trusted) */
   "design.message": {

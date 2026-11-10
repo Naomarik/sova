@@ -77,7 +77,7 @@ import { QUEUE_CHAT_MODE_REFUSAL, queueChatRole } from "../shared/merge-queue";
 import { cleanSessionTitle, readSessionTitleRecords, SESSION_TITLE_MAX, setSessionTitle } from "./session-titles";
 import { fixedNameRefusal } from "../shared/fixed-names";
 import { rowsOf } from "./transcript";
-import { readBranch, unknownEntries } from "./harness/pi/reader";
+import { parsePiBranch, readBranch, unknownEntries } from "./harness/pi/reader";
 import { contextOfBranch } from "./harness/pi/usage";
 import { appendToClosedFile, createSessionFile, type NewSessionFile } from "./harness/pi/state";
 import { modelCheck, modelCheckStatus } from "./harness/pi/model-sync";
@@ -952,8 +952,9 @@ export function buildApp(deps: AppDeps) {
     summary: (path) => getSessionSummary(path),
     sessionFiles: listSessionFiles,
     readBranch,
+    parseBranch: (text) => parsePiBranch(text).branch,
     // A conflict's scratch copy the merge thread made itself: the queue's own, never listed (merge-queue/owners.ts).
-    queueMade: async (path) => (await import("./merge-queue/wire")).worktreeQueueMade(path),
+    queueMade: async () => (await import("./merge-queue/wire")).worktreeQueueMadeNow(),
     targetOf: async (main) => (await import("./merge-queue/wire")).landingTargetOf(main),
   });
   app.get("/api/worktrees/summary", async (c) => {

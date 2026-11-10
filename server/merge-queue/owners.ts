@@ -30,9 +30,10 @@ export interface OwnerDeps {
   tracked: () => { version: number; each(): Iterable<[string, readonly TrackedWorktree[]]> };
   /** A path's canonical form (symlinks resolved), as tracked paths are recorded. */
   canonical: (path: string) => string;
-  /** The worktrees a queue chat's own file records. `tracked` covers only the sessions readiness reads, and it reads
-      no queue chat, so what one created is asked of its file. */
-  treesOfChat?: (sessionPath: string) => Promise<readonly TrackedWorktree[]>;
+  /** The worktrees these chats' own files record as created by them, still kept (worktree-cleanup.ts createdByChats:
+      a file is read again only when it changed). `tracked` covers only the sessions readiness reads, and it reads no
+      queue chat, so what one created is asked of its file. `key` moves whenever any of their files changed. */
+  createdBy?: (sessionPaths: readonly string[]) => Promise<{ key: string; trees: readonly string[] }>;
 }
 
 interface Tracker {
@@ -41,11 +42,17 @@ interface Tracker {
 
 export class WorktreeOwners {
   private index: { version: number; byTree: Map<string, Tracker[]> } | null = null;
+  /** The queue's own set (canonical), remembered while its key holds: the index's version, the queue chats and their files. */
+  private made: { key: string; trees: ReadonlySet<string> } | null = null;
   /** How many times the index was built (tests). */
   builds = 0;
   constructor(private readonly deps: OwnerDeps) {}
 
   private trackers(tree: string): Tracker[] {
+    return this.byTree().get(tree) ?? [];
+  }
+
+  private byTree(): Map<string, Tracker[]> {
     const t = this.deps.tracked();
     if (!this.index || this.index.version !== t.version) {
       const byTree = new Map<string, Tracker[]>();
@@ -61,7 +68,7 @@ export class WorktreeOwners {
       this.index = { version: t.version, byTree };
       this.builds++;
     }
-    return this.index.byTree.get(tree) ?? [];
+    return this.index.byTree;
   }
 
   async ownerOf(worktree: string): Promise<Owner | null> {
@@ -73,18 +80,26 @@ export class WorktreeOwners {
   /** Whether one of the merge queue's own chats (queueChat) created the worktree: a conflict's scratch copy the merge
       thread made itself, before Sova made them (merge-queue/scratch.ts). Never anyone's work to land. */
   async queueMade(worktree: string): Promise<boolean> {
-    const tree = this.deps.canonical(worktree);
+    return (await this.queueMadeNow())(worktree);
+  }
+
+  /** The answer to queueMade for any number of worktrees, from one look: a list asks this once, then each row. The set
+      is built again only when a queue chat's file, the queue chats or the index changed; else the remembered one. */
+  async queueMadeNow(): Promise<(worktree: string) => boolean> {
     const sessions = await this.deps.sessions();
-    const byPath = new Map(sessions.map((s) => [s.path, s]));
-    if (this.trackers(tree).some((t) => !!byPath.get(t.sessionPath)?.queueChat)) return true;
-    const read = this.deps.treesOfChat;
-    if (!read) return false;
-    for (const s of sessions) {
-      if (!s.queueChat) continue;
-      const trees = await read(s.path).catch((): readonly TrackedWorktree[] => []);
-      if (trees.some((t) => t.how === "created" && t.status !== "dropped" && this.deps.canonical(t.path) === tree)) return true;
+    const queue = sessions.filter((s) => s.queueChat).map((s) => s.path);
+    const byTree = this.byTree();
+    const files = this.deps.createdBy ? await this.deps.createdBy(queue).catch(() => null) : null;
+    const key = `${this.index!.version}\0${files?.key ?? "-"}\0${queue.join("\0")}`;
+    if (this.made?.key !== key) {
+      const ours = new Set(queue);
+      const trees = new Set<string>();
+      for (const [tree, list] of byTree) if (list.some((t) => ours.has(t.sessionPath))) trees.add(tree);
+      for (const p of files?.trees ?? []) trees.add(this.deps.canonical(p));
+      this.made = { key, trees };
     }
-    return false;
+    const trees = this.made.trees;
+    return (worktree) => trees.has(this.deps.canonical(worktree));
   }
 }
 

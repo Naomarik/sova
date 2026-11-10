@@ -136,10 +136,14 @@ export interface CleanupDeps {
   sessionFiles: () => Promise<string[]>;
   /** A session file's active branch entries (read only for a changed file that holds a `worktrees` entry). */
   readBranch: (path: string) => Promise<readonly unknown[]>;
+  /** The active branch entries of a session file's text already read (the scan's bytes): the same answer as
+      readBranch with no second read of the file. Absent: readBranch reads it again. */
+  parseBranch?: (text: string) => readonly unknown[];
   /** A session file's bytes, read only when it changed since the last check (the scan's cache). */
   readFile: (path: string) => Promise<Buffer>;
-  /** The worktree was made by one of the merge queue's own chats (merge-queue/wire.ts worktreeQueueMade): hidden from every count and list, though it retires like any other. Absent: none is. */
-  queueMade?: (path: string) => Promise<boolean>;
+  /** Which worktrees one of the merge queue's own chats made (merge-queue/wire.ts worktreeQueueMadeNow), asked once per
+      list and then of each row: hidden from every count and list, though they retire like any other. Absent: none is. */
+  queueMade?: () => Promise<(path: string) => boolean>;
   /** The branch a repository lands on, when its project declares one. Absent or null: master, else main. */
   targetOf?: (main: string) => Promise<string | null>;
   now: () => number;
@@ -278,8 +282,8 @@ export interface ClassifyOpts {
   only?: readonly string[];
   /** The shared answer; tests swap it. */
   left?: (o: Parameters<typeof branchLeft>[0]) => Promise<BranchLeft>;
-  /** Who made it, for this call: the configured seam otherwise. */
-  queueMade?: (path: string) => Promise<boolean>;
+  /** Who made which, for this call: the configured seam otherwise. */
+  queueMade?: () => Promise<(path: string) => boolean>;
 }
 
 const LEFTOVER_KINDS = new Set(["catch-up", "landed", "past-landing"]);
@@ -325,12 +329,14 @@ export async function classifyRepo(dir: string, opts: GitRunner | ClassifyOpts =
   // landing attempt ends: never listed, held or removed here. The ones a merge queue chat created itself leave every
   // count and list, and retire by the same rule (withQueueMade).
   const scratch = new Set(scratchCopiesIn(commonDir).map((c) => canonical(c.path)));
-  const queueMade = o.queueMade ?? deps?.queueMade;
+  const queueMadeNow = o.queueMade ?? deps?.queueMade;
+  // One look for the whole list: each row is then a lookup. Can't be read: none is the queue's.
+  const queueMade = queueMadeNow ? await queueMadeNow().catch(() => null) : null;
   const only = o.only ? new Set(o.only) : null;
   for (const w of linked) {
     if (only && !only.has(w.path)) continue;
     if (scratch.has(canonical(w.path))) continue;
-    const madeByQueue = !!queueMade && (await queueMade(w.path).catch(() => false));
+    const madeByQueue = !!queueMade?.(w.path);
     if (madeByQueue && !o.withQueueMade) continue;
     const nested = [first, ...linked].filter((x) => x.path !== w.path && isWithin(canonical(x.path), canonical(w.path))).map((x) => x.path);
     const base: ClassifiedTree = { path: w.path, ...(w.branch ? { branch: w.branch } : {}), ...(w.head ? { head: w.head } : {}), locked: w.locked, gone: w.prunable || !existsSync(w.path), class: "unmerged", ancestor: false, ...(nested.length ? { nested } : {}), ...(madeByQueue ? { queueMade: true as const } : {}) };
@@ -435,7 +441,7 @@ interface FileScan {
   version: string;
   mtime: number;
   cwd: string | null;
-  tracks?: { active: Set<string>; sandbox: boolean; records: { path: string; branch: string; base: string }[] };
+  tracks?: { active: Set<string>; sandbox: boolean; records: { path: string; branch: string; base: string }[]; created: string[] };
   /** Its sandbox, read once for a session that holds no `worktrees` entry but whose folder is in a tree asked about. */
   sandbox?: boolean;
 }
@@ -482,7 +488,7 @@ async function scanFile(path: string, d: CleanupDeps, failed?: string[]): Promis
     // Its marker is there: a branch that can't be read says nothing about what it tracks, so the file counts as unreadable.
     let branch: readonly unknown[];
     try {
-      branch = await d.readBranch(path);
+      branch = d.parseBranch ? d.parseBranch(buf.toString("utf8")) : await d.readBranch(path);
     } catch {
       failed?.push(path);
       return null;
@@ -493,13 +499,22 @@ async function scanFile(path: string, d: CleanupDeps, failed?: string[]): Promis
         active: new Set(set.trees.filter((t) => t.status === "active").map((t) => canonical(t.path))),
         sandbox: sandboxInfo(branch as Parameters<typeof sandboxInfo>[0]).on,
         records: set.trees.map((t) => ({ path: t.path, branch: t.branch, base: t.base })),
+        // The ones this chat made itself and still keeps: what a merge queue chat made is the queue's own (createdByChats).
+        created: set.trees.filter((t) => t.how === "created" && t.status !== "dropped").map((t) => t.path),
       };
     }
   }
   scans.set(path, scan);
-  if (scans.size > 5000) scans.delete(scans.keys().next().value!);
   return scan;
 }
+
+/** After a sweep of every session file: forget the ones it didn't list, so the record holds what is there, however many. */
+function keepOnly(listed: ReadonlySet<string>): void {
+  for (const path of scans.keys()) if (!listed.has(path)) scans.delete(path);
+}
+
+/** How many session files the record holds (tests). */
+export const scannedFiles = (): number => scans.size;
 
 /** `fn` over `items`, at most `limit` at once, results in order. */
 async function mapLimit<T, R>(items: readonly T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
@@ -522,9 +537,11 @@ async function mapLimit<T, R>(items: readonly T[], limit: number, fn: (item: T) 
  */
 export async function chatUses(paths: readonly string[], exclude?: string): Promise<ChatFacts> {
   const d = need();
-  const all = [...new Set(await d.sessionFiles())].filter((p) => p !== exclude);
+  const listed = new Set(await d.sessionFiles());
+  const all = [...listed].filter((p) => p !== exclude);
   const unreadable: string[] = [];
   const scanned = await mapLimit(all, READ_CONCURRENCY, (path) => scanFile(path, d, unreadable));
+  keepOnly(listed);
   const wanted = paths.map((p) => ({ path: p, canon: canonical(p) }));
   const rows = all
     .map((path, i) => {
@@ -571,11 +588,26 @@ export async function treeRecords(): Promise<{ records: TreeRecord[]; unreadable
   const all = [...new Set(await d.sessionFiles())];
   const unreadable: string[] = [];
   const scanned = await mapLimit(all, READ_CONCURRENCY, (path) => scanFile(path, d, unreadable));
+  keepOnly(new Set(all));
   const records: TreeRecord[] = [];
   scanned.forEach((scan, i) => {
     for (const r of scan?.tracks?.records ?? []) records.push({ ...r, session: all[i]! });
   });
   return { records, unreadable };
+}
+
+/**
+ * The worktrees `sessionPaths` made themselves and still keep (their own `worktrees` records), from the same per-file
+ * record: a file is read only when it changed since it was last read (inode, size, mtime), so asking again with
+ * nothing changed costs a `stat` per file. `key` moves whenever any of them changed. A file that can't be read
+ * names none: these are the merge queue's own chats, and a doubt leaves a worktree on the lists.
+ */
+export async function createdByChats(sessionPaths: readonly string[]): Promise<{ key: string; trees: string[] }> {
+  const d = need();
+  const scanned = await mapLimit(sessionPaths, READ_CONCURRENCY, (path) => scanFile(path, d));
+  const trees = new Set<string>();
+  for (const scan of scanned) for (const p of scan?.tracks?.created ?? []) trees.add(p);
+  return { key: sessionPaths.map((p, i) => `${p}@${scanned[i]?.version ?? "-"}`).join("\0"), trees: [...trees] };
 }
 
 /** A removal changed git's list: the next count reads again. */

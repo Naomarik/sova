@@ -137,7 +137,9 @@ describe("a merge thread's own old branch, as the live server sees it", () => {
     const { mkdtempSync, writeFileSync, rmSync } = await import("node:fs");
     const { tmpdir } = await import("node:os");
     const { join } = await import("node:path");
-    const { sessionFacts } = await import("../insights");
+    const { readFileSync } = await import("node:fs");
+    const cleanup = await import("../worktree-cleanup");
+    const { readBranch } = await import("../harness/pi/reader");
     const { trackedWorktrees } = await import("../merge-readiness");
     const dir = mkdtempSync(join(tmpdir(), "owners-file-"));
     const at = "2026-11-03T00:00:00.000Z";
@@ -148,18 +150,21 @@ describe("a merge thread's own old branch, as the live server sees it", () => {
     const DROPPED = join(dir, "proj-dropped");
     const file = join(dir, `2026-11-03T00-00-00-000Z_${id}.jsonl`);
     writeFileSync(file, `${[{ type: "session", version: 3, id, timestamp: at, cwd: dir }, { type: "custom", customType: "worktrees", id: "a0000001", parentId: null, timestamp: at, data: { version: 1, trees: [tree(OLD, "created"), tree(ATT, "attached"), tree(DROPPED, "created", "dropped")] } }].map((l) => JSON.stringify(l)).join("\n")}\n`);
+    cleanup.resetCleanup();
+    cleanup.configureCleanup({ summary: async () => null, sessionFiles: async () => [file], readBranch, readFile: async (p) => readFileSync(p) });
     try {
       const owners = new WorktreeOwners({
         sessions: async () => [{ ...row(id, dir, 5, { queueChat: { role: "thread" } }), path: file }],
         tracked: trackedWorktrees, // the live index: it holds no queue chat
         canonical: (p) => p,
-        treesOfChat: async (path) => (await sessionFacts(path)).worktrees?.trees ?? [],
+        createdBy: cleanup.createdByChats, // the cleanup scan's own record of the file
       });
       assert.equal(await owners.queueMade(OLD), true, "the thread created it");
       assert.equal(await owners.queueMade(ATT), false, "only attached");
       assert.equal(await owners.queueMade(DROPPED), false, "dropped");
       assert.equal(await owners.queueMade(join(dir, "someone-elses")), false);
     } finally {
+      cleanup.resetCleanup();
       rmSync(dir, { recursive: true, force: true });
     }
   });

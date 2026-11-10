@@ -272,7 +272,7 @@ describe("scratch copies: the queue", () => {
 
   test("a copy the merge thread made itself (old style, a branch it tracks): hidden from Ready and refused by Land, by who made it", async () => {
     let made = new Set<string>();
-    const k = makeKit({ deps: { queueMade: async (p) => made.has(p) } });
+    const k = makeKit({ deps: { queueMade: async () => (p) => made.has(p) } });
     try {
       const q = await k.q();
       const old = k.repo.branch("feat/resolve-mq_old1", { "x.txt": "x\n" });
@@ -289,7 +289,7 @@ describe("scratch copies: the queue", () => {
 
   test("a queue copy that changes the project's setup: Land says it is a queue copy, never to run a trial; a user's branch with the same change gets the trial gate", async () => {
     let made = new Set<string>();
-    const k = makeKit({ deps: { queueMade: async (p) => made.has(p) } });
+    const k = makeKit({ deps: { queueMade: async () => (p) => made.has(p) } });
     try {
       const q = await k.q();
       const setup = { ".sova/project.json": `${JSON.stringify({ version: 1, merge: { checks: "none" } })}\n` };

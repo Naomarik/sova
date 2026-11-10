@@ -251,8 +251,9 @@ export interface QueueDeps {
   /** How often open requests are read on the host (default 3 min). */
   pollMs?: number;
   /** The worktree was made by one of the merge queue's own chats (its creating tracker is a queue chat, owners.ts
-   *  queueMade): one of the scratch copies the merge thread made itself before Sova made them. Default: none is. */
-  queueMade?: (worktree: string) => Promise<boolean>;
+   *  queueMadeNow), asked once per list and then of each row: one of the scratch copies the merge thread made itself
+   *  before Sova made them. Default: none is. */
+  queueMade?: () => Promise<(worktree: string) => boolean>;
 }
 
 /** What the queue tells the releaser about one of a release's entries. */
@@ -492,9 +493,14 @@ export class ProjectQueue {
   }
 
   /** A worktree the merge queue made for itself: a scratch copy (by its mark), or one a queue chat created. */
-  private async queueOwned(path: string): Promise<boolean> {
+  private async queueOwned(path: string, made?: (worktree: string) => boolean): Promise<boolean> {
     if (isScratchCopy(path)) return true;
-    return (await this.deps.queueMade?.(path).catch(() => false)) ?? false;
+    return !!(made ?? (await this.queueMadeNow()))(path);
+  }
+
+  /** Which worktrees the queue's chats made, from one look: a list asks it once, then each row. Can't be read: none. */
+  private async queueMadeNow(): Promise<(worktree: string) => boolean> {
+    return (await this.deps.queueMade?.().catch(() => null)) ?? (() => false);
   }
 
   private schedulePublish(): void {
@@ -1051,6 +1057,7 @@ export class ProjectQueue {
     if (this.readyCache && this.readyCache.head === head && this.now() - this.readyCache.at < 15_000) return this.filterReady(this.readyCache.list, redrafted);
     const out: MergeReady[] = [];
     const trees = await worktreesOf(this.git, this.root);
+    const made = await this.queueMadeNow();
     // The answers are kept per head and target, so only a move of the target reads any again: a few at a time, since
     // the heads with work each run a trial merge.
     const asked = trees.filter((w) => w.branch && w.head && w.path !== this.root && existsSync(w.path));
@@ -1059,7 +1066,7 @@ export class ProjectQueue {
       if (!w.branch || !w.head || w.path === this.root || w.branch === this.q.target || w.branch === "master" || w.branch === "main" || !existsSync(w.path)) continue;
       if (w.branch.startsWith("sova/")) continue;
       // The queue's own scratch copies are never work to land, whatever branch one is on.
-      if (await this.queueOwned(w.path)) continue;
+      if (await this.queueOwned(w.path, made)) continue;
       // The one answer (§chat.worktrees/nothing-left): nothing left is on no list, drafts alone keep the row, and a branch
       // git can't read stays listed.
       const left = await this.leftOf(w.branch, w.head, w.path, head);

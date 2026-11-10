@@ -313,9 +313,11 @@ test("the card's line says what was described and what it cost, each session cou
   assert.equal(d.assetSummaryLine(parent.sessionId), "Assets: 1 described · 1 couldn't be read · $0.0025");
 });
 
-test("the team says once when it is done", async () => {
+test("the team says once when it starts and once when it is done", async () => {
   const seen: string[] = [];
+  const began: boolean[] = [];
   const off = d.onAssetsSettled((sid) => seen.push(sid));
+  const offStart = d.onDescribingStarted((sid) => began.push(sid === parent.sessionId && d.describing(sid)));
   const names = Array.from({ length: 12 }, (_, i) => addImage(i));
   d.describeAssets(parent);
   await until(() => helpers.length === 2, "both helpers");
@@ -325,6 +327,8 @@ test("the team says once when it is done", async () => {
   await answer(helpers[1]!);
   await settledOut();
   assert.deepEqual(seen, [parent.sessionId]);
+  assert.deepEqual(began, [true], "started once, already describing when told");
+  offStart();
   assert.ok(names.every((x) => asset(x).description));
   off();
 });

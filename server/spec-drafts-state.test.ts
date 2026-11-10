@@ -274,3 +274,25 @@ test("drafts unchanged since the last pass are read again from no file and no fo
     draftSettle.ms = 2000;
   }
 });
+
+test("at the default settle window, a draft file hashed just after its write isn't kept: a same-size rewrite is read again", () => {
+  assert.equal(draftSettle.ms, 2000);
+  const wt = tree();
+  draft(wt, "feat", file("x says one thing."));
+  const p = join(dir(wt, "feat"), "spec", F);
+  const was = statSync(p);
+  const before = readings(wt);
+  assert.deepEqual(before, byHand(wt));
+  // Within the window, nothing moved: the file is still read, since nothing read under so fresh a stat is kept.
+  const work = { ...draftWork };
+  assert.deepEqual(readings(wt), before);
+  assert.ok(draftWork.files > work.files, "a hash taken inside the window is not kept");
+  // Same size, mtime put back; the kernel moves ctime, which can't be set back.
+  writeFileSync(p, file("x says one THING."));
+  utimesSync(p, was.atime, was.mtime);
+  assert.equal(statSync(p).size, was.size);
+  assert.ok(Date.now() - was.mtimeMs < 2000, "still within the window");
+  const after = readings(wt);
+  assert.deepEqual(after, byHand(wt));
+  assert.notDeepEqual(after.hash, before.hash, "the rewrite shows");
+});

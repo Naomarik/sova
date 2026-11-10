@@ -91,7 +91,7 @@ TECHNICAL REQUIREMENTS:
 
 THE PAGE IS SEALED:
 The page runs in a sealed frame. Only Google Fonts can load from the web.
-- NO EXTERNAL IMAGES: photos and image URLs (Unsplash, placeholder services, anything else) are blocked and show as broken holes. Draw every picture in the page: inline SVG, CSS gradients and patterns, or data: URIs. Illustrate boldly; imagery you draw is part of the design
+- NO EXTERNAL IMAGES: photos and image URLs (Unsplash, placeholder services, anything else) are blocked and show as broken holes. Draw every picture in the page: inline SVG, CSS gradients and patterns, or data: URIs. Illustrate boldly; imagery you draw is part of the design. The one exception: images Sova lists for you in your message, each written exactly as its sova-asset:aN address
 - No fetch, WebSocket or other network calls, and no localStorage, sessionStorage or cookies: they fail, and a script that throws on them breaks the page. Keep any state in plain variables
 - Nothing may leave the page: no form posts, no navigating away. Forms stop at preventDefault and show their result in the page; links stay on the page
 

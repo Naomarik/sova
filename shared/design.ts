@@ -3,8 +3,19 @@
 // both the server and the web app import it.
 
 /** A design's life on its card. Queued: waiting for a seat or a provider slot; Writing: its session is
-    at work; Ready: a finished page exists; Failed: the last attempt produced none. */
-export type DesignStatus = "queued" | "writing" | "ready" | "failed";
+    at work; Fixing: the server sent its session back to repair a page that didn't land (`fix` says why);
+    Ready: a finished page exists; Failed: the last attempt produced none. */
+export type DesignStatus = "queued" | "writing" | "fixing" | "ready" | "failed";
+
+/** Why a design is being fixed (status "fixing"), for its card. */
+export interface DesignFix {
+  /** In plain words, for the card: "The page was cut off." */
+  reason: string;
+  /** This try, from 1. */
+  attempt: number;
+  /** The most tries a design gets. */
+  of: number;
+}
 
 /** How a design's page reaches the card while it is written: through the design tool's argument, or,
     for a provider that delivers a tool's argument whole at the end, between markers in its reply. */
@@ -56,6 +67,8 @@ export interface DesignRecord {
   status: DesignStatus;
   /** Why it failed, in plain words (status "failed"). */
   error?: string;
+  /** Set while status is "fixing". */
+  fix?: DesignFix;
   route: DesignStreamRoute;
   /** Finished versions, oldest first; empty until the first hand-in. */
   versions: DesignVersion[];

@@ -2,8 +2,8 @@ import { createEffect, createMemo, createSignal, For, on, onCleanup, onMount, Sh
 import type { DesignRecord } from "../../shared/design";
 import { versionLabel } from "../lib/design-frame";
 import { designPageText, type DesignStore } from "../lib/design-store";
-import { coordinatorOf, designCanRefine, designIsBusy, designLatest, designMeta, designStatusWord, parentsLine, QUICK_PROMPTS } from "../lib/design-ui";
-import { designStatusTone, DesignTile, designGrid, type DesignOpenTarget } from "./DesignCard";
+import { coordinatorOf, designCanRefine, designFixLine, designIsBusy, designLatest, designMeta, designStatusWord, parentsLine, QUICK_PROMPTS } from "../lib/design-ui";
+import { designStatusTone, DesignTile, designGrid, designWaiting, type DesignOpenTarget } from "./DesignCard";
 import { DesignCoordinatorPanel, DesignDeliveryLine, designKey, DesignMessageBox } from "./DesignCoordinator";
 import { DesignSealedFrame, DesignStreamFrame } from "./DesignFrame";
 import { WorkerTranscript } from "./SubagentPane";
@@ -95,15 +95,15 @@ function PageFrame(props: { d: DesignRecord; version: number; store: DesignStore
   const title = () => `Design ${versionLabel(props.d.label, props.version)}`;
   return (
     <div class="design-open-frame">
-      <Show when={props.d.live && props.version === 0}>
+      <Show when={(props.d.live || props.d.status === "writing" || props.d.status === "fixing") && props.version === 0}>
         <div inert class="design-frame-layer">
-          <DesignStreamFrame text={props.store.live(props.d.label)?.text ?? ""} title={title()} thinking={props.d.thinking} />
+          <DesignStreamFrame text={props.store.live(props.d.label)?.text ?? ""} title={title()} waiting={designWaiting(props.d)} />
         </div>
       </Show>
       <Show when={html() !== null}>
         <DesignSealedFrame html={html()!} motion title={title()} />
       </Show>
-      <Show when={props.version === 0 && !props.d.live}>
+      <Show when={props.version === 0 && !props.d.live && props.d.status !== "writing" && props.d.status !== "fixing"}>
         <div class="design-frame-note">No page has been written yet.</div>
       </Show>
       <Show when={error()}>
@@ -176,6 +176,7 @@ export function DesignOpen(props: { target: DesignOpenTarget; store: DesignStore
               <Chip tone={designStatusTone(x())} live={designIsBusy(x())}>
                 {designStatusWord(x())}
               </Chip>
+              <Show when={designFixLine(x())}>{(line) => <span class="text-caption text-muted design-open-meta">{line()}</span>}</Show>
               <Show when={x().versions.length > 1}>
                 <Select class="design-open-version" label="Version" hideLabel value={String(version())} options={x().versions.map((v) => ({ value: String(v.n), label: versionLabel(x().label, v.n) }))} onChange={(v) => setPick(Number(v))} />
               </Show>

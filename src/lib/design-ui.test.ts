@@ -4,7 +4,7 @@ import type { TranscriptItem } from "../../shared/protocol";
 import type { DesignRecord, DesignSetup } from "../../shared/design";
 import type { LiveTool } from "./live";
 import { designFold, liveDesignCalls, newestDesignRows, normalizeDesignCard } from "./design-rows";
-import { batchLine, briefTitle, designGroups, designIsBusy, designMeta, designStatusWord, moveCoordinator, parentsLine, setupBlocked, setupCount, setupSummary, statusCounts, toggleDirection, toggleGroup, toggleModel } from "./design-ui";
+import { batchLine, briefTitle, designGroups, designFixLine, designIsBusy, designMeta, designStatusWord, moveCoordinator, parentsLine, setupBlocked, setupCount, setupSummary, statusCounts, toggleDirection, toggleGroup, toggleModel } from "./design-ui";
 
 const caps = { batchDefault: 6, askAbove: 12, batchMax: 24, concurrent: 6 };
 const m = (ref: string, design = true, coordinator = false) => ({ ref, name: ref, design, coordinator, vision: true, route: "tool" as const });
@@ -81,6 +81,16 @@ test("a design's chip says what its session is doing", () => {
   assert.equal(designIsBusy({ ...rec("A", "ready"), workerState: "working" }), true);
   assert.equal(designIsBusy(rec("A", "ready")), false);
   assert.equal(designIsBusy(rec("A", "queued")), false);
+});
+
+test("a design being fixed says why and how many tries, and counts as work going on", () => {
+  const d: DesignRecord = { ...rec("A", "fixing"), fix: { reason: "The page was cut off.", attempt: 1, of: 2 } };
+  assert.equal(designStatusWord(d), "Fixing");
+  assert.equal(designFixLine(d), "The page was cut off. Fixing it, try 1 of 2.");
+  assert.equal(designIsBusy(d), true);
+  assert.equal(designFixLine(rec("A", "writing")), "", "only while fixing");
+  assert.equal(designFixLine(rec("A", "fixing")), "Fixing it.", "a server with no reason yet");
+  assert.equal(statusCounts([d, rec("B", "ready")]), "1 ready · 1 fixing");
 });
 
 test("a design's line names its model, its tokens as far as known, and its cost", () => {

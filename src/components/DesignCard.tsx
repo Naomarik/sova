@@ -10,6 +10,7 @@ import {
   coordinatorOf,
   designCanOpen,
   designCanRefine,
+  designFixLine,
   designGroups,
   designIsBusy,
   designLatest,
@@ -46,7 +47,13 @@ export const CAPS_FALLBACK: DesignCaps = { batchDefault: DESIGN_BATCH_DEFAULT, a
 
 export type DesignOpenTarget = { kind: "design"; label: string } | { kind: "coordinator" };
 
-export function designStatusTone(d: DesignRecord): "success" | "accent" | "error" | undefined {
+/** What a page with no text yet says instead. */
+export function designWaiting(d: DesignRecord): string | undefined {
+  return d.status === "fixing" ? d.fix?.reason || "Fixing the page" : d.thinking ? "Thinking about the page" : undefined;
+}
+
+export function designStatusTone(d: DesignRecord): "success" | "accent" | "error" | "warn" | undefined {
+  if (d.status === "fixing") return "warn";
   if (d.status === "ready" && d.workerState === "working") return "accent";
   return d.status === "ready" ? "success" : d.status === "writing" ? "accent" : d.status === "failed" ? "error" : undefined;
 }
@@ -286,7 +293,7 @@ function DesignRunBody(props: { run: DesignRunView; store: DesignStore; newest: 
   const [opened, setOpened] = createSignal<DesignOpenTarget | null>(null);
   const designs = createMemo(() => designsOfRun(props.store.view(), props.run.id, props.run.labels));
   const counts = () => statusCounts(designs());
-  const anyLive = () => designs().some((d) => d.status === "writing");
+  const anyLive = () => designs().some(designIsBusy);
   const coordinator = () => coordinatorOf(props.store.view());
   const refined = () => designs().find((d) => d.label === refining());
   return (
@@ -437,8 +444,8 @@ export function DesignThumb(props: { d: DesignRecord; store: DesignStore; cacheK
               <DesignSealedFrame html={html()!} motion={false} title={title()} onDrawn={() => setDrawn(true)} />
             </div>
           </Show>
-          <Show when={writing() || props.d.status === "writing" || (html() !== null && !drawn() && live())}>
-            <DesignStreamFrame text={live()?.text ?? ""} title={title()} thinking={props.d.thinking} />
+          <Show when={writing() || props.d.status === "writing" || props.d.status === "fixing" || (html() !== null && !drawn() && live())}>
+            <DesignStreamFrame text={live()?.text ?? ""} title={title()} waiting={designWaiting(props.d)} />
           </Show>
         </Show>
       </DesignScale>
@@ -489,6 +496,7 @@ export function DesignTile(props: { d: DesignRecord; store: DesignStore; cacheKe
         <Show when={props.d.status === "failed" && props.d.error}>
           <p class="text-caption design-tile-error">{props.d.error}</p>
         </Show>
+        <Show when={designFixLine(props.d)}>{(line) => <p class="text-caption text-muted design-tile-meta">{line()}</p>}</Show>
         <Show when={props.d.delivery?.state === "undelivered"}>
           <p class="text-caption design-tile-error">{props.d.delivery?.error || "That message couldn't be delivered. Your text is still in the box."}</p>
         </Show>

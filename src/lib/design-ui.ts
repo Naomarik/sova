@@ -91,7 +91,7 @@ export function briefTitle(brief: string): string {
   return line.length > 64 ? `${line.slice(0, 63).trimEnd()}…` : line || "New design";
 }
 
-export const STATUS_WORD: Record<DesignStatus, string> = { queued: "Queued", writing: "Writing", ready: "Ready", failed: "Failed" };
+export const STATUS_WORD: Record<DesignStatus, string> = { queued: "Queued", writing: "Writing", fixing: "Fixing", ready: "Ready", failed: "Failed" };
 
 /** The word on a design's chip: what its session is doing now, which can be more than its page's status. */
 export function designStatusWord(d: DesignRecord): string {
@@ -102,12 +102,20 @@ export function designStatusWord(d: DesignRecord): string {
 }
 
 /** Whether that word stands for work going on (the chip's live dot). */
-export const designIsBusy = (d: DesignRecord): boolean => d.status === "writing" || (d.status === "ready" && d.workerState === "working");
+export const designIsBusy = (d: DesignRecord): boolean => d.status === "writing" || d.status === "fixing" || (d.status === "ready" && d.workerState === "working");
+
+/** "The page was cut off. Fixing it, try 1 of 2.", for a design being repaired; else "". */
+export function designFixLine(d: DesignRecord): string {
+  if (d.status !== "fixing") return "";
+  const why = d.fix?.reason ?? "";
+  const tries = d.fix ? `try ${d.fix.attempt} of ${d.fix.of}` : "";
+  return [why, tries ? `Fixing it, ${tries}.` : "Fixing it."].filter(Boolean).join(" ");
+}
 
 /** "2 ready · 1 writing · 3 queued", omitting what there are none of; failed counted last. */
 export function statusCounts(designs: readonly DesignRecord[]): string {
   const of = (s: DesignStatus) => designs.filter((d) => d.status === s).length;
-  const parts = (["ready", "writing", "queued", "failed"] as const).map((s) => (of(s) ? `${of(s)} ${s}` : "")).filter(Boolean);
+  const parts = (["ready", "writing", "fixing", "queued", "failed"] as const).map((s) => (of(s) ? `${of(s)} ${s}` : "")).filter(Boolean);
   return parts.join(" · ") || "0 designs";
 }
 

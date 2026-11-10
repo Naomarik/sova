@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Merge check: Sova's reader still makes sense of the Claude Code installed on this computer. Sova
+// Run by hand (not a merge queue check): Sova's reader still makes sense of the Claude Code installed on this computer. Sova
 // follows that table by itself and only says so quietly in Settings when it can't, so a Claude Code
 // that changes the table's layout has to fail loudly here. Reads the program file; no model call.
 //   node scripts/merge-checks/claude-table.mjs [--bundle <path to a claude binary>]

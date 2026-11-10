@@ -154,7 +154,7 @@ function LookText(props: { url: string; look: DesignLook | undefined; run: Desig
   );
 }
 
-function BriefScreen(props: { run: DesignRunView; store: DesignStore }) {
+function BriefScreen(props: { run: DesignRunView; store: DesignStore; contentOnly: boolean }) {
   const [redirecting, setRedirecting] = createSignal(false);
   const [text, setText] = createSignal("");
   const [busy, setBusy] = createSignal(false);
@@ -188,7 +188,7 @@ function BriefScreen(props: { run: DesignRunView; store: DesignStore }) {
         </Show>
       </div>
       <div class="design-brief-screen-picture">
-        <Show when={screen()} fallback={<p class="text-muted design-brief-screen-empty">The coordinator hasn't shown a screen yet.</p>}>
+        <Show when={screen()} fallback={<p class="text-muted design-brief-screen-empty">{props.contentOnly ? "Your link is part of the page's content, so no screen is looked at." : "The coordinator hasn't shown a screen yet."}</p>}>
           {(s) => (
             <>
               <For each={s().screenshots}>{(src) => <img src={props.store.api.shotUrl(src)} alt="The screen the coordinator found" />}</For>
@@ -369,7 +369,7 @@ export function DesignBriefStep(props: { run: DesignRunView; store: DesignStore;
               </div>
             </Show>
             <Show when={anyLinks() || brief().screen}>
-              <BriefScreen run={props.run} store={props.store} />
+              <BriefScreen run={props.run} store={props.store} contentOnly={urls().length > 0 && urls().every((u) => useOf(u) === "content")} />
             </Show>
             <Show when={anyLinks() || assetsOfRun(catalogue(), props.run).length > 0}>
               <div class="design-brief-material">

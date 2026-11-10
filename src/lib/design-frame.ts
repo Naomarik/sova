@@ -60,7 +60,9 @@ const head = (csp: string) =>
  * The page's scripts are run here instead, as the document finishes parsing and before
  * DOMContentLoaded, so their listeners for it still fire. Inline handlers (which the policy can't
  * allow) are moved onto listeners. A form that nobody stopped is stopped here: its validation and
- * submit handlers run, and a post would only be refused by `form-action`.
+ * submit handlers run, and a post would only be refused by `form-action`. The page says it has drawn
+ * once its fonts are in and its opening animations have run (a fade-in starts from nothing), so a
+ * picture held above it never gives way to a page still appearing.
  */
 const SEAL_SCRIPT = `for(const n of Object.getOwnPropertyNames(globalThis))if(/^(webkit)?RTC/.test(n))delete globalThis[n];
 document.currentScript.remove();
@@ -78,7 +80,9 @@ const code=[...document.querySelectorAll("script:not([src])")].filter((s)=>!s.ty
 if(code)(0,eval)(code);
 });}
 {const raf=requestAnimationFrame.bind(window),said=()=>parent.postMessage({"sova-design-frame":1,op:"drawn"},"*");
-addEventListener("load",()=>{Promise.race([document.fonts.ready,new Promise((r)=>setTimeout(r,1500))]).then(()=>raf(()=>raf(said)));});}`;
+const frames=()=>new Promise((r)=>raf(()=>raf(r)));
+const settled=()=>Promise.race([Promise.all(document.getAnimations().filter((a)=>{const t=a.effect&&a.effect.getComputedTiming();return t&&isFinite(t.endTime);}).map((a)=>a.finished.catch(()=>0))),new Promise((r)=>setTimeout(r,1500))]);
+addEventListener("load",()=>{Promise.race([document.fonts.ready,new Promise((r)=>setTimeout(r,1500))]).then(frames).then(settled).then(frames).then(said);});}`;
 
 /** A grid card holds motion: animations jump to their end, and a script's animation loop stops after a moment. */
 const HOLD_MOTION_SCRIPT = `{const r=requestAnimationFrame.bind(window);let n=0;window.requestAnimationFrame=(f)=>n++<90?r(f):0;}`;

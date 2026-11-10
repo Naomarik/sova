@@ -112,3 +112,10 @@ test("a page being written is inert in its own frame, whatever holds it: a click
   assert.equal(DESIGN_STREAM_ATTRS.inert, "");
   assert.equal(DESIGN_STREAM_ATTRS.sandbox, "");
 });
+
+test("a finished page says it has drawn only after its fonts and its opening animations, each with a time limit", () => {
+  const { head } = designPageDoc("<p>x</p>", { motion: true });
+  assert.match(head, /document\.fonts\.ready[^;]*\.then\(settled\)[^;]*\.then\(said\)/, "fonts, then animations, then the word");
+  assert.match(head, /getAnimations\(\)[\s\S]*isFinite\(t\.endTime\)/, "an endless animation is never waited for");
+  assert.equal((head.match(/setTimeout\(r,1500\)/g) ?? []).length, 2, "each wait is capped");
+});

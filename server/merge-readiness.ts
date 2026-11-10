@@ -580,8 +580,6 @@ export interface ReadinessDeps {
   /** A served tree's branch at `head` that changes the project's setup without a passing trial of that commit: why it
       can't land yet (server/merge-queue/setup-branch.ts); null when it isn't a setup branch or its trial passed. */
   setupUntried?: (dir: string, head: string) => Promise<string | null>;
-  /** A served tree's head changes automatic cleanup and no rehearsal passed at it today (server/merge-queue/rehearsal.ts). */
-  rehearsalWait?: (dir: string, head: string) => Promise<boolean>;
   /** The Git inputs a tree's readiness reads, as stat stamps (worktrees.ts gitInputsStamp): the
       session feed's readiness watch compares them (checkReadinessInputs). */
   inputsStamp?: (dir: string, baseBranch?: string) => string | null;
@@ -886,7 +884,6 @@ async function computeReadinessNow(s: SessionSummary, facts: FileFacts, publishC
     // Only where the merge queue serves the repo: elsewhere a finished branch is merged by its chat (al_1).
     const servedHere = landingOn && (deps.served ? await deps.served(t.path).catch(() => false) : true);
     let landing: WorktreeReadiness["landing"];
-    let rehearsal = false;
     // Drafts that aren't official: a landing's, or a merged tree's that didn't make it (§chat.worktrees/readiness).
     const unofficial = tf.readable && (landingOn || tf.merged) ? await deps.drafts(t.path) : undefined;
     if (servedHere) {
@@ -906,7 +903,6 @@ async function computeReadinessNow(s: SessionSummary, facts: FileFacts, publishC
       // A setup branch is offered Land only once a trial of its exact head passed (§app.project-setup/land-gate).
       const untried = tf.head && landingLive(tf, rLand.state) && deps.setupUntried ? await deps.setupUntried(t.path, tf.head).catch(() => null) : null;
       if (untried) landing = undefined;
-      rehearsal = !!landing && !!tf.head && !!deps.rehearsalWait && (await deps.rehearsalWait(t.path, tf.head).catch(() => true));
       // Finished but not Ready to land: what the session can fix, for Sova's once-per-commit note.
       // The commit the user approved is the queue's now, and with nothing left there is nothing to fix: no note (a real
       // new commit past an approval or a landing is told as any other).
@@ -934,7 +930,6 @@ async function computeReadinessNow(s: SessionSummary, facts: FileFacts, publishC
       ...(tf.conflicts ? { conflicts: tf.conflicts } : {}),
       ...(hasNoCommits(tf) ? { noCommits: true as const } : {}),
       ...(landing ? { landing } : {}),
-      ...(rehearsal ? { rehearsal: true as const } : {}),
       ...(tf.readable && (tf.merged || hasNoCommits(tf)) ? (unofficial?.length ? { left: "drafts" as const, draftsLeft: unofficial.length } : { left: "nothing" as const, ...(await removeFieldsOf(t.path)) }) : {}),
     });
   }

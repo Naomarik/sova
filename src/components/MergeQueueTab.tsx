@@ -1162,7 +1162,7 @@ function ReadyRow(props: { projectId: string; root: string; target?: string; how
       <Show when={!confirm.ask()}>
         <div class="mq-row-act">
           <QueueReview projectId={props.projectId} branch={r().branch} scope={{ kind: "queue", project: props.projectId, branch: r().branch }} session={r().session} chatOf={props.chatOf} />
-          <LandSplit branch={r().branch} review={props.review} busy={!!act.busy()} onAsk={() => confirm.open("land")} onLand={doLand} onWithoutSpecs={() => confirm.open("specs")} draftsOnly={!!r().draftsOnly} rehearsal={!!r().rehearsal} commit={r().commit} />
+          <LandSplit branch={r().branch} review={props.review} busy={!!act.busy()} onAsk={() => confirm.open("land")} onLand={doLand} onWithoutSpecs={() => confirm.open("specs")} draftsOnly={!!r().draftsOnly} />
         </div>
       </Show>
     </li>

@@ -1908,7 +1908,8 @@ themselves (§chat.worktrees/retirement). Its words are the [copy deck](../desig
   worktree in git's list. A remote session, a folder outside a repository, a repository with no
   linked worktree, and a read that fails show nothing. Never in the Overseer's empty state.
 - **The line.** "{total} worktrees", with " · {held} held" when any are held, and " · {retired} retired"
-  when any retired in the last 7 days: "160 worktrees · 12 held". On an install where automatic cleanup is
+  when any retired in the last 7 days: "160 worktrees · 12 held". While retirement is off it never says
+  held: "160 worktrees · 3 retired". On an install where automatic cleanup is
   off because it runs on an agent directory of its own, it ends " · automatic cleanup is off for this
   install". The counts are §chat.worktrees/cleanup's: every linked worktree in git's list, wherever
   its folder is, and what retirement holds or has retired in that repository.

@@ -1,7 +1,7 @@
 import { createSignal, For, Match, onCleanup, onMount, Show, Switch, type JSX } from "solid-js";
 import { Portal } from "solid-js/web";
 import type { SessionWorktreeInfo } from "../../shared/protocol";
-import { landConfirmWords, modalHead, queueRow, rehearsalWhy, rowButtons, rowsSummary, shownCommit, unclearLine, type MergeProjectInfo, type QueueRow, type WorktreeQueueInfo } from "../lib/merge-queue";
+import { landConfirmWords, modalHead, queueRow, rowButtons, rowsSummary, shownCommit, unclearLine, type MergeProjectInfo, type QueueRow, type WorktreeQueueInfo } from "../lib/merge-queue";
 import { answerEntry, cancelEntry, land, refusal, type LandOptions } from "../lib/merge-queue-client";
 import { mergeRunHref, projectSessionHref, projectTabHref } from "../lib/projects-route";
 import { announce, home, toast } from "../lib/ui-state";
@@ -40,20 +40,9 @@ export function QueueChip(props: { row: Pick<QueueRow, "label" | "tone" | "live"
   );
 }
 
-/** Land before a rehearsal: disabled, and it says what it needs on hover and to a screen reader (§app.merge-queue/approve). */
-export function RehearsalNeeded(props: { branch: string; commit?: string }) {
-  return (
-    <button type="button" class="button button-sm wt-queue-land" data-land="" title={rehearsalWhy(props.commit)} aria-label={`Rehearsal needed for ${props.branch}. ${rehearsalWhy(props.commit)}`} disabled>
-      Rehearsal needed
-    </button>
-  );
-}
-
 /** Land and its ▾: Land asks first (onAsk opens the row's confirm); the ▾ holds Land Without Review (only with a
     review kit), which lands at once, and Land Without Its Specs…, which asks first. */
-export function LandSplit(props: { branch: string; review: boolean; busy: boolean; onAsk(): void; onLand(o?: LandOptions): void; onWithoutSpecs(): void; draftsOnly?: boolean; rehearsal?: boolean; commit?: string }) {
-  // Every option of Land waits the same way, so it reads as one disabled button with no ▾.
-  if (props.rehearsal) return <RehearsalNeeded branch={props.branch} commit={props.commit} />;
+export function LandSplit(props: { branch: string; review: boolean; busy: boolean; onAsk(): void; onLand(o?: LandOptions): void; onWithoutSpecs(): void; draftsOnly?: boolean }) {
   return (
     <div class="button-split wt-queue-split">
       <button type="button" class="button button-sm wt-queue-land" data-land="" aria-label={`Land ${props.branch}`} disabled={props.busy} aria-busy={props.busy ? "true" : undefined} onClick={() => props.onAsk()}>
@@ -233,8 +222,6 @@ export function WorktreeQueueRow(props: {
   const projectId = () => projectIdOf(w());
   const buttons = () => rowButtons(row(), projectId());
   const entry = () => w().queue;
-  /** Land waits for a rehearsal at this commit. */
-  const rehearsal = () => !!w().readiness?.rehearsal;
   /** The menu's Land Without Review: only where the project has a review kit. */
   const review = () => w().mergeProject?.review ?? w().queue?.reviewKit ?? false;
   const [busy, setBusy] = createSignal(false);
@@ -396,14 +383,12 @@ export function WorktreeQueueRow(props: {
         </Show>
         {/* A decision's Land is its answer on the queue (out of tries, a fix that needs your OK, drafts changed). */}
         <Show when={buttons().includes("Land") && row().decision}>
-          <Show when={!rehearsal()} fallback={<RehearsalNeeded branch={w().branch} commit={shownCommit(w())} />}>
-            <button type="button" class="button button-sm button-primary" aria-label={`Land ${w().branch}`} disabled={busy()} onClick={() => confirm.open("land")}>
-              Land
-            </button>
-          </Show>
+          <button type="button" class="button button-sm button-primary" aria-label={`Land ${w().branch}`} disabled={busy()} onClick={() => confirm.open("land")}>
+            Land
+          </button>
         </Show>
         <Show when={buttons().includes("Land") && !row().decision}>
-          <LandSplit branch={w().branch} review={review()} busy={busy()} onAsk={() => confirm.open("land")} onLand={doLand} onWithoutSpecs={() => confirm.open("specs")} draftsOnly={!!onlyDrafts()} rehearsal={rehearsal()} commit={shownCommit(w())} />
+          <LandSplit branch={w().branch} review={review()} busy={busy()} onAsk={() => confirm.open("land")} onLand={doLand} onWithoutSpecs={() => confirm.open("specs")} draftsOnly={!!onlyDrafts()} />
         </Show>
         <Show when={buttons().includes("Set Up Queue")}>
           <a class="button button-sm" href={projectTabHref(projectId()!, "merge-queue")} title="This project's merge queue isn't set up yet.">

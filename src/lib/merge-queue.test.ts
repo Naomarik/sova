@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { MergeEntry, MergeRun, RunStep, WorktreeQueueInfo } from "../../shared/merge-queue";
 import type { WorktreeReadiness } from "../../shared/protocol";
-import { landConfirmWords, readyFactsWords, rehearsalWhy, readyRowChip, type RowKey, type Tone, entryLandBlock, SENT_BACK_LINE, stillSentBack, rowButtons, attribution, clock, controlWords, mins, notesOf, pausedTitle, pushedWords, queueRow, queueStateChip, rowsSummary, runProgress, sourceTag, stepCounts, stepDetail, stepMark, stepTime, tildeIn, verdictChip, waitingHead, type QueueRowInput } from "./merge-queue";
+import { landConfirmWords, readyFactsWords, readyRowChip, type RowKey, type Tone, entryLandBlock, SENT_BACK_LINE, stillSentBack, rowButtons, attribution, clock, controlWords, mins, notesOf, pausedTitle, pushedWords, queueRow, queueStateChip, rowsSummary, runProgress, sourceTag, stepCounts, stepDetail, stepMark, stepTime, tildeIn, verdictChip, waitingHead, type QueueRowInput } from "./merge-queue";
 
 const SHA = "a".repeat(40);
 const wt = (x: Partial<QueueRowInput> = {}): QueueRowInput => ({ status: "active", exists: true, branch: "feat/x", readiness: undefined, ...x });
@@ -568,7 +568,3 @@ test("a row says when Remove Worktree keeps the branch, only as the server says"
   assert.equal(queueRow(wt({ readiness: ready })).removeKeepsBranch, undefined);
 });
 
-test("Rehearsal needed says what Land waits for, at the branch's short commit", () => {
-  assert.equal(rehearsalWhy("a1b2c3d4e5f6"), "This branch changes automatic cleanup. Land opens once a rehearsal has passed at a1b2c3d on a copy of your state taken today.");
-  assert.match(rehearsalWhy(undefined), /passed at its newest commit on a copy/);
-});

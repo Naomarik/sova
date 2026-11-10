@@ -158,6 +158,7 @@ export function readGlance(now = Date.now()): Promise<ProjectGlanceList> {
 
 async function gatherGlance(): Promise<ProjectGlanceList> {
   const { retirementGlance } = await import("../worktree-retire-view");
+  const { pendingWhileOff } = await import("../cleanup-switch");
   const [{ listProjects }, { queueGlanceState }, { keptReleases }, { readRegistry, stateHash }, { copyLimitOf }, { machineCopyLimit }, drivers, { resourceMonitor }, { lastListedRows }, { canonicalPath }, os, { SOVA_LIVE_UNIT }, { unitOfCgroup }, { listeningPortTable }] = await Promise.all([
     import("./spaces"),
     import("../merge-queue/wire"),
@@ -197,7 +198,8 @@ async function gatherGlance(): Promise<ProjectGlanceList> {
   // The one look at the listening ports, for every project of this read.
   const listeningPorts = listeningPortTable();
   return buildGlance({
-    retirementOf: (root) => retirementGlance(root),
+    // Switched off (../cleanup-switch.ts): the ledger only, never the saved list, so nothing shows as held.
+    retirementOf: (root) => retirementGlance(root, pendingWhileOff()),
     projects: listProjects(),
     sameRoot: (a, b) => c(a) === c(b),
     queueOf: (root) => queueGlanceState(root),

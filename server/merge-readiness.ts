@@ -13,6 +13,7 @@ import { stateRoot } from "./state-root";
 import { deferredOf, followUpFor, type FollowUpInput, type MergeFollowUps } from "./merge-followup";
 import { type AskTree, asksUserOf, isGoAsk, readSignals } from "./signals-store";
 import { removeOffered } from "./worktree-retire-gate";
+import { removeGate } from "./cleanup-switch";
 import { type AncestorCheck, draftProofVia, type DraftsHash, draftsHash, draftsLeft } from "./spec-drafts-state";
 import { queueReadingAt } from "./nothing-left";
 import { previewDocs, previewOf } from "./docs-preview";
@@ -580,8 +581,6 @@ export interface ReadinessDeps {
   /** A served tree's branch at `head` that changes the project's setup without a passing trial of that commit: why it
       can't land yet (server/merge-queue/setup-branch.ts); null when it isn't a setup branch or its trial passed. */
   setupUntried?: (dir: string, head: string) => Promise<string | null>;
-  /** A served tree's head changes automatic cleanup and no rehearsal passed at it today (server/merge-queue/rehearsal.ts). */
-  rehearsalWait?: (dir: string, head: string) => Promise<boolean>;
   /** The Git inputs a tree's readiness reads, as stat stamps (worktrees.ts gitInputsStamp): the
       session feed's readiness watch compares them (checkReadinessInputs). */
   inputsStamp?: (dir: string, baseBranch?: string) => string | null;
@@ -732,11 +731,14 @@ export function servedReader(rootOf: (dir: string) => Promise<string | null>, se
   };
 }
 
-/** The row's Remove, offered only where retirement is off for the install: whether it is, and whether its confirm says the branch stays. */
-async function removeFieldsOf(path: string): Promise<{ removable?: true; removeKeepsBranch?: true }> {
-  if (!removeOffered("nothing")) return {};
+/**
+ * The row's Remove, offered only where retirement is off for the install, or switched off (./cleanup-switch.ts): whether
+ * it is, and whether its confirm says the branch stays.
+ */
+export async function removeFieldsOf(path: string, gate = removeGate(), keepsBranch?: (path: string) => Promise<boolean>): Promise<{ removable?: true; removeKeepsBranch?: true }> {
+  if (!removeOffered("nothing", gate)) return {};
   // A setting that can't be read keeps the branch, as a removal would read it.
-  const keeps = await (await import("./worktree-retire")).keepsBranchAt(path).catch(() => true);
+  const keeps = await (keepsBranch ?? (await import("./worktree-retire")).keepsBranchAt)(path).catch(() => true);
   return { removable: true, ...(keeps ? { removeKeepsBranch: true as const } : {}) };
 }
 
@@ -886,7 +888,6 @@ async function computeReadinessNow(s: SessionSummary, facts: FileFacts, publishC
     // Only where the merge queue serves the repo: elsewhere a finished branch is merged by its chat (al_1).
     const servedHere = landingOn && (deps.served ? await deps.served(t.path).catch(() => false) : true);
     let landing: WorktreeReadiness["landing"];
-    let rehearsal = false;
     // Drafts that aren't official: a landing's, or a merged tree's that didn't make it (§chat.worktrees/readiness).
     const unofficial = tf.readable && (landingOn || tf.merged) ? await deps.drafts(t.path) : undefined;
     if (servedHere) {
@@ -906,7 +907,6 @@ async function computeReadinessNow(s: SessionSummary, facts: FileFacts, publishC
       // A setup branch is offered Land only once a trial of its exact head passed (§app.project-setup/land-gate).
       const untried = tf.head && landingLive(tf, rLand.state) && deps.setupUntried ? await deps.setupUntried(t.path, tf.head).catch(() => null) : null;
       if (untried) landing = undefined;
-      rehearsal = !!landing && !!tf.head && !!deps.rehearsalWait && (await deps.rehearsalWait(t.path, tf.head).catch(() => true));
       // Finished but not Ready to land: what the session can fix, for Sova's once-per-commit note.
       // The commit the user approved is the queue's now, and with nothing left there is nothing to fix: no note (a real
       // new commit past an approval or a landing is told as any other).
@@ -934,7 +934,6 @@ async function computeReadinessNow(s: SessionSummary, facts: FileFacts, publishC
       ...(tf.conflicts ? { conflicts: tf.conflicts } : {}),
       ...(hasNoCommits(tf) ? { noCommits: true as const } : {}),
       ...(landing ? { landing } : {}),
-      ...(rehearsal ? { rehearsal: true as const } : {}),
       ...(tf.readable && (tf.merged || hasNoCommits(tf)) ? (unofficial?.length ? { left: "drafts" as const, draftsLeft: unofficial.length } : { left: "nothing" as const, ...(await removeFieldsOf(t.path)) }) : {}),
     });
   }

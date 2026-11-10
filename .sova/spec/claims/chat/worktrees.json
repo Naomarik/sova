@@ -48,16 +48,18 @@
       "server/archive-worktrees.test.ts",
       "server/worktree-remove.ts",
       "server/worktree-remove-row.integration.test.ts",
-      "server/worktree-retire-branches.test.ts"
+      "server/worktree-retire-branches.test.ts",
+      "server/cleanup-switch.ts",
+      "server/cleanup-switch.test.ts"
     ],
     "requires": [
       "§chat.worktrees/merged-state",
       "§chat.worktrees/entry"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-11-09T16:22Z",
-      "source": "pi-session:01a1b2f4-86c6-73d4-9fe9-b847b27035f9#950bc2c9"
+      "by": "user",
+      "at": "2026-11-10T10:52Z",
+      "source": "pi-session:01a1c4f0-984c-7287-92e3-568db48c8f91#e123a0b1"
     }
   },
   "§chat.worktrees/dirty-freshness": {
@@ -367,12 +369,16 @@
       "src/components/BranchSummary.tsx",
       "server/worktree-remove-row.integration.test.ts",
       "src/lib/branch-place.ts",
-      "src/components/BranchPlaceLine.tsx"
+      "src/components/BranchPlaceLine.tsx",
+      "server/cleanup-switch.ts",
+      "server/cleanup-switch.test.ts",
+      "server/merge-readiness.ts",
+      "server/app.ts"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-11-09T16:22Z",
-      "source": "pi-session:01a1b2f4-86c6-73d4-9fe9-b847b27035f9#950bc2c9"
+      "by": "user",
+      "at": "2026-11-10T11:52Z",
+      "source": "pi-session:01a1c4f0-984c-7287-92e3-568db48c8f91#e123a0b1"
     }
   },
   "§chat.worktrees/pane-queue": {
@@ -542,9 +548,9 @@
       "§chat.worktrees/nothing-left"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-11-09T16:22Z",
-      "source": "pi-session:01a1b2f4-86c6-73d4-9fe9-b847b27035f9#950bc2c9"
+      "by": "user",
+      "at": "2026-11-10T10:52Z",
+      "source": "pi-session:01a1c4f0-984c-7287-92e3-568db48c8f91#e123a0b1"
     },
     "evidence": "reviewed",
     "code": [
@@ -567,7 +573,10 @@
       "server/landed-branch-agreement.integration.test.ts",
       "src/components/RetirementLists.tsx",
       "server/worktree-retire-branches.test.ts",
-      "server/worktree-retire-oracle.test.ts"
+      "server/worktree-retire-oracle.test.ts",
+      "server/cleanup-switch.ts",
+      "server/cleanup-switch.test.ts",
+      "server/index.ts"
     ]
   },
   "§chat.worktrees/sandbox": {

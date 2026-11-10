@@ -20,6 +20,7 @@ import { startGitMaintenance } from "./git-maintenance";
 import { onBranchLanded } from "./nothing-left";
 import { onReadinessMoved } from "./merge-readiness";
 import { realRetireDeps, type Retirer, startWorktreeRetirer } from "./worktree-retire";
+import { CLEANUP_SWITCHED_OFF, cleanupSwitchedOn } from "./cleanup-switch";
 import { firstPassSummary } from "./worktree-retire-notes";
 import { onProcessEnded } from "./worktree-retire-gate";
 import { reconcileProjectServices } from "./project-services/routes";
@@ -188,7 +189,12 @@ startGitMaintenance(() => listProjects().map((p) => p.root));
 // root is registered, then a cheap retry each minute. Any doubt about an owner keeps its tours.
 export const tourSweep = startTourSweep();
 
-function startRetirement(): Retirer {
+function startRetirement(): Retirer | null {
+  // Switched off by default for now (server/cleanup-switch.ts): no service, no pass, nothing written.
+  if (!cleanupSwitchedOn()) {
+    console.log(`[retire] off: ${CLEANUP_SWITCHED_OFF} (SOVA_RETIRE=on turns it on)`);
+    return null;
+  }
   return startWorktreeRetirer({
     deps: {
       ...realRetireDeps(),

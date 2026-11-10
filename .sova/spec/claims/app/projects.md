@@ -167,7 +167,8 @@ and a chat in any of them is one press away.
     (§chat.worktrees/nothing-left).
     Under it, whenever the project has any, a muted line counts what retirement did
     (§chat.worktrees/retirement): `{retired} retired · {held} held`, the retired ones those of the last 7
-    days, as a new session's line counts them, either part left out at 0, opening the same tab.
+    days, as a new session's line counts them, either part left out at 0, opening the same tab. While
+    retirement is off it counts none held, so the line shows only what already retired.
   - **Copies**: one pip per usable place of this project (the slots of 1 to 16 its port numbering
     can use, §app.project-services/instances, so normally 16; a place the numbering rules out is
     never drawn), and a figure. The pips are grouped, not in slot order: running first, then
@@ -283,7 +284,7 @@ listening ports, both below); it lands nothing and changes nothing.
   is never fresher than that view.
 - **Retired and held** come from the retirement service's own ledger and saved list as it last wrote
   them (§chat.worktrees/retirement), for every listed project, served or not; the read runs no git for
-  them.
+  them. While retirement is off it reads only the ledger, never the saved list, and counts none held.
 - **Release progress** comes from the project's release records (§app.release/record) as Sova
   keeps them in memory: as the releaser last published them to the Releases tab, or as its start
   read them; the read opens no record file. The record shown is the one the Releases tab shows:

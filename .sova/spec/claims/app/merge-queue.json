@@ -43,9 +43,9 @@
       "§chat.worktrees/nothing-left"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-11-09T21:41Z",
-      "source": "pi-session:01a1b2f4-86c6-73d4-9fe9-b847b27035f9#0fc54d24"
+      "by": "user",
+      "at": "2026-11-10T11:27Z",
+      "source": "pi-session:01a1c4f0-984c-7287-92e3-568db48c8f91#e123a0b1"
     },
     "code": [
       "server/merge-queue/queue.ts",
@@ -81,11 +81,12 @@
       "server/merge-queue/scratch.test.ts",
       "server/merge-queue/wire.ts",
       "server/merge-queue/owners.ts",
-      "server/merge-queue/rehearsal.ts",
       "shared/retire-lab.json",
       "server/merge-queue/scenarios-nothing-left.integration.test.ts",
       "server/landed-branch-agreement.integration.test.ts",
-      "server/merge-queue/rehearsal.test.ts"
+      "server/merge-queue/cleanup-land.test.ts",
+      "server/merge-readiness.ts",
+      "src/lib/merge-queue.test.ts"
     ]
   },
   "§app.merge-queue/blame": {
@@ -1283,9 +1284,9 @@
       "§chat.worktrees/nothing-left"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-11-09T16:22Z",
-      "source": "pi-session:01a1b2f4-86c6-73d4-9fe9-b847b27035f9#950bc2c9"
+      "by": "user",
+      "at": "2026-11-10T10:52Z",
+      "source": "pi-session:01a1c4f0-984c-7287-92e3-568db48c8f91#e123a0b1"
     },
     "code": [
       "server/merge-queue/view.ts",
@@ -1334,7 +1335,8 @@
       "server/merge-queue/owners.ts",
       "src/lib/merge-standing.ts",
       "src/components/RetirementLists.tsx",
-      "server/landed-branch-agreement.integration.test.ts"
+      "server/landed-branch-agreement.integration.test.ts",
+      "server/cleanup-switch.ts"
     ]
   },
   "§app/merge-queue": {

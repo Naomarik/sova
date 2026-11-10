@@ -22,10 +22,12 @@ export function decisionDefaults(): DecisionSettings {
 }
 
 /** Shown beside the fallback row as hints, never pre-selected. */
-export const DECISION_SUGGESTIONS: WorkerChoice[] = [
-  { backend: "claude-code", model: latestClaude("sonnet").id, effort: "low" },
-  { backend: "pi", model: "ollama-cloud/deepseek-v4.1-flash", effort: "off" },
-];
+export function decisionSuggestions(): WorkerChoice[] {
+  return [
+    { backend: "claude-code", model: latestClaude("sonnet").id, effort: "low" },
+    { backend: "pi", model: "ollama-cloud/deepseek-v4.1-flash", effort: "off" },
+  ];
+}
 
 const isRecord = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === "object" && !Array.isArray(v);
 

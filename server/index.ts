@@ -10,6 +10,8 @@ import { statingOwnNumber } from "./wire-gate";
 import { readBranch } from "./harness/pi/reader";
 import { extensionEntries } from "./harness/pi/state";
 import { startModelCheck } from "./harness/pi/model-sync";
+import { onClaudeModelsChanged } from "./claude-models-sync";
+import { startClaudeTableCheck } from "./claude-table";
 import { markShutdown } from "./wrapup-recovery";
 import { startBudgetRecount } from "./baton-recount";
 import { listProjects, openRegisteredProjects } from "./projects/spaces";
@@ -65,7 +67,7 @@ import { AttentionSignals } from "./attention-signals";
 import { sessionOwnMessages } from "./message-input";
 import { MessageLabeller } from "./message-labeller";
 import { messageLabelStore } from "./message-labels";
-import { configureSessionFeed, nudgeMarks, sessionFeed } from "./session-feed";
+import { configureSessionFeed, nudgeMarks, publishFeed, sessionFeed } from "./session-feed";
 import { startEvents } from "./events";
 import { onAttentionNotified } from "./attention-memo";
 import { configureLlmInflight } from "./llm-inflight";
@@ -201,6 +203,10 @@ export const server = serve({ fetch: app.fetch, port: PORT, hostname: HOST }, (i
   startUpdates(info.port, HOST);
   // Ollama Cloud's model list: the daily check, and the model list re-applied whenever its file changes (§app.model-levels/server-check).
   startModelCheck();
+  // A new Claude model reaches every open page with no restart (§app.claude-code-provider/catalog).
+  onClaudeModelsChanged(() => publishFeed({ type: "claude_models_changed" }));
+  // Claude Code's own model table: read when its program file changes, and remembered for every process.
+  startClaudeTableCheck();
 }) as Server;
 server.on("error", (err) => {
   // e.g. EADDRINUSE: don't linger half-alive behind the uncaughtException handler

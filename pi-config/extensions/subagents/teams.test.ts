@@ -27,7 +27,7 @@ import {
 	type TeamMemberInput,
 	type WorkerObservation,
 } from "./teams.ts";
-import { DEFAULT_TEAM_DEFAULTS, type TeamDefaultsFile } from "./team-defaults.ts";
+import { defaultTeamDefaults, type TeamDefaultsFile } from "./team-defaults.ts";
 
 /** Sova's coordinator, which every team has (index.ts adds it first; here it goes last, so the named members keep ag_01, ag_02…). */
 const COORDINATOR: TeamMemberInput = { role: "coordinator", prompt: "coordinate", duty: "coordinator", orchestrator: true };
@@ -36,11 +36,11 @@ const createIn = (store: TeamStore, input: Omit<Parameters<TeamStore["prepareCre
 	store.prepareCreate({
 		...input,
 		members: input.members.some((m) => m.duty === "coordinator") ? input.members : [...input.members, COORDINATOR],
-		coordination: { defaults: input.coordination?.defaults ?? DEFAULT_TEAM_DEFAULTS },
+		coordination: { defaults: input.coordination?.defaults ?? defaultTeamDefaults() },
 	});
 /** prepareAdd as index.ts calls it, with the team defaults read now. */
 const addTo = (store: TeamStore, ref: string, members: TeamMemberInput[], observe?: (workerId: string) => WorkerObservation | undefined) =>
-	store.prepareAdd(ref, members, observe, DEFAULT_TEAM_DEFAULTS);
+	store.prepareAdd(ref, members, observe, defaultTeamDefaults());
 const member = (i: number, extra: Partial<PersistedMember> = {}): PersistedMember => ({
 	workerId: `ag_${String(i).padStart(2, "0")}`, role: `role ${i}`, ownedPaths: [], backend: "pi", groupId: "run_01", addedAt: 1, ...extra,
 });
@@ -59,7 +59,7 @@ const running: WorkerObservation = { status: "running", processAlive: true, sett
 
 test("composed member header is exact and deterministic", () => {
 	const team = { id: "team_03", name: "Auth", objective: "Fix login\nKeep API stable" };
-	const coordination = { coordinatorRole: "coordinator", handoff: (role: string) => `/notes/${role}.md`, defaults: DEFAULT_TEAM_DEFAULTS };
+	const coordination = { coordinatorRole: "coordinator", handoff: (role: string) => `/notes/${role}.md`, defaults: defaultTeamDefaults() };
 	const others = [{ role: "coordinator", ownedPaths: [], duty: "coordinator" as const }, { role: "tests", ownedPaths: [] }, { role: "monitor", ownedPaths: [], duty: "monitor" as const }];
 	assert.equal(
 		composeMemberPrompt(team, { role: "backend", ownedPaths: ["src/api", "src/db"] }, others, "Do the thing.", "creation", "none", coordination),
@@ -179,7 +179,7 @@ test("create validation: labels, roles, paths, objective, uniqueness and limits"
 		[{ ...ok, members: [{ role: "a", prompt: "t", ownedPaths: ["a\nb"] }] }, /one line/],
 		[{ ...ok, members: [{ role: "a", prompt: "t", ownedPaths: Array.from({ length: 33 }, (_, i) => `p${i}`) }] }, /exceeds 32/],
 	] as const) assert.throws(() => createIn(store, input as any), pattern);
-	const coordination = { defaults: DEFAULT_TEAM_DEFAULTS };
+	const coordination = { defaults: defaultTeamDefaults() };
 	assert.throws(() => store.prepareCreate({ ...ok, members: [], coordination }), /at least one/);
 	assert.throws(() => store.prepareCreate({ ...ok, coordination }), /^Error: A team needs exactly one coordinator\.$/, "a team without Sova's coordinator is never prepared");
 	assert.throws(() => store.prepareCreate({ ...ok, members: [COORDINATOR, { ...COORDINATOR, role: "second" }], coordination }), /^Error: A team needs exactly one coordinator\.$/);
@@ -583,8 +583,8 @@ test("contract: subagents-team-v1 members keep an optional successorOf worker ID
 
 test("checkStandingRoles: a member the chat names on the coordinator's or monitor's role is refused, saying the role is Sova's", async () => {
 	const { checkStandingRoles } = await import("./teams.ts");
-	const { DEFAULT_TEAM_DEFAULTS } = await import("./team-defaults.ts");
-	const d = { ...DEFAULT_TEAM_DEFAULTS, coordinator: { ...DEFAULT_TEAM_DEFAULTS.coordinator, role: "lead" }, monitor: { ...DEFAULT_TEAM_DEFAULTS.monitor, role: "watch" } };
+	const { defaultTeamDefaults } = await import("./team-defaults.ts");
+	const d = { ...defaultTeamDefaults(), coordinator: { ...defaultTeamDefaults().coordinator, role: "lead" }, monitor: { ...defaultTeamDefaults().monitor, role: "watch" } };
 	assert.doesNotThrow(() => checkStandingRoles(d, [{ role: "dev", prompt: "p" }]));
 	assert.throws(() => checkStandingRoles(d, [{ role: " LEAD ", prompt: "p" }]), /^Error: Role LEAD is the role of the coordinator Sova adds to every team \(lead\); give that member another role\.$/);
 	assert.throws(() => checkStandingRoles(d, [{ role: "watch", prompt: "p" }]), /the role of the monitor Sova adds to every team \(watch\)/);

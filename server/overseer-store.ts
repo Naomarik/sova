@@ -44,7 +44,7 @@ const PROACTIVITY: readonly OverseerProactivity[] = ["off", "badge", "brief"];
 const isOpus5 = (model: string): boolean => resolveClaude(model)?.id === "claude-opus-5";
 
 /** The exploratory agent sova_idea `explore` launches: the Claude catalog's current Opus through Claude Code. */
-export const DEFAULT_EXPLORER: WorkerChoice = { backend: "claude-code", model: latestClaude("opus").id, effort: "medium" };
+export const defaultExplorer = (): WorkerChoice => ({ backend: "claude-code", model: latestClaude("opus").id, effort: "medium" });
 
 /** The settings file's version. 2: the quick actions moved off the old five (OLD_QUICK_ACTIONS). */
 export const SETTINGS_VERSION = 2;
@@ -88,7 +88,7 @@ export function defaultSettings(): OverseerSettings {
     proactivity: "badge",
     quickActions: DEFAULT_QUICK_ACTIONS.map((a) => ({ ...a })),
     caps: { ...DEFAULT_CAPS },
-    explorer: { ...DEFAULT_EXPLORER },
+    explorer: { ...defaultExplorer() },
   };
 }
 

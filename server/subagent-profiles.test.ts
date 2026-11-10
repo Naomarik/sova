@@ -9,7 +9,6 @@ import { after } from "node:test";
 import test from "node:test";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
 import type { ModelPolicy } from "../shared/protocol";
-import type { ClaudeModel } from "./claude-models";
 import { requireSubagentProfile, saveSubagentProfileDefault, saveSubagentProfiles, subagentProfilesInfo } from "./subagent-profiles";
 import type { DelegateSources } from "./delegate";
 import { restorePick, subagentProfileDefaultPath, subagentProfilesPath } from "../pi-config/extensions/subagents/subagent-profiles.ts";
@@ -24,13 +23,9 @@ const agentDir = () => {
 };
 
 const EMPTY: ModelPolicy = { disabledProviders: [], disabledModels: [], subagentDisabledProviders: [], subagentDisabledModels: [] };
-const claudeModels: ClaudeModel[] = [
-  { id: "claude-opus-5-5", name: "Opus", efforts: ["low", "medium", "high", "xhigh", "max"] },
-];
 const piModels = [{ ref: "zai/glm-5.3", id: "glm-5.3", provider: "zai", thinkingLevels: ["off", "minimal", "low", "medium", "high"] }];
 const sources = (over: Partial<DelegateSources> = {}): DelegateSources => ({
   piModels: async () => piModels,
-  claudeModels: async () => claudeModels,
   policy: () => EMPTY,
   ...over,
 });

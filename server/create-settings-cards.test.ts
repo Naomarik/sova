@@ -40,7 +40,7 @@ const { readWebSettings } = await import("./web-settings");
 const { settled } = await import("./workspace-git");
 const { copyLimitOf } = await import("../shared/project-slots");
 
-sova.setSovaSettingsDeps({ sources: { piModels: () => [], claudeModels: () => [], policy: () => readModelPolicy() } as never });
+sova.setSovaSettingsDeps({ sources: { piModels: () => [], policy: () => readModelPolicy() } as never });
 
 after(async () => {
   setQueueCardPort(null);

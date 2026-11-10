@@ -7,16 +7,18 @@ import { join } from "node:path";
 import { canonicalClaudeId, latestClaude } from "../claude-code/catalog.ts";
 import type { OutlineConfig, SummarizerSpec } from "./types.ts";
 
-export const DEFAULT_CONFIG: OutlineConfig = {
-  summarizers: [
-    { backend: "pi", model: "ollama-cloud/deepseek-v4.1-flash", timeoutMs: 60_000 },
-    { backend: "claude-code", model: latestClaude("sonnet").id, timeoutMs: 45_000, maxBudgetUsd: 0.05 },
-  ],
-  trigger: { debounceMs: 3_000, minNewMessages: 2 },
-  shareWithSessions: "now-only",
-  shareLastHeading: true,
-  limits: { maxTopics: 40, maxBullets: 3 },
-};
+export function defaultConfig(): OutlineConfig {
+  return {
+    summarizers: [
+      { backend: "pi", model: "ollama-cloud/deepseek-v4.1-flash", timeoutMs: 60_000 },
+      { backend: "claude-code", model: latestClaude("sonnet").id, timeoutMs: 45_000, maxBudgetUsd: 0.05 },
+    ],
+    trigger: { debounceMs: 3_000, minNewMessages: 2 },
+    shareWithSessions: "now-only",
+    shareLastHeading: true,
+    limits: { maxTopics: 40, maxBullets: 3 },
+  };
+}
 
 function readJson(path: string): Record<string, unknown> | undefined {
   try {
@@ -85,7 +87,7 @@ export function agentDir(env: NodeJS.ProcessEnv = process.env): string {
  */
 export function loadConfig(cwd: string, projectTrusted: boolean, configDir?: string): OutlineConfig {
   const globalDir = configDir ?? agentDir();
-  let config = merge(readJson(join(globalDir, "topic-outline.json")), DEFAULT_CONFIG);
+  let config = merge(readJson(join(globalDir, "topic-outline.json")), defaultConfig());
   if (projectTrusted && cwd) {
     config = merge(readJson(join(cwd, ".pi", "topic-outline.json")), config);
   }

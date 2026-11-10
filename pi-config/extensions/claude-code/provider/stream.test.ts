@@ -21,7 +21,7 @@ import {
 } from "@earendil-works/pi-ai";
 import { dropPiPreamble, MEASUREMENT_INVALID_DIAGNOSTIC, PI_STOCK_PREAMBLE, streamClaudeCode, resolveClaudeEffort } from "./stream.ts";
 import { cliHasTool, parseClaudeFrame, parseToolInput, type ClaudeFrame, type ClaudeSessionBridge, type ClaudeTurnRequest } from "./types.ts";
-import { STATIC_MODELS, toProviderModel } from "./index.ts";
+import { providerModels, toProviderModel } from "./index.ts";
 
 const fixtures = fileURLToPath(new URL("./fixtures/", import.meta.url));
 
@@ -41,7 +41,7 @@ const tools: Tool[] = [
 ];
 
 function model(id = "claude-sonnet-5-5"): Model<Api> {
-	const definition = STATIC_MODELS.find((candidate) => candidate.id === id) ?? toProviderModel({ id, name: id });
+	const definition = providerModels().find((candidate) => candidate.id === id) ?? toProviderModel({ id, name: id });
 	return { ...definition, provider: "claude-code-cli", api: "claude-code-cli", baseUrl: "claude-code-cli://local" } as Model<Api>;
 }
 

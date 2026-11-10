@@ -128,6 +128,16 @@ export async function reapplyModelLevels(): Promise<string[]> {
   return sharedApply?.() ?? [];
 }
 
+/**
+ * Re-read the Claude Code provider's models into this process's shared runtime (its refreshModels
+ * returns the catalog as it is now, with no network), so a learned model is listed with no restart.
+ */
+export async function reapplyClaudeModels(): Promise<void> {
+  if (!modelRuntimePromise) return;
+  const runtime = await modelRuntimePromise.catch(() => undefined);
+  await runtime?.refresh({ allowNetwork: false, providers: ["claude-code-cli"] });
+}
+
 /** Whether model metadata may be fetched (model levels, pi's built-in catalogs): the extension's own
     rule (core.ts), so the server's boot fetches and every hosted session's extension follow one switch. */
 export { modelFetchEnabled };

@@ -39,21 +39,21 @@ export interface ModelChoice {
   thinking: string;
 }
 /** The run's models in order of preference, each at medium: the Claude catalog's current Opus through Claude Code, then the fallback. */
-export const ONBOARD_MODELS: readonly string[] = [`claude-code-cli/${latestClaude("opus").id}`, "openai-codex/gpt-6-astra"];
+export const onboardModels = (): readonly string[] => [`claude-code-cli/${latestClaude("opus").id}`, "openai-codex/gpt-6-astra"];
 export const ONBOARD_THINKING = "medium";
 
-export const NO_ONBOARD_MODEL =
+export const noOnboardModel = (): string =>
   `No model for the Project verbs playbook: this host offers neither Claude Code ${latestClaude("opus").name} nor openai-codex gpt-6-astra. Pick a model to run it with.`;
 
 /**
  * The run's model: the one asked for (thinking as asked, else medium); else the first of
- * ONBOARD_MODELS that `offered` (the refs this host's model picker lists) has, at medium. Never a
+ * onboardModels() that `offered` (the refs this host's model picker lists) has, at medium. Never a
  * ref outside `offered`: null when it has none of them or is unknown (null). Pure.
  */
 export function onboardModel(input: { model?: string | null; thinking?: string | null }, offered: readonly string[] | null): ModelChoice | null {
   const asked = input.model?.trim();
   if (asked) return { model: asked, thinking: input.thinking?.trim() || ONBOARD_THINKING };
-  const pick = offered ? ONBOARD_MODELS.find((m) => offered.includes(m)) : undefined;
+  const pick = offered ? onboardModels().find((m) => offered.includes(m)) : undefined;
   return pick ? { model: pick, thinking: ONBOARD_THINKING } : null;
 }
 
@@ -125,7 +125,7 @@ export function onboardStartFrom(facts: OnboardFacts, input: { why?: string | nu
   const label = facts.playbook?.title || "Project verbs";
   const who = { playbookId: facts.playbookId ?? ONBOARD_PLAYBOOK_ID, label, proposes: facts.playbook?.proposes ?? "definition" };
   const title = input.title?.trim() || onboardTitle(facts.name, label);
-  const invalid = onboardInvalid(facts) ?? (choice ? null : NO_ONBOARD_MODEL);
+  const invalid = onboardInvalid(facts) ?? (choice ? null : noOnboardModel());
   if (invalid || !facts.playbook || !choice) return { prompt: "", title, model: choice?.model ?? "", thinking: choice?.thinking ?? ONBOARD_THINKING, ...who, invalid: invalid ?? "" };
   // The host's own context (the Setup chat's project, current setup and earlier chats) follows the playbook's turn.
   const turn = playbookTurnText(facts.playbook, input.context?.trim() ? "" : (input.why ?? ""));

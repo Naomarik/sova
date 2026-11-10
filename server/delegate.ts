@@ -27,8 +27,7 @@ import type {
   ModelInfo,
   ModelPolicy,
 } from "../shared/protocol";
-import { claudeDrift, claudeOffer } from "../pi-config/extensions/claude-code/catalog.ts";
-import { discoverClaudeModels, type ClaudeModel } from "./claude-models";
+import { claudeModel, claudeOffer } from "../pi-config/extensions/claude-code/catalog.ts";
 import { CLAUDE_CODE_PROVIDER } from "./models";
 
 // Delegate routing (legacy file; Settings → Profiles now edits it per profile): which worker each
@@ -81,39 +80,8 @@ export function workerDenial(policy: ModelPolicy, backend: DelegateBackend, mode
 export interface DelegateSources {
   /** pi's models with credentials, unfiltered by the picker's switches (models.ts listRegistryModels). */
   piModels(): Promise<Pick<ModelInfo, "ref" | "id" | "provider" | "thinkingLevels">[]>;
-  claudeModels(): Promise<ClaudeModel[]>;
   policy(): ModelPolicy;
 }
-
-const CLAUDE_TTL_MS = 60_000;
-/** How long the options wait for the CLI's list before answering without its drift. */
-const CLAUDE_DRIFT_WAIT_MS = 3_000;
-let claudeCache: { at: number; models: ClaudeModel[] } | undefined;
-let claudeInFlight: Promise<ClaudeModel[]> | undefined;
-
-/**
- * The CLI's initialize list, cached 60 s; failures are not cached, concurrent asks share one CLI
- * run. Read only for drift (§app.claude-code-provider/catalog-drift): what Settings offers is Sova's
- * Claude catalog, never this list.
- */
-export function cachedClaudeModels(discover: () => Promise<ClaudeModel[]> = () => discoverClaudeModels()): Promise<ClaudeModel[]> {
-  if (claudeCache && Date.now() - claudeCache.at < CLAUDE_TTL_MS) return Promise.resolve(claudeCache.models);
-  claudeInFlight ??= discover()
-    .then((models) => {
-      claudeCache = { at: Date.now(), models };
-      return models;
-    })
-    .finally(() => {
-      claudeInFlight = undefined;
-    });
-  return claudeInFlight;
-}
-
-/** Test seam: forget the cached Claude list. */
-export const resetClaudeCache = () => {
-  claudeCache = undefined;
-  claudeInFlight = undefined;
-};
 
 const message = (err: unknown) => (err instanceof Error ? err.message : String(err)).replace(/\.$/, "");
 
@@ -143,17 +111,8 @@ export async function delegateOptions(sources: DelegateSources): Promise<Delegat
       return { id: "pi", label: BACKEND_LABELS.pi, models: null, error: message(err) };
     }
   };
-  // Sova's Claude catalog, at once and offline (§app.claude-code-provider/catalog); the CLI's own list,
-  // when it answers within CLAUDE_DRIFT_WAIT_MS, only says what differs.
+  // Sova's Claude catalog, at once and offline (§app.claude-code-provider/catalog).
   const claude = async (): Promise<DelegateBackendOptions> => {
-    let drift: DelegateBackendOptions["drift"];
-    try {
-      const listed = await Promise.race([sources.claudeModels(), new Promise<never>((_, no) => setTimeout(() => no(new Error("slow")), CLAUDE_DRIFT_WAIT_MS).unref?.())]);
-      const d = claudeDrift(listed);
-      if (d.unknown.length || d.moved.length) drift = d;
-    } catch {
-      /* drift unknown: nothing changes */
-    }
     return {
       id: "claude-code",
       label: BACKEND_LABELS["claude-code"],
@@ -166,7 +125,6 @@ export async function delegateOptions(sources: DelegateSources): Promise<Delegat
           efforts: effectiveEfforts("claude-code", [...m.efforts]),
         }),
       ),
-      ...(drift ? { drift } : {}),
     };
   };
   return { backends: await Promise.all([pi(), claude()]) };
@@ -180,6 +138,13 @@ const sessionScoped = (backend: DelegateBackendOptions, model: string): boolean 
   return slash > 0 && !!backend.sessionScopedProviders?.includes(model.slice(0, slash));
 };
 
+/** A saved Claude choice Claude Code no longer offers: out of the list, still known and still run. */
+function retainedClaudeOption(choice: WorkerChoice): DelegateModelOption | undefined {
+  if (choice.backend !== "claude-code") return undefined;
+  const m = claudeModel(choice.model);
+  return m ? { id: m.id, name: m.name, efforts: effectiveEfforts("claude-code", [...m.efforts]) } : undefined;
+}
+
 /**
  * What discovery says about one tuple: an error when the backend answered and cannot run it, a
  * warning when it cannot be checked or the policy refuses it. Pure; exported for tests.
@@ -192,7 +157,7 @@ export function checkChoice(choice: WorkerChoice, options: DelegateOptions, owne
   const backend = options.backends.find((b) => b.id === choice.backend);
   if (!backend || backend.models === null)
     return { warning: `not verified — ${BACKEND_LABELS[choice.backend]} couldn't list its models${backend?.error ? ` (${backend.error})` : ""}` };
-  const model = backend.models.find((m) => m.id === choice.model);
+  const model = backend.models.find((m) => m.id === choice.model) ?? retainedClaudeOption(choice);
   if (!model && sessionScoped(backend, choice.model))
     return { warning: `not verified — ${choice.model.slice(0, choice.model.indexOf("/"))} models exist only in sessions started with that provider on` };
   if (!model && choice.backend === "claude-code" && modelShapeError("claude-code", choice.model) === null)

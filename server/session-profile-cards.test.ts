@@ -342,7 +342,7 @@ describe("My settings comes back as you left it (§chat.profiles/applying)", () 
 
 describe("Save Current As Profile", () => {
   // No model list here: every worker is "not verified", a warning, never a refusal.
-  const sources = { piModels: async () => { throw new Error("offline"); }, claudeModels: async () => { throw new Error("offline"); }, policy: () => ({ version: 1 as const, disabledProviders: [], disabledModels: [], subagentDisabledProviders: [], subagentDisabledModels: [] }) };
+  const sources = { piModels: async () => { throw new Error("offline"); }, policy: () => ({ version: 1 as const, disabledProviders: [], disabledModels: [], subagentDisabledProviders: [], subagentDisabledModels: [] }) };
   const library = () => (JSON.parse(readFileSync(join(agentDir, "subagent-profiles.json"), "utf8")) as { profiles: { id: string; name: string }[] }).profiles;
 
   test("adds the session's effort and a copy of its helpers to yours, both halves linked, keeping the others exactly as written", async () => {

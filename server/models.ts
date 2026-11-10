@@ -6,7 +6,7 @@ import { getModelRuntime } from "./chat-handle";
 import { readFavorites } from "./model-favorites";
 import { agentRoot } from "./state-root";
 import type { BranchContext } from "./harness/pi/usage";
-import { canonicalClaudeId } from "../pi-config/extensions/claude-code/catalog.ts";
+import { canonicalClaudeId, claudeModel, claudeOffer } from "../pi-config/extensions/claude-code/catalog.ts";
 
 /** pi's cached remote catalogs (READ-ONLY): {[provider]: {models: [{id, contextWindow}]}}. */
 const MODELS_STORE_FILE = join(agentRoot(), "models-store.json");
@@ -24,6 +24,18 @@ function storeWindow(provider: string, id: string): number | null {
 
 /** Cached per model id: `models-store.json` changes rarely, and a worker listing asks per row. */
 const providerCache = new Map<string, string | null>();
+
+/** The Claude list changed: a model's window and provider are read afresh (claude-models-sync.ts). */
+export function forgetModelCaches(): void {
+  windowCache.clear();
+  providerCache.clear();
+}
+
+/** A Claude model Claude Code no longer offers: old chats still open on it, new choices can't pick it. */
+function isOffered(m: { provider: string; id: string }): boolean {
+  if (m.provider !== CLAUDE_CODE_PROVIDER || !claudeModel(m.id)) return true;
+  return claudeOffer().some((o) => o.id === claudeModel(m.id)!.id);
+}
 
 /**
  * The provider that serves a model, for the subagents pane's meta line (which leads with it). A ref
@@ -110,6 +122,7 @@ export async function listModels(): Promise<ModelInfo[]> {
   const runtime = await getModelRuntime();
   const models = await runtime.getAvailable();
   return models
+    .filter(isOffered)
     // Claude Code's models are offered like any other (§app.claude-code-provider/always-on): the
     // claude-code extension registers them into the shared ModelRuntime at startup.
     // The window comes from the same cached resolver ContextInfo.window uses, so a model's window
@@ -126,7 +139,7 @@ export async function listModels(): Promise<ModelInfo[]> {
 export async function listRegistryModels(): Promise<ModelInfo[]> {
   const favorites = readFavorites();
   const runtime = await getModelRuntime();
-  return (await runtime.getAvailable()).map((m) => toModelInfo(m, favorites, contextWindow(`${m.provider}/${m.id}`, runtime)));
+  return (await runtime.getAvailable()).filter(isOffered).map((m) => toModelInfo(m, favorites, contextWindow(`${m.provider}/${m.id}`, runtime)));
 }
 
 /** Provider id the claude-code extension registers under (provider/index.ts CLAUDE_PROVIDER_ID). */

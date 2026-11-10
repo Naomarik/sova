@@ -2,7 +2,6 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { DelegateOptions, DelegateSettings, DelegateSettingsInfo } from "../../shared/protocol";
 import {
-  claudeDriftNotes,
   cloneSettings,
   draftComplete,
   draftConflicts,
@@ -74,8 +73,8 @@ test("the model select always shows the stored pick, and never calls an unverifi
   assert.deepEqual(modelSelectOptions(options, claude("retired", "low"))[0], { value: "retired", label: "retired — not verified" }, "an id the catalog doesn't know is not gone");
   assert.deepEqual(modelSelectOptions(options, claude("bad/alias", "low"))[0], { value: "bad/alias", label: "bad/alias — not offered" }, "a shape-invalid Claude id is");
   assert.deepEqual(modelSelectOptions(options, { backend: "pi", model: "zai/glm-9", effort: "low" })[0], { value: "zai/glm-9", label: "zai/glm-9 — not offered" }, "pi's registry is an answer");
-  assert.deepEqual(modelSelectOptions(claudeDown, claude("claude-opus-5-5", "low")), [{ value: "claude-opus-5-5", label: "claude-opus-5-5 — not verified" }]);
-  assert.deepEqual(modelSelectOptions(undefined, claude("claude-opus-5-5", "low")), [{ value: "claude-opus-5-5", label: "claude-opus-5-5 — not verified" }], "still asking");
+  assert.deepEqual(modelSelectOptions(claudeDown, claude("claude-opus-5-5", "low")), [{ value: "claude-opus-5-5", label: "Opus 5.5 — not verified", title: "claude-opus-5-5" }]);
+  assert.deepEqual(modelSelectOptions(undefined, claude("claude-opus-5-5", "low")), [{ value: "claude-opus-5-5", label: "Opus 5.5 — not verified", title: "claude-opus-5-5" }], "still asking");
   assert.deepEqual(modelSelectOptions(options, { backend: "pi", model: "", effort: "" }), [{ value: "zai/glm-5.3", label: "zai/glm-5.3" }], "nothing chosen: nothing injected");
 });
 
@@ -153,21 +152,10 @@ test("an old Claude id counts as listed when the catalog lists the model it mean
   assert.equal(slotIssue(info, listsBase, claude("opus[1m]", "max"), null, "primary")?.tone, "error");
   // An id the catalog doesn't know reads not verified.
   assert.equal(slotIssue(info, listsBase, claude("claude-opus-6", "high"), null, "primary")?.tone, "muted");
-  assert.equal(modelSelectOptions(listsBase, claude("claude-opus-6", "high"))[0]!.label, "claude-opus-6 — not verified");
+  assert.equal(modelSelectOptions(listsBase, claude("claude-opus-6", "high"))[0]!.label, "Opus 6 — not verified");
   // Only Claude Code: a pi ref ending in [1m] is not its base.
   const pi = { backend: "pi" as const, model: "zai/glm-5.3[1m]", effort: "low" };
   assert.equal(slotIssue(info, listsBase, pi, null, "primary")?.tone, "error");
   assert.equal(modelSelectOptions(listsBase, pi)[0]!.label, "zai/glm-5.3[1m] — not offered");
 });
 
-test("the CLI's drift is one quiet sentence each; nothing when it agrees or wasn't read", () => {
-  assert.deepEqual(claudeDriftNotes(undefined), []);
-  assert.deepEqual(claudeDriftNotes(options), []);
-  const drifted: DelegateOptions = {
-    backends: [options.backends[0]!, { ...options.backends[1]!, drift: { unknown: [{ id: "claude-opus-6", name: "Opus 6" }], moved: [{ family: "opus", id: "claude-opus-6", current: "claude-opus-5-5" }] } }],
-  };
-  assert.deepEqual(claudeDriftNotes(drifted), [
-    "Claude Code offers Opus 6 (claude-opus-6), which Sova's catalog doesn't know yet.",
-    "Claude Code now runs opus as claude-opus-6; Sova's catalog still says Opus 5.5.",
-  ]);
-});

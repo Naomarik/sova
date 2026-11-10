@@ -28,7 +28,8 @@ import { restorePick, pickEntryFor, shortModel } from "../pi-config/extensions/s
 const OFF_ON = Object.freeze({ id: "off", key: "sova:default", name: "Off" });
 import { decodeMemberContext, MEMBER_ENV } from "../pi-config/extensions/subagents/mailbox.ts";
 import { modelAllowed, modelDenial, readModelPolicy } from "./model-policy";
-import { toContextInfo, workerWindowResolver } from "./models";
+import { forgetModelCaches, toContextInfo, workerWindowResolver } from "./models";
+import { startClaudeModelsSync } from "./claude-models-sync";
 import { claudeSpawnModels, WorkerContextReader, withWorkerContext } from "./worker-context";
 import { resumeWorker, type ResumeOutcome } from "./worker-resume";
 import { applySandbox, onSandboxAppend, sandboxInfo, sandboxMessage, type SandboxHost } from "./sandbox-state";
@@ -48,7 +49,7 @@ import { stateView } from "./harness/state-view";
 import { LiveTail } from "./chat-runtime/live-tail";
 import { takeWriterLock, type WriterLock, WriterLockHeld } from "./chat-runtime/writer-lock";
 import { sovaNamedKind } from "../shared/fixed-names";
-import { extensionFlagValues, getModelRuntime, openPiSession, type OpenFlags, type OpenRead, type PiBuild, type PiModelRuntime, warmClaudeCodeProvider as warmPiProvider } from "./harness/pi/open";
+import { extensionFlagValues, getModelRuntime, openPiSession, type OpenFlags, type OpenRead, type PiBuild, type PiModelRuntime, reapplyClaudeModels, warmClaudeCodeProvider as warmPiProvider } from "./harness/pi/open";
 import type { PiExtensionAPI, PiLoaderOptions, PiToolDefinition } from "./harness/pi/extension-types";
 import { PiChatHost } from "./harness/pi/host";
 import { contextOfBranch } from "./harness/pi/usage";
@@ -331,6 +332,11 @@ let runtimeWarm: Promise<void> | null = null;
  */
 export function warmChatRuntime(onStep: (step: string) => void = () => {}): Promise<void> {
   if (runtimeWarm) return runtimeWarm;
+  // Before the provider registers: the learned Claude list, and its watch for this process's runtime.
+  startClaudeModelsSync(() => {
+    forgetModelCaches();
+    return reapplyClaudeModels();
+  });
   onStep("model setup");
   runtimeWarm = getModelRuntime().then(
     (runtime) => warmClaudeCodeProvider(runtime, agentRoot(), onStep),

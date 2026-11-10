@@ -10,7 +10,7 @@
  *
  * Absent file = both roles on the chat's own model with the built-in values; malformed = the same
  * plus the error list, and the file is never overwritten by a reader (effectiveTeamDefaults). A key
- * the file leaves out takes DEFAULT_TEAM_DEFAULTS' value; a key it states must be valid, and an
+ * the file leaves out takes defaultTeamDefaults()' value; a key it states must be valid, and an
  * unknown key is an error. `coordinator.enabled` and `monitor.enabled` are accepted and ignored.
  */
 import * as fs from "node:fs";
@@ -64,16 +64,18 @@ export interface TeamDefaultsFile {
 	handover: HandoverDefaults;
 }
 
-export const DEFAULT_TEAM_DEFAULTS: TeamDefaultsFile = {
-	version: 1,
-	coordinator: { role: "coordinator", primary: { backend: "claude-code", model: latestClaude("opus").id, effort: "medium" }, fallback: null, instructions: "" },
-	monitor: {
-		role: "monitor", primary: { backend: "pi", model: "ollama-cloud/deepseek-v4.1-flash", effort: "low" },
-		fallback: { backend: "claude-code", model: latestClaude("sonnet").id, effort: "low" },
-		contextPct: 60, everyMinutes: 10, usage: { enabled: true, pausePct: 90, resumeMarginMinutes: 5 }, instructions: "",
-	},
-	handover: { retireTimeoutMinutes: 10 },
-};
+export function defaultTeamDefaults(): TeamDefaultsFile {
+	return {
+		version: 1,
+		coordinator: { role: "coordinator", primary: { backend: "claude-code", model: latestClaude("opus").id, effort: "medium" }, fallback: null, instructions: "" },
+		monitor: {
+			role: "monitor", primary: { backend: "pi", model: "ollama-cloud/deepseek-v4.1-flash", effort: "low" },
+			fallback: { backend: "claude-code", model: latestClaude("sonnet").id, effort: "low" },
+			contextPct: 60, everyMinutes: 10, usage: { enabled: true, pausePct: 90, resumeMarginMinutes: 5 }, instructions: "",
+		},
+		handover: { retireTimeoutMinutes: 10 },
+	};
+}
 
 export type TeamDefaultsParse = { ok: true; value: TeamDefaultsFile } | { ok: false; errors: string[] };
 export type TeamDefaultsState =
@@ -165,7 +167,7 @@ class Checker {
 	}
 	fallbackTuple(at: string, value: unknown): WorkerTuple | null {
 		if (value === undefined || value === null) return null;
-		return this.tuple(at, value, DEFAULT_TEAM_DEFAULTS.coordinator.primary);
+		return this.tuple(at, value, defaultTeamDefaults().coordinator.primary);
 	}
 }
 
@@ -184,7 +186,7 @@ export function parseTeamDefaults(input: unknown): TeamDefaultsParse {
 		}
 	}
 	const c = new Checker();
-	const d = DEFAULT_TEAM_DEFAULTS;
+	const d = defaultTeamDefaults();
 	const root = c.object("", json, ["version", "coordinator", "monitor", "handover"]);
 	if (!root) return { ok: false, errors: c.errors };
 	if (root.version !== 1) c.fail("version", "must be 1");
@@ -274,13 +276,13 @@ export interface TeamDefaultsNow {
 }
 
 /**
- * The one resolver: the settings' value when they name one, else DEFAULT_TEAM_DEFAULTS with both
+ * The one resolver: the settings' value when they name one, else defaultTeamDefaults() with both
  * roles on `chat` (the chat's own model and effort) and no fallback, plus the malformed warning
  * when there is one. `chat` is undefined only for a chat with no model, which keeps the built-in tuples.
  */
 export function effectiveTeamDefaults(state: TeamDefaultsState, chat: WorkerTuple | undefined): TeamDefaultsNow {
 	if (state.state === "ok") return { value: state.value, chatsOwn: false, state };
-	const value = clone(DEFAULT_TEAM_DEFAULTS);
+	const value = clone(defaultTeamDefaults());
 	if (chat) {
 		value.coordinator = { ...value.coordinator, primary: { ...chat }, fallback: null };
 		value.monitor = { ...value.monitor, primary: { ...chat }, fallback: null };

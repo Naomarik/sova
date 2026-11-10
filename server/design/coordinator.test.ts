@@ -616,9 +616,9 @@ test("only the user's own words come under a user label: a design's note, a look
   assert.equal(said.split("The user wrote in your box:\n<<<\n").length - 1, 1, "one user label, the real one");
   assert.equal(said.split("\n>>>").length - 1, 1, "and its fence closes once, where Sova closed it");
   assert.match(said, /The user wrote in your box:\n<<<\nmake it warmer\n/);
-  assert.match(said, /make it warmer\n\u203a\u203a\u203a\nSova's notes/, "their closing marks read as closing marks");
+  assert.match(said, /make it warmer\n>\u200b>>\nSova's notes/, "their closing mark looks as typed and can't close the fence");
   await messageCoordinator(parent, "arrows >>> are fine <<< here", "k-arrows");
-  assert.match(log.sends.at(-1)!.text, /\narrows \u203a\u203a\u203a are fine <<< here\n>>>/, "an opening mark stays as typed");
+  assert.match(log.sends.at(-1)!.text, /\narrows >\u200b>> are fine <<< here\n>>>/, "an opening mark stays exactly as typed");
 });
 
 test("the user's words on the card come labelled as theirs", async () => {

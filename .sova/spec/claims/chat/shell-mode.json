@@ -173,15 +173,16 @@
       "server/shell-guard.ts",
       "shared/protocol.ts",
       "server/shell-mode.integration.test.ts",
+      "server/shell-mode-zsh.integration.test.ts",
       "src/components/Composer.tsx",
       "src/lib/shell-runs.ts",
       "pi-config/extensions/sandbox/index.ts",
       "pi-config/extensions/sandbox/state.ts"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-11-07T12:39Z",
-      "source": "pi-session:01a1b2ec-ac6a-73d4-9fe9-b83cb85cdc7f#008f8e00"
+      "by": "user",
+      "at": "2026-11-10T13:12Z",
+      "source": "pi-session:f35e0411-e320-48a7-b369-56e4af406aa7#706d0448"
     }
   },
   "§chat.shell-mode/who": {

@@ -95,9 +95,22 @@ to shell mode, and so does a `!` typed outside a text field that lands in the em
 
 ## §chat.shell-mode/running — Where and how a command runs
 
-- **Where.** In the chat's folder, with the shell and the environment the agent's own commands get,
-  at the same lowered priority (§app.load-priority/workers). In a chat bound to a remote target it
-  runs on the target, in its folder, as the agent's commands do there.
+- **Where.** In the chat's folder, with the environment the agent's own commands get, at the same
+  lowered priority (§app.load-priority/workers). When your login shell is zsh (the one Sova was
+  started with, else your account's own), a `!` command runs in zsh with your own terminal setup
+  loaded first: your login profile, then your shell config, from your zsh config folder when you
+  set one (`ZDOTDIR`), else your home folder, never the computer's shared ones. So your aliases,
+  functions and variables work. The setup's own messages are hidden, and a setup that fails partway
+  still runs the command, with what loaded before the failure. The setup loads after you press Run,
+  for every command: each one is a fresh shell, so an edit to your config applies to your next
+  command. It loads the same with the sandbox On or Off; with it On it loads confined like the
+  command: it can read your config but can't write outside what the sandbox allows, and its failed
+  writes stay hidden. A command follows zsh's rules, not bash's: an unmatched glob is an error, and
+  an unquoted variable doesn't split into words. Shell mode doesn't act as a terminal, so a config
+  that stops early when not run in one loads only up to that point. The agent's own commands keep
+  the shell they always had. With another login shell, or when pi's `shellPath` setting names a
+  shell, a command runs in the shell the agent's own commands get. In a chat bound to a remote
+  target it runs on the target, in its folder, as the agent's commands do there.
 - **The sandbox.** In a chat whose sandbox is On (§chat.sandbox/states) the command is confined
   exactly like the agent's `bash` (§chat.sandbox/what-on-enforces), in every case the agent's is: a
   chat reopened after its folder was deleted gets no writable folder in its place, a command run
@@ -110,7 +123,8 @@ to shell mode, and so does a `!` typed outside a text field that lands in the em
 - **The kill guard.** On macOS your command is checked as the agent's `bash` is
   (§chat.kill-guard/refusal): a mis-written kill is refused before it runs, nothing of it runs, and
   the guard's reply shows under the box with the correct form ("Sova refused this command before it
-  ran; nothing ran. …"). You can still write the exact command you mean.
+  ran; nothing ran. …"). You can still write the exact command you mean. The guard reads an alias
+  or a function by its name: it can't see what that runs.
 - **No time limit.** A command runs until it ends, until someone stops it (§chat.shell-mode/who),
   until its chat closes (§chat.shell-mode/lifecycle), or until its output passes about 1 GB, when
   Sova stops it and its card says so (§chat.shell-mode/card). What it keeps is exactly its first

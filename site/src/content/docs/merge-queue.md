@@ -23,7 +23,9 @@ A branch enters the queue only on your word, in one of two ways:
 
 Land approves exactly the commit the screen showed you. Work you do on the branch after that isn't
 included ("1 newer commit not included"): land again for it. Land refuses a branch with uncommitted
-files, nothing ahead of the main branch, or a temporary commit (`WIP`, `fixup!`). A branch whose chat
+files or a temporary commit (`WIP`, `fixup!`), and one with nothing left: "Nothing to land: everything
+on this branch is already on master." A branch whose code already landed but whose spec drafts didn't
+lands just the drafts. A branch whose chat
 says it's finished but that is held up by something the chat can fix (a failing check, spec drafts
 that don't fit) can still be landed: it reads **Approved · waiting for a fix**, its chat is told what
 blocks it, and it joins the line by itself once nothing does. One that only conflicts with the main
@@ -53,7 +55,10 @@ The branch's chat gets one card for its branch, from Land on, updated in place a
 "Queued · 2nd", "Checking · 4 of 7 steps", "Back with the chat · try 2 of 3 · Unit tests failed",
 "Waiting for the merge thread". It moves to the bottom of the chat only when the branch lands or a
 decision waits for you. The Landed card lists the chat's fixes that landed with your Land. The
-worktree stays where it is: Sova never removes it.
+worktree stays where it is: automatic cleanup ships switched off, so a finished one stays until
+you press **Remove Worktree** on its row. A branch you won't land goes, with its folder and its
+idle chats and no backup, by **Discard Branch…**, the last item of its Land ▾ menu, at your click
+alone.
 
 <!-- screen: landing-progress | A branch's card in its own chat, updated in place as the queue checks it: its place in line, the check running now and how long it takes. -->
 
@@ -126,8 +131,10 @@ The project page's **Merge Queue** tab shows the main branch at its commit and w
 it, the queue's state with **Pause Queue** and **Queue Settings**, what is being checked now (the
 check, a meter and how long it takes), and **Waiting**, the line of waiting branches, which opens and
 closes. Under them a strip of tabs sorts the rest: **Ready to land**, **Needs you**, **With its
-chat**, **Waiting on GitHub** or **GitLab** (for a project that lands there), **Landed**, with each
-landing's notes, and **Queue chats**. Each tab has its own address, so a reload or Back keeps it.
+chat**, **Waiting on GitHub** or **GitLab** (for a project that lands there), **Held**, **Landed**,
+with each landing's notes and, under them, the **Retired** list with **Restore**, and **Queue chats**.
+Each tab has its own address, so a reload or Back keeps it. While automatic cleanup is switched off,
+as it ships, one line says so and Held lists nothing; Retired and Restore still work.
 Every row opens its chat and has **Review Changes**, which shows the change in the changes viewer.
 
 When the review blocks a branch, the chat that has to fix it gets a **Review found issues** card with

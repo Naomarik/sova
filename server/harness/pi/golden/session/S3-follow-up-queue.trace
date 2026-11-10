@@ -62,9 +62,9 @@ B {"type":"queue","items":[{"id":"f3","kind":"followUp","state":"queued","text":
 A {"type":"queue","items":[{"id":"f3","kind":"followUp","state":"sending","text":"follow three","origin":"client"}]}
 B {"type":"queue","items":[{"id":"f3","kind":"followUp","state":"sending","text":"follow three","origin":"client"}]}
 sdk prompt ["follow three",{"streamingBehavior":"followUp","source":"interactive"}]
-A {"type":"event","event":{"type":"queue_update","steering":[],"followUp":["follow three"]}}
 A {"type":"event","event":{"type":"message_start","message":{"role":"user","content":[{"type":"text","text":"follow one"}],"timestamp":1000000000000}}}
 B {"type":"event","v":2,"event":{"type":"message.start","role":"user","text":"follow one","images":[]}}
+A {"type":"event","event":{"type":"queue_update","steering":[],"followUp":["follow three"]}}
 write {"id":"00000007","type":"message","role":"user"}
 A {"type":"event","event":{"type":"message_end","message":{"role":"user","content":[{"type":"text","text":"follow one"}],"timestamp":1000000000000}},"entryId":"00000007"}
 B {"type":"event","v":2,"event":{"type":"message.end","role":"user","entryId":"00000007"}}

@@ -1,15 +1,14 @@
 import { createEffect, createMemo, createSignal, For, Match, on, onCleanup, onMount, Show, Switch, untrack } from "solid-js";
-import type { ExplanationInfo, SessionInsight, SessionSkillOffer, SessionSkillUse, SessionSummary, TranscriptItem, WorkerInfo } from "../../shared/protocol";
+import type { ExplanationInfo, SessionInsight, SessionSummary, TranscriptItem, WorkerInfo } from "../../shared/protocol";
 import { fetchTranscriptLight } from "../lib/api";
 import { explainCaption, explainHref, explainInterrupted, explainState, newestFirst } from "../lib/explain";
-import { relativeTime } from "../lib/format";
 import { sessionIdOfPath } from "../lib/links";
 import { absoluteTime, headChipSpend, headChipWords } from "../lib/spend";
 import { activeTab, setActiveTab, toast } from "../lib/ui-state";
 import { capTitle, workerLabel, workerTeam } from "../lib/workers";
 import type { RewindControl } from "../lib/inputs";
-import { jumpWhenArrived } from "../lib/jump";
 import { paneShares } from "../lib/pane-shares";
+import { openingTab, TABS, type TabId } from "../lib/pane-tabs";
 import { sharingTabLabel } from "../lib/session-shares";
 import { RemotePaneStatus } from "./RemoteStatus";
 import { ContextTab } from "./ContextTab";
@@ -34,25 +33,13 @@ export interface PaneInsight {
   changed: number;
 }
 
-export type TabId = "session" | "timeline" | "agents" | "usage" | "time" | "context" | "sharing" | "skills" | "explain";
-const TABS: readonly { id: TabId; label: string }[] = [
-  { id: "session", label: "Session" },
-  { id: "timeline", label: "Timeline" },
-  { id: "agents", label: "Agents" },
-  { id: "usage", label: "Usage" },
-  { id: "time", label: "Time Spent" },
-  { id: "context", label: "Context" },
-  { id: "sharing", label: "Sharing" },
-  { id: "skills", label: "Skills" },
-  { id: "explain", label: "Explain" },
-];
-const isTab = (id: string | null): id is TabId => TABS.some((t) => t.id === id);
+export type { TabId };
 
 /**
  * The session detail pane: a head, a tab strip, and one tab's panel. Session is what the session
  * is (SessionDetails); Timeline is the session's one time axis; Agents is the subagents pane it grew
  * out of; Usage is what the session has spent (SessionUsage); Time Spent is where your time and the agent's went (TimeSpent); Context is what fills its window now (ContextTab); Sharing is its share links, with a
- * viewing-now badge on the tab; Skills says which skills loaded and when, here and in each worker; Explain lists this session's /explain pages. The tab is kept per
+ * viewing-now badge on the tab; Explain lists this session's /explain pages. The tab is kept per
  * session path; with none kept, it opens on Agents while a worker is working, else on Session —
  * never on Usage, which its tab and the head's token chip open, or on Time Spent. Read-only throughout, except the
  * Timeline's rewind, which goes through the chat.
@@ -121,10 +108,7 @@ export function SessionPane(props: {
   // Settled once, on open: a default that followed the working count would move the tab under
   // the reader when the last worker finished.
   const fallback: TabId = untrack(working) > 0 ? "agents" : "session";
-  const tab = (): TabId => {
-    const kept = activeTab(props.path);
-    return isTab(kept) ? kept : fallback;
-  };
+  const tab = (): TabId => openingTab(activeTab(props.path), fallback);
 
   /** The Agents tab's half in a narrow pane (list or one worker), kept across tab switches for
       as long as the pane is open. */
@@ -286,18 +270,6 @@ export function SessionPane(props: {
               </Show>
             </div>
           </Match>
-          <Match when={tab() === "skills"}>
-            <SkillsTab
-              path={props.path}
-              insight={props.insight}
-              now={props.now}
-              onShowWorker={(id) => {
-                props.onSelect(id);
-                setAgentsView("detail");
-                setActiveTab(props.path, "agents");
-              }}
-            />
-          </Match>
           <Match when={tab() === "explain"}>
             <ExplainTab insight={props.insight} now={props.now} />
           </Match>
@@ -418,198 +390,5 @@ function ExplainRow(props: { item: ExplanationInfo; now: number }) {
         </a>
       </Show>
     </li>
-  );
-}
-
-// ---- Skills -----------------------------------------------------------------------------------
-
-/** The certainty of a load, in words: the chip text and what it means. See server/skills.ts. */
-const HOW: Record<SessionSkillUse["how"], { word: string; title: string }> = {
-  invoked: { word: "invoked", title: "Invoked explicitly: /skill:name, or a Claude Code Skill call." },
-  read: { word: "read", title: "The agent read its SKILL.md." },
-  shell: { word: "inferred", title: "Read through a shell command. We infer this." },
-};
-
-/**
- * Which skills loaded, and when: this session's own loads, then each worker's, oldest first. Only
- * this session's rows jump — a worker's evidence is in its own transcript, which the Agents tab
- * opens. What the prompt offered sits below, folded: offered is not loaded.
- */
-function SkillsTab(props: { path: string; insight: PaneInsight; now: number; onShowWorker(id: string): void }) {
-  const own = () => props.insight.data?.skills;
-  const workers = () => props.insight.data?.workers ?? [];
-  const teams = () => props.insight.data?.teams;
-  /** Workers with loads, in the order their first load happened. */
-  const workerLoads = () =>
-    Object.entries(props.insight.data?.workerSkills ?? {})
-      .filter(([, sk]) => sk.used.length > 0)
-      .sort(([, a], [, b]) => a.used[0]!.at.localeCompare(b.used[0]!.at))
-      .map(([id, skills]) => ({ id, skills, worker: workers().find((w) => w.id === id) }));
-  const loads = () => (own()?.used.length ?? 0) + workerLoads().reduce((n, w) => n + w.skills.used.length, 0);
-
-  const jump = (entryId: string) => {
-    jumpWhenArrived(entryId, props.path, () => toast("That entry isn't in the transcript on screen."));
-  };
-
-  return (
-    <div class="session-panel-scroll" tabindex="0">
-      <Show
-        when={loads() > 0}
-        fallback={
-          <Show when={!props.insight.pending}>
-            <div class="empty subagents-empty">
-              <p class="empty-title">0 skills loaded in this session.</p>
-              <p class="empty-body">
-                A skill loads when the agent reads a SKILL.md, or when you invoke <code>/skill:name</code>.
-              </p>
-            </div>
-          </Show>
-        }
-      >
-        <section class="stack-2" aria-labelledby="skills-session-label">
-          <h3 class="text-eyebrow" id="skills-session-label">
-            This session
-          </h3>
-          <Show when={(own()?.used.length ?? 0) > 0} fallback={<p class="usage-note">0 loads on this session's own branch.</p>}>
-            <ul class="list skill-list" aria-labelledby="skills-session-label">
-              <For each={own()!.used}>{(use) => <SkillLoad use={use} now={props.now} onJump={jump} />}</For>
-            </ul>
-            <p class="usage-note text-muted">Active branch only. A row jumps to its entry in the transcript.</p>
-          </Show>
-        </section>
-
-        <For each={workerLoads()}>
-          {(w) => {
-            const label = () => (w.worker ? workerLabel(w.worker, teams()) : w.id);
-            const team = () => (w.worker ? workerTeam(w.worker, teams()) : null);
-            const headId = `skills-worker-${w.id}`;
-            return (
-              <section class="stack-2" aria-labelledby={headId}>
-                <div class="spread">
-                  <h3 class="text-eyebrow skill-worker-head" id={headId}>
-                    <span>{label()}</span>
-                    <Show when={team()}>{(t) => <span class="skill-worker-team">Team · {t().name}</span>}</Show>
-                  </h3>
-                  <Show when={w.worker}>
-                    <button type="button" class="button button-sm button-ghost" onClick={() => props.onShowWorker(w.id)}>
-                      Open in Agents
-                    </button>
-                  </Show>
-                </div>
-                <ul class="list skill-list" aria-labelledby={headId}>
-                  <For each={w.skills.used}>{(use) => <SkillLoad use={use} now={props.now} />}</For>
-                </ul>
-                <Show
-                  when={w.skills.offered.length > 0}
-                  fallback={
-                    <p class="usage-note text-muted">
-                      {w.worker?.backend === "claude-code"
-                        ? "Claude Code transcripts don't record which skills were offered."
-                        : "Its prompt recorded no offered skills."}
-                    </p>
-                  }
-                >
-                  <OfferedSkills offered={w.skills.offered} now={props.now} />
-                </Show>
-              </section>
-            );
-          }}
-        </For>
-      </Show>
-
-      <Show when={own()?.offered.length}>
-        <section class="stack-2" aria-labelledby="skills-offered-label">
-          <h3 class="text-eyebrow" id="skills-offered-label">
-            Offered
-          </h3>
-          <p class="usage-note text-muted">What this session's prompt listed. Being offered isn't being loaded.</p>
-          <OfferedSkills offered={own()!.offered} now={props.now} />
-        </section>
-      </Show>
-    </div>
-  );
-}
-
-/**
- * One load: name, the certainty in words, when. With `onJump` (this session's own loads) the row
- * is a button to its transcript entry and says so with a trailing arrow; without it the row is
- * plain text — no hover, no pointer, no arrow — so it never passes for a control.
- */
-function SkillLoad(props: { use: SessionSkillUse; now: number; onJump?: (entryId: string) => void }) {
-  const how = () => HOW[props.use.how];
-  const body = () => (
-    <>
-      <span class="list-main">
-        <span class="list-title">{props.use.name}</span>
-        <span class="list-meta" title={absoluteTime(props.use.at, props.now) || undefined}>
-          {relativeTime(props.use.at, props.now)}
-        </span>
-        <Show when={props.use.args}>
-          {(a) => (
-            <span class="list-meta skill-args" title={capTitle(a())}>
-              {a()}
-            </span>
-          )}
-        </Show>
-      </span>
-      <span class="chip chip-count" title={how().title}>
-        {how().word}
-      </span>
-    </>
-  );
-  return (
-    <li>
-      <Show when={props.onJump} fallback={<div class="list-row skill-row">{body()}</div>}>
-        {(jump) => (
-          <button type="button" class="list-row list-row-interactive skill-row" title="Jump to this entry in the transcript" onClick={() => jump()(props.use.entryId)}>
-            {body()}
-            <Icon name="arrow-right" small />
-          </button>
-        )}
-      </Show>
-    </li>
-  );
-}
-
-/** The offer windows, folded: quieter than the loads, and only on demand. */
-function OfferedSkills(props: { offered: SessionSkillOffer[]; now: number }) {
-  const span = (o: SessionSkillOffer) => {
-    const from = o.from ? relativeTime(o.from, props.now) : "";
-    if (!o.until) return from ? `Since ${from} · still offered` : "Still offered";
-    const until = relativeTime(o.until, props.now);
-    return from ? `${from} → ${until}` : `Until ${until}`;
-  };
-  return (
-    <details class="disclosure">
-      <summary class="disclosure-summary">
-        <Icon name="chevron-right" small class="icon-twist" />
-        <span class="disclosure-label">
-          {props.offered.length} offered
-        </span>
-      </summary>
-      <div class="disclosure-body">
-        <ul class="list">
-          <For each={props.offered}>
-            {(o) => (
-              <li class="list-row skill-row">
-                <span class="list-main">
-                  <span class="list-title">{o.name}</span>
-                  <Show when={o.description}>
-                    {(d) => (
-                      <span class="list-meta" title={capTitle(d())}>
-                        {d()}
-                      </span>
-                    )}
-                  </Show>
-                  <span class="list-meta" title={[o.from && absoluteTime(o.from, props.now), o.until && absoluteTime(o.until, props.now)].filter(Boolean).join(" → ") || undefined}>
-                    {span(o)}
-                  </span>
-                </span>
-              </li>
-            )}
-          </For>
-        </ul>
-      </div>
-    </details>
   );
 }

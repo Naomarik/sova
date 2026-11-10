@@ -17,6 +17,8 @@ export const SUBFOLDER_SCAN_CAP = 5000;
 
 const TAG = "sova-instructions";
 const HEADER = new RegExp(`^<${TAG} path="([^"\\n]+)">`);
+/** A subfolder's skills block (server/subfolder-skills.ts) in the same result: not ours, and no end to the walk. */
+const SKILLS_BLOCK = /^<sova-skills dir="[^"\n]+">/;
 
 /** A folder name no walk enters: node_modules and hidden folders. */
 export function skippedSegment(name: string): boolean {
@@ -77,6 +79,7 @@ export function markersIn(blocks: readonly { type: string; text?: string }[]): s
   const out: string[] = [];
   for (let k = blocks.length - 1; k >= 1; k--) {
     const b = blocks[k]!;
+    if (b.type === "text" && SKILLS_BLOCK.test(b.text ?? "")) continue;
     const m = b.type === "text" ? HEADER.exec(b.text ?? "") : null;
     if (!m) break;
     out.push(m[1]!);

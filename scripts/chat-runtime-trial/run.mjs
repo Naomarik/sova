@@ -3677,13 +3677,15 @@ async function tw6() {
 // tw7: a chain near the limit, a message from another chat partway: it doesn't reset, the 30th wake says stop, and the count holds across each idle stop.
 async function tw7() {
   await wakeBoot();
+  // The other chat first: its start (a process, then another for its profile) can outlast the 4 s idle stop,
+  // and a chat stopped behind this tab would never answer the nudge's prompt.
+  const pw = await powersChat();
+  await turn(pw, "say ok");
   const a = await newChat();
   await turn(a, "say ok");
   const id = entries(a.path)[0].id;
   const third = scheduleNudge("10s", "LAST");
   const second = scheduleNudge("10s", `SECOND ${third}`);
-  const pw = await powersChat();
-  await turn(pw, "say ok");
   const { pid } = await nudgeThenShutDown(a, "15s", `FIRST ${second}`);
   // 27 wakes behind it, as this chat's own entry says, written while it is down. Nothing typed from here on.
   appendFileSync(a.path, `${JSON.stringify({ type: "custom", customType: "wake-nudge-count", data: { n: 27 }, id: "counted0", parentId: entries(a.path).at(-1).id, timestamp: new Date().toISOString() })}\n`);

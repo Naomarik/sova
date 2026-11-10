@@ -849,7 +849,7 @@ export function ThreadScroller(props: {
   count: number;
   resume?: number;
   busy?: boolean;
-  /** The session shown here: what a jump from the outline, Skills or Timeline looks up. */
+  /** The session shown here: what a jump from the outline or Timeline looks up. */
   path?: string;
   /** Where to open, for rows kept from the last visit (lib/transcript-cache); the end otherwise. */
   restore?: ScrollSpot | null;

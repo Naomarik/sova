@@ -24,6 +24,7 @@ import type { PiExtensionFactory, PiLoaderOptions, PiToolDefinition } from "./ex
 import { installOwnCode, ownCodeLoader, withModesEntry } from "./own-code";
 import { sandboxBus } from "./shell";
 import { liveRead } from "./reader";
+import { withSkillSources } from "./skill-sources";
 import { PiHarnessSession } from "./session";
 import { piSessionState } from "./state";
 import { currentTheme } from "./ui-bridge";
@@ -173,9 +174,10 @@ async function servicesForCwd(cwd: string, modelRuntime: ModelRuntime, flags: ()
   // A chat process on a code generation loads Sova's extensions from its own copy, discovered and
   // listed alike (§app.chat-processes/code-generations). The server: nothing.
   installOwnCode();
+  // A worker's and an ordinary chat's alike; the same as the setup card's read of a folder (resources.ts).
   // The extensions' bus is Sova's, so the user's own commands see the sandbox's state (shell.ts, P40).
   const sandbox = sandboxBus();
-  const resourceLoaderOptions = { ...ownCodeLoader(loader), eventBus: sandbox.bus };
+  const resourceLoaderOptions = { ...ownCodeLoader(withSkillSources(cwd, loader)), eventBus: sandbox.bus };
   // Who runs this runtime's modes (§chat.mode-menu/sova-runs-modes): Sova's entry takes the discovered
   // mode extension's slot for this build's package manager, for the runtime's whole life (own-code.ts).
   const services = await withModesEntry(modesEntry, () =>

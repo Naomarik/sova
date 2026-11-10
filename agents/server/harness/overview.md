@@ -42,7 +42,7 @@ found so far (pi 1.0.3).
   (`server/harness/pi/testing/handle.ts`). (§app.harness/session)
 - **Every reach into pi's internals is a quirk** in `server/harness/pi/QUIRKS.md` (typed rows:
   `quirks.ts`): a monkey-patch, private read, error text, ordering or internal API, each with its sites
-  and a canary (`P1`…`P40`, `T1`) in `contract.test.ts`. On a pin bump or a TUI pi upgrade, run the
+  and a canary (`P1`…`P42`, `T1`) in `contract.test.ts`. On a pin bump or a TUI pi upgrade, run the
   canaries against that pi (command below); a failing canary is a triage by its row, never a test edit.
   `quirks-meta.test.ts` fails on a private cast, method-table cast or SDK-member assignment no row
   names. A new reach adds its row, canary and sites in the same change.
@@ -275,7 +275,8 @@ found so far (pi 1.0.3).
   another tool makes carries `parentToolCallId` (`HarnessEvent` `nested`, `SovaEvent` `parentCallId`)
   and is no row or live tool.
 - **pi reads the host's context files into a recording.** A session reads every `AGENTS.md`/`CLAUDE.md`
-  from its cwd up to `/` and skills from `~/.agents/skills`, so a golden recorded under a scratch dir
+  from its cwd up to `/` and skills from `~/.agents/skills`, and Sova adds the Claude skill folders
+  (`server/harness/pi/skill-sources.ts`, §chat/skill-sources), so a golden recorded under a scratch dir
   inside `$HOME` (or with the real `HOME`) captures the operator's private files. Record goldens from a
   scratch dir with no context file above it and `HOME` inside it, with every `SOVA_*` variable unset;
   `server/harness/pi/special-model-view.test.ts` fails a golden that names a real home path, a context

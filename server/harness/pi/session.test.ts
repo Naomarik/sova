@@ -60,7 +60,7 @@ describe("PiHarnessSession (§app.harness/session)", () => {
     Object.defineProperty(s, "model", { get: () => ({ provider: "fake", id: "m1", input: ["text", "image"] }), configurable: true });
     const loader = {
       getAgentsFiles: () => ({ agentsFiles: [{ path: "/w/AGENTS.md", content: "x" }] }),
-      getSkills: () => ({ skills: [{ name: "a", filePath: "/w/a/SKILL.md", description: "does a" }] }),
+      getSkills: () => ({ skills: [{ name: "a", filePath: "/w/a/SKILL.md", description: "does a" }], diagnostics: [] }),
       getSystemPromptSource: () => undefined,
       getAppendSystemPromptSources: () => [{ path: "/w/APPEND.md" }],
     };

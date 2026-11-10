@@ -900,7 +900,7 @@ virtualized.
 - **Jumps build their target first.** Whether an entry can be jumped to is asked of the rows the
   thread renders, not of what is built. Every jump builds the rows down from its target if the
   fill hasn't reached it, then lands on it and tints it (§chat.timeline/jumping): a Timeline
-  input row, the outline's Jump to Message, the Skills tab, Open in Session, and a
+  input row, the outline's Jump to Message, Open in Session, and a
   switch back (below). A jump to a row the list doesn't hold, while the branch has rows above
   the list, fetches every row down to it in one request and then lands; nothing is said while it
   waits, and a slow fetch shows the top edge's bar (above). A newer jump replaces a waiting one. "Isn't in
@@ -1502,7 +1502,7 @@ main-pane rows.
   every other case it is a single line (below). Each group after the first sits under a 1px
   `--color-border` rule.
 - **The one aggregate line.** `System context` leading, its figures trailing in the shape a section
-  total uses (`KB · lines · ≈tokens`). It adds up every Context row and every Skills row that is on (a row switched off,
+  total uses (`KB · lines · ≈tokens`). It adds up every Context row and every Skills row that is on and offered (a manual-only skill never is) (a row switched off,
   /setup-card-toggles, is listed but not counted), which is exactly what the two groups under it
   total, so it is the sum of their two totals. Its `title` is the one sentence saying so:
   "Everything pi loads into the prompt, plus the skills it offers." It carries no heading, because
@@ -1628,6 +1628,13 @@ The skills pi offers this session: what it is **offered**, not what is loaded.
   dimmed like an off Context row, but it is not offered, so the model never sees it. A skill
   loads when it is used, and the note's first two sentences say so. A row's token estimate is its whole
   SKILL.md file, so they are not something the session carries before it uses that skill.
+- **Manual only.** A manual-only skill (§chat.skill-sources/manual-only) keeps its row and its switch,
+  says `Manual only` under its name, and isn't in the total.
+- **What didn't load.** Under the list (or under the empty line), one quiet line names each skill that
+  couldn't load or lost to a same-named one, and why: `Not loaded: bad-skill (no description) ·
+  clojure (same name as ~/.agents/skills/clojure)`. A skill whose file couldn't be read as front matter
+  says `its front matter can't be read`. A chat with no such skill sees nothing new. A skill reached
+  twice by two routes is one skill, and a warning about a skill that still loaded isn't named.
 - **The row.** The skill's name, in the mono `.setup-path` face, with no path on screen and no
   role. The `title` holds the SKILL.md's full path, then on a new line its description, trimmed.
   A skill with a blank description or none gets only the path. A SKILL.md Sova can't read is left
@@ -1880,7 +1887,8 @@ it is on disk now, its front matter left out.
   `SYSTEM.md`, `APPEND_SYSTEM.md`), or a subfolder instruction file the session could load as it
   works: its folder's own instruction file, in a folder below the session's folder that the loading
   doesn't skip (§chat.subfolder-instructions/loading; the Context tab opens these,
-  §app.subagents-pane/context-tab). So the request reads no other file on disk; any other path is a
+  §app.subagents-pane/context-tab), or the `SKILL.md` of a skill that folder's skills folder lists
+  (§chat.subfolder-skills/offering). So the request reads no other file on disk; any other path is a
   404, "That file isn't in this session's system context." A remote session has no rows to press,
   and its request is refused. A file over 1 MB is refused with "That file is over 1 MB, too big to
   show here." Whatever goes wrong is a toast that starts "Couldn't open that file." and gives the

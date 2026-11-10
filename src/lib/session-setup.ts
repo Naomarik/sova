@@ -145,13 +145,34 @@ export function contextSum(s: Loaded): LoadoutSum {
 /** Everything this session is offered, added up — offered, not loaded: see skillsNote. Off rows
     are not offered. */
 export function skillsSum(s: Loaded): LoadoutSum {
-  return sumFiles(onOnly(s.skills));
+  return sumFiles(onOnly(offeredSkills(s)));
+}
+
+/** The skills the model is offered, off rows aside: a manual-only one never is. */
+const offeredSkills = (s: Loaded) => s.skills.filter((k) => !k.manualOnly);
+
+/** "Not loaded: bad (no description) · clojure (same name as ~/.agents/skills/clojure)", or null when every
+    skill loaded (§chat.transcript/setup-card-skills). `home` shortens a path, when the caller knows it. Pure. */
+export function skillProblemsLine(s: Loaded, home?: string): string | null {
+  const problems = s.skillProblems ?? [];
+  if (!problems.length) return null;
+  const folderOf = (path: string) => {
+    const dir = path.replace(/\/SKILL\.md$/, "");
+    if (dir.startsWith(`${s.cwd}/`)) return dir.slice(s.cwd.length + 1);
+    return home && dir.startsWith(`${home}/`) ? `~${dir.slice(home.length)}` : dir;
+  };
+  const why = (p: (typeof problems)[number]) =>
+    p.reason === "same-name" ? (p.winnerPath ? `same name as ${folderOf(p.winnerPath)}` : "same name as another skill")
+    : p.reason === "no-description" ? "no description"
+    : p.reason === "unreadable" ? "couldn't be read"
+    : "its front matter can't be read";
+  return `Not loaded: ${problems.map((p) => `${p.name} (${why(p)})`).join(" · ")}`;
 }
 
 /** What this session costs at rest: the files pi loads into the prompt, plus the skills it offers.
     The card's one aggregate line, above the two sections that add up to it. */
 export function systemContextSum(s: Loaded): LoadoutSum {
-  return sumFiles(onOnly([...layered(s).map((l) => l.file), ...s.skills]));
+  return sumFiles(onOnly([...layered(s).map((l) => l.file), ...offeredSkills(s)]));
 }
 
 export const contextHeading = (n: number) => `Context · ${n}`;

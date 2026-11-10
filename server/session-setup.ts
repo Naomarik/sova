@@ -15,7 +15,8 @@
 //
 // Nothing here re-implements pi's discovery — not the candidate context filenames, not the worktree
 // shadowing rule, not the settings-registered skill folders or the npm package ones. Those are pi's
-// rules, they move with pi, and a second copy would drift; both sources above are pi's own code.
+// rules, they move with pi, and a second copy would drift; both sources above are pi's own code. Both
+// also load the Claude skill folders Sova adds (server/harness/pi/skill-sources.ts, §chat/skill-sources).
 //
 // WHICH FOLDER is the other thing that must not be answered twice: `readStoredCwd` and `plan` come
 // from git-summary, so the remote classification is the same one the Git section applies. A
@@ -41,6 +42,8 @@ import { getSessionSummary } from "./sessions-index";
 import { agentRoot } from "./state-root";
 import { readBranch } from "./harness/pi/reader";
 import { folderResources } from "./harness/pi/resources";
+import { piSkillsIn } from "./harness/pi/skill-sources";
+import { isSubfolderSkillFile } from "./subfolder-skills";
 import { LOADOUT } from "./harness/state-kinds";
 import type { McpSetupAsk } from "./mcp/chat";
 import { stateView } from "./harness/state-view";
@@ -174,7 +177,7 @@ function skillsOf(skills: Loadout["skills"]): SessionSetupSkill[] {
     // The description is frontmatter: it carries the newline that ended it, and a blank one is not
     // a description. Trimmed here so every consumer shows the same words.
     const description = skill.description?.trim();
-    if (size) out.push({ name: skill.name, path: skill.filePath, ...(description ? { description } : {}), ...size });
+    if (size) out.push({ name: skill.name, path: skill.filePath, ...(description ? { description } : {}), ...(skill.manualOnly ? { manualOnly: true as const } : {}), ...size });
   }
   return out;
 }
@@ -215,6 +218,7 @@ async function read(cwd: string, sessionPath: string, deps: SetupDeps, now: () =
     ...base,
     context: filesOf(loadout.context.map((f) => f.path)),
     skills: skillsOf(loadout.skills),
+    ...(loadout.skillProblems?.length ? { skillProblems: loadout.skillProblems.map((p) => ({ ...p })) } : {}),
     ...(systemPrompt ? { systemPrompt } : {}),
     ...(appendSystemPrompt.length ? { appendSystemPrompt } : {}),
     fromRuntime,
@@ -287,7 +291,8 @@ export async function readSetupFile(sessionPath: string, file: string, deps: Set
   if (setup.state !== "ok") return { ok: false, status: 409, error: setup.reason };
   // An instruction file in a folder below cwd loads as the agent works there (server/deeper-context.ts): the
   // Context tab opens those too, gated on the engine's own rule for one (its folder's first instruction file).
-  if (!listedPaths(setup).has(file) && !(instructionFileIn(dirname(file)) === file && candidateDirs(setup.cwd, file).includes(dirname(file))))
+  // A skill of such a folder too (server/subfolder-skills.ts): it is listed there before it is offered.
+  if (!listedPaths(setup).has(file) && !(instructionFileIn(dirname(file)) === file && candidateDirs(setup.cwd, file).includes(dirname(file))) && !isSubfolderSkillFile(setup.cwd, file, piSkillsIn))
     return { ok: false, status: 404, error: "That file isn't in this session's system context." };
   try {
     if (statSync(file).size > SETUP_FILE_MAX_BYTES) return { ok: false, status: 413, error: "That file is over 1 MB, too big to show here." };

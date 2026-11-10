@@ -34,11 +34,13 @@ import type {
 } from "../../../shared/harness";
 import { commandContextOf, ownedCommand } from "./commands";
 import { compactSession, rewindSession } from "./history-ops";
-import { liveHistory, toHEntry } from "./reader";
+import { historyOf, liveHistory, toHEntry } from "./reader";
 import { resourcesOf } from "./resources";
 import { piShell, sandboxOf } from "./shell";
 import { piSessionState } from "./state";
 import { fromPiTool } from "./tools";
+import { loadoutOnBranch } from "../../session-loadout";
+import { offeredSkills } from "../../subfolder-skills";
 import { steerTicket } from "./steer-ticket";
 import { watchUserMessages } from "./turns";
 import { v1Frame, writtenEntryId } from "./wire";
@@ -453,8 +455,19 @@ export class PiHarnessSession implements HarnessSession {
     const out: HarnessCommand[] = [];
     for (const c of s.extensionRunner.getRegisteredCommands()) out.push({ name: c.invocationName, description: c.description, source: "extension", path: c.sourceInfo?.path });
     for (const t of s.promptTemplates) out.push({ name: t.name, description: t.description, source: "prompt", location: sourceLocation(t.sourceInfo), path: t.filePath });
-    for (const k of s.resourceLoader.getSkills().skills)
+    const starting = s.resourceLoader.getSkills().skills;
+    for (const k of starting)
       out.push({ name: `skill:${k.name}`, description: k.description, source: "skill", location: sourceLocation(k.sourceInfo), path: k.filePath });
+    // A subfolder's skills, while the model still sees the block that offered them; the name stays with the
+    // skill offered first (§chat.subfolder-skills/command).
+    const branch = historyOf(s.sessionManager.getBranch());
+    const off = new Set(loadoutOnBranch(branch)?.offSkills ?? []);
+    const named = new Set(starting.map((k) => k.name));
+    for (const k of offeredSkills(branch)) {
+      if (named.has(k.name) || off.has(k.name)) continue;
+      named.add(k.name);
+      out.push({ name: `skill:${k.name}`, description: k.description, source: "skill", location: "path", path: k.filePath });
+    }
     return out;
   }
 

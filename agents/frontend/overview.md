@@ -12,7 +12,8 @@ must stay DOM- and Solid-free), browser testing, and the project skills.
 - `src/`: SolidJS + TS (Vite, vite-plugin-solid; HMR = live reload). Owned by **frontend**, except
   `src/design/` (design tokens, base CSS), which with `public/` (fonts/icons) is owned by **designer**.
 - `.agents/skills/`: project skills, which pi finds on its own in `.agents/skills/` from the working
-  directory up to the git root (no registration).
+  directory up to the git root (no registration). A project's `.claude/skills` loads by itself too
+  (§chat/skill-sources).
   - `.agents/skills/fold-ai-dev-design/`: the design system skill (copied from foldaidev). READ IT
     ([SKILL.md](../../.agents/skills/fold-ai-dev-design/SKILL.md)).
   - `.agents/skills/playwright/`: CDP browser automation via

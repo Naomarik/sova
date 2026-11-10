@@ -517,7 +517,8 @@ export function DesignThumb(props: {
     if (!writing()) setStreamed(false);
     setSlots((list) => list.filter((s) => s.v === slot.v));
   };
-  // Writing to finished keeps the last picture until the finished page has drawn.
+  // Writing to finished keeps the last picture until the finished page has drawn. During a Refine the
+  // earlier version stays on show, with no note over it, until the new page has something to see.
   const showStream = () =>
     writing() || (streamed() && version() > 0 && front() < version());
   const title = () => `Design ${props.d.label}, ${props.d.direction}`;
@@ -549,6 +550,7 @@ export function DesignThumb(props: {
                 text={live()?.text ?? ""}
                 title={title()}
                 waiting={designWaiting(props.d)}
+                over={version() > 0}
               />
             </div>
           </Show>

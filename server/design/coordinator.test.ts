@@ -410,6 +410,16 @@ test("a Start hands over the images ticked, and only a link's on Use Its Images;
   setBriefImage(parent, run.id, "a2", false);
   await start(run);
   assert.equal(log.launches[0]!.brief, `P\n\n${assetBlock(parent.sessionId, ["a1", "a3"])}`);
+  // What the designers are told to write is what the tools let through and what a finished page has put in.
+  const { assetNamesIn, assetNamesProblem, showAssets } = await import("./assets");
+  const { pageProblem } = await import("./lint");
+  const srcs = [...log.launches[0]!.brief.matchAll(/<asset id="(a\d+)" src="([^"]+)"/g)].map((m) => [m[1], m[2]]);
+  assert.deepEqual(srcs, [["a1", "sova-asset:a1"], ["a3", "sova-asset:a3"]]);
+  const page = `<!doctype html><html><head><title>t</title></head><body>${srcs.map(([, src]) => `<img src="${src}" alt="">`).join("")}<div style="background-image:url(${srcs[0]![1]})"></div></body></html>`;
+  assert.deepEqual(assetNamesIn(page), ["a1", "a3"]);
+  assert.equal(assetNamesProblem(parent.sessionId, page), null);
+  assert.equal(pageProblem(page), null);
+  assert.doesNotMatch(showAssets(parent.sessionId, page, "small"), /sova-asset:/);
 });
 
 test("Start waits, by name, while the page's images are captured and then described, and goes once they're settled", async () => {

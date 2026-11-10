@@ -44,8 +44,8 @@
     ],
     "agreed": {
       "by": "naomarik",
-      "at": "2026-11-09T00:21Z",
-      "source": "pi-session:01a1b2f4-86c6-73d4-9fe9-b847b27035f9#e2a66e41"
+      "at": "2026-11-09T21:41Z",
+      "source": "pi-session:01a1b2f4-86c6-73d4-9fe9-b847b27035f9#0fc54d24"
     },
     "code": [
       "server/merge-queue/queue.ts",
@@ -81,8 +81,11 @@
       "server/merge-queue/scratch.test.ts",
       "server/merge-queue/wire.ts",
       "server/merge-queue/owners.ts",
+      "server/merge-queue/rehearsal.ts",
+      "shared/retire-lab.json",
       "server/merge-queue/scenarios-nothing-left.integration.test.ts",
-      "server/landed-branch-agreement.integration.test.ts"
+      "server/landed-branch-agreement.integration.test.ts",
+      "server/merge-queue/rehearsal.test.ts"
     ]
   },
   "§app.merge-queue/blame": {
@@ -395,8 +398,8 @@
     ],
     "agreed": {
       "by": "naomarik",
-      "at": "2026-11-09T00:21Z",
-      "source": "pi-session:01a1b2f4-86c6-73d4-9fe9-b847b27035f9#e2a66e41"
+      "at": "2026-11-09T16:22Z",
+      "source": "pi-session:01a1b2f4-86c6-73d4-9fe9-b847b27035f9#950bc2c9"
     },
     "code": [
       "server/merge-queue/land.ts",
@@ -773,8 +776,8 @@
     ],
     "agreed": {
       "by": "naomarik",
-      "at": "2026-11-09T00:22Z",
-      "source": "pi-session:01a1b2f4-86c6-73d4-9fe9-b847b27035f9#e2a66e41"
+      "at": "2026-11-09T16:22Z",
+      "source": "pi-session:01a1b2f4-86c6-73d4-9fe9-b847b27035f9#950bc2c9"
     }
   },
   "§app.merge-queue/resolve-copy": {
@@ -815,8 +818,8 @@
     ],
     "agreed": {
       "by": "naomarik",
-      "at": "2026-11-09T00:22Z",
-      "source": "pi-session:01a1b2f4-86c6-73d4-9fe9-b847b27035f9#e2a66e41"
+      "at": "2026-11-09T16:22Z",
+      "source": "pi-session:01a1b2f4-86c6-73d4-9fe9-b847b27035f9#950bc2c9"
     }
   },
   "§app.merge-queue/review": {
@@ -930,7 +933,6 @@
       "server/merge-queue/scenarios-landed-drafts.integration.test.ts",
       "server/merge-queue/scenarios-landed-drafts-edges.integration.test.ts",
       "server/merge-queue/notices.ts",
-      "server/landed-labels-guards.test.ts",
       "server/merge-queue/scenarios-nothing-left.integration.test.ts",
       "server/landed-branch-agreement.integration.test.ts"
     ]
@@ -1042,7 +1044,7 @@
   "§app.merge-queue/settings": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "requires": [
       "§app/settings-dialog",
       "§app.merge-queue/view",
@@ -1073,15 +1075,15 @@
       "server/merge-queue/settings-routes.test.ts"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-11-05T03:58Z",
-      "source": "pi-session:4c2be31e-b72f-4e3c-ae0b-8e551d522e03#18bf7727"
+      "by": "naomarik",
+      "at": "2026-11-09T16:22Z",
+      "source": "pi-session:01a1b2f4-86c6-73d4-9fe9-b847b27035f9#950bc2c9"
     }
   },
   "§app.merge-queue/settings-save": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "requires": [
       "§app.merge-queue/setup",
       "§app.merge-queue/master-moved",
@@ -1105,9 +1107,9 @@
       "shared/merge-queue-settings.ts"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-11-05T03:58Z",
-      "source": "pi-session:4c2be31e-b72f-4e3c-ae0b-8e551d522e03#18bf7727"
+      "by": "naomarik",
+      "at": "2026-11-09T16:22Z",
+      "source": "pi-session:01a1b2f4-86c6-73d4-9fe9-b847b27035f9#950bc2c9"
     }
   },
   "§app.merge-queue/setup": {
@@ -1282,8 +1284,8 @@
     ],
     "agreed": {
       "by": "naomarik",
-      "at": "2026-11-09T00:22Z",
-      "source": "pi-session:01a1b2f4-86c6-73d4-9fe9-b847b27035f9#e2a66e41"
+      "at": "2026-11-09T16:22Z",
+      "source": "pi-session:01a1b2f4-86c6-73d4-9fe9-b847b27035f9#950bc2c9"
     },
     "code": [
       "server/merge-queue/view.ts",
@@ -1331,6 +1333,7 @@
       "server/merge-queue/scratch.test.ts",
       "server/merge-queue/owners.ts",
       "src/lib/merge-standing.ts",
+      "src/components/RetirementLists.tsx",
       "server/landed-branch-agreement.integration.test.ts"
     ]
   },

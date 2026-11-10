@@ -93,7 +93,7 @@
   "§app.project-overseer/coding-worktrees": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "requires": [
       "§app.project-overseer/tools",
       "§chat.worktrees/tool"
@@ -150,9 +150,9 @@
       "server/cleanup-dry-run.test.ts"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-11-07T20:05Z",
-      "source": "pi-session:01a1b63e-6ef3-71fd-af21-1389de50cc23#e142ea9f"
+      "by": "naomarik",
+      "at": "2026-11-09T16:22Z",
+      "source": "pi-session:01a1b2f4-86c6-73d4-9fe9-b847b27035f9#950bc2c9"
     }
   },
   "§app.project-overseer/confirm-brief": {

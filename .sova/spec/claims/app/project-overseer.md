@@ -1043,16 +1043,17 @@ judgement.
   (§app.project-overseer/watch-loop), so it can tell the session to commit or fix it; a refusal
   about the project root's own checkout, or a busy session, is the operator's and is not.
 - **Remove Worktree** removes the worktree folder (git's own `worktree remove`) and deletes the
-  branch only when it is merged. Before its running copy is torn down, it runs the same check as
-  Clean Up Merged (§chat.worktrees/leftovers), whoever sets it off (the page's button, or the build's
+  branch only when it is merged, through Sova's one removal step (§chat.worktrees/cleanup). Before its
+  running copy is torn down, it runs the keep rule every removal runs (§chat.worktrees/leftovers), whoever sets it off (the page's button, or the build's
   remove-worktree effect, the Project Overseer's included): a worktree holding uncommitted or
   untracked files, ignored files that can't be rebuilt or a nested repository stays, as does one
-  whose files can't be read; nothing is torn down or removed, and the refusal gives the reason
+  whose files can't be read. Unlike retirement it lets none of what a test copy left go, nor any spec
+  draft, proved or not (§chat.worktrees/leftovers). Nothing is torn down or removed, and the refusal gives the reason
   (uncommitted files only, in today's words, otherwise "{reason} Nothing was removed."). On the
   project page the Remove confirmation asks first (`POST /api/projects/:pid/overseer/worktrees/remove
   {sessionId, dryRun: true}` answers the reason and the listing): a held worktree shows its reason
   in place of the "folder goes away" sentence, and, when what it holds is the reason, offers `Remove
-  Anyway` with the cleanup dialog's listing and buttons. Confirming (the same route with `{sessionId,
+  Anyway` with its listing and buttons (§chat.worktrees/leftovers). Confirming (the same route with `{sessionId,
   digest}`, your own click only; both together is a 400) re-reads the worktree and removes it with one `--force` only when the listing is
   unchanged and every other check still passes, tearing its running copy down only then; otherwise
   nothing is deleted: "Changed since the list, nothing was deleted: {reason}". A worktree cut for a
@@ -1069,8 +1070,11 @@ judgement.
   at once (§app.project-services/on-merge). On a missing folder it only clears git's record of
   it (and deletes a merged branch). The
   session and its transcript stay; its row says "Worktree removed", and `sova_send` refuses it:
-  "Its worktree was removed, so it has no folder to work in." Nothing is removed on its own, a
-  merged worktree included: the session's cwd is inside it.
+  "Its worktree was removed, so it has no folder to work in." A delete that stops part way is finished or
+  held at the removal step, and never reported as nothing removed. **A finished worktree also retires by
+  itself** (§chat.worktrees/retirement), though the session's cwd is inside it. Nothing records that on the
+  row: it reads "Worktree folder missing", as for a folder deleted by hand, and `sova_send` isn't refused: a
+  message to its session brings the worktree back, fresh from the project's target, as for any chat.
 - A session started before this change keeps running where it was; nothing is moved.
 
 ## §app.project-overseer/previews — Showing a coding session's app to a stakeholder

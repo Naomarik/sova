@@ -83,7 +83,7 @@
   "§chat.transcript/empty-worktrees": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "code": [
       "src/components/EmptyWorktrees.tsx",
       "src/components/ChatView.tsx",
@@ -95,7 +95,12 @@
     "requires": [
       "§chat.worktrees/cleanup",
       "§chat.transcript/states"
-    ]
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-11-09T16:22Z",
+      "source": "pi-session:01a1b2f4-86c6-73d4-9fe9-b847b27035f9#950bc2c9"
+    }
   },
   "§chat.transcript/focus-view": {
     "kind": "behavior",
@@ -721,9 +726,9 @@
       "src/lib/first-connect-send.browser.test.ts"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-11-04T22:53Z",
-      "source": "pi-session:01a1a881-85c2-72d2-b9d3-5a1d4c60dbfe#b1ee7dfc"
+      "by": "naomarik",
+      "at": "2026-11-09T16:22Z",
+      "source": "pi-session:01a1b2f4-86c6-73d4-9fe9-b847b27035f9#950bc2c9"
     }
   },
   "§chat.transcript/streaming": {

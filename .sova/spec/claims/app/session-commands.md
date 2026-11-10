@@ -32,9 +32,16 @@ control sends to the route named, so every answer and refusal is the route's own
   model, as Auto-title does; with redo, replace one session's title.
 - `session.title.shorten` (`POST /api/sessions/shorten-titles`): rename this host's long generated
   titles with the title model; a typed title is kept.
-- `session.worktree.summary`, `session.worktree.cleanup` (`GET /api/worktrees/summary`,
-  `POST /api/worktrees/cleanup`): count a session's repository's merged worktrees, list them (dry
-  run) and remove exactly the paths named, never forced.
+- `session.worktree.summary`, `session.worktree.status` (`GET /api/worktrees/summary`): count a
+  session's repository's worktrees, held and retired (§chat.worktrees/cleanup). `session.worktree.cleanup`
+  is retired: nothing lists or removes worktrees by name, and `POST /api/worktrees/cleanup` is page
+  plumbing, for its one release.
+- `session.worktree.retirement` (`GET /api/worktrees/retirement`): what retirement took and holds in a
+  project, its reasons and how many only wait (§chat.worktrees/retirement).
+- `session.worktree.restore` (`POST /api/worktrees/restore`): put a retired branch back at its last
+  commit and its folder at its old place (§chat.worktrees/retirement).
+- `session.worktree.remove` (`POST /api/worktrees/remove`): remove one worktree with nothing left to land,
+  on an install where automatic cleanup is off; refused everywhere else (§chat.worktrees/pane).
 - `session.diff.summary` (`GET /api/diff/summary`): the files a session's worktree, commit, merge or
   dirty folder changed, as the changes viewer lists them. Its session is given as `--session-path`
   (sent under the query key `session`), not as a session param.

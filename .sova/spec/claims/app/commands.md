@@ -70,7 +70,8 @@ terminal has the session open, `new` makes a new one) and a `meshNeed`.
   `org.claude-login.get`, `org.claude-login.set`, `server.restart`, `session.card.post`,
   `session.card.get`, `session.card.answer`, `project.cards.list`, `session.cleanup`,
   `session.title.auto`, `session.title.shorten`, `session.worktree.summary`,
-  `session.worktree.cleanup`, `session.diff.summary`, `overseer.get`, `overseer.memory.get`,
+  `session.worktree.status`, `session.worktree.retirement`, `session.worktree.restore`,
+  `session.worktree.remove`, `session.diff.summary`, `overseer.get`, `overseer.memory.get`,
   `project.overseer.get`, `project.overseer.actions`, `project.overseer.memory.get`,
   `insights.usage.refresh`, `schedule.list`, `playbook.list`, `draft-spec.list`,
   `project.verb.release.status`, `project.verb.release.logs`, `project.verb.release.request`,
@@ -129,7 +130,9 @@ terminal has the session open, `new` makes a new one) and a `meshNeed`.
   append-only too, and no entry may ever use it again. Retired: `settings.agents.get` (Settings →
   Agents, removed before it was released), and `session.tags.backfill`,
   `session.tags.backfill.status` and `session.tags.backfill.cancel` (their routes went with
-  automatic session tags, §app.decisions/backfill, before the entries were released).
+  automatic session tags, §app.decisions/backfill, before the entries were released), and
+  `session.worktree.cleanup` (nothing lists or removes worktrees by name since automatic retirement,
+  §chat.worktrees/cleanup).
 
 ## §app.commands/cli — The `sova` command line
 

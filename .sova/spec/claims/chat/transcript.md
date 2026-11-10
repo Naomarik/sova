@@ -1431,7 +1431,7 @@ card). On a phone it is `#/overview`, under the list's head row, and opening Sov
 | No session selected (unfolded) | The landing page below, not a bare `.empty`: `.overview` fills `.app-main`: the title "Overview" in `.overview-head`, the Projects section's cards (§app.projects/home-cards), the Start section's action card (`New Session`), then the Sessions card, Mesh, the Extensions section and the Explained grid when there are any, and last the Organizations card. No composer |
 | Loading transcript (after 300ms) | Three placeholder messages in `.thread`: a right-aligned `.skeleton` 40% × 44px, then a left `.skeleton-title` plus 3 `.skeleton-line` at 92/78/60%, then a `.skeleton-row` at 60% width. Put `aria-busy="true"` on the `section`. The head renders straight away from the `SessionSummary` |
 | Error (a watched TUI session) | `.banner.banner-error` in `.transcript-inner`. Title: "Couldn't load this transcript." Body: "The file at `{path}` wasn't changed. {server message}." Action: `Retry`. A chat the server refuses to open shows §app.shell's open-failure banner instead |
-| Empty (new session) | `.empty` with no icon: the title "New session in `~/webapps/sova`.", then, in an ordinary session, the profile cards and what the picked profile changes (§chat.profiles/picker), then the setup card (§chat.transcript/setup-card), then the footnote `.empty-body` "Your first message becomes its title.", then, for a local folder in a git repository with linked worktrees, the worktrees line and its `Clean Up Merged` button (§chat.transcript/empty-worktrees). The composer has focus. Show it only while the thread, holding every row of the branch (a list this short sits at the top, so its older rows, if any, are fetched at once), has no **rendered row**: model, thinking and mode change rows, the profile entry and a Claude login note (§app.claude-logins/switch-login) draw nothing and don't count (the login note is drawn where it sits once a message is on the branch), while local rows such as "Ran `/cmd`" (§chat/slash-commands) still do. Once any rendered row exists, the thread renders normally with no empty state. It opens at its top (the title, then the profile cards), not at its end, and doesn't follow the end; the first rendered row puts the view back to following. Jump to Latest never shows over it: scrolling the empty state (the cards, the setup card) has no latest to jump to |
+| Empty (new session) | `.empty` with no icon: the title "New session in `~/webapps/sova`.", then, in an ordinary session, the profile cards and what the picked profile changes (§chat.profiles/picker), then the setup card (§chat.transcript/setup-card), then the footnote `.empty-body` "Your first message becomes its title.", then, for a local folder in a git repository with linked worktrees, the worktrees line (§chat.transcript/empty-worktrees). The composer has focus. Show it only while the thread, holding every row of the branch (a list this short sits at the top, so its older rows, if any, are fetched at once), has no **rendered row**: model, thinking and mode change rows, the profile entry and a Claude login note (§app.claude-logins/switch-login) draw nothing and don't count (the login note is drawn where it sits once a message is on the branch), while local rows such as "Ran `/cmd`" (§chat/slash-commands) still do. Once any rendered row exists, the thread renders normally with no empty state. It opens at its top (the title, then the profile cards), not at its end, and doesn't follow the end; the first rendered row puts the view back to following. Jump to Latest never shows over it: scrolling the empty state (the cards, the setup card) has no latest to jump to |
 | Agent/server error (`type:"error"`, not busy) | `.banner.banner-error` placed as the last item of the thread (in flow). Title: "The turn stopped with an error." Body: "{message}. Your messages are kept. Send again to retry." The same failure reported again (a reconnect loop) keeps the one banner. It goes once a newer turn starts: a failed turn whose error is in its own row keeps it there, so the thread then reads as a fresh load of the chat does. What else sits in that place stays when a turn starts: a transcript reload that failed, a model turned off in Settings → Models, a usage limit's row offering another subagent profile (§chat.subagent-profiles/limit-row) |
 | Chat didn't start (an `error` before this connection's `hello`, after the server's own retry, §chat.transcript/instant-open; a new session's first connect included, whose messages sent meanwhile come back, §chat.transcript/send-while-starting) | `.banner.banner-error` in the same place. Title: "This chat didn't start." Body: "{message}. Your message is back in the composer. Send again to retry." ("Your messages are back…" for more than one; only "{message}." when nothing came back). One banner, however often the start fails again while the tab keeps reconnecting: the newest reason replaces the old. It goes once a newer turn starts; one that gave nothing back also goes at the chat's next `hello`. Never "The turn stopped with an error.": no turn ran |
 
@@ -1900,31 +1900,22 @@ it is on disk now, its front matter left out.
 
 A new session's empty state (the "Empty (new session)" row of States, above) ends, below its
 footnote and outside the setup card, with one muted line about the git worktrees of the
-repository its folder is in, and a button that removes the merged ones (§chat.worktrees/cleanup).
-Its words are the [copy deck](../design/copy-deck.md)'s §design.copy-deck/worktree-cleanup rows.
+repository its folder is in. It is a plain status with nothing to press: finished worktrees retire by
+themselves (§chat.worktrees/retirement). Its words are the [copy deck](../design/copy-deck.md)'s
+§design.copy-deck/worktree-cleanup rows.
 
 - **When it shows.** For a local folder inside a git repository with at least one linked
   worktree in git's list. A remote session, a folder outside a repository, a repository with no
   linked worktree, and a read that fails show nothing. Never in the Overseer's empty state.
-- **The line.** "{total} worktrees · {merged} merged", with " · {empty} empty" when there are
-  empty leftovers (a branch with no commit of its own). The counts are §chat.worktrees/cleanup's:
-  every linked worktree in git's list, wherever its folder is.
+- **The line.** "{total} worktrees", with " · {held} held" when any are held, and " · {retired} retired"
+  when any retired in the last 7 days: "160 worktrees · 12 held". On an install where automatic cleanup is
+  off because it runs on an agent directory of its own, it ends " · automatic cleanup is off for this
+  install". The counts are §chat.worktrees/cleanup's: every linked worktree in git's list, wherever
+  its folder is, and what retirement holds or has retired in that repository.
 - **Read once.** It reads when the empty state appears (`GET /api/worktrees/summary`), and again
-  only after a removal, or when asked about a different session. Nothing polls: no timer. An
-  answer for a session it no longer shows is dropped. It never holds up the setup card, and the
-  card never waits for it.
-- **The button.** `Clean Up Merged`, outlined and destructive, after the line, only when merged
-  plus empty is above 0. A press first asks for a dry run, and the button says it is checking
-  while that runs. The dry run's answer opens a confirm dialog: what goes (each folder in mono,
-  with its branch, and whether that branch is deleted or kept), then what stays, each with its
-  reason. Its confirm button names the count; with nothing removable the dialog says so and only
-  closes. Focus starts on Cancel.
-- **Confirming** posts exactly the dry run's paths as `expect`, so a tree that changed after the
-  preview is kept with its new reason, never removed. The result is said in a toast and to screen
-  readers: removed {n}, kept {k}, with the kept trees' reasons in the dialog's place until it
-  closes. Then the line reads again.
-- **Accessibility.** The line is a `p` in the empty state; the button is a real `button` with its
-  words as its name; the dialog is an `alertdialog` that traps focus and returns it to the button.
+  only when asked about a different session. Nothing polls: no timer. An answer for a session it no
+  longer shows is dropped. It never holds up the setup card, and the card never waits for it.
+- **Accessibility.** The line is a `p` in the empty state.
 
 ## §chat.transcript/tokens — Tokens
 

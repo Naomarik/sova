@@ -261,18 +261,34 @@ session) keeps its own rule. A worker chat whose stored folder is gone follows t
 other chat.
 
 Nothing on disk changes. The session file keeps its header (its id, its stored folder, its
-project), its transcript and its worktree records; Sova never recreates the missing folder, never
-guesses where it moved, and never rewrites the stored folder. The fallback lasts for that open:
-every open looks again, and once the folder is back the chat opens there.
+project), its transcript and its worktree records; opening a chat never recreates the missing
+folder, Sova never guesses where it moved, and never rewrites the stored folder. The fallback lasts for
+that open: every open looks again, and once the folder is back the chat opens there. One folder that is
+still there counts as gone too: what a retirement's stopped delete left, while it waits for its proof,
+so no chat runs among those files (§chat.worktrees/retirement). Only one thing brings a folder back, and
+it is never reading: a message to a chat whose own folder is in a retired worktree
+(§chat.worktrees/retirement). When that can't happen, the chat stays in the home folder and is told
+why.
 
 - **The user is told.** While the chat runs in the home folder, the chat's hello carries
   `cwdFallback: { original, cwd }`, and the transcript's `.transcript-banner` slot shows a
   `.banner.banner-warn`: "This session's folder is gone", naming the stored folder and saying that
-  the chat runs in the home folder instead and that the session file is unchanged.
+  the chat runs in the home folder instead and that the session file is unchanged. A folder that
+  retired says so instead, titled "This session's worktree was retired": "This session's worktree was
+  retired after {branch} landed. Send a message to bring it back, fresh from {target}.", or, where its
+  branch was kept, "This session's worktree was retired after {branch} landed. Send a message to bring it
+  back on {branch} as it was. It may be behind {target}." A folder still held
+  after a stopped delete is titled "This session's worktree is being cleaned up": "This session's worktree was
+  retired, but files stayed in {folder}, so this chat runs in your home folder, {home}, for now. Once Sova has
+  proved those files safe to delete, a message brings the worktree back."
 - **The agent is told.** Its system prompt gets a note after everything else it appends: the
   stored folder, that it no longer exists on this machine, that the session now runs in the home
   folder, and that earlier messages describe files in that folder which may no longer exist, so it
-  must check before relying on them. pi's own prompt names the home folder as the working
+  must check before relying on them. For a folder that retired, it says instead that its worktree was
+  retired after {branch} landed, and that the next message brings it back, fresh from {target} or, where
+  its branch was kept, on that branch as it was, possibly behind {target}; for one
+  still held, that files stayed there and nothing runs there for now, and that once Sova has proved them
+  safe a message brings it back. pi's own prompt names the home folder as the working
   directory, and every tool runs there.
 - **The sandbox does not widen.** With the sandbox on (§chat.sandbox/what-on-enforces), the
   fallback home folder is not a writable root: the chat writes only in its session tmp, the

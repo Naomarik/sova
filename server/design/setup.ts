@@ -2,7 +2,7 @@
 import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { periodAt, resolvePriceRef, type Aliases, type PriceTable } from "../../shared/model-prices/prices";
+import { periodAt, priceUsage, resolvePriceRef, type Aliases, type PriceTable } from "../../shared/model-prices/prices";
 import { stateRoot } from "../state-root";
 import { designLinksIn, designRouteOf, type DesignRun, type DesignSetup } from "../../shared/design";
 import { DESIGN_DEFAULT_DIRECTION_SETS, DESIGN_DIRECTIONS } from "../../pi-config/extensions/mode/design-guide.ts";
@@ -122,6 +122,33 @@ function pagePrice(ref: string, table: PriceTable, aliases: Aliases, now: number
   if (!("key" in r) || !table.models[r.key]) return null;
   const p = periodAt(table.models[r.key]!, now);
   return p ? (PAGE_OUTPUT_TOKENS * p.rates.output + PAGE_INPUT_TOKENS * p.rates.input) / 1_000_000 : null;
+}
+
+let rates: { at: number; table: PriceTable | null; aliases: Aliases | null } | null = null;
+/** The price tables, read at most once a minute: a page in progress asks several times a second. */
+function priceTables(now: number): { table: PriceTable | null; aliases: Aliases | null } {
+  if (!rates || now - rates.at > 60_000) rates = { at: now, table: priceFile<PriceTable>(join(stateRoot(), "model-prices.json")) ?? priceFile<PriceTable>(join(PRICES_DIR, "seed.json")), aliases: priceFile<Aliases>(join(PRICES_DIR, "aliases.json")) };
+  return rates;
+}
+
+/** Dollars per output token on `ref`, or null when it has no price (a local or unpriced model: no estimate, never $0). */
+export function outputRate(ref: string, now = Date.now()): number | null {
+  const { table, aliases } = priceTables(now);
+  if (!table || !aliases) return null;
+  const slash = ref.indexOf("/");
+  const r = resolvePriceRef(table, aliases, { provider: ref.slice(0, slash), model: ref.slice(slash + 1) }, now);
+  if (!("key" in r) || !table.models[r.key]) return null;
+  const p = periodAt(table.models[r.key]!, now);
+  return p && p.rates.output > 0 ? p.rates.output / 1_000_000 : null;
+}
+
+/** One reply's cost by Sova's own price table, as the usage ledger counts it (API prices on a subscription too), or
+    null when the table has no price for it. The card's cost and its estimate while writing come from the same place. */
+export function replyCost(ref: { provider: string; model: string }, u: { input: number; output: number; cacheRead: number; cacheWrite: number }, at: number): number | null {
+  const { table, aliases } = priceTables(Date.now());
+  if (!table || !aliases) return null;
+  const p = priceUsage(table, aliases, ref, { input: u.input, output: u.output, cacheRead: u.cacheRead, cacheWrite5m: u.cacheWrite, cacheWrite1h: 0 }, at);
+  return p.status === "priced" ? p.usd.total : null;
 }
 
 /** What a run should cost, for the question above the free limit; null when a price is missing. */

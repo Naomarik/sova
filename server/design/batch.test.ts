@@ -667,6 +667,19 @@ test("a design made from others starts its session on the real prompt, with no d
   assert.ok(fakes[1]!.sends[0]!.text.includes(PAGE));
 });
 
+test("a reply's cost is Sova's price for it, as the usage ledger counts it, even where the provider reports none", async () => {
+  const f = await start();
+  const file = join(dir, "priced.jsonl");
+  const at = "2026-01-01T00:00:00.000Z";
+  const usage = { input: 0, output: 1_000_000, cacheRead: 0, cacheWrite: 0, totalTokens: 1_000_000, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } };
+  writeFileSync(file, [{ type: "session", version: 3, id: "x", timestamp: at, cwd: dir }, { type: "message", id: "a", parentId: null, timestamp: at, message: { role: "assistant", provider: "ollama-cloud", model: "glm-5.3", content: [], usage, stopReason: "stop", timestamp: Date.parse(at) } }].map((l) => JSON.stringify(l)).join("\n") + "\n");
+  store.changeDesign(parent.sessionId, "A", (d) => void (d.sessionFile = file));
+  (registry as unknown as { onFeed(h: unknown, x: unknown): void }).onFeed(f, { t: "feed", cursor: { proc: f.mirror.worker.proc, seq: 1 }, event: { type: "message_end", message: { role: "assistant" } } });
+  await waitFor(() => stat("A").usage !== undefined);
+  // The seed table's price for it: $4.40 a million output tokens. The provider said $0.
+  assert.ok(Math.abs(stat("A").usage!.cost - 4.4) < 1e-9, String(stat("A").usage!.cost));
+});
+
 test("the cost moves as each reply ends, and a session past its reach ends in Failed", async () => {
   const f = await start();
   const file = join(dir, "usage.jsonl");

@@ -77,7 +77,13 @@ export interface DesignRecord {
   /** Its session is thinking and hasn't begun the page: draw that instead of an empty Writing. */
   thinking?: true;
   /** The page being written now, while there is one. */
-  live?: { version: number; chars: number };
+  live?: {
+    version: number;
+    chars: number;
+    /** An estimate, in dollars, of the session's cost so far: its finished replies' real cost plus the page written so
+        far at the model's output price. Absent for a model with no price; the real `usage` replaces it when the reply ends. */
+    estimateUsd?: number;
+  };
   /** The session's id once it has one; absent while queued. */
   sessionId?: string;
   sessionFile?: string;

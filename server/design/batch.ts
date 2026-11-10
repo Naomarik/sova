@@ -16,6 +16,7 @@ import { agentRoot } from "../state-root";
 import { applySlice, clearLivePage, livePage } from "./live";
 import { noteDesignEvent } from "./coordinator";
 import { pageProblem } from "./lint";
+import { replyCost } from "./setup";
 import { pageInReply } from "./stream-decode";
 import { changeDesign, changeDesigns, designOf, designRoot, designSessions, nextLabel, pendingPage, readDesigns, readPage, runOf, setPendingPage, setRunPhase, viewOf, writePage } from "./store";
 
@@ -526,7 +527,7 @@ async function noteUsage(sessionId: string, label: string, file: string): Promis
       if (e.kind !== "assistant" || !e.usage) continue;
       input += e.usage.input + e.usage.cacheRead + e.usage.cacheWrite;
       output += e.usage.output;
-      cost += e.usage.cost ?? 0;
+      cost += (e.provider && e.model ? replyCost({ provider: e.provider, model: e.model }, e.usage, e.sentAt ?? Date.now()) : null) ?? e.usage.cost ?? 0;
     }
     changeDesign(sessionId, label, (d) => void (d.usage = { input, output, cost }));
   } catch {

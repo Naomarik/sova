@@ -12,6 +12,11 @@ const { mountDesignLiveRoutes } = await import("./live-route");
 const { applySlice, clearLivePage } = await import("./live");
 const { LIVE_LINK_MS, liveLinkOpens, mintLiveLink, setLiveLinkClockForTest } = await import("./live-link");
 const store = await import("./store");
+const { designView } = await import("./live");
+const { writeFileSync, mkdirSync } = await import("node:fs");
+// A price table of the test's own, so the figures can't move with the real one.
+mkdirSync(join(process.env.PI_CODING_AGENT_DIR!, "sova"), { recursive: true });
+writeFileSync(join(process.env.PI_CODING_AGENT_DIR!, "sova", "model-prices.json"), JSON.stringify({ version: 1, models: { "zai/priced": { name: "P", periods: [{ from: null, until: null, rates: { input: 1, output: 36, cacheRead: 0 } }] } } }));
 const { classifyRequest } = await import("../mesh/access");
 
 const sid = "chat";
@@ -168,4 +173,23 @@ test("asking for a link: a bad chat is 400, nothing being written is 404", async
 
 test("a mesh peer needs full access for both the link and the page, like every design route", () => {
   for (const path of ["/api/design/live-page/abc", "/api/design/A/live-url"]) assert.equal(classifyRequest("GET", path).need, "full", path);
+});
+
+test("while a page is written its card has an estimate: the finished replies' cost plus the page so far at the output price", async () => {
+  const set = (model: string) =>
+    store.changeDesign(sid, label, (d) => {
+      d.model = model;
+      d.usage = { input: 0, output: 0, cost: 0.5 };
+      d.live = { version: 1, chars: 0 };
+    });
+  set("zai/priced");
+  slice(1, 0, "x".repeat(36_000));
+  const est = () => designView(sid).designs.find((d) => d.label === label)!.live!.estimateUsd;
+  // 36,000 characters is 10,000 tokens; at $36 a million that is $0.36, on top of the $0.50 already spent.
+  assert.ok(Math.abs(est()! - 0.86) < 1e-9, String(est()));
+  slice(1, 36_000, "x".repeat(3_600));
+  assert.ok(Math.abs(est()! - 0.896) < 1e-9, "it climbs as the page grows");
+  // A model the table has no price for gets no estimate, never $0.
+  set("zai/no-such-model");
+  assert.equal(est(), undefined);
 });

@@ -3,6 +3,8 @@
 import type { DesignChatView } from "../../shared/design";
 import { DESIGN_SAFETY_CHARS } from "../../shared/design";
 import type { SovaEvent } from "../../shared/harness";
+import { tokensOfText } from "../../src/lib/design-frame";
+import { outputRate } from "./setup";
 import { onDesignChanged, viewOf } from "./store";
 
 /** How long changes gather before the view goes out. */
@@ -107,10 +109,19 @@ export function clearLivePage(sessionId: string, label: string): void {
   endFollowers(key);
 }
 
-/** The view as the page reads it, each page in progress at its current length. */
+/** The view as the page reads it, each page in progress at its current length and, where its model has a price,
+    what the session has cost so far: the page written so far at the output price, on top of its finished replies. */
 export function designView(sessionId: string): DesignChatView {
   const v = viewOf(sessionId);
-  return { ...v, designs: v.designs.map((d) => (d.live ? { ...d, live: { ...d.live, chars: livePage(sessionId, d.label)?.chars ?? d.live.chars } } : d)) };
+  return {
+    ...v,
+    designs: v.designs.map((d) => {
+      if (!d.live) return d;
+      const chars = livePage(sessionId, d.label)?.chars ?? d.live.chars;
+      const rate = outputRate(d.model);
+      return { ...d, live: { ...d.live, chars, ...(rate === null ? {} : { estimateUsd: (d.usage?.cost ?? 0) + tokensOfText(chars) * rate }) } };
+    }),
+  };
 }
 
 const due = new Map<string, NodeJS.Timeout>();

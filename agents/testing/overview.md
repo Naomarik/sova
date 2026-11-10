@@ -160,7 +160,9 @@ environment every runner starts in, and the hermetic dev server.
   `sandbox-runtime.integration.test.ts` skip (`macConfinedBrowserSkip`). A test that only needs the
   server's choice stands in a file of its own (`runner.test.ts`).
 - `scripts/install.test.sh` sets `SOVA_APP_SYSTEM_APPS` to an empty folder of its own, so its Darwin
-  cases never pick the Mac's `/Applications` browsers; keep it exported for any new Darwin case.
+  cases never pick the Mac's `/Applications` browsers; keep it exported for any new Darwin case. Its
+  cases of the old Sova-only profile's move to the Trash keep the profile, the browser launchers and
+  the Trash under the case's own HOME, and the browser running on it is a process of the test's own.
 - Chrome puts named Unix sockets under `TMPDIR`, and `assertTourBrowserTempPath`
   (`server/tours/browser.ts`) refuses a base whose socket path would pass 100 bytes. Run them with a
   short temp dir outside any repository, e.g. `TMPDIR=/dev/shm/q` (create it first); a sandboxed
@@ -170,10 +172,6 @@ environment every runner starts in, and the hermetic dev server.
   `server/mesh/lan-handoff.ts` refuses it), removed when the file ends or the runner stops. A runner killed by SIGKILL leaves its roots
   (`/tmp/sova-test-home-*`) until macOS clears `/tmp`. If `/tmp` can't be written, the long `TMPDIR`
   stays, and those tests are refused.
-- `scripts/mac-mic-launch-check.ts` is in no tier and matches no glob: it starts the Mac's real Chrome
-  and opens the real microphone, so a person runs it by hand (`bun scripts/mac-mic-launch-check.ts`,
-  outside any sandbox) after changing how `scripts/mac-app.ts` or the launcher starts the window. Its
-  control case is the old launch: it must hang, or the run proves nothing.
 - The runner kills any one file after 300 s (`TEST_FILE_LIMIT_MS`), the per-file cap, under the
   integration tier's load too. Each browser launch costs seconds: split a growing Chrome file by
   scenario (as `runner-signin`, `-landed` and `-inplace` are) rather than raising its test timeouts.

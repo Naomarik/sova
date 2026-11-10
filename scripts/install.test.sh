@@ -6,6 +6,8 @@
 # anything, and nothing outside the temporary directory is touched. No case can see a terminal
 # unless it hands the installer one (SOVA_TTY). The cases of `sova app` stub the browsers, the
 # health check (curl), the openers, the notifiers, sips and iconutil: no real browser is started.
+# The old Sova-only profile, the browser launchers and the Trash those cases move them to are
+# under the case's own HOME, and the browser running on that profile is the test's own process.
 #
 # Run: scripts/install.test.sh   (TMPDIR picks where the temporary directory goes;
 #      TEST_BASH=/bin/bash runs the installer under another bash, e.g. macOS's 3.2)
@@ -19,6 +21,9 @@ tmp=$(mktemp -d "${TMPDIR:-/tmp}/sova-install-test.XXXXXX")
 # instead, so no case ever finds or starts the Mac's real Google Chrome (a crash or Keychain dialog).
 export SOVA_APP_SYSTEM_APPS="$tmp/no-system-apps"
 mkdir -p "$SOVA_APP_SYSTEM_APPS"
+# ... and its Trash step runs no /usr/bin/trash, which would move a case's files into the Mac's own
+# Trash: a path that isn't there, so it moves them into the case HOME's ~/.Trash itself.
+export SOVA_APP_TRASH="$tmp/no-trash-tool"
 test_bash=${TEST_BASH:-bash}
 trap 'rm -rf "$tmp"' EXIT
 pass=0
@@ -36,7 +41,7 @@ nopnpm=$tmp/sandbox-nopnpm       # npx but no pnpm: the installer runs pnpm thro
 nopm=$tmp/sandbox-nopm           # neither pnpm nor npx
 stubs=$tmp/stubs                 # not on any PATH; the pnpm stub lives here so npx can reach it
 mkdir -p "$sandbox" "$nogit" "$nopnpm" "$nopm" "$stubs"
-for c in awk basename bash cat chmod cmp cp dirname env grep head id ln mkdir mktemp mv nohup printf readlink rm rmdir sed sh sleep sort touch tr wc; do
+for c in awk basename bash cat chmod cmp cp date dirname env grep head id ln mkdir mktemp mv nohup printf readlink rm rmdir sed sh sleep sort touch tr wc; do
 	for d in "$sandbox" "$nogit" "$nopnpm" "$nopm"; do ln -sf "$(command -v "$c")" "$d/$c"; done
 done
 for d in "$sandbox" "$nopnpm" "$nopm"; do ln -sf "$(command -v git)" "$d/git"; done  # $nogit has no git
@@ -149,10 +154,7 @@ printf '[tools]\nnode = "25.2.1"\nbun = "1.4.2"\n' > "$seed/mise.toml"
 mkdir -p "$seed/public/icons"
 printf 'not really a png\n' > "$seed/public/icons/pwa-512.png"
 # fetch-bun.sh <dir>: a <dir>/bin/bun that reports the pinned version, kept when it already does;
-# every call logged to $BUN_LOG, and BUN_FAIL=1 fails it. Run on scripts/mac-app.ts (the seed's is
-# a placeholder), the bun logs that call to $MAC_APP_LOG and answers as FAKE_MAC_<CHECK|INSTALL|OPEN>
-# say: by default check says "already installed" (0, so a real browser some case finds on this Mac
-# starts nothing), install succeeds (0), open says "not installed" (10).
+# every call logged to $BUN_LOG, and BUN_FAIL=1 fails it.
 cat > "$seed/scripts/fetch-bun.sh" <<'STUB'
 #!/bin/sh
 [ -z "${BUN_LOG:-}" ] || printf 'fetch %s\n' "$1" >> "$BUN_LOG"
@@ -163,17 +165,6 @@ if [ "$("$1/bin/bun" --version 2>/dev/null)" != 1.4.2 ]; then
 	cat > "$1/bin/bun" <<'BUN'
 #!/bin/sh
 [ "$1" = --version ] && { echo 1.4.2; exit 0; }
-case "$1" in
-	*/scripts/mac-app.ts)
-		shift
-		[ -z "${MAC_APP_LOG:-}" ] || printf '%s\n' "$*" >> "$MAC_APP_LOG"
-		case "$1" in
-			check) exit "${FAKE_MAC_CHECK:-0}" ;;
-			install) echo "mac-app stub: installed"; exit "${FAKE_MAC_INSTALL:-0}" ;;
-			open) exit "${FAKE_MAC_OPEN:-10}" ;;
-		esac
-		exit 2 ;;
-esac
 echo "bun stub: $*"
 BUN
 	chmod 755 "$1/bin/bun"
@@ -185,7 +176,6 @@ cat > "$seed/scripts/start-server.sh" <<'STUB'
 #!/bin/sh
 printf 'start-server stub ran: SOVA_BUN=%s args=%s PORT=%s\n' "${SOVA_BUN:-}" "$*" "${PORT:-}"
 STUB
-printf '// placeholder: the stub bun answers for it\n' > "$seed/scripts/mac-app.ts"
 chmod 755 "$seed/scripts/fetch-bun.sh" "$seed/scripts/start-server.sh"
 # pi-config: two extensions (a directory and a single file), a non-extension file, and the
 # personal config the installer must not install.
@@ -741,7 +731,7 @@ check "$(yes_if [ "$status" -eq 0 ] && [ -x "$home/Applications/Sova.app/Content
 	"entry, mac without sips/iconutil: the bundle, with no icon"
 
 # 30. `sova app` with the server up: the browser it picks, the window it opens (bare, unlocked,
-#     its own profile, no debugging port), and the tab it falls back to.
+#     in the browser's own profile, no debugging port), and the tab it falls back to.
 run_install app-pick --port 4811 --no-service
 mkdir -p "$home/.pi/agent/sova"
 printf 'tok-app\n' > "$home/.pi/agent/sova/auth-token"
@@ -774,17 +764,18 @@ check "$(yes_if [ "$lstatus" -eq 0 ])" "sova app: exits 0"
 check "$(yes_if [ "$(head -n 1 "$browsed" 2>/dev/null)" = "$fake/chrome-bin/google-chrome-stable" ])" \
 	"sova app: the default browser, run as its .desktop file's Exec names it"
 check "$(yes_if grep -qxF -- '--app=http://127.0.0.1:4811/#t=tok-app' "$browsed")" "sova app: a bare app window, unlocked, on the install's port"
-check "$(yes_if grep -qxF -- "--user-data-dir=$home/.config/sova-browser" "$browsed")" "sova app: a profile of its own"
-check "$(yes_if grep -qxF -- '--no-first-run' "$browsed" && grep -qxF -- '--no-default-browser-check' "$browsed")" "sova app: no first-run or default-browser prompts"
-check "$(yes_if [ -z "$(grep -- '--remote-debugging' "$browsed")" ])" "sova app: no debugging port"
-check "$(yes_if grep -qF '"custom_chrome_frame":false' "$home/.config/sova-browser/Default/Preferences" && [ -e "$home/.config/sova-browser/First Run" ])" \
-	"sova app: a new profile uses the system title bar and skips the first-run page"
+check "$(yes_if [ "$(sed -n '2,$p' "$browsed" 2>/dev/null)" = '--app=http://127.0.0.1:4811/#t=tok-app' ])" \
+	"sova app: the browser's own profile: --app is all it is given (no --user-data-dir, no first-run switches, no debugging port)"
+check "$(yes_if [ ! -e "$home/.config/sova-browser" ])" "sova app: no profile of its own is made or seeded"
 check "$(yes_if [ ! -s "$tmp/app-pick/opened" ])" "sova app: no tab as well"
-printf '{"mine":true}\n' > "$home/.config/sova-browser/Default/Preferences"
 app_cmd "$fake:$up:$sandbox" FAKE_DEFAULT_BROWSER=google-chrome.desktop "$home/.local/bin/sova" open
 wait_for "$browsed" || true
 check "$(yes_if grep -qxF -- '--app=http://127.0.0.1:4811/#t=tok-app' "$browsed")" "sova open: the same window as sova app"
-check "$(yes_if grep -qF '"mine":true' "$home/.config/sova-browser/Default/Preferences")" "sova app: an existing profile is left as it is"
+# `sova app --install`, which older versions had: just Sova's window.
+app_cmd "$fake:$up:$sandbox" FAKE_DEFAULT_BROWSER=google-chrome.desktop "$home/.local/bin/sova" app --install
+wait_for "$browsed" || true
+check "$(yes_if [ "$lstatus" -eq 0 ] && [ "$(sed -n '2,$p' "$browsed" 2>/dev/null)" = '--app=http://127.0.0.1:4811/#t=tok-app' ])" \
+	"sova app --install: opens the same window as sova app, exits 0"
 # The default browser is not Chromium-family (or there is no xdg-settings): the first on PATH.
 mk_browser "$fake/path-bin/chromium"
 app_cmd "$fake/path-bin:$fake:$up:$sandbox" FAKE_DEFAULT_BROWSER=firefox.desktop "$home/.local/bin/sova" app
@@ -799,8 +790,8 @@ check "$(yes_if [ "$lstatus" -eq 0 ] && grep -qxF 'http://127.0.0.1:4811/#t=tok-
 check "$(yes_if [ ! -e "$browsed" ])" "sova app, no such browser: no browser started"
 
 # 31. macOS: the default https handler when it is one of them, else the first bundle found; the
-#     bundle started through `open -n -a`, with the macOS profile folder, and directly when `open`
-#     fails or isn't there; `open` as the tab fallback.
+#     bundle started through `open -n -a` with --app alone (the browser's own profile), and directly
+#     when `open` fails or isn't there; `open` as the tab fallback.
 FAKE_UNAME=Darwin run_install app-mac --no-service
 mkdir -p "$home/.pi/agent/sova"
 printf 'tok-mac\n' > "$home/.pi/agent/sova/auth-token"
@@ -854,11 +845,12 @@ mac_cmd "$mac:$up:$sandbox"
 wait_for "$browsed" || true
 check "$(yes_if [ "$lstatus" -eq 0 ] && [ "$(head -n 1 "$browsed" 2>/dev/null)" = "$home/Applications/Brave Browser.app/Contents/MacOS/Brave Browser" ])" \
 	"sova app, mac: the default https handler's bundle executable"
-check "$(yes_if grep -qxF -- "--user-data-dir=$home/Library/Application Support/sova-browser" "$browsed")" "sova app, mac: the macOS profile folder"
+check "$(yes_if [ "$(sed -n '2,$p' "$browsed" 2>/dev/null)" = '--app=http://127.0.0.1:4800/#t=tok-mac' ] && [ ! -e "$home/Library/Application Support/sova-browser" ])" \
+	"sova app, mac: the browser's own profile: --app alone, and no profile made for Sova"
 check "$(yes_if [ "$(sed -n 1,3p "$tmp/app-mac/launched" 2>/dev/null | tr '\n' '|')" = "-n|-a|$home/Applications/Brave Browser.app|" ] && [ "$(sed -n 4p "$tmp/app-mac/launched")" = --args ])" \
 	"sova app, mac: the window starts through macOS's launcher, a new instance of the browser's bundle"
-check "$(yes_if grep -qxF -- '--app=http://127.0.0.1:4800/#t=tok-mac' "$tmp/app-mac/launched" && grep -qxF -- '--no-first-run' "$tmp/app-mac/launched" && grep -qxF -- '--no-default-browser-check' "$tmp/app-mac/launched" && grep -qxF -- "--user-data-dir=$home/Library/Application Support/sova-browser" "$tmp/app-mac/launched")" \
-	"sova app, mac: the launcher gets the unlocked URL, the profile and the no-prompt flags"
+check "$(yes_if [ "$(tr '\n' '|' < "$tmp/app-mac/launched" 2>/dev/null)" = "-n|-a|$home/Applications/Brave Browser.app|--args|--app=http://127.0.0.1:4800/#t=tok-mac|" ])" \
+	"sova app, mac: open -n -a <bundle> --args --app=<the unlocked URL>, and nothing else"
 # open answered, and nothing else starts it: a direct start would be a second one.
 touch "$tmp/app-mac/open-no-start"
 mac_cmd "$mac:$up:$sandbox"
@@ -956,118 +948,162 @@ check "$(yes_if grep -qE 'launchctl kickstart gui/[0-9]+/io.github.naomarik.sova
 check "$(yes_if [ "$lstatus" -ne 0 ] && grep -qF 'Library/Logs/sova.log' "$case_dir/notified")" \
 	"server down, launchd agent, no answer: osascript notifies, naming its log"
 
-# 33. macOS, Sova as an app of its own: with a browser for `sova app`, the installer runs
-#     `sova app --install --auto` after the rest (the helper on the install's Bun, with the
-#     browser, the profile, the port and the token file), closing a running window only when it
-#     has a terminal; a helper that finds it installed starts nothing; a failure is said and the
-#     install still succeeds; --no-app-entry runs none of it. `sova app` opens the installed app
-#     when the helper does, and the bare window when it says there is none (case 31).
-mac_app_case() {    # mac_app_case <case name> [args...]: a Mac with a default browser of ours, server up
-	local name=$1; shift
-	fresh_home "$name"
-	mac_app_bin=$tmp/$name/bin
-	mkdir -p "$mac_app_bin"
-	browsed=$tmp/$name/browsed
-	mk_browser "$home/Applications/Brave Browser.app/Contents/MacOS/Brave Browser"
-	# Brave as the default: a stand-in in ~/Applications, where no real one is in /Applications.
-	cat > "$mac_app_bin/defaults" <<'STUB'
+# 33. The browser profile older versions kept for Sova alone goes to the Trash: moved by the
+#     installer and by `sova app`; on macOS with the browser's launchers for apps installed in it
+#     and no other launcher; never while a browser runs on it, nor without pgrep to ask; never
+#     failing `sova app`; nothing at all when there is nothing to move. Everything is under the
+#     case's own HOME, and the browser on the profile is a process of the test's own.
+pgrep_bin=$(command -v pgrep 2>/dev/null || true)
+retire_bin=$tmp/retire-bin           # pgrep, and a defaults that reads a key from a stand-in Info.plist
+nopgrep_bin=$tmp/retire-nopgrep
+mkdir -p "$retire_bin" "$nopgrep_bin"
+[ -z "$pgrep_bin" ] || ln -sf "$pgrep_bin" "$retire_bin/pgrep"
+cat > "$retire_bin/defaults" <<'STUB'
 #!/usr/bin/env bash
-case "$*" in
-	*launchservices.secure*LSHandlers)
-		cat <<'OUT'
-(
-        {
-        LSHandlerRoleAll = "com.brave.browser";
-        LSHandlerURLScheme = https;
-    }
-)
-OUT
-		;;
-	*) exit 1 ;;
-esac
+# defaults read <path without .plist> <key>: the <string> on the line after <key>; else nothing, 1
+[ "${1:-}" = read ] && [ -f "${2:-}.plist" ] || exit 1
+sed -n "/<key>$3<\/key>/{n;s/.*<string>\(.*\)<\/string>.*/\1/p;}" "$2.plist" | grep .
 STUB
-	chmod 755 "$mac_app_bin/defaults"
+chmod 755 "$retire_bin/defaults"
+ln -sf "$retire_bin/defaults" "$nopgrep_bin/defaults"
+shim() {            # shim <launcher .app> <CrAppModeUserDataDir>: a browser's launcher for an installed app
+	mkdir -p "$1/Contents"
+	printf '<?xml version="1.0" encoding="UTF-8"?>\n<plist version="1.0">\n<dict>\n\t<key>CrAppModeUserDataDir</key>\n\t<string>%s</string>\n</dict>\n</plist>\n' "$2" > "$1/Contents/Info.plist"
+}
+retire_app() {      # retire_app <PATH> [args...]: `sova app` on a Mac, server up, from this case's HOME
+	local path=$1; shift
+	rm -f "$browsed"
+	set +e
+	launch=$(env -u PI_CODING_AGENT_DIR -u PORT FAKE_UNAME=Darwin HOME="$home" FAKE_UP="$tmp/up.always" PATH="$path" "$home/.local/bin/sova" app "$@" 2>&1)
+	lstatus=$?
+	set -e
+}
+if [ -z "$pgrep_bin" ]; then
+	printf '  skip the old profile cases that need pgrep: there is none on this machine\n'
+else
+	fresh_home retire-mac
+	old="$home/Library/Application Support/sova-browser"
+	apps=$home/Applications
+	trash=$home/.Trash
+	mkdir -p "$old/Default"
+	printf 'old\n' > "$old/Default/Preferences"
+	shim "$apps/Chrome Apps.localized/sova.app" "$old/Default/Web Applications/_crx_sova"
+	shim "$apps/Brave Browser Apps.localized/sova.app" "$old/Default/Web Applications/_crx_sova"
+	shim "$apps/Chrome Apps.localized/GitLab.app" "$home/Library/Application Support/Google/Chrome/Default/Web Applications/_crx_gitlab"
+	shim "$apps/Chrome Apps.localized/Near.app" "$old-other/Default/Web Applications/_crx_near"
+	mkdir -p "$trash/sova-browser"       # something of that name in the Trash already
+	FAKE_UNAME=Darwin CASE_PATH="$retire_bin:$sandbox" inst --no-service
+	moved=$(find "$trash" -mindepth 1 -maxdepth 1 -name 'sova-browser ?*' -print)
+	check "$(yes_if [ "$status" -eq 0 ])" "old profile, mac: the install exits 0"
+	check "$({ [ ! -e "$old" ] && [ -n "$moved" ] && grep -qxF old "$moved/Default/Preferences"; } && echo true || echo false)" \
+		"old profile, mac: the installer moved it to ~/.Trash, under a dated name beside the item already named so"
+	check "$(yes_if [ -z "$(ls -A "$trash/sova-browser")" ])" "old profile, mac: the Trash's own item of that name is left as it was"
+	check "$({ [ ! -e "$apps/Chrome Apps.localized/sova.app" ] && [ ! -e "$apps/Brave Browser Apps.localized/sova.app" ] &&
+		[ -f "$trash/sova.app/Contents/Info.plist" ] && [ -n "$(find "$trash" -mindepth 1 -maxdepth 1 -name 'sova ?*.app' -print)" ]; } && echo true || echo false)" \
+		"old profile, mac: every browser launcher for an app in it went to the Trash too, the second one dated"
+	check "$(yes_if [ -f "$apps/Chrome Apps.localized/GitLab.app/Contents/Info.plist" ] && [ -f "$apps/Chrome Apps.localized/Near.app/Contents/Info.plist" ])" \
+		"old profile, mac: launchers for apps in another profile stay (one whose path only starts like it too)"
+	check "$(yes_if [ -z "$(printf '%s' "$out" | grep -i 'trash\|sova-browser')" ])" "old profile, mac: the installer says nothing about it"
+	# A browser running on it (the old window an upgrade from Settings runs in): it waits, and the
+	# window opens anyway; once that browser is gone, the next `sova app` moves it.
+	mkdir -p "$home/.pi/agent/sova" "$old"
+	printf 'tok-retire\n' > "$home/.pi/agent/sova/auth-token"
+	printf 'in use\n' > "$old/marker"
+	browsed=$tmp/retire-mac/browsed
+	mk_browser "$apps/Google Chrome.app/Contents/MacOS/Google Chrome"
+	bash -c 'sleep 60; :' stand-in-browser "--user-data-dir=$old" &
+	runner=$!
+	retire_app "$retire_bin:$up:$sandbox"
+	wait_for "$browsed" || true
+	check "$(yes_if [ "$lstatus" -eq 0 ] && [ -f "$old/marker" ] && grep -qxF -- '--app=http://127.0.0.1:4800/#t=tok-retire' "$browsed")" \
+		"old profile, mac: a browser runs on it: left in place, and Sova's window opens all the same"
+	kill "$runner" 2>/dev/null || true
+	wait "$runner" 2>/dev/null || true
+	# No pgrep to ask: it can't tell, so it stays.
+	retire_app "$nopgrep_bin:$up:$sandbox"
+	wait_for "$browsed" || true
+	check "$(yes_if [ "$lstatus" -eq 0 ] && [ -f "$old/marker" ] && [ -s "$browsed" ])" "old profile, mac, no pgrep: left in place, the window opens"
+	# A Trash it can't move into: `sova app` still opens the window.
+	mv "$trash" "$home/Trash.kept"
+	printf 'not a folder\n' > "$trash"
+	retire_app "$retire_bin:$up:$sandbox"
+	wait_for "$browsed" || true
+	check "$(yes_if [ "$lstatus" -eq 0 ] && [ -f "$old/marker" ] && [ -s "$browsed" ])" "old profile, mac, the Trash unusable: left in place, the window opens, exit 0"
+	rm -f "$trash"
+	mv "$home/Trash.kept" "$trash"
+	retire_app "$retire_bin:$up:$sandbox"
+	wait_for "$browsed" || true
+	check "$({ [ "$lstatus" -eq 0 ] && [ ! -e "$old" ] && [ -n "$(grep -lx 'in use' "$trash"/sova-browser*/marker 2>/dev/null)" ] && [ -s "$browsed" ]; } && echo true || echo false)" \
+		"old profile, mac: the browser gone, the next sova app moves it, then opens the window"
+	# Nothing left to move: nothing under HOME changes.
+	touch "$tmp/retire-mac/stamp"
+	sleep 1
+	retire_app "$retire_bin:$up:$sandbox"
+	wait_for "$browsed" || true
+	check "$(yes_if [ "$lstatus" -eq 0 ] && [ -z "$(find "$home" -newer "$tmp/retire-mac/stamp" -print)" ])" "old profile, mac: nothing to move, nothing under HOME changes"
+	retire_app "$retire_bin:$up:$sandbox" --retire-profile
+	check "$(yes_if [ "$lstatus" -eq 0 ] && [ -z "$launch" ] && [ ! -e "$browsed" ])" "sova app --retire-profile: only that step, silent, no window"
+	# macOS's own trash (15 and later), when there is one: it moves each, asked to fail when it can't.
+	mkdir -p "$old"
+	shim "$apps/Chrome Apps.localized/sova.app" "$old/Default/Web Applications/_crx_sova"
+	mkdir -p "$tmp/retire-mac/trash-tool-got"
+	printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$*" >> "%s"\n[ "$1" = -s ] && mv "$2" "%s/"\n' "$tmp/retire-mac/trash-tool.log" "$tmp/retire-mac/trash-tool-got" > "$tmp/retire-mac/trash-tool"
+	chmod 755 "$tmp/retire-mac/trash-tool"
+	SOVA_APP_TRASH="$tmp/retire-mac/trash-tool" retire_app "$retire_bin:$up:$sandbox" --retire-profile
+	check "$({ [ "$lstatus" -eq 0 ] && [ "$(cat "$tmp/retire-mac/trash-tool.log" 2>/dev/null)" = "-s $apps/Chrome Apps.localized/sova.app
+-s $old" ] &&
+		[ -d "$tmp/retire-mac/trash-tool-got/sova.app" ] && [ -d "$tmp/retire-mac/trash-tool-got/sova-browser" ]; } && echo true || echo false)" \
+		"old profile, mac: through macOS's own trash tool when there is one, the launcher first, then the profile"
+
+	# Linux: the freedesktop.org Trash under XDG_DATA_HOME's default, with a matching .trashinfo; gio's
+	# trash when gio is there.
+	fresh_home retire-linux
+	old=$home/.config/sova-browser
+	mkdir -p "$old/Default"
+	printf 'old\n' > "$old/Default/Preferences"
+	CASE_PATH="$retire_bin:$sandbox" inst --no-service
+	xtrash=$home/.local/share/Trash
+	info=$xtrash/info/sova-browser.trashinfo
+	check "$(yes_if [ "$status" -eq 0 ] && [ ! -e "$old" ] && grep -qxF old "$xtrash/files/sova-browser/Default/Preferences")" \
+		"old profile, linux: the installer moved it to ~/.local/share/Trash/files"
+	check "$({ [ "$(head -n 1 "$info" 2>/dev/null)" = '[Trash Info]' ] && grep -qxF "Path=${home// /%20}/.config/sova-browser" "$info" &&
+		grep -qE '^DeletionDate=[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}$' "$info"; } && echo true || echo false)" \
+		"old profile, linux: its .trashinfo names where it was (percent-encoded) and when"
+	mkdir -p "$old"
+	printf 'second\n' > "$old/marker"
 	mkdir -p "$home/.pi/agent/sova"
-	printf 'tok-pwa\n' > "$home/.pi/agent/sova/auth-token"
-	mac_log=$tmp/$name/mac-app.log
-	FAKE_MAC_CHECK=1 FAKE_UNAME=Darwin FAKE_UP="$tmp/up.always" MAC_APP_LOG="$mac_log" CASE_PATH="$mac_tools:$mac_app_bin:$up:$sandbox" inst --no-service "$@"
-}
-helper_browsers_ours() {   # every --browser the helper was given is under this test's own folders, and there is one
-	local b n=0
-	while IFS= read -r b; do
-		n=$((n + 1))
-		case "$b" in "$tmp"/*) ;; *) return 1 ;; esac
-	done < <(sed -n 's/.*--browser \(.*\) --profile .*/\1/p' "$mac_log")
-	[ "$n" -gt 0 ]
-}
-brave_exe="Brave Browser.app/Contents/MacOS/Brave Browser"
-mac_app_case app-pwa
-mac_profile="$home/Library/Application Support/sova-browser"
-check "$(yes_if [ "$status" -eq 0 ])" "app, mac: exits 0"
-check "$(yes_if grep -qxF "check --browser $home/Applications/$brave_exe --profile $mac_profile --port 4800 --auto" "$mac_log")" \
-	"app, mac: asks the helper first, with the browser, the profile and the port"
-check "$(yes_if grep -qxF "install --browser $home/Applications/$brave_exe --profile $mac_profile --port 4800 --token-file $home/.pi/agent/sova/auth-token --auto" "$mac_log")" \
-	"app, mac: installs through the helper, unlocked by the token file; no terminal, so a running window is left open"
-check "$(yes_if helper_browsers_ours)" "app, mac: the browser handed to the helper is the test's own, never the Mac's"
-check "$({ said 'mac-app stub: installed' && said 'app: Sova is an app of its own'; } && echo true || echo false)" "app, mac: passes on what the helper says, and says what it is now"
-check "$(yes_if [ -x "$home/Applications/Sova.app/Contents/MacOS/sova-app" ])" "app, mac: Sova.app is still the app entry (it starts the server, then opens the app)"
-printf 'a terminal\n' > "$tmp/app-pwa/tty"
-: > "$mac_log"
-CASE_TTY="$tmp/app-pwa/tty" FAKE_MAC_CHECK=1 FAKE_UNAME=Darwin FAKE_UP="$tmp/up.always" MAC_APP_LOG="$mac_log" CASE_PATH="$mac_tools:$mac_app_bin:$up:$sandbox" inst --no-service
-check "$(yes_if grep -q -- '^install .* --auto --close-running$' "$mac_log")" "app, mac, with a terminal: may close Sova's open window"
-# The terminal an upgrade from Settings hands the installer (server/updates/runner.ts): /dev/null
-# opens, but no one is there, so Sova's window stays open. A missing path can't catch this.
-: > "$mac_log"
-CASE_TTY=/dev/null FAKE_MAC_CHECK=1 FAKE_UNAME=Darwin FAKE_UP="$tmp/up.always" MAC_APP_LOG="$mac_log" CASE_PATH="$mac_tools:$mac_app_bin:$up:$sandbox" inst --no-service
-check "$({ grep -q -- '^check .* --auto$' "$mac_log" && grep -q -- '^install .* --auto$' "$mac_log" && ! grep -q -- '--close-running' "$mac_log"; } && echo true || echo false)" \
-	"app, mac, an upgrade from Settings (SOVA_TTY=/dev/null): never closes Sova's open window"
-: > "$mac_log"
-rm -f "$home/.pi/agent/sova/app-server.log"
-FAKE_MAC_CHECK=0 FAKE_UNAME=Darwin MAC_APP_LOG="$mac_log" CASE_PATH="$mac_tools:$mac_app_bin:$up:$sandbox" inst --no-service
-check "$({ [ "$status" -eq 0 ] && grep -q '^check ' "$mac_log" && ! grep -q '^install ' "$mac_log"; } && echo true || echo false)" "app, mac rerun, already installed: no install"
-check "$(yes_if [ ! -e "$home/.pi/agent/sova/app-server.log" ])" "app, mac rerun, already installed: no server started for it"
-: > "$mac_log"
-FAKE_MAC_CHECK=1 FAKE_MAC_INSTALL=1 FAKE_UNAME=Darwin FAKE_UP="$tmp/up.always" MAC_APP_LOG="$mac_log" CASE_PATH="$mac_tools:$mac_app_bin:$up:$sandbox" inst --no-service
-check "$({ [ "$status" -eq 0 ] && said "couldn't install Sova as an app"; } && echo true || echo false)" "app, mac, the helper fails: said, and the install still succeeds"
-: > "$mac_log"
-mac_app_case app-pwa-no-entry --no-app-entry
-check "$({ [ "$status" -eq 0 ] && [ ! -s "$mac_log" ] && [ ! -e "$home/Applications/Sova.app" ]; } && echo true || echo false)" "app, mac, --no-app-entry: no helper run, no bundle"
-# ... and `sova app` doesn't install it later: the helper is told never to, and the bare window opens.
-set +e
-launch=$(env -u PI_CODING_AGENT_DIR -u PORT FAKE_UNAME=Darwin HOME="$home" FAKE_UP="$tmp/up.always" MAC_APP_LOG="$mac_log" \
-	PATH="$mac_app_bin:$up:$sandbox" "$home/.local/bin/sova" app 2>&1)
-lstatus=$?
-set -e
-wait_for "$browsed" || true
-check "$({ [ "$lstatus" -eq 0 ] && grep -q -- '^open .* --no-install$' "$mac_log"; } && echo true || echo false)" "app, mac, --no-app-entry: sova app tells the helper never to install"
-check "$(yes_if grep -qxF -- "--app=http://127.0.0.1:4800/#t=tok-pwa" "$browsed")" "app, mac, --no-app-entry: sova app opens the bare window"
-# Asked for by name, it still installs (the opt-out only stops it happening unasked).
-: > "$mac_log"
-set +e
-launch=$(env -u PI_CODING_AGENT_DIR -u PORT FAKE_MAC_CHECK=1 FAKE_UNAME=Darwin HOME="$home" FAKE_UP="$tmp/up.always" MAC_APP_LOG="$mac_log" \
-	PATH="$mac_app_bin:$up:$sandbox" "$home/.local/bin/sova" app --install 2>&1)
-lstatus=$?
-set -e
-check "$({ [ "$lstatus" -eq 0 ] && grep -q '^install ' "$mac_log"; } && echo true || echo false)" "app, mac, --no-app-entry: sova app --install still installs"
-# `sova app` when the helper opens the installed app: no bare window as well.
-mac_app_case app-pwa-open
-: > "$mac_log"
-set +e
-launch=$(env -u PI_CODING_AGENT_DIR -u PORT FAKE_UNAME=Darwin HOME="$home" FAKE_UP="$tmp/up.always" FAKE_MAC_OPEN=0 MAC_APP_LOG="$mac_log" \
-	PATH="$mac_app_bin:$up:$sandbox" "$home/.local/bin/sova" app 2>&1)
-lstatus=$?
-set -e
-sleep 0.5
-check "$({ [ "$lstatus" -eq 0 ] && grep -qxF "open --browser $home/Applications/$brave_exe --profile $home/Library/Application Support/sova-browser --port 4800 --url http://127.0.0.1:4800/#t=tok-pwa --token-file $home/.pi/agent/sova/auth-token" "$mac_log"; } && echo true || echo false)" \
-	"sova app, mac, installed: the helper opens the app, unlocked"
-check "$(yes_if [ ! -e "$browsed" ])" "sova app, mac, installed: no bare window as well"
-check "$(yes_if helper_browsers_ours)" "sova app, mac, installed: the browser handed to the helper is the test's own"
-# On Linux there is no such step.
-set +e
-launch=$(env -u PI_CODING_AGENT_DIR HOME="$home" PATH="$sandbox" "$home/.local/bin/sova" app --install 2>&1)
-lstatus=$?
-set -e
-check "$({ [ "$lstatus" -eq 2 ] && printf '%s' "$launch" | grep -qF 'is for macOS'; } && echo true || echo false)" "sova app --install elsewhere: refused, says it is for macOS"
+	printf 'tok-retire\n' > "$home/.pi/agent/sova/auth-token"
+	browsed=$tmp/retire-linux/browsed
+	mk_browser "$tmp/retire-linux/bin/chromium"
+	set +e
+	launch=$(env -u PI_CODING_AGENT_DIR -u PORT HOME="$home" FAKE_UP="$tmp/up.always" PATH="$tmp/retire-linux/bin:$retire_bin:$up:$sandbox" "$home/.local/bin/sova" app 2>&1)
+	lstatus=$?
+	set -e
+	wait_for "$browsed" || true
+	second=$(find "$xtrash/files" -mindepth 1 -maxdepth 1 -name 'sova-browser ?*' -print)
+	check "$({ [ "$lstatus" -eq 0 ] && [ ! -e "$old" ] && [ -n "$second" ] && grep -qxF second "$second/marker" &&
+		[ -f "$xtrash/info/$(basename "$second").trashinfo" ]; } && echo true || echo false)" \
+		"old profile, linux: sova app moves it too, a taken name dated, files/ and info/ matching"
+	check "$(yes_if [ "$(sed -n '2,$p' "$browsed" 2>/dev/null)" = '--app=http://127.0.0.1:4800/#t=tok-retire' ])" "old profile, linux: then opens the window"
+	mkdir -p "$old"
+	printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$*" >> "%s"\n[ "$1" = trash ] && mv "$2" "%s/gio-trashed"\n' "$tmp/retire-linux/gio.log" "$tmp/retire-linux" > "$tmp/retire-linux/bin/gio"
+	chmod 755 "$tmp/retire-linux/bin/gio"
+	set +e
+	launch=$(env -u PI_CODING_AGENT_DIR -u PORT HOME="$home" FAKE_UP="$tmp/up.always" PATH="$tmp/retire-linux/bin:$retire_bin:$up:$sandbox" "$home/.local/bin/sova" app 2>&1)
+	lstatus=$?
+	set -e
+	check "$(yes_if [ "$lstatus" -eq 0 ] && grep -qxF "trash $old" "$tmp/retire-linux/gio.log" && [ ! -e "$old" ] && [ -d "$tmp/retire-linux/gio-trashed" ])" \
+		"old profile, linux, gio there: gio trash moves it"
+	# XDG_CONFIG_HOME names where it is; a byte beyond ASCII in that path is percent-encoded as itself.
+	old="$home/cönfig/sova-browser"
+	mkdir -p "$old"
+	set +e
+	launch=$(env -u PI_CODING_AGENT_DIR -u PORT HOME="$home" XDG_CONFIG_HOME="$home/cönfig" FAKE_UP="$tmp/up.always" PATH="$retire_bin:$up:$sandbox" "$home/.local/bin/sova" app --retire-profile 2>&1)
+	lstatus=$?
+	set -e
+	check "$(yes_if [ "$lstatus" -eq 0 ] && [ ! -e "$old" ] && grep -rqxF "Path=${home// /%20}/c%C3%B6nfig/sova-browser" "$xtrash/info")" \
+		"old profile, linux: XDG_CONFIG_HOME's, its .trashinfo Path percent-encoding each byte of a non-ASCII name"
+fi
 
 # 25. The ref: one that is neither a tag, a branch nor a commit stops the install before anything
 #     is written; the default branch is never installed in its place; the summary names the ref.

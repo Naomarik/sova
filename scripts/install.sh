@@ -33,13 +33,12 @@
 #   an app-launcher entry that runs `<bin dir>/sova app` (--no-app-entry skips it): on Linux
 #                          ${XDG_DATA_HOME:-~/.local/share}/applications/sova.desktop and its icon
 #                          .../icons/hicolor/512x512/apps/sova.png, on macOS ~/Applications/Sova.app.
-#                          `sova app` keeps its browser profile in ~/.config/sova-browser (Linux) or
-#                          ~/Library/Application Support/sova-browser (macOS). On macOS it also
-#                          installs Sova in that profile as an app of its own, its title bar hidden
-#                          (scripts/mac-app.ts, through `sova app --install`; it records the result
-#                          in the profile's sova-app.json), and the browser writes its own launcher
-#                          for the app in ~/Applications/<browser> Apps.localized/ (--no-app-entry
-#                          skips this too).
+#                          `sova app` opens Sova in the browser's own profile and writes nothing there.
+#   the Trash              gets the browser profile older versions kept for Sova alone,
+#                          ~/.config/sova-browser (Linux) or ~/Library/Application Support/sova-browser
+#                          (macOS), with on macOS the browser's launchers for apps installed in it
+#                          (~/Applications/<browser> Apps.localized/*.app), once no browser runs on it.
+#                          Every `sova app` does the same.
 #   <agent dir>/extensions/<name>
 #                          one symlink per extension in <install dir>/pi-config/extensions, where
 #                          <agent dir> is $PI_CODING_AGENT_DIR, else ~/.pi/agent (--no-extensions
@@ -469,18 +468,16 @@ $marker
 #   sova --node  run the server on Node instead (SOVA_RUNTIME=node does the same)
 #   sova token   print this install's access token (the server mints it at its first start)
 #   sova app     open the app, unlocked by the token in the URL's fragment, in a bare window of a
-#                Chromium-family browser with a profile of its own (a tab of the default browser
-#                when there is none), starting the server first when nothing answers on the port.
-#                What the app-launcher entry runs. \`sova app --print-browser\` names the browser.
-#                On macOS it opens Sova's installed app instead when there is one (scripts/mac-app.ts).
-#   sova app --install   macOS: install Sova as an app of its own in that browser's Sova profile,
-#                even when the install passed --no-app-entry (which only stops it happening unasked)
+#                Chromium-family browser, in its own profile, the one you browse with (a tab of the
+#                default browser when there is none), starting the server first when nothing
+#                answers on the port. What the app-launcher entry runs. \`sova app --print-browser\`
+#                names the browser; \`sova app --retire-profile\` only moves the browser profile
+#                older versions kept for Sova alone to the Trash, as every \`sova app\` does first.
 #   sova open    the same as sova app
 set -euo pipefail
 dir=$(printf '%q' "$dir")
 self=$(printf '%q' "$launcher")
 install_port=$port
-app_auto=$app_entry
 tool_path=$(printf '%q' "$service_path")
 agent=\${PI_CODING_AGENT_DIR:-$(printf '%q' "$agent")}
 LAUNCHER
@@ -598,80 +595,96 @@ pick_browser() {       # a Chromium-family browser's executable, or nothing
 	done
 	return 1
 }
-mac_app() {            # the install's macOS app helper, on the install's Bun
-	"${SOVA_BUN:-$dir/.bun/bin/bun}" "$dir/scripts/mac-app.ts" "$@"
+trash_name() {         # trash_name <dir> <name> [<info dir>]: <name>, or a dated one when it is taken there
+	local stem=${2%.app} ext name=$2 stamp n=1
+	ext=${2#"$stem"}
+	stamp=$(date '+%Y-%m-%d %H.%M.%S' 2>/dev/null || true)
+	while [ -e "$1/$name" ] || [ -L "$1/$name" ] || { [ -n "${3:-}" ] && [ -e "$3/$name.trashinfo" ]; }; do
+		name="$stem $stamp"
+		[ "$n" -eq 1 ] || name="$name $n"
+		name=$name$ext
+		n=$((n + 1))
+	done
+	printf '%s\n' "$name"
 }
-mac_profile="$HOME/Library/Application Support/sova-browser"
-install_app() {        # sova app --install [--auto] [--close-running]: macOS only
-	local browser started= rc
-	[ "$os" = Darwin ] || { echo "sova: sova app --install is for macOS" >&2; exit 2; }
-	[ -f "$dir/scripts/mac-app.ts" ] || { echo "sova: this install has no scripts/mac-app.ts" >&2; exit 1; }
-	browser=$(pick_browser) || { echo "sova: no Chrome, Chromium, Brave, Edge, Vivaldi or Helium to install Sova in" >&2; exit 1; }
-	mkdir -p "$mac_profile"
-	chmod 700 "$mac_profile"
-	# Already installed, or nothing to do this run: said, and nothing started.
-	set +e
-	mac_app check --browser "$browser" --profile "$mac_profile" --port "$port" "$@"
-	rc=$?
-	set -e
-	case "$rc" in 0 | 3) exit "$rc" ;; esac
-	if ! healthy; then
-		start_server
-		wait_up
-		started=$pid       # a server started in the background for this alone stops again below
+url_path() {           # a path as a .trashinfo's Path= holds it: every byte but [A-Za-z0-9/._~-] as %XX
+	local LC_ALL=C s=$1 out= c i=0
+	while [ "$i" -lt "${#s}" ]; do
+		c=${s:i:1}
+		case "$c" in
+			[A-Za-z0-9/._~-]) out=$out$c ;;
+			*) out=$out$(printf '%%%02X' "$(( $(printf '%d' "'$c") & 255 ))") ;;   # bash sign-extends a high byte
+		esac
+		i=$((i + 1))
+	done
+	printf '%s' "$out"
+}
+mac_trash() {          # mac_trash <path>: into the Trash through macOS's own trash (15 and later), else mv
+	local tool=${SOVA_APP_TRASH:-/usr/bin/trash} name   # SOVA_APP_TRASH: install.test.sh only, never the Mac's Trash
+	if [ -x "$tool" ] && "$tool" -s "$1" >/dev/null 2>&1 </dev/null; then return 0; fi
+	mkdir -p "$HOME/.Trash" || return 1
+	name=$(trash_name "$HOME/.Trash" "$(basename "$1")")
+	mv "$1" "$HOME/.Trash/$name" 2>/dev/null
+}
+# The browser profile older versions kept for Sova alone, to the Trash, with on macOS the browser's
+# launchers for apps installed in it. Run as `retire_profile || true`: it never stops `sova app`
+# or the install, says nothing, and with nothing to move does nothing.
+retire_profile() {
+	local old app d trash name
+	if [ "$os" = Darwin ]; then
+		old="$HOME/Library/Application Support/sova-browser"
+	else
+		old="${XDG_CONFIG_HOME:-$HOME/.config}/sova-browser"
 	fi
-	set +e
-	mac_app install --browser "$browser" --profile "$mac_profile" --port "$port" --token-file "$agent/sova/auth-token" "$@"
-	rc=$?
-	set -e
-	[ -z "$started" ] || kill "$started" 2>/dev/null || true
-	exit "$rc"
+	[ -e "$old" ] || [ -L "$old" ] || return 0
+	# Not while a browser runs on it (an upgrade from Settings runs inside that old window): a later
+	# `sova app` finishes it. pgrep answers 1 for none; anything else, or no pgrep, can't tell.
+	command -v pgrep >/dev/null 2>&1 || return 0
+	pgrep -f "user-data-dir=$old" >/dev/null 2>&1
+	[ $? -eq 1 ] || return 0
+	if [ "$os" = Darwin ]; then
+		# First the browser's launchers for apps installed in that profile, and no other launcher:
+		# theirs name a CrAppModeUserDataDir inside it. The profile waits until all of them moved.
+		for app in "$HOME"/Applications/*Apps.localized/*.app; do
+			[ -d "$app" ] || continue
+			d=$(defaults read "$app/Contents/Info" CrAppModeUserDataDir 2>/dev/null) || continue
+			case "$d" in "$old" | "$old"/*) ;; *) continue ;; esac
+			mac_trash "$app" || return 0
+		done
+		mac_trash "$old" || true
+	elif ! { command -v gio >/dev/null 2>&1 && gio trash "$old" >/dev/null 2>&1; }; then
+		# The freedesktop.org trash: the folder under files/, where it was and when under info/.
+		trash=${XDG_DATA_HOME:-$HOME/.local/share}/Trash
+		mkdir -p "$trash/files" "$trash/info" || return 0
+		name=$(trash_name "$trash/files" sova-browser "$trash/info")
+		printf '[Trash Info]\nPath=%s\nDeletionDate=%s\n' "$(url_path "$old")" "$(date +%Y-%m-%dT%H:%M:%S)" \
+			>"$trash/info/$name.trashinfo" 2>/dev/null || return 0
+		mv "$old" "$trash/files/$name" 2>/dev/null || rm -f "$trash/info/$name.trashinfo"
+	fi
+	return 0
 }
 open_app() {
-	local tok url browser profile no_install=
+	local tok url browser
 	if ! healthy; then
 		start_server
 		wait_up
 	fi
 	tok=$(token)
 	url="http://127.0.0.1:$port/#t=$tok"
+	retire_profile || true
 	if browser=$(pick_browser); then
-		if [ "$os" = Darwin ]; then
-			profile=$mac_profile
-			mkdir -p "$profile"
-			chmod 700 "$profile"
-			# Sova's installed app when there is one (installed now if nothing was ever tried and
-			# the browser is closed, unless the install opted out with --no-app-entry); else, status
-			# 10 or any failure, the bare window below.
-			"$app_auto" || no_install=--no-install
-			if [ -f "$dir/scripts/mac-app.ts" ] &&
-				mac_app open --browser "$browser" --profile "$profile" --port "$port" --url "$url" \
-					--token-file "$agent/sova/auth-token" $no_install >/dev/null 2>&1 </dev/null; then
-				exit 0
-			fi
-		else
-			profile="${XDG_CONFIG_HOME:-$HOME/.config}/sova-browser"
-			mkdir -p "$profile"
-			# A new profile: the system title bar (bare under a tiling compositor), no first-run page.
-			if [ ! -e "$profile/Default/Preferences" ]; then
-				mkdir -p "$profile/Default"
-				printf '{"browser":{"custom_chrome_frame":false}}\n' > "$profile/Default/Preferences"
-				: > "$profile/First Run"
-			fi
-		fi
-		chmod 700 "$profile"
-		# macOS holds a program's starter responsible for its mic use, so the window's browser starts
-		# through macOS's launcher and its mic permission is its own (scripts/mac-app.ts, launchApp).
-		# Outside a bundle, or when open fails: the direct start.
+		# The browser's own profile, so every link opens there; a browser already running takes the
+		# window over. macOS holds a program's starter responsible for its mic use, so there the
+		# browser starts through macOS's launcher and its mic permission is its own (-n: without it,
+		# macOS drops --args when the browser already runs). Outside a bundle, or when open fails:
+		# the direct start.
 		if [ "$os" = Darwin ]; then
 			case "$browser" in
 				*.app/Contents/MacOS/*)
-					open -n -a "${browser%/Contents/MacOS/*}" --args --app="$url" --user-data-dir="$profile" \
-						--no-first-run --no-default-browser-check >/dev/null 2>&1 </dev/null && exit 0 ;;
+					open -n -a "${browser%/Contents/MacOS/*}" --args --app="$url" >/dev/null 2>&1 </dev/null && exit 0 ;;
 			esac
 		fi
-		nohup "$browser" --app="$url" --user-data-dir="$profile" --no-first-run --no-default-browser-check \
-			>/dev/null 2>&1 </dev/null &
+		nohup "$browser" --app="$url" >/dev/null 2>&1 </dev/null &
 		exit 0
 	fi
 	if command -v open >/dev/null 2>&1 && [ "$os" = Darwin ]; then exec open "$url"; fi
@@ -684,7 +697,7 @@ case "${1:-}" in
 	app | open)
 		case "${2:-}" in
 			--print-browser) pick_browser; exit 0 ;;
-			--install) shift 2; install_app "$@" ;;
+			--retire-profile) retire_profile || true; exit 0 ;;
 		esac
 		open_app ;;
 esac
@@ -802,6 +815,9 @@ esac
 # The browser `sova app` would use; none means a tab of the default browser.
 app_browser=
 case "$os" in Linux | Darwin) app_browser=$("$launcher" app --print-browser 2>/dev/null || true) ;; esac
+# The browser profile older versions kept for Sova alone, to the Trash: the launcher's own step,
+# which every `sova app` runs too, and which waits while a browser runs on that profile.
+case "$os" in Linux | Darwin) "$launcher" app --retire-profile >/dev/null 2>&1 </dev/null || true ;; esac
 
 # ---- pi extensions: one link per extension, into the installed clone ----
 
@@ -966,29 +982,6 @@ UNIT
 	fi
 fi
 
-# ---- macOS: Sova as an app of its own, in the app entry's browser (scripts/mac-app.ts) ----
-
-# After the service: the install needs the server answering on the port (`sova app --install`
-# starts one in the background for itself when nothing answers, and stops it again). The browser
-# on Sova's profile has to be closed for it: a run with a terminal closes Sova's window, one
-# without (an upgrade from Settings, which runs in that window) skips it, and `sova app` finishes
-# it later. Any failure leaves the bare --app window as it was.
-app_install_note=
-if [ "$entry_kind" = bundle ] && [ -n "$app_browser" ] && [ -f "$dir/scripts/mac-app.ts" ]; then
-	close_flag=
-	if has_terminal; then close_flag=--close-running; fi
-	set +e
-	app_install_out=$("$launcher" app --install --auto $close_flag 2>&1 </dev/null)
-	app_install_status=$?
-	set -e
-	[ -z "$app_install_out" ] || say "$app_install_out"
-	case "$app_install_status" in
-		0) app_install_note="Sova is an app of its own, with its own icon in the Dock and the app switcher" ;;
-		3) app_install_note="not installed as an app this run (see above)" ;;
-		*) app_install_note="couldn't install Sova as an app; 'Sova' opens it in a bare browser window instead (sova app --install tries again)" ;;
-	esac
-fi
-
 say ""
 if $rebuild; then
 	say "installed $ref ($commit) in $dir"
@@ -999,7 +992,6 @@ say "launcher: $launcher"
 if [ -n "$entry_note" ]; then
 	say "app entry: $entry_note — 'Sova' in your app launcher opens it in its own window (sova app)"
 fi
-[ -z "$app_install_note" ] || say "app: $app_install_note"
 if [ -z "$app_browser" ] && { [ "$os" = Linux ] || [ "$os" = Darwin ]; }; then
 	say "an app window needs Chrome, Chromium, Brave, Edge or Vivaldi; until one is installed, the app"
 	say "entry and 'sova open' open Sova in a tab of your default browser"

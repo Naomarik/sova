@@ -81,7 +81,7 @@ addEventListener("load",()=>{Promise.race([document.fonts.ready,new Promise((r)=
 
 /** A grid card holds motion: animations jump to their end, and a script's animation loop stops after a moment. */
 const HOLD_MOTION_SCRIPT = `{const r=requestAnimationFrame.bind(window);let n=0;window.requestAnimationFrame=(f)=>n++<90?r(f):0;}`;
-const HOLD_MOTION_STYLE = `*,*::before,*::after{animation-duration:0s!important;animation-delay:0s!important;animation-iteration-count:1!important;transition:none!important;scroll-behavior:auto!important}`;
+export const HOLD_MOTION_STYLE = `*,*::before,*::after{animation-duration:0s!important;animation-delay:0s!important;animation-iteration-count:1!important;transition:none!important;scroll-behavior:auto!important}`;
 
 /** A finished page's document in two parts: Sova's own head (the policy and the seal), and the page as its author wrote it. */
 export interface DesignPageDoc {

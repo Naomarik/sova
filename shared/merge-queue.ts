@@ -817,6 +817,8 @@ export interface DiscardBranchPreview {
   drafts: string[];
   /** Its chat, archived with it; null: none (or one already archived), and that step is skipped. */
   chat: { id: string; title: string; path: string } | null;
+  /** Why the branch's chat stays when it isn't archived with it: it works in another folder. Absent: no such chat. */
+  chatStays?: string;
   /** Send it back on the confirm: the folder's files are deleted only while they are still this listing ("" with no folder). */
   digest: string;
   /** Why it can't go now, in words (the confirm's disabled reason); null: it may. */

@@ -8,7 +8,7 @@ import { join } from "node:path";
 import { after, before, describe, test } from "node:test";
 import { type Git, runGit } from "../pi-config/extensions/worktrees/git.ts";
 import { scratchRoot } from "./test-scratch";
-import { DISCARD_WORDS, type DiscardDeps, type DiscardOwner, DiscardRefused, discardBranch, previewDiscard, process_words } from "./worktree-remove-discard";
+import { DISCARD_WORDS, type DiscardDeps, type DiscardOwner, DiscardRefused, discardBranch, previewDiscard, process_words, twoFolders } from "./worktree-remove-discard";
 import { leftovers, leftoversDigest, removeAnywayOf, unreadableLeftovers } from "./worktree-leftovers";
 import { dropLock, takeLock } from "./worktree-retire";
 import type { ChatUse } from "./worktree-cleanup";
@@ -58,7 +58,7 @@ before(() => {
 });
 after(() => rmSync(root, { recursive: true, force: true }));
 
-const OWNER: DiscardOwner = { id: "s1", title: "Build x", path: "/sessions/s1.jsonl", archived: false, tui: false };
+const OWNER: DiscardOwner = { id: "s1", title: "Build x", path: "/sessions/s1.jsonl", archived: false, tui: false, cwd: "", tree: "" };
 
 interface World {
   log: string[];
@@ -79,7 +79,8 @@ function world(opts: Partial<DiscardDeps> & { chat?: DiscardOwner | null; failRe
     git: g,
     target: async () => "master",
     openEntry: async () => null,
-    owner: async () => owner,
+    // The branch's chat works in its folder unless the case says where it works.
+    owner: async (_r, b, folder) => (owner ? { ...owner, tree: folder ?? folderOf(b.replace(/^feat\//, "")), cwd: owner.cwd || (folder ?? folderOf(b.replace(/^feat\//, ""))) } : null),
     chatBusy: () => false,
     workingSubagents: () => 0,
     uses: async () => ({ uses: [], unreadable: [] }),
@@ -133,7 +134,7 @@ describe("Discard Branch…: the refusals, each before anything goes, in the dry
   const use = (u: Partial<ChatUse>): ChatUse => ({ path: "/sessions/w.jsonl", name: "w", cwd: null, inside: [], tracks: [], archived: false, running: false, tui: false, workers: 0, sandbox: false, lastActiveAt: ago, ...u });
   const cases: { name: string; words: string | ((folder: string) => string); setup: (b: ReturnType<typeof branch>) => { req?: Partial<{ branch: string; commit: string }>; deps?: Partial<DiscardDeps>; owner?: DiscardOwner | null } }[] = [
     { name: "the target branch", words: DISCARD_WORDS.main, setup: () => ({ req: { branch: "master" } }) },
-    { name: "the queue's target named apart from the checkout", words: DISCARD_WORDS.main, setup: (b) => ({ deps: { target: async () => b.branch } }) },
+    { name: "the branch it lands into, named apart from the checkout", words: DISCARD_WORDS.target, setup: (b) => ({ deps: { target: async () => b.branch } }) },
     { name: "a queue entry stands for it", words: DISCARD_WORDS.inQueue, setup: () => ({ deps: { openEntry: async () => ({ id: "mq_1", state: "queued" }) } }) },
     { name: "a turn runs in its chat", words: DISCARD_WORDS.chatWorking, setup: () => ({ deps: { chatBusy: (p) => p === OWNER.path } }) },
     { name: "its chat is open in a TUI", words: DISCARD_WORDS.chatTui, setup: () => ({ owner: { ...OWNER, tui: true } }) },
@@ -143,6 +144,19 @@ describe("Discard Branch…: the refusals, each before anything goes, in the dry
     { name: "its head moved since the row was read", words: DISCARD_WORDS.moved, setup: () => ({ req: { commit: "0".repeat(40) } }) },
     { name: "the branch is gone", words: DISCARD_WORDS.noBranch, setup: () => ({ req: { branch: "feat/never-was" } }) },
     { name: "the target can't be read", words: DISCARD_WORDS.noTarget, setup: () => ({ deps: { target: async () => null } }) },
+    {
+      name: "a chat working in its folder, while the chat that made it is idle elsewhere",
+      words: DISCARD_WORDS.worker,
+      setup: (b) => ({ owner: { ...OWNER, cwd: main }, deps: { uses: async () => ({ uses: [use({ cwd: b.folder, inside: [b.folder], running: true })], unreadable: [] }) } }),
+    },
+    {
+      name: "the branch checked out in a second folder too",
+      words: () => twoFolders(join(root, "second")),
+      setup: (b) => {
+        git(main, "worktree", "add", "-q", "-f", join(root, "second"), b.branch);
+        return {};
+      },
+    },
   ];
   let n = 0;
   for (const c of cases)
@@ -152,6 +166,9 @@ describe("Discard Branch…: the refusals, each before anything goes, in the dry
       const req = { root: main, branch: b.branch, commit: b.commit, ...s.req };
       const w = world({ ...s.deps, ...(s.owner !== undefined ? { chat: s.owner } : {}) });
       const words = typeof c.words === "function" ? c.words(b.folder) : c.words;
+      after(() => {
+        if (existsSync(join(root, "second"))) git(main, "worktree", "remove", "--force", join(root, "second"));
+      });
       const p = await previewDiscard(req, w.deps);
       assert.equal(p.refused, words);
       await assert.rejects(discardBranch(req, p.digest, w.deps), (err: unknown) => err instanceof DiscardRefused && err.code === "refused" && err.message === words);
@@ -201,7 +218,7 @@ describe("Discard Branch…: the confirm", () => {
     const r = await discardBranch({ root: main, ...b }, p.digest, w.deps);
     assert.equal(r.outcome, "discarded", r.message);
     assert.deepEqual(r.steps.map((s) => `${s.step}:${s.state}`), ["folder:done", "branch:done", "chat:done"]);
-    assert.equal(r.message, `Discarded ${b.branch}: its folder, its branch and its chat are gone.`);
+    assert.equal(r.message, `Discarded ${b.branch}: its folder and its branch are gone; its chat is archived.`);
     assert.deepEqual(w.log, [`git worktree remove --force -- ${b.folder}`, `git update-ref -d refs/heads/${b.branch} ${b.commit}`, `archive ${OWNER.path}`]);
     assert.ok(!existsSync(b.folder), "the folder is gone");
     assert.ok(!exists(`refs/heads/${b.branch}`), "the branch is gone");
@@ -241,6 +258,11 @@ describe("Discard Branch…: the confirm", () => {
     assert.equal(r.outcome, "partial");
     assert.deepEqual(r.steps.map((s) => `${s.step}:${s.state}`), ["folder:failed", "branch:not-run", "chat:not-run"]);
     assert.match(r.message, /^Nothing was deleted; its folder, its branch and its chat stayed\. Its folder: Git refused: fatal: stand-in refusal/);
+    const none = world({ failRemove: true, chat: null });
+    const b2 = branch("stuck-alone");
+    const r2 = await discardBranch({ root: main, ...b2 }, (await previewDiscard({ root: main, ...b2 }, none.deps)).digest, none.deps);
+    assert.deepEqual(r2.steps.map((s) => `${s.step}:${s.state}`), ["folder:failed", "branch:not-run", "chat:skipped"]);
+    assert.match(r2.message, /^Nothing was deleted; its folder and its branch stayed\./, "no chat, so none is said to stay");
     assert.ok(existsSync(b.folder) && exists(`refs/heads/${b.branch}`));
     assert.ok(!w.log.some((l) => l.startsWith("archive")));
   });
@@ -253,7 +275,34 @@ describe("Discard Branch…: the confirm", () => {
     assert.equal(r.outcome, "partial");
     assert.deepEqual(r.steps.map((s) => `${s.step}:${s.state}`), ["folder:done", "branch:done", "chat:failed"]);
     assert.equal(r.message, "Its folder and its branch are gone; its chat stayed. Its chat: Only sessions started in Sova can be archived.");
-    assert.ok(w.log.includes(`close ${OWNER.path}`));
+    assert.ok(w.log.includes(`close ${OWNER.path}`), "closed, since its folder is gone");
+  });
+
+  test("a chat that made the worktree from another folder stays: listed as staying, never archived", async () => {
+    const b = branch("parent");
+    const w = world({ chat: { ...OWNER, cwd: main } });
+    const p = await previewDiscard({ root: main, ...b }, w.deps);
+    assert.equal(p.chat, null);
+    assert.equal(p.chatStays, DISCARD_WORDS.chatElsewhere);
+    const r = await discardBranch({ root: main, ...b }, p.digest, w.deps);
+    assert.deepEqual(r.steps.map((s) => `${s.step}:${s.state}`), ["folder:done", "branch:done", "chat:skipped"]);
+    assert.equal(r.steps[2]?.detail, DISCARD_WORDS.chatElsewhere);
+    assert.ok(!w.log.some((l) => l.startsWith("archive") || l.startsWith("close")), "that chat is left alone");
+  });
+
+  test("a folder already gone that git still lists: that record is dropped by name, then the branch goes", async () => {
+    const b = branch("stale");
+    rmSync(b.folder, { recursive: true, force: true });
+    const w = world();
+    const p = await previewDiscard({ root: main, ...b }, w.deps);
+    assert.equal(p.refused, null);
+    assert.equal(p.folder, null);
+    const r = await discardBranch({ root: main, ...b }, p.digest, w.deps);
+    assert.equal(r.outcome, "discarded", r.message);
+    assert.deepEqual(r.steps.map((s) => `${s.step}:${s.state}`), ["folder:done", "branch:done", "chat:done"]);
+    assert.equal(w.log[0], `git worktree remove -- ${b.folder}`);
+    assert.ok(!git(main, "worktree", "list", "--porcelain").includes(b.folder), "git forgot it");
+    assert.ok(!exists(`refs/heads/${b.branch}`));
     assert.ok(!existsSync(b.folder) && !exists(`refs/heads/${b.branch}`));
   });
 

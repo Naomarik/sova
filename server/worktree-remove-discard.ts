@@ -6,6 +6,7 @@
 // (server/worktree-retire.ts), so a cleanup pass never runs beside it.
 //
 // The core takes its world as deps (tests stand in a fake git and chats); `realDiscardDeps` wires the server's.
+import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import type { Git } from "../pi-config/extensions/worktrees/git.ts";
@@ -19,6 +20,7 @@ import type { ChatUse, ProcFacts } from "./worktree-cleanup";
 /** The refusals, word for word (the copy the confirm's disabled button shows). */
 export const DISCARD_WORDS = {
   main: "That's the main checkout.",
+  target: "That's the branch it lands into.",
   inQueue: "It's in the merge queue.",
   chatWorking: "Its chat is working.",
   chatTui: "Its chat is open in a TUI.",
@@ -28,7 +30,11 @@ export const DISCARD_WORDS = {
   noTarget: "The branch it lands into couldn't be read.",
   locked: "A cleanup of this repository is running: try again in a moment.",
   changed: "Its files changed since you looked. Nothing was deleted. Look again.",
+  chatElsewhere: "Its chat works in another folder, so it stays.",
 } as const;
+
+/** The branch checked out in a second folder: neither goes, since the branch can't go while one has it. */
+export const twoFolders = (other: string): string => `Its branch is checked out in another folder too: ${other}.`;
 
 export const process_words = (p: { command: string; pid: number }): string => `A process is running in its folder: ${p.command} (${p.pid}).`;
 
@@ -43,6 +49,10 @@ export interface DiscardOwner {
   archived: boolean;
   /** Open in a TUI. */
   tui: boolean;
+  /** Its folder (the session's cwd): only a chat working in the branch's folder is archived with it. */
+  cwd: string;
+  /** The worktree path it was found by (the folder, or the one its record names when the folder is gone). */
+  tree: string;
 }
 
 export interface DiscardDeps {
@@ -81,6 +91,8 @@ export interface DiscardDeps {
   archive(path: string): Promise<{ ok: true } | { ok: false; error: string }>;
   close(path: string, message: string): Promise<unknown>;
   now(): number;
+  /** After a confirm, whatever its outcome: the queue's Ready list is read afresh. */
+  settled?(root: string): void;
 }
 
 export interface DiscardRequest {
@@ -115,24 +127,42 @@ async function headOf(git: Git, root: string, branch: string): Promise<string | 
 interface Reading {
   target: string | null;
   folder: string | null;
+  /** Git still lists a folder for the branch that is gone: that one record is dropped in the folder step. */
+  stale: string | null;
+  /** The chat archived with it: the branch's chat, only when it works in the branch's folder. */
   owner: DiscardOwner | null;
+  /** Why the branch's chat stays (it works elsewhere); absent when there is none or it goes. */
+  chatStays?: string;
   left: Leftovers | null;
   refused: string | null;
 }
+
+const within = (p: string, root: string): boolean => {
+  const a = realOr(p);
+  const r = realOr(root);
+  return a === r || a.startsWith(`${r}/`) || p === root || p.startsWith(`${root}/`);
+};
 
 async function read(req: DiscardRequest, d: DiscardDeps): Promise<Reading> {
   const { root, branch, commit } = req;
   const list = await worktreeList(d.git, root);
   const main = list[0];
-  const here = list.find((w) => w.branch === branch) ?? null;
+  const mine = list.filter((w) => w.branch === branch);
+  const here = mine[0] ?? null;
   const target = await d.target(root);
-  const base: Reading = { target, folder: null, owner: null, left: null, refused: null };
+  const base: Reading = { target, folder: null, stale: null, owner: null, left: null, refused: null };
   const no = (why: string): Reading => ({ ...base, refused: why });
-  if (branch === target || (main && main.branch === branch) || (here && main && realOr(here.path) === realOr(main.path))) return no(DISCARD_WORDS.main);
+  if ((main && main.branch === branch) || (here && main && realOr(here.path) === realOr(main.path))) return no(DISCARD_WORDS.main);
+  if (branch === target) return no(DISCARD_WORDS.target);
+  if (mine.length > 1) return no(twoFolders(mine[1]!.path));
   const folder = here && existsSync(here.path) ? here.path : null;
-  const owner = await d.owner(root, branch, folder);
+  const stale = here && !folder ? here.path : null;
+  const found = await d.owner(root, branch, folder);
+  // Only the chat that works in the branch's folder goes with it: a chat that made it from elsewhere (a parent, a coordinator) stays.
+  const inFolder = !!found && !found.archived && within(found.cwd, folder ?? found.tree);
+  const owner = inFolder ? found : null;
   const left = folder ? await d.leftovers(folder) : null;
-  const r: Reading = { ...base, folder, owner, left };
+  const r: Reading = { ...base, folder, stale, owner, left, ...(found && !found.archived && !inFolder ? { chatStays: DISCARD_WORDS.chatElsewhere } : {}) };
   const why = await refusal(req, d, r);
   return { ...r, refused: why };
 }
@@ -143,7 +173,7 @@ async function refusal(req: DiscardRequest, d: DiscardDeps, r: Reading): Promise
   if (head !== req.commit) return DISCARD_WORDS.moved;
   if (!r.target) return DISCARD_WORDS.noTarget;
   if (await d.openEntry(req.root, req.branch)) return DISCARD_WORDS.inQueue;
-  if (r.owner && !r.owner.archived) {
+  if (r.owner) {
     if (d.chatBusy(r.owner.path)) return DISCARD_WORDS.chatWorking;
     if (r.owner.tui) return DISCARD_WORDS.chatTui;
     if (d.workingSubagents(r.owner.path) > 0) return DISCARD_WORDS.worker;
@@ -157,8 +187,8 @@ async function refusal(req: DiscardRequest, d: DiscardDeps, r: Reading): Promise
       // Another chat or a worker working there: the one use rule, minus its quiet time (you asked for this now).
       if (chatInUse({ ...c, lastActiveAt: 0 }, d.now())) return DISCARD_WORDS.worker;
     }
-    const real = realOr(r.folder);
-    const inside = (p: string) => p === real || p.startsWith(`${real}/`) || realOr(p) === real || realOr(p).startsWith(`${real}/`);
+    const folder = r.folder;
+    const inside = (p: string) => within(p, folder);
     const procs = await d.processes();
     for (const p of procs) if (p.unreadable) return p.unreadable;
     for (const p of procs) if (p.paths.some(inside)) return process_words(p);
@@ -181,8 +211,9 @@ export async function previewDiscard(req: DiscardRequest, d: DiscardDeps): Promi
     folder: r.folder,
     files: r.left && !r.left.unreadable ? d.listingOf(r.left) : null,
     drafts: r.folder ? d.draftNames(r.folder) : [],
-    chat: r.owner && !r.owner.archived ? { id: r.owner.id, title: r.owner.title, path: r.owner.path } : null,
-    digest: r.left && !r.left.unreadable ? d.digestOf(r.left) : "",
+    chat: r.owner ? { id: r.owner.id, title: r.owner.title, path: r.owner.path } : null,
+    ...(r.chatStays ? { chatStays: r.chatStays } : {}),
+    digest: r.left && !r.left.unreadable ? digestOf(d, r.left) : "",
     refused: r.refused,
   };
 }
@@ -214,16 +245,26 @@ export async function discardBranch(req: DiscardRequest, digest: string, d: Disc
   try {
     const r = await read(req, d);
     if (r.refused) throw new DiscardRefused("refused", r.refused);
-    const now = r.left ? d.digestOf(r.left) : "";
+    const now = r.left ? digestOf(d, r.left) : "";
     if (now !== digest) throw new DiscardRefused("changed", DISCARD_WORDS.changed);
     const steps: DiscardBranchStep[] = [];
+    // Decided now, so a stop never names a chat there is none of.
+    const chatSkip: DiscardBranchStep | null = r.owner ? null : { step: "chat", state: "skipped", detail: r.chatStays ?? "It has no chat." };
     const stop = (from: DiscardBranchStep["step"][]): DiscardBranchResult => {
-      for (const s of from) steps.push({ step: s, state: "not-run" });
+      for (const s of from) steps.push(s === "chat" && chatSkip ? chatSkip : { step: s, state: "not-run" });
       return { outcome: "partial", steps, message: words(req.branch, steps) };
     };
 
-    // 1. The folder: only the listing the user saw (Remove Anyway's --force), else a plain removal.
-    if (!r.folder) steps.push({ step: "folder", state: "skipped", detail: "It has no folder." });
+    // 1. The folder: only the listing the user saw (Remove Anyway's --force), else a plain removal. A folder already
+    // gone that git still lists: that one record is dropped by name (never a prune, which forgets every missing one).
+    if (!r.folder && r.stale) {
+      const out = await removeTree({ path: r.stale, main: req.root, git: d.git, ...(d.remove ? { remove: d.remove } : {}) });
+      if (out.state !== "removed") {
+        steps.push({ step: "folder", state: "failed", detail: out.reason });
+        return stop(["branch", "chat"]);
+      }
+      steps.push({ step: "folder", state: "done", detail: "Its folder was already gone; git's record of it was dropped." });
+    } else if (!r.folder) steps.push({ step: "folder", state: "skipped", detail: "It has no folder." });
     else {
       const folder = r.folder;
       const forced = !!r.left && hasContent(r.left);
@@ -256,7 +297,7 @@ export async function discardBranch(req: DiscardRequest, digest: string, d: Disc
     steps.push({ step: "branch", state: "done" });
 
     // 3. The chat: archived as the Archive button does; closed in any case, since its folder is gone.
-    if (!r.owner || r.owner.archived) steps.push({ step: "chat", state: "skipped", detail: r.owner ? "It was already archived." : "It has no chat." });
+    if (chatSkip || !r.owner) steps.push(chatSkip!);
     else {
       const a = await d.archive(r.owner.path).catch((err: Error) => ({ ok: false as const, error: err.message }));
       if (a.ok) steps.push({ step: "chat", state: "done" });
@@ -269,21 +310,35 @@ export async function discardBranch(req: DiscardRequest, digest: string, d: Disc
     return { outcome: ok ? "discarded" : "partial", steps, message: words(req.branch, steps) };
   } finally {
     d.dropLock(lock);
+    d.settled?.(req.root);
   }
+}
+
+/** The listing's digest, and any recording found nowhere else with it: a confirm deletes nothing it didn't list. */
+function digestOf(d: DiscardDeps, l: Leftovers): string {
+  const base = d.digestOf(l);
+  return l.lastRecordings?.length ? createHash("sha256").update(`${base}\0${l.lastRecordings.join("\0")}`).digest("hex").slice(0, 32) : base;
 }
 
 const hasContent = (l: Leftovers): boolean => l.dirty.length > 0 || l.ignored.length > 0 || l.nested.length > 0 || !!l.lastRecordings?.length;
 
 const NAMES: Record<DiscardBranchStep["step"], string> = { folder: "its folder", branch: "its branch", chat: "its chat" };
 
+/** What went, in words: the folder and branch are gone, the chat is archived (never gone). */
+function wentWords(steps: readonly DiscardBranchStep[]): string {
+  const gone = steps.filter((s) => s.state === "done" && s.step !== "chat").map((s) => NAMES[s.step]);
+  const archived = steps.some((s) => s.state === "done" && s.step === "chat");
+  const parts = [...(gone.length ? [`${list(gone)} ${gone.length === 1 ? "is" : "are"} gone`] : []), ...(archived ? ["its chat is archived"] : [])];
+  return parts.join("; ");
+}
+
 /** The result in a sentence: what went, and what stayed and why. */
 function words(branch: string, steps: readonly DiscardBranchStep[]): string {
-  const done = steps.filter((s) => s.state === "done").map((s) => NAMES[s.step]);
+  const went = wentWords(steps);
   const failed = steps.find((s) => s.state === "failed");
-  if (!failed) return done.length ? `Discarded ${branch}: ${list(done)} ${done.length === 1 ? "is" : "are"} gone.` : `Discarded ${branch}.`;
+  if (!failed) return went ? `Discarded ${branch}: ${went}.` : `Discarded ${branch}.`;
   const kept = steps.filter((s) => s.state === "failed" || s.state === "not-run").map((s) => NAMES[s.step]);
-  const gone = done.length ? `${cap(list(done))} ${done.length === 1 ? "is" : "are"} gone; ` : "Nothing was deleted; ";
-  return `${gone}${list(kept)} stayed. ${cap(NAMES[failed.step])}: ${failed.detail ?? "it failed"}`;
+  return `${went ? `${cap(went)}; ` : "Nothing was deleted; "}${list(kept)} stayed. ${cap(NAMES[failed.step])}: ${failed.detail ?? "it failed"}`;
 }
 const list = (xs: string[]): string => (xs.length <= 1 ? (xs[0] ?? "") : `${xs.slice(0, -1).join(", ")} and ${xs[xs.length - 1]}`);
 const cap = (s: string): string => s.charAt(0).toUpperCase() + s.slice(1);
@@ -307,10 +362,10 @@ export async function realDiscardDeps(): Promise<DiscardDeps> {
     import("./merge-queue/wire"),
     import("./nothing-left"),
   ]);
-  const ownerRow = async (session: string, archived: boolean): Promise<DiscardOwner | null> => {
+  const ownerRow = async (session: string, archived: boolean, tree: string): Promise<DiscardOwner | null> => {
     const s = (await sessions.listSessions().catch(() => [])).find((x) => x.id === session);
     if (!s) return null;
-    return { id: s.id, title: s.title && s.title !== "Untitled" ? s.title : s.id.slice(0, 8), path: s.path, archived: archived || !!s.archived, tui: !!s.live };
+    return { id: s.id, title: s.title && s.title !== "Untitled" ? s.title : s.id.slice(0, 8), path: s.path, archived: archived || !!s.archived, tui: !!s.live, cwd: s.cwd, tree };
   };
   return {
     git: runGit,
@@ -327,7 +382,7 @@ export async function realDiscardDeps(): Promise<DiscardDeps> {
     async owner(_root, branch, folder) {
       if (folder) {
         const o = await wire.worktreeOwnerOf(folder);
-        return o ? ownerRow(o.session, !!o.archived) : null;
+        return o ? ownerRow(o.session, !!o.archived, folder) : null;
       }
       // No folder: the chat whose own record created a worktree on this branch.
       const { trackedWorktrees } = await import("./merge-readiness");
@@ -335,7 +390,7 @@ export async function realDiscardDeps(): Promise<DiscardDeps> {
         const t = trees.find((x) => x.branch === branch && x.how === "created" && x.status !== "dropped");
         if (t) {
           const o = await wire.worktreeOwnerOf(t.path);
-          if (o) return ownerRow(o.session, !!o.archived);
+          if (o) return ownerRow(o.session, !!o.archived, t.path);
         }
       }
       return null;
@@ -363,5 +418,9 @@ export async function realDiscardDeps(): Promise<DiscardDeps> {
     },
     close: (path, message) => chat.closeChat(path, message),
     now: () => Date.now(),
+    settled(root) {
+      // The Ready list's 15 s cache would show the branch until it runs out.
+      void wire.mergeQueues()?.loaded().then((qs) => qs.find((q) => q.root === root)?.forgetReady()).catch(() => undefined);
+    },
   };
 }

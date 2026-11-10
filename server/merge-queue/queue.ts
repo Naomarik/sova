@@ -1040,6 +1040,10 @@ export class ProjectQueue {
   }
 
   private readyCache: { at: number; head: string; list: MergeReady[] } | null = null;
+  /** The next view reads the Ready list afresh: a branch went outside the queue (Discard Branch…). */
+  forgetReady(): void {
+    this.readyCache = null;
+  }
   /** Ready, not approved (the view's Land list), re-read at most every 15 s or when the target moves. */
   private async readyList(head: string, redrafted: ReadonlySet<string> = new Set()): Promise<MergeReady[]> {
     if (this.readyCache && this.readyCache.head === head && this.now() - this.readyCache.at < 15_000) return this.filterReady(this.readyCache.list, redrafted);

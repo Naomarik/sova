@@ -1,4 +1,5 @@
 /** Pure derivations behind the Design card and the Gallery: no DOM, no Solid, so they are unit-tested. */
+import { designModelOrder, designSectionOf, type DesignSection } from "../../shared/design-models";
 import type { DesignCaps, DesignChatView, DesignCoordinatorView, DesignModelChoice, DesignRecord, DesignRun, DesignSetup, DesignStatus } from "../../shared/design";
 
 export type DesignRunView = DesignRun;
@@ -6,38 +7,51 @@ export type DesignCoordinatorInfo = DesignCoordinatorView;
 
 export const coordinatorOf = (view: DesignChatView | null): DesignCoordinatorInfo | null => view?.coordinator ?? null;
 
-export interface DesignModelGroup {
-  id: string;
-  name: string;
-}
-
-/** The picker's group for a model: every Claude route is one group, every Ollama, every GPT. */
-export function designModelGroup(ref: string): DesignModelGroup {
-  const provider = ref.split("/", 1)[0] ?? ref;
-  if (provider === "anthropic" || provider.startsWith("claude")) return { id: "claude", name: "Claude Models" };
-  if (provider.startsWith("ollama")) return { id: "ollama", name: "Ollama Models" };
-  if (provider.startsWith("openai") || provider.includes("codex") || provider.startsWith("github-copilot")) return { id: "gpt", name: "GPT Models" };
-  if (provider.startsWith("google")) return { id: "google", name: "Google Models" };
-  if (provider.startsWith("zai")) return { id: "glm", name: "GLM Models" };
-  return { id: provider, name: `${provider[0]?.toUpperCase() ?? ""}${provider.slice(1)} Models` };
-}
-
-export interface DesignGroupState extends DesignModelGroup {
+/** One provider's section of the picker, as its closed row tells it. */
+export interface DesignSectionState extends DesignSection {
+  /** Its models' refs, best first. */
+  refs: string[];
   count: number;
   on: number;
+  /** "glm-5.3, glm-5.2, glm-5.3-highspeed, +4", or "None designing". */
+  summary: string;
 }
 
-/** The groups a setup's models fall into, in the order first seen. */
-export function designGroups(models: readonly DesignModelChoice[]): DesignGroupState[] {
-  const out = new Map<string, DesignGroupState>();
-  for (const m of models) {
-    const g = designModelGroup(m.ref);
-    const held = out.get(g.id) ?? { ...g, count: 0, on: 0 };
+/** The picker's order: per provider, favorites, then the ranked list, then the rest newest first. */
+export const orderedModels = (models: readonly DesignModelChoice[]): DesignModelChoice[] => designModelOrder(models);
+
+/** The designing models of a section on one line: the first 3 by name, then how many more. */
+export function sectionSummary(designing: readonly string[]): string {
+  if (designing.length === 0) return "None designing";
+  const shown = designing.slice(0, 3);
+  return designing.length > 3 ? `${shown.join(", ")}, +${designing.length - 3}` : shown.join(", ");
+}
+
+/** The sections a setup's models fall into, in the picker's order. */
+export function designSections(models: readonly DesignModelChoice[]): DesignSectionState[] {
+  const out = new Map<string, DesignSectionState & { designing: string[] }>();
+  for (const m of orderedModels(models)) {
+    const sec = designSectionOf(m.ref);
+    const held = out.get(sec.id) ?? { ...sec, refs: [], count: 0, on: 0, summary: "", designing: [] };
+    held.refs.push(m.ref);
     held.count++;
-    if (m.design) held.on++;
-    out.set(g.id, held);
+    if (m.design) {
+      held.on++;
+      held.designing.push(m.name);
+    }
+    out.set(sec.id, held);
   }
-  return [...out.values()];
+  return [...out.values()].map(({ designing, ...s }) => ({ ...s, summary: sectionSummary(designing) }));
+}
+
+/** The models a search finds: every word of it in the name or the provider/id, in the picker's order. */
+export function searchModels(models: readonly DesignModelChoice[], query: string): DesignModelChoice[] {
+  const words = query.toLowerCase().split(/\s+/).filter(Boolean);
+  if (!words.length) return [];
+  return orderedModels(models).filter((m) => {
+    const hay = `${m.name} ${m.ref} ${designSectionOf(m.ref).name}`.toLowerCase();
+    return words.every((w) => hay.includes(w));
+  });
 }
 
 /** Moves the Coordinator mark to a model: exactly one holds it, whether or not that one designs. */
@@ -49,8 +63,9 @@ export function toggleModel(setup: DesignSetup, ref: string, on: boolean): Desig
   return { ...setup, models: setup.models.map((m) => (m.ref === ref ? { ...m, design: on } : m)) };
 }
 
-export function toggleGroup(setup: DesignSetup, groupId: string, on: boolean): DesignSetup {
-  return { ...setup, models: setup.models.map((m) => (designModelGroup(m.ref).id === groupId ? { ...m, design: on } : m)) };
+/** A section's All: Design on or off for every model in that section, and only those. */
+export function toggleGroup(setup: DesignSetup, sectionId: string, on: boolean): DesignSetup {
+  return { ...setup, models: setup.models.map((m) => (designSectionOf(m.ref).id === sectionId ? { ...m, design: on } : m)) };
 }
 
 export function toggleDirection(setup: DesignSetup, name: string, on: boolean): DesignSetup {

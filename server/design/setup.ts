@@ -4,11 +4,13 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { periodAt, priceUsage, resolvePriceRef, type Aliases, type PriceTable } from "../../shared/model-prices/prices";
 import { stateRoot } from "../state-root";
-import { designLinksIn, designRouteOf, type DesignRun, type DesignSetup } from "../../shared/design";
+import { designLinksIn, designRouteOf, type DesignModelChoice, type DesignRun, type DesignSetup } from "../../shared/design";
+import { DESIGN_NEVER_IDS, DESIGN_NEVER_REFS, designInGroup, designModelOrder } from "../../shared/design-models";
+import { retiredModelRefs } from "../harness/pi/model-sync";
 import { DESIGN_DEFAULT_DIRECTION_SETS, DESIGN_DIRECTIONS } from "../../pi-config/extensions/mode/design-guide.ts";
 import { listModels } from "../models";
 import { modelAllowed, readModelPolicy } from "../model-policy";
-import type { ModelPolicy } from "../../shared/protocol";
+import type { ModelInfo, ModelPolicy } from "../../shared/protocol";
 import type { DesignParent } from "./batch";
 import { linksFromText } from "./brief";
 import { changeDesigns } from "./store";
@@ -25,27 +27,16 @@ const priceFile = <T>(f: string): T | null => {
   }
 };
 
-/** What the model picker never offers. */
-const NEVER = new Set(["claude-opus-5"]);
-
-/** May a design session run on this model: allowed at all, and not barred for workers. */
-export function designModelAllowed(policy: ModelPolicy, ref: string): boolean {
+/** May a design session run on this model: allowed at all, not barred for workers, not one that can only fail
+    (`retired`: the refs Sova's Ollama Cloud check found retired). */
+export function designModelAllowed(policy: ModelPolicy, ref: string, retired: ReadonlySet<string> = new Set()): boolean {
   if (!modelAllowed(policy, ref)) return false;
   const slash = ref.indexOf("/");
   const provider = ref.slice(0, slash).toLowerCase();
   const id = ref.slice(slash + 1);
-  if (NEVER.has(id)) return false;
+  if (DESIGN_NEVER_IDS.has(id) || DESIGN_NEVER_REFS.has(ref) || retired.has(ref)) return false;
   return !policy.subagentDisabledProviders.includes(provider) && !policy.subagentDisabledModels.includes(ref.toLowerCase());
 }
-
-/** A group's name as the main chat says it, against each model's provider. */
-const inGroup = (ref: string, group: string): boolean => {
-  const provider = ref.slice(0, ref.indexOf("/")).toLowerCase();
-  const g = group.toLowerCase();
-  if (g === "claude") return provider === "claude-code-cli" || provider === "anthropic";
-  if (g === "gpt" || g === "openai") return provider === "openai" || provider === "openai-codex";
-  return provider === g;
-};
 
 export interface SetupInput {
   brief?: string;
@@ -55,23 +46,31 @@ export interface SetupInput {
   coordinator?: string;
 }
 
-/** The Setup card as the main chat's words fill it. Every model is listed so the user can change anything. */
-export async function setupFrom(input: SetupInput): Promise<DesignSetup> {
-  const policy = readModelPolicy();
-  const available = (await listModels()).filter((m) => designModelAllowed(policy, m.ref));
+/** The card's model rows from the models this server has: only what may run, best first per provider, with the
+    main chat's picks ticked and exactly one coordinator. */
+export function setupModels(listed: readonly ModelInfo[], policy: ModelPolicy, retired: ReadonlySet<string>, input: Pick<SetupInput, "models" | "modelGroups" | "coordinator">): DesignModelChoice[] {
+  // Best first within each provider's section, favorites leading: the order the card keeps.
+  const available = designModelOrder(listed.filter((m) => designModelAllowed(policy, m.ref, retired)));
   const named = new Set((input.models ?? []).map((m) => m.toLowerCase()));
   const isNamed = (ref: string, id: string) => named.has(ref.toLowerCase()) || named.has(id.toLowerCase());
   const coordinator = available.find((m) => input.coordinator && (m.ref === input.coordinator || m.id === input.coordinator));
-  const models = available.map((m) => ({
+  const models: DesignModelChoice[] = available.map((m) => ({
     ref: m.ref,
     name: m.id,
-    design: isNamed(m.ref, m.id) || (input.modelGroups ?? []).some((g) => inGroup(m.ref, g)),
+    design: isNamed(m.ref, m.id) || (input.modelGroups ?? []).some((g) => designInGroup(m.ref, g)),
     coordinator: false,
     vision: !!m.input?.includes("image"),
     route: designRouteOf(m.ref),
+    ...(m.favorite ? { favorite: true } : {}),
   }));
   const chosenCoordinator = coordinator?.ref ?? models.find((m) => m.design)?.ref ?? models[0]?.ref;
   for (const m of models) m.coordinator = m.ref === chosenCoordinator;
+  return models;
+}
+
+/** The Setup card as the main chat's words fill it. Every model is listed so the user can change anything. */
+export async function setupFrom(input: SetupInput): Promise<DesignSetup> {
+  const models = setupModels(await listModels(), readModelPolicy(), retiredModelRefs(), input);
   const asked = (input.directions ?? []).map((d) => d.toLowerCase());
   const known = DESIGN_DIRECTIONS.filter((d) => asked.includes(d.name.toLowerCase())).map((d) => d.name);
   const on = known.length ? known : [...DESIGN_DEFAULT_DIRECTION_SETS[Math.floor(Math.random() * DESIGN_DEFAULT_DIRECTION_SETS.length)]!];

@@ -50,7 +50,7 @@ export function mainDesignTools(parent: () => DesignParent, cwd: () => string): 
           op: str("What to do.", { enum: ["start", "read", "tell"] }),
           brief: str("start: what to design, in the user's words."),
           models: list("start: particular models the user named, as provider/modelId."),
-          modelGroups: list('start: whole groups the user named, such as "ollama-cloud" or "claude".'),
+          modelGroups: list('start: whole groups the user named, one picker section each: "claude", "gpt", "glm" (Z.ai), "deepseek", "ollama-cloud" (Ollama Cloud) or "ollama" (Ollama on this computer only).'),
           directions: list("start: direction names the user named."),
           coordinator: str("start: the model id to coordinate, only when the user named one."),
           images: list("tell: the paths of images the user attached, to add to the design's images."),

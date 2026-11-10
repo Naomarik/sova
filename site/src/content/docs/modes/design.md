@@ -30,11 +30,14 @@ opens with what you said filled in. Change anything on it. Your clicks don't go 
 
 - **What Do You Want to Design**: your request, in your words. Paste a link here to use a page's
   images or its feel.
-- **Models**: tick whole groups or single models to design. Each model also has a **Coordinator**
-  checkbox, and one model holds it at a time. It can coordinate without designing. On a later run, picking a different
-  coordinator starts a new one on that model. It keeps the notes, not the conversation, and Setup
-  says so. A model marked
-  "text only" can't read pictures and works from a written outline instead.
+- **Models**: one section per provider, all closed at first. Each section's row shows how many of its
+  models are designing and names them; **All** ticks or unticks the whole section, and the arrow opens
+  it to tick single models. Ollama on this computer and Ollama Cloud are separate sections. Your
+  favorites from the model menu come first in each section, then the most capable models. **Find a
+  model** searches every section. The **Coordinator** dropdown above them picks the one model that
+  coordinates; it can coordinate without designing. On a later run, picking a different coordinator
+  starts a new one on that model. It keeps the notes, not the conversation, and Setup says so. A
+  model marked "text only" can't read pictures and works from a written outline instead.
 - **Directions**: pick from 20.
 - **Links**: each link gets a row to choose how it's used:
   - **Use Its Images**: the coordinator opens the page once and brings back its images, with notes
@@ -76,7 +79,7 @@ captured or described.
 Press **Start**. Nothing is designed before you do, and the button names how many designs it starts.
 A batch is models times directions. Above 12 designs Sova shows the count and an estimate and asks
 before starting, and one start stops at 24. Models you've barred for workers in Settings don't
-appear.
+appear, and neither do models that can't run, such as retired Ollama Cloud models.
 
 ## Watching and working with designs
 

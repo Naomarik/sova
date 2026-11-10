@@ -20,6 +20,7 @@ import { agentRoot } from "../state-root";
 import { assetOf, changeAssets, readAssetPart, readAssets } from "./assets";
 import { designWorkers, type DesignParent } from "./batch";
 import { designModelAllowed } from "./setup";
+import { retiredModelRefs } from "../harness/pi/model-sync";
 import { changeDesigns, designDirOf, designSessions, readDesigns } from "./store";
 
 /** How many images one helper is given. Measured on the cheap model: none mixed up at 10, nor at 15, even among near-identical pictures. */
@@ -42,7 +43,8 @@ export const setDescriberQuietMsForTest = (ms: number): void => void (quietMs = 
 /** The models a helper may run on, best first; none means nothing here can read pictures. */
 export async function describerModels(): Promise<string[]> {
   const policy = readModelPolicy();
-  const able = (await listModels()).filter((m) => m.input?.includes("image") && designModelAllowed(policy, m.ref)).map((m) => m.ref);
+  const retired = retiredModelRefs();
+  const able = (await listModels()).filter((m) => m.input?.includes("image") && designModelAllowed(policy, m.ref, retired)).map((m) => m.ref);
   const rank = (ref: string): number => {
     const at = PREFERRED.indexOf(ref);
     return at === -1 ? PREFERRED.length : at;

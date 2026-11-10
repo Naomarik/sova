@@ -4,7 +4,7 @@ import type { TranscriptItem } from "../../shared/protocol";
 import type { DesignRecord, DesignSetup } from "../../shared/design";
 import type { LiveTool } from "./live";
 import { designFold, liveDesignCalls, newestDesignRows, normalizeDesignCard } from "./design-rows";
-import { batchLine, briefTitle, designGroups, designFixLine, designCanOpen, designHoldEnds, designIsBusy, designMeta, designOpenFollowsLive, designNoteLine, designUnchangedLine, designStatusWord, moveCoordinator, parentsLine, setupBlocked, setupCount, setupSummary, statusCounts, toggleDirection, toggleGroup, toggleModel } from "./design-ui";
+import { batchLine, briefTitle, designSections, searchModels, sectionSummary, designFixLine, designCanOpen, designHoldEnds, designIsBusy, designMeta, designOpenFollowsLive, designNoteLine, designUnchangedLine, designStatusWord, moveCoordinator, parentsLine, setupBlocked, setupCount, setupSummary, statusCounts, toggleDirection, toggleGroup, toggleModel } from "./design-ui";
 
 const caps = { batchDefault: 6, askAbove: 12, batchMax: 24, concurrent: 6 };
 const m = (ref: string, design = true, coordinator = false) => ({ ref, name: ref, design, coordinator, vision: true, route: "tool" as const });
@@ -34,13 +34,46 @@ test("the coordinator mark and designing are separate", () => {
   assert.equal(moveCoordinator(s, "claude-code/sonnet").models[1]!.design, true, "moving the mark leaves designing alone");
 });
 
-test("a group tick covers its models and only them", () => {
+test("a section's All covers its models and only them", () => {
   const off = toggleGroup(setup(), "claude", false);
   assert.deepEqual(off.models.map((x) => x.design), [false, false, true]);
   const on = toggleGroup(off, "claude", true);
   assert.deepEqual(on.models.map((x) => x.design), [true, true, true]);
-  const g = designGroups(toggleModel(setup(), "claude-code/opus", false).models).find((x) => x.id === "claude")!;
+  const g = designSections(toggleModel(setup(), "claude-code/opus", false).models).find((x) => x.id === "claude")!;
   assert.deepEqual([g.count, g.on], [2, 1], "half ticked");
+});
+
+test("local Ollama and Ollama Cloud are two sections: All on one never ticks the other", () => {
+  const s = setup({ models: [m("ollama-cloud/glm-5.3", false), m("ollama/gemma3:270m", false), m("ollama/qwen2.5:0.5b", false)] });
+  const ticked = toggleGroup(s, "ollama-cloud", true);
+  assert.deepEqual(ticked.models.filter((x) => x.design).map((x) => x.ref), ["ollama-cloud/glm-5.3"]);
+  assert.deepEqual(designSections(ticked.models).map((x) => [x.name, x.on, x.count]), [["Ollama Cloud", 1, 1], ["Ollama on this computer", 0, 2]]);
+});
+
+test("a closed section names its designing models on one line, or none", () => {
+  assert.equal(sectionSummary([]), "None designing");
+  assert.equal(sectionSummary(["glm-5.3", "glm-5.2"]), "glm-5.3, glm-5.2");
+  assert.equal(sectionSummary(["a", "b", "c", "d", "e", "f", "g"]), "a, b, c, +4");
+});
+
+test("the picker's order stays put while models are ticked", () => {
+  const models = [m("zai/glm-4.7", false), m("zai/glm-5.3", false), m("claude-code-cli/claude-haiku-4-5", false), m("zai/glm-5.2", false)];
+  const order = (ms: readonly DesignSetup["models"][number][]) => designSections(ms).flatMap((x) => x.refs);
+  const before = order(models);
+  let s = setup({ models });
+  for (const ref of ["zai/glm-4.7", "claude-code-cli/claude-haiku-4-5", "zai/glm-5.2"]) {
+    s = toggleModel(s, ref, true);
+    assert.deepEqual(order(s.models), before, `ticking ${ref} moves no row`);
+  }
+  s = moveCoordinator(toggleGroup(s, "zai", false), "zai/glm-4.7");
+  assert.deepEqual(order(s.models), before, "All and the coordinator move no row either");
+});
+
+test("search finds every word in a model's name or provider, in the picker's order", () => {
+  const models = [m("zai/glm-5.2"), m("ollama-cloud/glm-5.3"), m("zai/glm-5.3"), m("openai-codex/gpt-6-luna")];
+  assert.deepEqual(searchModels(models, "glm 5.3").map((x) => x.ref), ["zai/glm-5.3", "ollama-cloud/glm-5.3"]);
+  assert.deepEqual(searchModels(models, "cloud").map((x) => x.ref), ["ollama-cloud/glm-5.3"]);
+  assert.deepEqual(searchModels(models, "  "), [], "an empty search shows the sections, not a result");
 });
 
 test("a run is models times directions, and says so", () => {
@@ -53,7 +86,7 @@ test("a run is models times directions, and says so", () => {
 test("Start Coordinator says why it can't go, one reason at a time", () => {
   assert.equal(setupBlocked(setup(), caps), null);
   assert.match(setupBlocked(setup({ brief: " " }), caps)!, /what to design/);
-  assert.match(setupBlocked(toggleGroup(toggleGroup(setup(), "claude", false), "ollama", false), caps)!, /1 model/);
+  assert.match(setupBlocked(toggleGroup(toggleGroup(setup(), "claude", false), "ollama-cloud", false), caps)!, /1 model/);
   assert.match(setupBlocked(toggleDirection(toggleDirection(setup(), "Minimalist", false), "Heritage", false), caps)!, /1 direction/);
   const noMark = setup();
   assert.match(setupBlocked({ ...noMark, models: noMark.models.map((x) => ({ ...x, coordinator: false })) }, caps)!, /coordinator/);

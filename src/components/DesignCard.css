@@ -29,15 +29,49 @@
 .design-setup { gap: var(--space-4); }
 .design-setup .textarea { min-height: 76px; }
 .design-setup-label { margin: 0; font-size: var(--fs-caption); font-weight: var(--fw-semibold); color: var(--color-ink); }
-.design-setup-groups, .design-directions { display: flex; flex-wrap: wrap; gap: 0 var(--space-4); }
-.design-directions { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
+.design-directions { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 0 var(--space-4); }
 .design-toggle-inline { justify-content: flex-start; }
-.design-model-list { border: 1px solid var(--color-border); border-radius: var(--r-md); overflow: hidden; }
-.design-model-row { min-height: 45px; box-sizing: border-box; display: flex; align-items: center; flex-wrap: wrap; gap: 0 var(--space-4); padding: 0 var(--space-3); border-bottom: 1px solid var(--color-border); }
-.design-model-row:last-child { border-bottom: 0; }
-.design-model-name { flex: 1 1 180px; min-width: 0; font-weight: var(--fw-medium); overflow-wrap: anywhere; padding: var(--space-2) 0; }
+/* The model picker. Every row is one fixed height and every changing word is cut to one line, so a tick
+   changes words, never sizes; opening a section, or searching, only adds or takes away what is below. */
+.design-pick-bar { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: var(--space-3); height: var(--control-md); }
+.design-pick-coord { display: flex; align-items: center; gap: var(--space-2); min-width: 0; }
+.design-pick-coord-label { flex: none; font-size: var(--fs-caption); color: var(--color-ink-2); }
+.design-pick-coord-button { flex: 1 1 0; min-width: 0; justify-content: space-between; }
+.design-pick-coord-button .action-menu-text { display: flex; align-items: center; justify-content: space-between; gap: var(--space-1); width: 100%; min-width: 0; }
+.design-pick-coord-button .action-menu-text { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.design-model-search { min-width: 0; margin: 0; gap: 0; }
+@container design-card (max-width: 480px) {
+  .design-pick-bar { grid-template-columns: minmax(0, 1fr); grid-template-rows: var(--control-md) var(--control-md); height: calc(2 * var(--control-md) + var(--space-2)); gap: var(--space-2); }
+}
+.design-sections { border: 1px solid var(--color-border); border-radius: var(--r-md); overflow: hidden; }
+.design-section + .design-section { border-top: 1px solid var(--color-border); }
+.design-section-head { display: flex; align-items: center; height: 48px; box-sizing: border-box; padding-right: var(--space-3); }
+.design-section-open { flex: 1 1 0; min-width: 0; height: 100%; display: grid; grid-template-columns: minmax(0, max-content) minmax(0, 1fr) 7ch 16px; align-items: center; gap: var(--space-3); padding: 0 var(--space-2) 0 var(--space-3); border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.design-section-open:hover { background: var(--color-sunken); }
+.design-section-open:focus-visible { outline: var(--focus-width, 2px) solid var(--focus-color, var(--color-accent)); outline-offset: calc(-1 * var(--focus-width, 2px)); }
+.design-section-name { font-weight: var(--fw-medium); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.design-section-ticked, .design-section-count { font-size: var(--fs-caption); color: var(--color-ink-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* Left-aligned in a box of fixed width: "0 of 11" becoming "11 of 11" starts where it did. */
+.design-section-count { font-variant-numeric: tabular-nums; }
+.design-section-arrow { color: var(--color-ink-muted); transition: transform var(--dur-fast) var(--ease-standard); }
+.design-section-open[aria-expanded="true"] .design-section-arrow { transform: rotate(180deg); }
+.design-section-all { flex: none; padding-left: var(--space-3); border-left: 1px solid var(--color-border); font-size: var(--fs-caption); color: var(--color-ink-2); }
+@container design-card (max-width: 480px) {
+  /* A phone keeps the name and the count; what's ticked shows once the section is open. */
+  .design-section-open { grid-template-columns: minmax(0, 1fr) 7ch 16px; }
+  .design-section-ticked { display: none; }
+}
+.design-model-grid { list-style: none; margin: 0; padding: 0 var(--space-3) var(--space-2); display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); column-gap: var(--space-4); }
+.design-section .design-model-grid { border-top: 1px solid var(--color-border); padding-top: var(--space-1); background: var(--color-bg); }
+.design-model-cell { min-width: 0; height: var(--tap-min); }
+.design-model-toggle { height: 100%; min-width: 0; gap: var(--space-3); }
+.design-model-toggle > span:first-child { flex: 1 1 0; min-width: 0; }
+.design-model-name { display: block; font-weight: var(--fw-medium); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .design-model-note { font-weight: var(--fw-regular); font-size: var(--fs-caption); }
-.design-model-toggle { flex: none; justify-content: flex-start; font-size: var(--fs-caption); color: var(--color-ink-2); }
+.design-model-found { border: 1px solid var(--color-border); border-radius: var(--r-md); }
+.design-model-found > div + div { border-top: 1px solid var(--color-border); }
+.design-section-label { margin: 0; padding: var(--space-2) var(--space-3) 0; font-size: var(--fs-caption); font-weight: var(--fw-semibold); }
+.design-model-none { margin: 0; padding: var(--space-3); }
 .design-setup-foot { flex: none; display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); height: 72px; box-sizing: border-box; }
 .design-setup-summary { display: flex; flex-direction: column; font-size: var(--fs-caption); min-width: 0; flex: 1 1 0; }
 .design-setup-summary > span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-height: 1.45em; }

@@ -110,6 +110,8 @@ export interface DesignModelChoice {
   coordinator: boolean;
   vision: boolean;
   route: DesignStreamRoute;
+  /** One of the composer's favorites when the card was made: it leads its provider's section. */
+  favorite?: boolean;
 }
 
 export interface DesignDirection {

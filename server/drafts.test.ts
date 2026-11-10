@@ -362,3 +362,14 @@ test("a put-back while another reply is staged keeps that one and brings the ref
   assert.ok(d?.text.includes("[Replying to your earlier reply · 1a2b3c4d]"), "the refused reply's first line comes back");
   assert.ok(d?.text.includes("> the quoted words"), "and its quote");
 });
+
+test("a command draft keeps its staged reply apart from its mode, and a put-back onto it keeps both rules", () => {
+  setDraft("mode-reply", "ls -la", [], "shell", staged);
+  assert.deepEqual([getDraft("mode-reply")?.mode, getDraft("mode-reply")?.reply], ["shell", staged]);
+  assert.deepEqual([draftForClient("mode-reply").mode, draftForClient("mode-reply").reply], ["shell", staged]);
+  // The put-back is a message (the command joins as text, its marker shown) and the staged reply stays.
+  putBackDraft("mode-reply", ["the message that couldn't go"]);
+  const d = getDraft("mode-reply");
+  assert.deepEqual([d?.mode, d?.text, d?.reply], [undefined, "the message that couldn't go\n\n!ls -la", staged]);
+  dropDrafts(["mode-reply"]);
+});

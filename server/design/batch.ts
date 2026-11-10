@@ -589,8 +589,10 @@ export { pageProblem };
 
 /** A design tool turning a page away. The model hears why at once, which spends one of the design's tries, and the
     card says Fixing; the turn's end knows why if it stops there. With its tries used up the turn is over. */
-export function refusedPage(parent: DesignParent, label: string, problem: string): never {
+export function refusedPage(parent: DesignParent, label: string, problem: string, html?: string): never {
   const sid = parent.sessionId;
+  // The page it was refused for is what its next edits apply to, so a fix can be a small edit, not the page again.
+  if (html !== undefined) refusedPages.set(`${sid}\0${label}`, html);
   const tried = takeFixTry(sid, label);
   clearLivePage(sid, label);
   if (tried) {
@@ -619,12 +621,20 @@ export function refusedPage(parent: DesignParent, label: string, problem: string
   throw new Error(`${problem} Your tries for this page are used up, so stop now.`);
 }
 
+/** Pages a tool turned away, in memory only: what their fix edits. */
+const refusedPages = new Map<string, string>();
+
+/** The page edits apply to: the one being written, else one just refused, else the newest version. */
+export const editBase = (sid: string, label: string): string | null => pendingPage(sid, label) ?? refusedPages.get(`${sid}\0${label}`) ?? readPage(sid, label);
+
 /** A page that passed: whatever an earlier call was refused for is over. */
-const clearRefused = (sid: string, label: string): void =>
+function clearRefused(sid: string, label: string): void {
+  refusedPages.delete(`${sid}\0${label}`);
   changeDesigns(sid, (s) => {
     const i = s.internal?.[label];
     if (i) delete i.refused;
   });
+}
 
 export function savePage(parent: DesignParent, label: string, html: string): void {
   setPendingPage(parent.sessionId, label, html);
@@ -755,6 +765,7 @@ export function retryDesign(parent: DesignParent, label: string): void {
       delete i.refused;
     }
   });
+  refusedPages.delete(`${parent.sessionId}\0${label}`);
   const run = runOf(parent.sessionId, d.runId);
   if (run?.phase === "done") setRunPhase(parent.sessionId, run.id, "generating");
   pump(parent);

@@ -551,6 +551,17 @@ test("a Refine that ends with no new version says so; a question in Chat doesn't
   assert.equal(stat("A").unchanged, undefined);
 });
 
+test("after a refusal the next edit applies to the refused page, so a fix can be one small edit", async () => {
+  const f = await start();
+  await assert.rejects(refuse("A"));
+  await streamTool("A").execute("t", { label: "A", edits: [{ find: "var a = ;", replace: "var a = 1;" }] }, undefined, undefined, undefined);
+  await sessionDesignTools(parent, "A").find((t) => t.name === "design_hand_in")!.execute("t", { label: "A", note: NOTE }, undefined, undefined, undefined);
+  assert.equal(stat("A").status, "ready");
+  assert.equal(stat("A").fix, undefined);
+  assert.match(store.readPage(parent.sessionId, "A")!, /var a = 1;/);
+  assert.equal(fixSends(f).length, 0);
+});
+
 test("a refused edit and a hand-in with no page count too", async () => {
   await start();
   const edits = streamTool("A").execute("t", { label: "A", edits: [{ find: "a", replace: "b" }] }, undefined, undefined, undefined);

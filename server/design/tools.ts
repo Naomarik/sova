@@ -8,7 +8,7 @@ import { DESIGN_GUIDE_TOPICS, designGuide } from "../../pi-config/extensions/mod
 import { coordinatorCard, tellCoordinator } from "./coordinator";
 import { createRun } from "./setup";
 import { ownImagesLine } from "./asset-routes";
-import { DESIGN_HAND_IN_TOOL, handIn, pageProblem, refusedPage, replyPageThisTurn, savePage, takeLook, type DesignParent } from "./batch";
+import { DESIGN_HAND_IN_TOOL, editBase, handIn, pageProblem, refusedPage, replyPageThisTurn, savePage, takeLook, type DesignParent } from "./batch";
 import { livePage } from "./live";
 import { lookAtDesign } from "./look";
 import type { TourSize } from "../../shared/tour";
@@ -143,14 +143,14 @@ function allSessionTools(parent: DesignParent, label: string): ToolSpec[] {
         let html = params.html;
         if (html === undefined) {
           if (!params.edits?.length) throw new Error("Send html, or edits.");
-          const current = pendingPage(parent.sessionId, label) ?? readPage(parent.sessionId, label);
+          const current = editBase(parent.sessionId, label);
           if (!current) refusedPage(parent, label, "You have no page to edit yet; send html.");
           const out = applyEdits(current, params.edits);
           if ("error" in out) refusedPage(parent, label, out.error);
           html = out.html;
         }
         const problem = pageProblem(html) ?? assetNamesProblem(parent.sessionId, html);
-        if (problem) refusedPage(parent, label, problem);
+        if (problem) refusedPage(parent, label, problem, html);
         savePage(parent, label, html);
         return say("Saved. Now call design_hand_in, then stop: the user is looking at your page.");
       },

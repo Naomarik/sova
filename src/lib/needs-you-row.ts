@@ -8,6 +8,7 @@ import { tildePath } from "./format";
 import type { NeedsYouRow } from "./needs-you";
 import { orgPlaceLabel } from "./org-region";
 import { heldWaitLine } from "./pipeline-view";
+import { setupRowChip } from "./setup-chat";
 
 export type NeedsTone = "error" | "warn" | "success" | "info" | "accent" | undefined;
 
@@ -87,17 +88,25 @@ const isFolder = (s: string): boolean => s.startsWith("/") || s.startsWith("~");
 
 const tipOf = (title: string, sentences: readonly string[]): string => [title, ...sentences.filter(Boolean)].join("\n");
 
+/** A chat's chip. A proposal has its own: a Setup one stands as still being read until a row reads it, and any other
+    is Ready only with a hash to merge (no hash, no button). */
+function chatChip(r: NeedsYouRow): NeedsRow["chip"] {
+  const pb = r.kind === "playbook-review" ? r.playbook : undefined;
+  if (pb?.proposes === "pipeline") return setupRowChip(null, false);
+  if (pb && !pb.hash) return { word: "Blocked", tone: "warn" };
+  return { word: NEEDS_KINDS[r.kind].word, tone: NEEDS_KINDS[r.kind].tone };
+}
+
 /** A session's row: its project or folder, its title, its sentences as hover text. `sentences`: the Organizations region's,
     which say more than the digest's. */
 export function sessionRow(r: NeedsYouRow, o: { href: string; home: string | null; host?: string | null; sentences?: readonly string[] }): NeedsRow {
   const s: SessionSummary = r.session;
-  const k = NEEDS_KINDS[r.kind];
   const where = s.org ? orgPlaceLabel(s) : (s.project?.projectName ?? (s.cwd ? folderName(s.cwd) : "This host"));
   return {
     key: s.path,
     name: o.host ? `${where} · ${o.host}` : where,
     place: s.cwd ? tildePath(s.cwd, o.home) : null,
-    chip: { word: k.word, tone: k.tone },
+    chip: chatChip(r),
     title: s.title,
     ...(s.title === "Untitled" ? { titleMuted: true } : {}),
     tip: tipOf(s.title, o.sentences ?? r.details),

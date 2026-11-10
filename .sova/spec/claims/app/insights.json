@@ -783,7 +783,7 @@
       "§app.claude-code-provider/model-identity"
     ],
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "code": [
       "server/usage-helper/query.ts",
       "server/usage-helper/ledger.test.ts",
@@ -795,8 +795,14 @@
       "pi-config/extensions/llm-inflight/claude-usage.test.ts",
       "shared/model-prices/prices.ts",
       "server/model-prices.test.ts",
-      "server/usage-helper/ledger.ts"
-    ]
+      "server/usage-helper/ledger.ts",
+      "server/usage-helper/main.ts"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-09T23:07Z",
+      "source": "pi-session:11c2d12a-bd23-4062-86b0-4bda053a8931#e9d77662"
+    }
   },
   "§app.insights/usage-page-and-agents-page": {
     "kind": "behavior",

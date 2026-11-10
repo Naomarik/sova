@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { changedFiles, changesHead, chatLine, durationWords, landState, notSetUpWords, setupButtonLabel, trialChip, trialLine, trialStale, type SetupProposal, type SetupTrial, type SetupTrialCheck } from "./setup-chat";
+import { changedFiles, changesHead, chatLine, durationWords, landState, notSetUpWords, setupButtonLabel, setupRowChip, standsInQueue, trialChip, trialLine, trialStale, type SetupProposal, type SetupTrial, type SetupTrialCheck } from "./setup-chat";
 
 const HEAD = "a1b2c3d4e5f6a7b8c9d0";
 const OLD = "0f9e8d7c6b5a49382716";
@@ -28,6 +28,54 @@ const proposal = (o: Partial<SetupProposal> = {}): SetupProposal => ({
   ...o,
 });
 const chat = { sessionId: "s", title: "Setup · demo", startedAt: "", proposal: null, setUp: { merge: false, release: false, deploy: false } };
+
+test("a Setup row's chip is the first line of the promise that holds, for every combination", () => {
+  type Case = { queued: boolean; problem: boolean; state: SetupTrial["state"] | "none" | "stale"; refused: boolean; served: boolean };
+  // The promise, line by line, in its order.
+  const headTried = (c: Case, s: SetupTrial["state"]) => c.state === s;
+  const lines: [(c: Case) => boolean, string, string | undefined][] = [
+    [(c) => c.queued, "Queued", undefined],
+    [(c) => c.problem, "Blocked", "warn"],
+    [(c) => headTried(c, "running"), "Running", "accent"],
+    [(c) => c.state === "none" || c.state === "stale", "Your turn", "warn"],
+    [(c) => headTried(c, "failed"), "Failed", "error"],
+    [(c) => headTried(c, "machine") || headTried(c, "void"), "Your turn", "warn"],
+    [(c) => headTried(c, "passed") && c.refused, "Blocked", "warn"],
+    [(c) => headTried(c, "passed") && !c.refused, "Ready", "success"],
+  ];
+  let ready = 0;
+  for (const queued of [false, true])
+    for (const problem of [false, true])
+      for (const refused of [false, true])
+        for (const served of [false, true])
+          for (const state of ["none", "stale", "running", "passed", "failed", "machine", "void"] as const) {
+            const c: Case = { queued, problem, state, refused, served };
+            const p = proposal({
+              served,
+              trial: state === "none" ? null : state === "stale" ? trial("passed", { commit: OLD }) : trial(state),
+              land: refused ? { can: false, why: "It conflicts with main." } : { can: true },
+              ...(problem ? { problem: "merge.checks[0] has no command." } : {}),
+            });
+            const [, word, tone] = lines.find(([holds]) => holds(c))!;
+            assert.deepEqual(setupRowChip(p, queued), { word, tone }, JSON.stringify(c));
+            assert.ok(word.length <= 12, word);
+            // The chip and the button read the proposal alike: Ready is exactly Land or Merge Branch on offer.
+            const st = landState(p);
+            if (!queued) assert.equal(word === "Ready", st.can && (st.action === "land" || st.action === "merge"), JSON.stringify(c));
+            if (word === "Ready") ready++;
+          }
+  assert.equal(ready, 2, "Ready only on the last line: not queued, no problem, passed, not refused, either way of landing");
+});
+
+test("a Setup proposal that isn't read, or couldn't be, is never Ready", () => {
+  for (const queued of [false, true]) for (const p of [null, undefined]) assert.deepEqual(setupRowChip(p, queued), { word: "Proposed", tone: undefined });
+});
+
+test("a queue entry sent back to its chat isn't standing in the queue", () => {
+  for (const state of ["needs-fix", "drafts-changed"]) assert.equal(standsInQueue({ state }), undefined, state);
+  for (const state of ["waiting", "checking", "needs-you"]) assert.deepEqual(standsInQueue({ state }), { state });
+  assert.equal(standsInQueue(undefined), undefined);
+});
 
 test("the button: Set Up with a Chat until set up, then Change Setup", () => {
   assert.equal(setupButtonLabel(false), "Set Up with a Chat");

@@ -8,6 +8,7 @@ import { after, test } from "node:test";
 import type { HEntry } from "../shared/harness";
 import type { SessionSetup } from "../shared/protocol";
 import { conversationTalk, conversationTokens, getContextView, labelOf, skillReadState, skillsRead, type ContextViewDeps } from "./context-tab";
+import { skillsBlock } from "./subfolder-skills";
 import { splitSystemPrompt } from "./harness/pi/session";
 import { scratchRoot } from "./test-scratch";
 
@@ -215,4 +216,39 @@ test("an instruction file's name: relative in the chat's folder, ~ under home, w
   assert.equal(labelOf("/h/u/p", "/h/u/p/AGENTS.md", "/h/u"), "AGENTS.md");
   assert.equal(labelOf("/h/u/p", "/h/u/AGENTS.md", "/h/u"), "~/AGENTS.md");
   assert.equal(labelOf("/h/u/p", "/h/ux/AGENTS.md", "/h/u"), "/h/ux/AGENTS.md");
+});
+
+test("subfolder skills: a chat that loads none lists none; a worker's tools decide; a name two rows share reads by path alone", async () => {
+  const branchOf = (location: string): HEntry[] => branch({ kind: "assistant", blocks: [{ type: "toolCall", id: "c1", name: "read", arguments: { path: location } }] } as Partial<HEntry>);
+  const walk = { skills: [{ name: "pdf", description: "Nested.", filePath: "/w/svc/.claude/skills/pdf/SKILL.md", manualOnly: false, dir: "svc" }], incomplete: false };
+  const heldWith = (tools: string[], loader: unknown = null) => async () => ({ sections: {}, tools: tools.map((name) => ({ name, description: "", parameters: {} })), loader }) as never;
+  const go = (held: unknown, location = "/s/pdf/SKILL.md") => getContextView("/s.jsonl", deps({ held: held as never, branch: async () => branchOf(location), nestedSkills: () => walk }));
+  const none = await go(heldWith(["read"], { noSkills: true }));
+  assert.ok(none.state === "ok" && none.nestedSkills === undefined);
+  const noRead = await go(heldWith(["write"]));
+  assert.ok(noRead.state === "ok" && noRead.nestedSkills === undefined, "it can't read a skill's file");
+  const bare = await go(heldWith(["bash"]));
+  assert.ok(bare.state === "ok" && bare.nestedSkills === undefined, "it can't touch a file");
+  const v = await go(heldWith(["read"]));
+  assert.ok(v.state === "ok");
+  assert.deepEqual(v.nestedSkills?.map((p) => [p.label, p.folder, p.offered, p.read]), [["pdf", "svc", false, false]]);
+  assert.equal(v.skills.find((p) => p.label === "pdf")?.read, true, "the starting one was read, by its path; the other of its name wasn't");
+  const nested = await go(heldWith(["read"]), "/w/svc/.claude/skills/pdf/SKILL.md");
+  assert.ok(nested.state === "ok");
+  assert.equal(nested.nestedSkills?.[0]?.read, true);
+  assert.equal(nested.skills.find((p) => p.label === "pdf")?.read, false);
+});
+
+test("subfolder skills: an offered one counts its listing and leaves the conversation; a walk's cut says so", async () => {
+  const block = skillsBlock("svc", [{ name: "nest", description: "Nested.", filePath: "/w/svc/.claude/skills/nest/SKILL.md" }]);
+  const offered: HEntry[] = [{ kind: "tool-result", id: "t1", parentId: null, tool: "read", blocks: [{ type: "text", text: "out" }, { type: "text", text: block }] } as unknown as HEntry];
+  const v = await getContextView("/s.jsonl", deps({ branch: async () => offered, nested: () => ({ files: [], incomplete: false }), nestedSkills: () => ({ skills: [], incomplete: true }) }));
+  assert.ok(v.state === "ok");
+  const row = v.nestedSkills?.[0];
+  assert.deepEqual([row?.label, row?.offered, row?.read, row?.folder], ["nest", true, false, "svc"], "a block on the branch is a row, whatever the walk found");
+  assert.ok((row?.tokens ?? 0) > 0);
+  assert.equal(v.nestedIncomplete, true);
+  const wrapper = conversationTokens(offered) - (row?.tokens ?? 0);
+  assert.equal(v.conversation, wrapper, "the conversation is counted less the listing, so nothing counts twice");
+  assert.equal(v.talk?.toolResults.tokens, wrapper);
 });

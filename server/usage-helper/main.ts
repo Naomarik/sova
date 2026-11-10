@@ -10,6 +10,7 @@
 // appends (fs.watch on the root and the recent days, a sweep every 30 s for anything missed), saves
 // its snapshots every few seconds, closes days, and pulls prices every 6 hours. stdin closing (the
 // server gone) or SIGTERM saves and exits.
+import { claudeStateRoot, loadClaudeModels, watchClaudeModelsFile } from "../../pi-config/extensions/claude-code/catalog-store.ts";
 import fs from "node:fs";
 import path from "node:path";
 import { defaultAgentDir, readDeviceId, usageRoot as usageRootOf, validUsageDay } from "../../pi-config/extensions/llm-inflight/usage-record";
@@ -112,6 +113,10 @@ fs.watch(usageRoot, (_e, name) => {
 });
 rewatch();
 
+// Usage rows group by the Claude catalog: this process follows the learned list too.
+loadClaudeModels();
+const stopClaudeWatch = watchClaudeModelsFile(claudeStateRoot(), () => loadClaudeModels());
+void stopClaudeWatch;
 const timers = [
   setInterval(() => ledger.flush(), SAVE_MS),
   setInterval(() => {

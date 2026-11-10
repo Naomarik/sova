@@ -59,10 +59,12 @@ test("the stored pick is always in the select, and absence reads per backend", (
     summarizerModelOptions(OPTIONS, EMPTY_POLICY, { backend, model }).map((o) => o.label);
   assert.equal(labels("pi", "gone/model")[0], "gone/model — not offered");
   assert.equal(labels("pi", "claude-code-cli/opus")[0], "claude-code-cli/opus — not verified");
-  assert.equal(labels("claude-code", "claude-opus-5-5")[0], "claude-opus-5-5 — not verified");
+  assert.equal(labels("claude-code", "claude-nova-1-2")[0], "Nova 1.2 — not verified", "a shape-valid id Sova doesn't know");
+  assert.equal(labels("claude-code", "claude-opus-5-5")[0], "Opus 5.5", "known to the catalog but not on this list (a dropped model's saved choice): no note");
+  assert.equal(summarizerIssue(OPTIONS, EMPTY_POLICY, { backend: "claude-code", model: "claude-opus-5-5" }, null), null);
   assert.deepEqual(labels("pi", "ollama-cloud/deepseek-v4.1-flash"), ["ollama-cloud/deepseek-v4.1-flash", "openai/gpt-x"]);
   assert.equal(summarizerIssue(OPTIONS, EMPTY_POLICY, { backend: "pi", model: "gone/model" }, null)?.tone, "error");
-  assert.equal(summarizerIssue(OPTIONS, EMPTY_POLICY, { backend: "claude-code", model: "claude-opus-5-5" }, null)?.tone, "muted");
+  assert.equal(summarizerIssue(OPTIONS, EMPTY_POLICY, { backend: "claude-code", model: "claude-nova-1-2" }, null)?.tone, "muted");
   // Before the options arrive nothing is claimed either way.
   assert.equal(summarizerIssue(undefined, EMPTY_POLICY, { backend: "pi", model: "gone/model" }, null), null);
 });
@@ -78,8 +80,8 @@ test("an old Claude id counts as listed when the catalog lists the model it mean
     summarizerModelOptions(OPTIONS, EMPTY_POLICY, { backend, model }).map((o) => o.label);
   assert.deepEqual(labels("claude-code", "haiku"), ["Haiku 4.5", "Haiku 4.5"], "the stored old id and the catalog entry, both by name");
   assert.equal(summarizerIssue(OPTIONS, EMPTY_POLICY, { backend: "claude-code", model: "haiku[1m]" }, null), null);
-  // A model the list doesn't have: not verified.
-  assert.equal(summarizerIssue(OPTIONS, EMPTY_POLICY, { backend: "claude-code", model: "claude-opus-5-5" }, null)?.tone, "muted");
+  // A model the catalog doesn't know: not verified.
+  assert.equal(summarizerIssue(OPTIONS, EMPTY_POLICY, { backend: "claude-code", model: "claude-nova-1-2" }, null)?.tone, "muted");
   // pi is unaffected.
   assert.equal(labels("pi", "ollama-cloud/deepseek-v4.1-flash[1m]")[0], "ollama-cloud/deepseek-v4.1-flash[1m] — not offered");
   assert.equal(summarizerIssue(OPTIONS, EMPTY_POLICY, { backend: "pi", model: "ollama-cloud/deepseek-v4.1-flash[1m]" }, null)?.tone, "error");

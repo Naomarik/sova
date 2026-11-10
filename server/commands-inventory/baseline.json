@@ -58,6 +58,7 @@
     "GET /api/baton/:sid/told": {"need":"sessions","is":"opted-out"},
     "GET /api/baton/settings": {"need":"sessions","is":"opted-out"},
     "GET /api/claude/accounts": {"need":"sessions","is":"opted-out"},
+    "GET /api/claude/catalog": {"need":"sessions","is":"opted-out"},
     "GET /api/commands": {"need":"full","is":"catalogue"},
     "GET /api/cwds": {"need":"sessions","is":"command","ids":["cwds.list"]},
     "GET /api/diff/patch": {"need":"sessions","is":"pending"},

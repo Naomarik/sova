@@ -6,7 +6,7 @@ import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import { delegateDefaults } from "../mode/delegate.ts";
 import { ALIGN_STYLES } from "../mode/align-settings.ts";
-import { DEFAULT_TEAM_DEFAULTS, writeTeamDefaults } from "./team-defaults.ts";
+import { defaultTeamDefaults, writeTeamDefaults } from "./team-defaults.ts";
 import {
 	footprint,
 	idFor,
@@ -30,7 +30,7 @@ import {
 	subagentProfileDefaultPath,
 	subagentProfilesPath,
 	seedReviewer,
-	DEFAULT_REVIEWER,
+	defaultReviewer,
 	writeProfilesDefault,
 	writeSubagentProfiles,
 	type SubagentProfile,
@@ -125,7 +125,7 @@ test("parse: the library has no artificial profile count limit", () => {
 });
 
 test("parse: a teams section takes team-defaults' rules, and its defaults fill what it leaves out", () => {
-	const parsed = parseSubagentProfiles(file([profile("a", "A", { teams: { coordinator: { ...DEFAULT_TEAM_DEFAULTS.coordinator }, monitor: { ...DEFAULT_TEAM_DEFAULTS.monitor }, handover: { retireTimeoutMinutes: 10 } } })]));
+	const parsed = parseSubagentProfiles(file([profile("a", "A", { teams: { coordinator: { ...defaultTeamDefaults().coordinator }, monitor: { ...defaultTeamDefaults().monitor }, handover: { retireTimeoutMinutes: 10 } } })]));
 	assert.equal(parsed.ok, true);
 	const bad = parseSubagentProfiles({ version: 1, profiles: [{ ...profile("a", "A"), teams: { monitor: { contextPct: 0 } } }] });
 	assert.equal(bad.ok, false);
@@ -165,7 +165,7 @@ test("seed: an absent library and default file are written once from the legacy 
 	const dir = tempDir();
 	fs.writeFileSync(path.join(dir, "mode-delegate.json"), JSON.stringify({ version: 1, profiles: { routine: { primary: pi("zai/glm-5.3"), fallback: null } } }));
 	fs.writeFileSync(path.join(dir, "mode-spec.json"), JSON.stringify({ version: 1, writer: { primary: claude("claude-sonnet-5-5", "medium"), fallback: null } }));
-	writeTeamDefaults(dir, DEFAULT_TEAM_DEFAULTS);
+	writeTeamDefaults(dir, defaultTeamDefaults());
 	const state = loadSubagentProfiles(dir);
 	assert.equal(state.state, "ok");
 	const seeded = (state as { value: SubagentProfilesFile }).value;
@@ -204,7 +204,7 @@ test("seed: a malformed team-defaults.json is not seeded over: the legacy files,
 	const r = resolveSubagents(dir, undefined);
 	assert.equal(r.source, "legacy");
 	assert.equal(r.teams.state, "malformed");
-	writeTeamDefaults(dir, DEFAULT_TEAM_DEFAULTS);
+	writeTeamDefaults(dir, defaultTeamDefaults());
 	assert.equal(loadSubagentProfiles(dir).state, "ok", "seeded once it is fixed");
 });
 
@@ -256,7 +256,7 @@ test("resolution order: the chat's pick, then this device's default, then the le
 
 test("Off configures nothing: no routing, no team members, no spec writer", () => {
 	const dir = tempDir();
-	writeTeamDefaults(dir, DEFAULT_TEAM_DEFAULTS);
+	writeTeamDefaults(dir, defaultTeamDefaults());
 	writeSubagentProfiles(dir, file([profile("a", "A", { specWriter: { primary: claude("claude-opus-5-5"), fallback: null } })]));
 	writeProfilesDefault(dir, { version: 1, default: OFF_PROFILE_ID });
 	for (const r of [resolveSubagents(dir, undefined), resolveSubagents(dir, OFF_PROFILE_ID)]) {
@@ -272,7 +272,7 @@ test("Off configures nothing: no routing, no team members, no spec writer", () =
 
 test("a profile's teams resolve in team-defaults' own shape; null is absent", () => {
 	const dir = tempDir();
-	const teams = { coordinator: { ...DEFAULT_TEAM_DEFAULTS.coordinator }, monitor: { ...DEFAULT_TEAM_DEFAULTS.monitor, contextPct: 42 }, handover: { retireTimeoutMinutes: 3 } };
+	const teams = { coordinator: { ...defaultTeamDefaults().coordinator }, monitor: { ...defaultTeamDefaults().monitor, contextPct: 42 }, handover: { retireTimeoutMinutes: 3 } };
 	writeSubagentProfiles(dir, file([profile("a", "A", { teams }), profile("b", "B")]));
 	const a = resolveSubagents(dir, "a").teams;
 	assert.equal(a.state, "ok");
@@ -285,8 +285,8 @@ test("a profile's teams resolve in team-defaults' own shape; null is absent", ()
 
 test("profileSlots enumerates every slot — a disabled coordinator and monitor included", () => {
 	const teams = {
-		coordinator: { ...DEFAULT_TEAM_DEFAULTS.coordinator, enabled: false },
-		monitor: { ...DEFAULT_TEAM_DEFAULTS.monitor, enabled: false },
+		coordinator: { ...defaultTeamDefaults().coordinator, enabled: false },
+		monitor: { ...defaultTeamDefaults().monitor, enabled: false },
 		handover: { retireTimeoutMinutes: 10 },
 	};
 	const p = profile("a", "A", { teams, specWriter: { primary: claude("claude-opus-5-5"), fallback: pi("zai/glm-5.3") } });
@@ -306,7 +306,7 @@ test("footprints and providers", () => {
 	assert.equal(shortModel("zai/glm-5.3"), "glm-5.3");
 	assert.equal(shortModel("claude-code-cli/claude-sonnet-4-6"), "Sonnet 4.6");
 	const p = profile("a", "A", { specWriter: { primary: pi("zai/glm-5.3"), fallback: null } });
-	assert.equal(footprint(p), "Fable 5.1 · Opus 5.5 · glm-5.3");
+	assert.equal(footprint(p), "Fable 5.2 · Opus 5.5 · glm-5.3");
 	assert.deepEqual(profileProviders(p).sort(), ["claude", "zai"]);
 	assert.deepEqual(profileProviders(profile("z", "Z", { delegate: Object.fromEntries(Object.entries(delegateDefaults().profiles).map(([k]) => [k, { primary: pi("zai/glm-5.3"), fallback: null }])) as SubagentProfile["delegate"] })), ["zai"]);
 });
@@ -355,8 +355,8 @@ test("seedReviewer: the default goes only to profiles without the key; None and 
 	const after = readSubagentProfiles(dir);
 	assert.ok(after.state === "ok");
 	const [bare, none, own] = after.value.profiles;
-	assert.deepEqual(bare!.reviewer, DEFAULT_REVIEWER);
-	assert.deepEqual(DEFAULT_REVIEWER, { primary: { backend: "pi", model: "openai-codex/gpt-6.1-sol", effort: "high" }, fallback: { backend: "claude-code", model: "claude-opus-5-5", effort: "high" } });
+	assert.deepEqual(bare!.reviewer, defaultReviewer());
+	assert.deepEqual(defaultReviewer(), { primary: { backend: "pi", model: "openai-codex/gpt-6.1-sol", effort: "high" }, fallback: { backend: "claude-code", model: "claude-opus-5-5", effort: "high" } });
 	assert.equal(none!.reviewer, null, "an explicit None is never overwritten");
 	assert.deepEqual(own!.reviewer, mine, "an existing route is never overwritten");
 	const bytes = fs.readFileSync(subagentProfilesPath(dir), "utf8");

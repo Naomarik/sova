@@ -831,8 +831,9 @@ asked for, through the catalog or the legacy table (§app.claude-code-provider/l
 `opus[1m]`, `opus` and `claude-opus-5-5[1m]` calls that Opus 5.5 answered are one "Opus 5.5" row,
 and a Haiku call inside an Opus session keeps its own "Haiku 4.5" row. The row's `title` lists the
 ids that were asked for. A call answered by another model than the one asked for stays apart
-(§app.claude-code-provider/model-identity), and a Claude id the catalog doesn't know keeps a row of
-its own. The Model filter offers the same rows; a link that names an old key
+(§app.claude-code-provider/model-identity), and a Claude id the catalog doesn't know keeps a row of its own, read by its name where it is a
+standard id (§app.claude-code-provider/model-names). A
+model Claude Code has dropped keeps its rows (§app.claude-code-provider/model-table). The Model filter offers the same rows; a link that names an old key
 (`claude-code-cli/opus[1m]`) selects the row it now belongs to. Every total is unchanged: only the
 grouping moves.
 

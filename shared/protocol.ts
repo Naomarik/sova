@@ -1651,6 +1651,17 @@ export const CHARS_PER_TOKEN = 4;
 export interface SessionSetupSkill extends SessionSetupFile {
   name: string;
   description?: string;
+  /** Only `/skill:name` runs it: the model is never offered it. */
+  manualOnly?: true;
+}
+
+/** A skill that didn't load, and why (§chat.transcript/setup-card-skills). */
+export interface SessionSetupSkillProblem {
+  name: string;
+  path: string;
+  reason: "no-description" | "front-matter" | "unreadable" | "same-name";
+  /** `same-name`: the file that loaded under that name. */
+  winnerPath?: string;
 }
 
 export type SessionSetup =
@@ -1664,6 +1675,8 @@ export type SessionSetup =
       /** Skills, in the order pi lists them to the model. A skill is OFFERED, not loaded: it loads
           when it is used. */
       skills: SessionSetupSkill[];
+      /** Skills that didn't load; absent when none. */
+      skillProblems?: SessionSetupSkillProblem[];
       /** A `.pi/SYSTEM.md` that replaces the default prompt, when one is loaded. */
       systemPrompt?: SessionSetupFile;
       /** APPEND_SYSTEM.md sources, in the order they are appended. */
@@ -1722,6 +1735,12 @@ export interface SessionContextPart {
   /** Skills only: the agent loaded the whole skill (read all of its SKILL.md as it is now, or it was
       invoked) since the latest compaction, so its text is in the window now. */
   read?: boolean;
+  /** Skills only: only `/skill:name` runs it, so the model isn't offered it. `tokens` is its whole text. */
+  manualOnly?: true;
+  /** A skill of a folder below the chat's (`nestedSkills`): that folder, relative to cwd. */
+  folder?: string;
+  /** A skill of a folder below the chat's: the model has been offered it, on what it sees now. */
+  offered?: boolean;
   /** Skills only, when the agent loaded part of its SKILL.md: how many of its lines (a union of every
       read since the latest compaction), and `lines`, the file's length now. Absent when it read none or
       all; `lines` is absent too when the file couldn't be measured. */
@@ -1783,6 +1802,8 @@ export type SessionContextView =
       /** `conversation` by kind of message. Absent from an older server. */
       talk?: SessionContextTalk;
       nested: SessionContextNested[];
+      /** Skills of folders below cwd, offered or not; absent from an older server. */
+      nestedSkills?: SessionContextPart[];
       /** The walk below cwd stopped at its cap: the list may be incomplete. */
       nestedIncomplete?: true;
       checkedAt: number;
@@ -2085,15 +2106,18 @@ export interface DelegateBackendOptions {
       provider, `claude-code-cli`, registered only in sessions started with it on). A model of one
       of these that `models` doesn't list is NOT VERIFIED, never "not offered". */
   sessionScopedProviders?: string[];
-  /** claude-code only: what the CLI's own list says that Sova's Claude catalog doesn't (models it
-      names that the catalog doesn't know; a family alias it now runs as another model). Absent when
-      the list agrees or couldn't be read. Never changes `models`. */
-  drift?: ClaudeCatalogDrift;
 }
 
-export interface ClaudeCatalogDrift {
-  unknown: { id: string; name?: string }[];
-  moved: { family: string; id: string; current: string }[];
+/** GET /api/claude/catalog: the Claude models Sova has learned, for the web app's lookups. */
+export interface ClaudeCatalogInfo {
+  /** What claude-code/catalog.ts merges (mergeClaudeCatalog); all empty before anything is learned. */
+  data: {
+    models: { id: string; window?: number; maxOutput?: number; efforts?: string[]; apiIds?: string[] }[];
+    dropped?: string[];
+    tested?: string[];
+  };
+  /** Claude Code's model table couldn't be read: the list is the last one Sova knows. */
+  lastKnown: boolean;
 }
 
 export interface DelegateOptions {
@@ -5358,6 +5382,9 @@ export type SessionFeedMessage =
       payload: the client re-reads GET /api/session-groups and the list. Never on connect. Additive:
       a client that predates it ignores it. */
   | { type: "groups_changed" }
+  /** Sova's Claude model list changed (server/claude-models-sync.ts). No payload: the client re-reads
+      GET /api/claude/catalog and its model list. Additive: a client that predates it ignores it. */
+  | { type: "claude_models_changed" }
   /** The logical LLM calls in flight on this host and every connected host: sent once on every
       connect, then on each change of the total or its coverage. Never a reason to re-read the
       list. */

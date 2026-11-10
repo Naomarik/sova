@@ -8,7 +8,7 @@ configurable worker — backend · model · effort — with an optional fallback
 
 | Profile | Covers | Default worker | Default fallback |
 | --- | --- | --- | --- |
-| **Planning & specs** | Non-editing design: plans, specs, architecture, and any investigation that feeds a design decision | `claude-code` · `claude-fable-5-1[1m]` · `medium` | `claude-code` · `opus[1m]` · `high` |
+| **Planning & specs** | Non-editing design: plans, specs, architecture, and any investigation that feeds a design decision | `claude-code` · `claude-fable-5-2` · `medium` | `claude-code` · `opus[1m]` · `high` |
 | **Investigation** | Focused read-only research or diagnosis of a specific question, with no design to settle | `claude-code` · `opus[1m]` · `low` | none |
 | **Routine implementation** | Mechanical, well-specified, low-risk changes | `claude-code` · `opus[1m]` · `low` | none |
 | **Complex implementation** | Ambiguous, cross-cutting, or high-risk changes | `claude-code` · `opus[1m]` · `medium` | none |
@@ -551,7 +551,7 @@ a routing kept there would vanish on the next `/mode default`:
 
 ```json
 { "version": 1, "profiles": {
-    "planning":      { "primary":  { "backend": "claude-code", "model": "claude-fable-5-1[1m]", "effort": "medium" },
+    "planning":      { "primary":  { "backend": "claude-code", "model": "claude-fable-5-2", "effort": "medium" },
                        "fallback": { "backend": "claude-code", "model": "opus[1m]", "effort": "high" } },
     "investigation": { "primary":  { "backend": "claude-code", "model": "opus[1m]", "effort": "low" }, "fallback": null },
     "routine":       { "primary":  { "backend": "pi", "model": "zai/glm-5.3", "effort": "high" }, "fallback": null },

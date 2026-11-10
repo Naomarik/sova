@@ -465,14 +465,6 @@ export function buildClaudeArgv(o: ClaudeArgvOptions): ClaudeArgvResult {
 	}
 	return { args, mcpServers };
 }
-/** Initialize-only argv: no tools, no user settings (the fixed ones only), no prompts. */
-export function buildDiscoveryArgv(): string[] {
-	return [
-		"-p", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose",
-		"--tools", "", "--setting-sources", "", "--settings", fixedSettingsJson(), "--strict-mcp-config",
-		"--permission-mode", "dontAsk", "--permission-prompts", "none",
-	];
-}
 
 // ---------------------------------------------------------------------------
 // Private launch files

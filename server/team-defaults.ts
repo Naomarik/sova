@@ -3,7 +3,7 @@ import { CLAUDE_EFFORTS, DELEGATE_BACKENDS, PI_EFFORTS } from "../pi-config/exte
 // The subagents extension's own reader and writer of the file (node builtins only): the shape, the
 // strict parse, the atomic write, and the defaults a missing file stands for. See agents/extensions/subagents/overview.md.
 import {
-  DEFAULT_TEAM_DEFAULTS,
+  defaultTeamDefaults,
   parseTeamDefaults,
   readTeamDefaults,
   teamDefaultsPath,
@@ -36,14 +36,14 @@ const toWire = (f: TeamDefaultsFile): TeamDefaults => ({
 
 /** The built-in values: what a missing file means, and what the screen starts from. */
 export function teamDefaultsOff(): TeamDefaults {
-  return toWire(DEFAULT_TEAM_DEFAULTS);
+  return toWire(defaultTeamDefaults());
 }
 
 export function teamDefaultsInfo(agentDir = agentRoot()): TeamDefaultsInfo {
   const stored = readTeamDefaults(agentDir);
   return {
     settings: stored.state === "ok" ? toWire(stored.value) : teamDefaultsOff(),
-    defaults: toWire(DEFAULT_TEAM_DEFAULTS),
+    defaults: toWire(defaultTeamDefaults()),
     stored: stored.state !== "absent",
     ...(stored.state === "malformed" ? { error: stored.errors.join("; ") } : {}),
     backends: DELEGATE_BACKENDS.map((id) => ({ id, label: BACKEND_LABELS[id], efforts: [...(id === "pi" ? PI_EFFORTS : CLAUDE_EFFORTS)] })),

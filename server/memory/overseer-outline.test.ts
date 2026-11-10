@@ -29,7 +29,7 @@ after(async () => {
   rmSync(root, { recursive: true, force: true });
 });
 
-const sources: DelegateSources = { piModels: async () => [], claudeModels: async () => [], policy: () => ({ disabledProviders: [], disabledModels: [], subagentDisabledProviders: [], subagentDisabledModels: [] }) };
+const sources: DelegateSources = { piModels: async () => [], policy: () => ({ disabledProviders: [], disabledModels: [], subagentDisabledProviders: [], subagentDisabledModels: [] }) };
 const app = new Hono();
 registerMemoryRoutes(app, { resolvePath: (raw) => raw ?? null, held: () => undefined, overseer: () => undefined, readBranch, sources });
 const outline = async (path: string) => {

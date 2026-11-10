@@ -28,7 +28,8 @@ import { restorePick, pickEntryFor, shortModel } from "../pi-config/extensions/s
 const OFF_ON = Object.freeze({ id: "off", key: "sova:default", name: "Off" });
 import { decodeMemberContext, MEMBER_ENV } from "../pi-config/extensions/subagents/mailbox.ts";
 import { modelAllowed, modelDenial, readModelPolicy } from "./model-policy";
-import { toContextInfo, workerWindowResolver } from "./models";
+import { forgetModelCaches, toContextInfo, workerWindowResolver } from "./models";
+import { startClaudeModelsSync } from "./claude-models-sync";
 import { claudeSpawnModels, WorkerContextReader, withWorkerContext } from "./worker-context";
 import { resumeWorker, type ResumeOutcome } from "./worker-resume";
 import { applySandbox, onSandboxAppend, sandboxInfo, sandboxMessage, type SandboxHost } from "./sandbox-state";
@@ -48,7 +49,7 @@ import { stateView } from "./harness/state-view";
 import { LiveTail } from "./chat-runtime/live-tail";
 import { takeWriterLock, type WriterLock, WriterLockHeld } from "./chat-runtime/writer-lock";
 import { sovaNamedKind } from "../shared/fixed-names";
-import { extensionFlagValues, getModelRuntime, openPiSession, type OpenFlags, type OpenRead, type PiBuild, type PiModelRuntime, warmClaudeCodeProvider as warmPiProvider } from "./harness/pi/open";
+import { extensionFlagValues, getModelRuntime, openPiSession, type OpenFlags, type OpenRead, type PiBuild, type PiModelRuntime, reapplyClaudeModels, warmClaudeCodeProvider as warmPiProvider } from "./harness/pi/open";
 import type { PiExtensionAPI, PiLoaderOptions, PiToolDefinition } from "./harness/pi/extension-types";
 import { PiChatHost } from "./harness/pi/host";
 import { contextOfBranch } from "./harness/pi/usage";
@@ -331,6 +332,11 @@ let runtimeWarm: Promise<void> | null = null;
  */
 export function warmChatRuntime(onStep: (step: string) => void = () => {}): Promise<void> {
   if (runtimeWarm) return runtimeWarm;
+  // Before the provider registers: the learned Claude list, and its watch for this process's runtime.
+  startClaudeModelsSync(() => {
+    forgetModelCaches();
+    return reapplyClaudeModels();
+  });
   onStep("model setup");
   runtimeWarm = getModelRuntime().then(
     (runtime) => warmClaudeCodeProvider(runtime, agentRoot(), onStep),
@@ -852,7 +858,8 @@ const projectVerbsLoad = (path: string) =>
  */
 export function workerExtensionFactories(w: Pick<WorkerSpec, "kind"> & { builtins?: string[] | null } & Partial<Pick<WorkerSpec, "mcp" | "parent" | "env">>, path: string) {
   // Subfolder instruction files load for every kind whose loadout has a file tool (server/deeper-context.ts).
-  const files = !w.builtins || w.builtins.some((t) => LOADING_TOOLS.has(t)) ? [deeperContextExtension()] : [];
+  // A subfolder's skills too, for one that can also read a skill's file (§chat.subfolder-skills/offering).
+  const files = !w.builtins || w.builtins.some((t) => LOADING_TOOLS.has(t)) ? [deeperContextExtension({ skills: !w.builtins || w.builtins.includes("read") || w.builtins.includes("bash") })] : [];
   // A hidden chat keeps no job: nothing would deliver its card or stop it.
   if (w.kind !== "worker") return [SHELL_GUARD_FACTORY, ...files];
   // Only what the chat named: a worker's list is fixed at its start and kept when it resumes (§app.mcp/who-gets).
@@ -1291,6 +1298,8 @@ class ChatSession {
   /** The `sova-loadout` entry this runtime was built with, and the loader's unfiltered lists
       (§chat.transcript/setup-card-toggles). Null for a special session, which keeps its own loadout. */
   loadoutState: LoadoutState | null = null;
+  /** What refreshCommands last told clients; a bind tells them regardless. */
+  private lastCommands: string | null = null;
   /** The One at a time check passed for this runtime's first message. */
   private singletonCleared = false;
   /**
@@ -2102,6 +2111,8 @@ class ChatSession {
       // process), start the next session listing afresh (§app.session-list/listing-reuse). A call
       // another tool made (nested) doesn't: its caller's end does, once.
       if ((event.type === "tool.end" && !event.nested) || event.type === "run.start" || event.type === "run.settled") sessionsChanged();
+      // A subfolder's skills join the / menu once offered, and leave with the block (§chat.subfolder-skills/command).
+      if (event.type === "run.settled" || event.type === "compaction.end") this.refreshCommands();
       // A Claude login picked during the reply goes in now, before the queue wake below can start
       // the next turn: applyLoginPick holds the web queue until it has landed
       // (§app.claude-logins/switch-queue).
@@ -2213,7 +2224,8 @@ class ChatSession {
         this.broadcast(this.modeMessage());
       }
     });
-    this.broadcast(this.commands()); // extension commands exist only after bindExtensions
+    this.lastCommands = null;
+    this.refreshCommands(); // extension commands exist only after bindExtensions
     this.sendSandbox((m) => this.broadcast(m));
     // The same rule the extension's own session_start runs, so both agree on this session's mode.
     this.modeState = chatModeOf(harness.state.branch());
@@ -3237,6 +3249,15 @@ class ChatSession {
   /** POST /api/sandbox?path=: set this chat's sandbox state from its next tool call (applySandbox). */
   applySandbox(state: SandboxState): Promise<SandboxApplyResult> {
     return applySandbox(this.sandboxHost, state);
+  }
+
+  /** Tells every client the command list, when it changed since they were last told. */
+  private refreshCommands(): void {
+    const next = this.commands();
+    const key = JSON.stringify(next);
+    if (key === this.lastCommands) return;
+    this.lastCommands = key;
+    this.broadcast(next);
   }
 
   commands(): ChatServerMessage {

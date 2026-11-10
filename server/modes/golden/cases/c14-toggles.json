@@ -657,7 +657,7 @@
       "role": "system",
       "content": "",
       "sections": {
-       "mode": "@11e29a7753253ae3"
+       "mode": "@558b6ed7d55bf734"
       }
      },
      {
@@ -700,7 +700,7 @@
      "role": "system",
      "content": "",
      "sections": {
-      "mode": "@11e29a7753253ae3"
+      "mode": "@558b6ed7d55bf734"
      }
     }
    }
@@ -795,7 +795,7 @@
       "sections": {
        "tools": "@14069dc67c42c871",
        "rules": "@898a2a6e09208de2",
-       "mode": "@fb4bb51a2cca173b"
+       "mode": "@0e47e24b618b8548"
       },
       "toolsAdded": [
        {
@@ -879,7 +879,7 @@
      "sections": {
       "tools": "@14069dc67c42c871",
       "rules": "@898a2a6e09208de2",
-      "mode": "@fb4bb51a2cca173b"
+      "mode": "@0e47e24b618b8548"
      },
      "toolsAdded": [
       {

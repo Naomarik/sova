@@ -4,7 +4,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, describe, test } from "node:test";
-import { DEFAULT_TEAM_DEFAULTS } from "../pi-config/extensions/subagents/team-defaults.ts";
+import { defaultTeamDefaults } from "../pi-config/extensions/subagents/team-defaults.ts";
 import type { ModelPolicy, WorkerChoice } from "../shared/protocol";
 import type { TeamDefaults } from "../shared/team-defaults";
 import type { DelegateSources } from "./delegate";
@@ -28,11 +28,6 @@ const sources = (over: Partial<DelegateSources> = {}): DelegateSources => ({
     { ref: "zai/glm-5.3", id: "glm-5.3", provider: "zai", thinkingLevels: ["off", "low", "medium", "high"] },
     { ref: "ollama-cloud/deepseek-v4.1-flash", id: "deepseek-v4.1-flash", provider: "ollama-cloud", thinkingLevels: ["off", "low", "medium", "high"] },
   ],
-  claudeModels: async () => [
-    { id: "claude-opus-5-5", name: "Opus", efforts: ALL_CLAUDE },
-    { id: "claude-haiku-4-5", name: "Haiku", efforts: ALL_CLAUDE },
-    { id: "claude-sonnet-5-5", name: "Sonnet", efforts: ["low", "medium"] },
-  ],
   policy: () => EMPTY,
   ...over,
 });
@@ -40,7 +35,7 @@ const glm: WorkerChoice = { backend: "pi", model: "zai/glm-5.3", effort: "high" 
 const sonnet: WorkerChoice = { backend: "claude-code", model: "claude-sonnet-5-5", effort: "medium" };
 const copy = <T>(v: T): T => JSON.parse(JSON.stringify(v)) as T;
 /** The pinned defaults, as a save body. */
-const on = (): TeamDefaults => copy(DEFAULT_TEAM_DEFAULTS as TeamDefaults);
+const on = (): TeamDefaults => copy(defaultTeamDefaults() as TeamDefaults);
 
 describe("GET /api/settings/team", () => {
   test("no file: the built-in values, not stored, and nothing written", () => {
@@ -58,7 +53,7 @@ describe("GET /api/settings/team", () => {
   });
 
   test("the pinned built-in values", () => {
-    assert.deepEqual(DEFAULT_TEAM_DEFAULTS, {
+    assert.deepEqual(defaultTeamDefaults(), {
       version: 1,
       coordinator: { role: "coordinator", primary: { backend: "claude-code", model: "claude-opus-5-5", effort: "medium" }, fallback: null, instructions: "" },
       monitor: {
@@ -213,7 +208,7 @@ describe("PUT /api/settings/team", () => {
   test("a malformed stored file is never overwritten: 409, and its bytes stay", async () => {
     const dir = agentDir();
     writeFileSync(teamDefaultsFile(dir), "{ nope");
-    const result = await saveTeamDefaults(on(), sources({ claudeModels: async () => { throw new Error("must not be asked"); } }), dir);
+    const result = await saveTeamDefaults(on(), sources(), dir);
     assert.equal(result.status, 409);
     assert.match((result.body as { error: string }).error, /can't be read/);
     assert.equal(readFileSync(teamDefaultsFile(dir), "utf8"), "{ nope");
@@ -221,7 +216,7 @@ describe("PUT /api/settings/team", () => {
 
   test("a backend that couldn't list its models saves unverified, one note for the backend; the Claude CLI's list is never asked", async () => {
     const dir = agentDir();
-    const cli = await saveTeamDefaults(on(), sources({ claudeModels: async () => { throw new Error("CLI missing"); } }), dir);
+    const cli = await saveTeamDefaults(on(), sources(), dir);
     assert.equal(cli.status, 200, JSON.stringify(cli.body));
     if (cli.status !== 200) return;
     assert.deepEqual(cli.body.warnings, [], "Claude Code's list is the catalog");

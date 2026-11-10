@@ -1,4 +1,4 @@
-import { createSignal, Show } from "solid-js";
+import { createSignal, Show, splitProps } from "solid-js";
 import type { ProjectRuntimeView } from "../../shared/project-runtime";
 import { reviewAction, reviewBanner, type PlaybookReviewWords } from "../../shared/playbook-review";
 import { ApiError, mergeProjectRun } from "../lib/api";
@@ -8,9 +8,13 @@ import { announce, toast } from "../lib/ui-state";
 import { Banner } from "./ui";
 import { landBranch, refusal } from "../lib/merge-queue-client";
 import { queueRow } from "../lib/merge-queue";
-import { createProjectQueue } from "../lib/project-queue";
+import type { NeedsYouRow } from "../lib/needs-you";
+import type { NeedsRow } from "../lib/needs-you-row";
+import { createProjectQueue, type ProjectQueue } from "../lib/project-queue";
+import { setupRowChip, standsInQueue } from "../lib/setup-chat";
+import { NeedsYouRowView } from "./NeedsYouRow";
 import { QueueChip } from "./WorktreesModal";
-import { createSetupPoll, SetupLandButton } from "./SetupChat";
+import { createSetupPoll, SetupLandButton, type SetupPoll } from "./SetupChat";
 
 const errText = (err: unknown) => (err instanceof ApiError || err instanceof Error ? err.message : String(err));
 
@@ -54,23 +58,68 @@ export function MergeRunButton(props: {
 /** The Setup chat's proposal of `branch`, read as the card reads it; while it isn't read yet, nothing is offered. */
 function SetupRunButton(props: { projectId: string; branch: string; onDone(): void }) {
   const setup = createSetupPoll(props.projectId);
-  const proposal = () => {
-    const p = setup.data()?.chat?.proposal;
-    return p && p.branch === props.branch ? p : null;
-  };
+  return <SetupRunOffer projectId={props.projectId} branch={props.branch} setup={setup} onDone={props.onDone} />;
+}
+
+/** The Setup chat's proposal of `branch` in a read of its setup; null while it isn't read, or another branch's is. */
+const setupProposalOf = (setup: SetupPoll, branch: string) => {
+  const p = setup.data()?.chat?.proposal;
+  return p && p.branch === branch ? p : null;
+};
+
+function SetupRunOffer(props: { projectId: string; branch: string; setup: SetupPoll; queue?: ProjectQueue; onDone(): void }) {
   return (
-    <Show when={proposal()} fallback={<span class="text-caption text-muted">{setup.error() ? `Couldn't read the setup proposal. ${setup.error()}` : "Reading the setup proposal."}</span>}>
+    <Show when={setupProposalOf(props.setup, props.branch)} fallback={<span class="text-caption text-muted">{props.setup.error() ? `Couldn't read the setup proposal. ${props.setup.error()}` : "Reading the setup proposal."}</span>}>
       {(p) => (
         <SetupLandButton
           projectId={props.projectId}
           proposal={p()}
+          queue={props.queue}
           onDone={() => {
-            setup.refetch();
+            props.setup.refetch();
             props.onDone();
           }}
         />
       )}
     </Show>
+  );
+}
+
+type RowView = { row: NeedsRow; label?: string; current?: boolean; onDismiss?: (button: HTMLButtonElement) => void };
+
+/**
+ * A chat's Needs you row, with its proposal when it has one. A Setup proposal's chip reads the same setup and queue as
+ * its button, one read of each for the row; `offer`: the row carries the proposal's button.
+ */
+export function NeedsYouChatRow(props: RowView & { review: Pick<NeedsYouRow, "kind" | "playbook">; offer?: boolean }) {
+  const [own, view] = splitProps(props, ["review", "offer"]);
+  const setupRun = () => (own.review.playbook?.proposes === "pipeline" ? own.review.playbook : undefined);
+  return (
+    <Show
+      when={setupRun()}
+      fallback={
+        <NeedsYouRowView {...view}>
+          <Show when={own.offer && own.review.playbook}>{(pb) => <MergeRunButton projectId={pb().projectId} run={pb()} />}</Show>
+        </NeedsYouRowView>
+      }
+    >
+      {(pb) => <SetupReviewRow {...view} projectId={pb().projectId} branch={pb().branch} chipFollows={own.review.kind === "playbook-review"} offer={own.offer} />}
+    </Show>
+  );
+}
+
+function SetupReviewRow(props: RowView & { projectId: string; branch: string; chipFollows: boolean; offer?: boolean }) {
+  const [own, view] = splitProps(props, ["row", "projectId", "branch", "chipFollows", "offer"]);
+  const setup = createSetupPoll(own.projectId);
+  const queue = createProjectQueue(() => own.projectId);
+  const chip = () => setupRowChip(setupProposalOf(setup, own.branch), !!standsInQueue(queue.info(own.branch)));
+  // A row whose first item is another kind (a failed turn) keeps that kind's word.
+  return (
+    <NeedsYouRowView {...view} row={own.chipFollows ? { ...own.row, chip: chip() } : own.row}>
+      <Show when={own.offer}>
+        <SetupRunOffer projectId={own.projectId} branch={own.branch} setup={setup} queue={queue} onDone={() => {}} />
+      </Show>
+    </NeedsYouRowView>
   );
 }
 

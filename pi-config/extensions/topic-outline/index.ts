@@ -18,7 +18,7 @@ import { join } from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 
 import { locateMarker, markerOrdinalIndex, sameFingerprint, textOf } from "./anchors.ts";
-import { agentDir, loadConfig, DEFAULT_CONFIG } from "./config.ts";
+import { agentDir, loadConfig, defaultConfig } from "./config.ts";
 import { SummarizerChain } from "./summarizers/chain.ts";
 import { withUsageContext } from "../llm-inflight/attribution.ts";
 import { createClaudeCliSummarizer } from "./summarizers/claude-cli.ts";
@@ -324,7 +324,7 @@ export default function topicOutline(pi: ExtensionAPI): void {
     if (!runtime || !shouldRunOutline({ mode: runtime.ctx.mode, headless: pi.getFlag(HEADLESS_FLAG) })) return;
     if (force) pendingRefresh = true;
     if (debounceTimer) clearTimeout(debounceTimer);
-    const delay = runtime?.config.trigger.debounceMs ?? DEFAULT_CONFIG.trigger.debounceMs;
+    const delay = runtime?.config.trigger.debounceMs ?? defaultConfig().trigger.debounceMs;
     debounceTimer = setTimeout(() => {
       debounceTimer = undefined;
       const forceNext = pendingRefresh;

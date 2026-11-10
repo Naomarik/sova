@@ -129,8 +129,9 @@ loadout that loads no extension gets no flag at all), the server registers the p
 startup so `GET /api/models` offers `claude-code-cli/*` before any session opens, and
 `GET /api/models` never filters them out. With no `claude` CLI on `PATH` (or one that can't run)
 startup and every session carry on and nothing is logged for it; the picker still lists the
-provider's Claude Code models, Sova's catalog (§app.claude-code-provider/catalog), which the
-extension registers without asking the CLI, and
+provider's Claude Code models, Sova's catalog (§app.claude-code-provider/catalog): the built-in list
+and whatever Sova last remembered from Claude Code's table (§app.claude-code-provider/model-table),
+which the extension registers without running the CLI, and
 Settings → Accounts' status line says the CLI could not be run (§app.claude-logins/cli-status).
 
 Sova's own `<agent dir>/sova/settings.json` no longer holds a provider switch: a stored
@@ -144,38 +145,117 @@ so any other key, old or another writer's, stays.
 
 ## §app.claude-code-provider/catalog — Sova's own Claude model catalog
 
-Sova keeps its own list of the Claude models it offers, one entry per real model, in the
-claude-code extension's `catalog.ts` (imports nothing, so the extension, the server and the web app
-all read the same file). An entry is the model's id as the CLI's own model table names it, which is
-also what `--model` is given (`claude-opus-5-5`, `claude-sonnet-5-5`, `claude-fable-5-1`,
+Sova keeps its own list of the Claude models it offers, one entry per real model. It starts from a
+built-in list in the claude-code extension's `catalog.ts` (imports nothing, so the extension, the
+server and the web app all read the same file) and grows by itself from Claude Code's own model
+table (§app.claude-code-provider/model-table). An entry is the model's id as that table names it,
+which is also what `--model` is given (`claude-opus-5-5`, `claude-sonnet-5-5`, `claude-fable-5-2`,
 `claude-haiku-5-5`), the ids the API answers with for it (`claude-haiku-4-5-20251001` for Haiku
-4.5), its family and version, its name as the CLI names it (`Opus 5.5`, `Sonnet 5.5`, `Fable 5.1`,
-`Haiku 5.5`), its context window (1,000,000 where the CLI's table says the model is natively 1M,
-else 200,000), its output cap, the efforts it takes, whether it is the current model of its family
-or a previous one, and its price key. There are no aliases (`opus`, `sonnet`, `haiku`, `fable`) and
-no `[1m]` forms: a natively 1M model is 1M by its id alone.
+4.5), its family and version, its name (`Opus 5.5`, `Sonnet 5.5`, `Fable 5.2`, `Haiku 5.5`,
+§app.claude-code-provider/model-names), its context window (1,000,000 where the table says the
+model is natively 1M, else the window the table states, 200,000 when it states none), its output cap, the efforts it takes, whether it is the current
+model of its family or a previous one, and its price key. There are no aliases (`opus`, `sonnet`,
+`haiku`, `fable`) and no `[1m]` forms: a natively 1M model is 1M by its id alone.
 
 - **Every list is the catalog.** The chat model picker's `claude-code-cli/*` models, `agent_models`,
   and every Settings row that picks a Claude Code model (Subagents, Decisions, Overseer, Summaries,
-  Session titles) offer the catalog's current and previous entries, with their efforts, and nothing
-  else. They are there at once, with no `claude` process and offline; the CLI's model list never
-  adds, removes or renames one (§app.claude-code-provider/catalog-drift).
+  Session titles) offer the catalog's offered entries, with their efforts, and nothing else. They
+  are there at once, with no `claude` process and offline: the built-in list plus what Sova last
+  learned. No one edits Sova for a new model.
 - **Built-in defaults follow the catalog.** Every built-in Claude choice (Delegate's routes, the team
   coordinator and the monitor's fallback, the Overseer's idea explorer, the alignment reviewer, the
   Project verbs playbook, the summary line and session titles, the Claude worker default) names its
-  family's current entry, so one catalog change moves them all. A choice the user saved stays as
-  saved.
-- **A model the catalog doesn't know** (a shape-valid id such as `claude-opus-6` before the catalog
-  lists it) is still used, never refused: a Settings row says "— not verified" and, under it, "Not
-  verified: {model} is not in Sova's Claude catalog. It will still be used."; `agent_spawn` and
-  `team_create` start it and their result says the same.
-- Adopting a new model is a change to `catalog.ts`. `pnpm run claude:catalog` (a dev script, no
-  model call) reads the installed CLI's own model table and prints how it differs from the catalog.
+  family's current entry, so one catalog change moves them all. A family's current entry is its
+  newest offered entry that is built in or has passed Sova's test
+  (§app.claude-code-provider/default-test); the newest model in a picker can be a newer one that
+  hasn't. With every model of a family dropped, it is the built-in list's current one. A choice the
+  user saved stays as saved.
+- **A model the catalog doesn't know** (a shape-valid id typed by hand, such as `claude-opus-6`
+  before Claude Code's table lists it, or a table model Sova doesn't offer, such as
+  `claude-mythos-5`) is still used, never refused: it reads as its name where it has one
+  (§app.claude-code-provider/model-names), with a 200,000 window and no effort control; a Settings
+  row says "— not verified" and, under it, "Not verified: {model} is not in Sova's Claude catalog.
+  It will still be used."; `agent_spawn` and `team_create` start it and their result says the same.
+- `pnpm run claude:catalog` (a dev script, no model call) reads the installed CLI's own model table
+  and prints how it differs from the built-in list. Nothing depends on running it: a release may
+  add a model to the built-in list, and a model not on it still arrives by itself.
+
+## §app.claude-code-provider/model-table — New Claude models arrive from Claude Code's own table
+
+Claude Code carries a fixed table of its models inside its own program. Sova reads that table at
+every start, and while it runs looks at the program file's date every 5 minutes, reading the table
+again only when the file or its date has changed. A read makes no model call and needs no login and
+no network, so what Sova learns can change only when Claude Code itself does. The model list `claude` gives
+apps at initialize is never read, for the list or for any name or identity: it depends on the
+account and has been seen to change between asks.
+
+- **What is added.** The table names each family's latest model (`latest_per_family`), and adoption
+  stops there. A standard id (§app.claude-code-provider/model-names) comes in when the table names a
+  latest for its family and its version is newer than the newest the built-in list has for that
+  family and no newer than that latest: a row newer than the family's latest may be unreleased and
+  isn't adopted. A family the built-in list doesn't have comes in only through its latest entry,
+  that one model. A family the table names no latest for adopts nothing. So a
+  Fable 5.3 and a brand-new family's model appear by themselves, and Mythos 5 and Sonnet 3.5 stay out
+  until the table names their family. A model added once stays in the catalog, a previous model when
+  a newer one comes. Nothing announces it: it simply shows up in the lists.
+- **What the table gives.** For a model it lists, the table's context window, output cap, efforts
+  and answer ids are the model's, and it says which version is the family's latest. A field it
+  doesn't give falls back to a 200,000 window, a 64,000 output cap and no efforts. Id, family,
+  version and name never come from the table's labels.
+- **What leaves.** A model the table no longer lists leaves every picker and `agent_models`, built
+  in or learned; it comes back if the table lists it again. Everything else stays: an old chat
+  still opens on it, a saved choice still shows it by name, with no "not verified" note, and still
+  runs on it, and its name and its Usage and Costs rows stay. If Anthropic has really shut it down,
+  the chat shows Claude's own error. Only a whole table takes a model away: one that names a latest
+  for at least one family, has each of those as a row, and has more than half of the built-in ids as
+  rows. So an older Claude Code that lacks a few of the newest models still removes them, and a
+  fragment removes nothing.
+- **Remembered.** What Sova learned is kept on this computer in `<stateRoot>/claude-models.json`,
+  written atomically by the server, and is ready at the next start, with no `claude` program,
+  offline, or before any read has finished. It is data, never a tracked file.
+- **No restart.** A change to the list reaches open pages (the picker and Settings' model rows) and
+  running chats (their picker, a model switch to it, `agent_models`) with no restart and no reload:
+  every process follows the file, and the server tells open pages (`claude_models_changed`), which
+  read `GET /api/claude/catalog` again. The Project Overseer panel and the Orgs view read their model
+  list when they open, so they pick up a new model when reopened, with no restart.
+- **When the table can't be read.** A read that finds no models, finds a table that isn't whole, finds
+  a field gone from every row (context, capabilities or output cap: one row may lack one, a whole
+  table lacking it means the field was renamed) or fails Sova's other checks counts as unread, never
+  as "no models": the last good list stays, nothing is added or
+  removed, and Settings → Profiles' Models part shows one quiet line above its model rows:
+  "Showing the last known Claude models: Sova couldn't read Claude Code's model table." The line
+  goes at the next good read. It isn't shown when there is no `claude` program to read
+  (§app.claude-logins/cli-status says that) or with reading off (`SOVA_MODELS_FETCH=off`, `PI_OFFLINE`,
+  or `SOVA_CLAUDE_TABLE=off`, which `dev:hermetic` sets), under which Sova doesn't read the table at
+  all and the list it already has still applies. `node scripts/merge-checks/claude-table.mjs` fails
+  loudly when Sova can't read the table of the Claude Code on that computer; it is run by hand, not
+  by the merge queue.
+
+## §app.claude-code-provider/default-test — A learned model becomes a default after a one-word test
+
+A model learned from the table (§app.claude-code-provider/model-table) is in every picker at once.
+A built-in choice moves to it only once Sova has seen it run: Sova sends each learned model one
+one-word message, by one `claude` process given that id with `--model`, no tools, on this host's
+first usable login (§app.claude-logins/spawn-selection). The call is a one-shot in the usage ledger
+(§app.insights/usage-ledger), under its own purpose (`model-check`). An entry in the built-in list needs no test.
+
+- **A pass** is a reply without an error, from that model. It is remembered in
+  `<stateRoot>/claude-models.json`, across restarts, and that model is never tested again.
+- **Anything else is not a pass**: an error, an expired login, no answer in time, a reply from another
+  model, or a test that couldn't run. The built-in choices stay where they are
+  and the model stays in the pickers. Sova tries again at its next read of the table, once per model
+  each time, so at its next start or the next change of the `claude` program. With reading off
+  (§app.claude-code-provider/model-table) nothing is sent.
+- **On a pass**, the model becomes its family's current entry if it is the family's newest passed
+  model (§app.claude-code-provider/catalog), and each built-in choice naming that family uses it
+  from its next use, with no restart. A choice the user saved doesn't move.
+- **The picker's newest and the default are separate.** Until Fable 5.3 passes it is the newest
+  Fable in every picker while Delegate's planning route stays on Fable 5.2.
 
 ## §app.claude-code-provider/model-names — One name for each Claude model
 
 Wherever Sova shows a Claude model (under any provider: `claude-code-cli`, `claude-code`,
-`anthropic`), it shows the catalog's name: "Opus 5.5", "Sonnet 5.5", "Fable 5.1", "Haiku 4.5". That
+`anthropic`), it shows its name: "Opus 5.5", "Sonnet 5.5", "Fable 5.2", "Haiku 4.5". That
 holds for the chat model picker and the composer's model chip, Settings' model selects, the session
 header, the session list's rows and the assistant's author line, worker rows and their transcripts
 in the session pane, the Agents page, the Usage and Costs tables, the subagent profile footprint and
@@ -185,9 +265,19 @@ beside them in `agent_models`. The name is of the model that answered when Sova 
 recorded answer, a restored worker's transcript), else of the model asked for. An answer id the catalog lists under
 another id (`claude-haiku-4-5-20251001`) and an old id in a file Sova didn't rewrite
 (§app.claude-code-provider/legacy-ids) read as their catalog model. "1M" never appears: the window
-is the model's own. A Claude id the catalog doesn't know, and every other provider's model, keeps
-its short id as before. Where a name stands for an id (a picker row, a select option), the id is
+is the model's own. Where a name stands for an id (a picker row, a select option), the id is
 still shown beside it in mono or in its `title`.
+
+**A model's name and identity come from a rule on the id alone**, so they are the same every time
+Sova asks, on every screen and every computer, known model or not. A standard id is
+`claude-<family>-<major>[-<minor>]`: its family is the capitalised word and its version the numbers,
+with a minor of 0 dropped, so `claude-fable-5-2` is family Fable, version 5.2, "Fable 5.2";
+`claude-sonnet-4-0` is "Sonnet 4"; a family Sova has never heard of works the same
+(`claude-nova-1-2`, "Nova 1.2"). A trailing 8-digit date and a `[1m]` are dropped first, so
+`claude-opus-6-20270101` is "Opus 6". The rule reads nothing but the id: no list, no file, no answer
+from `claude`, and neither the table's labels nor the list `claude` gives at initialize can change a
+name. An id in the old word order (`claude-3-5-sonnet`) isn't standard and, like every other
+provider's model, keeps its short id as before.
 
 ## §app.claude-code-provider/legacy-ids — Old Claude ids are read, never written
 
@@ -229,7 +319,7 @@ once. The usage ledger records the id passed as the model asked for.
 
 Every `claude` process Sova or its extensions start runs with Claude Code's auto-memory off,
 whatever the user's own Claude Code settings say: the chat provider's child (a Claude Code
-worker's included), the summary line's summarizer, decisions, session titles and model discovery.
+worker's included), the summary line's summarizer, decisions, session titles and a learned model's one-word test.
 Such a process never reads a project's memory folder
 (`<config dir>/projects/<project>/memory/`, its `MEMORY.md` and notes) into a request and never
 writes to it. The setting rides in the one `--settings` object each process is given, merged last,
@@ -242,7 +332,7 @@ on. `claude auth` and
 ## §app.claude-code-provider/one-program — Every `claude` process runs the one Claude program
 
 Every `claude` process Sova starts runs the same Claude program, found from Sova's own environment,
-never from the folder a chat or worker works in: the chat provider's child, model discovery, a
+never from the folder a chat or worker works in: the chat provider's child, a learned model's one-word test, a
 login's sign-in check, the topic outline's Claude Code summarizer, and the server's own runs (decisions, session titles,
 `claude --version`, signing a login in). The server looks it up on first use: the first `claude` on
 its own `PATH` (absolute directories only); a version-manager shim found there (mise) is resolved
@@ -274,15 +364,6 @@ so and never stops the turn or the worker: the author line names the model that 
 `title` reads "Asked for {asked}; {answered} answered."; a worker row shows ⚠ beside its model with
 the same `title`; and in the Usage and Costs tables the calls stay on a row of their own, named by
 the model that answered, marked ⚠ with the same `title`, never merged into either model's row.
-
-## §app.claude-code-provider/catalog-drift — The CLI's model list only notifies
-
-The `claude` initialize model list (an initialize-only call, cached 60 s, no model request) is read
-only to notice drift, never to build a list. Settings → Profiles (which took the place of Settings →
-Subagents) shows one quiet note under its Models part's first line when the list names a model the catalog doesn't know ("Claude Code offers {name}
-({id}), which Sova's catalog doesn't know yet.") or resolves a family's alias to another model than
-the catalog's current one ("Claude Code now runs {family} as {id}; Sova's catalog still says
-{current}."). Nothing changes when the list omits a catalog model or can't be read.
 
 ## §app.claude-code-provider/system-prompt — The system prompt the CLI is given
 

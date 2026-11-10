@@ -12,7 +12,7 @@
  * next prompt. Normal mode never reads it.
  *
  *     { "version": 1, "profiles": {
- *         "planning": { "primary":  {"backend":"claude-code","model":"claude-fable-5-1","effort":"medium"},
+ *         "planning": { "primary":  {"backend":"claude-code","model":"claude-fable-5-2","effort":"medium"},
  *                       "fallback": {"backend":"claude-code","model":"claude-opus-5-5","effort":"high"} },
  *         "investigation": { "primary": {...}, "fallback": null }, "routine": {...}, "complex": {...} } }
  *

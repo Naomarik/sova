@@ -6,7 +6,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { listPlaybooks } from "../playbooks";
-import { NO_ONBOARD_MODEL, ONBOARD_MODELS, ONBOARD_PLAYBOOK_ID, onboardInvalid, onboardModel, onboardStartFrom, type OnboardFacts } from "./onboard";
+import { noOnboardModel, onboardModels, ONBOARD_PLAYBOOK_ID, onboardInvalid, onboardModel, onboardStartFrom, type OnboardFacts } from "./onboard";
 import { linkedPlaybook } from "../../shared/playbooks";
 
 const PLAYBOOK = { title: "Project verbs", dir: "/x/playbooks/project-verbs", body: "# Project verbs\n", proposes: "definition" as const };
@@ -26,10 +26,10 @@ test("the model: asked wins (medium unless given); else the catalog's current Op
   // Nothing usable listed, or the list unreadable: no model, never a guess.
   assert.equal(onboardModel({ model: "  " }, ["zai/glm-5.3", "claude-code-cli/claude-sonnet-5-5"]), null);
   assert.equal(onboardModel({}, null), null);
-  assert.deepEqual([...ONBOARD_MODELS], ["claude-code-cli/claude-opus-5-5", "openai-codex/gpt-6-astra"]);
-  assert.equal(NO_ONBOARD_MODEL, "No model for the Project verbs playbook: this host offers neither Claude Code Opus 5.5 nor openai-codex gpt-6-astra. Pick a model to run it with.");
+  assert.deepEqual([...onboardModels()], ["claude-code-cli/claude-opus-5-5", "openai-codex/gpt-6-astra"]);
+  assert.equal(noOnboardModel(), "No model for the Project verbs playbook: this host offers neither Claude Code Opus 5.5 nor openai-codex gpt-6-astra. Pick a model to run it with.");
   const none = onboardStartFrom(facts(), { why: "x" }, ["zai/glm-5.3"]);
-  assert.equal(none.invalid, NO_ONBOARD_MODEL);
+  assert.equal(none.invalid, noOnboardModel());
   assert.equal(none.prompt, "");
 });
 

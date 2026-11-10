@@ -207,16 +207,19 @@
       "src/projects.css",
       "server/projects/setup-chat.ts",
       "server/projects/runtime.ts",
-      "server/projects/setup-chat-open.test.ts"
+      "server/projects/setup-chat-open.test.ts",
+      "src/lib/setup-chat.ts",
+      "src/lib/setup-chat.test.ts",
+      "src/lib/needs-you-row.test.ts"
     ],
     "requires": [
       "§app.project-runtime/onboard",
       "§app.overseer/attention-digest"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-11-06T01:40Z",
-      "source": "pi-session:01a1ac4a-4cc0-77e8-b78d-580fabeebc2e#f924065b"
+      "by": "naomarik",
+      "at": "2026-11-09T21:21Z",
+      "source": "pi-session:4368877c-8704-42e1-8b6d-93f52ae7fb89#9680102b"
     }
   },
   "§app.project-runtime/run-progress": {

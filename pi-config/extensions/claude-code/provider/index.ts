@@ -15,7 +15,8 @@
  */
 import type { ExtensionAPI, ProviderModelConfig } from "@earendil-works/pi-coding-agent";
 import type { ThinkingLevelMap } from "@earendil-works/pi-ai";
-import { claudeContextWindow, claudeModel, claudeOffer, isClaudeIdShape, resolveClaude } from "../catalog.ts";
+import { claudeContextWindow, claudeModel, claudeName, claudeRegistered, isClaudeIdShape, resolveClaude } from "../catalog.ts";
+import { claudeStateRoot, loadClaudeModels, watchClaudeModelsFile } from "../catalog-store.ts";
 import { CLAUDE_LOGIN_ENTRY, hostLogins, loginContextFromEnv, recordedLogin } from "../accounts.ts";
 import { registerAutoCompact } from "./auto-compact.ts";
 import { CLAUDE_LOGIN_COMMAND, pickChatLogin } from "./login-command.ts";
@@ -73,37 +74,67 @@ export function toProviderModel(model: { id: string; name: string; efforts?: rea
 }
 
 /**
- * Sova's Claude catalog (catalog.ts, §app.claude-code-provider/catalog): one model per real model,
- * named as the CLI names it, with no aliases and no `[1m]` forms. No subprocess runs, ever: the CLI's
- * own list never adds, removes or renames one.
+ * What this process has registered, shared by every copy of this module (a chat's extension load and a
+ * worker's are separate instances): the list as last registered, and the ids a worker named that the
+ * catalog doesn't offer. Exported for tests, which delete it to start a fresh process.
  */
-export const STATIC_MODELS: ProviderModelConfig[] = claudeOffer().map((m) => toProviderModel(m));
+export const REGISTERED_MARKER = Symbol.for("sova.claude-code.provider-registered");
+interface ProviderRegistration {
+	/** The registered ids, joined: a session whose list differs registers again. */
+	registered?: string;
+	/** Shape-valid ids a worker asked for (CLAUDE_MODEL_FLAG), kept for the life of the process. */
+	extras: Set<string>;
+	/** Registers the provider through the newest session's API, when the list differs. */
+	register?: () => void;
+	/** The watch on the learned list, started once per process. */
+	stopWatch?: () => void;
+}
+function registration(): ProviderRegistration {
+	const host = globalThis as unknown as Record<symbol, ProviderRegistration | undefined>;
+	return (host[REGISTERED_MARKER] ??= { extras: new Set() });
+}
 
-/** The catalog, plus a shape-valid id it doesn't know (CLAUDE_MODEL_FLAG). */
-export function withExtraModel(models: ProviderModelConfig[], extra: unknown): ProviderModelConfig[] {
-	if (typeof extra !== "string" || !isClaudeIdShape(extra) || models.some((m) => m.id === extra)) return models;
-	return [...models, toProviderModel({ id: extra, name: extra })];
+/**
+ * The provider's models now: Sova's Claude catalog as this process knows it (catalog.ts,
+ * §app.claude-code-provider/catalog), one model per real model, with no aliases and no `[1m]` forms,
+ * a model Claude Code dropped (an old chat still opens on it; the pickers filter it out), plus any id
+ * a worker named. Read on every call, so a model learned while the process runs is here
+ * with no restart. No subprocess runs, ever.
+ */
+export function providerModels(): ProviderModelConfig[] {
+	const models = claudeRegistered().map((m) => toProviderModel(m));
+	for (const extra of registration().extras) {
+		if (!models.some((m) => m.id === extra)) models.push(toProviderModel({ id: extra, name: claudeName(extra) ?? extra }));
+	}
+	return models;
+}
+
+/** Keep a worker's model id (CLAUDE_MODEL_FLAG): a shape-valid id the catalog doesn't offer. */
+function noteExtraModel(extra: unknown): void {
+	if (typeof extra === "string" && isClaudeIdShape(extra) && !claudeRegistered().some((m) => m.id === extra)) registration().extras.add(extra);
 }
 
 /** The catalog, for pi's refreshModels: the same list online and offline. */
 export async function refreshClaudeModels(_context: { allowNetwork: boolean; signal: AbortSignal }): Promise<ProviderModelConfig[]> {
-	return STATIC_MODELS;
+	return providerModels();
 }
 
 /**
- * Registration is process-wide, not per session: Sova shares one
- * ModelRuntime across every hosted session, so a later session whose flag is
- * off must never rip the provider out from under a session that is mid-turn
- * on it. Once registered it stays registered until the process exits (a
- * `/reload` rebuilds the extension runtime anyway). Exported for tests.
+ * Registration is process-wide, not per session: Sova shares one ModelRuntime across every hosted
+ * session, so a later session whose flag is off must never rip the provider out from under a session
+ * that is mid-turn on it. It stays registered until the process exits (a `/reload` rebuilds the
+ * extension runtime anyway).
+ *
+ * A session registers again only when its list differs from the one registered: a chat process
+ * warms the provider up before its first session, so a worker's own id (CLAUDE_MODEL_FLAG) always
+ * arrives after that first registration. True when this session must register.
  */
-export const REGISTERED_MARKER = Symbol.for("sova.claude-code.provider-registered");
-
-function alreadyRegistered(): boolean {
-	const host = globalThis as unknown as Record<symbol, boolean | undefined>;
-	if (host[REGISTERED_MARKER]) return true;
-	host[REGISTERED_MARKER] = true;
-	return false;
+function needsRegistering(): boolean {
+	const state = registration();
+	const ids = providerModels().map((m) => m.id).join("\n");
+	if (state.registered === ids) return false;
+	state.registered = ids;
+	return true;
 }
 
 /**
@@ -139,15 +170,34 @@ export function registerProviderIfEnabled(pi: ExtensionAPI, bridge: ClaudeSessio
 				if (entry.text && entry.reason !== "manual") { try { ctx?.ui?.notify?.(entry.text, "warning"); } catch { /* no UI */ } }
 			});
 		}
-		if (alreadyRegistered()) return;
-		pi.registerProvider(CLAUDE_PROVIDER_ID, {
-			name: "Claude Code CLI",
-			baseUrl: CLAUDE_PROVIDER_BASE_URL,
-			apiKey: CLAUDE_PROVIDER_API_KEY,
-			api: CLAUDE_PROVIDER_ID,
-			models: withExtraModel(STATIC_MODELS, pi.getFlag(CLAUDE_MODEL_FLAG)),
-			refreshModels: async (context) => withExtraModel(await refreshClaudeModels(context), pi.getFlag(CLAUDE_MODEL_FLAG)),
-			streamSimple: createClaudeStreamSimple(bridge),
+		noteExtraModel(pi.getFlag(CLAUDE_MODEL_FLAG));
+		const state = registration();
+		const root = claudeStateRoot();
+		loadClaudeModels(root);
+		state.register = () => {
+			if (!needsRegistering()) return;
+			try {
+				pi.registerProvider(CLAUDE_PROVIDER_ID, {
+					name: "Claude Code CLI",
+					baseUrl: CLAUDE_PROVIDER_BASE_URL,
+					apiKey: CLAUDE_PROVIDER_API_KEY,
+					api: CLAUDE_PROVIDER_ID,
+					models: providerModels(),
+					refreshModels: refreshClaudeModels,
+					streamSimple: createClaudeStreamSimple(bridge),
+				});
+			} catch (err) {
+				// This session's API has gone (a throwaway warm-up): the next session registers, and a
+				// host's own watch refreshes the runtime meanwhile.
+				state.registered = undefined;
+				if (!state.stopWatch) throw err;
+			}
+		};
+		state.register();
+		// A model learned while this process runs (a host's own watch does the same for its runtime).
+		state.stopWatch ??= watchClaudeModelsFile(root, () => {
+			loadClaudeModels(root);
+			state.register?.();
 		});
 	});
 	// Move this chat to another Claude login (§app.claude-logins/switch-login). Sova's composer calls

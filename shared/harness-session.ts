@@ -105,11 +105,22 @@ export interface HarnessToolInfo {
 
 /** What a runtime loaded for its prompt, as paths: the context files, the skills, the system prompt's
     source file and the files appended to it. */
+/** A skill the loader dropped or passed over, and why. */
+export interface HarnessSkillProblem {
+  name: string;
+  path: string;
+  reason: "no-description" | "front-matter" | "unreadable" | "same-name";
+  /** `same-name`: the file that loaded under that name. */
+  winnerPath?: string;
+}
+
 export interface HarnessResources {
   context: readonly { path: string }[];
-  skills: readonly { name: string; filePath: string; description?: string }[];
+  skills: readonly { name: string; filePath: string; description?: string; manualOnly?: boolean }[];
   systemPrompt?: string;
   appendSystemPrompt: readonly string[];
+  /** Skills that didn't load. Absent or empty: none. */
+  skillProblems?: readonly HarnessSkillProblem[];
 }
 
 /** A live event's wire-1 frame, the shape every consumer that didn't ask for wire 2 reads

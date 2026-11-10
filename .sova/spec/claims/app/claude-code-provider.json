@@ -5,7 +5,7 @@
       "§app/claude-code-provider"
     ],
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "code": [
       "server/web-settings.ts",
       "server/web-settings.test.ts",
@@ -16,8 +16,15 @@
       "shared/protocol.ts",
       "src/lib/experimental-draft.ts",
       "src/lib/api.ts",
-      "server/project-coding-runtime.test.ts"
-    ]
+      "server/project-coding-runtime.test.ts",
+      "pi-config/extensions/claude-code/provider/index.ts",
+      "pi-config/extensions/claude-code/catalog-store.ts"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-09T23:07Z",
+      "source": "pi-session:11c2d12a-bd23-4062-86b0-4bda053a8931#e9d77662"
+    }
   },
   "§app.claude-code-provider/catalog": {
     "kind": "behavior",
@@ -26,7 +33,7 @@
       "§app.claude-code-provider/always-on"
     ],
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "code": [
       "pi-config/extensions/claude-code/catalog.ts",
       "pi-config/extensions/claude-code/catalog.test.ts",
@@ -64,26 +71,22 @@
       "pi-config/extensions/mode/spec.test.ts",
       "pi-config/extensions/mode/spec.ts",
       "pi-config/extensions/subagents/team-defaults.test.ts",
-      "pi-config/extensions/claude-code/provider/auto-compact.test.ts"
-    ]
-  },
-  "§app.claude-code-provider/catalog-drift": {
-    "kind": "behavior",
-    "requires": [
-      "§app.claude-code-provider/catalog"
+      "pi-config/extensions/claude-code/provider/auto-compact.test.ts",
+      "pi-config/extensions/claude-code/catalog-merge.test.ts",
+      "server/claude-worker-model.integration.test.ts",
+      "server/decide-routes.ts",
+      "server/decide-settings.test.ts",
+      "server/overseer.ts",
+      "server/overseer-store.test.ts",
+      "server/team-defaults.ts",
+      "server/projects/onboard.test.ts",
+      "pi-config/extensions/topic-outline/index.ts"
     ],
-    "authority": "accepted",
-    "evidence": "reviewed",
-    "code": [
-      "pi-config/extensions/claude-code/catalog.ts",
-      "server/delegate.ts",
-      "server/delegate.test.ts",
-      "server/claude-models.ts",
-      "server/claude-models.test.ts",
-      "shared/protocol.ts",
-      "src/lib/delegate-form.ts",
-      "src/components/SubagentProfilesSettings.tsx"
-    ]
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-09T23:07Z",
+      "source": "pi-session:11c2d12a-bd23-4062-86b0-4bda053a8931#e9d77662"
+    }
   },
   "§app.claude-code-provider/continuity": {
     "kind": "behavior",
@@ -118,6 +121,30 @@
     "agreed": {
       "by": "naomarik",
       "at": "2026-10-12T14:06Z"
+    }
+  },
+  "§app.claude-code-provider/default-test": {
+    "kind": "behavior",
+    "requires": [
+      "§app.claude-code-provider/catalog",
+      "§app.claude-code-provider/model-table",
+      "§app.claude-logins/spawn-selection",
+      "§app.insights/usage-ledger"
+    ],
+    "authority": "accepted",
+    "evidence": "reviewed",
+    "code": [
+      "pi-config/extensions/claude-code/catalog.ts",
+      "pi-config/extensions/claude-code/catalog-merge.test.ts",
+      "pi-config/extensions/claude-code/catalog-store.ts",
+      "server/claude-table.ts",
+      "server/claude-table.test.ts",
+      "server/claude-table-flow.integration.test.ts"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-09T23:07Z",
+      "source": "pi-session:11c2d12a-bd23-4062-86b0-4bda053a8931#e9d77662"
     }
   },
   "§app.claude-code-provider/invalid-tool-input": {
@@ -198,7 +225,7 @@
       "§app.claude-code-provider/legacy-ids"
     ],
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "code": [
       "src/lib/format.ts",
       "src/lib/format.test.ts",
@@ -216,8 +243,75 @@
       "src/lib/subagent-editor.ts",
       "pi-config/extensions/subagents/subagent-profiles.ts",
       "src/components/ModelMenu.tsx",
-      "src/design/base.css"
-    ]
+      "src/design/base.css",
+      "pi-config/extensions/claude-code/catalog.ts",
+      "pi-config/extensions/claude-code/catalog.test.ts",
+      "pi-config/extensions/claude-code/catalog-name-rule.test.ts",
+      "src/lib/delegate-form.ts",
+      "src/lib/summarizer-form.ts"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-09T23:07Z",
+      "source": "pi-session:11c2d12a-bd23-4062-86b0-4bda053a8931#e9d77662"
+    }
+  },
+  "§app.claude-code-provider/model-table": {
+    "kind": "behavior",
+    "requires": [
+      "§app.claude-code-provider/catalog",
+      "§app.claude-code-provider/model-names",
+      "§app.claude-logins/cli-status"
+    ],
+    "authority": "accepted",
+    "evidence": "reviewed",
+    "code": [
+      "pi-config/extensions/claude-code/bundle-table.ts",
+      "pi-config/extensions/claude-code/catalog-bundle-table.test.ts",
+      "pi-config/extensions/claude-code/catalog-merge.test.ts",
+      "pi-config/extensions/claude-code/catalog-store.ts",
+      "pi-config/extensions/claude-code/catalog.ts",
+      "pi-config/extensions/claude-code/catalog.test.ts",
+      "pi-config/extensions/claude-code/provider/index.ts",
+      "pi-config/extensions/claude-code/provider/registration.test.ts",
+      "scripts/merge-checks/claude-table.mjs",
+      "server/claude-table.ts",
+      "server/claude-table-read.ts",
+      "server/claude-table.test.ts",
+      "server/claude-table.integration.test.ts",
+      "server/claude-table-status.test.ts",
+      "server/claude-table-flow.integration.test.ts",
+      "server/claude-models-sync.ts",
+      "server/claude-models-sync.integration.test.ts",
+      "server/forms-claude-models-browser.integration.test.ts",
+      "server/index.ts",
+      "server/app.ts",
+      "server/models.ts",
+      "server/chat-manager.ts",
+      "server/delegate.ts",
+      "server/delegate.test.ts",
+      "server/harness/pi/open.ts",
+      "server/usage-helper/main.ts",
+      "shared/protocol.ts",
+      "src/lib/api.ts",
+      "src/lib/claude-catalog.ts",
+      "src/lib/session-feed.ts",
+      "src/lib/delegate-form.ts",
+      "src/lib/delegate-form.test.ts",
+      "src/lib/summarizer-form.ts",
+      "src/lib/summarizer-form.test.ts",
+      "src/components/ProfilesSettings.tsx",
+      "src/components/SubagentProfilesSettings.tsx",
+      "src/components/OverseerSettings.tsx",
+      "src/components/SummarizerSettings.tsx",
+      "src/components/SessionTitleSettings.tsx",
+      "src/lib/claude-catalog.browser.test.ts"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-09T23:07Z",
+      "source": "pi-session:11c2d12a-bd23-4062-86b0-4bda053a8931#e9d77662"
+    }
   },
   "§app.claude-code-provider/no-memory": {
     "kind": "behavior",
@@ -225,7 +319,7 @@
       "§app.claude-code-provider/pinned-model"
     ],
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "code": [
       "pi-config/extensions/claude-code/fixed-settings.ts",
       "pi-config/extensions/claude-code/transport.ts",
@@ -234,21 +328,20 @@
       "pi-config/extensions/topic-outline/summarizers/claude-cli.ts",
       "server/decide-llm.ts",
       "server/session-autotitle.ts",
-      "server/claude-models.ts",
-      "server/claude-models.test.ts",
       "pi-config/extensions/topic-outline/claude-cli.test.ts",
       "pi-config/extensions/claude-code/provider/bridge.test.ts",
       "server/decide-llm.test.ts",
       "server/session-autotitle.test.ts",
       "pi-config/extensions/claude-code/accounts.test.ts",
-      "pi-config/extensions/topic-outline/test.mjs"
+      "pi-config/extensions/topic-outline/test.mjs",
+      "server/claude-table.ts"
     ]
   },
   "§app.claude-code-provider/one-program": {
     "kind": "behavior",
     "requires": [],
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "code": [
       "pi-config/extensions/claude-code/claude-executable.ts",
       "pi-config/extensions/claude-code/claude-executable.test.ts",
@@ -257,12 +350,11 @@
       "pi-config/extensions/claude-code/accounts.ts",
       "pi-config/extensions/claude-code/README.md",
       "server/decide-llm.ts",
-      "server/claude-models.ts",
-      "server/claude-models.test.ts",
       "server/claude-status.ts",
       "server/claude-accounts.ts",
       "pi-config/extensions/topic-outline/summarizers/claude-cli.ts",
-      "pi-config/extensions/topic-outline/claude-cli.test.ts"
+      "pi-config/extensions/topic-outline/claude-cli.test.ts",
+      "server/claude-table.ts"
     ],
     "agreed": {
       "by": "naomarik",

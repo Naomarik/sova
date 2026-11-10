@@ -242,7 +242,7 @@ choice, written when this computer's default profile is chosen (§chat.profiles/
 remain for seeding and fallback, not as second editors.
 
 Built-in legacy Delegate values, used when seeding, each the catalog's current model of its family
-(§app.claude-code-provider/catalog): Planning & specs Claude Code `claude-fable-5-1` (Fable 5.1)
+(§app.claude-code-provider/catalog): Planning & specs Claude Code `claude-fable-5-2` (Fable 5.2)
 medium, fallback `claude-opus-5-5` (Opus 5.5) high; Investigation `claude-opus-5-5` low; Routine
 `claude-opus-5-5` low; Complex `claude-opus-5-5` medium; no fallbacks but Planning's.
 

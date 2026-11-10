@@ -2,11 +2,12 @@ import { createEffect, createMemo, createResource, createSignal, For, on, onMoun
 import { CAPABILITY_LABEL, GRANTABLE, LIMIT_KEYS, OFF_KEY, PROFILE_MINOR_MODES, powersText, REMOVABLE, type Grantable, type ProfileProblem, type ProfileSource, type Removable } from "../../shared/profiles";
 import type { SubagentProfile } from "../../shared/subagent-profiles";
 import { PROFILE_LABEL_RULE } from "../../shared/profile-limits";
-import { approveProfile, fetchProfiles, getDelegateOptions, getDelegateSettings, getSubagentProfiles, getTeamDefaults, restoreSubagentProfiles, setProfileHidden } from "../lib/api";
+import { approveProfile, fetchProfiles, getDelegateSettings, getSubagentProfiles, getTeamDefaults, restoreSubagentProfiles, setProfileHidden } from "../lib/api";
 import { tildePath } from "../lib/format";
 import { home, toast } from "../lib/ui-state";
 import { loadModels, modelList } from "../lib/models";
-import { claudeDriftNotes, modelEfforts } from "../lib/delegate-form";
+import { modelEfforts } from "../lib/delegate-form";
+import { liveDelegateOptions } from "../lib/claude-catalog";
 import { replacedNotice } from "../lib/subagent-replaced";
 import { teamsSeed } from "../lib/subagent-editor";
 import { clearProfilesRequest, clearSettingsSection, profilesRequest, settingsSection, subagentSettingsPath, type ProfilesPart } from "../lib/settings-nav";
@@ -52,7 +53,7 @@ export function ProfilesSettingsSection(props: { cwd: string | null }) {
   setProfilesCwd(props.cwd);
   const [listing, { refetch }] = createResource(() => props.cwd ?? "", (cwd) => fetchProfiles(cwd || null));
   const [library, { refetch: refetchLibrary }] = createResource(() => getSubagentProfiles(subagentSettingsPath()));
-  const [options, { refetch: refetchOptions }] = createResource(getDelegateOptions);
+  const [options, { refetch: refetchOptions }] = liveDelegateOptions();
   const [rows] = createResource(getDelegateSettings);
   const [teams] = createResource(getTeamDefaults);
   onMount(() => {
@@ -290,7 +291,6 @@ export function ProfilesSettingsSection(props: { cwd: string | null }) {
       <h3 class="settings-section-title" id="profiles-title">
         Profiles
       </h3>
-      <For each={claudeDriftNotes(optionsReady())}>{(note) => <p class="settings-intro">{note}</p>}</For>
       <Show when={listing.error}>
         <Banner tone="error" title="Couldn't load profiles." body={`${sentence(String(listing.error?.message ?? listing.error))} Your profiles are unchanged.`} action={<RetryButton label="Try Again" onClick={() => void refetch()} />} />
       </Show>

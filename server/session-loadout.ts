@@ -65,7 +65,7 @@ export const leavesOut = (d: LoadoutEntryData | null | undefined): d is LoadoutE
 export interface LoadoutState {
   data: LoadoutEntryData | null;
   baseContext?: string[];
-  baseSkills?: { name: string; filePath: string; description?: string }[];
+  baseSkills?: { name: string; filePath: string; description?: string; manualOnly?: boolean }[];
 }
 
 /** The two loader overrides for an entry, recording each base list into `state`. Undefined when the
@@ -81,7 +81,7 @@ export function loadoutOverrides(state: LoadoutState) {
       return { agentsFiles: base.agentsFiles.filter((f) => !offContext.has(f.path)) };
     },
     skillsOverride: (base: { skills: PiSkill[]; diagnostics: PiResourceDiagnostic[] }) => {
-      state.baseSkills = base.skills.map((s) => ({ name: s.name, filePath: s.filePath, ...(s.description !== undefined ? { description: s.description } : {}) }));
+      state.baseSkills = base.skills.map((s) => ({ name: s.name, filePath: s.filePath, ...(s.description !== undefined ? { description: s.description } : {}), ...(s.disableModelInvocation ? { manualOnly: true } : {}) }));
       return { skills: base.skills.filter((s) => !offSkills.has(s.name)), diagnostics: base.diagnostics };
     },
   };

@@ -101,7 +101,7 @@ import type {
   PushTestResult,
 } from "../../shared/protocol";
 import type { MeshFrontDoor, MeshLocalSettings } from "../../shared/mesh-local";
-import { WIRE_PARAM, type ChatProfileState, type ProfileSwitchResult, type ShellOutputPage, type ModelCheckStatus, type ProviderKeyRow, type ProviderKeysInfo, type ProviderKeyWrite } from "../../shared/protocol";
+import { WIRE_PARAM, type ClaudeCatalogInfo, type ChatProfileState, type ProfileSwitchResult, type ShellOutputPage, type ModelCheckStatus, type ProviderKeyRow, type ProviderKeysInfo, type ProviderKeyWrite } from "../../shared/protocol";
 import { LIST_VERSION_HEADER, parseListVersion } from "./summary-diff";
 import type { ShellDraftMode } from "./draft-save";
 import type { LanPairingAdd, LanRelayPut, LanStatus } from "../../shared/mesh-lan";
@@ -308,6 +308,7 @@ export const getDelegateSettings = () => request<DelegateSettingsInfo>("/api/set
 
 /** What each worker backend offers. Slow the first time (it asks the Claude Code CLI; cached 60s);
     a backend that can't answer comes back with `models: null`, which is not "offers nothing". */
+export const getClaudeCatalog = () => request<ClaudeCatalogInfo>("/api/claude/catalog");
 export const getDelegateOptions = () => request<DelegateOptions>("/api/settings/delegate/options");
 
 /** Replace the whole routing. Delegate sessions everywhere pick it up at their next turn. */

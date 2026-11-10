@@ -134,7 +134,9 @@
       "src/lib/git-summary.ts",
       "src/components/WakeCard.tsx",
       "shared/wake.ts",
-      "src/lib/wake-card.test.ts"
+      "src/lib/wake-card.test.ts",
+      "src/components/SessionSetup.tsx",
+      "src/lib/session-setup.ts"
     ]
   },
   "§design.copy-deck/markdown-and-code": {
@@ -547,7 +549,8 @@
       "src/components/NeedsYouRow.tsx",
       "src/lib/branch-status.ts",
       "src/lib/session-row.test.ts",
-      "src/lib/branch-place.ts"
+      "src/lib/branch-place.ts",
+      "src/lib/setup-chat.ts"
     ]
   },
   "§design.copy-deck/slash-commands": {

@@ -1,0 +1,99 @@
+{
+  "§chat.skill-sources/arguments": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "server/skill-sources.ts",
+      "server/skill-sources.test.ts",
+      "server/harness/pi/deeper-context.ts"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-06T18:26Z",
+      "source": "pi-session:01a1b07d-be49-727f-8989-d4d0378c61bb#55377061"
+    },
+    "requires": []
+  },
+  "§chat.skill-sources/manual-only": {
+    "kind": "behavior",
+    "requires": [
+      "§chat.transcript/setup-card-skills",
+      "§app.subagents-pane/context-tab"
+    ],
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "server/harness/pi/resources.ts",
+      "server/session-setup.ts",
+      "server/session-loadout.ts",
+      "shared/harness-session.ts",
+      "shared/protocol.ts",
+      "src/lib/session-setup.ts",
+      "src/components/SessionSetup.tsx",
+      "src/app.css",
+      "src/lib/context-parts.ts",
+      "server/context-tab.ts"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-06T18:26Z",
+      "source": "pi-session:01a1b07d-be49-727f-8989-d4d0378c61bb#55377061"
+    }
+  },
+  "§chat.skill-sources/rescue": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "server/skill-sources.ts",
+      "server/skill-sources.test.ts",
+      "server/harness/pi/skill-sources.ts",
+      "server/harness/pi/skill-sources.test.ts"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-06T18:26Z",
+      "source": "pi-session:01a1b07d-be49-727f-8989-d4d0378c61bb#55377061"
+    },
+    "requires": []
+  },
+  "§chat.skill-sources/starting": {
+    "kind": "behavior",
+    "requires": [
+      "§chat.transcript/setup-card-skills"
+    ],
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "server/skill-sources.ts",
+      "server/skill-sources.test.ts",
+      "server/harness/pi/skill-sources.ts",
+      "server/harness/pi/resources.ts",
+      "server/harness/pi/open.ts",
+      "server/harness/pi/contract.test.ts",
+      "server/harness/pi/QUIRKS.md",
+      "server/harness/pi/quirks.ts",
+      "server/harness/pi/skill-sources.test.ts"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-06T18:26Z",
+      "source": "pi-session:01a1b07d-be49-727f-8989-d4d0378c61bb#55377061"
+    }
+  },
+  "§chat/skill-sources": {
+    "kind": "surface",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "server/skill-sources.ts",
+      "server/harness/pi/skill-sources.ts"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-06T18:26Z",
+      "source": "pi-session:01a1b07d-be49-727f-8989-d4d0378c61bb#55377061"
+    }
+  }
+}

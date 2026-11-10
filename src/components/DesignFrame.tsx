@@ -167,13 +167,14 @@ export function DesignStreamFrame(props: { api: DesignApi; label: string; versio
         // The page's end takes its version away; the document on show stays.
         if (v === undefined) return;
         giveBack();
-        const ask = ++asked;
+        ++asked;
         setSrc("");
         setPainted(false);
         setTurn(true);
         release = designLiveSlots.ask({
           priority: !!props.priority,
-          grant: () => connect(ask),
+          // A grant after a revoke is a fresh ask: the one this line began with is gone.
+          grant: () => connect(++asked),
           revoke: () => {
             ++asked;
             setSrc("");

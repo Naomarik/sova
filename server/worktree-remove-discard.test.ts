@@ -142,6 +142,7 @@ describe("Discard Branch…: the refusals, each before anything goes, in the dry
     { name: "its chat is open in a TUI", words: DISCARD_WORDS.chatTui, setup: () => ({ owner: { ...OWNER, tui: true } }) },
     { name: "its chat's worker is working", words: DISCARD_WORDS.worker, setup: () => ({ deps: { workingSubagents: () => 1 } }) },
     { name: "another chat runs in its folder", words: DISCARD_WORDS.worker, setup: (b) => ({ deps: { uses: async () => ({ uses: [use({ cwd: b.folder, inside: [b.folder], running: true })], unreadable: [] }) } }) },
+    { name: "another chat in its folder is open in a terminal", words: DISCARD_WORDS.otherTui, setup: (b) => ({ deps: { uses: async () => ({ uses: [use({ cwd: b.folder, inside: [b.folder], tui: true })], unreadable: [] }) } }) },
     { name: "a process runs in its folder", words: () => process_words({ command: "vite", pid: 4242 }), setup: (b) => ({ deps: { processes: async () => [{ pid: 4242, command: "vite", paths: [join(b.folder, "src")] }] } }) },
     { name: "its head moved since the row was read", words: DISCARD_WORDS.moved, setup: () => ({ req: { commit: "0".repeat(40) } }) },
     { name: "the branch is gone", words: DISCARD_WORDS.noBranch, setup: () => ({ req: { branch: "feat/never-was" } }) },

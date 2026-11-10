@@ -23,7 +23,8 @@ export const DISCARD_WORDS = {
   target: "That's the branch it lands into.",
   inQueue: "It's in the merge queue.",
   chatWorking: "Its chat is working.",
-  chatTui: "Its chat is open in a TUI.",
+  chatTui: "Its chat is open in a terminal.",
+  otherTui: "A chat in its folder is open in a terminal.",
   worker: "A worker is running in its folder.",
   moved: "Its branch moved since you looked: look again.",
   noBranch: "There's no such branch any more.",
@@ -198,6 +199,7 @@ async function refusal(req: DiscardRequest, d: DiscardDeps, r: Reading): Promise
       if (r.owner && c.path === r.owner.path) continue;
       if (c.archived) continue;
       // Another chat or a worker working there: the one use rule, minus its quiet time (you asked for this now).
+      if (c.tui) return DISCARD_WORDS.otherTui;
       if (chatInUse({ ...c, lastActiveAt: 0 }, d.now())) return DISCARD_WORDS.worker;
     }
     const folder = r.folder;

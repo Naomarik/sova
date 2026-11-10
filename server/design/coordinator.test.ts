@@ -573,6 +573,35 @@ test("a brief left with a link of no use tells the coordinator what Start waits 
   assert.match(textOf(r), /Start waits until each link has a use: https:\/\/example\.test\/pricing.*content/);
 });
 
+test("a person turning a Just Its Feel link to Not a Reference tells the coordinator, and its look is no longer said to go", async () => {
+  const run = withLink("feel");
+  const { t, shot } = await looked(run);
+  await t.design_brief({ baseRev: 0, summary: "S", prompt: "Follow the feel source.", text: "F", shots: [shot], url: URL_ });
+  await new Promise((r) => setImmediate(r));
+  assert.equal(brief(run.id).looks[URL_]!.state, "ready");
+  log.sends.length = 0;
+  await setBriefLink(parent, run.id, URL_, "content");
+  assert.equal(log.sends.length, 1);
+  const said = log.sends[0]!.text;
+  assert.match(said, /changed how https:\/\/example\.test\/pricing is used, from Just Its Feel to Not a Reference/);
+  assert.doesNotMatch(said, /goes to the designers as it stands/);
+  assert.equal(brief(run.id).screen, undefined, "a page never looked at shows no screen");
+  await startRefused(run, /Writing the Full Prompt/);
+  await t.design_brief({ baseRev: brief(run.id).textRev, prompt: "No feel source." });
+  await start(run);
+  assert.equal(log.launches[0]!.brief, "No feel source.");
+});
+
+test("clicking the use a link already has wakes nothing", async () => {
+  const run = withLink("images", "user");
+  const { t, shot } = await looked(run);
+  await t.design_brief({ baseRev: 0, summary: "S", prompt: "P", text: "F", shots: [shot], url: URL_ });
+  log.sends.length = 0;
+  await setBriefLink(parent, run.id, URL_, "images");
+  assert.equal(log.sends.length, 0);
+  await start(run);
+});
+
 test("Not This Screen sends the user's words on, clears the screen, and an address in them counts as theirs", async () => {
   const run = runWith(2, 3);
   const t = await started(run);

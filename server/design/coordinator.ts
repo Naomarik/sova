@@ -600,18 +600,40 @@ export async function resolveBriefConflict(parent: BrowseParent, runId: string, 
 /** Use Its Images or Just Its Feel, by the person's click: the coordinator can't undo it. */
 export async function setBriefLink(parent: BrowseParent, runId: string, url: string, use: DesignLinkUse): Promise<void> {
   const { st, run } = openBrief(parent, runId);
-  if (!run.setup.links?.some((l) => l.url === url)) throw new BriefRefused("That link isn't on this brief.");
-  changeBrief(st, (b, r) => {
+  const link = run.setup.links?.find((l) => l.url === url);
+  if (!link) throw new BriefRefused("That link isn't on this brief.");
+  const was = link.use;
+  const changed = changeBrief(st, (b, r) => {
     const l = r.setup.links!.find((x) => x.url === url)!;
     l.use = use;
     l.by = "user";
     b.rev++;
+    // Never looked at from now on: a screen found there leaves the brief with it.
+    if (use === "content" && b.screen?.url && sameSite(b.screen.url, url)) delete b.screen;
+    if (was === use) return false;
+    // The summary and Full Prompt may say how this page is used: they hear it, as from the box.
+    userTold(b);
+    return true;
   });
+  // What it was told about this page's look may no longer hold: that line goes, and the change says what does.
+  if (was === "feel" && use !== "feel") {
+    st.notes = st.notes.filter((n) => !n.startsWith(`The look of ${url} `));
+    save(st);
+  }
   refreshLooks(parent, st);
   refreshNotes(st);
-  if (use === "feel" && !shotFor(st, url) && runOf(st.sessionId, runId)?.brief?.looks[url]?.state === "reading") {
-    await wakeForBrief(st, `The user chose Just Its Feel for ${url}. Open it with design_browse so its look can be read; nothing else is needed from you for this.`, `${runId}:brief:feel:${run.brief.rev}`);
-  }
+  const needsLook = use === "feel" && !shotFor(st, url) && runOf(st.sessionId, runId)?.brief?.looks[url]?.state === "reading";
+  if (!changed && !needsLook) return;
+  const what = use === "images" ? "Use Its Images: its images and screen go to the designers" : use === "feel" ? "Just Its Feel: only its look, in words, goes to the designers" : "Not a Reference: it is only an address in the page's content, never opened, and nothing from that page goes to the designers";
+  const after = runOf(st.sessionId, runId)!.brief!;
+  const rule = after.promptBy === "user"
+    ? `The Full Prompt is the user's own, so don't change it; bring the summary in line with design_brief (baseRev ${after.textRev}). The brief asks them whether to keep their prompt or have it rewritten.`
+    : `If the summary or Full Prompt says otherwise about this page, update them together with design_brief (baseRev ${after.textRev}); if not, end your turn.`;
+  await wakeForBrief(
+    st,
+    `The user changed how ${url} is used${was ? `, from ${was === "images" ? "Use Its Images" : was === "feel" ? "Just Its Feel" : "Not a Reference"}` : ""} to ${what}.${needsLook ? " Open it with design_browse so its look can be read." : ""} ${rule}`,
+    `${runId}:brief:link:${use}:${run.brief.rev}`,
+  );
 }
 
 /** Use, or not, on the image grid: no rewrite of the Full Prompt, because Sova adds the list of images at Start. */

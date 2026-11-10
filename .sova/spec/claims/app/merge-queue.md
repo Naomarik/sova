@@ -170,28 +170,16 @@ on as any other does.
   GitHub: change How it lands" (or the reverse); or this computer not signed in to that host
   (§app.merge-queue/hosts). Push branch only isn't checked here.
 
-- a change to automatic cleanup with no passing rehearsal at that commit (below), a release's own
-  entry aside: "Rehearsal needed: {branch} changes automatic cleanup and has no passing rehearsal at
-  {sha7} on a copy of your state taken today. Nothing was queued."
-
 An approval is still taken while the queue is paused; a pause stops runs, not approvals.
 
-**A change to automatic cleanup waits for its rehearsal.** A branch of Sova's own repository whose
+**A change to automatic cleanup is approved like any other.** A branch of Sova's own repository whose
 commits change a file the `retire-lab` test group is triggered by (the list in `shared/retire-lab.json`:
-the code that retires and removes worktrees) lands only once a rehearsal has passed at exactly that
-commit, on a private copy of the user's real state taken the same day as the approval. Where git can't
-say what the branch changes, it waits too. Until a pass at that commit is recorded (`<state
-root>/retire-rehearsals.json`, `passes`: commit, when the copy was taken, when it passed), Land reads
-**Rehearsal needed**, disabled, on the Merge Queue tab's Ready to land rows and the Worktrees rows, with
-what it needs as its hover and for a screen reader. Every option of Land waits the same way, and so does
-a typed "land it" or any other way in, such as the project page's Land (refused as above). A fix commit
-under a standing Land (§app.merge-queue/standing-approval) that changes one of those files needs its own
-pass: the entry reads **Approved · waiting for a fix**, "Rehearsal needed", and goes in line by itself
-once that pass is recorded. It is asked at each approval
-and each fix; an entry already in line isn't stopped by the date changing. The rehearsal runs outside
-the queue, started by the user, in a container with the network off and nothing real mounted: a queue
-check must never read the user's real state, so the queue's own checks run `retire-lab`, the same
-scenarios built on made-up state, whenever those files change (§app.merge-queue/checks).
+the code that retires and removes worktrees) needs no rehearsal on a copy of the user's real state:
+Land, its every option, a typed "land it" and every other way in take it as they take any branch, and
+a fix commit under a standing Land (§app.merge-queue/standing-approval) that changes those files goes
+in line as any fix does. A queue check never reads the user's real state; the queue's own checks run
+`retire-lab`, the same scenarios built on made-up state, whenever those files change
+(§app.merge-queue/checks).
 
 **Its options.** Each is set once per approval, on the Land control's menu or in the typed words:
 - **Land without review** ("land it, skip review") skips the review step (§app.merge-queue/review)
@@ -1327,8 +1315,12 @@ scrolled into view, clear of that fade.
 
 Where retirement is off (§chat.worktrees/retirement), its sentence shows once, above the strip or, on a
 project the queue doesn't serve, above Held and Retired, for every reason (a custom agent directory, a test
-copy, `SOVA_RETIRE=off`, or a server that can't tell) and even with no rows. Remove on a Worktrees row
-(§chat.worktrees/pane) is only for the custom agent directory; the other reasons offer nothing.
+copy, the real install not switched on with `SOVA_RETIRE=on`, `SOVA_RETIRE=off`, or a server that can't tell) and even with no
+rows. While it is off, Held lists no rows, no waiting line and no lock line, the tab and the queue's status
+count none held or waiting, and none of it reads retirement's working record; the Retired list and its
+Restore still read the ledger of removals. Remove on a Worktrees row
+(§chat.worktrees/pane) is only for the custom agent directory and the real install switched off by default; the
+other reasons (a test copy, `SOVA_RETIRE=off`, a server that can't tell) offer nothing.
 
 The tabs' rows:
 

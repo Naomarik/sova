@@ -29,7 +29,29 @@
 .design-setup { gap: var(--space-4); }
 .design-setup .textarea { min-height: 76px; }
 .design-setup-label { margin: 0; font-size: var(--fs-caption); font-weight: var(--fw-semibold); color: var(--color-ink); }
-.design-directions { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 0 var(--space-4); }
+/* The direction picker: Style and Layout are closed rows like a provider's; open, a row shows its chips
+   below itself. A chip keeps its size pressed or not (a plus becomes a check, the weight stays), so a tick
+   never rewraps the chips. The combine line is one fixed line (2 on a phone) whatever is ticked. */
+.design-direction-panel { border-top: 1px solid var(--color-border); background: var(--color-bg); padding: var(--space-2) var(--space-3) var(--space-3); display: flex; flex-direction: column; gap: var(--space-2); }
+.design-family { display: grid; grid-template-columns: 11ch minmax(0, 1fr); align-items: start; gap: var(--space-2) var(--space-3); }
+.design-family-name { font-size: var(--fs-caption); font-weight: var(--fw-semibold); color: var(--color-ink-2); line-height: var(--control-sm); }
+.design-chips { display: flex; flex-wrap: wrap; gap: var(--space-1) var(--space-2); }
+.design-chip { border-radius: var(--r-full); gap: var(--space-1); font-weight: var(--fw-regular); }
+.design-chip::before { content: ""; flex: none; width: 14px; height: 14px; background: currentColor; -webkit-mask: var(--chip-mark) center / contain no-repeat; mask: var(--chip-mark) center / contain no-repeat; --chip-mark: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 5v14M5 12h14'/%3E%3C/svg%3E"); }
+.design-chip[aria-pressed="true"] { background: var(--color-accent-tint); border-color: var(--color-accent); }
+.design-chip[aria-pressed="true"]::before { --chip-mark: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 12.5l4.5 4.5L19 7.5'/%3E%3C/svg%3E"); }
+@container design-card (max-width: 480px) {
+  .design-family { grid-template-columns: minmax(0, 1fr); gap: var(--space-1); }
+  .design-family-name { line-height: var(--lh-caption); }
+}
+.design-combine { display: grid; grid-template-columns: max-content minmax(0, 1fr) max-content; grid-template-areas: "how pairs shuffle"; align-items: center; gap: var(--space-3); height: var(--control-sm); }
+.design-combine-how { grid-area: how; display: flex; gap: var(--space-1); }
+.design-combine-how .button[aria-pressed="true"] { background: var(--color-accent-tint); border-color: var(--color-accent); }
+.design-combine-pairs { grid-area: pairs; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.design-combine-shuffle { grid-area: shuffle; }
+@container design-card (max-width: 480px) {
+  .design-combine { grid-template-columns: max-content minmax(0, 1fr) max-content; grid-template-rows: var(--control-sm) calc(var(--fs-caption) * var(--lh-caption)); grid-template-areas: "how . shuffle" "pairs pairs pairs"; height: calc(var(--control-sm) + var(--space-1) + var(--fs-caption) * var(--lh-caption)); row-gap: var(--space-1); }
+}
 .design-toggle-inline { justify-content: flex-start; }
 /* The model picker. Every row is one fixed height and every changing word is cut to one line, so a tick
    changes words, never sizes; opening a section, or searching, only adds or takes away what is below. */

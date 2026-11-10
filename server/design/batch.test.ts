@@ -104,7 +104,7 @@ async function waitFor(ok: () => boolean): Promise<void> {
   assert.ok(ok(), "never happened");
 }
 
-function newRun(models: string[], directions: string[]): string {
+function newRun(models: string[], directions: string[], layouts: string[] = [], combine: "pair" | "every" = "pair"): string {
   const id = `r${++n}`;
   const now = new Date().toISOString();
   store.changeDesigns(parent.sessionId, (s) => {
@@ -114,7 +114,7 @@ function newRun(models: string[], directions: string[]): string {
       labels: [],
       createdAt: now,
       updatedAt: now,
-      setup: { brief: "a page", models: models.map((ref) => ({ ref, name: ref, design: true, coordinator: false, vision: true, route: "tool" as const })), directions: directions.map((name) => ({ name, on: true })) },
+      setup: { brief: "a page", models: models.map((ref) => ({ ref, name: ref, design: true, coordinator: false, vision: true, route: "tool" as const })), directions: directions.map((name) => ({ name, on: true })), layouts: layouts.map((name) => ({ name, on: true })), combine },
     });
     s.cwd = dir;
     s.parentPath = parent.path;
@@ -225,6 +225,36 @@ test("q2: ask above 12, stop at 24, whatever the caller checked", () => {
   const big = newRun(Array.from({ length: 13 }, (_, i) => `zai/m${i}`), ["Minimalist"]);
   assert.throws(() => launchDesigns(parent, big, {}), DesignLimitError, "the runner is the wall");
   assert.equal(store.viewOf(parent.sessionId).designs.length, 0, "a refused launch starts nothing");
+});
+
+test("a launch with layouts makes the plan's designs, each session told its own style and layout", async () => {
+  const run = newRun(["zai/a", "zai/b"], ["Minimalist", "Bold & Vibrant", "Balanced"], ["Compact", "Bento", "Split Screen"]);
+  assert.deepEqual(launchDesigns(parent, run, {}), ["A", "B", "C", "D", "E", "F"]);
+  const made = store.viewOf(parent.sessionId).designs.map((d) => `${d.model} ${d.direction} + ${d.layout}`);
+  assert.deepEqual(made, [
+    "zai/a Minimalist + Compact",
+    "zai/b Minimalist + Bento",
+    "zai/a Bold & Vibrant + Bento",
+    "zai/b Bold & Vibrant + Split Screen",
+    "zai/a Balanced + Split Screen",
+    "zai/b Balanced + Compact",
+  ]);
+  await ticks();
+  for (const f of fakes) {
+    const d = store.viewOf(parent.sessionId).designs.find((x) => x.sessionId && f.rec.spec.appendSystemPrompt!.includes(`"${x.direction}" aesthetic`) && f.rec.spec.appendSystemPrompt!.includes(`Arrange the page as "${x.layout}".`));
+    assert.ok(d, "each session's standing instructions name its own style and layout");
+    assert.ok(!f.sends[0]!.text.includes("Arrange the page"), "the shared first message names no layout");
+  }
+});
+
+test("Every Mix counts against the same limits: 2 × 3 × 3 asks, 3 × 3 × 3 is refused", () => {
+  const asks = newRun(["zai/a", "zai/b"], ["Minimalist", "Balanced", "Elegant"], ["Compact", "Bento", "Dashboard"], "every");
+  assert.throws(() => launchDesigns(parent, asks, {}), (e: unknown) => e instanceof DesignLimitError && e.needsConfirm && e.designs === 18);
+  const refused = newRun(["zai/a", "zai/b", "zai/c"], ["Minimalist", "Balanced", "Elegant"], ["Compact", "Bento", "Dashboard"], "every");
+  assert.throws(() => launchDesigns(parent, refused, {}), (e: unknown) => e instanceof DesignLimitError && !e.needsConfirm && e.designs === 27 && /Choose fewer models, styles or layouts\./.test(e.message));
+  // The same ticks paired up are 9: no question.
+  const paired = newRun(["zai/a", "zai/b", "zai/c"], ["Minimalist", "Balanced", "Elegant"], ["Compact", "Bento", "Dashboard"]);
+  assert.equal(launchDesigns(parent, paired, {}).length, 9);
 });
 
 test("nothing reaches the main chat when designs finish or a user refines one (q6)", async () => {

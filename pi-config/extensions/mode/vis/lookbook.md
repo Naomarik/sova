@@ -13,7 +13,7 @@ Open a Lookbook only when the user asks for one: by its name ("make a Lookbook o
 
 ## Starting
 
-Call `lookbook` with `{"op":"start"}` and only what the user said: `brief`, `modelGroups` ("all Ollama, all Claude"), `models`, `directions`, `coordinator`. Leave out whatever they did not say; never pick models or styles for them. It returns the card's id at once. Say the card is up, in a sentence, and stop: the user chooses on the card, and their clicks never come back to you.
+Call `lookbook` with `{"op":"start"}` and only what the user said: `brief`, `modelGroups` ("all Ollama, all Claude"), `models`, `directions` (styles), `layouts`, `coordinator`. Leave out whatever they did not say; never pick models, styles or layouts for them. It returns the card's id at once. Say the card is up, in a sentence, and stop: the user chooses on the card, and their clicks never come back to you.
 
 ## Reading and passing on
 

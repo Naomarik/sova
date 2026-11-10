@@ -58,3 +58,26 @@ test("exactly one coordinator, which need not design", () => {
   assert.ok(typeof kept !== "string");
   assert.deepEqual(kept.models.filter((m) => m.coordinator).map((m) => m.ref), ["zai/glm-5.3"]);
 });
+
+test("Setup keeps only the layouts it offered, and the combine choice and seed it can read", () => {
+  const prev = { brief: "x", models: [], directions: [{ name: "Minimalist", on: true }], layouts: [{ name: "Bento", on: false }, { name: "Compact", on: false }], combine: "pair" as const };
+  const ok = cleanSetup(prev, { brief: "x", models: [], directions: [], layouts: [{ name: "Bento", on: true }], combine: "every", pairSeed: 7 });
+  assert.ok(typeof ok !== "string");
+  assert.deepEqual(ok.layouts!.map((d) => [d.name, d.on]), [["Bento", true], ["Compact", false]]);
+  assert.equal(ok.combine, "every");
+  assert.equal(ok.pairSeed, 7);
+  assert.equal(cleanSetup(prev, { brief: "x", models: [], directions: [], layouts: [{ name: "Hexagon", on: true }] }), "That layout isn't on this card.");
+  assert.match(cleanSetup(prev, { brief: "x", models: [], directions: [], combine: "all" }) as string, /combine/);
+  assert.match(cleanSetup(prev, { brief: "x", models: [], directions: [], pairSeed: -1 }) as string, /pairSeed/);
+  // Change on the brief: the layouts and how they combine change with the models and styles.
+  const open = cleanSetup(prev, { brief: "other", models: [], directions: [], layouts: [{ name: "Compact", on: true }], combine: "every" }, true);
+  assert.ok(typeof open !== "string");
+  assert.equal(open.brief, "x");
+  assert.deepEqual(open.layouts!.filter((d) => d.on).map((d) => d.name), ["Compact"]);
+  assert.equal(open.combine, "every");
+  // A run made before layouts offers none, and stays without them.
+  const old = cleanSetup({ brief: "x", models: [], directions: [] }, { brief: "x", models: [], directions: [], layouts: [{ name: "Bento", on: true }] });
+  assert.equal(old, "That layout isn't on this card.");
+  const oldPlain = cleanSetup({ brief: "x", models: [], directions: [] }, { brief: "x", models: [], directions: [] });
+  assert.ok(typeof oldPlain !== "string" && oldPlain.layouts === undefined);
+});

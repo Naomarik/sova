@@ -4,10 +4,10 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { periodAt, priceUsage, resolvePriceRef, type Aliases, type PriceTable } from "../../shared/model-prices/prices";
 import { stateRoot } from "../state-root";
-import { designLinksIn, designRouteOf, type DesignModelChoice, type DesignRun, type DesignSetup } from "../../shared/design";
+import { designLinksIn, designPlan, designRouteOf, type DesignModelChoice, type DesignRun, type DesignSetup } from "../../shared/design";
 import { DESIGN_NEVER_IDS, DESIGN_NEVER_REFS, designInGroup, designModelOrder } from "../../shared/design-models";
 import { retiredModelRefs } from "../harness/pi/model-sync";
-import { DESIGN_DEFAULT_DIRECTION_SETS, DESIGN_DIRECTIONS } from "../../pi-config/extensions/mode/design-guide.ts";
+import { DESIGN_DEFAULT_DIRECTION_SETS, DESIGN_DIRECTIONS, DESIGN_LAYOUTS } from "../../pi-config/extensions/mode/design-guide.ts";
 import { listModels } from "../models";
 import { modelAllowed, readModelPolicy } from "../model-policy";
 import type { ModelInfo, ModelPolicy } from "../../shared/protocol";
@@ -43,6 +43,8 @@ export interface SetupInput {
   models?: string[];
   modelGroups?: string[];
   directions?: string[];
+  /** Layouts the user named; none by default (Designer's Choice). */
+  layouts?: string[];
   coordinator?: string;
 }
 
@@ -74,8 +76,16 @@ export async function setupFrom(input: SetupInput): Promise<DesignSetup> {
   const asked = (input.directions ?? []).map((d) => d.toLowerCase());
   const known = DESIGN_DIRECTIONS.filter((d) => asked.includes(d.name.toLowerCase())).map((d) => d.name);
   const on = known.length ? known : [...DESIGN_DEFAULT_DIRECTION_SETS[Math.floor(Math.random() * DESIGN_DEFAULT_DIRECTION_SETS.length)]!];
+  const layoutsAsked = (input.layouts ?? []).map((d) => d.toLowerCase());
   const brief = input.brief?.trim() ?? "";
-  return { brief, models, directions: DESIGN_DIRECTIONS.map((d) => ({ name: d.name, on: on.includes(d.name) })), links: linksFromText(brief, undefined, designLinksIn(brief)) };
+  return {
+    brief,
+    models,
+    directions: DESIGN_DIRECTIONS.map((d) => ({ name: d.name, on: on.includes(d.name), ...(d.family ? { family: d.family } : {}) })),
+    layouts: DESIGN_LAYOUTS.map((d) => ({ name: d.name, on: layoutsAsked.includes(d.name.toLowerCase()) })),
+    combine: "pair",
+    links: linksFromText(brief, undefined, designLinksIn(brief)),
+  };
 }
 
 export async function createRun(parent: DesignParent, cwd: string, input: SetupInput): Promise<DesignRun> {
@@ -105,12 +115,25 @@ export function cleanSetup(previous: DesignSetup, next: unknown, briefOpen = fal
   });
   if (n.models.some((x) => !offered.has((x as { ref?: string })?.ref ?? ""))) return "That model isn't on this card.";
   if (models.filter((m) => m.coordinator).length > 1) return "Only one model can be the coordinator.";
-  const directions = previous.directions.map((d) => {
-    const sent = (n.directions as unknown[]).find((x) => (x as { name?: unknown })?.name === d.name) as { on?: unknown } | undefined;
-    return sent ? { ...d, on: !!sent.on } : d;
-  });
-  if (briefOpen) return { ...previous, models, directions };
-  return { brief: n.brief, models, directions, links: linksFromText(n.brief, previous.links, designLinksIn(n.brief), n.links) };
+  const ticks = (offered: readonly { name: string; on: boolean }[], sentList: unknown) =>
+    offered.map((d) => {
+      const sent = (Array.isArray(sentList) ? sentList : []).find((x) => (x as { name?: unknown })?.name === d.name) as { on?: unknown } | undefined;
+      return sent ? { ...d, on: !!sent.on } : d;
+    });
+  const directions = ticks(previous.directions, n.directions);
+  if (n.layouts !== undefined && !Array.isArray(n.layouts)) return "layouts must be a list.";
+  // Only the layouts this card offered; a run made before layouts offers none.
+  const offeredLayouts = previous.layouts ?? [];
+  if ((n.layouts ?? []).some((x) => !offeredLayouts.some((d) => d.name === (x as { name?: unknown })?.name))) return "That layout isn't on this card.";
+  if (n.combine !== undefined && n.combine !== "pair" && n.combine !== "every") return 'combine is "pair" or "every".';
+  if (n.pairSeed !== undefined && (typeof n.pairSeed !== "number" || !Number.isInteger(n.pairSeed) || n.pairSeed < 0 || n.pairSeed > 0xffffffff)) return "pairSeed must be a whole number.";
+  const combos = {
+    ...(previous.layouts ? { layouts: ticks(previous.layouts, n.layouts) } : {}),
+    combine: n.combine ?? previous.combine ?? "pair",
+    ...((n.pairSeed ?? previous.pairSeed) ? { pairSeed: n.pairSeed ?? previous.pairSeed } : {}),
+  } satisfies Partial<DesignSetup>;
+  if (briefOpen) return { ...previous, models, directions, ...combos };
+  return { brief: n.brief, models, directions, ...combos, links: linksFromText(n.brief, previous.links, designLinksIn(n.brief), n.links) };
 }
 
 /** About what one page costs on `ref`, in dollars, or null when its price isn't known (report E1: output dominates). */
@@ -163,12 +186,13 @@ export function estimateUsd(setup: DesignSetup, now = Date.now()): number | null
   const table = priceFile<PriceTable>(join(stateRoot(), "model-prices.json")) ?? priceFile<PriceTable>(join(PRICES_DIR, "seed.json"));
   const aliases = priceFile<Aliases>(join(PRICES_DIR, "aliases.json"));
   if (!table || !aliases) return null;
-  const directions = setup.directions.filter((d) => d.on).length;
   let total = 0;
-  for (const m of setup.models.filter((x) => x.design)) {
-    const each = pagePrice(m.ref, table, aliases, now);
-    if (each === null) return null;
-    total += each * directions;
+  const each = new Map<string, number | null>();
+  for (const item of designPlan(setup).items) {
+    if (!each.has(item.model)) each.set(item.model, pagePrice(item.model, table, aliases, now));
+    const price = each.get(item.model)!;
+    if (price === null) return null;
+    total += price;
   }
   return total;
 }

@@ -1,5 +1,5 @@
 /**
- * The Lookbook's text Sova itself reads, once at load: the 20 directions (vis/lookbook-directions.md,
+ * The Lookbook's text Sova itself reads, once at load: the 20 styles in 5 families and the 12 layouts (vis/lookbook-directions.md,
  * also a `vis_guide` part), a design session's system prompt and the coordinator's (design/ beside this
  * module). The main chat's guide is vis's: `vis_guide {kind:"lookbook"}` and its parts (minor.ts
  * VIS_TOOL_ENTRIES / VIS_TOOL_PARTS). Node builtins only: the server imports it. HTML comments (owner
@@ -19,23 +19,46 @@ function modelText(name: string, dir: URL = DIR): string {
 export interface DesignDirection {
 	name: string;
 	definition: string;
+	/** A style's family ("Quiet"); absent on a layout. */
+	family?: string;
 }
 
-function parseDirections(md: string): DesignDirection[] {
-	const directions = md
-		.split("\n")
-		.filter((line) => line.startsWith("- "))
-		.map((line) => {
-			const parts = /^- ([^:]+): (.+)$/.exec(line);
-			if (!parts) throw new Error(`vis/lookbook-directions.md: malformed line: ${line}`);
-			return { name: parts[1]!, definition: parts[2]! };
-		});
-	if (directions.length !== 20) throw new Error(`vis/lookbook-directions.md: expected 20 directions, found ${directions.length}`);
-	return directions;
+const LAYOUTS_HEADING = "Layouts";
+
+/** The styles under their `## <Family>` headings and the layouts under `## Layouts`: 20 styles in 5 families, 12 layouts. */
+function parseDirections(md: string): { styles: DesignDirection[]; layouts: DesignDirection[] } {
+	const styles: DesignDirection[] = [];
+	const layouts: DesignDirection[] = [];
+	let group: string | null = null;
+	for (const line of md.split("\n")) {
+		const heading = /^## (.+)$/.exec(line);
+		if (heading) {
+			group = heading[1]!.trim();
+			continue;
+		}
+		if (!line.startsWith("- ")) continue;
+		const parts = /^- ([^:]+): (.+)$/.exec(line);
+		if (!parts) throw new Error(`vis/lookbook-directions.md: malformed line: ${line}`);
+		if (!group) throw new Error(`vis/lookbook-directions.md: a style outside a family: ${line}`);
+		if (group === LAYOUTS_HEADING) layouts.push({ name: parts[1]!, definition: parts[2]! });
+		else styles.push({ name: parts[1]!, definition: parts[2]!, family: group });
+	}
+	if (styles.length !== 20) throw new Error(`vis/lookbook-directions.md: expected 20 styles, found ${styles.length}`);
+	const families = new Set(styles.map((d) => d.family)).size;
+	if (families !== 5) throw new Error(`vis/lookbook-directions.md: expected 5 style families, found ${families}`);
+	if (layouts.length !== 12) throw new Error(`vis/lookbook-directions.md: expected 12 layouts, found ${layouts.length}`);
+	const names = [...styles, ...layouts].map((d) => d.name.toLowerCase());
+	if (new Set(names).size !== names.length) throw new Error("vis/lookbook-directions.md: a name is used twice");
+	return { styles, layouts };
 }
 
-/** The 20 directions, in the Setup card's order. */
-export const DESIGN_DIRECTIONS: readonly DesignDirection[] = parseDirections(modelText("lookbook-directions.md", VIS_DIR));
+const PARSED = parseDirections(modelText("lookbook-directions.md", VIS_DIR));
+
+/** The 20 styles, in the Setup card's order (family by family), each with its family. */
+export const DESIGN_DIRECTIONS: readonly DesignDirection[] = PARSED.styles;
+
+/** The 12 layouts, in the Setup card's order. */
+export const DESIGN_LAYOUTS: readonly DesignDirection[] = PARSED.layouts;
 
 /** The sets of 3 directions Setup starts from, one chosen at random. */
 export const DESIGN_DEFAULT_DIRECTION_SETS: readonly (readonly string[])[] = [
@@ -61,6 +84,13 @@ const SESSION_TASK = {
 	screenshot: modelText("session/task-screenshot.md"),
 	description: modelText("session/task-description.md"),
 };
+/** A rebuild with a layout keeps the page's purpose and content and arranges it as the layout says. */
+const SESSION_TASK_LAYOUT: Record<keyof typeof SESSION_TASK, string> = {
+	none: SESSION_TASK.none,
+	screenshot: modelText("session/task-screenshot-layout.md"),
+	description: modelText("session/task-description-layout.md"),
+};
+const SESSION_LAYOUT = modelText("session/layout.md");
 const SESSION_DELIVERY = {
 	tool: modelText("session/delivery-tool.md"),
 	reply: modelText("session/delivery-reply.md"),
@@ -74,6 +104,8 @@ export interface DesignSessionPromptOptions {
 	label: string;
 	/** A name from DESIGN_DIRECTIONS. */
 	direction: string;
+	/** A name from DESIGN_LAYOUTS; absent: the designer arranges its own page. */
+	layout?: string;
 	/** What the first message carries as the page to rebuild: nothing, screenshots, or a text outline (no vision). */
 	reference: keyof typeof SESSION_TASK;
 	/** `reply` for a model marked no-tool-stream. */
@@ -87,9 +119,12 @@ export const DESIGN_MIXED_DIRECTION = { name: "Mixed", definition: "Draw on the 
 export function designSessionPrompt(options: DesignSessionPromptOptions): string {
 	const direction = [...DESIGN_DIRECTIONS, DESIGN_MIXED_DIRECTION].find((d) => d.name === options.direction);
 	if (!direction) throw new Error(`Unknown design direction "${options.direction}"`);
+	const layout = options.layout === undefined ? undefined : DESIGN_LAYOUTS.find((d) => d.name === options.layout);
+	if (options.layout !== undefined && !layout) throw new Error(`Unknown design layout "${options.layout}"`);
 	const delivery = fill(SESSION_DELIVERY[options.delivery], { label: options.label, pageStart: DESIGN_PAGE_START, pageEnd: DESIGN_PAGE_END });
 	return fill(SESSION_BRIEF, {
-		task: SESSION_TASK[options.reference],
+		task: (layout ? SESSION_TASK_LAYOUT : SESSION_TASK)[options.reference],
+		layout: layout ? `\n${fill(SESSION_LAYOUT, { name: layout.name, definition: layout.definition })}\n` : "",
 		delivery,
 		direction: direction.name,
 		definition: direction.definition,

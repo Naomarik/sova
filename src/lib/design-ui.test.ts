@@ -4,7 +4,7 @@ import type { TranscriptItem } from "../../shared/protocol";
 import type { DesignRecord, DesignSetup } from "../../shared/design";
 import type { LiveTool } from "./live";
 import { designFold, liveDesignCalls, newestDesignRows, normalizeDesignCard } from "./design-rows";
-import { batchLine, briefTitle, lookbookTitle, designSections, searchModels, sectionSummary, designFixLine, designCanOpen, designHoldEnds, designIsBusy, designMeta, designOpenFollowsLive, designNoteLine, designUnchangedLine, designStatusWord, moveCoordinator, parentsLine, setupBlocked, setupCount, setupSummary, statusCounts, toggleDirection, toggleGroup, toggleModel } from "./design-ui";
+import { batchLine, briefTitle, lookbookTitle, canShuffle, designSections, pairsLine, setCombine, shufflePairs, tickedLine, toggleLayout, searchModels, sectionSummary, designFixLine, designCanOpen, designHoldEnds, designIsBusy, designMeta, designOpenFollowsLive, designNoteLine, designUnchangedLine, designStatusWord, moveCoordinator, parentsLine, setupBlocked, setupCount, setupSummary, statusCounts, toggleDirection, toggleGroup, toggleModel } from "./design-ui";
 
 const caps = { batchDefault: 6, askAbove: 12, batchMax: 24, concurrent: 6 };
 const m = (ref: string, design = true, coordinator = false) => ({ ref, name: ref, design, coordinator, vision: true, route: "tool" as const });
@@ -78,21 +78,21 @@ test("search finds every word in a model's name or provider, in the picker's ord
 
 test("a run is models times directions, and says so", () => {
   const c = setupCount(setup());
-  assert.deepEqual(c, { models: 2, directions: 2, designs: 4 });
-  assert.equal(setupSummary(c), "4 designs · 2 models × 2 directions");
-  assert.equal(setupSummary(setupCount(toggleDirection(toggleModel(setup(), "claude-code/sonnet", false), "Heritage", false))), "1 design · 1 model × 1 direction");
+  assert.deepEqual([c.models, c.styles, c.layouts, c.designs], [2, 2, 0, 4]);
+  assert.equal(setupSummary(c), "4 designs · 2 styles · 2 models");
+  assert.equal(setupSummary(setupCount(toggleDirection(toggleModel(setup(), "claude-code/sonnet", false), "Heritage", false))), "1 design · 1 style · 1 model");
 });
 
 test("Start Coordinator says why it can't go, one reason at a time", () => {
   assert.equal(setupBlocked(setup(), caps), null);
   assert.match(setupBlocked(setup({ brief: " " }), caps)!, /what to design/);
   assert.match(setupBlocked(toggleGroup(toggleGroup(setup(), "claude", false), "ollama-cloud", false), caps)!, /1 model/);
-  assert.match(setupBlocked(toggleDirection(toggleDirection(setup(), "Minimalist", false), "Heritage", false), caps)!, /1 direction/);
+  assert.match(setupBlocked(toggleDirection(toggleDirection(setup(), "Minimalist", false), "Heritage", false), caps)!, /1 style/);
   const noMark = setup();
   assert.match(setupBlocked({ ...noMark, models: noMark.models.map((x) => ({ ...x, coordinator: false })) }, caps)!, /coordinator/);
   const many = setup({ directions: Array.from({ length: 13 }, (_, i) => ({ name: `d${i}`, on: true })) });
   assert.equal(setupCount(many).designs, 26);
-  assert.match(setupBlocked(many, caps)!, /24 designs is the most .* Turn off 2\./);
+  assert.match(setupBlocked(many, caps)!, /^26 designs is more than 1 run can make \(24\)\. Choose fewer models, styles or layouts\.$/);
 });
 
 const rec = (label: string, status: DesignRecord["status"], direction = "Minimalist", model = "x/y"): DesignRecord => ({ label, runId: "r", direction, model, modelName: "Opus", parents: [], status, route: "tool", versions: [], vision: true, workerState: "idle", createdAt: "", updatedAt: "" });
@@ -100,7 +100,7 @@ const rec = (label: string, status: DesignRecord["status"], direction = "Minimal
 test("the card's status line counts what there is, and nothing there isn't", () => {
   assert.equal(statusCounts([rec("A", "ready"), rec("B", "ready"), rec("C", "writing"), rec("D", "failed")]), "2 ready · 1 writing · 1 failed");
   assert.equal(statusCounts([]), "0 designs");
-  assert.equal(batchLine([rec("A", "ready", "M", "a"), rec("B", "ready", "H", "b")]), "2 designs · 2 directions · 2 models");
+  assert.equal(batchLine([rec("A", "ready", "M", "a"), rec("B", "ready", "H", "b")]), "2 designs · 2 styles · 2 models");
 });
 
 test("a design's chip says what its session is doing", () => {
@@ -217,6 +217,73 @@ test("a held page being written gives way at once when no new version came of it
   assert.equal(designHoldEnds({ ...rec("A", "ready"), versions: [v(1), v(2)] }, 1), false, "v2 came: wait for it to draw");
   assert.equal(designHoldEnds({ ...rec("A", "writing"), versions: [v(1)] }, 1), false, "still writing");
   assert.equal(designHoldEnds(rec("A", "failed"), 0), true, "a first page that failed");
+});
+
+// ---- Style and Layout ------------------------------------------------------------------------------
+
+const lay = (names: string[], on: string[] = []) => names.map((name) => ({ name, on: on.includes(name) }));
+const STYLES3 = ["Minimalist", "Bold & Vibrant", "Balanced"];
+const LAYOUTS3 = ["Compact", "Bento", "Split Screen"];
+const withLayouts = (on: string[], over: Partial<DesignSetup> = {}): DesignSetup =>
+  setup({ directions: lay([...STYLES3, "Heritage"], STYLES3), layouts: lay([...LAYOUTS3, "Dashboard"], on), ...over });
+
+test("the count line says how the plan combines, read from the same plan as the count", () => {
+  assert.equal(setupSummary(setupCount(withLayouts([]))), "6 designs · 3 styles · 2 models");
+  assert.equal(setupSummary(setupCount(withLayouts(LAYOUTS3))), "6 designs · 3 pairs · 2 models");
+  assert.equal(setupSummary(setupCount(withLayouts(LAYOUTS3, { combine: "every" }))), "18 designs · 3 styles × 3 layouts · 2 models");
+  // The longer list sets the pairs: 3 styles and 4 layouts are 4 pairs per model.
+  assert.equal(setupSummary(setupCount(withLayouts([...LAYOUTS3, "Dashboard"]))), "8 designs · 4 pairs · 2 models");
+});
+
+test("Every Mix past the hard stop says what to choose fewer of", () => {
+  const big = withLayouts([...LAYOUTS3, "Dashboard"], { combine: "every" });
+  assert.equal(setupCount(big).designs, 24);
+  assert.equal(setupBlocked(big, caps), null, "24 is the most, and allowed");
+  const over = { ...big, directions: big.directions.map((d) => ({ ...d, on: true })) };
+  assert.equal(setupCount(over).designs, 32);
+  assert.match(setupBlocked(over, caps)!, /Choose fewer models, styles or layouts/);
+  assert.equal(setupBlocked({ ...over, combine: "pair" }, caps), null, "the same ticks paired up stay small");
+});
+
+test("the combine line names the pairs that launch, and says so when no layout is ticked", () => {
+  assert.equal(pairsLine(withLayouts([])).text, "No layout ticked: each designer arranges its own page.");
+  const one = withLayouts(LAYOUTS3, { models: [m("claude-code/opus", false, true), m("claude-code/sonnet")] });
+  assert.equal(pairsLine(one).text, "Minimalist + Compact · Bold & Vibrant + Bento · Balanced + Split Screen");
+  // 2 models: the second model's pairs shift, and the line lists every distinct pair, first model first.
+  const two = withLayouts(LAYOUTS3);
+  assert.equal(pairsLine(two).text.split(" · ").length, 6);
+  assert.ok(pairsLine(two).text.startsWith("Minimalist + Compact · Bold & Vibrant + Bento · Balanced + Split Screen · "));
+  assert.match(pairsLine(withLayouts(LAYOUTS3, { combine: "every" })).text, /^Every style in every layout: 9 designs for each model\.$/);
+});
+
+test("Shuffle deals different pairs and keeps the count; with nothing to deal it stays put", () => {
+  const s = withLayouts(LAYOUTS3);
+  assert.equal(canShuffle(s), true);
+  const dealt = shufflePairs(s, () => 0.37);
+  assert.notEqual(pairsLine(dealt).full, pairsLine(s).full);
+  assert.equal(setupCount(dealt).designs, setupCount(s).designs);
+  const lone = withLayouts(["Bento"]);
+  assert.equal(canShuffle(lone), false);
+  assert.equal(canShuffle(withLayouts(LAYOUTS3, { combine: "every" })), false);
+});
+
+test("a layout ticks on its own row, and a run from before layouts reads as none ticked", () => {
+  const s = toggleLayout(withLayouts([]), "Bento", true);
+  assert.deepEqual(s.layouts!.filter((d) => d.on).map((d) => d.name), ["Bento"]);
+  assert.equal(tickedLine(s.layouts!, "Designer's Choice"), "Bento");
+  assert.equal(tickedLine(withLayouts([]).layouts!, "Designer's Choice"), "Designer's Choice");
+  assert.equal(setCombine(s, "every").combine, "every");
+  const old = setup();
+  assert.equal(old.layouts, undefined);
+  assert.equal(setupSummary(setupCount(old)), "4 designs · 2 styles · 2 models");
+});
+
+test("a launched run's size line reads like Setup's", () => {
+  const r = (label: string, style: string, layout: string | undefined, model: string, parents: string[] = []): DesignRecord => ({ ...rec(label, "ready", style, model), ...(layout ? { layout } : {}), parents });
+  const paired = [r("A", "Minimalist", "Compact", "a"), r("B", "Minimalist", "Bento", "b"), r("C", "Balanced", "Bento", "a"), r("D", "Balanced", "Compact", "b")];
+  assert.equal(batchLine(paired, "pair"), "4 designs · 2 pairs · 2 models");
+  assert.equal(batchLine(paired, "every"), "4 designs · 2 styles × 2 layouts · 2 models");
+  assert.equal(batchLine([...paired, r("E", "Mixed", undefined, "a", ["A", "C"])], "pair"), "5 designs · 2 pairs · 2 models", "a design made from others counts as a design, not a style");
 });
 
 test("a run's card title names its state: the brief until a design exists, then the count", () => {

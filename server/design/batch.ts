@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import type { WorkerHost, WorkerSpec, WorkerStart, WorkerState } from "../../shared/chat-runtime";
 import type { HEntry } from "../../shared/harness";
-import { DESIGN_ASK_ABOVE, DESIGN_BATCH_MAX, DESIGN_CONCURRENT, DESIGN_FIX_TRIES, type DesignNote, type DesignRecord, type DesignRun, type DesignSetup, type DesignVersion } from "../../shared/design";
+import { DESIGN_ASK_ABOVE, DESIGN_BATCH_MAX, DESIGN_CONCURRENT, DESIGN_FIX_TRIES, designPlan, type DesignNote, type DesignRecord, type DesignRun, type DesignSetup, type DesignVersion } from "../../shared/design";
 import { DESIGN_PAGE_END, DESIGN_PAGE_START, designSessionPrompt } from "../../pi-config/extensions/mode/design-guide.ts";
 import { claudeCodeProviderLoad, sessionDirName } from "../../pi-config/extensions/subagents/worker-load.ts";
 import { SESSIONS_DIR } from "../paths";
@@ -67,19 +67,16 @@ export class DesignLimitError extends Error {
 
 /** The limits of one launch, however it is made up (q2): ask above 12, stop at 24. */
 export function assertLaunchAllowed(designs: number, confirmedSpend: boolean): void {
-  if (designs > DESIGN_BATCH_MAX) throw new DesignLimitError(`${designs} designs is more than the ${DESIGN_BATCH_MAX} one launch may start. Choose fewer models or directions.`, false, designs);
+  if (designs > DESIGN_BATCH_MAX) throw new DesignLimitError(`${designs} designs is more than the ${DESIGN_BATCH_MAX} one launch may start. Choose fewer models, styles or layouts.`, false, designs);
   if (designs > DESIGN_ASK_ABOVE && !confirmedSpend) throw new DesignLimitError(`${designs} designs is more than ${DESIGN_ASK_ABOVE}, so this launch needs your confirmation first.`, true, designs);
 }
 
-const chosen = (setup: DesignSetup) => ({ models: setup.models.filter((m) => m.design), directions: setup.directions.filter((d) => d.on) });
-export const designCount = (setup: DesignSetup): number => {
-  const c = chosen(setup);
-  return c.models.length * c.directions.length;
-};
+/** How many designs a setup's plan makes: what the limits count. */
+export const designCount = (setup: DesignSetup): number => designPlan(setup).items.length;
 
 // ---- starting -----------------------------------------------------------------------------------
 
-export function specFor(parent: DesignParent, d: Pick<DesignRecord, "label" | "direction" | "model" | "route" | "vision">, cwd: string, reference: "none" | "screenshot" | "description"): WorkerSpec {
+export function specFor(parent: DesignParent, d: Pick<DesignRecord, "label" | "direction" | "layout" | "model" | "route" | "vision">, cwd: string, reference: "none" | "screenshot" | "description"): WorkerSpec {
   const loaded = claudeCodeProviderLoad(d.model, [WORKER_MARK], undefined);
   return {
     kind: "design",
@@ -92,7 +89,7 @@ export function specFor(parent: DesignParent, d: Pick<DesignRecord, "label" | "d
     builtins: [],
     extensions: loaded.extensions,
     flags: loaded.flags ?? {},
-    appendSystemPrompt: designSessionPrompt({ label: d.label, direction: d.direction, reference, delivery: d.route }),
+    appendSystemPrompt: designSessionPrompt({ label: d.label, direction: d.direction, ...(d.layout ? { layout: d.layout } : {}), reference, delivery: d.route }),
     env: {},
     agentDir: null,
     lowered: true,
@@ -127,26 +124,26 @@ function loadRefs(sessionId: string, runId: string): DesignReference[] {
 /** Whether a run's own batch has been started. Its labels can't say: a design made from others joins them too. */
 export const designRunLaunched = (run: Pick<DesignRun, "phase">): boolean => run.phase !== "setup" && run.phase !== "researching" && run.phase !== "brief";
 
-/** A run's designs: one queued record per model and direction, within what the Setup card holds. */
+/** A run's designs: one queued record per item of its setup's plan, within what the Setup card holds. */
 export function launchDesigns(parent: DesignParent, runId: string, input: { brief?: string; references?: DesignReference[] }): string[] {
   const run = runOf(parent.sessionId, runId);
   if (!run) throw new Error("No such design run.");
   if (designRunLaunched(run)) return run.labels;
-  const { models, directions } = chosen(run.setup);
-  if (!models.length || !directions.length) throw new Error("Pick at least one model and one direction first.");
-  assertLaunchAllowed(models.length * directions.length, !!run.confirmedSpend);
+  const plan = designPlan(run.setup).items;
+  if (!plan.length) throw new Error("Pick at least one model and one style first.");
+  assertLaunchAllowed(plan.length, !!run.confirmedSpend);
+  const models = new Map(run.setup.models.map((m) => [m.ref, m]));
   const brief = input.brief?.trim() || run.setup.brief;
   saveRefs(parent.sessionId, runId, input.references ?? []);
   const now = new Date().toISOString();
   const labels = changeDesigns(parent.sessionId, (s) => {
     const made: string[] = [];
-    for (const direction of directions) {
-      for (const model of models) {
-        const label = nextLabel(s);
-        made.push(label);
-        s.designs.push({ label, runId, direction: direction.name, model: model.ref, modelName: model.name, parents: [], status: "queued", route: model.route, versions: [], workerState: "stopped", vision: model.vision, createdAt: now, updatedAt: now });
-        (s.internal ??= {})[label] = { attempt: 0, brief, by: "first", parentPath: parent.path };
-      }
+    for (const item of plan) {
+      const model = models.get(item.model)!;
+      const label = nextLabel(s);
+      made.push(label);
+      s.designs.push({ label, runId, direction: item.style, ...(item.layout ? { layout: item.layout } : {}), model: model.ref, modelName: model.name, parents: [], status: "queued", route: model.route, versions: [], workerState: "stopped", vision: model.vision, createdAt: now, updatedAt: now });
+      (s.internal ??= {})[label] = { attempt: 0, brief, by: "first", parentPath: parent.path };
     }
     const r = s.runs.find((x) => x.id === runId)!;
     r.labels = made;
@@ -159,7 +156,7 @@ export function launchDesigns(parent: DesignParent, runId: string, input: { brie
 }
 
 /** A new design made from others (Phase 3): the server, not the coordinator, puts the parents' pages in its first message. */
-export function newDesign(parent: DesignParent, input: { parents: string[]; instructions: string; model: string; direction?: string; runId?: string }): string {
+export function newDesign(parent: DesignParent, input: { parents: string[]; instructions: string; model: string; direction?: string; layout?: string; runId?: string }): string {
   const sid = parent.sessionId;
   const view = viewOf(sid);
   const runId = input.runId ?? view.runs.at(-1)?.id;
@@ -172,7 +169,7 @@ export function newDesign(parent: DesignParent, input: { parents: string[]; inst
   const now = new Date().toISOString();
   const label = changeDesigns(sid, (s) => {
     const made = nextLabel(s);
-    s.designs.push({ label: made, runId: run.id, direction: input.direction ?? "Mixed", model: model.ref, modelName: model.name, parents: input.parents, status: "queued", route: model.route, versions: [], workerState: "stopped", vision: model.vision, createdAt: now, updatedAt: now });
+    s.designs.push({ label: made, runId: run.id, direction: input.direction ?? "Mixed", ...(input.layout ? { layout: input.layout } : {}), model: model.ref, modelName: model.name, parents: input.parents, status: "queued", route: model.route, versions: [], workerState: "stopped", vision: model.vision, createdAt: now, updatedAt: now });
     (s.internal ??= {})[made] = { attempt: 0, brief: run.setup.brief, by: "coordinator", instructions: input.instructions, parentPath: parent.path };
     run.labels.push(made);
     if (run.phase === "done") run.phase = "generating";
@@ -808,10 +805,10 @@ export function deleteDesign(parent: DesignParent, label: string): void {
 }
 
 /** Metadata only, never a page: what the coordinator may know of every design. */
-export function designsFor(sessionId: string): { label: string; direction: string; model: string; parents: string[]; status: DesignRecord["status"]; version: number; note?: DesignNote; costUsd?: number }[] {
+export function designsFor(sessionId: string): { label: string; direction: string; layout?: string; model: string; parents: string[]; status: DesignRecord["status"]; version: number; note?: DesignNote; costUsd?: number }[] {
   return viewOf(sessionId).designs.map((d) => {
     const last = d.versions.at(-1);
-    return { label: d.label, direction: d.direction, model: d.model, parents: d.parents, status: d.status, version: last?.n ?? 0, ...(last?.note ? { note: last.note } : {}), ...(d.usage ? { costUsd: d.usage.cost } : {}) };
+    return { label: d.label, direction: d.direction, ...(d.layout ? { layout: d.layout } : {}), model: d.model, parents: d.parents, status: d.status, version: last?.n ?? 0, ...(last?.note ? { note: last.note } : {}), ...(d.usage ? { costUsd: d.usage.cost } : {}) };
   });
 }
 

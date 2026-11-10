@@ -1,9 +1,9 @@
-import { createEffect, createMemo, createSignal, createUniqueId, For, on, onCleanup, Show, untrack, type Accessor } from "solid-js";
+import { createEffect, createMemo, createSignal, createUniqueId, For, on, onCleanup, Show, untrack, type Accessor, type JSX } from "solid-js";
 import type { DesignLinkUse, DesignSetup } from "../../shared/design";
 import type { DesignStore } from "../lib/design-store";
 import { coordinatorChangeLine } from "../lib/design-brief";
 import { designSectionOf } from "../../shared/design-models";
-import { designSections, moveCoordinator, searchModels, toggleDirection, toggleGroup, toggleModel, type DesignRunView } from "../lib/design-ui";
+import { canShuffle, designSections, moveCoordinator, pairsLine, searchModels, setCombine, shufflePairs, tickedLine, toggleDirection, toggleGroup, toggleLayout, toggleModel, type DesignRunView } from "../lib/design-ui";
 import { ActionMenu } from "./ActionMenu";
 import { Icon } from "./ui";
 import { SearchField, Toggle } from "./form";
@@ -70,23 +70,126 @@ export function createSetupDraft(run: Accessor<DesignRunView>, store: DesignStor
 
 /** The models and directions, on Setup and behind the brief's Change: the same controls in both places. */
 export function DesignSetupPickers(props: { setup: SetupDraft; /** The chat's coordinator now, provider/modelId, on a later run. */ currentCoordinator?: string }) {
-  const draft = props.setup.draft;
-  const change = props.setup.change;
   return (
     <>
       <DesignModelPicker setup={props.setup} currentCoordinator={props.currentCoordinator} />
-      <div class="stack-2">
-        <h4 class="design-setup-label">Directions</h4>
-        <div class="design-directions">
-          <For each={draft().directions.map((d) => d.name)}>
-            {(name) => {
-              const d = () => draft().directions.find((x) => x.name === name)!;
-              return <Toggle class="design-toggle-inline" label={name} checked={d().on} onChange={(on) => change(toggleDirection(draft(), name, on))} />;
-            }}
-          </For>
-        </div>
-      </div>
+      <DesignDirectionPicker setup={props.setup} />
     </>
+  );
+}
+
+/** One closed row of the direction picker, built like a provider's row: it opens what it holds below itself. */
+function DirectionRow(props: { name: string; ticked: string; count: string; open: boolean; onToggle(): void; panelId: string; children: JSX.Element }) {
+  return (
+    <div class="design-section" role="group" aria-label={props.name}>
+      <div class="design-section-head">
+        <button type="button" class="design-section-open" aria-expanded={props.open ? "true" : "false"} aria-controls={props.panelId} onClick={() => props.onToggle()}>
+          <span class="design-section-name">{props.name}</span>
+          <span class="design-section-ticked" title={props.ticked}>
+            {props.ticked}
+          </span>
+          <span class="design-section-count">{props.count}</span>
+          <Icon name="chevron-down" small class="design-section-arrow" />
+        </button>
+      </div>
+      <Show when={props.open}>
+        <div class="design-direction-panel" id={props.panelId}>
+          {props.children}
+        </div>
+      </Show>
+    </div>
+  );
+}
+
+/** A press-to-tick chip: a plus while off, a check while on, in the same room either way. */
+function DirectionChip(props: { name: string; on: boolean; onChange(on: boolean): void }) {
+  return (
+    <button type="button" class="button button-sm design-chip" aria-pressed={props.on ? "true" : "false"} onClick={() => props.onChange(!props.on)}>
+      {props.name}
+    </button>
+  );
+}
+
+/**
+ * Style and Layout: 2 closed rows, then 1 fixed line for how they combine. A row opens below itself, so
+ * nothing above it moves; the combine line keeps its one line and its Shuffle's room whatever is ticked.
+ */
+function DesignDirectionPicker(props: { setup: SetupDraft }) {
+  const draft = props.setup.draft;
+  const change = props.setup.change;
+  const [opened, setOpened] = createSignal<ReadonlySet<string>>(new Set());
+  const toggleOpen = (id: string) =>
+    setOpened((was) => {
+      const next = new Set(was);
+      if (!next.delete(id)) next.add(id);
+      return next;
+    });
+  const styleId = createUniqueId();
+  const layoutId = createUniqueId();
+  // Families in the order they first appear; a run from before families lists its styles as one group.
+  const families = createMemo(() => {
+    const out: { name: string; styles: string[] }[] = [];
+    for (const d of draft().directions) {
+      const name = d.family ?? "";
+      const held = out.find((f) => f.name === name);
+      if (held) held.styles.push(d.name);
+      else out.push({ name, styles: [d.name] });
+    }
+    return out;
+  }, undefined, { equals: (a, b) => JSON.stringify(a) === JSON.stringify(b) });
+  const layouts = () => draft().layouts ?? [];
+  const layoutNames = createMemo(() => layouts().map((d) => d.name), undefined, { equals: (a, b) => a.join("\n") === b.join("\n") });
+  const styleOn = (name: string) => !!draft().directions.find((d) => d.name === name)?.on;
+  const layoutOn = (name: string) => !!layouts().find((d) => d.name === name)?.on;
+  const combine = () => (draft().combine === "every" ? "every" : "pair");
+  const anyLayout = () => layouts().some((d) => d.on);
+  const line = createMemo(() => pairsLine(draft()));
+  const countOf = (list: readonly { on: boolean }[]) => `${list.filter((d) => d.on).length} of ${list.length}`;
+  return (
+    <div class="stack-2">
+      <h4 class="design-setup-label">Directions</h4>
+      <div class="design-sections">
+        <DirectionRow name="Style" ticked={tickedLine(draft().directions, "None ticked")} count={countOf(draft().directions)} open={opened().has("style")} onToggle={() => toggleOpen("style")} panelId={styleId}>
+          <For each={families()}>
+            {(f) => (
+              <div class="design-family" role="group" aria-label={f.name || "Styles"}>
+                <Show when={f.name}>
+                  <span class="design-family-name">{f.name}</span>
+                </Show>
+                <div class="design-chips">
+                  <For each={f.styles}>{(name) => <DirectionChip name={name} on={styleOn(name)} onChange={(on) => change(toggleDirection(draft(), name, on))} />}</For>
+                </div>
+              </div>
+            )}
+          </For>
+        </DirectionRow>
+        <Show when={layoutNames().length}>
+          <DirectionRow name="Layout" ticked={tickedLine(layouts(), "Designer's Choice")} count={countOf(layouts())} open={opened().has("layout")} onToggle={() => toggleOpen("layout")} panelId={layoutId}>
+            <div class="design-chips">
+              <For each={layoutNames()}>{(name) => <DirectionChip name={name} on={layoutOn(name)} onChange={(on) => change(toggleLayout(draft(), name, on))} />}</For>
+            </div>
+          </DirectionRow>
+        </Show>
+      </div>
+      <Show when={layoutNames().length}>
+        <div class="design-combine">
+          <div class="design-combine-how" role="group" aria-label="How styles and layouts combine">
+            <button type="button" class="button button-sm" aria-pressed={combine() === "pair" ? "true" : "false"} disabled={!anyLayout()} onClick={() => change(setCombine(draft(), "pair"))}>
+              Pair Up
+            </button>
+            <button type="button" class="button button-sm" aria-pressed={combine() === "every" ? "true" : "false"} disabled={!anyLayout()} onClick={() => change(setCombine(draft(), "every"))}>
+              Every Mix
+            </button>
+          </div>
+          <span class="design-combine-pairs text-caption" classList={{ "text-muted": !anyLayout() }} title={line().full} role="status">
+            {line().text}
+          </span>
+          <button type="button" class="button button-ghost button-sm design-combine-shuffle" style={{ visibility: canShuffle(draft()) ? "visible" : "hidden" }} title="Deal the pairs again. The count stays." onClick={() => change(shufflePairs(draft()))}>
+            Shuffle
+          </button>
+        </div>
+      </Show>
+    </div>
   );
 }
 

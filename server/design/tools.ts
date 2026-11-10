@@ -3,7 +3,7 @@
 // session's: `design_stream` (the page, whole or as edits) and `design_hand_in` (it is done).
 import { assetNamesProblem } from "./assets";
 import type { HEntry, ToolResult, ToolSpec } from "../../shared/harness";
-import { DESIGN_ASK_ABOVE, DESIGN_BATCH_MAX, DESIGN_TOOL, isDesignLabel, type DesignNote } from "../../shared/design";
+import { DESIGN_ASK_ABOVE, DESIGN_BATCH_MAX, DESIGN_TOOL, designDirectionLine, isDesignLabel, type DesignNote } from "../../shared/design";
 import { coordinatorCard, tellCoordinator } from "./coordinator";
 import { createRun } from "./setup";
 import { ownImagesLine } from "./asset-routes";
@@ -40,7 +40,8 @@ export function mainDesignTools(parent: () => DesignParent, cwd: () => string): 
           brief: str("start: what to design, in the user's words."),
           models: list("start: particular models the user named, as provider/modelId."),
           modelGroups: list('start: whole groups the user named, one picker section each: "claude", "gpt", "glm" (Z.ai), "deepseek", "ollama-cloud" (Ollama Cloud) or "ollama" (Ollama on this computer only).'),
-          directions: list("start: direction names the user named."),
+          directions: list("start: style names the user named."),
+          layouts: list('start: layout names the user named ("a compact and a bento version"); none unless they named some.'),
           coordinator: str("start: the model id to coordinate, only when the user named one."),
           images: list("tell: the paths of images the user attached, to add to the design's images."),
           label: str("read: a design's label, for its whole page."),
@@ -48,7 +49,7 @@ export function mainDesignTools(parent: () => DesignParent, cwd: () => string): 
         },
         required: ["op"],
       },
-      async execute(toolCallId, params: { op?: string; brief?: string; models?: string[]; modelGroups?: string[]; directions?: string[]; coordinator?: string; label?: string; text?: string; images?: unknown }) {
+      async execute(toolCallId, params: { op?: string; brief?: string; models?: string[]; modelGroups?: string[]; directions?: string[]; layouts?: string[]; coordinator?: string; label?: string; text?: string; images?: unknown }) {
         const p = parent();
         if (params?.op === "start") {
           const run = await createRun(p, cwd(), params);
@@ -63,7 +64,7 @@ export function mainDesignTools(parent: () => DesignParent, cwd: () => string): 
             return say(page);
           }
           const card = coordinatorCard(p.sessionId);
-          const lines = viewOf(p.sessionId).designs.map((d) => `${d.label} · ${d.direction} · ${d.model} · ${d.status}`);
+          const lines = viewOf(p.sessionId).designs.map((d) => `${d.label} · ${designDirectionLine(d)} · ${d.model} · ${d.status}`);
           return say([card?.card || "The coordinator has no card yet.", lines.length ? `Designs:\n${lines.join("\n")}` : ""].filter(Boolean).join("\n\n"));
         }
         if (params?.op === "tell") {

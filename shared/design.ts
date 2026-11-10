@@ -59,7 +59,10 @@ export interface DesignUsage {
 export interface DesignRecord {
   label: string;
   runId: string;
+  /** Its style, by name ("Mixed" for one made from others with none named). */
   direction: string;
+  /** Its layout, by name; absent when the designer arranges its own page. */
+  layout?: string;
   /** provider/modelId. */
   model: string;
   /** The labels it was made from (Phase 3); empty for a first-generation design. */
@@ -117,13 +120,26 @@ export interface DesignModelChoice {
 export interface DesignDirection {
   name: string;
   on: boolean;
+  /** A style's family ("Quiet"), which only groups the list; absent on a layout and on a run made before families. */
+  family?: string;
 }
+
+/** How ticked styles and layouts make designs: pair: one layout per style, the shorter list repeating and the
+    pairs shifting per model; every: each style in each layout. */
+export type DesignCombine = "pair" | "every";
 
 /** The Setup card's state: what the main chat filled in and the person changed. */
 export interface DesignSetup {
   brief: string;
   models: DesignModelChoice[];
+  /** The styles (the Style row); the name stays `directions` so stored runs read as they were. */
   directions: DesignDirection[];
+  /** The layouts (the Layout row). Absent on a run made before layouts: none ticked. */
+  layouts?: DesignDirection[];
+  /** Absent reads as pair. */
+  combine?: DesignCombine;
+  /** What Shuffle last dealt: 0 or absent is the ticked order. */
+  pairSeed?: number;
   /** The addresses in what the person wants, each with how it is used. Absent on a run made before links. */
   links?: DesignLink[];
 }
@@ -319,6 +335,80 @@ export function designBriefBlock(run: Pick<DesignRun, "brief" | "setup" | "image
   if (!models || !directions) return { code: "no-designs", label: "Pick a Model and a Direction" };
   return null;
 }
+
+/** One design a setup will make. */
+export interface DesignPlanItem {
+  /** provider/modelId. */
+  model: string;
+  style: string;
+  layout?: string;
+}
+
+/** A setup's designs, and how its count line reads them. */
+export interface DesignPlan {
+  items: DesignPlanItem[];
+  models: number;
+  styles: number;
+  layouts: number;
+  combine: DesignCombine;
+  /** Pair Up: how many designs each model makes (the longer of the two lists); else 0. */
+  pairs: number;
+}
+
+/** A permutation of 0..n-1 from a seed: 0 is the identity, any other seed a fixed shuffle. */
+function dealOrder(n: number, seed: number): number[] {
+  const order = Array.from({ length: n }, (_, i) => i);
+  if (!seed) return order;
+  let s = seed >>> 0 || 1;
+  const next = () => {
+    // xorshift32: small, stable on every runtime, so the line and the launch deal alike.
+    s ^= s << 13;
+    s >>>= 0;
+    s ^= s >>> 17;
+    s ^= s << 5;
+    s >>>= 0;
+    return s;
+  };
+  for (let i = n - 1; i > 0; i--) {
+    const j = next() % (i + 1);
+    [order[i], order[j]] = [order[j]!, order[i]!];
+  }
+  return order;
+}
+
+/**
+ * The one rule that turns a Setup into designs; the count line, the pairs line, the estimate, the limits and the
+ * launch all read it. No layout ticked: every model makes every style. Pair Up: each model makes max(styles, layouts)
+ * designs, round i pairing style i with layout i + the model's index (both lists repeating), so the pairs shift per
+ * model; pairSeed shuffles the layouts' order first. Every Mix: every model makes every style in every layout.
+ * Ordered style-major then model, as runs have always been labelled.
+ */
+export function designPlan(setup: Pick<DesignSetup, "models" | "directions" | "layouts" | "combine" | "pairSeed">): DesignPlan {
+  const models = setup.models.filter((m) => m.design).map((m) => m.ref);
+  const styles = setup.directions.filter((d) => d.on).map((d) => d.name);
+  const ticked = (setup.layouts ?? []).filter((d) => d.on).map((d) => d.name);
+  const combine: DesignCombine = setup.combine === "every" ? "every" : "pair";
+  const items: DesignPlanItem[] = [];
+  const base = { models: models.length, styles: styles.length, layouts: ticked.length, combine };
+  if (!models.length || !styles.length) return { items, ...base, pairs: 0 };
+  if (!ticked.length) {
+    for (const style of styles) for (const model of models) items.push({ model, style });
+    return { items, ...base, pairs: 0 };
+  }
+  if (combine === "every") {
+    for (const style of styles) for (const layout of ticked) for (const model of models) items.push({ model, style, layout });
+    return { items, ...base, pairs: 0 };
+  }
+  const layouts = dealOrder(ticked.length, setup.pairSeed ?? 0).map((i) => ticked[i]!);
+  const rounds = Math.max(styles.length, layouts.length);
+  for (let i = 0; i < rounds; i++) {
+    models.forEach((model, m) => items.push({ model, style: styles[i % styles.length]!, layout: layouts[(i + m) % layouts.length]! }));
+  }
+  return { items, ...base, pairs: rounds };
+}
+
+/** "Bold & Vibrant · Bento", or the style alone. */
+export const designDirectionLine = (d: { direction: string; layout?: string }): string => (d.layout ? `${d.direction} · ${d.layout}` : d.direction);
 
 /** The full addresses a person's text names, in order, once each: what Setup's link rows come from. */
 export function designLinksIn(text: string): string[] {

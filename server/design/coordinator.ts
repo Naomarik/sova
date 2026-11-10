@@ -10,7 +10,7 @@ import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { ToolSpec } from "../../shared/harness";
-import { DESIGN_ASK_ABOVE, designBriefBlock, isDesignLinkUse, type DesignAsk, type DesignBrief, type DesignBriefBlock, type DesignCoordinatorView, type DesignLinkUse, type DesignLook, type DesignRecord, type DesignRun, type DesignSignInAnswer } from "../../shared/design";
+import { DESIGN_ASK_ABOVE, designBriefBlock, designDirectionLine, designPlan, isDesignLinkUse, type DesignAsk, type DesignBrief, type DesignBriefBlock, type DesignCoordinatorView, type DesignLinkUse, type DesignLook, type DesignRecord, type DesignRun, type DesignSignInAnswer } from "../../shared/design";
 import { isTourOrigin, type TourSize } from "../../shared/tour";
 import { serverToolCall } from "../chat-handle";
 import { modelDenial, readModelPolicy } from "../model-policy";
@@ -20,7 +20,7 @@ import { listProjects } from "../projects/spaces";
 import { readRegistry } from "../project-services/store";
 import { tourRuntime } from "../tours/runtime";
 import { TourSignInStore } from "../tours/signin-store";
-import { DESIGN_COORDINATOR_PROMPT } from "../../pi-config/extensions/mode/design-guide.ts";
+import { DESIGN_COORDINATOR_PROMPT, DESIGN_DIRECTIONS, DESIGN_LAYOUTS } from "../../pi-config/extensions/mode/design-guide.ts";
 import { claudeCodeProviderLoad, sessionDirName } from "../../pi-config/extensions/subagents/worker-load.ts";
 import type { WorkerHost, WorkerSpec, WorkerStart } from "../../shared/chat-runtime";
 import { SESSIONS_DIR } from "../paths";
@@ -87,7 +87,7 @@ export interface CoordinatorPorts {
   capture: typeof captureDesignPage;
   describing(sessionId: string): boolean;
   readLook(parent: BrowseParent, a: { key: string; png: Uint8Array; url: string }): Promise<{ text: string; model: string } | "none">;
-  newDesign(parent: BrowseParent, a: { parents: string[]; instructions: string; model: string; runId?: string }): Promise<string>;
+  newDesign(parent: BrowseParent, a: { parents: string[]; instructions: string; model: string; direction?: string; layout?: string; runId?: string }): Promise<string>;
   deliverDesign(parent: BrowseParent, label: string, a: { text: string; key: string; by: "user" | "coordinator" | "main" }): Promise<{ queued: boolean }>;
   lookAtDesign(parent: BrowseParent, label: string, a: { version?: number; sizes?: TourSize[] }): Promise<{ shots: { size: TourSize; png: Uint8Array }[]; outline: string }>;
   systemPrompt(): string;
@@ -396,11 +396,19 @@ export function noteHandIn(sessionId: string, a: { label: string; version: numbe
 
 // ---- starting it ---------------------------------------------------------------------------------
 
+/** The styles and layouts the user ticked, and how they combine, for the coordinator's first message. */
+function directionsLine(run: DesignRun): string {
+  const styles = run.setup.directions.filter((d) => d.on).map((d) => d.name);
+  const layouts = (run.setup.layouts ?? []).filter((d) => d.on).map((d) => d.name);
+  const how = run.setup.combine === "every" ? "every mix: each style in each layout" : "paired up: each design gets one style and one layout";
+  return [`Styles: ${styles.join(", ") || "none"}.`, layouts.length ? `Layouts: ${layouts.join(", ")}, ${how}. Each designer gets its own style and layout; ask nothing about arrangement.` : "Layouts: none ticked, so each designer arranges its own page."].join("\n");
+}
+
 function firstMessage(run: DesignRun): string {
   const designers = run.setup.models.filter((m) => m.design).map((m) => m.name);
-  const directions = run.setup.directions.filter((d) => d.on).map((d) => d.name);
+  const plan = designPlan(run.setup);
   const links = (run.setup.links ?? []).map((l) => `${l.url}: ${l.use === "images" ? "Use Its Images" : l.use === "feel" ? "Just Its Feel" : l.use === "content" ? "Not a Reference: an address in the page's content, never to be opened" : "not chosen: set it in design_brief's sources from their words (content when it's only an address the page links to, such as a contact or booking link), or ask"}`);
-  return [`What the user wants to design.\n${userWords("setup", run.setup.brief)}`, ...(links.length ? [`Links, and how each is used:\n${links.join("\n")}`] : []), `Models that will design: ${designers.join(", ") || "none"}.`, `Directions: ${directions.join(", ") || "none"}.`, `That is ${designers.length * directions.length} designs. Your run's id is ${run.id}. Prepare the Design Brief; the designs start only when the user presses Start on it.`].join("\n\n");
+  return [`What the user wants to design.\n${userWords("setup", run.setup.brief)}`, ...(links.length ? [`Links, and how each is used:\n${links.join("\n")}`] : []), `Models that will design: ${designers.join(", ") || "none"}.`, directionsLine(run), `That is ${plan.items.length} designs${plan.layouts ? `: ${plan.items.map((i) => designDirectionLine({ direction: i.style, layout: i.layout })).join("; ")}` : ""}. Your run's id is ${run.id}. Prepare the Design Brief; the designs start only when the user presses Start on it.`].join("\n\n");
 }
 
 /** A new session on the model this run's Setup names, started from what is known (its card, the designs' metadata, the
@@ -993,7 +1001,7 @@ function raiseAsk(st: CoordinatorState, ask: NewAsk, grant?: CoordinatorState["g
 }
 
 const metadata = (d: DesignRecord) => ({
-  label: d.label, direction: d.direction, model: d.model, parents: d.parents, status: d.status, ...(d.error ? { error: d.error } : {}),
+  label: d.label, direction: d.direction, ...(d.layout ? { layout: d.layout } : {}), model: d.model, parents: d.parents, status: d.status, ...(d.error ? { error: d.error } : {}),
   versions: d.versions.map((v) => ({ n: v.n, at: v.at, ...(v.note ? { note: v.note } : {}) })), ...(d.usage ? { cost: d.usage.cost } : {}), ...(d.delivery ? { delivery: d.delivery.state } : {}),
 });
 
@@ -1006,7 +1014,7 @@ export function coordinatorTools(sessionId: string): ToolSpec[] {
 
   const status: ToolSpec = {
     name: "design_status", label: "Design status",
-    description: "What you know of this chat's designs: label, direction, model, parents, status, versions and the note each session handed in. Never a page's code.",
+    description: "What you know of this chat's designs: label, direction (its style), layout, model, parents, status, versions and the note each session handed in. Never a page's code.",
     parameters: { type: "object", properties: { label: { type: "string", description: "One design's label; omit for all." } }, additionalProperties: false },
     async execute(_id, params: { label?: string }) {
       const st = state();
@@ -1204,15 +1212,19 @@ export function coordinatorTools(sessionId: string): ToolSpec[] {
 
   const create: ToolSpec = {
     name: "design_new", label: "Make a new design from others",
-    description: "Start a new design that takes from others. parents are labels; Sova gives their pages to the new session. Say in instructions what to take from each. All your design_new calls in one turn count as one launch against the spending limits.",
-    parameters: { type: "object", properties: { parents: { type: "array", items: { type: "string" }, minItems: 1 }, instructions: { type: "string" }, model: { type: "string" } }, required: ["parents", "instructions", "model"], additionalProperties: false },
-    async execute(_id, params: { parents?: unknown; instructions?: string; model?: string }) {
+    description: "Start a new design that takes from others. parents are labels; Sova gives their pages to the new session. Say in instructions what to take from each. Its style reads Mixed unless you name one in style; layout is optional. All your design_new calls in one turn count as one launch against the spending limits.",
+    parameters: { type: "object", properties: { parents: { type: "array", items: { type: "string" }, minItems: 1 }, instructions: { type: "string" }, model: { type: "string" }, style: { type: "string", description: "One of the 20 style names, exactly; leave out for Mixed." }, layout: { type: "string", description: "One of the 12 layout names, exactly; leave out to let it arrange its own page." } }, required: ["parents", "instructions", "model"], additionalProperties: false },
+    async execute(_id, params: { parents?: unknown; instructions?: string; model?: string; style?: unknown; layout?: unknown }) {
       const st = state();
       if (isResult(st)) return st;
       const parents = Array.isArray(params?.parents) ? params.parents.filter((x): x is string => typeof x === "string") : [];
       const instructions = str(params?.instructions);
       const model = str(params?.model);
       if (!parents.length || !instructions || !model) return refuse("design_new needs parents, instructions and a model.");
+      const style = typeof params?.style === "string" && params.style.trim() ? DESIGN_DIRECTIONS.find((d) => d.name.toLowerCase() === (params.style as string).trim().toLowerCase())?.name ?? null : undefined;
+      const layout = typeof params?.layout === "string" && params.layout.trim() ? DESIGN_LAYOUTS.find((d) => d.name.toLowerCase() === (params.layout as string).trim().toLowerCase())?.name ?? null : undefined;
+      if (style === null) return refuse(`style must be one of: ${DESIGN_DIRECTIONS.map((d) => d.name).join(", ")}.`);
+      if (layout === null) return refuse(`layout must be one of: ${DESIGN_LAYOUTS.map((d) => d.name).join(", ")}.`);
       const run = runOf(parent.sessionId, st.runId);
       if (!run || !designRunLaunched(run)) return refuse("this run hasn't started: the user starts it on the Design Brief. Make new designs from others after that.");
       try {
@@ -1225,7 +1237,7 @@ export function coordinatorTools(sessionId: string): ToolSpec[] {
       st.newThisTurn++;
       save(st);
       try {
-        const label = await p().newDesign(parent, { parents, instructions, model, runId: st.runId });
+        const label = await p().newDesign(parent, { parents, instructions, model, ...(style ? { direction: style } : {}), ...(layout ? { layout } : {}), runId: st.runId });
         return say(`Started ${label}.`, { label });
       } catch (err) {
         st.newThisTurn--;

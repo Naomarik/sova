@@ -1,6 +1,6 @@
 /** Pure derivations behind the Design card and the Gallery: no DOM, no Solid, so they are unit-tested. */
 import { designModelOrder, designSectionOf, type DesignSection } from "../../shared/design-models";
-import type { DesignCaps, DesignChatView, DesignCoordinatorView, DesignModelChoice, DesignRecord, DesignRun, DesignSetup, DesignStatus } from "../../shared/design";
+import { designPlan, type DesignCaps, type DesignChatView, type DesignCombine, type DesignCoordinatorView, type DesignModelChoice, type DesignPlan, type DesignRecord, type DesignRun, type DesignSetup, type DesignStatus } from "../../shared/design";
 
 export type DesignRunView = DesignRun;
 export type DesignCoordinatorInfo = DesignCoordinatorView;
@@ -72,30 +72,93 @@ export function toggleDirection(setup: DesignSetup, name: string, on: boolean): 
   return { ...setup, directions: setup.directions.map((d) => (d.name === name ? { ...d, on } : d)) };
 }
 
-export interface DesignSetupCount {
-  models: number;
-  directions: number;
-  designs: number;
+export function toggleLayout(setup: DesignSetup, name: string, on: boolean): DesignSetup {
+  return { ...setup, layouts: (setup.layouts ?? []).map((d) => (d.name === name ? { ...d, on } : d)) };
 }
 
+export const setCombine = (setup: DesignSetup, combine: DesignCombine): DesignSetup => ({ ...setup, combine });
+
+export type DesignSetupCount = DesignPlan & { designs: number };
+
+/** The plan's figures, for the count line, the limits and Start. */
 export function setupCount(setup: DesignSetup): DesignSetupCount {
-  const models = setup.models.filter((m) => m.design).length;
-  const directions = setup.directions.filter((d) => d.on).length;
-  return { models, directions, designs: models * directions };
+  const plan = designPlan(setup);
+  return { ...plan, designs: plan.items.length };
 }
 
 const plural = (n: number, one: string) => `${n} ${one}${n === 1 ? "" : "s"}`;
 
-/** "6 designs · 2 models × 3 directions". */
-export const setupSummary = (c: DesignSetupCount): string => `${plural(c.designs, "design")} · ${plural(c.models, "model")} × ${plural(c.directions, "direction")}`;
+/** "6 designs · 3 pairs · 2 models", "18 designs · 3 styles × 3 layouts · 2 models", or with no layout
+    "6 designs · 3 styles · 2 models". */
+export function setupSummary(c: DesignSetupCount): string {
+  const how = !c.layouts ? plural(c.styles, "style") : c.combine === "every" ? `${plural(c.styles, "style")} × ${plural(c.layouts, "layout")}` : plural(c.pairs, "pair");
+  return `${plural(c.designs, "design")} · ${how} · ${plural(c.models, "model")}`;
+}
+
+/** A row's ticked names on one line, or what it reads with none. */
+export const tickedLine = (list: readonly { name: string; on: boolean }[], none: string): string => list.filter((d) => d.on).map((d) => d.name).join(", ") || none;
+
+/** The pairs a Pair Up run deals, per model, in order; with no model ticked, as one model would deal them. */
+function pairsByModel(setup: DesignSetup): { model: string; pairs: string[] }[] {
+  const designing = setup.models.some((m) => m.design);
+  const plan = designPlan(designing ? setup : { ...setup, models: [{ ref: "", name: "", design: true, coordinator: false, vision: true, route: "tool" }] });
+  const out: { model: string; pairs: string[] }[] = [];
+  for (const i of plan.items) {
+    let held = out.find((x) => x.model === i.model);
+    if (!held) out.push((held = { model: i.model, pairs: [] }));
+    held.pairs.push(`${i.style} + ${i.layout}`);
+  }
+  return out;
+}
+
+/** The combine row's line, and its full text for the title: what the plan will make of styles and layouts. */
+export function pairsLine(setup: DesignSetup): { text: string; full: string } {
+  const styles = setup.directions.filter((d) => d.on).length;
+  const layouts = (setup.layouts ?? []).filter((d) => d.on).length;
+  if (!layouts) {
+    const text = "No layout ticked: each designer arranges its own page.";
+    return { text, full: text };
+  }
+  if (!styles) {
+    const text = "Tick a style to pair with these layouts.";
+    return { text, full: text };
+  }
+  if (setup.combine === "every") {
+    const text = `Every style in every layout: ${plural(styles * layouts, "design")} for each model.`;
+    return { text, full: text };
+  }
+  const per = pairsByModel(setup);
+  const seen = new Set<string>();
+  const unique = per.flatMap((m) => m.pairs).filter((p) => !seen.has(p) && !!seen.add(p));
+  const names = new Map(setup.models.map((m) => [m.ref, m.name]));
+  const full = per.length > 1 ? per.map((m) => `${names.get(m.model) ?? m.model}: ${m.pairs.join(" · ")}`).join("\n") : unique.join(" · ");
+  return { text: unique.join(" · "), full };
+}
+
+/** Whether Shuffle can deal anything different: Pair Up, with 2 or more of both styles and layouts. */
+export function canShuffle(setup: DesignSetup): boolean {
+  if (setup.combine === "every") return false;
+  return setup.directions.filter((d) => d.on).length > 1 && (setup.layouts ?? []).filter((d) => d.on).length > 1;
+}
+
+/** Shuffle: a new seed whose pairs differ from the ones shown, when any other dealing exists. */
+export function shufflePairs(setup: DesignSetup, random: () => number = Math.random): DesignSetup {
+  const now = pairsLine(setup).full;
+  for (let i = 0; i < 32; i++) {
+    const pairSeed = 1 + Math.floor(random() * 0xfffffffe);
+    const next = { ...setup, pairSeed };
+    if (pairsLine(next).full !== now) return next;
+  }
+  return setup;
+}
 
 /** Why Start Coordinator can't be pressed yet, or null. */
 export function setupBlocked(setup: DesignSetup, caps: DesignCaps): string | null {
   const c = setupCount(setup);
   if (!setup.brief.trim()) return "Say what to design first.";
   if (c.models === 0) return "Pick at least 1 model to design.";
-  if (c.directions === 0) return "Pick at least 1 direction.";
-  if (c.designs > caps.batchMax) return `${caps.batchMax} designs is the most 1 run makes. Turn off ${c.designs - caps.batchMax}.`;
+  if (c.styles === 0) return "Pick at least 1 style.";
+  if (c.designs > caps.batchMax) return `${c.designs} designs is more than 1 run can make (${caps.batchMax}). Choose fewer models, styles or layouts.`;
   if (!setup.models.some((m) => m.coordinator)) return "Pick a model to be the coordinator.";
   return null;
 }
@@ -152,11 +215,15 @@ export function statusCounts(designs: readonly DesignRecord[]): string {
   return parts.join(" · ") || "0 designs";
 }
 
-/** "6 designs · 3 directions · 2 models". */
-export function batchLine(designs: readonly DesignRecord[]): string {
-  const dirs = new Set(designs.map((d) => d.direction)).size;
+/** A launched run's size, worded as Setup's count line: "6 designs · 3 pairs · 2 models". Designs made from others
+    count as designs; only the run's own styles and layouts count as styles and layouts. */
+export function batchLine(designs: readonly DesignRecord[], combine?: DesignCombine): string {
+  const own = designs.filter((d) => d.parents.length === 0);
+  const styles = new Set(own.map((d) => d.direction)).size;
+  const layouts = new Set(own.flatMap((d) => (d.layout ? [d.layout] : []))).size;
   const models = new Set(designs.map((d) => d.model)).size;
-  return `${plural(designs.length, "design")} · ${plural(dirs, "direction")} · ${plural(models, "model")}`;
+  const how = !layouts ? plural(styles, "style") : combine === "every" ? `${plural(styles, "style")} × ${plural(layouts, "layout")}` : plural(Math.max(styles, layouts), "pair");
+  return `${plural(designs.length, "design")} · ${how} · ${plural(models, "model")}`;
 }
 
 function shortCount(n: number): string {

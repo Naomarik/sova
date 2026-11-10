@@ -88,7 +88,7 @@ export function mountDesignRoutes(app: Hono): void {
     if (!run) return c.json({ error: "No such design run." }, 404);
     if (run.phase !== "setup") return c.json({ error: "This run has already started." }, 409);
     const n = designCount(run.setup);
-    if (!n) return c.json({ error: "Pick at least one model and one direction first." }, 400);
+    if (!n) return c.json({ error: "Pick at least one model and one style first." }, 400);
     // The hard stop only: the spending question waits for Start on the brief, when the plan is known.
     try {
       assertLaunchAllowed(n, true);
@@ -211,7 +211,7 @@ async function recordRun(p: DesignParent, runId: string): Promise<void> {
     runId,
     at: run.updatedAt,
     // What was chosen, never the whole model list.
-    setup: { brief: run.setup.brief, models: run.setup.models.filter((m) => m.design).map((m) => m.ref), coordinator: run.setup.models.find((m) => m.coordinator)?.ref ?? null, directions: run.setup.directions.filter((d) => d.on).map((d) => d.name) },
+    setup: { brief: run.setup.brief, models: run.setup.models.filter((m) => m.design).map((m) => m.ref), coordinator: run.setup.models.find((m) => m.coordinator)?.ref ?? null, directions: run.setup.directions.filter((d) => d.on).map((d) => d.name), layouts: (run.setup.layouts ?? []).filter((d) => d.on).map((d) => d.name), combine: run.setup.combine ?? "pair", ...(run.setup.pairSeed ? { pairSeed: run.setup.pairSeed } : {}) },
   });
 }
 

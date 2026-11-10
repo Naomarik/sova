@@ -119,6 +119,7 @@ import type { EventDetail, EvidenceView, HistoryChain, HistoryPacket, HistoryPag
 import type { BatonOutreach, SendLinkAnswer } from "../../shared/outreach";
 import type { BatonInfo, BatonSettings, BatonTold, BatonStartInput, BatonStartResult, BatonView, GatheringAbilities, OfferLink } from "../../shared/baton";
 import type { ConflictResolveInput, DecisionsInfo, PromoteResult, SpecStatus } from "../../shared/decisions";
+import type { DiscardBranchPreview, DiscardBranchResult } from "../../shared/merge-queue";
 import type { PipelineInfo, PipelineTimeline } from "../../shared/pipeline";
 import type { OrgCosts, ProjectCost } from "../../shared/costs";
 import type { UsagePerformance } from "../../shared/usage/perf";
@@ -1114,6 +1115,26 @@ export const fetchRetirement = (root: string, all = false) => request<Retirement
     offers it only when the server says `removable`). A refusal throws its reason. */
 export const removeWorktree = (path: string) =>
   request<{ ok: true; path: string; branch: string; branchDeleted: boolean }>("/api/worktrees/remove", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path }) });
+/** Discard Branch…'s answer: the dry run's preview, the discard's steps, or why it went nowhere ("refused": it can't go
+    now; "changed": its files changed since the preview, nothing was deleted). */
+export type DiscardAnswer =
+  | { kind: "preview"; preview: DiscardBranchPreview }
+  | { kind: "result"; result: DiscardBranchResult }
+  | { kind: "refused" | "changed"; message: string };
+/** Discard Branch… (page only): `dryRun` previews what goes; without it, deletes the folder and the branch and archives
+    its chat, unless the files changed since the preview whose `digest` it sends. A refusal its contract names comes back
+    as an answer; anything else throws. */
+export async function discardBranch(project: string, body: { branch: string; commit: string; dryRun?: true; digest?: string }): Promise<DiscardAnswer> {
+  try {
+    const r = await request<DiscardBranchPreview | DiscardBranchResult>(`/api/merge-queue/projects/${encodeURIComponent(project)}/discard-branch`, jsonInit("POST", body));
+    return body.dryRun ? { kind: "preview", preview: r as DiscardBranchPreview } : { kind: "result", result: r as DiscardBranchResult };
+  } catch (err) {
+    const e = err instanceof ApiError ? (err.body as { error?: { code?: string; message?: string } } | undefined)?.error : undefined;
+    if (e && (e.code === "refused" || e.code === "changed") && typeof e.message === "string") return { kind: e.code, message: e.message };
+    if (e && typeof e.message === "string") throw new Error(e.message);
+    throw err;
+  }
+}
 /** Puts a retired branch back at its last commit and its folder at its old place. A refusal throws its reason. */
 export const restoreWorktree = (root: string, row: { path: string; branch: string; tip: string }) =>
   request<{ ok: true; path: string; branch: string }>("/api/worktrees/restore", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ root, ...row }) });

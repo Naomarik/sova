@@ -1,7 +1,7 @@
 import { createSignal, For, Match, onCleanup, onMount, Show, Switch, type JSX } from "solid-js";
 import { Portal } from "solid-js/web";
 import type { SessionWorktreeInfo } from "../../shared/protocol";
-import { landConfirmWords, modalHead, queueRow, rehearsalWhy, rowButtons, rowsSummary, shownCommit, unclearLine, type MergeProjectInfo, type QueueRow, type WorktreeQueueInfo } from "../lib/merge-queue";
+import { landConfirmWords, modalHead, queueRow, rowButtons, rowsSummary, shownCommit, unclearLine, type MergeProjectInfo, type QueueRow, type WorktreeQueueInfo } from "../lib/merge-queue";
 import { answerEntry, cancelEntry, land, refusal, type LandOptions } from "../lib/merge-queue-client";
 import { mergeRunHref, projectSessionHref, projectTabHref } from "../lib/projects-route";
 import { announce, home, toast } from "../lib/ui-state";
@@ -17,6 +17,8 @@ import { placeOf, queueLinksOf } from "../lib/branch-place";
 import { BranchPlaceLine } from "./BranchPlaceLine";
 import { ReviewChangesButton } from "./ReviewChanges";
 import { paneScopedId, usePaneScope } from "../lib/pane-scope";
+import { DISCARD_LINE, discardMenuLine } from "../lib/discard-branch";
+import { createDiscard, DiscardConfirm, type Discard } from "./DiscardBranch";
 
 /** A tracked worktree with the queue's facts (SessionWorktreeInfo.queue, filled by the server). */
 export type QueueWorktree = SessionWorktreeInfo & { queue?: WorktreeQueueInfo; mergeProject?: MergeProjectInfo };
@@ -40,28 +42,33 @@ export function QueueChip(props: { row: Pick<QueueRow, "label" | "tone" | "live"
   );
 }
 
-/** Land before a rehearsal: disabled, and it says what it needs on hover and to a screen reader (§app.merge-queue/approve). */
-export function RehearsalNeeded(props: { branch: string; commit?: string }) {
-  return (
-    <button type="button" class="button button-sm wt-queue-land" data-land="" title={rehearsalWhy(props.commit)} aria-label={`Rehearsal needed for ${props.branch}. ${rehearsalWhy(props.commit)}`} disabled>
-      Rehearsal needed
-    </button>
-  );
-}
-
 /** Land and its ▾: Land asks first (onAsk opens the row's confirm); the ▾ holds Land Without Review (only with a
     review kit), which lands at once, and Land Without Its Specs…, which asks first. */
-export function LandSplit(props: { branch: string; review: boolean; busy: boolean; onAsk(): void; onLand(o?: LandOptions): void; onWithoutSpecs(): void; draftsOnly?: boolean; rehearsal?: boolean; commit?: string }) {
-  // Every option of Land waits the same way, so it reads as one disabled button with no ▾.
-  if (props.rehearsal) return <RehearsalNeeded branch={props.branch} commit={props.commit} />;
+export function LandSplit(props: {
+  branch: string;
+  review: boolean;
+  busy: boolean;
+  onAsk(): void;
+  onLand(o?: LandOptions): void;
+  onWithoutSpecs(): void;
+  draftsOnly?: boolean;
+  /** Discard Branch…, last after a separator: it opens the row's confirm. With it the ▾ always shows. */
+  onDiscard?(): void;
+  /** Why Discard Branch… can't run (the dry run's reason), shown as its line. */
+  discardWhy?: string | null;
+  /** Discard Branch…'s line (what the dry run found); the decided line until it answers. */
+  discardLine?: string;
+  /** The ▾ opened: the row asks its dry run then. */
+  onMenuOpen?(): void;
+}) {
   return (
     <div class="button-split wt-queue-split">
       <button type="button" class="button button-sm wt-queue-land" data-land="" aria-label={`Land ${props.branch}`} disabled={props.busy} aria-busy={props.busy ? "true" : undefined} onClick={() => props.onAsk()}>
         Land
       </button>
       {/* Only drafts left: Land lands just them, so the ▾ has nothing to offer without a review kit. */}
-      <Show when={props.review || !props.draftsOnly}>
-      <ActionMenu label={`More ways to land ${props.branch}`} title="More ways to land" icon="chevron-down" ghost={false} menuName={`Land ${props.branch}`} returnFocus>
+      <Show when={props.review || !props.draftsOnly || props.onDiscard}>
+      <ActionMenu label={`More ways to land ${props.branch}`} title="More ways to land" icon="chevron-down" ghost={false} menuName={`Land ${props.branch}`} panelClass="wt-land-menu" returnFocus onToggle={(open) => open && props.onMenuOpen?.()}>
         {(menu) => (
           <>
             <Show when={props.review}>
@@ -69,6 +76,16 @@ export function LandSplit(props: { branch: string; review: boolean; busy: boolea
             </Show>
             <Show when={!props.draftsOnly}>
               <menu.Item label="Land Without Its Specs…" aria={`Land ${props.branch} without its specs`} description="Its spec drafts stay drafts." onRun={() => props.onWithoutSpecs()} />
+            </Show>
+            <Show when={props.onDiscard}>
+              {(discard) => (
+                <>
+                  <Show when={props.review || !props.draftsOnly}>
+                    <div class="popover-sep" role="separator" />
+                  </Show>
+                  <menu.Item label="Discard Branch…" aria={`Discard ${props.branch}`} description={props.discardLine ?? DISCARD_LINE} disabled={props.discardWhy ?? undefined} onRun={() => discard()()} />
+                </>
+              )}
             </Show>
           </>
         )}
@@ -125,21 +142,23 @@ export function LandSpecsConfirm(props: { branch: string; busy: boolean; onConfi
 /** Which confirm a row has open: Land's or Land Without Its Specs…'s. Closing one by its cancel puts focus back on
     what opened it (Land, or the ▾ for the specs one). */
 export function createLandConfirm() {
-  const [ask, setAsk] = createSignal<"land" | "specs" | "remove" | null>(null);
+  const [ask, setAsk] = createSignal<LandConfirmKind | null>(null);
   let row: HTMLElement | undefined;
   const close = (back: boolean) => {
     const was = ask();
     setAsk(null);
     if (!back || !row) return;
-    const to = row.querySelector<HTMLElement>(was === "specs" ? '.wt-queue-split > [aria-haspopup="menu"]' : was === "remove" ? "[data-remove]" : "[data-land]");
+    const to = row.querySelector<HTMLElement>(was === "specs" || was === "discard" ? '.wt-queue-split > [aria-haspopup="menu"]' : was === "remove" ? "[data-remove]" : "[data-land]");
     to?.focus();
   };
-  return { ask, open: (k: "land" | "specs" | "remove") => setAsk(k), close, rowRef: (el: HTMLElement) => (row = el) };
+  return { ask, open: (k: LandConfirmKind) => setAsk(k), close, rowRef: (el: HTMLElement) => (row = el) };
 }
+/** The ▾'s two confirms (Land Without Its Specs… and Discard Branch…) give focus back to the ▾. */
+export type LandConfirmKind = "land" | "specs" | "remove" | "discard";
 export type LandConfirm = ReturnType<typeof createLandConfirm>;
 
 /** The open confirm, if any, for a row whose Land runs `onLand`. */
-export function LandConfirms(props: { confirm: LandConfirm; branch: string; ahead?: number; target?: string; how?: LandHow; place?: string; drafts?: number; busy: boolean; onLand(o?: LandOptions): void }) {
+export function LandConfirms(props: { confirm: LandConfirm; branch: string; ahead?: number; target?: string; how?: LandHow; place?: string; drafts?: number; busy: boolean; onLand(o?: LandOptions): void; discard?: Discard }) {
   const words = () => landConfirmWords(props.branch, props.ahead, props.target, props.how, props.place, props.drafts);
   return (
     <Switch>
@@ -168,6 +187,9 @@ export function LandConfirms(props: { confirm: LandConfirm; branch: string; ahea
           }}
           onCancel={() => props.confirm.close(true)}
         />
+      </Match>
+      <Match when={props.confirm.ask() === "discard" && props.discard}>
+        {(d) => <DiscardConfirm discard={d()} branch={props.branch} onClose={(back) => props.confirm.close(back)} />}
       </Match>
     </Switch>
   );
@@ -233,13 +255,20 @@ export function WorktreeQueueRow(props: {
   const projectId = () => projectIdOf(w());
   const buttons = () => rowButtons(row(), projectId());
   const entry = () => w().queue;
-  /** Land waits for a rehearsal at this commit. */
-  const rehearsal = () => !!w().readiness?.rehearsal;
   /** The menu's Land Without Review: only where the project has a review kit. */
   const review = () => w().mergeProject?.review ?? w().queue?.reviewKit ?? false;
   const [busy, setBusy] = createSignal(false);
   const [error, setError] = createSignal<string | null>(null);
   const confirm = createLandConfirm();
+  const discard = createDiscard(() => {
+    const project = projectId();
+    const commit = shownCommit(w());
+    return project && commit ? { project, branch: w().branch, commit, here: props.review?.sessionPath } : undefined;
+  }, () => props.onChanged?.());
+  const openDiscard = () => {
+    discard.opened();
+    confirm.open("discard");
+  };
 
   const run = async (what: string, call: () => Promise<{ ok: boolean; error?: { message: string } } & object>, done: string) => {
     if (busy()) return;
@@ -365,9 +394,10 @@ export function WorktreeQueueRow(props: {
           )}
         </For>
         <Show when={error()}>{(m) => <p class="list-meta wt-queue-error" role="alert">{m()}</p>}</Show>
+        <Show when={discard.partial()}>{(m) => <p class="list-meta wt-queue-error" role="alert">{m()}</p>}</Show>
       </div>
       {/* A confirm replaces the row's actions while it is open. */}
-      <LandConfirms confirm={confirm} branch={w().branch} ahead={w().mergeStats?.ahead} target={w().mergeProject?.target} how={w().mergeProject?.how} place={placeOf(w())} drafts={onlyDrafts()} busy={busy()} onLand={doLand} />
+      <LandConfirms confirm={confirm} branch={w().branch} ahead={w().mergeStats?.ahead} target={w().mergeProject?.target} how={w().mergeProject?.how} place={placeOf(w())} drafts={onlyDrafts()} busy={busy()} onLand={doLand} discard={discard} />
       <Show when={confirm.ask() === "remove"}>
         <LandConfirmBox
           label={`Remove ${w().branch}`}
@@ -396,14 +426,12 @@ export function WorktreeQueueRow(props: {
         </Show>
         {/* A decision's Land is its answer on the queue (out of tries, a fix that needs your OK, drafts changed). */}
         <Show when={buttons().includes("Land") && row().decision}>
-          <Show when={!rehearsal()} fallback={<RehearsalNeeded branch={w().branch} commit={shownCommit(w())} />}>
-            <button type="button" class="button button-sm button-primary" aria-label={`Land ${w().branch}`} disabled={busy()} onClick={() => confirm.open("land")}>
-              Land
-            </button>
-          </Show>
+          <button type="button" class="button button-sm button-primary" aria-label={`Land ${w().branch}`} disabled={busy()} onClick={() => confirm.open("land")}>
+            Land
+          </button>
         </Show>
         <Show when={buttons().includes("Land") && !row().decision}>
-          <LandSplit branch={w().branch} review={review()} busy={busy()} onAsk={() => confirm.open("land")} onLand={doLand} onWithoutSpecs={() => confirm.open("specs")} draftsOnly={!!onlyDrafts()} rehearsal={rehearsal()} commit={shownCommit(w())} />
+          <LandSplit branch={w().branch} review={review()} busy={busy()} onAsk={() => confirm.open("land")} onLand={doLand} onWithoutSpecs={() => confirm.open("specs")} draftsOnly={!!onlyDrafts()} onDiscard={discard.target() ? openDiscard : undefined} discardWhy={discard.refused()} discardLine={discardMenuLine(discard.preview())} onMenuOpen={() => void discard.check()} />
         </Show>
         <Show when={buttons().includes("Set Up Queue")}>
           <a class="button button-sm" href={projectTabHref(projectId()!, "merge-queue")} title="This project's merge queue isn't set up yet.">

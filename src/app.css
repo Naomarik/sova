@@ -1651,6 +1651,17 @@ html, body { overflow: clip; overscroll-behavior: none; }
 .wt-queue-confirm-title { font-weight: var(--fw-semibold); color: var(--color-ink); }
 .wt-queue-confirm-line { margin-top: 2px !important; color: var(--color-ink-2); }
 .wt-queue-confirm-act { justify-content: flex-end; flex-wrap: wrap; margin-top: var(--space-2); }
+/* Discard Branch…'s confirm lists what goes: a list reads from the left; its buttons stay right. */
+.wt-discard-confirm { text-align: left; display: flex; flex-direction: column; gap: var(--space-2); }
+.wt-discard-confirm .wt-queue-confirm-act { margin-top: 0; }
+.wt-discard-parts { margin: 0; padding-left: var(--space-4); color: var(--color-ink); font-size: var(--fs-caption); display: flex; flex-direction: column; gap: 2px; overflow-wrap: anywhere; }
+.wt-discard-confirm .worktree-cleanup-files { max-height: 10rem; }
+.wt-discard-confirm .remove-anyway-listing { gap: var(--space-2); }
+.wt-discard-confirm .remove-anyway-listing .message-text { font-size: var(--fs-caption); line-height: var(--lh-caption); color: var(--color-ink); }
+.wt-discard-warn { color: var(--color-ink) !important; }
+/* A refusal can name a long folder: it wraps inside the Land ▾ menu instead of running past its edge. */
+.wt-land-menu .popover-item-desc { overflow-wrap: anywhere; }
+.wt-discard-parts code { font-family: var(--font-mono); font-size: var(--fs-mono); overflow-wrap: anywhere; }
 /* Land and its ▾ at their own size: Land as wide as its word, the ▾ a narrow tab, both as tall as the row's other
    buttons. Every row action (and a confirm's two) is one size everywhere: button-sm's height at its label's width,
    on desktop, the Fold, a phone and a touch pointer alike; the coarse-pointer 44px is not applied to them. */

@@ -225,6 +225,23 @@ const MERGE_LANDING: CommandEntry[] = [
     meshNeed: "admin",
   },
   {
+    id: "project.merge-queue.discard-branch",
+    label: "Discard Branch…",
+    summary: "A branch you won't land, gone with everything on it: its folder (only the files you saw listed), its branch at the commit you saw, with no backup, and its chat archived. With dryRun: what would go, and why it can't now. Refused while it is in the queue or its chat or a worker is working.",
+    effect: "changes",
+    params: {
+      project: mqProject,
+      branch: { type: "string", description: "The branch", in: "body", required: true },
+      commit: { type: "string", description: "The branch's tip the row showed (full commit)", in: "body", required: true },
+      dryRun: { type: "boolean", description: "List what would go; delete nothing", in: "body" },
+      digest: { type: "string", description: "The dry run's digest: the folder's files go only while they are still that listing", in: "body" },
+    },
+    route: { method: "POST", path: "/api/merge-queue/projects/:project/discard-branch" },
+    sessionKey: null,
+    sessionFile: "never",
+    meshNeed: "admin",
+  },
+  {
     id: "project.merge-queue.request.publish",
     label: "Publish Request",
     summary: "Publish a checked branch's pull or merge request with the title and description you reviewed: the spec docs commit, the leak scan, the push, then the request.",

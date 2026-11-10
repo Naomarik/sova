@@ -43,9 +43,9 @@
       "§chat.worktrees/nothing-left"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-11-09T21:41Z",
-      "source": "pi-session:01a1b2f4-86c6-73d4-9fe9-b847b27035f9#0fc54d24"
+      "by": "user",
+      "at": "2026-11-10T11:27Z",
+      "source": "pi-session:01a1c4f0-984c-7287-92e3-568db48c8f91#e123a0b1"
     },
     "code": [
       "server/merge-queue/queue.ts",
@@ -81,11 +81,12 @@
       "server/merge-queue/scratch.test.ts",
       "server/merge-queue/wire.ts",
       "server/merge-queue/owners.ts",
-      "server/merge-queue/rehearsal.ts",
       "shared/retire-lab.json",
       "server/merge-queue/scenarios-nothing-left.integration.test.ts",
       "server/landed-branch-agreement.integration.test.ts",
-      "server/merge-queue/rehearsal.test.ts"
+      "server/merge-queue/cleanup-land.test.ts",
+      "server/merge-readiness.ts",
+      "src/lib/merge-queue.test.ts"
     ]
   },
   "§app.merge-queue/blame": {
@@ -325,6 +326,82 @@
       "playbooks/merge-queue/references/conflicts.md",
       "shared/project-contract.ts"
     ]
+  },
+  "§app.merge-queue/discard-branch": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "reviewed",
+    "requires": [
+      "§app.merge-queue/view",
+      "§chat.composer/worktrees-control",
+      "§chat.worktrees/pane-queue",
+      "§app.merge-queue/owner",
+      "§app.access/your-click",
+      "§app/commands",
+      "§app.merge-queue/discard-confirm"
+    ],
+    "code": [
+      "server/worktree-remove-discard.ts",
+      "server/worktree-remove-discard.test.ts",
+      "server/worktree-remove-discard.integration.test.ts",
+      "server/worktree-remove-discard-race.integration.test.ts",
+      "server/worktree-remove-discard-route.test.ts",
+      "server/merge-queue/routes-landing.ts",
+      "server/merge-queue/queue.ts",
+      "shared/merge-queue.ts",
+      "shared/commands/projects.ts",
+      "shared/commands-ids.json",
+      "docs/commands.md",
+      "server/commands-inventory/baseline.json",
+      "server/create-guide-growth.json",
+      "server/commands-fuzz.test.ts",
+      "src/card-toolkit/commands.gen.ts",
+      "src/lib/api.ts",
+      "src/components/DiscardBranch.tsx",
+      "src/lib/discard-branch.ts",
+      "src/lib/discard-branch.test.ts",
+      "src/components/MergeQueueTab.tsx",
+      "src/components/WorktreesModal.tsx",
+      "src/app.css",
+      "src/lib/land-confirm.test.ts",
+      "src/lib/merge-queue-requests.test.ts"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-10T12:11Z",
+      "source": "pi-session:01a1c4f0-984c-7287-92e3-568db48c8f91#3c462a8f"
+    }
+  },
+  "§app.merge-queue/discard-confirm": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "reviewed",
+    "requires": [
+      "§app.merge-queue/discard-branch",
+      "§chat.composer/land-confirm",
+      "§chat.worktrees/leftovers",
+      "§chat.worktrees/cleanup"
+    ],
+    "code": [
+      "server/worktree-remove-discard.ts",
+      "server/worktree-remove-discard.test.ts",
+      "server/worktree-remove-discard.integration.test.ts",
+      "server/worktree-remove-discard-race.integration.test.ts",
+      "server/merge-queue/queue.ts",
+      "shared/merge-queue.ts",
+      "src/lib/api.ts",
+      "src/components/DiscardBranch.tsx",
+      "src/lib/discard-branch.ts",
+      "src/lib/discard-branch.test.ts",
+      "src/components/WorktreesModal.tsx",
+      "src/app.css",
+      "src/lib/land-confirm.test.ts"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-10T12:57Z",
+      "source": "pi-session:01a1c4f0-984c-7287-92e3-568db48c8f91#3c462a8f"
+    }
   },
   "§app.merge-queue/empty": {
     "kind": "behavior",
@@ -1283,9 +1360,9 @@
       "§chat.worktrees/nothing-left"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-11-09T16:22Z",
-      "source": "pi-session:01a1b2f4-86c6-73d4-9fe9-b847b27035f9#950bc2c9"
+      "by": "user",
+      "at": "2026-11-10T12:11Z",
+      "source": "pi-session:01a1c4f0-984c-7287-92e3-568db48c8f91#3c462a8f"
     },
     "code": [
       "server/merge-queue/view.ts",
@@ -1334,7 +1411,8 @@
       "server/merge-queue/owners.ts",
       "src/lib/merge-standing.ts",
       "src/components/RetirementLists.tsx",
-      "server/landed-branch-agreement.integration.test.ts"
+      "server/landed-branch-agreement.integration.test.ts",
+      "server/cleanup-switch.ts"
     ]
   },
   "§app/merge-queue": {
@@ -1347,9 +1425,9 @@
       "§app.project-services/merge-verbs"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-11-06T00:58Z",
-      "source": "pi-session:01a1ac85-7019-77e8-b78d-58217842f2ef#e4f5f750"
+      "by": "user",
+      "at": "2026-11-10T12:12Z",
+      "source": "pi-session:01a1c4f0-984c-7287-92e3-568db48c8f91#3c462a8f"
     },
     "code": [
       "server/merge-queue/queue.ts",

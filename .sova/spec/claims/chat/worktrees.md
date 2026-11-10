@@ -456,8 +456,8 @@ controls are the queue actions above and, where the server offers it, Remove Wor
 
 **Remove Worktree**, last among a row's actions, shows only when the server sends `removable`, and the
 row keeps no rule of its own: only on an install where automatic cleanup is off because it runs on an
-agent directory of its own (§chat.worktrees/retirement), for a worktree with nothing left, no-commit
-ones included. It asks once, as Land does and in the same place: "Remove {branch}?", "The folder {path}
+agent directory of its own, or on the real install while automatic cleanup is switched off
+(§chat.worktrees/retirement), for a worktree with nothing left, no-commit ones included. It asks once, as Land does and in the same place: "Remove {branch}?", "The folder {path}
 and its branch go away. Its last commit stays, and Restore brings them back." (with the project's
 **Delete branches when cleaning up** off, §chat.worktrees/retirement: "The folder {path} goes away and
 its branch stays. Restore brings the folder back."), with Cancel, which takes
@@ -479,7 +479,8 @@ top changes nothing and is never mentioned, and a real new commit brings back th
 reading, with Land and "1 newer commit not included" under it. A landed entry with no reading of the
 branch (the Overseer's rows) stays Landed; with real newer commits it keeps that line, and Land where
 the queue serves the repository: nothing of its own says otherwise. **The row's
-action** is the modal's, from the same row: Land (with its menu), which asks once before it queues
+action** is the modal's, from the same row: Land (with its menu, Discard Branch… last,
+§app.merge-queue/discard-branch), which asks once before it queues
 anything, its confirmation right-aligned under the row (§chat.composer/land-confirm), laid out as
 the modal's rows are (§chat.composer/worktrees-control, "Row layout"), on Ready, Drafts changed, Drafts
 to land, Out of tries, a row of real work reading Ready to merge, Waiting for your OK, Landing specs,
@@ -921,12 +922,14 @@ Every way Sova removes one of your worktrees goes through one removal step on th
 (`server/worktree-cleanup.ts`): automatic retirement (§chat.worktrees/retirement), `sova_archive`
 with `worktrees: "remove"` (§app.overseer/tools), a project page's Remove Worktree
 (§app.project-overseer/coding-worktrees), a Worktrees row's Remove Worktree where retirement is off
-for the install (§chat.worktrees/pane), the teardown of a copy whose worktree Sova cut
+for the install or switched off (§chat.worktrees/pane), the teardown of a copy whose worktree Sova cut
 (§app.project-services/teardown) and a Setup chat's empty worktree (§app.project-setup/chat). No
 button removes worktrees in bulk, nobody confirms a list of them, and a chat never decides what to
 delete. Only the merge queue's own scratch copies go by another way (below), and the `worktree`
 tool's merge stays non-destructive. Deleting archived work that never landed is a separate feature
-and isn't this step.
+and isn't this step. Discard Branch… (§app.merge-queue/discard-branch) removes a folder by the same
+removal and proof, but keeps no backup: it pins nothing, writes no ledger entry and deletes the
+branch at the tip you saw, whatever the Delete branches setting says.
 
 - **Which trees.** Git's own list (`git worktree list`) for the repository: every linked worktree in
   it, wherever its folder is; the main checkout is never one. A remote session's folder has none.
@@ -945,7 +948,8 @@ and isn't this step.
   temporary files there.
 - **The count.** `GET /api/worktrees/summary?path=<session>` answers the repository's linked total,
   how many are finished, empty or have work, how many are held, how many retired in the last 7 days,
-  and why retirement is off here if it is (§chat.worktrees/retirement). Worktrees a queue chat made
+  and why retirement is off here if it is (§chat.worktrees/retirement). While retirement is off it
+  answers no held count and doesn't read retirement's working record. Worktrees a queue chat made
   are in no count. It is cached per repository for about 30 seconds, and a change to git's list of
   worktrees or a removal drops it.
 - **What holds a tree.** What can't be rebuilt, by the one rule in §chat.worktrees/leftovers, and what
@@ -953,11 +957,13 @@ and isn't this step.
   held carries one reason. A tree with work is never removed.
 - **No dry run, no list to confirm.** Nothing posts a list of paths any more. For one release
   `POST /api/worktrees/cleanup` removes nothing and answers "Sova retires finished worktrees on its
-  own now. Nothing was removed.", so a page still open gets a plain answer, and then the route goes.
+  own now. Nothing was removed.", or, while automatic cleanup is switched off, "Automatic cleanup is
+  switched off for now. Nothing was removed.", so a page still open gets a plain answer, and then the route goes.
 - **Removal.** The folder goes first, from the main checkout, with `git worktree remove -- <path>`,
   never `--force`, so git refuses a tree that changed under it; for a folder already gone the same
   command only drops it from git's list. The one `--force` in Sova is Remove Anyway's, at the user's own
-  click, on exactly the listing they confirmed (§chat.worktrees/leftovers). What happened is read back
+  click, on exactly the listing they confirmed (§chat.worktrees/leftovers), which Discard Branch…
+  uses the same way. What happened is read back
   from what git and the disk say, not from git's exit code. A folder with another registered worktree
   or the main checkout inside it is held. Then its last commit is pinned, whatever becomes of the
   branch: under a private reference of Sova's, which no branch list or screen shows and git's own tidy-up
@@ -1107,7 +1113,9 @@ list offers no Restore for it.
 
 **Remove Anyway.** On the project page's Remove Worktree (§app.project-overseer/coding-worktrees), on
 a worktree whose only reason is what it holds (never after a failed read, and never for a use
-reason). Retirement, `sova_archive` and teardown only name the reason, and no Held row offers it. It
+reason). Retirement, `sova_archive` and teardown only name the reason, and no Held row offers it.
+Discard Branch…'s confirm shows the same listing and removes the folder the same way, on its digest
+(§app.merge-queue/discard-branch). It
 first lists exactly what goes: the uncommitted files, the ignored files that can't be rebuilt, each
 nested repository (deleted whole) or worktree (its uncommitted work goes, its commits stay in its
 repository), and the rebuildable folders that go with it, each list its first 500 and then the
@@ -1125,7 +1133,9 @@ count; focus starts on Back.
 ## §chat.worktrees/retirement — A finished branch and its folder retire by themselves
 
 After a branch lands, Sova retires the branch and its folder once nothing is left and nothing is
-using them, with no button and no chat involved.
+using them, with no button and no chat involved, but only where it is switched on: for now it is
+switched off by default, the real install included (**Switched off by default**, below). Everything
+after that paragraph is what it does once switched on.
 
 **One service, every listed project.** One background service in Sova does this for every project on
 the Projects list, whatever its merge setup, apart from the merge queue; a repository no project lists
@@ -1139,20 +1149,38 @@ session's reading changes, when a process Sova started ends (a chat's or a test 
 starts, once the chats a previous server left are taken back and the queue is read. Wake-ups within a
 minute share one pass. Any other process ending has no signal of its own: the 5-minute pass notices it.
 
-**Only on the real install.** It runs only with the agent directory `~/.pi/agent`, no test signal, and
-not from a linked worktree. Anything else is off, and fails closed: off, it reads, writes and removes
-nothing.
+**Switched off by default.** Automatic cleanup is switched off until it is deliberately switched on:
+on the real install it runs only with `SOVA_RETIRE=on`. Without it: "Automatic cleanup is switched off
+for now." While it is off, for any reason below:
+- **No pass runs** and nothing more is retired: no wake-up, no 5-minute pass, no first pass, no
+  removal, no test copy stopped for it.
+- **Nothing is held or waiting.** The Merge Queue tab, the queue's status, the Worktrees rows, the project
+  cards and a new session's line show no held or waiting counts (§app.merge-queue/view,
+  §app.projects/home-cards, §chat.transcript/empty-worktrees), and none of them reads cleanup's working
+  record (`retire-pending.json` and its intents).
+- **What is already there stays.** Files already on disk, that record included, and worktrees already
+  retired are left as they are. The Retired list still reads the ledger of removals, and **Restore** (below)
+  and a message bringing a retired folder back keep working from it.
+- **Removing by hand stays.** On the real install a Worktrees row with nothing left offers Remove
+  Worktree, as on an install of its own (§chat.worktrees/pane), through the one removal step. A test
+  copy, `SOVA_RETIRE=off` and a server that can't tell offer none.
+
+**Only on the real install.** Switched on, it runs only with the agent directory `~/.pi/agent`, no test
+signal, and not from a linked worktree. Anything else is off, and fails closed: off, the service reads, writes
+and removes nothing.
 - **An install on a `PI_CODING_AGENT_DIR` of its own**, with nothing saying it's a test, is off, and no
   setting turns it on: it sees its own chats, but it can't tell which repositories others use. "Automatic
   cleanup is off for this install, because it runs on an agent directory of its own." A new session's
-  line and the Merge Queue tab say so. Only there a Worktrees row offers Remove Worktree
-  (§chat.worktrees/pane), through the one removal step, for a tree with nothing left.
+  line and the Merge Queue tab say so. Only there, and on the real install while switched off (above), a
+  Worktrees row offers Remove Worktree (§chat.worktrees/pane), through the one removal step, for a tree
+  with nothing left.
 - **A test copy of Sova** never retires anything: a hermetic server sees only its own chats but shares
   git's list with the real repository, so every real worktree would look unused to it. "This is a test
   copy of Sova, so it retires nothing."
 - **A server that can't tell which it is** counts as a test copy. "Sova couldn't tell which install this
   is, so it retires nothing."
-- **`SOVA_RETIRE=off`** turns it off on the real install too: "Automatic cleanup is turned off here
+- **The real install without `SOVA_RETIRE=on`** is off: "Automatic cleanup is switched off for now."
+  **`SOVA_RETIRE=off`** says so in its own words: "Automatic cleanup is turned off here
   (SOVA_RETIRE=off)." Nothing turns it on anywhere else.
 
 **A test copy stops itself when its folder disappears.** A server or chat process on an agent directory
@@ -1289,8 +1317,7 @@ work** or **the queue's own**, and lists what went from each and what was moved 
 whose lock looked taken, or a pass that failed, isn't read, so the first pass goes on at the next pass
 until every project has been. A stop in mid-pass ends with exactly the report an unbroken pass makes: each
 removal is noted before it starts, and the next pass counts it only if the ledger says it happened. One
-cut off with files left reads "Left behind: A stop cut its removal short." Nothing is migrated and no history is rewritten. A rehearsal of this pass on a private copy of the user's real
-state comes before the landing that brings it (§app.merge-queue/approve).
+cut off with files left reads "Left behind: A stop cut its removal short." Nothing is migrated and no history is rewritten.
 
 **What you see.** The Merge Queue tab has a **Held** tab, and a **Retired** list in its **Landed** tab
 (§app.merge-queue/view). The project card counts held and recently retired worktrees

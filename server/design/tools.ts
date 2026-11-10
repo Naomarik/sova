@@ -11,6 +11,9 @@ import { livePage } from "./live";
 import { lookAtDesign } from "./look";
 import type { TourSize } from "../../shared/tour";
 import { designOf, pendingPage, readPage, viewOf } from "./store";
+import { applyEdits, type Edit } from "./edits";
+
+export { applyEdits };
 
 export const DESIGN_GUIDE_TOOL = "design_guide";
 export const DESIGN_STREAM_TOOL = "design_stream";
@@ -82,32 +85,21 @@ export function mainDesignTools(parent: () => DesignParent, cwd: () => string): 
   ];
 }
 
-interface Edit {
-  find: string;
-  replace: string;
-}
-
-/** Apply a list of exact replacements, each of which must match exactly once. */
-export function applyEdits(page: string, edits: Edit[]): { html: string } | { error: string } {
-  let html = page;
-  for (const [i, e] of edits.entries()) {
-    if (typeof e?.find !== "string" || !e.find || typeof e.replace !== "string") return { error: `Edit ${i + 1} needs find and replace.` };
-    const at = html.indexOf(e.find);
-    if (at === -1) return { error: `Edit ${i + 1}: its find text is not in the page.` };
-    if (html.indexOf(e.find, at + 1) !== -1) return { error: `Edit ${i + 1}: its find text is in the page more than once; make it longer.` };
-    html = `${html.slice(0, at)}${e.replace}${html.slice(at + e.find.length)}`;
-  }
-  return { html };
-}
-
 const noteOf = (v: unknown): DesignNote | null => {
   const n = v as Partial<Record<keyof DesignNote, unknown>> | null | undefined;
   const ok = (x: unknown): x is string => typeof x === "string" && !!x.trim();
   return n && ok(n.layout) && ok(n.sections) && ok(n.type) && ok(n.color) ? { layout: n.layout, sections: n.sections, type: n.type, color: n.color } : null;
 };
 
-/** A design session's two tools, bound to the design it was started for. */
+/** A design session's tools, bound to the design it was started for. A model that can't stream tool arguments
+    isn't offered `design_stream`: a page sent that way would arrive whole at the end, and its reply is how the
+    user watches it being written. */
 export function sessionDesignTools(parent: DesignParent, label: string): ToolSpec[] {
+  const tools = allSessionTools(parent, label);
+  return designOf(parent.sessionId, label)?.route === "reply" ? tools.filter((t) => t.name !== DESIGN_STREAM_TOOL) : tools;
+}
+
+function allSessionTools(parent: DesignParent, label: string): ToolSpec[] {
   const own = (asked: unknown): void => {
     if (asked !== label) throw new Error(`You are design ${label}; label must be ${label}.`);
   };

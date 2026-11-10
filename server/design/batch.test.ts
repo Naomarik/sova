@@ -118,9 +118,8 @@ const finish = async (f: Fake, label: string): Promise<void> => {
 
 /** Give `label` a finished version straight, its session's turn left to the caller. */
 const finishInto = async (label: string): Promise<void> => {
-  const tools = sessionDesignTools(parent, label);
-  await tools.find((t) => t.name === "design_stream")!.execute("t", { label, html: PAGE }, undefined, undefined, undefined);
-  await tools.find((t) => t.name === "design_hand_in")!.execute("t", { label, note: NOTE }, undefined, undefined, undefined);
+  store.setPendingPage(parent.sessionId, label, PAGE);
+  await sessionDesignTools(parent, label).find((t) => t.name === "design_hand_in")!.execute("t", { label, note: NOTE }, undefined, undefined, undefined);
 };
 
 beforeEach(() => {
@@ -380,6 +379,14 @@ test("a later turn finds no page in an earlier one, and a handed-in turn adds no
     assert.equal(stat(label).versions.length, versions, JSON.stringify(messages));
     deleteDesign(parent, label);
   }
+});
+
+test("a session on a model that can't stream tool arguments isn't offered design_stream; every other session is", async () => {
+  const names = (label: string) => sessionDesignTools(parent, label).map((t) => t.name);
+  const reply = await replySession([]);
+  assert.deepEqual(names(reply), ["design_look", "design_hand_in"]);
+  const [tool] = launchDesigns(parent, newRun(["zai/a"], ["Heritage"]), {});
+  assert.deepEqual(names(tool!), ["design_look", "design_stream", "design_hand_in"]);
 });
 
 test("design_hand_in finds the page in an earlier reply of its turn, never in an earlier turn", async () => {

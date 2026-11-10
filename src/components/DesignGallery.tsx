@@ -43,8 +43,9 @@ export function DesignGallery(props: { path: string }) {
               <Show when={store.view()}>
                 <div class="empty gallery-empty">
                   <p class="empty-body">
-                    0 prototypes in this chat. Turn on Design in the mode menu
-                    to make some.
+                    {(store.view()?.runs.length ?? 0) > 0
+                      ? "0 prototypes yet. They show up here as the coordinator starts them."
+                      : "0 prototypes in this chat. Turn on Design in the mode menu to make some."}
                   </p>
                 </div>
               </Show>

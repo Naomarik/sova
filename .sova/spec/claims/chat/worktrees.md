@@ -479,7 +479,8 @@ top changes nothing and is never mentioned, and a real new commit brings back th
 reading, with Land and "1 newer commit not included" under it. A landed entry with no reading of the
 branch (the Overseer's rows) stays Landed; with real newer commits it keeps that line, and Land where
 the queue serves the repository: nothing of its own says otherwise. **The row's
-action** is the modal's, from the same row: Land (with its menu), which asks once before it queues
+action** is the modal's, from the same row: Land (with its menu, Discard Branch… last,
+§app.merge-queue/discard-branch), which asks once before it queues
 anything, its confirmation right-aligned under the row (§chat.composer/land-confirm), laid out as
 the modal's rows are (§chat.composer/worktrees-control, "Row layout"), on Ready, Drafts changed, Drafts
 to land, Out of tries, a row of real work reading Ready to merge, Waiting for your OK, Landing specs,
@@ -926,7 +927,9 @@ for the install or switched off (§chat.worktrees/pane), the teardown of a copy 
 button removes worktrees in bulk, nobody confirms a list of them, and a chat never decides what to
 delete. Only the merge queue's own scratch copies go by another way (below), and the `worktree`
 tool's merge stays non-destructive. Deleting archived work that never landed is a separate feature
-and isn't this step.
+and isn't this step. Discard Branch… (§app.merge-queue/discard-branch) removes a folder by the same
+removal and proof, but keeps no backup: it pins nothing, writes no ledger entry and deletes the
+branch at the tip you saw, whatever the Delete branches setting says.
 
 - **Which trees.** Git's own list (`git worktree list`) for the repository: every linked worktree in
   it, wherever its folder is; the main checkout is never one. A remote session's folder has none.
@@ -959,7 +962,8 @@ and isn't this step.
 - **Removal.** The folder goes first, from the main checkout, with `git worktree remove -- <path>`,
   never `--force`, so git refuses a tree that changed under it; for a folder already gone the same
   command only drops it from git's list. The one `--force` in Sova is Remove Anyway's, at the user's own
-  click, on exactly the listing they confirmed (§chat.worktrees/leftovers). What happened is read back
+  click, on exactly the listing they confirmed (§chat.worktrees/leftovers), which Discard Branch…
+  uses the same way. What happened is read back
   from what git and the disk say, not from git's exit code. A folder with another registered worktree
   or the main checkout inside it is held. Then its last commit is pinned, whatever becomes of the
   branch: under a private reference of Sova's, which no branch list or screen shows and git's own tidy-up
@@ -1109,7 +1113,9 @@ list offers no Restore for it.
 
 **Remove Anyway.** On the project page's Remove Worktree (§app.project-overseer/coding-worktrees), on
 a worktree whose only reason is what it holds (never after a failed read, and never for a use
-reason). Retirement, `sova_archive` and teardown only name the reason, and no Held row offers it. It
+reason). Retirement, `sova_archive` and teardown only name the reason, and no Held row offers it.
+Discard Branch…'s confirm shows the same listing and removes the folder the same way, on its digest
+(§app.merge-queue/discard-branch). It
 first lists exactly what goes: the uncommitted files, the ignored files that can't be rebuilt, each
 nested repository (deleted whole) or worktree (its uncommitted work goes, its commits stay in its
 repository), and the rebuildable folders that go with it, each list its first 500 and then the

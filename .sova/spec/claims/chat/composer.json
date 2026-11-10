@@ -245,9 +245,9 @@
       "server/merge-queue/wire.ts"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-11-09T15:52Z",
-      "source": "pi-session:01a1b2f4-86c6-73d4-9fe9-b847b27035f9#02c2fa31"
+      "by": "user",
+      "at": "2026-11-10T12:12Z",
+      "source": "pi-session:01a1c4f0-984c-7287-92e3-568db48c8f91#3c462a8f"
     }
   },
   "§chat.composer/memory-status": {
@@ -413,9 +413,9 @@
       "§chat.worktrees/nothing-left"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-11-09T16:22Z",
-      "source": "pi-session:01a1b2f4-86c6-73d4-9fe9-b847b27035f9#950bc2c9"
+      "by": "user",
+      "at": "2026-11-10T12:12Z",
+      "source": "pi-session:01a1c4f0-984c-7287-92e3-568db48c8f91#3c462a8f"
     },
     "code": [
       "src/components/WorktreesControl.tsx",

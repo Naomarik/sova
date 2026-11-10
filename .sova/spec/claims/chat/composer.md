@@ -906,7 +906,9 @@ project), with its why, and that Land still takes the approval. Then comes one r
     Stale, Landed, Landed · cleaned up, Merged or Removed. It asks once (§chat.composer/land-confirm),
     a compact button with a ▾ menu, a narrow tab of its own beside it, holding **Land Without
     Review** (only when the project has a review kit) and **Land Without Its Specs…**, which asks
-    first: "Its spec drafts stay drafts in this worktree. Only the code lands.";
+    first: "Its spec drafts stay drafts in this worktree. Only the code lands.", then, last after a
+    separator, **Discard Branch…** (§app.merge-queue/discard-branch) for a branch of a project on the
+    Projects list, whose row then always shows the ▾;
   - **Set Up Queue** on a Ready to merge row of a project on the Projects list whose merge setup
     isn't done, which opens its Merge Queue tab (§app.merge-queue/setup). A project whose definition doesn't parse keeps Land (never
     Set Up Queue), and the row reads "This project's .sova/project.json doesn't parse: {path:
@@ -1015,4 +1017,5 @@ Commits approves the branch, at the commit the row showed. Not Yet, or Escape, p
 actions back and queues nothing. A decision's Land (Out of tries, a fix that needs your OK, Drafts
 changed) in the Worktrees modal opens the same confirmation first; on the queue card and the Merge
 Queue tab's Needs you it acts at once, as before. The ▾ menu stays as it was, a narrow tab distinct
-from Land: its items act without this confirmation (Land Without Its Specs… keeps its own question).
+from Land: its items act without this confirmation (Land Without Its Specs… keeps its own question,
+and Discard Branch… its own confirm, §app.merge-queue/discard-branch).

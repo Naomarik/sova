@@ -19,6 +19,8 @@ fast-forwards the target to exactly the commit it tested (§app.merge-queue/land
 GitLab (§app.merge-queue/requests), or only push the branch (§app.merge-queue/publish).
 Every setting the queue uses shows in Settings → Merge Queue (§app.merge-queue/settings).
 Each branch's row says what the branch does, in a few bullets (§app.merge-queue/branch-summary).
+A branch you won't land goes, with its folder and chat and no backup, by Discard Branch… in its
+Land ▾ menu, at your click alone (§app.merge-queue/discard-branch).
 A failure goes to the branch's chat only once the same check passed on the target alone
 (§app.merge-queue/blame).
 
@@ -1334,7 +1336,9 @@ The tabs' rows:
   waiting for a fix** (§app.merge-queue/approve).
   Each shows its chat and branch, then its chip, commit and "{n} commits ahead · +{a} −{d} ·
   {when}",
-  and **Land** with the same menu as the modal's (Land Without Review, Land Without Its Specs…).
+  and **Land** with the same menu as the modal's (Land Without Review, Land Without Its Specs…,
+  then, last after a separator, Discard Branch…, §app.merge-queue/discard-branch); every Ready to
+  land row shows the ▾, one with only drafts left included.
   {when} is when the branch last changed, its head commit's committer date, said relative to now
   ("2h ago", "yesterday", "3d ago", then the day, "Nov 2", after a week), with the full date and
   time
@@ -1542,6 +1546,90 @@ from the session feed's merge-queue frames, at desktop and phone widths. The sam
 served
 project's, also drive the sidebar's landing bar, which opens this tab at an entry for the actions it
 doesn't take in place (§app.merge-queue/landing-bar).
+
+## §app.merge-queue/discard-branch — Discard Branch…: a branch you won't land, gone with its folder and chat
+
+A branch you won't land goes, with everything on it, from the Land ▾ menu. **Discard Branch…** is
+that menu's last item, after a separator, on every Ready to land row of the Merge Queue tab
+(§app.merge-queue/view) and on a chat's Worktrees rows that offer Land, in the Worktrees modal
+(§chat.composer/worktrees-control) and the session pane (§chat.worktrees/pane-queue), for a branch
+of a project on the Projects list. Every such row shows the ▾, a Drafts to land row included, though
+Discard Branch… may then be its only item.
+
+- **Its line.** Opening the ▾ asks the server what would go (a dry run), and the item's line names
+  only the parts it found: "Deletes the branch and its folder, and archives its chat." ("… archives
+  its chats." for more than one), "Deletes the branch and its folder." (no chat, and until the dry
+  run answers: no chat is promised before then), "Deletes the branch and archives its chat." (no
+  folder) or "Deletes the branch.".
+- **Disabled, with its reason** as its line, in these words: "Its chat is working."; "Its chat is
+  open in a terminal."; "A chat in its folder is open in a terminal." (another chat working there);
+  "A worker is running in its folder." (a worker of its chat, or another chat or worker running in
+  its folder now);
+  "A process is running in its folder: {command} ({pid})."; "It's in the merge queue." (any standing
+  approval: queued, checking, with its chat, waiting for you); "That's the main checkout."; "That's
+  the branch it lands into."; "Its branch is checked out in another folder too: {path}." (neither
+  folder goes); "Its branch moved since you looked: look again." (its
+  tip isn't the commit the row showed); "There's no such branch any more."; "The branch it lands
+  into couldn't be read."; a read that failed says so ("A chat's file couldn't be read, so Sova
+  can't tell whether one works in its folder.", or the folder's own unreadable reason). Only the
+  chat that works in the branch's folder is asked about: a chat that made the branch from another
+  folder holds nothing.
+- **Only your click.** The route, `POST /api/merge-queue/projects/:project/discard-branch` (its dry
+  run too, which lists a chat's files), answers only the person's own page on this machine. The
+  Overseer, a chat, a script or terminal with the token, and an extension get 403, "Only the user
+  discards a branch. Ask them to press Discard Branch… in the Land menu. Nothing was deleted.", and a
+  peer "A branch is discarded only on the page of the computer it is on. Nothing was deleted." Its
+  catalogue entry is `project.merge-queue.discard-branch` (effect `changes`, §app/commands); listing
+  it opens it to no agent.
+
+Pressing it opens its confirm, and only that confirm's Discard Branch deletes anything
+(§app.merge-queue/discard-confirm).
+
+## §app.merge-queue/discard-confirm — Discard Branch…'s confirm, and what it deletes
+
+Discard Branch… (§app.merge-queue/discard-branch) asks first, listing what goes, and deletes in order.
+
+- **The confirm**, in place of the row's actions as Land's is (§chat.composer/land-confirm): "Discard
+  {branch}?", then what goes, from the dry run, in this order, each part left out when the branch has
+  none of it: "{n} commits not on {target}" ("1 commit"); its uncommitted files, ignored files and
+  nested repositories, each kind counted ("{n} uncommitted files", "{n} ignored files", "{n} nested
+  repositories"), with Remove Anyway's exact listing of them under the list
+  (§chat.worktrees/leftovers), or, with only rebuildable folders, "Rebuildable files: {first 3}, and
+  {n} more"; "{n} spec drafts"; "Its folder, {path}" (the path in mono, `~` for home); and each chat
+  archived with it: "Its chat, {title}, archived", then "A chat in its folder, {title}, archived" for
+  each other one, and "This chat, archived" for the one whose Worktrees list you are in. A branch
+  whose chat works in another folder adds "Its chat works in another folder, so it stays." Then,
+  plainly, "No backup is kept: its {n} commits not on {target} can't be brought back." ("its commit
+  not on {target} can't"), or "Every commit is already on {target}. No backup is kept." Under it
+  **Cancel**, where focus starts, and **Discard Branch** (destructive). Escape or Cancel closes it,
+  deleting nothing, and puts focus back on the ▾. While the dry run runs it reads "Checking what
+  goes…"; when it can't go, the reason stands in the list's place and Discard Branch is disabled.
+- **On Discard Branch** Sova reads everything again under the repository's cleanup lock (a cleanup
+  pass running refuses: "A cleanup of this repository is running: try again in a moment."), and a
+  reason found now refuses, deleting nothing, with the reason under the row. When the folder's files
+  differ from the listing you saw, nothing is deleted and the confirm asks again, "Its files changed
+  since you looked. Nothing was deleted. This is what goes now.", over the new list; a chat newly
+  in the folder in between does the same ("A chat started working in its folder since you looked.
+  Nothing was deleted. This is what goes now."), so no chat is archived that the confirm didn't
+  name. Then, each step only once the one before it went:
+  1. **Its folder**, holding only the files you saw listed, removed as Remove Anyway removes one
+     (its one `--force`, §chat.worktrees/leftovers), else plainly; a folder already gone that git
+     still lists has that one record dropped by name.
+  2. **Its branch**, deleted at exactly the tip you saw, never another, with **no backup**: no
+     pinned commit, no Retired row and no restore, whatever the project's Delete branches setting
+     says (§chat.worktrees/cleanup); its branch settings go with it.
+  3. **Its chats archived**, as Archive does: the branch's chat when it works in the branch's folder,
+     and every other idle chat working in that folder or a folder inside it (never a folder that
+     only begins with its name; main chats only: no workers, none of the queue's own), each named in
+     the confirm. A chat that works in another folder stays. A chat that
+     can't be archived is closed, since its folder is gone.
+
+  Done, a toast (and the screen reader) says "Discarded {branch}. Its chat is archived." ("Its {n}
+  chats are archived.", or only "Discarded {branch}." when none was), and the row leaves the list,
+  which is read again at once. A stop part way says what went and what stayed, on the row and in a
+  toast, "Discard of {branch} stopped. {what was done}. {what stayed} stayed: {why}." ("Removed its
+  folder. The branch and its chat stayed: Git kept the branch: …"; "Nothing was discarded. …" when
+  nothing went), naming only parts the branch had; the row keeps that line until the page reloads.
 
 ## §app.merge-queue/run-logs — Run logs: packed as they age, cleaned only by you
 

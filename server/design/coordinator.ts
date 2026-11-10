@@ -9,7 +9,7 @@ import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { ToolSpec } from "../../shared/harness";
-import { DESIGN_ASK_ABOVE, designBriefBlock, type DesignAsk, type DesignBrief, type DesignBriefBlock, type DesignCoordinatorView, type DesignLinkUse, type DesignLook, type DesignRecord, type DesignRun, type DesignSignInAnswer } from "../../shared/design";
+import { DESIGN_ASK_ABOVE, designBriefBlock, isDesignLinkUse, type DesignAsk, type DesignBrief, type DesignBriefBlock, type DesignCoordinatorView, type DesignLinkUse, type DesignLook, type DesignRecord, type DesignRun, type DesignSignInAnswer } from "../../shared/design";
 import { isTourOrigin, type TourSize } from "../../shared/tour";
 import { serverToolCall } from "../chat-handle";
 import { modelDenial, readModelPolicy } from "../model-policy";
@@ -226,8 +226,36 @@ const publish = (st: CoordinatorState): void => {
   setCoordinator(st.sessionId, viewFor(st));
 };
 
-/** Whether the user's own words named this origin (q13). */
-const namedBy = (st: CoordinatorState, origin: string): boolean => st.named.includes(origin);
+/** Whether the user's own words named this origin (q13). An address that is only page content (Not a Reference) vouches for nothing. */
+const namedBy = (st: CoordinatorState, origin: string): boolean => {
+  if (!st.named.includes(origin)) return false;
+  const links = (runOf(st.sessionId, st.runId)?.setup.links ?? []).filter((l) => originOf(l.url) === origin);
+  return !(links.length > 0 && links.every((l) => l.use === "content"));
+};
+
+const originOf = (u: string): string | null => {
+  try {
+    return new URL(u).origin;
+  } catch {
+    return null;
+  }
+};
+const sameAddress = (a: string, b: string): boolean => {
+  try {
+    const x = new URL(a);
+    const y = new URL(b);
+    const path = (u: URL) => u.pathname.replace(/\/+$/, "");
+    return x.origin === y.origin && path(x) === path(y) && x.search === y.search;
+  } catch {
+    return false;
+  }
+};
+
+/** A link on Not a Reference this address is: it is the page's content, never opened. */
+function notAReference(st: CoordinatorState, url: unknown): string | null {
+  if (typeof url !== "string") return null;
+  return (runOf(st.sessionId, st.runId)?.setup.links ?? []).find((l) => l.use === "content" && sameAddress(l.url, url))?.url ?? null;
+}
 
 const following = new Map<string, () => void>();
 /** The card's status follows the session's. */
@@ -357,7 +385,7 @@ export function noteHandIn(sessionId: string, a: { label: string; version: numbe
 function firstMessage(run: DesignRun): string {
   const designers = run.setup.models.filter((m) => m.design).map((m) => m.name);
   const directions = run.setup.directions.filter((d) => d.on).map((d) => d.name);
-  const links = (run.setup.links ?? []).map((l) => `${l.url}: ${l.use === "images" ? "Use Its Images" : l.use === "feel" ? "Just Its Feel" : "not chosen; go by their words and set it, or ask"}`);
+  const links = (run.setup.links ?? []).map((l) => `${l.url}: ${l.use === "images" ? "Use Its Images" : l.use === "feel" ? "Just Its Feel" : l.use === "content" ? "Not a Reference: an address in the page's content, never to be opened" : "not chosen; go by their words and set it, or ask"}`);
   return [`What the user wants to design, as they left it on the Setup card:\n${run.setup.brief}`, ...(links.length ? [`Links, and how each is used:\n${links.join("\n")}`] : []), `Models that will design: ${designers.join(", ") || "none"}.`, `Directions: ${directions.join(", ") || "none"}.`, `That is ${designers.length * directions.length} designs. Your run's id is ${run.id}. Prepare the Design Brief; the designs start only when the user presses Start on it.`].join("\n\n");
 }
 
@@ -671,7 +699,8 @@ function briefReferences(st: CoordinatorState, run: DesignRun & { brief: DesignB
   if (!screen) return [];
   const links = run.setup.links ?? [];
   const own = screen.url ? links.find((l) => sameSite(l.url, screen.url!)) : undefined;
-  if (own ? own.use === "feel" : links.length > 0 && links.every((l) => l.use === "feel")) return [];
+  const references = links.filter((l) => l.use !== "content");
+  if (own ? own.use === "feel" : references.length > 0 && references.every((l) => l.use === "feel")) return [];
   return screen.screenshots.flatMap((u) => {
     const shot = st.shots.find((s) => s.url === u);
     if (!shot) return [];
@@ -895,7 +924,7 @@ export function coordinatorTools(sessionId: string): ToolSpec[] {
         baseRev: { type: "integer" }, summary: { type: "string" }, prompt: { type: "string" },
         promptEdits: { type: "array", items: { type: "object", properties: { find: { type: "string" }, replace: { type: "string" } }, required: ["find", "replace"] } },
         text: { type: "string", description: "Which screen you found and how you got there." }, shots: { type: "array", items: { type: "string" } }, url: { type: "string" },
-        sources: { type: "array", items: { type: "object", properties: { url: { type: "string" }, use: { type: "string", enum: ["images", "feel"] } }, required: ["url"] } },
+        sources: { type: "array", items: { type: "object", properties: { url: { type: "string" }, use: { type: "string", enum: ["images", "feel", "content"] } }, required: ["url"] } },
         images: { type: "array", description: "Which captured images suit this brief: only the ones you'd leave out need listing.", items: { type: "object", properties: { name: { type: "string" }, use: { type: "boolean" } }, required: ["name", "use"] } },
         questions: { type: "array", items: { type: "object", properties: { topic: { type: "string" }, ask: { type: "string" }, context: { type: "string" }, options: { type: "array", items: { type: "object", properties: { label: { type: "string" }, tradeoff: { type: "string" } }, required: ["label", "tradeoff"] } }, recommendation: { type: "object", properties: { choice: { type: "string" }, why: { type: "string" } }, required: ["choice", "why"] } }, required: ["topic", "ask", "recommendation"] } },
       },
@@ -925,7 +954,7 @@ export function coordinatorTools(sessionId: string): ToolSpec[] {
       for (const x of raw) {
         const url = x?.url;
         if (!isHttpUrl(url)) return refuse("each source needs an http or https address.");
-        sources.push({ url, use: x.use === "images" || x.use === "feel" ? x.use : null });
+        sources.push({ url, use: isDesignLinkUse(x.use) ? x.use : null });
       }
       // Just Its Feel is one look at the page: a link that needs one has to have been opened first.
       const trial = structuredClone(run.setup);
@@ -984,6 +1013,8 @@ export function coordinatorTools(sessionId: string): ToolSpec[] {
         save(st);
         return picturesResult(st, shots, r.shots.map((s) => s.png), r.outline);
       }
+      const content = notAReference(st, params?.url);
+      if (content) return refuse(`${content} is Not a Reference: it is part of the page's content, so it is never opened. Write it into the brief as it is.`);
       const { label: _l, version: _v, ...rest } = params ?? {};
       const out = await p().browse(parent, rest, { stores: p().stores(parent.sessionId) }, signal);
       switch (out.kind) {
@@ -1017,6 +1048,8 @@ export function coordinatorTools(sessionId: string): ToolSpec[] {
     async execute(_id, params: Record<string, unknown>, signal?: AbortSignal) {
       const st = state();
       if (isResult(st)) return st;
+      const content = notAReference(st, params?.url);
+      if (content) return refuse(`${content} is Not a Reference: it is part of the page's content, so it is never captured.`);
       capturing.add(parent.sessionId);
       syncBriefImages(parent.sessionId);
       let out: Awaited<ReturnType<typeof captureDesignPage>>;

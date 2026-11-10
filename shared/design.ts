@@ -127,8 +127,10 @@ export interface DesignSetup {
 }
 
 /** How a link's page is used. images: its images are used (and the screen goes to designers that can read
-    pictures); feel: only its look, put into words, reaches the designers. */
-export type DesignLinkUse = "images" | "feel";
+    pictures); feel: only its look, put into words, reaches the designers; content: Not a Reference, the address is
+    the page's content (a contact link, say) and is never looked at, captured or described. */
+export type DesignLinkUse = "images" | "feel" | "content";
+export const isDesignLinkUse = (v: unknown): v is DesignLinkUse => v === "images" || v === "feel" || v === "content";
 
 export interface DesignLink {
   url: string;

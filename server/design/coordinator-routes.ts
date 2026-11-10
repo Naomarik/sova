@@ -3,7 +3,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Context, Hono } from "hono";
-import { isDesignSignInAnswer, type DesignSignInAnswer } from "../../shared/design";
+import { isDesignLinkUse, isDesignSignInAnswer, type DesignSignInAnswer } from "../../shared/design";
 import { notPage } from "../page-only";
 import { resolveSessionPath } from "../paths";
 import { idOf } from "../sessions-index";
@@ -62,7 +62,7 @@ export function mountCoordinatorRoutes(app: Hono): void {
 
   onBrief("conflict", (p, run, b) => (b.choice === "keep" || b.choice === "rewrite" ? resolveBriefConflict(p, run, b.choice) : 'choice must be "keep" or "rewrite".'));
 
-  onBrief("link", (p, run, b) => (typeof b.url === "string" && (b.use === "images" || b.use === "feel") ? setBriefLink(p, run, b.url, b.use) : "A link needs its url and a use."));
+  onBrief("link", (p, run, b) => (typeof b.url === "string" && isDesignLinkUse(b.use) ? setBriefLink(p, run, b.url, b.use) : "A link needs its url and a use."));
 
   onBrief("image", (p, run, b) => {
     if (typeof b.name !== "string" || typeof b.use !== "boolean") return "An image needs its name and a use.";

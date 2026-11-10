@@ -100,6 +100,8 @@ test("Setup's rows keep a choice for an address still there, drop the one remove
   const prev = [{ url: "https://a.test", use: "feel" as const, by: "user" as const }, { url: "https://b.test", use: "images" as const, by: "user" as const }];
   assert.deepEqual(linksFromText("t", prev, ["https://a.test"]), [prev[0]]);
   assert.deepEqual(linksFromText("t", prev, ["https://c.test"], [{ url: "https://c.test", use: "images" }]), [{ url: "https://c.test", use: "images", by: "user" }]);
+  assert.deepEqual(linksFromText("t", prev, ["https://d.test"], [{ url: "https://d.test", use: "content" }]), [{ url: "https://d.test", use: "content", by: "user" }]);
+  assert.equal(designBriefBlock({ brief: settled(), setup: setup({ links: [{ url: "https://d.test", use: "content" }] }) }), null, "Not a Reference counts as chosen");
 });
 
 test("the coordinator's reading fills in a link, never over a person's click", () => {

@@ -1,7 +1,7 @@
 // The Design Brief's rules: who may change which layer, what makes Start wait. Every function here changes the
 // record it is given and nothing else, so each rule can be held by a test without a session or a server. Who the
 // coordinator is told what, and when Start launches, is coordinator.ts's.
-import type { DesignBrief, DesignBriefQuestion, DesignLink, DesignLinkUse, DesignLook, DesignRun, DesignSetup } from "../../shared/design";
+import { isDesignLinkUse, type DesignBrief, type DesignBriefQuestion, type DesignLink, type DesignLinkUse, type DesignLook, type DesignRun, type DesignSetup } from "../../shared/design";
 import type { DesignAssetCatalogue, DesignCapture, DesignPageNotes } from "../../shared/design-assets";
 import { questionInput, recommendedOption } from "../../pi-config/extensions/mode/align.ts";
 import { applyEdits, type Edit } from "./edits";
@@ -224,7 +224,7 @@ export function linksFromText(text: string, previous: DesignLink[] | undefined, 
   return found.slice(0, BRIEF_LIMITS.links).map((url) => {
     const was = previous?.find((l) => l.url === url);
     const asked = given.find((x) => x.url === url)?.use;
-    if (asked === "images" || asked === "feel") return { url, use: asked, by: "user" as const };
+    if (isDesignLinkUse(asked)) return { url, use: asked, by: "user" as const };
     return was ?? { url, use: null };
   });
 }

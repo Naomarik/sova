@@ -24,6 +24,7 @@ let readLook: (a: { key: string; png: Uint8Array; url: string }) => Promise<{ te
 let turnListener: (() => void) | null = null;
 let capture: (...a: unknown[]) => Promise<never>;
 let describingNow = false;
+let browseCalls = 0;
 
 const model = (ref: string, over: Partial<DesignModelChoice> = {}): DesignModelChoice => ({ ref, name: ref, design: true, coordinator: false, vision: true, route: "tool", ...over });
 const runWith = (designers: number, directions: number, over: Partial<DesignRun> = {}): DesignRun => ({
@@ -38,6 +39,7 @@ beforeEach(() => {
   workerState = "idle";
   turnListener = null;
   describingNow = false;
+  browseCalls = 0;
   capture = async () => ({ kind: "refused", message: "no capture in this test" }) as never;
   readLook = async () => ({ text: "Calm navy on white.", model: "zai/vision" });
   nextBrowse = { kind: "pictures", url: "/settings", origin: "http://127.0.0.1:4810", outline: "OUTLINE", signedIn: false, shots: [{ size: "desktop", png: PNG, viewport: { w: 1440, h: 960 } }] };
@@ -63,7 +65,7 @@ beforeEach(() => {
     systemPrompt: () => "PROMPT",
     specFor: () => ({}) as never,
     sessionDir: () => "/s",
-    browse: async () => nextBrowse,
+    browse: async () => (browseCalls++, nextBrowse),
     stores: () => ({}) as never,
     verbs: async (verb, body, caller) => (log.verbs.push({ verb, body, caller }), { state: "running", instances: [] }),
     projects: () => [{ id: "p1", root: "/proj/a" }, { id: "p2", root: "/proj/b" }],
@@ -487,6 +489,45 @@ test("a newer run's brief stops an older one that hadn't started, and says so on
   assert.match(was.error!, /newer run's brief replaced this one/);
   await assert.rejects(startBrief(parent, older.id, { rev: was.brief!.rev, confirmSpend: false }), /newer run's brief replaced this one/);
   assert.equal(log.launches.length, 0);
+});
+
+test("Not a Reference: a contact link is never opened, captured or read for a look, and the brief starts without it", async () => {
+  let browsed = 0;
+  const CONTACT = "https://contact.test/form";
+  const run = runWith(2, 3);
+  run.setup.brief = `A landing page. The contact button goes to ${CONTACT}`;
+  run.setup.links = [{ url: CONTACT, use: "content", by: "user" }];
+  const t = await started(run);
+  const real = nextBrowse;
+  nextBrowse = { kind: "needs-site", origin: "https://contact.test" };
+  capture = async () => ((browsed++, { kind: "refused", message: "x" }) as never);
+  refused(await t.design_browse({ url: CONTACT }));
+  refused(await t.design_browse({ url: `${CONTACT}/` }));
+  refused(await t.design_capture({ url: CONTACT }));
+  assert.equal(browsed, 0);
+  assert.equal(browseCalls, 0, "no browser was opened for it");
+  assert.equal((await import("./store")).viewOf(parent.sessionId).coordinator?.ask, undefined, "no request, so nothing to ask about");
+  nextBrowse = real;
+  await t.design_brief({ baseRev: 0, summary: "S", prompt: `Contact: ${CONTACT}`, sources: [{ url: CONTACT, use: "feel" }] });
+  assert.equal(runOf(parent.sessionId, run.id)!.setup.links![0]!.use, "content", "the person's choice stands");
+  assert.deepEqual(brief(run.id).looks, {});
+  await start(run);
+  assert.equal(log.looks.length, 0);
+  assert.equal(log.launches[0]!.brief, `Contact: ${CONTACT}`);
+  const named = JSON.parse(readFileSync(join(agentDir, "design", parent.sessionId, "coordinator.json"), "utf8")).named as string[];
+  assert.ok(named.includes("https://contact.test"), "named in their words");
+  const { browseStores } = await import("./coordinator");
+  assert.equal(browseStores(parent.sessionId).named("https://contact.test"), false, "but it vouches for nothing");
+});
+
+test("the coordinator may mark a link Not a Reference, and it then counts as chosen", async () => {
+  const run = withLink(null);
+  const t = await started(run);
+  await t.design_brief({ baseRev: 0, summary: "S", prompt: "P", sources: [{ url: URL_, use: "content" }] });
+  assert.equal(runOf(parent.sessionId, run.id)!.setup.links![0]!.use, "content");
+  await start(run);
+  assert.equal(log.launches.length, 1);
+  assert.equal(log.launches[0]!.references.length, 0);
 });
 
 test("Not This Screen sends the user's words on, clears the screen, and an address in them counts as theirs", async () => {

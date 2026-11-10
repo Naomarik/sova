@@ -264,6 +264,13 @@ export function onAssetsSettled(fn: (sessionId: string) => void): () => void {
   return () => settledListeners.delete(fn);
 }
 
+const startedListeners = new Set<(sessionId: string) => void>();
+/** Hear that a chat's helpers have started work (once each time the team starts, before any helper is up). */
+export function onDescribingStarted(fn: (sessionId: string) => void): () => void {
+  startedListeners.add(fn);
+  return () => startedListeners.delete(fn);
+}
+
 const isWaiting = (a: DesignAsset): boolean => (!a.description && !a.describeError) || !!a.describeAgain;
 
 function giveUp(sessionId: string, name: string, reason: string): void {
@@ -418,6 +425,13 @@ export function describeAssets(parent: DesignParent, names?: string[]): void {
   }
   const job: Job = { parent, waiting: want, tries: new Map(), helpers: new Map(), closing: 0, models: null };
   jobs.set(sid, job);
+  for (const fn of startedListeners) {
+    try {
+      fn(sid);
+    } catch (err) {
+      console.error("[design] a describing-started listener failed", err);
+    }
+  }
   void modelsFor()
     .catch(() => [] as string[])
     .then((models) => {

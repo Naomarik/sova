@@ -1,10 +1,9 @@
-// The tools Sova serves for Design mode. The main chat's: `design_guide` (the mode's reference text)
-// and `design` (put up a Setup card, read the coordinator's card or one page, pass words on). A design
+// The tools Sova serves for the Lookbook. The main chat's: `lookbook` (put up a Setup card, read the
+// coordinator's card or one page, pass words on); its guide is vis's (`vis_guide {kind:"lookbook"}`). A design
 // session's: `design_stream` (the page, whole or as edits) and `design_hand_in` (it is done).
 import { assetNamesProblem } from "./assets";
 import type { HEntry, ToolResult, ToolSpec } from "../../shared/harness";
 import { DESIGN_ASK_ABOVE, DESIGN_BATCH_MAX, DESIGN_TOOL, isDesignLabel, type DesignNote } from "../../shared/design";
-import { DESIGN_GUIDE_TOPICS, designGuide } from "../../pi-config/extensions/mode/design-guide.ts";
 import { coordinatorCard, tellCoordinator } from "./coordinator";
 import { createRun } from "./setup";
 import { ownImagesLine } from "./asset-routes";
@@ -17,33 +16,23 @@ import { applyEdits, type Edit } from "./edits";
 
 export { applyEdits };
 
-export const DESIGN_GUIDE_TOOL = "design_guide";
 export const DESIGN_STREAM_TOOL = "design_stream";
 export { DESIGN_HAND_IN_TOOL };
 export const DESIGN_LOOK_TOOL = "design_look";
-/** The main chat's tools: active only while Design mode is on. */
-export const DESIGN_TOOLS: ReadonlySet<string> = new Set([DESIGN_GUIDE_TOOL, DESIGN_TOOL]);
+/** The main chat's tools: active whenever vis is on, as the tour tools are. */
+export const DESIGN_TOOLS: ReadonlySet<string> = new Set([DESIGN_TOOL]);
 
 const say = (text: string, details: unknown = {}): ToolResult => ({ content: [{ type: "text", text }], details });
 const str = (description: string, extra: Record<string, unknown> = {}) => ({ type: "string", description, ...extra });
 const list = (description: string) => ({ type: "array", items: { type: "string" }, description });
 
-/** The main chat's Design tools. Nothing they do starts a turn or writes to its context beyond their own results. */
+/** The main chat's Lookbook tool. Nothing they do starts a turn or writes to its context beyond their own results. */
 export function mainDesignTools(parent: () => DesignParent, cwd: () => string): ToolSpec[] {
   return [
     {
-      name: DESIGN_GUIDE_TOOL,
-      label: "design guide",
-      description: "The Design mode reference. No topic: the list of topics.",
-      parameters: { type: "object", properties: { topic: str("The topic to read.", { enum: [...DESIGN_GUIDE_TOPICS] }) } },
-      async execute(_id, params: { topic?: string }) {
-        return say(designGuide(params?.topic));
-      },
-    },
-    {
-      name: "design",
-      label: "design",
-      description: `Design mode's prototypes. op "start" puts a Setup card in the chat (the user finishes it there, up to ${DESIGN_BATCH_MAX} designs). op "read" gets the coordinator's card, or one design's whole page with label. op "tell" passes text word for word to the coordinator, and images (the paths of images the user attached) join its image set. Read design_guide first.`,
+      name: DESIGN_TOOL,
+      label: "lookbook",
+      description: `The Lookbook: one page designed by several models side by side. op "start" puts a Lookbook Setup card in the chat (the user finishes it there, up to ${DESIGN_BATCH_MAX} designs), only when the user asked for a Lookbook. op "read" gets the coordinator's card, or one design's whole page with label. op "tell" passes text word for word to the coordinator, and images (the paths of images the user attached) join its image set. Call vis_guide with kind "lookbook" first.`,
       parameters: {
         type: "object",
         properties: {

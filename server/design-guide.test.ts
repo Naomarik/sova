@@ -1,43 +1,60 @@
 import { describe, test } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import {
   DESIGN_COORDINATOR_PROMPT,
   DESIGN_DEFAULT_DIRECTION_SETS,
   DESIGN_DIRECTIONS,
-  DESIGN_GUIDE_TOPICS,
-  DESIGN_INSTRUCTIONS,
   DESIGN_PAGE_END,
   DESIGN_PAGE_START,
-  designGuide,
   designSessionPrompt,
 } from "../pi-config/extensions/mode/design-guide.ts";
-import { MINOR_MODES, MINOR_SURFACES, MINOR_WORKER, buildMinorPrompt } from "../pi-config/extensions/mode/minor.ts";
-import { DESIGN_PAGE_CLOSE, DESIGN_PAGE_OPEN } from "../shared/design.ts";
+import { MINOR_MODES, VIS_GUIDE_NAMES, VIS_INSTRUCTIONS, VIS_KINDS, VIS_KIND_FILES, VIS_TOOL_ENTRIES, VIS_TOOL_PARTS, stripVisComments, visGuide } from "../pi-config/extensions/mode/minor.ts";
+import { DESIGN_PAGE_CLOSE, DESIGN_PAGE_OPEN, DESIGN_TOOL } from "../shared/design.ts";
+import { DESIGN_TOOLS, mainDesignTools } from "./design/tools.ts";
 
 const OWNER_NOTE = /<!--/;
 const UNFILLED = /\{\{\w+\}\}/;
+const PARTS = ["lookbook-setup", "lookbook-directions", "lookbook-passing-on"];
+const visFile = (name: string) => stripVisComments(readFileSync(new URL(`../pi-config/extensions/mode/vis/${name}.md`, import.meta.url), "utf8"));
 
-describe("the design mode's declaration", () => {
-  test("turns on only from Sova's menu, reaches no worker, and pays its block", () => {
-    assert.ok(MINOR_MODES.includes("design"));
-    assert.equal(MINOR_SURFACES.design, "web");
-    assert.equal(MINOR_WORKER.design, false);
-    assert.equal(buildMinorPrompt("design"), DESIGN_INSTRUCTIONS);
+describe("the Lookbook rides vis", () => {
+  test("it is no minor mode, and its tool is the main chat's one Lookbook tool", () => {
+    assert.ok(!(MINOR_MODES as readonly string[]).includes("design") && !(MINOR_MODES as readonly string[]).includes("lookbook"));
+    assert.equal(DESIGN_TOOL, "lookbook");
+    assert.deepEqual([...DESIGN_TOOLS], ["lookbook"]);
+    assert.deepEqual(mainDesignTools(() => ({ sessionId: "s", path: "p" }), () => "").map((t) => t.name), ["lookbook"], "no design_guide: vis_guide serves the guide");
   });
-});
 
-describe("the guide", () => {
-  test("every topic the prompt names exists, and no owner note reaches a model", () => {
-    for (const topic of DESIGN_GUIDE_TOPICS) {
-      assert.ok(DESIGN_INSTRUCTIONS.includes(`\`${topic}\``), topic);
-      assert.doesNotMatch(designGuide(topic), OWNER_NOTE);
+  test("a tool-backed vis entry: vis_guide returns its core alone, and never as a drawing kind", () => {
+    assert.ok(VIS_TOOL_ENTRIES.includes("lookbook"));
+    assert.ok(VIS_KINDS.includes("lookbook"), "the catalogue lists it");
+    for (const key of Object.keys(VIS_KIND_FILES)) assert.ok(!key.startsWith("lookbook") && !VIS_KIND_FILES[key]!.startsWith("lookbook"), key);
+    const core = visGuide("lookbook");
+    assert.equal(core, visFile("lookbook"), "the core alone, owner notes stripped");
+    assert.doesNotMatch(core, /^# vis: rules for every kind/m, "no shared fence rules");
+    for (const part of PARTS) {
+      assert.ok(VIS_TOOL_PARTS.includes(part) && VIS_GUIDE_NAMES.includes(part) && !VIS_KINDS.includes(part), part);
+      assert.equal(visGuide(part), visFile(part), part);
+      assert.match(visGuide(part), new RegExp(`^# ${part}: `), `${part} opens with its own heading`);
+      assert.doesNotMatch(visGuide(part), OWNER_NOTE);
+      assert.ok(core.includes(`\`${part}\``), `the core names ${part}`);
     }
-    assert.doesNotMatch(DESIGN_INSTRUCTIONS, OWNER_NOTE);
+    assert.throws(() => visGuide("lookbook-other"), /No vis kind/);
   });
 
-  test("no topic returns the index; an unknown one names the real ones", () => {
-    for (const topic of DESIGN_GUIDE_TOPICS) assert.ok(designGuide().includes(topic), topic);
-    assert.throws(() => designGuide("nope"), new RegExp(DESIGN_GUIDE_TOPICS[0]));
+  test("the catalogue's one line and the core say when to open one, and what stays a quick drawing", () => {
+    const line = VIS_INSTRUCTIONS.split("\n").filter((l) => l.startsWith("- lookbook: "));
+    assert.equal(line.length, 1);
+    assert.match(line[0]!, /asks for a Lookbook by name/);
+    assert.match(line[0]!, /quick html or wireframe drawing instead/);
+    assert.match(line[0]!, /never a `vis lookbook` fence/);
+    const core = visGuide("lookbook");
+    const not = core.slice(core.indexOf("Not a Lookbook"));
+    for (const ask of ["mock up a login page", "draw a wireframe", "show me a design"]) assert.ok(not.includes(ask), ask);
+    assert.match(core, /The ask lasts until the card is up/);
+    assert.match(core, /Only the user's own words count/);
+    assert.doesNotMatch(core, /design_guide/);
   });
 });
 

@@ -24,7 +24,7 @@ describe("parseModePatch (POST /api/mode body)", () => {
       const r = parseModePatch(body);
       assert.ok("error" in r, JSON.stringify(body));
     }
-    assert.match((parseModePatch({ minorModes: ["nope"] }) as { error: string }).error, /Unknown minor mode: nope \(known: align, spec, vis, memory, design\)/);
+    assert.match((parseModePatch({ minorModes: ["nope"] }) as { error: string }).error, /Unknown minor mode: nope \(known: align, spec, vis, memory\)/);
   });
 });
 
@@ -126,7 +126,7 @@ describe("mode.json read/merge/write", () => {
     const info = modeInfo(readMode(file("absent.json")));
     assert.deepEqual(info.modes.map((m) => m.id), ["normal", "delegate"]);
     assert.match(info.modes[1]!.description, /^Orchestrate: /);
-    assert.deepEqual(info.minors.map((m) => m.id), ["align", "spec", "vis", "memory", "design"]);
+    assert.deepEqual(info.minors.map((m) => m.id), ["align", "spec", "vis", "memory"]);
     assert.ok(info.minors[0]!.description.length > 0);
   });
 });

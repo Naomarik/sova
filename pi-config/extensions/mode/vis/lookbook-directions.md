@@ -1,5 +1,5 @@
-<!-- Parsed by design-guide.ts: every list line is `- Name: definition`, and these are the 20 directions the Setup card offers. A design session receives its one definition word for word. -->
-# Design directions
+<!-- Parsed by design-guide.ts (DESIGN_DIRECTIONS); returned alone by `vis_guide {kind:"lookbook-directions"}`: every list line is `- Name: definition`, and these are the 20 directions the Setup card offers. A design session receives its one definition word for word. -->
+# lookbook-directions: the styles
 
 A design is made for one direction. These are the names `directions` takes.
 

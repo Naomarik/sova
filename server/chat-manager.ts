@@ -2964,8 +2964,8 @@ class ChatSession {
       const major = (mode: ModeState["mode"]) => (handle ? handle.setMode(mode, ctx) : cmd!.handler(mode, ctx));
       this.flushDeferredAppends(); // open-time entries go before the extension's mode marker
       try {
-        // memory and design are web-only: the extension takes them on only while this switch is being applied (permit.ts).
-        const web = [...(state.minorModes.includes("memory") && this.memoryAvailable() ? (["memory"] as const) : []), ...(state.minorModes.includes("design") ? (["design"] as const) : [])];
+        // memory is web-only: the extension takes it on only while this switch is being applied (permit.ts).
+        const web = state.minorModes.includes("memory") && this.memoryAvailable() ? (["memory"] as const) : [];
         const memoryWasOn = this.modeState.minorModes.includes("memory");
         await withWebMinors(this.harness.id, web, async () => {
           for (const m of MINOR_MODES) {
@@ -3016,7 +3016,7 @@ class ChatSession {
     if (this.disposed || this.harness.isRunning()) return;
     const registered = this.harness.registeredTools();
     const names = [VIS_CHECK_TOOL, ...TOUR_TOOLS, ...DESIGN_TOOLS].filter(n => registered.includes(n));
-    const wanted = names.filter(n => n === VIS_CHECK_TOOL ? this.visToolsOn() : DESIGN_TOOLS.has(n) ? this.modeState.minorModes.includes("design") : this.modeState.minorModes.includes("vis"));
+    const wanted = names.filter(n => n === VIS_CHECK_TOOL ? this.visToolsOn() : this.modeState.minorModes.includes("vis"));
     const current = this.harness.activeTools();
     const next = [...current.filter(n => !names.includes(n) || wanted.includes(n)), ...wanted.filter(n => !current.includes(n))];
     if (next.length !== current.length) this.harness.setActiveTools(next);
@@ -4994,8 +4994,8 @@ async function openLocked(path: string, onDisposed: () => void, onStep: (step: s
                 ? servedToolsExtension("sova-topics", servedSpecs(path, (n) => n !== "project_verbs" && n !== QUEUE_OPEN_TOOL && n !== OFFER_TOOL && n !== CARD_TOOL && n !== CREATE_SETTINGS_TOOL && !TOUR_TOOLS.has(n) && !DESIGN_TOOLS.has(n)))
                 : queuePushExtension({ sessionId: () => read.id, title: () => titleOf(read.branch()) }),
               servedVisToolsExtension("sova-tours", servedDecls ? servedSpecs(path, n => TOUR_TOOLS.has(n)) : tourTools(read.id, path), () => visHost.chat ? visHost.chat.modeState.minorModes.includes("vis") : undefined),
-              // design_guide and design: active only while Design mode is on.
-              ...(servedDecls ? [servedVisToolsExtension("sova-design", servedSpecs(path, (n) => DESIGN_TOOLS.has(n)), () => visHost.chat?.modeState.minorModes.includes("design") ?? false)] : []),
+              // lookbook: active with explicit vis, as the tour tools are, in vis's same one tool-set change.
+              ...(servedDecls ? [servedVisToolsExtension("sova-lookbook", servedSpecs(path, (n) => DESIGN_TOOLS.has(n)), () => visHost.chat ? visHost.chat.modeState.minorModes.includes("vis") : undefined)] : []),
               // sova_settings: a Create chat's settings cards (§chat.create-mode/settings-cards), active only in Create.
               servedVisToolsExtension("sova-create-settings", servedDecls ? servedSpecs(path, (n) => n === CREATE_SETTINGS_TOOL) : [createSettingsTool({ sessionId: read.id, mode: () => visHost.chat?.modeState.mode, cwd: () => cwd })], () => visHost.chat?.modeState.mode === "create"),
               // offer: this project's offers, from the session's snapshot (§chat.offers/tool). Most chats have none: no extension.

@@ -3,12 +3,11 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import type { AlignEagerness, AlignStyle } from "./align-settings.ts";
-import { DESIGN_INSTRUCTIONS } from "./design-guide.ts";
 
-export type MinorMode = "align" | "spec" | "vis" | "memory" | "design";
+export type MinorMode = "align" | "spec" | "vis" | "memory";
 
 /** Registry order: the canonical order for state, status, and prompt composition. */
-export const MINOR_MODES: readonly MinorMode[] = ["align", "spec", "vis", "memory", "design"];
+export const MINOR_MODES: readonly MinorMode[] = ["align", "spec", "vis", "memory"];
 
 export function isMinorMode(value: unknown): value is MinorMode {
 	return typeof value === "string" && (MINOR_MODES as readonly string[]).includes(value);
@@ -17,9 +16,8 @@ export function isMinorMode(value: unknown): value is MinorMode {
 export const MINOR_DESCRIPTIONS: Record<MinorMode, string> = {
 	align: "Align with the user on what to build (architecture, UX, scope) before building",
 	spec: "Scope work from the project's .sova/spec documentation, propose changes in drafts, and promote them once implemented",
-	vis: "Draw small inline visuals (vis fences: flow, sequence, tree, timeline, chart, …) when a picture explains faster than prose",
+	vis: "Draw small inline visuals (vis fences: flow, sequence, tree, timeline, chart, …) when a picture explains faster than prose, and Lookbooks when asked: one page from several models, side by side",
 	memory: "Endless chat: the model works from a summary of the whole chat and opens any part of it word for word",
-	design: "Send one-page prototypes out to hidden design sessions on several models, drawn live in the chat",
 };
 
 /**
@@ -34,7 +32,6 @@ export const MINOR_WORKER: Record<MinorMode, boolean> = {
 	spec: true,
 	vis: false,
 	memory: false,
-	design: false,
 };
 
 /**
@@ -50,7 +47,6 @@ export const MINOR_SURFACES: Record<MinorMode, "everywhere" | "web"> = {
 	spec: "everywhere",
 	vis: "everywhere",
 	memory: "web",
-	design: "web",
 };
 
 /** The minor modes only Sova's menu turns on, in registry order. */
@@ -103,7 +99,6 @@ export const MINOR_PROMPTLESS: Record<MinorMode, boolean> = {
 	vis: false,
 	// Its guide rides its own view message (Sova's memory engine), never the mode section or a note.
 	memory: true,
-	design: false,
 };
 
 /** The minor modes of `minorModes` that carry a prompt block, in their order. */
@@ -249,12 +244,12 @@ export const VIS_FILES: Readonly<Record<string, string>> = Object.fromEntries(
 );
 
 /** Fence kind words only. Tool-backed catalogue entries have separate workflow guides. */
-export const VIS_TOOL_ENTRIES: readonly string[] = ["tour"];
+export const VIS_TOOL_ENTRIES: readonly string[] = ["tour", "lookbook"];
 /**
  * On-demand parts of a tool-backed entry's guide: `vis_guide` returns one by its name, alone. They are
  * never listed in the prompt's catalogue (the entry's core names them) and are no fence kind.
  */
-export const VIS_TOOL_PARTS: readonly string[] = ["tour-signin", "tour-sites", "tour-sova", "tour-sharing"];
+export const VIS_TOOL_PARTS: readonly string[] = ["tour-signin", "tour-sites", "tour-sova", "tour-sharing", "lookbook-setup", "lookbook-directions", "lookbook-passing-on"];
 export const VIS_KIND_FILES: Readonly<Record<string, string>> = Object.fromEntries(
 	Object.keys(VIS_FILES)
 		.filter((name) => name !== "overview" && name !== "shared" && !VIS_TOOL_ENTRIES.includes(name) && !VIS_TOOL_PARTS.includes(name))
@@ -302,7 +297,6 @@ const MINOR_INSTRUCTIONS: Record<MinorMode, string> = {
 	vis: VIS_INSTRUCTIONS,
 	// Promptless (MINOR_PROMPTLESS): never composed.
 	memory: "",
-	design: DESIGN_INSTRUCTIONS,
 };
 
 /** One minor mode's block; align's carries its style and Visuals paragraphs (buildAlignPrompt). */

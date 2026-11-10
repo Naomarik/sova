@@ -370,7 +370,7 @@ test("vis_guide: the tour core opens hands-off, looks before it rehearses, and n
 });
 
 test("spec: a registered minor mode, composed after align and never bridged", () => {
-	assert.deepEqual(MINOR_MODES, ["align", "spec", "vis", "memory", "design"], "registry order is prompt and status order");
+	assert.deepEqual(MINOR_MODES, ["align", "spec", "vis", "memory"], "registry order is prompt and status order");
 	assert.deepEqual(Object.keys(MINOR_DESCRIPTIONS), [...MINOR_MODES], "one description per minor mode, nothing else");
 	assert.deepEqual(parseMinorFlag("spec,align"), { minorModes: ["align", "spec"], unknown: [] });
 	const spec = buildMinorPrompt("spec");
@@ -417,8 +417,6 @@ test("spec: minor.ts reads its own spec-mode.md, from any cwd, and refuses a mal
 			writeFileSync(join(dir, "minor.ts"), readFileSync(join(here, "minor.ts")));
 			writeFileSync(join(dir, "spec-mode.md"), md);
 			cpSync(join(here, "vis"), join(dir, "vis"), { recursive: true });
-			cpSync(join(here, "design"), join(dir, "design"), { recursive: true });
-			writeFileSync(join(dir, "design-guide.ts"), readFileSync(join(here, "design-guide.ts")));
 			const src = `import(${JSON.stringify(pathToFileURL(join(dir, "minor.ts")).href)}).then((m) => process.stdout.write(JSON.stringify([m.buildMinorPrompt("spec"), m.SPEC_CORE_SHELL])))`;
 			return spawnSync(process.execPath, ["--input-type=module", "-e", src], { cwd: tmpdir(), encoding: "utf8" });
 		} finally {
@@ -965,8 +963,8 @@ test("modeCategoryItems: radio major modes, live minor toggles", async () => {
 	const rows = modeCategoryItems(() => state, actions);
 	assert.deepEqual(
 		rows.map((row) => row.id),
-		["mode:normal", "mode:delegate", ...MINOR_MODES.filter((minor) => MINOR_SURFACES[minor] !== "web").map((minor) => `mode:minor:${minor}`), "mode:align:view", "mode:default:save"],
-		"two major rows, then one row per minor mode but the web-only ones, then the align viewer, then save as default",
+		["mode:normal", "mode:delegate", ...MINOR_MODES.filter((minor) => minor !== "memory").map((minor) => `mode:minor:${minor}`), "mode:align:view", "mode:default:save"],
+		"two major rows, then one row per minor mode but the web-only memory, then the align viewer, then save as default",
 	);
 	const defaultRow = rows.at(-1);
 	assert.ok(defaultRow?.run && !defaultRow.toggle, "save-as-default runs, not toggles");
@@ -1118,9 +1116,9 @@ test("composePrompt takes a ModeActive, so the per-session state drives the turn
 
 // ── Workers (§chat.mode-menu/workers) ────────────────────────────────────────
 
-test("MINOR_SURFACES: memory and design are web-only, and only the server's hook for that session turns it on", () => {
+test("MINOR_SURFACES: memory alone is web-only, and only the server's hook for that session turns it on", () => {
 	assert.deepEqual(Object.keys(MINOR_SURFACES).sort(), [...MINOR_MODES].sort());
-	assert.deepEqual(WEB_ONLY_MINOR_MODES, ["memory", "design"]);
+	assert.deepEqual(WEB_ONLY_MINOR_MODES, ["memory"]);
 	assert.equal(MINOR_WORKER.memory, false, "workers never get memory");
 	assert.equal(MINOR_PROMPTLESS.memory, true, "its guide rides its view message, never the mode section");
 	assert.deepEqual(Object.keys(MINOR_PROMPTLESS), [...MINOR_MODES], "every minor mode decides");

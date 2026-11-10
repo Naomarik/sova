@@ -14,7 +14,6 @@ const MINOR_ICONS: Record<string, IconName> = {
   spec: "mode-spec",
   vis: "mode-vis",
   memory: "mode-memory",
-  design: "mode-design",
 };
 
 /** A major mode's glyph: its own icon, else (normal, or one this build doesn't know) the sliders. */

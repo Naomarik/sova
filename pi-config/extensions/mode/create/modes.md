@@ -48,7 +48,7 @@ A project mode lives in the checkout, so a chat in a worktree sees its own branc
 ## A project mode with instructions only
 
 - Change: instructions and reference files a project ships, switched on per chat.
-- Lives: `<project>/.sova/minor-modes/<id>/MODE.md`, with reference files beside it. The id takes lowercase letters, digits and hyphens, starts with a letter, runs to 30 characters at most, and can't be `align`, `spec`, `vis`, `memory` or `design`.
+- Lives: `<project>/.sova/minor-modes/<id>/MODE.md`, with reference files beside it. The id takes lowercase letters, digits and hyphens, starts with a letter, runs to 30 characters at most, and can't be `align`, `spec`, `vis` or `memory`.
 - Approves: nobody: a mode with no tools, commands or hooks needs no approval. Someone still has to turn it on in each chat.
 - By: Land or Card. Card for `MODE.md` alone; Land when it has reference files.
 - Live: after landing, or at once in the worktree of its branch: the mode menu reads the files each time it opens. Once on, the next reply.

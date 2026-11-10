@@ -1,36 +1,19 @@
 /**
- * The design minor mode's text, read once at load from design/ beside this module: the always-paid
- * prompt block (overview.md), the `design_guide` topics, the 20 directions, a design session's system
- * prompt and the coordinator's. Node builtins only: the server imports it, and serves `design_guide`
- * itself. HTML comments (owner notes) never reach a model. A missing file or a malformed direction
- * line fails at load.
+ * The Lookbook's text Sova itself reads, once at load: the 20 directions (vis/lookbook-directions.md,
+ * also a `vis_guide` part), a design session's system prompt and the coordinator's (design/ beside this
+ * module). The main chat's guide is vis's: `vis_guide {kind:"lookbook"}` and its parts (minor.ts
+ * VIS_TOOL_ENTRIES / VIS_TOOL_PARTS). Node builtins only: the server imports it. HTML comments (owner
+ * notes) never reach a model. A missing file or a malformed direction line fails at load.
  */
 
 import { readFileSync } from "node:fs";
 
 const DIR = new URL("./design/", import.meta.url);
+const VIS_DIR = new URL("./vis/", import.meta.url);
 
 /** Owner notes out, ends trimmed: the text a model reads. */
-function modelText(name: string): string {
-	return readFileSync(new URL(name, DIR), "utf8").replace(/<!--[\s\S]*?-->\n?/g, "").trim();
-}
-
-export const DESIGN_INSTRUCTIONS = modelText("overview.md");
-
-export const DESIGN_GUIDE_TOPICS = ["setup", "directions", "passing-on"] as const;
-export type DesignGuideTopic = (typeof DESIGN_GUIDE_TOPICS)[number];
-
-const TOPICS: Record<DesignGuideTopic, string> = {
-	setup: modelText("setup.md"),
-	directions: modelText("directions.md"),
-	"passing-on": modelText("passing-on.md"),
-};
-
-/** What `design_guide` returns: a topic's file, or with no topic the index of topics. */
-export function designGuide(topic?: string): string {
-	if (topic === undefined || topic === "") return `Design guide topics: ${DESIGN_GUIDE_TOPICS.join(", ")}.`;
-	if (!(DESIGN_GUIDE_TOPICS as readonly string[]).includes(topic)) throw new Error(`No design guide topic "${topic}". Topics: ${DESIGN_GUIDE_TOPICS.join(", ")}.`);
-	return TOPICS[topic as DesignGuideTopic];
+function modelText(name: string, dir: URL = DIR): string {
+	return readFileSync(new URL(name, dir), "utf8").replace(/<!--[\s\S]*?-->\n?/g, "").trim();
 }
 
 export interface DesignDirection {
@@ -44,15 +27,15 @@ function parseDirections(md: string): DesignDirection[] {
 		.filter((line) => line.startsWith("- "))
 		.map((line) => {
 			const parts = /^- ([^:]+): (.+)$/.exec(line);
-			if (!parts) throw new Error(`design/directions.md: malformed line: ${line}`);
+			if (!parts) throw new Error(`vis/lookbook-directions.md: malformed line: ${line}`);
 			return { name: parts[1]!, definition: parts[2]! };
 		});
-	if (directions.length !== 20) throw new Error(`design/directions.md: expected 20 directions, found ${directions.length}`);
+	if (directions.length !== 20) throw new Error(`vis/lookbook-directions.md: expected 20 directions, found ${directions.length}`);
 	return directions;
 }
 
 /** The 20 directions, in the Setup card's order. */
-export const DESIGN_DIRECTIONS: readonly DesignDirection[] = parseDirections(TOPICS.directions);
+export const DESIGN_DIRECTIONS: readonly DesignDirection[] = parseDirections(modelText("lookbook-directions.md", VIS_DIR));
 
 /** The sets of 3 directions Setup starts from, one chosen at random. */
 export const DESIGN_DEFAULT_DIRECTION_SETS: readonly (readonly string[])[] = [

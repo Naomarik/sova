@@ -53,7 +53,7 @@ does the Overseer's own chat.
 
 The folder's name is the mode's id: lowercase letters, digits and hyphens, starting with a letter,
 at most 30 characters. It can't be the name of a built-in minor mode (`align`, `spec`, `vis`,
-`memory`, `design`); a folder with one of those names is listed as broken and never replaces the
+`memory`); a folder with one of those names is listed as broken and never replaces the
 built-in.
 
 ## The mode file

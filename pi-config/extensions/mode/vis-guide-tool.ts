@@ -12,10 +12,10 @@ import { VIS_GUIDE_NAMES, VIS_OWN_KINDS_HOOK, visGuide } from "./minor.ts";
 export const VIS_GUIDE_TOOL = "vis_guide";
 
 export const VIS_GUIDE_DESCRIPTION =
-	"Look up one vis catalogue entry before using it: a drawing kind returns shared rules then its syntax/examples; tour returns the core of the tool-backed tour workflow (not a fence); tour-signin, tour-sites, tour-sova and tour-sharing return the parts it names. html and svg share one guide.";
+	"Look up one vis catalogue entry before using it: a drawing kind returns shared rules then its syntax/examples; tour and lookbook each return the core of their tool-backed workflow (not a fence); tour-signin, tour-sites, tour-sova, tour-sharing, lookbook-setup, lookbook-directions and lookbook-passing-on return the parts the cores name. html and svg share one guide.";
 
 export const VIS_GUIDE_PARAMETERS = Type.Object(
-	{ kind: StringEnum(VIS_GUIDE_NAMES, { description: "The drawing kind or tool-backed tour entry, as the vis minor mode lists it, or a part the tour guide names" }) },
+	{ kind: StringEnum(VIS_GUIDE_NAMES, { description: "The drawing kind or tool-backed entry (tour, lookbook), as the vis minor mode lists it, or a part its guide names" }) },
 	{ additionalProperties: false },
 );
 
@@ -63,7 +63,7 @@ function visGuideTool(own: readonly OwnVisKind[]) {
 		// No promptSnippet or guidelines: those would put the tool in the system prompt, and turning vis on
 		// or off would rewrite it, which a minor toggle must never do. The vis block names the tool.
 		parameters: own.length
-			? Type.Object({ kind: StringEnum(names, { description: "The drawing kind or tool-backed tour entry, as the vis minor mode lists it, a part the tour guide names, or one of this chat's own kinds" }) }, { additionalProperties: false })
+			? Type.Object({ kind: StringEnum(names, { description: "The drawing kind or tool-backed entry (tour, lookbook), as the vis minor mode lists it, a part its guide names, or one of this chat's own kinds" }) }, { additionalProperties: false })
 			: VIS_GUIDE_PARAMETERS,
 		async execute(_id: string, params: { kind: unknown }) {
 			const kind = String(params.kind);

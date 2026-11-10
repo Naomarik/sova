@@ -2,10 +2,10 @@ import type { TranscriptItem } from "../../shared/protocol";
 import type { LiveTool } from "./live";
 import { resultDetails, toolResultView } from "./message";
 
-/** The tool whose result anchors a Design card in the transcript. */
-export const DESIGN_TOOL = "design";
+/** The tool whose result anchors a Lookbook card in the transcript. */
+export const DESIGN_TOOL = "lookbook";
 
-/** What a `design` result carries when it stands for a card: only which run. */
+/** What a `lookbook` result carries when it stands for a card: only which run. */
 export interface DesignCardDetails {
   runId: string;
 }

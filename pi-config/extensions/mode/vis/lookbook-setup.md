@@ -1,11 +1,11 @@
-# Design: filling in Setup
+# lookbook-setup: filling in Setup
 
-`design` with `{"op":"start", …}` puts a Setup card in the chat and returns its id. Every field is optional and the user can change all of them on the card, so write down only what they said.
+`lookbook` with `{"op":"start", …}` puts a Setup card in the chat and returns its id. Every field is optional and the user can change all of them on the card, so write down only what they said.
 
 - `brief`: what to design, in the user's words (the card's What Do You Want to Design box). A screen, an address, a project, or a new idea.
 - `modelGroups`: whole groups the user named, resolved by Sova: "ollama-cloud" for "all Ollama", "claude" for "all Claude". Use these rather than listing models.
 - `models`: particular models the user named, as ids.
-- `directions`: direction names from the `directions` topic, when the user named or clearly described some.
+- `directions`: style names from `lookbook-directions`, when the user named or clearly described some.
 - `coordinator`: the model id, only when the user named one to coordinate.
 
 Models the user has barred for workers in Settings never appear, whatever you ask for.

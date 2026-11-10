@@ -1,6 +1,6 @@
-# Design: reading and passing on
+# lookbook-passing-on: reading and passing on
 
-Designs have stable labels (A, B, C, …, Z, AA) and refined versions (A2). Everything below goes through the `design` tool.
+Designs have stable labels (A, B, C, …, Z, AA) and refined versions (A2). Everything below goes through the `lookbook` tool.
 
 ## Reading
 

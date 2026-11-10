@@ -339,8 +339,8 @@ export interface DesignCaps {
   concurrent: number;
 }
 
-/** The main chat's tool whose result anchors a Design card. */
-export const DESIGN_TOOL = "design";
+/** The main chat's tool whose result anchors a Lookbook card. */
+export const DESIGN_TOOL = "lookbook";
 
 /** What a `design` result's details say when it put a card in the chat. */
 export const isDesignCardDetails = (v: unknown): v is { designCard: { runId: string } } => typeof (v as { designCard?: { runId?: unknown } } | null | undefined)?.designCard?.runId === "string";

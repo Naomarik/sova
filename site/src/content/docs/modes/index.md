@@ -23,7 +23,6 @@ The **major mode** is one of three:
 | [spec](/docs/modes/spec/) | The agent works from the project's spec: it reads the claims a task touches, and proposes changes in drafts. | Yes |
 | [vis](/docs/modes/vis/) | The agent can draw small diagrams and charts in its replies. | No |
 | [memory](/docs/modes/memory/) | A cheap model folds the chat's messages into one-line summaries, and the model opens any of them back to the original message with its `zoom` tool, so a chat can outgrow its context. The transcript you read never changes. Only Sova's mode menu turns it on. | No |
-| [design](/docs/modes/design/) | The chat sends one-page prototypes out to hidden sessions on several models, and they draw live in the chat and the Gallery tab. Only Sova's mode menu turns it on. | No |
 
 A project can also ship minor modes of its own, with instructions and its own command-line tools,
 in its `.sova/minor-modes/` folder. Chats in that project list them in their own group, and none is
@@ -48,7 +47,7 @@ Press it to open the menu. It has these groups:
   the chat and keeps the menu open. Delegate's row has a gear, **Configure Delegate**, that opens Settings → Profiles without
   switching anything, so you can set Delegate up before you turn it on. Create's row has the same
   gear, **Configure Create**, since Create shares Delegate's settings. A gathering chat has no Create row.
-- **Minor modes**: align, spec, vis, memory and design, each with its description. Toggling one
+- **Minor modes**: align, spec, vis and memory, each with its description. Toggling one
   keeps the menu open, so you can set several. Spec's row has a gear too, **Configure Spec**, that
   opens Settings → Profiles at its spec writer section. Memory is the last row, listed only in a
   chat whose runtime can run it; its row has a chevron, **Memory type**, that opens a panel to

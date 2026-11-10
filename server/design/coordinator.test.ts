@@ -455,6 +455,30 @@ test("a page's colors and fonts are notes on the brief and reach the designers; 
   assert.match(log.launches[0]!.brief, /^P\n\nColors and fonts of https:\/\/example\.test\/pricing, as notes[^\n]*\nNavy and Inter\.$/);
 });
 
+test("an older brief left open by earlier code is stopped at its Start, with the reason, instead of a bare refusal", async () => {
+  const older = runWith(2, 3);
+  await ready(older);
+  const newer = runWith(2, 3);
+  changeDesigns(parent.sessionId, (s) => void s.runs.push(newer));
+  await startCoordinator(parent, newer, "/cwd");
+  changeDesigns(parent.sessionId, (s) => void Object.assign(s.runs.find((r) => r.id === older.id)!, { phase: "brief", error: undefined }));
+  await assert.rejects(startBrief(parent, older.id, { rev: brief(older.id).rev, confirmSpend: false }), /replaced this one/);
+  assert.equal(runOf(parent.sessionId, older.id)!.phase, "stopped");
+});
+
+test("a newer run's brief stops an older one that hadn't started, and says so on its card", async () => {
+  const older = runWith(2, 3);
+  await ready(older);
+  const newer = runWith(2, 3);
+  changeDesigns(parent.sessionId, (s) => void s.runs.push(newer));
+  await startCoordinator(parent, newer, "/cwd");
+  const was = runOf(parent.sessionId, older.id)!;
+  assert.equal(was.phase, "stopped");
+  assert.match(was.error!, /newer run's brief replaced this one/);
+  await assert.rejects(startBrief(parent, older.id, { rev: was.brief!.rev, confirmSpend: false }), /newer run's brief replaced this one/);
+  assert.equal(log.launches.length, 0);
+});
+
 test("Not This Screen sends the user's words on, clears the screen, and an address in them counts as theirs", async () => {
   const run = runWith(2, 3);
   const t = await started(run);

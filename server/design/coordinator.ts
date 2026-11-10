@@ -251,6 +251,7 @@ export function reattachCoordinators(): void {
     const st = load(sid);
     if (!st) continue;
     try {
+      supersedeOpenRuns(sid, st.runId);
       follow(st);
       setCoordinator(sid, viewFor(st));
       refreshLooks({ sessionId: sid, path: st.parentPath }, st);
@@ -359,6 +360,20 @@ function firstMessage(run: DesignRun): string {
   return [`What the user wants to design, as they left it on the Setup card:\n${run.setup.brief}`, ...(links.length ? [`Links, and how each is used:\n${links.join("\n")}`] : []), `Models that will design: ${designers.join(", ") || "none"}.`, `Directions: ${directions.join(", ") || "none"}.`, `That is ${designers.length * directions.length} designs. Your run's id is ${run.id}. Prepare the Design Brief; the designs start only when the user presses Start on it.`].join("\n\n");
 }
 
+/** One coordinator works on one brief: a run still being prepared or waiting on its brief stops when a newer one starts,
+    and its card says why rather than offering a Start that can't work. */
+function supersedeOpenRuns(sessionId: string, newer: string): void {
+  changeDesigns(sessionId, (s) => {
+    for (const r of s.runs) {
+      if (r.id === newer || (r.phase !== "researching" && r.phase !== "brief")) continue;
+      r.phase = "stopped";
+      r.error = "A newer run's brief replaced this one, so it wasn't started. Use the newer card.";
+      delete r.imagesBusy;
+      r.updatedAt = new Date().toISOString();
+    }
+  });
+}
+
 /** Start Coordinator: one per chat, started here; a later run hands the same session the new Setup. */
 export async function startCoordinator(parent: BrowseParent, run: DesignRun, cwd: string): Promise<DesignCoordinatorView> {
   const choice = run.setup.models.find((m) => m.coordinator);
@@ -367,6 +382,7 @@ export async function startCoordinator(parent: BrowseParent, run: DesignRun, cwd
   if (denied) throw new Error(denied);
   const p = ports();
   const known = load(parent.sessionId);
+  supersedeOpenRuns(parent.sessionId, run.id);
   if (known && p.workers(parent).state(known.chatId) !== "ended") {
     known.runId = run.id;
     known.briefNudged = false;
@@ -448,9 +464,12 @@ function changeBrief<T>(st: CoordinatorState, fn: (b: DesignBrief, run: DesignRu
 function openBrief(parent: BrowseParent, runId: string): { st: CoordinatorState; run: DesignRun & { brief: DesignBrief } } {
   const st = mine(parent);
   const run = runOf(parent.sessionId, runId);
-  if (!run || run.id !== st.runId || !run.brief) throw new BriefRefused("This run has no brief to change.");
-  if (run.phase !== "brief") throw new BriefRefused("This brief was frozen when the designs started.");
-  return { st, run: run as DesignRun & { brief: DesignBrief } };
+  if (run && run.id !== st.runId && (run.phase === "brief" || run.phase === "researching")) supersedeOpenRuns(parent.sessionId, st.runId);
+  const now = runOf(parent.sessionId, runId);
+  if (now?.phase === "stopped") throw new BriefRefused(now.error ?? "This run was stopped before it started.");
+  if (!now || now.id !== st.runId || !now.brief) throw new BriefRefused("This run has no brief to change.");
+  if (now.phase !== "brief") throw new BriefRefused("This brief was frozen when the designs started.");
+  return { st, run: now as DesignRun & { brief: DesignBrief } };
 }
 
 /** The coordinator couldn't be reached: Start says so rather than waiting on a turn that isn't coming. */

@@ -2,6 +2,7 @@ import type { SessionFeedMessage, SessionMarks, SessionSummary } from "../shared
 import { randomBytes } from "node:crypto";
 import { rowEntry, rowsDigest } from "../src/lib/summary-diff";
 import { attentionChanged } from "./attention-memo";
+import { listInputsMoved } from "./list-generation";
 
 /**
  * The session feed: WS /ws/watch?feed=sessions (shared/protocol.ts SessionFeedMessage). The server
@@ -420,6 +421,7 @@ export function sessionFeed(): SessionFeed | null {
 
 /** A store changed or a pane attached: re-diff soon. Safe before configuration and in tests. */
 export function nudgeMarks(): void {
+  listInputsMoved();
   shared?.nudge();
 }
 

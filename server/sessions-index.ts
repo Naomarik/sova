@@ -2,7 +2,7 @@ import { PROFILE_ENTRY, type ProfileEntryData } from "../shared/profiles";
 import { removeOutputFiles } from "./shell-output";
 import { keptLabels, redactPreviewLinks, redactPreviewLinksDeep } from "./preview-kept";
 import { profileField, profileOnBranch } from "./session-profile";
-import { type Dirent, statSync } from "node:fs";
+import { type Dirent, readdirSync, statSync } from "node:fs";
 import { type FileHandle, lstat, open, readdir, stat, unlink } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import { OVERSEER_ENTRY, type SessionSummary, type SessionTags } from "../shared/protocol";
@@ -33,8 +33,8 @@ import { readDecisionSettings } from "./decide-settings";
 import { readSignals, settleGoAsk, type SignalsFile, signalsOverlay } from "./signals-store";
 import { withOpenOffer } from "./session-offers";
 import { dropSessionTags, tagsFor, tagsReader } from "./session-tags";
-import { askTreesOf, branchesOverlay, pruneReadiness, readinessOverlay } from "./merge-readiness";
-import { listGeneration } from "./list-generation";
+import { askTreesOf, branchesOverlay, pruneReadiness, readinessDue, readinessOverlay } from "./merge-readiness";
+import { listGeneration, rowChangedSince, rowChangeSeq, storesGeneration } from "./list-generation";
 import { projectOf, projectOverseerOfPath, readPoState } from "./project-overseer-store";
 import { memoSovaChatNames, readSovaChatNames, setSovaChatName, type SovaChatName } from "./sova-chat-names";
 import { rebuildSovaName } from "./sova-chat-origin";
@@ -51,7 +51,8 @@ import { removeDesignFiles } from "./design/store";
 import { byActivity } from "../src/lib/summary-diff";
 import { queueChatRole } from "../shared/merge-queue";
 import { opTrack } from "./stall-recorder";
-import { runningJobCount } from "./background-jobs";
+import { jobsDir, runningJobCount } from "./background-jobs";
+import { stateRoot } from "./state-root";
 
 /**
  * What another layer adds to the list (organizations: a baton session's `baton`, an org session's `org`), and
@@ -1207,18 +1208,172 @@ let listStamp = 0;
 
 /** All sessions, newest activity first, with fresh live presence merged in. Callers share a build
     that is running or started less than LIST_REUSE_MS ago, unless something in this process changed
-    since it started (server/list-generation.ts). Each caller gets its own array; rows are shared
-    and never mutated. */
+    since it started (server/list-generation.ts). Past that, the last build's list stands while
+    nothing it read has moved (keptOrBuilt), and a build keeps each row whose inputs stand.
+    Each caller gets its own array; rows are shared and never mutated. */
 export function listSessions(): Promise<SessionSummary[]> {
   let l = handOut();
   if (!l) {
-    const mine: Listing = { generation: listGeneration(), startedAt: Date.now(), stamp: ++listStamp, built: buildSessions() };
+    const mine: Listing = { generation: listGeneration(), startedAt: Date.now(), stamp: ++listStamp, built: keptOrBuilt() };
     listing = l = mine;
     mine.built.catch(() => {
       if (listing === mine) listing = null;
     });
   }
   return l.built.then((b) => [...b.rows]);
+}
+
+/** How long a listing's rows are kept while nothing they read has moved, from the build that last
+    built every row: past it every row is built again (§app.session-list/listing-reuse). */
+export const LIST_KEEP_MS = 15_000;
+
+/** Store files a row reads, by name under the state root: written by another process (another
+    server on the same stores), a change shows by its stat. This server's own writes bump the list
+    generation as well. */
+const ROW_STORES = [
+  "archived-sessions.json",
+  "session-titles.json",
+  "seen.json",
+  "drafts.json",
+  "session-groups.json",
+  "session-tags.json",
+  "signals.json",
+  "sova-chat-names.json",
+  "decisions.json",
+  "orgs.json",
+  "overseer-state.json",
+  "web-sessions.json",
+  "preview-kept.json",
+];
+/** A store read through a short read cache (seen, tags, signals: 1 s) may answer from before a
+    write this recent: a stamp taken then is never matched. */
+const STORE_SETTLE_MS = 2_000;
+let unsettled = 0;
+
+/**
+ * What a row reads from outside this process, besides session files and live records, as one
+ * comparable string: each row store's stat, each chat's background-jobs folder (job records are
+ * written whole, so a folder's mtime moves with each), and whether a model runtime answers context
+ * windows. One taken while a store was just written matches nothing.
+ */
+function outsideStamp(runtime: boolean, now = Date.now()): string {
+  const parts: string[] = [runtime ? "rt" : "-"];
+  const root = stateRoot();
+  for (const name of ROW_STORES) {
+    const st = statSafe(join(root, name));
+    if (st && now - st.mtimeMs < STORE_SETTLE_MS) return `unsettled ${++unsettled}`;
+    parts.push(st ? `${st.mtimeMs}:${st.size}` : "-");
+  }
+  const jobs = jobsDir();
+  let names: Dirent[] = [];
+  try {
+    names = readdirSync(jobs, { withFileTypes: true });
+  } catch {
+    // no jobs yet
+  }
+  for (const d of names) {
+    if (!d.isDirectory()) continue;
+    const st = statSafe(join(jobs, d.name));
+    parts.push(`${d.name}:${st ? st.mtimeMs : "-"}`);
+  }
+  return parts.join("\n");
+}
+
+function statSafe(p: string): { mtimeMs: number; size: number } | null {
+  try {
+    return statSync(p);
+  } catch {
+    return null;
+  }
+}
+
+/** What a row reads of its file's live records (readLive's and this server's own), "" for none. */
+function liveKeyOf(l: LiveRecord | undefined, own: RawLiveRecord | undefined): string {
+  if (!l && !own) return "";
+  return JSON.stringify([l ?? null, own ? [activityOf(own.rec) ?? null, workerCountsOf(own.rec) ?? null, own.rec?.presence?.outline ?? null] : null]);
+}
+
+function liveKeys(live: Map<string, LiveRecord>, own: Map<string, RawLiveRecord>): Map<string, string> {
+  const out = new Map<string, string>();
+  for (const p of new Set([...live.keys(), ...own.keys()])) out.set(p, liveKeyOf(live.get(p), own.get(p)));
+  return out;
+}
+
+function sameMap<K, V>(a: ReadonlyMap<K, V>, b: ReadonlyMap<K, V>): boolean {
+  if (a.size !== b.size) return false;
+  for (const [k, v] of a) if (b.get(k) !== v) return false;
+  return true;
+}
+
+/** What one build read, for the next one to compare (row reuse in buildSessionsNow, the kept listing). */
+interface BuildMark {
+  /** storesGeneration() and rowChangeSeq() at the build's start. */
+  stores: number;
+  rowSeq: number;
+  outside: string;
+  /** Each listed file's (mtime, size) as its row was read. */
+  files: Map<string, string>;
+  live: Map<string, string>;
+  parents: WorkerParents;
+  workers: ReadonlySet<string>;
+  /** When the build that last built every row started. */
+  fullAt: number;
+}
+let lastMark: BuildMark | null = null;
+
+/** The last listSessions build, while it may stand for a further one: its rows, its file set, and
+    every file's stat as its build started. */
+let kept: { rows: SessionSummary[]; files: string[]; stats: Map<string, string>; mark: BuildMark } | null = null;
+
+const statKey = (st: { mtimeMs: number; size: number } | null | undefined): string => (st ? `${st.mtimeMs}:${st.size}` : "-");
+
+/** Every listed file's stat, now. */
+async function fileStats(files: readonly string[]): Promise<Map<string, string>> {
+  const out = new Map<string, string>();
+  await Promise.all(
+    files.map(async (p) => {
+      listIo.stats++;
+      out.set(p, statKey(await stat(p).catch(() => null)));
+    }),
+  );
+  return out;
+}
+
+/** Listings answered by a kept listing (tests, measurement). */
+export const keptStats = { kept: 0, rowsKept: 0, rowsBuilt: 0, misses: {} as Record<string, number> };
+
+/**
+ * listSessions' build: the kept listing when nothing it read has moved since its build started
+ * (no bump but this server's session file writes, every listed file's stat, the live records a
+ * row reads, the row stores and job folders, the worker parents), else a fresh build.
+ */
+async function keptOrBuilt(): Promise<{ rows: SessionSummary[]; files: string[] }> {
+  const k = kept;
+  const now = Date.now();
+  const files = await listSessionFiles();
+  const stats = await fileStats(files);
+  if (
+    k &&
+    k.mark.stores === storesGeneration() &&
+    now >= k.mark.fullAt &&
+    now - k.mark.fullAt < LIST_KEEP_MS &&
+    rowChangeSeq() === k.mark.rowSeq &&
+    sameMap(stats, k.stats) &&
+    k.mark.outside === outsideStamp(!!(await windowResolver())) &&
+    sameMap(liveKeys(readLive(), readOwnLiveRecords()), k.mark.live) &&
+    workerSessions.parents() === k.mark.parents &&
+    // Nothing bumped while this was compared.
+    k.mark.stores === storesGeneration() &&
+    rowChangeSeq() === k.mark.rowSeq
+  ) {
+    keptStats.kept++;
+    // What a build would set off: a readiness read due by age or by its trees' Git stamps.
+    readinessDue(k.rows);
+    return { rows: k.rows, files: k.files };
+  }
+  const b = await buildSessions({ files });
+  kept = { rows: b.rows, files: b.files, stats, mark: b.mark };
+  return b;
 }
 
 /** The listing listSessions hands out now without starting a build, or null. */
@@ -1522,13 +1677,13 @@ async function zeroInputOf(path: string): Promise<boolean> {
   return !!st && (await isZeroInput(path, st.size));
 }
 
-/** Every row. `track`: the file set to list and the files that may have changed since the cached
-    summaries were read (only those are stat'ed and read); without it every folder is read and
-    every file stat'ed. Returns the rows and the file set they came from. */
 /** Listings built, of either kind (tests, measurement). */
 export const listStats = { builds: 0 };
 
-function buildSessions(track?: { files: string[]; dirty: ReadonlySet<string> }): Promise<{ rows: SessionSummary[]; files: string[] }> {
+/** Every row. `files`: the file set to list (else every folder is read); `dirty`: the files that may
+    have changed since the cached summaries were read (only those are stat'ed and read; without it
+    every file is stat'ed). Returns the rows, the file set they came from and what the build read. */
+function buildSessions(track?: { files: string[]; dirty?: ReadonlySet<string> }): Promise<{ rows: SessionSummary[]; files: string[]; mark: BuildMark }> {
   listStats.builds++;
   return opTrack("buildSessions", () => buildSessionsNow(track), (b) => b.rows.length);
 }
@@ -1548,26 +1703,41 @@ interface RowReads {
   stores: { tags: (id: string) => SessionTags | undefined; signals: SignalsFile };
   previewLabels: ReturnType<typeof keptLabels>;
   isWorker: (path: string) => boolean;
-  parents: Pick<WorkerParents, "workerOf">;
+  parents: WorkerParents;
 }
 
 function rowReads(isWorker: (path: string) => boolean): RowReads {
+  // The stores are read once, when a row is first built: a build that keeps every row reads none.
+  type Stores = Omit<RowReads, "live" | "own" | "isWorker" | "parents">;
+  let stores: Stores | null = null;
+  const read = (): Stores =>
+    (stores ??= {
+      drafts: readDrafts(),
+      titles: readSessionTitleRecords(),
+      sovaNames: readSovaChatNames(),
+      groups: readAssignments(),
+      seen: readSeen(),
+      attention: readDecisionSettings().features.attention,
+      fields: fieldLookup(),
+      stores: { tags: tagsReader(), signals: readSignals() },
+      // A kept preview link never reaches the list (§app.project-overseer/previews): a title or summary line
+      // that holds one (the overseer saw it in its tool result) shows "[preview link]" in its place.
+      previewLabels: keptLabels(),
+    });
   return {
     live: readLive(),
     own: readOwnLiveRecords(),
-    drafts: readDrafts(),
-    titles: readSessionTitleRecords(),
-    sovaNames: readSovaChatNames(),
-    groups: readAssignments(),
-    seen: readSeen(),
-    attention: readDecisionSettings().features.attention,
-    fields: fieldLookup(),
-    stores: { tags: tagsReader(), signals: readSignals() },
-    // A kept preview link never reaches the list (§app.project-overseer/previews): a title or summary line
-    // that holds one (the overseer saw it in its tool result) shows "[preview link]" in its place.
-    previewLabels: keptLabels(),
     isWorker,
     parents: workerSessions.parents(),
+    get drafts() { return read().drafts; },
+    get titles() { return read().titles; },
+    get sovaNames() { return read().sovaNames; },
+    get groups() { return read().groups; },
+    get seen() { return read().seen; },
+    get attention() { return read().attention; },
+    get fields() { return read().fields; },
+    get stores() { return read().stores; },
+    get previewLabels() { return read().previewLabels; },
   };
 }
 
@@ -1628,9 +1798,14 @@ async function rowFor(s: BaseSummary, r: RowReads): Promise<SessionSummary | nul
   return redactPreviewLinksDeep(settled.row, r.previewLabels);
 }
 
-async function buildSessionsNow(track?: { files: string[]; dirty: ReadonlySet<string> }): Promise<{ rows: SessionSummary[]; files: string[] }> {
+async function buildSessionsNow(track?: { files: string[]; dirty?: ReadonlySet<string> }): Promise<{ rows: SessionSummary[]; files: string[]; mark: BuildMark }> {
+  const startedAt = Date.now();
+  // Taken before anything is read: a change after it shows in the next build's comparison.
+  const stores = storesGeneration();
+  const rowSeq = rowChangeSeq();
   const files = track ? track.files : await listSessionFiles();
   const resolveWindow = await windowResolver();
+  const outside = outsideStamp(!!resolveWindow, startedAt);
   // A member whose file is gone KEEPS its assignment, on purpose: the workspace's "This
   // session's file is gone" pane IS that assignment rendered (spec 14-workspaces "Gone from
   // disk"), and pruning here — on every listing pass — would race the pane's own Remove From
@@ -1642,25 +1817,76 @@ async function buildSessionsNow(track?: { files: string[]; dirty: ReadonlySet<st
   const present = new Set(files);
   for (const k of cache.keys()) if (!present.has(k)) dropEntry(k);
   const reads = rowReads((p) => workers.has(p));
+  const live = liveKeys(reads.live, reads.own);
+  const read = new Map<string, string>();
+  for (const p of files) read.set(p, statKey(cache.get(p)));
+  // A row the last build made stands while nothing it reads has moved (§app.session-list/listing-reuse):
+  // no bump but this server's session file writes and other rows' own changes, the same row
+  // stores, job folders and worker parents, and its own file, live records and readiness as they were. Every row is built again at least
+  // every LIST_KEEP_MS; a project overseer's or baton's row, whose stores aren't compared, always.
+  const prev = lastMark;
+  const miss = !prev
+    ? "first"
+    : prev.stores !== stores
+      ? "stores"
+      : prev.outside !== outside
+        ? "outside"
+        : prev.parents !== reads.parents
+          ? "parents"
+          : !sameSet(prev.workers, workers)
+            ? "workers"
+            : startedAt < prev.fullAt || startedAt - prev.fullAt >= LIST_KEEP_MS
+              ? "age"
+              : null;
+  if (miss) keptStats.misses[miss] = (keptStats.misses[miss] ?? 0) + 1;
+  const keepRows = !miss;
   const out: SessionSummary[] = [];
+  const built = new Set<SessionSummary>();
   for (const s of results) {
     if (!s) continue;
+    const old = keepRows ? lastRows.get(s.path) : undefined;
+    if (
+      old &&
+      !old.projectOverseer &&
+      !old.baton &&
+      !rowChangedSince(s.path, prev!.rowSeq) &&
+      prev!.files.get(s.path) === read.get(s.path) &&
+      (prev!.live.get(s.path) ?? "") === (live.get(s.path) ?? "")
+    ) {
+      out.push(old);
+      continue;
+    }
     const row = await rowFor(s, reads);
-    if (row) out.push(row);
+    if (row) {
+      out.push(row);
+      built.add(row);
+    }
   }
+  keptStats.rowsKept += out.length - built.size;
+  keptStats.rowsBuilt += built.size;
+  // What building a kept row would have set off: a readiness read due by age or Git stamps.
+  readinessDue(out.filter((r) => !built.has(r)));
   pruneReadiness(out);
-  for (let i = 0; i < out.length; i++) out[i] = await withUnreadReplies(out[i]!);
+  for (let i = 0; i < out.length; i++) if (built.has(out[i]!)) out[i] = await withUnreadReplies(out[i]!);
   // A row equal to the last listing's (same keys, in order, same values) is that object itself:
   // rows are shared and never mutated, and a reader that keys work by row (the session feed's
   // comparison) does it once per change instead of once per row per listing.
   for (let i = 0; i < out.length; i++) {
-    const prev = lastRows.get(out[i]!.path);
-    if (prev && sameValue(prev, out[i])) out[i] = prev;
+    const prevRow = lastRows.get(out[i]!.path);
+    if (prevRow && prevRow !== out[i] && sameValue(prevRow, out[i])) out[i] = prevRow;
   }
   lastRows = new Map(out.map((r) => [r.path, r]));
   lastFiles = present;
+  const mark: BuildMark = { stores, rowSeq, outside, files: read, live, parents: reads.parents, workers, fullAt: keepRows ? prev!.fullAt : startedAt };
+  lastMark = mark;
   out.sort(byActivity);
-  return { rows: out, files };
+  return { rows: out, files, mark };
+}
+
+function sameSet<T>(a: ReadonlySet<T>, b: ReadonlySet<T>): boolean {
+  if (a.size !== b.size) return false;
+  for (const x of a) if (!b.has(x)) return false;
+  return true;
 }
 
 /**

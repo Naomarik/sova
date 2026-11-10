@@ -2,6 +2,7 @@
 // usage-helper child, no timers or loops. server/index.ts builds it, listens and boots everything
 // else; tests build it to drive routes through app.request() (no socket).
 import { registerJobRoutes } from "./background-jobs-routes";
+import { DEPLOY_READ_VERBS, MERGE_READ_VERBS, READ_VERBS, RELEASE_READ_VERBS } from "../shared/project-contract";
 import { chatHostHealth } from "./chat-host";
 import { holderAlive, readLock } from "./chat-runtime/writer-lock";
 import { execFileSync } from "node:child_process";
@@ -290,8 +291,10 @@ export function buildApp(deps: AppDeps) {
 
   // A request that may change something starts the next session listing afresh, before it runs and
   // again once it answered, so its caller's next listing shows the change (§app.session-list/listing-reuse).
+  // A project verb that only looks (merge.status, polled by the Merge Queue tab) is a read, however
+  // it is sent: what it does change (the queue's view) announces itself.
   app.use("*", async (c, next) => {
-    const writes = c.req.method !== "GET" && c.req.method !== "HEAD";
+    const writes = c.req.method !== "GET" && c.req.method !== "HEAD" && !lookingVerbRequest(c.req.path);
     if (writes) sessionsChanged();
     try {
       await next();
@@ -2206,3 +2209,7 @@ export function buildApp(deps: AppDeps) {
 }
 
 export type BuiltApp = ReturnType<typeof buildApp>;
+
+/** The project verbs that only look (shared/project-contract.ts), each as its POST /api/project-services/<verb>. */
+const LOOKING_VERB_PATHS = new Set([...READ_VERBS, ...MERGE_READ_VERBS, ...RELEASE_READ_VERBS, ...DEPLOY_READ_VERBS].map((v) => `/api/project-services/${v}`));
+export const lookingVerbRequest = (path: string): boolean => LOOKING_VERB_PATHS.has(path);

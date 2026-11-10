@@ -1,5 +1,6 @@
 import type { Hold, Refusal, StampContext } from "./statecharts";
 import { OrgHost, type ActResult, type HostChange, type OrgHostOptions } from "./org-host";
+import { listInputsMoved } from "./list-generation";
 import { OrgError } from "./org-error";
 import type { ActBy, Envelope } from "./org-envelope";
 import { projectOfSession, stampEnvelope, type StampWho } from "./org-stamp";
@@ -158,6 +159,8 @@ export async function openOrgHost(opts: OpenOptions): Promise<OrgHostApi> {
     self = host;
     for (const fn of openedHooks) fn(host, opts.orgId);
     host.onChange((change) => {
+      // A row's org, baton or project fields read the statecharts: no listing keeps a row past a step.
+      listInputsMoved();
       for (const fn of changeHooks)
         try {
           fn(opts.orgId, change);

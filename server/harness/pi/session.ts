@@ -494,6 +494,10 @@ export class PiHarnessSession implements HarnessSession {
     await this.s.sendCustomMessage({ customType: noteType, content: text, display: true, ...(details !== undefined ? { details } : {}) }, { triggerTurn: false });
   }
 
+  async noteIntoRun(noteType: string, text: string): Promise<void> {
+    await this.s.sendCustomMessage({ customType: noteType, content: text, display: false }, { deliverAs: "steer" });
+  }
+
   onUserMessage(claim: (input: unknown) => void): () => void {
     return watchUserMessages(this.s.agent, claim);
   }

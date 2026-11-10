@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { MergeQueueSettings } from "../../shared/merge-queue-settings";
 import { check as checkRule } from "../../shared/form-rules";
-import { changeLines, changesOf, draftHolds, draftProblem, freshChatWords, minutesTextOf, rebaseDraft, typedMinutes, checksCaption, minutes, modelWords, minutesRule, savedWords, summaryLine, toProjectDraft } from "./merge-queue-settings";
+import { deleteBranchesHint, changeLines, changesOf, draftHolds, draftProblem, freshChatWords, minutesTextOf, rebaseDraft, typedMinutes, checksCaption, minutes, modelWords, minutesRule, savedWords, summaryLine, toProjectDraft } from "./merge-queue-settings";
 
 const SHA = "97927e0c0a92041da839da63093e474719f83837";
 const check = (id: string, optional = false) => ({ id, label: id[0]!.toUpperCase() + id.slice(1), timeoutSec: 600, rerun: false, optional });
@@ -45,6 +45,21 @@ test("a save sends only what the user changed: an absent push stays absent", () 
   // Turning push off and back on is no change.
   assert.equal(changesOf({ ...d, push: true }, s, true), null);
   assert.deepEqual(changesOf({ ...d, push: false }, s, true), { push: false });
+});
+
+test("Delete branches when cleaning up: off unless the file says so; a save sends only a change of it", () => {
+  const s = settings();
+  const d = toProjectDraft(s, true);
+  assert.equal(d.deleteBranches, false, "absent reads off");
+  assert.equal(changesOf(d, s, true), null);
+  assert.deepEqual(changesOf({ ...d, deleteBranches: true }, s, true), { deleteBranches: true });
+  assert.deepEqual(changeLines({ deleteBranches: true }, s), ["Delete branches when cleaning up: on"]);
+  assert.deepEqual(changeLines({ deleteBranches: false }, s), ["Delete branches when cleaning up: off"]);
+  const on = { ...s, deleteBranches: true };
+  assert.equal(toProjectDraft(on, true).deleteBranches, true);
+  assert.deepEqual(changesOf({ ...toProjectDraft(on, true), deleteBranches: false }, on, true), { deleteBranches: false });
+  assert.match(deleteBranchesHint(false), /and keeps the branch\.$/);
+  assert.match(deleteBranchesHint(true), /then the branch\. Its last commit stays restorable\.$/);
 });
 
 test("Reuse passes from identical code: on unless the file says false; a save sends only a change of it", () => {

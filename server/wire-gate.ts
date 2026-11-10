@@ -16,7 +16,7 @@ import { meshEnabled, meshSelf } from "./mesh";
  * Judged outside the area, so not gated (each keeps working on another writing number):
  * - the session's place in the list, not its chat: /api/sessions/title, /archive, /auto-title,
  *   /shorten-titles, /cleanup, /api/session-groups (create, assign, rename, delete) and
- *   /api/worktrees/cleanup;
+ *   /api/worktrees/cleanup, /api/worktrees/restore;
  * - a draft or a file staged before a send, which writes nothing into the chat (the send itself is
  *   gated): PUT /api/sessions/draft, /api/upload, /api/attachment;
  * - what an agent or another chat does in a chat, not a page's send: /api/session-cards/post and

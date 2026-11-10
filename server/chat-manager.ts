@@ -66,7 +66,7 @@ import { cutTail, helloAfterHave, type HistoryPart, pullFields } from "./tail-he
 import { isOverseerId } from "./overseer-store";
 import { attachStreamGuard, capsFor, type StreamTrip } from "./stream-guard";
 import { targetOfCwd } from "./targets";
-import { cwdFallbackNote, probeFolder, type CwdFallback } from "./session-cwd";
+import { cwdFallbackNote, inHeldPartialFolder, probeFolder, retiredFallbackFacts, type CwdFallback } from "./session-cwd";
 import { sovaToken } from "./auth";
 import { ForeignWriteGuard, markOwned, markOwnedStat, recentForeignWriteAgeSec } from "./write-guard";
 import { monitorExtension } from "./resource-monitor";
@@ -430,13 +430,20 @@ export interface OpenCwd {
  */
 export function resolveOpenCwd(path: string, sessionCwd: string, opts: { overridden?: boolean; home?: string } = {}): OpenCwd {
   const probe = probeFolder(sessionCwd);
-  if (probe.state === "present") return { cwd: sessionCwd, fallback: null };
+  if (probe.state === "present") {
+    // What a retirement's stopped delete left: no chat runs among those files. With nowhere else to go it opens where it was.
+    const home = opts.home ?? homedir();
+    if (!opts.overridden && !targetOfCwd(sessionCwd) && home && home !== sessionCwd && probeFolder(home).state === "present" && inHeldPartialFolder(sessionCwd)) return { cwd: home, fallback: { original: sessionCwd, cwd: home, held: true } };
+    return { cwd: sessionCwd, fallback: null };
+  }
   if (probe.state === "unreachable")
     throw new ConfigError(`Stored session working directory can't be reached (${probe.code}): ${sessionCwd}\nSession file: ${path}`, sessionCwd);
   if (opts.overridden || targetOfCwd(sessionCwd)) throw goneError(path, sessionCwd);
   const home = opts.home ?? homedir();
   if (!home || home === sessionCwd || probeFolder(home).state !== "present") throw goneError(path, sessionCwd);
-  return { cwd: home, fallback: { original: sessionCwd, cwd: home } };
+  // A folder that retired says so (reading only: viewing never brings it back, §chat.worktrees/retirement).
+  const retired = retiredFallbackFacts(sessionCwd);
+  return { cwd: home, fallback: { original: sessionCwd, cwd: home, ...(retired ? { retired } : {}) } };
 }
 
 /** The cached permanent failure for `path`, if it still applies. Exported because it is the whole
@@ -3145,6 +3152,22 @@ class ChatSession {
     this.flushDeferredAppends(); // open-time entries go first, as in pinMode
     await this.harness.appendNote(customType, text, details);
     markOwned(this.path);
+    return true;
+  }
+
+  /**
+   * A hidden note for the run in progress, which a message queued behind it joins with no turn-start hook of its own: the
+   * run's next step reads the note first. False when no run is in progress (the next turn's own note hook tells the chat) or
+   * this runtime may not write.
+   */
+  async noteIntoRun(customType: string, text: string): Promise<boolean> {
+    if (this.disposed || this.foreignWrite || this.hasForeignWrites() || this.isCompacting() || !(this.harness.isRunning() || this.starting)) return false;
+    try {
+      assertNotLive(this.path);
+    } catch {
+      return false;
+    }
+    await this.harness.noteIntoRun(customType, text);
     return true;
   }
 

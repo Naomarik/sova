@@ -1,10 +1,13 @@
 import { createSignal, For, Match, onCleanup, onMount, Show, Switch, type JSX } from "solid-js";
 import { Portal } from "solid-js/web";
 import type { SessionWorktreeInfo } from "../../shared/protocol";
-import { landConfirmWords, modalHead, queueRow, rowButtons, rowsSummary, shownCommit, unclearLine, type MergeProjectInfo, type QueueRow, type WorktreeQueueInfo } from "../lib/merge-queue";
+import { landConfirmWords, modalHead, queueRow, rehearsalWhy, rowButtons, rowsSummary, shownCommit, unclearLine, type MergeProjectInfo, type QueueRow, type WorktreeQueueInfo } from "../lib/merge-queue";
 import { answerEntry, cancelEntry, land, refusal, type LandOptions } from "../lib/merge-queue-client";
 import { mergeRunHref, projectSessionHref, projectTabHref } from "../lib/projects-route";
-import { announce, toast } from "../lib/ui-state";
+import { announce, home, toast } from "../lib/ui-state";
+import { removeWorktree } from "../lib/api";
+import { tildePath } from "../lib/format";
+import { removeConfirmLine } from "../lib/worktree-cleanup";
 import { BranchSummaryView } from "./BranchSummary";
 import { ActionMenu } from "./ActionMenu";
 import type { LandHow, MergeUnclear } from "../../shared/merge-queue";
@@ -37,9 +40,20 @@ export function QueueChip(props: { row: Pick<QueueRow, "label" | "tone" | "live"
   );
 }
 
+/** Land before a rehearsal: disabled, and it says what it needs on hover and to a screen reader (§app.merge-queue/approve). */
+export function RehearsalNeeded(props: { branch: string; commit?: string }) {
+  return (
+    <button type="button" class="button button-sm wt-queue-land" data-land="" title={rehearsalWhy(props.commit)} aria-label={`Rehearsal needed for ${props.branch}. ${rehearsalWhy(props.commit)}`} disabled>
+      Rehearsal needed
+    </button>
+  );
+}
+
 /** Land and its ▾: Land asks first (onAsk opens the row's confirm); the ▾ holds Land Without Review (only with a
     review kit), which lands at once, and Land Without Its Specs…, which asks first. */
-export function LandSplit(props: { branch: string; review: boolean; busy: boolean; onAsk(): void; onLand(o?: LandOptions): void; onWithoutSpecs(): void; draftsOnly?: boolean }) {
+export function LandSplit(props: { branch: string; review: boolean; busy: boolean; onAsk(): void; onLand(o?: LandOptions): void; onWithoutSpecs(): void; draftsOnly?: boolean; rehearsal?: boolean; commit?: string }) {
+  // Every option of Land waits the same way, so it reads as one disabled button with no ▾.
+  if (props.rehearsal) return <RehearsalNeeded branch={props.branch} commit={props.commit} />;
   return (
     <div class="button-split wt-queue-split">
       <button type="button" class="button button-sm wt-queue-land" data-land="" aria-label={`Land ${props.branch}`} disabled={props.busy} aria-busy={props.busy ? "true" : undefined} onClick={() => props.onAsk()}>
@@ -66,7 +80,7 @@ export function LandSplit(props: { branch: string; review: boolean; busy: boolea
 
 /** A row's confirm: it replaces the row's actions, right-aligned under the row. Its action takes focus when it opens;
     Escape is the same as its cancel, and never closes the dialog around it. */
-export function LandConfirmBox(props: { label: string; title: string; line: string; confirm: string; cancel: string; busy: boolean; onConfirm(): void; onCancel(): void }) {
+export function LandConfirmBox(props: { label: string; title: string; line: string; confirm: string; cancel: string; busy: boolean; onConfirm(): void; onCancel(): void; destructive?: boolean }) {
   let primary: HTMLButtonElement | undefined;
   onMount(() => primary?.focus());
   const onKey = (e: KeyboardEvent) => {
@@ -80,10 +94,11 @@ export function LandConfirmBox(props: { label: string; title: string; line: stri
       <p class="wt-queue-confirm-title">{props.title}</p>
       <p class="text-caption wt-queue-confirm-line">{props.line}</p>
       <div class="button-row wt-queue-confirm-act">
-        <button type="button" class="button button-sm button-ghost" onClick={() => props.onCancel()}>
+        {/* Destructive: focus starts on its cancel, and the action is outlined. */}
+        <button type="button" class="button button-sm button-ghost" ref={(el) => { if (props.destructive) primary = el; }} onClick={() => props.onCancel()}>
           {props.cancel}
         </button>
-        <button type="button" class="button button-sm button-primary" ref={(el) => (primary = el)} disabled={props.busy} onClick={() => props.onConfirm()}>
+        <button type="button" class={`button button-sm ${props.destructive ? "button-destructive" : "button-primary"}`} ref={(el) => { if (!props.destructive) primary = el; }} disabled={props.busy} onClick={() => props.onConfirm()}>
           {props.confirm}
         </button>
       </div>
@@ -110,16 +125,16 @@ export function LandSpecsConfirm(props: { branch: string; busy: boolean; onConfi
 /** Which confirm a row has open: Land's or Land Without Its Specs…'s. Closing one by its cancel puts focus back on
     what opened it (Land, or the ▾ for the specs one). */
 export function createLandConfirm() {
-  const [ask, setAsk] = createSignal<"land" | "specs" | null>(null);
+  const [ask, setAsk] = createSignal<"land" | "specs" | "remove" | null>(null);
   let row: HTMLElement | undefined;
   const close = (back: boolean) => {
     const was = ask();
     setAsk(null);
     if (!back || !row) return;
-    const to = row.querySelector<HTMLElement>(was === "specs" ? '.wt-queue-split > [aria-haspopup="menu"]' : "[data-land]");
+    const to = row.querySelector<HTMLElement>(was === "specs" ? '.wt-queue-split > [aria-haspopup="menu"]' : was === "remove" ? "[data-remove]" : "[data-land]");
     to?.focus();
   };
-  return { ask, open: (k: "land" | "specs") => setAsk(k), close, rowRef: (el: HTMLElement) => (row = el) };
+  return { ask, open: (k: "land" | "specs" | "remove") => setAsk(k), close, rowRef: (el: HTMLElement) => (row = el) };
 }
 export type LandConfirm = ReturnType<typeof createLandConfirm>;
 
@@ -218,6 +233,8 @@ export function WorktreeQueueRow(props: {
   const projectId = () => projectIdOf(w());
   const buttons = () => rowButtons(row(), projectId());
   const entry = () => w().queue;
+  /** Land waits for a rehearsal at this commit. */
+  const rehearsal = () => !!w().readiness?.rehearsal;
   /** The menu's Land Without Review: only where the project has a review kit. */
   const review = () => w().mergeProject?.review ?? w().queue?.reviewKit ?? false;
   const [busy, setBusy] = createSignal(false);
@@ -351,6 +368,22 @@ export function WorktreeQueueRow(props: {
       </div>
       {/* A confirm replaces the row's actions while it is open. */}
       <LandConfirms confirm={confirm} branch={w().branch} ahead={w().mergeStats?.ahead} target={w().mergeProject?.target} how={w().mergeProject?.how} place={placeOf(w())} drafts={onlyDrafts()} busy={busy()} onLand={doLand} />
+      <Show when={confirm.ask() === "remove"}>
+        <LandConfirmBox
+          label={`Remove ${w().branch}`}
+          title={`Remove ${w().branch}?`}
+          line={removeConfirmLine(tildePath(w().path, home()), !!row().removeKeepsBranch)}
+          cancel="Cancel"
+          confirm="Remove Worktree"
+          destructive
+          busy={busy()}
+          onConfirm={() => {
+            confirm.close(false);
+            void run("Remove Worktree", () => removeWorktree(w().path), `Removed ${w().branch}.`);
+          }}
+          onCancel={() => confirm.close(true)}
+        />
+      </Show>
       <Show when={!confirm.ask()}>
       <div class="wt-queue-act">
         <Show when={props.review && canReviewChanges(w())}>
@@ -363,12 +396,14 @@ export function WorktreeQueueRow(props: {
         </Show>
         {/* A decision's Land is its answer on the queue (out of tries, a fix that needs your OK, drafts changed). */}
         <Show when={buttons().includes("Land") && row().decision}>
-          <button type="button" class="button button-sm button-primary" aria-label={`Land ${w().branch}`} disabled={busy()} onClick={() => confirm.open("land")}>
-            Land
-          </button>
+          <Show when={!rehearsal()} fallback={<RehearsalNeeded branch={w().branch} commit={shownCommit(w())} />}>
+            <button type="button" class="button button-sm button-primary" aria-label={`Land ${w().branch}`} disabled={busy()} onClick={() => confirm.open("land")}>
+              Land
+            </button>
+          </Show>
         </Show>
         <Show when={buttons().includes("Land") && !row().decision}>
-          <LandSplit branch={w().branch} review={review()} busy={busy()} onAsk={() => confirm.open("land")} onLand={doLand} onWithoutSpecs={() => confirm.open("specs")} draftsOnly={!!onlyDrafts()} />
+          <LandSplit branch={w().branch} review={review()} busy={busy()} onAsk={() => confirm.open("land")} onLand={doLand} onWithoutSpecs={() => confirm.open("specs")} draftsOnly={!!onlyDrafts()} rehearsal={rehearsal()} commit={shownCommit(w())} />
         </Show>
         <Show when={buttons().includes("Set Up Queue")}>
           <a class="button button-sm" href={projectTabHref(projectId()!, "merge-queue")} title="This project's merge queue isn't set up yet.">
@@ -405,6 +440,11 @@ export function WorktreeQueueRow(props: {
             onClick={() => void run("Remove from Queue", () => cancelEntry(e()), `Removed ${w().branch} from the merge queue.`)}
           >
             Remove from Queue
+          </button>
+        </Show>
+        <Show when={buttons().includes("Remove Worktree")}>
+          <button type="button" class="button button-sm button-destructive" data-remove="" aria-label={`Remove worktree ${w().branch}`} disabled={busy()} onClick={() => confirm.open("remove")}>
+            Remove Worktree
           </button>
         </Show>
         {props.extra}

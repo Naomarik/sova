@@ -362,6 +362,8 @@ export interface HarnessSession extends SessionRead {
   /** A note for the model, shown in the chat, that starts no turn (idle: written now). `details`: data the
       transcript reads (HEntry note `details`), never sent to the model. */
   appendNote(noteType: string, text: string, details?: unknown): Promise<void>;
+  /** A hidden note for the run in progress, read at its next step, ahead of anything queued behind the turn. Idle: written now. */
+  noteIntoRun(noteType: string, text: string): Promise<void>;
 
   // ── attribution
   /** `claim` sees the input each user-message entry point hands the agent (prompt, steer, follow-up)

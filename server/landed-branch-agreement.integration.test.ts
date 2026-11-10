@@ -14,13 +14,16 @@ import { type HarnessOptions, type QueueHarness } from "./merge-queue/testing/ha
 import { queueGlanceOf, worktreeQueueInfo } from "./merge-queue/view";
 import { writeOverride } from "./merge-queue/strategy";
 import { computeBranches, computeReadiness, configureReadiness } from "./merge-readiness";
+import { retirePass } from "./worktree-retire";
+import { plainRetireDeps } from "./worktree-retire-deps.integration.fixture";
+import { configureCleanup } from "./worktree-cleanup";
 import { branchLeft } from "./nothing-left";
 import { treeBucket } from "./overseer-roundup";
 import { setOfferDeps, showOffer } from "./session-offers";
 import { execGit, worktreeInsights } from "./worktrees";
 import { goneTreeState } from "./removed-worktrees";
 import { getSessionInsight } from "./insights";
-import { rowKeyOf, type RowKeyInput } from "../src/lib/merge-queue";
+import { queueRow, rowKeyOf, type RowKeyInput } from "../src/lib/merge-queue";
 import { treeMerge } from "../src/lib/agents-board";
 import type { MergeEntry } from "../shared/merge-queue";
 import type { SessionSummary, WorktreeReadiness } from "../shared/protocol";
@@ -95,6 +98,19 @@ async function sessionTabRow(fx: Fixture, b: B) {
 async function branchRow(fx: Fixture, b: B) {
   const rows = await computeBranches(SUMMARY(fx, b), { trees: [trackedBy(fx, b)] } as unknown as Parameters<typeof computeBranches>[1]);
   return rows?.find((r) => r.row.path === b.checkout)?.row;
+}
+
+/** What retirement did with it: retired for nothing left, held for drafts, left alone for work. The pass acts, so it runs last. */
+async function retireReads(fx: Fixture, b: B): Promise<Left> {
+  // The pass's own classifier asks the module's seam for a target not named master or main, as the real server's does.
+  configureCleanup({ summary: async () => null, sessionFiles: async () => [], readBranch: async () => [], targetOf: async () => fx.target });
+  const r = await retirePass(plainRetireDeps({ project: fx.project, target: fx.target, state: fx.state }));
+  const repo = r.repos[0]!;
+  if (repo.retired.some((t) => t.path === b.checkout)) return "nothing";
+  const held = repo.held.find((t) => t.path === b.checkout);
+  if (held) return held.kind === "drafts" ? "drafts" : "work";
+  assert.equal(repo.waiting.find((t) => t.path === b.checkout), undefined, `it isn't waiting on anything here: ${JSON.stringify(repo.waiting)}`);
+  return "work";
 }
 
 /** Ask every reader, at one moment. The Land gate is asked with the queue paused and its entry cancelled, so asking changes nothing. */
@@ -524,9 +540,19 @@ describe("every reader, one answer", () => {
         await landNew(fx, h, "one-more", { "one-more.txt": "1\n" });
         assertAgree(`${c.name} (after one more landing)`, left, await readAll(fx, h, b));
       }
-      // Step 1 removes nothing: reading, however it comes out, leaves the folder and the branch.
-      assert.ok(existsSync(b.checkout), "its folder stays");
-      assert.ok(git(fx.project, ["branch", "--list", b.branch]).includes(b.branch), "and its branch");
+      // The reader that acts goes last. Retirement reads the same answer, and only `nothing` loses its folder and branch.
+      const acted = await retireReads(fx, b);
+      assert.equal(acted, left === "unknown" ? "work" : left, `${c.name}: retirement disagrees`);
+      if (left === "nothing") {
+        assert.equal(existsSync(b.checkout), false, "nothing left: the folder goes");
+        const row: RowKeyInput = { status: "active", exists: false, readiness: { state: "merged", merged: true, left: "nothing" } as WorktreeReadiness };
+        const words = queueRow(row as Parameters<typeof queueRow>[0]);
+        assert.equal(words.action, "none", "retired: no Land on its row");
+        assert.match(words.label, /cleaned up/i, "and it reads Landed · cleaned up");
+      } else {
+        assert.ok(existsSync(b.checkout), "what has something left keeps its folder");
+        assert.ok(git(fx.project, ["branch", "--list", b.branch]).includes(b.branch), "and its branch");
+      }
     });
   }
 

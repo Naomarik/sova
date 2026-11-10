@@ -701,6 +701,8 @@ export interface MergeQueueView {
   release?: MergeReleaseHold;
   /** Every setting the queue uses, where each is kept, and the saves the Settings tab may make. */
   settings?: import("./merge-queue-settings").MergeQueueSettings;
+  /** What retirement did and holds in this project (§chat.worktrees/retirement). Additive. */
+  retirement?: import("./protocol").RetirementView;
   at: string;
 }
 
@@ -822,6 +824,8 @@ export interface MergeReady {
   /** The shared answer for this branch (§chat.worktrees/nothing-left): whole counts its drafts, code counts commits
    *  alone. A Ready row's whole is only ever "work" or "unknown". Additive. */
   left?: { whole: LeftAnswer; code: LeftAnswer };
+  /** This branch changes automatic cleanup and no rehearsal passed at this commit today: Land reads Rehearsal needed, disabled (§app.merge-queue/approve). Additive. */
+  rehearsal?: true;
 }
 
 /** SessionWorktreeInfo.mergeStats: the branch against the target, for the row's "N commits · +a −r". */

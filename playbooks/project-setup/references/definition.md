@@ -74,6 +74,7 @@ branch being landed.**
 | `land` | `"local"` (default: the target fast-forwards to the tested commit), `"github-pr"`, `"gitlab-mr"` or `"push-branch"`. A choice saved on this computer wins over it. **Releases need `local`** |
 | `request` | the request kit's folder: how a pull/merge request's title and body are written. Only with a request `land` |
 | `reuse` | `true` / `false`. Absent or `true`: a check whose runner supports it may reuse passes from identical code (same argv and inputs). `false`: every check runs in full on every landing (`SOVA_FRESH=1`). A trial follows it too |
+| `deleteBranches` | `true` / `false`. Absent or `false`: automatic cleanup removes a landed branch's folder and keeps the branch. `true`: it deletes the branch too, its last commit staying restorable. |
 
 **A check**: `{id, label?, run, timeout?, rerun?, requires?, optional?}`.
 - `id`: a name, unique among the checks (and among the release's own).

@@ -1161,18 +1161,13 @@ html, body { overflow: clip; overscroll-behavior: none; }
   .setup-row:has(.setup-toggle) { flex-direction: row; align-items: center; gap: var(--space-3); }
 }
 .profile-warn { color: var(--status-warn, var(--color-ink-2)); }
-/* A new session's worktrees line under the footnote (§chat.transcript/empty-worktrees): one muted
-   caption and the destructive button beside it, wrapping under it when the column is narrow. */
-.empty-worktrees { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: var(--space-2) var(--space-3); margin-top: var(--space-2); }
-.empty-worktrees-line { margin: 0; font-size: var(--fs-caption); color: var(--color-ink-muted); }
-/* Its dialog's lists: each folder in mono on its own line, its branch or reason under it. */
-.worktree-cleanup .modal-body section { display: flex; flex-direction: column; gap: var(--space-2); }
-.worktree-cleanup .modal-body h3 { margin: 0; }
+/* A new session's worktrees line under the footnote (§chat.transcript/empty-worktrees): plain status. */
+.empty-worktrees-line { margin: var(--space-2) 0 0; font-size: var(--fs-caption); color: var(--color-ink-muted); }
+/* The project page's Remove Anyway listing: each folder in mono on its own line, its reason under it. */
 .worktree-cleanup-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-2); }
 .worktree-cleanup-list li { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .worktree-cleanup-path { font-family: var(--font-mono); font-size: var(--fs-mono); overflow-wrap: anywhere; color: var(--color-ink); }
-/* Remove Anyway (§chat.worktrees/cleanup): the kept row's action, and the listing's file lists (scroll past ~12 rows). */
-.worktree-cleanup-anyway { align-self: flex-start; margin-top: var(--space-1); }
+/* Remove Anyway's file lists (§chat.worktrees/cleanup): scroll past ~12 rows. */
 .remove-anyway-listing { display: flex; flex-direction: column; gap: var(--space-3); min-width: 0; }
 .remove-anyway-listing section { display: flex; flex-direction: column; gap: var(--space-2); }
 .remove-anyway-listing h3 { margin: 0; }
@@ -1720,6 +1715,7 @@ html, body { overflow: clip; overscroll-behavior: none; }
 .mq-card .spread { flex-wrap: wrap; gap: var(--space-2); }
 .mq-card-title { font-weight: var(--fw-medium); flex-wrap: wrap; }
 .mq-now { color: var(--color-ink); font-weight: var(--fw-medium); }
+.mq-retired-refused { color: var(--status-error); }
 .mq-empty { margin: 0; padding: var(--space-3) var(--space-4); border: 1px dashed var(--color-border-strong); border-radius: var(--r-lg); color: var(--color-ink-2); }
 .mq-list { margin: 0; padding: 0; border: 1px solid var(--color-border); border-radius: var(--r-lg); background: var(--color-surface); }
 /* Waiting (§app.merge-queue/view): a header that opens and closes its rows, closed each time the tab is shown. */

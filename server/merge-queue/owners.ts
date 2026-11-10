@@ -30,6 +30,9 @@ export interface OwnerDeps {
   tracked: () => { version: number; each(): Iterable<[string, readonly TrackedWorktree[]]> };
   /** A path's canonical form (symlinks resolved), as tracked paths are recorded. */
   canonical: (path: string) => string;
+  /** The worktrees a queue chat's own file records. `tracked` covers only the sessions readiness reads, and it reads
+      no queue chat, so what one created is asked of its file. */
+  treesOfChat?: (sessionPath: string) => Promise<readonly TrackedWorktree[]>;
 }
 
 interface Tracker {
@@ -70,10 +73,18 @@ export class WorktreeOwners {
   /** Whether one of the merge queue's own chats (queueChat) created the worktree: a conflict's scratch copy the merge
       thread made itself, before Sova made them (merge-queue/scratch.ts). Never anyone's work to land. */
   async queueMade(worktree: string): Promise<boolean> {
-    const trackers = this.trackers(this.deps.canonical(worktree));
-    if (!trackers.length) return false;
-    const byPath = new Map((await this.deps.sessions()).map((s) => [s.path, s]));
-    return trackers.some((t) => !!byPath.get(t.sessionPath)?.queueChat);
+    const tree = this.deps.canonical(worktree);
+    const sessions = await this.deps.sessions();
+    const byPath = new Map(sessions.map((s) => [s.path, s]));
+    if (this.trackers(tree).some((t) => !!byPath.get(t.sessionPath)?.queueChat)) return true;
+    const read = this.deps.treesOfChat;
+    if (!read) return false;
+    for (const s of sessions) {
+      if (!s.queueChat) continue;
+      const trees = await read(s.path).catch((): readonly TrackedWorktree[] => []);
+      if (trees.some((t) => t.how === "created" && t.status !== "dropped" && this.deps.canonical(t.path) === tree)) return true;
+    }
+    return false;
   }
 }
 

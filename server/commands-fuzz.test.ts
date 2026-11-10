@@ -314,9 +314,10 @@ const VALIDATE_ONLY: Record<string, string> = {
   "session.shell.output": "a valid call needs a saved command row in a session; server/shell-output.test.ts covers its pages",
   "org.owner.request.chat": "a valid call starts a coding session in the request's project, which starts its chat process",
   "session.offers.choose": "a valid click on a send button sends its text as the user's message, which starts the session's chat process for the turn",
+  "session.worktree.remove": "only an install on its own agent directory removes anything, and a test server is never one; server/worktree-remove-row.integration.test.ts drives it",
+  "session.worktree.restore": "a valid restore needs a git repository with a retirement in its ledger, which server/worktree-retire-safety.integration.test.ts drives; a refusal changes nothing",
   "session.title.auto": "a valid call names sessions with the title model, a model call",
   "session.title.shorten": "a valid call renames long titles with the title model, a model call",
-  "session.worktree.cleanup": "a valid removal needs a git repository with a merged worktree; the dry run changes nothing, so no oracle can read it back",
   "insights.usage.refresh": "asks every provider for its usage over the network, which the unit tier may not",
   "project.coding.start": "a valid call starts a coding session in the project, which starts its chat process",
   "project.setup.open": "a valid call starts the project's Setup chat, a coding session whose chat process starts",
@@ -876,6 +877,8 @@ const FIXTURES: Record<string, Fixture> = {
     status: 200,
   },
   "session.worktree.summary": { values: () => ({ session: session()[0] }), status: 200 },
+  "session.worktree.status": { values: () => ({ session: session()[0] }), status: 200 },
+  "session.worktree.retirement": { values: () => ({ root: "/nowhere/project" }), status: 200 },
   "session.cleanup": {
     // An archived session last written an hour ago, past the guard on files a process may still be writing.
     values: () => { const s = session(true); archived.push(s[0]); const then = new Date(Date.now() - 3_600_000); process.getBuiltinModule("node:fs").utimesSync(s[0], then, then); return { mode: "paths", paths: [s[0]] }; },

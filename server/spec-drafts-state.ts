@@ -109,18 +109,22 @@ export const draftWork = { reads: 0, cuts: 0 };
 
 const cache = new Map<string, { stamps: [path: string, stamp: string][]; names: string[] }>();
 
+/** The drafts a proof reads in `<dir>/.sova/spec/drafts/`, by name, sorted: real folders whose names don't start with a dot. Undefined: the folder can't be read. */
+export function draftNamesIn(dir: string): string[] | undefined {
+  try {
+    return readdirSync(join(dir, ".sova", "spec", "drafts"), { withFileTypes: true }).filter((e) => e.isDirectory() && !e.name.startsWith(".")).map((e) => e.name).sort();
+  } catch {
+    return undefined;
+  }
+}
+
 /** The names of the drafts in `<dir>/.sova/spec/drafts/` not official (or unreadable), sorted (§chat.worktrees/ready-to-land);
     undefined when the folder has none. */
 export function unofficialDrafts(dir: string): string[] | undefined {
   const specRoot = join(dir, ".sova", "spec");
   const draftsDir = join(specRoot, "drafts");
-  let names: string[];
-  try {
-    names = readdirSync(draftsDir, { withFileTypes: true }).filter((e) => e.isDirectory() && !e.name.startsWith(".")).map((e) => e.name).sort();
-  } catch {
-    return undefined;
-  }
-  if (!names.length) return undefined;
+  const names = draftNamesIn(dir);
+  if (!names?.length) return undefined;
   const hit = cache.get(dir);
   if (hit && hit.stamps.every(([p, was]) => stamp(p) === was)) return [...hit.names];
   const left: string[] = [];

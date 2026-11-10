@@ -63,7 +63,7 @@ describe("what a landing runs", () => {
       assert.deepEqual(landing([f]).ran, ["trial"], f);
     }
     // The test setup triggers every group a landing runs.
-    for (const f of ["scripts/run-tests.mjs", "scripts/test-groups.mjs"]) assert.deepEqual(landing([f]).ran, ["trial", "merge-queue", "forms"], f);
+    for (const f of ["scripts/run-tests.mjs", "scripts/test-groups.mjs"]) assert.deepEqual(landing([f]).ran, ["trial", "merge-queue", "forms", "retire-lab"], f);
   });
 
   test("a tours-only change runs no group at landing (Tours never run there), and the everyday set still runs", () => {
@@ -79,13 +79,13 @@ describe("what a landing runs", () => {
   test("Tours never run at landing, even when every trigger changed", () => {
     const r = landing(["server/tours/runner.ts", "package.json", "scripts/run-tests.mjs"]);
     assert.ok(!r.files.includes(tour) && !r.files.includes(nearTours));
-    assert.deepEqual(r.ran, ["trial", "merge-queue", "forms"]);
+    assert.deepEqual(r.ran, ["trial", "merge-queue", "forms", "retire-lab"]);
   });
 
   test("an unrelated change runs only the everyday set, naming both groups as skipped", () => {
     const r = landing(["src/components/Sidebar.tsx"]);
     assert.deepEqual(r.files, [tourNoChrome, everyday]);
-    assert.deepEqual(r.skipped.map((s) => [s.name, s.why]), [["trial", "untriggered"], ["tours", "never"], ["merge-queue", "untriggered"], ["forms", "untriggered"]]);
+    assert.deepEqual(r.skipped.map((s) => [s.name, s.why]), [["trial", "untriggered"], ["tours", "never"], ["merge-queue", "untriggered"], ["forms", "untriggered"], ["retire-lab", "untriggered"]]);
     assert.equal(setKey(r.ran), "core");
     assert.equal(setKey(landing(["package.json"]).ran), "core+trial");
   });
@@ -142,6 +142,6 @@ describe("what a session's --changed adds", () => {
 describe("--groups", () => {
   test("only the named groups' files; all is every group", () => {
     assert.deepEqual(selectFiles(files, [], { mode: "groups", only: ["tours"] }).files, [tour, nearTours]);
-    assert.deepEqual(selectFiles(files, [], { mode: "groups", only: ["all"] }).ran, ["trial", "tours", "merge-queue", "forms"]);
+    assert.deepEqual(selectFiles(files, [], { mode: "groups", only: ["all"] }).ran, ["trial", "tours", "merge-queue", "forms", "retire-lab"]);
   });
 });

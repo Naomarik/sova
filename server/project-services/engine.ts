@@ -1,3 +1,5 @@
+import { removeTree } from "../worktree-remove";
+import { processEnded } from "../worktree-retire-gate";
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, realpathSync, rmSync, statSync } from "node:fs";
@@ -175,6 +177,8 @@ export interface VerbRequest {
   restart?: boolean;
   lines?: number;
   keepData?: boolean;
+  /** teardown, in-process only (retirement, which removes the folder itself right after): leave a cut worktree in place. */
+  keepWorktree?: boolean;
   resources?: string[];
   ref?: string;
   /** The operator's confirm (stopping a shared service). */
@@ -211,6 +215,7 @@ const REQUEST_KEYS: Record<keyof VerbRequest, "string" | "number" | "boolean" | 
   restart: "boolean",
   lines: "number",
   keepData: "boolean",
+  keepWorktree: "boolean",
   resources: "strings",
   ref: "string",
   confirm: "boolean",
@@ -1805,16 +1810,17 @@ export class ProjectEngine {
         });
       rmSync(dataRootOf(rec.id), { recursive: true, force: true });
     } else if (Object.keys(rec.data).length) run.steps.push({ id: "data", kind: "data", result: "skipped", ms: 0, detail: `kept: ${Object.values(rec.data).join(", ")}` });
-    if (rec.cutWorktree && existsSync(rec.checkout)) {
+    if (rec.cutWorktree && !run.req.keepWorktree && existsSync(rec.checkout)) {
       await this.step(run, "worktree", "worktree", async () => {
         // What git's own remove would delete silently: ignored files that can't be rebuilt and nested
         // repositories keep it, as with Clean Up Merged (server/worktree-leftovers.ts). A failed read keeps it.
         const held = await leftovers(rec.checkout).catch((err: Error): Leftovers => ({ dirty: [], ignored: [], nested: [], rebuildable: [], unreadable: `Its files couldn't be read: ${err.message}` }));
         const why = leftoversReason(held);
         if (why) return { result: "skipped", detail: `kept ${rec.checkout}: ${why}` };
-        const r = await this.git(["worktree", "remove", "--", rec.checkout], rec.project);
-        if (r.code !== 0) return { result: "skipped", detail: `kept ${rec.checkout}: ${firstLine(r.stderr || r.stdout)}` };
-        return { result: "done", detail: `removed ${rec.checkout} (branch ${rec.branch} kept)` };
+        // The one removal step (§chat.worktrees/cleanup). A copy's teardown always keeps the branch.
+        const r = await removeTree({ path: rec.checkout, main: rec.project, git: this.git, proof: async (cut) => (await import("../worktree-retire")).leftoverProofHere(rec.checkout, rec.project, rec.branch ?? undefined, cut) });
+        if (r.state === "removed") return { result: "done", detail: `removed ${rec.checkout}${r.finished ? " (git stopped part way; what was left was proved safe and finished)" : ""} (branch ${rec.branch} kept)` };
+        return { result: "skipped", detail: r.state === "held" ? `git forgot ${rec.checkout} but files stayed: ${r.reason}` : `kept ${rec.checkout}: ${r.reason}` };
       });
     }
     await this.step(run, "slot", "slot", async () => {
@@ -2088,6 +2094,8 @@ export class ProjectEngine {
     const rec = run.rec;
     const gone = (run as Run & { tornDown?: InstanceRecord }).tornDown;
     const changed = run.steps.some((s) => s.result === "done" && s.kind !== "check" && s.kind !== "ready" && s.kind !== "test");
+    // A copy stopped: what it held may be free now (§chat.worktrees/retirement).
+    if (changed && (run.verb === "down" || run.verb === "teardown")) processEnded("copy");
     // Only doctor's checks decide `ok`; status carries the supervisor's as a note.
     const checksOk = run.verb !== "doctor" || !run.extra.checks || run.extra.checks.every((c) => c.ok);
     return ordered({

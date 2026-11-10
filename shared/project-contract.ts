@@ -370,6 +370,8 @@ export interface MergeDecl {
   land?: import("./merge-queue").LandHow;
   request?: string;
   reuse?: boolean;
+  /** Automatic cleanup deletes a landed branch as well as its folder (§chat.worktrees/retirement). Absent: false. */
+  deleteBranches?: boolean;
 }
 
 /** The endpoints a copy may share (`"<service>.<port>"`, checkout services only; none when absent), at most `maxDays` per link, and whether at all. */
@@ -512,7 +514,7 @@ export const DEFINITION_KEYS = {
   rollback: [["steps"], ["none"]],
   credential: ["name", "kind", "check"],
   requires: ["tests"],
-  merge: ["target", "push", "checks", "install", "review", "land", "request", "reuse"],
+  merge: ["target", "push", "checks", "install", "review", "land", "request", "reuse", "deleteBranches"],
   mergeCheck: ["id", "label", "run", "timeout", "rerun", "requires", "optional"],
   mergeInstall: ["run", "inputs", "timeout"],
   release: ["playbook", "tag", "scheme", "channels", "commit", "checks", "quietMin"],
@@ -971,6 +973,10 @@ function mergeDecl(v: unknown, services: readonly ServiceDecl[]): MergeDecl {
   if (o.reuse !== undefined) {
     if (typeof o.reuse !== "boolean") throw new DefinitionError("$.merge.reuse", "must be true or false");
     out.reuse = o.reuse;
+  }
+  if (o.deleteBranches !== undefined) {
+    if (typeof o.deleteBranches !== "boolean") throw new DefinitionError("$.merge.deleteBranches", "must be true or false");
+    out.deleteBranches = o.deleteBranches;
   }
   return out;
 }

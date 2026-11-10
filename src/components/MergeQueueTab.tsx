@@ -21,6 +21,7 @@ import type { LandHow, MergeReady, TargetBroken } from "../../shared/merge-queue
 import { BranchSummaryView } from "./BranchSummary";
 import type { DiffScope, WorktreeReadiness } from "../../shared/protocol";
 import { ReviewChangesButton } from "./ReviewChanges";
+import { heldCount, heldHasContent, HeldList, RetiredList, RetirementLists, RetirementOff } from "./RetirementLists";
 
 /** How often the tab reads the queue while it shows (a run's steps move by the second). */
 const POLL_MS = 4000;
@@ -66,7 +67,7 @@ export function MergeQueueTab(props: { projectId: string; root: string; name: st
             fallback={<MergeRunView projectId={props.projectId} view={v()} runId={props.run!} chatOf={props.chatOf} from={props.queueTab} />}
           >
             {/* An invalid definition reads "unset" too: its error is said, never the not-set-up words. */}
-            <Show when={!notSetUp(v())} fallback={<NotSetUp projectId={props.projectId} view={v()} setup={setup} />}>
+            <Show when={!notSetUp(v())} fallback={<NotSetUp projectId={props.projectId} view={v()} setup={setup} chatOf={props.chatOf} onChanged={() => poll.refetch()} />}>
               <QueueBody projectId={props.projectId} view={v()} tab={props.queueTab} refreshed={props.refreshed} toStrip={fromRun} chatOf={props.chatOf} treesOf={props.treesOf} setup={setup} onChanged={() => poll.refetch()} />
             </Show>
           </Show>
@@ -83,7 +84,7 @@ const holdName = (r: { version: string | null; tag?: string | null }): string =>
  * A listed project with no merge setup: its chats merge plainly. The tab says what the queue does and what setting it
  * up changes, with Set Up with a Chat (the project's Setup chat), then that chat's state and its proposal.
  */
-function NotSetUp(props: { projectId: string; view: MergeQueueView; setup: SetupPoll }) {
+function NotSetUp(props: { projectId: string; view: MergeQueueView; setup: SetupPoll; chatOf?: ChatOf; onChanged(): void }) {
   return (
     <div class="stack mq-body mq-unset">
       <div class="cluster">
@@ -93,6 +94,7 @@ function NotSetUp(props: { projectId: string; view: MergeQueueView; setup: Setup
         <QueueChip row={{ label: "Not set up", tone: "warn" }} />
       </div>
       <SetupNotSetUp projectId={props.projectId} surface="merge-queue" target={props.view.target} poll={props.setup} />
+      <RetirementLists projectId={props.projectId} root={props.view.root} view={props.view.retirement} chatOf={props.chatOf} onChanged={props.onChanged} />
     </div>
   );
 }
@@ -338,6 +340,7 @@ function QueueBody(props: { projectId: string; view: MergeQueueView; tab?: Queue
       </Show>
       <CheckingNow projectId={props.projectId} view={v()} chatOf={props.chatOf} />
       <Waiting projectId={props.projectId} view={v()} refreshed={props.refreshed} chatOf={props.chatOf} onChanged={props.onChanged} />
+      <RetirementOff view={v().retirement} />
       <QueueTabs projectId={props.projectId} tabs={tabs()} tab={tab()} toStrip={props.toStrip} />
     </div>
     </RunFrom.Provider>
@@ -598,20 +601,40 @@ function queueTabs(projectId: string, v: () => MergeQueueView, onHost: boolean, 
         }
       : null,
     {
+      id: "held",
+      label: "Held",
+      get count() {
+        return heldCount(v().retirement);
+      },
+      get rows() {
+        return heldHasContent(v().retirement) ? Math.max(1, heldCount(v().retirement)) : 0;
+      },
+      get empty() {
+        return `${queueFact(v())} A folder shows here when Sova can't retire it.`;
+      },
+      panel: () => <Show when={v().retirement}>{(r) => <HeldList projectId={projectId} view={r()} chatOf={chatOf} />}</Show>,
+    },
+    {
       id: "landed",
       label: "Landed",
       // At most the newest 20 come: a count would read as all of them.
       count: null,
+      // Retired rows keep the tab from reading empty: they show under the landings, in this same tab.
       get rows() {
-        return v().recent.length;
+        return v().recent.length + (v().retirement?.retiredTotal ?? 0);
       },
       get empty() {
         return `${queueFact(v())} Each landing shows here.`;
       },
       panel: () => (
-        <ul class="list mq-list">
-          <For each={v().recent}>{(l) => <LandedRow projectId={projectId} view={v()} landed={l} chatOf={chatOf} />}</For>
-        </ul>
+        <>
+          <Show when={v().recent.length > 0}>
+            <ul class="list mq-list">
+              <For each={v().recent}>{(l) => <LandedRow projectId={projectId} view={v()} landed={l} chatOf={chatOf} />}</For>
+            </ul>
+          </Show>
+          <Show when={v().retirement}>{(r) => <RetiredList root={v().root} view={r()} onChanged={onChanged} />}</Show>
+        </>
       ),
     },
     {
@@ -1139,7 +1162,7 @@ function ReadyRow(props: { projectId: string; root: string; target?: string; how
       <Show when={!confirm.ask()}>
         <div class="mq-row-act">
           <QueueReview projectId={props.projectId} branch={r().branch} scope={{ kind: "queue", project: props.projectId, branch: r().branch }} session={r().session} chatOf={props.chatOf} />
-          <LandSplit branch={r().branch} review={props.review} busy={!!act.busy()} onAsk={() => confirm.open("land")} onLand={doLand} onWithoutSpecs={() => confirm.open("specs")} draftsOnly={!!r().draftsOnly} />
+          <LandSplit branch={r().branch} review={props.review} busy={!!act.busy()} onAsk={() => confirm.open("land")} onLand={doLand} onWithoutSpecs={() => confirm.open("specs")} draftsOnly={!!r().draftsOnly} rehearsal={!!r().rehearsal} commit={r().commit} />
         </div>
       </Show>
     </li>

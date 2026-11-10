@@ -12,6 +12,7 @@ import { canonical, normalizeMergeDetails, sharedWith, type TrackedWorktree, WOR
 import { stateRoot } from "./state-root";
 import { deferredOf, followUpFor, type FollowUpInput, type MergeFollowUps } from "./merge-followup";
 import { type AskTree, asksUserOf, isGoAsk, readSignals } from "./signals-store";
+import { removeOffered } from "./worktree-retire-gate";
 import { type AncestorCheck, draftProofVia, type DraftsHash, draftsHash, draftsLeft } from "./spec-drafts-state";
 import { queueReadingAt } from "./nothing-left";
 import { previewDocs, previewOf } from "./docs-preview";
@@ -579,6 +580,8 @@ export interface ReadinessDeps {
   /** A served tree's branch at `head` that changes the project's setup without a passing trial of that commit: why it
       can't land yet (server/merge-queue/setup-branch.ts); null when it isn't a setup branch or its trial passed. */
   setupUntried?: (dir: string, head: string) => Promise<string | null>;
+  /** A served tree's head changes automatic cleanup and no rehearsal passed at it today (server/merge-queue/rehearsal.ts). */
+  rehearsalWait?: (dir: string, head: string) => Promise<boolean>;
   /** The Git inputs a tree's readiness reads, as stat stamps (worktrees.ts gitInputsStamp): the
       session feed's readiness watch compares them (checkReadinessInputs). */
   inputsStamp?: (dir: string, baseBranch?: string) => string | null;
@@ -729,6 +732,21 @@ export function servedReader(rootOf: (dir: string) => Promise<string | null>, se
   };
 }
 
+/** The row's Remove, offered only where retirement is off for the install: whether it is, and whether its confirm says the branch stays. */
+async function removeFieldsOf(path: string): Promise<{ removable?: true; removeKeepsBranch?: true }> {
+  if (!removeOffered("nothing")) return {};
+  // A setting that can't be read keeps the branch, as a removal would read it.
+  const keeps = await (await import("./worktree-retire")).keepsBranchAt(path).catch(() => true);
+  return { removable: true, ...(keeps ? { removeKeepsBranch: true as const } : {}) };
+}
+
+const readinessListeners = new Set<(sessionPath: string) => void>();
+/** Told when a chat's readiness reading changes (one of the wake-ups of §chat.worktrees/retirement). → unsubscribe. */
+export function onReadinessMoved(fn: (sessionPath: string) => void): () => void {
+  readinessListeners.add(fn);
+  return () => readinessListeners.delete(fn);
+}
+
 /** Per session file, what blocks each finished tree's landing, from the last published reading (nudgeSpecs). */
 const blockedBySession = new Map<string, { path: string; branch: string; commit: string; blockers: LandingBlocker[]; conflicts?: { base: string; files: number } }[]>();
 
@@ -868,6 +886,7 @@ async function computeReadinessNow(s: SessionSummary, facts: FileFacts, publishC
     // Only where the merge queue serves the repo: elsewhere a finished branch is merged by its chat (al_1).
     const servedHere = landingOn && (deps.served ? await deps.served(t.path).catch(() => false) : true);
     let landing: WorktreeReadiness["landing"];
+    let rehearsal = false;
     // Drafts that aren't official: a landing's, or a merged tree's that didn't make it (§chat.worktrees/readiness).
     const unofficial = tf.readable && (landingOn || tf.merged) ? await deps.drafts(t.path) : undefined;
     if (servedHere) {
@@ -887,6 +906,7 @@ async function computeReadinessNow(s: SessionSummary, facts: FileFacts, publishC
       // A setup branch is offered Land only once a trial of its exact head passed (§app.project-setup/land-gate).
       const untried = tf.head && landingLive(tf, rLand.state) && deps.setupUntried ? await deps.setupUntried(t.path, tf.head).catch(() => null) : null;
       if (untried) landing = undefined;
+      rehearsal = !!landing && !!tf.head && !!deps.rehearsalWait && (await deps.rehearsalWait(t.path, tf.head).catch(() => true));
       // Finished but not Ready to land: what the session can fix, for Sova's once-per-commit note.
       // The commit the user approved is the queue's now, and with nothing left there is nothing to fix: no note (a real
       // new commit past an approval or a landing is told as any other).
@@ -914,7 +934,8 @@ async function computeReadinessNow(s: SessionSummary, facts: FileFacts, publishC
       ...(tf.conflicts ? { conflicts: tf.conflicts } : {}),
       ...(hasNoCommits(tf) ? { noCommits: true as const } : {}),
       ...(landing ? { landing } : {}),
-      ...(tf.readable && (tf.merged || hasNoCommits(tf)) ? (unofficial?.length ? { left: "drafts" as const, draftsLeft: unofficial.length } : { left: "nothing" as const }) : {}),
+      ...(rehearsal ? { rehearsal: true as const } : {}),
+      ...(tf.readable && (tf.merged || hasNoCommits(tf)) ? (unofficial?.length ? { left: "drafts" as const, draftsLeft: unofficial.length } : { left: "nothing" as const, ...(await removeFieldsOf(t.path)) }) : {}),
     });
   }
   const cards = facts.merges;
@@ -1005,7 +1026,7 @@ export async function computeBranches(s: Pick<SessionSummary, "id">, facts: Pick
         ...(shared ? { sharedWith: shared } : {}),
         ...(merged ? { mergedInto: merged } : {}),
         ...(q?.fields ?? {}),
-        ...(noneLeft ? (undrafted?.length ? { left: "drafts" as const, draftsLeft: undrafted.length } : { left: "nothing" as const }) : {}),
+        ...(noneLeft ? (undrafted?.length ? { left: "drafts" as const, draftsLeft: undrafted.length } : { left: "nothing" as const, ...(await removeFieldsOf(t.path)) }) : {}),
         ...(place ? { place } : {}),
       };
       return q?.root ? { row, root: q.root } : { row };
@@ -1287,7 +1308,16 @@ async function refresh(input: RefreshInput): Promise<void> {
   // A new answer shows on the next listing: the session feed compares at once (§app.decisions/push)
   // instead of waiting for a listing that happens to come.
   const now = cache.get(s.path);
-  if (JSON.stringify([now?.value ?? null, now?.branches ?? null, now?.replyHeads ?? null]) !== JSON.stringify([prev?.value ?? null, prev?.branches ?? null, prev?.replyHeads ?? null])) sessionsChanged();
+  if (JSON.stringify([now?.value ?? null, now?.branches ?? null, now?.replyHeads ?? null]) !== JSON.stringify([prev?.value ?? null, prev?.branches ?? null, prev?.replyHeads ?? null])) {
+    sessionsChanged();
+    for (const fn of readinessListeners) {
+      try {
+        fn(s.path);
+      } catch (err) {
+        console.warn(`[readiness] a listener failed: ${(err as Error).message}`);
+      }
+    }
+  }
 }
 
 /** Each tracked branch's head when the session's go-ahead ask was written: the newest commit at or

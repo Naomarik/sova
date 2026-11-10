@@ -9,7 +9,7 @@
  * allowlisting proxy and backend launch resources until the caller disposes them.
  */
 import { randomUUID } from "node:crypto";
-import { lstatSync, mkdirSync, rmSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, rmSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { type Backend, type Confined, type Policy, backendFor, gitProtectedPaths, shadowSource } from "./backend.ts";
@@ -66,7 +66,8 @@ export function resolveSessionPolicy(input: SessionPolicyInput): Result<Resolved
 	const backend = input.backend ?? backendFor(input.platform);
 	// The platform lists apply; which caches are shadowed is the policy file's `shadowed`.
 	const defaults = backend.platformDefaults({ home, agentDir: input.agentDir });
-	const roots = [...(input.worktreeRoots ?? [])];
+	// A worktree whose folder is gone (it retired) is no root: a missing path would stop every command from starting.
+	const roots = (input.worktreeRoots ?? []).filter((r) => existsSync(r));
 	return resolvePolicy({
 		agentDir: input.agentDir,
 		cwd: input.cwd,

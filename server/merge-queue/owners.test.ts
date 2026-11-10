@@ -131,3 +131,36 @@ describe("a worktree one of the merge queue's own chats made", () => {
     assert.equal(await owners.ownerOf(OLD), null);
   });
 });
+
+describe("a merge thread's own old branch, as the live server sees it", () => {
+  test("queueMade reads the thread's own file: no stub of the index, which by design never lists a queue chat", async () => {
+    const { mkdtempSync, writeFileSync, rmSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const { sessionFacts } = await import("../insights");
+    const { trackedWorktrees } = await import("../merge-readiness");
+    const dir = mkdtempSync(join(tmpdir(), "owners-file-"));
+    const at = "2026-11-03T00:00:00.000Z";
+    const id = "01a1a104-72f3-75b6-8a92-b608ea9b9dae";
+    const tree = (path: string, how: string, status = "active") => ({ path, branch: "feat/resolve-mq_1", base: "b".repeat(40), baseBranch: "master", status, session: id, how, at: 1 });
+    const OLD = join(dir, "proj-resolve-mq_1");
+    const ATT = join(dir, "proj-attached");
+    const DROPPED = join(dir, "proj-dropped");
+    const file = join(dir, `2026-11-03T00-00-00-000Z_${id}.jsonl`);
+    writeFileSync(file, `${[{ type: "session", version: 3, id, timestamp: at, cwd: dir }, { type: "custom", customType: "worktrees", id: "a0000001", parentId: null, timestamp: at, data: { version: 1, trees: [tree(OLD, "created"), tree(ATT, "attached"), tree(DROPPED, "created", "dropped")] } }].map((l) => JSON.stringify(l)).join("\n")}\n`);
+    try {
+      const owners = new WorktreeOwners({
+        sessions: async () => [{ ...row(id, dir, 5, { queueChat: { role: "thread" } }), path: file }],
+        tracked: trackedWorktrees, // the live index: it holds no queue chat
+        canonical: (p) => p,
+        treesOfChat: async (path) => (await sessionFacts(path)).worktrees?.trees ?? [],
+      });
+      assert.equal(await owners.queueMade(OLD), true, "the thread created it");
+      assert.equal(await owners.queueMade(ATT), false, "only attached");
+      assert.equal(await owners.queueMade(DROPPED), false, "dropped");
+      assert.equal(await owners.queueMade(join(dir, "someone-elses")), false);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});

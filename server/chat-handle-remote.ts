@@ -32,8 +32,15 @@ const FACTS = new Set(["run.start", "user.entered", "user.end", "run.settled"]);
 /** How often the ticks handled are acknowledged, at most. */
 const RUN_ACK_MS = 200;
 
+/** The commands that start work in a chat's folder. */
+const STARTS_WORK: ReadonlySet<ChatMethod> = new Set<ChatMethod>(["send", "deliverToAgent", "deliverTopicBatch", "resumeWorker"]);
+
 /** What the server does with what a chat process tells it, beyond the handle itself. */
 export interface RemoteHooks {
+  /** Before a message or a worker's start reaches the chat: its retired folder comes back, if it has one (server/worktree-retire-notes.ts). Never throws, and reading a chat never gets here. */
+  beforeMessage?(h: RemoteChatHandle): Promise<void>;
+  /** Cheap and sync: whether beforeMessage has anything to do for this chat now. */
+  needsBeforeMessage?(h: RemoteChatHandle): boolean;
   /** A `state` frame arrived (idle stop, the Claude cap, the resource monitor). */
   state?(h: RemoteChatHandle): void;
   /** The chat said it exits on purpose. */
@@ -105,6 +112,11 @@ export class RemoteChatHandle extends ChatHandle {
   private readonly running = new Map<string, AbortController>();
   private offs: (() => void)[] = [];
   private ended = false;
+  /** Panes' messages waiting on a retired folder's return, in order. */
+  private messageGate: Promise<unknown> = Promise.resolve();
+  private gating = 0;
+  /** Panes attached when the chat reopened: gone from its process, until they reconnect. */
+  private readonly reopened = new Set<string>();
   /** The last lifecycle seq heard: the next link's `control.since`. */
   lastSeq: number | null = null;
 
@@ -333,6 +345,8 @@ export class RemoteChatHandle extends ChatHandle {
   }
 
   async call<M extends ChatMethod>(method: M, args: ChatMethods[M]["args"]): Promise<ChatMethods[M]["result"]> {
+    // A message or a worker's start: a retired folder comes back first (§chat.worktrees/retirement).
+    if (STARTS_WORK.has(method) && this.hooks.needsBeforeMessage?.(this)) await (this.messageGate = this.gateOnce());
     // A chat whose link is down while its handle lives (reconnecting, a reload's swap) is waited for.
     if (!this.link.isOpen && !this.ended) await this.waitRelink();
     // A handle that ended (the process died, exited or was let go) takes no command: the next open starts afresh.
@@ -374,6 +388,41 @@ export class RemoteChatHandle extends ChatHandle {
     });
   }
   clientMessage(client: ChatClient, msg: ChatClientMessage): void {
+    if ((msg.type === "prompt" || msg.type === "steer") && (this.gating > 0 || this.hooks.needsBeforeMessage?.(this))) {
+      // In order, each after the folder is back; a chat whose folder is there costs one stat.
+      this.gating++;
+      this.messageGate = this.gateOnce().then(() => {
+        this.gating--;
+        this.deliverAfterGate(client, msg);
+      });
+      return;
+    }
+    this.deliverClientMessage(client, msg);
+  }
+  /** The folder's return, once however many messages wait on it. */
+  private gateOnce(): Promise<void> {
+    return this.messageGate.then(() => (this.hooks.needsBeforeMessage?.(this) ? this.hooks.beforeMessage?.(this) : undefined)).catch(() => undefined) as Promise<void>;
+  }
+  /** After a reopen the pane's socket is on its way to reconnecting: a prompt it sent goes in as a send, not through a client the chat no longer knows. */
+  private deliverAfterGate(client: ChatClient, msg: ChatClientMessage): void {
+    const clientId = this.ids.get(client);
+    if (clientId && this.reopened.has(clientId) && msg.type === "prompt") {
+      const m = msg as Extract<ChatClientMessage, { type: "prompt" }>;
+      void this.call("send", { text: String(m.text ?? ""), ...(m.images ? { images: m.images } : {}), origin: "client", ...(m.clientId ? { clientId: m.clientId } : {}), byPerson: true, report: true } as ChatMethods["send"]["args"]).catch((err: Error) => {
+        const refusal = unsentRefusal(msg);
+        if (refusal) client.send(refusal);
+        console.warn(`[retire] a message after a reopen: ${err.message}`);
+      });
+      return;
+    }
+    this.deliverClientMessage(client, msg);
+  }
+  /** Reopen the chat in this same process, its folder back: every pane reconnects. */
+  async reopenHere(): Promise<void> {
+    for (const id of this.clients.keys()) this.reopened.add(id);
+    await this.call("reopenHere", {});
+  }
+  private deliverClientMessage(client: ChatClient, msg: ChatClientMessage): void {
     const clientId = this.ids.get(client);
     if (clientId && !this.ended && this.link.send({ t: "client.msg", clientId, msg })) return;
     // No process to take it (exited, stopping, or its link down): a prompt goes back to the pane.

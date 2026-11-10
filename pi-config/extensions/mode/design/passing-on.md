@@ -5,7 +5,7 @@ Designs have stable labels (A, B, C, …, Z, AA) and refined versions (A2). Ever
 ## Reading
 
 - `{"op":"read"}` returns the coordinator's current card: what it has concluded and what has been made, with each design's label, direction, model, status and short description. It is small.
-- `{"op":"read","label":"B"}` returns that design's whole page. A page is typically 5,000 to 15,000 tokens, a long one more, and stays in this chat's context from then on, so read one only when the user wants you to work with that page itself. Several pages are rarely worth it.
+- `{"op":"read","label":"B"}` returns that design's whole page. A page is 16,000 to 24,000 tokens and stays in this chat's context from then on, so read one only when the user wants you to work with that page itself. Several pages are rarely worth it.
 
 Nothing is pushed to you: no note arrives when a design lands, or when the user refines or talks to a design. If the user asks how the designs came out, read the card.
 

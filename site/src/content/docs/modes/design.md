@@ -16,7 +16,7 @@ as they are written, on a card in the chat and in the session pane's **Gallery**
 Designs keep the labels they start with (A, B, C), so you can talk about them by name.
 
 Your chat stays out of the work. It fills in the Setup card and passes on what you tell it to. It
-reads a design only when you ask, and a page typically costs it 5,000 to 15,000 tokens, and a long one more.
+reads a design only when you ask, because reading a whole page into the chat is costly.
 
 ## Turn it on
 

@@ -102,7 +102,7 @@ import { ActionMenu } from "./ActionMenu";
 import { ArchiveCleanup } from "./ArchiveCleanup";
 import { ContextRing } from "./ContextRing";
 import { CancelHeldButton } from "./HeldAct";
-import { MergeRunButton } from "./PlaybookReview";
+import { NeedsYouChatRow } from "./PlaybookReview";
 import { waitingWords } from "../lib/working-hours";
 import { groupHref } from "../lib/group-route";
 import { GroupNameField } from "./Groups";
@@ -1505,7 +1505,6 @@ export function Sidebar(props: {
   /** ONE rule for the region and its spine door: rows, and proactivity known and not Off. */
   const showNeedsYou = () => !!props.sessions && needsYouShown(props.overseer?.proactivity, needsYouCount());
   const needsYouCutNote = () => needsYouCut(attention());
-  const needsYouPlaybook = (path: string) => needsYou().find((row) => row.session.path === path)?.playbook;
   /** Needs you's rows as drawn (lib/needs-you-row): a held act's minutes on the list's clock, read at the real time. */
   const needsItemRow = (it: AttentionItem) => itemRow(it, { home: home(), now: Math.max(props.now, Date.now()) });
   const chatRow = (r: NeedsYouRow, sentences?: readonly string[]) => {
@@ -2647,12 +2646,7 @@ export function Sidebar(props: {
               <ul class="list">
                 {/* Keyed by path (lib/for-key): a row is updated in place, never remounted, by a refresh. */}
                 <ForKey each={needsYouHard()} by={(r) => r.session.path}>
-                  {(r) => (
-                    <NeedsYouRowView row={needsChatRow(r())} label={needsLabels().get(r().session.path)} current={props.selected === r().session.path} onDismiss={(b) => dismissRow(r(), b)}>
-                      {/* A proposed playbook run: its one button, beside the row's link (§app.project-runtime/review). */}
-                      <Show when={needsYouPlaybook(r().session.path)}>{(pb) => <MergeRunButton projectId={pb().projectId} run={pb()} />}</Show>
-                    </NeedsYouRowView>
-                  )}
+                  {(r) => <NeedsYouChatRow row={needsChatRow(r())} review={r()} offer label={needsLabels().get(r().session.path)} current={props.selected === r().session.path} onDismiss={(b) => dismissRow(r(), b)} />}
                 </ForKey>
                 {/* An item of no session: a project's deploy or release, an owner's request, WhatsApp sending down. The row opens its page. */}
                 <ForKey each={needsYouProject()} by={(x) => x.id}>
@@ -2911,7 +2905,7 @@ export function Sidebar(props: {
                   </h3>
                   <ul class="list">
                     <ForKey each={orgNeedsYou()} by={(r) => r.session.path}>
-                      {(r) => <NeedsYouRowView row={orgChatRow(r())} label={orgLabels().get(r().session.path)} current={props.selected === r().session.path} onDismiss={(b) => dismissRow(r(), b)} />}
+                      {(r) => <NeedsYouChatRow row={orgChatRow(r())} review={r()} label={orgLabels().get(r().session.path)} current={props.selected === r().session.path} onDismiss={(b) => dismissRow(r(), b)} />}
                     </ForKey>
                     {/* A project's own item (a held act, a conflict to settle, a stakeholder to pick): no session, the row
                         opens the project page. A held act recounts its minutes, and Cancel stands beside the row's link. */}

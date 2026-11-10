@@ -11,6 +11,7 @@ import { after, before, describe, test } from "node:test";
 import type { Browser, BrowserContext, Page } from "playwright-core";
 import type { AttentionItem, SessionSummary } from "../shared/protocol";
 import type { ProjectSummary } from "../shared/projects";
+import type { SetupStatus, SetupTrial } from "../shared/setup-chat";
 import { launchTourBrowser } from "./tours/browser";
 import { scratchRoot } from "./test-scratch";
 
@@ -54,15 +55,33 @@ const ITEMS: AttentionItem[] = [
   act({ id: "h1", kind: "held-act", where: "Projects", detail: "Publishing v0.4.0 starts in 9 min unless you cancel it.", held: { id: "hold_7", goesAt: T0 + 9 * 60_000, what: "Publishing v0.4.0" } }),
 ];
 
+const SETUP_HEAD = `5bd95ab${"0".repeat(33)}`;
+const SETUP_ITEM = act({ id: "s1", kind: "playbook-review", path: REVIEW.path, title: REVIEW.title, where: "/w/shop", detail: "The Setup chat proposes the project's setup.", href: "#/s/y", playbook: { projectId: PID, label: "Project setup", hash: `sha256:${"e".repeat(64)}`, branch: "sova/setup", target: "master", proposes: "pipeline" } });
+const setupRead = (state: SetupTrial["state"]): SetupStatus => ({
+  chat: {
+    sessionId: "s2",
+    title: REVIEW.title,
+    state: "proposed",
+    startedAt: iso(30),
+    setUp: { merge: false, release: false, deploy: false },
+    proposal: { branch: "sova/setup", target: "master", commit: SETUP_HEAD, served: false, hash: `sha256:${"e".repeat(64)}`, services: [], merge: null, files: [], trial: { id: "mr_1", commit: SETUP_HEAD, at: iso(1), pass: state === "passed", state, checks: [] }, land: { can: true } },
+  },
+  setUp: { merge: false, release: false, deploy: false },
+  can: { open: true },
+  history: [],
+});
+
 const CONTENT: Record<string, string> = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".svg": "image/svg+xml", ".woff2": "font/woff2", ".json": "application/json", ".webmanifest": "application/manifest+json" };
 
 interface Opened {
   page: Page;
   ctx: BrowserContext;
   calls: string[];
+  /** Answers GET .../setup from now on. */
+  setSetup(read: SetupStatus): void;
 }
 
-async function open(width: number, scheme: "light" | "dark", o: { items?: AttentionItem[]; act?: number; refuseDismiss?: boolean } = {}): Promise<Opened> {
+async function open(width: number, scheme: "light" | "dark", o: { items?: AttentionItem[]; act?: number; refuseDismiss?: boolean; setup?: SetupStatus; sessions?: SessionSummary[] } = {}): Promise<Opened> {
   const phone = width < 768;
   const ctx = await browser.newContext({ viewport: { width, height: 1000 }, hasTouch: phone, isMobile: phone, reducedMotion: "reduce", colorScheme: scheme });
   // Sova wears dark unless a stored theme stands on light: the operating system's scheme doesn't choose.
@@ -71,6 +90,7 @@ async function open(width: number, scheme: "light" | "dark", o: { items?: Attent
   await ctx.addInitScript(() => sessionStorage.setItem("sova:launched", "1"));
   const page = await ctx.newPage();
   const calls: string[] = [];
+  let setup = o.setup;
   const json = (body: unknown, status = 200) => ({ status, contentType: "application/json", body: JSON.stringify(body) });
   await page.routeWebSocket(/.*/, () => {});
   await page.route("**/*", async (route) => {
@@ -86,8 +106,12 @@ async function open(width: number, scheme: "light" | "dark", o: { items?: Attent
       if (o.refuseDismiss) return route.fulfill(json({ error: "Disk full." }, 500));
       return route.fulfill(json(route.request().method() === "POST" ? { path: "", since: 0 } : { path: "", undone: true }));
     }
-    if (p === "/api/project-services/merge.status") return route.fulfill(json({ v: 1, verb: "merge.status", ok: true, merge: { view: { served: false, checks: "unset", target: "master" } } }));
-    if (p === "/api/sessions") return route.fulfill(json([CHAT, REVIEW, GUESS]));
+    if (p === "/api/project-services/merge.status") return route.fulfill(json({ v: 1, verb: "merge.status", ok: true, merge: { view: { served: false, checks: "unset", target: "master", checking: [], waiting: [], needsYou: [], needsFix: [], recent: [] } } }));
+    if (p === `/api/projects/${PID}/setup` && setup) {
+      calls.push(p);
+      return route.fulfill(json(setup));
+    }
+    if (p === "/api/sessions") return route.fulfill(json(o.sessions ?? [CHAT, REVIEW, GUESS]));
     if (p === "/api/projects") return route.fulfill(json({ projects: [PROJECT] }));
     if (p === `/api/projects/${PID}`) return route.fulfill(json(PROJECT));
     if (p === "/api/overseer/attention") {
@@ -109,7 +133,7 @@ async function open(width: number, scheme: "light" | "dark", o: { items?: Attent
   });
   await page.goto(`${ORIGIN}/`);
   await page.locator(".sidebar-needs-you .ny-row").first().waitFor();
-  return { page, ctx, calls };
+  return { page, ctx, calls, setSetup: (read) => (setup = read) };
 }
 
 const shot = async (page: Page, name: string) => {
@@ -155,6 +179,36 @@ describe("Needs you rows", () => {
       }
     });
   }
+
+  test("a Setup row's chip follows its trial on the row's one read: Running while it runs, Ready once it passed", async () => {
+    const o = await open(1280, "light", { items: [SETUP_ITEM], setup: setupRead("running") });
+    try {
+      const word = (w: string) => o.page.locator(`.ny-row[data-kind-word="${w}"]`).filter({ hasText: REVIEW.title });
+      await word("Running").waitFor();
+      assert.equal((await row(o.page, REVIEW.title).locator(".chip").textContent())?.trim(), "Running");
+      assert.equal(await word("Ready").count(), 0, "not Ready while its trial runs");
+      await row(o.page, REVIEW.title).getByText("Trial of 5bd95ab: running").waitFor();
+      o.setSetup(setupRead("passed"));
+      await word("Ready").waitFor();
+      await row(o.page, REVIEW.title).getByRole("button", { name: "Merge Branch sova/setup" }).waitFor();
+      assert.equal(o.calls.filter((c) => c.endsWith("/setup")).length, 2, "the first read and one 5 s poll: chip and button share it");
+    } finally {
+      await o.ctx.close();
+    }
+  });
+
+  test("an org project's Setup chat reads the same in the Organizations region, with no button there", async () => {
+    const org = { orgId: "o1", orgName: "Acme", projectId: PID, projectName: "Notes", kind: "coding" } as unknown as SessionSummary["org"];
+    const o = await open(1280, "light", { items: [SETUP_ITEM], setup: setupRead("running"), sessions: [{ ...REVIEW, org }] });
+    try {
+      const orgRow = o.page.locator(".org-needs .ny-row").filter({ hasText: REVIEW.title });
+      await o.page.locator('.org-needs .ny-row[data-kind-word="Running"]').waitFor();
+      await o.page.locator('.sidebar-needs-you .ny-row[data-kind-word="Running"]').waitFor();
+      assert.equal(await orgRow.getByRole("button", { name: /Merge Branch|Run Trial|Land/ }).count(), 0);
+    } finally {
+      await o.ctx.close();
+    }
+  });
 
   test("two same-named projects show just enough of their paths, and the folder's full path is the tooltip", async () => {
     const o = await open(1280, "light");

@@ -490,7 +490,8 @@
       "pi-config/extensions/subagents/worker-settle-report.test.ts",
       "scripts/chat-runtime-trial/run.mjs",
       "server/chat-runtime/trial-jobs-tj6.integration.test.ts",
-      "server/reports.test.ts"
+      "server/reports.test.ts",
+      "server/chat-workers.ts"
     ],
     "requires": [
       "§app.chat-processes/workers",
@@ -553,7 +554,8 @@
       "server/chat-runtime/trial-wake-tw5.integration.test.ts",
       "server/background-jobs.ts",
       "server/chat-runtime/trial-jobs-tj3.integration.test.ts",
-      "server/harness/pi/worker-tools.test.ts"
+      "server/harness/pi/worker-tools.test.ts",
+      "pi-config/extensions/subagents/worker-load.ts"
     ],
     "requires": [
       "§app/chat-processes",
@@ -566,10 +568,10 @@
     ],
     "agreed": {
       "by": "naomarik",
-      "at": "2026-11-07T17:25Z",
-      "source": "pi-session:4f394f82-707c-4335-a9f0-dfacbbbe4a11#d57957c0"
+      "at": "2026-11-10T11:42Z",
+      "source": "pi-session:0e2ea24a-22d2-4ec7-a1df-46bf85135214#c54c09bf"
     },
-    "evidence": "verified"
+    "evidence": "reviewed"
   },
   "§app/chat-processes": {
     "kind": "surface",

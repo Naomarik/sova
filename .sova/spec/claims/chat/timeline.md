@@ -107,7 +107,7 @@ can't answer, so the app passes the answer down as one boolean.
 | Open on Agents | `true` | `false` |
 | Open on Timeline, Inputs Only on | `false` | `true` |
 | Open on Timeline, Inputs Only off | `false` | `false` |
-| Open on Session, Skills or Explain | `false` | `false` |
+| Open on Session, Skills or Gallery | `false` | `false` |
 
 The unfiltered Timeline row looks odd — the pane is open on the right tab and the trigger says
 collapsed — but `aria-expanded` answers "did *this* control's content open?", and it didn't:

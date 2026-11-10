@@ -98,7 +98,9 @@
       "pi-config/extensions/subagents/claude-workers.ts",
       "pi-config/extensions/subagents/claude-workers.test.ts",
       "server/quiet-close-actions.test.ts",
-      "server/chat-host.ts"
+      "server/chat-host.ts",
+      "server/chat-workers.ts",
+      "server/design/batch.ts"
     ],
     "agreed": {
       "by": "naomarik",

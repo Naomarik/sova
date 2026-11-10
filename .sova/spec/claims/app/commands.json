@@ -24,14 +24,15 @@
       "src/card-toolkit/commands.gen.ts",
       "server/mesh/access.ts",
       "server/topic-pairs.ts",
-      "server/create-guide-growth.json"
+      "server/create-guide-growth.json",
+      "shared/commands/design.ts"
     ],
     "authority": "accepted",
     "evidence": "reviewed",
     "agreed": {
       "by": "naomarik",
-      "at": "2026-11-09T16:22Z",
-      "source": "pi-session:01a1b2f4-86c6-73d4-9fe9-b847b27035f9#950bc2c9"
+      "at": "2026-11-10T11:43Z",
+      "source": "pi-session:0e2ea24a-22d2-4ec7-a1df-46bf85135214#c54c09bf"
     }
   },
   "§app.commands/cli": {

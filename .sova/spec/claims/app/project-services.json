@@ -52,7 +52,7 @@
   "§app.project-services/callers": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "requires": [
       "§app.project-services/result",
       "§app.project-services/conform",
@@ -93,7 +93,8 @@
       "server/project-services/copy-approvals.test.ts",
       "server/overseer-copies.ts",
       "server/project-services/release.ts",
-      "server/project-services/tool-offered.test.ts"
+      "server/project-services/tool-offered.test.ts",
+      "server/project-services/design-coordinator-verbs.test.ts"
     ],
     "agreed": {
       "by": "naomarik",
@@ -846,7 +847,7 @@
   "§app.project-services/tool-offered": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "requires": [
       "§app.project-services/callers",
       "§app.project-services/contract",
@@ -873,7 +874,8 @@
       "server/playbooks.ts",
       "server/project-services/store.ts",
       "server/modes/engine.ts",
-      "server/harness/pi/contract.test.ts"
+      "server/harness/pi/contract.test.ts",
+      "server/chat-host.ts"
     ],
     "agreed": {
       "by": "naomarik",

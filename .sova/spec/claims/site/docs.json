@@ -213,6 +213,22 @@
       "source": "pi-session:5b3349ca-a4e6-4bb7-8a78-16e639eb61df#40d50679"
     }
   },
+  "§site.docs/design": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "site/src/content/docs/modes/vis/lookbook.md"
+    ],
+    "requires": [
+      "§chat/design-mode"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-11-10T08:52Z",
+      "source": "pi-session:0e2ea24a-22d2-4ec7-a1df-46bf85135214#f36f41aa"
+    }
+  },
   "§site.docs/drawing-kinds": {
     "kind": "behavior",
     "requires": [
@@ -930,7 +946,12 @@
     "evidence": "verified",
     "code": [
       "site/src/content/docs/modes/vis.md"
-    ]
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-11-10T11:43Z",
+      "source": "pi-session:0e2ea24a-22d2-4ec7-a1df-46bf85135214#c54c09bf"
+    }
   },
   "§site.docs/vis-examples": {
     "kind": "behavior",

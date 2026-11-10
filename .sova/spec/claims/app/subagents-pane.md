@@ -197,7 +197,7 @@ the Usage tab stays one tap away in the strip.
 
 The pane is Session detail: a head, the remote controls row (§app.shell/remote-session-chips), a
 tab strip, and one tab's panel, which scrolls on its own. The tabs, in this order: **Session ·
-Timeline · Agents · Usage · Time Spent · Context · Sharing · Explain** (`.tabs.session-tabs`, `role="tablist"`, one
+Timeline · Agents · Usage · Time Spent · Context · Sharing · Gallery** (`.tabs.session-tabs`, `role="tablist"`, one
 `role="tabpanel"`; roving `tabindex`, Left/Right wrapping, Home/End). Every tab is always in the
 strip, empty or not, so the strip never shifts under the reader.
 
@@ -208,7 +208,7 @@ strip, empty or not, so the strip never shifts under the reader.
   session path, in memory only. With none kept, it opens on Agents when a worker is working at
   open, else on Session, settled once at open so the tab never moves when the last worker
   finishes. Usage, Time Spent, Context and Sharing are never the default. A kept tab the strip
-  doesn't have opens as if none were kept.
+  doesn't have opens as if none were kept; one kept on the tab's old name, Explain, opens on Gallery.
 - **The strip never wraps** (§app.subagents-pane/tab-strip).
 - **Session** is what the session is, in this order: Path (with Copy Session Path and Copy Resume
   Command), Repository, Worktrees (§chat.worktrees/pane), Background jobs while it has any
@@ -255,8 +255,8 @@ strip, empty or not, so the strip never shifts under the reader.
   tab, "Open in a tab", never counts), the tab carries a count chip, and its accessible name is
   "Sharing, {n} viewing now"; at zero there is no chip and the name is "Sharing".
 - **Context** is what fills this chat's context window (§app.subagents-pane/context-tab).
-- **Time Spent** is §app.message-labels/time-spent-tab, **Timeline** §chat/timeline, **Agents** the list and transcript below, and **Explain** lists
-  the session's /explain pages. Which skills the chat has read is Context's Skills offered.
+- **Time Spent** is §app.message-labels/time-spent-tab, **Timeline** §chat/timeline, **Agents** the list and transcript below, and **Gallery** holds the chat's
+  prototypes on top (§chat.design-mode/gallery) and the session's /explain pages below them. Which skills the chat has read is Context's Skills offered.
 
 ## §app.subagents-pane/tab-strip — The tab strip never wraps
 
@@ -733,7 +733,8 @@ When the record's worker count is larger than the list, the end of the list says
 
 ## §app.subagents-pane/transcript-view — Transcript view
 
-A nested, read-only session view: **no composer, no Send, no Steer, no Stop, no attach**, and
+A nested, read-only session view, for every worker but a design session and the design coordinator
+(below): **no composer, no Send, no Steer, no Stop, no attach**, and
 no disabled composer with a reason either. A team member's view puts it under a Transcript tab
 beside its Inbox (§app.subagents-pane/member-inbox). The one exception is a restored worker
 (§app.worker-restore/restore). Under its view head, a `usage-note` says what happened: a
@@ -742,6 +743,13 @@ server restart; it was mid-task at {HH:MM}, and that turn never finished."). The
 resume: that is the parent agent's `agent_resume` or `/agent-resume` (§app.worker-restore/resume).
 A worker that had ended shows no note. The transcript itself stays read-only. A worker's session belongs to its worker, and the
 webapp never writes to it (AGENTS.md: no file locking).
+
+**A design session and the design coordinator have a message box.** These two kinds, and no other
+worker, are opened from the Gallery and the Lookbook card and read with a message box and Send under
+their transcript (§chat.design-mode/chat-with, §chat.design-mode/chat-placement). What is sent goes
+through the worker's delivery path (§chat.design-mode/delivery), so the webapp still never writes the
+session file, and a shut-down one comes back by itself when a message reaches it
+(§app.worker-restore/resume). They have no Steer, Stop or attach.
 
 ```html
 <div class="subagents-view">

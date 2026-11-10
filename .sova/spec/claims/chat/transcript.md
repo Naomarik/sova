@@ -658,17 +658,20 @@ Driven by `ChatServerMessage.event`. Streaming working blocks follow the same br
 ## §chat.transcript/runaway-stream — A runaway stream is stopped
 
 Every runtime Sova hosts (ordinary chats, baton sessions and their wrap-up, the Overseer, a
-project's overseer) has its turn stopped once the model's stream passes a limit for its kind. A
+project's overseer, a design session) has its turn stopped once the model's stream passes a limit for its kind. A
 model that degenerates — endless whitespace inside a tool call is the case seen — otherwise costs
 the server more CPU with every piece it streams, until nothing else on it answers.
 
-| Limit | Baton | Overseer | Project overseer | Ordinary chat |
-|---|---|---|---|---|
-| Raw whitespace in a row inside one tool call's arguments | 8,192 | 8,192 | 8,192 | 8,192 |
-| One tool call's arguments | 65,536 characters | 65,536 | 65,536 | 1,048,576 |
-| One reply (text, thinking and tool arguments) | 262,144 characters | none | 1,048,576 | none |
-| One run, start to end | 10 minutes | 10 minutes | 10 minutes | none |
-| The server stalled over 750 ms while one tool call is at least 131,072 characters | stop | stop | stop | stop |
+| Limit | Baton | Overseer | Project overseer | Ordinary chat | Design session |
+|---|---|---|---|---|---|
+| Raw whitespace in a row inside one tool call's arguments | 8,192 | 8,192 | 8,192 | 8,192 | 8,192 |
+| One tool call's arguments | 65,536 characters | 65,536 | 65,536 | 1,048,576 | 1,048,576 |
+| One reply (text, thinking and tool arguments) | 262,144 characters | none | 1,048,576 | none | 1,048,576, thinking counted apart (1,048,576) |
+| One run, start to end | 10 minutes | 10 minutes | 10 minutes | none | none |
+| The server stalled over 750 ms while one tool call is at least 131,072 characters | stop | stop | stop | stop | stop |
+
+A design session's page has no size limit of its own (§chat.design-mode/streaming): its column is
+the ordinary chat's safety stop, applied to a page written in the reply as well.
 
 A project overseer's conversation lives in its org's workspace repo, which every host clones, so a
 runaway reply there is capped: it can't write a line too long to read back or to back up.

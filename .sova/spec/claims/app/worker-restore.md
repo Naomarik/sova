@@ -128,7 +128,8 @@ command, stays on the server with no caller in the app. It opens the parent chat
 holds none (one closed for being quiet, §app.chat-processes/idle-stop), as a send would, and never
 answers "open the chat first". An archived parent is the exception: the request is refused with
 "That session is archived; unarchive it first." and nothing starts (§chat.transcript/instant-open). There is **no automatic resume**, not at session open, not at the
-next prompt, and not for team members.
+next prompt, and not for team members. A design session and the design coordinator are the one
+exception, below.
 
 - **Same worker.** It keeps its id, name, team membership and role, and continues its own transcript: its chat reopens its session file, a Claude Code worker included, through the same factory as a spawn (§app.chat-processes/workers). Its spawn
   spec is re-applied (cwd, model, effort, tools, system prompt, its worktree's agent dir), and the sandbox
@@ -162,6 +163,12 @@ next prompt, and not for team members.
   loaded (an older Claude Code worker excepted, above), and a worker whose backend session was never recorded. When the reopen itself fails,
   or the worker isn't idle within 180 seconds, the restored entry stays as it was and the reason
   is returned.
+- **A design session and the design coordinator come back on delivery.** Neither uses `agent_resume`
+  or `/agent-resume`. When Refine, a message or what the main chat passes on reaches one that has shut
+  down, or that a restart left stopped, its session reopens by itself under the same record and takes
+  the message (§chat.design-mode/delivery), and the main chat is neither told nor woken. One that has
+  been stopped for good doesn't reopen: its design keeps its page and Refine starts a fresh session
+  from that page.
 - **What the parent sees.** The resumed worker is listed under its group as "· resumed". The
   tool answers "Resumed {id} ({name}) idle in its own {backend} session …; nothing was sent to
   it. Give it work with agent_steer."

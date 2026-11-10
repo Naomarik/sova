@@ -442,8 +442,14 @@
       "src/components/SessionView.tsx",
       "server/usage-helper/query.ts",
       "shared/usage/wire.ts",
-      "shared/protocol.ts"
-    ]
+      "shared/protocol.ts",
+      "src/components/DesignOpen.tsx"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-11-10T11:43Z",
+      "source": "pi-session:0e2ea24a-22d2-4ec7-a1df-46bf85135214#c54c09bf"
+    }
   },
   "§app.subagents-pane/trigger": {
     "kind": "behavior",

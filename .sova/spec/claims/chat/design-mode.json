@@ -1,0 +1,1068 @@
+{
+  "§chat.design-mode/asking": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "pi-config/extensions/mode/vis/overview.md",
+      "server/design/tools.ts",
+      "pi-config/extensions/mode/index.test.ts"
+    ],
+    "requires": [
+      "§chat.design-mode/turning-on",
+      "§chat.markdown/visuals"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-11-10T11:43Z",
+      "source": "pi-session:0e2ea24a-22d2-4ec7-a1df-46bf85135214#c54c09bf"
+    }
+  },
+  "§chat.design-mode/asset-storage": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "reviewed",
+    "code": [
+      "server/design/assets.ts",
+      "server/design/assets.test.ts",
+      "server/design/asset-routes.ts",
+      "server/design/store.ts",
+      "shared/design-assets.ts"
+    ],
+    "requires": [
+      "§chat.design-mode/storage"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-11-10T00:34Z",
+      "source": "pi-session:0e2ea24a-22d2-4ec7-a1df-46bf85135214#9497cb80"
+    }
+  },
+  "§chat.design-mode/brief": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "shared/design.ts",
+      "server/design/brief.ts",
+      "server/design/brief.test.ts",
+      "server/design/coordinator.ts",
+      "src/components/DesignBrief.tsx",
+      "src/components/DesignBrief.css",
+      "src/lib/design-brief.ts",
+      "src/lib/design-brief.test.ts"
+    ],
+    "requires": [
+      "§chat.design-mode/brief-layers",
+      "§chat.design-mode/brief-questions",
+      "§chat.design-mode/brief-start",
+      "§chat.design-mode/brief-images",
+      "§chat.design-mode/link-modes",
+      "§chat.design-mode/research",
+      "§chat.design-mode/steady-cards"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-11-10T11:43Z",
+      "source": "pi-session:0e2ea24a-22d2-4ec7-a1df-46bf85135214#c54c09bf"
+    }
+  },
+  "§chat.design-mode/brief-images": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "src/components/DesignBriefImages.tsx",
+      "server/design/describe-routes.ts",
+      "server/design/coordinator-routes.ts",
+      "server/design/assets.ts",
+      "shared/design-assets.ts"
+    ],
+    "requires": [],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-11-10T00:34Z",
+      "source": "pi-session:0e2ea24a-22d2-4ec7-a1df-46bf85135214#9497cb80"
+    }
+  },
+  "§chat.design-mode/brief-layers": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "server/design/brief.ts",
+      "server/design/brief.test.ts",
+      "server/design/coordinator.ts",
+      "server/design/coordinator-routes.ts",
+      "src/components/DesignBrief.tsx",
+      "src/lib/design-brief.ts",
+      "src/lib/design-brief.test.ts"
+    ],
+    "requires": [
+      "§chat.design-mode/brief-start"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-11-10T11:43Z",
+      "source": "pi-session:0e2ea24a-22d2-4ec7-a1df-46bf85135214#7bd94752"
+    }
+  },
+  "§chat.design-mode/brief-questions": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "reviewed",
+    "code": [
+      "server/design/brief.ts",
+      "server/design/coordinator.ts",
+      "server/design/coordinator-routes.ts",
+      "src/components/DesignBrief.tsx",
+      "pi-config/extensions/mode/align.ts"
+    ],
+    "requires": [],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-11-10T11:43Z",
+      "source": "pi-session:0e2ea24a-22d2-4ec7-a1df-46bf85135214#7bd94752"
+    }
+  },
+  "§chat.design-mode/brief-start": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "server/design/brief.ts",
+      "server/design/brief.test.ts",
+      "server/design/routes.ts",
+      "server/design/batch.ts",
+      "server/design/coordinator.ts",
+      "src/components/DesignBrief.tsx",
+      "src/lib/design-brief.ts"
+    ],
+    "requires": [
+      "§chat.design-mode/launch-limits"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-11-10T11:43Z",
+      "source": "pi-session:0e2ea24a-22d2-4ec7-a1df-46bf85135214#7bd94752"
+    }
+  },
+  "§chat.design-mode/capture": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "server/design/capture.ts",
+      "server/design/capture.integration.test.ts",
+      "server/tours/page-capture.ts",
+      "server/tours/page-capture.test.ts",
+      "server/tours/runner-child.ts",
+      "server/tours/runner-protocol.ts",
+      "shared/design-assets.ts"
+    ],
+    "requires": [
+      "§chat.design-mode/link-reach",
+      "§app.tours/recording"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-11-10T00:34Z",
+      "source": "pi-session:0e2ea24a-22d2-4ec7-a1df-46bf85135214#9497cb80"
+    }
+  },
+  "§chat.design-mode/card": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "shared/design.ts",
+      "server/design/batch.ts",
+      "server/design/live.ts",
+      "server/design/routes.ts",
+      "server/design/setup.ts",
+      "server/transcript.ts",
+      "src/components/DesignCard.tsx",
+      "src/components/DesignCard.css",
+      "src/lib/design-rows.ts",
+      "src/lib/design-store.ts",
+      "src/lib/design-api.ts",
+      "src/lib/design-ui.ts",
+      "src/lib/design-ui.test.ts",
+      "src/lib/design-store-estimates.browser.test.ts",
+      "src/components/BuiltinKinds.tsx",
+      "src/components/LiveKinds.tsx",
+      "src/components/Thread.tsx",
+      "src/components/ChatView.tsx",
+      "src/lib/transcript-kinds.ts",
+      "src/lib/transcript-kinds.test.ts",
+      "src/lib/transcript-kinds-rule.test.ts",
+      "server/app.ts"
+    ],
+    "requires": [
+      "§app.tours/one-card",
+      "§chat.transcript-cards/built-ins",
+      "§chat.design-mode/streaming",
+      "§chat.design-mode/labels",
+      "§chat.design-mode/coordinator-card"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-11-10T11:43Z",
+      "source": "pi-session:0e2ea24a-22d2-4ec7-a1df-46bf85135214#c54c09bf"
+    }
+  },
+  "§chat.design-mode/chat-placement": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "reviewed",
+    "code": [
+      "src/components/DesignOpen.tsx",
+      "src/components/DesignCard.css"
+    ],
+    "requires": []
+  },
+  "§chat.design-mode/chat-with": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "src/components/DesignOpen.tsx",
+      "src/components/DesignCoordinator.tsx",
+      "src/components/SubagentPane.tsx",
+      "server/design/routes.ts",
+      "server/design/coordinator-routes.ts"
+    ],
+    "requires": [
+      "§app.subagents-pane/transcript-view",
+      "§chat.design-mode/delivery",
+      "§chat.design-mode/chat-placement"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-11-10T11:43Z",
+      "source": "pi-session:0e2ea24a-22d2-4ec7-a1df-46bf85135214#1341c7a7"
+    }
+  },
+  "§chat.design-mode/commands": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "reviewed",
+    "code": [
+      "shared/commands/design.ts",
+      "shared/commands/other.ts",
+      "shared/commands-ids.json",
+      "src/card-toolkit/commands.gen.ts",
+      "server/commands-inventory/scan.ts",
+      "server/commands-inventory/baseline.json",
+      "server/commands-fuzz.test.ts",
+      "docs/commands.md"
+    ],
+    "requires": [
+      "§app/commands"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-11-10T11:43Z",
+      "source": "pi-session:0e2ea24a-22d2-4ec7-a1df-46bf85135214#c54c09bf"
+    }
+  },
+  "§chat.design-mode/coordinator": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "server/design/coordinator.ts",
+      "server/design/coordinator.test.ts",
+      "server/chat-workers.ts",
+      "server/chat-host.ts",
+      "pi-config/extensions/mode/design/coordinator.md"
+    ],
+    "requires": [
+      "§app.chat-processes/workers",
+      "§chat.design-mode/launch-limits",
+      "§chat.design-mode/new-from-parents",
+      "§chat.design-mode/main-chat",
+      "§chat.design-mode/delivery"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-11-10T08:52Z",
+      "source": "pi-session:0e2ea24a-22d2-4ec7-a1df-46bf85135214#f36f41aa"
+    }
+  },
+  "§chat.design-mode/coordinator-card": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "src/components/DesignCoordinator.tsx",
+      "server/design/coordinator.ts",
+      "server/design/coordinator-routes.ts",
+      "server/design/coordinator.test.ts"
+    ],
+    "requires": [
+      "§chat.design-mode/delivery"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-11-10T11:43Z",
+      "source": "pi-session:0e2ea24a-22d2-4ec7-a1df-46bf85135214#c54c09bf"
+    }
+  },
+  "§chat.design-mode/delivery": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "reviewed",
+    "code": [
+      "server/design/batch.ts",
+      "server/design/batch.test.ts",
+      "server/design/routes.ts",
+      "server/chat-workers.ts",
+      "src/components/DesignCoordinator.tsx",
+      "src/components/DesignOpen.tsx"
+    ],
+    "requires": [
+      "§app.worker-restore/resume",
+      "§app.chat-processes/workers"
+    ]
+  },
+  "§chat.design-mode/describers": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "server/design/describe.ts",
+      "server/design/describe.test.ts",
+      "server/design/describe-routes.ts",
+      "server/chat-workers.ts",
+      "server/chat-host.ts",
+      "shared/design-assets.ts"
+    ],
+    "requires": [
+      "§chat.design-mode/design-sessions"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-11-10T00:34Z",
+      "source": "pi-session:0e2ea24a-22d2-4ec7-a1df-46bf85135214#9497cb80"
+    }
+  },
+  "§chat.design-mode/design-sessions": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "shared/design.ts",
+      "server/design/batch.ts",
+      "server/design/batch.test.ts",
+      "server/design/tools.ts",
+      "server/design/edits.ts",
+      "server/chat-workers.ts",
+      "server/chat-host.ts",
+      "server/chat-handle.ts",
+      "server/chat-manager.ts",
+      "pi-config/extensions/subagents/worker-host.ts",
+      "pi-config/extensions/subagents/worker-load.ts",
+      "pi-config/extensions/subagents/runner.ts",
+      "pi-config/extensions/subagents/chat-worker.ts",
+      "pi-config/extensions/mode/design/session/brief.md",
+      "src/components/DesignCard.tsx"
+    ],
+    "requires": [
+      "§app.chat-processes/workers",
+      "§app.chat-processes/idle-stop",
+      "§app/provider-limits",
+      "§chat.design-mode/gallery",
+      "§chat.design-mode/main-chat",
+      "§chat.design-mode/delivery"
+    ]
+  },
+  "§chat.design-mode/directions": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "shared/design.ts",
+      "server/design/setup.ts",
+      "src/components/DesignSetupControls.tsx",
+      "src/lib/design-ui.ts",
+      "pi-config/extensions/mode/vis/lookbook-directions.md",
+      "pi-config/extensions/mode/design-guide.ts",
+      "server/design-layouts.test.ts"
+    ],
+    "requires": [
+      "§chat.design-mode/model-picker",
+      "§chat.design-mode/layouts",
+      "§chat.design-mode/pairing"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-11-10T11:43Z",
+      "source": "pi-session:0e2ea24a-22d2-4ec7-a1df-46bf85135214#7bd94752"
+    }
+  },
+  "§chat.design-mode/failed-designs": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "shared/design.ts",
+      "server/design/batch.ts",
+      "server/design/batch.test.ts",
+      "server/design/tools.ts",
+      "server/design/routes.ts",
+      "src/lib/design-ui.ts",
+      "src/lib/design-ui.test.ts",
+      "src/components/DesignCard.tsx",
+      "src/components/DesignOpen.tsx"
+    ],
+    "requires": [
+      "§chat.design-mode/landing-checks"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-11-10T00:05Z",
+      "source": "pi-session:0e2ea24a-22d2-4ec7-a1df-46bf85135214#9497cb80"
+    }
+  },
+  "§chat.design-mode/gallery": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "src/components/DesignGallery.tsx",
+      "src/components/DesignBriefImages.tsx",
+      "src/components/SessionPane.tsx"
+    ],
+    "requires": [
+      "§app.subagents-pane/tabs",
+      "§app.insights/explanations-page"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-11-10T11:43Z",
+      "source": "pi-session:0e2ea24a-22d2-4ec7-a1df-46bf85135214#c54c09bf"
+    }
+  },
+  "§chat.design-mode/guide": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "reviewed",
+    "code": [
+      "pi-config/extensions/mode/design-guide.ts",
+      "pi-config/extensions/mode/vis/lookbook.md",
+      "pi-config/extensions/mode/vis/lookbook-directions.md",
+      "pi-config/extensions/mode/vis/lookbook-setup.md",
+      "pi-config/extensions/mode/vis/lookbook-passing-on.md",
+      "pi-config/extensions/mode/design/coordinator.md",
+      "pi-config/extensions/mode/design/session/brief.md",
+      "pi-config/extensions/mode/design/session/task-create.md",
+      "pi-config/extensions/mode/design/session/task-description.md",
+      "pi-config/extensions/mode/design/session/task-screenshot.md",
+      "server/design-guide.test.ts",
+      "pi-config/extensions/mode/vis-guide-tool.ts",
+      "pi-config/extensions/mode/design/session/layout.md",
+      "pi-config/extensions/mode/design/session/task-description-layout.md",
+      "pi-config/extensions/mode/design/session/task-screenshot-layout.md"
+    ],
+    "requires": [
+      "§chat.design-mode/prototype-frame",
+      "§chat.design-mode/main-chat",
+      "§chat.markdown/visuals",
+      "§chat.design-mode/asking",
+      "§chat.design-mode/directions",
+      "§chat.design-mode/layouts"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-11-10T11:43Z",
+      "source": "pi-session:0e2ea24a-22d2-4ec7-a1df-46bf85135214#c54c09bf"
+    }
+  },
+  "§chat.design-mode/labels": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "shared/design.ts",
+      "server/design/store.ts",
+      "server/design/batch.ts",
+      "src/lib/design-frame.ts"
+    ],
+    "requires": [],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-11-10T11:43Z",
+      "source": "pi-session:0e2ea24a-22d2-4ec7-a1df-46bf85135214#7bd94752"
+    }
+  },
+  "§chat.design-mode/landing-checks": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "server/design/lint.ts",
+      "server/design/lint.test.ts",
+      "server/design/batch.ts",
+      "server/design/tools.ts"
+    ],
+    "requires": [
+      "§chat.design-mode/prototype-frame"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-11-10T00:05Z",
+      "source": "pi-session:0e2ea24a-22d2-4ec7-a1df-46bf85135214#9497cb80"
+    }
+  },
+  "§chat.design-mode/launch-limits": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "reviewed",
+    "code": [
+      "shared/design.ts",
+      "server/design/batch.ts",
+      "server/design/batch.test.ts",
+      "server/design/coordinator.ts",
+      "server/design/coordinator.test.ts",
+      "server/design/routes.ts",
+      "server/design/setup.ts",
+      "src/components/DesignBrief.tsx"
+    ],
+    "requires": [
+      "§chat.design-mode/card",
+      "§chat.design-mode/pairing"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-11-10T11:43Z",
+      "source": "pi-session:0e2ea24a-22d2-4ec7-a1df-46bf85135214#7bd94752"
+    }
+  },
+  "§chat.design-mode/layouts": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "pi-config/extensions/mode/design-guide.ts",
+      "pi-config/extensions/mode/design/session/brief.md",
+      "pi-config/extensions/mode/design/session/layout.md",
+      "server/design-layouts.test.ts"
+    ],
+    "requires": [],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-11-10T11:43Z",
+      "source": "pi-session:0e2ea24a-22d2-4ec7-a1df-46bf85135214#7bd94752"
+    }
+  },
+  "§chat.design-mode/link-modes": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "shared/design.ts",
+      "server/design/coordinator.ts",
+      "server/design/brief.ts",
+      "server/design/describe.ts",
+      "src/components/DesignSetupControls.tsx",
+      "src/components/DesignBrief.tsx",
+      "pi-config/extensions/mode/design/coordinator.md"
+    ],
+    "requires": [
+      "§chat.design-mode/capture",
+      "§chat.design-mode/describers"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-11-10T00:33Z",
+      "source": "pi-session:0e2ea24a-22d2-4ec7-a1df-46bf85135214#9497cb80"
+    }
+  },
+  "§chat.design-mode/link-reach": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "server/design/browse.ts",
+      "server/design/browse.test.ts",
+      "server/tours/runner.ts",
+      "server/tours/runner.test.ts"
+    ],
+    "requires": [
+      "§app.tours/sites",
+      "§app.tours/sandbox"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-11-10T00:34Z",
+      "source": "pi-session:0e2ea24a-22d2-4ec7-a1df-46bf85135214#9497cb80"
+    }
+  },
+  "§chat.design-mode/link-sign-in": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "reviewed",
+    "code": [
+      "server/design/asset-routes.ts",
+      "server/design/capture.ts",
+      "server/design/browse.ts",
+      "server/design/coordinator.ts"
+    ],
+    "requires": [
+      "§chat.design-mode/link-reach",
+      "§app.tours/sites"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-11-10T00:34Z",
+      "source": "pi-session:0e2ea24a-22d2-4ec7-a1df-46bf85135214#9497cb80"
+    }
+  },
+  "§chat.design-mode/main-chat": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "server/design/tools.ts",
+      "server/design/own-images.ts",
+      "server/design/tell-images.test.ts",
+      "pi-config/extensions/mode/vis/lookbook-passing-on.md",
+      "pi-config/extensions/mode/vis/lookbook.md"
+    ],
+    "requires": [],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-11-10T11:43Z",
+      "source": "pi-session:0e2ea24a-22d2-4ec7-a1df-46bf85135214#c54c09bf"
+    }
+  },
+  "§chat.design-mode/model-picker": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "shared/design.ts",
+      "server/design/setup.ts",
+      "src/components/DesignSetupControls.tsx",
+      "pi-config/models.json",
+      "shared/design-models.ts",
+      "shared/design-models.test.ts",
+      "server/design/setup.test.ts"
+    ],
+    "requires": [
+      "§chat.design-mode/refine",
+      "§chat.model-menu/favorites",
+      "§app.model-levels/retired",
+      "§chat.design-mode/coordinator"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-11-10T08:52Z",
+      "source": "pi-session:0e2ea24a-22d2-4ec7-a1df-46bf85135214#f36f41aa"
+    }
+  },
+  "§chat.design-mode/new-from-parents": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "server/design/batch.ts",
+      "server/design/batch.test.ts",
+      "server/design/coordinator.ts",
+      "server/design/coordinator.test.ts"
+    ],
+    "requires": [
+      "§chat.design-mode/labels"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-11-10T11:43Z",
+      "source": "pi-session:0e2ea24a-22d2-4ec7-a1df-46bf85135214#7bd94752"
+    }
+  },
+  "§chat.design-mode/open-history": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "src/components/DesignOpen.tsx",
+      "src/components/DesignCard.tsx",
+      "src/components/DesignGallery.tsx",
+      "src/lib/design-history.ts",
+      "src/lib/design-history.browser.test.ts"
+    ],
+    "requires": [
+      "§chat.design-mode/chat-with",
+      "§app/shell"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-11-10T11:43Z",
+      "source": "pi-session:0e2ea24a-22d2-4ec7-a1df-46bf85135214#1341c7a7"
+    }
+  },
+  "§chat.design-mode/own-images": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "server/design/own-images.ts",
+      "server/design/tell-images.test.ts",
+      "server/design/asset-routes.ts",
+      "server/design/assets.ts",
+      "server/design/coordinator-routes.ts",
+      "server/tours/darkroom-child.ts",
+      "src/components/DesignCoordinator.tsx"
+    ],
+    "requires": [
+      "§chat.design-mode/describers",
+      "§chat.design-mode/brief-images"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-11-10T00:34Z",
+      "source": "pi-session:0e2ea24a-22d2-4ec7-a1df-46bf85135214#9497cb80"
+    }
+  },
+  "§chat.design-mode/page-images": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "server/design/assets.ts",
+      "server/design/assets.test.ts",
+      "server/design/tools.ts",
+      "server/design/routes.ts",
+      "src/lib/design-frame.ts",
+      "shared/design-assets.ts"
+    ],
+    "requires": [
+      "§chat.design-mode/prototype-frame"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-11-10T00:34Z",
+      "source": "pi-session:0e2ea24a-22d2-4ec7-a1df-46bf85135214#9497cb80"
+    }
+  },
+  "§chat.design-mode/pairing": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "shared/design.ts",
+      "server/design/batch.ts",
+      "server/design/setup.ts",
+      "src/lib/design-ui.ts",
+      "shared/design-plan.test.ts"
+    ],
+    "requires": [
+      "§chat.design-mode/directions",
+      "§chat.design-mode/launch-limits"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-11-10T11:43Z",
+      "source": "pi-session:0e2ea24a-22d2-4ec7-a1df-46bf85135214#7bd94752"
+    }
+  },
+  "§chat.design-mode/project-reach": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "reviewed",
+    "code": [
+      "server/project-services/engine.ts",
+      "server/project-services/design-coordinator-verbs.test.ts",
+      "server/design/coordinator.ts",
+      "server/design/coordinator-routes.ts"
+    ],
+    "requires": [
+      "§app.project-services/callers"
+    ]
+  },
+  "§chat.design-mode/prototype-frame": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "src/components/DesignFrame.tsx",
+      "src/lib/design-frame.ts",
+      "src/lib/design-frame.test.ts",
+      "server/design/look.ts",
+      "server/restart-paths.ts"
+    ],
+    "requires": [
+      "§chat.transcript-cards/sealed-box"
+    ]
+  },
+  "§chat.design-mode/rebuilds": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "pi-config/extensions/mode/design/session/task-screenshot.md",
+      "pi-config/extensions/mode/design/session/task-description.md",
+      "pi-config/extensions/mode/design/session/task-description-layout.md",
+      "pi-config/extensions/mode/design/session/task-screenshot-layout.md",
+      "server/design-layouts.test.ts"
+    ],
+    "requires": [
+      "§chat.design-mode/layouts",
+      "§chat.design-mode/research",
+      "§chat.design-mode/link-modes"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-11-10T11:43Z",
+      "source": "pi-session:0e2ea24a-22d2-4ec7-a1df-46bf85135214#7bd94752"
+    }
+  },
+  "§chat.design-mode/refine": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "server/design/batch.ts",
+      "server/design/routes.ts",
+      "server/design/look.ts",
+      "server/design/edits.ts",
+      "src/components/DesignOpen.tsx",
+      "src/components/DesignCard.tsx"
+    ],
+    "requires": [
+      "§chat.design-mode/delivery",
+      "§chat.design-mode/labels"
+    ]
+  },
+  "§chat.design-mode/reply-route": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "shared/design.ts",
+      "server/design/stream-decode.ts",
+      "server/design/stream-decode.test.ts",
+      "server/design/tools.ts",
+      "server/design/batch.ts",
+      "server/design/transcript.ts",
+      "server/watch.ts",
+      "pi-config/extensions/mode/design/session/delivery-reply.md",
+      "pi-config/extensions/mode/design/session/delivery-tool.md"
+    ],
+    "requires": []
+  },
+  "§chat.design-mode/research": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "server/design/browse.ts",
+      "server/design/browse.test.ts",
+      "server/design/browse.integration.test.ts",
+      "server/design/coordinator.ts",
+      "server/design/coordinator-routes.ts",
+      "src/components/DesignBrief.tsx",
+      "server/tours/runner.ts",
+      "server/tours/runner-child.ts",
+      "server/tours/runner-protocol.ts",
+      "pi-config/extensions/mode/design/session/task-screenshot.md"
+    ],
+    "requires": [
+      "§chat.design-mode/project-reach",
+      "§chat.design-mode/sites",
+      "§chat.design-mode/brief",
+      "§chat.design-mode/brief-start",
+      "§chat.design-mode/link-modes"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-11-10T00:35Z",
+      "source": "pi-session:0e2ea24a-22d2-4ec7-a1df-46bf85135214#9497cb80"
+    }
+  },
+  "§chat.design-mode/setup-card": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "shared/design.ts",
+      "server/design/setup.ts",
+      "server/design/store.ts",
+      "server/design/routes.ts",
+      "server/harness/state-kinds.ts",
+      "server/harness/state-kinds.test.ts",
+      "src/components/DesignCard.tsx",
+      "src/components/DesignSetupControls.tsx",
+      "src/lib/design-api.ts",
+      "src/lib/design-store.ts",
+      "pi-config/extensions/mode/vis/lookbook-setup.md",
+      "server/design/setup.test.ts"
+    ],
+    "requires": [
+      "§chat.design-mode/model-picker",
+      "§chat.design-mode/launch-limits",
+      "§chat.design-mode/coordinator",
+      "§chat.design-mode/asking",
+      "§chat.design-mode/directions",
+      "§chat.design-mode/pairing"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-11-10T08:52Z",
+      "source": "pi-session:0e2ea24a-22d2-4ec7-a1df-46bf85135214#f36f41aa"
+    }
+  },
+  "§chat.design-mode/sites": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "reviewed",
+    "code": [
+      "server/design/browse.ts",
+      "server/design/browse.test.ts",
+      "server/design/coordinator.ts",
+      "server/design/coordinator-routes.ts",
+      "server/tours/runner.ts",
+      "server/tours/runner.test.ts"
+    ],
+    "requires": [
+      "§app.tours/sites"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-11-10T00:35Z",
+      "source": "pi-session:0e2ea24a-22d2-4ec7-a1df-46bf85135214#9497cb80"
+    }
+  },
+  "§chat.design-mode/steady-cards": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "src/components/DesignFrame.tsx",
+      "src/components/DesignCard.tsx",
+      "src/components/DesignCard.css",
+      "src/components/DesignGallery.tsx",
+      "src/components/DesignOpen.tsx",
+      "src/components/DesignBrief.tsx",
+      "src/components/DesignBrief.css",
+      "src/lib/design-store.ts",
+      "src/lib/design-live-slots.ts"
+    ],
+    "requires": [
+      "§chat.design-mode/prototype-frame",
+      "§chat.design-mode/streaming",
+      "§chat.design-mode/card",
+      "§chat.design-mode/gallery",
+      "§chat.design-mode/model-picker",
+      "§chat.design-mode/directions"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-11-10T08:52Z",
+      "source": "pi-session:0e2ea24a-22d2-4ec7-a1df-46bf85135214#f36f41aa"
+    }
+  },
+  "§chat.design-mode/storage": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "reviewed",
+    "code": [
+      "server/design/store.ts",
+      "server/sessions-index.ts",
+      "server/mesh/access.ts"
+    ],
+    "requires": [
+      "§app.tours/storage"
+    ]
+  },
+  "§chat.design-mode/streaming": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "server/stream-guard.ts",
+      "server/stream-guard.test.ts",
+      "server/design/live.ts",
+      "server/design/live-link.ts",
+      "server/design/live-route.ts",
+      "server/design/live-route.test.ts",
+      "server/design/stream-decode.ts",
+      "server/design/stream-decode.test.ts",
+      "server/chat-runtime/design-live.ts",
+      "server/chat-runtime/design-live.test.ts",
+      "server/chat-runtime/host.ts",
+      "server/chat-runtime/worker-port.ts",
+      "server/chat-handle-remote.ts",
+      "server/ws.ts",
+      "shared/harness-wire.ts",
+      "shared/wire-areas.json",
+      "shared/chat-runtime-wire.ts",
+      "shared/chat-runtime-wire.test.ts",
+      "src/components/DesignFrame.tsx",
+      "src/lib/design-frame.ts",
+      "src/lib/design-frame.test.ts",
+      "src/lib/design-live-slots.ts",
+      "src/lib/design-live-slots.test.ts",
+      "src/lib/design-store.ts"
+    ],
+    "requires": [
+      "§chat.design-mode/failed-designs",
+      "§chat.design-mode/reply-route"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-11-10T00:05Z",
+      "source": "pi-session:0e2ea24a-22d2-4ec7-a1df-46bf85135214#9497cb80"
+    }
+  },
+  "§chat.design-mode/turning-on": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "pi-config/extensions/mode/minor.ts",
+      "pi-config/extensions/mode/project-format.ts",
+      "pi-config/extensions/mode/index.test.ts",
+      "server/chat-manager.ts",
+      "server/mode-state.test.ts",
+      "src/components/ui.tsx",
+      "src/lib/mode-glyphs.ts",
+      "pi-config/extensions/mode/create/modes.md",
+      "pi-config/extensions/mode/create/tools.md",
+      "server/create-guide-growth.json"
+    ],
+    "requires": [
+      "§chat/mode-menu",
+      "§chat.mode-menu/workers",
+      "§chat.mode-menu/sova-runs-modes",
+      "§chat.mode-menu/minor-toggle-keeps-prompt",
+      "§chat.markdown/visuals",
+      "§app.tours/authoring"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-11-10T11:43Z",
+      "source": "pi-session:0e2ea24a-22d2-4ec7-a1df-46bf85135214#c54c09bf"
+    }
+  },
+  "§chat/design-mode": {
+    "kind": "surface",
+    "authority": "accepted",
+    "evidence": "reviewed",
+    "code": [
+      "shared/design.ts",
+      "agents/modes/design/overview.md",
+      "agents/modes/overview.md",
+      "pi-config/extensions/mode/README.md"
+    ],
+    "requires": [
+      "§chat/mode-menu"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-11-10T11:43Z",
+      "source": "pi-session:0e2ea24a-22d2-4ec7-a1df-46bf85135214#c54c09bf"
+    }
+  }
+}

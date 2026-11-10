@@ -44,7 +44,10 @@ unfolded (≥768)                                  folded (<768)
   way reload and back work, and the folded back button is `history.back()` or a link to `#/`.
   The other routes follow the same rule: `#/overview` (§app.shell/overview), `#/usage` and `#/agents` (§app/insights), and a group opened as a
   workspace at `#/g/<id>` (split) or `#/g/<id>/<encodeURIComponent(path)>` (one member focused,
-  §workspace/groups). `#/s/` never changes meaning: it is one session, alone, grouped or not. An unknown group
+  §workspace/groups). `#/s/` never changes meaning: it is one session, alone, grouped or not; a Lookbook's open design or
+  coordinator rides on it as a `design=<label>` or `design=coordinator` parameter (beside `host=` on a
+  remote session), and each one opened is a
+  history step (§chat.design-mode/open-history). An unknown group
   id routes to `#/` with a toast rather than rendering an empty frame. `#/overseer` is the
   Overseer (§app.overseer/identity-and-clear): the normal session view on whichever Overseer file
   is current, with `data-view="session"`; `#/overseer/h/<id>` is a previous Overseer conversation, read-only.

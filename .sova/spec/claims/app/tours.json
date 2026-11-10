@@ -210,7 +210,10 @@
       "server/tours/runner-signin-inplace.integration.test.ts",
       "server/tours/runner-signin-midtour.integration.test.ts",
       "server/tours/runner-signin-inplace.integration.fixture.ts",
-      "server/tours/runner-signin.integration.fixture.ts"
+      "server/tours/runner-signin.integration.fixture.ts",
+      "server/design/browse.ts",
+      "server/tours/page-capture.ts",
+      "server/tours/darkroom-child.ts"
     ],
     "requires": [
       "§app.tours/sandbox",
@@ -369,7 +372,7 @@
   "§app.tours/sites": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "code": [
       "shared/tour.ts",
       "shared/tour.test.ts",
@@ -434,7 +437,8 @@
       "server/tours/runner-signin-inplace.integration.test.ts",
       "server/tours/runner-signin-midtour.integration.test.ts",
       "server/tours/runner-signin-inplace.integration.fixture.ts",
-      "server/tours/runner-signin.integration.fixture.ts"
+      "server/tours/runner-signin.integration.fixture.ts",
+      "server/design/browse.ts"
     ],
     "requires": [
       "§app.tours/sandbox",

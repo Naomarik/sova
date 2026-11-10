@@ -12,7 +12,8 @@ Overseer's Quick Actions in this slot (§app.overseer/quick-actions).
 
 A chat has one **major mode**, `normal`, `delegate` or
 `create` (§chat/create-mode), and any set of **minor modes** (today `align`, `spec`, `vis`, which teaches the inline
-visuals of §chat.markdown/visuals, and `memory`, §chat/memory).
+visuals of §chat.markdown/visuals and, in a Sova chat, the Lookbook (§chat.design-mode/turning-on),
+and `memory`, §chat/memory). A Lookbook is part of vis, not a minor mode of its own, and has no row.
 Every chat with modes offers all of them, in that order, except that only Sova's own mode menu
 turns `memory` on (§chat.memory/where). A chat in a project's checkout also offers that project's
 own minor modes, from its `.sova/minor-modes/` folder (§chat.mode-menu/project-modes), and your
@@ -395,6 +396,9 @@ unless align with the chat's Visuals still wants them, §chat.alignment/visuals;
 tool, and with Visuals on the vis tools too), while the
 system prompt stays as it was (neither adds a line to it). That is one tool-set change per
 toggle; in the plain TUI, where `vis` used to change no tool, it costs a prompt-cache rebuild. In an ordinary Sova chat, vis also adds or removes `record_tour` and `show_tour` (§app.tours/authoring): these two require vis itself, so align's Visuals alone never keeps them active. A hand-off's baseline scoped presentation is separate from this ordinary-chat loadout.
+In a Sova chat vis also adds or removes the Lookbook's `lookbook` tool, in that same one change
+(§chat.design-mode/turning-on); align's Visuals alone never brings it. Opening a Lookbook in a chat
+with vis already on changes no tool, so its cached prompt holds.
 A project mode with tools adds or removes them the same way, one tool-set change per toggle, and
 its block still reaches the model as a note, never by rewriting the prompt.
 
@@ -454,7 +458,8 @@ over every minor mode, so a new one cannot be added without deciding): `spec` do
 does not (aligning is a conversation with the user, which a worker doesn't have), nor does `vis`
 (its visuals are for the user, and a worker's replies are read by its parent session), nor does `memory`
 (it is the chat's own memory of its conversation; a worker starts fresh from its brief, and its report
-enters the parent's memory like any other message). A project mode declares it in its own file
+enters the parent's memory like any other message). So no worker has a Lookbook, and a Lookbook's
+design sessions and coordinator take nothing of the chat's modes (§chat.design-mode/turning-on). A project mode declares it in its own file
 (§chat.mode-menu/project-modes), `no` unless it says `yes`; one that reaches workers comes after
 spec's block, from the parent's saved copy of it, with its tools when the worker can run commands
 (a remote worker gets the block, never the tools), and the worker never reads the project's folder. A worker gets at most 8 modes, built-in and project together.
@@ -926,7 +931,8 @@ the chat's workers.
   the restart a reload already is.
 - **What the tools list says is the same.** In a chat's tools list (the setup card's Tools group), each
   of those tools names the same source with either owner: `mode` for `align`, `vis_guide`,
-  `create_guide` and a project or personal mode's tool, never the name of Sova's own module.
+  `create_guide` and a project or personal mode's tool, never the name of Sova's own module. The Lookbook's
+  `lookbook` tool is served by Sova under either owner, and names the same source with either.
 - **Flipping loses nothing.** Both read and write the same saved state: each chat's `mode` entries,
   its project modes' saved copies, its alignments, `mode.json` and the mode settings files. A chat
   reopened after a flip, either way, has the same modes on, the same alignments and the same

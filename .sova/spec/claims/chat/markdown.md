@@ -323,10 +323,11 @@ broken block's source (§app.baton/outsider-view).
   drawings are off. A block that draws with warnings never triggers one, except a cramped
   wireframe.
 - **Tool-backed Tours.** The vis catalogue also lists `tour` (§app/tours), a recorded explanation of a real interface. It is not a fence kind and is not added to the pure renderer registry. `vis_guide {kind: "tour"}` returns the core of the tour authoring and recording workflow and points to `record_tour` and `show_tour`, not the shared drawing-fence grammar; `vis_guide` also takes the four parts that core names (`tour-signin`, `tour-sites`, `tour-sova`, `tour-sharing`) and returns each alone (§app.tours/authoring). The parts are no catalogue kind: the prompt's kind list is unchanged, and only the `tour` line names them. In ordinary chats, recording and showing require vis on; align's Visuals alone grants neither tour tool, even though the existing guide/check tools retain that availability. Scoped hand-off tour presentation is baseline conversation context. Opening a message never records a tour.
+- **Tool-backed Lookbook.** The vis catalogue also lists `lookbook` (§chat/design-mode), one page designed by several models side by side, in one line that says to open one only when the user asks for a Lookbook (§chat.design-mode/asking) and to answer an ordinary ask to sketch, mock up or wireframe with a drawing here, ending a reply to such an ask that is plainly about comparing several takes with "For several models' takes side by side, ask for a Lookbook." It is no fence kind and is not in the renderer registry. `vis_guide {kind: "lookbook"}` returns its core, and `vis_guide` takes the three parts that core names (`lookbook-setup`, `lookbook-directions`, `lookbook-passing-on`) and returns each alone (§chat.design-mode/guide); the parts are no catalogue kinds. In a Sova chat the `lookbook` tool requires vis on, as the tour tools do; align's Visuals alone never grants it (§chat.design-mode/turning-on).
 - **`vis_guide`.** While vis is on, the model has a `vis_guide {kind}` tool. It returns the guide's
   shared rules (one statement per line, ids and quoting, tones, the strict parser, the "Not vis"
   pairs, the `mark` syntax) followed by that kind's file (its syntax, examples and `mark` targets);
-  `html` and `svg` return the same free-form file. `kind` is one of the kinds the prompt lists, a tour part, or
+  `html` and `svg` return the same free-form file. `kind` is one of the kinds the prompt lists, a tour or Lookbook part, or
   one of the chat's own kinds (§chat.transcript-cards/drawing-kinds); a stub or unknown kind is
   refused. A Sova chat whose snapshot holds own kinds gets them from its start, fixed for the chat:
   in the tool's `kind` list and one line each in its description, and for one the tool returns how
@@ -399,7 +400,7 @@ broken block's source (§app.baton/outsider-view).
   only through `vis_guide`, so a reply that draws nothing carries no grammar. A kind flagged `stub`
   in the registry is never taught: its line is dropped from the list and `vis_guide` refuses it.
   The fence guide's files match the renderer registry (one per fence kind, `html` and `svg` sharing one; a stub file
-  exactly for a stub kind; the fence list names exactly the kinds that aren't stubs). The separate tool-backed `tour` catalogue entry has its own workflow guide and no fence renderer. The drawing examples draw
+  exactly for a stub kind; the fence list names exactly the kinds that aren't stubs). The separate tool-backed `tour` and `lookbook` catalogue entries have their own workflow guides and no fence renderer. The drawing examples draw
   without warnings, and the flow and state examples are checked for what they mean, not only that
   they parse (`guide.test.ts`).
 - **No regression.** A block that drew before soft warnings, inline flow labels

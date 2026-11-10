@@ -88,7 +88,11 @@ host rule: the app's static shell and assets (a `GET` or `HEAD` outside `/api`, 
 `/explain`, `/design` and `/ws`; a link from another site may open the shell as a page, which then
 shows the unlock screen, and reach nothing else that way), `GET /api/health`,
 because it is how a front and a doctor ask which build runs, and `POST /api/auth/unlock`; nothing
-that reads or changes state is open beside them. Everything else on the listener, a route family
+that reads or changes state is open beside them. One read is open by a link instead: a design's page being written
+(`GET /api/design/live-page/<token>`, §chat.design-mode/streaming) loads in a sandboxed frame that has
+no origin and sends no cookie, so the random token in its path is its only credential. Sova's page
+gets one for one design version; it lasts 5 minutes, opens only that page as it is written, and is
+refused when changed, shortened or past its time. The host rule still holds for it. Everything else on the listener, a route family
 added later included, is gated by default. A path is judged as the router will route it, never
 by its raw spelling: decoded once, with repeated slashes collapsed and letter case ignored, so
 `/%61pi/…`, `/API/…` or `//api/…` is `/api` and needs the token. A spelling that can't be judged
@@ -236,7 +240,7 @@ Every caller keeps working with no new step for the person:
 
 ## §app.access/your-click — What only your own click passes
 
-Eleven approvals pass only on what Sova takes for the person's own click in its page on this
+Fourteen approvals pass only on what Sova takes for the person's own click in its page on this
 machine, but for what the Overseer keeps and a schedule on another computer
 (§app.access/other-roads). Each one lets something act later without asking, so the ordinary roads
 of a chat, a script or another computer are refused. This stops a chat following its instructions,
@@ -256,6 +260,9 @@ refused too (§app.access/other-roads).
 | Restarting Sova | `POST /api/updates/restart`, or Apply of Sova's own checkout (`POST /api/project-services/apply`, `POST /api/projects/:pid/services/apply`) | **Restart Sova** in Settings → General, or **Apply** on the Branches tab of Sova's project page |
 | Updating Sova | `POST /api/updates/check`, `POST /api/updates/apply`, `PUT /api/updates/settings` | Settings → General |
 | Adding or changing an extension | `POST /api/extensions/inspect`, `/install`, `/:id/approve`, `/:id/folder`, `/:id/on`, `/:id/off`, `/:id/program`, `DELETE /api/extensions/:id` | Settings → Extensions |
+| A design run's brief | `POST /api/design/runs/:run/brief/start`, and `/brief/edit`, `/brief/answers`, `/brief/conflict`, `/brief/link`, `/brief/image` and `/brief/not-this-screen` | **Start**, **Edit**, **Go With Recommendations** or **Send Answers**, **Keep My Prompt** or **Rewrite It**, a link's use, an image's Use tick, and **Not This Screen**, on the Lookbook's brief (§chat.design-mode/brief-start, §chat.design-mode/brief-layers, §chat.design-mode/brief-questions, §chat.design-mode/link-modes, §chat.design-mode/brief-images) |
+| Answering a design coordinator's question | `POST /api/design/coordinator/answer`, and a message to it that carries images (`POST /api/design/coordinator/message`) | The question on the coordinator's card: starting or stopping a copy, opening a site, a sign-in or more than 12 designs in a turn; and images pasted into its box (§chat.design-mode/project-reach, §chat.design-mode/sites, §chat.design-mode/own-images) |
+| A chat's design images | `POST /api/design/assets/own`, `POST /api/design/assets/signed-in-consent`, `PATCH /api/design/images/:name`, `POST /api/design/images/:name/describe` | Bringing your own image in, the yes to capturing a signed-in page, an image's kind or note, and **Describe Again**, on the Lookbook card (§chat.design-mode/own-images, §chat.design-mode/link-sign-in, §chat.design-mode/brief-images) |
 | Landing a branch, answering the merge queue, and taking a branch off it | every merge verb on the user's route but the reads and `merge.try` (`merge.add`, `merge.answer`, `merge.cancel`, pause, resume, Start Fresh, clear, setup, and the merge thread's `merge.restart`, `merge.test` and `merge.names`…: `POST /api/project-services/merge.*` and the queue's own routes), the Overseer's coding-worktree Merge (`POST /api/projects/:pid/overseer/worktrees/merge`) and Merge Branch on a proposed run (`POST /api/projects/:pid/runtime/merge`) | **Land**, a decision's answers (Accept, Land Anyway, Try Again, Land) and **Remove from Queue** or **Cancel**, on the branch's card, its Worktrees rows, the Merge Queue tab or the landing bar; or the person's own words in the branch's chat ("land it", §chat.worktrees/land-own-word, and an answer sent from its message box, §chat.merge-queue/decision); **Merge Branch** on the project page's coding worktree rows and on a proposed run |
 
 - **Who is refused.** A request with the Overseer's sender mark, a chat's key, the token in a header

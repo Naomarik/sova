@@ -208,7 +208,9 @@ run (`server/chat-runtime/**`, `scripts/chat-runtime-trial/**`, `server/harness/
 `package.json`, `pnpm-lock.yaml`, `pnpm-workspace.yaml` or `mise.toml`, by the test setup (the
 files the testing guide's front-matter `watches`), and by the groups module itself.
 **Tours** (`tours`) is the tour tests that drive real Chrome, `server/tours/*.integration.test.ts`
-except the nine that start no browser, triggered by tour code (`server/tours/**`,
+except the nine that start no browser, and the design coordinator's browser
+(`server/design/browse.integration.test.ts`), triggered by tour code (`server/tours/**`,
+`server/design/browse*`, `server/design/look*`,
 `shared/tour*`, `server/project-services/tour-target*`, `server/share/tour-*`,
 `server/tour-routes.ts`, `pi-config/extensions/sandbox/**`), the package files, the test setup
 and the groups module. **Merge queue** (`merge-queue`) is the merge queue's integration files on throwaway

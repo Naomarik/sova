@@ -129,9 +129,22 @@ spec line ("Also updates …"), the Agree step when align is on too, drafts and 
 writer, what workers get (and the claims a finished worker's changes landed in), and project coding
 sessions.
 
+## §site.docs/design — Lookbook (`/docs/modes/vis/lookbook/`)
+
+The Lookbook (§chat/design-mode), part of vis, in the order a person meets it: what it does (labelled
+one-page prototypes from hidden sessions on several models, drawn live on a card and in the Gallery
+tab, the main chat staying out of the work and reading a page only when asked); how to get one: with
+vis on, ask for a Lookbook, by name or in words that plainly mean it (an ordinary ask to sketch or mock up gets a quick drawing
+instead), never for workers; a run, from Lookbook · Setup (what to design, models by
+provider with the Coordinator dropdown, styles in their 5 families and the 12 layouts, Pair Up or
+Every Mix, the batch size and its limits) through Start Coordinator and
+Lookbook · Brief to Start; how a link is used; and working with designs: statuses and cost, a page
+being written, Google Fonts only, Refine, Chat, the coordinator and designs made from others. It
+ends with how long designs are kept and that they aren't on share links.
+
 ## §site.docs/vis — Vis (`/docs/modes/vis/`)
 
-The page's catalogue includes tool-backed Tours (§app.tours/authoring), distinct from drawing fences: ask in chat, clarify audience and intended understanding, approve sources, dry-run, record desktop and phone, inspect the overview and suspicious captures, and present only a complete checked edition. It explains reviewed expiring edition-pinned links and hand-off availability; ordinary tour tools require vis on, not align's Visuals alone, while hand-off scoped presentation remains baseline context. Opening a message never records.
+The page's catalogue includes tool-backed Tours (§app.tours/authoring), distinct from drawing fences: ask in chat, clarify audience and intended understanding, approve sources, dry-run, record desktop and phone, inspect the overview and suspicious captures, and present only a complete checked edition. It explains reviewed expiring edition-pinned links and hand-off availability; ordinary tour tools require vis on, not align's Visuals alone, while hand-off scoped presentation remains baseline context. Opening a message never records. The catalogue also lists the tool-backed Lookbook, which opens only when you ask for one, and links to its own page (§site.docs/design).
 
 The vis minor mode: the drawings the agent can put in a reply, where they render, and what is never
 trusted from the model. An Examples section at the end, which the kinds section points to, shows

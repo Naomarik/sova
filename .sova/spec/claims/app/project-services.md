@@ -637,6 +637,11 @@ same engine in-process, never over HTTP:
   Stopping a shared service answers `needs-confirm` whatever the word or click: the operator does it. Their
   `leftovers` read and `stop-leftover` (§app.overseer/copies) are the Overseers' tool's own verbs, not
   the engine's.
+- **The design coordinator** (the `design-coordinator` caller, §chat.design-mode/project-reach):
+  `status` of any of your projects. `up` and `down` of a copy, in any project, only after the user says
+  yes on the coordinator's card, and then only the request the card named; until then they answer
+  `needs-confirm`. Never on a project's main checkout or its main copy (`forbidden`). Every other verb
+  is `forbidden`. A design session has no project tool at all.
 - **The Project Assistant** (the `assistant` caller, §app.project-assistant/tools): only `up`, and
   only of the one instance its `start_version` named, which must be a copy the owner's versions list
   holds (§app.project-assistant/versions), or, when the main checkout has no copy yet, a bare `up`
@@ -662,7 +667,8 @@ reports its own release's steps.
 
 An ordinary chat, a worker, a team member and a restored worker, Claude Code's included, follow one
 rule: the tool is offered where the project has something for it to work on. A folder with no Project
-Verbs setup never sees it, and it appears on its own the moment setup exists. A hidden chat never has
+Verbs setup never sees it, and it appears on its own the moment setup exists. A design session has no project tool, and the design coordinator's reach is its own caller's
+(§app.project-services/callers). A hidden chat never has
 it, and the Overseers' `sova_project_verbs` is outside this rule.
 
 - **What offers it.** A chat is offered the tool when any of these is true:

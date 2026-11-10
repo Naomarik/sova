@@ -75,7 +75,7 @@
   "§chat.timeline/opening-it": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "code": [
       "src/components/ChatView.tsx",
       "src/components/Composer.tsx",

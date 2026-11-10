@@ -463,6 +463,15 @@ passes its events back. A worker never runs inside the server's process.
   chat gets none (§app.mcp/who-gets).
 - **Archiving or deleting the parent** stops its workers and their background jobs, and cancels
   their wake nudges (§app.background-jobs/stopping, §chat.wake-nudges/archive).
+- **Design sessions, the design coordinator and describing helpers.** The server starts these three
+  kinds itself, from a chat's Lookbook card, with no `agent_spawn` and no parent's loadout: a design
+  session on its label's model, the coordinator on the chosen one, and a helper on a model that can
+  read pictures (§chat.design-mode/design-sessions, §chat.design-mode/coordinator,
+  §chat.design-mode/describers). Everything in this section holds for them, except that their
+  Sova-served tools are their own and not `project_verbs` (the coordinator's reach across projects is
+  §app.project-services/callers), they take no live slot and none of the chat's 24 seats, working or
+  idle, and they **report nothing to the parent**: no completion, no wake, and no opening of the parent
+  chat for a report (§chat.design-mode/main-chat).
 - **Idle workers.** A waiting worker's process stops after the idle-stop time like any chat's
   (§app.chat-processes/idle-stop). It is still listed waiting and still takes a live slot, and its
   next instruction reopens it in a new process, under its recorded loadout. So does a wake nudge or a
@@ -564,6 +573,8 @@ link (§app.chat-processes/workers) carry the same keys, and the task moves once
   records are not rewritten. A worker mid-run during a reload includes answers written before it in
   its next report, each exactly once, unless a steer's run comes first. If the file can't place that
   settle, the report is what the feed showed or, with nothing shown, what the file holds up to its end.
+- **Not a design session, the design coordinator or a describing helper.** None reports to its
+  parent, whatever it writes after finishing (§chat.design-mode/main-chat).
 - **Jobs still running.** A report made while the worker has jobs running gets a line after the answer
   naming them and their commands, for example "Still running: j2 (npm run serve), 8m. It wakes this
   worker when it ends." A job that has ended but still owes its wake card reads "Just ended: j3 (npm

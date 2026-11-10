@@ -410,7 +410,6 @@
       "shared/row-counts.ts",
       "src/lib/api.ts",
       "scripts/e2e/transcript-drift.mjs",
-      "scripts/e2e/transcript-follow.mjs",
       "src/lib/recent-preload.ts",
       "src/lib/live.ts",
       "src/lib/live.test.ts",

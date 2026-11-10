@@ -71,8 +71,6 @@ export interface DesignRecord {
   fix?: DesignFix;
   /** The last request for a change ended with no new version: why, in plain words. Gone with the next message or version. */
   unchanged?: { reason: string; at: string };
-  /** The last request for a change ended with no new version: why, in plain words. Gone with the next message or version. */
-  unchanged?: { reason: string; at: string };
   route: DesignStreamRoute;
   /** Finished versions, oldest first; empty until the first hand-in. */
   versions: DesignVersion[];
@@ -274,6 +272,8 @@ export interface DesignBrief {
   looks: Record<string, DesignLook>;
   /** The screen found, when there is one: Not This Screen clears it. */
   screen?: DesignConfirm;
+  /** Which images go to the designers, by the image's name; an image not listed goes. A person's click stands. */
+  imageUse?: Record<string, { use: boolean; by: "user" | "coordinator" }>;
   /** What the designs are estimated to cost in dollars, with the models and directions chosen now; absent when a price isn't known. */
   estimateUsd?: number;
   /** Set at Start: the brief is frozen from then on. */

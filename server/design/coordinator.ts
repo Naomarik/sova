@@ -3,8 +3,8 @@
 // designs and never holds their pages: nothing in this file gives it a page's text. Every power it has is a tool
 // here, and each tool decides from server-held state, never from what the model says about itself.
 import { captureDesignPage } from "./capture";
-import { noteSignedInConsent } from "./assets";
-import { askVision, describerModels } from "./describe";
+import { noteSignedInConsent, readAssets } from "./assets";
+import { askVision, assetBlock, describerModels } from "./describe";
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -24,7 +24,7 @@ import { claudeCodeProviderLoad, sessionDirName } from "../../pi-config/extensio
 import type { WorkerHost, WorkerSpec, WorkerStart } from "../../shared/chat-runtime";
 import { SESSIONS_DIR } from "../paths";
 import { assertLaunchAllowed, deliverDesign, designCount, designRunLaunched, DesignLimitError, launchDesigns, newDesign, onDesignHandIn } from "./batch";
-import { answerQuestions, BRIEF_LIMITS, coordinatorWrote, isHttpUrl, keepPrompt, launchText, lookNote, mergeLinks, newBrief, openQuestions, parseBriefQuestions, rewritePrompt, turnEnded, userEditedPrompt, userEditedSummary, userTold, type BriefPick } from "./brief";
+import { answerQuestions, BRIEF_LIMITS, coordinatorWrote, isHttpUrl, keepPrompt, keptImages, launchText, lookNote, mergeLinks, newBrief, openQuestions, parseBriefQuestions, rewritePrompt, turnEnded, userEditedPrompt, userEditedSummary, userTold, type BriefPick } from "./brief";
 import { DESIGN_BROWSE_TOUR_ID, designBrowse, type BrowseParent, type DesignBrowseStores } from "./browse";
 import { lookAtDesign } from "./look";
 import { estimateUsd } from "./setup";
@@ -556,6 +556,16 @@ export async function setBriefLink(parent: BrowseParent, runId: string, url: str
   }
 }
 
+/** Use, or not, on the image grid: no rewrite of the Full Prompt, because Sova adds the list of images at Start. */
+export function setBriefImage(parent: BrowseParent, runId: string, name: string, use: boolean): void {
+  const { st } = openBrief(parent, runId);
+  if (!readAssets(parent.sessionId).assets.some((a) => a.name === name)) throw new BriefRefused("That image isn't in this chat.");
+  changeBrief(st, (b) => {
+    (b.imageUse ??= {})[name] = { use, by: "user" };
+    b.rev++;
+  });
+}
+
 /** Not This Screen: the screen leaves the brief, and the coordinator looks again. */
 export async function notThisScreen(parent: BrowseParent, runId: string, text?: string): Promise<void> {
   const { st, run } = openBrief(parent, runId);
@@ -578,7 +588,7 @@ export async function startBrief(parent: BrowseParent, runId: string, a: { rev: 
   if (block) throw new BriefRefused(block.label, { block });
   assertLaunchAllowed(designCount(run.setup), a.confirmSpend || !!run.confirmedSpend);
   if (a.confirmSpend) changeBrief(st, (_b, r) => void (r.confirmedSpend = true));
-  const text = launchText(run);
+  const text = launchText(run, assetBlock(parent.sessionId, keptImages(run, readAssets(parent.sessionId))));
   const labels = await ports().launchDesigns(parent, runId, { brief: text, references: briefReferences(st, run) });
   changeBrief(st, (b) => {
     b.startedRev = b.rev;
@@ -820,12 +830,13 @@ export function coordinatorTools(sessionId: string): ToolSpec[] {
         promptEdits: { type: "array", items: { type: "object", properties: { find: { type: "string" }, replace: { type: "string" } }, required: ["find", "replace"] } },
         text: { type: "string", description: "Which screen you found and how you got there." }, shots: { type: "array", items: { type: "string" } }, url: { type: "string" },
         sources: { type: "array", items: { type: "object", properties: { url: { type: "string" }, use: { type: "string", enum: ["images", "feel"] } }, required: ["url"] } },
+        images: { type: "array", description: "Which captured images suit this brief: only the ones you'd leave out need listing.", items: { type: "object", properties: { name: { type: "string" }, use: { type: "boolean" } }, required: ["name", "use"] } },
         questions: { type: "array", items: { type: "object", properties: { topic: { type: "string" }, ask: { type: "string" }, context: { type: "string" }, options: { type: "array", items: { type: "object", properties: { label: { type: "string" }, tradeoff: { type: "string" } }, required: ["label", "tradeoff"] } }, recommendation: { type: "object", properties: { choice: { type: "string" }, why: { type: "string" } }, required: ["choice", "why"] } }, required: ["topic", "ask", "recommendation"] } },
       },
       required: ["baseRev"],
       additionalProperties: false,
     },
-    async execute(_id, params: { baseRev?: number; summary?: string; prompt?: string; promptEdits?: { find: string; replace: string }[]; text?: string; shots?: unknown; url?: string; sources?: unknown; questions?: unknown }) {
+    async execute(_id, params: { baseRev?: number; summary?: string; prompt?: string; promptEdits?: { find: string; replace: string }[]; text?: string; shots?: unknown; url?: string; sources?: unknown; questions?: unknown; images?: unknown }) {
       const st = state();
       if (isResult(st)) return st;
       const run = runOf(parent.sessionId, st.runId);
@@ -862,6 +873,10 @@ export function coordinatorTools(sessionId: string): ToolSpec[] {
         if (why) return { why };
         r.brief = b;
         mergeLinks(r.setup, sources);
+        for (const x of Array.isArray(params.images) ? (params.images as { name?: unknown; use?: unknown }[]) : []) {
+          // A person's tick stands against the coordinator's judgement, as a link's use does.
+          if (typeof x?.name === "string" && typeof x.use === "boolean" && b.imageUse?.[x.name]?.by !== "user") (b.imageUse ??= {})[x.name] = { use: x.use, by: "coordinator" };
+        }
         if (shots.length) {
           const outline = shots[0]!.outline;
           b.screen = { text: words!, screenshots: shots.map((x) => x!.url), ...(str(params.url) ? { url: str(params.url)! } : {}), ...(outline ? { outline } : {}) };

@@ -386,6 +386,26 @@ test("a link with no use waits on the person; their click stands against the coo
   assert.deepEqual(runOf(parent.sessionId, run.id)!.setup.links, [{ url: URL_, use: "images", by: "user" }]);
 });
 
+test("a Start hands over the images ticked, and only a link's on Use Its Images; Sova's list follows the prompt", async () => {
+  const { changeAssets } = await import("./assets");
+  const { assetBlock } = await import("./describe");
+  const asset = (name: string, source: "page" | "yours", addedAt: string) => ({ name, sha256: name, source, mime: "image/png", ext: "png", bytes: 1, width: 2, height: 2, small: { w: 2, h: 2, bytes: 1 }, full: { w: 2, h: 2, bytes: 1 }, describe: { w: 2, h: 2, bytes: 1 }, context: {}, addedAt });
+  const run = withLink("images");
+  const { t, shot } = await looked(run);
+  changeAssets(parent.sessionId, (c) => {
+    c.assets.push(asset("a1", "page", "2026-02-01"), asset("a2", "page", "2026-02-01"), asset("a3", "yours", "2026-02-01"), asset("a4", "yours", "2020-01-01"));
+    c.captures.push({ id: "c", url: URL_, at: "t", names: ["a1", "a2"], skipped: [], notes: { colors: [], fonts: [] }, signedIn: false, bytes: 1, ms: 1 });
+  });
+  await t.design_brief({ baseRev: 0, summary: "S", prompt: "P", text: "F", shots: [shot], url: URL_, images: [{ name: "a1", use: false }] });
+  const { setBriefImage } = await import("./coordinator");
+  setBriefImage(parent, run.id, "a1", true);
+  await t.design_brief({ baseRev: brief(run.id).textRev, images: [{ name: "a1", use: false }] });
+  assert.equal(brief(run.id).imageUse!.a1!.use, true, "the person's tick stands");
+  setBriefImage(parent, run.id, "a2", false);
+  await start(run);
+  assert.equal(log.launches[0]!.brief, `P\n\n${assetBlock(parent.sessionId, ["a1", "a3"])}`);
+});
+
 test("Not This Screen sends the user's words on, clears the screen, and an address in them counts as theirs", async () => {
   const run = runWith(2, 3);
   const t = await started(run);
@@ -585,7 +605,7 @@ test("the card's yes is the person's: a chat's key or the token in a header is r
   const { mountCoordinatorRoutes } = await import("./coordinator-routes");
   const app = new Hono();
   mountCoordinatorRoutes(app);
-  for (const path of ["/api/design/coordinator/answer?path=x", ...["edit", "answers", "conflict", "link", "not-this-screen"].map((n) => `/api/design/runs/r/brief/${n}?path=x`)]) {
+  for (const path of ["/api/design/coordinator/answer?path=x", ...["edit", "answers", "conflict", "link", "image", "not-this-screen"].map((n) => `/api/design/runs/r/brief/${n}?path=x`)]) {
     for (const headers of [{ "x-sova-caller": "k" }, { "x-sova-token": "t" }, {} as Record<string, string>]) {
       const r = await app.request(path, { method: "POST", headers, body: "{}" });
       assert.equal(r.status, 403, JSON.stringify(headers));

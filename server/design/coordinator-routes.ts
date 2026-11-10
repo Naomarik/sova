@@ -9,7 +9,7 @@ import { resolveSessionPath } from "../paths";
 import { idOf } from "../sessions-index";
 import type { BrowseParent } from "./browse";
 import { ownImagesLine } from "./asset-routes";
-import { answerBrief, answerCoordinator, editBrief, messageCoordinator, notThisScreen, resolveBriefConflict, setBriefLink, shotsDir } from "./coordinator";
+import { answerBrief, answerCoordinator, editBrief, messageCoordinator, notThisScreen, resolveBriefConflict, setBriefImage, setBriefLink, shotsDir } from "./coordinator";
 import { designView } from "./live";
 
 const BAD_PATH = "Invalid or missing ?path= (must be a .jsonl under the pi sessions dir)";
@@ -33,7 +33,7 @@ const text = (v: unknown): string => (typeof v === "string" ? v : "");
 const message = (e: unknown): string => (e instanceof Error ? e.message : String(e));
 
 export function mountCoordinatorRoutes(app: Hono): void {
-  const onBrief = (name: string, fn: (p: BrowseParent, run: string, b: Record<string, unknown>) => Promise<void> | string) =>
+  const onBrief = (name: string, fn: (p: BrowseParent, run: string, b: Record<string, unknown>) => Promise<void> | void | string) =>
     app.post(`/api/design/runs/:run/brief/${name}`, async (c) => {
       if (notPage(c)) return c.json({ error: YOUR_CLICK }, 403);
       const p = parentOf(c);
@@ -63,6 +63,11 @@ export function mountCoordinatorRoutes(app: Hono): void {
   onBrief("conflict", (p, run, b) => (b.choice === "keep" || b.choice === "rewrite" ? resolveBriefConflict(p, run, b.choice) : 'choice must be "keep" or "rewrite".'));
 
   onBrief("link", (p, run, b) => (typeof b.url === "string" && (b.use === "images" || b.use === "feel") ? setBriefLink(p, run, b.url, b.use) : "A link needs its url and a use."));
+
+  onBrief("image", (p, run, b) => {
+    if (typeof b.name !== "string" || typeof b.use !== "boolean") return "An image needs its name and a use.";
+    setBriefImage(p, run, b.name, b.use);
+  });
 
   onBrief("not-this-screen", (p, run, b) => notThisScreen(p, run, text(b.text).trim() || undefined));
 

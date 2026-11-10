@@ -102,8 +102,6 @@ export function mountDesignRoutes(app: Hono): void {
     } catch (err) {
       return c.json({ error: message(err) }, 500);
     }
-    // The run's mark on the chat's own file; best effort, the store is what the card reads.
-    void recordRun(p, runId).catch((err) => console.warn(`[design] the run's record was not written: ${message(err)}`));
     return c.json(designView(p.sessionId));
   });
 
@@ -116,6 +114,7 @@ export function mountDesignRoutes(app: Hono): void {
     const runId = c.req.param("run");
     try {
       await startBrief(p, runId, { rev: b.rev, confirmSpend: b.confirmSpend === true });
+      // The run's mark on the chat's own file; best effort, the store is what the card reads.
       void recordRun(p, runId).catch((err) => console.warn(`[design] the run's record was not written: ${message(err)}`));
       return c.json(designView(p.sessionId));
     } catch (err) {

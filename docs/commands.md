@@ -13,7 +13,7 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 
 | What | Count |
 | --- | ---: |
-| Routes registered | 603 |
+| Routes registered | 611 |
 | Routes a catalogue entry points at | 193 |
 | Catalogue entries | 263 |
 | Class: Peer protocol | 39 |
@@ -28,14 +28,14 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | Class: A card view's own calls | 4 |
 | Class: Middleware and fallbacks | 2 |
 | Class: Left as is, by choice | 266 |
-| Class: Page plumbing | 18 |
+| Class: Page plumbing | 21 |
 | Class: Steps of starting a chat | 2 |
 | Class: Live capability links | 1 |
-| Class: Approvals and grants | 12 |
-| Pending (not yet a command) | 23 |
+| Class: Approvals and grants | 15 |
+| Pending (not yet a command) | 25 |
 | Chat socket frame types | 14 |
 | Document/window keydown listeners | 11 |
-| Hand-written tool specs | 146 |
+| Hand-written tool specs | 148 |
 
 ## Catalogue entries
 
@@ -312,6 +312,8 @@ class, leaves it, and a new route never joins it.
 
 | Route | Mesh need |
 | --- | --- |
+| `PATCH /api/design/images/:name` | full |
+| `POST /api/design/images/:name/describe` | full |
 | `GET /api/diff/patch` | sessions |
 | `GET /api/memory` | sessions |
 | `GET /api/memory/open` | sessions |
@@ -774,7 +776,7 @@ Areas the user chose not to make scriptable (`OPTED_OUT` in `server/commands-inv
 | `POST /api/voice/transcribe` | admin |
 | `POST /api/voice/warm` | admin |
 
-### Page plumbing (18)
+### Page plumbing (21)
 
 Requests a view, the composer or a link card makes to draw itself (attachments and uploads, a tool row's contents, a link's thread and seen mark, the remote folder picker's listing, the explanations feed, the empty list's folder name, a project's icon picture). Exactly these routes (`PAGE_PLUMBING`).
 
@@ -784,6 +786,9 @@ Requests a view, the composer or a link card makes to draw itself (attachments a
 | `GET /api/attachment` | sessions |
 | `GET /api/design/:label/live` | full |
 | `GET /api/design/:label/live-url` | full |
+| `GET /api/design/assets` | full |
+| `GET /api/design/assets/:name/:shown` | full |
+| `GET /api/design/assets/:name/original` | full |
 | `GET /api/design/live-page/:token` | full |
 | `GET /api/design/shots/:file` | full |
 | `GET /api/explanations` | sessions |
@@ -816,16 +821,19 @@ A list that prints live preview links, which open a project's port to whoever ho
 | --- | --- |
 | `GET /api/projects/:pid/previews` | sessions |
 
-### Approvals and grants (12)
+### Approvals and grants (15)
 
 Approving a schedule or a draft spec, the Overseer's permits and their revoke: any chat can run catalogue actions with the operator's token, so none of these is one. Exactly these routes (`GRANTS`).
 
 | Route | Mesh need |
 | --- | --- |
+| `POST /api/design/assets/own` | full |
+| `POST /api/design/assets/signed-in-consent` | full |
 | `POST /api/design/coordinator/answer` | full |
 | `POST /api/design/runs/:run/brief/answers` | full |
 | `POST /api/design/runs/:run/brief/conflict` | full |
 | `POST /api/design/runs/:run/brief/edit` | full |
+| `POST /api/design/runs/:run/brief/image` | full |
 | `POST /api/design/runs/:run/brief/link` | full |
 | `POST /api/design/runs/:run/brief/not-this-screen` | full |
 | `POST /api/design/runs/:run/brief/start` | full |
@@ -1073,7 +1081,8 @@ Per file, the tool names its object literals declare (`<computed: …>` where th
 | `server/conversation-draft-routes.ts` | 3 | `sova_draft_specs`, `sova_draft_approve`, `sova_draft_build` |
 | `server/conversation-draft-tools.ts` | 3 | `requirement_drop`, `requirements_summary`, `requirements_confirm` |
 | `server/create-settings-tool.ts` | 1 | `sova_settings` |
-| `server/design/coordinator.ts` | 7 | `design_status`, `design_brief`, `design_browse`, `design_send`, `design_new`, `coordinator_card`, `project_verbs` |
+| `server/design/coordinator.ts` | 8 | `design_status`, `design_brief`, `design_browse`, `design_capture`, `design_send`, `design_new`, `coordinator_card`, `project_verbs` |
+| `server/design/describe.ts` | 1 | `asset_report` |
 | `server/design/tools.ts` | 5 | `design_guide`, `design`, `design_look`, `design_stream`, `design_hand_in` |
 | `server/feature-chat-align.ts` | 1 | `align` |
 | `server/harness/pi/session.ts` | 1 | `<computed: t.name>` |

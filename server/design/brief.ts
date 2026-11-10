@@ -2,6 +2,7 @@
 // record it is given and nothing else, so each rule can be held by a test without a session or a server. Who the
 // coordinator is told what, and when Start launches, is coordinator.ts's.
 import type { DesignBrief, DesignBriefQuestion, DesignLink, DesignLinkUse, DesignLook, DesignRun, DesignSetup } from "../../shared/design";
+import type { DesignAssetCatalogue } from "../../shared/design-assets";
 import { questionInput, recommendedOption } from "../../pi-config/extensions/mode/align.ts";
 import { applyEdits, type Edit } from "./edits";
 
@@ -230,9 +231,24 @@ export function linksFromText(text: string, previous: DesignLink[] | undefined, 
 
 // ---- what a Start launches ----------------------------------------------------------------------
 
+/** The images a Start hands over: a page's only from a link on Use Its Images, the person's own from this run on, none unticked. */
+export function keptImages(run: Pick<DesignRun, "setup" | "createdAt"> & { brief: DesignBrief }, catalogue: Pick<DesignAssetCatalogue, "assets" | "captures">): string[] {
+  const usedLinks = (run.setup.links ?? []).filter((l) => l.use === "images");
+  const fromLinks = new Set(catalogue.captures.filter((c) => usedLinks.some((l) => sameOrigin(l.url, c.url))).flatMap((c) => c.names));
+  return catalogue.assets.filter((a) => (a.source === "yours" ? a.addedAt >= run.createdAt : fromLinks.has(a.name)) && run.brief.imageUse?.[a.name]?.use !== false).map((a) => a.name);
+}
+
+const sameOrigin = (a: string, b: string): boolean => {
+  try {
+    return new URL(a).origin === new URL(b).origin;
+  } catch {
+    return false;
+  }
+};
+
 /** Exactly what a design session is given: the Full Prompt word for word, then what Sova adds. */
-export function launchText(run: Pick<DesignRun, "setup"> & { brief: DesignBrief }): string {
-  const parts = [run.brief.prompt ?? ""];
+export function launchText(run: Pick<DesignRun, "setup"> & { brief: DesignBrief }, imageBlock = ""): string {
+  const parts = [run.brief.prompt ?? "", ...(imageBlock ? [imageBlock] : [])];
   for (const l of run.setup.links ?? []) {
     const look = run.brief.looks[l.url];
     if (l.use !== "feel" || look?.state !== "ready") continue;

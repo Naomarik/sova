@@ -4,8 +4,8 @@ import type { DesignChatView } from "../../shared/design";
 import { DESIGN_SAFETY_CHARS } from "../../shared/design";
 import type { SovaEvent } from "../../shared/harness";
 import { tokensOfText } from "../../src/lib/design-frame";
-import { outputRate } from "./setup";
-import { onDesignChanged, viewOf } from "./store";
+import { FIRST_INPUT_TOKENS, tokenRates } from "./setup";
+import { onDesignChanged, readDesigns, viewOf } from "./store";
 
 /** How long changes gather before the view goes out. */
 const VIEW_EVERY_MS = 250;
@@ -110,7 +110,8 @@ export function clearLivePage(sessionId: string, label: string): void {
 }
 
 /** The view as the page reads it, each page in progress at its current length and, where its model has a price,
-    what the session has cost so far: the page written so far at the output price, on top of its finished replies. */
+    what the session has cost so far: the reply in progress (its input, and the page so far at the output price) on top
+    of its finished replies. */
 export function designView(sessionId: string): DesignChatView {
   const v = viewOf(sessionId);
   return {
@@ -118,8 +119,11 @@ export function designView(sessionId: string): DesignChatView {
     designs: v.designs.map((d) => {
       if (!d.live) return d;
       const chars = livePage(sessionId, d.label)?.chars ?? d.live.chars;
-      const rate = outputRate(d.model);
-      return { ...d, live: { ...d.live, chars, ...(rate === null ? {} : { estimateUsd: (d.usage?.cost ?? 0) + tokensOfText(chars) * rate }) } };
+      const rate = tokenRates(d.model);
+      if (!rate) return { ...d, live: { ...d.live, chars } };
+      // The reply being written is charged for its input too: what its session had in context when it began.
+      const input = readDesigns(sessionId).internal?.[d.label]?.context ?? FIRST_INPUT_TOKENS;
+      return { ...d, live: { ...d.live, chars, estimateUsd: (d.usage?.cost ?? 0) + input * rate.input + tokensOfText(chars) * rate.output } };
     }),
   };
 }

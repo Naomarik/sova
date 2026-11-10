@@ -50,8 +50,8 @@ const parentContext = async (parent: BrowseParent): Promise<TourRecordingContext
 };
 
 /** Pictures of a stored page at both widths (or those asked for) and its outline for a model that reads no images. */
-export async function lookAtDesign(parent: BrowseParent, label: string, a: { version?: number; sizes?: TourSize[] } = {}, deps: DesignLookDeps = {}): Promise<{ shots: { size: TourSize; png: Uint8Array }[]; outline: string }> {
-  const written = (deps.readPage ?? readPage)(parent.sessionId, label, a.version);
+export async function lookAtDesign(parent: BrowseParent, label: string, a: { version?: number; sizes?: TourSize[]; html?: string } = {}, deps: DesignLookDeps = {}): Promise<{ shots: { size: TourSize; png: Uint8Array }[]; outline: string }> {
+  const written = a.html ?? (deps.readPage ?? readPage)(parent.sessionId, label, a.version);
   if (!written) throw new Error(`Design ${label} has no finished page to look at.`);
   // The real pictures, carried inside the page: this browser refuses any answer from a Sova, so it can't fetch them.
   const html = (deps.showAssets ?? showAssets)(parent.sessionId, written, "full");

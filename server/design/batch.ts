@@ -523,13 +523,20 @@ async function noteUsage(sessionId: string, label: string, file: string): Promis
     let input = 0;
     let output = 0;
     let cost = 0;
+    let context: number | undefined;
     for (const e of await readBranch(file)) {
       if (e.kind !== "assistant" || !e.usage) continue;
+      context = e.usage.input + e.usage.cacheRead + e.usage.cacheWrite + e.usage.output;
       input += e.usage.input + e.usage.cacheRead + e.usage.cacheWrite;
       output += e.usage.output;
       cost += (e.provider && e.model ? replyCost({ provider: e.provider, model: e.model }, e.usage, e.sentAt ?? Date.now()) : null) ?? e.usage.cost ?? 0;
     }
     changeDesign(sessionId, label, (d) => void (d.usage = { input, output, cost }));
+    if (context !== undefined)
+      changeDesigns(sessionId, (s) => {
+        const i = s.internal?.[label];
+        if (i) i.context = context;
+      });
   } catch {
     // A card without a cost: the page is what matters.
   }

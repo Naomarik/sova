@@ -37,6 +37,8 @@ export interface DesignInternal {
   settleKey?: string;
   /** The times the server has sent this design's page back; a person's Retry starts them again. */
   fixes?: number;
+  /** Tokens in its session's context after its newest reply: the input of the reply that comes next. */
+  context?: number;
   /** Why a design tool refused a page this turn, until the turn ends. */
   refused?: string;
 }

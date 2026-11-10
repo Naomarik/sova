@@ -562,6 +562,17 @@ test("after a refusal the next edit applies to the refused page, so a fix can be
   assert.equal(fixSends(f).length, 0);
 });
 
+test("design_look shows the page as its session has it now: saved and not handed in, or in this turn's reply, else the newest version", async () => {
+  const { pageNow } = await import("./tools");
+  await start();
+  assert.deepEqual(pageNow(parent, "A", undefined), {}, "nothing yet: the newest version, which is none");
+  store.setPendingPage(parent.sessionId, "A", PAGE);
+  assert.deepEqual(pageNow(parent, "A", undefined), { html: PAGE });
+  store.setPendingPage(parent.sessionId, "A", null);
+  const reply = [{ kind: "user", blocks: [{ type: "text", text: "b" }] }, { kind: "assistant", blocks: [{ type: "text", text: `${OPEN}\n${PAGE}\n${CLOSE}` }] }];
+  assert.deepEqual(pageNow(parent, "A", { branch: () => reply as never }), { html: PAGE });
+});
+
 test("a refused edit and a hand-in with no page count too", async () => {
   await start();
   const edits = streamTool("A").execute("t", { label: "A", edits: [{ find: "a", replace: "b" }] }, undefined, undefined, undefined);
@@ -689,6 +700,17 @@ test("a reply's cost is Sova's price for it, as the usage ledger counts it, even
   await waitFor(() => stat("A").usage !== undefined);
   // The seed table's price for it: $4.40 a million output tokens. The provider said $0.
   assert.ok(Math.abs(stat("A").usage!.cost - 4.4) < 1e-9, String(stat("A").usage!.cost));
+});
+
+test("each reply's end records what the session holds, the next reply's input for its estimate", async () => {
+  const f = await start();
+  const file = join(dir, "context.jsonl");
+  const at = "2026-01-01T00:00:00.000Z";
+  const usage = { input: 1_000, output: 300, cacheRead: 30_000, cacheWrite: 700, totalTokens: 32_000, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } };
+  writeFileSync(file, [{ type: "session", version: 3, id: "x", timestamp: at, cwd: dir }, { type: "message", id: "a", parentId: null, timestamp: at, message: { role: "assistant", content: [], usage, stopReason: "stop" } }].map((l) => JSON.stringify(l)).join("\n") + "\n");
+  store.changeDesign(parent.sessionId, "A", (d) => void (d.sessionFile = file));
+  (registry as unknown as { onFeed(h: unknown, x: unknown): void }).onFeed(f, { t: "feed", cursor: { proc: f.mirror.worker.proc, seq: 1 }, event: { type: "message_end", message: { role: "assistant" } } });
+  await waitFor(() => store.readDesigns(parent.sessionId).internal?.A?.context === 32_000);
 });
 
 test("the cost moves as each reply ends, and a session past its reach ends in Failed", async () => {

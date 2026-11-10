@@ -131,15 +131,18 @@ function priceTables(now: number): { table: PriceTable | null; aliases: Aliases 
   return rates;
 }
 
-/** Dollars per output token on `ref`, or null when it has no price (a local or unpriced model: no estimate, never $0). */
-export function outputRate(ref: string, now = Date.now()): number | null {
+/** About what a reply's input is when nothing has said yet: a first message, which is a page's whole brief. */
+export const FIRST_INPUT_TOKENS = PAGE_INPUT_TOKENS;
+
+/** Dollars per input and output token on `ref`, or null when it has no price (a local or unpriced model: no estimate, never $0). */
+export function tokenRates(ref: string, now = Date.now()): { input: number; output: number } | null {
   const { table, aliases } = priceTables(now);
   if (!table || !aliases) return null;
   const slash = ref.indexOf("/");
   const r = resolvePriceRef(table, aliases, { provider: ref.slice(0, slash), model: ref.slice(slash + 1) }, now);
   if (!("key" in r) || !table.models[r.key]) return null;
   const p = periodAt(table.models[r.key]!, now);
-  return p && p.rates.output > 0 ? p.rates.output / 1_000_000 : null;
+  return p && p.rates.output > 0 ? { input: (p.rates.input ?? 0) / 1_000_000, output: p.rates.output / 1_000_000 } : null;
 }
 
 /** One reply's cost by Sova's own price table, as the usage ledger counts it (API prices on a subscription too), or

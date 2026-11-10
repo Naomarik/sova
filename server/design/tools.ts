@@ -2,7 +2,7 @@
 // and `design` (put up a Setup card, read the coordinator's card or one page, pass words on). A design
 // session's: `design_stream` (the page, whole or as edits) and `design_hand_in` (it is done).
 import { assetNamesProblem } from "./assets";
-import type { ToolResult, ToolSpec } from "../../shared/harness";
+import type { HEntry, ToolResult, ToolSpec } from "../../shared/harness";
 import { DESIGN_ASK_ABOVE, DESIGN_BATCH_MAX, DESIGN_TOOL, isDesignLabel, type DesignNote } from "../../shared/design";
 import { DESIGN_GUIDE_TOPICS, designGuide } from "../../pi-config/extensions/mode/design-guide.ts";
 import { coordinatorCard, tellCoordinator } from "./coordinator";
@@ -97,6 +97,13 @@ const noteOf = (v: unknown): DesignNote | null => {
   return n && ok(n.layout) && ok(n.sections) && ok(n.type) && ok(n.color) ? { layout: n.layout, sections: n.sections, type: n.type, color: n.color } : null;
 };
 
+/** The page as its session has it now, for it to look at: one saved and not yet handed in (a Refine checks its
+    change before handing it in), or on the reply route one written in this turn's reply; else its newest version. */
+export function pageNow(parent: DesignParent, label: string, ctx: { branch(): HEntry[] } | undefined): { html?: string } {
+  const html = pendingPage(parent.sessionId, label) ?? (ctx ? replyPageThisTurn(ctx.branch()) : null);
+  return html === null ? {} : { html };
+}
+
 /** A design session's tools, bound to the design it was started for. A model that can't stream tool arguments
     isn't offered `design_stream`: a page sent that way would arrive whole at the end, and its reply is how the
     user watches it being written. */
@@ -115,12 +122,12 @@ function allSessionTools(parent: DesignParent, label: string): ToolSpec[] {
       label: "design look",
       description: "Open your finished page in a real browser at a width and see it: 1440 for desktop, 390 for phone.",
       parameters: { type: "object", properties: { label: str("Your label."), width: { type: "number", description: "The viewport width: 1440 or 390." } }, required: ["label", "width"] },
-      async execute(_id, params: { label?: string; width?: number }) {
+      async execute(_id, params: { label?: string; width?: number }, _signal, _update, ctx) {
         own(params?.label);
         const size: TourSize = (params.width ?? 1440) < 768 ? "phone" : "desktop";
         takeLook(parent.sessionId, label);
         const d = designOf(parent.sessionId, label);
-        const look = await lookAtDesign(parent, label, { sizes: [size] });
+        const look = await lookAtDesign(parent, label, { sizes: [size], ...pageNow(parent, label, ctx) });
         const images = d?.vision ? look.shots.map((s) => ({ type: "image" as const, data: Buffer.from(s.png).toString("base64"), mimeType: "image/png" })) : [];
         return { content: [...images, { type: "text", text: d?.vision ? `Your page at ${size} width.` : `An outline of your page at ${size} width (this model can't read images):\n${look.outline}` }], details: {} };
       },

@@ -185,10 +185,14 @@ test("while a page is written its card has an estimate: the finished replies' co
   set("zai/priced");
   slice(1, 0, "x".repeat(36_000));
   const est = () => designView(sid).designs.find((d) => d.label === label)!.live!.estimateUsd;
-  // 36,000 characters is 10,000 tokens; at $36 a million that is $0.36, on top of the $0.50 already spent.
-  assert.ok(Math.abs(est()! - 0.86) < 1e-9, String(est()));
+  // 36,000 characters is 10,000 tokens; at $36 a million that is $0.36, on top of the $0.50 already spent. Its input,
+  // with nothing said yet, is a first message's 10,000 tokens at $1 a million: $0.01.
+  assert.ok(Math.abs(est()! - 0.87) < 1e-9, String(est()));
   slice(1, 36_000, "x".repeat(3_600));
-  assert.ok(Math.abs(est()! - 0.896) < 1e-9, "it climbs as the page grows");
+  assert.ok(Math.abs(est()! - 0.906) < 1e-9, "it climbs as the page grows");
+  // Once a reply has ended, the next one's input is what the session then held: 40,000 tokens, $0.04.
+  store.changeDesigns(sid, (s) => void ((s.internal ??= {})[label] = { attempt: 1, brief: "", by: "first", context: 40_000 }));
+  assert.ok(Math.abs(est()! - 0.936) < 1e-9, String(est()));
   // A model the table has no price for gets no estimate, never $0.
   set("zai/no-such-model");
   assert.equal(est(), undefined);

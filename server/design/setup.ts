@@ -127,7 +127,12 @@ function pagePrice(ref: string, table: PriceTable, aliases: Aliases, now: number
 let rates: { at: number; table: PriceTable | null; aliases: Aliases | null } | null = null;
 /** The price tables, read at most once a minute: a page in progress asks several times a second. */
 function priceTables(now: number): { table: PriceTable | null; aliases: Aliases | null } {
-  if (!rates || now - rates.at > 60_000) rates = { at: now, table: priceFile<PriceTable>(join(stateRoot(), "model-prices.json")) ?? priceFile<PriceTable>(join(PRICES_DIR, "seed.json")), aliases: priceFile<Aliases>(join(PRICES_DIR, "aliases.json")) };
+  if (!rates || now - rates.at > 60_000) {
+    const table = priceFile<PriceTable>(join(stateRoot(), "model-prices.json")) ?? priceFile<PriceTable>(join(PRICES_DIR, "seed.json"));
+    const aliases = priceFile<Aliases>(join(PRICES_DIR, "aliases.json"));
+    // A file caught mid-rewrite reads as nothing: keep the last good tables rather than drop every estimate for a minute.
+    rates = { at: now, table: table ?? rates?.table ?? null, aliases: aliases ?? rates?.aliases ?? null };
+  }
   return rates;
 }
 

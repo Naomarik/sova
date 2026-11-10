@@ -112,6 +112,19 @@ export function designFixLine(d: DesignRecord): string {
   return [why, tries ? `Fixing it, ${tries}.` : "Fixing it."].filter(Boolean).join(" ");
 }
 
+/** "That didn't change the page: …", for a design whose last request ended with no new version; else "". */
+export function designUnchangedLine(d: DesignRecord): string {
+  if (d.status !== "ready" || !d.unchanged) return "";
+  const why = d.unchanged.reason.trim().replace(/\.$/, "");
+  return why ? `That didn't change the page: ${why}.` : "That didn't change the page.";
+}
+
+/** What a card says under its title about work in hand: a repair, or a request that changed nothing. */
+export const designNoteLine = (d: DesignRecord): string => designFixLine(d) || designUnchangedLine(d);
+
+/** "$0.19"; a figure under a cent reads "under $0.01". */
+const dollars = (usd: number): string => (usd < 0.005 ? "under $0.01" : `$${usd.toFixed(2)}`);
+
 /** "2 ready · 1 writing · 3 queued", omitting what there are none of; failed counted last. */
 export function statusCounts(designs: readonly DesignRecord[]): string {
   const of = (s: DesignStatus) => designs.filter((d) => d.status === s).length;
@@ -135,7 +148,9 @@ export function designMeta(d: DesignRecord, liveChars?: number): string {
   const tokens = d.usage?.output || (liveChars ? Math.round(liveChars / 3.6) : 0);
   const parts = [d.modelName || d.model];
   if (tokens) parts.push(`${shortCount(tokens)} tokens`);
-  if (d.usage?.cost) parts.push(`$${d.usage.cost < 1 ? d.usage.cost.toFixed(2) : d.usage.cost.toFixed(2)}`);
+  // While a page is written its cost is an estimate; a model with no price shows none, never $0.
+  if (d.live?.estimateUsd) parts.push(d.live.estimateUsd < 0.005 ? "under $0.01" : `about ${dollars(d.live.estimateUsd)}`);
+  else if (d.usage?.cost) parts.push(dollars(d.usage.cost));
   return parts.join(" · ");
 }
 

@@ -2,7 +2,7 @@ import { createEffect, createMemo, createSignal, For, on, onCleanup, onMount, Sh
 import type { DesignRecord } from "../../shared/design";
 import { versionLabel } from "../lib/design-frame";
 import { designPageText, type DesignStore } from "../lib/design-store";
-import { coordinatorOf, designCanRefine, designFixLine, designIsBusy, designLatest, designMeta, designStatusWord, parentsLine, QUICK_PROMPTS } from "../lib/design-ui";
+import { coordinatorOf, designCanRefine, designIsBusy, designNoteLine, designLatest, designMeta, designStatusWord, parentsLine, QUICK_PROMPTS } from "../lib/design-ui";
 import { designStatusTone, DesignTile, designGrid, designWaiting, type DesignOpenTarget } from "./DesignCard";
 import { DesignCoordinatorPanel, designKey, DesignMessageBox } from "./DesignCoordinator";
 import { DesignSealedFrame, DesignStreamFrame } from "./DesignFrame";
@@ -85,7 +85,7 @@ function PageFrame(props: { d: DesignRecord; version: number; store: DesignStore
         setHtml(null);
         setError("");
         if (v > 0) {
-          designPageText(props.store, props.cacheKey, label, v)
+          designPageText(props.store, props.cacheKey, label, v, "full")
             .then((t) => setHtml(t))
             .catch((e) => setError(e instanceof Error ? e.message : "This page couldn't be loaded."));
         }
@@ -178,9 +178,9 @@ export function DesignOpen(props: { target: DesignOpenTarget; store: DesignStore
         <Show when={d()}>
           {(x) => (
             <>
-              <span class="text-caption text-muted design-open-meta" title={designFixLine(x()) || designMeta(x())}>
-                {designFixLine(x()) || designMeta(x())}
-                <Show when={x().parents.length && !designFixLine(x())}> · {parentsLine(x().parents)}</Show>
+              <span class="text-caption text-muted design-open-meta" title={designNoteLine(x()) || designMeta(x())}>
+                {designNoteLine(x()) || designMeta(x())}
+                <Show when={x().parents.length && !designNoteLine(x())}> · {parentsLine(x().parents)}</Show>
               </span>
               <Chip tone={designStatusTone(x())} live={designIsBusy(x())}>
                 {designStatusWord(x())}

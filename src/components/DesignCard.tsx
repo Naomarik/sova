@@ -32,7 +32,7 @@ import {
   coordinatorOf,
   designCanOpen,
   designCanRefine,
-  designFixLine,
+  designNoteLine,
   designIsBusy,
   designLatest,
   designMeta,
@@ -491,7 +491,7 @@ export function DesignThumb(props: {
     on([version, near], ([v, isNear]) => {
       if (!v || !isNear || slots().some((s) => s.v === v)) return;
       setFailed("");
-      designPageText(props.store, props.cacheKey, props.d.label, v)
+      designPageText(props.store, props.cacheKey, props.d.label, v, "small")
         .then((html) => {
           if (v === version())
             setSlots((list) => [
@@ -602,7 +602,7 @@ export function DesignTile(props: {
         error: true,
         alert: false,
       };
-    return { text: designFixLine(props.d), error: false, alert: false };
+    return { text: designNoteLine(props.d), error: false, alert: false };
   };
   return (
     <article class="design-tile" aria-label={`Design ${props.d.label}`}>

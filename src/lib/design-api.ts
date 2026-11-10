@@ -87,8 +87,8 @@ export function designApi(path: string, host: string | null) {
       }
     },
     /** A finished page's text; the page is never loaded as a document from Sova's origin. */
-    page: async (l: string, version: number): Promise<string> => {
-      const res = await send(url(`${label(l)}/page`, `&v=${version}`));
+    page: async (l: string, version: number, images?: "small" | "full"): Promise<string> => {
+      const res = await send(url(`${label(l)}/page`, `&v=${version}${images ? `&images=${images}` : ""}`));
       if (!res.ok) throw new ApiError(res.status === 404 ? "This page isn't there." : `This page couldn't be loaded (${res.status}).`, res.status);
       return res.text();
     },

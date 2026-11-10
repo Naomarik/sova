@@ -145,16 +145,20 @@ export function designEvent(path: string, host: string | null, event: DesignEven
 
 const pageCache = new Map<string, Promise<string>>();
 
-/** A finished page's text, fetched once per browser while it is wanted. A failed fetch is forgotten, so it can retry. */
-export function designPageText(store: DesignStore, cacheKey: string, label: string, version: number): Promise<string> {
-  const key = `${cacheKey}|${label}|${version}`;
+/**
+ * A finished page's text for drawing, its pictures put in at the size the box wants (a grid card's
+ * small, an open design's full). Fetched once per browser while it is wanted; a failed fetch is
+ * forgotten, so it can retry.
+ */
+export function designPageText(store: DesignStore, cacheKey: string, label: string, version: number, images: "small" | "full"): Promise<string> {
+  const key = `${cacheKey}|${label}|${version}|${images}`;
   const held = pageCache.get(key);
   if (held) {
     pageCache.delete(key);
     pageCache.set(key, held);
     return held;
   }
-  const fetched = store.api.page(label, version);
+  const fetched = store.api.page(label, version, images);
   fetched.catch(() => pageCache.delete(key));
   pageCache.set(key, fetched);
   while (pageCache.size > PAGE_CACHE) pageCache.delete(pageCache.keys().next().value!);

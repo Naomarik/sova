@@ -4,7 +4,7 @@ import type { TranscriptItem } from "../../shared/protocol";
 import type { DesignRecord, DesignSetup } from "../../shared/design";
 import type { LiveTool } from "./live";
 import { designFold, liveDesignCalls, newestDesignRows, normalizeDesignCard } from "./design-rows";
-import { batchLine, briefTitle, designGroups, designFixLine, designIsBusy, designMeta, designStatusWord, moveCoordinator, parentsLine, setupBlocked, setupCount, setupSummary, statusCounts, toggleDirection, toggleGroup, toggleModel } from "./design-ui";
+import { batchLine, briefTitle, designGroups, designFixLine, designIsBusy, designMeta, designNoteLine, designUnchangedLine, designStatusWord, moveCoordinator, parentsLine, setupBlocked, setupCount, setupSummary, statusCounts, toggleDirection, toggleGroup, toggleModel } from "./design-ui";
 
 const caps = { batchDefault: 6, askAbove: 12, batchMax: 24, concurrent: 6 };
 const m = (ref: string, design = true, coordinator = false) => ({ ref, name: ref, design, coordinator, vision: true, route: "tool" as const });
@@ -143,4 +143,21 @@ test("details that aren't a run are no card", () => {
   assert.equal(normalizeDesignCard({ designCard: {} }), undefined);
   assert.equal(normalizeDesignCard({ designCard: { runId: 3 } }), undefined);
   assert.deepEqual(normalizeDesignCard({ designCard: { runId: "a" } }), { runId: "a" });
+});
+
+test("a request that ended with no new version says so, and why, only while the design is ready", () => {
+  const d = { ...rec("A", "ready"), unchanged: { reason: "It finished without changing the page.", at: "" } };
+  assert.equal(designUnchangedLine(d), "That didn't change the page: It finished without changing the page.");
+  assert.equal(designUnchangedLine({ ...d, unchanged: { reason: "script 1, line 2: Unexpected token ';'", at: "" } }), "That didn't change the page: script 1, line 2: Unexpected token ';'.");
+  assert.equal(designUnchangedLine(rec("A", "ready")), "", "nothing set, nothing said");
+  assert.equal(designUnchangedLine({ ...d, status: "writing" }), "", "a new request in hand");
+  assert.equal(designNoteLine({ ...d, status: "fixing", fix: { reason: "The page was cut off.", attempt: 1, of: 2 } }), "The page was cut off. Fixing it, try 1 of 2.");
+});
+
+test("a page being written shows its cost as an estimate, and a model with no price shows none", () => {
+  const d = { ...rec("A", "writing"), modelName: "Opus" };
+  assert.equal(designMeta({ ...d, live: { version: 1, chars: 3600, estimateUsd: 0.023 } }), "Opus · about $0.02");
+  assert.equal(designMeta({ ...d, live: { version: 1, chars: 3600, estimateUsd: 0.001 } }), "Opus · under $0.01");
+  assert.equal(designMeta({ ...d, live: { version: 1, chars: 3600 } }), "Opus");
+  assert.equal(designMeta({ ...d, status: "ready", usage: { input: 1, output: 1000, cost: 0 } }), "Opus · 1.0k tokens");
 });

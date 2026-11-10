@@ -100,9 +100,12 @@ export interface DesignSessionPromptOptions {
 	delivery: keyof typeof SESSION_DELIVERY;
 }
 
+/** The direction of a design made from others: never offered on Setup; the message names the pages it draws on. */
+export const DESIGN_MIXED_DIRECTION = { name: "Mixed", definition: "Draw on the designs in your first message, as it asks. Their strongest ideas, made into one coherent page, are your direction." };
+
 /** A design session's system prompt. */
 export function designSessionPrompt(options: DesignSessionPromptOptions): string {
-	const direction = DESIGN_DIRECTIONS.find((d) => d.name === options.direction);
+	const direction = [...DESIGN_DIRECTIONS, DESIGN_MIXED_DIRECTION].find((d) => d.name === options.direction);
 	if (!direction) throw new Error(`Unknown design direction "${options.direction}"`);
 	const delivery = fill(SESSION_DELIVERY[options.delivery], { label: options.label, pageStart: DESIGN_PAGE_START, pageEnd: DESIGN_PAGE_END });
 	return fill(SESSION_BRIEF, {

@@ -77,6 +77,17 @@ test("after the link comes back the whole page so far is said again from the sta
   assert.deepEqual(h.frames.at(-1), { gen: 1, at: 0, text: "abcdef" });
 });
 
+test("a page that ended isn't told again when the link comes back, or it reads as a new page", () => {
+  const h = harness();
+  h.start();
+  h.tool('{"html":"abc');
+  h.timer();
+  h.fire({ type: "message.end", role: "assistant" });
+  const before = h.frames.length;
+  h.live.resync();
+  assert.equal(h.frames.length, before);
+});
+
 test("thinking says so at once and then once an interval, with no page text", () => {
   const h = harness();
   h.start();

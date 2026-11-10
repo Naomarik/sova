@@ -119,9 +119,10 @@ export class DesignLive {
     }
   }
 
-  /** The link came back: the whole page so far, from the start. */
+  /** The link came back: the whole page so far, from the start. Only one still being written: a finished one is
+      the server's to keep, and hearing it again would read as a new page. */
   resync(): void {
-    if (!this.page.length) return;
+    if (!this.page.length || this.isNew) return;
     if (this.timer !== null) this.clock.clearTimeout(this.timer);
     this.timer = null;
     this.sent = this.page.length;

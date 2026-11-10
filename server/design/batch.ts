@@ -391,6 +391,7 @@ async function settled(parent: DesignParent, label: string, state: WorkerState):
   const d = designOf(sid, label);
   if (!d) return;
   if (d.sessionFile) await noteUsage(sid, label, d.sessionFile);
+  if (d.thinking) changeDesign(sid, label, (x) => void delete x.thinking);
   // A turn that has nothing new to land is fine for a design with a page (a question in Chat); for one without, that is the problem.
   const problem = wrote.page ? null : (wrote.problem ?? refused ?? (atWork(d) && !d.versions.length ? NO_PAGE : null));
   const s = state.lastSettled;
@@ -578,6 +579,8 @@ export function onLiveFrame(chatId: string, f: { thinking?: true; gen: number; a
   const sid = owner.parent.sessionId;
   const d = designOf(sid, label);
   if (!d) return;
+  // A chat that came back re-telling the page it already finished: that is no new page.
+  if (f.at === 0 && !f.thinking && !livePage(sid, label) && f.text.trim() === readPage(sid, label)?.trim()) return;
   heard(owner.parent, label);
   if (f.thinking) {
     if (!d.thinking && !d.live) changeDesign(sid, label, (x) => void (x.thinking = true));
@@ -638,7 +641,8 @@ export async function deliverDesign(parent: DesignParent, label: string, send: D
     const { queued } = await workers(parent).send(d.sessionId, { text: send.text, delivery: "followUp", key });
     if (!following.has(`${sid}\0${label}`)) follow(parent, label, d.sessionId);
     changeDesign(sid, label, (x) => {
-      delete x.error;
+      // A failed design's reason stays until a Retry: a message doesn't make it not have failed.
+      if (x.status !== "failed") delete x.error;
       if (queued) x.delivery = { state: "queued", key, at: new Date().toISOString() };
       else delete x.delivery;
     });

@@ -512,6 +512,45 @@ test("a second page written after a version goes back too, and the version stand
   assert.equal(fixSends(f).length, 1);
 });
 
+test("a chat re-telling the page it finished changes nothing; a new page that begins the same way is still a page", async () => {
+  const f = await start();
+  onLiveFrame(f.rec.chatId, { gen: 1, at: 0, text: PAGE });
+  await finish(f, "A");
+  await ticks();
+  const before = store.viewOf(parent.sessionId);
+  onLiveFrame(f.rec.chatId, { gen: 1, at: 0, text: `${PAGE}\n` });
+  assert.equal(stat("A").status, "ready");
+  assert.equal(stat("A").live, undefined);
+  assert.equal(livePage(parent.sessionId, "A"), null);
+  assert.equal(store.viewOf(parent.sessionId).runs[0]!.phase, before.runs[0]!.phase);
+  onLiveFrame(f.rec.chatId, { gen: 2, at: 0, text: "<!doctype html><html>" });
+  assert.equal(stat("A").status, "writing");
+});
+
+test("a message to a failed design keeps its reason, and a finished reply doesn't go on reading Thinking", async () => {
+  const f = await start();
+  settle(f, "error", "the login expired");
+  await waitFor(() => stat("A").status === "failed");
+  await deliverDesign(parent, "A", { text: "hello", key: "k", by: "user" });
+  assert.equal(stat("A").error, "the login expired");
+  onLiveFrame(f.rec.chatId, { thinking: true, gen: 1, at: 0, text: "" });
+  assert.equal(stat("A").thinking, true);
+  settle(f);
+  await waitFor(() => stat("A").thinking === undefined);
+});
+
+test("a design made from others starts its session on the real prompt, with no direction of its own", async () => {
+  const f = await start();
+  await finish(f, "A");
+  await ticks();
+  const label = newDesign(parent, { parents: ["A"], instructions: "take its header", model: "zai/a" });
+  await waitFor(() => fakes[1]?.sends.length === 1);
+  assert.equal(stat(label).direction, "Mixed");
+  assert.notEqual(stat(label).status, "failed");
+  assert.match(fakes[1]!.rec.spec.appendSystemPrompt!, /"Mixed" aesthetic/);
+  assert.ok(fakes[1]!.sends[0]!.text.includes(PAGE));
+});
+
 test("the cost moves as each reply ends, and a session past its reach ends in Failed", async () => {
   const f = await start();
   const file = join(dir, "usage.jsonl");

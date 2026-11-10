@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { afterEach, describe, test } from "node:test";
 import { harnessEventOf } from "./harness/pi/session";
 import { attachStreamGuard, BATON_RUN_WALL_MS, capsFor, setStreamCapsForTest, type GuardClock, type StreamCaps, type StreamTrip } from "./stream-guard";
-import { DESIGN_OUTPUT_TOKENS } from "../shared/design";
+import { DESIGN_SAFETY_CHARS } from "../shared/design";
 
 type Listener = (e: any) => void;
 
@@ -255,14 +255,14 @@ describe("stream guard", () => {
   });
 });
 
-test("a design session is held to its page budget: whatever the provider ignores", () => {
+test("a design page has no size limit, only the safety stop an ordinary tool call has, on the reply too", () => {
   const caps = capsFor("design");
-  assert.equal(caps.toolArgChars, DESIGN_OUTPUT_TOKENS * 4);
-  assert.equal(caps.outputChars, DESIGN_OUTPUT_TOKENS * 4);
-  assert.equal(caps.thinkingChars, DESIGN_OUTPUT_TOKENS * 8, "thinking is budgeted apart from the page");
-  // An ordinary chat's cap is the one this would have fallen through to.
-  assert.ok(capsFor(null).toolArgChars > caps.toolArgChars);
+  assert.equal(DESIGN_SAFETY_CHARS, capsFor(null).toolArgChars, "the general stop, not a page budget");
+  assert.equal(caps.toolArgChars, DESIGN_SAFETY_CHARS);
+  // An ordinary chat has no stop on reply text; a design session's page can be written there.
   assert.equal(capsFor(null).outputChars, null);
+  assert.equal(caps.outputChars, DESIGN_SAFETY_CHARS);
+  assert.equal(caps.thinkingChars, DESIGN_SAFETY_CHARS);
 });
 
 test("thinking with a budget of its own never spends the page's, and is stopped at its own", () => {

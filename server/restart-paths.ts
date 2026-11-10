@@ -11,6 +11,7 @@
  * to a walk of the server's import graph (restart-paths-walk.ts), so a new import of src/ fails it until it is here.
  */
 export const SERVER_SRC_IMPORTS: readonly string[] = [
+  "src/lib/design-frame.ts",
   "src/lib/diff/parse.ts",
   "src/lib/diff/types.ts",
   "src/lib/fences.ts",

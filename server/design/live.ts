@@ -1,7 +1,7 @@
 // What the browsers of a chat hear about its designs: a page's slices as they are written, and the
 // whole view when anything changes. Fan-out only: ws.ts subscribes each open pane to its own chat.
 import type { DesignChatView } from "../../shared/design";
-import { DESIGN_OUTPUT_CHARS } from "../../shared/design";
+import { DESIGN_SAFETY_CHARS } from "../../shared/design";
 import type { SovaEvent } from "../../shared/harness";
 import { onDesignChanged, viewOf } from "./store";
 
@@ -58,8 +58,8 @@ export function applySlice(sessionId: string, label: string, version: number, f:
   } else if (f.at !== b.text.length) {
     return false;
   }
-  // The guard stops the session past its budget; this only keeps a broken one from growing without bound.
-  if (b.text.length + f.text.length > 2 * DESIGN_OUTPUT_CHARS) return began;
+  // The guard stops the session at its safety limit; this only keeps a broken one from growing without bound.
+  if (b.text.length + f.text.length > 2 * DESIGN_SAFETY_CHARS) return began;
   b.text += f.text;
   tell({ sessionId, event: { type: "design.live", label, version, at: f.at, text: f.text, chars: b.text.length } });
   return began;

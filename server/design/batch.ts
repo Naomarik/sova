@@ -7,13 +7,15 @@ import { join } from "node:path";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import type { WorkerHost, WorkerSpec, WorkerStart, WorkerState } from "../../shared/chat-runtime";
 import type { HEntry } from "../../shared/harness";
-import { DESIGN_ASK_ABOVE, DESIGN_BATCH_MAX, DESIGN_CONCURRENT, type DesignNote, type DesignRecord, type DesignRun, type DesignSetup, type DesignVersion } from "../../shared/design";
+import { DESIGN_ASK_ABOVE, DESIGN_BATCH_MAX, DESIGN_CONCURRENT, DESIGN_FIX_TRIES, type DesignNote, type DesignRecord, type DesignRun, type DesignSetup, type DesignVersion } from "../../shared/design";
 import { DESIGN_PAGE_END, DESIGN_PAGE_START, designSessionPrompt } from "../../pi-config/extensions/mode/design-guide.ts";
 import { claudeCodeProviderLoad, sessionDirName } from "../../pi-config/extensions/subagents/worker-load.ts";
 import { SESSIONS_DIR } from "../paths";
 import { readBranch } from "../harness/pi/reader";
 import { agentRoot } from "../state-root";
 import { applySlice, clearLivePage, livePage } from "./live";
+import { noteDesignEvent } from "./coordinator";
+import { pageProblem } from "./lint";
 import { pageInReply } from "./stream-decode";
 import { changeDesign, changeDesigns, designOf, designRoot, designSessions, nextLabel, pendingPage, readDesigns, readPage, runOf, setPendingPage, setRunPhase, viewOf, writePage } from "./store";
 
@@ -119,11 +121,11 @@ function loadRefs(sessionId: string, runId: string): DesignReference[] {
   }
 }
 
-/** A run's designs: one queued record per model and direction, within what the Setup card holds. */
-export function launchDesigns(parent: DesignParent, runId: string, input: { brief?: string; references?: DesignReference[] }): string[] {
 /** Whether a run's own batch has been started. Its labels can't say: a design made from others joins them too. */
 export const designRunLaunched = (run: Pick<DesignRun, "phase">): boolean => run.phase !== "setup" && run.phase !== "researching" && run.phase !== "confirm";
 
+/** A run's designs: one queued record per model and direction, within what the Setup card holds. */
+export function launchDesigns(parent: DesignParent, runId: string, input: { brief?: string; references?: DesignReference[] }): string[] {
   const run = runOf(parent.sessionId, runId);
   if (!run) throw new Error("No such design run.");
   if (designRunLaunched(run)) return run.labels;
@@ -160,9 +162,9 @@ export function newDesign(parent: DesignParent, input: { parents: string[]; inst
   const runId = input.runId ?? view.runs.at(-1)?.id;
   const run = runId ? runOf(sid, runId) : undefined;
   if (!run) throw new Error("This chat has no design run to add to.");
+  if (!designRunLaunched(run)) throw new Error("This run hasn't launched yet: launch it first, then make new designs from others.");
   const model = run.setup.models.find((m) => m.ref === input.model && m.design);
   if (!model) throw new Error(`${input.model} isn't ticked for design on this run's Setup card.`);
-  if (!designRunLaunched(run)) throw new Error("This run hasn't launched yet: launch it first, then make new designs from others.");
   for (const p of input.parents) if (!readPage(sid, p)) throw new Error(`Design ${p} has no finished page to draw from.`);
   const now = new Date().toISOString();
   const label = changeDesigns(sid, (s) => {
@@ -177,7 +179,8 @@ export function newDesign(parent: DesignParent, input: { parents: string[]; inst
   return label;
 }
 
-const working = (d: DesignRecord): boolean => d.status === "writing" || (d.status === "queued" && !!d.sessionId && !d.sessionEnded);
+const atWork = (d: DesignRecord): boolean => d.status === "writing" || d.status === "fixing" || d.status === "queued";
+const working = (d: DesignRecord): boolean => d.status === "writing" || d.status === "fixing" || (d.status === "queued" && !!d.sessionId && !d.sessionEnded);
 
 /** Start queued designs while the chat has room. */
 export function pump(parent: DesignParent): void {
@@ -236,10 +239,12 @@ function fail(parent: DesignParent, label: string, why: string): void {
   changeDesign(parent.sessionId, label, (d) => {
     d.status = "failed";
     d.error = why;
+    delete d.fix;
     delete d.live;
     delete d.thinking;
     d.workerState = d.sessionEnded ? "ended" : "idle";
   });
+  noteDesignEvent(parent.sessionId, { label, kind: "failed", reason: why });
   finishRun(parent, label);
 }
 
@@ -276,12 +281,13 @@ function heard(parent: DesignParent, label: string): void {
   const t = setTimeout(() => {
     watchdogs.delete(`${parent.sessionId}\0${label}`);
     const d = designOf(parent.sessionId, label);
-    if (!d || (d.status !== "writing" && d.status !== "queued") || !d.sessionId) return;
+    if (!d || !atWork(d) || !d.sessionId) return;
     void workers(parent).abort(d.sessionId).catch(() => {});
     if (d.versions.length) {
       clearLivePage(parent.sessionId, label);
       changeDesign(parent.sessionId, label, (x) => {
         x.status = "ready";
+        delete x.fix;
         delete x.live;
       });
       finishRun(parent, label);
@@ -315,6 +321,8 @@ function follow(parent: DesignParent, label: string, chatId: string): void {
         }
       } else if (f.t === "event") {
         const e = f.event as { type?: string; message?: { role?: string }; sendKey?: string };
+        // Each reply as it ends: the card's cost keeps climbing through a long or repeated turn.
+        if (e.type === "message_end" && e.message?.role === "assistant" && d.sessionFile) void noteUsage(parent.sessionId, label, d.sessionFile);
         // The first words of its reply: past the wait for a provider slot, so Queued ends here.
         if (e.type === "message_start" && e.message?.role === "assistant" && d.status === "queued") changeDesign(parent.sessionId, label, (x) => void (x.status = "writing"));
         if (e.type === "message_start" && e.message?.role === "user" && e.sendKey && d.delivery?.key === e.sendKey) changeDesign(parent.sessionId, label, (x) => void delete x.delivery);
@@ -325,8 +333,12 @@ function follow(parent: DesignParent, label: string, chatId: string): void {
           x.sessionEnded = true;
           x.workerState = "ended";
         });
-        if (d.status === "writing" || d.status === "queued") {
-          if (d.versions.length) changeDesign(parent.sessionId, label, (x) => void (x.status = "ready"));
+        if (atWork(d)) {
+          if (d.versions.length)
+            changeDesign(parent.sessionId, label, (x) => {
+              x.status = "ready";
+              delete x.fix;
+            });
           else fail(parent, label, f.detail ?? "Its session stopped before it finished a page.");
         }
       } else if (f.t === "ended" && f.cause === "idle") {
@@ -346,33 +358,95 @@ function setWorkerState(parent: DesignParent, label: string, s: WorkerState): vo
   if (d && d.workerState !== next) changeDesign(parent.sessionId, label, (x) => void (x.workerState = next));
 }
 
+const NO_PAGE = "The model finished without writing a page.";
+
+/** What a turn left: a page that lands, or why the one it wrote doesn't. */
+async function writtenThisTurn(sid: string, label: string, d: DesignRecord): Promise<{ page: string | null; problem: string | null }> {
+  const pending = pendingPage(sid, label);
+  if (pending) return { page: pending, problem: null };
+  // A page written whole but never handed in (its session lost its tools, or stopped short) is still a page.
+  const live = livePage(sid, label)?.text;
+  const problem = live ? pageProblem(live) : null;
+  if (live && !problem) return { page: live, problem: null };
+  if (d.route === "reply" && d.sessionFile) {
+    const reply = await unsavedReplyPage(d.sessionFile, readPage(sid, label));
+    if (reply.page || reply.problem) return reply;
+  }
+  return { page: null, problem };
+}
+
 async function settled(parent: DesignParent, label: string, state: WorkerState): Promise<void> {
   const sid = parent.sessionId;
   stopWatching(sid, label);
-  // A page that was written whole but never handed in (its session lost its tools, or stopped short) is still a page.
-  const live = livePage(sid, label)?.text;
-  let page = pendingPage(sid, label) ?? (live && !pageProblem(live) ? live : null);
   const was = designOf(sid, label);
-  if (!page && was?.route === "reply" && was.sessionFile) page = await unsavedReplyPage(was.sessionFile, readPage(sid, label));
-  if (page && designOf(sid, label)) commitVersion(parent, label, page, undefined);
+  if (!was) return;
+  const wrote = await writtenThisTurn(sid, label, was);
+  const refused = changeDesigns(sid, (s) => {
+    const i = s.internal?.[label];
+    const out = i?.refused ?? null;
+    if (i) delete i.refused;
+    return out;
+  });
+  if (wrote.page && designOf(sid, label)) commitVersion(parent, label, wrote.page, undefined);
   const d = designOf(sid, label);
   if (!d) return;
   if (d.sessionFile) await noteUsage(sid, label, d.sessionFile);
-  if (d.status === "writing" || d.status === "queued") {
+  // A turn that has nothing new to land is fine for a design with a page (a question in Chat); for one without, that is the problem.
+  const problem = wrote.page ? null : (wrote.problem ?? refused ?? (atWork(d) && !d.versions.length ? NO_PAGE : null));
+  const s = state.lastSettled;
+  // The model can't act on these: a stop, or a provider's or login's failure.
+  const fixable = !state.trip && s?.outcome === "success";
+  if (problem && fixable && (await sendBack(parent, label, problem))) return;
+  if (atWork(d)) {
     if (d.versions.length) {
       clearLivePage(sid, label);
       changeDesign(sid, label, (x) => {
         x.status = "ready";
+        delete x.fix;
         delete x.live;
         delete x.thinking;
       });
+      if (problem) noteDesignEvent(sid, { label, kind: "failed", reason: problem });
     } else {
-      const s = state.lastSettled;
-      fail(parent, label, state.trip ? `Stopped: ${state.trip}.` : s?.outcome === "error" ? (s.error ?? "The model's reply failed.") : s?.outcome === "aborted" ? "It was stopped before it finished a page." : "The model finished without writing a page.");
+      fail(parent, label, state.trip ? `Stopped: ${state.trip}.` : s?.outcome === "error" ? (s.error ?? "The model's reply failed.") : s?.outcome === "aborted" ? "It was stopped before it finished a page." : (problem ?? NO_PAGE));
       return;
     }
   }
   finishRun(parent, label);
+}
+
+function fixMessage(route: DesignRecord["route"], problem: string, attempt: number): string {
+  const how = route === "reply" ? "in your reply, between the two marker lines" : "with `design_stream`";
+  return `Your page didn't land, so nobody can see it yet (fix ${attempt} of ${DESIGN_FIX_TRIES}). What is wrong: ${problem}\n\nFix exactly that and change nothing else. Then deliver the complete page again, ${how}, and call \`${DESIGN_HAND_IN_TOOL}\`.`;
+}
+
+/** Send a page that didn't land back to its session, while this design has tries left. False when it can't. */
+async function sendBack(parent: DesignParent, label: string, problem: string): Promise<boolean> {
+  const sid = parent.sessionId;
+  const tried = changeDesigns(sid, (s) => {
+    const i = s.internal?.[label];
+    if (!i || (i.fixes ?? 0) >= DESIGN_FIX_TRIES) return null;
+    i.fixes = (i.fixes ?? 0) + 1;
+    return { attempt: i.fixes, session: i.attempt };
+  });
+  if (!tried) return false;
+  clearLivePage(sid, label);
+  const d = changeDesign(sid, label, (x) => {
+    x.status = "fixing";
+    x.fix = { reason: problem, attempt: tried.attempt, of: DESIGN_FIX_TRIES };
+    delete x.error;
+    delete x.live;
+    delete x.thinking;
+  });
+  noteDesignEvent(sid, { label, kind: "fixing", reason: problem });
+  try {
+    await deliverDesign(parent, label, { text: fixMessage(d.route, problem, tried.attempt), key: `fix:${tried.session}:${tried.attempt}`, by: "server" });
+    heard(parent, label);
+    return true;
+  } catch {
+    changeDesign(sid, label, (x) => void delete x.delivery);
+    return false;
+  }
 }
 
 export const DESIGN_HAND_IN_TOOL = "design_hand_in";
@@ -380,28 +454,34 @@ export const DESIGN_HAND_IN_TOOL = "design_hand_in";
 /** The turn just ended: everything after the user's last message. */
 const thisTurn = (branch: readonly HEntry[]): readonly HEntry[] => branch.slice(branch.map((e) => e.kind).lastIndexOf("user") + 1);
 
-/** The newest whole page the replies of this turn carry between their markers. A page from an earlier turn is
-    never it: a question in Chat, with no new page, must not find one. */
-export function replyPageThisTurn(branch: readonly HEntry[]): string | null {
+/** The pages the replies of this turn carry between their markers, newest first. A page from an earlier turn is
+    never among them: a question in Chat, with no new page, must not find one. */
+function replyPages(branch: readonly HEntry[]): string[] {
+  const out: string[] = [];
   for (const e of [...thisTurn(branch)].reverse()) {
     if (e.kind !== "assistant") continue;
     const text = e.blocks.flatMap((b) => (b.type === "text" ? [b.text] : [])).join("");
     const page = pageInReply(text, DESIGN_PAGE_START, DESIGN_PAGE_END);
-    if (page !== null && !pageProblem(page)) return page;
+    if (page !== null) out.push(page);
   }
-  return null;
+  return out;
 }
 
+/** The newest page in this turn's replies that counts as landed. */
+export const replyPageThisTurn = (branch: readonly HEntry[]): string | null => replyPages(branch).find((p) => !pageProblem(p)) ?? null;
+
 /** A page a reply-route session wrote and never handed in, read from its session file: the live buffer is only
-    this server's memory, and the file is what survives. Null once this turn's hand-in has dealt with it. */
-async function unsavedReplyPage(file: string, current: string | null): Promise<string | null> {
+    this server's memory, and the file is what survives. Nothing once this turn's hand-in has dealt with it. */
+async function unsavedReplyPage(file: string, current: string | null): Promise<{ page: string | null; problem: string | null }> {
   try {
     const branch = await readBranch(file);
-    if (thisTurn(branch).some((e) => e.kind === "tool-result" && e.tool === DESIGN_HAND_IN_TOOL && !e.isError)) return null;
+    if (thisTurn(branch).some((e) => e.kind === "tool-result" && e.tool === DESIGN_HAND_IN_TOOL && !e.isError)) return { page: null, problem: null };
     const page = replyPageThisTurn(branch);
-    return page === current ? null : page;
+    if (page) return { page: page === current ? null : page, problem: null };
+    const newest = replyPages(branch)[0];
+    return { page: null, problem: newest === undefined ? null : pageProblem(newest) };
   } catch {
-    return null;
+    return { page: null, problem: null };
   }
 }
 
@@ -449,10 +529,12 @@ function commitVersion(parent: DesignParent, label: string, html: string, note: 
     d.versions.push(version);
     d.status = "ready";
     delete d.error;
+    delete d.fix;
     delete d.live;
     delete d.thinking;
   });
   if (note) for (const fn of handInListeners) fn({ sessionId: sid, label, version: n, note });
+  else noteDesignEvent(sid, { label, kind: "finished" });
   return version;
 }
 
@@ -469,13 +551,15 @@ export function takeLook(sessionId: string, label: string): void {
   });
 }
 
-/** Whether `html` is a complete page: truncated or empty output never counts as a design. */
-export function pageProblem(html: string): string | null {
-  const t = html.trim();
-  if (!t) return "The page is empty.";
-  if (!/^<!doctype html|^<html[\s>]/i.test(t)) return "The page must start with <!DOCTYPE html>.";
-  if (!/<\/html>\s*$/i.test(t)) return "The page was cut off: it must end with </html>.";
-  return null;
+export { pageProblem };
+
+/** A design tool turning a page away: the model hears why at once, and the turn's end knows why if it stops there. */
+export function refusedPage(parent: DesignParent, label: string, problem: string): never {
+  changeDesigns(parent.sessionId, (s) => {
+    const i = s.internal?.[label];
+    if (i) i.refused = problem;
+  });
+  throw new Error(problem);
 }
 
 export function savePage(parent: DesignParent, label: string, html: string): void {
@@ -503,7 +587,7 @@ export function onLiveFrame(chatId: string, f: { thinking?: true; gen: number; a
   const began = applySlice(sid, label, version, f);
   if (began)
     changeDesign(sid, label, (x) => {
-      x.status = "writing";
+      if (x.status !== "fixing") x.status = "writing";
       x.live = { version, chars: 0 };
       delete x.thinking;
     });
@@ -517,7 +601,8 @@ export interface DesignSend {
   text: string;
   /** Client-made: a retry of the same send doesn't deliver it twice. */
   key: string;
-  by: "user" | "coordinator" | "main";
+  /** "server": the server's own message, sending a page back; what the next version came from stays as it was. */
+  by: "user" | "coordinator" | "main" | "server";
   /** What the page shows this version came from. */
   version?: "refine" | "chat" | "coordinator";
 }
@@ -539,7 +624,7 @@ export async function deliverDesign(parent: DesignParent, label: string, send: D
   changeDesigns(sid, (s) => {
     const i = s.internal?.[label];
     if (i) {
-      i.by = by;
+      if (send.by !== "server") i.by = by;
       i.looks = 0;
     }
   });
@@ -585,11 +670,19 @@ export function retryDesign(parent: DesignParent, label: string): void {
   changeDesign(parent.sessionId, label, (x) => {
     x.status = "queued";
     delete x.error;
+    delete x.fix;
     delete x.sessionId;
     delete x.sessionFile;
     delete x.delivery;
     x.sessionEnded = false;
     x.workerState = "stopped";
+  });
+  changeDesigns(parent.sessionId, (s) => {
+    const i = s.internal?.[label];
+    if (i) {
+      delete i.fixes;
+      delete i.refused;
+    }
   });
   const run = runOf(parent.sessionId, d.runId);
   if (run?.phase === "done") setRunPhase(parent.sessionId, run.id, "generating");
@@ -627,7 +720,7 @@ export function reattachDesigns(): void {
     const path = readDesigns(sid).parentPath;
     if (!path) continue;
     const parent = { sessionId: sid, path };
-    for (const d of view.designs) if (d.sessionId && (d.status === "writing" || d.status === "queued")) follow(parent, d.label, d.sessionId);
+    for (const d of view.designs) if (d.sessionId && atWork(d)) follow(parent, d.label, d.sessionId);
     pump(parent);
   }
 }

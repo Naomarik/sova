@@ -220,10 +220,10 @@ export const DESIGN_ASK_ABOVE = 12;
 export const DESIGN_BATCH_MAX = 24;
 /** Design sessions of one chat writing at once (t22): the rest read Queued. */
 export const DESIGN_CONCURRENT = 6;
-/** The largest page a design session may write, enforced by the stream guard (t30). */
-export const DESIGN_OUTPUT_TOKENS = 32_768;
-/** The same budget as characters, at about 4 a token: the stream guard counts characters. */
-export const DESIGN_OUTPUT_CHARS = DESIGN_OUTPUT_TOKENS * 4;
+/** The safety stop on one reply of a design session, tool call or reply text alike: runaway output, not a page limit. */
+export const DESIGN_SAFETY_CHARS = 1_048_576;
+/** The times the server sends a page that didn't land back to its session before the card reads Failed. */
+export const DESIGN_FIX_TRIES = 2;
 
 /** The marker lines a no-tool-stream model writes its page between, in its reply (q15, t31). */
 export const DESIGN_PAGE_OPEN = "<<<design-page>>>";

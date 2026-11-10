@@ -1,6 +1,6 @@
 import type { HarnessSession } from "../shared/harness";
 import type { SpecialKind } from "./chat-handle";
-import { DESIGN_OUTPUT_CHARS } from "../shared/design";
+import { DESIGN_SAFETY_CHARS } from "../shared/design";
 
 /**
  * The runaway-stream guard (§chat.transcript/runaway-stream): every hosted runtime's turn is
@@ -53,10 +53,9 @@ const CAPS: Record<StreamKind, StreamCaps> = {
   // The org owner's Project Assistant: an outsider's reply, like a baton's, in the org's workspace repo.
   "project-assistant": { ...COMMON, toolArgChars: 64 * K, outputChars: 256 * K, runWallMs: 10 * 60_000 },
   chat: { ...COMMON, toolArgChars: K * K, outputChars: null, runWallMs: null },
-  // A design session's page budget: 32K tokens at four characters each (t30). Models and providers ignore an
-  // output cap, so this is where it holds. A page written in the reply (q15) is held to it as one written through
-  // the tool is. Thinking has its own, larger budget: a model that thinks long still has its whole page to write.
-  design: { ...COMMON, toolArgChars: DESIGN_OUTPUT_CHARS, outputChars: DESIGN_OUTPUT_CHARS, thinkingChars: 2 * DESIGN_OUTPUT_CHARS, runWallMs: null },
+  // A design page has no size limit: only the safety stop an ordinary tool call has, here over a page written
+  // in the reply too. Thinking is counted apart, so a model that thinks long keeps its whole allowance for the page.
+  design: { ...COMMON, toolArgChars: DESIGN_SAFETY_CHARS, outputChars: DESIGN_SAFETY_CHARS, thinkingChars: DESIGN_SAFETY_CHARS, runWallMs: null },
 };
 
 let override: Partial<StreamCaps> | null = null;

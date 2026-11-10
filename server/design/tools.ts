@@ -6,7 +6,7 @@ import { DESIGN_ASK_ABOVE, DESIGN_BATCH_MAX, DESIGN_TOOL, isDesignLabel, type De
 import { DESIGN_GUIDE_TOPICS, designGuide } from "../../pi-config/extensions/mode/design-guide.ts";
 import { coordinatorCard, tellCoordinator } from "./coordinator";
 import { createRun } from "./setup";
-import { DESIGN_HAND_IN_TOOL, handIn, pageProblem, replyPageThisTurn, savePage, takeLook, type DesignParent } from "./batch";
+import { DESIGN_HAND_IN_TOOL, handIn, pageProblem, refusedPage, replyPageThisTurn, savePage, takeLook, type DesignParent } from "./batch";
 import { livePage } from "./live";
 import { lookAtDesign } from "./look";
 import type { TourSize } from "../../shared/tour";
@@ -152,7 +152,7 @@ export function sessionDesignTools(parent: DesignParent, label: string): ToolSpe
           html = out.html;
         }
         const problem = pageProblem(html);
-        if (problem) throw new Error(problem);
+        if (problem) refusedPage(parent, label, problem);
         savePage(parent, label, html);
         return say("Saved. Now call design_hand_in, then stop: the user is looking at your page.");
       },
@@ -185,7 +185,7 @@ export function sessionDesignTools(parent: DesignParent, label: string): ToolSpe
         }
         if (html === null) throw new Error("You have no page to hand in yet.");
         const problem = pageProblem(html);
-        if (problem) throw new Error(problem);
+        if (problem) refusedPage(parent, label, problem);
         const v = handIn(parent, label, html, note);
         return say(`Handed in as version ${v.n}. Stop now.`, { label, version: v.n });
       },

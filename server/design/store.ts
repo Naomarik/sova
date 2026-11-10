@@ -35,6 +35,10 @@ export interface DesignInternal {
   looks?: number;
   /** The last settle already acted on. */
   settleKey?: string;
+  /** The times the server has sent this design's page back; a person's Retry starts them again. */
+  fixes?: number;
+  /** Why a design tool refused a page this turn, until the turn ends. */
+  refused?: string;
 }
 
 export const designRoot = (): string => join(agentRoot(), "design");

@@ -1,13 +1,14 @@
 // The batch runner over the real worker registry and a stand-in for the chat processes: no process, no socket.
 // What each discriminating case rules out is named where it matters.
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, beforeEach, test } from "node:test";
 
 process.env.PI_CODING_AGENT_DIR = mkdtempSync(join(tmpdir(), "design-batch-"));
-const { DESIGN_CONCURRENT } = await import("../../shared/design");
+const { DESIGN_CONCURRENT, DESIGN_FIX_TRIES } = await import("../../shared/design");
+const { setCoordinatorPorts } = await import("./coordinator");
 const { assertLaunchAllowed, deleteDesign, deliverDesign, DesignLimitError, installDesignHost, launchDesigns, newDesign, pageProblem, retryDesign, onDesignHandIn, onLiveFrame, setDesignQuietMsForTest } = await import("./batch");
 const store = await import("./store");
 const { sessionDesignTools } = await import("./tools");
@@ -392,14 +393,143 @@ test("design_hand_in finds the page in an earlier reply of its turn, never in an
   assert.equal(store.readPage(parent.sessionId, "A"), PAGE);
 });
 
-test("a half-written page with no hand-in is no version: the turn fails", async () => {
-  const run = newRun(["zai/a"], ["Minimalist"]);
-  launchDesigns(parent, run, {});
+const BROKEN = "<!doctype html><html><body><script>\nvar a = ;\n</script></body></html>";
+const lastSend = (f: Fake) => f.sends.at(-1)!;
+const fixSends = (f: Fake) => f.sends.filter((x) => x.key.startsWith("design-send:fix:"));
+
+// Stands in for the coordinator's process: any turn spent on a design's news would show here.
+let coordinatorSends = 0;
+function withCoordinator(): void {
+  coordinatorSends = 0;
+  setCoordinatorPorts({ workers: () => ({ send: async () => (coordinatorSends++, { queued: false }), state: () => "idle", watch: () => () => {}, start: async () => ({ chatId: "c", sessionFile: "/c" }) }), designsFor: () => [] } as never);
+  const folder = join(store.designRoot(), parent.sessionId);
+  mkdirSync(folder, { recursive: true });
+  writeFileSync(join(folder, "coordinator.json"), JSON.stringify({ v: 1, sessionId: parent.sessionId, parentPath: parent.path, chatId: "c", notes: [] }));
+}
+const coordinatorNotes = (): string[] => JSON.parse(readFileSync(join(store.designRoot(), parent.sessionId, "coordinator.json"), "utf8")).notes;
+const start = async (): Promise<Fake> => {
+  launchDesigns(parent, newRun(["zai/a"], ["Minimalist"]), {});
   await ticks();
-  onLiveFrame(fakes[0]!.rec.chatId, { gen: 1, at: 0, text: "<!doctype html><html><body>cut" });
-  settle(fakes[0]!);
+  return fakes[0]!;
+};
+
+test("a page with a script error goes back once, naming it, and spends no coordinator turn and no parent message", async () => {
+  withCoordinator();
+  const f = await start();
+  onLiveFrame(f.rec.chatId, { gen: 1, at: 0, text: BROKEN });
+  settle(f);
+  await waitFor(() => stat("A").status === "fixing");
   await ticks();
-  assert.equal(stat("A").status, "failed");
+  assert.deepEqual(stat("A").fix, { reason: stat("A").fix!.reason, attempt: 1, of: DESIGN_FIX_TRIES });
+  assert.match(stat("A").fix!.reason, /script 1, line 2: /);
+  assert.equal(stat("A").versions.length, 0, "a broken page is no version");
+  assert.equal(f.sends.length, 2, "the first message and exactly one fix");
+  assert.match(lastSend(f).text, /script 1, line 2: /);
+  assert.equal(lastSend(f).report, false);
+  assert.equal(livePage(parent.sessionId, "A"), null, "the broken page isn't what the card goes on drawing");
+  assert.equal(coordinatorSends, 0);
+  assert.equal(parentOpens, 0);
+  assert.equal(coordinatorNotes().length, 1);
+  assert.match(coordinatorNotes()[0]!, /A is fixing its page: script 1/);
+  setCoordinatorPorts(null);
+});
+
+test("a page a tool refused goes back with the refusal's reason when the turn stops there", async () => {
+  const f = await start();
+  const stream = sessionDesignTools(parent, "A").find((t) => t.name === "design_stream")!;
+  await assert.rejects(stream.execute("t", { label: "A", html: BROKEN }, undefined, undefined, undefined), /script 1, line 2/);
+  settle(f);
+  await waitFor(() => stat("A").status === "fixing");
+  assert.match(lastSend(f).text, /script 1, line 2/);
+});
+
+test("a fix that lands ends Fixing as an ordinary version, keeping who asked for the page", async () => {
+  const f = await start();
+  settle(f);
+  await waitFor(() => stat("A").status === "fixing");
+  await finish(f, "A");
+  await ticks();
+  assert.equal(stat("A").status, "ready");
+  assert.equal(stat("A").fix, undefined);
+  assert.equal(stat("A").versions[0]!.by, "first");
+  assert.equal(fixSends(f).length, 1);
+});
+
+test("three failures end in Failed after two tries, and a person's Retry gets two fresh ones", async () => {
+  withCoordinator();
+  const f = await start();
+  for (const attempt of [1, 2]) {
+    settle(f);
+    await waitFor(() => stat("A").status === "fixing" && stat("A").fix?.attempt === attempt);
+    await ticks();
+  }
+  settle(f);
+  await waitFor(() => stat("A").status === "failed");
+  await ticks();
+  assert.equal(fixSends(f).length, DESIGN_FIX_TRIES);
+  assert.equal(new Set(fixSends(f).map((x) => x.key)).size, DESIGN_FIX_TRIES, "each fix its own key");
+  assert.equal(stat("A").fix, undefined);
+  assert.equal(coordinatorSends, 0);
+  assert.equal(parentOpens, 0);
+  assert.match(coordinatorNotes().at(-1)!, /A failed/);
+  setCoordinatorPorts(null);
+  retryDesign(parent, "A");
+  await ticks();
+  const g = fakes[1]!;
+  settle(g);
+  await waitFor(() => stat("A").status === "fixing");
+  assert.equal(stat("A").fix?.attempt, 1);
+  assert.equal(fixSends(g).length, 1);
+});
+
+test("what the model can't act on spends no try: a provider's error, a stop, a guard's trip", async () => {
+  for (const end of ["error", "aborted", "trip"] as const) {
+    const before = fakes.length;
+    const [label] = launchDesigns(parent, newRun(["zai/a"], ["Minimalist"]), {});
+    await ticks();
+    const f = fakes[before]!;
+    onLiveFrame(f.rec.chatId, { gen: 1, at: 0, text: BROKEN });
+    // A trip alone tells it apart: the turn itself reads as a success here.
+    if (end === "trip") (f.mirror as { streamTrip?: { detail: string } }).streamTrip = { detail: "the reply passed 1,048,576 characters" };
+    f.mirror.worker.lastSettled = { key: `end-${label}`, outcome: end === "trip" ? "success" : end, ...(end === "error" ? { error: "login expired" } : {}) };
+    registry.onState(f as never);
+    await waitFor(() => stat(label!).status === "failed");
+    await ticks();
+    assert.equal(fixSends(f).length, 0, end);
+    deleteDesign(parent, label!);
+    await ticks();
+  }
+});
+
+test("a second page written after a version goes back too, and the version stands while it is fixed", async () => {
+  const f = await start();
+  await finish(f, "A");
+  await ticks();
+  onLiveFrame(f.rec.chatId, { gen: 2, at: 0, text: BROKEN });
+  settle(f);
+  await waitFor(() => stat("A").status === "fixing");
+  assert.equal(stat("A").versions.length, 1);
+  assert.equal(fixSends(f).length, 1);
+});
+
+test("the cost moves as each reply ends, and a session past its reach ends in Failed", async () => {
+  const f = await start();
+  const file = join(dir, "usage.jsonl");
+  const at = "2026-01-01T00:00:00.000Z";
+  const usage = { input: 3, output: 4, cacheRead: 0, cacheWrite: 0, totalTokens: 7, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0.5 } };
+  writeFileSync(file, [{ type: "session", version: 3, id: "x", timestamp: at, cwd: dir }, { type: "message", id: "a", parentId: null, timestamp: at, message: { role: "assistant", content: [], usage, stopReason: "stop" } }].map((l) => JSON.stringify(l)).join("\n") + "\n");
+  store.changeDesign(parent.sessionId, "A", (d) => void (d.sessionFile = file));
+  (registry as unknown as { onFeed(h: unknown, x: unknown): void }).onFeed(f, { t: "feed", cursor: { proc: f.mirror.worker.proc, seq: 1 }, event: { type: "message_end", message: { role: "assistant" } } });
+  await waitFor(() => stat("A").usage?.output === 4);
+  assert.equal(stat("A").status === "failed", false);
+  // The fix can't reach it: the page is gone with its session, so the card says what went wrong.
+  f.call = async () => {
+    throw new Error("gone");
+  };
+  settle(f);
+  await waitFor(() => stat("A").status === "failed");
+  assert.equal(stat("A").delivery, undefined);
+  assert.match(stat("A").error ?? "", /without writing a page/);
 });
 
 test("a session that goes quiet stops claiming to write, and hears any sign of life first", async () => {

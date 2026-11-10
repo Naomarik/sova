@@ -15,10 +15,14 @@ const YOUR_CLICK = "Only your own click on the Design card in Sova's page answer
 const SHOWN: readonly DesignAssetShown[] = ["small", "full"];
 const SEALED = { "X-Content-Type-Options": "nosniff", "Cache-Control": "private, max-age=3600", "Content-Security-Policy": "default-src 'none'; sandbox" };
 
+let ownImageDeps: Parameters<typeof addOwnImages>[2] = {};
+/** Tests only: draw pasted images without a browser. */
+export const setOwnImageDepsForTest = (d: Parameters<typeof addOwnImages>[2] | null): void => void (ownImageDeps = d ?? {});
+
 /** Bring images named by path into the chat's set. Shared by the coordinator's box and the main chat's hand-off. */
 export async function addAttachedImages(p: BrowseParent, paths: readonly string[]): Promise<OwnImagesResult> {
   const { images, unreadable } = await readAttachedImages(paths);
-  const out = await addOwnImages(p, images);
+  const out = await addOwnImages(p, images, ownImageDeps);
   if (out.added.length) describeAssets(p, out.added.map((x) => x.name));
   return { ...out, refused: [...unreadable, ...out.refused] };
 }

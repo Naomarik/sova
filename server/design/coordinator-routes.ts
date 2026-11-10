@@ -48,7 +48,7 @@ export function mountCoordinatorRoutes(app: Hono): void {
     });
 
   onBrief("edit", (p, run, b) => {
-    if (b.field !== "summary" && b.field !== "prompt" && b.field !== "look") return 'field must be "summary", "prompt" or "look".';
+    if (b.field !== "summary" && b.field !== "prompt" && b.field !== "look" && b.field !== "notes") return 'field must be "summary", "prompt", "look" or "notes".';
     if (typeof b.text !== "string") return "An edit needs its text.";
     return editBrief(p, run, { field: b.field, text: b.text, ...(typeof b.url === "string" ? { url: b.url } : {}) });
   });

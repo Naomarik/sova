@@ -22,6 +22,7 @@ test("what Start waits for, in the order the card should say it", () => {
   b.writing = { cause: "summary", stalled: true };
   assert.equal(block(), "stalled");
   b.writing = null;
+  assert.equal(designBriefBlock({ brief: b, setup: setup(), imagesBusy: "describing" })?.code, "images");
   assert.equal(designBriefBlock({ brief: b, setup: setup({ directions: [{ name: "D", on: false }] }) })?.code, "no-designs");
   assert.equal(designBriefBlock({ brief: undefined, setup: setup() })?.code, "writing");
 });

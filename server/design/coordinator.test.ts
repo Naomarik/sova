@@ -22,6 +22,8 @@ let workerState: "running" | "idle" | "ended";
 let lastTask = "";
 let readLook: (a: { key: string; png: Uint8Array; url: string }) => Promise<{ text: string; model: string } | "none">;
 let turnListener: (() => void) | null = null;
+let capture: (...a: unknown[]) => Promise<never>;
+let describingNow = false;
 
 const model = (ref: string, over: Partial<DesignModelChoice> = {}): DesignModelChoice => ({ ref, name: ref, design: true, coordinator: false, vision: true, route: "tool", ...over });
 const runWith = (designers: number, directions: number, over: Partial<DesignRun> = {}): DesignRun => ({
@@ -35,6 +37,8 @@ beforeEach(() => {
   log = { sends: [], launches: [], looks: [], news: [], verbs: [], sites: [], delivered: [] };
   workerState = "idle";
   turnListener = null;
+  describingNow = false;
+  capture = async () => ({ kind: "refused", message: "no capture in this test" }) as never;
   readLook = async () => ({ text: "Calm navy on white.", model: "zai/vision" });
   nextBrowse = { kind: "pictures", url: "/settings", origin: "http://127.0.0.1:4810", outline: "OUTLINE", signedIn: false, shots: [{ size: "desktop", png: PNG, viewport: { w: 1440, h: 960 } }] };
   setCoordinatorPorts({
@@ -51,6 +55,8 @@ beforeEach(() => {
       return ["A", "B"];
     },
     readLook: async (_p, a) => (log.looks.push(a), readLook(a)),
+    capture: (...a: unknown[]) => capture(...a),
+    describing: () => describingNow,
     newDesign: async (_p, a) => (log.news.push(a), "G"),
     deliverDesign: async (_p, label, a) => (log.delivered.push({ label, ...a }), { queued: true }),
     lookAtDesign: async () => ({ shots: [{ size: "desktop", png: PNG }], outline: "O" }),
@@ -71,7 +77,7 @@ afterEach(() => {
 });
 
 type Tool = (args: unknown) => Promise<{ content: { type: string; text?: string }[]; details: any }>;
-type Tools = Record<"design_status" | "design_brief" | "design_browse" | "design_send" | "design_new" | "coordinator_card" | "project_verbs", Tool>;
+type Tools = Record<"design_status" | "design_brief" | "design_capture" | "design_browse" | "design_send" | "design_new" | "coordinator_card" | "project_verbs", Tool>;
 async function started(run: DesignRun) {
   changeDesigns(parent.sessionId, (s) => {
     s.runs.push(run);
@@ -404,6 +410,49 @@ test("a Start hands over the images ticked, and only a link's on Use Its Images;
   setBriefImage(parent, run.id, "a2", false);
   await start(run);
   assert.equal(log.launches[0]!.brief, `P\n\n${assetBlock(parent.sessionId, ["a1", "a3"])}`);
+});
+
+test("Start waits, by name, while the page's images are captured and then described, and goes once they're settled", async () => {
+  const { syncBriefImages } = await import("./coordinator");
+  let release!: () => void;
+  capture = () => new Promise((r) => (release = () => r({ kind: "captured", capture: { id: "c", url: URL_, at: "t", names: [], skipped: [], notes: { colors: [{ hex: "#123456", share: 0.5, role: "background" }], fonts: [{ family: "Inter", role: "body", share: 1 }] }, signedIn: false, bytes: 0, ms: 1 }, added: [] } as never)));
+  const run = withLink("images");
+  const { t, shot } = await looked(run);
+  await t.design_brief({ baseRev: 0, summary: "S", prompt: "P", text: "F", shots: [shot], url: URL_ });
+  const going = t.design_capture({ url: URL_ });
+  await new Promise((r) => setImmediate(r));
+  await startRefused(run, /Still Reading the Page's Images/);
+  describingNow = true;
+  release();
+  await going;
+  await startRefused(run, /Still Describing the Images/);
+  describingNow = false;
+  syncBriefImages(parent.sessionId);
+  await start(run);
+  assert.equal(log.launches.length, 1);
+});
+
+test("a live check at Start: images being described that the card hasn't heard of still hold it", async () => {
+  const run = withLink("images");
+  const { t, shot } = await looked(run);
+  await t.design_brief({ baseRev: 0, summary: "S", prompt: "P", text: "F", shots: [shot], url: URL_ });
+  describingNow = true;
+  await assert.rejects(start(run), /Still Describing the Images/);
+  assert.equal(log.launches.length, 0);
+});
+
+test("a page's colors and fonts are notes on the brief and reach the designers; the person's own notes stand", async () => {
+  const { changeAssets } = await import("./assets");
+  const run = withLink("images");
+  const { t, shot } = await looked(run);
+  changeAssets(parent.sessionId, (c) => void c.captures.push({ id: "c", url: URL_, at: "t", names: [], skipped: [], notes: { colors: [{ hex: "#123456", share: 0.5, role: "background" }], fonts: [{ family: "Inter", role: "body", share: 1 }] }, signedIn: false, bytes: 0, ms: 1 }));
+  await t.design_brief({ baseRev: 0, summary: "S", prompt: "P", text: "F", shots: [shot], url: URL_ });
+  assert.deepEqual(brief(run.id).notes![URL_], { text: "Colors: #123456 background. Fonts: Inter for body text.", by: "capture" });
+  await editBrief(parent, run.id, { field: "notes", text: "Navy and Inter.", url: URL_ });
+  await t.design_brief({ baseRev: brief(run.id).textRev, summary: "S2", prompt: "P" });
+  assert.equal(brief(run.id).notes![URL_]!.text, "Navy and Inter.");
+  await start(run);
+  assert.match(log.launches[0]!.brief, /^P\n\nColors and fonts of https:\/\/example\.test\/pricing, as notes[^\n]*\nNavy and Inter\.$/);
 });
 
 test("Not This Screen sends the user's words on, clears the screen, and an address in them counts as theirs", async () => {

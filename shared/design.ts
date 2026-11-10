@@ -147,6 +147,8 @@ export interface DesignRun {
   brief?: DesignBrief;
   /** Why the coordinator stopped, in plain words. */
   error?: string;
+  /** The chat's page images are still being captured or described: Start waits, since what goes is what's on the card. */
+  imagesBusy?: "capturing" | "describing";
   /** The person's approval of a run above the free limit (q2). */
   confirmedSpend?: boolean;
   createdAt: string;
@@ -272,6 +274,8 @@ export interface DesignBrief {
   looks: Record<string, DesignLook>;
   /** The screen found, when there is one: Not This Screen clears it. */
   screen?: DesignConfirm;
+  /** The colors and font names read off a captured page, by the link's address, as notes the designers get. Editable. */
+  notes?: Record<string, { text: string; by: "capture" | "user" }>;
   /** Which images go to the designers, by the image's name; an image not listed goes. A person's click stands. */
   imageUse?: Record<string, { use: boolean; by: "user" | "coordinator" }>;
   /** What the designs are estimated to cost in dollars, with the models and directions chosen now; absent when a price isn't known. */
@@ -283,12 +287,12 @@ export interface DesignBrief {
 
 /** Why Start can't be pressed: code to branch on, label for the button. */
 export interface DesignBriefBlock {
-  code: "question" | "writing" | "stalled" | "conflict" | "link-use" | "look" | "no-designs";
+  code: "question" | "writing" | "stalled" | "conflict" | "link-use" | "look" | "images" | "no-designs";
   label: string;
 }
 
 /** The brief's named reason Start waits, or null: the server refuses Start by exactly this. */
-export function designBriefBlock(run: Pick<DesignRun, "brief" | "setup">): DesignBriefBlock | null {
+export function designBriefBlock(run: Pick<DesignRun, "brief" | "setup" | "imagesBusy">): DesignBriefBlock | null {
   const b = run.brief;
   if (!b) return { code: "writing", label: "Writing the Brief" };
   const open = b.questions.filter((q) => !q.answer).length;
@@ -299,6 +303,7 @@ export function designBriefBlock(run: Pick<DesignRun, "brief" | "setup">): Desig
   const links = run.setup.links ?? [];
   if (links.some((l) => l.use === null)) return { code: "link-use", label: "Choose How to Use Your Link" };
   if (links.some((l) => l.use === "feel" && b.looks[l.url]?.state === "reading")) return { code: "look", label: "Reading the Page's Look" };
+  if (run.imagesBusy) return { code: "images", label: run.imagesBusy === "capturing" ? "Still Reading the Page's Images" : "Still Describing the Images" };
   const models = run.setup.models.filter((m) => m.design).length;
   const directions = run.setup.directions.filter((d) => d.on).length;
   if (!models || !directions) return { code: "no-designs", label: "Pick a Model and a Direction" };

@@ -4,7 +4,7 @@
 // here, and each tool decides from server-held state, never from what the model says about itself.
 import { captureDesignPage } from "./capture";
 import { noteSignedInConsent, readAssets } from "./assets";
-import { askVision, assetBlock, describerModels } from "./describe";
+import { askVision, assetBlock, describerModels, describing, onAssetsSettled } from "./describe";
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -24,7 +24,7 @@ import { claudeCodeProviderLoad, sessionDirName } from "../../pi-config/extensio
 import type { WorkerHost, WorkerSpec, WorkerStart } from "../../shared/chat-runtime";
 import { SESSIONS_DIR } from "../paths";
 import { assertLaunchAllowed, deliverDesign, designCount, designRunLaunched, DesignLimitError, launchDesigns, newDesign, onDesignHandIn } from "./batch";
-import { answerQuestions, BRIEF_LIMITS, coordinatorWrote, isHttpUrl, keepPrompt, keptImages, launchText, lookNote, mergeLinks, newBrief, openQuestions, parseBriefQuestions, rewritePrompt, turnEnded, userEditedPrompt, userEditedSummary, userTold, type BriefPick } from "./brief";
+import { answerQuestions, BRIEF_LIMITS, coordinatorWrote, fillNotes, isHttpUrl, keepPrompt, keptImages, launchText, lookNote, mergeLinks, newBrief, openQuestions, parseBriefQuestions, rewritePrompt, turnEnded, userEditedPrompt, userEditedSummary, userTold, type BriefPick } from "./brief";
 import { DESIGN_BROWSE_TOUR_ID, designBrowse, type BrowseParent, type DesignBrowseStores } from "./browse";
 import { lookAtDesign } from "./look";
 import { estimateUsd } from "./setup";
@@ -82,6 +82,9 @@ export interface CoordinatorPorts {
   designsFor(sessionId: string): DesignRecord[];
   launchDesigns(parent: BrowseParent, runId: string, a: { brief: string; references: { name: string; mime: string; data: string; outline: string }[] }): Promise<string[]>;
   /** The one quick look of Just Its Feel: the picture to words, by a model that reads pictures. "none" when none can. */
+  /** One capture visit (asset-capture's), and whether the chat's describing helpers are at work. */
+  capture: typeof captureDesignPage;
+  describing(sessionId: string): boolean;
   readLook(parent: BrowseParent, a: { key: string; png: Uint8Array; url: string }): Promise<{ text: string; model: string } | "none">;
   newDesign(parent: BrowseParent, a: { parents: string[]; instructions: string; model: string; runId?: string }): Promise<string>;
   deliverDesign(parent: BrowseParent, label: string, a: { text: string; key: string; by: "user" | "coordinator" | "main" }): Promise<{ queued: boolean }>;
@@ -126,6 +129,7 @@ function ports(): CoordinatorPorts {
   if (!hooked) {
     hooked = true;
     onDesignHandIn((e) => noteHandIn(e.sessionId, { label: e.label, version: e.version, note: e.note }));
+    onAssetsSettled((sid) => syncBriefImages(sid));
   }
   return realPorts;
 }
@@ -159,6 +163,8 @@ const realPorts: CoordinatorPorts = {
   designsFor: (sessionId) => viewOf(sessionId).designs,
   launchDesigns: async (parent, runId, a) => launchDesigns(parent, runId, a),
   readLook: (parent, a) => readPageLook(parent, a),
+  capture: captureDesignPage,
+  describing,
   newDesign: async (parent, a) => newDesign(parent, a),
   deliverDesign: (parent, label, a) => deliverDesign(parent, label, a),
   lookAtDesign,
@@ -248,6 +254,7 @@ export function reattachCoordinators(): void {
       follow(st);
       setCoordinator(sid, viewFor(st));
       refreshLooks({ sessionId: sid, path: st.parentPath }, st);
+      syncBriefImages(sid);
     } catch (err) {
       console.warn(`[design] coordinator of ${sid} was not followed: ${err instanceof Error ? err.message : String(err)}`);
     }
@@ -481,9 +488,19 @@ function briefHeard(st: CoordinatorState, text: string): string {
 }
 
 /** Edit on the card: the summary, the Full Prompt or a link's look. Each names what the coordinator may then touch. */
-export async function editBrief(parent: BrowseParent, runId: string, a: { field: "summary" | "prompt" | "look"; text: string; url?: string }): Promise<void> {
+export async function editBrief(parent: BrowseParent, runId: string, a: { field: "summary" | "prompt" | "look" | "notes"; text: string; url?: string }): Promise<void> {
   const { st, run } = openBrief(parent, runId);
   const text = a.text.trim();
+  if (a.field === "notes") {
+    if (text.length > BRIEF_LIMITS.lookChars) throw new BriefRefused(`The notes must stay within ${BRIEF_LIMITS.lookChars} characters.`);
+    if (!run.setup.links?.some((l) => l.url === a.url)) throw new BriefRefused("That link isn't on this brief.");
+    // Empty is allowed: the person's way to send no notes at all.
+    changeBrief(st, (b) => {
+      (b.notes ??= {})[a.url!] = { text, by: "user" };
+      b.rev++;
+    });
+    return;
+  }
   if (a.field === "look") {
     if (!text || text.length > BRIEF_LIMITS.lookChars) throw new BriefRefused(`The look must be words, within ${BRIEF_LIMITS.lookChars} characters.`);
     if (!run.setup.links?.some((l) => l.url === a.url)) throw new BriefRefused("That link isn't on this brief.");
@@ -551,6 +568,7 @@ export async function setBriefLink(parent: BrowseParent, runId: string, url: str
     b.rev++;
   });
   refreshLooks(parent, st);
+  refreshNotes(st);
   if (use === "feel" && !shotFor(st, url) && runOf(st.sessionId, runId)?.brief?.looks[url]?.state === "reading") {
     await wakeForBrief(st, `The user chose Just Its Feel for ${url}. Open it with design_browse so its look can be read; nothing else is needed from you for this.`, `${runId}:brief:feel:${run.brief.rev}`);
   }
@@ -580,8 +598,36 @@ export async function notThisScreen(parent: BrowseParent, runId: string, text?: 
   await wakeForBrief(st, `The user pressed Not This Screen.${text ? ` They said: ${text}` : " Ask on your card which screen they mean."} Update the brief with design_brief once you have the right one.`, `${runId}:brief:not-this:${run.brief.rev}`);
 }
 
+const capturing = new Set<string>();
+
+/** Whether the chat's page images are still being captured or described, on the run the card shows; it moves no version. */
+export function syncBriefImages(sessionId: string): void {
+  const st = load(sessionId);
+  if (!st) return;
+  const busy = capturing.has(sessionId) ? "capturing" : ports().describing(sessionId) ? "describing" : undefined;
+  const run = runOf(sessionId, st.runId);
+  if (!run || (run.phase !== "researching" && run.phase !== "brief") || run.imagesBusy === busy) return;
+  changeDesigns(sessionId, (s) => {
+    const r = s.runs.find((x) => x.id === st.runId)!;
+    if (busy) r.imagesBusy = busy;
+    else delete r.imagesBusy;
+  });
+}
+
+/** Each link on Use Its Images gets its page's colors and font names as notes, unless the person wrote their own. */
+function refreshNotes(st: CoordinatorState): void {
+  const run = runOf(st.sessionId, st.runId);
+  if (run?.phase !== "brief" || !run.brief) return;
+  const captures = readAssets(st.sessionId).captures;
+  changeBrief(st, (b, r) => {
+    if (fillNotes({ setup: r.setup, brief: b }, captures)) b.rev++;
+  });
+}
+
 /** Start, from the user's click: launches the version on the card, with no coordinator turn, and freezes it. */
 export async function startBrief(parent: BrowseParent, runId: string, a: { rev: number; confirmSpend: boolean }): Promise<string[]> {
+  // The live answer, not only what the card last heard: images still coming would be left out.
+  syncBriefImages(parent.sessionId);
   const { st, run } = openBrief(parent, runId);
   if (a.rev !== run.brief.rev) throw new BriefRefused("The brief changed before you pressed Start. Look it over and press Start again.", { stale: true });
   const block = designBriefBlock(run);
@@ -891,6 +937,7 @@ export function coordinatorTools(sessionId: string): ToolSpec[] {
       st.briefNudged = false;
       publish(st);
       refreshLooks(parent, st);
+      refreshNotes(st);
       const next = outcome.open ? `It waits on ${outcome.open} question${outcome.open === 1 ? "" : "s"}. End your turn; the answers come as your next message.` : outcome.unwritten ? `Now write the Full Prompt, with design_brief (prompt, baseRev ${outcome.rev}).` : "End your turn. The user reads it and presses Start; you launch nothing.";
       return say(`The brief is on the user's card at revision ${outcome.rev}. ${next}`, { brief: true, rev: outcome.rev });
     },
@@ -950,7 +997,16 @@ export function coordinatorTools(sessionId: string): ToolSpec[] {
     async execute(_id, params: Record<string, unknown>, signal?: AbortSignal) {
       const st = state();
       if (isResult(st)) return st;
-      const out = await captureDesignPage(parent, params, { stores: p().stores(parent.sessionId) }, signal);
+      capturing.add(parent.sessionId);
+      syncBriefImages(parent.sessionId);
+      let out: Awaited<ReturnType<typeof captureDesignPage>>;
+      try {
+        out = await p().capture(parent, params, { stores: p().stores(parent.sessionId) }, signal);
+      } finally {
+        capturing.delete(parent.sessionId);
+        syncBriefImages(parent.sessionId);
+      }
+      if (out.kind === "captured") refreshNotes(st);
       switch (out.kind) {
         case "captured": {
           const { capture: c } = out;

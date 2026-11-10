@@ -111,3 +111,11 @@ test("the menu line promises only what the dry run found", () => {
   assert.equal(discardMenuLine(preview({ folder: null })), "Deletes the branch and archives its chat.");
   assert.equal(discardMenuLine(preview({ folder: null, chat: null })), "Deletes the branch.");
 });
+
+test("a chat that works in another folder isn't listed; the confirm says it stays", () => {
+  const w = discardConfirmWords(preview({ chat: null, chatStays: "Its chat works in another folder, so it stays." }));
+  assert.ok(!w.parts.some((p) => p.key === "chat"));
+  assert.equal(w.stays, "Its chat works in another folder, so it stays.");
+  assert.equal(discardConfirmWords(preview()).stays, undefined);
+  assert.equal(discardMenuLine(preview({ chat: null, chatStays: "x" })), "Deletes the branch and its folder.");
+});

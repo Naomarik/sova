@@ -171,6 +171,7 @@ export function DiscardConfirm(props: { discard: Discard; branch: string; onClos
                 )}
               </For>
             </ul>
+            <Show when={w().stays}>{(t) => <p class="text-caption wt-queue-confirm-line" data-part="chat-stays">{t()}</p>}</Show>
             <Show when={files()}>{(f) => <RemoveAnywayListing listing={f()} home={home()} />}</Show>
             <p class="text-caption wt-queue-confirm-line wt-discard-warn">{w().line}</p>
           </Show>

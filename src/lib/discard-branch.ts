@@ -37,6 +37,8 @@ export interface DiscardWords {
   parts: DiscardPart[];
   /** Plainly, what can't be brought back. */
   line: string;
+  /** What stays that the user might expect to go: the branch's chat, when it works in another folder. */
+  stays?: string;
   confirm: string;
 }
 
@@ -66,7 +68,7 @@ export function discardConfirmWords(p: DiscardBranchPreview, o: { here?: boolean
     commits > 0
       ? `No backup is kept: ${commits === 1 ? `its commit not on ${target} can't` : `its ${commits} commits not on ${target} can't`} be brought back.`
       : `Every commit is already on ${target}. No backup is kept.`;
-  return { title: `Discard ${p.branch}?`, parts, line, confirm: "Discard Branch" };
+  return { title: `Discard ${p.branch}?`, parts, line, confirm: "Discard Branch", ...(!p.chat && p.chatStays ? { stays: p.chatStays } : {}) };
 }
 
 /** The rebuildable folders by name, the first 3 and how many more. */

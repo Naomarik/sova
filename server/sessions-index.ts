@@ -1210,11 +1210,9 @@ let listStamp = 0;
     since it started (server/list-generation.ts). Each caller gets its own array; rows are shared
     and never mutated. */
 export function listSessions(): Promise<SessionSummary[]> {
-  const now = Date.now();
-  const generation = listGeneration();
-  let l = listing;
-  if (!l || l.generation !== generation || now - l.startedAt >= LIST_REUSE_MS || now < l.startedAt) {
-    const mine: Listing = { generation, startedAt: now, stamp: ++listStamp, built: buildSessions() };
+  let l = handOut();
+  if (!l) {
+    const mine: Listing = { generation: listGeneration(), startedAt: Date.now(), stamp: ++listStamp, built: buildSessions() };
     listing = l = mine;
     mine.built.catch(() => {
       if (listing === mine) listing = null;
@@ -1223,11 +1221,73 @@ export function listSessions(): Promise<SessionSummary[]> {
   return l.built.then((b) => [...b.rows]);
 }
 
+/** The listing listSessions hands out now without starting a build, or null. */
+function handOut(now = Date.now()): Listing | null {
+  const l = listing;
+  return l && l.generation === listGeneration() && now - l.startedAt < LIST_REUSE_MS && now >= l.startedAt ? l : null;
+}
+
 /** The last listing's rows by path (buildSessions hands an unchanged row out as the same object). */
 let lastRows = new Map<string, SessionSummary>();
 
 /** The last listing's rows by path, as built (no read): what the project cards' glance joins the monitor's sessions to. */
 export const lastListedRows = (): ReadonlyMap<string, SessionSummary> => lastRows;
+
+/** The file set the last listing came from: a file outside it (new since) is answered by a listing. */
+let lastFiles: ReadonlySet<string> = new Set();
+
+/**
+ * The row `listSessions().find((s) => s.id === id)` gives, without listing every session when
+ * it can: a listing that listSessions would hand out now is read, else only this session's row is
+ * built, the way a listing builds it (rowFor). A full listing still answers whenever one row
+ * could differ from the list's: an id the cache doesn't know, or that two files share, a file the
+ * last listing didn't come from, a file gone or one the list leaves out (an empty husk).
+ */
+export async function listedSession(id: string): Promise<SessionSummary | undefined> {
+  const listed = (): Promise<SessionSummary | undefined> => listSessions().then((all) => all.find((s) => s.id === id));
+  const l = handOut();
+  if (l) return listed();
+  const path = indexedSessionPaths().get(id);
+  if (!path || !lastFiles.has(path) || sharedIds().has(id)) return listed();
+  const row = await listedRowOf(path);
+  return row?.id === id ? row : listed();
+}
+
+/** The same by file path: the row `listSessions().find((s) => s.path === path)` gives. */
+export async function listedSessionAt(path: string): Promise<SessionSummary | undefined> {
+  const listed = (): Promise<SessionSummary | undefined> => listSessions().then((all) => all.find((s) => s.path === path));
+  if (handOut() || !lastFiles.has(path)) return listed();
+  const row = await listedRowOf(path);
+  return row ?? listed();
+}
+
+/** Ids more than one cached file carries (`indexedSessionPaths` answers one of them; the list's order picks another). */
+let shared: { index: ReadonlyMap<string, string>; ids: Set<string> } | null = null;
+function sharedIds(): ReadonlySet<string> {
+  const index = indexedSessionPaths();
+  if (shared?.index === index) return shared.ids;
+  const seen = new Set<string>();
+  const ids = new Set<string>();
+  for (const entry of cache.values()) {
+    const id = entry.summary.id;
+    if (seen.has(id)) ids.add(id);
+    else seen.add(id);
+  }
+  shared = { index, ids };
+  return ids;
+}
+
+/** One listed file's row, built as buildSessionsNow builds it; null when the file is gone or the list leaves it out. */
+async function listedRowOf(path: string): Promise<SessionSummary | null> {
+  const s = await summarize(path, await windowResolver());
+  if (!s) return null;
+  const worker = await workerSessions.isWorker(s.path).catch(() => false);
+  const row = await rowFor(s, rowReads(() => worker));
+  if (!row) return null;
+  const out = await withUnreadReplies(row);
+  const prev = lastRows.get(path);
+  return prev && sameValue(prev, out) ? prev : out;
+}
 
 /** Deep equality that also holds key order and undefined-valued keys: JSON- and deepStrictEqual-identical. */
 function sameValue(a: unknown, b: unknown): boolean {
@@ -1465,26 +1525,112 @@ async function zeroInputOf(path: string): Promise<boolean> {
 /** Every row. `track`: the file set to list and the files that may have changed since the cached
     summaries were read (only those are stat'ed and read); without it every folder is read and
     every file stat'ed. Returns the rows and the file set they came from. */
+/** Listings built, of either kind (tests, measurement). */
+export const listStats = { builds: 0 };
+
 function buildSessions(track?: { files: string[]; dirty: ReadonlySet<string> }): Promise<{ rows: SessionSummary[]; files: string[] }> {
+  listStats.builds++;
   return opTrack("buildSessions", () => buildSessionsNow(track), (b) => b.rows.length);
+}
+
+/** What one listing pass reads besides the files, read once and shared by its rows (rowFor). */
+interface RowReads {
+  live: Map<string, LiveRecord>;
+  own: Map<string, RawLiveRecord>;
+  drafts: ReturnType<typeof readDrafts>;
+  titles: ReturnType<typeof readSessionTitleRecords>;
+  sovaNames: ReturnType<typeof readSovaChatNames>;
+  groups: Record<string, string>;
+  seen: Record<string, number>;
+  attention: boolean;
+  fields: ReturnType<typeof fieldLookup>;
+  /** `signals` moves on as rows settle go-ahead asks (settleGoAsk): the next row reads what the last wrote. */
+  stores: { tags: (id: string) => SessionTags | undefined; signals: SignalsFile };
+  previewLabels: ReturnType<typeof keptLabels>;
+  isWorker: (path: string) => boolean;
+  parents: Pick<WorkerParents, "workerOf">;
+}
+
+function rowReads(isWorker: (path: string) => boolean): RowReads {
+  return {
+    live: readLive(),
+    own: readOwnLiveRecords(),
+    drafts: readDrafts(),
+    titles: readSessionTitleRecords(),
+    sovaNames: readSovaChatNames(),
+    groups: readAssignments(),
+    seen: readSeen(),
+    attention: readDecisionSettings().features.attention,
+    fields: fieldLookup(),
+    stores: { tags: tagsReader(), signals: readSignals() },
+    // A kept preview link never reaches the list (§app.project-overseer/previews): a title or summary line
+    // that holds one (the overseer saw it in its tool result) shows "[preview link]" in its place.
+    previewLabels: keptLabels(),
+    isWorker,
+    parents: workerSessions.parents(),
+  };
+}
+
+/** One file's row as the list shows it, or null when the list leaves it out (an empty husk). */
+async function rowFor(s: BaseSummary, r: RowReads): Promise<SessionSummary | null> {
+  // Empty husks — no user message anywhere in the file — are never listed, so abandoned
+  // new-session stubs don't clutter the archive. Hidden
+  // only when the whole file was read: a first user message beyond the head cap never hides
+  // a session. cleanupSessions("husks") still finds and deletes them by path.
+  // Exception: a husk with a stored composer draft (text or images) is a new session the user
+  // is writing in, not an abandoned stub, so it is listed as a draft row (draftPreview).
+  const draft = r.drafts[s.id];
+  const hasDraft = draftCounts(draft);
+  let preview: string | undefined;
+  // A baton or project overseer file is never a husk: a fresh baton held by the operator (or
+  // waiting for its first link) needs them before anyone has written in it.
+  const special = r.fields(s.path, s.id, s.cwd, cache.get(s.path)?.mtimeMs);
+  if (s.title === "Untitled") {
+    if (await zeroInputOf(s.path)) {
+      // A husk waiting on a dialog (a command run in a new session) is waiting on the user: listed.
+      // So is one that carries a profile: a One at a time profile counts from its pick, so the
+      // session holding it must be somewhere the user can find it (§chat.profiles/singleton).
+      if (!hasDraft && pendingDialogCount(s.path) === 0 && !special.baton && !special.projectOverseer && !s.profile) return null;
+      if (hasDraft) preview = draftPreview(redactPreviewLinks(draft.text), draft.attachments);
+    }
+  }
+  const l = r.live.get(s.path);
+  const ownRec = r.own.get(s.path);
+  // The husk check above reads the DERIVED title on purpose: what keeps an empty session out of
+  // the list is that nobody has written in it, which renaming it doesn't change.
+  const fixed = fixedNameOf({ id: s.id, path: s.path, overseer: !!s.overseer, projectOverseer: special.projectOverseer, baton: !!special.baton, profile: s.profile, createdAt: s.createdAt }, r.sovaNames, r.titles);
+  const row: SessionSummary = {
+    ...withFixedName(withTitle(s, r.titles), fixed),
+    ...outlineOverlay(s, liveOutline(l, ownRec)),
+    live: liveField(l),
+    workers: l?.workers ?? (ownRec ? workerCountsOf(ownRec.rec) : undefined),
+    origin: isWebSession(s.id) ? "web" : "external",
+    archived: isArchived(s.id),
+    ...(r.isWorker(s.path) ? { workerSession: true as const, ...workerOfField(s.path, r.parents) } : {}),
+    ...(r.groups[s.id] !== undefined ? { groupId: r.groups[s.id] } : {}),
+    busy: isSessionBusy(s.path),
+    ...heldChatField(s.path),
+    ...jobsField(s.id, s.path),
+    ...attentionFields(s, l, ownRec, r.seen),
+    ...decisionFields(s, l, ownRec, r.seen, r.attention, r.stores),
+    ...(preview !== undefined ? { draftPreview: preview } : {}),
+    ...(hasDraft ? { hasDraft: true as const } : {}),
+    ...special,
+  };
+  // Merge readiness (§chat.worktrees/readiness): the last background answer; git is never awaited here.
+  const readiness = readinessOverlay(row);
+  // The branches its chat's status row counts, each queue entry as the queue has it now (no Git here either).
+  const branches = branchesOverlay(row);
+  const withMerge = readiness || branches ? { ...row, ...(readiness ? { readiness } : {}), ...(branches ? { branches } : {}) } : row;
+  // A go-ahead ask whose version landed is noted when first seen; one in the queue is hidden while the queue says so.
+  const settled = settleGoAsk(withMerge, askTreesOf(withMerge), r.stores.signals);
+  r.stores.signals = settled.data;
+  return redactPreviewLinksDeep(settled.row, r.previewLabels);
 }
 
 async function buildSessionsNow(track?: { files: string[]; dirty: ReadonlySet<string> }): Promise<{ rows: SessionSummary[]; files: string[] }> {
   const files = track ? track.files : await listSessionFiles();
-  const live = readLive();
-  const own = readOwnLiveRecords();
   const resolveWindow = await windowResolver();
-  const drafts = readDrafts();
-  const titles = readSessionTitleRecords();
-  const sovaNames = readSovaChatNames();
-  const groups = readAssignments();
-  const seen = readSeen();
-  const attention = readDecisionSettings().features.attention;
-  const fields = fieldLookup();
-  const stores = { tags: tagsReader(), signals: readSignals() };
-  // A kept preview link never reaches the list (§app.project-overseer/previews): a title or summary line
-  // that holds one (the overseer saw it in its tool result) shows "[preview link]" in its place.
-  const previewLabels = keptLabels();
   // A member whose file is gone KEEPS its assignment, on purpose: the workspace's "This
   // session's file is gone" pane IS that assignment rendered (spec 14-workspaces "Gone from
   // disk"), and pruning here — on every listing pass — would race the pane's own Remove From
@@ -1495,63 +1641,12 @@ async function buildSessionsNow(track?: { files: string[]; dirty: ReadonlySet<st
   const [results, workers] = await Promise.all([summariesOf(ordered, resolveWindow, track?.dirty), workerSessionPaths(ordered.all, track?.dirty)]);
   const present = new Set(files);
   for (const k of cache.keys()) if (!present.has(k)) dropEntry(k);
+  const reads = rowReads((p) => workers.has(p));
   const out: SessionSummary[] = [];
-  const parents = workerSessions.parents();
   for (const s of results) {
     if (!s) continue;
-    // Empty husks — no user message anywhere in the file — are never listed, so abandoned
-    // new-session stubs don't clutter the archive. Hidden
-    // only when the whole file was read: a first user message beyond the head cap never hides
-    // a session. cleanupSessions("husks") still finds and deletes them by path.
-    // Exception: a husk with a stored composer draft (text or images) is a new session the user
-    // is writing in, not an abandoned stub, so it is listed as a draft row (draftPreview).
-    const draft = drafts[s.id];
-    const hasDraft = draftCounts(draft);
-    let preview: string | undefined;
-    // A baton or project overseer file is never a husk: a fresh baton held by the operator (or
-    // waiting for its first link) needs them before anyone has written in it.
-    const special = fields(s.path, s.id, s.cwd, cache.get(s.path)?.mtimeMs);
-    if (s.title === "Untitled") {
-      if (await zeroInputOf(s.path)) {
-        // A husk waiting on a dialog (a command run in a new session) is waiting on the user: listed.
-        // So is one that carries a profile: a One at a time profile counts from its pick, so the
-        // session holding it must be somewhere the user can find it (§chat.profiles/singleton).
-        if (!hasDraft && pendingDialogCount(s.path) === 0 && !special.baton && !special.projectOverseer && !s.profile) continue;
-        if (hasDraft) preview = draftPreview(redactPreviewLinks(draft.text), draft.attachments);
-      }
-    }
-    const l = live.get(s.path);
-    const ownRec = own.get(s.path);
-    // The husk check above reads the DERIVED title on purpose: what keeps an empty session out of
-    // the list is that nobody has written in it, which renaming it doesn't change.
-    const fixed = fixedNameOf({ id: s.id, path: s.path, overseer: !!s.overseer, projectOverseer: special.projectOverseer, baton: !!special.baton, profile: s.profile, createdAt: s.createdAt }, sovaNames, titles);
-    const row: SessionSummary = {
-      ...withFixedName(withTitle(s, titles), fixed),
-      ...outlineOverlay(s, liveOutline(l, ownRec)),
-      live: liveField(l),
-      workers: l?.workers ?? (ownRec ? workerCountsOf(ownRec.rec) : undefined),
-      origin: isWebSession(s.id) ? "web" : "external",
-      archived: isArchived(s.id),
-      ...(workers.has(s.path) ? { workerSession: true as const, ...workerOfField(s.path, parents) } : {}),
-      ...(groups[s.id] !== undefined ? { groupId: groups[s.id] } : {}),
-      busy: isSessionBusy(s.path),
-      ...heldChatField(s.path),
-      ...jobsField(s.id, s.path),
-      ...attentionFields(s, l, ownRec, seen),
-      ...decisionFields(s, l, ownRec, seen, attention, stores),
-      ...(preview !== undefined ? { draftPreview: preview } : {}),
-      ...(hasDraft ? { hasDraft: true as const } : {}),
-      ...special,
-    };
-    // Merge readiness (§chat.worktrees/readiness): the last background answer; git is never awaited here.
-    const readiness = readinessOverlay(row);
-    // The branches its chat's status row counts, each queue entry as the queue has it now (no Git here either).
-    const branches = branchesOverlay(row);
-    const withMerge = readiness || branches ? { ...row, ...(readiness ? { readiness } : {}), ...(branches ? { branches } : {}) } : row;
-    // A go-ahead ask whose version landed is noted when first seen; one in the queue is hidden while the queue says so.
-    const settled = settleGoAsk(withMerge, askTreesOf(withMerge), stores.signals);
-    stores.signals = settled.data;
-    out.push(redactPreviewLinksDeep(settled.row, previewLabels));
+    const row = await rowFor(s, reads);
+    if (row) out.push(row);
   }
   pruneReadiness(out);
   for (let i = 0; i < out.length; i++) out[i] = await withUnreadReplies(out[i]!);
@@ -1563,6 +1658,7 @@ async function buildSessionsNow(track?: { files: string[]; dirty: ReadonlySet<st
     if (prev && sameValue(prev, out[i])) out[i] = prev;
   }
   lastRows = new Map(out.map((r) => [r.path, r]));
+  lastFiles = present;
   out.sort(byActivity);
   return { rows: out, files };
 }

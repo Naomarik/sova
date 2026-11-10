@@ -19,7 +19,7 @@ import { approve } from "./profile-trust";
 import { projectRootOf } from "./project-root";
 import { type PowersHost, type PowersSend, type PowersSendResult, sendInviting, setPowersHost } from "./session-powers";
 import { resolveChoice, singletonHolder, SingletonRefusal, snapshotKey, type ProfileChoice } from "./session-profile";
-import { getSessionSummary, listSessions } from "./sessions-index";
+import { getSessionSummary, listedSession, listSessions } from "./sessions-index";
 import { rowsOf } from "./transcript";
 import { readBranch } from "./harness/pi/reader";
 
@@ -338,7 +338,7 @@ async function sendToSession({ path, text, delivery, from }: PowersSend): Promis
 export const powersHost: PowersHost = {
   sessions: () => listSessions(),
   async session(id) {
-    const s = (await listSessions()).find((x) => x.id === id);
+    const s = await listedSession(id);
     return s ? ((await getSessionSummary(s.path)) ?? s) : null;
   },
   transcript: async (path) => rowsOf(await readBranch(path)),

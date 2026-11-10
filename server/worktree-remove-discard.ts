@@ -394,7 +394,7 @@ export async function realDiscardDeps(): Promise<DiscardDeps> {
     import("./nothing-left"),
   ]);
   const ownerRow = async (session: string, archived: boolean, tree: string): Promise<DiscardOwner | null> => {
-    const s = (await sessions.listSessions().catch(() => [])).find((x) => x.id === session);
+    const s = await sessions.listedSession(session).catch(() => undefined);
     if (!s) return null;
     return { id: s.id, title: s.title && s.title !== "Untitled" ? s.title : s.id.slice(0, 8), path: s.path, archived: archived || !!s.archived, tui: !!s.live, cwd: s.cwd, tree };
   };

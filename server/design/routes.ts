@@ -9,6 +9,7 @@ import { resolveSessionPath } from "../paths";
 import { idOf } from "../sessions-index";
 import { startCoordinator } from "./coordinator";
 import { mountCoordinatorRoutes } from "./coordinator-routes";
+import { mountDesignLiveRoutes } from "./live-route";
 import { assertLaunchAllowed, deleteDesign, deliverDesign, DesignLimitError, designCount, retryDesign, type DesignParent } from "./batch";
 import { designView, livePage } from "./live";
 import { cleanSetup, estimateUsd } from "./setup";
@@ -36,6 +37,7 @@ const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
 export function mountDesignRoutes(app: Hono): void {
   // First: `/api/design/coordinator/...` would otherwise read as a design's own routes.
   mountCoordinatorRoutes(app);
+  mountDesignLiveRoutes(app, parentOf);
   app.get("/api/design", (c) => {
     const p = parentOf(c);
     if (!p) return c.json({ error: BAD_PATH }, 400);

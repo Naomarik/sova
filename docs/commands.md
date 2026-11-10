@@ -13,7 +13,7 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 
 | What | Count |
 | --- | ---: |
-| Routes registered | 596 |
+| Routes registered | 598 |
 | Routes a catalogue entry points at | 193 |
 | Catalogue entries | 263 |
 | Class: Peer protocol | 39 |
@@ -28,7 +28,7 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | Class: A card view's own calls | 4 |
 | Class: Middleware and fallbacks | 2 |
 | Class: Left as is, by choice | 266 |
-| Class: Page plumbing | 16 |
+| Class: Page plumbing | 18 |
 | Class: Steps of starting a chat | 2 |
 | Class: Live capability links | 1 |
 | Class: Approvals and grants | 7 |
@@ -774,7 +774,7 @@ Areas the user chose not to make scriptable (`OPTED_OUT` in `server/commands-inv
 | `POST /api/voice/transcribe` | admin |
 | `POST /api/voice/warm` | admin |
 
-### Page plumbing (16)
+### Page plumbing (18)
 
 Requests a view, the composer or a link card makes to draw itself (attachments and uploads, a tool row's contents, a link's thread and seen mark, the remote folder picker's listing, the explanations feed, the empty list's folder name, a project's icon picture). Exactly these routes (`PAGE_PLUMBING`).
 
@@ -783,6 +783,8 @@ Requests a view, the composer or a link card makes to draw itself (attachments a
 | `DELETE /api/attachment` | sessions |
 | `GET /api/attachment` | sessions |
 | `GET /api/design/:label/live` | full |
+| `GET /api/design/:label/live-url` | full |
+| `GET /api/design/live-page/:token` | full |
 | `GET /api/design/shots/:file` | full |
 | `GET /api/explanations` | sessions |
 | `GET /api/extensions/:id/log` | full |

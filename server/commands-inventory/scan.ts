@@ -55,7 +55,7 @@ const exactly = (routes: readonly RouteKey[]) => (m: string, p: string) => route
 
 /** The page's own requests in the core areas: what a view, the composer or a link card asks to draw itself. */
 export const PAGE_PLUMBING: readonly RouteKey[] = [
-  "GET /api/design/:label/live", "GET /api/design/shots/:file",
+  "GET /api/design/:label/live", "GET /api/design/:label/live-url", "GET /api/design/live-page/:token", "GET /api/design/shots/:file",
   "GET /api/attachment", "DELETE /api/attachment", "POST /api/upload", "GET /api/transcript/tool",
   "GET /api/links/:id/thread", "POST /api/links/:id/seen", "GET /api/targets/:name/folders", "GET /api/explanations",
   // Settings → Extensions drawing itself: no action, and no catalogue entry.

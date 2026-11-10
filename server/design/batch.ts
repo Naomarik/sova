@@ -333,6 +333,7 @@ function follow(parent: DesignParent, label: string, chatId: string): void {
           x.sessionEnded = true;
           x.workerState = "ended";
         });
+        clearLivePage(parent.sessionId, label);
         if (atWork(d)) {
           if (d.versions.length)
             changeDesign(parent.sessionId, label, (x) => {

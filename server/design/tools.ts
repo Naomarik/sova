@@ -158,7 +158,7 @@ export function sessionDesignTools(parent: DesignParent, label: string): ToolSpe
       },
     },
     {
-      name: DESIGN_HAND_IN_TOOL,
+      name: "design_hand_in",
       label: "design hand in",
       description: "Finish your page. note says what you made, for the people choosing between designs. Your last tool call for this page.",
       parameters: {

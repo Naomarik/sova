@@ -22,7 +22,7 @@ export type DesignCaptureOutcome =
   | Exclude<DesignBrowseOutcome, { kind: "pictures" }>;
 
 /** Keep what the attempt brought back; an image the chat can't keep is listed with its reason. Returns the capture's record. */
-export function keepCapture(sessionId: string, url: string, at: string, captured: NonNullable<Extract<DesignBrowseOutcome, { kind: "pictures" }>["capture"]>, signedIn: boolean): { capture: DesignCapture; added: string[] } {
+export function keepCapture(sessionId: string, url: string, at: string, captured: NonNullable<Extract<DesignBrowseOutcome, { kind: "pictures" }>["capture"]>, signedIn: boolean, runId?: string): { capture: DesignCapture; added: string[] } {
   const skipped = [...captured.skipped];
   const names: string[] = [];
   const added: string[] = [];
@@ -40,6 +40,7 @@ export function keepCapture(sessionId: string, url: string, at: string, captured
   }
   const capture: DesignCapture = {
     id: randomUUID(),
+    ...(runId ? { runId } : {}),
     url,
     ...(captured.title ? { title: captured.title } : {}),
     at,
@@ -59,7 +60,7 @@ export function keepCapture(sessionId: string, url: string, at: string, captured
 }
 
 /** One visit at desktop width. Refusals are outcomes the coordinator or the card can read. */
-export async function captureDesignPage(parent: BrowseParent, raw: unknown, deps: DesignBrowseDeps, signal?: AbortSignal): Promise<DesignCaptureOutcome> {
+export async function captureDesignPage(parent: BrowseParent, raw: unknown, deps: DesignBrowseDeps & { runId?: string }, signal?: AbortSignal): Promise<DesignCaptureOutcome> {
   const problem = browseRequestProblem(raw);
   if (problem) return { kind: "refused", message: problem };
   const req = raw as DesignBrowseRequest;
@@ -69,7 +70,7 @@ export async function captureDesignPage(parent: BrowseParent, raw: unknown, deps
   const out = await designBrowse(parent, { ...req, sizes: ["desktop"] }, { limitMs: CAPTURE_LIMITS.attemptMs, ...deps, capture: true }, signal);
   if (out.kind !== "pictures") return out;
   if (!out.capture) return { kind: "refused", message: "The visit finished but brought back no capture." };
-  const kept = keepCapture(parent.sessionId, out.capture.url, new Date().toISOString(), out.capture, signedIn || out.signedIn);
+  const kept = keepCapture(parent.sessionId, out.capture.url, new Date().toISOString(), out.capture, signedIn || out.signedIn, deps.runId);
   // Nothing new costs nothing: the same image keeps what was said about it.
   if (kept.added.length) describe(parent, kept.added);
   return { kind: "captured", ...kept };

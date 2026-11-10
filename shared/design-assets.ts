@@ -127,6 +127,8 @@ export interface DesignAssetSkipped {
 
 export interface DesignCapture {
   id: string;
+  /** The design run that asked for it, when one did. */
+  runId?: string;
   /** The screen the capture was made of. */
   url: string;
   title?: string;

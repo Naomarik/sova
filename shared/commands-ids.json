@@ -257,7 +257,8 @@
     "session.worktree.retirement",
     "session.worktree.restore",
     "session.worktree.remove",
-    "session.worktree.status"
+    "session.worktree.status",
+    "project.merge-queue.discard-branch"
   ],
   "retired": [
     "settings.agents.get",

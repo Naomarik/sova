@@ -799,6 +799,47 @@ export interface BranchSummary {
   stale?: { commit: string };
 }
 
+/** POST /api/merge-queue/projects/:project/discard-branch {branch, commit, dryRun: true}: what Discard Branch… would
+ *  take (the Land ▾ menu's page-only action, on a Ready row or a chat's Worktrees row), and why it can't now. */
+export interface DiscardBranchPreview {
+  branch: string;
+  /** The tip the row showed, as sent. */
+  commit: string;
+  /** The branch it lands into ("" when it couldn't be read). */
+  target: string;
+  /** Its commits the target hasn't: the exact count, and the newest ones by line (at most 20). */
+  commits: { count: number; shown: { sha: string; subject: string }[] };
+  /** Its folder; null: it has none, and that step is skipped. */
+  folder: string | null;
+  /** What the folder holds that git doesn't (Remove Anyway's listing); null: no folder, or it couldn't be read. */
+  files: import("./protocol").WorktreeRemoveAnyway | null;
+  /** Spec drafts in the folder, by name. */
+  drafts: string[];
+  /** Its chat, archived with it; null: none (or one already archived), and that step is skipped. */
+  chat: { id: string; title: string; path: string } | null;
+  /** Send it back on the confirm: the folder's files are deleted only while they are still this listing ("" with no folder). */
+  digest: string;
+  /** Why it can't go now, in words (the confirm's disabled reason); null: it may. */
+  refused: string | null;
+}
+
+/** One step of a confirmed Discard Branch…, in order: folder, branch, chat. */
+export interface DiscardBranchStep {
+  step: "folder" | "branch" | "chat";
+  /** skipped: the row has no folder or no chat; not-run: an earlier step stopped it. */
+  state: "done" | "skipped" | "failed" | "not-run";
+  detail?: string;
+}
+
+/** The confirm's answer (a refusal before anything went is a 409 {error: {code: "refused" | "changed", message}}). */
+export interface DiscardBranchResult {
+  outcome: "discarded" | "partial";
+  /** Always the three steps, in order. */
+  steps: DiscardBranchStep[];
+  /** What went and what stayed, in a sentence. */
+  message: string;
+}
+
 export interface MergeReady {
   branch: string;
   worktree: string;

@@ -2,6 +2,7 @@ import type { Context, Hono } from "hono";
 import { type LandHow, type MergeEntry, type MergeQueueView } from "../../shared/merge-queue";
 import { pageOnlyRefusal } from "../page-only";
 import { isLandHow } from "./strategy";
+import type { DiscardDeps } from "../worktree-remove-discard";
 
 /**
  * The routes of how a branch lands (al_3), beside the merge verbs (routes.ts): REST, not verbs, so the merge thread's
@@ -11,6 +12,8 @@ import { isLandHow } from "./strategy";
  *   POST   /api/merge-queue/entries/:id/publish {title, body, draft} publish a reviewed request (q10)
  *   PUT    /api/merge-queue/projects/:project/land-how {how, where}  save How it lands (project file or this computer)
  *   DELETE /api/merge-queue/projects/:project/land-how/override      clear this computer's choice
+ *   POST   /api/merge-queue/projects/:project/discard-branch {branch, commit, dryRun?: true, digest?}
+ *                                                                     Discard Branch…: what goes (dry run), then folder, branch, chat
  *
  * Refusals answer {error: {code, message}} with 400 (invalid-request), 404 (not-found), 409 (busy) or 501 (unsupported).
  */
@@ -31,6 +34,9 @@ export interface LandingRouteDeps {
   queueOfEntry(entryId: string): Promise<LandingQueue | null>;
   /** Why this caller may not act here (only the operator's own page may), or null (server/page-only.ts). */
   notPage?: (c: Context) => string | null;
+  /** Discard Branch… (server/worktree-remove-discard.ts): a project's main checkout by id, the act's world, and its
+   *  own page-only words (its dry run is the page's alone too: it lists a chat's files). */
+  discard?: { rootOf(projectId: string): Promise<string | null>; deps(): Promise<DiscardDeps>; notPage(c: Context): string | null };
 }
 
 const STATUS: Record<string, 400 | 403 | 404 | 409 | 501> = { "invalid-request": 400, "not-found": 404, busy: 409, unsupported: 501, forbidden: 403, "needs-confirm": 400 };
@@ -108,6 +114,37 @@ export function registerMergeLandingRoutes(app: Hono<any>, deps: LandingRouteDep
     }
   });
 
+  app.post("/api/merge-queue/projects/:project/discard-branch", async (c) => {
+    const dis = deps.discard;
+    if (!dis) return c.json({ error: { code: "unsupported", message: "Discard Branch isn't wired in this server." } }, 501);
+    const why = dis.notPage(c);
+    if (why) return c.json({ error: { code: "forbidden", message: why }, yourClick: true }, 403);
+    const b = await jsonBody(c);
+    const bad = (message: string) => c.json({ error: { code: "invalid-request", message } }, 400);
+    // A value of the wrong type is refused for itself, before what's missing.
+    for (const k of ["branch", "commit", "digest"] as const) if (b[k] !== undefined && typeof b[k] !== "string") return bad(`"${k}" must be text`);
+    if (b.dryRun !== undefined && typeof b.dryRun !== "boolean") return bad('"dryRun" must be true or absent');
+    if (typeof b.branch !== "string" || !b.branch || b.branch.length > 255 || b.branch.startsWith("-") || /[\s\0~^:?*[\\]|\.\.|@\{/.test(b.branch)) return bad('"branch" is a branch name');
+    if (typeof b.commit !== "string" || !/^[0-9a-f]{40,64}$/.test(b.commit)) return bad('"commit" is the full commit the row showed');
+    if (b.dryRun !== undefined && b.dryRun !== true) return bad('"dryRun" is true or absent');
+    if (b.dryRun === true && b.digest !== undefined) return bad("Send dryRun: true or a digest, not both");
+    if (b.dryRun !== true && (typeof b.digest !== "string" || !/^(|[0-9a-f]{8,64})$/.test(b.digest))) return bad('"digest" is the dry run\'s digest');
+    const id = c.req.param("project");
+    const root = await dis.rootOf(id);
+    if (!root) return c.json(noProject(id), 404);
+    const { previewDiscard, discardBranch, DiscardRefused } = await import("../worktree-remove-discard");
+    const req = { root, branch: b.branch, commit: b.commit };
+    try {
+      const d = await dis.deps();
+      if (b.dryRun === true) return c.json(await previewDiscard(req, d));
+      return c.json(await discardBranch(req, b.digest as string, d));
+    } catch (err) {
+      if (err instanceof DiscardRefused) return c.json({ error: { code: err.code, message: err.message } }, 409);
+      const f = fail(err);
+      return c.json(f.body, f.status);
+    }
+  });
+
   app.delete("/api/merge-queue/projects/:project/land-how/override", async (c) => {
     const no = refused(c);
     if (no) return no;
@@ -132,6 +169,17 @@ const WRITE_WORDS = {
   extension: "An extension can't publish a request or change how branches land: do it yourself on the Merge Queue tab.",
 };
 
+const DISCARD_WORDS = "Only the user discards a branch. Ask them to press Discard Branch… in the Land menu. Nothing was deleted.";
+const DISCARD_PAGE = {
+  overseer: DISCARD_WORDS,
+  local: "A branch is discarded only on the page of the computer it is on. Nothing was deleted.",
+  chat: DISCARD_WORDS,
+  script: DISCARD_WORDS,
+  extension: DISCARD_WORDS,
+};
+/** Why this caller may not discard a branch: only a click on the operator's own page on this machine may. */
+export const discardNotPage = (c: Context): string | null => pageOnlyRefusal(c, DISCARD_PAGE);
+
 /** The routes on the live server: projects by id (server/projects/spaces.ts), entries among the loaded queues. */
 export function registerLiveMergeLandingRoutes(app: Hono<any>): void {
   registerMergeLandingRoutes(app, {
@@ -150,5 +198,17 @@ export function registerLiveMergeLandingRoutes(app: Hono<any>): void {
       return (await mergeQueues()?.findEntry(entryId)) ?? null;
     },
     notPage: (c) => pageOnlyRefusal(c, WRITE_WORDS),
+    discard: {
+      async rootOf(id) {
+        const { listProjects } = await import("../projects/spaces");
+        try {
+          return listProjects().find((p) => p.id === id)?.root ?? null;
+        } catch {
+          return null;
+        }
+      },
+      deps: async () => (await import("../worktree-remove-discard")).realDiscardDeps(),
+      notPage: discardNotPage,
+    },
   });
 }

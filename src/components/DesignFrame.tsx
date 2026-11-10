@@ -1,7 +1,7 @@
 import { createEffect, createMemo, createSignal, on, onCleanup, onMount, Show, type JSX } from "solid-js";
 import { cardBoxSupported } from "../lib/card-box";
 import type { DesignApi } from "../lib/design-api";
-import { DESIGN_FRAME_LEFT, DESIGN_PAGE_HEIGHT, DESIGN_PAGE_WIDTH, DESIGN_SHELL_ATTRS, DESIGN_STREAM_ATTRS, designHasStyles, designPageDoc, designShellDoc, fromDesignFrame, tokensOfText } from "../lib/design-frame";
+import { DESIGN_FRAME_LEFT, DESIGN_PAGE_HEIGHT, DESIGN_PAGE_WIDTH, DESIGN_SHELL_ATTRS, DESIGN_STREAM_ATTRS, designHasFirstPaint, designHasStyles, designPageDoc, designShellDoc, fromDesignFrame, tokensOfText } from "../lib/design-frame";
 import { designLiveSlots } from "../lib/design-live-slots";
 
 /** Every ancestor that scrolls, innermost first, with the element to watch in each. */
@@ -104,8 +104,8 @@ const FIRST_PAINT_MS = 250;
 /**
  * A page being written: one document in one empty sandbox, served as it arrives, so it fills in with
  * no reload. The response names its own policy; the frame's attributes ask for at least as much.
- * A page shows nothing before its first style block closes, so that wait reads as progress, and the
- * note goes only once the frame has had time to paint. When the response ends the connection is
+ * A page shows nothing until its styles are closed and its body has begun, so that wait reads as
+ * progress, and the note goes only once the frame has had time to paint. When the response ends the connection is
  * given back and the document stays, so the last picture holds until the finished page has drawn.
  */
 export function DesignStreamFrame(props: { api: DesignApi; label: string; version: number | undefined; text: string; title: string; waiting?: string; priority?: boolean }) {
@@ -163,7 +163,7 @@ export function DesignStreamFrame(props: { api: DesignApi; label: string; versio
     ++asked;
     giveBack();
   });
-  const drawable = createMemo(() => !!src() && designHasStyles(props.text));
+  const drawable = createMemo(() => !!src() && designHasFirstPaint(props.text));
   createEffect(() => {
     if (!drawable() || painted()) return;
     let frame = 0;

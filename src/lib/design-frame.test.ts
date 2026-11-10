@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import vm from "node:vm";
-import { DESIGN_NONCE_SLOT, DESIGN_PAGE_CSP, DESIGN_SHELL_ATTRS, DESIGN_STREAM_ATTRS, DESIGN_STREAM_CSP, designHasStyles, designPageCsp, designPageDoc, designShellDoc, designStreamDoc, fromDesignFrame, versionLabel } from "./design-frame";
+import { DESIGN_NONCE_SLOT, DESIGN_PAGE_CSP, DESIGN_SHELL_ATTRS, DESIGN_STREAM_ATTRS, DESIGN_STREAM_CSP, designHasFirstPaint, designHasStyles, designPageCsp, designPageDoc, designShellDoc, designStreamDoc, fromDesignFrame, versionLabel } from "./design-frame";
 
 const directives = (csp: string) => new Map(csp.split("; ").map((d) => [d.split(" ")[0], d.split(" ").slice(1)] as const));
 
@@ -96,4 +96,14 @@ test("versions are named by label, with the first unnumbered", () => {
   assert.equal(versionLabel("A", 1), "A");
   assert.equal(versionLabel("A", 2), "A2");
   assert.equal(versionLabel("AB", 3), "AB3");
+});
+
+test("a page being written has something to see only once its body has text", () => {
+  const styles = "<html><head><style>body{color:red}</style>";
+  assert.equal(designHasFirstPaint("<style>a{}"), false);
+  assert.equal(designHasFirstPaint(styles), false);
+  assert.equal(designHasFirstPaint(`${styles}</head><body class="x">`), false);
+  assert.equal(designHasFirstPaint(`${styles}</head><body><header>\n<nav class="n"><a href="#">`), false);
+  assert.equal(designHasFirstPaint(`${styles}</head><body><header><a href="#">Tea`), true);
+  assert.equal(designHasFirstPaint(`${styles}${" ".repeat(4000)}`), true);
 });

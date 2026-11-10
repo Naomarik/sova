@@ -134,6 +134,18 @@ export function fromDesignFrame(e: { source: unknown; data: unknown }, shell: un
   return m.op === "drawn" || m.op === "left" ? m.op : null;
 }
 
+/**
+ * Whether a page being written has something to see: its styles are closed and its body has text.
+ * Until then the frame is a white sheet, so the progress note stays. A long stretch past the styles
+ * counts too, for a page that opens with pictures or leaves out its body tag.
+ */
+export function designHasFirstPaint(partial: string): boolean {
+  const closed = /<\/style\s*>/i.exec(partial);
+  if (!closed) return false;
+  const rest = partial.slice(closed.index + closed[0].length);
+  return rest.length >= 4000 || /<body[^>]*>(?:\s*<[^>]*>)*\s*[^<\s]/i.test(rest);
+}
+
 /** About how many tokens of a page have been written, from its characters. */
 export const tokensOfText = (chars: number): number => Math.round(chars / 3.6);
 

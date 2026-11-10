@@ -9,6 +9,7 @@ import {
   type SessionShareView,
 } from "../../shared/session-share";
 import { earlierLine, ShareViewKeeper, type ShareAnswer } from "../lib/share-slice";
+import { parseReply, replyLabel } from "../../shared/reply-quote";
 import { SESSION_VIS_KINDS } from "./markdown";
 import { LinkedText, Reply } from "./thread";
 import { visitTab } from "./visit-tab";
@@ -70,10 +71,21 @@ function Images(props: { images: SessionShareImageRef[] | undefined; url(n: numb
 
 function Item(props: { item: SessionShareItem; imageUrl(n: number): string }) {
   const it = props.item;
+  /** A reply to an earlier message: its quote above the words, plain, with no jump (§app.session-share/content). */
+  const reply = it.kind === "user" && it.text ? parseReply(it.text) : null;
+  const words = reply ? reply.words : it.text;
   return it.kind === "user" ? (
     <article class="share-msg share-msg-own ss-msg" aria-label="Message">
-      <Show when={it.text}>
-        <LinkedText text={it.text} />
+      <Show when={reply}>
+        {(r) => (
+          <div class="ss-reply-quote">
+            <span class="ss-reply-quote-label">{replyLabel(r())}</span>
+            <span class="ss-reply-quote-text">{r().quote}</span>
+          </div>
+        )}
+      </Show>
+      <Show when={words}>
+        <LinkedText text={words} />
       </Show>
       <Images images={it.images} url={props.imageUrl} />
     </article>

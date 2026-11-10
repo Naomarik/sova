@@ -157,6 +157,7 @@ import { upgradeLegacyRows } from "./legacy-rows";
 import { COMPOSER_QUERY } from "./wire-stamp";
 import { onAuthorized, onUnauthorized } from "./auth";
 import type { PreviewList, PreviewMint, PreviewMinted, PreviewView } from "../../shared/preview-links";
+import { cleanStagedReply, type StagedReply } from "../../shared/reply-quote";
 
 /**
  * What a batch send can come back as. The refusal is a VALUE, not a throw: it is the route's
@@ -978,23 +979,36 @@ export async function fetchTranscriptForCache(
 /** The composer draft stored for a session; `text: null` when there is none. The server has
     already dropped attachments whose file is gone. */
 export const fetchDraft = (path: string) =>
-  request<{ text: string | null; attachments?: UploadResult[]; mode?: ShellDraftMode; updatedAt: string | null }>(
+  request<{ text: string | null; attachments?: UploadResult[]; mode?: ShellDraftMode; reply?: unknown; updatedAt: string | null }>(
     `/api/sessions/draft?path=${encodeURIComponent(path)}`,
     { cache: "no-store" },
   ).then((r) => {
     const attachments = r.attachments ?? [];
     const host = hostOf(path);
     if (host) for (const a of attachments) noteHost(a.path, host);
-    return { text: r.text, attachments, ...(r.mode === "shell" || r.mode === "private" ? { mode: r.mode } : {}), updatedAt: r.updatedAt };
+    // An older server sends no reply; a malformed one is dropped rather than staged.
+    return {
+      text: r.text,
+      attachments,
+      ...(r.mode === "shell" || r.mode === "private" ? { mode: r.mode } : {}),
+      reply: cleanStagedReply(r.reply),
+      updatedAt: r.updatedAt,
+    };
   });
 
-/** Stores a session's draft; blank text with no attachments deletes it. `keepalive` lets the
-    write outlive a page that is being hidden or closed; `mode` keeps a shell-mode command's mode. */
-export const putDraft = (path: string, text: string, attachments: UploadResult[], opts: { keepalive?: boolean; mode?: ShellDraftMode } = {}) =>
+/** Stores a session's draft; blank text with no attachments and no staged reply deletes it. `keepalive`
+    lets the write outlive a page that is being hidden or closed; `mode` keeps a shell-mode command's mode;
+    `reply` is a message staged by its Reply (§chat.composer/replying). */
+export const putDraft = (
+  path: string,
+  text: string,
+  attachments: UploadResult[],
+  opts: { keepalive?: boolean; mode?: ShellDraftMode; reply?: StagedReply | null } = {},
+) =>
   request<{ ok: true }>("/api/sessions/draft", {
     method: "PUT",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ path, text, attachments, ...(opts.mode ? { mode: opts.mode } : {}) }),
+    body: JSON.stringify({ path, text, attachments, ...(opts.mode ? { mode: opts.mode } : {}), ...(opts.reply ? { reply: opts.reply } : {}) }),
     keepalive: opts.keepalive,
   });
 

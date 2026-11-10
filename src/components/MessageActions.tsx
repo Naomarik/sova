@@ -7,6 +7,7 @@ import { Icon, type IconName } from "./ui";
 const ICON: Record<MessageActionKind, IconName> = {
   copy: "copy",
   share: "share",
+  reply: "reply",
   rewind: "undo",
   regenerate: "refresh",
   fork: "branch",
@@ -22,6 +23,8 @@ export interface MessageActionItem {
   /** Replaces the default accessible name, for an action whose row says more than its kind. */
   label?: string;
   reason: string | null;
+  /** Called as the press starts, before it moves focus or the selection (Reply reads the selected passage here). */
+  prepare?(): void;
   run(): void | Promise<void>;
 }
 
@@ -182,6 +185,7 @@ export function MessageActions(props: {
                   aria-disabled={reason() ? "true" : undefined}
                   aria-describedby={reason() ? describe(kind) : undefined}
                   data-action={kind}
+                  onPointerDown={() => it()?.prepare?.()}
                   onClick={() => {
                     const current = it();
                     if (current) press(current);

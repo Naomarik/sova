@@ -2,10 +2,10 @@
 
 import type { SessionSummary } from "../../shared/protocol";
 
-/** Whether a draft is one: non-blank text or at least one image. The server's `draftCounts`
-    (server/drafts.ts) is the same rule, so a row reads the same before and after a refresh. */
-export function draftCounts(text: string, attachments: readonly unknown[]): boolean {
-  return text.trim() !== "" || attachments.length > 0;
+/** Whether a draft is one: non-blank text, at least one image, or a staged reply. The server's
+    `draftCounts` (server/drafts.ts) is the same rule, so a row reads the same before and after a refresh. */
+export function draftCounts(text: string, attachments: readonly unknown[], reply: unknown = null): boolean {
+  return text.trim() !== "" || attachments.length > 0 || !!reply;
 }
 
 /**

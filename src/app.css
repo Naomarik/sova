@@ -2077,3 +2077,94 @@ html, body { overflow: clip; overscroll-behavior: none; }
 .time-spent-skeleton { display: flex; flex-direction: column; gap: var(--space-4); }
 .time-spent-skeleton .time-spent-rows .text-skeleton { flex: none; }
 
+/* ---- REPLY TO A MESSAGE (§chat.transcript/reply, §chat.composer/replying,
+   §chat.transcript/reply-quote). The staged strip reads like the staged answers beside it;
+   the quote in a reply is a quiet sunken block above the words, clamped to two lines. ---- */
+.composer-reply {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  font-size: var(--fs-caption);
+  line-height: var(--lh-caption);
+  color: var(--color-ink-2);
+}
+.composer-reply > .icon { color: var(--color-ink-muted); }
+.composer-reply > .button-icon { flex: none; }
+.composer-reply-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.composer-reply-jump {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  min-height: var(--tap-min);
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+.composer-reply-label { flex: none; font-weight: var(--fw-medium); color: var(--color-ink); }
+.composer-reply-quote { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--color-ink-muted); }
+.composer-reply-note { margin: 0 0 var(--space-1); color: var(--color-ink-muted); }
+
+.message-reply-quote {
+  display: grid;
+  gap: var(--space-1);
+  max-width: 100%;
+  min-width: 0;
+  min-height: var(--tap-min);
+  padding: var(--space-2) var(--space-3);
+  border: 0;
+  border-inline-start: var(--stroke-icon) solid var(--color-border-strong);
+  border-radius: var(--r-sm);
+  background: var(--color-sunken);
+  color: var(--color-ink-2);
+  font: inherit;
+  font-size: var(--fs-caption);
+  line-height: var(--lh-caption);
+  text-align: start;
+  cursor: pointer;
+}
+.message-user > .message-reply-quote,
+.message-user > .message-reply-gone { align-self: flex-end; }
+.message-reply-quote-label { display: inline-flex; align-items: center; gap: var(--space-1); font-weight: var(--fw-medium); color: var(--color-ink-muted); }
+.message-reply-quote-text {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.message-reply-gone { margin: 0; font-size: var(--fs-caption); line-height: var(--lh-caption); color: var(--color-ink-muted); }
+
+/* Swipe to reply (lib/swipe-reply-dom.ts): a sideways drag on a bubble is ours, a vertical one
+   still scrolls the page and pinch still zooms; a code block or table that scrolls sideways is
+   its own scroll container, so it keeps its pan. The bubble follows the finger; the reply icon
+   shows in the space it leaves, in the accent once letting go will stage the reply. */
+.thread article.message { touch-action: pan-y pinch-zoom; }
+.message-swiping { position: relative; transform: translateX(var(--swipe-dx, 0px)); }
+.message-swiping::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: calc(-1 * var(--space-6));
+  width: 20px;
+  height: 20px;
+  margin-top: -10px;
+  background-color: var(--color-ink-muted);
+  -webkit-mask: url(/icons/reply.svg) center / contain no-repeat;
+          mask: url(/icons/reply.svg) center / contain no-repeat;
+}
+.message-swipe-armed::before { background-color: var(--color-accent); }
+/* Reduced motion: the bubble stays put, so the end state says it: an outline once it will stage. */
+@media (prefers-reduced-motion: reduce) {
+  .message-swiping::before { display: none; }
+  .message-swipe-armed { outline: 2px solid var(--color-accent); outline-offset: 2px; border-radius: var(--r-md); }
+}
+/* A Timeline input row that replies to an earlier message: its words after this marker. */
+.timeline-reply-mark { display: inline-flex; align-items: center; gap: var(--space-1); color: var(--color-ink-muted); font-weight: var(--fw-medium); }

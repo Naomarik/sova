@@ -4,6 +4,7 @@ import { basename, dirname, join } from "node:path";
 import { stateRoot } from "./state-root";
 import { checkTmpImage } from "./attachments";
 import { sessionsChanged } from "./list-generation";
+import { cleanStagedReply, takeBack, type StagedReply } from "../shared/reply-quote";
 
 /**
  * Persistent composer drafts, keyed by session id (GET/PUT /api/sessions/draft). A draft on a
@@ -11,6 +12,7 @@ import { sessionsChanged } from "./list-generation";
  * (SessionSummary.draftPreview): without one, a never-sent new session is a hidden husk.
  * Pending images ride along as `attachments`: files already uploaded into the session's
  * attachments folder (server/attachments.ts), so a reload keeps the screenshot with the text.
+ * A reply staged from a message's Reply rides along as `reply` (§chat.composer/replying).
  */
 const FILE = join(stateRoot(), "drafts.json");
 const PREVIEW_MAX = 80; // the sidebar title cap (sessions-index TITLE_MAX)
@@ -40,6 +42,8 @@ export interface Draft {
   updatedAt: string;
   /** Absent on disk when there are none. */
   attachments?: DraftAttachment[];
+  /** A staged reply (shared/reply-quote.ts), its quote already cut to what is sent. Absent when none. */
+  reply?: StagedReply;
 }
 
 /** A display label for a chip: the client's own name when it looks like one (that is what the
@@ -93,7 +97,14 @@ function load(): Record<string, Draft> {
       const e = d as Partial<Draft> | null;
       if (!e || typeof e.text !== "string" || typeof e.updatedAt !== "string") continue;
       const attachments = wellFormed(e.attachments);
-      out[id] = { text: e.text, updatedAt: e.updatedAt, ...(isDraftMode(e.mode) ? { mode: e.mode } : {}), ...(attachments.length ? { attachments } : {}) };
+      const reply = cleanStagedReply(e.reply);
+      out[id] = {
+        text: e.text,
+        updatedAt: e.updatedAt,
+        ...(isDraftMode(e.mode) ? { mode: e.mode } : {}),
+        ...(attachments.length ? { attachments } : {}),
+        ...(reply ? { reply } : {}),
+      };
     }
   } catch {
     // missing or corrupt: start empty
@@ -126,25 +137,40 @@ export function getDraft(id: string): Draft | null {
 
 /** GET /api/sessions/draft's body: nulls and [] when none. An image whose file is gone (deleted,
     or /tmp cleaned) is no longer part of the draft, so it is left out. */
-export function draftForClient(id: string): { text: string | null; mode?: DraftMode; attachments: DraftAttachment[]; updatedAt: string | null } {
+export function draftForClient(id: string): {
+  text: string | null;
+  mode?: DraftMode;
+  attachments: DraftAttachment[];
+  reply: StagedReply | null;
+  updatedAt: string | null;
+} {
   const d = getDraft(id);
   const attachments = (d?.attachments ?? []).filter((a) => checkTmpImage(a.path).ok);
-  return { text: d?.text ?? null, ...(d?.mode ? { mode: d.mode } : {}), attachments, updatedAt: d?.updatedAt ?? null };
+  return { text: d?.text ?? null, ...(d?.mode ? { mode: d.mode } : {}), attachments, reply: d?.reply ?? null, updatedAt: d?.updatedAt ?? null };
 }
 
 /**
- * Store one session's draft; blank text with no (valid) attachments deletes it (a cleared
- * composer leaves nothing behind). Attachments go through cleanAttachments. Same rules as
+ * Store one session's draft; blank text with no (valid) attachments and no (valid) staged reply
+ * deletes it (a cleared composer leaves nothing behind). Attachments go through cleanAttachments,
+ * the reply through cleanStagedReply; a malformed one is dropped, never the draft. Same rules as
  * web-sessions.ts: re-read the file and change only this id, so drafts written by another
  * server instance survive. A removed attachment's file is not deleted here: the client deletes
  * a chip's file itself (DELETE /api/attachment), and a sent draft's files must stay, since the
  * prompt names them and the transcript renders them. `mode` is the caller's to have checked: only the page's
  * write passes one; every other write, a hand-back included, stores a message (no mode, clearing any).
  */
-export function setDraft(id: string, text: string, rawAttachments?: unknown, mode?: DraftMode): void {
+export function setDraft(id: string, text: string, rawAttachments?: unknown, mode?: DraftMode, rawReply?: unknown): void {
   const next = load();
   const attachments = cleanAttachments(rawAttachments);
-  if (text.trim() || attachments.length) next[id] = { text, updatedAt: new Date().toISOString(), ...(mode ? { mode } : {}), ...(attachments.length ? { attachments } : {}) };
+  const reply = cleanStagedReply(rawReply);
+  if (text.trim() || attachments.length || reply)
+    next[id] = {
+      text,
+      updatedAt: new Date().toISOString(),
+      ...(mode ? { mode } : {}),
+      ...(attachments.length ? { attachments } : {}),
+      ...(reply ? { reply } : {}),
+    };
   else if (id in next) delete next[id];
   else {
     drafts = next; // absent already: nothing to write
@@ -156,15 +182,18 @@ export function setDraft(id: string, text: string, rawAttachments?: unknown, mod
 /** Messages a chat couldn't take while no tab was left to hear it (§chat.transcript/send-while-starting):
     their texts go back as the session's draft, ahead of any draft already saved (the order a tab
     puts a refused send back in), its attachments kept. Blank texts are skipped. The result is a message: a
-    saved command's mode is dropped, and its text stays as it was typed. */
+    saved command's mode is dropped, and its text stays as it was typed. A refused reply comes back as
+    its words with its reply staged again; while the draft already stages one, it comes back whole,
+    quote and all (shared/reply-quote `takeBack`, the tab's own rule). */
 export function putBackDraft(id: string, texts: readonly string[]): void {
-  const back = texts.filter((t) => t.trim());
-  if (!back.length) return;
   const current = load()[id];
+  const split = takeBack(texts.filter((t) => t.trim()), { staged: current?.reply ?? null });
+  const back = split.texts.filter((t) => t.trim());
+  if (!back.length && !split.reply) return;
   // A saved command joins as text with its marker shown, so nothing is lost and nothing runs on Enter.
   const kept = current?.text.trim() ? [`${current.mode ? markerOf(current.mode) : ""}${current.text}`] : [];
   const text = [...back, ...kept].join("\n\n");
-  setDraft(id, text, current?.attachments);
+  setDraft(id, text, current?.attachments, undefined, split.reply ?? current?.reply);
 }
 
 /** Drop the drafts of deleted sessions; same write rules as setDraft. */
@@ -181,11 +210,11 @@ export function dropDrafts(ids: string[]): void {
   else drafts = next;
 }
 
-/** Whether a stored draft is one: non-blank text or at least one image. What lists a never-sent
+/** Whether a stored draft is one: non-blank text, at least one image, or a staged reply. What lists a never-sent
     session (draftPreview) and marks any other session's row (hasDraft); the client's own copy of
     the rule is src/lib/draft-mark.ts. */
 export function draftCounts(draft: Draft | undefined): draft is Draft {
-  return !!draft && (!!draft.text.trim() || !!draft.attachments?.length);
+  return !!draft && (!!draft.text.trim() || !!draft.attachments?.length || !!draft.reply);
 }
 
 /** The sidebar line for a draft: its first non-empty line, capped like a session title; an

@@ -105,12 +105,16 @@ import { waitingSentence } from "../../shared/provider-limits";
 import type { UploadResult } from "../../shared/protocol";
 import {
   copyText,
+  draftReply,
   drafts,
+  focusView,
+  groupSendAll,
   hideThinking,
   hideTools,
   rememberSend,
   sentHere,
   sessionContext,
+  setDraftReply,
   setDraftText,
   draftMessage,
   setLocalRunning,
@@ -135,8 +139,11 @@ import {
   queueGoneEffect,
   queueRemoveRefusalText,
   type ActionState,
+  type MessageStrip,
   SHARE_WAIT_REASON,
 } from "../lib/message-actions";
+import { passageOf, readSelection, REPLY_GONE, REPLY_REMOVED, replyFrom, type SelectionFacts } from "../lib/reply-stage";
+import { composeReply, quoteFirstLine, replyLabel, takeBack } from "../../shared/reply-quote";
 import { shareHref } from "../lib/share-slice";
 import type { MessageActionItem } from "./MessageActions";
 import { queueRemoveFrame, queueRowActions } from "../lib/queue-actions";
@@ -498,6 +505,15 @@ export function ChatView(props: {
   const [resume, setResume] = createSignal(0);
   /** Queued steers/follow-ups a Stop drained, handed back to the composer. */
   const [restored, setRestored] = createSignal<{ text: string } | null>(null);
+  /** Texts on their way back to the composer: the first reply among them comes back as its words,
+      its reply staged again (shared/reply-quote `takeBack`). A Rewind or a Stop, the user's own
+      ask, replaces any reply staged before (`replace`); a refused send's reply, while another is
+      staged, comes back whole instead, quote and all. */
+  const restage = (texts: readonly string[], replace: boolean): string[] => {
+    const split = takeBack(texts, { staged: draftReply(props.path), replace });
+    if (split.reply) setDraftReply(props.path, split.reply);
+    return split.texts;
+  };
   const [everOpened, setEverOpened] = createSignal(false);
   /** The model this visit's socket said (hello, "model"); undefined until it has. */
   const [saidModel, setModel] = createSignal<string | null | undefined>(undefined);
@@ -770,10 +786,14 @@ export function ChatView(props: {
    * screen shows the typed texts now (it reads the stored draft only when it mounts), and the stored
    * draft holds them for one that mounts later. Returns the typed texts handed back.
    */
-  const handBackSends = (back: readonly Unsent[], said?: string): string[] => {
-    if (!back.length) return [];
+  const handBackSends = (sent: readonly Unsent[], said?: string): string[] => {
+    if (!sent.length) return [];
+    // A refused reply comes back as its words, its reply staged again; while another is staged, whole.
+    const split = takeBack(sent.map((u) => u.text), { staged: draftReply(props.path) });
+    const back = sent.map((u, i) => ({ ...u, text: split.texts[i]! }));
     const r = handBack({ draft: draftMessage(props.path) || undefined, cardSent: untrack(cardSent) }, back, clicks);
     if (r.texts.length) {
+      if (split.reply) setDraftReply(props.path, split.reply);
       setDraftText(props.path, r.draft ?? "");
       setRestored({ text: r.texts.join("\n\n") });
       if (said) announce(said);
@@ -1012,7 +1032,7 @@ export function ChatView(props: {
           }
           // Every drained row goes; only typed text comes back.
           takeBackQueued(setLive, drained);
-          const text = typed.filter((t) => t.trim()).join("\n\n");
+          const text = restage(typed, true).filter((t) => t.trim()).join("\n\n");
           if (text) {
             setRestored({ text });
             announce("Queued message returned to the composer.");
@@ -1080,7 +1100,7 @@ export function ChatView(props: {
             handBackSends([{ id: msg.itemId, text }]);
           } else if (first && effect.restore && text && sentHere(props.path, msg.itemId) && !handedBack.has(msg.itemId)) {
             handedBack.add(msg.itemId);
-            setRestored({ text });
+            setRestored({ text: restage([text], false).join("") });
             announce(
               msg.reason === "dropped"
                 ? "That message was handled without being sent. It's back in the composer."
@@ -1123,7 +1143,8 @@ export function ChatView(props: {
         case "rewound": {
           // A message another session sent comes back as its body: the header line is the
           // model's, not words to send again (§chat.timeline/rewind).
-          const editorText = msg.editorText ? handBackText(msg.editorText) : msg.editorText;
+          // A reply comes back as its words, with its reply staged again.
+          const editorText = msg.editorText ? restage([handBackText(msg.editorText)], true).join("") : msg.editorText;
           batch(() => {
             setFeed(feedOnReset()); // they belonged to the turns just abandoned
             setCommandRows([]);
@@ -1448,7 +1469,7 @@ export function ChatView(props: {
   const stopTakingBack = takeBackHere(props.path, (texts, ids) => {
     const gone = new Set(ids);
     setLive(produce((s) => void (s.entries = s.entries.filter((e) => !(e.kind === "user" && e.id && gone.has(e.id))))));
-    setRestored({ text: texts.join("\n\n") });
+    setRestored({ text: restage(texts, false).join("\n\n") });
   });
   // Closing with something still owed an answer (§chat.transcript/send-while-starting): the
   // connection, open or still connecting, goes to a courier with what the outbox kept and the sends
@@ -1667,6 +1688,10 @@ export function ChatView(props: {
     tourNotice,
     link,
     topic,
+    // A group pane while Send to All hides every pane composer: Reply has nowhere to stage.
+    sendToAll: scope.id !== null && groupSendAll(),
+    // Focus hides the single view's composer (never a pane's): Reply would stage out of sight.
+    focus: scope.id === null && focusView(),
   });
 
   /** Regenerate: the server walks back to the user message that started this reply, rewinds to
@@ -1721,6 +1746,45 @@ export function ChatView(props: {
   /** What extensions add under this chat's replies: asked once when it opens and once when a run
       ends, only of extensions that add to replies (lib/reply-place). */
   const additions = useReplyAdditions({ session: shareId, local: createMemo(() => !hostOf(props.path)), running: () => live.running });
+  /** The page's selection as the Reply button's press found it, before the press could move it. */
+  let heldSelection: SelectionFacts | null = null;
+  /**
+   * Reply (§chat.transcript/reply): stages the message, or the passage selected inside it, above the
+   * composer, replacing any staged before, says so and puts focus in the box. Changes nothing else.
+   */
+  const stageReply = (strip: MessageStrip) => {
+    const sel = heldSelection ?? readSelection();
+    heldSelection = null;
+    const reply = replyFrom(strip, passageOf(sel, strip.entryId));
+    if (!reply) return;
+    setDraftReply(props.path, reply);
+    announce(`${replyLabel(reply)}.`);
+    focusComposer();
+  };
+  /** Jumps to a quoted message, or says it left this conversation. */
+  const jumpToQuoted = (entryId: string) =>
+    void jumpWhenArrived(entryId, props.path, () => {
+      toast(REPLY_GONE);
+      announce(REPLY_GONE);
+    });
+  /** The staged reply as the composer draws and sends it. */
+  const composerReply = createMemo(() => {
+    const r = draftReply(props.path);
+    if (!r) return null;
+    return {
+      label: replyLabel(r),
+      preview: quoteFirstLine(r.quote),
+      trimmed: r.trimmed,
+      compose: (text: string) => composeReply(r, text),
+      jump: () => jumpToQuoted(r.entryId),
+      remove: () => {
+        setDraftReply(props.path, null);
+        announce(REPLY_REMOVED);
+        focusComposer();
+      },
+    };
+  });
+
   /** What each delivered message offers here: the reply place. Sova's own built-in first: Copy is
       ours alone; the rest are requests with a reason when they can't act, never a button that
       quietly does nothing. What extensions add comes after it. */
@@ -1734,6 +1798,14 @@ export function ChatView(props: {
             const id = shareId();
             return { kind, reason: id ? null : SHARE_WAIT_REASON, run: () => void (id && (location.hash = shareHref(id, { host: hostOf(props.path), from: strip.entryId }))) };
           }
+          case "reply":
+            return {
+              kind,
+              reason: actionReason("reply", actionState()),
+              // Read before the press moves focus or the click collapses the selection.
+              prepare: () => void (heldSelection = readSelection()),
+              run: () => stageReply(strip),
+            };
           case "fork":
             return { kind, reason: actionReason("fork", actionState()), run: () => forkFrom(strip.entryId) };
           case "rewind":
@@ -2858,6 +2930,7 @@ export function ChatView(props: {
         undo={undoControl}
         onSend={(text, running, attachments) => send(text, running, attachments, undefined, true)}
         picks={composerPicks()}
+        reply={composerReply()}
         onDraft={(has) => {
           setHasDraft(has);
           // An emptied message box drops a picked choice: the next answer is the newest decision's again.

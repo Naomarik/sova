@@ -17,7 +17,10 @@ import {
   queueRemoveRefusalText,
   stripsByRow,
   type ActionState,
+  REPLY_SEND_ALL_REASON,
+  TUI_LIVE_REASON,
 } from "./message-actions";
+import { composeReply } from "../../shared/reply-quote";
 import { parseWakeNudge, TOUR_SIGN_IN_TAG } from "../../shared/wake";
 
 const row = (id: string, kind: TranscriptItem["kind"], text?: string, extra: Partial<TranscriptItem> = {}): TranscriptItem => ({
@@ -89,13 +92,14 @@ test("each role gets its own branch action, never the other's", () => {
   const a = actionsFor("assistant", { copyable: true });
   assert.ok(u.includes("rewind") && !u.includes("regenerate"));
   assert.ok(a.includes("regenerate") && !a.includes("rewind"));
-  // Reply forks are fourth; they never appear on a user message or replace Regenerate.
-  assert.deepEqual(u, ["copy", "share", "rewind"]);
-  assert.deepEqual(a, ["copy", "share", "regenerate", "fork"]);
-  assert.equal(a[3], "fork");
+  // Reply comes after Copy and Share on both; reply forks are fifth, never on a user message,
+  // and never replace Regenerate.
+  assert.deepEqual(u, ["copy", "share", "reply", "rewind"]);
+  assert.deepEqual(a, ["copy", "share", "reply", "regenerate", "fork"]);
+  assert.equal(a[4], "fork");
 });
 
-test("an images-only message keeps Share and Rewind but offers no Copy", () => {
+test("an images-only message keeps Share and Rewind but offers no Copy and no Reply", () => {
   const [strip] = messageStrips([user("u1", "", 2)]);
   assert.equal(copyable(strip!), false);
   assert.deepEqual(actionsFor(strip!.role, { copyable: copyable(strip!) }), ["share", "rewind"]);
@@ -125,6 +129,29 @@ test("fork keeps a reason in unavailable views and needs no user-message replay"
   assert.equal(actionReason("fork", state({ paused: "Connecting…" })), "Connecting…");
   assert.equal(actionReason("fork", state({ wake: true, link: true, topic: true })), null);
   assert.equal(ACTION_LABEL.fork, "Fork from here");
+});
+
+test("Reply never changes the conversation: nothing in flight blocks it, only a view with nowhere to stage (§chat.transcript/reply)", () => {
+  assert.equal(ACTION_LABEL.reply, "Reply to this message");
+  for (const busy of [{ streaming: true }, { compacting: true }, { pending: true }, { paused: "Switching model…" }, { wake: true, link: true, topic: true }])
+    assert.equal(actionReason("reply", state(busy)), null, JSON.stringify(busy));
+  assert.equal(actionReason("reply", state({ chat: false })), "Only a chat open in Sova can reply.");
+  assert.equal(actionReason("reply", state({ live: true })), TUI_LIVE_REASON);
+  assert.equal(actionReason("reply", state({ sendToAll: true })), REPLY_SEND_ALL_REASON);
+  assert.equal(REPLY_SEND_ALL_REASON, "Turn off Send to All to reply in this pane.");
+  assert.equal(actionReason("reply", state({ focus: true })), "Turn off Focus to reply.");
+  // The structural facts outrank Send to All, as they do every other state.
+  assert.equal(actionReason("reply", state({ chat: false, sendToAll: true })), "Only a chat open in Sova can reply.");
+});
+
+test("a reply of yours: Copy takes only its words, and a Reply to it quotes only those, so quotes never nest", () => {
+  const sent = composeReply({ entryId: "a1b2c3d4", role: "assistant", part: false, quote: "the agent said", trimmed: false }, "my answer");
+  const [strip] = messageStrips([user("u1", sent)]);
+  assert.equal(strip!.text, "my answer");
+  assert.deepEqual(actionsFor("user", { copyable: copyable(strip!) }), ["copy", "share", "reply", "rewind"]);
+  // A reply holding only its quote (staged answers carried it) has no words: no Copy, no Reply.
+  const [bare] = messageStrips([user("u2", composeReply({ entryId: "a1b2c3d4", role: "assistant", part: false, quote: "q", trimmed: false }, ""))]);
+  assert.equal(copyable(bare!), false);
 });
 
 test("a terminal-owned session refuses every mutation", () => {

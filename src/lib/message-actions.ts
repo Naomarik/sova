@@ -5,9 +5,10 @@
 // without a browser.
 
 import type { TranscriptItem } from "../../shared/protocol";
+import { replyWords } from "../../shared/reply-quote";
 import { entryIdOf } from "./jump";
 
-export type MessageActionKind = "copy" | "share" | "rewind" | "regenerate" | "fork" | "remove";
+export type MessageActionKind = "copy" | "share" | "reply" | "rewind" | "regenerate" | "fork" | "remove";
 
 /** The actions a LANDED message offers. A queued message offers only `remove`, which is about
     the outgoing queue rather than about an entry, and carries its own reason (queueRemoveReason). */
@@ -27,7 +28,9 @@ export interface MessageStrip {
   index: number;
   entryId: string;
   role: MessageRole;
-  /** "" when the entry has no text to copy (an images-only message): then there is no Copy. */
+  /** "" when the entry has no text to copy (an images-only message): then there is no Copy and no
+      Reply. A message of yours that replies to another holds only its words (§chat.transcript/reply-quote):
+      Copy copies them, and a Reply to it quotes them, so quotes never nest. */
   text: string;
   /** This reply answered a scheduled WAKE-UP rather than a message the user sent. Replaying it
       would re-send Sova's own nudge text as if the user had typed it, so the server refuses
@@ -68,7 +71,7 @@ export function messageStrips(rows: readonly TranscriptItem[]): MessageStrip[] {
     }
     if (item.kind === "user") {
       startedBy = "user";
-      strips.push({ index, entryId: entryIdOf(item.id), role: "user", text: item.text ?? "" });
+      strips.push({ index, entryId: entryIdOf(item.id), role: "user", text: replyWords(item.text ?? "") });
       return;
     }
     if (item.kind !== "assistant-text") return;
@@ -102,11 +105,12 @@ export function stripsByRow(rows: readonly TranscriptItem[]): Map<number, Messag
 
 /**
  * What a strip offers, in order: the safe actions first (Share opens the share page with its
- * start on this message), then the branch action and, for replies, an independent fork. `copyable` is false
- * for an images-only message — a Copy that copies "" would claim to have copied the message.
+ * start on this message; Reply stages it for your next message), then the branch action and, for replies,
+ * an independent fork. `copyable` is false for an images-only message — a Copy that copies "" would
+ * claim to have copied the message, and a Reply would quote nothing.
  */
 export function actionsFor(role: MessageRole, opts: { copyable: boolean }): LandedActionKind[] {
-  const safe: LandedActionKind[] = opts.copyable ? ["copy", "share"] : ["share"];
+  const safe: LandedActionKind[] = opts.copyable ? ["copy", "share", "reply"] : ["share"];
   return role === "user" ? [...safe, "rewind"] : [...safe, "regenerate", "fork"];
 }
 
@@ -114,6 +118,7 @@ export function actionsFor(role: MessageRole, opts: { copyable: boolean }): Land
 export const ACTION_LABEL: Record<MessageActionKind, string> = {
   copy: "Copy message",
   share: "Share from here",
+  reply: "Reply to this message",
   rewind: "Rewind to before this message",
   regenerate: "Regenerate this reply",
   fork: "Fork from here",
@@ -181,6 +186,10 @@ export interface ActionState {
   wake?: boolean;
   /** With wake: that wake was a tour's sign-in notice. */
   tourNotice?: boolean;
+  /** This chat is a group pane while Send to All hides its composer: Reply has nowhere to stage. */
+  sendToAll?: boolean;
+  /** Focus hides this view's composer (§chat.transcript/focus-view): Reply has nowhere to show what it staged. */
+  focus?: boolean;
   /** This reply answered a link message: the same. */
   link?: boolean;
   /** This reply answered a topic batch: the same. */
@@ -188,6 +197,10 @@ export interface ActionState {
 }
 
 export const TUI_LIVE_REASON = "This session is open in a terminal, so Sova won't write to it.";
+/** Reply in a group pane while the group composer stands in for every pane's own. */
+export const REPLY_SEND_ALL_REASON = "Turn off Send to All to reply in this pane.";
+/** Reply while Focus hides the composer: only the Focus button turns Focus off. */
+export const REPLY_FOCUS_REASON = "Turn off Focus to reply.";
 /**
  * Why an action is off, in user-facing words — or null when it can act. Never hidden: a button
  * that disappears takes its reason with it.
@@ -204,6 +217,14 @@ export function actionReason(kind: LandedActionKind, s: ActionState): string | n
       return null;
     // Share only opens the share page, which reads: a watch or a live terminal can't refuse it.
     case "share":
+      return null;
+    // Reply only stages a quote in this view's composer and changes nothing, so a turn, a
+    // compaction or another action in flight never blocks it; a view with no composer to stage in does.
+    case "reply":
+      if (!s.chat) return "Only a chat open in Sova can reply.";
+      if (s.live) return TUI_LIVE_REASON;
+      if (s.sendToAll) return REPLY_SEND_ALL_REASON;
+      if (s.focus) return REPLY_FOCUS_REASON;
       return null;
     case "fork":
       if (!s.chat) return "Open this session as a chat in Sova to fork it.";

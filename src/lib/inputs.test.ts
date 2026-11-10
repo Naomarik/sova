@@ -167,3 +167,17 @@ test("inputRows carries each row's sender and wake flag, its text the body", () 
     ["u", "mine", "mine", null, false],
   ]);
 });
+
+test("a reply's input row shows its words, never the quote, and is marked as a reply (§chat.transcript/reply-quote)", async () => {
+  const { composeReply } = await import("../../shared/reply-quote");
+  const { inputRowsOf } = await import("./timeline");
+  const sent = composeReply({ entryId: "a1b2c3d4", role: "assistant", part: true, quote: "the agent's words", trimmed: false }, "why this?\nand more");
+  const [r] = inputRows([user("a", sent), user("b", "plain")]);
+  assert.equal(r!.preview, "why this?");
+  assert.equal(r!.text, "why this?\nand more");
+  assert.equal(r!.reply, true);
+  assert.equal(inputRows([user("b", "plain")])[0]!.reply, undefined);
+  const [row] = inputRowsOf([{ ...user("a", sent), at: "2026-11-01T10:00:00.000Z" }]);
+  assert.equal(row!.reply, true);
+  assert.equal(row!.title, "why this?");
+});

@@ -815,15 +815,19 @@ export interface SessionsDirInfo {
 //     session files, only ones carrying the archive mark — an unarchived session is refused with a
 //     reason to archive it first, as is anything outside the sessions dir, gone, or unreadable; each
 //     refusal is returned in refused with its reason. refused is paths-mode-only, additive)
-// GET  /api/sessions/draft?path=… -> { text: string | null, mode?: ShellDraftMode, attachments: UploadResult[], updatedAt: string | null }
+// GET  /api/sessions/draft?path=… -> { text: string | null, mode?: ShellDraftMode, attachments: UploadResult[],
+//                                  reply: StagedReply | null, updatedAt: string | null }
 //                                  (the stored composer draft, ~/.pi/agent/sova/drafts.json; nulls and [] when
-//                                  none; attachments whose file is gone are left out. 400 bad path, 404 missing)
-// PUT  /api/sessions/draft { path, text, mode?: ShellDraftMode, attachments?: UploadResult[] } -> { ok: true }
+//                                  none; attachments whose file is gone are left out. `reply` (shared/reply-quote.ts)
+//                                  is a message staged by its Reply; absent from an older server. 400 bad path, 404 missing)
+// PUT  /api/sessions/draft { path, text, mode?: ShellDraftMode, attachments?: UploadResult[], reply?: StagedReply | null }
+//                                  -> { ok: true }
 //                                  (`mode`: a draft written in shell mode, kept apart from the text, which holds no
 //                                  marker; absent, a message. Kept only from the person's own page: any other
 //                                  writer's draft is stored as a message, mode dropped; 400 for any other value.
 //                                  A draft handed back by Sova (a send it couldn't take) is a message too. Stores it; blank text
-//                                  with no attachments deletes it. At most 8 attachments; an entry that isn't
+//                                  with no attachments and no reply deletes it. A malformed reply is dropped, not an
+//                                  error; an older server ignores the field. At most 8 attachments; an entry that isn't
 //                                  an existing image in /tmp or the attachments folder is dropped, not an error;
 //                                  name/mimeType/size are re-derived from the file. Never writes the session file.
 //                                  400 bad body/path, attachments not an array, or "Draft too long" (> 1,000,000

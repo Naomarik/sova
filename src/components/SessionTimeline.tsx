@@ -333,6 +333,12 @@ function Body(props: { row: TimelineRow }) {
             #
           </span>
         </Show>
+        <Show when={props.row.kind === "input" && props.row.reply}>
+          <span class="timeline-reply-mark">
+            <Icon name="reply" small />
+            Reply
+          </span>{" "}
+        </Show>
         {props.row.title}
       </span>
       {/* A flagged chapter's meta is the words "summary time": the dimmed clock alone would

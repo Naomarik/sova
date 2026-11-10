@@ -28,3 +28,13 @@ test("showsDraftMark: a never-sent session's row keeps its pencil on line 2 only
   assert.equal(showsDraftMark({ hasDraft: true, draftPreview: "idea" }, true), false);
   assert.equal(showsDraftMark({ draftPreview: "2 images" }, true), false);
 });
+
+test("a staged reply alone is a draft, so a card's button and a palette command wait for it (§chat.composer/replying)", async () => {
+  const { chatBlocked, REASON } = await import("./palette");
+  const reply = { entryId: "1a2b3c4d", role: "assistant", part: false, quote: "q", trimmed: false };
+  assert.equal(draftCounts("", [], reply), true);
+  assert.equal(draftCounts("", [], null), false);
+  // The composer registers exactly this as its hasDraft (Composer.tsx, registerComposer and onDraft).
+  const composer = { commands: [], off: null, hasDraft: draftCounts("", [], reply), hideTools: false, hideThinking: false, playbooks: true, undo: null };
+  assert.equal(chatBlocked(composer), REASON.draft);
+});

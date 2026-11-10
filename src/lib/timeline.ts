@@ -67,6 +67,8 @@ export interface TimelineRow {
   sender?: Sender;
   /** input rows only: a fired wake nudge. Not typed by the user, so Inputs Only leaves it out. */
   wake?: boolean;
+  /** input rows only: it replies to an earlier message; the row shows its words after a "Reply" marker. */
+  reply?: boolean;
 }
 
 /** An input row the user typed: what Inputs Only keeps (inputs.ts `typedByUser`). */
@@ -113,6 +115,8 @@ export interface InputTurn {
   sender?: Sender;
   /** A fired wake nudge. */
   wake?: boolean;
+  /** It replies to an earlier message: its preview and text are its words (inputs.ts `inputRows`). */
+  reply?: boolean;
   replies: number;
   tools: number;
   /** Input → the last stamped row of the turn; 0 when nothing stamped followed. */
@@ -141,6 +145,7 @@ export function inputTurns(items: readonly TranscriptItem[]): InputTurn[] {
     };
     if (input.sender) turn.sender = input.sender;
     if (input.wake) turn.wake = true;
+    if (input.reply) turn.reply = true;
     const start = at ? Date.parse(at) : NaN;
     let last = NaN;
     for (let i = index + 1; i < items.length; i++) {
@@ -184,6 +189,7 @@ export function inputRowsOf(items: readonly TranscriptItem[]): TimelineRow[] {
       const row: TimelineRow = { key: `input:${t.id}`, kind: "input", at: t.at!, entryId: t.id, title: turnPreview(t) };
       if (t.sender) row.sender = t.sender;
       if (t.wake) row.wake = true;
+      if (t.reply) row.reply = true;
       if (t.text.trim() && t.text.trim() !== row.title) row.full = t.text;
       const density = densityLine(t);
       if (density) row.meta = density;
@@ -208,6 +214,7 @@ export function withRewindState(rows: readonly TimelineRow[], view: readonly Vie
     // Rebuilt from the view, so the sender comes from it too: the transcript no longer has the marker.
     if (v.sender) row.sender = v.sender;
     if (v.wake) row.wake = true;
+    if (v.reply) row.reply = true;
     if (v.text.trim() && v.text.trim() !== row.title) row.full = v.text;
     out.push(row);
   }

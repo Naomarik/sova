@@ -3,19 +3,18 @@
 // session's: `design_stream` (the page, whole or as edits) and `design_hand_in` (it is done).
 import type { ToolResult, ToolSpec } from "../../shared/harness";
 import { DESIGN_ASK_ABOVE, DESIGN_BATCH_MAX, DESIGN_TOOL, isDesignLabel, type DesignNote } from "../../shared/design";
-import { DESIGN_PAGE_END, DESIGN_PAGE_START, DESIGN_GUIDE_TOPICS, designGuide } from "../../pi-config/extensions/mode/design-guide.ts";
+import { DESIGN_GUIDE_TOPICS, designGuide } from "../../pi-config/extensions/mode/design-guide.ts";
 import { coordinatorCard, tellCoordinator } from "./coordinator";
 import { createRun } from "./setup";
-import { handIn, pageProblem, savePage, takeLook, type DesignParent } from "./batch";
+import { DESIGN_HAND_IN_TOOL, handIn, pageProblem, replyPageThisTurn, savePage, takeLook, type DesignParent } from "./batch";
 import { livePage } from "./live";
 import { lookAtDesign } from "./look";
 import type { TourSize } from "../../shared/tour";
 import { designOf, pendingPage, readPage, viewOf } from "./store";
-import { pageInReply } from "./stream-decode";
 
 export const DESIGN_GUIDE_TOOL = "design_guide";
 export const DESIGN_STREAM_TOOL = "design_stream";
-export const DESIGN_HAND_IN_TOOL = "design_hand_in";
+export { DESIGN_HAND_IN_TOOL };
 export const DESIGN_LOOK_TOOL = "design_look";
 /** The main chat's tools: active only while Design mode is on. */
 export const DESIGN_TOOLS: ReadonlySet<string> = new Set([DESIGN_GUIDE_TOOL, DESIGN_TOOL]);
@@ -107,14 +106,6 @@ const noteOf = (v: unknown): DesignNote | null => {
   return n && ok(n.layout) && ok(n.sections) && ok(n.type) && ok(n.color) ? { layout: n.layout, sections: n.sections, type: n.type, color: n.color } : null;
 };
 
-const textOfReply = (branch: { kind: string; blocks?: { type: string; text?: string }[] }[]): string | null => {
-  for (let i = branch.length - 1; i >= 0; i--) {
-    const e = branch[i]!;
-    if (e.kind === "assistant") return (e.blocks ?? []).filter((b) => b.type === "text").map((b) => b.text ?? "").join("");
-  }
-  return null;
-};
-
 /** A design session's two tools, bound to the design it was started for. */
 export function sessionDesignTools(parent: DesignParent, label: string): ToolSpec[] {
   const own = (asked: unknown): void => {
@@ -188,9 +179,8 @@ export function sessionDesignTools(parent: DesignParent, label: string): ToolSpe
         if (!note) throw new Error("note needs layout, sections, type and color.");
         let html = pendingPage(parent.sessionId, label);
         if (html === null) {
-          // A reply-route model: the page stands between its markers in the reply this call came with.
-          const reply = ctx ? textOfReply(ctx.branch() as never) : null;
-          html = reply === null ? null : pageInReply(reply, DESIGN_PAGE_START, DESIGN_PAGE_END);
+          // A reply-route model: the page stands between its markers in a reply of this turn, not always this call's.
+          html = ctx ? replyPageThisTurn(ctx.branch()) : null;
           if (html === null) html = livePage(parent.sessionId, label)?.text ?? null;
         }
         if (html === null) throw new Error("You have no page to hand in yet.");

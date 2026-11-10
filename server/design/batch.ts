@@ -6,13 +6,15 @@ import { fileURLToPath } from "node:url";
 import { join } from "node:path";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import type { WorkerHost, WorkerSpec, WorkerStart, WorkerState } from "../../shared/chat-runtime";
+import type { HEntry } from "../../shared/harness";
 import { DESIGN_ASK_ABOVE, DESIGN_BATCH_MAX, DESIGN_CONCURRENT, type DesignNote, type DesignRecord, type DesignRun, type DesignSetup, type DesignVersion } from "../../shared/design";
-import { designSessionPrompt } from "../../pi-config/extensions/mode/design-guide.ts";
+import { DESIGN_PAGE_END, DESIGN_PAGE_START, designSessionPrompt } from "../../pi-config/extensions/mode/design-guide.ts";
 import { claudeCodeProviderLoad, sessionDirName } from "../../pi-config/extensions/subagents/worker-load.ts";
 import { SESSIONS_DIR } from "../paths";
 import { readBranch } from "../harness/pi/reader";
 import { agentRoot } from "../state-root";
 import { applySlice, clearLivePage, livePage } from "./live";
+import { pageInReply } from "./stream-decode";
 import { changeDesign, changeDesigns, designOf, designRoot, designSessions, nextLabel, pendingPage, readDesigns, readPage, runOf, setPendingPage, setRunPhase, viewOf, writePage } from "./store";
 
 export interface DesignParent {
@@ -345,8 +347,10 @@ async function settled(parent: DesignParent, label: string, state: WorkerState):
   stopWatching(sid, label);
   // A page that was written whole but never handed in (its session lost its tools, or stopped short) is still a page.
   const live = livePage(sid, label)?.text;
-  const page = pendingPage(sid, label) ?? (live && !pageProblem(live) ? live : null);
-  if (page) commitVersion(parent, label, page, undefined);
+  let page = pendingPage(sid, label) ?? (live && !pageProblem(live) ? live : null);
+  const was = designOf(sid, label);
+  if (!page && was?.route === "reply" && was.sessionFile) page = await unsavedReplyPage(was.sessionFile, readPage(sid, label));
+  if (page && designOf(sid, label)) commitVersion(parent, label, page, undefined);
   const d = designOf(sid, label);
   if (!d) return;
   if (d.sessionFile) await noteUsage(sid, label, d.sessionFile);
@@ -365,6 +369,36 @@ async function settled(parent: DesignParent, label: string, state: WorkerState):
     }
   }
   finishRun(parent, label);
+}
+
+export const DESIGN_HAND_IN_TOOL = "design_hand_in";
+
+/** The turn just ended: everything after the user's last message. */
+const thisTurn = (branch: readonly HEntry[]): readonly HEntry[] => branch.slice(branch.map((e) => e.kind).lastIndexOf("user") + 1);
+
+/** The newest whole page the replies of this turn carry between their markers. A page from an earlier turn is
+    never it: a question in Chat, with no new page, must not find one. */
+export function replyPageThisTurn(branch: readonly HEntry[]): string | null {
+  for (const e of [...thisTurn(branch)].reverse()) {
+    if (e.kind !== "assistant") continue;
+    const text = e.blocks.flatMap((b) => (b.type === "text" ? [b.text] : [])).join("");
+    const page = pageInReply(text, DESIGN_PAGE_START, DESIGN_PAGE_END);
+    if (page !== null && !pageProblem(page)) return page;
+  }
+  return null;
+}
+
+/** A page a reply-route session wrote and never handed in, read from its session file: the live buffer is only
+    this server's memory, and the file is what survives. Null once this turn's hand-in has dealt with it. */
+async function unsavedReplyPage(file: string, current: string | null): Promise<string | null> {
+  try {
+    const branch = await readBranch(file);
+    if (thisTurn(branch).some((e) => e.kind === "tool-result" && e.tool === DESIGN_HAND_IN_TOOL && !e.isError)) return null;
+    const page = replyPageThisTurn(branch);
+    return page === current ? null : page;
+  } catch {
+    return null;
+  }
 }
 
 /** Cost per card, from the session's own replies. API prices apply on a subscription too. */

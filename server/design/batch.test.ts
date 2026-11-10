@@ -1,7 +1,7 @@
 // The batch runner over the real worker registry and a stand-in for the chat processes: no process, no socket.
 // What each discriminating case rules out is named where it matters.
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, beforeEach, test } from "node:test";
@@ -113,6 +113,13 @@ const finish = async (f: Fake, label: string): Promise<void> => {
   await tool("design_stream").execute("t", { label, html: PAGE }, undefined, undefined, undefined);
   await tool("design_hand_in").execute("t", { label, note: NOTE }, undefined, undefined, undefined);
   settle(f);
+};
+
+/** Give `label` a finished version straight, its session's turn left to the caller. */
+const finishInto = async (label: string): Promise<void> => {
+  const tools = sessionDesignTools(parent, label);
+  await tools.find((t) => t.name === "design_stream")!.execute("t", { label, html: PAGE }, undefined, undefined, undefined);
+  await tools.find((t) => t.name === "design_hand_in")!.execute("t", { label, note: NOTE }, undefined, undefined, undefined);
 };
 
 beforeEach(() => {
@@ -309,6 +316,71 @@ test("a page written whole but never handed in is kept when the turn ends", asyn
   settle(fakes[0]!);
   await ticks();
   assert.equal(stat("A").status, "ready");
+  assert.equal(store.readPage(parent.sessionId, "A"), PAGE);
+});
+
+// A reply-route session's file: a user message, then what followed it. No live frames in any of these.
+const OPEN = "<<<design-page>>>";
+const CLOSE = "<<<end-design-page>>>";
+const said = (text: string) => ({ role: "assistant", content: [{ type: "text", text }] });
+const withPage = (html: string) => said(`${OPEN}\n${html}\n${CLOSE}\nDone.`);
+const asked = (text: string) => ({ role: "user", content: [{ type: "text", text }] });
+const handedIn = (isError = false) => ({ role: "toolResult", toolCallId: "c", toolName: "design_hand_in", content: [{ type: "text", text: "ok" }], isError });
+
+async function replySession(messages: unknown[]): Promise<string> {
+  const run = newRun(["ollama-cloud/a"], ["Minimalist"]);
+  const [label] = launchDesigns(parent, run, {});
+  await ticks();
+  const file = join(dir, `reply-${label}.jsonl`);
+  const at = "2026-01-01T00:00:00.000Z";
+  const lines = [{ type: "session", version: 3, id: "x", timestamp: at, cwd: dir }, ...messages.map((message, i) => ({ type: "message", id: `e${i}`, parentId: i ? `e${i - 1}` : null, timestamp: at, message }))];
+  writeFileSync(file, lines.map((l) => JSON.stringify(l)).join("\n") + "\n");
+  store.changeDesign(parent.sessionId, label!, (d) => {
+    d.route = "reply";
+    d.sessionFile = file;
+  });
+  return label!;
+}
+
+test("a page in a reply is kept with no hand-in and no live frames, wherever in the turn it stands", async () => {
+  // The page came with a failed tool call, and a later reply of the same turn says something else.
+  await replySession([asked("the brief"), withPage(PAGE), { role: "toolResult", toolCallId: "c", toolName: "design_look", content: [{ type: "text", text: "No such tool" }], isError: true }, said("I delivered it above.")]);
+  settle(fakes[0]!);
+  await waitFor(() => stat("A").status !== "writing" && stat("A").status !== "queued");
+  assert.equal(stat("A").status, "ready");
+  assert.equal(store.readPage(parent.sessionId, "A"), PAGE);
+});
+
+test("a later turn finds no page in an earlier one, and a handed-in turn adds no second version", async () => {
+  const OTHER = "<!doctype html><html><body>other</body></html>";
+  for (const [messages, versions] of [
+    // A question in Chat: the page is the previous turn's. The bad state commits it as a new version.
+    [[asked("the brief"), withPage(OTHER), asked("why blue?"), said("Because.")], 1],
+    // The reply's page differs from the one handed in (edits); the hand-in is what counts.
+    [[asked("the brief"), withPage(OTHER), handedIn(), said("Done.")], 1],
+    // A hand-in that failed dealt with nothing: the page is kept.
+    [[asked("the brief"), withPage(OTHER), handedIn(true), said("Sorry.")], 2],
+    // The stored page again is no new version.
+    [[asked("the brief"), withPage(PAGE)], 1],
+  ] as const) {
+    const label = await replySession(messages as unknown as unknown[]);
+    await finishInto(label);
+    settle(fakes.at(-1)!);
+    await ticks();
+    await new Promise((r) => setTimeout(r, 20));
+    assert.equal(stat(label).versions.length, versions, JSON.stringify(messages));
+    deleteDesign(parent, label);
+  }
+});
+
+test("design_hand_in finds the page in an earlier reply of its turn, never in an earlier turn", async () => {
+  await replySession([]);
+  const handIn = sessionDesignTools(parent, "A").find((t) => t.name === "design_hand_in")!;
+  const entry = (kind: string, text: string) => ({ kind, blocks: [{ type: "text", text }] });
+  const ctx = (branch: unknown[]) => ({ branch: () => branch }) as never;
+  const page = `${OPEN}\n${PAGE}\n${CLOSE}`;
+  await assert.rejects(handIn.execute("t", { label: "A", note: NOTE }, undefined, undefined, ctx([entry("user", "b"), entry("assistant", page), entry("user", "q"), entry("assistant", "calling")])), /no page/);
+  await handIn.execute("t", { label: "A", note: NOTE }, undefined, undefined, ctx([entry("user", "b"), entry("assistant", page), entry("tool-result", "x"), entry("assistant", "calling")]));
   assert.equal(store.readPage(parent.sessionId, "A"), PAGE);
 });
 

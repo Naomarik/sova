@@ -75,7 +75,9 @@ el.addEventListener(a.name.slice(2),function(e){if(f.call(this,e)===false)e.prev
 const parses=(c)=>{try{new Function(c);return true;}catch{return false;}};
 const code=[...document.querySelectorAll("script:not([src])")].filter((s)=>!s.type||/javascript|ecmascript/i.test(s.type)).map((s)=>s.textContent).filter(parses).join("\\n;\\n");
 if(code)(0,eval)(code);
-});}`;
+});}
+{const raf=requestAnimationFrame.bind(window),said=()=>parent.postMessage({"sova-design-frame":1,op:"drawn"},"*");
+addEventListener("load",()=>{Promise.race([document.fonts.ready,new Promise((r)=>setTimeout(r,1500))]).then(()=>raf(()=>raf(said)));});}`;
 
 /** A grid card holds motion: animations jump to their end, and a script's animation loop stops after a moment. */
 const HOLD_MOTION_SCRIPT = `{const r=requestAnimationFrame.bind(window);let n=0;window.requestAnimationFrame=(f)=>n++<90?r(f):0;}`;
@@ -100,12 +102,15 @@ export function designShellDoc(doc: DesignPageDoc): string {
   for (const [k, v] of Object.entries(${JSON.stringify(DESIGN_PAGE_ATTRS)})) f.setAttribute(k, v);
   f.setAttribute("title", "Prototype");
   f.style.cssText = "border:0;display:block;width:100%;height:100%";
+  const up = (op) => parent.postMessage({ ${JSON.stringify(DESIGN_FRAME_MESSAGE)}: 1, op }, "*");
   let loads = 0;
   f.addEventListener("load", () => {
-    if (++loads === 1) return parent.postMessage({ ${JSON.stringify(DESIGN_FRAME_MESSAGE)}: 1, op: "loaded" }, "*");
+    if (++loads === 1) return void setTimeout(() => up("drawn"), 2500);
     f.remove();
-    parent.postMessage({ ${JSON.stringify(DESIGN_FRAME_MESSAGE)}: 1, op: "left" }, "*");
+    up("left");
   });
+  // The page says when it has drawn, fonts settled; it can only hurry or delay its own picture.
+  addEventListener("message", (e) => { if (e.source === f.contentWindow && e.data && e.data[${JSON.stringify(DESIGN_FRAME_MESSAGE)}] === 1 && e.data.op === "drawn") up("drawn"); });
   // The nonce goes into Sova's own head only: the page's text never passes through this replace.
   f.srcdoc = ${JSON.stringify(doc.head)}.split(${JSON.stringify(DESIGN_NONCE_SLOT)}).join(Array.from(crypto.getRandomValues(new Uint8Array(18)), (b) => b.toString(16).padStart(2, "0")).join("")) + ${JSON.stringify(doc.page)};
   document.body.append(f);
@@ -122,11 +127,11 @@ export function designStreamDoc(partial: string): string {
 export const designHasStyles = (partial: string): boolean => /<\/style\s*>/i.test(partial);
 
 /** What the shell said, or null for any other message. Only from this frame's own shell. */
-export function fromDesignFrame(e: { source: unknown; data: unknown }, shell: unknown): "loaded" | "left" | null {
+export function fromDesignFrame(e: { source: unknown; data: unknown }, shell: unknown): "drawn" | "left" | null {
   if (!shell || e.source !== shell) return null;
   const m = e.data as Record<string, unknown> | null;
   if (!m || typeof m !== "object" || m[DESIGN_FRAME_MESSAGE] !== 1) return null;
-  return m.op === "loaded" || m.op === "left" ? m.op : null;
+  return m.op === "drawn" || m.op === "left" ? m.op : null;
 }
 
 /** About how many tokens of a page have been written, from its characters. */

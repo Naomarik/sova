@@ -26,7 +26,7 @@ function builtBy(html: string, motion = true): string {
   const shell = designShellDoc(designPageDoc(html, { motion }));
   const script = shell.slice(shell.indexOf("<script>") + "<script>".length, shell.lastIndexOf("</script>"));
   const frame: Record<string, unknown> & { srcdoc?: string } = { setAttribute() {}, addEventListener() {}, style: {} };
-  vm.runInNewContext(script, { document: { createElement: () => frame, body: { append() {} } }, parent: { postMessage() {} }, crypto, Array, Uint8Array, Object, JSON });
+  vm.runInNewContext(script, { document: { createElement: () => frame, body: { append() {} } }, parent: { postMessage() {} }, addEventListener() {}, setTimeout() {}, crypto, Array, Uint8Array, Object, JSON });
   return frame.srcdoc!;
 }
 
@@ -59,9 +59,9 @@ test("a grid card holds motion and the full view runs it", () => {
   const held = designPageDoc("x", { motion: false }).head;
   const running = designPageDoc("x", { motion: true }).head;
   assert.match(held, /animation-duration:0s/);
-  assert.match(held, /requestAnimationFrame/);
+  assert.match(held, /window\.requestAnimationFrame=/);
   assert.doesNotMatch(running, /animation-duration:0s/);
-  assert.doesNotMatch(running, /requestAnimationFrame/);
+  assert.doesNotMatch(running, /window\.requestAnimationFrame=/);
 });
 
 test("the streaming document runs nothing and the empty sandbox says so", () => {

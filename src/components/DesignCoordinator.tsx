@@ -69,11 +69,9 @@ export function DesignMessageBox(props: { placeholder: string; label: string; se
           }
         }}
       />
-      <Show when={error()}>
-        <p class="field-error" role="alert">
-          {error()}
-        </p>
-      </Show>
+      <p class="field-error design-box-error" role={error() ? "alert" : undefined}>
+        {error()}
+      </p>
       <div class="button-row design-message-actions">
         <button type="submit" class="button button-primary" disabled={busy() || !text().trim()}>
           Send
@@ -172,13 +170,15 @@ export function DesignCoordinatorPanel(props: { coordinator: DesignCoordinatorIn
           </button>
         </Show>
       </div>
-      <Show when={props.coordinator.ask}>{(a) => <DesignAskPanel ask={a()} store={props.store} />}</Show>
-      <Show when={props.coordinator.card} fallback={<p class="text-muted">Nothing on its card yet. It writes here as it goes.</p>}>
-        <div class="design-coordinator-card">
+      <div class="design-coordinator-card" classList={{ "design-coordinator-card-bare": props.bare }}>
+        <Show when={props.coordinator.ask}>{(a) => <DesignAskPanel ask={a()} store={props.store} />}</Show>
+        <Show when={props.coordinator.card} fallback={<p class="text-muted">Nothing on its card yet. It writes here as it goes.</p>}>
           <Markdown text={props.coordinator.card} />
-        </div>
-      </Show>
-      <DesignDeliveryLine delivery={props.coordinator.delivery} name="the coordinator" />
+        </Show>
+      </div>
+      <div class="design-delivery-line">
+        <DesignDeliveryLine delivery={props.coordinator.delivery} name="the coordinator" />
+      </div>
       <Show when={!props.bare}>
         <DesignMessageBox
           label="Message the coordinator"

@@ -317,6 +317,7 @@ export const TRANSCRIPT_KINDS: readonly TranscriptKind[] = [
   kind({
     id: "design",
     outsideWork: true,
+    estimate: () => "var(--design-card-h)",
     match: (it, ctx) => isCall(it) && ctx.designCard?.(it),
     host: "page",
     placement: "anchored",

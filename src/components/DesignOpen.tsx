@@ -152,6 +152,7 @@ export function DesignOpen(props: { target: DesignOpenTarget; store: DesignStore
   const view = () => props.store.view();
   const d = createMemo(() => (props.target.kind === "design" ? view()?.designs.find((x) => x.label === (props.target as { label: string }).label) : undefined));
   const coordinator = () => coordinatorOf(view());
+  const labels = createMemo(() => designGrid(view()).map((x) => x.label), undefined, { equals: (a, b) => a.length === b.length && a.every((x, i) => x === b[i]) });
   const [hideChat, setHideChat] = createSignal(false);
   const [refine, setRefine] = createSignal(false);
   const [pick, setPick] = createSignal<number | null>(null);
@@ -169,14 +170,14 @@ export function DesignOpen(props: { target: DesignOpenTarget; store: DesignStore
         <Show when={d()}>
           {(x) => (
             <>
-              <span class="text-caption text-muted design-open-meta">
-                {designMeta(x())}
-                <Show when={x().parents.length}> · {parentsLine(x().parents)}</Show>
+              <span class="text-caption text-muted design-open-meta" title={designFixLine(x()) || designMeta(x())}>
+                {designFixLine(x()) || designMeta(x())}
+                <Show when={x().parents.length && !designFixLine(x())}> · {parentsLine(x().parents)}</Show>
               </span>
               <Chip tone={designStatusTone(x())} live={designIsBusy(x())}>
                 {designStatusWord(x())}
               </Chip>
-              <Show when={designFixLine(x())}>{(line) => <span class="text-caption text-muted design-open-meta">{line()}</span>}</Show>
+
               <Show when={x().versions.length > 1}>
                 <Select class="design-open-version" label="Version" hideLabel value={String(version())} options={x().versions.map((v) => ({ value: String(v.n), label: versionLabel(x().label, v.n) }))} onChange={(v) => setPick(Number(v))} />
               </Show>
@@ -228,15 +229,11 @@ export function DesignOpen(props: { target: DesignOpenTarget; store: DesignStore
               <div class="design-open-page design-open-page-scroll">
                 <DesignCoordinatorPanel coordinator={c()} view={view()} store={props.store} bare />
                 <div class="design-grid design-open-grid">
-                  <For each={designGrid(view())}>
-                    {(item) => (
-                      <DesignTile
-                        d={item}
-                        store={props.store}
-                        cacheKey={props.path}
-                        onOpen={() => props.onSwitch({ kind: "design", label: item.label })}
-                        onRefine={() => props.onSwitch({ kind: "design", label: item.label })}
-                      />
+                  <For each={labels()}>
+                    {(label) => (
+                      <Show when={designGrid(view()).find((x) => x.label === label)}>
+                        {(item) => <DesignTile d={item()} store={props.store} cacheKey={props.path} onOpen={() => props.onSwitch({ kind: "design", label })} onRefine={() => props.onSwitch({ kind: "design", label })} />}
+                      </Show>
                     )}
                   </For>
                 </div>

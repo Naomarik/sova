@@ -4,24 +4,45 @@ import { DESIGN_FRAME_LEFT, DESIGN_PAGE_HEIGHT, DESIGN_PAGE_WIDTH, DESIGN_SHELL_
 
 const STREAM_MS = 340;
 
-/** The first ancestor that scrolls: what "near the viewport" has to be measured against. */
-function scroller(el: HTMLElement): HTMLElement | null {
+/** Every ancestor that scrolls, innermost first, with the element to watch in each. */
+function scrollChain(el: HTMLElement): { root: HTMLElement; target: HTMLElement }[] {
+  const out: { root: HTMLElement; target: HTMLElement }[] = [];
+  let target = el;
   for (let p = el.parentElement; p; p = p.parentElement) {
     const o = getComputedStyle(p).overflowY;
-    if (o === "auto" || o === "scroll") return p;
+    if (o !== "auto" && o !== "scroll") continue;
+    out.push({ root: p, target });
+    target = p;
   }
-  return null;
+  return out;
 }
 
-/** Whether a box is within a screenful of being seen. A frame is held only while this is true. */
+const NEAR_MARGIN = "600px 0px";
+
+/**
+ * Whether a box is within about a screen of being seen, through every scroller around it (a tile
+ * sits in a card's scroller inside the transcript's). A frame is held only while this is true.
+ */
 export function createNearViewport(el: () => HTMLElement | undefined): () => boolean {
   const [near, setNear] = createSignal(false);
   onMount(() => {
     const box = el();
     if (!box) return;
-    const io = new IntersectionObserver((rows) => setNear(rows.at(-1)!.isIntersecting), { root: scroller(box), rootMargin: "600px 0px" });
-    io.observe(box);
-    onCleanup(() => io.disconnect());
+    const chain = scrollChain(box);
+    if (!chain.length) return setNear(true);
+    const seen = chain.map(() => false);
+    const ios = chain.map(
+      ({ root, target }, i) =>
+        new IntersectionObserver(
+          (rows) => {
+            seen[i] = rows.at(-1)!.isIntersecting;
+            setNear(seen.every(Boolean));
+          },
+          { root, rootMargin: NEAR_MARGIN },
+        ),
+    );
+    ios.forEach((io, i) => io.observe(chain[i]!.target));
+    onCleanup(() => ios.forEach((io) => io.disconnect()));
   });
   return near;
 }
@@ -55,7 +76,7 @@ export function DesignSealedFrame(props: { html: string; motion: boolean; title:
     const onMessage = (e: MessageEvent) => {
       const said = fromDesignFrame(e, frame?.contentWindow);
       if (said === "left") setLeft(true);
-      if (said === "loaded") props.onDrawn?.();
+      if (said === "drawn") props.onDrawn?.();
     };
     window.addEventListener("message", onMessage);
     onCleanup(() => window.removeEventListener("message", onMessage));
@@ -77,19 +98,26 @@ export function DesignSealedFrame(props: { html: string; motion: boolean; title:
   );
 }
 
+/** Long enough after a back frame's load for its fonts to have settled, so a swap never shows text jumping. */
+const SWAP_SETTLE_MS = 90;
+
 /**
- * A page being written, as a still picture: an empty sandbox redrawn about 3 times a second, in two
- * frames swapped on load, so each redraw replaces a finished picture and never blanks the card.
- * Before its first style block closes a page shows nothing, so that wait reads as progress instead.
+ * A page being written, as a still picture: an empty sandbox redrawn about 3 times a second. The next
+ * picture is built in the frame stacked behind the one showing, and comes to the front only once
+ * loaded, painted and settled, so a redraw never blanks the card or shows half a page. Before its
+ * first style block closes a page shows nothing, so that wait reads as progress instead.
  */
 export function DesignStreamFrame(props: { text: string; title: string; waiting?: string }) {
   let a!: HTMLIFrameElement;
   let b!: HTMLIFrameElement;
   const [front, setFront] = createSignal<"a" | "b">("a");
+  const [painted, setPainted] = createSignal(false);
   const drawable = () => designHasStyles(props.text);
   let timer: ReturnType<typeof setTimeout> | undefined;
+  let settle: ReturnType<typeof setTimeout> | undefined;
   let loading = false;
   let drawn = "";
+  let frame = 0;
   const draw = () => {
     timer = undefined;
     if (loading || !a || !b) return;
@@ -101,9 +129,17 @@ export function DesignStreamFrame(props: { text: string; title: string; waiting?
   };
   const onLoad = (which: "a" | "b") => {
     if (!loading) return; // a frame's first blank document
-    loading = false;
-    setFront(which);
-    if (!timer) timer = setTimeout(draw, STREAM_MS);
+    const show = () => {
+      loading = false;
+      setFront(which);
+      setPainted(true);
+      if (!timer) timer = setTimeout(draw, STREAM_MS);
+    };
+    frame = requestAnimationFrame(() => {
+      frame = requestAnimationFrame(() => {
+        settle = setTimeout(show, SWAP_SETTLE_MS);
+      });
+    });
   };
   createEffect(
     on(
@@ -113,7 +149,11 @@ export function DesignStreamFrame(props: { text: string; title: string; waiting?
       },
     ),
   );
-  onCleanup(() => clearTimeout(timer));
+  onCleanup(() => {
+    clearTimeout(timer);
+    clearTimeout(settle);
+    cancelAnimationFrame(frame);
+  });
   const attrs = (which: "a" | "b") => ({
     class: `design-frame design-frame-stream${front() === which ? " design-frame-front" : ""}`,
     title: props.title,
@@ -128,7 +168,7 @@ export function DesignStreamFrame(props: { text: string; title: string; waiting?
         <iframe ref={a} {...attrs("a")} />
         <iframe ref={b} {...attrs("b")} />
       </Show>
-      <Show when={!drawable()}>
+      <Show when={!painted()}>
         <div class="design-frame-note" role="status">
           {props.text ? `Writing styles · about ${tokensOfText(props.text.length).toLocaleString("en-US")} tokens` : props.waiting ?? "Starting the page"}
         </div>

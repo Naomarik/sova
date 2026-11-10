@@ -33,7 +33,7 @@ import { DesignCoordinatorPanel } from "./DesignCoordinator";
 import { createNearViewport, DesignScale, DesignSealedFrame, DesignStreamFrame } from "./DesignFrame";
 import { DesignOpen, DesignRefinePanel } from "./DesignOpen";
 import { TextArea, Toggle } from "./form";
-import { Chip, Icon } from "./ui";
+import { Chip } from "./ui";
 import "./DesignCard.css";
 
 /** The chat a Design card or the Gallery reads. Only a chat you can write to provides it. */
@@ -185,6 +185,7 @@ function DesignSetupCard(props: { run: DesignRunView; store: DesignStore }) {
         <h3 class="card-title">Design</h3>
         <Chip>Setup</Chip>
       </div>
+      <div class="design-card-scroll">
       <div class="design-card-body design-setup">
         <TextArea label="Brief" rows="2" value={draft().brief} onInput={(brief) => change({ ...draft(), brief })} />
         <div class="stack-2">
@@ -246,12 +247,39 @@ function DesignSetupCard(props: { run: DesignRunView; store: DesignStore }) {
           </div>
         </div>
       </div>
-      <Show when={ask()}>
-        {(a) => (
-          <div class="design-card-body design-spend" role="group" aria-label="Confirm the spend">
-            <p>
-              {a().designs} designs{a().estimateUsd ? `, about $${a().estimateUsd!.toFixed(2)}` : ""}. That's more than {caps().askAbove}, so we ask before starting.
-            </p>
+      </div>
+      <div class="card-foot design-setup-foot">
+        <div class="design-setup-summary">
+          <Show
+            when={ask()}
+            fallback={
+              <>
+                <span>{setupSummary(count())}</span>
+                <span class={saving() === "error" || error() ? "field-error" : "text-muted"} role={error() ? "alert" : undefined}>
+                  {saving() === "error" ? "This selection couldn't be saved. Your clicks are still here." : error() || blocked() || ""}
+                </span>
+              </>
+            }
+          >
+            {(a) => (
+              <>
+                <span>
+                  {a().designs} designs{a().estimateUsd ? `, about $${a().estimateUsd!.toFixed(2)}` : ""}.
+                </span>
+                <span class="text-muted">That's more than {caps().askAbove}, so we ask before starting.</span>
+              </>
+            )}
+          </Show>
+        </div>
+        <Show
+          when={ask()}
+          fallback={
+            <button type="button" class="button button-primary" disabled={busy() || !!blocked()} onClick={() => void start(false)}>
+              Start Coordinator
+            </button>
+          }
+        >
+          {(a) => (
             <div class="button-row">
               <button type="button" class="button button-ghost" disabled={busy()} onClick={() => setAsk(null)}>
                 Cancel
@@ -260,26 +288,7 @@ function DesignSetupCard(props: { run: DesignRunView; store: DesignStore }) {
                 Start {a().designs} Designs
               </button>
             </div>
-          </div>
-        )}
-      </Show>
-      <div class="card-foot design-setup-foot">
-        <div class="design-setup-summary">
-          <span>{setupSummary(count())}</span>
-          <Show when={saving() === "error"}>
-            <span class="field-error">This selection couldn't be saved. Your clicks are still here.</span>
-          </Show>
-          <Show when={blocked()}>{(why) => <span class="text-muted">{why()}</span>}</Show>
-          <Show when={error()}>
-            <span class="field-error" role="alert">
-              {error()}
-            </span>
-          </Show>
-        </div>
-        <Show when={!ask()}>
-          <button type="button" class="button button-primary" disabled={busy() || !!blocked()} onClick={() => void start(false)}>
-            Start Coordinator
-          </button>
+          )}
         </Show>
       </div>
     </>
@@ -292,6 +301,8 @@ function DesignRunBody(props: { run: DesignRunView; store: DesignStore; newest: 
   const [refining, setRefining] = createSignal<string | null>(null);
   const [opened, setOpened] = createSignal<DesignOpenTarget | null>(null);
   const designs = createMemo(() => designsOfRun(props.store.view(), props.run.id, props.run.labels));
+  // Keyed by label: a record changing never rebuilds its tile or the frame in it.
+  const labels = createMemo(() => designs().map((d) => d.label), undefined, { equals: (a, b) => a.length === b.length && a.every((x, i) => x === b[i]) });
   const counts = () => statusCounts(designs());
   const anyLive = () => designs().some(designIsBusy);
   const coordinator = () => coordinatorOf(props.store.view());
@@ -299,18 +310,17 @@ function DesignRunBody(props: { run: DesignRunView; store: DesignStore; newest: 
   return (
     <>
       <div class="card-head design-run-head">
-        <div class="design-run-title">
-          <h3 class="card-title">{briefTitle(props.run.setup.brief)}</h3>
-          <Show when={designs().length > 0}>
-            <span class="text-caption text-muted">{batchLine(designs())}</span>
+        <h3 class="card-title design-run-title">{briefTitle(props.run.setup.brief)}</h3>
+        <div class="design-run-sub">
+          <span class="text-caption text-muted design-run-batch">{designs().length > 0 ? batchLine(designs()) : ""}</span>
+          <Show when={designs().length > 0} fallback={<Chip live={props.run.phase === "researching"}>{props.run.phase === "confirm" ? "Waiting on you" : props.run.phase === "stopped" ? "Stopped" : "Looking for the screen"}</Chip>}>
+            <Chip live={anyLive()} tone={anyLive() ? "accent" : undefined}>
+              {counts()}
+            </Chip>
           </Show>
         </div>
-        <Show when={designs().length > 0} fallback={<Chip live={props.run.phase === "researching"}>{props.run.phase === "confirm" ? "Waiting on you" : props.run.phase === "stopped" ? "Stopped" : "Looking for the screen"}</Chip>}>
-          <Chip live={anyLive()} tone={anyLive() ? "accent" : undefined}>
-            {counts()}
-          </Chip>
-        </Show>
       </div>
+      <div class="design-card-scroll">
       <Show when={props.run.error}>
         {(e) => (
           <div class="design-card-body">
@@ -327,31 +337,28 @@ function DesignRunBody(props: { run: DesignRunView; store: DesignStore; newest: 
       <Show when={designs().length > 0}>
         <div class="design-card-body">
           <div class="design-grid">
-            <For each={designs()}>
-              {(d) => (
-                <DesignTile
-                  d={d}
-                  store={props.store}
-                  cacheKey={props.cacheKey}
-                  onOpen={() => setOpened({ kind: "design", label: d.label })}
-                  onRefine={() => setRefining(d.label)}
-                />
+            <For each={labels()}>
+              {(label) => (
+                <Show when={designs().find((d) => d.label === label)}>
+                  {(d) => <DesignTile d={d()} store={props.store} cacheKey={props.cacheKey} onOpen={() => setOpened({ kind: "design", label })} onRefine={() => setRefining(label)} />}
+                </Show>
               )}
             </For>
           </div>
         </div>
       </Show>
-      <Show when={refined()}>
-        {(d) => (
-          <div class="design-card-body design-card-refine">
-            <DesignRefinePanel d={d()} store={props.store} onClose={() => setRefining(null)} />
+      </div>
+      <Show when={props.newest && coordinator()}>
+        {(c) => (
+          <div class="design-card-coordinator">
+            <DesignCoordinatorPanel coordinator={c()} view={props.store.view()} store={props.store} onOpen={() => setOpened({ kind: "coordinator" })} />
           </div>
         )}
       </Show>
-      <Show when={props.newest && coordinator()}>
-        {(c) => (
-          <div class="design-card-body design-card-coordinator">
-            <DesignCoordinatorPanel coordinator={c()} view={props.store.view()} store={props.store} onOpen={() => setOpened({ kind: "coordinator" })} />
+      <Show when={refined()}>
+        {(d) => (
+          <div class="design-card-refine">
+            <DesignRefinePanel d={d()} store={props.store} onClose={() => setRefining(null)} />
           </div>
         )}
       </Show>
@@ -409,43 +416,63 @@ function DesignConfirmPanel(props: { run: DesignRunView; confirm: NonNullable<De
 
 // ---- One design -------------------------------------------------------------------------------
 
+/** One finished page in a tile's frame: at most two at once, the newest taking over only once drawn. */
+interface PageSlot {
+  v: number;
+  html: string;
+}
+
 /** One design's picture in a grid: the page as far as it has been written, then finished. */
 export function DesignThumb(props: { d: DesignRecord; store: DesignStore; cacheKey: string }) {
   let box: HTMLDivElement | undefined;
   const near = createNearViewport(() => box);
   const live = () => props.store.live(props.d.label);
   const version = createMemo(() => designLatest(props.d));
-  const writing = () => !!props.d.live;
-  const [html, setHtml] = createSignal<string | null>(null);
+  const [slots, setSlots] = createSignal<PageSlot[]>([]);
+  const [front, setFront] = createSignal(0);
   const [failed, setFailed] = createSignal("");
-  const [drawn, setDrawn] = createSignal(false);
   createEffect(
-    on([version, near], ([v, isNear]) => {
-      if (!v || !isNear || html() !== null) return;
-      setFailed("");
-      designPageText(props.store, props.cacheKey, props.d.label, v)
-        .then((t) => setHtml(t))
-        .catch((e) => setFailed(e instanceof Error ? e.message : "This page couldn't be loaded."));
+    on(near, (isNear) => {
+      if (isNear) return;
+      setSlots([]);
+      setFront(0);
     }),
   );
   createEffect(
-    on(version, () => {
-      setHtml(null);
-      setDrawn(false);
-    }, { defer: true }),
+    on([version, near], ([v, isNear]) => {
+      if (!v || !isNear || slots().some((s) => s.v === v)) return;
+      setFailed("");
+      designPageText(props.store, props.cacheKey, props.d.label, v)
+        .then((html) => {
+          if (v === version()) setSlots((list) => [...list.filter((s) => s.v === front()), { v, html }]);
+        })
+        .catch((e) => setFailed(e instanceof Error ? e.message : "This page couldn't be loaded."));
+    }),
   );
+  const drawn = (slot: PageSlot) => {
+    if (slot.v < front()) return;
+    setFront(slot.v);
+    setSlots((list) => list.filter((s) => s.v === slot.v));
+  };
+  const writing = () => !!props.d.live || props.d.status === "writing" || props.d.status === "fixing";
+  // Writing to finished keeps the last picture until the finished page has drawn.
+  const showStream = () => writing() || (version() > 0 && front() < version() && !!live());
   const title = () => `Design ${props.d.label}, ${props.d.direction}`;
   return (
     <div class="design-tile-page" ref={box}>
       <DesignScale label={`${title()}: ${STATUS_WORD[props.d.status]}`}>
         <Show when={near()}>
-          <Show when={html() !== null && !writing()} fallback={null}>
-            <div class={drawn() ? "design-frame-layer" : "design-frame-layer design-frame-layer-hidden"}>
-              <DesignSealedFrame html={html()!} motion={false} title={title()} onDrawn={() => setDrawn(true)} />
+          <For each={slots()}>
+            {(slot) => (
+              <div class="design-frame-layer" style={{ "z-index": front() === slot.v ? 2 : 1 }}>
+                <DesignSealedFrame html={slot.html} motion={false} title={title()} onDrawn={() => drawn(slot)} />
+              </div>
+            )}
+          </For>
+          <Show when={showStream()}>
+            <div class="design-frame-layer" style={{ "z-index": 3 }}>
+              <DesignStreamFrame text={live()?.text ?? ""} title={title()} waiting={designWaiting(props.d)} />
             </div>
-          </Show>
-          <Show when={writing() || props.d.status === "writing" || props.d.status === "fixing" || (html() !== null && !drawn() && live())}>
-            <DesignStreamFrame text={live()?.text ?? ""} title={title()} waiting={designWaiting(props.d)} />
           </Show>
         </Show>
       </DesignScale>
@@ -478,46 +505,51 @@ export function DesignTile(props: { d: DesignRecord; store: DesignStore; cacheKe
     }
   };
   const meta = () => designMeta(props.d, props.store.live(props.d.label)?.text.length);
+  // One two-line place for why a design isn't simply fine: nothing around it ever moves for it.
+  const reason = () => {
+    if (error()) return { text: error(), error: true, alert: true };
+    if (props.d.status === "failed" && props.d.error) return { text: props.d.error, error: true, alert: false };
+    if (props.d.delivery?.state === "undelivered") return { text: props.d.delivery.error || "That message couldn't be delivered. Your text is still in the box.", error: true, alert: false };
+    return { text: designFixLine(props.d), error: false, alert: false };
+  };
   return (
     <article class="design-tile" aria-label={`Design ${props.d.label}`}>
       <DesignThumb d={props.d} store={props.store} cacheKey={props.cacheKey} />
       <div class="design-tile-info">
         <div class="design-tile-title">
           <span class="design-tile-label">{props.d.label}</span>
-          <span class="design-tile-direction">{props.d.direction}</span>
-          <Chip tone={props.d.delivery?.state === "queued" ? "accent" : designStatusTone(props.d)} live={designIsBusy(props.d) && props.d.delivery?.state !== "queued"}>
-            {designStatusWord(props.d)}
-          </Chip>
+          <span class="design-tile-direction" title={props.d.direction}>
+            {props.d.direction}
+          </span>
+          <span class="design-tile-chip">
+            <Chip tone={props.d.delivery?.state === "queued" ? "accent" : designStatusTone(props.d)} live={designIsBusy(props.d) && props.d.delivery?.state !== "queued"}>
+              {designStatusWord(props.d)}
+            </Chip>
+          </span>
         </div>
-        <p class="text-caption text-muted design-tile-meta">
+        <p class="text-caption text-muted design-tile-meta" title={meta()}>
           {meta()}
           <Show when={props.d.parents.length > 0}> · {parentsLine(props.d.parents)}</Show>
         </p>
-        <Show when={props.d.status === "failed" && props.d.error}>
-          <p class="text-caption design-tile-error">{props.d.error}</p>
-        </Show>
-        <Show when={designFixLine(props.d)}>{(line) => <p class="text-caption text-muted design-tile-meta">{line()}</p>}</Show>
-        <Show when={props.d.delivery?.state === "undelivered"}>
-          <p class="text-caption design-tile-error">{props.d.delivery?.error || "That message couldn't be delivered. Your text is still in the box."}</p>
-        </Show>
-        <Show when={error()}>
-          <p class="text-caption design-tile-error" role="alert">
-            {error()}
-          </p>
-        </Show>
+        <p class={`text-caption design-tile-note${reason().error ? " design-tile-error" : " text-muted"}`} role={reason().alert ? "alert" : undefined} title={reason().text || undefined}>
+          {reason().text}
+        </p>
         <div class="design-tile-actions">
-          <Show when={props.d.status === "failed"}>
-            <button type="button" class="button button-sm" disabled={busy()} onClick={() => void retry()}>
-              <Icon name="refresh" small />
-              Retry
-            </button>
-          </Show>
           <button type="button" class="button button-sm" disabled={!designCanOpen(props.d)} title={designCanOpen(props.d) ? undefined : "Opens once the page is finished."} onClick={() => props.onOpen()}>
             Open
           </button>
-          <button type="button" class="button button-sm" disabled={!designCanRefine(props.d)} title={designCanRefine(props.d) ? undefined : "Refine waits for a finished page."} onClick={() => props.onRefine()}>
-            Refine
-          </button>
+          <Show
+            when={props.d.status === "failed"}
+            fallback={
+              <button type="button" class="button button-sm" disabled={!designCanRefine(props.d)} title={designCanRefine(props.d) ? undefined : "Refine waits for a finished page."} onClick={() => props.onRefine()}>
+                Refine
+              </button>
+            }
+          >
+            <button type="button" class="button button-sm" disabled={busy()} onClick={() => void retry()}>
+              Retry
+            </button>
+          </Show>
           <button type="button" class="button button-sm" disabled={!props.d.sessionFile} title={props.d.sessionFile ? undefined : "Its session hasn't started."} onClick={() => props.onOpen()}>
             Chat
           </button>

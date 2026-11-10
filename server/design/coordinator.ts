@@ -285,6 +285,9 @@ export function reattachCoordinators(): void {
       setCoordinator(sid, viewFor(st));
       refreshLooks({ sessionId: sid, path: st.parentPath }, st);
       syncBriefImages(sid);
+      // A turn that ended while the server was down was never heard: a brief still being prepared would wait for ever.
+      const phase = runOf(sid, st.runId)?.phase;
+      if ((phase === "researching" || phase === "brief") && ports().workers({ sessionId: sid, path: st.parentPath }).state(st.chatId) !== "running") onTurnEnded(st);
     } catch (err) {
       console.warn(`[design] coordinator of ${sid} was not followed: ${err instanceof Error ? err.message : String(err)}`);
     }
@@ -688,7 +691,13 @@ export async function startBrief(parent: BrowseParent, runId: string, a: { rev: 
     b.startedRev = b.rev;
     b.startedAt = new Date().toISOString();
   });
-  noteForNextTurn(st, `The user pressed Start on brief revision ${run.brief.textRev}; ${labels.join(", ")} started from it. The brief is frozen.`);
+  noteForNextTurn(st, `The user pressed Start on brief revision ${run.brief.textRev}; ${labels.join(", ")} started from it. The brief is frozen, and Sova replaced your card with a line saying so: write it again when you next have something to say.`);
+  // Its card was about the brief, which is over: Sova says what happened instead of spending a turn on it.
+  const card = `The designs started from the brief: ${labels.join(", ")}. Each one's note reaches me as it finishes.`;
+  st.revision++;
+  st.card = card;
+  st.revisions.push({ rev: st.revision, at: new Date().toISOString(), text: card });
+  if (st.revisions.length > COORDINATOR_LIMITS.revisions) st.revisions.splice(0, st.revisions.length - COORDINATOR_LIMITS.revisions);
   publish(st);
   return labels;
 }
@@ -772,7 +781,12 @@ function onTurnEnded(st: CoordinatorState): void {
   const run = runOf(st.sessionId, st.runId);
   const parent = { sessionId: st.sessionId, path: st.parentPath };
   if (run?.phase === "researching") {
-    if (st.ask || st.briefNudged) return;
+    if (st.ask) return;
+    if (st.briefNudged) {
+      // Reminded once already and still nothing: the card says so, and the box is how to get it going again.
+      if (!run.error) changeDesigns(st.sessionId, (s) => void (s.runs.find((r) => r.id === run.id)!.error = "The coordinator stopped without writing the brief. Tell it what to do in its box."));
+      return;
+    }
     st.briefNudged = true;
     save(st);
     void wakeSafely(st, "Your turn ended with no Design Brief on the user's card. Finish preparing and call design_brief, or say on your card what you're waiting for.", `${run.id}:brief:nudge:first`);
@@ -985,6 +999,7 @@ export function coordinatorTools(sessionId: string): ToolSpec[] {
       if (outcome.why !== undefined) return refuse(outcome.why);
       st.briefNudged = false;
       publish(st);
+      changeDesigns(parent.sessionId, (s) => void delete s.runs.find((r) => r.id === st.runId)!.error);
       refreshLooks(parent, st);
       refreshNotes(st);
       const next = outcome.open ? `It waits on ${outcome.open} question${outcome.open === 1 ? "" : "s"}. End your turn; the answers come as your next message.` : outcome.unwritten ? `Now write the Full Prompt, with design_brief (prompt, baseRev ${outcome.rev}).` : "End your turn. The user reads it and presses Start; you launch nothing.";

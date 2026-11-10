@@ -127,6 +127,7 @@ test("Start launches exactly what's on the card, with no coordinator turn, and f
   assert.equal(log.launches.length, 1);
   assert.equal(log.launches[0]!.brief, "The whole prompt.");
   assert.equal(log.sends.length, 0, "no coordinator turn");
+  assert.match(coordinatorCard(parent.sessionId)!.card, /^The designs started from the brief: A, B\./, "the card no longer reads as the brief");
   assert.equal(brief(run.id).startedRev, brief(run.id).rev);
   refused(await t.design_brief({ baseRev: brief(run.id).textRev, summary: "changed" }));
   await assert.rejects(editBrief(parent, run.id, { field: "summary", text: "changed" }), /frozen/);
@@ -528,6 +529,29 @@ test("the coordinator may mark a link Not a Reference, and it then counts as cho
   await start(run);
   assert.equal(log.launches.length, 1);
   assert.equal(log.launches[0]!.references.length, 0);
+});
+
+test("a restart while a brief is being prepared: a turn that ended unheard is picked up, never left waiting", async () => {
+  const { reattachCoordinators } = await import("./coordinator");
+  const run = runWith(2, 3);
+  await started(run);
+  forgetDesignCache();
+  reattachCoordinators();
+  assert.ok(log.sends.some((x) => x.key === `${run.id}:brief:nudge:first`), "reminded once after the restart");
+  const before = log.sends.length;
+  reattachCoordinators();
+  assert.equal(log.sends.filter((x) => x.key === `${run.id}:brief:nudge:first`).length, 1, "and only once");
+  assert.match(runOf(parent.sessionId, run.id)!.error!, /stopped without writing the brief/, "then the card says why");
+  assert.ok(log.sends.length >= before);
+});
+
+test("a restart with the coordinator still at work waits for its turn to end", async () => {
+  const { reattachCoordinators } = await import("./coordinator");
+  const run = runWith(2, 3);
+  await started(run);
+  workerState = "running";
+  reattachCoordinators();
+  assert.equal(log.sends.filter((x) => x.key.startsWith(`${run.id}:brief:nudge`)).length, 0);
 });
 
 test("Not This Screen sends the user's words on, clears the screen, and an address in them counts as theirs", async () => {

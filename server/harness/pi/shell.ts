@@ -8,6 +8,7 @@
 // pi records the result itself, deferred while the agent streams (P40); `saved` finds the entry once it is written.
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
+import { userInfo } from "node:os";
 import { basename } from "node:path";
 import { createEventBus, createLocalBashOperations, getShellConfig, type AgentSession, type BashOperations, type EventBus } from "@earendil-works/pi-coding-agent";
 import type { HEntry, HarnessShell, ShellResult } from "../../../shared/harness";
@@ -56,11 +57,26 @@ export function pickOperations(hook: { operations?: BashOperations } | undefined
   return { kind: "local" };
 }
 
+/** The account's login shell as the system records it (getpwuid on Linux and macOS); undefined when it can't be read. */
+function accountShell(): string | undefined {
+  try {
+    return userInfo().shell ?? undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 /** The user's login shell when it is zsh and pi's settings name no shell of their own (`shellPath`): a user command
     runs there, with the user's setup loaded first. Otherwise undefined: pi's own pick, as for the agent's commands.
+    The login shell is SHELL, else (a server started with no SHELL, as a service can be) the account's own.
     Exported for its test. */
-export function loginZsh(shellPath: string | undefined, env: { SHELL?: string } = process.env, exists: (path: string) => boolean = existsSync): string | undefined {
-  const login = env.SHELL;
+export function loginZsh(
+  shellPath: string | undefined,
+  env: { SHELL?: string } = process.env,
+  exists: (path: string) => boolean = existsSync,
+  account: () => string | undefined = accountShell,
+): string | undefined {
+  const login = env.SHELL || account();
   if (shellPath || !login?.startsWith("/") || basename(login) !== "zsh" || !exists(login)) return undefined;
   return login;
 }
@@ -68,6 +84,13 @@ export function loginZsh(shellPath: string | undefined, env: { SHELL?: string } 
 /** The user's terminal setup as a login zsh reads it (its login profile, then its config, under ZDOTDIR or the home
     folder), with no input and everything it prints hidden. */
 const ZSH_SETUP = '{ [[ -r "${ZDOTDIR:-$HOME}/.zprofile" ]] && source "${ZDOTDIR:-$HOME}/.zprofile"; [[ -r "${ZDOTDIR:-$HOME}/.zshrc" ]] && source "${ZDOTDIR:-$HOME}/.zshrc"; } >/dev/null 2>&1 </dev/null';
+
+/** What a confined zsh needs beyond the sandbox's own environment: ZDOTDIR, where the user keeps the setup, when the
+    server has one (the sandbox's environment leaves it out, and zsh would read the home folder's setup instead). Only
+    this command gets it, never the agent's own commands. Exported for its test. */
+export function zshEnv(env: { ZDOTDIR?: string } = process.env): Record<string, string> | undefined {
+  return env.ZDOTDIR ? { ZDOTDIR: env.ZDOTDIR } : undefined;
+}
 
 /** `command` as `zsh -c` runs it: the setup, then the command through eval. zsh parses the whole -c text before it
     runs any of it, so an alias the setup defines expands only in text parsed after it, eval's. Exported for its test. */
@@ -216,6 +239,7 @@ export function piShell(session: () => AgentSession, sandbox: () => SandboxSeen)
           },
           // In zsh with the user's setup; `resolved` stays what the confinement accepts, the one text pi hands it.
           zsh ? [zsh, "-c", zshCommand(resolved)] : [shell.shell, ...shell.args, resolved],
+          { env: zsh ? zshEnv() : undefined },
         );
         if (!ready.ok) return { refused: `The sandbox couldn't be prepared, so nothing ran: ${ready.error}`, why: "sandbox" };
         prepared = ready.value;

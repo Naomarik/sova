@@ -109,14 +109,18 @@ describe("the user's own commands on pi", () => {
     assert.deepEqual(pickOperations({}, { on: false }), { kind: "local" });
   });
 
-  test("loginZsh: the login shell when it is an existing zsh and pi names no shell; otherwise pi's own pick", () => {
-    const zshes = ["/bin/zsh", "/usr/local/bin/zsh"];
+  test("loginZsh: the login shell (SHELL, else the account's) when it is an existing zsh and pi names no shell; otherwise pi's own pick", () => {
+    const zshes = ["/bin/zsh", "/usr/local/bin/zsh", "/usr/bin/zsh"];
+    const others = ["/bin/bash", "/usr/bin/fish", "zsh", "/bin/zsh5"];
     for (const shellPath of [undefined, "/bin/bash", "/bin/zsh"])
-      for (const SHELL of [undefined, ...zshes, "/bin/bash", "/usr/bin/fish", "zsh", "/bin/zsh5"])
-        for (const exists of [true, false]) {
-          const want = !shellPath && exists && zshes.includes(SHELL!) ? SHELL : undefined;
-          assert.equal(loginZsh(shellPath, { SHELL }, () => exists), want, JSON.stringify({ shellPath, SHELL, exists }));
-        }
+      for (const SHELL of [undefined, "", ...zshes, ...others])
+        for (const account of [undefined, "/usr/bin/zsh", "/bin/bash"])
+          for (const exists of [true, false]) {
+            // SHELL when it names one; only a server started without it falls back to the account's.
+            const login = SHELL || account;
+            const want = !shellPath && exists && zshes.includes(login!) ? login : undefined;
+            assert.equal(loginZsh(shellPath, { SHELL }, () => exists, () => account), want, JSON.stringify({ shellPath, SHELL, account, exists }));
+          }
   });
 
   test("zshCommand: the setup on its own line, then eval of exactly the typed command, however it is quoted", () => {

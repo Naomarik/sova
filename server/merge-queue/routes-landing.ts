@@ -128,7 +128,7 @@ export function registerMergeLandingRoutes(app: Hono<any>, deps: LandingRouteDep
     if (typeof b.commit !== "string" || !/^[0-9a-f]{40,64}$/.test(b.commit)) return bad('"commit" is the full commit the row showed');
     if (b.dryRun !== undefined && b.dryRun !== true) return bad('"dryRun" is true or absent');
     if (b.dryRun === true && b.digest !== undefined) return bad("Send dryRun: true or a digest, not both");
-    if (b.dryRun !== true && (typeof b.digest !== "string" || !/^(|[0-9a-f]{8,64})$/.test(b.digest))) return bad('"digest" is the dry run\'s digest');
+    if (b.dryRun !== true && (typeof b.digest !== "string" || !/^(|[0-9a-f]{8,64}(-[0-9a-f]{8,64})?)$/.test(b.digest))) return bad('"digest" is the dry run\'s digest');
     const id = c.req.param("project");
     const root = await dis.rootOf(id);
     if (!root) return c.json(noProject(id), 404);

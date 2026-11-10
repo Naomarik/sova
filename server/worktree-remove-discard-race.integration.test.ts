@@ -63,6 +63,7 @@ function deps(): DiscardDeps {
     chatBusy: () => false,
     workingSubagents: () => 0,
     uses: async () => ({ uses: [], unreadable: [] }),
+    folderChats: async () => [],
     processes: async () => [],
     alive: () => false,
     leftovers: (folder) => leftovers(folder).catch(unreadableLeftovers),

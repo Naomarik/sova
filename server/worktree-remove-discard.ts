@@ -31,6 +31,7 @@ export const DISCARD_WORDS = {
   locked: "A cleanup of this repository is running: try again in a moment.",
   changed: "Its files changed since you looked. Nothing was deleted. Look again.",
   chatElsewhere: "Its chat works in another folder, so it stays.",
+  chatsChanged: "A chat started working in its folder since you looked. Nothing was deleted. Look again.",
 } as const;
 
 /** The branch checked out in a second folder: neither goes, since the branch can't go while one has it. */
@@ -55,6 +56,13 @@ export interface DiscardOwner {
   tree: string;
 }
 
+/** A chat archived with the branch. */
+export interface DiscardChat {
+  id: string;
+  title: string;
+  path: string;
+}
+
 export interface DiscardDeps {
   /** Reads and the branch's delete, in the main checkout. */
   git: Git;
@@ -72,6 +80,8 @@ export interface DiscardDeps {
   workingSubagents(path: string): number;
   /** The chats with a folder inside `folder` or tracking it. */
   uses(folder: string): Promise<{ uses: ChatUse[]; unreadable: string[] }>;
+  /** The main chats (no workers, none of the queue's own), not archived, whose folder is `folder` or inside it. */
+  folderChats(folder: string): Promise<DiscardChat[]>;
   processes(): Promise<ProcFacts[]>;
   alive(pid: number): boolean;
   /** What the folder holds that git doesn't (server/worktree-leftovers.ts). */
@@ -133,6 +143,8 @@ interface Reading {
   owner: DiscardOwner | null;
   /** Why the branch's chat stays (it works elsewhere); absent when there is none or it goes. */
   chatStays?: string;
+  /** The other chats working in the folder, archived with it. */
+  others: DiscardChat[];
   left: Leftovers | null;
   refused: string | null;
 }
@@ -150,7 +162,7 @@ async function read(req: DiscardRequest, d: DiscardDeps): Promise<Reading> {
   const mine = list.filter((w) => w.branch === branch);
   const here = mine[0] ?? null;
   const target = await d.target(root);
-  const base: Reading = { target, folder: null, stale: null, owner: null, left: null, refused: null };
+  const base: Reading = { target, folder: null, stale: null, owner: null, others: [], left: null, refused: null };
   const no = (why: string): Reading => ({ ...base, refused: why });
   if ((main && main.branch === branch) || (here && main && realOr(here.path) === realOr(main.path))) return no(DISCARD_WORDS.main);
   if (branch === target) return no(DISCARD_WORDS.target);
@@ -162,7 +174,8 @@ async function read(req: DiscardRequest, d: DiscardDeps): Promise<Reading> {
   const inFolder = !!found && !found.archived && within(found.cwd, folder ?? found.tree);
   const owner = inFolder ? found : null;
   const left = folder ? await d.leftovers(folder) : null;
-  const r: Reading = { ...base, folder, stale, owner, left, ...(found && !found.archived && !inFolder ? { chatStays: DISCARD_WORDS.chatElsewhere } : {}) };
+  const others = folder ? (await d.folderChats(folder)).filter((c) => c.path !== found?.path).sort((a, b) => a.id.localeCompare(b.id)) : [];
+  const r: Reading = { ...base, folder, stale, owner, others, left, ...(found && !found.archived && !inFolder ? { chatStays: DISCARD_WORDS.chatElsewhere } : {}) };
   const why = await refusal(req, d, r);
   return { ...r, refused: why };
 }
@@ -213,7 +226,8 @@ export async function previewDiscard(req: DiscardRequest, d: DiscardDeps): Promi
     drafts: r.folder ? d.draftNames(r.folder) : [],
     chat: r.owner ? { id: r.owner.id, title: r.owner.title, path: r.owner.path } : null,
     ...(r.chatStays ? { chatStays: r.chatStays } : {}),
-    digest: r.left && !r.left.unreadable ? digestOf(d, r.left) : "",
+    others: r.others.map((c) => ({ id: c.id, title: c.title, path: c.path })),
+    digest: r.left && !r.left.unreadable ? digestOf(d, r.left, r.others) : "",
     refused: r.refused,
   };
 }
@@ -245,14 +259,20 @@ export async function discardBranch(req: DiscardRequest, digest: string, d: Disc
   try {
     const r = await read(req, d);
     if (r.refused) throw new DiscardRefused("refused", r.refused);
-    const now = r.left ? digestOf(d, r.left) : "";
-    if (now !== digest) throw new DiscardRefused("changed", DISCARD_WORDS.changed);
+    const now = r.left ? digestOf(d, r.left, r.others) : "";
+    if (now !== digest) {
+      // Which part moved, for the words: the folder's files, or only the chats working there.
+      const filesSame = !!r.left && now.split("-")[0] === digest.split("-")[0];
+      throw new DiscardRefused("changed", filesSame ? DISCARD_WORDS.chatsChanged : DISCARD_WORDS.changed);
+    }
     const steps: DiscardBranchStep[] = [];
     // Decided now, so a stop never names a chat there is none of.
-    const chatSkip: DiscardBranchStep | null = r.owner ? null : { step: "chat", state: "skipped", detail: r.chatStays ?? "It has no chat." };
+    // The chats archived with it: the branch's chat first, then the others working in the folder.
+    const going: DiscardChat[] = [...(r.owner ? [{ id: r.owner.id, title: r.owner.title, path: r.owner.path }] : []), ...r.others];
+    const chatSkip: DiscardBranchStep | null = going.length ? null : { step: "chat", state: "skipped", detail: r.chatStays ?? "It has no chat." };
     const stop = (from: DiscardBranchStep["step"][]): DiscardBranchResult => {
       for (const s of from) steps.push(s === "chat" && chatSkip ? chatSkip : { step: s, state: "not-run" });
-      return { outcome: "partial", steps, message: words(req.branch, steps) };
+      return { outcome: "partial", steps, message: words(req.branch, steps, 0), chats: going.map((c) => ({ id: c.id, title: c.title, state: "not-run" as const })) };
     };
 
     // 1. The folder: only the listing the user saw (Remove Anyway's --force), else a plain removal. A folder already
@@ -297,27 +317,37 @@ export async function discardBranch(req: DiscardRequest, digest: string, d: Disc
     steps.push({ step: "branch", state: "done" });
 
     // 3. The chat: archived as the Archive button does; closed in any case, since its folder is gone.
-    if (chatSkip || !r.owner) steps.push(chatSkip!);
+    const chats: DiscardBranchResult["chats"] = [];
+    if (chatSkip) steps.push(chatSkip);
     else {
-      const a = await d.archive(r.owner.path).catch((err: Error) => ({ ok: false as const, error: err.message }));
-      if (a.ok) steps.push({ step: "chat", state: "done" });
-      else {
-        if (r.folder) await d.close(r.owner.path, "Its worktree was removed, so it has no folder to work in.").catch(() => undefined);
-        steps.push({ step: "chat", state: "failed", detail: a.error });
+      for (const c of going) {
+        const a = await d.archive(c.path).catch((err: Error) => ({ ok: false as const, error: err.message }));
+        if (a.ok) chats.push({ id: c.id, title: c.title, state: "done" });
+        else {
+          if (r.folder) await d.close(c.path, "Its worktree was removed, so it has no folder to work in.").catch(() => undefined);
+          chats.push({ id: c.id, title: c.title, state: "failed", detail: a.error });
+        }
       }
+      const failed = chats.find((c) => c.state === "failed");
+      steps.push(failed ? { step: "chat", state: "failed", detail: going.length > 1 ? `${failed.title}: ${failed.detail}` : failed.detail! } : { step: "chat", state: "done" });
     }
     const ok = steps.every((s) => s.state === "done" || s.state === "skipped");
-    return { outcome: ok ? "discarded" : "partial", steps, message: words(req.branch, steps) };
+    const archived = chats.filter((c) => c.state === "done").length;
+    return { outcome: ok ? "discarded" : "partial", steps, message: words(req.branch, steps, archived), chats };
   } finally {
     d.dropLock(lock);
     d.settled?.(req.root);
   }
 }
 
-/** The listing's digest, and any recording found nowhere else with it: a confirm deletes nothing it didn't list. */
-function digestOf(d: DiscardDeps, l: Leftovers): string {
+/**
+ * What the confirm must find unchanged: the folder's listing (with any recording found nowhere else), then, after a
+ * "-", the other chats working there. A confirm deletes no file and archives no chat it didn't list.
+ */
+function digestOf(d: DiscardDeps, l: Leftovers, others: readonly DiscardChat[]): string {
   const base = d.digestOf(l);
-  return l.lastRecordings?.length ? createHash("sha256").update(`${base}\0${l.lastRecordings.join("\0")}`).digest("hex").slice(0, 32) : base;
+  const files = l.lastRecordings?.length ? createHash("sha256").update(`${base}\0${l.lastRecordings.join("\0")}`).digest("hex").slice(0, 32) : base;
+  return others.length ? `${files}-${createHash("sha256").update(others.map((c) => c.id).join("\0")).digest("hex").slice(0, 32)}` : files;
 }
 
 const hasContent = (l: Leftovers): boolean => l.dirty.length > 0 || l.ignored.length > 0 || l.nested.length > 0 || !!l.lastRecordings?.length;
@@ -325,16 +355,15 @@ const hasContent = (l: Leftovers): boolean => l.dirty.length > 0 || l.ignored.le
 const NAMES: Record<DiscardBranchStep["step"], string> = { folder: "its folder", branch: "its branch", chat: "its chat" };
 
 /** What went, in words: the folder and branch are gone, the chat is archived (never gone). */
-function wentWords(steps: readonly DiscardBranchStep[]): string {
+function wentWords(steps: readonly DiscardBranchStep[], archived: number): string {
   const gone = steps.filter((s) => s.state === "done" && s.step !== "chat").map((s) => NAMES[s.step]);
-  const archived = steps.some((s) => s.state === "done" && s.step === "chat");
-  const parts = [...(gone.length ? [`${list(gone)} ${gone.length === 1 ? "is" : "are"} gone`] : []), ...(archived ? ["its chat is archived"] : [])];
+  const parts = [...(gone.length ? [`${list(gone)} ${gone.length === 1 ? "is" : "are"} gone`] : []), ...(archived === 1 ? ["its chat is archived"] : archived > 1 ? [`its ${archived} chats are archived`] : [])];
   return parts.join("; ");
 }
 
 /** The result in a sentence: what went, and what stayed and why. */
-function words(branch: string, steps: readonly DiscardBranchStep[]): string {
-  const went = wentWords(steps);
+function words(branch: string, steps: readonly DiscardBranchStep[], archived: number): string {
+  const went = wentWords(steps, archived);
   const failed = steps.find((s) => s.state === "failed");
   if (!failed) return went ? `Discarded ${branch}: ${went}.` : `Discarded ${branch}.`;
   const kept = steps.filter((s) => s.state === "failed" || s.state === "not-run").map((s) => NAMES[s.step]);
@@ -398,6 +427,12 @@ export async function realDiscardDeps(): Promise<DiscardDeps> {
     chatBusy: (path) => chat.isSessionBusy(path),
     workingSubagents: (path) => live.workingSubagents(path),
     uses: (folder) => cleanup.chatUses([folder]),
+    async folderChats(folder) {
+      const inside = (cwd: string) => cwd === folder || cwd.startsWith(`${folder}/`) || realOr(cwd) === realOr(folder) || realOr(cwd).startsWith(`${realOr(folder)}/`);
+      return (await sessions.listSessions().catch(() => []))
+        .filter((s) => !s.archived && !s.workerSession && !s.queueChat && !s.target && !!s.cwd && inside(s.cwd))
+        .map((s) => ({ id: s.id, title: s.title && s.title !== "Untitled" ? s.title : s.id.slice(0, 8), path: s.path }));
+    },
     processes: () => cleanup.scanProcesses(),
     alive: cleanup.pidAlive,
     leftovers: (folder) => leftoversMod.leftovers(folder).catch(leftoversMod.unreadableLeftovers),

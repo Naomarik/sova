@@ -29,6 +29,7 @@ function fakeDeps(o: { tip?: string | null } = {}) {
     chatBusy: () => false,
     workingSubagents: () => 0,
     uses: async () => ({ uses: [], unreadable: [] }),
+    folderChats: async () => [],
     processes: async () => [],
     alive: () => false,
     leftovers: async () => ({ dirty: [], ignored: [], nested: [], rebuildable: [] }),

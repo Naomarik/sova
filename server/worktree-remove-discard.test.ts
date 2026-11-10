@@ -8,7 +8,7 @@ import { join } from "node:path";
 import { after, before, describe, test } from "node:test";
 import { type Git, runGit } from "../pi-config/extensions/worktrees/git.ts";
 import { scratchRoot } from "./test-scratch";
-import { DISCARD_WORDS, type DiscardDeps, type DiscardOwner, DiscardRefused, discardBranch, previewDiscard, process_words, twoFolders } from "./worktree-remove-discard";
+import { DISCARD_WORDS, type DiscardChat, type DiscardDeps, type DiscardOwner, DiscardRefused, discardBranch, previewDiscard, process_words, twoFolders } from "./worktree-remove-discard";
 import { leftovers, leftoversDigest, removeAnywayOf, unreadableLeftovers } from "./worktree-leftovers";
 import { dropLock, takeLock } from "./worktree-retire";
 import type { ChatUse } from "./worktree-cleanup";
@@ -66,8 +66,9 @@ interface World {
 }
 
 /** The deps over real git, every call logged in order; the rest stood in, quiet by default. */
-function world(opts: Partial<DiscardDeps> & { chat?: DiscardOwner | null; failRemove?: boolean } = {}): World {
-  const { chat, failRemove, ...o } = opts;
+function world(opts: Partial<DiscardDeps> & { chat?: DiscardOwner | null; failRemove?: boolean; others?: DiscardChat[] } = {}): World {
+  const { chat, failRemove, others: listed, ...o } = opts;
+  const others = listed ?? [];
   const log: string[] = [];
   const g: Git = async (args, cwd) => {
     if (args[0] === "update-ref" || args.includes("update-ref") || args.includes("remove")) log.push(`git ${args.filter((a, i) => a !== "-c" && args[i - 1] !== "-c").join(" ")}`);
@@ -84,6 +85,7 @@ function world(opts: Partial<DiscardDeps> & { chat?: DiscardOwner | null; failRe
     chatBusy: () => false,
     workingSubagents: () => 0,
     uses: async () => ({ uses: [], unreadable: [] }),
+    folderChats: async () => others,
     processes: async () => [],
     alive: () => false,
     leftovers: (folder) => leftovers(folder).catch(unreadableLeftovers),
@@ -304,6 +306,48 @@ describe("Discard Branch…: the confirm", () => {
     assert.ok(!git(main, "worktree", "list", "--porcelain").includes(b.folder), "git forgot it");
     assert.ok(!exists(`refs/heads/${b.branch}`));
     assert.ok(!existsSync(b.folder) && !exists(`refs/heads/${b.branch}`));
+  });
+
+  test("other idle chats working in the folder are listed and archived with it, one outcome each", async () => {
+    const b = branch("others");
+    const second: DiscardChat = { id: "s2", title: "Try y", path: "/sessions/s2.jsonl" };
+    const third: DiscardChat = { id: "s3", title: "Look at z", path: "/sessions/s3.jsonl" };
+    // The folder's chats as the server lists them include the branch's own chat: it is listed once, as `chat`.
+    const w = world({ others: [third, { id: OWNER.id, title: OWNER.title, path: OWNER.path }, second], archive: async (path) => (path === third.path ? { ok: false, error: "Nothing was archived." } : { ok: true }) });
+    const p = await previewDiscard({ root: main, ...b }, w.deps);
+    assert.equal(p.chat?.id, "s1");
+    assert.deepEqual(p.others.map((c) => c.id), ["s2", "s3"]);
+    assert.match(p.digest, /^[0-9a-f]{32}-[0-9a-f]{32}$/, "the chats are in the digest");
+    const r = await discardBranch({ root: main, ...b }, p.digest, w.deps);
+    assert.equal(r.outcome, "partial");
+    assert.deepEqual(r.chats.map((c) => `${c.id}:${c.state}`), ["s1:done", "s2:done", "s3:failed"]);
+    assert.deepEqual(r.steps[2], { step: "chat", state: "failed", detail: "Look at z: Nothing was archived." });
+    assert.equal(r.message, "Its folder and its branch are gone; its 2 chats are archived; its chat stayed. Its chat: Look at z: Nothing was archived.");
+  });
+
+  test("the others are archived even when the branch's chat works elsewhere and stays", async () => {
+    const b = branch("others-only");
+    const second: DiscardChat = { id: "s2", title: "Try y", path: "/sessions/s2.jsonl" };
+    const archived: string[] = [];
+    const w = world({ chat: { ...OWNER, cwd: main }, others: [second], archive: async (path) => (archived.push(path), { ok: true }) });
+    const p = await previewDiscard({ root: main, ...b }, w.deps);
+    assert.equal(p.chat, null);
+    assert.equal(p.chatStays, DISCARD_WORDS.chatElsewhere);
+    const r = await discardBranch({ root: main, ...b }, p.digest, w.deps);
+    assert.equal(r.outcome, "discarded", r.message);
+    assert.deepEqual(archived, [second.path], "only the chat in the folder");
+    assert.equal(r.message, `Discarded ${b.branch}: its folder and its branch are gone; its chat is archived.`);
+  });
+
+  test("a chat that starts in the folder after the dry run stops it: changed, nothing deleted or archived", async () => {
+    const b = branch("late-chat");
+    let others: DiscardChat[] = [];
+    const w = world({ folderChats: async () => others });
+    const p = await previewDiscard({ root: main, ...b }, w.deps);
+    others = [{ id: "s9", title: "New", path: "/sessions/s9.jsonl" }];
+    await assert.rejects(discardBranch({ root: main, ...b }, p.digest, w.deps), (err: unknown) => err instanceof DiscardRefused && err.code === "changed" && err.message === DISCARD_WORDS.chatsChanged);
+    assert.deepEqual(w.log, []);
+    assert.ok(existsSync(b.folder) && exists(`refs/heads/${b.branch}`));
   });
 
   test("the lock is dropped after it, so the next one may run", async () => {

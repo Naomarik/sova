@@ -57,6 +57,19 @@ const post = async (body: unknown) => {
   return { status: r.status, body: (await r.json()) as Record<string, any> };
 };
 
+/** A web chat working in `cwd`, last written an hour ago: its id and file. */
+function chatIn(id: string, cwd: string): { id: string; path: string } {
+  const path = join(sessionsDir, `2026-11-10T00-00-00-000Z_${id}.jsonl`);
+  writeFileSync(path, `${[
+    JSON.stringify({ type: "session", version: 3, id, timestamp: "2026-11-10T00:00:00.000Z", cwd }),
+    JSON.stringify({ type: "message", id: "m1", parentId: null, timestamp: "2026-11-10T00:00:01.000Z", message: { role: "user", content: `work in ${id}` } }),
+  ].join("\n")}\n`);
+  addWebSession(id);
+  const then = new Date(Date.now() - 3_600_000);
+  utimesSync(path, then, then);
+  return { id, path };
+}
+
 /** feat/<name> with a commit master hasn't, in its own folder, and a chat working there (quiet for an hour). */
 function unlanded(name: string): { branch: string; commit: string; folder: string; chat: { id: string; path: string } } {
   const branch = `feat/${name}`;
@@ -104,6 +117,22 @@ describe("Discard Branch…, end to end", () => {
     assert.equal(git(main, "for-each-ref", "refs/sova/"), "", "no backup pin");
     assert.equal(isArchived(b.chat.id), true, "its chat is archived");
     assert.ok(existsSync(b.chat.path), "archived, not deleted");
+  });
+
+  test("a second idle chat working in the folder is listed and archived too", async () => {
+    const b = unlanded("two");
+    // A later write than the branch's chat: the owner rule picks the newest, so this one names an older id.
+    const other = chatIn("discard-two-other", join(b.folder));
+    utimesSync(other.path, new Date(Date.now() - 7_200_000), new Date(Date.now() - 7_200_000));
+    const p = await post({ branch: b.branch, commit: b.commit, dryRun: true });
+    assert.equal(p.body.refused, null, JSON.stringify(p.body));
+    const all = [p.body.chat?.id, ...p.body.others.map((c: { id: string }) => c.id)].sort();
+    assert.deepEqual(all, [b.chat.id, other.id].sort(), "both chats are named before the confirm");
+    const r = await post({ branch: b.branch, commit: b.commit, digest: p.body.digest });
+    assert.equal(r.body.outcome, "discarded", r.body.message);
+    assert.deepEqual(r.body.chats.map((c: { state: string }) => c.state), ["done", "done"]);
+    assert.equal(isArchived(b.chat.id), true);
+    assert.equal(isArchived(other.id), true);
   });
 
   test("while a turn runs in its chat it is refused, and everything stays", async () => {

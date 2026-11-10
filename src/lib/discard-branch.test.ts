@@ -103,7 +103,9 @@ test("a partial stop says what was done and what stayed, with the failed step's 
 });
 
 test("the menu line promises only what the dry run found", () => {
-  assert.equal(discardMenuLine(undefined), DISCARD_LINE);
+  // Before the dry run answers, it promises no chat.
+  assert.equal(discardMenuLine(undefined), "Deletes the branch and its folder.");
+  assert.equal(discardMenuLine(preview()), DISCARD_LINE);
   assert.equal(discardMenuLine(preview()), "Deletes the branch and its folder, and archives its chat.");
   assert.equal(discardMenuLine(preview({ chat: null })), "Deletes the branch and its folder.");
   assert.equal(discardMenuLine(preview({ folder: null })), "Deletes the branch and archives its chat.");

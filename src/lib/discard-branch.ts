@@ -10,9 +10,9 @@ const list = (xs: string[]) => (xs.length <= 1 ? (xs[0] ?? "") : xs.length === 2
 /** The menu item's one line when it may run. */
 export const DISCARD_LINE = "Deletes the branch and its folder, and archives its chat.";
 
-/** The menu item's line, by what the dry run found: the decided line until it answers, then only the parts it has. */
+/** The menu item's line, by what the dry run found: only the parts it has, and no chat before it answers. */
 export function discardMenuLine(p: Pick<DiscardBranchPreview, "folder" | "chat"> | undefined): string {
-  if (!p) return DISCARD_LINE;
+  if (!p) return "Deletes the branch and its folder.";
   if (p.folder && p.chat) return DISCARD_LINE;
   if (p.folder) return "Deletes the branch and its folder.";
   if (p.chat) return "Deletes the branch and archives its chat.";

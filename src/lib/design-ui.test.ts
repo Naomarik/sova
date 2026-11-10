@@ -4,7 +4,7 @@ import type { TranscriptItem } from "../../shared/protocol";
 import type { DesignRecord, DesignSetup } from "../../shared/design";
 import type { LiveTool } from "./live";
 import { designFold, liveDesignCalls, newestDesignRows, normalizeDesignCard } from "./design-rows";
-import { batchLine, briefTitle, designSections, searchModels, sectionSummary, designFixLine, designCanOpen, designHoldEnds, designIsBusy, designMeta, designOpenFollowsLive, designNoteLine, designUnchangedLine, designStatusWord, moveCoordinator, parentsLine, setupBlocked, setupCount, setupSummary, statusCounts, toggleDirection, toggleGroup, toggleModel } from "./design-ui";
+import { batchLine, briefTitle, lookbookTitle, designSections, searchModels, sectionSummary, designFixLine, designCanOpen, designHoldEnds, designIsBusy, designMeta, designOpenFollowsLive, designNoteLine, designUnchangedLine, designStatusWord, moveCoordinator, parentsLine, setupBlocked, setupCount, setupSummary, statusCounts, toggleDirection, toggleGroup, toggleModel } from "./design-ui";
 
 const caps = { batchDefault: 6, askAbove: 12, batchMax: 24, concurrent: 6 };
 const m = (ref: string, design = true, coordinator = false) => ({ ref, name: ref, design, coordinator, vision: true, route: "tool" as const });
@@ -148,7 +148,7 @@ test("a card's title is the brief's first line, and short", () => {
 
 // ---- the card's place in the transcript
 
-const call = (id: string, text = "design"): TranscriptItem => ({ id, kind: "tool-call", text, toolCallId: `c-${id}` }) as TranscriptItem;
+const call = (id: string, text = "lookbook"): TranscriptItem => ({ id, kind: "tool-call", text, toolCallId: `c-${id}` }) as TranscriptItem;
 const result = (id: string, details: unknown, isError = false): TranscriptItem => ({ id: `r-${id}`, kind: "tool-result", toolCallId: `c-${id}`, tool: { details, output: "" }, facts: { tool: { isError } } }) as unknown as TranscriptItem;
 
 test("one card per run: only each run's newest successful call draws it", () => {
@@ -165,9 +165,9 @@ test("a design call that names no run, fails, or belongs to another tool never t
 test("a streaming turn's own call takes the card from the settled row", () => {
   const items = [call("1"), result("1", { designCard: { runId: "a" } })];
   assert.deepEqual([...newestDesignRows(items, new Set(["a"]))], []);
-  const tools = { x: { name: "design", status: "done", details: { designCard: { runId: "a" } } } } as unknown as Record<string, LiveTool>;
+  const tools = { x: { name: "lookbook", status: "done", details: { designCard: { runId: "a" } } } } as unknown as Record<string, LiveTool>;
   assert.equal(liveDesignCalls(tools).get("a"), "x");
-  const running = { x: { name: "design", status: "running", details: { designCard: { runId: "a" } } } } as unknown as Record<string, LiveTool>;
+  const running = { x: { name: "lookbook", status: "running", details: { designCard: { runId: "a" } } } } as unknown as Record<string, LiveTool>;
   assert.equal(liveDesignCalls(running).size, 0);
 });
 
@@ -217,4 +217,10 @@ test("a held page being written gives way at once when no new version came of it
   assert.equal(designHoldEnds({ ...rec("A", "ready"), versions: [v(1), v(2)] }, 1), false, "v2 came: wait for it to draw");
   assert.equal(designHoldEnds({ ...rec("A", "writing"), versions: [v(1)] }, 1), false, "still writing");
   assert.equal(designHoldEnds(rec("A", "failed"), 0), true, "a first page that failed");
+});
+
+test("a run's card title names its state: the brief until a design exists, then the count", () => {
+  assert.equal(lookbookTitle(0), "Lookbook · Brief");
+  assert.equal(lookbookTitle(1), "Lookbook · 1 design");
+  assert.equal(lookbookTitle(6), "Lookbook · 6 designs");
 });

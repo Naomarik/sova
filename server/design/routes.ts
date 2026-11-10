@@ -20,7 +20,7 @@ import { cleanSetup, estimateUsd } from "./setup";
 import { changeDesigns, designOf, readDesigns, readPage, runOf } from "./store";
 
 const BAD_PATH = "Invalid or missing ?path= (must be a .jsonl under the pi sessions dir)";
-const ONLY_YOUR_CLICK = "Only your own click on the Design Brief in Sova's page starts the designs.";
+const ONLY_YOUR_CLICK = "Only your own click on the Lookbook's brief in Sova's page starts the designs.";
 
 function parentOf(c: Context): DesignParent | null {
   const path = resolveSessionPath(c.req.query("path"));

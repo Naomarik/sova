@@ -28,7 +28,7 @@ const bodyOf = async (c: Context): Promise<Record<string, unknown>> => {
     return {};
   }
 };
-const YOUR_CLICK = "Only your own click on the coordinator's card or the Design Brief in Sova's page answers this.";
+const YOUR_CLICK = "Only your own click on the coordinator's card or the Lookbook's brief in Sova's page answers this.";
 const text = (v: unknown): string => (typeof v === "string" ? v : "");
 const message = (e: unknown): string => (e instanceof Error ? e.message : String(e));
 

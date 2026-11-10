@@ -29,6 +29,7 @@ import {
 import {
   batchLine,
   briefTitle,
+  lookbookTitle,
   coordinatorOf,
   designCanOpen,
   designCanRefine,
@@ -143,7 +144,7 @@ function DesignCardIn(props: {
   return (
     <section
       class="card design-card"
-      aria-label={`Design: ${run() ? briefTitle(run()!.setup.brief) : "loading"}`}
+      aria-label={`Lookbook: ${run() ? briefTitle(run()!.setup.brief) : "loading"}`}
     >
       <Show when={fontsSettled()}>
         <Show
@@ -230,7 +231,7 @@ function DesignSetupCard(props: { run: DesignRunView; store: DesignStore }) {
   return (
     <>
       <div class="card-head">
-        <h3 class="card-title">Design</h3>
+        <h3 class="card-title">Lookbook</h3>
         <Chip>Setup</Chip>
       </div>
       <div class="design-card-scroll">
@@ -326,7 +327,8 @@ function DesignRunBody(props: {
     <>
       <div class="card-head design-run-head">
         <h3 class="card-title design-run-title">
-          {briefTitle(props.run.setup.brief)}
+          {lookbookTitle(designs().length)}
+          <span class="text-muted"> · {briefTitle(props.run.setup.brief)}</span>
         </h3>
         <div class="design-run-sub">
           <span class="text-caption text-muted design-run-batch">

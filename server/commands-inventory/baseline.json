@@ -639,7 +639,7 @@
     "server/create-settings-tool.ts": ["sova_settings"],
     "server/design/coordinator.ts": ["design_status","design_brief","design_browse","design_capture","design_send","design_new","coordinator_card","project_verbs"],
     "server/design/describe.ts": ["asset_report"],
-    "server/design/tools.ts": ["design_guide","design","design_look","design_stream","design_hand_in"],
+    "server/design/tools.ts": ["lookbook","design_look","design_stream","design_hand_in"],
     "server/feature-chat-align.ts": ["align"],
     "server/harness/pi/session.ts": ["<computed: t.name>"],
     "server/memory/tools.ts": ["<computed: MEMORY_ZOOM_TOOL>","<computed: MEMORY_DATE_TOOL>"],

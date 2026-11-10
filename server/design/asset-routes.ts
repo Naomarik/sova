@@ -11,7 +11,7 @@ import { addOwnImages, readAttachedImages, type OwnImagesResult } from "./own-im
 import { describeAssets } from "./describe";
 
 const BAD_PATH = "Invalid or missing ?path= (must be a .jsonl under the pi sessions dir)";
-const YOUR_CLICK = "Only your own click on the Design card in Sova's page answers this.";
+const YOUR_CLICK = "Only your own click on the Lookbook card in Sova's page answers this.";
 const SHOWN: readonly DesignAssetShown[] = ["small", "full"];
 const SEALED = { "X-Content-Type-Options": "nosniff", "Cache-Control": "private, max-age=3600", "Content-Security-Policy": "default-src 'none'; sandbox" };
 

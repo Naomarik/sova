@@ -30,7 +30,7 @@ const list = (description: string) => ({ type: "array", items: { type: "string" 
 export function mainDesignTools(parent: () => DesignParent, cwd: () => string): ToolSpec[] {
   return [
     {
-      name: DESIGN_TOOL,
+      name: "lookbook",
       label: "lookbook",
       description: `The Lookbook: one page designed by several models side by side. op "start" puts a Lookbook Setup card in the chat (the user finishes it there, up to ${DESIGN_BATCH_MAX} designs), only when the user asked for a Lookbook. op "read" gets the coordinator's card, or one design's whole page with label. op "tell" passes text word for word to the coordinator, and images (the paths of images the user attached) join its image set. Call vis_guide with kind "lookbook" first.`,
       parameters: {

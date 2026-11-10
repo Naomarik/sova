@@ -281,16 +281,6 @@ writer**).
   a shortcut it is refused or not offered, and workers never get it. Turning
   it off always works. It has no prompt block and no mode note
   (`MINOR_PROMPTLESS`): its guide rides the view message Sova sends.
-- **design** — Sends one-page prototypes out to hidden design sessions on
-  several models, drawn live on a card in the chat. Web-only, like memory, and
-  its tools are served by Sova's server, so it does nothing outside Sova.
-  Workers never get it. Its text lives in `design/`, read once at load by
-  `design-guide.ts` (node builtins only): `overview.md` is the prompt block,
-  `setup.md`, `directions.md` and `passing-on.md` are the `design_guide`
-  topics, `session/` builds a design session's system prompt and
-  `coordinator.md` is the coordinator's. `directions.md` must keep one
-  `- Name: definition` line per direction, 20 in all, or the module refuses
-  to load.
 
 Like the major mode, the prompt is read per turn, so toggles apply from the
 next prompt. The active triple (`mode`, `strict`, `minorModes`) is published
@@ -645,6 +635,14 @@ alone (`VIS_TOOL_PARTS` in `minor.ts`; never listed as kinds): `tour-signin` (si
 `tour-sites` (sources, site approval, sandbox, network rules), `tour-sova` (recording Sova itself) and
 `tour-sharing` (links, hand-offs, published editions). Each rule lives in one file. It is not a fence grammar;
 there is no executable `vis tour` fence and merely reading a message never records a browser.
+
+The catalogue's second tool-backed entry is the Lookbook: `vis_guide {kind:"lookbook"}` returns
+`vis/lookbook.md` alone (when the user has asked for one, how to start, read and pass on), and its parts
+`lookbook-setup`, `lookbook-directions` and `lookbook-passing-on` each alone. Sova serves the `lookbook`
+tool itself, only while vis is on, so a terminal has nothing to run. `design-guide.ts` (node builtins
+only) reads `vis/lookbook-directions.md` for the 20 styles (one `- Name: definition` line each, or the
+module refuses to load) and `design/` for a design session's system prompt (`session/`) and the
+coordinator's (`coordinator.md`).
 
 A host may add a session's own drawing kinds through the `sova:vis-own-kinds` hook (`VIS_OWN_KINDS_HOOK`
 in `minor.ts`, a `globalThis` function `(sessionId) => [{kind, guide, line}]`; Sova's server installs it

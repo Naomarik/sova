@@ -1,32 +1,40 @@
 ---
-title: Design
-description: With Design on, a chat sends one-page prototypes out to hidden sessions on several models, draws them live, and lets you refine, talk to and combine them.
+title: Lookbook
+description: Ask a chat with vis on for a Lookbook, and hidden sessions on several models each build one page, drawn live side by side, to refine, talk to and combine.
 group: Modes
 subgroup: Minor
-order: 8.6
+order: 7.5
 ---
 
-## What Design does
+## What a Lookbook does
 
-Design is a minor mode for trying out how a page could look. You describe a page, or point at one
-you already have, and several hidden design sessions each build a complete prototype of it. Each one
-works in a design direction, such as Minimalist or Heritage, on a model you choose. The pages appear
-as they are written, on a card in the chat and in the session pane's **Gallery** tab.
+A Lookbook is one page designed by several models side by side. You describe a page, or point at
+one you already have, and several hidden design sessions each build a complete prototype of it. Each
+one works in its own style, such as Minimalist or Heritage, on a model you choose. The pages appear
+as they are written, on a **Lookbook** card in the chat and in the session pane's **Gallery** tab.
 
 Designs keep the labels they start with (A, B, C), so you can talk about them by name.
 
 Your chat stays out of the work. It fills in the Setup card and passes on what you tell it to. It
 reads a design only when you ask, because reading a whole page into the chat is costly.
 
-## Turn it on
+## How to get one
 
-Design is a row in a chat's mode menu (see [How modes work](/docs/modes/)). Only that menu turns it
-on, and workers never get it.
+A Lookbook is part of [vis](/docs/modes/vis/): turn vis on in the chat's mode menu (see
+[How modes work](/docs/modes/)), then ask for a Lookbook, by name ("make a Lookbook of the pricing
+page") or in words that plainly mean it ("have a few models each mock up this page"). The chat
+decides from what you wrote. An ordinary ask to sketch, mock up or wireframe something ("mock up a
+login page") gets a quick drawing instead. If the chat asks you something first, such as which
+models, your answer still counts as the same ask. Notes and other chats' or workers' messages never
+open one, and workers never have Lookbooks.
+
+Turning vis on or off adds or removes the Lookbook's tool with vis's own, so a chat with vis on
+from the start changes nothing when a Lookbook begins.
 
 ## Setup
 
-Ask for designs in your chat: "a pricing page for my tea shop, all Claude models". A **Design** card
-opens with what you said filled in. Change anything on it. Your clicks don't go through the chat.
+Ask for a Lookbook in your chat: "a Lookbook of a pricing page for my tea shop, all Claude models".
+The card opens as **Lookbook · Setup**, with what you said filled in. Change anything on it. Your clicks don't go through the chat.
 
 - **What Do You Want to Design**: your request, in your words. Paste a link here to use a page's
   images or its feel.

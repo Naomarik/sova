@@ -106,6 +106,11 @@ export function briefTitle(brief: string): string {
   return line.length > 64 ? `${line.slice(0, 63).trimEnd()}…` : line || "New design";
 }
 
+/** A run's card title names its state: "Lookbook · Brief" until a design exists, then "Lookbook · 6 designs". */
+export function lookbookTitle(designs: number): string {
+  return `Lookbook · ${designs > 0 ? plural(designs, "design") : "Brief"}`;
+}
+
 export const STATUS_WORD: Record<DesignStatus, string> = { queued: "Queued", writing: "Writing", fixing: "Fixing", ready: "Ready", failed: "Failed" };
 
 /** The word on a design's chip: what its session is doing now, which can be more than its page's status. */

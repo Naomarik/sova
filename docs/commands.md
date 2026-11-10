@@ -35,7 +35,7 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | Pending (not yet a command) | 23 |
 | Chat socket frame types | 14 |
 | Document/window keydown listeners | 11 |
-| Hand-written tool specs | 148 |
+| Hand-written tool specs | 147 |
 
 ## Catalogue entries
 
@@ -297,12 +297,12 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | `chat.mode-command` | Run Mode Command | changes | `POST /api/mode/command` | full |
 | `design.list` | List Designs | looks | `GET /api/design` | full |
 | `design.page` | Read Design Page | looks | `GET /api/design/:label/page` | full |
-| `design.setup.set` | Change Design Setup | changes | `PATCH /api/design/runs/:run/setup` | full |
-| `design.start` | Start Design Coordinator | changes | `POST /api/design/runs/:run/start` | full |
+| `design.setup.set` | Change Lookbook Setup | changes | `PATCH /api/design/runs/:run/setup` | full |
+| `design.start` | Start Lookbook Coordinator | changes | `POST /api/design/runs/:run/start` | full |
 | `design.message` | Message a Design | changes | `POST /api/design/:label/message` | full |
 | `design.refine` | Refine a Design | changes | `POST /api/design/:label/refine` | full |
 | `design.retry` | Retry a Design | changes | `POST /api/design/:label/retry` | full |
-| `design.coordinator.message` | Message the Design Coordinator | changes | `POST /api/design/coordinator/message` | full |
+| `design.coordinator.message` | Message the Lookbook Coordinator | changes | `POST /api/design/coordinator/message` | full |
 | `design.delete` | Delete a Design | changes | `DELETE /api/design/:label` | full |
 
 ## Pending routes
@@ -1083,7 +1083,7 @@ Per file, the tool names its object literals declare (`<computed: …>` where th
 | `server/create-settings-tool.ts` | 1 | `sova_settings` |
 | `server/design/coordinator.ts` | 8 | `design_status`, `design_brief`, `design_browse`, `design_capture`, `design_send`, `design_new`, `coordinator_card`, `project_verbs` |
 | `server/design/describe.ts` | 1 | `asset_report` |
-| `server/design/tools.ts` | 5 | `design_guide`, `design`, `design_look`, `design_stream`, `design_hand_in` |
+| `server/design/tools.ts` | 4 | `lookbook`, `design_look`, `design_stream`, `design_hand_in` |
 | `server/feature-chat-align.ts` | 1 | `align` |
 | `server/harness/pi/session.ts` | 1 | `<computed: t.name>` |
 | `server/memory/tools.ts` | 2 | `<computed: MEMORY_ZOOM_TOOL>`, `<computed: MEMORY_DATE_TOOL>` |

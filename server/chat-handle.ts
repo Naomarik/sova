@@ -712,7 +712,7 @@ export async function fileSnapshot(path: string, w: Partial<ServerToolCtxWire> &
     (its pi session name, often none), used only when the session's display title can't be read. */
 export function servedToolsFor(chatId: ChatId, sessionId: string, known: () => string | undefined, powers = false, plain = !powers): ServerToolDecl[] {
   const specs: ToolSpec[] = [sessionVerbsTool(() => projectEngine()), queuePushTool({ sessionId: () => sessionId, title: () => senderTitle(chatId, known) }), ...tourTools(sessionId, chatId), jobTool({ path: chatId })];
-  // Declared for a plain chat only; its extension keeps them active only while Design mode is on.
+  // Declared for a plain chat only; its extension keeps them active only while vis is on.
   if (plain) specs.push(...mainDesignTools(() => ({ sessionId, path: chatId }), () => chatHandle(chatId)?.mirror.cwd ?? ""));
   // Declared for a plain chat only: a special kind's own tool of this name (a project overseer's) must keep answering.
   // Its extension keeps it active only in Create (§chat.create-mode/settings-cards).

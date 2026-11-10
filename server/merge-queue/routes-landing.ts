@@ -122,7 +122,7 @@ export function registerMergeLandingRoutes(app: Hono<any>, deps: LandingRouteDep
     const b = await jsonBody(c);
     const bad = (message: string) => c.json({ error: { code: "invalid-request", message } }, 400);
     // A value of the wrong type is refused for itself, before what's missing.
-    for (const k of ["branch", "commit", "digest"] as const) if (b[k] !== undefined && typeof b[k] !== "string") return bad(`"${k}" must be text`);
+    for (const k of DISCARD_TEXT_FIELDS) if (b[k] !== undefined && typeof b[k] !== "string") return bad(`"${k}" must be text`);
     if (b.dryRun !== undefined && typeof b.dryRun !== "boolean") return bad('"dryRun" must be true or absent');
     if (typeof b.branch !== "string" || !b.branch || b.branch.length > 255 || b.branch.startsWith("-") || /[\s\0~^:?*[\\]|\.\.|@\{/.test(b.branch)) return bad('"branch" is a branch name');
     if (typeof b.commit !== "string" || !/^[0-9a-f]{40,64}$/.test(b.commit)) return bad('"commit" is the full commit the row showed');
@@ -168,6 +168,9 @@ const WRITE_WORDS = {
   script: "A script can't publish a request or change how branches land: do it yourself on the Merge Queue tab.",
   extension: "An extension can't publish a request or change how branches land: do it yourself on the Merge Queue tab.",
 };
+
+/** Discard Branch…'s text fields: each refused for its own wrong type. */
+const DISCARD_TEXT_FIELDS = ["branch", "commit", "digest"] as const;
 
 const DISCARD_WORDS = "Only the user discards a branch. Ask them to press Discard Branch… in the Land menu. Nothing was deleted.";
 const DISCARD_PAGE = {

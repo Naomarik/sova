@@ -309,6 +309,22 @@ export function DesignBriefStep(props: { run: DesignRunView; store: DesignStore;
       setBusy(false);
     }
   };
+  const answersButton = () => (
+    <Show when={openQuestions().length > 0}>
+      <Show
+        when={toSend().length > 0}
+        fallback={
+          <button type="button" class="button" disabled={busy()} onClick={() => void recommend()}>
+            Go With Recommendations
+          </button>
+        }
+      >
+        <button type="button" class="button" disabled={busy()} onClick={() => void sendAnswers()}>
+          Send Answers
+        </button>
+      </Show>
+    </Show>
+  );
   const coordinator = () => coordinatorOf(props.store.view());
   const pendingAsk = () => coordinator()?.ask;
   const promptNote = () => {
@@ -368,6 +384,10 @@ export function DesignBriefStep(props: { run: DesignRunView; store: DesignStore;
                 <Show when={opened()}>{(a) => <DesignBriefImageDetail asset={a()} store={props.store} onClose={() => setOpenImage(null)} />}</Show>
               </div>
             </Show>
+            {/* On a narrow card the answers button sits with the questions, and the foot keeps only Start. */}
+            <Show when={brief().questions.length > 0}>
+              <div class="design-brief-answers-narrow">{answersButton()}</div>
+            </Show>
             <Show when={brief().questions.length > 0}>
               <ol class="align-questions design-brief-questions" aria-label="The coordinator's questions">
                 <For each={brief().questions}>
@@ -393,7 +413,7 @@ export function DesignBriefStep(props: { run: DesignRunView; store: DesignStore;
               {(c) => (
                 <div class="design-ask" role="group" aria-label="Your Full Prompt would change">
                   <p>{conflictWords[c().cause]} Your saved Full Prompt doesn't match it now.</p>
-                  <div class="button-row">
+                  <div class="design-brief-choice">
                     <button type="button" class="button button-sm" disabled={busy()} onClick={() => void guard(() => props.store.api.briefConflict(props.run.id, "keep"), "That choice couldn't be saved. Try again.")}>
                       Keep My Prompt
                     </button>
@@ -458,22 +478,7 @@ export function DesignBriefStep(props: { run: DesignRunView; store: DesignStore;
         <div class="design-brief-slot">
           <Show
             when={ask()}
-            fallback={
-              <Show when={openQuestions().length > 0}>
-                <Show
-                  when={toSend().length > 0}
-                  fallback={
-                    <button type="button" class="button" disabled={busy()} onClick={() => void recommend()}>
-                      Go With Recommendations
-                    </button>
-                  }
-                >
-                  <button type="button" class="button" disabled={busy()} onClick={() => void sendAnswers()}>
-                    Send Answers
-                  </button>
-                </Show>
-              </Show>
-            }
+            fallback={answersButton()}
           >
             <button type="button" class="button button-ghost" disabled={busy()} onClick={() => setAsk(null)}>
               Cancel
@@ -532,7 +537,10 @@ export function DesignBriefCollapsed(props: { run: DesignRunView; store: DesignS
               <Show when={b().prompt}>
                 {(p) => (
                   <details class="design-brief-frozen-prompt">
-                    <summary>Full Prompt</summary>
+                    <summary>
+                      <Icon name="chevron-right" small class="icon-twist" />
+                      Full Prompt
+                    </summary>
                     <div class="design-brief-read">{p()}</div>
                   </details>
                 )}

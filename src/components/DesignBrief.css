@@ -3,7 +3,7 @@
 .design-brief-region { position: relative; flex: 1 1 0; min-height: 0; display: flex; flex-direction: column; }
 .design-brief { gap: var(--space-4); }
 /* With no link, a screen or an image that turns up comes after the questions, so it pushes nothing down. */
-.design-brief:not([data-links]) .design-brief-screen, .design-brief:not([data-links]) .design-brief-material { order: 1; }
+.design-brief:not([data-links]) .design-brief-screen, .design-brief:not([data-links]) .design-brief-material { order: 2; }
 .design-brief-title { margin: 0; font-size: var(--fs-caption); font-weight: var(--fw-semibold); color: var(--color-ink); white-space: nowrap; }
 .design-brief-text { display: flex; flex-direction: column; gap: var(--space-1); min-width: 0; }
 .design-brief-text-head { display: flex; align-items: center; gap: var(--space-2); height: 36px; min-width: 0; }
@@ -64,13 +64,19 @@
 .design-brief-slot { min-width: 0; min-height: var(--control-md); display: flex; justify-content: flex-end; }
 .design-brief-slot .button { width: 100%; }
 .design-brief-start { width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; }
-.design-brief-overlays .button-row { gap: var(--space-2); }
+.design-brief-choice { flex: none; display: flex; gap: var(--space-2); margin-left: auto; }
 @container design-card (max-width: 720px) {
   .design-brief-foot { grid-template-columns: minmax(0, 1fr) minmax(0, 300px); height: 112px; }
   .design-brief-line { grid-column: 1 / -1; }
 }
+.design-brief-answers-narrow { display: none; }
 @container design-card (max-width: 500px) {
-  .design-brief-foot { grid-template-columns: minmax(0, 1fr); height: 160px; }
+  .design-brief-foot { grid-template-columns: minmax(0, 1fr); height: 112px; }
+  .design-brief-slot:not(:has(.button-ghost)) { display: none; }
+  .design-brief-foot:has(.design-brief-slot .button-ghost) { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .design-brief-answers-narrow { display: flex; order: 1; min-height: var(--control-md); }
+  .design-brief-answers-narrow .button { width: 100%; }
+  .design-brief-questions { order: 1; }
 }
 
 .design-brief-collapsed { border-bottom: 1px solid var(--color-border); padding: var(--space-1) var(--space-4); }
@@ -80,7 +86,7 @@
 .design-brief-frozen { display: flex; flex-direction: column; gap: var(--space-2); padding-bottom: var(--space-3); }
 .design-brief-frozen p { margin: 0; }
 .design-brief-frozen .design-brief-read { height: auto; padding: 0; overflow: visible; }
-.design-brief-frozen-prompt summary { cursor: pointer; font-weight: var(--fw-semibold); font-size: var(--fs-caption); min-height: 36px; display: flex; align-items: center; }
+.design-brief-frozen-prompt summary { list-style: none; gap: var(--space-1); cursor: pointer; font-weight: var(--fw-semibold); font-size: var(--fs-caption); min-height: 36px; display: flex; align-items: center; }
 
 /* The image grid: every card one size, so one arriving or being described moves no other. */
 .design-asset-error { margin: 0; min-height: 18px; }
@@ -104,3 +110,5 @@
 .design-asset-detail-body dt { font-size: var(--fs-caption); font-weight: var(--fw-semibold); }
 .design-asset-detail-body dd { margin: 0; }
 .design-asset-detail-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.design-brief-frozen-prompt summary::-webkit-details-marker { display: none; }
+.design-brief-frozen-prompt[open] .icon-twist { transform: rotate(90deg); }

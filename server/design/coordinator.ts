@@ -4,7 +4,7 @@
 // here, and each tool decides from server-held state, never from what the model says about itself.
 import { captureDesignPage } from "./capture";
 import { noteSignedInConsent, readAssets } from "./assets";
-import { askVision, assetBlock, describerModels, describing, onAssetsSettled } from "./describe";
+import { askVision, assetBlock, describerModels, describing, onAssetsSettled, onDescribingStarted } from "./describe";
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -130,6 +130,7 @@ function ports(): CoordinatorPorts {
     hooked = true;
     onDesignHandIn((e) => noteHandIn(e.sessionId, { label: e.label, version: e.version, note: e.note }));
     onAssetsSettled((sid) => syncBriefImages(sid));
+    onDescribingStarted((sid) => syncBriefImages(sid));
   }
   return realPorts;
 }

@@ -1,17 +1,18 @@
 import { createMemo, createSignal, For, Show } from "solid-js";
-import { Portal } from "solid-js/web";
+import { useDesignOpen } from "../lib/design-history";
 import { hostOf } from "../lib/mesh";
 import { useDesignStore } from "../lib/design-store";
 import { coordinatorOf } from "../lib/design-ui";
-import { designGrid, DesignTile, type DesignOpenTarget } from "./DesignCard";
-import { DesignOpen, DesignRefinePanel } from "./DesignOpen";
+import { designGrid, DesignTile } from "./DesignCard";
+import { DesignOpenSlot, DesignRefinePanel } from "./DesignOpen";
 import { createFontsSettled } from "./DesignFrame";
 import "./DesignCard.css";
 
 /** The Gallery tab's prototypes: every design of this chat, in the order they were made. */
 export function DesignGallery(props: { path: string }) {
   const store = useDesignStore(props.path, hostOf(props.path));
-  const [opened, setOpened] = createSignal<DesignOpenTarget | null>(null);
+  // Shared with the chat's Lookbook card, and kept in the browser's history.
+  const nav = useDesignOpen(props.path, hostOf(props.path));
   const [refining, setRefining] = createSignal<string | null>(null);
   const designs = () => designGrid(store.view());
   const labels = createMemo(() => designs().map((d) => d.label), undefined, {
@@ -29,7 +30,7 @@ export function DesignGallery(props: { path: string }) {
           <button
             type="button"
             class="button button-sm"
-            onClick={() => setOpened({ kind: "coordinator" })}
+            onClick={() => nav.open({ kind: "coordinator" })}
           >
             Open Coordinator
           </button>
@@ -60,7 +61,7 @@ export function DesignGallery(props: { path: string }) {
                         d={d()}
                         store={store}
                         cacheKey={props.path}
-                        onOpen={() => setOpened({ kind: "design", label })}
+                        onOpen={() => nav.open({ kind: "design", label })}
                         onRefine={() => setRefining(label)}
                       />
                     )}
@@ -82,19 +83,7 @@ export function DesignGallery(props: { path: string }) {
           </div>
         )}
       </Show>
-      <Show when={opened()}>
-        {(target) => (
-          <Portal>
-            <DesignOpen
-              target={target()}
-              store={store}
-              path={props.path}
-              onClose={() => setOpened(null)}
-              onSwitch={setOpened}
-            />
-          </Portal>
-        )}
-      </Show>
+      <DesignOpenSlot nav={nav} store={store} path={props.path} />
     </section>
   );
 }

@@ -1,6 +1,8 @@
 import { createEffect, createMemo, createSignal, For, on, onCleanup, onMount, Show } from "solid-js";
-import type { DesignRecord } from "../../shared/design";
+import { Portal } from "solid-js/web";
+import { designDirectionLine, type DesignRecord } from "../../shared/design";
 import { versionLabel } from "../lib/design-frame";
+import type { DesignOpener } from "../lib/design-history";
 import { designPageText, type DesignStore } from "../lib/design-store";
 import { coordinatorOf, designCanRefine, designHoldEnds, designIsBusy, designIsWriting, designNoteLine, designLatest, designMeta, designStatusWord, parentsLine, QUICK_PROMPTS } from "../lib/design-ui";
 import { designStatusTone, DesignTile, designGrid, designWaiting, type DesignOpenTarget } from "./DesignCard";
@@ -169,7 +171,18 @@ export function DesignOpen(props: { target: DesignOpenTarget; store: DesignStore
   const [refine, setRefine] = createSignal(false);
   const [pick, setPick] = createSignal<number | null>(null);
   const version = () => pick() ?? (d() ? designLatest(d()!) : 0);
-  const title = () => (d() ? `${d()!.label} · ${d()!.direction}` : "Coordinator");
+  // Another view in the same dialog (Back, Forward, a design opened from the coordinator) starts afresh.
+  createEffect(
+    on(
+      () => (props.target.kind === "design" ? `d:${props.target.label}` : "c"),
+      () => {
+        setPick(null);
+        setRefine(false);
+      },
+      { defer: true },
+    ),
+  );
+  const title = () => (d() ? `${d()!.label} · ${designDirectionLine(d()!)}` : "Coordinator");
   return (
     <dialog
       ref={dialog}
@@ -259,5 +272,34 @@ export function DesignOpen(props: { target: DesignOpenTarget; store: DesignStore
         </Show>
       </div>
     </dialog>
+  );
+}
+
+/**
+ * A chat's open Lookbook view, drawn by one of its surfaces (the card or the Gallery) from the shared
+ * opener, which keeps it in the browser's history and the address. An address naming a design (or a
+ * coordinator) this chat doesn't have shows the chat alone, and stops naming it.
+ */
+export function DesignOpenSlot(props: { nav: DesignOpener; store: DesignStore; path: string }) {
+  const shown = createMemo(() => {
+    const t = props.nav.target();
+    const view = props.store.view();
+    if (!t || !view) return null;
+    const there = t.kind === "coordinator" ? !!coordinatorOf(view) : view.designs.some((x) => x.label === t.label);
+    return there ? t : "gone";
+  });
+  createEffect(() => shown() === "gone" && props.nav.drop());
+  const target = () => {
+    const t = shown();
+    return props.nav.draws() && t && t !== "gone" ? t : null;
+  };
+  return (
+    <Show when={target()}>
+      {(t) => (
+        <Portal>
+          <DesignOpen target={t()} store={props.store} path={props.path} onClose={() => props.nav.close()} onSwitch={(x) => props.nav.open(x)} />
+        </Portal>
+      )}
+    </Show>
   );
 }

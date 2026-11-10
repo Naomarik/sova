@@ -8,7 +8,6 @@ import {
   Show,
   useContext,
 } from "solid-js";
-import { Portal } from "solid-js/web";
 import type {
   DesignCaps,
   DesignChatView,
@@ -19,6 +18,7 @@ import {
   DESIGN_BATCH_DEFAULT,
   DESIGN_BATCH_MAX,
   DESIGN_CONCURRENT,
+  designDirectionLine,
 } from "../../shared/design";
 import { briefStatus, setupLinks, withLinkUse } from "../lib/design-brief";
 import {
@@ -61,7 +61,9 @@ import {
   DesignSealedFrame,
   DesignStreamFrame,
 } from "./DesignFrame";
-import { DesignOpen, DesignRefinePanel } from "./DesignOpen";
+import { DesignOpenSlot, DesignRefinePanel } from "./DesignOpen";
+import { useDesignOpen } from "../lib/design-history";
+import { hostOf } from "../lib/mesh";
 import { TextArea } from "./form";
 import { Chip, Icon } from "./ui";
 import "./DesignCard.css";
@@ -82,8 +84,7 @@ export const CAPS_FALLBACK: DesignCaps = {
   concurrent: DESIGN_CONCURRENT,
 };
 
-export type DesignOpenTarget =
-  { kind: "design"; label: string } | { kind: "coordinator" };
+export type { DesignOpenTarget } from "../lib/design-history";
 
 /** What a page with no text yet says instead. */
 export function designWaiting(d: DesignRecord): string | undefined {
@@ -302,7 +303,8 @@ function DesignRunBody(props: {
   cacheKey: string;
 }) {
   const [refining, setRefining] = createSignal<string | null>(null);
-  const [opened, setOpened] = createSignal<DesignOpenTarget | null>(null);
+  // What this chat has open is shared with its other surfaces and kept in the browser's history.
+  const nav = useDesignOpen(props.cacheKey, hostOf(props.cacheKey));
   const designs = createMemo(() =>
     designsOfRun(props.store.view(), props.run.id, props.run.labels),
   );
@@ -332,7 +334,7 @@ function DesignRunBody(props: {
         </h3>
         <div class="design-run-sub">
           <span class="text-caption text-muted design-run-batch">
-            {designs().length > 0 ? batchLine(designs()) : ""}
+            {designs().length > 0 ? batchLine(designs(), props.run.setup.combine) : ""}
           </span>
           <Show
             when={designs().length > 0}
@@ -396,7 +398,7 @@ function DesignRunBody(props: {
                               store={props.store}
                               cacheKey={props.cacheKey}
                               onOpen={() =>
-                                setOpened({ kind: "design", label })
+                                nav.open({ kind: "design", label })
                               }
                               onRefine={() => setRefining(label)}
                             />
@@ -415,7 +417,7 @@ function DesignRunBody(props: {
                     coordinator={c()}
                     view={props.store.view()}
                     store={props.store}
-                    onOpen={() => setOpened({ kind: "coordinator" })}
+                    onOpen={() => nav.open({ kind: "coordinator" })}
                   />
                 </div>
               )}
@@ -426,7 +428,7 @@ function DesignRunBody(props: {
         <DesignBriefStep
           run={props.run}
           store={props.store}
-          onOpenCoordinator={() => setOpened({ kind: "coordinator" })}
+          onOpenCoordinator={() => nav.open({ kind: "coordinator" })}
         />
       </Show>
       <Show when={refined()}>
@@ -440,19 +442,7 @@ function DesignRunBody(props: {
           </div>
         )}
       </Show>
-      <Show when={opened()}>
-        {(target) => (
-          <Portal>
-            <DesignOpen
-              target={target()}
-              store={props.store}
-              path={props.cacheKey}
-              onClose={() => setOpened(null)}
-              onSwitch={setOpened}
-            />
-          </Portal>
-        )}
-      </Show>
+      <DesignOpenSlot nav={nav} store={props.store} path={props.cacheKey} />
     </>
   );
 }
@@ -523,7 +513,7 @@ export function DesignThumb(props: {
   // earlier version stays on show, with no note over it, until the new page has something to see.
   const showStream = () =>
     writing() || (streamed() && version() > 0 && front() < version());
-  const title = () => `Design ${props.d.label}, ${props.d.direction}`;
+  const title = () => `Design ${props.d.label}, ${designDirectionLine(props.d)}`;
   return (
     <div class="design-tile-page" ref={box}>
       <DesignScale label={`${title()}: ${STATUS_WORD[props.d.status]}`}>
@@ -619,8 +609,8 @@ export function DesignTile(props: {
       <div class="design-tile-info">
         <div class="design-tile-title">
           <span class="design-tile-label">{props.d.label}</span>
-          <span class="design-tile-direction" title={props.d.direction}>
-            {props.d.direction}
+          <span class="design-tile-direction" title={designDirectionLine(props.d)}>
+            {designDirectionLine(props.d)}
           </span>
           <span class="design-tile-chip">
             <Chip

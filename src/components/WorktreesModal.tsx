@@ -68,7 +68,7 @@ export function LandSplit(props: {
       </button>
       {/* Only drafts left: Land lands just them, so the ▾ has nothing to offer without a review kit. */}
       <Show when={props.review || !props.draftsOnly || props.onDiscard}>
-      <ActionMenu label={`More ways to land ${props.branch}`} title="More ways to land" icon="chevron-down" ghost={false} menuName={`Land ${props.branch}`} returnFocus onToggle={(open) => open && props.onMenuOpen?.()}>
+      <ActionMenu label={`More ways to land ${props.branch}`} title="More ways to land" icon="chevron-down" ghost={false} menuName={`Land ${props.branch}`} panelClass="wt-land-menu" returnFocus onToggle={(open) => open && props.onMenuOpen?.()}>
         {(menu) => (
           <>
             <Show when={props.review}>

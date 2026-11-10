@@ -1659,6 +1659,8 @@ html, body { overflow: clip; overscroll-behavior: none; }
 .wt-discard-confirm .remove-anyway-listing { gap: var(--space-2); }
 .wt-discard-confirm .remove-anyway-listing .message-text { font-size: var(--fs-caption); line-height: var(--lh-caption); color: var(--color-ink); }
 .wt-discard-warn { color: var(--color-ink) !important; }
+/* A refusal can name a long folder: it wraps inside the Land ▾ menu instead of running past its edge. */
+.wt-land-menu .popover-item-desc { overflow-wrap: anywhere; }
 .wt-discard-parts code { font-family: var(--font-mono); font-size: var(--fs-mono); overflow-wrap: anywhere; }
 /* Land and its ▾ at their own size: Land as wide as its word, the ▾ a narrow tab, both as tall as the row's other
    buttons. Every row action (and a confirm's two) is one size everywhere: button-sm's height at its label's width,

@@ -4,7 +4,7 @@ import { versionLabel } from "../lib/design-frame";
 import { designPageText, type DesignStore } from "../lib/design-store";
 import { coordinatorOf, designCanRefine, designFixLine, designIsBusy, designLatest, designMeta, designStatusWord, parentsLine, QUICK_PROMPTS } from "../lib/design-ui";
 import { designStatusTone, DesignTile, designGrid, designWaiting, type DesignOpenTarget } from "./DesignCard";
-import { DesignCoordinatorPanel, DesignDeliveryLine, designKey, DesignMessageBox } from "./DesignCoordinator";
+import { DesignCoordinatorPanel, designKey, DesignMessageBox } from "./DesignCoordinator";
 import { DesignSealedFrame, DesignStreamFrame } from "./DesignFrame";
 import { WorkerTranscript } from "./SubagentPane";
 import { Select, TextArea } from "./form";
@@ -93,15 +93,23 @@ function PageFrame(props: { d: DesignRecord; version: number; store: DesignStore
     ),
   );
   const title = () => `Design ${versionLabel(props.d.label, props.version)}`;
+  const live = () => props.store.live(props.d.label);
+  const streaming = () => (!!props.d.live || props.d.status === "writing" || props.d.status === "fixing") && props.version === 0;
+  // The page being written stays on show until the finished one has drawn over it.
+  const [held, setHeld] = createSignal(false);
+  createEffect(() => {
+    if (streaming()) setHeld(true);
+    else if (props.version === 0) setHeld(false);
+  });
   return (
     <div class="design-open-frame">
-      <Show when={(props.d.live || props.d.status === "writing" || props.d.status === "fixing") && props.version === 0}>
-        <div inert class="design-frame-layer">
-          <DesignStreamFrame text={props.store.live(props.d.label)?.text ?? ""} title={title()} waiting={designWaiting(props.d)} />
-        </div>
-      </Show>
       <Show when={html() !== null}>
-        <DesignSealedFrame html={html()!} motion title={title()} />
+        <DesignSealedFrame html={html()!} motion title={title()} onDrawn={() => setHeld(false)} />
+      </Show>
+      <Show when={streaming() || held()}>
+        <div inert class="design-frame-layer" style={{ "z-index": 3 }}>
+          <DesignStreamFrame api={props.store.api} label={props.d.label} version={live()?.version} text={live()?.text ?? ""} title={title()} waiting={designWaiting(props.d)} priority />
+        </div>
       </Show>
       <Show when={props.version === 0 && !props.d.live && props.d.status !== "writing" && props.d.status !== "fixing"}>
         <div class="design-frame-note">No page has been written yet.</div>
@@ -131,9 +139,9 @@ function ChatPane(props: { sessionFile?: string; host: string | null; name: stri
         </Show>
       </div>
       <Show when={props.note}>
-        <p class="field-hint">{props.note}</p>
+        <p class="field-hint design-open-note">{props.note}</p>
       </Show>
-      {props.children}
+      <div class="composer design-open-composer">{props.children}</div>
     </section>
   );
 }
@@ -216,8 +224,7 @@ export function DesignOpen(props: { target: DesignOpenTarget; store: DesignStore
                   streaming={x().status === "writing"}
                   note={x().workerState === "stopped" ? `${x().label}'s session has shut down. A message starts it again.` : x().sessionEnded ? `${x().label}'s session has ended. Refine starts a fresh one from the stored page.` : undefined}
                 >
-                  <DesignDeliveryLine delivery={x().delivery} name={x().label} />
-                  <DesignMessageBox label={`Message ${x().label}`} placeholder={`Message ${x().label}`} send={(text, key) => props.store.api.message(x().label, text, key)} onSent={() => props.store.refresh()} />
+                  <DesignMessageBox label={`Message ${x().label}`} placeholder={`Message ${x().label}`} delivery={x().delivery} name={x().label} send={(text, key) => props.store.api.message(x().label, text, key)} onSent={() => props.store.refresh()} />
                 </ChatPane>
               </Show>
             </>
@@ -240,8 +247,7 @@ export function DesignOpen(props: { target: DesignOpenTarget; store: DesignStore
               </div>
               <Show when={!hideChat()}>
                 <ChatPane sessionFile={c().sessionFile} host={hostOf()} name="the coordinator" author="Coordinator" streaming={c().status === "running"} note="It knows what each design is, not its code.">
-                  <DesignDeliveryLine delivery={c().delivery} name="the coordinator" />
-                  <DesignMessageBox label="Message the coordinator" placeholder="Message the coordinator" send={(text, key) => props.store.api.coordinatorMessage(text, key)} onSent={() => props.store.refresh()} />
+                  <DesignMessageBox label="Message the coordinator" placeholder="Message the coordinator" delivery={c().delivery} name="the coordinator" send={(text, key) => props.store.api.coordinatorMessage(text, key)} onSent={() => props.store.refresh()} />
                 </ChatPane>
               </Show>
             </>

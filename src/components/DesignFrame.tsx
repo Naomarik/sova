@@ -1,8 +1,8 @@
 import { createEffect, createMemo, createSignal, on, onCleanup, onMount, Show, type JSX } from "solid-js";
 import { cardBoxSupported } from "../lib/card-box";
-import { DESIGN_FRAME_LEFT, DESIGN_PAGE_HEIGHT, DESIGN_PAGE_WIDTH, DESIGN_SHELL_ATTRS, DESIGN_STREAM_ATTRS, designHasStyles, designPageDoc, designShellDoc, designStreamDoc, fromDesignFrame, tokensOfText } from "../lib/design-frame";
-
-const STREAM_MS = 340;
+import type { DesignApi } from "../lib/design-api";
+import { DESIGN_FRAME_LEFT, DESIGN_PAGE_HEIGHT, DESIGN_PAGE_WIDTH, DESIGN_SHELL_ATTRS, DESIGN_STREAM_ATTRS, designHasStyles, designPageDoc, designShellDoc, fromDesignFrame, tokensOfText } from "../lib/design-frame";
+import { designLiveSlots } from "../lib/design-live-slots";
 
 /** Every ancestor that scrolls, innermost first, with the element to watch in each. */
 function scrollChain(el: HTMLElement): { root: HTMLElement; target: HTMLElement }[] {
@@ -59,7 +59,7 @@ export function DesignScale(props: { children: JSX.Element; label: string }) {
   });
   return (
     <div class="design-scale" ref={box} aria-label={props.label} role="img">
-      <div class="design-scale-page" inert style={{ width: `${DESIGN_PAGE_WIDTH}px`, height: `${DESIGN_PAGE_HEIGHT}px`, transform: `scale(${scale()})` }}>
+      <div class="design-scale-page" inert style={{ width: `${DESIGN_PAGE_WIDTH}px`, height: `${DESIGN_PAGE_HEIGHT}px`, transform: `scale(${scale()})`, "--design-scale": scale() }}>
         {props.children}
       </div>
     </div>
@@ -98,79 +98,106 @@ export function DesignSealedFrame(props: { html: string; motion: boolean; title:
   );
 }
 
-/** Long enough after a back frame's load for its fonts to have settled, so a swap never shows text jumping. */
-const SWAP_SETTLE_MS = 90;
+/** Long enough after a frame is named for its replay to have painted, so a returning card never shows it blank. */
+const FIRST_PAINT_MS = 250;
 
 /**
- * A page being written, as a still picture: an empty sandbox redrawn about 3 times a second. The next
- * picture is built in the frame stacked behind the one showing, and comes to the front only once
- * loaded, painted and settled, so a redraw never blanks the card or shows half a page. Before its
- * first style block closes a page shows nothing, so that wait reads as progress instead.
+ * A page being written: one document in one empty sandbox, served as it arrives, so it fills in with
+ * no reload. The response names its own policy; the frame's attributes ask for at least as much.
+ * A page shows nothing before its first style block closes, so that wait reads as progress, and the
+ * note goes only once the frame has had time to paint. When the response ends the connection is
+ * given back and the document stays, so the last picture holds until the finished page has drawn.
  */
-export function DesignStreamFrame(props: { text: string; title: string; waiting?: string }) {
-  let a!: HTMLIFrameElement;
-  let b!: HTMLIFrameElement;
-  const [front, setFront] = createSignal<"a" | "b">("a");
+export function DesignStreamFrame(props: { api: DesignApi; label: string; version: number | undefined; text: string; title: string; waiting?: string; priority?: boolean }) {
+  const [src, setSrc] = createSignal("");
+  const [turn, setTurn] = createSignal(false);
   const [painted, setPainted] = createSignal(false);
-  const drawable = () => designHasStyles(props.text);
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  let settle: ReturnType<typeof setTimeout> | undefined;
-  let loading = false;
-  let drawn = "";
-  let frame = 0;
-  const draw = () => {
-    timer = undefined;
-    if (loading || !a || !b) return;
-    const text = props.text;
-    if (text === drawn) return;
-    drawn = text;
-    loading = true;
-    (front() === "a" ? b : a).srcdoc = designStreamDoc(text);
+  let release: (() => void) | undefined;
+  let since = 0;
+  let asked = 0;
+  const giveBack = () => {
+    release?.();
+    release = undefined;
   };
-  const onLoad = (which: "a" | "b") => {
-    if (!loading) return; // a frame's first blank document
-    const show = () => {
-      loading = false;
-      setFront(which);
-      setPainted(true);
-      if (!timer) timer = setTimeout(draw, STREAM_MS);
-    };
-    frame = requestAnimationFrame(() => {
-      frame = requestAnimationFrame(() => {
-        settle = setTimeout(show, SWAP_SETTLE_MS);
+  const connect = (ask: number) => {
+    setTurn(false);
+    props.api
+      .liveUrl(props.label)
+      .then((live) => {
+        if (ask !== asked) return;
+        if (!live) return giveBack();
+        since = performance.now();
+        setSrc(live.url);
+      })
+      .catch(() => {
+        if (ask === asked) giveBack();
       });
-    });
   };
+  // A memo: the live text changes many times a second, its version only at a new page.
+  const version = createMemo(() => props.version);
   createEffect(
     on(
-      () => [props.text, drawable()] as const,
-      ([, can]) => {
-        if (can && !timer && !loading) timer = setTimeout(draw, drawn ? STREAM_MS : 0);
+      version,
+      (v) => {
+        // The page's end takes its version away; the document on show stays.
+        if (v === undefined) return;
+        giveBack();
+        const ask = ++asked;
+        setSrc("");
+        setPainted(false);
+        setTurn(true);
+        release = designLiveSlots.ask({
+          priority: !!props.priority,
+          grant: () => connect(ask),
+          revoke: () => {
+            ++asked;
+            setSrc("");
+            setPainted(false);
+            setTurn(true);
+          },
+        });
       },
     ),
   );
   onCleanup(() => {
-    clearTimeout(timer);
-    clearTimeout(settle);
-    cancelAnimationFrame(frame);
+    ++asked;
+    giveBack();
   });
-  const attrs = (which: "a" | "b") => ({
-    class: `design-frame design-frame-stream${front() === which ? " design-frame-front" : ""}`,
-    title: props.title,
-    sandbox: DESIGN_STREAM_ATTRS.sandbox,
-    csp: DESIGN_STREAM_ATTRS.csp,
-    referrerpolicy: DESIGN_STREAM_ATTRS.referrerpolicy,
-    onLoad: () => onLoad(which),
+  const drawable = createMemo(() => !!src() && designHasStyles(props.text));
+  createEffect(() => {
+    if (!drawable() || painted()) return;
+    let frame = 0;
+    const hold = setTimeout(() => {
+      frame = requestAnimationFrame(() => {
+        frame = requestAnimationFrame(() => setPainted(true));
+      });
+    }, Math.max(0, since + FIRST_PAINT_MS - performance.now()));
+    onCleanup(() => {
+      clearTimeout(hold);
+      cancelAnimationFrame(frame);
+    });
   });
+  // The policy and sandbox have to be on the element before its document is named.
+  const seal = (el: HTMLIFrameElement, url: string) => {
+    el.setAttribute("sandbox", DESIGN_STREAM_ATTRS.sandbox);
+    el.setAttribute("csp", DESIGN_STREAM_ATTRS.csp);
+    el.setAttribute("referrerpolicy", DESIGN_STREAM_ATTRS.referrerpolicy);
+    el.src = url;
+  };
+  const tokens = () => tokensOfText(props.text.length).toLocaleString("en-US");
+  const note = () => {
+    if (!props.text) return props.waiting ?? "Starting the page";
+    if (turn()) return `Waiting for a free preview · about ${tokens()} tokens written`;
+    return `${designHasStyles(props.text) ? "Writing the page" : "Writing styles"} · about ${tokens()} tokens`;
+  };
   return (
     <>
-      <Show when={drawable()}>
-        <iframe ref={a} {...attrs("a")} />
-        <iframe ref={b} {...attrs("b")} />
+      <Show when={src()} keyed>
+        {(url) => <iframe class="design-frame" title={props.title} ref={(el) => seal(el, url)} onLoad={giveBack} />}
       </Show>
       <Show when={!painted()}>
         <div class="design-frame-note" role="status">
-          {props.text ? `Writing styles · about ${tokensOfText(props.text.length).toLocaleString("en-US")} tokens` : props.waiting ?? "Starting the page"}
+          {note()}
         </div>
       </Show>
     </>

@@ -7,8 +7,8 @@
  * with a policy that allows Google Fonts and nothing else over the network, then a boot script that
  * takes WebRTC off its global before any of the page's code runs.
  *
- * A page still being written is a still picture: an empty sandbox (no scripts at all), and two frames
- * swapped on load, so each redraw replaces a finished picture rather than blanking the card.
+ * A page still being written is one document in an empty sandbox (no scripts at all), served by the
+ * server as it arrives under this same stream policy, so it fills in without ever reloading.
  */
 
 /** Everything a page may load: Google Fonts and its own data. Scripts and styles inline only. */
@@ -118,7 +118,7 @@ export function designShellDoc(doc: DesignPageDoc): string {
   return `<!doctype html><html><head>${head(DESIGN_SHELL_CSP)}<style>html,body{margin:0;padding:0;width:100%;height:100%;overflow:hidden;background:#fff}</style></head><body><script>${shell}</script></body></html>`;
 }
 
-/** A page being written: the text so far, with no motion. A half-written last tag is the parser's to drop. */
+/** The start of a page being written, as the server sends it: the text so far, with no motion. A half-written last tag is the parser's to drop. */
 export function designStreamDoc(partial: string): string {
   return `<!doctype html>${head(DESIGN_STREAM_CSP)}<style>${HOLD_MOTION_STYLE}</style>${partial}`;
 }

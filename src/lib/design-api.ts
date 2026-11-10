@@ -66,6 +66,17 @@ export function designApi(path: string, host: string | null) {
         throw e;
       }
     },
+    /** Where a frame may read the page in progress as it is written; null when none is being written, and for another computer's chat, whose card keeps its Writing note. */
+    liveUrl: async (l: string): Promise<{ url: string; version: number; expires: number } | null> => {
+      const route = url(`${label(l)}/live-url`);
+      if (routeUrl(route).startsWith("/peer/")) return null;
+      try {
+        return await json<{ url: string; version: number; expires: number }>(route);
+      } catch (e) {
+        if (e instanceof ApiError && e.status === 404) return null;
+        throw e;
+      }
+    },
     /** A finished page's text; the page is never loaded as a document from Sova's origin. */
     page: async (l: string, version: number): Promise<string> => {
       const res = await send(url(`${label(l)}/page`, `&v=${version}`));

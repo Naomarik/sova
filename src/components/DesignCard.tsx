@@ -33,7 +33,7 @@ import { DesignCoordinatorPanel } from "./DesignCoordinator";
 import { createNearViewport, DesignScale, DesignSealedFrame, DesignStreamFrame } from "./DesignFrame";
 import { DesignOpen, DesignRefinePanel } from "./DesignOpen";
 import { TextArea, Toggle } from "./form";
-import { Chip } from "./ui";
+import { Chip, Icon } from "./ui";
 import "./DesignCard.css";
 
 /** The chat a Design card or the Gallery reads. Only a chat you can write to provides it. */
@@ -49,7 +49,7 @@ export type DesignOpenTarget = { kind: "design"; label: string } | { kind: "coor
 
 /** What a page with no text yet says instead. */
 export function designWaiting(d: DesignRecord): string | undefined {
-  return d.status === "fixing" ? d.fix?.reason || "Fixing the page" : d.thinking ? "Thinking about the page" : undefined;
+  return d.status === "fixing" ? "Fixing the page" : d.thinking ? "Thinking about the page" : undefined;
 }
 
 export function designStatusTone(d: DesignRecord): "success" | "accent" | "error" | "warn" | undefined {
@@ -315,7 +315,9 @@ function DesignRunBody(props: { run: DesignRunView; store: DesignStore; newest: 
           <span class="text-caption text-muted design-run-batch">{designs().length > 0 ? batchLine(designs()) : ""}</span>
           <Show when={designs().length > 0} fallback={<Chip live={props.run.phase === "researching"}>{props.run.phase === "confirm" ? "Waiting on you" : props.run.phase === "stopped" ? "Stopped" : "Looking for the screen"}</Chip>}>
             <Chip live={anyLive()} tone={anyLive() ? "accent" : undefined}>
-              {counts()}
+              <span class="design-run-counts" title={counts()}>
+                {counts()}
+              </span>
             </Chip>
           </Show>
         </div>
@@ -323,15 +325,18 @@ function DesignRunBody(props: { run: DesignRunView; store: DesignStore; newest: 
       <div class="design-card-scroll">
       <Show when={props.run.error}>
         {(e) => (
-          <div class="design-card-body">
-            <p class="field-error">{e()}</p>
+          <div class="design-run-error">
+            <div class="banner banner-compact banner-error" role="alert">
+              <Icon name="alert-circle" small class="banner-icon" />
+              <p class="banner-body">{e()}</p>
+            </div>
           </div>
         )}
       </Show>
       <Show when={props.run.phase === "confirm" && props.run.confirm}>{(c) => <DesignConfirmPanel run={props.run} confirm={c()} store={props.store} />}</Show>
       <Show when={props.run.phase === "researching"}>
-        <div class="design-card-body">
-          <p class="text-muted">The coordinator is finding the screen to design. It stops here to show you what it found.</p>
+        <div class="empty design-card-waiting">
+          <p class="empty-body">The coordinator is finding the screen to design. It stops here to show you what it found.</p>
         </div>
       </Show>
       <Show when={designs().length > 0}>
@@ -431,13 +436,19 @@ export function DesignThumb(props: { d: DesignRecord; store: DesignStore; cacheK
   const [slots, setSlots] = createSignal<PageSlot[]>([]);
   const [front, setFront] = createSignal(0);
   const [failed, setFailed] = createSignal("");
+  const [streamed, setStreamed] = createSignal(false);
+  const writing = () => !!props.d.live || props.d.status === "writing" || props.d.status === "fixing";
   createEffect(
     on(near, (isNear) => {
       if (isNear) return;
       setSlots([]);
       setFront(0);
+      setStreamed(false);
     }),
   );
+  createEffect(() => {
+    if (writing() && near() && live()) setStreamed(true);
+  });
   createEffect(
     on([version, near], ([v, isNear]) => {
       if (!v || !isNear || slots().some((s) => s.v === v)) return;
@@ -452,11 +463,11 @@ export function DesignThumb(props: { d: DesignRecord; store: DesignStore; cacheK
   const drawn = (slot: PageSlot) => {
     if (slot.v < front()) return;
     setFront(slot.v);
+    if (!writing()) setStreamed(false);
     setSlots((list) => list.filter((s) => s.v === slot.v));
   };
-  const writing = () => !!props.d.live || props.d.status === "writing" || props.d.status === "fixing";
   // Writing to finished keeps the last picture until the finished page has drawn.
-  const showStream = () => writing() || (version() > 0 && front() < version() && !!live());
+  const showStream = () => writing() || (streamed() && version() > 0 && front() < version());
   const title = () => `Design ${props.d.label}, ${props.d.direction}`;
   return (
     <div class="design-tile-page" ref={box}>
@@ -471,7 +482,7 @@ export function DesignThumb(props: { d: DesignRecord; store: DesignStore; cacheK
           </For>
           <Show when={showStream()}>
             <div class="design-frame-layer" style={{ "z-index": 3 }}>
-              <DesignStreamFrame text={live()?.text ?? ""} title={title()} waiting={designWaiting(props.d)} />
+              <DesignStreamFrame api={props.store.api} label={props.d.label} version={live()?.version} text={live()?.text ?? ""} title={title()} waiting={designWaiting(props.d)} />
             </div>
           </Show>
         </Show>

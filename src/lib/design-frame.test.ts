@@ -66,9 +66,9 @@ test("a grid card holds motion and the full view runs it", () => {
 
 test("the streaming document runs nothing and the empty sandbox says so", () => {
   assert.equal(DESIGN_STREAM_ATTRS.sandbox, "");
-  assert.equal(DESIGN_SHELL_ATTRS.sandbox, "allow-scripts allow-forms");
   assert.ok(designStreamDoc("<p>so far").endsWith("<p>so far"));
   assert.doesNotMatch(designStreamDoc("<p>"), /<script/);
+  assert.equal(DESIGN_SHELL_ATTRS.sandbox, "allow-scripts allow-forms");
 });
 
 test("the shell escapes the page so a closing script tag in it can't end the shell's own script", () => {

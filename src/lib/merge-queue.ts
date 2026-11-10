@@ -644,9 +644,6 @@ export const unattributedWhy = (reason: string | undefined, target?: string): st
 export const unclearLine = (u: { label: string; why?: string }, target?: string): string =>
   u.why?.trim() ? `${u.label}: ${u.why.trim().replace(/[.]$/, "")}` : `${u.label}: fails with this branch and on ${target ?? "the target"} alone, naming no tests`;
 
-/** Why Land reads Rehearsal needed (§app.merge-queue/approve): its hover and what a screen reader hears. */
-export const rehearsalWhy = (commit: string | undefined): string => `This branch changes automatic cleanup. Land opens once a rehearsal has passed at ${commit ? short(commit) : "its newest commit"} on a copy of your state taken today.`;
-
 /** The order the summary counts in. */
 const ORDER: RowKey[] = ["ready", "ready-to-merge", "waiting-ok", "landing-specs", "drafts-to-land", "conflicting", "in-progress", "blocked", "stale", "no-reading", "queued", "checking", "conflict", "behaviour-differs", "needs-you", "review-flagged", "unattributed", "needs-fix", "with-chat", "drafts-changed", "request-review", "requested", "uncommitted", "no-commits", "landed", "pushed", "closed", "merged", "cleaned-up", "removed", "dropped"];
 const COUNT_WORD: Record<RowKey, [string, string]> = {

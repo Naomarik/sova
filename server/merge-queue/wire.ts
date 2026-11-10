@@ -1051,13 +1051,6 @@ export async function startMergeQueue(
       const target = await queue.targetHead();
       return target ? queue.setupUntried(target, head) : null;
     },
-    rehearsalWait: async (dir, head) => {
-      const p = await projectOf(dir);
-      if (p.state !== "ok" || !p.git || !served.isListed(p.root)) return false;
-      const queue = (await q.peek(p.root)) ?? (await q.get(p.root));
-      const target = await queue.targetHead();
-      return target ? queue.rehearsalWait(target, head) : false;
-    },
     readyToLand: (t) =>
       void projectOf(t.path)
         .then((p) => (p.state === "ok" && p.git ? summaryFor(p.root, t.branch, t.commit) : undefined))

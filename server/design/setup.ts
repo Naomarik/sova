@@ -14,6 +14,7 @@ import type { ModelInfo, ModelPolicy } from "../../shared/protocol";
 import type { DesignParent } from "./batch";
 import { linksFromText } from "./brief";
 import { changeDesigns } from "./store";
+import { chatHandle } from "../chat-handle";
 
 const PRICES_DIR = join(import.meta.dirname, "..", "..", "shared", "model-prices");
 const PAGE_OUTPUT_TOKENS = 18_000;
@@ -48,31 +49,57 @@ export interface SetupInput {
   coordinator?: string;
 }
 
+/** What the main chat's request says beyond its fields: the model the chat itself runs on, provider/modelId. */
+export interface SetupContext {
+  chatModel?: string;
+}
+
+const providerOf = (ref: string): string => ref.slice(0, ref.indexOf("/")).toLowerCase();
+
+/**
+ * The one model each name means. A provider/id names exactly that model. A bare id that more than one provider
+ * offers goes to a provider the same request names (another model's provider/id, or a group), else to the chat's
+ * own model's provider, else to the first in the picker's order: never to two models.
+ */
+function resolveNames(available: readonly ModelInfo[], names: readonly string[], groups: readonly string[], context: SetupContext): string[] {
+  const exact = names.filter((n) => n.includes("/")).map((n) => available.find((m) => m.ref.toLowerCase() === n.toLowerCase())?.ref).filter((r): r is string => !!r);
+  const named = new Set(exact.map(providerOf));
+  const inGroup = (ref: string) => groups.some((g) => designInGroup(ref, g));
+  const chat = context.chatModel?.includes("/") ? providerOf(context.chatModel) : null;
+  const out = [...exact];
+  for (const n of names.filter((x) => !x.includes("/"))) {
+    const candidates = available.filter((m) => m.id.toLowerCase() === n.toLowerCase());
+    const pick = candidates.find((m) => out.includes(m.ref)) ?? candidates.find((m) => named.has(providerOf(m.ref))) ?? candidates.find((m) => inGroup(m.ref)) ?? candidates.find((m) => providerOf(m.ref) === chat) ?? candidates[0];
+    if (pick && !out.includes(pick.ref)) out.push(pick.ref);
+  }
+  return out;
+}
+
 /** The card's model rows from the models this server has: only what may run, best first per provider, with the
     main chat's picks ticked and exactly one coordinator. */
-export function setupModels(listed: readonly ModelInfo[], policy: ModelPolicy, retired: ReadonlySet<string>, input: Pick<SetupInput, "models" | "modelGroups" | "coordinator">): DesignModelChoice[] {
+export function setupModels(listed: readonly ModelInfo[], policy: ModelPolicy, retired: ReadonlySet<string>, input: Pick<SetupInput, "models" | "modelGroups" | "coordinator">, context: SetupContext = {}): DesignModelChoice[] {
   // Best first within each provider's section, favorites leading: the order the card keeps.
   const available = designModelOrder(listed.filter((m) => designModelAllowed(policy, m.ref, retired)));
-  const named = new Set((input.models ?? []).map((m) => m.toLowerCase()));
-  const isNamed = (ref: string, id: string) => named.has(ref.toLowerCase()) || named.has(id.toLowerCase());
-  const coordinator = available.find((m) => input.coordinator && (m.ref === input.coordinator || m.id === input.coordinator));
+  const groups = input.modelGroups ?? [];
+  const named = new Set(resolveNames(available, input.models ?? [], groups, context));
+  const coordinatorRef = input.coordinator ? resolveNames(available, [input.coordinator], groups, context)[0] : undefined;
   const models: DesignModelChoice[] = available.map((m) => ({
     ref: m.ref,
     name: m.id,
-    design: isNamed(m.ref, m.id) || (input.modelGroups ?? []).some((g) => designInGroup(m.ref, g)),
+    design: named.has(m.ref) || groups.some((g) => designInGroup(m.ref, g)),
     coordinator: false,
     vision: !!m.input?.includes("image"),
     route: designRouteOf(m.ref),
     ...(m.favorite ? { favorite: true } : {}),
   }));
-  const chosenCoordinator = coordinator?.ref ?? models.find((m) => m.design)?.ref ?? models[0]?.ref;
+  const chosenCoordinator = coordinatorRef ?? models.find((m) => m.design)?.ref ?? models[0]?.ref;
   for (const m of models) m.coordinator = m.ref === chosenCoordinator;
   return models;
 }
 
 /** The Setup card as the main chat's words fill it. Every model is listed so the user can change anything. */
-export async function setupFrom(input: SetupInput): Promise<DesignSetup> {
-  const models = setupModels(await listModels(), readModelPolicy(), retiredModelRefs(), input);
+export async function setupFrom(input: SetupInput, context: SetupContext = {}): Promise<DesignSetup> {
+  const models = setupModels(await listModels(), readModelPolicy(), retiredModelRefs(), input, context);
   const asked = (input.directions ?? []).map((d) => d.toLowerCase());
   const known = DESIGN_DIRECTIONS.filter((d) => asked.includes(d.name.toLowerCase())).map((d) => d.name);
   const on = known.length ? known : [...DESIGN_DEFAULT_DIRECTION_SETS[Math.floor(Math.random() * DESIGN_DEFAULT_DIRECTION_SETS.length)]!];
@@ -89,7 +116,9 @@ export async function setupFrom(input: SetupInput): Promise<DesignSetup> {
 }
 
 export async function createRun(parent: DesignParent, cwd: string, input: SetupInput): Promise<DesignRun> {
-  const setup = await setupFrom(input);
+  // A bare model id resolves toward the provider the chat itself runs on.
+  const chatModel = chatHandle(parent.path)?.mirror.model?.ref;
+  const setup = await setupFrom(input, chatModel ? { chatModel } : {});
   const now = new Date().toISOString();
   const run: DesignRun = { id: randomUUID().slice(0, 8), setup, phase: "setup", labels: [], createdAt: now, updatedAt: now };
   changeDesigns(parent.sessionId, (s) => {

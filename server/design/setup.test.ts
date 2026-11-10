@@ -81,3 +81,32 @@ test("Setup keeps only the layouts it offered, and the combine choice and seed i
   const oldPlain = cleanSetup({ brief: "x", models: [], directions: [] }, { brief: "x", models: [], directions: [] });
   assert.ok(typeof oldPlain !== "string" && oldPlain.layouts === undefined);
 });
+
+test("a bare model id ticks one model, never the same id under two providers", () => {
+  const designing = (models: string[], chatModel?: string, extra: { modelGroups?: string[] } = {}) =>
+    setupModels(LISTED, open, NONE, { models, ...extra }, chatModel ? { chatModel } : {}).filter((m) => m.design).map((m) => m.ref);
+  // glm-5.3 is under both Z.ai and Ollama Cloud: the chat's own provider decides.
+  assert.deepEqual(designing(["glm-5.3"], "zai/glm-5.3-flash"), ["zai/glm-5.3"]);
+  assert.deepEqual(designing(["glm-5.3"], "ollama-cloud/kimi-k3"), ["ollama-cloud/glm-5.3"]);
+  // A provider named in the same request leads the chat's own.
+  assert.deepEqual(designing(["glm-5.3", "ollama-cloud/kimi-k3"], "zai/glm-5.3-flash").sort(), ["ollama-cloud/glm-5.3", "ollama-cloud/kimi-k3"]);
+  // An exact provider/id wins over everything, and stays alone.
+  assert.deepEqual(designing(["ollama-cloud/glm-5.3"], "zai/glm-5.3-flash"), ["ollama-cloud/glm-5.3"]);
+  assert.deepEqual(designing(["zai/glm-5.3", "glm-5.3"], "ollama-cloud/kimi-k3"), ["zai/glm-5.3"], "the bare id is the model already named");
+  // Over every chat provider, with or without one: each bare id ticks at most one model.
+  for (const chat of [undefined, "zai/x", "ollama-cloud/x", "claude-code-cli/x", "ollama/x"])
+    for (const id of ["glm-5.3", "kimi-k3", "glm-4.7", "nope"]) {
+      const got = designing([id], chat);
+      assert.ok(got.length <= 1 && got.every((r) => r.endsWith(`/${id}`)), `${id} from ${chat}: ${got}`);
+      if (id !== "nope") assert.equal(got.length, 1, `${id} from ${chat}`);
+    }
+  // A whole group still ticks the whole section.
+  assert.deepEqual(designing(["glm-5.3"], "zai/x", { modelGroups: ["ollama-cloud"] }).sort(), ["ollama-cloud/glm-5.3", "ollama-cloud/kimi-k3", "ollama-cloud/old-retired"]);
+});
+
+test("a bare coordinator id resolves the same way, to one model", () => {
+  const coord = (coordinator: string, chatModel?: string) => setupModels(LISTED, open, NONE, { coordinator }, chatModel ? { chatModel } : {}).filter((m) => m.coordinator).map((m) => m.ref);
+  assert.deepEqual(coord("glm-5.3", "ollama-cloud/kimi-k3"), ["ollama-cloud/glm-5.3"]);
+  assert.deepEqual(coord("glm-5.3", "zai/x"), ["zai/glm-5.3"]);
+  assert.deepEqual(coord("ollama-cloud/glm-5.3", "zai/x"), ["ollama-cloud/glm-5.3"]);
+});

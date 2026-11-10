@@ -175,9 +175,10 @@ function BriefScreen(props: { run: DesignRunView; store: DesignStore; contentOnl
     }
   };
   return (
-    <section class="design-brief-screen" aria-label="The screen found">
+    <section class="design-brief-screen" aria-label={screen() ? "The screen found" : "The screen"}>
       <div class="design-brief-text-head">
-        <h4 class="design-brief-title">The screen found</h4>
+        {/* The slot keeps its room in every state; only its heading and words say which. */}
+        <h4 class="design-brief-title">{screen() ? "The screen found" : props.contentOnly ? "No screen" : "The screen"}</h4>
         <span class="text-caption text-muted design-brief-note" title={screen()?.url}>
           {screen()?.url ?? ""}
         </span>

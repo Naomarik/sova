@@ -31,8 +31,8 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | Class: Page plumbing | 21 |
 | Class: Steps of starting a chat | 2 |
 | Class: Live capability links | 1 |
-| Class: Approvals and grants | 15 |
-| Pending (not yet a command) | 25 |
+| Class: Approvals and grants | 17 |
+| Pending (not yet a command) | 23 |
 | Chat socket frame types | 14 |
 | Document/window keydown listeners | 11 |
 | Hand-written tool specs | 148 |
@@ -312,8 +312,6 @@ class, leaves it, and a new route never joins it.
 
 | Route | Mesh need |
 | --- | --- |
-| `PATCH /api/design/images/:name` | full |
-| `POST /api/design/images/:name/describe` | full |
 | `GET /api/diff/patch` | sessions |
 | `GET /api/memory` | sessions |
 | `GET /api/memory/open` | sessions |
@@ -821,7 +819,7 @@ A list that prints live preview links, which open a project's port to whoever ho
 | --- | --- |
 | `GET /api/projects/:pid/previews` | sessions |
 
-### Approvals and grants (15)
+### Approvals and grants (17)
 
 Approving a schedule or a draft spec, the Overseer's permits and their revoke: any chat can run catalogue actions with the operator's token, so none of these is one. Exactly these routes (`GRANTS`).
 
@@ -830,6 +828,8 @@ Approving a schedule or a draft spec, the Overseer's permits and their revoke: a
 | `POST /api/design/assets/own` | full |
 | `POST /api/design/assets/signed-in-consent` | full |
 | `POST /api/design/coordinator/answer` | full |
+| `PATCH /api/design/images/:name` | full |
+| `POST /api/design/images/:name/describe` | full |
 | `POST /api/design/runs/:run/brief/answers` | full |
 | `POST /api/design/runs/:run/brief/conflict` | full |
 | `POST /api/design/runs/:run/brief/edit` | full |

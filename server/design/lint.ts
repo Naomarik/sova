@@ -224,6 +224,8 @@ function allowed(directive: string, url: string): boolean {
   const sources = POLICY.get(directive) ?? POLICY.get("default-src") ?? [];
   const scheme = /^([a-z][a-z0-9+.-]*):/i.exec(u)?.[1]?.toLowerCase();
   if (scheme === "data" || scheme === "blob") return sources.includes(`${scheme}:`);
+  // A chat's own image by its short name: Sova puts the picture in when it shows the finished page.
+  if (scheme === "sova-asset") return directive === "img-src";
   try {
     return sources.includes(new URL(u.startsWith("//") ? `https:${u}` : u).origin);
   } catch {

@@ -73,9 +73,15 @@ test("a write the page sends on a click is stopped before it reaches the site", 
   assert.equal(writes, before);
 });
 
-test("a page reaching an unapproved origin stops the look and asks", { skip: !browser }, async () => {
-  const out = await designBrowse(parent, { url: `${origin}/third`, sizes: ["desktop"] }, deps);
+test("on a site approved but not named, a page reaching another origin stops the look and asks", { skip: !browser }, async () => {
+  const approvedOnly: DesignBrowseDeps = { ...deps, stores: { ...deps.stores, named: () => false, approvals: { isApproved: (o) => o === origin } } };
+  const out = await designBrowse(parent, { url: `${origin}/third`, sizes: ["desktop"] }, approvedOnly);
   assert.equal(out.kind, "needs-site", JSON.stringify(out));
+});
+
+test("on your link, a part at a private address is left out and the look still ends with a picture", { skip: !browser }, async () => {
+  const out = await designBrowse(parent, { url: `${origin}/third`, sizes: ["desktop"] }, deps);
+  assert.equal(out.kind, "pictures", JSON.stringify(out));
 });
 
 test("a design's own page is pictured, its scripts run, and it can't leave", { skip: !browser }, async () => {

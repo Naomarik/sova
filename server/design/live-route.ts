@@ -1,7 +1,7 @@
 // The page being written, as one document: a frame loads this once and the page fills in as it arrives, with
 // no reload. On connecting it gets the text so far, then each slice, until that page ends.
 import type { Context, Hono } from "hono";
-import { DESIGN_STREAM_CSP, HOLD_MOTION_STYLE } from "../../src/lib/design-frame";
+import { DESIGN_ASSET_PLACEHOLDER_STYLE, DESIGN_STREAM_CSP, HOLD_MOTION_STYLE } from "../../src/lib/design-frame";
 import { followLivePage, livePage } from "./live";
 import { LIVE_LINK_ROUTE, liveLink, liveLinkUrl, mintLiveLink, type LiveLink } from "./live-link";
 import { designOf, readPage } from "./store";
@@ -10,7 +10,7 @@ import { designOf, readPage } from "./store";
 const NO_STORE = { "Cache-Control": "no-store, no-transform", "X-Content-Type-Options": "nosniff" };
 const POLICY = `sandbox; ${DESIGN_STREAM_CSP}`;
 /** A page mid-write holds still. The policy comes with the headers; a half-written last tag is the parser's to drop. */
-const documentOf = (text: string) => `<!doctype html><style>${HOLD_MOTION_STYLE}</style>${text}`;
+const documentOf = (text: string) => `<!doctype html><style>${HOLD_MOTION_STYLE}${DESIGN_ASSET_PLACEHOLDER_STYLE}</style>${text}`;
 const isHighSurrogate = (c: number) => c >= 0xd800 && c <= 0xdbff;
 
 function stream(link: LiveLink): ReadableStream<Uint8Array> {

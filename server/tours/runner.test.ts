@@ -167,6 +167,29 @@ test("sandbox off: a declared origin's check failing with a job failure (scope c
   assert.equal(await running, refusal, "the attempt ends with the policy failure, not as a finished recording");
 });
 
+test("a look at a link: a connection waits for its hop's check to land, and waiting alone admits nothing", async () => {
+  const script = tourScriptFixture();
+  script.source = { kind: "site", origin: "https://public.example" };
+  let started: RunnerProxyOptions | undefined;
+  const proc = Object.assign(new EventEmitter(), { stdin: new PassThrough(), stdout: new PassThrough(), stderr: new PassThrough(), pid: undefined, exitCode: null, signalCode: null, kill: () => true }) as unknown as ChildProcess;
+  const running = runTourAttempt({
+    context: context(false), script, tourId: "seam-tour", editionId: "seam-edition", dryRun: false, reach: true, walk: { desktop: [] },
+    beforeContact: async () => {},
+    target: async () => ({ origin: "https://public.example", generation: 1, assertCurrent: async () => {} }),
+    startProxy: async options => { started = options; return { url: OWN, closed: new Promise<void>(() => {}), close: async () => {} }; },
+    spawn: async () => ({ process: proc, dispose: async () => {} }),
+  }).catch(() => {});
+  for (let i = 0; i < 100 && !started; i++) await new Promise(ok => setTimeout(ok, 5));
+  // The browser's connection arrives first; the page's contact for that hop lands just after.
+  const hop = started!.admit(["https://hop.example"]);
+  await new Promise(ok => setTimeout(ok, 50));
+  (proc.stdout as PassThrough).write(`${JSON.stringify({ type: "contact", id: 1, origin: "https://hop.example", request: { resourceType: "image", navigation: false, mainFrame: true } })}\n`);
+  assert.equal(await hop, "https://hop.example");
+  await assert.rejects(started!.admit(["https://never-contacted.example"]), /Not an origin/);
+  setTimeout(() => proc.emit("close", null), 20);
+  await running;
+});
+
 test("freshCheck: every caller is covered by a check that began at or after its call; a burst shares two", async () => {
   const starts: number[] = [];
   let release: (() => void) | undefined;

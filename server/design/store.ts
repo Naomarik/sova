@@ -43,6 +43,8 @@ export interface DesignInternal {
 
 export const designRoot = (): string => join(agentRoot(), "design");
 const dirOf = (sessionId: string): string => join(designRoot(), encodeURIComponent(sessionId));
+/** A chat's design folder: removed whole when the chat is deleted, so anything kept for the chat's life goes here. */
+export const designDirOf = dirOf;
 
 const empty = (): DiskState => ({ v: 1, labels: 0, runs: [], designs: [], coordinator: null });
 
@@ -50,11 +52,25 @@ const states = new Map<string, DiskState>();
 /** Chats deleted for good while this server ran: a late write never brings their folder back. */
 const deleted = new Set<string>();
 
+/** This chat was deleted for good while this server ran: nothing writes to its folder again. */
+export const designChatDeleted = (sessionId: string): boolean => deleted.has(sessionId);
+
 const changeListeners = new Set<(sessionId: string) => void>();
 /** Hear that a chat's designs changed (coalesced by the listener). */
 export function onDesignChanged(fn: (sessionId: string) => void): () => void {
   changeListeners.add(fn);
   return () => changeListeners.delete(fn);
+}
+
+/** Tell the page's watchers this chat's designs changed, for a change kept outside state.json (its images). */
+export function announceDesignChange(sessionId: string): void {
+  for (const fn of changeListeners) {
+    try {
+      fn(sessionId);
+    } catch (err) {
+      console.error("[design] a change listener failed", err);
+    }
+  }
 }
 
 function read(sessionId: string): DiskState {
@@ -78,13 +94,7 @@ function write(sessionId: string): void {
   const f = join(dir, "state.json");
   writeFileSync(`${f}.tmp`, JSON.stringify(read(sessionId)), { mode: 0o600 });
   renameSync(`${f}.tmp`, f);
-  for (const fn of changeListeners) {
-    try {
-      fn(sessionId);
-    } catch (err) {
-      console.error("[design] a change listener failed", err);
-    }
-  }
+  announceDesignChange(sessionId);
 }
 
 /** Change the chat's state and save it; every change goes through here. */

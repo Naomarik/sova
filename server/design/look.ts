@@ -12,6 +12,7 @@ import type { TourRecordingContext } from "../tours/sandbox";
 import { TourCaptureFailure } from "../tours/targets";
 import { browseOutline, browseScript, type BrowseParent } from "./browse";
 import { readPage } from "./store";
+import { showAssets } from "./assets";
 
 export const DESIGN_LOOK_CSP = "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com data:; img-src data: blob:; media-src data: blob:; form-action 'none'; base-uri 'none'; frame-src 'none'";
 const FONT_ORIGINS = ["https://fonts.googleapis.com", "https://fonts.gstatic.com"];
@@ -21,6 +22,8 @@ export interface DesignLookDeps {
   run?: typeof runTourAttempt;
   context?: (parent: BrowseParent) => Promise<TourRecordingContext>;
   readPage?: typeof readPage;
+  /** Tests: the pictures put into the page. */
+  showAssets?: typeof showAssets;
 }
 
 /** Serve one page on a fresh loopback port, for the length of `fn`. */
@@ -48,8 +51,10 @@ const parentContext = async (parent: BrowseParent): Promise<TourRecordingContext
 
 /** Pictures of a stored page at both widths (or those asked for) and its outline for a model that reads no images. */
 export async function lookAtDesign(parent: BrowseParent, label: string, a: { version?: number; sizes?: TourSize[] } = {}, deps: DesignLookDeps = {}): Promise<{ shots: { size: TourSize; png: Uint8Array }[]; outline: string }> {
-  const html = (deps.readPage ?? readPage)(parent.sessionId, label, a.version);
-  if (!html) throw new Error(`Design ${label} has no finished page to look at.`);
+  const written = (deps.readPage ?? readPage)(parent.sessionId, label, a.version);
+  if (!written) throw new Error(`Design ${label} has no finished page to look at.`);
+  // The real pictures, carried inside the page: this browser refuses any answer from a Sova, so it can't fetch them.
+  const html = (deps.showAssets ?? showAssets)(parent.sessionId, written, "full");
   const sizes: TourSize[] = a.sizes?.length ? [...new Set(a.sizes)] : ["desktop", "phone"];
   const context = await (deps.context ?? parentContext)(parent);
   return withServedPage(html, async (origin) => {

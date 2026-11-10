@@ -4,10 +4,11 @@ import { TourBrowserAddresses } from "./browser-addresses";
 import { createTourContactSheets } from "./contact-sheet";
 import { TourCaptureFailure, TOUR_TARGET_OUTSIDE, revealTourTarget, settledBox, stableTourBox, tourLocator, tourMark, tourNearby, uniqueTourTarget } from "./targets";
 import { TOUR_LIMITS, TOUR_PROBLEM_LIMITS, TOUR_VIEWPORTS, normalizeTourScript, tourOnSignInRoute, tourSignInViewProblem, type TourFailure, type TourProblem, type TourSignInRequirement, type TourSize, type TourStep, type TourTarget, type TourAction } from "../../shared/tour";
-import { TOUR_DRY_RUN_BLIND, TOUR_SIGN_IN_BOX_SIGNED_IN, TOUR_SIGN_IN_HUMAN, TOUR_SIGN_IN_LANDED, TOUR_SIGN_IN_STALE, TOUR_SIGN_IN_WRONG, type TourAttemptInput, type TourChildMessage, type TourParentMessage, type TourStorageState, type TourWalkAction } from "./runner-protocol";
+import { TOUR_DRY_RUN_BLIND, TOUR_SIGN_IN_BOX_SIGNED_IN, TOUR_SIGN_IN_HUMAN, TOUR_SIGN_IN_LANDED, TOUR_SIGN_IN_STALE, TOUR_SIGN_IN_WRONG, type TourAttemptInput, type TourChildMessage, type TourParentMessage, type TourContactRequest, type TourStorageState, type TourWalkAction } from "./runner-protocol";
 import { filterTourStorage } from "./signin-store";
 import { tourLookControls, tourLookLinks, tourLookUrl, type TourLookPage, type TourLookProblem, type TourLookSize } from "./look";
-import type { Locator, Page, WebSocketRoute } from "playwright-core";
+import { capturePage, watchPageResponses } from "./page-capture";
+import type { Locator, Page, Request, WebSocketRoute } from "playwright-core";
 import { SOVA_SERVER_HEADER, TOUR_RECORDER_HEADER, TOUR_SOVA_REFUSAL } from "./runner-header";
 
 declare global {
@@ -21,7 +22,7 @@ const GENERIC_GUIDANCE = "Review this step's semantic targets, allowed actions, 
 
 const send = (message: TourChildMessage) => process.stdout.write(`${JSON.stringify(message)}\n`);
 type SignInAnswer = { account?: string; username?: string; password?: string; code?: string };
-const awaiting = new Map<number, { resolve: (answer?: SignInAnswer) => void; reject: (error: Error) => void }>();
+const awaiting = new Map<number, { resolve: (answer?: SignInAnswer & { skip?: true }) => void; reject: (error: Error) => void }>();
 let nextId = 0;
 /** Ask the server for this sign-in's login or code: from the tour's memory, or once the user answers. */
 function askSignIn(origin: string, fields: TourSignInRequirement["fields"]): Promise<SignInAnswer> {
@@ -31,13 +32,25 @@ function askSignIn(origin: string, fields: TourSignInRequirement["fields"]): Pro
     send({ type: "sign-in-needed", id, origin, fields });
   });
 }
-function request(type: "contact" | "checkpoint", origin?: string): Promise<void> {
+/** Ask the server about a contact. False: leave this one out and carry on (only a look at a link hears that). */
+function request(type: "contact" | "checkpoint", origin?: string, about?: TourContactRequest): Promise<boolean> {
   if (awaiting.size > 256) return Promise.reject(new Error("The page exceeded the recording request limit."));
   return new Promise((resolve, reject) => {
     const id = ++nextId;
-    awaiting.set(id, { resolve: () => resolve(), reject });
-    send(type === "contact" ? { type, id, origin: origin! } : { type, id });
+    awaiting.set(id, { resolve: answer => resolve(!answer?.skip), reject });
+    send(type === "contact" ? { type, id, origin: origin!, ...(about ? { request: about } : {}) } : { type, id });
   });
+}
+/** What the browser says this request is. A frame it can't name counts as the page itself: the strict reading. */
+function contactOf(req: Request): TourContactRequest {
+  let mainFrame = true, initiator: string | undefined;
+  try {
+    const frame = req.frame();
+    mainFrame = !frame.parentFrame();
+    const at = new URL(frame.url());
+    if (at.protocol === "http:" || at.protocol === "https:") initiator = at.origin;
+  } catch { /* a request with no frame, or a frame with no address yet */ }
+  return { resourceType: req.resourceType(), navigation: req.isNavigationRequest(), mainFrame, ...(initiator ? { initiator } : {}) };
 }
 let started = false;
 let finished = false;
@@ -49,7 +62,7 @@ lines.on("line", line => {
     const msg = JSON.parse(line) as TourParentMessage;
     if (msg.type === "answer") {
       const entry = awaiting.get(msg.id); awaiting.delete(msg.id);
-      if (entry) msg.failure ? entry.reject(new TourCaptureFailure(msg.failure)) : entry.resolve();
+      if (entry) msg.failure ? entry.reject(new TourCaptureFailure(msg.failure)) : entry.resolve(msg.skip ? { skip: true } : undefined);
     } else if (msg.type === "sign-in") {
       const entry = awaiting.get(msg.id); awaiting.delete(msg.id);
       entry?.resolve({ ...(typeof msg.account === "string" ? { account: msg.account } : {}), ...(typeof msg.username === "string" ? { username: msg.username } : {}), ...(typeof msg.password === "string" ? { password: msg.password } : {}), ...(typeof msg.code === "string" ? { code: msg.code } : {}) });
@@ -170,7 +183,12 @@ async function run(input: TourAttemptInput): Promise<void> {
           if (!req.redirectedFrom()) return;
           let hop: string;
           try { hop = new URL(req.url()).origin; } catch { return; }
-          if (!declared.has(hop) && !requested.has(hop)) refuse(`This page redirects to ${hop}, which this tour didn't declare. Declare it in sites, or use reference text.`, hop);
+          if (declared.has(hop) || requested.has(hop)) return;
+          if (!input.reach) { refuse(`This page redirects to ${hop}, which this tour didn't declare. Declare it in sites, or use reference text.`, hop); return; }
+          // A look at a link: this hop is asked about like any contact. Its connection waits for the answer at the proxy.
+          void request("contact", hop, contactOf(req)).then(admitted => { if (admitted) requested.add(hop); }, error => {
+            blocked ??= error instanceof TourCaptureFailure ? error.failure : { message: "A destination could not be approved safely.", guidance: "Review site consent and the chat's sandbox, then retry." };
+          });
         });
         await context.route("**/*", async route => {
           const entered = generation;
@@ -186,9 +204,13 @@ async function run(input: TourAttemptInput): Promise<void> {
             // and any write to a Sova copy still fail the attempt.
             else if (req.method() !== "GET" && !localDraftOnly && !req.isNavigationRequest() && !sovaCopy) { quietAborts++; return await route.abort("blockedbyclient"); }
             else if (req.method() !== "GET" || localDraftOnly) { refuse(localDraftOnly ? "An opening or draft action tried to contact the application; a GET is not assumed to be a safe mutation." : `Blocked ${req.method()} request during read-only recording.`, url.origin); return await route.abort("blockedbyclient"); }
-            await request("contact", url.origin);
+            const about = contactOf(req);
+            if (!await request("contact", url.origin, about)) return await route.abort("blockedbyclient");
             requested.add(url.origin);
-            await addresses.beforeContact(url.origin);
+            // A part of a link's page whose address turns out private is left out, like any other part it can't load.
+            if (input.reach && !declared.has(url.origin) && !(about.navigation && about.mainFrame)) {
+              try { await addresses.beforeContact(url.origin); } catch { return await route.abort("blockedbyclient"); }
+            } else await addresses.beforeContact(url.origin);
             plumbing = true;
             await route.continue();
           } catch (error) {
@@ -215,7 +237,7 @@ async function run(input: TourAttemptInput): Promise<void> {
           if (path === "/ws/chat") { refuse("Blocked a live chat connection (/ws/chat): this page opens a live chat; record it as reference text or choose an idle view."); socket.close(); return; }
           if (localDraftOnly) { refuse(`An opening or draft action opened a live connection (${path}); a connection is not assumed to be read-only.`, origin); socket.close(); return; }
           try {
-            await request("contact", origin);
+            if (!await request("contact", origin, { resourceType: "websocket", navigation: false, mainFrame: false })) { socket.close(); return; }
             requested.add(origin);
             await addresses.beforeContact(origin);
             // An origin that answered as a Sova gets no socket: only a verified managed copy's own feed opens.
@@ -290,6 +312,7 @@ async function run(input: TourAttemptInput): Promise<void> {
           responseChecks.add(check);
           void check.finally(() => responseChecks.delete(check));
         });
+        const pageResponses = input.capture && size === "desktop" ? watchPageResponses(context) : undefined;
         const page = await context.newPage();
         page.setDefaultTimeout(6000);
         let pageErrors = 0;
@@ -545,6 +568,12 @@ async function run(input: TourAttemptInput): Promise<void> {
               assertSafe(); save(image, bytes);
               steps[si]!.views[vi]!.captures[size] = { image, marks };
               if (pageErrors || bytes.length < 5000) suspicious.push(image);
+              if (pageResponses) {
+                location = { stepId: step.id, viewId: view.id, size };
+                const report = await capturePage({ page, browser, responses: pageResponses, viewportHeight: viewport.h, assertSafe, send: (key, file) => send({ type: "capture-file", key, base64: Buffer.from(file).toString("base64") }) });
+                await request("checkpoint"); await Promise.all(responseChecks); assertSafe();
+                send({ type: "capture", report });
+              }
             }
             completed++; send({ type: "progress", progress: { completed, total, stepId: step.id, viewId: view.id, size } });
             break;

@@ -3,6 +3,7 @@
 // attempt's proxy, a fresh profile, no popups, no redirects off the declared origins, writes stopped), and
 // adds one thing: a click that navigates. What the model may ask for is decided here and refused here.
 import { randomUUID } from "node:crypto";
+import { isIP } from "node:net";
 import { join } from "node:path";
 import { isTourOrigin, isTourRoute, TOUR_VIEWPORTS, tourSignInOrigins, tourSignInProblem, type TourScriptRequest, type TourSignIn, type TourSize, type TourSource, type TourTarget } from "../../shared/tour";
 import { readRegistry, type Registry } from "../project-services/store";
@@ -11,11 +12,13 @@ import type { TourLookResult, TourLookSize } from "../tours/look";
 import { tourLookWithout } from "../tours/look";
 import { TourJobBlocked } from "../tours/queue";
 import { freshCheck, runTourAttempt, type TourSignInAnswer, type TourSignInNeed } from "../tours/runner";
-import type { TourStorageState, TourWalkAction } from "../tours/runner-protocol";
+import { isPublicRecordingAddress } from "../tours/browser-addresses";
+import type { CheckedCapture } from "../tours/page-capture";
+import { isSubresourceContact, type TourContactRequest, type TourStorageState, type TourWalkAction } from "../tours/runner-protocol";
 import type { TourRecordingContext } from "../tours/sandbox";
 import { TourCaptureFailure } from "../tours/targets";
 
-export const BROWSE_LIMITS = Object.freeze({ actions: 12, urlChars: 2048, outlineControls: 40, concurrent: 2, attemptMs: 120_000 });
+export const BROWSE_LIMITS = Object.freeze({ actions: 12, urlChars: 2048, outlineControls: 40, concurrent: 2, attemptMs: 120_000, reachOrigins: 60 });
 /** The sign-in memory's key beside a chat id: a design chat's one browser, in the tours' store. */
 export const DESIGN_BROWSE_TOUR_ID = "design-browse";
 
@@ -28,7 +31,7 @@ export interface DesignBrowseRequest {
 }
 
 export type DesignBrowseOutcome =
-  | { kind: "pictures"; url: string; origin: string; shots: { size: TourSize; png: Uint8Array; viewport: { w: number; h: number } }[]; outline: string; signedIn: boolean }
+  | { kind: "pictures"; url: string; origin: string; shots: { size: TourSize; png: Uint8Array; viewport: { w: number; h: number } }[]; outline: string; signedIn: boolean; capture?: CheckedCapture }
   | { kind: "needs-site"; origin: string }
   | { kind: "needs-sign-in"; origin: string; fields: TourSignInNeed["fields"]; reason?: string }
   | { kind: "needs-test-account"; origin: string }
@@ -55,8 +58,21 @@ export interface DesignBrowseDeps {
   context?: (parent: BrowseParent) => Promise<TourRecordingContext>;
   registry?: () => Registry;
   projects?: () => readonly { id: string; root: string }[] | Promise<readonly { id: string; root: string }[]>;
-  /** The attempt's time limit (tests). */
+  /** The attempt's time limit (tests, and a capture's own). */
   limitMs?: number;
+  /** Bring back the final screen's images and notes (design_capture). */
+  capture?: boolean;
+}
+
+let reachPublicForTest = false;
+/** Tests only: real local sockets stand in for public hosts, since a test may never touch the internet. */
+export const setReachPublicForTest = (v: boolean): void => void (reachPublicForTest = v);
+
+/** A literal private or loopback address, or a name for this computer. A public name that resolves private is caught where it's looked up. */
+export function isPrivateOrigin(origin: string): boolean {
+  if (reachPublicForTest) return false;
+  const host = new URL(origin).hostname.replace(/^\[|\]$/g, "").toLowerCase();
+  return host === "localhost" || host.endsWith(".localhost") || (isIP(host) > 0 && !isPublicRecordingAddress(host));
 }
 
 export interface BrowseParent { sessionId: string; path: string }
@@ -251,6 +267,10 @@ export async function designBrowse(parent: BrowseParent, raw: unknown, deps: Des
     const account = !req.signIn ? stores.accounts.forOrigin(ownOrigin) : null;
     const signInOrigins = req.signIn ? tourSignInOrigins(req.signIn, url.origin) : [];
     const contacts = new Set<string>();
+    // Your link covers what that page loads while it's looked at, and nothing else: this set lives for this one
+    // attempt and nothing in it is approved anywhere. A signed-in look keeps the per-origin rule.
+    const reach = !req.signIn && !account && stores.named(url.origin);
+    const allowance = new Set<string>();
     try {
       const result = await (deps.run ?? runTourAttempt)({
         context,
@@ -261,6 +281,8 @@ export async function designBrowse(parent: BrowseParent, raw: unknown, deps: Des
         walk: Object.fromEntries(sizes.map((s) => [s, req.actions ?? []])),
         limitMs: deps.limitMs ?? BROWSE_LIMITS.attemptMs,
         ...(signal ? { signal } : {}),
+        ...(reach ? { reach: true } : {}),
+        ...(deps.capture ? { capture: true } : {}),
         ...(account ? { account: account.credentials() } : {}),
         ...(req.signIn
           ? {
@@ -281,12 +303,21 @@ export async function designBrowse(parent: BrowseParent, raw: unknown, deps: Des
               onSignedIn: (_origin: string, state: TourStorageState) => stores.signIns.setStorage(parent.sessionId, tourId, signInOrigins, state),
             }
           : {}),
-        beforeContact: async (origin: string) => {
+        beforeContact: async (origin: string, request?: TourContactRequest): Promise<void | "skip"> => {
           await guard();
           if ((isCopy && origin === ownOrigin) || named(origin) || (req.signIn && signInOrigins.includes(origin))) {
             contacts.add(origin);
             if (contacts.size > 64) throw new TourCaptureFailure({ message: "This page contacts too many different sites.", guidance: "Tell the user; a site this large can't be looked at here." });
             return;
+          }
+          if (reach) {
+            // Going somewhere else is never a part of the page: it asks, whatever the page already loaded from there.
+            if (allowance.has(origin) && (!request || isSubresourceContact(request))) return;
+            if (isSubresourceContact(request)) {
+              if (request!.resourceType === "websocket" || isPrivateOrigin(origin) || allowance.size >= BROWSE_LIMITS.reachOrigins) return "skip";
+              allowance.add(origin);
+              return;
+            }
           }
           throw new TourJobBlocked({ origins: [origin] });
         },
@@ -304,7 +335,7 @@ export async function designBrowse(parent: BrowseParent, raw: unknown, deps: Des
         shots.push({ size, png, viewport: TOUR_VIEWPORTS[size] });
       }
       const here = look.pages[0]?.[sizes[0]!]?.url;
-      return { kind: "pictures", url: here || route, origin: result.provenance.origin, shots, outline: browseOutline(look, sizes), signedIn: !!result.signedIn };
+      return { kind: "pictures", url: here || route, origin: result.provenance.origin, shots, outline: browseOutline(look, sizes), signedIn: !!result.signedIn, ...(result.capture ? { capture: result.capture } : {}) };
     } catch (err) {
       if (err instanceof NeedsSignIn) return { kind: "needs-sign-in", origin: err.need.origin, fields: err.need.fields, ...(err.need.reason ? { reason: err.need.reason } : {}) };
       if (err instanceof TourJobBlocked) {

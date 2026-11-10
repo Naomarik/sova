@@ -83,6 +83,12 @@ addEventListener("load",()=>{Promise.race([document.fonts.ready,new Promise((r)=
 const HOLD_MOTION_SCRIPT = `{const r=requestAnimationFrame.bind(window);let n=0;window.requestAnimationFrame=(f)=>n++<90?r(f):0;}`;
 export const HOLD_MOTION_STYLE = `*,*::before,*::after{animation-duration:0s!important;animation-delay:0s!important;animation-iteration-count:1!important;transition:none!important;scroll-behavior:auto!important}`;
 
+/**
+ * A page being written can name a captured image Sova hasn't put in yet (`sova-asset:a3`), which the frame can't load:
+ * those spots show a plain block instead of the browser's broken-image mark. Real pictures come with the finished page.
+ */
+export const DESIGN_ASSET_PLACEHOLDER_STYLE = `img[src^="sova-asset:"],img[srcset*="sova-asset:"]{content:url("data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7");background:#e6e6e3;color:transparent;min-width:48px;min-height:48px}`;
+
 /** A finished page's document in two parts: Sova's own head (the policy and the seal), and the page as its author wrote it. */
 export interface DesignPageDoc {
   head: string;
@@ -120,7 +126,7 @@ export function designShellDoc(doc: DesignPageDoc): string {
 
 /** The start of a page being written, as the server sends it: the text so far, with no motion. A half-written last tag is the parser's to drop. */
 export function designStreamDoc(partial: string): string {
-  return `<!doctype html>${head(DESIGN_STREAM_CSP)}<style>${HOLD_MOTION_STYLE}</style>${partial}`;
+  return `<!doctype html>${head(DESIGN_STREAM_CSP)}<style>${HOLD_MOTION_STYLE}${DESIGN_ASSET_PLACEHOLDER_STYLE}</style>${partial}`;
 }
 
 /** Whether a page has anything to draw yet: nothing shows before its first style block closes. */

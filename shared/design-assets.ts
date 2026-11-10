@@ -23,6 +23,8 @@ export const DESIGN_ASSET_LIMITS = Object.freeze({
   fullPx: 1600,
   /** The long edge of the PNG copy a describing model reads. */
   describePx: 1024,
+  /** An image with more pixels than this is never decoded: drawing it could take the browser down with the rest. */
+  maxPixels: 40_000_000,
   /** Reasons listed for what a capture didn't bring back. */
   skipped: 60,
 });

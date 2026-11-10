@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { DESIGN_ASSET_LIMITS } from "../../shared/design-assets";
-import { checkPageCapture, cleanContext, cleanNotes, isCaptureFileKey, originalAssetUrl, rankPageCandidates, sniffImage, sniffRaster, type PageCaptureItem } from "./page-capture";
+import { checkPageCapture, cleanContext, cleanNotes, drawProblem, imageDimensions, isCaptureFileKey, originalAssetUrl, rankPageCandidates, sniffImage, sniffRaster, type PageCaptureItem } from "./page-capture";
 import { checkedContactRequest, isSubresourceContact } from "./runner-protocol";
 
 const PNG = (size = 64) => { const b = Buffer.alloc(size, 1); Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]).copy(b); return new Uint8Array(b); };
@@ -129,4 +129,27 @@ test("only a top-level navigation is 'going somewhere'; a request the child desc
   assert.equal(isSubresourceContact({ resourceType: "document", navigation: true, mainFrame: true }), false);
   assert.equal(isSubresourceContact(undefined), false);
   for (const bad of [null, "x", {}, { resourceType: "image", navigation: "no", mainFrame: true }, { resourceType: "x".repeat(99), navigation: false, mainFrame: true }]) assert.equal(checkedContactRequest(bad), undefined);
+});
+
+const pngOf = (w: number, h: number) => { const b = Buffer.alloc(33); Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]).copy(b); b.writeUInt32BE(13, 8); b.write("IHDR", 12, "latin1"); b.writeUInt32BE(w, 16); b.writeUInt32BE(h, 20); return new Uint8Array(b); };
+const webpOf = (kind: string, fill: (b: Buffer) => void) => { const b = Buffer.alloc(40); b.write("RIFF", 0, "latin1"); b.write("WEBP", 8, "latin1"); b.write(kind, 12, "latin1"); fill(b); return new Uint8Array(b); };
+const jpegOf = (w: number, h: number) => new Uint8Array(Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x04, 0x00, 0x00]), Buffer.from([0xff, 0xc2, 0x00, 0x0b, 0x08, h >> 8, h & 255, w >> 8, w & 255, 0x01, 0x00, 0x00, 0x00, 0x00])]));
+
+test("an image's size is read from its header, whatever the format, without decoding it", () => {
+  assert.deepEqual(imageDimensions(pngOf(1200, 800)), { w: 1200, h: 800 });
+  assert.deepEqual(imageDimensions(jpegOf(4000, 3000)), { w: 4000, h: 3000 });
+  const gif = Buffer.alloc(16); gif.write("GIF89a", 0, "latin1"); gif.writeUInt16LE(640, 6); gif.writeUInt16LE(480, 8);
+  assert.deepEqual(imageDimensions(new Uint8Array(gif)), { w: 640, h: 480 });
+  assert.deepEqual(imageDimensions(webpOf("VP8X", (b) => { b.writeUIntLE(9999, 24, 3); b.writeUIntLE(4999, 27, 3); })), { w: 10000, h: 5000 });
+  assert.deepEqual(imageDimensions(webpOf("VP8 ", (b) => { b.writeUInt16LE(300, 26); b.writeUInt16LE(200, 28); })), { w: 300, h: 200 });
+  const avif = Buffer.alloc(64); avif.write("ftypavif", 4, "latin1"); avif.write("ispe", 30, "latin1"); avif.writeUInt32BE(20000, 38); avif.writeUInt32BE(20000, 42);
+  assert.deepEqual(imageDimensions(new Uint8Array(avif)), { w: 20000, h: 20000 });
+});
+
+test("an image with too many pixels is refused before anything decodes it, and an unreadable size is refused too", () => {
+  assert.equal(drawProblem(pngOf(6000, 6000)), null);
+  assert.match(drawProblem(pngOf(20000, 20000))!, /20000 \u00d7 20000 pixels, too large to draw/);
+  assert.match(drawProblem(jpegOf(65000, 65000))!, /too large/);
+  assert.match(drawProblem(new Uint8Array(Buffer.from([0xff, 0xd8, 0xff, 0x00, 1, 2, 3, 4, 5, 6, 7, 8, 9])))!, /couldn't be read/);
+  assert.equal(drawProblem(SVG()), null);
 });

@@ -23,6 +23,62 @@ export function sniffImage(b: Uint8Array): { mime: string; ext: string } | null 
   return null;
 }
 
+/**
+ * An image's size as its header states it, read without decoding. Null for a format whose size isn't in a fixed
+ * header (SVG, ICO), and for a header that can't be read: the caller decides what null means.
+ */
+export function imageDimensions(b: Uint8Array): { w: number; h: number } | null {
+  const k = sniffImage(b)?.ext;
+  const buf = Buffer.from(b.buffer, b.byteOffset, b.byteLength);
+  const at = (n: number) => n < buf.length;
+  try {
+    if (k === "png") return at(23) ? { w: buf.readUInt32BE(16), h: buf.readUInt32BE(20) } : null;
+    if (k === "gif") return at(9) ? { w: buf.readUInt16LE(6), h: buf.readUInt16LE(8) } : null;
+    if (k === "webp") {
+      const chunk = buf.toString("latin1", 12, 16);
+      if (chunk === "VP8 " && at(29)) return { w: buf.readUInt16LE(26) & 0x3fff, h: buf.readUInt16LE(28) & 0x3fff };
+      if (chunk === "VP8L" && at(24)) return { w: 1 + (((buf[22]! & 0x3f) << 8) | buf[21]!), h: 1 + (((buf[24]! & 0xf) << 10) | (buf[23]! << 2) | ((buf[22]! & 0xc0) >> 6)) };
+      if (chunk === "VP8X" && at(29)) return { w: 1 + buf.readUIntLE(24, 3), h: 1 + buf.readUIntLE(27, 3) };
+      return null;
+    }
+    if (k === "jpg") {
+      for (let i = 2; at(i + 8); ) {
+        if (buf[i] !== 0xff) return null;
+        const m = buf[i + 1]!;
+        if (m === 0xff) { i++; continue; }
+        if (m === 0xd8 || m === 0x01 || (m >= 0xd0 && m <= 0xd7)) { i += 2; continue; }
+        if (m >= 0xc0 && m <= 0xcf && m !== 0xc4 && m !== 0xc8 && m !== 0xcc) return { w: buf.readUInt16BE(i + 7), h: buf.readUInt16BE(i + 5) };
+        i += 2 + buf.readUInt16BE(i + 2);
+      }
+      return null;
+    }
+    if (k === "avif") {
+      // Every image item states its size in an 'ispe' box; the largest is the one that costs memory.
+      let best: { w: number; h: number } | null = null;
+      for (let i = buf.indexOf("ispe", 0, "latin1"); i >= 0 && at(i + 15); i = buf.indexOf("ispe", i + 4, "latin1")) {
+        const w = buf.readUInt32BE(i + 8), h = buf.readUInt32BE(i + 12);
+        if (!best || w * h > best.w * best.h) best = { w, h };
+      }
+      return best;
+    }
+  } catch { return null; }
+  return null;
+}
+
+/** Why an image mustn't be decoded, or null. A raster whose size can't be read is refused, never guessed at. */
+export function drawProblem(b: Uint8Array): string | null {
+  const k = sniffImage(b)?.ext;
+  if (!k) return "It isn't an image.";
+  if (k === "svg" || k === "ico") return null;
+  const d = imageDimensions(b);
+  if (!d || !d.w || !d.h) return "Its size couldn't be read, so it wasn't drawn.";
+  if (d.w * d.h > DESIGN_ASSET_LIMITS.maxPixels) return `It's ${d.w} \u00d7 ${d.h} pixels, too large to draw safely.`;
+  return null;
+}
+
+/** An image the darkroom wouldn't draw, with the reason a person reads. */
+export class DarkroomRefusal extends Error {}
+
 /** A version the browser drew: only these are ever shown. */
 export function sniffRaster(b: Uint8Array): TourRaster | null {
   const k = sniffImage(b)?.ext;
@@ -280,13 +336,28 @@ async function drawInPage(a: { dataUrl: string; fallbackW: number; fallbackH: nu
 export async function openDarkroom(browser: Browser) {
   const context = await browser.newContext({ offline: true, serviceWorkers: "block", acceptDownloads: false, colorScheme: "light" });
   await context.route("**/*", (r) => r.abort("blockedbyclient"));
-  const page = await context.newPage();
-  await page.goto("about:blank");
+  const blank = async () => { const p = await context.newPage(); await p.goto("about:blank"); return p; };
+  let page = await blank();
   const edges = { full: DESIGN_ASSET_LIMITS.fullPx, small: DESIGN_ASSET_LIMITS.smallPx, describe: DESIGN_ASSET_LIMITS.describePx };
   return {
+    /** Tests: the room itself, to prove each of its two walls on its own. */
+    context,
+    /** Draws one image, or refuses it alone: one bad image never costs the others. */
     async develop(bytes: Uint8Array, mime: string, fallback: { w: number; h: number }): Promise<DevelopedSizes> {
+      const problem = drawProblem(bytes);
+      if (problem) throw new DarkroomRefusal(problem);
       const dataUrl = `data:${mime};base64,${Buffer.from(bytes).toString("base64")}`;
-      const r = await page.evaluate(drawInPage, { dataUrl, fallbackW: fallback.w, fallbackH: fallback.h, edges });
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const r = await Promise.race([
+        page.evaluate(drawInPage, { dataUrl, fallbackW: fallback.w, fallbackH: fallback.h, edges }),
+        new Promise<never>((_, no) => { timer = setTimeout(() => no(new DarkroomRefusal("It took too long to draw.")), DRAW_ONE_MS); }),
+      ]).catch(async (err) => {
+        // A page stuck on one image is thrown away, so the next image starts clean.
+        const stuck = page;
+        page = await blank();
+        void stuck.close().catch(() => {});
+        throw err;
+      }).finally(() => clearTimeout(timer));
       const part = (p: { data: string; w: number; h: number }) => ({ bytes: Buffer.from(p.data, "base64"), w: p.w, h: p.h });
       return { width: r.width, height: r.height, full: part(r.full), small: part(r.small), describe: part(r.describe) };
     },
@@ -318,6 +389,7 @@ export interface PageCaptureReport {
 }
 
 const FETCH_TIMEOUT_MS = 15_000;
+const DRAW_ONE_MS = 20_000;
 const CONCURRENCY = 6;
 const MAX_CANDIDATES = 400;
 const SCROLL_STEP_MS = 120;
@@ -416,6 +488,9 @@ export async function capturePage(a: { page: Page; browser: Browser; responses: 
     if (bytes.length > DESIGN_ASSET_LIMITS.eachBytes) return { reason: `It's ${mb(bytes.length)}, over the 8 MB limit.` };
     const kind = sniffImage(bytes);
     if (!kind) return { reason: "It isn't an image." };
+    // Too many pixels to draw: the next candidate (what the page itself drew) may be fine.
+    const problem = drawProblem(bytes);
+    if (problem) return { reason: problem };
     return { bytes, mime: kind.mime, url };
   };
 
@@ -448,7 +523,7 @@ export async function capturePage(a: { page: Page; browser: Browser; responses: 
       if (total + got.bytes.length > DESIGN_ASSET_LIMITS.totalBytes) { skip(what, `The page's images passed the capture's ${mb(DESIGN_ASSET_LIMITS.totalBytes)} total.`); continue; }
       let drawn: DevelopedSizes;
       try { drawn = await darkroom.develop(got.bytes, got.mime, { w: c.bounds?.width || 512, h: c.bounds?.height || 512 }); }
-      catch { skip(what, "It couldn't be drawn."); continue; }
+      catch (err) { skip(what, err instanceof DarkroomRefusal ? err.message : "It couldn't be drawn."); continue; }
       if (Math.max(drawn.width, drawn.height) < DESIGN_ASSET_LIMITS.minPx) continue;
       hashes.add(sha);
       total += got.bytes.length;

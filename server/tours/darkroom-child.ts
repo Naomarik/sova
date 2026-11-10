@@ -2,7 +2,7 @@
 // Reads one JSON job per line from stdin, writes one JSON result per line to stdout, then exits when stdin closes.
 import { createInterface } from "node:readline";
 import { launchTourBrowser } from "./browser";
-import { openDarkroom, sniffImage } from "./page-capture";
+import { DarkroomRefusal, openDarkroom, sniffImage } from "./page-capture";
 
 const MAX_LINE = 12 * 1024 * 1024;
 const lines = createInterface({ input: process.stdin, crlfDelay: Infinity });
@@ -26,7 +26,7 @@ try {
     try {
       const d = await darkroom.develop(bytes, kind.mime, { w: 512, h: 512 });
       send({ i: job.i, width: d.width, height: d.height, full: { base64: d.full.bytes.toString("base64"), w: d.full.w, h: d.full.h }, small: { base64: d.small.bytes.toString("base64"), w: d.small.w, h: d.small.h }, describe: { base64: d.describe.bytes.toString("base64"), w: d.describe.w, h: d.describe.h } });
-    } catch { send({ i: job.i, error: "It couldn't be drawn." }); }
+    } catch (err) { send({ i: job.i, error: err instanceof DarkroomRefusal ? err.message : "It couldn't be drawn." }); }
   }
 } finally {
   await darkroom.close().catch(() => {});

@@ -91,6 +91,7 @@ import { getGitSummary } from "./git-summary";
 import { configureCleanup, worktreesSummary } from "./worktree-cleanup";
 import { realRetireDeps, removeFinished, restoreRetired } from "./worktree-retire";
 import { retirementViewOf } from "./worktree-retire-view";
+import { cleanupAnswer, pendingWhileOff, removeGate, summaryWhileOff, viewWhileOff } from "./cleanup-switch";
 import type { WorktreeRestoreRequest } from "../shared/protocol";
 import { applyLoadout, getSessionSetup, readSetupFile } from "./session-setup";
 import { getContextView } from "./context-tab";
@@ -959,20 +960,22 @@ export function buildApp(deps: AppDeps) {
     const path = resolveSessionPath(c.req.query("path"));
     if (!path) return c.json({ error: "Invalid or missing ?path= (must be a .jsonl under the pi sessions dir)" }, 400);
     if (!existsSync(path)) return c.json({ error: "Session file not found" }, 404);
-    return c.json(await worktreesSummary(path), 200, { "Cache-Control": "no-store" });
+    return c.json(summaryWhileOff(await worktreesSummary(path)), 200, { "Cache-Control": "no-store" });
   });
   // One release only: a page still open gets a plain answer. Nothing posts a list of paths any more.
-  app.post("/api/worktrees/cleanup", (c) => c.json({ removed: [], kept: [], message: "Sova retires finished worktrees on its own now. Nothing was removed." }));
+  app.post("/api/worktrees/cleanup", (c) => c.json({ removed: [], kept: [], message: cleanupAnswer() }));
   app.get("/api/worktrees/retirement", (c) => {
     const root = c.req.query("root");
     if (!root || !root.startsWith("/")) return c.json({ error: "Invalid or missing ?root= (a project's main checkout)" }, 400);
-    return c.json(retirementViewOf(root, { all: c.req.query("all") === "1" }), 200, { "Cache-Control": "no-store" });
+    // Switched off (./cleanup-switch.ts): the ledger only (Restore), never the saved list.
+    return c.json(viewWhileOff(retirementViewOf(root, { all: c.req.query("all") === "1", ...pendingWhileOff() })), 200, { "Cache-Control": "no-store" });
   });
   app.post("/api/worktrees/remove", async (c) => {
     const body = (await c.req.json().catch(() => null)) as { path?: unknown } | null;
     if (typeof body?.path !== "string") return c.json({ error: "path must be a string" }, 400);
     if (!body.path.startsWith("/")) return c.json({ error: "path must be the worktree's folder, an absolute path" }, 400);
-    const r = await removeFinished(body.path);
+    // Switched off, the real server takes Remove as an install would (./cleanup-switch.ts).
+    const r = await removeFinished(body.path, realRetireDeps(), removeGate());
     return r.ok ? c.json(r) : c.json({ error: r.error }, 409);
   });
   app.post("/api/worktrees/restore", async (c) => {

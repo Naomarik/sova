@@ -1,5 +1,5 @@
 import { retirementViewOf } from "../worktree-retire-view";
-import { needsRehearsal, REHEARSAL_NEEDED, rehearsalRefusal } from "./rehearsal";
+import { pendingWhileOff, viewWhileOff } from "../cleanup-switch";
 import { queueQuietWork } from "./card-port";
 import { hostProblem } from "./host-sendback";
 import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -649,7 +649,8 @@ export class ProjectQueue {
     const chats = this.deps.chatsOf?.(this.root) ?? {};
     const readyRows = this.attachSummaries(v, ready.filter((r) => !heldBack.has(r.branch)));
     // What retirement did here, as it last wrote it: no git (§chat.worktrees/retirement).
-    const retirement = retirementViewOf(this.root);
+    // Switched off (../cleanup-switch.ts): the ledger only, never the saved list.
+    const retirement = viewWhileOff(retirementViewOf(this.root, pendingWhileOff()));
     return { ...v, served, ...(hold ? { release: structuredClone(hold) } : {}), ...(d.invalid ? { invalid: d.invalid } : {}), ...(readyRows.length ? { ready: readyRows } : {}), ...(thread ? { thread } : {}), ...chats, ...(tryRun ? { tryRun: structuredClone(tryRun) } : {}), ...(this.q.trials?.length ? { trials: structuredClone(this.q.trials) } : {}), ...(settings ? { settings } : {}), ...(retirement ? { retirement } : {}) };
   }
 
@@ -1071,7 +1072,7 @@ export class ProjectQueue {
       const owner = ownerId(await this.deps.ownerOf?.(this.root, w.branch, w.path).catch(() => null));
       const short = await this.git(["diff", "--shortstat", `${head}...${w.head}`], this.root);
       const lines = short.code === 0 ? { added: Number(/(\d+) insertion/.exec(short.stdout)?.[1] ?? 0), removed: Number(/(\d+) deletion/.exec(short.stdout)?.[1] ?? 0) } : {};
-      out.push({ branch: w.branch, worktree: w.path, commit: w.head, ...((await this.rehearsalWait(head, w.head)) ? { rehearsal: true as const } : {}), ahead, ...lines, ...(draftsOnly ? { draftsOnly } : {}), ...(left ? { left: { whole: left.whole, code: left.codeOnly } } : { left: { whole: "unknown", code: "unknown" } }), ...(headAt ? { headAt } : {}), ...(owner ? { session: owner.session, ...(owner.archived ? { sessionArchived: true as const } : {}) } : {}) });
+      out.push({ branch: w.branch, worktree: w.path, commit: w.head, ahead, ...lines, ...(draftsOnly ? { draftsOnly } : {}), ...(left ? { left: { whole: left.whole, code: left.codeOnly } } : { left: { whole: "unknown", code: "unknown" } }), ...(headAt ? { headAt } : {}), ...(owner ? { session: owner.session, ...(owner.archived ? { sessionArchived: true as const } : {}) } : {}) });
     }
     this.readyCache = { at: this.now(), head, list: out };
     return this.filterReady(out, redrafted);
@@ -1259,8 +1260,6 @@ export class ProjectQueue {
       // A setup branch is checked by the target's checks, not its own: it lands only once a trial of this exact commit passed.
       const untried = await this.setupUntried(head, commit);
       if (untried) throw new MergeFailure("invalid-request", untried);
-      // A change to automatic cleanup waits for its rehearsal, whichever way Land came (§app.merge-queue/approve).
-      if (req.by !== "release" && (await this.rehearsalWait(head, commit))) throw new MergeFailure("invalid-request", rehearsalRefusal(branch, commit));
       if (wt && commit === tip) {
         const st = await this.git(statusArgs("--porcelain"), wt);
         const n = st.stdout.split("\n").filter(Boolean).length;
@@ -2477,9 +2476,6 @@ export class ProjectQueue {
   private async fixBlocked(e: Pick<Entry, "branch" | "worktree" | "session" | "approval">, commit: string, drafts: { hash: string; names: string[] } | undefined): Promise<string | null> {
     const tip = await revParse(this.git, this.root, `refs/heads/${e.branch}`);
     if (!tip) return `${e.branch} is gone`;
-    // A fix that changes cleanup's code needs its own pass; it goes in line by itself once that is recorded.
-    const target = await this.targetHead();
-    if (target && (await this.rehearsalWait(target, commit))) return REHEARSAL_NEEDED;
     const wt = e.worktree && existsSync(e.worktree) ? e.worktree : undefined;
     if (wt && commit === tip) {
       const st = await this.git(statusArgs("--porcelain"), wt);
@@ -2522,12 +2518,6 @@ export class ProjectQueue {
     const drafts = !e.approval.withoutSpecs && wt ? await this.branchDrafts(wt, commit) : undefined;
     const blocked = await this.fixBlocked(e, commit, drafts);
     if (blocked) {
-      // The fix is the commit that waits for its rehearsal: the check of it stands, and the next look finds it.
-      if (blocked === REHEARSAL_NEEDED && commit !== e.commit) {
-        e.commit = commit;
-        e.approval.commit = commit;
-        if (drafts) e.approval.drafts = { hash: drafts.hash, names: drafts.names };
-      }
       e.state = "with-chat";
       this.setPhase(e, { phase: "waiting-fix", why: blocked });
       e.reason = blocked;
@@ -2930,11 +2920,6 @@ export class ProjectQueue {
         rmSync(`${tmp}.index`, { force: true });
       }
     });
-  }
-
-  /** Whether `commit` changes automatic cleanup and has no rehearsal passed for it today (./rehearsal.ts). */
-  async rehearsalWait(head: string, commit: string): Promise<boolean> {
-    return needsRehearsal((args, cwd) => this.git(args, cwd), this.root, head, commit, this.now());
   }
 
   /** Why `commit` can't land without a trial (a setup branch with no passing trial of that exact commit), or null. */

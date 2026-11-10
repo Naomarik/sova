@@ -437,7 +437,7 @@ test("a page with a script error goes back once, naming it, and spends no coordi
   assert.equal(coordinatorSends, 0);
   assert.equal(parentOpens, 0);
   assert.equal(coordinatorNotes().length, 1);
-  assert.match(coordinatorNotes()[0]!, /A is fixing its page: script 1/);
+  assert.match(coordinatorNotes()[0]!, /A is fixing its page:[\s\S]*script 1, line 2/);
   setCoordinatorPorts(null);
 });
 

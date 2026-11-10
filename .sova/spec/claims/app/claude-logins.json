@@ -168,11 +168,10 @@
       "§app.claude-logins/spawn-selection"
     ],
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "code": [
       "pi-config/extensions/claude-code/accounts.test.ts",
       "pi-config/extensions/claude-code/accounts.ts",
-      "pi-config/extensions/claude-code/models.ts",
       "pi-config/extensions/claude-code/provider/session-bridge.ts",
       "pi-config/extensions/topic-outline/summarizers/claude-cli.ts",
       "server/claude-pool/agent.test.ts",
@@ -362,7 +361,7 @@
       "§app.organizations/org-page"
     ],
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "code": [
       "server/claude-login-store.ts",
       "server/claude-login-known.ts",
@@ -436,23 +435,20 @@
       "§app.claude-logins/device-order"
     ],
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "code": [
       "pi-config/extensions/claude-code/accounts.ts",
       "pi-config/extensions/claude-code/provider/session-bridge.ts",
       "pi-config/extensions/claude-code/provider/index.ts",
       "pi-config/extensions/claude-code/provider/types.ts",
       "pi-config/extensions/claude-code/index.ts",
-      "pi-config/extensions/claude-code/models.ts",
       "pi-config/extensions/topic-outline/summarizers/claude-cli.ts",
       "server/claude-accounts.ts",
-      "server/claude-models.ts",
       "server/claude-status.ts",
       "pi-config/extensions/claude-code/provider/login-failover.test.ts",
       "pi-config/extensions/claude-code/transport.ts",
       "pi-config/extensions/claude-code/accounts.test.ts",
-      "server/claude-models.test.ts",
-      "server/claude-models.integration.test.ts"
+      "server/claude-table.ts"
     ],
     "agreed": {
       "by": "naomarik",

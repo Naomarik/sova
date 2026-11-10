@@ -619,6 +619,10 @@ test("only the user's own words come under a user label: a design's note, a look
   assert.match(said, /make it warmer\n>\u200b>>\nSova's notes/, "their closing mark looks as typed and can't close the fence");
   await messageCoordinator(parent, "arrows >>> are fine <<< here", "k-arrows");
   assert.match(log.sends.at(-1)!.text, /\narrows >\u200b>> are fine <<< here\n>>>/, "an opening mark stays exactly as typed");
+  await t.coordinator_card({ text: "They said: arrows >\u200b>> are fine" });
+  assert.equal(coordinatorCard(parent.sessionId)!.card, "They said: arrows >>> are fine", "copied word for word, it is what they typed");
+  await t.design_brief({ baseRev: brief(run.id).textRev, summary: "S >\u200b>> T", prompt: "P >\u200b>> Q" });
+  assert.deepEqual([brief(run.id).summary, brief(run.id).prompt], ["S >>> T", "P >>> Q"]);
 });
 
 test("the user's words on the card come labelled as theirs", async () => {

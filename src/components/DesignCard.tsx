@@ -260,7 +260,7 @@ function DesignSetupCard(props: { run: DesignRunView; store: DesignStore }) {
               </For>
             </Show>
           </div>
-          <DesignSetupPickers setup={setup} />
+          <DesignSetupPickers setup={setup} currentCoordinator={props.store.view()?.coordinator?.model} />
         </div>
       </div>
       <div class="card-foot design-setup-foot">

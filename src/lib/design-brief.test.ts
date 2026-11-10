@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import type { DesignBrief, DesignBriefQuestion, DesignSetup } from "../../shared/design";
-import { answerLine, assetsOfRun, briefStatus, imageUsed, pickIsRecommended, usedCount, recommendedPick, setupLinks, stagedAnswers, startLabel, withLinkUse } from "./design-brief";
+import { answerLine, coordinatorChangeLine, assetsOfRun, briefStatus, imageUsed, pickIsRecommended, usedCount, recommendedPick, setupLinks, stagedAnswers, startLabel, withLinkUse } from "./design-brief";
 
 const q = (id: string, over: Partial<DesignBriefQuestion> = {}): DesignBriefQuestion => ({
   id,
@@ -98,4 +98,10 @@ test("an image is used unless unticked, and a click not yet confirmed counts", (
   assert.equal(imageUsed(b, {}, "a2"), true);
   assert.equal(imageUsed(b, { a1: true }, "a1"), true);
   assert.equal(usedCount([asset("a1"), asset("a2")], {}, b), 1);
+});
+
+test("a later run's Setup says when the coordinator changes, and nothing when it doesn't", () => {
+  const s = setup();
+  assert.equal(coordinatorChangeLine(s, "a/b"), "");
+  assert.equal(coordinatorChangeLine(s, "other/model"), "This starts a new coordinator on b; it keeps the notes, not the conversation.");
 });

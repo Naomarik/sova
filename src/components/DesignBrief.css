@@ -139,3 +139,5 @@
 /* Page Assets' head is one line of one height, whatever the count and cost say. */
 .design-page-assets .gallery-head { flex-wrap: nowrap; height: 24px; }
 .design-page-assets .gallery-head > * { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 24px; }
+/* Two lines kept for the coordinator change, so it comes and goes without moving anything. */
+.design-setup-coord-note { margin: 0; height: 36px; line-height: 18px; overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }

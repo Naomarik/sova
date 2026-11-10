@@ -110,3 +110,10 @@ export function assetStateLine(a: DesignAsset): string {
   if (a.describeAgain || !a.description) return "Being described";
   return a.description.description;
 }
+
+/** Under Setup's models on a later run: what picking another coordinator does, or "" when it's the same model. */
+export function coordinatorChangeLine(setup: Pick<DesignSetup, "models">, current: string): string {
+  const picked = setup.models.find((m) => m.coordinator);
+  if (!picked || picked.ref === current) return "";
+  return `This starts a new coordinator on ${picked.name}; it keeps the notes, not the conversation.`;
+}

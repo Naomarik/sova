@@ -1,6 +1,7 @@
 import { createEffect, createSignal, For, on, onCleanup, Show, untrack, type Accessor } from "solid-js";
 import type { DesignLinkUse, DesignSetup } from "../../shared/design";
 import type { DesignStore } from "../lib/design-store";
+import { coordinatorChangeLine } from "../lib/design-brief";
 import { designGroups, moveCoordinator, toggleDirection, toggleGroup, toggleModel, type DesignRunView } from "../lib/design-ui";
 import { Toggle } from "./form";
 
@@ -65,7 +66,7 @@ export function createSetupDraft(run: Accessor<DesignRunView>, store: DesignStor
 }
 
 /** The models and directions, on Setup and behind the brief's Change: the same controls in both places. */
-export function DesignSetupPickers(props: { setup: SetupDraft }) {
+export function DesignSetupPickers(props: { setup: SetupDraft; /** The chat's coordinator now, provider/modelId, on a later run. */ currentCoordinator?: string }) {
   const draft = props.setup.draft;
   const change = props.setup.change;
   const groups = () => designGroups(draft().models);
@@ -121,6 +122,12 @@ export function DesignSetupPickers(props: { setup: SetupDraft }) {
             }}
           </For>
         </ul>
+        {/* A later run's place for the coordinator change, kept whether or not it says anything. */}
+        <Show when={props.currentCoordinator}>
+          <p class="text-caption text-muted design-setup-coord-note" role="status">
+            {coordinatorChangeLine(draft(), props.currentCoordinator!)}
+          </p>
+        </Show>
       </div>
       <div class="stack-2">
         <h4 class="design-setup-label">Directions</h4>

@@ -28,7 +28,7 @@ export function DesignGallery(props: { path: string }) {
         </Show>
       </div>
       <div class="gallery-scroll">
-      <Show when={designs().length > 0} fallback={<Show when={store.view()}><p class="text-muted">0 prototypes in this chat. Turn on Design in the mode menu to make some.</p></Show>}>
+      <Show when={designs().length > 0} fallback={<Show when={store.view()}><div class="empty gallery-empty"><p class="empty-body">0 prototypes in this chat. Turn on Design in the mode menu to make some.</p></div></Show>}>
         <div class="design-grid gallery-grid">
           <For each={labels()}>
             {(label) => <Show when={designs().find((d) => d.label === label)}>{(d) => <DesignTile d={d()} store={store} cacheKey={props.path} onOpen={() => setOpened({ kind: "design", label })} onRefine={() => setRefining(label)} />}</Show>}

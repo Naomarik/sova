@@ -1,10 +1,10 @@
-import { createSignal, For, Show } from "solid-js";
+import { createEffect, createSignal, For, on, Show } from "solid-js";
 import type { DesignAsk, DesignChatView, DesignDelivery } from "../../shared/design";
 import type { DesignStore } from "../lib/design-store";
 import type { DesignCoordinatorInfo } from "../lib/design-ui";
 import { Markdown } from "./Markdown";
 import { TextArea, TextField } from "./form";
-import { Chip } from "./ui";
+import { Chip, Icon } from "./ui";
 
 const STATUS_WORD = { starting: "Starting", running: "Working", idle: "Idle", ended: "Stopped" } as const;
 
@@ -18,7 +18,7 @@ export function DesignDeliveryLine(props: { delivery?: DesignDelivery; name: str
     <Show when={props.delivery}>
       {(d) => (
         <Show when={d().state === "queued"} fallback={<p class="field-error">{d().error || `That didn't reach ${props.name}. Your text is still in the box.`}</p>}>
-          <p class="text-caption text-muted">Queued: {props.name} takes your message when it finishes its current work.</p>
+          <p class="text-caption text-muted">Queued for {props.name}, after its current work.</p>
         </Show>
       )}
     </Show>
@@ -26,11 +26,20 @@ export function DesignDeliveryLine(props: { delivery?: DesignDelivery; name: str
 }
 
 /** A message box that keeps your words until they're handed over, under one key, so a retry can't send twice. */
-export function DesignMessageBox(props: { placeholder: string; label: string; send(text: string, key: string): Promise<unknown>; onSent?(): void }) {
+export function DesignMessageBox(props: { placeholder: string; label: string; delivery?: DesignDelivery; name: string; send(text: string, key: string): Promise<unknown>; onSent?(): void }) {
   const [text, setText] = createSignal("");
   const [busy, setBusy] = createSignal(false);
   const [error, setError] = createSignal("");
   let key = designKey();
+  let field: HTMLTextAreaElement | undefined;
+  // Auto-grow fallback where `field-sizing: content` isn't supported, as in the main composer.
+  createEffect(
+    on(text, () => {
+      if (!field || CSS.supports("field-sizing", "content")) return;
+      field.style.height = "auto";
+      field.style.height = `${field.scrollHeight}px`;
+    }),
+  );
   const submit = async () => {
     const body = text().trim();
     if (!body || busy()) return;
@@ -49,33 +58,43 @@ export function DesignMessageBox(props: { placeholder: string; label: string; se
   };
   return (
     <form
-      class="design-message-box"
+      class="composer-inner design-message-box"
       onSubmit={(e) => {
         e.preventDefault();
         void submit();
       }}
     >
-      <TextArea
-        label={props.label}
-        hideLabel
-        rows="2"
-        placeholder={props.placeholder}
-        value={text()}
-        onInput={setText}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
-            e.preventDefault();
-            void submit();
-          }
-        }}
-      />
-      <p class="field-error design-box-error" role={error() ? "alert" : undefined}>
-        {error()}
-      </p>
-      <div class="button-row design-message-actions">
-        <button type="submit" class="button button-primary" disabled={busy() || !text().trim()}>
-          Send
-        </button>
+      <div class="design-box-status">
+        <Show when={error()} fallback={<DesignDeliveryLine delivery={props.delivery} name={props.name} />}>
+          <p class="field-error" role="alert">
+            {error()}
+          </p>
+        </Show>
+      </div>
+      <div class="composer-row">
+        <TextArea
+          class="design-message-field"
+          inputClass="composer-input"
+          label={props.label}
+          hideLabel
+          rows="1"
+          placeholder={props.placeholder}
+          value={text()}
+          ref={field}
+          onInput={setText}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
+              e.preventDefault();
+              void submit();
+            }
+          }}
+        />
+        <div class="composer-actions">
+          <button type="submit" class="button button-primary" aria-disabled={busy() || !text().trim() ? "true" : undefined}>
+            <Icon name="arrow-right" small />
+            <span class="button-label">Send</span>
+          </button>
+        </div>
       </div>
     </form>
   );
@@ -110,10 +129,10 @@ function DesignAskPanel(props: { ask: DesignAsk; store: DesignStore }) {
         when={formFields()}
         fallback={
           <div class="button-row">
-            <button type="button" class="button button-ghost" disabled={busy()} onClick={() => void answer("no")}>
+            <button type="button" class="button button-sm button-ghost" disabled={busy()} onClick={() => void answer("no")}>
               {words[props.ask.kind]?.[1] ?? "No"}
             </button>
-            <button type="button" class="button button-primary" disabled={busy()} onClick={() => void answer("yes")}>
+            <button type="button" class="button button-sm button-primary" disabled={busy()} onClick={() => void answer("yes")}>
               {words[props.ask.kind]?.[0] ?? "Yes"}
             </button>
           </div>
@@ -158,9 +177,11 @@ function DesignAskPanel(props: { ask: DesignAsk; store: DesignStore }) {
 export function DesignCoordinatorPanel(props: { coordinator: DesignCoordinatorInfo; view: DesignChatView | null; store: DesignStore; onOpen?(): void; bare?: boolean }) {
   const tracking = () => props.view?.designs.length ?? 0;
   return (
-    <div class="design-coordinator">
+    <div class="design-coordinator" classList={{ "design-coordinator-bare": props.bare }}>
       <div class="design-coordinator-head">
-        <strong class="design-coordinator-title">Coordinator</strong>
+        <strong class="design-coordinator-title" classList={{ "visually-hidden": props.bare }}>
+          Coordinator
+        </strong>
         <Chip live={props.coordinator.status === "running" || props.coordinator.status === "starting"} tone={props.coordinator.status === "running" ? "accent" : undefined}>
           {tracking() > 0 ? `Tracking ${tracking()} designs` : STATUS_WORD[props.coordinator.status]}
         </Chip>
@@ -176,13 +197,17 @@ export function DesignCoordinatorPanel(props: { coordinator: DesignCoordinatorIn
           <Markdown text={props.coordinator.card} />
         </Show>
       </div>
-      <div class="design-delivery-line">
-        <DesignDeliveryLine delivery={props.coordinator.delivery} name="the coordinator" />
-      </div>
+      <Show when={props.bare}>
+        <div class="design-box-status">
+          <DesignDeliveryLine delivery={props.coordinator.delivery} name="the coordinator" />
+        </div>
+      </Show>
       <Show when={!props.bare}>
         <DesignMessageBox
           label="Message the coordinator"
-          placeholder="Tell the coordinator what you want from these designs"
+          placeholder="Message the coordinator"
+          delivery={props.coordinator.delivery}
+          name="the coordinator"
           send={(text, key) => props.store.api.coordinatorMessage(text, key)}
           onSent={() => props.store.refresh()}
         />

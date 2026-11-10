@@ -100,7 +100,7 @@ export function DesignMessageBox(props: { placeholder: string; label: string; de
   );
 }
 
-function DesignAskPanel(props: { ask: DesignAsk; store: DesignStore }) {
+export function DesignAskPanel(props: { ask: DesignAsk; store: DesignStore }) {
   const [busy, setBusy] = createSignal(false);
   const [error, setError] = createSignal("");
   const [fields, setFields] = createSignal<Record<string, string>>({});
@@ -117,7 +117,7 @@ function DesignAskPanel(props: { ask: DesignAsk; store: DesignStore }) {
       setBusy(false);
     }
   };
-  const words: Record<string, [string, string]> = { site: ["Allow Site", "Don't Allow"], "start-project": ["Start Copy", "Don't Start"], "stop-project": ["Stop Copy", "Keep Running"], spend: ["Start Designs", "Don't Start"] };
+  const words: Record<string, [string, string]> = { site: ["Allow Site", "Don't Allow"], "capture-signed-in": ["Capture Its Images", "Don't Capture"], "start-project": ["Start Copy", "Don't Start"], "stop-project": ["Stop Copy", "Keep Running"], spend: ["Start Designs", "Don't Start"] };
   const secret = (f: string) => f === "password";
   const formFields = () => (props.ask.kind === "sign-in" ? props.ask.fields : props.ask.kind === "test-account" ? ["username", "password"] : null);
   const ready = () => (formFields() ?? []).every((f) => (fields()[f] ?? "").trim() !== "");
@@ -174,7 +174,7 @@ function DesignAskPanel(props: { ask: DesignAsk; store: DesignStore }) {
 }
 
 /** What the coordinator has concluded and made so far, with a box to prompt it further. */
-export function DesignCoordinatorPanel(props: { coordinator: DesignCoordinatorInfo; view: DesignChatView | null; store: DesignStore; onOpen?(): void; bare?: boolean }) {
+export function DesignCoordinatorPanel(props: { coordinator: DesignCoordinatorInfo; view: DesignChatView | null; store: DesignStore; onOpen?(): void; bare?: boolean; /** Only its status and its box: during the brief, its words are on the brief and its question lays over it. */ strip?: boolean }) {
   const tracking = () => props.view?.designs.length ?? 0;
   return (
     <div class="design-coordinator" classList={{ "design-coordinator-bare": props.bare }}>
@@ -191,12 +191,14 @@ export function DesignCoordinatorPanel(props: { coordinator: DesignCoordinatorIn
           </button>
         </Show>
       </div>
-      <div class="design-coordinator-card" classList={{ "design-coordinator-card-bare": props.bare }}>
-        <Show when={props.coordinator.ask}>{(a) => <DesignAskPanel ask={a()} store={props.store} />}</Show>
-        <Show when={props.coordinator.card} fallback={<p class="text-muted">Nothing on its card yet. It writes here as it goes.</p>}>
-          <Markdown text={props.coordinator.card} />
-        </Show>
-      </div>
+      <Show when={!props.strip}>
+        <div class="design-coordinator-card" classList={{ "design-coordinator-card-bare": props.bare }}>
+          <Show when={props.coordinator.ask}>{(a) => <DesignAskPanel ask={a()} store={props.store} />}</Show>
+          <Show when={props.coordinator.card} fallback={<p class="text-muted">Nothing on its card yet. It writes here as it goes.</p>}>
+            <Markdown text={props.coordinator.card} />
+          </Show>
+        </div>
+      </Show>
       <Show when={props.bare}>
         <div class="design-box-status">
           <DesignDeliveryLine delivery={props.coordinator.delivery} name="the coordinator" />
@@ -205,7 +207,7 @@ export function DesignCoordinatorPanel(props: { coordinator: DesignCoordinatorIn
       <Show when={!props.bare}>
         <DesignMessageBox
           label="Message the coordinator"
-          placeholder="Message the coordinator"
+          placeholder={props.strip ? "Tell the coordinator what to change" : "Message the coordinator"}
           delivery={props.coordinator.delivery}
           name="the coordinator"
           send={(text, key) => props.store.api.coordinatorMessage(text, key)}

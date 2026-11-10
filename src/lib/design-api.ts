@@ -1,4 +1,4 @@
-import type { DesignChatView, DesignSetup } from "../../shared/design";
+import type { DesignChatView, DesignLinkUse, DesignSetup } from "../../shared/design";
 import { ApiError, withJsonType } from "./api";
 import { onAuthorized, onUnauthorized } from "./auth";
 import { hostUrl, routeUrl } from "./mesh";
@@ -40,10 +40,12 @@ export function designApi(path: string, host: string | null) {
   return {
     view: () => json<DesignChatView>(url("")),
     setup: (runId: string, setup: DesignSetup) => json<unknown>(url(`${run(runId)}/setup`), { method: "PATCH", body: JSON.stringify(setup) }),
-    /** Start Coordinator: a spend ask comes back as a value, any other refusal throws. */
-    start: async (runId: string, confirmSpend = false): Promise<DesignSpendAsk | null> => {
+    /** Start Coordinator: asks for no money, that's Start on the brief. */
+    start: (runId: string) => json<unknown>(url(`${run(runId)}/start`), post({})),
+    /** Start on the brief, on the version you read: a spend ask comes back as a value, any other refusal throws. */
+    briefStart: async (runId: string, rev: number, confirmSpend = false): Promise<DesignSpendAsk | null> => {
       try {
-        await json<unknown>(url(`${run(runId)}/start`), post(confirmSpend ? { confirmSpend: true } : {}));
+        await json<unknown>(url(`${run(runId)}/brief/start`), post({ rev, ...(confirmSpend ? { confirmSpend: true } : {}) }));
         return null;
       } catch (e) {
         const body = e instanceof ApiError ? e.body : undefined;
@@ -51,7 +53,11 @@ export function designApi(path: string, host: string | null) {
         throw e;
       }
     },
-    confirm: (runId: string, verdict: "design" | "not-this", text?: string) => json<unknown>(url(`${run(runId)}/confirm`), post({ verdict, ...(text ? { text } : {}) })),
+    briefEdit: (runId: string, edit: { field: "summary" | "prompt" | "look"; text: string; url?: string }) => json<unknown>(url(`${run(runId)}/brief/edit`), post(edit)),
+    briefAnswers: (runId: string, answers: { recommended: true } | { picks: { id: string; option?: number; text?: string }[] }) => json<unknown>(url(`${run(runId)}/brief/answers`), post(answers)),
+    briefConflict: (runId: string, choice: "keep" | "rewrite") => json<unknown>(url(`${run(runId)}/brief/conflict`), post({ choice })),
+    briefLink: (runId: string, link: string, use: DesignLinkUse) => json<unknown>(url(`${run(runId)}/brief/link`), post({ url: link, use })),
+    briefNotThisScreen: (runId: string, text?: string) => json<unknown>(url(`${run(runId)}/brief/not-this-screen`), post(text ? { text } : {})),
     message: (l: string, text: string, key: string) => json<{ queued?: boolean }>(url(`${label(l)}/message`), post({ text, key })),
     refine: (l: string, text: string, quick: readonly string[], key: string) => json<{ queued?: boolean }>(url(`${label(l)}/refine`), post({ text, quick, key })),
     retry: (l: string) => json<unknown>(url(`${label(l)}/retry`), post()),

@@ -38,7 +38,7 @@ const COALESCE_MS = 150;
 const PAGE_CACHE = 48;
 
 const active = (view: DesignChatView | null) =>
-  !!view && (view.designs.some((d) => d.status === "queued" || d.status === "writing" || d.status === "fixing") || view.runs.some((r) => r.phase === "researching" || r.phase === "confirm" || r.phase === "generating") || view.coordinator?.status === "running" || view.coordinator?.status === "starting");
+  !!view && (view.designs.some((d) => d.status === "queued" || d.status === "writing" || d.status === "fixing") || view.runs.some((r) => r.phase === "researching" || r.phase === "brief" || r.phase === "generating") || view.coordinator?.status === "running" || view.coordinator?.status === "starting");
 
 function make(path: string, host: string | null): Entry {
   return createRoot((dispose) => {

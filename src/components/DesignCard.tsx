@@ -1,8 +1,8 @@
-import { createContext, createEffect, createMemo, createSignal, For, on, onCleanup, Show, untrack, useContext } from "solid-js";
+import { createContext, createEffect, createMemo, createSignal, For, on, Show, useContext } from "solid-js";
 import { Portal } from "solid-js/web";
-import type { DesignCaps, DesignChatView, DesignRecord, DesignSetup } from "../../shared/design";
+import type { DesignCaps, DesignChatView, DesignRecord } from "../../shared/design";
 import { DESIGN_ASK_ABOVE, DESIGN_BATCH_DEFAULT, DESIGN_BATCH_MAX, DESIGN_CONCURRENT } from "../../shared/design";
-import type { DesignSpendAsk } from "../lib/design-api";
+import { briefStatus, setupLinks, withLinkUse } from "../lib/design-brief";
 import { designsOfRun, useDesignStore, type DesignStore } from "../lib/design-store";
 import {
   batchLine,
@@ -11,28 +11,25 @@ import {
   designCanOpen,
   designCanRefine,
   designFixLine,
-  designGroups,
   designIsBusy,
   designLatest,
   designMeta,
   designStatusWord,
-  moveCoordinator,
   parentsLine,
   setupBlocked,
   setupCount,
   setupSummary,
   STATUS_WORD,
   statusCounts,
-  toggleDirection,
-  toggleGroup,
-  toggleModel,
   type DesignRunView,
 } from "../lib/design-ui";
 import { designPageText } from "../lib/design-store";
+import { DesignBriefCollapsed, DesignBriefStep } from "./DesignBrief";
 import { DesignCoordinatorPanel } from "./DesignCoordinator";
+import { createSetupDraft, DesignLinkRow, DesignSetupPickers } from "./DesignSetupControls";
 import { createNearViewport, DesignScale, DesignSealedFrame, DesignStreamFrame } from "./DesignFrame";
 import { DesignOpen, DesignRefinePanel } from "./DesignOpen";
-import { TextArea, Toggle } from "./form";
+import { TextArea } from "./form";
 import { Chip, Icon } from "./ui";
 import "./DesignCard.css";
 
@@ -107,78 +104,28 @@ function DesignCardIn(props: { runId: string; path: string; host: string | null 
 // ---- Setup ------------------------------------------------------------------------------------
 
 function DesignSetupCard(props: { run: DesignRunView; store: DesignStore }) {
-  const [draft, setDraft] = createSignal<DesignSetup>(untrack(() => props.run.setup));
-  const [saving, setSaving] = createSignal<"" | "saving" | "error">("");
-  const [ask, setAsk] = createSignal<DesignSpendAsk | null>(null);
+  const setup = createSetupDraft(() => props.run, props.store);
   const [busy, setBusy] = createSignal(false);
   const [error, setError] = createSignal("");
   const caps = () => props.store.view()?.caps ?? CAPS_FALLBACK;
-  let dirty = false;
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  // What the main chat changed comes in here; what you're changing stays yours until it is saved.
-  createEffect(
-    on(
-      () => props.run.setup,
-      (s) => {
-        if (!dirty) setDraft(s);
-      },
-    ),
-  );
-  const save = () => {
-    timer = undefined;
-    const sent = draft();
-    setSaving("saving");
-    props.store.api
-      .setup(props.run.id, sent)
-      .then(() => {
-        if (sent === draft()) dirty = false;
-        setSaving("");
-      })
-      .catch(() => setSaving("error"));
-  };
-  const change = (next: DesignSetup) => {
-    setDraft(next);
-    setAsk(null);
-    dirty = true;
-    clearTimeout(timer);
-    timer = setTimeout(save, 300);
-  };
-  onCleanup(() => {
-    if (timer) {
-      clearTimeout(timer);
-      save();
-    }
-  });
+  const draft = setup.draft;
   const count = () => setupCount(draft());
   const blocked = () => setupBlocked(draft(), caps());
-  const start = async (confirmSpend: boolean) => {
+  const start = async () => {
     setBusy(true);
     setError("");
     try {
-      if (timer) {
-        clearTimeout(timer);
-        timer = undefined;
-        await props.store.api.setup(props.run.id, draft());
-      }
-      dirty = false;
-      const asks = await props.store.api.start(props.run.id, confirmSpend);
-      if (asks) setAsk(asks);
-      else props.store.refresh();
+      await setup.flush();
+      await props.store.api.start(props.run.id);
+      props.store.refresh();
     } catch (e) {
       setError(e instanceof Error ? e.message : "The coordinator couldn't start. Try again.");
     } finally {
       setBusy(false);
     }
   };
-  const groups = () => designGroups(draft().models);
-  // Rows are keyed by name, so a click keeps its row (and the keyboard focus on it).
-  const groupIds = () => groups().map((g) => g.id);
-  // What the main chat picked comes first; the order is set once, so a row never jumps as it's ticked.
-  const modelOrder = untrack(() => [...draft().models].sort((a, b) => Number(b.design || b.coordinator) - Number(a.design || a.coordinator)).map((m) => m.ref));
-  const modelRefs = () => {
-    const known = new Set(draft().models.map((m) => m.ref));
-    return [...modelOrder.filter((r) => known.has(r)), ...draft().models.map((m) => m.ref).filter((r) => !modelOrder.includes(r))];
-  };
+  // Rows are keyed by address, so choosing a use keeps its row.
+  const linkUrls = () => setupLinks(draft()).map((l) => l.url);
   return (
     <>
       <div class="card-head">
@@ -187,109 +134,25 @@ function DesignSetupCard(props: { run: DesignRunView; store: DesignStore }) {
       </div>
       <div class="design-card-scroll">
       <div class="design-card-body design-setup">
-        <TextArea label="Brief" rows="2" value={draft().brief} onInput={(brief) => change({ ...draft(), brief })} />
-        <div class="stack-2">
-          <h4 class="design-setup-label">Models</h4>
-          <div class="design-setup-groups" role="group" aria-label="Model groups">
-            <For each={groupIds()}>
-              {(id) => {
-                const g = () => groups().find((x) => x.id === id)!;
-                return (
-                  <Toggle class="design-toggle-inline" label={g().name} checked={g().on === g().count} mixed={g().on > 0 && g().on < g().count} onChange={(on) => change(toggleGroup(draft(), id, on))} />
-                );
-              }}
-            </For>
+        <TextArea label="What Do You Want to Design" rows="2" value={draft().brief} onInput={(brief) => setup.change({ ...draft(), brief })} />
+        <Show when={linkUrls().length > 0}>
+          <div class="design-setup-links">
+            <For each={linkUrls()}>{(url) => <DesignLinkRow url={url} use={setupLinks(draft()).find((l) => l.url === url)?.use ?? null} onUse={(use) => setup.change(withLinkUse(draft(), url, use))} />}</For>
           </div>
-          <ul class="list design-model-list" aria-label="Models">
-            <For each={modelRefs()}>
-              {(ref) => {
-                const m = () => draft().models.find((x) => x.ref === ref)!;
-                return (
-                  <li class="design-model-row">
-                    <span class="design-model-name">
-                      {m().name}
-                      <Show when={!m().vision}>
-                        <span class="text-muted design-model-note" title="This model can't read images. It works from a text outline of the page.">
-                          {" "}
-                          · text only
-                        </span>
-                      </Show>
-                    </span>
-                    <Toggle switch class="design-model-toggle" label="Design" ariaLabel={`${m().name}: design`} checked={m().design} onChange={(on) => change(toggleModel(draft(), ref, on))} />
-                    <Toggle
-                      class="design-model-toggle"
-                      label="Coordinator"
-                      ariaLabel={`${m().name}: coordinator`}
-                      title="1 model coordinates the team. It can coordinate without designing."
-                      checked={m().coordinator}
-                      onChange={(_on, el) => {
-                        el.checked = true;
-                        change(moveCoordinator(draft(), ref));
-                      }}
-                    />
-                  </li>
-                );
-              }}
-            </For>
-          </ul>
-        </div>
-        <div class="stack-2">
-          <h4 class="design-setup-label">Directions</h4>
-          <div class="design-directions">
-            <For each={draft().directions.map((d) => d.name)}>
-              {(name) => {
-                const d = () => draft().directions.find((x) => x.name === name)!;
-                return (
-                  <Toggle class="design-toggle-inline" label={name} checked={d().on} onChange={(on) => change(toggleDirection(draft(), name, on))} />
-                );
-              }}
-            </For>
-          </div>
-        </div>
+        </Show>
+        <DesignSetupPickers setup={setup} />
       </div>
       </div>
       <div class="card-foot design-setup-foot">
         <div class="design-setup-summary">
-          <Show
-            when={ask()}
-            fallback={
-              <>
-                <span>{setupSummary(count())}</span>
-                <span class={saving() === "error" || error() ? "field-error" : "text-muted"} role={error() ? "alert" : undefined}>
-                  {saving() === "error" ? "This selection couldn't be saved. Your clicks are still here." : error() || blocked() || ""}
-                </span>
-              </>
-            }
-          >
-            {(a) => (
-              <>
-                <span>
-                  {a().designs} designs{a().estimateUsd ? `, about $${a().estimateUsd!.toFixed(2)}` : ""}.
-                </span>
-                <span class="text-muted">That's more than {caps().askAbove}, so we ask before starting.</span>
-              </>
-            )}
-          </Show>
+          <span>{setupSummary(count())}</span>
+          <span class={setup.saving() === "error" || error() ? "field-error" : "text-muted"} role={error() ? "alert" : undefined}>
+            {setup.saving() === "error" ? "This selection couldn't be saved. Your clicks are still here." : error() || blocked() || ""}
+          </span>
         </div>
-        <Show
-          when={ask()}
-          fallback={
-            <button type="button" class="button button-primary" disabled={busy() || !!blocked()} onClick={() => void start(false)}>
-              Start Coordinator
-            </button>
-          }
-        >
-          {(a) => (
-            <div class="button-row">
-              <button type="button" class="button button-ghost" disabled={busy()} onClick={() => setAsk(null)}>
-                Cancel
-              </button>
-              <button type="button" class="button button-primary" disabled={busy()} onClick={() => void start(true)}>
-                Start {a().designs} Designs
-              </button>
-            </div>
-          )}
-        </Show>
+        <button type="button" class="button button-primary" disabled={busy() || !!blocked()} onClick={() => void start()}>
+          Start Coordinator
+        </button>
       </div>
     </>
   );
@@ -307,13 +170,15 @@ function DesignRunBody(props: { run: DesignRunView; store: DesignStore; newest: 
   const anyLive = () => designs().some(designIsBusy);
   const coordinator = () => coordinatorOf(props.store.view());
   const refined = () => designs().find((d) => d.label === refining());
+  const waitingChip = () => (props.run.phase === "brief" && props.run.brief ? briefStatus(props.run) : props.run.phase === "stopped" ? { text: "Stopped", live: false } : props.run.phase === "researching" || props.run.phase === "brief" ? { text: "Preparing the brief", live: true } : { text: "Starting the designs", live: true });
+  const briefOpen = () => props.run.phase === "brief" && !!props.run.brief;
   return (
     <>
       <div class="card-head design-run-head">
         <h3 class="card-title design-run-title">{briefTitle(props.run.setup.brief)}</h3>
         <div class="design-run-sub">
           <span class="text-caption text-muted design-run-batch">{designs().length > 0 ? batchLine(designs()) : ""}</span>
-          <Show when={designs().length > 0} fallback={<Chip live={props.run.phase === "researching"}>{props.run.phase === "confirm" ? "Waiting on you" : props.run.phase === "stopped" ? "Stopped" : "Looking for the screen"}</Chip>}>
+          <Show when={designs().length > 0} fallback={<Chip live={waitingChip().live}>{waitingChip().text}</Chip>}>
             <Chip live={anyLive()} tone={anyLive() ? "accent" : undefined}>
               <span class="design-run-counts" title={counts()}>
                 {counts()}
@@ -322,6 +187,7 @@ function DesignRunBody(props: { run: DesignRunView; store: DesignStore; newest: 
           </Show>
         </div>
       </div>
+      <Show when={briefOpen()} fallback={<>
       <div class="design-card-scroll">
       <Show when={props.run.error}>
         {(e) => (
@@ -333,12 +199,12 @@ function DesignRunBody(props: { run: DesignRunView; store: DesignStore; newest: 
           </div>
         )}
       </Show>
-      <Show when={props.run.phase === "confirm" && props.run.confirm}>{(c) => <DesignConfirmPanel run={props.run} confirm={c()} store={props.store} />}</Show>
-      <Show when={props.run.phase === "researching"}>
+      <Show when={props.run.phase === "researching" || (props.run.phase === "brief" && !props.run.brief)}>
         <div class="empty design-card-waiting">
-          <p class="empty-body">The coordinator is finding the screen to design. It stops here to show you what it found.</p>
+          <p class="empty-body">The coordinator is preparing your brief. Nothing is designed until you press Start.</p>
         </div>
       </Show>
+      <DesignBriefCollapsed run={props.run} />
       <Show when={designs().length > 0}>
         <div class="design-card-body">
           <div class="design-grid">
@@ -360,6 +226,9 @@ function DesignRunBody(props: { run: DesignRunView; store: DesignStore; newest: 
           </div>
         )}
       </Show>
+      </>}>
+        <DesignBriefStep run={props.run} store={props.store} onOpenCoordinator={() => setOpened({ kind: "coordinator" })} />
+      </Show>
       <Show when={refined()}>
         {(d) => (
           <div class="design-card-refine">
@@ -375,47 +244,6 @@ function DesignRunBody(props: { run: DesignRunView; store: DesignStore; newest: 
         )}
       </Show>
     </>
-  );
-}
-
-function DesignConfirmPanel(props: { run: DesignRunView; confirm: NonNullable<DesignRunView["confirm"]>; store: DesignStore }) {
-  const [text, setText] = createSignal("");
-  const [busy, setBusy] = createSignal(false);
-  const [error, setError] = createSignal("");
-  const answer = async (verdict: "design" | "not-this") => {
-    setBusy(true);
-    setError("");
-    try {
-      await props.store.api.confirm(props.run.id, verdict, text().trim() || undefined);
-      setText("");
-      props.store.refresh();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "That didn't reach the coordinator. Try again.");
-    } finally {
-      setBusy(false);
-    }
-  };
-  return (
-    <div class="design-card-body design-confirm">
-      <p>{props.confirm.text}</p>
-      <Show when={props.confirm.url}>{(u) => <code class="design-confirm-url">{u()}</code>}</Show>
-      <For each={props.confirm.screenshots}>{(src) => <img class="design-confirm-shot" src={props.store.api.shotUrl(src)} alt="The screen the coordinator found" />}</For>
-      <Show when={props.confirm.outline}>{(o) => <pre class="design-confirm-outline">{o()}</pre>}</Show>
-      <TextArea label="Or tell it which screen or address to use" rows="2" value={text()} onInput={setText} />
-      <Show when={error()}>
-        <p class="field-error" role="alert">
-          {error()}
-        </p>
-      </Show>
-      <div class="button-row design-confirm-actions">
-        <button type="button" class="button" disabled={busy()} onClick={() => void answer("not-this")}>
-          Not This Screen
-        </button>
-        <button type="button" class="button button-primary" disabled={busy()} onClick={() => void answer("design")}>
-          Design This Screen
-        </button>
-      </div>
-    </div>
   );
 }
 

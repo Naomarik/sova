@@ -256,7 +256,7 @@ function depsOf(w: WorldData, records: ReturnType<typeof leftovers>, clock: Cloc
       return classifyRepo(root, {
         git: execGit,
         withQueueMade: true,
-        queueMade: async (p) => w.queueMade.has(p),
+        queueMade: async () => (p) => w.queueMade.has(p),
         left: async (o) => {
           const l = await branchLeft(o);
           const drafts = l.drafts.filter((d) => !w.proved.has(d));

@@ -151,7 +151,7 @@ function world(fo: ConstructorParameters<typeof Fixture>[0] = {}): World {
     git: execGit,
     gitWrite: through,
     gitRemove: through,
-    classify: (root, only) => classifyRepo(root, { git: execGit, withQueueMade: true, queueMade: async (p) => queueMade.has(p), ...(only ? { only } : {}) }),
+    classify: (root, only) => classifyRepo(root, { git: execGit, withQueueMade: true, queueMade: async () => (p) => queueMade.has(p), ...(only ? { only } : {}) }),
     chats: async (paths, exclude): Promise<ChatFacts> => {
       const wanted = paths.map((p) => ({ path: p, canon: canonical(p) }));
       const uses = chats

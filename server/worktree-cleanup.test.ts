@@ -91,7 +91,7 @@ before(() => {
   mkdirSync(join(wt("liverec"), ".agent", "sessions", "live"), { recursive: true });
   writeFileSync(join(wt("liverec"), ".agent", "sessions", "live", `p${process.pid}-x.json`), JSON.stringify({ session: { pid: process.pid } }));
   c.configureCleanup({
-    queueMade: async (p) => queueMadeTrees.has(p),
+    queueMade: async () => (p) => queueMadeTrees.has(p),
     summary: async (p) => sessions.find((s) => s.path === p) ?? null,
     sessionFiles: async () => [...new Set([...sessions.map((s) => s.path), join(root, "sessions", "01a1026f-c64e-70a4.jsonl"), HOME_SESSION()])],
     readBranch: async (p) => (reads.branch.push(p), branches.get(p) ?? []),
@@ -217,7 +217,7 @@ test("a session file that can't be read is named, and a session list that can't 
   await assert.rejects(c.chatUses([wt("idle")]), /sessions unreadable/);
   sessions.pop();
   c.resetCleanup();
-  c.configureCleanup({ queueMade: async (p) => queueMadeTrees.has(p), summary: async (p) => sessions.find((s) => s.path === p) ?? null, sessionFiles: async () => [...new Set([...sessions.map((s) => s.path), join(root, "sessions", "01a1026f-c64e-70a4.jsonl"), HOME_SESSION()])], readBranch: async (p) => (reads.branch.push(p), branches.get(p) ?? []), readFile: async (p) => (reads.file.push(p), readFileSync(p)), now: () => 1000 });
+  c.configureCleanup({ queueMade: async () => (p) => queueMadeTrees.has(p), summary: async (p) => sessions.find((s) => s.path === p) ?? null, sessionFiles: async () => [...new Set([...sessions.map((s) => s.path), join(root, "sessions", "01a1026f-c64e-70a4.jsonl"), HOME_SESSION()])], readBranch: async (p) => (reads.branch.push(p), branches.get(p) ?? []), readFile: async (p) => (reads.file.push(p), readFileSync(p)), now: () => 1000 });
 });
 
 test("readiness's gone-folder reader: git first (ancestry, content, or unmerged), the ledger for a deleted branch, else unknown", async () => {

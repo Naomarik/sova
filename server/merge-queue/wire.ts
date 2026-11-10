@@ -587,14 +587,18 @@ export async function worktreeOwnerOf(worktree: string): Promise<Owner | null> {
 async function ownersNow(): Promise<WorktreeOwners> {
   if (!owners) {
     const [{ listSessions }, { trackedWorktrees }] = await Promise.all([import("../sessions-index"), import("../merge-readiness")]);
-    const { sessionFacts } = await import("../insights");
-    owners = new WorktreeOwners({ sessions: () => listSessions(), tracked: trackedWorktrees, canonical, treesOfChat: async (path) => (await sessionFacts(path)).worktrees?.trees ?? [] });
+    const { createdByChats } = await import("../worktree-cleanup");
+    owners = new WorktreeOwners({ sessions: () => listSessions(), tracked: trackedWorktrees, canonical, createdBy: createdByChats });
   }
   return owners;
 }
 /** A worktree one of the merge queue's own chats created (owners.ts queueMade): never on a list you land from. */
 export async function worktreeQueueMade(worktree: string): Promise<boolean> {
   return (await ownersNow()).queueMade(worktree);
+}
+/** The same, for a whole list: one look (owners.ts queueMadeNow), then a lookup per row. */
+export async function worktreeQueueMadeNow(): Promise<(worktree: string) => boolean> {
+  return (await ownersNow()).queueMadeNow();
 }
 
 /** A worktree row's owner: its chat's id, file, title and archived mark. */
@@ -970,7 +974,7 @@ export async function startMergeQueue(
     // The branch's chat (owners.ts): the Ready rows show it, and a Land naming no chat records it.
     ownerOf: async (_root, _branch, worktree) => (worktree ? worktreeOwnerOf(worktree) : null),
     // A conflict's scratch copy the merge thread made itself (old style): hidden from Ready, refused by Land.
-    queueMade: (worktree) => worktreeQueueMade(worktree),
+    queueMade: () => worktreeQueueMadeNow(),
     thread,
     draftsHash: (dir) => draftsHash(dir),
     // A branch sent back for its drafts: Sova's docs check of them, the one readiness runs (one cache).

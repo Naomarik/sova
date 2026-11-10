@@ -1787,7 +1787,7 @@ describe("the view's extras", () => {
     const written: string[] = [];
     let summaries: BranchSummaries | null = null;
     const made = new Set<string>();
-    const k = makeKit({ deps: { summaryOf: (root, branch, commit) => summaries!.summaryOf(root, branch, commit), queueMade: async (p) => made.has(p) } });
+    const k = makeKit({ deps: { summaryOf: (root, branch, commit) => summaries!.summaryOf(root, branch, commit), queueMade: async () => (p) => made.has(p) } });
     try {
       const q = await k.q();
       summaries = new BranchSummaries({

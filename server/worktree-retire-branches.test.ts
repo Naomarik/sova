@@ -57,7 +57,7 @@ function world(o: { seam?: RetireDeps["deleteBranches"]; fixture?: ConstructorPa
     git: execGit,
     gitWrite: through,
     gitRemove: through,
-    classify: (root, only) => classifyRepo(root, { git: execGit, withQueueMade: true, queueMade: async (p) => queueMade.has(p), ...(only ? { only } : {}) }),
+    classify: (root, only) => classifyRepo(root, { git: execGit, withQueueMade: true, queueMade: async () => (p) => queueMade.has(p), ...(only ? { only } : {}) }),
     chats: async () => ({ uses: [], unreadable: [] }),
     records: async () => ({ records, unreadable: [] }),
     processes: async () => [],

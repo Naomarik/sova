@@ -169,6 +169,7 @@ export type CommandId =
   | "project.folder.list"
   | "project.folder.read"
   | "project.merge-queue.update-local-main"
+  | "project.merge-queue.discard-branch"
   | "project.merge-queue.request.publish"
   | "project.merge-queue.land-how.set"
   | "project.merge-queue.land-how.clear"
@@ -3921,6 +3922,19 @@ export interface CommandParams {
     /** The project's id */
     "project": string;
   };
+  /** A branch you won't land, gone with everything on it: its folder (only the files you saw listed), its branch at the commit you saw, with no backup, and its chat archived. With dryRun: what would go, and why it can't now. Refused while it is in the queue or its chat or a worker is working. (changes something; needs the card's owner trusted) */
+  "project.merge-queue.discard-branch": {
+    /** The project's id */
+    "project": string;
+    /** The branch */
+    "branch": string;
+    /** The branch's tip the row showed (full commit) */
+    "commit": string;
+    /** List what would go; delete nothing */
+    "dryRun"?: boolean;
+    /** The dry run's digest: the folder's files go only while they are still that listing */
+    "digest"?: string;
+  };
   /** Publish a checked branch's pull or merge request with the title and description you reviewed: the spec docs commit, the leak scan, the push, then the request. (changes something; needs the card's owner trusted) */
   "project.merge-queue.request.publish": {
     /** The queue entry (mq_…) */
@@ -4582,6 +4596,7 @@ export const COMMAND_EFFECTS: Record<CommandId, "looks" | "changes"> = {
   "project.folder.list": "looks",
   "project.folder.read": "looks",
   "project.merge-queue.update-local-main": "changes",
+  "project.merge-queue.discard-branch": "changes",
   "project.merge-queue.request.publish": "changes",
   "project.merge-queue.land-how.set": "changes",
   "project.merge-queue.land-how.clear": "changes",

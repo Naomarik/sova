@@ -102,6 +102,58 @@ test("every row that draws Land hides its actions while a confirm is open, and L
   }
 });
 
+test("Discard Branch… keeps the ▾ on every row that offers it, even one with only drafts and no review kit", () => {
+  const split = (o: Record<string, unknown>) => html(() => solid.createComponent(LandSplit, { branch: "feat/x", review: false, busy: false, onAsk: noop, onLand: noop, onWithoutSpecs: noop, draftsOnly: true, ...o }));
+  assert.doesNotMatch(split({}), /aria-haspopup="menu"/, "without it, a drafts-only row with no review kit has no ▾");
+  assert.match(split({ onDiscard: noop }), /aria-haspopup="menu"/);
+  // Both rows hand it the same three props, and its confirm through LandConfirms.
+  for (const file of ["WorktreesModal.tsx", "MergeQueueTab.tsx"]) {
+    const src = readFileSync(new URL(`../components/${file}`, import.meta.url), "utf8");
+    for (const u of [...src.matchAll(/<LandSplit\b[\s\S]*?\/>/g)].map((m) => m[0])) assert.match(u, /onDiscard=\{[^}]*openDiscard[^}]*\}[\s\S]*discardWhy=\{discard\.refused\(\)\}[\s\S]*onMenuOpen=/, `${file}: LandSplit offers Discard Branch…`);
+    for (const u of [...src.matchAll(/<LandConfirms\b[\s\S]*?\/>/g)].map((m) => m[0])) assert.match(u, /discard=\{discard\}/, `${file}: its confirm is the row's`);
+  }
+});
+
+test("Discard Branch…'s confirm: what goes, the warning, Cancel (ghost) then Discard Branch (outlined destructive)", () => {
+  const preview = {
+    branch: "feat/x",
+    commit: "abc1234",
+    target: "master",
+    commits: { count: 2, shown: [] },
+    folder: "/w/sova-x",
+    files: { uncommitted: ["src/a.ts"], ignored: [], nested: [], rebuildable: [], counts: { uncommitted: 1, ignored: 0, nested: 0, rebuildable: 0 }, digest: "f" },
+    drafts: [],
+    chat: { id: "s1", title: "Work", path: "/s/1.jsonl" },
+    others: [{ id: "s2", title: "Tests", path: "/s/2.jsonl" }],
+    digest: "d",
+    refused: null as string | null,
+  };
+  const discard = (p: typeof preview | undefined) => ({ preview: () => p, checking: () => false, busy: () => false, error: () => null, changed: () => false, partial: () => null, refused: () => p?.refused ?? null, check: noop, run: async () => false, opened: noop, target: () => ({ project: "p", branch: "feat/x", commit: "abc1234", here: "/s/1.jsonl" }) });
+  const confirmOf = (p: typeof preview | undefined) => html(() => solid.createComponent(LandConfirms, { confirm: { ...asking(null), ask: () => "discard" }, branch: "feat/x", busy: false, onLand: noop, discard: discard(p) }));
+  const h = confirmOf(preview);
+  assert.match(h, /role="group"[^>]*aria-label="Discard feat\/x"/);
+  assert.match(h, /<p class="wt-queue-confirm-title">Discard feat\/x\?<\/p>/);
+  assert.match(h, /2 commits not on master/);
+  assert.match(h, /<code>src\/a\.ts<\/code>/, "the exact file list");
+  assert.match(h, /This chat, archived/, "the list belongs to the chat it archives");
+  assert.match(h, /A chat in its folder, Tests, archived/, "every other chat it archives, by name");
+  assert.match(h, /can&#39;t be brought back|can't be brought back/);
+  assert.deepEqual(
+    buttons(h).map((x) => [x.text, /button-ghost/.test(x.cls), /button-destructive/.test(x.cls), /button-primary/.test(x.cls)]),
+    [
+      ["Cancel", true, false, false],
+      ["Discard Branch", false, true, false],
+    ],
+  );
+  // Can't go now: the reason replaces the list, and the action is disabled.
+  const no = confirmOf({ ...preview, refused: "Its chat is working." });
+  assert.match(no, /Its chat is working\./);
+  assert.doesNotMatch(no, /not on master/);
+  assert.match(no, /<button[^>]*disabled[^>]*>Discard Branch/);
+  // No dry run yet: it says so, and waits.
+  assert.match(confirmOf(undefined), /Checking what goes/);
+});
+
 test("the Worktrees dialog: its foot carries the queue's one line and View Merge Queue; no Close button there", () => {
   assert.equal(modalHead([{ mergeServed: true, mergeProject: { target: "master", checks: "declared" } }]).intro, "Land queues a branch; it lands as the commit that was tested.");
   const src = readFileSync(new URL("../components/WorktreesModal.tsx", import.meta.url), "utf8");

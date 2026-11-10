@@ -541,6 +541,7 @@
    "project.folder.list": "scripts",
    "project.folder.read": "scripts",
    "project.merge-queue.update-local-main": "scripts",
+   "project.merge-queue.discard-branch": "scripts",
    "project.merge-queue.request.publish": "scripts",
    "project.merge-queue.land-how.set": "scripts",
    "project.merge-queue.land-how.clear": "scripts",

@@ -4,6 +4,56 @@ What changed in each Sova release, newest first: the highlights, written by hand
 list. The install command installs the newest release (the `stable` tag); `SOVA_REF=vX.Y.Z` installs
 or keeps one release. How a release is cut: [CONTRIBUTING.md](CONTRIBUTING.md#releases).
 
+## v0.14.0 — 2026-11-10
+
+Lookbooks, Discard Branch, `!` commands in your own zsh, and a Claude model list that keeps itself
+up to date. 266 commits since v0.13.0. The highlights:
+
+- **Lookbook.** With vis on, ask a chat for a Lookbook ("a Lookbook of my pricing page, all Claude
+  models") and several hidden design sessions each build a complete prototype of one page, each in
+  its own style, on the models you tick. **Lookbook · Setup** picks the models, a coordinator, a
+  Style (20, in 5 families) and a Layout, and how each link you paste is used. The coordinator
+  writes a Design Brief with its questions; after **Start**, the pages draw live side by side on
+  the card and in the session pane's new **Gallery** tab, labelled A, B, C so you can refine, talk
+  to and combine them by name. Back, Forward and the address follow the design you have open. An
+  ordinary "mock up a login page" still gets a quick drawing.
+- **Discard Branch….** The last item of the Land ▾ menu, on Ready rows and in a chat's Worktrees
+  list, throws a branch away in one step: its folder, the branch itself, its drafts, and the chats
+  idle in its folder, which are archived. It checks first and lists exactly what goes (commits the
+  target doesn't have, each kind of file, drafts, folder, chats), says no backup is kept, and asks
+  again if anything changed before you confirm. A chat still running there, or a branch checked out
+  in two folders, is refused with the reason.
+- **Shell mode runs in your zsh.** When your login shell is zsh, a `!` command from the composer
+  runs in zsh with your profile and `.zshrc` (or `$ZDOTDIR`'s) loaded first, so your aliases and
+  functions work; their output stays hidden. The sandbox loads the same setup. The agent's own
+  commands are unchanged, and any other login shell runs as before.
+- **Claude models follow Claude Code.** Sova reads Claude Code's own model table at each start and
+  remembers it, so a new Claude model appears in every picker (Profiles, the Overseer, Summaries,
+  Session titles) with no restart, and a model Claude Code drops leaves the pickers. Settings says
+  when it shows the last list it could read. Fable 5.2 is built in; Fable 5.1 becomes previous.
+- **Subfolder skills and Claude skill folders.** Skills in a project's subfolders are offered as
+  the agent starts working there, for Claude Code chats and workers as well, and skills in Claude's
+  own skill folders are found too. The Context tab's **Skills offered** sheet counts partly read
+  skills on their own and lists them after the read ones; a skill marked Manual only says so under
+  its name.
+- **Worktree rows tell the truth.** Rows, the Ready list and Land all use one answer to "is there
+  anything of this branch's own left to land?", read against the branch the project actually lands
+  on, so a project whose target isn't named master or main reads right: Ready only when truly
+  ready, Landed only while nothing is left, Drafts to land when only drafts remain. Finished rows
+  offer **Remove**.
+- **Smaller changes.** A Setup proposal's chip in Needs you says where the proposal stands, so it
+  no longer says Ready while a trial runs. Discard Branch's confirm spans the whole row.
+
+**What you may need to do:** Nothing for most installs. Automatic worktree cleanup ships switched
+off ("Automatic cleanup is switched off for now."): finished worktrees stay until you press
+**Remove**, and Land never waits for a cleanup rehearsal. Setting `SOVA_RETIRE=on` for the service
+opts in; when it does, landed branches are kept unless Settings → Merge Queue → **Delete branches
+when cleaning up** is on.
+
+Going back to `v0.13.0` (`SOVA_REF=v0.13.0`) keeps your settings and sessions. Lookbook designs
+stay in their chats' files but don't show there, and the remembered Claude model list is ignored,
+so the pickers fall back to v0.13.0's built-in list.
+
 ## v0.13.0 — 2026-11-09
 
 One Profiles tab for how a chat starts and which models it uses, a merge queue that gets fixes made

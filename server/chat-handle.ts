@@ -82,6 +82,7 @@ import { queueOpenTool, queuePushTool } from "./topics";
 import type { PowersSend } from "./session-powers";
 import { tourTools } from "./tours/tools";
 import { designLabelOf, mainDesignTools, sessionDesignTools } from "./design/tools";
+import { describerTools } from "./design/describe";
 import { sessionOfferTools } from "./session-offers-tool";
 import { offerNoteFor } from "./session-offers";
 import { sessionCardTools } from "./transcript-cards-tool";
@@ -763,6 +764,13 @@ export function servedDesignSessionTools(chatId: ChatId, spec: Pick<WorkerSpec, 
   const label = designLabelOf(spec.parent.workerId);
   if (!label) return [];
   const specs = sessionDesignTools({ sessionId: spec.parent.sessionId, path: spec.parent.path }, label);
+  serveTools(chatId, specs);
+  return specs.map(declOfTool);
+}
+
+/** A describing helper's one tool, hosted here for the images it was handed. */
+export function servedDescriberTools(chatId: ChatId, spec: Pick<WorkerSpec, "parent">): ServerToolDecl[] {
+  const specs = describerTools({ sessionId: spec.parent.sessionId }, spec.parent.workerId);
   serveTools(chatId, specs);
   return specs.map(declOfTool);
 }

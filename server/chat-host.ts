@@ -33,6 +33,7 @@ import {
   servedToolsForChat,
   servedCoordinatorTools,
   servedDesignSessionTools,
+  servedDescriberTools,
   servedWorkerTools,
   setChatRouter,
   setWorkerHostSource,
@@ -64,6 +65,7 @@ import { holderAlive, readLock, releaseLockOf } from "./chat-runtime/writer-lock
 import { chatBun, NO_BUN, NO_BUN_CHATS } from "./chat-runtime/bun";
 import { WORKER_PROTO } from "./chat-runtime/worker-port";
 import { installDesignHost, onLiveFrame, reattachDesigns } from "./design/batch";
+import { reattachDescribers } from "./design/describe";
 import { type WakeOwner, type WorkerProcesses, type WorkerRecord, WorkerRegistry } from "./chat-workers";
 import { installCoordinatorRegistry, reattachCoordinators } from "./design/coordinator";
 import { WAKE_DIR_ENV, WAKE_WORKER_ENV } from "../pi-config/extensions/subagents/wake-store.ts";
@@ -132,6 +134,7 @@ export function workerServed(worker: { kind: string; flags?: WorkerSpec["flags"]
     return parent ? servedCoordinatorTools(path, parent) : [];
   }
   if (worker.kind === "design") return worker.parent ? servedDesignSessionTools(path, { parent: worker.parent }) : [];
+  if (worker.kind === "design-describer") return worker.parent ? servedDescriberTools(path, { parent: worker.parent }) : [];
   return worker.kind === "worker" ? servedWorkerTools(path, worker.flags && worker.parent ? { flags: worker.flags, parent: worker.parent } : undefined) : [];
 }
 
@@ -613,6 +616,7 @@ export class ChatHostRouter {
       await Promise.all(each.values());
       this.workers.settleBoot();
       reattachDesigns();
+      reattachDescribers();
       reattachCoordinators();
       // Resumes the last server had not sent when it stopped: a chat it took back runs on (its marker is a live run's).
       const back = new Set(adopted.map((rec) => rec.chatId));

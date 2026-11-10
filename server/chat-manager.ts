@@ -848,7 +848,7 @@ export function workerExtensionFactories(w: Pick<WorkerSpec, "kind"> & { builtin
   // Subfolder instruction files load for every kind whose loadout has a file tool (server/deeper-context.ts).
   const files = !w.builtins || w.builtins.some((t) => LOADING_TOOLS.has(t)) ? [deeperContextExtension()] : [];
   // A design session or coordinator has only the tools the server serves it: every one it was declared.
-  if ((w.kind === "design" || w.kind === "design-coordinator") && servedDecls) return [SHELL_GUARD_FACTORY, servedToolsExtension(`sova-${w.kind}`, servedSpecs(path, () => true))];
+  if ((w.kind === "design" || w.kind === "design-coordinator" || w.kind === "design-describer") && servedDecls) return [SHELL_GUARD_FACTORY, servedToolsExtension(`sova-${w.kind}`, servedSpecs(path, () => true))];
   // A hidden chat keeps no job: nothing would deliver its card or stop it.
   if (w.kind !== "worker") return [SHELL_GUARD_FACTORY, ...files];
   // Only what the chat named: a worker's list is fixed at its start and kept when it resumes (§app.mcp/who-gets).

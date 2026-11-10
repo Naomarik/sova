@@ -8,7 +8,7 @@
  */
 
 /** What kind of worker chat: an agent_spawn/team worker, a hidden chat, or a design session Sova's server starts. */
-export type WorkerKind = "worker" | "explain" | "handoff" | "btw" | "design" | "design-coordinator";
+export type WorkerKind = "worker" | "explain" | "handoff" | "btw" | "design" | "design-coordinator" | "design-describer";
 
 /** A worker chat's whole loadout, as data. The parent computed it; nobody here interprets policy. */
 export interface WorkerSpec {

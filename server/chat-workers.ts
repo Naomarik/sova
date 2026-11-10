@@ -90,7 +90,7 @@ interface Live {
 }
 
 /** Kinds whose settles nobody opens the parent for: a design session reports to no one (q6). */
-const SILENT_KINDS: ReadonlySet<WorkerKind> = new Set<WorkerKind>(["design", "design-coordinator"]);
+const SILENT_KINDS: ReadonlySet<WorkerKind> = new Set<WorkerKind>(["design", "design-coordinator", "design-describer"]);
 
 const log = (line: string) => console.log(`[chat-workers] ${line}`);
 

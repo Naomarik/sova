@@ -71,6 +71,12 @@ async function started(run: DesignRun) {
   await startCoordinator(parent, run, "/cwd");
   return Object.fromEntries(coordinatorTools(parent.sessionId).map((t) => [t.name, (args: unknown) => t.execute("c1", args, undefined, undefined, undefined as never)])) as Tools;
 }
+async function launched() {
+  const run = runWith(2, 3);
+  const t = await started(run);
+  changeDesigns(parent.sessionId, (s) => void (s.runs.find((r) => r.id === run.id)!.phase = "generating"));
+  return t;
+}
 const textOf = (r: { content: { type: string; text?: string }[] }): string => r.content.filter((b) => b.type === "text").map((b) => b.text).join("\n");
 const refused = (r: { content: { type: string; text?: string }[] }) => assert.match(textOf(r), /^Refused:/);
 
@@ -193,8 +199,14 @@ test("addresses in a person's text are found exactly", () => {
   assert.deepEqual(originsIn("no address: foo.bar or ftp://x.test"), []);
 });
 
-test("design_new in one turn is one launch: the 13th asks, the 25th stops, a new message starts over", async () => {
+test("design_new waits for the run's launch, so it can't take the launch's place", async () => {
   const t = await started(runWith(2, 3));
+  refused(await t.design_new({ parents: ["A"], instructions: "mix", model: "zai/m0" }));
+  assert.equal(log.news.length, 0);
+});
+
+test("design_new in one turn is one launch: the 13th asks, the 25th stops, a new message starts over", async () => {
+  const t = await launched();
   const one = () => t.design_new({ parents: ["A"], instructions: "mix", model: "zai/m0" });
   for (let i = 0; i < 12; i++) assert.equal((await one()).details.label, "G");
   assert.match(textOf(await one()), /Asked the user/);
@@ -210,7 +222,7 @@ test("design_new in one turn is one launch: the 13th asks, the 25th stops, a new
 });
 
 test("design_new calls side by side can't pass the same check", async () => {
-  const t = await started(runWith(2, 3));
+  const t = await launched();
   const out = await Promise.all(Array.from({ length: 30 }, () => t.design_new({ parents: ["A"], instructions: "mix", model: "zai/m0" })));
   assert.equal(log.news.length, 12);
   assert.equal(out.filter((r) => r.details.asked).length, 1);

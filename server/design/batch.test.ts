@@ -8,7 +8,7 @@ import { after, beforeEach, test } from "node:test";
 
 process.env.PI_CODING_AGENT_DIR = mkdtempSync(join(tmpdir(), "design-batch-"));
 const { DESIGN_CONCURRENT } = await import("../../shared/design");
-const { assertLaunchAllowed, deleteDesign, deliverDesign, DesignLimitError, installDesignHost, launchDesigns, pageProblem, retryDesign, onDesignHandIn, onLiveFrame, setDesignQuietMsForTest } = await import("./batch");
+const { assertLaunchAllowed, deleteDesign, deliverDesign, DesignLimitError, installDesignHost, launchDesigns, newDesign, pageProblem, retryDesign, onDesignHandIn, onLiveFrame, setDesignQuietMsForTest } = await import("./batch");
 const store = await import("./store");
 const { sessionDesignTools } = await import("./tools");
 const { WorkerRegistry } = await import("../chat-workers");
@@ -146,6 +146,14 @@ test("a launch gives each model and direction its own label and session, and onl
   await finish(fakes[0]!, "A");
   await ticks();
   assert.equal(fakes.length, DESIGN_CONCURRENT + 1, "one done lets one more start");
+});
+
+test("a design made from others waits for the launch, and can't stand in for it", () => {
+  const run = newRun(["zai/a", "zai/b"], ["Minimalist", "Heritage", "Immersive"]);
+  assert.throws(() => newDesign(parent, { parents: ["A"], instructions: "mix", model: "zai/a", runId: run }), /hasn't launched/);
+  const labels = launchDesigns(parent, run, {});
+  assert.equal(labels.length, 6);
+  assert.deepEqual(launchDesigns(parent, run, {}), labels, "a second launch starts nothing");
 });
 
 test("labels never repeat in a chat, even after one is deleted", async () => {

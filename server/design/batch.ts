@@ -121,9 +121,12 @@ function loadRefs(sessionId: string, runId: string): DesignReference[] {
 
 /** A run's designs: one queued record per model and direction, within what the Setup card holds. */
 export function launchDesigns(parent: DesignParent, runId: string, input: { brief?: string; references?: DesignReference[] }): string[] {
+/** Whether a run's own batch has been started. Its labels can't say: a design made from others joins them too. */
+export const designRunLaunched = (run: Pick<DesignRun, "phase">): boolean => run.phase !== "setup" && run.phase !== "researching" && run.phase !== "confirm";
+
   const run = runOf(parent.sessionId, runId);
   if (!run) throw new Error("No such design run.");
-  if (run.labels.length) return run.labels;
+  if (designRunLaunched(run)) return run.labels;
   const { models, directions } = chosen(run.setup);
   if (!models.length || !directions.length) throw new Error("Pick at least one model and one direction first.");
   assertLaunchAllowed(models.length * directions.length, !!run.confirmedSpend);
@@ -159,6 +162,7 @@ export function newDesign(parent: DesignParent, input: { parents: string[]; inst
   if (!run) throw new Error("This chat has no design run to add to.");
   const model = run.setup.models.find((m) => m.ref === input.model && m.design);
   if (!model) throw new Error(`${input.model} isn't ticked for design on this run's Setup card.`);
+  if (!designRunLaunched(run)) throw new Error("This run hasn't launched yet: launch it first, then make new designs from others.");
   for (const p of input.parents) if (!readPage(sid, p)) throw new Error(`Design ${p} has no finished page to draw from.`);
   const now = new Date().toISOString();
   const label = changeDesigns(sid, (s) => {

@@ -20,7 +20,7 @@ import { DESIGN_COORDINATOR_PROMPT } from "../../pi-config/extensions/mode/desig
 import { claudeCodeProviderLoad, sessionDirName } from "../../pi-config/extensions/subagents/worker-load.ts";
 import type { WorkerHost, WorkerSpec, WorkerStart } from "../../shared/chat-runtime";
 import { SESSIONS_DIR } from "../paths";
-import { assertLaunchAllowed, deliverDesign, DesignLimitError, launchDesigns, newDesign, onDesignHandIn } from "./batch";
+import { assertLaunchAllowed, deliverDesign, designRunLaunched, DesignLimitError, launchDesigns, newDesign, onDesignHandIn } from "./batch";
 import { DESIGN_BROWSE_TOUR_ID, designBrowse, type BrowseParent, type DesignBrowseStores } from "./browse";
 import { lookAtDesign } from "./look";
 import { changeDesigns, designRoot, designSessions, runOf, setCoordinator, setRunPhase, viewOf } from "./store";
@@ -656,6 +656,8 @@ export function coordinatorTools(sessionId: string): ToolSpec[] {
       const instructions = str(params?.instructions);
       const model = str(params?.model);
       if (!parents.length || !instructions || !model) return refuse("design_new needs parents, instructions and a model.");
+      const run = runOf(parent.sessionId, st.runId);
+      if (!run || !designRunLaunched(run)) return refuse("this run hasn't launched yet. Launch it with design_launch first, then make new designs from others.");
       try {
         assertLaunchAllowed(st.newThisTurn + 1, st.spendOk);
       } catch (err) {

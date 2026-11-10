@@ -47,6 +47,29 @@ export function createNearViewport(el: () => HTMLElement | undefined): () => boo
   return near;
 }
 
+let fontsSettled: (() => boolean) | undefined;
+
+/**
+ * Whether the app's own fonts have arrived. A Design card's box is its final size from the start; its
+ * words wait for the fonts, so a font coming in late can't nudge a line by a pixel. Shared by every
+ * card, and true at once when the fonts are already in (which is nearly always).
+ */
+export function createFontsSettled(): () => boolean {
+  if (fontsSettled) return fontsSettled;
+  if (typeof document === "undefined" || !document.fonts) return (fontsSettled = () => true);
+  const css = getComputedStyle(document.documentElement);
+  const body = css.getPropertyValue("--font-body").trim() || "sans-serif";
+  const mono = css.getPropertyValue("--font-mono").trim() || "monospace";
+  const faces = [`400 16px ${body}`, `600 16px ${body}`, `400 12px ${mono}`];
+  const loaded = () => faces.every((f) => document.fonts.check(f));
+  if (loaded()) return (fontsSettled = () => true);
+  const [ready, setReady] = createSignal(false);
+  fontsSettled = ready;
+  // A font that never comes still lets the card draw, with what the browser has.
+  void Promise.race([Promise.all(faces.map((f) => document.fonts.load(f))), new Promise((ok) => setTimeout(ok, 3000))]).finally(() => setReady(true));
+  return ready;
+}
+
 /** A 1280px-wide page scaled into whatever box holds it. */
 export function DesignScale(props: { children: JSX.Element; label: string }) {
   let box!: HTMLDivElement;

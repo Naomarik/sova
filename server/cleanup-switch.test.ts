@@ -69,3 +69,39 @@ describe("off, the screens use only the ledger", () => {
     assert.deepEqual(summaryWhileOff({ state: "none" }, false), { state: "none" });
   });
 });
+
+const { removeGate, cleanupAnswer } = await import("./cleanup-switch");
+const { retirementAllowed, removeOffered } = await import("./worktree-retire-gate");
+const { removeFieldsOf } = await import("./merge-readiness");
+
+describe("off, a row with nothing left offers Remove, and the server takes it", () => {
+  // A real server: the user's own agent dir, code from a main checkout (a .git folder, not a linked worktree's file).
+  const home = join(agentDir, "home");
+  const code = join(agentDir, "code");
+  mkdirSync(join(home, ".pi", "agent"), { recursive: true });
+  mkdirSync(join(code, ".git"), { recursive: true });
+  const real = (env: NodeJS.ProcessEnv) => retirementAllowed(env, { agentDir: join(home, ".pi", "agent"), home, tmp: join(agentDir, "os-tmp"), codeRoot: code });
+
+  test("SOVA_RETIRE unset on the real server: removable, its confirm by the branch setting", async () => {
+    assert.equal(real({}).on, true, "the control: the real server's own gate is on");
+    const gate = removeGate(real({}), cleanupSwitchedOn({}));
+    assert.deepEqual(gate, { on: false, offFor: "install", why: CLEANUP_SWITCHED_OFF });
+    assert.deepEqual(await removeFieldsOf("/p/.worktrees/done", gate, async () => true), { removable: true, removeKeepsBranch: true });
+    assert.deepEqual(await removeFieldsOf("/p/.worktrees/done", gate, async () => false), { removable: true });
+    assert.equal(removeOffered("drafts", gate), false, "drafts left: no Remove");
+  });
+
+  test("switched on, the real server retires by itself and offers no Remove; a test copy never does", async () => {
+    const on = removeGate(real({ SOVA_RETIRE: "on" }), cleanupSwitchedOn({ SOVA_RETIRE: "on" }));
+    assert.deepEqual(on, { on: true });
+    assert.deepEqual(await removeFieldsOf("/p/.worktrees/done", on, async () => true), {});
+    const copy = retirementAllowed({}, { agentDir: join(agentDir, "x", ".agent"), home });
+    assert.equal(removeGate(copy, false), copy);
+    assert.deepEqual(await removeFieldsOf("/p/.worktrees/done", removeGate(copy, false), async () => true), {});
+  });
+
+  test("the old cleanup endpoint's answer follows the switch, and removes nothing either way", () => {
+    assert.equal(cleanupAnswer(false), "Automatic cleanup is switched off for now. Nothing was removed.");
+    assert.equal(cleanupAnswer(true), "Sova retires finished worktrees on its own now. Nothing was removed.");
+  });
+});

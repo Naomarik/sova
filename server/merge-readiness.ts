@@ -13,6 +13,7 @@ import { stateRoot } from "./state-root";
 import { deferredOf, followUpFor, type FollowUpInput, type MergeFollowUps } from "./merge-followup";
 import { type AskTree, asksUserOf, isGoAsk, readSignals } from "./signals-store";
 import { removeOffered } from "./worktree-retire-gate";
+import { removeGate } from "./cleanup-switch";
 import { type AncestorCheck, draftProofVia, type DraftsHash, draftsHash, draftsLeft } from "./spec-drafts-state";
 import { queueReadingAt } from "./nothing-left";
 import { previewDocs, previewOf } from "./docs-preview";
@@ -730,11 +731,14 @@ export function servedReader(rootOf: (dir: string) => Promise<string | null>, se
   };
 }
 
-/** The row's Remove, offered only where retirement is off for the install: whether it is, and whether its confirm says the branch stays. */
-async function removeFieldsOf(path: string): Promise<{ removable?: true; removeKeepsBranch?: true }> {
-  if (!removeOffered("nothing")) return {};
+/**
+ * The row's Remove, offered only where retirement is off for the install, or switched off (./cleanup-switch.ts): whether
+ * it is, and whether its confirm says the branch stays.
+ */
+export async function removeFieldsOf(path: string, gate = removeGate(), keepsBranch?: (path: string) => Promise<boolean>): Promise<{ removable?: true; removeKeepsBranch?: true }> {
+  if (!removeOffered("nothing", gate)) return {};
   // A setting that can't be read keeps the branch, as a removal would read it.
-  const keeps = await (await import("./worktree-retire")).keepsBranchAt(path).catch(() => true);
+  const keeps = await (keepsBranch ?? (await import("./worktree-retire")).keepsBranchAt)(path).catch(() => true);
   return { removable: true, ...(keeps ? { removeKeepsBranch: true as const } : {}) };
 }
 

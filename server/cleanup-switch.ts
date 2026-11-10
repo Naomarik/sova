@@ -3,6 +3,7 @@
 // Off, no pass is scheduled, and the screens read only the small ledger (what retired, for Restore), never the saved
 // list (`retire-pending.json`) the service writes. Nothing on disk is changed or removed.
 import type { RetirementView, WorktreesSummary } from "../shared/protocol";
+import { type Gate, retirementAllowed } from "./worktree-retire-gate";
 import type { PendingFile } from "./worktree-retire-view";
 
 export const CLEANUP_SWITCHED_OFF = "Automatic cleanup is switched off for now.";
@@ -34,3 +35,16 @@ export function summaryWhileOff(s: WorktreesSummary, on = cleanupSwitchedOn()): 
   const { held: _h, ...rest } = s;
   return rest;
 }
+
+/**
+ * The gate a worktree row's Remove reads (and POST /api/worktrees/remove passes on): while switched off, the real
+ * server is as an install where cleanup is off, so a worktree with nothing left offers Remove and the server takes it
+ * through the same rule. A test copy, or one that can't tell, stays as it is.
+ */
+export function removeGate(gate: Gate = retirementAllowed(), on = cleanupSwitchedOn()): Gate {
+  return !on && gate.on ? { on: false, offFor: "install", why: CLEANUP_SWITCHED_OFF } : gate;
+}
+
+/** POST /api/worktrees/cleanup's answer: it removes nothing either way. */
+export const cleanupAnswer = (on = cleanupSwitchedOn()): string =>
+  on ? "Sova retires finished worktrees on its own now. Nothing was removed." : `${CLEANUP_SWITCHED_OFF} Nothing was removed.`;

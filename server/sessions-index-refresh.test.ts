@@ -4,7 +4,8 @@
 // GET /api/sessions is built afresh, and its feed connection makes the feed's next comparison read
 // every folder. A session file is written here where nothing hears it (the feed's watch only tracks
 // files and watches no folder), then: a plain listing within the limit is the kept list, and both
-// page-load paths show the new chat at once. Seen to fail in a scratch copy with the route reading
+// page-load paths show the new chat at once; several page loads at once share a build that started
+// after they arrived. Seen to fail in a scratch copy with the route reading
 // listSessions (b), and with a new connection not making the feed read every folder (c).
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
@@ -27,7 +28,7 @@ after(() => {
   rmSync(agentDir, { recursive: true, force: true });
 });
 
-const { KEEP_UNHEARD_MS, LIST_REUSE_MS, listSessions, listSessionsTracked, listStamps, trackSessionFiles } = await import("./sessions-index");
+const { KEEP_UNHEARD_MS, LIST_REUSE_MS, listSessions, listSessionsTracked, listStamps, listStats, trackSessionFiles } = await import("./sessions-index");
 const { configureSessionFeed } = await import("./session-feed");
 const { canonicalPath } = await import("./paths");
 const { buildApp } = await import("./app");
@@ -83,6 +84,13 @@ test("a chat no watch heard: a plain listing within the limit is the kept list; 
     assert.ok(upserted.some((r) => r.id === second.id), "a new connection's comparison sends the new chat's row");
     skew += LIST_REUSE_MS + 1;
     assert.equal(has(await listSessions(), second.id), true, "and no kept list from before it is served");
+
+    // Several pages at once (tabs, peers): they share a build that started after they arrived.
+    const third = session("written before three pages load");
+    const builds = listStats.builds;
+    const pages = await Promise.all([app.request("/api/sessions"), app.request("/api/sessions"), app.request("/api/sessions")]);
+    assert.ok(listStats.builds - builds <= 2, `three page loads built ${listStats.builds - builds} lists`);
+    for (const p of pages) assert.equal(has((await p.json()) as SessionSummary[], third.id), true, "each shows the chat written before it");
   } finally {
     await feed.idle();
     for (const l of leaves) l();

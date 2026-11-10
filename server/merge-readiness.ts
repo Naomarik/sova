@@ -1505,13 +1505,14 @@ export function readinessOverlay(s: SessionSummary): SessionReadiness | undefine
 
 /**
  * For rows a listing keeps instead of building again (sessions-index.ts): what readinessOverlay
- * would queue for them, which with their file and row unchanged is only a read due by age or by
- * its trees' Git stamps, so only a row whose last answer can age or carries stamps is looked at.
+ * would queue for them, which with their file and row unchanged is a read due by age or by its
+ * trees' Git stamps, or one with no answer yet (never read, or its read failed): only those rows are looked at.
  */
 export function readinessDue(rows: readonly SessionSummary[]): void {
   for (const s of rows) {
     const hit = cache.get(s.path);
-    if (hit?.scan?.found || hit?.stamps) readinessOverlay(s);
+    // No answer yet (never read, or its read failed): asked again, as a build of the row would.
+    if (!hit || hit.scan?.found || hit.stamps) readinessOverlay(s);
   }
 }
 

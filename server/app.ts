@@ -337,9 +337,11 @@ export function buildApp(deps: AppDeps) {
   // A window reads it on loading (and on a resync): built afresh, never a kept list
   // (§app.session-list/listing-reuse), so a refresh shows a change no watch heard.
   app.get("/api/sessions", async (c) => {
+    // Several at once (tabs, peers) share a build that started after the request arrived.
+    const arrived = Date.now();
     const feed = sessionFeed();
-    if (!feed) return c.json(await listSessionsAfresh());
-    const { body, epoch, version } = await feed.snapshot(listSessionsAfresh);
+    if (!feed) return c.json(await listSessionsAfresh(arrived));
+    const { body, epoch, version } = await feed.snapshot(() => listSessionsAfresh(arrived));
     c.header(LIST_VERSION_HEADER, `${epoch}:${version}`);
     return c.json(body);
   });

@@ -10,7 +10,7 @@
 // Time is moved by Date.now, never waited out. Seen to fail in a scratch copy with the kept list
 // ignoring what the feed heard (a chat added stays missing, a nudge builds nothing).
 import assert from "node:assert/strict";
-import { appendFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { appendFileSync, mkdirSync, mkdtempSync, readdirSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
@@ -32,15 +32,15 @@ after(() => {
   rmSync(agentDir, { recursive: true, force: true });
 });
 
-const { KEEP_UNHEARD_MS, LIST_REUSE_MS, keptStats, listSessions, listSessionsTracked, listStamps, listStats, trackSessionFiles } = await import("./sessions-index");
-const { heardGeneration, listInputsMoved, sessionRowChanged, sessionsChanged } = await import("./list-generation");
+const { KEEP_UNHEARD_MS, LIST_REUSE_MS, getSessionSummary, keptStats, listPhases, listSessions, listSessionsTracked, listStamps, listStats, trackSessionFiles } = await import("./sessions-index");
+const { heardGeneration, listInputsMoved, sessionFileWritten, sessionRowChanged, sessionsChanged } = await import("./list-generation");
 const { SessionFeed } = await import("./session-feed");
 const { watchFeedInputs } = await import("./session-feed-watch");
 const { setArchived } = await import("./archived-sessions");
 const { setSessionTitle } = await import("./session-titles");
 const { stateRoot } = await import("./state-root");
 const { canonicalPath } = await import("./paths");
-const { configureReadiness, readinessIdle } = await import("./merge-readiness");
+const { configureReadiness, READINESS_TTL_MS, readinessIdle } = await import("./merge-readiness");
 const { readDecisionSettings, writeDecisionSettings } = await import("./decide-settings");
 const { updateSignals } = await import("./signals-store");
 
@@ -265,9 +265,21 @@ configureReadiness({
     git.calls++;
     return { code: 0, stdout: "", stderr: "" };
   },
-  asksUser: () => undefined,
+  // A session in `failing` has its next read fail outright (no answer kept).
+  asksUser: (id: string) => {
+    if (failing.delete(id)) throw new Error("the read failed, once");
+    return undefined;
+  },
+  // Each tree's Git stamp (index, HEAD, refs): what an idle answer is re-read on when it moves. None: a
+  // tree whose stamp can't be read, so its answer ages out after READINESS_TTL_MS instead.
+  treeStamp: (dir: string) => (stampReads++, unstamped.has(dir) ? null : (treeStamps[dir] ?? "s0")),
 });
 const gitNow = () => git.trees + git.calls;
+let stampReads = 0;
+const treeStamps: Record<string, string> = {};
+const unstamped = new Set<string>();
+/** Sessions whose next readiness read fails. */
+const failing = new Set<string>();
 
 /** A chat that tracked a worktree whose branch has merged, its last reply asking for the merge go-ahead. */
 function tracking(name: string, opts: { archived?: boolean; settledAsk?: boolean } = {}): { id: string; path: string } {
@@ -377,5 +389,111 @@ test("over unchanged listings, readiness reads and Git are no more than a build 
   } finally {
     await feed.idle();
     stop();
+  }
+});
+
+/** Stores just written are read through short caches, so a build keeps no row for 2 s after a write: dated
+    back past that, the builds below keep every unchanged row. */
+const settleStores = () => {
+  const t = new Date(realNow() - 10_000);
+  for (const f of readdirSync(stateRoot())) if (f.endsWith(".json")) utimesSync(join(stateRoot(), f), t, t);
+};
+/** A build past the 1 s window that keeps rows: the generation moves (no list is kept), the stores don't. */
+const nextBuild = async () => {
+  sessionFileWritten();
+  return listSessions();
+};
+
+test("a row is stamped with the read it was built from: another caller's newer read made meanwhile never keeps it stale", async () => {
+  const tracked = trackSessionFiles();
+  try {
+    const x = session("read twice");
+    settleStores();
+    await fresh();
+    // Mid-build, after this file's read: a write nothing here hears, and another caller reading the file again.
+    listPhases.openRead = async () => {
+      listPhases.openRead = undefined;
+      appendFileSync(x.path, `${reply("written meanwhile")}\n`);
+      await getSessionSummary(x.path);
+    };
+    await nextBuild();
+    const got = await nextBuild();
+    assert.deepEqual(got, await fresh(), "the next build reads the newer write");
+  } finally {
+    listPhases.openRead = undefined;
+    tracked.stop();
+  }
+});
+
+test("a burst of hand-outs of a kept list sets off readiness's due reads once per LIST_REUSE_MS", async () => {
+  const tracked = trackSessionFiles();
+  try {
+    settleStores();
+    await fresh();
+    await readsDone();
+    skew += LIST_REUSE_MS + 1;
+    const before = stampReads;
+    await listSessions();
+    const one = stampReads - before;
+    assert.ok(one > 0, "one pass reads each tracked tree's stamp");
+    for (let i = 0; i < 49; i++) await listSessions();
+    assert.equal(stampReads - before, one, "50 hand-outs at one time: one pass");
+  } finally {
+    tracked.stop();
+  }
+});
+
+test("a kept row IS re-read when its tree's stamp moved, or its answer is past its age limit", async () => {
+  const tracked = trackSessionFiles();
+  try {
+    const moved = tracking("stamp-moves");
+    const aging = tracking("ages");
+    unstamped.add("/wt/ages");
+    settleStores();
+    for (let i = 0; i < 3; i++) {
+      await fresh();
+      await readsDone();
+    }
+    const quiet = gitNow();
+    skew += LIST_REUSE_MS + 1;
+    await listSessions();
+    await readsDone();
+    assert.equal(gitNow(), quiet, "nothing due, nothing read");
+
+    // A commit in the tree, no session write: its stamp moves.
+    treeStamps["/wt/stamp-moves"] = "s1";
+    const g1 = gitNow();
+    skew += LIST_REUSE_MS + 1;
+    assert.ok(byId(await listSessions(), moved.id), "kept list");
+    await readsDone();
+    assert.ok(gitNow() > g1, "the moved tree is read again");
+
+    // An answer with no stamp to watch, past READINESS_TTL_MS (still within KEEP_UNHEARD_MS).
+    const g2 = gitNow();
+    skew += READINESS_TTL_MS + 1;
+    assert.ok(byId(await listSessions(), aging.id), "kept list");
+    await readsDone();
+    assert.ok(gitNow() > g2, "the aged answer is read again");
+  } finally {
+    tracked.stop();
+  }
+});
+
+test("a kept row whose readiness read failed is read again at the next build, not at the safety net", async () => {
+  const tracked = trackSessionFiles();
+  try {
+    const c = tracking("fails-once");
+    failing.add(c.id);
+    settleStores();
+    await fresh();
+    await readsDone();
+    assert.equal(byId(await nextBuild(), c.id)?.readiness, undefined, "no answer after the failed read");
+    // The next build keeps the row (nothing it reads moved): readiness is asked again, as a build of it would.
+    await readsDone();
+    const rows = await nextBuild();
+    assert.ok(byId(rows, c.id)?.readiness, "read again, and answered");
+  } finally {
+    failing.clear();
+    tracked.stop();
   }
 });

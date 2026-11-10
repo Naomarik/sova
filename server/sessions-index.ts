@@ -30,7 +30,7 @@ import { type AlignScan, readAlignScan } from "./align-state";
 import { type WorkerParents, WorkerSessions } from "./worker-sessions";
 import { isOverseerId, overseerDir, readOverseerState } from "./overseer-store";
 import { readDecisionSettings } from "./decide-settings";
-import { readSignals, settleGoAsk, type SignalsFile, signalsOverlay } from "./signals-store";
+import { GUESS_IDLE_MS, readSignals, settleGoAsk, type SignalsFile, signalsOverlay } from "./signals-store";
 import { withOpenOffer } from "./session-offers";
 import { dropSessionTags, tagsFor, tagsReader } from "./session-tags";
 import { askTreesOf, branchesOverlay, pruneReadiness, readinessDue, readinessOverlay } from "./merge-readiness";
@@ -914,6 +914,16 @@ export async function listSessionFiles(): Promise<string[]> {
  * means that after a model switch the window is the CURRENT model's, i.e. the one the next reply
  * will actually use, not the one that produced these tokens.
  */
+/** The (mtime, size) each summary handed out was made from: a build stamps a row with the read it was
+    built from, never with what the shared cache holds by then (another caller may have read the file again). */
+const madeFrom = new WeakMap<BaseSummary, string>();
+/** withWindow, the result stamped with its entry's stat. */
+function stamped(entry: CacheEntry, resolveWindow?: WindowResolver): BaseSummary {
+  const out = withWindow(entry, resolveWindow);
+  madeFrom.set(out, statKey(entry));
+  return out;
+}
+
 function withWindow(entry: CacheEntry, resolveWindow?: WindowResolver): BaseSummary {
   const summary = overseerOf(entry);
   const ctx = summary.context;
@@ -964,7 +974,7 @@ async function summarize(path: string, resolveWindow?: WindowResolver): Promise<
     return null;
   }
   const hit = cache.get(path);
-  if (hit && hit.mtimeMs === st.mtimeMs && hit.size === st.size) return withWindow(hit, resolveWindow);
+  if (hit && hit.mtimeMs === st.mtimeMs && hit.size === st.size) return stamped(hit, resolveWindow);
   try {
     // One handle for the head, the outline and one tail window the three tail readers share.
     listIo.opens++;
@@ -1024,7 +1034,7 @@ async function summarize(path: string, resolveWindow?: WindowResolver): Promise<
     };
     storeEntry(path, entry);
     if (summary.outlineGist && summary.outlineGist !== hit?.summary.outlineGist) gistChanged(path);
-    return withWindow(entry, resolveWindow);
+    return stamped(entry, resolveWindow);
   } catch {
     return null;
   }
@@ -1211,6 +1221,10 @@ type Listing = {
   built: Promise<{ rows: SessionSummary[]; files: string[] }>;
   /** Its rows, once built. */
   done?: SessionSummary[];
+  /** A page's build (listSessionsAfresh): every row built, none kept from a build before it. */
+  afresh?: boolean;
+  /** When a hand-out of it, kept, last set off readiness's due reads: at most once per LIST_REUSE_MS. */
+  dueAt?: number;
 };
 let listing: Listing | null = null;
 /** One more per build started, of either kind: a higher stamp is a build that started later. */
@@ -1227,9 +1241,13 @@ export function listSessions(): Promise<SessionSummary[]> {
   let l = handOut(now);
   if (l && now - l.startedAt >= LIST_REUSE_MS) {
     keptStats.kept++;
-    // What a build would set off: a readiness read due by age or by its trees' Git stamps.
-    if (l.done) readinessDueKept(l.done);
-    else void l.built.then((b) => readinessDueKept(b.rows)).catch(() => {});
+    // What a build would set off: a readiness read due by age or by its trees' Git stamps. Once per
+    // LIST_REUSE_MS at most, as builds came: a burst of one-chat lookups is one pass, not one each.
+    if (l.dueAt === undefined || now - l.dueAt >= LIST_REUSE_MS || now < l.dueAt) {
+      l.dueAt = now;
+      if (l.done) readinessDueKept(l.done);
+      else void l.built.then((b) => readinessDueKept(b.rows)).catch(() => {});
+    }
   }
   if (!l) {
     const mine: Listing = { generation: listGeneration(), heard: heardGeneration(), watch: tracker.run, startedAt: now, stamp: ++listStamp, built: buildSessions() };
@@ -1248,9 +1266,21 @@ export function listSessions(): Promise<SessionSummary[]> {
  * file read, never a kept list nor a build started before it, so a refresh shows a change no watch
  * heard at once. Callers after it within the second share it, as any build.
  */
-export function listSessionsAfresh(): Promise<SessionSummary[]> {
+export function listSessionsAfresh(arrivedAt = Date.now()): Promise<SessionSummary[]> {
+  // Another page's afresh build that started at or after this request arrived holds everything
+  // this one would: shared, as callers within a second always shared one.
+  const l = listing;
+  if (l?.afresh && l.startedAt >= arrivedAt && l.generation === listGeneration()) return l.built.then((b) => [...b.rows]);
   const now = Date.now();
-  const mine: Listing = { generation: listGeneration(), heard: heardGeneration(), watch: tracker.run, startedAt: now, stamp: ++listStamp, built: buildSessions() };
+  const mine: Listing = {
+    generation: listGeneration(),
+    heard: heardGeneration(),
+    watch: tracker.run,
+    startedAt: now,
+    stamp: ++listStamp,
+    afresh: true,
+    built: buildSessions({ allRows: true }),
+  };
   listing = mine;
   listStats.listed++;
   void mine.built.then((b) => void (mine.done = b.rows), () => {});
@@ -1660,7 +1690,7 @@ async function trackedFiles(prev: readonly string[], dirty: ReadonlySet<string>)
 function summaryOf(path: string, resolveWindow: WindowResolver | undefined, dirty: ReadonlySet<string> | undefined): Promise<BaseSummary | null> {
   if (dirty && !dirty.has(path)) {
     const hit = cache.get(path);
-    if (hit) return Promise.resolve(withWindow(hit, resolveWindow));
+    if (hit) return Promise.resolve(stamped(hit, resolveWindow));
   }
   return summarize(path, resolveWindow);
 }
@@ -1683,13 +1713,13 @@ function openFirst(files: readonly string[]): { open: string[]; archived: string
 async function summariesOf(files: { open: string[]; archived: string[] }, resolveWindow: WindowResolver | undefined, dirty: ReadonlySet<string> | undefined): Promise<(BaseSummary | null)[]> {
   const read = (p: string) => summaryOf(p, resolveWindow, dirty);
   const open = await mapLimit(files.open, LIST_READ_LIMIT, read);
-  listPhases.openRead?.();
+  await listPhases.openRead?.();
   const archived = await mapLimit(files.archived, LIST_READ_LIMIT, read);
   return [...open, ...archived];
 }
 
 /** Test and measurement hooks into a listing's phases (unset in production). */
-export const listPhases: { openRead?: () => void } = {};
+export const listPhases: { openRead?: () => void | Promise<void>; window?: () => WindowResolver | undefined } = {};
 
 /** The husk check (isZeroInput) from the summary cache when it holds this file, else from the file. */
 async function zeroInputOf(path: string): Promise<boolean> {
@@ -1706,7 +1736,7 @@ export const listStats = { builds: 0, listed: 0 };
 /** Every row. `files`: the file set to list (else every folder is read); `dirty`: the files that may
     have changed since the cached summaries were read (only those are stat'ed and read; without it
     every file is stat'ed). Returns the rows, the file set they came from and what the build read. */
-function buildSessions(track?: { files: string[]; dirty?: ReadonlySet<string> }): Promise<{ rows: SessionSummary[]; files: string[]; mark: BuildMark }> {
+function buildSessions(track?: { files?: string[]; dirty?: ReadonlySet<string>; allRows?: boolean }): Promise<{ rows: SessionSummary[]; files: string[]; mark: BuildMark }> {
   listStats.builds++;
   return opTrack("buildSessions", () => buildSessionsNow(track), (b) => b.rows.length);
 }
@@ -1771,6 +1801,9 @@ function rowReads(isWorker: (path: string) => boolean): RowReads {
  */
 const readinessRows = new Map<string, SessionSummary>();
 
+/** When a row changes with no event at all (its signal going after GUESS_IDLE_MS): a build keeps it until then only. */
+const rowExpiry = new Map<string, number>();
+
 /** readinessDue for rows a listing keeps, each as its build handed it to readiness. */
 function readinessDueKept(rows: readonly SessionSummary[]): void {
   readinessDue(rows.map((r) => readinessRows.get(r.path) ?? r));
@@ -1829,18 +1862,22 @@ async function rowFor(s: BaseSummary, r: RowReads): Promise<SessionSummary | nul
   // The branches its chat's status row counts, each queue entry as the queue has it now (no Git here either).
   const branches = branchesOverlay(row);
   const withMerge = readiness || branches ? { ...row, ...(readiness ? { readiness } : {}), ...(branches ? { branches } : {}) } : row;
+  // A signal goes on its own after GUESS_IDLE_MS (signalsOverlay): no build keeps this row past that.
+  const stored = row.signals ? r.stores.signals.sessions[s.id] : undefined;
+  if (stored) rowExpiry.set(s.path, stored.replyAt + GUESS_IDLE_MS);
+  else rowExpiry.delete(s.path);
   // A go-ahead ask whose version landed is noted when first seen; one in the queue is hidden while the queue says so.
   const settled = settleGoAsk(withMerge, askTreesOf(withMerge), r.stores.signals);
   r.stores.signals = settled.data;
   return redactPreviewLinksDeep(settled.row, r.previewLabels);
 }
 
-async function buildSessionsNow(track?: { files: string[]; dirty?: ReadonlySet<string> }): Promise<{ rows: SessionSummary[]; files: string[]; mark: BuildMark }> {
+async function buildSessionsNow(track?: { files?: string[]; dirty?: ReadonlySet<string>; allRows?: boolean }): Promise<{ rows: SessionSummary[]; files: string[]; mark: BuildMark }> {
   const startedAt = Date.now();
   // Taken before anything is read: a change after it shows in the next build's comparison.
   const stores = storesGeneration();
   const rowSeq = rowChangeSeq();
-  const files = track ? track.files : await listSessionFiles();
+  const files = track?.files ?? (await listSessionFiles());
   const resolveWindow = await windowResolver();
   const outside = outsideStamp(!!resolveWindow, startedAt);
   // A member whose file is gone KEEPS its assignment, on purpose: the workspace's "This
@@ -1856,7 +1893,12 @@ async function buildSessionsNow(track?: { files: string[]; dirty?: ReadonlySet<s
   const reads = rowReads((p) => workers.has(p));
   const live = liveKeys(reads.live, reads.own);
   const read = new Map<string, string>();
-  for (const p of files) read.set(p, statKey(cache.get(p)));
+  // Each row's file as its summary was read: a stamp taken from the cache now could be a newer read
+  // another caller made meanwhile, and keep a row built from the older one.
+  for (const s of results) {
+    const made = s && madeFrom.get(s);
+    if (made) read.set(s.path, made);
+  }
   // A row the last build made stands while nothing it reads has moved (§app.session-list/listing-reuse):
   // no bump but this server's session file writes and other rows' own changes, the same row
   // stores, job folders and worker parents, and its own file, live records and readiness as they were. Every row is built again at least
@@ -1865,6 +1907,8 @@ async function buildSessionsNow(track?: { files: string[]; dirty?: ReadonlySet<s
   const prev = lastMark;
   const miss = !prev
     ? "first"
+    : track?.allRows
+      ? "afresh"
     : tracker.active === 0
       ? "unwatched"
     : prev.stores !== stores
@@ -1890,6 +1934,13 @@ async function buildSessionsNow(track?: { files: string[]; dirty?: ReadonlySet<s
       !old.projectOverseer &&
       !old.baton &&
       !rowChangedSince(s.path, prev!.rowSeq) &&
+      // A coding session's merged mark is git's, read in the background as its row is built
+      // (build-merged.ts) and told by no event: its row is built every time, as before.
+      old.project?.kind !== "coding" &&
+      startedAt < (rowExpiry.get(s.path) ?? Infinity) &&
+      // A model list change moves a context window with no event: the file's summary has it now.
+      (old.context?.window ?? null) === (s.context?.window ?? null) &&
+      read.has(s.path) &&
       prev!.files.get(s.path) === read.get(s.path) &&
       (prev!.live.get(s.path) ?? "") === (live.get(s.path) ?? "")
     ) {
@@ -1908,6 +1959,7 @@ async function buildSessionsNow(track?: { files: string[]; dirty?: ReadonlySet<s
   readinessDueKept(out.filter((r) => !built.has(r)));
   pruneReadiness(out);
   for (const p of readinessRows.keys()) if (!present.has(p)) readinessRows.delete(p);
+  for (const p of rowExpiry.keys()) if (!present.has(p)) rowExpiry.delete(p);
   for (let i = 0; i < out.length; i++) if (built.has(out[i]!)) out[i] = await withUnreadReplies(out[i]!);
   // A row equal to the last listing's (same keys, in order, same values) is that object itself:
   // rows are shared and never mutated, and a reader that keys work by row (the session feed's
@@ -1935,6 +1987,7 @@ function sameSet<T>(a: ReadonlySet<T>, b: ReadonlySet<T>): boolean {
  * every context gauge simply reports `window: null` instead of failing the listing.
  */
 async function windowResolver(): Promise<WindowResolver | undefined> {
+  if (listPhases.window) return listPhases.window();
   try {
     const runtime = await getModelRuntime();
     return (ref) => contextWindow(ref, runtime);

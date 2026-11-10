@@ -135,6 +135,23 @@ test("Start launches exactly what's on the card, with no coordinator turn, and f
   assert.equal(brief(run.id).summary, "S");
 });
 
+test("a card the coordinator writes in a turn that hasn't heard of Start never puts the brief back over the running designs", async () => {
+  const run = runWith(2, 3);
+  const t = await ready(run);
+  await start(run);
+  // The turn that was under way when Start was pressed still thinks the brief waits on the user.
+  const r = await t.coordinator_card({ text: "Brief ready. Waiting on the user to press Start." });
+  refused(r);
+  assert.match(textOf(r), /pressed Start/);
+  assert.match(textOf(r), /A, B/, "the refusal says which designs started");
+  assert.match(coordinatorCard(parent.sessionId)!.card, /^The designs started from the brief: A, B\./, "the card still says the designs started");
+  // Told now, its next card stands, and the next turn isn't told the same thing again.
+  await t.coordinator_card({ text: "Tracking 2 designs." });
+  assert.equal(coordinatorCard(parent.sessionId)!.card, "Tracking 2 designs.");
+  await messageCoordinator(parent, "How is it going?", "k-after-start");
+  assert.doesNotMatch(JSON.stringify(log.sends.at(-1)), /pressed Start on brief/);
+});
+
 test("Start names the version it was pressed on: a stale one launches nothing", async () => {
   const run = runWith(2, 3);
   await ready(run);

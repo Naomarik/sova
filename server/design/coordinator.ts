@@ -586,6 +586,11 @@ async function wakeForBrief(st: CoordinatorState, text: string, key: string): Pr
 
 const wakeSafely = (st: CoordinatorState, text: string, key: string): Promise<void> => wakeForBrief(st, text, key).catch(() => {});
 
+/** What the coordinator is told of a Start; until it has heard it, a card it writes is still about the brief. */
+const START_NOTE = "The user pressed Start on brief revision ";
+const startNote = (textRev: number, labels: readonly string[]): string =>
+  `${START_NOTE}${textRev}; ${labels.join(", ")} started from it. The brief is frozen, and Sova replaced your card with a line saying so: write it again when you next have something to say.`;
+
 const noteForNextTurn = (st: CoordinatorState, line: string): void => {
   st.notes.push(line);
   if (st.notes.length > COORDINATOR_LIMITS.notes) st.notes.splice(0, st.notes.length - COORDINATOR_LIMITS.notes);
@@ -788,7 +793,7 @@ export async function startBrief(parent: BrowseParent, runId: string, a: { rev: 
     b.startedRev = b.rev;
     b.startedAt = new Date().toISOString();
   });
-  noteForNextTurn(st, `The user pressed Start on brief revision ${run.brief.textRev}; ${labels.join(", ")} started from it. The brief is frozen, and Sova replaced your card with a line saying so: write it again when you next have something to say.`);
+  noteForNextTurn(st, startNote(run.brief.textRev, labels));
   // Its card was about the brief, which is over: Sova says what happened instead of spending a turn on it.
   const card = `The designs started from the brief: ${labels.join(", ")}. Each one's note reaches me as it finishes.`;
   st.revision++;
@@ -1256,6 +1261,14 @@ export function coordinatorTools(sessionId: string): ToolSpec[] {
       if (isResult(st)) return st;
       const text = typeof params?.text === "string" ? params.text : "";
       if (!text.trim() || text.length > COORDINATOR_LIMITS.cardChars) return refuse(`the card must be text of at most ${COORDINATOR_LIMITS.cardChars} characters.`);
+      // A turn under way when the user pressed Start writes a card about the brief: refused, with the news,
+      // so the card never goes back to waiting on Start while the designs run. Told, its next card stands.
+      const unheard = st.notes.find((n) => n.startsWith(START_NOTE));
+      if (unheard) {
+        st.notes = st.notes.filter((n) => n !== unheard);
+        save(st);
+        return refuse(`your card wasn't changed. ${unheard}`);
+      }
       st.revision++;
       st.card = text;
       st.revisions.push({ rev: st.revision, at: new Date().toISOString(), text });

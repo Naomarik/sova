@@ -849,7 +849,7 @@ new.
 - **Every row reads the same**, here and in the Organizations region's Needs you
   (§app.session-list/organizations), whatever it is about (words: §design.copy-deck/sidebar):
   - the **name**, muted: the project, "{org} · {project}" for an organization's, else the folder's last
-    name ("{name} · {host}" for a session on another host), with a **state chip that always has a word**;
+    name ("{name} · {host}" for a session on another host), with a **state chip that always has a word** (on a proposal row, where the proposal stands, §app.project-runtime/review);
   - the **title** under it, semibold: the session's title; on a row of no session what it is, by kind
     ("Deploy failed"), an owner's item its own request, a held act what waits.
 

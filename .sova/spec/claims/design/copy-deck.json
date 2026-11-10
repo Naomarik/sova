@@ -549,7 +549,8 @@
       "src/components/NeedsYouRow.tsx",
       "src/lib/branch-status.ts",
       "src/lib/session-row.test.ts",
-      "src/lib/branch-place.ts"
+      "src/lib/branch-place.ts",
+      "src/lib/setup-chat.ts"
     ]
   },
   "§design.copy-deck/slash-commands": {

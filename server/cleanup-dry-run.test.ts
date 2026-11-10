@@ -85,7 +85,7 @@ describe("POST /api/worktrees/cleanup", () => {
     const path = sessionFile();
     const [status, body] = await post("/api/worktrees/cleanup", { path, expect: ["/nowhere/worktree"] });
     assert.equal(status, 200);
-    assert.deepEqual(body, { removed: [], kept: [], message: "Sova retires finished worktrees on its own now. Nothing was removed." });
+    assert.deepEqual(body, { removed: [], kept: [], message: "Automatic cleanup is switched off for now. Nothing was removed." });
     assert.ok(existsSync(path));
   });
 });

@@ -2,7 +2,7 @@ import { PROFILE_ENTRY, type ProfileEntryData } from "../shared/profiles";
 import { removeOutputFiles } from "./shell-output";
 import { keptLabels, redactPreviewLinks, redactPreviewLinksDeep } from "./preview-kept";
 import { profileField, profileOnBranch } from "./session-profile";
-import { type Dirent, readdirSync, statSync } from "node:fs";
+import { type Dirent, lstatSync, readdirSync, statSync } from "node:fs";
 import { type FileHandle, lstat, open, readdir, stat, unlink } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import { OVERSEER_ENTRY, type SessionSummary, type SessionTags } from "../shared/protocol";
@@ -34,7 +34,7 @@ import { readSignals, settleGoAsk, type SignalsFile, signalsOverlay } from "./si
 import { withOpenOffer } from "./session-offers";
 import { dropSessionTags, tagsFor, tagsReader } from "./session-tags";
 import { askTreesOf, branchesOverlay, pruneReadiness, readinessDue, readinessOverlay } from "./merge-readiness";
-import { listGeneration, rowChangedSince, rowChangeSeq, storesGeneration } from "./list-generation";
+import { heardGeneration, listGeneration, rowChangedSince, rowChangeSeq, storesGeneration } from "./list-generation";
 import { projectOf, projectOverseerOfPath, readPoState } from "./project-overseer-store";
 import { memoSovaChatNames, readSovaChatNames, setSovaChatName, type SovaChatName } from "./sova-chat-names";
 import { rebuildSovaName } from "./sova-chat-origin";
@@ -1201,21 +1201,37 @@ async function withUnreadReplies(row: SessionSummary): Promise<SessionSummary> {
 
 /** How long a finished listing serves further callers, from its build's start (§app.session-list/listing-reuse). */
 export const LIST_REUSE_MS = 1_000;
-type Listing = { generation: number; startedAt: number; stamp: number; built: Promise<{ rows: SessionSummary[]; files: string[] }> };
+type Listing = {
+  generation: number;
+  /** heardGeneration() and the file watch's run at the start: a kept list needs both unchanged. */
+  heard: number;
+  watch: number;
+  startedAt: number;
+  stamp: number;
+  built: Promise<{ rows: SessionSummary[]; files: string[] }>;
+};
 let listing: Listing | null = null;
 /** One more per build started, of either kind: a higher stamp is a build that started later. */
 let listStamp = 0;
 
 /** All sessions, newest activity first, with fresh live presence merged in. Callers share a build
     that is running or started less than LIST_REUSE_MS ago, unless something in this process changed
-    since it started (server/list-generation.ts). Past that, the last build's list stands while
-    nothing it read has moved (keptOrBuilt), and a build keeps each row whose inputs stand.
+    since it started (server/list-generation.ts). While the session folders are watched, a finished
+    list is kept past that until anything bumps or makes the session feed compare, for at most
+    KEEP_UNHEARD_MS (handOut); a build keeps each row whose inputs stand.
     Each caller gets its own array; rows are shared and never mutated. */
 export function listSessions(): Promise<SessionSummary[]> {
-  let l = handOut();
+  const now = Date.now();
+  let l = handOut(now);
+  if (l && now - l.startedAt >= LIST_REUSE_MS) {
+    keptStats.kept++;
+    // What a build would set off: a readiness read due by age or by its trees' Git stamps.
+    void l.built.then((b) => readinessDue(b.rows)).catch(() => {});
+  }
   if (!l) {
-    const mine: Listing = { generation: listGeneration(), startedAt: Date.now(), stamp: ++listStamp, built: keptOrBuilt() };
+    const mine: Listing = { generation: listGeneration(), heard: heardGeneration(), watch: tracker.run, startedAt: now, stamp: ++listStamp, built: buildSessions() };
     listing = l = mine;
+    listStats.listed++;
     mine.built.catch(() => {
       if (listing === mine) listing = null;
     });
@@ -1223,9 +1239,13 @@ export function listSessions(): Promise<SessionSummary[]> {
   return l.built.then((b) => [...b.rows]);
 }
 
-/** How long a listing's rows are kept while nothing they read has moved, from the build that last
-    built every row: past it every row is built again (§app.session-list/listing-reuse). */
-export const LIST_KEEP_MS = 15_000;
+/**
+ * The age limit for a change no watch hears (§app.session-list/listing-reuse): the longest a kept
+ * list stands, and a row is kept, without anything telling of a change. Everything Sova hears drops
+ * them at once; this bounds only what it can't hear (another server's stores, a write outside the
+ * watched folders, a time-driven change). The one place it is set.
+ */
+export const KEEP_UNHEARD_MS = 60_000;
 
 /** Store files a row reads, by name under the state root: written by another process (another
     server on the same stores), a change shows by its stat. This server's own writes bump the list
@@ -1299,13 +1319,7 @@ function liveKeys(live: Map<string, LiveRecord>, own: Map<string, RawLiveRecord>
   return out;
 }
 
-function sameMap<K, V>(a: ReadonlyMap<K, V>, b: ReadonlyMap<K, V>): boolean {
-  if (a.size !== b.size) return false;
-  for (const [k, v] of a) if (b.get(k) !== v) return false;
-  return true;
-}
-
-/** What one build read, for the next one to compare (row reuse in buildSessionsNow, the kept listing). */
+/** What one build read, for the next one to compare (row reuse in buildSessionsNow). */
 interface BuildMark {
   /** storesGeneration() and rowChangeSeq() at the build's start. */
   stores: number;
@@ -1321,65 +1335,19 @@ interface BuildMark {
 }
 let lastMark: BuildMark | null = null;
 
-/** The last listSessions build, while it may stand for a further one: its rows, its file set, and
-    every file's stat as its build started. */
-let kept: { rows: SessionSummary[]; files: string[]; stats: Map<string, string>; mark: BuildMark } | null = null;
-
 const statKey = (st: { mtimeMs: number; size: number } | null | undefined): string => (st ? `${st.mtimeMs}:${st.size}` : "-");
-
-/** Every listed file's stat, now. */
-async function fileStats(files: readonly string[]): Promise<Map<string, string>> {
-  const out = new Map<string, string>();
-  await Promise.all(
-    files.map(async (p) => {
-      listIo.stats++;
-      out.set(p, statKey(await stat(p).catch(() => null)));
-    }),
-  );
-  return out;
-}
 
 /** Listings answered by a kept listing (tests, measurement). */
 export const keptStats = { kept: 0, rowsKept: 0, rowsBuilt: 0, misses: {} as Record<string, number> };
 
-/**
- * listSessions' build: the kept listing when nothing it read has moved since its build started
- * (no bump but this server's session file writes, every listed file's stat, the live records a
- * row reads, the row stores and job folders, the worker parents), else a fresh build.
- */
-async function keptOrBuilt(): Promise<{ rows: SessionSummary[]; files: string[] }> {
-  const k = kept;
-  const now = Date.now();
-  const files = await listSessionFiles();
-  const stats = await fileStats(files);
-  if (
-    k &&
-    k.mark.stores === storesGeneration() &&
-    now >= k.mark.fullAt &&
-    now - k.mark.fullAt < LIST_KEEP_MS &&
-    rowChangeSeq() === k.mark.rowSeq &&
-    sameMap(stats, k.stats) &&
-    k.mark.outside === outsideStamp(!!(await windowResolver())) &&
-    sameMap(liveKeys(readLive(), readOwnLiveRecords()), k.mark.live) &&
-    workerSessions.parents() === k.mark.parents &&
-    // Nothing bumped while this was compared.
-    k.mark.stores === storesGeneration() &&
-    rowChangeSeq() === k.mark.rowSeq
-  ) {
-    keptStats.kept++;
-    // What a build would set off: a readiness read due by age or by its trees' Git stamps.
-    readinessDue(k.rows);
-    return { rows: k.rows, files: k.files };
-  }
-  const b = await buildSessions({ files });
-  kept = { rows: b.rows, files: b.files, stats, mark: b.mark };
-  return b;
-}
-
 /** The listing listSessions hands out now without starting a build, or null. */
 function handOut(now = Date.now()): Listing | null {
   const l = listing;
-  return l && l.generation === listGeneration() && now - l.startedAt < LIST_REUSE_MS && now >= l.startedAt ? l : null;
+  if (!l || l.generation !== listGeneration() || now < l.startedAt) return null;
+  if (now - l.startedAt < LIST_REUSE_MS) return l;
+  // Kept: the folders were watched all along (one watch run, still on) and nothing was heard since
+  // the build started. Unwatched, a change made outside this server can't be heard: 1 s, as before.
+  return tracker.active > 0 && l.watch === tracker.run && l.heard === heardGeneration() && now - l.startedAt < KEEP_UNHEARD_MS ? l : null;
 }
 
 /** The last listing's rows by path (buildSessions hands an unchanged row out as the same object). */
@@ -1388,32 +1356,62 @@ let lastRows = new Map<string, SessionSummary>();
 /** The last listing's rows by path, as built (no read): what the project cards' glance joins the monitor's sessions to. */
 export const lastListedRows = (): ReadonlyMap<string, SessionSummary> => lastRows;
 
-/** The file set the last listing came from: a file outside it (new since) is answered by a listing. */
-let lastFiles: ReadonlySet<string> = new Set();
 
 /**
- * The row `listSessions().find((s) => s.id === id)` gives, without listing every session when
- * it can: a listing that listSessions would hand out now is read, else only this session's row is
- * built, the way a listing builds it (rowFor). A full listing still answers whenever one row
- * could differ from the list's: an id the cache doesn't know, or that two files share, a file the
- * last listing didn't come from, a file gone or one the list leaves out (an empty husk).
+ * The row `listSessions().find((s) => s.id === id)` gives, built alone (§app.session-list/listing-reuse
+ * "One chat is looked up alone"): a list listSessions would hand out now is read; otherwise the chat's
+ * file is found (the id index, else by the id in the file names, a folder listing and no row built)
+ * and only its row is built, by the list's own row code (rowFor), with the same fields. Only an id two
+ * files share, or a file whose header names another id, still takes a whole listing.
  */
 export async function listedSession(id: string): Promise<SessionSummary | undefined> {
   const listed = (): Promise<SessionSummary | undefined> => listSessions().then((all) => all.find((s) => s.id === id));
-  const l = handOut();
-  if (l) return listed();
-  const path = indexedSessionPaths().get(id);
-  if (!path || !lastFiles.has(path) || sharedIds().has(id)) return listed();
+  if (handOut() || sharedIds().has(id)) return listed();
+  let path = indexedSessionPaths().get(id);
+  if (path && !listedPlace(path)) path = undefined;
+  path ??= (await listSessionFiles()).find((p) => idOf(p) === id);
+  if (!path) return undefined;
   const row = await listedRowOf(path);
-  return row?.id === id ? row : listed();
+  // None: gone, or a husk the list leaves out.
+  if (!row) return undefined;
+  return row.id === id ? row : listed();
 }
 
 /** The same by file path: the row `listSessions().find((s) => s.path === path)` gives. */
 export async function listedSessionAt(path: string): Promise<SessionSummary | undefined> {
-  const listed = (): Promise<SessionSummary | undefined> => listSessions().then((all) => all.find((s) => s.path === path));
-  if (handOut() || !lastFiles.has(path)) return listed();
-  const row = await listedRowOf(path);
-  return row ?? listed();
+  if (handOut()) return listSessions().then((all) => all.find((s) => s.path === path));
+  if (!listedPlace(path)) return undefined;
+  return (await listedRowOf(path)) ?? undefined;
+}
+
+/** A session file's path for `id`, as a listing would find it, with no row built: the id index,
+    else the id in the file names. Undefined when no listed file has it. */
+export async function sessionPathOfId(id: string): Promise<string | undefined> {
+  const hit = indexedSessionPaths().get(id);
+  if (hit && listedPlace(hit) && existsSafe(hit)) return hit;
+  return (await listSessionFiles()).find((p) => idOf(p) === id);
+}
+
+/** Whether a listing lists `path` (listSessionFiles' places): a real `.jsonl` file in the sessions
+    folder, one folder below it (not the live records'), or an extra session root. */
+function listedPlace(path: string): boolean {
+  if (!path.endsWith(".jsonl")) return false;
+  const dir = dirname(path);
+  const placed = dir === SESSIONS_DIR || (dirname(dir) === SESSIONS_DIR && dir !== LIVE_DIR) || extraSessionRoots().includes(dir);
+  if (!placed) return false;
+  try {
+    return lstatSync(path).isFile();
+  } catch {
+    return false;
+  }
+}
+
+function existsSafe(p: string): boolean {
+  try {
+    return statSync(p).isFile();
+  } catch {
+    return false;
+  }
 }
 
 /** Ids more than one cached file carries (`indexedSessionPaths` answers one of them; the list's order picks another). */
@@ -1478,11 +1476,12 @@ export const STAT_SWEEP_MS = 60_000;
  * file set and cached summaries and reads only the files named since its last build. `all`: the
  * watch could not say (or nothing is known yet), so the next build reads every folder.
  */
-const tracker = { active: 0, all: true, dirty: new Set<string>(), files: null as string[] | null, sweptAt: 0, statAt: 0, listed: 0, chain: Promise.resolve() as Promise<unknown> };
+const tracker = { run: 0, active: 0, all: true, dirty: new Set<string>(), files: null as string[] | null, sweptAt: 0, statAt: 0, listed: 0, chain: Promise.resolve() as Promise<unknown> };
 
 /** Start tracking (the feed's watch starts it with itself); returns the note sink and its stop. */
 export function trackSessionFiles(): { note: (path: string | null) => void; stop: () => void } {
-  tracker.active++;
+  // A new watch run: what changed while nothing watched was never heard, so no list kept from before stands.
+  if (tracker.active++ === 0) tracker.run++;
   let stopped = false;
   return {
     note: (path) => {
@@ -1678,7 +1677,7 @@ async function zeroInputOf(path: string): Promise<boolean> {
 }
 
 /** Listings built, of either kind (tests, measurement). */
-export const listStats = { builds: 0 };
+export const listStats = { builds: 0, listed: 0 };
 
 /** Every row. `files`: the file set to list (else every folder is read); `dirty`: the files that may
     have changed since the cached summaries were read (only those are stat'ed and read; without it
@@ -1823,10 +1822,13 @@ async function buildSessionsNow(track?: { files: string[]; dirty?: ReadonlySet<s
   // A row the last build made stands while nothing it reads has moved (§app.session-list/listing-reuse):
   // no bump but this server's session file writes and other rows' own changes, the same row
   // stores, job folders and worker parents, and its own file, live records and readiness as they were. Every row is built again at least
-  // every LIST_KEEP_MS; a project overseer's or baton's row, whose stores aren't compared, always.
+  // every KEEP_UNHEARD_MS; a project overseer's or baton's row, whose stores aren't compared, always.
+  // While nothing watches the folders no row is kept: every listing builds every row, as before.
   const prev = lastMark;
   const miss = !prev
     ? "first"
+    : tracker.active === 0
+      ? "unwatched"
     : prev.stores !== stores
       ? "stores"
       : prev.outside !== outside
@@ -1835,7 +1837,7 @@ async function buildSessionsNow(track?: { files: string[]; dirty?: ReadonlySet<s
           ? "parents"
           : !sameSet(prev.workers, workers)
             ? "workers"
-            : startedAt < prev.fullAt || startedAt - prev.fullAt >= LIST_KEEP_MS
+            : startedAt < prev.fullAt || startedAt - prev.fullAt >= KEEP_UNHEARD_MS
               ? "age"
               : null;
   if (miss) keptStats.misses[miss] = (keptStats.misses[miss] ?? 0) + 1;
@@ -1876,7 +1878,6 @@ async function buildSessionsNow(track?: { files: string[]; dirty?: ReadonlySet<s
     if (prevRow && prevRow !== out[i] && sameValue(prevRow, out[i])) out[i] = prevRow;
   }
   lastRows = new Map(out.map((r) => [r.path, r]));
-  lastFiles = present;
   const mark: BuildMark = { stores, rowSeq, outside, files: read, live, parents: reads.parents, workers, fullAt: keepRows ? prev!.fullAt : startedAt };
   lastMark = mark;
   out.sort(byActivity);

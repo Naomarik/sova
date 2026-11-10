@@ -1,13 +1,14 @@
 // The session list's write generation (§app.session-list/listing-reuse). listSessions shares one
 // build between callers for a second; anything this process does that a row reads (a store write,
 // a mutating request, a chat socket's message) bumps the generation, and a list built under an
-// older generation is never joined or shared again. Most bumps also move the stores generation,
-// which a kept listing compares; a session file this server wrote and one row's own change move
-// only the generation, and the kept listing tells those by the file's stat and by the row's change
-// number. Imports nothing, so every store can bump it without an import cycle through sessions-index.ts.
+// older generation is never joined, shared or kept again. A build may still keep a row of the last
+// one (sessions-index.ts): most bumps also move the stores generation, which keeps none; a session
+// file this server wrote and one row's own change move only the generation, and the build tells
+// those by the file's stat and by the row's change number. Imports nothing, so every store can bump
+// it without an import cycle through sessions-index.ts.
 
 let generation = 0;
-/** Moves with every bump but sessionFileWritten's: what a kept listing compares (sessions-index.ts). */
+/** Moves with every bump but sessionFileWritten's and sessionRowChanged's: a build keeps no row past it. */
 let stores = 0;
 const listeners = new Set<() => void>();
 
@@ -18,18 +19,26 @@ export function sessionsChanged(): void {
   bump();
 }
 
-/** This server wrote a session file: the same bump, except that a listing which compares every
-    session file's own stat (sessions-index's kept listing) tells the write by that stat, so it
-    doesn't count against keeping the rows every other file gives. */
+/** This server wrote a session file: the same bump (no list is kept past it), except that a build
+    tells the write by the file's own stat, so it still keeps the rows every other file gives. */
 export function sessionFileWritten(): void {
   bump();
 }
 
 /** Something a row reads moved that tells the session feed its own way (an org statechart step, a
-    mark nudge), not by a bump: no listing within its second
-    is built afresh for it, as before, but no row is kept past it. */
+    mark nudge, the feed's safety net, a new feed connection), not by a bump: no row is kept past it. */
 export function listInputsMoved(): void {
   stores++;
+}
+
+/** One more each time the session feed is told to compare (any of its triggers, its safety net and
+    a new connection included): a kept list is dropped on each (sessions-index.ts). */
+let heard = 0;
+export function feedHeard(): void {
+  heard++;
+}
+export function heardGeneration(): number {
+  return heard;
 }
 
 /** The generation every bump but a session file write or one row's change moves. */

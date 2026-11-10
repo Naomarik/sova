@@ -554,6 +554,25 @@ test("a restart with the coordinator still at work waits for its turn to end", a
   assert.equal(log.sends.filter((x) => x.key.startsWith(`${run.id}:brief:nudge`)).length, 0);
 });
 
+test("a Not a Reference link written another way by the coordinator stays one link, and no look of it is read", async () => {
+  const CONTACT = "https://example.org/book";
+  const run = runWith(2, 3);
+  run.setup.links = [{ url: CONTACT, use: "content", by: "user" }];
+  const t = await started(run);
+  await t.design_brief({ baseRev: 0, summary: "S", prompt: "P", sources: [{ url: `${CONTACT}/`, use: "feel" }] });
+  assert.deepEqual(runOf(parent.sessionId, run.id)!.setup.links, [{ url: CONTACT, use: "content", by: "user" }]);
+  assert.deepEqual(brief(run.id).looks, {});
+  await start(run);
+  assert.equal(log.looks.length, 0);
+});
+
+test("a brief left with a link of no use tells the coordinator what Start waits on", async () => {
+  const run = withLink(null);
+  const t = await started(run);
+  const r = await t.design_brief({ baseRev: 0, summary: "S", prompt: "P" });
+  assert.match(textOf(r), /Start waits until each link has a use: https:\/\/example\.test\/pricing.*content/);
+});
+
 test("Not This Screen sends the user's words on, clears the screen, and an address in them counts as theirs", async () => {
   const run = runWith(2, 3);
   const t = await started(run);

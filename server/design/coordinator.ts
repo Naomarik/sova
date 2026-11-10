@@ -24,7 +24,7 @@ import { claudeCodeProviderLoad, sessionDirName } from "../../pi-config/extensio
 import type { WorkerHost, WorkerSpec, WorkerStart } from "../../shared/chat-runtime";
 import { SESSIONS_DIR } from "../paths";
 import { assertLaunchAllowed, deliverDesign, designCount, designRunLaunched, DesignLimitError, launchDesigns, newDesign, onDesignHandIn } from "./batch";
-import { answerQuestions, BRIEF_LIMITS, coordinatorWrote, fillNotes, isHttpUrl, keepPrompt, keptImages, launchText, lookNote, mergeLinks, newBrief, openQuestions, parseBriefQuestions, rewritePrompt, turnEnded, userEditedPrompt, userEditedSummary, userTold, type BriefPick } from "./brief";
+import { answerQuestions, BRIEF_LIMITS, coordinatorWrote, fillNotes, sameAddress, isHttpUrl, keepPrompt, keptImages, launchText, lookNote, mergeLinks, newBrief, openQuestions, parseBriefQuestions, rewritePrompt, turnEnded, userEditedPrompt, userEditedSummary, userTold, type BriefPick } from "./brief";
 import { DESIGN_BROWSE_TOUR_ID, designBrowse, type BrowseParent, type DesignBrowseStores } from "./browse";
 import { lookAtDesign } from "./look";
 import { estimateUsd } from "./setup";
@@ -240,17 +240,6 @@ const originOf = (u: string): string | null => {
     return null;
   }
 };
-const sameAddress = (a: string, b: string): boolean => {
-  try {
-    const x = new URL(a);
-    const y = new URL(b);
-    const path = (u: URL) => u.pathname.replace(/\/+$/, "");
-    return x.origin === y.origin && path(x) === path(y) && x.search === y.search;
-  } catch {
-    return false;
-  }
-};
-
 /** A link on Not a Reference this address is: it is the page's content, never opened. */
 function notAReference(st: CoordinatorState, url: unknown): string | null {
   if (typeof url !== "string") return null;
@@ -388,7 +377,7 @@ export function noteHandIn(sessionId: string, a: { label: string; version: numbe
 function firstMessage(run: DesignRun): string {
   const designers = run.setup.models.filter((m) => m.design).map((m) => m.name);
   const directions = run.setup.directions.filter((d) => d.on).map((d) => d.name);
-  const links = (run.setup.links ?? []).map((l) => `${l.url}: ${l.use === "images" ? "Use Its Images" : l.use === "feel" ? "Just Its Feel" : l.use === "content" ? "Not a Reference: an address in the page's content, never to be opened" : "not chosen; go by their words and set it, or ask"}`);
+  const links = (run.setup.links ?? []).map((l) => `${l.url}: ${l.use === "images" ? "Use Its Images" : l.use === "feel" ? "Just Its Feel" : l.use === "content" ? "Not a Reference: an address in the page's content, never to be opened" : "not chosen: set it in design_brief's sources from their words (content when it's only an address the page links to, such as a contact or booking link), or ask"}`);
   return [`What the user wants to design, as they left it on the Setup card:\n${run.setup.brief}`, ...(links.length ? [`Links, and how each is used:\n${links.join("\n")}`] : []), `Models that will design: ${designers.join(", ") || "none"}.`, `Directions: ${directions.join(", ") || "none"}.`, `That is ${designers.length * directions.length} designs. Your run's id is ${run.id}. Prepare the Design Brief; the designs start only when the user presses Start on it.`].join("\n\n");
 }
 
@@ -931,7 +920,7 @@ export function coordinatorTools(sessionId: string): ToolSpec[] {
 
   const brief: ToolSpec = {
     name: "design_brief", label: "Write the Design Brief",
-    description: "Put the Design Brief on the user's card, or change it. summary: the short version they read. prompt: the Full Prompt the design sessions get, sent only once every question is answered; or promptEdits, exact find-and-replace pairs, for a change. questions: at most a few, replacing the ones still open. text with shots (picture ids from design_browse) and url: the screen you found. sources: each link and how it is used. baseRev: the revision you last saw, 0 for the first brief. Only send what changes. End your turn after calling it.",
+    description: "Put the Design Brief on the user's card, or change it. summary: the short version they read. prompt: the Full Prompt the design sessions get, sent only once every question is answered; or promptEdits, exact find-and-replace pairs, for a change. questions: at most a few, replacing the ones still open. text with shots (picture ids from design_browse) and url: the screen you found. sources: each link and how it is used (images, feel, or content: an address that is only part of the page, never opened). baseRev: the revision you last saw, 0 for the first brief. Only send what changes. End your turn after calling it.",
     parameters: {
       type: "object",
       properties: {
@@ -1002,8 +991,10 @@ export function coordinatorTools(sessionId: string): ToolSpec[] {
       changeDesigns(parent.sessionId, (s) => void delete s.runs.find((r) => r.id === st.runId)!.error);
       refreshLooks(parent, st);
       refreshNotes(st);
+      const unset = (runOf(parent.sessionId, st.runId)?.setup.links ?? []).filter((l) => l.use === null).map((l) => l.url);
+      const linkLine = unset.length ? ` Start waits until each link has a use: ${unset.join(", ")}. Set it in sources (images, feel, or content when it's only an address the page links to, such as a contact or booking link), or ask.` : "";
       const next = outcome.open ? `It waits on ${outcome.open} question${outcome.open === 1 ? "" : "s"}. End your turn; the answers come as your next message.` : outcome.unwritten ? `Now write the Full Prompt, with design_brief (prompt, baseRev ${outcome.rev}).` : "End your turn. The user reads it and presses Start; you launch nothing.";
-      return say(`The brief is on the user's card at revision ${outcome.rev}. ${next}`, { brief: true, rev: outcome.rev });
+      return say(`The brief is on the user's card at revision ${outcome.rev}.${linkLine} ${next}`, { brief: true, rev: outcome.rev });
     },
   };
 

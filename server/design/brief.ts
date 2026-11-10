@@ -204,11 +204,23 @@ export const isHttpUrl = (u: unknown): u is string => {
   }
 };
 
+/** One address however it's written: a trailing slash or an empty query doesn't make another link. */
+export function sameAddress(a: string, b: string): boolean {
+  try {
+    const x = new URL(a);
+    const y = new URL(b);
+    const path = (u: URL) => u.pathname.replace(/\/+$/, "");
+    return x.origin === y.origin && path(x) === path(y) && x.search === y.search;
+  } catch {
+    return a === b;
+  }
+}
+
 /** The coordinator's reading of how a link is used: a person's click stands. */
 export function mergeLinks(setup: DesignSetup, sources: { url: string; use: DesignLinkUse | null }[]): void {
   const links = (setup.links ??= []);
   for (const s of sources) {
-    const have = links.find((l) => l.url === s.url);
+    const have = links.find((l) => sameAddress(l.url, s.url));
     if (!have) {
       if (links.length < BRIEF_LIMITS.links) links.push({ url: s.url, use: s.use, by: "coordinator" });
     } else if (have.by !== "user" && s.use) {
@@ -222,10 +234,10 @@ export function mergeLinks(setup: DesignSetup, sources: { url: string; use: Desi
 export function linksFromText(text: string, previous: DesignLink[] | undefined, found: string[], sent?: unknown): DesignLink[] {
   const given = Array.isArray(sent) ? (sent as { url?: unknown; use?: unknown }[]) : [];
   return found.slice(0, BRIEF_LIMITS.links).map((url) => {
-    const was = previous?.find((l) => l.url === url);
-    const asked = given.find((x) => x.url === url)?.use;
+    const was = previous?.find((l) => sameAddress(l.url, url));
+    const asked = given.find((x) => typeof x.url === "string" && sameAddress(x.url, url))?.use;
     if (isDesignLinkUse(asked)) return { url, use: asked, by: "user" as const };
-    return was ?? { url, use: null };
+    return was ? { ...was, url } : { url, use: null };
   });
 }
 

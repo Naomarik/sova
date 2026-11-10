@@ -420,7 +420,7 @@ test("Sova's own definition declares its merge checks", async () => {
   const def = parseDefinition(readFileSync(new URL("../.sova/project.json", import.meta.url), "utf8"));
   const checks = def.merge?.checks;
   assert.ok(Array.isArray(checks));
-  assert.deepEqual(checks.filter((c) => !c.optional).map((c) => c.id), ["typecheck", "unit", "integration", "extensions", "claude-table", "spec-replay", "statecharts", "build", "spec", "leak-scan"]);
+  assert.deepEqual(checks.filter((c) => !c.optional).map((c) => c.id), ["typecheck", "unit", "integration", "extensions", "spec-replay", "statecharts", "build", "spec", "leak-scan"]);
   assert.deepEqual(checks.filter((c) => c.optional).map((c) => c.id), ["e2e", "integration-group"]);
   assert.equal(def.merge?.target, "master");
   assert.equal(def.merge?.install?.inputs.includes("pnpm-lock.yaml"), true);

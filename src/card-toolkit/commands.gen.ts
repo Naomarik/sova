@@ -260,7 +260,16 @@ export type CommandId =
   | "chat.reload-code"
   | "chat.shell.list"
   | "chat.shell.stop"
-  | "chat.mode-command";
+  | "chat.mode-command"
+  | "design.list"
+  | "design.page"
+  | "design.setup.set"
+  | "design.start"
+  | "design.message"
+  | "design.refine"
+  | "design.retry"
+  | "design.coordinator.message"
+  | "design.delete";
 
 /** Each command's params, as its catalogue entry declares them. */
 export interface CommandParams {
@@ -4426,6 +4435,83 @@ export interface CommandParams {
     /** The command's arguments, a JSON object */
     "args"?: unknown;
   };
+  /** A chat's design runs and designs, without their pages. (only looks; needs the card's owner trusted) */
+  "design.list": {
+    /** The chat the designs belong to, by id or by path */
+    "session"?: string;
+  };
+  /** A design's finished page as text: the newest, or the version asked for. (only looks; needs the card's owner trusted) */
+  "design.page": {
+    /** The chat the designs belong to, by id or by path */
+    "session"?: string;
+    /** The design's label (A, B, … AA) */
+    "label": string;
+    /** The version number */
+    "version"?: number;
+  };
+  /** Replace a run's Lookbook Setup card before it starts. Takes the whole setup. (changes something; needs the card's owner trusted) */
+  "design.setup.set": {
+    /** The chat the designs belong to, by id or by path */
+    "session"?: string;
+    /** The design run's id */
+    "run": string;
+    /** The whole setup: brief, models, directions */
+    "setup": unknown;
+  };
+  /** Start a Lookbook run's coordinator, which writes its Design Brief. The designs start from the brief, by the user's click. (changes something; needs the card's owner trusted) */
+  "design.start": {
+    /** The chat the designs belong to, by id or by path */
+    "session"?: string;
+    /** The design run's id */
+    "run": string;
+  };
+  /** Send a design's session a message. It waits if the session is busy. (changes something; needs the card's owner trusted) */
+  "design.message": {
+    /** The chat the designs belong to, by id or by path */
+    "session"?: string;
+    /** The design's label (A, B, … AA) */
+    "label": string;
+    /** What to say to the design */
+    "text": string;
+    /** A key you make: sending again under it delivers nothing twice */
+    "key": string;
+  };
+  /** Hand a design back with what to change: it looks at its page at desktop and phone width and fixes it. (changes something; needs the card's owner trusted) */
+  "design.refine": {
+    /** The chat the designs belong to, by id or by path */
+    "session"?: string;
+    /** The design's label (A, B, … AA) */
+    "label": string;
+    /** What to say to the design */
+    "text": string;
+    /** A key you make: sending again under it delivers nothing twice */
+    "key": string;
+    /** Quick prompts to add */
+    "quick"?: string[];
+  };
+  /** Try a failed design again in a fresh session. (changes something; needs the card's owner trusted) */
+  "design.retry": {
+    /** The chat the designs belong to, by id or by path */
+    "session"?: string;
+    /** The design's label (A, B, … AA) */
+    "label": string;
+  };
+  /** Send a chat's Lookbook coordinator a message. It waits if the coordinator is busy. (changes something; needs the card's owner trusted) */
+  "design.coordinator.message": {
+    /** The chat the designs belong to, by id or by path */
+    "session"?: string;
+    /** What to say to the coordinator */
+    "text": string;
+    /** A key you make: sending again under it delivers nothing twice */
+    "key": string;
+  };
+  /** Remove one design from its chat. (changes something; needs the card's owner trusted) */
+  "design.delete": {
+    /** The chat the designs belong to, by id or by path */
+    "session"?: string;
+    /** The design's label (A, B, … AA) */
+    "label": string;
+  };
 }
 
 /** Whether each command only looks or changes something; a view runs either only once its owner is trusted. */
@@ -4688,4 +4774,13 @@ export const COMMAND_EFFECTS: Record<CommandId, "looks" | "changes"> = {
   "chat.shell.list": "looks",
   "chat.shell.stop": "changes",
   "chat.mode-command": "changes",
+  "design.list": "looks",
+  "design.page": "looks",
+  "design.setup.set": "changes",
+  "design.start": "changes",
+  "design.message": "changes",
+  "design.refine": "changes",
+  "design.retry": "changes",
+  "design.coordinator.message": "changes",
+  "design.delete": "changes",
 };

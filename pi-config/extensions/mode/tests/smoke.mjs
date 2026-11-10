@@ -1236,10 +1236,10 @@ await commands.get("mode").handler("normal", ctx);
 	assert.deepEqual(first.notes, [], "nothing to tell on the first run");
 	const hasGuideTool = () => session.host.getTools().includes("vis_guide");
 	assert.ok(!hasGuideTool(), "no vis_guide while vis is off");
-	// The tool: in-process, kind is exactly the listed kinds then the tour guide's parts, and a lookup is the shared rules then the kind's file.
+	// The tool: in-process, kind is exactly the listed kinds then the tool entries' parts, and a lookup is the shared rules then the kind's file.
 	const guideTool = session.host.registeredTools.get("vis_guide");
 	assert.deepEqual(guideTool.parameters.properties.kind.enum, [...VIS_GUIDE_NAMES]);
-	assert.deepEqual(VIS_GUIDE_NAMES, [...VIS_KINDS, "tour-signin", "tour-sites", "tour-sova", "tour-sharing"]);
+	assert.deepEqual(VIS_GUIDE_NAMES, [...VIS_KINDS, "tour-signin", "tour-sites", "tour-sova", "tour-sharing", "lookbook-setup", "lookbook-directions", "lookbook-passing-on"]);
 	assert.equal((await guideTool.execute("t0", { kind: "tour-signin" })).content[0].text, visGuide("tour-signin"));
 	const looked = await guideTool.execute("t1", { kind: "wireframe" });
 	assert.equal(looked.content[0].text, visGuide("wireframe"));

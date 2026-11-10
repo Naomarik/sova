@@ -1,0 +1,143 @@
+/* The Design Brief. Every box whose words the server can change has one size of its own and scrolls inside
+   it; anything that needs you lays over the foot of the brief; so an update never moves what's around it. */
+.design-brief-region { position: relative; flex: 1 1 0; min-height: 0; display: flex; flex-direction: column; }
+.design-brief { gap: var(--space-4); }
+/* With no link, a screen or an image that turns up comes after the questions, so it pushes nothing down. */
+.design-brief:not([data-links]) .design-brief-screen, .design-brief:not([data-links]) .design-brief-material { order: 2; }
+.design-brief-title { margin: 0; font-size: var(--fs-caption); font-weight: var(--fw-semibold); color: var(--color-ink); white-space: nowrap; }
+.design-brief-text { display: flex; flex-direction: column; gap: var(--space-1); min-width: 0; }
+.design-brief-text-head { display: flex; align-items: center; gap: var(--space-2); height: 36px; min-width: 0; }
+.design-brief-note { flex: 1 1 0; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.design-brief-edit-actions { display: flex; gap: var(--space-2); flex: none; justify-content: flex-end; }
+.design-brief-fold { display: inline-flex; align-items: center; gap: var(--space-1); min-height: 36px; padding: 0; border: 0; background: none; color: var(--color-ink); cursor: pointer; font: inherit; }
+.design-brief-fold .icon-twist { transition: transform var(--dur-fast) var(--ease-standard); }
+.design-brief-twist-open { transform: rotate(90deg); }
+.design-brief-box { box-sizing: border-box; border: 1px solid var(--color-border); border-radius: var(--r-md); overflow: hidden; }
+.design-brief-summary { height: 168px; }
+.design-brief-prompt { height: 320px; }
+.design-brief-look { height: 124px; }
+.design-brief-notes { height: 72px; }
+.design-brief-read { height: 100%; box-sizing: border-box; padding: var(--space-2) var(--space-3); overflow-y: auto; white-space: pre-wrap; overflow-wrap: anywhere; scrollbar-width: thin; }
+.design-brief-area { height: 100%; }
+.design-brief-area .textarea { height: 100%; min-height: 0; border: 0; border-radius: 0; }
+
+.design-brief-links { display: flex; flex-direction: column; gap: var(--space-2); }
+.design-link-row { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: var(--space-1) var(--space-3); min-width: 0; }
+.design-link-url { flex: 1 1 200px; min-width: 0; font-size: var(--fs-mono); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* Three equal choices: picking one never changes the group's width. */
+.design-link-use { flex: 1 1 420px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-1); max-width: 480px; }
+.design-link-use .button { min-width: 0; padding-inline: var(--space-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+@container design-card (max-width: 500px) { .design-link-use .button { font-size: var(--fs-caption); white-space: normal; line-height: 1.2; } }
+.design-link-use .button[aria-pressed="true"] { background: var(--color-accent-tint); border-color: var(--color-accent); }
+.design-setup-links { flex: none; height: 104px; box-sizing: border-box; overflow-y: auto; scrollbar-width: thin; display: flex; flex-direction: column; gap: var(--space-2); }
+.design-setup-links > * { flex: none; }
+.design-setup-links > p { margin: 0; }
+
+.design-brief-screen { position: relative; flex: none; height: 300px; display: flex; flex-direction: column; gap: var(--space-1); min-width: 0; }
+.design-brief-screen-picture { flex: 1 1 0; min-height: 0; overflow-y: auto; border: 1px solid var(--color-border); border-radius: var(--r-md); background: var(--color-sunken); scrollbar-width: thin; }
+.design-brief-screen-picture img { display: block; width: 100%; height: auto; }
+.design-brief-screen-picture .design-confirm-outline { height: auto; min-height: 100%; box-sizing: border-box; border-radius: 0; }
+.design-brief-screen-empty { margin: 0; height: 100%; display: flex; align-items: center; justify-content: center; text-align: center; padding: var(--space-3); box-sizing: border-box; }
+.design-brief-screen-caption { flex: none; margin: 0; height: 18px; line-height: 18px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.design-brief-redirect { position: absolute; inset: auto 0 0 0; z-index: 2; display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-3); background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--r-md); box-shadow: var(--shadow-2); }
+
+/* Where the look in words and the images go: one size, whichever it holds. */
+.design-brief-material { position: relative; flex: none; height: 300px; }
+.design-brief-material-scroll { height: 100%; box-sizing: border-box; overflow-y: auto; scrollbar-width: thin; display: flex; flex-direction: column; gap: var(--space-3); padding-right: var(--space-1); }
+.design-brief-material-scroll > * { flex: none; }
+.design-brief-material p { margin: 0; }
+
+.design-brief-questions { min-width: 0; }
+.design-brief-q { padding: var(--space-3) 0; }
+.design-brief-q:first-child { border-top: 0; padding-top: 0; }
+
+.design-brief-overlays { position: absolute; inset: auto 0 0 0; z-index: 3; max-height: 70%; overflow-y: auto; display: flex; flex-direction: column; padding: var(--space-2) var(--space-4) 0; background: var(--color-surface); border-top: 1px solid var(--color-border); box-shadow: var(--shadow-2); }
+.design-brief-change { position: absolute; inset: 0; z-index: 4; display: flex; flex-direction: column; background: var(--color-surface); }
+.design-brief-change-scroll { flex: 1 1 0; min-height: 0; overflow-y: auto; scrollbar-width: thin; display: flex; flex-direction: column; padding: var(--space-3) var(--space-4); }
+.design-brief-change-foot { flex: none; display: flex; justify-content: flex-end; padding: var(--space-2) var(--space-4); border-top: 1px solid var(--color-border); }
+
+/* During the brief the coordinator is only its status, its open question and its box. */
+.design-brief-coordinator { flex: none; height: 120px; box-sizing: border-box; padding: var(--space-1) var(--space-4) var(--space-2); border-top: 1px solid var(--color-border); overflow: hidden; }
+.design-brief-coordinator .design-coordinator { height: 100%; }
+.design-brief-coordinator .composer-input { max-height: 64px; }
+
+.design-brief-foot { flex: none; box-sizing: border-box; display: grid; grid-template-columns: minmax(300px, 1fr) 214px minmax(240px, 300px); align-items: center; gap: var(--space-2) var(--space-3); height: 72px; }
+.design-brief-line { position: relative; display: flex; flex-direction: column; min-width: 0; font-size: var(--fs-caption); }
+.design-brief-line-cancel { display: none; position: absolute; right: 0; top: 50%; transform: translateY(-50%); }
+.design-brief-line > span { height: 18px; line-height: 18px; min-height: 1.45em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.design-brief-count { display: flex; align-items: baseline; gap: var(--space-2); min-width: 0; }
+.design-brief-count-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.design-brief-change-link { flex: none; padding: 0; border: 0; background: none; color: var(--color-accent); cursor: pointer; font: inherit; text-decoration: underline; min-height: 24px; }
+.design-brief-slot { min-width: 0; min-height: var(--control-md); display: flex; justify-content: flex-end; }
+.design-brief-slot .button { width: 100%; }
+.design-brief-start { width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; }
+.design-brief-choice { flex: none; display: flex; gap: var(--space-2); margin-left: auto; }
+@container design-card (max-width: 720px) {
+  .design-brief-foot { grid-template-columns: minmax(0, 1fr) minmax(0, 300px); grid-template-rows: 36px 44px; align-content: center; height: 112px; }
+  .design-brief-line { grid-column: 1 / -1; }
+}
+.design-brief-answers-narrow { display: none; }
+@container design-card (max-width: 500px) {
+  .design-brief-foot { grid-template-columns: minmax(0, 1fr); grid-template-rows: 36px 44px; align-content: center; height: 112px; }
+  /* Start keeps its one place in every state: the spend question's Cancel sits in the line above it. */
+  .design-brief-slot { display: none; }
+  .design-brief-line-cancel { display: inline-flex; }
+  .design-brief-line { padding-right: 96px; }
+  .design-brief-answers-narrow { display: flex; order: 1; min-height: var(--control-md); }
+  .design-brief-answers-narrow .button { width: 100%; }
+  .design-brief-questions { order: 1; }
+}
+
+.design-brief-collapsed { border-bottom: 1px solid var(--color-border); padding: var(--space-1) var(--space-4); }
+.design-brief-collapsed > .design-brief-fold { width: 100%; }
+.design-brief-used { margin-left: var(--space-2); }
+.design-brief-frozen { display: flex; flex-direction: column; gap: var(--space-2); padding-bottom: var(--space-3); }
+.design-brief-frozen p { margin: 0; }
+.design-brief-frozen .design-brief-read { height: auto; padding: 0; overflow: visible; }
+.design-brief-frozen-prompt summary { list-style: none; gap: var(--space-1); cursor: pointer; font-weight: var(--fw-semibold); font-size: var(--fs-caption); min-height: 36px; display: flex; align-items: center; }
+
+/* The image grid: every card one size, so one arriving or being described moves no other. */
+.design-asset-error { margin: 0; min-height: 18px; }
+.design-assets { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: var(--space-2); }
+.design-asset { display: flex; flex-direction: column; min-width: 0; height: 178px; box-sizing: border-box; padding: var(--space-1); border: 1px solid var(--color-border); border-radius: var(--r-md); }
+.design-asset-off img { opacity: .42; }
+.design-asset-open { flex: 1 1 0; min-height: 0; padding: 0; border: 0; background: var(--color-sunken); border-radius: var(--r-sm); overflow: hidden; cursor: pointer; }
+.design-asset-open img { display: block; width: 100%; height: 100%; object-fit: contain; }
+.design-asset-use { flex: none; justify-content: flex-start; min-height: 36px; }
+.design-asset-kind { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-caption); font-weight: var(--fw-medium); }
+.design-asset-state { flex: none; height: 18px; line-height: 18px; margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.design-asset-notes { margin: var(--space-2) 0 0; overflow-wrap: anywhere; }
+.design-asset-skipped { margin-top: var(--space-2); font-size: var(--fs-caption); }
+.design-asset-skipped summary { cursor: pointer; min-height: 36px; display: flex; align-items: center; }
+.design-asset-skipped ul { margin: 0; padding-left: var(--space-4); }
+.design-asset-detail { position: absolute; inset: 0; z-index: 2; display: flex; flex-direction: column; box-sizing: border-box; padding: 0 var(--space-3) var(--space-2); background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--r-md); }
+.design-asset-detail-body { flex: 1 1 0; min-height: 0; overflow-y: auto; scrollbar-width: thin; display: flex; flex-direction: column; gap: var(--space-2); }
+.design-asset-detail-body > * { flex: none; }
+.design-asset-detail-picture { height: 120px; border-radius: var(--r-sm); background: var(--color-sunken); overflow: hidden; }
+.design-asset-detail-picture img { display: block; width: 100%; height: 100%; object-fit: contain; }
+.design-asset-detail-body dl { margin: 0; display: grid; gap: 2px; }
+.design-asset-detail-body dt { font-size: var(--fs-caption); font-weight: var(--fw-semibold); }
+.design-asset-detail-body dd { margin: 0; }
+.design-asset-detail-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.design-brief-frozen-prompt summary::-webkit-details-marker { display: none; }
+.design-brief-frozen-prompt[open] .icon-twist { transform: rotate(90deg); }
+.design-brief-error-room { flex: none; height: 56px; }
+@container design-card (max-width: 560px) { .design-brief-error-room { height: 96px; } }
+.design-brief-banner { margin-bottom: var(--space-2); }
+.design-asset-row { flex: none; display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: var(--space-2); min-height: 36px; }
+.design-asset-name { font-size: var(--fs-caption); color: var(--color-ink-muted); }
+.design-page-assets .design-asset-detail { inset: var(--space-3) var(--space-4); }
+.design-page-assets .design-asset { height: 214px; }
+.design-asset-download { flex: none; width: 100%; }
+/* The Full Prompt opens over what follows it instead of pushing it down. */
+.design-brief-text[data-fold] { position: relative; }
+.design-brief-text[data-fold] > .design-brief-box { position: absolute; top: 100%; left: 0; right: 0; z-index: 3; background: var(--color-surface); box-shadow: var(--shadow-2); }
+/* The brief after Start opens over the grid instead of pushing it down. */
+.design-brief-collapsed { position: relative; z-index: 3; }
+.design-brief-collapsed > .design-brief-frozen { position: absolute; top: 100%; left: 0; right: 0; max-height: 420px; overflow-y: auto; scrollbar-width: thin; box-sizing: border-box; padding: var(--space-3) var(--space-4); background: var(--color-surface); border-bottom: 1px solid var(--color-border); box-shadow: var(--shadow-2); }
+.design-brief-toggle-word { margin-left: auto; }
+/* Page Assets' head is one line of one height, whatever the count and cost say. */
+.design-page-assets .gallery-head { flex-wrap: nowrap; height: 24px; }
+.design-page-assets .gallery-head > * { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 24px; }
+/* Two lines kept for the coordinator change, so it comes and goes without moving anything. */
+.design-setup-coord-note { margin: 0; height: 36px; line-height: 18px; overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }

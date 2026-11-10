@@ -2,7 +2,7 @@ import { execFile } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
-import { TOUR_LIMITS, isTourFile, isTourOrigin, normalizeTourScript, tourSignInOrigins, type TourFailure, type TourScript, type TourSignInRequirement, type TourStep } from "../../shared/tour";
+import { TOUR_LIMITS, isTourFile, isTourOrigin, normalizeTourScript, tourSignInOrigins, type TourFailure, type TourScript, type TourSignInRequirement, type TourSize, type TourStep } from "../../shared/tour";
 import { hostProcTable } from "../project-services/proctable";
 import { resolveTourTarget } from "../project-services/tour-target";
 import { assertTourCoverage, tourAsset, tourScriptDigest } from "./checks";
@@ -15,12 +15,19 @@ import { TourCaptureFailure } from "./targets";
 import { connectCandidates, startRunnerProxy, type RunnerProxy } from "./runner-proxy";
 import { TourJobBlocked, TourJobFailure } from "./queue";
 import { TourTargetRefused, TourTargetUnverifiable } from "../project-services/tour-target";
-import type { TourAttemptProgress, TourChildMessage, TourParentMessage, TourStorageState } from "./runner-protocol";
+import { checkedContactRequest, isSubresourceContact, type TourAttemptProgress, type TourChildMessage, type TourContactRequest, type TourParentMessage, type TourStorageState, type TourWalkAction } from "./runner-protocol";
+import { checkPageCapture, isCaptureFileKey, type CheckedCapture } from "./page-capture";
 import { normalizeTourLookResult, type TourLookResult } from "./look";
 
 /** A managed Sova copy signs the recorder in by its cookie only (§app.tours/recording). */
 export const TOUR_SOVA_SIGN_IN_REFUSAL = "A Sova test copy signs the recorder in by its own cookie; remove signIn.";
 export const TOUR_ATTEMPT_LIMIT_MS = 5 * 60_000;
+/** How long a connection to an origin nothing has admitted waits, on a look at a link, for a redirect's check to land. */
+export const REACH_HOP_WAIT_MS = 1500;
+/** One capture file over the wire: base64 of an 8 MB original, with room to spare. */
+const CAPTURE_FILE_BASE64 = 12 * 1024 * 1024;
+/** A capture's 40 MB of originals and up to 30 sets of drawn versions. */
+const CAPTURE_TOTAL_BYTES = 200 * 1024 * 1024;
 /** What the page asked for at its sign-in, and the answer: a login or a one-time code. Never logged. */
 export interface TourSignInNeed { origin: string; fields: TourSignInRequirement["fields"]; reason?: string }
 export interface TourSignInAnswer { account?: string; username?: string; password?: string; code?: string }
@@ -33,8 +40,12 @@ export interface TourAttemptOptions {
   dryRun: boolean;
   signal?: AbortSignal;
   onProgress?: (progress: TourAttemptProgress) => void;
-  /** Live exact-origin consent recheck. Project exemption applies only to the resolved own origin. */
-  beforeContact: (origin: string) => Promise<void>;
+  /**
+   * Live exact-origin consent recheck. Project exemption applies only to the resolved own origin. `request` says
+   * what the browser is fetching, when this contact is a page's request (a proxy connection or a checkpoint carries
+   * none). Answering "skip" leaves this one contact out, only where `reach` is on, and stops nothing.
+   */
+  beforeContact: (origin: string, request?: TourContactRequest) => Promise<void | "skip">;
   account?: { origin: string; username: string; password: string };
   /** The source's running-copy resolver (the runtime's own); defaults to the registry resolver. */
   target?: typeof resolveTourTarget;
@@ -55,6 +66,15 @@ export interface TourAttemptOptions {
   limitMs?: number;
   /** A look (§app.tours/look): a dry run that lists each page's controls instead of checking marks. */
   look?: { signInRoute?: string };
+  /** A walk (a design browser): steps that replace the view's actions; each size is pictured and listed. Never with `look`. */
+  walk?: Partial<Record<TourSize, TourWalkAction[]>>;
+  /**
+   * A look at a link the user gave: `beforeContact` decides each part of the page by what it is. A part it declines
+   * is left out; a redirect of a part is asked about, not refused outright. Never for a tour's recording.
+   */
+  reach?: boolean;
+  /** With a walk: bring back the final screen's images and notes, at desktop width. */
+  capture?: boolean;
 }
 export interface TourAttemptResult {
   steps: TourStep[];
@@ -72,6 +92,8 @@ export interface TourAttemptResult {
   signedIn?: true;
   /** A look's lists (§app.tours/look). */
   look?: TourLookResult;
+  /** The page capture a walk asked for, checked. */
+  capture?: CheckedCapture;
   scriptDigest: string;
   metrics?: { wallTimeMs: number; peakRssBytes: number; storedBytes: number };
 }
@@ -101,19 +123,29 @@ export async function runTourAttempt(options: TourAttemptOptions): Promise<TourA
   if (!script) throw new Error("Invalid tour script. Split oversized tours or correct its semantic targets.");
   if (options.signal?.aborted) throw new Error("Recording cancelled.");
   if (options.look && !options.dryRun) throw new Error("A look takes no pictures.");
+  if (options.walk && (options.look || options.dryRun)) throw new Error("A walk takes pictures and is never a look.");
+  if (options.capture && !options.walk?.desktop) throw new Error("A page capture is the final screen of a walk at desktop width.");
   const target = await (options.target ?? resolveTourTarget)(script.source);
   if (script.signIn && target.sova) throw new TourCaptureFailure({ message: TOUR_SOVA_SIGN_IN_REFUSAL, guidance: "Record the copy as it is: its own sign-in cookie signs the recorder in." });
   const signInOrigins = script.signIn ? tourSignInOrigins(script.signIn, target.origin) : [];
   const current = freshCheck(() => target.assertCurrent());
-  const checkContact = async (origin: string) => {
+  const checkContact = async (origin: string, request?: TourContactRequest): Promise<void | "skip"> => {
     await current();
+    const ownCopy = script.source.kind === "project" && origin === target.origin;
+    // A part of a link's page: consent first, since a part it declines (a private address, say) is only left out,
+    // and a part that is another running copy or a Sova is left out too, not a reason to stop the look.
+    if (options.reach && isSubresourceContact(request)) {
+      if ((await options.beforeContact(origin, request)) === "skip") return "skip";
+      if (!ownCopy) { try { await resolveTourTarget({ kind: "site", origin }); } catch { return "skip"; } }
+      return;
+    }
     // Also prevents declaring another managed copy as an approved external subresource.
-    if (!(script.source.kind === "project" && origin === target.origin)) {
+    if (!ownCopy) {
       await resolveTourTarget({ kind: "site", origin });
     }
-    await options.beforeContact(origin);
+    if ((await options.beforeContact(origin, request)) === "skip") throw new Error("A contact can only be left out of a look at a link.");
   };
-  const checkpoint = async () => { await current(); await options.beforeContact(target.origin); };
+  const checkpoint = async () => { await current(); if ((await options.beforeContact(target.origin)) === "skip") throw new Error("This page's own address was left out."); };
   for (const origin of new Set([target.origin, ...(script.sites ?? []), ...signInOrigins])) await checkContact(origin);
   if (options.signal?.aborted) throw new Error("Recording cancelled.");
   if (options.account && options.account.origin !== target.origin) throw new Error("The test account belongs to another origin.");
@@ -140,12 +172,27 @@ export async function runTourAttempt(options: TourAttemptOptions): Promise<TourA
   // refuses for consent or identity stops the attempt.
   const declared = new Set([target.origin, ...(script.sites ?? []), ...(options.account ? [options.account.origin] : []), ...signInOrigins]);
   const routed = new Set<string>();
+  // A redirect's next hop can't be held back in the browser, so its contact and its connection race: with `reach`,
+  // the proxy gives the check a moment to land. Waiting admits nothing by itself: only the routed set does.
+  const arrivals = new Set<() => void>();
+  const noteRouted = (origin: string) => { routed.add(origin); for (const go of arrivals) go(); };
+  const untilRouted = (candidates: string[]) => new Promise<void>(done => {
+    const end = () => { clearTimeout(timer); arrivals.delete(check); done(); };
+    const check = () => { if (candidates.some(o => declared.has(o) || routed.has(o))) end(); };
+    const timer = setTimeout(end, REACH_HOP_WAIT_MS);
+    arrivals.add(check);
+    check();
+  });
   const admit = async (candidates: string[]): Promise<string> => {
+    if (options.reach) await untilRouted(candidates);
     const known = candidates.filter(o => declared.has(o) || routed.has(o));
     if (!known.length) throw new Error("Not an origin of this tour.");
     let refusal: unknown;
     for (const origin of known) {
-      try { await checkContact(origin); return origin; } catch (error) { refusal ??= error; }
+      try {
+        if ((await checkContact(origin)) === "skip") throw new Error("Left out of this look.");
+        return origin;
+      } catch (error) { refusal ??= error; }
     }
     // Consent, source identity, the chat's sandbox scope or the site budget changing stops the attempt.
     if (refusal instanceof TourJobBlocked || refusal instanceof TourJobFailure || refusal instanceof TourTargetRefused || refusal instanceof TourTargetUnverifiable || refusal instanceof TourCaptureFailure) {
@@ -171,6 +218,9 @@ export async function runTourAttempt(options: TourAttemptOptions): Promise<TourA
   const proc = child.process;
   const assets = new Map<string, Uint8Array>();
   let assetBytes = 0;
+  const captureFiles = new Map<string, Uint8Array>();
+  let captureBytes = 0;
+  let captureReport: unknown;
   let failure: Error | undefined;
   let policyError: unknown;
   let result: Extract<TourChildMessage, { type: "result" }> | undefined;
@@ -251,7 +301,9 @@ export async function runTourAttempt(options: TourAttemptOptions): Promise<TourA
       if (message.type === "contact" || message.type === "checkpoint") {
         if (++pending > 256) throw new Error("Recording exceeded its pending policy-check limit.");
         // A passed contact makes its origin one this page requested, before the child may proceed.
-        void (message.type === "contact" ? checkContact(message.origin).then(() => { routed.add(message.origin); }) : checkpoint()).then(() => write({ type: "answer", id: message.id }), error => {
+        void (message.type === "contact"
+          ? checkContact(message.origin, checkedContactRequest(message.request)).then(v => { if (v !== "skip") noteRouted(message.origin); return v; })
+          : checkpoint().then(() => undefined)).then(v => write({ type: "answer", id: message.id, ...(v === "skip" ? { skip: true as const } : {}) }), error => {
           const safe = error instanceof TourCaptureFailure ? error.failure : { message: "Recording source ownership or site approval changed.", guidance: error instanceof Error ? error.message.slice(0, 1000) : "Review this copy and site consent, then retry." };
           write({ type: "answer", id: message.id, failure: safe });
           policyError ??= error;
@@ -261,6 +313,14 @@ export async function runTourAttempt(options: TourAttemptOptions): Promise<TourA
         const bytes = Buffer.from(message.base64, "base64"); tourAsset(message.file, bytes); assetBytes += bytes.length;
         if (assetBytes > TOUR_LIMITS.totalBytes) throw new Error("Recording exceeded its total image budget.");
         assets.set(message.file, bytes);
+      } else if (message.type === "capture-file") {
+        if (!options.capture || !isCaptureFileKey(message.key) || captureFiles.has(message.key) || typeof message.base64 !== "string" || message.base64.length > CAPTURE_FILE_BASE64) throw new Error("Invalid page capture output.");
+        const bytes = Buffer.from(message.base64, "base64"); captureBytes += bytes.length;
+        if (captureBytes > CAPTURE_TOTAL_BYTES) throw new Error("The page capture exceeded its total image budget.");
+        captureFiles.set(message.key, bytes);
+      } else if (message.type === "capture") {
+        if (!options.capture || captureReport !== undefined) throw new Error("Invalid page capture output.");
+        captureReport = message.report;
       } else if (message.type === "sign-in-needed") {
         const fields = JSON.stringify(message.fields);
         if (signingIn || !signInOrigins.includes(message.origin) || !Number.isInteger(message.id) || (fields !== (script.signIn?.account ? '["account","username","password"]' : '["username","password"]') && fields !== '["code"]') || (message.reason !== undefined && (typeof message.reason !== "string" || message.reason.length > 300))) throw new Error("Invalid recording sign-in request.");
@@ -289,22 +349,24 @@ export async function runTourAttempt(options: TourAttemptOptions): Promise<TourA
   });
   try {
     const exited = new Promise<number | null>((resolve, reject) => { proc.once("error", reject); proc.once("close", resolve); });
-    write({ type: "start", input: { script, origin: target.origin, dryRun: options.dryRun, proxied, declared: [...declared], ...(browser ? { browser } : {}), ...(options.account ? { account: options.account } : {}), ...(sova ? { sova } : {}), ...(script.signIn ? { signIn: { origins: signInOrigins, ...(options.signInStorage ? { storage: options.signInStorage } : {}) } } : {}), ...(options.look ? { look: { ...(options.look.signInRoute ? { signInRoute: options.look.signInRoute } : {}) } } : {}) } });
+    write({ type: "start", input: { script, origin: target.origin, dryRun: options.dryRun, proxied, declared: [...declared], ...(browser ? { browser } : {}), ...(options.account ? { account: options.account } : {}), ...(sova ? { sova } : {}), ...(script.signIn ? { signIn: { origins: signInOrigins, ...(options.signInStorage ? { storage: options.signInStorage } : {}) } } : {}), ...(options.look ? { look: { ...(options.look.signInRoute ? { signInRoute: options.look.signInRoute } : {}) } } : {}), ...(options.walk ? { walk: options.walk } : {}), ...(options.reach ? { reach: true } : {}), ...(options.capture ? { capture: true } : {}) } });
     const code = await exited;
     if (policyError) throw policyError;
     if (failure) throw failure;
     if (code !== 0 || !result) throw new Error("The installed recording browser stopped before completing this attempt. Check its installation and sandbox; no partial edition was published.");
     await target.assertCurrent();
     if (typeof result.sovaServer !== "boolean" || (result.quietAborts !== undefined && !(Number.isInteger(result.quietAborts) && result.quietAborts >= 0 && result.quietAborts <= 1_000_000)) || (result.signedIn !== undefined && typeof result.signedIn !== "boolean") || (result.signedIn && !script.signIn)) throw new Error("Invalid recording result.");
-    const look = options.look ? normalizeTourLookResult(result.look) : undefined;
-    if (options.look ? !look : result.look !== undefined) throw new Error("Invalid look result.");
+    const lists = !!options.look || !!options.walk;
+    const capture = options.capture ? checkPageCapture(captureReport, captureFiles) : undefined;
+    const look = lists ? normalizeTourLookResult(result.look) : undefined;
+    if (lists ? !look : result.look !== undefined) throw new Error("Invalid look result.");
     if (!Array.isArray(result.publicOrigins) || result.publicOrigins.length > 64 || !result.publicOrigins.every(isTourOrigin) || new Set(result.publicOrigins).size !== result.publicOrigins.length) throw new Error("Invalid recording address attestation.");
     if (!options.dryRun) {
       assertTourCoverage(script, result.steps);
       const listed = new Set([...result.steps.flatMap(s => s.views.flatMap(v => Object.values(v.captures).map(c => c.image))), ...result.contactSheets]);
       if (listed.size !== assets.size || [...listed].some(file => !assets.has(file)) || !result.suspicious.every(file => assets.has(file))) throw new Error("The recording image inventory is incomplete.");
     }
-    return { ...(look ? { look } : {}), ...(sova ? { sovaCopy: true as const } : {}), ...(result.quietAborts ? { quietAborts: result.quietAborts } : {}), ...(script.signIn && (result.signedIn || signedIn) ? { signedIn: true as const } : {}), steps: result.steps, assets, contactSheets: result.contactSheets, suspicious: result.suspicious, provenance: { origin: target.origin, recordedAt: new Date().toISOString(), publicOrigins: proxied ? [] : result.publicOrigins, ...(target.generation !== undefined ? { generation: target.generation } : {}) }, sovaServer: result.sovaServer, scriptDigest: tourScriptDigest(script), metrics: { wallTimeMs: Math.round(performance.now() - startedAt), peakRssBytes, storedBytes: assetBytes } };
+    return { ...(look ? { look } : {}), ...(capture ? { capture } : {}), ...(sova ? { sovaCopy: true as const } : {}), ...(result.quietAborts ? { quietAborts: result.quietAborts } : {}), ...(script.signIn && (result.signedIn || signedIn) ? { signedIn: true as const } : {}), steps: result.steps, assets, contactSheets: result.contactSheets, suspicious: result.suspicious, provenance: { origin: target.origin, recordedAt: new Date().toISOString(), publicOrigins: proxied ? [] : result.publicOrigins, ...(target.generation !== undefined ? { generation: target.generation } : {}) }, sovaServer: result.sovaServer, scriptDigest: tourScriptDigest(script), metrics: { wallTimeMs: Math.round(performance.now() - startedAt), peakRssBytes, storedBytes: assetBytes } };
   } finally {
     clearTimeout(timeout); clearInterval(resource); options.signal?.removeEventListener("abort", abort); lines.close();
     finished = true;

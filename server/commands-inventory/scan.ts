@@ -57,6 +57,7 @@ const exactly = (routes: readonly RouteKey[]) => (m: string, p: string) => route
 export const PAGE_PLUMBING: readonly RouteKey[] = [
   // One release only (§chat.worktrees/cleanup): an open page's post gets a plain answer, and nothing is removed.
   "POST /api/worktrees/cleanup",
+  "GET /api/design/:label/live", "GET /api/design/:label/live-url", "GET /api/design/live-page/:token", "GET /api/design/shots/:file", "GET /api/design/assets", "GET /api/design/assets/:name/:shown", "GET /api/design/assets/:name/original",
   "GET /api/attachment", "DELETE /api/attachment", "POST /api/upload", "GET /api/transcript/tool",
   "GET /api/links/:id/thread", "POST /api/links/:id/seen", "GET /api/targets/:name/folders", "GET /api/explanations",
   // Settings → Extensions drawing itself: no action, and no catalogue entry.
@@ -73,6 +74,12 @@ export const CAPABILITY_LINKS: readonly RouteKey[] = ["GET /api/projects/:pid/pr
 export const GRANTS: readonly RouteKey[] = [
   "POST /api/schedules/approve", "POST /api/schedules/revoke", "GET /api/overseer/autonomy", "POST /api/overseer/autonomy/revoke",
   "POST /api/projects/:pid/draft-specs/:sid/approve",
+  // A coordinator's questions and the Design Brief: a yes launches, spends, starts a copy or opens a site. Only the person's own click.
+  "POST /api/design/runs/:run/brief/start", "POST /api/design/runs/:run/brief/edit", "POST /api/design/runs/:run/brief/answers", "POST /api/design/runs/:run/brief/conflict", "POST /api/design/runs/:run/brief/link", "POST /api/design/runs/:run/brief/image", "POST /api/design/runs/:run/brief/not-this-screen", "POST /api/design/coordinator/answer",
+  // Bringing images into a chat's set, and agreeing to capture a signed-in page.
+  "POST /api/design/assets/own", "POST /api/design/assets/signed-in-consent",
+  // A person's own words and Describe Again on one image of the brief's grid.
+  "PATCH /api/design/images/:name", "POST /api/design/images/:name/describe",
 ];
 
 export const ROUTE_CLASSES: readonly RouteClass[] = [

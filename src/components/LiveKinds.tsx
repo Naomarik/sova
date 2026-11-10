@@ -16,6 +16,8 @@ import type { CardInfo } from "../../shared/transcript-cards";
 import { CARD_TOOL as RAISE_CARD_TOOL } from "../../shared/transcript-cards";
 import type { ShowChangesDetails } from "../../pi-config/extensions/show-changes/details";
 import type { TourCardDetails } from "../../shared/tour";
+import type { DesignCardDetails } from "../lib/design-rows";
+import { DesignCard } from "./DesignCard";
 import { normalizeTourCardDetails, TOUR_TOOLS } from "../../shared/tour";
 import type { SettingsToolDetails } from "../../shared/project-settings";
 import { CARD_TOOL, normalizeCardDetails } from "../../shared/overseer-card";
@@ -65,6 +67,7 @@ export const LIVE_VIEWS: { [K in LiveView]: Component<LiveKindViewProps<never>> 
   ),
   info: LiveEndRow,
   tour: (props: LiveKindViewProps<TourCardDetails>) => <TourCard details={props.value} />,
+  design: (props: LiveKindViewProps<DesignCardDetails>) => <DesignCard runId={props.value.runId} />,
   "show-changes": (props: LiveKindViewProps<ShowChangesDetails>) => <ShowChangesCard details={props.value} />,
   offer: (props: LiveKindViewProps<OfferCard>) => <OfferCardView card={props.value} />,
   card: (props: LiveKindViewProps<CardInfo>) => <LiveTranscriptCard item={{ id: callOf(props.input).id, kind: "tool-call", text: RAISE_CARD_TOOL, toolCallId: callOf(props.input).id }} value={props.value} />,

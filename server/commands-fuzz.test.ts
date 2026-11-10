@@ -266,6 +266,13 @@ const TYPE_ACCEPTS: Record<string, string> = {
 
 /** Why an entry is validate-only: its valid call starts a process the unit tier may not start. */
 const VALIDATE_ONLY: Record<string, string> = {
+  "design.setup.set": "acts on a run only a main chat's design tool makes; server/design/batch.test.ts drives runs",
+  "design.start": "starts a model session on the coordinator's model",
+  "design.message": "drives a design's model session",
+  "design.refine": "drives a design's model session",
+  "design.retry": "starts a model session again",
+  "design.coordinator.message": "drives the coordinator's model session",
+  "design.delete": "acts on a design only a model session makes; server/design/batch.test.ts covers it",
   "session.send": "starts a chat process for the turn",
   "session.configure": "acquires a chat handle, which starts the chat's process",
   "session.mode.set": "acquires a chat handle, which starts the chat's process",
@@ -463,6 +470,8 @@ function iconProject(values: Record<string, unknown>, uploaded = false): Record<
 }
 
 const FIXTURES: Record<string, Fixture> = {
+  "design.list": { values: () => ({ session: session()[0] }), status: 200 },
+  "design.page": { values: () => ({ session: session()[0], label: "A" }), status: 404 },
   "session.list": { values: () => ({}), status: 200 },
   "session.get": { values: () => ({ session: session()[1] }), status: 200 },
   "session.read": { values: () => ({ session: session()[0] }), status: 200 },

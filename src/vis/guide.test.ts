@@ -159,9 +159,9 @@ test("vis_guide returns the shared rules, then that kind's file, owner notes str
 
 // The emphasis section's one line of every kind's targets moved into the kinds' files.
 test("tour is a tool-backed workflow, not a renderer kind; its core's one worked example validates", () => {
-  assert.deepEqual(VIS_TOOL_ENTRIES, ["tour"]);
-  assert.deepEqual(VIS_TOOL_PARTS, ["tour-signin", "tour-sites", "tour-sova", "tour-sharing"]);
-  assert.ok(!KIND_WORDS.includes("tour"));
+  assert.deepEqual(VIS_TOOL_ENTRIES, ["tour", "lookbook"]);
+  assert.deepEqual(VIS_TOOL_PARTS, ["tour-signin", "tour-sites", "tour-sova", "tour-sharing", "lookbook-setup", "lookbook-directions", "lookbook-passing-on"]);
+  for (const entry of VIS_TOOL_ENTRIES) assert.ok(!KIND_WORDS.includes(entry), entry);
   const guide = visGuide("tour");
   assert.equal(guide, stripVisComments(FILES.tour!));
   assert.match(guide, /^# tour: explain a real interface/);

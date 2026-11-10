@@ -3,11 +3,12 @@ import { launchTourBrowser, TOUR_BROWSER_GUIDANCE, TourBrowserSetupError } from 
 import { TourBrowserAddresses } from "./browser-addresses";
 import { createTourContactSheets } from "./contact-sheet";
 import { TourCaptureFailure, TOUR_TARGET_OUTSIDE, revealTourTarget, settledBox, stableTourBox, tourLocator, tourMark, tourNearby, uniqueTourTarget } from "./targets";
-import { TOUR_LIMITS, TOUR_PROBLEM_LIMITS, TOUR_VIEWPORTS, normalizeTourScript, tourOnSignInRoute, tourSignInViewProblem, type TourFailure, type TourProblem, type TourSignInRequirement, type TourSize, type TourStep, type TourTarget } from "../../shared/tour";
-import { TOUR_DRY_RUN_BLIND, TOUR_SIGN_IN_BOX_SIGNED_IN, TOUR_SIGN_IN_HUMAN, TOUR_SIGN_IN_LANDED, TOUR_SIGN_IN_STALE, TOUR_SIGN_IN_WRONG, type TourAttemptInput, type TourChildMessage, type TourParentMessage, type TourStorageState } from "./runner-protocol";
+import { TOUR_LIMITS, TOUR_PROBLEM_LIMITS, TOUR_VIEWPORTS, normalizeTourScript, tourOnSignInRoute, tourSignInViewProblem, type TourFailure, type TourProblem, type TourSignInRequirement, type TourSize, type TourStep, type TourTarget, type TourAction } from "../../shared/tour";
+import { TOUR_DRY_RUN_BLIND, TOUR_SIGN_IN_BOX_SIGNED_IN, TOUR_SIGN_IN_HUMAN, TOUR_SIGN_IN_LANDED, TOUR_SIGN_IN_STALE, TOUR_SIGN_IN_WRONG, type TourAttemptInput, type TourChildMessage, type TourParentMessage, type TourContactRequest, type TourStorageState, type TourWalkAction } from "./runner-protocol";
 import { filterTourStorage } from "./signin-store";
 import { tourLookControls, tourLookLinks, tourLookUrl, type TourLookPage, type TourLookProblem, type TourLookSize } from "./look";
-import type { Locator, Page, WebSocketRoute } from "playwright-core";
+import { capturePage, watchPageResponses } from "./page-capture";
+import type { Locator, Page, Request, WebSocketRoute } from "playwright-core";
 import { SOVA_SERVER_HEADER, TOUR_RECORDER_HEADER, TOUR_SOVA_REFUSAL } from "./runner-header";
 
 declare global {
@@ -21,7 +22,7 @@ const GENERIC_GUIDANCE = "Review this step's semantic targets, allowed actions, 
 
 const send = (message: TourChildMessage) => process.stdout.write(`${JSON.stringify(message)}\n`);
 type SignInAnswer = { account?: string; username?: string; password?: string; code?: string };
-const awaiting = new Map<number, { resolve: (answer?: SignInAnswer) => void; reject: (error: Error) => void }>();
+const awaiting = new Map<number, { resolve: (answer?: SignInAnswer & { skip?: true }) => void; reject: (error: Error) => void }>();
 let nextId = 0;
 /** Ask the server for this sign-in's login or code: from the tour's memory, or once the user answers. */
 function askSignIn(origin: string, fields: TourSignInRequirement["fields"]): Promise<SignInAnswer> {
@@ -31,13 +32,25 @@ function askSignIn(origin: string, fields: TourSignInRequirement["fields"]): Pro
     send({ type: "sign-in-needed", id, origin, fields });
   });
 }
-function request(type: "contact" | "checkpoint", origin?: string): Promise<void> {
+/** Ask the server about a contact. False: leave this one out and carry on (only a look at a link hears that). */
+function request(type: "contact" | "checkpoint", origin?: string, about?: TourContactRequest): Promise<boolean> {
   if (awaiting.size > 256) return Promise.reject(new Error("The page exceeded the recording request limit."));
   return new Promise((resolve, reject) => {
     const id = ++nextId;
-    awaiting.set(id, { resolve: () => resolve(), reject });
-    send(type === "contact" ? { type, id, origin: origin! } : { type, id });
+    awaiting.set(id, { resolve: answer => resolve(!answer?.skip), reject });
+    send(type === "contact" ? { type, id, origin: origin!, ...(about ? { request: about } : {}) } : { type, id });
   });
+}
+/** What the browser says this request is. A frame it can't name counts as the page itself: the strict reading. */
+function contactOf(req: Request): TourContactRequest {
+  let mainFrame = true, initiator: string | undefined;
+  try {
+    const frame = req.frame();
+    mainFrame = !frame.parentFrame();
+    const at = new URL(frame.url());
+    if (at.protocol === "http:" || at.protocol === "https:") initiator = at.origin;
+  } catch { /* a request with no frame, or a frame with no address yet */ }
+  return { resourceType: req.resourceType(), navigation: req.isNavigationRequest(), mainFrame, ...(initiator ? { initiator } : {}) };
 }
 let started = false;
 let finished = false;
@@ -49,7 +62,7 @@ lines.on("line", line => {
     const msg = JSON.parse(line) as TourParentMessage;
     if (msg.type === "answer") {
       const entry = awaiting.get(msg.id); awaiting.delete(msg.id);
-      if (entry) msg.failure ? entry.reject(new TourCaptureFailure(msg.failure)) : entry.resolve();
+      if (entry) msg.failure ? entry.reject(new TourCaptureFailure(msg.failure)) : entry.resolve(msg.skip ? { skip: true } : undefined);
     } else if (msg.type === "sign-in") {
       const entry = awaiting.get(msg.id); awaiting.delete(msg.id);
       entry?.resolve({ ...(typeof msg.account === "string" ? { account: msg.account } : {}), ...(typeof msg.username === "string" ? { username: msg.username } : {}), ...(typeof msg.password === "string" ? { password: msg.password } : {}), ...(typeof msg.code === "string" ? { code: msg.code } : {}) });
@@ -129,7 +142,7 @@ async function run(input: TourAttemptInput): Promise<void> {
     // A look (§app.tours/look): the signed-out sign-in page first, when its route is known, then each page per size.
     const lookSignInRoute = input.look ? input.look.signInRoute ?? script.signIn?.route : undefined;
     const lookPages = new Map<number, TourLookPage>();
-    if (input.look) for (const [si, step] of script.steps.entries()) { const v = step.views[0]; if (v?.kind === "page") lookPages.set(si, { route: v.route }); }
+    if (input.look || input.walk) for (const [si, step] of script.steps.entries()) { const v = step.views[0]; if (v?.kind === "page") lookPages.set(si, { route: v.route }); }
     let lookSignIn: (TourLookSize & { route: string }) | undefined;
     const passes: ("sign-in-page" | TourSize)[] = [...(lookSignInRoute ? ["sign-in-page" as const] : []), "desktop", "phone"];
     for (const pass of passes) {
@@ -170,7 +183,12 @@ async function run(input: TourAttemptInput): Promise<void> {
           if (!req.redirectedFrom()) return;
           let hop: string;
           try { hop = new URL(req.url()).origin; } catch { return; }
-          if (!declared.has(hop) && !requested.has(hop)) refuse(`This page redirects to ${hop}, which this tour didn't declare. Declare it in sites, or use reference text.`, hop);
+          if (declared.has(hop) || requested.has(hop)) return;
+          if (!input.reach) { refuse(`This page redirects to ${hop}, which this tour didn't declare. Declare it in sites, or use reference text.`, hop); return; }
+          // A look at a link: this hop is asked about like any contact. Its connection waits for the answer at the proxy.
+          void request("contact", hop, contactOf(req)).then(admitted => { if (admitted) requested.add(hop); }, error => {
+            blocked ??= error instanceof TourCaptureFailure ? error.failure : { message: "A destination could not be approved safely.", guidance: "Review site consent and the chat's sandbox, then retry." };
+          });
         });
         await context.route("**/*", async route => {
           const entered = generation;
@@ -186,9 +204,13 @@ async function run(input: TourAttemptInput): Promise<void> {
             // and any write to a Sova copy still fail the attempt.
             else if (req.method() !== "GET" && !localDraftOnly && !req.isNavigationRequest() && !sovaCopy) { quietAborts++; return await route.abort("blockedbyclient"); }
             else if (req.method() !== "GET" || localDraftOnly) { refuse(localDraftOnly ? "An opening or draft action tried to contact the application; a GET is not assumed to be a safe mutation." : `Blocked ${req.method()} request during read-only recording.`, url.origin); return await route.abort("blockedbyclient"); }
-            await request("contact", url.origin);
+            const about = contactOf(req);
+            if (!await request("contact", url.origin, about)) return await route.abort("blockedbyclient");
             requested.add(url.origin);
-            await addresses.beforeContact(url.origin);
+            // A part of a link's page whose address turns out private is left out, like any other part it can't load.
+            if (input.reach && !declared.has(url.origin) && !(about.navigation && about.mainFrame)) {
+              try { await addresses.beforeContact(url.origin); } catch { return await route.abort("blockedbyclient"); }
+            } else await addresses.beforeContact(url.origin);
             plumbing = true;
             await route.continue();
           } catch (error) {
@@ -215,7 +237,7 @@ async function run(input: TourAttemptInput): Promise<void> {
           if (path === "/ws/chat") { refuse("Blocked a live chat connection (/ws/chat): this page opens a live chat; record it as reference text or choose an idle view."); socket.close(); return; }
           if (localDraftOnly) { refuse(`An opening or draft action opened a live connection (${path}); a connection is not assumed to be read-only.`, origin); socket.close(); return; }
           try {
-            await request("contact", origin);
+            if (!await request("contact", origin, { resourceType: "websocket", navigation: false, mainFrame: false })) { socket.close(); return; }
             requested.add(origin);
             await addresses.beforeContact(origin);
             // An origin that answered as a Sova gets no socket: only a verified managed copy's own feed opens.
@@ -290,6 +312,7 @@ async function run(input: TourAttemptInput): Promise<void> {
           responseChecks.add(check);
           void check.finally(() => responseChecks.delete(check));
         });
+        const pageResponses = input.capture && size === "desktop" ? watchPageResponses(context) : undefined;
         const page = await context.newPage();
         page.setDefaultTimeout(6000);
         let pageErrors = 0;
@@ -463,20 +486,35 @@ async function run(input: TourAttemptInput): Promise<void> {
             await page.waitForFunction(({ w, h }) => innerWidth === w && innerHeight === h && document.readyState !== "loading" && !!document.body?.getClientRects().length, viewport, { timeout: 6000 });
             await page.waitForLoadState("networkidle", { timeout: 6000 }).catch(error => { assertSafe(); throw error; });
             assertSafe();
-            if ((view.actions[size] ?? []).length && await signedOutHere()) { await reSignIn(); continue attempt; }
-            for (const [ai, action] of (view.actions[size] ?? []).entries()) {
+            // A walk (a design coordinator's browser): its own list stands in for the script's, click included.
+            const steps_ = (input.walk?.[size] ?? view.actions[size] ?? []) as (TourAction | TourWalkAction)[];
+            if (steps_.length && await signedOutHere()) { await reSignIn(); continue attempt; }
+            for (const [ai, action] of steps_.entries()) {
               location = { stepId: step.id, viewId: view.id, size, action: ai, ...("target" in action ? { target: action.target } : {}) };
               await request("checkpoint");
               if (action.op === "scroll") await page.evaluate(({ x, y }) => scrollBy({ left: x, top: y, behavior: "instant" }), action);
               else await targeted(async () => {
                 const loc = await uniqueTourTarget(page, action.target);
                 if (action.op === "reveal") { await revealTourTarget(loc, viewport); return; }
+                if (action.op === "click") {
+                  // Only a walk clicks, and a click never submits a form. Requests stay under the route above: GETs
+                  // pass the live checks, a write the page sends is stopped, a form's navigation fails the attempt.
+                  if (!input.walk) throw new Error("A click is only allowed while walking to a screen.");
+                  const submits = await loc.evaluate(el => { const c = el.closest("button,input"); if (!c) return false; const kind = (c as HTMLButtonElement | HTMLInputElement).type; return !!(c as HTMLButtonElement | HTMLInputElement).form && ["submit", "image"].includes(kind); });
+                  if (submits) throw new TourCaptureFailure({ message: "This control submits a form, and this browser never submits forms.", guidance: "Walk to the screen by links or routes, or tell the user this screen needs them." });
+                  await loc.click();
+                  await page.waitForLoadState("networkidle", { timeout: 6000 }).catch(error => { assertSafe(); throw error; });
+                  assertSafe();
+                  return;
+                }
                 if (action.op === "open") {
+                  if (input.walk) throw new Error("A walk never opens a draft action.");
                   localDraftOnly = true;
                   const safe = await loc.evaluate(el => el.tagName === "SUMMARY" && el.parentElement?.tagName === "DETAILS" || el.tagName === "BUTTON" && el.getAttribute("type") === "button" && el.hasAttribute("aria-expanded") && !!el.getAttribute("aria-controls") && !!document.getElementById(el.getAttribute("aria-controls")!));
                   if (!safe) throw new Error("Only native details or explicit disclosure buttons with a controlled region can be opened. Use a reference view for other actions.");
                   await loc.click();
                 } else if (action.op === "fill") {
+                  if (input.walk) throw new Error("A walk never types into a page.");
                   localDraftOnly = true;
                   // Local draft only: native setter without input/change events cannot trigger an
                   // autosave handler. It is not represented as an application-accepted edit.
@@ -499,6 +537,7 @@ async function run(input: TourAttemptInput): Promise<void> {
               completed++; send({ type: "progress", progress: { completed, total, stepId: step.id, viewId: view.id, size } });
               break;
             }
+            if (input.walk) lookPages.get(si)![size] = await lookHere();
             await page.evaluate(() => document.fonts.ready);
             // Password and username boxes are always blacked out, whatever the script names (BRIEF q7).
             for (const box of await loginBoxes(page, [signInConf?.username, signInConf?.account])) await page.evaluate(b => { const mask = document.createElement("div"); Object.assign(mask.style, { position: "fixed", left: `${b.x}px`, top: `${b.y}px`, width: `${b.width}px`, height: `${b.height}px`, background: "#242a30", zIndex: "2147483647", pointerEvents: "none" }); document.documentElement.append(mask); }, box);
@@ -529,6 +568,12 @@ async function run(input: TourAttemptInput): Promise<void> {
               assertSafe(); save(image, bytes);
               steps[si]!.views[vi]!.captures[size] = { image, marks };
               if (pageErrors || bytes.length < 5000) suspicious.push(image);
+              if (pageResponses) {
+                location = { stepId: step.id, viewId: view.id, size };
+                const report = await capturePage({ page, browser, responses: pageResponses, viewportHeight: viewport.h, assertSafe, send: (key, file) => send({ type: "capture-file", key, base64: Buffer.from(file).toString("base64") }) });
+                await request("checkpoint"); await Promise.all(responseChecks); assertSafe();
+                send({ type: "capture", report });
+              }
             }
             completed++; send({ type: "progress", progress: { completed, total, stepId: step.id, viewId: view.id, size } });
             break;
@@ -559,8 +604,8 @@ async function run(input: TourAttemptInput): Promise<void> {
       } finally { await context.close(); }
     }
     if (groups.size) { location = {}; throw new TourCaptureFailure(report()); }
-    const contactSheets = input.dryRun ? [] : await createTourContactSheets(browser, steps, assets, save);
-    send({ type: "result", steps, contactSheets, suspicious, publicOrigins: addresses.attestations(), sovaServer, quietAborts, ...(signInConf ? { signedIn } : {}), ...(input.look ? { look: { ...(lookSignIn ? { signInPage: lookSignIn } : {}), pages: [...lookPages.values()] } } : {}) });
+    const contactSheets = input.dryRun || input.walk ? [] : await createTourContactSheets(browser, steps, assets, save);
+    send({ type: "result", steps, contactSheets, suspicious, publicOrigins: addresses.attestations(), sovaServer, quietAborts, ...(signInConf ? { signedIn } : {}), ...(input.look || input.walk ? { look: { ...(lookSignIn ? { signInPage: lookSignIn } : {}), pages: [...lookPages.values()] } } : {}) });
   } catch (error) {
     const failure: TourFailure = error instanceof TourCaptureFailure ? error.failure : { message: error instanceof Error ? error.message.slice(0, 1800) : "Recording failed.", guidance: "Review this step's semantic targets, allowed actions, site consent and sandbox. Repair the script or use reference text, then run the dry run again." };
     // A sign-in failure is the sign-in's, never the view that led to it: it names the size alone.

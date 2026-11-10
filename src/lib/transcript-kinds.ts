@@ -35,6 +35,7 @@ import { CARD_TOOL, normalizeCardDetails as normalizeRaisedCard, type CardInfo }
 import { checkCardData, dataCardHeight } from "../../shared/view-cards";
 import { normalizeShowChangesDetails, SHOW_CHANGES_TOOL } from "../../pi-config/extensions/show-changes/details";
 import { normalizeTourCardDetails, TOUR_TOOLS } from "../../shared/tour";
+import { DESIGN_TOOL, normalizeDesignCard } from "./design-rows";
 import { isSettingsToolDetails } from "../../shared/project-settings";
 import { parseWakeNudge } from "../../shared/wake";
 import { parseTopicBatch } from "../../shared/topic-message";
@@ -70,6 +71,8 @@ export interface KindContext {
   hasUserRow(): boolean;
   /** A tour call's card, once its rows say so (lib/tour-rows). */
   tourCard(item: TranscriptItem): unknown;
+  /** A design call's card, once its rows say so (lib/design-rows). */
+  designCard?(item: TranscriptItem): unknown;
   /** A show_changes call's checked details, once it succeeded. */
   showChanges(callId: string | undefined): unknown;
   /** An offer call's card, once it succeeded. */
@@ -130,10 +133,12 @@ export interface LiveKindContext {
   tool(callId: string): LiveTool | undefined;
   /** The run's newest finished call for a tour: only it draws the tour's card (§app.tours/one-card). */
   tourCall(tourId: string): string | undefined;
+  /** The run's newest finished call for a design run: only it draws the card, as with a tour. */
+  designCall?(runId: string): string | undefined;
 }
 
 /** The live views (components/LiveKinds.tsx `LIVE_VIEWS`), by name. */
-export type LiveView = "wake" | "topic" | "brief" | "user" | "assistant-text" | "thinking" | "align" | "info" | "tour" | "show-changes" | "offer" | "card" | "settings" | "tool";
+export type LiveView = "wake" | "topic" | "brief" | "user" | "assistant-text" | "thinking" | "align" | "info" | "tour" | "design" | "show-changes" | "offer" | "card" | "settings" | "tool";
 
 /** What a live view gets: the piece of the run it draws, and the value its kind's live match gave. */
 export interface LiveKindViewProps<V = unknown> {
@@ -148,7 +153,7 @@ export interface LiveForm {
 }
 
 /** The views drawn in the page (components/TranscriptKind.tsx `PAGE_VIEWS`), by name. */
-export type PageView = "wake" | "topic" | "compaction" | "info" | "shell" | "worktree-merge" | "settings" | "offer" | "show-changes" | "tour" | "owner-request" | "handoff-run" | "mcp-note" | "overseer-answer" | "profile-mark" | "brief" | "explain" | "team-report" | "report" | "baton" | "user" | "assistant-text" | "thinking" | "tool-result" | "tool" | "align-report" | "align";
+export type PageView = "wake" | "topic" | "compaction" | "info" | "shell" | "worktree-merge" | "settings" | "offer" | "show-changes" | "tour" | "design" | "owner-request" | "handoff-run" | "mcp-note" | "overseer-answer" | "profile-mark" | "brief" | "explain" | "team-report" | "report" | "baton" | "user" | "assistant-text" | "thinking" | "tool-result" | "tool" | "align-report" | "align";
 
 /**
  * A kind's view: one of Sova's page views by name (drawn at once, as before, in the page's own
@@ -307,6 +312,23 @@ export const TRANSCRIPT_KINDS: readonly TranscriptKind[] = [
         return d && input.kind === "call" && ctx.tourCall(d.tourId) === input.block.id && d;
       },
       view: "tour",
+    },
+  }),
+  kind({
+    id: "design",
+    outsideWork: true,
+    estimate: () => "var(--design-card-h)",
+    match: (it, ctx) => isCall(it) && ctx.designCard?.(it),
+    host: "page",
+    placement: "anchored",
+    view: { page: "design" },
+    // Only the run's newest call for a design run draws the card, as with a tour.
+    live: {
+      match: (input, ctx) => {
+        const d = normalizeDesignCard(doneCall(input, ctx, named(DESIGN_TOOL)));
+        return d && input.kind === "call" && ctx.designCall?.(d.runId) === input.block.id && d;
+      },
+      view: "design",
     },
   }),
   // A show_changes result whose details check out reads as a card that opens the changes viewer

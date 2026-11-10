@@ -83,7 +83,12 @@ export type SovaEvent =
   | { type: "tool.update"; callId: string; output: string; images: string[]; details?: unknown; parentCallId?: string }
   | { type: "tool.end"; callId: string; name?: string; args?: unknown; isError: boolean; output: string; images: string[]; details?: unknown; parentCallId?: string }
   /** A retry after a provider error, or a compaction. `wrote` (compaction end only): one was written. */
-  | { type: "activity"; what: "retry" | "compaction"; phase: "start" | "end"; wrote?: boolean };
+  | { type: "activity"; what: "retry" | "compaction"; phase: "start" | "end"; wrote?: boolean }
+  /** A design's page, an appended slice at character `at` (about 3 a second). A pane not holding exactly `at`
+      characters reads the page so far from the design's live route. Sent to the parent chat's panes only. */
+  | { type: "design.live"; label: string; version: number; at: number; text: string; chars: number }
+  /** The chat's designs, whole, when anything about them changed (coalesced): a DesignChatView (shared/design.ts). */
+  | { type: "design.state"; state: unknown };
 
 /**
  * What a row's entry says beyond the row, on the entry's first row only (where EntryMeta is today);

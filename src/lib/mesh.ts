@@ -291,12 +291,32 @@ export function sessionHrefOn(host: string | null, path: string): string {
   return `#/s/${encodeURIComponent(path)}${host ? `?host=${encodeURIComponent(host)}` : ""}`;
 }
 
+/** The parameters a session route may carry after its path: the peer holding it, and what its
+    Lookbook has open (lib/design-history), each at most once. Anything else names no session. */
+const SESSION_ROUTE_PARAMS = new Set(["host", "design"]);
+
+/** A session hash's parts: its encoded path and its raw parameters, or null when it isn't one. */
+export function sessionHashParts(hash: string): { path: string; params: Map<string, string> } | null {
+  const m = /^#\/s\/([^?]+)(?:\?(.+))?$/.exec(hash);
+  if (!m) return null;
+  const params = new Map<string, string>();
+  for (const pair of m[2] ? m[2].split("&") : []) {
+    const eq = pair.indexOf("=");
+    const k = eq < 0 ? pair : pair.slice(0, eq);
+    const v = eq < 0 ? "" : pair.slice(eq + 1);
+    if (!SESSION_ROUTE_PARAMS.has(k) || !v || params.has(k)) return null;
+    params.set(k, v);
+  }
+  return { path: m[1]!, params };
+}
+
 /** The session a hash names and the host it lives on, or null when it names none. */
 export function sessionRouteFromHash(hash: string): { host: string | null; path: string } | null {
-  const m = /^#\/s\/([^?]+)(?:\?host=([^&]+))?$/.exec(hash);
-  if (!m) return null;
+  const parts = sessionHashParts(hash);
+  if (!parts) return null;
   try {
-    return { host: m[2] ? decodeURIComponent(m[2]) : null, path: decodeURIComponent(m[1]!) };
+    const host = parts.params.get("host");
+    return { host: host ? decodeURIComponent(host) : null, path: decodeURIComponent(parts.path) };
   } catch {
     return null;
   }

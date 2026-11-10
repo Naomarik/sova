@@ -397,7 +397,7 @@ for (const width of [390, 1440]) {
     const page = await open(width, "light", { view: READ_OR_NOT, files: SKILL_FILES, errors });
     try {
       const tabs = await page.locator("#session-pane .session-tabs [role=tab]").allInnerTexts();
-      assert.deepEqual(tabs.map((t) => t.trim()), ["Session", "Timeline", "Agents", "Usage", "Time Spent", "Context", "Sharing", "Explain"]);
+      assert.deepEqual(tabs.map((t) => t.trim()), ["Session", "Timeline", "Agents", "Usage", "Time Spent", "Context", "Sharing", "Gallery"]);
       assert.equal(await page.locator("#session-tab-skills").count(), 0);
 
       // The group's own row is as it was: its count, and every skill in its size.

@@ -132,7 +132,7 @@ describe("protocol versions", () => {
     assert.equal(protoCompatible(Number.NaN, 0, own), false);
   });
   test("this build speaks to itself, and to a stage-2 (proto 1) and stage-3 (proto 2) peer either way", () => {
-    assert.equal(CHAT_WIRE_PROTO, 3);
+    assert.equal(CHAT_WIRE_PROTO, 4);
     // a stage-3 runtime or server: it reads this build's frames, and this build reads its own
     assert.equal(protoCompatible(2, 1), true);
     assert.equal(protoCompatible(CHAT_WIRE_PROTO, CHAT_WIRE_MIN_PROTO, { proto: 2, minProto: 1 }), true);

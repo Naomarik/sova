@@ -5,6 +5,7 @@ import { parsePi, parsePiBranch } from "./harness/pi/reader";
 import { cutTail, pullFields } from "./tail-hello";
 import type { ReplyTimings } from "./reply-facts";
 import { rowsOf } from "./transcript";
+import { withoutDesignPages } from "./design/transcript";
 import { rowFor, withRows } from "./wire-rows";
 import { entryOfRow } from "../shared/row-counts";
 import type { ContextTally } from "./worker-context";
@@ -18,7 +19,7 @@ const REPLY_HEAD = new Set<string>(["thinking", "assistant-text", "tool-call"]);
 export type Normalize = (text: string, part: "snapshot" | "append") => TranscriptItem[];
 
 /** pi sessions: the active branch of the file, the new rows as they land (a header line has none). */
-const piNormalize: Normalize = (text, part) => rowsOf(part === "snapshot" ? parsePiBranch(text).branch : parsePi(text).entries);
+const piNormalize: Normalize = (text, part) => withoutDesignPages(rowsOf(part === "snapshot" ? parsePiBranch(text).branch : parsePi(text).entries));
 
 /**
  * Read-only tail of one session JSONL file for one client. Opens the file with "r" only.

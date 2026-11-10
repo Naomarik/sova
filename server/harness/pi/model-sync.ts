@@ -165,6 +165,12 @@ export function startModelCheck(): void {
   modelCheck().start();
 }
 
+/** The Ollama Cloud models the check found retired, as refs: they can only fail, so nothing offers them. */
+export function retiredModelRefs(): Set<string> {
+  const models = readCache(agentRoot())?.providers[CHECKED_PROVIDER]?.models ?? {};
+  return new Set(Object.entries(models).filter(([, m]) => m?.retired).map(([id]) => `${CHECKED_PROVIDER}/${id}`));
+}
+
 /** Settings → Models' line (§app.model-levels/settings-line): the last check, what's checking, the New models. */
 export function modelCheckStatus(now = Date.now()): ModelCheckStatus {
   const c = modelCheck();

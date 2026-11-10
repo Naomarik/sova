@@ -118,6 +118,7 @@ import { JOB_CARDS_ENV } from "./background-jobs";
 /** wake-nudge.ts of this code copy: a worker with no wake_nudge of its own still delivers its jobs' end cards (cards only). */
 const JOB_CARDS_EXTENSION = fileURLToPath(new URL("../pi-config/extensions/wake-nudge.ts", import.meta.url));
 import { TOUR_TOOLS } from "../shared/tour";
+import { DESIGN_TOOLS } from "./design/tools";
 import { tourTools } from "./tours/tools";
 import { excludedTools, GRANT_TOOLS, keyOf, KNOWN_REMOVABLE_TOOLS, parseMine, searchToolsFor, singletonRaceText, type ProfileEntryData, type SessionSentData } from "../shared/profiles";
 import { loadoutOverrides, type LoadoutEntryData, type LoadoutState } from "./session-loadout";
@@ -860,6 +861,8 @@ export function workerExtensionFactories(w: Pick<WorkerSpec, "kind"> & { builtin
   // Subfolder instruction files load for every kind whose loadout has a file tool (server/deeper-context.ts).
   // A subfolder's skills too, for one that can also read a skill's file (§chat.subfolder-skills/offering).
   const files = !w.builtins || w.builtins.some((t) => LOADING_TOOLS.has(t)) ? [deeperContextExtension({ skills: !w.builtins || w.builtins.includes("read") || w.builtins.includes("bash") })] : [];
+  // A design session or coordinator has only the tools the server serves it: every one it was declared.
+  if ((w.kind === "design" || w.kind === "design-coordinator" || w.kind === "design-describer") && servedDecls) return [SHELL_GUARD_FACTORY, servedToolsExtension(`sova-${w.kind}`, servedSpecs(path, () => true))];
   // A hidden chat keeps no job: nothing would deliver its card or stop it.
   if (w.kind !== "worker") return [SHELL_GUARD_FACTORY, ...files];
   // Only what the chat named: a worker's list is fixed at its start and kept when it resumes (§app.mcp/who-gets).
@@ -2079,7 +2082,7 @@ class ChatSession {
     // runtime (§app.server-runtime/quirks): the one place it is installed.
     this.host.useSlicedProviderReads();
     this.streamGuardOff?.();
-    this.streamGuardOff = attachStreamGuard(harness, () => capsFor(this.special), {
+    this.streamGuardOff = attachStreamGuard(harness, () => capsFor(this.workerSpec?.kind === "design" ? "design" : this.special), {
       onRunStart: () => (this.lastStreamTrip = null),
       onTrip: (trip) => {
         this.lastStreamTrip = trip;
@@ -3031,7 +3034,7 @@ class ChatSession {
   private syncVisCheckTool(): void {
     if (this.disposed || this.harness.isRunning()) return;
     const registered = this.harness.registeredTools();
-    const names = [VIS_CHECK_TOOL, ...TOUR_TOOLS].filter(n => registered.includes(n));
+    const names = [VIS_CHECK_TOOL, ...TOUR_TOOLS, ...DESIGN_TOOLS].filter(n => registered.includes(n));
     const wanted = names.filter(n => n === VIS_CHECK_TOOL ? this.visToolsOn() : this.modeState.minorModes.includes("vis"));
     const current = this.harness.activeTools();
     const next = [...current.filter(n => !names.includes(n) || wanted.includes(n)), ...wanted.filter(n => !current.includes(n))];
@@ -5032,9 +5035,11 @@ async function openLocked(path: string, onDisposed: () => void, onStep: (step: s
               projectVerbsLoad(path),
               // queue_push: every ordinary session can answer on a topic (§chat.topics/push).
               servedDecls
-                ? servedToolsExtension("sova-topics", servedSpecs(path, (n) => n !== "project_verbs" && n !== QUEUE_OPEN_TOOL && n !== OFFER_TOOL && n !== CARD_TOOL && n !== CREATE_SETTINGS_TOOL && !TOUR_TOOLS.has(n)))
+                ? servedToolsExtension("sova-topics", servedSpecs(path, (n) => n !== "project_verbs" && n !== QUEUE_OPEN_TOOL && n !== OFFER_TOOL && n !== CARD_TOOL && n !== CREATE_SETTINGS_TOOL && !TOUR_TOOLS.has(n) && !DESIGN_TOOLS.has(n)))
                 : queuePushExtension({ sessionId: () => read.id, title: () => titleOf(read.branch()) }),
               servedVisToolsExtension("sova-tours", servedDecls ? servedSpecs(path, n => TOUR_TOOLS.has(n)) : tourTools(read.id, path), () => visHost.chat ? visHost.chat.modeState.minorModes.includes("vis") : undefined),
+              // lookbook: active with explicit vis, as the tour tools are, in vis's same one tool-set change.
+              ...(servedDecls ? [servedVisToolsExtension("sova-lookbook", servedSpecs(path, (n) => DESIGN_TOOLS.has(n)), () => visHost.chat ? visHost.chat.modeState.minorModes.includes("vis") : undefined)] : []),
               // sova_settings: a Create chat's settings cards (§chat.create-mode/settings-cards), active only in Create.
               servedVisToolsExtension("sova-create-settings", servedDecls ? servedSpecs(path, (n) => n === CREATE_SETTINGS_TOOL) : [createSettingsTool({ sessionId: read.id, mode: () => visHost.chat?.modeState.mode, cwd: () => cwd })], () => visHost.chat?.modeState.mode === "create"),
               // offer: this project's offers, from the session's snapshot (§chat.offers/tool). Most chats have none: no extension.

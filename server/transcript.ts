@@ -14,6 +14,7 @@ import {
   type TranscriptItem,
 } from "../shared/protocol";
 import type { HEntry } from "../shared/harness";
+import { DESIGN_TOOL, isDesignCardDetails } from "../shared/design";
 import { normalizeTourCardDetails, redactTourToolArgs, TOUR_TOOLS, tourCardArgs } from "../shared/tour";
 import { joinedText, rawOf, toHEntry, typedText } from "./harness/pi/reader";
 import { metaOf, withoutSignatures } from "./harness/pi/wire";
@@ -242,6 +243,10 @@ function slimTool(it: TranscriptItem, h: HEntry | undefined): void {
     } else tool.output = "This tour result is unavailable. Open the tool report to check what happened.";
     delete it.text;
     delete it.images;
+  } else if (name === DESIGN_TOOL && !r?.isError && isDesignCardDetails(details)) {
+    // Only its reference to the card: a `read` of a page is a lazy row like any other.
+    tool.output = output;
+    tool.details = details;
   } else if (EAGER_TOOLS.has(name)) {
     tool.output = output;
     if (details !== undefined) tool.details = details;

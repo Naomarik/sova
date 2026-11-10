@@ -365,7 +365,7 @@ export interface AlignQuestionInput {
 	visual?: AlignVisual;
 }
 
-function questionInput(value: unknown, where: string, visuals = false): AlignQuestionInput {
+export function questionInput(value: unknown, where: string, visuals = false): AlignQuestionInput {
 	need(isRecord(value), `${where} must be an object {topic, ask, context?, options?, recommendation${visuals ? ", visual?" : ""}}`);
 	const v = value as Record<string, unknown>;
 	onlyKeys(v, ["topic", "ask", "context", "options", "recommendation", ...(visuals ? ["visual"] : [])], where);

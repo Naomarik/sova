@@ -13,6 +13,8 @@ import { ShowChangesCard } from "./ChangesViewer";
 import type { ShowChangesDetails } from "../../pi-config/extensions/show-changes/details";
 import { TourCard } from "./TourCard";
 import type { TourCardDetails } from "../../shared/tour";
+import type { DesignCardDetails } from "../lib/design-rows";
+import { DesignCard } from "./DesignCard";
 import { OwnerRequestNote } from "./OwnerRequestNote";
 import { profileIconName } from "../lib/profiles";
 import { useThreadRows } from "./thread-rows";
@@ -47,6 +49,7 @@ export const BUILTIN_VIEWS = {
   offer: (props: KindViewProps<OfferCard>) => <OfferCardView card={props.value} />,
   "show-changes": (props: KindViewProps<ShowChangesDetails>) => <ShowChangesCard details={props.value} />,
   tour: (props: KindViewProps<TourCardDetails>) => <TourCard details={props.value} />,
+  design: (props: KindViewProps<DesignCardDetails>) => <DesignCard runId={props.value.runId} />,
   // An owner request a Start Chat put at the top (§app.project-assistant/request-chat).
   "owner-request": (props: KindViewProps<NonNullable<TranscriptItem["ownerRequest"]>>) => <OwnerRequestNote card={props.value} />,
   "handoff-run": (props: KindViewProps<HandoffRunInfo>) => <HandoffRunRow run={props.value} text={props.item.text ?? ""} />,

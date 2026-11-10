@@ -379,6 +379,8 @@ export function classifyRequest(method: string, pathname: string): Classified {
   // Settings → Extensions: every entry names its folder and commands, and a change is your own page's. GET /api/extensions itself stays a read.
   if (path.startsWith("/api/extensions/")) return { need: "full", rule: "full:extensions-loader" };
   if (path === "/api/tours" || path.startsWith("/api/tours/")) return tourRequest(method, path);
+  // A chat's designs stay on the host that owns the chat.
+  if (path === "/api/design" || path.startsWith("/api/design/")) return { need: "full", rule: "full:design" };
   const read = method === "GET" || method === "HEAD";
   if (PROJECT_DRAFT_SPECS_RE.test(path)) return { need: "full", rule: "full:project-draft-specs" };
   let m = SESSION_RE.exec(path);

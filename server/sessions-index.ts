@@ -47,6 +47,7 @@ import { removeMemory } from "./memory/store";
 import { removeSessionLabels } from "./message-labels";
 import { removeSessionTimeSpent } from "./time-spent";
 import { removeSessionTours } from "./tours/lifecycle";
+import { removeDesignFiles } from "./design/store";
 import { byActivity } from "../src/lib/summary-diff";
 import { queueChatRole } from "../shared/merge-queue";
 import { opTrack } from "./stall-recorder";
@@ -1664,6 +1665,9 @@ function sessionArchived(id: string): void {
 async function cleanDeletedTours(id: string): Promise<void> {
   try { await removeSessionTours(id); }
   catch { console.error("[sessions] Deleted chat tour cleanup is pending; a later sweep will retry."); }
+  // A deleted chat's designs go with it, an archived chat's never do.
+  try { removeDesignFiles(id); }
+  catch (err) { console.error("[sessions] Deleted chat design cleanup failed", err); }
 }
 
 export const SUBAGENTS_WORKING = "Subagents are working in this session. Stop them or wait for them to finish before archiving.";

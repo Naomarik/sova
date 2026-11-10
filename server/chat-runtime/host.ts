@@ -71,8 +71,9 @@ import type { ControlFrame, HelloFrame, Link } from "./link";
 import { type CallCtx, failureReply, runMethod } from "./methods";
 import { mirrorOf } from "./mirror";
 import { snapshot as llmSnapshot } from "../../pi-config/extensions/llm-inflight/tracker.ts";
+import { DesignLive } from "./design-live";
 import { WorkerFeed } from "./worker-feed";
-import { LinkWorkerHost, WORKER_PROTO } from "./worker-port";
+import { LinkWorkerHost, DESIGN_PROTO, WORKER_PROTO } from "./worker-port";
 
 /** The provider and model runtime warm-up, once per process (main.ts awaits it before "ready"). */
 export { warmChatRuntime } from "../chat-manager";
@@ -210,6 +211,8 @@ export class ChatRuntimeHost {
   private readonly recorder: InflightRecorder;
   /** A worker chat's feed (proto 3), else null. */
   private feed: WorkerFeed | null = null;
+  /** A design session's page going out as it is written (proto 4), else null. */
+  private designLive: DesignLive | null = null;
   /** This chat's own workers, started and driven through the server (§app.chat-processes/workers). */
   private readonly workers = new LinkWorkerHost(() => this.settings.serverToolWaitMs);
   private readonly now: () => number;
@@ -261,6 +264,7 @@ export class ChatRuntimeHost {
     this.link = link;
     this.epoch = control.epoch;
     this.settings = control.settings;
+    this.designLive?.resync();
     const life = `${control.serverPid}:${control.serverStartedAt}`;
     if (this.serverLife !== null && this.serverLife !== life) {
       // The last server's reload (asked for, running or failed) ends with it: this one sees older
@@ -460,6 +464,10 @@ export class ChatRuntimeHost {
       if (f.worker && !this.feed) {
         this.feed = new WorkerFeed((frame) => this.sendFeed(frame), { onSettled: () => this.pokeSoon() });
         this.feed.attach(chat.harness, chat.sendKeys);
+      }
+      if (f.worker?.kind === "design" && !this.designLive) {
+        this.designLive = new DesignLive((frame) => this.sendDesignLive(frame));
+        this.designLive.attach(chat.harness);
       }
       this.setState("open");
       this.quietSince = this.now();
@@ -974,6 +982,12 @@ export class ChatRuntimeHost {
   private sendFeed(f: { cursor: { proc: string; seq: number }; event: unknown }): void {
     const link = this.link;
     if (link?.isOpen && link.compatible && link.peerProto >= WORKER_PROTO) link.send({ t: "feed", cursor: f.cursor, event: f.event });
+  }
+
+  /** A design session's page slice, to a server that speaks proto 4 (an older one draws the page when it is finished). */
+  private sendDesignLive(f: { thinking?: true; gen: number; at: number; text: string }): void {
+    const link = this.link;
+    if (link?.isOpen && link.compatible && link.peerProto >= DESIGN_PROTO) link.send({ t: "design.live", ...(f.thinking ? { thinking: true as const } : {}), gen: f.gen, at: f.at, text: f.text });
   }
 
   // ---- code ---------------------------------------------------------------------------------------

@@ -12,6 +12,7 @@ import { isDirectLocal } from "./compression";
 import { DEFAULT_SERVE_PORT } from "./mesh/front-door";
 import { localRequest } from "./mesh/proxy";
 import { judgedPath } from "./mesh/paths";
+import { liveLinkOpens } from "./design/live-link";
 import { TOUR_RECORDER_HEADER } from "./tours/runner-header";
 
 // The main listener's gate (§app.access/token, §app.access/gate): one per-install token, carried
@@ -435,6 +436,8 @@ function verdict(a: Asked, opts: { exempt: boolean }): 401 | 403 | null {
   const host = a.header("host");
   const name = host ? hostnameOf(host) : null;
   if (!host || !name || !hostAllowed(name)) return 403;
+  // A design's live page: its sandboxed frame has no origin of its own and no cookie, and the link is the credential.
+  if (opts.exempt && a.path !== null && liveLinkOpens(a.method, a.path)) return null;
   if (crossSite(a)) {
     // A link from another site may open the shell, which holds no data and shows the unlock
     // screen; nothing else is reachable that way.

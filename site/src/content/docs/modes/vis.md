@@ -65,6 +65,14 @@ the edition you reviewed; a changed tour needs a new link. Reviewed tours can al
 organization hand-off conversations without granting participants access to the recorded app.
 Ask About This Step fills a draft on their turn, never sends it.
 
+## Lookbooks
+
+Ask a chat with vis on for a Lookbook, and hidden sessions on several models each build one page of
+your choosing, drawn live side by side on a card in the chat. It opens only when you ask for one by
+name or in words that plainly mean it; an ordinary ask to mock something up gets a quick drawing.
+The vis catalogue's `lookbook` entry teaches the agent its part, with Sova's hosted `lookbook` tool,
+never a drawing fence. See [Lookbook](/docs/modes/vis/lookbook/).
+
 ## Reading a drawing
 
 Each drawing has a title (or its kind's name), the drawing itself, its numbered notes and its
@@ -146,7 +154,7 @@ it. Both tools
 come and go with the mode, and a chat with align on that started with Visuals has them too. The
 `tour` entry instead returns its recording workflow, with Sova's hosted `record_tour` and
 `show_tour` tools. Tour tools require vis mode on; align with Visuals alone keeps drawing tools
-only. Hand-off conversations receive only scoped presentation access, independent of their drawing
+only. The `lookbook` entry and its `lookbook` tool work the same way, with vis on only. Hand-off conversations receive only scoped presentation access, independent of their drawing
 switches.
 
 Turning vis on in the middle of a chat reaches the agent from its next message. Workers don't get

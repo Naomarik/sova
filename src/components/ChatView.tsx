@@ -146,6 +146,8 @@ import { jumpToEntry, jumpWhenArrived, landExplainJump, transcriptRoot } from ".
 import { ownInputTotal, keptBehind, lastInput as lastInputOf, newestOnly, newRows, withHave } from "../lib/older-rows";
 import { createOlderRows } from "../lib/older-rows-view";
 import { liveTourCalls } from "../lib/tour-rows";
+import { liveDesignCalls } from "../lib/design-rows";
+import { designEvent, isDesignEvent } from "../lib/design-store";
 import { alignRowFromDetails, foldAlignRows, isOpenDoc, openCount, recommendedOption, type AlignEntry } from "../lib/align";
 import { triageKey, triageOf } from "../lib/align-triage";
 import { Composer, type ComposerReason } from "./Composer";
@@ -168,6 +170,7 @@ import type { ModeControl, ModeState } from "./ModeMenu";
 import type { ModelControl } from "./ModelMenu";
 import { ChangesSession } from "./ChangesViewer";
 import { TourSessionContext } from "./TourCard";
+import { DesignSessionContext } from "./DesignCard";
 import { HistoryItems, holdReaderAcrossSwap, LiveEntries, StartError, ThreadScroller, ToolSourceContext, TranscriptSkeleton, TurnError } from "./Thread";
 import { type ReplyPlace, useReplyAdditions } from "../lib/reply-place";
 import { SubagentLimitRow } from "./SubagentLimitRow";
@@ -381,6 +384,7 @@ export function ChatView(props: {
   const liveCardIds = createMemo(() => new Set([...cards().cards.keys()].filter((id) => !cards().newest.has(id))));
   /** Tours this run finished a call for: their settled card reads as a line until the refetch (§app.tours/one-card). */
   const liveTourIds = createMemo(() => new Set(liveTourCalls(live.tools).keys()));
+  const liveDesignRuns = createMemo(() => new Set(liveDesignCalls(live.tools).keys()));
   /** What a click on each card sent, until the turn it started settles (the card shows "Sent: b"). */
   const [cardSent, setCardSent] = createSignal<Record<string, string>>({});
   const jumpToCard = (card: OverseerCard) => {
@@ -1216,6 +1220,11 @@ export function ChatView(props: {
           setClaudeLogin(msg.login);
           break;
         case "event":
+          // A design's page and state go to its card and the Gallery, never into the turn's rows.
+          if (isDesignEvent(msg.event)) {
+            designEvent(props.path, hostOf(props.path), msg.event);
+            break;
+          }
           // Wire 1 or 2 alike (an older server never sends 2): in the contract's words, the entry a
           // message was written as inside its end.
           queue.push(...liveEventsOf(msg as V1EventFrame | V2EventFrame));
@@ -2624,6 +2633,7 @@ export function ChatView(props: {
             <CardJumpContext.Provider value={jumpToCardId}>
             <AlignAnswerContext.Provider value={alignAnswer}>
               <ChangesSession.Provider value={{ get path() { return props.path; }, get cwd() { return props.summary?.()?.cwd; } }}>
+              <DesignSessionContext.Provider value={{ path: () => props.path, host: () => hostOf(props.path) }}>
               <TourSessionContext.Provider value={{
                 sessionId: () => props.summary?.()?.id,
                 host: () => hostOf(props.path),
@@ -2650,6 +2660,7 @@ export function ChatView(props: {
                 liveAlignIds={liveAlignIds()}
                 liveCardIds={liveCardIds()}
                 liveTourIds={liveTourIds()}
+                liveDesignRuns={liveDesignRuns()}
               />
               <LiveEntries
                 live={live}
@@ -2675,6 +2686,7 @@ export function ChatView(props: {
               </OfferContext.Provider>
               </SettingsCardContext.Provider>
               </TourSessionContext.Provider>
+              </DesignSessionContext.Provider>
               </ChangesSession.Provider>
               <For each={commandRows()}>
                 {(row) => (

@@ -258,7 +258,16 @@
     "session.worktree.restore",
     "session.worktree.remove",
     "session.worktree.status",
-    "project.merge-queue.discard-branch"
+    "project.merge-queue.discard-branch",
+    "design.list",
+    "design.page",
+    "design.setup.set",
+    "design.start",
+    "design.message",
+    "design.refine",
+    "design.retry",
+    "design.delete",
+    "design.coordinator.message"
   ],
   "retired": [
     "settings.agents.get",

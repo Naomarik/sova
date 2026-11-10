@@ -636,6 +636,14 @@ alone (`VIS_TOOL_PARTS` in `minor.ts`; never listed as kinds): `tour-signin` (si
 `tour-sharing` (links, hand-offs, published editions). Each rule lives in one file. It is not a fence grammar;
 there is no executable `vis tour` fence and merely reading a message never records a browser.
 
+The catalogue's second tool-backed entry is the Lookbook: `vis_guide {kind:"lookbook"}` returns
+`vis/lookbook.md` alone (when the user has asked for one, how to start, read and pass on), and its parts
+`lookbook-setup`, `lookbook-directions` and `lookbook-passing-on` each alone. Sova serves the `lookbook`
+tool itself, only while vis is on, so a terminal has nothing to run. `design-guide.ts` (node builtins
+only) reads `vis/lookbook-directions.md` for the 20 styles (one `- Name: definition` line each, or the
+module refuses to load) and `design/` for a design session's system prompt (`session/`) and the
+coordinator's (`coordinator.md`).
+
 A host may add a session's own drawing kinds through the `sova:vis-own-kinds` hook (`VIS_OWN_KINDS_HOOK`
 in `minor.ts`, a `globalThis` function `(sessionId) => [{kind, guide, line}]`; Sova's server installs it
 from the session's card snapshot). At `session_start`, when it gives any, `vis_guide` is registered again

@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import { afterEach, describe, test } from "node:test";
 import { harnessEventOf } from "./harness/pi/session";
 import { attachStreamGuard, BATON_RUN_WALL_MS, capsFor, setStreamCapsForTest, type GuardClock, type StreamCaps, type StreamTrip } from "./stream-guard";
+import { DESIGN_SAFETY_CHARS } from "../shared/design";
 
 type Listener = (e: any) => void;
 
@@ -252,4 +253,28 @@ describe("stream guard", () => {
     assert.equal(h.aborts, 2);
     assert.equal(h.trips.length, 2);
   });
+});
+
+test("a design page has no size limit, only the safety stop an ordinary tool call has, on the reply too", () => {
+  const caps = capsFor("design");
+  assert.equal(DESIGN_SAFETY_CHARS, capsFor(null).toolArgChars, "the general stop, not a page budget");
+  assert.equal(caps.toolArgChars, DESIGN_SAFETY_CHARS);
+  // An ordinary chat has no stop on reply text; a design session's page can be written there.
+  assert.equal(capsFor(null).outputChars, null);
+  assert.equal(caps.outputChars, DESIGN_SAFETY_CHARS);
+  assert.equal(caps.thinkingChars, DESIGN_SAFETY_CHARS);
+});
+
+test("thinking with a budget of its own never spends the page's, and is stopped at its own", () => {
+  const h = harness({ outputChars: 100, thinkingChars: 300 });
+  h.start();
+  h.emit({ type: "message_start", message: { role: "assistant" } });
+  const think = (n: number) => h.emit({ type: "message_update", message: { role: "assistant" }, assistantMessageEvent: { type: "thinking_delta", contentIndex: 0, delta: "t".repeat(n) } });
+  const text = (n: number) => h.emit({ type: "message_update", message: { role: "assistant" }, assistantMessageEvent: { type: "text_delta", contentIndex: 1, delta: "x".repeat(n) } });
+  think(250);
+  text(90);
+  assert.equal(h.trips.length, 0, "250 of thinking left the page its 100");
+  think(60);
+  assert.equal(h.trips.length, 1);
+  assert.match(h.trips[0]!.detail, /thinking/);
 });

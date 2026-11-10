@@ -43,7 +43,6 @@
         { "id": "kimi-k3", "name": "Kimi K3 (Ollama Cloud)", "reasoning": true, "input": ["text", "image"], "contextWindow": 1048576 },
         { "id": "kimi-k2.7-code", "name": "Kimi K2.7 Code (Ollama Cloud)", "reasoning": true, "input": ["text", "image"], "contextWindow": 262144 },
         { "id": "deepseek-v4.1-flash", "reasoning": true, "input": ["text", "image"], "contextWindow": 1048576 },
-        { "id": "deepseek-v4-flash:0731", "reasoning": true, "contextWindow": 1048576 },
         { "id": "deepseek-v4-pro:0813", "reasoning": true, "contextWindow": 1048576 },
         { "id": "glm-5.3", "reasoning": true, "contextWindow": 1048576 },
         { "id": "glm-5.3-flash", "reasoning": true, "input": ["text", "image"], "contextWindow": 1048576 },
@@ -53,8 +52,7 @@
         { "id": "mistral-large-3:675b", "input": ["text", "image"], "contextWindow": 262144 },
         { "id": "nemotron-3-nano:30b", "reasoning": true, "contextWindow": 262144 },
         { "id": "nemotron-3-super", "reasoning": true, "contextWindow": 262144 },
-        { "id": "nemotron-3-ultra", "reasoning": true, "contextWindow": 262144 },
-        { "id": "qwen3.5:397b", "reasoning": true, "input": ["text", "image"], "contextWindow": 262144 }
+        { "id": "nemotron-3-ultra", "reasoning": true, "contextWindow": 262144 }
       ]
     }
   }

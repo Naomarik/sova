@@ -322,6 +322,13 @@ test("vis_guide: the shared rules then the kind's file, for the listed kinds onl
 	for (const bad of ["mermaid", "overview", "shared", "html-svg", ""]) assert.throws(() => visGuide(bad), /No vis kind/);
 });
 
+test("vis catalogue: a loose ask about comparing several takes gets the quick drawing and the one-line Lookbook hint", () => {
+	const line = VIS_INSTRUCTIONS.split("\n").find((l) => l.startsWith("- lookbook: "))!;
+	assert.ok(VIS_INSTRUCTIONS.includes("ask for a Lookbook"), "the always-loaded text says to offer it");
+	assert.ok(line.includes("For several models' takes side by side, ask for a Lookbook."), "the hint, word for word, on the lookbook line");
+	assert.ok(line.length <= 600, `the always-loaded line stays short: ${line.length} chars`);
+});
+
 test("vis_guide: tour returns the core alone, and each named part returns its own file alone", () => {
 	const file = (name: string) => stripVisComments(readFileSync(new URL(`./vis/${name}.md`, import.meta.url), "utf8"));
 	const core = visGuide("tour");

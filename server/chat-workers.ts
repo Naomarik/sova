@@ -54,7 +54,7 @@ export interface WorkerRecord {
   seenSettleKey?: string;
   /** Its first task while not yet taken (cleared once it is): a server that dies first leaves the
       start for the next one to finish. `from`: the session file's size when the start began. */
-  task?: { text: string; key: string; from: number };
+  task?: { text: string; key: string; from: number; images?: WorkerStart["images"] };
 }
 
 /** Where a worker's chat process runs: the router (server/chat-host.ts) does the processes. */
@@ -88,6 +88,9 @@ interface Live {
   /** Its first task being handed over (once at a time). */
   finishing: Promise<void> | null;
 }
+
+/** Kinds whose settles nobody opens the parent for: a design session reports to no one (q6). */
+const SILENT_KINDS: ReadonlySet<WorkerKind> = new Set<WorkerKind>(["design", "design-coordinator", "design-describer"]);
 
 const log = (line: string) => console.log(`[chat-workers] ${line}`);
 
@@ -293,7 +296,7 @@ export class WorkerRegistry {
       spec: req.spec,
       state: "open",
       startedAt: new Date(this.now()).toISOString(),
-      ...(req.task !== null ? { task: { text: req.task, key: `${req.key}:task`, from: sizeOf(file.path) } } : {}),
+      ...(req.task !== null ? { task: { text: req.task, key: `${req.key}:task`, from: sizeOf(file.path), ...(req.images?.length ? { images: req.images } : {}) } } : {}),
     };
     // Recorded before its process exists: a server that dies in between knows what it was.
     this.write(rec);
@@ -316,7 +319,7 @@ export class WorkerRegistry {
     l.finishing ??= (async () => {
       try {
         // Taken by a process that has since gone (its receipts with it), the answer lost: its session says so.
-        if (!sessionHolds(l.rec.path, task)) await this.deliver(l, { text: task.text, key: task.key });
+        if (!sessionHolds(l.rec.path, task)) await this.deliver(l, { text: task.text, key: task.key, ...(task.images ? { images: task.images } : {}) });
         this.set(l, { task: undefined });
       } catch (err) {
         // Nobody holds it yet: a worker whose task was refused is stopped, never left running unowned.
@@ -345,9 +348,9 @@ export class WorkerRegistry {
     return l.opening;
   }
 
-  private async deliver(l: Live, input: { text: string; key: string; delivery?: "steer" | "followUp" }): Promise<{ queued: boolean }> {
+  private async deliver(l: Live, input: { text: string; key: string; delivery?: "steer" | "followUp"; images?: WorkerStart["images"] }): Promise<{ queued: boolean }> {
     const h = await this.open(l);
-    const receipt = await h.call("send", { text: input.text, key: input.key, origin: "server", report: false, ...(input.delivery ? { delivery: input.delivery } : {}) });
+    const receipt = await h.call("send", { text: input.text, key: input.key, origin: "server", report: false, ...(input.delivery ? { delivery: input.delivery } : {}), ...(input.images ? { images: input.images } : {}) });
     return { queued: receipt.queued };
   }
 
@@ -501,6 +504,7 @@ export class WorkerRegistry {
       model: m?.model?.ref ?? l.rec.spec.model,
       thinking: m?.thinking ?? l.rec.spec.thinking,
       lastSettled: m?.worker?.lastSettled ?? null,
+      ...(m?.streamTrip ? { trip: m.streamTrip.detail } : {}),
       queue: l.queue,
       ...(m?.worker?.keys ? { keys: true as const } : {}),
     };
@@ -533,6 +537,8 @@ export class WorkerRegistry {
       so its manager reattaches and takes the report. */
   private unwatchedSettle(l: Live, key: string, retry = 0): void {
     if (l.watchers.size || l.opened.has(key)) return;
+    // Nothing reports to the main chat for these: a settle never opens the parent.
+    if (SILENT_KINDS.has(l.rec.kind)) return;
     if (this.archived(l.rec.parent.sessionId)) return;
     if (l.settleTimer) clearTimeout(l.settleTimer);
     l.settleTimer = setTimeout(

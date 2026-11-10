@@ -1,5 +1,6 @@
 import type { HarnessSession } from "../shared/harness";
 import type { SpecialKind } from "./chat-handle";
+import { DESIGN_SAFETY_CHARS } from "../shared/design";
 
 /**
  * The runaway-stream guard (§chat.transcript/runaway-stream): every hosted runtime's turn is
@@ -31,6 +32,8 @@ export interface StreamCaps {
   toolArgChars: number;
   /** Text + thinking + tool-argument characters of one assistant message; null = none. */
   outputChars: number | null;
+  /** Thinking characters of one assistant message, counted apart from `outputChars`. Absent: thinking counts in `outputChars`. */
+  thinkingChars?: number;
   /** A run's start → its end; null = none. */
   runWallMs: number | null;
   /** How stale the heartbeat may be (the loop starved)… */
@@ -42,7 +45,7 @@ export interface StreamCaps {
 const K = 1024;
 const COMMON = { whitespaceRunChars: 8 * K, starvedMs: 750, starvedMinArgChars: 128 * K } as const;
 /** The caps by runtime kind. Baton sessions (share links, the wrap-up) and both overseers run unattended. */
-const CAPS: Record<"baton" | "overseer" | "project-overseer" | "project-assistant" | "chat", StreamCaps> = {
+const CAPS: Record<StreamKind, StreamCaps> = {
   baton: { ...COMMON, toolArgChars: 64 * K, outputChars: 256 * K, runWallMs: 10 * 60_000 },
   overseer: { ...COMMON, toolArgChars: 64 * K, outputChars: null, runWallMs: 10 * 60_000 },
   // Its conversation lives in the org's workspace repo, cloned to every host: one reply can't grow past what reads back.
@@ -50,6 +53,9 @@ const CAPS: Record<"baton" | "overseer" | "project-overseer" | "project-assistan
   // The org owner's Project Assistant: an outsider's reply, like a baton's, in the org's workspace repo.
   "project-assistant": { ...COMMON, toolArgChars: 64 * K, outputChars: 256 * K, runWallMs: 10 * 60_000 },
   chat: { ...COMMON, toolArgChars: K * K, outputChars: null, runWallMs: null },
+  // A design page has no size limit: only the safety stop an ordinary tool call has, here over a page written
+  // in the reply too. Thinking is counted apart, so a model that thinks long keeps its whole allowance for the page.
+  design: { ...COMMON, toolArgChars: DESIGN_SAFETY_CHARS, outputChars: DESIGN_SAFETY_CHARS, thinkingChars: DESIGN_SAFETY_CHARS, runWallMs: null },
 };
 
 let override: Partial<StreamCaps> | null = null;
@@ -58,7 +64,9 @@ export function setStreamCapsForTest(caps: Partial<StreamCaps> | null): void {
   override = caps;
 }
 
-export function capsFor(kind: SpecialKind | null): StreamCaps {
+export type StreamKind = SpecialKind | "chat" | "design";
+
+export function capsFor(kind: StreamKind | null): StreamCaps {
   const base = CAPS[kind ?? "chat"];
   return override ? { ...base, ...override } : base;
 }
@@ -117,6 +125,7 @@ export function attachStreamGuard(
   let runStart = 0;
   let timer: unknown = null;
   let output = 0;
+  let thinking = 0;
   /** Per tool call (content index): argument characters, and the whitespace run at its end. */
   const args = new Map<number, { chars: number; run: number }>();
 
@@ -147,6 +156,7 @@ export function attachStreamGuard(
       tripped = false;
       runStart = clock.now();
       output = 0;
+      thinking = 0;
       args.clear();
       disarm();
       const wall = caps().runWallMs;
@@ -165,6 +175,7 @@ export function attachStreamGuard(
     if (tripped) return;
     if (type === "message.start") {
       output = 0;
+      thinking = 0;
       args.clear();
       return;
     }
@@ -178,6 +189,11 @@ export function attachStreamGuard(
     // A part's start or end carries no characters.
     if (!("delta" in e)) return;
     const delta = e.delta;
+    if (e.kind === "thinking" && c.thinkingChars !== undefined) {
+      thinking += delta.length;
+      if (thinking > c.thinkingChars) trip("output", `the model's thinking passed ${n(c.thinkingChars)} characters`, thinking);
+      return;
+    }
     output += delta.length;
     if (c.outputChars !== null && output > c.outputChars) return trip("output", `the reply passed ${n(c.outputChars)} characters`, output);
     if (e.kind !== "tool-call") return;

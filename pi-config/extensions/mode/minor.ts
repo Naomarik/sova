@@ -16,7 +16,7 @@ export function isMinorMode(value: unknown): value is MinorMode {
 export const MINOR_DESCRIPTIONS: Record<MinorMode, string> = {
 	align: "Align with the user on what to build (architecture, UX, scope) before building",
 	spec: "Scope work from the project's .sova/spec documentation, propose changes in drafts, and promote them once implemented",
-	vis: "Draw small inline visuals (vis fences: flow, sequence, tree, timeline, chart, …) when a picture explains faster than prose",
+	vis: "Draw small inline visuals (vis fences: flow, sequence, tree, timeline, chart, …) when a picture explains faster than prose, and Lookbooks when asked: one page from several models, side by side",
 	memory: "Endless chat: the model works from a summary of the whole chat and opens any part of it word for word",
 };
 
@@ -244,12 +244,12 @@ export const VIS_FILES: Readonly<Record<string, string>> = Object.fromEntries(
 );
 
 /** Fence kind words only. Tool-backed catalogue entries have separate workflow guides. */
-export const VIS_TOOL_ENTRIES: readonly string[] = ["tour"];
+export const VIS_TOOL_ENTRIES: readonly string[] = ["tour", "lookbook"];
 /**
  * On-demand parts of a tool-backed entry's guide: `vis_guide` returns one by its name, alone. They are
  * never listed in the prompt's catalogue (the entry's core names them) and are no fence kind.
  */
-export const VIS_TOOL_PARTS: readonly string[] = ["tour-signin", "tour-sites", "tour-sova", "tour-sharing"];
+export const VIS_TOOL_PARTS: readonly string[] = ["tour-signin", "tour-sites", "tour-sova", "tour-sharing", "lookbook-setup", "lookbook-directions", "lookbook-passing-on"];
 export const VIS_KIND_FILES: Readonly<Record<string, string>> = Object.fromEntries(
 	Object.keys(VIS_FILES)
 		.filter((name) => name !== "overview" && name !== "shared" && !VIS_TOOL_ENTRIES.includes(name) && !VIS_TOOL_PARTS.includes(name))

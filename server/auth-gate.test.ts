@@ -23,6 +23,8 @@ const { buildApp } = await import("./app");
 const { app } = buildApp({ extensionEntriesOf: async () => [] });
 const { AUTH_COOKIE, initAuthToken, serverAuthEnabled, setAuthHosts, setAuthPort, sovaToken, tourRecorderCookieName } = await import("./auth");
 const { meshApi } = await import("./mesh");
+const liveLinks = await import("./design/live-link");
+const designStore = await import("./design/store");
 /** The port this listener would be bound to: no socket is opened. */
 const port = 47_913;
 // What server/index.ts does before and at listen: the token, the bound port, the mesh's names.
@@ -561,5 +563,35 @@ describe("a guided-tour recorder never gets an install's identity and never chan
     // Another install's marker name is an ordinary cookie here.
     const other = await get(PROTECTED, { ...sameNav, Cookie: `${tourRecorderCookieName("/made-up/other/.agent")}=1` });
     assert.equal(other.status, 200);
+  });
+});
+
+describe("a design's live page", () => {
+  const { mintLiveLink } = liveLinks;
+  const store = designStore;
+  const at = new Date().toISOString();
+  store.changeDesigns("live-chat", (s) => void s.designs.push({ label: "A", runId: "r", direction: "Minimalist", model: "m", modelName: "m", parents: [], status: "writing", route: "tool", versions: [], workerState: "working", vision: true, createdAt: at, updatedAt: at }));
+  const url = `/api/design/live-page/${mintLiveLink("live-chat", "A", 1).token}`;
+  // A frame's own reload: no cookie (it is SameSite=Strict), and cross-site as far as the browser is concerned.
+  const frame = { "Sec-Fetch-Site": "cross-site", "Sec-Fetch-Mode": "navigate", "Sec-Fetch-Dest": "iframe" };
+
+  test("the link alone opens it, from a frame with no origin and no cookie", async () => {
+    for (const headers of [frame, { ...frame, Origin: "null" }]) {
+      const res = await get(url, headers);
+      assert.equal(res.status, 200);
+      assert.match(String(res.headers["content-security-policy"]), /^sandbox; /);
+    }
+  });
+
+  test("anything but a live link gets the gate's usual answer", async () => {
+    assert.equal((await get("/api/design/live-page/not-a-token")).status, 401, "no cookie");
+    assert.equal((await get("/api/design/live-page/not-a-token", frame)).status, 403, "cross-site");
+    assert.equal((await send("POST", url, frame)).status, 403, "only reading");
+    assert.equal((await get(url, { Host: "evil.example" })).status, 403, "the host rule still holds");
+    assert.equal((await get(PROTECTED, frame)).status, 403, "a link opens only its own page");
+  });
+
+  test("a signed-in page asking for a bad link hears the route's own refusal", async () => {
+    assert.equal((await get("/api/design/live-page/not-a-token", browser())).status, 403);
   });
 });

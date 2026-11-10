@@ -241,8 +241,9 @@ function DesignSetupCard(props: { run: DesignRunView; store: DesignStore }) {
             value={draft().brief}
             onInput={(brief) => setup.change({ ...draft(), brief })}
           />
-          <Show when={linkUrls().length > 0}>
-            <div class="design-setup-links">
+          {/* The links' place is kept whether or not there are any, so typing an address moves nothing under it. */}
+          <div class="design-setup-links" aria-label="Links">
+            <Show when={linkUrls().length > 0} fallback={<p class="text-caption text-muted">Paste a link to use a page's images or its feel.</p>}>
               <For each={linkUrls()}>
                 {(url) => (
                   <DesignLinkRow
@@ -257,8 +258,8 @@ function DesignSetupCard(props: { run: DesignRunView; store: DesignStore }) {
                   />
                 )}
               </For>
-            </div>
-          </Show>
+            </Show>
+          </div>
           <DesignSetupPickers setup={setup} />
         </div>
       </div>

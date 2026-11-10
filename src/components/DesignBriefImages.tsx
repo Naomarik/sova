@@ -153,7 +153,9 @@ export function DesignBriefImageDetail(props: { asset: DesignAsset; store: Desig
         </button>
       </div>
       <div class="design-asset-detail-body">
-        <img src={props.store.api.assetUrl(props.asset.name, "small")} alt={d()?.description ?? props.asset.name} />
+        <div class="design-asset-detail-picture">
+          <img src={props.store.api.assetUrl(props.asset.name, "small")} alt={d()?.description ?? props.asset.name} />
+        </div>
         <dl>
           <Show when={d()} fallback={<dd class="text-muted">{props.asset.describeError ?? "Being described."}</dd>}>
             {(x) => (

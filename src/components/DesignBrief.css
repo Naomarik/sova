@@ -29,7 +29,9 @@
 .design-link-use .button { min-width: 0; padding-inline: var(--space-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 @container design-card (max-width: 500px) { .design-link-use .button { font-size: var(--fs-caption); white-space: normal; line-height: 1.2; } }
 .design-link-use .button[aria-pressed="true"] { background: var(--color-accent-tint); border-color: var(--color-accent); }
-.design-setup-links { display: flex; flex-direction: column; gap: var(--space-2); }
+.design-setup-links { flex: none; height: 104px; box-sizing: border-box; overflow-y: auto; scrollbar-width: thin; display: flex; flex-direction: column; gap: var(--space-2); }
+.design-setup-links > * { flex: none; }
+.design-setup-links > p { margin: 0; }
 
 .design-brief-screen { position: relative; flex: none; height: 300px; display: flex; flex-direction: column; gap: var(--space-1); min-width: 0; }
 .design-brief-screen-picture { flex: 1 1 0; min-height: 0; overflow-y: auto; border: 1px solid var(--color-border); border-radius: var(--r-md); background: var(--color-sunken); scrollbar-width: thin; }
@@ -60,8 +62,9 @@
 .design-brief-coordinator .composer-input { max-height: 64px; }
 
 .design-brief-foot { flex: none; box-sizing: border-box; display: grid; grid-template-columns: minmax(300px, 1fr) 214px minmax(240px, 300px); align-items: center; gap: var(--space-2) var(--space-3); height: 72px; }
-.design-brief-line { display: flex; flex-direction: column; min-width: 0; font-size: var(--fs-caption); }
-.design-brief-line > span { min-height: 1.45em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.design-brief-line { position: relative; display: flex; flex-direction: column; min-width: 0; font-size: var(--fs-caption); }
+.design-brief-line-cancel { display: none; position: absolute; right: 0; top: 50%; transform: translateY(-50%); }
+.design-brief-line > span { height: 18px; line-height: 18px; min-height: 1.45em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .design-brief-count { display: flex; align-items: baseline; gap: var(--space-2); min-width: 0; }
 .design-brief-count-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .design-brief-change-link { flex: none; padding: 0; border: 0; background: none; color: var(--color-accent); cursor: pointer; font: inherit; text-decoration: underline; min-height: 24px; }
@@ -70,14 +73,16 @@
 .design-brief-start { width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; }
 .design-brief-choice { flex: none; display: flex; gap: var(--space-2); margin-left: auto; }
 @container design-card (max-width: 720px) {
-  .design-brief-foot { grid-template-columns: minmax(0, 1fr) minmax(0, 300px); height: 112px; }
+  .design-brief-foot { grid-template-columns: minmax(0, 1fr) minmax(0, 300px); grid-template-rows: 36px 44px; align-content: center; height: 112px; }
   .design-brief-line { grid-column: 1 / -1; }
 }
 .design-brief-answers-narrow { display: none; }
 @container design-card (max-width: 500px) {
-  .design-brief-foot { grid-template-columns: minmax(0, 1fr); height: 112px; }
-  .design-brief-slot:not(:has(.button-ghost)) { display: none; }
-  .design-brief-foot:has(.design-brief-slot .button-ghost) { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .design-brief-foot { grid-template-columns: minmax(0, 1fr); grid-template-rows: 36px 44px; align-content: center; height: 112px; }
+  /* Start keeps its one place in every state: the spend question's Cancel sits in the line above it. */
+  .design-brief-slot { display: none; }
+  .design-brief-line-cancel { display: inline-flex; }
+  .design-brief-line { padding-right: 96px; }
   .design-brief-answers-narrow { display: flex; order: 1; min-height: var(--control-md); }
   .design-brief-answers-narrow .button { width: 100%; }
   .design-brief-questions { order: 1; }
@@ -86,7 +91,6 @@
 .design-brief-collapsed { border-bottom: 1px solid var(--color-border); padding: var(--space-1) var(--space-4); }
 .design-brief-collapsed > .design-brief-fold { width: 100%; }
 .design-brief-used { margin-left: var(--space-2); }
-.design-brief-collapsed > .design-brief-fold > .text-muted:last-child { margin-left: auto; }
 .design-brief-frozen { display: flex; flex-direction: column; gap: var(--space-2); padding-bottom: var(--space-3); }
 .design-brief-frozen p { margin: 0; }
 .design-brief-frozen .design-brief-read { height: auto; padding: 0; overflow: visible; }
@@ -109,7 +113,8 @@
 .design-asset-detail { position: absolute; inset: 0; z-index: 2; display: flex; flex-direction: column; box-sizing: border-box; padding: 0 var(--space-3) var(--space-2); background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--r-md); }
 .design-asset-detail-body { flex: 1 1 0; min-height: 0; overflow-y: auto; scrollbar-width: thin; display: flex; flex-direction: column; gap: var(--space-2); }
 .design-asset-detail-body > * { flex: none; }
-.design-asset-detail-body img { max-height: 120px; max-width: 100%; align-self: flex-start; object-fit: contain; border-radius: var(--r-sm); background: var(--color-sunken); }
+.design-asset-detail-picture { height: 120px; border-radius: var(--r-sm); background: var(--color-sunken); overflow: hidden; }
+.design-asset-detail-picture img { display: block; width: 100%; height: 100%; object-fit: contain; }
 .design-asset-detail-body dl { margin: 0; display: grid; gap: 2px; }
 .design-asset-detail-body dt { font-size: var(--fs-caption); font-weight: var(--fw-semibold); }
 .design-asset-detail-body dd { margin: 0; }
@@ -124,3 +129,10 @@
 .design-page-assets .design-asset-detail { inset: var(--space-3) var(--space-4); }
 .design-page-assets .design-asset { height: 214px; }
 .design-asset-download { flex: none; width: 100%; }
+/* The Full Prompt opens over what follows it instead of pushing it down. */
+.design-brief-text[data-fold] { position: relative; }
+.design-brief-text[data-fold] > .design-brief-box { position: absolute; top: 100%; left: 0; right: 0; z-index: 3; background: var(--color-surface); box-shadow: var(--shadow-2); }
+/* The brief after Start opens over the grid instead of pushing it down. */
+.design-brief-collapsed { position: relative; z-index: 3; }
+.design-brief-collapsed > .design-brief-frozen { position: absolute; top: 100%; left: 0; right: 0; max-height: 420px; overflow-y: auto; scrollbar-width: thin; box-sizing: border-box; padding: var(--space-3) var(--space-4); background: var(--color-surface); border-bottom: 1px solid var(--color-border); box-shadow: var(--shadow-2); }
+.design-brief-toggle-word { margin-left: auto; }

@@ -61,7 +61,7 @@ function BriefText(props: {
   const movedOn = () => draft() !== null && (text() ?? "") !== base() && held() === null;
   const note = () => error() || (movedOn() ? "The coordinator changed this while you typed. Saving replaces its version." : props.note || "");
   return (
-    <section class="design-brief-text" aria-label={props.title}>
+    <section class="design-brief-text" data-fold={props.fold ? "" : undefined} aria-label={props.title}>
       <div class="design-brief-text-head">
         <Show when={props.fold} fallback={<h4 class="design-brief-title">{props.title}</h4>}>
           <button type="button" class="design-brief-fold" aria-expanded={open()} onClick={() => setOpen(!open())}>
@@ -493,6 +493,9 @@ export function DesignBriefStep(props: { run: DesignRunView; store: DesignStore;
                   {a().designs} designs{a().estimateUsd ? `, about $${a().estimateUsd!.toFixed(2)}` : ""}.
                 </span>
                 <span class="text-muted">That's more than {props.store.view()?.caps.askAbove}, so we ask before starting.</span>
+                <button type="button" class="button button-sm button-ghost design-brief-line-cancel" disabled={busy()} onClick={() => setAsk(null)}>
+                  Cancel
+                </button>
               </>
             )}
           </Show>
@@ -533,7 +536,10 @@ export function DesignBriefCollapsed(props: { run: DesignRunView; store: DesignS
             <Icon name="chevron-right" small class={`icon-twist${open() ? " design-brief-twist-open" : ""}`} />
             <span class="design-brief-title">Design Brief</span>
             <span class="text-caption text-muted design-brief-used">{imagesUsed() > 0 ? `${imagesUsed()} image${imagesUsed() === 1 ? "" : "s"} used` : ""}</span>
-            <span class="text-caption text-muted">{open() ? "Collapse" : "Expand"}</span>
+            {/* A new node for each word, so the change can't count as a move. */}
+            <Show when={open() ? "Collapse" : "Expand"} keyed>
+              {(word) => <span class="text-caption text-muted design-brief-toggle-word">{word}</span>}
+            </Show>
           </button>
           <Show when={open()}>
             <div class="design-brief-frozen">

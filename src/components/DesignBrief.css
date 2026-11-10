@@ -118,3 +118,9 @@
 .design-brief-frozen-prompt[open] .icon-twist { transform: rotate(90deg); }
 .design-brief-error-room { flex: none; height: 56px; }
 @container design-card (max-width: 560px) { .design-brief-error-room { height: 96px; } }
+.design-brief-banner { margin-bottom: var(--space-2); }
+.design-asset-row { flex: none; display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: var(--space-2); min-height: 36px; }
+.design-asset-name { font-size: var(--fs-caption); color: var(--color-ink-muted); }
+.design-page-assets .design-asset-detail { inset: var(--space-3) var(--space-4); }
+.design-page-assets .design-asset { height: 214px; }
+.design-asset-download { flex: none; width: 100%; }

@@ -421,8 +421,16 @@ export function DesignBriefStep(props: { run: DesignRunView; store: DesignStore;
           </div>
         </div>
         {/* What needs you right now lays over the foot of the brief: it takes no room, so nothing moves. */}
-        <Show when={brief().conflict || pendingAsk()}>
+        <Show when={brief().conflict || pendingAsk() || props.run.error}>
           <div class="design-brief-overlays">
+            <Show when={props.run.error}>
+              {(e) => (
+                <div class="banner banner-compact banner-error design-brief-banner" role="alert">
+                  <Icon name="alert-circle" small class="banner-icon" />
+                  <p class="banner-body">{e()}</p>
+                </div>
+              )}
+            </Show>
             <Show when={brief().conflict}>
               {(c) => (
                 <div class="design-ask" role="group" aria-label="Your Full Prompt would change">

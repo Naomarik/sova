@@ -21,6 +21,7 @@ import { type AgentsView, SubagentPane } from "./SubagentPane";
 import { TimeSpentTab } from "./TimeSpent";
 import { Chip, Icon } from "./ui";
 import { DesignGallery } from "./DesignGallery";
+import { DesignPageAssets } from "./DesignBriefImages";
 import { trackSessionPane } from "../lib/time-spent";
 
 /** The open session's insight, loaded once in App.tsx for the head, the strip and this pane. */
@@ -361,6 +362,7 @@ function GalleryTab(props: { path: string; insight: PaneInsight; now: number }) 
   return (
     <div class="session-panel-scroll" tabindex="0">
       <DesignGallery path={props.path} />
+      <DesignPageAssets path={props.path} />
       <h3 class="text-eyebrow gallery-explanations">Explanations</h3>
       <Show
         when={items().length > 0}

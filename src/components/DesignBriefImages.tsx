@@ -2,7 +2,8 @@ import { createEffect, createMemo, createSignal, For, on, Show } from "solid-js"
 import type { DesignAsset, DesignAssetCatalogue } from "../../shared/design-assets";
 import { DESIGN_ASSET_KINDS } from "../../shared/design-assets";
 import { assetKindWord, assetsOfRun, assetStateLine, imageUsed, usedCount } from "../lib/design-brief";
-import type { DesignStore } from "../lib/design-store";
+import { useDesignStore, type DesignStore } from "../lib/design-store";
+import { hostOf } from "../lib/mesh";
 import type { DesignRunView } from "../lib/design-ui";
 import { Select, TextArea, Toggle } from "./form";
 
@@ -187,5 +188,67 @@ export function DesignBriefImageDetail(props: { asset: DesignAsset; store: Desig
         </div>
       </div>
     </div>
+  );
+}
+
+/** The Gallery's Page Assets: every image this chat holds, to look through and download (a15). One size, scrolling inside. */
+export function DesignPageAssets(props: { path: string }) {
+  const store = useDesignStore(props.path, hostOf(props.path));
+  const catalogue = createAssetCatalogue(store);
+  const [openImage, setOpenImage] = createSignal<string | null>(null);
+  const assets = () => catalogue()?.assets ?? [];
+  const names = createMemo(() => assets().map((a) => a.name), undefined, { equals: (a, b) => a.length === b.length && a.every((x, i) => x === b[i]) });
+  const of = (name: string) => assets().find((a) => a.name === name);
+  const usage = () => catalogue()?.describeUsage;
+  return (
+    <section class="gallery-section design-page-assets" aria-labelledby="gallery-page-assets">
+      <div class="gallery-head">
+        <h3 class="text-eyebrow" id="gallery-page-assets">
+          Page Assets · {assets().length}
+        </h3>
+        <span class="text-caption text-muted">{usage() && usage()!.cost > 0 ? `Described for $${usage()!.cost.toFixed(2)}` : ""}</span>
+      </div>
+      <div class="gallery-scroll">
+        <Show
+          when={assets().length > 0}
+          fallback={
+            <Show when={catalogue()}>
+              <div class="empty gallery-empty">
+                <p class="empty-body">0 images in this chat. A link set to Use Its Images, or an image pasted into the coordinator's box, adds them here.</p>
+              </div>
+            </Show>
+          }
+        >
+          <div class="design-assets">
+            <For each={names()}>
+              {(name) => (
+                <Show when={of(name)}>
+                  {(a) => (
+                    <article class="design-asset" aria-label={`Image ${a().name}`}>
+                      <button type="button" class="design-asset-open" aria-label={`Details of ${a().name}`} onClick={() => setOpenImage(name)}>
+                        <img src={store.api.assetUrl(name, "small")} alt={a().description?.description ?? ""} loading="lazy" />
+                      </button>
+                      <div class="design-asset-row">
+                        <span class="text-mono design-asset-name">{name}</span>
+                        <span class="design-asset-kind" title={assetKindWord(a())}>
+                          {assetKindWord(a())}
+                        </span>
+                      </div>
+                      <p class="text-caption text-muted design-asset-state" title={assetStateLine(a())}>
+                        {assetStateLine(a())}
+                      </p>
+                        <a class="button button-sm button-ghost design-asset-download" href={store.api.assetUrl(name, "original")} download={`${name}.${a().ext}`} aria-label={`Download ${name}`}>
+                          Download
+                        </a>
+                    </article>
+                  )}
+                </Show>
+              )}
+            </For>
+          </div>
+        </Show>
+      </div>
+      <Show when={of(openImage() ?? "")}>{(a) => <DesignBriefImageDetail asset={a()} store={store} onClose={() => setOpenImage(null)} />}</Show>
+    </section>
   );
 }

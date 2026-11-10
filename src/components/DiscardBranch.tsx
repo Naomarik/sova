@@ -1,7 +1,7 @@
 import { createSignal, For, onMount, Show } from "solid-js";
 import type { DiscardBranchPreview } from "../../shared/merge-queue";
 import { discardBranch } from "../lib/api";
-import { discardConfirmWords, discardDoneToast, discardFileCount, discardPartialLine } from "../lib/discard-branch";
+import { discardChats, discardConfirmWords, discardDoneToast, discardFileCount, discardPartialLine } from "../lib/discard-branch";
 import { tildePath } from "../lib/format";
 import { noteMergeChanged } from "../lib/merge-queue-client";
 import { announce, home, toast } from "../lib/ui-state";
@@ -90,12 +90,12 @@ export function createDiscard(target: () => DiscardTarget | undefined, onChanged
       noteMergeChanged();
       onChanged?.();
       if (r.result.outcome === "discarded") {
-        const done = discardDoneToast(p.branch, r.result.steps);
+        const done = discardDoneToast(p.branch, r.result.steps, r.result.chats);
         toast(done);
         announce(done);
         setPartial(null);
       } else {
-        const line = discardPartialLine(r.result.steps, { folder: !!p.folder, chat: !!p.chat });
+        const line = discardPartialLine(r.result.steps, { folder: !!p.folder, chat: discardChats(p).length > 0 }, r.result.chats);
         setPartial(line);
         toast(`Discard of ${p.branch} stopped. ${line}`);
         announce(`Discard of ${p.branch} stopped. ${line}`);
@@ -137,7 +137,7 @@ export function DiscardConfirm(props: { discard: Discard; branch: string; onClos
   const words = () => {
     const p = d.preview();
     const here = d.target()?.here;
-    return p && discardConfirmWords(p, { here: !!p.chat && !!here && p.chat.path === here, folder: p.folder ? tildePath(p.folder, home()) : undefined });
+    return p && discardConfirmWords(p, { ...(here ? { here } : {}), folder: p.folder ? tildePath(p.folder, home()) : undefined });
   };
   const files = () => {
     const p = d.preview();

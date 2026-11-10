@@ -23,6 +23,7 @@ const preview = (o: Partial<DiscardBranchPreview> = {}): DiscardBranchPreview =>
   files: files(["src/a.ts", "notes.md"]),
   drafts: ["discard-branch"],
   chat: { id: "s1", title: "Discard work", path: "/s/1.jsonl" },
+  others: [],
   digest: "d1",
   refused: null,
   ...o,
@@ -62,7 +63,7 @@ test("a missing part is left out, never listed as absent", () => {
 });
 
 test("singulars, the chat you're in, and ignored and nested files counted with the uncommitted ones", () => {
-  const w = discardConfirmWords(preview({ commits: { count: 1, shown: [] }, files: files(["a"]) }), { here: true });
+  const w = discardConfirmWords(preview({ commits: { count: 1, shown: [] }, files: files(["a"]) }), { here: "/s/1.jsonl" });
   assert.equal(w.parts[0]!.text, "1 commit not on master");
   assert.equal(w.parts[1]!.text, "1 uncommitted file");
   assert.equal(w.parts.at(-1)!.text, "This chat, archived");
@@ -118,4 +119,31 @@ test("a chat that works in another folder isn't listed; the confirm says it stay
   assert.equal(w.stays, "Its chat works in another folder, so it stays.");
   assert.equal(discardConfirmWords(preview()).stays, undefined);
   assert.equal(discardMenuLine(preview({ chat: null, chatStays: "x" })), "Deletes the branch and its folder.");
+});
+
+test("every other idle chat in its folder is named in the confirm, and counted in the menu, toast and a partial stop", () => {
+  const p = preview({ others: [{ id: "s2", title: "Tests", path: "/s/2.jsonl" }, { id: "s3", title: "", path: "/s/3.jsonl" }] });
+  assert.deepEqual(
+    discardConfirmWords(p).parts.filter((x) => x.key === "chat").map((x) => x.text),
+    ["Its chat, Discard work, archived", "A chat in its folder, Tests, archived", "A chat in its folder, untitled, archived"],
+  );
+  // The list belongs to one of the others: that one reads "This chat".
+  assert.deepEqual(discardConfirmWords(p, { here: "/s/2.jsonl" }).parts.filter((x) => x.key === "chat").map((x) => x.text)[1], "This chat, archived");
+  // Only others (the branch's own chat works elsewhere): they are still named, and its chat's reason stays.
+  const elsewhere = discardConfirmWords(preview({ chat: null, chatStays: "Its chat works in another folder, so it stays.", others: [{ id: "s2", title: "Tests", path: "/s/2.jsonl" }] }));
+  assert.deepEqual(elsewhere.parts.filter((x) => x.key === "chat").map((x) => x.text), ["A chat in its folder, Tests, archived"]);
+  assert.equal(elsewhere.stays, "Its chat works in another folder, so it stays.");
+  assert.equal(discardMenuLine(p), "Deletes the branch and its folder, and archives its chats.");
+  assert.equal(discardMenuLine(preview({ chat: null, others: [{ id: "s2", title: "T", path: "/s/2.jsonl" }] })), DISCARD_LINE);
+  assert.equal(discardMenuLine(preview({ folder: null, others: [{ id: "s2", title: "T", path: "/s/2.jsonl" }] })), "Deletes the branch and archives its chats.");
+  const c = (state: "done" | "failed" | "not-run", detail?: string) => ({ id: "x", title: "t", state, ...(detail ? { detail } : {}) });
+  assert.equal(discardDoneToast("feat/x", steps("done", "done", "done"), [c("done"), c("done"), c("done")]), "Discarded feat/x. Its 3 chats are archived.");
+  assert.equal(discardDoneToast("feat/x", steps("done", "done", "done"), [c("done")]), "Discarded feat/x. Its chat is archived.");
+  assert.equal(discardDoneToast("feat/x", steps("done", "done", "skipped"), []), "Discarded feat/x.");
+  assert.equal(
+    discardPartialLine(steps("done", "done", "failed"), { folder: true, chat: true }, [c("done"), c("failed", "It started working."), c("not-run")]),
+    "Removed its folder, deleted the branch, and archived 1 chat. 2 chats stayed: It started working.",
+  );
+  assert.equal(discardPartialLine(steps("done", "done", "failed"), { folder: true, chat: true }, [c("failed", "It started working.")]), "Removed its folder and deleted the branch. Its chat stayed: It started working.");
+  assert.equal(discardPartialLine(steps("done", "failed", "not-run", "Git refused."), { folder: true, chat: true }, [c("not-run"), c("not-run")]), "Removed its folder. The branch and 2 chats stayed: Git refused.");
 });

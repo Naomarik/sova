@@ -10,12 +10,17 @@ const list = (xs: string[]) => (xs.length <= 1 ? (xs[0] ?? "") : xs.length === 2
 /** The menu item's one line when it may run. */
 export const DISCARD_LINE = "Deletes the branch and its folder, and archives its chat.";
 
+/** The chats a discard archives: the branch's own first, then the others idle in its folder. */
+export const discardChats = (p: Pick<DiscardBranchPreview, "chat"> & { others?: DiscardBranchPreview["others"] }) => [...(p.chat ? [p.chat] : []), ...(p.others ?? [])];
+
 /** The menu item's line, by what the dry run found: only the parts it has, and no chat before it answers. */
-export function discardMenuLine(p: Pick<DiscardBranchPreview, "folder" | "chat"> | undefined): string {
+export function discardMenuLine(p: (Pick<DiscardBranchPreview, "folder" | "chat"> & { others?: DiscardBranchPreview["others"] }) | undefined): string {
   if (!p) return "Deletes the branch and its folder.";
-  if (p.folder && p.chat) return DISCARD_LINE;
+  const n = discardChats(p).length;
+  const chats = n > 1 ? "archives its chats" : "archives its chat";
+  if (p.folder && n) return n > 1 ? `Deletes the branch and its folder, and ${chats}.` : DISCARD_LINE;
   if (p.folder) return "Deletes the branch and its folder.";
-  if (p.chat) return "Deletes the branch and archives its chat.";
+  if (n) return `Deletes the branch and ${chats}.`;
   return "Deletes the branch.";
 }
 
@@ -43,11 +48,11 @@ export interface DiscardWords {
 }
 
 /**
- * The confirm's words. `here`: the list belongs to the chat that would be archived ("This chat"). `folder`: the folder
+ * The confirm's words. `here`: the file of the chat whose list this is: if it is archived too, it reads "This chat". `folder`: the folder
  * as the page shows it (with ~). The files themselves are drawn from `files` by Remove Anyway's listing; here they are
  * one counted part.
  */
-export function discardConfirmWords(p: DiscardBranchPreview, o: { here?: boolean; folder?: string } = {}): DiscardWords {
+export function discardConfirmWords(p: DiscardBranchPreview, o: { here?: string; folder?: string } = {}): DiscardWords {
   const target = p.target || "the target branch";
   const commits = p.commits.count;
   const files = discardFileCount(p);
@@ -62,7 +67,10 @@ export function discardConfirmWords(p: DiscardBranchPreview, o: { here?: boolean
   if (f?.rebuildable && !files) parts.push({ key: "files", text: `Rebuildable files: ${rebuildableWords(p.files!.rebuildable, f.rebuildable)}` });
   if (p.drafts.length > 0) parts.push({ key: "drafts", text: plural(p.drafts.length, "spec draft") });
   if (p.folder) parts.push({ key: "folder", text: "Its folder,", code: o.folder ?? p.folder });
-  if (p.chat) parts.push({ key: "chat", text: o.here ? "This chat, archived" : `Its chat, ${p.chat.title || "untitled"}, archived` });
+  // Each chat archived by name: the branch's own, then every other idle chat working in its folder.
+  const title = (c: { title: string }) => c.title || "untitled";
+  if (p.chat) parts.push({ key: "chat", text: o.here && p.chat.path === o.here ? "This chat, archived" : `Its chat, ${title(p.chat)}, archived` });
+  for (const c of p.others ?? []) parts.push({ key: "chat", text: o.here && c.path === o.here ? "This chat, archived" : `A chat in its folder, ${title(c)}, archived` });
   // The files' own listing says they can't be brought back; this line is about the commits.
   const line =
     commits > 0
@@ -75,21 +83,34 @@ export function discardConfirmWords(p: DiscardBranchPreview, o: { here?: boolean
 const rebuildableWords = (rows: string[], total: number) => `${rows.slice(0, 3).join(", ")}${total > Math.min(3, rows.length) ? `, and ${total - Math.min(3, rows.length)} more` : ""}`;
 
 type Steps = DiscardBranchResult["steps"];
-const stepDone = (steps: Steps, s: Steps[number]["step"]) => steps.some((x) => x.step === s && x.state === "done");
+type Chats = DiscardBranchResult["chats"] | undefined;
+/** How many chats were archived: by each chat's outcome, else (an answer without them) the chat step's. */
+const archivedCount = (steps: Steps, chats: Chats) => (chats ? chats.filter((c) => c.state === "done").length : steps.some((x) => x.step === "chat" && x.state === "done") ? 1 : 0);
+const chatsWords = (n: number) => (n === 1 ? "its chat" : `its ${n} chats`);
 
-/** The toast once it is all done: the chat clause only when a chat was archived. */
-export const discardDoneToast = (branch: string, steps: Steps): string => `Discarded ${branch}.${stepDone(steps, "chat") ? " Its chat is archived." : ""}`;
+/** The toast once it is all done: the chat clause only when a chat was archived, with how many. */
+export function discardDoneToast(branch: string, steps: Steps, chats?: Chats): string {
+  const n = archivedCount(steps, chats);
+  return `Discarded ${branch}.${n ? ` ${sentenceCase(chatsWords(n))} ${n === 1 ? "is" : "are"} archived.` : ""}`;
+}
 
 const DID: Record<Steps[number]["step"], string> = { folder: "removed its folder", branch: "deleted the branch", chat: "archived its chat" };
 const LEFT: Record<Steps[number]["step"], string> = { folder: "its folder", branch: "the branch", chat: "its chat" };
 
 /** A partial stop, on the row: what was done, then what stayed, with the failed step's reason. A part the branch never
     had (skipped, or absent from the dry run: no folder, no chat) names nothing, even when the stop left it "not run". */
-export function discardPartialLine(steps: Steps, had: { folder?: boolean; chat?: boolean } = {}): string {
+export function discardPartialLine(steps: Steps, had: { folder?: boolean; chat?: boolean } = {}, chats?: Chats): string {
   const has = (s: Steps[number]) => s.step === "branch" || had[s.step] !== false;
-  const did = steps.filter((s) => s.state === "done").map((s) => DID[s.step]);
-  const left = steps.filter((s) => (s.state === "failed" || s.state === "not-run") && has(s)).map((s) => LEFT[s.step]);
-  const why = steps.find((s) => s.state === "failed")?.detail?.replace(/\.$/, "");
+  // With each chat's outcome, the chat step counts them: "archived 2 chats", "1 chat stayed".
+  const chatDid = chats ? chats.filter((c) => c.state === "done").length : 0;
+  const chatLeft = chats ? chats.filter((c) => c.state !== "done").length : 0;
+  const did = steps
+    .filter((s) => (chats && s.step === "chat" ? chatDid > 0 : s.state === "done"))
+    .map((s) => (chats && s.step === "chat" ? `archived ${chatDid === 1 && !chatLeft ? "its chat" : plural(chatDid, "chat")}` : DID[s.step]));
+  const left = steps
+    .filter((s) => has(s) && (chats && s.step === "chat" ? chatLeft > 0 : s.state === "failed" || s.state === "not-run"))
+    .map((s) => (chats && s.step === "chat" ? (chatLeft === 1 && !chatDid ? "its chat" : plural(chatLeft, "chat")) : LEFT[s.step]));
+  const why = (steps.find((s) => s.state === "failed")?.detail ?? chats?.find((c) => c.state === "failed")?.detail)?.replace(/\.$/, "");
   const head = did.length ? `${sentenceCase(list(did))}.` : "Nothing was discarded.";
   const tail = left.length ? ` ${sentenceCase(list(left))} stayed${why ? `: ${why}` : ""}.` : "";
   return `${head}${tail}`;

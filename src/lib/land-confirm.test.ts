@@ -124,6 +124,7 @@ test("Discard Branch…'s confirm: what goes, the warning, Cancel (ghost) then D
     files: { uncommitted: ["src/a.ts"], ignored: [], nested: [], rebuildable: [], counts: { uncommitted: 1, ignored: 0, nested: 0, rebuildable: 0 }, digest: "f" },
     drafts: [],
     chat: { id: "s1", title: "Work", path: "/s/1.jsonl" },
+    others: [{ id: "s2", title: "Tests", path: "/s/2.jsonl" }],
     digest: "d",
     refused: null as string | null,
   };
@@ -135,6 +136,7 @@ test("Discard Branch…'s confirm: what goes, the warning, Cancel (ghost) then D
   assert.match(h, /2 commits not on master/);
   assert.match(h, /<code>src\/a\.ts<\/code>/, "the exact file list");
   assert.match(h, /This chat, archived/, "the list belongs to the chat it archives");
+  assert.match(h, /A chat in its folder, Tests, archived/, "every other chat it archives, by name");
   assert.match(h, /can&#39;t be brought back|can't be brought back/);
   assert.deepEqual(
     buttons(h).map((x) => [x.text, /button-ghost/.test(x.cls), /button-destructive/.test(x.cls), /button-primary/.test(x.cls)]),

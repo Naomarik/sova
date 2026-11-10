@@ -283,6 +283,16 @@ async function wake(st: CoordinatorState, text: string, key: string, sameTurn = 
   }
 }
 
+/** A design's other news (finished without a note, failed, being fixed): one line of context, and it wakes nothing. */
+export function noteDesignEvent(sessionId: string, a: { label: string; kind: "finished" | "failed" | "fixing"; reason?: string }): void {
+  const st = load(sessionId);
+  if (!st) return;
+  const reason = a.reason?.replace(/\s+/g, " ").trim().slice(0, 300);
+  st.notes.push(`${a.label} ${a.kind === "fixing" ? "is fixing its page" : a.kind}${reason ? `: ${reason}` : "."}`);
+  if (st.notes.length > COORDINATOR_LIMITS.notes) st.notes.splice(0, st.notes.length - COORDINATOR_LIMITS.notes);
+  save(st);
+}
+
 /** Its session ended for good: a fresh one starts from what is known (its card and the designs' metadata), never from a page. */
 async function revive(st: CoordinatorState, text: string, key: string): Promise<void> {
   const p = ports();

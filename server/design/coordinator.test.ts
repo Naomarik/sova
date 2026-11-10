@@ -227,6 +227,26 @@ test("a hand-in wakes nothing and reaches the coordinator with its next message;
   assert.equal(log.sends[1]!.text, "again");
 });
 
+test("a design finishing, failing or fixing itself spends no coordinator turn and reaches it with its next message", async () => {
+  const { noteDesignEvent } = await import("./coordinator");
+  await started(runWith(2, 3));
+  noteDesignEvent(parent.sessionId, { label: "B", kind: "fixing", reason: "script 2, line 14: unexpected token" });
+  noteDesignEvent(parent.sessionId, { label: "C", kind: "failed", reason: "The login expired." });
+  noteDesignEvent(parent.sessionId, { label: "D", kind: "finished" });
+  assert.equal(log.sends.length, 0);
+  await tellCoordinator(parent, "next", "k-events");
+  assert.equal(log.sends.length, 1);
+  assert.match(log.sends[0]!.text, /B is fixing its page: script 2, line 14/);
+  assert.match(log.sends[0]!.text, /C failed: The login expired\./);
+  assert.match(log.sends[0]!.text, /D finished\./);
+});
+
+test("news of a chat with no coordinator goes nowhere and throws nothing", async () => {
+  const { noteDesignEvent } = await import("./coordinator");
+  noteDesignEvent("no-such-chat", { label: "A", kind: "failed" });
+  assert.equal(log.sends.length, 0);
+});
+
 test("design_status holds metadata only", async () => {
   const t = await started(runWith(2, 3));
   const out = textOf(await t.design_status({}));

@@ -16,6 +16,7 @@
 .design-brief-summary { height: 168px; }
 .design-brief-prompt { height: 320px; }
 .design-brief-look { height: 124px; }
+.design-brief-notes { height: 72px; }
 .design-brief-read { height: 100%; box-sizing: border-box; padding: var(--space-2) var(--space-3); overflow-y: auto; white-space: pre-wrap; overflow-wrap: anywhere; scrollbar-width: thin; }
 .design-brief-area { height: 100%; }
 .design-brief-area .textarea { height: 100%; min-height: 0; border: 0; border-radius: 0; }
@@ -23,7 +24,10 @@
 .design-brief-links { display: flex; flex-direction: column; gap: var(--space-2); }
 .design-link-row { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: var(--space-1) var(--space-3); min-width: 0; }
 .design-link-url { flex: 1 1 200px; min-width: 0; font-size: var(--fs-mono); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.design-link-use { flex: none; display: flex; gap: var(--space-1); }
+/* Three equal choices: picking one never changes the group's width. */
+.design-link-use { flex: 1 1 420px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-1); max-width: 480px; }
+.design-link-use .button { min-width: 0; padding-inline: var(--space-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+@container design-card (max-width: 500px) { .design-link-use .button { font-size: var(--fs-caption); white-space: normal; line-height: 1.2; } }
 .design-link-use .button[aria-pressed="true"] { background: var(--color-accent-tint); border-color: var(--color-accent); }
 .design-setup-links { display: flex; flex-direction: column; gap: var(--space-2); }
 
@@ -112,3 +116,5 @@
 .design-asset-detail-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); }
 .design-brief-frozen-prompt summary::-webkit-details-marker { display: none; }
 .design-brief-frozen-prompt[open] .icon-twist { transform: rotate(90deg); }
+.design-brief-error-room { flex: none; height: 56px; }
+@container design-card (max-width: 560px) { .design-brief-error-room { height: 96px; } }

@@ -54,7 +54,7 @@ export function designApi(path: string, host: string | null) {
         throw e;
       }
     },
-    briefEdit: (runId: string, edit: { field: "summary" | "prompt" | "look"; text: string; url?: string }) => json<unknown>(url(`${run(runId)}/brief/edit`), post(edit)),
+    briefEdit: (runId: string, edit: { field: "summary" | "prompt" | "look" | "notes"; text: string; url?: string }) => json<unknown>(url(`${run(runId)}/brief/edit`), post(edit)),
     briefAnswers: (runId: string, answers: { recommended: true } | { picks: { id: string; option?: number; text?: string }[] }) => json<unknown>(url(`${run(runId)}/brief/answers`), post(answers)),
     briefConflict: (runId: string, choice: "keep" | "rewrite") => json<unknown>(url(`${run(runId)}/brief/conflict`), post({ choice })),
     briefLink: (runId: string, link: string, use: DesignLinkUse) => json<unknown>(url(`${run(runId)}/brief/link`), post({ url: link, use })),

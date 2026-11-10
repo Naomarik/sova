@@ -1,7 +1,7 @@
 import { createEffect, createMemo, createSignal, For, on, Show } from "solid-js";
 import type { DesignAsset, DesignAssetCatalogue } from "../../shared/design-assets";
 import { DESIGN_ASSET_KINDS } from "../../shared/design-assets";
-import { assetKindWord, assetsOfRun, assetStateLine, usedCount, type WithUnused } from "../lib/design-brief";
+import { assetKindWord, assetsOfRun, assetStateLine, imageUsed, usedCount } from "../lib/design-brief";
 import type { DesignStore } from "../lib/design-store";
 import type { DesignRunView } from "../lib/design-ui";
 import { Select, TextArea, Toggle } from "./form";
@@ -64,14 +64,13 @@ function AssetCard(props: { asset: DesignAsset; used: boolean; store: DesignStor
 export function DesignBriefImages(props: { run: DesignRunView; store: DesignStore; catalogue: DesignAssetCatalogue | null; onOpen(name: string): void; readOnly?: boolean }) {
   const [held, setHeld] = createSignal<Record<string, boolean>>({});
   const [error, setError] = createSignal("");
-  const brief = () => props.run.brief as WithUnused | undefined;
+  const brief = () => props.run.brief;
   const assets = createMemo(() => assetsOfRun(props.catalogue, props.run));
   const names = createMemo(() => assets().map((a) => a.name), undefined, { equals: (a, b) => a.length === b.length && a.every((x, i) => x === b[i]) });
-  const used = (name: string) => held()[name] ?? !(brief()?.unused ?? []).includes(name);
+  const used = (name: string) => imageUsed(brief(), held(), name);
   // A click shows at once; the server's word replaces it when it says the same.
   createEffect(() => {
-    const unused = brief()?.unused ?? [];
-    const left = Object.entries(held()).filter(([name, on]) => unused.includes(name) === on);
+    const left = Object.entries(held()).filter(([name, on]) => imageUsed(brief(), {}, name) !== on);
     if (left.length !== Object.keys(held()).length) setHeld(Object.fromEntries(left));
   });
   const setUse = (name: string, on: boolean) => {
@@ -88,8 +87,7 @@ export function DesignBriefImages(props: { run: DesignRunView; store: DesignStor
   };
   const of = (name: string) => assets().find((a) => a.name === name);
   const skipped = () => (props.catalogue?.captures ?? []).flatMap((c) => c.skipped);
-  const count = () => usedCount(assets(), held(), brief()?.unused ?? []);
-  const notes = () => props.catalogue?.captures.at(-1)?.notes;
+  const count = () => usedCount(assets(), held(), brief());
   return (
     <section aria-label="Images designers will use">
       <h4 class="design-brief-title">
@@ -107,11 +105,6 @@ export function DesignBriefImages(props: { run: DesignRunView; store: DesignStor
           )}
         </For>
       </div>
-      <Show when={notes() && (notes()!.colors.length > 0 || notes()!.fonts.length > 0)}>
-        <p class="text-caption text-muted design-asset-notes">
-          Colors: {notes()!.colors.map((c) => c.hex).join(", ") || "none read"} · Fonts: {notes()!.fonts.map((f) => f.family).join(", ") || "none read"}
-        </p>
-      </Show>
       <Show when={skipped().length > 0}>
         <details class="design-asset-skipped">
           <summary>{skipped().length} images not brought back</summary>

@@ -152,6 +152,7 @@ export function DesignLinkRow(props: { url: string; use: DesignLinkUse | null; d
       <div class="design-link-use" role="group" aria-label={`How to use ${props.url}`}>
         {choice("images", "Use Its Images")}
         {choice("feel", "Just Its Feel")}
+        {choice("content", "Not a Reference")}
       </div>
     </div>
   );

@@ -37,10 +37,11 @@ export function stagedAnswers(staged: Readonly<Record<string, StagedPick>>, ques
 }
 
 /** The word on the run's chip while the brief is open, from the one reason Start waits. */
-export function briefStatus(run: Pick<DesignRun, "brief" | "setup">): { text: string; live: boolean } {
+export function briefStatus(run: Pick<DesignRun, "brief" | "setup" | "imagesBusy">): { text: string; live: boolean } {
   const block = designBriefBlock(run);
   if (block?.code === "writing") return { text: run.brief ? "Writing the prompt" : "Writing the brief", live: true };
   if (block?.code === "look") return { text: "Reading the page's look", live: true };
+  if (block?.code === "images") return { text: run.imagesBusy === "capturing" ? "Reading the page's images" : "Describing the images", live: true };
   if (block?.code === "stalled") return { text: "Coordinator stopped", live: false };
   return { text: "Waiting on you", live: false };
 }
@@ -56,7 +57,7 @@ export function withLinkUse(setup: DesignSetup, url: string, use: DesignLinkUse)
 }
 
 /** The Start button's words: why it waits, or what it will do. */
-export function startLabel(run: Pick<DesignRun, "brief" | "setup">, designs: number): string {
+export function startLabel(run: Pick<DesignRun, "brief" | "setup" | "imagesBusy">, designs: number): string {
   return designBriefBlock(run)?.label ?? `Start ${designs} Design${designs === 1 ? "" : "s"}`;
 }
 
@@ -68,29 +69,36 @@ export function answerLine(q: DesignBriefQuestion): string {
   return `${[picked, a.text].filter(Boolean).join(": ") || q.recommendation.choice} · ${a.by === "you" ? "you" : "recommended"}`;
 }
 
-/** The brief as the image grid reads it: the images unticked for this run, named. */
-export type WithUnused = DesignBrief & { unused?: string[] };
+const sameOrigin = (a: string, b: string): boolean => {
+  try {
+    return new URL(a).origin === new URL(b).origin;
+  } catch {
+    return false;
+  }
+};
 
-/** A run's grid: what its link's captures brought back, plus every image you added to the chat. */
-export function assetsOfRun(catalogue: Pick<DesignAssetCatalogue, "assets" | "captures"> | null, run: Pick<DesignRun, "setup"> & { brief?: DesignBrief }): DesignAsset[] {
+/** A run's grid, the set the server keeps (keptImages) with the unticked ones still shown: what a link on
+    Use Its Images captured, in the capture's order, then the images you added since the run began. */
+export function assetsOfRun(catalogue: Pick<DesignAssetCatalogue, "assets" | "captures"> | null, run: Pick<DesignRun, "setup" | "createdAt">): DesignAsset[] {
   if (!catalogue) return [];
-  const urls = new Set([...(run.setup.links ?? []).filter((l) => l.use === "images").map((l) => l.url), ...(run.brief?.screen?.url ? [run.brief.screen.url] : [])]);
-  const ranked = catalogue.captures.filter((c) => urls.has(c.url)).flatMap((c) => c.names);
-  const seen = new Set<string>();
+  const links = (run.setup.links ?? []).filter((l) => l.use === "images");
+  const ranked = catalogue.captures.filter((c) => links.some((l) => sameOrigin(l.url, c.url))).flatMap((c) => c.names);
   const out: DesignAsset[] = [];
-  const add = (a: DesignAsset | undefined) => {
-    if (!a || seen.has(a.name)) return;
-    seen.add(a.name);
-    out.push(a);
-  };
-  for (const name of ranked) add(catalogue.assets.find((a) => a.name === name));
-  for (const a of catalogue.assets) if (a.source === "yours") add(a);
+  const seen = new Set<string>();
+  for (const name of ranked) {
+    const a = catalogue.assets.find((x) => x.name === name && x.source !== "yours");
+    if (a && !seen.has(name)) out.push(a), seen.add(name);
+  }
+  for (const a of catalogue.assets) if (a.source === "yours" && a.addedAt >= run.createdAt && !seen.has(a.name)) out.push(a), seen.add(a.name);
   return out;
 }
 
+/** Whether an image is used: a click not yet confirmed first, then the brief's word; an image not listed is used. */
+export const imageUsed = (brief: Pick<DesignBrief, "imageUse"> | undefined, held: Readonly<Record<string, boolean>>, name: string): boolean => held[name] ?? brief?.imageUse?.[name]?.use !== false;
+
 /** How many images are in use, with a click not yet confirmed counted as made. */
-export function usedCount(assets: readonly DesignAsset[], held: Readonly<Record<string, boolean>>, unused: readonly string[]): number {
-  return assets.filter((a) => held[a.name] ?? !unused.includes(a.name)).length;
+export function usedCount(assets: readonly DesignAsset[], held: Readonly<Record<string, boolean>>, brief: Pick<DesignBrief, "imageUse"> | undefined): number {
+  return assets.filter((a) => imageUsed(brief, held, a.name)).length;
 }
 
 export const assetKindWord = (a: DesignAsset): string => a.chosenKind ?? a.description?.kind ?? (a.source === "yours" ? "Yours" : "Image");

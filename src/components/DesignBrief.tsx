@@ -3,7 +3,7 @@ import type { DesignBriefQuestion, DesignLinkUse, DesignLook } from "../../share
 import type { DesignAssetCatalogue } from "../../shared/design-assets";
 import { designBriefBlock } from "../../shared/design";
 import type { DesignSpendAsk } from "../lib/design-api";
-import { answerLine, assetsOfRun, pickIsRecommended, recommendedPick, stagedAnswers, startLabel, usedCount, type StagedPick, type WithUnused } from "../lib/design-brief";
+import { answerLine, assetsOfRun, pickIsRecommended, recommendedPick, stagedAnswers, startLabel, usedCount, type StagedPick } from "../lib/design-brief";
 import type { DesignStore } from "../lib/design-store";
 import { coordinatorOf, setupCount, setupSummary, type DesignRunView } from "../lib/design-ui";
 import { Inline, QuestionChoices, type QuestionPicker } from "./AlignDocCard";
@@ -258,7 +258,7 @@ export function DesignBriefStep(props: { run: DesignRunView; store: DesignStore;
   const imageLinks = () => urls().filter((u) => useOf(u) === "images");
   const openQuestions = () => brief().questions.filter((q) => !q.answer);
   const toSend = () => stagedAnswers(staged(), brief().questions);
-  const block = () => designBriefBlock({ brief: brief(), setup: setup.draft() });
+  const block = () => designBriefBlock({ brief: brief(), setup: setup.draft(), imagesBusy: props.run.imagesBusy });
   const designs = () => setupCount(setup.draft()).designs;
   const guard = async (run: () => Promise<unknown>, fallback: string) => {
     setBusy(true);
@@ -374,8 +374,22 @@ export function DesignBriefStep(props: { run: DesignRunView; store: DesignStore;
             <Show when={anyLinks() || assetsOfRun(catalogue(), props.run).length > 0}>
               <div class="design-brief-material">
                 <div class="design-brief-material-scroll">
-                  <Show when={feelLinks().length > 0 || imageLinks().length > 0 || assetsOfRun(catalogue(), props.run).length > 0} fallback={<p class="text-muted">Choose how to use your link, and what it gives the designers shows here.</p>}>
+                  <Show when={feelLinks().length > 0 || imageLinks().length > 0 || assetsOfRun(catalogue(), props.run).length > 0} fallback={<p class="text-muted">{urls().every((u) => useOf(u) === "content") ? "Your link is part of the page's content, so nothing is read from it." : "Choose how to use your link, and what it gives the designers shows here."}</p>}>
                     <For each={feelLinks()}>{(url) => <LookText url={url} look={brief().looks[url]} run={props.run} store={props.store} many={urls().length > 1} />}</For>
+                    <For each={imageLinks()}>
+                      {(url) => (
+                        <BriefText
+                          title={urls().length > 1 ? `Colors and fonts · ${url}` : "Colors and fonts from the page"}
+                          editLabel="Edit Notes"
+                          text={brief().notes?.[url]?.text ?? null}
+                          empty="Read from the page once it's captured. Designers get these after the image list."
+                          note={brief().notes?.[url]?.by === "user" ? "Yours" : ""}
+                          boxClass="design-brief-notes"
+                          canEdit
+                          save={(text) => props.store.api.briefEdit(props.run.id, { field: "notes", url, text })}
+                        />
+                      )}
+                    </For>
                     <Show when={imageLinks().length > 0 || assetsOfRun(catalogue(), props.run).length > 0}>
                       <DesignBriefImages run={props.run} store={props.store} catalogue={catalogue()} onOpen={setOpenImage} />
                     </Show>
@@ -487,7 +501,7 @@ export function DesignBriefStep(props: { run: DesignRunView; store: DesignStore;
         </div>
         <button type="button" class="button button-primary design-brief-start" aria-disabled={block() ? "true" : undefined} disabled={busy()} title={block()?.label} onClick={() => void start(!!ask())}>
           {/* A new node for each label: new words in the old node would re-centre it, and that counts as a shift. */}
-          <Show when={ask() ? `Start ${ask()!.designs} Designs` : startLabel({ brief: brief(), setup: setup.draft() }, designs())} keyed>
+          <Show when={ask() ? `Start ${ask()!.designs} Designs` : startLabel({ brief: brief(), setup: setup.draft(), imagesBusy: props.run.imagesBusy }, designs())} keyed>
             {(label) => <span>{label}</span>}
           </Show>
         </button>
@@ -502,7 +516,7 @@ export function DesignBriefCollapsed(props: { run: DesignRunView; store: DesignS
   const [catalogue, setCatalogue] = createSignal<DesignAssetCatalogue | null>(null);
   void props.store.api.assets().then(setCatalogue, () => {});
   const brief = () => props.run.brief;
-  const imagesUsed = () => usedCount(assetsOfRun(catalogue(), props.run), {}, (brief() as WithUnused | undefined)?.unused ?? []);
+  const imagesUsed = () => usedCount(assetsOfRun(catalogue(), props.run), {}, brief());
   return (
     <Show when={brief()}>
       {(b) => (

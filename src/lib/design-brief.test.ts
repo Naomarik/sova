@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import type { DesignBrief, DesignBriefQuestion, DesignSetup } from "../../shared/design";
-import { answerLine, briefStatus, pickIsRecommended, recommendedPick, setupLinks, stagedAnswers, startLabel, withLinkUse } from "./design-brief";
+import { answerLine, assetsOfRun, briefStatus, imageUsed, pickIsRecommended, usedCount, recommendedPick, setupLinks, stagedAnswers, startLabel, withLinkUse } from "./design-brief";
 
 const q = (id: string, over: Partial<DesignBriefQuestion> = {}): DesignBriefQuestion => ({
   id,
@@ -77,4 +77,25 @@ test("a frozen answer's line says what was picked and by whom", () => {
   assert.equal(answerLine(q("q1", { answer: { text: "Both", by: "you", at: "t" } })), "Both · you");
   assert.equal(answerLine(q("q1", { answer: { option: 1, text: "for now", by: "recommended", at: "t" } })), "Yearly: for now · recommended");
   assert.equal(answerLine(q("q1")), "Not answered");
+});
+
+const asset = (name: string, over: Record<string, unknown> = {}) => ({ name, source: "page", addedAt: "2026-11-10T01:00:00Z", ...over }) as never;
+const capture = (url: string, names: string[]) => ({ url, names }) as never;
+
+test("a run's grid is its Use Its Images links' captures in their order, then images you added since it began", () => {
+  const run = { createdAt: "2026-11-10T00:30:00Z", setup: setup({ links: [{ url: "https://shop.example/pricing", use: "images" }, { url: "https://feel.example/", use: "feel" }] }) };
+  const catalogue = {
+    assets: [asset("a1"), asset("a2"), asset("a3"), asset("a4", { source: "yours" }), asset("a5", { source: "yours", addedAt: "2026-11-10T00:00:00Z" })],
+    captures: [capture("https://shop.example/other", ["a2", "a1"]), capture("https://feel.example/", ["a3"])],
+  };
+  assert.deepEqual(assetsOfRun(catalogue, run).map((a) => a.name), ["a2", "a1", "a4"]);
+  assert.deepEqual(assetsOfRun(null, run), []);
+});
+
+test("an image is used unless unticked, and a click not yet confirmed counts", () => {
+  const b = { imageUse: { a1: { use: false, by: "user" as const } } };
+  assert.equal(imageUsed(b, {}, "a1"), false);
+  assert.equal(imageUsed(b, {}, "a2"), true);
+  assert.equal(imageUsed(b, { a1: true }, "a1"), true);
+  assert.equal(usedCount([asset("a1"), asset("a2")], {}, b), 1);
 });

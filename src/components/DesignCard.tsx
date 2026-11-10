@@ -376,6 +376,10 @@ function DesignRunBody(props: {
                   </p>
                 </div>
               </Show>
+              {/* A run that stopped before any design keeps its error's room, so the brief's line under it can be read. */}
+              <Show when={props.run.error && designs().length === 0 && props.run.brief}>
+                <div class="design-brief-error-room" />
+              </Show>
               <DesignBriefCollapsed run={props.run} store={props.store} />
               <Show when={designs().length > 0}>
                 <div class="design-card-body">

@@ -12,6 +12,7 @@ import {
   boardRows,
   boardTotals,
   filterCounts,
+  hereRows,
   inDefaultScope,
   type RateCell,
   rateCell,
@@ -22,6 +23,7 @@ import {
   rateReader,
   sameRateCell,
   sortRows,
+  spendIdsKey,
   STATE_WORD,
   teamChips,
   teamForLink,
@@ -39,7 +41,7 @@ import {
 import { compactModel, relativeTime, tildePath } from "../lib/format";
 import { browserZone, costsHref, type CostsQuery, DEFAULT_COSTS_QUERY } from "../lib/cost-history";
 import { agentsHref, teamKey } from "../lib/insights";
-import { hostOf } from "../lib/mesh";
+import { activeHostFilter, hostFilterLabel, hostOf } from "../lib/mesh";
 import { createPoll, type Poll } from "../lib/poll";
 import { renameSession } from "../lib/session-actions";
 import { archiveBlockReason } from "../lib/archive-block";
@@ -55,7 +57,7 @@ import { PerformanceTab } from "./PerformanceTab";
 import { DEFAULT_PERF_QUERY, type PerfQuery, perfHref } from "../lib/perf";
 import { InsightsPage, ListSkeleton } from "./InsightsPage";
 import { TitleField } from "./TitleField";
-import { sessionHref } from "./Sidebar";
+import { HostMark, hostClause, sessionHref } from "./Sidebar";
 import { Chip, CountChip, Icon } from "./ui";
 
 /** What a row needs from the page: the shared state and the gestures that reach past the board. */
@@ -67,7 +69,8 @@ interface BoardCtx {
   toggle(path: string): void;
   renaming(path: string): boolean;
   setRenaming(path: string | null): void;
-  onRefresh(): void;
+  /** Read the list again after a change to the session at `path` (another host's: its list too). */
+  onRefresh(path?: string): void;
   onArchiveChanged(path: string, archived: boolean): void;
   onOpenSubagents(path: string): void;
   /** The session whose Session details pane is open beside the board, if any. */
@@ -88,6 +91,9 @@ const USAGE_POLL_MS = 60_000;
 
 /** A turn in flight as this tab knows it, newer than the list (the sidebar's rule). */
 const busyOf = (s: SessionSummary) => !s.live && !!(localRunning()[s.path] ?? s.busy);
+
+/** A session on another host: this host reads no worktrees, spend or tokens for it. */
+const remote = (path: string) => hostOf(path) !== null;
 
 /** The row's context fill: the open session's live value wins over the list's tail value. */
 function contextOf(s: SessionSummary): ContextInfo | null {
@@ -272,8 +278,10 @@ function BoardRowView(props: { row: BoardRow; ctx: BoardCtx }) {
   };
   const saveTitle = async (title: string | null) => {
     props.ctx.setRenaming(null);
-    if (await renameSession(s(), title)) props.ctx.onRefresh();
+    if (await renameSession(s(), title)) props.ctx.onRefresh(s().path);
   };
+  /** The host it lives on, when that is another one: its mark rides the age, as in the sidebar. */
+  const host = createMemo(() => hostOf(s().path));
   /**
    * A click anywhere on the row that isn't a control opens the session, as Open does. Controls
    * keep their own action, the rename field and its hint never open it, and neither does a click
@@ -335,6 +343,7 @@ function BoardRowView(props: { row: BoardRow; ctx: BoardCtx }) {
                   </a>
                   {/* The rail and the group heading show the state; this says it to a screen reader. */}
                   <span class="visually-hidden">, {r().word}</span>
+                  <Show when={host()}>{(h) => <span class="visually-hidden">{hostClause(h())}</span>}</Show>
                 </p>
               }
             >
@@ -362,6 +371,7 @@ function BoardRowView(props: { row: BoardRow; ctx: BoardCtx }) {
               <Show when={compactModel(s().model)}>{(m) => <span class="text-mono">{m()}</span>}</Show>
               <Show when={r().total > 0 && workersLine(r())}>{(w) => <span>{w()}</span>}</Show>
               <span>{relativeTime(s().lastActiveAt, props.ctx.now)}</span>
+              <Show when={host()}>{(h) => <HostMark host={h()} />}</Show>
               <Show when={rate().figure}>
                 <RateMark cell={rate()} micro />
               </Show>
@@ -379,6 +389,7 @@ function BoardRowView(props: { row: BoardRow; ctx: BoardCtx }) {
             <span class="board-when" title={s().model ? `${s().model}\n${s().lastActiveAt}` : s().lastActiveAt}>
               {relativeTime(s().lastActiveAt, props.ctx.now)}
             </span>
+            <Show when={host()}>{(h) => <HostMark host={h()} />}</Show>
           </span>
         </div>
 
@@ -512,12 +523,17 @@ function AgentsTabs(props: { tab: AgentsTab }) {
 /** `#/agents`: every session on one board; what it's about, where it stands and its worktrees folded inside. */
 export function AgentsView(props: {
   agents: Poll<AgentsAnswer>;
+  /** The board's sessions: this host's and every connected one's, under the host filter (App). */
   sessions: SessionSummary[] | undefined;
+  /** This host's sessions only: what the Costs tab names its rows from (this host's ledger). */
+  hereSessions: SessionSummary[] | undefined;
   now: number;
   /** Team a `#/agents/<teamKey>` link names: its session stays on the board and its pane opens on Agents. */
   focusTeam: string | null;
   titleRef(el: HTMLHeadingElement): void;
   onRefresh(): void;
+  /** Read the other hosts' session lists again now, not at the next poll. */
+  onReadPeers(): void;
   onArchiveChanged(path: string, archived: boolean): void;
   onOpenSubagents(path: string): void;
   detailsPath: string | null;
@@ -579,7 +595,7 @@ export function AgentsView(props: {
    * A string, so the poll below restarts only when the SET changes, never on a fresh list.
    */
   const treesKey = createMemo(() =>
-    onCosts() ? "" : worktreePathsKey(filter() === "unmerged" ? sortRows(rows().filter(inDefaultScope)).slice(0, limit()) : paged()),
+    onCosts() ? "" : worktreePathsKey(filter() === "unmerged" ? sortRows(hereRows(rows().filter(inDefaultScope), remote)).slice(0, limit()) : paged(), remote),
   );
   const readTrees = async (key: string) => {
     if (!key || document.hidden) return;
@@ -607,7 +623,7 @@ export function AgentsView(props: {
   const today = createPoll(() => getUsageToday(browserZone()), USAGE_POLL_MS);
   const [spends, setSpends] = createSignal<ReadonlyMap<string, number>>(new Map());
   /** The rendered rows' session ids, as one string: the poll restarts only when the SET changes. */
-  const spendKey = createMemo(() => (onCosts() ? "" : paged().map((r) => r.session.id).join(",")));
+  const spendKey = createMemo(() => (onCosts() ? "" : spendIdsKey(paged(), remote)));
   const readSpends = async (key: string) => {
     if (!key || document.hidden) return;
     try {
@@ -694,7 +710,10 @@ export function AgentsView(props: {
       }),
     renaming: (p) => renaming() === p,
     setRenaming,
-    onRefresh: () => props.onRefresh(),
+    onRefresh: (p) => {
+      props.onRefresh();
+      if (p && remote(p)) props.onReadPeers();
+    },
     onArchiveChanged: (p, a) => props.onArchiveChanged(p, a),
     onOpenSubagents: (p) => props.onOpenSubagents(p),
     get detailsPath() {
@@ -713,7 +732,12 @@ export function AgentsView(props: {
 
   const meta = () => (props.sessions ? totalsLine(totals()) : undefined);
   const metaTitle = () =>
-    "Sessions working, sessions live, what this device has spent since midnight at API prices (every call, subscriptions included), and unmerged branches in the worktrees read so far.";
+    "Sessions working and sessions live on the board, whichever computer they're on; what this computer has spent since midnight at API prices (every call, subscriptions included); and unmerged branches in this computer's worktrees read so far.";
+  /** The host the sidebar's host filter narrows both lists to, by name; null for All. */
+  const narrowedTo = createMemo(() => {
+    const f = activeHostFilter();
+    return f === null ? null : hostFilterLabel(f);
+  });
 
   const emptyLine = () => {
     const t = totals();
@@ -733,6 +757,7 @@ export function AgentsView(props: {
       onRefresh={() => {
         props.agents.refetch();
         props.onRefresh();
+        props.onReadPeers();
         today.refetch();
         if (onCosts()) setCostsTick((n) => n + 1);
         else {
@@ -747,7 +772,7 @@ export function AgentsView(props: {
       class="agents-page"
     >
       <AgentsTabs tab={tab()} />
-      <Show when={props.costs}>{(q) => <CostsTab query={q()} sessions={props.sessions} now={props.now} tick={costsTick()} />}</Show>
+      <Show when={props.costs}>{(q) => <CostsTab query={q()} sessions={props.hereSessions} now={props.now} tick={costsTick()} />}</Show>
       <Show when={props.performance}>{(q) => <PerformanceTab query={q()} now={props.now} tick={costsTick()} />}</Show>
       <Show when={!onCosts()}>
       <div class="agents-tabpanel" id="agents-tabpanel" role="tabpanel" aria-labelledby="agents-tab-board">
@@ -791,7 +816,8 @@ export function AgentsView(props: {
           <div class="board-caption">
             <p class="board-count-line" aria-live="polite">
               {shown().length} {shown().length === 1 ? "session" : "sessions"}
-              {filter() ? "" : query().trim() ? " across every session" : " live or open in Sova"}
+              {narrowedTo() ? ` on ${narrowedTo()}` : ""}
+              {filter() ? "" : query().trim() ? (narrowedTo() ? "" : " across every session") : " live or open in Sova"}
             </p>
             <Show when={meta()}>
               <p class="board-totals" title={metaTitle()}>

@@ -161,6 +161,10 @@
 .board-activity-line .board-when::before { content: "·"; margin-right: var(--space-2); }
 .board-model { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-mono); }
 .board-when { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--color-ink-muted); }
+/* Another host's row: its name after the age (mesh.css `.session-host`, the sidebar row's mark).
+   On the Activity line it takes what the age leaves and ellipsizes; its state word never cuts. */
+.board-activity-line .session-host { flex: 0 1 auto; min-width: 0; }
+.board-activity-line .session-host::before { content: "·"; margin-right: var(--space-1); font-family: var(--font-body); }
 .board-count { display: block; overflow: hidden; text-overflow: ellipsis; }
 .board-teams { gap: var(--space-1); }
 .board-team { display: inline-block; flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -272,6 +276,12 @@ button.board-team:focus-visible { outline: var(--focus-ring); outline-offset: va
   }
   .board-activity-line .board-when::before { content: none; }
   .board-activity-line .context-ring + .board-when::before { content: "·"; }
+  /* The ring and the age fill the 5.5rem track: another host's name takes the cell's second line,
+     the whole track wide, and a long one ellipsizes there. */
+  .board-activity-line { flex-wrap: wrap; row-gap: 2px; }
+  .board-activity-line .session-host { flex: 0 1 100%; max-width: 100%; }
+  .board-activity-line .session-host::before { content: none; }
+  .board-activity-line .session-host-warn, .board-activity-line .session-host-error { max-width: 100%; }
   .board-team:not(.board-team-all) { display: none; }
   .board-team.board-team-all { display: inline-block; }
 }

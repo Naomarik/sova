@@ -294,8 +294,18 @@ export function money(usd: number): string {
 // ---------------------------------------------------------------------------
 // Worktrees
 
-/** The comma-joined `paths` the worktrees request names: the rendered rows, in order. "" = none. */
-export const worktreePathsKey = (rows: readonly Pick<BoardRow, "session">[]): string => rows.map((r) => r.session.path).join(",");
+/** The rows this host reads worktrees and workers' spend for: never another computer's
+    (`remote`), whose readings this host doesn't have. */
+export const hereRows = <R extends Pick<BoardRow, "session">>(rows: readonly R[], remote: (path: string) => boolean): R[] =>
+  rows.filter((r) => !remote(r.session.path));
+
+/** The comma-joined `paths` the worktrees request names: the rendered rows on this host, in order. "" = none. */
+export const worktreePathsKey = (rows: readonly Pick<BoardRow, "session">[], remote: (path: string) => boolean): string =>
+  hereRows(rows, remote).map((r) => r.session.path).join(",");
+
+/** The comma-joined session ids the workers' spend request names: the rendered rows on this host. "" = none. */
+export const spendIdsKey = (rows: readonly Pick<BoardRow, "session">[], remote: (path: string) => boolean): string =>
+  hereRows(rows, remote).map((r) => r.session.id).join(",");
 
 /** What a tree's merge reading says, in words: merged (either way), unmerged, or nothing known. */
 export type TreeMerge = { kind: "merged"; text: "merged"; title: string } | { kind: "unmerged"; text: "unmerged"; title: string } | { kind: "unknown"; text: string };

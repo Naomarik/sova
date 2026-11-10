@@ -10,7 +10,8 @@ import { type BoardRow, gistTitle } from "../lib/agents-board";
 import { type MenuBuiltIn, type MenuEntry, menuGroups, runMenuEntry, sameGroups } from "../lib/menu-place";
 import { ExtensionsContext } from "../lib/reply-place";
 import { archivedProjectOf, unarchivedProjectOf } from "../lib/drag-archive";
-import { hostOf } from "../lib/mesh";
+import { peerGroupReason } from "../lib/drag-overlay";
+import { hostLabel, hostOf } from "../lib/mesh";
 import { archiveSession, renameSession } from "../lib/session-actions";
 import { groupNameOf, loadSessionGroups, quoted, sessionGroups, setSessionGroup } from "../lib/session-groups";
 import { summaryLineOf } from "../lib/summary-row";
@@ -22,7 +23,8 @@ import { Icon } from "./ui";
 /** What the menu needs from the board: the gestures that reach past it. */
 export interface RowMenuCtx {
   setRenaming(path: string | null): void;
-  onRefresh(): void;
+  /** Read the list again after a change to the session at `path` (another host's: its list too). */
+  onRefresh(path?: string): void;
   onArchiveChanged(path: string, archived: boolean): void;
   onOpenSubagents(path: string): void;
   /** The session whose Session details pane is open beside the board, if any. */
@@ -53,7 +55,12 @@ export function RowMenu(props: { row: BoardRow; ctx: RowMenuCtx; archive: { labe
   const extensions = useContext(ExtensionsContext);
   const added = createMemo(() => (hostOf(s().path) === null ? menuGroups(extensions(), "session") : []), [], { equals: sameGroups });
   const setTitle = async (title: string | null) => {
-    if (await renameSession(s(), title)) props.ctx.onRefresh();
+    if (await renameSession(s(), title)) props.ctx.onRefresh(s().path);
+  };
+  /** Groups are this host's: another host's row says so, as the sidebar's drop overlay does. */
+  const groupBlocked = () => {
+    const host = hostOf(s().path);
+    return host ? peerGroupReason(hostLabel(host)) : "";
   };
   const move = async (id: string | null) => {
     const before = groupNameOf(sessionGroups(), s().groupId);
@@ -115,6 +122,7 @@ export function RowMenu(props: { row: BoardRow; ctx: RowMenuCtx; archive: { labe
                   aria={`Move ${quoted(s().title)} into a group`}
                   icon={<Icon name="folder" small />}
                   description={groupNameOf(sessionGroups(), s().groupId) ?? undefined}
+                  disabled={groupBlocked()}
                   stayOpen
                   onRun={() => {
                     void loadSessionGroups();

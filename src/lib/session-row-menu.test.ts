@@ -17,6 +17,7 @@ const { RowMenu } = await importSsr(new URL("../components/SessionRowMenu.tsx", 
 const { ExtensionsContext } = await import("./reply-place");
 const { isSovaName, SESSION_MENU_NAMES } = await import("./menu-place");
 const mesh = await import("./mesh");
+const dragOverlay = await import("./drag-overlay");
 type ExtensionInfo = import("../../shared/protocol").ExtensionInfo;
 type BoardRow = import("./agents-board").BoardRow;
 type SessionSummary = import("../../shared/protocol").SessionSummary;
@@ -113,6 +114,26 @@ test("a session on another host shows no extension rows: an extension is this ho
   const remote = { row: row(session({ path: "/peer/sessions/b.jsonl" })), ctx: ctx(), archive: null };
   assert.equal(drawMenu(remote, [tickets, notes]), drawMenu(remote, []));
   assert.ok(drawMenu({ ...remote, row: row(session()) }, [tickets]).includes("File Issue"), "the same session on this host does");
+});
+
+test("on another host's row Move to Group is off, with the sidebar's reason; this host's row is as before", () => {
+  const { noteHost, setMeshState } = mesh;
+  const { peerGroupReason } = dragOverlay;
+  setMeshState({ enabled: true, self: { id: "desk", label: "", hostname: "desk" }, peers: [{ id: "laptop", label: "Laptop", state: "up" } as never], sync: [], frontDoor: null });
+  try {
+    noteHost("/peer/sessions/g.jsonl", "laptop");
+    const html = drawMenu({ row: row(session({ path: "/peer/sessions/g.jsonl" })), ctx: ctx(), archive: null });
+    const item = /<[^>]*aria-label="Move “Fix the build” into a group"[^>]*>/.exec(html)?.[0] ?? "";
+    assert.match(item, /aria-disabled="true"/);
+    const reason = "Groups hold this host's sessions only. That one lives on Laptop.";
+    assert.equal(peerGroupReason("Laptop"), reason, "the drop overlay's very sentence");
+    assert.ok(item.includes(`title="${reason}"`), item);
+    assert.ok(html.includes(`<span class="popover-item-desc">${reason}</span>`), "said before the press");
+    const want = JSON.parse(readFileSync(SNAPSHOT, "utf8")) as Record<string, string>;
+    assert.equal(drawMenu(CASES.plain!), want.plain, "this host's row: exactly the snapshot");
+  } finally {
+    setMeshState(null);
+  }
 });
 
 test("extension rows come after every one of Sova's items, one group per extension, headed by its title", () => {

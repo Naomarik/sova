@@ -4,7 +4,7 @@ import { DESIGN_ASSET_KINDS } from "../../shared/design-assets";
 import { assetKindWord, assetsOfRun, assetStateLine, usedCount, type WithUnused } from "../lib/design-brief";
 import type { DesignStore } from "../lib/design-store";
 import type { DesignRunView } from "../lib/design-ui";
-import { Select, TextArea } from "./form";
+import { Select, TextArea, Toggle } from "./form";
 
 const message = (e: unknown, fallback: string) => (e instanceof Error ? e.message : fallback);
 
@@ -41,13 +41,18 @@ function AssetCard(props: { asset: DesignAsset; used: boolean; store: DesignStor
       <button type="button" class="design-asset-open" aria-label={`Details of ${props.asset.name}`} onClick={() => props.onOpen()}>
         <img src={props.store.api.assetUrl(props.asset.name, "small")} alt={props.asset.description?.description ?? ""} loading="lazy" />
       </button>
-      <label class="toggle design-asset-use">
-        <input type="checkbox" checked={props.used} disabled={props.readOnly} aria-label={`Use ${props.asset.name}`} onChange={(e) => props.onUse(e.currentTarget.checked)} />
-        <span class="toggle-box" />
-        <span class="design-asset-kind" title={assetKindWord(props.asset)}>
-          {assetKindWord(props.asset)}
-        </span>
-      </label>
+      <Toggle
+        class="design-asset-use"
+        label={
+          <span class="design-asset-kind" title={assetKindWord(props.asset)}>
+            {assetKindWord(props.asset)}
+          </span>
+        }
+        ariaLabel={`Use ${props.asset.name}`}
+        checked={props.used}
+        disabled={props.readOnly}
+        onChange={(on) => props.onUse(on)}
+      />
       <p class="text-caption text-muted design-asset-state" title={assetStateLine(props.asset)}>
         {assetStateLine(props.asset)}
       </p>

@@ -46,7 +46,7 @@ export function DesignGallery(props: { path: string }) {
                   <p class="empty-body">
                     {(store.view()?.runs.length ?? 0) > 0
                       ? "0 prototypes yet. They show up here once you press Start on the brief."
-                      : "0 prototypes in this chat. Turn on vis and ask for a Lookbook to make some."}
+                      : "0 designs in this chat. Turn on vis and ask for a Lookbook to make some."}
                   </p>
                 </div>
               </Show>

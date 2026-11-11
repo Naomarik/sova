@@ -182,7 +182,9 @@ import { UiDialog } from "./UiDialog";
 import type { QueueWorktree } from "./WorktreesModal";
 import { heldAskLine, heldComposerLine, heldDecisionOf } from "../lib/merge-standing";
 import { askReread, askReview, holdOf } from "../lib/approval-hold";
-import { holdLine, REVIEW } from "../lib/approvals";
+import { createProfileHold } from "../lib/hello-steady";
+import { noteChatFolder } from "../lib/approval-overlay";
+import { holdLine, REVIEW, SAVING_LINE } from "../lib/approvals";
 import { clearPick, pickedDecision } from "../lib/merge-decision-pick";
 import { mergeChanged, mergeFeed, readQueue } from "../lib/merge-queue-client";
 
@@ -585,6 +587,14 @@ export function ChatView(props: {
     }, LOGIN_UNSAID_MS);
   };
   onCleanup(() => clearTimeout(loginUnsaid));
+  // A hello keeps the chat's profile as shown until the messages after it settle it (lib/hello-steady).
+  const profileHold = createProfileHold<ChatProfileInfo>(setProfileInfo, LOGIN_UNSAID_MS);
+  onCleanup(() => profileHold.dispose());
+  // The chat's folder, for its mid-chat lines' save queue (lib/approval-overlay).
+  createEffect(() => {
+    const cwd = props.summary?.()?.cwd;
+    if (cwd) noteChatFolder(props.path, cwd);
+  });
   /** Local "Ran /name args" rows; `tui` marks one that asked for a UI Sova can't show, `note` one
       that was refused (a /compact), whose row then says why instead of "Ran". */
   const [commandRows, setCommandRows] = createSignal<{ label: string; tui: boolean; note?: string }[]>([]);
@@ -947,7 +957,7 @@ export function ChatView(props: {
           setCwdFallback(msg.cwdFallback ?? null);
           // The shield and the login stay as shown until the messages after the hello settle them
           // ("commands", "sandbox", "claude_login"), so neither blinks out and back.
-          setProfileInfo(null); // a "profile" message follows for a profile or a session before its first message
+          profileHold.hello(); // a "profile" message follows for a profile or a session before its first message
           setChatProfile(null); // and a "chat_profile" one from a server that has it
           awaitLogin();
           batch(() => {
@@ -1216,7 +1226,7 @@ export function ChatView(props: {
           break;
         case "profile": {
           const { type: _t, ...info } = msg;
-          setProfileInfo(info);
+          profileHold.said(info);
           props.onProfile?.(info);
           if (info.locked) setProfileRace(null);
           break;
@@ -1225,6 +1235,8 @@ export function ChatView(props: {
           clearTimeout(loginUnsaid);
           loginUnsaid = undefined;
           setClaudeLogin(msg.login);
+          // It follows the profile's place after a hello: no profile said by now means none.
+          profileHold.settled();
           break;
         case "event":
           // A design's page and state go to its card and the Gallery, never into the turn's rows.
@@ -1869,7 +1881,10 @@ export function ChatView(props: {
     // Asking mode: a new chat sends once every context file and skill it could load is decided. The
     // draft stays and typing goes on; Review opens the setup card's list. The server holds it too.
     const hold = holdOf(props.path);
-    if (hold) return { icon: "attention", text: holdLine(hold.context, hold.skills), action: { label: REVIEW, run: () => askReview(props.path) } };
+    if (hold && hold.context + hold.skills > 0) return { icon: "attention", text: holdLine(hold.context, hold.skills), action: { label: REVIEW, run: () => askReview(props.path) } };
+    // Every waiting item is decided here, and the last decisions are still being saved: Send waits
+    // for the server to have them, so a message never bounces.
+    if (hold?.saving) return { icon: "clock", text: SAVING_LINE };
     // Connecting, starting or reconnecting: the words float over the transcript's end (`waitNote`),
     // the composer's reason carries them for assistive technology only (§chat.transcript/instant-open).
     const waiting = composerWait(wait(), waitingReason());

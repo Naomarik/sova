@@ -8,6 +8,8 @@ import { createRoot, createSignal } from "solid-js";
 export interface Hold {
   context: number;
   skills: number;
+  /** A decision made here is still being saved: Send waits for it even when nothing else waits. */
+  saving?: true;
 }
 
 const store = createRoot(() => {
@@ -23,8 +25,8 @@ export const holdOf = (path: string): Hold | null => store.holds()[path] ?? null
 /** The setup card's word: `hold` null (or empty) clears it. */
 export function setHold(path: string, hold: Hold | null): void {
   const cur = store.holds()[path];
-  const empty = !hold || hold.context + hold.skills <= 0;
-  if (empty ? !cur : cur && cur.context === hold!.context && cur.skills === hold!.skills) return;
+  const empty = !hold || (hold.context + hold.skills <= 0 && !hold.saving);
+  if (empty ? !cur : cur && cur.context === hold!.context && cur.skills === hold!.skills && !!cur.saving === !!hold!.saving) return;
   store.setHolds((all) => {
     const next = { ...all };
     if (empty) delete next[path];

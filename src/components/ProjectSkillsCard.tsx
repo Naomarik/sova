@@ -1,8 +1,9 @@
-import { createSignal, For, type JSX, Show } from "solid-js";
+import { createSignal, For, Index, type JSX, Show } from "solid-js";
 import type { ApprovalRow, ApprovalSource, ApprovalState } from "../../shared/approvals";
 import type { ProjectSkillRow } from "../../shared/project-skills";
 import { getProjectContextFiles, getProjectSkills, setProjectContextFiles, setProjectSkills } from "../lib/api";
 import { ACTION_DECISION, ACTION_WORD, CHANGED_LINE, PARTIAL_FINGERPRINT_LINE, rowActions, stateChip, stateWord, type Approval } from "../lib/approvals";
+import { begin, EMPTY, failed, inOrder, projectQueue, settled, type Overlay } from "../lib/approval-overlay";
 import { createPoll } from "../lib/poll";
 import { shortDescription } from "../lib/project-skills";
 import { toast } from "../lib/ui-state";
@@ -29,8 +30,9 @@ export interface ApprovalsList {
 
 /**
  * One list of what a folder's new chats may load (context files, or skills): grouped by where each
- * comes from, each row with its state and its buttons. Kept on this computer; a click saves at once
- * and reaches new chats only.
+ * comes from, each row with its state and its buttons. Kept on this computer; a click shows the
+ * decision at once and saves it behind the row (lib/approval-overlay), reaching new chats only; a
+ * refusal or failure puts the row back, with its toast.
  */
 export function ApprovalsCard(props: {
   id: string;
@@ -43,16 +45,25 @@ export function ApprovalsCard(props: {
   extra?: JSX.Element;
   /** Whose list: a project's (the default) or a folder's that isn't one. */
   folder?: "project" | "folder";
+  /** The folder's save queue (lib/approval-overlay): its saves go out in click order, whichever surface made them. */
+  queue: string;
 }) {
-  const [busy, setBusy] = createSignal<string | null>(null);
+  const [overlay, setOverlay] = createSignal<Overlay>(EMPTY);
+  let saves = 0;
   const act = (r: ApprovalRow, a: keyof typeof ACTION_WORD) => {
-    if (busy()) return;
-    setBusy(r.key);
-    props
-      .decide({ [r.key]: ACTION_DECISION[a] })
-      .catch((err: Error) => toast(`Couldn't save ${r.name}. ${err.message}`))
-      .finally(() => setBusy(null));
+    const id = ++saves;
+    const to = ACTION_DECISION[a];
+    setOverlay((o) => begin(o, [r.key], to, id));
+    // The PUT answers with the whole list, which then carries the decision: the row is the server's again.
+    inOrder(props.queue, () => props.decide({ [r.key]: to }))
+      .then(() => setOverlay((o) => settled(o, id)))
+      .catch((err: Error) => {
+        setOverlay((o) => failed(o, id));
+        toast(`Couldn't save ${r.name}. ${err.message}`);
+      });
   };
+  /** A row's decision as shown: the one clicked while it saves, else the server's. */
+  const shown = (r: ApprovalRow): Approval => overlay()[r.key]?.to ?? approvalOf(r);
   return (
     <section class="card orgs-section project-skills" aria-labelledby={props.id}>
       <h2 class="orgs-h2" id={props.id}>
@@ -75,41 +86,41 @@ export function ApprovalsCard(props: {
               <p class="orgs-line">The search stopped early, so this list may miss some {props.what}.</p>
             </Show>
             <Show when={l().rows.length} fallback={<p class="orgs-line">No {props.what} found. A chat here would load none.</p>}>
-              <For each={groupsFor(props.folder ?? "project").filter((g) => l().rows.some((r) => r.source.kind === g.kind))}>
-                {(g) => (
+              <For each={groupsFor(props.folder ?? "project").filter((g) => l().rows.some((r) => r.source.kind === g.kind)).map((g) => g.label)}>
+                {(label) => {
+                  const g = () => groupsFor(props.folder ?? "project").find((x) => x.label === label)!;
+                  return (
                   <div class="project-settings-group">
-                    <span class="text-eyebrow">{g.label}</span>
+                    <span class="text-eyebrow">{label}</span>
                     <ul class="list project-skills-rows">
-                      <For each={l().rows.filter((r) => r.source.kind === g.kind)}>
+                      <Index each={l().rows.filter((r) => r.source.kind === g().kind)}>
                         {(r) => (
-                          <li class="list-row project-skill-row" title={r.path}>
+                          <li class="list-row project-skill-row" title={r().path}>
                             <div class="list-main">
                               <span class="list-title">
-                                <span class="text-mono">{r.name}</span>
-                                <Show when={r.source.folder}>{(f) => <span class="project-skill-source">{f()}</span>}</Show>
+                                <span class="text-mono">{r().name}</span>
+                                <Show when={r().source.folder}>{(f) => <span class="project-skill-source">{f()}</span>}</Show>
                               </span>
-                              <Show when={r.changed}>
+                              <Show when={shown(r()) === "changed"}>
                                 <span class="list-meta project-skill-changed">{CHANGED_LINE}</span>
                               </Show>
-                              <Show when={shortDescription(r.description)}>{(t) => <span class="list-meta">{t()}</span>}</Show>
-                              <Show when={r.fingerprintPartial}>
+                              <Show when={shortDescription(r().description)}>{(t) => <span class="list-meta">{t()}</span>}</Show>
+                              <Show when={r().fingerprintPartial}>
                                 <span class="list-meta">{PARTIAL_FINGERPRINT_LINE}</span>
                               </Show>
                             </div>
-                            <span class={`chip ${stateChip(approvalOf(r), l().asking)}`}>
+                            <span class={`chip ${stateChip(shown(r()), l().asking)}`}>
                               <i class="chip-dot" />
-                              {stateWord(approvalOf(r), l().asking)}
+                              {stateWord(shown(r()), l().asking)}
                             </span>
                             <div class="project-skill-actions">
-                              <For each={rowActions(approvalOf(r), l().asking, "card")}>
+                              <For each={rowActions(shown(r()), l().asking, "card")}>
                                 {(a) => (
                                   <button
                                     type="button"
                                     class="button button-sm"
-                                    aria-label={`${ACTION_WORD[a]} ${r.name}`}
-                                    aria-disabled={busy() !== null ? "true" : undefined}
-                                    aria-busy={busy() === r.key ? "true" : undefined}
-                                    onClick={() => act(r, a)}
+                                    aria-label={`${ACTION_WORD[a]} ${r().name}`}
+                                    onClick={() => act(r(), a)}
                                   >
                                     {ACTION_WORD[a]}
                                   </button>
@@ -118,10 +129,11 @@ export function ApprovalsCard(props: {
                             </div>
                           </li>
                         )}
-                      </For>
+                      </Index>
                     </ul>
                   </div>
-                )}
+                  );
+                }}
               </For>
             </Show>
           </>
@@ -139,6 +151,7 @@ export function ProjectSkillsCard(props: { projectId: string; onChanged?: () => 
     <ApprovalsCard
       id="project-skills"
       title="Skills"
+      queue={projectQueue(props.projectId)}
       what="skills"
       list={poll.data() ? { rows: poll.data()!.skills as ProjectSkillRow[], asking: poll.data()!.asking, complete: poll.data()!.complete } : undefined}
       error={poll.error() ?? null}
@@ -157,6 +170,7 @@ export function ProjectContextCard(props: { projectId: string; onChanged?: () =>
     <ApprovalsCard
       id="project-context"
       title="Context Files"
+      queue={projectQueue(props.projectId)}
       what="context files"
       list={poll.data() ? { rows: poll.data()!.files, asking: poll.data()!.asking, complete: poll.data()!.complete } : undefined}
       error={poll.error() ?? null}

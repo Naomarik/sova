@@ -19,7 +19,7 @@ import {
 import { getBaton } from "../lib/api";
 import { jumpWhenArrived } from "../lib/jump";
 import { absoluteTime } from "../lib/spend";
-import { GAP_MS, newestFirst, timelineRows, timelineState, type TimelineRow } from "../lib/timeline";
+import { GAP_MS, groupRuns, runLabel, newestFirst, timelineRows, timelineState, type TimelineRow } from "../lib/timeline";
 import { toast } from "../lib/ui-state";
 import { capTitle } from "../lib/workers";
 import { Icon } from "./ui";
@@ -87,10 +87,10 @@ export function SessionTimeline(props: {
     timelineRows(props.items ?? [], props.outline, props.rewinds ?? [], GAP_MS, { outlines: props.outlines, view: view(), inputsOnly });
   const rows = createMemo(() => axis(props.inputsOnly));
   /** The rows as the list draws them, newest first; everything that reasons stays on `rows`. */
-  const display = createMemo(() => newestFirst(rows()));
+  const display = createMemo(() => newestFirst(groupRuns(rows())));
   const state = () => timelineState(props.outline, props.now);
   /** Rows keyed, so a refetch or a phase change never remounts one under focus. */
-  const byKey = createMemo(() => new Map(rows().map((r) => [r.key, r])));
+  const byKey = createMemo(() => new Map(display().map((r) => [r.key, r])));
 
   /** One rewind, one refresh, whoever started it: App's signal is the only thing that rebuilds
       the shadow, and the pane re-reads the transcript off the same signal. */
@@ -254,6 +254,8 @@ function Row(props: {
   const clockTitle = () => {
     const at = row().at;
     if (!at) return undefined;
+    const run = row().run;
+    if (run) return `${absoluteTime(run.from, props.now)} to ${absoluteTime(at, props.now)} · ${relativeTime(at, props.now)}`;
     return `${absoluteTime(at, props.now)} · ${relativeTime(at, props.now)}${flagged() ? " · summary time, not the message's" : ""}`;
   };
   const asking = () => props.phase.kind === "confirm" && props.phase.id === row().entryId;
@@ -323,6 +325,22 @@ function Row(props: {
 
 /** A row's title and meta, the same either way: only the element around them changes. */
 function Body(props: { row: TimelineRow }) {
+  return (
+    <Show when={props.row.run} fallback={<PlainBody row={props.row} />}>
+      <>
+          <span class="timeline-title" aria-hidden="true">
+            {props.row.title}
+          </span>
+          <Show when={props.row.meta}>{(meta) => <span class="timeline-meta" aria-hidden="true">{meta()}</span>}</Show>
+          <span class="visually-hidden">
+            {runLabel(props.row)}
+          </span>
+      </>
+    </Show>
+  );
+}
+
+function PlainBody(props: { row: TimelineRow }) {
   return (
     <>
       {/* A chapter heading has its own class, not `.timeline-title`: one line, never two. The

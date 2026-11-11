@@ -9,7 +9,7 @@
 // rewind left behind) stay in inputs.ts; this module only places their rows on the axis.
 
 import type { OutlineSnapshot, RewindInfo, SessionOutline, TranscriptItem } from "../../shared/protocol";
-import { duration, relativeTime, thousands } from "./format";
+import { clockTime, duration, relativeTime, thousands } from "./format";
 import { inputPreview, inputRows, typedByUser, type RowState, type Sender, type ViewRow } from "./inputs";
 import { SPAWN_TOOLS } from "./message";
 import { absoluteTime, firstLine, timelineEntries } from "./spend";
@@ -67,6 +67,9 @@ export interface TimelineRow {
   sender?: Sender;
   /** input rows only: a fired wake nudge. Not typed by the user, so Inputs Only leaves it out. */
   wake?: boolean;
+  /** A run of identical markers drawn as one row (`groupRuns`): how many, the shared title
+      without the count, and the oldest member's time. `at` and `entryId` are the newest's. */
+  run?: { count: number; title: string; from: string };
 }
 
 /** An input row the user typed: what Inputs Only keeps (inputs.ts `typedByUser`). */
@@ -411,6 +414,63 @@ export function timelineRows(
   return withGaps(sorted, thresholdMs).flatMap((row) =>
     row.kind === "input" && row.meta ? [{ ...row, meta: undefined }, { key: `density:${row.key}`, kind: "density" as const, title: row.meta }] : [row],
   );
+}
+
+/**
+ * A time range in clock form: "2:37–3:00 PM" when both ends share the meridiem, "11:50 AM–12:10 PM"
+ * when they don't, and one time when both ends show the same minute.
+ */
+export function clockRange(from: string, to: string): string {
+  const a = clockTime(from);
+  const b = clockTime(to);
+  if (a === b) return a;
+  return a.slice(-2) === b.slice(-2) ? `${a.slice(0, -3)}–${b}` : `${a}–${b}`;
+}
+
+/** A group row's spoken name: "coordinator finished, 31 times, 2:37 PM to 3:00 PM". "" for a plain row. */
+export function runLabel(row: TimelineRow): string {
+  if (!row.run) return "";
+  const a = clockTime(row.run.from);
+  const b = row.at ? clockTime(row.at) : a;
+  return `${row.run.title}, ${row.run.count} times, ${a === b ? a : `${a} to ${b}`}`;
+}
+
+/**
+ * Runs of 2+ consecutive identical markers (same marker kind, same title) become one row, a display
+ * step over `timelineRows`' chronological output: any other row between them (another marker, an
+ * input, a chapter, a gap) splits the run. The group keeps its oldest member's key, so a new member
+ * grows it without remounting, and jumps to its newest member. It never opens into a list.
+ */
+export function groupRuns(rows: readonly TimelineRow[]): TimelineRow[] {
+  const out: TimelineRow[] = [];
+  let i = 0;
+  while (i < rows.length) {
+    const first = rows[i]!;
+    let j = i + 1;
+    if (first.kind === "marker") {
+      while (j < rows.length && rows[j]!.kind === "marker" && rows[j]!.marker === first.marker && rows[j]!.title === first.title) j++;
+    }
+    const n = j - i;
+    if (n < 2) {
+      out.push(first);
+    } else {
+      const last = rows[j - 1]!;
+      const row: TimelineRow = {
+        key: first.key,
+        kind: "marker",
+        marker: first.marker,
+        at: last.at,
+        title: `${first.title} ×${n}`,
+        meta: first.at && last.at ? clockRange(first.at, last.at) : undefined,
+        run: { count: n, title: first.title, from: first.at ?? "" },
+      };
+      if (last.entryId !== undefined) row.entryId = last.entryId;
+      if (last.full) row.full = last.full;
+      out.push(row);
+    }
+    i = j;
+  }
+  return out;
 }
 
 /**

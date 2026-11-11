@@ -105,12 +105,17 @@ function needsPack(runDir: string): boolean {
 /**
  * An entry whose runs the queue is done with: one in a final state, except a sent-back one still waiting for its
  * chat's fix. That one is done once history's truly-final rule says so (superseded by a newer entry of its branch, or
- * git says its commit is in the target) or git says its branch or worktree is gone.
+ * git says its commit is in the target; once filed so in the history it stays so) or git says its branch or worktree
+ * is gone.
  */
-function doneWith(entries: readonly RunLogsEntry[], e: RunLogsEntry, settled: ReadonlyMap<string, "merged" | "gone"> | undefined): boolean {
+function doneWith(q: RunLogsQueue, entries: readonly RunLogsEntry[], e: RunLogsEntry, settled: ReadonlySet<string> | undefined): boolean {
   if (!ENTRY_FINAL.includes(e.state)) return false;
   if (e.state !== "needs-fix") return true;
-  return trulyFinal(entries, e, settled ? new Set(settled.keys()) : undefined);
+  let recorded: string | undefined;
+  try {
+    recorded = q.store.history.recordedState(e.id);
+  } catch {}
+  return trulyFinal(entries, e, settled, recorded);
 }
 
 const hasDrafts = (runDir: string): boolean => existsSync(join(runDir, RUN_DRAFTS)) || existsSync(join(runDir, DRAFTS_ARCHIVE));
@@ -124,9 +129,10 @@ function inUse(q: RunLogsQueue): { checking: Set<string>; open: Set<string> } {
   if (cur) checking.add(cur);
   const entries = q.entries();
   const settled = q.settled?.();
+  const settledIds = settled?.size ? new Set(settled.keys()) : undefined;
   for (const e of entries) {
     if (e.state === "checking" && e.run) checking.add(e.run);
-    if (!doneWith(entries, e, settled)) for (const r of [e.run, ...(e.runs ?? [])]) if (r) open.add(r);
+    if (!doneWith(q, entries, e, settledIds)) for (const r of [e.run, ...(e.runs ?? [])]) if (r) open.add(r);
   }
   return { checking, open };
 }

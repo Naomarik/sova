@@ -177,6 +177,18 @@ describe("run logs: packing a finished run", () => {
     assert.equal(runLogsInfo(q).cleanable.runs, 5, "the five done for good, not the two still waiting");
   });
 
+  test("a sent-back entry the history filed as done stays done after the entry that superseded it left the working list", async () => {
+    const { q, store } = kit();
+    const run = makeRun(store, { startedAt: NOW - 5 * DAY, endedAt: NOW - 4 * DAY });
+    const old = ent({ state: "needs-fix", branch: "feat/h", run, runs: [run] });
+    const newer = ent({ state: "landed", branch: "feat/h", runs: [] });
+    store.history.sync([old, newer], 100, { now: new Date(NOW).toISOString() });
+    // Put in front of the line later, the superseding entry got the lower seq and was trimmed first.
+    q.entriesList = [old];
+    assert.deepEqual(await sweepRunLogs(q, { now: NOW }), [run]);
+    assert.ok(existsSync(join(store.runDir(run), "logs", "02-check_unit.log.gz")), "its logs are packed");
+  });
+
   test("drafts already on disk: a finished run's drafts copy and the archive older sweeps made go, at any age; a packed run with only its old archive is swept again", async () => {
     const { q, store } = kit();
     const packedLongAgo = makeRun(store, { startedAt: NOW - 30 * DAY, endedAt: NOW - 29 * DAY, oldArchive: true });

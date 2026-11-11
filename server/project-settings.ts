@@ -1566,6 +1566,15 @@ export async function settingsInfo(projectId: string): Promise<ProjectSettingsIn
     rows.push({ setting: "copies", label: SETTINGS_REFERENCE.copies.label, state: `${limit.cap} at once`, where: "sova", href: `#/projects/${projectId}/branches`, hrefLabel: "the Branches tab", detail: machine !== null ? "set on this machine" : "from the project's file" });
   }
 
+  // Skills: the project's defaults for new chats, kept on this computer (server/projects/skills.ts).
+  try {
+    const { projectSkillsView, skillsRowState } = await import("./projects/skills");
+    const view = await projectSkillsView(projectId);
+    rows.push({ setting: "skills", label: "Skills", state: skillsRowState(view.counts), where: "sova", href: tab, anchor: "project-skills", hrefLabel: "Show Skills", detail: "kept on this computer; new chats start with these" });
+  } catch {
+    // unreadable: none listed
+  }
+
   const file = (setting: SettingId, state: string, href: string, hrefLabel: string, extra: Partial<SettingsRow> = {}) =>
     rows.push({ setting, label: SETTINGS_REFERENCE[setting].label, state, where: "file", href, hrefLabel, ...extra });
   // Services.

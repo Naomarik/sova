@@ -311,6 +311,18 @@ const PROJECTS_SWEEP: CommandEntry[] = [
     sessionFile: "never",
     meshNeed: "admin",
   },
+  looks("project.skills.get", "Show Project Skills", "Every skill a chat in a project could be offered, each Approved, Disallowed or Waiting for this project's new chats (kept on this computer).", "/api/projects/:pid/skills"),
+  {
+    id: "project.skills.set",
+    label: "Set Project Skills",
+    summary: "Approve or disallow skills for a project's new chats, saved at once: skills is { <skill name>: approved | disallowed | waiting }. Disallowed skills start off; chats already started keep theirs.",
+    effect: "changes",
+    params: { pid, skills: { type: "json", description: "{ <skill name>: \"approved\" | \"disallowed\" | \"waiting\" }", in: "body", required: true } },
+    route: { method: "PUT", path: "/api/projects/:pid/skills" },
+    sessionKey: null,
+    sessionFile: "never",
+    meshNeed: "admin",
+  },
   changes("project.coding.start", "New Chat in Project", "Start a coding chat in a project: in its root (or a folder inside it), on the project's coding model and mode; with worktree later it cuts its own branch once the work has a name.", "POST", "/api/projects/:pid/overseer/coding", {
     pid,
     title: { type: "string", description: "Names the chat (and, with worktree now, its branch)", in: "body" },

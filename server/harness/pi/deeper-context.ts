@@ -7,7 +7,7 @@
 import { readFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { blocksToAttach, loadedInstructions, LOADING_TOOLS } from "../../deeper-context";
-import { loadoutOnBranch } from "../../session-loadout";
+import { isSkillOff, loadoutOnBranch } from "../../session-loadout";
 import { expandedSkill, fillPlaceholders, skillBody, skillCommand } from "../../skill-sources";
 import { nestedSkillFile, offeredDirs, skillBlocksToAttach } from "../../subfolder-skills";
 import type { PiExtensionAPI } from "./extension-types";
@@ -52,7 +52,7 @@ export function deeperContextExtension(opts: { allow?: (abs: string) => boolean;
                 inFlight: skillsInFlight,
                 ignored,
                 startingFile: (f) => startingSkills().some((c) => c.sourceInfo.path === f),
-                off: (name) => (loadoutOnBranch(h.branch())?.offSkills ?? []).includes(name),
+                off: (name) => isSkillOff(loadoutOnBranch(h.branch()), name),
                 ...(opts.allow ? { allow: opts.allow } : {}),
               })
             : [];
@@ -76,7 +76,7 @@ export function deeperContextExtension(opts: { allow?: (abs: string) => boolean;
           const starting = startingSkills().find((c) => c.name === `skill:${cmd.name}`);
           const branch = toolCtx(ctx).branch();
           // A name this chat switched off stays off (§chat.transcript/setup-card-toggles): pi leaves the text as typed.
-          if (!starting && (loadoutOnBranch(branch)?.offSkills ?? []).includes(cmd.name)) return { action: "continue" as const };
+          if (!starting && isSkillOff(loadoutOnBranch(branch), cmd.name)) return { action: "continue" as const };
           const file = starting ? starting.sourceInfo.path : nestedSkillFile(ctx.cwd, cmd.name, branch, piSkillsIn);
           if (!file) return { action: "continue" as const };
           const raw = readFileSync(file, "utf8");

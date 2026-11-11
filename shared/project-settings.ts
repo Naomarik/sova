@@ -143,7 +143,8 @@ export interface SettingsCardView {
 
 /** One row of the Settings tab's All Settings. */
 export interface SettingsRow {
-  setting: SettingId;
+  /** "skills": the project's skill defaults, kept on this computer and changed only on its card (no proposal). */
+  setting: SettingId | "skills";
   label: string;
   /** A profile's, playbook's or mode's id. */
   name?: string;

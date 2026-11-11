@@ -13,9 +13,9 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 
 | What | Count |
 | --- | ---: |
-| Routes registered | 616 |
-| Routes a catalogue entry points at | 196 |
-| Catalogue entries | 267 |
+| Routes registered | 618 |
+| Routes a catalogue entry points at | 198 |
+| Catalogue entries | 269 |
 | Class: Peer protocol | 39 |
 | Class: Auth | 4 |
 | Class: Share pages | 0 |
@@ -177,6 +177,8 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | `project.update` | Edit Project | changes | `PATCH /api/projects/:pid` | admin |
 | `project.claude-login.get` | Show Project Claude Login | looks | `GET /api/projects/:pid/claude-login` | sessions |
 | `project.claude-login.set` | Set Project Claude Login | changes | `PUT /api/projects/:pid/claude-login` | admin |
+| `project.skills.get` | Show Project Skills | looks | `GET /api/projects/:pid/skills` | sessions |
+| `project.skills.set` | Set Project Skills | changes | `PUT /api/projects/:pid/skills` | admin |
 | `project.coding.start` | New Chat in Project | changes | `POST /api/projects/:pid/overseer/coding` | admin |
 | `project.setup.get` | Show Setup Chat | looks | `GET /api/projects/:pid/setup` | sessions |
 | `project.setup.open` | Set Up with a Chat | changes | `POST /api/projects/:pid/setup` | admin |
@@ -969,6 +971,8 @@ Approving a schedule or a draft spec, the Overseer's permits and their revoke: a
 | `GET /api/projects/:pid/setup` | sessions | `project.setup.get` |
 | `POST /api/projects/:pid/setup` | admin | `project.setup.open` |
 | `POST /api/projects/:pid/setup/merge` | admin | `project.setup.merge` |
+| `GET /api/projects/:pid/skills` | sessions | `project.skills.get` |
+| `PUT /api/projects/:pid/skills` | admin | `project.skills.set` |
 | `POST /api/projects/:pid/unarchive` | admin | `project.unarchive` |
 | `GET /api/projects/glance` | sessions | `project.glance` |
 | `POST /api/push/test` | admin | `push.test` |

@@ -1,6 +1,7 @@
 import { createEffect, createMemo, createSignal, For, Match, on, onCleanup, Show, Switch } from "solid-js";
 import type { GitSummary, SessionSetup } from "../../shared/protocol";
-import { fetchSessionSetup, fetchSessionTools, fetchSetupFile, setSessionLoadout } from "../lib/api";
+import { fetchSessionSetup, fetchSessionTools, fetchSetupFile, setProjectSkills, setSessionLoadout } from "../lib/api";
+import { approveLabel, disallowLabel, OFF_FOR_PROJECT, ON_FOR_THIS_CHAT, WAITING_LINE, waitingNotice } from "../lib/project-skills";
 import { mcpFlips, NOT_PROJECT, setupLine, setupOffLine, setupShows, setupSwitchLabel, setupTokens, SETUP_LABEL } from "../lib/mcp";
 import { openMarkdown } from "../lib/markdown-viewer";
 import { loadGitSummary, UPSTREAM_TITLE } from "../lib/git-summary";
@@ -177,6 +178,33 @@ export function SessionSetupCard(props: { path: string; editable?: boolean; tool
     return !!props.editable && !!s && "ok" in s && s.ok.state === "ok" && !!s.ok.toggleable;
   };
 
+  /** The project this new chat belongs to, while its skill list can still change, else null. */
+  const project = () => {
+    const s = setup();
+    return switchable() && s && "ok" in s && s.ok.state === "ok" ? (s.ok.project ?? null) : null;
+  };
+  const waitingCount = () => {
+    const s = setup();
+    return project() && s && "ok" in s && s.ok.state === "ok" ? s.ok.skills.filter((k) => k.project === "waiting").length : 0;
+  };
+  const [deciding, setDeciding] = createSignal<string | null>(null);
+  /** Approve or Disallow a waiting skill for the project (the project's Skills card's store), then read again. */
+  const decide = (name: string, state: "approved" | "disallowed") => {
+    const p = project();
+    if (!p || deciding()) return;
+    const mine = run;
+    setDeciding(name);
+    setProjectSkills(p.id, { [name]: state })
+      .then(() => settle(fetchSessionSetup(path(), true)))
+      .then((next) => {
+        if (mine !== run || !next || !("ok" in next)) return;
+        rev++;
+        setSetup(next);
+      })
+      .catch((err: Error) => toast(`Couldn't save ${name} for ${p.name}. ${err.message}`))
+      .finally(() => setDeciding(null));
+  };
+
   const view = () => {
     const s = setup();
     return s && "ok" in s ? loadoutView(s.ok) : null;
@@ -203,6 +231,25 @@ export function SessionSetupCard(props: { path: string; editable?: boolean; tool
   return (
     <Show when={landed()}>
       <section class="setup-card" aria-label="Session setup">
+        <Show when={waitingNotice(waitingCount())}>
+          {(line) => (
+            <div class="setup-group setup-waiting" role="status">
+              <p class="setup-note">{line()}</p>
+              <Show when={!foldOpen()}>
+                <button
+                  type="button"
+                  class="button button-sm button-ghost"
+                  onClick={() => {
+                    setSetupContextOpen(path(), true);
+                    setFoldOpen(true);
+                  }}
+                >
+                  Review Skills
+                </button>
+              </Show>
+            </div>
+          )}
+        </Show>
         <details
           class="setup-context"
           open={foldOpen()}
@@ -293,6 +340,32 @@ export function SessionSetupCard(props: { path: string; editable?: boolean; tool
                                   </button>
                                   <Show when={k.manualOnly}>
                                     <span class="setup-manual">Manual only</span>
+                                  </Show>
+                                  <Show when={project() && k.project === "disallowed"}>
+                                    <span class="setup-manual">{isOff(k) ? OFF_FOR_PROJECT : ON_FOR_THIS_CHAT}</span>
+                                  </Show>
+                                  <Show when={project() && k.project === "waiting"}>
+                                    <span class="setup-manual">{WAITING_LINE}</span>
+                                    <span class="setup-decide">
+                                      <button
+                                        type="button"
+                                        class="button button-sm"
+                                        aria-label={approveLabel(k.name)}
+                                        aria-disabled={deciding() ? "true" : undefined}
+                                        onClick={() => decide(k.name, "approved")}
+                                      >
+                                        Approve
+                                      </button>
+                                      <button
+                                        type="button"
+                                        class="button button-sm"
+                                        aria-label={disallowLabel(k.name)}
+                                        aria-disabled={deciding() ? "true" : undefined}
+                                        onClick={() => decide(k.name, "disallowed")}
+                                      >
+                                        Disallow
+                                      </button>
+                                    </span>
                                   </Show>
                                 </span>
                                 <span class="setup-facts">{fileFacts(k)}</span>

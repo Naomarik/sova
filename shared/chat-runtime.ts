@@ -95,6 +95,8 @@ export interface ChatLoadoutChoice {
   v: 1;
   offContext: string[];
   offSkills: string[];
+  /** Before the first message: skills the project disallows that this chat keeps on (server/session-loadout.ts). */
+  onSkills?: string[];
   offMcp?: string[];
   onMcp?: string[];
 }

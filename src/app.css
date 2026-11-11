@@ -1155,6 +1155,11 @@ html, body { overflow: clip; overscroll-behavior: none; }
 /* A manual-only skill: the words go under its name, so the name keeps the row's width. */
 .setup-name:has(.setup-manual) { flex-wrap: wrap; gap: 0 var(--space-2); }
 .setup-manual { flex: 0 0 100%; font-size: var(--fs-caption); color: var(--color-ink-muted); }
+/* A new chat's skill that waits for the project's decision: Approve and Disallow under its name.
+   The notice above the fold names the count. */
+.setup-decide { flex: 0 0 100%; display: flex; flex-wrap: wrap; gap: var(--space-2); margin-top: var(--space-1); }
+.setup-waiting { flex-direction: row; flex-wrap: wrap; align-items: center; justify-content: space-between; text-align: start; border-bottom: 1px solid var(--color-border); }
+.setup-waiting .setup-note { color: var(--color-ink-2); }
 /* A narrow card folds its rows (base.css), but not a row with a switch: it stays one line, the
    name ellipsised, then ≈tokens, then the switch at the right edge. */
 @container (max-width: 417.98px) {

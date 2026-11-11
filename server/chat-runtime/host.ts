@@ -47,6 +47,7 @@ import {
   setLinksSource,
   setLinkToken,
   setOpeningChoice,
+  setProjectSkillsOff,
   setRunRecorder,
   serverToolSpec,
   setServedTools,
@@ -446,6 +447,7 @@ export class ChatRuntimeHost {
       return void reply({ t: "opened", id: f.id, ok: false, error: { message: "A worker chat needs a server that speaks protocol 3." } });
     if (f.worker) setWorkerSpec(this.o.path, f.worker);
     if (f.opening) setOpeningChoice(this.o.path, f.opening);
+    setProjectSkillsOff(this.o.path, f.projectSkillsOff ?? null);
     setServedTools(f.served);
     // A special loadout opens from the server's data, its kind answered over this socket.
     if (f.special) {
@@ -499,6 +501,8 @@ export class ChatRuntimeHost {
       mcpList: (ask) => this.ask("mcp.list", ask) as never,
       mcpTell: (parent, note) => void this.ask("mcp.tell", { parent, note }).catch(() => {}),
       cardNote: (sessionId, since) => this.ask("cards.note", { sessionId, since }),
+      // The server sends the project's list in each open (setProjectSkillsOff): an ask during the build would wait on the open itself.
+      projectSkillsOff: async () => [],
     });
     setSingletonCheck((key, path) => this.ask("singleton", { key, path }));
     setLinksSource((sessionId, path) => this.ask("links", { sessionId, path }) as never);

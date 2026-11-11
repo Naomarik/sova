@@ -267,7 +267,9 @@
     "design.refine",
     "design.retry",
     "design.delete",
-    "design.coordinator.message"
+    "design.coordinator.message",
+    "project.skills.get",
+    "project.skills.set"
   ],
   "retired": [
     "settings.agents.get",

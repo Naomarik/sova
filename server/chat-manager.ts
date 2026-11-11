@@ -121,7 +121,7 @@ import { TOUR_TOOLS } from "../shared/tour";
 import { DESIGN_TOOLS } from "./design/tools";
 import { tourTools } from "./tours/tools";
 import { excludedTools, GRANT_TOOLS, keyOf, KNOWN_REMOVABLE_TOOLS, parseMine, searchToolsFor, singletonRaceText, type ProfileEntryData, type SessionSentData } from "../shared/profiles";
-import { loadoutOverrides, type LoadoutEntryData, type LoadoutState } from "./session-loadout";
+import { leavesOut, loadoutOnBranch, loadoutOverrides, loadoutStamp, pristineLoadout, sameLoadout, skillsOffOverride, type LoadoutEntryData, type LoadoutState } from "./session-loadout";
 import { RunState, SessionLimits, sessionPowersExtension } from "./session-powers";
 import { QUEUE_OPEN_TOOL, queuePushExtension, topicStore } from "./topics";
 import { OFFER_NOTE_MESSAGE, OFFER_TOOL } from "../shared/session-offers";
@@ -213,6 +213,8 @@ export interface ChatHosts {
   mcpTell?: (parent: string, note: McpNote) => void;
   /** The transcript cards' note of answers given at once since `since` (§chat.transcript-cards/answering). */
   cardNote?: (sessionId: string, since: string | null) => Promise<string | null>;
+  /** The skills a new chat in `cwd` starts with off: its project's disallowed ones (projects live in the server's engines). */
+  projectSkillsOff?: (cwd: string) => Promise<string[]>;
 }
 let chatHosts: ChatHosts = {};
 export function setChatHosts(h: ChatHosts): void {
@@ -310,6 +312,23 @@ export const DEFAULT_EXTENSION_FACTORIES = [
 ];
 
 const mcpListHere: NonNullable<ChatHosts["mcpList"]> = async (ask) => (await import("./mcp/chat")).chatListFor(ask);
+/** The project's disallowed skills the server sent with a chat process's open, by path (its builds use these). */
+const presetProjectOff = new Map<string, string[]>();
+export function setProjectSkillsOff(path: string, off: readonly string[] | null): void {
+  if (off) presetProjectOff.set(path, [...off]);
+  else presetProjectOff.delete(path);
+}
+const projectSkillsOffHere: NonNullable<ChatHosts["projectSkillsOff"]> = async (cwd) => (await import("./projects/skills")).projectSkillsOffForCwd(cwd);
+/** The project's disallowed skills for a new chat's build; none when they can't be read (the chat then starts with every skill on). */
+const projectSkillsOffFor = async (cwd: string): Promise<string[]> => {
+  try {
+    const off = await (chatHosts.projectSkillsOff ?? projectSkillsOffHere)(cwd);
+    return Array.isArray(off) ? off.filter((n): n is string => typeof n === "string" && n.length > 0) : [];
+  } catch (err) {
+    console.warn(`[chat] project skills for ${cwd}: ${err instanceof Error ? err.message : String(err)}`);
+    return [];
+  }
+};
 const mcpTellHere: NonNullable<ChatHosts["mcpTell"]> = (parent, note) => void import("./mcp/chat").then((m) => m.tellParent(parent, note));
 
 /** Register the Claude Code provider without waiting for the user to open a session: a throwaway
@@ -817,7 +836,8 @@ function workerHostExtension(sovaModes: boolean) {
     pi.on("session_start", (_event, ctx) => {
       const c = toolCtx(ctx);
       const host = c.key && workerHostSource ? workerHostSource({ sessionId: c.sessionId, path: c.key }) : null;
-      announcement = host ? { version: 1, host: modesStamped(host, sovaModes), ...(sovaModes ? { modes: "sova" as const } : {}) } : null;
+      // Its workers take this chat's skills as fixed at its first message, read at each start.
+      announcement = host ? { version: 1, host: skillsStamped(modesStamped(host, sovaModes), () => loadoutOnBranch(c.branch())?.offSkills ?? []), ...(sovaModes ? { modes: "sova" as const } : {}) } : null;
       announce();
     });
   };
@@ -834,6 +854,22 @@ export function modesStamped(host: WorkerHost, sovaModes: boolean): WorkerHost {
     start: (req) => {
       const { modes: _given, ...spec } = req.spec;
       return host.start({ ...req, spec: sovaModes ? { ...spec, modes: "sova" } : spec });
+    },
+  };
+}
+
+/**
+ * A parent's worker host with its skills on every start: a worker gets the parent chat's own off list
+ * (its skills as fixed at its first message), never its project's defaults directly. Sova's word, never
+ * the request's: an `offSkills` a caller put on the spec is replaced.
+ */
+export function skillsStamped(host: WorkerHost, offSkills: () => readonly string[]): WorkerHost {
+  return {
+    ...host,
+    start: (req) => {
+      const { offSkills: _given, ...spec } = req.spec;
+      const off = [...new Set(offSkills())];
+      return host.start({ ...req, spec: off.length ? { ...spec, offSkills: off } : spec });
     },
   };
 }
@@ -898,12 +934,21 @@ export function workerBuild(w: WorkerSpec, path: string): PiBuild {
       additionalExtensionPaths: [...workerModePaths(w.extensions, w.modes === "sova", modesEntries()), ...(process.env[JOB_CARDS_ENV] === "only" ? [JOB_CARDS_EXTENSION] : [])],
       extensionFactories: workerExtensionFactories(w, path),
       ...(w.appendSystemPrompt ? { appendSystemPrompt: [w.appendSystemPrompt] } : {}),
+      // Its parent chat's skills off list, stamped at its start (skillsStamped).
+      ...(w.offSkills?.length ? skillsOffOverride(w.offSkills) : {}),
     },
     flags: () => ({ extra: w.flags }),
     exclude: () => (w.builtins === null ? [] : WORKER_BUILTIN_TOOLS.filter((t) => !w.builtins!.includes(t))),
     // Its listed built-ins on: excluding the rest only filters pi's default set (read, bash, edit, write), so a
     // listed grep, find or ls would otherwise never be active.
     built: (session) => {
+      // Its parent's off list as its own entry too, so each later reading of it (a subfolder's skills,
+      // a typed /skill:name, the slash list) sees the same list; written once (a fork already has it).
+      if (w.offSkills?.length) {
+        const own = session.state.branch().latest(LOADOUT)?.data;
+        const offSkills = [...new Set(w.offSkills)];
+        if (!own || !sameLoadout({ ...own, onSkills: [] }, { ...own, onSkills: [], offSkills })) session.state.append(LOADOUT, { v: 1, offContext: own?.offContext ?? [], offSkills });
+      }
       if (w.builtins === null) return;
       const active = session.activeTools();
       const missing = w.builtins.filter((t) => WORKER_BUILTIN_TOOLS.includes(t) && !active.includes(t));
@@ -1571,6 +1616,7 @@ class ChatSession {
     this.assertNoForeignWrites();
     this.assertModelAllowed();
     this.flushDeferredAppends();
+    this.stampLoadout();
     const images = item.images as ImageInput[] | undefined;
     // The message goes in labelled with its send's key (§app.chat-processes/worker-instructions).
     const toSdk = <T>(send: () => T) => this.sendKeys.run(item.key, () => this.toSdk(item.notUser ? "server" : item.origin, send, item.confirm, !!item.overseer));
@@ -1820,6 +1866,7 @@ class ChatSession {
     this.assertNoForeignWrites();
     this.assertModelAllowed();
     this.flushDeferredAppends();
+    this.stampLoadout();
     this.topicMarks.push(mark);
     // Inside the settle emit the harness defers the prompt and resolves it at once (P5 settle-window);
     // delivery stays out of that window, and if it ever didn't, the settle sweep owns the mark.
@@ -1919,6 +1966,7 @@ class ChatSession {
       return;
     }
     this.flushDeferredAppends();
+    this.stampLoadout();
     // Tracked from before the hand-off: a prompt made idle can still be queued as a steer.
     this.linkInSdk.push(text);
     const untrack = () => {
@@ -2391,6 +2439,26 @@ class ChatSession {
     if (this.harness.isRunning() || this.isCompacting() || this.starting) throw new BusyError("Wait for the reply to finish first.", "busy");
     this.flushDeferredAppends(); // open-time entries go first, as in writeProfile
     this.state.append(LOADOUT, data);
+    markOwned(this.path);
+  }
+
+  /**
+   * Fix this chat's skills at its first message: the off list its runtime was built with (its
+   * project's defaults with the chat's own flips) written as its `sova-loadout` entry, before the
+   * message goes in, so a reload, restart or reopen builds it the same and a later change of the
+   * project's defaults never moves it. Only while no message is on the branch, so it is written once;
+   * nothing is written for a chat with nothing off and no entry. Callers have run the send's guards.
+   */
+  stampLoadout(): void {
+    const st = this.loadoutState;
+    if (!st || this.special || !this.isPristine()) return;
+    const branchEntry = this.harness.state.branch().latest(LOADOUT)?.data ?? null;
+    const projectOff = st.projectOff ?? [];
+    if (!branchEntry && !leavesOut(st.data) && !projectOff.length) return;
+    const stamp = loadoutStamp(st.data, projectOff);
+    if (branchEntry && sameLoadout(branchEntry, stamp)) return;
+    this.flushDeferredAppends();
+    this.state.append(LOADOUT, stamp);
     markOwned(this.path);
   }
 
@@ -3455,6 +3523,7 @@ class ChatSession {
       return { queued: true, turn: Promise.resolve() };
     }
     this.flushDeferredAppends();
+    this.stampLoadout();
     // Marked here when it starts a turn now; a queued one is marked at its hand-off. A pending
     // mark is dropped if the turn fails, and any left when the run settles are dropped too
     // (bind's agent_settled), so a later identical message the user types is never tagged.
@@ -4974,7 +5043,13 @@ async function openLocked(path: string, onDisposed: () => void, onStep: (step: s
     profile.data = data;
     // The session's own context files and skills (§chat.transcript/setup-card-toggles), also read at
     // every build: a flip disposes the runtime like a pick does. Special loadouts keep their own.
-    loadout.data = special ? null : (read.state.branch().latest(LOADOUT)?.data ?? null);
+    // Before its first message a chat's skills are its project's defaults with its own flips
+    // (pristineLoadout); its first message fixes them (ChatSession.stampLoadout), and from then on the
+    // entry alone counts: a chat started before project defaults existed (no entry) keeps every skill.
+    const entry = special ? null : (read.state.branch().latest(LOADOUT)?.data ?? null);
+    const started = read.branch().some((h) => h.kind === "user");
+    loadout.projectOff = special || started ? [] : (presetProjectOff.get(path) ?? (await projectSkillsOffFor(cwd)));
+    loadout.data = special ? null : started ? entry : pristineLoadout(entry, loadout.projectOff);
     loadout.baseContext = undefined;
     loadout.baseSkills = undefined;
     const overrides = special ? undefined : loadoutOverrides(loadout);
@@ -5174,7 +5249,7 @@ async function openLocked(path: string, onDisposed: () => void, onStep: (step: s
     chat.profileState = profile;
     chat.userTurns = runs.turns;
     chat.runTag = runs.tag;
-    if (!kind) chat.loadoutState = loadout;
+    if (!kind && !worker) chat.loadoutState = loadout;
     // The usage ledger (llm-inflight attribution.ts): this chat's calls are its own, an Overseer's or
     // a project overseer's as `overseer`. Registered here as well as by the extension at
     // session_start, since a special loadout may not load it.

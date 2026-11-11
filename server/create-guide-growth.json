@@ -514,6 +514,8 @@
    "project.update": "scripts",
    "project.claude-login.get": "scripts",
    "project.claude-login.set": "scripts",
+   "project.skills.get": "scripts",
+   "project.skills.set": "scripts",
    "project.coding.start": "scripts",
    "project.icon.get": "scripts",
    "project.icon.upload": "scripts",

@@ -24,6 +24,7 @@ import { createRuntimePoll, ProjectSoftwareCard } from "./ProjectSoftwareCard";
 import { ProjectFilesCard } from "./ProjectFilesCard";
 import { ProjectCardsCard } from "./ProjectCardsCard";
 import { ProjectMcpCard } from "./ProjectMcpCard";
+import { ProjectSkillsCard } from "./ProjectSkillsCard";
 import { ProjectOffersCard } from "./ProjectOffersCard";
 import { ProjectIcon } from "./ProjectIcon";
 import { ProjectIconCard } from "./ProjectIconCard";
@@ -396,6 +397,10 @@ export function ProjectPage(props: {
                   <ProjectOffersCard projectId={projectId} />
                   {/* Its .mcp.json servers, per checkout (§app.mcp/project-servers). */}
                   <ProjectMcpCard projectId={projectId} />
+                  {/* Its skill defaults for new chats, kept on this computer. A peer's project shows no card. */}
+                  <Show when={!projectHostOf(projectId)}>
+                    <ProjectSkillsCard projectId={projectId} onChanged={() => settings.info.refetch()} />
+                  </Show>
                   {/* Its card folders, broken ones with what is wrong, and its cards' trust. */}
                   <ProjectCardsCard projectId={projectId} />
                   <ProjectAllSettings data={settings} />

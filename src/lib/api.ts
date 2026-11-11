@@ -6,6 +6,7 @@ import type { CardAnswerValue, CardInfo, ProjectCardsAnswer, SessionCardsAnswer 
 import type { ProjectSettingsInfo, SettingsApplyResult, SettingsCardView, SettingsHistoryRow, SovaCardsInfo } from "../../shared/project-settings";
 import type { ExtensionInspect, ExtensionsInstalled } from "../../shared/extension-loader";
 import type { McpNewServer, McpProjectServers, McpServerRow, McpServers, McpSignIn } from "../../shared/mcp";
+import type { ProjectSkillsView } from "../../shared/project-skills";
 import type { ProfileSaveRequest, ProfilesListing, ProfileWriteAnswer } from "../../shared/profiles";
 import type { ProjectFilesAnswer } from "../../shared/project-files";
 import type { DeployVerb, VerbResult } from "../../shared/project-contract";
@@ -1875,6 +1876,11 @@ export const removeExtension = (id: string, deleteData: boolean) => request<{ ok
 // -- MCP servers (§app/mcp) --
 const mcpRow = (id: string, tail = "") => `/api/mcp/rows/${encodeURIComponent(id)}${tail}`;
 export const getMcpServers = () => request<McpServers>("/api/mcp/servers");
+/** A project's skill defaults for new chats, kept on this computer. */
+export const getProjectSkills = (projectId: string) => request<ProjectSkillsView>(`${projectPath(projectId)}/skills`, { cache: "no-store" });
+/** Approve or disallow skills (only the names given); answers the fresh view. */
+export const setProjectSkills = (projectId: string, skills: Record<string, "approved" | "disallowed">) =>
+  request<ProjectSkillsView>(`${projectPath(projectId)}/skills`, jsonInit("PUT", { skills }));
 export const getProjectMcp = (projectId: string) => request<McpProjectServers>(`/api/projects/${encodeURIComponent(projectId)}/mcp`);
 /** Add and Check: answers once the Check has finished; a failed Check is a row in state failed. */
 export const addMcpServer = (server: McpNewServer) => request<McpServerRow>("/api/mcp/servers", jsonInit("POST", server));

@@ -43,6 +43,9 @@ export interface WorkerSpec {
 	    the mode extension's listed files load as Sova's own in their slots; absent = the pi mode extension
 	    (as before). Stamped by Sova's worker host from the parent chat, never taken from the request. */
 	modes?: "sova";
+	/** Skills it starts without, by name: its parent chat's own off list at this start. Stamped by Sova's
+	    worker host from the parent chat, never taken from the request; absent = every skill on. */
+	offSkills?: string[];
 }
 
 /** How its session file comes to be, before the chat opens it. */

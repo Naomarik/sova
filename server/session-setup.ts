@@ -35,7 +35,8 @@ import type { SetupMcp } from "../shared/mcp";
 import { CHARS_PER_TOKEN, SETUP_FILE_MAX_BYTES, type SessionSetup, type SessionSetupFileText, type SessionSetupFile, type SessionSetupSkill } from "../shared/protocol";
 import { acquireChatHandle, assertNotLive, chatHandle, closeChat } from "./chat-handle";
 import { plan, readStoredCwd, type Plan } from "./git-summary";
-import { leavesOut, normalizeLoadout, type LoadoutEntryData } from "./session-loadout";
+import { flipsAgainstProject, isSkillOff, normalizeLoadout, pristineLoadout, type LoadoutEntryData } from "./session-loadout";
+import { projectSkillDecisions, type SkillDecision } from "./project-skills-store";
 import { dirname } from "node:path";
 import { candidateDirs, instructionFileIn } from "./deeper-context";
 import { getSessionSummary } from "./sessions-index";
@@ -100,14 +101,20 @@ export interface SessionSwitches {
   toggleable: boolean;
 }
 
-/** The held chat's own entry and window; else the newest entry in the file, read by Sova's own
-    parser, except for a TUI-live session (the TUI doesn't honour the entry). */
+/** The held chat's own entry and window (before its first message, already laid over its project's
+    disallowed skills); else the newest entry in the file, read by Sova's own parser, likewise laid
+    over the project's while no message is on the branch, except for a TUI-live session (the TUI
+    doesn't honour the entry). */
 async function sessionSwitches(sessionPath: string): Promise<SessionSwitches> {
   const chat = chatHandle(sessionPath);
   if (chat) return { off: chat.mirror.loadout?.off ?? null, toggleable: chat.mirror.loadout?.toggleable ?? false };
   try {
     assertNotLive(sessionPath);
-    return { off: stateView(await readBranch(sessionPath)).latest(LOADOUT)?.data ?? null, toggleable: false };
+    const branch = await readBranch(sessionPath);
+    const entry = stateView(branch).latest(LOADOUT)?.data ?? null;
+    if (branch.some((h) => h.kind === "user")) return { off: entry, toggleable: false };
+    const cwd = await readStoredCwd(sessionPath).catch(() => null);
+    return { off: pristineLoadout(entry, cwd ? await projectOffFor(cwd) : []), toggleable: false };
   } catch {
     return { off: null, toggleable: false };
   }
@@ -117,15 +124,52 @@ type Loaded = Extract<SessionSetup, { state: "ok" }>;
 
 const mcpSetup = async (ask: McpSetupAsk) => (await import("./mcp/chat")).setupFor(ask);
 
+/** The project a chat's folder belongs to and its decisions, or null (server/projects/skills.ts). */
+export interface SetupProject {
+  id: string;
+  name: string;
+  decisions: Record<string, SkillDecision>;
+}
+
+const projectSkills = async () => import("./projects/skills");
+
+/** The project of a folder, with its decisions; null outside a project or when it can't be told. */
+async function projectOfFolder(cwd: string): Promise<SetupProject | null> {
+  try {
+    const p = (await projectSkills()).projectForCwd(cwd);
+    return p ? { ...p, decisions: projectSkillDecisions(p.id) } : null;
+  } catch {
+    return null;
+  }
+}
+
+/** The skills a folder's project disallows (none outside a project). */
+async function projectOffFor(cwd: string): Promise<string[]> {
+  try {
+    return (await projectSkills()).projectSkillsOffForCwd(cwd);
+  } catch {
+    return [];
+  }
+}
+
+/** The project's state on each skill row, and the project named for the card's Approve and Disallow. */
+export function withProject(setup: Loaded, project: SetupProject | null): Loaded {
+  if (!project) return setup;
+  return {
+    ...setup,
+    skills: setup.skills.map((k) => ({ ...k, project: project.decisions[k.name] ?? "waiting" })),
+    project: { id: project.id, name: project.name },
+  };
+}
+
 /** The folder's answer as one session sees it: its off rows marked, and whether it can switch them.
     A new object: the cached answer is never changed. */
 export function withSwitches(setup: Loaded, sw: SessionSwitches): Loaded {
   const offContext = new Set(sw.off?.offContext ?? []);
-  const offSkills = new Set(sw.off?.offSkills ?? []);
   return {
     ...setup,
     context: setup.context.map(({ off: _o, ...f }) => (offContext.has(f.path) ? { ...f, off: true as const } : f)),
-    skills: setup.skills.map(({ off: _o, ...k }) => (offSkills.has(k.name) ? { ...k, off: true as const } : k)),
+    skills: setup.skills.map(({ off: _o, ...k }) => (isSkillOff(sw.off, k.name) ? { ...k, off: true as const } : k)),
     toggleable: sw.toggleable,
   };
 }
@@ -153,6 +197,8 @@ export interface SetupDeps {
   loader?: (cwd: string) => Promise<Loadout>;
   /** One session's off set and switch window (default: the held chat, else the file's entry). */
   switches?: (sessionPath: string) => SessionSwitches | Promise<SessionSwitches>;
+  /** The folder's project and its skill decisions (default: server/projects/skills.ts); never cached. */
+  project?: (cwd: string) => SetupProject | null | Promise<SetupProject | null>;
   /** The MCP Servers group (default: server/mcp/chat.ts); never part of the folder's cached answer. */
   mcp?: (ask: McpSetupAsk) => Promise<SetupMcp | undefined>;
   /** Whether a local path exists (default: fs.existsSync). */
@@ -269,7 +315,8 @@ export async function getSessionSetup(sessionPath: string, opts: { fresh?: boole
     sw = { off: null, toggleable: false };
   }
   const mcp = await (deps.mcp ?? mcpSetup)({ path: sessionPath, cwd: folder.cwd, off: sw.off }).catch(() => undefined);
-  return { ...withSwitches(folder, sw), ...(mcp ? { mcp } : {}) };
+  const project = await Promise.resolve((deps.project ?? projectOfFolder)(folder.cwd)).catch(() => null);
+  return { ...withProject(withSwitches(folder, sw), project), ...(mcp ? { mcp } : {}) };
 }
 
 /** Every path this setup lists, in any of its groups: the only files /api/sessions/context/file reads. */
@@ -335,7 +382,12 @@ let applying: Promise<unknown> = Promise.resolve();
  * a special session or a remote one. An unchanged set writes nothing and rebuilds nothing.
  */
 export function applyLoadout(path: string, body: unknown): Promise<LoadoutResult> {
-  const run = applying.then(() => applyLoadoutNow(path, body));
+  return inLoadoutOrder(() => applyLoadoutNow(path, body));
+}
+
+/** Run `fn` in the switches' one order (a card's switch, a project's skills change rebuilding new chats). */
+export function inLoadoutOrder<T>(fn: () => Promise<T>): Promise<T> {
+  const run = applying.then(fn);
   applying = run.catch(() => undefined);
   return run;
 }
@@ -364,13 +416,17 @@ async function applyLoadoutNow(path: string, body: unknown): Promise<LoadoutResu
   } catch (err) {
     return { ok: false, status: 409, error: err instanceof Error ? err.message : String(err) };
   }
-  const current = chat.mirror.loadout?.off;
-  const unchanged = leavesOut(current)
-    ? sameSet(current.offContext, data.offContext) && sameSet(current.offSkills, data.offSkills) && sameSet(current.offMcp ?? [], data.offMcp ?? []) && sameSet(current.onMcp ?? [], data.onMcp ?? [])
-    : !leavesOut(data);
+  // The card sends the whole off set it shows; before the first message what it shows of skills is the
+  // project's defaults with this chat's flips, so the entry keeps only the flips (flipsAgainstProject).
+  const current = chat.mirror.loadout?.off ?? null;
+  const unchanged =
+    sameSet(current?.offContext ?? [], data.offContext) && sameSet(current?.offSkills ?? [], data.offSkills) && sameSet(current?.offMcp ?? [], data.offMcp ?? []) && sameSet(current?.onMcp ?? [], data.onMcp ?? []);
   if (!unchanged) {
+    const projectOff = stored !== null ? await projectOffFor(stored) : [];
+    // The skills the card could list: the runtime's unfiltered list.
+    const listed = projectOff.length ? new Set((await chat.resources().catch(() => null))?.skills.map((k) => k.name) ?? []) : new Set<string>();
     try {
-      await chat.writeLoadout(data);
+      await chat.writeLoadout(flipsAgainstProject(data, projectOff, listed));
     } catch (err) {
       return { ok: false, status: 409, error: err instanceof Error ? err.message : String(err) };
     }

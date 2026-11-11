@@ -502,7 +502,9 @@ export class ChatHostRouter {
     const origin = currentLinkOrigin();
     const opening = takeOpeningChoice(path);
     const served = await servedToolsForChat(path, sessionId, () => this.remotes.get(path)?.mirror.monitor.title, kind);
-    link.send({ t: "open", id, path, force, ...(opening ? { opening } : {}), link: origin ? { origin, token: sovaToken() } : null, served, ...(special ? { special } : {}) });
+    // An ordinary chat's project skill defaults, read now: the chat's build can't ask the server mid-open.
+    const projectSkillsOff = special ? null : await (await import("./projects/skills")).projectSkillsOffForSession(path);
+    link.send({ t: "open", id, path, force, ...(opening ? { opening } : {}), link: origin ? { origin, token: sovaToken() } : null, served, ...(special ? { special } : {}), ...(projectSkillsOff ? { projectSkillsOff } : {}) });
     const f: FrameOf<"opened"> = await answer;
     if (f.ok) return f.mirror;
     if (f.refusal) throw errorOfRefusal(f.refusal);

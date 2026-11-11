@@ -1653,6 +1653,10 @@ export interface SessionSetupSkill extends SessionSetupFile {
   description?: string;
   /** Only `/skill:name` runs it: the model is never offered it. */
   manualOnly?: true;
+  /** The project's state for this skill (shared/project-skills), sent only when the chat belongs to a
+      project. Before the first message `off` is already the effective value: the project's default,
+      then the chat's own flip. */
+  project?: "approved" | "disallowed" | "waiting";
 }
 
 /** A skill that didn't load, and why (§chat.transcript/setup-card-skills). */
@@ -1690,6 +1694,9 @@ export type SessionSetup =
       toggleable?: boolean;
       /** The card's MCP Servers group (§chat.transcript/setup-card-toggles); absent: no group. */
       mcp?: SetupMcp;
+      /** The project the chat belongs to (its folder, a folder inside it, or a worktree), for the
+          skills' Approve and Disallow; absent: none. */
+      project?: { id: string; name: string };
       checkedAt: number;
     }
   /** A target session: its cwd is a local placeholder, so its loadout can't be read here. */

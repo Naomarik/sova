@@ -11,6 +11,8 @@ import { archiveBlockers } from "../project-overseer";
 import { nudgeMarks } from "../session-feed";
 import { knownLogin, loginOptions, UNKNOWN_LOGIN } from "../claude-login-known";
 import { projectLoginView, setProjectLogin } from "./claude-login";
+import { projectSkillsView, setProjectSkills } from "./skills";
+import { refreshNewChats } from "./skills-chats";
 import { cloneRepo, overseerRepoProblem } from "./clone";
 import { reservedRoots } from "./contributions";
 import { RegistryError, reservedRootProblem } from "./registry";
@@ -123,6 +125,19 @@ export function registerProjectRoutes(app: Hono<any>): void {
       if (login === "org" && p.space.kind === "standalone") throw new OrgError("Only a project an organization places can follow it.");
       if (login !== "org" && login !== "none" && !knownLogin(login)) throw new OrgError(typeof login === "string" ? UNKNOWN_LOGIN : "Expected { login: <login id> | \"org\" | \"none\" }");
       return c.json({ ...setProjectLogin(pid, login as string), options: loginOptions() }, 200, NO_STORE);
+    }),
+  );
+
+  // The project's skill defaults (shared/project-skills.ts): kept on this host, for chats not yet started.
+  app.get("/api/projects/:pid/skills", handle(async (c) => c.json(await projectSkillsView(pidOf(c)), 200, NO_STORE)));
+  app.put(
+    "/api/projects/:pid/skills",
+    handle(async (c) => {
+      const pid = pidOf(c);
+      const view = await setProjectSkills(pid, await body(c));
+      // A new chat of the project, before its first message, is rebuilt with the new defaults; a started one keeps its skills.
+      await refreshNewChats(pid);
+      return c.json(view, 200, NO_STORE);
     }),
   );
 

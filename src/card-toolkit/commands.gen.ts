@@ -139,6 +139,8 @@ export type CommandId =
   | "project.update"
   | "project.claude-login.get"
   | "project.claude-login.set"
+  | "project.skills.get"
+  | "project.skills.set"
   | "project.coding.start"
   | "project.setup.get"
   | "project.setup.open"
@@ -3697,6 +3699,18 @@ export interface CommandParams {
     /** A login id (default: this computer's own), org, or none */
     "login": string;
   };
+  /** Every skill a chat in a project could be offered, each Approved, Disallowed or Waiting for this project's new chats (kept on this computer). (only looks; needs the card's owner trusted) */
+  "project.skills.get": {
+    /** The project's id */
+    "pid": string;
+  };
+  /** Approve or disallow skills for a project's new chats, saved at once: skills is { <skill name>: approved | disallowed | waiting }. Disallowed skills start off; chats already started keep theirs. (changes something; needs the card's owner trusted) */
+  "project.skills.set": {
+    /** The project's id */
+    "pid": string;
+    /** { <skill name>: "approved" | "disallowed" | "waiting" } */
+    "skills": unknown;
+  };
   /** Start a coding chat in a project: in its root (or a folder inside it), on the project's coding model and mode; with worktree later it cuts its own branch once the work has a name. (changes something; needs the card's owner trusted) */
   "project.coding.start": {
     /** The project's id */
@@ -4652,6 +4666,8 @@ export const COMMAND_EFFECTS: Record<CommandId, "looks" | "changes"> = {
   "project.update": "changes",
   "project.claude-login.get": "looks",
   "project.claude-login.set": "changes",
+  "project.skills.get": "looks",
+  "project.skills.set": "changes",
   "project.coding.start": "changes",
   "project.setup.get": "looks",
   "project.setup.open": "changes",

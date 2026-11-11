@@ -2,8 +2,10 @@
  * al_1 a8 and a4/t8, through the server's own wiring (startMergeQueue): a queue record left for a repo the queue
  * doesn't serve is never loaded at start and stays byte-for-byte on disk, while a served repo's record is loaded;
  * and the merge thread is woken only for a served root (a root that stops being served wakes it no more).
- * The state root is a temp agent dir; both repos are real.
+ * The state root is a temp agent dir, set before any product module loads (the first import), so the file writes
+ * only there however it is started; both repos are real.
  */
+import { dropScratchAgentDir, scratchAgentDir } from "../testing/scratch-agent-dir";
 import assert from "node:assert/strict";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -15,7 +17,7 @@ const DEF = { version: 1, merge: { checks: [{ id: "ok", label: "OK", run: ["true
 
 const served = makeRepo({ prefix: "mq-unserved-a-" });
 const stray = makeRepo({ prefix: "mq-unserved-s-", target: "main" });
-const agentDir = join(served.scratch, "agent");
+const agentDir = scratchAgentDir;
 const base = join(agentDir, "sova", "merge-queue");
 const listedRows: { root: string }[] = [{ root: served.root }];
 const woke: { root: string; kind: string }[] = [];
@@ -24,8 +26,6 @@ let strayBytes = "";
 let strayTree = "";
 
 before(async () => {
-  mkdirSync(join(agentDir, "sova"), { recursive: true });
-  process.env.PI_CODING_AGENT_DIR = agentDir;
   served.commitOn(served.root, { ".sova/project.json": `${JSON.stringify(DEF, null, 2)}\n` }, "definition");
   // The stray repo declares checks too: only the Projects list keeps it out (al_1 q1 a).
   stray.commitOn(stray.root, { ".sova/project.json": `${JSON.stringify(DEF, null, 2)}\n` }, "definition");
@@ -55,6 +55,7 @@ after(async () => {
   (await import("./thread")).setMergeThread(null);
   served.done();
   stray.done();
+  dropScratchAgentDir();
 });
 
 test("a8: at start only served repos' records are loaded; an unserved repo's record isn't loaded and stays untouched on disk", async () => {
@@ -99,7 +100,7 @@ test("a repo gaining service: an archived row of its branch gains its queue entr
   const r = await import("../merge-readiness");
   const { listSessions } = await import("../sessions-index");
   const id = "0199aaaa-bbbb-7ccc-8ddd-eeeeeeeeeeee";
-  const dir = join((await import("../paths")).SESSIONS_DIR, "--wire-unserved--");
+  const dir = join(agentDir, "sessions", "--wire-unserved--");
   mkdirSync(dir, { recursive: true });
   const path = join(dir, `2026-09-29T15-34-48-453Z_${id}.jsonl`);
   const trees = [{ path: strayTree, branch: "feat/old", base: "b0", baseBranch: "main", status: "active", session: id, how: "created", at: 1 }];

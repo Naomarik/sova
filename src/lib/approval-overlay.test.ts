@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { test } from "node:test";
-import { acked, begin, chatQueue, EMPTY, failed, folderQueue, inOrder, noteChatFolder, pendingAny, projectQueue, queueOf, readLanded, settled } from "./approval-overlay";
+import { acked, begin, chatQueue, setupHold, EMPTY, failed, folderQueue, inOrder, noteChatFolder, pendingAny, projectQueue, queueOf, readLanded, settled } from "./approval-overlay";
 
 test("a clicked row shows its decision until a read started after its save's answer lands", () => {
   let o = begin(EMPTY, ["a", "b"], "approved", 1);
@@ -90,4 +91,25 @@ test("a chat's mid-chat lines queue on its folder's queue, read once per folder"
   assert.equal(reads, 2);
   noteChatFolder("/s/d.jsonl", "/broken");
   assert.equal(await chatQueue("/s/d.jsonl", async () => Promise.reject(new Error("no"))), "chat:/s/d.jsonl");
+});
+
+test("Send waits only for saves not yet answered: an answered save whose read hasn't landed holds nothing", () => {
+  const w = [{ kind: "context" as const }, { kind: "skill" as const }, { kind: "skill" as const }];
+  assert.deepEqual(setupHold(w, EMPTY), { context: 1, skills: 2 }, "what waits holds Send");
+  let o = begin(EMPTY, ["a", "b"], "approved", 1);
+  assert.deepEqual(setupHold([], o), { context: 0, skills: 0, saving: true }, "the last decisions saving: Saving…");
+  o = acked(o, 1, 4);
+  // No read has landed since (it failed): the rows keep the decision, but the server has it.
+  assert.ok(pendingAny(o), "the rows still show the decision");
+  assert.equal(setupHold([], o), null, "and Send no longer waits");
+  o = begin(o, ["c"], "disallowed", 2);
+  assert.equal(setupHold([], o)?.saving, true, "a newer save still running holds it again");
+  assert.equal(setupHold([], failed(o, 2)), null);
+});
+
+test("the new chat's card holds Send through setupHold only", () => {
+  const card = readFileSync(new URL("../components/SessionSetup.tsx", import.meta.url), "utf8");
+  // Its two writes: the hold as setupHold reads it, and none when the card goes.
+  const calls = [...card.matchAll(/\bsetHold\(([^\n]*)$/gm)].map((m) => m[1]!.trim());
+  assert.deepEqual(calls, ["path(), setupHold(waiting(), overlay())));", "untrack(path), null));"]);
 });

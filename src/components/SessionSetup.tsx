@@ -2,7 +2,7 @@ import { batch, createEffect, createMemo, createSignal, For, Index, Match, on, o
 import type { GitSummary, SessionSetup, SessionSetupFile } from "../../shared/protocol";
 import { fetchSessionSetup, fetchSessionTools, fetchSetupFile, setFolderApprovals, setSessionLoadout } from "../lib/api";
 import { ABOVE_PROJECT, ACTION_DECISION, ACTION_WORD, APPROVE_ALL, approveNotice, CHANGED_LINE, PARTIAL_FINGERPRINT_LINE, decideAll, DISALLOW_ALL, itemsPhrase, REVIEW, rowActions, WAITING_LINE, type Approval, type Decision } from "../lib/approvals";
-import { acked, begin, EMPTY, failed, inOrder, pendingAny, queueOf, readLanded, type Overlay } from "../lib/approval-overlay";
+import { acked, begin, EMPTY, failed, inOrder, pendingAny, queueOf, setupHold, readLanded, type Overlay } from "../lib/approval-overlay";
 import { offWords, rowApproval, type Row } from "../lib/setup-approvals";
 import { askReread, rereadAsked, reviewAsked, setHold } from "../lib/approval-hold";
 import { FolderApprovalsDialog } from "./FolderApprovalsDialog";
@@ -232,7 +232,7 @@ export function SessionSetupCard(props: { path: string; editable?: boolean; tool
   };
   /** What waits for a decision: asking mode only; a changed item stays loaded and never waits. */
   const waiting = () => (asking() ? decidable().filter((r) => shownApproval(r.f) === "waiting") : []);
-  /** A decision is still being saved: the switches wait, and so does Send. */
+  /** A decision shown here isn't read back yet: the switches wait (they send the off set the last read drew). */
   const saving = () => pendingAny(overlay());
   /** One row's decision, into the folder's list. */
   const decide = (r: Row, to: Decision, label: string) => save([r], to, label);
@@ -261,9 +261,9 @@ export function SessionSetupCard(props: { path: string; editable?: boolean; tool
       .then(() => {
         if (mine !== run) return;
         setOverlay((o) => acked(o, id, reads));
-        // Saved: the rows keep the decision until a read after the answer lands (a failed read
-        // leaves them, and Send's "Saving…", for the next one: once more here, then the rebuild's
-        // own broadcast and each hello read it again).
+        // Saved: Send no longer waits for it (setupHold), and the rows keep the decision until a
+        // read after the answer lands (a failed read leaves them for the next one: once more here,
+        // then the rebuild's own broadcast and each hello read it again).
         const reread = (again: boolean): Promise<void> =>
           readSetup(path(), true).then(({ answer: next, n }) => {
             if (mine !== run) return;
@@ -280,11 +280,7 @@ export function SessionSetupCard(props: { path: string; editable?: boolean; tool
   };
   // The composer's hold (lib/approval-hold): what waits, by kind, while this chat can't send yet,
   // and while a decision made here is still being saved.
-  createEffect(() => {
-    const w = waiting();
-    const busy = saving();
-    setHold(path(), w.length || busy ? { context: w.filter((r) => r.kind === "context").length, skills: w.filter((r) => r.kind === "skill").length, ...(busy ? { saving: true as const } : {}) } : null);
-  });
+  createEffect(() => setHold(path(), setupHold(waiting(), overlay())));
   onCleanup(() => setHold(untrack(path), null));
   // A decision made elsewhere (another tab, the project page) or a send refused for decisions: read again.
   createEffect(

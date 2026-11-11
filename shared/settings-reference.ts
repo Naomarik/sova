@@ -13,7 +13,7 @@ import { LIMIT_KEYS, LIMIT_LABEL } from "./profiles.ts";
 import { POWERS, POWER_INFO } from "./powers.ts";
 import { PO_CAP_LABEL, type ProjectOverseerCaps } from "./project-overseer.ts";
 import { OFFERS_FILE } from "./session-offers.ts";
-import { COPIES_EDIT_KEYS } from "./project-settings.ts";
+import { COPIES_EDIT_KEYS, SKILLS_EDIT_KEYS } from "./project-settings.ts";
 
 export type SettingId =
   | "overseer.watch"
@@ -33,6 +33,7 @@ export type SettingId =
   | "project.frozen"
   | "project.archive"
   | "copies"
+  | "skills"
   | "services"
   | "merge-queue"
   | "profile"
@@ -114,6 +115,10 @@ const COPIES_KEY_WORDS: Record<(typeof COPIES_EDIT_KEYS)[number], string> = {
   limit: "how many of the project's copies may run at once on this machine, 1–16; null removes this machine's value, so the main checkout's .sova/project.json (its slots {cap}, default 4) applies",
 };
 const copiesKeys = Object.fromEntries(COPIES_EDIT_KEYS.map((k) => [k, COPIES_KEY_WORDS[k]]));
+const SKILLS_KEY_WORDS: Record<(typeof SKILLS_EDIT_KEYS)[number], string> = {
+  skills: '{<skill name>: "approved" | "disallowed" | "waiting"}: only the names it changes. Approved and Waiting are on in new chats, Disallowed is off; waiting clears the decision. A name must be one a chat in the project could be offered (sova_settings get lists them).',
+};
+const skillsKeys = Object.fromEntries(SKILLS_EDIT_KEYS.map((k) => [k, SKILLS_KEY_WORDS[k]]));
 const serviceTop = Object.fromEntries(DEFINITION_KEYS.top.map((k) => [k, topKeys[k] ?? k]));
 
 export const SETTINGS_REFERENCE: Record<SettingId, ReferenceEntry> = {
@@ -302,6 +307,16 @@ export const SETTINGS_REFERENCE: Record<SettingId, ReferenceEntry> = {
     grant: "Raised (a reset to the file's value counts when that is higher).",
     keys: copiesKeys,
     changedAt: "the Branches tab (Change)",
+  },
+  skills: {
+    id: "skills",
+    label: "Skills",
+    where: "sova",
+    summary: "Which skills the project's new chats start with: each skill a chat in the project could be offered (its folder, the folders inside it, its worktrees, the user's and the Claude folder's) is Approved, Disallowed or Waiting (no decision yet, on until disallowed). Kept by Sova on this computer. A chat's skills are fixed at its first message: a change reaches only chats not yet started.",
+    edit: '{setting: "skills", skills: {<skill name>: "approved" | "disallowed" | "waiting"}}',
+    grant: "A Disallowed skill made Approved or Waiting (it is on again in new chats).",
+    keys: skillsKeys,
+    changedAt: "the Settings tab's Skills card",
   },
   services: {
     id: "services",

@@ -24,6 +24,11 @@ export const COPIES_EDIT_KEYS = ["limit"] as const;
 /** The history field of this machine's copy limit (its value: 1–16, or null for the project's file's). */
 export const COPIES_FIELD = "copies";
 
+/** The keys `{setting: "skills", …}` takes in sova_settings propose: the project's skill defaults for new chats. */
+export const SKILLS_EDIT_KEYS = ["skills"] as const;
+/** A skill's history field is this prefix and its name; its value: "approved", "disallowed" or "waiting". */
+export const SKILL_FIELD_PREFIX = "skills.";
+
 /** Who made a change. `via`: through what. */
 export interface SettingsBy {
   kind: "operator" | "project-overseer" | "overseer" | "create";
@@ -143,8 +148,7 @@ export interface SettingsCardView {
 
 /** One row of the Settings tab's All Settings. */
 export interface SettingsRow {
-  /** "skills": the project's skill defaults, kept on this computer and changed only on its card (no proposal). */
-  setting: SettingId | "skills";
+  setting: SettingId;
   label: string;
   /** A profile's, playbook's or mode's id. */
   name?: string;

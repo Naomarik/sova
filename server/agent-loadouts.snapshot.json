@@ -6262,7 +6262,7 @@
       ]
     },
     "project-overseer": {
-      "bytes": 40514,
+      "bytes": 40869,
       "tools": [
         {
           "name": "sova_project",
@@ -7183,7 +7183,7 @@
         {
           "name": "sova_settings",
           "label": "Settings",
-          "description": "The project's settings, every one of them: yours (Watch, the powers in both columns, models, extra instructions, limits and pace, the hold, abilities, memory), the project's name, in an organization's project its main stakeholder, whether the owner's page shows it and whether its spec is frozen, how many of its copies may run at once on this machine, and the project's files (services .sova/project.json, profiles, playbooks and their schedules, project modes, offers). get: every setting with its state, the cards waiting and the folder's uncommitted settings edits. reference {setting}: one setting's keys, what each means and what needs the operator's approval. propose {why, edits}: change settings; each edit names a setting, never a path: {setting: \"overseer\", patch: {…}}, {setting: \"memory\", on}, {setting: \"project\", name?, stakeholder?, ownerHidden?, frozen?}, {setting: \"copies\", limit: 1–16 | null}, {setting: \"profile\", id, profile | null}, {setting: \"playbook\", id, text | null}, {setting: \"mode\", id, text | null}, {setting: \"offers\", file | null}, {setting: \"services\", file | null} (whole files; null removes). In a turn the operator started, a change that narrows what you may do (a power Off, a limit lowered, a model, the spec frozen, the project hidden from the owner's page, the main stakeholder) applies at once, with Undo. Everything that widens (a grant) and every file change goes on a Settings change card the operator applies with one click (Apply and Approve); you never approve a grant. In a run the operator did not start, propose only prepares the card. Archiving is the operator's own, with its own confirm on the project page. withdraw {card}: drop a card of yours (sc_…).",
+          "description": "The project's settings, every one of them: yours (Watch, the powers in both columns, models, extra instructions, limits and pace, the hold, abilities, memory), the project's name, in an organization's project its main stakeholder, whether the owner's page shows it and whether its spec is frozen, how many of its copies may run at once on this machine, which skills its new chats start with (Skills: each Approved, Disallowed or Waiting), and the project's files (services .sova/project.json, profiles, playbooks and their schedules, project modes, offers). get: every setting with its state (each skill's too), the cards waiting and the folder's uncommitted settings edits. reference {setting}: one setting's keys, what each means and what needs the operator's approval. propose {why, edits}: change settings; each edit names a setting, never a path: {setting: \"overseer\", patch: {…}}, {setting: \"memory\", on}, {setting: \"project\", name?, stakeholder?, ownerHidden?, frozen?}, {setting: \"copies\", limit: 1–16 | null}, {setting: \"skills\", skills: {<skill name>: \"approved\" | \"disallowed\" | \"waiting\"}} (only the names it changes; a chat's skills are fixed at its first message, so this reaches only chats not yet started), {setting: \"profile\", id, profile | null}, {setting: \"playbook\", id, text | null}, {setting: \"mode\", id, text | null}, {setting: \"offers\", file | null}, {setting: \"services\", file | null} (whole files; null removes). In a turn the operator started, a change that narrows what you may do (a power Off, a limit lowered, a model, a skill Disallowed, the spec frozen, the project hidden from the owner's page, the main stakeholder) applies at once, with Undo. Everything that widens (a grant) and every file change goes on a Settings change card the operator applies with one click (Apply and Approve); you never approve a grant. In a run the operator did not start, propose only prepares the card. Archiving is the operator's own, with its own confirm on the project page. withdraw {card}: drop a card of yours (sc_…).",
           "promptSnippet": "every project setting: get, reference, propose a change (a card the operator applies), withdraw",
           "parameters": {
             "type": "object",
@@ -7218,6 +7218,7 @@
                   "project.frozen",
                   "project.archive",
                   "copies",
+                  "skills",
                   "services",
                   "merge-queue",
                   "profile",
@@ -7245,6 +7246,7 @@
                         "memory",
                         "project",
                         "copies",
+                        "skills",
                         "profile",
                         "playbook",
                         "mode",
@@ -7472,7 +7474,7 @@
       ]
     },
     "create-settings": {
-      "bytes": 2844,
+      "bytes": 2853,
       "tools": [
         {
           "name": "sova_settings",
@@ -7512,6 +7514,7 @@
                   "project.frozen",
                   "project.archive",
                   "copies",
+                  "skills",
                   "services",
                   "merge-queue",
                   "profile",
@@ -7675,7 +7678,7 @@
       ]
     },
     "project-overseer+onboard": {
-      "bytes": 40910,
+      "bytes": 41265,
       "tools": [
         {
           "name": "sova_project",
@@ -8596,7 +8599,7 @@
         {
           "name": "sova_settings",
           "label": "Settings",
-          "description": "The project's settings, every one of them: yours (Watch, the powers in both columns, models, extra instructions, limits and pace, the hold, abilities, memory), the project's name, in an organization's project its main stakeholder, whether the owner's page shows it and whether its spec is frozen, how many of its copies may run at once on this machine, and the project's files (services .sova/project.json, profiles, playbooks and their schedules, project modes, offers). get: every setting with its state, the cards waiting and the folder's uncommitted settings edits. reference {setting}: one setting's keys, what each means and what needs the operator's approval. propose {why, edits}: change settings; each edit names a setting, never a path: {setting: \"overseer\", patch: {…}}, {setting: \"memory\", on}, {setting: \"project\", name?, stakeholder?, ownerHidden?, frozen?}, {setting: \"copies\", limit: 1–16 | null}, {setting: \"profile\", id, profile | null}, {setting: \"playbook\", id, text | null}, {setting: \"mode\", id, text | null}, {setting: \"offers\", file | null}, {setting: \"services\", file | null} (whole files; null removes). In a turn the operator started, a change that narrows what you may do (a power Off, a limit lowered, a model, the spec frozen, the project hidden from the owner's page, the main stakeholder) applies at once, with Undo. Everything that widens (a grant) and every file change goes on a Settings change card the operator applies with one click (Apply and Approve); you never approve a grant. In a run the operator did not start, propose only prepares the card. Archiving is the operator's own, with its own confirm on the project page. withdraw {card}: drop a card of yours (sc_…).",
+          "description": "The project's settings, every one of them: yours (Watch, the powers in both columns, models, extra instructions, limits and pace, the hold, abilities, memory), the project's name, in an organization's project its main stakeholder, whether the owner's page shows it and whether its spec is frozen, how many of its copies may run at once on this machine, which skills its new chats start with (Skills: each Approved, Disallowed or Waiting), and the project's files (services .sova/project.json, profiles, playbooks and their schedules, project modes, offers). get: every setting with its state (each skill's too), the cards waiting and the folder's uncommitted settings edits. reference {setting}: one setting's keys, what each means and what needs the operator's approval. propose {why, edits}: change settings; each edit names a setting, never a path: {setting: \"overseer\", patch: {…}}, {setting: \"memory\", on}, {setting: \"project\", name?, stakeholder?, ownerHidden?, frozen?}, {setting: \"copies\", limit: 1–16 | null}, {setting: \"skills\", skills: {<skill name>: \"approved\" | \"disallowed\" | \"waiting\"}} (only the names it changes; a chat's skills are fixed at its first message, so this reaches only chats not yet started), {setting: \"profile\", id, profile | null}, {setting: \"playbook\", id, text | null}, {setting: \"mode\", id, text | null}, {setting: \"offers\", file | null}, {setting: \"services\", file | null} (whole files; null removes). In a turn the operator started, a change that narrows what you may do (a power Off, a limit lowered, a model, a skill Disallowed, the spec frozen, the project hidden from the owner's page, the main stakeholder) applies at once, with Undo. Everything that widens (a grant) and every file change goes on a Settings change card the operator applies with one click (Apply and Approve); you never approve a grant. In a run the operator did not start, propose only prepares the card. Archiving is the operator's own, with its own confirm on the project page. withdraw {card}: drop a card of yours (sc_…).",
           "promptSnippet": "every project setting: get, reference, propose a change (a card the operator applies), withdraw",
           "parameters": {
             "type": "object",
@@ -8631,6 +8634,7 @@
                   "project.frozen",
                   "project.archive",
                   "copies",
+                  "skills",
                   "services",
                   "merge-queue",
                   "profile",
@@ -8658,6 +8662,7 @@
                         "memory",
                         "project",
                         "copies",
+                        "skills",
                         "profile",
                         "playbook",
                         "mode",
@@ -8891,7 +8896,7 @@
       ]
     },
     "project-overseer+gaps": {
-      "bytes": 40955,
+      "bytes": 41310,
       "tools": [
         {
           "name": "sova_project",
@@ -9824,7 +9829,7 @@
         {
           "name": "sova_settings",
           "label": "Settings",
-          "description": "The project's settings, every one of them: yours (Watch, the powers in both columns, models, extra instructions, limits and pace, the hold, abilities, memory), the project's name, in an organization's project its main stakeholder, whether the owner's page shows it and whether its spec is frozen, how many of its copies may run at once on this machine, and the project's files (services .sova/project.json, profiles, playbooks and their schedules, project modes, offers). get: every setting with its state, the cards waiting and the folder's uncommitted settings edits. reference {setting}: one setting's keys, what each means and what needs the operator's approval. propose {why, edits}: change settings; each edit names a setting, never a path: {setting: \"overseer\", patch: {…}}, {setting: \"memory\", on}, {setting: \"project\", name?, stakeholder?, ownerHidden?, frozen?}, {setting: \"copies\", limit: 1–16 | null}, {setting: \"profile\", id, profile | null}, {setting: \"playbook\", id, text | null}, {setting: \"mode\", id, text | null}, {setting: \"offers\", file | null}, {setting: \"services\", file | null} (whole files; null removes). In a turn the operator started, a change that narrows what you may do (a power Off, a limit lowered, a model, the spec frozen, the project hidden from the owner's page, the main stakeholder) applies at once, with Undo. Everything that widens (a grant) and every file change goes on a Settings change card the operator applies with one click (Apply and Approve); you never approve a grant. In a run the operator did not start, propose only prepares the card. Archiving is the operator's own, with its own confirm on the project page. withdraw {card}: drop a card of yours (sc_…).",
+          "description": "The project's settings, every one of them: yours (Watch, the powers in both columns, models, extra instructions, limits and pace, the hold, abilities, memory), the project's name, in an organization's project its main stakeholder, whether the owner's page shows it and whether its spec is frozen, how many of its copies may run at once on this machine, which skills its new chats start with (Skills: each Approved, Disallowed or Waiting), and the project's files (services .sova/project.json, profiles, playbooks and their schedules, project modes, offers). get: every setting with its state (each skill's too), the cards waiting and the folder's uncommitted settings edits. reference {setting}: one setting's keys, what each means and what needs the operator's approval. propose {why, edits}: change settings; each edit names a setting, never a path: {setting: \"overseer\", patch: {…}}, {setting: \"memory\", on}, {setting: \"project\", name?, stakeholder?, ownerHidden?, frozen?}, {setting: \"copies\", limit: 1–16 | null}, {setting: \"skills\", skills: {<skill name>: \"approved\" | \"disallowed\" | \"waiting\"}} (only the names it changes; a chat's skills are fixed at its first message, so this reaches only chats not yet started), {setting: \"profile\", id, profile | null}, {setting: \"playbook\", id, text | null}, {setting: \"mode\", id, text | null}, {setting: \"offers\", file | null}, {setting: \"services\", file | null} (whole files; null removes). In a turn the operator started, a change that narrows what you may do (a power Off, a limit lowered, a model, a skill Disallowed, the spec frozen, the project hidden from the owner's page, the main stakeholder) applies at once, with Undo. Everything that widens (a grant) and every file change goes on a Settings change card the operator applies with one click (Apply and Approve); you never approve a grant. In a run the operator did not start, propose only prepares the card. Archiving is the operator's own, with its own confirm on the project page. withdraw {card}: drop a card of yours (sc_…).",
           "promptSnippet": "every project setting: get, reference, propose a change (a card the operator applies), withdraw",
           "parameters": {
             "type": "object",
@@ -9859,6 +9864,7 @@
                   "project.frozen",
                   "project.archive",
                   "copies",
+                  "skills",
                   "services",
                   "merge-queue",
                   "profile",
@@ -9886,6 +9892,7 @@
                         "memory",
                         "project",
                         "copies",
+                        "skills",
                         "profile",
                         "playbook",
                         "mode",
@@ -10113,7 +10120,7 @@
       ]
     },
     "project-overseer+copies": {
-      "bytes": 46532,
+      "bytes": 46887,
       "tools": [
         {
           "name": "sova_project",
@@ -11118,7 +11125,7 @@
         {
           "name": "sova_settings",
           "label": "Settings",
-          "description": "The project's settings, every one of them: yours (Watch, the powers in both columns, models, extra instructions, limits and pace, the hold, abilities, memory), the project's name, in an organization's project its main stakeholder, whether the owner's page shows it and whether its spec is frozen, how many of its copies may run at once on this machine, and the project's files (services .sova/project.json, profiles, playbooks and their schedules, project modes, offers). get: every setting with its state, the cards waiting and the folder's uncommitted settings edits. reference {setting}: one setting's keys, what each means and what needs the operator's approval. propose {why, edits}: change settings; each edit names a setting, never a path: {setting: \"overseer\", patch: {…}}, {setting: \"memory\", on}, {setting: \"project\", name?, stakeholder?, ownerHidden?, frozen?}, {setting: \"copies\", limit: 1–16 | null}, {setting: \"profile\", id, profile | null}, {setting: \"playbook\", id, text | null}, {setting: \"mode\", id, text | null}, {setting: \"offers\", file | null}, {setting: \"services\", file | null} (whole files; null removes). In a turn the operator started, a change that narrows what you may do (a power Off, a limit lowered, a model, the spec frozen, the project hidden from the owner's page, the main stakeholder) applies at once, with Undo. Everything that widens (a grant) and every file change goes on a Settings change card the operator applies with one click (Apply and Approve); you never approve a grant. In a run the operator did not start, propose only prepares the card. Archiving is the operator's own, with its own confirm on the project page. withdraw {card}: drop a card of yours (sc_…).",
+          "description": "The project's settings, every one of them: yours (Watch, the powers in both columns, models, extra instructions, limits and pace, the hold, abilities, memory), the project's name, in an organization's project its main stakeholder, whether the owner's page shows it and whether its spec is frozen, how many of its copies may run at once on this machine, which skills its new chats start with (Skills: each Approved, Disallowed or Waiting), and the project's files (services .sova/project.json, profiles, playbooks and their schedules, project modes, offers). get: every setting with its state (each skill's too), the cards waiting and the folder's uncommitted settings edits. reference {setting}: one setting's keys, what each means and what needs the operator's approval. propose {why, edits}: change settings; each edit names a setting, never a path: {setting: \"overseer\", patch: {…}}, {setting: \"memory\", on}, {setting: \"project\", name?, stakeholder?, ownerHidden?, frozen?}, {setting: \"copies\", limit: 1–16 | null}, {setting: \"skills\", skills: {<skill name>: \"approved\" | \"disallowed\" | \"waiting\"}} (only the names it changes; a chat's skills are fixed at its first message, so this reaches only chats not yet started), {setting: \"profile\", id, profile | null}, {setting: \"playbook\", id, text | null}, {setting: \"mode\", id, text | null}, {setting: \"offers\", file | null}, {setting: \"services\", file | null} (whole files; null removes). In a turn the operator started, a change that narrows what you may do (a power Off, a limit lowered, a model, a skill Disallowed, the spec frozen, the project hidden from the owner's page, the main stakeholder) applies at once, with Undo. Everything that widens (a grant) and every file change goes on a Settings change card the operator applies with one click (Apply and Approve); you never approve a grant. In a run the operator did not start, propose only prepares the card. Archiving is the operator's own, with its own confirm on the project page. withdraw {card}: drop a card of yours (sc_…).",
           "promptSnippet": "every project setting: get, reference, propose a change (a card the operator applies), withdraw",
           "parameters": {
             "type": "object",
@@ -11153,6 +11160,7 @@
                   "project.frozen",
                   "project.archive",
                   "copies",
+                  "skills",
                   "services",
                   "merge-queue",
                   "profile",
@@ -11180,6 +11188,7 @@
                         "memory",
                         "project",
                         "copies",
+                        "skills",
                         "profile",
                         "playbook",
                         "mode",

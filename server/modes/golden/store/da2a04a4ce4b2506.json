@@ -126,13 +126,7 @@
    "required": [
     "id"
    ],
-   "properties": {
-    "id": {
-     "type": "string",
-     "pattern": "^ag_\\d+$",
-     "description": "Exact worker ID (ag_NN)."
-    }
-   },
+   "properties": {},
    "additionalProperties": false
   }
  },
@@ -183,10 +177,6 @@
     "id"
    ],
    "properties": {
-    "id": {
-     "type": "string",
-     "minLength": 1
-    },
     "full": {
      "type": "boolean"
     },
@@ -214,10 +204,6 @@
     "message"
    ],
    "properties": {
-    "id": {
-     "type": "string",
-     "minLength": 1
-    },
     "message": {
      "type": "string",
      "minLength": 1
@@ -238,10 +224,6 @@
   "parameters": {
    "type": "object",
    "properties": {
-    "id": {
-     "type": "string",
-     "minLength": 1
-    },
     "group": {
      "type": "string",
      "minLength": 1
@@ -513,7 +495,7 @@
     "ops": {
      "type": "array",
      "items": {
-      "anyOf": "@8f0d66a627303464"
+      "anyOf": "@efddf5ee21db1c1d"
      },
      "description": "Operations, applied in order. change_request, when given, comes before every other op; create or import comes next (else first) and appears once.",
      "minItems": 1
@@ -566,7 +548,7 @@
   "description": "@33a84d06d908f213",
   "parameters": {
    "type": "object",
-   "properties": "@d2075d1e687bf90b",
+   "properties": "@6fa8e0626cb07675",
    "required": [
     "op"
    ],

@@ -29,6 +29,7 @@
    "project.frozen",
    "project.archive",
    "copies",
+   "skills",
    "services",
    "merge-queue",
    "profile",

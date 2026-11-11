@@ -1,5 +1,5 @@
 import type { Context, Hono } from "hono";
-import { appendHistory } from "../project-settings";
+import { appendHistory, setProjectSkillStates } from "../project-settings";
 import type { ProjectList, ProjectRegistered } from "../../shared/projects";
 import { BusyError } from "../chat-handle";
 import { localRequest } from "../mesh/proxy";
@@ -11,8 +11,7 @@ import { archiveBlockers } from "../project-overseer";
 import { nudgeMarks } from "../session-feed";
 import { knownLogin, loginOptions, UNKNOWN_LOGIN } from "../claude-login-known";
 import { projectLoginView, setProjectLogin } from "./claude-login";
-import { projectSkillsView, setProjectSkills } from "./skills";
-import { refreshNewChats } from "./skills-chats";
+import { parseSkillChanges, projectSkillsView } from "./skills";
 import { cloneRepo, overseerRepoProblem } from "./clone";
 import { reservedRoots } from "./contributions";
 import { RegistryError, reservedRootProblem } from "./registry";
@@ -134,9 +133,12 @@ export function registerProjectRoutes(app: Hono<any>): void {
     "/api/projects/:pid/skills",
     handle(async (c) => {
       const pid = pidOf(c);
-      const view = await setProjectSkills(pid, await body(c));
-      // A new chat of the project, before its first message, is rebuilt with the new defaults; a started one keeps its skills.
-      await refreshNewChats(pid);
+      readProject(pid);
+      const changes = parseSkillChanges(await body(c));
+      // The settings' one write (server/project-settings.ts): saved, recorded in Settings history, and every chat of
+      // the project not yet started rebuilt with the new defaults; a started one keeps its skills.
+      const by = operatorBy(c).via === "overseer" ? ({ kind: "overseer" } as const) : ({ kind: "operator", via: c.req.header("x-sova-token") !== undefined ? "script" : "page" } as const);
+      const { view } = await setProjectSkillStates(pid, changes, by);
       return c.json(view, 200, NO_STORE);
     }),
   );

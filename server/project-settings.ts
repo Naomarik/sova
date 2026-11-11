@@ -10,7 +10,9 @@ import { isProjectModeId, ModeFileError, parseModeFile, PROJECT_MODE_ENTRY, PROJ
 import { scheduleOf, scheduleText } from "../shared/schedules";
 import { OFFERS_FILE, parseOffersFile, runButtonsOf } from "../shared/session-offers";
 import { SETTINGS_REFERENCE, type ReferenceEntry, type SettingId } from "../shared/settings-reference";
-import { COPIES_EDIT_KEYS, COPIES_FIELD, PROJECT_EDIT_KEYS } from "../shared/project-settings";
+import { COPIES_EDIT_KEYS, COPIES_FIELD, PROJECT_EDIT_KEYS, SKILL_FIELD_PREFIX, SKILLS_EDIT_KEYS } from "../shared/project-settings";
+import type { ProjectSkillsView } from "../shared/project-skills";
+import { projectSkillDecisions } from "./project-skills-store";
 import { copyLimitOf } from "../shared/project-slots";
 import { copyLimitProblem, machineCopyLimit, setMachineCopyLimit } from "./project-services/copy-limit";
 import type { MergeQueueSettings, MergeSettingsChange, ModelChoice } from "../shared/merge-queue-settings";
@@ -140,6 +142,7 @@ export function fieldLabel(field: string): string {
   const m = /^powers\.(overseer|assistant)\.(.+)$/.exec(field);
   if (m && isPowerId(m[2])) return `${m[1] === "assistant" ? POWER_INFO[m[2]].assistantLabel ?? POWER_INFO[m[2]].label : POWER_INFO[m[2]].label} (${m[1] === "assistant" ? "the Project Assistant from a client" : "the overseer on its own"})`;
   if (field.startsWith("file:")) return field.slice(5);
+  if (isSkillsField(field)) return `Skill ${skillOfField(field)}`;
   return LABEL[field] ?? field;
 }
 
@@ -161,6 +164,7 @@ export function valueText(field: string, v: unknown): string {
   if (field === "project.frozen") return v === true ? "Frozen" : "Not frozen";
   if (field === COPIES_FIELD) return v === null || v === undefined ? "the project's file's value" : `${String(v)} at once`;
   if (field === "project.ownerHidden") return v === true ? "Hidden" : "Shown";
+  if (isSkillsField(field)) return v === "approved" ? "Approved" : v === "disallowed" ? "Disallowed" : "Waiting (on until decided)";
   if (field === "project.stakeholder") return typeof v === "string" && v ? (placementDeps?.nameOf(v) ?? v) : "None";
   return v === null || v === undefined ? "not set" : String(v);
 }
@@ -182,6 +186,7 @@ export function grantOf(field: string, from: unknown, to: unknown): string | und
   if (field === "resume") return "lifts the brake, so its switches act again";
   if (field === "project.frozen") return from === true && to !== true ? "unfreezes the project's spec: its claims may be written outside the reconciler's promotion again" : undefined;
   if (field === "project.ownerHidden") return from === true && to !== true ? "shows the project on the organization owner's page again" : undefined;
+  if (isSkillsField(field)) return from === "disallowed" && to !== "disallowed" ? `lets the project's new chats use the skill ${skillOfField(field)} again` : undefined;
   return undefined;
 }
 const lower = (s: string) => s.charAt(0).toLowerCase() + s.slice(1);
@@ -217,7 +222,7 @@ export function patchOf(changes: Pick<KeptChange, "field" | "to">[]): ProjectOve
 
 const isCopiesField = (f: string): boolean => f === COPIES_FIELD;
 const isLoginField = (f: string): boolean => f === LOGIN_FIELD;
-const isOwnField = (f: string): boolean => !isPlacementField(f) && !isCopiesField(f) && !isLoginField(f);
+const isOwnField = (f: string): boolean => !isPlacementField(f) && !isCopiesField(f) && !isLoginField(f) && !isSkillsField(f);
 const loginWords = (v: unknown): string => (v === "none" ? "this computer's order" : v === "org" ? "same as its organization" : (loginOptions().find((o) => o.id === v)?.name ?? String(v)));
 
 /** Which existing login a project's new chats start on. No login is added or signed in to here. */
@@ -262,6 +267,47 @@ export function setCopyLimit(projectId: string, to: unknown, by: SettingsBy, met
   if (same(from, to)) return [];
   setMachineCopyLimit(root, to as number | null);
   return appendHistory(projectId, [{ field: COPIES_FIELD, from, to: to ?? null, by, ...(meta.card ? { card: meta.card } : {}), ...(meta.revertOf ? { revertOf: meta.revertOf } : {}) }]);
+}
+
+// ---- the project's skill defaults (server/projects/skills.ts) ---------------------------------------------
+
+function isSkillsField(f: string): boolean {
+  return f.startsWith(SKILL_FIELD_PREFIX) && f.length > SKILL_FIELD_PREFIX.length;
+}
+function skillOfField(f: string): string {
+  return f.slice(SKILL_FIELD_PREFIX.length);
+}
+type SkillState = "approved" | "disallowed" | "waiting";
+const skillStateNow = (projectId: string, name: string): SkillState => projectSkillDecisions(projectId)[name] ?? "waiting";
+
+/** The change of one skill's state to `to`, in words with its grant, or null when it is already that. */
+function skillChange(projectId: string, name: string, to: SkillState): KeptChange | null {
+  const field = `${SKILL_FIELD_PREFIX}${name}`;
+  const from = skillStateNow(projectId, name);
+  if (from === to) return null;
+  const grant = grantOf(field, from, to);
+  return { field, label: fieldLabel(field), from, to, fromText: valueText(field, from), toText: valueText(field, to), ...(grant ? { grant } : {}) };
+}
+
+/**
+ * Set skills' states for the project's new chats and write a history line for each that changed: the
+ * Skills card's save (PUT /api/projects/:pid/skills) and the settings' apply and undo all come here. The
+ * store's own checks apply (a name no chat in the project could be offered is a 404), then every chat of
+ * the project not yet started is rebuilt with the new defaults; a started chat keeps its skills.
+ */
+export async function setProjectSkillStates(projectId: string, changes: Record<string, SkillState>, by: SettingsBy, meta: { card?: string; revertOf?: string } = {}): Promise<{ view: ProjectSkillsView; rows: SettingsHistoryRow[] }> {
+  const before = projectSkillDecisions(projectId);
+  const { setProjectSkills } = await import("./projects/skills");
+  const view = await setProjectSkills(projectId, { skills: changes });
+  await (await import("./projects/skills-chats")).refreshNewChats(projectId);
+  const rows = appendHistory(
+    projectId,
+    Object.entries(changes).flatMap(([name, to]) => {
+      const from = before[name] ?? "waiting";
+      return from === to ? [] : [{ field: `${SKILL_FIELD_PREFIX}${name}`, from, to, by, ...(meta.card ? { card: meta.card } : {}), ...(meta.revertOf ? { revertOf: meta.revertOf } : {}) }];
+    }),
+  );
+  return { view, rows };
 }
 
 // ---- history ----------------------------------------------------------------------------------------
@@ -455,6 +501,7 @@ export type SettingsEdit =
   | { setting: "offers"; file: Record<string, unknown> | null }
   | { setting: "services"; file: Record<string, unknown> | null }
   | { setting: "copies"; limit: number | null }
+  | { setting: "skills"; skills: Record<string, unknown> }
   | { setting: "merge-queue"; changes?: unknown; models?: unknown }
   | { setting: "claude-login"; login?: unknown };
 
@@ -467,7 +514,7 @@ const PATCH_REFUSED: Record<string, string> = {
 const PATCH_KNOWN = new Set(["model", "thinking", "codingModel", "codingThinking", "gatheringModel", "gatheringThinking", "gatheringAbilities", "watchGapMin", "soonLookSec", "watch", "holdMin", "extraSystemPrompt", "powers", "resume", "assistantModels", "caps"]);
 
 /** A file edit: its path, setting and new text (null: removed). Throws the parser's refusal. */
-async function fileEdit(root: string, e: Exclude<SettingsEdit, { setting: "overseer" | "memory" | "project" | "copies" | "merge-queue" | "claude-login" }>): Promise<{ rel: string; setting: SettingId; id?: string; text: string | null }> {
+async function fileEdit(root: string, e: Exclude<SettingsEdit, { setting: "overseer" | "memory" | "project" | "copies" | "skills" | "merge-queue" | "claude-login" }>): Promise<{ rel: string; setting: SettingId; id?: string; text: string | null }> {
   const json = (v: Record<string, unknown>) => `${JSON.stringify(v, null, 2)}\n`;
   const sized = (t: string) => (Buffer.byteLength(t) > FILE_MAX ? refuse(`That file would be over ${FILE_MAX / 1024} KB.`) : t);
   switch (e.setting) {
@@ -736,10 +783,11 @@ export async function proposeSettings(projectId: string, input: { edits: unknown
   let copiesTo: { to: number | null } | undefined;
   let queue: QueueCardPart | undefined;
   let loginTo: { to: string } | undefined;
+  const skillsTo: Record<string, SkillState> = {};
   const create = ctx.by.kind === "create";
   const fileEdits: { rel: string; setting: SettingId; id?: string; text: string | null }[] = [];
   for (const raw of edits) {
-    if (!isObj(raw) || typeof raw.setting !== "string") refuse('Each edit is an object naming its setting: {setting: "overseer" | "memory" | "project" | "copies" | "profile" | "playbook" | "mode" | "offers" | "services", …}.');
+    if (!isObj(raw) || typeof raw.setting !== "string") refuse('Each edit is an object naming its setting: {setting: "overseer" | "memory" | "project" | "copies" | "skills" | "profile" | "playbook" | "mode" | "offers" | "services", …}.');
     // Credentials never pass through Create (§chat.create-mode/settings-cards), in any setting it can name.
     if (create && credentialProblem(raw)) refuse(credentialRefusal(editPlace((raw as { setting: string }).setting)));
     const e = raw as SettingsEdit;
@@ -784,6 +832,17 @@ export async function proposeSettings(projectId: string, input: { edits: unknown
       const why = copyLimitProblem(e.limit);
       if (why) refuse(why);
       copiesTo = { to: e.limit };
+    } else if (e.setting === "skills") {
+      for (const k of Object.keys(e)) if (k !== "setting" && !(SKILLS_EDIT_KEYS as readonly string[]).includes(k)) refuse(`Unknown skills setting "${k}" (sova_settings reference skills lists them).`);
+      const { parseSkillChanges } = await import("./projects/skills");
+      let asked: Record<string, SkillState>;
+      try {
+        asked = parseSkillChanges({ skills: e.skills });
+      } catch (err) {
+        refuse('A skills edit names skills: {<skill name>: "approved" | "disallowed" | "waiting"}.');
+        throw err;
+      }
+      Object.assign(skillsTo, asked);
     } else if (["profile", "playbook", "mode", "offers", "services"].includes(e.setting)) {
       const f = await fileEdit(project.root, e as never);
       if (fileEdits.some((x) => x.rel === f.rel)) refuse(`Two edits change ${f.rel}: make it one.`);
@@ -815,6 +874,19 @@ export async function proposeSettings(projectId: string, input: { edits: unknown
   if (loginTo) {
     const c = loginChange(projectId, loginTo.to);
     if (c) kept.push(c);
+  }
+  if (Object.keys(skillsTo).length) {
+    // The store's own name check, made now so the overseer hears it before any card: a name no chat in
+    // the project could be offered is refused (a scan that couldn't see every checkout refuses none).
+    const { projectSkillsScan } = await import("./projects/skills");
+    const scan = await projectSkillsScan(project.root);
+    const names = new Set(scan.found.map((f) => f.name));
+    const unknown = scan.complete ? Object.keys(skillsTo).filter((n) => skillsTo[n] !== "waiting" && !names.has(n)) : [];
+    if (unknown.length) refuse(`No skill named ${unknown.map((n) => `"${n}"`).join(", ")} is offered in this project (sova_settings get lists them).`);
+    for (const [n, to] of Object.entries(skillsTo)) {
+      const c = skillChange(projectId, n, to);
+      if (c) kept.push(c);
+    }
   }
   if (body.resume === true) kept.push({ field: "resume", label: fieldLabel("resume"), from: "braked", to: "resumed", fromText: "on", toText: "lifted", grant: grantOf("resume", null, null)! });
   if (name === project.name) name = undefined;
@@ -1084,6 +1156,8 @@ async function applyKept(projectId: string, changes: Pick<KeptChange, "field" | 
   const own = changes.filter((k) => isOwnField(k.field));
   const rows: SettingsHistoryRow[] = own.length ? await depsOrThrow().patch(projectId, patchOf(own), by, meta) : [];
   for (const k of changes) if (isCopiesField(k.field)) rows.push(...setCopyLimit(projectId, k.to ?? null, by, meta));
+  const skills = Object.fromEntries(changes.filter((k) => isSkillsField(k.field)).map((k) => [skillOfField(k.field), k.to as SkillState]));
+  if (Object.keys(skills).length) rows.push(...(await setProjectSkillStates(projectId, skills, by, meta)).rows);
   for (const k of changes) {
     if (!isLoginField(k.field)) continue;
     const from = projectLoginView(projectId).setting;
@@ -1102,7 +1176,7 @@ async function applyKept(projectId: string, changes: Pick<KeptChange, "field" | 
 }
 
 const settingOfField = (field: string): SettingId =>
-  isPlacementField(field) ? field : isCopiesField(field) ? "copies" : field.startsWith("powers.") ? "overseer.powers" : field.startsWith("caps.") ? "overseer.limits" : field === "watch" ? "overseer.watch" : field === "holdMin" ? "overseer.hold" : field === "extraSystemPrompt" ? "overseer.extra" : field === "gatheringAbilities" ? "overseer.abilities" : field === "resume" ? "overseer.brake" : field === "watchGapMin" || field === "soonLookSec" ? "overseer.pace" : "overseer.models";
+  isPlacementField(field) ? field : isCopiesField(field) ? "copies" : isSkillsField(field) ? "skills" : field.startsWith("powers.") ? "overseer.powers" : field.startsWith("caps.") ? "overseer.limits" : field === "watch" ? "overseer.watch" : field === "holdMin" ? "overseer.hold" : field === "extraSystemPrompt" ? "overseer.extra" : field === "gatheringAbilities" ? "overseer.abilities" : field === "resume" ? "overseer.brake" : field === "watchGapMin" || field === "soonLookSec" ? "overseer.pace" : "overseer.models";
 
 function mergeBodies(a: Record<string, any>, b: Record<string, any>): Record<string, any> {
   const out: Record<string, any> = { ...a };
@@ -1262,6 +1336,10 @@ async function checkCard(projectId: string, c: StoredCard): Promise<{ now: KeptC
   const copiesKept = c.kept.find((k) => isCopiesField(k.field));
   if (copiesKept) {
     const ch = copiesChange(projectId, (copiesKept.to as number | null) ?? null);
+    if (ch) now.push(ch);
+  }
+  for (const k of c.kept.filter((x) => isSkillsField(x.field))) {
+    const ch = skillChange(projectId, skillOfField(k.field), k.to as SkillState);
     if (ch) now.push(ch);
   }
   const loginKept = c.kept.find((k) => isLoginField(k.field));
@@ -1508,6 +1586,12 @@ export async function undoRow(projectId: string, rowId: unknown, opts: { notPage
     if (opts.notPage && copiesGrant(projectId, row.to, row.from)) throw new OrgError(opts.notPage, 403);
     return { undone: setCopyLimit(projectId, row.from ?? null, by, meta) };
   }
+  if (isSkillsField(row.field)) {
+    const name = skillOfField(row.field);
+    if (skillStateNow(projectId, name) !== row.to) throw new OrgError(`${fieldLabel(row.field)} changed since: undo the newer change first.`, 409);
+    if (opts.notPage && grantOf(row.field, row.to, row.from)) throw new OrgError(opts.notPage, 403);
+    return { undone: (await setProjectSkillStates(projectId, { [name]: row.from as SkillState }, by, meta)).rows };
+  }
   if (isPlacementField(row.field)) {
     const p = placementOf(projectId);
     if (!p) throw new OrgError("No organization places this project any more.", 409);
@@ -1570,7 +1654,7 @@ export async function settingsInfo(projectId: string): Promise<ProjectSettingsIn
   try {
     const { projectSkillsView, skillsRowState } = await import("./projects/skills");
     const view = await projectSkillsView(projectId);
-    rows.push({ setting: "skills", label: "Skills", state: skillsRowState(view.counts), where: "sova", href: tab, anchor: "project-skills", hrefLabel: "Show Skills", detail: "kept on this computer; new chats start with these" });
+    rows.push({ setting: "skills", label: SETTINGS_REFERENCE.skills.label, state: skillsRowState(view.counts), where: "sova", href: tab, anchor: "project-skills", hrefLabel: "Show Skills", detail: "kept on this computer; new chats start with these" });
   } catch {
     // unreadable: none listed
   }

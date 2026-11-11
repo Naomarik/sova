@@ -1,7 +1,8 @@
-import { createEffect, createMemo, createSignal, For, Match, on, onCleanup, Show, Switch, untrack } from "solid-js";
-import type { GitSummary, SessionSetup } from "../../shared/protocol";
+import { batch, createEffect, createMemo, createSignal, For, Index, Match, on, onCleanup, Show, Switch, untrack } from "solid-js";
+import type { GitSummary, SessionSetup, SessionSetupFile } from "../../shared/protocol";
 import { fetchSessionSetup, fetchSessionTools, fetchSetupFile, setFolderApprovals, setSessionLoadout } from "../lib/api";
-import { ABOVE_PROJECT, ACTION_DECISION, ACTION_WORD, APPROVE_ALL, approveNotice, CHANGED_LINE, PARTIAL_FINGERPRINT_LINE, decideAll, DISALLOW_ALL, itemsPhrase, REVIEW, rowActions, WAITING_LINE, type Decision } from "../lib/approvals";
+import { ABOVE_PROJECT, ACTION_DECISION, ACTION_WORD, APPROVE_ALL, approveNotice, CHANGED_LINE, PARTIAL_FINGERPRINT_LINE, decideAll, DISALLOW_ALL, itemsPhrase, REVIEW, rowActions, WAITING_LINE, type Approval, type Decision } from "../lib/approvals";
+import { acked, begin, EMPTY, failed, inOrder, pendingAny, queueOf, readLanded, type Overlay } from "../lib/approval-overlay";
 import { offWords, rowApproval, type Row } from "../lib/setup-approvals";
 import { askReread, rereadAsked, reviewAsked, setHold } from "../lib/approval-hold";
 import { FolderApprovalsDialog } from "./FolderApprovalsDialog";
@@ -43,6 +44,8 @@ import { Icon } from "./ui";
 import type { SetupMcp } from "../../shared/mcp";
 
 type Answer<T> = { ok: T } | { error: string };
+/** After a saved decision's read failed, the one more read's wait. */
+const REREAD_MS = 1500;
 
 /**
  * The setup card of a new, empty session: what pi loads into
@@ -70,6 +73,22 @@ export function SessionSetupCard(props: { path: string; editable?: boolean; tool
   let run = 0;
   let rev = 0;
   const settle = <T,>(p: Promise<T>): Promise<Answer<T>> => p.then((ok) => ({ ok }), (err: Error) => ({ error: err.message }));
+  // Decisions shown at the click while their save runs (lib/approval-overlay); `reads` numbers the
+  // loadout reads started, so only a read that began after a save answered retires its rows.
+  const [overlay, setOverlay] = createSignal<Overlay>(EMPTY);
+  let reads = 0;
+  let saves = 0;
+  const readSetup = (p: string, fresh?: boolean): Promise<{ answer: Answer<SessionSetup>; n: number }> => {
+    const n = ++reads;
+    return settle(fresh ? fetchSessionSetup(p, true) : fetchSessionSetup(p)).then((answer) => ({ answer, n }));
+  };
+  /** A later read's answer, drawn in place: the rows stay mounted and only what changed redraws. */
+  const draw = (next: Answer<SessionSetup>, n: number) =>
+    batch(() => {
+      rev++;
+      setSetup(next);
+      setOverlay((o) => readLanded(o, n));
+    });
   // The Tools group's reads (§chat.transcript/setup-card-tools): the first is one of the card's three;
   // later ones redraw only the group, an older answer never over a newer one.
   const tools = createToolsReads(fetchSessionTools);
@@ -80,10 +99,14 @@ export function SessionSetupCard(props: { path: string; editable?: boolean; tool
       const mine = ++run;
       const seen = rev;
       setLanded(false);
+      setOverlay(EMPTY);
       tools.reset();
-      void Promise.all([settle(fetchSessionSetup(p)), settle(loadGitSummary(p)), tools.read(p)]).then(([s, g]) => {
+      void Promise.all([readSetup(p), settle(loadGitSummary(p)), tools.read(p)]).then(([{ answer: s, n }, g]) => {
         if (mine !== run) return;
-        if (seen === rev) setSetup(s);
+        if (seen === rev) {
+          setSetup(s);
+          setOverlay((o) => readLanded(o, n));
+        }
         setGit(g);
         setLanded(true);
       });
@@ -108,10 +131,9 @@ export function SessionSetupCard(props: { path: string; editable?: boolean; tool
       const s = setup();
       if (s && "ok" in s && s.ok.state === "ok" && s.ok.toggleable) return;
       const mine = run;
-      void settle(fetchSessionSetup(path(), true)).then((next) => {
+      void readSetup(path(), true).then(({ answer: next, n }) => {
         if (mine !== run || !("ok" in next)) return;
-        rev++;
-        setSetup(next);
+        draw(next, n);
       });
     }),
   );
@@ -124,10 +146,9 @@ export function SessionSetupCard(props: { path: string; editable?: boolean; tool
       serversKey,
       () => {
         const mine = run;
-        void settle(fetchSessionSetup(path(), true)).then((next) => {
+        void readSetup(path(), true).then(({ answer: next, n }) => {
           if (mine !== run || !("ok" in next)) return;
-          rev++;
-          setSetup(next);
+          draw(next, n);
         });
       },
       { defer: true },
@@ -199,43 +220,70 @@ export function SessionSetupCard(props: { path: string; editable?: boolean; tool
     if (!approvals() || !s || !("ok" in s) || s.ok.state !== "ok") return [];
     return [...s.ok.context.map((f) => ({ kind: "context" as const, f })), ...s.ok.skills.map((f) => ({ kind: "skill" as const, f }))].filter((r) => !!r.f.approval);
   };
-  /** What waits for a decision: asking mode only; a changed item stays loaded and never waits. */
-  const waiting = () => (asking() ? decidable().filter((r) => rowApproval(r.f) === "waiting") : []);
-  /** What is being saved: Approve All / Disallow All, or one row's key; null when nothing is. */
-  type Saving = { all: Decision } | { key: string };
-  const [deciding, setDeciding] = createSignal<Saving | null>(null);
-  const savingAll = (to: Decision) => {
-    const d = deciding();
-    return !!d && "all" in d && d.all === to;
+  /** A row's decision as shown: the one clicked here while it saves, else the server's. */
+  const shownApproval = (f: SessionSetupFile): Approval => {
+    const p = f.approval ? overlay()[f.approval.key] : undefined;
+    return p ? p.to : rowApproval(f);
   };
-  /** One row's decision, into the folder's list; then the setup is read again. */
-  const decide = (r: Row, to: Decision) => save({ key: r.f.approval!.key }, [r], to, r.f.approval!.key);
+  /** Whether a row reads as off: what it will be once its decision is saved, else the server's. */
+  const shownOff = (f: SessionSetupFile): boolean => {
+    const p = f.approval ? overlay()[f.approval.key] : undefined;
+    return p ? p.to === "disallowed" || (p.to === "waiting" && asking()) : isOff(f);
+  };
+  /** What waits for a decision: asking mode only; a changed item stays loaded and never waits. */
+  const waiting = () => (asking() ? decidable().filter((r) => shownApproval(r.f) === "waiting") : []);
+  /** A decision is still being saved: the switches wait, and so does Send. */
+  const saving = () => pendingAny(overlay());
+  /** One row's decision, into the folder's list. */
+  const decide = (r: Row, to: Decision, label: string) => save([r], to, label);
   /** Approve All / Disallow All: every waiting row in one save. */
   const decideWaiting = (to: Decision) => {
     const rows = waiting();
-    if (rows.length) save({ all: to }, rows, to, itemsPhrase(rows.filter((r) => r.kind === "context").length, rows.filter((r) => r.kind === "skill").length));
+    if (rows.length) save(rows, to, itemsPhrase(rows.filter((r) => r.kind === "context").length, rows.filter((r) => r.kind === "skill").length));
   };
-  const save = (key: Saving, rows: Row[], to: Decision, what: string) => {
+  /**
+   * The rows show the decision at once (lib/approval-overlay) and the save runs behind them, in
+   * click order with the folder's other saves; every row stays clickable meanwhile. The server's answer, then a read of the setup, retire them; a refusal or failure
+   * puts them back with its toast. Nothing loads on the overlay: the server decides what loads.
+   */
+  const save = (rows: Row[], to: Decision, what: string) => {
     const s = setup();
     const a = approvals();
-    if (!a || !s || !("ok" in s) || deciding()) return;
+    if (!a || !s || !("ok" in s)) return;
     const mine = run;
-    setDeciding(key);
+    const id = ++saves;
+    const cwd = s.ok.cwd;
+    setOverlay((o) => begin(o, rows.map((r) => r.f.approval!.key), to, id));
     const pick = (kind: "context" | "skill") => decideAll(rows.filter((r) => r.kind === kind).map((r) => ({ key: r.f.approval!.key })), to);
-    setFolderApprovals(s.ok.cwd, { files: pick("context"), skills: pick("skill") })
-      .then(() => settle(fetchSessionSetup(path(), true)))
-      .then((next) => {
-        if (mine !== run || !next || !("ok" in next)) return;
-        rev++;
-        setSetup(next);
+    // An answer after its time (its rows went back): the setup is read again to show what the server did.
+    const p = path();
+    inOrder(queueOf(a.folder), () => setFolderApprovals(cwd, { files: pick("context"), skills: pick("skill") }), { late: () => askReread(p) })
+      .then(() => {
+        if (mine !== run) return;
+        setOverlay((o) => acked(o, id, reads));
+        // Saved: the rows keep the decision until a read after the answer lands (a failed read
+        // leaves them, and Send's "Saving…", for the next one: once more here, then the rebuild's
+        // own broadcast and each hello read it again).
+        const reread = (again: boolean): Promise<void> =>
+          readSetup(path(), true).then(({ answer: next, n }) => {
+            if (mine !== run) return;
+            if ("ok" in next) draw(next, n);
+            else if (again) setTimeout(() => void reread(false), REREAD_MS);
+          });
+        return reread(true);
       })
-      .catch((err: Error) => toast(`Couldn't save ${what} for ${a.folder.name}. ${err.message}`))
-      .finally(() => setDeciding(null));
+      .catch((err: Error) => {
+        if (mine !== run) return;
+        setOverlay((o) => failed(o, id));
+        toast(`Couldn't save ${what} for ${a.folder.name}. ${err.message}`);
+      });
   };
-  // The composer's hold (lib/approval-hold): what waits, by kind, while this chat can't send yet.
+  // The composer's hold (lib/approval-hold): what waits, by kind, while this chat can't send yet,
+  // and while a decision made here is still being saved.
   createEffect(() => {
     const w = waiting();
-    setHold(path(), w.length ? { context: w.filter((r) => r.kind === "context").length, skills: w.filter((r) => r.kind === "skill").length } : null);
+    const busy = saving();
+    setHold(path(), w.length || busy ? { context: w.filter((r) => r.kind === "context").length, skills: w.filter((r) => r.kind === "skill").length, ...(busy ? { saving: true as const } : {}) } : null);
   });
   onCleanup(() => setHold(untrack(path), null));
   // A decision made elsewhere (another tab, the project page) or a send refused for decisions: read again.
@@ -243,10 +291,9 @@ export function SessionSetupCard(props: { path: string; editable?: boolean; tool
     on(rereadAsked, (ask) => {
       if (!ask || ask.path !== untrack(path)) return;
       const mine = run;
-      void settle(fetchSessionSetup(ask.path, true)).then((next) => {
+      void readSetup(ask.path, true).then(({ answer: next, n }) => {
         if (mine !== run || !("ok" in next)) return;
-        rev++;
-        setSetup(next);
+        draw(next, n);
       });
     }, { defer: true }),
   );
@@ -262,12 +309,12 @@ export function SessionSetupCard(props: { path: string; editable?: boolean; tool
   );
   /** The lines and buttons under a row's name: its decision, in the words this mode uses. */
   const RowDecision = (rp: { r: Row; label: string }) => {
-    const a = () => rowApproval(rp.r.f);
+    const a = () => shownApproval(rp.r.f);
     const acts = () => (approvals() ? rowActions(a(), asking(), "setup") : []);
     return (
       <>
         <Show when={approvals() && a() === "disallowed"}>
-          <span class="setup-manual">{offWords(approvals()!.folder, isOff(rp.r.f))}</span>
+          <span class="setup-manual">{offWords(approvals()!.folder, shownOff(rp.r.f))}</span>
         </Show>
         <Show when={approvals() && a() === "changed"}>
           <span class="setup-manual">{CHANGED_LINE}</span>
@@ -286,8 +333,7 @@ export function SessionSetupCard(props: { path: string; editable?: boolean; tool
                   type="button"
                   class="button button-sm"
                   aria-label={`${ACTION_WORD[act]} ${rp.label}`}
-                  aria-disabled={deciding() ? "true" : undefined}
-                  onClick={() => decide(rp.r, ACTION_DECISION[act])}
+                  onClick={() => decide(rp.r, ACTION_DECISION[act], rp.label)}
                 >
                   {ACTION_WORD[act]}
                 </button>
@@ -347,8 +393,6 @@ export function SessionSetupCard(props: { path: string; editable?: boolean; tool
                 <button
                   type="button"
                   class="button button-sm"
-                  aria-disabled={deciding() ? "true" : undefined}
-                  aria-busy={savingAll("disallowed") ? "true" : undefined}
                   onClick={() => decideWaiting("disallowed")}
                 >
                   {DISALLOW_ALL}
@@ -356,8 +400,6 @@ export function SessionSetupCard(props: { path: string; editable?: boolean; tool
                 <button
                   type="button"
                   class="button button-sm button-primary"
-                  aria-disabled={deciding() ? "true" : undefined}
-                  aria-busy={savingAll("approved") ? "true" : undefined}
                   onClick={() => decideWaiting("approved")}
                 >
                   {APPROVE_ALL}
@@ -409,32 +451,32 @@ export function SessionSetupCard(props: { path: string; editable?: boolean; tool
                       <Show when={rows().length > 0} fallback={<p class="setup-note">{CONTEXT_NONE}</p>}>
                         <p class="setup-note">{contextNote(s())}</p>
                         <ul class="setup-list">
-                          <For each={rows()}>
+                          <Index each={rows()}>
                             {(r) => (
-                              <li class="setup-row" classList={{ "setup-row-off": isOff(r.file) }} title={r.file.path}>
+                              <li class="setup-row" classList={{ "setup-row-off": shownOff(r().file) }} title={r().file.path}>
                                 <span class="setup-name">
-                                  <button class="setup-path setup-open" type="button" aria-label={openFileLabel(r.label)} onClick={() => void openFile(r.label, r.file.path)}>
-                                    {r.label}
+                                  <button class="setup-path setup-open" type="button" aria-label={openFileLabel(r().label)} onClick={() => void openFile(r().label, r().file.path)}>
+                                    {r().label}
                                   </button>
-                                  <Show when={r.role ?? (r.file.approval?.group === "above" ? ABOVE_PROJECT : undefined)}>{(role) => <span class="setup-role">{role()}</span>}</Show>
-                                  <RowDecision r={{ kind: "context", f: r.file }} label={r.label} />
+                                  <Show when={r().role ?? (r().file.approval?.group === "above" ? ABOVE_PROJECT : undefined)}>{(role) => <span class="setup-role">{role()}</span>}</Show>
+                                  <RowDecision r={{ kind: "context", f: r().file }} label={r().label} />
                                 </span>
-                                <span class="setup-facts">{fileFacts(r.file)}</span>
-                                <Show when={switchable() && r.switchable && !r.file.scanOnly}>
+                                <span class="setup-facts">{fileFacts(r().file)}</span>
+                                <Show when={switchable() && r().switchable && !r().file.scanOnly}>
                                   <label class="toggle toggle-switch setup-toggle">
                                     <input
                                       type="checkbox"
-                                      aria-label={contextSwitchLabel(r.label)}
-                                      checked={!isOff(r.file)}
-                                      disabled={applying()}
-                                      onChange={(e) => flip("context", r.file.path, e.currentTarget)}
+                                      aria-label={contextSwitchLabel(r().label)}
+                                      checked={!shownOff(r().file)}
+                                      disabled={applying() || saving()}
+                                      onChange={(e) => flip("context", r().file.path, e.currentTarget)}
                                     />
                                     <span class="toggle-box" />
                                   </label>
                                 </Show>
                               </li>
                             )}
-                          </For>
+                          </Index>
                         </ul>
                       </Show>
                     </div>
@@ -448,34 +490,34 @@ export function SessionSetupCard(props: { path: string; editable?: boolean; tool
                       <Show when={s().skills.length > 0} fallback={<p class="setup-note">{skillsNone(s())}</p>}>
                         <p class="setup-note">{skillsNote(s())}</p>
                         <ul class="setup-list">
-                          <For each={s().skills}>
+                          <Index each={s().skills}>
                             {(k) => (
-                              <li class="setup-row" classList={{ "setup-row-off": isOff(k) }} title={k.description ? `${k.path}\n${k.description}` : k.path}>
+                              <li class="setup-row" classList={{ "setup-row-off": shownOff(k()) }} title={k().description ? `${k().path}\n${k().description}` : k().path}>
                                 <span class="setup-name">
-                                  <button class="setup-path setup-open" type="button" aria-label={openFileLabel(k.name)} onClick={() => void openFile(k.name, k.path)}>
-                                    {k.name}
+                                  <button class="setup-path setup-open" type="button" aria-label={openFileLabel(k().name)} onClick={() => void openFile(k().name, k().path)}>
+                                    {k().name}
                                   </button>
-                                  <Show when={k.manualOnly}>
+                                  <Show when={k().manualOnly}>
                                     <span class="setup-manual">Manual only</span>
                                   </Show>
-                                  <RowDecision r={{ kind: "skill", f: k }} label={k.name} />
+                                  <RowDecision r={{ kind: "skill", f: k() }} label={k().name} />
                                 </span>
-                                <span class="setup-facts">{fileFacts(k)}</span>
-                                <Show when={switchable() && !k.scanOnly}>
+                                <span class="setup-facts">{fileFacts(k())}</span>
+                                <Show when={switchable() && !k().scanOnly}>
                                   <label class="toggle toggle-switch setup-toggle">
                                     <input
                                       type="checkbox"
-                                      aria-label={skillSwitchLabel(k.name)}
-                                      checked={!isOff(k)}
-                                      disabled={applying()}
-                                      onChange={(e) => flip("skill", k.path, e.currentTarget)}
+                                      aria-label={skillSwitchLabel(k().name)}
+                                      checked={!shownOff(k())}
+                                      disabled={applying() || saving()}
+                                      onChange={(e) => flip("skill", k().path, e.currentTarget)}
                                     />
                                     <span class="toggle-box" />
                                   </label>
                                 </Show>
                               </li>
                             )}
-                          </For>
+                          </Index>
                         </ul>
                       </Show>
                       <Show when={skillProblemsLine(s())}>{(line) => <p class="setup-note">{line()}</p>}</Show>

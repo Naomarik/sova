@@ -1,4 +1,5 @@
 import { children, createContext, createEffect, createMemo, createSignal, For, Match, on, onCleanup, Show, Switch, untrack, useContext, type JSX } from "solid-js";
+import { onEmptyChange } from "../lib/hello-steady";
 import type { TranscriptItem } from "../../shared/protocol";
 import { rowFacts } from "../../shared/wire-v1";
 import { rendersSomething } from "../lib/rendered";
@@ -915,21 +916,20 @@ export function ThreadScroller(props: {
   };
   // A new session's empty state reads from its top (the title, then the profile cards), never its
   // end, and follows nothing; the first row to land puts the view back to following the end.
-  createEffect(
-    on(
-      () => !!props.empty,
-      (empty, was) => {
-        if (empty)
-          queueMicrotask(() => {
-            if (!el || !props.empty) return;
-            follow = false;
-            el.scrollTop = 0;
-            scrolledTop = 0;
-            lastGap = el.scrollHeight - el.clientHeight;
-          });
-        else if (was) resumeFollowing();
-      },
-    ),
+  // Only a new VALUE moves the view (lib/hello-steady): every hello re-reads what the prop reads.
+  onEmptyChange(
+    () => !!props.empty,
+    (empty, was) => {
+      if (empty)
+        queueMicrotask(() => {
+          if (!el || !props.empty) return;
+          follow = false;
+          el.scrollTop = 0;
+          scrolledTop = 0;
+          lastGap = el.scrollHeight - el.clientHeight;
+        });
+      else if (was) resumeFollowing();
+    },
   );
   /**
    * The row at the top of the view, held for a moment after rows were built above it. Rows built

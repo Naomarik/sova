@@ -2,6 +2,7 @@ import { createResource, createUniqueId, onCleanup } from "solid-js";
 import { Portal } from "solid-js/web";
 import type { ApprovalState, FolderApprovalsView } from "../../shared/approvals";
 import { getFolderApprovals, setFolderApprovals } from "../lib/api";
+import { folderQueue, projectQueue } from "../lib/approval-overlay";
 import { ApprovalsCard } from "./ProjectSkillsCard";
 import { Icon, trapFocus } from "./ui";
 
@@ -19,6 +20,11 @@ export function FolderApprovalsDialog(props: { cwd: string; name: string; onClos
     props.onChanged?.();
   };
   const err = () => (view.error ? (view.error as Error).message : null);
+  /** The folder's save queue, shared with the new chat's rows for this folder. */
+  const queue = () => {
+    const f = view()?.folder;
+    return f?.projectId ? projectQueue(f.projectId) : folderQueue(f?.root ?? props.cwd);
+  };
   // Escape closes it wherever focus went (a decided row's button goes away under the pointer).
   const onKey = (e: KeyboardEvent) => {
     if (e.key !== "Escape") return;
@@ -55,6 +61,7 @@ export function FolderApprovalsDialog(props: { cwd: string; name: string; onClos
             list={view() ? { rows: view()!.files, asking: view()!.asking, complete: view()!.complete } : undefined}
             error={err()}
             decide={decide("files")}
+            queue={queue()}
             folder={view()?.folder.kind ?? "folder"}
           />
           <ApprovalsCard
@@ -64,6 +71,7 @@ export function FolderApprovalsDialog(props: { cwd: string; name: string; onClos
             list={view() ? { rows: view()!.skills, asking: view()!.asking, complete: view()!.complete } : undefined}
             error={err()}
             decide={decide("skills")}
+            queue={queue()}
             folder={view()?.folder.kind ?? "folder"}
           />
         </div>

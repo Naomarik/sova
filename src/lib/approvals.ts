@@ -46,6 +46,9 @@ export function holdLine(context: number, skills: number): string {
   return `Approve or disallow ${what} to send.`;
 }
 
+/** The composer's line while Send waits only for a decision made here to be saved. */
+export const SAVING_LINE = "Saving…";
+
 /** A Start from the page into a folder that asks first: its message waits as the new chat's draft. */
 export function decideFirstLine(n: number): string {
   return `Its message waits in the composer: decide ${n === 1 ? "1 context file or skill" : `${n} context files and skills`} to send it.`;

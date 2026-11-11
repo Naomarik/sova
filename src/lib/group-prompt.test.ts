@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { BatchRefusal, SessionSummary } from "../../shared/protocol";
-import { composerParts, composerPlaceholder, memberBlock, partialAfterRetry, partialBody, partialRetries, refusalBody, refusalSentence, targetsLine, targetsOf, withGone } from "./group-prompt";
+import { composerParts, composerPlaceholder, heldBody, heldTitle, memberBlock, partialAfterRetry, partialBody, partialRetries, refusalBody, refusalSentence, targetsLine, targetsOf, withGone } from "./group-prompt";
 
 const member = (id: string, over: Partial<SessionSummary> = {}): SessionSummary =>
   ({ id, path: `/tmp/${id}.jsonl`, title: id, live: null, busy: false, archived: false, ...over }) as SessionSummary;
@@ -54,6 +54,7 @@ test("a refusal is Sova's sentence, composed from the code and never parsed from
   assert.equal(refusalSentence(refusal("config"), "control"), "control can't be opened");
   assert.equal(refusalSentence(refusal("archived"), "control"), "control is archived");
   assert.equal(refusalSentence(refusal("busy"), "control"), "control is busy");
+  assert.equal(refusalSentence(refusal("decide-first"), "control"), "control has context files or skills to decide");
 });
 
 test("a code this build has no words for hands the server's sentence over verbatim", () => {
@@ -173,4 +174,11 @@ test("withGone folds file-gone members in under missing, counted in the group's 
   assert.equal(withGone(t, []), t);
   // The available set is untouched: a gone member was never sendable, never counted sendable.
   assert.deepEqual(g.available, ["a"]);
+});
+
+test("members held for decisions: who waits, and that the message is their draft", () => {
+  assert.equal(heldTitle(1, 2), "Sent to 2. 1 member is waiting for your decisions.");
+  assert.equal(heldTitle(2, 0), "2 members are waiting for your decisions.");
+  assert.equal(heldBody(["api"]), "api has context files or skills to decide. The message waits in its composer and goes once you decide there.");
+  assert.equal(heldBody(["api", "web", "docs"]), "api, web and docs have context files or skills to decide. The message waits in each one's composer and goes once you decide there.");
 });

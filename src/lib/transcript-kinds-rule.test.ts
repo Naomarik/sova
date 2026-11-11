@@ -61,6 +61,7 @@ const MOVED: Record<string, string[]> = {
   "owner-request": ["OwnerRequestNote"],
   "handoff-run": ["HandoffRunRow"],
   "mcp-note": ["McpNoteRow"],
+  "approval-pending": ["ApprovalPendingRow"],
   "overseer-answer": ["OverseerChoiceRow"],
   "profile-mark": [],
   brief: ["BriefRow"],

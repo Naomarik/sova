@@ -121,7 +121,8 @@ import { TOUR_TOOLS } from "../shared/tour";
 import { DESIGN_TOOLS } from "./design/tools";
 import { tourTools } from "./tours/tools";
 import { excludedTools, GRANT_TOOLS, keyOf, KNOWN_REMOVABLE_TOOLS, parseMine, searchToolsFor, singletonRaceText, type ProfileEntryData, type SessionSentData } from "../shared/profiles";
-import { loadoutOverrides, type LoadoutEntryData, type LoadoutState } from "./session-loadout";
+import { entryOverrides, leavesOut, loadoutOnBranch, loadoutOverrides, loadoutStamp, normalizeLoadout, pristineLoadout, sameLoadout, type LoadoutEntryData, type LoadoutState } from "./session-loadout";
+import type { FolderRule } from "../shared/folder-rule";
 import { RunState, SessionLimits, sessionPowersExtension } from "./session-powers";
 import { QUEUE_OPEN_TOOL, queuePushExtension, topicStore } from "./topics";
 import { OFFER_NOTE_MESSAGE, OFFER_TOOL } from "../shared/session-offers";
@@ -213,6 +214,8 @@ export interface ChatHosts {
   mcpTell?: (parent: string, note: McpNote) => void;
   /** The transcript cards' note of answers given at once since `since` (§chat.transcript-cards/answering). */
   cardNote?: (sessionId: string, since: string | null) => Promise<string | null>;
+  /** The context file and skill decisions a new chat in `cwd` starts with (the approval list lives in the server's engines). */
+  folderRule?: (cwd: string) => Promise<FolderRule>;
 }
 let chatHosts: ChatHosts = {};
 export function setChatHosts(h: ChatHosts): void {
@@ -310,6 +313,22 @@ export const DEFAULT_EXTENSION_FACTORIES = [
 ];
 
 const mcpListHere: NonNullable<ChatHosts["mcpList"]> = async (ask) => (await import("./mcp/chat")).chatListFor(ask);
+/** The folder decisions the server sent with a chat process's open, by path (its builds use these). */
+const presetFolderRule = new Map<string, FolderRule>();
+export function setFolderRule(path: string, rule: FolderRule | null): void {
+  if (rule) presetFolderRule.set(path, rule);
+  else presetFolderRule.delete(path);
+}
+const folderRuleHere: NonNullable<ChatHosts["folderRule"]> = async (cwd) => (await import("./projects/folder-rule")).folderRuleForCwd(cwd);
+/** The folder decisions for a new chat's build; none decided when they can't be read. */
+const folderRuleFor = async (cwd: string): Promise<FolderRule> => {
+  try {
+    return await (chatHosts.folderRule ?? folderRuleHere)(cwd);
+  } catch (err) {
+    console.warn(`[chat] approvals for ${cwd}: ${err instanceof Error ? err.message : String(err)}`);
+    return (await import("./projects/folder-rule")).fallbackRule();
+  }
+};
 const mcpTellHere: NonNullable<ChatHosts["mcpTell"]> = (parent, note) => void import("./mcp/chat").then((m) => m.tellParent(parent, note));
 
 /** Register the Claude Code provider without waiting for the user to open a session: a throwaway
@@ -530,6 +549,9 @@ export interface ChatClient {
   /** A script's, a chat's or an extension's socket (server/page-only.ts): what it sends runs, but is never the user's,
       so no turn it opens is attended (§app.access/your-click). A page, here or through a peer, has none. */
   notUser?: true;
+  /** A socket no person is behind that still counts as the user's (a direct call from another computer, not its page
+      relayed): its first send into a chat that asks first is never held (§chat.context-approval/held-send). */
+  unwatched?: true;
   /** Asked for wire 2 (`/ws/chat?wire=2`, shared/protocol.ts WireVersion): its events and rows are
       mapped (server/wire-rows.ts). Absent: wire 1, every message as it always was. */
   wire?: 2;
@@ -817,7 +839,8 @@ function workerHostExtension(sovaModes: boolean) {
     pi.on("session_start", (_event, ctx) => {
       const c = toolCtx(ctx);
       const host = c.key && workerHostSource ? workerHostSource({ sessionId: c.sessionId, path: c.key }) : null;
-      announcement = host ? { version: 1, host: modesStamped(host, sovaModes), ...(sovaModes ? { modes: "sova" as const } : {}) } : null;
+      // Its workers take this chat's skills as fixed at its first message, read at each start.
+      announcement = host ? { version: 1, host: skillsStamped(modesStamped(host, sovaModes), () => loadoutOnBranch(c.branch())), ...(sovaModes ? { modes: "sova" as const } : {}) } : null;
       announce();
     });
   };
@@ -836,6 +859,31 @@ export function modesStamped(host: WorkerHost, sovaModes: boolean): WorkerHost {
       return host.start({ ...req, spec: sovaModes ? { ...spec, modes: "sova" } : spec });
     },
   };
+}
+
+/**
+ * A parent's worker host with its context files and skills on every start: a worker gets exactly the
+ * parent chat's fixed list and mode (its entry as fixed at its first message), never its folder's
+ * decisions directly. Sova's word, never the request's: an `offSkills` or `loadout` a caller put on the
+ * spec is replaced. `offSkills` still goes beside it, by name, for a worker on older code.
+ */
+export function skillsStamped(host: WorkerHost, entry: () => LoadoutEntryData | null): WorkerHost {
+  return {
+    ...host,
+    start: (req) => {
+      const { offSkills: _given, loadout: _l, ...spec } = req.spec;
+      const d = entry();
+      const off = [...new Set((d?.offSkills ?? []).filter((n) => !n.startsWith("/")))];
+      return host.start({ ...req, spec: { ...spec, ...(off.length ? { offSkills: off } : {}), ...(leavesOut(d) ? { loadout: d } : {}) } });
+    },
+  };
+}
+
+/** A worker's own fixed list: its parent's entry (WorkerSpec.loadout), else its older off list by name. */
+export function workerLoadout(w: Pick<WorkerSpec, "offSkills" | "loadout">): LoadoutEntryData | null {
+  const d = w.loadout === undefined ? null : normalizeLoadout(w.loadout);
+  if (d) return d;
+  return w.offSkills?.length ? { v: 1, offContext: [], offSkills: [...new Set(w.offSkills)] } : null;
 }
 
 /** The coding agent's `spec` tool, run in the chat's own process: it reads only. */
@@ -889,6 +937,7 @@ export function workerExtensionFactories(w: Pick<WorkerSpec, "kind"> & { builtin
  * prompt; its model and thinking as a fresh session takes them. Nothing of an ordinary chat but the kill guard and, for a worker or team member, project_verbs.
  */
 export function workerBuild(w: WorkerSpec, path: string): PiBuild {
+  const own = workerLoadout(w);
   return {
     loader: {
       noExtensions: true,
@@ -898,12 +947,20 @@ export function workerBuild(w: WorkerSpec, path: string): PiBuild {
       additionalExtensionPaths: [...workerModePaths(w.extensions, w.modes === "sova", modesEntries()), ...(process.env[JOB_CARDS_ENV] === "only" ? [JOB_CARDS_EXTENSION] : [])],
       extensionFactories: workerExtensionFactories(w, path),
       ...(w.appendSystemPrompt ? { appendSystemPrompt: [w.appendSystemPrompt] } : {}),
+      // Its parent chat's fixed list, context files and skills, stamped at its start (skillsStamped).
+      ...(own ? entryOverrides(own) : {}),
     },
     flags: () => ({ extra: w.flags }),
     exclude: () => (w.builtins === null ? [] : WORKER_BUILTIN_TOOLS.filter((t) => !w.builtins!.includes(t))),
     // Its listed built-ins on: excluding the rest only filters pi's default set (read, bash, edit, write), so a
     // listed grep, find or ls would otherwise never be active.
     built: (session) => {
+      // Its parent's list as its own entry too, so each later reading of it (a subfolder's files and skills,
+      // a typed /skill:name, the slash list) sees the same list; written once (a fork already has it).
+      if (own) {
+        const had = session.state.branch().latest(LOADOUT)?.data;
+        if (!had || !sameLoadout(had, own)) session.state.append(LOADOUT, own);
+      }
       if (w.builtins === null) return;
       const active = session.activeTools();
       const missing = w.builtins.filter((t) => WORKER_BUILTIN_TOOLS.includes(t) && !active.includes(t));
@@ -1571,6 +1628,7 @@ class ChatSession {
     this.assertNoForeignWrites();
     this.assertModelAllowed();
     this.flushDeferredAppends();
+    this.stampLoadout();
     const images = item.images as ImageInput[] | undefined;
     // The message goes in labelled with its send's key (§app.chat-processes/worker-instructions).
     const toSdk = <T>(send: () => T) => this.sendKeys.run(item.key, () => this.toSdk(item.notUser ? "server" : item.origin, send, item.confirm, !!item.overseer));
@@ -1820,6 +1878,7 @@ class ChatSession {
     this.assertNoForeignWrites();
     this.assertModelAllowed();
     this.flushDeferredAppends();
+    this.stampLoadout();
     this.topicMarks.push(mark);
     // Inside the settle emit the harness defers the prompt and resolves it at once (P5 settle-window);
     // delivery stays out of that window, and if it ever didn't, the settle sweep owns the mark.
@@ -1919,6 +1978,7 @@ class ChatSession {
       return;
     }
     this.flushDeferredAppends();
+    this.stampLoadout();
     // Tracked from before the hand-off: a prompt made idle can still be queued as a steer.
     this.linkInSdk.push(text);
     const untrack = () => {
@@ -2392,6 +2452,50 @@ class ChatSession {
     this.flushDeferredAppends(); // open-time entries go first, as in writeProfile
     this.state.append(LOADOUT, data);
     markOwned(this.path);
+  }
+
+  /**
+   * Fix this chat's skills at its first message: the off list its runtime was built with (its
+   * project's defaults with the chat's own flips) written as its `sova-loadout` entry, before the
+   * message goes in, so a reload, restart or reopen builds it the same and a later change of the
+   * project's defaults never moves it. Only while no message is on the branch, so it is written once;
+   * nothing is written for a chat with nothing off and no entry. Callers have run the send's guards.
+   */
+  stampLoadout(): void {
+    const st = this.loadoutState;
+    if (!st || this.special || !this.isPristine()) return;
+    const branchEntry = this.harness.state.branch().latest(LOADOUT)?.data ?? null;
+    if (!branchEntry && !leavesOut(st.data)) return;
+    const stamp = loadoutStamp(st.data, st.baseSkills ?? [], existsSync);
+    if (branchEntry && sameLoadout(branchEntry, stamp)) return;
+    this.flushDeferredAppends();
+    this.state.append(LOADOUT, stamp);
+    markOwned(this.path);
+  }
+
+  /**
+   * Approve, from a started chat's "wasn't loaded" line, one item its fixed list keeps out
+   * (§chat.context-approval/mid-chat): it joins the chat's allowlist, so the agent gets it at its next
+   * touch of that folder. Only for a chat that decided in asking mode; the one write to a fixed list after
+   * the first message, and the caller has checked it is the operator's page. Never mid-write by a TUI.
+   */
+  allowInLoadout(kind: "context" | "skill", path: string): boolean {
+    if (this.special) throw new RefusedError("This session's context files and skills can't be switched.");
+    assertNotLive(this.path);
+    this.assertNoForeignWrites();
+    const d = this.harness.state.branch().latest(LOADOUT)?.data ?? null;
+    if (!d?.asking || this.isPristine()) return false;
+    const list = kind === "context" ? (d.onlyContext ?? []) : (d.onlySkills ?? []);
+    const off = kind === "context" ? d.offContext : d.offSkills;
+    if (list.includes(path) && !off.includes(path)) return false;
+    const next: LoadoutEntryData =
+      kind === "context"
+        ? { ...d, offContext: d.offContext.filter((p) => p !== path), onlyContext: [...list, path] }
+        : { ...d, offSkills: d.offSkills.filter((p) => p !== path), onlySkills: [...list, path] };
+    this.flushDeferredAppends();
+    this.state.append(LOADOUT, next);
+    markOwned(this.path);
+    return true;
   }
 
   /** A worker of this chat failed under its confinement (§app.mcp/sandbox): its note, here. */
@@ -3455,6 +3559,7 @@ class ChatSession {
       return { queued: true, turn: Promise.resolve() };
     }
     this.flushDeferredAppends();
+    this.stampLoadout();
     // Marked here when it starts a turn now; a queued one is marked at its hand-off. A pending
     // mark is dropped if the turn fails, and any left when the run settles are dropped too
     // (bind's agent_settled), so a later identical message the user types is never tagged.
@@ -4974,7 +5079,13 @@ async function openLocked(path: string, onDisposed: () => void, onStep: (step: s
     profile.data = data;
     // The session's own context files and skills (§chat.transcript/setup-card-toggles), also read at
     // every build: a flip disposes the runtime like a pick does. Special loadouts keep their own.
-    loadout.data = special ? null : (read.state.branch().latest(LOADOUT)?.data ?? null);
+    // Before its first message a chat's skills are its project's defaults with its own flips
+    // (pristineLoadout); its first message fixes them (ChatSession.stampLoadout), and from then on the
+    // entry alone counts: a chat started before project defaults existed (no entry) keeps every skill.
+    const entry = special ? null : (read.state.branch().latest(LOADOUT)?.data ?? null);
+    const started = read.branch().some((h) => h.kind === "user");
+    loadout.rule = special || started ? null : (presetFolderRule.get(path) ?? (await folderRuleFor(cwd)));
+    loadout.data = special ? null : started ? entry : pristineLoadout(entry, loadout.rule);
     loadout.baseContext = undefined;
     loadout.baseSkills = undefined;
     const overrides = special ? undefined : loadoutOverrides(loadout);
@@ -5174,7 +5285,7 @@ async function openLocked(path: string, onDisposed: () => void, onStep: (step: s
     chat.profileState = profile;
     chat.userTurns = runs.turns;
     chat.runTag = runs.tag;
-    if (!kind) chat.loadoutState = loadout;
+    if (!kind && !worker) chat.loadoutState = loadout;
     // The usage ledger (llm-inflight attribution.ts): this chat's calls are its own, an Overseer's or
     // a project overseer's as `overseer`. Registered here as well as by the extension at
     // session_start, since a special loadout may not load it.

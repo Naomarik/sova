@@ -11,6 +11,7 @@ import { archiveBlockers } from "../project-overseer";
 import { nudgeMarks } from "../session-feed";
 import { knownLogin, loginOptions, UNKNOWN_LOGIN } from "../claude-login-known";
 import { projectLoginView, setProjectLogin } from "./claude-login";
+import { registerApprovalRoutes } from "../approvals-routes";
 import { cloneRepo, overseerRepoProblem } from "./clone";
 import { reservedRoots } from "./contributions";
 import { RegistryError, reservedRootProblem } from "./registry";
@@ -125,6 +126,10 @@ export function registerProjectRoutes(app: Hono<any>): void {
       return c.json({ ...setProjectLogin(pid, login as string), options: loginOptions() }, 200, NO_STORE);
     }),
   );
+
+  // The project's context files and skills (shared/approvals.ts), the folder lists and the Sova-wide setting: kept on
+  // this host, for chats not yet started.
+  registerApprovalRoutes(app);
 
   app.patch(
     "/api/projects/:pid",

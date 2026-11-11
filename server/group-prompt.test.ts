@@ -296,3 +296,32 @@ test("a concurrent batch still reports failures per member, in group order", asy
     [["b", "tui-live"]],
   );
 });
+
+test("from the page, a new member that asks first with items to decide keeps the message as its draft; the rest get it, and a program's send holds none", async () => {
+  const waiting = async (p: string) => (p === PATHS.b ? 2 : 0);
+  const drafts: [string, string][] = [];
+  const page = deps({ waiting, holdAsDraft: (p, t) => void drafts.push([p, t]) });
+  const r = await promptGroup("g1", "ship it", undefined, page, true);
+  assert.ok(r.ok);
+  assert.deepEqual(r.result.sent, ["a", "c"]);
+  assert.deepEqual(r.result.held?.map((x) => [x.id, x.code]), [["b", "decide-first"]]);
+  assert.deepEqual(page.sent, ["/s/a.jsonl", "/s/c.jsonl"], "the held member was not prompted");
+  assert.deepEqual(drafts, [["/s/b.jsonl", "ship it"]]);
+  // Every member held: nothing sent, each keeps it, and that is no refusal.
+  const all = deps({ waiting: async () => 1, holdAsDraft: () => {} });
+  const r2 = await promptGroup("g1", "ship it", undefined, all, true);
+  assert.ok(r2.ok);
+  assert.deepEqual([r2.result.sent, r2.result.held?.map((x) => x.id)], [[], ["a", "b", "c"]]);
+  assert.deepEqual(all.sent, []);
+  // Another member's refusal still refuses the whole batch: nobody is prompted and no draft is kept.
+  const kept: string[] = [];
+  const blocked = deps({ waiting, streaming: (p) => p === PATHS.a, holdAsDraft: (p) => void kept.push(p) });
+  const r3 = await promptGroup("g1", "ship it", undefined, blocked, true);
+  assert.ok(!r3.ok && r3.status === 409);
+  assert.deepEqual([blocked.sent, kept], [[], []]);
+  const program = deps({ waiting, holdAsDraft: () => assert.fail("a program's send keeps no draft") });
+  const p = await promptGroup("g1", "ship it", undefined, program, false);
+  assert.ok(p.ok);
+  assert.deepEqual(program.sent, ["/s/a.jsonl", "/s/b.jsonl", "/s/c.jsonl"]);
+  assert.equal(p.result.held, undefined);
+});

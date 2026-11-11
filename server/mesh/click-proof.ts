@@ -24,11 +24,23 @@ const PROVEN_DOORS = [
   // worktree and Merge Branch on a proposed run (a Setup proposal's route still takes this machine's page only).
   /^\/api\/projects\/[^/]+\/overseer\/worktrees\/merge$/,
   /^\/api\/projects\/[^/]+\/runtime\/merge$/,
+  // A new chat's switch turning on a row its folder keeps off, and Approve on a chat's "wasn't loaded" line
+  // (§chat.context-approval/who).
+  /^\/api\/sessions\/loadout$/,
+  /^\/api\/sessions\/approval$/,
 ];
+/**
+ * The approval list's doors (server/approvals-routes.ts): approving context files and skills, turning a disallowed
+ * one back on, and letting them load without asking again. Saves are a PUT, so these are the doors a PUT's proof is
+ * minted for; every other door takes a POST alone.
+ */
+const PUT_DOORS = [/^\/api\/projects\/[^/]+\/skills$/, /^\/api\/projects\/[^/]+\/context-files$/, /^\/api\/folder-approvals$/, /^\/api\/settings\/context-approval$/];
 /** A merge verb's door: proven only for the verbs only the user's page takes (Land, answers, Remove, …), never a read. */
 const MERGE_VERB_DOOR = /^\/api\/(?:project-services|projects\/[^/]+\/services)\/(merge\.[a-z.-]+)$/;
 
-async function provenDoor(path: string): Promise<boolean> {
+async function provenDoor(method: string, path: string): Promise<boolean> {
+  if (method === "PUT") return PUT_DOORS.some((d) => d.test(path));
+  if (method !== "POST") return false;
   if (PROVEN_DOORS.some((d) => d.test(path))) return true;
   const verb = MERGE_VERB_DOOR.exec(path)?.[1];
   if (!verb) return false;
@@ -52,7 +64,7 @@ function forget(now: number): void {
 
 /** A proof for this relayed request: only for a door that takes one, and only from this host's own page. */
 export async function clickProofFor(c: Context, peerId: string, tail: string, now = Date.now()): Promise<string | undefined> {
-  if (c.req.method !== "POST" || notPage(c) !== null || !(await provenDoor(judgedPath(tail) ?? ""))) return undefined;
+  if (notPage(c) !== null || !(await provenDoor(c.req.method, judgedPath(tail) ?? ""))) return undefined;
   forget(now);
   const id = randomBytes(32).toString("base64url");
   minted.set(id, { peer: peerId, digest: digestOf(await c.req.raw.clone().text()), until: now + TTL_MS });

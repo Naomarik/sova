@@ -6,6 +6,8 @@ import type { CardAnswerValue, CardInfo, ProjectCardsAnswer, SessionCardsAnswer 
 import type { ProjectSettingsInfo, SettingsApplyResult, SettingsCardView, SettingsHistoryRow, SovaCardsInfo } from "../../shared/project-settings";
 import type { ExtensionInspect, ExtensionsInstalled } from "../../shared/extension-loader";
 import type { McpNewServer, McpProjectServers, McpServerRow, McpServers, McpSignIn } from "../../shared/mcp";
+import type { ProjectSkillsView } from "../../shared/project-skills";
+import type { ApprovalState, ContextApprovalSetting, ContextFilesView, FolderApprovalsView } from "../../shared/approvals";
 import type { ProfileSaveRequest, ProfilesListing, ProfileWriteAnswer } from "../../shared/profiles";
 import type { ProjectFilesAnswer } from "../../shared/project-files";
 import type { DeployVerb, VerbResult } from "../../shared/project-contract";
@@ -1875,6 +1877,25 @@ export const removeExtension = (id: string, deleteData: boolean) => request<{ ok
 // -- MCP servers (§app/mcp) --
 const mcpRow = (id: string, tail = "") => `/api/mcp/rows/${encodeURIComponent(id)}${tail}`;
 export const getMcpServers = () => request<McpServers>("/api/mcp/servers");
+/** A project's skill defaults for new chats, kept on this computer. */
+export const getProjectSkills = (projectId: string) => request<ProjectSkillsView>(`${projectPath(projectId)}/skills`, { cache: "no-store" });
+/** Approve or disallow skills (only the names given); answers the fresh view. */
+export const setProjectSkills = (projectId: string, skills: Record<string, ApprovalState>) =>
+  request<ProjectSkillsView>(`${projectPath(projectId)}/skills`, jsonInit("PUT", { skills }));
+/** A project's context files for new chats, kept on this computer (shared/approvals.ts). */
+export const getProjectContextFiles = (projectId: string) => request<ContextFilesView>(`${projectPath(projectId)}/context-files`, { cache: "no-store" });
+export const setProjectContextFiles = (projectId: string, files: Record<string, ApprovalState>) =>
+  request<ContextFilesView>(`${projectPath(projectId)}/context-files`, jsonInit("PUT", { files }));
+/** Any folder's list, a project's or not: what the new chat's card decides through. */
+export const getFolderApprovals = (cwd: string) => request<FolderApprovalsView>(`/api/folder-approvals?cwd=${encodeURIComponent(cwd)}`, { cache: "no-store" });
+export const setFolderApprovals = (cwd: string, change: { files?: Record<string, ApprovalState>; skills?: Record<string, ApprovalState> }) =>
+  request<FolderApprovalsView>("/api/folder-approvals", jsonInit("PUT", { cwd, ...change }));
+/** Settings → General: "Allow context files and skills without asking", this computer's. */
+/** A mid-chat line's Approve or Disallow: into the folder's list, and Approve loads it in this chat too (the page's only). */
+export const decideInChat = (path: string, kind: "context" | "skill", item: string, state: "approved" | "disallowed") =>
+  request<unknown>("/api/sessions/approval", jsonInit("POST", { path, kind, item, state }));
+export const getContextApproval = () => request<ContextApprovalSetting>("/api/settings/context-approval", { cache: "no-store" });
+export const setContextApproval = (allowWithoutAsking: boolean) => request<ContextApprovalSetting>("/api/settings/context-approval", jsonInit("PUT", { allowWithoutAsking }));
 export const getProjectMcp = (projectId: string) => request<McpProjectServers>(`/api/projects/${encodeURIComponent(projectId)}/mcp`);
 /** Add and Check: answers once the Check has finished; a failed Check is a row in state failed. */
 export const addMcpServer = (server: McpNewServer) => request<McpServerRow>("/api/mcp/servers", jsonInit("POST", server));

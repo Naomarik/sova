@@ -8,7 +8,7 @@ import { POWERS, POWER_INFO } from "./powers";
 import { PO_PATCH_FIELDS, PO_CAP_LABEL } from "./project-overseer";
 import { BUTTON_KEYS, OFFER_KEYS, OFFERS_FILE_KEYS } from "./session-offers";
 import { MODE_KEYS } from "./project-modes";
-import { COPIES_EDIT_KEYS, PROJECT_EDIT_KEYS } from "./project-settings";
+import { COPIES_EDIT_KEYS, PROJECT_EDIT_KEYS, SKILLS_EDIT_KEYS } from "./project-settings";
 import { SETTINGS_REFERENCE, settingsIndex, type SettingId } from "./settings-reference";
 
 // The ratchet (§app.project-overseer/settings): every key a settings parser reads has a reference entry,
@@ -84,4 +84,10 @@ test("the index names every setting once; a standalone project's leaves out what
   assert.equal(lines.length, Object.keys(SETTINGS_REFERENCE).length);
   assert.doesNotMatch(settingsIndex(false), /gathering/i);
   for (const e of Object.values(SETTINGS_REFERENCE)) assert.ok(e.where === "sova" || e.file, `${e.id} names its file`);
+});
+
+test("the skills edit: every key it takes has an entry, and it is Sova-kept, its grant a disallowed skill allowed again", () => {
+  assert.deepEqual(Object.keys(SETTINGS_REFERENCE.skills.keys), [...SKILLS_EDIT_KEYS]);
+  assert.equal(SETTINGS_REFERENCE.skills.where, "sova");
+  assert.match(SETTINGS_REFERENCE.skills.grant ?? "", /Disallowed skill made Approved or Waiting/);
 });

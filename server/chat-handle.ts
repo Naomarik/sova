@@ -238,6 +238,9 @@ export abstract class ChatHandle {
   writeLoadout(data: LoadoutEntryData): Promise<null> {
     return this.call("writeLoadout", { data });
   }
+  allowInLoadout(kind: "context" | "skill", path: string): Promise<boolean> {
+    return this.call("allowInLoadout", { kind, path });
+  }
 
   noteMcp(note: McpNote): Promise<null> {
     return this.call("noteMcp", { note });

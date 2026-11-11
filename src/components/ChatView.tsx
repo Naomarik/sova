@@ -181,6 +181,8 @@ import { Banner, Icon } from "./ui";
 import { UiDialog } from "./UiDialog";
 import type { QueueWorktree } from "./WorktreesModal";
 import { heldAskLine, heldComposerLine, heldDecisionOf } from "../lib/merge-standing";
+import { askReread, askReview, holdOf } from "../lib/approval-hold";
+import { holdLine, REVIEW } from "../lib/approvals";
 import { clearPick, pickedDecision } from "../lib/merge-decision-pick";
 import { mergeChanged, mergeFeed, readQueue } from "../lib/merge-queue-client";
 
@@ -890,6 +892,8 @@ export function ChatView(props: {
       switch (msg.type) {
         case "hello":
           dropNotFound();
+          // A new chat's setup is read again on each hello: a decision on its folder's list rebuilds it.
+          askReread(props.path);
           // A hello starts the socket's account again: memory says itself right after it, or is off;
           // so does the code, or it is current.
           setMemoryStatus(null);
@@ -1058,6 +1062,9 @@ export function ChatView(props: {
          * no message_start will ever come for it. The row goes and the text comes back, in the tab
          * that sent it — the only tab with anywhere to put it.
          */
+        case "setup_changed":
+          askReread(props.path);
+          break;
         case "queue_item_gone": {
           unacked.settled(msg.itemId);
           const effect = queueGoneEffect(msg.reason);
@@ -1264,6 +1271,8 @@ export function ChatView(props: {
             // turn failure. The composer's own blocked reason says the same once the list catches up.
             case "refused":
             {
+              // Held for decisions (asking mode): the setup card reads again, so the hold shows.
+              if (msg.decide === "first") askReread(props.path);
               // A command it names makes no user row: its text comes back from here (a click: its card).
               const taken = handBackSends([unacked.take(msg.clientId, handedBack)].filter((u): u is Unsent => u !== null));
               // Refused before the hello, the chat never had it: its row goes, as the text is back.
@@ -1857,6 +1866,10 @@ export function ChatView(props: {
     // server in order, behind what woke it (a model switch, then Send), and the server applies each
     // before the next (§chat.transcript/send-while-starting). The note still floats (`waitNote`).
     const waking = !!wait().waking;
+    // Asking mode: a new chat sends once every context file and skill it could load is decided. The
+    // draft stays and typing goes on; Review opens the setup card's list. The server holds it too.
+    const hold = holdOf(props.path);
+    if (hold) return { icon: "attention", text: holdLine(hold.context, hold.skills), action: { label: REVIEW, run: () => askReview(props.path) } };
     // Connecting, starting or reconnecting: the words float over the transcript's end (`waitNote`),
     // the composer's reason carries them for assistive technology only (§chat.transcript/instant-open).
     const waiting = composerWait(wait(), waitingReason());

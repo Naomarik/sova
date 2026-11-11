@@ -7,6 +7,7 @@
 //   - a state mirror (`ChatStateMirror`) the server reads synchronously instead of asking the chat;
 //   - lifecycle events (`ChatLifecycleEvent`) numbered per runtime, for reconnecting `since` a seq;
 //   - browser frames (`ChatClientFrame`), passed through without the server parsing a reply.
+import type { FolderRule } from "./folder-rule";
 import type { ChatProfileState, ProfileSwitchResult, ProfileSwitchTarget } from "./profile-switch";
 import type { McpNote } from "./mcp";
 import type { ModeState } from "../pi-config/extensions/mode/state";
@@ -95,6 +96,13 @@ export interface ChatLoadoutChoice {
   v: 1;
   offContext: string[];
   offSkills: string[];
+  /** Skills and context files its folder keeps off that this chat keeps on (server/session-loadout.ts). */
+  onSkills?: string[];
+  onContext?: string[];
+  /** It decides in asking mode: only the allowlists load. */
+  asking?: true;
+  onlyContext?: string[];
+  onlySkills?: string[];
   offMcp?: string[];
   onMcp?: string[];
 }
@@ -354,6 +362,8 @@ export interface ChatMethods {
   noteIntoRun: { args: { noteType: string; text: string }; result: boolean };
   writeProfile: { args: { data: ProfileEntryData }; result: null };
   writeLoadout: { args: { data: ChatLoadoutChoice }; result: null };
+  /** A started asking chat's fixed list takes one more item (§chat.context-approval/mid-chat); false: nothing to do. */
+  allowInLoadout: { args: { kind: "context" | "skill"; path: string }; result: boolean };
   noteMcp: { args: { note: McpNote }; result: null };
   flushDeferredAppends: { args: Record<string, never>; result: null };
   /** Run the write guard now: true when another writer touched the file. */
@@ -484,6 +494,9 @@ export interface SpecialSpec {
     append: "user-then-ours" | "none";
     /** The project overseer's context files: those inside `root`, outside `out` (projectContextFiles). */
     contextFilesWithin?: { root: string; out: string[] };
+    /** Its folder's context file and skill decisions, read at this build (shared/folder-rule.ts): what it keeps
+        off (disallowed, or Waiting while asking first) never loads, at the start or in a subfolder. */
+    folderRule?: FolderRule;
   };
   model: string | null;
   thinking: string | null;

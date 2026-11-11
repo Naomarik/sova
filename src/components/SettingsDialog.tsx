@@ -74,6 +74,7 @@ import { BatonSettingsSection } from "./BatonSettings";
 import { ProfilesSettingsSection } from "./ProfilesSettings";
 import { TypographySection } from "./TypographySection";
 import { ServerSettingsSection } from "./ServerSettings";
+import { ContextApprovalSection } from "./ContextApprovalSetting";
 import { UpdatesSettingsSection } from "./UpdatesSettings";
 import { VoiceSettingsSection } from "./VoiceSetup";
 import { Banner, Icon, trapFocus } from "./ui";
@@ -519,6 +520,7 @@ function GeneralPanel() {
         checked={showSummaries()}
         onChange={setShowSummaries}
       />
+      <ContextApprovalSection />
       <ServerSettingsSection />
       <UpdatesSettingsSection />
     </>

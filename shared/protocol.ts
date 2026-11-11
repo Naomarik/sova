@@ -3838,10 +3838,11 @@ export interface SessionInsight {
       server/skills.ts for the four signals and their reliability. Absent when neither is known. */
   skills?: SessionSkills;
 
-  /** What each live worker loaded, by worker id, read from that worker's own transcript (a pi
+  /** What each worker loaded, by worker id, read from that worker's own transcript (a pi
       worker's session file, or a Claude Code worker's project file). Same signals as `skills`,
-      except that a Claude Code transcript records no offered set at all. Absent when no worker
-      loaded anything, so the payload stays lean. */
+      except that a Claude Code transcript records no offered set at all. Covers the workers
+      `workers` leaves out too (those with a session file of their own), for the Context tab's
+      Everyone view. Absent when no worker loaded anything, so the payload stays lean. */
   workerSkills?: Record<string, SessionSkills>;
   /** /explain artifacts parented to this session (store ∪ JSONL explain-doc entries, deduped by
       id, newest first). Absent from older servers. */

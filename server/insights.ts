@@ -1398,8 +1398,11 @@ export async function getSessionInsight(path: string): Promise<SessionInsight> {
   // Each member's inbox counts, folded from the main chat's items files (server/team-inbox.ts).
   await addInboxCounts(teams, mailboxRootOf(agentRoot(), facts.sessionId));
   // A worker's own transcript is the only record of what it loaded (see server/worker-skills.ts).
-  // mtime-cached, because this endpoint is polled every 3s while the pane is open.
-  const skillsLoaded = workers && workers.length > 0 ? await workerSkills(workers) : undefined;
+  // mtime-cached, because this endpoint is polled every 3s while the pane is open. Every worker on the
+  // branch counts, not only the ones the record lists: the Context tab's Everyone view reads them all.
+  const unlisted = workerTotal !== undefined && workers ? unlistedReaders(facts, workers, await sharedWorkerWindowResolver()) : [];
+  const readers = [...(workers ?? []), ...unlisted];
+  const skillsLoaded = readers.length > 0 ? await workerSkills(readers) : undefined;
   return {
     outline: live ? overlayOutline(facts.outline, presence?.outline) : facts.outline,
     ...(facts.outlines.length > 0 ? { outlines: facts.outlines } : {}),
@@ -1414,6 +1417,23 @@ export async function getSessionInsight(path: string): Promise<SessionInsight> {
     ...(await worktreeRows(facts, workers, path)),
     ...(await linkRows(facts.sessionId, path)),
   };
+}
+
+/** The branch's workers a live record leaves out, with a session file of their own: whose skills the
+    insight reads too. Built from the facts' durable records alone, once per (facts, listed set). */
+const unlistedCache = new WeakMap<SessionFacts, { listed: string; workers: WorkerInfo[] }>();
+function unlistedReaders(facts: SessionFacts, listed: readonly WorkerInfo[], resolveWindow: Parameters<typeof workersFromRecords>[3]): WorkerInfo[] {
+  const ids = listed.map((w) => w.id).sort().join("\n");
+  const hit = unlistedCache.get(facts);
+  if (hit && hit.listed === ids) return hit.workers;
+  let workers: WorkerInfo[];
+  try {
+    workers = workersFromRecords(facts.workerRecords.all, facts.workerRecords.active, new Set(listed.map((w) => w.id)), resolveWindow).filter((w) => w.sessionFile);
+  } catch {
+    workers = [];
+  }
+  unlistedCache.set(facts, { listed: ids, workers });
+  return workers;
 }
 
 /** The active branch's workers the live record doesn't list (SessionHiddenWorkers). Read only

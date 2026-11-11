@@ -32,6 +32,8 @@ export interface ContextPart {
   offered?: boolean;
   linesRead?: number;
   lines?: number;
+  /** Skills: not read in the window, but opened before the latest compaction (the chat's whole-history record). */
+  readBefore?: boolean;
   /** Conversation counts: how many messages of that kind. */
   count?: number;
   /** The compaction summary: when that compaction ran (ISO). */
@@ -303,10 +305,12 @@ export function clockOf(iso: string | undefined): string {
 }
 
 /** A skill's chip, and the count beside it: Read only for the whole SKILL.md; Partly read with "140 of 555
-    lines" beside it when part of it loaded; else Not read yet. Pure. */
-export function skillChip(p: Pick<ContextPart, "read" | "linesRead" | "lines">): { chip: { word: string; done: boolean }; beside?: string } {
+    lines" beside it when part of it loaded; Read before the last compaction when only an earlier opening
+    did; else Not read yet. Pure. */
+export function skillChip(p: Pick<ContextPart, "read" | "linesRead" | "lines" | "readBefore">): { chip: { word: string; done: boolean }; beside?: string } {
   if (p.read) return { chip: { word: "Read", done: true } };
   if (p.linesRead) return { chip: { word: "Partly read", done: false }, beside: p.lines ? `${p.linesRead} of ${p.lines} lines` : counted(p.linesRead, "line", "lines") };
+  if (p.readBefore) return { chip: { word: "Read before the last compaction", done: false } };
   return { chip: { word: "Not read yet", done: false } };
 }
 

@@ -271,3 +271,37 @@ test("in a chat's own process every build, a reopen there included, takes the li
     cm.setProjectSkillsOff(path, null);
   }
 });
+
+test("a skill only one of the project's worktrees has: the setup lists it waiting, it can be disallowed, and the next new chat there starts without it", async () => {
+  const { execFileSync } = await import("node:child_process");
+  const repo = join(tmp, "repo");
+  mkdirSync(repo, { recursive: true });
+  const git = (cwd: string, ...args: string[]) => execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@example.invalid", "-c", "commit.gpgsign=false", ...args], { cwd, stdio: "pipe" });
+  git(repo, "init", "-q", "-b", "main");
+  writeFileSync(join(repo, "README.md"), "repo\n");
+  git(repo, "add", "-A");
+  git(repo, "commit", "-q", "-m", "init");
+  const wt = join(tmp, "repo-wt");
+  git(repo, "worktree", "add", "-q", "-b", "feat/wt", wt);
+  mkdirSync(join(wt, ".agents", "skills", "wt-skill"), { recursive: true });
+  writeFileSync(join(wt, ".agents", "skills", "wt-skill", "SKILL.md"), "---\nname: wt-skill\ndescription: Only in the worktree.\n---\n\nbody\n");
+  const { project: p2 } = await registerProjectIn("standalone", repo, { name: "Worktree Project", origin: "folder" });
+
+  const first = sessionFile(wt);
+  await cm.acquireChat(first);
+  clearSetupCache();
+  const setup = await getSessionSetup(first, { fresh: true });
+  assert.equal(setup.state, "ok");
+  if (setup.state !== "ok") return;
+  assert.equal(setup.project?.id, p2.id);
+  assert.equal(setup.skills.find((k) => k.name === "wt-skill")?.project, "waiting");
+
+  const res = await app.request(`/api/projects/${p2.id}/skills`, { method: "PUT", headers: { "content-type": "application/json", ...pageHeaders() }, body: JSON.stringify({ skills: { "wt-skill": "disallowed" } }) });
+  assert.equal(res.status, 200, await res.clone().text());
+  const view = (await (await app.request(`/api/projects/${p2.id}/skills`, { headers: pageHeaders() })).json()) as ProjectSkillsView;
+  assert.equal(view.skills.find((s) => s.name === "wt-skill")?.state, "disallowed", "kept while the worktree has it");
+
+  const next = await cm.acquireChat(sessionFile(wt));
+  assert.doesNotMatch(piSession(next).systemPrompt, /<name>wt-skill<\/name>/);
+  assert.equal(cm.heldChat(first) !== undefined && piSession(cm.heldChat(first)!).systemPrompt.includes("<name>wt-skill</name>"), false, "the open new chat was rebuilt too");
+});

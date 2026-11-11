@@ -1,11 +1,13 @@
 import { homedir } from "node:os";
-import { relative, resolve, sep } from "node:path";
+import { join, relative, resolve, sep } from "node:path";
 import type { ProjectSkillRow, ProjectSkillState, ProjectSkillsView } from "../../shared/project-skills";
 import { defaultClaudeDir } from "../../pi-config/extensions/claude-code/accounts.ts";
 import { folderResources } from "../harness/pi/resources";
 import { piSkillsIn } from "../harness/pi/skill-sources";
 import { OrgError } from "../org-error";
 import { readStoredCwd } from "../git-summary";
+import { checkoutsOf } from "../mcp/places";
+import { real } from "../mcp/folder";
 import { folderMatcher } from "../project-folder";
 import { disallowedSkills, isSkillName, projectSkillDecisions, pruneSkillDecisions, readProjectSkillsStore, setSkillDecisions, type SkillDecision } from "../project-skills-store";
 import { agentRoot } from "../state-root";
@@ -39,19 +41,38 @@ export function sourceOf(root: string, filePath: string, claudeDir: string = def
   return { kind: "user" };
 }
 
-/** Every skill a chat in the project's root could be offered, by name (the first of a name wins, as pi's list has it). */
-export async function projectSkillsFound(root: string, deps: { loader?: typeof folderResources } = {}): Promise<Found[]> {
+/**
+ * Every skill a chat in the project could be offered, by name (the first of a name wins, as pi's list
+ * has it): its root's, then each of its worktrees' (a chat in a worktree loads that checkout's skills),
+ * each checkout's own places and the folders inside it. A worktree-only skill is listed, can be decided
+ * on, and its decision is kept while a checkout still has it.
+ */
+export async function projectSkillsFound(root: string, deps: { loader?: typeof folderResources; checkouts?: (root: string) => Promise<string[]> } = {}): Promise<Found[]> {
   const out = new Map<string, Found>();
-  const res = await (deps.loader ?? folderResources)(root, agentRoot());
-  for (const s of res.skills) {
-    if (out.has(s.name)) continue;
-    const description = s.description?.trim();
-    out.set(s.name, { name: s.name, path: s.filePath, source: sourceOf(root, s.filePath), ...(description ? { description } : {}) });
-  }
-  for (const s of listSubfolderSkills(root, piSkillsIn).skills) {
-    if (out.has(s.name)) continue;
-    const description = s.description?.trim();
-    out.set(s.name, { name: s.name, path: s.filePath, source: { kind: "subfolder", folder: s.dir }, ...(description ? { description } : {}) });
+  const main = real(root);
+  const checkouts = await (deps.checkouts ?? checkoutsOf)(root).catch(() => [main]);
+  for (const checkout of checkouts.includes(main) ? checkouts : [main, ...checkouts]) {
+    const top = checkout === main ? root : checkout;
+    // A worktree's own folders are named from the project's root ("../.worktrees/x/sub").
+    const from = (dir: string) => posix(relative(main, join(checkout, dir))) || undefined;
+    let res;
+    try {
+      res = await (deps.loader ?? folderResources)(top, agentRoot());
+    } catch {
+      continue;
+    }
+    for (const s of res.skills) {
+      if (out.has(s.name)) continue;
+      const description = s.description?.trim();
+      const source = sourceOf(top, s.filePath);
+      const folder = checkout !== main && source.kind !== "user" && within(top, s.filePath) ? from("") : undefined;
+      out.set(s.name, { name: s.name, path: s.filePath, source: folder ? { ...source, folder } : source, ...(description ? { description } : {}) });
+    }
+    for (const s of listSubfolderSkills(top, piSkillsIn).skills) {
+      if (out.has(s.name)) continue;
+      const description = s.description?.trim();
+      out.set(s.name, { name: s.name, path: s.filePath, source: { kind: "subfolder", folder: checkout === main ? s.dir : (from(s.dir) ?? s.dir) }, ...(description ? { description } : {}) });
+    }
   }
   return [...out.values()].sort((a, b) => a.name.localeCompare(b.name));
 }

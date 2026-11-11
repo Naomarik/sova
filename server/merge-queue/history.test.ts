@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, test } from "node:test";
@@ -35,6 +35,7 @@ function kit() {
   const base = mkdtempSync(join(tmpdir(), "mq-history-"));
   const open = () => new QueueStore(base, ROOT);
   const store = open();
+  mkdirSync(store.dir, { recursive: true });
   const q = store.read({ project: "p", target: "master" });
   /** Every history row on disk, file by file. */
   const rows = () =>
@@ -177,6 +178,36 @@ describe("the merge queue's history (store)", () => {
       assert.equal(mine.length, 1);
       assert.equal(mine[0]!.row.entry!.state, "landed");
       assert.equal(mine[0]!.row.entry!.landed?.pushed, "pushed");
+    } finally {
+      k.done();
+    }
+  });
+
+  test("a stop between the history write and queue.json's: the reread files no second row; a history that can't be written trims nothing", () => {
+    const k = kit();
+    try {
+      for (let n = 1; n <= KEEP_FINAL + 1; n++) k.q.entries.push(entry(n));
+      k.store.write(k.q, { now: at(1000) });
+      // The history alone, as if the stop came before queue.json: it still lists everything.
+      const full = structuredClone(k.q);
+      full.entries = [entry(0, { state: "landed" }), ...Array.from({ length: KEEP_FINAL + 1 }, (_, i) => entry(i + 1))];
+      k.store.history.sync(full.entries, KEEP_FINAL, { now: at(1001) });
+      const again = k.open();
+      again.write(full, { now: at(1002) });
+      const ids = k.rows().map((r) => r.row.id);
+      assert.equal(ids.length, new Set(ids).size, "one row per id");
+      assert.equal(ids.length, KEEP_FINAL + 2);
+      // history/ unwritable (a file where the folder goes): queue.json is still written, nothing leaves it.
+      const k2 = kit();
+      try {
+        writeFileSync(join(k2.store.dir, "history"), "not a folder");
+        for (let n = 1; n <= KEEP_FINAL + 3; n++) k2.q.entries.push(entry(n));
+        k2.store.write(k2.q, { now: at(1000) });
+        assert.equal(k2.q.entries.length, KEEP_FINAL + 3);
+        assert.equal(k2.queueJson().entries.length, KEEP_FINAL + 3);
+      } finally {
+        k2.done();
+      }
     } finally {
       k.done();
     }

@@ -152,7 +152,13 @@ export class QueueStore {
    *  git last said are in the target. */
   write(q: QueueFile, opts?: { merged?: ReadonlySet<string>; now?: string }): void {
     mkdirSync(this.dir, { recursive: true });
-    q.entries = this.history.sync(q.entries, KEEP_FINAL, { ...(opts?.merged ? { merged: opts.merged } : {}), now: opts?.now ?? new Date().toISOString() });
+    // A history that can't be written never blocks queue.json: nothing is trimmed then (an entry leaves the working
+    // list only once its row is filed), and the next save tries again.
+    try {
+      q.entries = this.history.sync(q.entries, KEEP_FINAL, { ...(opts?.merged ? { merged: opts.merged } : {}), now: opts?.now ?? new Date().toISOString() });
+    } catch (err) {
+      console.warn(`[merge-queue] history under ${this.history.dir} not written (${err instanceof Error ? err.message : err}); nothing trimmed`);
+    }
     const entries = [...q.entries].sort((a, b) => a.seq - b.seq);
     writeAtomic(this.file, `${JSON.stringify({ ...q, entries, landed: q.landed.slice(-KEEP_LANDED) }, null, 1)}\n`);
   }

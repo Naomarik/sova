@@ -12,9 +12,13 @@ import { join } from "node:path";
 export const scratchAgentDir = realpathSync(mkdtempSync(join(tmpdir(), "sova-agent-")));
 mkdirSync(join(scratchAgentDir, "sova"), { recursive: true });
 mkdirSync(join(scratchAgentDir, "sessions"), { recursive: true });
+const inherited = process.env.PI_CODING_AGENT_DIR;
 process.env.PI_CODING_AGENT_DIR = scratchAgentDir;
 
-/** Removes the scratch agent dir; call it from the test's `after`. */
+/** Removes the scratch agent dir and puts back the PI_CODING_AGENT_DIR it found, so a later file in the
+    same process never works in a deleted folder; call it from the test's `after`. */
 export function dropScratchAgentDir(): void {
+  if (inherited === undefined) delete process.env.PI_CODING_AGENT_DIR;
+  else process.env.PI_CODING_AGENT_DIR = inherited;
   rmSync(scratchAgentDir, { recursive: true, force: true });
 }

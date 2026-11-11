@@ -19,6 +19,8 @@ control sends to the route named, so every answer and refusal is the route's own
 - `session.sandbox.set` (`POST /api/sandbox`): set a held chat's sandbox state.
 - `session.tools.get` (`GET /api/sessions/tools`): the tools a held chat declares to its model.
 - `session.context` (`GET /api/sessions/context`): what pi loads for a session's folder.
+- `session.folder-approvals.get`, `session.folder-approvals.set` (`GET`/`PUT /api/folder-approvals`): a folder's context files and skills, each by its key and state, and decisions on them, for a project's folder or one a chat of this computer runs in (§chat.context-approval/folders).
+- `session.approval.set` (`POST /api/sessions/approval`): Approve or Disallow one context file or skill of a chat's folder, by its file, as a chat's "wasn't loaded" line sends it (§chat.context-approval/mid-chat).
 - `session.context.view` (`GET /api/sessions/context-view`): what fills a chat's context window now, each part with its estimated size, and the last reply's total (§app.subagents-pane/context-tab).
 - `session.align.triage` (`GET /api/sessions/align-triage`): each open alignment question's guessed stakes (§app.decisions/align-triage).
 - `session.workers.checks` (`GET /api/sessions/worker-checks`): whether each worker's newest done report says it ran its tests or checks (§app.decisions/worker-report).

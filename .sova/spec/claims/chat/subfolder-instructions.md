@@ -4,8 +4,9 @@
 A chat starts with the instruction files of its folder and the folders above it
 (§chat.transcript/setup-card-context). A folder below it can keep its own instructions too: that
 file loads the first time the agent reads, edits or creates a file in that folder, at the end of
-that action's result, as Claude Code does with a nested `CLAUDE.md`, `AGENTS.md` included. It is
-always on: no project, chat or setting turns it off.
+that action's result, as Claude Code does with a nested `CLAUDE.md`, `AGENTS.md` included. A file
+follows the chat's fixed list (§chat.context-approval/fixed): one the chat has off, or its folder
+disallowed, never loads, and in a chat started while Sova asks first, only a file on its list does.
 
 ## §chat.subfolder-instructions/loading — Which files load, when, and once
 
@@ -34,6 +35,11 @@ always on: no project, chat or setting turns it off.
   and the file counts as loaded. A partial read of it attaches the whole file as usual.
 - **Again after a compaction or a rewind.** Once a compaction or a rewind (a fork too) leaves the
   block out of the current context, the next read, edit or write in that folder attaches it again.
+- **Only what the chat's list allows.** A file the chat has off (switched off on its setup card,
+  §chat.transcript/setup-card-toggles, or Disallowed for its folder when it started) never attaches.
+  In a chat started in the asking mode, only a file on its fixed list attaches; one that isn't
+  never reaches the agent, and the chat gets a transcript line, not sent to the model, "{file} wasn't
+  loaded: it isn't approved for this folder.", with Approve and Disallow (§chat.context-approval/mid-chat). A worker follows its parent's list.
 - **Every chat with file tools.** Ordinary chats, Claude Code chats, every worker whose tools
   include read, edit or write, and overseers, never a file their file tools may not read (outside
   their folder, or a secret). A chat that starts with no instruction files at all (the baton's

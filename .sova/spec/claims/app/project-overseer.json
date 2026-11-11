@@ -674,7 +674,7 @@
   "§app.project-overseer/settings": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "unreviewed",
     "code": [
       "server/project-settings.ts",
       "server/project-settings-git.ts",
@@ -698,7 +698,10 @@
       "src/components/ProjectPage.tsx",
       "server/overseer-org-part.ts",
       "server/project-services/copy-limit.ts",
-      "server/merge-queue/queue-held-card.test.ts"
+      "server/merge-queue/queue-held-card.test.ts",
+      "server/agent-loadouts.snapshot.json",
+      "server/harness/pi/golden/special-model-view.json",
+      "server/approvals.ts"
     ],
     "requires": [
       "§app.project-overseer/autonomy-levels",
@@ -713,8 +716,8 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-04T06:59Z",
-      "source": "pi-session:5b3349ca-a4e6-4bb7-8a78-16e639eb61df#40d50679"
+      "at": "2026-11-11T10:12Z",
+      "source": "pi-session:ddb0e3b6-cee0-49d4-939d-916b8e8a54b1#321c1f46"
     }
   },
   "§app.project-overseer/statechart-tools": {

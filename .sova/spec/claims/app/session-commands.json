@@ -2,7 +2,7 @@
   "§app.session-commands/sessions-sweep": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "reviewed",
+    "evidence": "unreviewed",
     "requires": [
       "§app/session-commands"
     ],
@@ -17,9 +17,9 @@
       "src/card-toolkit/commands.gen.ts"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-11-09T16:22Z",
-      "source": "pi-session:01a1b2f4-86c6-73d4-9fe9-b847b27035f9#950bc2c9"
+      "by": "user",
+      "at": "2026-11-11T12:19Z",
+      "source": "pi-session:ddb0e3b6-cee0-49d4-939d-916b8e8a54b1#da7a624a"
     }
   },
   "§app/session-commands": {

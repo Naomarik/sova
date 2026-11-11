@@ -278,7 +278,14 @@
       "shared/project-settings.ts",
       "src/lib/mesh-resync.test.ts",
       "pi-config/extensions/mode/create/landing.md",
-      "pi-config/extensions/mode/create/shared.md"
+      "pi-config/extensions/mode/create/shared.md",
+      "pi-config/extensions/mode/create/project.md",
+      "server/create-guide-growth.json",
+      "server/modes/golden/cases/c06-create.json",
+      "server/modes/golden/cases/c13-create-align-spec.json",
+      "server/modes/golden/store/7ac66de8a46b172d.json",
+      "server/modes/golden/store/8bdda316ab44e99e.json",
+      "server/modes/golden/store/9975a21f684a4236.json"
     ],
     "agreed": {
       "by": "user",

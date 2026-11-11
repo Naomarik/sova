@@ -549,7 +549,8 @@ Once the user has spoken again and the agent moved on without touching an alignm
 turned off (nothing could record an answer), the questions stay on the card and the composer's badge but leave
 the row mark, Needs you and push; the next align result that changes a document brings them back.
 Files with no `align` tool result are only searched for it, never parsed; after the first one, each
-change parses only the lines appended since (a file that shrank or was rewritten is read again).
+change parses only the lines appended since (a file that shrank or was rewritten, or one untouched for 30 days or
+more before the change, is read again from its start).
 
 - **Row mark.** A row whose session has open questions shows the needs-you mark on line 1 as
   the count alone ("3") in the accent, semibold at caption size, with no glyph; the count itself

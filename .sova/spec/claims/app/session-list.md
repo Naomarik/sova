@@ -2792,7 +2792,8 @@ stats and reads only those files and keeps every other session as it was last re
 opens a changed file once to build its row: its head, its outline and one window of its last
 256 KB, which the row's model, context and ending all read from (a file's first read may go
 further back, to its outline); its alignment and worker marks read only what the file gained
-since their last read. The feed's
+since their last read (the alignment mark reads a file untouched for 30 days or more again from its
+start, §chat.alignment/session-mark). The feed's
 own build looks at every folder and every file (a full build) only on its first listing, when the
 watch can't say what changed (a folder joins or leaves the watched set, a watch fails, a change
 comes with no file name), and every 5 minutes. Once a minute it also checks the size and

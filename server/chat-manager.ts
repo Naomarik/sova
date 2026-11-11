@@ -114,6 +114,7 @@ import { projectVerbsExtension, projectVerbsOffered, sessionInstanceNote } from 
 import { offeredToolExtension, servedToolsExtension, servedVisToolsExtension } from "./served-tools";
 import { specCodingTool } from "./spec-coding-tool";
 import { BACKGROUND_JOB_TOOL } from "./background-jobs-request";
+import { withSandboxNote } from "./sandbox-note";
 import { JOB_CARDS_ENV } from "./background-jobs";
 /** wake-nudge.ts of this code copy: a worker with no wake_nudge of its own still delivers its jobs' end cards (cards only). */
 const JOB_CARDS_EXTENSION = fileURLToPath(new URL("../pi-config/extensions/wake-nudge.ts", import.meta.url));
@@ -889,14 +890,19 @@ export function workerLoadout(w: Pick<WorkerSpec, "offSkills" | "loadout">): Loa
 /** The coding agent's `spec` tool, run in the chat's own process: it reads only. */
 const specToolExtension = () => servedToolsExtension("sova-spec", [specCodingTool()]);
 
-/** project_verbs and its instance note, in a chat that is offered it (§app.project-services/tool-offered): served when the server declared it, else in this process. */
-const projectVerbsLoad = (path: string) =>
-  offeredToolExtension(
-    servedDecls
-      ? servedToolsExtension("sova-project-verbs", servedSpecs(path, (n) => n === "project_verbs"), chatHosts.instanceNote ?? ((ctx) => sessionInstanceNote(projectEngine, ctx)))
-      : projectVerbsExtension(projectEngine),
-    "project_verbs",
-    projectVerbsOffered,
+/** project_verbs and its instance note, in a chat that is offered it (§app.project-services/tool-offered): served when the server declared it, else in this process.
+    Beside them, in every chat and worker, the sandbox note a confined agent gets (server/sandbox-note.ts), from a worker's own launch flags. */
+const projectVerbsLoad = (path: string, workerFlags?: Record<string, string | true> | null, workerEnv?: Record<string, string> | null) =>
+  withSandboxNote(
+    offeredToolExtension(
+      servedDecls
+        ? servedToolsExtension("sova-project-verbs", servedSpecs(path, (n) => n === "project_verbs"), chatHosts.instanceNote ?? ((ctx) => sessionInstanceNote(projectEngine, ctx, workerFlags)))
+        : projectVerbsExtension(projectEngine, workerFlags),
+      "project_verbs",
+      projectVerbsOffered,
+    ),
+    { workerFlags: workerFlags ?? null, env: workerEnv ?? null },
+    { verbsOffered: (ctx) => projectVerbsOffered(ctx) },
   );
 
 /**
@@ -905,7 +911,7 @@ const projectVerbsLoad = (path: string) =>
  * instance note, as an ordinary chat does (§app.project-services/callers), served when the server declared it, else
  * in this process; and the spec look-up, a team's monitor excepted (§app.spec-lookup/spec-tool): it does no project work.
  */
-export function workerExtensionFactories(w: Pick<WorkerSpec, "kind"> & { builtins?: string[] | null } & Partial<Pick<WorkerSpec, "mcp" | "parent" | "env">>, path: string) {
+export function workerExtensionFactories(w: Pick<WorkerSpec, "kind"> & { builtins?: string[] | null } & Partial<Pick<WorkerSpec, "mcp" | "parent" | "env" | "flags">>, path: string) {
   // Subfolder instruction files load for every kind whose loadout has a file tool (server/deeper-context.ts).
   // A subfolder's skills too, for one that can also read a skill's file (§chat.subfolder-skills/offering).
   const files = !w.builtins || w.builtins.some((t) => LOADING_TOOLS.has(t)) ? [deeperContextExtension({ skills: !w.builtins || w.builtins.includes("read") || w.builtins.includes("bash") })] : [];
@@ -922,7 +928,7 @@ export function workerExtensionFactories(w: Pick<WorkerSpec, "kind"> & { builtin
     ...(mcp?.servers.length
       ? [mcpExtension({ list: async () => mcp, label: () => w.parent?.workerId ?? "A worker", tellParent: (note) => (chatHosts.mcpTell ?? mcpTellHere)(w.parent?.path ?? "", note) })]
       : []),
-    projectVerbsLoad(path),
+    projectVerbsLoad(path, w.flags ?? null, w.env ?? null),
     // background_job: a job under the worker's own confinement, run by the server (§app.background-jobs/request).
     ...(servedDecls && (!w.builtins || w.builtins.includes("bash")) ? [servedToolsExtension("sova-background-job", servedSpecs(path, (n) => n === BACKGROUND_JOB_TOOL))] : []),
     // spec: the read-only spec look-up, last of all so nothing else moves. By its duty, never by its built-ins:

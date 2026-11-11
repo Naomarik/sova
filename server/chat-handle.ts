@@ -734,11 +734,15 @@ export function servedToolsFor(chatId: ChatId, sessionId: string, known: () => s
   return specs.map(declOfTool);
 }
 
+/** The launch flags of each worker chat this server serves tools to: its own confinement, for its instance note. */
+const servedWorkerFlags = new Map<ChatId, Record<string, string | true>>();
+
 /** The server-hosted tools of a worker or team member (WorkerKind "worker", never a hidden chat), hosted
     here: `project_verbs`, under an ordinary session's rules (§app.project-services/callers), and
     `background_job` under the worker's own confinement, read from its launch flags (§app.background-jobs/request). */
 export function servedWorkerTools(chatId: ChatId, spec?: Pick<WorkerSpec, "flags" | "parent">): ServerToolDecl[] {
-  const specs: ToolSpec[] = [sessionVerbsTool(() => projectEngine()), jobTool({ path: chatId, ...(spec ? { worker: { flags: spec.flags, workerId: spec.parent.workerId } } : {}) })];
+  if (spec) servedWorkerFlags.set(chatId, spec.flags);
+  const specs: ToolSpec[] = [sessionVerbsTool(() => projectEngine(), spec?.flags), jobTool({ path: chatId, ...(spec ? { worker: { flags: spec.flags, workerId: spec.parent.workerId } } : {}) })];
   serveTools(chatId, specs);
   return specs.map(declOfTool);
 }
@@ -862,7 +866,7 @@ export async function answerChatAsk(path: string, method: ChatAskMethod, args: u
   const a = (args ?? {}) as Record<string, any>;
   switch (method) {
     case "project.note":
-      return sessionInstanceNote(() => projectEngine(), await fileHookCtx(path, { sessionId: a.sessionId, cwd: a.cwd, leafId: a.leafId ?? null }));
+      return sessionInstanceNote(() => projectEngine(), await fileHookCtx(path, { sessionId: a.sessionId, cwd: a.cwd, leafId: a.leafId ?? null }), servedWorkerFlags.get(path));
     case "playbook.bundleFor":
       return playbookHost.bundleFor(a.sessionId, a.hint);
     case "playbook.reprime":

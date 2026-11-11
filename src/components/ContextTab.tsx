@@ -1,6 +1,8 @@
 import { createEffect, createMemo, createResource, createSignal, For, Index, Match, on, Show, Switch } from "solid-js";
-import type { TeamInfo, WorkerInfo } from "../../shared/protocol";
-import { fetchSessionContextView, fetchSetupFile } from "../lib/api";
+import type { SessionSkills, TeamInfo, WorkerInfo } from "../../shared/protocol";
+import { fetchHiddenWorkers, fetchSessionContextView, fetchSetupFile } from "../lib/api";
+import { relativeTime } from "../lib/format";
+import { overviewMeta, readBeforeCompaction, skillsOverview, type SkillOverviewRow, type SkillReaderSource } from "../lib/skills-overview";
 import {
   approxTokens,
   contextHeadline,
@@ -36,9 +38,17 @@ interface Doc {
   shape: FileShape;
   markdown: string;
 }
-/** One level of the sheet: a group, or a part of one with its text. */
-type Level = { line: ContextLineKind; label: string } | { line: ContextLineKind; label: string; part: ContextPart; doc: Doc };
+/** One level of the sheet: a group, a part of one with its text, or (Everyone) one skill's readers. */
+type Level =
+  | { line: ContextLineKind; label: string }
+  | { line: ContextLineKind; label: string; part: ContextPart; doc: Doc }
+  | { skill: string; label: string };
+type GroupLevelOf = Extract<Level, { line: ContextLineKind }>;
 const isPart = (l: Level): l is Extract<Level, { part: ContextPart }> => "part" in l;
+const isSkill = (l: Level): l is Extract<Level, { skill: string }> => "skill" in l;
+
+/** Whose context's value for Everyone: never a session path. */
+const EVERYONE = ":everyone";
 
 /** A row's size: a file or skill not in the window yet shows what it would add, and a skill /skill: ran
     unoffered has no listing there at all. */
@@ -55,25 +65,81 @@ const monoName = (p: ContextPart) => p.group === "instructions" || p.group === "
  * insight signal) and, for a picked worker, when one of its replies ends (`workerReplyKey`); never
  * polls. A part open in the sheet isn't read again.
  */
-export function ContextTab(props: { path: string; workers: WorkerInfo[]; teams?: TeamInfo[]; changed: number }) {
-  const pickable = () => props.workers.filter((w) => w.sessionFile);
+export function ContextTab(props: {
+  path: string;
+  workers: WorkerInfo[];
+  teams?: TeamInfo[];
+  changed: number;
+  /** This chat's whole-history skills record (the insight's `skills`). */
+  skills?: SessionSkills;
+  /** Each worker's, by worker id (the insight's `workerSkills`): every worker of the chat, not only the listed ones. */
+  workerSkills?: Record<string, SessionSkills>;
+}) {
+  /** Workers the insight's list leaves out but whose skills it sends, read from the session file once Everyone
+      needs their names. Kept per chat, so a reader picked from Everyone stays in Whose context. */
+  const [unlisted, setUnlisted] = createSignal<{ path: string; workers: WorkerInfo[] } | null>(null);
+  const pickable = createMemo(() => {
+    const listed = props.workers.filter((w) => w.sessionFile);
+    const more = unlisted();
+    if (!more || more.path !== props.path) return listed;
+    const ids = new Set(listed.map((w) => w.id));
+    return [...listed, ...more.workers.filter((w) => w.sessionFile && !ids.has(w.id))];
+  });
   const [who, setWho] = createSignal(props.path);
+  const everyone = () => who() === EVERYONE && pickable().length > 0;
   /** The session read: this chat, or the picked worker while it is still listed. */
   const target = createMemo(() => (pickable().some((w) => w.sessionFile === who()) ? who() : props.path));
+  /** What the tab shows: Everyone, or one chat's window. */
+  const shown = createMemo(() => (everyone() ? EVERYONE : target()));
   /** A picked worker's own reply-end signal: its replies don't move the parent's file. */
   const workerKey = createMemo(() => workerReplyKey(pickable().find((w) => w.sessionFile === target())));
   const [view] = createResource(
-    () => `${props.changed}\u0002${workerKey()}\u0001${target()}`,
+    () => (everyone() ? null : `${props.changed}\u0002${workerKey()}\u0001${target()}`),
     (key) => fetchSessionContextView(key.slice(key.indexOf("\u0001") + 1)),
   );
   const ok = createMemo(() => {
     const v = view.latest;
     return v?.state === "ok" ? v : null;
   });
+  /** The whole-history record of the chat whose window shows. */
+  const historyOf = (path: string) => {
+    if (path === props.path) return props.skills;
+    const w = pickable().find((x) => x.sessionFile === path);
+    return w ? props.workerSkills?.[w.id] : undefined;
+  };
   const layout = createMemo(() => {
     const v = ok();
-    return v ? contextLayout({ parts: flatParts(v), conversation: v.conversation, total: v.total, window: v.window }) : null;
+    if (!v) return null;
+    const used = historyOf(target())?.used;
+    // A skill read only before the latest compaction says so instead of Not read yet.
+    const parts = flatParts(v).map((p) => (readBeforeCompaction(p, used) ? { ...p, readBefore: true } : p));
+    return contextLayout({ parts, conversation: v.conversation, total: v.total, window: v.window });
   });
+
+  // ---- Everyone ------------------------------------------------------------------------------
+  /** Worker ids with a skills record the list can't name yet. */
+  const unnamed = createMemo(() => {
+    if (!everyone()) return "";
+    const known = new Set(pickable().map((w) => w.id));
+    return Object.keys(props.workerSkills ?? {}).filter((id) => !known.has(id)).sort().join("\n");
+  });
+  createEffect(
+    on(unnamed, (ids) => {
+      if (!ids) return;
+      const path = props.path;
+      fetchHiddenWorkers(path)
+        .then((res) => {
+          if (path === props.path) setUnlisted({ path, workers: res.workers });
+        })
+        .catch(() => {}); // unnamed workers stay out until the next try: the counts of the rest still stand
+    }),
+  );
+  const sources = createMemo<SkillReaderSource[]>(() => [
+    { key: props.path, label: "This chat", skills: props.skills },
+    ...pickable().flatMap((w) => (props.workerSkills?.[w.id] ? [{ key: w.sessionFile!, label: workerLabel(w, props.teams), skills: props.workerSkills[w.id] }] : [])),
+  ]);
+  const overview = createMemo(() => skillsOverview(sources()));
+  const skillRow = (id: string) => overview().read.find((r) => r.id === id);
   const windowSize = () => ok()?.window ?? null;
   const lineOf = (id: ContextLineKind) => layout()?.lines.find((l) => l.id === id);
 
@@ -81,6 +147,7 @@ export function ContextTab(props: { path: string; workers: WorkerInfo[]; teams?:
   const [stack, setStack] = createSignal<Level[]>([]);
   const [docView, setDocView] = createSignal<MarkdownView>("rendered");
   let root!: HTMLDivElement;
+  let picker: HTMLSelectElement | undefined;
   let back: HTMLButtonElement | undefined;
   let body: HTMLDivElement | undefined;
   /** Bumped by every move, so a slow read that lands after the reader moved on opens nothing. */
@@ -98,7 +165,7 @@ export function ContextTab(props: { path: string; workers: WorkerInfo[]; teams?:
     const left = stack()[depth];
     if (!left) return;
     setStack(stack().slice(0, depth));
-    focusKey(isPart(left) ? `part:${left.part.id}` : `line:${left.line}`);
+    focusKey(isPart(left) ? `part:${left.part.id}` : isSkill(left) ? `skill:${left.skill}` : `line:${left.line}`);
     if (depth > 0) queueMicrotask(() => body && (body.scrollTop = 0));
   };
   const openLine = (l: ContextLine) => {
@@ -106,7 +173,12 @@ export function ContextTab(props: { path: string; workers: WorkerInfo[]; teams?:
     setStack([{ line: l.id, label: l.label }]);
     opened();
   };
-  const openPart = async (l: Level, p: ContextPart) => {
+  const openSkill = (r: SkillOverviewRow) => {
+    moves++;
+    setStack([{ skill: r.id, label: r.name }]);
+    opened();
+  };
+  const openPart = async (l: GroupLevelOf, p: ContextPart) => {
     const mine = ++moves;
     let text: string;
     if (p.text !== undefined) text = p.text;
@@ -124,10 +196,11 @@ export function ContextTab(props: { path: string; workers: WorkerInfo[]; teams?:
     opened();
   };
   // Another chat or window closes the sheet; so does a fresh read whose group is gone.
-  createEffect(on(target, () => setStack([]), { defer: true }));
+  createEffect(on(shown, () => setStack([]), { defer: true }));
   createEffect(() => {
     const first = stack()[0];
-    if (first && layout() && !lineOf(first.line)) setStack([]);
+    if (!first) return;
+    if (isSkill(first) ? !skillRow(first.skill) : layout() && !lineOf(first.line)) setStack([]);
   });
   const onSheetKey = (e: KeyboardEvent) => {
     if (e.key !== "Escape" || e.defaultPrevented) return;
@@ -139,7 +212,7 @@ export function ContextTab(props: { path: string; workers: WorkerInfo[]; teams?:
   // ---- Rows ---------------------------------------------------------------------------------
   /** One row, the same for a group and a part: name, short line, share of the window, ≈ size, and an
       arrow only when it opens. */
-  const Row = (r: { key: string; name: string; mono?: boolean; chip?: { word: string; done: boolean }; beside?: string; meta?: string; share: number | null; size: string; opens: boolean; onOpen?: () => void }) => {
+  const Row = (r: { key: string; name: string; mono?: boolean; chip?: { word: string; done: boolean }; beside?: string; meta?: string; share: number | null; size: string; opens: boolean; onOpen?: () => void; label?: string; noSheet?: boolean }) => {
     const inner = () => (
       <>
         <span class="list-main context-row-main">
@@ -179,14 +252,14 @@ export function ContextTab(props: { path: string; workers: WorkerInfo[]; teams?:
     return (
       <li>
         <Show when={r.opens} fallback={<div class="list-row context-row context-row-static">{inner()}</div>}>
-          <button type="button" class="list-row list-row-interactive context-row" data-ctx-key={r.key} aria-haspopup="dialog" onClick={() => r.onOpen?.()}>
+          <button type="button" class="list-row list-row-interactive context-row" data-ctx-key={r.key} aria-haspopup={r.noSheet ? undefined : "dialog"} aria-label={r.label} onClick={() => r.onOpen?.()}>
             {inner()}
           </button>
         </Show>
       </li>
     );
   };
-  const PartRows = (r: { level: Level; parts: ContextPart[] }) => (
+  const PartRows = (r: { level: GroupLevelOf; parts: ContextPart[] }) => (
     <ForKey each={r.parts} by={(p) => p.id}>
       {(p) => (
         <Row
@@ -207,7 +280,34 @@ export function ContextTab(props: { path: string; workers: WorkerInfo[]; teams?:
 
   // ---- The sheet's levels --------------------------------------------------------------------
   const top = () => stack().at(-1);
-  const GroupLevel = (g: { level: Level; line: ContextLine }) => {
+  /** One skill's readers, most openings first; pressing one shows that chat's window. */
+  const SkillLevel = (s: { row: SkillOverviewRow }) => (
+    <>
+      <p class="context-sheet-sub">{overviewMeta(s.row)}</p>
+      <Show when={s.row.location}>{(loc) => <p class="context-sheet-sub text-mono">{loc()}</p>}</Show>
+      <ul class="list context-list" aria-label={`Who read ${s.row.name}`}>
+        <ForKey each={s.row.readers} by={(r) => r.key}>
+          {(r) => (
+            <Row
+              key={`reader:${r().key}`}
+              name={r().label}
+              meta={[`${r().count} ${r().count === 1 ? "opening" : "openings"}`, r().lastAt ? `last ${relativeTime(r().lastAt)}` : ""].filter(Boolean).join(" · ")}
+              share={null}
+              size=""
+              opens
+              noSheet
+              label={`Show ${r().label}'s context`}
+              onOpen={() => {
+                setWho(r().key);
+                queueMicrotask(() => picker?.focus());
+              }}
+            />
+          )}
+        </ForKey>
+      </ul>
+    </>
+  );
+  const GroupLevel = (g: { level: GroupLevelOf; line: ContextLine }) => {
     const sheet = createMemo(() => groupSheet(g.line));
     return (
       <>
@@ -263,6 +363,7 @@ export function ContextTab(props: { path: string; workers: WorkerInfo[]; teams?:
     return !!t && isPart(t) && monoName(t.part);
   };
   const levelSize = (l: Level) => {
+    if (isSkill(l)) return "";
     if (isPart(l)) return sizeOf(l.part);
     const line = lineOf(l.line);
     return line ? approxTokens(line.tokens) : "";
@@ -276,13 +377,16 @@ export function ContextTab(props: { path: string; workers: WorkerInfo[]; teams?:
             <label class="field">
               <span class="field-label">Whose context</span>
               <span class="select-wrap">
-                <select class="select" onChange={(e) => setWho(e.currentTarget.value)}>
-                  <option value={props.path} selected={target() === props.path}>
+                <select ref={picker} class="select" onChange={(e) => setWho(e.currentTarget.value)}>
+                  <option value={props.path} selected={!everyone() && target() === props.path}>
                     This chat
+                  </option>
+                  <option value={EVERYONE} selected={everyone()}>
+                    Everyone
                   </option>
                   <For each={pickable()}>
                     {(w) => (
-                      <option value={w.sessionFile} selected={target() === w.sessionFile}>
+                      <option value={w.sessionFile} selected={!everyone() && target() === w.sessionFile}>
                         {workerLabel(w, props.teams)}
                       </option>
                     )}
@@ -296,6 +400,43 @@ export function ContextTab(props: { path: string; workers: WorkerInfo[]; teams?:
           </Show>
 
           <Switch>
+            <Match when={everyone()}>
+              <section class="stack-2" aria-labelledby="context-everyone-label">
+                <h3 class="text-eyebrow" id="context-everyone-label">
+                  Skills read
+                </h3>
+                <p class="usage-note text-muted">Counts every opening in each chat's whole history, not only what its window holds now.</p>
+                <Show when={overview().read.length > 0} fallback={<p class="usage-note text-muted">This chat and its workers haven't opened a skill yet.</p>}>
+                  <ul class="list context-list" aria-labelledby="context-everyone-label">
+                    <ForKey each={overview().read} by={(r) => r.id}>
+                      {(r) => (
+                        <Row
+                          key={`skill:${r().id}`}
+                          name={r().name}
+                          meta={`${overviewMeta(r())}: ${r().readers.map((x) => x.label).join(", ")}${r().location ? ` · ${r().location}` : ""}`}
+                          share={null}
+                          size=""
+                          opens
+                          onOpen={() => openSkill(r())}
+                        />
+                      )}
+                    </ForKey>
+                  </ul>
+                </Show>
+                <Show when={overview().notRead.length > 0}>
+                  <section class="stack-2 context-apart" aria-labelledby="context-unread-label">
+                    <h4 class="text-eyebrow context-sheet-eyebrow" id="context-unread-label">
+                      Not read by anyone
+                    </h4>
+                    <ul class="list context-list" aria-labelledby="context-unread-label">
+                      <ForKey each={overview().notRead} by={(s) => s.name}>
+                        {(s) => <Row key={`unread:${s().name}`} name={s().name} meta={s().description} share={null} size="" opens={false} />}
+                      </ForKey>
+                    </ul>
+                  </section>
+                </Show>
+              </section>
+            </Match>
             <Match when={!view.latest && view.error}>
               <p class="usage-note field-error">Couldn't read this chat's context. {String(view.error instanceof Error ? view.error.message : view.error)}</p>
             </Match>
@@ -402,9 +543,11 @@ export function ContextTab(props: { path: string; workers: WorkerInfo[]; teams?:
           <div class="context-sheet-body" ref={body} tabindex="0" aria-labelledby="context-sheet-title">
             <Show when={top()} keyed>
               {(t) => (
-                <Show when={isPart(t) ? t : null} fallback={<Show when={lineOf(t.line)}>{(line) => <GroupLevel level={t} line={line()} />}</Show>}>
-                  {(p) => <PartLevel level={p()} />}
-                </Show>
+                <Switch>
+                  <Match when={isSkill(t) && t}>{(s) => <Show when={skillRow(s().skill)}>{(row) => <SkillLevel row={row()} />}</Show>}</Match>
+                  <Match when={isPart(t) && t}>{(p) => <PartLevel level={p()} />}</Match>
+                  <Match when={!isSkill(t) && !isPart(t) && t}>{(g) => <Show when={lineOf(g().line)}>{(line) => <GroupLevel level={g()} line={line()} />}</Show>}</Match>
+                </Switch>
               )}
             </Show>
           </div>

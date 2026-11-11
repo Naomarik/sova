@@ -1,5 +1,5 @@
 /**
- * What each live worker loaded, read from that worker's own transcript.
+ * What each worker loaded, read from that worker's own transcript.
  *
  * The subagents extension records nothing about skills — not in the live registry, the snapshots,
  * nor the completion reports (`pi-config/extensions/sessions/public/SCHEMA.md`) — so a worker's own
@@ -26,10 +26,16 @@ import { branchOf, headerOf, historyOf } from "./harness/pi/reader";
 import { parseJsonl } from "./jsonl";
 import { claudeSkillLines, collectSkills, hasSkills, type SkillLine, skillLinesOf } from "./skills";
 
-/** Parsed skills kept per file. Enough for several sessions' worth of workers at once. */
-const CACHE_MAX = 64;
+/** Parsed skills kept per file, least recently used dropped first. A parse is a few loads, so this holds
+    several big sessions' worth of workers at once; and a call never drops a file it touched itself, so a
+    session with more workers than this still parses each unchanged file once, not on every poll. */
+const CACHE_MAX = 1024;
 
+/** Insertion order is use order: a hit moves its file to the end, so the first key is the least recent. */
 const cache = new Map<string, { key: string; skills: SessionSkills }>();
+/** Files read and parsed since the server started: tests read it to see a poll re-read nothing. */
+let parses = 0;
+export const workerSkillsParses = (): number => parses;
 
 /** Where a worker's transcript lives, or null when we cannot tell. Injectable for tests. */
 export type WorkerFile = (worker: WorkerInfo) => string | null;
@@ -68,7 +74,11 @@ async function skillsOfFile(file: string): Promise<SessionSkills | null> {
     return null;
   }
   const hit = cache.get(file);
-  if (hit && hit.key === key) return hit.skills;
+  if (hit && hit.key === key) {
+    cache.delete(file);
+    cache.set(file, hit);
+    return hit.skills;
+  }
 
   let text: string;
   try {
@@ -76,10 +86,20 @@ async function skillsOfFile(file: string): Promise<SessionSkills | null> {
   } catch {
     return null;
   }
+  parses++;
   const skills = collectSkills(skillLinesOfText(text));
-  if (cache.size >= CACHE_MAX) cache.clear();
+  cache.delete(file);
   cache.set(file, { key, skills });
   return skills;
+}
+
+/** Drop the least recently used files past the cap, but never one of the `keep` newest (this call's own). */
+function trim(keep: number): void {
+  const cap = Math.max(CACHE_MAX, keep);
+  for (const file of cache.keys()) {
+    if (cache.size <= cap) break;
+    cache.delete(file);
+  }
 }
 
 /**
@@ -88,12 +108,15 @@ async function skillsOfFile(file: string): Promise<SessionSkills | null> {
  */
 export async function workerSkills(workers: readonly WorkerInfo[], file: WorkerFile = defaultWorkerFile): Promise<Record<string, SessionSkills> | undefined> {
   const found: Record<string, SessionSkills> = {};
+  let touched = 0;
   for (const w of workers) {
     const path = file(w);
     if (!path) continue;
+    touched++;
     const skills = await skillsOfFile(path);
     if (skills && hasSkills(skills)) found[w.id] = skills;
   }
+  trim(touched);
   return Object.keys(found).length > 0 ? found : undefined;
 }
 

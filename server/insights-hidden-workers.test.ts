@@ -99,6 +99,24 @@ test("hidden workers carry no spend (the usage ledger's), and their transcript s
   assert.equal(ag01.sessionFile, ag01File, "its transcript still opens from the row");
 });
 
+test("what an unlisted worker loaded rides the insight too, for the Context tab's Everyone view", async () => {
+  publish(newest40);
+  assert.equal((await getSessionInsight(owner)).workerSkills, undefined, "no worker loaded a skill yet");
+  const before = jsonl(
+    { type: "session", version: 3, id: "ag01", timestamp: iso(1), cwd: "/tmp/hidden-test" },
+    { type: "message", id: "w1", parentId: null, timestamp: iso(2), message: { role: "assistant", provider: "zai", model: "glm-5.3", content: [{ type: "text", text: "done" }], usage: { input: 99_999, output: 99_999, cacheRead: 0, cacheWrite: 0, cost: { total: 9 } }, stopReason: "stop" } },
+  );
+  try {
+    writeFileSync(ag01File, before + jsonl({ type: "message", id: "w2", parentId: "w1", timestamp: iso(3), message: { role: "assistant", content: [{ type: "toolCall", id: "tc", name: "read", arguments: { path: "/s/playwright/SKILL.md" } }] } }));
+    const insight = await getSessionInsight(owner);
+    assert.equal(insight.workers?.length, 40, "the list itself stays the record's 40");
+    assert.deepEqual(Object.keys(insight.workerSkills ?? {}), ["ag_01"]);
+    assert.deepEqual(insight.workerSkills!.ag_01!.used.map((u) => u.name), ["playwright"]);
+  } finally {
+    writeFileSync(ag01File, before);
+  }
+});
+
 test("a record whose list gained a hidden worker stops offering it", async () => {
   publish([...newest40.slice(0, 39), 3]);
   const res = await getHiddenWorkers(owner);

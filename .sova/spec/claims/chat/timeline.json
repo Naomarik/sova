@@ -8,9 +8,9 @@
       "src/components/SessionTimeline.tsx"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-10-19T21:32Z",
-      "source": "pi-session:731adbb4-6c80-4cc0-9fa2-0c5c7c6d88dc#baa7a28c"
+      "by": "user",
+      "at": "2026-11-11T11:29Z",
+      "source": "pi-session:aa091ab1-90ed-46fe-bcc3-022cc5217eb1#36110031"
     }
   },
   "§chat.timeline/class-table": {
@@ -63,8 +63,27 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-06T13:59Z",
-      "source": "pi-session:01a1b07d-be49-727f-8989-d4d0378c61bb#0056bb79"
+      "at": "2026-11-11T11:29Z",
+      "source": "pi-session:aa091ab1-90ed-46fe-bcc3-022cc5217eb1#36110031"
+    }
+  },
+  "§chat.timeline/marker-runs": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "unreviewed",
+    "code": [
+      "src/lib/timeline.ts",
+      "src/components/SessionTimeline.tsx",
+      "src/lib/timeline.test.ts"
+    ],
+    "requires": [
+      "§chat.timeline/rows",
+      "§chat.timeline/jumping"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-11T11:29Z",
+      "source": "pi-session:aa091ab1-90ed-46fe-bcc3-022cc5217eb1#36110031"
     }
   },
   "§chat.timeline/no-virtualization": {
@@ -142,8 +161,8 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-06T21:52Z",
-      "source": "pi-session:01a1acdc-5fed-7735-96f5-96f6019e339d#c412bec1"
+      "at": "2026-11-11T11:29Z",
+      "source": "pi-session:aa091ab1-90ed-46fe-bcc3-022cc5217eb1#36110031"
     }
   },
   "§chat.timeline/watch-mode": {
@@ -161,9 +180,9 @@
       "§app.insights/summary-sections"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-10-19T21:32Z",
-      "source": "pi-session:731adbb4-6c80-4cc0-9fa2-0c5c7c6d88dc#baa7a28c"
+      "by": "user",
+      "at": "2026-11-11T11:29Z",
+      "source": "pi-session:aa091ab1-90ed-46fe-bcc3-022cc5217eb1#36110031"
     },
     "code": [
       "src/components/SessionTimeline.tsx",

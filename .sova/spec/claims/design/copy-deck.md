@@ -998,6 +998,7 @@ en-US separators ("from 0 to 1,000", "at most 8,000 characters").
 | Density line | `{n} replies · {n} tools · {duration}` — e.g. `3 replies · 14 tools · 6m`; 1: `1 reply` / `1 tool`; a clause at 0 is dropped, and the row with it |
 | Idle gap | `idle {duration}` — e.g. `idle 38m` (`duration()` in `src/lib/format.ts`, the one the density line uses) |
 | Chapter fallback | `summary time` (after the topic, in the row's meta; the clock dims with it) |
+| Marker run (2+ identical in a row) | `{copy} ×{n}` — e.g. `coordinator finished ×31` · under it: `{from}–{to}` — e.g. `2:37–3:00 PM`, across noon `11:50 AM–12:10 PM`, same minute: one time · spoken: `{copy}, {n} times, {from} to {to}` (button: after `Jump to this message: `) · clock `title`: `{oldest absolute} to {newest absolute} · {relative}` |
 | Marker: compaction | `Compacted · {n} tokens summarized` |
 | Marker: rewind | `Rewound to an earlier message` |
 | Marker: subagent | `{name} started` · `{name} finished` · `{name} stopped` (errored or killed) |

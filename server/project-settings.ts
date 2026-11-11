@@ -299,7 +299,7 @@ export async function setProjectSkillStates(projectId: string, changes: Record<s
   const before = projectSkillDecisions(projectId);
   const { setProjectSkills } = await import("./projects/skills");
   const view = await setProjectSkills(projectId, { skills: changes });
-  await (await import("./projects/skills-chats")).refreshNewChats(projectId);
+  // Recorded as soon as it is saved: a rebuild that fails afterwards never leaves a change unrecorded.
   const rows = appendHistory(
     projectId,
     Object.entries(changes).flatMap(([name, to]) => {
@@ -307,6 +307,7 @@ export async function setProjectSkillStates(projectId: string, changes: Record<s
       return from === to ? [] : [{ field: `${SKILL_FIELD_PREFIX}${name}`, from, to, by, ...(meta.card ? { card: meta.card } : {}), ...(meta.revertOf ? { revertOf: meta.revertOf } : {}) }];
     }),
   );
+  await (await import("./projects/skills-chats")).refreshNewChats(projectId);
   return { view, rows };
 }
 

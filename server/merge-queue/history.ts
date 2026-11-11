@@ -13,17 +13,19 @@ import { superseded } from "./view";
  *   <state>/merge-queue/<key>/history/backfilled      the one-time backfill from runs/ ran
  *
  * Truly final: landed, cancelled or pushed; a sent-back (needs-fix) or closed entry once a newer entry of its branch
- * stands for it, or git says its commit is in the target. A sent-back entry still waiting on its chat is never final
- * here. Each queue save writes only the months whose rows changed; queue.json keeps the newest KEEP_FINAL of them.
+ * stands for it, or git says its commit is in the target or its branch or worktree is gone. A sent-back entry whose
+ * branch still exists, neither superseded nor landed, waits on its chat and is never final here. The one rule the
+ * history and the run-log sweep (run-logs.ts) both read. Each queue save writes only the months whose rows changed; queue.json keeps the newest KEEP_FINAL of them.
  */
 
 type Stored = QueueFile["entries"][number];
 
-/** Is `e` truly final? `merged`: sent-back entries git says are in the target; `recorded`: the state its history row
- *  was filed with (once filed as final in that state it stays so, even after the entry that superseded it is trimmed). */
-export function trulyFinal(entries: readonly Stored[], e: Stored, merged?: ReadonlySet<string>, recorded?: string): boolean {
+/** Is `e` truly final? `settled`: sent-back entries git says need no fix any more (their commit is in the target, or
+ *  their branch or worktree is gone: settled.ts); `recorded`: the state its history row was filed with (once filed as
+ *  final in that state it stays so, even after the entry that superseded it is trimmed). */
+export function trulyFinal(entries: readonly Stored[], e: Stored, settled?: ReadonlySet<string>, recorded?: string): boolean {
   if (e.state === "landed" || e.state === "cancelled" || e.state === "pushed") return true;
-  if (e.state === "needs-fix" || e.state === "closed") return recorded === e.state || superseded(entries, e) || !!merged?.has(e.id);
+  if (e.state === "needs-fix" || e.state === "closed") return recorded === e.state || superseded(entries, e) || !!settled?.has(e.id);
   return false;
 }
 
@@ -165,8 +167,8 @@ export class MergeHistory {
    * would read: the open ones plus the newest `keep` truly final ones (by seq), in their order. An entry leaves it only
    * once its row is filed. A new array when any left (never spliced: a loop over the old one goes on unharmed).
    */
-  sync(entries: Stored[], keep: number, opts: { merged?: ReadonlySet<string>; now: string }): Stored[] {
-    const final = entries.filter((e) => trulyFinal(entries, e, opts.merged, this.recordedState(e.id)));
+  sync(entries: Stored[], keep: number, opts: { settled?: ReadonlySet<string>; now: string }): Stored[] {
+    const final = entries.filter((e) => trulyFinal(entries, e, opts.settled, this.recordedState(e.id)));
     if (!final.length) return entries;
     this.upsert(final.map((e) => rowOf(e, finalAtOf(entries, e, opts.now))));
     const drop = new Set(

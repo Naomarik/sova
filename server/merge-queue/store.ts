@@ -148,14 +148,14 @@ export class QueueStore {
   }
 
   /** Save the queue: truly final entries' new and changed rows go to the history, `q.entries` becomes (a new array
-   *  when any left) the open ones plus the newest KEEP_FINAL truly final ones, then queue.json is written. `merged`: sent-back entries
-   *  git last said are in the target. */
-  write(q: QueueFile, opts?: { merged?: ReadonlySet<string>; now?: string }): void {
+   *  when any left) the open ones plus the newest KEEP_FINAL truly final ones, then queue.json is written. `settled`: sent-back entries
+   *  git last said need no fix any more (merged, or branch or worktree gone). */
+  write(q: QueueFile, opts?: { settled?: ReadonlySet<string>; now?: string }): void {
     mkdirSync(this.dir, { recursive: true });
     // A history that can't be written never blocks queue.json: nothing is trimmed then (an entry leaves the working
     // list only once its row is filed), and the next save tries again.
     try {
-      q.entries = this.history.sync(q.entries, KEEP_FINAL, { ...(opts?.merged ? { merged: opts.merged } : {}), now: opts?.now ?? new Date().toISOString() });
+      q.entries = this.history.sync(q.entries, KEEP_FINAL, { ...(opts?.settled ? { settled: opts.settled } : {}), now: opts?.now ?? new Date().toISOString() });
     } catch (err) {
       console.warn(`[merge-queue] history under ${this.history.dir} not written (${err instanceof Error ? err.message : err}); nothing trimmed`);
     }

@@ -128,7 +128,7 @@ describe("the merge queue's history (store)", () => {
     }
   });
 
-  test("truly final: landed, cancelled, pushed; sent back or closed only once superseded or merged (and then for good)", () => {
+  test("truly final: landed, cancelled, pushed; sent back or closed only once superseded, merged or gone (and then for good)", () => {
     const old = entry(1, { state: "needs-fix", branch: "feat/x" });
     const newer = entry(2, { state: "queued", branch: "feat/x" });
     const other = entry(3, { state: "needs-fix", branch: "feat/y" });
@@ -137,7 +137,7 @@ describe("the merge queue's history (store)", () => {
     for (const s of ["queued", "checking", "with-chat", "conflict", "requested", "request-review", "needs-user"] as const) assert.equal(trulyFinal(list, entry(9, { state: s })), false, s);
     assert.equal(trulyFinal(list, old), true, "superseded");
     assert.equal(trulyFinal(list, other), false, "still waiting on its chat");
-    assert.equal(trulyFinal(list, other, new Set([other.id])), true, "git says it is in the target");
+    assert.equal(trulyFinal(list, other, new Set([other.id])), true, "git says it is in the target, or its branch or worktree is gone");
     assert.equal(trulyFinal([other], entry(4, { state: "closed", branch: "feat/z" })), false, "a closed request may open again");
     assert.equal(trulyFinal([other], other, undefined, "needs-fix"), true, "filed as final: stays final when the newer entry is gone");
     assert.equal(trulyFinal([other], other, undefined, "landed"), false, "filed in another state: not sticky");

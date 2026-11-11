@@ -55,7 +55,7 @@ import { invalidOf, resolveTarget, setUpOf } from "./served";
 import { isFinal, newId, type QueueFile, QueueStore } from "./store";
 import { hasOrigin, publishGit, revertCommit, withdrawGit } from "./release-git";
 import type { MergeCheckDecl } from "../../shared/project-contract";
-import { settledFacts } from "./settled";
+import { settledFacts, sweepSettled } from "./settled";
 import { buildView, superseded } from "./view";
 import { type MergeQueueSettings, type MergeSettingsChange, type MergeSettingsSaveResult, SETTINGS_DIRTY_WORDS } from "../../shared/merge-queue-settings";
 import { effectiveModel, type ModelCheck, readModels } from "./models";
@@ -429,8 +429,8 @@ export class ProjectQueue {
 
   save(): void {
     this.viewCache = null;
-    const merged = this.settledCache ? new Set([...this.settledCache.facts].filter(([, f]) => f === "merged").map(([id]) => id)) : undefined;
-    this.store.write(this.q, { ...(merged ? { merged } : {}), now: this.iso() });
+    const settled = this.settledCache || this.swept.size ? new Set(this.settled().keys()) : undefined;
+    this.store.write(this.q, { ...(settled ? { settled } : {}), now: this.iso() });
     this.schedulePublish();
     this.tidyScratch();
   }
@@ -547,15 +547,34 @@ export class ProjectQueue {
   currentRun(): MergeRun | null {
     return this.current?.run ?? null;
   }
-  /** Sent-back entries git last said need no fix any more (settled.ts), as last read; empty before the first read. */
+  /** Sent-back entries git last said need no fix any more (settled.ts): the view's newest, read every 15 s, and every
+   *  other one the hourly sweep reached; empty before the first read. The one input history's trulyFinal reads, for the
+   *  queue's own trim (save) and the run-log sweep alike. */
   settled(): ReadonlyMap<string, "merged" | "gone"> {
-    return this.settledCache?.facts ?? new Map();
+    if (!this.swept.size) return this.settledCache?.facts ?? new Map();
+    return new Map([...this.swept, ...(this.settledCache?.facts ?? [])]);
   }
-  /** Read those facts afresh against the target's head (the run-log sweep calls it). */
+  /**
+   * The hourly sweep (run-logs.ts calls it): the view's facts afresh, then git asked about every sent-back entry, a
+   * bounded batch a pass (settled.ts sweepSettled). An entry it finds merged or gone is truly final: the save that
+   * follows files it in the history and trims it from the working list like any other. Never on the save path.
+   */
   async refreshSettled(): Promise<void> {
     const head = await this.targetHead();
-    if (head) await this.settledFacts(head);
+    if (!head) return;
+    await this.settledFacts(head);
+    const r = await sweepSettled(this.git, this.root, head, this.q.entries, { after: this.sweepAfter });
+    this.sweepAfter = r.next;
+    for (const id of r.checked) this.swept.delete(id);
+    for (const [id, f] of r.facts) this.swept.set(id, f);
+    // Forget entries no longer in the working list.
+    const here = new Set(this.q.entries.map((e) => e.id));
+    for (const id of [...this.swept.keys()]) if (!here.has(id)) this.swept.delete(id);
+    if (r.facts.size) await this.serial(async () => this.save());
   }
+  /** What the hourly sweep found (refreshSettled), by entry id, and where its next pass starts. */
+  private swept = new Map<string, "merged" | "gone">();
+  private sweepAfter: string | null = null;
   isPaused(): boolean {
     return !!this.q.paused;
   }

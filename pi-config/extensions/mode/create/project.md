@@ -118,7 +118,7 @@ One target. `rollback` is required; `{"none": "<reason>"}` is the way to have no
 
 - Change: which skills the project's new chats start with. Each skill a chat in the project could be offered is Approved, Disallowed or Waiting (no decision yet, on until disallowed).
 - Lives: this computer. It doesn't spread.
-- Approves: the person, by Apply. Allowing a disallowed skill again is marked as a grant; disallowing applies at once.
+- Approves: the person, by Apply. Allowing a disallowed skill again is marked as a grant on the card.
 - By: Card. The `skills` setting with `skills: {<name>: approved | disallowed | waiting}`. The Settings tab's Skills card has the same control.
 - Live: for chats not yet started, now. A chat's skills are fixed at its first message.
 - Check: the Settings tab's Skills card shows each skill's state.

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { shortDescription, sourceLabel, waitingNotice } from "./project-skills";
+import { approveAllChange, shortDescription, sourceLabel, waitingNotice, waitingSkills } from "./project-skills";
 
 test("the waiting notice counts in digits and is absent when nothing waits", () => {
   assert.equal(waitingNotice(0), null);
@@ -21,4 +21,20 @@ test("a description is one line, cut with an ellipsis past its limit", () => {
   const cut = shortDescription("x".repeat(200), 10);
   assert.equal(cut.length, 10);
   assert.ok(cut.endsWith("…"));
+});
+
+test("Approve All approves exactly the waiting skills, in one change", () => {
+  const skills = [
+    { name: "alpha", project: "approved" as const },
+    { name: "beta", project: "disallowed" as const },
+    { name: "delta", project: "waiting" as const },
+    { name: "free" },
+    { name: "gamma", project: "waiting" as const },
+  ];
+  const names = waitingSkills(skills);
+  assert.deepEqual(names, ["delta", "gamma"]);
+  assert.deepEqual(approveAllChange(names), { delta: "approved", gamma: "approved" });
+  // Nothing waits: no notice, and nothing to send.
+  assert.deepEqual(waitingSkills(skills.filter((k) => k.project !== "waiting")), []);
+  assert.deepEqual(approveAllChange([]), {});
 });

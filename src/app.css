@@ -1160,6 +1160,7 @@ html, body { overflow: clip; overscroll-behavior: none; }
 .setup-decide { flex: 0 0 100%; display: flex; flex-wrap: wrap; gap: var(--space-2); margin-top: var(--space-1); }
 .setup-waiting { flex-direction: row; flex-wrap: wrap; align-items: center; justify-content: space-between; text-align: start; border-bottom: 1px solid var(--color-border); }
 .setup-waiting .setup-note { color: var(--color-ink-2); }
+.setup-waiting-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
 /* A narrow card folds its rows (base.css), but not a row with a switch: it stays one line, the
    name ellipsised, then ≈tokens, then the switch at the right edge. */
 @container (max-width: 417.98px) {

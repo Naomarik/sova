@@ -1,7 +1,7 @@
 import { createEffect, createMemo, createSignal, For, Match, on, onCleanup, Show, Switch } from "solid-js";
 import type { GitSummary, SessionSetup } from "../../shared/protocol";
 import { fetchSessionSetup, fetchSessionTools, fetchSetupFile, setProjectSkills, setSessionLoadout } from "../lib/api";
-import { approveLabel, disallowLabel, OFF_FOR_PROJECT, ON_FOR_THIS_CHAT, WAITING_LINE, waitingNotice } from "../lib/project-skills";
+import { APPROVE_ALL, approveAllChange, approveLabel, disallowLabel, OFF_FOR_PROJECT, ON_FOR_THIS_CHAT, WAITING_LINE, waitingNotice, waitingSkills } from "../lib/project-skills";
 import { mcpFlips, NOT_PROJECT, setupLine, setupOffLine, setupShows, setupSwitchLabel, setupTokens, SETUP_LABEL } from "../lib/mcp";
 import { openMarkdown } from "../lib/markdown-viewer";
 import { loadGitSummary, UPSTREAM_TITLE } from "../lib/git-summary";
@@ -183,25 +183,33 @@ export function SessionSetupCard(props: { path: string; editable?: boolean; tool
     const s = setup();
     return switchable() && s && "ok" in s && s.ok.state === "ok" ? (s.ok.project ?? null) : null;
   };
-  const waitingCount = () => {
+  const waiting = () => {
     const s = setup();
-    return project() && s && "ok" in s && s.ok.state === "ok" ? s.ok.skills.filter((k) => k.project === "waiting").length : 0;
+    return project() && s && "ok" in s && s.ok.state === "ok" ? waitingSkills(s.ok.skills) : [];
   };
+  /** What is being saved: one skill's name, or ALL for Approve All; null when nothing is. */
+  const ALL = "*"; // never a skill name: those are lowercase letters, digits and hyphens
   const [deciding, setDeciding] = createSignal<string | null>(null);
   /** Approve or Disallow a waiting skill for the project (the project's Skills card's store), then read again. */
-  const decide = (name: string, state: "approved" | "disallowed") => {
+  const decide = (name: string, state: "approved" | "disallowed") => save(name, { [name]: state }, name);
+  /** Approve All: every waiting skill in one save, then read again. */
+  const approveAll = () => {
+    const names = waiting();
+    if (names.length) save(ALL, approveAllChange(names), names.length === 1 ? names[0]! : `${names.length} skills`);
+  };
+  const save = (key: string, change: Record<string, "approved" | "disallowed">, what: string) => {
     const p = project();
     if (!p || deciding()) return;
     const mine = run;
-    setDeciding(name);
-    setProjectSkills(p.id, { [name]: state })
+    setDeciding(key);
+    setProjectSkills(p.id, change)
       .then(() => settle(fetchSessionSetup(path(), true)))
       .then((next) => {
         if (mine !== run || !next || !("ok" in next)) return;
         rev++;
         setSetup(next);
       })
-      .catch((err: Error) => toast(`Couldn't save ${name} for ${p.name}. ${err.message}`))
+      .catch((err: Error) => toast(`Couldn't save ${what} for ${p.name}. ${err.message}`))
       .finally(() => setDeciding(null));
   };
 
@@ -231,22 +239,35 @@ export function SessionSetupCard(props: { path: string; editable?: boolean; tool
   return (
     <Show when={landed()}>
       <section class="setup-card" aria-label="Session setup">
-        <Show when={waitingNotice(waitingCount())}>
+        <Show when={waitingNotice(waiting().length)}>
           {(line) => (
-            <div class="setup-group setup-waiting" role="status">
-              <p class="setup-note">{line()}</p>
-              <Show when={!foldOpen()}>
+            <div class="setup-group setup-waiting">
+              <p class="setup-note" role="status">
+                {line()}
+              </p>
+              <span class="setup-waiting-actions">
+                <Show when={!foldOpen()}>
+                  <button
+                    type="button"
+                    class="button button-sm button-ghost"
+                    onClick={() => {
+                      setSetupContextOpen(path(), true);
+                      setFoldOpen(true);
+                    }}
+                  >
+                    Review Skills
+                  </button>
+                </Show>
                 <button
                   type="button"
-                  class="button button-sm button-ghost"
-                  onClick={() => {
-                    setSetupContextOpen(path(), true);
-                    setFoldOpen(true);
-                  }}
+                  class="button button-sm button-primary"
+                  aria-disabled={deciding() ? "true" : undefined}
+                  aria-busy={deciding() === ALL ? "true" : undefined}
+                  onClick={approveAll}
                 >
-                  Review Skills
+                  {APPROVE_ALL}
                 </button>
-              </Show>
+              </span>
             </div>
           )}
         </Show>

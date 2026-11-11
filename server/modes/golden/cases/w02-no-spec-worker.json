@@ -148,7 +148,7 @@
        "content": [
         {
          "type": "text",
-         "text": "@a0ae35850782b000"
+         "text": "@0579e6935218b320"
         }
        ],
        "details": {
@@ -240,7 +240,7 @@
    "flags": {},
    "appendSystemPrompt": null,
    "env": {
-    "SOVA_SHARED_DIR": "<home>/.local/state/sova/shared/<sid:1>",
+    "SOVA_SHARED_DIR": "<shared>/<sid:1>",
     "PI_SUBAGENT_BUILTIN_TOOLS": "read,bash,edit,write"
    },
    "agentDir": null,

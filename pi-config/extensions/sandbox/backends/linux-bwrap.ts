@@ -101,7 +101,9 @@ export function mountPlan(policy: Policy): { ops: Op[]; ensureDirs: string[] } {
 	const shadows = set.shadowed.filter((sh) => !underHidden(sh.path) && !hidden.includes(sh.path));
 	// A shadow's source is created private on first use; its host path must exist to be a mount
 	// point, so a missing one (~/.m2 on a machine without Maven) is created empty, as the tool would.
+	// A private tool state (`ifPresent`) is never created on the host: absent there, it gets no copy.
 	for (const sh of shadows) {
+		if (sh.ifPresent && kindOf(sh.path) !== "dir") continue;
 		try {
 			mkdirSync(sh.source, { recursive: true, mode: 0o700 });
 			if (kindOf(sh.path) === "missing" && kindOf(dirname(sh.path)) === "dir") mkdirSync(sh.path);

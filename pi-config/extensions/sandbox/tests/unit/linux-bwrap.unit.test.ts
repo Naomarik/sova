@@ -331,6 +331,28 @@ test("mountPlan: deeper paths land later; pins only between the nearest writable
 	}
 });
 
+test("mountPlan: a missing cache's host folder is made as its tool would; a missing private tool state's never is, and gets no copy", () => {
+	const base = realpathSync(mkdtempSync(join(tmpdir(), "sbx-plan-")));
+	try {
+		const home = join(base, "home");
+		mkdirSync(join(home, ".local", "state"), { recursive: true }); // the parents exist, the tools' folders don't
+		const m2 = join(home, ".m2");
+		const mise = join(home, ".local", "state", "mise");
+		const pnpm = join(home, ".local", "state", "pnpm");
+		mkdirSync(pnpm);
+		const sh = (path: string, ifPresent?: true) => ({ path, source: join(base, "shadow", path.slice(home.length + 1).replaceAll("/", "_")), ...(ifPresent ? { ifPresent } : {}) });
+		const { ops } = mountPlan(makePolicy(join(base, "ws"), base, { shadowed: [sh(m2), sh(mise, true), sh(pnpm, true)] }));
+		assert.equal(existsSync(m2), true, "a cache's mount point is made");
+		assert.equal(existsSync(mise), false, "the host never gets a mise state folder it lacked");
+		assert.equal(existsSync(sh(mise).source), false, "nor does the sandbox keep a copy of it");
+		const bound = ops.filter((o) => o.op === "bind").map((o) => o.path);
+		assert.ok(!bound.includes(mise), JSON.stringify(ops));
+		assert.ok(bound.includes(pnpm), "a present one is copied as before");
+	} finally {
+		rmSync(base, { recursive: true, force: true });
+	}
+});
+
 test("network proxy: the allowlist decides, direct egress is impossible (no live host can fail this)", { skip: skip || (!HAVE_SOCAT && "no socat") }, async (t) => {
 	const ws = scratch(t, "sbx-ws-");
 	const sockDir = scratch(t, "sbx-sock-");

@@ -138,7 +138,10 @@ private copy for every confined session, On and write-only alike, whatever the p
 Linux `~/.local/state/mise`, `~/.local/state/pnpm`, `~/.local/share/pnpm/store` and
 `~/.local/share/pnpm/package-manager-store`; macOS `~/.local/state/mise` (through `MISE_STATE_DIR`).
 A `writable` entry at or inside one (older templates listed `~/.local/state/mise`) is dropped, never
-failing closed; the file's own `writable` inside its own `shadowed` still does.
+failing closed; the file's own `writable` inside its own `shadowed` still does. Each is a shadow
+with `ifPresent`: unlike a cache's, a missing host path is never created as a mount point (bwrap's
+`mountPlan` skips it, so it gets no copy and stays absent; seatbelt never makes one), so a confined
+command can't add `~/.local/state/mise` or `pnpm` to a home that never had them.
 
 - **mise.** Before each command `seedShadow` links every host trust and ignore entry
   (`trusted-configs`, `ignored-configs`) into the copy and removes one it linked earlier that the

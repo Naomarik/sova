@@ -223,10 +223,12 @@ test("resolve: the platform's private tool state is shadowed On and write-only, 
 	const on = resolvePolicy({ agentDir, cwd: ws, tmpDir: join(ws, "t"), platform: "linux", home, shadowSource: src, defaults });
 	assert.ok(on.ok, on.ok ? "" : on.error);
 	assert.ok(!on.value.writable.some((w) => w === mise || w.startsWith(`${mise}/`)), "the writable entries are dropped");
-	for (const p of [mise, pnpm]) assert.deepEqual(on.value.shadowed.find((s) => s.path === p), { path: p, source: src(agentDir, p) });
+	// Private tool state is copied only while the host has it (ifPresent); a cache is copied whatever.
+	for (const p of [mise, pnpm]) assert.deepEqual(on.value.shadowed.find((s) => s.path === p), { path: p, source: src(agentDir, p), ifPresent: true });
+	assert.equal(on.value.shadowed.find((s) => s.path === join(home, ".cache"))?.ifPresent, undefined);
 	const wo = resolvePolicy({ agentDir, cwd: ws, tmpDir: join(ws, "t"), platform: "linux", home, shadowSource: src, defaults, parent: writeOnlyScope(ws) });
 	assert.ok(wo.ok);
-	assert.deepEqual(wo.value.shadowed.map((s) => s.path).sort(), [join(home, ".cache"), mise, pnpm].sort());
+	assert.deepEqual(wo.value.shadowed.map((s) => `${s.path}${s.ifPresent ? " ifPresent" : ""}`).sort(), [join(home, ".cache"), `${mise} ifPresent`, `${pnpm} ifPresent`].sort());
 	// The file's own writable entry inside its own shadow still fails closed.
 	writeFileSync(join(agentDir, "sandbox-policy", "linux", "policy.json"), JSON.stringify({ ...template(), writable: ["~/.npm/x"] }));
 	utimesSync(join(agentDir, "sandbox-policy", "linux", "policy.json"), new Date(), new Date(Date.now() + 9000));

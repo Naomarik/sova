@@ -65,6 +65,10 @@ export interface Policy {
 export interface Shadow {
 	path: string;
 	source: string;
+	/** A platform's private tool state (`PlatformDefaults.privateState`): copied only while its host
+	 * path exists. A backend that needs the host path as a mount point never creates a missing one
+	 * (that would add a folder to the user's home the tool never made); it stays as the host has it. */
+	ifPresent?: true;
 }
 
 export interface ConfineRequest {
@@ -355,7 +359,7 @@ function shadowsOf(policy: Policy): Shadow[] {
 		const path = canonicalizePath(s.path);
 		if (seen.has(path)) continue;
 		seen.add(path);
-		out.push({ path, source: canonicalizePath(s.source) });
+		out.push({ path, source: canonicalizePath(s.source), ...(s.ifPresent ? { ifPresent: true as const } : {}) });
 	}
 	return out;
 }

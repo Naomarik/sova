@@ -578,6 +578,7 @@ function resolveWriteOnly(input: ResolveInput, parent: ParentScope): Result<Reso
 	// than the shadow's, as the session cwd's is. Only the shadows that would hold a root are dropped.
 	const parentRoots = [...new Set(parent.writable.map(canonicalize))];
 	const shadowCanon = canon([...(d.shadowed ?? []), ...(d.privateState ?? [])]).filter((sh) => !parentRoots.some((r) => isWithin(r, sh)));
+	const privateSet = new Set(canon(d.privateState ?? []));
 	const sp = sharedPart(parent.shared, parent.note);
 	const writable = [tmpDir, ...parentRoots, ...sp.writable];
 	const outsideParent = !parentRoots.some((r) => isWithin(workspaceRoot, r));
@@ -604,7 +605,9 @@ function resolveWriteOnly(input: ResolveInput, parent: ParentScope): Result<Reso
 			policyDir: pDir,
 			agentDir,
 			tmpDir,
-			shadowed: input.shadowSource ? shadowCanon.map((p) => ({ path: p, source: canonicalize(input.shadowSource!(input.agentDir, p)) })) : [],
+			shadowed: input.shadowSource
+				? shadowCanon.map((p) => ({ path: p, source: canonicalize(input.shadowSource!(input.agentDir, p)), ...(privateSet.has(p) ? { ifPresent: true as const } : {}) }))
+				: [],
 			notices: [],
 			writeOnly: true,
 			browser: parent.browser === true,
@@ -707,7 +710,7 @@ export function resolvePolicy(input: ResolveInput): Result<ResolvedPolicy> {
 					: input.shadowSource
 						? [...new Set([...canon(policy.shadowed), ...privateCanon])]
 								.filter((p) => !readDenialIn(hiddenFinal, p))
-								.map((p) => ({ path: p, source: canonicalize(input.shadowSource!(input.agentDir, p)) }))
+								.map((p) => ({ path: p, source: canonicalize(input.shadowSource!(input.agentDir, p)), ...(privateCanon.includes(p) && !canon(policy.shadowed).includes(p) ? { ifPresent: true as const } : {}) }))
 						: [],
 			notices,
 			...(sp.writable.length ? { shared: sp.writable[0] } : {}),

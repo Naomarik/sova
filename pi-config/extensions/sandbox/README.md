@@ -150,8 +150,11 @@ failing closed; the file's own `writable` inside its own `shadowed` still does.
   by every sandboxed session, as the caches are, so a config one confined session trusts is trusted
   in every other one (never on the host).
 - **pnpm.** Its store, its own package-manager downloads and its state live in the copies, so an
-  install works in a worker (the first one downloads cold). Global installs
-  (`~/.local/share/pnpm/global`) stay read-only.
+  install works in a worker. Global installs (`~/.local/share/pnpm/global`) stay read-only.
+  Known limit: the store copy is a separate mount from the worktree, and link(2) across mounts
+  fails (EXDEV), so pnpm treats it as another drive and installs into a project-local store
+  (`node_modules/.pnpm-store`, gitignored): each worktree downloads cold, and the store copy
+  itself mostly goes unused (the package-manager store and the state copy still matter).
 - **Cleanup.** These copies are tool caches for the cache cleanup (`toolCacheDays`, removed after
   the scratch entries).
 - **Paths.** The default locations only: a host that moves mise's or pnpm's state elsewhere

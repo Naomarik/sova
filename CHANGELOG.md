@@ -4,6 +4,46 @@ What changed in each Sova release, newest first: the highlights, written by hand
 list. The install command installs the newest release (the `stable` tag); `SOVA_REF=vX.Y.Z` installs
 or keeps one release. How a release is cut: [CONTRIBUTING.md](CONTRIBUTING.md#releases).
 
+## v0.15.0 — 2026-11-11
+
+Skills and context files you decide on per project, a Context tab that shows which skills a chat and
+its workers actually read, and a merge queue that keeps every finished entry. 53 commits since
+v0.14.0. The highlights:
+
+- **A project's Skills and Context Files.** The project page's Settings tab has two new cards,
+  **Context Files** and **Skills**, listing everything a chat in the project (its folders and its
+  worktrees included) could load. **Disallow** keeps one out of new chats; open chats keep what they
+  have. A folder that is no project has the same lists, from a new chat's setup card (**Edit Folder
+  List**), and so does the Overseer's folder.
+- **Ask first, if you want it.** Settings → General has one new switch, **Allow context files and
+  skills without asking**, on by default, so nothing changes until you turn it off. Off, anything you
+  haven't approved stays off: a new chat lists what waits ("{n} to approve for this project"), with
+  **Approve All**, **Disallow All** and a button per row, and holds Send until you decide. A skill or
+  file that changes after you approved it is marked **Changed since you approved**. Each chat's list
+  is fixed at its first message, and its workers get the same one. Turning the switch back on is your
+  own page's click only.
+- **Which skills were read.** The Context tab's Whose context has a new **Everyone** view: every
+  skill this chat and all of its workers opened over the whole history, most opened first, with a
+  sheet per skill naming the chats that opened it, and the skills offered that nobody opened.
+- **Merge queue history.** Every finished entry is now kept for good in a per-project history on
+  this computer, so `merge.status` and `merge.logs` still find an old entry after it leaves the
+  view. Each run's copy of the branch's drafts is deleted when the run ends.
+- **Quieter, faster.** Repeated identical timeline markers fold into one row ("coordinator finished
+  ×31" with its time range). The session list is built once and kept until something in it changes;
+  the session feed is serialized once for every window; chats untouched for 30 days let go of their
+  scan memory; refreshing a project page no longer adds "Git was checked" history lines when nothing
+  changed.
+- **Smaller changes.** A group's pane menu says **Archive** where it said Eliminate.
+
+**What you may need to do:** Nothing for most installs: with the new switch on (the default), every
+context file and skill loads as before unless you disallow it. To be asked first, turn **Allow
+context files and skills without asking** off in Settings → General.
+
+Going back to `v0.14.0` (`SOVA_REF=v0.14.0`) hasn't been tested on this release. v0.14.0 doesn't know
+the approval list or the switch, so every context file and skill loads again, disallowed ones and
+chats started in asking mode included; the decisions stay in their files and return if you update
+again. The merge queue history stays on disk, unread.
+
 ## v0.14.0 — 2026-11-10
 
 Lookbooks, Discard Branch, `!` commands in your own zsh, and a Claude model list that keeps itself

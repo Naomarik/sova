@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { Git } from "./guard";
-import { SETTLED_CHECKED, settledFacts } from "./settled";
+import { SETTLED_CHECKED, settledFacts, sweepSettled } from "./settled";
 import type { QueueFile } from "./store";
 
 // §app.merge-queue/view
@@ -47,4 +47,33 @@ test("superseded entries skip git, and only the newest few are checked", async (
   assert.ok(!calls.some((c) => c.includes("refs/heads/feat/same")), "the superseded entry asks git nothing");
   assert.equal(facts.size, SETTLED_CHECKED, "only the newest are checked (each reads gone: no branch)");
   assert.ok(facts.has(`mq_${10 + SETTLED_CHECKED + 9}`) && !facts.has("mq_10"));
+});
+
+test("the sweep asks git about every sent-back entry, a bounded batch a pass, round again: never with-chat or superseded ones", async () => {
+  const many = Array.from({ length: SETTLED_CHECKED + 15 }, (_, i) => fix(100 + i, { worktree: "/here" }));
+  const old = fix(1, { branch: "feat/same" });
+  const later = fix(2, { branch: "feat/same", state: "landed" });
+  const chat = fix(3, { state: "with-chat" });
+  const branches = Object.fromEntries(many.filter((_, i) => i % 2).map((e) => [e.branch, `t${e.id}`]));
+  const { git, calls } = stubGit({ branches, inTarget: [] });
+  const entries = [old, later, chat, ...many];
+  const seen = new Set<string>();
+  let after: string | null = null;
+  let passes = 0;
+  const gone = new Set<string>();
+  do {
+    const r = await sweepSettled(git, "/r", "head", entries, { after, max: 30, exists: (p) => p === "/here" });
+    assert.ok(r.checked.length <= 30, "bounded");
+    for (const id of r.checked) seen.add(id);
+    for (const [id, f] of r.facts) if (f === "gone") gone.add(id);
+    after = r.next;
+    passes++;
+  } while (after && passes < 10);
+  assert.equal(seen.size, many.length, "every sent-back entry reached, the old ones past the view's window included");
+  assert.equal(passes, Math.ceil(many.length / 30));
+  assert.deepEqual([...gone].sort(), many.filter((_, i) => i % 2 === 0).map((e) => e.id).sort(), "branch gone: gone; branch here: current");
+  assert.ok(!seen.has("mq_1") && !seen.has("mq_3"), "superseded and with-chat skipped");
+  assert.ok(!calls.some((c) => c.includes("refs/heads/feat/same")));
+  const wrap = await sweepSettled(git, "/r", "head", entries, { after: many.at(-1)!.id, max: 5, exists: () => true });
+  assert.equal(wrap.checked[0], many[0]!.id, "after the last: round again from the first");
 });

@@ -314,6 +314,17 @@ that each worktree's copy is approved on its own; what a server costs in tokens 
 trim it; workers and profiles; and what the sandbox and remote chats change. It says a server stays
 on its computer, and that chats don't ask before a tool runs.
 
+## §site.docs/context-files-and-skills — Context files and skills (`/docs/context-files-and-skills/`)
+
+In Features, after MCP servers: what a chat loads from its folders, context files and skills; the
+default, where everything loads but what you disallow on the project's Context Files and Skills
+cards, and that only new chats change; a skill known by its place, not its name; the Sova-wide
+switch that asks first, with Waiting items off, a new chat's notice and held Send, Changed since you
+approved, and Re-approve; each chat's list fixed at its first message and shared with its workers,
+and the transcript line for an item found later; chats no one watches never wait; who may decide,
+only your own click approving; a folder that isn't a project and the Overseer's folder; and the
+Context tab's Everyone view of the skills a chat and its workers opened.
+
 ## §site.docs/themes — Themes (`/docs/themes/`)
 
 Settings → Themes, in Features: Light, Dark or Auto, and Auto following the system setting at once;

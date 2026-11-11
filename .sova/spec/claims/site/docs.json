@@ -148,6 +148,34 @@
       "site/src/styles/tokens.css"
     ]
   },
+  "§site.docs/context-files-and-skills": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "unreviewed",
+    "code": [
+      "site/src/content/docs/context-files-and-skills.md",
+      "site/src/data/docs.ts"
+    ],
+    "requires": [
+      "§chat/context-approval",
+      "§chat.context-approval/setting",
+      "§chat.context-approval/modes",
+      "§chat.context-approval/who",
+      "§chat.context-approval/list",
+      "§chat.context-approval/fingerprint",
+      "§chat.context-approval/context-card",
+      "§chat.context-approval/folders",
+      "§chat.context-approval/held-send",
+      "§chat.context-approval/unwatched",
+      "§chat.context-approval/live",
+      "§chat.context-approval/mid-chat",
+      "§chat.context-approval/fixed",
+      "§chat.skill-sources/project-defaults",
+      "§chat.skill-sources/project-new-chats",
+      "§app.subagents-pane/context-tab",
+      "§app.subagents-pane/context-tab-skills-read"
+    ]
+  },
   "§site.docs/create": {
     "kind": "behavior",
     "requires": [

@@ -304,4 +304,22 @@ test("a skill only one of the project's worktrees has: the setup lists it waitin
   const next = await cm.acquireChat(sessionFile(wt));
   assert.doesNotMatch(piSession(next).systemPrompt, /<name>wt-skill<\/name>/);
   assert.equal(cm.heldChat(first) !== undefined && piSession(cm.heldChat(first)!).systemPrompt.includes("<name>wt-skill</name>"), false, "the open new chat was rebuilt too");
+
+  // A scan that couldn't see every checkout drops nothing: git failing, then a checkout's loader failing.
+  const { projectSkillsView } = await import("./projects/skills");
+  const { projectSkillDecisions } = await import("./project-skills-store");
+  const partial = await projectSkillsView(p2.id, { checkouts: async () => ({ dirs: [realpathSync(repo)], complete: false }) });
+  assert.equal(partial.skills.some((s) => s.name === "wt-skill"), false, "it lists what it found");
+  assert.equal(projectSkillDecisions(p2.id)["wt-skill"], "disallowed", "kept when git couldn't list the worktrees");
+  const { folderResources } = await import("./harness/pi/resources");
+  await projectSkillsView(p2.id, { loader: async (cwd, agent) => (cwd === realpathSync(wt) ? Promise.reject(new Error("unreadable")) : folderResources(cwd, agent)) });
+  assert.equal(projectSkillDecisions(p2.id)["wt-skill"], "disallowed", "kept when the worktree's load failed");
+
+  // Once no checkout has it, it drops off the view and the store.
+  for (const path of [first]) await cm.disposeHeldChat(path, "test done");
+  await cm.disposeAllChats();
+  git(repo, "worktree", "remove", "--force", wt);
+  const gone = (await (await app.request(`/api/projects/${p2.id}/skills`, { headers: pageHeaders() })).json()) as ProjectSkillsView;
+  assert.equal(gone.skills.some((s) => s.name === "wt-skill"), false);
+  assert.equal(projectSkillDecisions(p2.id)["wt-skill"], undefined, "dropped from the store");
 });

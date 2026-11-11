@@ -1,3 +1,5 @@
+import { execFile } from "node:child_process";
+import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, relative, resolve, sep } from "node:path";
 import type { ProjectSkillRow, ProjectSkillState, ProjectSkillsView } from "../../shared/project-skills";
@@ -6,7 +8,6 @@ import { folderResources } from "../harness/pi/resources";
 import { piSkillsIn } from "../harness/pi/skill-sources";
 import { OrgError } from "../org-error";
 import { readStoredCwd } from "../git-summary";
-import { checkoutsOf } from "../mcp/places";
 import { real } from "../mcp/folder";
 import { folderMatcher } from "../project-folder";
 import { disallowedSkills, isSkillName, projectSkillDecisions, pruneSkillDecisions, readProjectSkillsStore, setSkillDecisions, type SkillDecision } from "../project-skills-store";
@@ -47,10 +48,36 @@ export function sourceOf(root: string, filePath: string, claudeDir: string = def
  * each checkout's own places and the folders inside it. A worktree-only skill is listed, can be decided
  * on, and its decision is kept while a checkout still has it.
  */
-export async function projectSkillsFound(root: string, deps: { loader?: typeof folderResources; checkouts?: (root: string) => Promise<string[]> } = {}): Promise<Found[]> {
+export interface SkillsScanDeps {
+  loader?: typeof folderResources;
+  /** The project's checkouts (default: `git worktree list`); `complete: false` when they couldn't all be told. */
+  checkouts?: (root: string) => Promise<{ dirs: string[]; complete: boolean }>;
+}
+
+/** The root and each git worktree of it, by real path; incomplete when git couldn't answer. */
+export function checkoutsOf(root: string): Promise<{ dirs: string[]; complete: boolean }> {
+  const main = real(root);
+  return new Promise((done) => {
+    execFile("git", ["-C", root, "worktree", "list", "--porcelain"], { timeout: 5_000 }, (err, stdout) => {
+      // Not a repository at all is a full answer (the root is the only checkout); any other failure is not.
+      if (err) return done({ dirs: [main], complete: !existsSync(join(root, ".git")) });
+      const all = stdout.split("\n").filter((l) => l.startsWith("worktree ")).map((l) => real(l.slice("worktree ".length)));
+      done({ dirs: [...new Set([main, ...all])].filter(existsSync), complete: true });
+    });
+  });
+}
+
+/**
+ * What projectSkillsFound found, and whether the scan saw every checkout whole: a checkout git
+ * couldn't list, a loader that failed or a walk that stopped at its cap makes it incomplete, and an
+ * incomplete scan never drops a decision (a name drops off only once no checkout has it).
+ */
+export async function projectSkillsScan(root: string, deps: SkillsScanDeps = {}): Promise<{ found: Found[]; complete: boolean }> {
   const out = new Map<string, Found>();
   const main = real(root);
-  const checkouts = await (deps.checkouts ?? checkoutsOf)(root).catch(() => [main]);
+  const listed = await (deps.checkouts ?? checkoutsOf)(root).catch(() => ({ dirs: [main], complete: false }));
+  let complete = listed.complete;
+  const checkouts = listed.dirs;
   for (const checkout of checkouts.includes(main) ? checkouts : [main, ...checkouts]) {
     const top = checkout === main ? root : checkout;
     // A worktree's own folders are named from the project's root ("../.worktrees/x/sub").
@@ -59,6 +86,7 @@ export async function projectSkillsFound(root: string, deps: { loader?: typeof f
     try {
       res = await (deps.loader ?? folderResources)(top, agentRoot());
     } catch {
+      complete = false;
       continue;
     }
     for (const s of res.skills) {
@@ -68,13 +96,20 @@ export async function projectSkillsFound(root: string, deps: { loader?: typeof f
       const folder = checkout !== main && source.kind !== "user" && within(top, s.filePath) ? from("") : undefined;
       out.set(s.name, { name: s.name, path: s.filePath, source: folder ? { ...source, folder } : source, ...(description ? { description } : {}) });
     }
-    for (const s of listSubfolderSkills(top, piSkillsIn).skills) {
+    const sub = listSubfolderSkills(top, piSkillsIn);
+    if (sub.incomplete) complete = false;
+    for (const s of sub.skills) {
       if (out.has(s.name)) continue;
       const description = s.description?.trim();
       out.set(s.name, { name: s.name, path: s.filePath, source: { kind: "subfolder", folder: checkout === main ? s.dir : (from(s.dir) ?? s.dir) }, ...(description ? { description } : {}) });
     }
   }
-  return [...out.values()].sort((a, b) => a.name.localeCompare(b.name));
+  return { found: [...out.values()].sort((a, b) => a.name.localeCompare(b.name)), complete };
+}
+
+/** Every skill a chat in the project could be offered (projectSkillsScan's list alone). */
+export async function projectSkillsFound(root: string, deps: SkillsScanDeps = {}): Promise<Found[]> {
+  return (await projectSkillsScan(root, deps)).found;
 }
 
 /** Rows and counts from what was found and the project's decisions. Pure. */
@@ -89,10 +124,10 @@ export function skillsView(found: readonly Found[], decisions: Record<string, Sk
 }
 
 /** GET /api/projects/:pid/skills: the card's rows. A decision on a name no longer found drops off the store. */
-export async function projectSkillsView(pid: string): Promise<ProjectSkillsView> {
+export async function projectSkillsView(pid: string, deps: SkillsScanDeps = {}): Promise<ProjectSkillsView> {
   const p = readProject(pid);
-  const found = await projectSkillsFound(p.root);
-  pruneSkillDecisions(p.id, new Set(found.map((f) => f.name)));
+  const { found, complete } = await projectSkillsScan(p.root, deps);
+  if (complete) pruneSkillDecisions(p.id, new Set(found.map((f) => f.name)));
   return skillsView(found, projectSkillDecisions(p.id));
 }
 
@@ -112,15 +147,16 @@ export function parseSkillChanges(body: unknown): Record<string, SkillDecision |
 }
 
 /** PUT /api/projects/:pid/skills: save the changes at once (names not found now are refused), then the fresh view. */
-export async function setProjectSkills(pid: string, body: unknown): Promise<ProjectSkillsView> {
+export async function setProjectSkills(pid: string, body: unknown, deps: SkillsScanDeps = {}): Promise<ProjectSkillsView> {
   const changes = parseSkillChanges(body);
   const p = readProject(pid);
-  const found = await projectSkillsFound(p.root);
+  const { found, complete } = await projectSkillsScan(p.root, deps);
   const names = new Set(found.map((f) => f.name));
-  const unknown = Object.keys(changes).filter((n) => !names.has(n) && changes[n] !== "waiting");
+  // A partial scan can't tell a name is offered nowhere: it is saved rather than refused.
+  const unknown = complete ? Object.keys(changes).filter((n) => !names.has(n) && changes[n] !== "waiting") : [];
   if (unknown.length) throw new OrgError(`No skill named ${unknown.map((n) => `"${n}"`).join(", ")} is offered in this project.`, 404);
   setSkillDecisions(p.id, changes);
-  pruneSkillDecisions(p.id, names);
+  if (complete) pruneSkillDecisions(p.id, names);
   return skillsView(found, projectSkillDecisions(p.id));
 }
 

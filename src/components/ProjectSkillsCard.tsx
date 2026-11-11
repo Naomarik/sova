@@ -2,7 +2,7 @@ import { createSignal, For, type JSX, Show } from "solid-js";
 import type { ApprovalRow, ApprovalSource, ApprovalState } from "../../shared/approvals";
 import type { ProjectSkillRow } from "../../shared/project-skills";
 import { getProjectContextFiles, getProjectSkills, setProjectContextFiles, setProjectSkills } from "../lib/api";
-import { ACTION_DECISION, ACTION_WORD, CHANGED_LINE, rowActions, stateChip, stateWord, type Approval } from "../lib/approvals";
+import { ACTION_DECISION, ACTION_WORD, CHANGED_LINE, PARTIAL_FINGERPRINT_LINE, rowActions, stateChip, stateWord, type Approval } from "../lib/approvals";
 import { createPoll } from "../lib/poll";
 import { shortDescription } from "../lib/project-skills";
 import { toast } from "../lib/ui-state";
@@ -92,6 +92,9 @@ export function ApprovalsCard(props: {
                                 <span class="list-meta project-skill-changed">{CHANGED_LINE}</span>
                               </Show>
                               <Show when={shortDescription(r.description)}>{(t) => <span class="list-meta">{t()}</span>}</Show>
+                              <Show when={r.fingerprintPartial}>
+                                <span class="list-meta">{PARTIAL_FINGERPRINT_LINE}</span>
+                              </Show>
                             </div>
                             <span class={`chip ${stateChip(approvalOf(r), l().asking)}`}>
                               <i class="chip-dot" />

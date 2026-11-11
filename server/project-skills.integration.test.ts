@@ -6,7 +6,7 @@
 // list (a reopen included), the held first Send, items met mid-chat, workers, and the setup card's rows.
 // A throwaway PI_CODING_AGENT_DIR; ~/.pi is never read or written.
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -664,5 +664,80 @@ test("asking: a skill approved mid-chat in a folder whose other skill was alread
   } finally {
     rmSync(join(root, "pair"), { recursive: true, force: true });
     await asking(false);
+  }
+});
+
+test("asking: a held chat that hasn't reported its loadout yet is counted from its folder's rule, never as nothing waiting", async () => {
+  await decide({});
+  await decideContext({});
+  await asking(true);
+  const { waitingForSession } = await import("./session-setup");
+  try {
+    const path = sessionFile();
+    const chat = await cm.acquireChat(path);
+    const before = await waitingForSession(path);
+    assert.ok(before > 0, `waiting once loaded (${before})`);
+    // As a chat's mirror reads before its build has said how it was built.
+    const was = chat.loadoutState;
+    chat.loadoutState = null;
+    try {
+      assert.equal((await import("./chat-handle")).chatHandle(path)?.mirror.loadout, null);
+      const early = await waitingForSession(path);
+      assert.ok(early > 0, `counted from the folder's rule, not as none (${early})`);
+    } finally {
+      chat.loadoutState = was;
+    }
+  } finally {
+    await asking(false);
+  }
+});
+
+test("the setup card's Changed mark reads a skill's whole folder, as the folder's card does; no fingerprint, a large or unreadable folder, and a linked SKILL.md", async () => {
+  await decideContext({});
+  await decide({ "keep-skill": "approved", "block-skill": "approved" });
+  const { updateApprovalStore, projectFolderKey } = await import("./project-skills-store");
+  const script = join(root, ".agents", "skills", "keep-skill", "run.sh");
+  const dangling = join(root, ".agents", "skills", "late-skill", "gone");
+  const linked = join(root, ".agents", "skills", "link-skill");
+  const target = join(tmp, "elsewhere", "SKILL.md");
+  const rows = async () => {
+    clearSetupCache();
+    const path = sessionFile();
+    await cm.acquireChat(path);
+    const s = (await getSessionSetup(path, { fresh: true })) as Extract<Awaited<ReturnType<typeof getSessionSetup>>, { state: "ok" }>;
+    assert.equal(s.state, "ok");
+    return { path, row: (name: string) => s.skills.find((k) => k.name === name)?.approval };
+  };
+  try {
+    let r = await rows();
+    assert.equal(r.row("keep-skill")?.state, "approved");
+    assert.equal(r.row("keep-skill")?.changed, undefined, "an unedited approved skill isn't Changed");
+    // A script beside its SKILL.md edited (here: added): the folder changed.
+    writeFileSync(script, "echo hi\n");
+    r = await rows();
+    assert.equal(r.row("keep-skill")?.changed, true, "an edited script reads Changed");
+    // An approval with no fingerprint matches nothing.
+    const blockKey = r.row("block-skill")!.key;
+    updateApprovalStore((s) => void (s.folders[projectFolderKey(pid)]!.skills[blockKey] = { state: "approved" }));
+    r = await rows();
+    assert.equal(r.row("block-skill")?.changed, true, "a hashless approval reads Changed");
+    // A part that can't be followed: checked by its listing, said so.
+    symlinkSync(join(tmp, "no-such-file"), dangling);
+    r = await rows();
+    assert.equal(r.row("late-skill")?.fingerprintPartial, true);
+    assert.equal(r.row("keep-skill")?.fingerprintPartial, undefined);
+    // A linked SKILL.md is keyed where it sits: Approve from the chat finds it there.
+    mkdirSync(dirname(target), { recursive: true });
+    writeFileSync(target, "---\nname: link-skill\ndescription: Linked.\n---\n\nbody\n");
+    mkdirSync(linked, { recursive: true });
+    symlinkSync(target, join(linked, "SKILL.md"));
+    const res = await app.request("/api/sessions/approval", { method: "POST", headers: { "content-type": "application/json", ...pageHeaders() }, body: JSON.stringify({ path: r.path, kind: "skill", item: join(linked, "SKILL.md"), state: "disallowed" }) });
+    assert.equal(res.status, 200, await res.clone().text());
+    assert.equal(((await res.json()) as { key: string }).key, ".agents/skills/link-skill/SKILL.md");
+  } finally {
+    rmSync(script, { force: true });
+    rmSync(dangling, { force: true });
+    rmSync(linked, { recursive: true, force: true });
+    await decide({});
   }
 });

@@ -36,9 +36,9 @@ export async function approveInChat(sessionPath: string, body: unknown, by: Sett
   const cwd = await readStoredCwd(sessionPath).catch(() => null);
   if (!cwd) throw new OrgError("This session file has no header to read its folder from.", 409);
   const approvals = await import("./approvals");
-  const { real } = await import("./mcp/folder");
   const lookup = await approvals.approvalLookupForCwd(cwd);
-  const key = approvals.itemKey(lookup, real(item));
+  // Keyed where it sits (a linked SKILL.md or CLAUDE.md by its own place, never its target), as the folder's list is.
+  const key = approvals.itemKey(lookup, approvals.placePath(item));
   const changes = { context: kind === "context" ? { [key]: state } : {}, skills: kind === "skill" ? { [key]: state } : {} };
   // A project's goes through its settings' one save, so its history line is written too.
   if (lookup.folder.kind === "project" && lookup.folder.projectId) await (await import("./project-settings")).setProjectApprovalStates(lookup.folder.projectId, changes, by);

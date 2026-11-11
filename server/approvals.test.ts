@@ -6,7 +6,7 @@
 // the one write and what it drops, and the Sova-wide setting.
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { after, beforeEach, describe, test } from "node:test";
@@ -194,6 +194,102 @@ describe("a folder's lists", () => {
     assert.equal(row().changed, undefined);
   });
 
+  test("a skill's fingerprint is its whole folder: an edited script or an added file marks it changed; a symlink is its target, never followed", async () => {
+    const w = world("folder-fp");
+    const sk = join(w.repo, ".agents", "skills", "tidy");
+    put(join(sk, "scripts", "run.sh"), "echo one\n");
+    const f = A.folderForCwd(w.repo);
+    const key = ".agents/skills/tidy/SKILL.md";
+    await A.writeFolderApprovals(f, { context: {}, skills: { [key]: "approved" } }, w.deps);
+    const row = async () => (await A.folderApprovalsView(f, w.deps)).skills.find((s) => s.key === key)!;
+    assert.equal((await row()).changed, undefined);
+    writeFileSync(join(sk, "scripts", "run.sh"), "echo two\n");
+    assert.equal((await row()).changed, true, "an edited script");
+    await A.writeFolderApprovals(f, { context: {}, skills: { [key]: "approved" } }, w.deps);
+    assert.equal((await row()).changed, undefined, "Re-approve takes the folder as it is");
+    put(join(sk, "notes.txt"), "new\n");
+    assert.equal((await row()).changed, true, "an added file");
+    await A.writeFolderApprovals(f, { context: {}, skills: { [key]: "approved" } }, w.deps);
+    // A link to a file: the file's content counts, read through the link.
+    put(join(base, "outside.txt"), "outside\n");
+    symlinkSync(join(base, "outside.txt"), join(sk, "out"));
+    assert.equal((await row()).changed, true, "an added link");
+    await A.writeFolderApprovals(f, { context: {}, skills: { [key]: "approved" } }, w.deps);
+    assert.equal((await row()).fingerprintPartial, undefined, "a file link is covered");
+    writeFileSync(join(base, "outside.txt"), "outside, edited\n");
+    assert.equal((await row()).changed, true, "editing a linked file's target marks the skill changed");
+    // An edit that keeps the size and puts the times back is still seen (ctime is the kernel's).
+    await A.writeFolderApprovals(f, { context: {}, skills: { [key]: "approved" } }, w.deps);
+    const script = join(sk, "scripts", "run.sh");
+    const { atime, mtime } = statSync(script);
+    writeFileSync(script, "echo six\n");
+    utimesSync(script, atime, mtime);
+    assert.equal((await row()).changed, true, "same size, times reset");
+  });
+
+  test("a SKILL.md that is a link: its target's text is the skill's; a link to a folder or a dangling one marks the row partial", async () => {
+    const w = world("linked-skill");
+    const shared = join(base, "shared-skill.md");
+    put(shared, "---\nname: shared\ndescription: Shared.\n---\nOne.\n");
+    mkdirSync(join(w.repo, ".agents", "skills", "shared"), { recursive: true });
+    symlinkSync(shared, join(w.repo, ".agents", "skills", "shared", "SKILL.md"));
+    const f = A.folderForCwd(w.repo);
+    const key = ".agents/skills/shared/SKILL.md";
+    await A.writeFolderApprovals(f, { context: {}, skills: { [key]: "approved" } }, w.deps);
+    const row = async () => (await A.folderApprovalsView(f, w.deps)).skills.find((s) => s.key === key)!;
+    assert.deepEqual([(await row()).changed, (await row()).fingerprintPartial], [undefined, undefined]);
+    writeFileSync(shared, "---\nname: shared\ndescription: Shared.\n---\nTwo: rewritten.\n");
+    assert.equal((await row()).changed, true, "the linked SKILL.md's text changed");
+    mkdirSync(join(base, "elsewhere"), { recursive: true });
+    symlinkSync(join(base, "elsewhere"), join(w.repo, ".agents", "skills", "shared", "lib"));
+    assert.equal((await row()).fingerprintPartial, true, "a link to a folder can't be covered");
+    rmSync(join(w.repo, ".agents", "skills", "shared", "lib"));
+    symlinkSync(join(base, "nowhere"), join(w.repo, ".agents", "skills", "shared", "gone"));
+    assert.equal((await row()).fingerprintPartial, true, "a dangling link can't be covered");
+  });
+
+  test("an unchanged rescan reads no file; past the cap the fingerprint is the listing, marked partial", async () => {
+    const FP = await import("./skill-fingerprint");
+    const w = world("fp-cache");
+    const skillFile = join(w.repo, ".agents", "skills", "tidy", "SKILL.md");
+    put(join(dirname(skillFile), "a.txt"), "a\n");
+    FP.forgetFingerprintsForTest();
+    const first = FP.skillFolderFingerprint(skillFile);
+    const reads = FP.fingerprintIo.reads;
+    assert.deepEqual(FP.skillFolderFingerprint(skillFile), first);
+    assert.equal(FP.fingerprintIo.reads, reads, "nothing read the second time");
+    writeFileSync(join(dirname(skillFile), "a.txt"), "a, edited\n");
+    assert.notEqual(FP.skillFolderFingerprint(skillFile).sha256, first.sha256);
+    assert.equal(FP.fingerprintIo.reads, reads + 1, "only the changed file read");
+    // Past the cap: a listing fingerprint, partial, and it reads no contents.
+    const before = FP.fingerprintIo.reads;
+    const big = FP.skillFolderFingerprint(skillFile, { maxFiles: 1 });
+    assert.equal(big.partial, true);
+    assert.equal(FP.fingerprintIo.reads, before);
+    assert.equal(FP.skillFolderFingerprint(skillFile, { maxBytes: 4 }).partial, true);
+    put(join(dirname(skillFile), "b.txt"), "b\n");
+    assert.notEqual(FP.skillFolderFingerprint(skillFile, { maxFiles: 1 }).sha256, big.sha256, "an added file moves the listing too");
+    assert.equal(FP.skillFolderFingerprint(skillFile).partial, undefined, "under the cap: whole");
+    if (process.getuid?.() !== 0) {
+      mkdirSync(join(dirname(skillFile), "locked"), { recursive: true });
+      chmodSync(join(dirname(skillFile), "locked"), 0o000);
+      try {
+        assert.equal(FP.skillFolderFingerprint(skillFile).partial, true, "an unreadable folder isn't covered");
+      } finally {
+        chmodSync(join(dirname(skillFile), "locked"), 0o755);
+        rmSync(join(dirname(skillFile), "locked"), { recursive: true, force: true });
+      }
+    }
+    // The real cap, on the wire: a skill folder past FINGERPRINT_MAX_FILES files is marked on its row.
+    const huge = join(w.repo, ".agents", "skills", "huge");
+    skill(join(w.repo, ".agents", "skills"), "huge");
+    mkdirSync(join(huge, "data"), { recursive: true });
+    for (let i = 0; i < FP.FINGERPRINT_MAX_FILES; i++) writeFileSync(join(huge, "data", `${i}.txt`), "x");
+    const v = await A.folderApprovalsView(A.folderForCwd(w.repo), w.deps);
+    assert.equal(v.skills.find((x) => x.name === "huge")?.fingerprintPartial, true);
+    assert.equal(v.skills.find((x) => x.name === "tidy" && x.key.startsWith(".agents"))?.fingerprintPartial, undefined);
+  });
+
   test("the main checkout and its worktree share one decision; a file only the worktree has is listed and decided too", async () => {
     const w = world("trees");
     const wt = join(w.above, "wt");
@@ -302,11 +398,29 @@ test("the All settings row: waiting counts only while asking; changed ones are n
   assert.equal(skillsRowState(c(3, 0, 0, 1)), "1 changed");
 });
 
-test("the Sova-wide setting: on unless the file says false, kept on this computer", () => {
-  assert.equal(setting.allowWithoutAsking(), true);
+test("the Sova-wide setting: no file is the default (allow); a file that can't be read or understood keeps asking on", () => {
+  assert.equal(setting.allowWithoutAsking(), true, "missing file: the default");
+  assert.equal(setting.askingFirst(), false);
   setting.setAllowWithoutAsking(false);
-  assert.equal(setting.allowWithoutAsking(), false);
   assert.equal(setting.askingFirst(), true);
-  writeFileSync(setting.contextApprovalPath(), "garbage");
-  assert.equal(setting.allowWithoutAsking(), true);
+  setting.setAllowWithoutAsking(true);
+  assert.equal(setting.askingFirst(), false);
+  const warn = console.warn;
+  const warnings: string[] = [];
+  console.warn = (...a: unknown[]) => void warnings.push(a.join(" "));
+  try {
+    for (const bad of ["{", "garbage", "null", "[]", "{}", '{"allowWithoutAsking":"yes"}']) {
+      writeFileSync(setting.contextApprovalPath(), bad);
+      assert.equal(setting.askingFirst(), true, bad);
+    }
+    // Unreadable, not missing: a folder where the file should be.
+    rmSync(setting.contextApprovalPath(), { force: true });
+    mkdirSync(setting.contextApprovalPath());
+    assert.equal(setting.askingFirst(), true, "unreadable");
+    rmSync(setting.contextApprovalPath(), { recursive: true, force: true });
+  } finally {
+    console.warn = warn;
+  }
+  assert.ok(warnings.some((w) => /not JSON/.test(w)) && warnings.some((w) => /unreadable/.test(w)), warnings.join("\n"));
+  assert.equal(setting.askingFirst(), false, "removed again: the default");
 });

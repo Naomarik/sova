@@ -150,3 +150,44 @@ test("asking first: a page's first message into a new chat in its own process is
     await notifySetupChanged(null);
   }
 });
+
+test("asking first: a page's first message sent before the chat has opened is held too", async () => {
+  const { setAllowWithoutAsking } = await import("./context-approval-setting");
+  const { notifySetupChanged } = await import("./projects/skills-chats");
+  const { pageHeaders } = await import("./testing/page");
+  setAllowWithoutAsking(false);
+  await notifySetupChanged(null);
+  try {
+    const folder = join(tmp, "adhoc-early");
+    mkdirSync(join(folder, ".agents", "skills", "early-skill"), { recursive: true });
+    writeFileSync(join(folder, ".agents", "skills", "early-skill", "SKILL.md"), "---\nname: early-skill\ndescription: Waits.\n---\n\nbody\n");
+    const path = newSession(folder);
+    const page = new WebSocket(`ws://${host}/ws/chat?path=${encodeURIComponent(path)}&force=1`, { headers: pageHeaders() });
+    sockets.push(page);
+    const frames: Record<string, unknown>[] = [];
+    page.on("message", (d) => void frames.push(JSON.parse(String(d)) as Record<string, unknown>));
+    // Sent the moment the socket opens: the chat's process is still starting (send-while-starting).
+    await new Promise<void>((done, fail) => {
+      page.once("open", () => {
+        page.send(JSON.stringify({ type: "prompt", text: "early", clientId: "e1" }));
+        done();
+      });
+      page.once("error", fail);
+    });
+    const refused = await new Promise<Record<string, unknown>>((done, fail) => {
+      const t = setTimeout(() => fail(new Error(`no refusal: ${JSON.stringify(frames.map((f) => f.type))}`)), 60_000);
+      const look = () => {
+        const f = frames.find((x) => x.type === "error" && x.clientId === "e1");
+        if (f) {
+          clearTimeout(t);
+          done(f);
+        } else setTimeout(look, 20);
+      };
+      look();
+    });
+    assert.equal(refused.decide, "first", JSON.stringify(refused));
+  } finally {
+    setAllowWithoutAsking(true);
+    await notifySetupChanged(null);
+  }
+});

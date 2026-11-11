@@ -86,6 +86,9 @@ export const ACTION_DECISION: Record<keyof typeof ACTION_WORD, Decision> = { app
 export const CHANGED_LINE = "Changed since you approved";
 export const WAITING_LINE = "Waiting for your decision · off until you approve it";
 export const ABOVE_PROJECT = "Above the project";
+/** A skill whose folder can't be fully fingerprinted (very large, or holding links or files Sova can't read):
+    changes there are caught from the listing only. A quiet note, not a warning. */
+export const PARTIAL_FINGERPRINT_LINE = "Not fully checked for changes: the folder is very large, or holds links or files Sova can't read.";
 
 export const APPROVE_ALL = "Approve All";
 export const DISALLOW_ALL = "Disallow All";

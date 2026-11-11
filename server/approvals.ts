@@ -7,6 +7,7 @@ import type { ProjectSkillRow } from "../shared/project-skills";
 import { defaultClaudeDir } from "../pi-config/extensions/claude-code/accounts.ts";
 import { checkoutOf, fileSha256, groupOf, itemKey, type ApprovalLookup, type FolderRef } from "./approvals-lookup";
 import { askingFirst } from "./context-approval-setting";
+import { skillFolderFingerprint, type Fingerprint } from "./skill-fingerprint";
 import { listSubfolderInstructions } from "./deeper-context";
 import { folderResources } from "./harness/pi/resources";
 import { piSkillsIn } from "./harness/pi/skill-sources";
@@ -135,8 +136,10 @@ export interface ScanItem {
   group: ApprovalSource;
   folder?: string;
   description?: string;
-  /** Of the file's bytes now ("" unreadable). */
+  /** The item's fingerprint now ("" unreadable): a context file's bytes, a skill's whole folder (itemFingerprint). */
   sha256: string;
+  /** A skill folder too large to fingerprint fully: its fingerprint is of the listing. */
+  partial?: true;
 }
 
 export interface FolderScan {
@@ -154,6 +157,19 @@ const shaOf = (p: string): string => {
     return "";
   }
 };
+
+/** Where an item is: its folder's real path and its own name. A file that is a link (a SKILL.md shared from
+    elsewhere, a CLAUDE.md pointing at AGENTS.md) is keyed where it sits, never by what it points at. Pass this,
+    not a fully resolved path, to itemKey. */
+export function placePath(p: string): string {
+  return join(real(dirname(resolve(p))), basename(p));
+}
+
+/** An item's fingerprint now: a context file's sha256, a skill's whole folder (server/skill-fingerprint.ts). What an
+    approval stores and the "Changed since you approved" check compares; "" when unreadable. */
+export function itemFingerprint(kind: "context" | "skill", path: string): Fingerprint {
+  return kind === "skill" ? skillFolderFingerprint(path) : { sha256: shaOf(path) };
+}
 
 /** The places groupOf tells apart, for a checkout. */
 function placesFor(checkout: string) {
@@ -181,7 +197,7 @@ export async function folderQuickScan(where: string | FolderRef, deps: ScanDeps 
   const lookup = { checkouts };
   const out = new Map<string, ScanItem>();
   const add = (kind: ScanItem["kind"], abs: string, checkout: string, extra: { name?: string; description?: string; dir?: string } = {}) => {
-    const path = real(abs);
+    const path = placePath(abs);
     const key = itemKey(lookup, path);
     const id = `${kind}\0${key}`;
     if (out.has(id)) return;
@@ -192,7 +208,8 @@ export async function folderQuickScan(where: string | FolderRef, deps: ScanDeps 
     else if (group === "project" && holder !== main) folderName = posix(relative(main, holder));
     else if (group === "above") folderName = homeShort(dirname(path));
     const description = extra.description?.trim();
-    out.set(id, { kind, key, path, name: extra.name ?? basename(path), group, ...(folderName ? { folder: folderName } : {}), ...(description ? { description } : {}), sha256: shaOf(path) });
+    const fp = itemFingerprint(kind, path);
+    out.set(id, { kind, key, path, name: extra.name ?? basename(path), group, ...(folderName ? { folder: folderName } : {}), ...(description ? { description } : {}), sha256: fp.sha256, ...(fp.partial ? { partial: true as const } : {}) });
   };
   for (const checkout of checkouts) {
     const top = checkout === main ? main : checkout;
@@ -268,7 +285,7 @@ function rowOf(i: ScanItem, d: Decision | undefined, counts: ApprovalCounts): Ap
   const changed = state === "approved" && d?.sha256 !== i.sha256;
   counts[state]++;
   if (changed) counts.changed++;
-  return { key: i.key, path: i.path, name: i.name, source: i.folder ? { kind: i.group, folder: i.folder } : { kind: i.group }, state, ...(changed ? { changed: true as const } : {}) };
+  return { key: i.key, path: i.path, name: i.name, source: i.folder ? { kind: i.group, folder: i.folder } : { kind: i.group }, state, ...(changed ? { changed: true as const } : {}), ...(i.partial ? { fingerprintPartial: true as const } : {}) };
 }
 
 const byPlace = (a: ApprovalRow, b: ApprovalRow) => {

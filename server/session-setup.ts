@@ -110,7 +110,8 @@ export interface SessionSwitches {
     doesn't honour the entry). */
 async function sessionSwitches(sessionPath: string): Promise<SessionSwitches> {
   const chat = chatHandle(sessionPath);
-  if (chat) return { off: chat.mirror.loadout?.off ?? null, toggleable: chat.mirror.loadout?.toggleable ?? false };
+  // A held chat that hasn't reported its loadout yet: its file and the folder's rule, as for a chat nobody holds.
+  if (chat?.mirror.loadout) return { off: chat.mirror.loadout?.off ?? null, toggleable: chat.mirror.loadout?.toggleable ?? false };
   try {
     assertNotLive(sessionPath);
     const branch = await readBranch(sessionPath);
@@ -175,23 +176,35 @@ async function ruleFor(cwd: string): Promise<FolderRule | null> {
   }
 }
 
-/** One row's decision in the folder's list, by its file. */
+/** One row's decision in the folder's list, by its file: keyed where it sits (placePath) and checked against its
+    fingerprint (a skill's whole folder) as the folder's own scan and card are, so the two never disagree. An approval
+    with no fingerprint, or a file that can't be read now, reads Changed. */
 function approvalOf(a: SetupApprovals, kind: "context" | "skill", path: string, places: { checkout: string | null }): SetupApproval {
   const m = approvalsSync!;
-  const realPath = m.real(path);
-  const key = m.itemKey(a.lookup, realPath);
+  const place = m.placePath(path);
+  const key = m.itemKey(a.lookup, place);
   const d = (kind === "context" ? a.lookup.context : a.lookup.skills)[key];
   const state = d?.state ?? "waiting";
   let changed = false;
-  if (state === "approved" && d?.sha256) {
+  let partial = false;
+  if (state === "approved") {
+    let fp: { sha256: string; partial?: true };
     try {
-      changed = m.fileSha256(readFileSync(path)) !== d.sha256;
+      fp = m.itemFingerprint(kind, place);
     } catch {
-      changed = false;
+      fp = { sha256: "" };
+    }
+    partial = !!fp.partial;
+    changed = !fp.sha256 || m.itemChanged(a.lookup, kind, place, fp.sha256);
+  } else if (kind === "skill") {
+    try {
+      partial = !!m.itemFingerprint(kind, place).partial;
+    } catch {
+      partial = false;
     }
   }
-  const group = m.groupOf(kind, realPath, m.placesFor(places.checkout));
-  return { key, state, group, ...(changed ? { changed: true as const } : {}) };
+  const group = m.groupOf(kind, place, m.placesFor(places.checkout));
+  return { key, state, group, ...(changed ? { changed: true as const } : {}), ...(partial ? { fingerprintPartial: true as const } : {}) };
 }
 /** The pure helpers approvalOf reads, loaded once with the module. */
 let approvalsSync: (typeof import("./approvals") & { real: (p: string) => string; placesFor: (checkout: string | null) => import("./approvals").GroupPlaces }) | null = null;
@@ -242,10 +255,11 @@ export function withApprovals(setup: Loaded, a: SetupApprovals | null, sw: Sessi
 }
 
 /** How many context files and skills a session's first message waits on: none once a message is sent, for a
-    special chat, or without asking first; else its setup read's waiting rows, read fresh. */
+    special chat, or without asking first; else its setup read's waiting rows, read fresh. A chat that hasn't
+    reported its loadout yet is read from its folder's rule (a pristine chat's setup asks the folder), never as none. */
 export async function waitingForSession(sessionPath: string, deps: SetupDeps = {}): Promise<number> {
   const chat = chatHandle(sessionPath);
-  if (chat && (!chat.mirror.pristine || chat.mirror.special || !chat.mirror.loadout)) return 0;
+  if (chat && (!chat.mirror.pristine || chat.mirror.special)) return 0;
   return waitingOf(await getSessionSetup(sessionPath, { fresh: true }, deps));
 }
 

@@ -41,8 +41,13 @@ export interface ApprovalRow {
   /** `folder`: relative to the project's root (a subfolder's, or a worktree's own). */
   source: { kind: ApprovalSource; folder?: string };
   state: ApprovalState;
-  /** Approved, but the file no longer matches what was approved: still on, marked "Changed since you approved". */
+  /** Approved, but the file no longer matches what was approved: still on, marked "Changed since you approved".
+      A skill's fingerprint covers its whole folder, so an edited or added file beside its SKILL.md counts. */
   changed?: true;
+  /** A skill folder not fully fingerprinted: too large (past about 2000 files or 20 MB: its fingerprint is of the
+      listing, paths, sizes and times), or a part of it can't be covered (a link to a folder, a dangling link, an
+      unreadable folder or file). */
+  fingerprintPartial?: true;
 }
 
 export type ContextFileRow = ApprovalRow;
@@ -86,4 +91,6 @@ export interface SetupApproval {
   group: ApprovalSource;
   /** Approved, but changed since: still on. */
   changed?: true;
+  /** A skill folder not fully fingerprinted (ApprovalRow.fingerprintPartial). */
+  fingerprintPartial?: true;
 }

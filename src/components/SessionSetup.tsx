@@ -1,7 +1,7 @@
 import { createEffect, createMemo, createSignal, For, Match, on, onCleanup, Show, Switch, untrack } from "solid-js";
 import type { GitSummary, SessionSetup } from "../../shared/protocol";
 import { fetchSessionSetup, fetchSessionTools, fetchSetupFile, setFolderApprovals, setSessionLoadout } from "../lib/api";
-import { ABOVE_PROJECT, ACTION_DECISION, ACTION_WORD, APPROVE_ALL, approveNotice, CHANGED_LINE, decideAll, DISALLOW_ALL, itemsPhrase, REVIEW, rowActions, WAITING_LINE, type Decision } from "../lib/approvals";
+import { ABOVE_PROJECT, ACTION_DECISION, ACTION_WORD, APPROVE_ALL, approveNotice, CHANGED_LINE, PARTIAL_FINGERPRINT_LINE, decideAll, DISALLOW_ALL, itemsPhrase, REVIEW, rowActions, WAITING_LINE, type Decision } from "../lib/approvals";
 import { offWords, rowApproval, type Row } from "../lib/setup-approvals";
 import { askReread, rereadAsked, reviewAsked, setHold } from "../lib/approval-hold";
 import { FolderApprovalsDialog } from "./FolderApprovalsDialog";
@@ -274,6 +274,9 @@ export function SessionSetupCard(props: { path: string; editable?: boolean; tool
         </Show>
         <Show when={approvals() && a() === "waiting" && asking()}>
           <span class="setup-manual">{WAITING_LINE}</span>
+        </Show>
+        <Show when={approvals() && rp.r.f.approval?.fingerprintPartial}>
+          <span class="setup-manual">{PARTIAL_FINGERPRINT_LINE}</span>
         </Show>
         <Show when={acts().length}>
           <span class="setup-decide">

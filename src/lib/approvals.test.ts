@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { ACTION_DECISION, approveNotice, decideFirstLine, decideAll, holdLine, itemsPhrase, rowActions, stateWord, waitingOf, type Approval } from "./approvals";
+import { ACTION_DECISION, approveNotice, decideFirstLine, PARTIAL_FINGERPRINT_LINE, decideAll, holdLine, itemsPhrase, rowActions, stateWord, waitingOf, type Approval } from "./approvals";
 
 const ALL: Approval[] = ["approved", "disallowed", "waiting", "changed"];
 
@@ -51,4 +51,9 @@ test("Approve All and Disallow All set exactly the given keys, in one change", (
 test("a Start that waits says where its message is and how many decide it, in digits", () => {
   assert.equal(decideFirstLine(1), "Its message waits in the composer: decide 1 context file or skill to send it.");
   assert.equal(decideFirstLine(3), "Its message waits in the composer: decide 3 context files and skills to send it.");
+});
+
+test("a skill folder that can't be fully fingerprinted says so and why, never that a change goes unnoticed", () => {
+  assert.equal(PARTIAL_FINGERPRINT_LINE, "Not fully checked for changes: the folder is very large, or holds links or files Sova can't read.");
+  assert.ok(!/unnoticed|aren't noticed|missed/.test(PARTIAL_FINGERPRINT_LINE));
 });

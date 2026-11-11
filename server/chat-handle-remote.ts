@@ -394,10 +394,11 @@ export class RemoteChatHandle extends ChatHandle {
     });
   }
   /** Whether a page's message is a first send that must wait for the folder's decisions: the chat is ordinary,
-      before its first message, and was built asking first. A program's (notUser) never waits. */
+      before its first message, and was built asking first, or hasn't said yet how it was built (then the count, from
+      the folder's rule, decides: "not loaded yet" is never "nothing waiting"). A program's (notUser) never waits. */
   holdsFirst(client: Pick<ChatClient, "notUser" | "unwatched">, msg: ChatClientMessage): boolean {
     const m = this.mirror;
-    return msg.type === "prompt" && !client.notUser && !client.unwatched && !!this.hooks.waitingBeforeFirst && m.pristine && !m.special && !!m.loadout?.off?.asking;
+    return msg.type === "prompt" && !client.notUser && !client.unwatched && !!this.hooks.waitingBeforeFirst && !!m.pristine && !m.special && (!m.loadout || !!m.loadout.off?.asking);
   }
   clientMessage(client: ChatClient, msg: ChatClientMessage): void {
     if (this.holdsFirst(client, msg)) {

@@ -243,3 +243,34 @@ test("mirrorListedKey: a mirror differing only in its LLM count starts no new li
   assert.equal(mirrorListedKey({ ...base, llm: { tokens: { end: 2 } } }), a);
   assert.notEqual(mirrorListedKey({ ...base, busy: true, llm: { tokens: { end: 1 } } }), a);
 });
+
+test("a page's first send before the chat has reported its loadout waits on the folder's count; one built without asking goes at once", async () => {
+  const sendFirst = async (loadout: ChatRuntimeMirror["loadout"] | undefined, waiting: number) => {
+    const link = new FakeLink();
+    const path = sessionFile();
+    let asked = 0;
+    const h = new RemoteChatHandle(path, path, { unit: "u", pid: 1 }, link as never, mirror({ pristine: true, ...(loadout !== undefined ? { loadout } : { loadout: null }) }), 7, {
+      waitingBeforeFirst: async () => (asked++, waiting),
+    });
+    const heard: Record<string, unknown>[] = [];
+    const client = { send: (m: unknown) => void heard.push(m as Record<string, unknown>) };
+    h.attach(client as never);
+    h.clientMessage(client as never, { type: "prompt", text: "hi", clientId: "c1" } as never);
+    await tick(5);
+    const delivered = link.sent.filter((f) => f.t === "client.msg").length;
+    return { asked, delivered, refusal: heard.find((m) => m.type === "error") };
+  };
+  // Not loaded yet: the count is asked, never taken as none.
+  const early = await sendFirst(undefined, 1);
+  assert.equal(early.asked, 1);
+  assert.equal(early.delivered, 0, "nothing reached the chat");
+  assert.equal(early.refusal?.decide, "first");
+  assert.equal(early.refusal?.clientId, "c1");
+  // Not loaded yet with nothing waiting: it goes.
+  assert.deepEqual([(await sendFirst(undefined, 0)).delivered], [1]);
+  // Built asking first: held the same.
+  assert.equal((await sendFirst({ off: { v: 1, offContext: [], offSkills: [], asking: true } as never, toggleable: true }, 2)).refusal?.waiting, 2);
+  // Built without asking: never asked, it goes.
+  const open = await sendFirst({ off: null, toggleable: true }, 3);
+  assert.deepEqual([open.asked, open.delivered], [0, 1]);
+});

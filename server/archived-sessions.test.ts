@@ -1,7 +1,7 @@
-// Run: npx tsx --test server/archived-sessions.test.ts
+// Run: pnpm test server/archived-sessions.test.ts
 // Uses a throwaway PI_CODING_AGENT_DIR in the OS temp dir; ~/.pi is never read or written.
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
@@ -52,6 +52,26 @@ test("store: set and clear an id, atomically and merged with other writers", () 
   setArchived("b", false);
   setArchived("other", false);
   assert.deepEqual(onDisk(), []);
+});
+
+/** Waits for `f` to hold; the set re-checks the file's stat at most once a second. */
+async function until(f: () => boolean, what: string, ms = 5_000): Promise<void> {
+  const end = Date.now() + ms;
+  while (!f()) {
+    if (Date.now() > end) throw new Error(`timed out waiting for ${what}`);
+    await new Promise((r) => setTimeout(r, 25));
+  }
+}
+
+// Seen to fail on the earlier store, which loaded the set once at start and re-read it only in setArchived.
+test("store: a change another process makes to the file shows without a write of ours", async () => {
+  setArchived("mine", true);
+  // Written whole and renamed in, as another server writes it: one id added, ours removed.
+  writeFileSync(`${archiveFile}.x`, JSON.stringify(["theirs"]));
+  renameSync(`${archiveFile}.x`, archiveFile);
+  await until(() => isArchived("theirs") && !isArchived("mine"), "the outside change");
+  rmSync(archiveFile); // deleted: nothing is archived
+  await until(() => !isArchived("theirs"), "the file's removal");
 });
 
 test("store: a corrupt file counts as empty and is replaced on the next write", () => {

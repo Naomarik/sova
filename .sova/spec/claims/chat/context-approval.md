@@ -48,6 +48,45 @@ your decision before its first message.
 - **Both modes.** The per-chat switch on a new chat's setup card (§chat.transcript/setup-card-toggles)
   still turns an item on or off for that one chat, and never counts as deciding it.
 
+## §chat.context-approval/at-once — A decision shows at once, and comes back if it isn't saved
+
+- **Everywhere you decide.** Approve, Re-approve, Allow, Disallow, Approve All and Disallow All show
+  the new state at the click, before the save answers: on a new chat's setup card and its notice
+  (/held-send), the project page's Context Files and Skills cards (/context-card,
+  §chat.skill-sources/project-defaults), a folder's list dialog (/folders) and a chat's "wasn't
+  loaded" line (/mid-chat). The save runs behind it; the server's answer, or the next read of the
+  list, replaces what was shown.
+- **Every row stays clickable.** No button waits for another save: while saves run, any row can be
+  decided, and a newer click on the same row is the one it keeps. A folder's saves go out one at a
+  time in click order, whichever of these places made them; other folders' saves don't wait. Approve
+  All and Disallow All cover what is still waiting at the click, never a row already decided and
+  still saving.
+- **A save that is refused or fails** puts back only its own rows (the notice's count too), and
+  shows that place's failure message; other rows keep what was clicked.
+- **A save with no answer** fails the same way 90 s after its click: its rows go back, with the
+  failure message ending "It didn't answer in 90 s.", and a Send it held comes back. The folder's
+  later saves still wait for its real answer, so none lands out of order; one that timed out before
+  it went out is never sent. When the real answer comes after all, the place shows what the server
+  did: a new chat's setup card and a project's card read the list again, and a chat's line shows its
+  decision.
+- **Send waits for what you decided here.** On a new chat's setup card, in either mode, while any
+  decision made there has a save the server hasn't answered yet, Send is held and the composer line
+  says "Saving…" (when nothing else waits, /held-send, §chat.composer/disabled-states). Once the
+  server accepts the save, Send no longer waits for it, also when the read of the card after it
+  fails. The card's per-chat switches wait longer: until a read of the card started after the answer
+  has come back, since a switch sends the on and off set the card shows. If that read fails, it is
+  tried once more 1.5 s later; if that fails too, the rows keep showing the decision (the notice's
+  count too) and the switches stay waiting until the card's next read (the chat's rebuild and its
+  reconnect read it again, /live). A message is never sent and then refused for an unsaved decision.
+- **It loads nothing early.** What a chat loads, and whether its Send is held for Waiting items,
+  follow only what the server saved (/held-send); who may decide is unchanged (/who).
+- **The new chat screen stays put.** A decision on a new chat's setup card changes only its row and
+  the notice's count, in place: the page keeps its scroll position and every section stays open or
+  closed as it was, also when the card is read again after the save (/live). While the chat restarts
+  with the new list and reconnects, the screen keeps its controls (the model picker and the setup
+  card's decisions) until the chat says them again, and the view isn't sent back to the top, so the
+  page doesn't move.
+
 ## §chat.context-approval/who — Who may decide
 
 - **Open to every caller:** disallowing, and turning the Sova-wide switch off.
@@ -134,8 +173,8 @@ your decision before its first message.
   its state as a chip, and the buttons its mode gives it (/modes). Its line reads "New chats load these
   context files, except the ones you disallow. Open chats keep theirs.", or while asking "New chats
   load the context files you approve. Open chats keep theirs." With none found: "No context files
-  found. A chat here would load none." A click saves at once; a save that fails is a toast,
-  "Couldn't save {name}. {message}".
+  found. A chat here would load none." A click shows its new state at once and saves (/at-once); a
+  save that fails puts the row back and is a toast, "Couldn't save {name}. {message}".
 - **The routes.** `GET /api/projects/:pid/context-files` answers its rows, counts, the mode and whether
   the scan was complete. `PUT /api/projects/:pid/context-files {files: {<key>: "approved" | "disallowed"
   | "waiting"}}` saves the files given and answers the fresh view: refused 400 for a bad body, 404 for
@@ -152,8 +191,8 @@ your decision before its first message.
 - **From the chat.** A new chat's setup card ends its lists with where they are kept: "Kept for this
   project on this computer." with **Open Project Settings** (the project's Settings tab), or "Kept for
   this folder on this computer." with **Edit Folder List**, which opens the folder's list in a dialog:
-  its **Context Files** and **Skills**, the same rows and buttons as a project's cards. A decision there
-  reaches the folder's chats not yet started as a project's does.
+  its **Context Files** and **Skills**, the same rows and buttons as a project's cards, showing a
+  decision at once and putting it back if its save fails (/at-once). A decision there reaches the folder's chats not yet started as a project's does.
 - **The Overseer.** The global Overseer runs in a folder that is no project. With asking on, it
   follows that folder's list (what waits stays off, and it never waits for you, /unwatched), and its
   head has a button that says how many wait ("{n} to approve", else **Context Files and Skills**) and
@@ -172,13 +211,18 @@ your decision before its first message.
 - **The notice.** While any of them is Waiting, the setup card shows one notice counting context files
   and skills together, "{n} to approve for this project." ("… for this folder." outside a project),
   with **Review**, **Disallow All** and a primary **Approve All**, and each Waiting row says "Waiting
-  for your decision · off until you approve it" with its own **Approve** and **Disallow**. A save that
-  fails is a toast: "Couldn't save {what} for {folder}. {message}".
+  for your decision · off until you approve it" with its own **Approve** and **Disallow**. Each shows
+  its new state at once, the notice's count included, without moving the page (/at-once); a save that
+  fails puts it back and is a toast: "Couldn't save {what} for {folder}. {message}".
 - **Send is held.** You can type and the draft is kept, but Send is disabled, and one composer line
   says "Approve or disallow {n context files and m skills} to send." with **Review**, which opens the
   setup card's list (§chat.composer/disabled-states). Approve, Disallow, Approve All and Disallow All
   all count as deciding; the per-chat switch alone does not. Send comes back as soon as nothing waits,
   also when the decision is made in another tab or on the project page (/live).
+- **Saving.** When nothing waits but a decision made on this page has a save not yet answered, Send
+  stays held and the composer line says "Saving…" in place of the usual line (/at-once, which holds in the
+  default mode too). A save that fails brings its items and the usual line back. A message is never
+  sent and then refused for an unsaved decision.
 - **An early first send.** A first send that arrives before the chat has reported the list it was
   built with is judged from its folder's list: while anything waits it is held, never let through as
   if nothing waited.
@@ -220,9 +264,10 @@ chat is never touched.
   folder." ("The skill {name} wasn't loaded: …"), once per item.
 - **Approve and Disallow on the line.** **Approve** (the operator's own page only, /who) saves the
   approval in the folder's list and also adds the item to this chat's fixed list, so it loads at the
-  agent's next touch of that folder; the line then says "Approved. It loads at the agent's next step
-  here." **Disallow** saves for the folder; the line says "Disallowed. It stays out." A save that fails
-  is a toast, "Couldn't save {name}. {message}". `POST /api/sessions/approval {path, kind, item,
+  agent's next touch of that folder once the save is accepted; the line says "Approved. It loads at
+  the agent's next step here." **Disallow** saves for the folder; the line says "Disallowed. It stays
+  out." Each line shows at the click (/at-once); a save that fails puts the line back with its buttons
+  and is a toast, "Couldn't save {name}. {message}". `POST /api/sessions/approval {path, kind, item,
   state}` is the route (`session.approval.set`, Approve or Disallow in a Chat).
 
 ## §chat.context-approval/fixed — Each chat's list, fixed at its first message

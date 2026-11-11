@@ -82,8 +82,9 @@ it starts, kept on this computer in its approval list (§chat.context-approval/l
   inside it (§chat/subfolder-skills). A skill is one row per place, never per name alone, so a project
   skill named like one of yours is a row of its own; the main folder and its worktrees share a row for
   the same place. Each row has the skill's name, where it comes from, its state as a chip, and the
-  buttons its mode gives it (§chat.context-approval/modes). A click saves at once; a save that fails
-  is a toast, "Couldn't save {name}. {message}". With no skill found the card says "No skills found. A
+  buttons its mode gives it (§chat.context-approval/modes). A click shows its new state at once and
+  saves (§chat.context-approval/at-once); a save that fails puts the row back and is a toast,
+  "Couldn't save {name}. {message}". With no skill found the card says "No skills found. A
   chat here would load none." A peer's project (opened with `?host=`) shows no Skills card.
 - **The routes.** `GET /api/projects/:pid/skills` answers every row with its key and state, the
   counts, the mode and whether the scan was complete. `PUT /api/projects/:pid/skills {skills: {<skill
@@ -125,10 +126,13 @@ it starts, kept on this computer in its approval list (§chat.context-approval/l
   (§chat.context-approval/folders).
 - **In the asking mode.** A Waiting row starts off and says `Waiting for your decision · off until you
   approve it`, with its own **Approve** and **Disallow**, and the card's one notice and the held Send
-  ask for the decisions (§chat.context-approval/held-send). Each answer saves to the folder's list as
-  the cards' buttons do (/project-defaults), and the card is read again: an approved item is on, and a
-  disallowed one is off in this same chat as well, before its first message. While any of these saves
-  runs, the others wait.
+  ask for the decisions (§chat.context-approval/held-send). Each answer shows on its row at once and
+  saves to the folder's list as the cards' buttons do (/project-defaults), and the card is read again
+  in place, the page keeping its scroll position and open sections (§chat.context-approval/at-once):
+  an approved item is on, and a disallowed one is off in this same chat as well, before its first
+  message. Every row stays clickable while saves run: the folder's saves go out in click order, a
+  failure puts back only its own row, and Approve All and Disallow All cover what is still waiting
+  at the click (§chat.context-approval/at-once).
 - **Before the first message, flips stay flips.** A chat's own switches are kept as what it changed
   against its folder's decisions, so a decision made before its first message still reaches it, except
   for an item the chat switched itself. A switch never turns on a disallowed skill the card doesn't

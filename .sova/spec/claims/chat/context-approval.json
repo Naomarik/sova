@@ -1,4 +1,35 @@
 {
+  "§chat.context-approval/at-once": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "unreviewed",
+    "requires": [
+      "§chat.context-approval/modes",
+      "§chat.context-approval/who",
+      "§chat.context-approval/held-send",
+      "§chat.context-approval/live"
+    ],
+    "code": [
+      "src/lib/approval-overlay.ts",
+      "src/lib/approval-overlay.test.ts",
+      "src/lib/approval-hold.ts",
+      "src/lib/approvals.ts",
+      "src/lib/hello-steady.ts",
+      "src/lib/hello-steady.browser.test.ts",
+      "src/components/SessionSetup.tsx",
+      "src/components/ProjectSkillsCard.tsx",
+      "src/components/FolderApprovalsDialog.tsx",
+      "src/components/ApprovalPendingRow.tsx",
+      "src/components/ChatView.tsx",
+      "src/components/Thread.tsx",
+      "server/approval-jump-browser.integration.test.ts"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-11T16:05Z",
+      "source": "pi-session:ddb0e3b6-cee0-49d4-939d-916b8e8a54b1#d4f6b709"
+    }
+  },
   "§chat.context-approval/context-card": {
     "kind": "behavior",
     "authority": "accepted",
@@ -22,7 +53,12 @@
       "shared/commands/projects.ts",
       "shared/project-settings.ts",
       "shared/project-skills.ts"
-    ]
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-11T16:05Z",
+      "source": "pi-session:ddb0e3b6-cee0-49d4-939d-916b8e8a54b1#d4f6b709"
+    }
   },
   "§chat.context-approval/fingerprint": {
     "kind": "behavior",
@@ -94,8 +130,8 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-11T12:19Z",
-      "source": "pi-session:ddb0e3b6-cee0-49d4-939d-916b8e8a54b1#da7a624a"
+      "at": "2026-11-11T16:05Z",
+      "source": "pi-session:ddb0e3b6-cee0-49d4-939d-916b8e8a54b1#d4f6b709"
     }
   },
   "§chat.context-approval/held-send": {
@@ -138,7 +174,12 @@
       "server/project-skills.integration.test.ts",
       "server/chat-handle-remote.test.ts",
       "server/project-skills-processes.integration.test.ts"
-    ]
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-11T16:05Z",
+      "source": "pi-session:ddb0e3b6-cee0-49d4-939d-916b8e8a54b1#d4f6b709"
+    }
   },
   "§chat.context-approval/list": {
     "kind": "behavior",
@@ -215,7 +256,12 @@
       "shared/protocol.ts",
       "shared/wire-areas.json",
       "shared/commands/sessions.ts"
-    ]
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-11T16:05Z",
+      "source": "pi-session:ddb0e3b6-cee0-49d4-939d-916b8e8a54b1#d4f6b709"
+    }
   },
   "§chat.context-approval/modes": {
     "kind": "behavior",

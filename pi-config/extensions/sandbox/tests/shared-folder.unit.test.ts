@@ -6,7 +6,10 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { isWithin, narrowScope, parentScopeOf, parseParentScope, type PolicyFile, resolvePolicy, validatePolicyFile, writeDenial, writeOnlyScope } from "../policy.ts";
 import { resolveSessionPolicy, sessionSharedFolder } from "../session-policy.ts";
-import { chatSharedFolder, ensureSharedFolder, memberNoteDir, removeChatSharedFolder, SHARED_DIR_ENV, sharedFolderOf, sharedTeamsDir } from "../shared-folder.ts";
+import { chatSharedFolder, ensureSharedFolder, memberNoteDir, removeChatSharedFolder, SHARED_BASE_ENV, SHARED_DIR_ENV, sharedBase, sharedFolderOf, sharedTeamsDir } from "../shared-folder.ts";
+
+// A hermetic server's base (its chats inherit it) never reaches these assertions.
+delete process.env[SHARED_BASE_ENV];
 
 const TEMPLATE = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "sandbox-policy", "linux", "policy.json");
 const template = (): PolicyFile => {
@@ -40,6 +43,17 @@ test("the shared folder sits outside the agent dir and every repo, one per chat"
 	assert.equal(chatSharedFolder("../../x", w.home), join(w.home, ".local", "state", "sova", "shared", "x"), "a key never climbs out");
 	assert.throws(() => chatSharedFolder("..", w.home), /needs a session key/);
 	w.done();
+});
+
+test("a hermetic server's SOVA_SHARED_BASE holds its chats' folders instead of the home's", () => {
+	assert.equal(sharedBase("/h", { [SHARED_BASE_ENV]: "/wt/.cache/sova-shared" }), "/wt/.cache/sova-shared");
+	assert.equal(sharedBase("/h", { [SHARED_BASE_ENV]: "relative" }), "/h/.local/state/sova/shared", "only an absolute path");
+	process.env[SHARED_BASE_ENV] = "/wt/.cache/sova-shared";
+	try {
+		assert.equal(chatSharedFolder("c1", "/h"), "/wt/.cache/sova-shared/c1");
+	} finally {
+		delete process.env[SHARED_BASE_ENV];
+	}
 });
 
 test("b1: file tools may write <shared>/brief.md for an On chat, its On worker, a Subagents-only worker, and both narrowed to the branch", () => {

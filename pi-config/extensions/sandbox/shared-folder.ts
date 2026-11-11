@@ -3,7 +3,8 @@
  * (pi or Claude Code, any depth) and every team member can read and write. It holds briefs,
  * reports, alignment files and team handover notes.
  *
- * It lives under the user's state dir, `~/.local/state/sova/shared/<session key>`: outside the
+ * It lives under the user's state dir, `~/.local/state/sova/shared/<session key>` (a hermetic
+ * server's: `$SOVA_SHARED_BASE/<session key>`, see SHARED_BASE_ENV): outside the
  * agent dir (read-only to every confined agent, and the home of code Sova loads) and outside every
  * repository (nothing stray shows in a branch). Sova never loads code from it.
  *
@@ -18,7 +19,7 @@
  */
 import { mkdirSync, rmSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { isAbsolute, join } from "node:path";
 
 /** The environment variable a worker learns its chat's shared folder from. */
 export const SHARED_DIR_ENV = "SOVA_SHARED_DIR";
@@ -36,9 +37,17 @@ export function sessionDirKey(sessionId: string | undefined, fallback: string): 
 	return key || fallback;
 }
 
-/** The base every chat's shared folder lives in: `<home>/.local/state/sova/shared`. */
-export function sharedBase(home: string = homedir()): string {
-	return join(home, ".local", "state", "sova", "shared");
+/**
+ * Where a server's hermetic copy keeps its chats' folders instead (`pnpm run dev:hermetic` sets it to
+ * `<worktree>/.cache/sova-shared`), so its state never lands in the user's real home. Every chat and
+ * worker that server starts inherits it. Absolute paths only; anything else is ignored.
+ */
+export const SHARED_BASE_ENV = "SOVA_SHARED_BASE";
+
+/** The base every chat's shared folder lives in: `$SOVA_SHARED_BASE`, else `<home>/.local/state/sova/shared`. */
+export function sharedBase(home: string = homedir(), env: Record<string, string | undefined> = process.env): string {
+	const own = env[SHARED_BASE_ENV];
+	return own && isAbsolute(own) ? own : join(home, ".local", "state", "sova", "shared");
 }
 
 /** The shared folder of the chat whose session key (or id) is `sessionKey`. */

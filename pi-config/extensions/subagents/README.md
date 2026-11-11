@@ -805,7 +805,10 @@ is the usage pause's switch. The extension never writes the file.
   starts (any backend, any depth) and every team member read and write it. Every worker gets it as
   `SOVA_SHARED_DIR` (a worker's spawns inherit it: always the root chat's), a confined one also in its
   sandbox scope (`ParentScope.shared`); `agent_spawn` and `team_create` results name it. Sova never
-  loads code from it. Archiving (or deleting) the chat removes it.
+  loads code from it. Archiving (or deleting) the chat removes it. A hermetic server (`pnpm run dev:hermetic`)
+  keeps its chats' folders under `$SOVA_SHARED_BASE` (`<worktree>/.cache/sova-shared`), never the real home.
+  A team created before this layout keeps no old path (notes are placed by the layout at restore), but a
+  member already running still has the old agent-dir note path in its header until it is succeeded.
 - **Handovers.** Notes live in the shared folder,
   `<shared>/teams/<parent session id>/<team_id>/<role>/handover.md` (team IDs restart in every
   session, so the session id keeps two sessions' — or a worker's and its parent's — `team_01` apart;

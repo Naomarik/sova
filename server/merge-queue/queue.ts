@@ -35,7 +35,9 @@ import {
   type ReviewVerdict,
   type RunStep,
   type SentBackFor,
+  type MergeHistoryRow,
 } from "../../shared/merge-queue";
+import { historyWords } from "./history";
 import { HOOK_TIMEOUT_MAX, parseDefinition, type ProjectDef } from "../../shared/project-contract";
 import type { ChecksOf, EstimateRun, RunInput, RunMerge, RunOutcome, ThreadEvent, WakeThread } from "./contract";
 import { countBetween, type Git, isAncestor, ownCommitsPast, realGit, revParse, statusArgs, worktreesOf } from "./guard";
@@ -53,7 +55,7 @@ import { invalidOf, resolveTarget, setUpOf } from "./served";
 import { isFinal, newId, type QueueFile, QueueStore } from "./store";
 import { hasOrigin, publishGit, revertCommit, withdrawGit } from "./release-git";
 import type { MergeCheckDecl } from "../../shared/project-contract";
-import { settledFacts } from "./settled";
+import { settledFacts, sweepSettled } from "./settled";
 import { buildView, superseded } from "./view";
 import { type MergeQueueSettings, type MergeSettingsChange, type MergeSettingsSaveResult, SETTINGS_DIRTY_WORDS } from "../../shared/merge-queue-settings";
 import { effectiveModel, type ModelCheck, readModels } from "./models";
@@ -70,6 +72,7 @@ import { changeWords, editSettingsText, isEmptyChange, REVIEW_KIT_DIR, SettingsE
 import { PROJECT_PLAYBOOK } from "./thread";
 import { dropScratch, isScratchCopy, makeScratchCopy, pinResolution, scratchCopyPath, scratchMarkOf, sweepScratch } from "./scratch";
 import { commitResolution } from "./resolve-content";
+import { dropRunDrafts } from "./run-logs";
 import { isSetupChange, SETUP_UNREADABLE, setupChangeOf, trialReleaseChecks, untriedWhy } from "./setup-branch";
 
 /** Land's refusal of a worktree the merge queue made for itself (a conflict's scratch copy). */
@@ -388,6 +391,12 @@ export class ProjectQueue {
     this.q = this.store.read({ project: this.id, target });
     this.q.project = this.id;
     this.q.target = target;
+    // Once per project: the entries only runs/ remembers get partial history rows (history.ts).
+    try {
+      this.store.backfillHistory(this.q);
+    } catch (err) {
+      console.warn(`[merge-queue] history backfill for ${this.root} failed: ${err instanceof Error ? err.message : err}`);
+    }
     // Host landings recorded before their pins were kept: read now, while their entries are still here to read.
     for (const e of [...this.q.entries].filter((x) => x.state === "landed" && x.landed?.via === "host").sort((a, b) => a.landed!.at.localeCompare(b.landed!.at))) {
       if (!this.q.hostPins?.[e.branch]?.includes(e.commit)) this.keepHostPin(e.branch, e.commit);
@@ -420,7 +429,8 @@ export class ProjectQueue {
 
   save(): void {
     this.viewCache = null;
-    this.store.write(this.q);
+    const settled = this.settledCache || this.swept.size ? new Set(this.settled().keys()) : undefined;
+    this.store.write(this.q, { ...(settled ? { settled } : {}), now: this.iso() });
     this.schedulePublish();
     this.tidyScratch();
   }
@@ -521,12 +531,50 @@ export class ProjectQueue {
   entry(id: string): Entry | undefined {
     return this.q.entries.find((e) => e.id === id);
   }
+  /** An entry only the history holds (no longer in the working list): read-only. */
+  historyEntry(id: string): MergeHistoryRow | null {
+    if (!/^mq_[0-9a-z]+$/.test(id) || this.entry(id)) return null;
+    return this.store.historyRow(id);
+  }
+  /** Refuses an entry only the history holds: no verb changes a finished entry kept there. */
+  refuseHistory(id: string | undefined): void {
+    const h = id ? this.historyEntry(id) : null;
+    if (h) throw new MergeFailure("invalid-request", historyWords(h));
+  }
   queued(): Entry[] {
     return this.q.entries.filter((e) => e.state === "queued").sort((a, b) => a.seq - b.seq);
   }
   currentRun(): MergeRun | null {
     return this.current?.run ?? null;
   }
+  /** Sent-back entries git last said need no fix any more (settled.ts): the view's newest, read every 15 s, and every
+   *  other one the hourly sweep reached; empty before the first read. The one input history's trulyFinal reads, for the
+   *  queue's own trim (save) and the run-log sweep alike. */
+  settled(): ReadonlyMap<string, "merged" | "gone"> {
+    if (!this.swept.size) return this.settledCache?.facts ?? new Map();
+    return new Map([...this.swept, ...(this.settledCache?.facts ?? [])]);
+  }
+  /**
+   * The hourly sweep (run-logs.ts calls it): the view's facts afresh, then git asked about every sent-back entry, a
+   * bounded batch a pass (settled.ts sweepSettled). An entry it finds merged or gone is truly final: the save that
+   * follows files it in the history and trims it from the working list like any other. Never on the save path.
+   */
+  async refreshSettled(): Promise<void> {
+    const head = await this.targetHead();
+    if (!head) return;
+    await this.settledFacts(head);
+    const r = await sweepSettled(this.git, this.root, head, this.q.entries, { after: this.sweepAfter });
+    this.sweepAfter = r.next;
+    for (const id of r.checked) this.swept.delete(id);
+    for (const [id, f] of r.facts) this.swept.set(id, f);
+    // Forget entries no longer in the working list.
+    const here = new Set(this.q.entries.map((e) => e.id));
+    for (const id of [...this.swept.keys()]) if (!here.has(id)) this.swept.delete(id);
+    if (r.facts.size) await this.serial(async () => this.save());
+  }
+  /** What the hourly sweep found (refreshSettled), by entry id, and where its next pass starts. */
+  private swept = new Map<string, "merged" | "gone">();
+  private sweepAfter: string | null = null;
   isPaused(): boolean {
     return !!this.q.paused;
   }
@@ -3059,6 +3107,7 @@ export class ProjectQueue {
 
   private mustEntry(id: string): Entry {
     const e = this.entry(id);
+    if (!e) this.refuseHistory(id);
     if (!e) throw new MergeFailure("not-found", `no queue entry ${id}`);
     return e;
   }
@@ -3382,6 +3431,8 @@ export class ProjectQueue {
       } catch (err) {
         out = { verdict: "machine", why: `the run failed: ${err instanceof Error ? err.message : String(err)}`, notes: [], checks: run.checks };
       }
+      // The drafts copy is read only inside the run (its docs step); a later run of this entry copies them afresh.
+      if (draftsDir) dropRunDrafts(runDir);
       if (persistTimer) clearTimeout(persistTimer);
       await this.serial(() => this.finish(cur, out));
     })();
@@ -4694,6 +4745,8 @@ export class MergeQueues {
   /** Find the queue holding an entry or a run, among the loaded ones. */
   async findEntry(id: string): Promise<ProjectQueue | null> {
     for (const q of await this.loaded()) if (q.entry(id)) return q;
+    // Then each queue's history (read-only: every verb that changes an entry refuses one found there).
+    for (const q of await this.loaded()) if (q.historyEntry(id)) return q;
     return null;
   }
   /** The queue holding a request of a branch's chat (rq_…), by id. */

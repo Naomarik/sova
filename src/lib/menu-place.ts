@@ -134,7 +134,6 @@ export const MENU_NAMES: readonly string[] = [
   "Focus",
   "Promote",
   "Remove From Group",
-  "Eliminate",
   // a message's
   "Copy",
   "Copy as Plain Text",

@@ -18,7 +18,7 @@ import { SENT_BACK_LINE } from "./merge-queue";
 import { focusOnce, joinPlain, MESSAGE_MENU, menuStripOf, type PlainNode, plainReads, repliesByEntry, stripBlocks } from "./message-menu";
 import { MENU_NAMES, type MenuAct, type MenuDecl, type MenuScreen } from "./menu-place";
 import { notePeerProjects, notePeerSessions } from "./mesh";
-import { PANE_MENU, paneEliminate, type PaneMenuWiring } from "./pane-menu";
+import { PANE_MENU, paneArchive, type PaneMenuWiring } from "./pane-menu";
 import { renameValue, SESSION_MENU, sessionArchiveRow, type SessionMenuCtx } from "./session-menu";
 import { WORKTREE_MENU, worktreeMenuOffered } from "./worktree-menu";
 
@@ -167,7 +167,7 @@ const paneWiring = (calls: string[], over: Partial<PaneMenuWiring> = {}): PaneMe
   ...over,
 });
 
-test("the pane menu: three groups, membership by command, width, order and Eliminate local", () => {
+test("the pane menu: three groups, membership by command, width, order and Archive local", () => {
   const calls: string[] = [];
   const out = `cmd session.group.assign ${JSON.stringify({ session: P, group: null })}`;
   const pane = { path: P, summary: session(), w: paneWiring(calls) };
@@ -181,19 +181,19 @@ test("the pane menu: three groups, membership by command, width, order and Elimi
     ["This pane", "Focus", "", "local"],
     ["This session's membership", "Promote", "", out],
     ["This session's membership", "Remove From Group", "", out],
-    ["This session's membership", "Eliminate", "", "local"],
+    ["This session's membership", "Archive", "", "local"],
   ]);
   assert.deepEqual(request(find(PANE_MENU, pane, "Promote").act), { method: "POST", url: "/api/session-groups/assign", body: { path: P, groupId: null } });
-  // Stacked: no width or order; first and last say why; not started in Sova: no Eliminate; mid-turn: why not.
+  // Stacked: no width or order; first and last say why; not started in Sova: no Archive; mid-turn: why not.
   const rows = (w: Partial<PaneMenuWiring>, s = session()) => table(PANE_MENU, { path: P, summary: s, w: paneWiring([], w) });
   assert.deepEqual(rows({ split: () => false }).map((r) => r[1]).slice(1, 3), ["Open", "Focus"]);
   assert.equal(rows({ panes: () => [P, "/c"] })[4]![2], "It's already first.");
   assert.equal(rows({ panes: () => ["/a", P] })[5]![2], "It's already last.");
   assert.equal(rows({}, session({ origin: "external" } as Partial<SessionSummary>)).at(-1)![1], "Remove From Group");
-  assert.equal(rows({ running: () => true }).at(-1)![2], "It's mid-turn. Stop it or wait, then eliminate it.");
-  assert.deepEqual([paneEliminate(session({ live: true } as unknown as Partial<SessionSummary>), false), paneEliminate(session(), false)], ["This session is open in a terminal.", ""]);
+  assert.equal(rows({ running: () => true }).at(-1)![2], "It's mid-turn. Stop it or wait, then archive it.");
+  assert.deepEqual([paneArchive(session({ live: true } as unknown as Partial<SessionSummary>), false), paneArchive(session(), false)], ["This session is open in a terminal.", ""]);
   // Each row runs the workspace's own gesture on this pane; membership rows hand it the command's request.
-  for (const label of ["Wider", "Narrower", "Move Left", "Move Right", "Focus", "Eliminate"]) {
+  for (const label of ["Wider", "Narrower", "Move Left", "Move Right", "Focus", "Archive"]) {
     const a = find(PANE_MENU, pane, label).act;
     if ("local" in a) a.local();
   }

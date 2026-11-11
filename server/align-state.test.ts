@@ -1,7 +1,7 @@
 // Run: npx tsx --test server/align-state.test.ts
 // Uses a throwaway PI_CODING_AGENT_DIR in the OS temp dir; ~/.pi is never read or written.
 import assert from "node:assert/strict";
-import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, describe, test } from "node:test";
@@ -15,7 +15,8 @@ after(() => rmSync(agentDir, { recursive: true, force: true }));
 const { applyAlignCall } = await import("../pi-config/extensions/mode/align.ts");
 const { entryOf, normalizeEntries, normalizeEntry } = await import("./transcript");
 const { readAlignScan, sessionAlignOf } = await import("./align-state");
-const { getSessionSummary } = await import("./sessions-index");
+const { cachedAlignScan, getSessionSummary, listSessions, releaseOldScans } = await import("./sessions-index");
+const { OLD_SCAN_MS } = await import("./old-scans");
 const { canonicalPath } = await import("./paths");
 const { appendToClosedFile } = await import("./harness/pi/state");
 const { SESSION_SENT } = await import("./harness/state-kinds");
@@ -405,5 +406,59 @@ describe("adversarial review: the record rides the align row (§chat.alignment-r
     const bad = JSON.parse(JSON.stringify(started));
     bad.doc.review.plan.state = "maybe";
     assert.notEqual(normalizeEntry(result(bad, null))[0]?.kind, "align", "a malformed record fails the snapshot, like any field");
+  });
+});
+
+describe("a file untouched 30+ days: its align scan keeps the answer, not the stored lines", () => {
+  const line = (e: unknown) => `${JSON.stringify(e)}\n`;
+  const fresh = async (path: string) => readAlignScan(path, readFileSync(path).length, null);
+  const age = (path: string, ms: number) => {
+    const at = (Date.now() - ms) / 1000;
+    utimesSync(path, at, at);
+  };
+
+  test("aging in the cache drops the entries; the summary is the same before and after; grown, the next read equals a fresh full scan", async () => {
+    const a = result(created, "u1");
+    const path = session("old-aging", [a]);
+    const before = await getSessionSummary(path);
+    assert.ok(before?.align && cachedAlignScan(path)?.entries, "recent: an answer and its stored entries");
+    releaseOldScans();
+    assert.ok(cachedAlignScan(path)?.entries, "under 30 days: kept");
+    releaseOldScans(Date.now() + OLD_SCAN_MS);
+    assert.deepEqual(cachedAlignScan(path), { size: readFileSync(path).length, found: true, summary: before.align }, "the answer alone");
+    assert.deepEqual(await getSessionSummary(path), before, "the list's summary is unchanged");
+    appendFileSync(path, line(result(answered, a.id)));
+    const grown = await getSessionSummary(path);
+    const full = await fresh(path);
+    assert.deepEqual(grown?.align, full.summary, "the same answer as a never-dropped scan");
+    assert.notDeepEqual(grown?.align, before.align, "and the growth counted");
+    assert.deepEqual(cachedAlignScan(path)?.entries, full.entries, "recent again: the whole file's entries");
+  });
+
+  test("a file already old when read stores no entries, answers as a full scan does, and a later growth reads it whole", async () => {
+    const a = result(created, "u1");
+    const path = session("old-at-read", [a]);
+    age(path, OLD_SCAN_MS + 60_000);
+    const first = await getSessionSummary(path);
+    assert.deepEqual(first?.align, (await fresh(path)).summary);
+    assert.equal(cachedAlignScan(path)?.entries, undefined);
+    appendFileSync(path, line(result(second, a.id)));
+    const full = await fresh(path);
+    assert.deepEqual((await getSessionSummary(path))?.align, full.summary);
+    assert.deepEqual(cachedAlignScan(path)?.entries, full.entries);
+  });
+
+  test("a listing drops the entries of a cached file that has aged past 30 days, and only of that one", async () => {
+    const oldPath = session("old-listed", [result(created, "u1")]);
+    const newPath = session("new-listed", [result(created, "u1")]);
+    age(oldPath, OLD_SCAN_MS - 300);
+    await getSessionSummary(oldPath);
+    await getSessionSummary(newPath);
+    assert.ok(cachedAlignScan(oldPath)?.entries, "still under 30 days when read");
+    await new Promise((done) => setTimeout(done, 400));
+    const rows = await listSessions();
+    assert.equal(cachedAlignScan(oldPath)?.entries, undefined, "past 30 days at the listing: dropped");
+    assert.ok(cachedAlignScan(newPath)?.entries, "a recent file keeps them");
+    assert.deepEqual(rows.find((r) => r.path === oldPath)?.align, (await fresh(oldPath)).summary, "its row still shows the answer");
   });
 });

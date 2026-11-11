@@ -27,6 +27,7 @@ import { goneTreeState, type GoneState } from "./removed-worktrees";
 import { sessionRowChanged, sessionsChanged } from "./list-generation";
 import { opTrack } from "./stall-recorder";
 import { needsRestart } from "./restart-paths";
+import { isOldFile } from "./old-scans";
 
 /**
  * Merge readiness (§chat.worktrees/readiness): for each worktree a session tracks and owns, whether
@@ -1596,6 +1597,16 @@ export const readinessCovers = (s: SessionSummary): boolean => !excluded(s);
 export function treeReadinessOf(sessionPath: string, treePath: string): WorktreeReadiness | undefined {
   inspected(sessionPath);
   return cache.get(sessionPath)?.value?.trees.find((t) => t.path === treePath);
+}
+
+/** Old files (old-scans.ts) keep their scan as `{size, found}` and their facts: an unchanged file reuses
+    them (refresh), and a grown one, with no entries to carry on from, is read again from its start. */
+export function releaseOldReadinessScans(now: number = Date.now()): void {
+  for (const [k, c] of cache) {
+    if (!c.scan?.entries || c.file === "missing") continue;
+    const mtimeMs = (JSON.parse(c.file) as number[])[3];
+    if (typeof mtimeMs === "number" && isOldFile(mtimeMs, now)) cache.set(k, { ...c, scan: { size: c.scan.size, found: c.scan.found } });
+  }
 }
 
 /** An explicit look: the cached answer stands for this call, and one fresh read of every tree,

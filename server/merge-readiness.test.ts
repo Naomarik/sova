@@ -1671,3 +1671,55 @@ test("a failed check run in the session file carries what it named into the read
   const facts = r.factsOf(entries);
   assert.deepEqual(facts.lastCheck, { at: Date.parse("2026-11-05T10:01:00.000Z"), ok: false, what: "test run", failed: "1 failing file, server/x.test.ts" });
 });
+
+test("a file untouched 30+ days keeps its answer but not its stored lines; grown, it is read from the start once and answers as a full read does", async () => {
+  servedReset();
+  const fs = await import("node:fs");
+  const { OLD_SCAN_MS } = await import("./old-scans");
+  const lines = chain([worktrees([tracked()], "2026-09-29T15:36:00.000Z"), assistant([{ type: "text", text: EDCD_REPLY }], "stop", "2026-09-29T19:44:00.000Z")]);
+  const path = sessionFile(lines);
+  const oldAt = (Date.now() - OLD_SCAN_MS - 60_000) / 1000;
+  fs.utimesSync(path, oldAt, oldAt);
+  // A recent file beside it, the same bytes: its stored lines stay.
+  const recent = sessionFile(lines);
+  r.configureReadiness({ insights: { treeStatus: async () => readyStatus() }, asksUser: () => undefined });
+  const grow = (p: string, text: string) => {
+    const more = chain([user(text, "2026-11-01T10:00:00.000Z")]);
+    (more[0] as { parentId: string | null }).parentId = (lines.at(-1) as { id: string }).id;
+    writeFileSync(p, `${JSON.stringify(more[0])}\n`, { flag: "a" });
+  };
+  const read = async (p: string, over: Partial<SessionSummary> = {}) => {
+    r.readinessOverlay(summary(p, over));
+    await r.readinessIdle();
+    return r.readinessOverlay(summary(p, over));
+  };
+  try {
+    const before = await read(path);
+    assert.ok(before, "an answer to keep");
+    await read(recent);
+    r.releaseOldReadinessScans();
+    // The row moved, the file didn't: the stored answer stands, with no line read.
+    let work = r.readinessScanWork.lines;
+    assert.deepEqual(await read(path, { title: "moved" }), before, "the same answer after the drop");
+    assert.equal(r.readinessScanWork.lines - work, 0, "an unchanged file is not read");
+    // Grown: read again from the start, equal to a never-dropped full read of the grown bytes.
+    grow(path, "yes, merge");
+    work = r.readinessScanWork.lines;
+    const grown = await read(path);
+    assert.ok(r.readinessScanWork.lines - work > 1, "from the start");
+    const copy = sessionFile([]);
+    fs.copyFileSync(path, copy);
+    assert.deepEqual(grown, await read(copy), "a fresh full read of the grown file answers the same");
+    // Written now, it is recent again: the next growth reads the new line alone.
+    r.releaseOldReadinessScans();
+    grow(path, "and again");
+    work = r.readinessScanWork.lines;
+    await read(path);
+    assert.equal(r.readinessScanWork.lines - work, 1, "carried on");
+    // The recent file kept its lines through the drop.
+    grow(recent, "yes, merge");
+    work = r.readinessScanWork.lines;
+    await read(recent);
+    assert.equal(r.readinessScanWork.lines - work, 1, "under 30 days: carried on from its stored lines");
+  } finally { await r.readinessIdle(); servedReset(); }
+});

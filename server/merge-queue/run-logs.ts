@@ -3,8 +3,9 @@ import { join } from "node:path";
 import { promisify } from "node:util";
 import { gunzipSync, gzip } from "node:zlib";
 import { RUN_LOG_CLEANED_LINE, RUN_LOGS_KEEP_NEWEST, RUN_LOGS_PACK_AFTER_MS, type RunLogsCleaned, type RunLogsInfo } from "../../shared/merge-run-logs";
-import { ENTRY_FINAL, type MergeEntry, type MergeRun } from "../../shared/merge-queue";
-import type { QueueStore } from "./store";
+import { ENTRY_FINAL, type MergeRun } from "../../shared/merge-queue";
+import { trulyFinal } from "./history";
+import type { QueueFile, QueueStore } from "./store";
 
 /**
  * The merge queue's run folders over time, like logrotate: a finished run's logs are packed (gzip) a day after it
@@ -12,12 +13,16 @@ import type { QueueStore } from "./store";
  * finished runs, keeping every run's record.
  *
  *   <runDir>/logs/<step>.log            → <step>.log.gz        (each step log, and its `.out.json` counts file)
- *   <runDir>/drafts/                    → drafts.tar.gz        (the spec drafts snapshot the run carried, read only
- *                                                                while it ran: ~97% of a run folder's size)
  *   run.json, changed.txt, docs-landed.json stay as they are (small, and read after the run).
  *
- * A run in use (the queue's current run, one an entry in `checking` names, one an open or sent-back entry names,
- * or one whose record says `running` or has no end) is never touched. Each pack writes its result beside the original and renames it in
+ * The spec drafts copy a run carries (`<runDir>/drafts/`, ~97% of a run folder's size) is read only while the run
+ * runs: the queue deletes it as the run ends (dropRunDrafts), and a sweep deletes any left on disk (a stop mid-run, a
+ * folder from before) with the `drafts.tar.gz` older sweeps packed it into, whatever the run's age, once the run has
+ * ended and isn't checking, even when an open entry names it. A later run of the same entry copies the drafts afresh
+ * into its own folder.
+ *
+ * A run in use (the queue's current run, one an entry in `checking` names, one an open entry or a sent-back entry
+ * still waiting for its fix names (history.ts trulyFinal), or one whose record says `running` or has no end) is never touched. Each pack writes its result beside the original and renames it in
  * before the original goes, so a stop between the two leaves both, and the next sweep packs it again.
  */
 
@@ -25,12 +30,20 @@ import type { QueueStore } from "./store";
 export interface RunLogsQueue {
   readonly id: string;
   readonly store: QueueStore;
-  entries(): Pick<MergeEntry, "state" | "run" | "runs">[];
+  entries(): RunLogsEntry[];
   currentRun(): Pick<MergeRun, "id"> | null;
+  /** Sent-back entries git last said need no fix any more (merged, gone), by entry id; absent or empty: none known. */
+  settled?(): ReadonlyMap<string, "merged" | "gone">;
+  /** Read those facts afresh (a sweep calls it first). */
+  refreshSettled?(): Promise<void>;
 }
+export type RunLogsEntry = QueueFile["entries"][number];
 
 /** Written into a run folder once Clean Logs took its logs: its steps read RUN_LOG_CLEANED_LINE. */
 export const CLEANED_MARK = "logs-cleaned";
+/** The spec drafts copy a run carries while it runs (queue.ts startRun). */
+export const RUN_DRAFTS = "drafts";
+/** What sweeps before drafts were deleted packed that copy into: nothing reads it. */
 const DRAFTS_ARCHIVE = "drafts.tar.gz";
 /** What Clean Logs leaves of a run: its record and the small files read after it. */
 const KEPT_ON_CLEAN = new Set(["run.json", "changed.txt", "docs-landed.json", CLEANED_MARK]);
@@ -79,9 +92,9 @@ function diskBytes(path: string): number {
 
 const isPacked = (runDir: string): boolean => !needsPack(runDir);
 
-/** A run folder with anything left to pack: a step log not yet gzipped, or its drafts snapshot. */
+/** A run folder with anything left to pack: a step log not yet gzipped, or a drafts copy (or its old archive) to delete. */
 function needsPack(runDir: string): boolean {
-  if (existsSync(join(runDir, "drafts"))) return true;
+  if (hasDrafts(runDir)) return true;
   try {
     return readdirSync(join(runDir, "logs")).some((n) => !n.endsWith(".gz") && !n.endsWith(".tmp"));
   } catch {
@@ -89,16 +102,31 @@ function needsPack(runDir: string): boolean {
   }
 }
 
-/** The runs the queue still uses: the one checking now, and every run an open entry, or one sent back to fix (its
- *  chat reads the failure), names. */
+/**
+ * An entry whose runs the queue is done with: one in a final state, except a sent-back one still waiting for its
+ * chat's fix. That one is done once history's truly-final rule says so (superseded by a newer entry of its branch, or
+ * git says its commit is in the target) or git says its branch or worktree is gone.
+ */
+function doneWith(entries: readonly RunLogsEntry[], e: RunLogsEntry, settled: ReadonlyMap<string, "merged" | "gone"> | undefined): boolean {
+  if (!ENTRY_FINAL.includes(e.state)) return false;
+  if (e.state !== "needs-fix") return true;
+  return trulyFinal(entries, e, settled ? new Set(settled.keys()) : undefined);
+}
+
+const hasDrafts = (runDir: string): boolean => existsSync(join(runDir, RUN_DRAFTS)) || existsSync(join(runDir, DRAFTS_ARCHIVE));
+
+/** The runs the queue still uses: the one checking now, and every run an open entry, or one sent back to fix and still
+ *  waiting for it (its chat reads the failure), names. A sent-back entry done for good (superseded, merged, gone) doesn't. */
 function inUse(q: RunLogsQueue): { checking: Set<string>; open: Set<string> } {
   const checking = new Set<string>();
   const open = new Set<string>();
   const cur = q.currentRun()?.id;
   if (cur) checking.add(cur);
-  for (const e of q.entries()) {
+  const entries = q.entries();
+  const settled = q.settled?.();
+  for (const e of entries) {
     if (e.state === "checking" && e.run) checking.add(e.run);
-    if (!ENTRY_FINAL.includes(e.state) || e.state === "needs-fix") for (const r of [e.run, ...(e.runs ?? [])]) if (r) open.add(r);
+    if (!doneWith(entries, e, settled)) for (const r of [e.run, ...(e.runs ?? [])]) if (r) open.add(r);
   }
   return { checking, open };
 }
@@ -144,62 +172,6 @@ function removableBytes(runDir: string): number {
 
 // ---- packing ------------------------------------------------------------------------------------
 
-/** One ustar header block (POSIX tar): `name` relative, a directory's ending in "/". */
-function tarHeader(name: string, o: { size: number; mode: number; mtime: number; dir: boolean }): Buffer {
-  const h = Buffer.alloc(512);
-  let base = name;
-  let prefix = "";
-  if (Buffer.byteLength(name) > 100) {
-    // Split at a "/" so the name part fits 100 bytes and the prefix 155.
-    const body = name.endsWith("/") ? name.slice(0, -1) : name;
-    let cut = -1;
-    for (let i = body.lastIndexOf("/"); i > 0; i = body.lastIndexOf("/", i - 1)) {
-      if (Buffer.byteLength(name.slice(i + 1)) > 100) break;
-      if (Buffer.byteLength(name.slice(0, i)) <= 155) cut = i;
-    }
-    if (cut < 0) throw new Error(`a path too long to archive: ${name}`);
-    prefix = name.slice(0, cut);
-    base = name.slice(cut + 1);
-  }
-  const oct = (n: number, len: number) => `${n.toString(8).padStart(len - 1, "0")}\0`;
-  h.write(base, 0, 100, "utf8");
-  h.write(oct(o.mode & 0o7777, 8), 100, "ascii");
-  h.write(oct(0, 8), 108, "ascii");
-  h.write(oct(0, 8), 116, "ascii");
-  h.write(oct(o.size, 12), 124, "ascii");
-  h.write(oct(Math.floor(o.mtime / 1000), 12), 136, "ascii");
-  h.write("        ", 148, "ascii");
-  h.write(o.dir ? "5" : "0", 156, "ascii");
-  h.write("ustar\0", 257, "ascii");
-  h.write("00", 263, "ascii");
-  h.write(prefix, 345, 155, "utf8");
-  let sum = 0;
-  for (const x of h) sum += x;
-  h.write(`${sum.toString(8).padStart(6, "0")}\0 `, 148, "ascii");
-  return h;
-}
-
-/** `<root>/<top>` as a tar archive (directories and regular files; anything else is left out). */
-function tarOf(root: string, top: string): Buffer {
-  const parts: Buffer[] = [];
-  const walk = (rel: string) => {
-    const abs = join(root, rel);
-    const st = lstatSync(abs);
-    if (st.isDirectory()) {
-      parts.push(tarHeader(`${rel}/`, { size: 0, mode: st.mode, mtime: st.mtimeMs, dir: true }));
-      for (const n of readdirSync(abs).sort()) walk(`${rel}/${n}`);
-    } else if (st.isFile()) {
-      const body = readFileSync(abs);
-      parts.push(tarHeader(rel, { size: body.length, mode: st.mode, mtime: st.mtimeMs, dir: false }), body);
-      const pad = (512 - (body.length % 512)) % 512;
-      if (pad) parts.push(Buffer.alloc(pad));
-    }
-  };
-  walk(top);
-  parts.push(Buffer.alloc(1024));
-  return Buffer.concat(parts);
-}
-
 /** Gzip one file in place: `<f>.gz` written and renamed in, then `<f>` removed. */
 async function gzipFile(file: string): Promise<void> {
   const tmp = `${file}.gz.${process.pid}.tmp`;
@@ -208,7 +180,29 @@ async function gzipFile(file: string): Promise<void> {
   unlinkSync(file);
 }
 
-/** Pack one finished run's folder: its step logs gzipped, its drafts snapshot archived. Answers whether it changed. */
+/**
+ * A run's drafts copy deleted, with the archive older sweeps packed it into and any half-written one. Never throws:
+ * what it can't delete the next sweep does. Answers whether anything went.
+ */
+export function dropRunDrafts(runDir: string): boolean {
+  let changed = false;
+  let names: string[] = [];
+  try {
+    names = readdirSync(runDir);
+  } catch {
+    return false;
+  }
+  for (const n of names) {
+    if (n !== RUN_DRAFTS && n !== DRAFTS_ARCHIVE && !(n.startsWith(`${DRAFTS_ARCHIVE}.`) && n.endsWith(".tmp"))) continue;
+    try {
+      rmSync(join(runDir, n), { recursive: true, force: true });
+      changed = true;
+    } catch {}
+  }
+  return changed;
+}
+
+/** Pack one finished run's folder: its step logs gzipped, its drafts copy deleted. Answers whether it changed. */
 export async function packRun(runDir: string): Promise<boolean> {
   let changed = false;
   const logs = join(runDir, "logs");
@@ -228,40 +222,40 @@ export async function packRun(runDir: string): Promise<boolean> {
     await gzipFile(f);
     changed = true;
   }
-  for (const n of readdirSync(runDir)) if (n.startsWith(`${DRAFTS_ARCHIVE}.`) && n.endsWith(".tmp")) rmSync(join(runDir, n), { force: true });
-  const drafts = join(runDir, "drafts");
-  if (existsSync(drafts)) {
-    const tmp = join(runDir, `${DRAFTS_ARCHIVE}.${process.pid}.tmp`);
-    writeFileSync(tmp, await gzipAsync(tarOf(runDir, "drafts")), { mode: 0o600 });
-    renameSync(tmp, join(runDir, DRAFTS_ARCHIVE));
-    rmSync(drafts, { recursive: true, force: true });
-    changed = true;
-  }
+  if (dropRunDrafts(runDir)) changed = true;
   return changed;
 }
 
 /**
- * Pack every finished run of the queue that ended at least `afterMs` ago (default a day). Never a run in use
- * (checking, or named by an entry still open or sent back to fix).
- * Answers the runs packed; a run whose pack fails is reported and left for the next sweep.
+ * Pack every finished run of the queue that ended at least `afterMs` ago (default a day), and delete the drafts copy
+ * of every finished run, whatever its age or whoever names it. Never the logs of a run in use (checking, or named by
+ * an entry still open or sent back and still waiting for its fix), nor anything of a run checking or not ended. Answers the runs changed; a run whose pack fails is reported and left for the next sweep.
  */
 export async function sweepRunLogs(q: RunLogsQueue, o: { now?: number; afterMs?: number; log?: (s: string) => void } = {}): Promise<string[]> {
   const now = o.now ?? Date.now();
   const after = o.afterMs ?? RUN_LOGS_PACK_AFTER_MS;
   const done: string[] = [];
+  await q.refreshSettled?.().catch(() => {});
   for (const id of q.store.runIds()) {
     if (!run$.test(id)) continue;
-    // Read fresh before each run: one may have started meanwhile. A run an open or sent-back entry names stays as
-    // it is too: its chat was handed the plain log's path (notices.ts).
+    // Read fresh before each run: one may have started meanwhile.
     const { checking, open } = inUse(q);
-    if (checking.has(id) || open.has(id)) continue;
+    if (checking.has(id)) continue;
     const ended = endedAt(q.store, id);
-    if (ended === null || now - ended < after) continue;
+    if (ended === null) continue;
     const d = q.store.runDir(id);
-    if (!needsPack(d)) continue;
+    // An ended run's drafts copy is read by nothing, whoever names the run (one a stop cut short keeps it).
+    const dropped = hasDrafts(d) && dropRunDrafts(d);
+    // A run an open or sent-back entry names keeps its logs as they are: its chat was handed the plain log's path
+    // (notices.ts).
+    if (open.has(id) || now - ended < after || !needsPack(d)) {
+      if (dropped) done.push(id);
+      continue;
+    }
     try {
-      if (await packRun(d)) done.push(id);
+      if ((await packRun(d)) || dropped) done.push(id);
     } catch (err) {
+      if (dropped) done.push(id);
       o.log?.(`run ${id}: its logs weren't packed (${err instanceof Error ? err.message : String(err)}); the next sweep tries again`);
     }
   }

@@ -72,6 +72,7 @@ import { changeWords, editSettingsText, isEmptyChange, REVIEW_KIT_DIR, SettingsE
 import { PROJECT_PLAYBOOK } from "./thread";
 import { dropScratch, isScratchCopy, makeScratchCopy, pinResolution, scratchCopyPath, scratchMarkOf, sweepScratch } from "./scratch";
 import { commitResolution } from "./resolve-content";
+import { dropRunDrafts } from "./run-logs";
 import { isSetupChange, SETUP_UNREADABLE, setupChangeOf, trialReleaseChecks, untriedWhy } from "./setup-branch";
 
 /** Land's refusal of a worktree the merge queue made for itself (a conflict's scratch copy). */
@@ -545,6 +546,15 @@ export class ProjectQueue {
   }
   currentRun(): MergeRun | null {
     return this.current?.run ?? null;
+  }
+  /** Sent-back entries git last said need no fix any more (settled.ts), as last read; empty before the first read. */
+  settled(): ReadonlyMap<string, "merged" | "gone"> {
+    return this.settledCache?.facts ?? new Map();
+  }
+  /** Read those facts afresh against the target's head (the run-log sweep calls it). */
+  async refreshSettled(): Promise<void> {
+    const head = await this.targetHead();
+    if (head) await this.settledFacts(head);
   }
   isPaused(): boolean {
     return !!this.q.paused;
@@ -3402,6 +3412,8 @@ export class ProjectQueue {
       } catch (err) {
         out = { verdict: "machine", why: `the run failed: ${err instanceof Error ? err.message : String(err)}`, notes: [], checks: run.checks };
       }
+      // The drafts copy is read only inside the run (its docs step); a later run of this entry copies them afresh.
+      if (draftsDir) dropRunDrafts(runDir);
       if (persistTimer) clearTimeout(persistTimer);
       await this.serial(() => this.finish(cur, out));
     })();

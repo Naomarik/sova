@@ -5,6 +5,7 @@ import { historyOf } from "./harness/pi/reader";
 import { lastNoteDigest, noteDigest, sandboxedOf } from "./project-services/note";
 import { stateView } from "./harness/state-view";
 import { currentSandboxNote, registerSandboxNote, SANDBOX_NOTE_MESSAGE, sandboxNote } from "./sandbox-note";
+import { targetDir } from "./targets";
 
 /**
  * The sandbox note: only an agent whose tools are confined gets it (a write-only worktree worker, or a
@@ -15,6 +16,8 @@ import { currentSandboxNote, registerSandboxNote, SANDBOX_NOTE_MESSAGE, sandboxN
 const SHARED = "/home/u/.local/state/sova/shared/s1";
 const TREE = "/home/u/webapps/.worktrees/sova-x";
 const sandboxEntry = (on: boolean, level = "workspace-write") => ({ type: "custom", customType: "sandbox", data: { version: 1, on, level, backend: on ? "linux-bwrap" : "none", enforcement: on ? "full" : "none" } });
+// What the sandbox extension records for On in a remote chat (pi-config/extensions/sandbox/index.ts): on, enforced nowhere.
+const remoteOnEntry = (level = "workspace-write") => ({ type: "custom", customType: "sandbox", data: { version: 1, on: true, level, backend: "none", enforcement: "none", reasons: ["not enforced on remote"] } });
 const worktreesEntry = (paths: string[], status = "active") => ({
   type: "custom",
   customType: "worktrees",
@@ -59,8 +62,22 @@ test("who gets it: none, Subagents only and Off get nothing; a write-only worker
   const dropped = await currentSandboxNote({}, hookCtx([sandboxEntry(true), worktreesEntry([TREE], "dropped")]), deps());
   assert.match(dropped!, /^Sandbox: you can write only in \/home\/u\/proj and \$TMPDIR\. /, "a dropped worktree isn't a root");
   assert.match((await currentSandboxNote({}, hookCtx([sandboxEntry(true, "read-only")]), deps()))!, /^Sandbox: you can write only in \$TMPDIR\. /);
+  // A remote chat runs its tools on the target, which nothing here confines: nothing, whether its cwd or its state says so.
+  const remoteCwd = targetDir("box", "/srv/app");
+  assert.equal(await currentSandboxNote({}, hookCtx([sandboxEntry(true)], remoteCwd), deps()), null, "a target's placeholder cwd");
+  assert.equal(await currentSandboxNote({}, hookCtx([remoteOnEntry()], remoteCwd), deps()), null, "On, not enforced on remote");
+  assert.equal(await currentSandboxNote({}, hookCtx([remoteOnEntry("read-only")]), deps()), null, "On with nothing enforced, any cwd");
   // A malformed parent scope fails closed: confined, with no roots named.
   assert.match((await currentSandboxNote({ workerFlags: { sandbox: "on", "sandbox-parent": "{nope" } }, hookCtx([]), deps()))!, /^Sandbox: you can write only in \$TMPDIR\. /);
+});
+
+test("at the read-only level the note names no shared folder, which it can't write, and still says where it can", async () => {
+  const readOnly = `Sandbox: you can write only in $TMPDIR. /tmp and ~/.cache are private to you. Set up, serve and test through project_verbs.`;
+  // A chat at read-only (the merge thread's level) and a worker whose parent scope is read-only: the same note.
+  assert.equal(await currentSandboxNote({}, hookCtx([sandboxEntry(true, "read-only")]), deps()), readOnly);
+  assert.equal(await currentSandboxNote({ workerFlags: onWorkerFlags("read-only") }, hookCtx([], TREE), deps()), readOnly);
+  // The same chat at workspace-write still offers it.
+  assert.match((await currentSandboxNote({}, hookCtx([sandboxEntry(true)]), deps()))!, new RegExp(`leave files for other chats in ${SHARED}\\.`));
 });
 
 test("delivered hidden at a turn's start, re-sent only when its text changes and after a compaction", async () => {

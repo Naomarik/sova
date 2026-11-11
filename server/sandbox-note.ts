@@ -3,6 +3,7 @@ import type { PiExtensionAPI } from "./harness/pi/extension-types";
 import { parseParentScope } from "../pi-config/extensions/sandbox/policy.ts";
 import { sharedFolderOf } from "../pi-config/extensions/sandbox/shared-folder.ts";
 import { confinementOf } from "./background-jobs-request";
+import { targetOfCwd } from "./targets";
 import { SANDBOX, WORKTREES } from "./harness/state-kinds";
 import { registerNoteHooks } from "./project-services/note";
 
@@ -10,7 +11,9 @@ import { registerNoteHooks } from "./project-services/note";
  * The sandbox note: what a confined agent is told about where it may write, as one hidden message at a
  * turn's start (registerNoteHooks: again only when its text changes, and after a compaction), never in
  * the system prompt. Only an agent whose tools are confined gets one: a write-only worktree worker, or
- * a chat or worker whose sandbox is On. Off and Subagents only get nothing.
+ * a chat or worker whose sandbox is On. Off, Subagents only and a remote chat (its tools run on the
+ * target, so nothing here confines them) get nothing. At the read-only level it names no shared folder:
+ * the agent can't write there.
  */
 
 export const SANDBOX_NOTE_MESSAGE = "sova-sandbox-note";
@@ -41,26 +44,37 @@ export interface SandboxNoteOwner {
   env?: Record<string, string | undefined> | null;
 }
 
+/** A confined agent's writable roots, and whether it is at the read-only level (it writes in none of them). */
+export interface Confined {
+  folders: string[];
+  readOnly: boolean;
+}
+
 /**
- * The writable roots of a confined agent, or null when its tools aren't confined. A worker's come from
- * its parent scope (`--sandbox-parent`); a chat with the sandbox On writes in its folder and its tracked
- * worktrees, nowhere at the read-only level. `shared` is left out: the note names it on its own.
+ * The writable roots of a confined agent, or null when its tools aren't confined: no sandbox, or a
+ * remote chat (its cwd a target's placeholder, or On recorded with nothing enforced). A worker's come
+ * from its parent scope (`--sandbox-parent`); a chat with the sandbox On writes in its folder and its
+ * tracked worktrees, nowhere at the read-only level. `shared` is left out: the note names it on its own.
  */
-export function confinedFolders(o: SandboxNoteOwner & { cwd: string; branch: readonly HEntry[]; state: StateView }, shared: string | null): string[] | null {
+export function confinedFolders(o: SandboxNoteOwner & { cwd: string; branch: readonly HEntry[]; state: StateView }, shared: string | null): Confined | null {
+  if (targetOfCwd(o.cwd)) return null;
   const c = confinementOf({ workerFlags: o.workerFlags ?? null, branch: o.branch });
   if (c.kind === "none") return null;
+  const sandbox = o.state.latest(SANDBOX)?.data;
+  if (c.kind === "sandboxed" && o.workerFlags?.["sandbox-parent"] === undefined && sandbox?.on === true && sandbox.enforcement === "none") return null;
   const bare = (p: string) => p.replace(/\/+$/, "");
   // The shared folder and anything in it (a member's own note folder) go by the shared folder's name alone.
   const inShared = (r: string) => shared !== null && (r === bare(shared) || r.startsWith(`${bare(shared)}/`));
   const drop = (roots: readonly string[]) => [...new Set(roots.map(bare))].filter((r) => !inShared(r));
-  if (c.kind === "write-only") return drop(c.parent.writable);
+  if (c.kind === "write-only") return { folders: drop(c.parent.writable), readOnly: false };
   const flag = o.workerFlags?.["sandbox-parent"];
   if (flag !== undefined) {
     const p = parseParentScope(flag);
-    return p.ok ? drop(p.value.level === "read-only" ? [] : p.value.writable) : [];
+    if (!p.ok) return { folders: [], readOnly: false };
+    return p.value.level === "read-only" ? { folders: [], readOnly: true } : { folders: drop(p.value.writable), readOnly: false };
   }
-  if (o.state.latest(SANDBOX)?.data?.level === "read-only") return [];
-  return drop([o.cwd, ...(o.state.latest(WORKTREES)?.data.trees ?? []).filter((t) => t.status === "active").map((t) => t.path)]);
+  if (sandbox?.level === "read-only") return { folders: [], readOnly: true };
+  return { folders: drop([o.cwd, ...(o.state.latest(WORKTREES)?.data.trees ?? []).filter((t) => t.status === "active").map((t) => t.path)]), readOnly: false };
 }
 
 export interface SandboxNoteDeps {
@@ -74,9 +88,10 @@ export interface SandboxNoteDeps {
 export async function currentSandboxNote(owner: SandboxNoteOwner, ctx: HookCtx, deps: SandboxNoteDeps): Promise<string | null> {
   try {
     const shared = (deps.shared ?? sharedFolderOf)({ sessionId: ctx.sessionId, workerFlags: owner.workerFlags ?? null, ...(owner.env ? { env: owner.env } : {}) }) ?? null;
-    const folders = confinedFolders({ ...owner, cwd: ctx.cwd, branch: ctx.branch(), state: ctx.state() }, shared);
-    if (!folders) return null;
-    return sandboxNote({ folders, shared, verbs: await deps.verbsOffered(ctx).catch(() => false), platform: deps.platform ?? process.platform });
+    const confined = confinedFolders({ ...owner, cwd: ctx.cwd, branch: ctx.branch(), state: ctx.state() }, shared);
+    if (!confined) return null;
+    // At the read-only level the shared folder isn't writable: the note doesn't offer it.
+    return sandboxNote({ folders: confined.folders, shared: confined.readOnly ? null : shared, verbs: await deps.verbsOffered(ctx).catch(() => false), platform: deps.platform ?? process.platform });
   } catch {
     return null;
   }

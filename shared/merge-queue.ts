@@ -940,10 +940,37 @@ export interface WorktreeMergeProject {
 export const MERGE_ANSWERS = ["accept", "land-anyway", "try-again", "land"] as const;
 export type MergeAnswer = (typeof MERGE_ANSWERS)[number];
 
+/**
+ * One finished entry as the queue's history keeps it for good (`<state>/merge-queue/<key>/history/YYYY-MM.jsonl`, one
+ * row per entry, filed by the month it first became truly final). Read-only: no verb changes it.
+ */
+export interface MergeHistoryRow {
+  id: string;
+  /** When it first became truly final (landed, cancelled, pushed; sent back and superseded or merged). */
+  finalAt: string;
+  branch: string;
+  target: string;
+  commit: string;
+  state?: MergeEntryState;
+  /** The entry as it last stood; absent on a partial row. */
+  entry?: MergeEntry;
+  /** Backfilled from its runs alone (its entry was gone from the queue's records): no tries, requests or review. */
+  partial?: true;
+  /** Partial rows: what its runs said, the newest run's verdict, blame and failures. */
+  runs?: string[];
+  verdict?: RunVerdict;
+  blame?: Blame;
+  failures?: { step: string; file?: string; name?: string; message?: string; blame?: Blame }[];
+  startedAt?: string;
+  endedAt?: string;
+}
+
 /** `VerbResult.merge`: what a merge verb answers. */
 export interface MergeReport {
   view?: MergeQueueView;
   entry?: MergeEntry;
+  /** merge.status {entry} of an entry only the history holds (read-only). */
+  history?: MergeHistoryRow;
   run?: MergeRun;
   /** merge.logs: the step's log lines (newest last). */
   lines?: string[];

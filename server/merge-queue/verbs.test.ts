@@ -107,6 +107,56 @@ describe("the verbs and who may call them", () => {
     }
   });
 
+  test("an entry only the history holds: merge.status finds it read-only; merge.note and every other change refuse it, naming the history (no restart)", async () => {
+    const { k, call, thread, session } = setup();
+    try {
+      const q = await k.q();
+      const t0 = Date.UTC(2026, 9, 1);
+      for (let n = 1; n <= 61; n++) {
+        const iso = new Date(t0 + n * 60_000).toISOString();
+        q.file.entries.push({
+          id: `mq_old${n.toString().padStart(3, "0")}`,
+          project: q.file.project,
+          target: "master",
+          branch: `feat/old${n}`,
+          commit: n.toString(16).padStart(40, "0"),
+          state: "landed",
+          approval: { commit: n.toString(16).padStart(40, "0"), by: "land-button", at: iso },
+          landed: { sha: n.toString(16).padStart(40, "0"), from: "0".repeat(40), at: iso, pushed: "pushed" },
+          picks: [],
+          notes: [],
+          runs: [],
+          createdAt: iso,
+          updatedAt: iso,
+          seq: ++q.file.seq,
+        } as (typeof q.file.entries)[number]);
+      }
+      q.save();
+      const oldest = "mq_old001";
+      assert.equal(q.entry(oldest), undefined, "out of the working list");
+      const s = await call("merge.status", { entry: oldest }, op);
+      assert.equal(s.ok, true);
+      assert.equal(s.merge!.history?.id, oldest);
+      assert.equal(s.merge!.history?.entry?.state, "landed");
+      const refusals = [
+        await call("merge.note", { entry: oldest, note: "late note" }, session(thread)),
+        await call("merge.note", { entry: oldest, note: "late note" }, op),
+        await call("merge.cancel", { entry: oldest }, op),
+        await call("merge.retry", { entry: oldest }, session(thread)),
+        await call("merge.extend", { entry: oldest, checks: ["unit"], why: "x" }, session(thread)),
+      ];
+      for (const r of refusals) {
+        assert.equal(r.ok, false);
+        assert.equal(r.error!.code, "invalid-request");
+        assert.match(r.error!.message, /mq_old001 \(feat\/old1\) is finished and kept in the merge queue's history/);
+      }
+      assert.equal(q.entry("mq_old002")?.state, "landed", "the window's oldest is still a working entry");
+      assert.equal((await call("merge.note", { entry: "mq_old002", note: "fine" }, session(thread))).ok, true);
+    } finally {
+      await k.done();
+    }
+  });
+
   test("a chat reads its own project's queue and nothing more; never another project's", async () => {
     const { k, call, session } = setup();
     try {

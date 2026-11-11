@@ -35,7 +35,9 @@ import {
   type ReviewVerdict,
   type RunStep,
   type SentBackFor,
+  type MergeHistoryRow,
 } from "../../shared/merge-queue";
+import { historyWords } from "./history";
 import { HOOK_TIMEOUT_MAX, parseDefinition, type ProjectDef } from "../../shared/project-contract";
 import type { ChecksOf, EstimateRun, RunInput, RunMerge, RunOutcome, ThreadEvent, WakeThread } from "./contract";
 import { countBetween, type Git, isAncestor, ownCommitsPast, realGit, revParse, statusArgs, worktreesOf } from "./guard";
@@ -388,6 +390,12 @@ export class ProjectQueue {
     this.q = this.store.read({ project: this.id, target });
     this.q.project = this.id;
     this.q.target = target;
+    // Once per project: the entries only runs/ remembers get partial history rows (history.ts).
+    try {
+      this.store.backfillHistory(this.q);
+    } catch (err) {
+      console.warn(`[merge-queue] history backfill for ${this.root} failed: ${err instanceof Error ? err.message : err}`);
+    }
     // Host landings recorded before their pins were kept: read now, while their entries are still here to read.
     for (const e of [...this.q.entries].filter((x) => x.state === "landed" && x.landed?.via === "host").sort((a, b) => a.landed!.at.localeCompare(b.landed!.at))) {
       if (!this.q.hostPins?.[e.branch]?.includes(e.commit)) this.keepHostPin(e.branch, e.commit);
@@ -420,7 +428,8 @@ export class ProjectQueue {
 
   save(): void {
     this.viewCache = null;
-    this.store.write(this.q);
+    const merged = this.settledCache ? new Set([...this.settledCache.facts].filter(([, f]) => f === "merged").map(([id]) => id)) : undefined;
+    this.store.write(this.q, { ...(merged ? { merged } : {}), now: this.iso() });
     this.schedulePublish();
     this.tidyScratch();
   }
@@ -520,6 +529,16 @@ export class ProjectQueue {
   }
   entry(id: string): Entry | undefined {
     return this.q.entries.find((e) => e.id === id);
+  }
+  /** An entry only the history holds (no longer in the working list): read-only. */
+  historyEntry(id: string): MergeHistoryRow | null {
+    if (!/^mq_[0-9a-z]+$/.test(id) || this.entry(id)) return null;
+    return this.store.historyRow(id);
+  }
+  /** Refuses an entry only the history holds: no verb changes a finished entry kept there. */
+  refuseHistory(id: string | undefined): void {
+    const h = id ? this.historyEntry(id) : null;
+    if (h) throw new MergeFailure("invalid-request", historyWords(h));
   }
   queued(): Entry[] {
     return this.q.entries.filter((e) => e.state === "queued").sort((a, b) => a.seq - b.seq);
@@ -3059,6 +3078,7 @@ export class ProjectQueue {
 
   private mustEntry(id: string): Entry {
     const e = this.entry(id);
+    if (!e) this.refuseHistory(id);
     if (!e) throw new MergeFailure("not-found", `no queue entry ${id}`);
     return e;
   }
@@ -4694,6 +4714,8 @@ export class MergeQueues {
   /** Find the queue holding an entry or a run, among the loaded ones. */
   async findEntry(id: string): Promise<ProjectQueue | null> {
     for (const q of await this.loaded()) if (q.entry(id)) return q;
+    // Then each queue's history (read-only: every verb that changes an entry refuses one found there).
+    for (const q of await this.loaded()) if (q.historyEntry(id)) return q;
     return null;
   }
   /** The queue holding a request of a branch's chat (rq_…), by id. */

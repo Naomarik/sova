@@ -13,7 +13,7 @@ import { projectOf, projectOverseerPaths, type ProjectOverseerPaths, readPoSetti
 import { overseerMemoryInfo, putOverseerMemorySwitch } from "./memory/routes";
 import { recordKept } from "./project-settings";
 import { TOKEN_HEADER } from "./auth";
-import { pageOnlyRefusal, yourClickRefusal } from "./page-only";
+import { pageOnlyRefusal, personWatching, yourClickRefusal } from "./page-only";
 import { notPageNorProven } from "./mesh/click-proof";
 import { PAGE_IS_THE_USERS } from "./merge-queue/routes";
 import { powerTurnsOn } from "../shared/powers";
@@ -234,7 +234,7 @@ export function registerProjectOverseerRoutes(app: Hono<any>): void {
   app.post(`${base}/items/code`, handle(async (c) => {
     const p = pathsOf(c);
     // The global Overseer's call starts it for the operator, marked so (and may give no item).
-    return c.json(await codeItem(p.projectId, (await body(c)) as unknown as ItemCodeInput, overseerOf(c) ? "overseer" : undefined), 201);
+    return c.json(await codeItem(p.projectId, (await body(c)) as unknown as ItemCodeInput, overseerOf(c) ? "overseer" : undefined, personWatching(c)), 201);
   }));
   // The global Overseer's one route into the overseer's conversation (§app.overseer/org-project-overseers):
   // nothing else writes there but the operator's own composer.

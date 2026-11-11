@@ -40,7 +40,7 @@ import { REFUSED_HEADER } from "./hello";
 import { getIdentity, setIdentity, type TailnetStatus } from "./localapi";
 import { defaultSelfId, type HomeBinding, nextLabelAt, type PeerEntry, type PeersConfig, peerPort, peerUrl, peersFile, readPeers, SYNC_CATEGORIES, validatePeers, writePeers } from "./peers";
 import { clickProofFor, takeClick } from "./click-proof";
-import { localRequest, PROXIED_HEADER, peerSocketRoute, proxyTail, proxyPeer, upgradePeerSocket } from "./proxy";
+import { localRequest, PROXIED_HEADER, peerSocketRoute, RELAYED_HEADER, proxyTail, proxyPeer, upgradePeerSocket } from "./proxy";
 import { fetchPeer, setLanClients } from "./dial";
 import { candidateBase } from "./peer-address";
 import { ensureLanIdentity, LanRuntime, readLanIdentity } from "./lan";
@@ -451,6 +451,7 @@ export function peerFetch(peerId: string, path: string, init?: RequestInit): Pro
   if (outboundRefusal(peerId, path)) return Promise.reject(new NotShared(peerId));
   const headers = new Headers(init?.headers);
   headers.delete(PROXIED_HEADER); // it would make the peer treat this host's own call as a browser's
+  headers.delete(RELAYED_HEADER); // only the /peer/<id>/ proxy relays a page: a program's call never says it is one
   // Whatever runs on this host states this host's own numbers (§mesh.compatibility/every-send-states-a-version).
   headers.set(COMPOSER_HEADER, String(WIRE_AREAS.composer));
   headers.set(PEER_AREA_HEADER, String(WIRE_AREAS.peer));

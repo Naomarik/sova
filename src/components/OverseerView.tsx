@@ -1,3 +1,4 @@
+import { OverseerApprovalsButton } from "./OverseerApprovalsButton";
 import { createEffect, createMemo, createResource, createSignal, For, Match, on, Show, Switch } from "solid-js";
 import type { OverseerInfo, OverseerProactivity, SessionSummary } from "../../shared/protocol";
 import { clearOverseer, getOverseer, getOverseerIdeas, getOverseerSettings, getOverseerTodos, putOverseerSettings } from "../lib/api";
@@ -326,6 +327,7 @@ export function OverseerView(props: {
         {(info) => (
           <>
             <ContextGauge path={info().path} />
+            <OverseerApprovalsButton path={info().path} />
             <button
               type="button"
               class="button button-sm button-ghost overseer-proactivity overseer-mid"

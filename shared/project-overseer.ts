@@ -507,6 +507,9 @@ export interface ItemCodeResult {
   notPrompted?: string;
   /** Its first prompt asks the operator to confirm the brief first (an Overseer's start, §app.project-overseer/confirm-brief). */
   confirmBrief?: boolean;
+  /** Started from the operator's page in a folder that asks first, with this many context files and skills still to
+      decide: its first message waits as the new chat's draft, and Send waits for the decisions (§chat.context-approval/held-send). */
+  decideFirst?: number;
 }
 
 /** New Coding Session: a coding session tied to no to-do or idea, with no first prompt (the operator writes it in the composer). */

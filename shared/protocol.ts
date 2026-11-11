@@ -3,6 +3,7 @@
  * Do not change a shape without telling the other side (team_msg).
  */
 
+import type { ApprovalFolder, SetupApproval } from "./approvals";
 import type { McpNote, McpToolName, SetupMcp } from "./mcp";
 import type { WakeInfo } from "./wake";
 import type { BatonMark, BatonSummaryField } from "./baton";
@@ -455,6 +456,10 @@ export interface TranscriptItem {
   loginNote?: true;
   /** kind "info" only: a server's failure in this chat (§app.mcp/in-a-chat), the `sova-mcp-note` entry. */
   mcpNote?: McpNote;
+  /** kind "info" only: a context file or skill found after the first message that this chat's fixed list
+      keeps out (§chat.context-approval/mid-chat), the `sova-approval-pending` entry. Never sent to the
+      model. Approve or Disallow: POST /api/sessions/approval {path: the session, kind, item: this path, state}. */
+  approvalPending?: { kind: "context" | "skill"; path: string; /** A skill's name; a context file's place below the chat's folder ("sub/AGENTS.md"). */ name?: string };
   /** kind "info" only: a subagents-team-event-v1 entry; `text` is `Team: ` + its sentence. */
   teamEvent?: TeamEvent;
   /** kind "info" only: a /compact-handoff run's `compact-handoff-run` entry
@@ -1639,6 +1644,11 @@ export interface SessionSetupFile {
   /** This session keeps this context file or skill out (§chat.transcript/setup-card-toggles): the
       row is still listed, and no total counts it. Never set on SYSTEM.md / APPEND_SYSTEM.md rows. */
   off?: true;
+  /** Its decision in the folder's list (shared/approvals.ts); absent where the setup read has none. */
+  approval?: SetupApproval;
+  /** Found by the folder's scan (a folder inside, or above), not loaded at the chat's folder: the agent
+      sees it only once approved and reached. Listed so it can be decided before the first message. */
+  scanOnly?: true;
 }
 
 /** pi's own estimate of what text costs a model (pi-ai `estimateTextTokens`): the text's length in
@@ -1697,6 +1707,9 @@ export type SessionSetup =
       /** The project the chat belongs to (its folder, a folder inside it, or a worktree), for the
           skills' Approve and Disallow; absent: none. */
       project?: { id: string; name: string };
+      /** Whose list the rows' decisions belong to, and whether this chat asks first: before the first
+          message, the Sova-wide setting; after it, the mode the chat started in. Absent: no list. */
+      approvals?: { folder: ApprovalFolder; asking: boolean };
       checkedAt: number;
     }
   /** A target session: its cwd is a local placeholder, so its loadout can't be read here. */
@@ -2020,6 +2033,9 @@ export type BatchRefusalCode =
   | "config"
   | "busy"
   | "missing"
+  /** A new chat that asks first still has context files or skills to decide (the operator's page only): never a
+      refusal, a member `held` with the message as its draft. */
+  | "decide-first"
   | "internal";
 
 /** One member the batch could not take, named four ways: `id` joins against `GroupMember.id` and
@@ -2041,6 +2057,9 @@ export interface BatchRefusal {
 export interface BatchPromptResult {
   sent: string[]; // session ids, in the order they were accepted
   failed: BatchRefusal[];
+  /** Members held from the operator's page: a new chat that asks first with context files or skills still to decide.
+      Each kept the message as its composer draft, and its Send waits for the decisions (code "decide-first"). */
+  held?: BatchRefusal[];
 }
 
 /** The mode extension's settings (pi-config/extensions/mode). One major mode, any set of minor
@@ -3076,6 +3095,10 @@ export type ChatServerMessage =
       message: string;
       code?: "busy" | "recent" | "reloaded" | "config" | "refused" | "internal";
       clientId?: string;
+      /** With code "refused": a new chat's first message held while context files or skills wait for a
+          decision (§chat.context-approval/held-send): the draft comes back, and `waiting` says how many. */
+      decide?: "first";
+      waiting?: number;
       /** A One at a time profile's first message was refused: the session that holds it (§chat.profiles/singleton). */
       profileRunning?: { id: string; path: string; title: string };
       /** The provider of the model whose turn failed, when the error IS the turn's failure (never a worker's or a guessed one); absent otherwise. */
@@ -3083,6 +3106,9 @@ export type ChatServerMessage =
       /** With `provider`: the model ref that turn actually ran (§chat.subagent-profiles/limit-row), even when it differs from the chat's profile's. */
       model?: string;
     }
+  /** The context files and skills this chat's folder decides changed (§chat.context-approval/live): re-read
+      GET /api/sessions/context with fresh=1. Never at hello. Additive. */
+  | { type: "setup_changed" }
   /** Which profile the chat is on, "(edited)", and a switch waiting for the reply to end (§chat.profiles/switch). Sent at hello and on every change. */
   | { type: "chat_profile"; state: ChatProfileState };
 

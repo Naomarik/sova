@@ -1150,7 +1150,7 @@ html, body { overflow: clip; overscroll-behavior: none; }
    dimmed, with its switch at full strength so it reads as the thing to turn back on. */
 .setup-row:has(.setup-toggle) { align-items: center; }
 .setup-toggle { flex: none; min-height: var(--tap-min); }
-.setup-row-off .setup-name,
+.setup-row-off .setup-name > :not(.setup-decide),
 .setup-row-off .setup-facts { opacity: .5; }
 /* A manual-only skill: the words go under its name, so the name keeps the row's width. */
 .setup-name:has(.setup-manual) { flex-wrap: wrap; gap: 0 var(--space-2); }
@@ -1161,6 +1161,17 @@ html, body { overflow: clip; overscroll-behavior: none; }
 .setup-waiting { flex-direction: row; flex-wrap: wrap; align-items: center; justify-content: space-between; text-align: start; border-bottom: 1px solid var(--color-border); }
 .setup-waiting .setup-note { color: var(--color-ink-2); }
 .setup-waiting-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+/* The setup card's last line: where this folder's list is kept, with its link. */
+.setup-list-link { flex-direction: row; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-2); }
+/* A mid-chat line for an item kept out (§chat.context-approval/mid-chat): its Approve and Disallow follow the words. */
+.approval-pending-row .info-row-text { flex-wrap: wrap; justify-content: center; }
+.approval-pending-actions { display: inline-flex; flex: none; gap: var(--space-2); }
+.approval-pending-done { flex: none; color: var(--color-ink-2); }
+/* The composer's reason with its Review button (a Send held for decisions). */
+.composer-reason-action { flex: none; }
+/* A folder's list (not a project), opened from its chat: its two cards, one under the other. */
+.folder-approvals-dialog { max-width: 760px; }
+.folder-approvals-body { display: flex; flex-direction: column; gap: var(--space-4); }
 /* A narrow card folds its rows (base.css), but not a row with a switch: it stays one line, the
    name ellipsised, then ≈tokens, then the switch at the right edge. */
 @container (max-width: 417.98px) {

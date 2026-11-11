@@ -31,6 +31,14 @@ const outside = join(root, "outside"); // a sibling of the agent dir: what a `..
 mkdirSync(outside, { recursive: true });
 writeFileSync(join(outside, "sentinel.jsonl"), "{}\n");
 process.env.PI_CODING_AGENT_DIR = agentDir;
+/** A new chat recorded in `cwd` (a header-only session file): the folder routes answer only for such a folder or a project's. */
+let chats = 0;
+function chatIn(cwd: string): void {
+  const dir = join(agentDir, "sessions", "--fuzz-folders--");
+  mkdirSync(dir, { recursive: true });
+  const id = `01a5c555-0000-7000-8000-${String(++chats).padStart(12, "0")}`;
+  writeFileSync(join(dir, `2026-11-11T00-00-${String(chats).padStart(2, "0")}-000Z_${id}.jsonl`), `${JSON.stringify({ type: "session", version: 3, id, timestamp: "2026-11-11T00:00:00.000Z", cwd })}\n`);
+}
 const sessionsDir = join(agentDir, "sessions", "--tmp-fuzz--");
 mkdirSync(sessionsDir, { recursive: true });
 mkdirSync(join(agentDir, "sessions", "live"), { recursive: true });
@@ -274,6 +282,7 @@ const VALIDATE_ONLY: Record<string, string> = {
   "design.coordinator.message": "drives the coordinator's model session",
   "design.delete": "acts on a design only a model session makes; server/design/batch.test.ts covers it",
   "session.send": "starts a chat process for the turn",
+  "session.approval.set": "acquires a chat handle, which starts the chat's process (server/approval-in-chat.ts's own tests drive it)",
   "session.configure": "acquires a chat handle, which starts the chat's process",
   "session.mode.set": "acquires a chat handle, which starts the chat's process",
   "session.profile.switch": "acquires a chat handle, which starts the chat's process",
@@ -361,7 +370,7 @@ function anchors(c: CommandEntry): Anchor[] {
   if (c.id === "project.overseer.todo.update") return [{ anchor: { pid: "no-such-project", id: "x" }, refuse: true, kind: "refused" }, { anchor: (() => { const a: Record<string, unknown> = {}; pendingSetup.push(async () => { const d = join(root, `po-${c.id}`); mkdirSync(d, { recursive: true }); a.pid = ((await sendTo(app, "POST", "/api/projects", JSON.stringify({ root: d, name: c.id }))).body as { project: { id: string } }).project.id; /* its runtime registry's first read, done now: no write lands after the hash */ await (await import("./projects/runtime")).observe(String(a.pid)); await (await import("./org-engine")).hostOf(String(a.pid)).idle(); a.id = ((await sendTo(app, "POST", `/api/projects/${a.pid}/overseer/todos`, JSON.stringify({ text: "Anchor" }))).body as { todos: { id: string }[] }).todos[0]!.id; }); return a; })(), refuse: false, kind: "real" }];
   if (c.id === "project.overseer.todo.reorder") return [{ anchor: { pid: "no-such-project" }, refuse: true, kind: "refused" }, { anchor: (() => { const a: Record<string, unknown> = {}; pendingSetup.push(async () => { const d = join(root, `po-${c.id}`); mkdirSync(d, { recursive: true }); a.pid = ((await sendTo(app, "POST", "/api/projects", JSON.stringify({ root: d, name: c.id }))).body as { project: { id: string } }).project.id; /* its runtime registry's first read, done now: no write lands after the hash */ await (await import("./projects/runtime")).observe(String(a.pid)); await (await import("./org-engine")).hostOf(String(a.pid)).idle(); a.id = ((await sendTo(app, "POST", `/api/projects/${a.pid}/overseer/todos`, JSON.stringify({ text: "Anchor" }))).body as { todos: { id: string }[] }).todos[0]!.id; }); return a; })(), refuse: false, kind: "real" }];
   // A registered project (made in the set-up, its id written into the anchor) takes each body past the project's lookup to the route's own checks.
-  if (c.id === "project.update" || c.id === "project.worktree.merge" || c.id === "project.worktree.remove" || c.id === "project.claude-login.set" || c.id === "project.skills.get" || c.id === "project.skills.set" || c.id.startsWith("project.icon.")) {
+  if (c.id === "project.update" || c.id === "project.worktree.merge" || c.id === "project.worktree.remove" || c.id === "project.claude-login.set" || c.id === "project.skills.get" || c.id === "project.skills.set" || c.id === "project.context-files.get" || c.id === "project.context-files.set" || c.id.startsWith("project.icon.")) {
     const v: Record<string, unknown> = {};
     pendingSetup.push(async () => { const d = join(root, `project-${++n}`); mkdirSync(d, { recursive: true }); v.pid = ((await sendTo(app, "POST", "/api/projects", JSON.stringify({ root: d }))).body as { project: { id: string } }).project.id; await sendTo(app, "GET", `/api/projects/${v.pid}/runtime`); });
     return [{ anchor: { pid: "no-such-project" }, refuse: true, kind: "refused" }, { anchor: v, refuse: false, kind: "real" }];
@@ -766,6 +775,48 @@ const FIXTURES: Record<string, Fixture> = {
     },
     status: 200,
     oracle: async (_b, v) => assert.equal(((await read("GET", `/api/projects/${v.pid}/skills`)).skills as { name: string; state: string }[]).find((s) => s.name === "fuzz-skill")?.state, "disallowed"),
+  },
+  // A project's context files: one project file, disallowed (open to every caller) and read back.
+  "project.context-files.get": {
+    values: () => {
+      const v: Record<string, unknown> = {};
+      pendingSetup.push(async () => { const d = join(root, `project-${++n}`); mkdirSync(d, { recursive: true }); v.pid = ((await sendTo(app, "POST", "/api/projects", JSON.stringify({ root: d }))).body as { project: { id: string } }).project.id; await sendTo(app, "GET", `/api/projects/${v.pid}/runtime`); });
+      return v;
+    },
+    status: 200,
+  },
+  "project.context-files.set": {
+    values: () => {
+      const v: Record<string, unknown> = { files: { "AGENTS.md": "disallowed" } };
+      pendingSetup.push(async () => {
+        const d = join(root, `project-${++n}`);
+        mkdirSync(d, { recursive: true });
+        writeFileSync(join(d, "AGENTS.md"), "# Fuzz\n");
+        v.pid = ((await sendTo(app, "POST", "/api/projects", JSON.stringify({ root: d }))).body as { project: { id: string } }).project.id;
+        await sendTo(app, "GET", `/api/projects/${v.pid}/runtime`);
+      });
+      return v;
+    },
+    status: 200,
+    oracle: async (_b, v) => assert.equal(((await read("GET", `/api/projects/${v.pid}/context-files`)).files as { key: string; state: string }[]).find((s) => s.key === "AGENTS.md")?.state, "disallowed"),
+  },
+  // A folder's lists (a recorded chat's folder): one context file, disallowed (open to every caller) and read back.
+  "session.folder-approvals.get": {
+    values: () => {
+      const v: Record<string, unknown> = {};
+      pendingSetup.push(async () => { const d = join(root, `folder-${++n}`); mkdirSync(d, { recursive: true }); chatIn(d); v.cwd = d; });
+      return v;
+    },
+    status: 200,
+  },
+  "session.folder-approvals.set": {
+    values: () => {
+      const v: Record<string, unknown> = { files: { "AGENTS.md": "disallowed" } };
+      pendingSetup.push(async () => { const d = join(root, `folder-${++n}`); mkdirSync(d, { recursive: true }); writeFileSync(join(d, "AGENTS.md"), "# Fuzz\n"); chatIn(d); v.cwd = d; });
+      return v;
+    },
+    status: 200,
+    oracle: async (_b, v) => assert.equal(((await read("GET", `/api/folder-approvals?cwd=${encodeURIComponent(String(v.cwd))}`)).files as { key: string; state: string }[]).find((s) => s.key === "AGENTS.md")?.state, "disallowed"),
   },
   // A project's icon (§app.projects/icon): its upload and letters switch are kept under the state root.
   "project.icon.get": { values: () => iconProject({}), status: 200 },

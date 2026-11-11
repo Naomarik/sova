@@ -250,6 +250,13 @@ export function takeBackHere(path: string, fn: (texts: string[], ids: string[]) 
     if (views.get(path) === fn) views.delete(path);
   };
 }
+/** Hands texts to the chat's open view, if one is open here (into its composer); false when none is. */
+export function giveToOpenView(path: string, texts: string[]): boolean {
+  const view = views.get(path);
+  if (!view) return false;
+  view(texts, []);
+  return true;
+}
 const putBack = (path: string, texts: string[], ids: string[]) => {
   const back = texts.filter((t) => t.trim());
   if (!back.length) return;

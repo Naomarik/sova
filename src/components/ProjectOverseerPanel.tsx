@@ -1,3 +1,4 @@
+import { decideFirstLine } from "../lib/approvals";
 import { ClaudeLoginCard } from "./ClaudeLoginCard";
 import { RemoveAnywayListing } from "./RemoveAnywayListing";
 import { createEffect, createMemo, createResource, createSignal, For, type JSX, on, onMount, Show } from "solid-js";
@@ -1534,7 +1535,9 @@ function ItemActions(props: ItemCallbacks & { item: Item }) {
         return;
       }
       setErr(null);
-      toast(r.worktree ? `Coding session started on ${r.worktree.branch}.` : "Coding session started in the project root.");
+      const where = r.worktree ? `Coding session started on ${r.worktree.branch}.` : "Coding session started in the project root.";
+      // Asking first: the message waits in its composer until the context files and skills are decided.
+      toast(r.decideFirst ? `${where} ${decideFirstLine(r.decideFirst)}` : where);
       location.hash = sessionHref(r.path);
     } catch (x) {
       setErr(unchangedError(errText(x), "No session was started."));

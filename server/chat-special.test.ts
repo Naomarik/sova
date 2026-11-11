@@ -9,7 +9,7 @@ import { fileURLToPath } from "node:url";
 import type { RunStartAnswer, ServerToolDecl, SpecialSpec } from "../shared/chat-runtime";
 import { NOT_RUN_NO_SERVER } from "../shared/chat-runtime-wire";
 import type { SpecialPort } from "./chat-manager";
-import { specialLoadout } from "./chat-special";
+import { deeperContextAllow, specialLoadout } from "./chat-special";
 
 const decl = (name: string): ServerToolDecl => ({ name, label: name, description: name, parameters: { type: "object" } });
 
@@ -172,6 +172,35 @@ test("chat-special imports only what a chat process may load: shared types, the 
     "./overseer-deny",
     "./overseer-id-check",
     "./overseer-redact",
+    "./session-loadout",
   ]);
   assert.match(src, /import type \{ SpecialPort \} from "\.\/chat-manager";/, "the chat's own module only as a type");
+});
+
+test("a special loadout's context files follow its folder's list, at the start and in subfolders, inside its confinement", () => {
+  const loader = (asking: boolean): SpecialSpec["loader"] => ({
+    append: "none",
+    contextFilesWithin: { root: "/p", out: ["/p/secret"] },
+    folderRule: { asking, context: { approved: ["/p/AGENTS.md"], disallowed: ["/p/off/AGENTS.md"] }, skills: { approved: [], disallowed: [] } },
+  });
+  const files = ["/p/AGENTS.md", "/p/off/AGENTS.md", "/p/wait/AGENTS.md", "/p/secret/AGENTS.md", "/home/AGENTS.md"];
+  for (const asking of [false, true]) {
+    const allow = deeperContextAllow(loader(asking))!;
+    const want = asking ? ["/p/AGENTS.md"] : ["/p/AGENTS.md", "/p/wait/AGENTS.md"];
+    assert.deepEqual(files.filter(allow), want, `subfolders, asking=${asking}`);
+    const built = specialLoadout("c", { loader: loader(asking), tools: [], customTools: [], allow: [] } as unknown as SpecialSpec, {} as SpecialPort, {} as never);
+    const o = (built.loader as unknown as { agentsFilesOverride: (b: { agentsFiles: { path: string }[] }) => { agentsFiles: { path: string }[] } }).agentsFilesOverride;
+    assert.deepEqual(o({ agentsFiles: files.map((path) => ({ path })) }).agentsFiles.map((f) => f.path), want, `the start, asking=${asking}`);
+  }
+});
+
+test("a special loadout with skills (the Overseer) keeps its folder's waiting skills off while asking first; nothing decided in the default mode changes nothing", () => {
+  const skills = [{ name: "a", filePath: "/h/skills/a/SKILL.md" }, { name: "b", filePath: "/h/skills/b/SKILL.md" }];
+  const spec = (asking: boolean, approved: string[]) =>
+    ({ loader: { append: "none", folderRule: { asking, context: { approved: [], disallowed: [] }, skills: { approved, disallowed: [] } } }, tools: [], customTools: [], allow: [] }) as unknown as SpecialSpec;
+  const asking = specialLoadout("c", spec(true, [skills[0]!.filePath]), {} as SpecialPort, {} as never).loader as unknown as { skillsOverride: (b: { skills: unknown[]; diagnostics: [] }) => { skills: { name: string }[] } };
+  assert.deepEqual(asking.skillsOverride({ skills, diagnostics: [] }).skills.map((k) => k.name), ["a"]);
+  const open = specialLoadout("c", spec(false, []), {} as SpecialPort, {} as never).loader as unknown as { skillsOverride?: unknown; agentsFilesOverride?: unknown };
+  assert.equal(open.skillsOverride, undefined, "built exactly as before");
+  assert.equal(open.agentsFilesOverride, undefined);
 });

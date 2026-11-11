@@ -464,7 +464,7 @@ export class PiHarnessSession implements HarnessSession {
     const loadout = loadoutOnBranch(branch);
     const named = new Set(starting.map((k) => k.name));
     for (const k of offeredSkills(branch)) {
-      if (named.has(k.name) || isSkillOff(loadout, k.name)) continue;
+      if (named.has(k.name) || isSkillOff(loadout, k)) continue;
       named.add(k.name);
       out.push({ name: `skill:${k.name}`, description: k.description, source: "skill", location: "path", path: k.filePath });
     }

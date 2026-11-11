@@ -471,7 +471,7 @@ describe("the project's skill defaults: a Sova-kept setting with history, Undo a
     mkdirSync(join(dir, ".agents", "skills", name), { recursive: true });
     writeFileSync(join(dir, ".agents", "skills", name, "SKILL.md"), `---\nname: ${name}\ndescription: The ${name} recipe.\n---\n\nbody\n`);
   }
-  const { projectSkillDecisions } = await import("./project-skills-store");
+  const { projectSkillDecisions, folderDecisions } = await import("./project-skills-store");
   const { registerProjectRoutes } = await import("./projects/routes");
   const cm = await import("./chat-manager");
   const { markOwned } = await import("./write-guard");
@@ -489,47 +489,71 @@ describe("the project's skill defaults: a Sova-kept setting with history, Undo a
   };
   const offers = (path: string, name: string) => piSession(cm.heldChat(path)!).systemPrompt.includes(`<name>${name}</name>`);
 
-  test("the tool names the setting, and get lists each skill's state", async () => {
+  const A = ".agents/skills/a-skill/SKILL.md";
+  const B = ".agents/skills/b-skill/SKILL.md";
+  /** Apply a card as the operator's page does. */
+  const apply = async (c: { id: string; fingerprint: string }) => {
+    const r = await post(app(), `/api/projects/${pid}/settings/apply`, { card: c.id, fingerprint: c.fingerprint });
+    assert.equal(r.status, 200, await r.clone().text());
+  };
+
+  test("the tool names the settings, and get lists each context file and skill by key with its state", async () => {
     const params = tool(pid, true).parameters as any;
     assert.ok(params.properties.edits.items.properties.setting.enum.includes("skills"), "the model can name it");
-    assert.match(tool(pid, true).description, /\{setting: "skills", skills: \{<skill name>: "approved" \| "disallowed" \| "waiting"\}\}/);
+    assert.match(tool(pid, true).description, /\{setting: "skills", skills: \{<skill key or name>: "approved" \| "disallowed" \| "waiting"\}\}/);
     const got = await run(pid, true, { op: "get" });
     assert.match(got.content[0]!.text, /- skills: No preference/);
-    assert.match(got.content[0]!.text, /- a-skill: waiting · project/);
+    assert.match(got.content[0]!.text, /- context-approval: Allowed without asking \(Sova-wide\)/);
+    assert.match(got.content[0]!.text, new RegExp(`- a-skill \\(${A.replace(/\./g, "\\.")}\\): waiting · project`));
     assert.match((await run(pid, true, { op: "reference", setting: "skills" })).content[0]!.text, /Skills \(skills\)/);
+    assert.match((await run(pid, true, { op: "reference", setting: "context-files" })).content[0]!.text, /Context Files \(context-files\)/);
   });
 
-  test("a disallow applies at once in the operator's turn and rebuilds a new chat; a run the operator didn't start only makes a card; allowing again is a grant", async () => {
+  test("a disallow applies at once in the operator's turn and rebuilds a new chat; a run the operator didn't start only makes a card; approving and allowing again are grants", async () => {
     const path = newChat();
     await cm.acquireChat(path);
     assert.equal(offers(path, "a-skill"), true);
     const off = await run(pid, true, { op: "propose", why: "Not for this project.", edits: [{ setting: "skills", skills: { "a-skill": "disallowed" } }] });
     assert.equal(off.details.card, null);
     assert.equal(state("a-skill"), "disallowed");
-    assert.deepEqual(off.details.appliedNow.map((r: any) => [r.field, r.from, r.to, r.by.kind, r.by.via]), [["skills.a-skill", "waiting", "disallowed", "project-overseer", "tool"]]);
+    assert.deepEqual(off.details.appliedNow.map((r: any) => [r.field, r.from, r.to, r.by.kind, r.by.via]), [[`skills.${A}`, "waiting", "disallowed", "project-overseer", "tool"]]);
     assert.equal(offers(path, "a-skill"), false, "the not-yet-started chat was rebuilt without it");
     const quiet = await run(pid, false, { op: "propose", why: "Also b.", edits: [{ setting: "skills", skills: { "b-skill": "disallowed" } }] });
     assert.equal(state("b-skill"), "waiting", "nothing applies in a run the operator didn't start");
     await post(app(), `/api/projects/${pid}/settings/cards/${quiet.details.card.id}/withdraw`, {});
-    const back = await run(pid, true, { op: "propose", why: "It is fine after all.", edits: [{ setting: "skills", skills: { "a-skill": "approved" } }] });
+    const back = await run(pid, true, { op: "propose", why: "It is fine after all.", edits: [{ setting: "skills", skills: { [A]: "approved" } }] });
     assert.equal(state("a-skill"), "disallowed", "allowing a disallowed skill is a grant: it waits");
     const c = back.details.card;
-    assert.deepEqual(c.kept.map((k: any) => [k.field, k.from, k.to]), [["skills.a-skill", "disallowed", "approved"]]);
+    assert.deepEqual(c.kept.map((k: any) => [k.field, k.from, k.to]), [[`skills.${A}`, "disallowed", "approved"]]);
     assert.match(c.grants[0].what, /lets the project's new chats use the skill a-skill again/);
-    const r = await post(app(), `/api/projects/${pid}/settings/apply`, { card: c.id, fingerprint: c.fingerprint });
-    assert.equal(r.status, 200, await r.clone().text());
+    await apply(c);
     assert.equal(state("a-skill"), "approved");
     const last = settings.readHistory(pid).at(-1)!;
-    assert.deepEqual([last.field, last.from, last.to, last.by.via, last.card], ["skills.a-skill", "disallowed", "approved", "card", c.id]);
-    // Approving a waiting one changes nothing a chat gets: no grant, at once.
+    assert.deepEqual([last.field, last.from, last.to, last.by.via, last.card], [`skills.${A}`, "disallowed", "approved", "card", c.id]);
+    // Approving a waiting one is the operator's too: a card, never at once.
     const ok = await run(pid, true, { op: "propose", why: "Fine.", edits: [{ setting: "skills", skills: { "b-skill": "approved" } }] });
-    assert.equal(ok.details.card, null);
+    assert.equal(state("b-skill"), "waiting");
+    assert.match(ok.details.card.grants[0].what, /approves the skill b-skill for the project's new chats/);
+    await apply(ok.details.card);
     assert.equal(state("b-skill"), "approved");
   });
 
-  test("the store's checks: an unknown name or state is refused in words, nothing written", async () => {
+  test("a context file is a setting the same way: disallowed at once, approved on a card", async () => {
+    writeFileSync(join(dir, "AGENTS.md"), "# skills project\n");
+    const off = await run(pid, true, { op: "propose", why: "Not this one.", edits: [{ setting: "context-files", files: { "AGENTS.md": "disallowed" } }] });
+    assert.deepEqual(off.details.appliedNow.map((r: any) => [r.field, r.from, r.to]), [["context.AGENTS.md", "waiting", "disallowed"]]);
+    const on = await run(pid, true, { op: "propose", why: "Back.", edits: [{ setting: "context-files", files: { "AGENTS.md": "approved" } }] });
+    assert.match(on.details.card.grants[0].what, /lets the project's new chats use the context file AGENTS\.md again/);
+    await apply(on.details.card);
+    assert.equal(folderDecisions(`p:${pid}`).context["AGENTS.md"]?.state, "approved");
+    await assert.rejects(run(pid, true, { op: "propose", why: "x", edits: [{ setting: "context-files", files: { "nope/AGENTS.md": "disallowed" } }] }), /Nothing named "nope\/AGENTS\.md"/);
+    const row = (await settings.settingsInfo(pid)).rows.find((x) => x.setting === "context-files")!;
+    assert.deepEqual([row.label, row.anchor, row.hrefLabel], ["Context Files", "project-context", "Show Context Files"]);
+  });
+
+  test("the list's checks: an unknown skill or state is refused in words, nothing written", async () => {
     for (const [edit, why] of [
-      [{ setting: "skills", skills: { "no-such-skill": "disallowed" } }, /No skill named "no-such-skill"/],
+      [{ setting: "skills", skills: { "no-such-skill": "disallowed" } }, /Nothing named "no-such-skill"/],
       [{ setting: "skills", skills: { "a-skill": "off" } }, /names skills/],
       [{ setting: "skills" }, /names skills/],
       [{ setting: "skills", skills: { "a-skill": "disallowed" }, all: true }, /Unknown skills setting "all"/],
@@ -542,7 +566,7 @@ describe("the project's skill defaults: a Sova-kept setting with history, Undo a
   test("Undo puts a skill back; the Skills card's own save is a history line too; history and All settings read in words", async () => {
     await run(pid, true, { op: "propose", why: "Off.", edits: [{ setting: "skills", skills: { "b-skill": "disallowed" } }] });
     const row = settings.readHistory(pid).at(-1)!;
-    assert.equal(row.field, "skills.b-skill");
+    assert.equal(row.field, `skills.${B}`);
     const refused = await post(app(), `/api/projects/${pid}/settings/undo`, { id: row.id }, { "x-sova-caller": "k" });
     assert.equal(refused.status, 403, "undoing a disallow is a grant: the page only");
     const undone = await post(app(), `/api/projects/${pid}/settings/undo`, { id: row.id });
@@ -553,10 +577,10 @@ describe("the project's skill defaults: a Sova-kept setting with history, Undo a
     const put = await a.request(`/api/projects/${pid}/skills`, { method: "PUT", headers: { "content-type": "application/json", ...pageHeaders() }, body: JSON.stringify({ skills: { "b-skill": "waiting" } }) });
     assert.equal(put.status, 200, await put.clone().text());
     const saved = settings.readHistory(pid).at(-1)!;
-    assert.deepEqual([saved.field, saved.from, saved.to, saved.by.kind, saved.by.via], ["skills.b-skill", "approved", "waiting", "operator", "page"]);
+    assert.deepEqual([saved.field, saved.from, saved.to, saved.by.kind, saved.by.via], [`skills.${B}`, "approved", "waiting", "operator", "page"]);
     const h = await (await app().request(`/api/projects/${pid}/settings/history`)).json();
-    assert.deepEqual([h[0].label, h[0].fromText, h[0].toText], ["Skill b-skill", "Approved", "Waiting (on until decided)"]);
-    // Turning a Disallowed skill back on through the PUT is the operator's own page only; disallowing is open.
+    assert.deepEqual([h[0].label, h[0].fromText, h[0].toText], ["Skill b-skill", "Approved", "Waiting (no decision yet)"]);
+    // Approving, and turning a Disallowed skill back on, through the PUT is the operator's own page only; disallowing is open.
     const skillsPut = (skills: Record<string, string>, headers: Record<string, string> = {}) =>
       a.request(`/api/projects/${pid}/skills`, { method: "PUT", headers: { "content-type": "application/json", ...(Object.keys(headers).length ? {} : pageHeaders()), ...headers }, body: JSON.stringify({ skills }) });
     assert.equal((await skillsPut({ "b-skill": "disallowed" }, { "x-sova-token": "x" })).status, 200, "a script may disallow");
@@ -568,8 +592,8 @@ describe("the project's skill defaults: a Sova-kept setting with history, Undo a
     }
     assert.equal(state("b-skill"), "disallowed", "nothing changed");
     assert.equal((await skillsPut({ "a-skill": "waiting" }, { "x-sova-token": "x" })).status, 200, "Approved → Waiting stays open");
-    assert.equal((await skillsPut({ "a-skill": "approved" }, { "x-sova-token": "x" })).status, 200, "Waiting → Approved stays open");
-    assert.equal((await skillsPut({ "b-skill": "approved" })).status, 200, "the page may");
+    assert.equal((await skillsPut({ "a-skill": "approved" }, { "x-sova-token": "x" })).status, 403, "Waiting → Approved is the page's");
+    assert.equal((await skillsPut({ "a-skill": "approved", "b-skill": "approved" })).status, 200, "the page may");
     assert.equal(state("b-skill"), "approved");
     const skillsRow = (await settings.settingsInfo(pid)).rows.find((x) => x.setting === "skills")!;
     assert.deepEqual([skillsRow.label, skillsRow.state, skillsRow.anchor], ["Skills", "2 approved", "project-skills"]);

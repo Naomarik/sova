@@ -35,9 +35,12 @@ import type { SetupMcp } from "../shared/mcp";
 import { CHARS_PER_TOKEN, SETUP_FILE_MAX_BYTES, type SessionSetup, type SessionSetupFileText, type SessionSetupFile, type SessionSetupSkill } from "../shared/protocol";
 import { acquireChatHandle, assertNotLive, chatHandle, closeChat } from "./chat-handle";
 import { plan, readStoredCwd, type Plan } from "./git-summary";
-import { flipsAgainstProject, isSkillOff, normalizeLoadout, pristineLoadout, type LoadoutEntryData } from "./session-loadout";
-import { projectSkillDecisions, type SkillDecision } from "./project-skills-store";
-import { dirname } from "node:path";
+import { flipsAgainstProject, isContextOff, isSkillOff, normalizeLoadout, pristineLoadout, type LoadoutEntryData } from "./session-loadout";
+import type { ApprovalLookup } from "./approvals-lookup";
+import type { FolderScan } from "./approvals";
+import type { FolderRule } from "../shared/folder-rule";
+import type { ApprovalFolder, SetupApproval } from "../shared/approvals";
+import { dirname, join } from "node:path";
 import { candidateDirs, instructionFileIn } from "./deeper-context";
 import { getSessionSummary } from "./sessions-index";
 import { agentRoot } from "./state-root";
@@ -114,7 +117,7 @@ async function sessionSwitches(sessionPath: string): Promise<SessionSwitches> {
     const entry = stateView(branch).latest(LOADOUT)?.data ?? null;
     if (branch.some((h) => h.kind === "user")) return { off: entry, toggleable: false };
     const cwd = await readStoredCwd(sessionPath).catch(() => null);
-    return { off: pristineLoadout(entry, cwd ? await projectOffFor(cwd) : []), toggleable: false };
+    return { off: pristineLoadout(entry, cwd ? await ruleFor(cwd) : null), toggleable: false };
   } catch {
     return { off: null, toggleable: false };
   }
@@ -122,54 +125,143 @@ async function sessionSwitches(sessionPath: string): Promise<SessionSwitches> {
 
 type Loaded = Extract<SessionSetup, { state: "ok" }>;
 
-const mcpSetup = async (ask: McpSetupAsk) => (await import("./mcp/chat")).setupFor(ask);
-
-/** The project a chat's folder belongs to and its decisions, or null (server/projects/skills.ts). */
-export interface SetupProject {
-  id: string;
-  name: string;
-  decisions: Record<string, SkillDecision>;
+/** Whether no message is on a session's branch yet: the held chat's word, else its file's. */
+async function isPristineSession(sessionPath: string): Promise<boolean> {
+  const chat = chatHandle(sessionPath);
+  if (chat) return !!chat.mirror.pristine;
+  try {
+    return !(await readBranch(sessionPath)).some((h) => h.kind === "user");
+  } catch {
+    return false;
+  }
 }
 
-const projectSkills = async () => import("./projects/skills");
+const mcpSetup = async (ask: McpSetupAsk) => (await import("./mcp/chat")).setupFor(ask);
 
-/** The project of a folder, with its decisions; null outside a project or when it can't be told. */
-async function projectOfFolder(cwd: string): Promise<SetupProject | null> {
+/** A chat folder's approval list as the setup read lays it over its rows: the decisions now (never cached)
+    and the folder's scan (cached with the folder's answer; `fresh` reads it again). */
+export interface SetupApprovals {
+  lookup: ApprovalLookup;
+  folder: ApprovalFolder;
+  scan: Pick<FolderScan, "items"> | null;
+}
+
+const approvalsMod = async () => import("./approvals");
+const scanCache = new Map<string, { at: number; scan: FolderScan }>();
+
+/** The folder's list for a chat in `cwd`, with its scan (null when it can't be read). */
+async function approvalsOfFolder(cwd: string, fresh: boolean, now: () => number): Promise<SetupApprovals | null> {
   try {
-    const p = (await projectSkills()).projectForCwd(cwd);
-    return p ? { ...p, decisions: projectSkillDecisions(p.id) } : null;
+    const m = await approvalsMod();
+    const lookup = await m.approvalLookupForCwd(cwd);
+    const hit = scanCache.get(lookup.folder.key);
+    let scan: FolderScan | null = !fresh && hit && now() - hit.at < SETUP_TTL_MS ? hit.scan : null;
+    if (!scan) {
+      scan = await m.folderQuickScan(lookup.folder).catch(() => null);
+      if (scan) scanCache.set(lookup.folder.key, { at: now(), scan });
+    }
+    return { lookup, folder: m.approvalFolderOf(lookup.folder), scan };
   } catch {
     return null;
   }
 }
 
-/** The skills a folder's project disallows (none outside a project). */
-async function projectOffFor(cwd: string): Promise<string[]> {
+/** The decisions a new chat in `cwd` builds with (server/projects/folder-rule.ts). */
+async function ruleFor(cwd: string): Promise<FolderRule | null> {
   try {
-    return (await projectSkills()).projectSkillsOffForCwd(cwd);
+    return await (await import("./projects/folder-rule")).folderRuleForCwd(cwd);
   } catch {
-    return [];
+    return null;
   }
 }
 
-/** The project's state on each skill row, and the project named for the card's Approve and Disallow. */
-export function withProject(setup: Loaded, project: SetupProject | null): Loaded {
-  if (!project) return setup;
-  return {
-    ...setup,
-    skills: setup.skills.map((k) => ({ ...k, project: project.decisions[k.name] ?? "waiting" })),
-    project: { id: project.id, name: project.name },
-  };
+/** One row's decision in the folder's list, by its file. */
+function approvalOf(a: SetupApprovals, kind: "context" | "skill", path: string, places: { checkout: string | null }): SetupApproval {
+  const m = approvalsSync!;
+  const realPath = m.real(path);
+  const key = m.itemKey(a.lookup, realPath);
+  const d = (kind === "context" ? a.lookup.context : a.lookup.skills)[key];
+  const state = d?.state ?? "waiting";
+  let changed = false;
+  if (state === "approved" && d?.sha256) {
+    try {
+      changed = m.fileSha256(readFileSync(path)) !== d.sha256;
+    } catch {
+      changed = false;
+    }
+  }
+  const group = m.groupOf(kind, realPath, m.placesFor(places.checkout));
+  return { key, state, group, ...(changed ? { changed: true as const } : {}) };
+}
+/** The pure helpers approvalOf reads, loaded once with the module. */
+let approvalsSync: (typeof import("./approvals") & { real: (p: string) => string; placesFor: (checkout: string | null) => import("./approvals").GroupPlaces }) | null = null;
+async function loadApprovalsSync() {
+  if (approvalsSync) return approvalsSync;
+  const m = await approvalsMod();
+  const { real } = await import("./mcp/folder");
+  const { homedir } = await import("node:os");
+  const { join } = await import("node:path");
+  const { defaultClaudeDir } = await import("../pi-config/extensions/claude-code/accounts.ts");
+  const placesFor = (checkout: string | null) => ({ checkout, agentDir: real(agentRoot()), home: real(homedir()), claudeDirs: [...new Set([real(defaultClaudeDir()), real(join(homedir(), ".claude"))])] });
+  approvalsSync = { ...m, real, placesFor };
+  return approvalsSync;
+}
+
+/**
+ * Each row's decision in its folder's list, the list named, and whether this chat asks first (before its
+ * first message the Sova-wide setting, after it the mode it was stamped with). Before the first message
+ * the folder scan's items this chat's folder doesn't load at its start are listed too (`scanOnly`), so
+ * they are decided first; their `off` is the chat's effective value.
+ */
+export function withApprovals(setup: Loaded, a: SetupApprovals | null, sw: SessionSwitches, pristine: boolean): Loaded {
+  if (!a || !approvalsSync) return setup;
+  const m = approvalsSync;
+  const checkout = m.checkoutOf(a.lookup.checkouts, m.real(setup.cwd));
+  const places = { checkout };
+  const asking = pristine ? a.lookup.asking : !!sw.off?.asking;
+  const context: SessionSetupFile[] = setup.context.map((f) => ({ ...f, approval: approvalOf(a, "context", f.path, places) }));
+  const skills: SessionSetupSkill[] = setup.skills.map((k) => ({ ...k, approval: approvalOf(a, "skill", k.path, places) }));
+  if (pristine && a.scan && checkout) {
+    const have = new Set([...context, ...skills].map((r) => `${r.approval!.key}`));
+    for (const i of a.scan.items) {
+      if (have.has(i.key) || i.key.startsWith("/")) continue;
+      const path = join(checkout, i.key);
+      const size = measureFile(path);
+      if (!size) continue;
+      have.add(i.key);
+      const approval = approvalOf(a, i.kind, path, places);
+      if (i.kind === "context") {
+        context.push({ path, ...size, approval, scanOnly: true, ...(isContextOff(sw.off, path) ? { off: true as const } : {}) });
+      } else {
+        const description = i.description?.trim();
+        skills.push({ name: i.name, path, ...(description ? { description } : {}), ...size, approval, scanOnly: true, ...(isSkillOff(sw.off, { name: i.name, filePath: path }) ? { off: true as const } : {}) });
+      }
+    }
+  }
+  return { ...setup, context, skills, approvals: { folder: a.folder, asking } };
+}
+
+/** How many context files and skills a session's first message waits on: none once a message is sent, for a
+    special chat, or without asking first; else its setup read's waiting rows, read fresh. */
+export async function waitingForSession(sessionPath: string, deps: SetupDeps = {}): Promise<number> {
+  const chat = chatHandle(sessionPath);
+  if (chat && (!chat.mirror.pristine || chat.mirror.special || !chat.mirror.loadout)) return 0;
+  return waitingOf(await getSessionSetup(sessionPath, { fresh: true }, deps));
+}
+
+/** How many of a setup's rows wait for a decision while it asks first (Send waits on them). */
+export function waitingOf(setup: SessionSetup): number {
+  if (setup.state !== "ok" || !setup.approvals?.asking) return 0;
+  return [...setup.context, ...setup.skills].filter((r) => r.approval?.state === "waiting").length;
 }
 
 /** The folder's answer as one session sees it: its off rows marked, and whether it can switch them.
     A new object: the cached answer is never changed. */
 export function withSwitches(setup: Loaded, sw: SessionSwitches): Loaded {
-  const offContext = new Set(sw.off?.offContext ?? []);
   return {
     ...setup,
-    context: setup.context.map(({ off: _o, ...f }) => (offContext.has(f.path) ? { ...f, off: true as const } : f)),
-    skills: setup.skills.map(({ off: _o, ...k }) => (isSkillOff(sw.off, k.name) ? { ...k, off: true as const } : k)),
+    context: setup.context.map(({ off: _o, ...f }) => (isContextOff(sw.off, f.path) ? { ...f, off: true as const } : f)),
+    skills: setup.skills.map(({ off: _o, ...k }) => (isSkillOff(sw.off, { name: k.name, filePath: k.path }) ? { ...k, off: true as const } : k)),
     toggleable: sw.toggleable,
   };
 }
@@ -197,8 +289,10 @@ export interface SetupDeps {
   loader?: (cwd: string) => Promise<Loadout>;
   /** One session's off set and switch window (default: the held chat, else the file's entry). */
   switches?: (sessionPath: string) => SessionSwitches | Promise<SessionSwitches>;
-  /** The folder's project and its skill decisions (default: server/projects/skills.ts); never cached. */
-  project?: (cwd: string) => SetupProject | null | Promise<SetupProject | null>;
+  /** The folder's approval list and scan (default: server/approvals.ts); the decisions never cached. */
+  approvals?: (cwd: string, fresh: boolean) => SetupApprovals | null | Promise<SetupApprovals | null>;
+  /** Whether no message is on the session's branch yet (default: the held chat's mirror, else the file). */
+  pristine?: (sessionPath: string) => boolean | Promise<boolean>;
   /** The MCP Servers group (default: server/mcp/chat.ts); never part of the folder's cached answer. */
   mcp?: (ask: McpSetupAsk) => Promise<SetupMcp | undefined>;
   /** Whether a local path exists (default: fs.existsSync). */
@@ -315,8 +409,10 @@ export async function getSessionSetup(sessionPath: string, opts: { fresh?: boole
     sw = { off: null, toggleable: false };
   }
   const mcp = await (deps.mcp ?? mcpSetup)({ path: sessionPath, cwd: folder.cwd, off: sw.off }).catch(() => undefined);
-  const project = await Promise.resolve((deps.project ?? projectOfFolder)(folder.cwd)).catch(() => null);
-  return { ...withProject(withSwitches(folder, sw), project), ...(mcp ? { mcp } : {}) };
+  await loadApprovalsSync().catch(() => null);
+  const approvals = await Promise.resolve((deps.approvals ?? ((cwd, fresh) => approvalsOfFolder(cwd, fresh, now)))(folder.cwd, !!opts.fresh)).catch(() => null);
+  const pristine = await Promise.resolve((deps.pristine ?? isPristineSession)(sessionPath)).catch(() => false);
+  return { ...withApprovals(withSwitches(folder, sw), approvals, sw, pristine), ...(mcp ? { mcp } : {}) };
 }
 
 /** Every path this setup lists, in any of its groups: the only files /api/sessions/context/file reads. */
@@ -369,7 +465,16 @@ function folderSetup(cwd: string, sessionPath: string, opts: { fresh?: boolean }
   return run;
 }
 
-export type LoadoutResult = { ok: true; setup: SessionSetup } | { ok: false; status: 400 | 404 | 409; error: string };
+export type LoadoutResult = { ok: true; setup: SessionSetup } | { ok: false; status: 400 | 403 | 404 | 409; error: string; yourClick?: true };
+
+/** Who asks for a switch: `page` is the operator's page here or a proven click from another of their
+    computers' (notPageNorProven), the only caller that may turn on a row the folder keeps off. */
+export interface LoadoutCaller {
+  page: boolean;
+}
+
+/** The refusal for turning on, from anything but the page, a row the folder keeps off. */
+export const LOADOUT_TURN_ON_REFUSAL = "Only you can turn on a context file or skill this folder keeps off: switch it on in Sova's page.";
 
 /** One switch at a time, so two quick flips write in the order they were made. */
 let applying: Promise<unknown> = Promise.resolve();
@@ -381,8 +486,8 @@ let applying: Promise<unknown> = Promise.resolve();
  * with nothing written once a message is on the branch, mid-turn, TUI-live, for a foreign writer,
  * a special session or a remote one. An unchanged set writes nothing and rebuilds nothing.
  */
-export function applyLoadout(path: string, body: unknown): Promise<LoadoutResult> {
-  return inLoadoutOrder(() => applyLoadoutNow(path, body));
+export function applyLoadout(path: string, body: unknown, caller: LoadoutCaller = { page: true }): Promise<LoadoutResult> {
+  return inLoadoutOrder(() => applyLoadoutNow(path, body, caller));
 }
 
 /** Run `fn` in the switches' one order (a card's switch, a project's skills change rebuilding new chats). */
@@ -394,7 +499,7 @@ export function inLoadoutOrder<T>(fn: () => Promise<T>): Promise<T> {
 
 const sameSet = (a: readonly string[], b: readonly string[]) => a.length === b.length && [...a].sort().join("\0") === [...b].sort().join("\0");
 
-async function applyLoadoutNow(path: string, body: unknown): Promise<LoadoutResult> {
+async function applyLoadoutNow(path: string, body: unknown, caller: LoadoutCaller): Promise<LoadoutResult> {
   const b = (body ?? {}) as { offContext?: unknown; offSkills?: unknown; offMcp?: unknown; onMcp?: unknown };
   const data = normalizeLoadout({ v: 1, offContext: b.offContext, offSkills: b.offSkills, offMcp: b.offMcp, onMcp: b.onMcp });
   if (!data) return { ok: false, status: 400, error: "Expected {path, offContext: absolute paths, offSkills: skill names}" };
@@ -416,17 +521,39 @@ async function applyLoadoutNow(path: string, body: unknown): Promise<LoadoutResu
   } catch (err) {
     return { ok: false, status: 409, error: err instanceof Error ? err.message : String(err) };
   }
-  // The card sends the whole off set it shows; before the first message what it shows of skills is the
-  // project's defaults with this chat's flips, so the entry keeps only the flips (flipsAgainstProject).
+  // The card sends the whole off set it shows, of the rows it lists: the runtime's unfiltered lists. Before
+  // the first message that set is the folder's decisions with this chat's flips, so the entry keeps only the
+  // flips (flipsAgainstProject), and a later decision still reaches the chat until it starts.
+  const res = await chat.resources().catch(() => null);
+  const listedContext = (res?.context ?? []).map((f) => f.path);
+  const listedSkills = (res?.skills ?? []).map((k) => ({ name: k.name, filePath: k.filePath }));
+  // The card names a skill by its name or its SKILL.md; the entry keeps the file (a skill of the same name
+  // from another place is another skill). A name it doesn't list is never switched.
+  const fileOf = (n: string) => (n.startsWith("/") ? listedSkills.find((k) => k.filePath === n) : listedSkills.find((k) => k.name === n))?.filePath;
+  const wanted = { ...data, offSkills: [...new Set(data.offSkills.map(fileOf).filter((p): p is string => !!p))] };
   const current = chat.mirror.loadout?.off ?? null;
+  const offNow = {
+    context: listedContext.filter((p) => isContextOff(current, p)),
+    skills: listedSkills.filter((k) => isSkillOff(current, k)).map((k) => k.filePath),
+  };
   const unchanged =
-    sameSet(current?.offContext ?? [], data.offContext) && sameSet(current?.offSkills ?? [], data.offSkills) && sameSet(current?.offMcp ?? [], data.offMcp ?? []) && sameSet(current?.onMcp ?? [], data.onMcp ?? []);
+    sameSet(offNow.context, data.offContext.filter((p) => listedContext.includes(p))) &&
+    sameSet(offNow.skills, wanted.offSkills) &&
+    sameSet(current?.offMcp ?? [], data.offMcp ?? []) &&
+    sameSet(current?.onMcp ?? [], data.onMcp ?? []);
   if (!unchanged) {
-    const projectOff = stored !== null ? await projectOffFor(stored) : [];
-    // The skills the card could list: the runtime's unfiltered list.
-    const listed = projectOff.length ? new Set((await chat.resources().catch(() => null))?.skills.map((k) => k.name) ?? []) : new Set<string>();
+    // What the folder keeps off for this chat with no flips of its own.
+    const kept = pristineLoadout(null, stored !== null ? await ruleFor(stored) : null);
+    const keptOff = { context: listedContext.filter((p) => isContextOff(kept, p)), skills: listedSkills.filter((k) => isSkillOff(kept, k)).map((k) => k.filePath) };
+    const next = flipsAgainstProject(wanted, keptOff, { context: new Set(listedContext), skills: new Set(listedSkills.map((k) => k.filePath)) });
+    // Turning on what the folder keeps off is the page's alone: otherwise a chat could approve itself.
+    const had = await readBranch(path)
+      .then((branch) => stateView(branch).latest(LOADOUT)?.data ?? null)
+      .catch(() => null);
+    const newlyOn = [...(next.onContext ?? []).filter((p) => !had?.onContext?.includes(p)), ...(next.onSkills ?? []).filter((n) => !had?.onSkills?.includes(n))];
+    if (newlyOn.length && !caller.page) return { ok: false, status: 403, error: LOADOUT_TURN_ON_REFUSAL, yourClick: true };
     try {
-      await chat.writeLoadout(flipsAgainstProject(data, projectOff, listed));
+      await chat.writeLoadout(next);
     } catch (err) {
       return { ok: false, status: 409, error: err instanceof Error ? err.message : String(err) };
     }

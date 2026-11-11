@@ -54,3 +54,17 @@ test("a relayed request carries neither the token nor a chat's key", async () =>
   assert.equal(seen!.get("x-sova-token"), null);
   assert.equal(seen!.get("x-sova-caller"), null);
 });
+
+test("only the page proxy marks a call relayed: a program's direct call to a peer never carries the mark, even when it sets it", async () => {
+  // The peer b of the test above, still configured.
+  seen = null;
+  const relayed = await app.request("/peer/b/api/echo", { headers: { Host: "a.lab:4800" } });
+  assert.equal(relayed.status, 200);
+  assert.equal((seen as Headers | null)?.get("x-sova-relayed"), "1", "the proxy marks what it relays");
+  seen = null;
+  const { peerFetch } = await import("./index");
+  const direct = await peerFetch("b", "/api/echo", { headers: { "X-Sova-Relayed": "1" } });
+  assert.equal(direct.status, 200);
+  assert.ok(seen, "the peer was reached");
+  assert.equal((seen as Headers | null)?.get("x-sova-relayed"), null, "a direct call is a program's, whatever it says");
+});

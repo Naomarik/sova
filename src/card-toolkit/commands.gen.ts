@@ -29,6 +29,9 @@ export type CommandId =
   | "session.workers.checks"
   | "session.context"
   | "session.context.file"
+  | "session.folder-approvals.get"
+  | "session.folder-approvals.set"
+  | "session.approval.set"
   | "session.context.view"
   | "session.group.list"
   | "session.group.create"
@@ -141,6 +144,8 @@ export type CommandId =
   | "project.claude-login.set"
   | "project.skills.get"
   | "project.skills.set"
+  | "project.context-files.get"
+  | "project.context-files.set"
   | "project.coding.start"
   | "project.setup.get"
   | "project.setup.open"
@@ -441,6 +446,31 @@ export interface CommandParams {
     "session"?: string;
     /** A path the session's setup lists (a context file, SKILL.md, SYSTEM.md or APPEND_SYSTEM.md) */
     "file": string;
+  };
+  /** Every context file and skill a chat in a folder could load, each by its key and Approved, Disallowed or Waiting, kept on this computer, with whether Sova asks first. The folder is a project's (it answers for its project) or one a chat of this computer runs in; any other is a 404. (only looks; needs the card's owner trusted) */
+  "session.folder-approvals.get": {
+    /** A project's folder or a chat's (absolute) */
+    "cwd": string;
+  };
+  /** Approve or disallow a folder's context files and skills for its new chats, saved at once: files and skills are { <key>: approved | disallowed | waiting }. Approving, or turning a disallowed one back on, is the operator's own page only. (changes something; needs the card's owner trusted) */
+  "session.folder-approvals.set": {
+    /** The chat's folder (absolute) */
+    "cwd": string;
+    /** { <context file key>: "approved" | "disallowed" | "waiting" } */
+    "files"?: unknown;
+    /** { <skill key or name>: "approved" | "disallowed" | "waiting" } */
+    "skills"?: unknown;
+  };
+  /** Approve or disallow one context file or skill of a chat's folder, by its file; an approval also lets a started chat that asks first load it at the agent's next step there. Approving is the operator's own page only. (changes something; needs the card's owner trusted) */
+  "session.approval.set": {
+    /** The session, by id or by path */
+    "session"?: string;
+    /** context or skill */
+    "kind": "context" | "skill";
+    /** The file (absolute; a skill's SKILL.md) */
+    "item": string;
+    /** approved or disallowed */
+    "state": "approved" | "disallowed";
   };
   /** What fills a chat's context window now: its instruction files, mode, rules, skills, tools and conversation, each with an estimated size, and the last reply's total. (only looks; needs the card's owner trusted) */
   "session.context.view": {
@@ -3699,17 +3729,29 @@ export interface CommandParams {
     /** A login id (default: this computer's own), org, or none */
     "login": string;
   };
-  /** Every skill a chat in a project could be offered, each Approved, Disallowed or Waiting for this project's new chats (kept on this computer). (only looks; needs the card's owner trusted) */
+  /** Every skill a chat in a project could be offered, each by its key (its place) and Approved, Disallowed or Waiting for this project's new chats (kept on this computer). (only looks; needs the card's owner trusted) */
   "project.skills.get": {
     /** The project's id */
     "pid": string;
   };
-  /** Approve or disallow skills for a project's new chats, saved at once: skills is { <skill name>: approved | disallowed | waiting }. Disallowed skills start off; chats already started keep theirs. (changes something; needs the card's owner trusted) */
+  /** Approve or disallow skills for a project's new chats, saved at once: skills is { <skill key or name>: approved | disallowed | waiting }. Disallowed skills start off; chats already started keep theirs. Approving, or turning a disallowed one back on, is the operator's own page only. (changes something; needs the card's owner trusted) */
   "project.skills.set": {
     /** The project's id */
     "pid": string;
-    /** { <skill name>: "approved" | "disallowed" | "waiting" } */
+    /** { <skill key or name>: "approved" | "disallowed" | "waiting" } */
     "skills": unknown;
+  };
+  /** Every context file (AGENTS.md, CLAUDE.md and the like) a chat in a project could load, the project's, its folders', those above it and the user's own, each by its key and Approved, Disallowed or Waiting for this project's new chats (kept on this computer). (only looks; needs the card's owner trusted) */
+  "project.context-files.get": {
+    /** The project's id */
+    "pid": string;
+  };
+  /** Approve or disallow context files for a project's new chats, saved at once: files is { <context file key>: approved | disallowed | waiting }. Disallowed files aren't loaded; chats already started keep theirs. Approving, or turning a disallowed one back on, is the operator's own page only. (changes something; needs the card's owner trusted) */
+  "project.context-files.set": {
+    /** The project's id */
+    "pid": string;
+    /** { <context file key>: "approved" | "disallowed" | "waiting" } */
+    "files": unknown;
   };
   /** Start a coding chat in a project: in its root (or a folder inside it), on the project's coding model and mode; with worktree later it cuts its own branch once the work has a name. (changes something; needs the card's owner trusted) */
   "project.coding.start": {
@@ -4556,6 +4598,9 @@ export const COMMAND_EFFECTS: Record<CommandId, "looks" | "changes"> = {
   "session.workers.checks": "looks",
   "session.context": "looks",
   "session.context.file": "looks",
+  "session.folder-approvals.get": "looks",
+  "session.folder-approvals.set": "changes",
+  "session.approval.set": "changes",
   "session.context.view": "looks",
   "session.group.list": "looks",
   "session.group.create": "changes",
@@ -4668,6 +4713,8 @@ export const COMMAND_EFFECTS: Record<CommandId, "looks" | "changes"> = {
   "project.claude-login.set": "changes",
   "project.skills.get": "looks",
   "project.skills.set": "changes",
+  "project.context-files.get": "looks",
+  "project.context-files.set": "changes",
   "project.coding.start": "changes",
   "project.setup.get": "looks",
   "project.setup.open": "changes",

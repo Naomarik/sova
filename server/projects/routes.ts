@@ -1,5 +1,5 @@
 import type { Context, Hono } from "hono";
-import { appendHistory, setProjectSkillStates } from "../project-settings";
+import { appendHistory } from "../project-settings";
 import type { ProjectList, ProjectRegistered } from "../../shared/projects";
 import { BusyError } from "../chat-handle";
 import { localRequest } from "../mesh/proxy";
@@ -11,9 +11,7 @@ import { archiveBlockers } from "../project-overseer";
 import { nudgeMarks } from "../session-feed";
 import { knownLogin, loginOptions, UNKNOWN_LOGIN } from "../claude-login-known";
 import { projectLoginView, setProjectLogin } from "./claude-login";
-import { parseSkillChanges, projectSkillsView } from "./skills";
-import { pageOnlyRefusal } from "../page-only";
-import { projectSkillDecisions } from "../project-skills-store";
+import { registerApprovalRoutes } from "../approvals-routes";
 import { cloneRepo, overseerRepoProblem } from "./clone";
 import { reservedRoots } from "./contributions";
 import { RegistryError, reservedRootProblem } from "./registry";
@@ -61,15 +59,6 @@ function operatorBy(c: Context): OperatorBy {
 }
 
 const pidOf = (c: Context): string => c.req.param("pid") ?? "";
-
-/** Who may turn a project's Disallowed skill back on: the operator's own page alone. */
-const SKILLS_WORDS = {
-  overseer: "Only you turn a disallowed skill back on: the Overseer can't. Nothing was changed.",
-  local: "A disallowed skill is turned back on only on this machine. Nothing was changed.",
-  chat: "A chat can't turn a disallowed skill back on: its project overseer proposes it through sova_settings, on a card you apply. Nothing was changed.",
-  script: "A script can't turn a disallowed skill back on: use the Skills card on the project's Settings tab. Nothing was changed.",
-  extension: "An extension can't turn a disallowed skill back on. Nothing was changed.",
-};
 
 /** One of the global Overseer's clones at a time (§app.overseer/org-project-add). */
 let overseerCloning = false;
@@ -138,27 +127,9 @@ export function registerProjectRoutes(app: Hono<any>): void {
     }),
   );
 
-  // The project's skill defaults (shared/project-skills.ts): kept on this host, for chats not yet started.
-  app.get("/api/projects/:pid/skills", handle(async (c) => c.json(await projectSkillsView(pidOf(c)), 200, NO_STORE)));
-  app.put(
-    "/api/projects/:pid/skills",
-    handle(async (c) => {
-      const pid = pidOf(c);
-      readProject(pid);
-      const changes = parseSkillChanges(await body(c));
-      // Turning a Disallowed skill back on is a grant: the operator's own page only, as the copy limit's raise.
-      // Disallowing, and Waiting → Approved, stay open to scripts and the Overseer.
-      const decided = projectSkillDecisions(pid);
-      const reAllows = Object.keys(changes).filter((n) => decided[n] === "disallowed" && changes[n] !== "disallowed");
-      const notYou = reAllows.length ? pageOnlyRefusal(c, SKILLS_WORDS) : null;
-      if (notYou) return c.json({ error: notYou }, 403);
-      // The settings' one write (server/project-settings.ts): saved, recorded in Settings history, and every chat of
-      // the project not yet started rebuilt with the new defaults; a started one keeps its skills.
-      const by = operatorBy(c).via === "overseer" ? ({ kind: "overseer" } as const) : ({ kind: "operator", via: c.req.header("x-sova-token") !== undefined ? "script" : "page" } as const);
-      const { view } = await setProjectSkillStates(pid, changes, by);
-      return c.json(view, 200, NO_STORE);
-    }),
-  );
+  // The project's context files and skills (shared/approvals.ts), the folder lists and the Sova-wide setting: kept on
+  // this host, for chats not yet started.
+  registerApprovalRoutes(app);
 
   app.patch(
     "/api/projects/:pid",

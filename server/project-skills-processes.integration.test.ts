@@ -54,12 +54,14 @@ const api = async (method: string, path: string, body?: unknown) => {
 };
 
 /** A new session's file in the project: its header only, as New Session makes it. */
-function newSession(): string {
+let sessions = 0;
+function newSession(cwd = root): string {
   const dir = join(agentDir, "sessions", "--proj--");
   mkdirSync(dir, { recursive: true });
-  const id = "01a5c222-0000-7000-8000-000000000001";
-  const file = join(dir, `2026-11-11T00-00-01-000Z_${id}.jsonl`);
-  writeFileSync(file, `${JSON.stringify({ type: "session", version: 3, id, timestamp: "2026-11-11T00:00:00.000Z", cwd: root })}\n`);
+  const n = ++sessions;
+  const id = `01a5c222-0000-7000-8000-${String(n).padStart(12, "0")}`;
+  const file = join(dir, `2026-11-11T00-00-${String(n).padStart(2, "0")}-000Z_${id}.jsonl`);
+  writeFileSync(file, `${JSON.stringify({ type: "session", version: 3, id, timestamp: "2026-11-11T00:00:00.000Z", cwd })}\n`);
   return canonicalPath(file);
 }
 
@@ -84,7 +86,7 @@ const offOf = async (path: string) => {
   assert.equal(s.state, "ok", JSON.stringify(s));
   const ok = s as Extract<SessionSetup, { state: "ok" }>;
   assert.equal(ok.fromRuntime, true, "read from the chat's own runtime");
-  return Object.fromEntries(ok.skills.filter((k) => k.name.endsWith("-skill")).map((k) => [k.name, { off: !!k.off, project: k.project }]));
+  return Object.fromEntries(ok.skills.filter((k) => k.name.endsWith("-skill")).map((k) => [k.name, { off: !!k.off, project: k.approval?.state }]));
 };
 
 test("a new chat in its own process starts without the project's disallowed skill, and a save answers after its rebuild", async () => {
@@ -95,4 +97,56 @@ test("a new chat in its own process starts without the project's disallowed skil
   assert.deepEqual(await offOf(path), { "block-skill": { off: true, project: "disallowed" }, "keep-skill": { off: false, project: "waiting" } }, "its first build");
   await api("PUT", `/api/projects/${project.id}/skills`, { skills: { "keep-skill": "disallowed" } });
   assert.deepEqual(await offOf(path), { "block-skill": { off: true, project: "disallowed" }, "keep-skill": { off: true, project: "disallowed" } }, "the read right after the save");
+});
+
+test("asking first: a page's first message into a new chat in its own process is held with its draft; a program's goes through", async () => {
+  const { setAllowWithoutAsking } = await import("./context-approval-setting");
+  const { notifySetupChanged } = await import("./projects/skills-chats");
+  const { pageHeaders } = await import("./testing/page");
+  setAllowWithoutAsking(false);
+  await notifySetupChanged(null);
+  try {
+    // A folder that isn't a project, nothing decided in it.
+    const folder = join(tmp, "adhoc");
+    mkdirSync(join(folder, ".agents", "skills", "wait-skill"), { recursive: true });
+    writeFileSync(join(folder, ".agents", "skills", "wait-skill", "SKILL.md"), "---\nname: wait-skill\ndescription: Waits.\n---\n\nbody\n");
+    writeFileSync(join(folder, "AGENTS.md"), "RULES\n");
+    const path = newSession(folder);
+    // The page's own socket: the install's cookie, no token.
+    const page = new WebSocket(`ws://${host}/ws/chat?path=${encodeURIComponent(path)}&force=1`, { headers: pageHeaders() });
+    sockets.push(page);
+    const frames: Record<string, unknown>[] = [];
+    await new Promise<void>((done, fail) => {
+      const t = setTimeout(() => fail(new Error("no hello")), 60_000);
+      page.on("message", (d) => {
+        const f = JSON.parse(String(d)) as Record<string, unknown>;
+        frames.push(f);
+        if (f.type === "hello") {
+          clearTimeout(t);
+          done();
+        }
+      });
+      page.on("error", fail);
+    });
+    page.send(JSON.stringify({ type: "prompt", text: "hello", clientId: "c1" }));
+    const refused = await new Promise<Record<string, unknown>>((done, fail) => {
+      const t = setTimeout(() => fail(new Error(`no refusal: ${JSON.stringify(frames.map((f) => f.type))}`)), 30_000);
+      const look = () => {
+        const f = frames.find((x) => x.type === "error" && x.clientId === "c1");
+        if (f) {
+          clearTimeout(t);
+          done(f);
+        } else setTimeout(look, 20);
+      };
+      look();
+    });
+    assert.equal(refused.code, "refused");
+    assert.equal(refused.decide, "first");
+    assert.ok(typeof refused.waiting === "number" && refused.waiting >= 2, JSON.stringify(refused));
+    // A program's message (the token: not the page) is never held: the chat starts with the waiting ones off.
+    await api("POST", "/api/sessions/prompt", { path, text: "from a script" });
+  } finally {
+    setAllowWithoutAsking(true);
+    await notifySetupChanged(null);
+  }
 });

@@ -153,7 +153,7 @@ export interface LiveForm {
 }
 
 /** The views drawn in the page (components/TranscriptKind.tsx `PAGE_VIEWS`), by name. */
-export type PageView = "wake" | "topic" | "compaction" | "info" | "shell" | "worktree-merge" | "settings" | "offer" | "show-changes" | "tour" | "design" | "owner-request" | "handoff-run" | "mcp-note" | "overseer-answer" | "profile-mark" | "brief" | "explain" | "team-report" | "report" | "baton" | "user" | "assistant-text" | "thinking" | "tool-result" | "tool" | "align-report" | "align";
+export type PageView = "wake" | "topic" | "compaction" | "info" | "shell" | "worktree-merge" | "settings" | "offer" | "show-changes" | "tour" | "design" | "owner-request" | "handoff-run" | "mcp-note" | "approval-pending" | "overseer-answer" | "profile-mark" | "brief" | "explain" | "team-report" | "report" | "baton" | "user" | "assistant-text" | "thinking" | "tool-result" | "tool" | "align-report" | "align";
 
 /**
  * A kind's view: one of Sova's page views by name (drawn at once, as before, in the page's own
@@ -285,6 +285,8 @@ export const TRANSCRIPT_KINDS: readonly TranscriptKind[] = [
   kind({ id: "handoff-run", match: (it) => it.kind === "info" && it.handoffRun, host: "page", placement: "anchored", view: { page: "handoff-run" } }),
   // A server's failure in this chat, with its link (§app.mcp/in-a-chat).
   kind({ id: "mcp-note", match: (it) => it.kind === "info" && it.mcpNote, host: "page", placement: "anchored", view: { page: "mcp-note" } }),
+  // A context file or skill found after the first message, kept out until decided (§chat.context-approval/mid-chat).
+  kind({ id: "approval-pending", match: (it) => it.kind === "info" && it.approvalPending, host: "page", placement: "anchored", view: { page: "approval-pending" } }),
   kind({ id: "compaction", match: (it) => it.kind === "info" && rowFacts(it)?.compaction, estimate: () => "36px", host: "page", placement: "anchored", view: { page: "compaction" } }),
   // A Claude login note waits for the first message, like the profile row.
   kind({ id: "login-note-waiting", match: (it, ctx) => isLoginNoteRow(it) && !ctx.hasUserRow(), host: "page", placement: "anchored", drawsNothing: true }),

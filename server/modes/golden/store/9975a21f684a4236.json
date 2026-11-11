@@ -30,6 +30,8 @@
    "project.archive",
    "copies",
    "skills",
+   "context-files",
+   "context-approval",
    "services",
    "merge-queue",
    "profile",

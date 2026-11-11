@@ -13,9 +13,9 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 
 | What | Count |
 | --- | ---: |
-| Routes registered | 618 |
-| Routes a catalogue entry points at | 198 |
-| Catalogue entries | 269 |
+| Routes registered | 625 |
+| Routes a catalogue entry points at | 203 |
+| Catalogue entries | 274 |
 | Class: Peer protocol | 39 |
 | Class: Auth | 4 |
 | Class: Share pages | 0 |
@@ -27,14 +27,14 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | Class: Trust grants | 25 |
 | Class: A card view's own calls | 4 |
 | Class: Middleware and fallbacks | 2 |
-| Class: Left as is, by choice | 267 |
+| Class: Left as is, by choice | 269 |
 | Class: Page plumbing | 22 |
 | Class: Steps of starting a chat | 2 |
 | Class: Live capability links | 1 |
 | Class: Approvals and grants | 17 |
 | Pending (not yet a command) | 23 |
 | Chat socket frame types | 14 |
-| Document/window keydown listeners | 11 |
+| Document/window keydown listeners | 12 |
 | Hand-written tool specs | 147 |
 
 ## Catalogue entries
@@ -67,6 +67,9 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | `session.workers.checks` | Show Worker Report Checks | looks | `GET /api/sessions/worker-checks` | sessions |
 | `session.context` | Show Session Context | looks | `GET /api/sessions/context` | sessions |
 | `session.context.file` | Read Context File | looks | `GET /api/sessions/context/file` | sessions |
+| `session.folder-approvals.get` | Show Folder Context Files and Skills | looks | `GET /api/folder-approvals` | sessions |
+| `session.folder-approvals.set` | Set Folder Context Files and Skills | changes | `PUT /api/folder-approvals` | admin |
+| `session.approval.set` | Approve or Disallow in a Chat | changes | `POST /api/sessions/approval` | sessions |
 | `session.context.view` | Show Context Window | looks | `GET /api/sessions/context-view` | sessions |
 | `session.group.list` | List Groups | looks | `GET /api/session-groups` | sessions |
 | `session.group.create` | New Group | changes | `POST /api/session-groups` | sessions |
@@ -179,6 +182,8 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | `project.claude-login.set` | Set Project Claude Login | changes | `PUT /api/projects/:pid/claude-login` | admin |
 | `project.skills.get` | Show Project Skills | looks | `GET /api/projects/:pid/skills` | sessions |
 | `project.skills.set` | Set Project Skills | changes | `PUT /api/projects/:pid/skills` | admin |
+| `project.context-files.get` | Show Project Context Files | looks | `GET /api/projects/:pid/context-files` | sessions |
+| `project.context-files.set` | Set Project Context Files | changes | `PUT /api/projects/:pid/context-files` | admin |
 | `project.coding.start` | New Chat in Project | changes | `POST /api/projects/:pid/overseer/coding` | admin |
 | `project.setup.get` | Show Setup Chat | looks | `GET /api/projects/:pid/setup` | sessions |
 | `project.setup.open` | Set Up with a Chat | changes | `POST /api/projects/:pid/setup` | admin |
@@ -507,7 +512,7 @@ What a transcript card's or a drawing's sealed view asks through its box, for it
 | `ALL /*` | full |
 | `ALL /api/*` | full |
 
-### Left as is, by choice (267)
+### Left as is, by choice (269)
 
 Areas the user chose not to make scriptable (`OPTED_OUT` in `server/commands-inventory/scan.ts`). A route there that a catalogue entry points at stays a command; the rest are not pending, and a new route there needs no entry.
 
@@ -706,6 +711,8 @@ Areas the user chose not to make scriptable (`OPTED_OUT` in `server/commands-inv
 | `POST /api/settings/accounts/openai/login/answer` | admin |
 | `POST /api/settings/apply` | admin |
 | `GET /api/settings/claude-status` | sessions |
+| `GET /api/settings/context-approval` | sessions |
+| `PUT /api/settings/context-approval` | admin |
 | `GET /api/settings/decisions` | sessions |
 | `PUT /api/settings/decisions` | admin |
 | `DELETE /api/settings/decisions/key` | admin |
@@ -873,6 +880,8 @@ Approving a schedule or a draft spec, the Overseer's permits and their revoke: a
 | `GET /api/draft-specs` | full | `draft-spec.list` |
 | `GET /api/extensions` | sessions | `extensions.list` |
 | `GET /api/files` | sessions | `files.list` |
+| `GET /api/folder-approvals` | sessions | `session.folder-approvals.get` |
+| `PUT /api/folder-approvals` | admin | `session.folder-approvals.set` |
 | `GET /api/folders` | sessions | `folders.list` |
 | `GET /api/folders/list` | sessions | `project.folder.list` |
 | `GET /api/folders/read` | sessions | `project.folder.read` |
@@ -938,6 +947,8 @@ Approving a schedule or a draft spec, the Overseer's permits and their revoke: a
 | `GET /api/projects/:pid/cards` | sessions | `project.cards.list` |
 | `GET /api/projects/:pid/claude-login` | sessions | `project.claude-login.get` |
 | `PUT /api/projects/:pid/claude-login` | admin | `project.claude-login.set` |
+| `GET /api/projects/:pid/context-files` | sessions | `project.context-files.get` |
+| `PUT /api/projects/:pid/context-files` | admin | `project.context-files.set` |
 | `GET /api/projects/:pid/costs` | sessions | `project.costs` |
 | `GET /api/projects/:pid/files` | sessions | `project.files.list` |
 | `DELETE /api/projects/:pid/icon` | admin | `project.icon.remove` |
@@ -995,6 +1006,7 @@ Approving a schedule or a draft spec, the Overseer's permits and their revoke: a
 | `GET /api/sessions` | sessions | `session.list` |
 | `POST /api/sessions` | sessions | `session.create` |
 | `GET /api/sessions/align-triage` | sessions | `session.align.triage` |
+| `POST /api/sessions/approval` | sessions | `session.approval.set` |
 | `POST /api/sessions/archive` | sessions | `session.archive`, `session.unarchive` |
 | `POST /api/sessions/auto-title` | sessions | `session.title.auto` |
 | `POST /api/sessions/cleanup` | sessions | `session.cleanup` |
@@ -1068,6 +1080,7 @@ The `type` of every `ChatClientMessage` (`shared/protocol.ts`), the frames a pag
 | --- | --- |
 | `src/commands/keys.ts` | window, document |
 | `src/components/ChangesViewer.tsx` | document |
+| `src/components/FolderApprovalsDialog.tsx` | document |
 | `src/components/GroupView.tsx` | window |
 | `src/components/InsightStrip.tsx` | document |
 | `src/components/LandingBar.tsx` | document, document |

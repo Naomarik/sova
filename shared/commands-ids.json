@@ -269,7 +269,12 @@
     "design.delete",
     "design.coordinator.message",
     "project.skills.get",
-    "project.skills.set"
+    "project.skills.set",
+    "project.context-files.get",
+    "project.context-files.set",
+    "session.folder-approvals.get",
+    "session.folder-approvals.set",
+    "session.approval.set"
   ],
   "retired": [
     "settings.agents.get",

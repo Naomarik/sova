@@ -3,8 +3,8 @@ import type { BatchRefusal, SessionSummary } from "../../shared/protocol";
 import { promptSessionGroup } from "../lib/api";
 import { createTouchMode, enterSends } from "../lib/input-mode";
 import { fitPlaceholderNow, type FittedPlaceholder } from "../lib/placeholder-fit";
-import { composerParts, partialAfterRetry, partialBody, partialRetries, refusalBody, refusalSentence, targetsLine, targetsOf, withGone, type Targets } from "../lib/group-prompt";
-import { announce, toast } from "../lib/ui-state";
+import { composerParts, heldBody, heldTitle, partialAfterRetry, partialBody, partialRetries, refusalBody, refusalSentence, targetsLine, targetsOf, withGone, type Targets } from "../lib/group-prompt";
+import { announce, flushDrafts, heldMessageBack, toast } from "../lib/ui-state";
 import { Banner, Icon } from "./ui";
 import { createVoiceInput, VoiceButton, VoiceStrip } from "./VoiceInput";
 
@@ -57,6 +57,8 @@ export function GroupComposer(props: {
    * message, not whatever the box reads by then.
    */
   const [partial, setPartial] = createSignal<{ failed: BatchRefusal[]; sent: number; text: string } | null>(null);
+  /** Members a send left waiting for decisions (asking first): the message is each one's draft. */
+  const [held, setHeld] = createSignal<{ ids: string[]; sent: number } | null>(null);
   /** Tapped, Enter adds a line and Send to All sends; the placeholder drops its key hint. */
   const { touch, onPointerDown } = createTouchMode();
   /** The placeholder in reading order: the ask, then the key hint a narrow box can spare. */
@@ -112,6 +114,8 @@ export function GroupComposer(props: {
     const sent = (body ?? text()).trim();
     if (!sent || sending() || noone()) return;
     setSending(true);
+    // A member held for decisions keeps the message ahead of its stored draft: store what was typed first.
+    flushDrafts();
     const out = await promptSessionGroup(props.groupId, sent, subset);
     setSending(false);
     if (out.ok) {
@@ -129,6 +133,8 @@ export function GroupComposer(props: {
             ? { failed: out.result.failed, sent: n, text: sent }
             : null;
       setPartial(next);
+      setHeld(out.result.held?.length ? { ids: out.result.held.map((r) => r.id), sent: n } : null);
+      for (const r of out.result.held ?? []) if (r.path) heldMessageBack(r.path, sent);
       // The roll-up's anchor: this is the set the workspace counts "replied" against, from the
       // moment the server accepted — accepted, not answered (the route never waits for turns).
       props.onSent?.(out.result.sent, body === undefined ? "send" : "retry");
@@ -138,7 +144,8 @@ export function GroupComposer(props: {
         edit("");
         input.value = "";
       }
-      const said = `Sent to ${n} ${n === 1 ? "member" : "members"}.`;
+      const k = out.result.held?.length ?? 0;
+      const said = k ? heldTitle(k, n) : `Sent to ${n} ${n === 1 ? "member" : "members"}.`;
       announce(said);
       props.onRefresh();
       return;
@@ -197,6 +204,20 @@ export function GroupComposer(props: {
                     Cancel
                   </button>
                 </>
+              }
+            />
+          )}
+        </Show>
+        <Show when={held()}>
+          {(hd) => (
+            <Banner
+              tone="info"
+              title={heldTitle(hd().ids.length, hd().sent)}
+              body={heldBody(hd().ids.map((id) => props.nameOf(id)))}
+              action={
+                <button type="button" class="button button-sm button-ghost" onClick={() => setHeld(null)}>
+                  Dismiss
+                </button>
               }
             />
           )}

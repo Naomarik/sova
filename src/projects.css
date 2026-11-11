@@ -676,3 +676,5 @@ a.pipeline-link:hover, button.pipeline-link:hover, summary.pipeline-link:hover {
 .project-skill-source { font-size: var(--fs-caption); color: var(--color-ink-muted); }
 .project-skill-actions { display: flex; gap: var(--space-2); }
 .project-skill-actions .button[aria-pressed="true"] { background: var(--color-accent-tint); border-color: var(--color-accent); }
+/* A context file or skill approved, then changed: its line under the name says so (Re-approve or Disallow). */
+.project-skill-changed { color: var(--status-warn); }

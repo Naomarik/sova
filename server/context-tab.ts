@@ -242,8 +242,9 @@ export async function getContextView(path: string, deps: ContextViewDeps = {}): 
   const [held, branch] = await Promise.all([(deps.held ?? heldPrompt)(path), (deps.branch ?? readBranch)(path).catch(() => [] as HEntry[])]);
   const ctx = await (deps.context ?? resolveContext)(contextOfBranch(branch));
 
+  // What loads at the start only: a row the folder's scan lists for a decision (scanOnly) isn't loaded there.
   const instructions: SessionContextPart[] = setup.context
-    .filter((f) => !f.off)
+    .filter((f) => !f.off && !f.scanOnly)
     .map((f) => ({ id: `file:${f.path}`, label: labelOf(cwd, f.path), path: f.path, tokens: f.tokens ?? Math.ceil(f.bytes / CHARS_PER_TOKEN) }));
   const loads = skillsRead(branch, cwd);
   // The skills a folder below cwd has, for a chat that gets them: none where it loads no skills, or where its
@@ -251,10 +252,10 @@ export async function getContextView(path: string, deps: ContextViewDeps = {}): 
   const toolNames = held ? new Set(held.tools.map((t) => t.name)) : null;
   const getsNested = !held?.loader?.noSkills && (!toolNames || (["read", "edit", "write"].some((t) => toolNames.has(t)) && ["read", "bash"].some((t) => toolNames.has(t))));
   const skillWalk = getsNested ? (deps.nestedSkills ?? ((c) => listSubfolderSkills(c, piSkillsIn)))(cwd) : { skills: [], incomplete: false };
-  const startingPaths = new Set(setup.skills.map((k) => k.path));
+  const startingPaths = new Set(setup.skills.filter((k) => !k.scanOnly).map((k) => k.path));
   // A name two rows share matches by path alone: reading one of them says nothing of the other.
   const uses = new Map<string, number>();
-  for (const n of [...setup.skills.filter((k) => !k.off).map((k) => k.name), ...skillWalk.skills.filter((s) => !startingPaths.has(s.filePath)).map((s) => s.name), ...offeredSkills(branch).filter((s) => !skillWalk.skills.some((w) => w.filePath === s.filePath)).map((s) => s.name)]) uses.set(n, (uses.get(n) ?? 0) + 1);
+  for (const n of [...setup.skills.filter((k) => !k.off && !k.scanOnly).map((k) => k.name), ...skillWalk.skills.filter((s) => !startingPaths.has(s.filePath)).map((s) => s.name), ...offeredSkills(branch).filter((s) => !skillWalk.skills.some((w) => w.filePath === s.filePath)).map((s) => s.name)]) uses.set(n, (uses.get(n) ?? 0) + 1);
   const readText = deps.readText ?? ((p: string) => readFile(p, "utf8"));
   const readStateOf: SkillReadStateOf = async (name, path, lines) => {
     const byPath = loads.paths.get(resolveToolPath(cwd, path)) ?? [];
@@ -265,7 +266,7 @@ export async function getContextView(path: string, deps: ContextViewDeps = {}): 
   };
   const skills: SessionContextPart[] = await Promise.all(
     setup.skills
-      .filter((k) => !k.off)
+      .filter((k) => !k.off && !k.scanOnly)
       .map(async (k) => ({
         id: `skill:${k.name}`,
         label: k.name,

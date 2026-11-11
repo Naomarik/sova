@@ -1,6 +1,7 @@
 import type { BatchPromptResult, BatchRefusal, BatchRefusalCode } from "../shared/protocol";
 import { ARCHIVED_REFUSAL, isArchived } from "./archived-sessions";
 import { acquireChatHandle, activeConfigFailure, BusyError, chatHandle, ConfigError } from "./chat-handle";
+import { putBackDraft } from "./drafts";
 import { readLive } from "./live";
 import { readAssignments, readGroups } from "./session-groups";
 import { idOf, indexedSessionPaths, listSessionFiles } from "./sessions-index";
@@ -51,6 +52,10 @@ export interface BatchDeps {
   /** ACCEPT the prompt, through the same guards as a /ws/chat prompt: resolves once the turn is
       queued, never when it finishes. Rejects only for an acceptance failure. */
   accept(path: string, text: string): Promise<void>;
+  /** How many context files and skills a pristine chat that asks first still has to decide (0 for any other). */
+  waiting?(path: string): Promise<number>;
+  /** Keep `text` as the member's composer draft (a held member). */
+  holdAsDraft?(path: string, text: string): void;
 }
 
 export const realBatchDeps: BatchDeps = {
@@ -92,6 +97,8 @@ export const realBatchDeps: BatchDeps = {
     // The user typed it, so the members' extensions see a person's input (§app.overseer/input-source).
     await chat.send({ text, origin: "server", byPerson: true });
   },
+  waiting: async (path) => (await import("./session-setup")).waitingForSession(path).catch(() => 0),
+  holdAsDraft: (path, text) => putBackDraft(idOf(path), [text]),
 };
 
 /** The sentence behind each code. The client renders its own copy per code (the workspace spec); this is
@@ -103,6 +110,7 @@ const SENTENCE: Record<BatchRefusalCode, string> = {
   config: "Its working directory is gone, so its runtime cannot be opened.",
   busy: "Another process wrote to it just now.",
   missing: "Its session file no longer exists.",
+  "decide-first": "It is a new chat with context files or skills to approve or disallow first: the message waits as its draft.",
   internal: "It could not be prompted.",
 };
 
@@ -144,7 +152,7 @@ export type BatchResult =
  * inferred server-side: the first call always means every member, so a silent partial send can
  * only ever be the user's own decision.
  */
-export async function promptGroup(groupId: string, text: string, subset: string[] | undefined, deps: BatchDeps = realBatchDeps): Promise<BatchResult> {
+export async function promptGroup(groupId: string, text: string, subset: string[] | undefined, deps: BatchDeps = realBatchDeps, fromPage = false): Promise<BatchResult> {
   if (!text.trim()) return { ok: false, status: 400, error: "text must not be blank" };
   const members = deps.members(groupId);
   if (!members) return { ok: false, status: 404, error: "Group not found" };
@@ -162,12 +170,22 @@ export async function promptGroup(groupId: string, text: string, subset: string[
 
   const paths = await deps.paths(targets);
   const refused: BatchRefusal[] = [];
+  const held: BatchRefusal[] = [];
   for (const id of targets) {
     const checked = check(id, paths.get(id), deps);
     const r = checked instanceof Promise ? await checked : checked;
     if (r) refused.push(r);
+    // The operator's page: a new chat that asks first takes no first message while anything waits to be decided
+    // (§chat.context-approval/held-send). It isn't a refusal: that member keeps the message as its draft, and the
+    // rest get it. A program's send is never held.
+    else if (fromPage && deps.waiting && (await deps.waiting(paths.get(id)!)) > 0) held.push(refusal(id, paths.get(id)!, "decide-first"));
   }
-  if (refused.length > 0) return { ok: false, status: 409, refused }; // nothing sent
+  if (refused.length > 0) return { ok: false, status: 409, refused }; // nothing sent, nothing kept as a draft
+  for (const h of held) deps.holdAsDraft?.(h.path, text);
+  const heldIds = new Set(held.map((h) => h.id));
+  targets = targets.filter((id) => !heldIds.has(id));
+  const withHeld = (r: BatchPromptResult): BatchPromptResult => (held.length ? { ...r, held } : r);
+  if (targets.length === 0) return { ok: true, result: withHeld({ sent: [], failed: [] }) }; // every member keeps it as its draft
 
   // Past this line the batch is committed: each member that fails ACCEPTANCE is reported, never
   // rolled back, and never stops the members behind it.
@@ -192,8 +210,8 @@ export async function promptGroup(groupId: string, text: string, subset: string[
     const code = codeOf(err);
     failed.push(refusal(id, paths.get(id)!, code, said || SENTENCE[code]));
   });
-  // `sent` is never empty: nothing accepted is not a partial send, it is a refusal. "Sent to 0 of
+  // `sent` is never empty but with members held as drafts: nothing accepted is not a partial send, it is a refusal. "Sent to 0 of
   // 5 members" is a sentence with no meaning, and the copy deck deliberately has no copy for it.
-  if (sent.length === 0) return { ok: false, status: 409, refused: failed };
-  return { ok: true, result: { sent, failed } };
+  if (sent.length === 0 && !held.length) return { ok: false, status: 409, refused: failed };
+  return { ok: true, result: withHeld({ sent, failed }) };
 }

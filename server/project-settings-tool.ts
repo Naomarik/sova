@@ -9,10 +9,10 @@ import { proposeSettings, settingsInfo, SettingsRefusal, withdrawCard } from "./
  */
 
 export const SETTINGS_TOOL_DESCRIPTION =
-  "The project's settings, every one of them: yours (Watch, the powers in both columns, models, extra instructions, limits and pace, the hold, abilities, memory), the project's name, in an organization's project its main stakeholder, whether the owner's page shows it and whether its spec is frozen, how many of its copies may run at once on this machine, which skills its new chats start with (Skills: each Approved, Disallowed or Waiting), and the project's files (services .sova/project.json, profiles, playbooks and their schedules, project modes, offers). " +
-  "get: every setting with its state (each skill's too), the cards waiting and the folder's uncommitted settings edits. reference {setting}: one setting's keys, what each means and what needs the operator's approval. " +
-  "propose {why, edits}: change settings; each edit names a setting, never a path: {setting: \"overseer\", patch: {…}}, {setting: \"memory\", on}, {setting: \"project\", name?, stakeholder?, ownerHidden?, frozen?}, {setting: \"copies\", limit: 1–16 | null}, {setting: \"skills\", skills: {<skill name>: \"approved\" | \"disallowed\" | \"waiting\"}} (only the names it changes; a chat's skills are fixed at its first message, so this reaches only chats not yet started), {setting: \"profile\", id, profile | null}, {setting: \"playbook\", id, text | null}, {setting: \"mode\", id, text | null}, {setting: \"offers\", file | null}, {setting: \"services\", file | null} (whole files; null removes). " +
-  "In a turn the operator started, a change that narrows what you may do (a power Off, a limit lowered, a model, a skill Disallowed, the spec frozen, the project hidden from the owner's page, the main stakeholder) applies at once, with Undo. Everything that widens (a grant) and every file change goes on a Settings change card the operator applies with one click (Apply and Approve); you never approve a grant. In a run the operator did not start, propose only prepares the card. Archiving is the operator's own, with its own confirm on the project page. withdraw {card}: drop a card of yours (sc_…).";
+  "The project's settings, every one of them: yours (Watch, the powers in both columns, models, extra instructions, limits and pace, the hold, abilities, memory), the project's name, in an organization's project its main stakeholder, whether the owner's page shows it and whether its spec is frozen, how many of its copies may run at once on this machine, which context files and skills its new chats start with (Context Files and Skills: each Approved, Disallowed or Waiting), and the project's files (services .sova/project.json, profiles, playbooks and their schedules, project modes, offers). " +
+  "get: every setting with its state (each context file's and skill's too, by key), the cards waiting and the folder's uncommitted settings edits. reference {setting}: one setting's keys, what each means and what needs the operator's approval. " +
+  "propose {why, edits}: change settings; each edit names a setting, never a path: {setting: \"overseer\", patch: {…}}, {setting: \"memory\", on}, {setting: \"project\", name?, stakeholder?, ownerHidden?, frozen?}, {setting: \"copies\", limit: 1–16 | null}, {setting: \"skills\", skills: {<skill key or name>: \"approved\" | \"disallowed\" | \"waiting\"}}, {setting: \"context-files\", files: {<context file key>: \"approved\" | \"disallowed\" | \"waiting\"}} (only the items it changes; a chat's list is fixed at its first message, so this reaches only chats not yet started), {setting: \"profile\", id, profile | null}, {setting: \"playbook\", id, text | null}, {setting: \"mode\", id, text | null}, {setting: \"offers\", file | null}, {setting: \"services\", file | null} (whole files; null removes). " +
+  "In a turn the operator started, a change that narrows what you may do (a power Off, a limit lowered, a model, a context file or skill Disallowed, the spec frozen, the project hidden from the owner's page, the main stakeholder) applies at once, with Undo. Everything that widens (a grant, approving a context file or skill included) and every file change goes on a Settings change card the operator applies with one click (Apply and Approve); you never approve a grant. In a run the operator did not start, propose only prepares the card. Archiving is the operator's own, with its own confirm on the project page. withdraw {card}: drop a card of yours (sc_…).";
 
 export const SETTINGS_TOOL_PARAMETERS = {
   type: "object",
@@ -23,7 +23,7 @@ export const SETTINGS_TOOL_PARAMETERS = {
     edits: {
       type: "array",
       description: "propose: the changes, each an object naming its setting (see the description).",
-      items: { type: "object", properties: { setting: { type: "string", enum: ["overseer", "memory", "project", "copies", "skills", "profile", "playbook", "mode", "offers", "services"] } }, required: ["setting"] },
+      items: { type: "object", properties: { setting: { type: "string", enum: ["overseer", "memory", "project", "copies", "skills", "context-files", "profile", "playbook", "mode", "offers", "services"] } }, required: ["setting"] },
     },
     card: { type: "string", description: "withdraw: the card's id (sc_…)." },
   },
@@ -53,11 +53,16 @@ export async function runSettingsTool(projectId: string, q: Record<string, unkno
     const rows = info.rows.map((r) => `- ${r.setting}${r.name ? ` ${r.name}` : ""}: ${r.state}${r.detail ? ` (${r.detail})` : ""} · changed at ${r.hrefLabel}`);
     const parts = [`Settings (${info.git ? "the project folder is in Git" : "the project folder is not in Git: its files change by hand"}):`, ...rows];
     try {
-      const { projectSkillsView } = await import("./projects/skills");
-      const view = await projectSkillsView(projectId);
-      if (view.skills.length) parts.push("", "Skills (for new chats; Waiting is on until decided):", ...view.skills.map((k) => `- ${k.name}: ${k.state} · ${k.source.kind}${k.source.folder ? ` ${k.source.folder}` : ""}`));
+      const { projectScan, contextViewOfScan, skillsViewOfScan } = await import("./projects/skills");
+      const scan = await projectScan(projectId);
+      const ctx = contextViewOfScan(scan);
+      const view = skillsViewOfScan(scan);
+      const waiting = view.asking ? "Waiting is off until decided: Sova asks first" : "Waiting is on until disallowed";
+      const where = (k: { source: { kind: string; folder?: string }; changed?: true }) => `${k.source.kind}${k.source.folder ? ` ${k.source.folder}` : ""}${k.changed ? " · changed since approved" : ""}`;
+      if (ctx.files.length) parts.push("", `Context files (for new chats; ${waiting}; by key):`, ...ctx.files.map((k) => `- ${k.key}: ${k.state} · ${where(k)}`));
+      if (view.skills.length) parts.push("", `Skills (for new chats; ${waiting}; by key):`, ...view.skills.map((k) => `- ${k.name} (${k.key}): ${k.state} · ${where(k)}`));
     } catch {
-      // unreadable: the Skills row alone
+      // unreadable: the rows alone
     }
     if (info.cards.length) parts.push("", "Cards waiting for the operator:", ...info.cards.map(cardWords));
     if (info.local) parts.push("", "Uncommitted settings edits in the project folder (one card, local: the operator lands or discards them):", cardWords(info.local));

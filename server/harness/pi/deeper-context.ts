@@ -5,16 +5,18 @@
 // skill (no list of pi's has it), a rescued one (pi's parser throws on it), and Claude's placeholders
 // (quirk P41, §chat.subfolder-skills/command, §chat.skill-sources/arguments).
 import { readFileSync } from "node:fs";
-import { dirname } from "node:path";
+import { dirname, relative, sep } from "node:path";
 import { blocksToAttach, loadedInstructions, LOADING_TOOLS } from "../../deeper-context";
-import { isSkillOff, loadoutOnBranch } from "../../session-loadout";
+import { APPROVAL_PENDING, type ApprovalPendingData } from "../state-kinds";
+import { isContextOff, isSkillOff, loadoutOnBranch, type LoadoutEntryData } from "../../session-loadout";
 import { expandedSkill, fillPlaceholders, skillBody, skillCommand } from "../../skill-sources";
-import { nestedSkillFile, offeredDirs, skillBlocksToAttach } from "../../subfolder-skills";
+import { nestedSkillFile, offeredDirs, offeredSkills, skillBlocksToAttach } from "../../subfolder-skills";
 import type { PiExtensionAPI } from "./extension-types";
 import { piCanExpand, piSkillsIn, skillArgumentNames } from "./skill-sources";
+import { stateViewOf } from "./state-view-of";
 import { toolCtx } from "./tools";
 
-export function deeperContextExtension(opts: { allow?: (abs: string) => boolean; skills?: boolean } = {}) {
+export function deeperContextExtension(opts: { allow?: (abs: string) => boolean; skills?: boolean; skillOff?: (s: { name: string; filePath: string }) => boolean } = {}) {
   const withSkills = opts.skills !== false;
   return {
     name: "sova-deeper-context",
@@ -30,6 +32,18 @@ export function deeperContextExtension(opts: { allow?: (abs: string) => boolean;
         return typeof p === "string" && p ? p : undefined;
       };
       const startingSkills = () => pi.getCommands().filter((c) => c.source === "skill");
+      /** Items this chat already has a "wasn't loaded" line for (its branch's, and this process's). */
+      const noted = new Set<string>();
+      /** An item an asking chat's fixed list doesn't name (and the chat never switched off): kept out, with
+          one transcript line offering Approve and Disallow, never sent to the model. */
+      const unlisted = (d: LoadoutEntryData | null, kind: ApprovalPendingData["kind"], path: string) =>
+        !!d?.asking && (kind === "context" ? !d.offContext.includes(path) && !d.onlyContext?.includes(path) : !d.offSkills.includes(path) && !d.onlySkills?.includes(path));
+      const note = (branch: readonly unknown[], item: ApprovalPendingData) => {
+        if (noted.size === 0) for (const e of stateViewOf(branch).list(APPROVAL_PENDING)) noted.add(e.data.path);
+        if (noted.has(item.path)) return;
+        noted.add(item.path);
+        pi.appendEntry(APPROVAL_PENDING.type, item);
+      };
 
       pi.on("tool_result", async (event, ctx) => {
         const path = LOADING_TOOLS.has(event.toolName) ? pathOf(event.input) : undefined;
@@ -37,25 +51,45 @@ export function deeperContextExtension(opts: { allow?: (abs: string) => boolean;
         try {
           const input = event.input as { offset?: unknown; limit?: unknown };
           const h = toolCtx(ctx);
+          const branch = h.branch();
+          const entry = loadoutOnBranch(branch);
+          const pending: ApprovalPendingData[] = [];
+          // What this chat's fixed list keeps out (§chat.context-approval/fixed), beside any confinement of its own.
+          const allowContext = (abs: string) => {
+            if (opts.allow && !opts.allow(abs)) return false;
+            if (!isContextOff(entry, abs)) return true;
+            // Named by its place below the chat's folder ("sub/AGENTS.md"); the path stays absolute.
+            if (unlisted(entry, "context", abs)) pending.push({ kind: "context", path: abs, name: relative(ctx.cwd, abs).split(sep).join("/") || abs });
+            return false;
+          };
+          const skillOff = (s: { name: string; filePath: string }) => {
+            if (opts.skillOff?.(s)) return true;
+            if (!isSkillOff(entry, s)) return false;
+            if (unlisted(entry, "skill", s.filePath) && !entry?.offSkills.includes(s.name)) pending.push({ kind: "skill", path: s.filePath, name: s.name });
+            return true;
+          };
           const blocks = blocksToAttach(ctx.cwd, {
             path,
             ...(event.toolName === "read" ? { selfRead: { path, offset: input.offset, limit: input.limit } } : {}),
             loaded: () => loadedInstructions(h.branch()),
             inFlight,
-            ...(opts.allow ? { allow: opts.allow } : {}),
+            allow: allowContext,
           });
           const skills = withSkills
             ? skillBlocksToAttach(ctx.cwd, {
                 path,
                 read: piSkillsIn,
                 offered: () => offeredDirs(h.branch()),
+                // By file: a skill approved mid-chat in a folder already offered is offered at the next touch there.
+                offeredFiles: () => new Set(offeredSkills(h.branch()).map((s) => s.filePath)),
                 inFlight: skillsInFlight,
                 ignored,
                 startingFile: (f) => startingSkills().some((c) => c.sourceInfo.path === f),
-                off: (name) => isSkillOff(loadoutOnBranch(h.branch()), name),
+                off: skillOff,
                 ...(opts.allow ? { allow: opts.allow } : {}),
               })
             : [];
+          for (const p of pending) note(branch, p);
           if (!blocks.length && !skills.length) return;
           return { content: [...event.content, ...[...blocks, ...skills].map((text) => ({ type: "text" as const, text }))] };
         } catch (err) {
@@ -76,9 +110,11 @@ export function deeperContextExtension(opts: { allow?: (abs: string) => boolean;
           const starting = startingSkills().find((c) => c.name === `skill:${cmd.name}`);
           const branch = toolCtx(ctx).branch();
           // A name this chat switched off stays off (§chat.transcript/setup-card-toggles): pi leaves the text as typed.
-          if (!starting && isSkillOff(loadoutOnBranch(branch), cmd.name)) return { action: "continue" as const };
+          if (!starting && isSkillOff(loadoutOnBranch(branch), { name: cmd.name, filePath: "" })) return { action: "continue" as const };
           const file = starting ? starting.sourceInfo.path : nestedSkillFile(ctx.cwd, cmd.name, branch, piSkillsIn);
           if (!file) return { action: "continue" as const };
+          // A subfolder's skill this chat's list keeps out stays as typed, as a switched-off name does.
+          if (!starting && isSkillOff(loadoutOnBranch(branch), { name: cmd.name, filePath: file })) return { action: "continue" as const };
           const raw = readFileSync(file, "utf8");
           const skillDir = dirname(file);
           const body = skillBody(raw);

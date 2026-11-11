@@ -7,6 +7,7 @@ import { cappedWebSocketServer, streamWebSocketServer } from "./runtime-quirks";
 import type { ChatClientMessage, ChatServerMessage, LlmFeedMessage, SessionFeedMessage, V2EventFrame, WatchServerMessage } from "../shared/protocol";
 import { refuseUpgrade } from "./auth";
 import { type NotPage, notPageSocket, yourClickBody } from "./page-only";
+import { RELAYED_HEADER } from "./mesh/proxy";
 import { onCardNews } from "./transcript-cards";
 import { chatClosedToKeys, EXTENSION_CHAT_DOOR, extensionFrameRefusal } from "./extension-doors";
 import { sandboxAfterRewind, sandboxCommand, sandboxLowers } from "./sandbox-state";
@@ -94,6 +95,8 @@ interface ChatSocketOpts {
   refused?: string;
   /** Who this socket is when it isn't the operator's page; only a socket the main listener judged leaves it null. */
   notPage?: NotPage | null;
+  /** A peer-listener socket that is not another computer's page relayed (no relay mark): a program, never held. */
+  unwatched?: boolean;
   /** The Stop Command entry's recording socket: its one `shell_stop` goes through, whoever asked. */
   stopsCommand?: boolean;
 }
@@ -226,6 +229,7 @@ async function handleChat(ws: WebSocket, path: string, force: boolean, ask: Tail
     close: (code, reason) => ws.close(code, reason),
     // A peer's socket stays as it was: a page on another computer comes that way (§app.access/your-click).
     ...(who !== null && who !== "local" ? { notUser: true as const } : {}),
+    ...(who === "local" && opts.unwatched ? { unwatched: true as const } : {}),
     ...(wire === 2 ? { wire: 2 as const } : {}),
     ...(ask.tail ? { tail: true } : {}),
     ...(ask.tail && ask.pull ? { pull: { prefetch: ask.prefetch } } : {}),
@@ -638,7 +642,7 @@ function upgradeWith(server: typeof wss, req: IncomingMessage, socket: Duplex, h
     }
     if (route === "/ws/chat") {
       const refused = writingRefused(url.searchParams.get(COMPOSER_PARAM)) ?? undefined;
-      handleChat(ws, path, url.searchParams.get("force") === "1", tail, wire, haveOf(url.searchParams, tail), { notPage: pageSockets.get(req), ...(refused ? { refused } : {}) }).catch((err) => {
+      handleChat(ws, path, url.searchParams.get("force") === "1", tail, wire, haveOf(url.searchParams, tail), { notPage: pageSockets.get(req), ...(pageSockets.get(req) === undefined && !req.headers[RELAYED_HEADER.toLowerCase()] ? { unwatched: true } : {}), ...(refused ? { refused } : {}) }).catch((err) => {
         console.error("[ws/chat]", err);
         ws.close(4500, "internal");
       });

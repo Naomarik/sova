@@ -116,12 +116,30 @@ One target. `rollback` is required; `{"none": "<reason>"}` is the way to have no
 
 ## Skills
 
-- Change: which skills the project's new chats start with. Each skill a chat in the project could be offered is Approved, Disallowed or Waiting (no decision yet, on until disallowed).
+- Change: which skills the project's new chats start with. Each skill a chat in the project could be offered, told by its place, is Approved, Disallowed or Waiting (no decision yet: on, unless Sova asks first).
 - Lives: this computer. It doesn't spread.
-- Approves: the person, by Apply. Allowing a disallowed skill again is marked as a grant on the card.
-- By: Card. The `skills` setting with `skills: {<name>: approved | disallowed | waiting}`. The Settings tab's Skills card has the same control.
+- Approves: the person, by Apply. Approving a skill, or allowing a disallowed one again, is marked as a grant on the card.
+- By: Card. The `skills` setting with `skills: {<key or name>: approved | disallowed | waiting}`. The Settings tab's Skills card has the same control.
 - Live: for chats not yet started, now. A chat's skills are fixed at its first message.
 - Check: the Settings tab's Skills card shows each skill's state.
+
+## Context Files
+
+- Change: which context files (AGENTS.md, CLAUDE.md and the like) the project's new chats load: the project's, its folders', those above it and the person's own. Each is Approved, Disallowed or Waiting, like a skill.
+- Lives: this computer. It doesn't spread.
+- Approves: the person, by Apply. Approving one, or allowing a disallowed one again, is a grant on the card.
+- By: Card. The `context-files` setting with `files: {<key>: approved | disallowed | waiting}`. The Settings tab's Context Files card has the same control.
+- Live: for chats not yet started, now. A chat's list is fixed at its first message.
+- Check: the Settings tab's Context Files card shows each file's state.
+
+## Asking first (Sova-wide)
+
+- Change: whether new chats load context files and skills without asking (the default) or hold their first message until each one is decided. The `context-approval` setting is Sova-wide, not the project's.
+- Lives: this computer.
+- Approves: the person. Turning asking on is open to anyone; turning it off again is the person's own click.
+- By: Screen. Settings → General, the switch "Allow context files and skills without asking". Never on a card.
+- Live: for chats not yet started, now. A chat keeps the mode it started in.
+- Check: All settings shows it as "Context files and skills".
 
 ## Moving or archiving the project
 

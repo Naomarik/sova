@@ -35,6 +35,7 @@ import { AlignCard } from "./AlignCard";
 import { ExplainCard } from "./ExplainCard";
 import { TeamMessageCard } from "./TeamMessageCard";
 import { ReportRow } from "./ReportRow";
+import { ApprovalPendingRow } from "./ApprovalPendingRow";
 import { AlignRow } from "./AlignDocCard";
 
 /**
@@ -54,6 +55,7 @@ export const BUILTIN_VIEWS = {
   "owner-request": (props: KindViewProps<NonNullable<TranscriptItem["ownerRequest"]>>) => <OwnerRequestNote card={props.value} />,
   "handoff-run": (props: KindViewProps<HandoffRunInfo>) => <HandoffRunRow run={props.value} text={props.item.text ?? ""} />,
   "mcp-note": (props: KindViewProps<McpNote>) => <McpNoteRow note={props.value} />,
+  "approval-pending": (props: KindViewProps<NonNullable<TranscriptItem["approvalPending"]>>) => <ApprovalPendingRow item={props.value} text={props.item.text ?? ""} path={props.limitPath} />,
   "overseer-answer": (props: KindViewProps<Extract<NonNullable<TranscriptItem["overseerMark"]>, { kind: "dialog-answer" }>>) => <OverseerChoiceRow title={props.value.title} answer={props.value.answer} />,
   "profile-mark": ProfileMarkRow,
   brief: (props: KindViewProps) => <BriefRow text={props.item.text ?? ""} time={props.item.at} />,

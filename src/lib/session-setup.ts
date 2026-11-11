@@ -83,9 +83,9 @@ export function contextRows(s: Loaded, home: string | null): ContextRow[] {
 export const isOff = (f: SessionSetupFile): boolean => f.off === true;
 const onOnly = <F extends SessionSetupFile>(files: readonly F[]): F[] => files.filter((f) => !isOff(f));
 
-/** The session's whole off set as it stands. */
+/** The session's whole off set as it stands. Skills by their SKILL.md: two of one name are two items. */
 export function offSets(s: Loaded): { offContext: string[]; offSkills: string[] } {
-  return { offContext: s.context.filter(isOff).map((f) => f.path), offSkills: s.skills.filter(isOff).map((k) => k.name) };
+  return { offContext: s.context.filter(isOff).map((f) => f.path), offSkills: s.skills.filter(isOff).map((k) => k.path) };
 }
 
 /** The session's whole off set after one flip — what the card sends. */

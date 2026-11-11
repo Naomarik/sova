@@ -128,6 +128,24 @@
       "§app.server-runtime/test-tiers"
     ]
   },
+  "§app.server-runtime/test-agent-fence": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "server/testing/scratch-agent-dir.ts",
+      "server/merge-queue/wire-unserved.integration.test.ts",
+      "server/archived-sessions.ts"
+    ],
+    "requires": [
+      "§app.server-runtime/test-tiers"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-11T14:09Z",
+      "source": "pi-session:01a1ca84-b3de-7601-9d6d-7e61cbb746c9#a4b61b34"
+    }
+  },
   "§app.server-runtime/test-env": {
     "kind": "behavior",
     "authority": "accepted",
@@ -143,8 +161,8 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-05T03:57Z",
-      "source": "pi-session:4c2be31e-b72f-4e3c-ae0b-8e551d522e03#18bf7727"
+      "at": "2026-11-11T14:09Z",
+      "source": "pi-session:01a1ca84-b3de-7601-9d6d-7e61cbb746c9#a4b61b34"
     }
   },
   "§app.server-runtime/test-repo-fence": {
@@ -231,8 +249,8 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-05T20:05Z",
-      "source": "pi-session:01a1acf3-91f6-7735-96f5-970a0699e9c9#85bf6ed9"
+      "at": "2026-11-11T14:09Z",
+      "source": "pi-session:01a1ca84-b3de-7601-9d6d-7e61cbb746c9#a4b61b34"
     }
   },
   "§app.server-runtime/typecheck-reuse": {

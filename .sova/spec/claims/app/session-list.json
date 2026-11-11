@@ -625,12 +625,14 @@
       "src/lib/section-reveal.ts",
       "src/lib/section-reveal.test.ts",
       "src/lib/section-reveal.browser.test.ts",
-      "src/components/Composer.tsx"
+      "src/components/Composer.tsx",
+      "server/archived-sessions.ts",
+      "server/archived-sessions.test.ts"
     ],
     "agreed": {
-      "by": "omar",
-      "at": "2026-10-27T08:48Z",
-      "source": "pi-session:01a1735d-d92b-70d4-a656-e4521f0fd84f#d9c4dc3f"
+      "by": "user",
+      "at": "2026-11-11T14:09Z",
+      "source": "pi-session:01a1ca84-b3de-7601-9d6d-7e61cbb746c9#a4b61b34"
     }
   },
   "§app.session-list/search": {

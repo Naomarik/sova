@@ -992,7 +992,13 @@ judgement.
   state, merged, ahead, uncommitted, branch gone, new commits since a merge). It adopts `later`
   worktrees one at a time, reads the worktrees side by side (at most 5 git reads at once, the
   repository's root read once per request), then hands each reading to the build's statechart and
-  the session list's merged answer one at a time. The page merges the two by session. Before the
+  the session list's merged answer one at a time. The build's statechart always holds the newest
+  reading (so a merged build still retires after a click or a restart), but a reading is recorded
+  in the build's history ("Git was checked for the branch.") only when it changes that build's git
+  state: its folder (there, missing or removed), its branch's state (no commits, not merged, merged,
+  new commits since a merge, gone), its commits ahead, its uncommitted changes, or git's error.
+  Refreshing the page, or the Agents board, again and again with nothing changed in git adds no
+  history entry; entries already recorded stay as they are. The page merges the two by session. Before the
   first rows answer, it lists the project's coding sessions the browser already holds from the
   session list, so the rows show with the page. A row shows its branch as recorded until its
   branch facts arrive. Until then a row with a recorded branch, not removed, has its **⋯** menu
@@ -1419,7 +1425,8 @@ judgement.
   its own steps succeeds, or Reload gives them another go. A link notification to a session that exists
   nowhere (a host-local watch a clone doesn't carry, a deleted session) is dropped and that session
   is taken off the watchers, never failing the step; an explicit send to one is still refused.
-- **The transition log is the history.** One row per event a statechart took or refused: when, which
+- **The transition log is the history.** One row per event a statechart took or refused (except a
+  git check of a coding session's branch that changes nothing, §app.project-overseer/coding-worktrees): when, which
   session, the event, who (`operator`, `overseer`, `system`, `model`, `person`, and `via:
   "overseer"` for the global Overseer acting for the operator), the configuration before and after,
   what changed, and for a refusal its sentence. It never holds a link token or hash, a contact

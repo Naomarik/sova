@@ -27,9 +27,66 @@ const fileStamp = (st: { ino: bigint; size: bigint; mtimeNs: bigint; ctimeNs: bi
 
 /** A file written this recently may be written again within one clock tick, unseen by its stat: no hash of it is kept. */
 const SETTLED_MS = 2000;
+/** Tests: the window, to see the kept answers within one test (each edit then waits out the clock's tick). */
+export const draftSettle = { ms: SETTLED_MS };
 const MAX_HASHES = 100_000;
 /** A draft's own files, most of them what its base says: their hashes, while their stats stand. */
 const hashes = new Map<string, { stamp: string; hash: string | undefined }>();
+
+/** Whether a stat is old enough for what was read under it to be kept (SETTLED_MS). */
+const settled = (st: { mtimeNs: bigint; ctimeNs: bigint }): boolean =>
+  Date.now() - Number(st.mtimeNs / 1_000_000n) > draftSettle.ms && Date.now() - Number(st.ctimeNs / 1_000_000n) > draftSettle.ms;
+
+/** A file's sha256, read again only when its stat moved (inode, size, mtime or ctime, to the nanosecond: a rewrite that
+    puts the time back still moves ctime); undefined: unreadable. `read` hears each real read. */
+function hashFile(path: string, read?: () => void): string | undefined {
+  let st;
+  try {
+    st = statSync(path, { bigint: true });
+  } catch {
+    return undefined;
+  }
+  const now = fileStamp(st);
+  const hit = hashes.get(path);
+  if (hit?.stamp === now) return hit.hash;
+  read?.();
+  draftWork.files++;
+  const buf = readOr(path);
+  const hash = buf ? sha(buf) : undefined;
+  if (settled(st)) {
+    if (hashes.size >= MAX_HASHES) hashes.clear();
+    hashes.set(path, { stamp: now, hash });
+  }
+  return hash;
+}
+
+/** A folder's listing, kept while every folder in it stats the same: an entry added, removed or renamed moves its
+    folder's mtime and ctime, so no folder is read again while none did. */
+const MAX_LISTINGS = 5000;
+const listings = new Map<string, { dirs: [path: string, stamp: string][]; value: unknown }>();
+const dirStamp = (path: string): { stamp: string; settled: boolean } => {
+  try {
+    const st = statSync(path, { bigint: true });
+    return st.isDirectory() ? { stamp: fileStamp(st), settled: settled(st) } : { stamp: "!dir", settled: true };
+  } catch {
+    return { stamp: "-", settled: true };
+  }
+};
+/** `list`'s answer, reused while each folder it read (`root`, and each one `list` names to `reading` just before reading
+    it) stats as it did before it was read: an entry written meanwhile shows on the next pass, never hides. */
+function listed<T>(kind: string, root: string, list: (reading: (dir: string) => void) => T): T {
+  const key = `${kind}\0${root}`;
+  const hit = listings.get(key);
+  if (hit && hit.dirs.every(([p, was]) => dirStamp(p).stamp === was)) return hit.value as T;
+  draftWork.listings++;
+  const before = new Map<string, { stamp: string; settled: boolean }>([[root, dirStamp(root)]]);
+  const value = list((dir) => void (before.has(dir) || before.set(dir, dirStamp(dir))));
+  if ([...before.values()].every((s) => s.settled)) {
+    if (listings.size >= MAX_LISTINGS) listings.clear();
+    listings.set(key, { dirs: [...before].map(([p, s]): [string, string] => [p, s.stamp]), value });
+  } else listings.delete(key);
+  return value;
+}
 
 /** One spec file's claims by name and content: `cut` is a function of the two, and most worktrees of a repository hold
     the same files. Bounded by the bytes they were cut from, oldest first. */
@@ -62,25 +119,7 @@ function draftPass(seen: Set<string>) {
       }
       return files.get(path)!;
     },
-    hash(path: string): string | undefined {
-      let st;
-      try {
-        st = statSync(path, { bigint: true });
-      } catch {
-        return undefined;
-      }
-      const now = fileStamp(st);
-      const hit = hashes.get(path);
-      if (hit?.stamp === now) return hit.hash;
-      draftWork.reads++;
-      const buf = readOr(path);
-      const hash = buf ? sha(buf) : undefined;
-      if (Date.now() - Number(st.mtimeNs / 1_000_000n) > SETTLED_MS && Date.now() - Number(st.ctimeNs / 1_000_000n) > SETTLED_MS) {
-        if (hashes.size >= MAX_HASHES) hashes.clear();
-        hashes.set(path, { stamp: now, hash });
-      }
-      return hash;
-    },
+    hash: (path: string): string | undefined => hashFile(path, () => void draftWork.reads++),
     cut<T>(rel: string, buf: Buffer | null, cut: (rel: string, buf: Buffer | null) => T): T {
       if (!buf) return cut(rel, buf);
       const key = `${rel}\0${sha(buf)}`;
@@ -104,18 +143,26 @@ function draftPass(seen: Set<string>) {
   };
 }
 
-/** Tests: the work done, cumulative; a shared read or cut doesn't count. */
-export const draftWork = { reads: 0, cuts: 0 };
+/** Tests: the work done, cumulative; a shared read or cut doesn't count. `files`: files read for a kept hash or
+    receipt; `listings`: folders listed again. */
+export const draftWork = { reads: 0, cuts: 0, files: 0, listings: 0 };
 
 const cache = new Map<string, { stamps: [path: string, stamp: string][]; names: string[] }>();
 
 /** The drafts a proof reads in `<dir>/.sova/spec/drafts/`, by name, sorted: real folders whose names don't start with a dot. Undefined: the folder can't be read. */
 export function draftNamesIn(dir: string): string[] | undefined {
-  try {
-    return readdirSync(join(dir, ".sova", "spec", "drafts"), { withFileTypes: true }).filter((e) => e.isDirectory() && !e.name.startsWith(".")).map((e) => e.name).sort();
-  } catch {
-    return undefined;
-  }
+  return subdirsOf(join(dir, ".sova", "spec", "drafts"))?.filter((n) => !n.startsWith("."));
+}
+
+/** The real folders directly in `dir`, by name, sorted (listed); undefined: it can't be read. */
+function subdirsOf(dir: string): readonly string[] | undefined {
+  return listed("subdirs", dir, () => {
+    try {
+      return readdirSync(dir, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => e.name).sort();
+    } catch {
+      return undefined;
+    }
+  });
 }
 
 /** The names of the drafts in `<dir>/.sova/spec/drafts/` not official (or unreadable), sorted (§chat.worktrees/ready-to-land);
@@ -168,9 +215,30 @@ const REF_NAME = /^(?!-)(?!.*\.\.)[A-Za-z0-9._/-]{1,200}$/;
 
 /** A draft's landing receipt, when it is well formed. */
 export function landedReceiptOf(draftDir: string): LandedReceipt | null {
+  const file = join(draftDir, "draft.json");
+  let st;
+  try {
+    st = statSync(file, { bigint: true });
+  } catch {
+    return null;
+  }
+  const now = fileStamp(st);
+  const hit = receipts.get(file);
+  if (hit?.stamp === now) return hit.receipt && { ...hit.receipt };
+  draftWork.files++;
+  const receipt = receiptIn(file);
+  if (settled(st)) {
+    if (receipts.size >= MAX_HASHES) receipts.clear();
+    receipts.set(file, { stamp: now, receipt });
+  }
+  return receipt && { ...receipt };
+}
+/** Each draft.json's receipt, while its stat stands (as hashFile keeps a hash). */
+const receipts = new Map<string, { stamp: string; receipt: LandedReceipt | null }>();
+function receiptIn(file: string): LandedReceipt | null {
   let d: unknown;
   try {
-    d = JSON.parse(readFileSync(join(draftDir, "draft.json"), "utf8"));
+    d = JSON.parse(readFileSync(file, "utf8"));
   } catch {
     return null;
   }
@@ -393,18 +461,24 @@ const readOr = (path: string): Buffer | null => {
     return null;
   }
 };
-/** Every file under `dir`, relative, `/`-separated. */
-function filesUnder(dir: string, rel = ""): string[] {
+/** Every file under `dir`, relative, `/`-separated, sorted; read again only once a folder in it moved (listed). */
+function filesUnder(dir: string): readonly string[] {
+  return listed("files", dir, (reading) => walk(dir, "", reading).sort());
+}
+/** The walk itself: each folder goes to `reading` before it is read. */
+function walk(dir: string, rel: string, reading: (dir: string) => void): string[] {
   const out: string[] = [];
   let entries: import("node:fs").Dirent[];
+  const here = rel ? join(dir, rel) : dir;
+  reading(here);
   try {
-    entries = readdirSync(join(dir, rel), { withFileTypes: true });
+    entries = readdirSync(here, { withFileTypes: true });
   } catch {
     return out;
   }
   for (const e of entries) {
     const r = rel ? `${rel}/${e.name}` : e.name;
-    if (e.isDirectory()) out.push(...filesUnder(dir, r));
+    if (e.isDirectory()) out.push(...walk(dir, r, reading));
     else if (e.isFile()) out.push(r);
   }
   return out;
@@ -412,13 +486,8 @@ function filesUnder(dir: string, rel = ""): string[] {
 
 export function draftsHash(dir: string): DraftsHash | undefined {
   const draftsDir = join(dir, ".sova", "spec", "drafts");
-  let names: string[];
-  try {
-    names = readdirSync(draftsDir, { withFileTypes: true }).filter((e) => e.isDirectory() && DRAFT_NAME.test(e.name)).map((e) => e.name).sort();
-  } catch {
-    return undefined;
-  }
-  if (!names.length) return undefined;
+  const names = subdirsOf(draftsDir)?.filter((n) => DRAFT_NAME.test(n));
+  if (!names?.length) return undefined;
   const all: string[] = [];
   const each: Record<string, string> = {};
   for (const n of names) {
@@ -434,8 +503,8 @@ const hashOf = (lines: string[]) => createHash("sha256").update([...lines].sort(
 function draftLines(draftsDir: string, n: string): string[] {
   const lines: string[] = [];
   for (const rel of filesUnder(join(draftsDir, n, "spec"))) {
-    const buf = readOr(join(draftsDir, n, "spec", rel));
-    if (buf) lines.push(`${n}/${rel} ${sha(buf)}`);
+    const hash = hashFile(join(draftsDir, n, "spec", rel));
+    if (hash) lines.push(`${n}/${rel} ${hash}`);
   }
   return lines;
 }
@@ -450,15 +519,16 @@ export function draftsChanged(pressed: { hash: string; names: string[]; each?: R
   return names.filter((n) => (pressed.each![n] ?? null) !== (now?.each[n] ?? null));
 }
 
-/** A cheap stamp of a worktree's drafts folder (every file under `.sova/spec/drafts/`, by path, size and mtime): a
-    drafts edit moves it, with no commit (the merge queue's watch on a branch sent back for its drafts). "" when none. */
+/** A cheap stamp of a worktree's drafts folder (every file under `.sova/spec/drafts/`, by path, inode, size and both
+    times, so a rewrite that puts the time back moves it too): a drafts edit moves it, with no commit (the merge queue's
+    watch on a branch sent back for its drafts). "" when none. Stats only: no file is read. */
 export function draftsStamp(dir: string): string {
   const draftsDir = join(dir, ".sova", "spec", "drafts");
   const parts: string[] = [];
-  for (const rel of filesUnder(draftsDir).sort()) {
+  for (const rel of filesUnder(draftsDir)) {
     try {
-      const st = statSync(join(draftsDir, rel));
-      parts.push(`${rel}:${st.size}:${st.mtimeMs}`);
+      const st = statSync(join(draftsDir, rel), { bigint: true });
+      parts.push(`${rel}:${fileStamp(st)}`);
     } catch {
       parts.push(`${rel}:-`);
     }
@@ -477,9 +547,6 @@ export function draftsFingerprint(dir: string): string | undefined {
     return undefined;
   }
   const lines: string[] = [];
-  for (const rel of filesUnder(draftsDir).sort()) {
-    const buf = readOr(join(draftsDir, rel));
-    lines.push(`${rel} ${buf ? sha(buf) : "-"}`);
-  }
+  for (const rel of filesUnder(draftsDir)) lines.push(`${rel} ${hashFile(join(draftsDir, rel)) ?? "-"}`);
   return createHash("sha256").update(lines.join("\n")).digest("hex");
 }

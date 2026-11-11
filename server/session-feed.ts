@@ -2,6 +2,7 @@ import type { SessionFeedMessage, SessionMarks, SessionSummary } from "../shared
 import { randomBytes } from "node:crypto";
 import { rowEntry, rowsDigest } from "../src/lib/summary-diff";
 import { attentionChanged } from "./attention-memo";
+import { feedConnected, feedHeard, listInputsMoved } from "./list-generation";
 
 /**
  * The session feed: WS /ws/watch?feed=sessions (shared/protocol.ts SessionFeedMessage). The server
@@ -220,6 +221,11 @@ export class SessionFeed {
       rows listener its `rows_hello` before that). */
   add(send: Send, opts: { rows?: boolean } = {}): () => void {
     let gone = false;
+    // A new connection (a window loading) reads no kept list and keeps no row: its first list is built
+    // afresh, every folder and file read, so a change no watch heard shows on a refresh.
+    listInputsMoved();
+    feedConnected();
+    feedHeard();
     this.joining++;
     if (!this.timer) {
       // A new run: a list read while no one listened (its version this run's 0 too) is never taken
@@ -227,6 +233,8 @@ export class SessionFeed {
       this.epochId = newEpoch();
       this.timer = setInterval(() => {
         this.checkDue = true;
+        // The safety net is for a change no source tells of: no list or row is kept past it.
+        listInputsMoved();
         this.nudge(0);
       }, this.opts.intervalMs ?? SAFETY_NET_MS);
       this.timer.unref?.();
@@ -260,6 +268,8 @@ export class SessionFeed {
 
   /** Something the overlays read changed: re-diff soon (coalesced). A no-op with no listener. */
   nudge(delayMs = this.opts.debounceMs ?? 250): void {
+    // Whatever makes the feed compare drops a kept list (sessions-index.ts), heard or not here.
+    feedHeard();
     if (this.clients.size === 0 || this.announcing) return;
     this.heard++;
     this.signal = this.opts.stamps?.now() ?? 0;
@@ -420,6 +430,7 @@ export function sessionFeed(): SessionFeed | null {
 
 /** A store changed or a pane attached: re-diff soon. Safe before configuration and in tests. */
 export function nudgeMarks(): void {
+  listInputsMoved();
   shared?.nudge();
 }
 

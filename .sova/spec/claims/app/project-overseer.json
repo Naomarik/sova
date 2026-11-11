@@ -150,9 +150,9 @@
       "server/cleanup-dry-run.test.ts"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-11-09T16:22Z",
-      "source": "pi-session:01a1b2f4-86c6-73d4-9fe9-b847b27035f9#950bc2c9"
+      "by": "user",
+      "at": "2026-11-10T16:15Z",
+      "source": "pi-session:01a1c5d6-77b4-7248-87d0-5225867cac4b#a56c245f"
     }
   },
   "§app.project-overseer/confirm-brief": {
@@ -735,6 +735,7 @@
     "authority": "accepted",
     "evidence": "verified",
     "code": [
+      "server/build-loadout.ts",
       "statecharts/.gitignore",
       "statecharts/STATECHARTS.md",
       "statecharts/EVENTS.md",
@@ -876,7 +877,12 @@
     "requires": [
       "§app.project-overseer/autonomy-levels",
       "§app.project-overseer/watch-loop"
-    ]
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-10T16:15Z",
+      "source": "pi-session:01a1c5d6-77b4-7248-87d0-5225867cac4b#a56c245f"
+    }
   },
   "§app.project-overseer/tools": {
     "kind": "behavior",

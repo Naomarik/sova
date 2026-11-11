@@ -421,6 +421,9 @@ async function codingWorktrees(projectId: string, root: string, repo?: Awaited<R
       };
     },
   });
+  // The Setup proposal (Needs you, the banner) is read again too: an unchanged probe steps no build, and a Setup
+  // branch's head can move (an amend) with the same counts.
+  if (out.length) await import("./projects/runtime").then((m) => m.setupSoon(projectId)).catch(() => undefined);
   return newestFirst(out);
 }
 

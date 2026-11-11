@@ -37,6 +37,7 @@ import { SHELL_NOT_PAGE_TEXT } from "./chat-shell";
 import { COMPOSER_PARAM } from "../shared/wire-areas";
 import { writingRefused } from "./wire-gate";
 import { opNote, stallGauge } from "./stall-recorder";
+import { feedFrameJson } from "./feed-frame-json";
 
 /** How long a chat socket that closed stays in its chat to hear what became of the messages it
     sent (§chat.transcript/send-while-starting): taken, or refused and put back as the draft. */
@@ -520,7 +521,17 @@ function handleFeed(ws: WebSocket, rows: boolean): void {
     ws.close(4500, "no feed");
     return;
   }
-  const remove = feed.add((msg) => sendJson(ws, msg), { rows });
+  const remove = feed.add((msg) => {
+    if (ws.readyState !== ws.OPEN) return;
+    let json: string;
+    try {
+      json = feedFrameJson(msg);
+    } catch (err) {
+      console.error("[ws] send failed", err);
+      return;
+    }
+    sendRaw(ws, json);
+  }, { rows });
   // The LLM calls in flight ride the same socket.
   const removeLlm = llmInflight()?.addBrowser((msg) => sendJson(ws, msg));
   ws.on("close", () => {

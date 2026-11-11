@@ -28,8 +28,10 @@ file differs from the main branch's, a line says so.
 ## The groups
 
 - **Landing**: how a branch lands, the branch it lands into, whether to push after each landing
-  (only when it merges locally), and whether private names are set up (their count, never the
-  names).
+  (only when it merges locally), whether private names are set up (their count, never the
+  names), and **Delete branches when cleaning up**, off by default: off, automatic cleanup removes a
+  landed branch's folder and keeps the branch; on, it removes the branch too, and its last commit
+  stays restorable.
 - **Checks**: how many always run and how many only when the merge thread picks them, then each
   check with its time limit, whether it reruns failed files, and when it runs. **Reuse passes from
   identical code**, on by default: a test file that already passed on exactly this code isn't run
@@ -63,6 +65,8 @@ branch, and opens a file to read. It only reads; nothing in it runs.
 - Each check's **time limit** (at most 30 minutes), whether it **reruns failed files**, and whether it
   runs **every time** or **only when picked**.
 - **Reuse passes from identical code**, on or off.
+- **Delete branches when cleaning up**, on or off, in the project's file. It applies from the next
+  cleanup, and the confirm says so.
 
 Everything else only reads here: the check commands, setup, install and the instruction folders.
 Change those in a branch, and Land it, so the queue tests the change.

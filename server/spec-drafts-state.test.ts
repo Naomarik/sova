@@ -3,12 +3,12 @@
 // temp folders shaped as the draft tool writes them: draft.json, base/, spec/.
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdirSync, readFileSync, rmSync, utimesSync, writeFileSync } from "node:fs";
+import { mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, utimesSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { after, test } from "node:test";
 import { promotionClaims } from "../pi-config/extensions/spec/core/official.mjs";
 import { scratchRoot } from "./test-scratch";
-import { draftWork, unofficialDrafts } from "./spec-drafts-state";
+import { draftSettle, draftsFingerprint, draftsHash, draftsStamp, draftWork, landedReceiptOf, unofficialDrafts } from "./spec-drafts-state";
 
 const draftCount = (dir: string) => unofficialDrafts(dir)?.length;
 
@@ -190,4 +190,109 @@ test("a rewrite of a draft's file with its time put back is still seen", () => {
   writeFileSync(join(dir(wt, "feat"), "spec", "claims/b.md"), "# §b — B\n\nb says two thing.\n");
   utimesSync(join(dir(wt, "feat"), "spec", "claims/b.md"), old, old);
   assert.deepEqual(unofficialDrafts(wt), ["feat"]);
+});
+
+/** Every file under `d`, relative and sorted, read straight from disk. */
+const walk = (d: string, rel = ""): string[] =>
+  readdirSync(join(d, rel), { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(d, rel ? `${rel}/${e.name}` : e.name) : [rel ? `${rel}/${e.name}` : e.name])).sort();
+/** What the three readings say of `wt`, worked out by hand from the files as they are now: draftsHash's lines
+    `<draft>/<path under spec/> <sha256>` (sorted, joined), draftsFingerprint's `<path> <sha256>` over the whole folder, and
+    each draft's receipt as draft.json holds it. */
+function byHand(wt: string) {
+  const drafts = join(spec(wt), "drafts");
+  const hashOf = (lines: string[]) => sha([...lines].sort().join("\n"));
+  const names = readdirSync(drafts).sort();
+  const lines = (n: string) => walk(join(drafts, n, "spec")).map((r) => `${n}/${r} ${sha(readFileSync(join(drafts, n, "spec", r), "utf8"))}`);
+  return {
+    hash: { hash: hashOf(names.flatMap(lines)), names, each: Object.fromEntries(names.map((n) => [n, hashOf(lines(n))])) },
+    print: sha(walk(drafts).map((r) => `${r} ${sha(readFileSync(join(drafts, r), "utf8"))}`).join("\n")),
+    receipts: names.map((n) => JSON.parse(readFileSync(join(drafts, n, "draft.json"), "utf8")).landed ?? null),
+  };
+}
+const readings = (wt: string) => ({ hash: draftsHash(wt), print: draftsFingerprint(wt), receipts: readdirSync(join(spec(wt), "drafts")).sort().map((n) => landedReceiptOf(dir(wt, n))) });
+
+test("drafts unchanged since the last pass are read again from no file and no folder; any edit is seen at once", async () => {
+  // The kept hashes, listings and receipts stand on stats alone. Each edit below must show in all three readings on the
+  // very next pass, as reading every file would show it, including a rewrite that keeps the size and puts the time back
+  // (only its ctime moves: a stamp of size and mtime alone misses it, as the stand-in at the end shows).
+  const receipt = (c: string) => ({ commit: c.repeat(40), target: "master", hash: "a".repeat(64), at: "", by: "t" });
+  const keepTime = (p: string, edit: () => void) => {
+    const was = statSync(p);
+    edit();
+    utimesSync(p, was.atime, was.mtime);
+  };
+  const edits: [string, (wt: string) => void][] = [
+    ["a spec file rewritten, same size, its time put back", (wt) => keepTime(join(dir(wt, "feat"), "spec", F), () => writeFileSync(join(dir(wt, "feat"), "spec", F), file("x says one THING.")))],
+    ["a new file in a new nested folder", (wt) => put(join(dir(wt, "feat"), "spec", "claims/deep/c.md"), "# §c — C\n")],
+    ["a file removed", (wt) => rmSync(join(dir(wt, "feat"), "spec", F))],
+    ["a file renamed, its content kept", (wt) => renameSync(join(dir(wt, "feat"), "spec", F), join(dir(wt, "feat"), "spec", "claims/z.md"))],
+    ["a base file rewritten, same size, its time put back", (wt) => keepTime(join(dir(wt, "feat"), "base", F), () => writeFileSync(join(dir(wt, "feat"), "base", F), file("x says one THING.")))],
+    ["a receipt rewritten, same size, its time put back", (wt) => {
+      const p = join(dir(wt, "feat"), "draft.json");
+      keepTime(p, () => writeFileSync(p, JSON.stringify({ ...JSON.parse(readFileSync(p, "utf8")), landed: receipt("b") })));
+    }],
+    ["a new draft", (wt) => draft(wt, "more", file("x says more."))],
+  ];
+  const tick = () => new Promise((r) => setTimeout(r, 30));
+  /** Every draft file at a whole second, which a time put back then matches to the nanosecond. */
+  const wholeSecond = (wt: string) => {
+    const t = Math.floor(Date.now() / 1000) - 60;
+    for (const r of walk(join(spec(wt), "drafts"))) utimesSync(join(spec(wt), "drafts", r), t, t);
+  };
+  draftSettle.ms = 0;
+  try {
+    for (const [what, edit] of edits) {
+      const wt = tree();
+      draft(wt, "feat", file("x says one thing."));
+      const meta = join(dir(wt, "feat"), "draft.json");
+      writeFileSync(meta, JSON.stringify({ ...JSON.parse(readFileSync(meta, "utf8")), landed: receipt("a") }));
+      wholeSecond(wt);
+      await tick();
+      const before = readings(wt);
+      const stamp = draftsStamp(wt);
+      assert.deepEqual(before, byHand(wt), what);
+      const work = { ...draftWork };
+      assert.deepEqual(readings(wt), before, what);
+      assert.equal(draftsStamp(wt), stamp, what);
+      assert.deepEqual([draftWork.files - work.files, draftWork.listings - work.listings], [0, 0], `${what}: a pass with nothing moved reads nothing`);
+      await tick();
+      edit(wt);
+      assert.deepEqual(readings(wt), byHand(wt), what);
+      assert.notDeepEqual(readings(wt), before, `${what}: the edit shows`);
+      assert.notEqual(draftsStamp(wt), stamp, `${what}: the stamp moves`);
+    }
+    // The stand-in: size and mtime alone don't move for the first edit.
+    const wt = tree();
+    draft(wt, "feat", file("x says one thing."));
+    wholeSecond(wt);
+    const p = join(dir(wt, "feat"), "spec", F);
+    const sizeMtime = () => { const st = statSync(p, { bigint: true }); return `${st.size}:${st.mtimeNs}`; };
+    const was = sizeMtime();
+    edits[0]![1](wt);
+    assert.equal(sizeMtime(), was);
+  } finally {
+    draftSettle.ms = 2000;
+  }
+});
+
+test("at the default settle window, a draft file hashed just after its write isn't kept: a same-size rewrite is read again", () => {
+  assert.equal(draftSettle.ms, 2000);
+  const wt = tree();
+  draft(wt, "feat", file("x says one thing."));
+  const p = join(dir(wt, "feat"), "spec", F);
+  const was = statSync(p);
+  const before = readings(wt);
+  assert.deepEqual(before, byHand(wt));
+  // Within the window, nothing moved: the file is still read, since nothing read under so fresh a stat is kept.
+  const work = { ...draftWork };
+  assert.deepEqual(readings(wt), before);
+  assert.ok(draftWork.files > work.files, "a hash taken inside the window is not kept");
+  // Same size, mtime put back; the kernel moves ctime, which can't be set back.
+  writeFileSync(p, file("x says one THING."));
+  utimesSync(p, was.atime, was.mtime);
+  assert.equal(statSync(p).size, was.size);
+  assert.ok(Date.now() - was.mtimeMs < 2000, "still within the window");
+  const after = readings(wt);
+  assert.deepEqual(after, byHand(wt));
+  assert.notDeepEqual(after.hash, before.hash, "the rewrite shows");
 });

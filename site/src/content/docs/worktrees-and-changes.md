@@ -36,17 +36,18 @@ A chat working in a worktree reads that worktree's own [project modes](/docs/mod
 
 ## The Worktrees section
 
-Open the session pane and its Session tab. Right after Repository, **Worktrees** lists every worktree the session tracks, dropped and merged ones included, with a count line such as "2 active · 1 merged". Each row names the branch and the folder, and has a status chip: Active, Dropped, or Merged "into master at 4ef9f18". A worktree whose folder is gone never reads Active: it reads Merged with a Cleaned up chip when its work is in the main branch, and Removed when it isn't, such as "Removed · not merged".
+Open the session pane and its Session tab. Right after Repository, **Worktrees** lists every worktree the session tracks, dropped and merged ones included, with a count line such as "2 active · 1 merged". Each row names the branch and the folder, and has a status chip: Active, Dropped, or Merged "into master at 4ef9f18". A worktree whose folder is gone never reads Active: it reads Landed, with "Landed · cleaned up", when its work is in the branch the project lands on, and Removed when it isn't, such as "Removed · not merged".
 
 A worktree the session created or attached also gets a readiness chip, worked out from git with no model call:
 
 | Chip | Means |
 |---|---|
-| Ready | At least 1 commit ahead, and nothing below holds it back. In a project with no merge queue it reads Ready to merge. |
+| Ready | Truly ready to land: at least 1 commit ahead, and nothing below holds it back. In a project with no merge queue it reads Ready to merge. A branch with real work that isn't ready says its own state and keeps Land. |
 | Waiting for your OK | Ready, and the session's last reply asks you something, like whether to merge. |
 | In progress | A turn or a worker is running, it has 3 or more uncommitted files, it has no commits yet, it conflicts with its base (not in a project the merge queue serves: there Land queues it and the merge thread settles the conflict), a commit on it is marked unfinished (`WIP`, `TEMP`, `fixup!` and the like), or the last test, typecheck, or build failed. |
 | Blocked | The session waits on your answers to open questions. |
 | Stale | Merged, but the folder has uncommitted changes and nothing is running. |
+| Drafts to land | Its code has landed but some spec drafts haven't, such as "Code landed · 2 spec drafts not landed". Land lands just the drafts. |
 
 Each row also has a line naming the branch's project and where it merges, such as "AmalMoney · merges into master"; it unfolds to the exact folders. Under the chips, one line gives the reason in words, such as "Ready to land · 19 commits ahead · docs: 2 new, 1 changed" or "Conflicts with master · 17 files". It wraps on a phone instead of hiding behind a tooltip.
 
@@ -58,11 +59,13 @@ The same rows, actions and states are in the composer's **worktrees control**, b
 
 When the session merges a worktree, with the tool or with plain git during one of its turns, a **merge card** lands in the transcript. It shows the folder, the branch, the target branch, the resulting commit, how many commits and lines came in, and whether it was a fast-forward or a merge commit. A merge spotted after a turn says "seen after the turn". A merge another session made gets no card here, though the Session tab still shows that worktree as merged. A branch that lands through the merge queue gets the queue's own card in its chat instead.
 
-## Removing merged worktrees
+## Removing finished worktrees
 
-Sova never removes a worktree of yours on its own, only the scratch copies the merge queue makes for a conflict, once that attempt ends: the `worktree` tool's merge and the merge queue's landing both leave the folder in place. A new session's empty screen shows a line like "4 worktrees · 2 merged · 1 empty" for its repository (empty ones are leftovers with no commits of their own), with a **Clean Up Merged** button when some merged or empty ones can go. When the Overseer archives a session, it can remove that session's own worktrees too, with the same checks.
+Automatic cleanup ships switched off for now, so Sova doesn't remove a worktree of yours on its own; it removes only the scratch copies the merge queue makes for a conflict, once that attempt ends. The `worktree` tool's merge and the merge queue's landing both leave the folder in place. A new session's empty screen ends with a plain line about its repository, such as "160 worktrees · 3 retired", with nothing to press.
 
-The button checks first and shows you what goes and what stays, each kept folder with its reason: not merged, uncommitted files, a session still running there, and so on. Only the folders you confirmed are removed, and only if they're still safe to remove at that moment. Git removes them without force, so it refuses a folder that changed. A branch that git finds in your main branch is deleted too; the others keep their commits.
+A finished worktree (nothing of its own left to land, or no commits of its own) offers **Remove Worktree**, last among its row's actions. It asks once, in the same place as Land: "Remove {branch}?", saying the folder goes and whether its branch goes too or stays, as the project's **Delete branches when cleaning up** says (off by default, in [Merge queue settings](/docs/merge-queue-settings/)). Its last commit stays, and Restore brings it back. When the Overseer archives a session, it can remove that session's own finished worktrees too, through the same step.
+
+To throw away a branch you won't land, use **Discard Branch…**, the last item of the Land ▾ menu. It lists what goes first (commits the target doesn't have, files, drafts, the folder and the chats idle in it, which are archived), keeps no backup, and deletes the branch at the tip you saw.
 
 Git's own remove would delete every ignored file and every repository nested in the folder without asking, so Sova reads what a worktree holds first, wherever it removes one. A folder stays when it holds something git can't bring back: an uncommitted file, an ignored file that can't be rebuilt (folders such as `node_modules`, `dist` or `build` can be, and go with it), or a nested repository or worktree. It stays too when Sova couldn't read it all. Its row says what it holds and offers **Remove Anyway**, which first lists exactly what goes and starts on Back. Sova runs every check again and removes it only if what it holds is still what you confirmed.
 

@@ -8,7 +8,7 @@ import { git, REPO_ROOT, until } from "./testing/repo";
 import type { QueueHarness } from "./testing/harness";
 import type { Fixture } from "./testing/repo";
 import type { SessionSummary } from "../../shared/protocol";
-import { draftsLeft } from "../spec-drafts-state";
+import { draftProofVia, draftSettle, draftsLeft, draftWork } from "../spec-drafts-state";
 import { backfillLandedDrafts } from "./landed-drafts";
 import { writeOverride } from "./strategy";
 
@@ -130,6 +130,33 @@ describe("drafts a queue landing made official", () => {
     assert.deepEqual(await draftsLeft(b.checkout, ancestor), []);
     writeFileSync(join(b.checkout, ".sova/spec/drafts/doc/spec/claims/b/doc.md"), "# §b/doc\n\nThe doc feature now does two things.\n");
     assert.deepEqual(await draftsLeft(b.checkout, ancestor), ["doc"], "the receipt no longer speaks for the edited draft");
+  });
+
+  test("the target moved back before the landing, no draft edited: the kept hashes don't keep the draft landed", async () => {
+    const { fx, h } = await setup();
+    await fx.withSpec();
+    const b = fx.branch("doc", { "src/app.txt": APP("line 3 changed") });
+    fx.draft(b.checkout, "doc");
+    const e = await h.add({ branch: b.branch });
+    const landed = await h.waitEntry(e.id, settled);
+    assert.equal(landed.state, "landed", `${landed.state}: ${landed.reason}`);
+    const tip = fx.head();
+    // As readiness asks it: the receipt, then git's own proof against the target.
+    const proof = draftProofVia(async (args, o) => {
+      const r = spawnSync("git", [...args], { cwd: o.cwd, encoding: "utf8" });
+      return { code: r.status, stdout: r.stdout ?? "" };
+    }, () => fx.target);
+    draftSettle.ms = 0;
+    try {
+      assert.deepEqual(await draftsLeft(b.checkout, ancestor, proof), []);
+      const work = { ...draftWork };
+      assert.deepEqual(await draftsLeft(b.checkout, ancestor, proof), []);
+      assert.equal(draftWork.files, work.files, "the second pass reads no draft file: the cache is warm");
+      git(fx.project, ["update-ref", `refs/heads/${fx.target}`, `${tip}~1`]);
+      assert.deepEqual(await draftsLeft(b.checkout, ancestor, proof), ["doc"], "the receipt's commit isn't on the target any more");
+    } finally {
+      draftSettle.ms = 2000;
+    }
   });
 
   test("landed without its specs: no receipt, and the drafts still read as not landed", async () => {

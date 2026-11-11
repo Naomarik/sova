@@ -690,12 +690,26 @@ export async function noteBuildSettled(path: string, failed: boolean): Promise<v
   }
 }
 
-/** Git's facts about a build's worktree and branch (the page's read) to its statechart. */
+/** The statechart's data each `git/probe` payload key lands in (build.cljc: the tree and branch regions, `probe-ops`). */
+const PROBE_DATA: Record<string, string> = { tree: "tree", branch: "branchState", ahead: "gitAhead", dirty: "gitDirty", branchGone: "gitBranchGone", error: "gitError" };
+
+/** The statechart already holds every fact of this probe (its tree and branch states, its git data): hearing it again
+    would move nothing. Read from the statechart itself, never from what was sent last, so whatever else moved its
+    reading (another act, a replay, a restart from its snapshot) gets the next probe delivered. */
+export function probeHeld(data: Record<string, unknown> | null, payload: Record<string, unknown>): boolean {
+  if (!data) return false;
+  return Object.entries(payload).every(([k, v]) => k in PROBE_DATA && data[PROBE_DATA[k]!] === v);
+}
+
+/** Git's facts about a build's worktree and branch (the page's read) to its statechart, only when they would change
+    its reading: an unchanged probe adds no history row (§app.project-overseer/coding-worktrees). */
 export async function probeBuild(projectId: string, sid: string, row: BuildRow, w: WorktreeReading): Promise<void> {
   const tree = row.removed ? "removed" : w.state === "missing" ? "missing" : "open";
   const branch = !w.branch ? undefined : w.merged ? "merged" : row.merged && w.unmerged > 0 ? "new-since-merge" : w.ahead > 0 ? "unmerged" : "no-commits";
   const payload: Record<string, unknown> = { tree, ahead: w.ahead, dirty: w.dirty, branchGone: !w.branch, ...(branch ? { branch } : {}), ...(w.error ? { error: w.error } : {}) };
-  await projectHost(projectId).act(sid, "git/probe", payload, SYSTEM);
+  const host = projectHost(projectId);
+  if (probeHeld(host.data(sid), payload)) return;
+  await host.act(sid, "git/probe", payload, SYSTEM);
 }
 
 /** Tests: forget the session files made here. */

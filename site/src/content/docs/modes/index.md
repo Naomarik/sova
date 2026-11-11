@@ -21,7 +21,7 @@ The **major mode** is one of three:
 |---|---|---|
 | [align](/docs/modes/align/) | The agent agrees with you on what to build before building it, and records each agreement as an alignment. | No |
 | [spec](/docs/modes/spec/) | The agent works from the project's spec: it reads the claims a task touches, and proposes changes in drafts. | Yes |
-| [vis](/docs/modes/vis/) | The agent can draw small diagrams and charts in its replies. | No |
+| [vis](/docs/modes/vis/) | The agent can draw small diagrams and charts in its replies, and opens a [Lookbook](/docs/modes/vis/lookbook/) when you ask for one. | No |
 | [memory](/docs/modes/memory/) | A cheap model folds the chat's messages into one-line summaries, and the model opens any of them back to the original message with its `zoom` tool, so a chat can outgrow its context. The transcript you read never changes. Only Sova's mode menu turns it on. | No |
 
 A project can also ship minor modes of its own, with instructions and its own command-line tools,
@@ -87,7 +87,7 @@ Switching a minor mode in the middle of a chat doesn't rewrite the instructions 
 has (except align in Delegate or Create, which changes one paragraph of Delegate's instructions). The change reaches the model as a hidden note with its next message, which you don't see in
 the transcript. This keeps the model provider's prompt cache, so a toggle doesn't re-send the whole
 conversation. Turning **align** or **vis** on or off does change the agent's tools:
-align adds its `align` tool and vis its drawing tools. A project mode
+align adds its `align` tool and vis its drawing tools and the Lookbook's tool. A project mode
 with tools adds or removes its own tools the same way. **memory** sends no note at all: it changes
 the history the model is sent from the next turn, and adds its `zoom` and `date` tools.
 
@@ -156,7 +156,8 @@ mode whose file says `workers: yes`. A worker gets at most 8 modes, built-in and
   short note: its brief is its go-ahead, it works in the draft its brief names, and the parent
   promotes. See [Spec](/docs/modes/spec/).
 - **align** doesn't: aligning is a conversation with you, and a worker doesn't have one.
-- **vis** doesn't: drawings are for you, and a worker's replies are read by its parent.
+- **vis** doesn't: drawings are for you, and a worker's replies are read by its parent. So no
+  worker has a Lookbook, and a Lookbook's design sessions take none of the chat's modes.
 - **memory** doesn't: it is the chat's own memory of its conversation, and a worker starts fresh
   from its brief.
 - A **project mode** does when its file says `workers: yes`: the worker gets the chat's copy of it,

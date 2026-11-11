@@ -63,7 +63,7 @@ routes, all on Claude Code:
 
 | Work kind | Model · effort | Fallback |
 |---|---|---|
-| Planning & specs | Fable 5.1 · medium | Opus 5.5 · high |
+| Planning & specs | Fable 5.2 · medium | Opus 5.5 · high |
 | Investigation | Opus 5.5 · low | none |
 | Routine implementation | Opus 5.5 · low | none |
 | Complex implementation | Opus 5.5 · medium | none |

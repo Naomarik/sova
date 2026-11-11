@@ -2754,13 +2754,31 @@ word never does.
 ---
 
 
-## §app.session-list/listing-reuse — One listing, shared for a second
+## §app.session-list/listing-reuse — One listing, kept until a row changes
 
 The server builds the session list once for every caller that asks while a build is running, and
-hands a finished list to further callers for up to **1 second** after its build started: the
-session feed's comparison, the attention scan, the Overseer, the profile, schedule and share routes
-and `GET /api/sessions` all read the same list then. A change made outside this server (a TUI writing
-a session, another server's stores) therefore reaches a listing up to 1 second later.
+keeps a finished list for further callers for as long as nothing its rows show has changed, however
+long ago it was built: the session feed's comparison, the attention scan, the Overseer, the profile,
+schedule and share routes and `GET /api/sessions` all read the same list then. The kept list is
+dropped, and the next listing is built afresh, when a chat is added, written, removed, archived or
+unarchived, or renamed, when a live mark changes (a chat opens or closes in a TUI, a turn starts or
+ends, its process dies), when a branch's state changes (merge readiness or a merge queue entry
+reads a new answer), and on everything below that starts the next listing afresh: whatever makes
+the session feed compare (§app.decisions/push) drops it too, its once-a-minute safety net
+included. So a change no watch hears (another server's stores, a program writing outside the
+watched folders) reaches a kept list within about a minute, at that safety net. Loading or
+refreshing a window never reads a kept list: its feed's new connection drops it, so the window's
+first list read builds the list afresh and shows a change made outside Sova at once. That needs the session folders and live records watched, as they are while a feed is
+connected, Sova's event stream has a subscriber or the Overseer's loop reads the digest; while
+nothing watches them, a change made outside this server (a TUI writing a session, another server's
+stores) can't be heard, so a finished list serves further callers for up to **1 second** after its
+build started, as before, and such a change reaches a listing up to 1 second later. Either way the
+session list, its live marks and its branch states reach a window exactly as soon as before.
+
+**One chat is looked up alone.** A place that needs one chat's row, by its path or id (the merge
+queue finding a branch's chat or its title, a tour finding its chat, a worktree's removal finding
+the chat that owns it, a share opening its chat), reads that chat alone and never builds the whole
+list for it; the row it gets has the same fields as that chat's row in the list.
 
 The schedule's discovery, which runs on a timer, reads the session
 feed's last list instead while a feed is connected and nothing it watches has changed since that

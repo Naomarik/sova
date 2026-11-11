@@ -73,7 +73,7 @@ import { getAgentsInsight, getHiddenWorkers, getMemberInbox, getSessionInsight, 
 import { registerUsageRoutes } from "./usage-routes";
 import { sessionFeed } from "./session-feed";
 import { LIST_VERSION_HEADER } from "../src/lib/summary-diff";
-import { archiveSession, cleanupSessions, getSessionSummary, idOf, listCwds, listSessionFiles, listSessions, onSessionArchived } from "./sessions-index";
+import { archiveSession, cleanupSessions, getSessionSummary, idOf, listCwds, listSessionFiles, listSessions, listSessionsAfresh, onSessionArchived } from "./sessions-index";
 import { QUEUE_CHAT_MODE_REFUSAL, queueChatRole } from "../shared/merge-queue";
 import { cleanSessionTitle, readSessionTitleRecords, SESSION_TITLE_MAX, setSessionTitle } from "./session-titles";
 import { fixedNameRefusal } from "../shared/fixed-names";
@@ -334,10 +334,14 @@ export function buildApp(deps: AppDeps) {
 
   // The body is the list as it always was; with the session feed running, read in turn with its
   // re-diffs and named by the version it is at, so a tab can apply the feed's `rows` frames from it.
+  // A window reads it on loading (and on a resync): built afresh, never a kept list
+  // (§app.session-list/listing-reuse), so a refresh shows a change no watch heard.
   app.get("/api/sessions", async (c) => {
+    // Several at once (tabs, peers) share a build that started after the request arrived.
+    const arrived = Date.now();
     const feed = sessionFeed();
-    if (!feed) return c.json(await listSessions());
-    const { body, epoch, version } = await feed.snapshot(listSessions);
+    if (!feed) return c.json(await listSessionsAfresh(arrived));
+    const { body, epoch, version } = await feed.snapshot(() => listSessionsAfresh(arrived));
     c.header(LIST_VERSION_HEADER, `${epoch}:${version}`);
     return c.json(body);
   });

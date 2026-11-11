@@ -31,7 +31,7 @@ const git = (cwd: string, ...a: string[]) => execFileSync("git", a, { cwd, env: 
 const M = { model: "zai/glm-5.3" };
 
 let n = 0;
-async function project(): Promise<{ id: string; root: string }> {
+async function project(): Promise<{ id: string; root: string; orgId: string }> {
   n++;
   const root = join(tmp, "code", `p${n}`);
   mkdirSync(root, { recursive: true });
@@ -41,7 +41,7 @@ async function project(): Promise<{ id: string; root: string }> {
   git(root, "commit", "-q", "-m", "base");
   const org = await createOrg({ name: `Org ${n}`, dir: join(tmp, "orgs", `o${n}`) });
   const p = await addProject(org.id, { name: `P${n}`, root });
-  return { id: p.id, root };
+  return { id: p.id, root, orgId: org.id };
 }
 
 /** Stand-ins over real git: a run cuts a real worktree and branch; archive moves the chat's file away. */
@@ -253,6 +253,33 @@ describe("Needs you follows the Setup proposal at once", () => {
     } finally {
       off();
     }
+  });
+});
+
+describe("the project page's read reads the Setup proposal again", () => {
+  test("its head amended outside a turn with the same counts: reading the project page moves Needs you's commit", async () => {
+    const { setupReviewOf } = await import("./setup-chat");
+    const { projectWorktrees } = await import("../project-overseer");
+    const { settleSetupForTest } = await import("./runtime");
+    const { seedBuild } = await import("../org-test-fixtures");
+    const a = await project();
+    const s = stand(a.root);
+    const first = await openSetup(a.id, M, s.deps);
+    const wt = first.worktree!.path;
+    const before = commitIn(wt, { ".sova/project.json": DEF("none") });
+    // A coding session the page lists, so its read probes a build; the first probe moves its statechart.
+    await seedBuild(a.orgId, a.id, { sessionId: `c-${a.id}`, kind: "coding", worktree: { branch: first.worktree!.branch, base: "main", target: "main" } });
+    await projectWorktrees(a.id);
+    await settleSetupForTest();
+    assert.equal(setupReviewOf(a.id)?.commit, before);
+    // Amended with no Sova turn: the same one commit ahead, the same clean tree, a new head; the probe is held.
+    writeFileSync(join(wt, ".sova/project.json"), DEF([]));
+    git(wt, "commit", "-q", "-a", "--amend", "-m", "propose again");
+    const after = git(wt, "rev-parse", "HEAD");
+    assert.notEqual(after, before);
+    await projectWorktrees(a.id);
+    await settleSetupForTest();
+    assert.equal(setupReviewOf(a.id)?.commit, after, "Needs you and the banner follow the new head");
   });
 });
 

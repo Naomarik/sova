@@ -115,9 +115,8 @@ export async function resolveTourSource(context: TourRecordingContext, requested
 }
 /** Used by operator HTTP actions; no path or policy is accepted in their bodies. */
 export async function tourCallerBySession(sessionId: string): Promise<TourToolCaller> {
-  const { indexedSessionPaths, listSessions } = await import("../sessions-index");
-  let path = indexedSessionPaths().get(sessionId);
-  if (!path) { await listSessions(); path = indexedSessionPaths().get(sessionId); }
+  const { sessionPathOfId } = await import("../sessions-index");
+  const path = await sessionPathOfId(sessionId);
   const { resolveSessionPath } = await import("../paths");
   const file = path ? resolveSessionPath(path) : null;
   if (!file) throw new Error("The owning chat is unavailable.");

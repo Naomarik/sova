@@ -35,7 +35,7 @@ import {
   StoreUnavailable,
   validDays,
 } from "./session-shares";
-import { cachedTitleOf, getSessionSummary, indexedSessionPaths, listSessions, onSessionArchived } from "./sessions-index";
+import { cachedTitleOf, getSessionSummary, onSessionArchived, sessionPathOfId } from "./sessions-index";
 import { sharesOverview } from "./shares-overview";
 import { tokenFor } from "./link-tokens";
 import { awaitShareLinks } from "./share/links-events";
@@ -55,13 +55,9 @@ import { readSessionVisits, visitSummary } from "./visits";
 const small = bodyLimit({ maxSize: 16 * 1024, onError: (c) => c.json({ error: "Too large", code: "too-large" }, 413) });
 const NO_STORE = { "Cache-Control": "no-store" };
 
-/** A session's file on this host, by id: the listing cache first, then one real listing. */
+/** A session's file on this host, by id: the listing cache first, then the id in the file names (no list built). */
 async function sessionPathOf(sessionId: string): Promise<string | null> {
-  let path = indexedSessionPaths().get(sessionId);
-  if (!path) {
-    await listSessions().catch(() => []);
-    path = indexedSessionPaths().get(sessionId);
-  }
+  const path = await sessionPathOfId(sessionId).catch(() => undefined);
   const resolved = path ? resolveSessionPath(path) : null;
   return resolved && existsSync(resolved) ? resolved : null;
 }

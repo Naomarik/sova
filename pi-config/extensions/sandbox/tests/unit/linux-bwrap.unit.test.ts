@@ -7,12 +7,12 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, realpathSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
 import { createServer, type Server } from "node:net";
 import { homedir, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { classifyRun, type Policy } from "../../backend.ts";
-import { findExecutable, LinuxBwrapBackend, mountPlan, parseProcNetUnix, runCapture, type TmpSocketScan, tmpSockets } from "../../backends/linux-bwrap.ts";
+import { classifyRun, type Policy, shadowSource } from "../../backend.ts";
+import { findExecutable, LinuxBwrapBackend, mountPlan, runCapture } from "../../backends/linux-bwrap.ts";
 import { GIT_CLEANUP_FILE, scrubEnv } from "../../env.ts";
 import { startProxy } from "../../proxy.ts";
 
@@ -88,13 +88,12 @@ test("private /tmp is the session tmp dir; host /tmp and /run/user are invisible
 	assert.equal(existsSync(join("/tmp", name)), false);
 });
 
-test("a write-only worker's /tmp (hostTmp): the host's, read-only, sockets masked; TMPDIR is its own tmp", { skip }, async (t) => {
-	// The literal /tmp, whatever TMPDIR the test runs with: that is what the worker sees.
+test("a write-only worker's /tmp: its own private one, as On's; the host's /tmp and its sockets are out of sight", { skip }, async (t) => {
+	// The literal /tmp, whatever TMPDIR the test runs with: that is what the worker would see.
 	const host = mkdtempSync("/tmp/sbx-host-");
 	t.after(() => rmSync(host, { recursive: true, force: true }));
 	writeFileSync(join(host, "brief.md"), "the brief");
-	const sock = join(host, "svc", "s.sock");
-	mkdirSync(dirname(sock));
+	const sock = join(host, "s.sock");
 	const server = createServer((c) => c.on("error", () => {}).end("hello"));
 	await listen(server, { path: sock });
 	t.after(() => server.close());
@@ -104,117 +103,19 @@ test("a write-only worker's /tmp (hostTmp): the host's, read-only, sockets maske
 	const connect = `require("net").connect(${JSON.stringify(sock)}).on("connect",()=>{console.log("CONNECTED");process.exit(0)}).on("error",(e)=>{console.log("REFUSED",e.code);process.exit(0)})`;
 	const r = await run(
 		new LinuxBwrapBackend(),
-		makePolicy(ws, tmp, { network: { mode: "host" }, hostTmp: true }),
-		`cat ${host}/brief.md; echo; (echo x > ${host}/${name}) 2>/dev/null || echo TMP-RO; echo in > "$TMPDIR/${name}"; echo "tmpdir=$TMPDIR"; ${process.execPath} -e '${connect}'`,
+		makePolicy(ws, tmp, { network: { mode: "host" } }),
+		`cat ${host}/brief.md 2>/dev/null || echo NO-BRIEF; echo x > /tmp/${name}; echo "tmpdir=$TMPDIR"; ${process.execPath} -e '${connect}'`,
 	);
 	assert.equal(r.code, 0, r.output);
-	assert.match(r.output, /^the brief$/m, "a file another session wrote to /tmp is readable");
-	assert.match(r.output, /TMP-RO/, "the host /tmp is read-only");
-	assert.equal(existsSync(join(host, name)), false);
-	assert.match(r.output, new RegExp(`tmpdir=${tmp}$`, "m"));
-	assert.equal(readFileSync(join(tmp, name), "utf8"), "in\n", "its temp files land in its own tmp");
-	assert.doesNotMatch(r.output, /CONNECTED/, "a socket in /tmp is masked");
-	assert.match(r.output, /REFUSED/);
-	assert.ok(r.confined.argv.join("\0").includes(`--ro-bind\0/dev/null\0${sock}\0`));
-	assert.ok(!r.confined.argv.join("\0").includes(`\0${tmp}\0/tmp\0`), "no private /tmp");
+	assert.match(r.output, /NO-BRIEF/, "bash no longer sees the host's /tmp");
+	assert.match(r.output, /^tmpdir=\/tmp$/m, "TMPDIR is /tmp: short enough for a Unix socket path");
+	assert.equal(readFileSync(join(tmp, name), "utf8"), "x\n", "a write to /tmp lands in its own tmp");
+	assert.equal(existsSync(join("/tmp", name)), false, "never in the host's /tmp");
+	assert.doesNotMatch(r.output, /CONNECTED/, "a socket in the host's /tmp is unreachable");
+	assert.ok(r.confined.argv.join("\0").includes(`\0--bind\0${tmp}\0/tmp\0`), "the session tmp at /tmp");
+	assert.ok(!r.confined.argv.join("\0").includes("--ro-bind\0/dev/null\0/tmp/"), "no socket scan, so nothing in /tmp to vanish before bwrap starts");
 });
 
-const UNIX_HEADER = "Num       RefCount Protocol Flags    Type St Inode Path";
-let inode = 1000;
-const unixLine = (path?: string) => `0000000000000000: 00000002 00000000 00010000 0001 01 ${inode++}${path === undefined ? "" : ` ${path}`}`;
-const unixList = (...paths: Array<string | undefined>) => [UNIX_HEADER, ...paths.map(unixLine)].join("\n") + "\n";
-
-test("parseProcNetUnix: bound pathnames only; anything not in the kernel's format is undefined", () => {
-	const text = [UNIX_HEADER, unixLine(), unixLine("@/tmp/.X11-unix/X0"), "0000000000000000: 00000003 00000000 00000000 0001 03 12345678 /tmp/a b.sock", unixLine("/run/x.sock"), unixLine("/run/x.sock")].join("\n") + "\n";
-	assert.deepEqual(parseProcNetUnix(text), ["/tmp/a b.sock", "/run/x.sock"]);
-	assert.deepEqual(parseProcNetUnix(`${UNIX_HEADER}\n`), []);
-	assert.equal(parseProcNetUnix(""), undefined, "no header");
-	assert.equal(parseProcNetUnix(unixLine("/tmp/a")), undefined, "no header");
-	// A path with a line break splits its line: the rest is not the kernel's format.
-	assert.equal(parseProcNetUnix(unixList("/tmp/a\nb")), undefined);
-	assert.equal(parseProcNetUnix(`${UNIX_HEADER}\n${unixLine("/tmp/a")}\n\n${unixLine("/tmp/b")}\n`), undefined, "an empty line inside");
-	assert.equal(parseProcNetUnix(`${UNIX_HEADER}\n0000000000000000: 00000002 /tmp/a\n`), undefined);
-});
-
-const linuxOnly = process.platform === "linux" ? false : "Linux only";
-
-async function socketsIn(t: { after(fn: () => void): void }) {
-	const servers: Server[] = [];
-	t.after(() => {
-		for (const s of servers) s.close();
-	});
-	return async (p: string) => {
-		mkdirSync(dirname(p), { recursive: true });
-		const s = createServer();
-		await listen(s, { path: p });
-		servers.push(s);
-		return p;
-	};
-}
-
-test("tmpSockets: the listed sockets under the root, canonical, plus a shallow walk's", { skip: linuxOnly }, async (t) => {
-	const root = scratch(t, "sbx-scan-");
-	const sockAt = await socketsIn(t);
-	// Only the list finds a deep one; only the walk finds an unlisted one, and only two levels down.
-	const deep = await sockAt(join(root, "d1", "d2", "d3", "deep.sock"));
-	const top = await sockAt(join(root, "top.sock"));
-	const second = await sockAt(join(root, "tmux-1000", "default"));
-	await sockAt(join(root, "w1", "w2", "unlisted-deep.sock"));
-	const mine = await sockAt(join(root, "own", "mine.sock"));
-	writeFileSync(join(root, "plain"), "x");
-	const elsewhere = scratch(t, "sbx-scan-else-");
-	const far = await sockAt(join(elsewhere, "far.sock"));
-	// The root and a parent reached through symlinks, as a server may have bound them.
-	const rootLink = join(elsewhere, "tmp-link");
-	execFileSync("ln", ["-s", root, rootLink]);
-	execFileSync("ln", ["-s", join(root, "d1", "d2"), join(root, "d2-link")]);
-	const viaLink = await sockAt(join(rootLink, "via", "link.sock"));
-	execFileSync("ln", ["-s", elsewhere, join(root, "out-link")]);
-	const list = unixList(
-		join(rootLink, "d2-link", "d3", "deep.sock"),
-		viaLink,
-		mine,
-		far,
-		join(root, "plain"),
-		join(root, "gone.sock"),
-		join(root, "no-such-dir", "gone.sock"),
-		undefined,
-		"@abstract",
-	);
-	const scan = (over: Partial<TmpSocketScan> = {}) => tmpSockets({ root: rootLink, skip: [join(root, "own")], readUnixList: () => list, ...over });
-	assert.deepEqual(scan(), [deep, top, second, join(root, "via", "link.sock")].sort());
-	assert.deepEqual(scan({ walkBudget: 0 }), [deep, join(root, "via", "link.sock")].sort(), "without the walk, the list alone");
-	assert.deepEqual(scan({ skip: [] })?.includes(mine), true);
-});
-
-test("tmpSockets fails closed: an unreadable or ambiguous list, a relative path, a line break in a name", { skip: linuxOnly }, async (t) => {
-	const root = scratch(t, "sbx-scan-");
-	const sockAt = await socketsIn(t);
-	const s = await sockAt(join(root, "a.sock"));
-	assert.deepEqual(tmpSockets({ root, readUnixList: () => unixList(s) }), [s]);
-	assert.equal(tmpSockets({ root, readUnixList: () => { throw new Error("EACCES"); } }), undefined);
-	assert.equal(tmpSockets({ root, readUnixList: () => unixList(`${s}\nx`) }), undefined);
-	assert.equal(tmpSockets({ root, readUnixList: () => "garbage\n" }), undefined);
-	assert.equal(tmpSockets({ root, readUnixList: () => unixList(s, "relative.sock") }), undefined, "a relative path could be anywhere");
-	assert.equal(tmpSockets({ root: join(root, "missing"), readUnixList: () => unixList(s) }), undefined);
-	writeFileSync(join(root, "odd\nname"), "x");
-	assert.equal(tmpSockets({ root, readUnixList: () => unixList(s) }), undefined, "a name the list would split");
-});
-
-test("tmpSockets: a /tmp of more than 10,000 entries still gives the host view", { skip: linuxOnly }, async (t) => {
-	const root = scratch(t, "sbx-scan-big-");
-	const sockAt = await socketsIn(t);
-	const bulk = join(root, "bulk");
-	mkdirSync(bulk);
-	for (let i = 0; i < 6000; i++) writeFileSync(join(root, `f${i}`), "");
-	for (let i = 0; i < 6000; i++) writeFileSync(join(bulk, `f${i}`), "");
-	const s = await sockAt(join(root, "x", "y", "z", "s.sock"));
-	const started = performance.now();
-	const found = tmpSockets({ root, readUnixList: () => unixList(s) });
-	const ms = performance.now() - started;
-	assert.deepEqual(found, [s]);
-	assert.ok(ms < 500, `took ${ms} ms`);
-});
 
 test("the mount namespace differs from the host's", { skip }, async (t) => {
 	const r = await run(new LinuxBwrapBackend(), makePolicy(scratch(t, "sbx-ws-"), scratch(t, "sbx-tmp-")), "readlink /proc/self/ns/mnt");
@@ -519,14 +420,61 @@ test("trust stores in a writable state dir stay read-only and cannot be planted 
 	assert.equal(readFileSync(join(mise, "other"), "utf8"), "ok\n", "the rest of the state dir stays writable");
 });
 
-test("the real ~/.local/state/mise/trusted-configs is not writable under the default writable roots", { skip: skip || (!existsSync(join(homedir(), ".local/state/mise/trusted-configs")) && "no mise state here") }, async (t) => {
+test("the real ~/.local/state/mise/trusted-configs is never written: the platform's private copy takes the write", { skip: skip || (!existsSync(join(homedir(), ".local/state/mise/trusted-configs")) && "no mise state here") }, async (t) => {
 	const ws = scratch(t, "sbx-ws-");
+	const agentDir = scratch(t, "sbx-agent-");
 	const b = new LinuxBwrapBackend();
-	const defaults = b.platformDefaults({ home: homedir(), agentDir: join(homedir(), ".pi", "agent") });
-	const target = join(homedir(), ".local/state/mise/trusted-configs", `sbx-${rand()}`);
+	const defaults = b.platformDefaults({ home: homedir(), agentDir });
+	assert.deepEqual(defaults.writable, [], "no host state dir is writable by default");
+	const shadowed = (defaults.privateState ?? []).map((path) => ({ path, source: shadowSource(agentDir, path) }));
+	const name = `sbx-${rand()}`;
+	const target = join(homedir(), ".local/state/mise/trusted-configs", name);
 	t.after(() => rmSync(target, { force: true }));
-	await run(b, makePolicy(ws, scratch(t, "sbx-tmp-"), { writable: [ws, ...defaults.writable] }), `touch ${target}; true`);
-	assert.equal(existsSync(target), false);
+	const r = await run(b, makePolicy(ws, scratch(t, "sbx-tmp-"), { shadowed }), `touch ${target} && echo TOUCHED`);
+	assert.match(r.output, /TOUCHED/, r.output);
+	assert.equal(existsSync(target), false, "the host's trust list is unchanged");
+	assert.equal(existsSync(join(shadowSource(agentDir, join(homedir(), ".local/state/mise")), "trusted-configs", name)), true, "the write is in the copy");
+});
+
+test("mise's state is a private copy: the host's trust links seeded in, `mise trust` inside only in the copy, a host removal mirrored", { skip }, async (t) => {
+	const ws = scratch(t, "sbx-ws-");
+	const home = scratch(t, "sbx-home-");
+	const agentDir = scratch(t, "sbx-agent-");
+	const mise = join(home, ".local", "state", "mise");
+	mkdirSync(join(mise, "trusted-configs"), { recursive: true });
+	mkdirSync(join(mise, "tracked-configs"), { recursive: true });
+	symlinkSync(join(ws, "mise.toml"), join(mise, "trusted-configs", "host-trust"));
+	symlinkSync(join(ws, "gone.toml"), join(mise, "trusted-configs", "host-gone"));
+	const source = shadowSource(agentDir, mise, home);
+	const policy = makePolicy(ws, scratch(t, "sbx-tmp-"), {
+		shadowed: [{ path: mise, source }],
+		env: { ...scrubEnv(process.env), HOME: home, XDG_STATE_HOME: join(home, ".local", "state") },
+	});
+	const r = await run(new LinuxBwrapBackend(), policy, [
+		`ls ${mise}/trusted-configs`,
+		`mkdir -p ${mise}/tracked-configs`,
+		`ln -s ${ws}/other.toml ${mise}/trusted-configs/inside-trust && echo TRUSTED`,
+		`ln -sf ${ws}/mise.toml ${mise}/tracked-configs/inside-track && echo TRACKED`,
+	].join("; "));
+	assert.match(r.output, /host-trust/, "the host's trust is seen inside");
+	assert.match(r.output, /TRUSTED/, r.output);
+	assert.match(r.output, /TRACKED/, "the tracking list is writable: no warning");
+	assert.equal(existsSync(join(mise, "trusted-configs", "inside-trust")), false, "the host's list is unchanged");
+	assert.equal(readlinkSync(join(source, "trusted-configs", "inside-trust")), join(ws, "other.toml"));
+	// The host untrusts one: the copy drops it, and keeps the sandbox's own.
+	unlinkSync(join(mise, "trusted-configs", "host-gone"));
+	const r2 = await run(new LinuxBwrapBackend(), policy, `ls ${mise}/trusted-configs`);
+	assert.doesNotMatch(r2.output, /host-gone/);
+	assert.match(r2.output, /host-trust/);
+	assert.match(r2.output, /inside-trust/);
+});
+
+test("mise's tracking warning alone never earns the denial note", () => {
+	const confined = { argv: [], env: {}, enforcement: "full" as const, network: "none" as const, denialSignatures: ["Read-only file system"], runnerFailure: { fatalSignatures: ["^bwrap: "] } };
+	const warn = "mise WARN  tracking config: failed to ln -sf /w/mise.toml /h/.local/state/mise/tracked-configs/cc75: Read-only file system (os error 30)";
+	assert.deepEqual(classifyRun(confined, { exitCode: 1, output: `${warn}\nerror: test failed\n` }), { kind: "failed" });
+	assert.deepEqual(classifyRun(confined, { exitCode: 1, output: `${warn}\ntouch: cannot touch '/x': Read-only file system\n` }).kind, "denied", "a real denial beside it still counts");
+	assert.deepEqual(classifyRun(confined, { exitCode: 0, output: warn }), { kind: "ok" });
 });
 
 test("Sova's topic store is on the default hidden list: other sessions' return addresses can't be read", { skip }, async (t) => {

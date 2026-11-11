@@ -134,7 +134,6 @@ export async function prepareSessionCommand(
 			readOnlyWithinWritable: p.readOnlyWithinWritable, hidden: p.hidden, tmpDir: p.tmpDir,
 			shadowed: p.shadowed, network, sessionId: input.sessionId,
 			env: p.writeOnly ? hostEnv(process.env) : scrubEnv(process.env, p.envAllow),
-			...(p.writeOnly ? { hostTmp: true } : {}),
 			// The policy's `browser` (a worker: its parent's), as the extension's snapshot() passes it.
 			...(p.browser ? { browser: true } : {}),
 		};

@@ -180,9 +180,7 @@ test("prepareSessionCommand: a caller's own tmp is the attempt's, and goes with 
 test("prepareSessionCommand: a caller's own tmp keeps the attempt's proxy socket beside it, whatever TMPDIR is", async (t) => {
 	const { home, agentDir, ws } = rig(t);
 	let parent: string;
-	// A socket path needs to be short: /tmp, which a sandboxed chat running this test can't write. On
-	// Linux /dev/shm instead, as proxy.unit.test.ts does: linux-bwrap's hostTmp test, running beside
-	// this one, masks every socket in /tmp, and one removed between its scan and bwrap's start fails it.
+	// A socket path needs to be short: on Linux /dev/shm, as proxy.unit.test.ts does, else /tmp.
 	const shortRoot = process.platform === "linux" && existsSync("/dev/shm") ? "/dev/shm" : "/tmp";
 	try { parent = realpathSync(mkdtempSync(join(shortRoot, "own-"))); } catch { t.skip(`${shortRoot} is closed here`); return; }
 	t.after(() => rmSync(parent, { recursive: true, force: true }));

@@ -216,8 +216,6 @@ export default function sandbox(pi: ExtensionAPI) {
 			network,
 			env: policy.writeOnly ? hostEnv(process.env) : scrubEnv(process.env, policy.envAllow),
 			sessionId,
-			// Write-only: the host's /tmp stays visible, read-only (§chat.worktrees/workers).
-			...(policy.writeOnly ? { hostTmp: true } : {}),
 			// The policy's `browser` (a worker: its parent's): the Seatbelt profile's Chromium rules.
 			...(policy.browser ? { browser: true } : {}),
 		};

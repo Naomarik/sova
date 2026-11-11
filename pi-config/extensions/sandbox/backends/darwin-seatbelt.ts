@@ -38,7 +38,7 @@ import type {
 	ProbeResult,
 	Shadow,
 } from "../backend.ts";
-import { canonicalizePath, isWithin, policyKey, writeSet } from "../backend.ts";
+import { canonicalizePath, isWithin, policyKey, seedShadow, writeSet } from "../backend.ts";
 import { addGitCleanupEnv, proxyEnv } from "../env.ts";
 
 export const SANDBOX_EXEC = "/usr/bin/sandbox-exec";
@@ -315,6 +315,7 @@ export function shadowEnv(shadows: Shadow[], env: Record<string, string>, home: 
 	for (const s of shadows) {
 		if (s.path === canonicalizePath(env.XDG_CACHE_HOME || join(home, ".cache"))) out.XDG_CACHE_HOME = s.source;
 		else if (s.path === canonicalizePath(join(home, ".npm"))) out.npm_config_cache = s.source;
+		else if (s.path === canonicalizePath(env.MISE_STATE_DIR || join(env.XDG_STATE_HOME || join(home, ".local", "state"), "mise"))) out.MISE_STATE_DIR = s.source;
 		else if (s.path === canonicalizePath(join(home, ".m2"))) out.MAVEN_OPTS = `${env.MAVEN_OPTS ? env.MAVEN_OPTS + " " : ""}-Dmaven.repo.local=${join(s.source, "repository")}`;
 	}
 	return out;
@@ -408,8 +409,10 @@ export class DarwinSeatbeltBackend implements Backend {
 				h("Library/Application Support/Arc"),
 				...uniq([ctx.agentDir, h(".pi/agent")]).flatMap((a) => [join(a, "auth.json"), join(a, "mcp-auth.json"), join(a, "sova", "api-token"), join(a, "sova", "secrets", "mcp"), join(a, "claude-accounts"), join(a, "sova", "topics")]),
 			],
-			writable: [h(".local/state/mise")],
+			writable: [],
 			shadowed: [h(".cache"), h(".npm"), h(".m2")],
+			// mise's own state (trust and tracking lists), reached through MISE_STATE_DIR (shadowEnv).
+			privateState: [h(".local/state/mise")],
 			readOnlyWithinWritable: [
 				ctx.agentDir, h(".pi"), h(".claude"), h(".config"), h(".local/bin"), h(".local/share"),
 				h(".bashrc"), h(".bash_profile"), h(".profile"), h(".zshrc"), h(".zprofile"), h(".zshenv"), h(".zlogin"),
@@ -469,13 +472,16 @@ export class DarwinSeatbeltBackend implements Backend {
 		let profile: string;
 		try {
 			plan = profilePlan({ policy, relayPort });
-			for (const s of plan.shadowed) mkdirSync(s.source, { recursive: true, mode: 0o700 });
+			for (const s of plan.shadowed) {
+				mkdirSync(s.source, { recursive: true, mode: 0o700 });
+				seedShadow(s);
+			}
 			profile = writeProfile(policy.tmpDir, renderProfile(plan));
 		} catch (err) {
 			return { ok: false, code: "SANDBOX_UNAVAILABLE", reason: `cannot write the Seatbelt profile: ${(err as Error).message}` };
 		}
 		if (plan.shadowed.length) {
-			notes.push("shadowed caches: the host copies are read-only here; XDG_CACHE_HOME, npm_config_cache and MAVEN_OPTS point at the sandbox's own copies");
+			notes.push("shadowed caches: the host copies are read-only here; XDG_CACHE_HOME, npm_config_cache, MISE_STATE_DIR and MAVEN_OPTS point at the sandbox's own copies");
 		}
 
 		const home = policy.env.HOME || process.env.HOME || "";

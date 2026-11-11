@@ -482,7 +482,7 @@ export interface ResolveInput {
 	platform?: string;
 	home?: string;
 	/** The backend's platform lists (absolute paths), merged under the file's own. `shadowed` is used only by a write-only worker, which reads no file. */
-	defaults?: { hidden: string[]; writable: string[]; readOnlyWithinWritable: string[]; shadowed?: string[] };
+	defaults?: { hidden: string[]; writable: string[]; readOnlyWithinWritable: string[]; shadowed?: string[]; privateState?: string[] };
 	/**
 	 * More writable roots for this session (not a worker's): the session's active tracked worktrees
 	 * (§chat.worktrees/sandbox). Dropped under read-only.
@@ -528,7 +528,7 @@ function resolveWriteOnly(input: ResolveInput, parent: ParentScope): Result<Reso
 	// A root inside a shadowed cache (a worktree under ~/.cache) stays real: its bind is deeper
 	// than the shadow's, as the session cwd's is. Only the shadows that would hold a root are dropped.
 	const parentRoots = [...new Set(parent.writable.map(canonicalize))];
-	const shadowCanon = canon(d.shadowed ?? []).filter((sh) => !parentRoots.some((r) => isWithin(r, sh)));
+	const shadowCanon = canon([...(d.shadowed ?? []), ...(d.privateState ?? [])]).filter((sh) => !parentRoots.some((r) => isWithin(r, sh)));
 	const writable = [tmpDir, ...parentRoots];
 	const outsideParent = !parentRoots.some((r) => isWithin(workspaceRoot, r));
 	const gitReadOnly: string[] = [];
@@ -587,6 +587,11 @@ export function resolvePolicy(input: ResolveInput): Result<ResolvedPolicy> {
 	// session cwd may sit inside a shadow; there the real cwd wins, as in the mounts.
 	const shadowCanon = canon(policy.shadowed);
 	const inShadow = (w: string) => shadowCanon.some((sh) => isWithin(w, sh));
+	// The platform's private copies of tool state (mise, pnpm) are shadowed whatever the file says, and
+	// supersede a writable entry at or inside one (older templates listed ~/.local/state/mise): that
+	// entry is dropped, never failing closed.
+	const privateCanon = canon(d.privateState ?? []).filter((p) => !shadowCanon.some((sh) => isWithin(p, sh)));
+	const inPrivate = (w: string) => privateCanon.some((sh) => isWithin(w, sh));
 	if (level !== "read-only") {
 		const bad = canon(policy.writable).find(inShadow);
 		if (bad) return { ok: false, error: `invalid policy: writable ${bad} is at or inside a shadowed path` };
@@ -604,7 +609,7 @@ export function resolvePolicy(input: ResolveInput): Result<ResolvedPolicy> {
 				: [
 						...(input.cwdWritable === false ? [] : [workspaceRoot]),
 						tmpDir,
-						...canon([...d.writable, ...policy.writable]).filter((w) => !inShadow(w)),
+						...canon([...d.writable, ...policy.writable]).filter((w) => !inShadow(w) && !inPrivate(w)),
 						// Tracked worktrees are roots like the cwd: one inside a shadow stays real.
 						...canon(input.extraWritable ?? []),
 					];
@@ -646,7 +651,7 @@ export function resolvePolicy(input: ResolveInput): Result<ResolvedPolicy> {
 				level === "read-only"
 					? []
 					: input.shadowSource
-						? canon(policy.shadowed)
+						? [...new Set([...canon(policy.shadowed), ...privateCanon])]
 								.filter((p) => !readDenialIn(hiddenFinal, p))
 								.map((p) => ({ path: p, source: canonicalize(input.shadowSource!(input.agentDir, p)) }))
 						: [],

@@ -31,6 +31,21 @@ environment every runner starts in, and the hermetic dev server.
 
 ## Rules and contracts
 
+### Run tests only through the runner
+
+- **Only through the project's runner**: `pnpm test <file>` (a unit file), `pnpm test:int <file>` (an
+  `*.integration.test.ts`), or the `project_verbs` `test` verb with `select: [<file>]` when the sandbox
+  blocks a direct run. Never a bare `bun test`, `node --test`, `tsx --test` or `npx tsx --test` on a
+  Sova test file, not even for one file or a folder: without the runner's preload and throwaway home a
+  test that points its agent dir anywhere late writes into the user's real `~/.pi` (a bare
+  `bun test server/merge-queue/` once wrote a fixture chat into the user's real sessions and
+  archived it). A file header's `// Run:` line naming another command is stale: use the runner.
+- A test sets its agent dir before any product module loads: import `server/testing/scratch-agent-dir.ts`
+  first (or set `PI_CODING_AGENT_DIR` before dynamic imports), and build fixture paths from that dir,
+  never from an imported constant such as `SESSIONS_DIR`.
+- pi-config's own extension tests (self-contained, outside the runner's GLOBS) are the one exception:
+  run each with the command its guide names, nothing shorter.
+
 ### Two tiers, by file name (§app.server-runtime/test-tiers)
 
 - `pnpm test`, the **unit tier**: every `*.test.ts` the runner's GLOBS match except
@@ -83,7 +98,8 @@ environment every runner starts in, and the hermetic dev server.
   extensionless imports) or `SOVA_RUNTIME=node pnpm test`; an explicit `--runtime` wins. No Bun found:
   the runner exits 2 naming `pnpm run test:node`, never a quiet Node pass. `pnpm run test:bun` is kept
   as an explicit Bun alias.
-- Tests run on Bun only through the runner (`pnpm test`, `test:int`): it sets HOME before bun starts
+- Tests run on Bun only through the runner (`pnpm test`, `test:int`; see "Run tests only through the
+  runner"): it sets HOME before bun starts
   (Bun's `os.homedir()` ignores an in-process change), puts the real node and `mise bin-paths` first
   on PATH (shims refuse in a throwaway HOME; tests spawn `node` and `python3`), and sets
   `SOVA_PRICES_FETCH=off` and `SOVA_GIT_MAINTENANCE=off` (no server a test starts registers a

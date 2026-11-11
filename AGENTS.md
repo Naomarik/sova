@@ -78,6 +78,11 @@ also update Y" list live in its guide: read the guide of every area your task to
   (the everyday integration set plus the slow groups the branch triggers, `scripts/test-groups.mjs`),
   plus what the merge thread picks for the branch; a release runs every group. Verify on Bun (the
   runner's default, the user's runtime); Node only when the user asks.
+- Run Sova's tests only through the runner: `pnpm test <file>`, `pnpm test:int <file>` (an
+  integration file), or the `project_verbs` `test` verb (`select: [<file>]`). Never a bare `bun test`,
+  `node --test` or `tsx --test`, not even for one file: it skips the throwaway home, and one such run
+  wrote a test chat into the user's real sessions. A file's `// Run:` header naming another command is
+  stale. pi-config extension tests run as their guides say (testing guide).
 - Write tests as the testing guide's "Writing tests" says: a rule over its edges where one exists,
   else one example per edge; each behaviour once, in the smallest harness; wait on events.
 - Never run the spec replay suite (`pi-config/extensions/spec/tests/replay`) while working: it is a

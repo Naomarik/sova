@@ -75,6 +75,11 @@ export interface ResolvedPolicy {
 	writeOnly?: boolean;
 	/** The policy's `browser` is "headless-shell" (a worker: its parent's). macOS only; ignored on Linux. */
 	browser: boolean;
+	/**
+	 * The chat's shared folder (shared-folder.ts), canonical: a writable root, its `teams/` read-only
+	 * (a member's own note folder excepted). Absent under read-only and where none is known.
+	 */
+	shared?: string;
 }
 
 export type Result<T> = { ok: true; value: T } | { ok: false; error: string };
@@ -353,6 +358,11 @@ export function isWithin(child: string, parent: string): boolean {
  * `browser`: the parent's policy turns the headless-shell rules on (its file's `browser`, after its
  * cwd's project file). Like the allowlists it is the parent's, never the worker's own file's; a
  * write-only worker gets it only this way. Only a literal `true` parses.
+ *
+ * `shared` (shared-folder.ts): the ROOT chat's shared folder, writable for every worker at every
+ * depth, its `teams/` read-only. `note`: a team member's own note folder inside `teams/`, writable
+ * for that member only: it is never handed on (narrowScope and parentScopeOf drop it), so a member
+ * can never write another member's handover note.
  */
 export interface ParentScope {
 	version: 1;
@@ -365,20 +375,29 @@ export interface ParentScope {
 	envAllow?: string[];
 	writeOnly?: true;
 	browser?: true;
+	shared?: string;
+	note?: string;
 }
 
+/** `<shared>/teams`: read-only inside the shared folder (path only; shared-folder.ts names the layout). */
+const teamsOf = (shared: string): string => join(shared, "teams");
+
 export function parentScopeOf(
-	policy: Pick<ResolvedPolicy, "level" | "workspaceRoot" | "writable" | "tmpDir"> & Partial<Pick<ResolvedPolicy, "readOnlyWithinWritable" | "hidden" | "proxyAllow" | "envAllow" | "browser">>,
+	policy: Pick<ResolvedPolicy, "level" | "workspaceRoot" | "writable" | "tmpDir"> & Partial<Pick<ResolvedPolicy, "readOnlyWithinWritable" | "hidden" | "proxyAllow" | "envAllow" | "browser" | "shared">>,
 ): ParentScope {
-	const writable = policy.level === "read-only" ? [] : policy.writable.filter((w) => w !== policy.tmpDir);
+	const shared = policy.level === "read-only" ? undefined : policy.shared;
+	// The shared folder rides as `shared` (a member's own note folder in it is never handed on).
+	const inShared = (p: string) => shared !== undefined && isWithin(p, shared);
+	const writable = policy.level === "read-only" ? [] : policy.writable.filter((w) => w !== policy.tmpDir && !inShared(w));
 	// Only what lies inside a root handed down matters: anything else is not writable for the worker anyway.
-	const readOnly = (policy.readOnlyWithinWritable ?? []).filter((p) => writable.some((w) => isWithin(p, w)));
+	const readOnly = (policy.readOnlyWithinWritable ?? []).filter((p) => !inShared(p) && writable.some((w) => isWithin(p, w)));
 	return {
 		version: 1,
 		level: policy.level,
 		workspaceRoot: policy.workspaceRoot,
 		writable,
 		...(readOnly.length ? { readOnly } : {}),
+		...(shared ? { shared } : {}),
 		...(policy.hidden ? { hidden: [...policy.hidden] } : {}),
 		...(policy.proxyAllow ? { proxyAllow: [...policy.proxyAllow] } : {}),
 		...(policy.envAllow ? { envAllow: [...policy.envAllow] } : {}),
@@ -388,7 +407,8 @@ export function parentScopeOf(
 
 /** A parent scope narrowed to one root (a worker started inside a tracked worktree): it writes there only. */
 export function narrowScope(scope: ParentScope, root: string): ParentScope {
-	const { readOnly: _, ...rest } = scope;
+	// The shared folder stays; a member's own note folder is never handed on.
+	const { readOnly: _, note: _note, ...rest } = scope;
 	if (scope.level === "read-only") return { ...rest, writable: [] };
 	// The parent's read-only paths under the new root stay read-only (a tracked worktree's `.agent`).
 	const r = canonicalize(root);
@@ -399,10 +419,28 @@ export function narrowScope(scope: ParentScope, root: string): ParentScope {
 /**
  * The scope an unsandboxed parent gives a worker it confines to `root`: writes there only (its
  * `.agent` read-only), nothing else changed. `browser`: the parent's policy turns the browser rules
- * on (`parentBrowser`).
+ * on (`parentBrowser`). `shared`: the chat's shared folder; `note`: a team member's own note folder.
  */
-export function writeOnlyScope(root: string, opts: { browser?: boolean } = {}): ParentScope {
-	return { version: 1, level: "workspace-write", workspaceRoot: root, writable: [root], readOnly: [join(root, ".agent")], writeOnly: true, ...(opts.browser ? { browser: true as const } : {}) };
+export function writeOnlyScope(root: string, opts: { browser?: boolean; shared?: string; note?: string } = {}): ParentScope {
+	return {
+		version: 1, level: "workspace-write", workspaceRoot: root, writable: [root], readOnly: [join(root, ".agent")], writeOnly: true,
+		...(opts.browser ? { browser: true as const } : {}),
+		...(opts.shared ? { shared: opts.shared } : {}),
+		...(opts.shared && opts.note ? { note: opts.note } : {}),
+	};
+}
+
+/**
+ * The shared folder's part of a scope: its writable roots (the folder, the member's own note folder
+ * when it lies in the folder's `teams/`) and its read-only `teams/`. A note folder anywhere else is
+ * ignored: it could only widen the scope.
+ */
+function sharedPart(shared: string | undefined, note: string | undefined): { writable: string[]; readOnly: string[] } {
+	if (!shared) return { writable: [], readOnly: [] };
+	const s = canonicalize(shared);
+	const teams = canonicalize(teamsOf(shared));
+	const n = note ? canonicalize(note) : undefined;
+	return { writable: [s, ...(n && n !== teams && isWithin(n, teams) ? [n] : [])], readOnly: [teams] };
 }
 
 /**
@@ -460,6 +498,12 @@ export function parseParentScope(value: unknown): Result<ParentScope> {
 		if (raw.browser !== true) return { ok: false, error: "--sandbox-parent browser is malformed" };
 		scope.browser = true;
 	}
+	for (const key of ["shared", "note"] as const) {
+		if (raw[key] === undefined) continue;
+		if (typeof raw[key] !== "string" || !isAbsolute(raw[key] as string)) return { ok: false, error: `--sandbox-parent ${key} is malformed` };
+		scope[key] = raw[key] as string;
+	}
+	if (scope.note !== undefined && scope.shared === undefined) return { ok: false, error: "--sandbox-parent note needs shared" };
 	return { ok: true, value: scope };
 }
 
@@ -508,6 +552,11 @@ export interface ResolveInput {
 	readOnly?: boolean;
 	/** Where a shadowed path's private copy lives (backend `shadowSource`). Without it nothing is shadowed. */
 	shadowSource?: (agentDir: string, path: string) => string;
+	/**
+	 * This session's own shared folder (a top-level chat's; shared-folder.ts). A worker's comes from
+	 * its parent scope instead and this is ignored. Dropped under read-only.
+	 */
+	shared?: string;
 }
 
 /**
@@ -529,7 +578,8 @@ function resolveWriteOnly(input: ResolveInput, parent: ParentScope): Result<Reso
 	// than the shadow's, as the session cwd's is. Only the shadows that would hold a root are dropped.
 	const parentRoots = [...new Set(parent.writable.map(canonicalize))];
 	const shadowCanon = canon([...(d.shadowed ?? []), ...(d.privateState ?? [])]).filter((sh) => !parentRoots.some((r) => isWithin(r, sh)));
-	const writable = [tmpDir, ...parentRoots];
+	const sp = sharedPart(parent.shared, parent.note);
+	const writable = [tmpDir, ...parentRoots, ...sp.writable];
 	const outsideParent = !parentRoots.some((r) => isWithin(workspaceRoot, r));
 	const gitReadOnly: string[] = [];
 	if (input.git) {
@@ -546,7 +596,7 @@ function resolveWriteOnly(input: ResolveInput, parent: ParentScope): Result<Reso
 			defaultOn: false,
 			workspaceRoot,
 			writable: [...new Set(writable)],
-			readOnlyWithinWritable: [...new Set([...canon(d.readOnlyWithinWritable), ...gitReadOnly, ...(parent.readOnly ?? []).map(canonicalize), agentDir, pDir])],
+			readOnlyWithinWritable: [...new Set([...canon(d.readOnlyWithinWritable), ...gitReadOnly, ...(parent.readOnly ?? []).map(canonicalize), ...sp.readOnly, agentDir, pDir])],
 			hidden: [],
 			proxyAllow: [],
 			envAllow: [],
@@ -558,6 +608,7 @@ function resolveWriteOnly(input: ResolveInput, parent: ParentScope): Result<Reso
 			notices: [],
 			writeOnly: true,
 			browser: parent.browser === true,
+			...(sp.writable.length ? { shared: sp.writable[0] } : {}),
 			...(outsideParent ? { outsideParent: true } : {}),
 		},
 	};
@@ -601,17 +652,20 @@ export function resolvePolicy(input: ResolveInput): Result<ResolvedPolicy> {
 	// Its roots are the parent's resolved ones, so a root inside a shadow (the parent's cwd or a
 	// worktree under ~/.cache) stays real here too: its bind is deeper than the shadow's.
 	const parentRoots = input.parent ? [...new Set(input.parent.writable.map(canonicalize))] : undefined;
+	// The chat's shared folder: a worker's from its parent (with its own note folder), else the session's own.
+	const sp = level === "read-only" ? sharedPart(undefined, undefined) : input.parent ? sharedPart(input.parent.shared, input.parent.note) : sharedPart(input.shared, undefined);
 	const writable =
 		level === "read-only"
 			? [tmpDir]
 			: parentRoots
-				? [tmpDir, ...parentRoots]
+				? [tmpDir, ...parentRoots, ...sp.writable]
 				: [
 						...(input.cwdWritable === false ? [] : [workspaceRoot]),
 						tmpDir,
 						...canon([...d.writable, ...policy.writable]).filter((w) => !inShadow(w) && !inPrivate(w)),
 						// Tracked worktrees are roots like the cwd: one inside a shadow stays real.
 						...canon(input.extraWritable ?? []),
+						...sp.writable,
 					];
 	// The tracked worktrees' own agent dirs: read-only whenever their worktree is writable. A worker
 	// gets its parent's read-only paths inside the roots it was handed instead.
@@ -619,7 +673,7 @@ export function resolvePolicy(input: ResolveInput): Result<ResolvedPolicy> {
 	const outsideParent = level !== "read-only" && parentRoots !== undefined && !parentRoots.some((r) => isWithin(workspaceRoot, r));
 	const gitReadOnly: string[] = [];
 	if (level !== "read-only" && input.git) {
-		for (const root of writable.filter((w) => w !== tmpDir)) {
+		for (const root of writable.filter((w) => w !== tmpDir && !sp.writable.includes(w))) {
 			const g = input.git(root);
 			for (const w of g.writable.map(canonicalize)) if (!writable.includes(w)) writable.push(w);
 			gitReadOnly.push(...g.readOnly.map(canonicalize));
@@ -636,7 +690,7 @@ export function resolvePolicy(input: ResolveInput): Result<ResolvedPolicy> {
 			workspaceRoot,
 			writable: [...new Set(writable)],
 			// The agent dir and the policy dir are never writable, even inside the cwd.
-			readOnlyWithinWritable: [...new Set([...canon([...d.readOnlyWithinWritable, ...policy.readOnlyWithinWritable]), ...gitReadOnly, ...extraReadOnly, agentDir, pDir])],
+			readOnlyWithinWritable: [...new Set([...canon([...d.readOnlyWithinWritable, ...policy.readOnlyWithinWritable]), ...gitReadOnly, ...extraReadOnly, ...sp.readOnly, agentDir, pDir])],
 			hidden: hiddenFinal,
 			// A worker of a sandboxed parent is held to the parent's allowlists, never its own file's.
 			proxyAllow: [...(input.parent?.proxyAllow ?? policy.proxy.allow)],
@@ -656,6 +710,7 @@ export function resolvePolicy(input: ResolveInput): Result<ResolvedPolicy> {
 								.map((p) => ({ path: p, source: canonicalize(input.shadowSource!(input.agentDir, p)) }))
 						: [],
 			notices,
+			...(sp.writable.length ? { shared: sp.writable[0] } : {}),
 			...(outsideParent ? { outsideParent: true } : {}),
 		},
 	};

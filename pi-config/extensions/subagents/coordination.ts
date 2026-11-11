@@ -4,6 +4,9 @@
  * wake_nudge bounds. No process, UI or pi-runtime dependency; index.ts owns every effect.
  */
 import * as path from "node:path";
+import { HANDOVER_FILE, sessionDirKey } from "../sandbox/shared-folder.ts";
+
+export { sessionDirKey };
 
 // ── Successors and handover notes ──────────────────────────────────────────
 
@@ -30,17 +33,16 @@ export function roleSlug(role: string): string {
 	return slug || "member";
 }
 /**
- * The parent session's id as one safe directory name. Team IDs restart at team_01 in every
- * parent session, so notes are keyed by the session as well; a session without an id (or one
- * that sanitises to nothing) uses `fallback`, which must be unique to this process.
+ * `<teamsDir>/<session key>/<team_id>`: one directory per parent session and team, where
+ * `teamsDir` is the chat's shared folder's `teams/` (shared-folder.ts). The session key keeps a
+ * worker's own teams apart from its parent's in the one shared folder.
  */
-export function sessionDirKey(sessionId: string | undefined, fallback: string): string {
-	const key = (sessionId ?? "").trim().replace(/[^A-Za-z0-9._-]+/g, "_").replace(/^[._-]+/, "").slice(0, 128);
-	return key || fallback;
-}
-/** `<agentDir>/sova/teams/<session key>/<team_id>/handoffs`: one directory per parent session and team. */
-export const handoffDir = (agentDir: string, sessionKey: string, teamId: string): string => path.join(agentDir, "sova", "teams", sessionKey, teamId, "handoffs");
-export const handoffPath = (agentDir: string, sessionKey: string, teamId: string, role: string): string => path.join(handoffDir(agentDir, sessionKey, teamId), `${roleSlug(role)}.md`);
+export const handoffDir = (teamsDir: string, sessionKey: string, teamId: string): string => path.join(teamsDir, sessionKey, teamId);
+/** A member's own note folder in its team's directory: the one place its confinement lets it write a note. */
+export const noteDirOf = (teamHandoffDir: string, role: string): string => path.join(teamHandoffDir, roleSlug(role));
+/** A member's handover note: `<team dir>/<role slug>/handover.md`. */
+export const notePathOf = (teamHandoffDir: string, role: string): string => path.join(noteDirOf(teamHandoffDir, role), HANDOVER_FILE);
+export const handoffPath = (teamsDir: string, sessionKey: string, teamId: string, role: string): string => notePathOf(handoffDir(teamsDir, sessionKey, teamId), role);
 
 // ── Context column ─────────────────────────────────────────────────────────
 

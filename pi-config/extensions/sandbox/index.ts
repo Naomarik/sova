@@ -27,7 +27,8 @@ import { hostEnv, scrubEnv } from "./env.ts";
 import { canonicalize, loadPolicyFile, narrowScope, type ParentScope, parentBrowser, parentScopeOf, parseParentScope, policyFilePath, type ResolvedPolicy, workerCwdRefusal, writeOnlyScope } from "./policy.ts";
 import { encodeLaunchScope, OWNER_ID } from "./launch.ts";
 import { type ProxyHandle, proxySocketPath, startProxy } from "./proxy.ts";
-import { ensureSessionTmpDir, resolveSessionPolicy } from "./session-policy.ts";
+import { ensureSessionTmpDir, resolveSessionPolicy, sessionSharedFolder } from "./session-policy.ts";
+import { ensureSharedFolder, SHARED_DIR_ENV, sharedTeamsDir } from "./shared-folder.ts";
 import { BUSY_TEXT, cachesLine, cleanResultText, invalidNotice, isDue, loadCacheSettings, lockHeld, lockPath, pruneRunner, readStamp } from "./shadow-prune.ts";
 import {
 	describeActive,
@@ -189,9 +190,12 @@ export default function sandbox(pi: ExtensionAPI) {
 		if (typeof parentScope === "string") return { ok: false, reason: parentScope };
 		// The same resolution Sova's server makes for this session (session-policy.ts).
 		const cwdWritable = pi.getFlag(CWD_NOT_WRITABLE_FLAG) !== true;
-		const resolved = resolveSessionPolicy({ agentDir: agentDir(), cwd, sessionId, tmpDir, parent: parentScope, worktreeRoots, backend, ...(cwdWritable ? {} : { cwdWritable: false }), ...(pi.getFlag(READ_ONLY_FLAG) === true ? { readOnly: true } : {}) });
+		const inherited = inheritedShared();
+		const resolved = resolveSessionPolicy({ agentDir: agentDir(), cwd, sessionId, tmpDir, parent: parentScope, worktreeRoots, backend, ...(cwdWritable ? {} : { cwdWritable: false }), ...(pi.getFlag(READ_ONLY_FLAG) === true ? { readOnly: true } : {}), ...(inherited ? { shared: inherited } : {}) });
 		if (!resolved.ok) return { ok: false, reason: resolved.error };
 		const policy = resolved.value;
+		// A writable root must exist before it can be bound.
+		if (policy.shared) ensureSharedFolder(policy.shared);
 		if (policy.outsideParent) {
 			const message = parentScope ? workerCwdRefusal(parentScope, cwd) : undefined;
 			return { ok: false, reason: message ?? "worker cwd is outside the parent's sandbox", message };
@@ -263,6 +267,26 @@ export default function sandbox(pi: ExtensionAPI) {
 	 * a tracked worktree, else nothing; Off (§chat.sandbox/states): nothing, ever. pi workers get the
 	 * extension's flags; any other backend the scope its whole process would run under (launch.ts).
 	 */
+	/** An unconfined worker's inherited shared folder (its spawner's `SOVA_SHARED_DIR`); a confined one's rides in its scope. */
+	function inheritedShared(): string | undefined {
+		const v = process.env[SHARED_DIR_ENV];
+		return v && v.startsWith("/") ? v : undefined;
+	}
+
+	/**
+	 * The shared folder and member note folder a worker's scope carries (shared-folder.ts): the
+	 * chat's folder (made here, as a root must exist to be bound), and `req.note` only when it lies in
+	 * the folder's `teams/` (anything else is dropped: it could only widen the scope).
+	 */
+	function withShared(scope: ParentScope, shared: string | undefined, note: string | undefined): ParentScope {
+		const { note: _old, ...rest } = scope;
+		if (!shared) return rest;
+		const teams = sharedTeamsDir(shared);
+		const own = note && canonicalize(note) !== canonicalize(teams) && canonicalize(note).startsWith(`${canonicalize(teams)}/`) ? note : undefined;
+		ensureSharedFolder(shared, own);
+		return { ...rest, shared, ...(own ? { note: own } : {}) };
+	}
+
 	function workerLaunch(on: boolean, workersOff: boolean, req: WorkerLaunchRequest): WorkerLaunch {
 		if (!on && workersOff) return { kind: "none" };
 		const root = req.root ? canonicalize(req.root) : undefined;
@@ -277,11 +301,13 @@ export default function sandbox(pi: ExtensionAPI) {
 			const outside = workerCwdRefusal(parent, req.cwd);
 			if (outside) return { kind: "refused", reason: outside };
 			scope = root ? narrowScope(parent, root) : parent;
+			if (parent.level !== "read-only") scope = withShared(scope, parent.shared, req.note);
 		} else {
 			if (!root) return { kind: "none" };
 			// No policy file is read for the worker itself; the browser setting is the parent's (its
 			// file and its cwd's project file). Unreadable: no browser, and the worker still starts.
-			scope = writeOnlyScope(root, { browser: parentBrowser(agentDir(), cwd) });
+			const shared = sessionSharedFolder({ sessionId, ...(inheritedShared() ? { shared: inheritedShared() } : {}) });
+			scope = withShared(writeOnlyScope(root, { browser: parentBrowser(agentDir(), cwd) }), shared, req.note);
 		}
 		if (req.backend === "pi") return { kind: "pi", extensionPath: SELF_DIR, flags: { [FLAG]: "on", [PARENT_FLAG]: JSON.stringify(scope) } };
 		if (!OWNER_ID.test(req.owner) || req.owner === "." || req.owner === "..") return { kind: "refused", reason: `Sandbox: invalid worker id ${JSON.stringify(req.owner)}; a worker cannot start sandboxed.` };

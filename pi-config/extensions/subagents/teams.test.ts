@@ -522,7 +522,7 @@ test("N4/N5: a worker successor's task starts from the note, redoes nothing it m
 
 test("N1: a store keys its handover directory by the parent session, so two sessions' team_01 never share one", () => {
 	const create = (key: string) => {
-		const store = new TeamStore("/agent/sova/teams", () => key);
+		const store = new TeamStore(() => "/shared/teams", () => key);
 		const prepared = createIn(store, {
 			name: "Crew", objective: "o", coordination: {},
 			members: [{ role: "coordinator", prompt: "c", duty: "coordinator", orchestrator: true }, { role: "dev", prompt: "d" }],
@@ -532,9 +532,9 @@ test("N1: a store keys its handover directory by the parent session, so two sess
 	};
 	const a = create("session-a"), b = create("session-b");
 	assert.equal(a.teamId, b.teamId, "both sessions' first team is team_01");
-	assert.equal(a.coordination!.handoffDir, "/agent/sova/teams/session-a/team_01/handoffs");
+	assert.equal(a.coordination!.handoffDir, "/shared/teams/session-a/team_01");
 	assert.notEqual(a.coordination!.handoffDir, b.coordination!.handoffDir);
-	assert.match(a.members[1].spec.prompt, /Your handover note path: \/agent\/sova\/teams\/session-a\/team_01\/handoffs\/dev\.md\./);
+	assert.match(a.members[1].spec.prompt, /Your handover note path: \/shared\/teams\/session-a\/team_01\/dev\/handover\.md\./);
 });
 
 test("restart: tasks, every steer and a successor's inheritance rebuild from session entries; a pause is read back from the team events", () => {

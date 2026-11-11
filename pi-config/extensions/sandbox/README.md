@@ -101,6 +101,15 @@ outside the sandbox). That holds when the agent dir is inside the workspace (the
 `<worktree>/.agent`): the file tools refuse by canonical path, and the backend masks (Seatbelt:
 denies) the files and pins their ancestors.
 
+The chat's shared folder (`shared-folder.ts`): `~/.local/state/sova/shared/<session id>`, outside
+the agent dir and every repository, is a writable root of every confined session that knows it
+(On or write-only; never at the read-only level). A top-level chat's is its own, by its session id
+(`resolveSessionPolicy`); a worker's rides in its scope as `ParentScope.shared` (the root chat's,
+at every depth; `narrowScope` and `parentScopeOf` keep it, never as a plain writable root). Its
+`teams/` is read-only; `ParentScope.note`, a team member's own note folder inside `teams/`, is
+writable for that member alone and never handed on (a note folder anywhere else is ignored). The
+folder and the note folder are made before a worker starts (a missing path can't be bound).
+
 ## File tools
 
 Paths resolve like pi's, then (Linux, On and write-only alike) `/tmp` maps into the session tmp

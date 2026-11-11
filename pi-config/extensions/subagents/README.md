@@ -800,10 +800,21 @@ is the usage pause's switch. The extension never writes the file.
   member: the worker's `contextTokens` over the spawned model's window (a Claude model: the
   catalog's, through the extension's `claudeContextWindow` — 1M for `[1m]` or a natively 1M
   model, else 200k; any other: the registry), rounded down.
-- **Handovers.** Notes live in `<agent dir>/sova/teams/<parent session id>/<team_id>/handoffs/<role>.md`
-  (team IDs restart in every session, so the session id keeps two sessions' `team_01` apart; a
-  session without an id uses `unsaved-<pid>-<time>`), named in each worker's and the coordinator's
-  header. The monitor has no file tools and no note: it briefs its successor over `team_msg`, and
+- **Shared folder.** Each top-level chat has one, `~/.local/state/sova/shared/<session id>`
+  (`sandbox/shared-folder.ts`), outside the agent dir and every repository: the chat, every worker it
+  starts (any backend, any depth) and every team member read and write it. Every worker gets it as
+  `SOVA_SHARED_DIR` (a worker's spawns inherit it: always the root chat's), a confined one also in its
+  sandbox scope (`ParentScope.shared`); `agent_spawn` and `team_create` results name it. Sova never
+  loads code from it. Archiving (or deleting) the chat removes it.
+- **Handovers.** Notes live in the shared folder,
+  `<shared>/teams/<parent session id>/<team_id>/<role>/handover.md` (team IDs restart in every
+  session, so the session id keeps two sessions' — or a worker's and its parent's — `team_01` apart;
+  a session without an id uses `unsaved-<pid>-<time>`), named in each worker's and the coordinator's
+  header. `<shared>/teams` is read-only to every confined agent; a coordinated member's own `<role>`
+  folder is writable for it alone (the spawn asks the sandbox for it as `WorkerLaunchRequest.note`,
+  and the scope never hands it on), so a member can't write another member's note, and only
+  `<role>/handover.md` itself starts that role's successor. The mailbox stays in the agent dir,
+  read-only to workers. The monitor has no file tools and no note: it briefs its successor over `team_msg`, and
   its successor's task is the monitor task ("you take over from <old>"), with `team_ready` like any
   successor (an ended monitor's successor is told nobody is left to ask). `team_succeed { role }`
   (routing coordinator only, itself included) starts

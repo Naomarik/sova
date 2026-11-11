@@ -10,6 +10,7 @@ import { mountPlan } from "../backends/linux-bwrap.ts";
 import { BROWSER_RULES, DarwinSeatbeltBackend } from "../backends/darwin-seatbelt.ts";
 import { spawnSync } from "node:child_process";
 import { ensureSessionTmpDir, prepareSessionCommand, resolveSessionPolicy, sessionTmpBase, sessionTmpDir } from "../session-policy.ts";
+import { chatSharedFolder } from "../shared-folder.ts";
 
 const TEMPLATE_DIR = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "sandbox-policy");
 
@@ -38,6 +39,8 @@ test("the session policy is exactly what the extension's snapshot resolved befor
 		agentDir, cwd: ws, tmpDir, home, platform: "linux",
 		defaults: backend.platformDefaults({ home, agentDir }), shadowSource, git: gitProtectedPaths,
 		extraWritable: [wt], extraReadOnly: [join(wt, ".agent")],
+		// The chat's own shared folder, by its session id (shared-folder.ts).
+		shared: chatSharedFolder("s1", home),
 	});
 	assert.deepEqual(got, want);
 	assert.ok(got.ok);

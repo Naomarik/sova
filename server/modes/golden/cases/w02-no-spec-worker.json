@@ -22,7 +22,8 @@
     "team_succeed",
     "team_list",
     "project_verbs",
-    "queue_push"
+    "queue_push",
+    "spec"
    ],
    "entries": [],
    "extensions": [
@@ -43,7 +44,8 @@
     "<inline:sova-topics>",
     "<inline:sova-tours>",
     "<inline:sova-create-settings>",
-    "<inline:sova-transcript-cards>"
+    "<inline:sova-transcript-cards>",
+    "<inline:sova-spec>"
    ]
   },
   {
@@ -68,7 +70,8 @@
     "team_succeed",
     "team_list",
     "project_verbs",
-    "queue_push"
+    "queue_push",
+    "spec"
    ],
    "entries": []
   },
@@ -88,7 +91,7 @@
         "docs": "@0f5fabf6c3c47c4c",
         "cwd": "<cwd>\n<ws:plain>\n</cwd>"
        },
-       "toolsAdded": "@ed596a5985c5d307"
+       "toolsAdded": "@bd2ba431c874ff56"
       },
       {
        "role": "user",
@@ -145,7 +148,7 @@
        "content": [
         {
          "type": "text",
-         "text": "@43eb6daf3c1faca4"
+         "text": "@a0ae35850782b000"
         }
        ],
        "details": {
@@ -189,7 +192,8 @@
     "team_succeed",
     "team_list",
     "project_verbs",
-    "queue_push"
+    "queue_push",
+    "spec"
    ],
    "entries": [
     {
@@ -204,7 +208,7 @@
        "docs": "@0f5fabf6c3c47c4c",
        "cwd": "<cwd>\n<ws:plain>\n</cwd>"
       },
-      "toolsAdded": "@619362e2e44edede"
+      "toolsAdded": "@90fbab6af5ba9433"
      }
     }
    ],
@@ -236,6 +240,7 @@
    "flags": {},
    "appendSystemPrompt": null,
    "env": {
+    "SOVA_SHARED_DIR": "<home>/.local/state/sova/shared/<sid:1>",
     "PI_SUBAGENT_BUILTIN_TOOLS": "read,bash,edit,write"
    },
    "agentDir": null,
@@ -265,7 +270,7 @@
         "docs": "@0f5fabf6c3c47c4c",
         "cwd": "<cwd>\n<ws:plain>\n</cwd>"
        },
-       "toolsAdded": "@2397e9aca7f149ff"
+       "toolsAdded": "@c0348cafaab0e950"
       },
       {
        "role": "user",
@@ -284,7 +289,8 @@
     "bash",
     "edit",
     "write",
-    "project_verbs"
+    "project_verbs",
+    "spec"
    ],
    "entries": [
     {
@@ -299,7 +305,7 @@
        "docs": "@0f5fabf6c3c47c4c",
        "cwd": "<cwd>\n<ws:plain>\n</cwd>"
       },
-      "toolsAdded": "@2397e9aca7f149ff"
+      "toolsAdded": "@9e0c194f7854181b"
      }
     }
    ],
@@ -311,7 +317,8 @@
     "<inline:sova-shell-guard>",
     "<inline:sova-deeper-context>",
     "<inline:sova-background-jobs>",
-    "<inline:sova-project-verbs>"
+    "<inline:sova-project-verbs>",
+    "<inline:sova-spec>"
    ]
   }
  ]

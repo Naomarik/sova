@@ -705,7 +705,8 @@ The merge queue (§app/merge-queue) is worked through verbs beside the deploy ve
 the same route (`POST /api/project-services/<verb>`), the same CLI and the same tools, each
 answering the one result shape with its own `merge` key (§app.project-services/result).
 
-- **Reads**: `merge.status` (a project, or one entry, which narrows the view to it: the queue's view, its state and why it is paused, the
+- **Reads**: `merge.status` (a project, or one entry, which narrows the view to it, the queue's
+  history too, read-only: §app.merge-queue/history; the queue's view, its state and why it is paused, the
   current run, the waiting line with estimates, what needs the user, what needs a fix, recent
   landings with their runs, the target's and pushed heads, and the test checks flagged broken on the
   target) and `merge.logs` (a run, optionally one step and a line count).

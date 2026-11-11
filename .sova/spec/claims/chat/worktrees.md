@@ -381,8 +381,8 @@ none of them. A branch with no commit left but such a draft still has something 
 lands just the drafts (§app.merge-queue/approve).
 
 **How recently it landed doesn't matter.** The answer doesn't depend on when the branch landed, how
-many landings came after it or which landings the queue's view still shows: it reads every entry the
-queue has, and a host's landing is kept past its entry (per branch the newest 8, for the newest 500
+many landings came after it or which landings the queue's view still shows: it reads every entry in
+the queue's list (its open entries and newest 60 finished ones, §app.merge-queue/history), and a host's landing is kept past its entry (per branch the newest 8, for the newest 500
 branches); one from before they were kept is read in at load, from its landed entries still there. So it never changes by itself as newer landings
 arrive. Only a new commit on the branch or an edited draft changes it.
 

@@ -321,12 +321,14 @@
       "server/merge-queue/scenarios-nothing-left.integration.test.ts",
       "server/landed-branch-agreement.integration.test.ts",
       "server/merge-queue/queue.ts",
-      "server/merge-queue/queue.test.ts"
+      "server/merge-queue/queue.test.ts",
+      "server/merge-queue/store.ts",
+      "server/merge-queue/history.ts"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-11-09T21:25Z",
-      "source": "pi-session:01a1b2f4-86c6-73d4-9fe9-b847b27035f9#9d6f6a2c"
+      "by": "user",
+      "at": "2026-11-11T11:22Z",
+      "source": "pi-session:153d255f-fbbd-46ec-933b-56f5b0674df1#79716458"
     }
   },
   "§chat.worktrees/pane": {

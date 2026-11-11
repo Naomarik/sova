@@ -30,7 +30,7 @@ a group, and no group that can't be opened as a workspace.
 | The group composer is a mode, off by default | A workspace opens with each member's own composer and nothing else at the foot. `Send to All` in the head swaps every pane composer for the one group composer, and its `×` swaps them back. There is one kind of composer on screen at a time, never two rows of them |
 | The pre-check is also what makes this surface testable for nothing | A refused batch has no side effects, so the whole refusal path — parsing, the banner, every member named in Sova's words, `Send to the Rest`, the draft surviving — can be exercised against a real server with **zero model calls**, e.g. by a group whose members are all TUI-live. A transactional design would have something to undo on every run. Noted beside the decision because it is a property of it, not a testing trick |
 | All-or-nothing is a **pre-check**, not a transaction | The server checks every member before it prompts any of them, so the refusal is complete and nothing is half-sent by our own doing. A member lost *between* the check and the send (a TUI grabs it in the same second) makes the batch partial, and we say so — a prompt a model is already answering cannot be recalled, and claiming otherwise would be the one lie this surface can't afford |
-| Promote removes from the group; Eliminate removes and archives | Neither deletes a transcript. Both are the group's writes, never the session file's |
+| Promote removes from the group; Archive removes and archives | Neither deletes a transcript. Both are the group's writes, never the session file's |
 | A group survives being emptied | See "Emptying a group". Every group, an older build's `autoDissolve` group included (§workspace.groups/legacy-groups): nothing deletes a group but Dissolve and Delete group |
 | Announcements and DOM ids are pane-scoped | Three panes finishing in the same second must read as three facts, each naming its member |
 
@@ -348,9 +348,9 @@ apply verbatim. What changes is scoping and chrome:
   and `Move Right` carry the workspace's one keyboard hint in their `title`s, because they are
   the rows whose gesture most invites it, and it lived nowhere else.
 - **Three ways a member leaves, and each word does one thing.** `Promote` removes it and takes
-  you to it. `Remove From Group` removes it and leaves you here. `Eliminate` removes it and
+  you to it. `Remove From Group` removes it and leaves you here. `Archive` removes it and
   archives it. All three are offered for a session Sova started; for one it didn't,
-  `Eliminate` is absent rather than relabelled, because the archive half isn't available (§app/session-list
+  `Archive` is absent rather than relabelled, because the archive half isn't available (§app/session-list
   "Archiving") and a word that only sometimes archives is the lie this set exists to avoid.
   `Remove From Group` is what a member you want out but not archived has always needed — without
   it the only remove-and-stay gesture would be `Promote`, which doesn't stay.
@@ -365,7 +365,7 @@ apply verbatim. What changes is scoping and chrome:
 | Ready | The chat, the composer live | Included |
 | Mid-turn | The chat, the run status row, `Steer` in its own composer (§chat/composer) | **Excluded**, reason "mid-turn". A shared prompt is not a steer |
 | Open in a TUI | A **watch** pane: read-only transcript, the `TUI` chip (accent, static), and in place of a composer the `.composer-reason` "This session is open in a terminal, so Sova won't write to it." | Excluded, reason "open in a terminal" |
-| Archived **while still a member** — archived from its own pane, or from anywhere else, without leaving the group | The chat, read normally, with a neutral `.chip` "Archived" in the pane head and its composer disabled, reason "This session is archived. Unarchive it to send.", with an `Unarchive` button in place of Send (§chat.transcript/instant-open, "An archived chat") **Archiving is the close gesture**: the server disposes the held runtime, so this pane's `/ws/chat` closes from the server side while the pane is still mounted. That close is **expected** — the pane keeps rendering the transcript it has and shows the Archived chip, never the disconnected or busy banner a single-session view would show for the same event. This is the only state in which that happens; an **eliminated** session is not a member and has no pane (see Eliminate) | Excluded, reason "archived" |
+| Archived **while still a member** — archived from its own pane, or from anywhere else, without leaving the group | The chat, read normally, with a neutral `.chip` "Archived" in the pane head and its composer disabled, reason "This session is archived. Unarchive it to send.", with an `Unarchive` button in place of Send (§chat.transcript/instant-open, "An archived chat") **Archiving is the close gesture**: the server disposes the held runtime, so this pane's `/ws/chat` closes from the server side while the pane is still mounted. That close is **expected** — the pane keeps rendering the transcript it has and shows the Archived chip, never the disconnected or busy banner a single-session view would show for the same event. This is the only state in which that happens; an **archived-out** session is not a member and has no pane (see Archive) | Excluded, reason "archived" |
 | Config error | The §app/shell open-failure banner, in the pane's own banner slot, with its own actions (Reconnect · Archive, as appropriate to the diagnosis). The transcript area keeps whatever loaded | Excluded, reason "can't be opened" |
 | Foreign-write busy | The `busy` banner the single-session view already shows, with its `Reconnect (force)` action, and the composer disabled | Excluded, reason "another program is writing to it" |
 | Gone from disk (the session file, checked by shape plus one async stat — never a sync stat, and never the member's `cwd`) | The pane is replaced by an `.empty` inside the pane: **"This session's file is gone."** Its transcript was deleted outside Sova. Removing it from the group is all that's left. · button `Remove From Group` | Excluded, reason "the file is gone" |
@@ -630,18 +630,18 @@ the session details' `Move into group` (§app.subagents-pane/tabs), or the Overs
 - **Promote** — `POST /api/session-groups/assign {path, groupId: null}`, then navigate to
   `#/s/{path}`. The member you picked is the answer; the workspace has done its job. There is no
   undo chip: putting it back is the sidebar's gesture, like adding any session.
-- **Eliminate** — the same assign-to-null, plus
+- **Archive** — the same assign-to-null, plus
   `POST /api/sessions/archive {path, archived:true}`. Two writes, one gesture, and **the second
   can refuse in three ways** (`archiveSession` in `server/sessions-index.ts`): the session
   is open in a TUI, it wasn't started in Sova, or it is mid-turn. Two of the three the pane
   already knows, so it says so **before** the press rather than half-succeeding: for a TUI-live
-  or mid-turn member, Eliminate is `aria-disabled` with the reason ("This session is open in a
-  terminal." · "It's mid-turn. Stop it or wait, then eliminate it."). Removed-but-not-archived is
+  or mid-turn member, Archive is `aria-disabled` with the reason ("This session is open in a
+  terminal." · "It's mid-turn. Stop it or wait, then archive it."). Removed-but-not-archived is
   a worse outcome than a button that explains itself, and it is left for the genuine race — a
   turn that starts between the check and the write — where §design/copy-deck's "Removed **{title}** from
   “{name}”, but couldn't archive it." is the honest report. The non-web case is not a refusal to
   route around but a different gesture, below.
-  - **The pane goes.** An eliminated session is no longer a member, so it leaves the workspace on
+  - **The pane goes.** A session taken out by Archive is no longer a member, so it leaves the workspace on
     the next list refresh. It does not linger greyed out: a pane is a member, and a view that
     kept showing one that isn't would be the workspace disagreeing with the group.
   - **What "reversible" means, exactly.** Nothing is destroyed: the transcript is intact, the
@@ -663,7 +663,7 @@ the session details' `Move into group` (§app.subagents-pane/tabs), or the Overs
 ### Emptying a group
 
 **A group stands empty.** Its name is the user's work, so taking out its last member — Promote,
-Remove From Group, Eliminate, or removing a member whose file is gone — leaves the group in the
+Remove From Group, Archive, or removing a member whose file is gone — leaves the group in the
 sidebar and the workspace on screen, showing the empty state below. There is no exception: a
 group an older build marked `autoDissolve` (§workspace.groups/legacy-groups) stands empty like any
 other. `POST /api/session-groups/assign` answers `{ok: true}` and never deletes a group; only

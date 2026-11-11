@@ -71,7 +71,7 @@ const composerOf = (path: string) => document.getElementById(`composer-input-${p
 const [workspaceFocus, setWorkspaceFocus] = createSignal<string | null>(null);
 export { workspaceFocus };
 
-/** Whether a member is mid-turn: what the tab's live dot and Eliminate's refusal both read. */
+/** Whether a member is mid-turn: what the tab's live dot and Archive's refusal both read. */
 const running = (s: SessionSummary | undefined) => !!s && (s.busy || sessionWorking(s) > 0);
 
 /** What SessionView needs from App, forwarded through the workspace unchanged. */
@@ -512,7 +512,7 @@ export function GroupView(props: {
     if (next && !next.startsWith("gone:")) focusPane(next, true);
   };
 
-  /** Takes the session out of the group — and, for Eliminate, archives it in the same gesture. */
+  /** Takes the session out of the group — and, for Archive, archives it in the same gesture. */
   const detach = async (path: string, archive: boolean) => {
     const s = summaryOf(path);
     const title = s?.title ?? "this session";
@@ -905,7 +905,7 @@ export function GroupView(props: {
                             : summary().live
                               ? "This session is open in a terminal."
                               : running(summary())
-                                ? "It's mid-turn. Stop it or wait, then eliminate it."
+                                ? "It's mid-turn. Stop it or wait, then archive it."
                                 : ""
                         }
                         label={labelOf(path)}
@@ -971,7 +971,7 @@ export function GroupView(props: {
  * One pane's tools, as a menu: at 440px a row of seven buttons
  * is not a thing a pane head can hold. What can be done to the pane (width, place, focus, open on
  * its own) and to its membership — three separate words on purpose: Promote takes it out and
- * opens it, Eliminate takes it out and archives it, Remove From Group only takes it out.
+ * opens it, Archive takes it out and archives it, Remove From Group only takes it out.
  */
 function PaneMenu(props: {
   /** The pane's name, so every row here says which member it acts on. */
@@ -983,8 +983,8 @@ function PaneMenu(props: {
   first: boolean;
   last: boolean;
   /**
-   * Eliminate's state: `null` when this session was not started in Sova (there is nothing to
-   * archive, so the row is absent), `""` when it can be eliminated, and otherwise the reason it
+   * Archive's state: `null` when this session was not started in Sova (there is nothing to
+   * archive, so the row is absent), `""` when it can be archived, and otherwise the reason it
    * can't — said before the press rather than discovered as a half-finished gesture.
    */
   eliminate: string | null;
@@ -1100,8 +1100,8 @@ function PaneMenu(props: {
                     to archive, and it is a different gesture rather than a refusal. */}
                 <Show when={props.eliminate !== null}>
                   <menu.Item
-                    label="Eliminate"
-                    aria={`Eliminate ${props.name}`}
+                    label="Archive"
+                    aria={`Archive ${props.name}`}
                     title={`Take it out of ${quoted(props.groupName)} and archive it. The transcript stays; unarchiving brings it back`}
                     icon={<Icon name="archive" small />}
                     disabled={props.eliminate!}

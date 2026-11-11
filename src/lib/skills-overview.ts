@@ -3,7 +3,7 @@
 // server/skills.ts records it (a /skill: run, a read of its SKILL.md, a shell print of it): paged reads
 // aren't joined and nothing is marked partly read. Pure (no DOM, no Solid), so it tests under tsx.
 
-import type { SessionSkills, SessionSkillUse } from "../../shared/protocol";
+import { CHARS_PER_TOKEN, type SessionSkills, type SessionSkillUse } from "../../shared/protocol";
 import type { ContextPart } from "./context-parts";
 
 /** One chat whose record counts: this chat or one of its workers. `key` is what Whose context picks it by. */
@@ -29,6 +29,12 @@ export interface SkillOverviewRow {
   name: string;
   /** The SKILL.md path, only when one name was opened at two or more paths. */
   location?: string;
+  /** The skill's description, from any chat's offer of it. */
+  description?: string;
+  /** What being offered costs, as Skills offered sizes it: tokens of its name, description and location. */
+  tokens: number;
+  /** Where its full text opens from: the SKILL.md path and the chat (a source key) whose record names it. */
+  opens?: { path: string; from: string };
   /** Every opening, by every chat. */
   total: number;
   /** Most openings first. */
@@ -38,7 +44,22 @@ export interface SkillOverviewRow {
 export interface SkillsOverview {
   read: SkillOverviewRow[];
   /** Skills offered to any of the chats that none of them opened, by name. */
-  notRead: { name: string; description?: string; location?: string }[];
+  notRead: NotReadSkill[];
+}
+
+/** A skill offered that nobody opened. */
+export interface NotReadSkill {
+  name: string;
+  description?: string;
+  location?: string;
+  tokens: number;
+}
+
+/** What one offered skill costs, the server's own estimate (server/context-tab.ts): pi's listing of it
+    (name, description, location), ceil(chars / CHARS_PER_TOKEN). Pure. */
+export function skillOfferTokens(name: string, description: string | undefined, location: string | undefined): number {
+  const listing = `  <skill>\n    <name>${name}</name>\n    <description>${description ?? ""}</description>\n    <location>${location ?? ""}</location>\n  </skill>`;
+  return Math.ceil(listing.length / CHARS_PER_TOKEN);
 }
 
 /** A path that names one file wherever it was read from. A relative one, or none, says nothing of which. */
@@ -61,7 +82,7 @@ export function skillsOverview(sources: readonly SkillReaderSource[]): SkillsOve
     for (const u of s.skills?.used ?? []) {
       const g = groupOf(u);
       let r = rows.get(g.id);
-      if (!r) rows.set(g.id, (r = { row: { id: g.id, name: u.name, ...(g.location ? { location: g.location } : {}), total: 0, readers: [] }, by: new Map() }));
+      if (!r) rows.set(g.id, (r = { row: { id: g.id, name: u.name, ...(g.location ? { location: g.location } : {}), tokens: 0, total: 0, readers: [] }, by: new Map() }));
       r.row.total++;
       const who = r.by.get(s.key);
       if (who) {
@@ -70,17 +91,31 @@ export function skillsOverview(sources: readonly SkillReaderSource[]): SkillsOve
       } else r.by.set(s.key, { key: s.key, label: s.label, count: 1, lastAt: u.at });
     }
   }
-  const read = [...rows.values()].map(({ row, by }) => ({
-    ...row,
-    readers: [...by.values()].sort((a, b) => b.count - a.count || (Date.parse(b.lastAt) || 0) - (Date.parse(a.lastAt) || 0) || a.label.localeCompare(b.label)),
-  }));
+  // Its offer, by name and (on a split row) path, gives the description and size; its text opens from the
+  // chat whose record names its SKILL.md: an offer of it, else an opening with a path.
+  const offers = sources.flatMap((s) => (s.skills?.offered ?? []).map((o) => ({ o, from: s.key })));
+  const uses = sources.flatMap((s) => (s.skills?.used ?? []).map((u) => ({ u, from: s.key })));
+  const read = [...rows.values()].map(({ row, by }) => {
+    const mine = offers.filter(({ o }) => o.name === row.name && (!row.location || o.location === row.location));
+    const description = mine.find(({ o }) => o.description)?.o.description;
+    const offered = mine.find(({ o }) => absolute(o.location));
+    const opened = uses.find(({ u }) => u.name === row.name && absolute(u.location) && (!row.location || u.location === row.location));
+    const opens = offered ? { path: offered.o.location!, from: offered.from } : opened ? { path: opened.u.location!, from: opened.from } : undefined;
+    return {
+      ...row,
+      ...(description ? { description } : {}),
+      tokens: skillOfferTokens(row.name, description, row.location ?? opens?.path ?? mine[0]?.o.location),
+      ...(opens ? { opens } : {}),
+      readers: [...by.values()].sort((a, b) => b.count - a.count || (Date.parse(b.lastAt) || 0) - (Date.parse(a.lastAt) || 0) || a.label.localeCompare(b.label)),
+    };
+  });
   read.sort((a, b) => b.total - a.total || b.readers.length - a.readers.length || a.name.localeCompare(b.name) || (a.location ?? "").localeCompare(b.location ?? ""));
   const opened = new Set(read.map((r) => r.name));
-  const notRead = new Map<string, { name: string; description?: string; location?: string }>();
+  const notRead = new Map<string, NotReadSkill>();
   for (const s of sources) {
     for (const o of s.skills?.offered ?? []) {
       if (opened.has(o.name) || notRead.has(o.name)) continue;
-      notRead.set(o.name, { name: o.name, ...(o.description ? { description: o.description } : {}), ...(o.location ? { location: o.location } : {}) });
+      notRead.set(o.name, { name: o.name, ...(o.description ? { description: o.description } : {}), ...(o.location ? { location: o.location } : {}), tokens: skillOfferTokens(o.name, o.description, o.location) });
     }
   }
   return { read, notRead: [...notRead.values()].sort((a, b) => a.name.localeCompare(b.name)) };

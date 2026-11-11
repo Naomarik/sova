@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 import type { SessionSkillOffer, SessionSkills, SessionSkillUse } from "../../shared/protocol";
-import { overviewMeta, readBeforeCompaction, skillsOverview, type SkillReaderSource } from "./skills-overview";
+import { overviewMeta, readBeforeCompaction, skillOfferTokens, skillsOverview, type SkillReaderSource } from "./skills-overview";
 
 const use = (name: string, at: string, location?: string, how: SessionSkillUse["how"] = "read"): SessionSkillUse => ({ name, at, entryId: `e-${at}`, how, ...(location ? { location } : {}) });
 const offer = (name: string): SessionSkillOffer => ({ name, from: "", location: `/s/${name}/SKILL.md` });
@@ -53,6 +53,28 @@ describe("skillsOverview", () => {
   test("a row's short line counts openings and chats", () => {
     assert.equal(overviewMeta({ total: 1, readers: [{ key: "a", label: "a", count: 1, lastAt: "" }] }), "1 opening · 1 chat");
     assert.equal(overviewMeta({ total: 5, readers: [{ key: "a", label: "a", count: 4, lastAt: "" }, { key: "b", label: "b", count: 1, lastAt: "" }] }), "5 openings · 2 chats");
+  });
+});
+
+describe("skillsOverview: description, size and where the text opens", () => {
+  test("the size is what being offered costs, the server's listing estimate, never the whole text", () => {
+    // Collision check against server/context-tab.ts's listing: the same text, at 4 chars a token.
+    const listing = (n: string, d: string, l: string) => `  <skill>\n    <name>${n}</name>\n    <description>${d}</description>\n    <location>${l}</location>\n  </skill>`;
+    const cases: [string, string, string][] = [["x", "", "/a/SKILL.md"], ["playwright", "Browser automation via CDP.", "/s/playwright/SKILL.md"], ["é", "😀", "/p"]];
+    for (const [n, d, l] of cases) assert.equal(skillOfferTokens(n, d, l), Math.ceil(listing(n, d, l).length / 4));
+  });
+  test("a read row carries any chat's description, the offer's size and the chat whose record names its path", () => {
+    const o: SessionSkillOffer = { name: "pw", from: "", description: "Drives a browser.", location: "/s/pw/SKILL.md" };
+    const { read, notRead } = skillsOverview([src("a", [use("pw", "t")]), src("b", [], [o, offer("other")])]);
+    const row = read[0]!;
+    assert.deepEqual([row.description, row.tokens, row.opens], ["Drives a browser.", skillOfferTokens("pw", "Drives a browser.", "/s/pw/SKILL.md"), { path: "/s/pw/SKILL.md", from: "b" }]);
+    assert.deepEqual(notRead, [{ name: "other", location: "/s/other/SKILL.md", tokens: skillOfferTokens("other", undefined, "/s/other/SKILL.md") }]);
+  });
+  test("a split row sizes and opens its own path; a row with no offer and no path opens nothing", () => {
+    const { read } = skillsOverview([src("a", [use("p", "t", "/one/SKILL.md"), use("p", "t", "/two/SKILL.md"), use("q", "t")])]);
+    const two = read.find((r) => r.location === "/two/SKILL.md")!;
+    assert.deepEqual([two.opens, two.tokens], [{ path: "/two/SKILL.md", from: "a" }, skillOfferTokens("p", undefined, "/two/SKILL.md")]);
+    assert.equal(read.find((r) => r.name === "q")!.opens, undefined);
   });
 });
 

@@ -178,13 +178,16 @@ export function ContextTab(props: {
     setStack([{ skill: r.id, label: r.name }]);
     opened();
   };
-  const openPart = async (l: GroupLevelOf, p: ContextPart) => {
+  /** A skill of the Everyone list as a part, so its full text opens as Skills offered opens one. */
+  const skillPart = (r: SkillOverviewRow, path: string): ContextPart => ({ id: `everyone:${r.id}`, group: "skills", label: r.name, tokens: r.tokens, path, ...(r.description ? { detail: r.description } : {}) });
+  /** `from`: the chat whose record names the file (Everyone), else the chat shown. */
+  const openPart = async (l: GroupLevelOf, p: ContextPart, from = target()) => {
     const mine = ++moves;
     let text: string;
     if (p.text !== undefined) text = p.text;
     else if (p.path !== undefined) {
       try {
-        text = (await fetchSetupFile(target(), p.path)).text;
+        text = (await fetchSetupFile(from, p.path)).text;
       } catch (err) {
         toast(`${OPEN_FILE_FAILED} ${err instanceof Error ? err.message : String(err)}`);
         return;
@@ -212,7 +215,7 @@ export function ContextTab(props: {
   // ---- Rows ---------------------------------------------------------------------------------
   /** One row, the same for a group and a part: name, short line, share of the window, ≈ size, and an
       arrow only when it opens. */
-  const Row = (r: { key: string; name: string; mono?: boolean; chip?: { word: string; done: boolean }; beside?: string; meta?: string; share: number | null; size: string; opens: boolean; onOpen?: () => void; label?: string; noSheet?: boolean }) => {
+  const Row = (r: { key: string; name: string; mono?: boolean; chip?: { word: string; done: boolean }; beside?: string; meta?: string; share: number | null; size: string; opens: boolean; onOpen?: () => void; label?: string; noSheet?: boolean; below?: string }) => {
     const inner = () => (
       <>
         <span class="list-main context-row-main">
@@ -235,6 +238,11 @@ export function ContextTab(props: {
               <Show when={r.meta}>
                 <span class="context-row-meta-text">{r.meta}</span>
               </Show>
+            </span>
+          </Show>
+          <Show when={r.below}>
+            <span class="context-row-meta">
+              <span class="context-row-meta-text">{r.below}</span>
             </span>
           </Show>
           <Show when={r.share !== null}>
@@ -283,8 +291,23 @@ export function ContextTab(props: {
   /** One skill's readers, most openings first; pressing one shows that chat's window. */
   const SkillLevel = (s: { row: SkillOverviewRow }) => (
     <>
+      <Show when={s.row.description}>{(d) => <p class="context-sheet-sub">{d()}</p>}</Show>
       <p class="context-sheet-sub">{overviewMeta(s.row)}</p>
       <Show when={s.row.location}>{(loc) => <p class="context-sheet-sub text-mono">{loc()}</p>}</Show>
+      <Show when={s.row.opens}>
+        {(o) => (
+          <ul class="list context-list" aria-label={`${s.row.name}'s text`}>
+            <Row
+              key={`part:${skillPart(s.row, o().path).id}`}
+              name="Open Skill"
+              share={null}
+              size=""
+              opens
+              onOpen={() => void openPart({ line: "skills", label: s.row.name }, skillPart(s.row, o().path), o().from)}
+            />
+          </ul>
+        )}
+      </Show>
       <ul class="list context-list" aria-label={`Who read ${s.row.name}`}>
         <ForKey each={s.row.readers} by={(r) => r.key}>
           {(r) => (
@@ -413,9 +436,10 @@ export function ContextTab(props: {
                         <Row
                           key={`skill:${r().id}`}
                           name={r().name}
-                          meta={`${overviewMeta(r())}: ${r().readers.map((x) => x.label).join(", ")}${r().location ? ` · ${r().location}` : ""}`}
+                          meta={r().description}
+                          below={`${overviewMeta(r())}${r().location ? ` · ${r().location}` : ""}`}
                           share={null}
-                          size=""
+                          size={approxTokens(r().tokens)}
                           opens
                           onOpen={() => openSkill(r())}
                         />
@@ -430,7 +454,7 @@ export function ContextTab(props: {
                     </h4>
                     <ul class="list context-list" aria-labelledby="context-unread-label">
                       <ForKey each={overview().notRead} by={(s) => s.name}>
-                        {(s) => <Row key={`unread:${s().name}`} name={s().name} meta={s().description} share={null} size="" opens={false} />}
+                        {(s) => <Row key={`unread:${s().name}`} name={s().name} meta={s().description} share={null} size={approxTokens(s().tokens)} opens={false} />}
                       </ForKey>
                     </ul>
                   </section>

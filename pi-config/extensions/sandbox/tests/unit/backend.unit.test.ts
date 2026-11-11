@@ -236,7 +236,7 @@ test("checkWrite: a trust store inside a shadow is the sandbox's own copy, writa
 });
 
 test("seedShadow: mise's trust and ignore links mirrored from the host, the copy's own kept, a host removal mirrored; other shadows untouched", async (t) => {
-	const { seedShadow, SEEDED_LIST } = await import("../../backend.ts");
+	const { seedShadow, seededListPath } = await import("../../backend.ts");
 	const base = realpathSync(mkdtempSync(join(tmpdir(), "sbx-seed-")));
 	t.after(() => rmSync(base, { recursive: true, force: true }));
 	const host = join(base, "mise");
@@ -263,7 +263,36 @@ test("seedShadow: mise's trust and ignore links mirrored from the host, the copy
 	mkdirSync(cache);
 	mkdirSync(cacheCopy);
 	seedShadow({ path: cache, source: cacheCopy });
-	assert.throws(() => lstatSync(join(cacheCopy, SEEDED_LIST)), /ENOENT/);
+	assert.throws(() => lstatSync(seededListPath(cacheCopy)), /ENOENT/);
+});
+
+test("seedShadow's list survives the cache cleanup: a host removal is still mirrored after the copy's trust dir was pruned", async (t) => {
+	const { seedShadow, seededListPath } = await import("../../backend.ts");
+	const { scanShadows, DEFAULT_CACHE_SETTINGS } = await import("../../shadow-prune.ts");
+	const base = realpathSync(mkdtempSync(join(tmpdir(), "sbx-seedp-")));
+	t.after(() => rmSync(base, { recursive: true, force: true }));
+	const host = join(base, "mise");
+	const root = join(base, "shadow");
+	const source = join(root, "home-.local%2Fstate%2Fmise");
+	mkdirSync(join(host, "trusted-configs"), { recursive: true });
+	mkdirSync(source, { recursive: true });
+	symlinkSync("/w/a/mise.toml", join(host, "trusted-configs", "a"));
+	symlinkSync("/w/b/mise.toml", join(host, "trusted-configs", "b"));
+	seedShadow({ path: host, source });
+	assert.ok(lstatSync(seededListPath(source)).isFile());
+	const units = scanShadows(root, DEFAULT_CACHE_SETTINGS).map((e) => `${e.root}/${e.name}`);
+	assert.ok(units.length > 0 && units.every((u) => u.startsWith("home-.local%2Fstate%2Fmise/")), `the list is no cleanup unit: ${units}`);
+	// The cleanup removes the copy's whole trust dir; the host then untrusts b.
+	rmSync(join(source, "trusted-configs"), { recursive: true, force: true });
+	unlinkSync(join(host, "trusted-configs", "b"));
+	seedShadow({ path: host, source });
+	assert.equal(readlinkSync(join(source, "trusted-configs", "a")), "/w/a/mise.toml");
+	assert.throws(() => lstatSync(join(source, "trusted-configs", "b")), /ENOENT/);
+	// And a b the copy got back from somewhere is removed on the next seed, since the list still names it.
+	symlinkSync("/w/b/mise.toml", join(source, "trusted-configs", "b"));
+	writeFileSync(seededListPath(source), JSON.stringify({ "trusted-configs": ["a", "b"] }));
+	seedShadow({ path: host, source });
+	assert.throws(() => lstatSync(join(source, "trusted-configs", "b")), /ENOENT/);
 });
 
 test("checkWrite in a linked worktree: own admin dir and objects writable, redirects and main checkout not", async (t) => {

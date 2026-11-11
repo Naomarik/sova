@@ -402,15 +402,20 @@ export function writeSet(policy: Policy): WriteSet {
 
 /** The trust lists of mise's state that a private copy mirrors from the host (`seedShadow`). */
 export const MISE_TRUST_DIRS = ["trusted-configs", "ignored-configs"] as const;
-/** In a shadow's source: the names `seedShadow` linked from the host, so a host removal is mirrored. */
-export const SEEDED_LIST = ".sova-seeded.json";
+/**
+ * Beside a shadow's source (`<source>.seeded.json`, a file in the shadow root, which the cache
+ * cleanup never walks or removes): the names `seedShadow` linked from the host, so a host removal
+ * is mirrored even after the cleanup removed part of the copy.
+ */
+export const seededListPath = (source: string) => `${source}.seeded.json`;
 
 /**
  * Brings a shadow's private copy up to date with what its host path must keep telling the sandbox:
  * for mise's state (a host path holding `trusted-configs`), each host trust and ignore link is
  * linked into the copy, and a link seeded earlier that the host has since removed is removed, so
  * the sandbox trusts what the host trusts, and a `mise trust` inside writes only the copy (kept,
- * since it was never seeded). Other shadows are left alone. Never throws: a copy it cannot update
+ * since it was never seeded; the copy is shared, so every sandboxed session then trusts it). Other
+ * shadows are left alone. Never throws: a copy it cannot update
  * stays as it was.
  */
 export function seedShadow(shadow: Shadow): void {
@@ -419,7 +424,7 @@ export function seedShadow(shadow: Shadow): void {
 	try {
 		mkdirSync(join(shadow.source, "tracked-configs"), { recursive: true, mode: 0o700 });
 	} catch {}
-	const listFile = join(shadow.source, SEEDED_LIST);
+	const listFile = seededListPath(shadow.source);
 	let seeded: Record<string, string[]> = {};
 	try {
 		const raw = JSON.parse(readFileSync(listFile, "utf8"));

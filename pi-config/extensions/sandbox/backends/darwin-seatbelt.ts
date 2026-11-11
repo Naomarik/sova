@@ -315,7 +315,8 @@ export function shadowEnv(shadows: Shadow[], env: Record<string, string>, home: 
 	for (const s of shadows) {
 		if (s.path === canonicalizePath(env.XDG_CACHE_HOME || join(home, ".cache"))) out.XDG_CACHE_HOME = s.source;
 		else if (s.path === canonicalizePath(join(home, ".npm"))) out.npm_config_cache = s.source;
-		else if (s.path === canonicalizePath(env.MISE_STATE_DIR || join(env.XDG_STATE_HOME || join(home, ".local", "state"), "mise"))) out.MISE_STATE_DIR = s.source;
+		// The copy replaces mise's state wherever the host's MISE_STATE_DIR or XDG_STATE_HOME points.
+		else if (s.path === canonicalizePath(join(home, ".local", "state", "mise"))) out.MISE_STATE_DIR = s.source;
 		else if (s.path === canonicalizePath(join(home, ".m2"))) out.MAVEN_OPTS = `${env.MAVEN_OPTS ? env.MAVEN_OPTS + " " : ""}-Dmaven.repo.local=${join(s.source, "repository")}`;
 	}
 	return out;

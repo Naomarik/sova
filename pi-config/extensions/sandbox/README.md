@@ -142,14 +142,22 @@ failing closed; the file's own `writable` inside its own `shadowed` still does.
 
 - **mise.** Before each command `seedShadow` links every host trust and ignore entry
   (`trusted-configs`, `ignored-configs`) into the copy and removes one it linked earlier that the
-  host has since removed (`.sova-seeded.json` in the copy names them), so the sandbox trusts what
-  the host trusts. The host trust stores (`trustStores`) stay pinned read-only wherever a real
+  host has since removed (`<copy>.seeded.json` beside the copy names them: a file in the shadow root,
+  which the cleanup never removes, so a pruned trust dir is re-seeded and a host removal still
+  mirrored), so the sandbox trusts what the host trusts. The host trust stores (`trustStores`) stay pinned read-only wherever a real
   writable root holds them, but not inside a copy, which no host tool reads: `mise trust` and mise's
   tracking list write only the copy, and the host's trust list never changes. The copy is shared
-  by every sandboxed session, as the caches are.
+  by every sandboxed session, as the caches are, so a config one confined session trusts is trusted
+  in every other one (never on the host).
 - **pnpm.** Its store, its own package-manager downloads and its state live in the copies, so an
-  install works in a worker (the first one downloads cold); the store counts toward the cache
-  cleanup like the other copies. Global installs (`~/.local/share/pnpm/global`) stay read-only.
+  install works in a worker (the first one downloads cold). Global installs
+  (`~/.local/share/pnpm/global`) stay read-only.
+- **Cleanup.** These copies are tool caches for the cache cleanup (`toolCacheDays`, removed after
+  the scratch entries).
+- **Paths.** The default locations only: a host that moves mise's or pnpm's state elsewhere
+  (`MISE_STATE_DIR`, `XDG_STATE_HOME`, `XDG_DATA_HOME`, a store-dir setting) gets no copy of it on
+  Linux, where those stay read-only as before; on macOS `MISE_STATE_DIR` names the copy whatever the
+  host's says.
 - **The denial note.** `classifyRun` drops mise's `tracking config` warning (`BENIGN_DENIAL_LINES`)
   before matching the denial signatures: that warning alone never earns
   `[sandbox: a write or connection outside the policy was refused]`.
@@ -192,7 +200,8 @@ siblings). Spec: §chat.sandbox/cache-cleanup.
   `os.setPriority(19)` in the child. The walk never runs in the chat's process.
 - **Units.** Each top-level entry of each shadow dir (`home-.cache/pnpm`, `home-.npm/_cacache`, an
   older layout's entries). A shadow dir itself is a live bind source and is never removed. Tool
-  caches: every entry of `home-.npm` and `home-.m2`, and the `toolCaches` names in `home-.cache`.
+  caches: every entry of `home-.npm`, `home-.m2` and the mise and pnpm state copies ("Tool state"),
+  and the `toolCaches` names in `home-.cache`. A file in the shadow root (a seeded list) is no unit.
 - **Measure.** `lstat` only, never following a link, never leaving the shadow dir's `st_dev`. Size is
   `st_blocks * 512`, a hard-linked file counted once (by dev and inode) over the whole scan. Recency
   is the newest regular file's mtime (protected 24 h) and atime (protected 48 h); directory atimes

@@ -2,7 +2,7 @@ import { PROFILE_ENTRY, type ProfileEntryData } from "../shared/profiles";
 import { removeOutputFiles } from "./shell-output";
 import { keptLabels, redactPreviewLinks, redactPreviewLinksDeep } from "./preview-kept";
 import { profileField, profileOnBranch } from "./session-profile";
-import { type Dirent, statSync } from "node:fs";
+import { type Dirent, lstatSync, readdirSync, statSync } from "node:fs";
 import { type FileHandle, lstat, open, readdir, stat, unlink } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import { OVERSEER_ENTRY, type SessionSummary, type SessionTags } from "../shared/protocol";
@@ -30,11 +30,11 @@ import { type AlignScan, readAlignScan } from "./align-state";
 import { type WorkerParents, WorkerSessions } from "./worker-sessions";
 import { isOverseerId, overseerDir, readOverseerState } from "./overseer-store";
 import { readDecisionSettings } from "./decide-settings";
-import { readSignals, settleGoAsk, type SignalsFile, signalsOverlay } from "./signals-store";
+import { GUESS_IDLE_MS, readSignals, settleGoAsk, type SignalsFile, signalsOverlay } from "./signals-store";
 import { withOpenOffer } from "./session-offers";
 import { dropSessionTags, tagsFor, tagsReader } from "./session-tags";
-import { askTreesOf, branchesOverlay, pruneReadiness, readinessOverlay } from "./merge-readiness";
-import { listGeneration } from "./list-generation";
+import { askTreesOf, branchesOverlay, pruneReadiness, readinessDue, readinessOverlay } from "./merge-readiness";
+import { connectGeneration, heardGeneration, listGeneration, rowChangedSince, rowChangeSeq, storesGeneration } from "./list-generation";
 import { projectOf, projectOverseerOfPath, readPoState } from "./project-overseer-store";
 import { memoSovaChatNames, readSovaChatNames, setSovaChatName, type SovaChatName } from "./sova-chat-names";
 import { rebuildSovaName } from "./sova-chat-origin";
@@ -51,7 +51,8 @@ import { removeDesignFiles } from "./design/store";
 import { byActivity } from "../src/lib/summary-diff";
 import { queueChatRole } from "../shared/merge-queue";
 import { opTrack } from "./stall-recorder";
-import { runningJobCount } from "./background-jobs";
+import { jobsDir, runningJobCount } from "./background-jobs";
+import { stateRoot } from "./state-root";
 
 /**
  * What another layer adds to the list (organizations: a baton session's `baton`, an org session's `org`), and
@@ -913,6 +914,16 @@ export async function listSessionFiles(): Promise<string[]> {
  * means that after a model switch the window is the CURRENT model's, i.e. the one the next reply
  * will actually use, not the one that produced these tokens.
  */
+/** The (mtime, size) each summary handed out was made from: a build stamps a row with the read it was
+    built from, never with what the shared cache holds by then (another caller may have read the file again). */
+const madeFrom = new WeakMap<BaseSummary, string>();
+/** withWindow, the result stamped with its entry's stat. */
+function stamped(entry: CacheEntry, resolveWindow?: WindowResolver): BaseSummary {
+  const out = withWindow(entry, resolveWindow);
+  madeFrom.set(out, statKey(entry));
+  return out;
+}
+
 function withWindow(entry: CacheEntry, resolveWindow?: WindowResolver): BaseSummary {
   const summary = overseerOf(entry);
   const ctx = summary.context;
@@ -963,7 +974,7 @@ async function summarize(path: string, resolveWindow?: WindowResolver): Promise<
     return null;
   }
   const hit = cache.get(path);
-  if (hit && hit.mtimeMs === st.mtimeMs && hit.size === st.size) return withWindow(hit, resolveWindow);
+  if (hit && hit.mtimeMs === st.mtimeMs && hit.size === st.size) return stamped(hit, resolveWindow);
   try {
     // One handle for the head, the outline and one tail window the three tail readers share.
     listIo.opens++;
@@ -1023,7 +1034,7 @@ async function summarize(path: string, resolveWindow?: WindowResolver): Promise<
     };
     storeEntry(path, entry);
     if (summary.outlineGist && summary.outlineGist !== hit?.summary.outlineGist) gistChanged(path);
-    return withWindow(entry, resolveWindow);
+    return stamped(entry, resolveWindow);
   } catch {
     return null;
   }
@@ -1200,22 +1211,49 @@ async function withUnreadReplies(row: SessionSummary): Promise<SessionSummary> {
 
 /** How long a finished listing serves further callers, from its build's start (§app.session-list/listing-reuse). */
 export const LIST_REUSE_MS = 1_000;
-type Listing = { generation: number; startedAt: number; stamp: number; built: Promise<{ rows: SessionSummary[]; files: string[] }> };
+type Listing = {
+  generation: number;
+  /** heardGeneration() and the file watch's run at the start: a kept list needs both unchanged. */
+  heard: number;
+  watch: number;
+  startedAt: number;
+  stamp: number;
+  built: Promise<{ rows: SessionSummary[]; files: string[] }>;
+  /** Its rows, once built. */
+  done?: SessionSummary[];
+  /** A page's build (listSessionsAfresh): every row built, none kept from a build before it. */
+  afresh?: boolean;
+  /** When a hand-out of it, kept, last set off readiness's due reads: at most once per LIST_REUSE_MS. */
+  dueAt?: number;
+};
 let listing: Listing | null = null;
 /** One more per build started, of either kind: a higher stamp is a build that started later. */
 let listStamp = 0;
 
 /** All sessions, newest activity first, with fresh live presence merged in. Callers share a build
     that is running or started less than LIST_REUSE_MS ago, unless something in this process changed
-    since it started (server/list-generation.ts). Each caller gets its own array; rows are shared
-    and never mutated. */
+    since it started (server/list-generation.ts). While the session folders are watched, a finished
+    list is kept past that until anything bumps or makes the session feed compare, for at most
+    KEEP_UNHEARD_MS (handOut); a build keeps each row whose inputs stand.
+    Each caller gets its own array; rows are shared and never mutated. */
 export function listSessions(): Promise<SessionSummary[]> {
   const now = Date.now();
-  const generation = listGeneration();
-  let l = listing;
-  if (!l || l.generation !== generation || now - l.startedAt >= LIST_REUSE_MS || now < l.startedAt) {
-    const mine: Listing = { generation, startedAt: now, stamp: ++listStamp, built: buildSessions() };
+  let l = handOut(now);
+  if (l && now - l.startedAt >= LIST_REUSE_MS) {
+    keptStats.kept++;
+    // What a build would set off: a readiness read due by age or by its trees' Git stamps. Once per
+    // LIST_REUSE_MS at most, as builds came: a burst of one-chat lookups is one pass, not one each.
+    if (l.dueAt === undefined || now - l.dueAt >= LIST_REUSE_MS || now < l.dueAt) {
+      l.dueAt = now;
+      if (l.done) readinessDueKept(l.done);
+      else void l.built.then((b) => readinessDueKept(b.rows)).catch(() => {});
+    }
+  }
+  if (!l) {
+    const mine: Listing = { generation: listGeneration(), heard: heardGeneration(), watch: tracker.run, startedAt: now, stamp: ++listStamp, built: buildSessions() };
     listing = l = mine;
+    listStats.listed++;
+    void mine.built.then((b) => void (mine.done = b.rows), () => {});
     mine.built.catch(() => {
       if (listing === mine) listing = null;
     });
@@ -1223,11 +1261,237 @@ export function listSessions(): Promise<SessionSummary[]> {
   return l.built.then((b) => [...b.rows]);
 }
 
+/**
+ * The list a window loading reads (GET /api/sessions): always a build of its own, every folder and
+ * file read, never a kept list nor a build started before it, so a refresh shows a change no watch
+ * heard at once. Callers after it within the second share it, as any build.
+ */
+export function listSessionsAfresh(arrivedAt = Date.now()): Promise<SessionSummary[]> {
+  // Another page's afresh build that started at or after this request arrived holds everything
+  // this one would: shared, as callers within a second always shared one.
+  const l = listing;
+  if (l?.afresh && l.startedAt >= arrivedAt && l.generation === listGeneration()) return l.built.then((b) => [...b.rows]);
+  const now = Date.now();
+  const mine: Listing = {
+    generation: listGeneration(),
+    heard: heardGeneration(),
+    watch: tracker.run,
+    startedAt: now,
+    stamp: ++listStamp,
+    afresh: true,
+    built: buildSessions({ allRows: true }),
+  };
+  listing = mine;
+  listStats.listed++;
+  void mine.built.then((b) => void (mine.done = b.rows), () => {});
+  mine.built.catch(() => {
+    if (listing === mine) listing = null;
+  });
+  return mine.built.then((b) => [...b.rows]);
+}
+
+/**
+ * The age limit for a change no watch hears (§app.session-list/listing-reuse): the longest a kept
+ * list stands, and a row is kept, without anything telling of a change. Everything Sova hears drops
+ * them at once; this bounds only what it can't hear (another server's stores, a write outside the
+ * watched folders, a time-driven change). The one place it is set.
+ */
+export const KEEP_UNHEARD_MS = 60_000;
+
+/** Store files a row reads, by name under the state root: written by another process (another
+    server on the same stores), a change shows by its stat. This server's own writes bump the list
+    generation as well. */
+const ROW_STORES = [
+  "archived-sessions.json",
+  "session-titles.json",
+  "seen.json",
+  "drafts.json",
+  "session-groups.json",
+  "session-tags.json",
+  "signals.json",
+  "sova-chat-names.json",
+  "decisions.json",
+  "orgs.json",
+  "overseer-state.json",
+  "web-sessions.json",
+  "preview-kept.json",
+];
+/** A store read through a short read cache (seen, tags, signals: 1 s) may answer from before a
+    write this recent: a stamp taken then is never matched. */
+const STORE_SETTLE_MS = 2_000;
+let unsettled = 0;
+
+/**
+ * What a row reads from outside this process, besides session files and live records, as one
+ * comparable string: each row store's stat, each chat's background-jobs folder (job records are
+ * written whole, so a folder's mtime moves with each), and whether a model runtime answers context
+ * windows. One taken while a store was just written matches nothing.
+ */
+function outsideStamp(runtime: boolean, now = Date.now()): string {
+  const parts: string[] = [runtime ? "rt" : "-"];
+  const root = stateRoot();
+  for (const name of ROW_STORES) {
+    const st = statSafe(join(root, name));
+    if (st && now - st.mtimeMs < STORE_SETTLE_MS) return `unsettled ${++unsettled}`;
+    parts.push(st ? `${st.mtimeMs}:${st.size}` : "-");
+  }
+  const jobs = jobsDir();
+  let names: Dirent[] = [];
+  try {
+    names = readdirSync(jobs, { withFileTypes: true });
+  } catch {
+    // no jobs yet
+  }
+  for (const d of names) {
+    if (!d.isDirectory()) continue;
+    const st = statSafe(join(jobs, d.name));
+    parts.push(`${d.name}:${st ? st.mtimeMs : "-"}`);
+  }
+  return parts.join("\n");
+}
+
+function statSafe(p: string): { mtimeMs: number; size: number } | null {
+  try {
+    return statSync(p);
+  } catch {
+    return null;
+  }
+}
+
+/** What a row reads of its file's live records (readLive's and this server's own), "" for none. */
+function liveKeyOf(l: LiveRecord | undefined, own: RawLiveRecord | undefined): string {
+  if (!l && !own) return "";
+  return JSON.stringify([l ?? null, own ? [activityOf(own.rec) ?? null, workerCountsOf(own.rec) ?? null, own.rec?.presence?.outline ?? null] : null]);
+}
+
+function liveKeys(live: Map<string, LiveRecord>, own: Map<string, RawLiveRecord>): Map<string, string> {
+  const out = new Map<string, string>();
+  for (const p of new Set([...live.keys(), ...own.keys()])) out.set(p, liveKeyOf(live.get(p), own.get(p)));
+  return out;
+}
+
+/** What one build read, for the next one to compare (row reuse in buildSessionsNow). */
+interface BuildMark {
+  /** storesGeneration() and rowChangeSeq() at the build's start. */
+  stores: number;
+  rowSeq: number;
+  outside: string;
+  /** Each listed file's (mtime, size) as its row was read. */
+  files: Map<string, string>;
+  live: Map<string, string>;
+  parents: WorkerParents;
+  workers: ReadonlySet<string>;
+  /** When the build that last built every row started. */
+  fullAt: number;
+}
+let lastMark: BuildMark | null = null;
+
+const statKey = (st: { mtimeMs: number; size: number } | null | undefined): string => (st ? `${st.mtimeMs}:${st.size}` : "-");
+
+/** Listings answered by a kept listing (tests, measurement). */
+export const keptStats = { kept: 0, rowsKept: 0, rowsBuilt: 0, misses: {} as Record<string, number> };
+
+/** The listing listSessions hands out now without starting a build, or null. */
+function handOut(now = Date.now()): Listing | null {
+  const l = listing;
+  if (!l || l.generation !== listGeneration() || now < l.startedAt) return null;
+  if (now - l.startedAt < LIST_REUSE_MS) return l;
+  // Kept: the folders were watched all along (one watch run, still on) and nothing was heard since
+  // the build started. Unwatched, a change made outside this server can't be heard: 1 s, as before.
+  return tracker.active > 0 && l.watch === tracker.run && l.heard === heardGeneration() && now - l.startedAt < KEEP_UNHEARD_MS ? l : null;
+}
+
 /** The last listing's rows by path (buildSessions hands an unchanged row out as the same object). */
 let lastRows = new Map<string, SessionSummary>();
 
 /** The last listing's rows by path, as built (no read): what the project cards' glance joins the monitor's sessions to. */
 export const lastListedRows = (): ReadonlyMap<string, SessionSummary> => lastRows;
+
+
+/**
+ * The row `listSessions().find((s) => s.id === id)` gives, built alone (§app.session-list/listing-reuse
+ * "One chat is looked up alone"): a list listSessions would hand out now is read; otherwise the chat's
+ * file is found (the id index, else by the id in the file names, a folder listing and no row built)
+ * and only its row is built, by the list's own row code (rowFor), with the same fields. Only an id two
+ * files share, or a file whose header names another id, still takes a whole listing.
+ */
+export async function listedSession(id: string): Promise<SessionSummary | undefined> {
+  const listed = (): Promise<SessionSummary | undefined> => listSessions().then((all) => all.find((s) => s.id === id));
+  if (handOut() || sharedIds().has(id)) return listed();
+  let path = indexedSessionPaths().get(id);
+  if (path && !listedPlace(path)) path = undefined;
+  path ??= (await listSessionFiles()).find((p) => idOf(p) === id);
+  if (!path) return undefined;
+  const row = await listedRowOf(path);
+  // None: gone, or a husk the list leaves out.
+  if (!row) return undefined;
+  return row.id === id ? row : listed();
+}
+
+/** The same by file path: the row `listSessions().find((s) => s.path === path)` gives. */
+export async function listedSessionAt(path: string): Promise<SessionSummary | undefined> {
+  if (handOut()) return listSessions().then((all) => all.find((s) => s.path === path));
+  if (!listedPlace(path)) return undefined;
+  return (await listedRowOf(path)) ?? undefined;
+}
+
+/** A session file's path for `id`, as a listing would find it, with no row built: the id index,
+    else the id in the file names. Undefined when no listed file has it. */
+export async function sessionPathOfId(id: string): Promise<string | undefined> {
+  const hit = indexedSessionPaths().get(id);
+  if (hit && listedPlace(hit) && existsSafe(hit)) return hit;
+  return (await listSessionFiles()).find((p) => idOf(p) === id);
+}
+
+/** Whether a listing lists `path` (listSessionFiles' places): a real `.jsonl` file in the sessions
+    folder, one folder below it (not the live records'), or an extra session root. */
+function listedPlace(path: string): boolean {
+  if (!path.endsWith(".jsonl")) return false;
+  const dir = dirname(path);
+  const placed = dir === SESSIONS_DIR || (dirname(dir) === SESSIONS_DIR && dir !== LIVE_DIR) || extraSessionRoots().includes(dir);
+  if (!placed) return false;
+  try {
+    return lstatSync(path).isFile();
+  } catch {
+    return false;
+  }
+}
+
+function existsSafe(p: string): boolean {
+  try {
+    return statSync(p).isFile();
+  } catch {
+    return false;
+  }
+}
+
+/** Ids more than one cached file carries (`indexedSessionPaths` answers one of them; the list's order picks another). */
+let shared: { index: ReadonlyMap<string, string>; ids: Set<string> } | null = null;
+function sharedIds(): ReadonlySet<string> {
+  const index = indexedSessionPaths();
+  if (shared?.index === index) return shared.ids;
+  const seen = new Set<string>();
+  const ids = new Set<string>();
+  for (const entry of cache.values()) {
+    const id = entry.summary.id;
+    if (seen.has(id)) ids.add(id);
+    else seen.add(id);
+  }
+  shared = { index, ids };
+  return ids;
+}
+
+/** One listed file's row, built as buildSessionsNow builds it; null when the file is gone or the list leaves it out. */
+async function listedRowOf(path: string): Promise<SessionSummary | null> {
+  const s = await summarize(path, await windowResolver());
+  if (!s) return null;
+  const worker = await workerSessions.isWorker(s.path).catch(() => false);
+  const row = await rowFor(s, rowReads(() => worker));
+  if (!row) return null;
+  const out = await withUnreadReplies(row);
+  const prev = lastRows.get(path);
+  return prev && sameValue(prev, out) ? prev : out;
+}
 
 /** Deep equality that also holds key order and undefined-valued keys: JSON- and deepStrictEqual-identical. */
 function sameValue(a: unknown, b: unknown): boolean {
@@ -1263,11 +1527,12 @@ export const STAT_SWEEP_MS = 60_000;
  * file set and cached summaries and reads only the files named since its last build. `all`: the
  * watch could not say (or nothing is known yet), so the next build reads every folder.
  */
-const tracker = { active: 0, all: true, dirty: new Set<string>(), files: null as string[] | null, sweptAt: 0, statAt: 0, listed: 0, chain: Promise.resolve() as Promise<unknown> };
+const tracker = { run: 0, connects: 0, active: 0, all: true, dirty: new Set<string>(), files: null as string[] | null, sweptAt: 0, statAt: 0, listed: 0, chain: Promise.resolve() as Promise<unknown> };
 
 /** Start tracking (the feed's watch starts it with itself); returns the note sink and its stop. */
 export function trackSessionFiles(): { note: (path: string | null) => void; stop: () => void } {
-  tracker.active++;
+  // A new watch run: what changed while nothing watched was never heard, so no list kept from before stands.
+  if (tracker.active++ === 0) tracker.run++;
   let stopped = false;
   return {
     note: (path) => {
@@ -1349,7 +1614,10 @@ async function buildTracked(): Promise<SessionSummary[]> {
   const now = Date.now();
   tracker.listed = ++listStamp;
   trackedStats.builds++;
-  const full = tracker.all || tracker.files === null || now - tracker.sweptAt >= SWEEP_MS || now < tracker.sweptAt;
+  // A new feed connection (a window loading) reads everything: a change no watch heard shows on a refresh.
+  const connected = connectGeneration();
+  const full = tracker.all || tracker.files === null || now - tracker.sweptAt >= SWEEP_MS || now < tracker.sweptAt || connected !== tracker.connects;
+  tracker.connects = connected;
   // Taken before any await: what is noted during this build is the next build's.
   const dirty = tracker.dirty;
   tracker.dirty = new Set();
@@ -1422,7 +1690,7 @@ async function trackedFiles(prev: readonly string[], dirty: ReadonlySet<string>)
 function summaryOf(path: string, resolveWindow: WindowResolver | undefined, dirty: ReadonlySet<string> | undefined): Promise<BaseSummary | null> {
   if (dirty && !dirty.has(path)) {
     const hit = cache.get(path);
-    if (hit) return Promise.resolve(withWindow(hit, resolveWindow));
+    if (hit) return Promise.resolve(stamped(hit, resolveWindow));
   }
   return summarize(path, resolveWindow);
 }
@@ -1445,13 +1713,13 @@ function openFirst(files: readonly string[]): { open: string[]; archived: string
 async function summariesOf(files: { open: string[]; archived: string[] }, resolveWindow: WindowResolver | undefined, dirty: ReadonlySet<string> | undefined): Promise<(BaseSummary | null)[]> {
   const read = (p: string) => summaryOf(p, resolveWindow, dirty);
   const open = await mapLimit(files.open, LIST_READ_LIMIT, read);
-  listPhases.openRead?.();
+  await listPhases.openRead?.();
   const archived = await mapLimit(files.archived, LIST_READ_LIMIT, read);
   return [...open, ...archived];
 }
 
 /** Test and measurement hooks into a listing's phases (unset in production). */
-export const listPhases: { openRead?: () => void } = {};
+export const listPhases: { openRead?: () => void | Promise<void>; window?: () => WindowResolver | undefined } = {};
 
 /** The husk check (isZeroInput) from the summary cache when it holds this file, else from the file. */
 async function zeroInputOf(path: string): Promise<boolean> {
@@ -1462,29 +1730,156 @@ async function zeroInputOf(path: string): Promise<boolean> {
   return !!st && (await isZeroInput(path, st.size));
 }
 
-/** Every row. `track`: the file set to list and the files that may have changed since the cached
-    summaries were read (only those are stat'ed and read); without it every folder is read and
-    every file stat'ed. Returns the rows and the file set they came from. */
-function buildSessions(track?: { files: string[]; dirty: ReadonlySet<string> }): Promise<{ rows: SessionSummary[]; files: string[] }> {
+/** Listings built, of either kind (tests, measurement). */
+export const listStats = { builds: 0, listed: 0 };
+
+/** Every row. `files`: the file set to list (else every folder is read); `dirty`: the files that may
+    have changed since the cached summaries were read (only those are stat'ed and read; without it
+    every file is stat'ed). Returns the rows, the file set they came from and what the build read. */
+function buildSessions(track?: { files?: string[]; dirty?: ReadonlySet<string>; allRows?: boolean }): Promise<{ rows: SessionSummary[]; files: string[]; mark: BuildMark }> {
+  listStats.builds++;
   return opTrack("buildSessions", () => buildSessionsNow(track), (b) => b.rows.length);
 }
 
-async function buildSessionsNow(track?: { files: string[]; dirty: ReadonlySet<string> }): Promise<{ rows: SessionSummary[]; files: string[] }> {
-  const files = track ? track.files : await listSessionFiles();
-  const live = readLive();
-  const own = readOwnLiveRecords();
+/** What one listing pass reads besides the files, read once and shared by its rows (rowFor). */
+interface RowReads {
+  live: Map<string, LiveRecord>;
+  own: Map<string, RawLiveRecord>;
+  drafts: ReturnType<typeof readDrafts>;
+  titles: ReturnType<typeof readSessionTitleRecords>;
+  sovaNames: ReturnType<typeof readSovaChatNames>;
+  groups: Record<string, string>;
+  seen: Record<string, number>;
+  attention: boolean;
+  fields: ReturnType<typeof fieldLookup>;
+  /** `signals` moves on as rows settle go-ahead asks (settleGoAsk): the next row reads what the last wrote. */
+  stores: { tags: (id: string) => SessionTags | undefined; signals: SignalsFile };
+  previewLabels: ReturnType<typeof keptLabels>;
+  isWorker: (path: string) => boolean;
+  parents: WorkerParents;
+}
+
+function rowReads(isWorker: (path: string) => boolean): RowReads {
+  // The stores are read once, when a row is first built: a build that keeps every row reads none.
+  type Stores = Omit<RowReads, "live" | "own" | "isWorker" | "parents">;
+  let stores: Stores | null = null;
+  const read = (): Stores =>
+    (stores ??= {
+      drafts: readDrafts(),
+      titles: readSessionTitleRecords(),
+      sovaNames: readSovaChatNames(),
+      groups: readAssignments(),
+      seen: readSeen(),
+      attention: readDecisionSettings().features.attention,
+      fields: fieldLookup(),
+      stores: { tags: tagsReader(), signals: readSignals() },
+      // A kept preview link never reaches the list (§app.project-overseer/previews): a title or summary line
+      // that holds one (the overseer saw it in its tool result) shows "[preview link]" in its place.
+      previewLabels: keptLabels(),
+    });
+  return {
+    live: readLive(),
+    own: readOwnLiveRecords(),
+    isWorker,
+    parents: workerSessions.parents(),
+    get drafts() { return read().drafts; },
+    get titles() { return read().titles; },
+    get sovaNames() { return read().sovaNames; },
+    get groups() { return read().groups; },
+    get seen() { return read().seen; },
+    get attention() { return read().attention; },
+    get fields() { return read().fields; },
+    get stores() { return read().stores; },
+    get previewLabels() { return read().previewLabels; },
+  };
+}
+
+/**
+ * Each listed file's row as rowFor handed it to readiness, before settleGoAsk: readiness keys its
+ * answer by that row (a settled go-ahead ask's turn included), so a row a listing keeps is handed
+ * to readiness as this, exactly as a build of it would hand it, never as the settled row the list shows.
+ */
+const readinessRows = new Map<string, SessionSummary>();
+
+/** When a row changes with no event at all (its signal going after GUESS_IDLE_MS): a build keeps it until then only. */
+const rowExpiry = new Map<string, number>();
+
+/** readinessDue for rows a listing keeps, each as its build handed it to readiness. */
+function readinessDueKept(rows: readonly SessionSummary[]): void {
+  readinessDue(rows.map((r) => readinessRows.get(r.path) ?? r));
+}
+
+/** One file's row as the list shows it, or null when the list leaves it out (an empty husk). */
+async function rowFor(s: BaseSummary, r: RowReads): Promise<SessionSummary | null> {
+  // Empty husks — no user message anywhere in the file — are never listed, so abandoned
+  // new-session stubs don't clutter the archive. Hidden
+  // only when the whole file was read: a first user message beyond the head cap never hides
+  // a session. cleanupSessions("husks") still finds and deletes them by path.
+  // Exception: a husk with a stored composer draft (text or images) is a new session the user
+  // is writing in, not an abandoned stub, so it is listed as a draft row (draftPreview).
+  const draft = r.drafts[s.id];
+  const hasDraft = draftCounts(draft);
+  let preview: string | undefined;
+  // A baton or project overseer file is never a husk: a fresh baton held by the operator (or
+  // waiting for its first link) needs them before anyone has written in it.
+  const special = r.fields(s.path, s.id, s.cwd, cache.get(s.path)?.mtimeMs);
+  if (s.title === "Untitled") {
+    if (await zeroInputOf(s.path)) {
+      // A husk waiting on a dialog (a command run in a new session) is waiting on the user: listed.
+      // So is one that carries a profile: a One at a time profile counts from its pick, so the
+      // session holding it must be somewhere the user can find it (§chat.profiles/singleton).
+      if (!hasDraft && pendingDialogCount(s.path) === 0 && !special.baton && !special.projectOverseer && !s.profile) return null;
+      if (hasDraft) preview = draftPreview(redactPreviewLinks(draft.text), draft.attachments);
+    }
+  }
+  const l = r.live.get(s.path);
+  const ownRec = r.own.get(s.path);
+  // The husk check above reads the DERIVED title on purpose: what keeps an empty session out of
+  // the list is that nobody has written in it, which renaming it doesn't change.
+  const fixed = fixedNameOf({ id: s.id, path: s.path, overseer: !!s.overseer, projectOverseer: special.projectOverseer, baton: !!special.baton, profile: s.profile, createdAt: s.createdAt }, r.sovaNames, r.titles);
+  const row: SessionSummary = {
+    ...withFixedName(withTitle(s, r.titles), fixed),
+    ...outlineOverlay(s, liveOutline(l, ownRec)),
+    live: liveField(l),
+    workers: l?.workers ?? (ownRec ? workerCountsOf(ownRec.rec) : undefined),
+    origin: isWebSession(s.id) ? "web" : "external",
+    archived: isArchived(s.id),
+    ...(r.isWorker(s.path) ? { workerSession: true as const, ...workerOfField(s.path, r.parents) } : {}),
+    ...(r.groups[s.id] !== undefined ? { groupId: r.groups[s.id] } : {}),
+    busy: isSessionBusy(s.path),
+    ...heldChatField(s.path),
+    ...jobsField(s.id, s.path),
+    ...attentionFields(s, l, ownRec, r.seen),
+    ...decisionFields(s, l, ownRec, r.seen, r.attention, r.stores),
+    ...(preview !== undefined ? { draftPreview: preview } : {}),
+    ...(hasDraft ? { hasDraft: true as const } : {}),
+    ...special,
+  };
+  // Merge readiness (§chat.worktrees/readiness): the last background answer; git is never awaited here.
+  const readiness = readinessOverlay(row);
+  // What readiness read this row as: before settleGoAsk drops a settled go-ahead ask, which its key reads.
+  readinessRows.set(s.path, row);
+  // The branches its chat's status row counts, each queue entry as the queue has it now (no Git here either).
+  const branches = branchesOverlay(row);
+  const withMerge = readiness || branches ? { ...row, ...(readiness ? { readiness } : {}), ...(branches ? { branches } : {}) } : row;
+  // A signal goes on its own after GUESS_IDLE_MS (signalsOverlay): no build keeps this row past that.
+  const stored = row.signals ? r.stores.signals.sessions[s.id] : undefined;
+  if (stored) rowExpiry.set(s.path, stored.replyAt + GUESS_IDLE_MS);
+  else rowExpiry.delete(s.path);
+  // A go-ahead ask whose version landed is noted when first seen; one in the queue is hidden while the queue says so.
+  const settled = settleGoAsk(withMerge, askTreesOf(withMerge), r.stores.signals);
+  r.stores.signals = settled.data;
+  return redactPreviewLinksDeep(settled.row, r.previewLabels);
+}
+
+async function buildSessionsNow(track?: { files?: string[]; dirty?: ReadonlySet<string>; allRows?: boolean }): Promise<{ rows: SessionSummary[]; files: string[]; mark: BuildMark }> {
+  const startedAt = Date.now();
+  // Taken before anything is read: a change after it shows in the next build's comparison.
+  const stores = storesGeneration();
+  const rowSeq = rowChangeSeq();
+  const files = track?.files ?? (await listSessionFiles());
   const resolveWindow = await windowResolver();
-  const drafts = readDrafts();
-  const titles = readSessionTitleRecords();
-  const sovaNames = readSovaChatNames();
-  const groups = readAssignments();
-  const seen = readSeen();
-  const attention = readDecisionSettings().features.attention;
-  const fields = fieldLookup();
-  const stores = { tags: tagsReader(), signals: readSignals() };
-  // A kept preview link never reaches the list (§app.project-overseer/previews): a title or summary line
-  // that holds one (the overseer saw it in its tool result) shows "[preview link]" in its place.
-  const previewLabels = keptLabels();
+  const outside = outsideStamp(!!resolveWindow, startedAt);
   // A member whose file is gone KEEPS its assignment, on purpose: the workspace's "This
   // session's file is gone" pane IS that assignment rendered (spec 14-workspaces "Gone from
   // disk"), and pruning here — on every listing pass — would race the pane's own Remove From
@@ -1495,76 +1890,95 @@ async function buildSessionsNow(track?: { files: string[]; dirty: ReadonlySet<st
   const [results, workers] = await Promise.all([summariesOf(ordered, resolveWindow, track?.dirty), workerSessionPaths(ordered.all, track?.dirty)]);
   const present = new Set(files);
   for (const k of cache.keys()) if (!present.has(k)) dropEntry(k);
+  const reads = rowReads((p) => workers.has(p));
+  const live = liveKeys(reads.live, reads.own);
+  const read = new Map<string, string>();
+  // Each row's file as its summary was read: a stamp taken from the cache now could be a newer read
+  // another caller made meanwhile, and keep a row built from the older one.
+  for (const s of results) {
+    const made = s && madeFrom.get(s);
+    if (made) read.set(s.path, made);
+  }
+  // A row the last build made stands while nothing it reads has moved (§app.session-list/listing-reuse):
+  // no bump but this server's session file writes and other rows' own changes, the same row
+  // stores, job folders and worker parents, and its own file, live records and readiness as they were. Every row is built again at least
+  // every KEEP_UNHEARD_MS; a project overseer's or baton's row, whose stores aren't compared, always.
+  // While nothing watches the folders no row is kept: every listing builds every row, as before.
+  const prev = lastMark;
+  const miss = !prev
+    ? "first"
+    : track?.allRows
+      ? "afresh"
+    : tracker.active === 0
+      ? "unwatched"
+    : prev.stores !== stores
+      ? "stores"
+      : prev.outside !== outside
+        ? "outside"
+        : prev.parents !== reads.parents
+          ? "parents"
+          : !sameSet(prev.workers, workers)
+            ? "workers"
+            : startedAt < prev.fullAt || startedAt - prev.fullAt >= KEEP_UNHEARD_MS
+              ? "age"
+              : null;
+  if (miss) keptStats.misses[miss] = (keptStats.misses[miss] ?? 0) + 1;
+  const keepRows = !miss;
   const out: SessionSummary[] = [];
-  const parents = workerSessions.parents();
+  const built = new Set<SessionSummary>();
   for (const s of results) {
     if (!s) continue;
-    // Empty husks — no user message anywhere in the file — are never listed, so abandoned
-    // new-session stubs don't clutter the archive. Hidden
-    // only when the whole file was read: a first user message beyond the head cap never hides
-    // a session. cleanupSessions("husks") still finds and deletes them by path.
-    // Exception: a husk with a stored composer draft (text or images) is a new session the user
-    // is writing in, not an abandoned stub, so it is listed as a draft row (draftPreview).
-    const draft = drafts[s.id];
-    const hasDraft = draftCounts(draft);
-    let preview: string | undefined;
-    // A baton or project overseer file is never a husk: a fresh baton held by the operator (or
-    // waiting for its first link) needs them before anyone has written in it.
-    const special = fields(s.path, s.id, s.cwd, cache.get(s.path)?.mtimeMs);
-    if (s.title === "Untitled") {
-      if (await zeroInputOf(s.path)) {
-        // A husk waiting on a dialog (a command run in a new session) is waiting on the user: listed.
-        // So is one that carries a profile: a One at a time profile counts from its pick, so the
-        // session holding it must be somewhere the user can find it (§chat.profiles/singleton).
-        if (!hasDraft && pendingDialogCount(s.path) === 0 && !special.baton && !special.projectOverseer && !s.profile) continue;
-        if (hasDraft) preview = draftPreview(redactPreviewLinks(draft.text), draft.attachments);
-      }
+    const old = keepRows ? lastRows.get(s.path) : undefined;
+    if (
+      old &&
+      !old.projectOverseer &&
+      !old.baton &&
+      !rowChangedSince(s.path, prev!.rowSeq) &&
+      // A coding session's merged mark is git's, read in the background as its row is built
+      // (build-merged.ts) and told by no event: its row is built every time, as before.
+      old.project?.kind !== "coding" &&
+      startedAt < (rowExpiry.get(s.path) ?? Infinity) &&
+      // A model list change moves a context window with no event: the file's summary has it now.
+      (old.context?.window ?? null) === (s.context?.window ?? null) &&
+      read.has(s.path) &&
+      prev!.files.get(s.path) === read.get(s.path) &&
+      (prev!.live.get(s.path) ?? "") === (live.get(s.path) ?? "")
+    ) {
+      out.push(old);
+      continue;
     }
-    const l = live.get(s.path);
-    const ownRec = own.get(s.path);
-    // The husk check above reads the DERIVED title on purpose: what keeps an empty session out of
-    // the list is that nobody has written in it, which renaming it doesn't change.
-    const fixed = fixedNameOf({ id: s.id, path: s.path, overseer: !!s.overseer, projectOverseer: special.projectOverseer, baton: !!special.baton, profile: s.profile, createdAt: s.createdAt }, sovaNames, titles);
-    const row: SessionSummary = {
-      ...withFixedName(withTitle(s, titles), fixed),
-      ...outlineOverlay(s, liveOutline(l, ownRec)),
-      live: liveField(l),
-      workers: l?.workers ?? (ownRec ? workerCountsOf(ownRec.rec) : undefined),
-      origin: isWebSession(s.id) ? "web" : "external",
-      archived: isArchived(s.id),
-      ...(workers.has(s.path) ? { workerSession: true as const, ...workerOfField(s.path, parents) } : {}),
-      ...(groups[s.id] !== undefined ? { groupId: groups[s.id] } : {}),
-      busy: isSessionBusy(s.path),
-      ...heldChatField(s.path),
-      ...jobsField(s.id, s.path),
-      ...attentionFields(s, l, ownRec, seen),
-      ...decisionFields(s, l, ownRec, seen, attention, stores),
-      ...(preview !== undefined ? { draftPreview: preview } : {}),
-      ...(hasDraft ? { hasDraft: true as const } : {}),
-      ...special,
-    };
-    // Merge readiness (§chat.worktrees/readiness): the last background answer; git is never awaited here.
-    const readiness = readinessOverlay(row);
-    // The branches its chat's status row counts, each queue entry as the queue has it now (no Git here either).
-    const branches = branchesOverlay(row);
-    const withMerge = readiness || branches ? { ...row, ...(readiness ? { readiness } : {}), ...(branches ? { branches } : {}) } : row;
-    // A go-ahead ask whose version landed is noted when first seen; one in the queue is hidden while the queue says so.
-    const settled = settleGoAsk(withMerge, askTreesOf(withMerge), stores.signals);
-    stores.signals = settled.data;
-    out.push(redactPreviewLinksDeep(settled.row, previewLabels));
+    const row = await rowFor(s, reads);
+    if (row) {
+      out.push(row);
+      built.add(row);
+    }
   }
+  keptStats.rowsKept += out.length - built.size;
+  keptStats.rowsBuilt += built.size;
+  // What building a kept row would have set off: a readiness read due by age or Git stamps.
+  readinessDueKept(out.filter((r) => !built.has(r)));
   pruneReadiness(out);
-  for (let i = 0; i < out.length; i++) out[i] = await withUnreadReplies(out[i]!);
+  for (const p of readinessRows.keys()) if (!present.has(p)) readinessRows.delete(p);
+  for (const p of rowExpiry.keys()) if (!present.has(p)) rowExpiry.delete(p);
+  for (let i = 0; i < out.length; i++) if (built.has(out[i]!)) out[i] = await withUnreadReplies(out[i]!);
   // A row equal to the last listing's (same keys, in order, same values) is that object itself:
   // rows are shared and never mutated, and a reader that keys work by row (the session feed's
   // comparison) does it once per change instead of once per row per listing.
   for (let i = 0; i < out.length; i++) {
-    const prev = lastRows.get(out[i]!.path);
-    if (prev && sameValue(prev, out[i])) out[i] = prev;
+    const prevRow = lastRows.get(out[i]!.path);
+    if (prevRow && prevRow !== out[i] && sameValue(prevRow, out[i])) out[i] = prevRow;
   }
   lastRows = new Map(out.map((r) => [r.path, r]));
+  const mark: BuildMark = { stores, rowSeq, outside, files: read, live, parents: reads.parents, workers, fullAt: keepRows ? prev!.fullAt : startedAt };
+  lastMark = mark;
   out.sort(byActivity);
-  return { rows: out, files };
+  return { rows: out, files, mark };
+}
+
+function sameSet<T>(a: ReadonlySet<T>, b: ReadonlySet<T>): boolean {
+  if (a.size !== b.size) return false;
+  for (const x of a) if (!b.has(x)) return false;
+  return true;
 }
 
 /**
@@ -1573,6 +1987,7 @@ async function buildSessionsNow(track?: { files: string[]; dirty: ReadonlySet<st
  * every context gauge simply reports `window: null` instead of failing the listing.
  */
 async function windowResolver(): Promise<WindowResolver | undefined> {
+  if (listPhases.window) return listPhases.window();
   try {
     const runtime = await getModelRuntime();
     return (ref) => contextWindow(ref, runtime);

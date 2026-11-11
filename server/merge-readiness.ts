@@ -24,7 +24,7 @@ import { stateViewOf } from "./harness/pi/state";
 import { WORKTREES } from "./harness/state-kinds";
 import { DIRTY_TTL_MS, execGit, gitInputsStamp, gitRefsStamp, type GitRunner, linkedCheckoutOf, queueTargetOfTree, worktreeInsights, type WorktreeInsights } from "./worktrees";
 import { goneTreeState, type GoneState } from "./removed-worktrees";
-import { sessionsChanged } from "./list-generation";
+import { sessionRowChanged, sessionsChanged } from "./list-generation";
 import { opTrack } from "./stall-recorder";
 import { needsRestart } from "./restart-paths";
 
@@ -1308,7 +1308,8 @@ async function refresh(input: RefreshInput): Promise<void> {
   // instead of waiting for a listing that happens to come.
   const now = cache.get(s.path);
   if (JSON.stringify([now?.value ?? null, now?.branches ?? null, now?.replyHeads ?? null]) !== JSON.stringify([prev?.value ?? null, prev?.branches ?? null, prev?.replyHeads ?? null])) {
-    sessionsChanged();
+    // Only this row reads its answer: a listing that keeps rows builds this one again.
+    sessionRowChanged(s.path);
     for (const fn of readinessListeners) {
       try {
         fn(s.path);
@@ -1500,6 +1501,19 @@ export function readinessOverlay(s: SessionSummary): SessionReadiness | undefine
     void drain();
   }
   return shown(hit?.value);
+}
+
+/**
+ * For rows a listing keeps instead of building again (sessions-index.ts): what readinessOverlay
+ * would queue for them, which with their file and row unchanged is a read due by age or by its
+ * trees' Git stamps, or one with no answer yet (never read, or its read failed): only those rows are looked at.
+ */
+export function readinessDue(rows: readonly SessionSummary[]): void {
+  for (const s of rows) {
+    const hit = cache.get(s.path);
+    // No answer yet (never read, or its read failed): asked again, as a build of the row would.
+    if (!hit || hit.scan?.found || hit.stamps) readinessOverlay(s);
+  }
 }
 
 /** Every listed session's readiness, and the follow-up store kept to listed sessions. */

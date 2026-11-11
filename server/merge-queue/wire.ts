@@ -549,8 +549,8 @@ async function threadVerbDeps(served: { projectIdOf(root: string): string | null
     async threadAnswer(root, id, text, by) {
       let from = by.kind === "operator" ? "the user, on the Merge Queue tab" : "the user, relayed by the branch's chat";
       if (by.session) {
-        const { listSessions } = await import("../sessions-index");
-        const s = (await listSessions().catch(() => [])).find((x) => x.id === by.session);
+        const { listedSession } = await import("../sessions-index");
+        const s = await listedSession(by.session).catch(() => undefined);
         if (s) from = `the user, relayed by their chat "${s.title}"`;
       }
       const r = keeper().answer(root, id, text, { ...by, from });
@@ -603,8 +603,8 @@ export async function worktreeQueueMadeNow(): Promise<(worktree: string) => bool
 
 /** A worktree row's owner: its chat's id, file, title and archived mark. */
 async function ownerRowOf(o: Owner): Promise<SessionWorktreeInfo["mergeOwner"]> {
-  const { listSessions } = await import("../sessions-index");
-  const s = (await listSessions().catch(() => [])).find((x) => x.id === o.session);
+  const { listedSession } = await import("../sessions-index");
+  const s = await listedSession(o.session).catch(() => undefined);
   const title = s?.title && s.title !== "Untitled" ? s.title : undefined;
   return { session: o.session, ...(s?.path ? { path: s.path } : {}), ...(title ? { title } : {}), ...(o.archived || s?.archived ? { archived: true as const } : {}) };
 }
@@ -762,8 +762,8 @@ export async function startMergeQueue(
   const legacyNames = self.state === "ok" ? { root: self.root, file: join(stateRoot(), "merge-round.json") } : undefined;
   // A request to the branch's chat, on the merge queue's chat queue there (§chat.merge-queue/requests).
   const sendTo = async (session: string, text: string, info?: { kind?: string; branch?: string; entry?: string; place?: string }): Promise<void> => {
-    const { listSessions } = await import("../sessions-index");
-    const s = (await listSessions()).find((x) => x.id === session);
+    const { listedSession } = await import("../sessions-index");
+    const s = await listedSession(session);
     if (!s) throw new Error(`no session ${session}`);
     await (await import("./wake")).sendQueueWake(s.path, text, undefined, info);
   };
@@ -813,8 +813,8 @@ export async function startMergeQueue(
     return true;
   };
   const sessionPath = async (session: string): Promise<string | null> => {
-    const { listSessions } = await import("../sessions-index");
-    return (await listSessions()).find((x) => x.id === session)?.path ?? null;
+    const { listedSession } = await import("../sessions-index");
+    return (await listedSession(session))?.path ?? null;
   };
   const mc = new MergeCards({
     dir: join(base, "cards"),
@@ -853,8 +853,8 @@ export async function startMergeQueue(
   const { MERGE_QUEUE_PROFILES } = await import("../merge-readiness");
   const notes = new LandingNotes({
     repos: async (session) => {
-      const { listSessions } = await import("../sessions-index");
-      const s = (await listSessions()).find((x) => x.id === session);
+      const { listedSession } = await import("../sessions-index");
+      const s = await listedSession(session);
       if (!s || (s.profile && MERGE_QUEUE_PROFILES.includes(s.profile.id))) return null;
       const roots: string[] = [];
       for (const dir of [s.cwd, ...(s.readiness?.trees ?? []).map((t) => t.path)]) {
@@ -889,8 +889,8 @@ export async function startMergeQueue(
   // A chat is idle read as the worktree readiness reads it (server/merge-readiness.ts runningNow: busy, working, or a
   // worker working); an unknown chat counts as idle.
   const chatIdle = async (session: string): Promise<boolean> => {
-    const { listSessions } = await import("../sessions-index");
-    const x = (await listSessions()).find((y) => y.id === session);
+    const { listedSession } = await import("../sessions-index");
+    const x = await listedSession(session);
     return !x || !(x.busy || x.activity?.state === "working" || (x.workers?.working ?? x.live?.workers?.working ?? 0) > 0);
   };
   const cardsDo = (p: Promise<void>) => void p.catch((err) => console.warn(`[merge-queue] card: ${err instanceof Error ? err.stack : err}`));
@@ -921,14 +921,14 @@ export async function startMergeQueue(
     // The chat's own newest check run, as its last readiness reading saw it (never a fresh read): a failing one keeps a
     // fix out of line (§app.merge-queue/standing-approval), in the words Ready to land uses.
     chatCheckFailing: async (session) => {
-      const [{ listSessions }, { readinessChecksOf }, { lastCheckWords }] = await Promise.all([import("../sessions-index"), import("../merge-readiness"), import("../ready-to-land")]);
-      const path = (await listSessions()).find((s) => s.id === session)?.path;
+      const [{ listedSession }, { readinessChecksOf }, { lastCheckWords }] = await Promise.all([import("../sessions-index"), import("../merge-readiness"), import("../ready-to-land")]);
+      const path = (await listedSession(session))?.path;
       const c = path ? readinessChecksOf(path)?.lastCheck : undefined;
       return c && !c.ok ? lastCheckWords(c) : null;
     },
     newestReading: async (worktree, tip) => {
-      const [{ listSessions }, { readinessReading }, { newestReadingOf }] = await Promise.all([import("../sessions-index"), import("../merge-readiness"), import("../ready-to-land")]);
-      return newestReadingOf(worktree, tip, { owner: worktreeOwnerOf, pathOf: async (id) => (await listSessions()).find((s) => s.id === id)?.path, reading: readinessReading, canonical });
+      const [{ listedSession }, { readinessReading }, { newestReadingOf }] = await Promise.all([import("../sessions-index"), import("../merge-readiness"), import("../ready-to-land")]);
+      return newestReadingOf(worktree, tip, { owner: worktreeOwnerOf, pathOf: async (id) => (await listedSession(id))?.path, reading: readinessReading, canonical });
     },
     // A test check broken on the target: one notification that opens the project's Merge Queue tab (its Needs you
     // holds the flag), so the user can start a chat to fix the target.
@@ -987,8 +987,8 @@ export async function startMergeQueue(
     // can't be interrupted. A request's title is its chat's.
     chatIdle,
     chatTitle: async (session) => {
-      const { listSessions } = await import("../sessions-index");
-      const t = (await listSessions()).find((y) => y.id === session)?.title;
+      const { listedSession } = await import("../sessions-index");
+      const t = (await listedSession(session))?.title;
       return t && t !== "Untitled" ? t : null;
     },
     ...(legacyNames ? { legacyNames } : {}),
@@ -1186,8 +1186,8 @@ export async function startMergeQueue(
       queue: (root) => q.get(root),
       // The chat's repo: its cwd's main checkout.
       repoOf: async (session) => {
-        const { listSessions } = await import("../sessions-index");
-        const s = (await listSessions().catch(() => [])).find((x) => x.id === session);
+        const { listedSession } = await import("../sessions-index");
+        const s = await listedSession(session).catch(() => undefined);
         const p = s?.cwd ? await projectOf(s.cwd).catch(() => null) : null;
         return p?.state === "ok" && p.git ? p.root : null;
       },

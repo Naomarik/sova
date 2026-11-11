@@ -872,13 +872,22 @@ export class TeamStore {
 	private checkMembers(members: readonly TeamMemberInput[], taken: Set<string>, defaults: TeamDefaults | undefined): { role: string; ownedPaths: string[]; orchestrator: boolean; duty?: MemberDuty; successorOf?: string; successorOfId?: string; task: string; input: TeamMemberInput }[] {
 		if (!Array.isArray(members) || !members.length) throw new Error("Provide at least one team member.");
 		const seen = new Set<string>();
+		// Each member's note folder is named after its role's slug, which its confinement may write: two roles with one slug would share it.
+		const slugKey = (role: string) => roleSlug(role).toLowerCase();
+		const takenSlugs = new Set([...taken].map(slugKey));
+		const seenSlugs = new Map<string, string>();
 		return members.map((input) => {
 			const role = checkLabel("role", input.role);
 			if (WORKER_ID.test(role)) throw new Error(`Role ${role} looks like a worker ID; choose a descriptive role.`);
 			const key = labelKey(role);
 			if (seen.has(key)) throw new Error(`Duplicate role in request: ${role}. Each member needs a unique role.`);
 			if (taken.has(key)) throw new Error(`Role ${role} already exists in this team (or is being added concurrently); roles are unique per team.`);
+			const slug = slugKey(role);
+			const clash = seenSlugs.get(slug);
+			if (clash !== undefined) throw new Error(`Roles ${clash} and ${role} in this request share one handover-note folder (${roleSlug(role)}); each member needs a distinct role.`);
+			if (takenSlugs.has(slug)) throw new Error(`A role like ${role} (note folder ${roleSlug(role)}) already exists in this team (or is being added concurrently); roles are unique per team.`);
 			seen.add(key);
+			seenSlugs.set(slug, role);
 			if (typeof input.prompt !== "string" || !input.prompt.trim()) throw new Error(`Task for ${role} must not be blank.`);
 			const orchestrator = input.orchestrator === true;
 			if ((input.duty === "coordinator" || input.duty === "monitor") && memberTooling(memberBackend(input, defaults)) === "none")

@@ -15,14 +15,17 @@ export { sessionDirKey };
  * first number not taken (case-insensitive) wins. builder → builder-2 → builder-3.
  */
 export function successorRole(role: string, taken: Iterable<string>, maxChars = 64): string {
-	const used = new Set([...taken].map((r) => r.trim().toLowerCase()));
+	const list = [...taken];
+	const used = new Set(list.map((r) => r.trim().toLowerCase()));
+	// A candidate whose note folder (roleSlug) is a live member's is taken too.
+	const usedSlugs = new Set(list.map((r) => roleSlug(r).toLowerCase()));
 	const match = /^(.*\S)-(\d+)$/.exec(role.trim());
 	const base = match ? match[1] : role.trim();
 	let n = match ? Number(match[2]) + 1 : 2;
 	for (;;) {
 		const suffix = `-${n}`;
 		const candidate = `${base.slice(0, Math.max(1, maxChars - suffix.length))}${suffix}`;
-		if (!used.has(candidate.toLowerCase())) return candidate;
+		if (!used.has(candidate.toLowerCase()) && !usedSlugs.has(roleSlug(candidate).toLowerCase())) return candidate;
 		n++;
 	}
 }

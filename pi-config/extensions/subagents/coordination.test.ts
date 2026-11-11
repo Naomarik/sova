@@ -25,6 +25,7 @@ import {
 test("successor names strip an existing -N suffix and take the first free number", () => {
 	assert.equal(successorRole("builder", []), "builder-2");
 	assert.equal(successorRole("builder-2", ["builder", "builder-2"]), "builder-3");
+	assert.equal(successorRole("qa-lead", ["qa-lead", "qa lead-2"]), "qa-lead-3", "a successor never takes a live member's note folder");
 	assert.equal(successorRole("builder", ["builder", "Builder-2"]), "builder-3", "taken roles collide case-insensitively");
 	assert.equal(successorRole("builder-3", ["builder-4"]), "builder-5");
 	assert.equal(successorRole("qa lead", []), "qa lead-2");

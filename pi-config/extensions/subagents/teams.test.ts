@@ -215,6 +215,11 @@ test("add validation: history is read-only, roles unique across committed and pe
 	assert.throws(() => addTo(store, "team_09", [{ role: "x", prompt: "t" }]), /No such team: team_09/);
 	assert.throws(() => addTo(store, "missing", [{ role: "x", prompt: "t" }]), /No such team: missing/);
 	assert.throws(() => addTo(store, prepared.teamId, [{ role: " lead ", prompt: "t" }]), /already exists in this team/);
+	// Roles that share one note folder (roleSlug) are refused like duplicates, in an add and within one create.
+	const qa = addTo(store, prepared.teamId, [{ role: "qa lead", prompt: "t" }]);
+	assert.throws(() => addTo(store, prepared.teamId, [{ role: "QA-lead", prompt: "t" }]), /role like QA-lead .*already exists/);
+	qa.release();
+	assert.throws(() => createIn(store, { name: "slugs", objective: "obj", members: [{ role: "qa lead", prompt: "t" }, { role: "qa-lead", prompt: "t" }] }), /qa lead and qa-lead .*share one handover-note folder/);
 	const pending = addTo(store, "live", [{ role: "tests", prompt: "t" }]);
 	assert.equal(pending.teamId, prepared.teamId);
 	assert.equal(pending.name, "Live");

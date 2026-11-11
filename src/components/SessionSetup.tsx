@@ -187,17 +187,21 @@ export function SessionSetupCard(props: { path: string; editable?: boolean; tool
     const s = setup();
     return project() && s && "ok" in s && s.ok.state === "ok" ? waitingSkills(s.ok.skills) : [];
   };
-  /** What is being saved: one skill's name, or ALL for Approve All; null when nothing is. */
-  const ALL = "*"; // never a skill name: those are lowercase letters, digits and hyphens
-  const [deciding, setDeciding] = createSignal<string | null>(null);
+  /** What is being saved: Approve All, or one skill's row; null when nothing is. */
+  type Saving = { all: true } | { name: string };
+  const [deciding, setDeciding] = createSignal<Saving | null>(null);
+  const savingAll = () => {
+    const d = deciding();
+    return !!d && "all" in d;
+  };
   /** Approve or Disallow a waiting skill for the project (the project's Skills card's store), then read again. */
-  const decide = (name: string, state: "approved" | "disallowed") => save(name, { [name]: state }, name);
+  const decide = (name: string, state: "approved" | "disallowed") => save({ name }, { [name]: state }, name);
   /** Approve All: every waiting skill in one save, then read again. */
   const approveAll = () => {
     const names = waiting();
-    if (names.length) save(ALL, approveAllChange(names), names.length === 1 ? names[0]! : `${names.length} skills`);
+    if (names.length) save({ all: true }, approveAllChange(names), names.length === 1 ? names[0]! : `${names.length} skills`);
   };
-  const save = (key: string, change: Record<string, "approved" | "disallowed">, what: string) => {
+  const save = (key: Saving, change: Record<string, "approved" | "disallowed">, what: string) => {
     const p = project();
     if (!p || deciding()) return;
     const mine = run;
@@ -262,7 +266,7 @@ export function SessionSetupCard(props: { path: string; editable?: boolean; tool
                   type="button"
                   class="button button-sm button-primary"
                   aria-disabled={deciding() ? "true" : undefined}
-                  aria-busy={deciding() === ALL ? "true" : undefined}
+                  aria-busy={savingAll() ? "true" : undefined}
                   onClick={approveAll}
                 >
                   {APPROVE_ALL}

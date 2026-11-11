@@ -28,6 +28,7 @@ import type {
   WorkerState,
 } from "./chat-runtime";
 import type { LlmProcessSnapshot } from "../pi-config/extensions/llm-inflight/tracker";
+import type { FolderRule } from "./folder-rule";
 import type { HEntry } from "./harness-history";
 import type { ReplyTiming } from "./harness-wire";
 import type { ToolResult } from "./harness-tools";
@@ -141,6 +142,9 @@ export type ChatOpenFrame =
       special?: SpecialSpec;
       /** A worker chat's loadout (proto 3): the chat opens as that worker, never as an ordinary chat. */
       worker?: WorkerSpec;
+      /** An ordinary chat: its folder's context file and skill decisions, read by the server at this open
+          (a chat before its first message builds with them; server/projects/folder-rule.ts). */
+      folderRule?: FolderRule;
     }
   | { t: "opened"; id: string; ok: true; mirror: ChatRuntimeMirror }
   | { t: "opened"; id: string; ok: false; refusal?: ChatRefusal; error?: { message: string } };

@@ -301,11 +301,18 @@ test("off rows stay listed, and no total counts them (§chat.transcript/setup-ca
 test("flipped sends the whole off set after one flip, and only that flip changes", () => {
   const f = (path: string, off?: true) => ({ path, bytes: 1, lines: 1, ...(off ? { off } : {}) });
   const s = setup({ context: [f("/g.md", true), f("/l.md")], skills: [{ name: "a", ...f("/a", true) }, { name: "b", ...f("/b") }] });
-  assert.deepEqual(flipped(s, "context", "/l.md", false), { offContext: ["/g.md", "/l.md"], offSkills: ["a"] });
-  assert.deepEqual(flipped(s, "context", "/g.md", true), { offContext: [], offSkills: ["a"] });
-  assert.deepEqual(flipped(s, "skill", "b", false), { offContext: ["/g.md"], offSkills: ["a", "b"] });
-  assert.deepEqual(flipped(s, "skill", "a", true), { offContext: ["/g.md"], offSkills: [] });
-  assert.deepEqual(flipped(s, "skill", "a", false), { offContext: ["/g.md"], offSkills: ["a"] }, "already off: not doubled");
+  assert.deepEqual(flipped(s, "context", "/l.md", false), { offContext: ["/g.md", "/l.md"], offSkills: ["/a"] });
+  assert.deepEqual(flipped(s, "context", "/g.md", true), { offContext: [], offSkills: ["/a"] });
+  assert.deepEqual(flipped(s, "skill", "/b", false), { offContext: ["/g.md"], offSkills: ["/a", "/b"] });
+  assert.deepEqual(flipped(s, "skill", "/a", true), { offContext: ["/g.md"], offSkills: [] });
+  assert.deepEqual(flipped(s, "skill", "/a", false), { offContext: ["/g.md"], offSkills: ["/a"] }, "already off: not doubled");
+});
+
+test("two skills of one name are two items: a flip names the one by its SKILL.md", () => {
+  const f = (path: string, off?: true) => ({ path, bytes: 1, lines: 1, ...(off ? { off } : {}) });
+  const s = setup({ context: [], skills: [{ name: "x", ...f("/proj/.agents/skills/x/SKILL.md") }, { name: "x", ...f("/home/u/.agents/skills/x/SKILL.md", true) }] });
+  assert.deepEqual(flipped(s, "skill", "/proj/.agents/skills/x/SKILL.md", false).offSkills, ["/home/u/.agents/skills/x/SKILL.md", "/proj/.agents/skills/x/SKILL.md"]);
+  assert.deepEqual(flipped(s, "skill", "/home/u/.agents/skills/x/SKILL.md", true).offSkills, []);
 });
 
 test("a context file in the session's own folder is named from there; one in a sibling or parent isn't", () => {

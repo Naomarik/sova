@@ -1207,6 +1207,11 @@ whether the person stays on the chat, moves to another chat, home or Back, reloa
 closes the tab. A reconnect is not this: once the tab's connection to the chat has opened, Send
 waits through a drop (§chat.composer/disabled-states).
 
+- **A new chat that asks first.** In the asking mode (§chat.context-approval/held-send) a watched
+  page's first message into a chat that still has Waiting items is refused by the server (code
+  `decide-first`, on the chat's socket and on `POST /api/sessions/prompt` alike), and the message comes
+  back as the draft, its setup card read again; Send then waits until nothing is left to decide. A
+  chat no one watches is never held (§chat.context-approval/unwatched).
 - **Straight to the server.** The tab writes the message, and anything asked of that chat before
   it (a change of model, thinking level, Claude login, mode or sandbox, a rewind, regenerate,
   Remove of a queued message or `/compact`), on the connection that wakes or first opens the chat
@@ -1817,8 +1822,15 @@ skills it is offered, for this one session only.
   and not open in a terminal. Otherwise the card is as before, with no switches, though a row
   this session keeps off still reads off (except while a terminal has it open, since the TUI
   loads every row).
-- **On by default, every time.** Each new session starts with every file and skill row on. Nothing is
-  remembered between sessions, per folder or globally: the choice lives in the session alone.
+- **Where the switches start.** Each context file and skill row starts as its folder's decisions say
+  (§chat/context-approval): the folder is the session's project (its folder, a folder inside it, or
+  one of its worktrees, as §app/projects matches folders), or the session's own folder when it is no
+  project. A Disallowed row starts off, saying `Off for this project` under its name, and its switch
+  still turns it on for this one session (§chat.skill-sources/project-new-chats). In the default mode
+  every other row starts on; in the asking mode a Waiting row starts off too, with Approve and
+  Disallow (§chat.context-approval/held-send). Turning a row on with its switch never counts as
+  deciding it, and turning on a row its folder keeps off (Disallowed, or Waiting while asking) is the
+  operator's own page only (§chat.context-approval/who). A flip itself lives in the session alone.
 - **MCP Servers.** The card's MCP Servers group, after Tools, has one row for each server the chat
   could list (§app.mcp/tool-list): its name, its token cost measured at its last Check, and a switch
   that follows this section's window and flip. A server starts as its New Chats switch says, not
@@ -1832,14 +1844,29 @@ skills it is offered, for this one session only.
 - **A flip applies at once.** The card sends the session's whole off set
   (`POST /api/sessions/loadout {path, offContext, offSkills, offMcp, onMcp}`), and while it applies every switch
   is disabled. The server writes a hidden `custom` entry `customType: "sova-loadout"`, data
-  `{v: 1, offContext: [absolute paths], offSkills: [skill names], offMcp: [server names], onMcp:
-  [server names]}`, the last two only where a flip differs from the server's New Chats switch, newest
+  `{v: 1, offContext: [absolute paths], offSkills: [SKILL.md paths], onSkills?: [SKILL.md paths],
+  onContext?: [absolute paths], asking?: true, onlyContext?: [absolute paths], onlySkills?: [SKILL.md
+  paths], offMcp: [server names], onMcp: [server names]}` (an entry from before skills were told apart by
+  place names them in `offSkills` by name), the last two only where a flip differs from the server's New Chats switch, newest
   on the branch wins, then
   rebuilds the session's runtime the way a profile pick does: open tabs get `reloaded` and
   reconnect, keeping the draft. The answer is the card's new loadout, which it draws in place. A
   refusal (409: "Context files, skills and MCP servers are fixed once a message is sent.", mid-turn, open in a
   terminal, a foreign writer, a special session) changes nothing and is shown as a toast. A set
   equal to the one the session already has writes nothing and rebuilds nothing.
+- **Before the first message.** The entry holds only this session's flips against its folder's
+  decisions: its `offSkills` and `offContext` the ones it switched off, its `onSkills` and `onContext`
+  the ones its folder keeps off that it switched on. The session is built from its folder's decisions in the mode
+  Sova is in, with its flips laid over them.
+- **Written at the first message too.** When the first message is sent, the server writes the entry
+  once, before the message goes in, so the list is fixed for the session's life
+  (§chat.context-approval/fixed). A session started in the default mode gets what it has off then as
+  its `offContext` and `offSkills` (and the ones its folder keeps off that it keeps on as `onSkills`
+  and `onContext`); from then on only those lists count, and a session with nothing off and no entry gets none. A session started
+  in the asking mode always gets one, with `asking: true` and the exact lists of what it may load,
+  `onlyContext` and `onlySkills`: anything not on them stays off, even what appears later. A session
+  past its first message with no entry, or with one and no `asking` (one started before this
+  feature), keeps loading as its entry says and never takes up its folder's decisions.
 - **The entry.** It records exclusions only, never context: no file text, no skill text. It draws
   no transcript row, so writing it keeps the empty state and the session still counts as before
   its first message. It is never LLM context and the TUI ignores it.
@@ -1850,9 +1877,12 @@ skills it is offered, for this one session only.
   that no longer exists is ignored. Sova-hosted runtimes honour it for every model, pi's and Claude
   Code's alike (the Claude Code provider sends pi's own system prompt). Re-opening the session,
   and restarting the server, rebuild the runtime from the same entry, so the choice holds.
-- **What it does not change.** A TUI that opens the session, and any worker the session spawns,
-  load their own context files and skills: they do not read this entry. A remote session's card
-  has no rows, so it has no switches.
+- **What it does not change.** A TUI that opens the session loads its own context files and
+  skills: it does not read this entry. A remote session's card has no rows, so it has no switches.
+- **Workers and subfolders.** A worker the session starts gets exactly the session's fixed list and
+  mode, context files included (§chat.context-approval/fixed). The instruction files and skills of
+  folders inside the session's folder follow the entry too: a file or skill it has off never attaches
+  (§chat.subfolder-instructions/loading, §chat.subfolder-skills/offering).
 - **Off rows and the totals.** A row that is off stays listed, dimmed, with its switch off. The
   Context and Skills headings still count every row listed, but each group's total and the
   `System context` line add up only the rows that are on, so they say what this session loads and

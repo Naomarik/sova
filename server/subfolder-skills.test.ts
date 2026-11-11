@@ -96,7 +96,7 @@ test("a rescued skill is offered; one with no description isn't", () => {
 
 test("a file the starting list has, a name switched off and a file the chat may not see aren't offered", () => {
   const cwd = project({ "svc/.claude/skills/a/SKILL.md": skill("a"), "svc/.claude/skills/b/SKILL.md": skill("b"), "svc/.claude/skills/c/SKILL.md": skill("c"), "svc/.claude/skills/d/SKILL.md": skill("d"), "svc/x.ts": "" });
-  const [block] = attach(cwd, "svc/x.ts", { startingFile: (f) => f.endsWith("/a/SKILL.md"), off: (n) => n === "b", allow: (f) => !f.endsWith("/c/SKILL.md") });
+  const [block] = attach(cwd, "svc/x.ts", { startingFile: (f) => f.endsWith("/a/SKILL.md"), off: (s) => s.name === "b", allow: (f) => !f.endsWith("/c/SKILL.md") });
   assert.deepEqual([...block!.matchAll(/<name>(\w+)<\/name>/g)].map((m) => m[1]), ["d"]);
 });
 

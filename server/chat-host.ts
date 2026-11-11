@@ -398,6 +398,8 @@ export class ChatHostRouter {
     // A chat's retired folder comes back before a message reaches it (§chat.worktrees/retirement).
     needsBeforeMessage: (h) => needsBringBack(h.mirror),
     beforeMessage: async (h) => void (await bringBackForChat(h)),
+    // A page's first message into a chat that asks first waits until nothing is left to decide (§chat.context-approval/held-send).
+    waitingBeforeFirst: async (h) => (await import("./session-setup")).waitingForSession(h.path),
     state: (h) => {
       const m = h.mirror;
       const sup = this.sup;
@@ -502,7 +504,9 @@ export class ChatHostRouter {
     const origin = currentLinkOrigin();
     const opening = takeOpeningChoice(path);
     const served = await servedToolsForChat(path, sessionId, () => this.remotes.get(path)?.mirror.monitor.title, kind);
-    link.send({ t: "open", id, path, force, ...(opening ? { opening } : {}), link: origin ? { origin, token: sovaToken() } : null, served, ...(special ? { special } : {}) });
+    // An ordinary chat's project skill defaults, read now: the chat's build can't ask the server mid-open.
+    const folderRule = special ? null : await (await import("./projects/folder-rule")).folderRuleForSession(path);
+    link.send({ t: "open", id, path, force, ...(opening ? { opening } : {}), link: origin ? { origin, token: sovaToken() } : null, served, ...(special ? { special } : {}), ...(folderRule ? { folderRule } : {}) });
     const f: FrameOf<"opened"> = await answer;
     if (f.ok) return f.mirror;
     if (f.refusal) throw errorOfRefusal(f.refusal);

@@ -120,7 +120,7 @@
   "§app.settings-dialog/general": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "unreviewed",
     "code": [
       "src/lib/recent.ts",
       "src/lib/summary-line.ts",
@@ -134,7 +134,8 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-10-14T15:54Z"
+      "at": "2026-11-11T10:12Z",
+      "source": "pi-session:ddb0e3b6-cee0-49d4-939d-916b8e8a54b1#321c1f46"
     }
   },
   "§app.settings-dialog/memory": {

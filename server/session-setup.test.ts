@@ -87,6 +87,7 @@ test("an open chat's own loader is the answer, and the fallback is never asked",
   let loaderCalls = 0;
   const runtime: Loadout = loadout({ context: [{ path: join(dir, "AGENTS.md") }], skills: [{ name: "a", filePath: join(cwd, "SKILL.md"), description: "does a" }] });
   const setup = await S.getSessionSetup(sessionFile(cwd), {}, {
+    approvals: () => null,
     runtime: () => runtime,
     loader: () => {
       loaderCalls++;
@@ -114,6 +115,7 @@ test("with nothing open, pi's loader answers — and says it is the lower bound"
 test("a listed file is sized from disk, a project prompt source is reported when there is one", async () => {
   const dir = fresh({ "AGENTS.md": "one\ntwo\n", "SYSTEM.md": "sys\n", "APPEND.md": "app\n" });
   const setup = await S.getSessionSetup(sessionFile(dir), {}, {
+    approvals: () => null,
     runtime: () => null,
     loader: () => Promise.resolve(loadout({ context: [{ path: join(dir, "AGENTS.md") }], systemPrompt: join(dir, "SYSTEM.md"), appendSystemPrompt: [join(dir, "APPEND.md")] })),
     exists: () => true,

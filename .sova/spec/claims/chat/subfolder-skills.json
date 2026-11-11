@@ -28,7 +28,7 @@
       "§chat.transcript/setup-card-toggles"
     ],
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "unreviewed",
     "code": [
       "server/subfolder-skills.ts",
       "server/subfolder-skills.test.ts",
@@ -42,8 +42,8 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-06T18:26Z",
-      "source": "pi-session:01a1b07d-be49-727f-8989-d4d0378c61bb#55377061"
+      "at": "2026-11-11T10:12Z",
+      "source": "pi-session:ddb0e3b6-cee0-49d4-939d-916b8e8a54b1#321c1f46"
     }
   },
   "§chat/subfolder-skills": {

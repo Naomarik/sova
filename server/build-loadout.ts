@@ -89,6 +89,22 @@ const str = (v: unknown): string => (typeof v === "string" ? v : "");
 const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v);
 const isoOf = (v: unknown): string => (typeof v === "number" && Number.isFinite(v) ? new Date(v).toISOString() : typeof v === "string" ? v : "");
 
+/** Builds the operator's page starts with a first prompt: held as the chat's draft while it has something to decide. */
+const holdFirstOf = new Set<string>();
+/** Those held, with how many items waited. */
+const heldFirst = new Map<string, number>();
+/** Its first prompt waits as its draft when the chat asks first and something is still to decide (set before its start). */
+export function holdFirstPrompt(sessionId: string, on: boolean): void {
+  if (on) holdFirstOf.add(sessionId);
+  else holdFirstOf.delete(sessionId);
+}
+/** How many items waited when its first prompt was held as its draft (read once), or undefined when it was sent. */
+export function takeHeldFirst(sessionId: string): number | undefined {
+  const n = heldFirst.get(sessionId);
+  heldFirst.delete(sessionId);
+  return n;
+}
+
 /** Session files made here since the index last looked (the index finds them later). */
 const fresh = new Map<string, string>();
 
@@ -448,7 +464,18 @@ export function registerBuildEffects(host: OrgHostApi, engine: string): void {
   host.effects.register("first-prompt", async (e) => {
     const { sessionId } = sessionOf(host, e);
     if (seeded.has(sessionId)) return {};
-    const r = await (await import("./session-prompt")).promptSession(pathOrThrow(sessionId), str(e.prompt));
+    const path = pathOrThrow(sessionId);
+    // The operator's page started it in a folder that asks first, with something still to decide: the message waits as
+    // the new chat's draft, and its Send waits for the decisions like any first message (§chat.context-approval/held-send).
+    if (holdFirstOf.delete(sessionId)) {
+      const waiting = await (await import("./session-setup")).waitingForSession(path).catch(() => 0);
+      if (waiting > 0) {
+        (await import("./drafts")).putBackDraft(sessionId, [str(e.prompt)]);
+        heldFirst.set(sessionId, waiting);
+        return {};
+      }
+    }
+    const r = await (await import("./session-prompt")).promptSession(path, str(e.prompt));
     if (!r.ok) throw new Error(r.error);
     return {};
   });

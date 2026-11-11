@@ -21,7 +21,10 @@ turn and no restart of a Claude process.
   gets the block in the tool result like any other text.
 - **In one folder.** `.agents/skills` first, then `.claude/skills`, as at a chat's start; the first of
   two with one name is offered. A file the chat's starting list already has isn't offered again. A
-  name this chat has switched off (§chat.transcript/setup-card-toggles) stays off. A manual-only skill
+  skill this chat has off (switched off on its setup card, §chat.transcript/setup-card-toggles, or
+  off for its folder when it started, §chat.skill-sources/project-new-chats; a worker's are its
+  parent's) stays off. In a chat started in the asking mode only a skill on its fixed list is
+  offered; any other one gets the transcript line of §chat.context-approval/mid-chat instead. A manual-only skill
   (§chat.skill-sources/manual-only) isn't in the block, and a folder holding only those gets none.
 - **Once.** A folder's block attaches only when the chat's current context doesn't hold it, by the same
   rule as instruction files: the current branch from the latest compaction on, only blocks after a

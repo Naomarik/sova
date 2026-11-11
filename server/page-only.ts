@@ -2,6 +2,7 @@ import type { Context } from "hono";
 import { CALLER_HEADER, extensionCaller, isExtensionKey, presentsPageCookie, serverAuthEnabled, TOKEN_HEADER } from "./auth";
 import { isSenderSecret, OVERSEER_SENDER_HEADER } from "./overseer-sender";
 import { SANDBOX_LOWER_REFUSAL } from "./sandbox-state";
+import { RELAYED_HEADER } from "./mesh/proxy";
 
 /** The refusals of an act only the operator's own page on this machine may take, one per kind of caller. */
 export interface PageOnlyWords {
@@ -47,6 +48,15 @@ function notPageOf(r: Shown): NotPage | null {
 export function notPage(c: Context): NotPage | null {
   const env = c.env as { incoming?: unknown; meshPeer?: unknown } | undefined;
   return notPageOf({ header: (n) => c.req.header(n), socket: !!env?.incoming, peer: !!env?.meshPeer });
+}
+
+/** A person is watching: the operator's page here, or theirs on another computer, relayed through that computer's
+    /peer/<id>/ proxy (it marks what it relays). A direct call between computers (the Overseer starting a chat on another)
+    is a program. A held first send waits for a person (§chat.context-approval/held-send); a program is never held, and a
+    forged relay mark only gets a call held. */
+export function personWatching(c: Context): boolean {
+  const who = notPage(c);
+  return who === null || (who === "local" && !!c.req.header(RELAYED_HEADER));
 }
 
 /** The same, for a socket the main listener's gate let in (server/ws.ts). The peer listener's are never the page. */

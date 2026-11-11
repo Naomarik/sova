@@ -79,7 +79,7 @@ test("a switch writes the entry, rebuilds the runtime without the off rows, and 
 
   const r = await applyLoadout(path, { offContext: [GLOBAL], offSkills: ["beta-skill"] });
   assert.equal(r.ok, true);
-  assert.deepEqual(loadoutEntries(path).map((e) => e.data), [{ v: 1, offContext: [GLOBAL], offSkills: ["beta-skill"] }]);
+  assert.deepEqual(loadoutEntries(path).map((e) => e.data), [{ v: 1, offContext: [GLOBAL], offSkills: [join(agentDir, "skills", "beta-skill", "SKILL.md")] }], "a skill's switch is kept by its file");
 
   const after = heldChat(path)!;
   assert.notEqual(after, before, "the runtime was rebuilt");

@@ -118,14 +118,17 @@ export interface SkillAttachOptions {
   read: SkillsIn;
   /** The folders the branch has offered (read only when a candidate has skills). */
   offered: () => ReadonlySet<string>;
+  /** The skill files the branch has offered. Given: a folder already offered is offered again with only the skills it
+      hasn't offered yet (one approved mid-chat), and never again with none. */
+  offeredFiles?: () => ReadonlySet<string>;
   /** Folders attached in this turn, not yet on the branch; the call's own are added. */
   inFlight: Set<string>;
   /** A skills folder's answer from git, kept for this chat: it is asked once per folder. */
   ignored: Map<string, boolean>;
   /** A file the chat's starting list already has (it isn't offered again). */
   startingFile?: (abs: string) => boolean;
-  /** A name this chat switched off. */
-  off?: (name: string) => boolean;
+  /** A skill this chat keeps off (by its name and its SKILL.md: isSkillOff). */
+  off?: (skill: { name: string; filePath: string }) => boolean;
   /** A file the chat may not be shown. */
   allow?: (abs: string) => boolean;
 }
@@ -141,8 +144,9 @@ export function skillBlocksToAttach(cwd: string, o: SkillAttachOptions): string[
   for (const dir of candidateDirs(cwd, resolveToolPath(cwd, o.path))) {
     if (!SKILL_FOLDERS.some((s) => existsSync(join(dir, s)))) continue;
     const rel = posix(relative(resolve(cwd), dir));
-    if (o.inFlight.has(rel) || o.offered().has(rel)) continue;
-    const skills = skillsOfFolder(dir, o.read, ignores).filter((s) => !s.manualOnly && !o.startingFile?.(s.filePath) && !o.off?.(s.name) && (!o.allow || o.allow(s.filePath)));
+    if (o.inFlight.has(rel) || (!o.offeredFiles && o.offered().has(rel))) continue;
+    const seen = o.offeredFiles?.();
+    const skills = skillsOfFolder(dir, o.read, ignores).filter((s) => !s.manualOnly && !seen?.has(s.filePath) && !o.startingFile?.(s.filePath) && !o.off?.(s) && (!o.allow || o.allow(s.filePath)));
     if (!skills.length) continue;
     o.inFlight.add(rel);
     out.push(skillsBlock(rel, skills));

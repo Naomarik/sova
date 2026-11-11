@@ -2,7 +2,7 @@
   "§app.project-commands/projects-sweep": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "unreviewed",
     "requires": [
       "§app/project-commands"
     ],
@@ -15,12 +15,14 @@
       "docs/commands.md",
       "scenarios/projects.json",
       "server/commands-inventory/scan.ts",
-      "src/card-toolkit/commands.gen.ts"
+      "src/card-toolkit/commands.gen.ts",
+      "server/create-guide-growth.json",
+      "server/projects/routes.ts"
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-04T22:53Z",
-      "source": "pi-session:01a1a881-85c2-72d2-b9d3-5a1d4c60dbfe#b1ee7dfc"
+      "at": "2026-11-11T10:12Z",
+      "source": "pi-session:ddb0e3b6-cee0-49d4-939d-916b8e8a54b1#321c1f46"
     }
   },
   "§app.project-commands/verb-params": {

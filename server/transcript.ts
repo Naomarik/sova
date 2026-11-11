@@ -1,4 +1,4 @@
-import { MCP_LIST, MCP_NOTE, SHELL_CLOSED, SHELL_RUN } from "./harness/state-kinds";
+import { APPROVAL_PENDING, MCP_LIST, MCP_NOTE, SHELL_CLOSED, SHELL_RUN } from "./harness/state-kinds";
 import { mcpNamesOf, mcpToolOfRow, type McpNames } from "./mcp/tool-names";
 import {
   EAGER_TOOLS,
@@ -739,6 +739,17 @@ function mcpNoteRow(id: string, h: StateEntry): TranscriptItem[] {
   return [it];
 }
 
+/** An item found after the first message that this chat's list keeps out (§chat.context-approval/mid-chat):
+    the page draws its Approve and Disallow from `approvalPending`. */
+function approvalPendingRow(id: string, h: StateEntry): TranscriptItem[] {
+  const d = APPROVAL_PENDING.parse(h.data);
+  if (!d) return [];
+  const what = d.kind === "skill" ? `The skill ${d.name ?? d.path}` : (d.name ?? d.path);
+  const it = item(id, "info", h, `${what} wasn't loaded: it isn't approved for this folder.`.slice(0, 300));
+  it.approvalPending = d;
+  return [it];
+}
+
 /** A subagents team event (handover, retire, pause, resume, wrap-up): one machine row, like a
     model change, in both webapp-owned and watched sessions. Undecodable: nothing. */
 function teamEventRow(id: string, h: StateEntry): TranscriptItem[] {
@@ -860,6 +871,7 @@ function stateRows(id: string, h: StateEntry): TranscriptItem[] {
   if (h.key === TEAM_EVENT_TYPE) return teamEventRow(id, h);
   if (h.key === "claude-login") return claudeLoginRow(id, h);
   if (h.key === MCP_NOTE.type) return mcpNoteRow(id, h);
+  if (h.key === APPROVAL_PENDING.type) return approvalPendingRow(id, h);
   if (BATON_ROWS.has(h.key)) return batonRow(id, h);
   return [];
 }

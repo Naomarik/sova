@@ -556,7 +556,22 @@ describe("the project's skill defaults: a Sova-kept setting with history, Undo a
     assert.deepEqual([saved.field, saved.from, saved.to, saved.by.kind, saved.by.via], ["skills.b-skill", "approved", "waiting", "operator", "page"]);
     const h = await (await app().request(`/api/projects/${pid}/settings/history`)).json();
     assert.deepEqual([h[0].label, h[0].fromText, h[0].toText], ["Skill b-skill", "Approved", "Waiting (on until decided)"]);
+    // Turning a Disallowed skill back on through the PUT is the operator's own page only; disallowing is open.
+    const skillsPut = (skills: Record<string, string>, headers: Record<string, string> = {}) =>
+      a.request(`/api/projects/${pid}/skills`, { method: "PUT", headers: { "content-type": "application/json", ...(Object.keys(headers).length ? {} : pageHeaders()), ...headers }, body: JSON.stringify({ skills }) });
+    assert.equal((await skillsPut({ "b-skill": "disallowed" }, { "x-sova-token": "x" })).status, 200, "a script may disallow");
+    for (const headers of [{ "x-sova-caller": "k" }, { "x-sova-token": "x" }, { [OVERSEER_SENDER_HEADER]: senderSecret() }] as Record<string, string>[]) {
+      for (const to of ["approved", "waiting"]) {
+        const r = await skillsPut({ "b-skill": to }, headers);
+        assert.equal(r.status, 403, `${to} ${JSON.stringify(headers)}`);
+      }
+    }
+    assert.equal(state("b-skill"), "disallowed", "nothing changed");
+    assert.equal((await skillsPut({ "a-skill": "waiting" }, { "x-sova-token": "x" })).status, 200, "Approved → Waiting stays open");
+    assert.equal((await skillsPut({ "a-skill": "approved" }, { "x-sova-token": "x" })).status, 200, "Waiting → Approved stays open");
+    assert.equal((await skillsPut({ "b-skill": "approved" })).status, 200, "the page may");
+    assert.equal(state("b-skill"), "approved");
     const skillsRow = (await settings.settingsInfo(pid)).rows.find((x) => x.setting === "skills")!;
-    assert.deepEqual([skillsRow.label, skillsRow.state, skillsRow.anchor], ["Skills", "1 waiting", "project-skills"]);
+    assert.deepEqual([skillsRow.label, skillsRow.state, skillsRow.anchor], ["Skills", "2 approved", "project-skills"]);
   });
 });

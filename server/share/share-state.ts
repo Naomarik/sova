@@ -90,8 +90,9 @@ export function quickState(t: TunnelStatus, opts: { enabled: boolean; consentAt:
   if (opts.consentAt === null) return none("configured", "quick-turn-on");
   if (t.state === "needs-cloudflared") return none("configured", "quick-setup");
   if (t.state === "up" && t.origin) {
-    // Up but not yet answering from outside: used, with `unverified`.
-    if (t.reason?.startsWith(UNVERIFIED)) return { state: "configured", source: "quick", publicUrl: t.origin, warning: LINK_WARNINGS.unverified, warningCode: "unverified" };
+    // Up but not yet answering from outside: used, and said to be coming online (Free has no
+    // Verify of its own: the tunnel checks itself again). It reads `verified` once that lands.
+    if (t.reason?.startsWith(UNVERIFIED)) return { state: "configured", source: "quick", publicUrl: t.origin, warning: LINK_WARNINGS["quick-verifying"], warningCode: "quick-verifying" };
     return { state: "verified", source: "quick", publicUrl: t.origin, warning: LINK_WARNINGS.quick, warningCode: "quick" };
   }
   if (t.state === "degraded" || t.state === "failed") return { ...none("unreachable", "tunnel-down"), ...(t.origin && t.state === "degraded" ? { publicUrl: t.origin } : {}) };

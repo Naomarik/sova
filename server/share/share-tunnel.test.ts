@@ -25,7 +25,7 @@ test("Free: each tunnel state gives one address and one warning", () => {
     ["nothing shared yet", status("stopped"), ON, { state: "configured", publicUrl: null, code: "quick-starting" }],
     ["starting", status("starting", { origin: null }), ON, { state: "configured", publicUrl: null, code: "quick-starting" }],
     ["up and checked from outside", status("up"), ON, { state: "verified", publicUrl: ORIGIN, code: "quick" }],
-    ["up, its outside check not passed", status("up", { reason: `${UNVERIFIED}.` }), ON, { state: "configured", publicUrl: ORIGIN, code: "unverified" }],
+    ["up, its outside check not passed yet", status("up", { reason: `${UNVERIFIED}.` }), ON, { state: "configured", publicUrl: ORIGIN, code: "quick-verifying" }],
     ["cut off from Cloudflare", status("degraded"), ON, { state: "unreachable", publicUrl: ORIGIN, code: "tunnel-down" }],
     ["failed", status("failed"), ON, { state: "unreachable", publicUrl: null, code: "tunnel-down" }],
   ];
@@ -34,6 +34,8 @@ test("Free: each tunnel state gives one address and one warning", () => {
     assert.deepEqual({ state: s.state, publicUrl: s.publicUrl, code: s.warningCode }, want, name);
     assert.equal(s.source, "quick", name);
     assert.equal(s.warning, LINK_WARNINGS[want.code as keyof typeof LINK_WARNINGS], `${name}: the code's own text`);
+    // Free has no Verify button: no Free warning may send the user to one.
+    assert.doesNotMatch(s.warning ?? "", /Verify/, `${name}: never "Verify"`);
   }
 });
 

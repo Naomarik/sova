@@ -4,7 +4,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
-import { DetachedDriver } from "./drivers";
+import { DetachedDriver, RESTART_BURST, RESTART_SEC, restartTickMs } from "./drivers";
 import { type ProcEntry, type ProcTable, psTable, realSyncExec } from "./proctable";
 import { procsDir } from "./store";
 
@@ -162,8 +162,45 @@ test("the detached driver's restart watch: a crash is started again; a clean exi
   await d.start({ unit: loop, argv: [process.execPath, "-e", "process.exit(3)"], cwd: tmpdir(), env });
   for (let i = 0; i < 100 && (st = await d.status(loop)).state !== "failed"; i++) await sleep(50);
   assert.equal(st.state, "failed");
-  assert.equal(st.detail, "start limit hit");
+  assert.equal(st.gaveUp, true);
+  assert.match(st.detail ?? "", /^start limit hit: 5 failed starts/);
   await d.stop(loop);
+});
+
+test("detached restart watch at the production ratio: a service that runs a moment and fails gives up, stays failed through a server restart, and a start clears it", async () => {
+  const root = mkdtempSync(join(tmpdir(), "sova-detached-limit-"));
+  after(() => rmSync(root, { recursive: true, force: true }));
+  const dirs = { procsDir: () => join(root, "procs"), logsDir: () => join(root, "logs") };
+  // Production is a 2 s delay and a service that runs about a second; here the same ratio, scaled to 100 ms.
+  const d = new DetachedDriver(1_000, { restart: true, restartMs: 100, ...dirs });
+  const env = { PATH: process.env.PATH ?? "" };
+  const unit = `sova-svc-test-${process.pid}-ratio`;
+  await d.start({ unit, argv: [process.execPath, "-e", "setTimeout(()=>process.exit(3),50)"], cwd: tmpdir(), env });
+  let st = await d.status(unit);
+  for (let i = 0; i < 400 && !(st = await d.status(unit)).gaveUp; i++) await sleep(25);
+  assert.equal(st.state, "failed", "it gave up");
+  assert.equal(st.gaveUp, true);
+  const rec = JSON.parse(readFileSync(join(root, "procs", `${unit}.json`), "utf8"));
+  assert.ok(rec.gaveUp, "its record keeps it");
+
+  // A server restart: a new driver reads the same records.
+  const next = new DetachedDriver(1_000, { restart: true, restartMs: 100, ...dirs });
+  await next.adopt();
+  st = await next.status(unit);
+  assert.equal(st.state, "failed", "still failed after the restart, not waiting to restart");
+  assert.equal(st.gaveUp, true);
+  await sleep(250);
+  assert.ok(!(await next.tick()).some((x) => x.startsWith(unit)), "the watch never starts it again");
+  assert.equal((await next.status(unit)).state, "failed");
+
+  // Started by hand (up): a fresh count, and the mark is gone.
+  await next.start({ unit, argv: [process.execPath, "-e", "setInterval(()=>{},1000)"], cwd: tmpdir(), env });
+  st = await next.status(unit);
+  assert.equal(st.state, "active");
+  assert.equal(st.gaveUp, undefined);
+  assert.equal(JSON.parse(readFileSync(join(root, "procs", `${unit}.json`), "utf8")).gaveUp, undefined, "the new record has no mark");
+  await next.stop(unit);
+  assert.equal((await next.status(unit)).state, "missing");
 });
 
 test("detached restart watch: a failed unit whose pid is now someone else's (another start) is started again without signalling that process", async () => {
@@ -193,4 +230,37 @@ test("detached restart watch: a failed unit whose pid is now someone else's (ano
   assert.deepEqual(did, ["u-reused: started again"]);
   assert.deepEqual(sent, [], "nothing signalled at the reused pid");
   await d.stop("u-reused");
+});
+
+test("detached restart watch at production timing (2 s delay, 1 s ticks): a service that fails at once gives up after 5 starts, and its record keeps it", async () => {
+  const root = mkdtempSync(join(tmpdir(), "sova-detached-prod-"));
+  after(() => rmSync(root, { recursive: true, force: true }));
+  // No process ever looks alive: each start fails at once. The clock is stepped a watch tick at a time.
+  const table: ProcTable = { kind: "ps", sessions: false, list: () => [], get: () => null, startOf: () => null };
+  let t = 1_700_000_000_000;
+  const d = new DetachedDriver(100, { table, restart: true, restartMs: RESTART_SEC * 1000, procsDir: () => join(root, "procs"), logsDir: () => join(root, "logs"), now: () => t });
+  const unit = "u-prod";
+  await d.start({ unit, argv: [process.execPath, "-e", "process.exit(3)"], cwd: root, env: {} });
+  let starts = 1;
+  let gaveUpAt: number | null = null;
+  for (let tick = 1; tick <= 60 && gaveUpAt === null; tick++) {
+    t += restartTickMs(RESTART_SEC * 1000);
+    for (const line of await d.tick()) {
+      if (line === `${unit}: started again`) starts++;
+      else if (line === `${unit}: start limit hit`) gaveUpAt = tick;
+      else assert.fail(line);
+    }
+  }
+  // A fixed 10 s window (the old one) never gets here: a cycle is 3 s, so at most 4 starts fall in any 10 s.
+  assert.notEqual(gaveUpAt, null, `gave up (${starts} starts)`);
+  assert.equal(starts, RESTART_BURST, "5 starts, then failed");
+  const st = await d.status(unit);
+  assert.equal(st.state, "failed");
+  assert.equal(st.gaveUp, true);
+  assert.match(st.detail ?? "", /^start limit hit: 5 failed starts within 30 s/);
+  // Much later, still not started again: the mark is in its record, not the window.
+  t += 10 * 60_000;
+  assert.deepEqual(await d.tick(), []);
+  assert.equal((await d.status(unit)).gaveUp, true);
+  await d.stop(unit);
 });

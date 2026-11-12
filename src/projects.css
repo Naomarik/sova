@@ -170,6 +170,11 @@
 .project-extra { margin: 0; }
 .project-extra-foot { align-items: center; }
 .project-archive-confirm { display: flex; flex-direction: column; gap: var(--space-2); }
+/* The ask's running copies: a list row per copy (its name and state on one line, what it runs under it), then Stop Running Copies. */
+.project-archive-copies { display: flex; flex-direction: column; gap: var(--space-2); }
+.project-archive-copies > .list { border: var(--stroke-thin) solid var(--color-border); border-radius: var(--r-lg); background: var(--color-surface); }
+.project-archive-copy-title { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); min-width: 0; }
+.project-archive-copy-title > .text-mono { overflow-wrap: anywhere; }
 /* Limits (§app.project-overseer/limits): one table, a row per limit and a column per allowance;
    editing, each cell holds its field (and ∞), the pace under it. */
 .project-limits { display: flex; flex-direction: column; gap: var(--space-3); }

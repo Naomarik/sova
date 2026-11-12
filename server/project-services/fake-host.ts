@@ -32,6 +32,9 @@ interface Unit {
   logs: string[];
   late: { port: number; at: number }[];
   signals: string[];
+  /** Failed and waiting to be started again (auto-restart), or failed and given up (the start limit). */
+  restarting?: true;
+  gaveUp?: true;
 }
 
 /** A unit's own declared ports: the engine's `SOVA_PORT_<port>` (every service's are `SOVA_PORT_<service>_<port>`). */
@@ -106,6 +109,21 @@ export class FakeDriver implements Driver {
     u.pid = null;
     u.exit = code;
   }
+  /** The unit failed and waits to be started again, as systemd's auto-restart. */
+  restarting(unit: string, code = 1) {
+    this.crash(unit, code);
+    const u = this.records.get(unit);
+    if (u) u.restarting = true;
+  }
+  /** The unit hit its start limit: failed, never started again on its own. */
+  giveUp(unit: string, code = 1) {
+    this.crash(unit, code);
+    const u = this.records.get(unit);
+    if (u) {
+      delete u.restarting;
+      u.gaveUp = true;
+    }
+  }
   async stop(unit: string) {
     const u = this.records.get(unit);
     if (u?.pid) this.host.closeAll(u.pid);
@@ -115,6 +133,8 @@ export class FakeDriver implements Driver {
     const u = this.records.get(unit);
     if (!u) return { state: "missing", pid: null };
     if (u.pid) return { state: "active", pid: u.pid };
+    if (u.restarting) return { state: "activating", pid: null, exit: u.exit ?? null, detail: "activating/auto-restart" };
+    if (u.gaveUp) return { state: "failed", pid: null, exit: u.exit ?? null, gaveUp: true, detail: "start limit hit" };
     return { state: u.exit === 0 ? "inactive" : "failed", pid: null, exit: u.exit ?? null, detail: `exited with ${u.exit}` };
   }
   async signal(unit: string, sig: string) {

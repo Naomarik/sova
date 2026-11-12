@@ -274,7 +274,8 @@
     "project.context-files.set",
     "session.folder-approvals.get",
     "session.folder-approvals.set",
-    "session.approval.set"
+    "session.approval.set",
+    "project.copies.running"
   ],
   "retired": [
     "settings.agents.get",

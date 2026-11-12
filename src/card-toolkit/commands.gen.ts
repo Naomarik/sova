@@ -156,6 +156,7 @@ export type CommandId =
   | "project.icon.remove"
   | "project.archive"
   | "project.unarchive"
+  | "project.copies.running"
   | "project.preview.off"
   | "project.worktree.list"
   | "project.worktree.merge"
@@ -3831,6 +3832,11 @@ export interface CommandParams {
     /** The project's id */
     "pid": string;
   };
+  /** A project's copies that run or wait to restart, as the archive dialog lists them, each with the down that stops it. (only looks; needs the card's owner trusted) */
+  "project.copies.running": {
+    /** The project's id */
+    "pid": string;
+  };
   /** Turn a preview link off at once. (changes something; needs the card's owner trusted) */
   "project.preview.off": {
     /** The preview's id */
@@ -4725,6 +4731,7 @@ export const COMMAND_EFFECTS: Record<CommandId, "looks" | "changes"> = {
   "project.icon.remove": "changes",
   "project.archive": "changes",
   "project.unarchive": "changes",
+  "project.copies.running": "looks",
   "project.preview.off": "changes",
   "project.worktree.list": "looks",
   "project.worktree.merge": "changes",

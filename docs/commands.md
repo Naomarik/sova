@@ -13,9 +13,9 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 
 | What | Count |
 | --- | ---: |
-| Routes registered | 626 |
-| Routes a catalogue entry points at | 203 |
-| Catalogue entries | 274 |
+| Routes registered | 627 |
+| Routes a catalogue entry points at | 204 |
+| Catalogue entries | 275 |
 | Class: Peer protocol | 39 |
 | Class: Auth | 4 |
 | Class: Share pages | 0 |
@@ -194,6 +194,7 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | `project.icon.remove` | Remove Project Icon | changes | `DELETE /api/projects/:pid/icon` | admin |
 | `project.archive` | Archive Project | changes | `POST /api/projects/:pid/archive` | admin |
 | `project.unarchive` | Unarchive Project | changes | `POST /api/projects/:pid/unarchive` | admin |
+| `project.copies.running` | List Running Copies | looks | `GET /api/projects/:pid/running-copies` | sessions |
 | `project.preview.off` | Turn Off Preview Link | changes | `POST /api/previews/:id/off` | admin |
 | `project.worktree.list` | List Project Worktrees | looks | `GET /api/projects/:pid/overseer/worktrees` | sessions |
 | `project.worktree.merge` | Merge Worktree | changes | `POST /api/projects/:pid/overseer/worktrees/merge` | admin |
@@ -975,6 +976,7 @@ Approving a schedule or a draft spec, the Overseer's permits and their revoke: a
 | `GET /api/projects/:pid/overseer/worktrees` | sessions | `project.worktree.list` |
 | `POST /api/projects/:pid/overseer/worktrees/merge` | admin | `project.worktree.merge` |
 | `POST /api/projects/:pid/overseer/worktrees/remove` | admin | `project.worktree.remove` |
+| `GET /api/projects/:pid/running-copies` | sessions | `project.copies.running` |
 | `GET /api/projects/:pid/services` | sessions | `project.services.view` |
 | `GET /api/projects/:pid/settings` | sessions | `project.settings.get` |
 | `POST /api/projects/:pid/settings/cards/:card/withdraw` | admin | `project.settings.propose.withdraw` |

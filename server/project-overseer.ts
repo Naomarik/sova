@@ -1,5 +1,6 @@
 import { powersView, type PowersView } from "../shared/powers";
 import type { ThinkingLevel } from "../shared/profiles";
+import type { ArchiveCopy } from "../shared/projects";
 import { existsSync, mkdirSync, readdirSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, relative } from "node:path";
@@ -1905,13 +1906,31 @@ async function runReleaseAct(projectId: string, e: Record<string, unknown>): Pro
 
 // ---- archive: what must stop first (§app.organizations/archive) -------------------------------------------
 
+/** The project's copies that run or wait to restart, adopted ones included (§app.organizations/archive): what the
+    archive dialog lists, each with the down that stops it. */
+export async function archiveCopies(projectId: string): Promise<ArchiveCopy[]> {
+  const { projectEngine } = await import("./project-services/routes");
+  return projectEngine().liveCopies(projectOf(projectId).root);
+}
+
+/** The blocker phrase for the copies that hold an archive up (an adopted one never does), or null: none. */
+export function copiesPhrase(copies: readonly ArchiveCopy[]): string | null {
+  const held = copies.filter((c) => !c.adopted);
+  if (!held.length) return null;
+  const named = held.map((c) => (c.services.some((s) => s.state === "restarting") ? `${c.name}, restarting` : c.name));
+  return `${held.length} ${held.length === 1 ? "copy" : "copies"} running (${named.join("; ")})`;
+}
+
 /**
  * What is open in the project, for the archive act's `blockers` stamp (§app.organizations/archive): what
- * other layers name (an org's open gathering sessions), its coding sessions mid-turn or with workers
- * running, and whether its overseer is working. The project statechart words the refusal ("Stop these first: …").
+ * other layers name (an org's open gathering sessions), its copies that run or wait to restart (`copies`, as
+ * archiveCopies read them), its coding sessions mid-turn or with workers running, and whether its overseer is
+ * working. The project statechart words the refusal ("Stop these first: …").
  */
-export async function archiveBlockers(projectId: string): Promise<ArchiveBlockers> {
+export async function archiveBlockers(projectId: string, copies: readonly ArchiveCopy[] = []): Promise<ArchiveBlockers> {
   const phrases = contributedBlockers(engineOrThrow(projectId), projectId);
+  const running = copiesPhrase(copies);
+  if (running) phrases.push(running);
   const p = projectOverseerPaths(projectId);
   const coding: string[] = [];
   for (const r of readBuilds(projectId)) {

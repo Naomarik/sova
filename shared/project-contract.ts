@@ -194,6 +194,7 @@ export const ERROR_CODES = [
   "deploy-failed",
   "verify-failed",
   "release-refused",
+  "refused-archived",
 ] as const;
 export type ErrorCode = (typeof ERROR_CODES)[number];
 
@@ -217,6 +218,7 @@ const EXIT: Record<ErrorCode, ExitClass> = {
   "needs-confirm": 2,
   "deploy-refused": 2,
   "release-refused": 2,
+  "refused-archived": 2,
   "needs-override": 2,
   "invalid-request": 3,
   "invalid-definition": 3,
@@ -1308,6 +1310,9 @@ export interface ServiceView {
   detail?: string;
   /** The resident memory of its unit's processes now, while a process or container service runs. */
   rssBytes?: number;
+  /** It failed too often in a short time and gave up restarting (the start limit, §app.project-services/supervisor):
+      `failed` until someone starts it again (up, apply), through a server restart too. */
+  gaveUp?: true;
 }
 export interface DataView {
   name: string;

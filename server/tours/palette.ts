@@ -90,27 +90,37 @@ const dist = (a: readonly number[], b: readonly number[]): number => Math.hypot(
  * Transparent pixels don't count.
  */
 export function paletteOf(rgba: ArrayLike<number>, width = 0, max: number = PALETTE_LIMITS.colors): MeasuredColor[] {
+  return paletteFromBins(binPixels(rgba, width), max);
+}
+
+/**
+ * Pixels as colour bins: [key, count, sum r, sum g, sum b, edge count, ...] flat, 5 bits a channel (fine enough that a
+ * page and the surface on it stay apart). A pixel is on an edge when a 4-neighbour falls in another bin: what strokes
+ * are made of. The darkroom's page bins its pixels by this same rule (page-capture.ts binsInPage), so only the bins
+ * leave it, never the pixels.
+ */
+export function binPixels(rgba: ArrayLike<number>, width = 0): number[] {
   const count = Math.floor(rgba.length / 4);
   const keys = new Int32Array(count).fill(-1);
-  const bins = new Map<number, Cluster>();
-  let total = 0;
+  const at = new Map<number, number>();
+  const out: number[] = [];
   for (let p = 0; p < count; p++) {
     const i = p * 4;
     if (rgba[i + 3]! < 128) continue;
     const r = rgba[i]!, g = rgba[i + 1]!, b = rgba[i + 2]!;
-    // 5 bits a channel: fine enough that a page and the surface on it stay apart.
     const key = ((r >> 3) << 10) | ((g >> 3) << 5) | (b >> 3);
     keys[p] = key;
-    const bin = bins.get(key) ?? { n: 0, r: 0, g: 0, b: 0, edges: 0, saturated: false, peak: [0, 0, 0] as const };
-    bin.n++;
-    bin.r += r;
-    bin.g += g;
-    bin.b += b;
-    bins.set(key, bin);
-    total++;
+    let j = at.get(key);
+    if (j === undefined) {
+      j = out.length;
+      at.set(key, j);
+      out.push(key, 0, 0, 0, 0, 0);
+    }
+    out[j + 1]!++;
+    out[j + 2]! += r;
+    out[j + 3]! += g;
+    out[j + 4]! += b;
   }
-  if (!total) return [];
-  // A pixel on an edge has a 4-neighbour of a different colour: what strokes are made of.
   if (width > 0) {
     const height = Math.floor(count / width);
     for (let y = 0; y < height; y++)
@@ -119,9 +129,26 @@ export function paletteOf(rgba: ArrayLike<number>, width = 0, max: number = PALE
         const k = keys[p]!;
         if (k < 0) continue;
         const differs = (q: number) => keys[q]! >= 0 && keys[q] !== k;
-        if ((x > 0 && differs(p - 1)) || (x < width - 1 && differs(p + 1)) || (y > 0 && differs(p - width)) || (y < height - 1 && differs(p + width))) bins.get(k)!.edges++;
+        if ((x > 0 && differs(p - 1)) || (x < width - 1 && differs(p + 1)) || (y > 0 && differs(p - width)) || (y < height - 1 && differs(p + width))) out[at.get(k)! + 5]!++;
       }
   }
+  return out;
+}
+
+/** The main colours of binned pixels (binPixels' shape); `edges` counts only mean something when the width was known. */
+export function paletteFromBins(flat: readonly number[], max: number = PALETTE_LIMITS.colors): MeasuredColor[] {
+  const bins = new Map<number, Cluster>();
+  let total = 0;
+  let edgesKnown = false;
+  for (let j = 0; j + 5 < flat.length; j += 6) {
+    const [key, n, r, g, b, edges] = flat.slice(j, j + 6) as [number, number, number, number, number, number];
+    if (!(n > 0)) continue;
+    bins.set(key, { n, r, g, b, edges, saturated: false, peak: [0, 0, 0] });
+    total += n;
+    if (edges > 0) edgesKnown = true;
+  }
+  if (!total) return [];
+  const width = edgesKnown ? 1 : 0;
   for (const bin of bins.values()) {
     bin.peak = meanOf(bin);
     bin.saturated = chromaOf(bin.peak) >= PALETTE_LIMITS.chroma;

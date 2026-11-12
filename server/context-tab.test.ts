@@ -41,6 +41,8 @@ const deps = (o: Partial<ContextViewDeps> = {}): ContextViewDeps => ({
   context: async (c) => (c ? { tokens: c.tokens, window: 200_000 } : null),
   nested: () => ({ files: [{ path: "api/AGENTS.md", dir: "api", abs: "/w/api/AGENTS.md", chars: 80, loaded: true }, { path: "web/AGENTS.md", dir: "web", abs: "/w/web/AGENTS.md", chars: 41, loaded: false }], incomplete: false }),
   now: () => 7,
+  // A chat that looks below its folder (server/skill-descent.ts); the test of the rule itself passes its own.
+  descends: () => true,
   ...o,
 });
 
@@ -127,6 +129,18 @@ test("subfolder files only where the chat's hook would load them: none with no c
   assert.deepEqual(await nestedOf({ held: held({ noContextFiles: true, append: "none" }) }), []);
   // A confined chat (the project overseer's): a file its allow refuses is left out.
   assert.deepEqual(await nestedOf({ held: held({ append: "none", contextFilesWithin: { root: cwd, out: [join(cwd, "private")] } }) }), ["sub/AGENTS.md"]);
+  // A chat that doesn't look below its folder: nothing below it is listed. By the rule itself (no stand-in): a plain
+  // folder in no project lists none, and lists them once it is a repository's top.
+  mkdirSync(join(cwd, "sub", ".agents", "skills", "foo"), { recursive: true });
+  writeFileSync(join(cwd, "sub", ".agents", "skills", "foo", "SKILL.md"), "---\nname: foo\ndescription: Foo things.\n---\nDo foo.\n");
+  const reader = async () => ({ sections: {}, tools: [{ name: "read", description: "", parameters: {} }], loader: null }) as never;
+  const plain = await getContextView("/s.jsonl", deps({ setup: async () => ({ ...setup, cwd }), branch: async () => [], held: reader, nested: undefined, nestedSkills: undefined, descends: undefined }));
+  assert.ok(plain.state === "ok");
+  assert.deepEqual([plain.state === "ok" && plain.nested, plain.state === "ok" && plain.nestedSkills], [[], undefined]);
+  mkdirSync(join(cwd, ".git"));
+  const repo = await getContextView("/s.jsonl", deps({ setup: async () => ({ ...setup, cwd }), branch: async () => [], held: reader, nested: undefined, nestedSkills: undefined, descends: undefined }));
+  assert.ok(repo.state === "ok");
+  assert.deepEqual([repo.state === "ok" && repo.nested.map((f) => f.path), repo.state === "ok" && repo.nestedSkills?.map((k) => k.label)], [["private/AGENTS.md", "sub/AGENTS.md"], ["foo"]]);
 });
 
 test("the conversation by kind: your messages, replies, tool results less the loaded subfolder files, the rest; the tallies add up", () => {

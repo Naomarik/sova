@@ -42,6 +42,7 @@ import type { FolderRule } from "../shared/folder-rule";
 import type { ApprovalFolder, SetupApproval } from "../shared/approvals";
 import { dirname, join } from "node:path";
 import { candidateDirs, instructionFileIn } from "./deeper-context";
+import { inProjectHere, skillDescentAllowed } from "./skill-descent";
 import { getSessionSummary } from "./sessions-index";
 import { agentRoot } from "./state-root";
 import { readBranch } from "./harness/pi/reader";
@@ -161,7 +162,11 @@ async function approvalsOfFolder(cwd: string, fresh: boolean, now: () => number)
       scan = await m.folderQuickScan(lookup.folder).catch(() => null);
       if (scan) scanCache.set(lookup.folder.key, { at: now(), scan });
     }
-    return { lookup, folder: m.approvalFolderOf(lookup.folder), scan };
+    // The scan is the folder's; a chat whose own folder isn't looked below (the home folder, a project's or not:
+    // server/skill-descent.ts) is never shown a subfolder's rows.
+    const descends = skillDescentAllowed(cwd, { home: (await import("node:os")).homedir(), inProject: lookup.folder.kind === "project" });
+    const own = scan && !descends ? { items: scan.items.filter((i) => i.group !== "subfolder") } : scan;
+    return { lookup, folder: m.approvalFolderOf(lookup.folder), scan: own };
   } catch {
     return null;
   }
@@ -449,7 +454,10 @@ export async function readSetupFile(sessionPath: string, file: string, deps: Set
   // An instruction file in a folder below cwd loads as the agent works there (server/deeper-context.ts): the
   // Context tab opens those too, gated on the engine's own rule for one (its folder's first instruction file).
   // A skill of such a folder too (server/subfolder-skills.ts): it is listed there before it is offered.
-  if (!listedPaths(setup).has(file) && !(instructionFileIn(dirname(file)) === file && candidateDirs(setup.cwd, file).includes(dirname(file))) && !isSubfolderSkillFile(setup.cwd, file, piSkillsIn))
+  // Neither where the chat doesn't look below its folder (server/skill-descent.ts).
+  const below = () => (instructionFileIn(dirname(file)) === file && candidateDirs(setup.cwd, file).includes(dirname(file))) || isSubfolderSkillFile(setup.cwd, file, piSkillsIn);
+  const descends = async () => skillDescentAllowed(setup.cwd, { home: (await import("node:os")).homedir(), inProject: await inProjectHere(setup.cwd) });
+  if (!listedPaths(setup).has(file) && !(below() && (await descends())))
     return { ok: false, status: 404, error: "That file isn't in this session's system context." };
   try {
     if (statSync(file).size > SETUP_FILE_MAX_BYTES) return { ok: false, status: 413, error: "That file is over 1 MB, too big to show here." };

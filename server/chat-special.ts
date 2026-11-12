@@ -47,6 +47,8 @@ export interface SpecialDeps {
   visRetry?: () => PiExtensionFactory;
   /** A run start whose answer did not come: logged by the caller. */
   log?(line: string): void;
+  /** Its folder belongs to a project added to Sova (server/skill-descent.ts): the subfolder hook looks below it. */
+  inProject?: boolean;
 }
 
 /** The built loadout: the loader's options, the tool allowlist, the SDK's custom tools, the prompt a run starts on. */
@@ -174,7 +176,7 @@ export function specialLoadout(chatId: string, spec: SpecialSpec, port: SpecialP
       ...(spec.visRetry && deps.visRetry ? [deps.visRetry()] : []),
       // Subfolder instruction files, never outside what its file tools may read (a loadout with no
       // context files gets none).
-      ...(deeperAllow ? [deeperContextExtension({ allow: deeperAllow, skills: !l.noSkills, ...(kept ? { skillOff: (s: { name: string; filePath: string }) => isSkillOff(kept, s) } : {}) })] : []),
+      ...(deeperAllow ? [deeperContextExtension({ allow: deeperAllow, skills: !l.noSkills, inProject: deps.inProject === true, ...(kept ? { skillOff: (s: { name: string; filePath: string }) => isSkillOff(kept, s) } : {}) })] : []),
     ],
     // The OVERRIDE, not appendSystemPrompt: passing appendSystemPrompt suppresses discovery of the
     // user's own APPEND_SYSTEM.md, and the override keeps it (resource-loader.js:386-396).

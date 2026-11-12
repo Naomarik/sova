@@ -89,7 +89,7 @@ the transcript. This keeps the model provider's prompt cache, so a toggle doesn'
 conversation. Turning **align** or **vis** on or off does change the agent's tools:
 align adds its `align` tool and vis its drawing tools and the Lookbook's tool. A project mode
 with tools adds or removes its own tools the same way. **memory** sends no note at all: it changes
-the history the model is sent from the next turn, and adds its `zoom` and `date` tools.
+the history the model is sent from the next turn, and adds its `zoom`, `date` and `recall` tools.
 
 Each switch is recorded in the session. It draws nothing in the thread, but it shows in the Session
 pane's Changes and as a marker on the Timeline.
@@ -187,7 +187,7 @@ and every other tool stay, and the agent's instructions read the same either way
 Memory lets a chat outgrow its context. A cheap model, the summarizer, folds each message into a
 one-line summary, and older lines into lines that cover more. The model reads those lines instead of
 the whole history, and opens any of them back down to the original message with its `zoom` tool
-(`date` gives a message's date and time). Each recall shows as a tool row, such as "Recalled
+(`date` gives a message's date and time, and `recall` finds a message by its words). Each recall shows as a tool row, such as "Recalled
 messages 40–47". The transcript you read never changes, so turning memory off gives the model the
 chat's full history back.
 

@@ -1,7 +1,7 @@
 import { createEffect, createMemo, createSignal, For, on, Show, type Accessor } from "solid-js";
 import type { DesignBriefQuestion, DesignLinkUse, DesignLook } from "../../shared/design";
 import type { DesignAssetCatalogue } from "../../shared/design-assets";
-import { designBriefBlock } from "../../shared/design";
+import { designBriefBlock, designerSkills } from "../../shared/design";
 import type { DesignSpendAsk } from "../lib/design-api";
 import { answerLine, assetsOfRun, pickIsRecommended, recommendedPick, stagedAnswers, startLabel, usedCount, type StagedPick } from "../lib/design-brief";
 import type { DesignStore } from "../lib/design-store";
@@ -365,7 +365,9 @@ export function DesignBriefStep(props: { run: DesignRunView; store: DesignStore;
               noEditWhy="Waits until it's written."
               save={(text) => props.store.api.briefEdit(props.run.id, { field: "prompt", text })}
             />
-            <DesignSkillsLine run={props.run} />
+            <Show when={(props.run.skills?.length ?? 0) > 0}>
+              <DesignSkillsLine run={{ skills: designerSkills(props.run) }} />
+            </Show>
             <Show when={anyLinks()}>
               <div class="design-brief-links">
                 <For each={urls()}>{(url) => <DesignLinkRow url={url} use={useOf(url)} onUse={(use) => setUse(url, use)} />}</For>
@@ -550,7 +552,9 @@ export function DesignBriefCollapsed(props: { run: DesignRunView; store: DesignS
                 <p class="text-caption text-muted">This is what the designs were started from. Read only.</p>
               </Show>
               <p class="design-brief-read">{b().summary}</p>
-              <DesignSkillsLine run={props.run} />
+              <Show when={(props.run.skills?.length ?? 0) > 0}>
+                <DesignSkillsLine run={{ skills: designerSkills(props.run) }} />
+              </Show>
               <For each={props.run.setup.links ?? []}>
                 {(l) => (
                   <p class="text-caption">

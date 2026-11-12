@@ -6,7 +6,7 @@ import { meshApi } from "./mesh/index";
 import { localRequest } from "./mesh/proxy";
 import { tokenFor, type LinkTokenKind } from "./link-tokens";
 import { yourClickRefusal } from "./page-only";
-import { effectivePublicLinks, patchPublicLinks, pinnedByEnv, readPublicLinks, readPublicLinksSetting, readTunnelConsent, writeServerFields } from "./public-links";
+import { patchPublicLinks, pinnedByEnv, readPublicLinks, readPublicLinksSetting, readTunnelConsent, writeServerFields } from "./public-links";
 import { linkByHash } from "./session-shares";
 import { accountGuide, frontGuide, verifyPreviewUrl, verifyPublicUrl } from "./share/front";
 import { previewAddress } from "./share/preview-address";
@@ -132,7 +132,8 @@ export function mountPublicLinks(app: Hono, sources: PublicLinksSources = SOURCE
       await Promise.race([refreshGateway().catch(() => null), waited]);
       clearTimeout(timer);
     }
-    return c.json(await publicLinksInfo(r.file, sources, effectivePublicLinks({ kind: "ok", file: r.file })), 200, NO_STORE);
+    // The reading as written, read again: the patch answers the effective file, whose flags (implicit) it can't carry.
+    return c.json(await publicLinksInfo(r.file, sources, readPublicLinksSetting()), 200, NO_STORE);
   });
 
   mountTunnelRoutes(app, { info: () => publicLinksInfo(readPublicLinks(), sources), wanted: () => shareWanted() });

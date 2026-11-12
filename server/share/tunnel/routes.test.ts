@@ -101,6 +101,15 @@ describe("PUT /api/public-links: where links open stays the user's", () => {
     assert.equal(store.readTunnelConsent(), null);
   });
 
+  test("a PUT that leaves an old Off as it is answers implicit, as GET does", async () => {
+    const { writeFileSync } = await import("node:fs");
+    writeFileSync(store.publicLinksFile(), JSON.stringify({ version: 1, route: "off" }));
+    const a = app();
+    const put = (await (await call(a, "PUT", "/api/public-links", "page", { ingressPort: 4803 })).json()) as { implicit?: boolean; file: { route: unknown } };
+    const got = (await (await a.request("/api/public-links")).json()) as { implicit?: boolean };
+    assert.deepEqual([put.file.route, put.implicit, got.implicit], ["quick", true, true]);
+  });
+
   test("Account needs a saved token first", async () => {
     const res = await call(app(), "PUT", "/api/public-links", "page", { route: "account", account: { publicUrl: "https://share.example.com" } });
     assert.equal(res.status, 400);

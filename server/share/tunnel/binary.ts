@@ -4,13 +4,13 @@ import { accessSync, constants, createReadStream, readFileSync, statSync } from 
 import { delimiter, isAbsolute, join } from "node:path";
 import { stateRoot } from "../../state-root";
 import type { CloudflaredInfo, CloudflaredSource } from "../../../shared/public-links";
-import { assetFor, installCommand } from "./release";
+import { assetFor, CLOUDFLARED_VERSION, installCommand } from "./release";
 
 /**
  * Which cloudflared Sova runs for a tunnel: `SOVA_CLOUDFLARED` (a person's own path, and the tests' stand-in; `off`,
  * the test runner's default, skips PATH) →
- * `cloudflared` on PATH, asked its version once → the copy Sova downloaded, while its file still hashes to what
- * was recorded when it was verified. Found once per server lifetime; a download drops the answer.
+ * `cloudflared` on PATH, asked its version once → the copy Sova downloaded, while its file still hashes to the sum
+ * release.ts pins for this platform. Found once per server lifetime; a download drops the answer.
  * Never downloads: ensureTunnel maps "not found" to `needs-cloudflared`, and only the operator's click fetches it.
  */
 
@@ -134,12 +134,12 @@ const notFound = (deps: ResolveDeps, reason: string): CloudflaredFound => ({ ok:
 
 /** The finding, uncached (the tests' door). */
 export async function findCloudflared(deps: ResolveDeps = defaultResolveDeps()): Promise<CloudflaredFound> {
-  const pinned = deps.env.SOVA_CLOUDFLARED?.trim();
+  const named = deps.env.SOVA_CLOUDFLARED?.trim();
   // `off` (the test runner's default): nothing on PATH counts, so a test never runs an installed cloudflared.
-  const offPath = pinned === "off";
-  if (pinned && !offPath) {
-    if (!isAbsolute(pinned) || !deps.executable(pinned)) return notFound(deps, `SOVA_CLOUDFLARED names ${pinned}, which isn't a program Sova can run.`);
-    return { ok: true, path: pinned, version: null, source: "env" };
+  const offPath = named === "off";
+  if (named && !offPath) {
+    if (!isAbsolute(named) || !deps.executable(named)) return notFound(deps, `SOVA_CLOUDFLARED names ${named}, which isn't a program Sova can run.`);
+    return { ok: true, path: named, version: null, source: "env" };
   }
   let tooOld: string | null = null;
   for (const dir of offPath ? [] : searchDirs(deps.env, deps.platform)) {
@@ -154,8 +154,12 @@ export async function findCloudflared(deps: ResolveDeps = defaultResolveDeps()):
     }
     return { ok: true, path: p, version, source: "path" };
   }
+  // Checked against the sum this Sova pins, never the record beside it: whoever could swap the file could swap
+  // that too. A copy of an older pin (Sova updated since) no longer counts, and Download is offered again.
   const record = deps.readRecord();
-  if (record && deps.executable(deps.downloaded) && (await deps.sha256File(deps.downloaded)) === record.sha256) {
+  const pinned = assetFor(deps.platform, deps.arch);
+  const want = pinned ? (pinned.member?.sha256 ?? pinned.sha256) : null;
+  if (record && want && record.version === CLOUDFLARED_VERSION && deps.executable(deps.downloaded) && (await deps.sha256File(deps.downloaded)) === want) {
     return { ok: true, path: deps.downloaded, version: record.version, source: "download" };
   }
   return notFound(deps, tooOld ?? "cloudflared isn't installed on this computer.");

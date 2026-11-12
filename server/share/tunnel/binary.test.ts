@@ -3,12 +3,13 @@
 import { dropScratchAgentDir } from "../../testing/scratch-agent-dir";
 import assert from "node:assert/strict";
 import { after, describe, test } from "node:test";
-import { installCommand } from "./release";
+import { CLOUDFLARED_ASSETS, CLOUDFLARED_VERSION, installCommand } from "./release";
 import { compareVersions, findCloudflared, parseDownloadedRecord, parseVersion, type ResolveDeps, searchDirs } from "./binary";
 
 after(dropScratchAgentDir);
 
-const SUM = "a".repeat(64);
+/** The sum release.ts pins for linux x64, the platform these fakes say they are. */
+const SUM = CLOUDFLARED_ASSETS["linux-x64"]!.sha256;
 
 function deps(over: Partial<ResolveDeps> & { programs?: Record<string, string | null>; files?: Record<string, string> } = {}): ResolveDeps & { asked: string[] } {
   const programs = over.programs ?? {};
@@ -39,7 +40,7 @@ describe("finding cloudflared", () => {
     const d = deps({ env: { PATH: "/a", SOVA_CLOUDFLARED: "off" }, programs: { "/a/cloudflared": "cloudflared version 2026.10.7", "/usr/local/bin/cloudflared": "cloudflared version 2026.10.7" } });
     assert.deepEqual(await findCloudflared(d), { ok: false, reason: "cloudflared isn't installed on this computer.", canDownload: true, install: installCommand("linux") });
     assert.deepEqual(d.asked, []);
-    const record = { version: "2026.10.7", sha256: SUM, at: 1 };
+    const record = { version: CLOUDFLARED_VERSION, sha256: SUM, at: 1 };
     const kept = await findCloudflared(deps({ env: { SOVA_CLOUDFLARED: "off" }, files: { "/state/bin/cloudflared": SUM }, readRecord: () => record }));
     assert.equal(kept.ok && kept.source, "download");
   });
@@ -54,7 +55,7 @@ describe("finding cloudflared", () => {
     const d = deps({
       programs: { "/a/cloudflared": null, "/b/cloudflared": "cloudflared version 2026.10.7 (built 2026-10-30-1705 UTC)" },
       files: { "/state/bin/cloudflared": SUM },
-      readRecord: () => ({ version: "2026.10.7", sha256: SUM, at: 1 }),
+      readRecord: () => ({ version: CLOUDFLARED_VERSION, sha256: SUM, at: 1 }),
     });
     assert.deepEqual(await findCloudflared(d), { ok: true, path: "/b/cloudflared", version: "2026.10.7", source: "path" });
     assert.deepEqual(d.asked, ["/a/cloudflared", "/b/cloudflared"]);
@@ -71,11 +72,18 @@ describe("finding cloudflared", () => {
     assert.match(!f.ok ? f.reason : "", /\/a\/cloudflared is version 2021\.3\.1; Sova needs 2024\.1\.0 or later/);
   });
 
-  test("the downloaded copy only while it still hashes to its record", async () => {
-    const record = { version: "2026.10.7", sha256: SUM, at: 1 };
-    assert.deepEqual(await findCloudflared(deps({ files: { "/state/bin/cloudflared": SUM }, readRecord: () => record })), { ok: true, path: "/state/bin/cloudflared", version: "2026.10.7", source: "download" });
+  test("the downloaded copy only while it hashes to the pinned sum, never just to its own record", async () => {
+    const record = { version: CLOUDFLARED_VERSION, sha256: SUM, at: 1 };
+    assert.deepEqual(await findCloudflared(deps({ files: { "/state/bin/cloudflared": SUM }, readRecord: () => record })), { ok: true, path: "/state/bin/cloudflared", version: CLOUDFLARED_VERSION, source: "download" });
     const changed = await findCloudflared(deps({ files: { "/state/bin/cloudflared": "b".repeat(64) }, readRecord: () => record }));
     assert.equal(changed.ok, false, "a file changed since it was verified is not run");
+    const swapped = await findCloudflared(deps({ files: { "/state/bin/cloudflared": "b".repeat(64) }, readRecord: () => ({ ...record, sha256: "b".repeat(64) }) }));
+    assert.equal(swapped.ok, false, "another program with a record rewritten to match is not run");
+    const older = await findCloudflared(deps({ files: { "/state/bin/cloudflared": SUM }, readRecord: () => ({ ...record, version: "2025.1.0" }) }));
+    assert.equal(older.ok, false, "a copy of an older pin isn't run; Download is offered again");
+    const mac = CLOUDFLARED_ASSETS["darwin-arm64"]!;
+    const onMac = await findCloudflared(deps({ platform: "darwin", arch: "arm64", files: { "/state/bin/cloudflared": mac.member!.sha256 }, readRecord: () => record }));
+    assert.equal(onMac.ok && onMac.source, "download", "macOS: the binary's own pinned sum, not the archive's");
     assert.equal((await findCloudflared(deps({ files: { "/state/bin/cloudflared": SUM } }))).ok, false, "no record, no run");
   });
 

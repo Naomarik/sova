@@ -1148,7 +1148,7 @@ test("Start: a Rebuild screenshot's picture goes to the designers even beside a 
   assert.doesNotMatch(l.brief, new RegExp(`sova-asset:${rebuild}|id="${rebuild}"`), "a screenshot is never offered to embed");
 });
 
-test("Start: at most four reference pictures a design, the ticked Rebuild screenshots' first", async () => {
+test("Start: at most four reference pictures a design, a slot kept for each ticked Rebuild screenshot", async () => {
   const run = withLink("images");
   run.createdAt = "2026-01-01T00:00:00Z";
   const { t, shot: found } = await looked(run);
@@ -1156,6 +1156,7 @@ test("Start: at most four reference pictures a design, the ticked Rebuild screen
   await t.design_brief({ baseRev: 0, summary: "S", prompt: "P", text: "F", shots: [found], images: shots.map((name) => ({ name, screen: "rebuild" })) });
   await start(run);
   const refs = log.launches[0]!.references as unknown as { name: string }[];
+  // Five Rebuild screenshots take all four slots, leaving the found screen none.
   assert.deepEqual(refs.map((r) => r.name), shots.slice(0, 4).map((n) => `screenshot-${n}.png`));
 });
 
@@ -1172,7 +1173,8 @@ test("Start: four found-screen pictures never push out a Rebuild screenshot; the
   const l = log.launches[0]!;
   const names = (l.references as unknown as { name: string }[]).map((r) => r.name);
   assert.equal(names.length, 4);
-  assert.equal(names[0], `screenshot-${rebuild}.png`, "the Rebuild screenshot is attached");
+  assert.ok(names.includes(`screenshot-${rebuild}.png`), "the Rebuild screenshot is attached");
+  assert.ok(!names[0]!.startsWith("screenshot-") && names.at(-1) === `screenshot-${rebuild}.png`, "found-screen shots first in order");
   assert.equal(names.filter((n) => !n.startsWith("screenshot-")).length, 3, "the cap cuts a found-screen shot");
   // What the text says is rebuilt is one of the pictures attached.
   const rebuilt = [...l.brief.matchAll(/- (a\d+) \([^)]*\): Rebuild this screen/g)].map((m) => `screenshot-${m[1]}.png`);

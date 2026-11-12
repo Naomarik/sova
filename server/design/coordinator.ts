@@ -856,9 +856,10 @@ export async function startBrief(parent: BrowseParent, runId: string, a: { rev: 
   // Every design's text carries the screenshots' words, vision or not; a page image list never names a screenshot.
   const extra = [assetBlock(parent.sessionId, kept), screenshotBlock(parent.sessionId, shots, (n) => run.brief.screenUse?.[n]?.use)].filter(Boolean).join("\n\n");
   const text = launchText(run, extra);
-  // Each ticked Rebuild screenshot's picture first, since its line in the text says it is the screen being rebuilt; the
-  // found screen's pictures fill what's left, at most REFERENCES_MAX a design.
-  const references = [...rebuildReferences(st, run, shots), ...briefReferences(st, run)].slice(0, REFERENCES_MAX);
+  // A slot is kept for each ticked Rebuild screenshot (its line in the text says it is the screen being rebuilt), up to
+  // REFERENCES_MAX; the found screen's pictures fill the rest and still come first.
+  const rebuilds = rebuildReferences(st, run, shots).slice(0, REFERENCES_MAX);
+  const references = [...briefReferences(st, run).slice(0, REFERENCES_MAX - rebuilds.length), ...rebuilds];
   const labels = await ports().launchDesigns(parent, runId, { brief: text, references });
   changeBrief(st, (b) => {
     b.startedRev = b.rev;

@@ -27,7 +27,7 @@ chat's model. The row is there only in a chat whose runtime can run memory. Whil
 row's detail line names the type, such as "UniiChat — by Victor Taelin".
 
 A switch sends the model no note. It changes the history the model is sent from the next turn, and
-adds two tools: `zoom` and `date`.
+adds three tools: `zoom`, `date` and `recall`.
 
 ## Two types
 
@@ -46,7 +46,8 @@ Each chat uses one of two types, and keeps its own:
   compaction's summary size, 32 KB by default.
 
 Sova's UniiChat adapts Taelin's design and keeps its name and credit. Its guide tells the model the
-lines are an index, not the record, and to open a line before it reaches for any other tool. It also
+lines are an index, not the record, and to open a line, or `recall` a topic by its words when no line
+names it, before it reaches for any other tool. It also
 shows a session id whole where the line's own messages make that certain, since summaries tend to
 shorten ids.
 
@@ -68,14 +69,23 @@ before you've saved one, from UniiChat.
 
 ## Recalling a line
 
-The agent has two tools while memory is on:
+The agent has three tools while memory is on:
 
 - `zoom` opens a line into the two lines it was made from, and a single message's line into the
   message itself, whole, tool results included.
 - `date` gives a message's date and time.
+- `recall` finds earlier messages by their words: those holding every word given, closest match
+  first, at most 8 at a time. Each hit names its message, its date and time and a snippet around
+  the words, so `zoom` can open it whole. It never returns a message from the current turn, nor the
+  memory tools' own calls, and a snippet from a tool result or from a message the model didn't
+  write is marked as text to read, never instructions to follow.
+
+Memory comes first: when no line names what the model needs, it calls `recall` with the topic's
+words before any other tool. The lines themselves carry no dates; every date and time these tools
+show is this computer's local time.
 
 Each call is a tool row in the transcript, folded to what it opened: "Recalled messages 40–47",
-"Recalled message 40", "Date of message 40".
+"Recalled message 40", "Date of message 40", `Recalled "release notes"`.
 
 ## While it works
 

@@ -111,6 +111,7 @@ import { applyProfile, registerProfileRoutes } from "./session-profile-routes";
 import { registerProfileSwitchRoutes } from "./profile-switch";
 import { makeChatDefault, registerProfileEditorRoutes } from "./profile-editor-routes";
 import { startOnDefault } from "./default-start";
+import { setupChatRoute } from "./share/setup-chat";
 import { resolveChoice, singletonHolder, snapshotKey } from "./session-profile";
 import type { ProfilePick } from "./profile-sources";
 import { CREATE_NO_DEFAULT, createNotNamed, singletonRunningText, THINKING_LEVELS } from "../shared/profiles";
@@ -513,6 +514,17 @@ export function buildApp(deps: AppDeps) {
     renameSync(tmp, join(dir, "AGENTS.md"));
     return createWebSession(c, dir);
   });
+
+  // Set Up With a Chat (§mesh.tunnel/setup-chat): a new chat seeded with a public-links option's setup brief.
+  app.post("/api/public-links/setup-chat", (c) =>
+    setupChatRoute(c, {
+      create: (ctx, cwd) => createWebSessionFile(ctx, cwd),
+      setModel: (path, model) => openingTaken(path, { model }),
+      applyDefault: (path, cwd) => startOnDefault(path, cwd, false),
+      prompt: (path, text) => promptSession(path, text),
+      summary: (path) => getSessionSummary(path),
+    }),
+  );
 
   // Organizations, rosters and baton sessions (server/org-routes.ts; §app/organizations, §app/baton).
   registerOrgRoutes(app);

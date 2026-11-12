@@ -28,6 +28,8 @@
 /* Setup */
 .design-setup { gap: var(--space-4); }
 .design-setup .textarea { min-height: 76px; }
+/* The run's design skills: one read-only line on Setup and the brief; the folders are in its tooltip. */
+.design-skills-line { margin: 0; color: var(--color-ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .design-setup-label { margin: 0; font-size: var(--fs-caption); font-weight: var(--fw-semibold); color: var(--color-ink); }
 /* The direction picker: Style and Layout are closed rows like a provider's; open, a row shows its chips
    below itself. A chip keeps its size pressed or not (a plus becomes a check, the weight stays), so a tick

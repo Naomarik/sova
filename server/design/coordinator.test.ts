@@ -1148,7 +1148,7 @@ test("Start: a Rebuild screenshot's picture goes to the designers even beside a 
   assert.doesNotMatch(l.brief, new RegExp(`sova-asset:${rebuild}|id="${rebuild}"`), "a screenshot is never offered to embed");
 });
 
-test("Start: at most four reference pictures a design, the found screen's first", async () => {
+test("Start: at most four reference pictures a design, the ticked Rebuild screenshots' first", async () => {
   const run = withLink("images");
   run.createdAt = "2026-01-01T00:00:00Z";
   const { t, shot: found } = await looked(run);
@@ -1156,8 +1156,28 @@ test("Start: at most four reference pictures a design, the found screen's first"
   await t.design_brief({ baseRev: 0, summary: "S", prompt: "P", text: "F", shots: [found], images: shots.map((name) => ({ name, screen: "rebuild" })) });
   await start(run);
   const refs = log.launches[0]!.references as unknown as { name: string }[];
-  assert.equal(refs.length, 4);
-  assert.ok(!refs[0]!.name.startsWith("screenshot-"), "the found screen first");
+  assert.deepEqual(refs.map((r) => r.name), shots.slice(0, 4).map((n) => `screenshot-${n}.png`));
+});
+
+test("Start: four found-screen pictures never push out a Rebuild screenshot; the cap cuts found shots, and text and pictures agree", async () => {
+  const run = withLink("images");
+  run.createdAt = "2026-01-01T00:00:00Z";
+  const t = await started(run);
+  nextBrowse = { ...(nextBrowse as Extract<Outcome, { kind: "pictures" }>), url: URL_, origin: "https://example.test", shots: (["desktop", "desktop", "phone", "phone"] as const).map((size) => ({ size, png: PNG, viewport: { w: 1440, h: 960 } })) };
+  const found = (await t.design_browse({ url: URL_ })).details.shots as string[];
+  assert.equal(found.length, 4);
+  const rebuild = pasted(1);
+  await t.design_brief({ baseRev: 0, summary: "S", prompt: "P", text: "F", shots: found, images: [{ name: rebuild, screen: "rebuild" }] });
+  await start(run);
+  const l = log.launches[0]!;
+  const names = (l.references as unknown as { name: string }[]).map((r) => r.name);
+  assert.equal(names.length, 4);
+  assert.equal(names[0], `screenshot-${rebuild}.png`, "the Rebuild screenshot is attached");
+  assert.equal(names.filter((n) => !n.startsWith("screenshot-")).length, 3, "the cap cuts a found-screen shot");
+  // What the text says is rebuilt is one of the pictures attached.
+  const rebuilt = [...l.brief.matchAll(/- (a\d+) \([^)]*\): Rebuild this screen/g)].map((m) => `screenshot-${m[1]}.png`);
+  assert.deepEqual(rebuilt, [`screenshot-${rebuild}.png`]);
+  for (const r of rebuilt) assert.ok(names.includes(r), `${r} is attached`);
 });
 
 test("Start's screenshots are the shared rule's: an unticked screenshot needs no choice and can't be given one", async () => {

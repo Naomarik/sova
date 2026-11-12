@@ -19,6 +19,7 @@ import { pageProblem } from "./lint";
 import { replyCost } from "./setup";
 import { pageInReply } from "./stream-decode";
 import { designerSkillsBlock } from "./skills";
+import { SCREENSHOTS_HEADING, WORDS_ONLY_NOTE } from "../../shared/design-assets";
 import { changeDesign, changeDesigns, designOf, designRoot, designSessions, nextLabel, pendingPage, readDesigns, readPage, runOf, setPendingPage, setRunPhase, viewOf, writePage } from "./store";
 
 export interface DesignParent {
@@ -111,6 +112,8 @@ export function firstMessage(d: DesignRecord, brief: string, refs: DesignReferen
   // Sova writes the skills list itself, from the design's own record; a description comes from its run when it still has it.
   const skills = (d.skills ?? []).map((k) => ({ name: k.name, description: run?.skills?.find((r) => r.dir === k.dir)?.description ?? "" }));
   if (skills.length) parts.push(designerSkillsBlock(skills));
+  // A designer that reads no pictures, given screenshots: the brief may speak of pictures, so its own note overrides that.
+  if (!d.vision && (instructions ?? brief).includes(SCREENSHOTS_HEADING)) parts.push(WORDS_ONLY_NOTE);
   for (const p of parents) parts.push(`Design ${p.label}, a page to draw from:\n\n${p.html}`);
   // A reference with no outline (a pasted screenshot's: its words are in the text) adds no empty line.
   if (refs.length && !d.vision) parts.push(...refs.filter((r) => r.outline.trim()).map((r) => `Outline of the existing screen (${r.name}):\n${r.outline}`));

@@ -1142,6 +1142,8 @@ test("Start: a Rebuild screenshot's picture goes to the designers even beside a 
   assert.match(l.brief, /REFERENCE SCREENSHOTS/);
   assert.match(l.brief, new RegExp(`${rebuild} \\(1440x900\\): Rebuild this screen[\\s\\S]*#f2f2f7 page background; #4a43d8 primary action`));
   assert.match(l.brief, new RegExp(`${feel} \\(1440x900\\): Just its feel`));
+  assert.match(l.brief, new RegExp(`${rebuild} \\(1440x900\\)[^\\n]*\\n[^\\n]*\\n  What it shows: A settings screen\\.`), "a rebuild's content, in words, for every designer");
+  assert.doesNotMatch(l.brief.slice(l.brief.indexOf("REFERENCE SCREENSHOTS")), /picture/i, "the block never speaks of a picture");
   assert.doesNotMatch(l.brief, new RegExp(`sova-asset:${rebuild}|id="${rebuild}"`), "a screenshot is never offered to embed");
 });
 

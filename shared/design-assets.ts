@@ -64,6 +64,16 @@ export interface DesignAssetContext {
   dom?: DesignAssetDom;
 }
 
+/** The heading of the Reference screenshots block a design's message carries at Start. */
+export const SCREENSHOTS_HEADING = "REFERENCE SCREENSHOTS:";
+
+/** What a designer whose model reads no pictures is told when its message has screenshots: the brief may speak of
+    pictures it doesn't have, so the words lead, and what the screen holds is kept as described. */
+export const WORDS_ONLY_NOTE = [
+  "YOU HAVE NO PICTURES: your model reads no images, so no screenshot came with this message. Wherever anything above speaks of a picture, an image or a screenshot you can see (\"the picture a1 shows...\"), go by the words under REFERENCE SCREENSHOTS instead; never mention a picture in your page or your note.",
+  "Keep the screenshot's real titles, labels, figures and sample data exactly as the brief and those words describe them. Never invent names, numbers, prices, models or entries of your own; where the words give none, use plain placeholders that say what goes there.",
+].join("\n");
+
 /** One measured colour of a picture. */
 export interface DesignMeasuredColor {
   hex: string;

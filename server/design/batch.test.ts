@@ -241,6 +241,12 @@ test("a Rebuild screenshot: a designer that reads pictures gets it attached; one
   assert.match(blind.text, /#f2f2f7 page background; #4a43d8 primary action/);
   assert.ok(!blind.images?.length, "no picture for a model that can't read one");
   assert.doesNotMatch(blind.text, /Outline of the existing screen/);
+  // Its own note: the words lead over any picture the brief speaks of, and the screen's real data is kept.
+  const { WORDS_ONLY_NOTE } = await import("../../shared/design-assets");
+  assert.ok(blind.text.includes(WORDS_ONLY_NOTE));
+  assert.match(blind.text, /Keep the screenshot's real titles, labels, figures and sample data exactly as/);
+  assert.doesNotMatch(blind.text.replace(WORDS_ONLY_NOTE, ""), /picture/i, "nothing else speaks of a picture it doesn't have");
+  assert.ok(!sees.text.includes(WORDS_ONLY_NOTE), "a designer that sees it isn't told it can't");
   // With no outline to work from, the blind designer isn't told it has a description of the screen.
   assert.doesNotMatch(byModel("zai/blind").rec.spec.appendSystemPrompt ?? "", /detailed text description of a website design/);
 });

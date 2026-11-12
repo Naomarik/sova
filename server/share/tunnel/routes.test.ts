@@ -163,6 +163,8 @@ describe("a new address waits for its Verify while today's route works", () => {
       ["Free works → own server", [self("https://s.example.com"), quick, true], true],
       ["own server works → a new address", [self("https://new.example.com"), self("https://s.example.com"), true], true],
       ["own server works → same address (another field)", [self("https://s.example.com"), self("https://s.example.com"), true], false],
+      ["Account works → same address with a newly pasted token", [account, account, true, true], true],
+      ["Account works → same address, no new token", [account, account, true, false], false],
       ["nothing works yet (a fresh computer) → Account", [account, quick, false], false],
       ["→ Free switches at once", [quick, account, true], false],
       ["→ Off switches at once", [{ version: 1, route: "off" }, quick, true], false],

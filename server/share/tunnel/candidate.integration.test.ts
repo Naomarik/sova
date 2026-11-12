@@ -118,3 +118,21 @@ test("on a working Account, a new token waits with its setup: the live tunnel ke
   assert.equal(listener.shareState().publicUrl, ACCOUNT);
   assert.equal(((await call("GET", "/api/public-links")) as PublicLinksInfo).candidate, undefined);
 });
+
+test("on a working Account, a pasted token then Cancel: the live token and tunnel are as they were", async () => {
+  const { candidateTokenFile, tokenFile } = await import("./account-token");
+  assert.equal(listener.shareState().source, "account", "control: a verified Account");
+  const live = readFileSync(tokenFile(), "utf8");
+  const startsBefore = accountStarts();
+  const tokenC = Buffer.from(JSON.stringify({ a: "acct", t: "tunnel-c", s: "third-secret" })).toString("base64");
+  await app.request("/api/public-links/account-token", { method: "PUT", headers: { "Content-Type": "application/json", ...pageHeaders() }, body: JSON.stringify({ token: tokenC }) });
+  assert.ok(existsSync(candidateTokenFile()), "control: the pasted token waits");
+  await call("PUT", "/api/public-links", { route: "account", account: { publicUrl: ACCOUNT } });
+  assert.ok(((await call("GET", "/api/public-links")) as PublicLinksInfo).candidate, "control: a candidate waits");
+  const cancelled = (await call("DELETE", "/api/public-links/candidate")) as PublicLinksInfo;
+  assert.equal(cancelled.candidate, undefined);
+  assert.equal(readFileSync(tokenFile(), "utf8"), live, "the live token file is byte-identical");
+  assert.ok(!existsSync(candidateTokenFile()), "the pasted token is gone");
+  assert.equal(accountStarts(), startsBefore, "the Account tunnel was never restarted");
+  assert.equal(listener.shareState().publicUrl, ACCOUNT);
+});

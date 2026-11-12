@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import type { ModelInfo, ModelPolicy } from "../../shared/protocol";
-import { cleanSetup, setupModels } from "./setup";
+import { cleanSetup, estimateUsd, setupModels } from "./setup";
 
 const open: ModelPolicy = { disabledProviders: [], disabledModels: [], subagentDisabledProviders: [], subagentDisabledModels: [] };
 const info = (ref: string, favorite = false): ModelInfo => ({ ref, provider: ref.slice(0, ref.indexOf("/")), id: ref.slice(ref.indexOf("/") + 1), favorite, thinkingLevels: [] });
@@ -109,4 +109,13 @@ test("a bare coordinator id resolves the same way, to one model", () => {
   assert.deepEqual(coord("glm-5.3", "ollama-cloud/kimi-k3"), ["ollama-cloud/glm-5.3"]);
   assert.deepEqual(coord("glm-5.3", "zai/x"), ["zai/glm-5.3"]);
   assert.deepEqual(coord("ollama-cloud/glm-5.3", "zai/x"), ["ollama-cloud/glm-5.3"]);
+});
+
+test("the estimate before Start counts what each design reads of the run's skills", () => {
+  const setup = { brief: "b", models: [{ ref: "anthropic/claude-sonnet-4-5", name: "s", design: true, coordinator: true, vision: true, route: "tool" as const }], directions: [{ name: "Minimalist", on: true }, { name: "Heritage", on: true }] };
+  const plain = estimateUsd(setup);
+  assert.ok(plain !== null, "the seed table prices it");
+  const reading = estimateUsd(setup, Date.now(), 20_000)!;
+  assert.ok(reading > plain, `${reading} > ${plain}`);
+  assert.equal(estimateUsd(setup, Date.now(), 0), plain);
 });

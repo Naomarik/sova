@@ -134,7 +134,11 @@ export function visitorResponseHeaders(raw: string[], port: number, publicOrigin
       continue;
     }
     if (k === "location" || k === "content-location" || k === "access-control-allow-origin") value = value.replace(local, publicOrigin);
-    else if (k === "set-cookie") value = hostOnlyCookie(value);
+    else if (k === "set-cookie") {
+      // The app never sets or clears the proxy's own cookies (§mesh.public/preview-proxy).
+      if (OWN_COOKIES.has(value.split(";")[0]!.split("=")[0]!.trim())) continue;
+      value = hostOnlyCookie(value);
+    }
     else if (k === "referrer-policy") referrer = true;
     out.push(name, value);
   }

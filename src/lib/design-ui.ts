@@ -179,6 +179,7 @@ export const STATUS_WORD: Record<DesignStatus, string> = { queued: "Queued", wri
 /** The word on a design's chip: what its session is doing now, which can be more than its page's status. */
 export function designStatusWord(d: DesignRecord): string {
   if (d.delivery?.state === "queued") return "Queued";
+  if (d.status === "writing" && d.readingSkill && !d.live) return "Reading";
   if (d.status === "writing" && d.thinking) return "Thinking";
   if (d.status === "ready" && d.workerState === "working") return "Working";
   return STATUS_WORD[d.status];

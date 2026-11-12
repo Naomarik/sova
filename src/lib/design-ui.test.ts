@@ -108,6 +108,8 @@ test("a design's chip says what its session is doing", () => {
   assert.equal(word({}), "Ready");
   assert.equal(word({ status: "writing" }), "Writing");
   assert.equal(word({ status: "writing", thinking: true }), "Thinking");
+  assert.equal(word({ status: "writing", readingSkill: true, thinking: true }), "Reading");
+  assert.equal(word({ status: "writing", readingSkill: true, live: { version: 1, chars: 10 } }), "Writing");
   assert.equal(word({ workerState: "working" }), "Working", "a refine with no page yet");
   assert.equal(word({ status: "failed" }), "Failed");
   assert.equal(word({ workerState: "working", delivery: { state: "queued", key: "k", at: "" } }), "Queued", "a queued message says so first");

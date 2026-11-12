@@ -10,6 +10,7 @@ import { previewAddress } from "./share/preview-address";
 import { gatewayProtocol, refreshGateway } from "./share/gateway-client";
 import { noteVerify, shareListenerSettled, shareState } from "./share/listener";
 import { routedHosts } from "./share/registry";
+import { mountCloudflaredDownload } from "./share/tunnel/download";
 import { publicLinksChanged } from "./share/setting-events";
 import { parseVisitorLogging, readVisitorLogging, writeVisitorLogging } from "./visitor-logging";
 
@@ -104,4 +105,7 @@ export function mountPublicLinks(app: Hono, sources: PublicLinksSources = SOURCE
     if (shareState().publicUrl === url) writeServerFields({ verifiedAt: result.ok ? Date.now() : null });
     return c.json(result satisfies VerifyResult, 200, NO_STORE);
   });
+
+  // The one-click cloudflared download, your click only (§mesh.tunnel/cloudflared).
+  mountCloudflaredDownload(app);
 }

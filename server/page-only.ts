@@ -87,6 +87,7 @@ const DOORS = {
   update: "Only the user updates Sova. Ask them to do it in Settings → General. Nothing was changed.",
   cardClick: "Only the user answers a card. Ask them to click it in that chat. Nothing was sent.",
   extensions: "Only the user changes extensions. Ask them to do it in Settings → Extensions. Nothing was changed.",
+  cloudflared: "Only the user downloads programs. Ask them to press Download in Settings → Public links. Nothing was downloaded.",
 } as const;
 export type YourClickDoor = keyof typeof DOORS | { projectTool: string } | { cardsOf: string };
 

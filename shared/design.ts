@@ -348,6 +348,11 @@ export interface DesignBrief {
   startedAt?: string;
 }
 
+/** Whether an image the user supplied is this run's own: pasted since the run began, or attached when it was asked for
+    (run.images). Start, the Creative Director and the card all read a run's images by this one rule. */
+export const runOwnImage = (a: { source: string; name: string; addedAt: string }, run: Pick<DesignRun, "createdAt" | "images">): boolean =>
+  a.source === "yours" && (a.addedAt >= run.createdAt || (run.images ?? []).includes(a.name));
+
 /** The skills a run's designers use: those the brief names among the run's skills, or all of the run's when it names none. */
 export function designerSkills(run: Pick<DesignRun, "skills" | "brief">): DesignSkill[] {
   const all = run.skills ?? [];

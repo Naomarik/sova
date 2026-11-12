@@ -11,7 +11,7 @@ import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { ToolSpec } from "../../shared/harness";
-import { DESIGN_ASK_ABOVE, designBriefBlock, designerSkills, designDirectionLine, designPlan, isDesignLinkUse, type DesignAsk, type DesignBrief, type DesignBriefBlock, type DesignCoordinatorView, type DesignLinkUse, type DesignLook, type DesignRecord, type DesignRun, type DesignSignInAnswer } from "../../shared/design";
+import { DESIGN_ASK_ABOVE, designBriefBlock, designerSkills, runOwnImage, designDirectionLine, designPlan, isDesignLinkUse, type DesignAsk, type DesignBrief, type DesignBriefBlock, type DesignCoordinatorView, type DesignLinkUse, type DesignLook, type DesignRecord, type DesignRun, type DesignSignInAnswer } from "../../shared/design";
 import { isTourOrigin, type TourSize } from "../../shared/tour";
 import { serverToolCall } from "../chat-handle";
 import { modelDenial, readModelPolicy } from "../model-policy";
@@ -443,8 +443,7 @@ function directionsLine(run: DesignRun): string {
 
 /** The images the user brought to this run (attached when the Lookbook was asked for, pasted since): their names. */
 function runImages(sessionId: string, run: Pick<DesignRun, "createdAt" | "images">): string[] {
-  const attached = new Set(run.images ?? []);
-  return readAssets(sessionId).assets.filter((a) => a.source === "yours" && (a.addedAt >= run.createdAt || attached.has(a.name))).map((a) => a.name);
+  return readAssets(sessionId).assets.filter((a) => runOwnImage(a, run)).map((a) => a.name);
 }
 
 function firstMessage(run: DesignRun, images: readonly string[] = []): string {

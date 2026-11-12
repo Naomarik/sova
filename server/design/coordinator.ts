@@ -442,8 +442,9 @@ function directionsLine(run: DesignRun): string {
 }
 
 /** The images the user brought to this run (attached when the Lookbook was asked for, pasted since): their names. */
-function runImages(sessionId: string, run: Pick<DesignRun, "createdAt">): string[] {
-  return readAssets(sessionId).assets.filter((a) => a.source === "yours" && a.addedAt >= run.createdAt).map((a) => a.name);
+function runImages(sessionId: string, run: Pick<DesignRun, "createdAt" | "images">): string[] {
+  const attached = new Set(run.images ?? []);
+  return readAssets(sessionId).assets.filter((a) => a.source === "yours" && (a.addedAt >= run.createdAt || attached.has(a.name))).map((a) => a.name);
 }
 
 function firstMessage(run: DesignRun, images: readonly string[] = []): string {

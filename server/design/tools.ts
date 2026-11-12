@@ -12,7 +12,7 @@ import { listSkillFiles, readSkillFile, SKILL_LIMITS, SkillReadRefused, skillNam
 import { livePage } from "./live";
 import { lookAtDesign } from "./look";
 import type { TourSize } from "../../shared/tour";
-import { designOf, pendingPage, readPage, viewOf } from "./store";
+import { changeDesigns, designOf, pendingPage, readPage, viewOf } from "./store";
 import { applyEdits, type Edit } from "./edits";
 
 export { applyEdits };
@@ -57,12 +57,23 @@ export function mainDesignTools(parent: () => DesignParent, cwd: () => string): 
           const run = await createRun(p, cwd(), { ...params, skills: skillNamesOf(params.skills) });
           // The user's attached images join this run's own images: Setup shows them, and the Creative Director sees them first.
           const paths = Array.isArray(params.images) ? params.images.filter((x): x is string => typeof x === "string").slice(0, 20) : [];
-          const added = paths.length ? await ownImages(p, paths, { freshen: true }) : null;
+          // Never fails the call: the card is already up, and a retry would open a second one.
+          let added: { line: string; names: string[] } | null = null;
+          let failed = "";
+          if (paths.length) {
+            try {
+              added = await ownImages(p, paths);
+              // On the run itself, so one the chat already had belongs to it too, and Setup has them from its first frame.
+              if (added.names.length) changeDesigns(p.sessionId, (s) => void (s.runs.find((r) => r.id === run.id)!.images = added!.names));
+            } catch (err) {
+              failed = ` The card is up, but the attached images couldn't be added (${err instanceof Error ? err.message : String(err)}): ask the user to paste them into the Creative Director's box. Don't start another card.`;
+            }
+          }
           const picked = run.setup.models.filter((m) => m.design).length;
           const skills = run.skills?.length ? ` Design skills: ${run.skills.map((k) => k.name).join(", ")}.` : "";
           const missing = run.skillsMissing?.length ? ` Not found: ${run.skillsMissing.map((m) => m.asked).join(", ")}; the Creative Director asks the user about ${run.skillsMissing.length === 1 ? "it" : "them"} on the brief.` : "";
           const imagesLine = added ? (added.names.length ? ` Images: ${added.names.join(", ")} joined the run.` : "") + (added.line.includes("wasn't added") ? ` ${added.line.split("\n").filter((l) => l.includes("wasn't added")).join(" ")}` : "") : "";
-          return say(`The Setup card is on screen (run ${run.id}${picked ? `, ${picked} models ticked` : ""}).${skills}${missing}${imagesLine} The user finishes it there and starts the run; above ${DESIGN_ASK_ABOVE} designs Sova asks them first. Nothing more is needed from you, and nothing about it will reach you.`, { designCard: { runId: run.id } });
+          return say(`The Setup card is on screen (run ${run.id}${picked ? `, ${picked} models ticked` : ""}).${skills}${missing}${imagesLine}${failed} The user finishes it there and starts the run; above ${DESIGN_ASK_ABOVE} designs Sova asks them first. Nothing more is needed from you, and nothing about it will reach you.`, { designCard: { runId: run.id } });
         }
         if (params?.op === "read") {
           if (params.label) {

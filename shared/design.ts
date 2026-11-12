@@ -205,6 +205,9 @@ export interface DesignRun {
   skills?: DesignSkill[];
   /** Skills the user named for this run that weren't found. */
   skillsMissing?: DesignSkillMissing[];
+  /** The images the user attached when asking for this Lookbook, by asset name: the run's own, as the ones they paste
+      once it has begun are (whatever their age in the chat). Absent: none. */
+  images?: string[];
   createdAt: string;
   updatedAt: string;
 }

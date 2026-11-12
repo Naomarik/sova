@@ -244,10 +244,11 @@ export function linksFromText(text: string, previous: DesignLink[] | undefined, 
 // ---- what a Start launches ----------------------------------------------------------------------
 
 /** The images a Start hands over: a page's only from a link on Use Its Images, the person's own from this run on, none unticked. */
-export function keptImages(run: Pick<DesignRun, "setup" | "createdAt"> & { brief: DesignBrief }, catalogue: Pick<DesignAssetCatalogue, "assets" | "captures">): string[] {
+export function keptImages(run: Pick<DesignRun, "setup" | "createdAt" | "images"> & { brief: DesignBrief }, catalogue: Pick<DesignAssetCatalogue, "assets" | "captures">): string[] {
   const usedLinks = (run.setup.links ?? []).filter((l) => l.use === "images");
   const fromLinks = new Set(catalogue.captures.filter((c) => usedLinks.some((l) => sameOrigin(l.url, c.url))).flatMap((c) => c.names));
-  return catalogue.assets.filter((a) => (a.source === "yours" ? a.addedAt >= run.createdAt : fromLinks.has(a.name)) && run.brief.imageUse?.[a.name]?.use !== false).map((a) => a.name);
+  const attached = new Set(run.images ?? []);
+  return catalogue.assets.filter((a) => (a.source === "yours" ? a.addedAt >= run.createdAt || attached.has(a.name) : fromLinks.has(a.name)) && run.brief.imageUse?.[a.name]?.use !== false).map((a) => a.name);
 }
 
 const sameOrigin = (a: string, b: string): boolean => {

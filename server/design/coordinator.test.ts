@@ -25,6 +25,7 @@ let turnListener: (() => void) | null = null;
 let capture: (...a: unknown[]) => Promise<never>;
 let describingNow = false;
 let browseCalls = 0;
+let imageCalls: string[][] = [];
 
 const model = (ref: string, over: Partial<DesignModelChoice> = {}): DesignModelChoice => ({ ref, name: ref, design: true, coordinator: false, vision: true, route: "tool", ...over });
 const runWith = (designers: number, directions: number, over: Partial<DesignRun> = {}): DesignRun => ({
@@ -40,6 +41,7 @@ beforeEach(() => {
   turnListener = null;
   describingNow = false;
   browseCalls = 0;
+  imageCalls = [];
   capture = async () => ({ kind: "refused", message: "no capture in this test" }) as never;
   readLook = async () => ({ text: "Calm navy on white.", model: "zai/vision" });
   nextBrowse = { kind: "pictures", url: "/settings", origin: "http://127.0.0.1:4810", outline: "OUTLINE", signedIn: false, shots: [{ size: "desktop", png: PNG, viewport: { w: 1440, h: 960 } }] };
@@ -72,6 +74,7 @@ beforeEach(() => {
     projects: () => [{ id: "p1", root: "/proj/a" }, { id: "p2", root: "/proj/b" }],
     approveSite: (o) => void log.sites.push(o),
     saveTestAccount: () => {},
+    addImageFiles: async (_p, paths) => (imageCalls.push([...paths]), "Added to the chat's images as a1."),
   });
 });
 afterEach(() => {
@@ -688,6 +691,53 @@ test("described images reach the coordinator once, fenced as data", async () => 
   assert.equal(log.sends.length, 1, "nothing once the brief is frozen");
 });
 
+test("each run's skills reach the coordinator in that run's first message, with the same model keeping one session across runs", async () => {
+  const skill = (name: string, from: "project" | "named" = "project") => ({ name, description: `${name} rules`, dir: `/proj/.agents/skills/${name}`, from });
+  const first = runWith(2, 3, { skills: [skill("brand")] });
+  await started(first);
+  assert.match(lastTask, /Design skills for this run[\s\S]*- brand \(this project's\): \/proj\/\.agents\/skills\/brand\/SKILL\.md/);
+  assert.match(lastTask, /suggest which parts/i);
+  const second = runWith(2, 3, { skills: [skill("brand"), skill("house", "named")], skillsMissing: [{ asked: "~/Downloads/kit", reason: "There is no such folder." }] });
+  changeDesigns(parent.sessionId, (s) => void s.runs.push(second));
+  const sent = log.sends.length;
+  await startCoordinator(parent, second, "/cwd");
+  assert.equal(log.starts.length, 1, "the same model keeps its session: the new run's skills come in its message");
+  const told = log.sends.slice(sent).map((x) => x.text).join("\n");
+  assert.match(told, /- house \(named by the user\): \/proj\/\.agents\/skills\/house\/SKILL\.md/);
+  assert.match(told, /~\/Downloads\/kit: There is no such folder\.[\s\S]*question on the brief/);
+  assert.match(told, new RegExp(`run's id is ${second.id}`));
+  // A third run with none says so, so the earlier runs' skills don't carry over by silence.
+  const third = runWith(2, 3);
+  changeDesigns(parent.sessionId, (s) => void s.runs.push(third));
+  const before = log.sends.length;
+  await startCoordinator(parent, third, "/cwd");
+  const plain = log.sends.slice(before).map((x) => x.text).join("\n");
+  assert.match(plain, /Design skills: none for this run\./);
+  assert.doesNotMatch(plain, /house/);
+});
+
+test("a coordinator started again after its session ended is told its run's skills", async () => {
+  const run = runWith(2, 3, { skills: [{ name: "brand", description: "d", dir: "/proj/.agents/skills/brand", from: "project" }], skillsMissing: [{ asked: "kit", reason: "No skill by that name was found." }] });
+  await started(run);
+  workerState = "ended";
+  await messageCoordinator(parent, "carry on", "k1");
+  assert.equal(log.starts.length, 2, "a fresh session");
+  assert.match(lastTask, /\/proj\/\.agents\/skills\/brand\/SKILL\.md/);
+  assert.match(lastTask, /kit: No skill by that name was found\./);
+});
+
+test("design_images brings files the coordinator read into the chat's images, until the designs start", async () => {
+  const run = runWith(2, 3);
+  await started(run);
+  const call = (args: unknown) => coordinatorTools(parent.sessionId).find((x) => x.name === "design_images")!.execute("c1", args, undefined, undefined, undefined as never) as Promise<{ content: { type: string; text?: string }[] }>;
+  refused(await call({ paths: [] }));
+  assert.match(textOf(await call({ paths: ["/home/u/Downloads/logo.png", 7] })), /a1/);
+  assert.deepEqual(imageCalls, [["/home/u/Downloads/logo.png"]]);
+  changeDesigns(parent.sessionId, (s) => void (s.runs.find((r) => r.id === run.id)!.phase = "generating"));
+  refused(await call({ paths: ["/home/u/Downloads/logo.png"] }));
+  assert.equal(imageCalls.length, 1);
+});
+
 test("a later run naming another coordinator model replaces the session, carrying its card and notes; the same model keeps it", async () => {
   const first = runWith(2, 3);
   const t = await started(first);
@@ -941,14 +991,16 @@ test("the card's yes is the person's: a chat's key or the token in a header is r
   }
 });
 
-test("a coordinator's process is served its tools and no others, and has no built-in tools at all", async () => {
+test("a coordinator's process is served its tools and no others, and of the built-ins has pi's read only", async () => {
   const { workerServed } = await import("../chat-host");
   const decls = workerServed({ kind: "design-coordinator", parent: { sessionId: "p", path: "/p.jsonl", workerId: "design-coordinator" } }, "/w.jsonl");
-  assert.deepEqual(decls.map((d) => d.name).sort(), ["coordinator_card", "design_brief", "design_browse", "design_capture", "design_new", "design_send", "design_status", "project_verbs"]);
+  assert.deepEqual(decls.map((d) => d.name).sort(), ["coordinator_card", "design_brief", "design_browse", "design_capture", "design_images", "design_new", "design_send", "design_status", "project_verbs"]);
   // After a restart its mirror names only the parent's id: the same tools come back.
   assert.equal(workerServed({ kind: "design-coordinator", parentSessionId: "p" }, "/w2.jsonl").length, decls.length);
   const spec = (await import("./coordinator")).realCoordinatorSpec({ sessionId: "p", path: "/p.jsonl" }, "/cwd", "zai/glm-5.3-flash", "P");
-  assert.deepEqual(spec.builtins, []);
+  // Read anywhere, as an ordinary chat reads; never write, edit or a shell.
+  assert.deepEqual(spec.builtins, ["read"]);
+  for (const t of ["write", "edit", "bash", "grep", "find", "ls"]) assert.ok(!spec.builtins!.includes(t), t);
   assert.equal(spec.kind, "design-coordinator");
   assert.equal(spec.appendSystemPrompt, "P");
 });

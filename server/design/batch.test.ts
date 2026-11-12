@@ -166,6 +166,37 @@ test("a launch gives each model and direction its own label and session, and onl
   assert.equal(fakes.length, DESIGN_CONCURRENT + 1, "one done lets one more start");
 });
 
+test("a design takes its run's skills on its own record: its first message lists them, its reader reads them, and it keeps no built-ins", async () => {
+  const skillDir = join(dir, ".agents", "skills", "brand");
+  mkdirSync(skillDir, { recursive: true });
+  writeFileSync(join(skillDir, "SKILL.md"), "---\nname: brand\ndescription: The house look.\n---\nUse --brand.");
+  const run = newRun(["zai/a"], ["Minimalist"]);
+  store.changeDesigns(parent.sessionId, (s) => void (s.runs.find((r) => r.id === run)!.skills = [{ name: "brand", description: "The house look.", dir: skillDir, from: "project" }]));
+  launchDesigns(parent, run, { brief: "the brief" });
+  await ticks();
+  assert.deepEqual(stat("A").skills, [{ name: "brand", dir: skillDir }]);
+  // Never pi's file tools for a designer, skills or not.
+  assert.deepEqual(fakes[0]!.rec.spec.builtins, []);
+  const first = fakes[0]!.sends[0]!.text;
+  assert.match(first, /the brief[\s\S]*DESIGN SKILLS:[\s\S]*design_skill[\s\S]*- brand: The house look\./);
+  const tools = sessionDesignTools(parent, "A");
+  const reader = tools.find((t) => t.name === "design_skill")!;
+  assert.ok(reader, "a design with skills gets the reader");
+  const out = (await reader.execute("t", { skill: "brand", file: "SKILL.md" }, undefined, undefined, undefined)) as { content: { text: string }[] };
+  assert.match(out.content[0]!.text, /Use --brand\./);
+  assert.equal(stat("A").readingSkill, true, "its tile says it is reading the skill");
+  await assert.rejects(reader.execute("t", { skill: "brand", file: "../../../../etc/passwd" }, undefined, undefined, undefined) as Promise<unknown>, /\.\./);
+  // The page starting ends the reading.
+  onLiveFrame(fakes[0]!.rec.chatId, { gen: 1, at: 0, text: "<!doctype html><html>" });
+  assert.equal(stat("A").readingSkill, undefined);
+  // A run with none: no reader, and nothing about skills in its message.
+  const plain = newRun(["zai/a"], ["Heritage"]);
+  const [label] = launchDesigns(parent, plain, { brief: "another" });
+  await ticks();
+  assert.ok(!sessionDesignTools(parent, label!).some((t) => t.name === "design_skill"));
+  assert.equal(stat(label!).skills, undefined);
+});
+
 test("a design made from others waits for the launch, and can't stand in for it", () => {
   const run = newRun(["zai/a", "zai/b"], ["Minimalist", "Heritage", "Immersive"]);
   assert.throws(() => newDesign(parent, { parents: ["A"], instructions: "mix", model: "zai/a", runId: run }), /hasn't launched/);

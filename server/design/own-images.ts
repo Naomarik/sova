@@ -108,3 +108,31 @@ export async function readAttachedImages(paths: readonly string[]): Promise<{ im
   }
   return { images, unreadable };
 }
+
+/** Read images the Creative Director names by path on disk (a logo it found with its read): each an image file within the
+    size limit, read by its real path. The Creative Director reads anywhere, so this lets nothing new out; what it brings in
+    joins the chat's set like a pasted image, and reaches designers only as that set's small versions. */
+export async function readDiskImages(paths: readonly string[]): Promise<{ images: Uint8Array[]; unreadable: DesignAssetSkipped[] }> {
+  const { realpath, stat, readFile } = await import("node:fs/promises");
+  const { homedir } = await import("node:os");
+  const { isAbsolute, join } = await import("node:path");
+  const images: Uint8Array[] = [];
+  const unreadable: DesignAssetSkipped[] = [];
+  for (const raw of paths) {
+    const what = raw.length > 200 ? `${raw.slice(0, 199)}…` : raw;
+    const p = raw === "~" ? homedir() : raw.startsWith("~/") ? join(homedir(), raw.slice(2)) : raw;
+    if (!isAbsolute(p)) { unreadable.push({ what, reason: "Give its full path." }); continue; }
+    try {
+      const real = await realpath(p);
+      const st = await stat(real);
+      if (!st.isFile()) { unreadable.push({ what, reason: "It isn't a file." }); continue; }
+      if (st.size > DESIGN_ASSET_LIMITS.eachBytes) { unreadable.push({ what, reason: "It's over the 8 MB limit." }); continue; }
+      const bytes = new Uint8Array(await readFile(real));
+      if (!sniffImage(bytes)) { unreadable.push({ what, reason: "It isn't an image." }); continue; }
+      images.push(bytes);
+    } catch {
+      unreadable.push({ what, reason: "It couldn't be read." });
+    }
+  }
+  return { images, unreadable };
+}

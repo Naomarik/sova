@@ -7,7 +7,8 @@ import { DESIGN_ASK_ABOVE, DESIGN_BATCH_MAX, DESIGN_TOOL, designDirectionLine, i
 import { coordinatorCard, tellCoordinator } from "./coordinator";
 import { createRun } from "./setup";
 import { ownImagesLine } from "./asset-routes";
-import { DESIGN_HAND_IN_TOOL, editBase, handIn, pageProblem, refusedPage, replyPageThisTurn, savePage, takeLook, type DesignParent } from "./batch";
+import { DESIGN_HAND_IN_TOOL, editBase, handIn, pageProblem, readingSkill, refusedPage, replyPageThisTurn, savePage, takeLook, type DesignParent } from "./batch";
+import { DESIGN_SKILL_TOOL, listSkillFiles, readSkillFile, SKILL_LIMITS, SkillReadRefused, skillNamesOf } from "./skills";
 import { livePage } from "./live";
 import { lookAtDesign } from "./look";
 import type { TourSize } from "../../shared/tour";
@@ -43,18 +44,21 @@ export function mainDesignTools(parent: () => DesignParent, cwd: () => string): 
           directions: list("start: style names the user named."),
           layouts: list('start: layout names the user named ("a compact and a bento version"); none unless they named some.'),
           coordinator: str("start: the model id for the Creative Director (the coordinator), only when the user named one."),
+          skills: list("start: design skills the user named for this Lookbook, each a folder holding SKILL.md (an absolute or ~ path) or a skill's name. This project's own skills are always used; list only ones the user named."),
           images: list("tell: the paths of images the user attached, to add to the design's images."),
           label: str("read: a design's label, for its whole page."),
           text: str("tell: the words to pass on, exactly as the user said them."),
         },
         required: ["op"],
       },
-      async execute(toolCallId, params: { op?: string; brief?: string; models?: string[]; modelGroups?: string[]; directions?: string[]; layouts?: string[]; coordinator?: string; label?: string; text?: string; images?: unknown }) {
+      async execute(toolCallId, params: { op?: string; brief?: string; models?: string[]; modelGroups?: string[]; directions?: string[]; layouts?: string[]; coordinator?: string; skills?: unknown; label?: string; text?: string; images?: unknown }) {
         const p = parent();
         if (params?.op === "start") {
-          const run = await createRun(p, cwd(), params);
+          const run = await createRun(p, cwd(), { ...params, skills: skillNamesOf(params.skills) });
           const picked = run.setup.models.filter((m) => m.design).length;
-          return say(`The Setup card is on screen (run ${run.id}${picked ? `, ${picked} models ticked` : ""}). The user finishes it there and starts the run; above ${DESIGN_ASK_ABOVE} designs Sova asks them first. Nothing more is needed from you, and nothing about it will reach you.`, { designCard: { runId: run.id } });
+          const skills = run.skills?.length ? ` Design skills: ${run.skills.map((k) => k.name).join(", ")}.` : "";
+          const missing = run.skillsMissing?.length ? ` Not found: ${run.skillsMissing.map((m) => m.asked).join(", ")}; the Creative Director asks the user about ${run.skillsMissing.length === 1 ? "it" : "them"} on the brief.` : "";
+          return say(`The Setup card is on screen (run ${run.id}${picked ? `, ${picked} models ticked` : ""}).${skills}${missing} The user finishes it there and starts the run; above ${DESIGN_ASK_ABOVE} designs Sova asks them first. Nothing more is needed from you, and nothing about it will reach you.`, { designCard: { runId: run.id } });
         }
         if (params?.op === "read") {
           if (params.label) {
@@ -98,8 +102,38 @@ export function pageNow(parent: DesignParent, label: string, ctx: { branch(): HE
     isn't offered `design_stream`: a page sent that way would arrive whole at the end, and its reply is how the
     user watches it being written. */
 export function sessionDesignTools(parent: DesignParent, label: string): ToolSpec[] {
-  const tools = allSessionTools(parent, label);
-  return designOf(parent.sessionId, label)?.route === "reply" ? tools.filter((t) => t.name !== DESIGN_STREAM_TOOL) : tools;
+  const d = designOf(parent.sessionId, label);
+  const tools = [...allSessionTools(parent, label), ...(d?.skills?.length ? [skillTool(parent, label)] : [])];
+  return d?.route === "reply" ? tools.filter((t) => t.name !== DESIGN_STREAM_TOOL) : tools;
+}
+
+/** A design's skill reader: read only, inside the skill folders its own record names (never pi's file tools). */
+function skillTool(parent: DesignParent, label: string): ToolSpec {
+  return {
+    name: DESIGN_SKILL_TOOL,
+    label: "design skill",
+    description: `Read one of your design skills, the house rules for this project's pages. skill alone lists its files; with file (a path inside the skill, such as SKILL.md) it returns that file's text. Text files only (md, css, html, json, svg, txt), up to ${SKILL_LIMITS.readBytes / 1000} KB a read.`,
+    parameters: { type: "object", properties: { skill: str("The skill's name, as your first message lists it."), file: str("A file's path inside the skill; omit to list its files.") }, required: ["skill"], additionalProperties: false },
+    async execute(_id, params: { skill?: string; file?: string }) {
+      // Its roots from its own record at each call: what it may read never comes from the model.
+      const roots = designOf(parent.sessionId, label)?.skills ?? [];
+      const skill = typeof params?.skill === "string" ? params.skill : "";
+      try {
+        if (typeof params?.file === "string" && params.file.trim()) {
+          const f = readSkillFile(roots, skill, params.file);
+          readingSkill(parent, label);
+          return say(f.text, { skill: f.skill, file: f.path });
+        }
+        const l = listSkillFiles(roots, skill);
+        readingSkill(parent, label);
+        const lines = l.files.map((f) => `${f.path} (${f.bytes} bytes${f.text ? "" : ", not text: can't be read"})`);
+        return say([`The files of ${l.skill}:`, ...lines, ...(l.more ? ["(more files than are listed)"] : [])].join("\n"), { skill: l.skill });
+      } catch (err) {
+        if (err instanceof SkillReadRefused) throw new Error(err.message);
+        throw err;
+      }
+    },
+  };
 }
 
 function allSessionTools(parent: DesignParent, label: string): ToolSpec[] {

@@ -29,6 +29,7 @@ import { answerQuestions, BRIEF_LIMITS, coordinatorWrote, fillNotes, sameAddress
 import { DESIGN_BROWSE_TOUR_ID, designBrowse, type BrowseParent, type DesignBrowseStores } from "./browse";
 import { lookAtDesign } from "./look";
 import { estimateUsd } from "./setup";
+import { coordinatorSkillsBlock, skillReadTokens } from "./skills";
 import { changeDesigns, designRoot, designSessions, runOf, setCoordinator, setRunPhase, viewOf } from "./store";
 
 export const COORDINATOR_LIMITS = Object.freeze({ cardChars: 20_000, briefChars: 20_000, revisions: 50, shots: 200, notes: 200, textChars: 20_000 });
@@ -99,6 +100,8 @@ export interface CoordinatorPorts {
   projects(): readonly { id: string; root: string; name?: string }[];
   approveSite(origin: string): void;
   saveTestAccount(origin: string, username: string, password: string): void;
+  /** Images it read on disk, into the chat's set as pasted ones go: one line for it. */
+  addImageFiles?(parent: BrowseParent, paths: readonly string[]): Promise<string>;
 }
 export interface CoordinatorWorkers {
   /** Hear its state change; the returned function stops listening. */
@@ -142,11 +145,15 @@ function ports(): CoordinatorPorts {
 
 const WORKER_MARK = fileURLToPath(new URL("../../pi-config/extensions/subagents/worker-mark.ts", import.meta.url));
 
-/** A coordinator's loadout: no file tools and no shell, so everything it may do is one of its served tools. */
+/** The one built-in a coordinator has: pi's own read, anywhere on disk, as an ordinary chat reads (a skill, a logo the user
+    points at). It writes nothing and runs nothing: everything else it may do is one of its served tools. */
+export const COORDINATOR_BUILTINS: readonly string[] = Object.freeze(["read"]);
+
+/** A coordinator's loadout: read only of the built-ins, no edit, write or shell; the rest is its served tools. */
 export function realCoordinatorSpec(parent: BrowseParent, cwd: string, model: string, systemPrompt: string): WorkerSpec {
   // The worker mark first: it is what keeps this session out of the sessions list.
   const loaded = claudeCodeProviderLoad(model, [WORKER_MARK], undefined);
-  return { kind: "design-coordinator", parent: { sessionId: parent.sessionId, path: parent.path, workerId: "design-coordinator" }, cwd, model, thinking: null, builtins: [], extensions: loaded.extensions, flags: loaded.flags ?? {}, appendSystemPrompt: systemPrompt, env: {}, agentDir: null, lowered: true };
+  return { kind: "design-coordinator", parent: { sessionId: parent.sessionId, path: parent.path, workerId: "design-coordinator" }, cwd, model, thinking: null, builtins: [...COORDINATOR_BUILTINS], extensions: loaded.extensions, flags: loaded.flags ?? {}, appendSystemPrompt: systemPrompt, env: {}, agentDir: null, lowered: true };
 }
 
 const realPorts: CoordinatorPorts = {
@@ -184,6 +191,7 @@ const realPorts: CoordinatorPorts = {
   projects: () => listProjects(),
   approveSite: (origin) => tourRuntime().approvals.approve(origin),
   saveTestAccount: (origin, username, password) => void tourRuntime().accounts.save({ origin, username, password, testAccount: true }),
+  addImageFiles: async (parent, paths) => (await import("./asset-routes")).diskImagesLine(parent, paths),
 };
 
 // ---- state --------------------------------------------------------------------------------------
@@ -364,9 +372,12 @@ async function revive(st: CoordinatorState, text: string, key: string): Promise<
 
 /** A fresh session is told the brief as it stands, so it edits that rather than starting another. */
 function briefForRevival(st: CoordinatorState): string[] {
-  const b = runOf(st.sessionId, st.runId)?.brief;
-  if (!b) return [];
-  return [`The Design Brief is at revision ${b.textRev}${b.startedRev !== undefined ? " and frozen, since the designs started" : ""}.\nSummary: ${b.summary}\nFull Prompt (${b.promptBy ?? "not written"}): ${b.prompt ?? "(none)"}`];
+  const run = runOf(st.sessionId, st.runId);
+  // The run's skills too: a fresh session knows them only from its messages.
+  const skills = run ? [coordinatorSkillsBlock(run.skills ?? [], run.skillsMissing ?? [])] : [];
+  const b = run?.brief;
+  if (!b) return skills;
+  return [...skills, `The Design Brief is at revision ${b.textRev}${b.startedRev !== undefined ? " and frozen, since the designs started" : ""}.\nSummary: ${b.summary}\nFull Prompt (${b.promptBy ?? "not written"}): ${b.prompt ?? "(none)"}`];
 }
 
 /** Words a model wrote (a design's note, a failure's text), fenced as data. A fence inside them can't close this one. */
@@ -408,7 +419,7 @@ function firstMessage(run: DesignRun): string {
   const designers = run.setup.models.filter((m) => m.design).map((m) => m.name);
   const plan = designPlan(run.setup);
   const links = (run.setup.links ?? []).map((l) => `${l.url}: ${l.use === "images" ? "Use Its Images" : l.use === "feel" ? "Just Its Feel" : l.use === "content" ? "Not a Reference: an address in the page's content, never to be opened" : "not chosen: set it in design_brief's sources from their words (content when it's only an address the page links to, such as a contact or booking link), or ask"}`);
-  return [`What the user wants to design.\n${userWords("setup", run.setup.brief)}`, ...(links.length ? [`Links, and how each is used:\n${links.join("\n")}`] : []), `Models that will design: ${designers.join(", ") || "none"}.`, directionsLine(run), `That is ${plan.items.length} designs${plan.layouts ? `: ${plan.items.map((i) => designDirectionLine({ direction: i.style, layout: i.layout })).join("; ")}` : ""}. Your run's id is ${run.id}. Prepare the Design Brief; the designs start only when the user presses Start on it.`].join("\n\n");
+  return [`What the user wants to design.\n${userWords("setup", run.setup.brief)}`, ...(links.length ? [`Links, and how each is used:\n${links.join("\n")}`] : []), `Models that will design: ${designers.join(", ") || "none"}.`, directionsLine(run), `That is ${plan.items.length} designs${plan.layouts ? `: ${plan.items.map((i) => designDirectionLine({ direction: i.style, layout: i.layout })).join("; ")}` : ""}.`, coordinatorSkillsBlock(run.skills ?? [], run.skillsMissing ?? []), `Your run's id is ${run.id}. Prepare the Design Brief; the designs start only when the user presses Start on it.`].join("\n\n");
 }
 
 /** A new session on the model this run's Setup names, started from what is known (its card, the designs' metadata, the
@@ -1092,7 +1103,7 @@ export function coordinatorTools(sessionId: string): ToolSpec[] {
           const outline = shots[0]!.outline;
           b.screen = { text: words!, screenshots: shots.map((x) => x!.url), ...(str(params.url) ? { url: str(params.url)! } : {}), ...(outline ? { outline } : {}) };
         }
-        const estimate = estimateUsd(r.setup);
+        const estimate = estimateUsd(r.setup, Date.now(), skillReadTokens(r.skills));
         if (estimate !== null) b.estimateUsd = estimate;
         r.phase = "brief";
         r.updatedAt = new Date().toISOString();
@@ -1315,7 +1326,24 @@ export function coordinatorTools(sessionId: string): ToolSpec[] {
     serverRedactor,
   );
 
-  return [status, brief, browse, capture, send, create, card, verbs];
+  const images: ToolSpec = {
+    name: "design_images", label: "Add images from disk",
+    description: "Add image files you found on disk (a logo the user pointed you to, a picture in a skill) to this chat's images, by full path, at most 10. They join the images on the Design Brief and go to the designers with the rest; the page stays sealed, so this is the only way a file reaches a design. Images only, 8 MB each.",
+    parameters: { type: "object", properties: { paths: { type: "array", items: { type: "string" }, description: "Full paths of image files." } }, required: ["paths"], additionalProperties: false },
+    async execute(_id, params: { paths?: unknown }) {
+      const st = state();
+      if (isResult(st)) return st;
+      const paths = Array.isArray(params?.paths) ? params.paths.filter((x): x is string => typeof x === "string" && x.trim().length > 0).slice(0, 10) : [];
+      if (!paths.length) return refuse("name at least one image file by its full path.");
+      const run = runOf(parent.sessionId, st.runId);
+      if (run && designRunLaunched(run)) return refuse("the designs have started, so their images are fixed. Pass an image on with design_send's words, or make a new design.");
+      const add = p().addImageFiles;
+      if (!add) return refuse("images can't be added here.");
+      return say(await add(parent, paths));
+    },
+  };
+
+  return [status, brief, browse, capture, send, create, card, verbs, images];
 }
 
 /** What a coordinator needs of a project's copies: which is running, and the addresses to open. */

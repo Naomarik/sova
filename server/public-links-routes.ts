@@ -227,15 +227,16 @@ export function mountPublicLinks(app: Hono, sources: PublicLinksSources = SOURCE
     // A route chosen outright replaces a waiting candidate; a token pasted for an Account taken at
     // once (nothing works to keep) is that Account's token now.
     const newToken = plan.file.route === "account" && hasCandidateToken();
+    const r = patchPublicLinks(body);
+    if ("error" in r) return c.json({ error: r.error }, 400);
+    // Only once the save stands: a refused PUT changes no token and drops nothing.
     if (body && typeof body === "object" && "route" in body) {
       if (newToken) {
         if (readCandidate()) dropCandidate();
         promoteCandidateToken();
+        if (tunnelStatus(SHARE).state !== "stopped") await restartTunnel(SHARE, "a new Account token").catch(() => undefined);
       } else await cancelCandidate();
     }
-    const r = patchPublicLinks(body);
-    if ("error" in r) return c.json({ error: r.error }, 400);
-    if (newToken && tunnelStatus(SHARE).state !== "stopped") await restartTunnel(SHARE, "a new Account token").catch(() => undefined);
     publicLinksChanged(r.file);
     // The answer carries the bind as it came out (§mesh.public/listener-failure).
     await shareListenerSettled();

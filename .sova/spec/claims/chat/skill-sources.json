@@ -70,12 +70,15 @@
       "server/project-settings.test.ts",
       "server/approvals.ts",
       "server/approvals-routes.ts",
-      "shared/approvals.ts"
+      "shared/approvals.ts",
+      "server/approvals.test.ts",
+      "server/skill-descent.ts",
+      "server/session-setup.test.ts"
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-11T16:05Z",
-      "source": "pi-session:ddb0e3b6-cee0-49d4-939d-916b8e8a54b1#d4f6b709"
+      "at": "2026-11-12T16:08Z",
+      "source": "pi-session:ec6da819-fb0b-454b-9ba9-97db0affcbfb#723cbddc"
     }
   },
   "§chat.skill-sources/project-new-chats": {
@@ -111,12 +114,15 @@
       "server/project-skills-processes.integration.test.ts",
       "src/lib/project-skills.test.ts",
       "src/lib/setup-approvals.ts",
-      "server/session-loadout-runtime.test.ts"
+      "server/session-loadout-runtime.test.ts",
+      "server/session-setup.test.ts",
+      "server/skill-descent.ts",
+      "server/chat-host.test.ts"
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-11T16:05Z",
-      "source": "pi-session:ddb0e3b6-cee0-49d4-939d-916b8e8a54b1#d4f6b709"
+      "at": "2026-11-12T16:08Z",
+      "source": "pi-session:ec6da819-fb0b-454b-9ba9-97db0affcbfb#723cbddc"
     }
   },
   "§chat.skill-sources/rescue": {

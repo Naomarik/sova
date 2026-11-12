@@ -36,7 +36,7 @@
   "§app.organizations/archive": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "code": [
       "server/orgs.ts",
       "shared/orgs.ts",
@@ -65,8 +65,48 @@
       "§app.organizations/projects",
       "§app.organizations/org-page",
       "§app.project-overseer/watch-loop",
-      "§app.project-overseer/new-coding-session"
-    ]
+      "§app.project-overseer/new-coding-session",
+      "§app.organizations/archive-copies"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-12T20:06Z",
+      "source": "pi-session:cd5bc367-c9ed-418c-9f81-00287ee4986a#15085bbd"
+    }
+  },
+  "§app.organizations/archive-copies": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "code": [
+      "shared/projects.ts",
+      "src/components/ProjectArchiveAsk.tsx",
+      "src/components/ProjectPage.tsx",
+      "src/components/ProjectServicesTab.tsx",
+      "src/lib/archive-copies.ts",
+      "src/lib/archive-copies.test.ts",
+      "src/lib/services-view.ts",
+      "src/lib/services-view.test.ts",
+      "src/lib/api.ts",
+      "server/project-overseer.ts",
+      "server/projects/routes.ts",
+      "server/project-services/engine.ts",
+      "server/project-services/archive-copies.test.ts",
+      "src/projects.css",
+      "src/components/PreviewsCard.tsx"
+    ],
+    "requires": [
+      "§app.project-services/down",
+      "§app.project-services/reconcile",
+      "§app.project-services/services-ui",
+      "§app.project-services/supervisor",
+      "§app.project-services/up"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-12T20:06Z",
+      "source": "pi-session:cd5bc367-c9ed-418c-9f81-00287ee4986a#15085bbd"
+    },
+    "evidence": "verified"
   },
   "§app.organizations/backup-guard": {
     "kind": "behavior",

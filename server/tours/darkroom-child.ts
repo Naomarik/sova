@@ -3,6 +3,7 @@
 import { createInterface } from "node:readline";
 import { launchTourBrowser } from "./browser";
 import { DarkroomRefusal, openDarkroom, sniffImage } from "./page-capture";
+import { PALETTE_LIMITS, paletteFromBins } from "./palette";
 
 const MAX_LINE = 12 * 1024 * 1024;
 const lines = createInterface({ input: process.stdin, crlfDelay: Infinity });
@@ -25,7 +26,11 @@ try {
     if (!kind) { send({ i: job.i, error: "It isn't an image." }); continue; }
     try {
       const d = await darkroom.develop(bytes, kind.mime, { w: 512, h: 512 });
-      send({ i: job.i, width: d.width, height: d.height, full: { base64: d.full.bytes.toString("base64"), w: d.full.w, h: d.full.h }, small: { base64: d.small.bytes.toString("base64"), w: d.small.w, h: d.small.h }, describe: { base64: d.describe.bytes.toString("base64"), w: d.describe.w, h: d.describe.h } });
+      // Its main colours, measured here from the version it drew: a missing palette never costs the image.
+      // From the original near its own size, so a 2px accent line stays whole pixels; binned in the page, so only bins
+      // come back. If the original can't be drawn that way, the small version it drew: its accents may be lost there.
+      const palette = await darkroom.bins(bytes, kind.mime, PALETTE_LIMITS.edge).catch(() => darkroom.bins(d.describe.bytes, "image/png", PALETTE_LIMITS.edge)).then((b) => paletteFromBins(b.bins)).catch(() => []);
+      send({ i: job.i, palette, width: d.width, height: d.height, full: { base64: d.full.bytes.toString("base64"), w: d.full.w, h: d.full.h }, small: { base64: d.small.bytes.toString("base64"), w: d.small.w, h: d.small.h }, describe: { base64: d.describe.bytes.toString("base64"), w: d.describe.w, h: d.describe.h } });
     } catch (err) { send({ i: job.i, error: err instanceof DarkroomRefusal ? err.message : "It couldn't be drawn." }); }
   }
 } finally {

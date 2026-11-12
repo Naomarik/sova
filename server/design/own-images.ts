@@ -12,6 +12,9 @@ import { startRunnerProxy, type RunnerProxy } from "../tours/runner-proxy";
 import { spawnTourCommand, killTourChild, type TourRecordingContext } from "../tours/sandbox";
 import type { BrowseParent } from "./browse";
 import { keepAsset, type DevelopedImage } from "./assets";
+import { cleanPalette, type MeasuredColor } from "../tours/palette";
+
+const paletteField = (p: MeasuredColor[] | undefined): { palette?: MeasuredColor[] } => (p ? { palette: p } : {});
 
 export interface OwnImagesResult {
   added: DesignAsset[];
@@ -47,10 +50,10 @@ export const drawInDarkroom: OwnImageDrawer = async (context, images) => {
       };
       createInterface({ input: proc.stdout! }).on("line", (line) => {
         try {
-          const m = JSON.parse(line) as { type?: string; i?: number; error?: string; width?: number; height?: number; full?: Part; small?: Part; describe?: Part };
+          const m = JSON.parse(line) as { type?: string; i?: number; error?: string; width?: number; height?: number; full?: Part; small?: Part; describe?: Part; palette?: unknown };
           if (m.type === "ready") return feed();
           if (Number.isInteger(m.i) && m.i! >= 0 && m.i! < images.length) {
-            results[m.i!] = m.error || !m.full || !m.small || !m.describe ? { error: m.error ?? "It couldn't be drawn." } : { width: Number(m.width), height: Number(m.height), full: part(m.full), small: part(m.small), describe: part(m.describe) };
+            results[m.i!] = m.error || !m.full || !m.small || !m.describe ? { error: m.error ?? "It couldn't be drawn." } : { width: Number(m.width), height: Number(m.height), full: part(m.full), small: part(m.small), describe: part(m.describe), ...paletteField(cleanPalette(m.palette)) };
           }
           feed();
         } catch { killTourChild(proc, "SIGKILL"); }
@@ -105,6 +108,34 @@ export async function readAttachedImages(paths: readonly string[]): Promise<{ im
     const bytes = check.ok ? await readTmpImage(check.realPath) : null;
     if (bytes) images.push(new Uint8Array(bytes));
     else unreadable.push({ what: `Image ${i + 1}`, reason: "It couldn't be read." });
+  }
+  return { images, unreadable };
+}
+
+/** Read images the Creative Director names by path on disk (a logo it found with its read): each an image file within the
+    size limit, read by its real path. The Creative Director reads anywhere, so this lets nothing new out; what it brings in
+    joins the chat's set like a pasted image, and reaches designers only as that set's small versions. */
+export async function readDiskImages(paths: readonly string[]): Promise<{ images: Uint8Array[]; unreadable: DesignAssetSkipped[] }> {
+  const { realpath, stat, readFile } = await import("node:fs/promises");
+  const { homedir } = await import("node:os");
+  const { isAbsolute, join } = await import("node:path");
+  const images: Uint8Array[] = [];
+  const unreadable: DesignAssetSkipped[] = [];
+  for (const raw of paths) {
+    const what = raw.length > 200 ? `${raw.slice(0, 199)}…` : raw;
+    const p = raw === "~" ? homedir() : raw.startsWith("~/") ? join(homedir(), raw.slice(2)) : raw;
+    if (!isAbsolute(p)) { unreadable.push({ what, reason: "Give its full path." }); continue; }
+    try {
+      const real = await realpath(p);
+      const st = await stat(real);
+      if (!st.isFile()) { unreadable.push({ what, reason: "It isn't a file." }); continue; }
+      if (st.size > DESIGN_ASSET_LIMITS.eachBytes) { unreadable.push({ what, reason: "It's over the 8 MB limit." }); continue; }
+      const bytes = new Uint8Array(await readFile(real));
+      if (!sniffImage(bytes)) { unreadable.push({ what, reason: "It isn't an image." }); continue; }
+      images.push(bytes);
+    } catch {
+      unreadable.push({ what, reason: "It couldn't be read." });
+    }
   }
   return { images, unreadable };
 }

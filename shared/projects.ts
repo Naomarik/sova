@@ -7,7 +7,9 @@
  * POST  /api/projects {root} | {clone: {repo, parent, folder?}} -> ProjectRegistered (201)
  * GET   /api/projects/:pid               -> ProjectSummary
  * PATCH /api/projects/:pid {name?, root?} -> ProjectSummary
- * POST  /api/projects/:pid/archive | /unarchive -> ProjectSummary
+ * POST  /api/projects/:pid/archive | /unarchive -> ProjectSummary (archive refused, 409, while anything is open:
+ *       {error: "Stop these first: …", copies?: ArchiveCopy[]} when its copies run)
+ * GET   /api/projects/:pid/running-copies -> ArchiveCopies (what the archive dialog lists, §app.organizations/archive)
  * GET   /api/projects/glance             -> ProjectGlanceList (the overview cards' runtime figures, §app.projects/home-glance)
  *
  * A project's icon (§app.projects/icon), kept on this host only:
@@ -57,6 +59,42 @@ export interface ProjectSummary {
   space: ProjectSpace;
   /** A picture in use (absent: letters). Only on this host's own summaries; a peer's project is drawn as letters. */
   icon?: ProjectIconRef;
+}
+
+/** A service of a copy that runs: up, starting, or failing and about to be started again. */
+export interface ArchiveCopyService {
+  name: string;
+  state: "running" | "starting" | "restarting";
+  /** The adopted unit Sova only reads (§app.project-services/adopt). */
+  adopted?: true;
+}
+
+/**
+ * A copy of the project that runs or waits to restart (§app.organizations/archive): one per instance, and one for
+ * the project's shared services. Archive is refused while any that is not `adopted` is listed.
+ */
+export interface ArchiveCopy {
+  /** The instance id; null for the project's shared services. */
+  instance: string | null;
+  /** How it is named: "Main copy", its branch, its checkout's folder, or "Shared services". */
+  name: string;
+  branch: string | null;
+  checkout: string | null;
+  slot: number | null;
+  /** What it runs. */
+  services: ArchiveCopyService[];
+  /** It runs outside Sova (only an adopted unit runs): "runs outside Sova; stop it yourself", never stopped here, never blocks archive. */
+  adopted: boolean;
+  /** The body of `POST /api/project-services/down` that stops it, keeping its data (the operator's click confirms what
+      otherwise needs it: slot 0, shared services, share links); null when Sova can't stop it (`adopted`, or `why`).
+      The shared services' is the project's shared down, which needs no copy (`shared`). */
+  down: { instance: string; services?: string[]; confirm: true } | { project: string; shared: true; confirm: true } | null;
+  /** Why it can't be stopped here, when `down` is null and it is not adopted. */
+  why?: string;
+}
+
+export interface ArchiveCopies {
+  copies: ArchiveCopy[];
 }
 
 export interface ProjectList {

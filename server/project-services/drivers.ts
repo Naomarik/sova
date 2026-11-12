@@ -30,7 +30,33 @@ export interface UnitStatus {
   /** The signal that ended the main process (`SIGKILL`), when the driver saw it. */
   signal?: string;
   detail?: string;
+  /** It failed RESTART_BURST starts in a row and is not started again until someone starts it (up, apply): the
+      start limit (§app.project-services/supervisor). Kept by the supervisor, so it holds through a server restart. */
+  gaveUp?: true;
 }
+
+/** The delay before a failed service is started again, in seconds (systemd's `RestartSec=`, the detached driver's default). */
+export const RESTART_SEC = 2;
+/** After this many failed starts in a row, however long each ran before it failed, a unit is left failed (gave up). */
+export const RESTART_BURST = 5;
+/** A run that lasted this long before it failed counts as having stayed up: its failure starts a fresh count. */
+export const STABLE_RUN_SEC = 60;
+/** The restart watch's tick for a restart delay: at most a second. */
+export const restartTickMs = (restartMs: number) => Math.max(100, Math.min(restartMs, 1_000));
+/**
+ * systemd's start limit for a restarted unit (pure, for tests). systemd counts starts within a fixed
+ * interval, never failures in a row, and has no reset for a run that stayed up; this interval comes as
+ * close as it allows. RESTART_BURST failed runs, each shorter than STABLE_RUN_SEC, and their restart
+ * delays span less than RESTART_BURST * (RestartSec + STABLE_RUN_SEC), so the start after the last of
+ * them falls inside the interval and is refused (start-limit-hit): it gives up after the 5th failure in
+ * a row however slowly each failed (a fixed 30 s interval let a service that ran 4 s restart forever).
+ * A service that runs at least STABLE_RUN_SEC before each failure fits at most RESTART_BURST starts in
+ * the interval and never hits it. Where quick failures and long runs mix inside one interval, systemd
+ * can give up sooner than the detached driver's count would.
+ */
+export const startLimitIntervalSec = () => RESTART_BURST * (RESTART_SEC + STABLE_RUN_SEC);
+/** What a gave-up unit's status says. */
+export const GAVE_UP_DETAIL = `start limit hit: ${RESTART_BURST} failed starts in a row; it waits to be started again`;
 
 export interface RunOnceResult {
   code: number | null;
@@ -121,15 +147,25 @@ export function envFileText(env: Record<string, string>): string {
 }
 
 /** The `systemd-run` argv that starts `spec` as a transient user service (pure, for tests). A waited-for run is
-    not `--quiet`: its summary on exit carries the memory peak. A command named by a relative path
+    not `--quiet`: its summary on exit carries the memory peak. A restarted service carries its start limit
+    (RESTART_BURST starts within startLimitIntervalSec) and no `--collect`: a unit that gave up stays loaded as failed
+    (start-limit-hit) until it is started or stopped again (both reset it), so a server restart still sees it.
+    A command named by a relative path
     (`.sova/bin/setup`) is made absolute against `cwd`: systemd-run resolves it against its own
     directory, not the unit's, and refuses to start the unit when it is not there. */
 export function systemdRunArgv(spec: UnitSpec, once?: { timeoutSec: number }, unitOpts: SystemdUnitOptions = {}): string[] {
-  const a = ["--user", `--unit=${spec.unit}`, `--slice=${unitOpts.slice ?? SLICE}`, "--collect", ...(once ? [] : ["--quiet"]), `--working-directory=${spec.cwd}`, "--property=StandardInput=null"];
+  const restarts = !once && unitOpts.restart !== false;
+  const a = ["--user", `--unit=${spec.unit}`, `--slice=${unitOpts.slice ?? SLICE}`, ...(restarts ? [] : ["--collect"]), ...(once ? [] : ["--quiet"]), `--working-directory=${spec.cwd}`, "--property=StandardInput=null"];
   if (once) a.push("--wait", "--property=KillMode=control-group", `--property=RuntimeMaxSec=${once.timeoutSec}`);
   else {
     a.push("--property=KillMode=mixed", `--property=TimeoutStopSec=${unitOpts.timeoutStopSec ?? 15}`);
-    if (unitOpts.restart !== false) a.push("--property=Restart=on-failure", "--property=RestartSec=2");
+    if (restarts)
+      a.push(
+        "--property=Restart=on-failure",
+        `--property=RestartSec=${RESTART_SEC}`,
+        `--property=StartLimitIntervalSec=${startLimitIntervalSec()}`,
+        `--property=StartLimitBurst=${RESTART_BURST}`,
+      );
   }
   if (spec.nice) a.push(`--property=Nice=${spec.nice}`);
   if (unitOpts.envFile) a.push(`--property=EnvironmentFile=${unitOpts.envFile(spec.unit)}`);
@@ -151,6 +187,8 @@ export function parseShow(text: string): UnitStatus {
   const exit = kv.ExecMainStatus !== undefined && kv.ExecMainStatus !== "" ? Number(kv.ExecMainStatus) : null;
   const active = kv.ActiveState;
   const state: UnitState = active === "active" ? "active" : active === "activating" || active === "reloading" ? "activating" : active === "failed" ? "failed" : "inactive";
+  // systemd gave up starting it again: its start limit (§app.project-services/supervisor).
+  if (state === "failed" && kv.Result === "start-limit-hit") return { state, pid, exit, gaveUp: true, detail: GAVE_UP_DETAIL };
   return { state, pid, exit, ...(kv.SubState ? { detail: `${active}/${kv.SubState}${kv.Result && kv.Result !== "success" ? ` (${kv.Result})` : ""}` } : {}) };
 }
 
@@ -536,6 +574,12 @@ interface ProcRecord {
   /** To start it again after a crash, as the engine started it. */
   env?: Record<string, string>;
   at: string;
+  /** When it hit the start limit (ISO): failed, never started again by the watch or reconcile until a start writes a new record. */
+  gaveUp?: string;
+  /** The restart watch's start: how many runs before this one failed in a row (none for a start by someone). */
+  failed?: number;
+  /** When this run started on the driver's clock (ms), to tell how long it stayed up before it failed. */
+  t?: number;
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -547,14 +591,14 @@ export interface DetachedOptions {
   restart?: boolean;
   /** The delay before such a start, and the watch's tick. */
   restartMs?: number;
+  /** How long a run must stay up for its failure to start a fresh count (default STABLE_RUN_SEC). */
+  stableMs?: number;
   /** Where unit records and logs live (default: project services' `procs/` and `logs/`). */
   procsDir?: () => string;
   logsDir?: () => string;
+  /** The clock the restart watch counts its delay and run lengths in (default: the wall clock); tests step a fake one. */
+  now?: () => number;
 }
-
-/** At most this many starts of one unit in RESTART_WINDOW_MS, then it stays failed (systemd's default burst). */
-const RESTART_BURST = 5;
-const RESTART_WINDOW_MS = 10_000;
 
 /**
  * Each unit is a process started in its own session (`detached`, so setsid), its output appended to
@@ -564,7 +608,10 @@ const RESTART_WINDOW_MS = 10_000;
  * group stays in the session): stop signals every process in it, TERM, then KILL after 15 s. Where
  * the process table has no session ids (macOS's `ps`), the unit is its leader's process tree and
  * the groups its members created. A process that starts a session of its own escapes. With
- * `restart`, a unit that ends with a failure is started again after 2 s, at most 5 times in 10 s.
+ * `restart`, a unit that ends with a failure is started again after 2 s; after RESTART_BURST failed starts
+ * in a row (however long each ran) its record keeps that it gave up, so it stays failed through a server
+ * restart until it is started again. A run that stayed up STABLE_RUN_SEC before it failed begins a fresh
+ * count. The count is in the unit's record, so a server restart doesn't reset it.
  */
 export class DetachedDriver implements Driver {
   readonly id = "detached" as const;
@@ -572,20 +619,22 @@ export class DetachedDriver implements Driver {
   private signals = new Map<string, string>();
   private readonly table: ProcTable;
   private readonly restartMs: number;
+  private readonly stableMs: number;
+  private readonly now: () => number;
   private watch: NodeJS.Timeout | null = null;
   private ticking = false;
   /** Units being stopped: never started again under the stop. */
   private stopping = new Set<string>();
-  /** Per unit: when it first looked dead, and its recent starts. */
+  /** Per unit: when it first looked dead. */
   private down = new Map<string, number>();
-  private starts = new Map<string, number[]>();
-  private gaveUp = new Set<string>();
   constructor(
     private readonly stopGraceMs = 15_000,
     private readonly opts: DetachedOptions = {},
   ) {
     this.table = opts.table ?? hostProcTable();
-    this.restartMs = opts.restartMs ?? 2_000;
+    this.restartMs = opts.restartMs ?? RESTART_SEC * 1000;
+    this.stableMs = opts.stableMs ?? STABLE_RUN_SEC * 1000;
+    this.now = opts.now ?? Date.now;
   }
   private procsDir = () => (this.opts.procsDir ?? procsDir)();
   private logsDir = () => (this.opts.logsDir ?? logsDir)();
@@ -651,7 +700,7 @@ export class DetachedDriver implements Driver {
             // not permitted: it runs at the caller's priority
           }
         }
-        const rec: ProcRecord = { pid, start: this.table.startOf(pid) ?? "", clock: this.table.kind, argv: spec.argv, cwd: spec.cwd, env: spec.env, at: new Date().toISOString() };
+        const rec: ProcRecord = { pid, start: this.table.startOf(pid) ?? "", clock: this.table.kind, argv: spec.argv, cwd: spec.cwd, env: spec.env, at: new Date().toISOString(), t: this.now() };
         this.exits.delete(spec.unit);
         this.signals.delete(spec.unit);
         child.once("exit", (code, sig) => {
@@ -663,26 +712,23 @@ export class DetachedDriver implements Driver {
       });
     });
   }
-  private async spawnRecorded(spec: UnitSpec): Promise<void> {
+  private async spawnRecorded(spec: UnitSpec, failed?: number): Promise<void> {
     const rec = await this.spawnUnit(spec);
     // The record holds the unit's env: only its owner reads it.
-    writeWhole(this.recFile(spec.unit), `${JSON.stringify(rec)}\n`, 0o600);
-    const now = Date.now();
-    this.starts.set(spec.unit, [...(this.starts.get(spec.unit) ?? []).filter((t) => now - t < RESTART_WINDOW_MS), now]);
+    writeWhole(this.recFile(spec.unit), `${JSON.stringify(failed ? { ...rec, failed } : rec)}\n`, 0o600);
     this.down.delete(spec.unit);
   }
   async start(spec: UnitSpec) {
     const old = this.rec(spec.unit);
     if (old && this.live(old)) return;
-    this.gaveUp.delete(spec.unit);
-    this.starts.delete(spec.unit);
+    // A start by someone (up, apply) is a fresh count: its new record has no failures and no gave-up mark.
     await this.spawnRecorded(spec);
     this.watchUnits();
   }
   /** With `restart`: every tick, start again each recorded unit that ended with a failure. */
   private watchUnits(): void {
     if (!this.opts.restart || this.watch) return;
-    this.watch = setInterval(() => void this.tick(), Math.max(100, Math.min(this.restartMs, 1_000)));
+    this.watch = setInterval(() => void this.tick(), restartTickMs(this.restartMs));
     this.watch.unref();
   }
   /** One pass of the restart watch (public for tests). */
@@ -698,8 +744,9 @@ export class DetachedDriver implements Driver {
   private async restartFailed(): Promise<string[]> {
     const did: string[] = [];
     for (const unit of await this.units("")) {
-      if (this.stopping.has(unit) || this.gaveUp.has(unit)) continue;
+      if (this.stopping.has(unit)) continue;
       const r = this.rec(unit);
+      if (r?.gaveUp) continue;
       if (!r || this.live(r)) {
         this.down.delete(unit);
         continue;
@@ -707,19 +754,27 @@ export class DetachedDriver implements Driver {
       // A clean exit of its own is not a failure (systemd's on-failure); an unknown one is. A record
       // from before env was recorded can't be started the same way: reconcile starts it at the next server start.
       if (this.exits.get(unit) === 0 || !r.env) continue;
-      const since = this.down.get(unit) ?? Date.now();
+      const now = this.now();
+      const since = this.down.get(unit) ?? now;
       this.down.set(unit, since);
-      if (Date.now() - since < this.restartMs) continue;
-      const recent = (this.starts.get(unit) ?? []).filter((t) => Date.now() - t < RESTART_WINDOW_MS);
-      if (recent.length >= RESTART_BURST) {
-        this.gaveUp.add(unit);
+      if (now - since < this.restartMs) continue;
+      // This run's failure, after those before it in a row. A run that stayed up stableMs before it failed starts
+      // the count afresh; one whose start time isn't recorded (an older record) counts as a quick failure.
+      const ran = r.t !== undefined ? since - r.t : 0;
+      const failed = (ran >= this.stableMs ? 0 : (r.failed ?? 0)) + 1;
+      if (failed >= RESTART_BURST) {
+        // Nothing of it is left running (as systemd stops a failed unit's cgroup), and its record keeps that it
+        // gave up: a server restart (the watch, reconcile) leaves it failed too.
+        if (this.members(r).length) await this.killSession(r);
+        writeWhole(this.recFile(unit), `${JSON.stringify({ ...r, gaveUp: new Date().toISOString() } satisfies ProcRecord)}\n`, 0o600);
+        this.down.delete(unit);
         did.push(`${unit}: start limit hit`);
         continue;
       }
       // What is left of its session goes first, as systemd's restart stops the whole unit.
       if (this.members(r).length) await this.killSession(r);
       try {
-        await this.spawnRecorded({ unit, argv: r.argv, cwd: r.cwd, env: r.env ?? {} });
+        await this.spawnRecorded({ unit, argv: r.argv, cwd: r.cwd, env: r.env ?? {} }, failed);
         did.push(`${unit}: started again`);
       } catch (err) {
         did.push(`${unit}: ${(err as Error).message}`);
@@ -758,8 +813,6 @@ export class DetachedDriver implements Driver {
       if (r && this.members(r).length) await this.killSession(r);
       rmSync(this.recFile(unit), { force: true });
       this.down.delete(unit);
-      this.starts.delete(unit);
-      this.gaveUp.delete(unit);
     } finally {
       this.stopping.delete(unit);
     }
@@ -769,15 +822,16 @@ export class DetachedDriver implements Driver {
     if (!r) return { state: "missing", pid: null };
     if (this.live(r)) return { state: "active", pid: r.pid };
     const exit = this.exits.get(unit);
+    if (r.gaveUp) return { state: "failed", pid: null, ...(exit !== undefined ? { exit } : {}), gaveUp: true, detail: GAVE_UP_DETAIL };
     // Waiting to be started again, as systemd's auto-restart.
-    if (this.opts.restart && this.watch && r.env && exit !== 0 && !this.gaveUp.has(unit)) return { state: "activating", pid: null, ...(exit !== undefined ? { exit } : {}), detail: "auto-restart" };
+    if (this.opts.restart && this.watch && r.env && exit !== 0) return { state: "activating", pid: null, ...(exit !== undefined ? { exit } : {}), detail: "auto-restart" };
     const signal = this.signals.get(unit);
     return {
       state: exit === 0 ? "inactive" : "failed",
       pid: null,
       ...(exit !== undefined ? { exit } : {}),
       ...(signal ? { signal } : {}),
-      detail: this.gaveUp.has(unit) ? "start limit hit" : exit === undefined ? "exited" : `exited with ${exit}`,
+      detail: exit === undefined ? "exited" : `exited with ${exit}`,
     };
   }
   async signal(unit: string, sig: string) {

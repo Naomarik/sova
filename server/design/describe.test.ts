@@ -373,3 +373,125 @@ test("the check picture is a real PNG that two colours can be read from", () => 
   }
   assert.equal(d.cleanWords("a <<b>> c\n\nd", 100), "a b c d");
 });
+
+/** A pasted image, with the colours the darkroom measured. */
+function addYours(i: number, palette: { hex: string; share: number; saturation?: number; thin?: true; frame?: number }[] = [{ hex: "#f2f2f7", share: 0.6 }, { hex: "#4a43d8", share: 0.1 }]): string {
+  const original = Buffer.concat([PNG, Buffer.from(`#yours${i}`)]);
+  const v = { bytes: PNG, w: 10, h: 10 };
+  const out = assets.keepAsset(parent.sessionId, { source: "yours", original, full: v, small: v, describe: v, width: 1440, height: 900, context: {}, palette });
+  assert.ok("asset" in out);
+  return out.asset.name;
+}
+
+test("a pasted image keeps the palette the darkroom measured, and the helper sees it; a page's image never can be a screenshot", async () => {
+  const page = addImage(0);
+  const shot = addYours(0);
+  assert.deepEqual(asset(shot).palette, [{ hex: "#f2f2f7", share: 0.6 }, { hex: "#4a43d8", share: 0.1 }]);
+  assert.equal(asset(page).palette, undefined);
+  d.describeAssets(parent);
+  await until(() => helpers.length === 1, "started");
+  assert.match(helpers[0]!.req.task, /Measured colours \(from its pixels\), largest first:\n  #f2f2f7: 60% of the picture, fills areas\n  #4a43d8: 10% of the picture, fills areas/);
+  // One batch with both: the page's image refused as a screenshot, the pasted one kept with its draft.
+  const out = await call(helpers[0]!, [
+    row(page, "screenshot"),
+    { ...row(shot, "screenshot"), feel: "Calm and airy, generous spacing.", roles: [{ hex: "#F2F2F7", role: "page background" }, { hex: "#4a43d8", role: "primary action" }, { hex: "#123456", role: "made up" }] },
+  ]);
+  assert.match(JSON.stringify(out), new RegExp(`${page}: screenshot is only for an image the user supplied`));
+  assert.equal(asset(page).description, undefined);
+  assert.equal(asset(shot).description!.kind, "screenshot");
+  assert.equal(asset(shot).description!.feel, "Calm and airy, generous spacing.");
+  assert.deepEqual(asset(shot).description!.roles, [{ hex: "#f2f2f7", role: "page background" }, { hex: "#4a43d8", role: "primary action" }], "only measured colours get a role");
+  await call(helpers[0]!, [row(page, "photo")]);
+  settle(helpers[0]!);
+  await settledOut();
+  // The user can't make a page's image a screenshot either.
+  assert.throws(() => d.setAssetNote(parent.sessionId, page, { kind: "screenshot" }), /Only an image you supplied/);
+  d.setAssetNote(parent.sessionId, shot, { kind: "screenshot" });
+  // A screenshot is never offered for a page to embed; its words go in the reference block instead.
+  assert.ok(!d.assetBlock(parent.sessionId, [page, shot]).includes(`id="${shot}"`));
+  const ref = d.screenshotBlock(parent.sessionId, [page, shot], () => "rebuild");
+  assert.match(ref, /REFERENCE SCREENSHOTS/);
+  assert.match(ref, new RegExp(`${shot} \\(1440x900\\): Rebuild this screen[\\s\\S]*Calm and airy[\\s\\S]*#f2f2f7 page background; #4a43d8 primary action`));
+  assert.ok(!ref.includes(page));
+});
+
+test("a screenshot's words: the user's saved words beat the Creative Director's and the helper's, and Describe Again keeps them", async () => {
+  const { assetKind, shotWords } = await import("../../shared/design-assets");
+  const shot = addYours(1);
+  d.describeAssets(parent);
+  await until(() => helpers.length === 1, "started");
+  await call(helpers[0]!, [{ ...row(shot, "screenshot"), feel: "draft feel", roles: [{ hex: "#f2f2f7", role: "background" }] }]);
+  settle(helpers[0]!);
+  await settledOut();
+  assert.deepEqual(shotWords(asset(shot)), { words: { feel: "draft feel", colors: [{ hex: "#f2f2f7", role: "background" }, { hex: "#4a43d8", role: "" }] }, by: "helper" });
+  assets.changeAssets(parent.sessionId, (c) => {
+    const a = c.assets.find((x) => x.name === shot)!;
+    a.cdWords = { feel: "director feel", colors: [] };
+    a.cdKind = "screenshot";
+  });
+  assert.equal(shotWords(asset(shot))!.by, "coordinator");
+  d.setAssetNote(parent.sessionId, shot, { words: { feel: "my own feel", colors: [{ hex: "#4A43D8", role: "buttons" }] } });
+  assert.deepEqual(shotWords(asset(shot)), { words: { feel: "my own feel", colors: [{ hex: "#4a43d8", role: "buttons" }] }, by: "user" });
+  assert.throws(() => d.setAssetNote(parent.sessionId, shot, { words: { feel: "x", colors: [{ hex: "blue", role: "r" }].concat(Array(9).fill({ hex: "#000000", role: "r" })) } }));
+  // The user's kind beats the Creative Director's screenshot.
+  d.setAssetNote(parent.sessionId, shot, { kind: "photo" });
+  assert.equal(assetKind(asset(shot)), "photo");
+  assert.equal(asset(shot).cdKind, "screenshot", "the Creative Director's choice stays in its own field");
+  d.setAssetNote(parent.sessionId, shot, { kind: null });
+  assert.equal(assetKind(asset(shot)), "screenshot");
+  d.describeAgain(parent, shot);
+  await until(() => helpers.length === 2, "again");
+  await call(helpers[1]!, [{ ...row(shot, "screenshot"), feel: "a new draft" }]);
+  settle(helpers[1]!);
+  await settledOut();
+  assert.equal(asset(shot).description!.feel, "a new draft");
+  assert.equal(shotWords(asset(shot))!.words.feel, "my own feel");
+  d.setAssetNote(parent.sessionId, shot, { words: null });
+  assert.equal(shotWords(asset(shot))!.words.feel, "director feel");
+});
+
+test("the helper judges roles from each colour's facts: its share, how saturated it is, and whether it sits on strokes", async () => {
+  const shot = addYours(9, [{ hex: "#2c2c38", share: 0.82, saturation: 0.05, frame: 0.39 }, { hex: "#1e1e26", share: 0.15, saturation: 0.03, frame: 0.55 }, { hex: "#e8e8ee", share: 0.03, saturation: 0.02, thin: true, frame: 0 }, { hex: "#8e88ff", share: 0.0004, saturation: 0.47, thin: true }, { hex: "#e0a030", share: 0.002, saturation: 0.69, thin: true }]);
+  d.describeAssets(parent, [shot]);
+  await until(() => helpers.length === 1, "started");
+  const task = helpers[0]!.req.task;
+  assert.match(task, /#8e88ff: under 0\.1% of the picture, saturated \(0\.47\), on thin strokes: text, lines, borders or small marks/);
+  assert.match(task, /#e8e8ee: 3% of the picture, neutral grey \(0\.02\), on thin strokes/);
+  assert.match(task, /#2c2c38: 82% of the picture, neutral grey \(0\.05\), fills areas, covers 39% of the screen's outer edge/);
+  assert.match(task, /#1e1e26: 15% of the picture, neutral grey \(0\.03\), fills areas, covers 55% of the screen's outer edge/);
+  assert.match(task, /#e8e8ee: [^\n]*only inside the screen, never at its outer edge/);
+  assert.match(d.DESCRIBER_PROMPT, /Label by where a colour sits, not by how much of the picture it covers\. The neutral covering most of the screen's outer edge is the page background/);
+  assert.match(d.DESCRIBER_PROMPT, /never call a small saturated colour a background or a divider/);
+  assert.match(d.DESCRIBER_PROMPT, /A neutral on thin strokes far from the background's lightness is text/);
+});
+
+test("the helper's screenshot words are kept whole: a long role, feel and description are never cut", async () => {
+  const shot = addYours(11);
+  d.describeAssets(parent, [shot]);
+  await until(() => helpers.length === 1, "started");
+  const role = `active tab underline under the selected tab, ${"and the focus ring on the search field, ".repeat(8)}nothing else`;
+  const description = "A dark sessions board. ".repeat(40).trim();
+  await call(helpers[0]!, [{ ...row(shot, "screenshot"), description, feel: "Quiet. ".repeat(250).trim(), roles: [{ hex: "#4a43d8", role }] }]);
+  settle(helpers[0]!);
+  await settledOut();
+  assert.ok(role.length > 300);
+  assert.equal(asset(shot).description!.roles![0]!.role, role);
+  assert.equal(asset(shot).description!.description, description);
+  assert.equal(asset(shot).description!.feel!.length, "Quiet. ".repeat(250).trim().length);
+  assert.ok(!d.assetsForCoordinator(parent.sessionId).includes("…"));
+});
+
+test("a pasted image described as a photo keeps its whole description, so it reaches designers whole if it is made a screenshot", async () => {
+  const shot = addYours(12);
+  d.describeAssets(parent, [shot]);
+  await until(() => helpers.length === 1, "started");
+  const description = "A long table of sessions with real names and figures. ".repeat(20).trim();
+  await call(helpers[0]!, [{ ...row(shot, "photo"), description }]);
+  settle(helpers[0]!);
+  await settledOut();
+  assert.equal(asset(shot).description!.description, description);
+  d.setAssetNote(parent.sessionId, shot, { kind: "screenshot" });
+  const block = d.screenshotBlock(parent.sessionId, [shot], () => "rebuild");
+  assert.ok(block.includes(`What it shows: ${description}`));
+  assert.doesNotMatch(block, /…/);
+});

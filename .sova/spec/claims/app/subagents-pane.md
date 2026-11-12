@@ -501,7 +501,8 @@ sent. Each part is read as the chat's folder and the chat hold it now (`GET
   chat's folder that haven't loaded yet come last, under **Not yet loaded · not counted**: each shows
   what it would cost (`+≈{n}`), draws no share bar and isn't in any total. The folder walk follows
   the loading's skip rule and stops after 5,000 folders; then the group says "This list may be
-  incomplete."
+  incomplete." A chat Sova doesn't look below (§chat.subfolder-skills/offering) lists no file of a
+  folder below its own, and says nothing about it.
 - **Skills offered** lists each skill by its name, its description under it, and a chip that tells
   a full read from a skim, counting only the conversation since the latest compaction: **Read**
   only when the whole `SKILL.md` has loaded (an invocation of it, a read of it, or a shell command
@@ -541,8 +542,9 @@ sent. Each part is read as the chat's folder and the chat hold it now (`GET
   `≈0`, last in the card, a manual-only skill included: its text is under Conversation, and no listing
   of it is in the window. The line's short line adds `· {k} not offered yet` while there are some, and
   the sheet's top line does too. The line stays while it has any row, even at `≈0`. A chat that loads no
-  skills, or a worker whose tools can't touch and read a file, lists no skill of a folder below its own
-  here.
+  skills, a worker whose tools can't touch and read a file, or a chat Sova doesn't look below
+  (§chat.subfolder-skills/offering) lists no skill of a folder below its own here, with no line saying
+  why.
 - **Conversation** opens to its parts: **Tool results**, **Replies** and **Your messages**, each
   with its count and ≈ size, then **Other messages** (an extension's messages and branch summaries)
   only while there are some, and, once the chat has compacted, the **Compaction summary** the

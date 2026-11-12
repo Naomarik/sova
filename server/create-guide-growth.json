@@ -534,6 +534,7 @@
    "project.icon.remove": "scripts",
    "project.archive": "scripts",
    "project.unarchive": "scripts",
+   "project.copies.running": "scripts",
    "project.preview.off": "scripts",
    "project.worktree.list": "scripts",
    "project.worktree.merge": "scripts",

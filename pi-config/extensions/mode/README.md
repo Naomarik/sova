@@ -646,7 +646,9 @@ The catalogue's second tool-backed entry is the Lookbook: `vis_guide {kind:"look
 tool itself, only while vis is on, so a terminal has nothing to run. `design-guide.ts` (node builtins
 only) reads `vis/lookbook-directions.md` for the 20 styles (one `- Name: definition` line each, or the
 module refuses to load) and `design/` for a design session's system prompt (`session/`) and the
-coordinator's (`coordinator.md`).
+coordinator's (`coordinator.md`). Nothing autoloads for these sessions (no skills, no context files). A run's design skills are only those the user
+names with `lookbook`'s `skills`, listed in each run's messages by Sova: the Creative Director reads them with pi's `read`,
+its one built-in, and a design session only through the served `design_skill` reader.
 
 A host may add a session's own drawing kinds through the `sova:vis-own-kinds` hook (`VIS_OWN_KINDS_HOOK`
 in `minor.ts`, a `globalThis` function `(sessionId) => [{kind, guide, line}]`; Sova's server installs it

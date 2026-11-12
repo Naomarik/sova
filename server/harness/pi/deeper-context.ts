@@ -3,21 +3,27 @@
 // write's tool_result it appends the instruction files and skills of the folders the call touched that the
 // branch hasn't got yet. Its `input` hook expands `/skill:name` where pi's own expansion can't: a subfolder's
 // skill (no list of pi's has it), a rescued one (pi's parser throws on it), and Claude's placeholders
-// (quirk P41, §chat.subfolder-skills/command, §chat.skill-sources/arguments).
+// (quirk P41, §chat.subfolder-skills/command, §chat.skill-sources/arguments). Neither looks below a chat's folder
+// where server/skill-descent.ts says it doesn't (the home folder and above, a plain folder): starting skills alone.
 import { readFileSync } from "node:fs";
+import { homedir } from "node:os";
 import { dirname, relative, sep } from "node:path";
 import { blocksToAttach, loadedInstructions, LOADING_TOOLS } from "../../deeper-context";
 import { APPROVAL_PENDING, type ApprovalPendingData } from "../state-kinds";
 import { isContextOff, isSkillOff, loadoutOnBranch, type LoadoutEntryData } from "../../session-loadout";
 import { expandedSkill, fillPlaceholders, skillBody, skillCommand } from "../../skill-sources";
+import { skillDescentAllowed } from "../../skill-descent";
 import { nestedSkillFile, offeredDirs, offeredSkills, skillBlocksToAttach } from "../../subfolder-skills";
 import type { PiExtensionAPI } from "./extension-types";
 import { piCanExpand, piSkillsIn, skillArgumentNames } from "./skill-sources";
 import { stateViewOf } from "./state-view-of";
 import { toolCtx } from "./tools";
 
-export function deeperContextExtension(opts: { allow?: (abs: string) => boolean; skills?: boolean; skillOff?: (s: { name: string; filePath: string }) => boolean } = {}) {
+/** `inProject`: the chat's folder belongs to a project added to Sova, as its build was told (absent: not). */
+export function deeperContextExtension(opts: { allow?: (abs: string) => boolean; skills?: boolean; skillOff?: (s: { name: string; filePath: string }) => boolean; inProject?: boolean } = {}) {
   const withSkills = opts.skills !== false;
+  /** Asked at each call from the chat's own folder: a repository made there is noticed as the chat works. */
+  const descends = (cwd: string) => skillDescentAllowed(cwd, { home: homedir(), inProject: opts.inProject === true });
   return {
     name: "sova-deeper-context",
     hidden: true,
@@ -49,6 +55,8 @@ export function deeperContextExtension(opts: { allow?: (abs: string) => boolean;
         const path = LOADING_TOOLS.has(event.toolName) ? pathOf(event.input) : undefined;
         if (!path || event.isError) return;
         try {
+          // Where the chat doesn't look below its folder: nothing offered, and no "wasn't loaded" line.
+          if (!descends(ctx.cwd)) return;
           const input = event.input as { offset?: unknown; limit?: unknown };
           const h = toolCtx(ctx);
           const branch = h.branch();
@@ -111,6 +119,8 @@ export function deeperContextExtension(opts: { allow?: (abs: string) => boolean;
           const branch = toolCtx(ctx).branch();
           // A name this chat switched off stays off (§chat.transcript/setup-card-toggles): pi leaves the text as typed.
           if (!starting && isSkillOff(loadoutOnBranch(branch), { name: cmd.name, filePath: "" })) return { action: "continue" as const };
+          // A subfolder's skill only where the chat looks below its folder; else the text goes as typed.
+          if (!starting && !descends(ctx.cwd)) return { action: "continue" as const };
           const file = starting ? starting.sourceInfo.path : nestedSkillFile(ctx.cwd, cmd.name, branch, piSkillsIn);
           if (!file) return { action: "continue" as const };
           // A subfolder's skill this chat's list keeps out stays as typed, as a switched-off name does.

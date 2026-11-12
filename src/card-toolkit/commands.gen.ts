@@ -156,6 +156,7 @@ export type CommandId =
   | "project.icon.remove"
   | "project.archive"
   | "project.unarchive"
+  | "project.copies.running"
   | "project.preview.off"
   | "project.worktree.list"
   | "project.worktree.merge"
@@ -3831,6 +3832,11 @@ export interface CommandParams {
     /** The project's id */
     "pid": string;
   };
+  /** A project's copies that run or wait to restart, as the archive dialog lists them, each with the down that stops it. (only looks; needs the card's owner trusted) */
+  "project.copies.running": {
+    /** The project's id */
+    "pid": string;
+  };
   /** Turn a preview link off at once. (changes something; needs the card's owner trusted) */
   "project.preview.off": {
     /** The preview's id */
@@ -4514,7 +4520,7 @@ export interface CommandParams {
     /** The whole setup: brief, models, directions */
     "setup": unknown;
   };
-  /** Start a Lookbook run's coordinator, which writes its Design Brief. The designs start from the brief, by the user's click. (changes something; needs the card's owner trusted) */
+  /** Start a Lookbook run's Creative Director, which writes its Design Brief. The designs start from the brief, by the user's click. (changes something; needs the card's owner trusted) */
   "design.start": {
     /** The chat the designs belong to, by id or by path */
     "session"?: string;
@@ -4552,11 +4558,11 @@ export interface CommandParams {
     /** The design's label (A, B, … AA) */
     "label": string;
   };
-  /** Send a chat's Lookbook coordinator a message. It waits if the coordinator is busy. (changes something; needs the card's owner trusted) */
+  /** Send a chat's Lookbook Creative Director a message. It waits if the Creative Director is busy. (changes something; needs the card's owner trusted) */
   "design.coordinator.message": {
     /** The chat the designs belong to, by id or by path */
     "session"?: string;
-    /** What to say to the coordinator */
+    /** What to say to the Creative Director */
     "text": string;
     /** A key you make: sending again under it delivers nothing twice */
     "key": string;
@@ -4725,6 +4731,7 @@ export const COMMAND_EFFECTS: Record<CommandId, "looks" | "changes"> = {
   "project.icon.remove": "changes",
   "project.archive": "changes",
   "project.unarchive": "changes",
+  "project.copies.running": "looks",
   "project.preview.off": "changes",
   "project.worktree.list": "looks",
   "project.worktree.merge": "changes",

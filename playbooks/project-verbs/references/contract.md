@@ -159,6 +159,7 @@ A conformance stamp proves exactly one hash. The hash covers the whole parsed de
 | `deploy-failed` | 1 | a deploy step failed |
 | `verify-failed` | 1 | the deploy ran, and its `verify` did not answer as expected |
 | `release-refused` | 2 | a release verb refused because a gate isn't met: not set up, one already open, a check failed, a step not done |
+| `refused-archived` | 2 | create, up, apply, test or reset of a copy of an archived project: unarchive it first (down, status, logs and teardown still run) |
 
 ## Toolchains
 - mise shims (`mise.toml`, `.mise.toml`, `.tool-versions`) refuse an untrusted checkout: give each service `"MISE_TRUSTED_CONFIG_PATHS": "${checkout}"` in `env`. Setup steps, hooks, builds and the test run take no `env`: run them through a `.sova/bin/` script that exports `MISE_TRUSTED_CONFIG_PATHS="$SOVA_CHECKOUT"` first.

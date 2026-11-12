@@ -61,7 +61,7 @@ function SessionLink(props: { href: string | null; children: JSX.Element }) {
  * state (Running, Starting, Stopped) and, stopped, Start: the operator's `up`, the only thing that
  * starts it (a visit never does). Read every 5 seconds while the page shows.
  */
-export function PreviewsCard(props: { projectId: string }) {
+export function PreviewsCard(props: { projectId: string; /** Archived: its copies are not started here. */ archived?: boolean }) {
   const poll = createPoll(() => getProjectPreviews(props.projectId), POLL_MS, { cacheKey: `project:${props.projectId}:previews` });
   /** Links minted in this page, by preview id: copyable even when the list keeps none. */
   const [links, setLinks] = createSignal<Record<string, string>>({});
@@ -281,9 +281,9 @@ export function PreviewsCard(props: { projectId: string }) {
                       </div>
                     </Show>
                   </div>
-                  <Show when={row().start || row().url || v.sentLink || !solo()}>
+                  <Show when={(row().start && !props.archived) || row().url || v.sentLink || !solo()}>
                     <div class="previews-row-actions">
-                      <Show when={row().start}>
+                      <Show when={!props.archived && row().start}>
                         {(s) => (
                           <button type="button" class="button button-sm" title="Starts this copy. A visit to its link never starts it." onClick={() => void start(s().instance)}>
                             Start

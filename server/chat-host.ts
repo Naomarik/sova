@@ -88,6 +88,7 @@ import { isArchived } from "./archived-sessions";
 import { agentRoot, stateRoot } from "./state-root";
 import { loginContextEnv, withoutLoginContext } from "./claude-login-context";
 import { markOwned, recentForeignWriteAgeSec } from "./write-guard";
+import { inProjectForSession } from "./skill-descent";
 
 const REPO = join(dirname(fileURLToPath(import.meta.url)), "..");
 /** What an archived chat's close says (its tabs are told `closed`, never this). */
@@ -492,8 +493,10 @@ export class ChatHostRouter {
     const id = randomUUID();
     if (worker) {
       // A worker chat opens as its loadout says, served only project_verbs (a worker or team member, never a hidden chat).
+      // Whether its folder is a project's, read now: a worker's process has no engines to ask (server/skill-descent.ts).
+      const inProject = await inProjectForSession(path, worker.cwd);
       const answer = this.awaitOpened(link, id, sessionId);
-      link.send({ t: "open", id, path, force, link: null, served: workerServed(worker, path), worker });
+      link.send({ t: "open", id, path, force, link: null, served: workerServed(worker, path), worker, inProject });
       const f: FrameOf<"opened"> = await answer;
       if (f.ok) return f.mirror;
       if (f.refusal) throw errorOfRefusal(f.refusal);
@@ -508,7 +511,9 @@ export class ChatHostRouter {
     const served = await servedToolsForChat(path, sessionId, () => this.remotes.get(path)?.mirror.monitor.title, kind);
     // An ordinary chat's project skill defaults, read now: the chat's build can't ask the server mid-open.
     const folderRule = special ? null : await (await import("./projects/folder-rule")).folderRuleForSession(path);
-    link.send({ t: "open", id, path, force, ...(opening ? { opening } : {}), link: origin ? { origin, token: sovaToken() } : null, served, ...(special ? { special } : {}), ...(folderRule ? { folderRule } : {}) });
+    // Whether its folder is a project's, for every kind (a special chat in its own folder): its process has no engines to ask.
+    const inProject = await inProjectForSession(path, special?.cwd ?? null);
+    link.send({ t: "open", id, path, force, ...(opening ? { opening } : {}), link: origin ? { origin, token: sovaToken() } : null, served, ...(special ? { special } : {}), ...(folderRule ? { folderRule } : {}), inProject });
     const f: FrameOf<"opened"> = await answer;
     if (f.ok) return f.mirror;
     if (f.refusal) throw errorOfRefusal(f.refusal);

@@ -6,12 +6,13 @@ import type { HEntry, ToolResult, ToolSpec } from "../../shared/harness";
 import { DESIGN_ASK_ABOVE, DESIGN_BATCH_MAX, DESIGN_TOOL, designDirectionLine, isDesignLabel, type DesignNote } from "../../shared/design";
 import { coordinatorCard, tellCoordinator } from "./coordinator";
 import { createRun } from "./setup";
-import { ownImagesLine } from "./asset-routes";
-import { DESIGN_HAND_IN_TOOL, editBase, handIn, pageProblem, refusedPage, replyPageThisTurn, savePage, takeLook, type DesignParent } from "./batch";
+import { ownImages } from "./asset-routes";
+import { DESIGN_HAND_IN_TOOL, editBase, handIn, pageProblem, readingSkill, refusedPage, replyPageThisTurn, savePage, takeLook, type DesignParent } from "./batch";
+import { listSkillFiles, readSkillFile, SKILL_LIMITS, SkillReadRefused, skillNamesOf } from "./skills";
 import { livePage } from "./live";
 import { lookAtDesign } from "./look";
 import type { TourSize } from "../../shared/tour";
-import { designOf, pendingPage, readPage, viewOf } from "./store";
+import { changeDesigns, designOf, pendingPage, readPage, viewOf } from "./store";
 import { applyEdits, type Edit } from "./edits";
 
 export { applyEdits };
@@ -32,7 +33,7 @@ export function mainDesignTools(parent: () => DesignParent, cwd: () => string): 
     {
       name: "lookbook",
       label: "lookbook",
-      description: `The Lookbook: one page designed by several models side by side. op "start" puts a Lookbook Setup card in the chat (the user finishes it there, up to ${DESIGN_BATCH_MAX} designs), only when the user asked for a Lookbook. op "read" gets the coordinator's card, or one design's whole page with label. op "tell" passes text word for word to the coordinator, and images (the paths of images the user attached) join its image set. Call vis_guide with kind "lookbook" first.`,
+      description: `The Lookbook: one page designed by several models side by side. op "start" puts a Lookbook Setup card in the chat (the user finishes it there, up to ${DESIGN_BATCH_MAX} designs), only when the user asked for a Lookbook. op "read" gets the Creative Director's card (the coordinator), or one design's whole page with label. op "tell" passes text word for word to the Creative Director. images (the paths of images the user attached) join the Lookbook's images, on start as on tell. Call vis_guide with kind "lookbook" first.`,
       parameters: {
         type: "object",
         properties: {
@@ -42,19 +43,37 @@ export function mainDesignTools(parent: () => DesignParent, cwd: () => string): 
           modelGroups: list('start: whole groups the user named, one picker section each: "claude", "gpt", "glm" (Z.ai), "deepseek", "ollama-cloud" (Ollama Cloud) or "ollama" (Ollama on this computer only).'),
           directions: list("start: style names the user named."),
           layouts: list('start: layout names the user named ("a compact and a bento version"); none unless they named some.'),
-          coordinator: str("start: the model id to coordinate, only when the user named one."),
-          images: list("tell: the paths of images the user attached, to add to the design's images."),
+          coordinator: str("start: the model id for the Creative Director (the coordinator), only when the user named one."),
+          skills: list("start: design skills the user named for this Lookbook, each a skill's name (this project's skills are found by name) or a folder holding SKILL.md (an absolute or ~ path). None loads by itself: with none named, pass none."),
+          images: list("start or tell: the paths of images the user attached (a screenshot, a logo), to add to this Lookbook's images. On start they join the run itself."),
           label: str("read: a design's label, for its whole page."),
           text: str("tell: the words to pass on, exactly as the user said them."),
         },
         required: ["op"],
       },
-      async execute(toolCallId, params: { op?: string; brief?: string; models?: string[]; modelGroups?: string[]; directions?: string[]; layouts?: string[]; coordinator?: string; label?: string; text?: string; images?: unknown }) {
+      async execute(toolCallId, params: { op?: string; brief?: string; models?: string[]; modelGroups?: string[]; directions?: string[]; layouts?: string[]; coordinator?: string; skills?: unknown; label?: string; text?: string; images?: unknown }) {
         const p = parent();
         if (params?.op === "start") {
-          const run = await createRun(p, cwd(), params);
+          const run = await createRun(p, cwd(), { ...params, skills: skillNamesOf(params.skills) });
+          // The user's attached images join this run's own images: Setup shows them, and the Creative Director sees them first.
+          const paths = Array.isArray(params.images) ? params.images.filter((x): x is string => typeof x === "string").slice(0, 20) : [];
+          // Never fails the call: the card is already up, and a retry would open a second one.
+          let added: { line: string; names: string[] } | null = null;
+          let failed = "";
+          if (paths.length) {
+            try {
+              added = await ownImages(p, paths);
+              // On the run itself, so one the chat already had belongs to it too, and Setup has them from its first frame.
+              if (added.names.length) changeDesigns(p.sessionId, (s) => void (s.runs.find((r) => r.id === run.id)!.images = added!.names));
+            } catch (err) {
+              failed = ` The card is up, but the attached images couldn't be added (${err instanceof Error ? err.message : String(err)}): ask the user to paste them into the Creative Director's box. Don't start another card.`;
+            }
+          }
           const picked = run.setup.models.filter((m) => m.design).length;
-          return say(`The Setup card is on screen (run ${run.id}${picked ? `, ${picked} models ticked` : ""}). The user finishes it there and starts the run; above ${DESIGN_ASK_ABOVE} designs Sova asks them first. Nothing more is needed from you, and nothing about it will reach you.`, { designCard: { runId: run.id } });
+          const skills = run.skills?.length ? ` Design skills: ${run.skills.map((k) => k.name).join(", ")}.` : "";
+          const missing = run.skillsMissing?.length ? ` Not found: ${run.skillsMissing.map((m) => m.asked).join(", ")}; the Creative Director asks the user about ${run.skillsMissing.length === 1 ? "it" : "them"} on the brief.` : "";
+          const imagesLine = added ? (added.names.length ? ` Images: ${added.names.join(", ")} joined the run.` : "") + (added.line.includes("wasn't added") ? ` ${added.line.split("\n").filter((l) => l.includes("wasn't added")).join(" ")}` : "") : "";
+          return say(`The Setup card is on screen (run ${run.id}${picked ? `, ${picked} models ticked` : ""}).${skills}${missing}${imagesLine}${failed} The user finishes it there and starts the run; above ${DESIGN_ASK_ABOVE} designs Sova asks them first. Nothing more is needed from you, and nothing about it will reach you.`, { designCard: { runId: run.id } });
         }
         if (params?.op === "read") {
           if (params.label) {
@@ -65,15 +84,15 @@ export function mainDesignTools(parent: () => DesignParent, cwd: () => string): 
           }
           const card = coordinatorCard(p.sessionId);
           const lines = viewOf(p.sessionId).designs.map((d) => `${d.label} · ${designDirectionLine(d)} · ${d.model} · ${d.status}`);
-          return say([card?.card || "The coordinator has no card yet.", lines.length ? `Designs:\n${lines.join("\n")}` : ""].filter(Boolean).join("\n\n"));
+          return say([card?.card || "The Creative Director has no card yet.", lines.length ? `Designs:\n${lines.join("\n")}` : ""].filter(Boolean).join("\n\n"));
         }
         if (params?.op === "tell") {
           const paths = Array.isArray(params.images) ? params.images.filter((x): x is string => typeof x === "string").slice(0, 20) : [];
           if (!params.text?.trim() && !paths.length) throw new Error("tell needs the text to pass on, or images.");
           // By reference: the pictures go straight into the chat's set, and only their names reach anyone's memory.
-          const added = paths.length ? await ownImagesLine(p, paths) : "";
-          await tellCoordinator(p, [params.text?.trim(), added].filter(Boolean).join("\n\n"), `tell:${toolCallId}`);
-          return say(added ? `Passed on. ${added}` : "Passed on.");
+          const added = paths.length ? await ownImages(p, paths) : { line: "", names: [] };
+          await tellCoordinator(p, [params.text?.trim(), added.line].filter(Boolean).join("\n\n"), `tell:${toolCallId}`, added.names);
+          return say(added.line ? `Passed on. ${added.line}` : "Passed on.");
         }
         throw new Error('op must be "start", "read" or "tell".');
       },
@@ -98,8 +117,38 @@ export function pageNow(parent: DesignParent, label: string, ctx: { branch(): HE
     isn't offered `design_stream`: a page sent that way would arrive whole at the end, and its reply is how the
     user watches it being written. */
 export function sessionDesignTools(parent: DesignParent, label: string): ToolSpec[] {
-  const tools = allSessionTools(parent, label);
-  return designOf(parent.sessionId, label)?.route === "reply" ? tools.filter((t) => t.name !== DESIGN_STREAM_TOOL) : tools;
+  const d = designOf(parent.sessionId, label);
+  const tools = [...allSessionTools(parent, label), ...(d?.skills?.length ? [skillTool(parent, label)] : [])];
+  return d?.route === "reply" ? tools.filter((t) => t.name !== DESIGN_STREAM_TOOL) : tools;
+}
+
+/** A design's skill reader: read only, inside the skill folders its own record names (never pi's file tools). */
+function skillTool(parent: DesignParent, label: string): ToolSpec {
+  return {
+    name: "design_skill",
+    label: "design skill",
+    description: `Read one of your design skills, the house rules for this project's pages. skill alone lists its files; with file (a path inside the skill, such as SKILL.md) it returns that file's text. Text files only (md, css, html, json, svg, txt), up to ${SKILL_LIMITS.readBytes / 1000} KB a read.`,
+    parameters: { type: "object", properties: { skill: str("The skill's name, as your first message lists it."), file: str("A file's path inside the skill; omit to list its files.") }, required: ["skill"], additionalProperties: false },
+    async execute(_id, params: { skill?: string; file?: string }) {
+      // Its roots from its own record at each call: what it may read never comes from the model.
+      const roots = designOf(parent.sessionId, label)?.skills ?? [];
+      const skill = typeof params?.skill === "string" ? params.skill : "";
+      try {
+        if (typeof params?.file === "string" && params.file.trim()) {
+          const f = readSkillFile(roots, skill, params.file);
+          readingSkill(parent, label);
+          return say(f.text, { skill: f.skill, file: f.path });
+        }
+        const l = listSkillFiles(roots, skill);
+        readingSkill(parent, label);
+        const lines = l.files.map((f) => `${f.path} (${f.bytes} bytes${f.text ? "" : ", not text: can't be read"})`);
+        return say([`The files of ${l.skill}:`, ...lines, ...(l.more ? ["(more files than are listed)"] : [])].join("\n"), { skill: l.skill });
+      } catch (err) {
+        if (err instanceof SkillReadRefused) throw new Error(err.message);
+        throw err;
+      }
+    },
+  };
 }
 
 function allSessionTools(parent: DesignParent, label: string): ToolSpec[] {

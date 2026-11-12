@@ -166,6 +166,91 @@ test("a launch gives each model and direction its own label and session, and onl
   assert.equal(fakes.length, DESIGN_CONCURRENT + 1, "one done lets one more start");
 });
 
+test("a design takes its run's skills on its own record: its first message lists them, its reader reads them, and it keeps no built-ins", async () => {
+  const skillDir = join(dir, ".agents", "skills", "brand");
+  mkdirSync(skillDir, { recursive: true });
+  writeFileSync(join(skillDir, "SKILL.md"), "---\nname: brand\ndescription: The house look.\n---\nUse --brand.");
+  const run = newRun(["zai/a"], ["Minimalist"]);
+  store.changeDesigns(parent.sessionId, (s) => void (s.runs.find((r) => r.id === run)!.skills = [{ name: "brand", description: "The house look.", dir: skillDir, from: "project" }]));
+  launchDesigns(parent, run, { brief: "the brief" });
+  await ticks();
+  assert.deepEqual(stat("A").skills, [{ name: "brand", dir: skillDir }]);
+  // Never pi's file tools for a designer, skills or not.
+  assert.deepEqual(fakes[0]!.rec.spec.builtins, []);
+  const first = fakes[0]!.sends[0]!.text;
+  assert.match(first, /the brief[\s\S]*DESIGN SKILLS:[\s\S]*design_skill[\s\S]*- brand: The house look\./);
+  const tools = sessionDesignTools(parent, "A");
+  const reader = tools.find((t) => t.name === "design_skill")!;
+  assert.ok(reader, "a design with skills gets the reader");
+  const out = (await reader.execute("t", { skill: "brand", file: "SKILL.md" }, undefined, undefined, undefined)) as { content: { text: string }[] };
+  assert.match(out.content[0]!.text, /Use --brand\./);
+  assert.equal(stat("A").readingSkill, true, "its tile says it is reading the skill");
+  await assert.rejects(reader.execute("t", { skill: "brand", file: "../../../../etc/passwd" }, undefined, undefined, undefined) as Promise<unknown>, /\.\./);
+  // The page starting ends the reading.
+  onLiveFrame(fakes[0]!.rec.chatId, { gen: 1, at: 0, text: "<!doctype html><html>" });
+  assert.equal(stat("A").readingSkill, undefined);
+  // A run with none: no reader, and nothing about skills in its message.
+  const plain = newRun(["zai/a"], ["Heritage"]);
+  const [label] = launchDesigns(parent, plain, { brief: "another" });
+  await ticks();
+  assert.ok(!sessionDesignTools(parent, label!).some((t) => t.name === "design_skill"));
+  assert.equal(stat(label!).skills, undefined);
+});
+
+test("a design reads only the skills its brief chose for the designers: design_skill refuses the run's others", async () => {
+  const mk = (name: string) => {
+    const d = join(dir, ".agents", "skills", name);
+    mkdirSync(d, { recursive: true });
+    writeFileSync(join(d, "SKILL.md"), `---\nname: ${name}\ndescription: ${name} rules\n---\n${name} body`);
+    return { name, description: `${name} rules`, dir: d, from: "project" as const };
+  };
+  const run = newRun(["zai/a"], ["Minimalist"]);
+  store.changeDesigns(parent.sessionId, (s) => {
+    const r = s.runs.find((x) => x.id === run)!;
+    r.skills = [mk("brand"), mk("playwright")];
+    r.brief = { rev: 1, textRev: 1, summary: "S", prompt: "P", promptBy: "coordinator", writing: null, conflict: null, questions: [], looks: {}, skills: ["brand"] };
+  });
+  launchDesigns(parent, run, { brief: "the brief" });
+  await ticks();
+  assert.deepEqual(stat("A").skills?.map((k) => k.name), ["brand"]);
+  const first = fakes[0]!.sends[0]!.text;
+  assert.match(first, /- brand: brand rules/);
+  assert.doesNotMatch(first, /playwright/);
+  const reader = sessionDesignTools(parent, "A").find((t) => t.name === "design_skill")!;
+  const ok = (await reader.execute("t", { skill: "brand", file: "SKILL.md" }, undefined, undefined, undefined)) as { content: { text: string }[] };
+  assert.match(ok.content[0]!.text, /brand body/);
+  await assert.rejects(reader.execute("t", { skill: "playwright", file: "SKILL.md" }, undefined, undefined, undefined) as Promise<unknown>, /No skill "playwright"/);
+  await assert.rejects(reader.execute("t", { skill: "brand", file: "../playwright/SKILL.md" }, undefined, undefined, undefined) as Promise<unknown>, /\.\./);
+});
+
+test("a Rebuild screenshot: a designer that reads pictures gets it attached; one that can't gets its words and no picture or empty outline", async () => {
+  const run = newRun(["zai/sees", "zai/blind"], ["Minimalist"]);
+  store.changeDesigns(parent.sessionId, (s) => {
+    const r = s.runs.find((x) => x.id === run)!;
+    r.setup.models[1]!.vision = false;
+  });
+  const words = "REFERENCE SCREENSHOTS: …\n- a1 (1440x900): Rebuild this screen.\n  Calm. Colours: #f2f2f7 page background; #4a43d8 primary action";
+  launchDesigns(parent, run, { brief: `P\n\n${words}`, references: [{ name: "screenshot-a1.png", mime: "image/png", data: Buffer.from("png").toString("base64"), outline: "" }] });
+  await ticks();
+  const byModel = (m: string) => fakes.find((f) => (f.rec.spec as unknown as { model: string }).model === m)!;
+  const sees = byModel("zai/sees").sends[0] as { text: string; images?: { mimeType: string }[] };
+  const blind = byModel("zai/blind").sends[0] as { text: string; images?: unknown[] };
+  assert.equal(sees.images?.length, 1);
+  assert.equal(sees.images![0]!.mimeType, "image/png");
+  assert.match(sees.text, /#4a43d8 primary action/, "the hex values are in the text too");
+  assert.match(blind.text, /#f2f2f7 page background; #4a43d8 primary action/);
+  assert.ok(!blind.images?.length, "no picture for a model that can't read one");
+  assert.doesNotMatch(blind.text, /Outline of the existing screen/);
+  // Its own note: the words lead over any picture the brief speaks of, and the screen's real data is kept.
+  const { WORDS_ONLY_NOTE } = await import("../../shared/design-assets");
+  assert.ok(blind.text.includes(WORDS_ONLY_NOTE));
+  assert.match(blind.text, /Keep the screenshot's real titles, labels, figures and sample data exactly as/);
+  assert.doesNotMatch(blind.text.replace(WORDS_ONLY_NOTE, ""), /picture/i, "nothing else speaks of a picture it doesn't have");
+  assert.ok(!sees.text.includes(WORDS_ONLY_NOTE), "a designer that sees it isn't told it can't");
+  // With no outline to work from, the blind designer isn't told it has a description of the screen.
+  assert.doesNotMatch(byModel("zai/blind").rec.spec.appendSystemPrompt ?? "", /detailed text description of a website design/);
+});
+
 test("a design made from others waits for the launch, and can't stand in for it", () => {
   const run = newRun(["zai/a", "zai/b"], ["Minimalist", "Heritage", "Immersive"]);
   assert.throws(() => newDesign(parent, { parents: ["A"], instructions: "mix", model: "zai/a", runId: run }), /hasn't launched/);

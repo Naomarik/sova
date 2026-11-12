@@ -179,6 +179,13 @@ test("a pasted image joins the same set, as yours, and one bad image costs only 
   assert.deepEqual(out.refused.map((r) => r.reason), ["It isn't an image.", "It's over the 8 MB limit."]);
 });
 
+test("a pasted image's palette, measured where it was drawn, is carried to its asset", async () => {
+  const sid = chat();
+  const draw = async (_c: unknown, images: readonly Uint8Array[]) => images.map(() => ({ width: 8, height: 8, full: { bytes: WEBP(4), w: 8, h: 8 }, small: { bytes: WEBP(5), w: 8, h: 8 }, describe: { bytes: PNG(6), w: 8, h: 8 }, palette: [{ hex: "#4a43d8", share: 0.5 }] }));
+  const out = await addOwnImages(parent(sid), [PNG(11)], { draw: draw as never, context: (async () => ({})) as never });
+  assert.deepEqual(out.added[0]!.palette, [{ hex: "#4a43d8", share: 0.5 }]);
+});
+
 test("the same picture from a page and from you is one asset under one name", async () => {
   const sid = chat();
   keepAsset(sid, image(7));

@@ -151,6 +151,12 @@ A trial runs no install step, no review and no spec docs step. A check that fail
 and one that passes then counts as flaky, not failed. Each check runs as though every file in the
 commit changed and the merge thread had picked it, so no check skips itself for its paths or for
 not being picked: each runs in full.
+A trial names no selection: an optional check that takes one (§app.merge-queue/checks) runs with
+none, and either works out for itself what this branch calls for or says "skipped" and why; it
+never fails for lack of one. Sova's **Slow test group** runs the slow groups a landing would
+run for the branch's changes against the target (its files changed since the merge base,
+§app.server-runtime/slow-groups), and reads "Slow test group · skipped: no slow group applies to
+this branch's changes" when there are none; a skipped check doesn't fail the trial.
 A commit with no valid `.sova/project.json` is refused (`invalid-request`), and so is a check named
 for the trial that the commit doesn't declare. A commit that declares no merge checks is tried as
 "no automated tests": the copy and its setup run, and the trial passes when they do. A trial merges nothing, saves nothing and moves no branch. It never runs a tag, push, publish, release step or deploy step: those

@@ -446,7 +446,8 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-10-15T19:49Z"
+      "at": "2026-11-12T10:39Z",
+      "source": "pi-session:c6e7f9da-6608-46f4-a4d9-6db219882520#b5acf41a"
     }
   },
   "§app.tours/source-identity": {

@@ -15,6 +15,7 @@ import type { DesignParent } from "./batch";
 import { linksFromText } from "./brief";
 import { changeDesigns } from "./store";
 import { chatHandle } from "../chat-handle";
+import { runSkills, type SkillLister } from "./skills";
 
 const PRICES_DIR = join(import.meta.dirname, "..", "..", "shared", "model-prices");
 const PAGE_OUTPUT_TOKENS = 18_000;
@@ -47,6 +48,8 @@ export interface SetupInput {
   /** Layouts the user named; none by default (Designer's Choice). */
   layouts?: string[];
   coordinator?: string;
+  /** Skills the user named for this run: a folder holding SKILL.md (an absolute or ~ path) or a skill's name. */
+  skills?: string[];
 }
 
 /** What the main chat's request says beyond its fields: the model the chat itself runs on, provider/modelId. */
@@ -115,12 +118,14 @@ export async function setupFrom(input: SetupInput, context: SetupContext = {}): 
   };
 }
 
-export async function createRun(parent: DesignParent, cwd: string, input: SetupInput): Promise<DesignRun> {
+export async function createRun(parent: DesignParent, cwd: string, input: SetupInput, lister?: SkillLister): Promise<DesignRun> {
   // A bare model id resolves toward the provider the chat itself runs on.
   const chatModel = chatHandle(parent.path)?.mirror.model?.ref;
   const setup = await setupFrom(input, chatModel ? { chatModel } : {});
+  // The project's skills always, and the ones the user named: fixed on the run, so each run carries its own.
+  const { skills, missing } = await runSkills(cwd, input.skills ?? [], lister);
   const now = new Date().toISOString();
-  const run: DesignRun = { id: randomUUID().slice(0, 8), setup, phase: "setup", labels: [], createdAt: now, updatedAt: now };
+  const run: DesignRun = { id: randomUUID().slice(0, 8), setup, phase: "setup", labels: [], ...(skills.length ? { skills } : {}), ...(missing.length ? { skillsMissing: missing } : {}), createdAt: now, updatedAt: now };
   changeDesigns(parent.sessionId, (s) => {
     s.runs.push(run);
     s.parentPath = parent.path;
@@ -143,7 +148,7 @@ export function cleanSetup(previous: DesignSetup, next: unknown, briefOpen = fal
     return { ...m, design: !!sent.design, coordinator: briefOpen ? m.coordinator : !!sent.coordinator };
   });
   if (n.models.some((x) => !offered.has((x as { ref?: string })?.ref ?? ""))) return "That model isn't on this card.";
-  if (models.filter((m) => m.coordinator).length > 1) return "Only one model can be the coordinator.";
+  if (models.filter((m) => m.coordinator).length > 1) return "Only one model can be the Creative Director.";
   const ticks = (offered: readonly { name: string; on: boolean }[], sentList: unknown) =>
     offered.map((d) => {
       const sent = (Array.isArray(sentList) ? sentList : []).find((x) => (x as { name?: unknown })?.name === d.name) as { on?: unknown } | undefined;
@@ -166,13 +171,13 @@ export function cleanSetup(previous: DesignSetup, next: unknown, briefOpen = fal
 }
 
 /** About what one page costs on `ref`, in dollars, or null when its price isn't known (report E1: output dominates). */
-function pagePrice(ref: string, table: PriceTable, aliases: Aliases, now: number): number | null {
+function pagePrice(ref: string, table: PriceTable, aliases: Aliases, now: number, extraInput = 0): number | null {
   const slash = ref.indexOf("/");
   const r = resolvePriceRef(table, aliases, { provider: ref.slice(0, slash), model: ref.slice(slash + 1) }, now);
   if ("free" in r) return 0;
   if (!("key" in r) || !table.models[r.key]) return null;
   const p = periodAt(table.models[r.key]!, now);
-  return p ? (PAGE_OUTPUT_TOKENS * p.rates.output + PAGE_INPUT_TOKENS * p.rates.input) / 1_000_000 : null;
+  return p ? (PAGE_OUTPUT_TOKENS * p.rates.output + (PAGE_INPUT_TOKENS + extraInput) * p.rates.input) / 1_000_000 : null;
 }
 
 let rates: { at: number; table: PriceTable | null; aliases: Aliases | null } | null = null;
@@ -210,15 +215,16 @@ export function replyCost(ref: { provider: string; model: string }, u: { input: 
   return p.status === "priced" ? p.usd.total : null;
 }
 
-/** What a run should cost, for the question above the free limit; null when a price is missing. */
-export function estimateUsd(setup: DesignSetup, now = Date.now()): number | null {
+/** What a run should cost, for the question above the free limit; null when a price is missing. `skillTokens`: what each
+    design is reckoned to read of the run's design skills (skillReadTokens), added to its input. */
+export function estimateUsd(setup: DesignSetup, now = Date.now(), skillTokens = 0): number | null {
   const table = priceFile<PriceTable>(join(stateRoot(), "model-prices.json")) ?? priceFile<PriceTable>(join(PRICES_DIR, "seed.json"));
   const aliases = priceFile<Aliases>(join(PRICES_DIR, "aliases.json"));
   if (!table || !aliases) return null;
   let total = 0;
   const each = new Map<string, number | null>();
   for (const item of designPlan(setup).items) {
-    if (!each.has(item.model)) each.set(item.model, pagePrice(item.model, table, aliases, now));
+    if (!each.has(item.model)) each.set(item.model, pagePrice(item.model, table, aliases, now, skillTokens));
     const price = each.get(item.model)!;
     if (price === null) return null;
     total += price;

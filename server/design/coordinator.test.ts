@@ -25,6 +25,7 @@ let turnListener: (() => void) | null = null;
 let capture: (...a: unknown[]) => Promise<never>;
 let describingNow = false;
 let browseCalls = 0;
+let imageCalls: string[][] = [];
 
 const model = (ref: string, over: Partial<DesignModelChoice> = {}): DesignModelChoice => ({ ref, name: ref, design: true, coordinator: false, vision: true, route: "tool", ...over });
 const runWith = (designers: number, directions: number, over: Partial<DesignRun> = {}): DesignRun => ({
@@ -40,6 +41,7 @@ beforeEach(() => {
   turnListener = null;
   describingNow = false;
   browseCalls = 0;
+  imageCalls = [];
   capture = async () => ({ kind: "refused", message: "no capture in this test" }) as never;
   readLook = async () => ({ text: "Calm navy on white.", model: "zai/vision" });
   nextBrowse = { kind: "pictures", url: "/settings", origin: "http://127.0.0.1:4810", outline: "OUTLINE", signedIn: false, shots: [{ size: "desktop", png: PNG, viewport: { w: 1440, h: 960 } }] };
@@ -72,6 +74,7 @@ beforeEach(() => {
     projects: () => [{ id: "p1", root: "/proj/a" }, { id: "p2", root: "/proj/b" }],
     approveSite: (o) => void log.sites.push(o),
     saveTestAccount: () => {},
+    addImageFiles: async (_p, paths) => (imageCalls.push([...paths]), { line: "Added to the chat's images as a1.", names: [] }),
   });
 });
 afterEach(() => {
@@ -688,6 +691,68 @@ test("described images reach the coordinator once, fenced as data", async () => 
   assert.equal(log.sends.length, 1, "nothing once the brief is frozen");
 });
 
+test("each run's skills reach the coordinator in that run's first message, with the same model keeping one session across runs", async () => {
+  const skill = (name: string, from: "project" | "named" = "project") => ({ name, description: `${name} rules`, dir: `/proj/.agents/skills/${name}`, from });
+  const first = runWith(2, 3, { skills: [skill("brand")] });
+  await started(first);
+  assert.match(lastTask, /Skills the user named for this run[\s\S]*- brand \(this project's\): \/proj\/\.agents\/skills\/brand\/SKILL\.md/);
+  assert.match(lastTask, /design_brief's skills/);
+  const second = runWith(2, 3, { skills: [skill("brand"), skill("house", "named")], skillsMissing: [{ asked: "~/Downloads/kit", reason: "There is no such folder." }] });
+  changeDesigns(parent.sessionId, (s) => void s.runs.push(second));
+  const sent = log.sends.length;
+  await startCoordinator(parent, second, "/cwd");
+  assert.equal(log.starts.length, 1, "the same model keeps its session: the new run's skills come in its message");
+  const told = log.sends.slice(sent).map((x) => x.text).join("\n");
+  assert.match(told, /- house \(from elsewhere on disk\): \/proj\/\.agents\/skills\/house\/SKILL\.md/);
+  assert.match(told, /~\/Downloads\/kit: There is no such folder\.[\s\S]*question on the brief/);
+  assert.match(told, new RegExp(`run's id is ${second.id}`));
+  // A third run with none says so, so the earlier runs' skills don't carry over by silence.
+  const third = runWith(2, 3);
+  changeDesigns(parent.sessionId, (s) => void s.runs.push(third));
+  const before = log.sends.length;
+  await startCoordinator(parent, third, "/cwd");
+  const plain = log.sends.slice(before).map((x) => x.text).join("\n");
+  assert.match(plain, /Design skills: none for this run\./);
+  assert.doesNotMatch(plain, /house/);
+});
+
+test("a coordinator started again after its session ended is told its run's skills", async () => {
+  const run = runWith(2, 3, { skills: [{ name: "brand", description: "d", dir: "/proj/.agents/skills/brand", from: "project" }], skillsMissing: [{ asked: "kit", reason: "No skill by that name was found." }] });
+  await started(run);
+  workerState = "ended";
+  await messageCoordinator(parent, "carry on", "k1");
+  assert.equal(log.starts.length, 2, "a fresh session");
+  assert.match(lastTask, /\/proj\/\.agents\/skills\/brand\/SKILL\.md/);
+  assert.match(lastTask, /kit: No skill by that name was found\./);
+});
+
+test("design_brief's skills picks which of the run's skills the designers use, and names only the run's", async () => {
+  const skill = (name: string) => ({ name, description: "d", dir: `/proj/.agents/skills/${name}`, from: "project" as const });
+  const run = runWith(2, 3, { skills: [skill("brand"), skill("playwright")] });
+  const t = await started(run);
+  await t.design_brief({ baseRev: 0, summary: "S" });
+  const { designerSkills } = await import("../../shared/design");
+  assert.deepEqual(designerSkills(runOf(parent.sessionId, run.id)!).map((s) => s.name), ["brand", "playwright"], "all of them until it chooses");
+  refused(await t.design_brief({ baseRev: brief(run.id).textRev, skills: ["brand", "tailwind"] }));
+  const rev = brief(run.id).rev;
+  await t.design_brief({ baseRev: brief(run.id).textRev, skills: ["brand"] });
+  assert.deepEqual(brief(run.id).skills, ["brand"]);
+  assert.ok(brief(run.id).rev > rev, "Start names the choice it was pressed on");
+  assert.deepEqual(designerSkills(runOf(parent.sessionId, run.id)!).map((s) => s.name), ["brand"]);
+});
+
+test("design_images brings files the coordinator read into the chat's images, until the designs start", async () => {
+  const run = runWith(2, 3);
+  await started(run);
+  const call = (args: unknown) => coordinatorTools(parent.sessionId).find((x) => x.name === "design_images")!.execute("c1", args, undefined, undefined, undefined as never) as Promise<{ content: { type: string; text?: string }[] }>;
+  refused(await call({ paths: [] }));
+  assert.match(textOf(await call({ paths: ["/home/u/Downloads/logo.png", 7] })), /a1/);
+  assert.deepEqual(imageCalls, [["/home/u/Downloads/logo.png"]]);
+  changeDesigns(parent.sessionId, (s) => void (s.runs.find((r) => r.id === run.id)!.phase = "generating"));
+  refused(await call({ paths: ["/home/u/Downloads/logo.png"] }));
+  assert.equal(imageCalls.length, 1);
+});
+
 test("a later run naming another coordinator model replaces the session, carrying its card and notes; the same model keeps it", async () => {
   const first = runWith(2, 3);
   const t = await started(first);
@@ -941,14 +1006,16 @@ test("the card's yes is the person's: a chat's key or the token in a header is r
   }
 });
 
-test("a coordinator's process is served its tools and no others, and has no built-in tools at all", async () => {
+test("a coordinator's process is served its tools and no others, and of the built-ins has pi's read only", async () => {
   const { workerServed } = await import("../chat-host");
   const decls = workerServed({ kind: "design-coordinator", parent: { sessionId: "p", path: "/p.jsonl", workerId: "design-coordinator" } }, "/w.jsonl");
-  assert.deepEqual(decls.map((d) => d.name).sort(), ["coordinator_card", "design_brief", "design_browse", "design_capture", "design_new", "design_send", "design_status", "project_verbs"]);
+  assert.deepEqual(decls.map((d) => d.name).sort(), ["coordinator_card", "design_brief", "design_browse", "design_capture", "design_images", "design_new", "design_send", "design_status", "project_verbs"]);
   // After a restart its mirror names only the parent's id: the same tools come back.
   assert.equal(workerServed({ kind: "design-coordinator", parentSessionId: "p" }, "/w2.jsonl").length, decls.length);
   const spec = (await import("./coordinator")).realCoordinatorSpec({ sessionId: "p", path: "/p.jsonl" }, "/cwd", "zai/glm-5.3-flash", "P");
-  assert.deepEqual(spec.builtins, []);
+  // Read anywhere, as an ordinary chat reads; never write, edit or a shell.
+  assert.deepEqual(spec.builtins, ["read"]);
+  for (const t of ["write", "edit", "bash", "grep", "find", "ls"]) assert.ok(!spec.builtins!.includes(t), t);
   assert.equal(spec.kind, "design-coordinator");
   assert.equal(spec.appendSystemPrompt, "P");
 });
@@ -974,4 +1041,217 @@ test("neither a coordinator nor a design session reaches the sessions list: each
   assert.equal(appended.length, 1);
   const entry = toHEntry({ type: "custom", id: "e1", parentId: null, timestamp: "2026-01-01T00:00:00Z", customType: appended[0]!.customType, data: appended[0]!.data });
   assert.equal(entryFacts(entry).self, true);
+});
+
+// ---- pasted screenshots ----------------------------------------------------------------------------
+
+const assetsMod = await import("./assets");
+const { checkPicture } = await import("./describe");
+const REAL_PNG = Buffer.from(checkPicture({ left: "red", right: "blue" }), "base64");
+/** An image in this chat: the user's pasted one by default, already described as `kind`. */
+function pasted(i: number, kind = "screenshot", source: "yours" | "page" = "yours"): string {
+  const v = { bytes: REAL_PNG, w: 10, h: 10 };
+  const out = assetsMod.keepAsset(parent.sessionId, { source, original: Buffer.concat([REAL_PNG, Buffer.from(`#${parent.sessionId}-${i}`)]), full: v, small: v, describe: v, width: 1440, height: 900, context: {}, ...(source === "yours" ? { palette: [{ hex: "#f2f2f7", share: 0.6 }, { hex: "#4a43d8", share: 0.1 }] } : {}) });
+  assert.ok("asset" in out);
+  const name = out.asset.name;
+  assetsMod.changeAssets(parent.sessionId, (c) => {
+    const a = c.assets.find((x) => x.name === name)!;
+    a.addedAt = "2026-06-01T00:00:00Z";
+    a.description = { kind, description: "A settings screen.", placement: "", usage: "", ...(kind === "screenshot" ? { feel: "Calm, airy.", roles: [{ hex: "#f2f2f7", role: "page background" }, { hex: "#4a43d8", role: "primary action" }] } : {}), at: "t" };
+  });
+  return name;
+}
+const assetNow = (name: string) => assetsMod.assetOf(parent.sessionId, name)!;
+
+test("a Creative Director that reads pictures sees a pasted screenshot on that turn; one that can't hears its name and words", async () => {
+  await started(runWith(2, 3));
+  const shot = pasted(1);
+  await messageCoordinator(parent, "here's our current screen", "k1", true, [shot]);
+  const sent = log.sends.at(-1) as { text: string; images?: { mimeType: string; data: string }[] };
+  assert.equal(sent.images?.length, 1);
+  assert.equal(sent.images![0]!.mimeType, "image/png");
+  assert.equal(Buffer.from(sent.images![0]!.data, "base64").subarray(1, 4).toString(), "PNG");
+  // design_images looks again, by name.
+  const again = await coordinatorTools(parent.sessionId).find((t) => t.name === "design_images")!.execute("c", { names: [shot] }, undefined, undefined, undefined as never);
+  assert.equal(again.content.filter((b) => b.type === "image").length, 1);
+  assert.match(textOf(again as never), /measured colours: #f2f2f7: 60% of the picture, fills areas; #4a43d8: 10% of the picture, fills areas/);
+});
+
+test("a Creative Director that can't read pictures gets no picture: names and words instead", async () => {
+  const run = runWith(2, 3);
+  run.setup.models[0] = model("zai/coord", { design: false, coordinator: true, vision: false });
+  await started(run);
+  const shot = pasted(1);
+  await messageCoordinator(parent, "this one", "k1", true, [shot]);
+  assert.equal((log.sends.at(-1) as { images?: unknown[] }).images, undefined);
+  const again = await coordinatorTools(parent.sessionId).find((t) => t.name === "design_images")!.execute("c", { names: [shot] }, undefined, undefined, undefined as never);
+  assert.equal(again.content.filter((b) => b.type === "image").length, 0);
+  assert.match(textOf(again as never), /can't read pictures[\s\S]*words for designers \(the helper's draft, for you to tune\): Calm, airy\. Colours: #f2f2f7 page background; #4a43d8 primary action/);
+});
+
+test("design_brief images: kind, words and rebuild or feel; a page's image is never a screenshot, and the user's choices win", async () => {
+  const { assetKind, shotWords } = await import("../../shared/design-assets");
+  const run = runWith(2, 3, { createdAt: "2026-01-01T00:00:00Z" });
+  const t = await started(run);
+  const shot = pasted(1, "photo");
+  const page = pasted(2, "photo", "page");
+  await t.design_brief({ baseRev: 0, summary: "S" });
+  const rev = () => brief(run.id).textRev;
+  // Mixed: the page's image as a screenshot refuses the whole call, and nothing of it is kept.
+  refused(await t.design_brief({ baseRev: rev(), images: [{ name: shot, kind: "screenshot" }, { name: page, kind: "screenshot" }] }));
+  assert.equal(assetNow(shot).cdKind, undefined);
+  refused(await t.design_brief({ baseRev: rev(), images: [{ name: shot, screen: "rebuild" }] }));
+  await t.design_brief({ baseRev: rev(), images: [{ name: shot, kind: "screenshot", screen: "rebuild", words: { feel: "Director's feel.", colors: [{ hex: "#4A43D8", role: "buttons" }] } }] });
+  assert.equal(assetNow(shot).cdKind, "screenshot");
+  assert.equal(assetNow(shot).chosenKind, undefined, "never the user's field");
+  const seen = brief(run.id).rev;
+  await t.design_brief({ baseRev: rev(), images: [{ name: shot, words: { feel: "Retuned.", colors: [] } }] });
+  assert.ok(brief(run.id).rev > seen, "a retune the user hasn't seen moves the version Start names");
+  await t.design_brief({ baseRev: rev(), images: [{ name: shot, words: { feel: "Director's feel.", colors: [{ hex: "#4A43D8", role: "buttons" }] } }] });
+  assert.deepEqual(brief(run.id).screenUse, { [shot]: { use: "rebuild", by: "coordinator" } });
+  // The measured colours stay; the Creative Director renames one's role.
+  assert.deepEqual(shotWords(assetNow(shot)), { words: { feel: "Director's feel.", colors: [{ hex: "#f2f2f7", role: "" }, { hex: "#4a43d8", role: "buttons" }] }, by: "coordinator" });
+  // The user's words, kind and click stand against the Creative Director's later ones.
+  const { setAssetNote } = await import("./describe");
+  setAssetNote(parent.sessionId, shot, { words: { feel: "Mine.", colors: [] } });
+  const { setBriefScreenshot } = await import("./coordinator");
+  setBriefScreenshot(parent, run.id, shot, "feel");
+  await t.design_brief({ baseRev: rev(), images: [{ name: shot, screen: "rebuild", words: { feel: "Director again.", colors: [] } }] });
+  assert.equal(shotWords(assetNow(shot))!.words.feel, "Mine.");
+  assert.deepEqual(brief(run.id).screenUse![shot], { use: "feel", by: "user" });
+  setAssetNote(parent.sessionId, shot, { kind: "photo" });
+  assert.equal(assetKind(assetNow(shot)), "photo", "the user's kind beats the Creative Director's screenshot");
+  assert.throws(() => setBriefScreenshot(parent, run.id, page, "rebuild"), /isn't a screenshot/);
+});
+
+test("Start: a Rebuild screenshot's picture goes to the designers even beside a Just Its Feel link; a Feel one's never; every design's text has the words", async () => {
+  const run = withLink("feel");
+  run.createdAt = "2026-01-01T00:00:00Z";
+  const { t, shot: found } = await looked(run);
+  const rebuild = pasted(1);
+  const feel = pasted(2);
+  await t.design_brief({ baseRev: 0, summary: "S", prompt: "P", text: "F", shots: [found] });
+  await new Promise((r) => setImmediate(r));
+  await startRefused(run, /Choose Rebuild or Just Its Feel/);
+  await t.design_brief({ baseRev: brief(run.id).textRev, images: [{ name: rebuild, screen: "rebuild" }, { name: feel, screen: "feel" }] });
+  await start(run);
+  const l = log.launches[0]!;
+  // The feel link's page gives no picture; the rebuild screenshot's does, and only it.
+  assert.equal(l.references.length, 1);
+  assert.equal((l.references[0] as unknown as { name: string }).name, `screenshot-${rebuild}.png`);
+  assert.equal(l.references[0]!.outline, "");
+  assert.match(l.brief, /REFERENCE SCREENSHOTS/);
+  assert.match(l.brief, new RegExp(`${rebuild} \\(1440x900\\): Rebuild this screen[\\s\\S]*#f2f2f7 page background; #4a43d8 primary action`));
+  assert.match(l.brief, new RegExp(`${feel} \\(1440x900\\): Just its feel`));
+  assert.match(l.brief, new RegExp(`${rebuild} \\(1440x900\\)[^\\n]*\\n[^\\n]*\\n  What it shows: A settings screen\\.`), "a rebuild's content, in words, for every designer");
+  assert.doesNotMatch(l.brief.slice(l.brief.indexOf("REFERENCE SCREENSHOTS")), /picture/i, "the block never speaks of a picture");
+  assert.doesNotMatch(l.brief, new RegExp(`sova-asset:${rebuild}|id="${rebuild}"`), "a screenshot is never offered to embed");
+});
+
+test("Start: at most four reference pictures a design, a slot kept for each ticked Rebuild screenshot", async () => {
+  const run = withLink("images");
+  run.createdAt = "2026-01-01T00:00:00Z";
+  const { t, shot: found } = await looked(run);
+  const shots = [1, 2, 3, 4, 5].map((i) => pasted(i));
+  await t.design_brief({ baseRev: 0, summary: "S", prompt: "P", text: "F", shots: [found], images: shots.map((name) => ({ name, screen: "rebuild" })) });
+  await start(run);
+  const refs = log.launches[0]!.references as unknown as { name: string }[];
+  // Five Rebuild screenshots take all four slots, leaving the found screen none.
+  assert.deepEqual(refs.map((r) => r.name), shots.slice(0, 4).map((n) => `screenshot-${n}.png`));
+  // The fifth has no picture, and its line says so; the four attached say nothing of the kind.
+  const text = log.launches[0]!.brief;
+  const lineOf = (n: string) => text.slice(text.indexOf(`- ${n} (`), text.indexOf("\n- ", text.indexOf(`- ${n} (`) + 1) >>> 0 || undefined);
+  assert.match(lineOf(shots[4]!), /This one comes as words only: no image of it is attached to this message\./);
+  for (const n of shots.slice(0, 4)) assert.doesNotMatch(lineOf(n), /words only/);
+});
+
+test("Start: four found-screen pictures never push out a Rebuild screenshot; the cap cuts found shots, and text and pictures agree", async () => {
+  const run = withLink("images");
+  run.createdAt = "2026-01-01T00:00:00Z";
+  const t = await started(run);
+  nextBrowse = { ...(nextBrowse as Extract<Outcome, { kind: "pictures" }>), url: URL_, origin: "https://example.test", shots: (["desktop", "desktop", "phone", "phone"] as const).map((size) => ({ size, png: PNG, viewport: { w: 1440, h: 960 } })) };
+  const found = (await t.design_browse({ url: URL_ })).details.shots as string[];
+  assert.equal(found.length, 4);
+  const rebuild = pasted(1);
+  await t.design_brief({ baseRev: 0, summary: "S", prompt: "P", text: "F", shots: found, images: [{ name: rebuild, screen: "rebuild" }] });
+  await start(run);
+  const l = log.launches[0]!;
+  const names = (l.references as unknown as { name: string }[]).map((r) => r.name);
+  assert.equal(names.length, 4);
+  assert.ok(names.includes(`screenshot-${rebuild}.png`), "the Rebuild screenshot is attached");
+  assert.ok(!names[0]!.startsWith("screenshot-") && names.at(-1) === `screenshot-${rebuild}.png`, "found-screen shots first in order");
+  assert.equal(names.filter((n) => !n.startsWith("screenshot-")).length, 3, "the cap cuts a found-screen shot");
+  // What the text says is rebuilt is one of the pictures attached.
+  const rebuilt = [...l.brief.matchAll(/- (a\d+) \([^)]*\): Rebuild this screen/g)].map((m) => `screenshot-${m[1]}.png`);
+  assert.deepEqual(rebuilt, [`screenshot-${rebuild}.png`]);
+  for (const r of rebuilt) assert.ok(names.includes(r), `${r} is attached`);
+});
+
+test("Start's screenshots are the shared rule's: an unticked screenshot needs no choice and can't be given one", async () => {
+  const { screenshotsInUse } = await import("../../shared/design-assets");
+  const run = runWith(2, 3, { createdAt: "2026-01-01T00:00:00Z" });
+  const t = await started(run);
+  const shot = pasted(1);
+  await t.design_brief({ baseRev: 0, summary: "S", prompt: "P" });
+  assert.deepEqual(screenshotsInUse(readAssetsNow(), brief(run.id)), [shot]);
+  await startRefused(run, /Choose Rebuild or Just Its Feel/);
+  const { setBriefImage, setBriefScreenshot } = await import("./coordinator");
+  setBriefImage(parent, run.id, shot, false);
+  assert.deepEqual(screenshotsInUse(readAssetsNow(), brief(run.id)), []);
+  assert.throws(() => setBriefScreenshot(parent, run.id, shot, "rebuild"), /unticked/);
+  await start(run);
+  assert.equal(log.launches[0]!.references.length, 0);
+  assert.doesNotMatch(log.launches[0]!.brief, /REFERENCE SCREENSHOTS/, "unticked: no one gets it");
+});
+const readAssetsNow = () => assetsMod.readAssets(parent.sessionId).assets;
+
+test("the measured palette reaches every design's text even when the Creative Director's words carry no colours", async () => {
+  const eight = ["#2c2c38", "#1e1e26", "#26262f", "#373744", "#8d8d9a", "#cdcdd2", "#e3a63a", "#746fc6"];
+  const run = runWith(2, 3, { createdAt: "2026-01-01T00:00:00Z" });
+  const t = await started(run);
+  const shot = pasted(1);
+  assetsMod.changeAssets(parent.sessionId, (c) => {
+    const a = c.assets.find((x) => x.name === shot)!;
+    a.palette = eight.map((hex, i) => ({ hex, share: [0.73, 0.19, 0.03, 0.015, 0.01, 0.003, 0.001, 0.001][i]! }));
+    a.description!.roles = [{ hex: "#e3a63a", role: "needs-you marker" }];
+  });
+  await t.design_brief({ baseRev: 0, summary: "S", prompt: "P", images: [{ name: shot, screen: "rebuild", words: { feel: "Dense, calm, dark." } }] });
+  const { shotWords } = await import("../../shared/design-assets");
+  assert.deepEqual(shotWords(assetNow(shot))!.words.colors.map((c) => c.hex), eight, "the brief's swatches: every measured colour");
+  await start(run);
+  const text = log.launches[0]!.brief;
+  for (const hex of eight) assert.ok(text.includes(hex), `${hex} reaches the designs`);
+  assert.match(text, /Dense, calm, dark\./);
+  assert.match(text, /#e3a63a needs-you marker/, "the helper's role stays unless renamed");
+  // Colours the Creative Director adds fit within 8 with the measured ones, the limit a user's own edit has.
+  const colors = shotWords({ ...assetNow(shot), cdWords: { feel: "x", colors: [{ hex: "#ff0000", role: "extra" }, { hex: "#8d8d9a", role: "muted text" }] } })!.words.colors;
+  assert.equal(colors.length, 8);
+  assert.equal(colors.find((c) => c.hex === "#8d8d9a")!.role, "muted text");
+});
+
+test("design_brief: a pasted screenshot's name in shots is refused with the field it belongs in", async () => {
+  const t = await started(runWith(2, 3, { createdAt: "2026-01-01T00:00:00Z" }));
+  const shot = pasted(1);
+  const r = await t.design_brief({ baseRev: 0, summary: "S", text: "the screen", shots: [shot] });
+  refused(r);
+  assert.match(textOf(r), new RegExp(`${shot} is an image the user pasted, not a picture from design_browse\\. Set a pasted screenshot with images: \\[\\{name: "${shot}", kind: "screenshot"`));
+  refused(await t.design_brief({ baseRev: 0, summary: "S", text: "x", shots: ["s99"] }));
+  // Said the right way, it goes through first time.
+  const ok = await t.design_brief({ baseRev: 0, summary: "S", images: [{ name: shot, kind: "screenshot", screen: "rebuild" }] });
+  assert.doesNotMatch(textOf(ok), /^Refused/);
+});
+
+test("a screenshot's words reach the designers whole: a 300+ character role and a long feel are never cut", async () => {
+  const run = runWith(2, 3, { createdAt: "2026-01-01T00:00:00Z" });
+  const t = await started(run);
+  const shot = pasted(1);
+  const role = `active tab underline: the 2px violet line under the selected Sessions tab at the top left, ${"and the same violet on the focus ring of the search field and the selected row's left edge, ".repeat(3)}and nowhere else on the screen`;
+  const feel = "Dense and calm. ".repeat(60).trim();
+  assert.ok(role.length > 300);
+  await t.design_brief({ baseRev: 0, summary: "S", prompt: "P", images: [{ name: shot, screen: "rebuild", words: { feel, colors: [{ hex: "#4a43d8", role }] } }] });
+  await start(run);
+  const text = log.launches[0]!.brief;
+  assert.ok(text.includes(`#4a43d8 ${role}`), "the whole role");
+  assert.ok(text.includes(feel), "the whole feel");
+  assert.ok(!text.slice(text.indexOf("REFERENCE SCREENSHOTS")).includes("…"), "nothing cut");
 });

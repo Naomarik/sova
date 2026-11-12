@@ -136,11 +136,21 @@ one-page prototypes from hidden sessions on several models, drawn live on a card
 tab, the main chat staying out of the work and reading a page only when asked); how to get one: with
 vis on, ask for a Lookbook, by name or in words that plainly mean it (an ordinary ask to sketch or mock up gets a quick drawing
 instead), never for workers; a run, from Lookbook · Setup (what to design, models by
-provider with the Coordinator dropdown, styles in their 5 families and the 12 layouts, Pair Up or
-Every Mix, the batch size and its limits) through Start Coordinator and
-Lookbook · Brief to Start; how a link is used; and working with designs: statuses and cost, a page
-being written, Google Fonts only, Refine, Chat, the coordinator and designs made from others. It
-ends with how long designs are kept and that they aren't on share links.
+provider with the Creative Director dropdown, styles in their 5 families and the 12 layouts, Pair Up or
+Every Mix, the batch size and its limits) through Start Creative Director and
+Lookbook · Brief to Start; how a link is used; how skills reach a run (only the skills you name, by
+name or by folder, with nothing loaded by itself; shown on Setup and, when you named some, on the
+brief's Design skills line; the Creative Director choosing which reach the designers and reading
+files you point it to, and designers reading only inside those skills, §chat.design-mode/skills); a Screenshots section on pasted screenshots (only your own
+images can be one, the helper marks the kind and you can change it; up to 8 measured colours as
+swatches with hex values; words for designers drafted by a helper, tuned by the Creative Director,
+yours always winning; Rebuild This Screen or Just Its Feel before Start, at most 4 reference
+pictures a design with Rebuild screenshots first and the rest as words only; every designer gets
+the words, and a screenshot is never put in the page, §chat.design-mode/own-images,
+§chat.design-mode/brief-start); and working with designs: statuses and cost, a page
+being written, Google Fonts only, Refine, Chat, the Creative Director and designs made from others. It
+ends with how long designs are kept and that they aren't on share links. The page calls the run's
+lead session the Creative Director throughout (§chat.design-mode/creative-director).
 
 ## §site.docs/vis — Vis (`/docs/modes/vis/`)
 

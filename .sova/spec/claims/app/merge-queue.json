@@ -267,8 +267,8 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-05T19:18Z",
-      "source": "pi-session:01a1acf3-91f6-7735-96f5-970a0699e9c9#85bf6ed9"
+      "at": "2026-11-12T21:09Z",
+      "source": "pi-session:01a1d023-6988-7481-af78-b02082042586#f2373ebf"
     },
     "code": [
       "server/merge-queue/checks.ts",

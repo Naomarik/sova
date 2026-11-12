@@ -13,9 +13,9 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 
 | What | Count |
 | --- | ---: |
-| Routes registered | 625 |
-| Routes a catalogue entry points at | 203 |
-| Catalogue entries | 274 |
+| Routes registered | 627 |
+| Routes a catalogue entry points at | 204 |
+| Catalogue entries | 275 |
 | Class: Peer protocol | 39 |
 | Class: Auth | 4 |
 | Class: Share pages | 0 |
@@ -31,11 +31,11 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | Class: Page plumbing | 22 |
 | Class: Steps of starting a chat | 2 |
 | Class: Live capability links | 1 |
-| Class: Approvals and grants | 17 |
+| Class: Approvals and grants | 18 |
 | Pending (not yet a command) | 23 |
 | Chat socket frame types | 14 |
 | Document/window keydown listeners | 12 |
-| Hand-written tool specs | 148 |
+| Hand-written tool specs | 150 |
 
 ## Catalogue entries
 
@@ -194,6 +194,7 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | `project.icon.remove` | Remove Project Icon | changes | `DELETE /api/projects/:pid/icon` | admin |
 | `project.archive` | Archive Project | changes | `POST /api/projects/:pid/archive` | admin |
 | `project.unarchive` | Unarchive Project | changes | `POST /api/projects/:pid/unarchive` | admin |
+| `project.copies.running` | List Running Copies | looks | `GET /api/projects/:pid/running-copies` | sessions |
 | `project.preview.off` | Turn Off Preview Link | changes | `POST /api/previews/:id/off` | admin |
 | `project.worktree.list` | List Project Worktrees | looks | `GET /api/projects/:pid/overseer/worktrees` | sessions |
 | `project.worktree.merge` | Merge Worktree | changes | `POST /api/projects/:pid/overseer/worktrees/merge` | admin |
@@ -309,11 +310,11 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | `design.list` | List Designs | looks | `GET /api/design` | full |
 | `design.page` | Read Design Page | looks | `GET /api/design/:label/page` | full |
 | `design.setup.set` | Change Lookbook Setup | changes | `PATCH /api/design/runs/:run/setup` | full |
-| `design.start` | Start Lookbook Coordinator | changes | `POST /api/design/runs/:run/start` | full |
+| `design.start` | Start Lookbook Creative Director | changes | `POST /api/design/runs/:run/start` | full |
 | `design.message` | Message a Design | changes | `POST /api/design/:label/message` | full |
 | `design.refine` | Refine a Design | changes | `POST /api/design/:label/refine` | full |
 | `design.retry` | Retry a Design | changes | `POST /api/design/:label/retry` | full |
-| `design.coordinator.message` | Message the Lookbook Coordinator | changes | `POST /api/design/coordinator/message` | full |
+| `design.coordinator.message` | Message the Lookbook Creative Director | changes | `POST /api/design/coordinator/message` | full |
 | `design.delete` | Delete a Design | changes | `DELETE /api/design/:label` | full |
 
 ## Pending routes
@@ -834,7 +835,7 @@ A list that prints live preview links, which open a project's port to whoever ho
 | --- | --- |
 | `GET /api/projects/:pid/previews` | sessions |
 
-### Approvals and grants (17)
+### Approvals and grants (18)
 
 Approving a schedule or a draft spec, the Overseer's permits and their revoke: any chat can run catalogue actions with the operator's token, so none of these is one. Exactly these routes (`GRANTS`).
 
@@ -851,6 +852,7 @@ Approving a schedule or a draft spec, the Overseer's permits and their revoke: a
 | `POST /api/design/runs/:run/brief/image` | full |
 | `POST /api/design/runs/:run/brief/link` | full |
 | `POST /api/design/runs/:run/brief/not-this-screen` | full |
+| `POST /api/design/runs/:run/brief/screenshot` | full |
 | `POST /api/design/runs/:run/brief/start` | full |
 | `GET /api/overseer/autonomy` | sessions |
 | `POST /api/overseer/autonomy/revoke` | admin |
@@ -974,6 +976,7 @@ Approving a schedule or a draft spec, the Overseer's permits and their revoke: a
 | `GET /api/projects/:pid/overseer/worktrees` | sessions | `project.worktree.list` |
 | `POST /api/projects/:pid/overseer/worktrees/merge` | admin | `project.worktree.merge` |
 | `POST /api/projects/:pid/overseer/worktrees/remove` | admin | `project.worktree.remove` |
+| `GET /api/projects/:pid/running-copies` | sessions | `project.copies.running` |
 | `GET /api/projects/:pid/services` | sessions | `project.services.view` |
 | `GET /api/projects/:pid/settings` | sessions | `project.settings.get` |
 | `POST /api/projects/:pid/settings/cards/:card/withdraw` | admin | `project.settings.propose.withdraw` |
@@ -1107,9 +1110,9 @@ Per file, the tool names its object literals declare (`<computed: …>` where th
 | `server/conversation-draft-routes.ts` | 3 | `sova_draft_specs`, `sova_draft_approve`, `sova_draft_build` |
 | `server/conversation-draft-tools.ts` | 3 | `requirement_drop`, `requirements_summary`, `requirements_confirm` |
 | `server/create-settings-tool.ts` | 1 | `sova_settings` |
-| `server/design/coordinator.ts` | 8 | `design_status`, `design_brief`, `design_browse`, `design_capture`, `design_send`, `design_new`, `coordinator_card`, `project_verbs` |
+| `server/design/coordinator.ts` | 9 | `design_status`, `design_brief`, `design_browse`, `design_capture`, `design_send`, `design_new`, `coordinator_card`, `project_verbs`, `design_images` |
 | `server/design/describe.ts` | 1 | `asset_report` |
-| `server/design/tools.ts` | 4 | `lookbook`, `design_look`, `design_stream`, `design_hand_in` |
+| `server/design/tools.ts` | 5 | `lookbook`, `design_skill`, `design_look`, `design_stream`, `design_hand_in` |
 | `server/feature-chat-align.ts` | 1 | `align` |
 | `server/harness/pi/session.ts` | 1 | `<computed: t.name>` |
 | `server/memory/tools.ts` | 3 | `<computed: MEMORY_ZOOM_TOOL>`, `<computed: MEMORY_DATE_TOOL>`, `<computed: MEMORY_RECALL_TOOL>` |

@@ -64,18 +64,49 @@ export interface DesignAssetContext {
   dom?: DesignAssetDom;
 }
 
+/** The heading of the Reference screenshots block a design's message carries at Start. */
+export const SCREENSHOTS_HEADING = "REFERENCE SCREENSHOTS:";
+
+/** What a designer whose model reads no pictures is told when its message has screenshots: the brief may speak of
+    pictures it doesn't have, so the words lead, and what the screen holds is kept as described. */
+export const WORDS_ONLY_NOTE = [
+  "YOU HAVE NO PICTURES: your model reads no images, so no screenshot came with this message. Wherever anything above speaks of a picture, an image or a screenshot you can see (\"the picture a1 shows...\"), go by the words under REFERENCE SCREENSHOTS instead; never mention a picture in your page or your note.",
+  "Keep the screenshot's real titles, labels, figures and sample data exactly as the brief and those words describe them. Never invent names, numbers, prices, models or entries of your own; where the words give none, use plain placeholders that say what goes there.",
+].join("\n");
+
+/** One measured colour of a picture. */
+export interface DesignMeasuredColor {
+  hex: string;
+  share: number;
+  saturation?: number;
+  thin?: true;
+  /** How much of the screen's outer frame it covers, 0..1: the page background covers most of it. */
+  frame?: number;
+}
+
+/** What a designer is told of a pasted screenshot: its feel, and its colours by role. Words, never the picture. */
+export interface DesignShotWords {
+  feel: string;
+  colors: { hex: string; role: string }[];
+}
+
 /** What a describing model said about an image. */
 export interface DesignAssetDescription {
   kind: string;
   description: string;
   placement: string;
   usage: string;
+  /** A screenshot's: the helper's short draft of its feel, a starting point only. */
+  feel?: string;
+  /** A screenshot's: the helper's role for each measured colour. */
+  roles?: { hex: string; role: string }[];
   model?: string;
   at: string;
 }
 
-/** What a describing helper may call an image. The first four belong to the whole site, the rest to one page. */
-export const DESIGN_ASSET_KINDS = ["logo", "icon", "background", "decorative", "hero", "product", "photo", "embed"] as const;
+/** What a describing helper may call an image. The first four belong to the whole site, the next four to one page;
+    `screenshot` (a picture of a screen, a reference rather than material) only an image the user supplied. */
+export const DESIGN_ASSET_KINDS = ["logo", "icon", "background", "decorative", "hero", "product", "photo", "embed", "screenshot"] as const;
 export type DesignAssetKind = (typeof DESIGN_ASSET_KINDS)[number];
 export const isDesignAssetKind = (v: unknown): v is DesignAssetKind => typeof v === "string" && (DESIGN_ASSET_KINDS as readonly string[]).includes(v);
 
@@ -110,8 +141,60 @@ export interface DesignAsset {
   describeAgain?: boolean;
   /** The user's own words on it, which override everything else said about it. */
   note?: string;
-  /** The kind the user chose, over the helper's. */
+  /** The kind the user chose, over the Creative Director's and the helper's. */
   chosenKind?: string;
+  /** Its main colours, measured from its pixels with no model (a pasted image's), up to 8, largest first; absent on an
+      image kept before. saturation 0..1; thin: it sits mostly on strokes (text, lines, small marks) rather than areas. */
+  palette?: DesignMeasuredColor[];
+  /** The kind the Creative Director chose, over the helper's; never the user's field. */
+  cdKind?: DesignAssetKind;
+  /** A screenshot's words for designers as the Creative Director wrote them. */
+  cdWords?: DesignShotWords;
+  /** A screenshot's words for designers as the user saved them: nothing else replaces them. */
+  userWords?: DesignShotWords;
+}
+
+/** The kind an image is: the user's, else the Creative Director's, else the helper's. */
+export const assetKind = (a: Pick<DesignAsset, "chosenKind" | "cdKind" | "description">): string => a.chosenKind ?? a.cdKind ?? a.description?.kind ?? "image";
+
+/** Whether an image is a pasted screenshot: only one the user supplied can be. */
+export const isScreenshot = (a: Pick<DesignAsset, "source" | "chosenKind" | "cdKind" | "description">): boolean => a.source === "yours" && assetKind(a) === "screenshot";
+
+/** Whether a kind may be given to this image: `screenshot` only to one the user supplied. */
+export const kindAllowed = (a: Pick<DesignAsset, "source">, kind: string): boolean => isDesignAssetKind(kind) && (kind !== "screenshot" || a.source === "yours");
+
+/** The pasted screenshots that go to the designers: of these assets (a run's own), each screenshot not unticked by its
+    saved tick. What Start waits on for Rebuild or Feel, the same on the card and the server. */
+export const screenshotsInUse = (assets: readonly DesignAsset[], brief: { imageUse?: Record<string, { use: boolean }> } | undefined): string[] =>
+  assets.filter((a) => isScreenshot(a) && brief?.imageUse?.[a.name]?.use !== false).map((a) => a.name);
+
+/** The most colours a screenshot's words hold: the measured ones and any added, as a user's own may. */
+export const SHOT_COLORS_LIMIT = 8;
+
+/** A screenshot's words for designers and whose they are. The feel is the user's, else the Creative Director's, else the
+    helper's draft (`by` says whose). The colours always start from the measured palette, so its hex values reach every
+    design whoever wrote the feel: the helper's roles first, then the Creative Director's and the user's renaming a role
+    or adding a colour. Only the user's own colours replace the measured ones. Null when there are none at all. */
+export function shotWords(a: Pick<DesignAsset, "userWords" | "cdWords" | "description" | "palette">): { words: DesignShotWords; by: "user" | "coordinator" | "helper" } | null {
+  const user = a.userWords;
+  const cd = a.cdWords;
+  const by = user ? "user" : cd ? "coordinator" : "helper";
+  const feel = user?.feel ?? cd?.feel ?? a.description?.feel ?? "";
+  let colors: { hex: string; role: string }[];
+  if (user?.colors.length) colors = user.colors.map((c) => ({ ...c }));
+  else {
+    const roles = new Map((a.description?.roles ?? []).map((r) => [r.hex.toLowerCase(), r.role]));
+    colors = (a.palette ?? []).map((p) => ({ hex: p.hex.toLowerCase(), role: roles.get(p.hex.toLowerCase()) ?? "" }));
+    for (const c of cd?.colors ?? []) {
+      const hex = c.hex.toLowerCase();
+      const known = colors.find((x) => x.hex === hex);
+      if (known) {
+        if (c.role) known.role = c.role;
+      } else if (colors.length < SHOT_COLORS_LIMIT) colors.push({ hex, role: c.role });
+    }
+  }
+  if (!feel && !colors.length) return null;
+  return { words: { feel, colors }, by };
 }
 
 /** Colors and font names read off the page: notes for the brief, no model involved. */

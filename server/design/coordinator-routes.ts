@@ -8,8 +8,8 @@ import { notPage } from "../page-only";
 import { resolveSessionPath } from "../paths";
 import { idOf } from "../sessions-index";
 import type { BrowseParent } from "./browse";
-import { ownImagesLine } from "./asset-routes";
-import { answerBrief, answerCoordinator, editBrief, messageCoordinator, notThisScreen, resolveBriefConflict, setBriefImage, setBriefLink, shotsDir } from "./coordinator";
+import { ownImages } from "./asset-routes";
+import { answerBrief, answerCoordinator, editBrief, messageCoordinator, notThisScreen, resolveBriefConflict, setBriefImage, setBriefLink, setBriefScreenshot, shotsDir } from "./coordinator";
 import { designView } from "./live";
 
 const BAD_PATH = "Invalid or missing ?path= (must be a .jsonl under the pi sessions dir)";
@@ -28,7 +28,7 @@ const bodyOf = async (c: Context): Promise<Record<string, unknown>> => {
     return {};
   }
 };
-const YOUR_CLICK = "Only your own click on the coordinator's card or the Lookbook's brief in Sova's page answers this.";
+const YOUR_CLICK = "Only your own click on the Creative Director's card or the Lookbook's brief in Sova's page answers this.";
 const text = (v: unknown): string => (typeof v === "string" ? v : "");
 const message = (e: unknown): string => (e instanceof Error ? e.message : String(e));
 
@@ -69,6 +69,11 @@ export function mountCoordinatorRoutes(app: Hono): void {
     setBriefImage(p, run, b.name, b.use);
   });
 
+  onBrief("screenshot", (p, run, b) => {
+    if (typeof b.name !== "string" || (b.use !== "rebuild" && b.use !== "feel")) return 'A screenshot needs its name and a use, "rebuild" or "feel".';
+    setBriefScreenshot(p, run, b.name, b.use);
+  });
+
   onBrief("not-this-screen", (p, run, b) => notThisScreen(p, run, text(b.text).trim() || undefined));
 
   app.post("/api/design/coordinator/message", async (c) => {
@@ -79,12 +84,12 @@ export function mountCoordinatorRoutes(app: Hono): void {
     const images = Array.isArray(b.images) ? b.images.filter((x): x is string => typeof x === "string").slice(0, 20) : [];
     if ((!words && !images.length) || !text(b.key)) return c.json({ error: "A message needs its text or an image, and a key." }, 400);
     try {
-      // Your own images join the chat's set here; the coordinator hears their names, never their bytes.
+      // Your own images join the chat's set here; the Creative Director hears their names, and sees them when it reads pictures.
       if (images.length && notPage(c)) return c.json({ error: YOUR_CLICK }, 403);
-      const added = images.length ? await ownImagesLine(p, images) : "";
-      const said = [words, added].filter(Boolean).join("\n\n");
+      const added = images.length ? await ownImages(p, images) : { line: "", names: [] };
+      const said = [words, added.line].filter(Boolean).join("\n\n");
       // Only the person's own page vouches for an address it names (a script's or a chat's call still delivers).
-      return c.json(await messageCoordinator(p, said, `user:${text(b.key)}`, notPage(c) === null));
+      return c.json(await messageCoordinator(p, said, `user:${text(b.key)}`, notPage(c) === null, added.names));
     } catch (err) {
       return c.json({ error: message(err) }, 409);
     }

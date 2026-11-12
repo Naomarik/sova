@@ -105,7 +105,7 @@ A screenshot you paste into your chat or the Creative Director's box joins the L
 images, and the helper marks it a **Screenshot** (you can change its kind). Only images you paste can be Screenshots, never images captured from
 a page. It shows up to 8 colours measured from its pixels, as swatches with their hex values, and
 its **words for designers**: the screen's feel and what each colour is for. A helper drafts those
-words, the Creative Director tunes them, and you can **Edit** them. Your edits always win.
+words, the Creative Director tunes them, and you can change them with **Edit Words**. Your edits always win.
 Editing only the feel keeps the measured colours.
 
 Each ticked screenshot needs a choice before Start:

@@ -729,10 +729,10 @@ function hermeticEnv(tier) {
     // No Cloudflare Free tunnel by default (server/public-links.ts): a missing setting reads as off, as before
     // the Free default; a test that drives a tunnel turns it on for itself.
     SOVA_QUICK_TUNNEL: "off",
-    // No per-server copy of the code (§app.chat-processes/code-generations): a server a test starts has
     // No installed cloudflared is ever run (server/share/tunnel/binary.ts): PATH is skipped; a tunnel test names
     // its fake, and a test that wants "none" gets it on every machine.
     SOVA_CLOUDFLARED: process.env.SOVA_CLOUDFLARED || "off",
+    // No per-server copy of the code (§app.chat-processes/code-generations): a server a test starts has
     // its state root here, on another filesystem than the checkout, where each copy is ~350 MB.
     SOVA_CHAT_CODE: "live",
     TMPDIR: tmp,

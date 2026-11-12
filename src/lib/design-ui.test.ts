@@ -83,13 +83,13 @@ test("a run is models times directions, and says so", () => {
   assert.equal(setupSummary(setupCount(toggleDirection(toggleModel(setup(), "claude-code/sonnet", false), "Heritage", false))), "1 design · 1 style · 1 model");
 });
 
-test("Start Coordinator says why it can't go, one reason at a time", () => {
+test("Start Creative Director says why it can't go, one reason at a time", () => {
   assert.equal(setupBlocked(setup(), caps), null);
   assert.match(setupBlocked(setup({ brief: " " }), caps)!, /what to design/);
   assert.match(setupBlocked(toggleGroup(toggleGroup(setup(), "claude", false), "ollama-cloud", false), caps)!, /1 model/);
   assert.match(setupBlocked(toggleDirection(toggleDirection(setup(), "Minimalist", false), "Heritage", false), caps)!, /1 style/);
   const noMark = setup();
-  assert.match(setupBlocked({ ...noMark, models: noMark.models.map((x) => ({ ...x, coordinator: false })) }, caps)!, /coordinator/);
+  assert.match(setupBlocked({ ...noMark, models: noMark.models.map((x) => ({ ...x, coordinator: false })) }, caps)!, /Creative Director/);
   const many = setup({ directions: Array.from({ length: 13 }, (_, i) => ({ name: `d${i}`, on: true })) });
   assert.equal(setupCount(many).designs, 26);
   assert.match(setupBlocked(many, caps)!, /^26 designs is more than 1 run can make \(24\)\. Choose fewer models, styles or layouts\.$/);

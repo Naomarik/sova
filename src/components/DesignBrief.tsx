@@ -10,6 +10,7 @@ import { Inline, QuestionChoices, type QuestionPicker } from "./AlignDocCard";
 import { DesignAskPanel, DesignCoordinatorPanel } from "./DesignCoordinator";
 import { createSetupDraft, DesignLinkRow, DesignSetupPickers, type SetupDraft } from "./DesignSetupControls";
 import { createAssetCatalogue, DesignBriefImageDetail, DesignBriefImages } from "./DesignBriefImages";
+import { DesignSkillsLine } from "./DesignSkills";
 import { TextArea, TextField } from "./form";
 import { Chip, Icon } from "./ui";
 import "./DesignBrief.css";
@@ -59,7 +60,7 @@ function BriefText(props: {
     }
   };
   const movedOn = () => draft() !== null && (text() ?? "") !== base() && held() === null;
-  const note = () => error() || (movedOn() ? "The coordinator changed this while you typed. Saving replaces its version." : props.note || "");
+  const note = () => error() || (movedOn() ? "The Creative Director changed this while you typed. Saving replaces its version." : props.note || "");
   return (
     <section class="design-brief-text" data-fold={props.fold ? "" : undefined} aria-label={props.title}>
       <div class="design-brief-text-head">
@@ -169,7 +170,7 @@ function BriefScreen(props: { run: DesignRunView; store: DesignStore; contentOnl
       setRedirecting(false);
       props.store.refresh();
     } catch (e) {
-      setError(message(e, "That didn't reach the coordinator. Try again."));
+      setError(message(e, "That didn't reach the Creative Director. Try again."));
     } finally {
       setBusy(false);
     }
@@ -189,10 +190,10 @@ function BriefScreen(props: { run: DesignRunView; store: DesignStore; contentOnl
         </Show>
       </div>
       <div class="design-brief-screen-picture">
-        <Show when={screen()} fallback={<p class="text-muted design-brief-screen-empty">{props.contentOnly ? "Your link is part of the page's content, so no screen is looked at." : "The coordinator hasn't shown a screen yet."}</p>}>
+        <Show when={screen()} fallback={<p class="text-muted design-brief-screen-empty">{props.contentOnly ? "Your link is part of the page's content, so no screen is looked at." : "The Creative Director hasn't shown a screen yet."}</p>}>
           {(s) => (
             <>
-              <For each={s().screenshots}>{(src) => <img src={props.store.api.shotUrl(src)} alt="The screen the coordinator found" />}</For>
+              <For each={s().screenshots}>{(src) => <img src={props.store.api.shotUrl(src)} alt="The screen the Creative Director found" />}</For>
               <Show when={s().screenshots.length === 0 && s().outline}>{(o) => <pre class="design-confirm-outline">{o()}</pre>}</Show>
             </>
           )}
@@ -222,7 +223,7 @@ function BriefScreen(props: { run: DesignRunView; store: DesignStore; contentOnl
               Cancel
             </button>
             <button type="submit" class="button button-sm button-primary" disabled={busy()}>
-              Send to Coordinator
+              Send to Creative Director
             </button>
           </div>
         </form>
@@ -284,10 +285,10 @@ export function DesignBriefStep(props: { run: DesignRunView; store: DesignStore;
     });
   };
   const sendAnswers = async () => {
-    if (await guard(() => props.store.api.briefAnswers(props.run.id, { picks: toSend() }), "Your answers didn't reach the coordinator. They're still picked.")) setStaged({});
+    if (await guard(() => props.store.api.briefAnswers(props.run.id, { picks: toSend() }), "Your answers didn't reach the Creative Director. They're still picked.")) setStaged({});
   };
   const recommend = async () => {
-    if (await guard(() => props.store.api.briefAnswers(props.run.id, { recommended: true }), "That didn't reach the coordinator. Try again.")) setStaged({});
+    if (await guard(() => props.store.api.briefAnswers(props.run.id, { recommended: true }), "That didn't reach the Creative Director. Try again.")) setStaged({});
   };
   const jumpToWhatBlocks = () => {
     const code = block()?.code;
@@ -329,12 +330,12 @@ export function DesignBriefStep(props: { run: DesignRunView; store: DesignStore;
   const coordinator = () => coordinatorOf(props.store.view());
   const pendingAsk = () => coordinator()?.ask;
   const promptNote = () => {
-    if (brief().writing) return brief().writing!.stalled ? "The coordinator stopped before writing this" : "Being written";
+    if (brief().writing) return brief().writing!.stalled ? "The Creative Director stopped before writing this" : "Being written";
     return brief().promptBy === "user" ? "Yours" : "What the design sessions get";
   };
   const conflictWords: Record<string, string> = {
     summary: "You edited the summary.",
-    told: "You told the coordinator something new.",
+    told: "You told the Creative Director something new.",
     answer: "You answered a question.",
     screen: "The screen changed.",
   };
@@ -347,7 +348,7 @@ export function DesignBriefStep(props: { run: DesignRunView; store: DesignStore;
               title="Summary"
               editLabel="Edit Summary"
               text={brief().summary}
-              empty="The coordinator is writing the summary."
+              empty="The Creative Director is writing the summary."
               boxClass="design-brief-summary"
               canEdit
               save={(text) => props.store.api.briefEdit(props.run.id, { field: "summary", text })}
@@ -357,13 +358,14 @@ export function DesignBriefStep(props: { run: DesignRunView; store: DesignStore;
               title="Full Prompt"
               editLabel="Edit Prompt"
               text={brief().prompt}
-              empty="The coordinator writes this once your questions are answered."
+              empty="The Creative Director writes this once your questions are answered."
               note={promptNote()}
               boxClass="design-brief-prompt"
               canEdit={brief().prompt !== null}
               noEditWhy="Waits until it's written."
               save={(text) => props.store.api.briefEdit(props.run.id, { field: "prompt", text })}
             />
+            <DesignSkillsLine run={props.run} />
             <Show when={anyLinks()}>
               <div class="design-brief-links">
                 <For each={urls()}>{(url) => <DesignLinkRow url={url} use={useOf(url)} onUse={(use) => setUse(url, use)} />}</For>
@@ -404,7 +406,7 @@ export function DesignBriefStep(props: { run: DesignRunView; store: DesignStore;
               <div class="design-brief-answers-narrow">{answersButton()}</div>
             </Show>
             <Show when={brief().questions.length > 0}>
-              <ol class="align-questions design-brief-questions" aria-label="The coordinator's questions">
+              <ol class="align-questions design-brief-questions" aria-label="The Creative Director's questions">
                 <For each={brief().questions}>
                   {(q) => (
                     <BriefQuestion
@@ -548,6 +550,7 @@ export function DesignBriefCollapsed(props: { run: DesignRunView; store: DesignS
                 <p class="text-caption text-muted">This is what the designs were started from. Read only.</p>
               </Show>
               <p class="design-brief-read">{b().summary}</p>
+              <DesignSkillsLine run={props.run} />
               <For each={props.run.setup.links ?? []}>
                 {(l) => (
                   <p class="text-caption">

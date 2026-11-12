@@ -32,7 +32,7 @@ export function mainDesignTools(parent: () => DesignParent, cwd: () => string): 
     {
       name: "lookbook",
       label: "lookbook",
-      description: `The Lookbook: one page designed by several models side by side. op "start" puts a Lookbook Setup card in the chat (the user finishes it there, up to ${DESIGN_BATCH_MAX} designs), only when the user asked for a Lookbook. op "read" gets the coordinator's card, or one design's whole page with label. op "tell" passes text word for word to the coordinator, and images (the paths of images the user attached) join its image set. Call vis_guide with kind "lookbook" first.`,
+      description: `The Lookbook: one page designed by several models side by side. op "start" puts a Lookbook Setup card in the chat (the user finishes it there, up to ${DESIGN_BATCH_MAX} designs), only when the user asked for a Lookbook. op "read" gets the Creative Director's card (the coordinator), or one design's whole page with label. op "tell" passes text word for word to the Creative Director, and images (the paths of images the user attached) join its image set. Call vis_guide with kind "lookbook" first.`,
       parameters: {
         type: "object",
         properties: {
@@ -42,7 +42,7 @@ export function mainDesignTools(parent: () => DesignParent, cwd: () => string): 
           modelGroups: list('start: whole groups the user named, one picker section each: "claude", "gpt", "glm" (Z.ai), "deepseek", "ollama-cloud" (Ollama Cloud) or "ollama" (Ollama on this computer only).'),
           directions: list("start: style names the user named."),
           layouts: list('start: layout names the user named ("a compact and a bento version"); none unless they named some.'),
-          coordinator: str("start: the model id to coordinate, only when the user named one."),
+          coordinator: str("start: the model id for the Creative Director (the coordinator), only when the user named one."),
           images: list("tell: the paths of images the user attached, to add to the design's images."),
           label: str("read: a design's label, for its whole page."),
           text: str("tell: the words to pass on, exactly as the user said them."),
@@ -65,7 +65,7 @@ export function mainDesignTools(parent: () => DesignParent, cwd: () => string): 
           }
           const card = coordinatorCard(p.sessionId);
           const lines = viewOf(p.sessionId).designs.map((d) => `${d.label} · ${designDirectionLine(d)} · ${d.model} · ${d.status}`);
-          return say([card?.card || "The coordinator has no card yet.", lines.length ? `Designs:\n${lines.join("\n")}` : ""].filter(Boolean).join("\n\n"));
+          return say([card?.card || "The Creative Director has no card yet.", lines.length ? `Designs:\n${lines.join("\n")}` : ""].filter(Boolean).join("\n\n"));
         }
         if (params?.op === "tell") {
           const paths = Array.isArray(params.images) ? params.images.filter((x): x is string => typeof x === "string").slice(0, 20) : [];

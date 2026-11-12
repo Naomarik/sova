@@ -62,6 +62,7 @@ import {
   DesignStreamFrame,
 } from "./DesignFrame";
 import { DesignOpenSlot, DesignRefinePanel } from "./DesignOpen";
+import { DesignSkillsLine } from "./DesignSkills";
 import { useDesignOpen } from "../lib/design-history";
 import { hostOf } from "../lib/mesh";
 import { TextArea } from "./form";
@@ -90,7 +91,9 @@ export type { DesignOpenTarget } from "../lib/design-history";
 export function designWaiting(d: DesignRecord): string | undefined {
   return d.status === "fixing"
     ? "Fixing the page"
-    : d.thinking
+    : d.readingSkill
+      ? "Reading the design skill"
+      : d.thinking
       ? "Thinking about the page"
       : undefined;
 }
@@ -221,7 +224,7 @@ function DesignSetupCard(props: { run: DesignRunView; store: DesignStore }) {
       setError(
         e instanceof Error
           ? e.message
-          : "The coordinator couldn't start. Try again.",
+          : "The Creative Director couldn't start. Try again.",
       );
     } finally {
       setBusy(false);
@@ -262,6 +265,7 @@ function DesignSetupCard(props: { run: DesignRunView; store: DesignStore }) {
               </For>
             </Show>
           </div>
+          <DesignSkillsLine run={props.run} />
           <DesignSetupPickers setup={setup} currentCoordinator={props.store.view()?.coordinator?.model} />
         </div>
       </div>
@@ -287,7 +291,7 @@ function DesignSetupCard(props: { run: DesignRunView; store: DesignStore }) {
           disabled={busy() || !!blocked()}
           onClick={() => void start()}
         >
-          Start Coordinator
+          Start Creative Director
         </button>
       </div>
     </>
@@ -376,7 +380,7 @@ function DesignRunBody(props: {
               >
                 <div class="empty design-card-waiting">
                   <p class="empty-body">
-                    The coordinator is preparing your brief. Nothing is designed
+                    The Creative Director is preparing your brief. Nothing is designed
                     until you press Start.
                   </p>
                 </div>

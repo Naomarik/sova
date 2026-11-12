@@ -103,5 +103,5 @@ test("an image is used unless unticked, and a click not yet confirmed counts", (
 test("a later run's Setup says when the coordinator changes, and nothing when it doesn't", () => {
   const s = setup();
   assert.equal(coordinatorChangeLine(s, "a/b"), "");
-  assert.equal(coordinatorChangeLine(s, "other/model"), "This starts a new coordinator on b; it keeps the notes, not the conversation.");
+  assert.equal(coordinatorChangeLine(s, "other/model"), "This starts a new Creative Director on b; it keeps the notes, not the conversation.");
 });

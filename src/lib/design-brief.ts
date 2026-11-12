@@ -42,7 +42,7 @@ export function briefStatus(run: Pick<DesignRun, "brief" | "setup" | "imagesBusy
   if (block?.code === "writing") return { text: run.brief ? "Writing the prompt" : "Writing the brief", live: true };
   if (block?.code === "look") return { text: "Reading the page's look", live: true };
   if (block?.code === "images") return { text: run.imagesBusy === "capturing" ? "Reading the page's images" : "Describing the images", live: true };
-  if (block?.code === "stalled") return { text: "Coordinator stopped", live: false };
+  if (block?.code === "stalled") return { text: "Creative Director stopped", live: false };
   return { text: "Waiting on you", live: false };
 }
 
@@ -115,5 +115,5 @@ export function assetStateLine(a: DesignAsset): string {
 export function coordinatorChangeLine(setup: Pick<DesignSetup, "models">, current: string): string {
   const picked = setup.models.find((m) => m.coordinator);
   if (!picked || picked.ref === current) return "";
-  return `This starts a new coordinator on ${picked.name}; it keeps the notes, not the conversation.`;
+  return `This starts a new Creative Director on ${picked.name}; it keeps the notes, not the conversation.`;
 }

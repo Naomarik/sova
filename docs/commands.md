@@ -309,11 +309,11 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | `design.list` | List Designs | looks | `GET /api/design` | full |
 | `design.page` | Read Design Page | looks | `GET /api/design/:label/page` | full |
 | `design.setup.set` | Change Lookbook Setup | changes | `PATCH /api/design/runs/:run/setup` | full |
-| `design.start` | Start Lookbook Coordinator | changes | `POST /api/design/runs/:run/start` | full |
+| `design.start` | Start Lookbook Creative Director | changes | `POST /api/design/runs/:run/start` | full |
 | `design.message` | Message a Design | changes | `POST /api/design/:label/message` | full |
 | `design.refine` | Refine a Design | changes | `POST /api/design/:label/refine` | full |
 | `design.retry` | Retry a Design | changes | `POST /api/design/:label/retry` | full |
-| `design.coordinator.message` | Message the Lookbook Coordinator | changes | `POST /api/design/coordinator/message` | full |
+| `design.coordinator.message` | Message the Lookbook Creative Director | changes | `POST /api/design/coordinator/message` | full |
 | `design.delete` | Delete a Design | changes | `DELETE /api/design/:label` | full |
 
 ## Pending routes

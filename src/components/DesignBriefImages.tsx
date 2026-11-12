@@ -216,7 +216,7 @@ export function DesignPageAssets(props: { path: string }) {
           fallback={
             <Show when={catalogue()}>
               <div class="empty gallery-empty">
-                <p class="empty-body">0 images in this chat. A link set to Use Its Images, or an image pasted into the coordinator's box, adds them here.</p>
+                <p class="empty-body">0 images in this chat. A link set to Use Its Images, or an image pasted into the Creative Director's box, adds them here.</p>
               </div>
             </Show>
           }

@@ -42,45 +42,82 @@ The card opens as **Lookbook · Setup**, with what you said filled in. Change an
   models are designing and names them; **All** ticks or unticks the whole section, and the arrow opens
   it to tick single models. Ollama on this computer and Ollama Cloud are separate sections. Your
   favorites from the model menu come first in each section, then the most capable models. **Find a
-  model** searches every section. The **Coordinator** dropdown above them picks the one model that
-  coordinates; it can coordinate without designing. On a later run, picking a different coordinator
+  model** searches every section. The **Creative Director** dropdown above them picks the one model that
+  coordinates; it can coordinate without designing. On a later run, picking a different Creative Director
   starts a new one on that model. It keeps the notes, not the conversation, and Setup says so. A
   model marked "text only" can't read pictures and works from a written outline instead.
 - **Directions**: pick from 20.
 - **Links**: each link gets a row to choose how it's used:
-  - **Use Its Images**: the coordinator opens the page once and brings back its images, with notes
+  - **Use Its Images**: the Creative Director opens the page once and brings back its images, with notes
     on its colors and fonts.
   - **Just Its Feel**: a model that can read pictures describes the page's colors, type and imagery
     in words, and that look leads over each design's direction.
   - **Not a Reference**: the address belongs in the page itself, like a booking or contact link. It
     is never opened.
 
-Press **Start Coordinator**. Nothing is designed yet.
+Press **Start Creative Director**. Nothing is designed yet.
+
+### Design skills
+
+A Lookbook loads no skill and no project file by itself, not even your project's own. To use a
+design skill, name it to your chat in your own words: by its name ("use the brand skill", found among
+the project's skills) or by its folder ("use the brand kit in ~/kits/acme", a folder holding a
+`SKILL.md`). Setup lists the skills you named under **Design skills**; there is nothing to tick. A
+skill you named that can't be found becomes one of the Creative Director's questions on the brief.
+
+The Creative Director reads the skills, and can read any file you point it to ("the logo is in my
+Downloads folder"), but writes and runs nothing. It chooses which of your skills the designers use,
+leaving out any that aren't about design, and the brief's **Design skills** line shows that choice.
+Its brief suggests which files of each skill the designers read first. Each designer can read those
+skills, and only those, through a reader Sova gives it. While it does, its tile says **Reading the
+design skill**. Designers copy the tokens and rules they use into the page, which still loads nothing
+but Google Fonts. An image the Creative Director finds, such as a logo, joins the brief's images and
+reaches the designers from there. The estimate before Start counts the reading.
 
 ## The Design Brief
 
-The coordinator writes a **Design Brief** on the card. It looks first at any screen or link you gave
+The Creative Director writes a **Design Brief** on the card. It looks first at any screen or link you gave
 it: a running copy of your project, or an address. If it found the wrong screen, press **Not This
 Screen** and say which one to use.
 
 - The **summary** is the short version for you to read.
 - The **Full Prompt**, folded under it, is exactly what each design session gets.
-- **The coordinator's questions** sit below, each with a recommendation. Answer them, or press
-  **Go With Recommendations**. The coordinator writes the Full Prompt once they're answered.
+- **The Creative Director's questions** sit below, each with a recommendation. Answer them, or press
+  **Go With Recommendations**. The Creative Director writes the Full Prompt once they're answered.
 
 You can change the brief either way. Press **Edit Summary** or **Edit Prompt**, or tell the
-coordinator in its box. If you edit the summary, the coordinator rewrites the Full Prompt to match.
+Creative Director in its box. If you edit the summary, the Creative Director rewrites the Full Prompt to match.
 If you save your own Full Prompt, it launches as you left it. If something later would change your
 prompt, the brief asks **Keep My Prompt** or **Rewrite It**, and Start waits for your choice.
 
 ### Images
 
 Images from a link on Use Its Images show in a grid on the brief. Paste your own into the
-coordinator's box, or into your chat, which passes them on. Each image is described for the
+Creative Director's box, or into your chat, which passes them on. Each image is described for the
 designers. Untick one to leave it out, or open it to read what it shows, add a note, or describe it
 again. While a page using these images is being written, their spots show a plain placeholder. The
 real images appear when the page is finished. Start waits while a link's images are still being
 captured or described.
+
+### Screenshots
+
+A screenshot you paste into your chat or the Creative Director's box joins the Lookbook's
+images, and the helper marks it a **Screenshot** (you can change its kind). Only images you paste can be Screenshots, never images captured from
+a page. It shows up to 8 colours measured from its pixels, as swatches with their hex values, and
+its **words for designers**: the screen's feel and what each colour is for. A helper drafts those
+words, the Creative Director tunes them, and you can change them with **Edit Words**. Your edits always win.
+Editing only the feel keeps the measured colours.
+
+Each ticked screenshot needs a choice before Start:
+
+- **Rebuild This Screen**: designers whose model reads pictures get the screenshot attached. A
+  design gets at most 4 reference pictures, and Rebuild screenshots take those first (past 4, the
+  rest go as words only).
+- **Just Its Feel**: no designer gets the picture.
+
+Either way, every designer gets the screenshot's words and colours, and words-only designers are
+told that's all they get. Untick a screenshot and no designer gets it. A screenshot is never put
+in the page as an image.
 
 ## Start
 
@@ -103,7 +140,7 @@ once; others say "Waiting for a free preview". A page loads only Google Fonts fr
 - **Open** (or **Chat**) shows a design full size with its own conversation beside it, even while
   its first page is being written. **Hide Chat** gives the page the room. A session that has shut down starts again when you message it.
 - **Retry** tries a failed design again in a fresh session.
-- The **coordinator** has its own card and box. It knows what each design is, but not its code.
+- The **Creative Director** has its own card and box. It knows what each design is, but not its code.
   Tell it what you want, such as "the header from A with the cards from C", and it starts a new
   design that names its parents.
 
@@ -112,7 +149,7 @@ passes that on word for word.
 
 ## The Gallery
 
-The session pane's **Gallery** tab holds the chat's **Prototypes**, with **Open Coordinator**, then
+The session pane's **Gallery** tab holds the chat's **Prototypes**, with **Open Creative Director**, then
 **Page Assets**: every image the chat holds, to look through and download. The chat's
 explanations come below.
 

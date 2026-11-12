@@ -141,3 +141,16 @@
 .design-page-assets .gallery-head > * { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 24px; }
 /* Two lines kept for the coordinator change, so it comes and goes without moving anything. */
 .design-setup-coord-note { margin: 0; height: 36px; line-height: 18px; overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+/* A pasted screenshot on the brief: picture and colours, its use, then its words. Fixed sizes, so nothing moves as its words arrive. */
+.design-shot { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-2); border: 1px solid var(--color-border); border-radius: var(--r-md); }
+.design-shot-head { display: grid; grid-template-columns: 96px minmax(0, 1fr); gap: var(--space-3); align-items: start; }
+.design-shot-thumb { width: 96px; height: 72px; padding: 0; border: 0; border-radius: var(--r-sm); background: var(--color-sunken); overflow: hidden; cursor: pointer; }
+.design-shot-thumb img { display: block; width: 100%; height: 100%; object-fit: contain; }
+.design-shot-facts { min-width: 0; display: flex; flex-direction: column; gap: var(--space-1); }
+.design-shot-title { margin: 0; display: flex; align-items: center; height: var(--control-sm); gap: var(--space-2); min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* Up to 8 colours in two fixed rows of 4: the role is in each swatch's tooltip and in the words below, so the row never grows; at a narrow width it scrolls inside its own height. */
+.design-shot-swatches { margin: 0; padding: 0; list-style: none; display: grid; grid-template-columns: repeat(auto-fill, minmax(84px, 1fr)); grid-auto-rows: 22px; gap: var(--space-1) var(--space-2); height: 48px; overflow-y: auto; scrollbar-width: thin; }
+.design-shot-swatch { position: relative; display: inline-flex; align-items: center; gap: var(--space-1); min-width: 0; height: 22px; font-size: var(--fs-caption); }
+.design-shot-chip { flex: none; width: 14px; height: 14px; border-radius: var(--r-xs); box-shadow: inset 0 0 0 1px var(--color-border-strong); }
+.design-shot-use { grid-template-columns: repeat(2, minmax(0, 1fr)); max-width: 360px; }
+.design-shot-drop { margin-left: auto; flex: none; }

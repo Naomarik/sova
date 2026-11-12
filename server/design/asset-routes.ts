@@ -7,7 +7,7 @@ import { isTourOrigin } from "../../shared/tour";
 import { notPage } from "../page-only";
 import { assetOf, noteSignedInConsent, rasterMime, readAssetPart, readAssets } from "./assets";
 import type { BrowseParent } from "./browse";
-import { addOwnImages, readAttachedImages, type OwnImagesResult } from "./own-images";
+import { addOwnImages, readAttachedImages, readDiskImages, type OwnImagesResult } from "./own-images";
 import { describeAssets } from "./describe";
 
 const BAD_PATH = "Invalid or missing ?path= (must be a .jsonl under the pi sessions dir)";
@@ -27,11 +27,26 @@ export async function addAttachedImages(p: BrowseParent, paths: readonly string[
   return { ...out, refused: [...unreadable, ...out.refused] };
 }
 
+/** Images the Creative Director found on disk and read, into the chat's set by the same path as a pasted image's. One line
+    for it: the names given, and what was left out. */
+export async function diskImagesLine(p: BrowseParent, paths: readonly string[]): Promise<{ line: string; names: string[] }> {
+  const { images, unreadable } = await readDiskImages(paths);
+  const out = images.length ? await addOwnImages(p, images, ownImageDeps) : { added: [], known: [], refused: [] };
+  if (out.added.length) describeAssets(p, out.added.map((x) => x.name));
+  const names = [...out.added, ...out.known].map((a) => a.name);
+  return { names, line: [names.length ? `Added to the chat's images as ${names.join(", ")}. They go to the designers with the rest unless you leave them out with design_brief's images; their descriptions follow when they're ready.` : "No image was added.", ...[...unreadable, ...out.refused].map((r) => `${r.what} wasn't added: ${r.reason}`)].join("\n") };
+}
+
 /** One line for the coordinator about images just brought in: the names and what was left out, no picture. */
 export async function ownImagesLine(p: BrowseParent, paths: readonly string[]): Promise<string> {
+  return (await ownImages(p, paths)).line;
+}
+
+/** Images brought in, with their names: the Creative Director that reads pictures is shown them with the line. */
+export async function ownImages(p: BrowseParent, paths: readonly string[]): Promise<{ line: string; names: string[] }> {
   const out = await addAttachedImages(p, paths);
   const names = [...out.added, ...out.known].map((a) => a.name);
-  return [names.length ? `[The user added ${names.length === 1 ? "an image" : `${names.length} images`} of their own: ${names.join(", ")}. Their descriptions follow when they're ready.]` : "", ...out.refused.map((r) => `[${r.what} wasn't added: ${r.reason}]`)].filter(Boolean).join("\n");
+  return { names, line: [names.length ? `[The user added ${names.length === 1 ? "an image" : `${names.length} images`} of their own: ${names.join(", ")}. Their descriptions follow when they're ready.]` : "", ...out.refused.map((r) => `[${r.what} wasn't added: ${r.reason}]`)].filter(Boolean).join("\n") };
 }
 
 export function mountDesignAssetRoutes(app: Hono, parentOf: (c: Context) => BrowseParent | null): void {

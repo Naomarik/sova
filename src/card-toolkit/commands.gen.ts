@@ -4514,7 +4514,7 @@ export interface CommandParams {
     /** The whole setup: brief, models, directions */
     "setup": unknown;
   };
-  /** Start a Lookbook run's coordinator, which writes its Design Brief. The designs start from the brief, by the user's click. (changes something; needs the card's owner trusted) */
+  /** Start a Lookbook run's Creative Director, which writes its Design Brief. The designs start from the brief, by the user's click. (changes something; needs the card's owner trusted) */
   "design.start": {
     /** The chat the designs belong to, by id or by path */
     "session"?: string;
@@ -4552,11 +4552,11 @@ export interface CommandParams {
     /** The design's label (A, B, … AA) */
     "label": string;
   };
-  /** Send a chat's Lookbook coordinator a message. It waits if the coordinator is busy. (changes something; needs the card's owner trusted) */
+  /** Send a chat's Lookbook Creative Director a message. It waits if the Creative Director is busy. (changes something; needs the card's owner trusted) */
   "design.coordinator.message": {
     /** The chat the designs belong to, by id or by path */
     "session"?: string;
-    /** What to say to the coordinator */
+    /** What to say to the Creative Director */
     "text": string;
     /** A key you make: sending again under it delivers nothing twice */
     "key": string;

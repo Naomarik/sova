@@ -79,6 +79,11 @@ export interface DesignRecord {
   versions: DesignVersion[];
   /** Its session is thinking and hasn't begun the page: draw that instead of an empty Writing. */
   thinking?: true;
+  /** The skill folders this design may read with its skill reader, taken from its run at launch: a design revived after a
+      restart keeps them. Absent: none. */
+  skills?: { name: string; dir: string }[];
+  /** Its session is reading a design skill and hasn't begun the page: the tile says so. Gone once the page starts. */
+  readingSkill?: true;
   /** The page being written now, while there is one. */
   live?: {
     version: number;
@@ -157,6 +162,25 @@ export interface DesignLink {
   by?: "user" | "coordinator";
 }
 
+/** A design skill a run uses: a folder holding SKILL.md, read by the Creative Director and offered to its designers. */
+export interface DesignSkill {
+  /** Its SKILL.md front matter's name, else the folder's. */
+  name: string;
+  /** Its front matter's description; may be empty. */
+  description: string;
+  /** The folder holding SKILL.md, absolute. */
+  dir: string;
+  /** project: found in the run's folder; named: a folder the user named for this run. */
+  from: "project" | "named";
+}
+
+/** A skill the user named for a run that couldn't be found: the Creative Director asks about it on the brief. */
+export interface DesignSkillMissing {
+  /** What the user named, as passed on. */
+  asked: string;
+  reason: string;
+}
+
 export type DesignRunPhase = "setup" | "researching" | "brief" | "generating" | "done" | "stopped";
 
 /** One run: a Setup card and the batch started from it. */
@@ -177,6 +201,13 @@ export interface DesignRun {
   imagesBusy?: "capturing" | "describing";
   /** The person's approval of a run above the free limit (q2). */
   confirmedSpend?: boolean;
+  /** The design skills this run's Creative Director and designers use, fixed when the run is made. Absent: none (or a run made before skills). */
+  skills?: DesignSkill[];
+  /** Skills the user named for this run that weren't found. */
+  skillsMissing?: DesignSkillMissing[];
+  /** The images the user attached when asking for this Lookbook, by asset name: the run's own, as the ones they paste
+      once it has begun are (whatever their age in the chat). Absent: none. */
+  images?: string[];
   createdAt: string;
   updatedAt: string;
 }
@@ -304,6 +335,12 @@ export interface DesignBrief {
   notes?: Record<string, { text: string; by: "capture" | "user" }>;
   /** Which images go to the designers, by the image's name; an image not listed goes. A person's click stands. */
   imageUse?: Record<string, { use: boolean; by: "user" | "coordinator" }>;
+  /** How each pasted screenshot is used, by its name: rebuild (that screen is what's redesigned; designers that read pictures
+      get it) or feel (only its words go). A person's click stands. */
+  screenUse?: Record<string, { use: "rebuild" | "feel"; by: "user" | "coordinator" }>;
+  /** Which of the run's named skills the designers use, by name, as the Creative Director chose (design_brief's skills).
+      Absent: all of them. */
+  skills?: string[];
   /** What the designs are estimated to cost in dollars, with the models and directions chosen now; absent when a price isn't known. */
   estimateUsd?: number;
   /** Set at Start: the brief is frozen from then on. */
@@ -311,23 +348,37 @@ export interface DesignBrief {
   startedAt?: string;
 }
 
+/** Whether an image the user supplied is this run's own: pasted since the run began, or attached when it was asked for
+    (run.images). Start, the Creative Director and the card all read a run's images by this one rule. */
+export const runOwnImage = (a: { source: string; name: string; addedAt: string }, run: Pick<DesignRun, "createdAt" | "images">): boolean =>
+  a.source === "yours" && (a.addedAt >= run.createdAt || (run.images ?? []).includes(a.name));
+
+/** The skills a run's designers use: those the brief names among the run's skills, or all of the run's when it names none. */
+export function designerSkills(run: Pick<DesignRun, "skills" | "brief">): DesignSkill[] {
+  const all = run.skills ?? [];
+  const picked = run.brief?.skills;
+  return picked ? all.filter((s) => picked.includes(s.name)) : all;
+}
+
 /** Why Start can't be pressed: code to branch on, label for the button. */
 export interface DesignBriefBlock {
-  code: "question" | "writing" | "stalled" | "conflict" | "link-use" | "look" | "images" | "no-designs";
+  code: "question" | "writing" | "stalled" | "conflict" | "link-use" | "screenshot-use" | "look" | "images" | "no-designs";
   label: string;
 }
 
-/** The brief's named reason Start waits, or null: the server refuses Start by exactly this. */
-export function designBriefBlock(run: Pick<DesignRun, "brief" | "setup" | "imagesBusy">): DesignBriefBlock | null {
+/** The brief's named reason Start waits, or null: the server refuses Start by exactly this. `screenshots`: the names of
+    the pasted screenshots that go to the designers (ticked), each of which needs Rebuild or Just Its Feel. */
+export function designBriefBlock(run: Pick<DesignRun, "brief" | "setup" | "imagesBusy">, screenshots: readonly string[] = []): DesignBriefBlock | null {
   const b = run.brief;
   if (!b) return { code: "writing", label: "Writing the Brief" };
   const open = b.questions.filter((q) => !q.answer).length;
   if (open) return { code: "question", label: `Answer ${open} Question${open === 1 ? "" : "s"} First` };
   if (b.conflict) return { code: "conflict", label: "Choose Keep My Prompt or Rewrite It" };
-  if (b.writing?.stalled || (b.prompt === null && !b.writing)) return { code: "stalled", label: "The Coordinator Hasn't Written the Prompt" };
+  if (b.writing?.stalled || (b.prompt === null && !b.writing)) return { code: "stalled", label: "The Creative Director Hasn't Written the Prompt" };
   if (b.writing || b.prompt === null) return { code: "writing", label: "Writing the Full Prompt" };
   const links = run.setup.links ?? [];
   if (links.some((l) => l.use === null)) return { code: "link-use", label: "Choose How to Use Your Link" };
+  if (screenshots.some((n) => !b.screenUse?.[n])) return { code: "screenshot-use", label: "Choose Rebuild or Just Its Feel" };
   if (links.some((l) => l.use === "feel" && b.looks[l.url]?.state === "reading")) return { code: "look", label: "Reading the Page's Look" };
   if (run.imagesBusy) return { code: "images", label: run.imagesBusy === "capturing" ? "Still Reading the Page's Images" : "Still Describing the Images" };
   const models = run.setup.models.filter((m) => m.design).length;

@@ -1,7 +1,6 @@
 import { createEffect, createMemo, createSignal, For, on, Show } from "solid-js";
 import type { DesignAsset, DesignAssetCatalogue } from "../../shared/design-assets";
-import { DESIGN_ASSET_KINDS } from "../../shared/design-assets";
-import { assetKindWord, assetsOfRun, assetStateLine, imageUsed, usedCount } from "../lib/design-brief";
+import { assetKindWord, assetsOfRun, kindChoices, assetStateLine, imageUsed, usedCount } from "../lib/design-brief";
 import { useDesignStore, type DesignStore } from "../lib/design-store";
 import { hostOf } from "../lib/mesh";
 import type { DesignRunView } from "../lib/design-ui";
@@ -58,6 +57,30 @@ function AssetCard(props: { asset: DesignAsset; used: boolean; store: DesignStor
         {assetStateLine(props.asset)}
       </p>
     </article>
+  );
+}
+
+/** Setup's images: the ones the run starts with (attached when the Lookbook was asked for, on the run from the first
+    frame, so their row's place is there before the pictures load), read-only, in one fixed row of thumbnails. */
+export function DesignSetupImages(props: { run: DesignRunView; store: DesignStore }) {
+  const catalogue = createAssetCatalogue(props.store);
+  const assets = createMemo(() => assetsOfRun(catalogue(), props.run));
+  const count = () => Math.max(assets().length, props.run.images?.length ?? 0);
+  return (
+    <Show when={count() > 0}>
+      <section class="design-setup-images" aria-label="Images for this run">
+        <h4 class="design-setup-label">Images · {count()}</h4>
+        <ul class="design-setup-thumbs">
+          <For each={assets()}>
+            {(a) => (
+              <li class="design-setup-thumb" title={`${a.name} · ${assetKindWord(a)}`}>
+                <img src={props.store.api.assetUrl(a.name, "small")} alt={`${a.name}, ${assetKindWord(a)}`} loading="lazy" />
+              </li>
+            )}
+          </For>
+        </ul>
+      </section>
+    </Show>
   );
 }
 
@@ -142,7 +165,8 @@ export function DesignBriefImageDetail(props: { asset: DesignAsset; store: Desig
     }
   };
   const d = () => props.asset.description;
-  const kinds = () => DESIGN_ASSET_KINDS.map((k) => ({ value: k, label: k }));
+  // A page capture's image is never offered `screenshot`: only a picture you pasted can be one.
+  const kinds = () => kindChoices(props.asset).map((k) => ({ value: k, label: k }));
   return (
     <div class="design-asset-detail" role="group" aria-label={`Image ${props.asset.name}`}>
       <div class="design-brief-text-head">
@@ -170,7 +194,7 @@ export function DesignBriefImageDetail(props: { asset: DesignAsset; store: Desig
             )}
           </Show>
         </dl>
-        <Select label="Kind" value={props.asset.chosenKind ?? d()?.kind ?? ""} options={kinds()} disabled={busy()} onChange={(kind) => void act(() => props.store.api.imageNote(props.asset.name, { kind }), "That kind couldn't be saved. Try again.")} />
+        <Select label="Kind" value={props.asset.chosenKind ?? props.asset.cdKind ?? d()?.kind ?? ""} options={kinds()} disabled={busy()} onChange={(kind) => void act(() => props.store.api.imageNote(props.asset.name, { kind }), "That kind couldn't be saved. Try again.")} />
         <TextArea label="Your note, which overrides everything else said about it" rows="2" value={note()} onInput={setNote} />
         <Show when={error()}>
           <p class="field-error" role="alert">
@@ -216,7 +240,7 @@ export function DesignPageAssets(props: { path: string }) {
           fallback={
             <Show when={catalogue()}>
               <div class="empty gallery-empty">
-                <p class="empty-body">0 images in this chat. A link set to Use Its Images, or an image pasted into the coordinator's box, adds them here.</p>
+                <p class="empty-body">0 images in this chat. A link set to Use Its Images, or an image pasted into the Creative Director's box, adds them here.</p>
               </div>
             </Show>
           }

@@ -1,7 +1,7 @@
 <!-- The Lookbook's core, returned alone by `vis_guide {kind:"lookbook"}` (minor.ts VIS_TOOL_ENTRIES). It costs nothing until the chat looks it up; vis/overview.md's one `lookbook` line is all a chat carries before that. The parts it names are VIS_TOOL_PARTS. -->
 # Lookbook
 
-A Lookbook sends one page out to hidden design sessions on several models, each in its own style, and shows the results side by side on a Lookbook card in this chat and in the session pane's Gallery tab. A coordinator session, one per chat, runs the work. Your part is small, and it keeps this chat's context for its own work.
+A Lookbook sends one page out to hidden design sessions on several models, each in its own style, and shows the results side by side on a Lookbook card in this chat and in the session pane's Gallery tab. A Creative Director session, one per chat, runs the work; a user who says "the coordinator" means it. Your part is small, and it keeps this chat's context for its own work.
 
 ## When to open one
 
@@ -13,16 +13,16 @@ Open a Lookbook only when the user asks for one: by its name ("make a Lookbook o
 
 ## Starting
 
-If the user hasn't said what page to design, ask that one question first and open the card once they answer. Then call `lookbook` with `{"op":"start"}` and only what the user said: `brief`, `modelGroups` ("all Ollama, all Claude"), `models`, `directions` (styles), `layouts`, `coordinator`. Leave out whatever they did not say; never pick models, styles or layouts for them. It returns the card's id at once. Say the card is up, in a sentence, and stop: the user chooses on the card, and their clicks never come back to you.
+If the user hasn't said what page to design, ask that one question first and open the card once they answer. Then call `lookbook` with `{"op":"start"}` and only what the user said: `brief`, `modelGroups` ("all Ollama, all Claude"), `models`, `directions` (styles), `layouts`, `coordinator`, `skills` (only design skills the user named, each by its name or its folder's path; none loads by itself, so pass none when they named none), `images` (the paths of any images the user attached to that message, such as a screenshot of the screen to redesign; never put a path in `brief`). Leave out whatever they did not say; never pick models, styles or layouts for them. It returns the card's id at once. Say the card is up, in a sentence, and stop: the user chooses on the card, and their clicks never come back to you.
 
-One card per ask: details the user adds once the card is up (a model, a style, a link) go on the card. Tell them to set it there; never open a second card for it, and never `tell` the coordinator, which hasn't started.
+One card per ask: details the user adds once the card is up (a model, a style, a link) go on the card. Tell them to set it there; never open a second card for it, and never `tell` the Creative Director, which hasn't started.
 
 ## Reading and passing on
 
 These need no new ask; they work whenever a Lookbook exists in this chat.
 
 - When the user tells you to pass something on ("tell B to go darker"), call `lookbook` with `{"op":"tell","text":…}`, their words as they said them. Add nothing, change nothing, and take no part in the design.
-- `{"op":"read"}` returns the coordinator's card: what it has concluded and made so far. `{"op":"read","label":"A"}` returns one page, which typically costs 5,000-25,000 tokens depending on the model; long pages much more. Read only when the user asks you to, or when their request cannot be answered otherwise, and prefer the card to a page.
+- `{"op":"read"}` returns the Creative Director's card: what it has concluded and made so far. `{"op":"read","label":"A"}` returns one page, which typically costs 5,000-25,000 tokens depending on the model; long pages much more. Read only when the user asks you to, or when their request cannot be answered otherwise, and prefer the card to a page.
 - You get no message when a design finishes. Never look at the card or a page unprompted to see how things are going.
 - While a Lookbook runs, never write its page yourself, in a reply or a `vis` fence.
 

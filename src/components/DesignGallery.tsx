@@ -32,7 +32,7 @@ export function DesignGallery(props: { path: string }) {
             class="button button-sm"
             onClick={() => nav.open({ kind: "coordinator" })}
           >
-            Open Coordinator
+            Open Creative Director
           </button>
         </Show>
       </div>

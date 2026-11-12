@@ -1158,6 +1158,11 @@ test("Start: at most four reference pictures a design, a slot kept for each tick
   const refs = log.launches[0]!.references as unknown as { name: string }[];
   // Five Rebuild screenshots take all four slots, leaving the found screen none.
   assert.deepEqual(refs.map((r) => r.name), shots.slice(0, 4).map((n) => `screenshot-${n}.png`));
+  // The fifth has no picture, and its line says so; the four attached say nothing of the kind.
+  const text = log.launches[0]!.brief;
+  const lineOf = (n: string) => text.slice(text.indexOf(`- ${n} (`), text.indexOf("\n- ", text.indexOf(`- ${n} (`) + 1) >>> 0 || undefined);
+  assert.match(lineOf(shots[4]!), /This one comes as words only: no image of it is attached to this message\./);
+  for (const n of shots.slice(0, 4)) assert.doesNotMatch(lineOf(n), /words only/);
 });
 
 test("Start: four found-screen pictures never push out a Rebuild screenshot; the cap cuts found shots, and text and pictures agree", async () => {

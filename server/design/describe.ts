@@ -739,7 +739,7 @@ const wordsLine = (w: DesignShotWords): string => [cleanWords(w.feel, CAPS.feel)
  * words (its feel and its colours by role, as hex), fenced as content. Never a picture, and never a name to embed;
  * designers that read pictures get a rebuild screenshot's picture beside it.
  */
-export function screenshotBlock(sessionId: string, names: readonly string[], use: (name: string) => "rebuild" | "feel" | undefined): string {
+export function screenshotBlock(sessionId: string, names: readonly string[], use: (name: string) => "rebuild" | "feel" | undefined, attached: (name: string) => boolean = () => true): string {
   const known = new Map(readAssets(sessionId).assets.map((a) => [a.name, a]));
   const rows = names.flatMap((n) => {
     const a = known.get(n);
@@ -750,7 +750,9 @@ export function screenshotBlock(sessionId: string, names: readonly string[], use
     const text = w ? wordsLine(w.words) : "";
     // What the screen holds, in words, for a rebuild: the content every designer keeps, a words-only one included.
     const shows = rebuild && a.description?.description ? `\n  What it shows: ${cleanWords(a.description.description, CAPS.shot)}` : "";
-    return [`- ${n} (${a.width}x${a.height}): ${how}${text ? `\n  ${text}` : "\n  The feel couldn't be read from it."}${shows}`];
+    // Past the cap of pictures a design gets: say so, so no designer looks for one.
+    const wordsOnly = rebuild && !attached(n) ? "\n  This one comes as words only: no image of it is attached to this message." : "";
+    return [`- ${n} (${a.width}x${a.height}): ${how}${text ? `\n  ${text}` : "\n  The feel couldn't be read from it."}${shows}${wordsOnly}`];
   });
   if (!rows.length) return "";
   return [

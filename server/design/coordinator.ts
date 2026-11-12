@@ -854,12 +854,14 @@ export async function startBrief(parent: BrowseParent, runId: string, a: { rev: 
   assertLaunchAllowed(designCount(run.setup), a.confirmSpend || !!run.confirmedSpend);
   if (a.confirmSpend) changeBrief(st, (_b, r) => void (r.confirmedSpend = true));
   // Every design's text carries the screenshots' words, vision or not; a page image list never names a screenshot.
-  const extra = [assetBlock(parent.sessionId, kept), screenshotBlock(parent.sessionId, shots, (n) => run.brief.screenUse?.[n]?.use)].filter(Boolean).join("\n\n");
-  const text = launchText(run, extra);
   // A slot is kept for each ticked Rebuild screenshot (its line in the text says it is the screen being rebuilt), up to
-  // REFERENCES_MAX; the found screen's pictures fill the rest and still come first.
+  // REFERENCES_MAX; the found screen's pictures fill the rest and still come first. One past the cap is said to come as
+  // words only.
   const rebuilds = rebuildReferences(st, run, shots).slice(0, REFERENCES_MAX);
   const references = [...briefReferences(st, run).slice(0, REFERENCES_MAX - rebuilds.length), ...rebuilds];
+  const attached = new Set(rebuilds.map((r) => r.name));
+  const extra = [assetBlock(parent.sessionId, kept), screenshotBlock(parent.sessionId, shots, (n) => run.brief.screenUse?.[n]?.use, (n) => attached.has(`screenshot-${n}.png`))].filter(Boolean).join("\n\n");
+  const text = launchText(run, extra);
   const labels = await ports().launchDesigns(parent, runId, { brief: text, references });
   changeBrief(st, (b) => {
     b.startedRev = b.rev;

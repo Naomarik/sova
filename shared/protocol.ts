@@ -5419,6 +5419,10 @@ export type SessionFeedMessage =
   /** Sova's Claude model list changed (server/claude-models-sync.ts). No payload: the client re-reads
       GET /api/claude/catalog and its model list. Additive: a client that predates it ignores it. */
   | { type: "claude_models_changed" }
+  /** The public links setting, a Cloudflare tunnel's state, Turn On or the Account token changed
+      (server/share/tunnel/wiring.ts). No payload: the client re-reads GET /api/public-links. Never
+      on connect. Additive: a client that predates it ignores it. */
+  | import("./public-links").PublicLinksFeed
   /** The logical LLM calls in flight on this host and every connected host: sent once on every
       connect, then on each change of the total or its coverage. Never a reason to re-read the
       list. */

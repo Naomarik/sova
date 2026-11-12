@@ -48,6 +48,7 @@ import { ensureTourToolRuntime, setTourNeedsYou, setTourResumed } from "./tours/
 import { setTourSignInWaits, tourResumedNotifier, tourSignInNotifier } from "./tours/sign-in-notice";
 import { registerSessionForkRoutes } from "./session-fork-routes";
 import { mountPreviewLinks } from "./preview-links-routes";
+import { sharingOffResponse } from "./share/sharing-off";
 import { mountPublicLinks } from "./public-links-routes";
 import { mountShareGateway } from "./share/gateway-routes";
 import { mountOutreachRelay } from "./outreach/relay";
@@ -316,6 +317,9 @@ export function buildApp(deps: AppDeps) {
   });
 
   app.onError((err, c) => {
+    // Sharing is off (§mesh.public/sharing-off): a link store refused before writing anything.
+    const off = sharingOffResponse(err, c);
+    if (off) return off;
     console.error("[api]", err);
     return c.json({ error: err.message }, 500);
   });

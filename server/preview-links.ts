@@ -6,6 +6,7 @@ import type { PreviewErrorCode, PreviewState, PreviewView } from "../shared/prev
 import { SHARE_DAYS_MAX } from "../shared/project-contract";
 import { keptPreview } from "./preview-kept";
 import { shareLinksChanged } from "./share/links-events";
+import { assertSharingOn } from "./share/sharing-off";
 import { stateRoot } from "./state-root";
 
 /**
@@ -250,6 +251,7 @@ export interface MintInput {
  * (`operator`, or the sending overseer's `session:<id>`).
  */
 export function mintSibling(of: string, sentTo: string, createdBy = "operator", now = Date.now()): { record: PreviewRecord; label: string } {
+  assertSharingOn();
   const store = read();
   const o = store.links.find((l) => l.id === of);
   if (!o || previewState(o, now) !== "active") throw new PreviewRefused("bad-project", "That preview is not active.");
@@ -292,6 +294,7 @@ function checkProject(projectId: unknown): string {
 
 /** Mint one preview. The label is returned once and never stored. Emits a `p` link change. */
 export function mintPreview(input: MintInput, sovaPorts: ReadonlySet<number>, now = Date.now()): { record: PreviewRecord; label: string } {
+  assertSharingOn();
   const projectId = checkProject(input.projectId);
   const port = checkPort(input.port, sovaPorts);
   const days = checkDays(input.days);

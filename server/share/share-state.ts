@@ -1,7 +1,8 @@
-import { LINK_WARNINGS, type LinkWarningCode, type PublicLinksFile, type ShareListenerFailure, type ShareState } from "../../shared/public-links";
+import { LINK_WARNINGS, type LinkWarningCode, type PublicLinksFile, type ShareListenerFailure, type ShareState, type TunnelStatus } from "../../shared/public-links";
 import { SESSION_SHARE_GATEWAY_OLD, type SessionShareWarningCode } from "../../shared/session-share";
 import { readPeers } from "../mesh/peers";
-import { readPublicLinks, sharePin } from "../public-links";
+import { quickTunnelEnabled, readPublicLinks, readStoredPublicLinks, readTunnelConsent, sharePin } from "../public-links";
+import { tunnelStatus } from "./tunnel/manager";
 import { viaGatewayStatus } from "./gateway-client";
 import type { IngressInfo } from "./ingress";
 import type { ShareLinksOutcome } from "./links-events";
@@ -78,9 +79,41 @@ export function shareState(env: NodeJS.ProcessEnv = process.env, file: PublicLin
   return failure ? { ...s, listener: { ...failure } } : s;
 }
 
+/** Where links point under Cloudflare Free (§mesh.public/setting): the share tunnel's address
+    once it is up (`verified` once its outside check passed, always with `quick`: the address
+    changes when the tunnel starts again), else no address with why: Free disabled
+    (SOVA_QUICK_TUNNEL=off), not turned on yet, no cloudflared, starting, or down. Memory only:
+    the tunnel's state is the manager's cache (§mesh.tunnel/lifetime). */
+export function quickState(t: TunnelStatus, opts: { enabled: boolean; consentAt: number | null }): ShareState {
+  const none = (state: ShareState["state"], code: LinkWarningCode): ShareState => ({ state, source: "quick", publicUrl: null, warning: LINK_WARNINGS[code], warningCode: code });
+  if (!opts.enabled) return { state: "off", source: "quick", publicUrl: null, warning: LINK_WARNINGS.off, warningCode: "off" };
+  if (opts.consentAt === null) return none("configured", "quick-turn-on");
+  if (t.state === "needs-cloudflared") return none("configured", "quick-setup");
+  if (t.state === "up" && t.origin) {
+    // An up tunnel with a reason is one whose outside check failed: used, with `unverified`.
+    if (t.reason) return { state: "configured", source: "quick", publicUrl: t.origin, warning: LINK_WARNINGS.unverified, warningCode: "unverified" };
+    return { state: "verified", source: "quick", publicUrl: t.origin, warning: LINK_WARNINGS.quick, warningCode: "quick" };
+  }
+  if (t.state === "degraded" || t.state === "failed") return { ...none("unreachable", "tunnel-down"), ...(t.origin && t.state === "degraded" ? { publicUrl: t.origin } : {}) };
+  // stopped (nothing shared yet, or about to start) and starting: the next mint starts it.
+  return none("configured", "quick-starting");
+}
+
+/** Where links point under Cloudflare Account: the saved address, judged as this host's own
+    (Verify), unreachable while its tunnel is down, `quick-setup` with no cloudflared. */
+export function accountState(file: PublicLinksFile, t: TunnelStatus): ShareState {
+  const url = file.account?.publicUrl ?? null;
+  if (!url) return { state: "off", source: "account", publicUrl: null, warning: LINK_WARNINGS.off, warningCode: "off" };
+  if (t.state === "needs-cloudflared") return { state: "configured", source: "account", publicUrl: url, warning: LINK_WARNINGS["quick-setup"], warningCode: "quick-setup" };
+  if (t.state === "failed" || t.state === "degraded") return { state: "unreachable", source: "account", publicUrl: url, warning: LINK_WARNINGS["tunnel-down"], warningCode: "tunnel-down" };
+  return ownState("account", url, file);
+}
+
 function effectiveState(env: NodeJS.ProcessEnv, file: PublicLinksFile): ShareState {
   const pin = sharePin(env);
   if (pin) return ownState("env", pin, file);
+  if (file.route === "quick") return quickState(tunnelStatus({ kind: "share" }), { enabled: quickTunnelEnabled(env), consentAt: readTunnelConsent() });
+  if (file.route === "account") return accountState(file, tunnelStatus({ kind: "share" }));
   if (file.route === "self" && file.gateway) return ownState("setting", file.gateway.publicUrl, file);
   if (typeof file.route === "object") {
     const status = viaGatewayStatus();
@@ -97,6 +130,8 @@ function effectiveState(env: NodeJS.ProcessEnv, file: PublicLinksFile): ShareSta
   }
   const at = boundUrl();
   if (at) return ownState("bound", at, file);
+  // An unreadable setting reads as no route, and says so (§mesh.public/free-default).
+  if (file.route === "off" && readStoredPublicLinks().kind === "broken") return { state: "off", source: "setting", publicUrl: null, warning: LINK_WARNINGS.broken, warningCode: "broken" };
   return { state: "off", source: "setting", publicUrl: null, warning: LINK_WARNINGS.off, warningCode: "off" };
 }
 

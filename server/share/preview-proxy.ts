@@ -47,6 +47,9 @@ const localOrigin = (port: number) => `http://localhost:${port}`;
 
 /** The proxy's own cookie: a preview visit's tab (§mesh.public/visitor-log). */
 export const VISIT_COOKIE = "__Host-sova-pv";
+/** A Free preview's key cookie (§mesh.public/preview-tunnels): never passed to the app. */
+export const KEY_COOKIE = "__Host-sova-pk";
+const OWN_COOKIES = new Set([VISIT_COOKIE, KEY_COOKIE]);
 
 /** The visit cookie's value in a Cookie header, when it has TAB_RE's shape. */
 export function visitCookie(cookie: string | undefined): string | null {
@@ -58,7 +61,7 @@ export function visitCookie(cookie: string | undefined): string | null {
 }
 
 /** The request headers the app gets: a browser on this computer's, with the preview's origin
-    swapped for localhost in Origin and Referer, the proxy's own cookie removed, and nothing
+    swapped for localhost in Origin and Referer, the proxy's own cookies removed, and nothing
     forwarded, unless `client` is given (the host sends the visitor's address): then exactly one
     X-Forwarded-For and X-Forwarded-Proto. */
 export function appRequestHeaders(headers: IncomingHttpHeaders, port: number, publicOrigin: string, client?: string): Record<string, string | string[]> {
@@ -77,7 +80,7 @@ export function appRequestHeaders(headers: IncomingHttpHeaders, port: number, pu
     const kept = out.cookie
       .split(";")
       .map((p) => p.trim())
-      .filter((p) => p && p.split("=")[0] !== VISIT_COOKIE);
+      .filter((p) => p && !OWN_COOKIES.has(p.split("=")[0]!.trim()));
     if (kept.length) out.cookie = kept.join("; ");
     else delete out.cookie;
   }

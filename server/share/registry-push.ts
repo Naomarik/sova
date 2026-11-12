@@ -105,7 +105,7 @@ function storeLinks(name: string): StoredLink[] {
 /** This host's live links (not revoked, not expired), from the three link stores, newest expiry
     first. Session links (kind `s`) are here whatever the gateway routes: snapshotOf leaves them
     out for a gateway that doesn't list `s`. */
-function liveLinks(now: number): RegistryLink[] {
+export function liveLinks(now: number): RegistryLink[] {
   const latest = now + REGISTRY_LIMITS.maxExpiryAheadMs;
   const seen = new Set<string>();
   const out: RegistryLink[] = [];

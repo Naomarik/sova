@@ -1104,6 +1104,10 @@ test("design_brief images: kind, words and rebuild or feel; a page's image is ne
   await t.design_brief({ baseRev: rev(), images: [{ name: shot, kind: "screenshot", screen: "rebuild", words: { feel: "Director's feel.", colors: [{ hex: "#4A43D8", role: "buttons" }] } }] });
   assert.equal(assetNow(shot).cdKind, "screenshot");
   assert.equal(assetNow(shot).chosenKind, undefined, "never the user's field");
+  const seen = brief(run.id).rev;
+  await t.design_brief({ baseRev: rev(), images: [{ name: shot, words: { feel: "Retuned.", colors: [] } }] });
+  assert.ok(brief(run.id).rev > seen, "a retune the user hasn't seen moves the version Start names");
+  await t.design_brief({ baseRev: rev(), images: [{ name: shot, words: { feel: "Director's feel.", colors: [{ hex: "#4A43D8", role: "buttons" }] } }] });
   assert.deepEqual(brief(run.id).screenUse, { [shot]: { use: "rebuild", by: "coordinator" } });
   assert.deepEqual(shotWords(assetNow(shot)), { words: { feel: "Director's feel.", colors: [{ hex: "#4a43d8", role: "buttons" }] }, by: "coordinator" });
   // The user's words, kind and click stand against the Creative Director's later ones.

@@ -330,13 +330,22 @@ const PICTURES_MAX = 6;
 /** The pictures of these images, for a Creative Director that reads pictures: each one's describing PNG, the version
     drawn for a model to read. None for one that can't, which works from their words. */
 export function picturesFor(st: Pick<CoordinatorState, "sessionId" | "vision">, names: readonly string[]): { type: "image"; data: string; mimeType: string }[] {
-  if (!st.vision) return [];
+  return shownPictures(st, names).images;
+}
+
+/** The pictures shown, with the name of each, in order: one with no picture is left out of both. */
+function shownPictures(st: Pick<CoordinatorState, "sessionId" | "vision">, names: readonly string[]): { names: string[]; images: { type: "image"; data: string; mimeType: string }[] } {
+  const out = { names: [] as string[], images: [] as { type: "image"; data: string; mimeType: string }[] };
+  if (!st.vision) return out;
   const known = new Map(readAssets(st.sessionId).assets.map((a) => [a.name, a]));
-  return names.slice(0, PICTURES_MAX).flatMap((n) => {
+  for (const n of names.slice(0, PICTURES_MAX)) {
     const a = known.get(n);
     const png = a && readAssetPart(st.sessionId, a, "describe");
-    return png?.length ? [{ type: "image" as const, data: Buffer.from(png).toString("base64"), mimeType: "image/png" }] : [];
-  });
+    if (!png?.length) continue;
+    out.names.push(n);
+    out.images.push({ type: "image", data: Buffer.from(png).toString("base64"), mimeType: "image/png" });
+  }
+  return out;
 }
 
 async function wake(st: CoordinatorState, text: string, key: string, sameTurn = false, pictures: readonly string[] = []): Promise<{ queued: boolean }> {
@@ -1213,6 +1222,7 @@ export function coordinatorTools(sessionId: string): ToolSpec[] {
       if (outcome.why !== undefined) return refuse(outcome.why);
       // Its kind and words have their own fields: the user's (chosenKind, userWords) are never written here, and win.
       const assetEdits = imageEdits.filter((x) => x.kind || x.words);
+      // Every design_brief call already raises the brief's version (coordinatorWrote), so Start names a retune too.
       if (assetEdits.length)
         changeAssets(parent.sessionId, (c) => {
           for (const x of assetEdits) {
@@ -1461,9 +1471,10 @@ export function coordinatorTools(sessionId: string): ToolSpec[] {
         ({ line, names: added } = await add(parent, paths));
       }
       const look = [...new Set([...added, ...asked])];
-      const pictures = picturesFor(st, look);
+      const shown = shownPictures(st, look);
+      const pictures = shown.images;
       const words = asked.length ? assetsForCoordinator(parent.sessionId, asked) : "";
-      const text = [line, pictures.length ? `The pictures of ${look.slice(0, pictures.length).join(", ")} follow.` : asked.length && !st.vision ? "Your model can't read pictures, so here is what is known of them." : "", words].filter(Boolean).join("\n\n");
+      const text = [line, pictures.length ? `The pictures of ${shown.names.join(", ")} follow.` : asked.length && !st.vision ? "Your model can't read pictures, so here is what is known of them." : "", words].filter(Boolean).join("\n\n");
       return { content: [...pictures, { type: "text", text }], details: { v: 1 } };
     },
   };

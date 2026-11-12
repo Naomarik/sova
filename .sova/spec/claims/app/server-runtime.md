@@ -184,7 +184,14 @@ The suite has two tiers, told apart by file name alone, so a file's tier can't d
   queue, Forms in a browser) only when the change since the merge base touches its triggers; Tours never run
   at landing. It prints one line per group it skipped, with its file
   count, its recorded time and why (no change to its triggers, or never at landing). `--groups
-  <name,…|all>` runs only those groups' files, `--plan` prints the selection as JSON (the files,
+  <name,…|all>` runs only those groups' files, and given no name it is a usage error (exit 2), so a
+  command typed by hand never passes having run nothing. `--picked-groups [<name,…|all> …]` is the
+  merge queue's form (Sova's Slow test group check, which appends the merge thread's selection):
+  with names it runs those groups as `--groups` does; with none it runs only the slow groups
+  `--landing` would add for the change since the merge base with `--base <rev>`, else the queue's
+  target (`SOVA_MERGE_TARGET`), else `master`, never the everyday set, and prints which and why;
+  when the change triggers none it runs nothing, prints and reports (`SOVA_OUT` `skipped`) "no slow
+  group applies to this branch's changes", and exits 0. `--plan` prints the selection as JSON (the files,
   the groups run and skipped, the lane count and an estimate from the recorded file times: their
   sum over the lanes, never less than the longest file) and runs nothing. Plain `pnpm test:int`
   still runs the whole tier, every group included, and a release runs it so

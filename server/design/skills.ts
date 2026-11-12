@@ -125,6 +125,11 @@ export async function runSkills(cwd: string, named: readonly string[] = [], list
     }
     const key = real(r.dir) ?? r.dir;
     if (seen.has(key) || skills.length >= SKILL_LIMITS.perRun) continue;
+    // Skills are chosen and read by name: a second of the same name could never be, so the brief asks instead.
+    if (skills.some((k) => k.name.toLowerCase() === r.name.toLowerCase())) {
+      missing.push({ asked: n, reason: `Another named skill is already called ${r.name}.` });
+      continue;
+    }
     seen.add(key);
     skills.push(r);
   }

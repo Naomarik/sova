@@ -1053,7 +1053,7 @@ export function coordinatorTools(sessionId: string): ToolSpec[] {
         text: { type: "string", description: "Which screen you found and how you got there." }, shots: { type: "array", items: { type: "string" } }, url: { type: "string" },
         sources: { type: "array", items: { type: "object", properties: { url: { type: "string" }, use: { type: "string", enum: ["images", "feel", "content"] } }, required: ["url"] } },
         images: { type: "array", description: "Which captured images suit this brief: only the ones you'd leave out need listing.", items: { type: "object", properties: { name: { type: "string" }, use: { type: "boolean" } }, required: ["name", "use"] } },
-        skills: { type: "array", items: { type: "string" }, description: "Which of this run's skills the designers use, by name: the design skills, leaving out any that aren't (a testing or tooling skill). Omit for all of them." },
+        skills: { type: "array", items: { type: "string" }, description: "Which of this run's skills the designers use, by name: the design skills, leaving out any that aren't (a testing or tooling skill). Omit for all of them; [] for none." },
         questions: { type: "array", items: { type: "object", properties: { topic: { type: "string" }, ask: { type: "string" }, context: { type: "string" }, options: { type: "array", items: { type: "object", properties: { label: { type: "string" }, tradeoff: { type: "string" } }, required: ["label", "tradeoff"] } }, recommendation: { type: "object", properties: { choice: { type: "string" }, why: { type: "string" } }, required: ["choice", "why"] } }, required: ["topic", "ask", "recommendation"] } },
       },
       required: ["baseRev"],

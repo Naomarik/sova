@@ -85,6 +85,13 @@ test("a run's skills are only the ones named: none by itself, a path, a project 
   assert.equal(r.skills[0]!.dir, brand);
   assert.deepEqual(r.missing.map((m) => m.asked), [empty, join(base, "nowhere"), "unknown-skill"]);
   assert.match(r.missing[0]!.reason, /no SKILL\.md/);
+  // Two named folders whose skills share a name: the second can't be told apart, so it's asked about.
+  const twin = join(base, "other-kit", "brand");
+  mkdirSync(twin, { recursive: true });
+  writeFileSync(join(twin, "SKILL.md"), skillMd("brand", "A second brand."));
+  const twins = await runSkills(project, ["brand", twin], lister);
+  assert.deepEqual(twins.skills.map((s) => s.dir), [brand]);
+  assert.deepEqual(twins.missing, [{ asked: twin, reason: "Another named skill is already called brand." }]);
 });
 
 test("the sessions' words name the reader and the skills, and the estimate counts reading them", () => {

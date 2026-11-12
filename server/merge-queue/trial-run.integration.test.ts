@@ -10,6 +10,8 @@ import { parseDefinition } from "../../shared/project-contract";
 import type { RunInput, RunOutcome } from "./contract";
 import { Fixture, git, REPO_ROOT } from "./testing/repo";
 import { makeRunMerge } from "./run";
+import { optionalPicks } from "./queue";
+import { RUNNER_FILES } from "../../scripts/runner-copy.test.helper";
 
 const fixtures: Fixture[] = [];
 after(() => {
@@ -48,7 +50,8 @@ async function trial(fx: Fixture, commit: string, branch: string) {
     base: commit,
     commit,
     runDir,
-    picks: [],
+    // The picks the queue really builds for a trial: every optional check, with no selection.
+    picks: optionalPicks(def),
     review: false,
     tryOnly: true,
     trialOf: branch,
@@ -91,5 +94,53 @@ describe("a trial runs path-gated checks in full", () => {
     assert.equal(r.out.verdict, "passed", r.out.why);
     assert.equal(r.out.noChecks, true);
     assert.deepEqual([...r.steps.keys()].filter((k) => k.startsWith("check:")), [], "no check ran");
+  });
+});
+
+describe("a trial runs optional checks with no selection, as the queue picks them", () => {
+  test("Sova's own Slow test group: it runs the slow groups the branch's changes call for, and with none reads skipped, saying why; neither fails the trial", async () => {
+    const fx = new Fixture();
+    fixtures.push(fx);
+    // The target holds Sova's test runner, a probe in the Merge queue slow group, and the definition: a passing
+    // required check and Sova's own optional Slow test group, exactly as Sova declares it.
+    const sova = JSON.parse(readFileSync(join(REPO_ROOT, ".sova/project.json"), "utf8"));
+    const group = sova.merge.checks.find((c: { id: string }) => c.id === "integration-group");
+    assert.equal(group.optional, true);
+    const def = { version: 1, test: sova.test, merge: { checks: [{ id: "ok", label: "Required", run: ["node", "checks/ok.mjs"] }, group] } };
+    const files: Record<string, string> = {};
+    for (const f of [...RUNNER_FILES, "scripts/nice.mjs"]) files[f] = readFileSync(join(REPO_ROOT, f), "utf8");
+    files["checks/ok.mjs"] = "process.exit(0);\n";
+    files["server/merge-queue/probe.integration.test.ts"] = `import { test } from "node:test";\ntest("probe", () => {});\n`;
+    files[".sova/project.json"] = `${JSON.stringify(def, null, 2)}\n`;
+    fx.commitIn(fx.project, files, "runner, probe, definition");
+
+    // A branch whose changes call for no slow group.
+    const quiet = fx.branch("readme", { "README.md": "# demo, edited\n" });
+    const r1 = await trial(fx, quiet.commit, quiet.branch);
+    const s1 = r1.steps.get("check:integration-group");
+    assert.equal(r1.out.verdict, "passed", `${r1.out.why}: ${JSON.stringify(s1)}`);
+    assert.equal(s1?.result, "skipped", JSON.stringify(s1));
+    assert.equal(s1?.detail, "skipped: no slow group applies to this branch's changes");
+
+    // A branch that changes the queue's code: the Merge queue group runs in the trial, its probe with it.
+    const busy = fx.branch("queue", { "server/merge-queue/queue.ts": "export {};\n" });
+    const r2 = await trial(fx, busy.commit, busy.branch);
+    const s2 = r2.steps.get("check:integration-group");
+    assert.equal(r2.out.verdict, "passed", `${r2.out.why}: ${JSON.stringify(s2)}`);
+    assert.equal(s2?.result, "passed", JSON.stringify(s2));
+    assert.equal(s2?.counts?.passed, 1, `the group's one probe ran: ${JSON.stringify(s2)}`);
+  });
+
+  test("an optional check that fails when given no selection fails the trial by name", async () => {
+    const fx = new Fixture();
+    fixtures.push(fx);
+    const STRICT = `if (process.argv.length < 3) { console.error("strict: --groups needs a value"); process.exit(2); }\n`;
+    fx.commitIn(fx.project, { "checks/ok.mjs": "process.exit(0);\n", "checks/strict.mjs": STRICT }, "checks");
+    const def = { version: 1, merge: { checks: [{ id: "ok", label: "Required", run: ["node", "checks/ok.mjs"] }, { id: "strict", label: "Strict group", run: ["node", "checks/strict.mjs"], optional: true }] } };
+    const br = fx.branch("setup/strict", { ".sova/project.json": `${JSON.stringify(def, null, 2)}\n` });
+    const r = await trial(fx, br.commit, br.branch);
+    assert.equal(r.out.verdict, "failed");
+    assert.match(r.out.why ?? "", /Strict group fails/);
+    assert.equal(r.steps.get("check:ok")?.result, "passed");
   });
 });

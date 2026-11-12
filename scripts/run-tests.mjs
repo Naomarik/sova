@@ -5,6 +5,7 @@
 //   node scripts/run-tests.mjs --integration [--changed [--base <rev>]]       # pnpm test:int
 //   node scripts/run-tests.mjs --integration --landing [--base <rev>] [--plan] # what a landing runs
 //   node scripts/run-tests.mjs --integration --groups <name,…|all>            # only those slow groups
+//   node scripts/run-tests.mjs --integration --picked-groups [<name,…|all> …] # the merge queue's Slow test group
 //   node scripts/run-tests.mjs --all                                          # pnpm test:all: both tiers
 //   node scripts/run-tests.mjs --runtime node [<files>] [-- <runner flags>]   # pnpm run test:node
 //   any of the above + --fresh (or SOVA_FRESH=1)                              # run every file, reusing nothing
@@ -23,7 +24,12 @@
 // change touches (scripts/test-groups.mjs: Chat processes, Tours; a group's file never by its
 // imports alone). --landing keeps every integration file in no group (the everyday set) plus each
 // group a landing runs when triggered (Chat processes), never Tours, and prints a line per group it
-// skipped and why; --groups <name,…|all> keeps only those groups' files; --plan prints the selection
+// skipped and why; --groups <name,…|all> keeps only those groups' files (no name: a usage error, exit 2);
+// --picked-groups is the merge queue's form (Sova's Slow test group check appends the merge thread's selection): the
+// arguments after it that aren't flags are group names, run as --groups runs them; none (a trial picks the check with
+// no selection) keeps only the slow groups --landing would add for the change since the merge base with --base, else
+// $SOVA_MERGE_TARGET, else master (never the everyday set), and when that is none it runs nothing, prints and
+// reports `skipped: "no slow group applies to this branch's changes"` (SOVA_OUT) and exits 0; --plan prints the selection
 // as JSON (files, groups run and skipped, lanes, an estimate from the recorded times) and runs
 // nothing. Plain --integration runs the whole tier, every group included (a release runs that).
 // The integration tier runs at a lower width (a quarter
@@ -299,7 +305,9 @@ function repoAround(dir) {
   return ask("--show-toplevel") ?? ask("--absolute-git-dir");
 }
 
-const USAGE = "usage: node scripts/run-tests.mjs [--runtime node|bun] [--integration | --all] [--changed [--base <rev>] | --landing [--base <rev>] | --groups <name,…|all>] [--plan] [--fresh] [files] [-- flags]";
+const USAGE = "usage: node scripts/run-tests.mjs [--runtime node|bun] [--integration | --all] [--changed [--base <rev>] | --landing [--base <rev>] | --groups <name,…|all> | [--base <rev>] --picked-groups [<name,…|all> …]] [--plan] [--fresh] [files] [-- flags]";
+/** What a bare --picked-groups reports when the branch's changes trigger no slow group a landing runs. */
+const NO_GROUP_APPLIES = "no slow group applies to this branch's changes";
 const argv = process.argv.slice(2);
 /** The runner's own options (each with its value, if it takes one); everything else is files and the runner's flags. */
 const own = { "--runtime": 1, "--base": 1, "--integration": 0, "--all": 0, "--changed": 0, "--landing": 0, "--groups": 1, "--plan": 0, "--fresh": 0 };
@@ -308,18 +316,27 @@ const rest = [];
 for (let i = 0; i < argv.length; i++) {
   const a = argv[i];
   if (a === "--") continue;
+  // The merge queue's form (the Slow test group check): every argument after it that isn't a flag is a group name,
+  // the merge thread's selection appended; none at all is allowed (a trial runs the check with no selection).
+  if (a === "--picked-groups") {
+    opts[a] = [];
+    while (i + 1 < argv.length && !argv[i + 1].startsWith("-")) opts[a].push(argv[++i]);
+    continue;
+  }
   if (!(a in own)) { rest.push(a); continue; }
   if (own[a] && (i + 1 >= argv.length || argv[i + 1].startsWith("-"))) usageExit(`run-tests: ${a} needs a value\n${USAGE}`);
   opts[a] = own[a] ? argv[++i] : true;
 }
 const runtime = opts["--runtime"] ?? chosenRuntime();
-const picks = ["--changed", "--landing", "--groups"].filter((o) => opts[o]);
-const groupNames = opts["--groups"] ? opts["--groups"].split(",").map((s) => s.trim()).filter(Boolean) : [];
-const badGroup = groupNames.find((n) => n !== "all" && !GROUPS.some((g) => g.name === n));
+const picks = ["--changed", "--landing", "--groups", "--picked-groups"].filter((o) => opts[o]);
+const splitNames = (list) => list.flatMap((s) => s.split(",")).map((s) => s.trim()).filter(Boolean);
+const groupNames = opts["--groups"] ? splitNames([opts["--groups"]]) : [];
+const pickedNames = opts["--picked-groups"] ? splitNames(opts["--picked-groups"]) : [];
+const badGroup = [...groupNames, ...pickedNames].find((n) => n !== "all" && !GROUPS.some((g) => g.name === n));
 if (badGroup) console.error(`run-tests: no test group ${badGroup} (groups: ${GROUPS.map((g) => g.name).join(", ")}, all)`);
-if ((runtime !== "node" && runtime !== "bun") || (opts["--integration"] && opts["--all"]) || picks.length > 1 || (opts["--base"] && !opts["--changed"] && !opts["--landing"]) || badGroup || (opts["--groups"] && !groupNames.length)) usageExit(USAGE);
-// The slow groups are integration files: --landing and --groups mean that tier unless one is named.
-if ((opts["--landing"] || opts["--groups"]) && !opts["--all"]) opts["--integration"] = true;
+if ((runtime !== "node" && runtime !== "bun") || (opts["--integration"] && opts["--all"]) || picks.length > 1 || (opts["--base"] && !opts["--changed"] && !opts["--landing"] && !opts["--picked-groups"]) || badGroup || (opts["--groups"] && !groupNames.length)) usageExit(USAGE);
+// The slow groups are integration files: --landing, --groups and --picked-groups mean that tier unless one is named.
+if ((opts["--landing"] || opts["--groups"] || opts["--picked-groups"]) && !opts["--all"]) opts["--integration"] = true;
 // Tests make plain folders in the temp dir and register them as projects; inside a checkout each one
 // would be that checkout, and promotions and coding worktrees would land in it (they once did, in
 // Sova's own). The preload stops git's search at the temp dir; refusing first says so. Each runtime
@@ -340,11 +357,16 @@ const tiersAsked = opts["--all"] ? ["unit", "integration"] : opts["--integration
 let files = named.length
   ? named
   : [...new Set(GLOBS.flatMap((g) => fs.globSync(g, { cwd: ROOT })))].sort().filter((f) => tiersAsked.includes(isIntegration(f) ? "integration" : "unit"));
-/** What --changed, --landing or --groups chose, for --plan: the groups run and those skipped. */
+/** What --changed, --landing, --groups or --picked-groups chose, for --plan: the groups run and those skipped. */
 let picked = null;
+/** A bare --picked-groups whose branch triggers no slow group a landing runs: nothing to do, said and reported. */
+let noGroupApplies = false;
 if (opts["--changed"]) files = changedOnly(files, opts["--base"] ?? "master");
 else if (opts["--landing"]) files = landingOnly(files, opts["--base"] ?? "master");
 else if (opts["--groups"]) files = groupsOnly(files, groupNames);
+else if (opts["--picked-groups"] && pickedNames.length) files = groupsOnly(files, pickedNames, "--picked-groups");
+// The merge queue's target branch (a trial's check is told it in SOVA_MERGE_TARGET; its SOVA_MERGE_BASE is the tried commit).
+else if (opts["--picked-groups"]) files = branchGroupsOnly(files, opts["--base"] ?? (process.env.SOVA_MERGE_TARGET || "master"));
 /** The runner flags bun gets: --timeout=60000 unless one is passed, then the caller's. */
 const withDefaults = (fl) => [...["--timeout=60000"].filter((d) => !fl.some((f) => f.split("=")[0] === d.split("=")[0])), ...fl];
 /** A file's key in the store: its path from the root. */
@@ -434,6 +456,10 @@ const sets = ["unit", "integration"].flatMap((tier) => {
     { tier, extra: [BROWSER_CONDITION], files: mine.filter(isBrowserTest) },
   ];
 }).filter((s) => s.files.length);
+if (noGroupApplies) {
+  writeSovaOut({ passed: 0, failed: 0, errors: 0, skipped: NO_GROUP_APPLIES, failures: [], ranFiles: [] });
+  process.exit(0);
+}
 if (!sets.length) {
   console.log("run-tests: no test file to run.");
   writeSovaOut({ passed: 0, failed: 0, errors: 0, skipped: 0, failures: [], ranFiles: [] });
@@ -495,10 +521,37 @@ function landingOnly(files, base) {
 }
 
 /** `files` narrowed to the named groups' ("all": every group's). */
-function groupsOnly(files, names) {
+function groupsOnly(files, names, flag = "--groups") {
   const pick = selectFiles(files, [], { mode: "groups", only: names });
-  say(`run-tests: --groups ${names.join(",")}: ${pick.files.length} of ${files.length} test files (${pick.ran.map(titleOf).join(", ")}).`);
+  say(`run-tests: ${flag} ${names.join(",")}: ${pick.files.length} of ${files.length} test files (${pick.ran.map(titleOf).join(", ")}).`);
   picked = pick;
+  return pick.files;
+}
+
+/** A bare --picked-groups: only the slow groups a landing runs for the change since the merge base with `base` (the
+ *  groups --landing would add to the everyday set, never the everyday set itself); none: noGroupApplies. */
+function branchGroupsOnly(files, base) {
+  let changed;
+  try {
+    changed = changedSince(ROOT, base);
+  } catch (err) {
+    usageExit(`run-tests: --picked-groups: no merge base with ${base} (${String(err.stderr ?? err.message).trim().split("\n")[0]})`);
+  }
+  const landing = selectFiles(files, changed, { mode: "landing" });
+  const since = `${changed.length} file${changed.length === 1 ? "" : "s"} changed since the merge base with ${base}`;
+  const pick = selectFiles(files, [], { mode: "groups", only: landing.ran });
+  // A triggered group with no file in this tree has nothing to run either.
+  if (!pick.files.length) {
+    say(`run-tests: --picked-groups, none named: skipped: ${NO_GROUP_APPLIES} (${since}).`);
+    for (const s of landing.skipped) say(`run-tests: skipped group ${s.name} (${s.title}): ${s.why === "never" ? "never at landing" : "no change to its triggers"}.`);
+    picked = { ...pick, ran: [], skipped: landing.skipped };
+    noGroupApplies = true;
+    return [];
+  }
+  say(`run-tests: --picked-groups, none named: the slow groups a landing runs for this branch's changes (${since}): ${pick.files.length} of ${files.length} test files (${pick.ran.map(titleOf).join(", ")}).`);
+  for (const name of landing.ran) say(`run-tests: running group ${name} (${titleOf(name)}): its triggers changed (${shortList(landing.hits[name])}).`);
+  for (const s of landing.skipped) say(`run-tests: skipped group ${s.name} (${s.title}): ${s.why === "never" ? "never at landing" : "no change to its triggers"}.`);
+  picked = { ...pick, skipped: landing.skipped };
   return pick.files;
 }
 

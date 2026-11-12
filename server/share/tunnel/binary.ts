@@ -7,7 +7,8 @@ import type { CloudflaredInfo, CloudflaredSource } from "../../../shared/public-
 import { assetFor, installCommand } from "./release";
 
 /**
- * Which cloudflared Sova runs for a tunnel: `SOVA_CLOUDFLARED` (a person's own path, and the tests' stand-in) →
+ * Which cloudflared Sova runs for a tunnel: `SOVA_CLOUDFLARED` (a person's own path, and the tests' stand-in; `off`,
+ * the test runner's default, skips PATH) →
  * `cloudflared` on PATH, asked its version once → the copy Sova downloaded, while its file still hashes to what
  * was recorded when it was verified. Found once per server lifetime; a download drops the answer.
  * Never downloads: ensureTunnel maps "not found" to `needs-cloudflared`, and only the operator's click fetches it.
@@ -134,12 +135,14 @@ const notFound = (deps: ResolveDeps, reason: string): CloudflaredFound => ({ ok:
 /** The finding, uncached (the tests' door). */
 export async function findCloudflared(deps: ResolveDeps = defaultResolveDeps()): Promise<CloudflaredFound> {
   const pinned = deps.env.SOVA_CLOUDFLARED?.trim();
-  if (pinned) {
+  // `off` (the test runner's default): nothing on PATH counts, so a test never runs an installed cloudflared.
+  const offPath = pinned === "off";
+  if (pinned && !offPath) {
     if (!isAbsolute(pinned) || !deps.executable(pinned)) return notFound(deps, `SOVA_CLOUDFLARED names ${pinned}, which isn't a program Sova can run.`);
     return { ok: true, path: pinned, version: null, source: "env" };
   }
   let tooOld: string | null = null;
-  for (const dir of searchDirs(deps.env, deps.platform)) {
+  for (const dir of offPath ? [] : searchDirs(deps.env, deps.platform)) {
     const p = join(dir, "cloudflared");
     if (!deps.executable(p)) continue;
     const out = await deps.version(p);

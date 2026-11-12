@@ -105,6 +105,8 @@ async function download(deps: DownloadDeps): Promise<DownloadResult> {
   const asset = deps.asset;
   if (!asset) return { ok: false, status: 400, code: "unsupported", error: `Install cloudflared yourself, then reload this page. ${installCommand(deps.platform)}` };
   mkdirSync(deps.dir, { recursive: true, mode: 0o700 });
+  // Only Sova writes here: binary.ts trusts the copy's recorded sum for the server's lifetime.
+  chmodSync(deps.dir, 0o700);
   const part = join(deps.dir, asset.member ? "cloudflared.tgz.part" : "cloudflared.part");
   const target = join(deps.dir, "cloudflared");
   let scratch: string | null = null;

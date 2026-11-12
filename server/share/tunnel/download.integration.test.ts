@@ -56,4 +56,16 @@ describe("PATH, asked its version", () => {
     assert.deepEqual(f, { ok: true, path: join(b, "cloudflared"), version: "2026.10.7", source: "path" });
     assert.equal(existsSync(join(scratchAgentDir, "sova", "bin")), false, "a look downloads nothing");
   });
+
+  test("under SOVA_CLOUDFLARED=off (the runner's) a working one on PATH is still none", async () => {
+    const c = join(work, "c");
+    mkdirSync(c, { recursive: true });
+    const ran = join(work, "ran");
+    writeFileSync(join(c, "cloudflared"), `#!/bin/sh\ntouch '${ran}'\n${SCRIPT.split("\n")[1]}\n`);
+    chmodSync(join(c, "cloudflared"), 0o755);
+    assert.equal(process.env.SOVA_CLOUDFLARED, "off", "the runner sets it");
+    const f = await findCloudflared({ ...defaultResolveDeps(), env: { PATH: c, SOVA_CLOUDFLARED: "off" } });
+    assert.equal(f.ok, false);
+    assert.equal(existsSync(ran), false, "never run");
+  });
 });

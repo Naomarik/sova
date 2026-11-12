@@ -4,7 +4,7 @@
 import { dropScratchAgentDir, scratchAgentDir } from "../../testing/scratch-agent-dir";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { after, afterEach, describe, test } from "node:test";
 import { Hono } from "hono";
@@ -73,6 +73,11 @@ describe("the download", () => {
     assert.deepEqual(r.ok && r.found, { ok: true, path: join(dir, "cloudflared"), version: "2026.10.7", source: "download" });
     assert.equal(statSync(join(dir, "cloudflared")).mode & 0o777, 0o755);
     assert.equal(statSync(dir).mode & 0o777, 0o700);
+    chmodSync(dir, 0o755);
+    rmSync(join(dir, "cloudflared.json"));
+    forgetCloudflared();
+    assert.ok((await downloadCloudflared(deps({ fetch: serving(BINARY).fetch }))).ok);
+    assert.equal(statSync(dir).mode & 0o777, 0o700, "a folder already there is made 0700 too");
     assert.deepEqual(JSON.parse(readFileSync(join(dir, "cloudflared.json"), "utf8")), { version: "2026.10.7", sha256: BARE.sha256, at: 1234 });
     assert.deepEqual(left(), ["cloudflared", "cloudflared.json"]);
     assert.equal(told, 1, "a waiting tunnel is told");

@@ -346,6 +346,8 @@ export async function startHermeticServer(opts: HermeticServerOptions = {}): Pro
       // The runner's SOVA_QUICK_TUNNEL=off (dropped with every SOVA_* above): a missing setting stays off unless
       // the test passes SOVA_QUICK_TUNNEL in opts.env; `pnpm run dev:hermetic` leaves it unset, so Free is on there.
       ...(process.env.SOVA_QUICK_TUNNEL ? { SOVA_QUICK_TUNNEL: process.env.SOVA_QUICK_TUNNEL } : {}),
+      // And its SOVA_CLOUDFLARED=off: the server never finds an installed cloudflared; a tunnel test passes its fake.
+      ...(process.env.SOVA_CLOUDFLARED ? { SOVA_CLOUDFLARED: process.env.SOVA_CLOUDFLARED } : {}),
       ...(opts.env ?? {}),
     };
     const bootTimeout = opts.bootTimeoutMs ?? 30_000;

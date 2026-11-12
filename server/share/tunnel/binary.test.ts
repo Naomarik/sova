@@ -35,6 +35,15 @@ describe("finding cloudflared", () => {
     assert.deepEqual(d.asked, []);
   });
 
+  test("SOVA_CLOUDFLARED=off (the runner's): an installed one is never asked or run, but the downloaded copy still counts", async () => {
+    const d = deps({ env: { PATH: "/a", SOVA_CLOUDFLARED: "off" }, programs: { "/a/cloudflared": "cloudflared version 2026.10.7", "/usr/local/bin/cloudflared": "cloudflared version 2026.10.7" } });
+    assert.deepEqual(await findCloudflared(d), { ok: false, reason: "cloudflared isn't installed on this computer.", canDownload: true, install: installCommand("linux") });
+    assert.deepEqual(d.asked, []);
+    const record = { version: "2026.10.7", sha256: SUM, at: 1 };
+    const kept = await findCloudflared(deps({ env: { SOVA_CLOUDFLARED: "off" }, files: { "/state/bin/cloudflared": SUM }, readRecord: () => record }));
+    assert.equal(kept.ok && kept.source, "download");
+  });
+
   test("a SOVA_CLOUDFLARED that isn't a program is no cloudflared, said so", async () => {
     const f = await findCloudflared(deps({ env: { PATH: "/a", SOVA_CLOUDFLARED: "/nope" }, programs: { "/a/cloudflared": "cloudflared version 2026.10.7" } }));
     assert.equal(f.ok, false);

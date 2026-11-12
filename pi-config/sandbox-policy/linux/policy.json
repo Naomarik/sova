@@ -20,7 +20,8 @@
     "$AGENT_DIR/auth.json",
     "$AGENT_DIR/mcp-auth.json",
     "$AGENT_DIR/sova/secrets/mcp",
-    "$AGENT_DIR/sova/whatsapp"
+    "$AGENT_DIR/sova/whatsapp",
+    "$AGENT_DIR/sova/tunnels"
   ],
   "readOnlyWithinWritable": [".git/hooks", ".git/config", ".envrc"],
   "proxy": {

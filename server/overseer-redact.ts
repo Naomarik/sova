@@ -19,6 +19,9 @@ export type SecretSource = { path: string; pick: (json: unknown) => string[]; te
 /** A plain-text secret file (one value, e.g. Sova's own Jev key): the trimmed text when it is plausible. */
 export const textValue = (text: unknown): string[] => (typeof text === "string" && plausibleSecret(text.trim()) ? [text.trim()] : []);
 
+/** An environment file's `TUNNEL_TOKEN` (the Account tunnel's token, server/share/tunnel/account-token.ts). */
+export const tunnelTokenValue = (text: unknown): string[] => textValue(typeof text === "string" ? (/^TUNNEL_TOKEN=["']?([^"'\n]*)/m.exec(text)?.[1] ?? "") : "");
+
 /**
  * Where the secret values come from: the credential files the deny list (overseer-deny.ts) names,
  * read by the server itself and parsed as JSON. `pick` takes the values out of one file. Nothing is
@@ -48,6 +51,9 @@ export function secretSources(home = homedir(), agentDir = agentRoot()): SecretS
     // The main listener's per-install token (server/auth.ts): the whole file is the token.
     { path: join(home, ".pi", "agent", "sova", "auth-token"), pick: textValue, text: true as const },
     { path: join(agentDir, "sova", "auth-token"), pick: textValue, text: true as const },
+    // The Cloudflare Account tunnel's token (§mesh.tunnel/account), and each tunnel unit's environment file, which carries it.
+    { path: join(agentDir, "sova", "tunnels", "account-token.env"), pick: tunnelTokenValue, text: true as const },
+    { path: join(agentDir, "sova", "tunnels", "env"), pick: tunnelTokenValue, text: true as const, dir: true as const },
     // Sova's Web Push signing key (server/push-store.ts): the private half only; the public one is on the wire anyway.
     { path: join(home, ".pi", "agent", "sova", "secrets", "vapid.json"), pick: vapidPrivate },
     { path: join(agentDir, "sova", "secrets", "vapid.json"), pick: vapidPrivate },

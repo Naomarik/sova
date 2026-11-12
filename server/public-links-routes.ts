@@ -259,7 +259,12 @@ export function mountPublicLinks(app: Hono, sources: PublicLinksSources = SOURCE
     if (!local(c)) return notFound(c);
     // A new address waiting for its check is what Verify checks (and, on a pass, switches to).
     const waiting = readCandidate();
-    if (waiting) return c.json((await verifyCandidate(waiting, sources.verify)) satisfies VerifyResult, 200, NO_STORE);
+    if (waiting) {
+      // Its pass changes where every link points: the PUT's own door.
+      const refused = yourClickRefusal(c, "publicLinks", { tokenScriptPasses: true });
+      if (refused) return refused;
+      return c.json((await verifyCandidate(waiting, sources.verify)) satisfies VerifyResult, 200, NO_STORE);
+    }
     const url = shareState().publicUrl;
     if (!url) return c.json({ ok: false, error: "No public address is set." } satisfies VerifyResult, 200, NO_STORE);
     const result: VerifyResult = await verifyPublicUrl(url);

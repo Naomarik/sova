@@ -189,6 +189,10 @@ describe("a new address waits for its Verify while today's route works", () => {
     assert.equal(readFileSync(store.publicLinksFile(), "utf8"), before, "the setting file isn't written");
     assert.equal((await call(a, "DELETE", "/api/public-links/candidate", "chat")).status, 403);
     assert.ok(existsSync(candidateFile()), "a chat cancels nothing");
+    // A chat's Verify would switch where links point: refused, nothing checked or changed.
+    assert.equal((await call(a, "POST", "/api/public-links/verify", "chat")).status, 403);
+    assert.ok(existsSync(candidateFile()));
+    assert.equal(readFileSync(store.publicLinksFile(), "utf8"), before);
     const cancelled = (await (await call(a, "DELETE", "/api/public-links/candidate", "script")).json()) as { candidate?: unknown };
     assert.equal(cancelled.candidate, undefined);
     assert.ok(!existsSync(candidateFile()));

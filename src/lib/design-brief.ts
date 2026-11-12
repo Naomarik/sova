@@ -2,7 +2,7 @@
 import type { DesignBrief, DesignBriefQuestion, DesignLink, DesignLinkUse, DesignRun, DesignSetup } from "../../shared/design";
 import type { DesignAsset, DesignAssetCatalogue, DesignShotWords } from "../../shared/design-assets";
 import { DESIGN_ASSET_KINDS, kindAllowed, screenshotsInUse } from "../../shared/design-assets";
-import { designBriefBlock, designLinksIn } from "../../shared/design";
+import { designBriefBlock, designLinksIn, runOwnImage } from "../../shared/design";
 import { recommendedOption } from "./align";
 
 /** An answer picked on the card and not yet sent: an option, or words where a question has no options. */
@@ -91,7 +91,7 @@ export function assetsOfRun(catalogue: Pick<DesignAssetCatalogue, "assets" | "ca
     const a = catalogue.assets.find((x) => x.name === name && x.source !== "yours");
     if (a && !seen.has(name)) out.push(a), seen.add(name);
   }
-  for (const a of catalogue.assets) if (a.source === "yours" && (a.addedAt >= run.createdAt || run.images?.includes(a.name)) && !seen.has(a.name)) out.push(a), seen.add(a.name);
+  for (const a of catalogue.assets) if (runOwnImage(a, run) && !seen.has(a.name)) out.push(a), seen.add(a.name);
   return out;
 }
 

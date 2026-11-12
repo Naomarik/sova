@@ -382,8 +382,8 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-10-28T13:39Z",
-      "source": "pi-session:01a181b5-0126-7289-9604-86c617633d9d#8e5330a0"
+      "at": "2026-11-12T10:11Z",
+      "source": "pi-session:01a1c9c0-9d0b-7601-9d6d-7dfaeea30a3a#9199d10f"
     }
   },
   "§app.project-overseer/limits": {
@@ -465,7 +465,12 @@
       "src/app.css",
       "server/overseer-memory.integration.test.ts",
       "server/project-overseer.test.ts"
-    ]
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-12T10:11Z",
+      "source": "pi-session:01a1c9c0-9d0b-7601-9d6d-7dfaeea30a3a#9199d10f"
+    }
   },
   "§app.project-overseer/new-coding-session": {
     "kind": "behavior",

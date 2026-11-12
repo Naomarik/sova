@@ -5,6 +5,7 @@
 // a window, and the conversation by kind); and /api/sessions/context/file opening that subfolder file, while a
 // file nothing lists stays a 404.
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { after, before, test } from "node:test";
@@ -13,6 +14,8 @@ import { startHermeticServer, type HermeticServer } from "./testing/hermetic-ser
 let s: HermeticServer;
 before(async () => {
   s = await startHermeticServer();
+  // A repository's top: a chat there looks below its folder (server/skill-descent.ts).
+  execFileSync("git", ["init", "-q"], { cwd: s.work });
   writeFileSync(join(s.work, "AGENTS.md"), "# Root rules\n\nBe brief.\n");
   mkdirSync(join(s.work, "api"));
   writeFileSync(join(s.work, "api", "AGENTS.md"), "# API rules\n\nValidate input.\n");

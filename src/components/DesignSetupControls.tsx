@@ -194,7 +194,7 @@ function DesignDirectionPicker(props: { setup: SetupDraft }) {
 }
 
 /**
- * The models: a Coordinator dropdown and a search box on one row, then one closed section per provider.
+ * The models: a Creative Director dropdown and a search box on one row, then one closed section per provider.
  * Everything that opens grows the card below the click: the dropdown lays over the page in the top layer,
  * a section's models come in under its own row, and a search replaces only what is under the box.
  */
@@ -263,17 +263,17 @@ function DesignModelPicker(props: { setup: SetupDraft; currentCoordinator?: stri
       <div class="design-pick-bar">
         <div class="design-pick-coord">
           <span class="design-pick-coord-label" id="design-coordinator-label">
-            Coordinator
+            Creative Director
           </span>
           <ActionMenu
-            label={`Coordinator: ${coordinator()?.name ?? "none"}`}
+            label={`Creative Director: ${coordinator()?.name ?? "none"}`}
             title="1 model coordinates the team. It can coordinate without designing."
             text={coordinator()?.name ?? "Pick a Model"}
             icon={null}
             align="start"
             ghost={false}
             class="design-pick-coord-button"
-            menuName="Coordinator"
+            menuName="Creative Director"
             panelClass="design-coord-menu"
             returnFocus
           >
@@ -306,7 +306,7 @@ function DesignModelPicker(props: { setup: SetupDraft; currentCoordinator?: stri
         </div>
         <SearchField class="design-model-search" label="Find a model" placeholder="Find a model" spellcheck={false} value={query()} onInput={setQuery} />
       </div>
-      {/* A later run's place for the coordinator change, kept whether or not it says anything. */}
+      {/* A later run's place for the Creative Director change, kept whether or not it says anything. */}
       <Show when={props.currentCoordinator}>
         <p class="text-caption text-muted design-setup-coord-note" role="status">
           {coordinatorChangeLine(draft(), props.currentCoordinator!)}

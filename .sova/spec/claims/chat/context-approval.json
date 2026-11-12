@@ -205,8 +205,15 @@
       "server/projects/skills.ts",
       "server/skill-fingerprint.ts",
       "server/approval-in-chat.ts",
-      "server/session-setup.ts"
-    ]
+      "server/session-setup.ts",
+      "server/skill-descent.ts",
+      "server/session-setup.test.ts"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-12T16:08Z",
+      "source": "pi-session:ec6da819-fb0b-454b-9ba9-97db0affcbfb#723cbddc"
+    }
   },
   "§chat.context-approval/live": {
     "kind": "behavior",

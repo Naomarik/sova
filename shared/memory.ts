@@ -3,10 +3,11 @@
 // so the server, the web app and tests read one copy.
 import type { ChatMemoryChoice, MemoryType, MemoryTypeInfo } from "./protocol";
 
-/** The recall tools (§chat.memory/recall): open a line, and a message's date. */
+/** The recall tools (§chat.memory/recall): open a line, a message's date, and find messages by their words. */
 export const MEMORY_ZOOM_TOOL = "zoom";
 export const MEMORY_DATE_TOOL = "date";
-export const MEMORY_TOOLS: readonly string[] = [MEMORY_ZOOM_TOOL, MEMORY_DATE_TOOL];
+export const MEMORY_RECALL_TOOL = "recall";
+export const MEMORY_TOOLS: readonly string[] = [MEMORY_ZOOM_TOOL, MEMORY_DATE_TOOL, MEMORY_RECALL_TOOL];
 
 export const MEMORY_TYPES: readonly MemoryType[] = ["uniichat", "zoomable"];
 
@@ -52,11 +53,16 @@ const isPow2 = (n: number) => Number.isInteger(n) && n >= 1 && (n & (n - 1)) ===
 
 /**
  * The folded line of a recall's slim row (§chat.memory/recall): "Recalled messages 40–47" for
- * zoom(40, 8), "Recalled message 40" for zoom(40, 1), "Date of message 40" for date(40). undefined for
+ * zoom(40, 8), "Recalled message 40" for zoom(40, 1), "Date of message 40" for date(40), 'Recalled "release
+ * notes"' for recall("release notes"). undefined for
  * any other tool, or arguments the tool would refuse.
  */
 export function recallSummary(name: string | undefined, args: unknown): string | undefined {
   if (!isObj(args)) return undefined;
+  if (name === MEMORY_RECALL_TOOL) {
+    const words = typeof args.words === "string" ? args.words.replace(/\s+/g, " ").trim() : "";
+    return words ? `Recalled "${words}"` : undefined;
+  }
   const id = args.id;
   if (typeof id !== "number" || !Number.isInteger(id) || id < 0) return undefined;
   if (name === MEMORY_DATE_TOOL) return `Date of message ${id}`;

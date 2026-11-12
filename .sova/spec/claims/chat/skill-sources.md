@@ -79,7 +79,10 @@ it starts, kept on this computer in its approval list (§chat.context-approval/l
   you approve. Open chats keep theirs." It lists every skill a chat in the project could be offered,
   found by the folder's scan (§chat.context-approval/list): for the project's root, then for each of
   its worktrees, pi's own places with the Claude folders (/starting), then the skills of folders
-  inside it (§chat/subfolder-skills). A skill is one row per place, never per name alone, so a project
+  inside it (§chat/subfolder-skills), which a project lists unless its root is the home folder or a
+  folder above it: such a project's card walks no folder below. A folder that is no project lists a
+  folder's inside it only where a chat there is offered them: in a git repository below the home
+  folder (§chat.subfolder-skills/offering). A skill is one row per place, never per name alone, so a project
   skill named like one of yours is a row of its own; the main folder and its worktrees share a row for
   the same place. Each row has the skill's name, where it comes from, its state as a chip, and the
   buttons its mode gives it (§chat.context-approval/modes). A click shows its new state at once and
@@ -123,7 +126,9 @@ it starts, kept on this computer in its approval list (§chat.context-approval/l
   says `Changed since you approved`, with **Re-approve** and **Disallow**. In the default mode every
   other row is as any other: no Waiting line, no Approve and no notice. The chat's own switches never
   change the folder's decisions. Under the lists, the card says where they are kept and opens them
-  (§chat.context-approval/folders).
+  (§chat.context-approval/folders). A chat whose own folder Sova doesn't look below
+  (§chat.subfolder-skills/offering), at the home folder say, even a project's, shows no row of a folder
+  below its own.
 - **In the asking mode.** A Waiting row starts off and says `Waiting for your decision · off until you
   approve it`, with its own **Approve** and **Disallow**, and the card's one notice and the held Send
   ask for the decisions (§chat.context-approval/held-send). Each answer shows on its row at once and
@@ -145,6 +150,8 @@ it starts, kept on this computer in its approval list (§chat.context-approval/l
 - **Workers.** A worker a chat starts is offered exactly its parent chat's skills and mode, whatever
   the folder's decisions say now (§chat.context-approval/fixed). Sova sets it from the parent chat,
   never from the request. The worker keeps that list as its own, so its subfolder skills, a typed
-  `/skill:name` and its slash list leave the same skills out.
+  `/skill:name` and its slash list leave the same skills out. Whether it is offered a subfolder's
+  skills at all goes by its own folder (§chat.subfolder-skills/offering), whichever way it was
+  started.
 - **Off everywhere.** A skill a chat has off is out of the skills the prompt lists, `/skill:`
   expansion, the composer's slash list and the subfolder skills block (§chat.subfolder-skills/offering).

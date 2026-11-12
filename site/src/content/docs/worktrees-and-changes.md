@@ -28,7 +28,7 @@ With the session's sandbox on, the agent asks you before it creates, attaches, o
 
 A worker may start only in the session's own folder (or a folder inside it), or inside one of the session's active worktrees. Any other folder is refused, and the refusal names the session's worktrees. This applies to single workers, team members, and resumed workers alike, on pi and on Claude Code.
 
-A worker started inside a worktree, pi or Claude Code, writes only inside that worktree unless the session's sandbox is Off. Under Subagents only, the default, it can still read the rest of your machine, but its writes go only to the worktree and its own scratch space.
+A worker started inside a worktree, pi or Claude Code, writes only inside that worktree unless the session's sandbox is Off. Under Subagents only, the default, it can still read the rest of your machine, but its writes go only to the worktree, its own scratch space (a private `/tmp` on Linux) and its chat's shared folder, where a chat, its workers and its teams leave briefs, reports and handover notes for each other.
 
 A fork of a session starts with the same worktree list. A worktree that came from another session says so in the Session tab.
 

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { isStarting } from "../../shared/services-view";
-import { adoptedLine, copyChip, costLine, usableLine, gbWord, limitHint, limitInputProblem, limitLine, limitSource, placesLine, copyMemory, copyName, createdByWord, endpointNotRunning, entryHref, openEntry, rowVerbs, shareOffered, endpointPort, httpHref, linkLine, notReadyLine, refusalLine, sentence, SHARE_SENSITIVE, shareBlocked, verbGroups, portLabel } from "./services-view";
+import { adoptedLine, archivedVerbs, copyChip, gaveUp, costLine, usableLine, gbWord, limitHint, limitInputProblem, limitLine, limitSource, placesLine, copyMemory, copyName, createdByWord, endpointNotRunning, entryHref, openEntry, rowVerbs, shareOffered, endpointPort, httpHref, linkLine, notReadyLine, refusalLine, sentence, SHARE_SENSITIVE, shareBlocked, verbGroups, portLabel } from "./services-view";
 
 test("a copy is named main at slot 0, else by its branch, else by its folder", () => {
   assert.equal(copyName({ slot: 0, branch: "master", checkout: "/p" }), "main");
@@ -26,6 +26,7 @@ test("the services not ready are named; none when all are", () => {
   const s = (name: string, state: "ready" | "stopped" | "failed") => ({ name, scope: "checkout" as const, kind: "process" as const, state, unit: null, pid: null, ports: {} });
   assert.equal(notReadyLine([s("web", "ready")]), null);
   assert.equal(notReadyLine([s("web", "ready"), s("api", "failed"), s("db", "stopped")]), "api failed · db stopped");
+  assert.equal(notReadyLine([s("web", "ready"), { ...s("flaky", "failed"), gaveUp: true as const }]), "flaky failed and stopped retrying; Start runs it again");
 });
 
 test("an HTTP port links on the page's host, an IPv6 host bracketed", () => {
@@ -80,6 +81,9 @@ test("Share only on a running copy, never an adopted main; Starting reads in pla
   assert.equal(shareOffered({ state: "running", adopted: "u.service" }), false);
   assert.equal(copyChip("degraded", true).word, "Starting");
   assert.equal(copyChip("degraded", false).word, "Degraded");
+  assert.deepEqual(copyChip("degraded", false, true), { word: "Failed", tone: "error" });
+  assert.equal(gaveUp([{}, { gaveUp: true }]), true);
+  assert.equal(gaveUp([{}]), false);
   const svcs = (...st: ("ready" | "starting" | "failed")[]) => st.map((state) => ({ state }));
   assert.equal(isStarting("degraded", svcs("ready", "starting")), true);
   assert.equal(isStarting("degraded", svcs("failed", "starting")), false);
@@ -165,4 +169,10 @@ test("fewer usable slots than the limit: the tab says what the limit can reach",
   assert.equal(usableLine({ usable: 9, value: 12 }), "Only 9 slots are usable, so at most 9 copies run at once.");
   assert.equal(usableLine({ usable: 1, value: 4 }), "Only 1 slot is usable, so at most 1 copy runs at once.");
   assert.equal(usableLine({ usable: 16, value: 12 }), null);
+});
+
+test("an archived project's copies keep Stop and Teardown only", () => {
+  assert.deepEqual(archivedVerbs(rowVerbs({ slot: 2, state: "running" })), ["down", "teardown"]);
+  assert.deepEqual(archivedVerbs(rowVerbs({ slot: 0, state: "stopped" })), []);
+  assert.deepEqual(archivedVerbs(rowVerbs({ slot: 0, state: "running", adopted: "app.service" })), []);
 });

@@ -1040,12 +1040,15 @@ shows exactly what it showed before.
 
 ## §chat.transcript/recall-rows — Memory recalls are quiet rows
 
-A memory recall — the model's `zoom` or `date` call (§chat.memory/recall) — draws as a slim, quiet
-tool row: the folded line the row carries ("Recalled messages 40–47",
-"Recalled message 40", "Date of message 40"; while it streams, the same line from its arguments),
+A memory recall — the model's `zoom`, `date` or `recall` call (§chat.memory/recall,
+§chat.memory/recall-words) — draws as a slim, quiet tool row: the folded line the row carries
+("Recalled messages 40–47", "Recalled message 40", "Date of message 40", `Recalled "release
+notes"` for `recall`'s words, runs of spaces collapsed to one; while it streams, the same line from
+its arguments),
 in muted text after the clock icon, with no tool name, no "Done" chip and, folded, no card edge or
 fill. "Running" and "Failed" still show. It opens
-like any tool card, onto what the recall returned.
+like any tool card, onto what the recall returned. Every memory-tool call gets this quiet row, a `recall` call
+with no words included: it has no such line, but no tool name and no "Done" chip either.
 
 ## §chat.transcript/recent-preload — Recent sessions open at once
 
@@ -1921,7 +1924,7 @@ it is on disk now, its front matter left out.
   works: its folder's own instruction file, in a folder below the session's folder that the loading
   doesn't skip (§chat.subfolder-instructions/loading; the Context tab opens these,
   §app.subagents-pane/context-tab), or the `SKILL.md` of a skill that folder's skills folder lists
-  (§chat.subfolder-skills/offering). So the request reads no other file on disk; any other path is a
+  (§chat.subfolder-skills/offering), these two only where Sova looks below the session's folder. So the request reads no other file on disk; any other path is a
   404, "That file isn't in this session's system context." A remote session has no rows to press,
   and its request is refused. A file over 1 MB is refused with "That file is over 1 MB, too big to
   show here." Whatever goes wrong is a toast that starts "Couldn't open that file." and gives the

@@ -83,7 +83,7 @@ function project(): string {
 }
 
 await import("./testing/in-process-chats"); // chats open in this process (the server hosts none)
-const { acquireChat, disposeAllChats, disposeHeldChat, setWorkerSpec, warmChatRuntime } = await import("./chat-manager");
+const { acquireChat, disposeAllChats, disposeHeldChat, setProjectFact, setWorkerSpec, warmChatRuntime } = await import("./chat-manager");
 const { canonicalPath } = await import("./paths");
 const { getContextView } = await import("./context-tab");
 const { clearSetupCache, getSessionSetup, readSetupFile } = await import("./session-setup");
@@ -454,3 +454,80 @@ describe("a chat that loads no skills", () => {
   });
 });
 
+
+describe("where a chat looks below its folder", () => {
+  /** A folder with no repository: a subfolder with its instruction file and a skill. */
+  const plain = () => {
+    const cwd = join(root, `plain-${++count}`);
+    put(cwd, { "sub/AGENTS.md": "sub instructions marker\n", "sub/x.md": "x\n", "sub/.agents/skills/foo/SKILL.md": skill("foo") });
+    return cwd;
+  };
+  const menu = (chat: Awaited<ReturnType<typeof acquireChat>>) => {
+    const m = chat.commands();
+    // A subfolder's: a starting skill (the home folder's home-direct) stays in the menu wherever the chat is.
+    return m.type === "commands" ? m.commands.filter((c) => c.name.startsWith("skill:") && c.name !== "skill:home-direct").map((c) => c.name) : [];
+  };
+
+  test("a plain folder's chat: a read below offers nothing, /skill:name goes as typed, the menu and the Context tab list nothing below", async () => {
+    const cwd = plain();
+    const { path, chat, model, turn } = await ordinary(cwd);
+    await turn([{ name: "read", arguments: { path: "sub/x.md" } }]);
+    assert.doesNotMatch(toolResults(model), /<sova-skills|<sova-instructions/);
+    model.reply({ text: "ok" });
+    await chat.acceptPrompt("/skill:foo now", undefined, "server").turn;
+    assert.equal(textOf(messagesOf(model).at(-1)!), "/skill:foo now", "sent as typed, as an unknown skill is");
+    assert.deepEqual(menu(chat), []);
+    const v = await getContextView(path);
+    assert.ok(v.state === "ok");
+    assert.deepEqual([v.state === "ok" && v.nested, v.state === "ok" && v.nestedSkills], [[], undefined]);
+    assert.equal((await readSetupFile(path, join(cwd, "sub/AGENTS.md"))).ok, false, "nor does the tab open one");
+    await disposeHeldChat(path, "test: done");
+  });
+
+  test("as a chat process hears it from its open: in a project, the same folder offers; out of one, the menu drops what the branch offered", async () => {
+    const cwd = plain();
+    const path = sessionFile(cwd);
+    setProjectFact(path, true);
+    try {
+      const chat = await acquireChat(path, true);
+      const model = new ScriptedModel().attach(piSession(chat));
+      model.reply({ toolCall: { name: "read", arguments: { path: "sub/x.md" } } }, { text: "done" });
+      await chat.acceptPrompt("go", undefined, "server").turn;
+      assert.match(toolResults(model), /<sova-instructions path="sub\/AGENTS\.md">[\s\S]*<sova-skills dir="sub">[\s\S]*foo/);
+      assert.deepEqual(menu(chat), ["skill:foo"]);
+      // Its next build hears it is in none (a reload): the block stays on the branch, the menu leaves it out.
+      setProjectFact(path, false);
+      await disposeHeldChat(path, "test: reload");
+      assert.deepEqual(menu(await acquireChat(path, true)), []);
+    } finally {
+      setProjectFact(path, null);
+      await disposeHeldChat(path, "test: done");
+    }
+  });
+
+  test("in a Sova project with no repository: a worker's read offers the subfolder's skill, a project overseer's loads its file", async () => {
+    const orgs = await import("./orgs");
+    const po = await import("./project-overseer");
+    const cwd = plain();
+    const org = await orgs.createOrg({ name: "Plain", dir: join(root, "ws-plain") });
+    const placed = await orgs.addProject(org.id, { name: "No Git", root: cwd });
+
+    const wpath = sessionFile(cwd, { provider: "scripted", id: "scripted" });
+    setWorkerSpec(wpath, workerSpec(cwd, { model: "scripted/scripted" }));
+    const worker = await acquireChat(wpath, true);
+    const wmodel = new ScriptedModel().attach(piSession(worker));
+    wmodel.reply({ toolCall: { name: "read", arguments: { path: "sub/x.md" } } }, { text: "ok" });
+    await worker.acceptPrompt("go", undefined, "server").turn;
+    assert.match(toolResults(wmodel), /<sova-skills dir="sub">[\s\S]*<name>foo<\/name>/);
+    await disposeHeldChat(wpath, "test: done");
+
+    // A project overseer loads no skills at all (above): its subfolder's instruction file shows it looks below.
+    const { path } = await po.ensureProjectOverseer(placed.id);
+    const chat = await acquireChat(path);
+    const model = new ScriptedModel().attach(piSession(chat));
+    model.reply({ toolCall: { name: "read", arguments: { path: "sub/x.md" } } }, { text: "ok" });
+    await piSession(chat).prompt("go");
+    assert.match(toolResults(model), /<sova-instructions path="sub\/AGENTS\.md">/);
+    await disposeHeldChat(path, "test: done");
+  });
+});

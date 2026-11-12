@@ -313,3 +313,32 @@ test("a remote session's files are never read", async () => {
   const r = await S.readSetupFile(sessionFile(placeholder), join(placeholder, "AGENTS.md"), { runtime: () => { throw new Error("must not be asked"); } });
   assert.deepEqual(r, { ok: false, status: 409, error: "This session's files are on another machine." });
 });
+
+// ---------------------------------------------------------------------------
+// the home folder (server/skill-descent.ts)
+
+test("home as a project: a new chat in home lists no subfolder's rows, its file or its skill", async () => {
+  const { realpathSync } = await import("node:fs");
+  const { homedir } = await import("node:os");
+  const home = realpathSync(homedir()); // the runner's throwaway home
+  const made = [join(home, "AGENTS.md"), join(home, "sub")];
+  after(() => made.forEach((p) => rmSync(p, { recursive: true, force: true })));
+  writeFileSync(join(home, "AGENTS.md"), "# home\n");
+  mkdirSync(join(home, "sub", ".agents", "skills", "foo"), { recursive: true });
+  writeFileSync(join(home, "sub", "AGENTS.md"), "# sub\n");
+  writeFileSync(join(home, "sub", ".agents", "skills", "foo", "SKILL.md"), "---\nname: foo\ndescription: Foo things.\n---\nBody.\n");
+  const { registerProjectIn } = await import("./projects/spaces");
+  const { projectFolder } = await import("./approvals");
+  const p = await registerProjectIn("standalone", home, { name: "Home", origin: "folder" });
+  const setup = await S.getSessionSetup(sessionFile(home), { fresh: true }, { runtime: () => null, loader: () => Promise.resolve(loadout()) });
+  assert.equal(setup.state, "ok");
+  if (setup.state !== "ok") return;
+  assert.deepEqual(setup.approvals?.folder, { kind: "project", id: p.project.id, name: "Home" }, "the project's list, read for real");
+  assert.deepEqual([...setup.context, ...setup.skills].filter((r) => r.approval?.group === "subfolder").map((r) => r.path), []);
+  assert.ok(!setup.skills.some((k) => k.name === "foo"));
+  assert.ok(!setup.context.some((f) => f.path === join(home, "sub", "AGENTS.md")));
+  // The project's own card: home is the home folder, so no subfolder walk there either.
+  const { folderQuickScan } = await import("./approvals");
+  const scan = await folderQuickScan(projectFolder(p.project.id), { checkouts: async (root) => ({ dirs: [realpathSync(root)], complete: true }) });
+  assert.deepEqual(scan.items.filter((i) => i.group === "subfolder"), []);
+});

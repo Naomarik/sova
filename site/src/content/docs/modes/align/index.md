@@ -179,4 +179,5 @@ or commands there.
   Overseer can't turn its align off. A playbook run you answer yourself starts with align on.
 
 Workers never get align: aligning is a conversation with you. A planning worker can still write an
-alignment for the agent to import.
+alignment for the agent to import, as a file in the chat's shared folder, which a sandboxed worker
+can write too.

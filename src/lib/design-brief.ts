@@ -1,7 +1,8 @@
 /** Pure derivations behind the Design Brief on the Design card: no DOM, no Solid, so they are unit-tested. */
 import type { DesignBrief, DesignBriefQuestion, DesignLink, DesignLinkUse, DesignRun, DesignSetup } from "../../shared/design";
-import type { DesignAsset, DesignAssetCatalogue } from "../../shared/design-assets";
-import { designBriefBlock, designLinksIn } from "../../shared/design";
+import type { DesignAsset, DesignAssetCatalogue, DesignShotWords } from "../../shared/design-assets";
+import { DESIGN_ASSET_KINDS, kindAllowed, screenshotsInUse, SHOT_COLORS_LIMIT } from "../../shared/design-assets";
+import { designBriefBlock, designLinksIn, runOwnImage } from "../../shared/design";
 import { recommendedOption } from "./align";
 
 /** An answer picked on the card and not yet sent: an option, or words where a question has no options. */
@@ -42,7 +43,7 @@ export function briefStatus(run: Pick<DesignRun, "brief" | "setup" | "imagesBusy
   if (block?.code === "writing") return { text: run.brief ? "Writing the prompt" : "Writing the brief", live: true };
   if (block?.code === "look") return { text: "Reading the page's look", live: true };
   if (block?.code === "images") return { text: run.imagesBusy === "capturing" ? "Reading the page's images" : "Describing the images", live: true };
-  if (block?.code === "stalled") return { text: "Coordinator stopped", live: false };
+  if (block?.code === "stalled") return { text: "Creative Director stopped", live: false };
   return { text: "Waiting on you", live: false };
 }
 
@@ -57,8 +58,8 @@ export function withLinkUse(setup: DesignSetup, url: string, use: DesignLinkUse)
 }
 
 /** The Start button's words: why it waits, or what it will do. */
-export function startLabel(run: Pick<DesignRun, "brief" | "setup" | "imagesBusy">, designs: number): string {
-  return designBriefBlock(run)?.label ?? `Start ${designs} Design${designs === 1 ? "" : "s"}`;
+export function startLabel(run: Pick<DesignRun, "brief" | "setup" | "imagesBusy">, designs: number, screenshots: readonly string[] = []): string {
+  return designBriefBlock(run, screenshots)?.label ?? `Start ${designs} Design${designs === 1 ? "" : "s"}`;
 }
 
 /** The words a question was answered with, for the frozen brief. */
@@ -78,8 +79,9 @@ const sameOrigin = (a: string, b: string): boolean => {
 };
 
 /** A run's grid, the set the server keeps (keptImages) with the unticked ones still shown: what a link on
-    Use Its Images captured, in the capture's order, then the images you added since the run began. */
-export function assetsOfRun(catalogue: Pick<DesignAssetCatalogue, "assets" | "captures"> | null, run: Pick<DesignRun, "setup" | "createdAt">): DesignAsset[] {
+    Use Its Images captured, in the capture's order, then your images: those the run started with (run.images) and those
+    added since it began. */
+export function assetsOfRun(catalogue: Pick<DesignAssetCatalogue, "assets" | "captures"> | null, run: Pick<DesignRun, "setup" | "createdAt" | "images">): DesignAsset[] {
   if (!catalogue) return [];
   const links = (run.setup.links ?? []).filter((l) => l.use === "images");
   const ranked = catalogue.captures.filter((c) => links.some((l) => sameOrigin(l.url, c.url))).flatMap((c) => c.names);
@@ -89,7 +91,7 @@ export function assetsOfRun(catalogue: Pick<DesignAssetCatalogue, "assets" | "ca
     const a = catalogue.assets.find((x) => x.name === name && x.source !== "yours");
     if (a && !seen.has(name)) out.push(a), seen.add(name);
   }
-  for (const a of catalogue.assets) if (a.source === "yours" && a.addedAt >= run.createdAt && !seen.has(a.name)) out.push(a), seen.add(a.name);
+  for (const a of catalogue.assets) if (runOwnImage(a, run) && !seen.has(a.name)) out.push(a), seen.add(a.name);
   return out;
 }
 
@@ -101,7 +103,19 @@ export function usedCount(assets: readonly DesignAsset[], held: Readonly<Record<
   return assets.filter((a) => imageUsed(brief, held, a.name)).length;
 }
 
-export const assetKindWord = (a: DesignAsset): string => a.chosenKind ?? a.description?.kind ?? (a.source === "yours" ? "Yours" : "Image");
+export const assetKindWord = (a: DesignAsset): string => a.chosenKind ?? a.cdKind ?? a.description?.kind ?? (a.source === "yours" ? "Yours" : "Image");
+
+/** The kinds an image's picker offers: never `screenshot` for one a page capture brought back. */
+export const kindChoices = (a: Pick<DesignAsset, "source">): string[] => DESIGN_ASSET_KINDS.filter((k) => kindAllowed(a, k));
+
+/** The run's pasted screenshots that go to the designers (ticked), in the grid's order: each needs Rebuild or Just Its Feel. */
+export const runScreenshots = (assets: readonly DesignAsset[], brief: Pick<DesignBrief, "imageUse"> | undefined): string[] => screenshotsInUse(assets, brief);
+
+/** How a screenshot is used: a click not yet confirmed first, then the brief's word; null until someone chooses. */
+export const screenUseOf = (brief: Pick<DesignBrief, "screenUse"> | undefined, held: Readonly<Record<string, "rebuild" | "feel">>, name: string): "rebuild" | "feel" | null => held[name] ?? brief?.screenUse?.[name]?.use ?? null;
+
+/** Whose the screenshot's choice is, for its row: "" for the user's own click or none. */
+export const screenUseBy = (brief: Pick<DesignBrief, "screenUse"> | undefined, name: string): string => (brief?.screenUse?.[name]?.by === "coordinator" ? "The Creative Director's pick" : "");
 
 /** The one line under an image: what's said about it, or where its description stands. */
 export function assetStateLine(a: DesignAsset): string {
@@ -115,5 +129,43 @@ export function assetStateLine(a: DesignAsset): string {
 export function coordinatorChangeLine(setup: Pick<DesignSetup, "models">, current: string): string {
   const picked = setup.models.find((m) => m.coordinator);
   if (!picked || picked.ref === current) return "";
-  return `This starts a new coordinator on ${picked.name}; it keeps the notes, not the conversation.`;
+  return `This starts a new Creative Director on ${picked.name}; it keeps the notes, not the conversation.`;
+}
+
+/** A screenshot's words for designers as one editable text: its feel, then a `#hex role` line per colour. */
+export function shotWordsText(w: DesignShotWords): string {
+  const lines = w.colors.map((c) => `${c.hex}${c.role ? ` ${c.role}` : ""}`);
+  return [w.feel.trim(), lines.join("\n")].filter(Boolean).join("\n\n");
+}
+
+/** The most colours a screenshot's words carry: the shared limit the server holds them to. */
+export const SHOT_COLORS_MAX = SHOT_COLORS_LIMIT;
+
+/** That text read back: lines that start with a hex value are colours with their role, the rest is the feel. A colour
+    is kept as #rrggbb, as the server stores it: #rgb is spelled out, and an alpha (#rrggbbaa, #rgba) is dropped. */
+export function parseShotWords(text: string): DesignShotWords {
+  const feel: string[] = [];
+  const colors: { hex: string; role: string }[] = [];
+  for (const line of text.split("\n")) {
+    const m = /^\s*#([0-9a-f]{8}|[0-9a-f]{6}|[0-9a-f]{4}|[0-9a-f]{3})\b[\s:·—–-]*(.*)$/i.exec(line);
+    if (!m) {
+      feel.push(line);
+      continue;
+    }
+    const raw = m[1]!.toLowerCase();
+    const six = raw.length <= 4 ? [...raw.slice(0, 3)].map((c) => c + c).join("") : raw.slice(0, 6);
+    colors.push({ hex: `#${six}`, role: m[2]!.trim() });
+  }
+  return { feel: feel.join("\n").trim(), colors };
+}
+
+/** What Save sends for edited words: null when nothing is left (back to the Creative Director's or the helper's), else
+    the words, with no colours when they're as shown; refused, with why, past the colour limit. */
+export function shotWordsToSave(text: string, shown: readonly { hex: string; role: string }[] = []): DesignShotWords | null {
+  const w = parseShotWords(text);
+  if (w.colors.length > SHOT_COLORS_MAX) throw new Error(`Keep it to ${SHOT_COLORS_MAX} colours; this has ${w.colors.length}.`);
+  // Colours left as they were shown stay the measured ones (with whatever roles they had): only a change makes them yours.
+  const same = w.colors.length === shown.length && w.colors.every((c, i) => c.hex === shown[i]!.hex.toLowerCase() && c.role === shown[i]!.role.trim());
+  const colors = same ? [] : w.colors;
+  return w.feel || colors.length ? { feel: w.feel, colors } : null;
 }

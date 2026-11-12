@@ -1,5 +1,5 @@
 import type { DesignChatView, DesignLinkUse, DesignSetup } from "../../shared/design";
-import type { DesignAssetCatalogue, DesignAssetShown } from "../../shared/design-assets";
+import type { DesignAssetCatalogue, DesignAssetShown, DesignShotWords } from "../../shared/design-assets";
 import { ApiError, uploadImage, withJsonType } from "./api";
 import { onAuthorized, onUnauthorized } from "./auth";
 import { hostUrl, routeUrl } from "./mesh";
@@ -95,9 +95,12 @@ export function designApi(path: string, host: string | null) {
     assets: () => json<DesignAssetCatalogue>(url("/assets")),
     /** A captured image as the page may show it; only "original" downloads. */
     assetUrl: (name: string, part: DesignAssetShown | "original") => routeUrl(url(`/assets/${encodeURIComponent(name)}/${part}`)),
-    imageNote: (name: string, change: { note?: string | null; kind?: string | null }) => json<unknown>(url(`/images/${encodeURIComponent(name)}`), { method: "PATCH", body: JSON.stringify(change) }),
+    /** words: a screenshot's words for designers as you saved them; null gives them back to the Creative Director's. */
+    imageNote: (name: string, change: { note?: string | null; kind?: string | null; words?: DesignShotWords | null }) => json<unknown>(url(`/images/${encodeURIComponent(name)}`), { method: "PATCH", body: JSON.stringify(change) }),
     imageDescribe: (name: string) => json<unknown>(url(`/images/${encodeURIComponent(name)}/describe`), post()),
     briefImage: (runId: string, name: string, use: boolean) => json<unknown>(url(`${run(runId)}/brief/image`), post({ name, use })),
+    /** A pasted screenshot: Rebuild This Screen or Just Its Feel, your click over the Creative Director's. */
+    briefScreen: (runId: string, name: string, use: "rebuild" | "feel") => json<unknown>(url(`${run(runId)}/brief/screenshot`), post({ name, use })),
     /** A coordinator screenshot, as an image URL the page may load. */
     shotUrl: (src: string) => routeUrl(src),
   };

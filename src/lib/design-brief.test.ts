@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import type { DesignBrief, DesignBriefQuestion, DesignSetup } from "../../shared/design";
-import { answerLine, coordinatorChangeLine, assetsOfRun, briefStatus, imageUsed, pickIsRecommended, usedCount, recommendedPick, setupLinks, stagedAnswers, startLabel, withLinkUse } from "./design-brief";
+import { answerLine, coordinatorChangeLine, assetsOfRun, assetKindWord, briefStatus, imageUsed, kindChoices, parseShotWords, shotWordsToSave, pickIsRecommended, runScreenshots, screenUseOf, shotWordsText, usedCount, recommendedPick, setupLinks, stagedAnswers, startLabel, withLinkUse } from "./design-brief";
 
 const q = (id: string, over: Partial<DesignBriefQuestion> = {}): DesignBriefQuestion => ({
   id,
@@ -103,5 +103,86 @@ test("an image is used unless unticked, and a click not yet confirmed counts", (
 test("a later run's Setup says when the coordinator changes, and nothing when it doesn't", () => {
   const s = setup();
   assert.equal(coordinatorChangeLine(s, "a/b"), "");
-  assert.equal(coordinatorChangeLine(s, "other/model"), "This starts a new coordinator on b; it keeps the notes, not the conversation.");
+  assert.equal(coordinatorChangeLine(s, "other/model"), "This starts a new Creative Director on b; it keeps the notes, not the conversation.");
+});
+
+test("a page capture's image is never offered screenshot; a pasted one is", () => {
+  assert.equal(kindChoices({ source: "page" }).includes("screenshot"), false);
+  assert.equal(kindChoices({ source: "yours" }).includes("screenshot"), true);
+});
+
+test("the kind shown is the user's, then the Creative Director's, then the helper's", () => {
+  const described = { description: { kind: "photo", description: "", placement: "", usage: "", at: "t" } };
+  assert.equal(assetKindWord(asset("a1", { source: "yours", ...described, cdKind: "screenshot" })), "screenshot");
+  assert.equal(assetKindWord(asset("a1", { source: "yours", ...described, cdKind: "screenshot", chosenKind: "photo" })), "photo");
+});
+
+test("Start waits for each ticked screenshot's Rebuild or Just Its Feel; an unticked one or a page image doesn't count", () => {
+  const shot = (name: string, source = "yours") => asset(name, { source, chosenKind: "screenshot" });
+  const assets = [shot("a1"), shot("a2"), shot("a3", "page"), asset("a4", { source: "yours", chosenKind: "photo" })];
+  const b = brief({ imageUse: { a2: { use: false, by: "user" } } });
+  const names = runScreenshots(assets, b);
+  assert.deepEqual(names, ["a1"]);
+  const run = { brief: b, setup: setup() };
+  assert.equal(startLabel(run, 2, names), "Choose Rebuild or Just Its Feel");
+  assert.equal(startLabel({ ...run, brief: { ...b, screenUse: { a1: { use: "feel", by: "coordinator" } } } }, 2, names), "Start 2 Designs");
+});
+
+test("a screenshot's choice: a click not yet confirmed, then the brief's, else none", () => {
+  const b = brief({ screenUse: { a1: { use: "rebuild", by: "coordinator" } } });
+  assert.equal(screenUseOf(b, {}, "a1"), "rebuild");
+  assert.equal(screenUseOf(b, { a1: "feel" }, "a1"), "feel");
+  assert.equal(screenUseOf(b, {}, "a2"), null);
+});
+
+test("a screenshot's words edit as one text and read back as feel and colours with roles", () => {
+  const w = { feel: "Calm, airy, lots of white.", colors: [{ hex: "#1e1e26", role: "background" }, { hex: "#8e88ff", role: "" }] };
+  const text = shotWordsText(w);
+  assert.equal(text, "Calm, airy, lots of white.\n\n#1e1e26 background\n#8e88ff");
+  assert.deepEqual(parseShotWords(text), w);
+  assert.deepEqual(parseShotWords("Dark and dense.\n#FFF — text\n#4A43D8: accent"), { feel: "Dark and dense.", colors: [{ hex: "#ffffff", role: "text" }, { hex: "#4a43d8", role: "accent" }] });
+});
+
+test("typed colours are kept as #rrggbb, as the server stores them: #rgb spelled out, an alpha dropped", () => {
+  assert.deepEqual(parseShotWords("#fff page background\n#4a43d8cc accent\n#0f08 text").colors, [
+    { hex: "#ffffff", role: "page background" },
+    { hex: "#4a43d8", role: "accent" },
+    { hex: "#00ff00", role: "text" },
+  ]);
+});
+
+test("Save sends null when nothing is left, and refuses more than 8 colours with why", () => {
+  assert.equal(shotWordsToSave("  \n "), null);
+  assert.deepEqual(shotWordsToSave("Calm."), { feel: "Calm.", colors: [] });
+  const nine = Array.from({ length: 9 }, (_, i) => `#00000${i}`).join("\n");
+  assert.throws(() => shotWordsToSave(nine), /Keep it to 8 colours; this has 9/);
+});
+
+test("a run's images are the ones it started with (run.images) and yours added since, never another run's", () => {
+  const catalogue = {
+    captures: [],
+    assets: [
+      asset("a1", { source: "yours", addedAt: "2026-11-10T00:00:00Z" }),
+      asset("a2", { source: "yours", addedAt: "2026-11-10T00:00:00Z" }),
+      asset("a3", { source: "yours", addedAt: "2026-11-10T03:00:00Z" }),
+    ],
+  } as never;
+  const run = { setup: setup(), createdAt: "2026-11-10T02:00:00Z", images: ["a2"] };
+  assert.deepEqual(assetsOfRun(catalogue, run).map((a) => a.name), ["a2", "a3"]);
+  assert.deepEqual(assetsOfRun(catalogue, { ...run, images: undefined }).map((a) => a.name), ["a3"]);
+});
+
+test("editing only the feel sends no colours, so the measured ones stay; a changed colour list is sent whole", () => {
+  const shown = [{ hex: "#1E1E26", role: "background" }, { hex: "#8e88ff", role: "accent" }];
+  const text = shotWordsText({ feel: "Calm.", colors: shown });
+  assert.deepEqual(shotWordsToSave(text.replace("Calm.", "Quiet and airy."), shown), { feel: "Quiet and airy.", colors: [] });
+  assert.deepEqual(shotWordsToSave(text.replace("accent", "links"), shown)?.colors, [{ hex: "#1e1e26", role: "background" }, { hex: "#8e88ff", role: "links" }]);
+});
+
+test("a long role and feel are kept whole through the words editor: nothing is cut", () => {
+  const role = "accent violet used on thin small marks, the secondary purple highlights and counts, and the active tab underline";
+  const feel = "Dense, calm, dark. ".repeat(80).trim();
+  const w = { feel, colors: [{ hex: "#8e88ff", role }] };
+  assert.deepEqual(parseShotWords(shotWordsText(w)), w);
+  assert.deepEqual(shotWordsToSave(shotWordsText(w).replace("Dense", "Quiet")), { feel: feel.replace("Dense", "Quiet"), colors: [{ hex: "#8e88ff", role }] });
 });

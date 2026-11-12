@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import type { WorkerHost, WorkerSpec, WorkerStart, WorkerState } from "../../shared/chat-runtime";
 import type { HEntry } from "../../shared/harness";
-import { DESIGN_ASK_ABOVE, DESIGN_BATCH_MAX, DESIGN_CONCURRENT, DESIGN_FIX_TRIES, designPlan, type DesignNote, type DesignRecord, type DesignRun, type DesignSetup, type DesignVersion } from "../../shared/design";
+import { DESIGN_ASK_ABOVE, DESIGN_BATCH_MAX, DESIGN_CONCURRENT, DESIGN_FIX_TRIES, designerSkills, designPlan, type DesignNote, type DesignRecord, type DesignRun, type DesignSetup, type DesignVersion } from "../../shared/design";
 import { DESIGN_PAGE_END, DESIGN_PAGE_START, designSessionPrompt } from "../../pi-config/extensions/mode/design-guide.ts";
 import { claudeCodeProviderLoad, sessionDirName } from "../../pi-config/extensions/subagents/worker-load.ts";
 import { SESSIONS_DIR } from "../paths";
@@ -18,6 +18,8 @@ import { noteDesignEvent } from "./coordinator";
 import { pageProblem } from "./lint";
 import { replyCost } from "./setup";
 import { pageInReply } from "./stream-decode";
+import { designerSkillsBlock } from "./skills";
+import { SCREENSHOTS_HEADING, WORDS_ONLY_NOTE } from "../../shared/design-assets";
 import { changeDesign, changeDesigns, designOf, designRoot, designSessions, nextLabel, pendingPage, readDesigns, readPage, runOf, setPendingPage, setRunPhase, viewOf, writePage } from "./store";
 
 export interface DesignParent {
@@ -96,12 +98,25 @@ export function specFor(parent: DesignParent, d: Pick<DesignRecord, "label" | "d
   };
 }
 
-function firstMessage(d: DesignRecord, brief: string, refs: DesignReference[], parents: { label: string; html: string }[], instructions: string | null): { text: string; images: NonNullable<WorkerStart["images"]> } {
+/** A design's skill folders, from its run: on its own record, so a design revived after a restart keeps them. */
+const skillRootsOf = (run: Pick<DesignRun, "skills" | "brief">): Pick<DesignRecord, "skills"> => {
+  // The brief's choice among the run's skills: what the Creative Director left out, its designers never read.
+  const mine = designerSkills(run);
+  return mine.length ? { skills: mine.map((k) => ({ name: k.name, dir: k.dir })) } : {};
+};
+
+export function firstMessage(d: DesignRecord, brief: string, refs: DesignReference[], parents: { label: string; html: string }[], instructions: string | null, run?: Pick<DesignRun, "skills">): { text: string; images: NonNullable<WorkerStart["images"]> } {
   const parts: string[] = [];
   if (instructions) parts.push(instructions);
   else parts.push(brief);
+  // Sova writes the skills list itself, from the design's own record; a description comes from its run when it still has it.
+  const skills = (d.skills ?? []).map((k) => ({ name: k.name, description: run?.skills?.find((r) => r.dir === k.dir)?.description ?? "" }));
+  if (skills.length) parts.push(designerSkillsBlock(skills));
+  // A designer that reads no pictures, given screenshots: the brief may speak of pictures, so its own note overrides that.
+  if (!d.vision && (instructions ?? brief).includes(SCREENSHOTS_HEADING)) parts.push(WORDS_ONLY_NOTE);
   for (const p of parents) parts.push(`Design ${p.label}, a page to draw from:\n\n${p.html}`);
-  if (refs.length && !d.vision) parts.push(...refs.map((r) => `Outline of the existing screen (${r.name}):\n${r.outline}`));
+  // A reference with no outline (a pasted screenshot's: its words are in the text) adds no empty line.
+  if (refs.length && !d.vision) parts.push(...refs.filter((r) => r.outline.trim()).map((r) => `Outline of the existing screen (${r.name}):\n${r.outline}`));
   const images = d.vision ? refs.map((r) => ({ type: "image" as const, data: r.data, mimeType: r.mime })) : [];
   return { text: parts.join("\n\n"), images };
 }
@@ -142,7 +157,7 @@ export function launchDesigns(parent: DesignParent, runId: string, input: { brie
       const model = models.get(item.model)!;
       const label = nextLabel(s);
       made.push(label);
-      s.designs.push({ label, runId, direction: item.style, ...(item.layout ? { layout: item.layout } : {}), model: model.ref, modelName: model.name, parents: [], status: "queued", route: model.route, versions: [], workerState: "stopped", vision: model.vision, createdAt: now, updatedAt: now });
+      s.designs.push({ label, runId, direction: item.style, ...(item.layout ? { layout: item.layout } : {}), model: model.ref, modelName: model.name, parents: [], status: "queued", route: model.route, versions: [], workerState: "stopped", vision: model.vision, ...skillRootsOf(run), createdAt: now, updatedAt: now });
       (s.internal ??= {})[label] = { attempt: 0, brief, by: "first", parentPath: parent.path };
     }
     const r = s.runs.find((x) => x.id === runId)!;
@@ -169,7 +184,7 @@ export function newDesign(parent: DesignParent, input: { parents: string[]; inst
   const now = new Date().toISOString();
   const label = changeDesigns(sid, (s) => {
     const made = nextLabel(s);
-    s.designs.push({ label: made, runId: run.id, direction: input.direction ?? "Mixed", ...(input.layout ? { layout: input.layout } : {}), model: model.ref, modelName: model.name, parents: input.parents, status: "queued", route: model.route, versions: [], workerState: "stopped", vision: model.vision, createdAt: now, updatedAt: now });
+    s.designs.push({ label: made, runId: run.id, direction: input.direction ?? "Mixed", ...(input.layout ? { layout: input.layout } : {}), model: model.ref, modelName: model.name, parents: input.parents, status: "queued", route: model.route, versions: [], workerState: "stopped", vision: model.vision, ...skillRootsOf(run), createdAt: now, updatedAt: now });
     (s.internal ??= {})[made] = { attempt: 0, brief: run.setup.brief, by: "coordinator", instructions: input.instructions, parentPath: parent.path };
     run.labels.push(made);
     if (run.phase === "done") run.phase = "generating";
@@ -217,9 +232,10 @@ async function startSession(parent: DesignParent, label: string, seed?: { text: 
   try {
     const cwd = viewCwd(sid);
     const refs = loadRefs(sid, d.runId);
-    const reference = refs.length ? (d.vision ? "screenshot" : "description") : "none";
+    // A designer that can't read pictures works from an outline: with none (only screenshots' pictures), it has no reference.
+    const reference = refs.length ? (d.vision ? "screenshot" : refs.some((r) => r.outline.trim()) ? "description" : "none") : "none";
     const parents = d.parents.map((p) => ({ label: p, html: readPage(sid, p) ?? "" }));
-    const first = seed ?? firstMessage(d, st.brief, refs, parents, st.instructions ?? null);
+    const first = seed ?? firstMessage(d, st.brief, refs, parents, st.instructions ?? null, runOf(sid, d.runId));
     const ref = await workers(parent).start({
       key: `design:${sid}:${label}:${st.attempt}`,
       spec: specFor(parent, d, cwd, reference),
@@ -255,6 +271,7 @@ function fail(parent: DesignParent, label: string, why: string): void {
     delete d.fix;
     delete d.live;
     delete d.thinking;
+    delete d.readingSkill;
     d.workerState = d.sessionEnded ? "ended" : "idle";
   });
   noteDesignEvent(parent.sessionId, { label, kind: "failed", reason: why });
@@ -407,7 +424,11 @@ async function settled(parent: DesignParent, label: string, state: WorkerState):
   const d = designOf(sid, label);
   if (!d) return;
   if (d.sessionFile) await noteUsage(sid, label, d.sessionFile);
-  if (d.thinking) changeDesign(sid, label, (x) => void delete x.thinking);
+  if (d.thinking || d.readingSkill)
+    changeDesign(sid, label, (x) => {
+      delete x.thinking;
+      delete x.readingSkill;
+    });
   // A turn that has nothing new to land is fine for a design with a page (a question in Chat); for one without, that is the problem.
   const problem = wrote.page ? null : (wrote.problem ?? refused ?? (atWork(d) && !d.versions.length ? NO_PAGE : null));
   const s = state.lastSettled;
@@ -428,6 +449,7 @@ async function settled(parent: DesignParent, label: string, state: WorkerState):
         delete x.fix;
         delete x.live;
         delete x.thinking;
+        delete x.readingSkill;
       });
       if (problem) noteDesignEvent(sid, { label, kind: "failed", reason: problem });
     } else {
@@ -455,6 +477,7 @@ function showFixing(sid: string, label: string, problem: string, attempt: number
     delete x.error;
     delete x.live;
     delete x.thinking;
+    delete x.readingSkill;
   });
   noteDesignEvent(sid, { label, kind: "fixing", reason: problem });
   return d;
@@ -583,6 +606,7 @@ function commitVersion(parent: DesignParent, label: string, html: string, note: 
     delete d.unchanged;
     delete d.live;
     delete d.thinking;
+    delete d.readingSkill;
   });
   if (note) for (const fn of handInListeners) fn({ sessionId: sid, label, version: n, note });
   else noteDesignEvent(sid, { label, kind: "finished" });
@@ -630,6 +654,7 @@ export function refusedPage(parent: DesignParent, label: string, problem: string
       delete x.fix;
       delete x.live;
       delete x.thinking;
+      delete x.readingSkill;
     });
     noteUnchanged(sid, label, problem);
     noteDesignEvent(sid, { label, kind: "failed", reason: problem });
@@ -650,6 +675,18 @@ function clearRefused(sid: string, label: string): void {
   changeDesigns(sid, (s) => {
     const i = s.internal?.[label];
     if (i) delete i.refused;
+  });
+}
+
+/** Its session is reading a design skill: before the page starts, the tile says so instead of an empty Writing. */
+export function readingSkill(parent: DesignParent, label: string): void {
+  const d = designOf(parent.sessionId, label);
+  if (!d || d.live || d.readingSkill || !atWork(d)) return;
+  heard(parent, label);
+  changeDesign(parent.sessionId, label, (x) => {
+    if (x.status === "queued") x.status = "writing";
+    x.readingSkill = true;
+    delete x.thinking;
   });
 }
 
@@ -684,6 +721,7 @@ export function onLiveFrame(chatId: string, f: { thinking?: true; gen: number; a
       if (x.status !== "fixing") x.status = "writing";
       x.live = { version, chars: 0 };
       delete x.thinking;
+      delete x.readingSkill;
     });
 }
 

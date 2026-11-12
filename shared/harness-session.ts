@@ -345,7 +345,9 @@ export interface HarnessSession extends SessionRead {
   promptSections(): Record<string, string>;
   /** An extension's registered tool, by name, as a Sova tool (the Overseer's subagent tools). */
   registeredTool(name: string): ToolSpec | undefined;
-  commands(): HarnessCommand[];
+  /** Its commands; `subfolderSkills: false` leaves out the skills a subfolder's block offered (a chat that doesn't
+      look below its folder, server/skill-descent.ts). */
+  commands(o?: { subfolderSkills?: boolean }): HarnessCommand[];
   /** `owner`'s own command in this runtime, or undefined (not loaded, or a same-named command another
       extension registered). */
   command(owner: CommandOwner): OwnedCommand | undefined;

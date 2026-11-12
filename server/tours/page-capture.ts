@@ -5,6 +5,7 @@
 import { createHash } from "node:crypto";
 import type { Browser, Page, Response } from "playwright-core";
 import { DESIGN_ASSET_LIMITS, type DesignAssetContext, type DesignAssetDom, type DesignAssetSkipped, type DesignPageNotes } from "../../shared/design-assets";
+import { PALETTE_LIMITS } from "./palette";
 
 export type TourRaster = "png" | "jpeg" | "webp";
 
@@ -308,6 +309,66 @@ export interface DevelopedSizes {
   describe: { bytes: Buffer; w: number; h: number };
 }
 
+/** Runs inside the darkroom's blank page: an image drawn to fit `edge`, its pixels binned by palette.ts binPixels' rule
+    ([key, count, r, g, b, edges, frame] flat, 5 bits a channel), so a few KB of bins leave the page instead of megabytes of pixels.
+    Self-contained: it is sent to the page as source. */
+/* v8 ignore next */
+async function binsInPage(a: { dataUrl: string; edge: number; frameBand: number }) {
+  const img = new Image();
+  await new Promise<void>((ok, no) => { img.onload = () => ok(); img.onerror = () => no(new Error("decode")); img.src = a.dataUrl; });
+  const scale = Math.min(1, a.edge / Math.max(img.naturalWidth || 1, img.naturalHeight || 1));
+  const w = Math.max(1, Math.round((img.naturalWidth || 1) * scale)), h = Math.max(1, Math.round((img.naturalHeight || 1) * scale));
+  const c = document.createElement("canvas");
+  c.width = w; c.height = h;
+  const ctx = c.getContext("2d")!;
+  ctx.drawImage(img, 0, 0, w, h);
+  const data = ctx.getImageData(0, 0, w, h).data;
+  const count = w * h;
+  const keys = new Int32Array(count).fill(-1);
+  const at = new Map<number, number>();
+  const out: number[] = [];
+  for (let p = 0; p < count; p++) {
+    const i = p * 4;
+    if (data[i + 3]! < 128) continue;
+    const r = data[i]!, g = data[i + 1]!, b = data[i + 2]!;
+    const key = ((r >> 3) << 10) | ((g >> 3) << 5) | (b >> 3);
+    keys[p] = key;
+    let j = at.get(key);
+    if (j === undefined) { j = out.length; at.set(key, j); out.push(key, 0, 0, 0, 0, 0, 0); }
+    out[j + 1]!++; out[j + 2]! += r; out[j + 3]! += g; out[j + 4]! += b;
+  }
+  const band = Math.max(2, Math.round(Math.min(w, h) * a.frameBand));
+  for (let y = 0; y < h; y++)
+    for (let x = 0; x < w; x++) {
+      const p = y * w + x;
+      const k = keys[p]!;
+      if (k < 0) continue;
+      const j = at.get(k)!;
+      const differs = (q: number) => keys[q]! >= 0 && keys[q] !== k;
+      if ((x > 0 && differs(p - 1)) || (x < w - 1 && differs(p + 1)) || (y > 0 && differs(p - w)) || (y < h - 1 && differs(p + w))) out[j + 5]!++;
+      if (x < band || y < band || x >= w - band || y >= h - band) out[j + 6]!++;
+    }
+  return { w, h, bins: out };
+}
+
+/** Runs inside the darkroom's blank page: an image's RGBA pixels, scaled to fit `edge`, as base64. Tests compare the
+    page's binning against binPixels with it. */
+/* v8 ignore next */
+async function pixelsInPage(a: { dataUrl: string; edge: number }) {
+  const img = new Image();
+  await new Promise<void>((ok, no) => { img.onload = () => ok(); img.onerror = () => no(new Error("decode")); img.src = a.dataUrl; });
+  const scale = Math.min(1, a.edge / Math.max(img.naturalWidth || 1, img.naturalHeight || 1));
+  const cw = Math.max(1, Math.round((img.naturalWidth || 1) * scale)), ch = Math.max(1, Math.round((img.naturalHeight || 1) * scale));
+  const c = document.createElement("canvas");
+  c.width = cw; c.height = ch;
+  const ctx = c.getContext("2d")!;
+  ctx.drawImage(img, 0, 0, cw, ch);
+  const data = ctx.getImageData(0, 0, cw, ch).data;
+  let s = "";
+  for (let i = 0; i < data.length; i += 8192) s += String.fromCharCode(...data.subarray(i, i + 8192));
+  return { w: cw, h: ch, b64: btoa(s) };
+}
+
 /** Runs inside the darkroom's blank page. */
 /* v8 ignore next */
 async function drawInPage(a: { dataUrl: string; fallbackW: number; fallbackH: number; edges: { full: number; small: number; describe: number } }) {
@@ -360,6 +421,24 @@ export async function openDarkroom(browser: Browser) {
       }).finally(() => clearTimeout(timer));
       const part = (p: { data: string; w: number; h: number }) => ({ bytes: Buffer.from(p.data, "base64"), w: p.w, h: p.h });
       return { width: r.width, height: r.height, full: part(r.full), small: part(r.small), describe: part(r.describe) };
+    },
+    /** An image's pixels, at most `edge` on its long side, as RGBA: what a palette is measured from. Drawn in this same
+        offline room, under the same checks as develop, so the server never decodes it. */
+    async pixels(bytes: Uint8Array, mime: string, edge: number): Promise<{ width: number; height: number; rgba: Uint8Array }> {
+      const problem = drawProblem(bytes);
+      if (problem) throw new DarkroomRefusal(problem);
+      const dataUrl = `data:${mime};base64,${Buffer.from(bytes).toString("base64")}`;
+      const r = await page.evaluate(pixelsInPage, { dataUrl, edge });
+      return { width: r.w, height: r.h, rgba: new Uint8Array(Buffer.from(r.b64, "base64")) };
+    },
+    /** An image's colour bins (binPixels' shape), drawn to fit `edge` in this same offline room under develop's
+        checks: what a palette is measured from, without its pixels leaving the page. */
+    async bins(bytes: Uint8Array, mime: string, edge: number): Promise<{ width: number; height: number; bins: number[] }> {
+      const problem = drawProblem(bytes);
+      if (problem) throw new DarkroomRefusal(problem);
+      const dataUrl = `data:${mime};base64,${Buffer.from(bytes).toString("base64")}`;
+      const r = await page.evaluate(binsInPage, { dataUrl, edge, frameBand: PALETTE_LIMITS.frameBand });
+      return { width: r.w, height: r.h, bins: r.bins };
     },
     close: () => context.close(),
   };

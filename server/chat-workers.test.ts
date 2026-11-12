@@ -119,6 +119,18 @@ describe("WorkerRegistry", () => {
     assert.equal(states.at(-1)!.keys, true);
   });
 
+  test("a send carries its pictures to the process, as a start's task does; one without sends none", async () => {
+    const { procs, handles } = fakeProcs();
+    const r = reg(procs);
+    const ref = await r.start(start("k", null));
+    const images = [{ type: "image" as const, data: "AAAA", mimeType: "image/png" }];
+    await r.send(ref.chatId, { text: "look", delivery: "followUp", key: "k1", images });
+    await r.send(ref.chatId, { text: "plain", delivery: "followUp", key: "k2" });
+    const sends = handles[0]!.calls.filter((c) => c.method === "send").map((c) => c.args as { images?: unknown });
+    assert.deepEqual(sends[0]!.images, images);
+    assert.equal(sends[1]!.images, undefined);
+  });
+
   test("a start makes the session file, writes the record, opens the process, sends the task once under its key", async () => {
     const { procs, handles } = fakeProcs();
     const r = reg(procs);

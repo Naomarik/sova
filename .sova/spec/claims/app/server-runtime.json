@@ -240,7 +240,9 @@
       "server/test-env.test.ts",
       "server/test-env.integration.test.ts",
       "scripts/test-report.test.ts",
-      "scripts/run-tests.integration.test.ts"
+      "scripts/run-tests.integration.test.ts",
+      "scripts/run-tests-picked-groups.integration.test.ts",
+      "scripts/runner-copy.test.helper.ts"
     ],
     "requires": [
       "§app.server-runtime/choice",
@@ -249,8 +251,8 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-11T14:09Z",
-      "source": "pi-session:01a1ca84-b3de-7601-9d6d-7e61cbb746c9#a4b61b34"
+      "at": "2026-11-12T21:09Z",
+      "source": "pi-session:01a1d023-6988-7481-af78-b02082042586#f2373ebf"
     }
   },
   "§app.server-runtime/typecheck-reuse": {

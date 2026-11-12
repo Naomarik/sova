@@ -4,6 +4,43 @@ What changed in each Sova release, newest first: the highlights, written by hand
 list. The install command installs the newest release (the `stable` tag); `SOVA_REF=vX.Y.Z` installs
 or keeps one release. How a release is cut: [CONTRIBUTING.md](CONTRIBUTING.md#releases).
 
+## v0.16.0 — 2026-11-12
+
+Lookbooks that use your design skills and pasted screenshots, a recall tool for memory chats, one
+shared folder per chat for its workers, and approvals that answer at once. 11 commits on the main
+line since v0.15.0 (6 merged branches). The highlights:
+
+- **Lookbook: the Creative Director.** The Lookbook's coordinator is now called the **Creative
+  Director** everywhere you read it: the Setup dropdown, **Start Creative Director**, its questions
+  and **Open Creative Director** in the Gallery tab.
+- **Lookbook: design skills.** A Lookbook loads no skill and no project file by itself. Name a design
+  skill to your chat ("use the brand skill", or a folder holding a `SKILL.md`) and Setup lists it
+  under **Design skills**; one that can't be found becomes a question on the brief. The Creative
+  Director reads them (it can also read files you point it to, but writes and runs nothing), picks
+  which ones the designers use, and the brief's **Design skills** line shows that choice. A designer
+  reading its skill says **Reading the design skill** on its tile, and the estimate counts it.
+- **Lookbook: screenshots.** A screenshot you paste joins the Lookbook's images as a **Screenshot**,
+  with up to 8 colours measured from its pixels and **words for designers** (its feel and what each
+  colour is for), which you can change with **Edit Words**. Before Start, each ticked screenshot needs
+  **Rebuild This Screen** (designers that read pictures get it attached, up to 4 reference pictures a
+  design) or **Just Its Feel** (words and colours only). Images attached when you ask for a Lookbook
+  now join the run and show in Setup's image row.
+- **Memory: recall.** Every memory chat has a new **recall** tool that finds earlier messages by their
+  words, closest match first, each dated in your local time; zoom and date show the same local dates.
+- **One shared folder per chat.** A chat and its workers now share one folder, outside the project,
+  for briefs, reports, alignment files and team handover notes. A write-only worker gets its own
+  private `/tmp` and private mise and pnpm state, and a confined worker is told what it can reach.
+- **Approvals answer at once.** On a new chat's setup card, **Approve** and **Disallow** show their
+  answer immediately with no jump, and Send waits only for answers still being saved.
+- **Smaller changes.** Test runs no longer write outside their own scratch folders.
+
+**What you may need to do:** Nothing. To give a Lookbook a design skill, name it to your chat when
+you ask for the Lookbook.
+
+Going back to `v0.15.0` (`SOVA_REF=v0.15.0`) hasn't been tested on this release. v0.15.0 doesn't know
+a run's design skills or screenshot words, so an open Lookbook loses them there; chats' shared
+folders stay on disk, unused.
+
 ## v0.15.0 — 2026-11-11
 
 Skills and context files you decide on per project, a Context tab that shows which skills a chat and

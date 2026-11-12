@@ -459,7 +459,7 @@ does not (aligning is a conversation with the user, which a worker doesn't have)
 (its visuals are for the user, and a worker's replies are read by its parent session), nor does `memory`
 (it is the chat's own memory of its conversation; a worker starts fresh from its brief, and its report
 enters the parent's memory like any other message). So no worker has a Lookbook, and a Lookbook's
-design sessions and coordinator take nothing of the chat's modes (§chat.design-mode/turning-on). A project mode declares it in its own file
+design sessions and Creative Director take nothing of the chat's modes (§chat.design-mode/turning-on). A project mode declares it in its own file
 (§chat.mode-menu/project-modes), `no` unless it says `yes`; one that reaches workers comes after
 spec's block, from the parent's saved copy of it, with its tools when the worker can run commands
 (a remote worker gets the block, never the tools), and the worker never reads the project's folder. A worker gets at most 8 modes, built-in and project together.

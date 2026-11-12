@@ -3,14 +3,15 @@
 // designs and never holds their pages: nothing in this file gives it a page's text. Every power it has is a tool
 // here, and each tool decides from server-held state, never from what the model says about itself.
 import { captureDesignPage } from "./capture";
-import { noteSignedInConsent, readAssets } from "./assets";
-import { askVision, assetBlock, assetsForCoordinator, describerModels, describing, onAssetsSettled, onDescribingStarted } from "./describe";
+import { changeAssets, noteSignedInConsent, readAssetPart, readAssets } from "./assets";
+import { askVision, assetBlock, assetsForCoordinator, cleanShotWords, describerModels, describing, onAssetsSettled, onDescribingStarted, screenshotBlock } from "./describe";
+import { DESIGN_ASSET_KINDS, isDesignAssetKind, isScreenshot, kindAllowed, screenshotsInUse, type DesignAssetKind, type DesignShotWords } from "../../shared/design-assets";
 import { randomBytes } from "node:crypto";
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { ToolSpec } from "../../shared/harness";
-import { DESIGN_ASK_ABOVE, designBriefBlock, designDirectionLine, designPlan, isDesignLinkUse, type DesignAsk, type DesignBrief, type DesignBriefBlock, type DesignCoordinatorView, type DesignLinkUse, type DesignLook, type DesignRecord, type DesignRun, type DesignSignInAnswer } from "../../shared/design";
+import { DESIGN_ASK_ABOVE, designBriefBlock, designerSkills, runOwnImage, designDirectionLine, designPlan, isDesignLinkUse, type DesignAsk, type DesignBrief, type DesignBriefBlock, type DesignCoordinatorView, type DesignLinkUse, type DesignLook, type DesignRecord, type DesignRun, type DesignSignInAnswer } from "../../shared/design";
 import { isTourOrigin, type TourSize } from "../../shared/tour";
 import { serverToolCall } from "../chat-handle";
 import { modelDenial, readModelPolicy } from "../model-policy";
@@ -29,6 +30,7 @@ import { answerQuestions, BRIEF_LIMITS, coordinatorWrote, fillNotes, sameAddress
 import { DESIGN_BROWSE_TOUR_ID, designBrowse, type BrowseParent, type DesignBrowseStores } from "./browse";
 import { lookAtDesign } from "./look";
 import { estimateUsd } from "./setup";
+import { coordinatorSkillsBlock, skillReadTokens } from "./skills";
 import { changeDesigns, designRoot, designSessions, runOf, setCoordinator, setRunPhase, viewOf } from "./store";
 
 export const COORDINATOR_LIMITS = Object.freeze({ cardChars: 20_000, briefChars: 20_000, revisions: 50, shots: 200, notes: 200, textChars: 20_000 });
@@ -99,12 +101,14 @@ export interface CoordinatorPorts {
   projects(): readonly { id: string; root: string; name?: string }[];
   approveSite(origin: string): void;
   saveTestAccount(origin: string, username: string, password: string): void;
+  /** Images it read on disk, into the chat's set as pasted ones go: one line for it. */
+  addImageFiles?(parent: BrowseParent, paths: readonly string[]): Promise<{ line: string; names: string[] }>;
 }
 export interface CoordinatorWorkers {
   /** Hear its state change; the returned function stops listening. */
   watch(chatId: string, fn: () => void): () => void;
   start(req: WorkerStart): Promise<{ chatId: string; sessionFile: string }>;
-  send(chatId: string, input: { text: string; delivery: "followUp"; key: string }): Promise<{ queued: boolean }>;
+  send(chatId: string, input: { text: string; delivery: "followUp"; key: string; images?: { type: "image"; data: string; mimeType: string }[] }): Promise<{ queued: boolean }>;
   stop(chatId: string, reason: string): Promise<void>;
   state(chatId: string): "running" | "idle" | "ended" | undefined;
 }
@@ -142,16 +146,20 @@ function ports(): CoordinatorPorts {
 
 const WORKER_MARK = fileURLToPath(new URL("../../pi-config/extensions/subagents/worker-mark.ts", import.meta.url));
 
-/** A coordinator's loadout: no file tools and no shell, so everything it may do is one of its served tools. */
+/** The one built-in a coordinator has: pi's own read, anywhere on disk, as an ordinary chat reads (a skill, a logo the user
+    points at). It writes nothing and runs nothing: everything else it may do is one of its served tools. */
+export const COORDINATOR_BUILTINS: readonly string[] = Object.freeze(["read"]);
+
+/** A coordinator's loadout: read only of the built-ins, no edit, write or shell; the rest is its served tools. */
 export function realCoordinatorSpec(parent: BrowseParent, cwd: string, model: string, systemPrompt: string): WorkerSpec {
   // The worker mark first: it is what keeps this session out of the sessions list.
   const loaded = claudeCodeProviderLoad(model, [WORKER_MARK], undefined);
-  return { kind: "design-coordinator", parent: { sessionId: parent.sessionId, path: parent.path, workerId: "design-coordinator" }, cwd, model, thinking: null, builtins: [], extensions: loaded.extensions, flags: loaded.flags ?? {}, appendSystemPrompt: systemPrompt, env: {}, agentDir: null, lowered: true };
+  return { kind: "design-coordinator", parent: { sessionId: parent.sessionId, path: parent.path, workerId: "design-coordinator" }, cwd, model, thinking: null, builtins: [...COORDINATOR_BUILTINS], extensions: loaded.extensions, flags: loaded.flags ?? {}, appendSystemPrompt: systemPrompt, env: {}, agentDir: null, lowered: true };
 }
 
 const realPorts: CoordinatorPorts = {
   workers(parent) {
-    if (!registry) throw new Error("The design coordinator needs Sova's chat runtime.");
+    if (!registry) throw new Error("The Creative Director needs Sova's chat runtime.");
     const host = registry.workers(parent);
     const statusOf = registry.status;
     return {
@@ -184,6 +192,7 @@ const realPorts: CoordinatorPorts = {
   projects: () => listProjects(),
   approveSite: (origin) => tourRuntime().approvals.approve(origin),
   saveTestAccount: (origin, username, password) => void tourRuntime().accounts.save({ origin, username, password, testAccount: true }),
+  addImageFiles: async (parent, paths) => (await import("./asset-routes")).diskImagesLine(parent, paths),
 };
 
 // ---- state --------------------------------------------------------------------------------------
@@ -315,7 +324,31 @@ function noteNamed(st: CoordinatorState, text: string): void {
 // ---- waking it -----------------------------------------------------------------------------------
 
 /** Deliver a message, carrying the notes that piled up. A message opens a new turn, so its launch count starts over. */
-async function wake(st: CoordinatorState, text: string, key: string, sameTurn = false): Promise<{ queued: boolean }> {
+/** The most pictures one message shows the Creative Director. */
+const PICTURES_MAX = 6;
+
+/** The pictures of these images, for a Creative Director that reads pictures: each one's describing PNG, the version
+    drawn for a model to read. None for one that can't, which works from their words. */
+export function picturesFor(st: Pick<CoordinatorState, "sessionId" | "vision">, names: readonly string[]): { type: "image"; data: string; mimeType: string }[] {
+  return shownPictures(st, names).images;
+}
+
+/** The pictures shown, with the name of each, in order: one with no picture is left out of both. */
+function shownPictures(st: Pick<CoordinatorState, "sessionId" | "vision">, names: readonly string[]): { names: string[]; images: { type: "image"; data: string; mimeType: string }[] } {
+  const out = { names: [] as string[], images: [] as { type: "image"; data: string; mimeType: string }[] };
+  if (!st.vision) return out;
+  const known = new Map(readAssets(st.sessionId).assets.map((a) => [a.name, a]));
+  for (const n of names.slice(0, PICTURES_MAX)) {
+    const a = known.get(n);
+    const png = a && readAssetPart(st.sessionId, a, "describe");
+    if (!png?.length) continue;
+    out.names.push(n);
+    out.images.push({ type: "image", data: Buffer.from(png).toString("base64"), mimeType: "image/png" });
+  }
+  return out;
+}
+
+async function wake(st: CoordinatorState, text: string, key: string, sameTurn = false, pictures: readonly string[] = []): Promise<{ queued: boolean }> {
   const notes = st.notes;
   // Sova's notes first, under Sova's own heading; what a model wrote inside them is fenced where it was noted.
   const body = notes.length ? `Sova's notes since your last turn (Sova wrote these; text marked untrusted was written by a model):\n${notes.join("\n")}\n\n${text}` : text;
@@ -326,11 +359,12 @@ async function wake(st: CoordinatorState, text: string, key: string, sameTurn = 
   }
   save(st);
   try {
+    const images = picturesFor(st, pictures);
     if (ports().workers({ sessionId: st.sessionId, path: st.parentPath }).state(st.chatId) === "ended") {
-      await revive(st, body, key);
+      await revive(st, body, key, images);
       return { queued: false };
     }
-    return await ports().workers({ sessionId: st.sessionId, path: st.parentPath }).send(st.chatId, { text: body, delivery: "followUp", key });
+    return await ports().workers({ sessionId: st.sessionId, path: st.parentPath }).send(st.chatId, { text: body, delivery: "followUp", key, ...(images.length ? { images } : {}) });
   } catch (err) {
     st.notes = [...notes, ...st.notes];
     save(st);
@@ -349,11 +383,11 @@ export function noteDesignEvent(sessionId: string, a: { label: string; kind: "fi
 }
 
 /** Its session ended for good: a fresh one starts from what is known (its card and the designs' metadata), never from a page. */
-async function revive(st: CoordinatorState, text: string, key: string): Promise<void> {
+async function revive(st: CoordinatorState, text: string, key: string, images: { type: "image"; data: string; mimeType: string }[] = []): Promise<void> {
   const p = ports();
   const parent = { sessionId: st.sessionId, path: st.parentPath };
   const task = [`Your earlier session in this chat ended, so you are starting again. Your card said:\n${st.card || "(nothing yet)"}`, `The designs so far:\n${modelWords(JSON.stringify(p.designsFor(st.sessionId).map(metadata)))}`, ...briefForRevival(st), text].join("\n\n");
-  const ref = await p.workers(parent).start({ key: `${st.sessionId}:design-coordinator:revive:${++st.revived}:${key}`, spec: p.specFor(parent, st.cwd, st.model, p.systemPrompt()), session: { new: { dir: p.sessionDir(st.cwd) } }, task });
+  const ref = await p.workers(parent).start({ key: `${st.sessionId}:design-coordinator:revive:${++st.revived}:${key}`, spec: p.specFor(parent, st.cwd, st.model, p.systemPrompt()), session: { new: { dir: p.sessionDir(st.cwd) } }, task, ...(images.length ? { images } : {}) });
   following.get(st.chatId)?.();
   following.delete(st.chatId);
   st.chatId = ref.chatId;
@@ -364,9 +398,12 @@ async function revive(st: CoordinatorState, text: string, key: string): Promise<
 
 /** A fresh session is told the brief as it stands, so it edits that rather than starting another. */
 function briefForRevival(st: CoordinatorState): string[] {
-  const b = runOf(st.sessionId, st.runId)?.brief;
-  if (!b) return [];
-  return [`The Design Brief is at revision ${b.textRev}${b.startedRev !== undefined ? " and frozen, since the designs started" : ""}.\nSummary: ${b.summary}\nFull Prompt (${b.promptBy ?? "not written"}): ${b.prompt ?? "(none)"}`];
+  const run = runOf(st.sessionId, st.runId);
+  // The run's skills too: a fresh session knows them only from its messages.
+  const skills = run ? [coordinatorSkillsBlock(run.skills ?? [], run.skillsMissing ?? [])] : [];
+  const b = run?.brief;
+  if (!b) return skills;
+  return [...skills, `The Design Brief is at revision ${b.textRev}${b.startedRev !== undefined ? " and frozen, since the designs started" : ""}.\nSummary: ${b.summary}\nFull Prompt (${b.promptBy ?? "not written"}): ${b.prompt ?? "(none)"}`];
 }
 
 /** Words a model wrote (a design's note, a failure's text), fenced as data. A fence inside them can't close this one. */
@@ -404,11 +441,16 @@ function directionsLine(run: DesignRun): string {
   return [`Styles: ${styles.join(", ") || "none"}.`, layouts.length ? `Layouts: ${layouts.join(", ")}, ${how}. Each designer gets its own style and layout; ask nothing about arrangement.` : "Layouts: none ticked, so each designer arranges its own page."].join("\n");
 }
 
-function firstMessage(run: DesignRun): string {
+/** The images the user brought to this run (attached when the Lookbook was asked for, pasted since): their names. */
+function runImages(sessionId: string, run: Pick<DesignRun, "createdAt" | "images">): string[] {
+  return readAssets(sessionId).assets.filter((a) => runOwnImage(a, run)).map((a) => a.name);
+}
+
+function firstMessage(run: DesignRun, images: readonly string[] = []): string {
   const designers = run.setup.models.filter((m) => m.design).map((m) => m.name);
   const plan = designPlan(run.setup);
   const links = (run.setup.links ?? []).map((l) => `${l.url}: ${l.use === "images" ? "Use Its Images" : l.use === "feel" ? "Just Its Feel" : l.use === "content" ? "Not a Reference: an address in the page's content, never to be opened" : "not chosen: set it in design_brief's sources from their words (content when it's only an address the page links to, such as a contact or booking link), or ask"}`);
-  return [`What the user wants to design.\n${userWords("setup", run.setup.brief)}`, ...(links.length ? [`Links, and how each is used:\n${links.join("\n")}`] : []), `Models that will design: ${designers.join(", ") || "none"}.`, directionsLine(run), `That is ${plan.items.length} designs${plan.layouts ? `: ${plan.items.map((i) => designDirectionLine({ direction: i.style, layout: i.layout })).join("; ")}` : ""}. Your run's id is ${run.id}. Prepare the Design Brief; the designs start only when the user presses Start on it.`].join("\n\n");
+  return [`What the user wants to design.\n${userWords("setup", run.setup.brief)}`, ...(links.length ? [`Links, and how each is used:\n${links.join("\n")}`] : []), ...(images.length ? [`The user's own images for this run: ${images.join(", ")}. ${"Their descriptions reach you when they're ready; if your model reads pictures, they come with this message."}`] : []), `Models that will design: ${designers.join(", ") || "none"}.`, directionsLine(run), `That is ${plan.items.length} designs${plan.layouts ? `: ${plan.items.map((i) => designDirectionLine({ direction: i.style, layout: i.layout })).join("; ")}` : ""}.`, coordinatorSkillsBlock(run.skills ?? [], run.skillsMissing ?? []), `Your run's id is ${run.id}. Prepare the Design Brief; the designs start only when the user presses Start on it.`].join("\n\n");
 }
 
 /** A new session on the model this run's Setup names, started from what is known (its card, the designs' metadata, the
@@ -434,7 +476,7 @@ async function replaceCoordinator(st: CoordinatorState, run: DesignRun, choice: 
   save(st);
   if (p.workers(parent).state(old) !== "ended") {
     try {
-      await p.workers(parent).stop(old, "replaced: the Setup card chose another coordinator model");
+      await p.workers(parent).stop(old, "replaced: the Setup card chose another Creative Director model");
     } catch (err) {
       console.warn(`[design] the earlier coordinator of ${st.sessionId} didn't stop: ${err instanceof Error ? err.message : String(err)}`);
     }
@@ -442,12 +484,13 @@ async function replaceCoordinator(st: CoordinatorState, run: DesignRun, choice: 
   noteNamed(st, run.setup.brief);
   setRunPhase(st.sessionId, run.id, "researching");
   const task = [
-    `You take over as this chat's design coordinator from an earlier session on ${previous}. Its card said:\n${st.card || "(nothing yet)"}`,
+    `You take over as this chat's Creative Director from an earlier session on ${previous}. Its card said:\n${st.card || "(nothing yet)"}`,
     `The designs so far:\n${modelWords(JSON.stringify(p.designsFor(st.sessionId).map(metadata)))}`,
     ...(notes.length ? [`Sova's notes since that session's last turn (Sova wrote these; text marked untrusted was written by a model):\n${notes.join("\n")}`] : []),
-    firstMessage(run),
+    firstMessage(run, runImages(st.sessionId, run)),
   ].join("\n\n");
-  const ref = await p.workers(parent).start({ key: `${st.sessionId}:design-coordinator:${run.id}:on:${choice.ref}`, spec: p.specFor(parent, st.cwd, choice.ref, p.systemPrompt()), session: { new: { dir: p.sessionDir(st.cwd) } }, task });
+  const images = picturesFor(st, runImages(st.sessionId, run));
+  const ref = await p.workers(parent).start({ key: `${st.sessionId}:design-coordinator:${run.id}:on:${choice.ref}`, spec: p.specFor(parent, st.cwd, choice.ref, p.systemPrompt()), session: { new: { dir: p.sessionDir(st.cwd) } }, task, ...(images.length ? { images } : {}) });
   st.chatId = ref.chatId;
   st.sessionFile = ref.sessionFile;
   publish(st);
@@ -471,7 +514,7 @@ function supersedeOpenRuns(sessionId: string, newer: string): void {
 /** Start Coordinator: one per chat, started here; a later run hands the same session the new Setup. */
 export async function startCoordinator(parent: BrowseParent, run: DesignRun, cwd: string): Promise<DesignCoordinatorView> {
   const choice = run.setup.models.find((m) => m.coordinator);
-  if (!choice) throw new Error("Pick a coordinator model on the Setup card first.");
+  if (!choice) throw new Error("Pick a Creative Director model on the Setup card first.");
   const denied = modelDenial(readModelPolicy(), choice.ref);
   if (denied) throw new Error(denied);
   const p = ports();
@@ -490,11 +533,15 @@ export async function startCoordinator(parent: BrowseParent, run: DesignRun, cwd
     noteNamed(known, run.setup.brief);
     setRunPhase(parent.sessionId, run.id, "researching");
     publish(known);
-    await wake(known, firstMessage(run), `${run.id}:coordinator-start`);
+    const mine = runImages(parent.sessionId, run);
+    await wake(known, firstMessage(run, mine), `${run.id}:coordinator-start`, false, mine);
     return viewFor(known);
   }
   const key = `${parent.sessionId}:design-coordinator:${run.id}`;
-  const ref = await p.workers(parent).start({ key, spec: p.specFor(parent, cwd, choice.ref, p.systemPrompt()), session: { new: { dir: p.sessionDir(cwd) } }, task: firstMessage(run) });
+  // The images the user attached when asking for the Lookbook: a Creative Director that reads pictures sees them now.
+  const mine = runImages(parent.sessionId, run);
+  const images = picturesFor({ sessionId: parent.sessionId, vision: choice.vision }, mine);
+  const ref = await p.workers(parent).start({ key, spec: p.specFor(parent, cwd, choice.ref, p.systemPrompt()), session: { new: { dir: p.sessionDir(cwd) } }, task: firstMessage(run, mine), ...(images.length ? { images } : {}) });
   const st: CoordinatorState = {
     v: 1, sessionId: parent.sessionId, parentPath: parent.path, chatId: ref.chatId, sessionFile: ref.sessionFile, cwd, revived: known?.revived ?? 0, model: choice.ref, vision: choice.vision, runId: run.id,
     revision: known?.revision ?? 0, card: known?.card ?? "", revisions: known?.revisions ?? [], named: known?.named ?? [], ask: null, grant: null, shots: known?.shots ?? [], notes: [], newThisTurn: 0, spendOk: false, shotSeq: known?.shotSeq ?? 0,
@@ -509,20 +556,21 @@ export async function startCoordinator(parent: BrowseParent, run: DesignRun, cwd
 // ---- what people and the main chat do ------------------------------------------------------------
 
 /** A person's message from the coordinator's own box: their words, so an address in it counts as theirs when their page sent it. */
-export async function messageCoordinator(parent: BrowseParent, text: string, key: string, vouches = true): Promise<{ queued: boolean }> {
+export async function messageCoordinator(parent: BrowseParent, text: string, key: string, vouches = true, pictures: readonly string[] = []): Promise<{ queued: boolean }> {
   const st = mine(parent);
   if (vouches) noteNamed(st, text);
   st.briefNudged = false;
   save(st);
-  return wake(st, briefHeard(st, userWords("box", text)), key);
+  // Images pasted with it: a Creative Director that reads pictures sees them on this turn.
+  return wake(st, briefHeard(st, userWords("box", text)), key, false, pictures);
 }
 
 /** The main chat passing something on, word for word. A model typed this, so no address in it is vouched for. */
-export async function tellCoordinator(parent: BrowseParent, text: string, key: string): Promise<{ queued: boolean }> {
+export async function tellCoordinator(parent: BrowseParent, text: string, key: string, pictures: readonly string[] = []): Promise<{ queued: boolean }> {
   const st = mine(parent);
   st.briefNudged = false;
   save(st);
-  return wake(st, briefHeard(st, userWords("main", text)), key);
+  return wake(st, briefHeard(st, userWords("main", text)), key, false, pictures);
 }
 
 /** The coordinator's card, for the main chat to read when it needs to. */
@@ -533,7 +581,7 @@ export function coordinatorCard(sessionId: string): { card: string; revision: nu
 
 function mine(parent: BrowseParent): CoordinatorState {
   const st = load(parent.sessionId);
-  if (!st || st.parentPath !== parent.path) throw new Error("This chat has no design coordinator yet.");
+  if (!st || st.parentPath !== parent.path) throw new Error("This chat has no Creative Director yet.");
   return st;
 }
 
@@ -729,6 +777,21 @@ export function setBriefImage(parent: BrowseParent, runId: string, name: string,
   });
 }
 
+/** Rebuild This Screen or Just Its Feel, on a pasted screenshot: the user's click, which the Creative Director can't
+    change. Nothing is rewritten: Sova writes the screenshots' block at Start, and the Creative Director hears it next turn. */
+export function setBriefScreenshot(parent: BrowseParent, runId: string, name: string, use: "rebuild" | "feel"): void {
+  const { st } = openBrief(parent, runId);
+  const a = readAssets(parent.sessionId).assets.find((x) => x.name === name);
+  if (!a) throw new BriefRefused("That image isn't in this chat.");
+  if (!isScreenshot(a)) throw new BriefRefused("That image isn't a screenshot you pasted.");
+  if (st.runId === runId && runOf(parent.sessionId, runId)?.brief?.imageUse?.[name]?.use === false) throw new BriefRefused("That screenshot is unticked, so it goes to no one: tick it first.");
+  changeBrief(st, (b) => {
+    (b.screenUse ??= {})[name] = { use, by: "user" };
+    b.rev++;
+  });
+  noteForNextTurn(st, `The user set screenshot ${name} to ${use === "rebuild" ? "Rebuild This Screen: designers that read pictures get it, and every designer its words" : "Just Its Feel: only its words go to the designers"}. That choice is theirs: don't change it.`);
+}
+
 /** Not This Screen: the screen leaves the brief, and the coordinator looks again. */
 export async function notThisScreen(parent: BrowseParent, runId: string, text?: string): Promise<void> {
   const { st, run } = openBrief(parent, runId);
@@ -783,12 +846,23 @@ export async function startBrief(parent: BrowseParent, runId: string, a: { rev: 
   syncBriefImages(parent.sessionId);
   const { st, run } = openBrief(parent, runId);
   if (a.rev !== run.brief.rev) throw new BriefRefused("The brief changed before you pressed Start. Look it over and press Start again.", { stale: true });
-  const block = designBriefBlock(run);
+  const catalogue = readAssets(parent.sessionId);
+  const kept = keptImages(run, catalogue);
+  const shots = screenshotsInUse(catalogue.assets.filter((x) => kept.includes(x.name)), run.brief);
+  const block = designBriefBlock(run, shots);
   if (block) throw new BriefRefused(block.label, { block });
   assertLaunchAllowed(designCount(run.setup), a.confirmSpend || !!run.confirmedSpend);
   if (a.confirmSpend) changeBrief(st, (_b, r) => void (r.confirmedSpend = true));
-  const text = launchText(run, assetBlock(parent.sessionId, keptImages(run, readAssets(parent.sessionId))));
-  const labels = await ports().launchDesigns(parent, runId, { brief: text, references: briefReferences(st, run) });
+  // Every design's text carries the screenshots' words, vision or not; a page image list never names a screenshot.
+  // A slot is kept for each ticked Rebuild screenshot (its line in the text says it is the screen being rebuilt), up to
+  // REFERENCES_MAX; the found screen's pictures fill the rest and still come first. One past the cap is said to come as
+  // words only.
+  const rebuilds = rebuildReferences(st, run, shots).slice(0, REFERENCES_MAX);
+  const references = [...briefReferences(st, run).slice(0, REFERENCES_MAX - rebuilds.length), ...rebuilds];
+  const attached = new Set(rebuilds.map((r) => r.name));
+  const extra = [assetBlock(parent.sessionId, kept), screenshotBlock(parent.sessionId, shots, (n) => run.brief.screenUse?.[n]?.use, (n) => attached.has(`screenshot-${n}.png`))].filter(Boolean).join("\n\n");
+  const text = launchText(run, extra);
+  const labels = await ports().launchDesigns(parent, runId, { brief: text, references });
   changeBrief(st, (b) => {
     b.startedRev = b.rev;
     b.startedAt = new Date().toISOString();
@@ -802,6 +876,22 @@ export async function startBrief(parent: BrowseParent, runId: string, a: { rev: 
   if (st.revisions.length > COORDINATOR_LIMITS.revisions) st.revisions.splice(0, st.revisions.length - COORDINATOR_LIMITS.revisions);
   publish(st);
   return labels;
+}
+
+/** The most reference pictures one design gets. */
+export const REFERENCES_MAX = 4;
+
+/** The pictures of the ticked screenshots on Rebuild This Screen, for designers that read pictures. Chosen here, on their
+    own: a link on Just Its Feel gives no picture of its page, but says nothing about a screenshot. One on Just Its Feel
+    gives none. No outline: every designer has its words in the text. */
+function rebuildReferences(st: CoordinatorState, run: DesignRun & { brief: DesignBrief }, shots: readonly string[]): { name: string; mime: string; data: string; outline: string }[] {
+  const known = new Map(readAssets(st.sessionId).assets.map((a) => [a.name, a]));
+  return shots.flatMap((n) => {
+    const a = known.get(n);
+    if (!a || run.brief.screenUse?.[n]?.use !== "rebuild") return [];
+    const png = readAssetPart(st.sessionId, a, "describe");
+    return png?.length ? [{ name: `screenshot-${n}.png`, mime: "image/png", data: Buffer.from(png).toString("base64"), outline: "" }] : [];
+  });
 }
 
 /** Pictures of the found screen for designers that can read them. Just Its Feel gives none, so its layout can't be copied. */
@@ -886,7 +976,7 @@ function onTurnEnded(st: CoordinatorState): void {
     if (st.ask) return;
     if (st.briefNudged) {
       // Reminded once already and still nothing: the card says so, and the box is how to get it going again.
-      if (!run.error) changeDesigns(st.sessionId, (s) => void (s.runs.find((r) => r.id === run.id)!.error = "The coordinator stopped without writing the brief. Tell it what to do in its box."));
+      if (!run.error) changeDesigns(st.sessionId, (s) => void (s.runs.find((r) => r.id === run.id)!.error = "The Creative Director stopped without writing the brief. Tell it what to do in its box."));
       return;
     }
     st.briefNudged = true;
@@ -1014,7 +1104,7 @@ const metadata = (d: DesignRecord) => ({
 export function coordinatorTools(sessionId: string): ToolSpec[] {
   const parent: BrowseParent = { sessionId, get path() { return load(sessionId)?.parentPath ?? ""; } };
   const p = () => ports();
-  const state = (): CoordinatorState | Result => load(parent.sessionId) ?? refuse("this chat's coordinator record is gone.");
+  const state = (): CoordinatorState | Result => load(parent.sessionId) ?? refuse("this chat's Creative Director record is gone.");
   const isResult = (s: CoordinatorState | Result): s is Result => "content" in s;
 
   const status: ToolSpec = {
@@ -1033,7 +1123,7 @@ export function coordinatorTools(sessionId: string): ToolSpec[] {
 
   const brief: ToolSpec = {
     name: "design_brief", label: "Write the Design Brief",
-    description: "Put the Design Brief on the user's card, or change it. summary: the short version they read. prompt: the Full Prompt the design sessions get, sent only once every question is answered; or promptEdits, exact find-and-replace pairs, for a change. questions: at most a few, replacing the ones still open. text with shots (picture ids from design_browse) and url: the screen you found. sources: each link and how it is used (images, feel, or content: an address that is only part of the page, never opened). baseRev: the revision you last saw, 0 for the first brief. Only send what changes. End your turn after calling it.",
+    description: "Put the Design Brief on the user's card, or change it. summary: the short version they read. prompt: the Full Prompt the design sessions get, sent only once every question is answered; or promptEdits, exact find-and-replace pairs, for a change. questions: at most a few, replacing the ones still open. text with shots (design_browse's picture ids, s1, s2, ...) and url: a screen you opened with design_browse; a pasted screenshot (a1) goes in images instead, never in shots. sources: each link and how it is used (images, feel, or content: an address that is only part of the page, never opened). skills: which of the run's skills the designers use. baseRev: the revision you last saw, 0 for the first brief. Only send what changes. End your turn after calling it.",
     parameters: {
       type: "object",
       properties: {
@@ -1041,13 +1131,25 @@ export function coordinatorTools(sessionId: string): ToolSpec[] {
         promptEdits: { type: "array", items: { type: "object", properties: { find: { type: "string" }, replace: { type: "string" } }, required: ["find", "replace"] } },
         text: { type: "string", description: "Which screen you found and how you got there." }, shots: { type: "array", items: { type: "string" } }, url: { type: "string" },
         sources: { type: "array", items: { type: "object", properties: { url: { type: "string" }, use: { type: "string", enum: ["images", "feel", "content"] } }, required: ["url"] } },
-        images: { type: "array", description: "Which captured images suit this brief: only the ones you'd leave out need listing.", items: { type: "object", properties: { name: { type: "string" }, use: { type: "boolean" } }, required: ["name", "use"] } },
+        images: {
+          type: "array",
+          description: "Each image you change, by name: use false leaves out one that doesn't suit the brief (only those need listing). kind: what it is, screenshot for a picture of a screen the user pasted. A screenshot's screen (rebuild: that screen is what gets redesigned; feel: only its look) and words: its words for designers, its feel and its measured colours by role (hex as measured).",
+          items: {
+            type: "object",
+            properties: {
+              name: { type: "string" }, use: { type: "boolean" }, kind: { type: "string", enum: [...DESIGN_ASSET_KINDS] }, screen: { type: "string", enum: ["rebuild", "feel"] },
+              words: { type: "object", properties: { feel: { type: "string" }, colors: { type: "array", items: { type: "object", properties: { hex: { type: "string" }, role: { type: "string" } }, required: ["hex", "role"] } } }, required: ["feel"] },
+            },
+            required: ["name"],
+          },
+        },
+        skills: { type: "array", items: { type: "string" }, description: "Which of this run's skills the designers use, by name: the design skills, leaving out any that aren't (a testing or tooling skill). Omit for all of them; [] for none." },
         questions: { type: "array", items: { type: "object", properties: { topic: { type: "string" }, ask: { type: "string" }, context: { type: "string" }, options: { type: "array", items: { type: "object", properties: { label: { type: "string" }, tradeoff: { type: "string" } }, required: ["label", "tradeoff"] } }, recommendation: { type: "object", properties: { choice: { type: "string" }, why: { type: "string" } }, required: ["choice", "why"] } }, required: ["topic", "ask", "recommendation"] } },
       },
       required: ["baseRev"],
       additionalProperties: false,
     },
-    async execute(_id, params: { baseRev?: number; summary?: string; prompt?: string; promptEdits?: { find: string; replace: string }[]; text?: string; shots?: unknown; url?: string; sources?: unknown; questions?: unknown; images?: unknown }) {
+    async execute(_id, params: { baseRev?: number; summary?: string; prompt?: string; promptEdits?: { find: string; replace: string }[]; text?: string; shots?: unknown; url?: string; sources?: unknown; questions?: unknown; images?: unknown; skills?: unknown }) {
       const st = state();
       if (isResult(st)) return st;
       const run = runOf(parent.sessionId, st.runId);
@@ -1062,7 +1164,12 @@ export function coordinatorTools(sessionId: string): ToolSpec[] {
       }
       const ids = Array.isArray(params.shots) ? params.shots.filter((s): s is string => typeof s === "string") : [];
       const shots = ids.map((id) => st.shots.find((s) => s.id === id));
-      if (shots.some((s) => !s)) return refuse("shots must be picture ids from design_browse.");
+      if (shots.some((s) => !s)) {
+        // A pasted image's name (a1) isn't a found screen's picture: it has its own field, so say which.
+        const pasted = ids.filter((id, i) => !shots[i] && readAssets(parent.sessionId).assets.some((a) => a.name === id));
+        if (pasted.length) return refuse(`${pasted.join(", ")} ${pasted.length === 1 ? "is an image" : "are images"} the user pasted, not a picture from design_browse. Set a pasted screenshot with images: [{name: "${pasted[0]}", kind: "screenshot", screen: "rebuild" or "feel", words}] instead; shots takes only design_browse's picture ids (s1, s2, ...) of a screen you opened.`);
+        return refuse("shots takes only design_browse's picture ids (s1, s2, ...) of a screen you opened. A pasted image goes in images, by its name.");
+      }
       const words = str(params.text);
       if (shots.length && !words) return refuse("say in text which screen you found and how you got there.");
       const raw = Array.isArray(params.sources) ? (params.sources as { url?: unknown; use?: unknown }[]) : [];
@@ -1077,28 +1184,73 @@ export function coordinatorTools(sessionId: string): ToolSpec[] {
       mergeLinks(trial, sources);
       const unopened = (trial.links ?? []).find((l) => l.use === "feel" && !run.brief?.looks[l.url] && !shotFor(st, l.url));
       if (unopened) return refuse(`${unopened.url} is on Just Its Feel, so open it with design_browse first: its look is read from that picture.`);
+      // Each image's change, checked against what the chat has: a page's image is never a screenshot (only the user's are).
+      const catalogue = new Map(readAssets(parent.sessionId).assets.map((a) => [a.name, a]));
+      const imageEdits: { name: string; use?: boolean; kind?: string; screen?: "rebuild" | "feel"; words?: DesignShotWords }[] = [];
+      for (const x of Array.isArray(params.images) ? (params.images as Record<string, unknown>[]) : []) {
+        const name = typeof x?.name === "string" ? x.name : "";
+        const a = catalogue.get(name);
+        if (!a) return refuse(`no image ${name || "(no name)"} in this chat.`);
+        if (x.kind !== undefined && (!isDesignAssetKind(x.kind) || !kindAllowed(a, x.kind))) return refuse(x.kind === "screenshot" ? `${name} came from a page, so it can't be a screenshot: only an image the user supplied can.` : `kind must be one of ${DESIGN_ASSET_KINDS.join(", ")}.`);
+        if (x.screen !== undefined && x.screen !== "rebuild" && x.screen !== "feel") return refuse('screen is "rebuild" or "feel".');
+        const words = x.words === undefined ? undefined : cleanShotWords(x.words);
+        if (x.words !== undefined && !words) return refuse("words need feel, and colors as { hex, role } with #rrggbb hex, at most 8.");
+        // As it will be: its kind with this change, the user's still first.
+        const isShot = isScreenshot({ ...a, ...(typeof x.kind === "string" ? { cdKind: x.kind as DesignAssetKind } : {}) });
+        if ((x.screen !== undefined || words) && !isShot) return refuse(`${name} isn't a screenshot: screen and words are for a screenshot the user pasted.`);
+        imageEdits.push({ name, ...(typeof x.use === "boolean" ? { use: x.use } : {}), ...(typeof x.kind === "string" ? { kind: x.kind } : {}), ...(x.screen ? { screen: x.screen as "rebuild" | "feel" } : {}), ...(words ? { words } : {}) });
+      }
+      let pickedSkills: string[] | undefined;
+      if (params.skills !== undefined) {
+        const names = Array.isArray(params.skills) ? params.skills.filter((x): x is string => typeof x === "string") : null;
+        const known = (run.skills ?? []).map((k) => k.name);
+        const unknown = names?.filter((x) => !known.includes(x)) ?? [];
+        if (!names || unknown.length) return refuse(`skills names this run's skills, from: ${known.join(", ") || "none"}${unknown.length ? `. Not one of them: ${unknown.join(", ")}` : ""}.`);
+        pickedSkills = [...new Set(names)];
+      }
       const outcome = changeDesigns(parent.sessionId, (s) => {
         const r = s.runs.find((x) => x.id === st.runId)!;
         const b = r.brief ?? newBrief();
         const why = coordinatorWrote(b, { ...(typeof params.summary === "string" ? { summary: params.summary } : {}), ...(typeof params.prompt === "string" ? { prompt: params.prompt } : {}), ...(Array.isArray(params.promptEdits) ? { promptEdits: params.promptEdits } : {}), ...(questions ? { questions } : {}) });
         if (why) return { why };
         r.brief = b;
+        if (pickedSkills && JSON.stringify(pickedSkills) !== JSON.stringify(b.skills)) {
+          // What the designers read is part of what Start starts.
+          b.skills = pickedSkills;
+          b.rev++;
+        }
         mergeLinks(r.setup, sources);
-        for (const x of Array.isArray(params.images) ? (params.images as { name?: unknown; use?: unknown }[]) : []) {
-          // A person's tick stands against the coordinator's judgement, as a link's use does.
-          if (typeof x?.name === "string" && typeof x.use === "boolean" && b.imageUse?.[x.name]?.by !== "user") (b.imageUse ??= {})[x.name] = { use: x.use, by: "coordinator" };
+        for (const x of imageEdits) {
+          // A person's tick and choice stand against the Creative Director's judgement, as a link's use does.
+          if (x.use !== undefined && b.imageUse?.[x.name]?.by !== "user") (b.imageUse ??= {})[x.name] = { use: x.use, by: "coordinator" };
+          if (x.screen && b.screenUse?.[x.name]?.by !== "user" && b.screenUse?.[x.name]?.use !== x.screen) {
+            (b.screenUse ??= {})[x.name] = { use: x.screen, by: "coordinator" };
+            b.rev++;
+          }
         }
         if (shots.length) {
           const outline = shots[0]!.outline;
           b.screen = { text: words!, screenshots: shots.map((x) => x!.url), ...(str(params.url) ? { url: str(params.url)! } : {}), ...(outline ? { outline } : {}) };
         }
-        const estimate = estimateUsd(r.setup);
+        const estimate = estimateUsd(r.setup, Date.now(), skillReadTokens(designerSkills(r)));
         if (estimate !== null) b.estimateUsd = estimate;
         r.phase = "brief";
         r.updatedAt = new Date().toISOString();
         return { rev: b.textRev, open: openQuestions(b).length, unwritten: b.prompt === null, theirs: b.promptBy === "user" };
       });
       if (outcome.why !== undefined) return refuse(outcome.why);
+      // Its kind and words have their own fields: the user's (chosenKind, userWords) are never written here, and win.
+      const assetEdits = imageEdits.filter((x) => x.kind || x.words);
+      // Every design_brief call already raises the brief's version (coordinatorWrote), so Start names a retune too.
+      if (assetEdits.length)
+        changeAssets(parent.sessionId, (c) => {
+          for (const x of assetEdits) {
+            const a = c.assets.find((y) => y.name === x.name);
+            if (!a) continue;
+            if (x.kind) a.cdKind = x.kind as DesignAssetKind;
+            if (x.words) a.cdWords = x.words;
+          }
+        });
       st.briefNudged = false;
       publish(st);
       changeDesigns(parent.sessionId, (s) => void delete s.runs.find((r) => r.id === st.runId)!.error);
@@ -1304,7 +1456,7 @@ export function coordinatorTools(sessionId: string): ToolSpec[] {
         if (!project) return refuse(`${verb} needs a project.`);
         if (verb === "down" && !instance) return refuse("down needs the copy's instance id.");
         if (!instance && !branch) return refuse("up needs an instance or a branch: the main checkout is never started from here.");
-        if (instance && readRegistry().instances.find((r) => r.id === instance)?.slot === 0) return refuse("that is the project's main checkout, which a coordinator never starts or stops.");
+        if (instance && readRegistry().instances.find((r) => r.id === instance)?.slot === 0) return refuse("that is the project's main checkout, which a Creative Director never starts or stops.");
         const body = { project, ...(instance ? { instance } : {}), ...(branch ? { branch } : {}) };
         const target = instance ?? branch!;
         return verb === "up"
@@ -1315,7 +1467,38 @@ export function coordinatorTools(sessionId: string): ToolSpec[] {
     serverRedactor,
   );
 
-  return [status, brief, browse, capture, send, create, card, verbs];
+  const images: ToolSpec = {
+    name: "design_images", label: "Add or look at images",
+    description: "paths: add image files you found on disk (a logo the user pointed you to, a picture in a skill) to this chat's images, by full path, at most 10. They join the images on the Design Brief and go to the designers with the rest; the page stays sealed, so this is the only way a file reaches a design. Images only, 8 MB each. names: look again at images already in this chat (a pasted screenshot, say), by name: you see the pictures when your model reads them, else what is known of them in words.",
+    parameters: { type: "object", properties: { paths: { type: "array", items: { type: "string" }, description: "Full paths of image files to add." }, names: { type: "array", items: { type: "string" }, description: "Names of this chat's images to look at again, such as a3." } }, additionalProperties: false },
+    async execute(_id, params: { paths?: unknown; names?: unknown }) {
+      const st = state();
+      if (isResult(st)) return st;
+      const paths = Array.isArray(params?.paths) ? params.paths.filter((x): x is string => typeof x === "string" && x.trim().length > 0).slice(0, 10) : [];
+      const known = new Set(readAssets(parent.sessionId).assets.map((a) => a.name));
+      const asked = Array.isArray(params?.names) ? params.names.filter((x): x is string => typeof x === "string") : [];
+      const missing = asked.filter((n) => !known.has(n));
+      if (missing.length) return refuse(`no image ${missing.join(", ")} in this chat.`);
+      if (!paths.length && !asked.length) return refuse("name image files by full path to add, or this chat's images by name to look at.");
+      let line = "";
+      let added: string[] = [];
+      if (paths.length) {
+        const run = runOf(parent.sessionId, st.runId);
+        if (run && designRunLaunched(run)) return refuse("the designs have started, so their images are fixed. Pass an image on with design_send's words, or make a new design.");
+        const add = p().addImageFiles;
+        if (!add) return refuse("images can't be added here.");
+        ({ line, names: added } = await add(parent, paths));
+      }
+      const look = [...new Set([...added, ...asked])];
+      const shown = shownPictures(st, look);
+      const pictures = shown.images;
+      const words = asked.length ? assetsForCoordinator(parent.sessionId, asked) : "";
+      const text = [line, pictures.length ? `The pictures of ${shown.names.join(", ")} follow.` : asked.length && !st.vision ? "Your model can't read pictures, so here is what is known of them." : "", words].filter(Boolean).join("\n\n");
+      return { content: [...pictures, { type: "text", text }], details: { v: 1 } };
+    },
+  };
+
+  return [status, brief, browse, capture, send, create, card, verbs, images];
 }
 
 /** What a coordinator needs of a project's copies: which is running, and the addresses to open. */

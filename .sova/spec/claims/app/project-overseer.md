@@ -49,7 +49,7 @@ which is also its live view: its tool calls render as tool cards as they happen.
   agent dir's or a folder's above the root (the home folder's `AGENTS.md`). An instruction file in a
   folder below the root loads as its file tools work there (§chat/subfolder-instructions), never a
   secret one. Its tools
-  (§app.project-overseer/tools), memory's `zoom` and `date` while its memory is on
+  (§app.project-overseer/tools), memory's `zoom`, `date` and `recall` while its memory is on
   (§chat.memory/overseer), plus read-only `read`, `grep`, `find` and `ls` **anywhere on the host
   but other clients' work, Sova's and pi's own state, and secrets**: every path, as written (`..`,
   `~`, absolute) and at its realpath (a symlink that leads elsewhere), must be outside every
@@ -131,7 +131,7 @@ beside the conversation (§chat.memory/log).
 - **Its turns.** Switched on (or on by default) in a conversation with history, it is prepared in
   the background from its next turn (§chat.memory/preparing) and its run-status row shows
   "Preparing memory: n of m messages"; then every run, its watch-loop looks included, gets the view
-  in place of the early turns, and `zoom` and `date` are among its tools, on Claude Code as on pi.
+  in place of the early turns, and `zoom`, `date` and `recall` are among its tools, on Claude Code as on pi.
   Switched off, its next turn sends its full history again.
 - Its mode switch stays refused (§chat.memory/where), and the coding sessions it starts never get
   memory.

@@ -152,7 +152,7 @@ function ChatPane(props: { sessionFile?: string; host: string | null; name: stri
   );
 }
 
-/** A design's page, or the coordinator's card, with its own chat beside it (stacked on a phone). */
+/** A design's page, or the Creative Director's card, with its own chat beside it (stacked on a phone). */
 export function DesignOpen(props: { target: DesignOpenTarget; store: DesignStore; path: string; onClose(): void; onSwitch(t: DesignOpenTarget): void }) {
   let dialog!: HTMLDialogElement;
   const opener = document.activeElement as HTMLElement | null;
@@ -171,7 +171,7 @@ export function DesignOpen(props: { target: DesignOpenTarget; store: DesignStore
   const [refine, setRefine] = createSignal(false);
   const [pick, setPick] = createSignal<number | null>(null);
   const version = () => pick() ?? (d() ? designLatest(d()!) : 0);
-  const title = () => (d() ? `${d()!.label} · ${designDirectionLine(d()!)}` : "Coordinator");
+  const title = () => (d() ? `${d()!.label} · ${designDirectionLine(d()!)}` : "Creative Director");
   return (
     <dialog
       ref={dialog}
@@ -252,8 +252,8 @@ export function DesignOpen(props: { target: DesignOpenTarget; store: DesignStore
                 </div>
               </div>
               <Show when={!hideChat()}>
-                <ChatPane sessionFile={c().sessionFile} host={hostOf()} name="the coordinator" author="Coordinator" streaming={c().status === "running"} note="It knows what each design is, not its code.">
-                  <DesignMessageBox label="Message the coordinator" placeholder="Message the coordinator" delivery={c().delivery} name="the coordinator" send={(text, key, images) => props.store.api.coordinatorMessage(text, key, images)} upload={props.store.api.uploadImage} onSent={() => props.store.refresh()} />
+                <ChatPane sessionFile={c().sessionFile} host={hostOf()} name="the Creative Director" author="Creative Director" streaming={c().status === "running"} note="It knows what each design is, not its code.">
+                  <DesignMessageBox label="Message the Creative Director" placeholder="Message the Creative Director" delivery={c().delivery} name="the Creative Director" send={(text, key, images) => props.store.api.coordinatorMessage(text, key, images)} upload={props.store.api.uploadImage} onSent={() => props.store.refresh()} />
                 </ChatPane>
               </Show>
             </>
@@ -282,7 +282,7 @@ export function DesignOpenSlot(props: { nav: DesignOpener; store: DesignStore; p
     const t = shown();
     return props.nav.draws() && t && t !== "gone" ? t : null;
   };
-  // Each view is its own dialog: going from the coordinator to a design (or Back) never reflows
+  // Each view is its own dialog: going from the Creative Director to a design (or Back) never reflows
   // one in place, so nothing in it moves; the next one opens where the last one was.
   const key = createMemo(() => {
     const t = target();

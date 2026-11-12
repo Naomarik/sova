@@ -156,8 +156,8 @@ export function browseScript(source: TourSource, route: string, sizes: readonly 
   return {
     v: 1,
     title: "A look for a design",
-    summary: "One screen, as a design coordinator walked to it.",
-    audience: "The design coordinator",
+    summary: "One screen, as a Creative Director walked to it.",
+    audience: "The Creative Director",
     outcome: "Pictures of the screen.",
     source,
     ...(sites.length ? { sites: [...sites] } : {}),

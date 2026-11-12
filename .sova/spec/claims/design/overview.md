@@ -98,7 +98,7 @@ One file per document, in reading order.
 | [§chat/context-window · Context window](../chat/context-window.md) | The context readout in the session head: plain text, the sidebar ring, steps toward the limit. |
 | [§chat/mode-menu · Mode menu](../chat/mode-menu.md) | Per-chat mode switching and the always-visible Profile picker. |
 | [§chat/create-mode · Create](../chat/create-mode.md) | The third major mode: everything Delegate does, plus every supported way to configure or extend Sova. |
-| [§chat/design-mode · Lookbook](../chat/design-mode.md) | Part of vis: prototypes in bulk across models, drawn live in the chat and the Gallery, with a coordinator. |
+| [§chat/design-mode · Lookbook](../chat/design-mode.md) | Part of vis: prototypes in bulk across models, drawn live in the chat and the Gallery, with a Creative Director. |
 | [§chat/subagent-profiles · A profile's Models part](../chat/subagent-profiles.md) | Named worker setups: the helper library behind each profile's Models part, per-chat helper picks and usage-limit recovery. |
 | [§chat/playbooks · Playbooks](../chat/playbooks.md) | Markdown recipes from the composer flyout: the three provenance groups, the two-step modal, and what gets sent into the chat. |
 | [§app/new-session-dialog · New Session dialog](../app/new-session-dialog.md) | Creating a session: the modal, the in-place folder picker, fields, and validation. |

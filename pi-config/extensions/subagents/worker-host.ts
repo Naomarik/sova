@@ -94,7 +94,8 @@ export interface WorkerHostAnnouncement {
 
 export interface WorkerHost {
 	start(req: WorkerStart): Promise<WorkerRef>;
-	send(chatId: string, input: { text: string; delivery: "prompt" | "steer" | "followUp"; key: string }): Promise<{ queued: boolean }>;
+	/** `images`: pictures sent with the text, as a start's are (a Lookbook's Creative Director seeing a pasted screenshot). */
+	send(chatId: string, input: { text: string; delivery: "prompt" | "steer" | "followUp"; key: string; images?: WorkerStart["images"] }): Promise<{ queued: boolean }>;
 	abort(chatId: string): Promise<void>;
 	stop(chatId: string, reason: string): Promise<void>;
 	watch(chatId: string, cursor: WorkerCursor | null, fn: (f: WorkerFeedFrame) => void): () => void;

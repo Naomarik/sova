@@ -31,13 +31,14 @@ export function mountDescribeRoutes(app: Hono, parentOf: (c: Context) => DesignP
     try {
       sent = ((await c.req.json()) ?? {}) as Record<string, unknown>;
     } catch {
-      return c.json({ error: "Expected { note?, kind? }." }, 400);
+      return c.json({ error: "Expected { note?, kind?, words? }." }, 400);
     }
     const note = orNull(sent.note);
     const kind = orNull(sent.kind);
-    if (note === undefined && kind === undefined) return c.json({ error: "Expected { note?, kind? }." }, 400);
+    const words = sent.words;
+    if (note === undefined && kind === undefined && words === undefined) return c.json({ error: "Expected { note?, kind?, words? }." }, 400);
     try {
-      setAssetNote(p.sessionId, c.req.param("name"), { ...(note !== undefined ? { note } : {}), ...(kind !== undefined ? { kind } : {}) });
+      setAssetNote(p.sessionId, c.req.param("name"), { ...(note !== undefined ? { note } : {}), ...(kind !== undefined ? { kind } : {}), ...(words !== undefined ? { words } : {}) });
       return c.json({ ok: true });
     } catch (err) {
       return c.json({ error: err instanceof Error ? err.message : String(err) }, 400);

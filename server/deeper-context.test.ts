@@ -11,10 +11,11 @@ import { deeperContextExtension } from "./harness/pi/deeper-context";
 const roots: string[] = [];
 after(() => roots.forEach((r) => rmSync(r, { recursive: true, force: true })));
 
-/** A project folder holding `files` (relative path → text). */
+/** A repository's top holding `files` (relative path → text): a chat there looks below its folder. */
 function project(files: Record<string, string>): string {
   const root = realpathSync(mkdtempSync(join(tmpdir(), "sova-deeper-")));
   roots.push(root);
+  mkdirSync(join(root, ".git"));
   for (const [p, text] of Object.entries(files)) {
     mkdirSync(dirname(join(root, p)), { recursive: true });
     writeFileSync(join(root, p), text);
@@ -150,4 +151,30 @@ test("the hook skips a file the chat may not be shown, and one the branch alread
   assert.equal(await call("sec/a.ts"), undefined);
   const piEntry = { type: "message", id: "m1", parentId: null, message: { role: "toolResult", toolCallId: "z", toolName: "read", content: [{ type: "text", text: "x" }, { type: "text", text: markerBlock("api/AGENTS.md", "rules") }] } };
   assert.equal(await call("api/a.ts", [piEntry]), undefined);
+});
+
+test("in a folder the chat doesn't look below, nothing below it is offered, noted or expanded; in a project's, the same folder is", async () => {
+  const files = { "sub/AGENTS.md": "rules", "sub/x.md": "", "sub/.agents/skills/foo/SKILL.md": "---\nname: foo\ndescription: Foo things.\n---\nDo foo.\n" };
+  const cwd = realpathSync(mkdtempSync(join(tmpdir(), "sova-deeper-plain-")));
+  roots.push(cwd);
+  for (const [p, text] of Object.entries(files)) {
+    mkdirSync(dirname(join(cwd, p)), { recursive: true });
+    writeFileSync(join(cwd, p), text);
+  }
+  // A list that asks first: an unlisted item would be noted with a "wasn't loaded" line.
+  const asking = { type: "custom", customType: "sova-loadout", id: "l1", parentId: null, data: { v: 1, offContext: [], offSkills: [], asking: true } };
+  for (const inProject of [false, true]) {
+    const notes: unknown[] = [];
+    const hooks = new Map<string, (e: any, ctx: any) => any>();
+    deeperContextExtension({ inProject }).factory({ on: (name: string, h: any) => hooks.set(name, h), appendEntry: (...a: unknown[]) => notes.push(a), getCommands: () => [] } as never);
+    const read = await hooks.get("tool_result")!({ type: "tool_result", toolCallId: `c${++n}`, toolName: "read", input: { path: "sub/x.md" }, content: [{ type: "text", text: "x" }], isError: false }, ctxOf(cwd, [asking]));
+    const typed = await hooks.get("input")!({ type: "input", text: "/skill:foo now" }, ctxOf(cwd));
+    if (!inProject) {
+      assert.deepEqual([read, notes, typed], [undefined, [], { action: "continue" }], "a plain folder: as typed, and no line");
+    } else {
+      // Its folder's file and skill, each kept out with its one line while the list asks; a typed name expands.
+      assert.deepEqual([read, notes.map((a: any) => a[1].name)], [undefined, ["sub/AGENTS.md", "foo"]]);
+      assert.equal(typed.action, "transform");
+    }
+  }
 });

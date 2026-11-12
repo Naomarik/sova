@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
-import { DetachedDriver, parseShow, SLICE, sliceCgroupPath, SystemdDriver, systemdRunArgv, unitCgroupPids, userManagerCgroup, type Exec } from "./drivers";
+import { DetachedDriver, parseShow, RESTART_BURST, RESTART_SEC, SLICE, STABLE_RUN_SEC, startLimitIntervalSec, sliceCgroupPath, SystemdDriver, systemdRunArgv, unitCgroupPids, userManagerCgroup, type Exec } from "./drivers";
 import type { ProcEntry, ProcTable } from "./proctable";
 
 process.env.PI_CODING_AGENT_DIR = mkdtempSync(join(tmpdir(), "sova-drivers-"));
@@ -11,13 +11,30 @@ after(() => rmSync(process.env.PI_CODING_AGENT_DIR!, { recursive: true, force: t
 
 test("systemd-run argv: a transient user unit in the services slice, env sorted, argv after --", () => {
   const a = systemdRunArgv({ unit: "sova-svc-abc123-p-1-web", argv: ["node", "server.js", "--port", "4010"], cwd: "/w", env: { B: "2", A: "x y" } });
-  assert.deepEqual(a.slice(0, 7), ["--user", "--unit=sova-svc-abc123-p-1-web", "--slice=sova-services.slice", "--collect", "--quiet", "--working-directory=/w", "--property=StandardInput=null"]);
+  // No --collect: a service that gave up stays loaded as failed (start-limit-hit), so a server restart still sees it.
+  assert.deepEqual(a.slice(0, 6), ["--user", "--unit=sova-svc-abc123-p-1-web", "--slice=sova-services.slice", "--quiet", "--working-directory=/w", "--property=StandardInput=null"]);
   assert.ok(a.includes("--property=KillMode=mixed") && a.includes("--property=Restart=on-failure"));
+  assert.ok(a.includes("--property=RestartSec=2") && a.includes("--property=StartLimitIntervalSec=310") && a.includes("--property=StartLimitBurst=5"), "its own start limit, sized from RestartSec and the stable run");
   assert.ok(a.indexOf("--setenv=A=x y") < a.indexOf("--setenv=B=2"), "env in a fixed order");
   assert.deepEqual(a.slice(a.indexOf("--") + 1), ["node", "server.js", "--port", "4010"], "the argv is passed as is, never through a shell");
   const once = systemdRunArgv({ unit: "sova-hook-x", argv: ["true"], cwd: "/w", env: {} }, { timeoutSec: 30 });
   assert.ok(once.includes("--wait") && once.includes("--property=RuntimeMaxSec=30") && once.includes("--property=KillMode=control-group"));
   assert.ok(!once.includes("--property=Restart=on-failure"), "a hook is never restarted");
+  assert.ok(once.includes("--collect") && !once.some((x) => x.startsWith("--property=StartLimit")), "a hook is collected and has no start limit");
+  const chat = systemdRunArgv({ unit: "sova-chat-x", argv: ["true"], cwd: "/w", env: {} }, undefined, { restart: false });
+  assert.ok(chat.includes("--collect") && !chat.some((x) => x.startsWith("--property=StartLimit")), "a unit with no Restart= is collected as before");
+});
+
+test("systemd's start limit catches 5 failed starts in a row however slowly each fails, and never a service that stays up between failures", () => {
+  const interval = startLimitIntervalSec();
+  assert.equal(interval, RESTART_BURST * (RESTART_SEC + STABLE_RUN_SEC));
+  // systemd refuses the start after StartLimitBurst starts inside one interval (counted from the first).
+  // A service that runs `ran` seconds then fails: its RESTART_BURST+1-th start comes RESTART_BURST cycles after the first.
+  const refused = (ran: number) => RESTART_BURST * (ran + RESTART_SEC) < interval;
+  for (const ran of [0, 1, 4, 30, STABLE_RUN_SEC - 1]) assert.ok(refused(ran), `a service failing after ${ran} s gives up`);
+  // The fixed 30 s interval this replaces let a service that ran 4 s restart forever.
+  assert.ok(!(RESTART_BURST * (4 + RESTART_SEC) < 30));
+  for (const ran of [STABLE_RUN_SEC, STABLE_RUN_SEC + 10, 3_600]) assert.ok(!refused(ran), `a service up ${ran} s before each failure never gives up`);
 });
 
 test("systemctl show parses into the unit's state", () => {
@@ -30,6 +47,11 @@ test("systemctl show parses into the unit's state", () => {
   assert.equal(failed.exit, 3);
   assert.match(failed.detail!, /exit-code/);
   assert.equal(parseShow("LoadState=loaded\nActiveState=activating\nSubState=auto-restart\n").state, "activating");
+  assert.equal(failed.gaveUp, undefined, "a failure is not a give-up");
+  const limit = parseShow("LoadState=loaded\nActiveState=failed\nSubState=failed\nMainPID=0\nExecMainStatus=3\nResult=start-limit-hit\n");
+  assert.equal(limit.state, "failed");
+  assert.equal(limit.gaveUp, true, "systemd's start limit: it gave up");
+  assert.match(limit.detail!, /start limit hit: 5 failed starts in a row/);
 });
 
 test("the systemd driver only ever names its own unit, by argv", async () => {

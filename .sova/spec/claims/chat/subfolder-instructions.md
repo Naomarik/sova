@@ -4,7 +4,11 @@
 A chat starts with the instruction files of its folder and the folders above it
 (§chat.transcript/setup-card-context). A folder below it can keep its own instructions too: that
 file loads the first time the agent reads, edits or creates a file in that folder, at the end of
-that action's result, as Claude Code does with a nested `CLAUDE.md`, `AGENTS.md` included. A file
+that action's result, as Claude Code does with a nested `CLAUDE.md`, `AGENTS.md` included. This
+follows the subfolder skills' rule (§chat.subfolder-skills/offering): only when the chat's own folder
+is in a git repository below the home folder or in a project added to Sova, never at the home folder
+or above it; elsewhere a read, edit or write below its folder loads no file and shows no "wasn't
+loaded" line. A file
 follows the chat's fixed list (§chat.context-approval/fixed): one the chat has off, or its folder
 disallowed, never loads, and in a chat started while Sova asks first, only a file on its list does.
 
@@ -42,5 +46,6 @@ disallowed, never loads, and in a chat started while Sova asks first, only a fil
   loaded: it isn't approved for this folder.", with Approve and Disallow (§chat.context-approval/mid-chat). A worker follows its parent's list.
 - **Every chat with file tools.** Ordinary chats, Claude Code chats, every worker whose tools
   include read, edit or write, and overseers, never a file their file tools may not read (outside
-  their folder, or a secret). A chat that starts with no instruction files at all (the baton's
+  their folder, or a secret), each only where Sova looks below its own folder
+  (§chat.subfolder-skills/offering). A chat that starts with no instruction files at all (the baton's
   gathering chat, the Project Assistant) gets none this way either.

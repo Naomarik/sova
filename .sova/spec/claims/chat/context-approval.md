@@ -138,7 +138,11 @@ your decision before its first message.
   (`.pi/SYSTEM.md`, `APPEND_SYSTEM.md`) and its extensions are not on the list.
 - **The scan.** Everything a chat in the folder could load is found by one scan of each checkout, the
   root first: pi's own context files and skills, then the subfolder walk's, each walk bounded as the
-  subfolder walk is. One row per key, the first found. A scan that stopped early (a walk at its limit,
+  subfolder walk is. A project's scan walks below unless its root is the home folder or a folder above
+  it; a folder that is no project walks below only where its chats look below
+  (§chat.subfolder-skills/offering), never at the home folder or above it. A new chat's setup card
+  drops the scan's subfolder rows when the chat's own folder fails that rule.
+  One row per key, the first found. A scan that stopped early (a walk at its limit,
   a checkout that couldn't be read) says so on the cards: "The search stopped early, so this list may
   miss some {context files | skills}."
 - **Where it is kept.** In `<state root>/project-skills.json`, version 2 (`folders[<folder key>]`, each

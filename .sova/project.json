@@ -208,7 +208,7 @@
           "node",
           "scripts/run-tests.mjs",
           "--integration",
-          "--groups"
+          "--picked-groups"
         ],
         "timeout": 1800,
         "rerun": true,

@@ -1,15 +1,17 @@
 import { createEffect, createMemo, createSignal, For, on, Show, type Accessor } from "solid-js";
 import type { DesignBriefQuestion, DesignLinkUse, DesignLook } from "../../shared/design";
-import type { DesignAssetCatalogue } from "../../shared/design-assets";
-import { designBriefBlock } from "../../shared/design";
+import type { DesignAsset, DesignAssetCatalogue } from "../../shared/design-assets";
+import { assetKind, shotWords } from "../../shared/design-assets";
+import { designBriefBlock, designerSkills } from "../../shared/design";
 import type { DesignSpendAsk } from "../lib/design-api";
-import { answerLine, assetsOfRun, pickIsRecommended, recommendedPick, stagedAnswers, startLabel, usedCount, type StagedPick } from "../lib/design-brief";
+import { answerLine, assetsOfRun, pickIsRecommended, recommendedPick, runScreenshots, screenUseBy, screenUseOf, shotWordsText, shotWordsToSave, stagedAnswers, startLabel, usedCount, type StagedPick } from "../lib/design-brief";
 import type { DesignStore } from "../lib/design-store";
 import { coordinatorOf, setupCount, setupSummary, type DesignRunView } from "../lib/design-ui";
 import { Inline, QuestionChoices, type QuestionPicker } from "./AlignDocCard";
 import { DesignAskPanel, DesignCoordinatorPanel } from "./DesignCoordinator";
 import { createSetupDraft, DesignLinkRow, DesignSetupPickers, type SetupDraft } from "./DesignSetupControls";
 import { createAssetCatalogue, DesignBriefImageDetail, DesignBriefImages } from "./DesignBriefImages";
+import { DesignSkillsLine } from "./DesignSkills";
 import { TextArea, TextField } from "./form";
 import { Chip, Icon } from "./ui";
 import "./DesignBrief.css";
@@ -59,7 +61,7 @@ function BriefText(props: {
     }
   };
   const movedOn = () => draft() !== null && (text() ?? "") !== base() && held() === null;
-  const note = () => error() || (movedOn() ? "The coordinator changed this while you typed. Saving replaces its version." : props.note || "");
+  const note = () => error() || (movedOn() ? "The Creative Director changed this while you typed. Saving replaces its version." : props.note || "");
   return (
     <section class="design-brief-text" data-fold={props.fold ? "" : undefined} aria-label={props.title}>
       <div class="design-brief-text-head">
@@ -169,7 +171,7 @@ function BriefScreen(props: { run: DesignRunView; store: DesignStore; contentOnl
       setRedirecting(false);
       props.store.refresh();
     } catch (e) {
-      setError(message(e, "That didn't reach the coordinator. Try again."));
+      setError(message(e, "That didn't reach the Creative Director. Try again."));
     } finally {
       setBusy(false);
     }
@@ -189,10 +191,10 @@ function BriefScreen(props: { run: DesignRunView; store: DesignStore; contentOnl
         </Show>
       </div>
       <div class="design-brief-screen-picture">
-        <Show when={screen()} fallback={<p class="text-muted design-brief-screen-empty">{props.contentOnly ? "Your link is part of the page's content, so no screen is looked at." : "The coordinator hasn't shown a screen yet."}</p>}>
+        <Show when={screen()} fallback={<p class="text-muted design-brief-screen-empty">{props.contentOnly ? "Your link is part of the page's content, so no screen is looked at." : "The Creative Director hasn't shown a screen yet."}</p>}>
           {(s) => (
             <>
-              <For each={s().screenshots}>{(src) => <img src={props.store.api.shotUrl(src)} alt="The screen the coordinator found" />}</For>
+              <For each={s().screenshots}>{(src) => <img src={props.store.api.shotUrl(src)} alt="The screen the Creative Director found" />}</For>
               <Show when={s().screenshots.length === 0 && s().outline}>{(o) => <pre class="design-confirm-outline">{o()}</pre>}</Show>
             </>
           )}
@@ -222,11 +224,87 @@ function BriefScreen(props: { run: DesignRunView; store: DesignStore; contentOnl
               Cancel
             </button>
             <button type="submit" class="button button-sm button-primary" disabled={busy()}>
-              Send to Coordinator
+              Send to Creative Director
             </button>
           </div>
         </form>
       </Show>
+    </section>
+  );
+}
+
+/** A pasted screenshot on the brief: its kind, its measured colours, its words for designers, and Rebuild or Feel. */
+function BriefShot(props: { asset: DesignAsset; run: DesignRunView; store: DesignStore; use: "rebuild" | "feel" | null; onUse(use: "rebuild" | "feel"): void; onOpen(): void }) {
+  const found = () => shotWords(props.asset);
+  const colors = () => found()?.words.colors ?? (props.asset.palette ?? []).map((p) => ({ hex: p.hex, role: "" }));
+  const describing = () => props.run.imagesBusy === "describing" || (!props.asset.description && !props.asset.describeError) || !!props.asset.describeAgain;
+  const feelEmpty = () => (describing() ? "Its words are being drafted." : "Its feel couldn't be read, so designers get only its colours. Edit to say it yourself.");
+  const by = () => ({ user: "Yours", coordinator: "The Creative Director's", helper: "A first draft" })[found()?.by ?? "helper"];
+  const save = async (text: string) => {
+    const words = shotWordsToSave(text, found()?.words.colors ?? []);
+    await props.store.api.imageNote(props.asset.name, { words });
+    props.store.refresh();
+  };
+  const [dropping, setDropping] = createSignal(false);
+  const drop = async () => {
+    setDropping(true);
+    try {
+      await props.store.api.imageNote(props.asset.name, { words: null });
+      props.store.refresh();
+    } catch {
+      // The words stay as they were; the button can be pressed again.
+    } finally {
+      setDropping(false);
+    }
+  };
+  const choice = (use: "rebuild" | "feel", label: string) => (
+    <button type="button" class="button" aria-pressed={props.use === use} onClick={() => props.onUse(use)}>
+      {label}
+    </button>
+  );
+  return (
+    <section class="design-shot" aria-label={`Screenshot ${props.asset.name}`}>
+      <div class="design-shot-head">
+        <button type="button" class="design-shot-thumb" aria-label={`Details of ${props.asset.name}`} onClick={() => props.onOpen()}>
+          <img src={props.store.api.assetUrl(props.asset.name, "small")} alt="" loading="lazy" />
+        </button>
+        <div class="design-shot-facts">
+          <p class="design-shot-title">
+            <span class="text-mono design-asset-name">{props.asset.name}</span> <span class="design-asset-kind">{assetKind(props.asset)}</span>
+            <span class="text-caption text-muted design-shot-by">{screenUseBy(props.run.brief, props.asset.name)}</span>
+            <Show when={found()?.by === "user"}>
+              <button type="button" class="button button-sm button-ghost design-shot-drop" disabled={dropping()} title="Your words go; the Creative Director's or the first draft's come back." onClick={() => void drop()}>
+                Drop My Words
+              </button>
+            </Show>
+          </p>
+          <ul class="design-shot-swatches" aria-label={`Colours of ${props.asset.name}`}>
+            <For each={colors()} fallback={<li class="text-caption text-muted">No colours measured.</li>}>
+              {(c) => (
+                <li class="design-shot-swatch" title={c.role ? `${c.hex} · ${c.role}` : c.hex}>
+                  <span class="design-shot-chip" style={{ background: c.hex }} aria-hidden="true" />
+                  <code class="text-mono">{c.hex}</code>
+                  <span class="visually-hidden">{c.role}</span>
+                </li>
+              )}
+            </For>
+          </ul>
+        </div>
+      </div>
+      <div class="design-link-use design-shot-use" role="group" aria-label={`How to use ${props.asset.name}`}>
+        {choice("rebuild", "Rebuild This Screen")}
+        {choice("feel", "Just Its Feel")}
+      </div>
+      <BriefText
+        title={`Words for designers · ${props.asset.name}`}
+        editLabel="Edit Words"
+        text={found()?.words.feel || found()?.words.colors.length ? shotWordsText(found()!.words) : null}
+        empty={feelEmpty()}
+        note={found() && !found()!.words.feel && !describing() ? "The feel couldn't be read" : found() ? by() : ""}
+        boxClass="design-brief-notes"
+        canEdit
+        save={save}
+      />
     </section>
   );
 }
@@ -259,7 +337,16 @@ export function DesignBriefStep(props: { run: DesignRunView; store: DesignStore;
   const imageLinks = () => urls().filter((u) => useOf(u) === "images");
   const openQuestions = () => brief().questions.filter((q) => !q.answer);
   const toSend = () => stagedAnswers(staged(), brief().questions);
-  const block = () => designBriefBlock({ brief: brief(), setup: setup.draft(), imagesBusy: props.run.imagesBusy });
+  const runAssets = createMemo(() => assetsOfRun(catalogue(), props.run));
+  const shots = createMemo(() => runScreenshots(runAssets(), brief()), undefined, { equals: (a, b) => a.length === b.length && a.every((x, i) => x === b[i]) });
+  const shotOf = (name: string) => runAssets().find((a) => a.name === name);
+  const [shotUses, setShotUses] = createSignal<Record<string, "rebuild" | "feel">>({});
+  createEffect(() => {
+    const held = shotUses();
+    const left = Object.entries(held).filter(([name, use]) => brief().screenUse?.[name]?.use !== use);
+    if (left.length !== Object.keys(held).length) setShotUses(Object.fromEntries(left));
+  });
+  const block = () => designBriefBlock({ brief: brief(), setup: setup.draft(), imagesBusy: props.run.imagesBusy }, shots());
   const designs = () => setupCount(setup.draft()).designs;
   const guard = async (run: () => Promise<unknown>, fallback: string) => {
     setBusy(true);
@@ -283,15 +370,23 @@ export function DesignBriefStep(props: { run: DesignRunView; store: DesignStore;
       setUses(rest);
     });
   };
+  const setShotUse = (name: string, use: "rebuild" | "feel") => {
+    setShotUses({ ...shotUses(), [name]: use });
+    void guard(() => props.store.api.briefScreen(props.run.id, name, use), "That choice couldn't be saved. Try again.").then((ok) => {
+      if (ok) return;
+      const { [name]: _gone, ...rest } = shotUses();
+      setShotUses(rest);
+    });
+  };
   const sendAnswers = async () => {
-    if (await guard(() => props.store.api.briefAnswers(props.run.id, { picks: toSend() }), "Your answers didn't reach the coordinator. They're still picked.")) setStaged({});
+    if (await guard(() => props.store.api.briefAnswers(props.run.id, { picks: toSend() }), "Your answers didn't reach the Creative Director. They're still picked.")) setStaged({});
   };
   const recommend = async () => {
-    if (await guard(() => props.store.api.briefAnswers(props.run.id, { recommended: true }), "That didn't reach the coordinator. Try again.")) setStaged({});
+    if (await guard(() => props.store.api.briefAnswers(props.run.id, { recommended: true }), "That didn't reach the Creative Director. Try again.")) setStaged({});
   };
   const jumpToWhatBlocks = () => {
     const code = block()?.code;
-    const el = code === "question" ? scroller?.querySelector("[data-open-q]") : code === "link-use" ? scroller?.querySelector(".design-link-row") : null;
+    const el = code === "question" ? scroller?.querySelector("[data-open-q]") : code === "link-use" ? scroller?.querySelector(".design-link-row") : code === "screenshot-use" ? scroller?.querySelector(".design-shot") : null;
     if (el && scroller) scroller.scrollTop += el.getBoundingClientRect().top - scroller.getBoundingClientRect().top;
   };
   const start = async (confirmSpend: boolean) => {
@@ -329,12 +424,12 @@ export function DesignBriefStep(props: { run: DesignRunView; store: DesignStore;
   const coordinator = () => coordinatorOf(props.store.view());
   const pendingAsk = () => coordinator()?.ask;
   const promptNote = () => {
-    if (brief().writing) return brief().writing!.stalled ? "The coordinator stopped before writing this" : "Being written";
+    if (brief().writing) return brief().writing!.stalled ? "The Creative Director stopped before writing this" : "Being written";
     return brief().promptBy === "user" ? "Yours" : "What the design sessions get";
   };
   const conflictWords: Record<string, string> = {
     summary: "You edited the summary.",
-    told: "You told the coordinator something new.",
+    told: "You told the Creative Director something new.",
     answer: "You answered a question.",
     screen: "The screen changed.",
   };
@@ -347,7 +442,7 @@ export function DesignBriefStep(props: { run: DesignRunView; store: DesignStore;
               title="Summary"
               editLabel="Edit Summary"
               text={brief().summary}
-              empty="The coordinator is writing the summary."
+              empty="The Creative Director is writing the summary."
               boxClass="design-brief-summary"
               canEdit
               save={(text) => props.store.api.briefEdit(props.run.id, { field: "summary", text })}
@@ -357,13 +452,16 @@ export function DesignBriefStep(props: { run: DesignRunView; store: DesignStore;
               title="Full Prompt"
               editLabel="Edit Prompt"
               text={brief().prompt}
-              empty="The coordinator writes this once your questions are answered."
+              empty="The Creative Director writes this once your questions are answered."
               note={promptNote()}
               boxClass="design-brief-prompt"
               canEdit={brief().prompt !== null}
               noEditWhy="Waits until it's written."
               save={(text) => props.store.api.briefEdit(props.run.id, { field: "prompt", text })}
             />
+            <Show when={(props.run.skills?.length ?? 0) > 0}>
+              <DesignSkillsLine run={{ skills: designerSkills(props.run) }} />
+            </Show>
             <Show when={anyLinks()}>
               <div class="design-brief-links">
                 <For each={urls()}>{(url) => <DesignLinkRow url={url} use={useOf(url)} onUse={(use) => setUse(url, use)} />}</For>
@@ -391,6 +489,9 @@ export function DesignBriefStep(props: { run: DesignRunView; store: DesignStore;
                         />
                       )}
                     </For>
+                    <For each={shots()}>
+                      {(name) => <Show when={shotOf(name)}>{(a) => <BriefShot asset={a()} run={props.run} store={props.store} use={screenUseOf(brief(), shotUses(), name)} onUse={(use) => setShotUse(name, use)} onOpen={() => setOpenImage(name)} />}</Show>}
+                    </For>
                     <Show when={imageLinks().length > 0 || assetsOfRun(catalogue(), props.run).length > 0}>
                       <DesignBriefImages run={props.run} store={props.store} catalogue={catalogue()} onOpen={setOpenImage} />
                     </Show>
@@ -404,7 +505,7 @@ export function DesignBriefStep(props: { run: DesignRunView; store: DesignStore;
               <div class="design-brief-answers-narrow">{answersButton()}</div>
             </Show>
             <Show when={brief().questions.length > 0}>
-              <ol class="align-questions design-brief-questions" aria-label="The coordinator's questions">
+              <ol class="align-questions design-brief-questions" aria-label="The Creative Director's questions">
                 <For each={brief().questions}>
                   {(q) => (
                     <BriefQuestion
@@ -513,7 +614,7 @@ export function DesignBriefStep(props: { run: DesignRunView; store: DesignStore;
         </div>
         <button type="button" class="button button-primary design-brief-start" aria-disabled={block() ? "true" : undefined} disabled={busy()} title={block()?.label} onClick={() => void start(!!ask())}>
           {/* A new node for each label: new words in the old node would re-centre it, and that counts as a shift. */}
-          <Show when={ask() ? `Start ${ask()!.designs} Designs` : startLabel({ brief: brief(), setup: setup.draft(), imagesBusy: props.run.imagesBusy }, designs())} keyed>
+          <Show when={ask() ? `Start ${ask()!.designs} Designs` : startLabel({ brief: brief(), setup: setup.draft(), imagesBusy: props.run.imagesBusy }, designs(), shots())} keyed>
             {(label) => <span>{label}</span>}
           </Show>
         </button>
@@ -548,10 +649,20 @@ export function DesignBriefCollapsed(props: { run: DesignRunView; store: DesignS
                 <p class="text-caption text-muted">This is what the designs were started from. Read only.</p>
               </Show>
               <p class="design-brief-read">{b().summary}</p>
+              <Show when={(props.run.skills?.length ?? 0) > 0}>
+                <DesignSkillsLine run={{ skills: designerSkills(props.run) }} />
+              </Show>
               <For each={props.run.setup.links ?? []}>
                 {(l) => (
                   <p class="text-caption">
                     <code class="design-link-url">{l.url}</code> · {l.use === "feel" ? "Just Its Feel" : l.use === "images" ? "Use Its Images" : "Not chosen"}
+                  </p>
+                )}
+              </For>
+              <For each={Object.entries(b().screenUse ?? {})}>
+                {([name, u]) => (
+                  <p class="text-caption">
+                    <span class="text-mono">{name}</span> · {u.use === "rebuild" ? "Rebuild This Screen" : "Just Its Feel"}
                   </p>
                 )}
               </For>

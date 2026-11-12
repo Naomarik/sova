@@ -528,6 +528,27 @@ test("B6: a worker's and a hidden chat's model calls, reported with their state 
   assert.equal(hostCount(snapshot(), Date.now()).count, before);
 });
 
+test("every open, an ordinary chat's and a worker's alike, says whether the chat's folder is a project's (its process has no engines to ask)", async () => {
+  const opens: Record<string, unknown>[] = [];
+  // The frames the router sends each process, as its socket would carry them.
+  const t = setup({
+    wrap: (c) =>
+      (async (...a: Parameters<Connect>) => {
+        const r = await c(...a);
+        const send = r.link.send.bind(r.link);
+        r.link.send = ((f: Record<string, unknown>) => (f.t === "open" && opens.push(f), send(f as never))) as never;
+        return r;
+      }) as never,
+  });
+  const parent = session();
+  await t.router.acquire(parent.path, false);
+  const spec = { kind: "pi", parent: { sessionId: parent.id, path: parent.path, workerId: "ag_01" }, cwd, model: null, thinking: null, builtins: null, extensions: [], flags: {}, appendSystemPrompt: null, env: {}, agentDir: null, lowered: true as const };
+  await t.router.workers.start({ key: "fact:pi", spec: spec as never, session: { new: { dir: join(agentDir, "sessions", "--fact--") } }, task: null });
+  // A plain folder in no project: each says so, never leaving it out.
+  assert.deepEqual(opens.map((f) => [!!f.worker, f.inProject]), [[false, false], [true, false]]);
+  t.router.detach();
+});
+
 test("each chat's output tokens land on its board row: workers' on their parent's, kept after their processes exit, a reload's added (§app.insights/session-token-rate)", async () => {
   const { snapshot } = await import("../pi-config/extensions/llm-inflight/tracker.ts");
   const { sessionTokens } = await import("./session-tokens");

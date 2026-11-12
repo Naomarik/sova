@@ -14,7 +14,7 @@ import type { MemoryType } from "../../../shared/protocol";
 import { MEMORY_TOOLS } from "../../../shared/memory";
 import { MODE_NOTE_TYPE } from "../../../pi-config/extensions/mode/state.ts";
 import type { MemoryEngine } from "../../memory/engine";
-import { dateTool, zoomTool } from "../../memory/tools";
+import { dateTool, recallTool, zoomTool } from "../../memory/tools";
 import type { PiExtensionAPI } from "./extension-types";
 
 type AgentMessage = ContextEvent["messages"][number];
@@ -65,6 +65,7 @@ export function memoryExtension(host: () => MemoryHost | null) {
       const engineOf = (_ctx: ToolCtx | undefined) => (on()?.on ? host()?.engine() : undefined);
       pi.registerTool(toPiTool(zoomTool(engineOf)));
       pi.registerTool(toPiTool(dateTool(engineOf)));
+      pi.registerTool(toPiTool(recallTool(engineOf)));
 
       // The recall tools are in the loadout exactly while memory is on; pi activates every tool at
       // registration, so session_start takes them out of a chat without memory before any request.
@@ -108,10 +109,14 @@ export function memoryExtension(host: () => MemoryHost | null) {
         if (!run.decided) {
           run.decided = true;
           const c = on();
-          if (!c?.on || c.type !== "uniichat") return;
+          if (!c?.on) return;
+          const branch = toolCtx(ctx).branch();
+          // The run's input ends the branch now: recall never searches from it on (either memory type).
+          h.engine().markTurn(branch);
+          if (c.type !== "uniichat") return;
           const k = inputIndex(event.messages as { role?: string }[]);
           // The system prompt shares the prefix's cached block where the provider joins them (splitView).
-          const tv = await h.engine().turnView(toolCtx(ctx).branch(), c.size, Buffer.byteLength(ctx.getSystemPrompt()));
+          const tv = await h.engine().turnView(branch, c.size, Buffer.byteLength(ctx.getSystemPrompt()));
           if (!tv) return; // still preparing: the turn goes out as without memory
           run.view = { k, content: tv.content, ts: Date.now() };
         }
@@ -145,6 +150,7 @@ export function memoryExtension(host: () => MemoryHost | null) {
       });
       pi.on("agent_settled", async (_e, ctx) => {
         run = undefined;
+        if (on()?.on) host()?.engine().markTurn(undefined);
         syncTools();
         sync(toolCtx(ctx));
       });

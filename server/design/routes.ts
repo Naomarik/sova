@@ -2,7 +2,7 @@
 // starts a turn in the main chat or writes to its context.
 import { existsSync } from "node:fs";
 import type { Context, Hono } from "hono";
-import { DESIGN_ASK_ABOVE, isDesignLabel, type DesignSetup } from "../../shared/design";
+import { DESIGN_ASK_ABOVE, designerSkills, isDesignLabel, type DesignRun, type DesignSetup } from "../../shared/design";
 import { DESIGN_RUN } from "../harness/state-kinds";
 import { chatHandle, acquireChatHandle } from "../chat-handle";
 import { notPage } from "../page-only";
@@ -17,6 +17,7 @@ import { mountDescribeRoutes } from "./describe-routes";
 import { assertLaunchAllowed, deleteDesign, deliverDesign, DesignLimitError, designCount, retryDesign, type DesignParent } from "./batch";
 import { designView, livePage } from "./live";
 import { cleanSetup, estimateUsd } from "./setup";
+import { skillReadTokens } from "./skills";
 import { changeDesigns, designOf, readDesigns, readPage, runOf } from "./store";
 
 const BAD_PATH = "Invalid or missing ?path= (must be a .jsonl under the pi sessions dir)";
@@ -71,7 +72,7 @@ export function mountDesignRoutes(app: Hono): void {
         if (briefOpen && r.brief) {
           // On the card, so what Start starts from has moved; and so has what it should cost.
           r.brief.rev++;
-          const estimate = estimateUsd(next);
+          const estimate = estimateUsd(next, Date.now(), skillReadTokens(designerSkills(r)));
           if (estimate === null) delete r.brief.estimateUsd;
           else r.brief.estimateUsd = estimate;
         }
@@ -120,7 +121,7 @@ export function mountDesignRoutes(app: Hono): void {
     } catch (err) {
       if (err instanceof DesignLimitError) {
         const run = runOf(p.sessionId, runId);
-        return c.json({ error: err.message, ...(err.needsConfirm && run ? { needsConfirm: true, designs: err.designs, askAbove: DESIGN_ASK_ABOVE, ...priced(run.setup) } : {}) }, err.needsConfirm ? 409 : 400);
+        return c.json({ error: err.message, ...(err.needsConfirm && run ? { needsConfirm: true, designs: err.designs, askAbove: DESIGN_ASK_ABOVE, ...priced(run.setup, designerSkills(run)) } : {}) }, err.needsConfirm ? 409 : 400);
       }
       if (err instanceof BriefRefused) return c.json({ error: err.message, ...err.detail }, 409);
       return c.json({ error: message(err) }, 500);
@@ -196,8 +197,8 @@ export function mountDesignRoutes(app: Hono): void {
   });
 }
 
-const priced = (setup: DesignSetup) => {
-  const estimateUsd_ = estimateUsd(setup);
+const priced = (setup: DesignSetup, skills?: DesignRun["skills"]) => {
+  const estimateUsd_ = estimateUsd(setup, Date.now(), skillReadTokens(skills));
   return estimateUsd_ === null ? {} : { estimateUsd: estimateUsd_ };
 };
 

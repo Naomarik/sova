@@ -145,6 +145,10 @@ export type ChatOpenFrame =
       /** An ordinary chat: its folder's context file and skill decisions, read by the server at this open
           (a chat before its first message builds with them; server/projects/folder-rule.ts). */
       folderRule?: FolderRule;
+      /** Every kind of chat (ordinary, special, worker): its folder belongs to a project added to Sova, read by
+          the server at this open (its builds look below their folder by it, server/skill-descent.ts). Absent
+          from an older server: not in a project. */
+      inProject?: boolean;
     }
   | { t: "opened"; id: string; ok: true; mirror: ChatRuntimeMirror }
   | { t: "opened"; id: string; ok: false; refusal?: ChatRefusal; error?: { message: string } };

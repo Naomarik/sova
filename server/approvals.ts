@@ -12,6 +12,7 @@ import { listSubfolderInstructions } from "./deeper-context";
 import { folderResources } from "./harness/pi/resources";
 import { piSkillsIn } from "./harness/pi/skill-sources";
 import { real } from "./mcp/folder";
+import { skillDescentAllowed } from "./skill-descent";
 import { OrgError } from "./org-error";
 import { folderMatcher } from "./project-folder";
 import { dirFolderKey, folderDecisions, isItemKey, isSkillName, projectFolderKey, readApprovalStore, updateApprovalStore, type Decision, type ItemKind } from "./project-skills-store";
@@ -186,7 +187,9 @@ const homeShort = (dir: string) => {
  * Everything a chat in the folder could load at its start or meet in its folders: for each checkout (the root
  * first), pi's own context files (pi's settings folder's, then the checkout's and every folder above it) and
  * skills, and the subfolder walk's instruction files and skills, each walk bounded as the deeper-context walk is.
- * One row per key, the first found.
+ * One row per key, the first found. No subfolder walk for a folder whose chats don't look below it (server/skill-descent.ts:
+ * a plain folder, the home folder or above); a project's walks, a chat anywhere inside it may, unless its root is the
+ * home folder or above it.
  */
 export async function folderQuickScan(where: string | FolderRef, deps: ScanDeps = {}): Promise<FolderScan> {
   const folder = typeof where === "string" ? folderForCwd(where) : where;
@@ -196,6 +199,7 @@ export async function folderQuickScan(where: string | FolderRef, deps: ScanDeps 
   const checkouts = listed.dirs.includes(main) ? listed.dirs : [main, ...listed.dirs];
   const lookup = { checkouts };
   const out = new Map<string, ScanItem>();
+  const descends = skillDescentAllowed(main, { home: homedir(), inProject: folder.kind === "project" });
   const add = (kind: ScanItem["kind"], abs: string, checkout: string, extra: { name?: string; description?: string; dir?: string } = {}) => {
     const path = placePath(abs);
     const key = itemKey(lookup, path);
@@ -222,6 +226,7 @@ export async function folderQuickScan(where: string | FolderRef, deps: ScanDeps 
     } catch {
       complete = false;
     }
+    if (!descends) continue;
     const opts = deps.cap !== undefined ? { cap: deps.cap } : {};
     const files = listSubfolderInstructions(top, [], opts);
     if (files.incomplete) complete = false;

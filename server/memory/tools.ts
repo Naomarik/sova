@@ -1,7 +1,7 @@
-// The recall tools (§chat.memory/recall): zoom(id, n) and date(id), as Sova ToolSpecs. Active only while
+// The recall tools (§chat.memory/recall): zoom(id, n), date(id) and recall(words, before?), as Sova ToolSpecs. Active only while
 // memory is on (the adapter syncs them); each reads the calling chat's engine.
 import type { ToolCtx, ToolSpec } from "../../shared/harness";
-import { MEMORY_DATE_TOOL, MEMORY_ZOOM_TOOL } from "../../shared/memory";
+import { MEMORY_DATE_TOOL, MEMORY_RECALL_TOOL, MEMORY_ZOOM_TOOL } from "../../shared/memory";
 import type { MemoryEngine } from "./engine";
 
 export type EngineOf = (ctx: ToolCtx | undefined) => MemoryEngine | undefined;
@@ -52,6 +52,28 @@ export function dateTool(engineOf: EngineOf): ToolSpec<{ id: number }> {
     executionMode: "parallel",
     async execute(_id, params, _signal, _update, ctx) {
       return text(engineOrThrow(engineOf, ctx).date(params.id));
+    },
+  };
+}
+
+export function recallTool(engineOf: EngineOf): ToolSpec<{ words: string; before?: number }> {
+  return {
+    name: MEMORY_RECALL_TOOL,
+    label: "Recall",
+    description:
+      'Find messages of this chat by their words, when no memory line names what you need. Lists the messages that hold every word (case-insensitive), closest match first: the words together, then what you or the user said ahead of tool output, then newest. Each is id|kind: the text around the match, with ids whole; "+N alike" names messages that repeat it. zoom(id, 1) then gives one whole. Use it before looking elsewhere.',
+    parameters: {
+      type: "object",
+      properties: {
+        words: { type: "string", description: "Space-separated; all in one message." },
+        before: { type: "integer", minimum: 1, description: "Only messages below this id, to look at older ones." },
+      },
+      required: ["words"],
+      additionalProperties: false,
+    },
+    executionMode: "parallel",
+    async execute(_id, params, _signal, _update, ctx) {
+      return text(engineOrThrow(engineOf, ctx).recall(params.words, params.before));
     },
   };
 }

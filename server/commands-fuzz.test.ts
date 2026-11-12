@@ -852,6 +852,15 @@ const FIXTURES: Record<string, Fixture> = {
     status: 200,
     oracle: async (_b, v) => assert.equal((await read("GET", `/api/orgs/${v["org-id"]}/claude-login`)).setting, "default"),
   },
+  "project.copies.running": {
+    values: () => {
+      const v: Record<string, unknown> = {};
+      pendingSetup.push(async () => { const d = join(root, `project-${++n}`); mkdirSync(d, { recursive: true }); v.pid = ((await sendTo(app, "POST", "/api/projects", JSON.stringify({ root: d }))).body as { project: { id: string } }).project.id; await sendTo(app, "GET", `/api/projects/${v.pid}/runtime`); });
+      return v;
+    },
+    status: 200,
+    oracle: async (_b, v) => assert.deepEqual((await read("GET", `/api/projects/${v.pid}/running-copies`)).copies, [], "nothing runs"),
+  },
   "project.archive": {
     values: () => {
       const v: Record<string, unknown> = {};

@@ -1,6 +1,6 @@
 // The Branches tab and Running branches (§app.project-services/services-ui) as words. Pure: no Solid, no DOM.
 
-import type { InstanceState, LinkView, ServiceState, VerbResult } from "../../shared/project-contract";
+import type { InstanceState, LinkView, ServiceState, ServiceView, VerbResult } from "../../shared/project-contract";
 import type { CopyLimitView, CopyView, EntryView, ServiceRowView } from "../../shared/services-view";
 import { bytesWord, type ChipTone } from "./project-software";
 import { expiresWord } from "./session-shares";
@@ -57,7 +57,7 @@ export function createdByWord(tag: string): string {
 /** The services of a copy that are not ready, as "web stopped · api failed"; null when all are. */
 export function notReadyLine(services: readonly ServiceRowView[]): string | null {
   const off = services.filter((s) => s.state !== "ready");
-  return off.length ? off.map((s) => `${s.name} ${SERVICE_WORD[s.state]}`).join(" · ") : null;
+  return off.length ? off.map((s) => (s.gaveUp ? `${s.name} failed and stopped retrying; Start runs it again` : `${s.name} ${SERVICE_WORD[s.state]}`)).join(" · ") : null;
 }
 
 /** A port with HTTP readiness, on the host this page was opened from. */
@@ -171,6 +171,12 @@ export function rowVerbs(c: Pick<CopyView, "slot" | "state" | "adopted">): RowVe
   return out;
 }
 
+/** An archived project's copies keep only what stops or removes them: the engine refuses the rest. */
+export const archivedVerbs = (verbs: readonly RowVerb[]): RowVerb[] => verbs.filter((v) => v === "down" || v === "teardown");
+
+/** The Branches tab's line while the project is archived. */
+export const ARCHIVED_COPIES_LINE = "Archived: its copies can be stopped or torn down, not started. Unarchive it to start one.";
+
 /** The verbs that undo work (asked first, and drawn apart from the rest). */
 export const DESTRUCTIVE: ReadonlySet<RowVerb> = new Set(["reset", "teardown"]);
 
@@ -194,10 +200,17 @@ export const portLabel = (name: string, port: number): string => (name === "port
 /** Share is offered only on a running copy (the chosen endpoint's own readiness is checked in the form). */
 export const shareOffered = (c: Pick<CopyView, "state" | "adopted">): boolean => c.state === "running" && !c.adopted;
 
-/** The copy's chip: Starting while it is degraded only because a service is still starting. */
-export function copyChip(state: InstanceState, starting: boolean): { word: string; tone?: ChipTone } {
+/**
+ * The copy's chip: Failed while a service of it gave up restarting (it waits for Start), else Starting while it
+ * is degraded only because a service is still starting.
+ */
+export function copyChip(state: InstanceState, starting: boolean, gaveUp = false): { word: string; tone?: ChipTone } {
+  if (gaveUp) return { word: "Failed", tone: "error" };
   return starting ? { word: "Starting", tone: "info" } : COPY_CHIP[state];
 }
+
+/** A service of the copy gave up restarting after too many failed starts. */
+export const gaveUp = (services: readonly Pick<ServiceView, "gaveUp">[]): boolean => services.some((s) => s.gaveUp);
 
 /** The line under an adopted main's row. */
 export const adoptedLine = (unit: string): string => `Runs as ${unit}; Apply schedules a guarded restart.`;

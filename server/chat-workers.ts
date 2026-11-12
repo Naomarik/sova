@@ -354,10 +354,10 @@ export class WorkerRegistry {
     return { queued: receipt.queued };
   }
 
-  async send(chatId: string, input: { text: string; delivery: "prompt" | "steer" | "followUp"; key: string }): Promise<{ queued: boolean }> {
+  async send(chatId: string, input: { text: string; delivery: "prompt" | "steer" | "followUp"; key: string; images?: WorkerStart["images"] }): Promise<{ queued: boolean }> {
     const l = this.get(chatId);
     if (l.rec.state === "ended") throw new Error(`${l.rec.parent.workerId} has ended`);
-    return this.deliver(l, { text: input.text, key: input.key, ...(input.delivery === "prompt" ? {} : { delivery: input.delivery }) });
+    return this.deliver(l, { text: input.text, key: input.key, ...(input.delivery === "prompt" ? {} : { delivery: input.delivery }), ...(input.images?.length ? { images: input.images } : {}) });
   }
 
   async abort(chatId: string): Promise<void> {

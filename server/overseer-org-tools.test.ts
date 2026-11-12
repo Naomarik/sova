@@ -746,6 +746,17 @@ describe("archive a project (§app.organizations/archive)", async () => {
     await baton.closeBaton(open.sessionId);
   });
 
+  test("refused while its copies run or wait to restart, naming each; an adopted main copy never holds it up", async () => {
+    const copy = (name: string, state: "running" | "restarting", adopted = false) => ({ instance: adopted ? null : name, name, branch: null, checkout: null, slot: null, services: [{ name: "web", state }], adopted, down: null });
+    assert.equal(po.copiesPhrase([]), null);
+    assert.equal(po.copiesPhrase([copy("Main copy", "running", true)]), null, "runs outside Sova: no blocker");
+    const copies = [copy("Main copy", "running"), copy("sova/b", "restarting"), copy("Elsewhere", "running", true)];
+    assert.equal(po.copiesPhrase(copies), "2 copies running (Main copy; sova/b, restarting)");
+    await assert.rejects(setProjectArchived(project.id, true, { kind: "operator" }, await po.archiveBlockers(project.id, copies)), { message: "Stop these first: 2 copies running (Main copy; sova/b, restarting)." });
+    assert.equal(orgs.readProjects(org.id)[0]!.archived, undefined, "nothing written");
+    assert.deepEqual(await po.archiveCopies(project.id), [], "none of its copies runs here");
+  });
+
   test("on the user's typed word, no card: archives via the Overseer, left out of counts and the Organizations region", async () => {
     attended = false;
     card = null;

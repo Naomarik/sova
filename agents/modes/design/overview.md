@@ -37,10 +37,15 @@ Every tool is served by Sova's server, so a terminal has nothing to run.
 - **The trigger is the model's judgement.** No server gate: the catalogue line and `lookbook.md` say when the
   user has asked. Keep both in step.
 - **Text names the tools.** The prompts name `lookbook`, `vis_guide`, `design_stream`, `design_hand_in`,
-  `design_look`, `coordinator_card`, `design_brief`, `design_status`, `design_new`, `design_send`, `design_browse`, `design_capture`
-  and their arguments. A renamed tool or argument changes the text in the same branch.
+  `design_look`, `coordinator_card`, `design_brief`, `design_status`, `design_new`, `design_send`, `design_browse`, `design_capture`,
+  `design_images`, `design_skill`, the Creative Director's one built-in `read`, and their arguments (the lookbook tool's `skills` too). A renamed tool or argument changes the text in the same branch.
 - **Reply markers.** `DESIGN_PAGE_START` and `DESIGN_PAGE_END` equal `DESIGN_PAGE_OPEN` and `DESIGN_PAGE_CLOSE` in
   `shared/design.ts` (pi-config can't import `shared/`). `server/design-guide.test.ts` keeps them equal.
+- **Design skills.** Nothing autoloads for a Lookbook's sessions: `workerBuild` gives the design kinds `noSkills` and
+  `noContextFiles`, so no `<skills>` section and no AGENTS.md. A run's skills (`server/design/skills.ts`) are only the
+  ones the user named (a name, found among the project's skills first, or a path); they sit on the run and reach the
+  Creative Director in each run's first message (its session outlives runs). It picks the designers' subset with
+  `design_brief`'s `skills` (`designerSkills`); designers read only that, through `design_skill`, never pi's file tools.
 - **The sealed frame.** The brief says only Google Fonts load. It must keep saying what the frame actually blocks.
 
 ## When you change it, also update

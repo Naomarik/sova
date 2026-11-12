@@ -388,6 +388,7 @@ const PROJECTS_SWEEP: CommandEntry[] = [
   },
   changes("project.archive", "Archive Project", "Archive a project; refused while anything in it is open.", "POST", "/api/projects/:pid/archive", { pid }),
   changes("project.unarchive", "Unarchive Project", "Bring an archived project back.", "POST", "/api/projects/:pid/unarchive", { pid }),
+  looks("project.copies.running", "List Running Copies", "A project's copies that run or wait to restart, as the archive dialog lists them, each with the down that stops it.", "/api/projects/:pid/running-copies"),
   changes("project.preview.off", "Turn Off Preview Link", "Turn a preview link off at once.", "POST", "/api/previews/:id/off", { id: previewId }),
   looks("project.worktree.list", "List Project Worktrees", "A project's coding sessions' worktrees and their branches.", "/api/projects/:pid/overseer/worktrees"),
   changes("project.worktree.merge", "Merge Worktree", "Merge a coding session's worktree branch into its target. The user's own page only: a chat, an Overseer or a script is refused.", "POST", "/api/projects/:pid/overseer/worktrees/merge", { pid, "session-id": codingSession }),

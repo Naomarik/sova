@@ -62,3 +62,76 @@ test("the main chat's image goes to the coordinator by name: neither chat's file
   }
   assert.ok(!/"type":"image"/.test(toMain), "no picture block in the main chat's tool result");
 });
+
+test("images attached when the Lookbook is asked for join the run itself, and a Creative Director that reads pictures sees them first", async () => {
+  const starts: { task?: string; images?: { mimeType: string }[] }[] = [];
+  setCoordinatorPorts({
+    workers: () => ({ start: async (req: { task?: string; images?: { mimeType: string }[] }) => (starts.push(req), { chatId: "coord2", sessionFile: "/c2.jsonl" }), send: async () => ({ queued: false }), state: () => "idle", watch: () => () => {} }),
+    designsFor: () => [], systemPrompt: () => "P", specFor: () => ({}) as never, sessionDir: () => "/s", stores: () => ({}) as never, projects: () => [],
+  } as never);
+  setOwnImageDepsForTest({
+    draw: (async (_c: unknown, images: readonly Uint8Array[]) => images.map(() => ({ width: 1440, height: 900, full: { bytes: drawn.full, w: 800, h: 600 }, small: { bytes: drawn.small, w: 400, h: 300 }, describe: { bytes: drawn.describe, w: 400, h: 300 } }))) as never,
+    context: (async () => ({ sessionId: other, sessionFile: chat.path, cwd: agentDir, agentDir, sandbox: { on: false } })) as never,
+  });
+  after(() => { setCoordinatorPorts(null); setOwnImageDepsForTest(null); });
+  const other = "01a1c2a9-c0c7-7016-a44a-66741a821f66";
+  const chat = { sessionId: other, path: join(agentDir, "main2.jsonl") };
+  const dir = join(attachmentsRoot(), other);
+  mkdirSync(dir, { recursive: true });
+  const file = join(dir, "sova-0f8f7c3e-1111-4222-8333-444455556667.png");
+  writeFileSync(file, Buffer.concat([Buffer.from(original), Buffer.from("SCREENSHOT")]));
+  const lookbook = mainDesignTools(() => chat, () => agentDir).find((t) => t.name === "lookbook")!;
+  const out = await lookbook.execute("s1", { op: "start", brief: "Redesign this screen", images: [file] }, undefined, undefined, undefined as never);
+  const { viewOf } = await import("./store");
+  const { keptImages } = await import("./brief");
+  const run = viewOf(other).runs.at(-1)!;
+  const asset = readAssets(other).assets.find((a) => a.source === "yours")!;
+  assert.ok(asset, "the attached image joined the chat's images");
+  assert.match(JSON.stringify(out), new RegExp(`Images: ${asset.name} joined the run`));
+  assert.ok(!run.setup.brief.includes(file), "no path in the brief");
+  assert.deepEqual(run.images, [asset.name], "on the run itself, so Setup has them from its first frame");
+  assert.deepEqual(keptImages({ ...run, brief: { imageUse: {} } as never }, readAssets(other)), [asset.name], "it is this run's own image: Setup shows it and Start hands it over");
+  // The Creative Director: told its name, and shown the picture on its first turn.
+  run.setup.models = [{ ref: "zai/c", name: "c", design: true, coordinator: true, vision: true, route: "tool" }];
+  changeDesigns(other, (s) => void (s.runs.find((r) => r.id === run.id)!.setup = run.setup));
+  await startCoordinator(chat, run, agentDir);
+  assert.match(starts.at(-1)!.task!, new RegExp(`The user's own images for this run: ${asset.name}\\.`));
+  assert.equal(starts.at(-1)!.images?.length, 1);
+  assert.equal(starts.at(-1)!.images![0]!.mimeType, "image/png");
+});
+
+test("start images the chat already had belong to the new run without being re-dated; a darkroom that fails still leaves one card, and says so", async () => {
+  const sid = "01a1c2a9-c0c7-7016-a44a-66741a821f67";
+  const chat = { sessionId: sid, path: join(agentDir, "main3.jsonl") };
+  const drawOk = (async (_c: unknown, images: readonly Uint8Array[]) => images.map(() => ({ width: 800, height: 600, full: { bytes: drawn.full, w: 800, h: 600 }, small: { bytes: drawn.small, w: 400, h: 300 }, describe: { bytes: drawn.describe, w: 400, h: 300 } }))) as never;
+  const context = (async () => ({ sessionId: sid, sessionFile: chat.path, cwd: agentDir, agentDir, sandbox: { on: false } })) as never;
+  setOwnImageDepsForTest({ draw: drawOk, context });
+  after(() => setOwnImageDepsForTest(null));
+  const dir = join(attachmentsRoot(), sid);
+  mkdirSync(dir, { recursive: true });
+  const file = join(dir, "sova-0f8f7c3e-1111-4222-8333-444455556668.png");
+  writeFileSync(file, Buffer.concat([Buffer.from(original), Buffer.from("KNOWN")]));
+  const lookbook = mainDesignTools(() => chat, () => agentDir).find((t) => t.name === "lookbook")!;
+  await lookbook.execute("s1", { op: "start", brief: "first", images: [file] }, undefined, undefined, undefined as never);
+  const { viewOf } = await import("./store");
+  const { keptImages } = await import("./brief");
+  const name = readAssets(sid).assets[0]!.name;
+  const first = readAssets(sid).assets[0]!.addedAt;
+  await new Promise((r) => setTimeout(r, 5));
+  await lookbook.execute("s2", { op: "start", brief: "second", images: [file] }, undefined, undefined, undefined as never);
+  const second = viewOf(sid).runs.at(-1)!;
+  assert.equal(readAssets(sid).assets.length, 1, "the same image, one asset");
+  assert.equal(readAssets(sid).assets[0]!.addedAt, first, "never re-dated");
+  assert.ok(first < second.createdAt);
+  assert.deepEqual(second.images, [name]);
+  assert.deepEqual(keptImages({ ...second, brief: { imageUse: {} } as never }, readAssets(sid)), [name], "the new run has it");
+  // The darkroom fails after the card is up: the call still answers, once, and says what to do.
+  setOwnImageDepsForTest({ draw: (async () => { throw new Error("the darkroom didn't start"); }) as never, context });
+  const runs = viewOf(sid).runs.length;
+  writeFileSync(file, Buffer.concat([Buffer.from(original), Buffer.from("OTHER")]));
+  const out = JSON.stringify(await lookbook.execute("s3", { op: "start", brief: "third", images: [file] }, undefined, undefined, undefined as never));
+  assert.equal(viewOf(sid).runs.length, runs + 1, "one card");
+  assert.match(out, /The Setup card is on screen/);
+  assert.match(out, /couldn't be added \(the darkroom didn't start\)[^"]*paste them into the Creative Director's box\. Don't start another card\./);
+  assert.equal(viewOf(sid).runs.at(-1)!.images, undefined);
+});

@@ -1,9 +1,9 @@
 import { createEffect, createMemo, createSignal, For, type JSX, Match, on, Show, Switch } from "solid-js";
 import { chatRefOf } from "../lib/merge-chat";
 import { chatTreesOf } from "../lib/merge-queue";
-import type { ProjectSummary } from "../../shared/projects";
+import type { ArchiveCopy, ProjectSummary } from "../../shared/projects";
 import type { SessionSummary } from "../../shared/protocol";
-import { ApiError, archiveProject, getProjectPreviews, unarchiveProject } from "../lib/api";
+import { ApiError, archiveProject, getProjectPreviews, runProjectVerb, unarchiveProject } from "../lib/api";
 import { relativeTime } from "../lib/format";
 import { createPoll } from "../lib/poll";
 import { PROJECT_TABS, PROJECTS_HREF, projectTabHref, type ProjectTab, type QueueTab } from "../lib/projects-route";
@@ -12,6 +12,9 @@ import { isGap, openIdeas } from "../lib/project-overseer-view";
 import { projectHostOf } from "../lib/mesh";
 import { announce, toast } from "../lib/ui-state";
 import { InsightsPage } from "./InsightsPage";
+import { createRunningCopies, ProjectArchiveAsk, refusedCopies } from "./ProjectArchiveAsk";
+import { archivedRunningLine, STOP_SHARED_CONFIRM, STOP_SHARED_LABEL, STOP_SHARED_RUNNING, stoppableShared } from "../lib/archive-copies";
+import { refusalLine } from "../lib/services-view";
 import { PreviewsCard } from "./PreviewsCard";
 import { ActionMenu } from "./ActionMenu";
 import { costFigure, createProjectCost, ProjectCostCard } from "./ProjectCostCard";
@@ -38,6 +41,8 @@ import "../projects.css";
 const errText = (err: unknown) => (err instanceof ApiError || err instanceof Error ? err.message : String(err));
 /** The previews chip's count; the Previews card reads its own, more often. */
 const PREVIEWS_POLL_MS = 30_000;
+/** While archived, what it left running is read this often (the Branches tab reads its own). */
+const ARCHIVED_POLL_MS = 15_000;
 
 /** What the page hands the layer that places the project, to build its part from. */
 export interface ProjectPartContext {
@@ -135,6 +140,8 @@ export function ProjectPage(props: {
   const [confirmArchive, setConfirmArchive] = createSignal<"head" | "settings" | null>(null);
   const [archiveError, setArchiveError] = createSignal<string | null>(null);
   const [archiving, setArchiving] = createSignal(false);
+  // The copies the last refusal named: the ask lists them at once.
+  const [refused, setRefused] = createSignal<ArchiveCopy[] | null>(null);
   const setArchived = async (on: boolean) => {
     const p = project();
     if (archiving()) return;
@@ -148,34 +155,28 @@ export function ProjectPage(props: {
       announce(done);
     } catch (err) {
       setArchiveError(errText(err));
+      setRefused(refusedCopies(err));
     } finally {
       setArchiving(false);
     }
   };
   const ArchiveConfirm = (p: { from: "head" | "settings" }) => (
     <Show when={confirmArchive() === p.from && !archived()}>
-      <div class="project-archive-confirm">
-        <Banner
-          tone="warn"
-          title={`${project().name} leaves the Projects list and its overseer stops looking. Nothing is deleted; Unarchive brings it back.`}
-          action={
-            <div class="button-row">
-              <button type="button" class="button button-sm button-destructive" aria-disabled={archiving() ? "true" : undefined} onClick={() => void setArchived(true)}>
-                Archive Project
-              </button>
-              <button type="button" class="button button-sm button-ghost" onClick={() => setConfirmArchive(null)}>
-                Cancel
-              </button>
-            </div>
-          }
-        />
-        <Show when={archiveError()}>{(e) => <p class="field-error">{e()}</p>}</Show>
-      </div>
+      <ProjectArchiveAsk
+        projectId={projectId}
+        name={project().name}
+        archiving={archiving()}
+        error={archiveError()}
+        refused={refused()}
+        onArchive={() => void setArchived(true)}
+        onCancel={() => setConfirmArchive(null)}
+      />
     </Show>
   );
   const askArchive = (from: "head" | "settings") => {
     setConfirmArchive(confirmArchive() === from ? null : from);
     setArchiveError(null);
+    setRefused(null);
   };
 
   // ---- the summary's counts ----------------------------------------------------------------------
@@ -262,20 +263,70 @@ export function ProjectPage(props: {
       {/* The Setup chat's proposal: read from the Setup read (it is not a verb playbook run). */}
       <SetupProposalBanner projectId={projectId} poll={setup} />
       <Show when={archived()}>
-        {(a) => (
-          <div class="project-archive-confirm">
-            <Banner
-              tone="info"
-              title={`${project().name} was archived${a().via === "overseer" ? " by you, via the Overseer" : ""} ${relativeTime(a().at)}. Its overseer is paused and nothing new starts here. Nothing was deleted.`}
-              action={
-                <button type="button" class="button button-sm" aria-disabled={archiving() ? "true" : undefined} onClick={() => void setArchived(false)}>
-                  Unarchive
-                </button>
-              }
-            />
-            <Show when={archiveError()}>{(e) => <p class="field-error">{e()}</p>}</Show>
-          </div>
-        )}
+        {(a) => {
+          // What it left running (copies run on while archived): read now and then, named under the banner.
+          const left = createRunningCopies(projectId, ARCHIVED_POLL_MS);
+          const leftLine = () => (left.data() ? archivedRunningLine(left.data()!.copies) : null);
+          // Its shared services may run with no copy to show them on Branches: their Stop is here, pressed twice.
+          const sharedRow = () => (left.data() ? stoppableShared(left.data()!.copies) : null);
+          const [stopArmed, setStopArmed] = createSignal(false);
+          const [stopping, setStopping] = createSignal(false);
+          const [stopError, setStopError] = createSignal<string | null>(null);
+          const stopShared = async () => {
+            const row = sharedRow();
+            if (!row?.down || stopping()) return;
+            if (!stopArmed()) return void setStopArmed(true);
+            setStopArmed(false);
+            setStopping(true);
+            setStopError(null);
+            try {
+              const why = refusalLine(await runProjectVerb(projectId, "down", row.down));
+              if (why) setStopError(why);
+              else announce("Stopped its shared services.");
+            } catch (err) {
+              setStopError(`Couldn't reach the engine. ${errText(err)}`);
+            } finally {
+              setStopping(false);
+              left.refetch();
+            }
+          };
+          return (
+            <div class="project-archive-confirm">
+              <Banner
+                tone="info"
+                title={`${project().name} was archived${a().via === "overseer" ? " by you, via the Overseer" : ""} ${relativeTime(a().at)}. Its overseer is paused and nothing new starts here. Nothing was deleted.`}
+                body={
+                  leftLine() ? (
+                    <>
+                      {leftLine()!.endsWith(" on Branches.") ? (
+                        <>
+                          {leftLine()!.slice(0, -"Branches.".length)}
+                          <a href={tabHref("branches")}>Branches</a>.
+                        </>
+                      ) : (
+                        leftLine()
+                      )}
+                    </>
+                  ) : undefined
+                }
+                action={
+                  <div class="button-row">
+                    <Show when={sharedRow()}>
+                      <button type="button" class="button button-sm button-destructive" aria-disabled={stopping() ? "true" : undefined} onClick={() => void stopShared()} onBlur={() => setStopArmed(false)}>
+                        {stopping() ? STOP_SHARED_RUNNING : stopArmed() ? STOP_SHARED_CONFIRM : STOP_SHARED_LABEL}
+                      </button>
+                    </Show>
+                    <button type="button" class="button button-sm" aria-disabled={archiving() ? "true" : undefined} onClick={() => void setArchived(false)}>
+                      Unarchive
+                    </button>
+                  </div>
+                }
+              />
+              <Show when={stopError()}>{(e) => <p class="field-error">{e()}</p>}</Show>
+              <Show when={archiveError()}>{(e) => <p class="field-error">{e()}</p>}</Show>
+            </div>
+          );
+        }}
       </Show>
       <div class="project-summary">
         <OverseerSummary po={po} archived={!!archived()} placed={!!org} attachedWho={org?.attachedWho} />
@@ -316,7 +367,7 @@ export function ProjectPage(props: {
                 <CodingSessionsCard po={po} archived={!!archived()} />
                 {/* Preview links (§mesh.public/preview-card): this project's apps, on this host. */}
                 <div id="project-previews" class="project-anchor">
-                  <PreviewsCard projectId={projectId} />
+                  <PreviewsCard projectId={projectId} archived={!!archived()} />
                 </div>
               </div>
               <div class="project-col">

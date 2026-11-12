@@ -4,7 +4,8 @@
 A **Lookbook** is one page designed by several models side by side. It is part of vis: when you ask
 for one, the main chat sends labelled one-page prototypes out to hidden design sessions on several
 models, Sova draws each page live in the chat and in the session pane, and you refine a design, talk
-to it, and make new designs from others through one coordinator.
+to it, and make new designs from others through one Creative Director, the run's hidden lead session
+(§chat.design-mode/creative-director). A run uses only the skills you name (§chat.design-mode/skills).
 
 The chat holds one **Lookbook card** per run. The card goes through states, each in its title:
 **Lookbook · Setup**, **Lookbook · Brief**, then the designs being made (**Lookbook · 6 designs**).
@@ -14,8 +15,9 @@ unless it asks to read one.
 
 Owns: how a Lookbook rides vis, when the main chat opens one, its guide, the Lookbook card and its
 states, the model picker, design sessions, how a page streams and how its frame is sealed, the
-Gallery's prototypes, labels, storage, the coordinator and its card, how the main chat reads and
-passes on, research, the brief and Start, links and images, the limits on a launch, what the coordinator may do across projects and sites, Refine, and
+Gallery's prototypes, labels, storage, the Creative Director, its name and its card, the skills a run
+uses, how the main chat reads and
+passes on, research, the brief and Start, links and images, the limits on a launch, what the Creative Director may do across projects and sites, Refine, and
 new designs made from others.
 
 Not here: the mode menu and the vis minor mode itself (§chat/mode-menu, §chat.markdown/visuals),
@@ -42,7 +44,7 @@ it is there only with vis on.
   kinds, with when to use it (§chat.design-mode/asking); everything else about it loads only when the
   chat looks it up (§chat.design-mode/guide). Neither the tool nor the line adds anything to the
   system prompt beyond vis's own block.
-- **Not for workers.** A chat's workers, design sessions and coordinator take nothing of the chat's
+- **Not for workers.** A chat's workers, design sessions and Creative Director take nothing of the chat's
   modes (§chat.mode-menu/workers), so none of them has a Lookbook. The Overseer has no minor modes,
   so it has none either.
 
@@ -62,7 +64,7 @@ this itself, from what you wrote; Sova checks no word.
   up. A later request starts over.
 - **Only your own words count.** A note, another chat's message, or a team member's or worker's
   message that names a Lookbook doesn't open one.
-- **Reading and passing on need no ask.** Reading a design or the coordinator's card and passing
+- **Reading and passing on need no ask.** Reading a design or the Creative Director's card and passing
   your words on (§chat.design-mode/main-chat) work whenever the chat has a Lookbook.
 
 ## §chat.design-mode/guide — The guide is the entry point
@@ -86,6 +88,9 @@ The brief a design session gets:
   look.
 - Carries the anti-pattern list, among them no generic fonts (Inter, Roboto, Arial, Space Grotesk)
   and no cliched purple gradients.
+- When the run has skills, tells the designer to read first the parts the brief suggests, to read
+  any other part it needs, and to copy the rules and tokens it uses into the page
+  (§chat.design-mode/skills).
 - Tells the designer to draw any imagery it isn't given (§chat.design-mode/page-images) in the page,
   since a prototype may load only Google Fonts
   (§chat.design-mode/prototype-frame).
@@ -111,24 +116,25 @@ chat filled in, which keeps the main chat's context clean."
   (§chat.design-mode/directions), and a line that counts the run from its plan
   (§chat.design-mode/pairing): "6 designs · 3 pairs · 2 models", "18 designs · 3 styles × 3 layouts · 2
   models", or with no layout "6 designs · 3 styles · 2 models". When the text holds a link, a small row chooses how it is
-  used (§chat.design-mode/link-modes). The name Brief belongs only to the brief
+  used (§chat.design-mode/link-modes). The card shows the skills you named for the run, with nothing
+  to set (§chat.design-mode/skills). The name Brief belongs only to the brief
   (§chat.design-mode/brief).
 - **Clicks stay on the card.** No edit goes back into the transcript or wakes the main chat: each
   click is saved in the chat's design store (§chat.design-mode/storage), with nothing written to the
-  chat's session per click, and a reload shows it as left. Start Coordinator records what was chosen
-  (what you want, the designing models, the coordinator, the styles and layouts and how they
-  combine) in the session once.
-- **Start Coordinator** hands the setup to the chat's hidden coordinator
+  chat's session per click, and a reload shows it as left. Start Creative Director records what was chosen
+  (what you want, the designing models, the Creative Director, the styles and layouts and how they
+  combine, and the skills it uses, §chat.design-mode/skills) in the session once.
+- **Start Creative Director** hands the setup to the chat's hidden Creative Director
   (§chat.design-mode/coordinator). It is a click on the card, never a main-chat turn. It
-  starts only the coordinator's preparing: no design is written until Start on the brief
+  starts only the Creative Director's preparing: no design is written until Start on the brief
   (§chat.design-mode/brief-start). The limits on a run are §chat.design-mode/launch-limits.
 
-## §chat.design-mode/model-picker — The model picker and its Coordinator dropdown
+## §chat.design-mode/model-picker — The model picker and its Creative Director dropdown
 
-The Setup card has one picker for every choice of model: a Coordinator dropdown and a search box on
-one row, then one section per provider. The coordinator's model is chosen in the same picker and
+The Setup card has one picker for every choice of model: a Creative Director dropdown and a search box on
+one row, then one section per provider. The Creative Director's model is chosen in the same picker and
 stays separate from designing; as the user decided, "I can deselect that model as a designer and
-still choose it explicitly as coordinator". One Coordinator dropdown holds that choice, instead of a
+still choose it explicitly as coordinator". One Creative Director dropdown holds that choice, instead of a
 checkbox on every row.
 
 - **One section per provider, all closed at first.** Each provider has its own section, and Ollama
@@ -147,11 +153,12 @@ checkbox on every row.
   capable first. A model that list doesn't know yet goes at the bottom of its section, newest
   version first. The order is set when the picker draws and never changes while the user ticks, so
   no row jumps.
-- **The Coordinator dropdown.** Exactly one model is the coordinator. The dropdown lists every model
+- **The Creative Director dropdown.** Exactly one model is the Creative Director. A setup naming two is refused with "Only one model can be the Creative
+  Director." The dropdown lists every model
   the picker offers, in the same sections and order, whether it is designing or not: choosing the
-  coordinator never ticks or unticks Design, and unticking Design never changes the coordinator.
+  Creative Director never ticks or unticks Design, and unticking Design never changes the Creative Director.
   The main chat's pick is filled in, and on a later run the line under it says what changing the
-  coordinator does (§chat.design-mode/coordinator).
+  Creative Director does (§chat.design-mode/coordinator).
 - **Search.** Typing in the search box shows only the models that match, under their providers'
   names, in place of the sections. Clearing it brings the sections back, each open or closed as the
   user left it.
@@ -164,7 +171,7 @@ checkbox on every row.
   under a provider the same request names (another model given with its provider, or a group), else
   the one under the provider of the model the chat itself runs on, else the first in the picker's
   order. So a chat on Z.ai asking for `glm-5.3-flash` ticks Z.ai's and not Ollama Cloud's. The
-  coordinator's name resolves the same way.
+  Creative Director's name resolves the same way.
 - **What is offered.** Only models that can run, in the sections, the dropdown, search and the main
   chat's groups alike. A model barred for workers in Settings is never offered, and `claude-opus-5`
   is never offered. Ollama models Sova's Ollama Cloud check has found retired, which can only fail,
@@ -268,12 +275,12 @@ default, ask above 12, stop at 24".
   plan is known.
 - **Above 24** the run can't start, and the card says why ("Choose fewer models, styles or
   layouts.").
-- **The coordinator can't widen it.** Start launches the run (§chat.design-mode/brief-start), and the
+- **The Creative Director can't widen it.** Start launches the run (§chat.design-mode/brief-start), and the
   server holds it to the models, styles, layouts and combine choice saved on the card and to these limits, whatever the
-  coordinator asks for.
+  Creative Director asks for.
 - **Per launch.** The limits count each launch on its own: Start's batch, and the designs the
-  coordinator makes from others in one turn with `design_new`, which count together. Above 12 in one
-  turn the coordinator's card asks first ("Make more than 12 designs this turn?").
+  Creative Director makes from others in one turn with `design_new`, which count together. Above 12 in one
+  turn the Creative Director's card asks first ("Make more than 12 designs this turn?").
 - **It counts designs, not money.** The limit is on how many designs a run makes, whatever each one
   costs, and each design's real spend shows on its tile (§chat.design-mode/card).
 
@@ -290,7 +297,7 @@ with its letter (A, B, A2; §chat.design-mode/labels).
 
 Once a run is going, the card shows the run's title, its size, worded as Setup's count line
 ("6 designs · 3 pairs · 2 models", §chat.design-mode/setup-card),
-a summary of its states ("2 ready · 1 writing · 3 queued"), one tile per design, and the coordinator's
+a summary of its states ("2 ready · 1 writing · 3 queued"), one tile per design, and the Creative Director's
 card (§chat.design-mode/coordinator-card).
 
 Each tile holds the page as it is written (§chat.design-mode/streaming) and:
@@ -321,7 +328,9 @@ the parent is archived; §app.chat-processes/workers), and two things a worker d
 A design session has only the tools that make its page: `design_stream {label, html}` (the whole
 document, or a find-and-replace list so a refine doesn't rewrite the page; never offered to a model
 that writes through its reply, §chat.design-mode/reply-route), `design_hand_in {label,
-note}` and `design_look`. It has no shell and no file tools. It never opens as an ordinary chat, and
+note}` and `design_look`, and Sova's read-only skill reader, which opens files only inside its run's
+skill folders (§chat.design-mode/skills). It has no shell and none of pi's built-in file tools. It
+never opens as an ordinary chat, and
 the refusal for a worker's session (§app.chat-processes/workers) holds for it.
 
 - **Queued.** A chat writes at most 6 designs at once, each label in one session only: a design whose
@@ -329,7 +338,7 @@ the refusal for a worker's session (§app.chat-processes/workers) holds for it.
   limit applies on top (§app/provider-limits). A design waiting for either reads Queued, and its tile
   says "Waiting for a free session".
 - **Handing in.** A session finishes with `design_hand_in`. Its `note` is required and says, briefly,
-  the page's layout, sections, type and colour; that note is what the coordinator knows of the page.
+  the page's layout, sections, type and colour; that note is what the Creative Director knows of the page.
 - **Idle sessions go away and the pages don't.** An idle design session's process stops after the
   idle-stop time like any chat's (§app.chat-processes/idle-stop), so keeping designs for the life of
   a chat doesn't keep dozens of sessions running. The page stays, and the session starts again when
@@ -433,7 +442,7 @@ hold still.
   row, while the card's top and every row down to the clicked one stay where they were. Each of these
   rows keeps its height whatever it names, and so does the
   row of pairs, which stays one line with Shuffle in its place whether shown or not. Typing in or clearing the search box changes only what is
-  below it, and the Coordinator dropdown opens over the card, pushing nothing.
+  below it, and the Creative Director dropdown opens over the card, pushing nothing.
 - **Refine opens over the page.** Pressing Refine opens its box as an overlay, so nothing moves.
 - **The open view holds still too.** Its status chip and version picker have fixed places, the picker
   there even with one version, so a new version arriving moves nothing beside it. Its message box is
@@ -456,7 +465,7 @@ What happens depends on whether the model can do anything about it.
   that needed no change doesn't.
 - **A reason the model can't act on** (an unsupported model, a login, the provider down) goes straight
   to Failed, with the reason and Retry, and is never sent back.
-- **Nobody else pays for it.** The coordinator spends no turn on any of this: it gets quiet notes that
+- **Nobody else pays for it.** The Creative Director spends no turn on any of this: it gets quiet notes that
   start no turn. The main chat is not woken.
 
 Retry starts that one design again under its label, and the rest of the run carries on.
@@ -479,7 +488,7 @@ on top, then **Page Assets**, then **Explanations**: the same list of this sessi
 the tab showed before.
 
 Prototypes shows every design in the chat, from every run, with the same tiles, statuses and live
-pages as the Lookbook card, and has **Open Coordinator** at its head. This is where design sessions
+pages as the Lookbook card, and has **Open Creative Director** at its head. This is where design sessions
 live, since they are not on the Agents tab. With none it reads "0 prototypes yet. They show up here
 once you press Start on the brief.", or in a chat with vis off "0 designs in this chat. Turn on
 vis and ask for a Lookbook to make some." The tab keeps its name, Gallery.
@@ -490,12 +499,12 @@ moving it, and **Download** gives the original.
 
 The Explanations page (`#/explanations`, §app.insights/explanations-page) is unchanged.
 
-## §chat.design-mode/chat-with — Every design and the coordinator have their own chat
+## §chat.design-mode/chat-with — Every design and the Creative Director have their own chat
 
-Pressing **Open** on a design, or **Open Coordinator**, shows the page full size or the coordinator's
+Pressing **Open** on a design, or **Open Creative Director**, shows the page full size or the Creative Director's
 work and the session's own chat: its messages, with a message box and **Send** ("Chat with A",
-"Message A"; "Chat with the coordinator", "It knows what each design is, not its code", "Message the
-coordinator"). **Chat** on a tile opens the same thing. Open works while a design is being written:
+"Message A"; "Chat with the Creative Director", "It knows what each design is, not its code", "Message the
+Creative Director"). **Chat** on a tile opens the same thing. Open works while a design is being written:
 its page grows full size as it is written, and a Refine sent from here shows live in the same place,
 the old version holding until the new one has text. This message box exists
 for these two kinds of session only (§app.subagents-pane/transcript-view); what is sent goes the way
@@ -509,15 +518,15 @@ is §chat.design-mode/open-history.
 As the user decided, the open view (§chat.design-mode/chat-with) is part of the browser's history and
 of the page's address.
 
-- **Each open is one step.** Opening a design, its chat or the coordinator, from the Lookbook card or
-  the Gallery, adds one history step. So does opening a design from inside the coordinator's view.
+- **Each open is one step.** Opening a design, its chat or the Creative Director, from the Lookbook card or
+  the Gallery, adds one history step. So does opening a design from inside the Creative Director's view.
 - **Back retraces what you opened.** Back goes to what was open before: from a design opened inside
-  the coordinator, Back returns to the coordinator, then to the chat. **Forward** goes the other way,
+  the Creative Director, Back returns to the Creative Director, then to the chat. **Forward** goes the other way,
   opening them again in order.
 - **Closing leaves no stale step.** Closing the view with its close button or Esc puts you back where
   you were before you opened it, so Back afterwards never reopens what you closed.
 - **The address says what is open.** The chat's address names the open design by its label or the
-  coordinator (`#/s/<path>?design=A`, `#/s/<path>?design=coordinator`), so a reload or a copied
+  Creative Director (`#/s/<path>?design=A`, `#/s/<path>?design=coordinator`), so a reload or a copied
   address reopens the same view over the same chat. An address naming a design the chat no longer
   has opens the chat alone.
 
@@ -531,13 +540,13 @@ worktree link has something to show me."
 
 This placement is the first build's and is open to change on the user's look at it. Whatever is
 decided then replaces this paragraph; nothing else in this document depends on the view being side
-by side, only on each design and the coordinator having a chat of their own.
+by side, only on each design and the Creative Director having a chat of their own.
 
 ## §chat.design-mode/labels — Stable labels
 
 Each design has a letter for as long as the chat has it: A, B and so on to Z, then AA. A chat has one
 counter, shared by all its runs, and a letter is never reused, so "the header from A" means the same
-thing to you, the coordinator and the main chat whenever you say it.
+thing to you, the Creative Director and the main chat whenever you say it.
 
 A refined version keeps its letter with a number after it (A, then A2, A3). A design made from others
 names its parents ("G, from A and C"). Its style and layout, model, status and cost go with its label
@@ -557,12 +566,12 @@ As the user decided: "As long as the chat, only inside it". Designs follow the r
 - **Not outside the chat.** They aren't on share links, and no other chat reads them. A peer computer
   linked over the mesh doesn't get them for now.
 
-## §chat.design-mode/coordinator — One coordinator per chat, on metadata only
+## §chat.design-mode/coordinator — One Creative Director per chat, on metadata only
 
-Each chat has one hidden coordinator session, started when Start Coordinator is pressed. It runs on
-the model chosen in the Setup card's Coordinator dropdown (§chat.design-mode/model-picker) and
+Each chat has one hidden Creative Director session, started when Start Creative Director is pressed. It runs on
+the model chosen in the Setup card's Creative Director dropdown (§chat.design-mode/model-picker) and
 prepares the brief
-(§chat.design-mode/brief); Start launches the team, not the coordinator. As the user decided: "The coordinator should not know every single token every
+(§chat.design-mode/brief); Start launches the team, not the Creative Director. As the user decided: "The coordinator should not know every single token every
 design has, only the data about them. That makes running out of room a non-issue. Giving it all the
 HTML they generate would be the issue."
 
@@ -570,64 +579,126 @@ HTML they generate would be the issue."
   `design_hand_in` (whose layout line shows whether the layout was followed), and nothing of the
   page's code. Its first message names the run's styles, layouts, Pair Up or Every Mix, and how many
   designs that makes. It reads these with `design_status`, and each
-  hand-in reaches it as a note that doesn't start a turn. Of images it holds the descriptions, never
-  the images (§chat.design-mode/describers, §chat.design-mode/own-images).
+  hand-in reaches it as a note that doesn't start a turn. Of a page's captured images and of your
+  other images it holds the descriptions, never the images (§chat.design-mode/describers). A
+  screenshot you paste it sees itself when its model can read pictures
+  (§chat.design-mode/own-images).
 - **What it can do.** Write the brief's summary, Full Prompt and questions with `design_brief`
-  (§chat.design-mode/brief-layers, §chat.design-mode/brief-questions), start a new design
+  (§chat.design-mode/brief-layers, §chat.design-mode/brief-questions), and there each screenshot's
+  kind, its Rebuild This Screen or Just Its Feel choice and its words for designers
+  (§chat.design-mode/own-images), start a new design
   (§chat.design-mode/new-from-parents), send a design a message with `design_send {label, text}`,
   rewrite its own card with `coordinator_card`, and look at a design or a screen with `design_browse`,
-  which returns a screenshot on demand.
+  which returns a screenshot on demand. It reads files as an ordinary chat does, with pi's built-in
+  read tool, anywhere on this computer, so you can say "the logo is in my Downloads folder"; it never
+  writes, edits or runs a shell. A file it reads that the designers need, such as a logo image,
+  reaches them as one of the Lookbook's images (§chat.design-mode/own-images), and the pages stay
+  sealed (§chat.design-mode/prototype-frame). Nothing loads for it by itself: no list of skills
+  and no `AGENTS.md` or `CLAUDE.md`. It reads the skills you named, chooses which the designers get,
+  and suggests what each designer reads first (§chat.design-mode/skills).
 - **Whose words are whose.** What you write reaches it under a label Sova writes ("The user wrote in
   your box", or the main chat passing on your words), byte for byte as typed, between marks drawn for
   that one message that the text doesn't contain, so nothing in it can close its fence. Everything a model or a page
   wrote (a design's note or failure, a page's look, an image's description) reaches it fenced as
   data, never as instructions and never as yours, so a note can't pass for your words.
-- **A later run's choice of model.** A chat has one coordinator, on the model the newest run's Setup
+- **A later run's choice of model.** A chat has one Creative Director, on the model the newest run's Setup
   chose. When a later run chooses a different one, a new session on that model takes over, carrying
   only the old one's card and Sova's notes since its last turn, and the old session ends; Setup says
-  so before Start Coordinator. The same model keeps the same session.
+  so before Start Creative Director. The same model keeps the same session.
 - **What it costs.** A few hundred tokens per design, not the page.
 - **It reports nothing to the main chat** (§chat.design-mode/main-chat). It is a worker of Sova's in
   everything else: §app.chat-processes/workers, and §chat.design-mode/delivery for how it is reached.
 
-## §chat.design-mode/coordinator-card — The coordinator's card
+## §chat.design-mode/coordinator-card — The Creative Director's card
 
-The coordinator has a card that follows the conversation, like an alignment card: what it has
-concluded and made so far, with a box to prompt it further ("Message the coordinator", **Send**), and its state ("Tracking 6 designs") and **Open Chat**. Each update
-replaces what the card said before. It lives in the Lookbook card and in the coordinator's own view.
+The Creative Director has a card that follows the conversation, like an alignment card: what it has
+concluded and made so far, with a box to prompt it further ("Message the Creative Director", **Send**), and its state ("Tracking 6 designs") and **Open Chat**. Each update
+replaces what the card said before. It lives in the Lookbook card and in the Creative Director's own view.
 
 **While the brief is open** only its status, any yes-or-no question and its message box show, so the
 two don't repeat each other. After Start, it reads as above. Its box also takes pasted images
 (§chat.design-mode/own-images).
 
 **Start is heard before the card changes.** At Start, Sova replaces the card with its own line naming
-the designs that started ("The designs started from the brief: A, B."). A card the coordinator writes
+the designs that started ("The designs started from the brief: A, B."). A card the Creative Director writes
 from a turn that hasn't yet heard of the Start is refused, with the news of the Start and which designs
 started, so Sova's line stays while the designs run. Once refused it counts as told: its next card
 stands, and its next turn isn't told of the Start again.
 
-There is no Mix button: you tell the coordinator what you want. A message sent here is delivered as
+There is no Mix button: you tell the Creative Director what you want. A message sent here is delivered as
 §chat.design-mode/delivery says, and stays out of the main chat.
+
+## §chat.design-mode/skills — A run uses only the skills you name
+
+As the user decided: "for these particular sessions, we do not want to AUTOLOAD _ANY_ skills or
+context. we must be explicit about it. that includes the coordinator." Skills reach a Lookbook only
+when you name them, with no new control on Setup.
+
+- **Nothing loads by itself.** The Creative Director and the designers load no skills and no project
+  context by themselves: no list of skills, no `AGENTS.md` or `CLAUDE.md`, this project's own skills
+  included. The Creative Director keeps its read tool (§chat.design-mode/coordinator).
+- **Only what you name.** A run's skills are the ones you named in your own words for it: by name
+  ("use this project's design skill", "the brand skill"), found among the project's own skills first,
+  or by a skill folder's path on this computer. A folder you name counts only if it holds a `SKILL.md`. Name none and the run has none.
+- **Never a guess.** A skill you name that can't be found becomes one of the Creative Director's
+  questions on the brief (§chat.design-mode/brief-questions) instead of a guess.
+- **The Creative Director chooses for the designers.** It reads the skills you named and picks in the
+  brief which of them the designers get: all of them unless it leaves one out, and it leaves out a
+  skill that isn't about design (such as a testing or browser skill). It suggests in the brief which
+  sections each designer should read first. It never restricts them within a skill: a designer may
+  read any part of the skills it gets.
+- **Shown, never set.** The Setup card shows the skills you named for the run on one line ("Design
+  skills: none" when you named none), with any not found (§chat.design-mode/setup-card), and, when you named any, the brief has a **Design skills: …** line
+  naming the ones the designers get (§chat.design-mode/brief). Neither has a control for them.
+- **Designers read through Sova.** A design session reads a skill with a read-only skill reader Sova
+  serves, which opens files only inside the skill folders the Creative Director chose for them, and only
+  text files (Markdown, CSS, HTML, JSON, SVG, plain text) up to a size limit. It
+  resolves each file's real path, so a link, a `..` or an absolute path that lands outside them is
+  refused. Designers still have no shell and none of pi's built-in file tools
+  (§chat.design-mode/design-sessions). They copy the rules and tokens they need into the page, since
+  the page stays sealed and loads only Google Fonts (§chat.design-mode/prototype-frame). While a
+  designer reads a skill before its page starts, its tile says **Reading the design skill**.
+- **Each run keeps its own.** A run's skills are stored on the run, and none carries over from an
+  earlier run. A Creative Director reused across runs follows the newest run's skills, and a design
+  revived after a restart keeps its run's skills.
+
+## §chat.design-mode/creative-director — It is called the Creative Director
+
+As the user decided, the run's lead session is the **Creative Director** everywhere a person or a
+model reads its name: Setup (its dropdown and **Start Creative Director**), the brief, the Lookbook
+card, the Gallery (**Open Creative Director**), the opened view, the images panel, the command list's
+labels (§chat.design-mode/commands), the docs page (§site.docs/design), its own card's text, the main
+chat's wording, and the text the Creative Director itself and the designers are given. No visible
+"coordinator" is left in the Lookbook.
+
+- **Hidden names stay.** The session's kind and worker id (`design-coordinator`), routes, command ids,
+  the `lookbook` tool's `coordinator` parameter and `?design=coordinator` addresses
+  (§chat.design-mode/open-history) keep their names and keep working. This document's § ids keep
+  theirs too.
+- **The old word still works.** The main chat still understands you when you say "coordinator".
 
 ## §chat.design-mode/main-chat — The main chat reads when asked
 
 The main chat stays out of the way so its context stays clean for feature work. As the user decided
 on what it does as designs land: "No note, it reads when asked".
 
-- **Nothing is pushed into it.** No design finishing, no refine, no message and no coordinator turn
+- **Nothing is pushed into it.** No design finishing, no refine, no message and no Creative Director turn
   sends the main chat a note or wakes it, one design at a time or as a batch.
-- **It reads on demand.** `lookbook {op:"read", label?}` returns the coordinator's current card, or one
+- **It reads on demand.** `lookbook {op:"read", label?}` returns the Creative Director's current card, or one
   design's page by label, and costs only what it reads. A page is typically 5,000 to 25,000 tokens
   depending on the model, long pages much more, and the guide says so. It knows each design by one
   line, "A · Bold & Vibrant · Bento · {model} · {status}" (the style alone with no layout).
 - **It passes things on word for word.** If you tell the main chat "tell B to go darker", it uses
-  `lookbook {op:"tell", text}`, which forwards your words to the coordinator and returns only an
+  `lookbook {op:"tell", text}`, which forwards your words to the Creative Director and returns only an
   acknowledgement. An image attached to your message goes with it by reference
   (§chat.design-mode/own-images).
+- **A screenshot you ask with goes in at the start.** A screenshot attached to the message in which
+  you ask for a Lookbook is handed to the Lookbook when it starts: the Setup card shows it, and the
+  Creative Director sees it on its first turn (§chat.design-mode/own-images).
 
-## §chat.design-mode/research — The coordinator looks first, and the screen goes in the brief
+## §chat.design-mode/research — The Creative Director looks first, and the screen goes in the brief
 
-Before the brief opens, the coordinator can research: see what's running across your projects
+Before the brief opens, the Creative Director can research: see what's running across your projects
 (§chat.design-mode/project-reach), start a copy or open an address you give it
 (§chat.design-mode/sites), walk to the right screen in a real browser, and take screenshots. It clicks
 to navigate and submits nothing but a sign-in.
@@ -635,13 +706,14 @@ to navigate and submits nothing but a sign-in.
 There is no separate confirm step: the brief is where you see the screen.
 
 - **With a screen,** its picture appears in the brief with **Not This Screen**, which opens the box to
-  redirect the coordinator ("Or tell it which screen or address to use"). **Start** is what says this
+  redirect the Creative Director ("Or tell it which screen or address to use"). **Start** is what says this
   is the right screen (§chat.design-mode/brief-start).
 - **With nothing to look at,** the brief opens all the same (§chat.design-mode/brief).
 
 ## §chat.design-mode/rebuilds — Rebuilding a screen that exists
 
-When a run redesigns a screen that exists (one the coordinator found, or a link used as a reference),
+When a run redesigns a screen that exists (one the Creative Director found, a link used as a reference, or
+a screenshot you pasted set to Rebuild This Screen, §chat.design-mode/own-images),
 what each design keeps depends on its layout. As the user decided, a ticked layout rearranges the
 screen.
 
@@ -652,20 +724,22 @@ screen.
   and so on.
 
 On Use Its Images, a design model that can't read images gets a written outline of the page instead
-of the screenshot (§chat.design-mode/link-modes).
+of the screenshot (§chat.design-mode/link-modes). Of a pasted screenshot, a design model that can't
+read images gets the screenshot's words and no picture (§chat.design-mode/brief-start).
 
 ## §chat.design-mode/brief — Every run gets a brief
 
 As the user decided: "Every run gets the brief, including a brand-new idea with no link." Every run
-goes the same way: Setup, then Start Coordinator, then the coordinator prepares, then the brief
+goes the same way: Setup, then Start Creative Director, then the Creative Director prepares, then the brief
 opens on the same Lookbook card (**Lookbook · Brief**), then you press Start, and the brief collapses as the designs appear.
 
 - **What the brief holds.** The summary and, folded under it, the Full Prompt
   (§chat.design-mode/brief-layers). Around them: the screen found, when there is one
   (§chat.design-mode/research); how each link is used (§chat.design-mode/link-modes); the images
-  designers will use or the look in words (§chat.design-mode/brief-images); the coordinator's open
+  designers will use or the look in words (§chat.design-mode/brief-images); the Creative Director's open
   questions (§chat.design-mode/brief-questions); and a line saying how many designs on which models,
-  styles and layouts, with an estimate.
+  styles and layouts, with an estimate; and, when you named skills, a **Design skills: …** line
+  naming the ones the designers get (§chat.design-mode/skills).
 - **Change.** On that line, **Change** reopens the Setup card's model picker and direction picker
   (§chat.design-mode/directions), so a
   different plan doesn't mean starting again.
@@ -681,38 +755,38 @@ opens on the same Lookbook card (**Lookbook · Brief**), then you press Start, a
 
 The brief has two layers. The **summary** is short enough to read in under a minute: what will be
 built, for whom, what it must contain and what is left out. The **Full Prompt** is the much larger
-text the coordinator generates, section by section, and it is what the design sessions actually get.
+text the Creative Director generates, section by section, and it is what the design sessions actually get.
 It names no style and no arrangement, since each design adds its own style and layout: it describes
 what the page contains (its sections as content, what each is for), never how they are laid out or in
 what columns. One text serves the whole batch, so designs differ by style, layout and model and not
 by content. As the user decided: "The Full Prompt can
 be read and edited, folded under the summary."
 
-The coordinator writes the summary and its questions first, and the Full Prompt once the questions
+The Creative Director writes the summary and its questions first, and the Full Prompt once the questions
 are answered.
 
 You change the brief either way: press **Edit Summary** or **Edit Prompt** to type into that layer,
-or tell the coordinator in the box below it.
+or tell the Creative Director in the box below it.
 
-- **Edit the summary** and the coordinator rewrites the Full Prompt to match.
-- **Edit the Full Prompt** and your words launch as you left them, while the coordinator only brings
+- **Edit the summary** and the Creative Director rewrites the Full Prompt to match.
+- **Edit the Full Prompt** and your words launch as you left them, while the Creative Director only brings
   the summary in line.
-- **Yours stays yours.** The coordinator can't overwrite what you saved, and your unsaved typing is
+- **Yours stays yours.** The Creative Director can't overwrite what you saved, and your unsaved typing is
   never replaced.
 - **Keep My Prompt or Rewrite It.** If you've saved your own Full Prompt and something later would
-  change it (you edit the summary, tell the coordinator something, or answer a question), the brief
+  change it (you edit the summary, tell the Creative Director something, or answer a question), the brief
   asks **Keep My Prompt** or **Rewrite It**, and Start waits until you pick, so the summary and the
   prompt can never quietly disagree.
 
-## §chat.design-mode/brief-questions — The coordinator's questions, and your answers
+## §chat.design-mode/brief-questions — The Creative Director's questions, and your answers
 
-The coordinator can put questions in the brief, especially when your request is ambiguous, each with
+The Creative Director can put questions in the brief, especially when your request is ambiguous, each with
 options and a recommendation, looking like an alignment card's. It asks at most a few, only ones that
 change what gets built, and never about style, which your styles already cover, nor about
 arrangement when layouts are ticked.
 
 **Go With Recommendations** accepts all of them in one click. Or pick for each and press **Send
-Answers**. Your answers go straight to the coordinator and never pass through the main chat.
+Answers**. Your answers go straight to the Creative Director and never pass through the main chat.
 
 ## §chat.design-mode/brief-start — Start, and what holds it back
 
@@ -720,22 +794,39 @@ Answers**. Your answers go straight to the coordinator and never pass through th
 told in the box.
 
 - **What blocks it.** Start is disabled while any question is open, while the Full Prompt is being
-  written, while a link's images are still being captured or described, and while the brief waits
+  written, while a link's images are still being captured or described, while a screenshot's words
+  for designers are still being drafted, while a screenshot has neither Rebuild This Screen nor Just
+  Its Feel ("Choose Rebuild or Just Its Feel", §chat.design-mode/own-images), and while the brief waits
   for Keep My Prompt or Rewrite It (§chat.design-mode/brief-layers), and its label says why ("Answer 1
-  Question First", "Writing the Full Prompt", "Reading the page's images", "Describing the
+  Question First", "Writing the Full Prompt", "The Creative Director Hasn't Written the Prompt", "Reading the page's images", "Describing the
   images"). A run past the limit can't start either (§chat.design-mode/launch-limits).
-- **A stopped coordinator.** If the coordinator has stopped, a Full Prompt you wrote or kept can still
+- **A stopped Creative Director.** If the Creative Director has stopped, a Full Prompt you wrote or kept can still
   start.
 - **It launches with your click.** Start uses exactly the version on the card, with no extra
-  coordinator turn. This is the only spending question, asked once when the plan is known
+  Creative Director turn. This is the only spending question, asked once when the plan is known
   (§chat.design-mode/launch-limits).
 - **What each design session gets.** As its first message, the Full Prompt word for word, then either
-  the kept images' descriptions and short names, added by Sova, or the look in words. Its style and
+  the kept images' descriptions and short names, added by Sova, or the look in words. A screenshot is
+  never among the images a page may show. When screenshots are in use, a **Reference screenshots**
+  block follows, with each one's words for designers (its feel and its colours as hex values with
+  their roles), fenced as content, in every design's message, whether its model reads pictures or
+  not. A designer that gets no picture is never pointed at one it doesn't have, and is told to keep
+  the screenshot's real titles, figures and sample data. Its style and
   layout stay in that session's own standing instructions, never in the Full Prompt, so one shared prompt becomes as many different
   designs as were asked for.
 - **The screen's picture.** On Use Its Images it also goes to designers that can read images. On Just
   Its Feel it doesn't, so they can't copy the layout.
-- **Frozen.** The brief is frozen at Start. Later changes go through Refine or the coordinator, and
+- **A screenshot's picture.** A designer that can read pictures also gets the picture of each Rebuild
+  This Screen screenshot attached to its first message, with no tool to fetch it. A Just Its Feel
+  screenshot and an unticked one reach no designer as a picture, and an unticked one not as words
+  either. A design gets at most 4 reference pictures: each ticked Rebuild This Screen screenshot
+  keeps one of the 4, the found screen's shots fill the rest and come first in order, and a Rebuild
+  screenshot past the cap is named in every designer's message as coming in words only. A design
+  revived after a restart keeps what it was given.
+- **Nothing about a screenshot is cut.** What the Creative Director and the designers receive about a
+  pasted screenshot (its feel, its colours' roles, its description) reaches them whole, never
+  shortened.
+- **Frozen.** The brief is frozen at Start. Later changes go through Refine or the Creative Director, and
   the next run gets a new brief.
 
 ## §chat.design-mode/link-modes — No link, Use Its Images, Just Its Feel, or Not a Reference
@@ -750,33 +841,60 @@ A link is optional, and each link is used one of three ways.
   a description of the look in words. As the user decided: "On Just Its Feel, the link's look leads
   over a design's direction." Each design's direction still shapes how it interprets that look.
 - **Not a Reference.** A link that is part of what's being designed, such as where a button goes, is
-  never opened, captured or described. The coordinator can set it so when your words only point at
+  never opened, captured or described. The Creative Director can set it so when your words only point at
   the address.
 
 As the user decided: "Use Its Images vs Just Its Feel is chosen on Setup and on the brief." A small
 row appears on Setup when your text holds a link, with all three choices; you can still switch on the
-brief or tell the coordinator, and a click of yours beats the coordinator's choice. Changing a link's
-use on the brief tells the coordinator, which rewrites the Full Prompt, and Start waits for it. If you say nothing, the coordinator
-goes by your words and asks on the brief when it can't tell.
+brief or tell the Creative Director, and a click of yours beats the Creative Director's choice. Changing a link's
+use on the brief tells the Creative Director, which rewrites the Full Prompt, and Start waits for it. If you say nothing, the Creative Director
+goes by your words and asks on the brief when it can't tell. A screenshot you paste has a choice of
+its own of the same kind, Rebuild This Screen or Just Its Feel (§chat.design-mode/own-images).
 
 **The look in words.** On Just Its Feel, one quick look by a model that can read pictures describes
-the page's colors, type and imagery in words, whichever model is the coordinator. If none of your
+the page's colors, type and imagery in words, whichever model is the Creative Director. If none of your
 models can read pictures, the brief says the look couldn't be read rather than making one up.
 
 ## §chat.design-mode/own-images — Your own images
 
 As the user decided: "i can also paste in my own images too - whatever i want. this would prob be
 trivial the way sova works, can be simply passed to coordinator if it was done in main chat - and/or
-can do it in coordinator myself".
+can do it in Creative Director myself".
 
-Paste any image into the coordinator's box, or into the main chat, which passes it to the coordinator
-without keeping it in mind beyond that. Your images join the brief's image grid alongside anything
+Paste any image into the Creative Director's box, or into the main chat, which passes it to the Creative Director
+without keeping it in mind beyond that. A screenshot attached in the main chat when you ask for the
+Lookbook goes in with its start, so Setup already shows it and the Creative Director sees it on its
+first turn (§chat.design-mode/main-chat). Your images join the brief's image grid alongside anything
 captured, are described the same way (§chat.design-mode/describers), and are kept or dropped the same
-way. A run can use your images with no link at all.
+way. A run can use your images with no link at all. An image file you point the Creative Director to
+on this computer ("the logo is in my Downloads folder") joins the same way once it has read it
+(§chat.design-mode/coordinator).
 
-They need no site approval, and the limit of 8 MB per image applies. The coordinator holds the
-description, never the image itself; a coordinator that can read pictures may see a small version on
-the turn it arrives.
+They need no site approval, and the limit of 8 MB per image applies. Of your images other than
+screenshots, the Creative Director holds the description, never the image itself.
+
+**A screenshot is a reference.** As the user decided, a screenshot you paste is shown to the
+Creative Director and the designers as a reference, never put into a page. **Screenshot** is a kind
+only your own images can have: an image captured from a page is never one. An image's kind is yours
+first, then the Creative Director's, then the describing helper's (§chat.design-mode/brief-images).
+
+- **Rebuild This Screen or Just Its Feel.** Each screenshot gets its own choice, as a link does
+  (§chat.design-mode/link-modes). **Rebuild This Screen** rebuilds what it shows
+  (§chat.design-mode/rebuilds); on **Just Its Feel** nobody gets the picture, only its words. A click
+  of yours beats the Creative Director's choice.
+- **The Creative Director sees it.** A Creative Director whose model can read pictures gets the
+  screenshot itself on the turn it is pasted, and can look at it again later, as after a restart or a
+  change of model.
+- **Its colours are measured.** A screenshot's colours are measured from its pixels, with no model, as
+  hex values. They keep its small strong accents and its main text colour, not only its largest
+  areas, and the describing helper names each colour's role by what it colours
+  (§chat.design-mode/describers).
+- **Words for designers.** Each screenshot has words for the designers: its feel and its theme
+  colours with their roles. The Creative Director writes and tunes them itself in the brief, from the
+  picture when it can see it, else from the helper's draft and the measured colours; it gets no
+  ready-made summary, and the helper's draft is only where it starts. Words you save always win over
+  the Creative Director's, and describing again never replaces them. With no model that can read
+  pictures at all, the brief shows the measured colours and says the feel couldn't be read.
 
 ## §chat.design-mode/capture — Capturing a page's images, with no model
 
@@ -784,7 +902,7 @@ As the user decided: "A capture step with no model, then up to 3 describing help
 downloading images is mechanical and uses no model.
 
 - **Once, on the final screen.** On Use Its Images the capture runs once, on the final screen, as soon
-  as the coordinator has found it, not on every page it passes through. A browser visit at desktop
+  as the Creative Director has found it, not on every page it passes through. A browser visit at desktop
   width scrolls the page, collects the images and saves them. Describing then begins, and the brief's
   grid fills in as results land.
 - **Limits.** At most 30 images a capture, 8 MB each and 40 MB in total. Anything over is listed with
@@ -799,8 +917,11 @@ downloading images is mechanical and uses no model.
 ## §chat.design-mode/describers — A small team describes the images
 
 Up to 3 hidden helpers, on a cheap model that can read pictures, describe about 10 images each and
-return data to the coordinator: what kind each image is, what it shows, where it sat and how a
-redesign should use it. The coordinator judges which images suit the brief from those words alone.
+return data to the Creative Director: what kind each image is, what it shows, where it sat and how a
+redesign should use it. For a screenshot you pasted, the same call also drafts a short feel and names
+the role of each measured colour, a starting point for the Creative Director's words for designers
+(§chat.design-mode/own-images). The Creative Director judges which images suit the brief from those
+words alone, except a screenshot it can see.
 
 - **Not on any board.** Helpers take no design seats, never appear on the Agents tab, and can't be
   opened to chat with.
@@ -815,6 +936,12 @@ Each image on the brief has a thumbnail, its kind and a **Use** checkbox. Open o
 shows, where it sat and how it should be used, change its kind, add a note that overrides the rest,
 **Describe Again**, or download the original.
 
+A **Screenshot** (§chat.design-mode/own-images) shows its kind, its colours as swatches with their
+hex values, its words for designers with **Edit Words** (and **Drop My Words** once you've saved your
+own, which brings back the Creative Director's or the first draft's), and its **Rebuild This Screen**
+or **Just Its Feel** choice. A page's captured image can't be set to Screenshot. A kind you pick beats the Creative
+Director's and the helper's.
+
 Unticking an image needs no rewrite of the Full Prompt, because Sova adds the image list at Start.
 Images keep the same name for the life of the chat, so a page made from them keeps working even if
 you later stop using one.
@@ -824,7 +951,7 @@ you later stop using one.
 A designer writes only an image's short name. Sova puts the real picture in when it shows the page,
 inside the page's sealed frame, so the seal of §chat.design-mode/prototype-frame doesn't change, and
 a model that can't read pictures uses the real images too. The designer's memory, its edits, the main
-chat's reading of a page and the coordinator never hold the picture's data.
+chat's reading of a page and the Creative Director never hold the picture's data.
 
 A page naming an image the chat doesn't have is refused, with the valid names. While a page using
 captured images is being written, those spots show a plain placeholder, never a broken-image icon.
@@ -851,11 +978,11 @@ are refused, and a chat's sandbox still applies (§app.tours/sandbox).
 
 As the user decided: "Signed-in pages: ask once on the card."
 
-When the page is behind a sign-in, capturing asks one extra question on the coordinator's card, saying
+When the page is behind a sign-in, capturing asks one extra question on the Creative Director's card, saying
 what will be saved and which model reads it. Hosts other than the link's own are approved one by one
 here: §chat.design-mode/link-reach's cover doesn't apply to a signed-in look.
 
-## §chat.design-mode/project-reach — What the coordinator may do across your projects
+## §chat.design-mode/project-reach — What the Creative Director may do across your projects
 
 As the user decided: "See all, start after you confirm".
 
@@ -871,7 +998,7 @@ As the user decided: "Your projects and addresses you give it".
 - Running copies of your projects and addresses you gave it open at once: naming an address is your
   say-so. An address counts as given only from your own words in Sova's page (Setup's brief, a message,
   the brief's box), never from a script's or a chat's call.
-- Any other site asks you once, on the coordinator's card, as a tour asks (§app.tours/sites). What a
+- Any other site asks you once, on the Creative Director's card, as a tour asks (§app.tours/sites). What a
   page you gave it loads is covered by your link instead (§chat.design-mode/link-reach).
 - A sign-in asks for a test account on that card, from the same store as tours'. Capturing a
   signed-in page asks once more (§chat.design-mode/link-sign-in).
@@ -892,7 +1019,7 @@ keeps the earlier page, as a new version of that label (§chat.design-mode/label
 
 ## §chat.design-mode/delivery — One way to reach a session
 
-Refine, Chat, the coordinator's card and what the main chat passes on all reach a session the same
+Refine, Chat, the Creative Director's card and what the main chat passes on all reach a session the same
 way, and in the order they were sent.
 
 - **Busy.** The message waits, and the tile shows Queued ("Queued for {name}, after its current
@@ -907,21 +1034,21 @@ way, and in the order they were sent.
 
 ## §chat.design-mode/new-from-parents — New designs made from others
 
-You tell the coordinator in words: "the header from A with the cards from C". It starts a new labelled
+You tell the Creative Director in words: "the header from A with the cards from C". It starts a new labelled
 design with `design_new {parents, instructions, model}`, which names its parents ("G, from A and C")
-and shows up like any other design. Its style reads **Mixed**, unless the coordinator names a style
+and shows up like any other design. Its style reads **Mixed**, unless the Creative Director names a style
 (and, if it wants one, a layout) from the lists (§chat.design-mode/directions). The new design session is the one that gets the parent pages: the
-server puts them in its first message, and the coordinator only writes the instructions. Designs from
+server puts them in its first message, and the Creative Director only writes the instructions. Designs from
 earlier runs in the chat count too. `design_new` is refused until its run has launched, so combining
 earlier designs while a brief is open waits until after Start.
 
 ## §chat.design-mode/commands — The actions are in the command list
 
 Each action a person takes on designs has an entry in Sova's command list (§app/commands): listing a
-chat's designs, reading a page, changing Setup, Start Coordinator, a message, a Refine, a Retry,
-deleting a design, and a message to the coordinator. Entries about the whole Lookbook carry its name
-(**Change Lookbook Setup**, **Start Lookbook Coordinator**, **Message the Lookbook Coordinator**), and
+chat's designs, reading a page, changing Setup, Start Creative Director, a message, a Refine, a Retry,
+deleting a design, and a message to the Creative Director. Entries about the whole Lookbook carry its name
+(**Change Lookbook Setup**, **Start Lookbook Creative Director**, **Message the Lookbook Creative Director**), and
 entries about one page stay a design's (**List Designs**, **Read Design Page**, **Message a Design**,
 **Refine a Design**, **Retry a Design**, **Delete a Design**). Their ids stay as they were. What only a person's own click may do (the
-brief's Start, answers and edits, the coordinator's questions, bringing in images and an image's own
+brief's Start, answers and edits, the Creative Director's questions, bringing in images and an image's own
 note) has no entry (§app.access/your-click).

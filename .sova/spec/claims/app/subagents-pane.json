@@ -99,12 +99,14 @@
       "server/skills.test.ts",
       "server/subfolder-skills.ts",
       "src/lib/skills-overview.ts",
-      "src/lib/skills-overview.test.ts"
+      "src/lib/skills-overview.test.ts",
+      "server/skill-descent.ts",
+      "server/session-setup.ts"
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-11T11:21Z",
-      "source": "pi-session:0b818e61-c9b3-4e6b-bc95-df17af92f201#ad77b6dd"
+      "at": "2026-11-12T16:08Z",
+      "source": "pi-session:ec6da819-fb0b-454b-9ba9-97db0affcbfb#723cbddc"
     }
   },
   "§app.subagents-pane/context-tab-skills-read": {

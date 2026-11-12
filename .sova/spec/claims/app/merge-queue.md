@@ -562,7 +562,11 @@ never "passed".
 
 A check the project marks optional runs only when the merge thread picks it (Sova's: `e2e`, one
 build and then each picked end-to-end walkthrough, and
-`integration-group`, one slow integration group per pick). A pick on a required check that would
+`integration-group`, one slow integration group per pick). An optional check that takes a selection
+and is given none (a trial picks every optional check with none, §app.project-setup/trial) never
+fails for it: `e2e` reads "skipped: no walkthrough selected", and `integration-group` runs the slow
+groups a landing runs for the branch's changes since its merge base with the target, or reads
+"skipped: no slow group applies to this branch's changes" when there are none. A pick on a required check that would
 skip itself (the
 statecharts check skips unless statecharts changed) makes it run. A check with nothing to do for
 this change exits clean and says why ("Spec replay · skipped: no

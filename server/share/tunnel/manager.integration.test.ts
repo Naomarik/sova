@@ -188,6 +188,17 @@ test("detached Account: the token reaches cloudflared only in its env, its recor
   const [pid] = fakePids(bad.log);
   await waitFor("its cloudflared's end", () => !alive(pid!));
   b.p.kill("SIGKILL");
+  // Routes pushed after it connects, pointing at Sova's app: caught by the one-shot look 3 s on, with no demand.
+  const late = scratch();
+  const lateEnv = envFor(late, { SOVA_TUNNEL_DRIVER: "detached", STANDIN_ACCOUNT_TOKEN: token, FAKE_CF_INGRESS: "http://127.0.0.1:4800", FAKE_CF_INGRESS_AFTER_MS: "500" });
+  const l = startServer(lateEnv);
+  const first = await waitFor("the first look", () => l.lines.find((x) => x.what === "ensured"));
+  assert.equal(first.state, "degraded", "not up while its routes are unread");
+  const caught = await waitFor("the later look's refusal", () => l.lines.find((x) => x.what === "changed" && x.state === "failed"), 15_000);
+  assert.match(JSON.stringify(caught), /point its public hostname/);
+  const [latePid] = fakePids(late.log);
+  await waitFor("its cloudflared's end", () => !alive(latePid!));
+  l.p.kill("SIGKILL");
 });
 
 const userBus = () => {

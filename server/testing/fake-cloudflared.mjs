@@ -16,6 +16,7 @@
 //   FAKE_CF_HOSTNAME=<host>     the quick tunnel's host (default: random words + .trycloudflare.com)
 //   FAKE_CF_DOWN_FILE=<file>    while this file exists, /ready answers 503 (the edge dropped it)
 //   FAKE_CF_INGRESS=<service>   the named tunnel's first ingress service (default http_status:503)
+//   FAKE_CF_INGRESS_AFTER_MS=<n> /config answers {"version":0,"config":{}} (nothing pushed yet) until that long after connecting
 // A token in argv (--token, or a word shaped like one) is a leak: it logs "token-in-argv" and exits 2.
 // It logs "token-env yes|no" (whether TUNNEL_TOKEN is set; never its value).
 // SIGTERM / SIGINT: exit 0.
@@ -59,6 +60,7 @@ const pick = () => words[randomBytes(1)[0] % words.length];
 const hostname = process.env.FAKE_CF_HOSTNAME || `${pick()}-${pick()}-${pick()}-${randomBytes(3).toString("hex")}.trycloudflare.com`;
 const connectorId = randomBytes(16).toString("hex");
 let connected = false;
+let connectedAt = 0;
 
 const [host, port] = (metrics ?? "127.0.0.1:0").split(":");
 const server = createServer((req, res) => {
@@ -70,6 +72,7 @@ const server = createServer((req, res) => {
   const down = !connected || (process.env.FAKE_CF_DOWN_FILE && existsSync(process.env.FAKE_CF_DOWN_FILE));
   if (req.url === "/ready") return down ? send(503, { status: 503, readyConnections: 0, connectorId }) : send(200, { status: 200, readyConnections: 4, connectorId });
   if (req.url === "/quicktunnel" && quick) return send(200, { hostname });
+  if (req.url === "/config" && !quick && (!connectedAt || Date.now() - connectedAt < Number(process.env.FAKE_CF_INGRESS_AFTER_MS ?? 0))) return send(200, { version: 0, config: {} });
   if (req.url === "/config" && !quick) return send(200, { version: 1, config: { ingress: [{ hostname: "share.example.com", service: process.env.FAKE_CF_INGRESS || "http_status:503" }, { service: "http_status:404" }] } });
   send(404, { error: "not found" });
 });
@@ -88,6 +91,7 @@ process.on("SIGINT", () => end(0, "SIGINT"));
 if (process.env.FAKE_CF_NEVER_CONNECT !== "1") {
   setTimeout(() => {
     connected = true;
+    connectedAt = Date.now();
     console.error(`INF Registered tunnel connection connIndex=0 connection=${connectorId}`);
     if (pidfile) writeFileSync(pidfile, `${process.pid}\n`);
     const die = Number(process.env.FAKE_CF_DIE_MS);

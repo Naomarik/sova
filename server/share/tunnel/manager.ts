@@ -60,6 +60,10 @@ const VERIFY_GAP_MS = 2_000;
 const LOG_LINES = 12;
 /** The reason an up tunnel carries while its address hasn't answered from outside (the `unverified` warning). */
 export const UNVERIFIED = "The address didn't answer from outside yet";
+/** When an Account tunnel's routes are looked at again after it connects, if they aren't readable yet (ms after connect). */
+export const INGRESS_RECHECK_MS = [3_000, 10_000, 30_000] as const;
+export const ROUTES_UNREAD = (port: number) =>
+  `Sova couldn't read this tunnel's routes, so it stopped it. In the Cloudflare dashboard, point its public hostname at http://127.0.0.1:${port}, then save the Account option again.`;
 export const INGRESS_REFUSED = (port: number) =>
   `This tunnel sends visitors somewhere other than Sova's share links. In the Cloudflare dashboard, point its public hostname at http://127.0.0.1:${port}.`;
 
@@ -128,6 +132,9 @@ interface Entry {
   aborted: boolean;
   retryAt: number;
   retry?: Timer;
+  /** An Account tunnel whose routes aren't readable yet: its next one-shot look, and how many were made. */
+  ingressTimer?: Timer;
+  ingressTries: number;
   autoRestarts: number[];
   /** The port its last run forwarded to: a restart binds exactly that one (a link's tunnel may still point at it). */
   lastTarget: number | null;
@@ -319,7 +326,6 @@ export class TunnelManager {
         return this.failStart(e, "cloudflared didn't say its address.", detail);
       }
     }
-    if (rec.mode === "account" && !(await this.ingressOk(e))) return this.statusOf(e);
     const now = deps.now();
     if (!sameOrigin(rec.origin, origin)) {
       if (rec.origin) e.previous = { origin: rec.origin, endedAt: now };
@@ -345,6 +351,10 @@ export class TunnelManager {
     e.checkedAt = deps.now();
     e.dirty = false;
     e.downSince = undefined;
+    if (rec.mode === "account") {
+      e.ingressTries = 0;
+      if (!(await this.ingressOk(e))) return this.statusOf(e);
+    }
     // Not yet verified from outside is still up (the link is used, with the unverified warning): `degraded`
     // is kept for a tunnel that is really down. `reason` on an up tunnel means unverified.
     return rec.verifiedAt ? this.settle(e, "up") : this.settle(e, "up", `${UNVERIFIED}${verified.error ? ` (${verified.error})` : ""}.`);
@@ -434,21 +444,38 @@ export class TunnelManager {
    * An Account tunnel's routes live in the Cloudflare dashboard: one loopback GET of cloudflared's /config
    * (after it connects, and at each on-demand check, never on a timer). Only the share listener's port
    * (or a fixed http_status answer) may be behind it; anything else (Sova's app, another service) is
-   * stopped at once and fails with the dashboard fix. An unreadable /config is checked again on the next demand.
+   * stopped at once and fails with the dashboard fix. Fails closed: routes not readable or not pushed yet
+   * (a token-run tunnel gets them after it connects) are looked at again by one-shot timers 3, 10 and 30 s
+   * on, while the tunnel reads degraded; still unread after the last, it is stopped and fails too.
    */
   private async ingressOk(e: Entry): Promise<boolean> {
     const rec = e.rec!;
     const a = await this.deps.metrics(rec.metricsPort, "/config");
     const verdict = ingressVerdict(a, rec.targetPort);
-    if (verdict === "ok") return true;
-    if (verdict === "unknown") {
-      e.dirty = true;
+    if (verdict === "ok") {
+      e.ingressTimer?.cancel();
+      e.ingressTimer = undefined;
+      e.ingressTries = 0;
       return true;
     }
-    this.deps.log(`tunnel ${e.id}: its ingress points elsewhere than the share listener; stopping it`);
-    await this.killUnit(e);
-    await this.dropUnit(e);
-    this.settle(e, "failed", INGRESS_REFUSED(rec.targetPort));
+    if (verdict === "bad" || e.ingressTries >= INGRESS_RECHECK_MS.length) {
+      this.deps.log(`tunnel ${e.id}: ${verdict === "bad" ? "its routes point elsewhere than the share listener" : "its routes couldn't be read"}; stopping it`);
+      await this.killUnit(e);
+      await this.dropUnit(e);
+      this.settle(e, "failed", verdict === "bad" ? INGRESS_REFUSED(rec.targetPort) : ROUTES_UNREAD(rec.targetPort));
+      return false;
+    }
+    const at = INGRESS_RECHECK_MS[e.ingressTries]! - (e.ingressTries ? INGRESS_RECHECK_MS[e.ingressTries - 1]! : 0);
+    e.ingressTries++;
+    e.ingressTimer?.cancel();
+    e.ingressTimer = this.deps.setTimer(() => {
+      e.ingressTimer = undefined;
+      void this.serial(e, async () => {
+        if (!e.rec || e.rec.mode !== "account" || e.starting) return;
+        if (await this.ingressOk(e)) this.settle(e, "up");
+      });
+    }, at);
+    this.settle(e, "degraded", "Checking this tunnel's routes.");
     return false;
   }
 
@@ -580,6 +607,8 @@ export class TunnelManager {
   private async dropUnit(e: Entry): Promise<void> {
     const dir = this.deps.dir();
     const unit = e.unit;
+    e.ingressTimer?.cancel();
+    e.ingressTimer = undefined;
     for (const f of [pidFileOf(unit, dir), exitFileOf(unit, dir), envFileOf(unit, dir)]) rmSync(f, { force: true });
     if (e.rec?.driver === "detached") rmSync(`${procsDirOf(dir)}/${unit}.json`, { force: true });
     e.rec = null;
@@ -654,7 +683,7 @@ export class TunnelManager {
     const id = recordIdOf(key);
     let e = this.entries.get(id);
     if (!e) {
-      e = { key, id, unit: tunnelUnitOf(key, this.deps.hash()), rec: null, state: "stopped", mode: "quick", checkedAt: 0, dirty: false, stopping: false, aborted: false, retryAt: 0, autoRestarts: [], lastTarget: null, chain: Promise.resolve() };
+      e = { key, id, unit: tunnelUnitOf(key, this.deps.hash()), rec: null, state: "stopped", mode: "quick", checkedAt: 0, dirty: false, stopping: false, aborted: false, retryAt: 0, autoRestarts: [], lastTarget: null, ingressTries: 0, chain: Promise.resolve() };
       this.entries.set(id, e);
     }
     return e;
@@ -785,14 +814,15 @@ export class TunnelManager {
 }
 
 /** cloudflared's /config answer → whether every ingress rule goes to the share listener's port or is a fixed
-    status (pure, for tests). No answer, or not JSON: unknown. No ingress yet (nothing pushed): ok, it serves nothing. */
+    status (pure, for tests). No answer, not JSON, or no routes yet (nothing pushed, an older cloudflared): unknown,
+    never ok. */
 export function ingressVerdict(a: MetricsAnswer, sharePort: number): "ok" | "bad" | "unknown" {
   if (!a || a.status !== 200 || !a.body || typeof a.body !== "object") return "unknown";
   const config = (a.body as { config?: unknown }).config;
-  if (config === undefined || config === null) return "ok";
+  if (config === undefined || config === null) return "unknown";
   if (typeof config !== "object") return "bad";
   const ingress = (config as { ingress?: unknown }).ingress;
-  if (ingress === undefined || ingress === null) return "ok";
+  if (ingress === undefined || ingress === null || (Array.isArray(ingress) && !ingress.length)) return "unknown";
   if (!Array.isArray(ingress)) return "bad";
   const good = new RegExp(`^http://(127\\.0\\.0\\.1|localhost):${sharePort}/?$`, "i");
   for (const rule of ingress) {

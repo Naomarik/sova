@@ -6,7 +6,7 @@ import { after, beforeEach, test } from "node:test";
 import type { TunnelKey, TunnelMode } from "../../../shared/public-links";
 import type { Driver, UnitSpec, UnitStatus } from "../../project-services/drivers";
 import type { CloudflaredFound } from "./binary";
-import { AUTO_RESTARTS_PER_HOUR, CHECK_WINDOW_MS, ingressVerdict, RETRY_DELAYS_MS, TunnelManager, UNVERIFIED, type MetricsAnswer, type TunnelDeps } from "./manager";
+import { AUTO_RESTARTS_PER_HOUR, CHECK_WINDOW_MS, INGRESS_RECHECK_MS, ingressVerdict, RETRY_DELAYS_MS, TunnelManager, UNVERIFIED, type MetricsAnswer, type TunnelDeps } from "./manager";
 import { writeTunnels, type TunnelRecord } from "./state";
 import { envFileOf, exitFileOf, pidFileOf, tunnelsFile, tunnelUnitOf } from "./units";
 
@@ -35,13 +35,13 @@ function world(o: { found?: CloudflaredFound; wanted?: boolean; mode?: TunnelMod
   const starts: UnitSpec[] = [];
   const stops: string[] = [];
   /** Per metrics port: what cloudflared answers, or nothing. */
-  const tunnels = new Map<number, { connectorId: string; host: string; ready: number; ingress?: string } | null>();
+  const tunnels = new Map<number, { connectorId: string; host: string; ready: number; ingress?: string | null } | null>();
   const unitState = new Map<string, UnitStatus["state"]>();
   let onFile: ((name: string) => void) | null = null;
   let watches = 0;
   let nextPort = 41000;
   let hostN = 0;
-  const state = { wanted: o.wanted ?? true, mode: o.mode ?? "quick", account: o.account ?? null, verifyOk: true, quickAllowed: true, ingress: "http://127.0.0.1:4802", logs: ["ERR something"] };
+  const state = { wanted: o.wanted ?? true, mode: o.mode ?? "quick", account: o.account ?? null, verifyOk: true, quickAllowed: true, ingress: "http://127.0.0.1:4802" as string | null, logs: ["ERR something"] };
   const driver: Driver = {
     id: o.driver ?? "systemd",
     available: async () => ({ ok: true, detail: "" }),
@@ -95,7 +95,7 @@ function world(o: { found?: CloudflaredFound; wanted?: boolean; mode?: TunnelMod
       const t = tunnels.get(port);
       if (!t) return null;
       if (path === "/ready") return { status: t.ready, body: { status: t.ready, connectorId: t.connectorId } };
-      if (path === "/config") return { status: 200, body: { version: 1, config: { ingress: [{ service: t.ingress }, { service: "http_status:404" }] } } };
+      if (path === "/config") return { status: 200, body: t.ingress === null ? { version: 0, config: {} } : { version: 1, config: { ingress: [{ service: t.ingress }, { service: "http_status:404" }] } } };
       return { status: 200, body: { hostname: t.host } };
     },
     freePort: async () => ++nextPort,
@@ -463,7 +463,9 @@ test("Account ingress: only the share listener's port or a fixed status; anythin
   const table: [MetricsAnswer, string][] = [
     [ans([{ service: "http://127.0.0.1:4802" }, { service: "http_status:404" }]), "ok"],
     [ans([{ service: "http://localhost:4802/" }]), "ok"],
-    [ans(undefined), "ok"],
+    [ans(undefined), "unknown"],
+    [ans([]), "unknown"],
+    [{ status: 200, body: { version: 0 } }, "unknown"],
     [ans([{ service: "http://127.0.0.1:4800" }]), "bad"],
     [ans([{ service: "http://127.0.0.1:48020" }]), "bad"],
     [ans([{ service: "http://192.168.1.2:4802" }]), "bad"],
@@ -501,4 +503,41 @@ test("a unit's log lines in a status never carry a token", async () => {
   const s = w.m.status(SHARE);
   assert.ok(s.detail?.length, "the log is shown");
   assert.ok(!JSON.stringify(s).includes(token.slice(0, 24)));
+});
+
+test("Account ingress fails closed: routes not pushed yet are looked at again 3, 10 and 30 s on (no demand needed), then it stops", async () => {
+  const account = { token: "eyJ" + "r".repeat(40), publicUrl: "https://share.example.com" };
+  const port = (w: ReturnType<typeof world>) => w.tunnels.get(w.metricsPortOf(w.starts[0]!))!;
+  // Pushed later, pointing elsewhere: stopped at the next one-shot look.
+  const late = world({ mode: "account", account });
+  late.state.ingress = null;
+  const s = await up(late);
+  assert.equal(s.state, "degraded", "never up while its routes are unread");
+  port(late).ingress = "http://127.0.0.1:4800";
+  await late.advance(INGRESS_RECHECK_MS[0]);
+  assert.equal(late.m.status(SHARE).state, "failed");
+  assert.deepEqual(late.stops, [UNIT]);
+  // Pushed later, right: up then.
+  const good = world({ mode: "account", account });
+  good.state.ingress = null;
+  await up(good);
+  await good.advance(INGRESS_RECHECK_MS[0]);
+  port(good).ingress = "http://127.0.0.1:4802";
+  await good.advance(INGRESS_RECHECK_MS[1] - INGRESS_RECHECK_MS[0]);
+  assert.equal(good.m.status(SHARE).state, "up");
+  assert.deepEqual(good.stops, []);
+  // Never readable: failed once the last look is spent, and no timer after it.
+  const never = world({ mode: "account", account });
+  never.state.ingress = null;
+  await up(never);
+  await never.advance(INGRESS_RECHECK_MS[0]);
+  await never.advance(INGRESS_RECHECK_MS[1] - INGRESS_RECHECK_MS[0]);
+  await never.advance(INGRESS_RECHECK_MS[2] - INGRESS_RECHECK_MS[1] - 1);
+  assert.equal(never.m.status(SHARE).state, "degraded");
+  await never.advance(1);
+  assert.equal(never.m.status(SHARE).state, "failed");
+  assert.match(never.m.status(SHARE).reason ?? "", /couldn't read this tunnel's routes/);
+  const reads = never.calls.length;
+  await never.advance(24 * 3_600_000);
+  assert.equal(never.calls.length, reads, "nothing after the last look");
 });

@@ -139,14 +139,31 @@ export function shotWordsText(w: DesignShotWords): string {
   return [w.feel.trim(), lines.join("\n")].filter(Boolean).join("\n\n");
 }
 
-/** That text read back: lines that start with a hex value are colours with their role, the rest is the feel. */
+/** The most colours a screenshot's words carry: the server refuses more. */
+export const SHOT_COLORS_MAX = 8;
+
+/** That text read back: lines that start with a hex value are colours with their role, the rest is the feel. A colour
+    is kept as #rrggbb, as the server stores it: #rgb is spelled out, and an alpha (#rrggbbaa, #rgba) is dropped. */
 export function parseShotWords(text: string): DesignShotWords {
   const feel: string[] = [];
   const colors: { hex: string; role: string }[] = [];
   for (const line of text.split("\n")) {
-    const m = /^\s*(#[0-9a-f]{3}(?:[0-9a-f]{3})?(?:[0-9a-f]{2})?)\b[\s:·—–-]*(.*)$/i.exec(line);
-    if (m) colors.push({ hex: m[1]!.toLowerCase(), role: m[2]!.trim() });
-    else feel.push(line);
+    const m = /^\s*#([0-9a-f]{8}|[0-9a-f]{6}|[0-9a-f]{4}|[0-9a-f]{3})\b[\s:·—–-]*(.*)$/i.exec(line);
+    if (!m) {
+      feel.push(line);
+      continue;
+    }
+    const raw = m[1]!.toLowerCase();
+    const six = raw.length <= 4 ? [...raw.slice(0, 3)].map((c) => c + c).join("") : raw.slice(0, 6);
+    colors.push({ hex: `#${six}`, role: m[2]!.trim() });
   }
   return { feel: feel.join("\n").trim(), colors };
+}
+
+/** What Save sends for edited words: null when nothing is left (back to the Creative Director's or the helper's), else
+    the words; refused, with why, past the colour limit. */
+export function shotWordsToSave(text: string): DesignShotWords | null {
+  const w = parseShotWords(text);
+  if (w.colors.length > SHOT_COLORS_MAX) throw new Error(`Keep it to ${SHOT_COLORS_MAX} colours; this has ${w.colors.length}.`);
+  return w.feel || w.colors.length ? w : null;
 }

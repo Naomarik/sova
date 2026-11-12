@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import type { DesignBrief, DesignBriefQuestion, DesignSetup } from "../../shared/design";
-import { answerLine, coordinatorChangeLine, assetsOfRun, assetKindWord, briefStatus, imageUsed, kindChoices, parseShotWords, pickIsRecommended, runScreenshots, screenUseOf, shotWordsText, usedCount, recommendedPick, setupLinks, stagedAnswers, startLabel, withLinkUse } from "./design-brief";
+import { answerLine, coordinatorChangeLine, assetsOfRun, assetKindWord, briefStatus, imageUsed, kindChoices, parseShotWords, shotWordsToSave, pickIsRecommended, runScreenshots, screenUseOf, shotWordsText, usedCount, recommendedPick, setupLinks, stagedAnswers, startLabel, withLinkUse } from "./design-brief";
 
 const q = (id: string, over: Partial<DesignBriefQuestion> = {}): DesignBriefQuestion => ({
   id,
@@ -140,5 +140,20 @@ test("a screenshot's words edit as one text and read back as feel and colours wi
   const text = shotWordsText(w);
   assert.equal(text, "Calm, airy, lots of white.\n\n#1e1e26 background\n#8e88ff");
   assert.deepEqual(parseShotWords(text), w);
-  assert.deepEqual(parseShotWords("Dark and dense.\n#FFF — text\n#4A43D8: accent"), { feel: "Dark and dense.", colors: [{ hex: "#fff", role: "text" }, { hex: "#4a43d8", role: "accent" }] });
+  assert.deepEqual(parseShotWords("Dark and dense.\n#FFF — text\n#4A43D8: accent"), { feel: "Dark and dense.", colors: [{ hex: "#ffffff", role: "text" }, { hex: "#4a43d8", role: "accent" }] });
+});
+
+test("typed colours are kept as #rrggbb, as the server stores them: #rgb spelled out, an alpha dropped", () => {
+  assert.deepEqual(parseShotWords("#fff page background\n#4a43d8cc accent\n#0f08 text").colors, [
+    { hex: "#ffffff", role: "page background" },
+    { hex: "#4a43d8", role: "accent" },
+    { hex: "#00ff00", role: "text" },
+  ]);
+});
+
+test("Save sends null when nothing is left, and refuses more than 8 colours with why", () => {
+  assert.equal(shotWordsToSave("  \n "), null);
+  assert.deepEqual(shotWordsToSave("Calm."), { feel: "Calm.", colors: [] });
+  const nine = Array.from({ length: 9 }, (_, i) => `#00000${i}`).join("\n");
+  assert.throws(() => shotWordsToSave(nine), /Keep it to 8 colours; this has 9/);
 });

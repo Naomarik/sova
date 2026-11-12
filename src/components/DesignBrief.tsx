@@ -4,7 +4,7 @@ import type { DesignAsset, DesignAssetCatalogue } from "../../shared/design-asse
 import { assetKind, shotWords } from "../../shared/design-assets";
 import { designBriefBlock, designerSkills } from "../../shared/design";
 import type { DesignSpendAsk } from "../lib/design-api";
-import { answerLine, assetsOfRun, parseShotWords, pickIsRecommended, recommendedPick, runScreenshots, screenUseBy, screenUseOf, shotWordsText, stagedAnswers, startLabel, usedCount, type StagedPick } from "../lib/design-brief";
+import { answerLine, assetsOfRun, pickIsRecommended, recommendedPick, runScreenshots, screenUseBy, screenUseOf, shotWordsText, shotWordsToSave, stagedAnswers, startLabel, usedCount, type StagedPick } from "../lib/design-brief";
 import type { DesignStore } from "../lib/design-store";
 import { coordinatorOf, setupCount, setupSummary, type DesignRunView } from "../lib/design-ui";
 import { Inline, QuestionChoices, type QuestionPicker } from "./AlignDocCard";
@@ -240,7 +240,23 @@ function BriefShot(props: { asset: DesignAsset; run: DesignRunView; store: Desig
   const describing = () => props.run.imagesBusy === "describing" || (!props.asset.description && !props.asset.describeError) || !!props.asset.describeAgain;
   const feelEmpty = () => (describing() ? "Its words are being drafted." : "Its feel couldn't be read, so designers get only its colours. Edit to say it yourself.");
   const by = () => ({ user: "Yours", coordinator: "The Creative Director's", helper: "A first draft" })[found()?.by ?? "helper"];
-  const save = (text: string) => props.store.api.imageNote(props.asset.name, { words: parseShotWords(text) });
+  const save = async (text: string) => {
+    const words = shotWordsToSave(text);
+    await props.store.api.imageNote(props.asset.name, { words });
+    props.store.refresh();
+  };
+  const [dropping, setDropping] = createSignal(false);
+  const drop = async () => {
+    setDropping(true);
+    try {
+      await props.store.api.imageNote(props.asset.name, { words: null });
+      props.store.refresh();
+    } catch {
+      // The words stay as they were; the button can be pressed again.
+    } finally {
+      setDropping(false);
+    }
+  };
   const choice = (use: "rebuild" | "feel", label: string) => (
     <button type="button" class="button" aria-pressed={props.use === use} onClick={() => props.onUse(use)}>
       {label}
@@ -256,6 +272,11 @@ function BriefShot(props: { asset: DesignAsset; run: DesignRunView; store: Desig
           <p class="design-shot-title">
             <span class="text-mono design-asset-name">{props.asset.name}</span> <span class="design-asset-kind">{assetKind(props.asset)}</span>
             <span class="text-caption text-muted design-shot-by">{screenUseBy(props.run.brief, props.asset.name)}</span>
+            <Show when={found()?.by === "user"}>
+              <button type="button" class="button button-sm button-ghost design-shot-drop" disabled={dropping()} title="Your words go; the Creative Director's or the first draft's come back." onClick={() => void drop()}>
+                Drop My Words
+              </button>
+            </Show>
           </p>
           <ul class="design-shot-swatches" aria-label={`Colours of ${props.asset.name}`}>
             <For each={colors()} fallback={<li class="text-caption text-muted">No colours measured.</li>}>

@@ -1924,7 +1924,7 @@ it is on disk now, its front matter left out.
   works: its folder's own instruction file, in a folder below the session's folder that the loading
   doesn't skip (§chat.subfolder-instructions/loading; the Context tab opens these,
   §app.subagents-pane/context-tab), or the `SKILL.md` of a skill that folder's skills folder lists
-  (§chat.subfolder-skills/offering). So the request reads no other file on disk; any other path is a
+  (§chat.subfolder-skills/offering), these two only where Sova looks below the session's folder. So the request reads no other file on disk; any other path is a
   404, "That file isn't in this session's system context." A remote session has no rows to press,
   and its request is refused. A file over 1 MB is refused with "That file is over 1 MB, too big to
   show here." Whatever goes wrong is a toast that starts "Couldn't open that file." and gives the

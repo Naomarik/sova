@@ -4,11 +4,23 @@
 A folder below a chat's own can keep skills of its own, in `.claude/skills` or `.agents/skills`. They
 cost nothing until the agent works there: the first time it reads, edits or creates a file in that
 folder, the model is offered them, the way a subfolder's instruction file loads
-(§chat/subfolder-instructions). The chat's prompt never changes for this, so it costs no uncached
+(§chat/subfolder-instructions). Sova looks below a chat's folder only when that folder is in a git
+repository below the home folder or in a project added to Sova, never at the home folder or above it
+(§chat.subfolder-skills/offering). The chat's prompt never changes for this, so it costs no uncached
 turn and no restart of a Claude process.
 
 ## §chat.subfolder-skills/offering — When and how the model is offered them
 
+- **Only in a repository or a project.** Sova looks below a chat's folder only when that folder is
+  inside a git repository whose top folder is below the home folder (that top folder, any folder
+  inside it, or a linked worktree), or belongs to a project added to Sova (§app/projects), a project
+  with no git included. Never when the chat's folder is the home folder or a folder above it, reached
+  through a link too, even if that folder is a repository or a project. A repository at the home
+  folder itself doesn't count for a plain folder below it. Each chat goes by its own folder, never by
+  the touched file's: a worker and Sova's own chats each by theirs. Anywhere else a read, an edit or a
+  write below the chat's folder offers no skills and shows no transcript line. A project added while
+  a chat is open counts from that chat's next reload; a repository made in its folder counts as the
+  chat works.
 - **Which folders.** The folders strictly below the chat's folder, down to the touched file's folder,
   outermost first. A folder whose name starts with `.`, `node_modules`, and everything below either
   doesn't count, as for instruction files. Nor does a skills folder git ignores; a folder git can't
@@ -38,10 +50,14 @@ turn and no restart of a Claude process.
 ## §chat.subfolder-skills/command — `/skill:name` for a subfolder's skill
 
 - **The menu.** A subfolder's skill joins the `/` menu once the chat has been offered it, and leaves if
-  a compaction or a rewind removes the block. The menu updates when the run settles.
+  a compaction or a rewind removes the block. The menu updates when the run settles. In a chat Sova
+  doesn't look below (/offering) the menu lists no subfolder's skill, one its branch was offered before
+  included.
 - **By hand.** Typing `/skill:name` works at any time, offered yet or not, manual-only included, because
   you're asking for it directly and it costs nothing until then, unless this chat switched that name off. It expands as a starting skill's does,
-  with its arguments filled in (§chat.skill-sources/arguments), and then counts as read.
+  with its arguments filled in (§chat.skill-sources/arguments), and then counts as read. In a chat
+  Sova doesn't look below (/offering), no folder below is searched: a name only a subfolder's skill has
+  is sent as typed, as an unknown skill's is, while the chat's starting skills still expand.
 - **Same name.** The name stays with the skill offered first: the chat's starting skill, else the one
   offered earliest on the branch, else the outermost one below the chat's folder. The model is still
   offered a subfolder's skill of the same name, with its location, since a service's own skill may

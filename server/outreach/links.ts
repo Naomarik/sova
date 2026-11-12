@@ -1,15 +1,18 @@
 import { OPERATOR } from "../../shared/baton";
-import { LINK_WARNINGS } from "../../shared/public-links";
+import { LINK_WARNINGS, SHARING_OFF_ERROR, SHARING_OFF_MESSAGE, type LinkWarningCode } from "../../shared/public-links";
 import { handoffLine, ownerLine, type LinkKind, type LinkRef, type LinkRefusal, type OutreachLogLine } from "../../shared/outreach";
 import { linksOfKey, mintLink, revokeLinks } from "../baton-links";
 import { batonById, currentOffer, keptLinks, reachedBy } from "../baton";
 import { operatorName, ownerOf, readIndex, readOrgOrPlaceholder, readProjects, readRoster } from "../orgs";
 import { markOwnerLinkDelivered } from "../person-links";
-import { dropSiblingLinks, keepSiblingLink } from "../preview-kept";
-import { listPreviews, mintSibling, revokePreview } from "../preview-links";
+import { dropSiblingLinks, keepSiblingKey, keepSiblingLink } from "../preview-kept";
+import { listPreviews, mintSibling, PreviewRefused, revokePreview } from "../preview-links";
 import { awaitShareLinks } from "../share/links-events";
 import { linkUrl, shareState } from "../share/listener";
-import { previewAddress, previewOrigin, zoneOf } from "../share/preview-address";
+import { previewAddress } from "../share/preview-address";
+import { previewHome, previewLinkOf, previewRefusal, type PreviewHome } from "../share/preview-link";
+import { isSharingOffError, sharingOff } from "../share/sharing-off";
+import { readyShareAddress } from "../share/tunnel/wiring";
 
 /**
  * Link references (§app.outreach/links): a send carries a reference, never a URL; the resolver of its
@@ -38,6 +41,9 @@ export interface Resolved {
   url: string;
   /** The link's default line, when the send has no note. Fixed text, never model-written. */
   line?: string;
+  /** The public address's note for whoever sent it (Cloudflare Free: the address changes when this
+      computer restarts), never a refusal. */
+  warning?: string;
   /** Ids for the send log (no token, no URL). */
   log: Partial<Pick<OutreachLogLine, "sessionId" | "n" | "offerId" | "previewId">>;
   /** What was made in this step, to turn off again on a definite failure or after a restart (empty
@@ -59,11 +65,37 @@ export interface LinkResolver {
   settle?(minted: Record<string, string>): void;
 }
 
-/** The public address's own refusal: a link nobody outside can open is not sent. */
+/** The address warnings that mean nobody outside can open the link, and their send log codes. */
+const REFUSING: Partial<Record<LinkWarningCode, string>> = {
+  off: "address-off",
+  unreachable: "address-unreachable",
+  "not-accepted": "address-not-accepted",
+  broken: "address-broken",
+  "quick-turn-on": "address-turn-on",
+  "quick-setup": "address-setup",
+  "tunnel-down": "address-down",
+};
+
+/** The public address's own refusal: a link nobody outside can open is not sent, nor any while sharing
+    is off (§mesh.public/sharing-off). A Free tunnel still starting isn't refused here: the send's own
+    step starts it and waits (addressAfterWait). */
 function addressRefusal(): LinkRefusal | null {
-  const warn = shareState().warningCode;
-  return warn === "off" || warn === "unreachable" || warn === "not-accepted" ? { code: `address-${warn}`, why: LINK_WARNINGS[warn] } : null;
+  if (sharingOff()) return { code: SHARING_OFF_ERROR, why: SHARING_OFF_MESSAGE };
+  const s = shareState();
+  const code = s.warningCode ? REFUSING[s.warningCode] : undefined;
+  return code ? { code, why: s.warning ?? LINK_WARNINGS[s.warningCode!] } : null;
 }
+
+/** After the send's step made or took its link and waited for the address: still no public address
+    (a Free tunnel that didn't come up in time included) is a refusal. */
+function addressAfterWait(): LinkRefusal | null {
+  const s = shareState();
+  if (s.warningCode === "quick-starting") return { code: "address-starting", why: s.warning ?? LINK_WARNINGS["quick-starting"] };
+  return addressRefusal();
+}
+
+/** Free's note for the sender, while the link goes at a Free tunnel's address. */
+const quickNote = (): { warning?: string } => (shareState().warningCode === "quick" ? { warning: LINK_WARNINGS.quick } : {});
 
 const no = (code: string, why: string): LinkRefusal => ({ code, why });
 
@@ -98,16 +130,29 @@ const handoff: LinkResolver = {
     // nothing, so neither a failure nor a success turns anything off (no linkKey). A link another send
     // still in flight made is never it: that send's failure would turn it off.
     const kept = keptLinks(row, Date.now(), { reuse: true })[personId];
-    if (kept && kept.n === n)
+    if (kept && kept.n === n) {
+      // Nothing is minted: the address is made ready here instead (a Free tunnel stopped since).
+      await readyShareAddress();
+      const late = addressAfterWait();
+      if (late) throw new LinkRefused(late.code, late.why);
       return {
         url: linkUrl("h", kept.token),
         line: handoffLine(operatorName(), row.publicTitle),
+        ...quickNote(),
         log: { sessionId: row.sessionId, n, ...(offer ? { offerId: offer.id } : {}) },
         minted: {},
       };
+    }
     const { result: token } = await awaitShareLinks(() => mintLink({ orgId, sessionId: row.sessionId, n, personId, ...(offer ? { offerId: offer.id } : {}), key }));
+    const late = addressAfterWait();
+    if (late) {
+      // Never sent: what this step made stops again.
+      revokeLinks((l) => l.key === key);
+      throw new LinkRefused(late.code, late.why);
+    }
     return {
       url: linkUrl("h", token),
+      ...quickNote(),
       line: handoffLine(operatorName(), row.publicTitle),
       log: { sessionId: row.sessionId, n, ...(offer ? { offerId: offer.id } : {}) },
       minted: { linkKey: key, sessionId: row.sessionId, n: String(n), personId, ...(offer ? { offerId: offer.id } : {}) },
@@ -127,6 +172,17 @@ const handoff: LinkResolver = {
 
 // ---- a public preview link ------------------------------------------------------------------------
 
+/** A preview home's refusal as the send log's code (§app.outreach/links): never a URL or a number. */
+function previewHomeRefusal(err: PreviewRefused): LinkRefusal {
+  const code =
+    err.code === "too-many-tunnels" ? "too-many-tunnels"
+    : err.code === "quick-turn-on" ? "address-turn-on"
+    : err.code === "quick-setup" ? "address-setup"
+    : err.code === "tunnel-down" ? "address-down"
+    : "preview-address";
+  return { code, why: err.message };
+}
+
 
 const preview: LinkResolver = {
   kind: "preview",
@@ -137,33 +193,49 @@ const preview: LinkResolver = {
     if (!p || !readProjects(orgId).some((x) => x.id === p.projectId)) return no("preview-unknown", "No such preview in this organization.");
     if (p.projectId !== projectId) return no("other-project", "That preview belongs to another project.");
     if (p.state !== "active") return p.state === "off" ? no("preview-off", "That preview is turned off.") : no("preview-expired", "That preview is expired.");
-    const address = previewAddress();
-    if (!address.url) return no("preview-address", address.message ?? "No preview address is set.");
-    return addressRefusal();
+    if (sharingOff()) return { code: SHARING_OFF_ERROR, why: SHARING_OFF_MESSAGE };
+    const refused = previewRefusal(p.port);
+    if (refused) return previewHomeRefusal(refused);
+    // Under Cloudflare Free a preview rides its app's own tunnel, never the share tunnel: the share address's
+    // state says nothing about it (previewRefusal judged Turn On, the switch and the cap).
+    return previewAddress().mode === "tunnel" ? null : addressRefusal();
   },
   // The host keeps only a preview's hash, so its URL exists only at a mint: the person gets their own
   // sibling of it (same port, its expiry, turned off with it), listed as "sent to {name}".
   async resolve({ personId, createdBy }, ref) {
     if (ref.kind !== "preview") throw new LinkRefused("link", "Not a preview link.");
     // One reading, before the mint: a routed host's address reads as unset for a moment while its gateway
-    // states its kinds again after a comeback, which the mint's own wait for the gateway can land in.
-    const address = previewAddress();
-    const zone = address.url && zoneOf(address.url) ? address.url : null;
-    if (!zone) throw new LinkRefused("preview-address", address.message ?? "No preview address is set.");
+    // states its kinds again after a comeback, which the mint's own wait for the gateway can land in. Under
+    // Cloudflare Free it is the app's own tunnel, started now if it isn't running (§mesh.public/preview-tunnels).
+    const port = listPreviews().find((v) => v.id === ref.preview)?.port;
+    if (port === undefined) throw new LinkRefused("preview-unknown", "No such preview in this organization.");
+    let home: PreviewHome;
+    try {
+      home = await previewHome(port, createdBy ?? "operator");
+    } catch (err) {
+      if (err instanceof PreviewRefused) {
+        const r = previewHomeRefusal(err);
+        throw new LinkRefused(r.code, r.why);
+      }
+      if (isSharingOffError(err)) throw new LinkRefused("sharing-off", err.message);
+      throw err;
+    }
     let result: ReturnType<typeof mintSibling>;
     try {
       result = (await awaitShareLinks(() => mintSibling(ref.preview, personId, createdBy ?? "operator"))).result;
     } catch (err) {
       throw new LinkRefused("preview-off", err instanceof Error ? err.message : String(err));
     }
-    const url = `${previewOrigin(zone, result.label)}/`;
+    const url = previewLinkOf(home, result.label);
     // Kept for the operator's Sent to line only (§mesh.public/preview): never in the log, a result or a model's context.
     try {
-      keepSiblingLink(result.record.id, url);
+      if (home.mode === "tunnel") keepSiblingKey(result.record.id, result.label);
+      else keepSiblingLink(result.record.id, url);
     } catch (err) {
       console.warn(`[outreach] a person's preview link isn't kept (${err instanceof Error ? err.name : "error"}); it still goes`);
     }
-    return { url, line: `${operatorName()} shared a preview with you.`, log: { previewId: result.record.id }, minted: { previewId: result.record.id } };
+    // On Cloudflare Free the sender hears that its address changes when this computer restarts (§app.outreach/links).
+    return { url, line: `${operatorName()} shared a preview with you.`, ...(home.mode === "tunnel" ? { warning: LINK_WARNINGS.quick } : {}), log: { previewId: result.record.id }, minted: { previewId: result.record.id } };
   },
   revoke(minted) {
     const id = minted.previewId;
@@ -198,10 +270,16 @@ const owner: LinkResolver = {
     try {
       got = (await awaitShareLinks(() => ownerLinkToSend(orgId, personId))).result;
     } catch (err) {
+      if (isSharingOffError(err)) throw new LinkRefused(SHARING_OFF_ERROR, err.message);
       throw new LinkRefused("not-owner", err instanceof Error ? err.message : String(err));
     }
+    if (!got.made) await readyShareAddress();
+    const late = addressAfterWait();
+    // A link it made stays the org's one live link, undelivered, as after any failure (revoke below).
+    if (late) throw new LinkRefused(late.code, late.why);
     return {
       url: linkUrl("i", got.token),
+      ...quickNote(),
       line: ownerLine(operatorName(), readOrgOrPlaceholder(orgId).name),
       log: {},
       minted: { ownerHash: got.hash, ...(got.made ? { made: "1" } : {}) },

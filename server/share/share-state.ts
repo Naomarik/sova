@@ -2,7 +2,7 @@ import { LINK_WARNINGS, type LinkWarningCode, type PublicLinksFile, type ShareLi
 import { SESSION_SHARE_GATEWAY_OLD, type SessionShareWarningCode } from "../../shared/session-share";
 import { readPeers } from "../mesh/peers";
 import { quickTunnelEnabled, readPublicLinks, readStoredPublicLinks, readTunnelConsent, sharePin } from "../public-links";
-import { tunnelStatus } from "./tunnel/manager";
+import { tunnelStatus, UNVERIFIED } from "./tunnel/manager";
 import { viaGatewayStatus } from "./gateway-client";
 import type { IngressInfo } from "./ingress";
 import type { ShareLinksOutcome } from "./links-events";
@@ -90,8 +90,8 @@ export function quickState(t: TunnelStatus, opts: { enabled: boolean; consentAt:
   if (opts.consentAt === null) return none("configured", "quick-turn-on");
   if (t.state === "needs-cloudflared") return none("configured", "quick-setup");
   if (t.state === "up" && t.origin) {
-    // An up tunnel with a reason is one whose outside check failed: used, with `unverified`.
-    if (t.reason) return { state: "configured", source: "quick", publicUrl: t.origin, warning: LINK_WARNINGS.unverified, warningCode: "unverified" };
+    // Up but not yet answering from outside: used, with `unverified`.
+    if (t.reason?.startsWith(UNVERIFIED)) return { state: "configured", source: "quick", publicUrl: t.origin, warning: LINK_WARNINGS.unverified, warningCode: "unverified" };
     return { state: "verified", source: "quick", publicUrl: t.origin, warning: LINK_WARNINGS.quick, warningCode: "quick" };
   }
   if (t.state === "degraded" || t.state === "failed") return { ...none("unreachable", "tunnel-down"), ...(t.origin && t.state === "degraded" ? { publicUrl: t.origin } : {}) };

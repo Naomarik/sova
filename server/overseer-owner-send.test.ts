@@ -381,6 +381,17 @@ describe("§app.owner-page/send: the Overseer sends the owner their page link", 
       assert.match(r.text, /^Not sent to Omar Hughes: This link can't be opened from outside yet\. Turn on public links in Settings → Public links\. You can send it yourself from the People tab\.$/);
       assert.equal(logOf().at(-1)!.code, "address-off");
       nothing();
+      // Off picked in the list turns sharing off (§mesh.public/sharing-off): the send refuses, making nothing.
+      const links = await import("./public-links");
+      links.patchPublicLinks({ route: "off" });
+      try {
+        const off = await sendOwner("Omar Hughes");
+        assert.match(off.text, /^Not sent to Omar Hughes: Sharing is off on this computer\. The user can turn it on in Settings → Public links\./);
+        assert.equal(logOf().at(-1)!.code, "sharing-off");
+        nothing();
+      } finally {
+        rmSync(links.publicLinksFile(), { force: true });
+      }
     } finally {
       process.env.SOVA_SHARE_PUBLIC_URL = PUBLIC;
     }

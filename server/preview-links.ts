@@ -336,6 +336,7 @@ export function revokePreview(id: string, now = Date.now()): PreviewRecord | nul
 
 /** Move an active one's expiry to `days` from now (a running copy's link, §app.project-services/share: at most 7). */
 export function extendPreview(id: string, days: unknown, now = Date.now()): PreviewRecord | null {
+  assertSharingOn();
   const d = checkDays(days);
   const store = read();
   const r = store.links.find((l) => l.id === id);
@@ -367,6 +368,7 @@ export function setPreviewExpiry(id: string, at: number, now = Date.now()): Prev
 
 /** A shared copy's link shared again (§app.project-services/share): its expiry moves to the later of its own and `days` from now. */
 export function renewPreview(id: string, days: number, now = Date.now()): PreviewRecord | null {
+  assertSharingOn();
   const store = read();
   const r = store.links.find((l) => l.id === id);
   if (!r || previewState(r, now) !== "active") return null;

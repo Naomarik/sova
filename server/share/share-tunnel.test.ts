@@ -9,6 +9,7 @@ const { LINK_WARNINGS } = await import("../../shared/public-links");
 const { accountState, quickState } = await import("./share-state");
 const { shareHostAllowed } = await import("./listener");
 const { brokenLinks, isBroken } = await import("./tunnel/handouts");
+const { UNVERIFIED } = await import("./tunnel/manager");
 
 after(dropScratchAgentDir);
 
@@ -24,7 +25,7 @@ test("Free: each tunnel state gives one address and one warning", () => {
     ["nothing shared yet", status("stopped"), ON, { state: "configured", publicUrl: null, code: "quick-starting" }],
     ["starting", status("starting", { origin: null }), ON, { state: "configured", publicUrl: null, code: "quick-starting" }],
     ["up and checked from outside", status("up"), ON, { state: "verified", publicUrl: ORIGIN, code: "quick" }],
-    ["up, its outside check not passed", status("up", { reason: "The address didn't answer from outside yet." }), ON, { state: "configured", publicUrl: ORIGIN, code: "unverified" }],
+    ["up, its outside check not passed", status("up", { reason: `${UNVERIFIED}.` }), ON, { state: "configured", publicUrl: ORIGIN, code: "unverified" }],
     ["cut off from Cloudflare", status("degraded"), ON, { state: "unreachable", publicUrl: ORIGIN, code: "tunnel-down" }],
     ["failed", status("failed"), ON, { state: "unreachable", publicUrl: null, code: "tunnel-down" }],
   ];

@@ -53,9 +53,30 @@ export function handedOutHashes(body: unknown): string[] | null {
   return out;
 }
 
+/** Record hand-outs under Free only (an address can change only there), of live links only. */
+function noteLive(hashes: string[]): number {
+  if (readPublicLinks().route !== "quick" || !hashes.length) return 0;
+  const live = new Set(liveLinks(Date.now()).map((l) => l.h));
+  const noted = hashes.filter((h) => live.has(h));
+  noteHandouts(noted, Date.now(), live);
+  return noted.length;
+}
+
+/** A link that just left Sova in a send (outreach): recorded as handed out. Never throws. */
+export function noteSentLink(url: string): void {
+  try {
+    const hashes = handedOutHashes({ links: [{ url }] });
+    if (hashes) noteLive(hashes);
+  } catch {
+    // the notice is a convenience: a send never fails for it
+  }
+}
+
 export interface TunnelRoutesDeps {
   /** GET /api/public-links's answer, as it is now. */
   info: () => Promise<unknown>;
+  /** Whether the share tunnel is wanted now (wiring's shareWanted). */
+  wanted: () => boolean;
 }
 
 export function mountTunnelRoutes(app: Hono, deps: TunnelRoutesDeps): void {
@@ -66,7 +87,7 @@ export function mountTunnelRoutes(app: Hono, deps: TunnelRoutesDeps): void {
     if (refused) return refused;
     if (!quickTunnelEnabled()) return c.json({ error: "Cloudflare Free is turned off on this computer (SOVA_QUICK_TUNNEL=off)." }, 409, NO_STORE);
     recordTunnelConsent();
-    if (readPublicLinks().route === "quick" && liveLinks(Date.now()).some((l) => l.kind !== "p" && l.kind !== "x")) await ensureTunnel({ kind: "share" }, { by: "operator" }).catch(() => null);
+    if (readPublicLinks().route === "quick" && deps.wanted()) await ensureTunnel({ kind: "share" }, { by: "operator" }).catch(() => null);
     return c.json(await deps.info(), 200, NO_STORE);
   });
 
@@ -75,19 +96,19 @@ export function mountTunnelRoutes(app: Hono, deps: TunnelRoutesDeps): void {
     const hashes = handedOutHashes(await c.req.json().catch(() => undefined));
     if (!hashes) return c.json({ error: `Expected { links: [{ url }] }, at most ${HANDED_OUT_MAX}.` }, 400, NO_STORE);
     // Only Free's address can change under a sent link (§mesh.public/broken-links).
-    if (readPublicLinks().route !== "quick" || !hashes.length) return c.json({ ok: true, noted: 0 }, 200, NO_STORE);
-    const live = new Set(liveLinks(Date.now()).map((l) => l.h));
-    const noted = hashes.filter((h) => live.has(h));
-    noteHandouts(noted, Date.now(), live);
-    return c.json({ ok: true, noted: noted.length }, 200, NO_STORE);
+    return c.json({ ok: true, noted: noteLive(hashes) }, 200, NO_STORE);
   });
 
   app.post("/api/public-links/tunnel/start", async (c) => {
     if (!localRequest(c)) return notFound(c);
+    // The page's Try Again: a chat never starts a tunnel by itself.
+    const refused = yourClickRefusal(c, "turnOn");
+    if (refused) return refused;
     const route = readPublicLinks().route;
     if (route !== "quick" && route !== "account") return c.json({ error: "No Cloudflare tunnel is chosen." }, 409, NO_STORE);
     if (route === "quick" && readTunnelConsent() === null) return c.json({ error: "Turn on public links first." }, 409, NO_STORE);
-    await ensureTunnel({ kind: "share" }, { by: "operator" }).catch(() => null);
+    // Only a tunnel something waits for: with nothing shared under Free, nothing starts (nothing runs at idle).
+    if (deps.wanted()) await ensureTunnel({ kind: "share" }, { by: "operator" }).catch(() => null);
     return c.json(await deps.info(), 200, NO_STORE);
   });
 }

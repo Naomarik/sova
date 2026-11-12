@@ -21,6 +21,7 @@ import { cloudflaredInfo, resolveCloudflared } from "./share/tunnel/binary";
 import { brokenLinks } from "./share/tunnel/handouts";
 import { checkTunnel, runningTunnels, tunnelStatus } from "./share/tunnel/manager";
 import { mountTunnelRoutes } from "./share/tunnel/routes";
+import { shareWanted } from "./share/tunnel/wiring";
 import { parseVisitorLogging, readVisitorLogging, writeVisitorLogging } from "./visitor-logging";
 
 /**
@@ -134,7 +135,7 @@ export function mountPublicLinks(app: Hono, sources: PublicLinksSources = SOURCE
     return c.json(await publicLinksInfo(r.file, sources, effectivePublicLinks({ kind: "ok", file: r.file })), 200, NO_STORE);
   });
 
-  mountTunnelRoutes(app, { info: () => publicLinksInfo(readPublicLinks(), sources) });
+  mountTunnelRoutes(app, { info: () => publicLinksInfo(readPublicLinks(), sources), wanted: () => shareWanted() });
   mountAccountRoutes(app);
 
   app.get("/api/visitor-logging", (c) => (local(c) ? c.json(readVisitorLogging() satisfies VisitorLogging, 200, NO_STORE) : notFound(c)));

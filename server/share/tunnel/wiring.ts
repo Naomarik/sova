@@ -72,6 +72,13 @@ async function ensureShare(by: string, waitMs?: number): Promise<TunnelStatus | 
   }
 }
 
+/** Make the share address ready for a link sent without a new mint (a kept link): under Free (after
+    Turn On) or Account, start the share tunnel if needed and wait for it as a mint would. */
+export async function readyShareAddress(): Promise<void> {
+  const r = route();
+  if (r === "account" || (r === "quick" && quickTunnelAllowed(env))) await ensureShare("send", r === "quick" ? QUICK_MINT_WAIT_MS : undefined);
+}
+
 /** Stop the share tunnel when it isn't wanted, and let the listener go once no tunnel is left. */
 async function settle(why: string): Promise<void> {
   const file = readPublicLinks(env);

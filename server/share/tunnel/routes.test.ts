@@ -66,6 +66,18 @@ describe("Turn On", () => {
   });
 });
 
+describe("Try Again", () => {
+  test("only the page; and with nothing shared under Free nothing starts (nothing runs at idle)", async () => {
+    const { tunnelStatus } = await import("./manager");
+    const a = app();
+    store.recordTunnelConsent();
+    assert.equal((await call(a, "POST", "/api/public-links/tunnel/start", "chat")).status, 403);
+    const res = await call(a, "POST", "/api/public-links/tunnel/start", "page");
+    assert.equal(res.status, 200);
+    assert.equal(tunnelStatus({ kind: "share" }).state, "stopped", "no live link: no tunnel");
+  });
+});
+
 describe("PUT /api/public-links: where links open stays the user's", () => {
   test("a chat can't leave Off or pick Free; the operator's token script can (option c)", async () => {
     const a = app();

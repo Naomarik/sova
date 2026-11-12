@@ -430,6 +430,7 @@ export const stopSharesOfSession = (sessionId: string, now = Date.now()): { shar
  * how many expired links stayed expired.
  */
 export function extendShare(shareId: string, days: SessionShareDays, now = Date.now()): { renewed: number; kept: number } {
+  assertSharingOn();
   const store = read();
   const share = liveShareOf(store, shareId);
   const expiresAt = iso(now + days * DAY_MS);

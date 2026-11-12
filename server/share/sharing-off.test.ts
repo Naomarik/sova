@@ -38,6 +38,10 @@ const MINTS: [string, () => unknown][] = [
   ["s: one more recipient", () => sessionShares.addRecipient("ss_x", { label: "B" })],
   ["s: a recipient's new link", () => sessionShares.relinkRecipient("ss_x", "r_x")],
   ["t: a tour link", () => tourShares().create("s1", "t1", "e1", "pv", new Date(Date.now() + 86_400_000).toISOString())],
+  // A live link's life lengthened is a share too.
+  ["p: a preview extended", () => previewLinks.extendPreview("pv_x", 1)],
+  ["p: a running copy's link shared again", () => previewLinks.renewPreview("pv_x", 1)],
+  ["s: a share extended", () => sessionShares.extendShare("ss_x", 7 as never)],
 ];
 
 describe("while sharing is off", () => {

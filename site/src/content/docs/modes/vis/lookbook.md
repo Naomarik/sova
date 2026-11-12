@@ -99,6 +99,21 @@ again. While a page using these images is being written, their spots show a plai
 real images appear when the page is finished. Start waits while a link's images are still being
 captured or described.
 
+### Screenshots
+
+Paste a screenshot into your chat or the Creative Director's box and it becomes a
+**Screenshot** on the brief. It shows its measured colours as swatches with their hex values, and
+its **words for designers**: the screen's feel and what each colour is for. The Creative Director
+writes those words, and you can **Edit** them. Your edits always win over the Creative Director's.
+
+Choose how each screenshot is used:
+
+- **Rebuild This Screen**: designers whose model reads pictures get the screenshot itself, along
+  with its words. Words-only designers get the words.
+- **Just Its Feel**: no designer gets the picture. Every designer gets the words.
+
+Untick a screenshot and no designer gets it.
+
 ## Start
 
 Press **Start**. Nothing is designed before you do, and the button names how many designs it starts.

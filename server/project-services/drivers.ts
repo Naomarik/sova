@@ -102,6 +102,9 @@ export interface SystemdUnitOptions {
   /** The unit's env goes in this file (mode 0600, written at start) as `EnvironmentFile=`, never in
       systemd-run's argv, which every user on the host can read. */
   envFile?: (unit: string) => string;
+  /** More `--property=` assignments for a long-running unit (the tunnels' stop hook and restart policy), each
+      already in systemd's own syntax. */
+  properties?: (unit: string) => string[];
 }
 
 /** Whether an `EnvironmentFile=` can carry `name=value`: a variable name, and a value on one line. */
@@ -130,6 +133,7 @@ export function systemdRunArgv(spec: UnitSpec, once?: { timeoutSec: number }, un
   else {
     a.push("--property=KillMode=mixed", `--property=TimeoutStopSec=${unitOpts.timeoutStopSec ?? 15}`);
     if (unitOpts.restart !== false) a.push("--property=Restart=on-failure", "--property=RestartSec=2");
+    for (const p of unitOpts.properties?.(spec.unit) ?? []) a.push(`--property=${p}`);
   }
   if (spec.nice) a.push(`--property=Nice=${spec.nice}`);
   if (unitOpts.envFile) a.push(`--property=EnvironmentFile=${unitOpts.envFile(spec.unit)}`);

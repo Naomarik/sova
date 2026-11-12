@@ -1,7 +1,7 @@
 /** Pure derivations behind the Design Brief on the Design card: no DOM, no Solid, so they are unit-tested. */
 import type { DesignBrief, DesignBriefQuestion, DesignLink, DesignLinkUse, DesignRun, DesignSetup } from "../../shared/design";
 import type { DesignAsset, DesignAssetCatalogue, DesignShotWords } from "../../shared/design-assets";
-import { DESIGN_ASSET_KINDS, isScreenshot, kindAllowed } from "../../shared/design-assets";
+import { DESIGN_ASSET_KINDS, kindAllowed, screenshotsInUse } from "../../shared/design-assets";
 import { designBriefBlock, designLinksIn } from "../../shared/design";
 import { recommendedOption } from "./align";
 
@@ -108,9 +108,7 @@ export const assetKindWord = (a: DesignAsset): string => a.chosenKind ?? a.cdKin
 export const kindChoices = (a: Pick<DesignAsset, "source">): string[] => DESIGN_ASSET_KINDS.filter((k) => kindAllowed(a, k));
 
 /** The run's pasted screenshots that go to the designers (ticked), in the grid's order: each needs Rebuild or Just Its Feel. */
-export function runScreenshots(assets: readonly DesignAsset[], brief: Pick<DesignBrief, "imageUse"> | undefined, held: Readonly<Record<string, boolean>> = {}): string[] {
-  return assets.filter((a) => isScreenshot(a) && imageUsed(brief, held, a.name)).map((a) => a.name);
-}
+export const runScreenshots = (assets: readonly DesignAsset[], brief: Pick<DesignBrief, "imageUse"> | undefined): string[] => screenshotsInUse(assets, brief);
 
 /** How a screenshot is used: a click not yet confirmed first, then the brief's word; null until someone chooses. */
 export const screenUseOf = (brief: Pick<DesignBrief, "screenUse"> | undefined, held: Readonly<Record<string, "rebuild" | "feel">>, name: string): "rebuild" | "feel" | null => held[name] ?? brief?.screenUse?.[name]?.use ?? null;

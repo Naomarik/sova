@@ -188,9 +188,13 @@ any more, and they count toward no badge, row or digest.
   other is answered (or delegated) as the delegate block says, with no planning worker for an
   alignment. For a change request, the investigation goes to at most one non-editing Planning & specs
   worker (never the Investigation profile), whose one permitted write is the alignment JSON for
-  `import` at an absolute path outside the repository that the agent names (the delegate block's
-  own no-edit rule names no exception: the bridge does; in a remote session the worker reports the
-  JSON and the agent creates inline), and the agent imports that file, never retyping it. When the
+  `import` in the chat's shared folder (§chat.sandbox/shared-folder), outside every repository and
+  writable for a confined worker too, at a name the agent gives in the brief (the bridge's example is
+  `$SOVA_SHARED_DIR/align-<topic>-<n>.json`, and it says never `/tmp`, which a sandboxed worker
+  can't share; the bridge names the variable, never a path, so the system prompt stays the same in
+  every chat). The worker reports the absolute path it wrote (the delegate block's own no-edit rule
+  names no exception: the bridge does; in a remote session the worker reports the JSON and the agent
+  creates inline), and the agent imports that path, never retyping the file. When the
   same matter was first investigated by a lighter worker (an Investigation worker the delegate block
   sent on a bug report or a question) and the user then asks for the change, the agent's brief to the
   planning worker carries the root cause that worker found, so the planning worker starts from it

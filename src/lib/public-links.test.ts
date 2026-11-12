@@ -7,6 +7,7 @@ import {
   parsePort,
   publicLinksChanges,
   publicLinksDraftOf,
+  samePublicLinks,
   setPublicLinksDraft,
   setPublicLinksSaved,
   sourceLabel,
@@ -124,4 +125,37 @@ test("gateway behind: only once the via gateway answered, and only when it state
   assert.deepEqual(gatewayResync({ line: "3 commits behind laptop", button: {} }), {});
   assert.deepEqual(gatewayResync({ line: "x", button: { reason: "No recipe." } }), { reason: "No recipe." });
   assert.deepEqual(gatewayResync({ line: "Same commit as laptop", button: null }), { reason: "Same commit as laptop" });
+});
+
+test("Cloudflare Account: the route goes with its address; a pasted token alone makes the form dirty", () => {
+  const quick: PublicLinksFile = { version: 1, route: "quick" };
+  const d = { ...publicLinksDraftOf(quick), route: "account" as const, accountUrl: " https://share.example.com/ ", accountPreviewUrl: "https://*.Example.com" };
+  assert.deepEqual(publicLinksChanges(d, quick), { route: "account", account: { publicUrl: "https://share.example.com", previewUrl: "https://*.example.com" } });
+  const saved: PublicLinksFile = { version: 1, route: "account", account: { publicUrl: "https://share.example.com" } };
+  assert.deepEqual(publicLinksChanges(publicLinksDraftOf(saved), saved), {});
+  assert.equal(samePublicLinks(publicLinksDraftOf(saved), saved), true);
+  assert.equal(samePublicLinks({ ...publicLinksDraftOf(saved), accountToken: "eyJh" }, saved), false);
+  assert.equal(draftIssue({ ...publicLinksDraftOf(saved) })?.field, "accountToken", "no token stored, none pasted");
+  assert.equal(draftIssue({ ...publicLinksDraftOf(saved) }, [], true), null);
+  assert.equal(draftIssue({ ...publicLinksDraftOf(saved), accountUrl: "http://x" }, [], true)?.field, "accountUrl");
+});
+
+test("an unreadable setting: the first save sends the route, whatever it picks", () => {
+  const broken: PublicLinksFile = { version: 1, route: "off" };
+  assert.deepEqual(publicLinksChanges(publicLinksDraftOf(broken), broken), {});
+  assert.deepEqual(publicLinksChanges(publicLinksDraftOf(broken), broken, { broken: true }), { route: "off" });
+  assert.equal(samePublicLinks(publicLinksDraftOf(broken), broken, { broken: true }), false);
+});
+
+test("Free's chip words and the Mesh card's Cloudflare chip", () => {
+  assert.deepEqual(stateChip(share({ state: "configured", warningCode: "quick-starting" })), { word: "Starting", tone: "info" });
+  assert.deepEqual(stateChip(share({ state: "off", warningCode: "quick-turn-on" })), { word: "Not turned on", tone: "warn" });
+  assert.deepEqual(stateChip(share({ state: "off", warningCode: "quick-setup" })), { word: "Needs cloudflared", tone: "warn" });
+  assert.deepEqual(stateChip(share({ state: "unreachable", warningCode: "tunnel-down" })), { word: "Tunnel down", tone: "error" });
+  assert.deepEqual(stateChip(share({ state: "off" }), { broken: true }), { word: "Can't read setting", tone: "error" });
+  assert.deepEqual(stateChip(share({ state: "verified", warningCode: "quick" })), { word: "Verified", tone: "success" });
+  const i = (route: PublicLinksFile["route"]) => ({ file: { version: 1 as const, route }, share: share({}), pinnedByEnv: [] }) as PublicLinksInfo;
+  assert.equal(meshChipText(i("quick")), "Public links: Cloudflare");
+  assert.equal(meshChipText(i("account")), "Public links: Cloudflare");
+  assert.equal(meshChipText(i("off")), null);
 });

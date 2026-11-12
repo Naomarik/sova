@@ -1,4 +1,5 @@
 import { batch, createEffect, createMemo, createSignal, on, onCleanup, Show, type JSX } from "solid-js";
+import { sharingOffHere } from "../lib/public-links";
 import type { SessionSummary, TranscriptItem, WatchContext, WatchServerMessage } from "../../shared/protocol";
 import { fetchTranscriptRows, wsUrl } from "../lib/api";
 import { contextFromItems, contextStateFor } from "../lib/context";
@@ -159,7 +160,8 @@ export function WatchView(props: {
   const additions = useReplyAdditions({ session: () => props.sessionId, local: createMemo(() => !hostOf(props.path)), running: () => false });
   const watchActions: ReplyPlace = {
     builtIns: [{ id: "sova.message-actions", items(strip) {
-      return actionsFor(strip.role, { copyable: copyable(strip) }).map((kind): MessageActionItem => {
+      // Sharing off on the session's host (§mesh.public/sharing-off): no Share on a message.
+      return actionsFor(strip.role, { copyable: copyable(strip) }).filter((kind) => kind !== "share" || !sharingOffHere(hostOf(props.path))).map((kind): MessageActionItem => {
         switch (kind) {
           case "copy":
             return { kind, reason: null, run: async () => void (await copyText(strip.text, COPIED)) };

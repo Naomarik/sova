@@ -1,4 +1,5 @@
 import { createEffect, createMemo, createSignal, For, Match, onCleanup, onMount, Show, Switch } from "solid-js";
+import { copyLink } from "../lib/copy-link";
 import { Portal } from "solid-js/web";
 import {
   SESSION_SHARE_DAYS,
@@ -48,11 +49,11 @@ import {
 } from "../lib/session-shares";
 import { openSettings } from "../lib/settings-nav";
 import { shareHref } from "../lib/share-slice";
-import { copyText } from "../lib/ui-state";
 import { DELETE_LINK, DELETE_THIS_LINK, deleteLinkConfirm, LINK_GONE } from "../lib/link-delete";
 import { SessionThread } from "../share/SessionShareApp";
 import { DeleteButton } from "./DeleteButton";
 import { Banner, CopyButton, Icon, trapFocus } from "./ui";
+import { BrokenLinksNotice, OpensAtLine } from "./OpensAt";
 import "../shares.css";
 
 /** Activity is read again this often while a managed share is open and the page is visible. */
@@ -246,7 +247,7 @@ export function MintedLinks(props: { links: SessionShareLink[]; warning?: string
                 <p class="list-title">{l.label}</p>
                 <p class="list-meta share-link-url">{l.link}</p>
               </div>
-              <CopyButton label="Copy Link" title={`Copy ${l.label}'s link`} text={() => l.link} onCopy={(t) => copyText(t, "Link copied.")} />
+              <CopyButton label="Copy Link" title={`Copy ${l.label}'s link`} text={() => l.link} onCopy={(t) => copyLink(t, "Link copied.")} />
             </li>
           )}
         </For>
@@ -490,6 +491,10 @@ function ManageShare(props: {
       </Match>
       <Match when={true}>
         <div class="modal-body">
+          <OpensAtLine host={props.host} />
+          <Show when={!props.host}>
+            <BrokenLinksNotice kinds={["s"]} />
+          </Show>
           <Show when={fresh()}>
             {(f) => (
               <section class="stack-2" aria-label="New links">
@@ -727,7 +732,7 @@ function RecipientRow(props: {
       <Show when={r().state !== "off"}>
         <div class="share-recipient-actions">
           <Show when={copyable()}>
-            {(link) => <CopyButton label="Copy Link" title={r().anyone ? "Copy this link" : `Copy ${r().label}'s link`} text={link} onCopy={(t) => copyText(t, "Link copied.")} />}
+            {(link) => <CopyButton label="Copy Link" title={r().anyone ? "Copy this link" : `Copy ${r().label}'s link`} text={link} onCopy={(t) => copyLink(t, "Link copied.")} />}
           </Show>
           <button type="button" class="button button-sm" aria-disabled={props.busy ? "true" : undefined} title="A new link for them. This one stops working." onClick={() => props.onRelink()}>
             Get New Link

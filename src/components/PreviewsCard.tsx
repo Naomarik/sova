@@ -1,4 +1,5 @@
 import { createSignal, For, type JSX, Show } from "solid-js";
+import { copyLink } from "../lib/copy-link";
 import { PREVIEW_PURPOSE_MAX } from "../../shared/preview-links";
 import { getProjectPreviews, mintPreview, runProjectVerb, turnOffPreview } from "../lib/api";
 import { createPoll } from "../lib/poll";
@@ -29,8 +30,10 @@ import {
 } from "../lib/previews";
 import { resolveAppLink, sessionIndex, sessionIndexVersion } from "../lib/session-links";
 import { createArm } from "../lib/two-step";
-import { announce, copyText, toast } from "../lib/ui-state";
+import { announce, toast } from "../lib/ui-state";
 import { Banner } from "./ui";
+import { BrokenLinksNotice, FreePreviewNote, OpensAtLine } from "./OpensAt";
+import { publicLinksInfo, sharingOffHere } from "../lib/public-links";
 
 const POLL_MS = 5_000;
 const errText = (x: unknown) => (x instanceof Error ? x.message : String(x));
@@ -78,10 +81,16 @@ export function PreviewsCard(props: { projectId: string }) {
 
   const list = () => previewGroups(poll.data()?.previews ?? []);
   const address = () => poll.data()?.address;
+  /** Previews open on Free's own tunnels (§mesh.public/preview-tunnels): no wildcard address needed. */
+  const tunnelMode = () => address()?.mode === "tunnel";
+  /** New Preview is offered: an address to mint on (or Free's tunnels), and sharing on (§mesh.public/sharing-off). */
+  const canMint = () => (!address() || !!address()!.url || tunnelMode()) && !sharingOffHere();
+  /** Free preview tunnels running now, for the cap's line. */
+  const tunnelsRunning = () => (publicLinksInfo()?.tunnel?.previews ?? []).filter((t) => t.state === "up" || t.state === "starting" || t.state === "degraded").length;
   /** The number typed, for the warning (named even when the port is refused). */
   const typed = () => (/^\d{1,5}$/.test(port().trim()) ? Number(port().trim()) : null);
 
-  const copy = (url: string) => void copyText(url, "Link copied.");
+  const copy = (url: string) => void copyLink(url, "Link copied.");
 
   const create = async (e: Event) => {
     e.preventDefault();
@@ -142,7 +151,7 @@ export function PreviewsCard(props: { projectId: string }) {
   };
 
   /** One preview and New Preview showing: its Delete moves to New Preview's line, at its right. */
-  const solo = () => list().length === 1 && !formOpen() && (!address() || !!address()!.url);
+  const solo = () => list().length === 1 && !formOpen() && canMint();
 
   /** A row's own Delete: the preview and every link sent from it, or, for a sibling listed alone, that person's link. */
   const offPerson = (g: PreviewGroup) => (g.preview.siblingOf ? recipientName(g.preview) : null);
@@ -190,7 +199,14 @@ export function PreviewsCard(props: { projectId: string }) {
       <Show when={poll.error() && !poll.data()}>
         <p class="field-error">Couldn't read this project's previews. {poll.error()}</p>
       </Show>
-      <Show when={address() && !address()!.url}>
+      <Show when={!sharingOffHere()}>
+        <OpensAtLine />
+      </Show>
+      <Show when={tunnelMode()}>
+        <FreePreviewNote running={tunnelsRunning()} />
+        <BrokenLinksNotice kinds={["p"]} />
+      </Show>
+      <Show when={address() && !address()!.url && !tunnelMode()}>
         <Banner tone="info" title="Preview links aren't set up." body={address()!.message ?? "Set a preview address in Settings → Public links on the gateway."} />
       </Show>
       <Show when={list().length > 0}>
@@ -252,7 +268,7 @@ export function PreviewsCard(props: { projectId: string }) {
                                   {/* Their own link, while it is kept: Copy only, never Open (the row's Open is the original's). */}
                                   <Show when={r.sentLink}>
                                     {(link) => (
-                                      <button type="button" class="button button-sm previews-recipient-copy" title={recipientCopyTip(name())} onClick={() => void copyText(link(), recipientCopied(name()))}>
+                                      <button type="button" class="button button-sm previews-recipient-copy" title={recipientCopyTip(name())} onClick={() => void copyLink(link(), recipientCopied(name()))}>
                                         {recipientCopyLabel(name())}
                                       </button>
                                     )}
@@ -293,7 +309,7 @@ export function PreviewsCard(props: { projectId: string }) {
                       {/* A sibling listed alone: its person's own link, while kept; never an Open. */}
                       <Show when={v.siblingOf && v.sentLink}>
                         {(link) => (
-                          <button type="button" class="button button-sm" title={recipientCopyTip(recipientName(v))} onClick={() => void copyText(link(), recipientCopied(recipientName(v)))}>
+                          <button type="button" class="button button-sm" title={recipientCopyTip(recipientName(v))} onClick={() => void copyLink(link(), recipientCopied(recipientName(v)))}>
                             {recipientCopyLabel(recipientName(v))}
                           </button>
                         )}
@@ -324,7 +340,7 @@ export function PreviewsCard(props: { projectId: string }) {
           </For>
         </ul>
       </Show>
-      <Show when={!address() || address()!.url}>
+      <Show when={canMint()}>
         <Show
           when={formOpen()}
           fallback={

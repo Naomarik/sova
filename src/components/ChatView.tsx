@@ -2,6 +2,7 @@ import { archivedDropToast, archivedProjectOf, unarchivedProjectOf } from "../li
 import { archiveSession } from "../lib/session-actions";
 import { createPressTracker, notePress, refocusAfterSend, type SendPress } from "../lib/input-mode";
 import { batch, createEffect, createMemo, createResource, createSignal, For, Match, on, onCleanup, Show, Switch, untrack, type JSX } from "solid-js";
+import { sharingOffHere } from "../lib/public-links";
 import { createStore, produce, reconcile, unwrap } from "solid-js/store";
 import { Portal } from "solid-js/web";
 import type {
@@ -1747,7 +1748,8 @@ export function ChatView(props: {
       quietly does nothing. What extensions add comes after it. */
   const chatActions: ReplyPlace = {
     builtIns: [{ id: "sova.message-actions", items(strip) {
-      return actionsFor(strip.role, { copyable: copyable(strip) }).map((kind): MessageActionItem => {
+      // Sharing off on the session's host (§mesh.public/sharing-off): no Share on a message.
+      return actionsFor(strip.role, { copyable: copyable(strip) }).filter((kind) => kind !== "share" || !sharingOffHere(hostOf(props.path))).map((kind): MessageActionItem => {
         switch (kind) {
           case "copy":
             return { kind, reason: null, run: async () => void (await copyText(strip.text, COPIED)) };

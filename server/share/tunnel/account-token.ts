@@ -8,7 +8,8 @@ import { readPublicLinks } from "../../public-links";
 import { readCandidate } from "../candidate";
 import { envFileText } from "../../project-services/drivers";
 import { stateRoot } from "../../state-root";
-import { configureTunnels, stopTunnel } from "./manager";
+import { shareState } from "../listener";
+import { configureTunnels, restartTunnel, stopTunnel } from "./manager";
 
 /**
  * Cloudflare Account's connector token (§mesh.tunnel/account): the token the Cloudflare dashboard shows for a
@@ -120,10 +121,13 @@ export function accountTunnel(): { token: string; publicUrl: string } | null {
   return token ? { token, publicUrl: file.account.publicUrl } : null;
 }
 
-/** What the routes do to a running Account tunnel when its token is removed (the tunnel manager; tests pass their
-    own). A new token never restarts it: it waits as the candidate's until Verify (share-wiring's promotion). */
+/** What the routes do to the Account tunnel (the tunnel manager; tests pass their own). */
 export interface AccountTunnelControl {
+  /** Stop and start the share tunnel again: its unit's environment file is written only at a start. */
+  restart(why: string): Promise<unknown>;
   stop(why: string): Promise<unknown>;
+  /** Whether today's route works (share-wiring's routeWorks): a working one keeps its token until Verify. */
+  works(): boolean;
 }
 
 const notFound = (c: Context) => c.json({ error: "Not found" }, 404);
@@ -136,7 +140,14 @@ const NO_STORE = { "Cache-Control": "no-store" };
  * page (§app.access/your-click). The answer says only whether a token is saved.
  */
 const SHARE = { kind: "share" } as const;
-const MANAGER: AccountTunnelControl = { stop: (why) => stopTunnel(SHARE, why) };
+const MANAGER: AccountTunnelControl = {
+  restart: (why) => restartTunnel(SHARE, why),
+  stop: (why) => stopTunnel(SHARE, why),
+  works: () => {
+    const file = readPublicLinks();
+    return file.route === "account" && shareState(process.env, file).state === "verified";
+  },
+};
 
 /** Also hands the tunnel manager its `account` dep, once, as the routes mount at server start. */
 export function mountAccountRoutes(app: Hono, control: () => Promise<AccountTunnelControl> = async () => MANAGER): void {
@@ -148,10 +159,18 @@ export function mountAccountRoutes(app: Hono, control: () => Promise<AccountTunn
     const body = (await c.req.json().catch(() => undefined)) as { token?: unknown } | undefined;
     const v = validAccountToken(body?.token);
     if (!v.ok) return c.json({ error: v.error }, 400, NO_STORE);
-    // A working Account tunnel, or a setup waiting for its Verify: the new token waits beside the saved one and
-    // nothing restarts; Verify promotes it. Otherwise nothing runs on a token yet, and it is simply saved.
-    if (readPublicLinks().route === "account" || readCandidate() !== null) writeAccountToken(v.token, candidateTokenFile());
-    else writeAccountToken(v.token);
+    // A working route, or a setup waiting for its Verify: the new token waits beside the saved one and nothing
+    // restarts; Verify promotes it. Otherwise (a fresh computer, an Account that never verified or is broken) it
+    // applies at once, as before, and an Account tunnel restarts on it.
+    const ctl = await control();
+    const account = readPublicLinks().route === "account";
+    if ((account && ctl.works()) || readCandidate() !== null) {
+      writeAccountToken(v.token, candidateTokenFile());
+      return c.json({ hasToken: true }, 200, NO_STORE);
+    }
+    writeAccountToken(v.token);
+    dropCandidateToken();
+    if (account) await ctl.restart("token changed").catch((err) => console.warn(`[tunnel] account tunnel restart failed: ${err instanceof Error ? err.message : String(err)}`));
     return c.json({ hasToken: true }, 200, NO_STORE);
   });
 

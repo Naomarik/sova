@@ -132,7 +132,8 @@ describe("kept from chats and the Overseer", () => {
 describe("the routes", () => {
   afterEach(reset);
   const calls: string[] = [];
-  const control = async () => ({ stop: async (why: string) => calls.push(`stop ${why}`) });
+  let works = true;
+  const control = async () => ({ restart: async (why: string) => calls.push(`restart ${why}`), stop: async (why: string) => calls.push(`stop ${why}`), works: () => works });
   const app = () => {
     const a = new Hono();
     tok.mountAccountRoutes(a, control);
@@ -175,27 +176,29 @@ describe("the routes", () => {
     assert.equal(readFileSync(tok.tokenFile(), "utf8"), `TUNNEL_TOKEN='${TOKEN}'\n`);
   });
 
-  test("a new token waits beside the saved one while Account runs or a setup waits for Verify; nothing restarts; Verify promotes it, Cancel drops it", async () => {
+  test("a new token waits beside the saved one while a working Account runs or a setup waits for Verify; else it applies at once", async () => {
     const OTHER = b64({ a: "acct".padEnd(32, "0"), t: "tunnel".padEnd(36, "2"), s: "b3RoZXI=".padEnd(44, "y") });
     const account = { publicUrl: "https://share.example.com" };
     for (const route of ["quick", "account"] as const)
+      for (const working of [false, true])
       for (const pending of [false, true]) {
         reset();
         calls.length = 0;
+        works = working;
         store.patchPublicLinks({ route, account });
         tok.writeAccountToken(TOKEN);
         const live = readFileSync(tok.tokenFile());
         if (pending) cand.saveCandidate({ route: "account", account: { publicUrl: "https://new.example.com" } }, { version: 1, route: "account", account: { publicUrl: "https://new.example.com" } });
         const r = await app().request(PATH, put({ token: OTHER }), PAGE);
         assert.deepEqual(await r.json(), { hasToken: true });
-        const waits = route === "account" || pending;
-        const at = `${route} pending=${pending}`;
+        const waits = (route === "account" && working) || pending;
+        const at = `${route} works=${working} pending=${pending}`;
         assert.equal(tok.readAccountToken(), waits ? TOKEN : OTHER, `${at}: the saved token`);
         if (waits) assert.deepEqual(readFileSync(tok.tokenFile()), live, `${at}: the live token file is byte-identical`);
         assert.equal(tok.readCandidateToken(), OTHER, `${at}: the candidate runs on the new one`);
         assert.equal(tok.hasCandidateToken(), waits, at);
         assert.equal(tok.accountTunnel()?.token ?? null, route === "account" ? (waits ? TOKEN : OTHER) : null, `${at}: today's tunnel keeps its token`);
-        assert.deepEqual(calls, [], `${at}: nothing restarts`);
+        assert.deepEqual(calls, route === "account" && !waits ? ["restart token changed"] : [], `${at}: only an Account that doesn't work restarts on it`);
         if (waits) {
           assert.equal(statSync(tok.candidateTokenFile()).mode & 0o777, 0o600);
           tok.dropCandidateToken();

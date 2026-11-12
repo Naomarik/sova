@@ -1119,7 +1119,7 @@ export function coordinatorTools(sessionId: string): ToolSpec[] {
 
   const brief: ToolSpec = {
     name: "design_brief", label: "Write the Design Brief",
-    description: "Put the Design Brief on the user's card, or change it. summary: the short version they read. prompt: the Full Prompt the design sessions get, sent only once every question is answered; or promptEdits, exact find-and-replace pairs, for a change. questions: at most a few, replacing the ones still open. text with shots (picture ids from design_browse) and url: the screen you found. sources: each link and how it is used (images, feel, or content: an address that is only part of the page, never opened). skills: which of the run's skills the designers use. baseRev: the revision you last saw, 0 for the first brief. Only send what changes. End your turn after calling it.",
+    description: "Put the Design Brief on the user's card, or change it. summary: the short version they read. prompt: the Full Prompt the design sessions get, sent only once every question is answered; or promptEdits, exact find-and-replace pairs, for a change. questions: at most a few, replacing the ones still open. text with shots (design_browse's picture ids, s1, s2, ...) and url: a screen you opened with design_browse; a pasted screenshot (a1) goes in images instead, never in shots. sources: each link and how it is used (images, feel, or content: an address that is only part of the page, never opened). skills: which of the run's skills the designers use. baseRev: the revision you last saw, 0 for the first brief. Only send what changes. End your turn after calling it.",
     parameters: {
       type: "object",
       properties: {
@@ -1160,7 +1160,12 @@ export function coordinatorTools(sessionId: string): ToolSpec[] {
       }
       const ids = Array.isArray(params.shots) ? params.shots.filter((s): s is string => typeof s === "string") : [];
       const shots = ids.map((id) => st.shots.find((s) => s.id === id));
-      if (shots.some((s) => !s)) return refuse("shots must be picture ids from design_browse.");
+      if (shots.some((s) => !s)) {
+        // A pasted image's name (a1) isn't a found screen's picture: it has its own field, so say which.
+        const pasted = ids.filter((id, i) => !shots[i] && readAssets(parent.sessionId).assets.some((a) => a.name === id));
+        if (pasted.length) return refuse(`${pasted.join(", ")} ${pasted.length === 1 ? "is an image" : "are images"} the user pasted, not a picture from design_browse. Set a pasted screenshot with images: [{name: "${pasted[0]}", kind: "screenshot", screen: "rebuild" or "feel", words}] instead; shots takes only design_browse's picture ids (s1, s2, ...) of a screen you opened.`);
+        return refuse("shots takes only design_browse's picture ids (s1, s2, ...) of a screen you opened. A pasted image goes in images, by its name.");
+      }
       const words = str(params.text);
       if (shots.length && !words) return refuse("say in text which screen you found and how you got there.");
       const raw = Array.isArray(params.sources) ? (params.sources as { url?: unknown; use?: unknown }[]) : [];

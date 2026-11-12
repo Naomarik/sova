@@ -1197,3 +1197,15 @@ test("the measured palette reaches every design's text even when the Creative Di
   assert.match(text, /Dense, calm, dark\./);
   assert.match(text, /#e3a63a needs-you marker/, "the helper's role stays unless renamed");
 });
+
+test("design_brief: a pasted screenshot's name in shots is refused with the field it belongs in", async () => {
+  const t = await started(runWith(2, 3, { createdAt: "2026-01-01T00:00:00Z" }));
+  const shot = pasted(1);
+  const r = await t.design_brief({ baseRev: 0, summary: "S", text: "the screen", shots: [shot] });
+  refused(r);
+  assert.match(textOf(r), new RegExp(`${shot} is an image the user pasted, not a picture from design_browse\\. Set a pasted screenshot with images: \\[\\{name: "${shot}", kind: "screenshot"`));
+  refused(await t.design_brief({ baseRev: 0, summary: "S", text: "x", shots: ["s99"] }));
+  // Said the right way, it goes through first time.
+  const ok = await t.design_brief({ baseRev: 0, summary: "S", images: [{ name: shot, kind: "screenshot", screen: "rebuild" }] });
+  assert.doesNotMatch(textOf(ok), /^Refused/);
+});

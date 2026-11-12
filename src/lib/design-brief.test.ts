@@ -178,3 +178,11 @@ test("editing only the feel sends no colours, so the measured ones stay; a chang
   assert.deepEqual(shotWordsToSave(text.replace("Calm.", "Quiet and airy."), shown), { feel: "Quiet and airy.", colors: [] });
   assert.deepEqual(shotWordsToSave(text.replace("accent", "links"), shown)?.colors, [{ hex: "#1e1e26", role: "background" }, { hex: "#8e88ff", role: "links" }]);
 });
+
+test("a long role and feel are kept whole through the words editor: nothing is cut", () => {
+  const role = "accent violet used on thin small marks, the secondary purple highlights and counts, and the active tab underline";
+  const feel = "Dense, calm, dark. ".repeat(80).trim();
+  const w = { feel, colors: [{ hex: "#8e88ff", role }] };
+  assert.deepEqual(parseShotWords(shotWordsText(w)), w);
+  assert.deepEqual(shotWordsToSave(shotWordsText(w).replace("Dense", "Quiet")), { feel: feel.replace("Dense", "Quiet"), colors: [{ hex: "#8e88ff", role }] });
+});

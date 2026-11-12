@@ -64,18 +64,29 @@ export interface DesignAssetContext {
   dom?: DesignAssetDom;
 }
 
+/** What a designer is told of a pasted screenshot: its feel, and its colours by role. Words, never the picture. */
+export interface DesignShotWords {
+  feel: string;
+  colors: { hex: string; role: string }[];
+}
+
 /** What a describing model said about an image. */
 export interface DesignAssetDescription {
   kind: string;
   description: string;
   placement: string;
   usage: string;
+  /** A screenshot's: the helper's short draft of its feel, a starting point only. */
+  feel?: string;
+  /** A screenshot's: the helper's role for each measured colour. */
+  roles?: { hex: string; role: string }[];
   model?: string;
   at: string;
 }
 
-/** What a describing helper may call an image. The first four belong to the whole site, the rest to one page. */
-export const DESIGN_ASSET_KINDS = ["logo", "icon", "background", "decorative", "hero", "product", "photo", "embed"] as const;
+/** What a describing helper may call an image. The first four belong to the whole site, the next four to one page;
+    `screenshot` (a picture of a screen, a reference rather than material) only an image the user supplied. */
+export const DESIGN_ASSET_KINDS = ["logo", "icon", "background", "decorative", "hero", "product", "photo", "embed", "screenshot"] as const;
 export type DesignAssetKind = (typeof DESIGN_ASSET_KINDS)[number];
 export const isDesignAssetKind = (v: unknown): v is DesignAssetKind => typeof v === "string" && (DESIGN_ASSET_KINDS as readonly string[]).includes(v);
 
@@ -110,8 +121,37 @@ export interface DesignAsset {
   describeAgain?: boolean;
   /** The user's own words on it, which override everything else said about it. */
   note?: string;
-  /** The kind the user chose, over the helper's. */
+  /** The kind the user chose, over the Creative Director's and the helper's. */
   chosenKind?: string;
+  /** Its main colours, measured from its pixels with no model (a pasted image's); absent on an image kept before. */
+  palette?: { hex: string; share: number }[];
+  /** The kind the Creative Director chose, over the helper's; never the user's field. */
+  cdKind?: DesignAssetKind;
+  /** A screenshot's words for designers as the Creative Director wrote them. */
+  cdWords?: DesignShotWords;
+  /** A screenshot's words for designers as the user saved them: nothing else replaces them. */
+  userWords?: DesignShotWords;
+}
+
+/** The kind an image is: the user's, else the Creative Director's, else the helper's. */
+export const assetKind = (a: Pick<DesignAsset, "chosenKind" | "cdKind" | "description">): string => a.chosenKind ?? a.cdKind ?? a.description?.kind ?? "image";
+
+/** Whether an image is a pasted screenshot: only one the user supplied can be. */
+export const isScreenshot = (a: Pick<DesignAsset, "source" | "chosenKind" | "cdKind" | "description">): boolean => a.source === "yours" && assetKind(a) === "screenshot";
+
+/** Whether a kind may be given to this image: `screenshot` only to one the user supplied. */
+export const kindAllowed = (a: Pick<DesignAsset, "source">, kind: string): boolean => isDesignAssetKind(kind) && (kind !== "screenshot" || a.source === "yours");
+
+/** A screenshot's words for designers and whose they are: the user's, else the Creative Director's, else the helper's draft
+    over the measured colours. Null when there are none: no draft and no palette. */
+export function shotWords(a: Pick<DesignAsset, "userWords" | "cdWords" | "description" | "palette">): { words: DesignShotWords; by: "user" | "coordinator" | "helper" } | null {
+  if (a.userWords) return { words: a.userWords, by: "user" };
+  if (a.cdWords) return { words: a.cdWords, by: "coordinator" };
+  const feel = a.description?.feel ?? "";
+  const roles = new Map((a.description?.roles ?? []).map((r) => [r.hex.toLowerCase(), r.role]));
+  const colors = (a.palette ?? []).map((p) => ({ hex: p.hex, role: roles.get(p.hex.toLowerCase()) ?? "" }));
+  if (!feel && !colors.length) return null;
+  return { words: { feel, colors }, by: "helper" };
 }
 
 /** Colors and font names read off the page: notes for the brief, no model involved. */

@@ -12,6 +12,9 @@ import { startRunnerProxy, type RunnerProxy } from "../tours/runner-proxy";
 import { spawnTourCommand, killTourChild, type TourRecordingContext } from "../tours/sandbox";
 import type { BrowseParent } from "./browse";
 import { keepAsset, type DevelopedImage } from "./assets";
+import { cleanPalette, type MeasuredColor } from "../tours/palette";
+
+const paletteField = (p: MeasuredColor[] | undefined): { palette?: MeasuredColor[] } => (p ? { palette: p } : {});
 
 export interface OwnImagesResult {
   added: DesignAsset[];
@@ -47,10 +50,10 @@ export const drawInDarkroom: OwnImageDrawer = async (context, images) => {
       };
       createInterface({ input: proc.stdout! }).on("line", (line) => {
         try {
-          const m = JSON.parse(line) as { type?: string; i?: number; error?: string; width?: number; height?: number; full?: Part; small?: Part; describe?: Part };
+          const m = JSON.parse(line) as { type?: string; i?: number; error?: string; width?: number; height?: number; full?: Part; small?: Part; describe?: Part; palette?: unknown };
           if (m.type === "ready") return feed();
           if (Number.isInteger(m.i) && m.i! >= 0 && m.i! < images.length) {
-            results[m.i!] = m.error || !m.full || !m.small || !m.describe ? { error: m.error ?? "It couldn't be drawn." } : { width: Number(m.width), height: Number(m.height), full: part(m.full), small: part(m.small), describe: part(m.describe) };
+            results[m.i!] = m.error || !m.full || !m.small || !m.describe ? { error: m.error ?? "It couldn't be drawn." } : { width: Number(m.width), height: Number(m.height), full: part(m.full), small: part(m.small), describe: part(m.describe), ...paletteField(cleanPalette(m.palette)) };
           }
           feed();
         } catch { killTourChild(proc, "SIGKILL"); }

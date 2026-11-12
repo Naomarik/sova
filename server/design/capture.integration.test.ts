@@ -184,6 +184,8 @@ test("a pasted image is drawn in the darkroom with no network, and an SVG comes 
   assert.deepEqual(out.refused, []);
   assert.deepEqual(out.added.map((x) => x.source), ["yours", "yours"]);
   assert.equal(out.added[1]!.width, 300);
+  // Its colours were measured in the darkroom from what it drew: the red rect, all of it.
+  assert.deepEqual(out.added[1]!.palette, [{ hex: "#ff0000", share: 1 }]);
   assert.equal(b.hits.filter((h) => h.url.startsWith("/phone-home")).length, 0);
 });
 

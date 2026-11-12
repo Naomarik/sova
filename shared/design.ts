@@ -332,6 +332,9 @@ export interface DesignBrief {
   notes?: Record<string, { text: string; by: "capture" | "user" }>;
   /** Which images go to the designers, by the image's name; an image not listed goes. A person's click stands. */
   imageUse?: Record<string, { use: boolean; by: "user" | "coordinator" }>;
+  /** How each pasted screenshot is used, by its name: rebuild (that screen is what's redesigned; designers that read pictures
+      get it) or feel (only its words go). A person's click stands. */
+  screenUse?: Record<string, { use: "rebuild" | "feel"; by: "user" | "coordinator" }>;
   /** Which of the run's named skills the designers use, by name, as the Creative Director chose (design_brief's skills).
       Absent: all of them. */
   skills?: string[];
@@ -351,12 +354,13 @@ export function designerSkills(run: Pick<DesignRun, "skills" | "brief">): Design
 
 /** Why Start can't be pressed: code to branch on, label for the button. */
 export interface DesignBriefBlock {
-  code: "question" | "writing" | "stalled" | "conflict" | "link-use" | "look" | "images" | "no-designs";
+  code: "question" | "writing" | "stalled" | "conflict" | "link-use" | "screenshot-use" | "look" | "images" | "no-designs";
   label: string;
 }
 
-/** The brief's named reason Start waits, or null: the server refuses Start by exactly this. */
-export function designBriefBlock(run: Pick<DesignRun, "brief" | "setup" | "imagesBusy">): DesignBriefBlock | null {
+/** The brief's named reason Start waits, or null: the server refuses Start by exactly this. `screenshots`: the names of
+    the pasted screenshots that go to the designers (ticked), each of which needs Rebuild or Just Its Feel. */
+export function designBriefBlock(run: Pick<DesignRun, "brief" | "setup" | "imagesBusy">, screenshots: readonly string[] = []): DesignBriefBlock | null {
   const b = run.brief;
   if (!b) return { code: "writing", label: "Writing the Brief" };
   const open = b.questions.filter((q) => !q.answer).length;
@@ -366,6 +370,7 @@ export function designBriefBlock(run: Pick<DesignRun, "brief" | "setup" | "image
   if (b.writing || b.prompt === null) return { code: "writing", label: "Writing the Full Prompt" };
   const links = run.setup.links ?? [];
   if (links.some((l) => l.use === null)) return { code: "link-use", label: "Choose How to Use Your Link" };
+  if (screenshots.some((n) => !b.screenUse?.[n])) return { code: "screenshot-use", label: "Choose Rebuild or Just Its Feel" };
   if (links.some((l) => l.use === "feel" && b.looks[l.url]?.state === "reading")) return { code: "look", label: "Reading the Page's Look" };
   if (run.imagesBusy) return { code: "images", label: run.imagesBusy === "capturing" ? "Still Reading the Page's Images" : "Still Describing the Images" };
   const models = run.setup.models.filter((m) => m.design).length;

@@ -308,6 +308,23 @@ export interface DevelopedSizes {
   describe: { bytes: Buffer; w: number; h: number };
 }
 
+/** Runs inside the darkroom's blank page: an image's RGBA pixels, scaled to fit `edge`, as base64. */
+/* v8 ignore next */
+async function pixelsInPage(a: { dataUrl: string; edge: number }) {
+  const img = new Image();
+  await new Promise<void>((ok, no) => { img.onload = () => ok(); img.onerror = () => no(new Error("decode")); img.src = a.dataUrl; });
+  const scale = Math.min(1, a.edge / Math.max(img.naturalWidth || 1, img.naturalHeight || 1));
+  const cw = Math.max(1, Math.round((img.naturalWidth || 1) * scale)), ch = Math.max(1, Math.round((img.naturalHeight || 1) * scale));
+  const c = document.createElement("canvas");
+  c.width = cw; c.height = ch;
+  const ctx = c.getContext("2d")!;
+  ctx.drawImage(img, 0, 0, cw, ch);
+  const data = ctx.getImageData(0, 0, cw, ch).data;
+  let s = "";
+  for (let i = 0; i < data.length; i += 8192) s += String.fromCharCode(...data.subarray(i, i + 8192));
+  return btoa(s);
+}
+
 /** Runs inside the darkroom's blank page. */
 /* v8 ignore next */
 async function drawInPage(a: { dataUrl: string; fallbackW: number; fallbackH: number; edges: { full: number; small: number; describe: number } }) {
@@ -360,6 +377,13 @@ export async function openDarkroom(browser: Browser) {
       }).finally(() => clearTimeout(timer));
       const part = (p: { data: string; w: number; h: number }) => ({ bytes: Buffer.from(p.data, "base64"), w: p.w, h: p.h });
       return { width: r.width, height: r.height, full: part(r.full), small: part(r.small), describe: part(r.describe) };
+    },
+    /** A drawn PNG's pixels, at most `edge` on its long side, as RGBA: what a palette is measured from. Drawn in the
+        same offline room, so nothing but a raster the room made is read. */
+    async pixels(png: Uint8Array, edge: number): Promise<Uint8Array> {
+      const dataUrl = `data:image/png;base64,${Buffer.from(png).toString("base64")}`;
+      const b64 = await page.evaluate(pixelsInPage, { dataUrl, edge });
+      return new Uint8Array(Buffer.from(b64, "base64"));
     },
     close: () => context.close(),
   };

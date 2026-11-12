@@ -78,6 +78,8 @@ export interface DevelopedImage {
   width: number;
   height: number;
   context: DesignAssetContext;
+  /** Its main colours, measured in the darkroom from the version it drew (a pasted image's); absent when not measured. */
+  palette?: { hex: string; share: number }[];
 }
 
 const sizeOf = (v: DevelopedImage["full"]): DesignAssetSize => ({ w: v.w, h: v.h, bytes: v.bytes.length });
@@ -108,7 +110,14 @@ export function keepAsset(sessionId: string, v: DevelopedImage): { asset: Design
   const sha256 = createHash("sha256").update(v.original).digest("hex");
   const d = readDisk(sessionId);
   const known = d.assets.find((a) => a.sha256 === sha256);
-  if (known) return { asset: known, isNew: false };
+  if (known) {
+    // Pasted again after palettes began: it gains the colours it was kept without.
+    if (!known.palette && v.palette?.length) {
+      known.palette = v.palette;
+      writeDisk(sessionId, d);
+    }
+    return { asset: known, isNew: false };
+  }
   const room = DESIGN_ASSET_LIMITS.chatBytes - chatBytes(d);
   if (v.original.length + v.full.bytes.length + v.small.bytes.length + v.describe.bytes.length > room) return { refused: "This chat has reached its 200 MB of images." };
   const kind = sniffImage(v.original)!;
@@ -125,6 +134,7 @@ export function keepAsset(sessionId: string, v: DevelopedImage): { asset: Design
     full: sizeOf(v.full),
     describe: sizeOf(v.describe),
     context: v.context,
+    ...(v.palette?.length ? { palette: v.palette } : {}),
     addedAt: new Date().toISOString(),
   };
   mkdirSync(assetsDir(sessionId), { recursive: true, mode: 0o700 });

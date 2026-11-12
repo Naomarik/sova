@@ -143,7 +143,7 @@ export function cleanSetup(previous: DesignSetup, next: unknown, briefOpen = fal
     return { ...m, design: !!sent.design, coordinator: briefOpen ? m.coordinator : !!sent.coordinator };
   });
   if (n.models.some((x) => !offered.has((x as { ref?: string })?.ref ?? ""))) return "That model isn't on this card.";
-  if (models.filter((m) => m.coordinator).length > 1) return "Only one model can be the coordinator.";
+  if (models.filter((m) => m.coordinator).length > 1) return "Only one model can be the Creative Director.";
   const ticks = (offered: readonly { name: string; on: boolean }[], sentList: unknown) =>
     offered.map((d) => {
       const sent = (Array.isArray(sentList) ? sentList : []).find((x) => (x as { name?: unknown })?.name === d.name) as { on?: unknown } | undefined;

@@ -52,7 +52,7 @@ test("exactly one coordinator, which need not design", () => {
   assert.deepEqual(models.filter((m) => m.coordinator).map((m) => [m.ref, m.design]), [["openai-codex/gpt-6-luna", false]]);
   const setup = { brief: "x", models, directions: [] };
   const two = { ...setup, models: models.map((m) => ({ ...m, coordinator: m.ref === "openai-codex/gpt-6-luna" || m.ref === "zai/glm-5.3" })) };
-  assert.equal(cleanSetup(setup, two), "Only one model can be the coordinator.");
+  assert.equal(cleanSetup(setup, two), "Only one model can be the Creative Director.");
   const moved = { ...setup, models: models.map((m) => ({ ...m, coordinator: m.ref === "zai/glm-5.3" })) };
   const kept = cleanSetup(setup, moved);
   assert.ok(typeof kept !== "string");

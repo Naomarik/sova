@@ -95,6 +95,10 @@ export interface TunnelDeps {
   shareMode(): TunnelMode;
   /** The Account tunnel's token and address, null when none is saved. */
   account(): { token: string; publicUrl: string } | null;
+  /** An Account setup being verified (the candidate tunnel's token and address), null when none is pending. */
+  candidateAccount(): { token: string; publicUrl: string } | null;
+  /** A candidate is still pending: an ended candidate tunnel may start again (within the hourly budget). */
+  candidateWanted(): boolean;
   /** One loopback GET on cloudflared's metrics port; null when nothing answers. */
   metrics(port: number, path: string): Promise<MetricsAnswer>;
   freePort(): Promise<number>;
@@ -162,7 +166,7 @@ export class TunnelManager {
 
   status(key: TunnelKey): TunnelStatus {
     const e = this.entries.get(recordIdOf(key));
-    if (!e) return { key, mode: key.kind === "share" ? this.safeShareMode() : "quick", state: "stopped", origin: null, epoch: null };
+    if (!e) return { key, mode: this.modeOf(key), state: "stopped", origin: null, epoch: null };
     return this.statusOf(e);
   }
 
@@ -230,9 +234,9 @@ export class TunnelManager {
 
   private async start(e: Entry, by: string): Promise<TunnelStatus> {
     const deps = this.deps;
-    const mode: TunnelMode = e.key.kind === "share" ? this.safeShareMode() : "quick";
+    const mode = this.modeOf(e.key);
     e.mode = mode;
-    const account = mode === "account" ? deps.account() : null;
+    const account = mode !== "account" ? null : e.key.kind === "candidate" ? this.safe(() => deps.candidateAccount(), null) : this.safe(() => deps.account(), null);
     if (mode === "account" && !account) return this.settle(e, "failed", "no-token");
     // The one gate for every caller (a mint, a preview, a retry, a download): no Free tunnel before Turn On.
     if (mode === "quick" && !this.quickAllowed()) return this.settle(e, "stopped", "turn-on");
@@ -526,7 +530,7 @@ export class TunnelManager {
     if (!rec) return;
     const deps = this.deps;
     // An Account unit under systemd is restarted by systemd itself, with the same address.
-    if (from === "exit" && rec.mode === "account" && rec.driver === "systemd") {
+    if (from === "exit" && rec.mode === "account" && rec.driver === "systemd" && e.key.kind === "share") {
       e.dirty = true;
       rmSync(exitFileOf(rec.unit, deps.dir()), { force: true });
       this.settle(e, "degraded", "The tunnel is starting again.");
@@ -691,9 +695,22 @@ export class TunnelManager {
 
   private wanted(key: TunnelKey): boolean {
     try {
-      return key.kind === "share" ? this.deps.shareWanted() : this.deps.previewWanted(key.port);
+      return key.kind === "share" ? this.deps.shareWanted() : key.kind === "candidate" ? this.deps.candidateWanted() : this.deps.previewWanted(key.port);
     } catch {
       return false;
+    }
+  }
+
+  /** A share tunnel runs in the route's mode, a candidate always as Account, a preview always Free. */
+  private modeOf(key: TunnelKey): TunnelMode {
+    return key.kind === "share" ? this.safeShareMode() : key.kind === "candidate" ? "account" : "quick";
+  }
+
+  private safe<T>(fn: () => T, dflt: T): T {
+    try {
+      return fn();
+    } catch {
+      return dflt;
     }
   }
 
@@ -901,6 +918,8 @@ export function realTunnelDeps(env: NodeJS.ProcessEnv = process.env): TunnelDeps
     quickAllowed: () => quickTunnelAllowed(env),
     shareMode: () => "quick",
     account: () => null,
+    candidateAccount: () => null,
+    candidateWanted: () => false,
     metrics: loopbackGet,
     freePort: freeLoopbackPort,
     verify: (origin) => (env.SOVA_TUNNEL_VERIFY?.trim() === "off" ? Promise.resolve({ ok: true }) : verifyPublicUrl(origin)),

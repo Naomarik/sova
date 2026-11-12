@@ -29,12 +29,13 @@ export const logsDirOf = (dir = tunnelsDir()): string => join(dir, "logs");
 
 /** Every tunnel unit of this state root starts with this: a hermetic or dev server never adopts the live server's. */
 export const tunnelUnitPrefix = (hash = stateHash()): string => `sova-tunnel-${hash}-`;
-/** `sova-tunnel-<hash>-share`, `sova-tunnel-<hash>-pv<port>`. */
-export const tunnelUnitOf = (key: TunnelKey, hash = stateHash()): string => `${tunnelUnitPrefix(hash)}${key.kind === "share" ? "share" : `pv${key.port}`}`;
+/** `sova-tunnel-<hash>-share`, `-candidate` (an Account setup being verified), `-pv<port>`. */
+export const tunnelUnitOf = (key: TunnelKey, hash = stateHash()): string => `${tunnelUnitPrefix(hash)}${key.kind === "preview" ? `pv${key.port}` : key.kind}`;
 /** The key a tunnel is recorded under in tunnels.json. */
-export const recordIdOf = (key: TunnelKey): string => (key.kind === "share" ? "share" : `preview:${key.port}`);
+export const recordIdOf = (key: TunnelKey): string => (key.kind === "preview" ? `preview:${key.port}` : key.kind);
 export function keyOfRecordId(id: string): TunnelKey | null {
   if (id === "share") return { kind: "share" };
+  if (id === "candidate") return { kind: "candidate" };
   const m = /^preview:(\d{1,5})$/.exec(id);
   const port = m ? Number(m[1]) : 0;
   return port > 0 && port < 65536 ? { kind: "preview", port } : null;
@@ -63,12 +64,13 @@ export function cloudflaredArgv(i: ArgvInput): string[] {
 export const plainPath = (p: string): boolean => /^\/[A-Za-z0-9_./+,:@=-]+$/.test(p);
 
 /** The unit's extra systemd properties: the stop hook on every end (clean stop, crash, OOM kill), and for
-    an Account tunnel systemd's own restart (its address never changes). A Free tunnel is never
-    restarted by systemd: its restart is a new address, which Sova must see. */
+    an Account share tunnel systemd's own restart (its address never changes). A Free tunnel is never
+    restarted by systemd (its restart is a new address, which Sova must see), nor is an Account candidate
+    (it runs only while a setup is being verified; Sova restarts it within its hourly budget). */
 export function unitProperties(mode: TunnelMode, unit: string, hook: string): string[] {
   if (!plainPath(hook)) throw new Error(`the tunnel hook's path can't be given to systemd: ${hook}`);
   const props = [`ExecStopPost=${hook} exited ${unit}`];
-  if (mode === "account") props.push("Restart=always", "RestartSec=5", "StartLimitIntervalSec=120", "StartLimitBurst=5");
+  if (mode === "account" && !unit.endsWith("-candidate")) props.push("Restart=always", "RestartSec=5", "StartLimitIntervalSec=120", "StartLimitBurst=5");
   return props;
 }
 

@@ -28,7 +28,7 @@ const flush = async () => {
 
 /** A world of fakes: a driver that only records, a cloudflared per unit whose metrics the test sets,
     a manual clock and timers, and a watch the test fires. Every read of a tunnel is counted. */
-function world(o: { found?: CloudflaredFound; wanted?: boolean; mode?: TunnelMode; account?: { token: string; publicUrl: string } | null; driver?: "systemd" | "detached" } = {}) {
+function world(o: { found?: CloudflaredFound; wanted?: boolean; mode?: TunnelMode; account?: { token: string; publicUrl: string } | null; candidate?: { token: string; publicUrl: string } | null; driver?: "systemd" | "detached" } = {}) {
   let clock = 1_794_000_000_000;
   const timers: { at: number; fn: () => void; dead: boolean }[] = [];
   const calls: string[] = [];
@@ -41,7 +41,7 @@ function world(o: { found?: CloudflaredFound; wanted?: boolean; mode?: TunnelMod
   let watches = 0;
   let nextPort = 41000;
   let hostN = 0;
-  const state = { wanted: o.wanted ?? true, mode: o.mode ?? "quick", account: o.account ?? null, verifyOk: true, quickAllowed: true, ingress: "http://127.0.0.1:4802" as string | null, logs: ["ERR something"] };
+  const state = { wanted: o.wanted ?? true, mode: o.mode ?? "quick", account: o.account ?? null, verifyOk: true, quickAllowed: true, candidate: o.candidate ?? null, candidateWanted: true, ingress: "http://127.0.0.1:4802" as string | null, logs: ["ERR something"] };
   const driver: Driver = {
     id: o.driver ?? "systemd",
     available: async () => ({ ok: true, detail: "" }),
@@ -90,6 +90,8 @@ function world(o: { found?: CloudflaredFound; wanted?: boolean; mode?: TunnelMod
     previewWanted: () => state.wanted,
     shareMode: () => state.mode,
     account: () => state.account,
+    candidateAccount: () => state.candidate,
+    candidateWanted: () => state.candidateWanted,
     metrics: async (port, path): Promise<MetricsAnswer> => {
       calls.push(`GET ${path}`);
       const t = tunnels.get(port);
@@ -145,7 +147,7 @@ function world(o: { found?: CloudflaredFound; wanted?: boolean; mode?: TunnelMod
       await flush();
     },
     /** The unit ended: its hook writes the end line, the watch sees it. */
-    exit: async (line = "exit-code exited 1", unit = UNIT) => {
+    exit: async (line = "exit-code exited 1", unit: string = UNIT) => {
       unitState.set(unit, "failed");
       for (const s of starts) if (s.unit === unit) tunnels.set(metricsPortOf(s), null);
       writeFileSync(exitFileOf(unit, dir), `${line} ${Math.floor(clock / 1000)}\n`);
@@ -157,8 +159,8 @@ function world(o: { found?: CloudflaredFound; wanted?: boolean; mode?: TunnelMod
   };
 }
 
-async function up(w: ReturnType<typeof world>, key: TunnelKey = SHARE) {
-  const p = w.m.ensure(key);
+async function up(w: ReturnType<typeof world>, key: TunnelKey = SHARE, opts?: { waitMs?: number }) {
+  const p = w.m.ensure(key, opts);
   await w.connect();
   return p;
 }
@@ -540,4 +542,88 @@ test("Account ingress fails closed: routes not pushed yet are looked at again 3,
   const reads = never.calls.length;
   await never.advance(24 * 3_600_000);
   assert.equal(never.calls.length, reads, "nothing after the last look");
+});
+
+const CANDIDATE: TunnelKey = { kind: "candidate" };
+const CAND_UNIT = tunnelUnitOf(CANDIDATE, HASH);
+const candidate = { token: "eyJjYW5k" + "c".repeat(60), publicUrl: "https://new.example.com" };
+
+test("an Account candidate runs beside the Free share tunnel, into the same share port, its token only in its env; it is no preview", async () => {
+  const w = world({ candidate });
+  const free = await up(w);
+  const c = await up(w, CANDIDATE);
+  assert.deepEqual([free.state, c.state, c.mode, c.origin], ["up", "up", "account", "https://new.example.com"]);
+  assert.equal(w.m.status(SHARE).origin, free.origin, "the Free share tunnel keeps running, unchanged");
+  const spec = w.starts[1]!;
+  assert.equal(spec.unit, CAND_UNIT);
+  assert.equal(spec.env.TUNNEL_TOKEN, candidate.token);
+  assert.ok(!spec.argv.join(" ").includes(candidate.token));
+  assert.ok(!readFileSync(tunnelsFile(dir), "utf8").includes(candidate.token));
+  assert.equal(w.m.previewHosts().size, 0);
+  assert.deepEqual(w.m.running().map((s) => s.key.kind).sort(), ["candidate", "share"], "reported, as kind candidate (previews count only kind preview)");
+  // No pending candidate: nothing starts.
+  const none = world({ candidate: null });
+  const n = await none.m.ensure(CANDIDATE);
+  assert.deepEqual([n.state, n.reason, none.starts.length], ["failed", "no-token", 0]);
+});
+
+test("a candidate gets the Account ingress check, failing closed", async () => {
+  const w = world({ candidate });
+  w.state.ingress = "http://127.0.0.1:4800";
+  const c = await up(w, CANDIDATE);
+  assert.equal(c.state, "failed");
+  assert.deepEqual(w.stops, [CAND_UNIT]);
+});
+
+test("cancel stops the candidate alone; promote = stop the candidate, then the share tunnel restarts as Account", async () => {
+  const w = world({ candidate });
+  const free = await up(w);
+  await up(w, CANDIDATE);
+  await w.m.stop(CANDIDATE, "cancelled");
+  assert.deepEqual(w.stops, [CAND_UNIT]);
+  assert.deepEqual([w.m.status(CANDIDATE).state, w.m.status(SHARE).origin], ["stopped", free.origin]);
+  // Promote.
+  await up(w, CANDIDATE);
+  await w.m.stop(CANDIDATE, "promoted");
+  w.state.mode = "account";
+  w.state.account = candidate;
+  const p = w.m.restart(SHARE, "account saved");
+  await flush();
+  await w.connect();
+  const s = await p;
+  assert.deepEqual([s.state, s.mode, s.origin], ["up", "account", "https://new.example.com"]);
+  assert.deepEqual(w.stops, [CAND_UNIT, CAND_UNIT, UNIT]);
+  assert.equal(w.m.status(CANDIDATE).state, "stopped");
+});
+
+test("an ended candidate starts again only while it is pending, within the hourly budget", async () => {
+  const w = world({ candidate });
+  await up(w, CANDIDATE);
+  for (let i = 1; i <= AUTO_RESTARTS_PER_HOUR; i++) {
+    await w.exit("exit-code exited 1", CAND_UNIT);
+    assert.equal(w.starts.length, i + 1);
+    await w.connect();
+  }
+  await w.exit("exit-code exited 1", CAND_UNIT);
+  assert.equal(w.starts.length, AUTO_RESTARTS_PER_HOUR + 1, "budget spent");
+  const gone = world({ candidate });
+  await up(gone, CANDIDATE);
+  gone.state.candidateWanted = false;
+  await gone.exit("exit-code exited 1", CAND_UNIT);
+  assert.equal(gone.starts.length, 1, "no longer pending: stays stopped");
+});
+
+test("adopt reattaches a running candidate as the candidate, beside the share tunnel", async () => {
+  const w = world({ candidate });
+  const share = recorded(w, { host: "kept.trycloudflare.com", connectorId: "c-kept" });
+  const cand: TunnelRecord = { ...share, mode: "account", unit: CAND_UNIT, metricsPort: 45001, origin: "https://new.example.com", connectorId: "c-cand", verifiedAt: undefined };
+  delete cand.verifiedAt;
+  writeTunnels({ share, candidate: cand }, tunnelsFile(dir));
+  w.tunnels.set(45001, { host: "", connectorId: "c-cand", ready: 200, ingress: "http://127.0.0.1:4999" });
+  w.unitState.set(CAND_UNIT, "active");
+  await w.m.adopt();
+  assert.deepEqual([w.m.status(SHARE).state, w.m.status(SHARE).origin], ["up", share.origin]);
+  const c = w.m.status(CANDIDATE);
+  assert.deepEqual([c.state, c.mode, c.origin], ["up", "account", "https://new.example.com"]);
+  assert.equal(w.starts.length, 0);
 });

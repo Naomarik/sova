@@ -59,3 +59,12 @@ test("log lines never carry a connector token", () => {
   assert.ok(!out.includes(TOKEN.slice(0, 30)));
   assert.match(out, /plain line/);
 });
+
+test("an Account candidate is never restarted by systemd (Sova's hourly budget applies), and is named apart", () => {
+  const unit = tunnelUnitOf({ kind: "candidate" }, "abc123");
+  assert.equal(unit, "sova-tunnel-abc123-candidate");
+  assert.deepEqual(keyOfRecordId(recordIdOf({ kind: "candidate" })), { kind: "candidate" });
+  const props = unitProperties("account", unit, "/s/tunnels/hook.sh");
+  assert.ok(!props.some((p) => p.startsWith("Restart=")));
+  assert.ok(props.includes(`ExecStopPost=/s/tunnels/hook.sh exited ${unit}`));
+});

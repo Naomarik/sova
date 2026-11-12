@@ -32,7 +32,7 @@ import { resolveAppLink, sessionIndex, sessionIndexVersion } from "../lib/sessio
 import { createArm } from "../lib/two-step";
 import { announce, toast } from "../lib/ui-state";
 import { Banner } from "./ui";
-import { BrokenLinksNotice, FreePreviewNote, OpensAtLine } from "./OpensAt";
+import { BrokenLinksNotice, FreePreviewNote, OpensAtLine, SharingOffNote } from "./OpensAt";
 import { publicLinksInfo, sharingOffHere } from "../lib/public-links";
 
 const POLL_MS = 5_000;
@@ -206,7 +206,10 @@ export function PreviewsCard(props: { projectId: string }) {
         <FreePreviewNote running={tunnelsRunning()} />
         <BrokenLinksNotice kinds={["p"]} />
       </Show>
-      <Show when={address() && !address()!.url && !tunnelMode()}>
+      <Show when={sharingOffHere()}>
+        <SharingOffNote />
+      </Show>
+      <Show when={address() && !address()!.url && !tunnelMode() && !sharingOffHere()}>
         <Banner tone="info" title="Preview links aren't set up." body={address()!.message ?? "Set a preview address in Settings → Public links on the gateway."} />
       </Show>
       <Show when={list().length > 0}>
@@ -266,7 +269,7 @@ export function PreviewsCard(props: { projectId: string }) {
                                     {name()}
                                   </span>
                                   {/* Their own link, while it is kept: Copy only, never Open (the row's Open is the original's). */}
-                                  <Show when={r.sentLink}>
+                                  <Show when={!sharingOffHere() && r.sentLink}>
                                     {(link) => (
                                       <button type="button" class="button button-sm previews-recipient-copy" title={recipientCopyTip(name())} onClick={() => void copyLink(link(), recipientCopied(name()))}>
                                         {recipientCopyLabel(name())}
@@ -307,7 +310,7 @@ export function PreviewsCard(props: { projectId: string }) {
                         )}
                       </Show>
                       {/* A sibling listed alone: its person's own link, while kept; never an Open. */}
-                      <Show when={v.siblingOf && v.sentLink}>
+                      <Show when={!sharingOffHere() && v.siblingOf && v.sentLink}>
                         {(link) => (
                           <button type="button" class="button button-sm" title={recipientCopyTip(recipientName(v))} onClick={() => void copyLink(link(), recipientCopied(recipientName(v)))}>
                             {recipientCopyLabel(recipientName(v))}
@@ -317,9 +320,11 @@ export function PreviewsCard(props: { projectId: string }) {
                       <Show when={row().url}>
                         {(url) => (
                           <>
-                            <button type="button" class="button button-sm" onClick={() => copy(url())}>
-                              Copy Link
-                            </button>
+                            <Show when={!sharingOffHere()}>
+                              <button type="button" class="button button-sm" onClick={() => copy(url())}>
+                                Copy Link
+                              </button>
+                            </Show>
                             <a class="button button-sm" href={url()} target="_blank" rel="noopener noreferrer">
                               Open
                             </a>

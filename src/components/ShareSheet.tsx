@@ -1,5 +1,6 @@
 import { createEffect, createMemo, createSignal, For, Match, onCleanup, onMount, Show, Switch } from "solid-js";
 import { copyLink } from "../lib/copy-link";
+import { sharingOffHere } from "../lib/public-links";
 import { Portal } from "solid-js/web";
 import {
   SESSION_SHARE_DAYS,
@@ -571,6 +572,7 @@ function ManageShare(props: {
               <For each={s().recipients}>
                 {(r) => (
                   <RecipientRow
+                    host={props.host}
                     recipient={r}
                     activity={activity().get(r.id)}
                     now={now()}
@@ -683,6 +685,8 @@ function ManageShare(props: {
 }
 
 function RecipientRow(props: {
+  /** The share's host (null: this one): its Copy Link hides while sharing is off there. */
+  host: string | null;
   recipient: SessionShareRecipient;
   activity?: SessionShareRecipientActivity;
   now: number;
@@ -731,7 +735,7 @@ function RecipientRow(props: {
       </div>
       <Show when={r().state !== "off"}>
         <div class="share-recipient-actions">
-          <Show when={copyable()}>
+          <Show when={!sharingOffHere(props.host) && copyable()}>
             {(link) => <CopyButton label="Copy Link" title={r().anyone ? "Copy this link" : `Copy ${r().label}'s link`} text={link} onCopy={(t) => copyLink(t, "Link copied.")} />}
           </Show>
           <button type="button" class="button button-sm" aria-disabled={props.busy ? "true" : undefined} title="A new link for them. This one stops working." onClick={() => props.onRelink()}>

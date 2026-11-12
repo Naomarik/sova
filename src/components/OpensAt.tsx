@@ -70,7 +70,7 @@ export function OpensAtChoices(props: { info: PublicLinksInfo; selected?: OpensA
                       <span class="public-links-choice-name">
                         {o.label}
                         <Show when={o.badge}>{(b) => <span class="chip opens-at-badge">{b()}</span>}</Show>
-                        <span class="opens-at-tag"> · {STATE_WORDS[o.state]}</span>
+                        <span class="opens-at-tag"> · {o.stateWord ?? STATE_WORDS[o.state]}</span>
                       </span>
                       <span class="public-links-choice-meta">{o.hint}</span>
                       <Show when={o.note}>{(n) => <span class="public-links-choice-meta opens-at-note">{n()}</span>}</Show>
@@ -186,12 +186,14 @@ export function OpensAtLine(props: { host?: string | null; /** Where the Change 
     <Show when={!props.host && publicLinksInfo()}>
       {(i) => (
         <div class="opens-at-line stack-2">
-          <p class="opens-at-current">
-            <span class="opens-at-current-name">{opensAtLine(i())}</span>
-            <button ref={trigger} type="button" class="button button-sm button-ghost" onClick={() => setOpen(true)}>
-              Change
-            </button>
-          </p>
+          <Show when={!i().sharingOff} fallback={<SharingOffNote />}>
+            <p class="opens-at-current">
+              <span class="opens-at-current-name">{opensAtLine(i())}</span>
+              <button ref={trigger} type="button" class="button button-sm button-ghost" onClick={() => setOpen(true)}>
+                Change
+              </button>
+            </p>
+          </Show>
           <TunnelPrompts info={i()} />
           <CandidateNotice info={i()} />
           <Show when={open()}>
@@ -207,6 +209,18 @@ export function OpensAtLine(props: { host?: string | null; /** Where the Change 
         </div>
       )}
     </Show>
+  );
+}
+
+/** Sharing is off on this computer (§mesh.public/sharing-off): said in place of the share line, with the way to turn it on. */
+export function SharingOffNote() {
+  return (
+    <p class="opens-at-current">
+      <span class="opens-at-current-name">Sharing is off.</span>
+      <button type="button" class="button button-sm button-ghost" onClick={() => openSettings("public-links")}>
+        Open Settings
+      </button>
+    </p>
   );
 }
 

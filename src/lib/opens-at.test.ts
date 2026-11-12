@@ -103,3 +103,11 @@ test("prompts: Turn On before consent, Download without cloudflared, Off hides s
   assert.equal(sharingIsOff(info({ route: "off" }, { broken: true })), false);
   assert.equal(sharingIsOff(null), false);
 });
+
+test("Free picked before Turn On says so on its row, as the panel's chip does", () => {
+  const free = (consentAt: number | null | undefined) => opensAtSections(info({}, consentAt === undefined ? {} : { consentAt }))[0]!.options[0]!;
+  assert.equal(free(null).stateWord, "Not turned on");
+  assert.equal(free(1).stateWord, undefined);
+  assert.equal(free(undefined).stateWord, undefined);
+  assert.equal(opensAtSections(info({ route: "self", gateway: gw("caddy") }, { consentAt: null }))[0]!.options[0]!.stateWord, undefined);
+});

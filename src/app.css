@@ -776,7 +776,11 @@ html, body { overflow: clip; overscroll-behavior: none; }
 .opens-at { display: flex; flex-direction: column; gap: var(--space-3); min-width: 0; }
 .opens-at-section { display: flex; flex-direction: column; }
 .opens-at-section-title { margin: 0; font-family: var(--font-mono); font-size: var(--fs-micro); line-height: var(--lh-micro); letter-spacing: var(--ls-eyebrow); text-transform: uppercase; color: var(--color-ink-muted); }
-.opens-at-needs-setup .public-links-choice-name { color: var(--color-ink-2); }
+/* Not set up: the name and hint drop to the muted token (still 4.5:1 on surface, so readable), and the
+   "Needs setup" word carries the state in ink-2. The radio stays enabled: the row is selectable. */
+.opens-at-needs-setup :is(.public-links-choice-name, .public-links-choice-meta) { color: var(--color-ink-muted); }
+.opens-at-needs-setup .opens-at-tag { color: var(--color-ink-2); font-weight: var(--fw-medium); }
+.opens-at-needs-setup .toggle-box { border-style: dashed; }
 .opens-at-tag { font-size: var(--fs-caption); color: var(--color-ink-muted); }
 .opens-at-badge { margin-left: var(--space-2); vertical-align: middle; }
 .opens-at-note { font-style: normal; }

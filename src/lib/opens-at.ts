@@ -25,6 +25,8 @@ export interface OpensAtOption {
   note?: string;
   /** `Default`: Free, picked because nothing else was chosen. */
   badge?: string;
+  /** The row's state word when it isn't STATE_WORDS[state]: Free picked before Turn On is "Not turned on". */
+  stateWord?: string;
   setup?: OpensAtSetupKind;
 }
 
@@ -112,6 +114,8 @@ export function opensAtSections(i: PublicLinksInfo, opts: { selected?: OpensAtKe
           hint: "No account needed. The address is random and changes when this computer restarts.",
           state: state("free", true),
           ...(i.implicit && saved === "free" ? { badge: "Default" } : {}),
+          // Picked but nothing public yet (§mesh.tunnel/turn-on): the row says so, as the panel's chip does.
+          ...(selected === "free" && i.consentAt === null ? { stateWord: "Not turned on" } : {}),
         },
         { key: "account", section: "cloudflare", label: "Account", hint: "Your own address, through your Cloudflare account. Sova runs the tunnel.", state: state("account", accountReady(i)), setup: "account" },
         // A tunnel the user runs (a gateway whose front is cloudflared): shown only where one is saved.

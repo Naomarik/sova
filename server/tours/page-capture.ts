@@ -322,7 +322,7 @@ async function pixelsInPage(a: { dataUrl: string; edge: number }) {
   const data = ctx.getImageData(0, 0, cw, ch).data;
   let s = "";
   for (let i = 0; i < data.length; i += 8192) s += String.fromCharCode(...data.subarray(i, i + 8192));
-  return btoa(s);
+  return { w: cw, h: ch, b64: btoa(s) };
 }
 
 /** Runs inside the darkroom's blank page. */
@@ -378,12 +378,14 @@ export async function openDarkroom(browser: Browser) {
       const part = (p: { data: string; w: number; h: number }) => ({ bytes: Buffer.from(p.data, "base64"), w: p.w, h: p.h });
       return { width: r.width, height: r.height, full: part(r.full), small: part(r.small), describe: part(r.describe) };
     },
-    /** A drawn PNG's pixels, at most `edge` on its long side, as RGBA: what a palette is measured from. Drawn in the
-        same offline room, so nothing but a raster the room made is read. */
-    async pixels(png: Uint8Array, edge: number): Promise<Uint8Array> {
-      const dataUrl = `data:image/png;base64,${Buffer.from(png).toString("base64")}`;
-      const b64 = await page.evaluate(pixelsInPage, { dataUrl, edge });
-      return new Uint8Array(Buffer.from(b64, "base64"));
+    /** An image's pixels, at most `edge` on its long side, as RGBA: what a palette is measured from. Drawn in this same
+        offline room, under the same checks as develop, so the server never decodes it. */
+    async pixels(bytes: Uint8Array, mime: string, edge: number): Promise<{ width: number; height: number; rgba: Uint8Array }> {
+      const problem = drawProblem(bytes);
+      if (problem) throw new DarkroomRefusal(problem);
+      const dataUrl = `data:${mime};base64,${Buffer.from(bytes).toString("base64")}`;
+      const r = await page.evaluate(pixelsInPage, { dataUrl, edge });
+      return { width: r.w, height: r.h, rgba: new Uint8Array(Buffer.from(r.b64, "base64")) };
     },
     close: () => context.close(),
   };

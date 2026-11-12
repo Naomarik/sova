@@ -6,7 +6,7 @@
 import { createHash } from "node:crypto";
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { DESIGN_ASSET_LIMITS, DESIGN_ASSET_SCHEME, isDesignAssetName, type DesignAsset, type DesignAssetCatalogue, type DesignAssetContext, type DesignAssetPart, type DesignAssetShown, type DesignAssetSize } from "../../shared/design-assets";
+import { DESIGN_ASSET_LIMITS, DESIGN_ASSET_SCHEME, isDesignAssetName, type DesignMeasuredColor, type DesignAsset, type DesignAssetCatalogue, type DesignAssetContext, type DesignAssetPart, type DesignAssetShown, type DesignAssetSize } from "../../shared/design-assets";
 import { sniffImage, sniffRaster } from "../tours/page-capture";
 import { announceDesignChange, designChatDeleted, designDirOf } from "./store";
 
@@ -79,7 +79,7 @@ export interface DevelopedImage {
   height: number;
   context: DesignAssetContext;
   /** Its main colours, measured in the darkroom from the version it drew (a pasted image's); absent when not measured. */
-  palette?: { hex: string; share: number }[];
+  palette?: DesignMeasuredColor[];
 }
 
 const sizeOf = (v: DevelopedImage["full"]): DesignAssetSize => ({ w: v.w, h: v.h, bytes: v.bytes.length });

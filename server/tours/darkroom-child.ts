@@ -27,7 +27,8 @@ try {
     try {
       const d = await darkroom.develop(bytes, kind.mime, { w: 512, h: 512 });
       // Its main colours, measured here from the version it drew: a missing palette never costs the image.
-      const palette = await darkroom.pixels(d.describe.bytes, PALETTE_LIMITS.edge).then((px) => paletteOf(px)).catch(() => []);
+      // From the original near its own size (a 2px accent line stays whole); the version it drew if that can't be read.
+      const palette = await darkroom.pixels(bytes, kind.mime, PALETTE_LIMITS.edge).catch(() => darkroom.pixels(d.describe.bytes, "image/png", PALETTE_LIMITS.edge)).then((px) => paletteOf(px.rgba, px.width)).catch(() => []);
       send({ i: job.i, palette, width: d.width, height: d.height, full: { base64: d.full.bytes.toString("base64"), w: d.full.w, h: d.full.h }, small: { base64: d.small.bytes.toString("base64"), w: d.small.w, h: d.small.h }, describe: { base64: d.describe.bytes.toString("base64"), w: d.describe.w, h: d.describe.h } });
     } catch (err) { send({ i: job.i, error: err instanceof DarkroomRefusal ? err.message : "It couldn't be drawn." }); }
   }

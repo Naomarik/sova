@@ -1074,7 +1074,7 @@ test("a Creative Director that reads pictures sees a pasted screenshot on that t
   // design_images looks again, by name.
   const again = await coordinatorTools(parent.sessionId).find((t) => t.name === "design_images")!.execute("c", { names: [shot] }, undefined, undefined, undefined as never);
   assert.equal(again.content.filter((b) => b.type === "image").length, 1);
-  assert.match(textOf(again as never), /measured colours: #f2f2f7 60%, #4a43d8 10%/);
+  assert.match(textOf(again as never), /measured colours: #f2f2f7: 60% of the picture, fills areas; #4a43d8: 10% of the picture, fills areas/);
 });
 
 test("a Creative Director that can't read pictures gets no picture: names and words instead", async () => {

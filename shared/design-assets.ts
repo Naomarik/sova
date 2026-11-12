@@ -64,6 +64,14 @@ export interface DesignAssetContext {
   dom?: DesignAssetDom;
 }
 
+/** One measured colour of a picture. */
+export interface DesignMeasuredColor {
+  hex: string;
+  share: number;
+  saturation?: number;
+  thin?: true;
+}
+
 /** What a designer is told of a pasted screenshot: its feel, and its colours by role. Words, never the picture. */
 export interface DesignShotWords {
   feel: string;
@@ -123,8 +131,9 @@ export interface DesignAsset {
   note?: string;
   /** The kind the user chose, over the Creative Director's and the helper's. */
   chosenKind?: string;
-  /** Its main colours, measured from its pixels with no model (a pasted image's); absent on an image kept before. */
-  palette?: { hex: string; share: number }[];
+  /** Its main colours, measured from its pixels with no model (a pasted image's), up to 8, largest first; absent on an
+      image kept before. saturation 0..1; thin: it sits mostly on strokes (text, lines, small marks) rather than areas. */
+  palette?: DesignMeasuredColor[];
   /** The kind the Creative Director chose, over the helper's; never the user's field. */
   cdKind?: DesignAssetKind;
   /** A screenshot's words for designers as the Creative Director wrote them. */

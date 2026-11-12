@@ -375,7 +375,7 @@ test("the check picture is a real PNG that two colours can be read from", () => 
 });
 
 /** A pasted image, with the colours the darkroom measured. */
-function addYours(i: number, palette = [{ hex: "#f2f2f7", share: 0.6 }, { hex: "#4a43d8", share: 0.1 }]): string {
+function addYours(i: number, palette: { hex: string; share: number; saturation?: number; thin?: true }[] = [{ hex: "#f2f2f7", share: 0.6 }, { hex: "#4a43d8", share: 0.1 }]): string {
   const original = Buffer.concat([PNG, Buffer.from(`#yours${i}`)]);
   const v = { bytes: PNG, w: 10, h: 10 };
   const out = assets.keepAsset(parent.sessionId, { source: "yours", original, full: v, small: v, describe: v, width: 1440, height: 900, context: {}, palette });
@@ -390,7 +390,7 @@ test("a pasted image keeps the palette the darkroom measured, and the helper see
   assert.equal(asset(page).palette, undefined);
   d.describeAssets(parent);
   await until(() => helpers.length === 1, "started");
-  assert.match(helpers[0]!.req.task, /Measured colours \(from its pixels\): #f2f2f7 60%, #4a43d8 10%/);
+  assert.match(helpers[0]!.req.task, /Measured colours \(from its pixels\), largest first:\n  #f2f2f7: 60% of the picture, fills areas\n  #4a43d8: 10% of the picture, fills areas/);
   // One batch with both: the page's image refused as a screenshot, the pasted one kept with its draft.
   const out = await call(helpers[0]!, [
     row(page, "screenshot"),
@@ -448,4 +448,16 @@ test("a screenshot's words: the user's saved words beat the Creative Director's 
   assert.equal(shotWords(asset(shot))!.words.feel, "my own feel");
   d.setAssetNote(parent.sessionId, shot, { words: null });
   assert.equal(shotWords(asset(shot))!.words.feel, "director feel");
+});
+
+test("the helper judges roles from each colour's facts: its share, how saturated it is, and whether it sits on strokes", async () => {
+  const shot = addYours(9, [{ hex: "#2c2c38", share: 0.82, saturation: 0.05 }, { hex: "#e8e8ee", share: 0.03, saturation: 0.02, thin: true }, { hex: "#8e88ff", share: 0.0004, saturation: 0.47, thin: true }, { hex: "#e0a030", share: 0.002, saturation: 0.69, thin: true }]);
+  d.describeAssets(parent, [shot]);
+  await until(() => helpers.length === 1, "started");
+  const task = helpers[0]!.req.task;
+  assert.match(task, /#8e88ff: under 0\.1% of the picture, saturated \(0\.47\), on thin strokes: text, lines, borders or small marks/);
+  assert.match(task, /#e8e8ee: 3% of the picture, neutral grey \(0\.02\), on thin strokes/);
+  assert.match(task, /#2c2c38: 82% of the picture, neutral grey \(0\.05\), fills areas/);
+  assert.match(d.DESCRIBER_PROMPT, /never call a small saturated colour a background or a divider/);
+  assert.match(d.DESCRIBER_PROMPT, /A neutral on thin strokes far from the background's lightness is text/);
 });

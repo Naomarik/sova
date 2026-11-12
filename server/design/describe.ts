@@ -72,6 +72,14 @@ export function cleanWords(v: unknown, cap: number): string {
 
 const quoted = (v: unknown, cap: number = CAPS.context): string => JSON.stringify(cleanWords(v, cap));
 
+/** One measured colour as the helper reads it: how much of the picture it covers, how colourful it is, and whether it
+    fills areas or sits on strokes (text, lines, small marks). What a role is judged from. */
+export function colourFacts(p: { hex: string; share: number; saturation?: number; thin?: true }): string {
+  const pct = p.share >= 0.01 ? `${Math.round(p.share * 100)}%` : p.share >= 0.001 ? `${(p.share * 100).toFixed(1)}%` : "under 0.1%";
+  const sat = p.saturation === undefined ? "" : p.saturation >= 0.19 ? `, saturated (${p.saturation})` : `, neutral grey (${p.saturation})`;
+  return `${p.hex}: ${pct} of the picture${sat}, ${p.thin ? "on thin strokes: text, lines, borders or small marks" : "fills areas"}`;
+}
+
 function contextLines(c: DesignAssetContext, a: Pick<DesignAsset, "width" | "height" | "source" | "palette">): string[] {
   const d = c.dom ?? {};
   const bits = [d.alt && `alt=${quoted(d.alt)}`, d.title && `title=${quoted(d.title)}`, d.ariaLabel && `aria-label=${quoted(d.ariaLabel)}`, d.classes?.length && `classes=${quoted(d.classes.join(","))}`].filter(Boolean);
@@ -79,7 +87,7 @@ function contextLines(c: DesignAssetContext, a: Pick<DesignAsset, "width" | "hei
   const list = (v: string[] | undefined): string => (v ?? []).map((x) => quoted(x)).join(" | ");
   return [
     a.source === "yours" ? "The user supplied this image themselves; it isn't from a page, so say that in placement." : "",
-    a.source === "yours" && a.palette?.length ? `Measured colours (from its pixels): ${a.palette.map((p) => `${p.hex} ${Math.round(p.share * 100)}%`).join(", ")}` : "",
+    a.source === "yours" && a.palette?.length ? `Measured colours (from its pixels), largest first:\n${a.palette.map((p) => `  ${colourFacts(p)}`).join("\n")}` : "",
     c.pageTitle || c.pageUrl ? `Page: ${[c.pageTitle && quoted(c.pageTitle), c.pageUrl && quoted(c.pageUrl)].filter(Boolean).join(" ")}` : "",
     c.sourceTag ? `Source: <${cleanWords(c.sourceTag, 40)}>` : "",
     c.type === "embed" ? `Embedded ${cleanWords(c.platform, 40) || "video"} player; the image is its thumbnail` : "",
@@ -114,7 +122,11 @@ For each image:
 - description: 1-2 sentences: what the image shows, its style, colours, and any text inside it
 - placement: one sentence: where it sits on the original page and its role there
 - usage: one sentence: how a redesign should use it (header logo, hero background, card thumbnail, ...), with aspect-ratio or background advice
-- for a screenshot only: feel, a short draft (2-3 sentences) of its look for designers to follow: mood, density, type and how colour is used; and roles, one entry per measured colour listed for it, saying what the colour does there (page background, card surface, primary text, accent, ...). Use exactly the hex values given
+- for a screenshot only: feel, a short draft (2-3 sentences) of its look for designers to follow: mood, density, type and how colour is used; and roles, one entry per measured colour listed for it, naming exactly what that colour paints, found by looking for it in the picture. Use exactly the hex values given. Judge each from its facts and the picture:
+  - The largest neutral that fills areas is the page background; a neutral filling smaller areas on it is a surface (cards, panels, rows, sidebar); a grey on thin strokes near the background's lightness is a divider or border.
+  - A neutral on thin strokes far from the background's lightness is text: the lightest (on a dark screen) or darkest (on a light one) is primary text, a middle one muted or secondary text.
+  - A saturated colour on thin strokes or a small share is an accent: say what it marks (active tab underline, link, focus ring, status label, left-edge marker, badge). A saturated colour filling areas is a button, banner or highlight fill.
+  - Never call a colour a background unless it fills a large area, and never call a small saturated colour a background or a divider.
 
 Describe what you see in each picture. Pictures may look alike, so take care to pair each one with its own id. Call ${ASSET_REPORT_TOOL}, then stop.`;
 
@@ -707,7 +719,7 @@ function screenshotLines(a: DesignAsset): string[] {
   const w = shotWords(a);
   const by = w?.by === "user" ? "the user's, which you can't change" : w?.by === "coordinator" ? "yours" : "the helper's draft, for you to tune";
   return [
-    a.palette?.length ? line("measured colours", a.palette.map((p) => `${p.hex} ${Math.round(p.share * 100)}%`).join(", ")) : line("measured colours", "none were measured"),
+    a.palette?.length ? line("measured colours", a.palette.map(colourFacts).join("; ")) : line("measured colours", "none were measured"),
     w ? line(`words for designers (${by})`, wordsLine(w.words) || "(none yet)") : line("words for designers", a.describeError ? "the feel couldn't be read" : "(none yet)"),
   ];
 }

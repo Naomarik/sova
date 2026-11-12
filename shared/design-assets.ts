@@ -142,6 +142,11 @@ export const isScreenshot = (a: Pick<DesignAsset, "source" | "chosenKind" | "cdK
 /** Whether a kind may be given to this image: `screenshot` only to one the user supplied. */
 export const kindAllowed = (a: Pick<DesignAsset, "source">, kind: string): boolean => isDesignAssetKind(kind) && (kind !== "screenshot" || a.source === "yours");
 
+/** The pasted screenshots that go to the designers: of these assets (a run's own), each screenshot not unticked by its
+    saved tick. What Start waits on for Rebuild or Feel, the same on the card and the server. */
+export const screenshotsInUse = (assets: readonly DesignAsset[], brief: { imageUse?: Record<string, { use: boolean }> } | undefined): string[] =>
+  assets.filter((a) => isScreenshot(a) && brief?.imageUse?.[a.name]?.use !== false).map((a) => a.name);
+
 /** A screenshot's words for designers and whose they are: the user's, else the Creative Director's, else the helper's draft
     over the measured colours. Null when there are none: no draft and no palette. */
 export function shotWords(a: Pick<DesignAsset, "userWords" | "cdWords" | "description" | "palette">): { words: DesignShotWords; by: "user" | "coordinator" | "helper" } | null {

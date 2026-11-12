@@ -494,12 +494,14 @@ export function setAssetNote(sessionId: string, name: string, change: { note?: s
 export function cleanShotWords(v: unknown): DesignShotWords | undefined {
   const w = v as { feel?: unknown; colors?: unknown } | null;
   if (!w || typeof w !== "object" || typeof w.feel !== "string" || (w.colors !== undefined && !Array.isArray(w.colors))) return undefined;
-  const colors = ((w.colors as unknown[] | undefined) ?? []).flatMap((x) => {
+  const sent = (w.colors as unknown[] | undefined) ?? [];
+  const colors = sent.flatMap((x) => {
     const c = x as { hex?: unknown; role?: unknown } | null;
     const hex = typeof c?.hex === "string" ? c.hex.trim().toLowerCase() : "";
     return /^#[0-9a-f]{6}$/.test(hex) ? [{ hex, role: cleanWords(c?.role, CAPS.role) }] : [];
   });
-  if (colors.length > 8) return undefined;
+  // A colour that isn't #rrggbb is refused, never dropped quietly.
+  if (colors.length !== sent.length || colors.length > 8) return undefined;
   return { feel: cleanWords(w.feel, CAPS.feel), colors };
 }
 

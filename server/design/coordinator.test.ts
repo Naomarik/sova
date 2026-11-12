@@ -1152,3 +1152,21 @@ test("Start: at most four reference pictures a design, the found screen's first"
   assert.equal(refs.length, 4);
   assert.ok(!refs[0]!.name.startsWith("screenshot-"), "the found screen first");
 });
+
+test("Start's screenshots are the shared rule's: an unticked screenshot needs no choice and can't be given one", async () => {
+  const { screenshotsInUse } = await import("../../shared/design-assets");
+  const run = runWith(2, 3, { createdAt: "2026-01-01T00:00:00Z" });
+  const t = await started(run);
+  const shot = pasted(1);
+  await t.design_brief({ baseRev: 0, summary: "S", prompt: "P" });
+  assert.deepEqual(screenshotsInUse(readAssetsNow(), brief(run.id)), [shot]);
+  await startRefused(run, /Choose Rebuild or Just Its Feel/);
+  const { setBriefImage, setBriefScreenshot } = await import("./coordinator");
+  setBriefImage(parent, run.id, shot, false);
+  assert.deepEqual(screenshotsInUse(readAssetsNow(), brief(run.id)), []);
+  assert.throws(() => setBriefScreenshot(parent, run.id, shot, "rebuild"), /unticked/);
+  await start(run);
+  assert.equal(log.launches[0]!.references.length, 0);
+  assert.doesNotMatch(log.launches[0]!.brief, /REFERENCE SCREENSHOTS/, "unticked: no one gets it");
+});
+const readAssetsNow = () => assetsMod.readAssets(parent.sessionId).assets;

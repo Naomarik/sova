@@ -5,7 +5,7 @@
 import { captureDesignPage } from "./capture";
 import { changeAssets, noteSignedInConsent, readAssetPart, readAssets } from "./assets";
 import { askVision, assetBlock, assetsForCoordinator, cleanShotWords, describerModels, describing, onAssetsSettled, onDescribingStarted, screenshotBlock } from "./describe";
-import { DESIGN_ASSET_KINDS, isDesignAssetKind, isScreenshot, kindAllowed, type DesignAssetKind, type DesignShotWords } from "../../shared/design-assets";
+import { DESIGN_ASSET_KINDS, isDesignAssetKind, isScreenshot, kindAllowed, screenshotsInUse, type DesignAssetKind, type DesignShotWords } from "../../shared/design-assets";
 import { randomBytes } from "node:crypto";
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -765,6 +765,7 @@ export function setBriefScreenshot(parent: BrowseParent, runId: string, name: st
   const a = readAssets(parent.sessionId).assets.find((x) => x.name === name);
   if (!a) throw new BriefRefused("That image isn't in this chat.");
   if (!isScreenshot(a)) throw new BriefRefused("That image isn't a screenshot you pasted.");
+  if (st.runId === runId && runOf(parent.sessionId, runId)?.brief?.imageUse?.[name]?.use === false) throw new BriefRefused("That screenshot is unticked, so it goes to no one: tick it first.");
   changeBrief(st, (b) => {
     (b.screenUse ??= {})[name] = { use, by: "user" };
     b.rev++;
@@ -828,7 +829,7 @@ export async function startBrief(parent: BrowseParent, runId: string, a: { rev: 
   if (a.rev !== run.brief.rev) throw new BriefRefused("The brief changed before you pressed Start. Look it over and press Start again.", { stale: true });
   const catalogue = readAssets(parent.sessionId);
   const kept = keptImages(run, catalogue);
-  const shots = kept.filter((n) => catalogue.assets.some((x) => x.name === n && isScreenshot(x)));
+  const shots = screenshotsInUse(catalogue.assets.filter((x) => kept.includes(x.name)), run.brief);
   const block = designBriefBlock(run, shots);
   if (block) throw new BriefRefused(block.label, { block });
   assertLaunchAllowed(designCount(run.setup), a.confirmSpend || !!run.confirmedSpend);

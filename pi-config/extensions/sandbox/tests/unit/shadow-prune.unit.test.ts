@@ -445,3 +445,14 @@ test("the caches line: never cleaned, cleaned, over the limit, off", () => {
 	assert.equal(cleanResultText({ ...stamp, freed: 1.5 * GiB }, "clean"), "Caches cleaned: freed up to 1.5 GB; 3 GB left of 10 GB");
 	assert.equal(BUSY_TEXT, "Caches: a cleanup is already running. Nothing was removed; try again later.");
 });
+
+test("tierOf: the private copies of mise's and pnpm's state are tool caches, named as backend.ts names them", async () => {
+	const { tierOf, DEFAULT_CACHE_SETTINGS } = await import("../../shadow-prune.ts");
+	const { LinuxBwrapBackend } = await import("../../backends/linux-bwrap.ts");
+	const { shadowSource } = await import("../../backend.ts");
+	const home = "/home/u";
+	const roots = (new LinuxBwrapBackend().platformDefaults({ home, agentDir: "/a" }).privateState ?? []).map((p) => shadowSource("/a", p, home).split("/").pop()!);
+	assert.equal(roots.length, 4);
+	for (const r of roots) assert.equal(tierOf(r, "anything", DEFAULT_CACHE_SETTINGS), "tool", r);
+	assert.equal(tierOf("home-.cache", "anything", DEFAULT_CACHE_SETTINGS), "scratch");
+});

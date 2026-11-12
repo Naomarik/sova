@@ -164,7 +164,7 @@
        "content": [
         {
          "type": "text",
-         "text": "@09d1f4b82d06584f"
+         "text": "@319d32d623d020bc"
         }
        ],
        "details": {
@@ -269,6 +269,7 @@
     "SPEC_AGREE_SOURCE": "pi-session:<sid:1>#<entry>",
     "SPEC_AGREE_GIVEN": "pi-session:<sid:1>#<entry>",
     "SOVA_SPEC_LANDED_FILE": "<file>",
+    "SOVA_SHARED_DIR": "<shared>/<sid:1>",
     "PI_SUBAGENT_BUILTIN_TOOLS": "read,bash,edit,write,grep,find,ls"
    },
    "agentDir": null,

@@ -331,12 +331,23 @@ min`), and once the team has any item, `team_roster` and `team_list` end with on
 
 ## §teams.defaults/handover — Successors, handover notes and retirement
 
-- **Where notes go.** `<agent dir>/sova/teams/<session>/<team_id>/handoffs/<role>.md`, where
-  `<session>` is the parent session's id (reduced to `[A-Za-z0-9._-]`; a session without an id uses
-  a key unique to that parent process) and the role is reduced to `[A-Za-z0-9._-]`. Team IDs
-  restart at `team_01` in every parent session, so the session id is what keeps two sessions'
-  notes apart. The directory is created with the team; every member's header but the
-  monitor's names its own path. The monitor has no file tools and no note.
+- **Where notes go.** In the chat's shared folder (§chat.sandbox/shared-folder):
+  `<shared>/teams/<session>/<team_id>/<role>/handover.md`, where `<session>` is the parent
+  session's id (reduced to `[A-Za-z0-9._-]`; a session without an id uses a key unique to that
+  parent process) and the role is reduced to `[A-Za-z0-9._-]`. Team IDs restart at `team_01` in
+  every parent session, so the session id is what keeps two sessions' notes apart; a worker's own
+  teams use the worker's session id inside its top-level chat's shared folder. The directory is
+  created with the team, and a confined member's own folder before it starts; every member's header
+  but the monitor's names its own path, and `team_create`'s result says "Handover notes: {team
+  dir} (each member writes only its own <role>/handover.md)". A confined member
+  (§chat.worktrees/workers, §chat.sandbox/workers) can write its own note's folder and no other
+  member's, so writing the note never fails for the sandbox and no member can write or plant
+  another's. Only the note's own path starts a successor: another member's note, or any other
+  file in the team's directory, starts none. The monitor has no file tools and no note. Team
+  mailboxes stay in the agent dir (§app.teams/inbox). A member that was already running when
+  notes moved here keeps the path its header named (`<agent dir>/sova/teams/…/handoffs/<role>.md`)
+  until it hands off; a note written there isn't seen, so its successor starts when it ends or the
+  retire timeout passes.
 - **`team_succeed { role }`** — the routing coordinator's tool for any member, and the main
   chat's (below) for a coordinator or monitor only. It starts the successor of that
   member (itself included) through the same spawn path: role `<base>-<n+1>` where an existing

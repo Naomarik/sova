@@ -6,8 +6,8 @@
 // Needs Linux with the systemd user manager and bwrap; skipped elsewhere.
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { join, resolve } from "node:path";
 import { after, describe, test } from "node:test";
 import { writeOnlyScope } from "../pi-config/extensions/sandbox/policy.ts";
 import { readSessionJobs, runningJobs } from "../pi-config/extensions/subagents/job-store.ts";
@@ -37,14 +37,19 @@ async function until(cond: () => boolean, ms: number, what: string): Promise<voi
 describe("background_job on the service manager", { skip: !ready && "needs the systemd user manager and bwrap" }, () => {
   const root = scratchRoot("bgjob-int-");
   const wt = join(root, "wt");
-  const outside = join(root, "outside");
+  // Outside the OS temp dir: a confined command sees its own private /tmp, where a folder under the host's isn't
+  // there at all (no such file), so it couldn't show the permission error. This checkout's gitignored .cache is
+  // visible inside, read-only.
+  const cache = join(resolve(import.meta.dirname, ".."), ".cache");
+  mkdirSync(cache, { recursive: true });
+  const outside = mkdtempSync(join(cache, "bgjob-outside-"));
   mkdirSync(wt);
-  mkdirSync(outside);
   const prefix = `sova-job-t${process.pid}-`;
   const deps = { ...realRequestDeps({ dir: join(root, "jobs"), unitPrefix: prefix, agentDir: join(root, "agent") }), outDir: join(root, "out") };
   const units: string[] = [];
   after(() => {
     for (const u of units) can("systemctl", ["--user", "stop", u]);
+    rmSync(outside, { recursive: true, force: true });
   });
 
   test("a write-only worker's job: writes only inside its worktree, a write outside fails with a permission error, and it stays listed", async () => {

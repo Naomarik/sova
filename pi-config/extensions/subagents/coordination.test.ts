@@ -9,7 +9,9 @@ import {
 	contextPct,
 	contextShare,
 	contextText,
+	handoffDir,
 	handoffPath,
+	noteDirOf,
 	sessionDirKey,
 	nudgeFireAt,
 	parseDelay,
@@ -23,6 +25,7 @@ import {
 test("successor names strip an existing -N suffix and take the first free number", () => {
 	assert.equal(successorRole("builder", []), "builder-2");
 	assert.equal(successorRole("builder-2", ["builder", "builder-2"]), "builder-3");
+	assert.equal(successorRole("qa-lead", ["qa-lead", "qa lead-2"]), "qa-lead-3", "a successor never takes a live member's note folder");
 	assert.equal(successorRole("builder", ["builder", "Builder-2"]), "builder-3", "taken roles collide case-insensitively");
 	assert.equal(successorRole("builder-3", ["builder-4"]), "builder-5");
 	assert.equal(successorRole("qa lead", []), "qa lead-2");
@@ -31,19 +34,21 @@ test("successor names strip an existing -N suffix and take the first free number
 	assert.match(successorRole(long, [], 64), /-2$/);
 });
 
-test("handover notes live under the team's handoffs directory with a safe file name", () => {
+test("handover notes live in each member's own folder of the team's directory, with a safe name", () => {
 	assert.equal(roleSlug("qa lead/../x"), "qa-lead-..-x");
 	assert.equal(roleSlug("../etc"), "etc");
 	assert.equal(roleSlug("   "), "member");
-	assert.equal(handoffPath("/agent", "s1", "team_03", "Lead Dev"), path.join("/agent", "sova", "teams", "s1", "team_03", "handoffs", "Lead-Dev.md"));
+	assert.equal(handoffPath("/shared/teams", "s1", "team_03", "Lead Dev"), path.join("/shared/teams", "s1", "team_03", "Lead-Dev", "handover.md"));
+	assert.equal(noteDirOf(handoffDir("/shared/teams", "s1", "team_03"), "Lead Dev"), path.join("/shared/teams", "s1", "team_03", "Lead-Dev"), "the folder only that member may write");
+	assert.notEqual(path.dirname(handoffPath("/shared/teams", "s1", "team_03", "a")), path.dirname(handoffPath("/shared/teams", "s1", "team_03", "b")), "two members never share a note folder");
 	assert.ok(!handoffPath("/agent", "s1", "team_03", "../../outside").includes(".."), "a role can never climb out of the directory");
 });
 
 test("N1: handover notes are keyed by the parent session, so two sessions' team_01 never share a note", () => {
-	const a = handoffPath("/agent", sessionDirKey("0199aaaa-1111-7000-8000-000000000001", "x"), "team_01", "writer");
-	const b = handoffPath("/agent", sessionDirKey("0199aaaa-1111-7000-8000-000000000002", "x"), "team_01", "writer");
+	const a = handoffPath("/shared/teams", sessionDirKey("0199aaaa-1111-7000-8000-000000000001", "x"), "team_01", "writer");
+	const b = handoffPath("/shared/teams", sessionDirKey("0199aaaa-1111-7000-8000-000000000002", "x"), "team_01", "writer");
 	assert.notEqual(a, b);
-	assert.equal(a, path.join("/agent", "sova", "teams", "0199aaaa-1111-7000-8000-000000000001", "team_01", "handoffs", "writer.md"));
+	assert.equal(a, path.join("/shared/teams", "0199aaaa-1111-7000-8000-000000000001", "team_01", "writer", "handover.md"));
 	assert.equal(sessionDirKey(undefined, "unsaved-1"), "unsaved-1", "no session id: the process-unique fallback");
 	assert.equal(sessionDirKey("../..", "unsaved-1"), "unsaved-1", "an id that is only dots never names a parent directory");
 	assert.equal(sessionDirKey("a/b c", "f"), "a_b_c");

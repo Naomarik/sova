@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import type { HEntry, HookCtx, StateView } from "../../shared/harness";
 import type { VerbResult } from "../../shared/project-contract";
 import { toolCtx } from "../harness/pi/tools";
+import { confinementOf } from "../background-jobs-request";
 import { sandboxInfoOf } from "../sandbox-state";
 import type { ProjectEngine } from "./engine";
 
@@ -75,15 +76,24 @@ export function lastNoteDigest(branch: readonly HEntry[], type: string = NOTE_ME
   return null;
 }
 
-/** Whether the session's sandbox is on (its branch's `sandbox` state). */
-export const sandboxedOf = (state: StateView): boolean => sandboxInfoOf(state).on;
+/** A worker's launch flags (its own confinement), when the session is a worker. */
+export type WorkerFlags = Record<string, string | true> | null | undefined;
+
+/**
+ * Whether the session's shell can't reach its instances' ports: its sandbox is On (its own network runs
+ * through the sandbox). A write-only worktree worker starts with its sandbox on too, but on the host's
+ * network, so only its launch flags tell the two apart (confinementOf).
+ */
+export const sandboxedOf = (state: StateView, workerFlags?: WorkerFlags): boolean =>
+  workerFlags && (workerFlags["sandbox-parent"] !== undefined || workerFlags.sandbox === "on")
+    ? confinementOf({ workerFlags, branch: [] }).kind === "sandboxed"
+    : sandboxInfoOf(state).on;
 
 /** The hidden message for `text`, carrying its digest. */
 export const noteMessage = (text: string, type: string = NOTE_MESSAGE) => ({ customType: type, content: text, display: false as const, details: { v: 1, digest: noteDigest(text) } });
 
 /** The note of every checkout in `checkouts` that has one, joined; null when none does. */
-export async function currentNote(engine: ProjectEngine, checkouts: readonly string[], state: StateView): Promise<string | null> {
-  const sandboxed = sandboxedOf(state);
+export async function currentNote(engine: ProjectEngine, checkouts: readonly string[], state: StateView, sandboxed: boolean = sandboxedOf(state)): Promise<string | null> {
   const parts: string[] = [];
   for (const c of checkouts) {
     const f = await engine.noteFacts(c);
@@ -95,11 +105,11 @@ export async function currentNote(engine: ProjectEngine, checkouts: readonly str
 const SINGLE = new Set(["create", "up", "apply", "status"]);
 
 /** The note that follows a create, up, apply or status result of one instance (the tools'), or null. */
-export async function resultNote(engine: ProjectEngine, r: VerbResult, state: StateView): Promise<string | null> {
+export async function resultNote(engine: ProjectEngine, r: VerbResult, state: StateView, sandboxed: boolean = sandboxedOf(state)): Promise<string | null> {
   if (!SINGLE.has(r.verb) || !r.instance || !r.checkout || r.instances) return null;
   try {
     const f = await engine.noteFacts(r.checkout);
-    return f ? instanceNote(f, sandboxedOf(state)) : null;
+    return f ? instanceNote(f, sandboxed) : null;
   } catch {
     return null;
   }
@@ -109,14 +119,14 @@ export async function resultNote(engine: ProjectEngine, r: VerbResult, state: St
  * Deliver the note in a session (projectVerbsExtension): at a turn's start as a hidden message, only when
  * its text differs from the last one on the branch; after a compaction, again. Never in the system prompt.
  */
-export function registerInstanceNote(pi: PiExtensionAPI, engine: () => ProjectEngine, own: (ctx: HookCtx) => Promise<string[]>): void {
-  registerNoteHooks(pi, (ctx) => sessionNote(engine, own, ctx));
+export function registerInstanceNote(pi: PiExtensionAPI, engine: () => ProjectEngine, own: (ctx: HookCtx) => Promise<string[]>, workerFlags?: WorkerFlags): void {
+  registerNoteHooks(pi, (ctx) => sessionNote(engine, own, ctx, workerFlags));
 }
 
 /** The session's note now (null: none, or it could not be read). */
-export async function sessionNote(engine: () => ProjectEngine, own: (ctx: HookCtx) => Promise<string[]>, ctx: HookCtx): Promise<string | null> {
+export async function sessionNote(engine: () => ProjectEngine, own: (ctx: HookCtx) => Promise<string[]>, ctx: HookCtx, workerFlags?: WorkerFlags): Promise<string | null> {
   try {
-    return await currentNote(engine(), await own(ctx), ctx.state());
+    return await currentNote(engine(), await own(ctx), ctx.state(), sandboxedOf(ctx.state(), workerFlags));
   } catch {
     return null;
   }

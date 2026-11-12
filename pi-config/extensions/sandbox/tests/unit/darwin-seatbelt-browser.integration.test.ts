@@ -99,7 +99,6 @@ function backendPolicy(p: ResolvedPolicy): Policy {
 		network: { mode: p.writeOnly ? "host" : "none" },
 		env: p.writeOnly ? hostEnv(process.env) : scrubEnv(process.env, p.envAllow),
 		sessionId: "browser-test",
-		...(p.writeOnly ? { hostTmp: true } : {}),
 		...(p.browser ? { browser: true } : {}),
 	};
 }

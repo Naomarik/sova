@@ -40,6 +40,10 @@ for (const k of Object.keys(process.env)) if (/^(SPEC_AGREE_|SOVA_SPEC_|PI_SPEC_
 export const agentDir = realpathSync(mkdtempSync(join(tmpdir(), "sova-mg-")));
 process.on("exit", () => rmSync(agentDir, { recursive: true, force: true }));
 process.env.PI_CODING_AGENT_DIR = agentDir;
+// The chats' shared folders (pi-config/extensions/sandbox/shared-folder.ts): in the throwaway agent dir, recorded as
+// `<shared>`, never under the home.
+export const sharedBase = join(agentDir, "shared");
+process.env.SOVA_SHARED_BASE = sharedBase;
 const sessionsRoot = join(agentDir, "sessions");
 mkdirSync(join(sessionsRoot, "live"), { recursive: true });
 writeFileSync(join(agentDir, "models.json"), JSON.stringify(scriptedModelsJson()));
@@ -161,6 +165,7 @@ function safeReal(p: string): string {
 place(REPO, "<repo>");
 // pi's docs section names its package under node_modules, which may be a link into another checkout.
 place(join(REPO, "node_modules"), "<repo>/node_modules");
+place(sharedBase, "<shared>");
 place(agentDir, "<agent>");
 place(homedir(), "<home>");
 

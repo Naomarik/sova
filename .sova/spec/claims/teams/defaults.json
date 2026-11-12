@@ -80,12 +80,16 @@
       "shared/profiles.ts",
       "pi-config/extensions/subagents/inbox.ts",
       "pi-config/extensions/subagents/delivery.ts",
-      "pi-config/extensions/subagents/inbox-lifecycle.ts"
+      "pi-config/extensions/subagents/inbox-lifecycle.ts",
+      "pi-config/extensions/sandbox/shared-folder.ts",
+      "pi-config/extensions/subagents/coordination.test.ts",
+      "pi-config/extensions/subagents/teams.test.ts",
+      "pi-config/extensions/subagents/index.test.ts"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-11-08T22:15Z",
-      "source": "pi-session:f599f57e-519d-4f33-9088-ed8a9cd164b5#cebf8649"
+      "by": "user",
+      "at": "2026-11-11T14:16Z",
+      "source": "pi-session:01a1ca84-b3de-7601-9d6d-7e61cbb746c9#a4b61b34"
     }
   },
   "§teams.defaults/member-kinds": {

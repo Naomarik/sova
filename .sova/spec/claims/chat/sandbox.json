@@ -33,12 +33,35 @@
       "pi-config/sandbox-policy/linux/CLAUDE.md",
       "pi-config/sandbox-policy/darwin/CLAUDE.md",
       "pi-config/install.sh",
-      "agents/extensions/sandbox/overview.md"
+      "agents/extensions/sandbox/overview.md",
+      "pi-config/extensions/sandbox/backend.ts"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-10-30T12:02Z",
-      "source": "pi-session:01a18c63-8f43-7660-9a5a-04b82a0fed6e#73daaccb"
+      "by": "user",
+      "at": "2026-11-11T14:15Z",
+      "source": "pi-session:01a1ca84-b3de-7601-9d6d-7e61cbb746c9#a4b61b34"
+    }
+  },
+  "§chat.sandbox/confined-note": {
+    "kind": "behavior",
+    "requires": [
+      "§chat.sandbox/states",
+      "§chat.sandbox/shared-folder",
+      "§app.project-services/tool-offered"
+    ],
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "server/sandbox-note.ts",
+      "server/project-services/note.ts",
+      "server/sandbox-note.test.ts",
+      "server/chat-manager.ts",
+      "pi-config/extensions/sandbox/shared-folder.ts"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-11T14:15Z",
+      "source": "pi-session:01a1ca84-b3de-7601-9d6d-7e61cbb746c9#a4b61b34"
     }
   },
   "§chat.sandbox/fail-closed": {
@@ -93,7 +116,11 @@
       "server/background-jobs-request.integration.test.ts",
       "server/harness/pi/session.ts",
       "server/harness/pi/shell.ts",
-      "server/harness/pi/shell.test.ts"
+      "server/harness/pi/shell.test.ts",
+      "pi-config/extensions/sandbox/shared-folder.ts",
+      "pi-config/extensions/sandbox/backend.ts",
+      "server/sandbox-note.ts",
+      "pi-config/extensions/subagents/coordination.ts"
     ],
     "about": [
       "§chat.sandbox/what-on-enforces"
@@ -130,12 +157,14 @@
       "pi-config/sandbox-policy/darwin/caches.json",
       "pi-config/extensions/sandbox/shadow-prune.ts",
       "pi-config/extensions/sandbox/README.md",
-      "pi-config/install.test.mjs"
+      "pi-config/install.test.mjs",
+      "pi-config/extensions/sandbox/shared-folder.ts",
+      "pi-config/extensions/sandbox/tests/policy.unit.test.ts"
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-04T02:27Z",
-      "source": "pi-session:5b3349ca-a4e6-4bb7-8a78-16e639eb61df#8fb59837"
+      "at": "2026-11-11T14:15Z",
+      "source": "pi-session:01a1ca84-b3de-7601-9d6d-7e61cbb746c9#a4b61b34"
     }
   },
   "§chat.sandbox/project-tightening": {
@@ -150,6 +179,37 @@
       "by": "naomarik",
       "at": "2026-10-30T12:02Z",
       "source": "pi-session:01a18c63-8f43-7660-9a5a-04b82a0fed6e#73daaccb"
+    }
+  },
+  "§chat.sandbox/shared-folder": {
+    "kind": "behavior",
+    "requires": [
+      "§chat.sandbox/policy-file",
+      "§chat.worktrees/workers",
+      "§teams.defaults/handover"
+    ],
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "pi-config/extensions/sandbox/shared-folder.ts",
+      "pi-config/extensions/sandbox/policy.ts",
+      "pi-config/extensions/sandbox/session-policy.ts",
+      "pi-config/extensions/sandbox/index.ts",
+      "pi-config/extensions/sandbox/state.ts",
+      "pi-config/extensions/sandbox/README.md",
+      "pi-config/extensions/sandbox/tests/shared-folder.unit.test.ts",
+      "pi-config/extensions/sandbox/tests/shared-folder-bwrap.unit.test.ts",
+      "pi-config/extensions/sandbox/tests/session-policy.unit.test.ts",
+      "pi-config/extensions/sandbox/tests/index.unit.test.ts",
+      "pi-config/extensions/subagents/index.ts",
+      "pi-config/extensions/subagents/index.test.ts",
+      "server/sessions-index.ts",
+      "package.json"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-11T14:15Z",
+      "source": "pi-session:01a1ca84-b3de-7601-9d6d-7e61cbb746c9#a4b61b34"
     }
   },
   "§chat.sandbox/states": {
@@ -179,12 +239,13 @@
       "pi-config/extensions/sandbox/tests/run.mjs",
       "pi-config/extensions/subagents/index.test.ts",
       "pi-config/extensions/claude-code/provider/session-bridge.ts",
-      "server/app.ts"
+      "server/app.ts",
+      "server/sandbox-note.ts"
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-04T12:30Z",
-      "source": "pi-session:5b3349ca-a4e6-4bb7-8a78-16e639eb61df#78234ec6"
+      "at": "2026-11-11T14:15Z",
+      "source": "pi-session:01a1ca84-b3de-7601-9d6d-7e61cbb746c9#a4b61b34"
     }
   },
   "§chat.sandbox/toggle": {
@@ -205,12 +266,40 @@
       "server/chat-manager.ts",
       "server/ws.ts",
       "server/sandbox-state.ts",
-      "server/chat-runtime/trial-your-click.integration.test.ts"
+      "server/chat-runtime/trial-your-click.integration.test.ts",
+      "server/sandbox-note.ts"
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-04T16:27Z",
-      "source": "pi-session:5b3349ca-a4e6-4bb7-8a78-16e639eb61df#e85d747a"
+      "at": "2026-11-11T14:15Z",
+      "source": "pi-session:01a1ca84-b3de-7601-9d6d-7e61cbb746c9#a4b61b34"
+    }
+  },
+  "§chat.sandbox/toolchains": {
+    "kind": "behavior",
+    "requires": [
+      "§chat.sandbox/what-on-enforces",
+      "§chat.worktrees/workers"
+    ],
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "pi-config/extensions/sandbox/backends/linux-bwrap.ts",
+      "pi-config/extensions/sandbox/backend.ts",
+      "server/compression.test.ts",
+      "server/drafts.test.ts",
+      "server/transcript.test.ts",
+      "pi-config/extensions/sandbox/backends/darwin-seatbelt.ts",
+      "pi-config/extensions/sandbox/policy.ts",
+      "pi-config/extensions/sandbox/README.md",
+      "pi-config/extensions/sandbox/tests/unit/backend.unit.test.ts",
+      "pi-config/extensions/sandbox/tests/unit/linux-bwrap.unit.test.ts",
+      "pi-config/extensions/sandbox/tests/policy.unit.test.ts"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-11T14:15Z",
+      "source": "pi-session:01a1ca84-b3de-7601-9d6d-7e61cbb746c9#a4b61b34"
     }
   },
   "§chat.sandbox/what-on-enforces": {
@@ -231,12 +320,20 @@
       "pi-config/extensions/sandbox/session-policy.ts",
       "pi-config/extensions/sandbox/README.md",
       "pi-config/extensions/sandbox/tests/unit/darwin-seatbelt-browser.integration.test.ts",
-      "pi-config/extensions/sandbox/shadow-prune.ts"
+      "pi-config/extensions/sandbox/shadow-prune.ts",
+      "pi-config/extensions/sandbox/shared-folder.ts",
+      "pi-config/extensions/sandbox/tests/unit/backend.unit.test.ts",
+      "pi-config/extensions/sandbox/tests/tools.unit.test.ts",
+      "pi-config/extensions/sandbox/tests/policy.unit.test.ts",
+      "pi-config/sandbox-policy/linux/policy.json",
+      "pi-config/sandbox-policy/darwin/policy.json",
+      "pi-config/sandbox-policy/linux/CLAUDE.md",
+      "pi-config/sandbox-policy/darwin/CLAUDE.md"
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-04T14:16Z",
-      "source": "pi-session:01a1a628-48c2-7136-a762-464d5bf0599f#bf9df942"
+      "at": "2026-11-11T14:15Z",
+      "source": "pi-session:01a1ca84-b3de-7601-9d6d-7e61cbb746c9#a4b61b34"
     }
   },
   "§chat.sandbox/workers": {
@@ -257,12 +354,14 @@
       "pi-config/extensions/sandbox/backends/linux-bwrap.ts",
       "pi-config/extensions/sandbox/tests/policy.unit.test.ts",
       "pi-config/extensions/sandbox/launch.ts",
-      "pi-config/extensions/sandbox/tests/index.unit.test.ts"
+      "pi-config/extensions/sandbox/tests/index.unit.test.ts",
+      "pi-config/extensions/sandbox/shared-folder.ts",
+      "pi-config/extensions/sandbox/tests/shared-folder.unit.test.ts"
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-04T02:28Z",
-      "source": "pi-session:5b3349ca-a4e6-4bb7-8a78-16e639eb61df#8fb59837"
+      "at": "2026-11-11T14:15Z",
+      "source": "pi-session:01a1ca84-b3de-7601-9d6d-7e61cbb746c9#a4b61b34"
     }
   },
   "§chat/sandbox": {

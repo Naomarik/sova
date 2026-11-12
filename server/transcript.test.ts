@@ -1,6 +1,9 @@
 // Run: npx tsx --test server/transcript.test.ts
-// Creates a few files directly in /tmp, and an attachments root in a throwaway
-// PI_CODING_AGENT_DIR (attachmentsRoot reads it per call), and removes them afterwards.
+// Creates a few files directly in /tmp (the one literal place /api/attachment serves outside an
+// attachments root, so these must sit there, not in os.tmpdir()), and an attachments root in a
+// throwaway PI_CODING_AGENT_DIR (attachmentsRoot reads it per call), and removes them afterwards.
+// Where /tmp can't be written (a macOS Seatbelt sandbox) the /tmp cases skip; on Linux a confined
+// worker writes them to its own private /tmp layer.
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
@@ -13,9 +16,16 @@ import { parseReport, previewLine } from "./reports";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
 import { entryOf, normalizeEntries, normalizeEntry } from "./transcript";
 
+/** Whether this process may write directly in /tmp. */
+const TMP_OPEN = (() => {
+  try { rmSync(mkdtempSync("/tmp/sova-transcript-probe-"), { recursive: true }); return true; } catch { return false; }
+})();
+const TMP_SKIP = TMP_OPEN ? false : "/tmp is closed here";
+
 const created: string[] = [];
 function tmpFile(name: string, bytes = "png-bytes"): string {
   const p = `/tmp/${name}`;
+  if (!TMP_OPEN) return p;
   writeFileSync(p, bytes);
   created.push(p);
   return p;
@@ -41,7 +51,7 @@ const userEntry = (text: string) => ({
   message: { role: "user", content: [{ type: "text", text }], timestamp: 0 },
 });
 
-describe("inlineTmpImages", () => {
+describe("inlineTmpImages", { skip: TMP_SKIP }, () => {
   test("a pi clipboard path becomes an attachment and leaves the text", () => {
     const r = inlineTmpImages(`is there a way to do what VS Code does ${clip} to get this minimap?`, true);
     assert.equal(r.text, "is there a way to do what VS Code does to get this minimap?");
@@ -172,7 +182,7 @@ describe("inlineTmpImages", () => {
   });
 });
 
-describe("normalizeEntry (user rows)", () => {
+describe("normalizeEntry (user rows)", { skip: TMP_SKIP }, () => {
   test("attachments are set, text normalized, raw untouched", () => {
     const entry = userEntry(`fix this ${clip}`);
     const before = JSON.stringify(entry);
@@ -260,7 +270,8 @@ describe("normalizeEntry (user rows)", () => {
   });
 });
 
-describe("checkTmpImage (GET /api/attachment)", () => {
+describe("checkTmpImage (GET /api/attachment)", { skip: TMP_SKIP }, () => {
+  if (!TMP_OPEN) return;
   const dir = `/tmp/sova-test-${tag}`;
   mkdirSync(dir);
   created.push(dir);
@@ -714,7 +725,7 @@ describe("attachments root (composer-draft uploads)", () => {
     assert.deepEqual(checkTmpImage(upload), { ok: true, realPath: upload, mimeType: "image/png", size: 9 });
   });
 
-  test("/tmp is still recognised", () => assert.equal(checkTmpImage(clip).ok, true));
+  test("/tmp is still recognised", { skip: TMP_SKIP }, () => assert.equal(checkTmpImage(clip).ok, true));
 
   test("lookalikes outside the root, traversal and extra depth are 400", () => {
     for (const p of [

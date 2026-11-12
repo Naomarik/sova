@@ -639,7 +639,7 @@
       "§chat.sandbox/workers"
     ],
     "authority": "accepted",
-    "evidence": "reviewed",
+    "evidence": "verified",
     "code": [
       "pi-config/extensions/subagents/index.ts",
       "pi-config/extensions/subagents/index.test.ts",
@@ -658,12 +658,13 @@
       "pi-config/extensions/sandbox/README.md",
       "server/background-jobs-request.ts",
       "server/background-jobs-request.test.ts",
-      "server/background-jobs-request.integration.test.ts"
+      "server/background-jobs-request.integration.test.ts",
+      "pi-config/extensions/sandbox/shared-folder.ts"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-11-09T16:22Z",
-      "source": "pi-session:01a1b2f4-86c6-73d4-9fe9-b847b27035f9#950bc2c9"
+      "by": "user",
+      "at": "2026-11-11T14:15Z",
+      "source": "pi-session:01a1ca84-b3de-7601-9d6d-7e61cbb746c9#a4b61b34"
     }
   },
   "§chat.worktrees/worktree-config": {

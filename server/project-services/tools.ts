@@ -19,7 +19,7 @@ import { chatStateRoot } from "../state-root";
 import type { Caller, CopyApproval, CreatorWorking, ProjectEngine, VerbAct } from "./engine";
 import { approvedLeftover, LEFTOVER_CLICK_REFUSAL } from "../overseer-copies";
 import { findLeftovers, LEFTOVER_UNSUPPORTED, leftoverLine, stopLeftover, type LeftoverHost } from "./leftovers";
-import { registerInstanceNote, resultNote, sessionNote } from "./note";
+import { registerInstanceNote, resultNote, sandboxedOf, sessionNote, type WorkerFlags } from "./note";
 import { readRegistry, registryFile } from "./store";
 
 /**
@@ -261,6 +261,8 @@ export function fitMergeAnswer(r: VerbResult, text: string, note?: string | null
 }
 
 export interface VerbToolOptions {
+  /** The worker the tool serves, by its launch flags: its own confinement, for a result's note. */
+  workerFlags?: WorkerFlags;
   /** The merge verbs too (a chat's own tool). */
   merge?: true;
   /** Whether results keep a share link's `url` (the Overseers'); absent: never (a coding session's). */
@@ -337,7 +339,8 @@ export function projectVerbsTool(o: VerbToolOptions): Tool {
       }
       const ran = await o.engine().run(String(p.verb ?? ""), body, caller, signal ? { signal } : {});
       const r = o.urls ? ran : withoutUrls(ran);
-      const note = await resultNote(o.engine(), r, ctx?.state() ?? stateView([]));
+      const state = ctx?.state() ?? stateView([]);
+      const note = await resultNote(o.engine(), r, state, sandboxedOf(state, o.workerFlags));
       return { content: [{ type: "text" as const, text: renderResult(r, note) }], details: { v: 1, result: r } };
     },
   };
@@ -407,20 +410,20 @@ export async function projectVerbsOffered(ctx: HookCtx, prompt?: string): Promis
 }
 
 /** The inline extension every ordinary hosted session gets (server/chat-manager.ts). */
-export function projectVerbsExtension(engine: () => ProjectEngine) {
+export function projectVerbsExtension(engine: () => ProjectEngine, workerFlags?: WorkerFlags) {
   return {
     name: "sova-project-verbs",
     hidden: true,
     factory: (pi: PiExtensionAPI) => {
-      pi.registerTool(toPiTool(sessionVerbsTool(engine)));
+      pi.registerTool(toPiTool(sessionVerbsTool(engine, workerFlags)));
       // Its own instances' ports, data and tests, as a hidden note (§app.project-services/instance-note).
-      registerInstanceNote(pi, engine, ownCheckouts);
+      registerInstanceNote(pi, engine, ownCheckouts, workerFlags);
     },
   };
 }
 
 /** The session's own instance note now: what the server renders for a chat in its own process. */
-export const sessionInstanceNote = (engine: () => ProjectEngine, ctx: HookCtx): Promise<string | null> => sessionNote(engine, ownCheckouts, ctx);
+export const sessionInstanceNote = (engine: () => ProjectEngine, ctx: HookCtx, workerFlags?: WorkerFlags): Promise<string | null> => sessionNote(engine, ownCheckouts, ctx, workerFlags);
 
 /** What a merge reviewer may call: the reads, and its verdict. It runs nothing (a project's `test` would run the
     branch's code), so every other verb is refused. */
@@ -431,8 +434,9 @@ export const REVIEWER_VERB_REFUSAL = "A merge reviewer only reads: it may call s
 export const isReviewerSession = (ctx: ToolCtx | undefined): boolean => queueChatRole(ctx?.state().latest(PROFILE)?.data?.profile) === "reviewer";
 
 /** An ordinary session's `project_verbs`: its own worktrees' running instances; a merge reviewer's reads and verdict only. */
-export function sessionVerbsTool(engine: () => ProjectEngine): Tool {
+export function sessionVerbsTool(engine: () => ProjectEngine, workerFlags?: WorkerFlags): Tool {
   const t = projectVerbsTool({
+    ...(workerFlags ? { workerFlags } : {}),
     name: "project_verbs",
     label: "Project verbs",
     description:

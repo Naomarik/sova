@@ -395,12 +395,14 @@
       "server/project-services/note.integration.test.ts",
       "server/project-services/worker-verbs.test.ts",
       "server/chat-manager.ts",
-      "server/served-tools.ts"
+      "server/served-tools.ts",
+      "server/chat-handle.ts",
+      "server/served-instance-note.test.ts"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-11-06T23:21Z",
-      "source": "pi-session:4f394f82-707c-4335-a9f0-dfacbbbe4a11#5709e705"
+      "by": "user",
+      "at": "2026-11-11T14:16Z",
+      "source": "pi-session:01a1ca84-b3de-7601-9d6d-7e61cbb746c9#a4b61b34"
     }
   },
   "§app.project-services/instances": {

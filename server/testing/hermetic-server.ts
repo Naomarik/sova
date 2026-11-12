@@ -337,6 +337,9 @@ export async function startHermeticServer(opts: HermeticServerOptions = {}): Pro
       SOVA_GIT_MAINTENANCE: "off",
       // Its own test data (server/worktree-retire-gate.ts): what `sova_archive` may remove worktrees from.
       SOVA_TEST_DATA: scratch,
+      // Its chats' shared folders (pi-config/extensions/sandbox/shared-folder.ts): in the scratch root, never the
+      // sentinel home, whose `.local/state` they would otherwise create.
+      SOVA_SHARED_BASE: join(scratch, "shared"),
       SOVA_CHAT_DRIVER: "detached",
       SOVA_CHAT_CODE: "live",
       GIT_CEILING_DIRECTORIES: opts.root ? `${tmpdir()}:${base}` : tmpdir(),

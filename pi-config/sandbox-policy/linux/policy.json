@@ -2,7 +2,7 @@
   "version": 1,
   "level": "workspace-write",
   "defaultOn": false,
-  "writable": ["~/.local/state/mise"],
+  "writable": [],
   "shadowed": ["~/.cache", "~/.npm", "~/.m2"],
   "hidden": [
     "~/.ssh",

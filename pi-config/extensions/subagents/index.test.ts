@@ -17,6 +17,7 @@ import { MODE_DISCOVER_EVENT, MODE_STATE_EVENT } from "../mode/state.ts";
 const LEDGER_ENV = "SOVA_SPEC_LEDGER";
 import { workerSpecBrief } from "./spec-brief.ts";
 import { SANDBOX_DISCOVER_EVENT, SANDBOX_STATE_EVENT, type SandboxStateEvent, type WorkerLaunch } from "../sandbox/state.ts";
+import { SHARED_DIR_ENV } from "../sandbox/shared-folder.ts";
 import { MODE_WORKER_DISCOVER_EVENT, MODE_WORKER_EVENT, WORKER_ROLE_DISCOVER_EVENT, WORKER_ROLE_EVENT, type ModeWorkerEvent } from "../mode/events.ts";
 import workerMarkExtension from "./worker-mark.ts";
 import { CLAUDE_CODE_PROVIDER_FLAG } from "./runner.ts";
@@ -2596,7 +2597,7 @@ test("team members get a parent-issued identity, private mailbox and only the me
 		// The user-facing extensions option still refuses the member file, and ad hoc workers never get an identity.
 		await assert.rejects(h.call("agent_spawn", { prompt: "x", extensions: [MEMBER_EXTENSION] }), /do not nest/);
 		await h.call("agent_spawn", { prompt: "plain", wake: false });
-		assert.equal(h.workers.at(-1).env, undefined);
+		assert.deepEqual(Object.keys(h.workers.at(-1).env), [SHARED_DIR_ENV], "an ad hoc worker's env is only the chat's shared folder");
 		assert.deepEqual(h.workers.at(-1).extensions, [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, MODEL_LEVELS_EXTENSION]);
 		// team_add refuses orchestrator the same way, and a newcomer's header marks no lead.
 		await assert.rejects(
@@ -2977,7 +2978,7 @@ test("a local session's workers are untouched by the remote wiring", async () =>
 		assert.deepEqual(h.workers[0].extensions, [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, MODEL_LEVELS_EXTENSION]);
 		await h.call("agent_spawn", { prompt: "claude task", backend: "native-cli" });
 		assert.equal(created[0].mcpServers, undefined);
-		assert.equal(created[0].env, undefined);
+		assert.deepEqual(Object.keys(created[0].env), [SHARED_DIR_ENV], "only the chat's shared folder");
 		assert.equal(created[0].tools, undefined, "the backend's default tool list applies");
 	} finally { await h.close(); }
 });
@@ -3147,7 +3148,7 @@ test("pin: with the sandbox off and no worktree, a claude-code worker's launch o
 		};
 		const shape = (w: any) => ({ ...launchShape(w), id: undefined });
 		for (const w of h.workers) for (const key of Object.keys(want)) if (key !== "groupId") assert.deepEqual(w[key], (want as any)[key], key);
-		assert.equal(h.workers[0].env, undefined, "no env, settings, confinement or mcp key");
+		assert.deepEqual(Object.keys(h.workers[0].env), [SHARED_DIR_ENV], "no env but the chat's shared folder, no settings, confinement or mcp key");
 		assert.equal(h.workers[0].mcpServers, undefined);
 		assert.equal(h.workers[0].confine, undefined);
 		assert.deepEqual({ ...shape(h.workers[1]), groupId: undefined }, { ...shape(h.workers[0]), groupId: undefined }, "an off sandbox changes nothing");
@@ -3397,6 +3398,7 @@ function coordinatedHarness(file?: unknown, opts: { claude?: boolean; sessionId?
 	const timers: { fn: () => void; ms: number }[] = [];
 	const h = harness(eventBus(), {
 		mailboxRoot: path.join(root, "mail"), mailboxPollMs: 10, agentDir, inboxDebounceMs: 30, inboxRetryMs: [30, 60],
+		sharedFolder: path.join(root, "shared"),
 		...(opts.policyFile ? { policyFile: opts.policyFile } : {}),
 		setTimer: (fn, ms) => { const t = { fn, ms }; timers.push(t); return t as any; },
 	});
@@ -3419,11 +3421,11 @@ function coordinatedHarness(file?: unknown, opts: { claude?: boolean; sessionId?
 	};
 	const tick = (ms = 30) => new Promise((r) => setTimeout(r, ms));
 	const parentMessages = (type: string) => h.messages.filter(([m]: any[]) => m.customType === type);
-	const handoffs = (teamId = "team_01") => path.join(agentDir, "sova", "teams", opts.sessionId ?? SESSION_ID, teamId, "handoffs");
+	const handoffs = (teamId = "team_01") => path.join(root, "shared", "teams", opts.sessionId ?? SESSION_ID, teamId);
 	/** The old member writes its note and ends its turn: team_succeed's successor starts then (N3). */
 	const writeNote = (role: string, text = `# ${role}\nDone: step 1.\nOpen: step 2.`) => {
-		fs.mkdirSync(handoffs(), { recursive: true });
-		fs.writeFileSync(path.join(handoffs(), `${role}.md`), text);
+		fs.mkdirSync(path.join(handoffs(), role), { recursive: true });
+		fs.writeFileSync(path.join(handoffs(), role, "handover.md"), text);
 	};
 	return {
 		...h, root, agentDir, timers, created, worker, memberOf, ask, tick, parentMessages, handoffs, writeNote,
@@ -3533,7 +3535,7 @@ test("team defaults synthesize a coordinator and a monitor in code, with role he
 		const text = r.content[0].text;
 		assert.match(text, /^Sova added the coordinator "coordinator" on claude-code\/claude-opus-5-5\/medium \(primary\)\.$/m);
 		assert.match(text, /^Sova added the monitor "monitor" on claude-code\/claude-haiku-4-5\/medium \(primary\)\.$/m);
-		const handoffs = path.join(h.agentDir, "sova", "teams", SESSION_ID, "team_01", "handoffs");
+		const handoffs = h.handoffs();
 		assert.match(text, new RegExp(`Handover notes: ${handoffs.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`));
 		assert.ok(fs.statSync(handoffs).isDirectory());
 		assert.match(text, /ag_01 {2}coordinator \(coordinator\) {2}running {2}backend=pi {2}model=claude-code-cli\/claude-opus-5-5 {2}effort=medium/);
@@ -3555,7 +3557,7 @@ test("team defaults synthesize a coordinator and a monitor in code, with role he
 		assert.match(coordinator.task, /You are this team's coordinator\. You do no implementation yourself/);
 		assert.match(coordinator.task, /- monitor \(monitor\): none declared/);
 		assert.match(dev.task, /This team has a coordinator, coordinator: report to it, not to the operator\./);
-		assert.match(dev.task, new RegExp(`Your handover note path: ${path.join(handoffs, "dev.md").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\.`));
+		assert.match(dev.task, new RegExp(`Your handover note path: ${path.join(handoffs, "dev", "handover.md").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\.`));
 		assert.match(dev.task, /team_ask sends a question to your team's coordinator/);
 		assert.doesNotMatch(monitor.task, /mcp__team__/);
 		assert.match(monitor.task, /at or over 60% of its context window: team_msg it with notice "wrap-up"/);
@@ -3563,7 +3565,7 @@ test("team defaults synthesize a coordinator and a monitor in code, with role he
 		assert.match(monitor.task, /wake_nudge schedule delay "10m" and end your turn\. Never sleep or poll in a shell/);
 		assert.doesNotMatch(monitor.task, /team_ask/);
 		for (const [w, role] of [[coordinator, "coordinator"], [dev, "dev"], [writer, "writer"]])
-			assert.ok(w.task.includes(`Your handover note path: ${path.join(handoffs, `${role}.md`)}.`), `${role}'s header names its own note`);
+			assert.ok(w.task.includes(`Your handover note path: ${path.join(handoffs, role, "handover.md")}.`), `${role}'s header names its own note`);
 		assert.doesNotMatch(monitor.task, /handover note path|read its handover note/, "a monitor has no file tools: it hands over by team_msg");
 		const list = (await h.call("team_list")).content[0].text;
 		assert.match(list, /Coordinated \(team defaults\)/);
@@ -3944,7 +3946,7 @@ test("team_succeed starts <role>-<n+1> on the same backend/model/effort; team_re
 		await h.call("team_create", { name: "Crew", objective: "Ship", members: [{ role: "dev", prompt: "build", ownedPaths: ["src"], model: "test/model", effort: "low", tools: ["read"] }] });
 		const coordinator = h.worker("ag_01"), dev = h.worker("ag_02");
 		const handoffs = h.handoffs();
-		const note = path.join(handoffs, "dev.md");
+		const note = path.join(handoffs, "dev", "handover.md");
 		const refused = await h.ask("ag_02", { type: "succeed", to: "dev" });
 		assert.equal(refused.ok, false);
 		assert.match(refused.text, /Only the team's coordinator can start a successor/);
@@ -3959,6 +3961,14 @@ test("team_succeed starts <role>-<n+1> on the same backend/model/effort; team_re
 		dev.settle();
 		await h.tick();
 		assert.equal(h.worker("ag_04"), undefined, "a turn that ended without the note starts nothing");
+		// Another seat's note (the coordinator's own folder, the only one it may write) and a file in the
+		// team's directory itself never stand for dev's: only dev/handover.md starts dev's successor.
+		h.writeNote("coordinator");
+		fs.writeFileSync(path.join(handoffs, "dev.md"), "not dev's note");
+		dev.status = "running";
+		dev.settle();
+		await h.tick();
+		assert.equal(h.worker("ag_04"), undefined, "another seat's note starts no successor for dev");
 		h.writeNote("dev");
 		dev.status = "running";
 		dev.settle();
@@ -4010,7 +4020,7 @@ test("team_succeed starts <role>-<n+1> on the same backend/model/effort; team_re
 		assert.deepEqual(events, [["handover", "dev"], ["retire", "dev"], ["handover", "dev-2"], ["retire", "dev-2"]]);
 		// The coordinator can succeed itself: it writes its note and ends its turn, then the successor takes over routing.
 		const self = await h.ask("ag_01", { type: "succeed", to: "coordinator" });
-		assert.match(self.text, new RegExp(`^Handover started for you, coordinator \\(ag_01\\): Finish the step you are in, then write or update your handover note at ${esc(path.join(handoffs, "coordinator.md"))} `));
+		assert.match(self.text, new RegExp(`^Handover started for you, coordinator \\(ag_01\\): Finish the step you are in, then write or update your handover note at ${esc(path.join(handoffs, "coordinator", "handover.md"))} `));
 		h.writeNote("coordinator");
 		coordinator.settle();
 		await h.tick();
@@ -4242,7 +4252,7 @@ test("handovers eject automatically: a retired member and an ended member succee
 		const dev = h.worker("ag_02");
 		// (c) The predecessor while its successor has not started.
 		await h.ask("ag_01", { type: "succeed", to: "dev" });
-		await assert.rejects(h.call("team_eject", { team: "Crew", member: "dev" }), /^Error: dev \(ag_02\) is mid-handover in team_01: its successor has not started yet \(it starts once the handover note at .*dev\.md exists, or at the handover timeout\); it is then retired and its seat released automatically\.$/);
+		await assert.rejects(h.call("team_eject", { team: "Crew", member: "dev" }), /^Error: dev \(ag_02\) is mid-handover in team_01: its successor has not started yet \(it starts once the handover note at .*dev\/handover\.md exists, or at the handover timeout\); it is then retired and its seat released automatically\.$/);
 		h.writeNote("dev");
 		await h.tick();
 		const successor = h.worker("ag_05");
@@ -6126,4 +6136,23 @@ test("mcpServers: a worker on its worktree's own config is refused at the start,
 	await assert.rejects(h.call("agent_spawn", { prompt: "x", name: "fixer", mcpServers: ["a"], useWorktreeConfig: true, wake: false }), /^Error: fixer uses its worktree's own config, so it can't have MCP servers\.$/);
 	assert.equal(h.workers.length, 0);
 	assert.equal(asked, 0);
+});
+
+test("the shared folder: agent_spawn and team_create name it, and each coordinated member's launch asks for its own note folder only", async () => {
+	const h = coordinatedHarness(DEFAULTS_FILE);
+	try {
+		const asked: any[] = [];
+		h.bus.emit(SANDBOX_STATE_EVENT, { ...SANDBOX_ON, workerLaunch: (req: any) => (asked.push(req), workerLaunchOf()(req)) });
+		const shared = path.join(h.root, "shared");
+		const spawned = (await h.call("agent_spawn", { prompt: "plain", wake: false })).content[0].text;
+		assert.ok(spawned.includes(`Shared folder (this chat and all its workers read and write it; put briefs and reports here): ${shared}`), spawned);
+		assert.equal(asked.at(-1).note, undefined, "an ad hoc worker has no note folder");
+		assert.equal(h.workers.at(-1).env[SHARED_DIR_ENV], shared);
+		asked.length = 0;
+		const created = (await h.call("team_create", { name: "Crew", objective: "Ship", members: [{ role: "dev", prompt: "build" }] })).content[0].text;
+		assert.ok(created.includes(`Shared folder (this chat and all its workers read and write it; put briefs and reports here): ${shared}`));
+		assert.ok(created.includes(`Handover notes: ${h.handoffs()} (each member writes only its own <role>/handover.md)`));
+		assert.deepEqual(asked.map((r) => r.note), [path.join(h.handoffs(), "coordinator"), path.join(h.handoffs(), "dev"), undefined], "coordinator and dev: their own folder; the monitor (no file tools): none");
+		assert.ok(fs.statSync(path.join(h.handoffs(), "dev")).isDirectory(), "made before the worker starts, so the sandbox can bind it");
+	} finally { await h.cleanup(); }
 });

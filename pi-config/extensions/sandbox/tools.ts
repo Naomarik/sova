@@ -120,11 +120,11 @@ export function resolveLikePi(input: string, cwd: string): string {
  * bash sees the session tmp as /tmp, so the file tools do too: a path under /tmp maps into the
  * session tmp, unless a writable root is bound over it there (a workspace under /tmp stays where it
  * is, as it does inside bwrap). For reads a host /tmp path the session tmp lacks stays as it is
- * (pi's own truncated-output files live there). A write-only worker keeps the host's /tmp
- * (read-only; its tmp is writable at its own path), so nothing is mapped for it.
+ * (pi's own truncated-output files live there). A write-only worker's /tmp is its session tmp
+ * too, so the same mapping holds for it.
  */
-export function mapTmp(abs: string, policy: Pick<ResolvedPolicy, "tmpDir" | "writable" | "writeOnly">, mode: "read" | "write"): string {
-	if (process.platform !== "linux" || policy.writeOnly) return abs;
+export function mapTmp(abs: string, policy: Pick<ResolvedPolicy, "tmpDir" | "writable">, mode: "read" | "write", platform: NodeJS.Platform = process.platform): string {
+	if (platform !== "linux") return abs;
 	if (abs !== "/tmp" && !abs.startsWith("/tmp/")) return abs;
 	if (isWithin(abs, policy.tmpDir) || policy.writable.some((w) => w !== policy.tmpDir && isWithin(abs, w))) return abs;
 	const mapped = join(policy.tmpDir, abs.slice("/tmp".length));
@@ -137,7 +137,7 @@ export function mapTmp(abs: string, policy: Pick<ResolvedPolicy, "tmpDir" | "wri
  * path (a host cache) to its private source, as the OS backend mounts it. `view` is the canonical
  * path as the sandbox names it, `real` the host path the file tool touches.
  */
-export function sandboxView(abs: string, policy: Pick<ResolvedPolicy, "tmpDir" | "writable" | "shadowed" | "writeOnly">, mode: "read" | "write"): { view: string; real: string } {
+export function sandboxView(abs: string, policy: Pick<ResolvedPolicy, "tmpDir" | "writable" | "shadowed">, mode: "read" | "write"): { view: string; real: string } {
 	const view = canonicalize(mapTmp(abs, policy, mode));
 	const sh = policy.shadowed.filter((s) => isWithin(view, s.path)).sort((a, b) => b.path.length - a.path.length)[0];
 	// A real writable root inside the shadowed path (a workspace under ~/.cache) is bound over the shadow: it stays real.

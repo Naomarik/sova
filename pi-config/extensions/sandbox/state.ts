@@ -61,6 +61,11 @@ export interface WorkerLaunchRequest {
 	backend: string;
 	/** A stable id of the worker (its registry id): names its sandbox tmp and proxy. Plain `[A-Za-z0-9._-]`. */
 	owner: string;
+	/**
+	 * A team member's own handover-note folder, inside the chat's shared folder's `teams/`
+	 * (shared-folder.ts): writable for this worker only. Anything else is ignored.
+	 */
+	note?: string;
 }
 
 /**

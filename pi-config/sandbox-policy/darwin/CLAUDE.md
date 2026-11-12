@@ -20,7 +20,9 @@ Seatbelt filters operations; it cannot remap paths as bwrap's mounts do. So on m
   at the session tmp; tools that honour it work.
 - **`shadowed` caches work through the environment**: the host `~/.cache`, `~/.npm` and `~/.m2`
   are read-only inside, and `XDG_CACHE_HOME`, `npm_config_cache` and `MAVEN_OPTS
-  -Dmaven.repo.local` point at the sandbox's private copies. A tool that ignores those variables
+  -Dmaven.repo.local` point at the sandbox's private copies. mise's `~/.local/state/mise` always
+  gets one too, through `MISE_STATE_DIR` (seeded with the host's trust list), whatever this file
+  says; a `writable` entry at or inside it is ignored. A tool that ignores those variables
   cannot write its cache. The copies are cleaned as on Linux, with the same `caches.json` beside
   `policy.json` (see the Linux note's "Cache cleanup").
 - **Network**: no DNS and no direct connections; outbound only to one loopback port, a relay to

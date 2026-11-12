@@ -16,6 +16,7 @@ import { type Backend, type Confined, type Policy, backendFor, gitProtectedPaths
 import { hostEnv, scrubEnv } from "./env.ts";
 import { proxySocketPath, startProxy, type ProxyHandle, type ProxyOptions } from "./proxy.ts";
 import { type ParentScope, type ResolvedPolicy, type Result, resolvePolicy } from "./policy.ts";
+import { chatSharedFolder, ensureSharedFolder, sessionDirKey } from "./shared-folder.ts";
 
 export interface SessionPolicyInput {
 	/** pi's agent dir (getAgentDir()/PI_CODING_AGENT_DIR). */
@@ -37,6 +38,19 @@ export interface SessionPolicyInput {
 	platform?: NodeJS.Platform;
 	/** Only its platform lists are read; defaults to `backendFor(platform)`. */
 	backend?: Pick<Backend, "platformDefaults">;
+	/** A top-level session's shared folder when the caller knows it (an unconfined worker's inherited `SOVA_SHARED_DIR`); else its own chat's. */
+	shared?: string;
+}
+
+/**
+ * The shared folder a session's policy makes writable: a worker's is its parent scope's (resolvePolicy
+ * reads it there); a top-level session's is its own chat's, by its session id. None without an id.
+ */
+export function sessionSharedFolder(input: Pick<SessionPolicyInput, "sessionId" | "parent" | "home" | "shared">): string | undefined {
+	if (input.parent) return input.parent.shared;
+	if (input.shared) return input.shared;
+	const key = sessionDirKey(input.sessionId, "");
+	return key ? chatSharedFolder(key, input.home ?? homedir()) : undefined;
 }
 
 /** The per-user base of every session tmp: `<os tmp>/pi-sandbox-<uid>`. */
@@ -82,6 +96,7 @@ export function resolveSessionPolicy(input: SessionPolicyInput): Result<Resolved
 		...(input.readOnly === true ? { readOnly: true } : {}),
 		extraWritable: roots,
 		extraReadOnly: roots.map((r) => join(r, ".agent")),
+		...(input.parent ? {} : { shared: sessionSharedFolder({ ...input, home }) }),
 	});
 }
 
@@ -121,6 +136,8 @@ export async function prepareSessionCommand(
 		if (!resolved.ok) { await dispose(); return resolved; }
 		const p = resolved.value;
 		if (p.outsideParent) { await dispose(); return { ok: false, error: "session cwd is outside its parent's sandbox" }; }
+		// A writable root must exist to be bound.
+		if (p.shared) ensureSharedFolder(p.shared);
 		let network: Policy["network"] = { mode: p.writeOnly ? "host" : "none" };
 		if (p.level === "workspace-write" && !p.writeOnly) {
 			// Failure tightens to no network, just as snapshot() does.
@@ -134,7 +151,6 @@ export async function prepareSessionCommand(
 			readOnlyWithinWritable: p.readOnlyWithinWritable, hidden: p.hidden, tmpDir: p.tmpDir,
 			shadowed: p.shadowed, network, sessionId: input.sessionId,
 			env: p.writeOnly ? hostEnv(process.env) : scrubEnv(process.env, p.envAllow),
-			...(p.writeOnly ? { hostTmp: true } : {}),
 			// The policy's `browser` (a worker: its parent's), as the extension's snapshot() passes it.
 			...(p.browser ? { browser: true } : {}),
 		};

@@ -17,7 +17,8 @@ for hostile code and has not been security-audited (§chat.sandbox/limits).
 
 Owns: the three states, the `/sandbox` toggle, what On enforces on Linux and macOS, cleaning its
 cache copies, failing closed,
-the policy file and per-project tightening, what workers inherit, and what it does not
+the policy file and per-project tightening, what workers inherit, the chat's shared folder, the
+note a confined agent gets, toolchains inside, and what it does not
 cover. Not here: the composer's shield and Sandbox group
 (§chat.composer/sandbox-shield, §chat.composer/composer-flyout), a worktree worker's write-only
 confinement (§chat.worktrees/workers), and what the Overseer may set (§app.overseer/tools).
@@ -68,9 +69,12 @@ no state confines the main thread and leaves its workers loose.
   "sandbox: on", "sandbox: on, narrowed to {path}", "sandbox: write-only to {path}" or
   "sandbox: none" (nothing for a worker restored after a restart).
 - **Nothing the model sees changes** between any two states (§chat.sandbox/toggle): Off and
-  Subagents only both leave the session's own tools pi's own, and the state lives only in the
-  plain `sandbox` entry, never in a prompt, a message or a tool description, so a change never
-  busts the prompt cache or restarts a Claude-backed session's CLI.
+  Subagents only both leave the session's own tools pi's own, and the state lives in the plain
+  `sandbox` entry, never in the system prompt or a tool description, so a change never busts the
+  prompt cache or restarts a Claude-backed session's CLI. The one thing the model is told is the
+  hidden note a confined agent gets at a turn's start (§chat.sandbox/confined-note): an appended
+  message, which busts no cached prefix and restarts no CLI. Off and Subagents only give the
+  session's own model no note.
 - **MCP servers.** Under On a chat's command servers run inside its sandbox and its address
   servers stay off. A change to or from On keeps the chat's tool list, stops its running copies
   and applies from the next call (§app.mcp/sandbox).
@@ -121,9 +125,11 @@ tools from their next call and is recorded in a `sandbox` entry.
   batch under the new one. The session never restarts, reconnects or loses its workers.
 - **Nothing the model sees changes on a change.** Confined tools keep exactly the stock tool
   names, descriptions and parameters, and the system prompt is the same in every state. The sandbox
-  shows only in tool results (a denial note, below) and in the session's own `sandbox` entry.
+  shows only in tool results (a denial note, below), in the session's own `sandbox` entry and, for
+  an agent whose tools are confined, in one hidden note at the start of a turn
+  (§chat.sandbox/confined-note), never in the system prompt or a tool description.
   A changed tool list or prompt would bust the prompt cache and make a Claude-backed session
-  restart its CLI.
+  restart its CLI; an appended hidden message does neither.
 - **Persistence.** Each change appends a `custom` entry `sandbox`
   `{version: 1, on, level, backend, enforcement, reasons?, workers?}` (`workers` as
   §chat.sandbox/states says): turning On appends a provisional entry, then the real state
@@ -169,10 +175,10 @@ so. It is not a choice in the UI. Under `workspace-write`:
 
 - **Filesystem.** The whole filesystem is readable and read-only, except the session's cwd (not
   when it is the home folder standing in for a folder that is gone, §app.shell/missing-folder-home), a
-  per-session tmp mounted as `/tmp`, the policy's `writable` roots (`~/.local/state/mise` in
-  the shipped policy), and the session's active tracked worktrees, each with its `.agent`
-  read-only (§chat.worktrees/sandbox). `read-only` drops the cwd, the `writable` roots and the
-  worktrees from that list.
+  per-session tmp mounted as `/tmp`, the policy's `writable` roots, the session's active tracked
+  worktrees, each with its `.agent` read-only (§chat.worktrees/sandbox), and the chat's shared
+  folder (§chat.sandbox/shared-folder). `read-only` drops the cwd, the `writable` roots, the
+  worktrees and the shared folder from that list.
 - **Shadowed caches.** Build caches (`~/.cache`, `~/.npm`, `~/.m2`: the policy's `shadowed`) are
   the sandbox's own private copies, kept between sessions; nothing written there reaches the
   host's caches. They are cleaned by age and size, never of anything used recently
@@ -184,6 +190,21 @@ so. It is not a choice in the UI. Under `workspace-write`:
   same copies as `bash`. A `writable` entry at or inside a shadowed path is a policy error, and
   the sandbox fails closed on it. Under `read-only` nothing is shadowed and the caches are
   read-only.
+- **Toolchain state is a private copy too.** mise's state (`~/.local/state/mise`, on Linux and
+  macOS) and, on Linux, pnpm's (`~/.local/state/pnpm`, `~/.local/share/pnpm/store`,
+  `~/.local/share/pnpm/package-manager-store`) are private copies like the caches, for every
+  confined agent, a write-only worker included (§chat.sandbox/toolchains), kept under the same
+  `<agentDir>/sova/sandbox/shadow/` and shared by all sandboxed sessions. They are the sandbox's own
+  default, whatever the policy file says: a `writable` entry at or inside one (the
+  `~/.local/state/mise` an older policy file carries) is dropped, never failing closed, and the
+  template's `writable` is now empty. Only those default paths get a copy on Linux (an
+  `XDG_STATE_HOME` or `XDG_DATA_HOME` elsewhere doesn't move it); on macOS `MISE_STATE_DIR` always
+  names the copy. Nothing written there reaches the host. Unlike a cache's, a toolchain state folder the
+  host doesn't have is never created on the host (nor any folder above it); on Linux it then gets no
+  copy: it stays absent, and a confined write there is refused as outside the policy. The mise copy mirrors the host's trust
+  and ignore lists, removals included, so the sandbox trusts what the host trusts; a `mise trust`
+  inside changes only the copy, which the host's own mise never reads, so a trust store inside a
+  copy is not pinned read-only as the host's are below.
 - **Hidden secrets.** Credential directories read as empty and read-only (`~/.ssh`, `~/.gnupg`,
   `~/.aws`, `~/.docker`, `~/.config/gh`, GitLab's tool's `~/.config/glab-cli` (and on macOS
   `~/Library/Application Support/glab-cli`), the agent dir's `claude-accounts/`, where every added
@@ -231,10 +252,15 @@ so. It is not a choice in the UI. Under `workspace-write`:
   is dropped: session-bus and agent sockets, `DISPLAY`, `TMUX`, provider API keys, tokens. To
   these the sandbox adds one of its own, `GIT_CONFIG_SYSTEM` (§chat.sandbox/git-cleanup).
 - **The file tools see the same view.** For `read`, `write`, `edit`, `ls`, `find` and `grep`,
-  `/tmp` is the session tmp, as it is for `bash`, except where a writable root sits under `/tmp`.
+  `/tmp` is the session tmp, as it is for `bash`, except where a writable root sits under `/tmp`:
+  every write goes there, and a read goes there when the session tmp holds the path, else falls
+  back to the host's `/tmp` (pi's own truncated-output files live there, and a brief another
+  session left there stays readable). A write-only worker's file tools map its private `/tmp` the
+  same way (§chat.worktrees/workers).
   `find` and `grep` drop results under hidden paths and say how many they dropped.
 - **Denials are ordinary tool failures.** A blocked write or connection returns the command's
   real output plus a trailing note naming the sandbox, which the model reads like any failure. A
+  harmless command gets no such note (§chat.sandbox/toolchains). A
   failure of the sandbox itself (the command never ran) is a tool error naming the sandbox, never
   passed off as command output.
 - **Credentialed actions fail cleanly.** With no keys, agent socket or credentials visible,
@@ -275,12 +301,17 @@ age and by size, and nothing used recently is ever removed from them.
   CPU priority everywhere, and the lowest disk priority where the system offers one, as Linux
   does), and never delays the chat being ready. `/sandbox clean` runs it at once (§chat.sandbox/toggle).
 - **What it removes.** Whole top-level entries of the copies: each `~/.cache/<name>`,
-  `~/.npm/<name>` and `~/.m2/<name>` as the sandbox sees them, and each entry of a copy left under
-  `<agentDir>/sova/sandbox/shadow/` by an older layout. It never removes a copy's own folder.
+  `~/.npm/<name>` and `~/.m2/<name>` as the sandbox sees them, each entry of the toolchain state
+  copies (mise's and pnpm's, §chat.sandbox/what-on-enforces), and each entry of a copy left under
+  `<agentDir>/sova/sandbox/shadow/` by an older layout. It never removes a copy's own folder. The
+  toolchain state copies count toward the same limit. The list of what the mise copy took from the
+  host's trust lists is kept beside the copy, out of the cleanup's reach, so after the cleanup
+  removed the copy's trust folder a trust you later withdraw on the host is still withdrawn inside.
 - **By age.** An entry nothing in which was used for 7 days is removed. Known tool caches are kept
   30 days instead: in `~/.cache`, the entries named `pnpm`, `ms-playwright`, `pip`, `uv`,
   `go-build`, `node-gyp`, `yarn`, `deno`, `typescript`, `puppeteer`, `mise`, `huggingface` and the
-  voice install cache's, and every entry of `~/.npm` and `~/.m2`. Everything else is scratch.
+  voice install cache's, and every entry of `~/.npm`, `~/.m2` and the toolchain state copies.
+  Everything else is scratch.
 - **By size.** Then, while the copies together are over their limit, the least recently used
   entries are removed first, scratch before tool caches, until they are under it. The limit is the
   smallest of the `maxSizeGB` setting (50 GB by default), 5% of the size of the disk holding the
@@ -340,6 +371,9 @@ is the workspace. `install.sh --check` reports drift from the template and never
   before that keeps its own list: `install.sh --check` reports the drift.
 - **The template hides MCP's secrets and sign-ins**, `$AGENT_DIR/sova/secrets/mcp` and
   `$AGENT_DIR/mcp-auth.json` (§app.mcp/secrets, §app.mcp/sign-in), the same way.
+- **The template's `writable` is empty.** mise's state, which it used to list, is now a private
+  copy whatever the file says (§chat.sandbox/what-on-enforces); a policy seeded before keeps its
+  entry, which is dropped rather than failing closed, and `install.sh --check` reports the drift.
 - **Re-read on every tool call.** An edit applies to the next tool call of every session.
 - **Cache cleanup has its own file.** The cleanup settings (§chat.sandbox/cache-cleanup) live in
   an optional `caches.json` beside `policy.json`, never in it: `policy.json` keeps exactly the keys
@@ -349,11 +383,14 @@ is the workspace. `install.sh --check` reports drift from the template and never
 - **Never writable from inside.** The whole agent directory is read-only (it holds sessions,
   settings and extensions that pi runs later outside the sandbox), `<agentDir>/sandbox-policy/`
   included. Each `policy.json` there is also hidden; each `CLAUDE.md` stays readable. The file tools refuse those canonical
-  paths too. This holds even when the session's cwd contains the agent directory.
+  paths too. This holds even when the session's cwd contains the agent directory. The one place
+  Sova keeps for confined agents to write, the chat's shared folder (§chat.sandbox/shared-folder),
+  lies outside the agent directory, so the rule has no exception.
 - **Its `CLAUDE.md`** explains each key, says per-project files may only tighten, and opens by
   telling an agent that it cannot edit the policy from inside the sandbox by design and should
-  ask the user instead of working around it. The `darwin/` copy explains what Seatbelt enforces
-  differently on macOS (§chat.sandbox/what-on-enforces).
+  ask the user instead of working around it. It names the tool state that always gets a private
+  copy whatever the file says (§chat.sandbox/what-on-enforces). The `darwin/` copy explains what
+  Seatbelt enforces differently on macOS (§chat.sandbox/what-on-enforces).
 
 ## §chat.sandbox/project-tightening — Per-project config only tightens
 
@@ -394,6 +431,106 @@ confinement runs its command servers under that same confinement.
 
 Any worker whose enforcement is `partial` refuses to start unattended unless the policy sets
 `acceptPartial`.
+
+Every worker, confined or not and at any depth, shares the top-level chat's shared folder
+(§chat.sandbox/shared-folder): a confined one gets it as a writable root whatever else its scope
+is narrowed to.
+
+## §chat.sandbox/shared-folder — The chat's shared folder
+
+Each top-level chat has one folder that the chat, every worker it starts (pi or Claude Code, at
+any depth) and every member of its teams can read and write, confined or not. It is where they
+leave files for each other: briefs, reports, alignment files and team handover notes.
+
+- **Where.** `~/.local/state/sova/shared/<chat key>/`, where the key is the top-level chat's
+  session id reduced to `[A-Za-z0-9._-]`; a chat with no session id yet has none. An absolute
+  `SOVA_SHARED_BASE` in the server's environment replaces `~/.local/state/sova/shared`, and a
+  hermetic copy of Sova (`dev:hermetic`) sets it to its worktree's `.cache/sova-shared`, so its
+  chats never make or remove a folder in your real home. It is outside the agent directory, which stays wholly
+  read-only to every confined agent (§chat.sandbox/policy-file), and outside every repository, so
+  nothing left there shows in a branch or blocks Land. A worker's folder is always its top-level
+  chat's, never one of its own. Sova never loads or runs code from it.
+- **Writable while confined.** It is a writable root of a write-only worker
+  (§chat.worktrees/workers), of a chat whose sandbox is On and of every worker under On, narrowed
+  or not (§chat.sandbox/what-on-enforces), for `bash` and the file tools alike, on Linux and
+  macOS. It travels in the worker's scope apart from its other roots, so narrowing a scope to a
+  worktree never drops it. The `read-only` level drops it, as it drops every other root.
+- **Team notes.** Its `teams/` folder holds the teams' handover notes (§teams.defaults/handover)
+  and is read-only to every confined agent, except that each coordinated member and coordinator
+  may write its own note's folder and no other's, so a member can never write or plant another
+  member's note, make a folder for a new role, or move `teams/` aside. A member's own note folder is
+  never handed on to the workers it starts, and the monitor has none. Nothing a team routes on
+  (mailboxes, the roster) lives in the shared folder.
+- **Named where it is needed.** Every worker's environment carries it as `SOVA_SHARED_DIR`; the
+  results of `agent_spawn` and `team_create` name it, so the parent knows where to put a brief;
+  the confined agent's note names it (§chat.sandbox/confined-note); and the alignment hand-off
+  names it as the place for the planning worker's alignment file (§chat.alignment/model).
+- **Kept until the chat is archived.** Archiving the top-level chat, or deleting it while it is
+  still empty, removes its shared folder; until then it stays, across reloads and server
+  restarts. Unarchiving it doesn't bring the folder back: the chat starts a new, empty one the next
+  time it needs it.
+
+## §chat.sandbox/confined-note — What a confined agent is told
+
+An agent whose tools are confined is told, in one short hidden note, where it may write and where
+to leave files for others. No other agent, and never you, sees it.
+
+- **Who.** A write-only worker in a tracked worktree (§chat.worktrees/workers), and a chat or a
+  worker whose sandbox is On (§chat.sandbox/states), at either level. A chat whose sandbox is Off
+  or Subagents only, an unconfined worker and a remote session, whose tools nothing confines
+  (§chat.sandbox/backends), get none: a chat whose folder is a target's, or whose sandbox is On
+  but enforced nowhere ("not enforced on remote"), is told nothing.
+- **What it says.** "Sandbox: you can write only in {folders} and $TMPDIR. /tmp and ~/.cache are
+  private to you: leave files for other chats in {shared}. Set up, serve and test through
+  project_verbs." {folders} is the agent's writable roots, comma-separated, the shared folder not
+  among them: a write-only worker's worktree; under On the chat's cwd and its tracked worktrees,
+  or a worker's roots as its parent handed them; under the `read-only` level none, and the
+  sentence reads "you can write only in $TMPDIR". {shared} is the chat's shared folder
+  (§chat.sandbox/shared-folder): a worker's from its scope, else from `SOVA_SHARED_DIR`, a chat's
+  its own; where none is known, ": leave files for other chats in {shared}" is left out. Under the
+  `read-only` level it is left out too, since the agent cannot write there
+  (§chat.sandbox/shared-folder): the note reads "Sandbox: you can write only in $TMPDIR. /tmp and
+  ~/.cache are private to you.", then the project_verbs sentence where it applies. On macOS, whose `/tmp` is never private (§chat.sandbox/what-on-enforces), the second
+  sentence reads "/tmp is read-only and ~/.cache is private to you". The last sentence is there
+  only when the agent is offered `project_verbs` (§app.project-services/tool-offered).
+- **How it arrives.** As a hidden message (`sova-sandbox-note`, never shown in the transcript) at
+  the start of a turn, only when its text differs from the last such message on the branch, so
+  again only when the confinement changes (a new tracked worktree, a change of state) and, with
+  the current text, after a compaction. It is never in the system prompt or a tool description
+  (§chat.sandbox/toggle), so it busts no cached prefix and restarts no Claude-backed CLI.
+
+## §chat.sandbox/toolchains — Toolchains work inside
+
+The tools a coding agent runs every turn work inside a confined agent with no recipe or
+workaround: the version manager, the package manager, the project's tests and Sova's browser
+helper.
+
+- **mise.** It runs quietly: its own state is a private copy (§chat.sandbox/what-on-enforces), so
+  `mise trust` and `mise exec` succeed inside without touching the host's trust list, and no
+  warning about tracking its configs buries a command's output. The copy is one for every
+  confined session: a config one of them trusts is trusted in every other confined session, never
+  on the host.
+- **pnpm.** `pnpm install`, type-checking and builds work in a worker's worktree: pnpm's own
+  state is a private copy, and its lock files in `/tmp` go to the worker's private `/tmp` on Linux
+  (§chat.worktrees/workers). Its private store is a mount of its own, which pnpm can't hard-link
+  across, so it installs into a store inside the project (`node_modules/.pnpm-store`): each
+  worktree's first install downloads cold. A `node_modules` linked to another checkout stays
+  read-only and is no way around it.
+- **No false refusals.** A command whose only match is a harmless warning (mise's about tracking
+  configs) gets no denial note (§chat.sandbox/what-on-enforces): the note is added only when the
+  sandbox really refused something.
+- **No misfire from another sandbox's files.** On Linux no confined command sees the host's
+  `/tmp` (§chat.worktrees/workers), so nothing there is scanned or masked as a command starts, and
+  a socket in another sandbox's temp folder that vanishes at that moment never stops a command
+  from starting.
+- **Short temp paths.** On Linux a confined agent's `TMPDIR` is `/tmp`, its private one, so a
+  Unix socket path inside it fits the path limit, and test servers and browsers that bind one
+  there start.
+- **Sova's own tests and browser helper.** Sova's unit tests write their temp files under
+  `TMPDIR` wherever a fixed `/tmp` path isn't needed; the few that must sit directly in `/tmp`
+  (the attachment route serves that literal folder, §chat.images/path-attachments) write to the private `/tmp` on
+  Linux and skip those cases where `/tmp` can't be written (a macOS sandbox). The Playwright skill's
+  start script keeps its pid and port files under `TMPDIR`.
 
 ## §chat.sandbox/git-cleanup — Sandboxed commands start no background git cleanup
 
@@ -469,13 +606,22 @@ These are the gaps the sandbox leaves, each named so that nobody relies on it th
   nothing can listen on a TCP port, so a browser driven over `--remote-debugging-port` (the
   Playwright skill's start script) works only under Subagents only; under On drive it over
   Playwright's default pipe within one `bash` call.
-- **A write-only worker's view of the host `/tmp`** (Linux, §chat.worktrees/workers) masks the
-  Unix sockets found there when its command or its process starts; a socket created later in
-  `/tmp` is reachable from a worker already running. The kernel's list names a socket by the
-  path its server bound, in the server's own namespaces, so a socket in the host `/tmp` that
-  was bound from another network or mount namespace (a container, another sandbox's private
-  `/tmp`) is masked only if the shallow scan finds it: directly in `/tmp` or one folder down,
-  within the scan's first 4,096 entries.
+- **A file left in `/tmp` reaches no one.** A confined agent's `/tmp` is private to it on Linux, so
+  a file it writes there for another chat is silently not seen; the shared folder is the place for
+  those (§chat.sandbox/shared-folder), and its note says so (§chat.sandbox/confined-note).
+- **A brief in the host `/tmp` reaches only the file tools.** A confined agent's commands never see
+  the host's `/tmp`; its file tools fall back to it for a read (§chat.sandbox/what-on-enforces), so
+  `read` finds a brief left there but `cat` in `bash` does not.
+- **Toolchain copies have their limits.** pnpm installs cold once per worktree
+  (§chat.sandbox/toolchains); only mise's and pnpm's default paths get a private copy on Linux, so
+  one moved by `XDG_STATE_HOME` or `XDG_DATA_HOME` is read-only inside; and one mise trust copy
+  serves every confined session, so a trust made in one holds in all of them.
+- **The shared folder's edges.** A team member already running when its note moved into the shared
+  folder keeps the note path its header named until it hands off (§teams.defaults/handover). A
+  chat you unarchive gets an empty shared folder, never its old one. Under the `read-only` level
+  (the merge thread's, §chat.merge-queue/thread-sandbox) the agent cannot write it, and its note
+  names no shared folder (§chat.sandbox/confined-note); the workers it starts still get
+  `SOVA_SHARED_DIR`, which their read-only scope cannot write either.
 - **Freed cache space is "up to".** On a copy-on-write disk (Btrfs, APFS and the like), files that
   share their blocks with others give back less than their size when removed, so the space a cache
   cleanup reports freed (§chat.sandbox/cache-cleanup) is at most what the disk gained.

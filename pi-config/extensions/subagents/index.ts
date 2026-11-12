@@ -82,7 +82,9 @@ import {
 	contextText,
 	fmtDur,
 	nudgeFireAt,
-	roleSlug,
+	handoffDir,
+	noteDirOf,
+	notePathOf,
 	sessionDirKey,
 	successorRole,
 	usageLines,
@@ -100,6 +102,7 @@ import { RestoredWorker, isRestored } from "./restored.ts";
 import { placeholderDir, placeholderRoot, toRemotePath } from "../remote/argv.ts";
 import { REMOTE_DISCOVER_EVENT, REMOTE_SESSION_EVENT, type RemoteSessionEvent } from "../remote/workers.ts";
 import { SANDBOX_DISCOVER_EVENT, SANDBOX_STATE_EVENT, type SandboxStateEvent, type WorkerLaunch } from "../sandbox/state.ts";
+import { chatSharedFolder, SHARED_DIR_ENV, sharedTeamsDir } from "../sandbox/shared-folder.ts";
 import { MODE_DISCOVER_EVENT, MODE_STATE_EVENT, type ModeStateEvent } from "../mode/state.ts";
 import { MODE_WORKER_DISCOVER_EVENT, MODE_WORKER_EVENT, parseModeWorkerEvent, type ModeWorkerEvent } from "../mode/events.ts";
 
@@ -652,6 +655,8 @@ export interface SubagentsOptions {
 	policyFile?: string;
 	/** Agent dir for team-defaults.json, handover notes and the usage-status cache; default getAgentDir(). */
 	agentDir?: string;
+	/** The chat's shared folder (tests); default the inherited SOVA_SHARED_DIR, else this chat's own (shared-folder.ts). */
+	sharedFolder?: string;
 	/** Timer for member wake_nudges and handover timeouts (tests fire them by hand); default setTimeout, unref'd. */
 	setTimer?: (fn: () => void, ms: number) => ReturnType<typeof setTimeout>;
 	/** Team inbox wakes (tests): the idle gathering time (default 3 s) and the failed-wake backoff. */
@@ -883,7 +888,24 @@ export function registerSubagents(
 	// Handover notes live under the parent session's id (team IDs restart in every session); a
 	// session without one gets a key unique to this process, never another session's directory.
 	const unsavedSessionKey = `unsaved-${process.pid}-${Date.now().toString(36)}`;
-	const teams = new TeamStore(path.join(agentDir(), "sova", "teams"), () => sessionDirKey(activeCtx?.sessionManager.getSessionId?.(), unsavedSessionKey));
+	const sessionKey = () => sessionDirKey(activeCtx?.sessionManager.getSessionId?.(), unsavedSessionKey);
+	// The chat's shared folder (shared-folder.ts): a worker's is its spawner's (SOVA_SHARED_DIR, the root
+	// chat's), a top-level chat's its own. Every worker it starts gets it in its environment.
+	const sharedFolder = (): string => {
+		if (options.sharedFolder) return options.sharedFolder;
+		const inherited = process.env[SHARED_DIR_ENV];
+		return inherited && path.isAbsolute(inherited) ? inherited : chatSharedFolder(sessionKey());
+	};
+	// Team notes live in it, out of the agent dir (read-only to every confined member).
+	const teams = new TeamStore(() => sharedTeamsDir(sharedFolder()), sessionKey);
+	/** The tool results' line naming the shared folder (made here, so a brief can go there at once). */
+	const sharedFolderLine = (): string => {
+		const dir = sharedFolder();
+		try { fs.mkdirSync(dir, { recursive: true, mode: 0o700 }); } catch { /* named all the same */ }
+		return `Shared folder (this chat and all its workers read and write it; put briefs and reports here): ${dir}`;
+	};
+	/** A coordinated member's own note folder, `<shared>/teams/<session key>/<team_id>/<role slug>`. */
+	const memberNoteDir = (teamId: string, role: string): string => noteDirOf(handoffDir(sharedTeamsDir(sharedFolder()), sessionKey(), teamId), role);
 	// Worker transcripts of every backend, read through one protocol (worker-transcript.ts);
 	// a backend extension may register its own adapter with its registration.
 	const adapters = defaultWorkerTranscriptAdapters();
@@ -1628,7 +1650,11 @@ export function registerSubagents(
 						? "This session's sandbox is on but gave no worker launch; a worker cannot start sandboxed."
 						: `Cannot confine a worker to the worktree ${tree!.path}: ${sandboxState ? "this session's sandbox gave no scope for it" : "the sandbox extension is not loaded"}.`);
 				}
-				launch = sandboxState.workerLaunch({ cwd, ...(tree ? { root: tree.path } : {}), backend: backendId, owner: workerKey("check") });
+				// A coordinated member's own note folder: the one place in the shared folder's teams/ it may write.
+				const member = request.team?.members[index];
+				const note = member && member.duty !== "monitor" && (member.coordinated || member.duty === "coordinator") ? memberNoteDir(request.team!.teamId, member.role) : undefined;
+				if (note) try { fs.mkdirSync(note, { recursive: true, mode: 0o700 }); } catch { /* the sandbox's own refusal says what is missing */ }
+				launch = sandboxState.workerLaunch({ cwd, ...(tree ? { root: tree.path } : {}), backend: backendId, owner: workerKey("check"), ...(note ? { note } : {}) });
 				if (launch.kind === "refused") throw new Error(launch.reason);
 				// Off (§chat.sandbox/states) is the one answer that leaves a worktree's worker unconfined; it
 				// counts only from a parent that is not on and says so (an older sandbox never does).
@@ -1777,7 +1803,10 @@ export function registerSubagents(
 					else landedSources.delete(id);
 					if (landedFile && !resuming) fs.rmSync(landedFile, { force: true });
 					const landedEnv = landedFile ? { ...specEnv, [LANDED_FILE_ENV]: landedFile } : specEnv;
-					const env = projectToolsFile ? { ...landedEnv, [PROJECT_TOOLS_FILE_ENV]: projectToolsFile } : landedEnv;
+					const toolsEnv = projectToolsFile ? { ...landedEnv, [PROJECT_TOOLS_FILE_ENV]: projectToolsFile } : landedEnv;
+					// Every worker, any backend, learns the chat's shared folder (shared-folder.ts); a
+					// backend's own prepared env is kept under it, never replaced.
+					const env: Record<string, string> = { ...(backendPrepared?.env as Record<string, string> | undefined), ...toolsEnv, [SHARED_DIR_ENV]: sharedFolder() };
 					const name = (spec.count ?? 1) > 1 ? `${base}-${i + 1}` : base;
 					const runner = (backend?.create ?? createRunner)(
 						{
@@ -3767,6 +3796,7 @@ export function registerSubagents(
 				[
 					`Started ${group.agents.length} background subagent(s) in ${groupId} (${label}). Task acceptance is asynchronous; inspect status for startup failures.`,
 					remoteNotice(ctx),
+					sharedFolderLine(),
 					...unverifiedClaudeModels(group.agents),
 					...group.agents.map(
 						(a) =>
@@ -4131,7 +4161,7 @@ export function registerSubagents(
 		if ([...handovers.values()].some((h) => h.newId === target.workerId)) throw new Error(`${target.role} is itself still taking over; wait for its team_ready first.`);
 		if (!activeCtx) throw new Error("The parent session is not ready; retry shortly.");
 		const retireMinutes = teamDefaultsNow().value.handover.retireTimeoutMinutes;
-		const note = path.join(teams.memberInfo(me.workerId)!.team.coordination!.handoffDir, `${roleSlug(target.role)}.md`);
+		const note = notePathOf(teams.memberInfo(me.workerId)!.team.coordination!.handoffDir, target.role);
 		if (target.duty === "monitor") return (await spawnSuccessor(team, target, me, note, retireMinutes)).text;
 		if (!isLiveWorker(target.workerId)) return (await spawnSuccessor(team, target, me, note, retireMinutes, fs.existsSync(note) ? undefined : `${target.role} had already ended without writing it`)).text;
 		const p: PendingSuccession = { team: { id: team.id, name: team.name }, coordinatorId: me.workerId, target, note, retireMinutes };
@@ -4476,7 +4506,7 @@ export function registerSubagents(
 			const { target } = teams.checkReplacement(team.id, a.id, notEnded);
 			// Its seat first: a full team still gets the successor.
 			if (teams.ejectedAt(a.id) === undefined) ejectMember(team.id, a.id, "system");
-			const note = path.join(coordination.handoffDir, `${roleSlug(target.role)}.md`);
+			const note = notePathOf(coordination.handoffDir, target.role);
 			const missing = duty === "monitor" ? undefined : `${target.role} stopped when its primary ${primaryText} ${why.reason}, without writing a handover note`;
 			const retireMinutes = teamDefaultsNow().value.handover.retireTimeoutMinutes;
 			const started = await spawnSuccessor(team, target, target, note, retireMinutes, missing, "system", { primary: primaryText, reason: said });
@@ -4582,7 +4612,7 @@ export function registerSubagents(
 				return teamSpawnResult(
 					`Created ${prepared.teamId} (${prepared.name}) with ${group.agents.length} member(s) in ${group.id}. Task acceptance is asynchronous; inspect status for startup failures.`,
 					prepared.teamId, group, persisted,
-					[...lines, `Handover notes: ${prepared.coordination.handoffDir}`],
+					[...lines, `Handover notes: ${prepared.coordination.handoffDir} (each member writes only its own <role>/handover.md)`, sharedFolderLine()],
 				);
 			} finally {
 				prepared.release();
@@ -4675,7 +4705,7 @@ export function registerSubagents(
 			const coordination = teams.memberInfo(target.workerId)?.team.coordination;
 			if (!coordination) throw new Error(`${team.id} has no coordinator or monitor to replace.`);
 			const retireMinutes = teamDefaultsNow().value.handover.retireTimeoutMinutes;
-			const note = path.join(coordination.handoffDir, `${roleSlug(target.role)}.md`);
+			const note = notePathOf(coordination.handoffDir, target.role);
 			const missing = target.duty === "monitor" || fs.existsSync(note) ? undefined : `${target.role} had already ended without writing it`;
 			const started = await spawnSuccessor(team, target, target, note, retireMinutes, missing, "parent");
 			const routing = target.duty === "coordinator" ? ` It routes ${team.id} from now on: members report to it, and only it reaches you.` : "";

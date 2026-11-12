@@ -431,8 +431,11 @@ the service's readiness is http on that port, and "shared" for a shared service'
 rendered `about` and whether it is on-demand; each data resource's name and where it is; how tests
 run ("project_verbs {verb: "test", select: [...]} runs them in this instance; no select runs the
 whole suite", with the smoke selection) or that the project declares none; "Start, reload and stop
-these through project_verbs, never by hand."; and, when the session's sandbox is on, "Your shell is
-sandboxed and cannot reach these ports: use project_verbs." A checkout with a definition but no
+these through project_verbs, never by hand."; and, when the agent's tools run under the sandbox's
+On (a chat or worker whose sandbox is On, §chat.sandbox/states), "Your shell is sandboxed and
+cannot reach these ports: use project_verbs." A write-only worker in a tracked worktree, whose
+network is the host's (§chat.worktrees/workers), never gets that line, though it starts with its
+sandbox on; its own launch tells the two apart. A checkout with a definition but no
 instance gets one line saying it has no running copy yet and that project_verbs up gives it its own
 ports; one whose definition is invalid, one line naming the problem. A project without a definition
 gets no note, even where something else offers the tool (§app.project-services/tool-offered). Every
@@ -441,7 +444,7 @@ checkout the note covers has a definition, valid or not, so a chat with a note a
 The note reaches the model as a hidden message (`sova-instance-note`, never shown in the
 transcript) at the start of a turn, only when its text differs from the last such message on the
 branch: the text holds no live state (no pids, no running or stopped), so it changes only when a
-slot, port, data ref, `about`, the test command or the sandbox does. After a
+slot, port, data ref, `about`, the test command or the sandbox line does. After a
 compaction the current note is sent again. The system prompt never carries the note. The same text follows
 the result of `project_verbs` and `sova_project_verbs` for create, up, apply and status of one
 instance, so a turn that just ran up learns its ports at once, and status is the note on demand.

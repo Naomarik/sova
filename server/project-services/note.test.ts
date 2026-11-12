@@ -156,6 +156,21 @@ test("delivered hidden at a turn's start only when it changed, again after a com
   define(def(), checkout);
 });
 
+test("a write-only worker's note has no 'cannot reach these ports' line, though its own sandbox reads on; an On worker's has it", async () => {
+  const on = { type: "custom", customType: "sandbox", data: { version: 1, on: true, level: "workspace-write", backend: "bwrap", enforcement: "full" } };
+  const noteFor = async (flags: Record<string, string | true>) => {
+    const handlers: Record<string, (e: unknown, ctx: unknown) => Promise<unknown>> = {};
+    const pi = { on: (name: string, fn: (e: unknown, ctx: unknown) => Promise<unknown>) => (handlers[name] = fn), sendMessage: () => {} };
+    registerInstanceNote(pi as never, () => engine, async () => [checkout], flags);
+    return ((await handlers.before_agent_start!({}, { sessionManager: { getBranch: () => [on] } })) as { message: { content: string } }).message.content;
+  };
+  const scope = (writeOnly: boolean) => JSON.stringify({ version: 1, level: "workspace-write", workspaceRoot: checkout, writable: [checkout], ...(writeOnly ? { writeOnly: true } : {}) });
+  assert.doesNotMatch(await noteFor({ sandbox: "on", "sandbox-parent": scope(true) }), /cannot reach these ports/);
+  assert.match(await noteFor({ sandbox: "on", "sandbox-parent": scope(false) }), /\nYour shell is sandboxed and cannot reach these ports: use project_verbs\.$/);
+  const st = await engine.run("status", { instance: id }, op);
+  assert.doesNotMatch((await resultNote(engine, st, stateView(historyOf([on])), false))!, /cannot reach/, "a result's note follows the same reading");
+});
+
 test("the hash leaves out about and the default start, and covers an on-demand start and the test command", () => {
   const h = (d: object) => defHashOf(parseDefinition(JSON.stringify(d)));
   const plain = { version: 1, services: { app: { cmd: ["a"] } } };

@@ -34,8 +34,11 @@ const sessionPath = join(sessionsDir, "2026-09-28T00-00-00-000Z_01a0aaaa-0000-70
   }
   writeFileSync(sessionPath, lines.map((l) => JSON.stringify(l)).join("\n") + "\n");
 }
-// An image directly in /tmp, the one place /api/attachment serves outside a session's folder (written by its case).
-const pngPath = `/tmp/sova-compression-test-${randomUUID()}.png`;
+// An image in a session's folder under the throwaway attachments root (written by its case), so
+// nothing lands in a fixed /tmp path.
+const pngDir = join(agentDir, "sova", "attachments", "01a0aaaa-0000-7000-8000-000000000001");
+mkdirSync(pngDir, { recursive: true });
+const pngPath = join(pngDir, `sova-${randomUUID()}.png`);
 
 const { buildApp } = await import("./app");
 const { app } = buildApp({ extensionEntriesOf: async () => [] });
@@ -43,7 +46,6 @@ const { isDirectLocal } = await import("./compression");
 
 after(() => {
   rmSync(agentDir, { recursive: true, force: true });
-  rmSync(pngPath, { force: true });
 });
 
 const transcriptUrl = `/api/transcript?path=${encodeURIComponent(sessionPath)}`;

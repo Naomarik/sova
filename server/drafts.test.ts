@@ -268,16 +268,19 @@ test("DELETE /api/attachment: one file under the attachments root only", () => {
   assert.equal(existsSync(b.path), true);
   const again = deleteAttachment(a.path);
   assert.equal(again.ok ? 0 : again.status, 404);
+  // A real file directly in /tmp (the TUI's clipboard pastes), when this process may write there
+  // (not inside a macOS Seatbelt sandbox; a Linux worker writes to its own private /tmp layer).
   const tmp = `/tmp/sova-${crypto.randomUUID()}.png`;
-  writeFileSync(tmp, PNG);
+  let tmpOpen = true;
+  try { writeFileSync(tmp, PNG); } catch { tmpOpen = false; }
   try {
-    for (const p of [tmp, "/etc/passwd", `${attachmentsRoot()}/del/../../../drafts.json`, `${attachmentsRoot()}/del`, draftsFile]) {
+    for (const p of [...(tmpOpen ? [tmp] : []), "/etc/passwd", `${attachmentsRoot()}/del/../../../drafts.json`, `${attachmentsRoot()}/del`, draftsFile]) {
       const r = deleteAttachment(p);
       assert.equal(r.ok ? 0 : r.status, 403, p);
     }
-    assert.equal(existsSync(tmp), true, "/tmp is never ours to delete");
+    if (tmpOpen) assert.equal(existsSync(tmp), true, "/tmp is never ours to delete");
   } finally {
-    rmSync(tmp, { force: true });
+    if (tmpOpen) rmSync(tmp, { force: true });
   }
   const none = deleteAttachment(undefined);
   assert.equal(none.ok ? 0 : none.status, 400);

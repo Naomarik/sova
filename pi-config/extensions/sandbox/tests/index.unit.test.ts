@@ -26,6 +26,9 @@ const agentDir = join(root, "agent");
 mkdirSync(join(agentDir, "sandbox-policy"), { recursive: true });
 cpSync(join(HERE, "..", "..", "..", "sandbox-policy"), join(agentDir, "sandbox-policy"), { recursive: true });
 process.env.PI_CODING_AGENT_DIR = agentDir;
+// The chat's shared folder, as a worker inherits it: never one under the real home.
+const SHARED = join(root, "shared");
+process.env.SOVA_SHARED_DIR = SHARED;
 const { default: sandbox } = await import("../index.ts");
 // The cache cleanup runs in-process here (the unit tier starts no process): the same runPrune the
 // child runs, its result returned as the child would report it. shadow-prune.integration.test.ts
@@ -125,7 +128,10 @@ test("a parent that is on hands its workers its writable roots, and refuses a cw
 	assert.equal(flags.sandbox, "on");
 	const scope = JSON.parse(flags["sandbox-parent"]!);
 	// The flag is the scope as parentScopeOf builds it, keys in that order (the spelling pi workers always got).
-	assert.deepEqual(Object.keys(scope), ["version", "level", "workspaceRoot", "writable", "readOnly", "hidden", "proxyAllow", "envAllow"]);
+	assert.deepEqual(Object.keys(scope), ["version", "level", "workspaceRoot", "writable", "readOnly", "shared", "hidden", "proxyAllow", "envAllow"]);
+	assert.equal(scope.shared, SHARED, "the chat's shared folder rides as its own key, never as a writable root");
+	assert.ok(!scope.writable.includes(SHARED));
+	assert.ok(existsSync(join(SHARED, "teams")), "made before the worker starts");
 	assert.equal(JSON.stringify(scope), flags["sandbox-parent"]);
 	assert.equal(scope.level, "workspace-write");
 	assert.ok(scope.writable.includes(a));
@@ -227,7 +233,14 @@ test("workerLaunch off: none outside a tracked worktree; inside one, a write-onl
 	const pi = wl({ cwd: a, root: a, backend: "pi", owner: "w1" });
 	assert.equal(pi.kind, "pi");
 	if (pi.kind !== "pi") return;
-	assert.deepEqual(pi.flags, { sandbox: "on", "sandbox-parent": JSON.stringify(writeOnlyScope(a)) }, "the write-only scope, as pi workers always got it");
+	assert.deepEqual(pi.flags, { sandbox: "on", "sandbox-parent": JSON.stringify(writeOnlyScope(a, { shared: SHARED })) }, "the write-only scope with the chat's shared folder");
+	// A coordinated member's own note folder rides along; one outside the folder's teams/ never does.
+	const note = join(SHARED, "teams", "c", "team_01", "dev");
+	const member = wl({ cwd: a, root: a, backend: "pi", owner: "w2", note });
+	assert.ok(member.kind === "pi" && JSON.parse(member.flags["sandbox-parent"]!).note === note);
+	assert.ok(existsSync(note), "made before the member starts");
+	const stray = wl({ cwd: a, root: a, backend: "pi", owner: "w3", note: join(a, "x") });
+	assert.ok(stray.kind === "pi" && JSON.parse(stray.flags["sandbox-parent"]!).note === undefined);
 	const cc = wl({ cwd: a, root: a, backend: "claude-code", owner: "w1" });
 	assert.equal(cc.kind, "confine");
 	if (cc.kind !== "confine") return;
@@ -255,7 +268,7 @@ test("workerLaunch Subagents only: a write-only worker gets browser from the par
 		const scopeOf = () => JSON.parse(piFlags(s.last(), { cwd: a, root: a })["sandbox-parent"]!);
 		assert.equal(scopeOf().browser, undefined, "the template says none");
 		put(JSON.stringify({ ...JSON.parse(original), browser: "headless-shell" }));
-		assert.deepEqual(scopeOf(), writeOnlyScope(a, { browser: true }));
+		assert.deepEqual(scopeOf(), writeOnlyScope(a, { browser: true, shared: SHARED }));
 		const cc = s.last().workerLaunch!({ cwd: a, root: a, backend: "claude-code", owner: "w1" });
 		assert.ok(cc.kind === "confine" && decodeLaunchScope(cc.scope).ok && (decodeLaunchScope(cc.scope) as { value: { parent: { browser?: true } } }).value.parent.browser === true, "a confined launch carries it too");
 		// The parent's cwd's project file tightens it.
@@ -264,9 +277,9 @@ test("workerLaunch Subagents only: a write-only worker gets browser from the par
 		assert.equal(scopeOf().browser, undefined);
 		rmSync(join(a, ".sova"), { recursive: true });
 		put(JSON.stringify({ ...JSON.parse(original), browser: true }));
-		assert.deepEqual(scopeOf(), writeOnlyScope(a), "malformed: no browser, still write-only");
+		assert.deepEqual(scopeOf(), writeOnlyScope(a, { shared: SHARED }), "malformed: no browser, still write-only");
 		put("{ not json");
-		assert.deepEqual(scopeOf(), writeOnlyScope(a), "unreadable: no browser, still write-only");
+		assert.deepEqual(scopeOf(), writeOnlyScope(a, { shared: SHARED }), "unreadable: no browser, still write-only");
 		await s.stop();
 	} finally {
 		put(original);

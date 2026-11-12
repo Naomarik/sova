@@ -166,7 +166,7 @@
        "content": [
         {
          "type": "text",
-         "text": "@69fa83a24472c935"
+         "text": "@f2f339ee4074cfe6"
         }
        ],
        "details": {
@@ -263,13 +263,14 @@
     "major": "normal",
     "minor": "spec",
     "sandbox": "on",
-    "sandbox-parent": "{\"version\":1,\"level\":\"workspace-write\",\"workspaceRoot\":\"<ws:tree-mode>\",\"writable\":[\"<ws:tree-mode>\"],\"readOnly\":[\"<ws:tree-mode>/.agent\"],\"writeOnly\":true}"
+    "sandbox-parent": "{\"version\":1,\"level\":\"workspace-write\",\"workspaceRoot\":\"<ws:tree-mode>\",\"writable\":[\"<ws:tree-mode>\"],\"readOnly\":[\"<ws:tree-mode>/.agent\"],\"writeOnly\":true,\"shared\":\"<shared>/<sid:1>\"}"
    },
    "appendSystemPrompt": null,
    "env": {
     "SPEC_AGREE_SOURCE": "pi-session:<sid:1>#<entry>",
     "SPEC_AGREE_GIVEN": "pi-session:<sid:1>#<entry>",
     "SOVA_SPEC_LANDED_FILE": "<file>",
+    "SOVA_SHARED_DIR": "<shared>/<sid:1>",
     "PI_SUBAGENT_BUILTIN_TOOLS": "read,bash,edit,write"
    },
    "agentDir": "<ws:tree-mode>/.agent",
@@ -308,6 +309,15 @@
         {
          "type": "text",
          "text": "do the task"
+        }
+       ]
+      },
+      {
+       "role": "user",
+       "content": [
+        {
+         "type": "text",
+         "text": "Sandbox: you can write only in <ws:tree-mode> and $TMPDIR. /tmp and ~/.cache are private to you: leave files for other chats in <shared>/<sid:1>. Set up, serve and test through project_verbs."
         }
        ]
       }

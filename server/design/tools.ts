@@ -8,7 +8,7 @@ import { coordinatorCard, tellCoordinator } from "./coordinator";
 import { createRun } from "./setup";
 import { ownImagesLine } from "./asset-routes";
 import { DESIGN_HAND_IN_TOOL, editBase, handIn, pageProblem, readingSkill, refusedPage, replyPageThisTurn, savePage, takeLook, type DesignParent } from "./batch";
-import { DESIGN_SKILL_TOOL, listSkillFiles, readSkillFile, SKILL_LIMITS, SkillReadRefused, skillNamesOf } from "./skills";
+import { listSkillFiles, readSkillFile, SKILL_LIMITS, SkillReadRefused, skillNamesOf } from "./skills";
 import { livePage } from "./live";
 import { lookAtDesign } from "./look";
 import type { TourSize } from "../../shared/tour";
@@ -110,7 +110,7 @@ export function sessionDesignTools(parent: DesignParent, label: string): ToolSpe
 /** A design's skill reader: read only, inside the skill folders its own record names (never pi's file tools). */
 function skillTool(parent: DesignParent, label: string): ToolSpec {
   return {
-    name: DESIGN_SKILL_TOOL,
+    name: "design_skill",
     label: "design skill",
     description: `Read one of your design skills, the house rules for this project's pages. skill alone lists its files; with file (a path inside the skill, such as SKILL.md) it returns that file's text. Text files only (md, css, html, json, svg, txt), up to ${SKILL_LIMITS.readBytes / 1000} KB a read.`,
     parameters: { type: "object", properties: { skill: str("The skill's name, as your first message lists it."), file: str("A file's path inside the skill; omit to list its files.") }, required: ["skill"], additionalProperties: false },

@@ -35,7 +35,7 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | Pending (not yet a command) | 23 |
 | Chat socket frame types | 14 |
 | Document/window keydown listeners | 12 |
-| Hand-written tool specs | 147 |
+| Hand-written tool specs | 149 |
 
 ## Catalogue entries
 
@@ -1107,9 +1107,9 @@ Per file, the tool names its object literals declare (`<computed: …>` where th
 | `server/conversation-draft-routes.ts` | 3 | `sova_draft_specs`, `sova_draft_approve`, `sova_draft_build` |
 | `server/conversation-draft-tools.ts` | 3 | `requirement_drop`, `requirements_summary`, `requirements_confirm` |
 | `server/create-settings-tool.ts` | 1 | `sova_settings` |
-| `server/design/coordinator.ts` | 8 | `design_status`, `design_brief`, `design_browse`, `design_capture`, `design_send`, `design_new`, `coordinator_card`, `project_verbs` |
+| `server/design/coordinator.ts` | 9 | `design_status`, `design_brief`, `design_browse`, `design_capture`, `design_send`, `design_new`, `coordinator_card`, `project_verbs`, `design_images` |
 | `server/design/describe.ts` | 1 | `asset_report` |
-| `server/design/tools.ts` | 4 | `lookbook`, `design_look`, `design_stream`, `design_hand_in` |
+| `server/design/tools.ts` | 5 | `lookbook`, `design_skill`, `design_look`, `design_stream`, `design_hand_in` |
 | `server/feature-chat-align.ts` | 1 | `align` |
 | `server/harness/pi/session.ts` | 1 | `<computed: t.name>` |
 | `server/memory/tools.ts` | 2 | `<computed: MEMORY_ZOOM_TOOL>`, `<computed: MEMORY_DATE_TOOL>` |

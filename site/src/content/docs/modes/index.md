@@ -157,7 +157,8 @@ mode whose file says `workers: yes`. A worker gets at most 8 modes, built-in and
   promotes. See [Spec](/docs/modes/spec/).
 - **align** doesn't: aligning is a conversation with you, and a worker doesn't have one.
 - **vis** doesn't: drawings are for you, and a worker's replies are read by its parent. So no
-  worker has a Lookbook, and a Lookbook's design sessions take none of the chat's modes.
+  worker has a Lookbook, and a Lookbook's design sessions and its Creative Director take none of
+  the chat's modes.
 - **memory** doesn't: it is the chat's own memory of its conversation, and a worker starts fresh
   from its brief.
 - A **project mode** does when its file says `workers: yes`: the worker gets the chat's copy of it,

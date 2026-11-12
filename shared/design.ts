@@ -79,6 +79,11 @@ export interface DesignRecord {
   versions: DesignVersion[];
   /** Its session is thinking and hasn't begun the page: draw that instead of an empty Writing. */
   thinking?: true;
+  /** The skill folders this design may read with its skill reader, taken from its run at launch: a design revived after a
+      restart keeps them. Absent: none. */
+  skills?: { name: string; dir: string }[];
+  /** Its session is reading a design skill and hasn't begun the page: the tile says so. Gone once the page starts. */
+  readingSkill?: true;
   /** The page being written now, while there is one. */
   live?: {
     version: number;
@@ -157,6 +162,25 @@ export interface DesignLink {
   by?: "user" | "coordinator";
 }
 
+/** A design skill a run uses: a folder holding SKILL.md, read by the Creative Director and offered to its designers. */
+export interface DesignSkill {
+  /** Its SKILL.md front matter's name, else the folder's. */
+  name: string;
+  /** Its front matter's description; may be empty. */
+  description: string;
+  /** The folder holding SKILL.md, absolute. */
+  dir: string;
+  /** project: found in the run's folder; named: a folder the user named for this run. */
+  from: "project" | "named";
+}
+
+/** A skill the user named for a run that couldn't be found: the Creative Director asks about it on the brief. */
+export interface DesignSkillMissing {
+  /** What the user named, as passed on. */
+  asked: string;
+  reason: string;
+}
+
 export type DesignRunPhase = "setup" | "researching" | "brief" | "generating" | "done" | "stopped";
 
 /** One run: a Setup card and the batch started from it. */
@@ -177,6 +201,10 @@ export interface DesignRun {
   imagesBusy?: "capturing" | "describing";
   /** The person's approval of a run above the free limit (q2). */
   confirmedSpend?: boolean;
+  /** The design skills this run's Creative Director and designers use, fixed when the run is made. Absent: none (or a run made before skills). */
+  skills?: DesignSkill[];
+  /** Skills the user named for this run that weren't found. */
+  skillsMissing?: DesignSkillMissing[];
   createdAt: string;
   updatedAt: string;
 }

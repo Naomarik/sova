@@ -374,7 +374,7 @@ export function designBriefBlock(run: Pick<DesignRun, "brief" | "setup" | "image
   const open = b.questions.filter((q) => !q.answer).length;
   if (open) return { code: "question", label: `Answer ${open} Question${open === 1 ? "" : "s"} First` };
   if (b.conflict) return { code: "conflict", label: "Choose Keep My Prompt or Rewrite It" };
-  if (b.writing?.stalled || (b.prompt === null && !b.writing)) return { code: "stalled", label: "The Coordinator Hasn't Written the Prompt" };
+  if (b.writing?.stalled || (b.prompt === null && !b.writing)) return { code: "stalled", label: "The Creative Director Hasn't Written the Prompt" };
   if (b.writing || b.prompt === null) return { code: "writing", label: "Writing the Full Prompt" };
   const links = run.setup.links ?? [];
   if (links.some((l) => l.use === null)) return { code: "link-use", label: "Choose How to Use Your Link" };

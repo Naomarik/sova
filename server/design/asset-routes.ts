@@ -5,7 +5,7 @@ import type { Context, Hono } from "hono";
 import { isDesignAssetName, type DesignAssetShown } from "../../shared/design-assets";
 import { isTourOrigin } from "../../shared/tour";
 import { notPage } from "../page-only";
-import { assetOf, noteSignedInConsent, rasterMime, readAssetPart, readAssets } from "./assets";
+import { assetOf, changeAssets, noteSignedInConsent, rasterMime, readAssetPart, readAssets } from "./assets";
 import type { BrowseParent } from "./browse";
 import { addOwnImages, readAttachedImages, readDiskImages, type OwnImagesResult } from "./own-images";
 import { describeAssets } from "./describe";
@@ -43,8 +43,16 @@ export async function ownImagesLine(p: BrowseParent, paths: readonly string[]): 
 }
 
 /** Images brought in, with their names: the Creative Director that reads pictures is shown them with the line. */
-export async function ownImages(p: BrowseParent, paths: readonly string[]): Promise<{ line: string; names: string[] }> {
+export async function ownImages(p: BrowseParent, paths: readonly string[], o: { freshen?: true } = {}): Promise<{ line: string; names: string[] }> {
   const out = await addAttachedImages(p, paths);
+  // Brought to a new run: one the chat already had joins it too (a run takes the user's images added since it began).
+  if (o.freshen && out.known.length) {
+    const at = new Date().toISOString();
+    const known = new Set(out.known.map((a) => a.name));
+    changeAssets(p.sessionId, (c) => {
+      for (const a of c.assets) if (known.has(a.name)) a.addedAt = at;
+    });
+  }
   const names = [...out.added, ...out.known].map((a) => a.name);
   return { names, line: [names.length ? `[The user added ${names.length === 1 ? "an image" : `${names.length} images`} of their own: ${names.join(", ")}. Their descriptions follow when they're ready.]` : "", ...out.refused.map((r) => `[${r.what} wasn't added: ${r.reason}]`)].filter(Boolean).join("\n") };
 }

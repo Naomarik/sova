@@ -441,11 +441,16 @@ function directionsLine(run: DesignRun): string {
   return [`Styles: ${styles.join(", ") || "none"}.`, layouts.length ? `Layouts: ${layouts.join(", ")}, ${how}. Each designer gets its own style and layout; ask nothing about arrangement.` : "Layouts: none ticked, so each designer arranges its own page."].join("\n");
 }
 
-function firstMessage(run: DesignRun): string {
+/** The images the user brought to this run (attached when the Lookbook was asked for, pasted since): their names. */
+function runImages(sessionId: string, run: Pick<DesignRun, "createdAt">): string[] {
+  return readAssets(sessionId).assets.filter((a) => a.source === "yours" && a.addedAt >= run.createdAt).map((a) => a.name);
+}
+
+function firstMessage(run: DesignRun, images: readonly string[] = []): string {
   const designers = run.setup.models.filter((m) => m.design).map((m) => m.name);
   const plan = designPlan(run.setup);
   const links = (run.setup.links ?? []).map((l) => `${l.url}: ${l.use === "images" ? "Use Its Images" : l.use === "feel" ? "Just Its Feel" : l.use === "content" ? "Not a Reference: an address in the page's content, never to be opened" : "not chosen: set it in design_brief's sources from their words (content when it's only an address the page links to, such as a contact or booking link), or ask"}`);
-  return [`What the user wants to design.\n${userWords("setup", run.setup.brief)}`, ...(links.length ? [`Links, and how each is used:\n${links.join("\n")}`] : []), `Models that will design: ${designers.join(", ") || "none"}.`, directionsLine(run), `That is ${plan.items.length} designs${plan.layouts ? `: ${plan.items.map((i) => designDirectionLine({ direction: i.style, layout: i.layout })).join("; ")}` : ""}.`, coordinatorSkillsBlock(run.skills ?? [], run.skillsMissing ?? []), `Your run's id is ${run.id}. Prepare the Design Brief; the designs start only when the user presses Start on it.`].join("\n\n");
+  return [`What the user wants to design.\n${userWords("setup", run.setup.brief)}`, ...(links.length ? [`Links, and how each is used:\n${links.join("\n")}`] : []), ...(images.length ? [`The user's own images for this run: ${images.join(", ")}. ${"Their descriptions reach you when they're ready; if your model reads pictures, they come with this message."}`] : []), `Models that will design: ${designers.join(", ") || "none"}.`, directionsLine(run), `That is ${plan.items.length} designs${plan.layouts ? `: ${plan.items.map((i) => designDirectionLine({ direction: i.style, layout: i.layout })).join("; ")}` : ""}.`, coordinatorSkillsBlock(run.skills ?? [], run.skillsMissing ?? []), `Your run's id is ${run.id}. Prepare the Design Brief; the designs start only when the user presses Start on it.`].join("\n\n");
 }
 
 /** A new session on the model this run's Setup names, started from what is known (its card, the designs' metadata, the
@@ -482,9 +487,10 @@ async function replaceCoordinator(st: CoordinatorState, run: DesignRun, choice: 
     `You take over as this chat's Creative Director from an earlier session on ${previous}. Its card said:\n${st.card || "(nothing yet)"}`,
     `The designs so far:\n${modelWords(JSON.stringify(p.designsFor(st.sessionId).map(metadata)))}`,
     ...(notes.length ? [`Sova's notes since that session's last turn (Sova wrote these; text marked untrusted was written by a model):\n${notes.join("\n")}`] : []),
-    firstMessage(run),
+    firstMessage(run, runImages(st.sessionId, run)),
   ].join("\n\n");
-  const ref = await p.workers(parent).start({ key: `${st.sessionId}:design-coordinator:${run.id}:on:${choice.ref}`, spec: p.specFor(parent, st.cwd, choice.ref, p.systemPrompt()), session: { new: { dir: p.sessionDir(st.cwd) } }, task });
+  const images = picturesFor(st, runImages(st.sessionId, run));
+  const ref = await p.workers(parent).start({ key: `${st.sessionId}:design-coordinator:${run.id}:on:${choice.ref}`, spec: p.specFor(parent, st.cwd, choice.ref, p.systemPrompt()), session: { new: { dir: p.sessionDir(st.cwd) } }, task, ...(images.length ? { images } : {}) });
   st.chatId = ref.chatId;
   st.sessionFile = ref.sessionFile;
   publish(st);
@@ -527,11 +533,15 @@ export async function startCoordinator(parent: BrowseParent, run: DesignRun, cwd
     noteNamed(known, run.setup.brief);
     setRunPhase(parent.sessionId, run.id, "researching");
     publish(known);
-    await wake(known, firstMessage(run), `${run.id}:coordinator-start`);
+    const mine = runImages(parent.sessionId, run);
+    await wake(known, firstMessage(run, mine), `${run.id}:coordinator-start`, false, mine);
     return viewFor(known);
   }
   const key = `${parent.sessionId}:design-coordinator:${run.id}`;
-  const ref = await p.workers(parent).start({ key, spec: p.specFor(parent, cwd, choice.ref, p.systemPrompt()), session: { new: { dir: p.sessionDir(cwd) } }, task: firstMessage(run) });
+  // The images the user attached when asking for the Lookbook: a Creative Director that reads pictures sees them now.
+  const mine = runImages(parent.sessionId, run);
+  const images = picturesFor({ sessionId: parent.sessionId, vision: choice.vision }, mine);
+  const ref = await p.workers(parent).start({ key, spec: p.specFor(parent, cwd, choice.ref, p.systemPrompt()), session: { new: { dir: p.sessionDir(cwd) } }, task: firstMessage(run, mine), ...(images.length ? { images } : {}) });
   const st: CoordinatorState = {
     v: 1, sessionId: parent.sessionId, parentPath: parent.path, chatId: ref.chatId, sessionFile: ref.sessionFile, cwd, revived: known?.revived ?? 0, model: choice.ref, vision: choice.vision, runId: run.id,
     revision: known?.revision ?? 0, card: known?.card ?? "", revisions: known?.revisions ?? [], named: known?.named ?? [], ask: null, grant: null, shots: known?.shots ?? [], notes: [], newThisTurn: 0, spendOk: false, shotSeq: known?.shotSeq ?? 0,

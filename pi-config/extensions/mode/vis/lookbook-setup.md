@@ -9,6 +9,7 @@
 - `layouts`: layout names from `lookbook-directions` ("try a compact and a bento version": Compact, Bento), only when the user named or clearly described some. With none, each designer arranges its own page.
 - `coordinator`: the model id, only when the user named one to be the Creative Director (or "coordinator").
 
+- `images`: the paths of the images the user attached when asking (a screenshot of the screen to redesign, a logo), exactly as `tell` takes them. They join the run's own images: Setup shows them, and the Creative Director sees them from its first turn. Pass every attached image here, never as a path in `brief`; images attached later go with `tell`.
 - `skills`: design skills the user named for this Lookbook, and only those: nothing loads by itself, this project's own skills included. Pass each as a skill's name ("use the brand skill": `brand`; "use this project's design skill": that skill's name) or as a folder holding SKILL.md, by an absolute or `~` path ("the kit in ~/kits/acme"). When the user named none, pass none. Pass their words as they said them rather than guessing a path: one Sova can't find becomes a question on the brief.
 
 Models the user has barred for workers in Settings never appear, whatever you ask for.

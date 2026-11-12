@@ -33,7 +33,7 @@ export function mainDesignTools(parent: () => DesignParent, cwd: () => string): 
     {
       name: "lookbook",
       label: "lookbook",
-      description: `The Lookbook: one page designed by several models side by side. op "start" puts a Lookbook Setup card in the chat (the user finishes it there, up to ${DESIGN_BATCH_MAX} designs), only when the user asked for a Lookbook. op "read" gets the Creative Director's card (the coordinator), or one design's whole page with label. op "tell" passes text word for word to the Creative Director, and images (the paths of images the user attached) join its image set. Call vis_guide with kind "lookbook" first.`,
+      description: `The Lookbook: one page designed by several models side by side. op "start" puts a Lookbook Setup card in the chat (the user finishes it there, up to ${DESIGN_BATCH_MAX} designs), only when the user asked for a Lookbook. op "read" gets the Creative Director's card (the coordinator), or one design's whole page with label. op "tell" passes text word for word to the Creative Director. images (the paths of images the user attached) join the Lookbook's images, on start as on tell. Call vis_guide with kind "lookbook" first.`,
       parameters: {
         type: "object",
         properties: {
@@ -45,7 +45,7 @@ export function mainDesignTools(parent: () => DesignParent, cwd: () => string): 
           layouts: list('start: layout names the user named ("a compact and a bento version"); none unless they named some.'),
           coordinator: str("start: the model id for the Creative Director (the coordinator), only when the user named one."),
           skills: list("start: design skills the user named for this Lookbook, each a skill's name (this project's skills are found by name) or a folder holding SKILL.md (an absolute or ~ path). None loads by itself: with none named, pass none."),
-          images: list("tell: the paths of images the user attached, to add to the design's images."),
+          images: list("start or tell: the paths of images the user attached (a screenshot, a logo), to add to this Lookbook's images. On start they join the run itself."),
           label: str("read: a design's label, for its whole page."),
           text: str("tell: the words to pass on, exactly as the user said them."),
         },
@@ -55,10 +55,14 @@ export function mainDesignTools(parent: () => DesignParent, cwd: () => string): 
         const p = parent();
         if (params?.op === "start") {
           const run = await createRun(p, cwd(), { ...params, skills: skillNamesOf(params.skills) });
+          // The user's attached images join this run's own images: Setup shows them, and the Creative Director sees them first.
+          const paths = Array.isArray(params.images) ? params.images.filter((x): x is string => typeof x === "string").slice(0, 20) : [];
+          const added = paths.length ? await ownImages(p, paths, { freshen: true }) : null;
           const picked = run.setup.models.filter((m) => m.design).length;
           const skills = run.skills?.length ? ` Design skills: ${run.skills.map((k) => k.name).join(", ")}.` : "";
           const missing = run.skillsMissing?.length ? ` Not found: ${run.skillsMissing.map((m) => m.asked).join(", ")}; the Creative Director asks the user about ${run.skillsMissing.length === 1 ? "it" : "them"} on the brief.` : "";
-          return say(`The Setup card is on screen (run ${run.id}${picked ? `, ${picked} models ticked` : ""}).${skills}${missing} The user finishes it there and starts the run; above ${DESIGN_ASK_ABOVE} designs Sova asks them first. Nothing more is needed from you, and nothing about it will reach you.`, { designCard: { runId: run.id } });
+          const imagesLine = added ? (added.names.length ? ` Images: ${added.names.join(", ")} joined the run.` : "") + (added.line.includes("wasn't added") ? ` ${added.line.split("\n").filter((l) => l.includes("wasn't added")).join(" ")}` : "") : "";
+          return say(`The Setup card is on screen (run ${run.id}${picked ? `, ${picked} models ticked` : ""}).${skills}${missing}${imagesLine} The user finishes it there and starts the run; above ${DESIGN_ASK_ABOVE} designs Sova asks them first. Nothing more is needed from you, and nothing about it will reach you.`, { designCard: { runId: run.id } });
         }
         if (params?.op === "read") {
           if (params.label) {

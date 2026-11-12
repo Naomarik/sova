@@ -6,7 +6,8 @@
 //   bun server/share/tunnel/tunnel-standin.ts adopt   adopt, print the share tunnel's status, exit
 //   bun server/share/tunnel/tunnel-standin.ts stop    adopt, stop the share tunnel, print its status, exit
 //
-// STANDIN_WANTED=1: the share tunnel is wanted (an ended one starts again). SOVA_TUNNEL_DRIVER and
+// STANDIN_WANTED=1: the share tunnel is wanted (an ended one starts again). STANDIN_ACCOUNT_TOKEN: run the
+// share tunnel as Account (https://share.example.com) from that token. Turn On counts as given. SOVA_TUNNEL_DRIVER and
 // SOVA_TUNNEL_SLICE choose the driver and slice, as for the server.
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
@@ -24,7 +25,9 @@ const print = (what: string) => console.log(JSON.stringify({ what, ...tunnelStat
 configureTunnels({
   shareTarget: async (recorded) => recorded ?? 4899,
   shareWanted: () => process.env.STANDIN_WANTED === "1",
-  shareMode: () => "quick",
+  shareMode: () => (process.env.STANDIN_ACCOUNT_TOKEN ? "account" : "quick"),
+  account: () => (process.env.STANDIN_ACCOUNT_TOKEN ? { token: process.env.STANDIN_ACCOUNT_TOKEN, publicUrl: "https://share.example.com" } : null),
+  quickAllowed: () => true,
   log: (l) => console.error(`[standin] ${l}`),
 });
 

@@ -118,9 +118,18 @@ case "\${1:-}" in
 esac
 `;
 
+/** The tunnels folder and its subfolders (detached records hold an Account token; logs hold cloudflared's
+    lines): the owner's only, 0700, made so or put back so. */
+export function privateDirs(dir = tunnelsDir()): void {
+  for (const d of [dir, procsDirOf(dir), logsDirOf(dir), envDir(dir)]) {
+    mkdirSync(d, { recursive: true, mode: 0o700 });
+    chmodSync(d, 0o700);
+  }
+}
+
 /** Write the hook (0700) if it differs. */
 export function writeHook(dir = tunnelsDir()): string {
-  mkdirSync(dir, { recursive: true, mode: 0o700 });
+  privateDirs(dir);
   const file = hookPath(dir);
   let now = "";
   try {

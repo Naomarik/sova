@@ -5,6 +5,7 @@
 //
 //   GET /ready        {"status":200,"readyConnections":4,"connectorId":"<id>"} (503, 0 connections, before connect or when FAKE_CF_DOWN_FILE exists)
 //   GET /quicktunnel  {"hostname":"<host>"} (quick tunnels only: argv has --url)
+//   GET /config       {"version":1,"config":{"ingress":[{"service":"<FAKE_CF_INGRESS>"},{"service":"http_status:404"}]}} (named tunnels)
 //
 // Switches (env):
 //   FAKE_CF_LOG=<file>          one line per metrics request ("<pid> <path>"), and "start <pid> <argv>" / "exit <pid> <how>"
@@ -14,6 +15,9 @@
 //   FAKE_CF_DIE_MS=<n>          exit 1 that long after connecting
 //   FAKE_CF_HOSTNAME=<host>     the quick tunnel's host (default: random words + .trycloudflare.com)
 //   FAKE_CF_DOWN_FILE=<file>    while this file exists, /ready answers 503 (the edge dropped it)
+//   FAKE_CF_INGRESS=<service>   the named tunnel's first ingress service (default http_status:503)
+// A token in argv (--token, or a word shaped like one) is a leak: it logs "token-in-argv" and exits 2.
+// It logs "token-env yes|no" (whether TUNNEL_TOKEN is set; never its value).
 // SIGTERM / SIGINT: exit 0.
 import { appendFileSync, existsSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
@@ -35,7 +39,12 @@ if (argv[0] === "--version" || argv[0] === "version") {
   process.exit(0);
 }
 
+if (argv.some((a) => a === "--token" || a.startsWith("--token=") || /^eyJ[A-Za-z0-9_-]{20,}/.test(a))) {
+  log(`token-in-argv ${process.pid}`);
+  process.exit(2);
+}
 log(`start ${process.pid} ${argv.join(" ")}`);
+log(`token-env ${process.env.TUNNEL_TOKEN ? "yes" : "no"}`);
 if (process.env.FAKE_CF_FAIL === "start") {
   console.error("ERR fake cloudflared: failed to start (FAKE_CF_FAIL=start)");
   log(`exit ${process.pid} fail-start`);
@@ -61,6 +70,7 @@ const server = createServer((req, res) => {
   const down = !connected || (process.env.FAKE_CF_DOWN_FILE && existsSync(process.env.FAKE_CF_DOWN_FILE));
   if (req.url === "/ready") return down ? send(503, { status: 503, readyConnections: 0, connectorId }) : send(200, { status: 200, readyConnections: 4, connectorId });
   if (req.url === "/quicktunnel" && quick) return send(200, { hostname });
+  if (req.url === "/config" && !quick) return send(200, { version: 1, config: { ingress: [{ hostname: "share.example.com", service: process.env.FAKE_CF_INGRESS || "http_status:503" }, { service: "http_status:404" }] } });
   send(404, { error: "not found" });
 });
 server.listen(Number(port), host, () => {

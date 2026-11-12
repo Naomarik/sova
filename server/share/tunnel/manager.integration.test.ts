@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawn, spawnSync, type ChildProcess } from "node:child_process";
-import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
@@ -158,6 +158,36 @@ test("detached: scripts/stop-tunnels.ts stops a tunnel whose server is gone, thr
   assert.match(r.stdout, /1 tunnel stopped/);
   await waitFor("cloudflared's end", () => !alive(pid!));
   assert.equal(existsSync(join(s.tunnels, "tunnels.json")), false);
+});
+
+test("detached Account: the token reaches cloudflared only in its env, its record is 0600 in 0700 folders; an ingress to another port is stopped", async () => {
+  const s = scratch();
+  const token = "eyJhIjoi" + "k".repeat(60);
+  const env = envFor(s, { SOVA_TUNNEL_DRIVER: "detached", STANDIN_ACCOUNT_TOKEN: token, FAKE_CF_INGRESS: "http://127.0.0.1:4899" });
+  const srv = startServer(env);
+  const up = await waitFor("the Account tunnel", () => srv.lines.find((l) => l.what === "ensured"));
+  assert.deepEqual([up.state, up.origin], ["up", "https://share.example.com"], srv.err());
+  const log = fakeLog(s.log).join("\n");
+  assert.match(log, /^token-env yes$/m);
+  assert.doesNotMatch(log, /token-in-argv/);
+  assert.ok(!log.includes(token.slice(0, 24)), "the fake never logs it, and nothing put it in argv");
+  for (const d of [s.tunnels, join(s.tunnels, "procs")]) assert.equal(statSync(d).mode & 0o077, 0, `${d} is the owner's only`);
+  const [rec] = readdirSync(join(s.tunnels, "procs"));
+  assert.equal(statSync(join(s.tunnels, "procs", rec!)).mode & 0o777, 0o600);
+  assert.ok(!readFileSync(join(s.tunnels, "tunnels.json"), "utf8").includes(token.slice(0, 24)));
+  srv.p.kill("SIGKILL");
+  await new Promise((r) => srv.p.once("exit", r));
+  runStandin("stop", env);
+  // The same tunnel routed (in the dashboard) to Sova's app port: stopped at once, failed with the fix.
+  const bad = scratch();
+  const badEnv = envFor(bad, { SOVA_TUNNEL_DRIVER: "detached", STANDIN_ACCOUNT_TOKEN: token, FAKE_CF_INGRESS: "http://127.0.0.1:4800" });
+  const b = startServer(badEnv);
+  const refused = await waitFor("the refusal", () => b.lines.find((l) => l.what === "ensured"));
+  assert.equal(refused.state, "failed", b.err());
+  assert.match(JSON.stringify(refused), /point its public hostname at http:\/\/127\.0\.0\.1:4899/);
+  const [pid] = fakePids(bad.log);
+  await waitFor("its cloudflared's end", () => !alive(pid!));
+  b.p.kill("SIGKILL");
 });
 
 const userBus = () => {

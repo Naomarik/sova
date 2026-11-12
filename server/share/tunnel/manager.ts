@@ -4,6 +4,7 @@ import { homedir } from "node:os";
 import type { TunnelKey, TunnelMode, TunnelState, TunnelStatus } from "../../../shared/public-links";
 import { DetachedDriver, realExec, SystemdDriver, type Driver } from "../../project-services/drivers";
 import { stateHash } from "../../project-services/store";
+import { quickTunnelAllowed } from "../../public-links";
 import { verifyPublicUrl } from "../front";
 import { resolveCloudflared, onCloudflaredChanged, type CloudflaredFound } from "./binary";
 import { readTunnels, writeTunnels, type TunnelRecord } from "./state";
@@ -57,6 +58,10 @@ const SECOND_LOOK_MS = 5_000;
 const VERIFY_TRIES = 3;
 const VERIFY_GAP_MS = 2_000;
 const LOG_LINES = 12;
+/** The reason an up tunnel carries while its address hasn't answered from outside (the `unverified` warning). */
+export const UNVERIFIED = "The address didn't answer from outside yet";
+export const INGRESS_REFUSED = (port: number) =>
+  `This tunnel sends visitors somewhere other than Sova's share links. In the Cloudflare dashboard, point its public hostname at http://127.0.0.1:${port}.`;
 
 export type DriverId = "systemd" | "detached";
 export type MetricsAnswer = { status: number; body: unknown } | null;
@@ -73,10 +78,12 @@ export interface TunnelDeps {
   chooseDriver(): Promise<DriverId>;
   driver(id: DriverId, mode: TunnelMode): Driver;
   resolveCloudflared(): Promise<CloudflaredFound>;
-  /** Binds the share listener and answers its loopback port; `recorded` must be bound exactly. Idempotent. */
+  /** Binds the share listener and answers its loopback port; `recorded` must be bound exactly. Idempotent.
+      The only target of every tunnel, share and preview alike (the edge picks a preview by Host): a tunnel
+      never points at an app's own port or at Sova's app. */
   shareTarget(recorded: number | null): Promise<number>;
-  /** Preview tunnels' target; defaults to shareTarget. */
-  previewTarget?(appPort: number, recorded: number | null): Promise<number>;
+  /** Free tunnels may run: SOVA_QUICK_TUNNEL isn't off and Turn On was clicked (§mesh.tunnel/turn-on). */
+  quickAllowed(): boolean;
   /** The share tunnel is still wanted (a live link, or route account): decides restarts on its own. */
   shareWanted(): boolean;
   previewWanted(appPort: number): boolean;
@@ -220,6 +227,8 @@ export class TunnelManager {
     e.mode = mode;
     const account = mode === "account" ? deps.account() : null;
     if (mode === "account" && !account) return this.settle(e, "failed", "no-token");
+    // The one gate for every caller (a mint, a preview, a retry, a download): no Free tunnel before Turn On.
+    if (mode === "quick" && !this.quickAllowed()) return this.settle(e, "stopped", "turn-on");
     const found = await deps.resolveCloudflared();
     if (!found.ok) {
       this.armCloudflared();
@@ -234,7 +243,7 @@ export class TunnelManager {
     const old = e.rec;
     let targetPort: number;
     try {
-      targetPort = e.key.kind === "preview" && deps.previewTarget ? await deps.previewTarget(e.key.port, old?.targetPort ?? e.lastTarget) : await deps.shareTarget(old?.targetPort ?? e.lastTarget);
+      targetPort = await deps.shareTarget(old?.targetPort ?? e.lastTarget);
     } catch (err) {
       return this.failStart(e, `The share listener couldn't be opened: ${(err as Error).message}`);
     }
@@ -302,7 +311,7 @@ export class TunnelManager {
     if (rec.mode === "quick") {
       const q = await deps.metrics(rec.metricsPort, "/quicktunnel");
       const host = (q?.body as { hostname?: unknown } | undefined)?.hostname;
-      origin = typeof host === "string" && /^[a-z0-9.-]+$/i.test(host) ? `https://${host.toLowerCase()}` : null;
+      origin = typeof host === "string" && /^[a-z0-9-]+(\.[a-z0-9-]+)*\.trycloudflare\.com$/i.test(host) ? `https://${host.toLowerCase()}` : null;
       if (!origin) {
         const detail = await this.unitLog(e);
         await this.killUnit(e);
@@ -310,6 +319,7 @@ export class TunnelManager {
         return this.failStart(e, "cloudflared didn't say its address.", detail);
       }
     }
+    if (rec.mode === "account" && !(await this.ingressOk(e))) return this.statusOf(e);
     const now = deps.now();
     if (!sameOrigin(rec.origin, origin)) {
       if (rec.origin) e.previous = { origin: rec.origin, endedAt: now };
@@ -335,7 +345,9 @@ export class TunnelManager {
     e.checkedAt = deps.now();
     e.dirty = false;
     e.downSince = undefined;
-    return rec.verifiedAt ? this.settle(e, "up") : this.settle(e, "degraded", `The new address didn't answer from outside yet${verified.error ? ` (${verified.error})` : ""}.`);
+    // Not yet verified from outside is still up (the link is used, with the unverified warning): `degraded`
+    // is kept for a tunnel that is really down. `reason` on an up tunnel means unverified.
+    return rec.verifiedAt ? this.settle(e, "up") : this.settle(e, "up", `${UNVERIFIED}${verified.error ? ` (${verified.error})` : ""}.`);
   }
 
   private failStart(e: Entry, reason: string, detail?: string[]): TunnelStatus {
@@ -386,7 +398,8 @@ export class TunnelManager {
     e.dirty = false;
     if (look === "up") {
       e.downSince = undefined;
-      return rec.verifiedAt || rec.mode === "account" ? this.settle(e, "up") : this.settle(e, "degraded", e.reason ?? "The address didn't answer from outside yet.");
+      if (rec.mode === "account" && !(await this.ingressOk(e))) return this.statusOf(e);
+      return rec.verifiedAt || rec.mode === "account" ? this.settle(e, "up") : this.settle(e, "up", e.reason?.startsWith(UNVERIFIED) ? e.reason : `${UNVERIFIED}.`);
     }
     if (look === "down") {
       // Alive, no edge connection (network down, or Cloudflare dropped it while the computer slept).
@@ -415,6 +428,28 @@ export class TunnelManager {
     if (alive) await this.killUnit(e);
     await this.ended(e, this.readExit(e), "check");
     return this.statusOf(e);
+  }
+
+  /**
+   * An Account tunnel's routes live in the Cloudflare dashboard: one loopback GET of cloudflared's /config
+   * (after it connects, and at each on-demand check, never on a timer). Only the share listener's port
+   * (or a fixed http_status answer) may be behind it; anything else (Sova's app, another service) is
+   * stopped at once and fails with the dashboard fix. An unreadable /config is checked again on the next demand.
+   */
+  private async ingressOk(e: Entry): Promise<boolean> {
+    const rec = e.rec!;
+    const a = await this.deps.metrics(rec.metricsPort, "/config");
+    const verdict = ingressVerdict(a, rec.targetPort);
+    if (verdict === "ok") return true;
+    if (verdict === "unknown") {
+      e.dirty = true;
+      return true;
+    }
+    this.deps.log(`tunnel ${e.id}: its ingress points elsewhere than the share listener; stopping it`);
+    await this.killUnit(e);
+    await this.dropUnit(e);
+    this.settle(e, "failed", INGRESS_REFUSED(rec.targetPort));
+    return false;
   }
 
   /** One loopback look: up (the recorded connector and, Free, host), down (503), silent (no answer), other (another tunnel). */
@@ -585,7 +620,10 @@ export class TunnelManager {
             if (exit && exit.at + 1000 >= rec.startedAt) return this.ended(e, exit, "adopt");
             const look = await this.look(rec);
             e.checkedAt = this.deps.now();
-            if (look === "up") return void this.settle(e, rec.verifiedAt || rec.mode === "account" ? "up" : "degraded", rec.verifiedAt || rec.mode === "account" ? undefined : "The address didn't answer from outside yet.");
+            if (look === "up") {
+              if (rec.mode === "account" && !(await this.ingressOk(e))) return;
+              return void this.settle(e, "up", rec.verifiedAt || rec.mode === "account" ? undefined : `${UNVERIFIED}.`);
+            }
             if (look === "down") return void this.settle(e, "degraded", "The tunnel isn't connected to Cloudflare right now.");
             const st = await this.deps.driver(rec.driver, rec.mode).status(rec.unit).catch(() => ({ state: "missing" as const, pid: null }));
             if (look === "silent" && (st.state === "active" || st.state === "activating")) {
@@ -625,6 +663,14 @@ export class TunnelManager {
   private wanted(key: TunnelKey): boolean {
     try {
       return key.kind === "share" ? this.deps.shareWanted() : this.deps.previewWanted(key.port);
+    } catch {
+      return false;
+    }
+  }
+
+  private quickAllowed(): boolean {
+    try {
+      return this.deps.quickAllowed();
     } catch {
       return false;
     }
@@ -738,6 +784,26 @@ export class TunnelManager {
   }
 }
 
+/** cloudflared's /config answer → whether every ingress rule goes to the share listener's port or is a fixed
+    status (pure, for tests). No answer, or not JSON: unknown. No ingress yet (nothing pushed): ok, it serves nothing. */
+export function ingressVerdict(a: MetricsAnswer, sharePort: number): "ok" | "bad" | "unknown" {
+  if (!a || a.status !== 200 || !a.body || typeof a.body !== "object") return "unknown";
+  const config = (a.body as { config?: unknown }).config;
+  if (config === undefined || config === null) return "ok";
+  if (typeof config !== "object") return "bad";
+  const ingress = (config as { ingress?: unknown }).ingress;
+  if (ingress === undefined || ingress === null) return "ok";
+  if (!Array.isArray(ingress)) return "bad";
+  const good = new RegExp(`^http://(127\\.0\\.0\\.1|localhost):${sharePort}/?$`, "i");
+  for (const rule of ingress) {
+    const service = (rule as { service?: unknown } | null)?.service;
+    if (typeof service !== "string") return "bad";
+    if (/^http_status:\d{3}$/.test(service) || good.test(service)) continue;
+    return "bad";
+  }
+  return "ok";
+}
+
 // ---- real deps ----------------------------------------------------------------------------------
 
 /** Where tunnels run: detached with SOVA_TUNNEL_DRIVER=detached (tests), off Linux, or with no user manager. */
@@ -802,6 +868,7 @@ export function realTunnelDeps(env: NodeJS.ProcessEnv = process.env): TunnelDeps
     },
     shareWanted: () => false,
     previewWanted: () => false,
+    quickAllowed: () => quickTunnelAllowed(env),
     shareMode: () => "quick",
     account: () => null,
     metrics: loopbackGet,

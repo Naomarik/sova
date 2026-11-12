@@ -6,7 +6,7 @@ import { after, beforeEach, test } from "node:test";
 import type { TunnelKey, TunnelMode } from "../../../shared/public-links";
 import type { Driver, UnitSpec, UnitStatus } from "../../project-services/drivers";
 import type { CloudflaredFound } from "./binary";
-import { AUTO_RESTARTS_PER_HOUR, CHECK_WINDOW_MS, RETRY_DELAYS_MS, TunnelManager, type MetricsAnswer, type TunnelDeps } from "./manager";
+import { AUTO_RESTARTS_PER_HOUR, CHECK_WINDOW_MS, ingressVerdict, RETRY_DELAYS_MS, TunnelManager, UNVERIFIED, type MetricsAnswer, type TunnelDeps } from "./manager";
 import { writeTunnels, type TunnelRecord } from "./state";
 import { envFileOf, exitFileOf, pidFileOf, tunnelsFile, tunnelUnitOf } from "./units";
 
@@ -35,13 +35,13 @@ function world(o: { found?: CloudflaredFound; wanted?: boolean; mode?: TunnelMod
   const starts: UnitSpec[] = [];
   const stops: string[] = [];
   /** Per metrics port: what cloudflared answers, or nothing. */
-  const tunnels = new Map<number, { connectorId: string; host: string; ready: number } | null>();
+  const tunnels = new Map<number, { connectorId: string; host: string; ready: number; ingress?: string } | null>();
   const unitState = new Map<string, UnitStatus["state"]>();
   let onFile: ((name: string) => void) | null = null;
   let watches = 0;
   let nextPort = 41000;
   let hostN = 0;
-  const state = { wanted: o.wanted ?? true, mode: o.mode ?? "quick", account: o.account ?? null, verifyOk: true };
+  const state = { wanted: o.wanted ?? true, mode: o.mode ?? "quick", account: o.account ?? null, verifyOk: true, quickAllowed: true, ingress: "http://127.0.0.1:4802", logs: ["ERR something"] };
   const driver: Driver = {
     id: o.driver ?? "systemd",
     available: async () => ({ ok: true, detail: "" }),
@@ -50,7 +50,7 @@ function world(o: { found?: CloudflaredFound; wanted?: boolean; mode?: TunnelMod
       starts.push(spec);
       unitState.set(spec.unit, "active");
       const port = Number(spec.argv[spec.argv.indexOf("--metrics") + 1]!.split(":")[1]);
-      tunnels.set(port, { connectorId: `c${starts.length}`, host: `h${++hostN}.trycloudflare.com`, ready: 200 });
+      tunnels.set(port, { connectorId: `c${starts.length}`, host: `h${++hostN}.trycloudflare.com`, ready: 200, ingress: state.ingress });
     },
     stop: async (unit) => {
       calls.push(`stop ${unit}`);
@@ -64,7 +64,7 @@ function world(o: { found?: CloudflaredFound; wanted?: boolean; mode?: TunnelMod
     signal: async () => {},
     owns: () => false,
     pids: () => [],
-    logs: async () => [{ t: "", text: "ERR something" }],
+    logs: async () => state.logs.map((text) => ({ t: "", text })),
     runOnce: async () => ({ code: 0, timedOut: false, ms: 0 }),
     units: async () => {
       calls.push("units");
@@ -86,6 +86,7 @@ function world(o: { found?: CloudflaredFound; wanted?: boolean; mode?: TunnelMod
     resolveCloudflared: async () => o.found ?? { ok: true, path: "/usr/bin/cloudflared", version: "2026.10.7", source: "path" },
     shareTarget: async (recorded) => recorded ?? 4802,
     shareWanted: () => state.wanted,
+    quickAllowed: () => state.quickAllowed,
     previewWanted: () => state.wanted,
     shareMode: () => state.mode,
     account: () => state.account,
@@ -94,6 +95,7 @@ function world(o: { found?: CloudflaredFound; wanted?: boolean; mode?: TunnelMod
       const t = tunnels.get(port);
       if (!t) return null;
       if (path === "/ready") return { status: t.ready, body: { status: t.ready, connectorId: t.connectorId } };
+      if (path === "/config") return { status: 200, body: { version: 1, config: { ingress: [{ service: t.ingress }, { service: "http_status:404" }] } } };
       return { status: 200, body: { hostname: t.host } };
     },
     freePort: async () => ++nextPort,
@@ -408,8 +410,8 @@ test("an address that doesn't answer from outside is used, degraded, with the re
   const w = world();
   w.state.verifyOk = false;
   const s = await up(w);
-  assert.equal(s.state, "degraded");
-  assert.match(s.reason ?? "", /didn't answer from outside/);
+  assert.equal(s.state, "up", "used, with the unverified warning: degraded is only for a tunnel that is down");
+  assert.ok(s.reason?.startsWith(UNVERIFIED));
   assert.equal(s.origin, "https://h1.trycloudflare.com");
 });
 
@@ -423,4 +425,80 @@ test("preview tunnels: one per app port, their hosts in memory for the edge", as
   await w.m.stop(key, "preview ended");
   assert.equal(w.m.previewHosts().size, 0);
   rmSync(dir, { recursive: true, force: true });
+});
+
+test("no Free tunnel before Turn On, whoever asks (a share, a preview); Account needs none", async () => {
+  for (const key of [SHARE, { kind: "preview" as const, port: 5173 }]) {
+    const w = world();
+    w.state.quickAllowed = false;
+    const s = await w.m.ensure(key);
+    assert.deepEqual([s.state, s.reason, w.starts.length, w.watching()], ["stopped", "turn-on", 0, 0]);
+  }
+  const a = world({ mode: "account", account: { token: "eyJ" + "z".repeat(40), publicUrl: "https://share.example.com" } });
+  a.state.quickAllowed = false;
+  assert.equal((await up(a)).state, "up");
+});
+
+test("every tunnel, a preview's included, forwards to the share listener's port, never the app's", async () => {
+  const w = world();
+  await up(w, { kind: "preview", port: 5173 });
+  const argv = w.starts[0]!.argv;
+  assert.equal(argv[argv.indexOf("--url") + 1], "http://127.0.0.1:4802");
+  assert.ok(!argv.join(" ").includes("127.0.0.1:5173"));
+});
+
+test("a Free tunnel whose address isn't a trycloudflare.com host fails, and its unit is stopped", async () => {
+  const w = world();
+  const p = w.m.ensure(SHARE);
+  await flush();
+  w.tunnels.get(w.metricsPortOf(w.starts[0]!))!.host = "evil.example.com";
+  await w.connect();
+  assert.equal((await p).state, "failed");
+  assert.ok(w.stops.includes(UNIT));
+});
+
+test("Account ingress: only the share listener's port or a fixed status; anything else is stopped at connect and at a check", async () => {
+  const port = 4802;
+  const ans = (ingress: unknown, status = 200): MetricsAnswer => ({ status, body: { version: 1, config: ingress === undefined ? {} : { ingress } } });
+  const table: [MetricsAnswer, string][] = [
+    [ans([{ service: "http://127.0.0.1:4802" }, { service: "http_status:404" }]), "ok"],
+    [ans([{ service: "http://localhost:4802/" }]), "ok"],
+    [ans(undefined), "ok"],
+    [ans([{ service: "http://127.0.0.1:4800" }]), "bad"],
+    [ans([{ service: "http://127.0.0.1:48020" }]), "bad"],
+    [ans([{ service: "http://192.168.1.2:4802" }]), "bad"],
+    [ans([{ service: "https://127.0.0.1:4802" }]), "bad"],
+    [ans([{ service: "tcp://127.0.0.1:22" }]), "bad"],
+    [ans([{ hostname: "x" }]), "bad"],
+    [ans("all"), "bad"],
+    [ans([], 404), "unknown"],
+    [null, "unknown"],
+  ];
+  for (const [a, want] of table) assert.equal(ingressVerdict(a, port), want, JSON.stringify(a));
+  const account = { token: "eyJ" + "q".repeat(40), publicUrl: "https://share.example.com" };
+  const bad = world({ mode: "account", account });
+  bad.state.ingress = "http://127.0.0.1:4800";
+  const s = await up(bad);
+  assert.equal(s.state, "failed");
+  assert.match(s.reason ?? "", /point its public hostname at http:\/\/127\.0\.0\.1:4802/);
+  assert.deepEqual(bad.stops, [UNIT]);
+  // Good at connect, changed in the dashboard later: the next on-demand check stops it.
+  const later = world({ mode: "account", account });
+  assert.equal((await up(later)).state, "up");
+  later.tunnels.get(later.metricsPortOf(later.starts[0]!))!.ingress = "http://127.0.0.1:4810";
+  await later.advance(CHECK_WINDOW_MS);
+  assert.equal((await later.m.check(SHARE)).state, "failed");
+  assert.deepEqual(later.stops, [UNIT]);
+});
+
+test("a unit's log lines in a status never carry a token", async () => {
+  const token = "eyJhIjoi" + "t".repeat(60);
+  const w = world();
+  w.state.logs = [`ERR TUNNEL_TOKEN=${token}`, `connecting with ${token}`];
+  await up(w);
+  w.state.wanted = false;
+  await w.exit();
+  const s = w.m.status(SHARE);
+  assert.ok(s.detail?.length, "the log is shown");
+  assert.ok(!JSON.stringify(s).includes(token.slice(0, 24)));
 });

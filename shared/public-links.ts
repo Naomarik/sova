@@ -121,6 +121,19 @@ export interface PublicLinksReading {
   sharingOff: boolean;
 }
 
+/** A PUT to `account` or `self` made while the current route works is kept as a candidate, in its
+    own file (<stateRoot>/public-links-candidate.json; public-links.json is untouched), until its
+    Verify passes; then it becomes the setting. `failure`: the last Verify that didn't pass. */
+export interface PublicLinksCandidate {
+  route: "account" | "self";
+  publicUrl: string;
+  previewUrl?: string;
+  /** For `self`: the front that serves it. */
+  front?: ShareFront;
+  savedAt: number;
+  failure?: { reason: string; at: number };
+}
+
 /** What a share command, tool or route answers while sharing is off (PublicLinksReading.sharingOff). */
 export const SHARING_OFF_ERROR = "sharing-off";
 export const SHARING_OFF_MESSAGE = "Sharing is off on this computer. The user can turn it on in Settings → Public links.";
@@ -128,8 +141,9 @@ export const SHARING_OFF_MESSAGE = "Sharing is off on this computer. The user ca
 // ---- tunnels (Cloudflare Free and Account; server/share/tunnel/manager.ts) ----------------------
 
 /** The share tunnel carries every /h /i /s /t link; a preview tunnel is one Free tunnel per
-    previewed app (its port). */
-export type TunnelKey = { kind: "share" } | { kind: "preview"; port: number };
+    previewed app (its port); the candidate tunnel runs a saved Account candidate
+    (PublicLinksCandidate) while its Verify is pending. */
+export type TunnelKey = { kind: "share" } | { kind: "preview"; port: number } | { kind: "candidate" };
 export type TunnelMode = "quick" | "account";
 export type TunnelState = "stopped" | "starting" | "up" | "degraded" | "failed" | "needs-cloudflared";
 
@@ -293,6 +307,8 @@ export interface PublicLinksInfo {
   /** Cloudflare Account: whether a connector token is stored (never the token). */
   account?: { hasToken: boolean };
   tunnel?: PublicLinksTunnelInfo;
+  /** A saved address waiting for its Verify (PublicLinksCandidate); links keep the current route. */
+  candidate?: PublicLinksCandidate;
 }
 
 export interface RoutedHost {

@@ -262,6 +262,16 @@ const verifiedAddress = (f: PublicLinksFile): string | null =>
  * an older Sova still reads it. A file that can't be read is replaced (saving again fixes it).
  */
 export function patchPublicLinks(patch: unknown, now: number = Date.now()): { file: PublicLinksFile } | { error: string } {
+  const plan = planPublicLinksPatch(patch, now);
+  if ("error" in plan) return plan;
+  write(plan.file);
+  return { file: effectivePublicLinks({ kind: "ok", file: plan.file }).file };
+}
+
+/** patchPublicLinks without the write: `{file}`, the next STORED file a PUT's patch would write
+    (patchPublicLinks' rules: validated, offChosenAt stamped, account dropped for self/via,
+    verifiedAt kept only for the same address), or `{error}`. Nothing is written or changed. */
+export function planPublicLinksPatch(patch: unknown, now: number = Date.now()): { file: PublicLinksFile } | { error: string } {
   const stored = readStoredPublicLinks();
   const cur: PublicLinksFile = stored.kind === "ok" ? stored.file : { ...OFF };
   try {
@@ -288,8 +298,7 @@ export function patchPublicLinks(patch: unknown, now: number = Date.now()): { fi
     const file = parsePublicLinks(next);
     const addr = verifiedAddress(file);
     if (addr === null || addr !== verifiedAddress(cur)) delete file.verifiedAt;
-    write(file);
-    return { file: effectivePublicLinks({ kind: "ok", file }).file };
+    return { file };
   } catch (err) {
     if (err instanceof ParseError) return { error: err.message };
     throw err;

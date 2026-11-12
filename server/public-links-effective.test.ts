@@ -199,3 +199,20 @@ describe("Turn On", () => {
     assert.equal(store.readTunnelConsent(), null);
   });
 });
+
+describe("planning a patch", () => {
+  afterEach(reset);
+
+  test("planPublicLinksPatch builds the next stored file and writes nothing; patchPublicLinks writes the same", () => {
+    stored({ version: 1, route: "off" });
+    const before = readFileSync(store.publicLinksFile(), "utf8");
+    const plan = store.planPublicLinksPatch({ route: "account", account: { publicUrl: "https://links.example.com/" } }, 5);
+    assert.deepEqual(plan, { file: { version: 1, route: "account", account: ACCOUNT } });
+    assert.equal(readFileSync(store.publicLinksFile(), "utf8"), before, "nothing written");
+    assert.ok("error" in store.planPublicLinksPatch({ route: "account" }));
+    const off = store.planPublicLinksPatch({ route: "off" }, 7);
+    assert.ok("file" in off && off.file.offChosenAt === 7, "the stored form: offChosenAt stamped");
+    store.patchPublicLinks({ route: "account", account: ACCOUNT });
+    assert.deepEqual(JSON.parse(readFileSync(store.publicLinksFile(), "utf8")), plan.file);
+  });
+});

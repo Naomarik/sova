@@ -336,11 +336,18 @@
       "§chat.transcript/slim-rows"
     ],
     "authority": "accepted",
-    "evidence": "unreviewed",
+    "evidence": "verified",
     "code": [
       "src/components/ToolCard.tsx",
-      "src/app.css"
-    ]
+      "src/app.css",
+      "shared/memory.ts",
+      "shared/memory.test.ts"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-12T10:11Z",
+      "source": "pi-session:01a1c9c0-9d0b-7601-9d6d-7dfaeea30a3a#9199d10f"
+    }
   },
   "§chat.transcript/recent-preload": {
     "kind": "behavior",

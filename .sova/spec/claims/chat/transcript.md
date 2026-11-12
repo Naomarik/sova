@@ -1040,12 +1040,15 @@ shows exactly what it showed before.
 
 ## §chat.transcript/recall-rows — Memory recalls are quiet rows
 
-A memory recall — the model's `zoom` or `date` call (§chat.memory/recall) — draws as a slim, quiet
-tool row: the folded line the row carries ("Recalled messages 40–47",
-"Recalled message 40", "Date of message 40"; while it streams, the same line from its arguments),
+A memory recall — the model's `zoom`, `date` or `recall` call (§chat.memory/recall,
+§chat.memory/recall-words) — draws as a slim, quiet tool row: the folded line the row carries
+("Recalled messages 40–47", "Recalled message 40", "Date of message 40", `Recalled "release
+notes"` for `recall`'s words, runs of spaces collapsed to one; while it streams, the same line from
+its arguments),
 in muted text after the clock icon, with no tool name, no "Done" chip and, folded, no card edge or
 fill. "Running" and "Failed" still show. It opens
-like any tool card, onto what the recall returned.
+like any tool card, onto what the recall returned. Every memory-tool call gets this quiet row, a `recall` call
+with no words included: it has no such line, but no tool name and no "Done" chip either.
 
 ## §chat.transcript/recent-preload — Recent sessions open at once
 

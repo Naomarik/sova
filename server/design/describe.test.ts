@@ -480,3 +480,18 @@ test("the helper's screenshot words are kept whole: a long role, feel and descri
   assert.equal(asset(shot).description!.feel!.length, "Quiet. ".repeat(250).trim().length);
   assert.ok(!d.assetsForCoordinator(parent.sessionId).includes("…"));
 });
+
+test("a pasted image described as a photo keeps its whole description, so it reaches designers whole if it is made a screenshot", async () => {
+  const shot = addYours(12);
+  d.describeAssets(parent, [shot]);
+  await until(() => helpers.length === 1, "started");
+  const description = "A long table of sessions with real names and figures. ".repeat(20).trim();
+  await call(helpers[0]!, [{ ...row(shot, "photo"), description }]);
+  settle(helpers[0]!);
+  await settledOut();
+  assert.equal(asset(shot).description!.description, description);
+  d.setAssetNote(parent.sessionId, shot, { kind: "screenshot" });
+  const block = d.screenshotBlock(parent.sessionId, [shot], () => "rebuild");
+  assert.ok(block.includes(`What it shows: ${description}`));
+  assert.doesNotMatch(block, /…/);
+});

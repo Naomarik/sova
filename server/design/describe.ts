@@ -609,8 +609,10 @@ export function describerTools(parent: { sessionId: string }, workerId: string):
             problems.push(`${id}: kind must be one of ${DESIGN_ASSET_KINDS.join(", ")}`);
             continue;
           }
-          // A screenshot's description is what words-only designers rebuild from: never cut.
-          const description = cleanWords(r.description, r.kind === "screenshot" ? CAPS.shot : CAPS.description);
+          // A pasted image's description is never cut: it may be (or later be made) a screenshot, whose description is
+          // what words-only designers rebuild from.
+          const yours = readAssets(sid).assets.find((x) => x.name === id)?.source === "yours";
+          const description = cleanWords(r.description, r.kind === "screenshot" || yours ? CAPS.shot : CAPS.description);
           if (!description) {
             problems.push(`${id}: description is empty`);
             continue;

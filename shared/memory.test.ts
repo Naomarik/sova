@@ -8,6 +8,8 @@ test("a recall's slim row reads what it opened", () => {
   assert.equal(recallSummary("zoom", { id: 40, n: 8 }), "Recalled messages 40–47");
   assert.equal(recallSummary("zoom", { id: 40, n: 1 }), "Recalled message 40");
   assert.equal(recallSummary("date", { id: 40 }), "Date of message 40");
+  assert.equal(recallSummary("recall", { words: "release  notes", before: 90 }), 'Recalled "release notes"');
+  assert.equal(recallSummary("recall", { words: " " }), undefined, "no words: the row reads as any tool's");
   assert.equal(recallSummary("zoom", { id: 40, n: 3 }), undefined, "n not a power of 2");
   assert.equal(recallSummary("read", { id: 1 }), undefined);
   // The transcript's folded line is the card's own argsSummary (§chat.transcript/slim-rows).

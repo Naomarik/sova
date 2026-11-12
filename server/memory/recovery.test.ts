@@ -295,7 +295,7 @@ describe("failures (§chat.memory/recovery)", () => {
     assert.match(readFileSync(join(dir, "tree.jsonl"), "utf8"), /"i":2,"text":"user: m2[^\n]*"excerpt":true/);
     assert.equal(existsSync(join(dir, "retry.json")), false);
     assert.ok(e.get(1, 1) && e.get(2, 0), "its merges follow");
-    assert.equal(e.zoom(2, 1), `2|user: ${long(2)}`, "the whole message is one zoom away");
+    assert.equal(e.zoom(2, 1).replace(/ \[[^\]]*\]:/, ":"), `2|user: ${long(2)}`, "the whole message is one zoom away");
     e.dispose();
   });
 

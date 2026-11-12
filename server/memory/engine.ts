@@ -6,6 +6,7 @@ import type { MemoryLine, MemoryMessage, MemoryStatus } from "../../shared/proto
 import { memoryViewContent } from "../../pi-config/extensions/claude-code/provider/memory-view.ts";
 import { expandIds, uuidsIn } from "./ids";
 import { inputStart, messagesBefore, messagesOf, type LogMessage } from "./log";
+import { defang, isUntrustedKind, memoryStamp, recallMessages, UNTRUSTED_CLOSE, UNTRUSTED_OPEN } from "./recall";
 import { COMPACTION_GUIDE, leafTask, mergeTask, TURN_GUIDE, zoomableSummary } from "./prompts";
 import { MemoryStore, type MemoryFileState, type MemoryPause, type NodeRetry } from "./store";
 import type { SummaryCall, SummaryResult } from "./summarizer";
@@ -652,21 +653,43 @@ export class MemoryEngine implements Tree {
 
   // ---- recall -------------------------------------------------------------------------------------
 
-  /** zoom(id, n) (§chat.memory/recall): the two lines under line id+n, or message id whole. */
+  /**
+   * Where the current turn starts in the log: recall never searches from here on. Set at a run's first
+   * request (the branch then ends with the run's input), cleared when it settles.
+   */
+  private turnAt: number | undefined;
+
+  /** The run starting on `branch` (its input last), or none (undefined): recall's wall. */
+  markTurn(branch: readonly HEntry[] | undefined): void {
+    this.turnAt = branch ? messagesBefore(branch, inputStart(branch)) : undefined;
+  }
+
+  /** zoom(id, n) (§chat.memory/recall): the two lines under line id+n, or message id whole, each with its time. */
   zoom(id: number, n: number): string {
     this.checkRef(id, n);
-    if (n === 1) return messageText(this.log[id]!);
+    if (n === 1) return zoomedMessage(this.log[id]!);
     const half = n / 2;
     const l = Math.log2(n) - 1;
-    const out = [this.shownLine([l, id / half])];
-    if (id + half < this.log.length) out.push(this.shownLine([l, id / half + 1]));
+    const line = (k: number) => {
+      const shown = this.shownLine([l, k]);
+      const when = memoryStamp(this.log[k * half]?.at);
+      const head = shown.indexOf("|") + 1;
+      return when ? `${shown.slice(0, head)}[${when}] ${shown.slice(head)}` : shown;
+    };
+    const out = [line(id / half)];
+    if (id + half < this.log.length) out.push(line(id / half + 1));
     return out.join("\n");
   }
 
-  /** date(id): the message's date and time. */
+  /** date(id): the message's date and time, as the [now] line prints one. */
   date(id: number): string {
     this.checkRef(id, 1);
-    return this.log[id]!.at ?? "unknown";
+    return memoryStamp(this.log[id]!.at) ?? "unknown";
+  }
+
+  /** recall(words, before?): the messages before the current turn that hold every word. */
+  recall(words: unknown, before?: unknown): string {
+    return recallMessages(this.log, this.turnAt ?? this.log.length, words, before).text;
   }
 
   private checkRef(id: number, n: number): void {
@@ -782,8 +805,16 @@ function linesBytes(lines: readonly string[]): number {
   return n;
 }
 
-/** A message whole, as zoom(id, 1) gives it. */
+/** A message whole, as logged. */
 export function messageText(m: LogMessage): string {
   const page = m.page ? ` (page ${m.page.index} of ${m.page.of})` : "";
   return `${m.i}|${m.kind}${page}: ${m.text}`;
+}
+
+/** A message whole as zoom(id, 1) gives it: with its time, and fenced when it is tool output or not the model's. */
+export function zoomedMessage(m: LogMessage): string {
+  const page = m.page ? ` (page ${m.page.index} of ${m.page.of})` : "";
+  const when = memoryStamp(m.at);
+  const text = `${m.i}|${m.kind}${page}${when ? ` [${when}]` : ""}: ${isUntrustedKind(m.kind) ? defang(m.text) : m.text}`;
+  return isUntrustedKind(m.kind) ? `${UNTRUSTED_OPEN}\n${text}\n${UNTRUSTED_CLOSE}` : text;
 }

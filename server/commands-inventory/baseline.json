@@ -657,7 +657,7 @@
     "server/design/tools.ts": ["lookbook","design_look","design_stream","design_hand_in"],
     "server/feature-chat-align.ts": ["align"],
     "server/harness/pi/session.ts": ["<computed: t.name>"],
-    "server/memory/tools.ts": ["<computed: MEMORY_ZOOM_TOOL>","<computed: MEMORY_DATE_TOOL>"],
+    "server/memory/tools.ts": ["<computed: MEMORY_ZOOM_TOOL>","<computed: MEMORY_DATE_TOOL>","<computed: MEMORY_RECALL_TOOL>"],
     "server/org-history-tools.ts": ["sova_history","sova_decide"],
     "server/overseer-card-tool.ts": ["<computed: CARD_TOOL>"],
     "server/overseer-code-history.ts": ["sova_project_git","sova_server_log"],

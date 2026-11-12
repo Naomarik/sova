@@ -168,6 +168,9 @@ export const kindAllowed = (a: Pick<DesignAsset, "source">, kind: string): boole
 export const screenshotsInUse = (assets: readonly DesignAsset[], brief: { imageUse?: Record<string, { use: boolean }> } | undefined): string[] =>
   assets.filter((a) => isScreenshot(a) && brief?.imageUse?.[a.name]?.use !== false).map((a) => a.name);
 
+/** The most colours a screenshot's words hold: the measured ones and any added, as a user's own may. */
+export const SHOT_COLORS_LIMIT = 8;
+
 /** A screenshot's words for designers and whose they are. The feel is the user's, else the Creative Director's, else the
     helper's draft (`by` says whose). The colours always start from the measured palette, so its hex values reach every
     design whoever wrote the feel: the helper's roles first, then the Creative Director's and the user's renaming a role
@@ -187,7 +190,7 @@ export function shotWords(a: Pick<DesignAsset, "userWords" | "cdWords" | "descri
       const known = colors.find((x) => x.hex === hex);
       if (known) {
         if (c.role) known.role = c.role;
-      } else colors.push({ hex, role: c.role });
+      } else if (colors.length < SHOT_COLORS_LIMIT) colors.push({ hex, role: c.role });
     }
   }
   if (!feel && !colors.length) return null;

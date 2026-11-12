@@ -1196,6 +1196,10 @@ test("the measured palette reaches every design's text even when the Creative Di
   for (const hex of eight) assert.ok(text.includes(hex), `${hex} reaches the designs`);
   assert.match(text, /Dense, calm, dark\./);
   assert.match(text, /#e3a63a needs-you marker/, "the helper's role stays unless renamed");
+  // Colours the Creative Director adds fit within 8 with the measured ones, the limit a user's own edit has.
+  const colors = shotWords({ ...assetNow(shot), cdWords: { feel: "x", colors: [{ hex: "#ff0000", role: "extra" }, { hex: "#8d8d9a", role: "muted text" }] } })!.words.colors;
+  assert.equal(colors.length, 8);
+  assert.equal(colors.find((c) => c.hex === "#8d8d9a")!.role, "muted text");
 });
 
 test("design_brief: a pasted screenshot's name in shots is refused with the field it belongs in", async () => {

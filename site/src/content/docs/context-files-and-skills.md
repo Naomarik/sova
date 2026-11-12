@@ -27,7 +27,9 @@ project**, or your own), and a chip that reads **Allowed** or **Disallowed**.
 - **Disallow** keeps that item out of every new chat in the project, its worktrees included.
 - **Allow** on a disallowed one lifts the Disallow again.
 
-A click saves at once. Chats already open keep what they loaded; only new chats change.
+A click shows its new state at once and saves behind it; every row stays clickable while saves run.
+A save that fails puts back only its own row, with a message, also when it hasn't answered in 90
+seconds. Chats already open keep what they loaded; only new chats change.
 
 A skill is known by where it is, not by its name, so a project skill named like one of yours is a row
 of its own, and a skill that moves counts as a new one.
@@ -43,7 +45,8 @@ default. Turn it off and nothing loads until you approve it:
 - A new chat's setup card lists everything the chat could load, says "{n} to approve for this
   project." with **Review**, **Disallow All** and **Approve All**, and holds Send until nothing waits.
   You can still type; your draft is kept. A decision made in another tab or on the project page
-  frees it at once.
+  frees it at once. While a decision made on the card is still saving, Send waits and the composer
+  says "Saving…"; the screen keeps its scroll position and open sections.
 - An approved item whose content changes is marked **Changed since you approved**. It stays loaded,
   and **Re-approve** accepts the new content. For a skill, a change to any file in its folder counts.
 

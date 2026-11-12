@@ -236,12 +236,13 @@ export interface ShareListenerFailure {
     is a laptop or phone, so its links don't open while it is asleep.
     Cloudflare tunnels: `quick` the Free tunnel is up (its address changes when the tunnel
     restarts), `quick-starting` it is starting and didn't answer within the mint's wait,
+    `quick-verifying` it is up with its address, not yet verified from outside (Free has no Verify),
     `quick-setup` cloudflared isn't on this computer, `quick-turn-on` the operator hasn't pressed
     Turn On yet (consentAt), `tunnel-down` the tunnel stopped or lost its connection. `broken`:
     the saved setup can't be read (PublicLinksReading.broken). */
 export type LinkWarningCode =
   | "off" | "unverified" | "unreachable" | "unconfirmed" | "not-accepted" | "sleeps"
-  | "quick" | "quick-starting" | "quick-setup" | "quick-turn-on" | "tunnel-down" | "broken";
+  | "quick" | "quick-starting" | "quick-verifying" | "quick-setup" | "quick-turn-on" | "tunnel-down" | "broken";
 
 /** The warnings' text (§design.copy-deck/public-links; Free's codes and `broken`:
     §design.copy-deck/where-links-open), verbatim; `{gateway}` is the via peer's label. */
@@ -254,6 +255,7 @@ export const LINK_WARNINGS: Readonly<Record<LinkWarningCode, string>> = {
   sleeps: "This link opens only while this host is awake.",
   quick: "This link's address changes when this computer restarts.",
   "quick-starting": "The public address is starting. This link opens from outside in a moment.",
+  "quick-verifying": "This link's address is still coming online. It should open within a couple of minutes.",
   "quick-setup": "Links can't open from outside until Cloudflare's tunnel program is on this computer. Set it up in Settings → Public links.",
   "quick-turn-on": "This link isn't public yet. Turn on public links in Settings → Public links.",
   "tunnel-down": "The public address is down, so this link won't open until it's back.",

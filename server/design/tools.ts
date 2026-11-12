@@ -6,7 +6,7 @@ import type { HEntry, ToolResult, ToolSpec } from "../../shared/harness";
 import { DESIGN_ASK_ABOVE, DESIGN_BATCH_MAX, DESIGN_TOOL, designDirectionLine, isDesignLabel, type DesignNote } from "../../shared/design";
 import { coordinatorCard, tellCoordinator } from "./coordinator";
 import { createRun } from "./setup";
-import { ownImagesLine } from "./asset-routes";
+import { ownImages } from "./asset-routes";
 import { DESIGN_HAND_IN_TOOL, editBase, handIn, pageProblem, readingSkill, refusedPage, replyPageThisTurn, savePage, takeLook, type DesignParent } from "./batch";
 import { listSkillFiles, readSkillFile, SKILL_LIMITS, SkillReadRefused, skillNamesOf } from "./skills";
 import { livePage } from "./live";
@@ -75,9 +75,9 @@ export function mainDesignTools(parent: () => DesignParent, cwd: () => string): 
           const paths = Array.isArray(params.images) ? params.images.filter((x): x is string => typeof x === "string").slice(0, 20) : [];
           if (!params.text?.trim() && !paths.length) throw new Error("tell needs the text to pass on, or images.");
           // By reference: the pictures go straight into the chat's set, and only their names reach anyone's memory.
-          const added = paths.length ? await ownImagesLine(p, paths) : "";
-          await tellCoordinator(p, [params.text?.trim(), added].filter(Boolean).join("\n\n"), `tell:${toolCallId}`);
-          return say(added ? `Passed on. ${added}` : "Passed on.");
+          const added = paths.length ? await ownImages(p, paths) : { line: "", names: [] };
+          await tellCoordinator(p, [params.text?.trim(), added.line].filter(Boolean).join("\n\n"), `tell:${toolCallId}`, added.names);
+          return say(added.line ? `Passed on. ${added.line}` : "Passed on.");
         }
         throw new Error('op must be "start", "read" or "tell".');
       },

@@ -112,7 +112,8 @@ export function firstMessage(d: DesignRecord, brief: string, refs: DesignReferen
   const skills = (d.skills ?? []).map((k) => ({ name: k.name, description: run?.skills?.find((r) => r.dir === k.dir)?.description ?? "" }));
   if (skills.length) parts.push(designerSkillsBlock(skills));
   for (const p of parents) parts.push(`Design ${p.label}, a page to draw from:\n\n${p.html}`);
-  if (refs.length && !d.vision) parts.push(...refs.map((r) => `Outline of the existing screen (${r.name}):\n${r.outline}`));
+  // A reference with no outline (a pasted screenshot's: its words are in the text) adds no empty line.
+  if (refs.length && !d.vision) parts.push(...refs.filter((r) => r.outline.trim()).map((r) => `Outline of the existing screen (${r.name}):\n${r.outline}`));
   const images = d.vision ? refs.map((r) => ({ type: "image" as const, data: r.data, mimeType: r.mime })) : [];
   return { text: parts.join("\n\n"), images };
 }
@@ -228,7 +229,8 @@ async function startSession(parent: DesignParent, label: string, seed?: { text: 
   try {
     const cwd = viewCwd(sid);
     const refs = loadRefs(sid, d.runId);
-    const reference = refs.length ? (d.vision ? "screenshot" : "description") : "none";
+    // A designer that can't read pictures works from an outline: with none (only screenshots' pictures), it has no reference.
+    const reference = refs.length ? (d.vision ? "screenshot" : refs.some((r) => r.outline.trim()) ? "description" : "none") : "none";
     const parents = d.parents.map((p) => ({ label: p, html: readPage(sid, p) ?? "" }));
     const first = seed ?? firstMessage(d, st.brief, refs, parents, st.instructions ?? null, runOf(sid, d.runId));
     const ref = await workers(parent).start({

@@ -13,7 +13,7 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 
 | What | Count |
 | --- | ---: |
-| Routes registered | 625 |
+| Routes registered | 626 |
 | Routes a catalogue entry points at | 203 |
 | Catalogue entries | 274 |
 | Class: Peer protocol | 39 |
@@ -31,7 +31,7 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | Class: Page plumbing | 22 |
 | Class: Steps of starting a chat | 2 |
 | Class: Live capability links | 1 |
-| Class: Approvals and grants | 17 |
+| Class: Approvals and grants | 18 |
 | Pending (not yet a command) | 23 |
 | Chat socket frame types | 14 |
 | Document/window keydown listeners | 12 |
@@ -834,7 +834,7 @@ A list that prints live preview links, which open a project's port to whoever ho
 | --- | --- |
 | `GET /api/projects/:pid/previews` | sessions |
 
-### Approvals and grants (17)
+### Approvals and grants (18)
 
 Approving a schedule or a draft spec, the Overseer's permits and their revoke: any chat can run catalogue actions with the operator's token, so none of these is one. Exactly these routes (`GRANTS`).
 
@@ -851,6 +851,7 @@ Approving a schedule or a draft spec, the Overseer's permits and their revoke: a
 | `POST /api/design/runs/:run/brief/image` | full |
 | `POST /api/design/runs/:run/brief/link` | full |
 | `POST /api/design/runs/:run/brief/not-this-screen` | full |
+| `POST /api/design/runs/:run/brief/screenshot` | full |
 | `POST /api/design/runs/:run/brief/start` | full |
 | `GET /api/overseer/autonomy` | sessions |
 | `POST /api/overseer/autonomy/revoke` | admin |

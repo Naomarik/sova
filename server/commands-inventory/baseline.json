@@ -343,6 +343,7 @@
     "POST /api/design/runs/:run/brief/image": {"need":"full","is":"grants"},
     "POST /api/design/runs/:run/brief/link": {"need":"full","is":"grants"},
     "POST /api/design/runs/:run/brief/not-this-screen": {"need":"full","is":"grants"},
+    "POST /api/design/runs/:run/brief/screenshot": {"need":"full","is":"grants"},
     "POST /api/design/runs/:run/brief/start": {"need":"full","is":"grants"},
     "POST /api/design/runs/:run/start": {"need":"full","is":"command","ids":["design.start"]},
     "POST /api/extensions/:id/approve": {"need":"full","is":"trust-grants"},

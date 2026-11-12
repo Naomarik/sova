@@ -223,6 +223,28 @@ test("a design reads only the skills its brief chose for the designers: design_s
   await assert.rejects(reader.execute("t", { skill: "brand", file: "../playwright/SKILL.md" }, undefined, undefined, undefined) as Promise<unknown>, /\.\./);
 });
 
+test("a Rebuild screenshot: a designer that reads pictures gets it attached; one that can't gets its words and no picture or empty outline", async () => {
+  const run = newRun(["zai/sees", "zai/blind"], ["Minimalist"]);
+  store.changeDesigns(parent.sessionId, (s) => {
+    const r = s.runs.find((x) => x.id === run)!;
+    r.setup.models[1]!.vision = false;
+  });
+  const words = "REFERENCE SCREENSHOTS: …\n- a1 (1440x900): Rebuild this screen.\n  Calm. Colours: #f2f2f7 page background; #4a43d8 primary action";
+  launchDesigns(parent, run, { brief: `P\n\n${words}`, references: [{ name: "screenshot-a1.png", mime: "image/png", data: Buffer.from("png").toString("base64"), outline: "" }] });
+  await ticks();
+  const byModel = (m: string) => fakes.find((f) => (f.rec.spec as unknown as { model: string }).model === m)!;
+  const sees = byModel("zai/sees").sends[0] as { text: string; images?: { mimeType: string }[] };
+  const blind = byModel("zai/blind").sends[0] as { text: string; images?: unknown[] };
+  assert.equal(sees.images?.length, 1);
+  assert.equal(sees.images![0]!.mimeType, "image/png");
+  assert.match(sees.text, /#4a43d8 primary action/, "the hex values are in the text too");
+  assert.match(blind.text, /#f2f2f7 page background; #4a43d8 primary action/);
+  assert.ok(!blind.images?.length, "no picture for a model that can't read one");
+  assert.doesNotMatch(blind.text, /Outline of the existing screen/);
+  // With no outline to work from, the blind designer isn't told it has a description of the screen.
+  assert.doesNotMatch(byModel("zai/blind").rec.spec.appendSystemPrompt ?? "", /detailed text description of a website design/);
+});
+
 test("a design made from others waits for the launch, and can't stand in for it", () => {
   const run = newRun(["zai/a", "zai/b"], ["Minimalist", "Heritage", "Immersive"]);
   assert.throws(() => newDesign(parent, { parents: ["A"], instructions: "mix", model: "zai/a", runId: run }), /hasn't launched/);

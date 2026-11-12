@@ -166,16 +166,30 @@ export const kindAllowed = (a: Pick<DesignAsset, "source">, kind: string): boole
 export const screenshotsInUse = (assets: readonly DesignAsset[], brief: { imageUse?: Record<string, { use: boolean }> } | undefined): string[] =>
   assets.filter((a) => isScreenshot(a) && brief?.imageUse?.[a.name]?.use !== false).map((a) => a.name);
 
-/** A screenshot's words for designers and whose they are: the user's, else the Creative Director's, else the helper's draft
-    over the measured colours. Null when there are none: no draft and no palette. */
+/** A screenshot's words for designers and whose they are. The feel is the user's, else the Creative Director's, else the
+    helper's draft (`by` says whose). The colours always start from the measured palette, so its hex values reach every
+    design whoever wrote the feel: the helper's roles first, then the Creative Director's and the user's renaming a role
+    or adding a colour. Only the user's own colours replace the measured ones. Null when there are none at all. */
 export function shotWords(a: Pick<DesignAsset, "userWords" | "cdWords" | "description" | "palette">): { words: DesignShotWords; by: "user" | "coordinator" | "helper" } | null {
-  if (a.userWords) return { words: a.userWords, by: "user" };
-  if (a.cdWords) return { words: a.cdWords, by: "coordinator" };
-  const feel = a.description?.feel ?? "";
-  const roles = new Map((a.description?.roles ?? []).map((r) => [r.hex.toLowerCase(), r.role]));
-  const colors = (a.palette ?? []).map((p) => ({ hex: p.hex, role: roles.get(p.hex.toLowerCase()) ?? "" }));
+  const user = a.userWords;
+  const cd = a.cdWords;
+  const by = user ? "user" : cd ? "coordinator" : "helper";
+  const feel = user?.feel ?? cd?.feel ?? a.description?.feel ?? "";
+  let colors: { hex: string; role: string }[];
+  if (user?.colors.length) colors = user.colors.map((c) => ({ ...c }));
+  else {
+    const roles = new Map((a.description?.roles ?? []).map((r) => [r.hex.toLowerCase(), r.role]));
+    colors = (a.palette ?? []).map((p) => ({ hex: p.hex.toLowerCase(), role: roles.get(p.hex.toLowerCase()) ?? "" }));
+    for (const c of cd?.colors ?? []) {
+      const hex = c.hex.toLowerCase();
+      const known = colors.find((x) => x.hex === hex);
+      if (known) {
+        if (c.role) known.role = c.role;
+      } else colors.push({ hex, role: c.role });
+    }
+  }
   if (!feel && !colors.length) return null;
-  return { words: { feel, colors }, by: "helper" };
+  return { words: { feel, colors }, by };
 }
 
 /** Colors and font names read off the page: notes for the brief, no model involved. */

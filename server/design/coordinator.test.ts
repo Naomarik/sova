@@ -1109,7 +1109,8 @@ test("design_brief images: kind, words and rebuild or feel; a page's image is ne
   assert.ok(brief(run.id).rev > seen, "a retune the user hasn't seen moves the version Start names");
   await t.design_brief({ baseRev: rev(), images: [{ name: shot, words: { feel: "Director's feel.", colors: [{ hex: "#4A43D8", role: "buttons" }] } }] });
   assert.deepEqual(brief(run.id).screenUse, { [shot]: { use: "rebuild", by: "coordinator" } });
-  assert.deepEqual(shotWords(assetNow(shot)), { words: { feel: "Director's feel.", colors: [{ hex: "#4a43d8", role: "buttons" }] }, by: "coordinator" });
+  // The measured colours stay; the Creative Director renames one's role.
+  assert.deepEqual(shotWords(assetNow(shot)), { words: { feel: "Director's feel.", colors: [{ hex: "#f2f2f7", role: "" }, { hex: "#4a43d8", role: "buttons" }] }, by: "coordinator" });
   // The user's words, kind and click stand against the Creative Director's later ones.
   const { setAssetNote } = await import("./describe");
   setAssetNote(parent.sessionId, shot, { words: { feel: "Mine.", colors: [] } });
@@ -1176,3 +1177,23 @@ test("Start's screenshots are the shared rule's: an unticked screenshot needs no
   assert.doesNotMatch(log.launches[0]!.brief, /REFERENCE SCREENSHOTS/, "unticked: no one gets it");
 });
 const readAssetsNow = () => assetsMod.readAssets(parent.sessionId).assets;
+
+test("the measured palette reaches every design's text even when the Creative Director's words carry no colours", async () => {
+  const eight = ["#2c2c38", "#1e1e26", "#26262f", "#373744", "#8d8d9a", "#cdcdd2", "#e3a63a", "#746fc6"];
+  const run = runWith(2, 3, { createdAt: "2026-01-01T00:00:00Z" });
+  const t = await started(run);
+  const shot = pasted(1);
+  assetsMod.changeAssets(parent.sessionId, (c) => {
+    const a = c.assets.find((x) => x.name === shot)!;
+    a.palette = eight.map((hex, i) => ({ hex, share: [0.73, 0.19, 0.03, 0.015, 0.01, 0.003, 0.001, 0.001][i]! }));
+    a.description!.roles = [{ hex: "#e3a63a", role: "needs-you marker" }];
+  });
+  await t.design_brief({ baseRev: 0, summary: "S", prompt: "P", images: [{ name: shot, screen: "rebuild", words: { feel: "Dense, calm, dark." } }] });
+  const { shotWords } = await import("../../shared/design-assets");
+  assert.deepEqual(shotWords(assetNow(shot))!.words.colors.map((c) => c.hex), eight, "the brief's swatches: every measured colour");
+  await start(run);
+  const text = log.launches[0]!.brief;
+  for (const hex of eight) assert.ok(text.includes(hex), `${hex} reaches the designs`);
+  assert.match(text, /Dense, calm, dark\./);
+  assert.match(text, /#e3a63a needs-you marker/, "the helper's role stays unless renamed");
+});

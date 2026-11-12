@@ -48,6 +48,25 @@ test("a dark screen keeps its light text, a 2px indigo line and small amber mark
   assert.ok(nearest(p, amber).c.saturation! > 0.5);
   assert.ok(nearest(p, surface).c.saturation! < 0.1);
   assert.equal(p[0]!.hex, nearest(p, surface).c.hex, "largest first");
+  // Where each sits: the page covers the screen's outer frame, the larger surface sits inside it.
+  assert.ok(nearest(p, page).c.frame! > nearest(p, surface).c.frame!, "the page holds the frame, whatever its share");
+});
+
+test("a thin line and text are told by their core shade, not their blend into the background", () => {
+  const W = 400, H = 200;
+  const bg: RGB = [0x1e, 0x1e, 0x26], core: RGB = [0x8e, 0x88, 0xff], ink: RGB = [0xf2, 0xf2, 0xf6];
+  const mix = (a: RGB, b: RGB, t: number): RGB => a.map((v, i) => Math.round(v * (1 - t) + b[i]! * t)) as RGB;
+  const { px, rect } = canvas(W, H, bg);
+  // An anti-aliased underline: one pure row between two half-blended ones (the blends outnumber the core).
+  rect(50, 40, 300, 1, mix(bg, core, 0.55));
+  rect(50, 41, 300, 1, core);
+  rect(50, 42, 300, 1, mix(bg, core, 0.45));
+  rect(50, 43, 300, 1, mix(bg, core, 0.6));
+  // Text: short strokes, a pure core with blended sides.
+  for (let x = 40; x < 360; x += 6) rect(x, 100, 1, 9, mix(bg, ink, 0.5)), rect(x + 1, 100, 1, 9, ink), rect(x + 2, 100, 1, 9, mix(bg, ink, 0.4));
+  const p = paletteOf(px, W);
+  assert.ok(nearest(p, core).d < 6, `indigo ${nearest(p, core).c.hex}`);
+  assert.ok(nearest(p, ink).d < 6, `text ${nearest(p, ink).c.hex}`);
 });
 
 test("the main colours, largest first, specks and transparency left out", () => {

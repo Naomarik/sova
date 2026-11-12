@@ -80,6 +80,8 @@ export interface DesignMeasuredColor {
   share: number;
   saturation?: number;
   thin?: true;
+  /** How much of the screen's outer frame it covers, 0..1: the page background covers most of it. */
+  frame?: number;
 }
 
 /** What a designer is told of a pasted screenshot: its feel, and its colours by role. Words, never the picture. */

@@ -14,13 +14,17 @@ export interface MeasuredColor {
   saturation?: number;
   /** It sits mostly on thin strokes (text, lines, borders, small marks) rather than filling areas. */
   thin?: true;
+  /** How much of the screen's outer frame (a band along all four edges) it covers, 0..1, two decimals: where it sits.
+      The page background covers most of it; a panel or table inside the page covers little, however large it is. */
+  frame?: number;
 }
 
 export const PALETTE_LIMITS = Object.freeze({
   /** Colours kept. */
   colors: 8,
-  /** The long edge the pixels are read at, at most: a screenshot near its own size, so a 2px line stays whole pixels. */
-  edge: 1600,
+  /** The long edge the pixels are read at, at most: a screenshot at its own size, since any downscale blends a 1-2px
+      line into the background (the bins leave the darkroom, never the pixels, so size costs only a little time). */
+  edge: 4096,
   /** A neutral under this share is noise or anti-aliasing, unless it is the text colour. */
   neutralShare: 0.01,
   /** A saturated colour needs only this share, and this many pixels: an accent may be a single thin line. */
@@ -41,6 +45,10 @@ export const PALETTE_LIMITS = Object.freeze({
   textShare: 0.002,
   /** A colour with at least this share of its pixels on an edge (a neighbour of another colour) is thin. */
   thinEdges: 0.5,
+  /** The outer frame: this fraction of the shorter side along each edge, at least 2px. */
+  frameBand: 0.03,
+  /** A stroke's own shade is taken from bins with at least this fraction of its largest bin's pixels. */
+  coreFloor: 0.04,
 });
 
 const hex2 = (n: number): string => Math.max(0, Math.min(255, Math.round(n))).toString(16).padStart(2, "0");
@@ -54,6 +62,8 @@ interface Cluster {
   saturated: boolean;
   /** Its largest bin's colour: for a thin colour, the stroke's core rather than its blend into the background. */
   peak: readonly [number, number, number];
+  /** Its pixels in the outer frame. */
+  framed: number;
   /** The bins it was made of, largest first. */
   members?: Cluster[];
 }
@@ -71,14 +81,14 @@ function hueOf([r, g, b]: readonly [number, number, number]): number {
     background are duller, so the stroke's own colour wins. */
 function purest(c: Cluster): readonly [number, number, number] {
   const members = c.members ?? [c];
-  const floor = Math.max(3, members[0]!.n * 0.15);
-  return members.filter((m) => m.n >= floor).reduce((best, m) => (chromaOf(m.peak) > chromaOf(best) ? m.peak : best), members[0]!.peak);
+  const floor = Math.max(3, members[0]!.n * PALETTE_LIMITS.coreFloor);
+  return members.filter((m) => m.n >= floor).reduce((best, m) => (chromaOf(m.peak) + lumaOf(m.peak) * 40 > chromaOf(best) + lumaOf(best) * 40 ? m.peak : best), members[0]!.peak);
 }
 /** A text group's own shade: of its bins with a real count, the one furthest from the background in lightness. A
     stroke's edges blend toward the background, so its core is the starkest. */
 function starkest(c: Cluster, bgLuma: number): readonly [number, number, number] {
   const members = c.members ?? [c];
-  const floor = Math.max(3, members[0]!.n * 0.15);
+  const floor = Math.max(3, members[0]!.n * PALETTE_LIMITS.coreFloor);
   return members.filter((m) => m.n >= floor).reduce((best, m) => (Math.abs(lumaOf(m.peak) - bgLuma) > Math.abs(lumaOf(best) - bgLuma) ? m.peak : best), members[0]!.peak);
 }
 const hueGap = (a: number, b: number): number => Math.min(Math.abs(a - b), 360 - Math.abs(a - b));
@@ -94,9 +104,9 @@ export function paletteOf(rgba: ArrayLike<number>, width = 0, max: number = PALE
 }
 
 /**
- * Pixels as colour bins: [key, count, sum r, sum g, sum b, edge count, ...] flat, 5 bits a channel (fine enough that a
- * page and the surface on it stay apart). A pixel is on an edge when a 4-neighbour falls in another bin: what strokes
- * are made of. The darkroom's page bins its pixels by this same rule (page-capture.ts binsInPage), so only the bins
+ * Pixels as colour bins: [key, count, sum r, sum g, sum b, edge count, frame count, ...] flat, 5 bits a channel (fine
+ * enough that a page and the surface on it stay apart). A pixel is on an edge when a 4-neighbour falls in another bin:
+ * what strokes are made of. The frame count is its pixels in the band along the picture's four sides: where it sits. The darkroom's page bins its pixels by this same rule (page-capture.ts binsInPage), so only the bins
  * leave it, never the pixels.
  */
 export function binPixels(rgba: ArrayLike<number>, width = 0): number[] {
@@ -114,7 +124,7 @@ export function binPixels(rgba: ArrayLike<number>, width = 0): number[] {
     if (j === undefined) {
       j = out.length;
       at.set(key, j);
-      out.push(key, 0, 0, 0, 0, 0);
+      out.push(key, 0, 0, 0, 0, 0, 0);
     }
     out[j + 1]!++;
     out[j + 2]! += r;
@@ -123,13 +133,16 @@ export function binPixels(rgba: ArrayLike<number>, width = 0): number[] {
   }
   if (width > 0) {
     const height = Math.floor(count / width);
+    const band = Math.max(2, Math.round(Math.min(width, height) * PALETTE_LIMITS.frameBand));
     for (let y = 0; y < height; y++)
       for (let x = 0; x < width; x++) {
         const p = y * width + x;
         const k = keys[p]!;
         if (k < 0) continue;
+        const j = at.get(k)!;
         const differs = (q: number) => keys[q]! >= 0 && keys[q] !== k;
-        if ((x > 0 && differs(p - 1)) || (x < width - 1 && differs(p + 1)) || (y > 0 && differs(p - width)) || (y < height - 1 && differs(p + width))) out[at.get(k)! + 5]!++;
+        if ((x > 0 && differs(p - 1)) || (x < width - 1 && differs(p + 1)) || (y > 0 && differs(p - width)) || (y < height - 1 && differs(p + width))) out[j + 5]!++;
+        if (x < band || y < band || x >= width - band || y >= height - band) out[j + 6]!++;
       }
   }
   return out;
@@ -140,11 +153,13 @@ export function paletteFromBins(flat: readonly number[], max: number = PALETTE_L
   const bins = new Map<number, Cluster>();
   let total = 0;
   let edgesKnown = false;
-  for (let j = 0; j + 5 < flat.length; j += 6) {
-    const [key, n, r, g, b, edges] = flat.slice(j, j + 6) as [number, number, number, number, number, number];
+  let framedTotal = 0;
+  for (let j = 0; j + 6 < flat.length; j += 7) {
+    const [key, n, r, g, b, edges, framed] = flat.slice(j, j + 7) as [number, number, number, number, number, number, number];
     if (!(n > 0)) continue;
-    bins.set(key, { n, r, g, b, edges, saturated: false, peak: [0, 0, 0] });
+    bins.set(key, { n, r, g, b, edges, framed, saturated: false, peak: [0, 0, 0] });
     total += n;
+    framedTotal += framed;
     if (edges > 0) edgesKnown = true;
   }
   if (!total) return [];
@@ -165,6 +180,7 @@ export function paletteFromBins(flat: readonly number[], max: number = PALETTE_L
         c.g += bin.g;
         c.b += bin.b;
         c.edges += bin.edges;
+        c.framed += bin.framed;
         c.members!.push(bin);
       } else out.push({ ...bin, members: [bin] });
     }
@@ -209,6 +225,7 @@ export function paletteFromBins(flat: readonly number[], max: number = PALETTE_L
         share: Math.max(0.001, Math.round(share(c) * 1000) / 1000),
         saturation: Math.round((chromaOf(rgb) / 255) * 100) / 100,
         ...(thin(c) ? { thin: true as const } : {}),
+        ...(framedTotal > 0 ? { frame: Math.round((c.framed / framedTotal) * 100) / 100 } : {}),
       };
     });
 }
@@ -222,6 +239,7 @@ export function cleanPalette(v: unknown): MeasuredColor[] | undefined {
     .map((c) => ({
       hex: c.hex,
       share: c.share,
+      ...(typeof c.frame === "number" && c.frame >= 0 && c.frame <= 1 ? { frame: c.frame } : {}),
       ...(typeof c.saturation === "number" && c.saturation >= 0 && c.saturation <= 1 ? { saturation: c.saturation } : {}),
       ...(c.thin === true ? { thin: true as const } : {}),
     }));

@@ -5,6 +5,7 @@
 import { createHash } from "node:crypto";
 import type { Browser, Page, Response } from "playwright-core";
 import { DESIGN_ASSET_LIMITS, type DesignAssetContext, type DesignAssetDom, type DesignAssetSkipped, type DesignPageNotes } from "../../shared/design-assets";
+import { PALETTE_LIMITS } from "./palette";
 
 export type TourRaster = "png" | "jpeg" | "webp";
 
@@ -309,10 +310,10 @@ export interface DevelopedSizes {
 }
 
 /** Runs inside the darkroom's blank page: an image drawn to fit `edge`, its pixels binned by palette.ts binPixels' rule
-    ([key, count, r, g, b, edges] flat, 5 bits a channel), so a few KB of bins leave the page instead of megabytes of pixels.
+    ([key, count, r, g, b, edges, frame] flat, 5 bits a channel), so a few KB of bins leave the page instead of megabytes of pixels.
     Self-contained: it is sent to the page as source. */
 /* v8 ignore next */
-async function binsInPage(a: { dataUrl: string; edge: number }) {
+async function binsInPage(a: { dataUrl: string; edge: number; frameBand: number }) {
   const img = new Image();
   await new Promise<void>((ok, no) => { img.onload = () => ok(); img.onerror = () => no(new Error("decode")); img.src = a.dataUrl; });
   const scale = Math.min(1, a.edge / Math.max(img.naturalWidth || 1, img.naturalHeight || 1));
@@ -333,16 +334,19 @@ async function binsInPage(a: { dataUrl: string; edge: number }) {
     const key = ((r >> 3) << 10) | ((g >> 3) << 5) | (b >> 3);
     keys[p] = key;
     let j = at.get(key);
-    if (j === undefined) { j = out.length; at.set(key, j); out.push(key, 0, 0, 0, 0, 0); }
+    if (j === undefined) { j = out.length; at.set(key, j); out.push(key, 0, 0, 0, 0, 0, 0); }
     out[j + 1]!++; out[j + 2]! += r; out[j + 3]! += g; out[j + 4]! += b;
   }
+  const band = Math.max(2, Math.round(Math.min(w, h) * a.frameBand));
   for (let y = 0; y < h; y++)
     for (let x = 0; x < w; x++) {
       const p = y * w + x;
       const k = keys[p]!;
       if (k < 0) continue;
+      const j = at.get(k)!;
       const differs = (q: number) => keys[q]! >= 0 && keys[q] !== k;
-      if ((x > 0 && differs(p - 1)) || (x < w - 1 && differs(p + 1)) || (y > 0 && differs(p - w)) || (y < h - 1 && differs(p + w))) out[at.get(k)! + 5]!++;
+      if ((x > 0 && differs(p - 1)) || (x < w - 1 && differs(p + 1)) || (y > 0 && differs(p - w)) || (y < h - 1 && differs(p + w))) out[j + 5]!++;
+      if (x < band || y < band || x >= w - band || y >= h - band) out[j + 6]!++;
     }
   return { w, h, bins: out };
 }
@@ -433,7 +437,7 @@ export async function openDarkroom(browser: Browser) {
       const problem = drawProblem(bytes);
       if (problem) throw new DarkroomRefusal(problem);
       const dataUrl = `data:${mime};base64,${Buffer.from(bytes).toString("base64")}`;
-      const r = await page.evaluate(binsInPage, { dataUrl, edge });
+      const r = await page.evaluate(binsInPage, { dataUrl, edge, frameBand: PALETTE_LIMITS.frameBand });
       return { width: r.w, height: r.h, bins: r.bins };
     },
     close: () => context.close(),

@@ -13,7 +13,7 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 
 | What | Count |
 | --- | ---: |
-| Routes registered | 632 |
+| Routes registered | 633 |
 | Routes a catalogue entry points at | 203 |
 | Catalogue entries | 274 |
 | Class: Peer protocol | 39 |
@@ -27,7 +27,7 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | Class: Trust grants | 25 |
 | Class: A card view's own calls | 4 |
 | Class: Middleware and fallbacks | 2 |
-| Class: Left as is, by choice | 276 |
+| Class: Left as is, by choice | 277 |
 | Class: Page plumbing | 22 |
 | Class: Steps of starting a chat | 2 |
 | Class: Live capability links | 1 |
@@ -512,7 +512,7 @@ What a transcript card's or a drawing's sealed view asks through its box, for it
 | `ALL /*` | full |
 | `ALL /api/*` | full |
 
-### Left as is, by choice (276)
+### Left as is, by choice (277)
 
 Areas the user chose not to make scriptable (`OPTED_OUT` in `server/commands-inventory/scan.ts`). A route there that a catalogue entry points at stays a command; the rest are not pending, and a new route there needs no entry.
 
@@ -679,6 +679,7 @@ Areas the user chose not to make scriptable (`OPTED_OUT` in `server/commands-inv
 | `PUT /api/public-links` | admin |
 | `DELETE /api/public-links/account-token` | admin |
 | `PUT /api/public-links/account-token` | admin |
+| `DELETE /api/public-links/candidate` | admin |
 | `POST /api/public-links/cloudflared/download` | admin |
 | `POST /api/public-links/handed-out` | admin |
 | `POST /api/public-links/setup-chat` | admin |

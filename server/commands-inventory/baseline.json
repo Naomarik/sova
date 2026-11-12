@@ -33,6 +33,7 @@
     "DELETE /api/projects/:pid/overseer/todo": {"need":"admin","is":"command","ids":["project.overseer.todo.remove"]},
     "DELETE /api/projects/:pid/overseer/todos/done": {"need":"admin","is":"command","ids":["project.overseer.todo.clear-done"]},
     "DELETE /api/public-links/account-token": {"need":"admin","is":"opted-out"},
+    "DELETE /api/public-links/candidate": {"need":"admin","is":"opted-out"},
     "DELETE /api/push/subscribe": {"need":"admin","is":"opted-out"},
     "DELETE /api/session-groups/:id": {"need":"sessions","is":"command","ids":["session.group.delete"]},
     "DELETE /api/sessions/profile-switch": {"need":"sessions","is":"command","ids":["session.profile.switch.cancel"]},

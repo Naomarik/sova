@@ -4,7 +4,7 @@
 // are never a PUT's; a Copy click under Free records the link's hand-out. A throwaway agent dir.
 import { dropScratchAgentDir } from "../../testing/scratch-agent-dir";
 import assert from "node:assert/strict";
-import { rmSync } from "node:fs";
+import { existsSync, readFileSync, rmSync } from "node:fs";
 import { after, afterEach, describe, test } from "node:test";
 import { Hono } from "hono";
 
@@ -21,8 +21,9 @@ const handouts = await import("./handouts");
 const { handedOutHashes, HANDED_OUT_MAX } = await import("./routes");
 
 after(dropScratchAgentDir);
+const { candidateFile } = await import("../candidate");
 afterEach(() => {
-  for (const f of [store.publicLinksFile(), store.tunnelConsentFile()]) rmSync(f, { force: true });
+  for (const f of [store.publicLinksFile(), store.tunnelConsentFile(), candidateFile()]) rmSync(f, { force: true });
   handouts.resetHandoutsCache();
 });
 
@@ -146,5 +147,61 @@ describe("a Copy click under Free records the hand-out", () => {
     rmSync(store.publicLinksFile(), { force: true });
     await call(a, "PUT", "/api/public-links", "page", { route: "off" });
     assert.equal(((await (await call(a, "POST", "/api/public-links/handed-out", "page", body)).json()) as { noted: number }).noted, 0);
+  });
+});
+
+describe("a new address waits for its Verify while today's route works", () => {
+  const GW = (publicUrl: string) => ({ publicUrl, front: "caddy", sharePort: 4802, acceptFrom: "all" }) as const;
+
+  test("the rule: only a move to Account or this host as gateway, at another address, while today's route works", async () => {
+    const { waitsForVerify } = await import("../../public-links-routes");
+    const quick = { version: 1, route: "quick" } as const;
+    const self = (u: string) => ({ version: 1, route: "self", gateway: GW(u) }) as const;
+    const account = { version: 1, route: "account", account: { publicUrl: "https://a.example.com" } } as const;
+    const rows: [string, Parameters<typeof waitsForVerify>, boolean][] = [
+      ["Free works → Account", [account, quick, true], true],
+      ["Free works → own server", [self("https://s.example.com"), quick, true], true],
+      ["own server works → a new address", [self("https://new.example.com"), self("https://s.example.com"), true], true],
+      ["own server works → same address (another field)", [self("https://s.example.com"), self("https://s.example.com"), true], false],
+      ["nothing works yet (a fresh computer) → Account", [account, quick, false], false],
+      ["→ Free switches at once", [quick, account, true], false],
+      ["→ Off switches at once", [{ version: 1, route: "off" }, quick, true], false],
+      ["→ Through switches at once", [{ version: 1, route: { via: { nodeId: "n1" } } }, quick, true], false],
+    ];
+    for (const [name, args, want] of rows) assert.equal(waitsForVerify(...args), want, name);
+  });
+
+  test("a fresh computer (Free not up) takes the new route at once: no candidate", async () => {
+    const a = app();
+    const info = (await (await call(a, "PUT", "/api/public-links", "page", { route: "self", gateway: GW("https://s.example.com") })).json()) as { file: { route: unknown }; candidate?: unknown };
+    assert.equal(info.file.route, "self");
+    assert.equal(info.candidate, undefined);
+  });
+
+  test("while one waits, public-links.json is untouched; cancel is the same door as PUT", async () => {
+    const a = app();
+    await call(a, "PUT", "/api/public-links", "page", { route: "self", gateway: GW("https://s.example.com") });
+    store.writeServerFields({ verifiedAt: Date.now() });
+    const before = readFileSync(store.publicLinksFile(), "utf8");
+    const info = (await (await call(a, "PUT", "/api/public-links", "page", { route: "self", gateway: GW("https://new.example.com") })).json()) as { file: { gateway?: { publicUrl: string } }; candidate?: { publicUrl: string; route: string } };
+    assert.equal(info.file.gateway?.publicUrl, "https://s.example.com", "links keep today's address");
+    assert.deepEqual([info.candidate?.route, info.candidate?.publicUrl], ["self", "https://new.example.com"]);
+    assert.equal(readFileSync(store.publicLinksFile(), "utf8"), before, "the setting file isn't written");
+    assert.equal((await call(a, "DELETE", "/api/public-links/candidate", "chat")).status, 403);
+    assert.ok(existsSync(candidateFile()), "a chat cancels nothing");
+    const cancelled = (await (await call(a, "DELETE", "/api/public-links/candidate", "script")).json()) as { candidate?: unknown };
+    assert.equal(cancelled.candidate, undefined);
+    assert.ok(!existsSync(candidateFile()));
+  });
+
+  test("a route chosen outright (Free, Off, Through) replaces a waiting candidate", async () => {
+    const a = app();
+    await call(a, "PUT", "/api/public-links", "page", { route: "self", gateway: GW("https://s.example.com") });
+    store.writeServerFields({ verifiedAt: Date.now() });
+    await call(a, "PUT", "/api/public-links", "page", { route: "self", gateway: GW("https://new.example.com") });
+    assert.ok(existsSync(candidateFile()), "control: one waits");
+    const info = (await (await call(a, "PUT", "/api/public-links", "page", { route: "off" })).json()) as { file: { route: unknown }; candidate?: unknown };
+    assert.deepEqual([info.file.route, info.candidate], ["off", undefined]);
+    assert.ok(!existsSync(candidateFile()));
   });
 });

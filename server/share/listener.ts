@@ -57,12 +57,16 @@ let listenEnv: NodeJS.ProcessEnv = process.env;
 
 const tunnelRoute = (file: PublicLinksFile): boolean => file.route === "quick" || file.route === "account";
 
+/** A candidate address being verified right now (withCandidate): its host passes the Host gate, and
+    `port` (a gateway candidate's sharePort) is bound when nothing else is. Only during a Verify. */
+let candidate: { host: string; port: number | null } | null = null;
+
 /** What the setting and the environment ask for: an address to bind, a failure (a bind is wanted
     but SOVA_SHARE_PORT isn't a port; only the variable can be one, the setting is parsed
     strictly), or null: nothing to bind. */
 function bindAsk(file: PublicLinksFile, env: NodeJS.ProcessEnv): { want: BindTarget } | { failure: ShareListenerFailure } | null {
   const self = file.route === "self" && file.gateway ? file.gateway : null;
-  const tunnel = tunnelRoute(file) && tunnelPort !== null ? tunnelPort : null;
+  const tunnel = (tunnelRoute(file) || candidate) && tunnelPort !== null ? tunnelPort : candidate?.port ?? null;
   const host = env.SOVA_SHARE_HOST?.trim() || (self || tunnel !== null ? "127.0.0.1" : "");
   const portText = env.SOVA_SHARE_PORT?.trim() || (self ? String(self.sharePort) : tunnel !== null ? String(tunnel) : "");
   if (!host || !portText) return null;
@@ -115,7 +119,7 @@ function bind(want: BindTarget, gen: number): Promise<ShareListenerState | null>
       previewTunnel.dispose();
     },
   };
-  const server = createShareServer({ ...router, previewTunnel, shareHost: (req) => shareHostAllowed(req.headers.host, readPublicLinks(listenEnv), tunnelStatus({ kind: "share" }), listenEnv) });
+  const server = createShareServer({ ...router, previewTunnel, shareHost: (req) => shareHostAllowed(req.headers.host, readPublicLinks(listenEnv), tunnelStatus({ kind: "share" }), listenEnv, candidate?.host ?? null) });
   return new Promise((resolve) => {
     server.once("error", (err: NodeJS.ErrnoException) => {
       console.warn(`[share] listener not up on ${want.host}:${want.port}: ${err.message}`);
@@ -202,11 +206,13 @@ function hostOnly(raw: string | undefined): string | null {
  * isn't known yet (adopt still running, a host change). Other routes and the env pins judge no Host.
  * Pure.
  */
-export function shareHostAllowed(raw: string | undefined, file: PublicLinksFile, share: TunnelStatus, env: NodeJS.ProcessEnv = process.env): boolean {
+export function shareHostAllowed(raw: string | undefined, file: PublicLinksFile, share: TunnelStatus, env: NodeJS.ProcessEnv = process.env, candidateHost: string | null = null): boolean {
   if (!tunnelRoute(file) || env.SOVA_SHARE_PUBLIC_URL?.trim()) return true;
   const host = hostOnly(raw);
   if (!host) return false;
   if (LOOPBACK.has(host)) return true;
+  // The candidate's own address, while its Verify runs.
+  if (candidateHost && candidateHost === host) return true;
   const origin = file.route === "account" ? (file.account?.publicUrl ?? null) : share.state === "up" || share.state === "degraded" ? share.origin : null;
   if (!origin) return false;
   try {
@@ -229,11 +235,11 @@ function ownPort(port: number, env: NodeJS.ProcessEnv): boolean {
  * could be bound, or the route runs no tunnel.
  */
 export async function bindForTunnel(recorded: number | null, file: PublicLinksFile = readPublicLinks(listenEnv)): Promise<number> {
-  if (!tunnelRoute(file)) throw new Error("The route runs no Cloudflare tunnel.");
+  if (!tunnelRoute(file) && !candidate) throw new Error("The route runs no Cloudflare tunnel.");
   // Account's dashboard points at exactly sharePort (its guide says so): no fallback there, a taken
   // port is the listener failure. Free's own tunnel follows whatever port it got.
   const asked = file.gateway?.sharePort ?? SHARE_PORT_DEFAULT;
-  const tries = recorded !== null ? [recorded] : file.route === "account" ? [asked] : [asked, 0];
+  const tries = recorded !== null ? [recorded] : file.route === "quick" ? [asked, 0] : [asked];
   for (const port of tries) {
     if (bound && (port === 0 || bound.want.port === port || bound.state.port === port)) return guard(bound.state.port);
     tunnelPort = port;
@@ -253,6 +259,28 @@ export function releaseTunnelBind(file: PublicLinksFile = readPublicLinks(listen
   tunnelPort = null;
   return rebind(bindAsk(file, listenEnv));
 }
+
+/**
+ * Run `check` (a candidate's Verify) with the candidate's address let in: its host passes the Host
+ * gate, and a gateway candidate's `port` is bound when the listener has nothing else to bind. Put
+ * back as it was afterwards, whatever `check` did.
+ */
+export async function withCandidate<T>(c: { host: string; port: number | null }, check: () => Promise<T>): Promise<T> {
+  candidate = { host: c.host.toLowerCase(), port: c.port };
+  try {
+    if (c.port !== null && !bound) await rebind(bindAsk(readPublicLinks(listenEnv), listenEnv));
+    return await check();
+  } finally {
+    candidate = null;
+    const file = readPublicLinks(listenEnv);
+    // A candidate's tunnel bound for itself under a route that runs none: that ask ends with it.
+    if (!tunnelRoute(file)) tunnelPort = null;
+    await rebind(bindAsk(file, listenEnv)).catch(() => null);
+  }
+}
+
+/** The address the listener is bound on, for a candidate's reason. */
+export const boundPort = (): number | null => bound?.state.port ?? null;
 
 export function stopShareListener(): void {
   generation++;

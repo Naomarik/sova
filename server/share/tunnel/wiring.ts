@@ -4,7 +4,9 @@ import { bindForTunnel, releaseTunnelBind } from "../listener";
 import { onShareLinksChanged, setMintWait, type ShareLinksChange } from "../links-events";
 import { liveLinks } from "../registry-push";
 import { onPublicLinksChanged } from "../setting-events";
+import { readAccountToken } from "./account-token";
 import { onCloudflaredChanged } from "./binary";
+import { readCandidate } from "../candidate";
 import { noteHandouts } from "./handouts";
 import { adoptTunnels, configureTunnels, ensureTunnel, onTunnelChanged, recordedTargetPort, runningTunnels, stopTunnel, tunnelStatus } from "./manager";
 
@@ -141,6 +143,13 @@ export async function startTunnelWiring(opts: TunnelWiringOptions = {}): Promise
     shareTarget: (recorded) => bindForTunnel(recorded, readPublicLinks(env)),
     shareWanted: () => shareWanted(),
     shareMode: () => (route() === "account" ? "account" : "quick"),
+    // An Account candidate's tunnel runs only for its Verify (public-links-routes.ts), never by itself.
+    candidateAccount: () => {
+      const c = readCandidate();
+      const token = c?.file.route === "account" ? readAccountToken() : null;
+      return c && token && c.file.account ? { token, publicUrl: c.file.account.publicUrl } : null;
+    },
+    candidateWanted: () => false,
   });
   setMintWait(mintWait);
   unsubscribe = [

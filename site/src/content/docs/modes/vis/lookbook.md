@@ -57,6 +57,22 @@ The card opens as **Lookbook · Setup**, with what you said filled in. Change an
 
 Press **Start Creative Director**. Nothing is designed yet.
 
+### Design skills
+
+A Lookbook uses your project's design skills by itself: any skill in the project's folder (a folder
+holding a `SKILL.md`, such as `.agents/skills/brand`). To add another for one Lookbook, name it to
+your chat in your own words ("use the brand kit in ~/kits/acme"). Setup and the brief list the skills
+in use under **Design skills**; there is nothing to tick. A skill you named that can't be found
+becomes one of the Creative Director's questions on the brief.
+
+The Creative Director reads the skills, and can read any file you point it to ("the logo is in my
+Downloads folder"), but writes and runs nothing. Its brief suggests which parts of each skill the
+designers should read first. Each designer can read its run's skills, and only those, through a
+reader Sova gives it. While it does, its tile says **Reading the design skill**. Designers copy the
+tokens and rules they use into the page, which still loads nothing but Google Fonts. An image the
+Creative Director finds, such as a logo, joins the brief's images and reaches the designers from
+there. The estimate before Start counts the reading.
+
 ## The Design Brief
 
 The Creative Director writes a **Design Brief** on the card. It looks first at any screen or link you gave

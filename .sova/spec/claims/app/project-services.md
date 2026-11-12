@@ -642,7 +642,7 @@ same engine in-process, never over HTTP:
   the engine's.
 - **The design coordinator** (the `design-coordinator` caller, §chat.design-mode/project-reach):
   `status` of any of your projects. `up` and `down` of a copy, in any project, only after the user says
-  yes on the coordinator's card, and then only the request the card named; until then they answer
+  yes on the Creative Director's card, and then only the request the card named; until then they answer
   `needs-confirm`. Never on a project's main checkout or its main copy (`forbidden`). Every other verb
   is `forbidden`. A design session has no project tool at all.
 - **The Project Assistant** (the `assistant` caller, §app.project-assistant/tools): only `up`, and

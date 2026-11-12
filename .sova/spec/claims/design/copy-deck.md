@@ -398,7 +398,7 @@ the person clicks.
 | Restarting Sova | Only the user restarts Sova. Ask them to press Restart Sova in Settings → General. Nothing was restarted. |
 | Updating Sova | Only the user updates Sova. Ask them to do it in Settings → General. Nothing was changed. |
 | A design run's Start | Only your own click on the Lookbook's brief in Sova's page starts the designs. |
-| A design run's brief, and answering a design coordinator | Only your own click on the coordinator's card or the Lookbook's brief in Sova's page answers this. |
+| A design run's brief, and answering a Lookbook Creative Director | Only your own click on the Creative Director's card or the Lookbook's brief in Sova's page answers this. |
 | Bringing in a design image, or a signed-in capture | Only your own click on the Lookbook card in Sova's page answers this. |
 | A design image's note, or Describe Again | Only your own click on the image in Sova's page changes this. |
 | Apply of Sova's own checkout | Only the user restarts Sova. Ask them to press Apply on the Branches tab of Sova's project page. Nothing was restarted. |

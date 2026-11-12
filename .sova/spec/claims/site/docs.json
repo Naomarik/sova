@@ -244,7 +244,7 @@
   "§site.docs/design": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "code": [
       "site/src/content/docs/modes/vis/lookbook.md"
     ],
@@ -252,9 +252,9 @@
       "§chat/design-mode"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-11-10T08:52Z",
-      "source": "pi-session:0e2ea24a-22d2-4ec7-a1df-46bf85135214#f36f41aa"
+      "by": "user",
+      "at": "2026-11-12T10:40Z",
+      "source": "pi-session:c6e7f9da-6608-46f4-a4d9-6db219882520#b5acf41a"
     }
   },
   "§site.docs/drawing-kinds": {

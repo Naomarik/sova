@@ -257,3 +257,8 @@
   max-height: calc(var(--control-md) + 2 * var(--fs-body) * var(--lh-body));
   overflow-y: auto;
 }
+/* Setup's images: one fixed row of thumbnails that scrolls sideways, so any count takes the same room. */
+.design-setup-images { display: flex; flex-direction: column; gap: var(--space-1); }
+.design-setup-thumbs { flex: none; box-sizing: border-box; margin: 0; padding: 0 0 var(--space-1); list-style: none; display: flex; align-items: center; gap: var(--space-2); height: 60px; overflow-x: auto; overflow-y: hidden; scrollbar-width: thin; }
+.design-setup-thumb { flex: none; width: 72px; height: 54px; border-radius: var(--r-sm); background: var(--color-sunken); overflow: hidden; }
+.design-setup-thumb img { display: block; width: 100%; height: 100%; object-fit: contain; }

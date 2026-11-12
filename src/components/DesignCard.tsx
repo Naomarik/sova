@@ -63,6 +63,7 @@ import {
 } from "./DesignFrame";
 import { DesignOpenSlot, DesignRefinePanel } from "./DesignOpen";
 import { DesignSkillsLine } from "./DesignSkills";
+import { DesignSetupImages } from "./DesignBriefImages";
 import { useDesignOpen } from "../lib/design-history";
 import { hostOf } from "../lib/mesh";
 import { TextArea } from "./form";
@@ -266,6 +267,7 @@ function DesignSetupCard(props: { run: DesignRunView; store: DesignStore }) {
             </Show>
           </div>
           <DesignSkillsLine run={props.run} />
+          <DesignSetupImages run={props.run} store={props.store} />
           <DesignSetupPickers setup={setup} currentCoordinator={props.store.view()?.coordinator?.model} />
         </div>
       </div>

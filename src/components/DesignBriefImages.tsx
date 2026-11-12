@@ -60,6 +60,29 @@ function AssetCard(props: { asset: DesignAsset; used: boolean; store: DesignStor
   );
 }
 
+/** Setup's images: the ones the run starts with (attached when the Lookbook was asked for, or pasted since), read-only.
+    Their place is kept whether or not there are any, since the list arrives after the card is drawn: nothing below moves. */
+export function DesignSetupImages(props: { run: DesignRunView; store: DesignStore }) {
+  const catalogue = createAssetCatalogue(props.store);
+  const assets = createMemo(() => assetsOfRun(catalogue(), props.run));
+  return (
+    <section class="design-setup-images" aria-label="Images for this run">
+      <h4 class="design-setup-label">Images{assets().length ? ` · ${assets().length}` : ""}</h4>
+      <Show when={assets().length > 0} fallback={<p class="text-caption text-muted design-setup-thumbs">{catalogue() ? "Images you attach when you ask for a Lookbook show here." : ""}</p>}>
+        <ul class="design-setup-thumbs">
+          <For each={assets()}>
+            {(a) => (
+              <li class="design-setup-thumb" title={`${a.name} · ${assetKindWord(a)}`}>
+                <img src={props.store.api.assetUrl(a.name, "small")} alt={`${a.name}, ${assetKindWord(a)}`} loading="lazy" />
+              </li>
+            )}
+          </For>
+        </ul>
+      </Show>
+    </section>
+  );
+}
+
 /** The images designers will use: a size of its own, and its cards land where they were reserved. */
 export function DesignBriefImages(props: { run: DesignRunView; store: DesignStore; catalogue: DesignAssetCatalogue | null; onOpen(name: string): void; readOnly?: boolean }) {
   const [held, setHeld] = createSignal<Record<string, boolean>>({});

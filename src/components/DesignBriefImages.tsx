@@ -60,15 +60,16 @@ function AssetCard(props: { asset: DesignAsset; used: boolean; store: DesignStor
   );
 }
 
-/** Setup's images: the ones the run starts with (attached when the Lookbook was asked for, or pasted since), read-only.
-    Their place is kept whether or not there are any, since the list arrives after the card is drawn: nothing below moves. */
+/** Setup's images: the ones the run starts with (attached when the Lookbook was asked for, on the run from the first
+    frame, so their row's place is there before the pictures load), read-only, in one fixed row of thumbnails. */
 export function DesignSetupImages(props: { run: DesignRunView; store: DesignStore }) {
   const catalogue = createAssetCatalogue(props.store);
   const assets = createMemo(() => assetsOfRun(catalogue(), props.run));
+  const count = () => Math.max(assets().length, props.run.images?.length ?? 0);
   return (
-    <section class="design-setup-images" aria-label="Images for this run">
-      <h4 class="design-setup-label">Images{assets().length ? ` · ${assets().length}` : ""}</h4>
-      <Show when={assets().length > 0} fallback={<p class="text-caption text-muted design-setup-thumbs">{catalogue() ? "Images you attach when you ask for a Lookbook show here." : ""}</p>}>
+    <Show when={count() > 0}>
+      <section class="design-setup-images" aria-label="Images for this run">
+        <h4 class="design-setup-label">Images · {count()}</h4>
         <ul class="design-setup-thumbs">
           <For each={assets()}>
             {(a) => (
@@ -78,8 +79,8 @@ export function DesignSetupImages(props: { run: DesignRunView; store: DesignStor
             )}
           </For>
         </ul>
-      </Show>
-    </section>
+      </section>
+    </Show>
   );
 }
 

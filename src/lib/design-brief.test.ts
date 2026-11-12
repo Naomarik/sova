@@ -157,3 +157,17 @@ test("Save sends null when nothing is left, and refuses more than 8 colours with
   const nine = Array.from({ length: 9 }, (_, i) => `#00000${i}`).join("\n");
   assert.throws(() => shotWordsToSave(nine), /Keep it to 8 colours; this has 9/);
 });
+
+test("a run's images are the ones it started with (run.images) and yours added since, never another run's", () => {
+  const catalogue = {
+    captures: [],
+    assets: [
+      asset("a1", { source: "yours", addedAt: "2026-11-10T00:00:00Z" }),
+      asset("a2", { source: "yours", addedAt: "2026-11-10T00:00:00Z" }),
+      asset("a3", { source: "yours", addedAt: "2026-11-10T03:00:00Z" }),
+    ],
+  } as never;
+  const run = { setup: setup(), createdAt: "2026-11-10T02:00:00Z", images: ["a2"] };
+  assert.deepEqual(assetsOfRun(catalogue, run).map((a) => a.name), ["a2", "a3"]);
+  assert.deepEqual(assetsOfRun(catalogue, { ...run, images: undefined }).map((a) => a.name), ["a3"]);
+});

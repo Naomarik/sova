@@ -79,8 +79,9 @@ const sameOrigin = (a: string, b: string): boolean => {
 };
 
 /** A run's grid, the set the server keeps (keptImages) with the unticked ones still shown: what a link on
-    Use Its Images captured, in the capture's order, then the images you added since the run began. */
-export function assetsOfRun(catalogue: Pick<DesignAssetCatalogue, "assets" | "captures"> | null, run: Pick<DesignRun, "setup" | "createdAt">): DesignAsset[] {
+    Use Its Images captured, in the capture's order, then your images: those the run started with (run.images) and those
+    added since it began. */
+export function assetsOfRun(catalogue: Pick<DesignAssetCatalogue, "assets" | "captures"> | null, run: Pick<DesignRun, "setup" | "createdAt" | "images">): DesignAsset[] {
   if (!catalogue) return [];
   const links = (run.setup.links ?? []).filter((l) => l.use === "images");
   const ranked = catalogue.captures.filter((c) => links.some((l) => sameOrigin(l.url, c.url))).flatMap((c) => c.names);
@@ -90,7 +91,7 @@ export function assetsOfRun(catalogue: Pick<DesignAssetCatalogue, "assets" | "ca
     const a = catalogue.assets.find((x) => x.name === name && x.source !== "yours");
     if (a && !seen.has(name)) out.push(a), seen.add(name);
   }
-  for (const a of catalogue.assets) if (a.source === "yours" && a.addedAt >= run.createdAt && !seen.has(a.name)) out.push(a), seen.add(a.name);
+  for (const a of catalogue.assets) if (a.source === "yours" && (a.addedAt >= run.createdAt || run.images?.includes(a.name)) && !seen.has(a.name)) out.push(a), seen.add(a.name);
   return out;
 }
 

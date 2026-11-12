@@ -52,3 +52,21 @@ test("a worker's built-ins are its list, whatever pi's default set: an empty lis
   assert.deepEqual(await activeBuiltins(spec([])), []);
   assert.deepEqual(await activeBuiltins(spec(null)), ["bash", "edit", "read", "write"]);
 });
+
+test("a Creative Director's real session has pi's read only, and so its system prompt lists the project's skills", async () => {
+  const { mkdirSync, writeFileSync } = await import("node:fs");
+  const { realCoordinatorSpec } = await import("../../design/coordinator");
+  const cwd = realpathSync(mkdtempSync(join(tmpdir(), "sova-cd-skills-")));
+  process.on("exit", () => rmSync(cwd, { recursive: true, force: true }));
+  mkdirSync(join(cwd, ".pi", "skills", "brand"), { recursive: true });
+  writeFileSync(join(cwd, ".pi", "skills", "brand", "SKILL.md"), "---\nname: brand\ndescription: The house look for this project's pages.\n---\n# Brand\n");
+  const w = realCoordinatorSpec({ sessionId: "p", path: "/p.jsonl" }, cwd, "zai/glm-5.3-flash", "P");
+  const build = workerBuild(w, join(agentDir, "cd.jsonl"));
+  assert.ok(!(build.loader as { noSkills?: boolean }).noSkills, "its loader keeps skill discovery");
+  const resourceLoader = new pi.DefaultResourceLoader({ cwd, agentDir, noExtensions: true });
+  await resourceLoader.reload();
+  const { session } = await pi.createAgentSession({ cwd, agentDir, settingsManager: pi.SettingsManager.inMemory(), sessionManager: pi.SessionManager.inMemory(cwd), resourceLoader, excludeTools: build.exclude([]) });
+  build.built?.(new PiHarnessSession({ session, services: {} } as never));
+  assert.deepEqual(session.getActiveToolNames().filter((t) => BUILTINS.includes(t)).sort(), ["read"]);
+  assert.match(session.systemPrompt, /<available_skills>[\s\S]*brand[\s\S]*The house look/);
+});

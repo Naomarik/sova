@@ -62,7 +62,7 @@ test("a listing shows the skill's files and leaves out what leads outside it", (
   assert.equal(l.files.find((f) => f.path === "logo.png")?.text, false);
 });
 
-test("a run's skills: the project's own (found by the harness), then named folders; a named one not found is missing, not guessed", async () => {
+test("a run's skills are only the ones named: none by itself, a path, a project skill by its name; one not found is missing, not guessed", async () => {
   const named = join(base, "elsewhere", "house-style");
   mkdirSync(named, { recursive: true });
   writeFileSync(join(named, "SKILL.md"), skillMd("house-style", "Another look."));
@@ -71,14 +71,20 @@ test("a run's skills: the project's own (found by the harness), then named folde
   const personal = join(base, "agent", "skills", "personal");
   mkdirSync(personal, { recursive: true });
   writeFileSync(join(personal, "SKILL.md"), skillMd("personal", "Mine."));
-  const lister = { all: async () => [{ name: "brand", description: "The house look.", filePath: join(brand, "SKILL.md") }, { name: "personal", description: "Mine.", filePath: join(personal, "SKILL.md") }] };
-  const r = await runSkills(project, [named, empty, join(base, "nowhere"), "personal", "unknown-skill", `${named}/SKILL.md`], lister);
+  let listed = 0;
+  const lister = { all: async () => (listed++, [{ name: "personal", description: "Mine.", filePath: join(personal, "SKILL.md") }, { name: "brand", description: "The house look.", filePath: join(brand, "SKILL.md") }]) };
+  // Nothing named: nothing at all, the project's own skill included, and the folder isn't even listed.
+  assert.deepEqual(await runSkills(project, [], lister), { skills: [], missing: [] });
+  assert.equal(listed, 0);
+  // A path by itself needs no listing.
+  const byPath = await runSkills(project, [named], lister);
+  assert.deepEqual(byPath.skills.map((s) => [s.name, s.from, s.description]), [["house-style", "named", "Another look."]]);
+  assert.equal(listed, 0);
+  const r = await runSkills(project, ["brand", named, empty, join(base, "nowhere"), "personal", "unknown-skill", `${named}/SKILL.md`], lister);
   assert.deepEqual(r.skills.map((s) => [s.name, s.from]), [["brand", "project"], ["house-style", "named"], ["personal", "named"]]);
-  assert.equal(r.skills[1]!.description, "Another look.");
+  assert.equal(r.skills[0]!.dir, brand);
   assert.deepEqual(r.missing.map((m) => m.asked), [empty, join(base, "nowhere"), "unknown-skill"]);
   assert.match(r.missing[0]!.reason, /no SKILL\.md/);
-  // A personal skill is the project's only when named: with nothing named, only the project's own.
-  assert.deepEqual((await runSkills(project, [], lister)).skills.map((s) => s.name), ["brand"]);
 });
 
 test("the sessions' words name the reader and the skills, and the estimate counts reading them", () => {
@@ -89,7 +95,8 @@ test("the sessions' words name the reader and the skills, and the estimate count
   assert.equal(designerSkillsBlock([]), "");
   const c = coordinatorSkillsBlock([{ name: "brand", description: "d", dir: brand, from: "project" }], [{ asked: "~/gone", reason: "There is no such folder." }]);
   assert.ok(c.includes(join(brand, "SKILL.md")));
-  assert.match(c, /suggest which parts/i);
+  assert.match(c, /design_brief's skills/);
+  assert.match(c, /exact paths inside the skill that you read/);
   assert.match(c, /~\/gone: There is no such folder\.[\s\S]*question on the brief/);
   assert.equal(skillReadTokens(undefined), 0);
   assert.ok(skillReadTokens([{ dir: brand }]) > 1000);

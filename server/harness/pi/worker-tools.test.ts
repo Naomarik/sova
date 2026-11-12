@@ -53,20 +53,36 @@ test("a worker's built-ins are its list, whatever pi's default set: an empty lis
   assert.deepEqual(await activeBuiltins(spec(null)), ["bash", "edit", "read", "write"]);
 });
 
-test("a Creative Director's real session has pi's read only, and so its system prompt lists the project's skills", async () => {
+test("a Lookbook's sessions load nothing by themselves: the Creative Director has pi's read only, and its prompt has no skills section and no context file", async () => {
   const { mkdirSync, writeFileSync } = await import("node:fs");
   const { realCoordinatorSpec } = await import("../../design/coordinator");
+  const { withSkillSources } = await import("./skill-sources");
   const cwd = realpathSync(mkdtempSync(join(tmpdir(), "sova-cd-skills-")));
   process.on("exit", () => rmSync(cwd, { recursive: true, force: true }));
   mkdirSync(join(cwd, ".pi", "skills", "brand"), { recursive: true });
   writeFileSync(join(cwd, ".pi", "skills", "brand", "SKILL.md"), "---\nname: brand\ndescription: The house look for this project's pages.\n---\n# Brand\n");
-  const w = realCoordinatorSpec({ sessionId: "p", path: "/p.jsonl" }, cwd, "zai/glm-5.3-flash", "P");
-  const build = workerBuild(w, join(agentDir, "cd.jsonl"));
-  assert.ok(!(build.loader as { noSkills?: boolean }).noSkills, "its loader keeps skill discovery");
-  const resourceLoader = new pi.DefaultResourceLoader({ cwd, agentDir, noExtensions: true });
-  await resourceLoader.reload();
-  const { session } = await pi.createAgentSession({ cwd, agentDir, settingsManager: pi.SettingsManager.inMemory(), sessionManager: pi.SessionManager.inMemory(cwd), resourceLoader, excludeTools: build.exclude([]) });
-  build.built?.(new PiHarnessSession({ session, services: {} } as never));
-  assert.deepEqual(session.getActiveToolNames().filter((t) => BUILTINS.includes(t)).sort(), ["read"]);
-  assert.match(session.systemPrompt, /<available_skills>[\s\S]*brand[\s\S]*The house look/);
+  writeFileSync(join(cwd, "AGENTS.md"), "PROJECT-RULES-7f3a: always use tabs.\n");
+  /** The system prompt and active built-ins of a real session built from this worker build's loader options. */
+  const opened = async (w: WorkerSpec) => {
+    const build = workerBuild(w, join(agentDir, `${w.kind}.jsonl`));
+    const l = build.loader as { noSkills?: true; noContextFiles?: true };
+    const resourceLoader = new pi.DefaultResourceLoader({ cwd, agentDir, ...withSkillSources(cwd, { noExtensions: true, ...(l.noSkills ? { noSkills: true } : {}), ...(l.noContextFiles ? { noContextFiles: true } : {}) }) });
+    await resourceLoader.reload();
+    const { session } = await pi.createAgentSession({ cwd, agentDir, settingsManager: pi.SettingsManager.inMemory(), sessionManager: pi.SessionManager.inMemory(cwd), resourceLoader, excludeTools: build.exclude([]) });
+    build.built?.(new PiHarnessSession({ session, services: {} } as never));
+    return { prompt: session.systemPrompt, builtins: session.getActiveToolNames().filter((t) => BUILTINS.includes(t)).sort() };
+  };
+  // The control: an ordinary worker with read sees both, so their absence below is the loadout's doing.
+  const plain = await opened({ ...spec(["read"]), cwd });
+  assert.match(plain.prompt, /<available_skills>[\s\S]*brand/);
+  assert.match(plain.prompt, /PROJECT-RULES-7f3a/);
+  const cd = await opened(realCoordinatorSpec({ sessionId: "p", path: "/p.jsonl" }, cwd, "zai/glm-5.3-flash", "P"));
+  assert.deepEqual(cd.builtins, ["read"]);
+  assert.doesNotMatch(cd.prompt, /available_skills|brand/);
+  assert.doesNotMatch(cd.prompt, /PROJECT-RULES-7f3a/);
+  for (const kind of ["design", "design-describer"] as const) {
+    const w = await opened({ ...spec([]), kind, cwd });
+    assert.deepEqual(w.builtins, [], kind);
+    assert.doesNotMatch(w.prompt, /PROJECT-RULES-7f3a|available_skills/, kind);
+  }
 });

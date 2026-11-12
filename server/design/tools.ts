@@ -44,7 +44,7 @@ export function mainDesignTools(parent: () => DesignParent, cwd: () => string): 
           directions: list("start: style names the user named."),
           layouts: list('start: layout names the user named ("a compact and a bento version"); none unless they named some.'),
           coordinator: str("start: the model id for the Creative Director (the coordinator), only when the user named one."),
-          skills: list("start: design skills the user named for this Lookbook, each a folder holding SKILL.md (an absolute or ~ path) or a skill's name. This project's own skills are always used; list only ones the user named."),
+          skills: list("start: design skills the user named for this Lookbook, each a skill's name (this project's skills are found by name) or a folder holding SKILL.md (an absolute or ~ path). None loads by itself: with none named, pass none."),
           images: list("tell: the paths of images the user attached, to add to the design's images."),
           label: str("read: a design's label, for its whole page."),
           text: str("tell: the words to pass on, exactly as the user said them."),

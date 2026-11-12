@@ -197,6 +197,32 @@ test("a design takes its run's skills on its own record: its first message lists
   assert.equal(stat(label!).skills, undefined);
 });
 
+test("a design reads only the skills its brief chose for the designers: design_skill refuses the run's others", async () => {
+  const mk = (name: string) => {
+    const d = join(dir, ".agents", "skills", name);
+    mkdirSync(d, { recursive: true });
+    writeFileSync(join(d, "SKILL.md"), `---\nname: ${name}\ndescription: ${name} rules\n---\n${name} body`);
+    return { name, description: `${name} rules`, dir: d, from: "project" as const };
+  };
+  const run = newRun(["zai/a"], ["Minimalist"]);
+  store.changeDesigns(parent.sessionId, (s) => {
+    const r = s.runs.find((x) => x.id === run)!;
+    r.skills = [mk("brand"), mk("playwright")];
+    r.brief = { rev: 1, textRev: 1, summary: "S", prompt: "P", promptBy: "coordinator", writing: null, conflict: null, questions: [], looks: {}, skills: ["brand"] };
+  });
+  launchDesigns(parent, run, { brief: "the brief" });
+  await ticks();
+  assert.deepEqual(stat("A").skills?.map((k) => k.name), ["brand"]);
+  const first = fakes[0]!.sends[0]!.text;
+  assert.match(first, /- brand: brand rules/);
+  assert.doesNotMatch(first, /playwright/);
+  const reader = sessionDesignTools(parent, "A").find((t) => t.name === "design_skill")!;
+  const ok = (await reader.execute("t", { skill: "brand", file: "SKILL.md" }, undefined, undefined, undefined)) as { content: { text: string }[] };
+  assert.match(ok.content[0]!.text, /brand body/);
+  await assert.rejects(reader.execute("t", { skill: "playwright", file: "SKILL.md" }, undefined, undefined, undefined) as Promise<unknown>, /No skill "playwright"/);
+  await assert.rejects(reader.execute("t", { skill: "brand", file: "../playwright/SKILL.md" }, undefined, undefined, undefined) as Promise<unknown>, /\.\./);
+});
+
 test("a design made from others waits for the launch, and can't stand in for it", () => {
   const run = newRun(["zai/a", "zai/b"], ["Minimalist", "Heritage", "Immersive"]);
   assert.throws(() => newDesign(parent, { parents: ["A"], instructions: "mix", model: "zai/a", runId: run }), /hasn't launched/);

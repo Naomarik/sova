@@ -41,9 +41,11 @@ Every tool is served by Sova's server, so a terminal has nothing to run.
   `design_images`, `design_skill`, the Creative Director's one built-in `read`, and their arguments (the lookbook tool's `skills` too). A renamed tool or argument changes the text in the same branch.
 - **Reply markers.** `DESIGN_PAGE_START` and `DESIGN_PAGE_END` equal `DESIGN_PAGE_OPEN` and `DESIGN_PAGE_CLOSE` in
   `shared/design.ts` (pi-config can't import `shared/`). `server/design-guide.test.ts` keeps them equal.
-- **Design skills.** A run's skills (`server/design/skills.ts`) are the project's own, found by the harness's loader, plus
-  folders the user named; they sit on the run and reach the Creative Director in each run's first message (its session
-  outlives runs). Designers read them only through `design_skill`, never pi's file tools.
+- **Design skills.** Nothing autoloads for a Lookbook's sessions: `workerBuild` gives the design kinds `noSkills` and
+  `noContextFiles`, so no `<skills>` section and no AGENTS.md. A run's skills (`server/design/skills.ts`) are only the
+  ones the user named (a name, found among the project's skills first, or a path); they sit on the run and reach the
+  Creative Director in each run's first message (its session outlives runs). It picks the designers' subset with
+  `design_brief`'s `skills` (`designerSkills`); designers read only that, through `design_skill`, never pi's file tools.
 - **The sealed frame.** The brief says only Google Fonts load. It must keep saying what the frame actually blocks.
 
 ## When you change it, also update

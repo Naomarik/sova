@@ -899,6 +899,9 @@ const projectVerbsLoad = (path: string) =>
     projectVerbsOffered,
   );
 
+/** A Lookbook's hidden sessions: the Creative Director, the designers and the describing helpers. */
+const isLookbookKind = (kind: WorkerSpec["kind"]): boolean => kind === "design" || kind === "design-coordinator" || kind === "design-describer";
+
 /**
  * A worker chat's own inline extensions: every one, hidden chats included, gets the macOS kill guard
  * (server/shell-guard.ts); a worker or team member (never a hidden chat) also gets project_verbs and its
@@ -910,7 +913,7 @@ export function workerExtensionFactories(w: Pick<WorkerSpec, "kind"> & { builtin
   // A subfolder's skills too, for one that can also read a skill's file (§chat.subfolder-skills/offering).
   const files = !w.builtins || w.builtins.some((t) => LOADING_TOOLS.has(t)) ? [deeperContextExtension({ skills: !w.builtins || w.builtins.includes("read") || w.builtins.includes("bash") })] : [];
   // A design session or coordinator has only the tools the server serves it: every one it was declared.
-  if ((w.kind === "design" || w.kind === "design-coordinator" || w.kind === "design-describer") && servedDecls) return [SHELL_GUARD_FACTORY, servedToolsExtension(`sova-${w.kind}`, servedSpecs(path, () => true))];
+  if (isLookbookKind(w.kind) && servedDecls) return [SHELL_GUARD_FACTORY, servedToolsExtension(`sova-${w.kind}`, servedSpecs(path, () => true))];
   // A hidden chat keeps no job: nothing would deliver its card or stop it.
   if (w.kind !== "worker") return [SHELL_GUARD_FACTORY, ...files];
   // Only what the chat named: a worker's list is fixed at its start and kept when it resumes (§app.mcp/who-gets).
@@ -941,6 +944,9 @@ export function workerBuild(w: WorkerSpec, path: string): PiBuild {
   return {
     loader: {
       noExtensions: true,
+      // A Lookbook's sessions load nothing by themselves: no skills (so no skills section in the prompt) and no context
+      // files. The skills a run uses are named, and Sova lists them in its messages.
+      ...(isLookbookKind(w.kind) ? { noSkills: true as const, noContextFiles: true as const } : {}),
       // The mode extension's files in their own slots: Sova's when its parent's modes ran on Sova at this
       // start (§chat.mode-menu/sova-runs-modes); otherwise as listed, but a worker file this copy no
       // longer has (listed by a parent on older code) is Sova's instead of failing the start.

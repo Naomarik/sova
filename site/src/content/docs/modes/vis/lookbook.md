@@ -59,19 +59,20 @@ Press **Start Creative Director**. Nothing is designed yet.
 
 ### Design skills
 
-A Lookbook uses your project's design skills by itself: any skill in the project's folder (a folder
-holding a `SKILL.md`, such as `.agents/skills/brand`). To add another for one Lookbook, name it to
-your chat in your own words ("use the brand kit in ~/kits/acme"). Setup and the brief list the skills
-in use under **Design skills**; there is nothing to tick. A skill you named that can't be found
-becomes one of the Creative Director's questions on the brief.
+A Lookbook loads no skill and no project file by itself, not even your project's own. To use a
+design skill, name it to your chat in your own words: by its name ("use the brand skill", found among
+the project's skills) or by its folder ("use the brand kit in ~/kits/acme", a folder holding a
+`SKILL.md`). Setup lists the skills you named under **Design skills**; there is nothing to tick. A
+skill you named that can't be found becomes one of the Creative Director's questions on the brief.
 
 The Creative Director reads the skills, and can read any file you point it to ("the logo is in my
-Downloads folder"), but writes and runs nothing. Its brief suggests which parts of each skill the
-designers should read first. Each designer can read its run's skills, and only those, through a
-reader Sova gives it. While it does, its tile says **Reading the design skill**. Designers copy the
-tokens and rules they use into the page, which still loads nothing but Google Fonts. An image the
-Creative Director finds, such as a logo, joins the brief's images and reaches the designers from
-there. The estimate before Start counts the reading.
+Downloads folder"), but writes and runs nothing. It chooses which of your skills the designers use,
+leaving out any that aren't about design, and the brief's **Design skills** line shows that choice.
+Its brief suggests which files of each skill the designers read first. Each designer can read those
+skills, and only those, through a reader Sova gives it. While it does, its tile says **Reading the
+design skill**. Designers copy the tokens and rules they use into the page, which still loads nothing
+but Google Fonts. An image the Creative Director finds, such as a logo, joins the brief's images and
+reaches the designers from there. The estimate before Start counts the reading.
 
 ## The Design Brief
 

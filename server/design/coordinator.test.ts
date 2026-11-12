@@ -695,15 +695,15 @@ test("each run's skills reach the coordinator in that run's first message, with 
   const skill = (name: string, from: "project" | "named" = "project") => ({ name, description: `${name} rules`, dir: `/proj/.agents/skills/${name}`, from });
   const first = runWith(2, 3, { skills: [skill("brand")] });
   await started(first);
-  assert.match(lastTask, /Design skills for this run[\s\S]*- brand \(this project's\): \/proj\/\.agents\/skills\/brand\/SKILL\.md/);
-  assert.match(lastTask, /suggest which parts/i);
+  assert.match(lastTask, /Skills the user named for this run[\s\S]*- brand \(this project's\): \/proj\/\.agents\/skills\/brand\/SKILL\.md/);
+  assert.match(lastTask, /design_brief's skills/);
   const second = runWith(2, 3, { skills: [skill("brand"), skill("house", "named")], skillsMissing: [{ asked: "~/Downloads/kit", reason: "There is no such folder." }] });
   changeDesigns(parent.sessionId, (s) => void s.runs.push(second));
   const sent = log.sends.length;
   await startCoordinator(parent, second, "/cwd");
   assert.equal(log.starts.length, 1, "the same model keeps its session: the new run's skills come in its message");
   const told = log.sends.slice(sent).map((x) => x.text).join("\n");
-  assert.match(told, /- house \(named by the user\): \/proj\/\.agents\/skills\/house\/SKILL\.md/);
+  assert.match(told, /- house \(from elsewhere on disk\): \/proj\/\.agents\/skills\/house\/SKILL\.md/);
   assert.match(told, /~\/Downloads\/kit: There is no such folder\.[\s\S]*question on the brief/);
   assert.match(told, new RegExp(`run's id is ${second.id}`));
   // A third run with none says so, so the earlier runs' skills don't carry over by silence.
@@ -724,6 +724,21 @@ test("a coordinator started again after its session ended is told its run's skil
   assert.equal(log.starts.length, 2, "a fresh session");
   assert.match(lastTask, /\/proj\/\.agents\/skills\/brand\/SKILL\.md/);
   assert.match(lastTask, /kit: No skill by that name was found\./);
+});
+
+test("design_brief's skills picks which of the run's skills the designers use, and names only the run's", async () => {
+  const skill = (name: string) => ({ name, description: "d", dir: `/proj/.agents/skills/${name}`, from: "project" as const });
+  const run = runWith(2, 3, { skills: [skill("brand"), skill("playwright")] });
+  const t = await started(run);
+  await t.design_brief({ baseRev: 0, summary: "S" });
+  const { designerSkills } = await import("../../shared/design");
+  assert.deepEqual(designerSkills(runOf(parent.sessionId, run.id)!).map((s) => s.name), ["brand", "playwright"], "all of them until it chooses");
+  refused(await t.design_brief({ baseRev: brief(run.id).textRev, skills: ["brand", "tailwind"] }));
+  const rev = brief(run.id).rev;
+  await t.design_brief({ baseRev: brief(run.id).textRev, skills: ["brand"] });
+  assert.deepEqual(brief(run.id).skills, ["brand"]);
+  assert.ok(brief(run.id).rev > rev, "Start names the choice it was pressed on");
+  assert.deepEqual(designerSkills(runOf(parent.sessionId, run.id)!).map((s) => s.name), ["brand"]);
 });
 
 test("design_images brings files the coordinator read into the chat's images, until the designs start", async () => {

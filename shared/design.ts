@@ -332,11 +332,21 @@ export interface DesignBrief {
   notes?: Record<string, { text: string; by: "capture" | "user" }>;
   /** Which images go to the designers, by the image's name; an image not listed goes. A person's click stands. */
   imageUse?: Record<string, { use: boolean; by: "user" | "coordinator" }>;
+  /** Which of the run's named skills the designers use, by name, as the Creative Director chose (design_brief's skills).
+      Absent: all of them. */
+  skills?: string[];
   /** What the designs are estimated to cost in dollars, with the models and directions chosen now; absent when a price isn't known. */
   estimateUsd?: number;
   /** Set at Start: the brief is frozen from then on. */
   startedRev?: number;
   startedAt?: string;
+}
+
+/** The skills a run's designers use: those the brief names among the run's skills, or all of the run's when it names none. */
+export function designerSkills(run: Pick<DesignRun, "skills" | "brief">): DesignSkill[] {
+  const all = run.skills ?? [];
+  const picked = run.brief?.skills;
+  return picked ? all.filter((s) => picked.includes(s.name)) : all;
 }
 
 /** Why Start can't be pressed: code to branch on, label for the button. */

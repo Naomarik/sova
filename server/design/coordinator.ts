@@ -10,7 +10,7 @@ import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { ToolSpec } from "../../shared/harness";
-import { DESIGN_ASK_ABOVE, designBriefBlock, designDirectionLine, designPlan, isDesignLinkUse, type DesignAsk, type DesignBrief, type DesignBriefBlock, type DesignCoordinatorView, type DesignLinkUse, type DesignLook, type DesignRecord, type DesignRun, type DesignSignInAnswer } from "../../shared/design";
+import { DESIGN_ASK_ABOVE, designBriefBlock, designerSkills, designDirectionLine, designPlan, isDesignLinkUse, type DesignAsk, type DesignBrief, type DesignBriefBlock, type DesignCoordinatorView, type DesignLinkUse, type DesignLook, type DesignRecord, type DesignRun, type DesignSignInAnswer } from "../../shared/design";
 import { isTourOrigin, type TourSize } from "../../shared/tour";
 import { serverToolCall } from "../chat-handle";
 import { modelDenial, readModelPolicy } from "../model-policy";
@@ -1044,7 +1044,7 @@ export function coordinatorTools(sessionId: string): ToolSpec[] {
 
   const brief: ToolSpec = {
     name: "design_brief", label: "Write the Design Brief",
-    description: "Put the Design Brief on the user's card, or change it. summary: the short version they read. prompt: the Full Prompt the design sessions get, sent only once every question is answered; or promptEdits, exact find-and-replace pairs, for a change. questions: at most a few, replacing the ones still open. text with shots (picture ids from design_browse) and url: the screen you found. sources: each link and how it is used (images, feel, or content: an address that is only part of the page, never opened). baseRev: the revision you last saw, 0 for the first brief. Only send what changes. End your turn after calling it.",
+    description: "Put the Design Brief on the user's card, or change it. summary: the short version they read. prompt: the Full Prompt the design sessions get, sent only once every question is answered; or promptEdits, exact find-and-replace pairs, for a change. questions: at most a few, replacing the ones still open. text with shots (picture ids from design_browse) and url: the screen you found. sources: each link and how it is used (images, feel, or content: an address that is only part of the page, never opened). skills: which of the run's skills the designers use. baseRev: the revision you last saw, 0 for the first brief. Only send what changes. End your turn after calling it.",
     parameters: {
       type: "object",
       properties: {
@@ -1053,12 +1053,13 @@ export function coordinatorTools(sessionId: string): ToolSpec[] {
         text: { type: "string", description: "Which screen you found and how you got there." }, shots: { type: "array", items: { type: "string" } }, url: { type: "string" },
         sources: { type: "array", items: { type: "object", properties: { url: { type: "string" }, use: { type: "string", enum: ["images", "feel", "content"] } }, required: ["url"] } },
         images: { type: "array", description: "Which captured images suit this brief: only the ones you'd leave out need listing.", items: { type: "object", properties: { name: { type: "string" }, use: { type: "boolean" } }, required: ["name", "use"] } },
+        skills: { type: "array", items: { type: "string" }, description: "Which of this run's skills the designers use, by name: the design skills, leaving out any that aren't (a testing or tooling skill). Omit for all of them." },
         questions: { type: "array", items: { type: "object", properties: { topic: { type: "string" }, ask: { type: "string" }, context: { type: "string" }, options: { type: "array", items: { type: "object", properties: { label: { type: "string" }, tradeoff: { type: "string" } }, required: ["label", "tradeoff"] } }, recommendation: { type: "object", properties: { choice: { type: "string" }, why: { type: "string" } }, required: ["choice", "why"] } }, required: ["topic", "ask", "recommendation"] } },
       },
       required: ["baseRev"],
       additionalProperties: false,
     },
-    async execute(_id, params: { baseRev?: number; summary?: string; prompt?: string; promptEdits?: { find: string; replace: string }[]; text?: string; shots?: unknown; url?: string; sources?: unknown; questions?: unknown; images?: unknown }) {
+    async execute(_id, params: { baseRev?: number; summary?: string; prompt?: string; promptEdits?: { find: string; replace: string }[]; text?: string; shots?: unknown; url?: string; sources?: unknown; questions?: unknown; images?: unknown; skills?: unknown }) {
       const st = state();
       if (isResult(st)) return st;
       const run = runOf(parent.sessionId, st.runId);
@@ -1088,12 +1089,25 @@ export function coordinatorTools(sessionId: string): ToolSpec[] {
       mergeLinks(trial, sources);
       const unopened = (trial.links ?? []).find((l) => l.use === "feel" && !run.brief?.looks[l.url] && !shotFor(st, l.url));
       if (unopened) return refuse(`${unopened.url} is on Just Its Feel, so open it with design_browse first: its look is read from that picture.`);
+      let pickedSkills: string[] | undefined;
+      if (params.skills !== undefined) {
+        const names = Array.isArray(params.skills) ? params.skills.filter((x): x is string => typeof x === "string") : null;
+        const known = (run.skills ?? []).map((k) => k.name);
+        const unknown = names?.filter((x) => !known.includes(x)) ?? [];
+        if (!names || unknown.length) return refuse(`skills names this run's skills, from: ${known.join(", ") || "none"}${unknown.length ? `. Not one of them: ${unknown.join(", ")}` : ""}.`);
+        pickedSkills = [...new Set(names)];
+      }
       const outcome = changeDesigns(parent.sessionId, (s) => {
         const r = s.runs.find((x) => x.id === st.runId)!;
         const b = r.brief ?? newBrief();
         const why = coordinatorWrote(b, { ...(typeof params.summary === "string" ? { summary: params.summary } : {}), ...(typeof params.prompt === "string" ? { prompt: params.prompt } : {}), ...(Array.isArray(params.promptEdits) ? { promptEdits: params.promptEdits } : {}), ...(questions ? { questions } : {}) });
         if (why) return { why };
         r.brief = b;
+        if (pickedSkills && JSON.stringify(pickedSkills) !== JSON.stringify(b.skills)) {
+          // What the designers read is part of what Start starts.
+          b.skills = pickedSkills;
+          b.rev++;
+        }
         mergeLinks(r.setup, sources);
         for (const x of Array.isArray(params.images) ? (params.images as { name?: unknown; use?: unknown }[]) : []) {
           // A person's tick stands against the coordinator's judgement, as a link's use does.
@@ -1103,7 +1117,7 @@ export function coordinatorTools(sessionId: string): ToolSpec[] {
           const outline = shots[0]!.outline;
           b.screen = { text: words!, screenshots: shots.map((x) => x!.url), ...(str(params.url) ? { url: str(params.url)! } : {}), ...(outline ? { outline } : {}) };
         }
-        const estimate = estimateUsd(r.setup, Date.now(), skillReadTokens(r.skills));
+        const estimate = estimateUsd(r.setup, Date.now(), skillReadTokens(designerSkills(r)));
         if (estimate !== null) b.estimateUsd = estimate;
         r.phase = "brief";
         r.updatedAt = new Date().toISOString();

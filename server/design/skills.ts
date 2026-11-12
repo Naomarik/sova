@@ -1,6 +1,6 @@
 // A Lookbook run's design skills: which folders holding SKILL.md its Creative Director and designers use, and the
-// designers' one way to read them. The project's own skills (found in the run's folder by the harness's loader) are
-// always in; a folder the user named for the run joins it. The designers have no file tools: `design_skill` reads only
+// designers' one way to read them. Nothing is included by itself: a run's skills are the ones the user named, each a
+// folder's path or a skill's name (found among the project's skills by the harness's loader first). The designers have no file tools: `design_skill` reads only
 // inside the skill folders their own design record names, by their real paths, text files only, a size at a time.
 import { closeSync, existsSync, lstatSync, openSync, readdirSync, readSync, realpathSync, statSync } from "node:fs";
 import { homedir } from "node:os";
@@ -73,8 +73,9 @@ function folderSkill(dir: string): DesignSkill | null {
 const expandHome = (p: string): string => (p === "~" ? homedir() : p.startsWith("~/") ? join(homedir(), p.slice(2)) : p);
 const looksLikePath = (s: string): boolean => s.startsWith("/") || s === "~" || s.startsWith("~/");
 
-/** One name the user gave, as a skill: a path to a folder holding SKILL.md (or to the SKILL.md itself), or a skill's name. */
-function namedSkill(asked: string, all: readonly Listed[]): DesignSkill | DesignSkillMissing {
+/** One name the user gave, as a skill: a path to a folder holding SKILL.md (or to the SKILL.md itself), or a skill's
+    name, found among the project's own skills first (`project`), then any other skill the harness finds for the folder. */
+function namedSkill(asked: string, all: readonly Listed[], top: string): DesignSkill | DesignSkillMissing {
   if (looksLikePath(asked)) {
     let p = resolve(expandHome(asked));
     if (basename(p) === "SKILL.md") p = dirname(p);
@@ -87,37 +88,45 @@ function namedSkill(asked: string, all: readonly Listed[]): DesignSkill | Design
     return folderSkill(p) ?? { asked, reason: "That folder holds no SKILL.md." };
   }
   const want = asked.trim().toLowerCase();
-  const hit = all.find((s) => s.name.toLowerCase() === want) ?? all.find((s) => basename(dirname(s.filePath)).toLowerCase() === want);
-  return hit ? skillOf(hit, "named") : { asked, reason: "No skill by that name was found." };
+  const own = (s: Listed): boolean => {
+    const dir = real(dirname(s.filePath));
+    return !!dir && inside(dir, top);
+  };
+  const byName = (list: readonly Listed[]) => list.find((s) => s.name.toLowerCase() === want) ?? list.find((s) => basename(dirname(s.filePath)).toLowerCase() === want);
+  const mine = byName(all.filter(own));
+  if (mine) return skillOf(mine, "project");
+  const other = byName(all);
+  return other ? skillOf(other, "named") : { asked, reason: "No skill by that name was found." };
 }
 
-/** A run's skills: the project's own, then each one the user named, once each by real folder. */
+/** A run's skills: only the ones the user named, once each by real folder. Nothing is included by itself, the project's
+    own skills neither: "use this project's design skill" arrives as that skill's name. */
 export async function runSkills(cwd: string, named: readonly string[] = [], lister: SkillLister = harnessLister): Promise<{ skills: DesignSkill[]; missing: DesignSkillMissing[] }> {
-  let all: readonly Listed[] = [];
-  try {
-    all = await lister.all(cwd);
-  } catch (err) {
-    console.warn(`[design] the skills of ${cwd} weren't read: ${err instanceof Error ? err.message : String(err)}`);
-  }
-  const top = real(projectTop(cwd)) ?? resolve(cwd);
+  const asked = [...new Set(named.map((n) => n.trim()).filter(Boolean))].slice(0, SKILL_LIMITS.named);
   const skills: DesignSkill[] = [];
   const missing: DesignSkillMissing[] = [];
-  const seen = new Set<string>();
-  const add = (s: DesignSkill): void => {
-    const key = real(s.dir) ?? s.dir;
-    if (seen.has(key) || skills.length >= SKILL_LIMITS.perRun) return;
-    seen.add(key);
-    skills.push(s);
-  };
-  for (const s of all) {
-    const dir = real(dirname(s.filePath));
-    if (dir && inside(dir, top)) add(skillOf(s, "project"));
+  if (!asked.length) return { skills, missing };
+  let all: readonly Listed[] = [];
+  // Only a name needs the folder's list; a path is read by itself.
+  if (asked.some((n) => !looksLikePath(n))) {
+    try {
+      all = await lister.all(cwd);
+    } catch (err) {
+      console.warn(`[design] the skills of ${cwd} weren't read: ${err instanceof Error ? err.message : String(err)}`);
+    }
   }
-  const asked = [...new Set(named.map((n) => n.trim()).filter(Boolean))].slice(0, SKILL_LIMITS.named);
+  const top = real(projectTop(cwd)) ?? resolve(cwd);
+  const seen = new Set<string>();
   for (const n of asked) {
-    const r = namedSkill(n, all);
-    if ("reason" in r) missing.push(r);
-    else add(r);
+    const r = namedSkill(n, all, top);
+    if ("reason" in r) {
+      missing.push(r);
+      continue;
+    }
+    const key = real(r.dir) ?? r.dir;
+    if (seen.has(key) || skills.length >= SKILL_LIMITS.perRun) continue;
+    seen.add(key);
+    skills.push(r);
   }
   return { skills, missing };
 }
@@ -224,7 +233,7 @@ export function designerSkillsBlock(skills: readonly Pick<DesignSkill, "name" | 
   const lines = skills.map((s) => `- ${s.name}${s.description ? `: ${oneLine(s.description, 300)}` : ""}`);
   return [
     "DESIGN SKILLS:",
-    `This project has design skills, the house rules for its pages. Read them before you write: ${DESIGN_SKILL_TOOL} with {"skill": name} lists a skill's files, and with {"skill": name, "file": path} returns one of them (start with SKILL.md). The brief may suggest which parts to read first; you may read any part.`,
+    `This Lookbook uses design skills, the house rules for its pages. Read them before you write: ${DESIGN_SKILL_TOOL} with {"skill": name} lists a skill's files, and with {"skill": name, "file": path} returns one of them (start with SKILL.md). The brief may suggest which parts to read first; you may read any part.`,
     ...lines,
     "The page stays sealed: copy the tokens, colors, fonts and rules you need into the page itself. Nothing in a skill loads into the page, and only Google Fonts load from the web.",
   ].join("\n");
@@ -236,8 +245,8 @@ export function coordinatorSkillsBlock(skills: readonly DesignSkill[], missing: 
   const parts: string[] = [];
   if (skills.length) {
     parts.push(
-      `Design skills for this run (read each SKILL.md with read; the designers can read them too, with their own reader):\n${skills.map((s) => `- ${s.name} (${s.from === "project" ? "this project's" : "named by the user"}): ${join(s.dir, "SKILL.md")}${s.description ? `\n  ${oneLine(s.description, 300)}` : ""}`).join("\n")}`,
-      "In the Full Prompt, suggest which parts of each skill the designers should read first. Suggest only: they may read any part.",
+      `Skills the user named for this run (read each SKILL.md with read):\n${skills.map((s) => `- ${s.name} (${s.from === "project" ? "this project's" : "from elsewhere on disk"}): ${join(s.dir, "SKILL.md")}${s.description ? `\n  ${oneLine(s.description, 300)}` : ""}`).join("\n")}`,
+      "Choose with design_brief's skills which of them the designers use: the ones about how pages look and read, leaving out any that aren't (a testing or tooling skill). In the Full Prompt, suggest which files of each the designers read first, by the exact paths inside the skill that you read (tokens/colors.css, not a path you guess). Suggest only: they may read any part.",
     );
   }
   if (missing.length) parts.push(`Skills the user named that weren't found:\n${missing.map((m) => `- ${m.asked}: ${m.reason}`).join("\n")}\nAsk about each one as a question on the brief; never guess which skill they meant.`);

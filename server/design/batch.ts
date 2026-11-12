@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import type { WorkerHost, WorkerSpec, WorkerStart, WorkerState } from "../../shared/chat-runtime";
 import type { HEntry } from "../../shared/harness";
-import { DESIGN_ASK_ABOVE, DESIGN_BATCH_MAX, DESIGN_CONCURRENT, DESIGN_FIX_TRIES, designPlan, type DesignNote, type DesignRecord, type DesignRun, type DesignSetup, type DesignVersion } from "../../shared/design";
+import { DESIGN_ASK_ABOVE, DESIGN_BATCH_MAX, DESIGN_CONCURRENT, DESIGN_FIX_TRIES, designerSkills, designPlan, type DesignNote, type DesignRecord, type DesignRun, type DesignSetup, type DesignVersion } from "../../shared/design";
 import { DESIGN_PAGE_END, DESIGN_PAGE_START, designSessionPrompt } from "../../pi-config/extensions/mode/design-guide.ts";
 import { claudeCodeProviderLoad, sessionDirName } from "../../pi-config/extensions/subagents/worker-load.ts";
 import { SESSIONS_DIR } from "../paths";
@@ -98,7 +98,11 @@ export function specFor(parent: DesignParent, d: Pick<DesignRecord, "label" | "d
 }
 
 /** A design's skill folders, from its run: on its own record, so a design revived after a restart keeps them. */
-const skillRootsOf = (run: Pick<DesignRun, "skills">): Pick<DesignRecord, "skills"> => (run.skills?.length ? { skills: run.skills.map((k) => ({ name: k.name, dir: k.dir })) } : {});
+const skillRootsOf = (run: Pick<DesignRun, "skills" | "brief">): Pick<DesignRecord, "skills"> => {
+  // The brief's choice among the run's skills: what the Creative Director left out, its designers never read.
+  const mine = designerSkills(run);
+  return mine.length ? { skills: mine.map((k) => ({ name: k.name, dir: k.dir })) } : {};
+};
 
 export function firstMessage(d: DesignRecord, brief: string, refs: DesignReference[], parents: { label: string; html: string }[], instructions: string | null, run?: Pick<DesignRun, "skills">): { text: string; images: NonNullable<WorkerStart["images"]> } {
   const parts: string[] = [];

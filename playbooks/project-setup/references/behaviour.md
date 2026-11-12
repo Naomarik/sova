@@ -63,7 +63,9 @@ ran (`SOVA_OUT`), and fail only for real.
 **Optional checks** run only when the merge thread picks them for a branch, from the project's own
 blast-radius map (`.sova/playbooks/merge-queue/PLAYBOOK.md` and its references) or its judgement. A
 check worth running on some branches only (slow end-to-end tests, one slow group) is optional, with a
-map rule that names the paths that call for it.
+map rule that names the paths that call for it. A trial runs every optional check with no selection:
+one that takes a selection reports Skipped with its reason when given none (or runs what the branch
+calls for), never a usage error, or no trial of the project can pass.
 
 **Pushing.** After each landing the target is pushed to `origin` fast-forward only (never forced),
 after a leak scan of what would be pushed with the project's private names. **Until the project's

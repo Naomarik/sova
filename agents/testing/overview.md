@@ -16,7 +16,10 @@ environment every runner starts in, and the hermetic dev server.
 - `scripts/test-cache.mjs`: the tree fingerprint and the store of remembered passes; `scripts/checked.mjs`
   does the same for the type check (`pnpm run typecheck`, Build's first step).
 - `scripts/test-changed.mjs`: the `--changed` selection.
-- `scripts/test-groups.mjs`: the slow groups and their triggers (`--landing`, `--changed`, `--groups`).
+- `scripts/test-groups.mjs`: the slow groups and their triggers (`--landing`, `--changed`, `--groups`,
+  `--picked-groups`).
+- `scripts/runner-copy.test.helper.ts`: the runner copied into a throwaway repository, for the tests
+  that run it end to end (reuse, `--picked-groups`, Sova's own optional checks run bare).
 - `pi-config/extensions/claude-code/tests/hermetic-env.mjs`: the throwaway-home preload.
 - `scripts/test-sentinel.mjs`, `server/test-scratch.ts` (`scratchRoot`).
 - `scripts/hermetic-agent-dir.mjs`: builds the hermetic `.agent` for `pnpm run dev:hermetic`.
@@ -74,7 +77,11 @@ environment every runner starts in, and the hermetic dev server.
   file, or a new area such a test drives from outside, goes in that list.
 - **At landing** the merge queue runs `pnpm test`, then `pnpm test:int -- --landing --base <master>`:
   the everyday set, plus Chat processes when the branch triggers it; Tours never. It names what it
-  skipped. `--groups <name,…|all>` runs only those groups, `--plan` prints the selection as JSON
+  skipped. `--groups <name,…|all>` runs only those groups (bare: a usage error), `--picked-groups
+  [<name,…|all> …]` is the queue's form (the Slow test group check: the thread's selection appended;
+  none, as in a trial, runs the slow groups `--landing` would add for the change since the merge base
+  with `$SOVA_MERGE_TARGET`, or skips, exit 0, "no slow group applies to this branch's changes"),
+  `--plan` prints the selection as JSON
   and runs nothing, and plain `pnpm test:int` runs every group: a release does that (the only
   catch-up for what landings skip).
 - The tier guard records what each file starts, binds, connects to, fetches and whether it imports

@@ -195,6 +195,7 @@
     "GET /api/projects/:pid/overseer/todos": {"need":"sessions","is":"command","ids":["project.overseer.todo.list"]},
     "GET /api/projects/:pid/overseer/worktrees": {"need":"sessions","is":"command","ids":["project.worktree.list"]},
     "GET /api/projects/:pid/previews": {"need":"sessions","is":"capability-links"},
+    "GET /api/projects/:pid/running-copies": {"need":"sessions","is":"command","ids":["project.copies.running"]},
     "GET /api/projects/:pid/runtime": {"need":"sessions","is":"pending"},
     "GET /api/projects/:pid/services": {"need":"sessions","is":"command","ids":["project.services.view"]},
     "GET /api/projects/:pid/settings": {"need":"sessions","is":"command","ids":["project.settings.get"]},

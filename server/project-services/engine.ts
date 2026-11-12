@@ -50,7 +50,8 @@ import type { PortOwner } from "../port-owner";
 import { startStaticServe, staticServes, StaticServeError, stopStaticServe } from "../preview-serve";
 import { projectOf } from "../project-root";
 import { copyContentsArgv } from "./copy-tree";
-import { adoptedLogs, adoptedPids, adoptedStatus, DriverError, ownMemoryOf, type AdoptedStatus, type Driver, type OnceSpec, type UnitSpec } from "./drivers";
+import { adoptedLogs, adoptedPids, adoptedStatus, DriverError, ownMemoryOf, type AdoptedStatus, type Driver, type OnceSpec, type UnitSpec, type UnitStatus } from "./drivers";
+import type { ArchiveCopy, ArchiveCopyService } from "../../shared/projects";
 import { hostPortOwner } from "./proctable";
 import type { NoteFacts } from "./note";
 import { RESTART_DELAY_SEC, scheduleRestart, SELF_APPLY_REFUSAL, serverCheckout, serverStart } from "./self-host";
@@ -182,6 +183,9 @@ export interface VerbRequest {
   keepData?: boolean;
   /** teardown, in-process only (retirement, which removes the folder itself right after): leave a cut worktree in place. */
   keepWorktree?: boolean;
+  /** down, with the project and no instance or checkout: the project's shared services alone, needing no copy (the
+      operator, confirmed; the running-copies list's down of them). Not on the tools or the command line. */
+  shared?: boolean;
   resources?: string[];
   ref?: string;
   /** The operator's confirm (stopping a shared service). */
@@ -219,6 +223,7 @@ const REQUEST_KEYS: Record<keyof VerbRequest, "string" | "number" | "boolean" | 
   lines: "number",
   keepData: "boolean",
   keepWorktree: "boolean",
+  shared: "boolean",
   resources: "strings",
   ref: "string",
   confirm: "boolean",
@@ -366,7 +371,18 @@ export interface EngineDeps {
   adoptedStatus?: (unit: string) => Promise<AdoptedStatus>;
   /** Schedule an adopted unit's delayed restart: null when scheduled, else why not; tests fake it. */
   scheduleRestart?: (unit: string) => Promise<string | null>;
+  /** Whether the registered project at this root is archived (§app.organizations/archive); tests fake it. */
+  projectArchived?: (root: string) => Promise<boolean>;
 }
+
+/** The verbs an archived project refuses on its copies (§app.organizations/archive): nothing new starts in it (reset
+    starts again what it stopped). down, status, logs and teardown still run, so what still runs can be stopped. */
+export const ARCHIVED_REFUSES = ["create", "up", "apply", "test", "reset"] as const;
+export const ARCHIVED_REFUSAL = "This project is archived; unarchive it first";
+
+/** A service's unit state as a running copy's service lists it, or null: not running nor waiting to restart. */
+const liveState = (st: Pick<UnitStatus, "state" | "detail">): ArchiveCopyService["state"] | null =>
+  st.state === "active" ? "running" : st.state === "activating" ? (/auto-restart/.test(st.detail ?? "") ? "restarting" : "starting") : null;
 
 /** Everything one verb run knows. */
 interface Run {
@@ -430,6 +446,7 @@ export class ProjectEngine {
   private readonly sovaPorts: () => Promise<ReadonlySet<number>>;
   private readonly adoptedStatus: (unit: string) => Promise<AdoptedStatus>;
   private readonly scheduleRestart: (unit: string) => Promise<string | null>;
+  private readonly projectArchived: (root: string) => Promise<boolean>;
   private sharedChain = new Map<string, Promise<unknown>>();
   /** The conformance runner (server/project-services/conform.ts), wired at startup. */
   conformer: ((body: unknown, caller: Caller) => Promise<VerbResult>) | null = null;
@@ -472,6 +489,16 @@ export class ProjectEngine {
     this.sovaPorts = deps.sovaPorts ?? (async () => (await import("../project-previews")).sovaPorts());
     this.adoptedStatus = deps.adoptedStatus ?? ((unit) => adoptedStatus(unit));
     this.scheduleRestart = deps.scheduleRestart ?? ((unit) => scheduleRestart(unit));
+    this.projectArchived =
+      deps.projectArchived ??
+      (async (root) => {
+        try {
+          const { listProjects } = await import("../projects/spaces");
+          return !!listProjects().find((p) => p.root === root)?.archived;
+        } catch {
+          return false;
+        }
+      });
   }
 
   unitOf(scopeId: string, service: string): string {
@@ -506,6 +533,8 @@ export class ProjectEngine {
       if (isReleaseVerb(verb)) throw new VerbFailure("unsupported", `${verb} runs through the releaser, which this engine has not got`);
       await this.resolveTarget(run);
       if (run.verb === "teardown" && !run.rec) return await this.result(run);
+      // An archived project starts nothing (§app.organizations/archive), whoever asks.
+      if ((ARCHIVED_REFUSES as readonly string[]).includes(run.verb) && (await this.projectArchived(run.project!))) throw new VerbFailure("refused-archived", ARCHIVED_REFUSAL);
       this.authorize(run, await this.starterWorking(run));
       // Every check a share makes runs before its act: a refused share never reaches the statechart.
       if (run.verb === "share") await this.shareChecks(run);
@@ -555,6 +584,8 @@ export class ProjectEngine {
       if (req.instance && req.instance !== of) throw new VerbFailure("not-found", `share link ${req.link} is not ${req.instance}'s`);
       req.instance = of;
     }
+    if (req.shared && (run.verb !== "down" || req.instance || req.checkout || !req.project))
+      throw new VerbFailure("invalid-request", "shared is down of the project's shared services alone: name the project, and no instance or checkout");
     if (req.instance) {
       const rec = reg.instances.find((i) => i.id === req.instance);
       if (!rec) {
@@ -575,6 +606,8 @@ export class ProjectEngine {
         const target = await this.targetCheckout(run);
         (run as Run & { target?: string }).target = target.checkout;
         run.rec = reg.instances.find((i) => i.project === run.project && i.checkout === target.checkout) ?? null;
+      } else if (req.shared) {
+        // The shared services' down: no copy, the main checkout's definition.
       } else if (["down", "apply", "reset", "teardown", "logs", "share", "revoke"].includes(run.verb)) {
         if (!req.checkout) throw new VerbFailure("invalid-request", `${run.verb} needs an instance (or the checkout it runs)`);
         const checkout = canonical(req.checkout);
@@ -724,7 +757,7 @@ export class ProjectEngine {
   private authorize(run: Run, starterWorking = false): void {
     this.selfHosted(run);
     const { caller, verb } = run;
-    const sharedNamed = verb === "down" && !!run.req.services?.length && !!run.def && run.req.services.some((n) => run.def!.services.find((s) => s.name === n)?.scope === "shared");
+    const sharedNamed = verb === "down" && (!!run.req.shared || (!!run.req.services?.length && !!run.def && run.req.services.some((n) => run.def!.services.find((s) => s.name === n)?.scope === "shared")));
     const confirmShared = "stopping a shared service stops it for every instance of the project: the operator does it (sova-project down … --confirm)";
     // A copy with an active share link (§app.project-services/share): its down is confirmed, by the operator only.
     const linked = verb === "down" && !!run.rec ? linksOf(run.rec.id, { activeOnly: true }).length : 0;
@@ -818,7 +851,7 @@ export class ProjectEngine {
       case "up":
         return this.up(run);
       case "down":
-        return this.down(run);
+        return run.rec ? this.down(run) : this.downShared(run);
       case "apply":
         return this.apply(run);
       case "status":
@@ -1208,7 +1241,7 @@ export class ProjectEngine {
   }
 
   /** The project's shared services' scope. */
-  private sharedScope(def: ProjectDef, project: string): Scope {
+  private sharedScope(_def: ProjectDef | null, project: string): Scope {
     return { id: sharedIdOf(project), project, checkout: project, branch: null, slot: 0, ports: {}, data: {}, shared: true };
   }
 
@@ -1690,6 +1723,32 @@ export class ProjectEngine {
     if (!run.req.services?.length) await this.stopSharedRemoved(run, rec.project);
   }
 
+  /**
+   * down of the project's shared services alone, with no copy to go through (`shared`; §app.project-services/down):
+   * each stops, keeping its data, and is marked stopped so reconcile leaves it. Allowed while the project is archived,
+   * so what still runs in one can be stopped. The operator's, confirmed (authorize).
+   */
+  private async downShared(run: Run): Promise<void> {
+    const project = run.project!;
+    const def = run.def;
+    await this.supervised(def);
+    const declared = def ? serviceOrder(def).filter((s) => s.scope === "shared") : [];
+    const recorded = Object.keys(readRegistry().shared.find((x) => x.project === project)?.desired ?? {});
+    // What the record names that the definition doesn't declare (or all of it, with no readable definition) goes first.
+    const undeclared = recorded.filter((n) => !declared.some((s) => s.name === n));
+    const all = [...undeclared, ...[...declared].reverse().map((s) => s.name)];
+    const names = run.req.services?.length ? run.req.services : all;
+    for (const n of names) if (!all.includes(n)) throw new VerbFailure("invalid-request", `no shared service "${n}"`);
+    const scope = this.sharedScope(def, project);
+    for (const name of all.filter((n) => names.includes(n))) {
+      mutateRegistry((r) => {
+        const sh = r.shared.find((x) => x.project === project);
+        if (sh) sh.desired[name] = "stopped";
+      });
+      await this.stopService(run, def, scope, name, declared.find((s) => s.name === name));
+    }
+  }
+
   private async apply(run: Run): Promise<void> {
     const rec = run.rec!;
     const def = this.need(run);
@@ -2038,7 +2097,7 @@ export class ProjectEngine {
         out.push({ name: s.name, scope: s.scope, kind, state: p.ok ? "ready" : st.state === "activating" ? "starting" : "degraded", unit, pid: st.pid, ports, ready: p, ...(rss !== null ? { rssBytes: rss } : {}) });
       } else {
         const state = st.state === "failed" ? "failed" : this.heldElsewhere(sc, s, ports) ? "external" : "stopped";
-        out.push({ name: s.name, scope: s.scope, kind, state, unit, pid: null, ports, ...(st.detail && st.state === "failed" ? { detail: st.detail } : {}) });
+        out.push({ name: s.name, scope: s.scope, kind, state, unit, pid: null, ports, ...(st.detail && st.state === "failed" ? { detail: st.detail } : {}), ...(st.gaveUp && st.state === "failed" ? { gaveUp: true as const } : {}) });
       }
     }
     // What the definition no longer declares but still runs is never hidden (§app.project-services/status-logs).
@@ -2054,6 +2113,57 @@ export class ProjectEngine {
       const st = await this.driver.status(unit);
       if (st.state !== "active" && st.state !== "activating") continue;
       out.push({ name, scope: "shared", kind: "process", state: "degraded", unit, pid: st.pid, ports: readRegistry().shared.find((x) => x.project === rec.project)?.ports[name] ?? {}, detail: "shared, no longer in any definition" });
+    }
+    return out;
+  }
+
+  /**
+   * Every copy of `project` that runs or waits to restart, and its shared services that do (§app.organizations/archive):
+   * what an archive waits for, each with the down that stops it. Slot 0's adopted unit is listed but runs outside Sova:
+   * no down, and it never holds an archive up.
+   */
+  async liveCopies(project: string): Promise<ArchiveCopy[]> {
+    const reg = readRegistry();
+    const recs = reg.instances.filter((i) => i.project === project).sort((a, b) => a.slot - b.slot);
+    const out: ArchiveCopy[] = [];
+    const unitState = async (unit: string, s?: ServiceDecl): Promise<ArchiveCopyService["state"] | null> => {
+      if (s?.static !== undefined || staticServes().some((x) => x.id === unit)) return staticServes().some((x) => x.id === unit) ? "running" : null;
+      return liveState(await this.driver.status(unit));
+    };
+    for (const rec of recs) {
+      const def = this.bare(rec).def;
+      const adopted = rec.slot === 0 && def ? adoptedService(def) : null;
+      const services: ArchiveCopyService[] = [];
+      const names = def ? def.services.filter((s) => s.scope === "checkout").map((s) => s.name) : Object.keys(rec.desired);
+      for (const name of [...names, ...this.removedOf(rec, def)]) {
+        const s = def?.services.find((x) => x.name === name);
+        if (adopted && s === adopted) {
+          const state = liveState(await this.adoptedStatus(adopted.adopt!.unit));
+          if (state) services.push({ name, state, adopted: true });
+          continue;
+        }
+        const state = await unitState(this.unitOf(rec.id, name), s);
+        if (state) services.push({ name, state });
+      }
+      if (!services.length) continue;
+      const base = { instance: rec.id, name: rec.slot === 0 ? "Main copy" : (rec.branch ?? basename(rec.checkout)), branch: rec.branch, checkout: rec.checkout, slot: rec.slot, services };
+      // A slot 0 that adopts a unit is never Sova's to stop (its down is refused, §app.project-services/adopt): it runs outside Sova.
+      if (adopted) out.push({ ...base, adopted: true, down: null });
+      else out.push({ ...base, adopted: false, down: { instance: rec.id, confirm: true } });
+    }
+    const sh = reg.shared.find((x) => x.project === project);
+    if (sh) {
+      const main = { verb: "status", caller: { kind: "operator" }, req: {}, project, rec: null, def: null, defError: null, defHash: null, steps: [], extra: {} } as Run;
+      this.loadDefinition(main, project);
+      const declared = main.def?.services.filter((s) => s.scope === "shared") ?? [];
+      const names = [...new Set([...declared.map((s) => s.name), ...Object.keys(sh.desired)])];
+      const services: ArchiveCopyService[] = [];
+      for (const name of names) {
+        const state = await unitState(this.unitOf(sh.id, name), declared.find((s) => s.name === name));
+        if (state) services.push({ name, state });
+      }
+      // The project's shared down, which needs no copy: it stops them in an archived project with none too.
+      if (services.length) out.push({ instance: null, name: "Shared services", branch: null, checkout: project, slot: null, services, adopted: false, down: { project, shared: true, confirm: true } });
     }
     return out;
   }
@@ -2238,10 +2348,18 @@ export class ProjectEngine {
 
   // ---- reconcile (§app.project-services/reconcile) ------------------------------------------------------
 
-  /** Bring every instance back to its desired state after a server start. Returns what it did. */
+  /** Bring every instance back to its desired state after a server start. Returns what it did. A service that gave up
+      restarting (its start limit, §app.project-services/supervisor) is left failed until someone starts it, and an archived
+      project's copies are never started (what still runs in it keeps running, §app.organizations/archive). */
   async reconcile(): Promise<string[]> {
     const did: string[] = [];
     const reg = readRegistry();
+    const archivedOf = new Map<string, Promise<boolean>>();
+    const archived = (project: string) => {
+      if (!archivedOf.has(project)) archivedOf.set(project, this.projectArchived(project).catch(() => false));
+      return archivedOf.get(project)!;
+    };
+    const gaveUp = async (unit: string, s: ServiceDecl) => s.static === undefined && !!(await this.driver.status(unit)).gaveUp;
     // This server as its own project's adopted slot 0: nothing to start, its start noted (§app.project-services/adopt).
     for (const rec of reg.instances.filter((i) => i.slot === 0 && i.project === this.selfCheckout())) {
       const s = this.bare(rec).def;
@@ -2268,7 +2386,15 @@ export class ProjectEngine {
         // A start from nothing is a new generation, whoever starts it.
         const own = def.services.filter((x) => x.scope === "checkout");
         const anyActive = (await Promise.all(own.map((s) => this.isActive(this.unitOf(rec.id, s.name), s)))).some((a) => a.active);
-        const due = own.some((s) => rec.desired[s.name] === "running");
+        const isArchived = await archived(rec.project);
+        // What this pass will start: wanted, not running, not given up, in a project that is not archived.
+        const held = new Map<string, string>();
+        for (const s of own) {
+          if (rec.desired[s.name] !== "running") continue;
+          if (isArchived) held.set(s.name, "the project is archived");
+          else if (await gaveUp(this.unitOf(rec.id, s.name), s)) held.set(s.name, "it gave up restarting; it starts again on up");
+        }
+        const due = own.some((s) => rec.desired[s.name] === "running" && !held.has(s.name));
         if (!anyActive && due) {
           rec.generation += 1;
           this.save(rec);
@@ -2276,7 +2402,9 @@ export class ProjectEngine {
         for (const s of serviceOrder(def).filter((x) => x.scope === "checkout")) {
           const unit = this.unitOf(rec.id, s.name);
           const a = await this.isActive(unit, s);
-          if (rec.desired[s.name] === "running" && !a.active) {
+          if (rec.desired[s.name] === "running" && !a.active && held.has(s.name)) {
+            did.push(`${rec.id}: left ${s.name} ${isArchived ? "stopped" : "failed"} (${held.get(s.name)})`);
+          } else if (rec.desired[s.name] === "running" && !a.active) {
             if (s.scope === "checkout") for (const r of s.requires) touched.add(`${rec.project}\0${r}`);
             try {
               await this.startService(run, def, scope, s);
@@ -2308,7 +2436,15 @@ export class ProjectEngine {
       }
       this.loadDefinition(run, sh.project);
       if (!run.def) continue;
-      const names = run.def.services.filter((s) => s.scope === "shared" && sh.desired[s.name] === "running");
+      const wanted = run.def.services.filter((s) => s.scope === "shared" && sh.desired[s.name] === "running");
+      const names: ServiceDecl[] = [];
+      for (const s of wanted) {
+        const unit = this.unitOf(sh.id, s.name);
+        if ((await this.isActive(unit, s)).active) names.push(s);
+        else if (await archived(sh.project)) did.push(`${sh.id}: left ${s.name} stopped (the project is archived)`);
+        else if (await gaveUp(unit, s)) did.push(`${sh.id}: left ${s.name} failed (it gave up restarting; it starts again on up)`);
+        else names.push(s);
+      }
       try {
         await this.upShared(run, run.def, names);
         if (run.steps.some((s) => s.result === "done")) did.push(`${sh.id}: started shared services`);

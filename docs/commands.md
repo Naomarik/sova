@@ -35,7 +35,7 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | Pending (not yet a command) | 23 |
 | Chat socket frame types | 14 |
 | Document/window keydown listeners | 12 |
-| Hand-written tool specs | 147 |
+| Hand-written tool specs | 148 |
 
 ## Catalogue entries
 
@@ -1112,7 +1112,7 @@ Per file, the tool names its object literals declare (`<computed: …>` where th
 | `server/design/tools.ts` | 4 | `lookbook`, `design_look`, `design_stream`, `design_hand_in` |
 | `server/feature-chat-align.ts` | 1 | `align` |
 | `server/harness/pi/session.ts` | 1 | `<computed: t.name>` |
-| `server/memory/tools.ts` | 2 | `<computed: MEMORY_ZOOM_TOOL>`, `<computed: MEMORY_DATE_TOOL>` |
+| `server/memory/tools.ts` | 3 | `<computed: MEMORY_ZOOM_TOOL>`, `<computed: MEMORY_DATE_TOOL>`, `<computed: MEMORY_RECALL_TOOL>` |
 | `server/org-history-tools.ts` | 2 | `sova_history`, `sova_decide` |
 | `server/overseer-card-tool.ts` | 1 | `<computed: CARD_TOOL>` |
 | `server/overseer-code-history.ts` | 2 | `sova_project_git`, `sova_server_log` |

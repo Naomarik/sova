@@ -536,5 +536,27 @@
    ],
    "additionalProperties": false
   }
+ },
+ {
+  "name": "recall",
+  "description": "@477e826208c0f88b",
+  "parameters": {
+   "type": "object",
+   "properties": {
+    "words": {
+     "type": "string",
+     "description": "Space-separated; all in one message."
+    },
+    "before": {
+     "type": "integer",
+     "minimum": 1,
+     "description": "Only messages below this id, to look at older ones."
+    }
+   },
+   "required": [
+    "words"
+   ],
+   "additionalProperties": false
+  }
  }
 ]

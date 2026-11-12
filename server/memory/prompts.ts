@@ -1,7 +1,7 @@
 // The memory mode's texts for the model (§chat.memory/turn, §chat.memory/summarizer, §chat.memory/zoomable),
 // adapted from Victor Taelin's UniiChat prompt (gist §4–§5): the agent unnamed, the device and subagent
 // paragraphs left out. No dates and no state in any of them, so each is a stable cache prefix.
-import { MEMORY_DATE_TOOL, MEMORY_ZOOM_TOOL } from "../../shared/memory";
+import { MEMORY_DATE_TOOL, MEMORY_RECALL_TOOL, MEMORY_ZOOM_TOOL } from "../../shared/memory";
 import { LIMIT } from "./tree";
 
 const KINDS = `Each message has a kind:
@@ -17,6 +17,18 @@ short message is its own line), then adjacent lines are merged in pairs, again
 and again. So recent lines cover one message each, and older lines cover more. A
 message not summarized yet shows as "(not summarized yet: zoom it)". A text too
 long for one message is split over several in a row.`;
+
+/**
+ * The memory guide's three recall sentences (§chat.memory/turn), the wording the recall bench tested, shared
+ * by the UniiChat guide and a zoomable compaction's summary: what recall lists, memory before any other
+ * tool, and no search elsewhere to confirm what memory holds. Their line breaks are the UniiChat guide's.
+ */
+export const RECALL_LISTS = `${MEMORY_RECALL_TOOL}(words) lists the
+messages that hold every word, closest match first, each with its id.`;
+export const RECALL_FIRST = `or ${MEMORY_RECALL_TOOL} it by its words when
+no line names it, before any other tool, and before you act, guess or ask.`;
+export const MEMORY_HOLDS = `Use other tools only for what the view and ${MEMORY_RECALL_TOOL} never show, or to check
+what is true now; never search elsewhere to confirm what memory already holds.`;
 
 /**
  * The first block of a UniiChat view message: the guide, ahead of the view's lines. It calls the lines
@@ -43,13 +55,11 @@ Recent lines cover one message each; older lines merge pairs, so n is a power of
 2. Lines are the index, not the record: every message is kept whole under its
 line, tool results included, while lines at every n shorten names and
 numbers. ${MEMORY_ZOOM_TOOL}(id, n) opens line id+n into its two lines of n/2, ${MEMORY_ZOOM_TOOL}(id, 1)
-gives message id whole, and ${MEMORY_DATE_TOOL}(id) gives its date and time.
+gives message id whole, and ${MEMORY_DATE_TOOL}(id) gives its date and time. ${RECALL_LISTS}
 
 Whenever you need anything the chat has seen, first find its latest mention in
-the view and ${MEMORY_ZOOM_TOOL}, halving n down to the message, before any other tool, and
-before you act, guess or ask. Never grep or read this chat's transcript or
-memory files. Use other tools only for what the view never mentions, or to check
-what is true now. Lines keep little of tool output, so say in your reply what
+the view and ${MEMORY_ZOOM_TOOL}, halving n down to the message, ${RECALL_FIRST} Never grep or read this chat's transcript or
+memory files. ${MEMORY_HOLDS} Lines keep little of tool output, so say in your reply what
 you learned that will matter later.`;
 
 /** The summarizer's system prompt, before its stable view prefix (gist §5's compaction half). */
@@ -133,8 +143,9 @@ The ${messages} messages before this point were compacted into the one-line summ
 below, oldest first: \`id+n|text\` is the n messages from id on, summarized. Recent
 lines cover one message each, older lines cover more. Nothing was lost: call
 ${MEMORY_ZOOM_TOOL}(id, n) to open line id+n into the two lines it was made from, ${MEMORY_ZOOM_TOOL}(id, 1)
-to read message id whole, and ${MEMORY_DATE_TOOL}(id) for its date. When you need a detail, find
-its latest mention here and zoom until you have it whole before you act, guess or ask.
+to read message id whole, and ${MEMORY_DATE_TOOL}(id) for its date. ${RECALL_LISTS}
+When you need a detail, find its latest mention here and zoom until you have it whole, ${RECALL_FIRST}
+${MEMORY_HOLDS}
 Kinds: user (the user's words), sova (your replies), tool (your tool calls), echo (tool
 results), work (a worker's report), note (a branch summary).
 

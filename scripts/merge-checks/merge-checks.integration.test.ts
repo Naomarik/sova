@@ -2,9 +2,10 @@
 // its report in SOVA_OUT. Each with nothing to do exits 0 and says why; each that runs reports counts.
 import { describe, expect, test } from "bun:test";
 import { execFileSync, spawnSync } from "node:child_process";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { scratchRoot } from "../../server/test-scratch.ts";
+import { copyFromRepo, importClosure, REPO, RUNNER_FILES } from "../runner-copy.test.helper.ts";
 
 const HERE = import.meta.dirname;
 const script = (name: string) => join(HERE, `${name}.mjs`);
@@ -152,5 +153,39 @@ describe("merge checks", () => {
     const r = runCheck("spec", tree, root, ["a.txt"], base, { SOVA_SPEC_CORE: join(root, "no-core") });
     expect(r.code).toBe(1);
     expect(String((r.report?.failures as { message: string }[])[0].message)).toMatch(/spec tools aren't at/);
+  });
+
+  test("every optional check Sova declares, run bare as a trial runs it (no selection) on a branch with nothing for it, exits 0 and says why it skipped", () => {
+    // A trial picks every optional check with no selection (queue.ts optionalPicks). Each of Sova's runs here in a tree
+    // holding its own scripts (each file its command names, with their imports) and the test runner, at the target's
+    // tip: the branch changes nothing, every tracked file reads as changed and the check as picked, as a trial says.
+    // A new optional check that fails without a selection fails this test by name.
+    const def = JSON.parse(readFileSync(join(REPO, ".sova/project.json"), "utf8"));
+    const optional = (def.merge.checks as { id: string; run: string[]; optional?: boolean }[]).filter((c) => c.optional);
+    expect(optional.map((c) => c.id)).toContain("integration-group");
+    const root = scratchRoot("mc-bare-");
+    const tree = join(root, "tree");
+    const isFile = (a: string) => !a.startsWith("-") && !!statSync(join(REPO, a), { throwIfNoEntry: false })?.isFile();
+    copyFromRepo(tree, [...new Set([...RUNNER_FILES, ".sova/project.json", ...importClosure(optional.flatMap((c) => c.run.filter(isFile)))])]);
+    const git = (...a: string[]) => execFileSync("git", ["-c", "user.email=t@example.com", "-c", "user.name=t", ...a], { cwd: tree, encoding: "utf8" }).trim();
+    git("init", "-q", "-b", "master");
+    git("add", "-A");
+    git("commit", "-qm", "target");
+    const tip = git("rev-parse", "HEAD");
+    const list = join(root, "changed.txt");
+    writeFileSync(list, `${git("ls-tree", "-r", "--name-only", "HEAD")}\n`);
+    for (const c of optional) {
+      expect(c.run.join(" "), `${c.id} takes no template a bare run can't fill`).not.toContain("${");
+      const out = join(root, `out-${c.id}.json`);
+      const env = { ...cleanEnv(), SOVA_VERB: "merge", SOVA_MERGE_BASE: tip, SOVA_MERGE_TIP: tip, SOVA_MERGE_TARGET: "master", SOVA_MERGE_CHANGED: list, SOVA_MERGE_PICKED: "1", SOVA_OUT: out };
+      delete env.SOVA_TEST_FILE;
+      const r = spawnSync(c.run[0], c.run.slice(1), { cwd: tree, encoding: "utf8", env, timeout: 120_000 });
+      let report: Record<string, unknown> | null = null;
+      try { report = JSON.parse(readFileSync(out, "utf8")); } catch { /* none */ }
+      expect(r.status, `${c.id} run bare: ${r.stdout}${r.stderr}`).toBe(0);
+      expect(report?.passed, c.id).toBe(0);
+      expect(report?.failed, c.id).toBe(0);
+      expect(typeof report?.skipped === "string" && report.skipped.length > 0, `${c.id} says why it skipped: ${JSON.stringify(report)}`).toBe(true);
+    }
   });
 });

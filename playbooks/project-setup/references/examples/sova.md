@@ -22,7 +22,9 @@ offline install keyed on `pnpm-lock.yaml`, `pnpm-workspace.yaml`, `package.json`
 ${merge.base}`, `rerun: true`), `extensions` (only the changed extensions' suites), `spec-replay` and
 `statecharts` (each skips itself unless its paths changed), `build`, `spec`, `leak-scan`. Two
 optional: `e2e` (a build, then the browser walkthroughs named by the pick's `select`) and
-`integration-group` (one slow group per pick). The heavy test checks run under `scripts/nice.mjs`, at
+`integration-group` (`--integration --picked-groups`: one slow group per pick; with none picked, as in a
+trial, the slow groups a landing runs for the branch's changes, or Skipped "no slow group applies to
+this branch's changes"). The heavy test checks run under `scripts/nice.mjs`, at
 lowered CPU priority, so a landing never starves the live server. Every limit is at most 1800 s.
 
 Why it reads this way: fast, broad checks first (a typecheck fails in a minute, before a 25-minute

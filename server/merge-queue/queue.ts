@@ -305,8 +305,9 @@ interface Current {
 
 type Entry = QueueFile["entries"][number];
 
-/** A trial's picks: every optional merge check its definition declares (a landing runs those only when picked). */
-function optionalPicks(def: ProjectDef): CheckPick[] {
+/** A trial's picks: every optional merge check its definition declares (a landing runs those only when picked), each
+ *  with no selection: a check that takes one runs bare (exported for the trial tests, which run these real picks). */
+export function optionalPicks(def: ProjectDef): CheckPick[] {
   const checks = def.merge?.checks;
   return Array.isArray(checks) ? checks.filter((c) => c.optional).map((c) => ({ id: c.id, label: c.label, source: "picked" as const, why: "a trial runs every proposed check" })) : [];
 }

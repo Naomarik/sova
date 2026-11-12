@@ -91,7 +91,11 @@ branch being landed.**
 - `requires`: services of `services` brought up in the merge copy, in its own slot and ports, before
   the check, and stopped after the checks.
 - `optional: true`: out of the required set; runs only when the merge thread picks it for a branch
-  (by the project's blast-radius map in `.sova/playbooks/merge-queue/`, or its judgement).
+  (by the project's blast-radius map in `.sova/playbooks/merge-queue/`, or its judgement). A trial
+  runs every optional check with no selection appended, so one that takes a selection (a group, files,
+  walkthroughs) must not fail without one: it works out what the branch calls for (from
+  `$SOVA_MERGE_TARGET` and the branch's changes since the merge base) or exits 0 with
+  `{"skipped": "<why>"}` in `$SOVA_OUT`. A check that exits 2 with no selection fails every trial.
 
 **What a check sees.** It runs in the merge copy (cwd its root) with an allow-list environment:
 `PATH`, `HOME`, `USER`, `LANG`, `TZ`, `TMPDIR`, the XDG dirs, `MISE_*`, plus `SOVA_V`, `SOVA_SLOT`,

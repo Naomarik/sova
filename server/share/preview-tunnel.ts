@@ -2,7 +2,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import type { Duplex } from "node:stream";
 import { PREVIEW_LABEL_RE, PREVIEW_LIMITS } from "../../shared/public-links";
 import { findPreview, previewState, type PreviewRecord } from "../preview-links";
-import { previewAnswer, previewUpgradeAnswer } from "./preview-pages";
+import { isNavigation, previewAnswer, previewUpgradeAnswer } from "./preview-pages";
 import { createPreviewProxy, KEY_COOKIE, type PreviewProxy } from "./preview-proxy";
 import { RateLimiter } from "./rate-limit";
 import { previewTunnelHosts, tunnelStatus } from "./tunnel/manager";
@@ -64,11 +64,17 @@ export function keyCookie(cookie: string | undefined): string | null {
   return found;
 }
 
-/** Where the open hop sends the visitor: `/<path>` with its query, never another host (`//…`, `/\…`). Pure. */
+/** Where the open hop sends the visitor: `/<path>` with its query, never another host: a path with a
+    backslash anywhere, or starting `//` or an escaped `/` or `\` (`/%2F…`, `/%5C…`), is `/`. Pure. */
 export function openRedirect(rest: string | undefined, query: string): string {
-  const path = rest && rest.length > 1 && rest[1] !== "/" && rest[1] !== "\\" ? rest : "/";
-  return query ? `${path}?${query}` : path;
+  const safe = !!rest && rest.length > 1 && rest[1] !== "/" && !rest.includes("\\") && !/^\/%(?:2f|5c)/i.test(rest);
+  const path = safe ? rest! : "/";
+  return query && !query.includes("\\") ? `${path}?${query}` : path;
 }
+
+/** The key cookie, until the preview's expiry as it is now. */
+const keyCookieHeader = (label: string, record: PreviewRecord, now: number): string =>
+  `${KEY_COOKIE}=${label}; Path=/; Secure; HttpOnly; SameSite=Lax; Max-Age=${Math.max(1, Math.ceil((Date.parse(record.expiresAt) - now) / 1000))}`;
 
 export function createPreviewTunnelHooks(deps: PreviewTunnelDeps = {}): PreviewTunnelHooks {
   const hosts = deps.hosts ?? previewTunnelHosts;
@@ -110,10 +116,9 @@ export function createPreviewTunnelHooks(deps: PreviewTunnelDeps = {}): PreviewT
       if (!m || (method !== "GET" && method !== "HEAD")) return previewAnswer(req, res, "unknown");
       const record = activeOf(m[1]!, port);
       if (!record) return previewAnswer(req, res, missed(client));
-      const maxAge = Math.max(1, Math.ceil((Date.parse(record.expiresAt) - now()) / 1000));
       res.writeHead(302, {
         Location: openRedirect(m[2], query),
-        "Set-Cookie": `${KEY_COOKIE}=${m[1]}; Path=/; Secure; HttpOnly; SameSite=Lax; Max-Age=${maxAge}`,
+        "Set-Cookie": keyCookieHeader(m[1]!, record, now()),
         "Cache-Control": "no-store",
         "Referrer-Policy": "no-referrer",
         "Content-Length": "0",
@@ -122,9 +127,11 @@ export function createPreviewTunnelHooks(deps: PreviewTunnelDeps = {}): PreviewT
       return;
     }
     const label = keyCookie(req.headers.cookie);
-    if (!activeOf(label, port)) return previewAnswer(req, res, missed(client));
+    const record = activeOf(label, port);
+    if (!record) return previewAnswer(req, res, missed(client));
     if (perPreview.limited(`${client} ${label}`)) return previewAnswer(req, res, "tooMany");
-    proxy.dispatch(req, res, label!, client);
+    // A page load renews the cookie to the preview's expiry as it is now (an Extend moves it).
+    proxy.dispatch(req, res, label!, client, isNavigation(req) ? ["Set-Cookie", keyCookieHeader(label!, record, now())] : undefined);
   };
 
   const upgrade = (req: IncomingMessage, socket: Duplex, head: Buffer, port: number, client: string): void => {

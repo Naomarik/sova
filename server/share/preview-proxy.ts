@@ -283,7 +283,7 @@ export interface PreviewProxyOptions {
 export interface PreviewProxy {
   /** `client`: the address the share edge computed (§mesh.public/forwarded-for), for the visitor log
       and X-Forwarded-For. */
-  dispatch(req: IncomingMessage, res: ServerResponse, label: string, client?: string): void;
+  dispatch(req: IncomingMessage, res: ServerResponse, label: string, client?: string, extra?: readonly string[]): void;
   upgrade(req: IncomingMessage, socket: Duplex, head: Buffer, label: string, client?: string): void;
   /** Cut every open connection whose preview is no longer active. */
   sweep(): void;
@@ -332,7 +332,8 @@ export function createPreviewProxy(opts: PreviewProxyOptions): PreviewProxy {
     return had ? null : tab;
   };
 
-  const dispatch = (req: IncomingMessage, res: ServerResponse, label: string, client?: string): void => {
+  /** `extra`: header pairs added to the app's answer toward the visitor (a Free preview's key cookie, renewed). */
+  const dispatch = (req: IncomingMessage, res: ServerResponse, label: string, client?: string, extra?: readonly string[]): void => {
     if (disposed) return previewAnswer(req, res, "busy");
     const j = judge(label);
     if (j === "unknown") return previewAnswer(req, res, "unknown");
@@ -395,6 +396,7 @@ export function createPreviewProxy(opts: PreviewProxyOptions): PreviewProxy {
           previewAnswer(req, res, "notRunning");
           return finish();
         }
+        if (extra) out.push(...extra);
         res.writeHead(r.statusCode ?? 502, r.statusMessage, out);
         r.on("error", () => res.destroy());
         r.pipe(res);

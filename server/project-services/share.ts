@@ -3,7 +3,9 @@ import { keepPreview, keptPreview, type KeptPreview } from "../preview-kept";
 import { listPreviews, mintPreview, PreviewRefused, renewPreview, revokePreview } from "../preview-links";
 import { staticServes } from "../preview-serve";
 import { awaitShareLinks } from "../share/links-events";
-import { previewAddress, previewOrigin } from "../share/preview-address";
+import { previewAddress } from "../share/preview-address";
+import { assertSharingOn } from "../share/sharing-off";
+import { previewHome, previewLinkOf, type PreviewHome } from "../share/preview-link";
 import { holdsSensitive, SENSITIVE_REFUSAL } from "./sensitive";
 import { readRegistry, type InstanceRecord } from "./store";
 
@@ -129,15 +131,31 @@ export async function checkShare(i: Omit<ShareInput, "createdBy" | "sovaPorts">)
 
 /** Share one endpoint of a running copy: its active link again (expiry moved to the later), else a new one. With its url. */
 export async function shareInstance(i: ShareInput, now = Date.now()): Promise<{ link: LinkView; changed: boolean }> {
+  // Sharing off refuses before anything, a link shared again included (§mesh.public/sharing-off).
+  assertSharingOn();
   const c = await checkShare(i);
-  const same = linksOf(i.rec.id, { activeOnly: true, withUrl: true }, now).find((l) => l.endpoint === i.endpoint);
+  const homeOf = async (): Promise<PreviewHome> => {
+    try {
+      return await previewHome(c.port, i.createdBy);
+    } catch (err) {
+      if (err instanceof PreviewRefused) throw new ShareFailure("share-denied", err.message);
+      throw err;
+    }
+  };
+  const sameNow = () => linksOf(i.rec.id, { activeOnly: true, withUrl: true }, now).find((l) => l.endpoint === i.endpoint);
+  let same = sameNow();
+  // A Free link shared again rides its app's tunnel, started again if it stopped: its link is read at that address.
+  if (same && previewAddress().mode === "tunnel") {
+    await homeOf();
+    same = sameNow() ?? same;
+  }
   if (same) {
     const before = same.expiresAt;
     const r = renewPreview(same.id, c.days, now);
     return { link: { ...same, expiresAt: r?.expiresAt ?? before }, changed: (r?.expiresAt ?? before) !== before };
   }
-  const address = previewAddress();
-  if (!address.url) throw new ShareFailure("share-denied", address.message ?? "No preview address is set.");
+  // Its home first (under Cloudflare Free its app's own tunnel, started now): nothing is made without one.
+  const home = await homeOf();
   // A static copy's own serve holds its port: that one port is not "Sova's own" for its link.
   const ports = c.serve ? new Set([...i.sovaPorts].filter((p) => p !== c.port)) : i.sovaPorts;
   let minted: ReturnType<typeof mintPreview>;
@@ -148,12 +166,12 @@ export async function shareInstance(i: ShareInput, now = Date.now()): Promise<{ 
     throw err;
   }
   const kept: KeptPreview = {
-    url: `${previewOrigin(address.url, minted.label)}/`,
+    ...(home.mode === "tunnel" ? { key: minted.label } : { url: previewLinkOf(home, minted.label) }),
     target: { kind: "instance", instance: i.rec.id, endpoint: i.endpoint!, generation: i.rec.generation, ...(c.serve ? { serve: c.serve } : {}) },
     ...(i.rec.branch ? { branch: i.rec.branch } : {}),
   };
   keepPreview(minted.record.id, kept);
-  return { link: viewOf({ ...minted.record, state: "active" }, kept, true), changed: true };
+  return { link: viewOf({ ...minted.record, state: "active" }, { ...kept, url: previewLinkOf(home, minted.label) }, true), changed: true };
 }
 
 /** End links: one by id, or an instance's (only its endpoint's when given). Each person's sibling ends with it. The ended ones, without url. */

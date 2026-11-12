@@ -35,6 +35,7 @@ import { startStaticPreviews } from "./project-previews";
 import { startOutreach } from "./outreach/core";
 import { startShareRuntime, stopShareRuntime } from "./share/runtime";
 import { startTunnelWiring } from "./share/tunnel/wiring";
+import { stopEndedPreviewTunnels } from "./share/preview-link";
 import { startTourSweep } from "./tours/sweep";
 import { flushOpenVisits } from "./visits";
 import { pruneVisitorLogs } from "./visitor-identity";
@@ -233,6 +234,8 @@ export const server = serve({ fetch: app.fetch, port: PORT, hostname: HOST }, (i
   // running taken back (§mesh.tunnel/lifetime); every change re-reads open pages' public links.
   void startShareRuntime()
     .then(() => startTunnelWiring({ publish: () => publishFeed({ type: "public_links_changed" }) }))
+    // Preview tunnels whose previews ended while Sova was down stop now (§mesh.public/preview-tunnels).
+    .then(() => stopEndedPreviewTunnels())
     .catch((err) => console.error("[tunnels] start failed:", err instanceof Error ? err.message : err));
   // Project instances back to their desired state (server/project-services/routes.ts).
   void reconcileProjectServices();

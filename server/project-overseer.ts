@@ -72,7 +72,9 @@ import { makePreview, previewViews, resolvePreview, sovaPorts, turnOffPreview as
 import { shareFromAct } from "./project-services/share";
 import type { Caller } from "./project-services/engine";
 import { readRegistry } from "./project-services/store";
-import { previewAddress } from "./share/preview-address";
+import { previewRefusal } from "./share/preview-link";
+import { sharingOff } from "./share/sharing-off";
+import { SHARING_OFF_MESSAGE } from "../shared/public-links";
 import { heldActs, projectOfHold } from "./project-holds";
 import type { ActResult } from "./org-host";
 import type { Envelope, LedgerCounts } from "./org-envelope";
@@ -846,8 +848,9 @@ function toolHost(rt: Rt): PoToolHost {
       try {
         const r = await resolvePreview({ projectId, ...input.target, sessionId: input.session, purpose: input.purpose, days: input.days, createdBy: `session:${overseerId}`, requireOwner: true }, { sovaPorts: sovaPorts() });
         codingSession = r.tree?.sessionId ?? input.session;
-        const address = previewAddress();
-        if (!address.url) invalid = address.message ?? "No preview address is set.";
+        // Under Cloudflare Free a port's own tunnel is needed (§mesh.public/preview-tunnels): Turn On, the cap of 6.
+        const refused = sharingOff() ? SHARING_OFF_MESSAGE : previewRefusal(r.target.kind === "port" ? r.target.port : null)?.message;
+        if (refused) invalid = refused;
       } catch (err) {
         if (!(err instanceof PreviewRefused)) throw err;
         invalid = err.message;

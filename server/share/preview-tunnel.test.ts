@@ -31,9 +31,11 @@ const HOST = "able-baker-charlie-delta.trycloudflare.com";
 
 function harness() {
   const reached: { label: string; url: string }[] = [];
+  const extras: (readonly string[] | undefined)[] = [];
   const proxy: PreviewProxy = {
-    dispatch: (req, res, l) => {
+    dispatch: (req, res, l, _client, extra) => {
       reached.push({ label: l, url: req.url ?? "" });
+      extras.push(extra);
       res.writeHead(200);
       res.end("app");
     },
@@ -46,15 +48,15 @@ function harness() {
     dispose: () => {},
   };
   const hooks = createPreviewTunnelHooks({ hosts: () => new Map([[HOST, 5173]]), originOf: () => `https://${HOST}`, find: (l) => RECORDS.get(l) ?? null, proxy, now: () => NOW });
-  return { hooks, reached };
+  return { hooks, reached, extras };
 }
 
 interface Answer {
   status: number;
   headers: Record<string, string>;
 }
-function call(hooks: ReturnType<typeof harness>["hooks"], url: string, opts: { cookie?: string; method?: string; client?: string } = {}): Answer {
-  const req = { url, method: opts.method ?? "GET", headers: { host: HOST, ...(opts.cookie ? { cookie: opts.cookie } : {}) }, resume() {} } as unknown as IncomingMessage;
+function call(hooks: ReturnType<typeof harness>["hooks"], url: string, opts: { cookie?: string; method?: string; client?: string; page?: boolean } = {}): Answer {
+  const req = { url, method: opts.method ?? "GET", headers: { host: HOST, ...(opts.cookie ? { cookie: opts.cookie } : {}), ...(opts.page ? { "sec-fetch-mode": "navigate" } : {}) }, resume() {} } as unknown as IncomingMessage;
   const out: Answer = { status: 0, headers: {} };
   const fake = { destroyed: false, headersSent: false, writeHead: (_s: number, _h?: Record<string, string>) => fake, end: () => {} };
   fake.writeHead = (status, headers) => {
@@ -122,7 +124,19 @@ test("the open hop redirects only to a path on the same host", () => {
   assert.equal(openRedirect(undefined, ""), "/");
   assert.equal(openRedirect("/", "a=1"), "/?a=1");
   assert.equal(openRedirect("/x/y", ""), "/x/y");
-  for (const rest of ["//evil.example/x", "/\\evil.example", "/"]) assert.equal(openRedirect(rest, ""), "/", rest);
+  assert.equal(openRedirect("/a%2Fb", ""), "/a%2Fb");
+  for (const rest of ["//evil.example/x", "/\\evil.example", "/x\\y", "/%2F%2Fevil.example", "/%2fevil", "/%5Cevil.example", "/%5cx", "/"]) assert.equal(openRedirect(rest, ""), "/", rest);
+  // Through the hop itself.
+  const { hooks } = harness();
+  assert.equal(call(hooks, `/_sova/open/${VALID}//evil.example/x`).headers.location, "/");
+  assert.equal(call(hooks, `/_sova/open/${VALID}/%5Cevil.example`).headers.location, "/");
+});
+
+test("a page load through the cookie renews it to the preview's expiry now; other requests don't", () => {
+  const { hooks, extras } = harness();
+  call(hooks, "/", { cookie: `__Host-sova-pk=${VALID}`, page: true });
+  call(hooks, "/app.js", { cookie: `__Host-sova-pk=${VALID}` });
+  assert.deepEqual(extras, [["Set-Cookie", `__Host-sova-pk=${VALID}; Path=/; Secure; HttpOnly; SameSite=Lax; Max-Age=3600`], undefined]);
 });
 
 test("a request is a preview tunnel's only when its Host is exactly a running tunnel's host", () => {

@@ -19,6 +19,12 @@ import { sessionsChanged } from "./list-generation";
  * of its own, `siblingLinks` (sibling id -> link), never as a `previews` entry: a sibling has no target
  * of its own, and every reader of `previews` relies on each entry having one. It is the operator's,
  * for the Sent to line only (§mesh.public/preview-card); no tool or model reads it.
+ *
+ * Under Cloudflare Free (§mesh.public/preview-tunnels) a preview's link has no fixed address: its tunnel's
+ * address changes when the tunnel restarts. Such an entry keeps `key` (its label) instead of `url`, and a
+ * person's link sits in `siblingKeys` (sibling id -> label) instead of `siblingLinks`; every read builds the
+ * link from the tunnel's current address (setKeptLinkResolver), none while it has none. An older Sova
+ * ignores both fields (no link kept).
  */
 
 export const PREVIEW_KEPT_FILE = "preview-kept.json";
@@ -27,8 +33,10 @@ export const PREVIEW_KEPT_FILE = "preview-kept.json";
 export type KeptTarget = { kind: "port" } | { kind: "static"; folder: string } | { kind: "instance"; instance: string; endpoint: string; generation?: number; serve?: string };
 
 export interface KeptPreview {
-  /** The link, `<scheme>://<label>.<zone>/`. */
+  /** The link, `<scheme>://<label>.<zone>/`; for a `key` entry, built on read (absent while its tunnel has no address). */
   url?: string;
+  /** A Free preview's label (§mesh.public/preview-tunnels): the link is built from it on read. Never stored with a `url`. */
+  key?: string;
   target: KeptTarget;
   sessionId?: string;
   branch?: string;
@@ -43,7 +51,22 @@ interface KeptFile {
   previews: Record<string, KeptPreview>;
   /** A person's own link by sibling id: absent while none is kept (an older Sova writes none, and ignores it). */
   siblingLinks?: Record<string, string>;
+  /** A person's Free link by sibling id: its label (the link is built on read). */
+  siblingKeys?: Record<string, string>;
 }
+
+/** A Free link from its label, at its tunnel's current address; null while it has none. preview-link.ts sets it. */
+let resolveKey: (key: string) => string | null = () => null;
+export function setKeptLinkResolver(fn: ((key: string) => string | null) | null): void {
+  resolveKey = fn ?? (() => null);
+}
+const linkOfKey = (key: string): string | null => {
+  try {
+    return resolveKey(key);
+  } catch {
+    return null;
+  }
+};
 
 export const previewKeptFile = (): string => join(stateRoot(), PREVIEW_KEPT_FILE);
 
@@ -87,10 +110,12 @@ function entryOf(v: unknown): KeptPreview | null {
   if (!optStr(v.url, 512) || !optStr(v.branch, 256) || !optStr(v.purpose, 400)) return null;
   if (v.sessionId !== undefined && (typeof v.sessionId !== "string" || !REF.test(v.sessionId))) return null;
   if (typeof v.url === "string" && !isLink(v.url)) return null;
+  if (v.key !== undefined && (typeof v.key !== "string" || !PREVIEW_LABEL_RE.test(v.key) || v.url !== undefined)) return null;
   if (v.owner !== undefined && (typeof v.owner !== "string" || !/^[0-9a-f]{64}$/.test(v.owner))) return null;
   return {
     target,
     ...(typeof v.url === "string" ? { url: v.url } : {}),
+    ...(typeof v.key === "string" ? { key: v.key } : {}),
     ...(typeof v.sessionId === "string" ? { sessionId: v.sessionId } : {}),
     ...(typeof v.branch === "string" ? { branch: v.branch } : {}),
     ...(typeof v.purpose === "string" ? { purpose: v.purpose } : {}),
@@ -128,6 +153,11 @@ function read(): KeptFile {
         for (const [id, v] of Object.entries(raw.siblingLinks)) if (PREVIEW_ID.test(id) && typeof v === "string" && isLink(v)) links[id] = v;
         if (Object.keys(links).length) out.siblingLinks = links;
       }
+      if (isObj(raw.siblingKeys)) {
+        const keys: Record<string, string> = {};
+        for (const [id, v] of Object.entries(raw.siblingKeys)) if (PREVIEW_ID.test(id) && typeof v === "string" && PREVIEW_LABEL_RE.test(v)) keys[id] = v;
+        if (Object.keys(keys).length) out.siblingKeys = keys;
+      }
     } catch (err) {
       // Never quotes the file: it holds links.
       const why = err instanceof SyntaxError ? "not JSON" : err instanceof Error ? err.message : "unreadable";
@@ -152,21 +182,41 @@ function write(file: KeptFile): void {
   sessionsChanged(); // a kept link changes what rows redact
 }
 
+/** An entry as readers get it: a `key` entry with its link built now (absent while its tunnel has no address). */
+function withLink(k: KeptPreview): KeptPreview {
+  if (!k.key) return k;
+  const url = linkOfKey(k.key);
+  return url ? { ...k, url } : k;
+}
+
 /** What is kept for one preview, or null (one made before this file, or a broken entry). */
 export function keptPreview(id: string): KeptPreview | null {
-  return read().previews[id] ?? null;
+  const k = read().previews[id];
+  return k ? withLink(k) : null;
 }
 
 /** Every kept entry, by preview id. */
 export function keptPreviews(): Record<string, KeptPreview> {
-  return { ...read().previews };
+  return Object.fromEntries(Object.entries(read().previews).map(([id, k]) => [id, withLink(k)]));
 }
 
-/** Keep one preview's facts (its link included): written at its mint. */
+/** Keep one preview's facts (its link, or a Free preview's key, included): written at its mint. A `key` entry
+    never stores a `url` (that one is built on read). */
 export function keepPreview(id: string, kept: KeptPreview): void {
   if (!PREVIEW_ID.test(id)) throw new Error("bad preview id");
+  if (kept.key !== undefined && !PREVIEW_LABEL_RE.test(kept.key)) throw new Error("bad preview key");
+  const stored: KeptPreview = { ...kept };
+  if (stored.key) delete stored.url;
   const file = read();
-  write({ ...file, previews: { ...file.previews, [id]: kept } });
+  write({ ...file, previews: { ...file.previews, [id]: stored } });
+}
+
+/** Keep a person's own Free link to a preview (sibling `id`) by its label (§app.outreach/links). */
+export function keepSiblingKey(id: string, key: string): void {
+  if (!PREVIEW_ID.test(id)) throw new Error("bad preview id");
+  if (!PREVIEW_LABEL_RE.test(key)) throw new Error("bad preview key");
+  const file = read();
+  write({ ...file, siblingKeys: { ...file.siblingKeys, [id]: key } });
 }
 
 /** Keep a person's own link to a preview (sibling `id`), made by its send (§app.outreach/links). */
@@ -179,25 +229,36 @@ export function keepSiblingLink(id: string, url: string): void {
 
 /** A person's kept link (sibling `id`), or null: one sent before links were kept, or one dropped. */
 export function keptSiblingLink(id: string): string | null {
-  return read().siblingLinks?.[id] ?? null;
+  const file = read();
+  const key = file.siblingKeys?.[id];
+  return file.siblingLinks?.[id] ?? (key ? linkOfKey(key) : null);
 }
 
 /** Drop the people's links `keep` refuses (a sibling turned off, expired or gone). Writes only when one goes. */
 export function dropSiblingLinks(keep: (id: string) => boolean): string[] {
   const file = read();
   const links = file.siblingLinks ?? {};
-  const gone = Object.keys(links).filter((id) => !keep(id));
+  const keys = file.siblingKeys ?? {};
+  const gone = [...new Set([...Object.keys(links), ...Object.keys(keys)])].filter((id) => !keep(id));
   if (!gone.length) return [];
   const rest = Object.fromEntries(Object.entries(links).filter(([id]) => !gone.includes(id)));
-  write({ version: 1, previews: file.previews, ...(Object.keys(rest).length ? { siblingLinks: rest } : {}) });
+  const restKeys = Object.fromEntries(Object.entries(keys).filter(([id]) => !gone.includes(id)));
+  write({ version: 1, previews: file.previews, ...(Object.keys(rest).length ? { siblingLinks: rest } : {}), ...(Object.keys(restKeys).length ? { siblingKeys: restKeys } : {}) });
   return gone;
 }
 
-/** A kept link's label (the secret part), or null when it is no preview link. Pure. */
+/** A Free preview link's path (§mesh.public/preview-tunnels): `/_sova/open/<label>[/…]`. */
+const OPEN_PATH = /^\/_sova\/open\/([a-z2-7]{52})(?:\/|$)/;
+
+/** A kept link's label (the secret part), or null when it is no preview link: the host's first label, or a Free
+    link's key in its path. Pure. */
 export function linkLabel(url: string | undefined | null): string | null {
   if (!url) return null;
   try {
-    const label = new URL(url).hostname.split(".")[0] ?? "";
+    const u = new URL(url);
+    const key = OPEN_PATH.exec(u.pathname)?.[1];
+    if (key) return key;
+    const label = u.hostname.split(".")[0] ?? "";
     return PREVIEW_LABEL_RE.test(label) ? label : null;
   } catch {
     return null; // not a URL: not kept
@@ -207,7 +268,8 @@ export function linkLabel(url: string | undefined | null): string | null {
 /** Every kept link's label (the secret part), for the redactions and the leak checks. */
 export function keptLabels(): string[] {
   const file = read();
-  return [...Object.values(file.previews).map((k) => k.url), ...Object.values(file.siblingLinks ?? {})].map(linkLabel).filter((l): l is string => !!l);
+  const linked = [...Object.values(file.previews).map((k) => k.url), ...Object.values(file.siblingLinks ?? {})].map(linkLabel).filter((l): l is string => !!l);
+  return [...linked, ...Object.values(file.previews).flatMap((k) => (k.key ? [k.key] : [])), ...Object.values(file.siblingKeys ?? {})];
 }
 
 /** What stands in for a kept link in text that must never carry one. */
@@ -218,8 +280,8 @@ export function redactPreviewLinks(text: string, labels: readonly string[] = kep
   let out = text;
   for (const label of labels) {
     if (!out.includes(label)) continue;
-    // The whole link when it is one (scheme, host, any path), else the label alone.
-    out = out.replace(new RegExp(`(?:https?://)?${label}(?:\\.[A-Za-z0-9.-]+)?(?::\\d+)?(?:/[^\\s)\\]>"']*)?`, "g"), PREVIEW_LINK_REDACTED);
+    // The whole link when it is one (scheme, host, any path; a Free link's host and /_sova/open/ before its key), else the label alone.
+    out = out.replace(new RegExp(`(?:https?://[A-Za-z0-9.-]+(?::\\d+)?/_sova/open/${label}|(?:https?://)?${label}(?:\\.[A-Za-z0-9.-]+)?(?::\\d+)?)(?:/[^\\s)\\]>"']*)?`, "g"), PREVIEW_LINK_REDACTED);
   }
   return out;
 }

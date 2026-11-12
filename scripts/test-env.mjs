@@ -73,6 +73,8 @@ export const TEST_SWITCHES = [
   "SOVA_INSERTION_ALL", "SOVA_INSERTION_DEBUG", "SOVA_STATE_ASSERT", "SOVA_SYNC_LOGIN_KINDS", "SOVA_PARITY_BASE",
   "OWNER_SHOTS", "MQ_UI_SHOTS", "REL_UI_SHOTS", "NY_UI_SHOTS", "CTX_UI_SHOTS", "SPENT_UI_SHOTS", "SPENT_FADE_SHOTS", "SPENT_TAB_SHOTS", "MODE_TEST_SCRATCH", "SOVA_TAR_FIXTURES_WRITE",
   "E2E_RELEASE_NOTES", "PI_CLAUDE_CODE_DEBUG", "WRITE_*_SNAPSHOT",
+  // Cloudflare tunnels (server/share/tunnel): the cloudflared to run (a test's fake), the driver, the outside check.
+  "SOVA_CLOUDFLARED", "SOVA_TUNNEL_DRIVER", "SOVA_TUNNEL_VERIFY",
 ];
 
 /** Switches that point a test at files outside the work tree (a build made elsewhere, another checkout's server):

@@ -79,7 +79,8 @@
 // node's directory and mise's tool paths (shims refuse an untrusted config in a throwaway HOME), then
 // the system's directories (SYSTEM_PATH). Then SOVA_PRICES_FETCH=off (bun test sets no NODE_TEST_CONTEXT), and SOVA_GIT_MAINTENANCE=off (a server a
 // test starts registers no repository with git's scheduled maintenance and starts no systemd
-// timer; server/git-maintenance.ts's own tests drive it with their own deps). bun test itself sets TZ=UTC and
+// timer; server/git-maintenance.ts's own tests drive it with their own deps), and SOVA_QUICK_TUNNEL=off
+// (a missing Public links setting reads as off, never a Cloudflare Free tunnel; a tunnel test opts in). bun test itself sets TZ=UTC and
 // NODE_ENV=test. Both runtimes: a stand-in `claude` (scripts/fake-claude.mjs) leads every test
 // process's PATH, so no test runs the installed Claude CLI, or a paid model through it; a test that
 // needs another `claude` sets its own PATH.
@@ -723,6 +724,9 @@ function hermeticEnv(tier) {
     PATH: testPath([fakeClaudeDir(root), path.dirname(process.execPath), misePaths], path.delimiter),
     SOVA_PRICES_FETCH: "off",
     SOVA_GIT_MAINTENANCE: "off",
+    // No Cloudflare Free tunnel by default (server/public-links.ts): a missing setting reads as off, as before
+    // the Free default; a test that drives a tunnel turns it on for itself.
+    SOVA_QUICK_TUNNEL: "off",
     // No per-server copy of the code (§app.chat-processes/code-generations): a server a test starts has
     // its state root here, on another filesystem than the checkout, where each copy is ~350 MB.
     SOVA_CHAT_CODE: "live",

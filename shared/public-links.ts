@@ -55,10 +55,26 @@ export interface ShareGatewaySetting {
   previewUrl?: string;
 }
 
-/** `off`: no public links. `self`: this host is the gateway (`gateway` set). `{ via }`: links
-    go public through the peer with this Tailscale StableID in peers.json. The StableID, not the
-    peer's id: a peer id can be renamed on this host, and the ingress gate needs the node anyway. */
-export type ShareRoute = "off" | "self" | { via: { nodeId: string } };
+/** `off`: no public links. `quick`: Cloudflare Free, a Quick Tunnel (`*.trycloudflare.com`, no
+    account) Sova starts lazily. `account`: Cloudflare Account, a dashboard-made tunnel Sova runs
+    from its connector token (`account` set; the token is never in this file). `self`: this host
+    is the gateway (`gateway` set; front `funnel` is Tailscale Funnel, `vhost`/`caddy` Your own web
+    server, `cloudflared` a tunnel the user runs). `{ via }`: links go public through the peer with
+    this Tailscale StableID in peers.json. The StableID, not the peer's id: a peer id can be renamed
+    on this host, and the ingress gate needs the node anyway.
+
+    As stored, `off` is two things: written by a PUT (it carries `offChosenAt`) it is the new
+    layout's Off, which turns sharing off entirely (PublicLinksReading.sharingOff); written before
+    this build (no `offChosenAt`) it reads as `quick` (Free whenever no address is set). */
+export type ShareRoute = "off" | "quick" | "account" | "self" | { via: { nodeId: string } };
+
+/** Cloudflare Account's address: the public hostname(s) set in the dashboard for the tunnel. */
+export interface CloudflareAccountSetting {
+  /** https://share.example.com, no path, no trailing slash. */
+  publicUrl: string;
+  /** `https://*.example.com`, as ShareGatewaySetting.previewUrl. Absent: no preview links. */
+  previewUrl?: string;
+}
 
 /** <stateRoot>/public-links.json. */
 export interface PublicLinksFile {
@@ -72,10 +88,101 @@ export interface PublicLinksFile {
   lastKnownUrl?: string;
   /** Server-written only: when Verify last passed, ms epoch. */
   verifiedAt?: number;
+  /** Cloudflare Account's address. Kept while `route` is "off", "quick" or "account"; a file whose
+      route is "self" or a via is written without it, so an older Sova can still read that file. */
+  account?: CloudflareAccountSetting;
+  /** Server-written only: stamped when a PUT sets `route: "off"` (the new layout's Off, sharing
+      off entirely). Removed when the route changes. */
+  offChosenAt?: number;
 }
 
 /** The fields PUT /api/public-links may change; the server-written ones are never accepted. */
-export type PublicLinksPatch = Partial<Pick<PublicLinksFile, "route" | "gateway" | "ingressPort">>;
+export type PublicLinksPatch = Partial<Pick<PublicLinksFile, "route" | "gateway" | "ingressPort" | "account">>;
+
+/**
+ * The setting as every reader sees it (server/public-links.ts readPublicLinksSetting), never stored.
+ * `file` is the EFFECTIVE setting, so a reader of `file.route` needs nothing more:
+ *   - no file, or a stored `off` without `offChosenAt` (an Off saved before this build): `quick`,
+ *     `implicit` (Free whenever no address is set);
+ *   - a stored `off` with `offChosenAt`: `off`, `sharingOff` (no Share button, agents refuse);
+ *   - a file that can't be read or parsed: `off`, `broken`; never `quick`, so no tunnel starts for
+ *     it, and sharing stays on (links are local-only with the `broken` warning);
+ *   - SOVA_QUICK_TUNNEL=off (the test runner sets it): what would be an implicit `quick` is `off`
+ *     (still `implicit`), and no Free tunnel ever starts.
+ * An env pin (SOVA_SHARE_PUBLIC_URL) wins over all of it: with one set, `sharingOff` is false.
+ */
+export interface PublicLinksReading {
+  file: PublicLinksFile;
+  /** No address was ever chosen in the new layout (no file, or a pre-build Off). */
+  implicit: boolean;
+  /** The stored file exists but can't be read or parsed (F1). */
+  broken: boolean;
+  /** The new layout's Off: sharing is off entirely. */
+  sharingOff: boolean;
+}
+
+/** What a share command, tool or route answers while sharing is off (PublicLinksReading.sharingOff). */
+export const SHARING_OFF_ERROR = "sharing-off";
+export const SHARING_OFF_MESSAGE = "Sharing is off on this computer. The user can turn it on in Settings → Public links.";
+
+// ---- tunnels (Cloudflare Free and Account; server/share/tunnel/manager.ts) ----------------------
+
+/** The share tunnel carries every /h /i /s /t link; a preview tunnel is one Free tunnel per
+    previewed app (its port). */
+export type TunnelKey = { kind: "share" } | { kind: "preview"; port: number };
+export type TunnelMode = "quick" | "account";
+export type TunnelState = "stopped" | "starting" | "up" | "degraded" | "failed" | "needs-cloudflared";
+
+export interface TunnelStatus {
+  key: TunnelKey;
+  mode: TunnelMode;
+  state: TunnelState;
+  /** https://<host>, null until known. Account: the saved publicUrl. */
+  origin: string | null;
+  /** When this address began (ms). A new address is a new epoch. */
+  epoch: number | null;
+  /** The address before this one and when it ended, for the "links broke" notice. */
+  previous?: { origin: string; endedAt: number };
+  /** One sentence when failed or degraded; the unit's last lines in `detail`. */
+  reason?: string;
+  detail?: string[];
+}
+
+/** At most this many Free preview tunnels run at once; the next preview share is refused. */
+export const PREVIEW_TUNNELS_MAX = 6;
+
+/** Where the cloudflared Sova would run comes from: `env` SOVA_CLOUDFLARED, `path` on PATH,
+    `download` the verified copy in <stateRoot>/bin/cloudflared (outside tunnels/, so a tunnel
+    cleanup never deletes it). */
+export type CloudflaredSource = "env" | "path" | "download";
+export interface CloudflaredInfo {
+  found: boolean;
+  source: CloudflaredSource | null;
+  version: string | null;
+  /** Why none can be run, one sentence, when `found` is false (missing, too old). */
+  reason?: string;
+  /** A pinned build exists for this computer (linux x64/arm64, macOS x64/arm64), so Download is offered. */
+  canDownload: boolean;
+  /** How to install it oneself, the line shown beside Download (e.g. "brew install cloudflared"). */
+  install: string;
+}
+
+/** The "these links broke" notice: live links handed out before the tunnel's current epoch.
+    `kept`: the link can be copied again with a new address (Copy New Link); else Share again. */
+export interface BrokenLinks {
+  since: number;
+  /** `url`: for a kept link, the link at the current address (what Copy New Link copies). */
+  links: { kind: RegistryLinkKind; id: string; title: string; kept: boolean; url?: string }[];
+}
+
+/** GET /api/public-links `tunnel`: present when the route is `quick` or `account`, or a tunnel runs. */
+export interface PublicLinksTunnelInfo {
+  /** null when the route runs no share tunnel. */
+  share: TunnelStatus | null;
+  previews: TunnelStatus[];
+  cloudflared: CloudflaredInfo;
+  broken?: BrokenLinks;
+}
 
 /**
  * Where links minted on this host point, as shareState() (server/share/listener.ts) resolves it. Order: the
@@ -86,7 +193,8 @@ export type PublicLinksPatch = Partial<Pick<PublicLinksFile, "route" | "gateway"
  */
 export interface ShareState {
   state: "off" | "configured" | "verified" | "unreachable";
-  source: "env" | "setting" | "gateway" | "bound";
+  /** `quick`/`account`: the Cloudflare tunnel Sova runs (route quick or account). */
+  source: "env" | "setting" | "gateway" | "bound" | "quick" | "account";
   publicUrl: string | null;
   /** The via peer's id in peers.json (looked up from its nodeId at read time), for a routed host. */
   via?: string;
@@ -111,10 +219,18 @@ export interface ShareListenerFailure {
     gateway did not ack the mint within MINT_ACK_TIMEOUT_MS (the outbox keeps sending).
     A failed publication (the push errored) is `unconfirmed` too, never shown as confirmed.
     `not-accepted`: the gateway answers but does not accept this host's links. `sleeps`: this host
-    is a laptop or phone, so its links don't open while it is asleep. */
-export type LinkWarningCode = "off" | "unverified" | "unreachable" | "unconfirmed" | "not-accepted" | "sleeps";
+    is a laptop or phone, so its links don't open while it is asleep.
+    Cloudflare tunnels: `quick` the Free tunnel is up (its address changes when the tunnel
+    restarts), `quick-starting` it is starting and didn't answer within the mint's wait,
+    `quick-setup` cloudflared isn't on this computer, `quick-turn-on` the operator hasn't pressed
+    Turn On yet (consentAt), `tunnel-down` the tunnel stopped or lost its connection. `broken`:
+    the saved setup can't be read (PublicLinksReading.broken). */
+export type LinkWarningCode =
+  | "off" | "unverified" | "unreachable" | "unconfirmed" | "not-accepted" | "sleeps"
+  | "quick" | "quick-starting" | "quick-setup" | "quick-turn-on" | "tunnel-down" | "broken";
 
-/** The warnings' text (§design.copy-deck/public-links), verbatim; `{gateway}` is the via peer's label. */
+/** The warnings' text (§design.copy-deck/public-links; Free's codes and `broken`:
+    §design.copy-deck/where-links-open), verbatim; `{gateway}` is the via peer's label. */
 export const LINK_WARNINGS: Readonly<Record<LinkWarningCode, string>> = {
   off: "This link can't be opened from outside yet. Turn on public links in Settings → Public links.",
   unverified: "This link may not open from outside yet. Verify the address in Settings → Public links.",
@@ -122,6 +238,12 @@ export const LINK_WARNINGS: Readonly<Record<LinkWarningCode, string>> = {
   unconfirmed: "This link isn't public yet. We'll keep sending it to {gateway}, and it opens once {gateway} confirms.",
   "not-accepted": "{gateway} doesn't accept links from this host yet. Add this host in {gateway}'s Settings → Public links.",
   sleeps: "This link opens only while this host is awake.",
+  quick: "This link's address changes when this computer restarts.",
+  "quick-starting": "The public address is starting. This link opens from outside in a moment.",
+  "quick-setup": "Links can't open from outside until Cloudflare's tunnel program is on this computer. Set it up in Settings → Public links.",
+  "quick-turn-on": "This link isn't public yet. Turn on public links in Settings → Public links.",
+  "tunnel-down": "The public address is down, so this link won't open until it's back.",
+  broken: "Your public links setup can't be read. Fix it or save it again in Settings → Public links.",
 };
 
 /** The front picker's labels (§design.copy-deck/public-links). */
@@ -161,6 +283,16 @@ export interface PublicLinksInfo {
       stated (`theirs`, null when it stated none: an older gateway) and this host's (`ours`,
       SHARE_PROTOCOL). The gateway is behind when `theirs` is null or lower (§mesh.public/share-protocol). */
   gatewayProtocol?: { theirs: number | null; ours: number };
+  /** PublicLinksReading's flags (`file` is the effective setting). */
+  implicit?: boolean;
+  broken?: boolean;
+  sharingOff?: boolean;
+  /** When the operator pressed Turn On for public Free tunnels (ms), null before. Until then no
+      Free tunnel starts and mints carry `quick-turn-on`. Never set by an agent. */
+  consentAt?: number | null;
+  /** Cloudflare Account: whether a connector token is stored (never the token). */
+  account?: { hasToken: boolean };
+  tunnel?: PublicLinksTunnelInfo;
 }
 
 export interface RoutedHost {
@@ -197,6 +329,16 @@ export interface VisitorLogging {
   /** The preview proxy sends the app `X-Forwarded-For` and `X-Forwarded-Proto`. */
   forwardIp: boolean;
 }
+
+/** The sessions feed's page event (joined into SessionFeedMessage): the public links setting,
+    a tunnel's state, the consent or the Account token changed. No payload: pages re-read
+    GET /api/public-links. */
+export interface PublicLinksFeed {
+  type: "public_links_changed";
+}
+
+/** POST /api/public-links/setup-chat `option`: which setup the seeded chat walks through. */
+export type SetupChatOption = "account" | "web-server" | "funnel";
 
 // ---- hello --------------------------------------------------------------------------------------
 
@@ -397,6 +539,9 @@ export const PREVIEW_PAGES = {
 export interface PreviewAddress {
   url: string | null;
   source: "env" | "setting" | "gateway" | null;
+  /** `tunnel`: route quick, each preview gets its own Free tunnel (url null, no reason); absent or
+      `wildcard`: previews live under `url`'s wildcard. */
+  mode?: "wildcard" | "tunnel";
   reason?: "no-address" | "gateway-old";
   /** `reason`'s sentence, the gateway named. */
   message?: string;

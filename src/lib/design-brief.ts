@@ -160,9 +160,12 @@ export function parseShotWords(text: string): DesignShotWords {
 }
 
 /** What Save sends for edited words: null when nothing is left (back to the Creative Director's or the helper's), else
-    the words; refused, with why, past the colour limit. */
-export function shotWordsToSave(text: string): DesignShotWords | null {
+    the words, with no colours when they're as shown; refused, with why, past the colour limit. */
+export function shotWordsToSave(text: string, shown: readonly { hex: string; role: string }[] = []): DesignShotWords | null {
   const w = parseShotWords(text);
   if (w.colors.length > SHOT_COLORS_MAX) throw new Error(`Keep it to ${SHOT_COLORS_MAX} colours; this has ${w.colors.length}.`);
-  return w.feel || w.colors.length ? w : null;
+  // Colours left as they were shown stay the measured ones (with whatever roles they had): only a change makes them yours.
+  const same = w.colors.length === shown.length && w.colors.every((c, i) => c.hex === shown[i]!.hex.toLowerCase() && c.role === shown[i]!.role.trim());
+  const colors = same ? [] : w.colors;
+  return w.feel || colors.length ? { feel: w.feel, colors } : null;
 }

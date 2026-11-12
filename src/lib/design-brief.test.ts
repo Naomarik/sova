@@ -171,3 +171,10 @@ test("a run's images are the ones it started with (run.images) and yours added s
   assert.deepEqual(assetsOfRun(catalogue, run).map((a) => a.name), ["a2", "a3"]);
   assert.deepEqual(assetsOfRun(catalogue, { ...run, images: undefined }).map((a) => a.name), ["a3"]);
 });
+
+test("editing only the feel sends no colours, so the measured ones stay; a changed colour list is sent whole", () => {
+  const shown = [{ hex: "#1E1E26", role: "background" }, { hex: "#8e88ff", role: "accent" }];
+  const text = shotWordsText({ feel: "Calm.", colors: shown });
+  assert.deepEqual(shotWordsToSave(text.replace("Calm.", "Quiet and airy."), shown), { feel: "Quiet and airy.", colors: [] });
+  assert.deepEqual(shotWordsToSave(text.replace("accent", "links"), shown)?.colors, [{ hex: "#1e1e26", role: "background" }, { hex: "#8e88ff", role: "links" }]);
+});

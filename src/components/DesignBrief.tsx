@@ -241,7 +241,7 @@ function BriefShot(props: { asset: DesignAsset; run: DesignRunView; store: Desig
   const feelEmpty = () => (describing() ? "Its words are being drafted." : "Its feel couldn't be read, so designers get only its colours. Edit to say it yourself.");
   const by = () => ({ user: "Yours", coordinator: "The Creative Director's", helper: "A first draft" })[found()?.by ?? "helper"];
   const save = async (text: string) => {
-    const words = shotWordsToSave(text);
+    const words = shotWordsToSave(text, found()?.words.colors ?? []);
     await props.store.api.imageNote(props.asset.name, { words });
     props.store.refresh();
   };

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { ArchiveCopy } from "../../shared/projects";
-import { ADOPTED_ARCHIVE_LINE, afterStops, archivedRunningLine, archiveUnavailable, blockingCopies, copiesLead, copyKey, copyStateWord, runsLine, stopLabel, stoppableCopies } from "./archive-copies";
+import { ADOPTED_ARCHIVE_LINE, afterStops, archivedRunningLine, archiveUnavailable, blockingCopies, copiesLead, copyKey, copyStateWord, runsLine, stopLabel, stoppableCopies, stoppableShared } from "./archive-copies";
 
 const copy = (name: string, extra: Partial<ArchiveCopy> = {}): ArchiveCopy => ({
   instance: `p:${name}`,
@@ -15,7 +15,7 @@ const copy = (name: string, extra: Partial<ArchiveCopy> = {}): ArchiveCopy => ({
   ...extra,
 });
 const adopted = copy("Main copy", { slot: 0, adopted: true, down: null, services: [{ name: "web", state: "running", adopted: true }] });
-const shared = copy("Shared services", { instance: null, branch: null, checkout: null, slot: null, services: [{ name: "db", state: "running" }], down: { instance: "p:a", services: ["db"], confirm: true } });
+const shared = copy("Shared services", { instance: null, branch: null, checkout: null, slot: null, services: [{ name: "db", state: "running" }], down: { project: "/p", shared: true, confirm: true } });
 
 test("an adopted main is listed but never blocks archiving, nor is it stopped", () => {
   const feat = copy("feat-x");
@@ -66,6 +66,20 @@ test("the archived banner names what was left running", () => {
   assert.equal(archivedRunningLine([adopted]), null);
   assert.equal(archivedRunningLine([copy("a")]), "1 copy of it still runs. Stop it on Branches.");
   assert.equal(archivedRunningLine([copy("a"), copy("b")]), "2 copies of it still run. Stop them on Branches.");
-  assert.equal(archivedRunningLine([copy("a"), shared]), "1 copy and its shared services still run. Stop them on Branches.");
-  assert.equal(archivedRunningLine([shared]), "Its shared services still run. Stop them on Branches.");
+  // The shared services are stopped by the banner's own Stop: Branches shows them only through a copy.
+  assert.equal(archivedRunningLine([copy("a"), shared]), "1 copy and its shared services still run. Stop the copy on Branches.");
+  assert.equal(archivedRunningLine([copy("a"), copy("b"), shared]), "2 copies and its shared services still run. Stop the copies on Branches.");
+  assert.equal(archivedRunningLine([shared]), "Its shared services still run.");
+  // An older server's row with no down: Branches it is.
+  assert.equal(archivedRunningLine([{ ...shared, down: null }]), "Its shared services still run. Stop them on Branches.");
+});
+
+test("the shared services with no copy: Stop Running Copies stops them, and the archived page offers their Stop", () => {
+  assert.deepEqual(blockingCopies([shared]), [shared]);
+  assert.deepEqual(stoppableCopies([shared]), [shared], "their down needs no copy");
+  assert.deepEqual(stoppableCopies([adopted, shared]), [shared]);
+  assert.equal(archiveUnavailable([adopted, shared]), "Stop the running copy first");
+  assert.equal(stoppableShared([adopted, copy("a"), shared]), shared);
+  assert.equal(stoppableShared([copy("a")]), null);
+  assert.equal(stoppableShared([{ ...shared, down: null }]), null);
 });

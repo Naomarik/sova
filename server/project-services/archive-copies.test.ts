@@ -85,7 +85,7 @@ test("the copies an archive waits for: each running copy and the shared services
     [
       [a, "sova/a", [{ name: "web", state: "running" }], false, { instance: a, confirm: true }],
       [b, "sova/b", [{ name: "web", state: "restarting" }], false, { instance: b, confirm: true }],
-      [null, "Shared services", [{ name: "bus", state: "running" }], false, { instance: a, services: ["bus"], confirm: true }],
+      [null, "Shared services", [{ name: "bus", state: "running" }], false, { project: demo, shared: true, confirm: true }],
     ],
   );
 });
@@ -187,4 +187,40 @@ test("an adopted main copy is listed as running outside Sova, with no down, and 
   assert.deepEqual((await engine.liveCopies(self))[0]!.services, [{ name: "server", state: "restarting", adopted: true }]);
   adopted = { state: "inactive", pid: null, startedAt: null, rssBytes: null };
   assert.deepEqual(await engine.liveCopies(self), [], "stopped outside Sova: not listed");
+});
+
+test("an archived project with shared services running and no copy: the shared row's down needs no copy, stops them, and reconcile leaves them stopped", async () => {
+  // A copy starts the shared bus; tearing every copy down leaves the bus running with no copy to go through.
+  const up = await engine.run("up", { project: demo, branch: "sova/lone" }, op);
+  assert.equal(up.ok, true, up.error?.message);
+  for (const i of readRegistry().instances.filter((x) => x.project === demo)) {
+    const t = await engine.run("teardown", { instance: i.id, confirm: true }, op);
+    assert.equal(t.ok, true, `${i.id}: ${t.error?.message}`);
+  }
+  assert.ok(!readRegistry().instances.some((i) => i.project === demo), "no copy of the project is left");
+  const bus = engine.unitOf(sharedIdOf(demo), "bus");
+  assert.equal((await host.driver.status(bus)).state, "active", "the shared bus still runs");
+  archived.add(demo);
+  try {
+    const copies = await engine.liveCopies(demo);
+    assert.deepEqual(copies, [{ instance: null, name: "Shared services", branch: null, checkout: demo, slot: null, services: [{ name: "bus", state: "running" }], adopted: false, down: { project: demo, shared: true, confirm: true } }]);
+    // Only the operator, confirmed: a coding session or an unconfirmed down is refused before anything stops.
+    const session: Caller = { kind: "session", id: "s1", root: demo, own: [] };
+    assert.equal((await engine.run("down", copies[0]!.down, session)).error?.code, "needs-confirm");
+    assert.equal((await engine.run("down", { project: demo, shared: true }, op)).error?.code, "needs-confirm");
+    assert.equal((await engine.run("down", { project: demo, shared: true, instance: "x", confirm: true }, op)).error?.code, "invalid-request");
+    assert.equal((await engine.run("up", { project: demo, shared: true }, op)).error?.code, "invalid-request");
+    assert.equal((await host.driver.status(bus)).state, "active", "still running after the refusals");
+    // The dialog's (and the archived page's) Stop: allowed while archived.
+    const r = await engine.run("down", copies[0]!.down, op);
+    assert.equal(r.ok, true, r.error?.message);
+    assert.ok(r.steps.some((x) => x.id === "stop:bus" && x.result === "done"), JSON.stringify(r.steps));
+    assert.equal((await host.driver.status(bus)).state, "missing", "the shared bus stopped");
+    assert.equal(readRegistry().shared.find((x) => x.project === demo)?.desired.bus, "stopped", "marked stopped");
+    assert.deepEqual(await engine.liveCopies(demo), [], "nothing runs: an archive may go ahead");
+  } finally {
+    archived.delete(demo);
+  }
+  await engine.reconcile();
+  assert.equal((await host.driver.status(bus)).state, "missing", "reconcile doesn't start it again");
 });

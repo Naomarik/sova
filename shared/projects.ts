@@ -86,8 +86,9 @@ export interface ArchiveCopy {
   /** It runs outside Sova (only an adopted unit runs): "runs outside Sova; stop it yourself", never stopped here, never blocks archive. */
   adopted: boolean;
   /** The body of `POST /api/project-services/down` that stops it, keeping its data (the operator's click confirms what
-      otherwise needs it: slot 0, shared services, share links); null when Sova can't stop it (`adopted`, or `why`). */
-  down: { instance: string; services?: string[]; confirm: true } | null;
+      otherwise needs it: slot 0, shared services, share links); null when Sova can't stop it (`adopted`, or `why`).
+      The shared services' is the project's shared down, which needs no copy (`shared`). */
+  down: { instance: string; services?: string[]; confirm: true } | { project: string; shared: true; confirm: true } | null;
   /** Why it can't be stopped here, when `down` is null and it is not adopted. */
   why?: string;
 }

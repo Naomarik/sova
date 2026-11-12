@@ -183,6 +183,9 @@ export interface VerbRequest {
   keepData?: boolean;
   /** teardown, in-process only (retirement, which removes the folder itself right after): leave a cut worktree in place. */
   keepWorktree?: boolean;
+  /** down, with the project and no instance or checkout: the project's shared services alone, needing no copy (the
+      operator, confirmed; the running-copies list's down of them). Not on the tools or the command line. */
+  shared?: boolean;
   resources?: string[];
   ref?: string;
   /** The operator's confirm (stopping a shared service). */
@@ -220,6 +223,7 @@ const REQUEST_KEYS: Record<keyof VerbRequest, "string" | "number" | "boolean" | 
   lines: "number",
   keepData: "boolean",
   keepWorktree: "boolean",
+  shared: "boolean",
   resources: "strings",
   ref: "string",
   confirm: "boolean",
@@ -580,6 +584,8 @@ export class ProjectEngine {
       if (req.instance && req.instance !== of) throw new VerbFailure("not-found", `share link ${req.link} is not ${req.instance}'s`);
       req.instance = of;
     }
+    if (req.shared && (run.verb !== "down" || req.instance || req.checkout || !req.project))
+      throw new VerbFailure("invalid-request", "shared is down of the project's shared services alone: name the project, and no instance or checkout");
     if (req.instance) {
       const rec = reg.instances.find((i) => i.id === req.instance);
       if (!rec) {
@@ -600,6 +606,8 @@ export class ProjectEngine {
         const target = await this.targetCheckout(run);
         (run as Run & { target?: string }).target = target.checkout;
         run.rec = reg.instances.find((i) => i.project === run.project && i.checkout === target.checkout) ?? null;
+      } else if (req.shared) {
+        // The shared services' down: no copy, the main checkout's definition.
       } else if (["down", "apply", "reset", "teardown", "logs", "share", "revoke"].includes(run.verb)) {
         if (!req.checkout) throw new VerbFailure("invalid-request", `${run.verb} needs an instance (or the checkout it runs)`);
         const checkout = canonical(req.checkout);
@@ -749,7 +757,7 @@ export class ProjectEngine {
   private authorize(run: Run, starterWorking = false): void {
     this.selfHosted(run);
     const { caller, verb } = run;
-    const sharedNamed = verb === "down" && !!run.req.services?.length && !!run.def && run.req.services.some((n) => run.def!.services.find((s) => s.name === n)?.scope === "shared");
+    const sharedNamed = verb === "down" && (!!run.req.shared || (!!run.req.services?.length && !!run.def && run.req.services.some((n) => run.def!.services.find((s) => s.name === n)?.scope === "shared")));
     const confirmShared = "stopping a shared service stops it for every instance of the project: the operator does it (sova-project down … --confirm)";
     // A copy with an active share link (§app.project-services/share): its down is confirmed, by the operator only.
     const linked = verb === "down" && !!run.rec ? linksOf(run.rec.id, { activeOnly: true }).length : 0;
@@ -843,7 +851,7 @@ export class ProjectEngine {
       case "up":
         return this.up(run);
       case "down":
-        return this.down(run);
+        return run.rec ? this.down(run) : this.downShared(run);
       case "apply":
         return this.apply(run);
       case "status":
@@ -1233,7 +1241,7 @@ export class ProjectEngine {
   }
 
   /** The project's shared services' scope. */
-  private sharedScope(def: ProjectDef, project: string): Scope {
+  private sharedScope(_def: ProjectDef | null, project: string): Scope {
     return { id: sharedIdOf(project), project, checkout: project, branch: null, slot: 0, ports: {}, data: {}, shared: true };
   }
 
@@ -1715,6 +1723,32 @@ export class ProjectEngine {
     if (!run.req.services?.length) await this.stopSharedRemoved(run, rec.project);
   }
 
+  /**
+   * down of the project's shared services alone, with no copy to go through (`shared`; §app.project-services/down):
+   * each stops, keeping its data, and is marked stopped so reconcile leaves it. Allowed while the project is archived,
+   * so what still runs in one can be stopped. The operator's, confirmed (authorize).
+   */
+  private async downShared(run: Run): Promise<void> {
+    const project = run.project!;
+    const def = run.def;
+    await this.supervised(def);
+    const declared = def ? serviceOrder(def).filter((s) => s.scope === "shared") : [];
+    const recorded = Object.keys(readRegistry().shared.find((x) => x.project === project)?.desired ?? {});
+    // What the record names that the definition doesn't declare (or all of it, with no readable definition) goes first.
+    const undeclared = recorded.filter((n) => !declared.some((s) => s.name === n));
+    const all = [...undeclared, ...[...declared].reverse().map((s) => s.name)];
+    const names = run.req.services?.length ? run.req.services : all;
+    for (const n of names) if (!all.includes(n)) throw new VerbFailure("invalid-request", `no shared service "${n}"`);
+    const scope = this.sharedScope(def, project);
+    for (const name of all.filter((n) => names.includes(n))) {
+      mutateRegistry((r) => {
+        const sh = r.shared.find((x) => x.project === project);
+        if (sh) sh.desired[name] = "stopped";
+      });
+      await this.stopService(run, def, scope, name, declared.find((s) => s.name === name));
+    }
+  }
+
   private async apply(run: Run): Promise<void> {
     const rec = run.rec!;
     const def = this.need(run);
@@ -2096,12 +2130,9 @@ export class ProjectEngine {
       if (s?.static !== undefined || staticServes().some((x) => x.id === unit)) return staticServes().some((x) => x.id === unit) ? "running" : null;
       return liveState(await this.driver.status(unit));
     };
-    // Through which copy a shared service's down goes: one Sova may stop (an adopted slot 0's down is refused).
-    let via: { rec: InstanceRecord; def: ProjectDef | null } | null = null;
     for (const rec of recs) {
       const def = this.bare(rec).def;
       const adopted = rec.slot === 0 && def ? adoptedService(def) : null;
-      if (!adopted && !via) via = { rec, def };
       const services: ArchiveCopyService[] = [];
       const names = def ? def.services.filter((s) => s.scope === "checkout").map((s) => s.name) : Object.keys(rec.desired);
       for (const name of [...names, ...this.removedOf(rec, def)]) {
@@ -2131,13 +2162,8 @@ export class ProjectEngine {
         const state = await unitState(this.unitOf(sh.id, name), declared.find((s) => s.name === name));
         if (state) services.push({ name, state });
       }
-      if (services.length) {
-        // A down names only the shared services the copy's definition declares; one no definition declares any more is stopped by any down of a copy.
-        const known = via ? services.map((x) => x.name).filter((n) => via!.def?.services.some((s) => s.name === n && s.scope === "shared")) : [];
-        const base = { instance: null, name: "Shared services", branch: null, checkout: project, slot: null, services, adopted: false };
-        if (!via) out.push({ ...base, down: null, why: "no copy of this project to stop them through: start one, then down it" });
-        else out.push({ ...base, down: { instance: via.rec.id, ...(known.length ? { services: known } : {}), confirm: true } });
-      }
+      // The project's shared down, which needs no copy: it stops them in an archived project with none too.
+      if (services.length) out.push({ instance: null, name: "Shared services", branch: null, checkout: project, slot: null, services, adopted: false, down: { project, shared: true, confirm: true } });
     }
     return out;
   }

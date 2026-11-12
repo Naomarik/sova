@@ -4,7 +4,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
-import { DetachedDriver, RESTART_BURST, RESTART_SEC, restartTickMs } from "./drivers";
+import { DetachedDriver, RESTART_BURST, RESTART_SEC, restartTickMs, STABLE_RUN_SEC } from "./drivers";
 import { type ProcEntry, type ProcTable, psTable, realSyncExec } from "./proctable";
 import { procsDir } from "./store";
 
@@ -251,16 +251,92 @@ test("detached restart watch at production timing (2 s delay, 1 s ticks): a serv
       else assert.fail(line);
     }
   }
-  // A fixed 10 s window (the old one) never gets here: a cycle is 3 s, so at most 4 starts fall in any 10 s.
+  // A fixed 10 s window never got here: a cycle is 3 s, so at most 4 starts fall in any 10 s.
   assert.notEqual(gaveUpAt, null, `gave up (${starts} starts)`);
   assert.equal(starts, RESTART_BURST, "5 starts, then failed");
   const st = await d.status(unit);
   assert.equal(st.state, "failed");
   assert.equal(st.gaveUp, true);
-  assert.match(st.detail ?? "", /^start limit hit: 5 failed starts within 30 s/);
-  // Much later, still not started again: the mark is in its record, not the window.
+  assert.match(st.detail ?? "", /^start limit hit: 5 failed starts in a row/);
+  // Much later, still not started again: the mark is in its record.
   t += 10 * 60_000;
   assert.deepEqual(await d.tick(), []);
   assert.equal((await d.status(unit)).gaveUp, true);
   await d.stop(unit);
+});
+
+/** A process table on the fake clock: each spawned pid lives `lifeOf(n)` ms (n counts the spawns from 0), then is gone. */
+function clockTable(clock: () => number, lifeOf: (n: number) => number) {
+  const born = new Map<number, { at: number; life: number }>();
+  const alive = (pid: number) => {
+    const b = born.get(pid);
+    return !!b && clock() - b.at < b.life;
+  };
+  const entry = (pid: number): ProcEntry => ({ pid, ppid: 1, pgid: pid, sid: null, zombie: false });
+  const table: ProcTable = {
+    kind: "ps",
+    sessions: false,
+    list: () => [...born.keys()].filter(alive).map(entry),
+    get: (pid) => (alive(pid) ? entry(pid) : null),
+    startOf: (pid) => {
+      if (!born.has(pid)) born.set(pid, { at: clock(), life: lifeOf(born.size) });
+      return `S${pid}`;
+    },
+  };
+  return { table, spawns: () => born.size };
+}
+
+test("detached restart watch at production timing: a service that runs 4 s before each failure gives up after its 5th failed start in a row, counted through a server restart", async () => {
+  const root = mkdtempSync(join(tmpdir(), "sova-detached-slow-"));
+  after(() => rmSync(root, { recursive: true, force: true }));
+  let t = 1_700_000_000_000;
+  // Each run stays up 4 s, then fails: a cycle of about 7 s (4 s up, a tick to see it dead, the 2 s delay),
+  // so a 30 s window of starts holds only 4 of them and never reached its limit.
+  const { table, spawns } = clockTable(() => t, () => 4_000);
+  const opts = { table, restart: true, restartMs: RESTART_SEC * 1000, procsDir: () => join(root, "procs"), logsDir: () => join(root, "logs"), now: () => t };
+  let d = new DetachedDriver(100, opts);
+  const unit = "u-slow";
+  await d.start({ unit, argv: [process.execPath, "-e", "process.exit(3)"], cwd: root, env: {} });
+  const step = async () => {
+    t += restartTickMs(RESTART_SEC * 1000);
+    await d.tick();
+  };
+  // Three failed starts, then a server restart: a new driver reads the count from the record.
+  for (let i = 0; i < 200 && spawns() < 3; i++) await step();
+  assert.equal(spawns(), 3);
+  d = new DetachedDriver(100, opts);
+  await d.adopt();
+  let st = await d.status(unit);
+  for (let i = 0; i < 200 && !(st = await d.status(unit)).gaveUp; i++) await step();
+  assert.equal(st.gaveUp, true, `gave up (${spawns()} starts)`);
+  assert.equal(st.state, "failed");
+  assert.equal(spawns(), RESTART_BURST, "5 failed starts in a row, then failed");
+  assert.match(st.detail ?? "", /^start limit hit: 5 failed starts in a row/);
+  assert.ok(JSON.parse(readFileSync(join(root, "procs", `${unit}.json`), "utf8")).gaveUp, "its record keeps it");
+  t += 10 * 60_000;
+  await d.tick();
+  assert.equal(spawns(), RESTART_BURST, "never started again");
+  await d.stop(unit);
+});
+
+test("detached restart watch at production timing: a service that stays up past STABLE_RUN_SEC between its failures never gives up", async () => {
+  const root = mkdtempSync(join(tmpdir(), "sova-detached-stable-"));
+  after(() => rmSync(root, { recursive: true, force: true }));
+  let t = 1_700_000_000_000;
+  // Three quick failures (4 s each), then a run that stays up 61 s and fails too, over and over: never 5 quick
+  // failures in a row, though far more than 5 failed starts.
+  const { table, spawns } = clockTable(() => t, (n) => (n % 4 === 3 ? (STABLE_RUN_SEC + 1) * 1000 : 4_000));
+  const d = new DetachedDriver(100, { table, restart: true, restartMs: RESTART_SEC * 1000, procsDir: () => join(root, "procs"), logsDir: () => join(root, "logs"), now: () => t });
+  const unit = "u-stable";
+  await d.start({ unit, argv: [process.execPath, "-e", "process.exit(3)"], cwd: root, env: {} });
+  for (let i = 0; i < 2_000 && spawns() < 16; i++) {
+    t += restartTickMs(RESTART_SEC * 1000);
+    await d.tick();
+    assert.equal((await d.status(unit)).gaveUp, undefined, `still restarted after ${spawns()} starts`);
+  }
+  assert.equal(spawns(), 16, "16 starts, every one failed");
+  // Gone on the fake table, so the stop has nothing left to signal.
+  t += 10 * 60_000;
+  await d.stop(unit);
+  assert.equal((await d.status(unit)).state, "missing");
 });

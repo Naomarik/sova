@@ -3,7 +3,7 @@ import { chatRefOf } from "../lib/merge-chat";
 import { chatTreesOf } from "../lib/merge-queue";
 import type { ArchiveCopy, ProjectSummary } from "../../shared/projects";
 import type { SessionSummary } from "../../shared/protocol";
-import { ApiError, archiveProject, getProjectPreviews, unarchiveProject } from "../lib/api";
+import { ApiError, archiveProject, getProjectPreviews, runProjectVerb, unarchiveProject } from "../lib/api";
 import { relativeTime } from "../lib/format";
 import { createPoll } from "../lib/poll";
 import { PROJECT_TABS, PROJECTS_HREF, projectTabHref, type ProjectTab, type QueueTab } from "../lib/projects-route";
@@ -13,7 +13,8 @@ import { projectHostOf } from "../lib/mesh";
 import { announce, toast } from "../lib/ui-state";
 import { InsightsPage } from "./InsightsPage";
 import { createRunningCopies, ProjectArchiveAsk, refusedCopies } from "./ProjectArchiveAsk";
-import { archivedRunningLine } from "../lib/archive-copies";
+import { archivedRunningLine, STOP_SHARED_CONFIRM, STOP_SHARED_LABEL, STOP_SHARED_RUNNING, stoppableShared } from "../lib/archive-copies";
+import { refusalLine } from "../lib/services-view";
 import { PreviewsCard } from "./PreviewsCard";
 import { ActionMenu } from "./ActionMenu";
 import { costFigure, createProjectCost, ProjectCostCard } from "./ProjectCostCard";
@@ -266,6 +267,29 @@ export function ProjectPage(props: {
           // What it left running (copies run on while archived): read now and then, named under the banner.
           const left = createRunningCopies(projectId, ARCHIVED_POLL_MS);
           const leftLine = () => (left.data() ? archivedRunningLine(left.data()!.copies) : null);
+          // Its shared services may run with no copy to show them on Branches: their Stop is here, pressed twice.
+          const sharedRow = () => (left.data() ? stoppableShared(left.data()!.copies) : null);
+          const [stopArmed, setStopArmed] = createSignal(false);
+          const [stopping, setStopping] = createSignal(false);
+          const [stopError, setStopError] = createSignal<string | null>(null);
+          const stopShared = async () => {
+            const row = sharedRow();
+            if (!row?.down || stopping()) return;
+            if (!stopArmed()) return void setStopArmed(true);
+            setStopArmed(false);
+            setStopping(true);
+            setStopError(null);
+            try {
+              const why = refusalLine(await runProjectVerb(projectId, "down", row.down));
+              if (why) setStopError(why);
+              else announce("Stopped its shared services.");
+            } catch (err) {
+              setStopError(`Couldn't reach the engine. ${errText(err)}`);
+            } finally {
+              setStopping(false);
+              left.refetch();
+            }
+          };
           return (
             <div class="project-archive-confirm">
               <Banner
@@ -274,17 +298,31 @@ export function ProjectPage(props: {
                 body={
                   leftLine() ? (
                     <>
-                      {leftLine()!.slice(0, -"Branches.".length)}
-                      <a href={tabHref("branches")}>Branches</a>.
+                      {leftLine()!.endsWith(" on Branches.") ? (
+                        <>
+                          {leftLine()!.slice(0, -"Branches.".length)}
+                          <a href={tabHref("branches")}>Branches</a>.
+                        </>
+                      ) : (
+                        leftLine()
+                      )}
                     </>
                   ) : undefined
                 }
                 action={
-                  <button type="button" class="button button-sm" aria-disabled={archiving() ? "true" : undefined} onClick={() => void setArchived(false)}>
-                    Unarchive
-                  </button>
+                  <div class="button-row">
+                    <Show when={sharedRow()}>
+                      <button type="button" class="button button-sm button-destructive" aria-disabled={stopping() ? "true" : undefined} onClick={() => void stopShared()} onBlur={() => setStopArmed(false)}>
+                        {stopping() ? STOP_SHARED_RUNNING : stopArmed() ? STOP_SHARED_CONFIRM : STOP_SHARED_LABEL}
+                      </button>
+                    </Show>
+                    <button type="button" class="button button-sm" aria-disabled={archiving() ? "true" : undefined} onClick={() => void setArchived(false)}>
+                      Unarchive
+                    </button>
+                  </div>
                 }
               />
+              <Show when={stopError()}>{(e) => <p class="field-error">{e()}</p>}</Show>
               <Show when={archiveError()}>{(e) => <p class="field-error">{e()}</p>}</Show>
             </div>
           );

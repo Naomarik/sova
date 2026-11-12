@@ -6,7 +6,7 @@ import { after, beforeEach, test } from "node:test";
 import type { TunnelKey, TunnelMode } from "../../../shared/public-links";
 import type { Driver, UnitSpec, UnitStatus } from "../../project-services/drivers";
 import type { CloudflaredFound } from "./binary";
-import { AUTO_RESTARTS_PER_HOUR, CHECK_WINDOW_MS, INGRESS_RECHECK_MS, ingressVerdict, RETRY_DELAYS_MS, TunnelManager, UNVERIFIED, type MetricsAnswer, type TunnelDeps } from "./manager";
+import { AUTO_RESTARTS_PER_HOUR, CHECK_WINDOW_MS, INGRESS_RECHECK_MS, ingressVerdict, VERIFY_RECHECK_MS, RETRY_DELAYS_MS, TunnelManager, UNVERIFIED, type MetricsAnswer, type TunnelDeps } from "./manager";
 import { writeTunnels, type TunnelRecord } from "./state";
 import { envFileOf, exitFileOf, pidFileOf, tunnelsFile, tunnelUnitOf } from "./units";
 
@@ -41,7 +41,7 @@ function world(o: { found?: CloudflaredFound; wanted?: boolean; mode?: TunnelMod
   let watches = 0;
   let nextPort = 41000;
   let hostN = 0;
-  const state = { wanted: o.wanted ?? true, mode: o.mode ?? "quick", account: o.account ?? null, verifyOk: true, quickAllowed: true, candidate: o.candidate ?? null, candidateWanted: true, ingress: "http://127.0.0.1:4802" as string | null, logs: ["ERR something"] };
+  const state = { wanted: o.wanted ?? true, mode: o.mode ?? "quick", account: o.account ?? null, verifyOk: true, quickAllowed: true, verifyFails: 0, candidate: o.candidate ?? null, candidateWanted: true, ingress: "http://127.0.0.1:4802" as string | null, logs: ["ERR something"] };
   const driver: Driver = {
     id: o.driver ?? "systemd",
     available: async () => ({ ok: true, detail: "" }),
@@ -101,7 +101,14 @@ function world(o: { found?: CloudflaredFound; wanted?: boolean; mode?: TunnelMod
       return { status: 200, body: { hostname: t.host } };
     },
     freePort: async () => ++nextPort,
-    verify: async () => (state.verifyOk ? { ok: true } : { ok: false, error: "Timed out" }),
+    verify: async () => {
+      calls.push("verify");
+      if (state.verifyFails > 0) {
+        state.verifyFails--;
+        return { ok: false, error: "Couldn't connect" };
+      }
+      return state.verifyOk ? { ok: true } : { ok: false, error: "Timed out" };
+    },
     watch: (_d, cb) => {
       watches++;
       onFile = cb;
@@ -642,4 +649,59 @@ test("adopt stops a candidate whose setup is no longer pending (no orphan cloudf
   w.state.candidateWanted = true;
   w.state.ingress = "http://127.0.0.1:4999"; // the share listener's recorded port, which it binds again
   assert.equal((await up(w, CANDIDATE)).state, "up", "Verify starts it again");
+});
+
+/** Advance through the re-check steps one by one (each one-shot timer is set when the one before fires). */
+async function throughSteps(w: ReturnType<typeof world>, steps: readonly number[], from = 0) {
+  let at = from;
+  for (const ms of steps) {
+    await w.advance(ms - at);
+    at = ms;
+  }
+}
+const verifies = (w: ReturnType<typeof world>) => w.calls.filter((c) => c === "verify").length;
+
+test("a new Free address that resolves only minutes later becomes verified from the one-shot re-checks, with no demand, and they end at the first pass", async () => {
+  const w = world();
+  w.state.verifyFails = 3 + 2; // the start's 3 tries, then the 15 s and 30 s re-checks
+  const told: (string | undefined)[] = [];
+  w.m.onChanged((x) => told.push(x.reason));
+  const s = await up(w);
+  assert.ok(s.state === "up" && s.reason?.startsWith(UNVERIFIED), "used, unverified");
+  await throughSteps(w, VERIFY_RECHECK_MS.slice(0, 2));
+  assert.ok(w.m.status(SHARE).reason?.startsWith(UNVERIFIED), "still unverified after 30 s");
+  await throughSteps(w, VERIFY_RECHECK_MS.slice(2, 3), VERIFY_RECHECK_MS[1]);
+  const v = w.m.status(SHARE);
+  assert.deepEqual([v.state, v.reason], ["up", undefined], "verified at the 60 s re-check");
+  assert.equal(told.at(-1), undefined, "listeners are told when it verifies, though the state stays up");
+  assert.ok(told.some((r) => r?.startsWith(UNVERIFIED)));
+  const n = verifies(w);
+  await w.advance(24 * 3_600_000);
+  assert.equal(verifies(w), n, "no check after the pass");
+  assert.ok(JSON.parse(readFileSync(tunnelsFile(dir), "utf8")).tunnels.share.verifiedAt, "recorded, so a restarted Sova keeps it");
+});
+
+test("an address that never answers is checked at each step once, then only on demand; a demand checks it again", async () => {
+  const w = world();
+  w.state.verifyOk = false;
+  await up(w);
+  await throughSteps(w, VERIFY_RECHECK_MS);
+  assert.equal(verifies(w), 3 + VERIFY_RECHECK_MS.length);
+  await w.advance(24 * 3_600_000);
+  assert.equal(verifies(w), 3 + VERIFY_RECHECK_MS.length, "the series is bounded");
+  w.state.verifyOk = true;
+  const s = await w.m.check(SHARE);
+  assert.deepEqual([s.state, s.reason, verifies(w)], ["up", undefined, 3 + VERIFY_RECHECK_MS.length + 1], "the on-demand check verifies it");
+});
+
+test("a stop cancels the pending outside re-checks", async () => {
+  const w = world();
+  w.state.verifyOk = false;
+  await up(w);
+  await w.advance(VERIFY_RECHECK_MS[0]);
+  const n = verifies(w);
+  await w.m.stop(SHARE, "route changed");
+  await throughSteps(w, VERIFY_RECHECK_MS, VERIFY_RECHECK_MS[0]);
+  await w.advance(24 * 3_600_000);
+  assert.equal(verifies(w), n);
 });

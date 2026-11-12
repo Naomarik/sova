@@ -133,6 +133,20 @@ test("detached: a tunnel outlives its server, is adopted with the same address, 
   assert.deepEqual(readdirSync(join(s.tunnels, "procs")), []);
 });
 
+test("detached: a new address that answers from outside only later becomes verified from a one-shot re-check, told as a change", async () => {
+  const s = scratch();
+  const env = envFor(s, { SOVA_TUNNEL_DRIVER: "detached", STANDIN_VERIFY_FAILS: "3" });
+  const srv = startServer(env);
+  const first = await waitFor("the address", () => srv.lines.find((l) => l.what === "ensured"));
+  assert.equal(first.state, "up", srv.err());
+  assert.ok((first as { reason?: string }).reason, "unverified at first");
+  const verified = await waitFor("verification (the 15 s re-check)", () => srv.lines.find((l) => l.what === "changed" && l.state === "up" && !(l as { reason?: string }).reason), 30_000);
+  assert.equal(verified.origin, first.origin);
+  srv.p.kill("SIGKILL");
+  await new Promise((r) => srv.p.once("exit", r));
+  runStandin("stop", env);
+});
+
 test("detached: a start that cloudflared fails reports it with cloudflared's own line and starts nothing more while unwanted", async () => {
   const s = scratch();
   const env = envFor(s, { SOVA_TUNNEL_DRIVER: "detached", FAKE_CF_FAIL: "start" });

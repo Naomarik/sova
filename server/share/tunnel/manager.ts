@@ -57,6 +57,9 @@ const HOUR = 3_600_000;
 const SECOND_LOOK_MS = 5_000;
 const VERIFY_TRIES = 3;
 const VERIFY_GAP_MS = 2_000;
+/** A new trycloudflare name can take minutes to resolve: while a Free address is unverified it is checked from
+    outside again by one-shot timers this long after it connected (and at each on-demand check), never more. */
+export const VERIFY_RECHECK_MS = [15_000, 30_000, 60_000, 120_000, 240_000] as const;
 const LOG_LINES = 12;
 /** The reason an up tunnel carries while its address hasn't answered from outside (the `unverified` warning). */
 export const UNVERIFIED = "The address didn't answer from outside yet";
@@ -139,6 +142,9 @@ interface Entry {
   /** An Account tunnel whose routes aren't readable yet: its next one-shot look, and how many were made. */
   ingressTimer?: Timer;
   ingressTries: number;
+  /** A Free address not yet verified from outside: its next one-shot check, and how many were made. */
+  verifyTimer?: Timer;
+  verifyTries: number;
   autoRestarts: number[];
   /** The port its last run forwarded to: a restart binds exactly that one (a link's tunnel may still point at it). */
   lastTarget: number | null;
@@ -359,6 +365,10 @@ export class TunnelManager {
       e.ingressTries = 0;
       if (!(await this.ingressOk(e))) return this.statusOf(e);
     }
+    if (rec.mode === "quick" && !rec.verifiedAt) {
+      e.verifyTries = 0;
+      this.armVerify(e, now);
+    }
     // Not yet verified from outside is still up (the link is used, with the unverified warning): `degraded`
     // is kept for a tunnel that is really down. `reason` on an up tunnel means unverified.
     return rec.verifiedAt ? this.settle(e, "up") : this.settle(e, "up", `${UNVERIFIED}${verified.error ? ` (${verified.error})` : ""}.`);
@@ -413,7 +423,13 @@ export class TunnelManager {
     if (look === "up") {
       e.downSince = undefined;
       if (rec.mode === "account" && !(await this.ingressOk(e))) return this.statusOf(e);
-      return rec.verifiedAt || rec.mode === "account" ? this.settle(e, "up") : this.settle(e, "up", e.reason?.startsWith(UNVERIFIED) ? e.reason : `${UNVERIFIED}.`);
+      // A demand checks an unverified Free address from outside again (within this window's one look).
+      if (rec.mode === "quick" && !rec.verifiedAt) {
+        const v = await this.verifyOnce(e);
+        if (!e.rec) return this.statusOf(e);
+        if (!v.ok) return this.settle(e, "up", `${UNVERIFIED}${v.error ? ` (${v.error})` : ""}.`);
+      }
+      return this.settle(e, "up");
     }
     if (look === "down") {
       // Alive, no edge connection (network down, or Cloudflare dropped it while the computer slept).
@@ -442,6 +458,45 @@ export class TunnelManager {
     if (alive) await this.killUnit(e);
     await this.ended(e, this.readExit(e), "check");
     return this.statusOf(e);
+  }
+
+  /** One outside check of a Free address; a pass records it (verified) and ends the re-checks. */
+  private async verifyOnce(e: Entry): Promise<{ ok: boolean; error?: string }> {
+    const rec = e.rec;
+    if (!rec?.origin) return { ok: false };
+    const v = await this.deps.verify(rec.origin).catch((err) => ({ ok: false, error: (err as Error).message }));
+    if (e.rec !== rec) return v; // stopped or replaced meanwhile
+    if (v.ok) {
+      rec.verifiedAt = this.deps.now();
+      e.verifyTimer?.cancel();
+      e.verifyTimer = undefined;
+      this.persist();
+    }
+    return v;
+  }
+
+  /** The next one-shot outside check of an unverified Free address, VERIFY_RECHECK_MS after `since` (its connect). */
+  private armVerify(e: Entry, since: number): void {
+    const step = VERIFY_RECHECK_MS[e.verifyTries];
+    e.verifyTimer?.cancel();
+    e.verifyTimer = undefined;
+    if (step === undefined || !e.rec || e.rec.verifiedAt) return;
+    e.verifyTries++;
+    e.verifyTimer = this.deps.setTimer(() => {
+      e.verifyTimer = undefined;
+      void this.serial(e, async () => {
+        const rec = e.rec;
+        if (!rec || rec.verifiedAt || e.starting || rec.mode !== "quick") return;
+        const v = await this.verifyOnce(e);
+        if (!e.rec) return;
+        if (v.ok) {
+          if (e.state === "up") this.settle(e, "up");
+        } else {
+          if (e.state === "up") this.settle(e, "up", `${UNVERIFIED}${v.error ? ` (${v.error})` : ""}.`);
+          this.armVerify(e, since);
+        }
+      });
+    }, Math.max(0, since + step - this.deps.now()));
   }
 
   /**
@@ -613,6 +668,8 @@ export class TunnelManager {
     const unit = e.unit;
     e.ingressTimer?.cancel();
     e.ingressTimer = undefined;
+    e.verifyTimer?.cancel();
+    e.verifyTimer = undefined;
     for (const f of [pidFileOf(unit, dir), exitFileOf(unit, dir), envFileOf(unit, dir)]) rmSync(f, { force: true });
     if (e.rec?.driver === "detached") rmSync(`${procsDirOf(dir)}/${unit}.json`, { force: true });
     e.rec = null;
@@ -660,6 +717,11 @@ export class TunnelManager {
             e.checkedAt = this.deps.now();
             if (look === "up") {
               if (rec.mode === "account" && !(await this.ingressOk(e))) return;
+              if (rec.mode === "quick" && !rec.verifiedAt) {
+                // Sova restarted before the address verified: its checks go on from where they would be.
+                e.verifyTries = VERIFY_RECHECK_MS.findIndex((ms) => rec.startedAt + ms > this.deps.now());
+                if (e.verifyTries >= 0) this.armVerify(e, rec.startedAt);
+              }
               return void this.settle(e, "up", rec.verifiedAt || rec.mode === "account" ? undefined : `${UNVERIFIED}.`);
             }
             if (look === "down") return void this.settle(e, "degraded", "The tunnel isn't connected to Cloudflare right now.");
@@ -692,7 +754,7 @@ export class TunnelManager {
     const id = recordIdOf(key);
     let e = this.entries.get(id);
     if (!e) {
-      e = { key, id, unit: tunnelUnitOf(key, this.deps.hash()), rec: null, state: "stopped", mode: "quick", checkedAt: 0, dirty: false, stopping: false, aborted: false, retryAt: 0, autoRestarts: [], lastTarget: null, ingressTries: 0, chain: Promise.resolve() };
+      e = { key, id, unit: tunnelUnitOf(key, this.deps.hash()), rec: null, state: "stopped", mode: "quick", checkedAt: 0, dirty: false, stopping: false, aborted: false, retryAt: 0, autoRestarts: [], lastTarget: null, ingressTries: 0, verifyTries: 0, chain: Promise.resolve() };
       this.entries.set(id, e);
     }
     return e;

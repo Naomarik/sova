@@ -34,7 +34,7 @@ import {
 } from "../lib/public-links";
 import { copyText } from "../lib/ui-state";
 import { MeshResyncSheet } from "./MeshResyncSheet";
-import { OpensAtChoices, OpensAtSetup, TunnelPrompts, TunnelState } from "./OpensAt";
+import { CandidateNotice, OpensAtChoices, OpensAtSetup, TunnelPrompts, TunnelState } from "./OpensAt";
 import { Banner, Chip, CopyButton } from "./ui";
 import { Choice, NumberField, Select, TextField, Toggle } from "./form";
 import { closeSettings } from "../lib/settings-nav";
@@ -277,6 +277,7 @@ export function PublicLinksSettingsSection() {
         <Show when={info()}>{(i) => <OpensAtChoices info={i()} selected={selected()} withOff disabled={off()} idPrefix="settings" onPick={pick} />}</Show>
         <Show when={help()}>{(o) => <OpensAtSetup kind={o().setup ?? "through"} inSettings onOpened={closeSettings} />}</Show>
       </fieldset>
+      <Show when={info()}>{(i) => <CandidateNotice info={i()} />}</Show>
 
       <fieldset class="field public-links-route">
         <legend class="field-label">Visitor logging</legend>

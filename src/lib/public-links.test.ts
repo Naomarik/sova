@@ -6,6 +6,7 @@ import {
   meshChipText,
   parsePort,
   publicLinksChanges,
+  candidateOf,
   publicLinksDraftOf,
   samePublicLinks,
   setPublicLinksDraft,
@@ -158,4 +159,12 @@ test("Free's chip words and the Mesh card's Cloudflare chip", () => {
   assert.equal(meshChipText(i("quick")), "Public links: Cloudflare");
   assert.equal(meshChipText(i("account")), "Public links: Cloudflare");
   assert.equal(meshChipText(i("off")), null);
+});
+
+test("a pending candidate is read from the answer, absent on an older server", () => {
+  const i = { file: { version: 1, route: "quick" }, share: share({}), pinnedByEnv: [] } as PublicLinksInfo;
+  assert.equal(candidateOf(i), null);
+  assert.equal(candidateOf(null), null);
+  const c = { route: "account" as const, publicUrl: "https://share.example.com", savedAt: 1 };
+  assert.deepEqual(candidateOf({ ...i, candidate: c } as PublicLinksInfo), c);
 });

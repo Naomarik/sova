@@ -10,6 +10,7 @@ import {
   type ShareFront,
   type ShareGatewaySetting,
   type CloudflareAccountSetting,
+  type PublicLinksCandidate,
   type CloudflaredInfo,
   type SetupChatOption,
   type ShareState,
@@ -53,6 +54,12 @@ export const verifyPublicLinks = () => call<VerifyResult>("/api/public-links/ver
 
 const post = <T>(url: string, body: unknown = {}, method = "POST") =>
   call<T>(url, { method, headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+
+/** A new Account or own-server address saved while the current route works: not in use until it
+    passes Verify. Absent on an older server. */
+export const candidateOf = (i: PublicLinksInfo | null | undefined): PublicLinksCandidate | null => i?.candidate ?? null;
+/** Cancel: the saved candidate goes; the current route never changed. */
+export const cancelCandidate = () => call<PublicLinksInfo>("/api/public-links/candidate", { method: "DELETE" });
 
 /** Turn On (q11): the operator's one click before the first public Free tunnel. Page-only on the server. */
 export const turnOnPublicLinks = () => post<PublicLinksInfo>("/api/public-links/turn-on");

@@ -5,6 +5,7 @@ import { agoTime, clockTime } from "../lib/format";
 import { sessionHrefOn } from "../lib/mesh";
 import {
   APPLIES_TO_ALL,
+  currentLine,
   needsCloudflared,
   needsTurnOn,
   opensAtLine,
@@ -18,6 +19,8 @@ import {
 } from "../lib/opens-at";
 import {
   acceptPublicLinksInfo,
+  cancelCandidate,
+  candidateOf,
   downloadCloudflared,
   loadPublicLinks,
   noteHandedOut,
@@ -25,6 +28,7 @@ import {
   putPublicLinks,
   startSetupChat,
   turnOnPublicLinks,
+  verifyPublicLinks,
 } from "../lib/public-links";
 import { closeSettings, openSettings } from "../lib/settings-nav";
 import { copyText } from "../lib/ui-state";
@@ -189,6 +193,7 @@ export function OpensAtLine(props: { host?: string | null; /** Where the Change 
             </button>
           </p>
           <TunnelPrompts info={i()} />
+          <CandidateNotice info={i()} />
           <Show when={open()}>
             <OpensAtSheet
               info={i()}
@@ -228,6 +233,64 @@ export function TunnelPrompts(props: { info: PublicLinksInfo }) {
         <CloudflaredPrompt info={props.info} />
       </Match>
     </Switch>
+  );
+}
+
+/**
+ * A new address saved but not in use yet (Account, Funnel or Your own web server, saved while the
+ * current route works): "Waiting for verification", its address, the last Verify's reason, and
+ * Verify and Cancel. Links keep opening with the current choice until Verify passes.
+ */
+export function CandidateNotice(props: { info: PublicLinksInfo }) {
+  const c = () => candidateOf(props.info);
+  const [busy, setBusy] = createSignal<"verify" | "cancel" | null>(null);
+  const [error, setError] = createSignal<string | null>(null);
+  const run = async (kind: "verify" | "cancel") => {
+    if (busy()) return;
+    setBusy(kind);
+    setError(null);
+    try {
+      if (kind === "cancel") acceptPublicLinksInfo(await cancelCandidate());
+      else {
+        const r = await verifyPublicLinks();
+        if (!r.ok && !candidateOf(await loadPublicLinks())?.failure) setError(r.error ?? (r.status ? `It answered ${r.status}` : "No answer"));
+      }
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(null);
+      void loadPublicLinks();
+    }
+  };
+  const name = () => (c()?.route === "account" ? "Cloudflare Account" : c()?.front === "funnel" ? "Tailscale Funnel" : c()?.front === "cloudflared" ? "your own Cloudflare tunnel" : "Your own web server");
+  return (
+    <Show when={c()}>
+      {(cand) => (
+        <Banner
+          tone={cand().failure ? "warn" : "info"}
+          title="Waiting for verification"
+          body={
+            <span class="stack-2">
+              <span>
+                <code class="text-mono public-links-url">{cand().publicUrl}</code> ({name()}) is saved, not in use yet. Links keep opening with {currentLine(props.info)} until it passes Verify.
+              </span>
+              <Show when={cand().failure}>{(f) => <span class="field-error">Verify failed: {sentence(f().reason)}</span>}</Show>
+              <Show when={error()}>{(e) => <span class="field-error">{sentence(e())}</span>}</Show>
+            </span>
+          }
+          action={
+            <>
+              <button type="button" class="button button-sm" disabled={!!busy()} onClick={() => void run("verify")}>
+                {busy() === "verify" ? "Verifying…" : "Verify Address"}
+              </button>
+              <button type="button" class="button button-sm button-ghost" disabled={!!busy()} onClick={() => void run("cancel")}>
+                {busy() === "cancel" ? "Canceling…" : "Cancel"}
+              </button>
+            </>
+          }
+        />
+      )}
+    </Show>
   );
 }
 

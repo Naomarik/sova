@@ -369,7 +369,7 @@ describe("nothing private reaches the owner (§app.owner-page/never)", async () 
 describe("the Owner page's code never reads private stores", () => {
   const serverDir = resolve(import.meta.dirname);
   const read = (f: string) => readFileSync(join(serverDir, f), "utf8");
-  const files = ["owner-page.ts", "owner.ts", "person-links.ts", "project-updates.ts", ...readdirSync(join(serverDir, "share")).map((f) => `share/${f}`)];
+  const files = ["owner-page.ts", "owner.ts", "person-links.ts", "project-updates.ts", ...readdirSync(join(serverDir, "share"), { recursive: true, withFileTypes: true }).filter((e) => e.isFile()).map((e) => relative(serverDir, join(e.parentPath, e.name)))];
 
   test("no About text, overseer notes, ideas, to-dos, actions, settings or instructions reader; no coding titles, usage or costs", () => {
     const forbidden = /\b(readOrgAbout|readOrgHistory|readNotes|readManifest|readProse|promptToc|readTodos|readPoSettings|readPoState|logAction|getSessionSummary|getSessionInsight|piUsageTally|projectCost|orgCosts|readCostLedger|readUsageLedger|appendUsage|priceMessage|readActions)\b|"\.\.?\/(overseer-(store|ideas|todos)|project-costs|model-prices)"|"\.\.\/shared\/(costs|model-prices)"|about\.md|notes\.md|actions\.jsonl|costs\.json|usage\.jsonl/;

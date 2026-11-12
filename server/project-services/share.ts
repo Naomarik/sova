@@ -4,7 +4,8 @@ import { listPreviews, mintPreview, PreviewRefused, renewPreview, revokePreview 
 import { staticServes } from "../preview-serve";
 import { awaitShareLinks } from "../share/links-events";
 import { previewAddress } from "../share/preview-address";
-import { assertSharingOn } from "../share/sharing-off";
+import { sharingOff } from "../share/sharing-off";
+import { SHARING_OFF_MESSAGE } from "../../shared/public-links";
 import { previewHome, previewLinkOf, type PreviewHome } from "../share/preview-link";
 import { holdsSensitive, SENSITIVE_REFUSAL } from "./sensitive";
 import { readRegistry, type InstanceRecord } from "./store";
@@ -132,7 +133,7 @@ export async function checkShare(i: Omit<ShareInput, "createdBy" | "sovaPorts">)
 /** Share one endpoint of a running copy: its active link again (expiry moved to the later), else a new one. With its url. */
 export async function shareInstance(i: ShareInput, now = Date.now()): Promise<{ link: LinkView; changed: boolean }> {
   // Sharing off refuses before anything, a link shared again included (§mesh.public/sharing-off).
-  assertSharingOn();
+  if (sharingOff()) throw new ShareFailure("share-denied", SHARING_OFF_MESSAGE);
   const c = await checkShare(i);
   const homeOf = async (): Promise<PreviewHome> => {
     try {

@@ -82,7 +82,7 @@ terminal has the session open, `new` makes a new one) and a `meshNeed`.
   `project.icon.upload`, `project.icon.letters`, `project.icon.remove`,
   `project.merge-queue.landing-summary`, `project.glance`, `session.job.list`,
   `session.job.stop`, `session.pairs.list`, `session.pairs.unpair`, `session.pairs.resume`,
-  `attention.dismiss`, `attention.undismiss`.
+  `attention.dismiss`, `attention.undismiss`, `project.copies.running`.
   `attention.dismiss` and `attention.undismiss` are Needs you's Dismiss and its Undo
   (§app.session-list/needs-you-dismiss), `meshNeed` `full`.
   The `project.verb.*` ids are made from the verb lists of `shared/project-contract.ts`, so a new

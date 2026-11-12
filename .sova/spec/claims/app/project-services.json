@@ -355,12 +355,14 @@
       "server/project-services/share.integration.test.ts",
       "server/project-services/adopt.test.ts",
       "server/project-services/adopt.integration.test.ts",
-      "server/project-services/copy-approvals.test.ts"
+      "server/project-services/copy-approvals.test.ts",
+      "server/project-services/archive-copies.test.ts",
+      "shared/projects.ts"
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-10-28T13:39Z",
-      "source": "pi-session:01a181b5-0126-7289-9604-86c617633d9d#8e5330a0"
+      "at": "2026-11-12T20:06Z",
+      "source": "pi-session:cd5bc367-c9ed-418c-9f81-00287ee4986a#15085bbd"
     }
   },
   "§app.project-services/facts": {
@@ -545,7 +547,7 @@
       "§app.project-services/conform"
     ],
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "code": [
       "server/project-services/on-merge.ts",
       "server/project-services/on-merge.test.ts",
@@ -576,8 +578,15 @@
       "server/project-services/shared-removed.test.ts",
       "server/project-services/shared-removed.integration.test.ts",
       "server/project-services/self-host.ts",
-      "server/app.ts"
-    ]
+      "server/app.ts",
+      "server/project-services/archive-copies.test.ts",
+      "server/project-services/fake-host.ts"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-12T18:22Z",
+      "source": "pi-session:cd5bc367-c9ed-418c-9f81-00287ee4986a#7c887b56"
+    }
   },
   "§app.project-services/reserved": {
     "kind": "behavior",
@@ -627,7 +636,8 @@
       "server/project-services/share.test.ts",
       "server/project-services/share.integration.test.ts",
       "server/project-services/slots.test.ts",
-      "shared/project-contract-release.test.ts"
+      "shared/project-contract-release.test.ts",
+      "playbooks/project-verbs/references/contract.md"
     ],
     "agreed": {
       "by": "user",
@@ -748,12 +758,16 @@
       "server/project-services/share.integration.test.ts",
       "server/project-services/adopt.test.ts",
       "server/project-services/adopt.integration.test.ts",
-      "server/project-services/restart.test.ts"
+      "server/project-services/restart.test.ts",
+      "shared/project-contract.ts",
+      "server/project-services/archive-copies.test.ts",
+      "server/project-services/drivers.test.ts",
+      "server/project-services/drivers.integration.test.ts"
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-05T13:41Z",
-      "source": "pi-session:01a1ab30-f643-72b7-9a70-76331f9c7523#21128e50"
+      "at": "2026-11-12T20:06Z",
+      "source": "pi-session:cd5bc367-c9ed-418c-9f81-00287ee4986a#15085bbd"
     }
   },
   "§app.project-services/supervisor": {
@@ -779,12 +793,13 @@
       "server/project-services/drivers.integration.test.ts",
       "server/project-services/engine.integration.test.ts",
       "server/project-services/restart.test.ts",
-      "server/background-jobs-request.ts"
+      "server/background-jobs-request.ts",
+      "server/project-services/archive-copies.test.ts"
     ],
     "agreed": {
-      "by": "omar",
-      "at": "2026-11-04T10:59Z",
-      "source": "pi-session:05fd96dc-df16-4b9a-83b9-6ddf700c2ffc#8ffa61c9"
+      "by": "user",
+      "at": "2026-11-12T20:06Z",
+      "source": "pi-session:cd5bc367-c9ed-418c-9f81-00287ee4986a#15085bbd"
     }
   },
   "§app.project-services/teardown": {
@@ -915,8 +930,14 @@
       "server/project-services/ports-grace.test.ts",
       "server/project-services/ports-grace.integration.test.ts",
       "server/test-ports.ts",
-      "server/project-services/fake-host.ts"
-    ]
+      "server/project-services/fake-host.ts",
+      "server/project-services/archive-copies.test.ts"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-12T18:22Z",
+      "source": "pi-session:cd5bc367-c9ed-418c-9f81-00287ee4986a#7c887b56"
+    }
   },
   "§app/project-services": {
     "kind": "surface",

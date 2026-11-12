@@ -102,17 +102,21 @@ captured or described.
 ### Screenshots
 
 Paste a screenshot into your chat or the Creative Director's box and it becomes a
-**Screenshot** on the brief. It shows its measured colours as swatches with their hex values, and
-its **words for designers**: the screen's feel and what each colour is for. The Creative Director
-writes those words, and you can **Edit** them. Your edits always win over the Creative Director's.
+**Screenshot** on the brief. Only images you paste can be Screenshots, never images captured from
+a page. It shows up to 8 colours measured from its pixels, as swatches with their hex values, and
+its **words for designers**: the screen's feel and what each colour is for. A helper drafts those
+words, the Creative Director tunes them, and you can **Edit** them. Your edits always win.
+Editing only the feel keeps the measured colours.
 
-Choose how each screenshot is used:
+Each ticked screenshot needs a choice before Start:
 
-- **Rebuild This Screen**: designers whose model reads pictures get the screenshot itself, along
-  with its words. Words-only designers get the words.
-- **Just Its Feel**: no designer gets the picture. Every designer gets the words.
+- **Rebuild This Screen**: designers whose model reads pictures get the screenshot attached. A
+  design gets at most 4 reference pictures, and a Rebuild screenshot always gets one of them.
+- **Just Its Feel**: no designer gets the picture.
 
-Untick a screenshot and no designer gets it.
+Either way, every designer gets the screenshot's words and colours, and words-only designers are
+told that's all they get. Untick a screenshot and no designer gets it. A screenshot is never put
+in the page as an image.
 
 ## Start
 

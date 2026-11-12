@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import type { DesignBrief, DesignBriefQuestion, DesignSetup } from "../../shared/design";
-import { answerLine, coordinatorChangeLine, assetsOfRun, briefStatus, imageUsed, pickIsRecommended, usedCount, recommendedPick, setupLinks, stagedAnswers, startLabel, withLinkUse } from "./design-brief";
+import { answerLine, coordinatorChangeLine, assetsOfRun, assetKindWord, briefStatus, imageUsed, kindChoices, parseShotWords, pickIsRecommended, runScreenshots, screenUseOf, shotWordsText, usedCount, recommendedPick, setupLinks, stagedAnswers, startLabel, withLinkUse } from "./design-brief";
 
 const q = (id: string, over: Partial<DesignBriefQuestion> = {}): DesignBriefQuestion => ({
   id,
@@ -104,4 +104,41 @@ test("a later run's Setup says when the coordinator changes, and nothing when it
   const s = setup();
   assert.equal(coordinatorChangeLine(s, "a/b"), "");
   assert.equal(coordinatorChangeLine(s, "other/model"), "This starts a new Creative Director on b; it keeps the notes, not the conversation.");
+});
+
+test("a page capture's image is never offered screenshot; a pasted one is", () => {
+  assert.equal(kindChoices({ source: "page" }).includes("screenshot"), false);
+  assert.equal(kindChoices({ source: "yours" }).includes("screenshot"), true);
+});
+
+test("the kind shown is the user's, then the Creative Director's, then the helper's", () => {
+  const described = { description: { kind: "photo", description: "", placement: "", usage: "", at: "t" } };
+  assert.equal(assetKindWord(asset("a1", { source: "yours", ...described, cdKind: "screenshot" })), "screenshot");
+  assert.equal(assetKindWord(asset("a1", { source: "yours", ...described, cdKind: "screenshot", chosenKind: "photo" })), "photo");
+});
+
+test("Start waits for each ticked screenshot's Rebuild or Just Its Feel; an unticked one or a page image doesn't count", () => {
+  const shot = (name: string, source = "yours") => asset(name, { source, chosenKind: "screenshot" });
+  const assets = [shot("a1"), shot("a2"), shot("a3", "page"), asset("a4", { source: "yours", chosenKind: "photo" })];
+  const b = brief({ imageUse: { a2: { use: false, by: "user" } } });
+  const names = runScreenshots(assets, b);
+  assert.deepEqual(names, ["a1"]);
+  const run = { brief: b, setup: setup() };
+  assert.equal(startLabel(run, 2, names), "Choose Rebuild or Just Its Feel");
+  assert.equal(startLabel({ ...run, brief: { ...b, screenUse: { a1: { use: "feel", by: "coordinator" } } } }, 2, names), "Start 2 Designs");
+});
+
+test("a screenshot's choice: a click not yet confirmed, then the brief's, else none", () => {
+  const b = brief({ screenUse: { a1: { use: "rebuild", by: "coordinator" } } });
+  assert.equal(screenUseOf(b, {}, "a1"), "rebuild");
+  assert.equal(screenUseOf(b, { a1: "feel" }, "a1"), "feel");
+  assert.equal(screenUseOf(b, {}, "a2"), null);
+});
+
+test("a screenshot's words edit as one text and read back as feel and colours with roles", () => {
+  const w = { feel: "Calm, airy, lots of white.", colors: [{ hex: "#1e1e26", role: "background" }, { hex: "#8e88ff", role: "" }] };
+  const text = shotWordsText(w);
+  assert.equal(text, "Calm, airy, lots of white.\n\n#1e1e26 background\n#8e88ff");
+  assert.deepEqual(parseShotWords(text), w);
+  assert.deepEqual(parseShotWords("Dark and dense.\n#FFF — text\n#4A43D8: accent"), { feel: "Dark and dense.", colors: [{ hex: "#fff", role: "text" }, { hex: "#4a43d8", role: "accent" }] });
 });

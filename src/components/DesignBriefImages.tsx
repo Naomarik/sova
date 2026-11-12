@@ -1,7 +1,6 @@
 import { createEffect, createMemo, createSignal, For, on, Show } from "solid-js";
 import type { DesignAsset, DesignAssetCatalogue } from "../../shared/design-assets";
-import { DESIGN_ASSET_KINDS } from "../../shared/design-assets";
-import { assetKindWord, assetsOfRun, assetStateLine, imageUsed, usedCount } from "../lib/design-brief";
+import { assetKindWord, assetsOfRun, kindChoices, assetStateLine, imageUsed, usedCount } from "../lib/design-brief";
 import { useDesignStore, type DesignStore } from "../lib/design-store";
 import { hostOf } from "../lib/mesh";
 import type { DesignRunView } from "../lib/design-ui";
@@ -142,7 +141,8 @@ export function DesignBriefImageDetail(props: { asset: DesignAsset; store: Desig
     }
   };
   const d = () => props.asset.description;
-  const kinds = () => DESIGN_ASSET_KINDS.map((k) => ({ value: k, label: k }));
+  // A page capture's image is never offered `screenshot`: only a picture you pasted can be one.
+  const kinds = () => kindChoices(props.asset).map((k) => ({ value: k, label: k }));
   return (
     <div class="design-asset-detail" role="group" aria-label={`Image ${props.asset.name}`}>
       <div class="design-brief-text-head">
@@ -170,7 +170,7 @@ export function DesignBriefImageDetail(props: { asset: DesignAsset; store: Desig
             )}
           </Show>
         </dl>
-        <Select label="Kind" value={props.asset.chosenKind ?? d()?.kind ?? ""} options={kinds()} disabled={busy()} onChange={(kind) => void act(() => props.store.api.imageNote(props.asset.name, { kind }), "That kind couldn't be saved. Try again.")} />
+        <Select label="Kind" value={props.asset.chosenKind ?? props.asset.cdKind ?? d()?.kind ?? ""} options={kinds()} disabled={busy()} onChange={(kind) => void act(() => props.store.api.imageNote(props.asset.name, { kind }), "That kind couldn't be saved. Try again.")} />
         <TextArea label="Your note, which overrides everything else said about it" rows="2" value={note()} onInput={setNote} />
         <Show when={error()}>
           <p class="field-error" role="alert">

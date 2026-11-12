@@ -1,9 +1,10 @@
 import { createEffect, createMemo, createSignal, For, on, Show, type Accessor } from "solid-js";
 import type { DesignBriefQuestion, DesignLinkUse, DesignLook } from "../../shared/design";
-import type { DesignAssetCatalogue } from "../../shared/design-assets";
+import type { DesignAsset, DesignAssetCatalogue } from "../../shared/design-assets";
+import { assetKind, shotWords } from "../../shared/design-assets";
 import { designBriefBlock, designerSkills } from "../../shared/design";
 import type { DesignSpendAsk } from "../lib/design-api";
-import { answerLine, assetsOfRun, pickIsRecommended, recommendedPick, stagedAnswers, startLabel, usedCount, type StagedPick } from "../lib/design-brief";
+import { answerLine, assetsOfRun, parseShotWords, pickIsRecommended, recommendedPick, runScreenshots, screenUseBy, screenUseOf, shotWordsText, stagedAnswers, startLabel, usedCount, type StagedPick } from "../lib/design-brief";
 import type { DesignStore } from "../lib/design-store";
 import { coordinatorOf, setupCount, setupSummary, type DesignRunView } from "../lib/design-ui";
 import { Inline, QuestionChoices, type QuestionPicker } from "./AlignDocCard";
@@ -232,6 +233,63 @@ function BriefScreen(props: { run: DesignRunView; store: DesignStore; contentOnl
   );
 }
 
+/** A pasted screenshot on the brief: its kind, its measured colours, its words for designers, and Rebuild or Feel. */
+function BriefShot(props: { asset: DesignAsset; run: DesignRunView; store: DesignStore; use: "rebuild" | "feel" | null; onUse(use: "rebuild" | "feel"): void; onOpen(): void }) {
+  const found = () => shotWords(props.asset);
+  const colors = () => found()?.words.colors ?? (props.asset.palette ?? []).map((p) => ({ hex: p.hex, role: "" }));
+  const describing = () => props.run.imagesBusy === "describing" || (!props.asset.description && !props.asset.describeError) || !!props.asset.describeAgain;
+  const feelEmpty = () => (describing() ? "Its words are being drafted." : "Its feel couldn't be read, so designers get only its colours. Edit to say it yourself.");
+  const by = () => ({ user: "Yours", coordinator: "The Creative Director's", helper: "A first draft" })[found()?.by ?? "helper"];
+  const save = (text: string) => props.store.api.imageNote(props.asset.name, { words: parseShotWords(text) });
+  const choice = (use: "rebuild" | "feel", label: string) => (
+    <button type="button" class="button" aria-pressed={props.use === use} onClick={() => props.onUse(use)}>
+      {label}
+    </button>
+  );
+  return (
+    <section class="design-shot" aria-label={`Screenshot ${props.asset.name}`}>
+      <div class="design-shot-head">
+        <button type="button" class="design-shot-thumb" aria-label={`Details of ${props.asset.name}`} onClick={() => props.onOpen()}>
+          <img src={props.store.api.assetUrl(props.asset.name, "small")} alt="" loading="lazy" />
+        </button>
+        <div class="design-shot-facts">
+          <p class="design-shot-title">
+            <span class="text-mono design-asset-name">{props.asset.name}</span> <span class="design-asset-kind">{assetKind(props.asset)}</span>
+            <span class="text-caption text-muted design-shot-by">{screenUseBy(props.run.brief, props.asset.name)}</span>
+          </p>
+          <ul class="design-shot-swatches" aria-label={`Colours of ${props.asset.name}`}>
+            <For each={colors()} fallback={<li class="text-caption text-muted">No colours measured.</li>}>
+              {(c) => (
+                <li class="design-shot-swatch" title={c.role ? `${c.hex} · ${c.role}` : c.hex}>
+                  <span class="design-shot-chip" style={{ background: c.hex }} aria-hidden="true" />
+                  <code class="text-mono">{c.hex}</code>
+                  <Show when={c.role}>
+                    <span class="text-caption text-muted design-shot-role">{c.role}</span>
+                  </Show>
+                </li>
+              )}
+            </For>
+          </ul>
+        </div>
+      </div>
+      <div class="design-link-use design-shot-use" role="group" aria-label={`How to use ${props.asset.name}`}>
+        {choice("rebuild", "Rebuild This Screen")}
+        {choice("feel", "Just Its Feel")}
+      </div>
+      <BriefText
+        title={`Words for designers · ${props.asset.name}`}
+        editLabel="Edit Words"
+        text={found()?.words.feel || found()?.words.colors.length ? shotWordsText(found()!.words) : null}
+        empty={feelEmpty()}
+        note={found() && !found()!.words.feel && !describing() ? "The feel couldn't be read" : found() ? by() : ""}
+        boxClass="design-brief-notes"
+        canEdit
+        save={save}
+      />
+    </section>
+  );
+}
+
 /** The brief while it is open: what will be built, the choices around it, and Start. Takes over the card between its head and its foot. */
 export function DesignBriefStep(props: { run: DesignRunView; store: DesignStore; onOpenCoordinator(): void }) {
   const setup: SetupDraft = createSetupDraft(() => props.run, props.store);
@@ -260,7 +318,16 @@ export function DesignBriefStep(props: { run: DesignRunView; store: DesignStore;
   const imageLinks = () => urls().filter((u) => useOf(u) === "images");
   const openQuestions = () => brief().questions.filter((q) => !q.answer);
   const toSend = () => stagedAnswers(staged(), brief().questions);
-  const block = () => designBriefBlock({ brief: brief(), setup: setup.draft(), imagesBusy: props.run.imagesBusy });
+  const runAssets = createMemo(() => assetsOfRun(catalogue(), props.run));
+  const shots = createMemo(() => runScreenshots(runAssets(), brief()), undefined, { equals: (a, b) => a.length === b.length && a.every((x, i) => x === b[i]) });
+  const shotOf = (name: string) => runAssets().find((a) => a.name === name);
+  const [shotUses, setShotUses] = createSignal<Record<string, "rebuild" | "feel">>({});
+  createEffect(() => {
+    const held = shotUses();
+    const left = Object.entries(held).filter(([name, use]) => brief().screenUse?.[name]?.use !== use);
+    if (left.length !== Object.keys(held).length) setShotUses(Object.fromEntries(left));
+  });
+  const block = () => designBriefBlock({ brief: brief(), setup: setup.draft(), imagesBusy: props.run.imagesBusy }, shots());
   const designs = () => setupCount(setup.draft()).designs;
   const guard = async (run: () => Promise<unknown>, fallback: string) => {
     setBusy(true);
@@ -284,6 +351,14 @@ export function DesignBriefStep(props: { run: DesignRunView; store: DesignStore;
       setUses(rest);
     });
   };
+  const setShotUse = (name: string, use: "rebuild" | "feel") => {
+    setShotUses({ ...shotUses(), [name]: use });
+    void guard(() => props.store.api.briefScreen(props.run.id, name, use), "That choice couldn't be saved. Try again.").then((ok) => {
+      if (ok) return;
+      const { [name]: _gone, ...rest } = shotUses();
+      setShotUses(rest);
+    });
+  };
   const sendAnswers = async () => {
     if (await guard(() => props.store.api.briefAnswers(props.run.id, { picks: toSend() }), "Your answers didn't reach the Creative Director. They're still picked.")) setStaged({});
   };
@@ -292,7 +367,7 @@ export function DesignBriefStep(props: { run: DesignRunView; store: DesignStore;
   };
   const jumpToWhatBlocks = () => {
     const code = block()?.code;
-    const el = code === "question" ? scroller?.querySelector("[data-open-q]") : code === "link-use" ? scroller?.querySelector(".design-link-row") : null;
+    const el = code === "question" ? scroller?.querySelector("[data-open-q]") : code === "link-use" ? scroller?.querySelector(".design-link-row") : code === "screenshot-use" ? scroller?.querySelector(".design-shot") : null;
     if (el && scroller) scroller.scrollTop += el.getBoundingClientRect().top - scroller.getBoundingClientRect().top;
   };
   const start = async (confirmSpend: boolean) => {
@@ -394,6 +469,9 @@ export function DesignBriefStep(props: { run: DesignRunView; store: DesignStore;
                           save={(text) => props.store.api.briefEdit(props.run.id, { field: "notes", url, text })}
                         />
                       )}
+                    </For>
+                    <For each={shots()}>
+                      {(name) => <Show when={shotOf(name)}>{(a) => <BriefShot asset={a()} run={props.run} store={props.store} use={screenUseOf(brief(), shotUses(), name)} onUse={(use) => setShotUse(name, use)} onOpen={() => setOpenImage(name)} />}</Show>}
                     </For>
                     <Show when={imageLinks().length > 0 || assetsOfRun(catalogue(), props.run).length > 0}>
                       <DesignBriefImages run={props.run} store={props.store} catalogue={catalogue()} onOpen={setOpenImage} />
@@ -517,7 +595,7 @@ export function DesignBriefStep(props: { run: DesignRunView; store: DesignStore;
         </div>
         <button type="button" class="button button-primary design-brief-start" aria-disabled={block() ? "true" : undefined} disabled={busy()} title={block()?.label} onClick={() => void start(!!ask())}>
           {/* A new node for each label: new words in the old node would re-centre it, and that counts as a shift. */}
-          <Show when={ask() ? `Start ${ask()!.designs} Designs` : startLabel({ brief: brief(), setup: setup.draft(), imagesBusy: props.run.imagesBusy }, designs())} keyed>
+          <Show when={ask() ? `Start ${ask()!.designs} Designs` : startLabel({ brief: brief(), setup: setup.draft(), imagesBusy: props.run.imagesBusy }, designs(), shots())} keyed>
             {(label) => <span>{label}</span>}
           </Show>
         </button>
@@ -559,6 +637,13 @@ export function DesignBriefCollapsed(props: { run: DesignRunView; store: DesignS
                 {(l) => (
                   <p class="text-caption">
                     <code class="design-link-url">{l.url}</code> · {l.use === "feel" ? "Just Its Feel" : l.use === "images" ? "Use Its Images" : "Not chosen"}
+                  </p>
+                )}
+              </For>
+              <For each={Object.entries(b().screenUse ?? {})}>
+                {([name, u]) => (
+                  <p class="text-caption">
+                    <span class="text-mono">{name}</span> · {u.use === "rebuild" ? "Rebuild This Screen" : "Just Its Feel"}
                   </p>
                 )}
               </For>

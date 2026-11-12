@@ -91,3 +91,30 @@ test("on Free with its tunnel up, a move to Account waits for its Verify; a fail
   assert.deepEqual([listener.shareState().publicUrl, listener.shareState().source, listener.shareState().state], [ACCOUNT, "account", "verified"]);
   assert.equal(manager.tunnelStatus({ kind: "share" }).mode, "account", "Account's tunnel took over");
 });
+
+test("on a working Account, a new token waits with its setup: the live tunnel keeps its token and address until Verify passes", async () => {
+  const { tokenFile } = await import("./account-token");
+  assert.equal(listener.shareState().source, "account", "control: the first test left a verified Account");
+  const tokenA = readFileSync(tokenFile(), "utf8");
+  const startsBefore = accountStarts();
+  const tokenB = Buffer.from(JSON.stringify({ a: "acct", t: "tunnel-b", s: "other-secret" })).toString("base64");
+  await app.request("/api/public-links/account-token", { method: "PUT", headers: { "Content-Type": "application/json", ...pageHeaders() }, body: JSON.stringify({ token: tokenB }) });
+  assert.equal(readFileSync(tokenFile(), "utf8"), tokenA, "the live token is untouched");
+  assert.equal(accountStarts(), startsBefore, "nothing restarted");
+
+  // A new address with it: waits.
+  const moved = (await call("PUT", "/api/public-links", { route: "account", account: { publicUrl: "https://new.example.com" } })) as PublicLinksInfo;
+  assert.deepEqual([moved.file.account?.publicUrl, moved.candidate?.publicUrl], [ACCOUNT, "https://new.example.com"]);
+  assert.equal(listener.shareState().publicUrl, ACCOUNT);
+
+  // The same address with the new token: waits too (a new tunnel to check), and a pass takes the token over.
+  const same = (await call("PUT", "/api/public-links", { route: "account", account: { publicUrl: ACCOUNT } })) as PublicLinksInfo;
+  assert.equal(same.candidate?.publicUrl, ACCOUNT, "a candidate even at the same address");
+  assert.equal(readFileSync(tokenFile(), "utf8"), tokenA, "still the old token live");
+  answers = true;
+  assert.equal(((await call("POST", "/api/public-links/verify")) as VerifyResult).ok, true);
+  assert.notEqual(readFileSync(tokenFile(), "utf8"), tokenA, "the verified token is the live one now");
+  assert.ok(readFileSync(tokenFile(), "utf8").includes(tokenB));
+  assert.equal(listener.shareState().publicUrl, ACCOUNT);
+  assert.equal(((await call("GET", "/api/public-links")) as PublicLinksInfo).candidate, undefined);
+});

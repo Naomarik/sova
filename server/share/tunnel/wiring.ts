@@ -4,7 +4,7 @@ import { bindForTunnel, releaseTunnelBind } from "../listener";
 import { onShareLinksChanged, setMintWait, type ShareLinksChange } from "../links-events";
 import { liveLinks } from "../registry-push";
 import { onPublicLinksChanged } from "../setting-events";
-import { readAccountToken } from "./account-token";
+import { readCandidateToken } from "./account-token";
 import { onCloudflaredChanged } from "./binary";
 import { readCandidate } from "../candidate";
 import { noteHandouts } from "./handouts";
@@ -146,7 +146,8 @@ export async function startTunnelWiring(opts: TunnelWiringOptions = {}): Promise
     // An Account candidate's tunnel runs only for its Verify (public-links-routes.ts), never by itself.
     candidateAccount: () => {
       const c = readCandidate();
-      const token = c?.file.route === "account" ? readAccountToken() : null;
+      // The token pasted for it, else the saved one.
+      const token = c?.file.route === "account" ? readCandidateToken() : null;
       return c && token && c.file.account ? { token, publicUrl: c.file.account.publicUrl } : null;
     },
     candidateWanted: () => false,

@@ -17,7 +17,7 @@ import { liveLinks } from "./share/registry-push";
 import { routedHosts } from "./share/registry";
 import { mountCloudflaredDownload } from "./share/tunnel/download";
 import { publicLinksChanged } from "./share/setting-events";
-import { hasAccountToken, mountAccountRoutes } from "./share/tunnel/account-token";
+import { dropCandidateToken, hasAccountToken, hasCandidateToken, mountAccountRoutes, promoteCandidateToken } from "./share/tunnel/account-token";
 import { cloudflaredInfo, resolveCloudflared } from "./share/tunnel/binary";
 import { brokenLinks } from "./share/tunnel/handouts";
 import { checkTunnel, ensureTunnel, restartTunnel, runningTunnels, stopTunnel, tunnelStatus } from "./share/tunnel/manager";
@@ -102,9 +102,10 @@ export function routeWorks(file: PublicLinksFile): boolean {
 /** Whether a PUT's next setting waits as a candidate rather than switching: it moves to Account or
     to this host as the gateway, at an address other than today's, while today's route works. Pure
     over its inputs. */
-export function waitsForVerify(next: PublicLinksFile, current: PublicLinksFile, works: boolean): boolean {
+export function waitsForVerify(next: PublicLinksFile, current: PublicLinksFile, works: boolean, newToken = false): boolean {
   if (next.route !== "account" && next.route !== "self") return false;
-  if (next.route === current.route && candidateUrl(next) === candidateUrl(current)) return false;
+  // The same address waits too when a new Account token was pasted for it: a new tunnel to check.
+  if (next.route === current.route && candidateUrl(next) === candidateUrl(current) && !(next.route === "account" && newToken)) return false;
   return works && candidateUrl(next) !== null;
 }
 
@@ -122,8 +123,9 @@ function candidateView(c: StoredCandidate): PublicLinksCandidate {
   };
 }
 
-/** Drop a waiting candidate, and its tunnel if one runs. */
+/** Drop a waiting candidate, its pasted token, and its tunnel if one runs. */
 async function cancelCandidate(): Promise<void> {
+  dropCandidateToken();
   if (!readCandidate()) return;
   dropCandidate();
   if (tunnelStatus(CANDIDATE).state !== "stopped") await stopTunnel(CANDIDATE, "candidate dropped").catch(() => undefined);
@@ -162,8 +164,11 @@ async function verifyCandidate(c: StoredCandidate, check: (url: string) => Promi
   writeServerFields({ verifiedAt: Date.now() });
   publicLinksChanged(r.file);
   await shareListenerSettled();
-  // Account's tunnel takes over from Free's (its address is fixed: only a reconnect).
-  if (r.file.route === "account") await restartTunnel(SHARE, "Account verified").catch(() => undefined);
+  // Account's tunnel takes over, on the token just verified (its address is fixed: only a reconnect).
+  if (r.file.route === "account") {
+    promoteCandidateToken();
+    await restartTunnel(SHARE, "Account verified").catch(() => undefined);
+  }
   return result;
 }
 
@@ -212,15 +217,25 @@ export function mountPublicLinks(app: Hono, sources: PublicLinksSources = SOURCE
     // Links keep opening where they open now until a new address is saved and verified: a move to
     // Account or to this host as the gateway waits as a candidate while today's route works.
     const current = readPublicLinks();
-    if (waitsForVerify(plan.file, current, routeWorks(current))) {
-      await cancelCandidate();
+    if (waitsForVerify(plan.file, current, routeWorks(current), hasCandidateToken())) {
+      // A new setup replaces a waiting one, its pasted token kept for it.
+      if (readCandidate()) dropCandidate();
+      if (tunnelStatus(CANDIDATE).state !== "stopped") await stopTunnel(CANDIDATE, "candidate replaced").catch(() => undefined);
       saveCandidate(body as Record<string, unknown>, plan.file);
       return c.json(await publicLinksInfo(current, sources), 200, NO_STORE);
     }
-    // A route chosen outright replaces a waiting candidate.
-    if (body && typeof body === "object" && "route" in body) await cancelCandidate();
+    // A route chosen outright replaces a waiting candidate; a token pasted for an Account taken at
+    // once (nothing works to keep) is that Account's token now.
+    const newToken = plan.file.route === "account" && hasCandidateToken();
+    if (body && typeof body === "object" && "route" in body) {
+      if (newToken) {
+        if (readCandidate()) dropCandidate();
+        promoteCandidateToken();
+      } else await cancelCandidate();
+    }
     const r = patchPublicLinks(body);
     if ("error" in r) return c.json({ error: r.error }, 400);
+    if (newToken && tunnelStatus(SHARE).state !== "stopped") await restartTunnel(SHARE, "a new Account token").catch(() => undefined);
     publicLinksChanged(r.file);
     // The answer carries the bind as it came out (§mesh.public/listener-failure).
     await shareListenerSettled();

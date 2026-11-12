@@ -138,7 +138,7 @@
         "rules": "@898a2a6e09208de2",
         "docs": "@0f5fabf6c3c47c4c",
         "cwd": "<cwd>\n<ws:plain>\n</cwd>",
-        "mode": "@0b874a97389226d7"
+        "mode": "@48aec79347042225"
        },
        "toolsAdded": "@18e7e181b06584f6"
       },
@@ -197,7 +197,7 @@
        "content": [
         {
          "type": "text",
-         "text": "@43eb6daf3c1faca4"
+         "text": "@0579e6935218b320"
         }
        ],
        "details": {
@@ -264,7 +264,7 @@
        "rules": "@898a2a6e09208de2",
        "docs": "@0f5fabf6c3c47c4c",
        "cwd": "<cwd>\n<ws:plain>\n</cwd>",
-       "mode": "@0b874a97389226d7"
+       "mode": "@48aec79347042225"
       },
       "toolsAdded": "@80a91d9c0ac3cb27"
      }
@@ -306,6 +306,7 @@
     "SPEC_AGREE_SOURCE": "pi-session:<sid:1>#<entry>",
     "SPEC_AGREE_GIVEN": "pi-session:<sid:1>#<entry>",
     "SOVA_SPEC_LANDED_FILE": "<file>",
+    "SOVA_SHARED_DIR": "<shared>/<sid:1>",
     "PI_SUBAGENT_BUILTIN_TOOLS": "read,bash,edit,write"
    },
    "agentDir": null,

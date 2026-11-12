@@ -7,7 +7,7 @@
  * this machine (`probe`). Silent unconfined passthrough is never a legal answer: a backend that
  * cannot enforce returns `{ ok: false }` and the caller refuses the tool call.
  */
-import { lstatSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { lstatSync, mkdirSync, readdirSync, readFileSync, readlinkSync, renameSync, statSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, isAbsolute, join, resolve, sep } from "node:path";
 import { DarwinSeatbeltBackend } from "./backends/darwin-seatbelt.ts";
@@ -57,10 +57,6 @@ export interface Policy {
 	 * is writable inside at `path`, whatever the level, deeper than every other rule. Canonical;
 	 * `path === source` binds in place. Never set for a tool call. */
 	binds?: Shadow[];
-	/** A write-only worker (§chat.worktrees/workers): the host's /tmp stays visible, read-only, with
-	 * its Unix sockets masked, and TMPDIR names `tmpDir` (writable at its own path) instead of a
-	 * private /tmp. Linux only: macOS never remaps /tmp. */
-	hostTmp?: boolean;
 	/** The policy's `browser: "headless-shell"`: darwin-seatbelt adds its two Chromium rules
 	 * (BROWSER_RULES); linux-bwrap ignores it with a note. */
 	browser?: boolean;
@@ -69,6 +65,10 @@ export interface Policy {
 export interface Shadow {
 	path: string;
 	source: string;
+	/** A platform's private tool state (`PlatformDefaults.privateState`): copied only while its host
+	 * path exists. A backend that needs the host path as a mount point never creates a missing one
+	 * (that would add a folder to the user's home the tool never made); it stays as the host has it. */
+	ifPresent?: true;
 }
 
 export interface ConfineRequest {
@@ -137,6 +137,14 @@ export interface PlatformDefaults {
 	readOnlyWithinWritable: string[];
 	/** Host paths the sandbox gets a private writable copy of (caches); see Policy.shadowed. */
 	shadowed: string[];
+	/**
+	 * Host tools' own state a confined session gets a private copy of whatever the policy file says
+	 * (mise's state, pnpm's store and state): added to the shadowed paths for On and write-only alike,
+	 * and a writable entry at or inside one is superseded rather than failing closed. Host trust
+	 * stores inside one are not pinned (host tools never read the copy); mise's is seeded from the host
+	 * (`seedShadow`).
+	 */
+	privateState?: string[];
 }
 
 export interface PlatformContext {
@@ -207,7 +215,6 @@ export function policyKey(policy: Policy): string {
 		env: Object.keys(policy.env).sort(),
 		shadowed: (policy.shadowed ?? []).map((sh) => `${sh.path}=${sh.source}`).sort(),
 		...(policy.binds?.length ? { binds: policy.binds.map((b) => `${b.path}=${b.source}`).sort() } : {}),
-		...(policy.hostTmp ? { hostTmp: true } : {}),
 		...(policy.browser ? { browser: true } : {}),
 	});
 }
@@ -352,7 +359,7 @@ function shadowsOf(policy: Policy): Shadow[] {
 		const path = canonicalizePath(s.path);
 		if (seen.has(path)) continue;
 		seen.add(path);
-		out.push({ path, source: canonicalizePath(s.source) });
+		out.push({ path, source: canonicalizePath(s.source), ...(s.ifPresent ? { ifPresent: true as const } : {}) });
 	}
 	return out;
 }
@@ -384,7 +391,10 @@ export function writeSet(policy: Policy): WriteSet {
 		readOnly.push(...git.readOnly);
 		ensureDirs.push(...git.ensureDirs);
 	}
-	const stores = trustStores({ ...process.env, ...policy.env }).map((p) => canonicalizePath(p));
+	// A trust store inside a shadow is the sandbox's private copy, which no host tool reads: not pinned.
+	const stores = trustStores({ ...process.env, ...policy.env })
+		.map((p) => canonicalizePath(p))
+		.filter((p) => !shadowed.some((s) => isWithin(p, s.path)));
 	readOnly.push(...policy.readOnlyWithinWritable.map((p) => canonicalizePath(p)), ...stores);
 	ensureDirs.push(...stores);
 	// Git detection reads the host tree, so it runs on real roots only; a shadow is sandbox-private
@@ -392,6 +402,90 @@ export function writeSet(policy: Policy): WriteSet {
 	const finalWritable = uniq([...writable, ...shadowed.map((s) => s.path)]);
 	const inWritable = (p: string) => finalWritable.some((w) => isWithin(p, w));
 	return { writable: finalWritable, readOnly: uniq(readOnly).filter(inWritable), hidden, ensureDirs: uniq(ensureDirs), shadowed };
+}
+
+/** The trust lists of mise's state that a private copy mirrors from the host (`seedShadow`). */
+export const MISE_TRUST_DIRS = ["trusted-configs", "ignored-configs"] as const;
+/**
+ * Beside a shadow's source (`<source>.seeded.json`, a file in the shadow root, which the cache
+ * cleanup never walks or removes): the names `seedShadow` linked from the host, so a host removal
+ * is mirrored even after the cleanup removed part of the copy.
+ */
+export const seededListPath = (source: string) => `${source}.seeded.json`;
+
+/**
+ * Brings a shadow's private copy up to date with what its host path must keep telling the sandbox:
+ * for mise's state (a host path holding `trusted-configs`), each host trust and ignore link is
+ * linked into the copy, and a link seeded earlier that the host has since removed is removed, so
+ * the sandbox trusts what the host trusts, and a `mise trust` inside writes only the copy (kept,
+ * since it was never seeded; the copy is shared, so every sandboxed session then trusts it). Other
+ * shadows are left alone. Never throws: a copy it cannot update
+ * stays as it was.
+ */
+export function seedShadow(shadow: Shadow): void {
+	if (!isDir(join(shadow.path, "trusted-configs"))) return;
+	// Its tracking list starts empty in the copy, but present, as the host's is.
+	try {
+		mkdirSync(join(shadow.source, "tracked-configs"), { recursive: true, mode: 0o700 });
+	} catch {}
+	const listFile = seededListPath(shadow.source);
+	let seeded: Record<string, string[]> = {};
+	try {
+		const raw = JSON.parse(readFileSync(listFile, "utf8"));
+		if (raw && typeof raw === "object") seeded = raw;
+	} catch {}
+	const next: Record<string, string[]> = {};
+	let changed = false;
+	for (const sub of MISE_TRUST_DIRS) {
+		const host = join(shadow.path, sub);
+		const copy = join(shadow.source, sub);
+		let names: string[];
+		try {
+			names = readdirSync(host);
+		} catch {
+			names = [];
+		}
+		const have = new Set(names);
+		const before = Array.isArray(seeded[sub]) ? seeded[sub]!.filter((x) => typeof x === "string") : [];
+		const kept: string[] = [];
+		for (const name of before) {
+			if (have.has(name)) continue;
+			try {
+				if (lstatSync(join(copy, name)).isSymbolicLink()) unlinkSync(join(copy, name));
+			} catch {}
+			changed = true;
+		}
+		const beforeSet = new Set(before);
+		if (names.length) {
+			try {
+				mkdirSync(copy, { recursive: true, mode: 0o700 });
+			} catch {}
+		}
+		for (const name of names) {
+			const target = join(copy, name);
+			let exists = false;
+			try {
+				lstatSync(target);
+				exists = true;
+			} catch {}
+			if (!exists) {
+				try {
+					symlinkSync(readlinkSync(join(host, name)), target);
+					exists = true;
+				} catch {}
+			}
+			// A name the host lists is the host's: once the host drops it, the copy drops it too.
+			if (exists) kept.push(name);
+			if (!beforeSet.has(name)) changed = true;
+		}
+		next[sub] = kept;
+	}
+	if (!changed) return;
+	try {
+		const tmp = `${listFile}.${process.pid}.${Date.now()}`;
+		writeFileSync(tmp, JSON.stringify(next));
+		renameSync(tmp, listFile);
+	} catch {}
 }
 
 export type WriteCheck = { ok: true; path: string } | { ok: false; path: string; reason: string };
@@ -427,6 +521,13 @@ export type RunClass =
 export const DENIAL_NOTE = "[sandbox: a write or connection outside the policy was refused]";
 
 /**
+ * Output lines that carry a denial signature but say nothing about why the command failed: mise's
+ * warning that it could not record a config it read (its tracking list), printed on almost any
+ * command in a folder with a mise config. They are dropped before the denial signatures are matched.
+ */
+export const BENIGN_DENIAL_LINES: readonly RegExp[] = [/^\s*mise WARN\s+tracking config: /];
+
+/**
  * Classify a finished confined run (plan v2 §2.2). Runner failure wins over denial: a runner
  * that never started the command cannot have been denied anything.
  */
@@ -440,6 +541,10 @@ export function classifyRun(confined: Confined, run: { exitCode: number | null; 
 		const hit = lines.find((l) => fatal.some((re) => re.test(l)));
 		if (hit !== undefined) return { kind: "runner-failure", message: `sandbox runner failed, the command did not run: ${hit.trim()}` };
 	}
-	if (confined.denialSignatures.some((s) => run.output.includes(s))) return { kind: "denied", note: DENIAL_NOTE };
+	const telling = run.output
+		.split(/\r?\n/)
+		.filter((l) => !BENIGN_DENIAL_LINES.some((re) => re.test(l)))
+		.join("\n");
+	if (confined.denialSignatures.some((s) => telling.includes(s))) return { kind: "denied", note: DENIAL_NOTE };
 	return { kind: "failed" };
 }

@@ -205,8 +205,35 @@ test("the templates shadow the host caches and list none as writable", () => {
 	for (const p of ["linux", "darwin"]) {
 		const t = template(p);
 		assert.deepEqual(t.shadowed, ["~/.cache", "~/.npm", "~/.m2"]);
-		assert.deepEqual(t.writable, ["~/.local/state/mise"]);
+		assert.deepEqual(t.writable, [], "mise's state is a platform private copy, never a host writable root");
 	}
+});
+
+test("resolve: the platform's private tool state is shadowed On and write-only, and supersedes a writable entry instead of failing closed", () => {
+	const ws = tmp();
+	const agentDir = join(ws, "agent");
+	const home = tmp();
+	mkdirSync(join(agentDir, "sandbox-policy", "linux"), { recursive: true });
+	const mise = join(home, ".local", "state", "mise");
+	const pnpm = join(home, ".local", "share", "pnpm", "store");
+	// An older template's entry: the user's live file still lists mise's state as writable.
+	writeFileSync(join(agentDir, "sandbox-policy", "linux", "policy.json"), JSON.stringify({ ...template(), writable: ["~/.local/state/mise", "~/.local/state/mise/sub"] }));
+	const src = (_a: string, p: string) => join(agentDir, "shadow", p.replaceAll("/", "_"));
+	const defaults = { hidden: [], writable: [mise], readOnlyWithinWritable: [], shadowed: [join(home, ".cache")], privateState: [mise, pnpm] };
+	const on = resolvePolicy({ agentDir, cwd: ws, tmpDir: join(ws, "t"), platform: "linux", home, shadowSource: src, defaults });
+	assert.ok(on.ok, on.ok ? "" : on.error);
+	assert.ok(!on.value.writable.some((w) => w === mise || w.startsWith(`${mise}/`)), "the writable entries are dropped");
+	// Private tool state is copied only while the host has it (ifPresent); a cache is copied whatever.
+	for (const p of [mise, pnpm]) assert.deepEqual(on.value.shadowed.find((s) => s.path === p), { path: p, source: src(agentDir, p), ifPresent: true });
+	assert.equal(on.value.shadowed.find((s) => s.path === join(home, ".cache"))?.ifPresent, undefined);
+	const wo = resolvePolicy({ agentDir, cwd: ws, tmpDir: join(ws, "t"), platform: "linux", home, shadowSource: src, defaults, parent: writeOnlyScope(ws) });
+	assert.ok(wo.ok);
+	assert.deepEqual(wo.value.shadowed.map((s) => `${s.path}${s.ifPresent ? " ifPresent" : ""}`).sort(), [join(home, ".cache"), `${mise} ifPresent`, `${pnpm} ifPresent`].sort());
+	// The file's own writable entry inside its own shadow still fails closed.
+	writeFileSync(join(agentDir, "sandbox-policy", "linux", "policy.json"), JSON.stringify({ ...template(), writable: ["~/.npm/x"] }));
+	utimesSync(join(agentDir, "sandbox-policy", "linux", "policy.json"), new Date(), new Date(Date.now() + 9000));
+	assert.equal(resolvePolicy({ agentDir, cwd: ws, tmpDir: join(ws, "t"), platform: "linux", home, shadowSource: src, defaults }).ok, false);
+	[ws, home].forEach((p) => rmSync(p, { recursive: true, force: true }));
 });
 
 test("resolve: shadows come from the file, never double as writable roots, and vanish under read-only", () => {

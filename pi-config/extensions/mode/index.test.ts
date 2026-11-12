@@ -276,7 +276,7 @@ test("composePrompt joins the delegate block and minor blocks", () => {
 	assert.doesNotMatch(align, /\[ \]/);
 	// The bridge hands the planning worker's result over as a file, in the tool's schema.
 	assert.match(DELEGATE_ALIGN_BRIDGE, /Workers have no align tool/);
-	assert.match(DELEGATE_ALIGN_BRIDGE, /align \{op: "import", path: that same absolute path\}/);
+	assert.match(DELEGATE_ALIGN_BRIDGE, /align \{op: "import", path: that absolute path\}/);
 	// No text the model reads names an op shape the tool no longer takes, and every op it names is one.
 	for (const text of [align, DELEGATE_ALIGN_BRIDGE, ALIGN_NUDGE_TEXT]) {
 		assert.doesNotMatch(text, /fromFile|create \+|\bdrop \{|\{why\}|exempt with why|accept \{q|q: "open"/);
@@ -285,7 +285,9 @@ test("composePrompt joins the delegate block and minor blocks", () => {
 	// The planner's one write is named, absolute and outside the repo, by the bridge alone: the delegate
 	// block's no-edit rule names no exception, and the bridge that grants it follows it whenever align is on.
 	assert.match(DELEGATE_ALIGN_BRIDGE, /one permitted write is the alignment JSON/);
-	assert.match(DELEGATE_ALIGN_BRIDGE, /absolute path outside the repository that you name in its prompt/);
+	assert.match(DELEGATE_ALIGN_BRIDGE, /in this chat's shared folder, outside the repository, at a name you give in its prompt/);
+	assert.match(DELEGATE_ALIGN_BRIDGE, /\$SOVA_SHARED_DIR\/align-<topic>-<n>\.json/, "the example names the shared folder");
+	assert.doesNotMatch(DELEGATE_ALIGN_BRIDGE, /\/tmp\/align/, "never the temp folder, which a sandboxed worker can't share");
 	for (const delegateBlock of [buildDelegatePrompt([]), buildDelegatePrompt(ALL_OK)]) {
 		assert.match(delegateBlock, /must not edit files: say so in their prompt/);
 		assert.doesNotMatch(delegateBlock, /exception|alignment JSON/);

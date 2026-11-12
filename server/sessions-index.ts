@@ -4,6 +4,7 @@ import { keptLabels, redactPreviewLinks, redactPreviewLinksDeep } from "./previe
 import { profileField, profileOnBranch } from "./session-profile";
 import { type Dirent, lstatSync, readdirSync, statSync } from "node:fs";
 import { type FileHandle, lstat, open, readdir, stat, unlink } from "node:fs/promises";
+import { removeChatSharedFolder } from "../pi-config/extensions/sandbox/shared-folder.ts";
 import { basename, dirname, join } from "node:path";
 import { OVERSEER_ENTRY, type SessionSummary, type SessionTags } from "../shared/protocol";
 import { activityOf, type LiveRecord, type RawLiveRecord, readLive, readOwnLiveRecords, workerCountsOf, workingSubagents } from "./live";
@@ -2159,6 +2160,7 @@ export async function archiveSession(path: string, archived: boolean): Promise<A
         removeSessionTimeSpent(s.id);
         removeSessionLabels(s.id);
         dropGroupAssignments([s.id]);
+        removeSharedFolder(s.id);
         sessionArchived(s.id);
         return { ok: true, summary: { ...s, archived: true, deleted: true } };
       }
@@ -2176,10 +2178,16 @@ export async function archiveSession(path: string, archived: boolean): Promise<A
  * on it ended (its workers stopped with any report still waiting to open it, its links, its memory).
  * A chat still starting now is closed by its own start once that finishes (server/chat-host.ts).
  */
+/** An archived (or deleted) chat's shared folder goes with it (shared-folder.ts). */
+function removeSharedFolder(id: string): void {
+  if (!removeChatSharedFolder(id)) console.error(`[sessions] Archived chat ${id}: its shared folder could not be removed`);
+}
+
 export async function markArchived(id: string, path: string): Promise<void> {
   setArchived(id, true);
   await closeChat(path, "Session archived; its runtime was closed.", { quiet: "archived" });
   await removeOutputFiles(path);
+  removeSharedFolder(id);
   sessionArchived(id);
 }
 

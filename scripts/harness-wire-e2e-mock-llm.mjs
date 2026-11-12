@@ -17,7 +17,8 @@
 //
 // Opt-in, for a test that needs a reply still streaming (server/chat-actions.integration.test.ts): a
 // request whose last user message contains `[[slow]]` gets a text-only reply in 60 parts, 500 ms
-// apart (half a minute), and stops writing when the caller hangs up. One whose last user message contains
+// apart (half a minute), and stops writing when the caller hangs up. One whose turn (its user messages since the
+// last assistant message: the prompt, and any note Sova sends after it, as a sandboxed chat's) contains
 // `[[bash:<command>]]` and whose history has no tool result gets a `bash` call running <command> instead of the
 // `read` (server/shell-mode-zsh.integration.test.ts: what the agent's own command sees). Every other request is
 // answered exactly as above.
@@ -36,13 +37,19 @@ const server = createServer(async (req, res) => {
     // not JSON: answered as a first request
   }
   const toolDone = (ask.messages ?? []).some((m) => m.role === "tool");
-  const lastUser = [...(ask.messages ?? [])].reverse().find((m) => m.role === "user");
-  const lastUserText = typeof lastUser?.content === "string" ? lastUser.content : JSON.stringify(lastUser?.content ?? "");
+  // The turn's user messages, newest first: a note sent after the prompt must not hide the prompt's directive.
+  const msgs = ask.messages ?? [];
+  const lastAssistant = msgs.map((m) => m.role).lastIndexOf("assistant");
+  const turn = msgs.slice(lastAssistant + 1).filter((m) => m.role === "user").reverse();
+  const textOf = (m) => (typeof m?.content === "string" ? m.content : JSON.stringify(m?.content ?? ""));
+  const newestUser = [...msgs].reverse().find((m) => m.role === "user");
+  const lastUser = turn.find((m) => /\[\[bash:/.test(textOf(m))) ?? newestUser;
+  const lastUserText = textOf(lastUser);
   res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache" });
   const chunk = (delta, extra = {}) => res.write(`data: ${JSON.stringify({ id: `c${n}`, object: "chat.completion.chunk", created: 1, model: "m1", choices: [{ index: 0, delta, ...extra }] })}\n\n`);
   const usage = (prompt, completion) => res.write(`data: ${JSON.stringify({ id: `c${n}`, object: "chat.completion.chunk", created: 1, model: "m1", choices: [], usage: { prompt_tokens: prompt, completion_tokens: completion, total_tokens: prompt + completion } })}\n\n`);
   n++;
-  if (lastUserText.includes("[[slow]]")) {
+  if (textOf(newestUser).includes("[[slow]]")) {
     let gone = false;
     res.on("close", () => (gone = true));
     for (let i = 0; i < 60 && !gone; i++) {

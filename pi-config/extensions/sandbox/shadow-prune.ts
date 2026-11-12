@@ -117,8 +117,18 @@ export const trashDir = (agentDir: string) => join(agentDir, "sova", "sandbox", 
 export const stampPath = (agentDir: string) => join(agentDir, "sova", "sandbox", "shadow-prune.json");
 export const lockPath = (agentDir: string) => join(agentDir, "sova", "sandbox", "shadow-prune.lock");
 
-/** The shadow dirs whose every entry is a tool cache (backend.ts names them home-<path>). */
-const ALL_TOOL_ROOTS = new Set(["home-.npm", "home-.m2"]);
+/**
+ * The shadow dirs whose every entry is a tool cache (backend.ts names them home-<path>): npm's and
+ * Maven's, and the private copies of mise's and pnpm's own state (the platforms' `privateState`).
+ */
+const ALL_TOOL_ROOTS = new Set([
+	"home-.npm",
+	"home-.m2",
+	"home-.local%2Fstate%2Fmise",
+	"home-.local%2Fstate%2Fpnpm",
+	"home-.local%2Fshare%2Fpnpm%2Fstore",
+	"home-.local%2Fshare%2Fpnpm%2Fpackage-manager-store",
+]);
 const CACHE_ROOT = "home-.cache";
 
 export type Tier = "scratch" | "tool";

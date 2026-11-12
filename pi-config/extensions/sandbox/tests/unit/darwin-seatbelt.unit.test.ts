@@ -161,6 +161,14 @@ test("shadowed: the host path is read-only, its source writable, and the tool va
 	assert.deepEqual(shadowEnv(plan.shadowed, {}, root), { npm_config_cache: source });
 });
 
+test("shadowEnv: mise's private state copy is MISE_STATE_DIR, whatever the host's MISE_STATE_DIR or XDG_STATE_HOME says", () => {
+	const home = "/Users/u";
+	const mise = { path: join(home, ".local", "state", "mise"), source: "/a/shadow/mise" };
+	assert.deepEqual(shadowEnv([mise], {}, home), { MISE_STATE_DIR: "/a/shadow/mise" });
+	assert.deepEqual(shadowEnv([mise], { MISE_STATE_DIR: "/elsewhere", XDG_STATE_HOME: "/x" }, home), { MISE_STATE_DIR: "/a/shadow/mise" });
+	assert.ok(new DarwinSeatbeltBackend().platformDefaults({ home, agentDir: "/a" }).privateState?.includes(mise.path));
+});
+
 test("writeProfile: a 0600 file beside the session tmp, named by its hash; a tampered copy is replaced", (t) => {
 	const { tmpDir } = setup(t);
 	const file = writeProfile(tmpDir, "(version 1)\n(deny default)\n");

@@ -627,3 +627,19 @@ test("adopt reattaches a running candidate as the candidate, beside the share tu
   assert.deepEqual([c.state, c.mode, c.origin], ["up", "account", "https://new.example.com"]);
   assert.equal(w.starts.length, 0);
 });
+
+test("adopt stops a candidate whose setup is no longer pending (no orphan cloudflared); a pending one starts again on demand", async () => {
+  const w = world({ candidate });
+  const share = recorded(w, { host: "kept.trycloudflare.com", connectorId: "c-kept" });
+  writeTunnels({ share, candidate: { ...share, mode: "account", unit: CAND_UNIT, metricsPort: 45001, origin: "https://new.example.com", connectorId: "c-cand" } }, tunnelsFile(dir));
+  w.unitState.set(CAND_UNIT, "active");
+  w.state.candidateWanted = false;
+  await w.m.adopt();
+  assert.deepEqual(w.stops, [CAND_UNIT]);
+  assert.equal(w.m.status(CANDIDATE).state, "stopped");
+  assert.deepEqual(Object.keys(JSON.parse(readFileSync(tunnelsFile(dir), "utf8")).tunnels), ["share"]);
+  assert.equal(w.m.status(SHARE).state, "up", "the share tunnel is untouched");
+  w.state.candidateWanted = true;
+  w.state.ingress = "http://127.0.0.1:4999"; // the share listener's recorded port, which it binds again
+  assert.equal((await up(w, CANDIDATE)).state, "up", "Verify starts it again");
+});

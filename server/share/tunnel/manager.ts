@@ -649,6 +649,11 @@ export class TunnelManager {
         .map((e) =>
           this.serial(e, async () => {
             const rec = e.rec!;
+            // A candidate whose setup is no longer pending: never left running across a restart.
+            if (e.key.kind === "candidate" && !this.wanted(e.key)) {
+              await this.stopUnit(e, "no candidate pending");
+              return void this.settle(e, "stopped", undefined);
+            }
             const exit = this.readExit(e);
             if (exit && exit.at + 1000 >= rec.startedAt) return this.ended(e, exit, "adopt");
             const look = await this.look(rec);

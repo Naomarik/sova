@@ -76,6 +76,7 @@ import { VIS_CHECK_TOOL, visCheckExtension, type VisCheckHost } from "./vis-chec
 import { MEMORY_COMPACTION_REFUSAL, memoryExtension, type MemoryHost } from "./harness/pi/memory";
 import { shellModelExtension } from "./harness/pi/shell";
 import { deeperContextExtension } from "./harness/pi/deeper-context";
+import { inProjectHere, skillDescentAllowed } from "./skill-descent";
 import { backgroundJobsExtension } from "./harness/pi/background-jobs";
 import { mcpExtension } from "./harness/pi/mcp";
 import { nothingDeclared } from "./mcp/folder";
@@ -303,15 +304,18 @@ export function alignLaunchOf(state: Pick<SessionState, "branch" | "file">): Ali
 /** The extensions every ordinary session loads beyond pi-config's: resource monitoring, inherited
     fork-cache affinity and the macOS kill guard (server/shell-guard.ts). None changes prompt sections or tool declarations by loading. A caller that passes its own list for an ordinary session
     starts from this one; the special loadouts keep exactly their own (none has bash). */
-export const DEFAULT_EXTENSION_FACTORIES = [
+export const defaultExtensionFactories = (inProject: boolean) => [
   { name: "sova-resource-monitor", factory: monitorExtension },
   { name: "sova-fork-cache", factory: forkCacheExtension },
   SHELL_GUARD_FACTORY,
-  // Subfolder AGENTS.md / CLAUDE.md files, attached to the read/edit/write result that first reaches them.
-  deeperContextExtension(),
+  // Subfolder AGENTS.md / CLAUDE.md files, attached to the read/edit/write result that first reaches them, where the
+  // chat looks below its folder (server/skill-descent.ts: `inProject`, its folder is a project's).
+  deeperContextExtension({ inProject }),
   // What a bash call leaves running is kept as a background job (§app.background-jobs/keeping).
   backgroundJobsExtension(),
 ];
+/** The default extensions of a chat in no project (the provider's warm-up has no chat). */
+export const DEFAULT_EXTENSION_FACTORIES = defaultExtensionFactories(false);
 
 const mcpListHere: NonNullable<ChatHosts["mcpList"]> = async (ask) => (await import("./mcp/chat")).chatListFor(ask);
 /** The folder decisions the server sent with a chat process's open, by path (its builds use these). */
@@ -320,6 +324,19 @@ export function setFolderRule(path: string, rule: FolderRule | null): void {
   if (rule) presetFolderRule.set(path, rule);
   else presetFolderRule.delete(path);
 }
+/** Whether each chat's folder belongs to a project added to Sova, as the server said with its open (every kind of
+    chat in a process of its own), by path. */
+const presetProjectFact = new Map<string, boolean>();
+export function setProjectFact(path: string, inProject: boolean | null): void {
+  if (inProject === null) presetProjectFact.delete(path);
+  else presetProjectFact.set(path, inProject);
+}
+/** The same as each chat's latest build took it, by path: its / menu reads it. */
+const builtProjectFact = new Map<string, boolean>();
+/** A build's: the server's word from the open, else read here (a chat this server hosts itself). */
+const projectFactFor = async (path: string, cwd: string): Promise<boolean> => presetProjectFact.get(path) ?? (await inProjectHere(cwd));
+/** Whether the chat of `path` in `cwd` looks below its folder (server/skill-descent.ts), by its latest build's fact. */
+const descendsHere = (path: string, cwd: string): boolean => skillDescentAllowed(cwd, { home: homedir(), inProject: builtProjectFact.get(path) ?? false });
 const folderRuleHere: NonNullable<ChatHosts["folderRule"]> = async (cwd) => (await import("./projects/folder-rule")).folderRuleForCwd(cwd);
 /** The folder decisions for a new chat's build; none decided when they can't be read. */
 const folderRuleFor = async (cwd: string): Promise<FolderRule> => {
@@ -914,10 +931,10 @@ const isLookbookKind = (kind: WorkerSpec["kind"]): boolean => kind === "design" 
  * instance note, as an ordinary chat does (§app.project-services/callers), served when the server declared it, else
  * in this process; and the spec look-up, a team's monitor excepted (§app.spec-lookup/spec-tool): it does no project work.
  */
-export function workerExtensionFactories(w: Pick<WorkerSpec, "kind"> & { builtins?: string[] | null } & Partial<Pick<WorkerSpec, "mcp" | "parent" | "env" | "flags">>, path: string) {
+export function workerExtensionFactories(w: Pick<WorkerSpec, "kind"> & { builtins?: string[] | null } & Partial<Pick<WorkerSpec, "mcp" | "parent" | "env" | "flags">>, path: string, inProject = false) {
   // Subfolder instruction files load for every kind whose loadout has a file tool (server/deeper-context.ts).
   // A subfolder's skills too, for one that can also read a skill's file (§chat.subfolder-skills/offering).
-  const files = !w.builtins || w.builtins.some((t) => LOADING_TOOLS.has(t)) ? [deeperContextExtension({ skills: !w.builtins || w.builtins.includes("read") || w.builtins.includes("bash") })] : [];
+  const files = !w.builtins || w.builtins.some((t) => LOADING_TOOLS.has(t)) ? [deeperContextExtension({ skills: !w.builtins || w.builtins.includes("read") || w.builtins.includes("bash"), inProject })] : [];
   // A design session or coordinator has only the tools the server serves it: every one it was declared.
   if (isLookbookKind(w.kind) && servedDecls) return [SHELL_GUARD_FACTORY, servedToolsExtension(`sova-${w.kind}`, servedSpecs(path, () => true))];
   // A hidden chat keeps no job: nothing would deliver its card or stop it.
@@ -945,7 +962,7 @@ export function workerExtensionFactories(w: Pick<WorkerSpec, "kind"> & { builtin
  * flags; the built-ins outside its list excluded (extension tools never filtered); its appended
  * prompt; its model and thinking as a fresh session takes them. Nothing of an ordinary chat but the kill guard and, for a worker or team member, project_verbs.
  */
-export function workerBuild(w: WorkerSpec, path: string): PiBuild {
+export function workerBuild(w: WorkerSpec, path: string, inProject = false): PiBuild {
   const own = workerLoadout(w);
   return {
     loader: {
@@ -957,7 +974,7 @@ export function workerBuild(w: WorkerSpec, path: string): PiBuild {
       // start (§chat.mode-menu/sova-runs-modes); otherwise as listed, but a worker file this copy no
       // longer has (listed by a parent on older code) is Sova's instead of failing the start.
       additionalExtensionPaths: [...workerModePaths(w.extensions, w.modes === "sova", modesEntries()), ...(process.env[JOB_CARDS_ENV] === "only" ? [JOB_CARDS_EXTENSION] : [])],
-      extensionFactories: workerExtensionFactories(w, path),
+      extensionFactories: workerExtensionFactories(w, path, inProject),
       ...(w.appendSystemPrompt ? { appendSystemPrompt: [w.appendSystemPrompt] } : {}),
       // Its parent chat's fixed list, context files and skills, stamped at its start (skillsStamped).
       ...(own ? entryOverrides(own) : {}),
@@ -1119,10 +1136,11 @@ function imageBlocks(content: unknown): QueueImage[] | undefined {
 }
 
 /** The runtime's commands as pi's rpc get_commands lists them, per runtime/cwd. */
-function listCommands(harness: HarnessSession): SlashCommand[] {
+function listCommands(harness: HarnessSession, subfolderSkills = true): SlashCommand[] {
   // Sova's own `compact` leads; an extension command of that name could never run from here,
   // because the text is intercepted before pi sees it (ChatSession.handle), so it is not offered.
-  return [COMPACT_COMMAND, ...harness.commands().filter((c) => !(c.source === "extension" && c.name === COMPACT_COMMAND.name))];
+  // A subfolder's skills only where the chat looks below its folder.
+  return [COMPACT_COMMAND, ...harness.commands({ subfolderSkills }).filter((c) => !(c.source === "extension" && c.name === COMPACT_COMMAND.name))];
 }
 
 /** A session's title as the list would say it: its name, else its first message, else "Untitled". A first
@@ -3381,7 +3399,7 @@ class ChatSession {
 
   commands(): ChatServerMessage {
     try {
-      return { type: "commands", commands: listCommands(this.harness) };
+      return { type: "commands", commands: listCommands(this.harness, descendsHere(this.path, this.harness.cwd)) };
     } catch (err) {
       console.error("[chat] listing commands failed", err);
       return { type: "commands", commands: [] };
@@ -5041,10 +5059,14 @@ async function openLocked(path: string, onDisposed: () => void, onStep: (step: s
   // reads it anew; a flip back before then cancels it. A worker's is its spec's, stamped at its start (workerBuild).
   const modes: { sova: boolean; applies: boolean; handle: ModesHandle | null } = { sova: !worker && sovaRunsModesSaved(), applies: false, handle: null };
   const build = async ({ cwd, read }: { cwd: string; read: OpenRead }): Promise<PiBuild> => {
+    // Whether its folder is a project's (server/skill-descent.ts), for every kind: read at each build, so a project
+    // added while the chat is open counts from its next reload.
+    const inProject = await projectFactFor(path, cwd);
+    builtProjectFact.set(path, inProject);
     // A worker chat (§app.chat-processes/workers) is its loadout and nothing else, its messages labelled
     // with the keys of the sends they came from (§app.chat-processes/worker-instructions).
     if (worker) {
-      const b = workerBuild(worker, path);
+      const b = workerBuild(worker, path, inProject);
       return { ...b, built: (session) => (sendKeys.watch(session), b.built?.(session)) };
     }
     if (!launch.recorded) {
@@ -5082,6 +5104,7 @@ async function openLocked(path: string, onDisposed: () => void, onStep: (step: s
               return h ? { ...h, drawingsOn: () => true, visToolsOn: () => false } : null;
             }),
           log: (line) => console.warn(`[chat] ${kind}: ${line}`),
+          inProject,
         })
       : null;
     // An ordinary chat gets the default extensions plus the vis feedback extension
@@ -5136,7 +5159,7 @@ async function openLocked(path: string, onDisposed: () => void, onStep: (step: s
             }
         : {
             extensionFactories: [
-              ...DEFAULT_EXTENSION_FACTORIES,
+              ...defaultExtensionFactories(inProject),
               // Its MCP servers (§app/mcp); a profile may remove them (§chat.profiles/capabilities).
               mcpExtension({
                 label: () => titleOf(read.branch()),

@@ -171,6 +171,10 @@ describe("a folder's lists", () => {
     assert.deepEqual(tidy, [[".agents/skills/tidy/SKILL.md", "project"], [join(agent, "skills", "tidy", "SKILL.md"), "user"]]);
     assert.ok(v.skills.some((s) => s.key === "svc/.agents/skills/deploy/SKILL.md" && s.source.kind === "subfolder"));
     assert.equal(v.counts.waiting, v.files.length + v.skills.length);
+    // The plain folder above it: its chats don't look below it (server/skill-descent.ts), so no subfolder's row is listed.
+    const plain = await A.folderApprovalsView(w.above, w.deps);
+    assert.deepEqual([...plain.files, ...plain.skills].filter((r) => r.source.kind === "subfolder"), []);
+    assert.ok(plain.files.some((f) => f.path === join(w.above, "AGENTS.md")), "its own file still is");
   });
 
   test("approving keeps the file's fingerprint; changed content is marked, still approved, and Re-approve clears the mark", async () => {

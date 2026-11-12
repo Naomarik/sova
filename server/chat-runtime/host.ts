@@ -48,6 +48,7 @@ import {
   setLinkToken,
   setOpeningChoice,
   setFolderRule,
+  setProjectFact,
   setRunRecorder,
   serverToolSpec,
   setServedTools,
@@ -449,6 +450,8 @@ export class ChatRuntimeHost {
     if (f.worker) setWorkerSpec(this.o.path, f.worker);
     if (f.opening) setOpeningChoice(this.o.path, f.opening);
     setFolderRule(this.o.path, f.folderRule ?? null);
+    // Every kind's: an older server that sends none says it is in no project (its folder's git and home alone decide).
+    setProjectFact(this.o.path, f.inProject ?? false);
     setServedTools(f.served);
     // A special loadout opens from the server's data, its kind answered over this socket.
     if (f.special) {

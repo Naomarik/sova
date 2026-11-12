@@ -284,9 +284,7 @@ function BriefShot(props: { asset: DesignAsset; run: DesignRunView; store: Desig
                 <li class="design-shot-swatch" title={c.role ? `${c.hex} · ${c.role}` : c.hex}>
                   <span class="design-shot-chip" style={{ background: c.hex }} aria-hidden="true" />
                   <code class="text-mono">{c.hex}</code>
-                  <Show when={c.role}>
-                    <span class="text-caption text-muted design-shot-role">{c.role}</span>
-                  </Show>
+                  <span class="visually-hidden">{c.role}</span>
                 </li>
               )}
             </For>

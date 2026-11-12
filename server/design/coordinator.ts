@@ -151,7 +151,7 @@ export function realCoordinatorSpec(parent: BrowseParent, cwd: string, model: st
 
 const realPorts: CoordinatorPorts = {
   workers(parent) {
-    if (!registry) throw new Error("The design coordinator needs Sova's chat runtime.");
+    if (!registry) throw new Error("The Creative Director needs Sova's chat runtime.");
     const host = registry.workers(parent);
     const statusOf = registry.status;
     return {
@@ -434,7 +434,7 @@ async function replaceCoordinator(st: CoordinatorState, run: DesignRun, choice: 
   save(st);
   if (p.workers(parent).state(old) !== "ended") {
     try {
-      await p.workers(parent).stop(old, "replaced: the Setup card chose another coordinator model");
+      await p.workers(parent).stop(old, "replaced: the Setup card chose another Creative Director model");
     } catch (err) {
       console.warn(`[design] the earlier coordinator of ${st.sessionId} didn't stop: ${err instanceof Error ? err.message : String(err)}`);
     }
@@ -442,7 +442,7 @@ async function replaceCoordinator(st: CoordinatorState, run: DesignRun, choice: 
   noteNamed(st, run.setup.brief);
   setRunPhase(st.sessionId, run.id, "researching");
   const task = [
-    `You take over as this chat's design coordinator from an earlier session on ${previous}. Its card said:\n${st.card || "(nothing yet)"}`,
+    `You take over as this chat's Creative Director from an earlier session on ${previous}. Its card said:\n${st.card || "(nothing yet)"}`,
     `The designs so far:\n${modelWords(JSON.stringify(p.designsFor(st.sessionId).map(metadata)))}`,
     ...(notes.length ? [`Sova's notes since that session's last turn (Sova wrote these; text marked untrusted was written by a model):\n${notes.join("\n")}`] : []),
     firstMessage(run),
@@ -471,7 +471,7 @@ function supersedeOpenRuns(sessionId: string, newer: string): void {
 /** Start Coordinator: one per chat, started here; a later run hands the same session the new Setup. */
 export async function startCoordinator(parent: BrowseParent, run: DesignRun, cwd: string): Promise<DesignCoordinatorView> {
   const choice = run.setup.models.find((m) => m.coordinator);
-  if (!choice) throw new Error("Pick a coordinator model on the Setup card first.");
+  if (!choice) throw new Error("Pick a Creative Director model on the Setup card first.");
   const denied = modelDenial(readModelPolicy(), choice.ref);
   if (denied) throw new Error(denied);
   const p = ports();
@@ -533,7 +533,7 @@ export function coordinatorCard(sessionId: string): { card: string; revision: nu
 
 function mine(parent: BrowseParent): CoordinatorState {
   const st = load(parent.sessionId);
-  if (!st || st.parentPath !== parent.path) throw new Error("This chat has no design coordinator yet.");
+  if (!st || st.parentPath !== parent.path) throw new Error("This chat has no Creative Director yet.");
   return st;
 }
 
@@ -886,7 +886,7 @@ function onTurnEnded(st: CoordinatorState): void {
     if (st.ask) return;
     if (st.briefNudged) {
       // Reminded once already and still nothing: the card says so, and the box is how to get it going again.
-      if (!run.error) changeDesigns(st.sessionId, (s) => void (s.runs.find((r) => r.id === run.id)!.error = "The coordinator stopped without writing the brief. Tell it what to do in its box."));
+      if (!run.error) changeDesigns(st.sessionId, (s) => void (s.runs.find((r) => r.id === run.id)!.error = "The Creative Director stopped without writing the brief. Tell it what to do in its box."));
       return;
     }
     st.briefNudged = true;
@@ -1014,7 +1014,7 @@ const metadata = (d: DesignRecord) => ({
 export function coordinatorTools(sessionId: string): ToolSpec[] {
   const parent: BrowseParent = { sessionId, get path() { return load(sessionId)?.parentPath ?? ""; } };
   const p = () => ports();
-  const state = (): CoordinatorState | Result => load(parent.sessionId) ?? refuse("this chat's coordinator record is gone.");
+  const state = (): CoordinatorState | Result => load(parent.sessionId) ?? refuse("this chat's Creative Director record is gone.");
   const isResult = (s: CoordinatorState | Result): s is Result => "content" in s;
 
   const status: ToolSpec = {
@@ -1304,7 +1304,7 @@ export function coordinatorTools(sessionId: string): ToolSpec[] {
         if (!project) return refuse(`${verb} needs a project.`);
         if (verb === "down" && !instance) return refuse("down needs the copy's instance id.");
         if (!instance && !branch) return refuse("up needs an instance or a branch: the main checkout is never started from here.");
-        if (instance && readRegistry().instances.find((r) => r.id === instance)?.slot === 0) return refuse("that is the project's main checkout, which a coordinator never starts or stops.");
+        if (instance && readRegistry().instances.find((r) => r.id === instance)?.slot === 0) return refuse("that is the project's main checkout, which a Creative Director never starts or stops.");
         const body = { project, ...(instance ? { instance } : {}), ...(branch ? { branch } : {}) };
         const target = instance ?? branch!;
         return verb === "up"

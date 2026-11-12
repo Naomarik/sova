@@ -750,7 +750,7 @@ export class ProjectEngine {
     // A chat's design coordinator: reads every project; starts or stops a copy only on the user's click.
     if (caller.kind === "design-coordinator") {
       if (verb === "status") return;
-      if (!caller.granted) throw new VerbFailure("needs-confirm", `${verb} of a copy asks the user first, on the coordinator's card`);
+      if (!caller.granted) throw new VerbFailure("needs-confirm", `${verb} of a copy asks the user first, on the Creative Director's card`);
       const checkout = run.rec?.checkout ?? (run as Run & { target?: string }).target ?? null;
       if (!checkout || checkout === run.project || run.rec?.slot === 0) throw new VerbFailure("forbidden", "a design coordinator never starts or stops the main checkout");
       if (sharedNamed) throw new VerbFailure("needs-confirm", confirmShared);

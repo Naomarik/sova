@@ -14,6 +14,7 @@ process.env.SOVA_AUTH = "off";
 
 const tok = await import("./account-token");
 const store = await import("../../public-links");
+const cand = await import("../candidate");
 
 after(() => rmSync(root, { recursive: true, force: true }));
 
@@ -23,6 +24,8 @@ const TOKEN = b64({ a: "acct".padEnd(32, "0"), t: "tunnel".padEnd(36, "1"), s: "
 
 function reset(): void {
   rmSync(tok.tokenFile(), { force: true });
+  tok.dropCandidateToken();
+  cand.dropCandidate();
   rmSync(store.publicLinksFile(), { force: true });
 }
 
@@ -117,9 +120,11 @@ describe("kept from chats and the Overseer", () => {
     const other = TOKEN.replace(/^.{8}/, "ZZZZZZZZ");
     mkdirSync(dirname(unitEnv), { recursive: true });
     writeFileSync(unitEnv, `TUNNEL_TOKEN='${other}'\n`);
+    const pasted = TOKEN.replace(/^.{8}/, "YYYYYYYY");
+    tok.writeAccountToken(pasted, tok.candidateTokenFile());
     const r = new Redactor(secretSources(join(root, "no-home"), process.env.PI_CODING_AGENT_DIR!), {}).refresh();
-    const out = r.redact(`a ${TOKEN} b ${other} c`);
-    assert.ok(!out.includes(TOKEN) && !out.includes(other), out);
+    const out = r.redact(`a ${TOKEN} b ${other} c ${pasted} d`);
+    assert.ok(!out.includes(TOKEN) && !out.includes(other) && !out.includes(pasted), out);
     rmSync(dirname(unitEnv), { recursive: true, force: true });
   });
 });
@@ -127,7 +132,7 @@ describe("kept from chats and the Overseer", () => {
 describe("the routes", () => {
   afterEach(reset);
   const calls: string[] = [];
-  const control = async () => ({ restart: async (why: string) => calls.push(`restart ${why}`), stop: async (why: string) => calls.push(`stop ${why}`) });
+  const control = async () => ({ stop: async (why: string) => calls.push(`stop ${why}`) });
   const app = () => {
     const a = new Hono();
     tok.mountAccountRoutes(a, control);
@@ -170,15 +175,51 @@ describe("the routes", () => {
     assert.equal(readFileSync(tok.tokenFile(), "utf8"), `TUNNEL_TOKEN='${TOKEN}'\n`);
   });
 
-  test("the running Account tunnel restarts on a new token and stops when it's removed; other routes leave tunnels alone", async () => {
+  test("a new token waits beside the saved one while Account runs or a setup waits for Verify; nothing restarts; Verify promotes it, Cancel drops it", async () => {
+    const OTHER = b64({ a: "acct".padEnd(32, "0"), t: "tunnel".padEnd(36, "2"), s: "b3RoZXI=".padEnd(44, "y") });
+    const account = { publicUrl: "https://share.example.com" };
+    for (const route of ["quick", "account"] as const)
+      for (const pending of [false, true]) {
+        reset();
+        calls.length = 0;
+        store.patchPublicLinks({ route, account });
+        tok.writeAccountToken(TOKEN);
+        const live = readFileSync(tok.tokenFile());
+        if (pending) cand.saveCandidate({ route: "account", account: { publicUrl: "https://new.example.com" } }, { version: 1, route: "account", account: { publicUrl: "https://new.example.com" } });
+        const r = await app().request(PATH, put({ token: OTHER }), PAGE);
+        assert.deepEqual(await r.json(), { hasToken: true });
+        const waits = route === "account" || pending;
+        const at = `${route} pending=${pending}`;
+        assert.equal(tok.readAccountToken(), waits ? TOKEN : OTHER, `${at}: the saved token`);
+        if (waits) assert.deepEqual(readFileSync(tok.tokenFile()), live, `${at}: the live token file is byte-identical`);
+        assert.equal(tok.readCandidateToken(), OTHER, `${at}: the candidate runs on the new one`);
+        assert.equal(tok.hasCandidateToken(), waits, at);
+        assert.equal(tok.accountTunnel()?.token ?? null, route === "account" ? (waits ? TOKEN : OTHER) : null, `${at}: today's tunnel keeps its token`);
+        assert.deepEqual(calls, [], `${at}: nothing restarts`);
+        if (waits) {
+          assert.equal(statSync(tok.candidateTokenFile()).mode & 0o777, 0o600);
+          tok.dropCandidateToken();
+          assert.equal(tok.readAccountToken(), TOKEN, `${at}: Cancel keeps the saved one`);
+          assert.equal(tok.readCandidateToken(), TOKEN, `${at}: no candidate token: the saved one`);
+          await app().request(PATH, put({ token: OTHER }), PAGE);
+          tok.promoteCandidateToken();
+          assert.equal(tok.readAccountToken(), OTHER, `${at}: Verify promotes it`);
+          assert.equal(tok.hasCandidateToken(), false, at);
+        }
+      }
+  });
+
+  test("removing it drops both tokens and stops a running Account tunnel; other routes leave tunnels alone", async () => {
     for (const route of ["quick", "account"] as const) {
+      reset();
       calls.length = 0;
       store.patchPublicLinks({ route, account: { publicUrl: "https://share.example.com" } });
-      await app().request(PATH, put({ token: TOKEN }), PAGE);
+      tok.writeAccountToken(TOKEN);
+      tok.writeAccountToken(TOKEN, tok.candidateTokenFile());
       const d = await app().request(PATH, { method: "DELETE" }, PAGE);
       assert.deepEqual(await d.json(), { hasToken: false });
       assert.equal(tok.hasAccountToken(), false);
-      assert.deepEqual(calls, route === "account" ? ["restart token changed", "stop token removed"] : [], route);
+      assert.deepEqual(calls, route === "account" ? ["stop token removed"] : [], route);
     }
   });
 });

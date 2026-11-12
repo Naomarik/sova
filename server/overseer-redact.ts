@@ -53,6 +53,7 @@ export function secretSources(home = homedir(), agentDir = agentRoot()): SecretS
     { path: join(agentDir, "sova", "auth-token"), pick: textValue, text: true as const },
     // The Cloudflare Account tunnel's token (§mesh.tunnel/account), and each tunnel unit's environment file, which carries it.
     { path: join(agentDir, "sova", "tunnels", "account-token.env"), pick: tunnelTokenValue, text: true as const },
+    { path: join(agentDir, "sova", "tunnels", "account-token.candidate.env"), pick: tunnelTokenValue, text: true as const },
     { path: join(agentDir, "sova", "tunnels", "env"), pick: tunnelTokenValue, text: true as const, dir: true as const },
     // Sova's Web Push signing key (server/push-store.ts): the private half only; the public one is on the wire anyway.
     { path: join(home, ".pi", "agent", "sova", "secrets", "vapid.json"), pick: vapidPrivate },

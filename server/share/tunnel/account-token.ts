@@ -5,16 +5,18 @@ import { bodyLimit } from "hono/body-limit";
 import { localRequest } from "../../mesh/proxy";
 import { yourClickRefusal } from "../../page-only";
 import { readPublicLinks } from "../../public-links";
+import { readCandidate } from "../candidate";
 import { envFileText } from "../../project-services/drivers";
 import { stateRoot } from "../../state-root";
-import { configureTunnels, restartTunnel, stopTunnel } from "./manager";
+import { configureTunnels, stopTunnel } from "./manager";
 
 /**
  * Cloudflare Account's connector token (§mesh.tunnel/account): the token the Cloudflare dashboard shows for a
  * tunnel the user made there, pasted in Settings → Public links. Sova runs that tunnel from it.
  *
  * The token is a credential that runs the tunnel from anywhere. It lives only here, in
- * `<stateRoot>/tunnels/account-token.env` (dir 0700, file 0600, one `TUNNEL_TOKEN=` line), and reaches
+ * `<stateRoot>/tunnels/account-token.env` (dir 0700, file 0600, one `TUNNEL_TOKEN=` line; a new one pasted while
+ * Account runs or a setup waits for Verify sits in `account-token.candidate.env` until Verify promotes it), and reaches
  * cloudflared only through the unit's own 0600 environment file (the tunnel manager's `account` dep). It is
  * never in public-links.json, a command line, a chat's context, a setup chat's brief, an answer or a log line.
  */
@@ -24,6 +26,9 @@ const VAR = "TUNNEL_TOKEN";
 const MAX_PASTE = 4096;
 
 export const tokenFile = (): string => join(stateRoot(), "tunnels", "account-token.env");
+/** A token pasted while a working Account tunnel runs, or while a new setup waits for its Verify: kept apart, so
+    today's tunnel keeps its token until Verify promotes the new one (§mesh.public/where-links-open). */
+export const candidateTokenFile = (): string => join(stateRoot(), "tunnels", "account-token.candidate.env");
 
 /** The refusal of a paste that isn't the dashboard token's shape (§design.copy-deck/where-links-open). */
 export const NOT_A_TOKEN = "That isn't a Cloudflare tunnel token.";
@@ -55,10 +60,15 @@ export function validAccountToken(raw: unknown): { ok: true; token: string } | {
 }
 
 /** The saved token, or null when none is saved or the file holds no token. Never logged. */
-export function readAccountToken(): string | null {
+export const readAccountToken = (): string | null => tokenIn(tokenFile());
+
+/** The token a candidate Account setup runs from: one pasted for it, else the saved one. */
+export const readCandidateToken = (): string | null => tokenIn(candidateTokenFile()) ?? readAccountToken();
+
+function tokenIn(path: string): string | null {
   let text: string;
   try {
-    text = readFileSync(tokenFile(), "utf8");
+    text = readFileSync(path, "utf8");
   } catch {
     return null;
   }
@@ -67,11 +77,14 @@ export function readAccountToken(): string | null {
   return v.ok ? v.token : null;
 }
 
-export const hasAccountToken = (): boolean => readAccountToken() !== null;
+/** A token is saved, or one waits as a candidate's. */
+export const hasAccountToken = (): boolean => readAccountToken() !== null || tokenIn(candidateTokenFile()) !== null;
+
+/** A token was pasted that waits for a Verify (today's tunnel still runs on the saved one). */
+export const hasCandidateToken = (): boolean => tokenIn(candidateTokenFile()) !== null;
 
 /** Saves a token `validAccountToken` passed: 0600 from its first byte, then renamed over the old one. */
-export function writeAccountToken(token: string): void {
-  const file = tokenFile();
+export function writeAccountToken(token: string, file = tokenFile()): void {
   mkdirSync(dirname(file), { recursive: true, mode: 0o700 });
   chmodSync(dirname(file), 0o700);
   const tmp = `${file}.${process.pid}.tmp`;
@@ -82,6 +95,18 @@ export function writeAccountToken(token: string): void {
 
 export function deleteAccountToken(): void {
   rmSync(tokenFile(), { force: true });
+  dropCandidateToken();
+}
+
+/** The candidate's token becomes the saved one (at the Verify that promotes the candidate); no-op when none waits. */
+export function promoteCandidateToken(): void {
+  if (tokenIn(candidateTokenFile()) === null) return dropCandidateToken();
+  renameSync(candidateTokenFile(), tokenFile());
+}
+
+/** The candidate's token is dropped (Cancel, or a route chosen outright). */
+export function dropCandidateToken(): void {
+  rmSync(candidateTokenFile(), { force: true });
 }
 
 /**
@@ -95,10 +120,9 @@ export function accountTunnel(): { token: string; publicUrl: string } | null {
   return token ? { token, publicUrl: file.account.publicUrl } : null;
 }
 
-/** What the routes do to a running Account tunnel when the token changes (the tunnel manager; tests pass their own). */
+/** What the routes do to a running Account tunnel when its token is removed (the tunnel manager; tests pass their
+    own). A new token never restarts it: it waits as the candidate's until Verify (share-wiring's promotion). */
 export interface AccountTunnelControl {
-  /** Stop and start the share tunnel again: its unit's environment file is written only at a start. */
-  restart(why: string): Promise<unknown>;
   stop(why: string): Promise<unknown>;
 }
 
@@ -112,7 +136,7 @@ const NO_STORE = { "Cache-Control": "no-store" };
  * page (§app.access/your-click). The answer says only whether a token is saved.
  */
 const SHARE = { kind: "share" } as const;
-const MANAGER: AccountTunnelControl = { restart: (why) => restartTunnel(SHARE, why), stop: (why) => stopTunnel(SHARE, why) };
+const MANAGER: AccountTunnelControl = { stop: (why) => stopTunnel(SHARE, why) };
 
 /** Also hands the tunnel manager its `account` dep, once, as the routes mount at server start. */
 export function mountAccountRoutes(app: Hono, control: () => Promise<AccountTunnelControl> = async () => MANAGER): void {
@@ -124,8 +148,10 @@ export function mountAccountRoutes(app: Hono, control: () => Promise<AccountTunn
     const body = (await c.req.json().catch(() => undefined)) as { token?: unknown } | undefined;
     const v = validAccountToken(body?.token);
     if (!v.ok) return c.json({ error: v.error }, 400, NO_STORE);
-    writeAccountToken(v.token);
-    if (readPublicLinks().route === "account") await (await control()).restart("token changed").catch((err) => console.warn(`[tunnel] account tunnel restart failed: ${err instanceof Error ? err.message : String(err)}`));
+    // A working Account tunnel, or a setup waiting for its Verify: the new token waits beside the saved one and
+    // nothing restarts; Verify promotes it. Otherwise nothing runs on a token yet, and it is simply saved.
+    if (readPublicLinks().route === "account" || readCandidate() !== null) writeAccountToken(v.token, candidateTokenFile());
+    else writeAccountToken(v.token);
     return c.json({ hasToken: true }, 200, NO_STORE);
   });
 

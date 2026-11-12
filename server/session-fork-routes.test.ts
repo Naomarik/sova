@@ -5,15 +5,14 @@
 import assert from "node:assert/strict";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { dirname, join } from "node:path";
 import { after, before, describe, test } from "node:test";
 import { piSession } from "./harness/pi/testing/handle";
 
 const dir = mkdtempSync(join(tmpdir(), "sova-fork-routes-"));
 process.env.PI_CODING_AGENT_DIR = dir;
-// The mode extension owns the helper pick and the pinned modes; two providers, so a default can name a model a fresh chat isn't on.
-writeFileSync(join(dir, "settings.json"), JSON.stringify({ extensions: [resolve(dirname(fileURLToPath(import.meta.url)), "../pi-config/extensions/mode")] }));
+// Sova's mode engine (in every chat, no settings entry) owns the helper pick and the pinned modes; two providers, so a default can name a model a fresh chat isn't on.
+writeFileSync(join(dir, "settings.json"), JSON.stringify({}));
 writeFileSync(join(dir, "auth.json"), JSON.stringify({ anthropic: { type: "api_key", key: "test" }, openai: { type: "api_key", key: "test" } }));
 await import("./testing/in-process-chats"); // chats open in this process (the server hosts none)
 const { buildApp } = await import("./app");

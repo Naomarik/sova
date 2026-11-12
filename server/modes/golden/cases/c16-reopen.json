@@ -21,7 +21,8 @@
    "team_succeed",
    "team_list",
    "project_verbs",
-   "queue_push"
+   "queue_push",
+   "spec"
   ],
   "entries": [],
   "extensions": [
@@ -42,7 +43,8 @@
    "<inline:sova-topics>",
    "<inline:sova-tours>",
    "<inline:sova-create-settings>",
-   "<inline:sova-transcript-cards>"
+   "<inline:sova-transcript-cards>",
+   "<inline:sova-spec>"
   ]
  },
  {
@@ -68,6 +70,7 @@
    "team_list",
    "project_verbs",
    "queue_push",
+   "spec",
    "align"
   ],
   "entries": [
@@ -121,9 +124,9 @@
        "rules": "@898a2a6e09208de2",
        "docs": "@0f5fabf6c3c47c4c",
        "cwd": "<cwd>\n<ws:plain>\n</cwd>",
-       "mode": "@4227f5a8a6bce075"
+       "mode": "@70c1861b956d5153"
       },
-      "toolsAdded": "@18e7e181b06584f6"
+      "toolsAdded": "@b31b4d08c830858b"
      },
      {
       "role": "user",
@@ -157,6 +160,7 @@
    "team_list",
    "project_verbs",
    "queue_push",
+   "spec",
    "align"
   ],
   "entries": [
@@ -179,9 +183,9 @@
       "rules": "@898a2a6e09208de2",
       "docs": "@0f5fabf6c3c47c4c",
       "cwd": "<cwd>\n<ws:plain>\n</cwd>",
-      "mode": "@4227f5a8a6bce075"
+      "mode": "@70c1861b956d5153"
      },
-     "toolsAdded": "@80a91d9c0ac3cb27"
+     "toolsAdded": "@1c3142c6aaa4ae35"
     }
    }
   ],
@@ -213,6 +217,7 @@
    "team_list",
    "project_verbs",
    "queue_push",
+   "spec",
    "align",
    "vis_guide",
    "vis_check",
@@ -327,6 +332,7 @@
    "team_list",
    "project_verbs",
    "queue_push",
+   "spec",
    "align",
    "vis_guide",
    "vis_check",
@@ -395,7 +401,8 @@
    "project_verbs",
    "queue_push",
    "record_tour",
-   "show_tour"
+   "show_tour",
+   "spec"
   ],
   "entries": [],
   "extensions": [
@@ -416,7 +423,8 @@
    "<inline:sova-topics>",
    "<inline:sova-tours>",
    "<inline:sova-create-settings>",
-   "<inline:sova-transcript-cards>"
+   "<inline:sova-transcript-cards>",
+   "<inline:sova-spec>"
   ]
  },
  {
@@ -497,7 +505,8 @@
    "project_verbs",
    "queue_push",
    "record_tour",
-   "show_tour"
+   "show_tour",
+   "spec"
   ],
   "entries": [
    {
@@ -540,7 +549,8 @@
    "team_succeed",
    "team_list",
    "project_verbs",
-   "queue_push"
+   "queue_push",
+   "spec"
   ],
   "entries": [
    {
@@ -682,7 +692,8 @@
    "team_succeed",
    "team_list",
    "project_verbs",
-   "queue_push"
+   "queue_push",
+   "spec"
   ],
   "entries": [
    {

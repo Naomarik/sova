@@ -1,18 +1,18 @@
 // Sova's chat mode engine, pi's half (§chat.mode-menu/sova-runs-modes): the engine is harness-neutral
 // (server/modes/engine.ts); this file is where pi's events, entries, messages and tools meet it.
 //
-// The engine is loaded IN THE SLOT the pi-config `mode` extension had, never beside it: with the
-// Experimental switch "Sova runs chat modes" on, the loader's resolve() rewrite (own-code.ts) answers
-// the discovered `…/extensions/mode` with modes-entry.ts, and a worker's listed mode paths are rewritten
-// the same way (own-code.ts modesEntries, modeFileOf, workerModePaths). So the tools register in the
-// same order, the `mode` section keeps its place among the prompt's sections, and every hook chains where it did: what the model sees is the
-// extension's, byte for byte. With the switch off nothing is rewritten and the extension runs as before.
+// The engine is loaded IN THE SLOT the pi-config `mode` extension had, never beside it: the loader's
+// resolve() rewrite (own-code.ts ownExtensions) answers a discovered `…/extensions/mode` with
+// modes-entry.ts, always on, and adds it among the agent dir's extensions where a link would be found
+// when there is none; a worker's listed mode paths are rewritten the same way (own-code.ts modesEntries,
+// modeFileOf, workerModePaths). So the tools register in the same order, the `mode` section keeps its
+// place among the prompt's sections, and every hook chains where it did: what the model sees is the
+// extension's, byte for byte. The pi mode extension itself never loads in Sova.
 //
 // The tools are registered with the extension's own registrars (align-tool.ts, vis-guide-tool.ts,
 // create-guide-tool.ts): the same names, descriptions, schemas and renderers. Raw branch reads and entry
 // writes happen here only, through the extension's readers (state.ts, align.ts, spec-guard.ts).
 import { getAgentDir, type ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { join } from "node:path";
 import { foldAlignments } from "../../../pi-config/extensions/mode/align.ts";
 import { registerAlignTool } from "../../../pi-config/extensions/mode/align-tool.ts";
 import { registerCreateGuideTool } from "../../../pi-config/extensions/mode/create-guide-tool.ts";
@@ -29,6 +29,7 @@ import type { MinorMode } from "../../../pi-config/extensions/mode/minor.ts";
 import { ModeEngine, REVIEW_FLAG, VISUALS_FLAG, type ModeSource } from "../../modes/engine";
 import type { ModeCtx, ModePort } from "../../modes/port";
 import type { PiExtensionAPI } from "./extension-types";
+import { ownSpecCore } from "./own-code";
 
 /** The engine's handle on the runtime's bus, for the chat that hosts it (modesBridgeExtension). */
 export const MODES_ENGINE_EVENT = "sova:modes-engine";
@@ -114,6 +115,13 @@ export function withoutStaleNotes<M>(messages: M[], headFixed: boolean): M[] | u
   return kept.length === messages.length ? undefined : kept;
 }
 
+/** Where spec-mode.md's `$core` line resolves the trusted spec tools: SOVA_SPEC_CORE (a local chat's own copy of
+    Sova, set at its launch), else this copy's on the server's own agent dir (the server, its in-process and hidden
+    chats) and the agent dir's elsewhere (a worker on its worktree's own .agent): own-code.ts ownSpecCore. */
+export function engineSpecCore(agentDir: string, env: NodeJS.ProcessEnv = process.env): string {
+  return env.SOVA_SPEC_CORE || ownSpecCore(agentDir, env);
+}
+
 /** The engine for one runtime, wired to pi (the factory modes-entry.ts exports). */
 export function modesExtension(pi: PiExtensionAPI, options: ModesExtensionOptions = {}): ModesHandle {
   const agentDir = getAgentDir();
@@ -141,8 +149,7 @@ export function modesExtension(pi: PiExtensionAPI, options: ModesExtensionOption
   };
   const engine = new ModeEngine(port, {
     agentDir,
-    // Where spec-mode.md's `$core` line resolves the trusted spec tools (install.sh links them there).
-    specCore: () => join(agentDir, "extensions", "spec", "core"),
+    specCore: () => engineSpecCore(agentDir),
     ...(options.modes?.() ? { modes: options.modes()! } : {}),
   });
   const ctxOf = (ctx: unknown) => modeCtx(ctx as ExtensionContext, probe);

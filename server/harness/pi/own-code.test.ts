@@ -41,7 +41,7 @@ test("a Sova pi-config path, the checkout's or another copy's, re-rooted in the 
   assert.equal(ownCode(join(t, "elsewhere", "pi-config", "extensions", "mode", "index.ts"), o), null, "another checkout (a worktree's agent dir)");
 });
 
-test("resolve() patched: Sova extensions re-rooted, enabled flags and metadata kept, one the copy lacks left out; put back after", async () => {
+test("resolve() patched: Sova extensions re-rooted, enabled flags and metadata kept, one the copy lacks left out, the mode slot Sova's engine; put back after", async () => {
   const meta = { source: "local", scope: "user", origin: "top-level" };
   class FakePm {
     async resolve() {
@@ -60,7 +60,7 @@ test("resolve() patched: Sova extensions re-rooted, enabled flags and metadata k
   const unpatch = patchResolve(FakePm as never, o, (l) => lines.push(l));
   const out = (await new FakePm().resolve()) as Awaited<ReturnType<FakePm["resolve"]>>;
   assert.deepEqual(out.extensions, [
-    { path: mine("mode"), enabled: true, metadata: meta },
+    { path: join(own, "server", "harness", "pi", "modes-entry.ts"), enabled: true, metadata: meta },
     { path: mine("spec"), enabled: false, metadata: meta },
     { path: join(t, "pkg", "a.ts"), enabled: true, metadata: { ...meta, origin: "package" } },
   ]);
@@ -83,6 +83,6 @@ test("a worker's listed extensions mapped; one missing from its copy fails the b
 
 test("a mapped path still names its owner's command (ownedCommand matches the file under any root)", () => {
   const runner = (path: string) => ({ getCommand: () => ({ sourceInfo: { path } }) });
-  assert.ok(ownedCommand(runner(mine("mode")), "mode"));
+  assert.ok(ownedCommand(runner(mine("claude-code")), "claude-login"));
   assert.ok(ownedCommand(runner(join(own, "pi-config", "extensions", "subagents", "index.ts")), "agent-resume"));
 });

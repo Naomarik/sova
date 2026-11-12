@@ -2,13 +2,12 @@
 // runs at once (§chat.mode-menu/minor-toggle-keeps-prompt), so a new session's setup card lists them before
 // the first message (§chat.transcript/setup-card-tools): vis_guide (the mode extension's) and vis_check
 // (Sova's, synced by ChatSession.applyMode after both /mode handlers ran). A switch during a run waits for
-// it to settle. Real chats built by the chat manager with the real mode extension; the model is a script.
+// it to settle. Real chats built by the chat manager with Sova's mode engine; the model is a script.
 // A throwaway PI_CODING_AGENT_DIR; ~/.pi is never read or written.
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
 import { after, test } from "node:test";
 import type { ChatServerMessage } from "../shared/protocol";
 import { piSession } from "./harness/pi/testing/handle";
@@ -22,7 +21,7 @@ mkdirSync(sessionsDir, { recursive: true });
 mkdirSync(join(agentDir, "sessions", "live"), { recursive: true });
 const cwd = join(agentDir, "cwd");
 mkdirSync(cwd, { recursive: true });
-writeFileSync(join(agentDir, "settings.json"), JSON.stringify({ extensions: [resolve(dirname(fileURLToPath(import.meta.url)), "../pi-config/extensions/mode")] }));
+writeFileSync(join(agentDir, "settings.json"), JSON.stringify({}));
 
 await import("./testing/in-process-chats"); // chats open in this process (the server hosts none)
 const { acquireChat, disposeAllChats, disposeHeldChat } = await import("./chat-manager");

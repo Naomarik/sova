@@ -6,17 +6,15 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
 import { after, describe, test } from "node:test";
 import { scratchRoot } from "./test-scratch";
 
-const here = dirname(fileURLToPath(import.meta.url));
 const tmp = scratchRoot("sova-po-fast-");
 process.on("exit", () => rmSync(tmp, { recursive: true, force: true }));
 const agentDir = join(tmp, "agent");
 mkdirSync(join(agentDir, "sessions", "live"), { recursive: true });
-writeFileSync(join(agentDir, "settings.json"), JSON.stringify({ extensions: [resolve(here, "../pi-config/extensions/mode")] }));
+writeFileSync(join(agentDir, "settings.json"), JSON.stringify({}));
 process.env.PI_CODING_AGENT_DIR = agentDir;
 await import("./testing/in-process-chats");
 const { buildApp } = await import("./app");

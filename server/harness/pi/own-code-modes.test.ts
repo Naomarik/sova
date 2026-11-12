@@ -1,107 +1,107 @@
-// The modes owner in the loader (Settings → Experimental "Sova runs chat modes"): the mode extension's
-// slot taken by Sova's entry under withModesEntry, bound to the package manager for its life, and a
-// worker's listed mode files mapped in place.
+// Sova's mode engine in the loader (§chat.mode-menu/sova-runs-modes): the mode slot is recognised by its folder
+// (a `mode` folder in an `extensions` folder, by name or through a link, whatever it holds), the first discovered
+// one becomes Sova's entry in its own place, always on, any other is dropped, and with none the engine is added
+// where a link to it would be found; a worker's listed mode files map in place, whichever tree they lie in.
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { after, test } from "node:test";
-import { isModeExtension, modeFileOf, patchResolve, withModesEntry, workerModePaths } from "./own-code";
+import { isModeSlot, modeFileOf, patchResolve, workerModePaths } from "./own-code";
 
+const REPO = resolve(import.meta.dirname, "..", "..", "..");
+const REPO_MODE = join(REPO, "pi-config", "extensions", "mode");
 const t = realpathSync(mkdtempSync(join(tmpdir(), "own-code-modes-")));
 after(() => rmSync(t, { recursive: true, force: true }));
 const touch = (p: string) => {
   mkdirSync(join(p, ".."), { recursive: true });
   writeFileSync(p, "export default () => {};\n");
 };
-const live = join(t, "live");
-const ext = (name: string, file = "index.ts") => join(live, "pi-config", "extensions", name, file);
-touch(ext("mode"));
-touch(ext("mode", "spec-worker.ts"));
-touch(ext("mode", "project-tools-worker.ts"));
-touch(ext("spec"));
-touch(join(t, "other", "extensions", "mode", "index.ts")); // a "mode" outside any pi-config
-mkdirSync(join(t, "agent", "extensions"), { recursive: true });
-symlinkSync(join(live, "pi-config", "extensions", "mode"), join(t, "agent", "extensions", "mode"));
+// An older tree's mode folder that has no index.ts at all (what the pi mode extension ships doesn't count).
+const bare = join(t, "old", "pi-config", "extensions", "mode");
+mkdirSync(bare, { recursive: true });
+touch(join(t, "pkg", "a.ts"));
+touch(join(t, "elsewhere", "mode", "index.ts")); // a folder named mode outside any extensions folder
+touch(join(t, "agent", "extensions", "zeta.ts"));
+touch(join(t, "agent", "extensions", "alpha", "index.ts"));
+symlinkSync(REPO_MODE, join(t, "agent", "extensions", "mode"));
+mkdirSync(join(t, "tree", ".agent", "extensions"), { recursive: true });
+symlinkSync(bare, join(t, "tree", ".agent", "extensions", "mode"));
 const ENTRY = join(t, "sova", "server", "harness", "pi", "modes-entry.ts");
 const entries = { entry: ENTRY, specWorker: join(t, "sova", "spec-w.ts"), projectToolsWorker: join(t, "sova", "pt-w.ts") };
 
-test("the mode extension is recognised as a directory, its index.ts, or through the agent dir's link; nothing else is", () => {
-  assert.equal(isModeExtension(join(live, "pi-config", "extensions", "mode")), true);
-  assert.equal(isModeExtension(ext("mode")), true);
-  assert.equal(isModeExtension(join(t, "agent", "extensions", "mode")), true);
-  assert.equal(isModeExtension(join(t, "agent", "extensions", "mode", "index.ts")), true);
-  assert.equal(isModeExtension(ext("spec")), false);
-  assert.equal(isModeExtension(ext("mode", "spec-worker.ts")), false);
-  assert.equal(isModeExtension(join(t, "other", "extensions", "mode", "index.ts")), false, "not under pi-config");
-  assert.equal(modeFileOf(ext("mode", "spec-worker.ts")), "specWorker");
-  assert.equal(modeFileOf(ext("mode", "project-tools-worker.ts")), "projectToolsWorker");
+test("the mode slot is its folder: this repo's real one, its index.ts, a link to it, a folder with no index.ts; nothing else", () => {
+  for (const p of [REPO_MODE, join(REPO_MODE, "index.ts"), join(t, "agent", "extensions", "mode"), join(t, "agent", "extensions", "mode", "index.ts"), bare, join(t, "tree", ".agent", "extensions", "mode")])
+    assert.equal(isModeSlot(p), true, p);
+  for (const p of [join(REPO, "pi-config", "extensions", "spec"), join(REPO_MODE, "spec-worker.ts"), join(t, "elsewhere", "mode", "index.ts"), join(t, "agent", "extensions", "alpha", "index.ts")])
+    assert.equal(isModeSlot(p), false, p);
+  assert.equal(modeFileOf(join(REPO_MODE, "spec-worker.ts")), "specWorker");
+  assert.equal(modeFileOf(join(REPO_MODE, "project-tools-worker.ts")), "projectToolsWorker");
   assert.equal(modeFileOf(join(t, "agent", "extensions", "mode")), "entry");
-  assert.equal(modeFileOf(ext("spec")), null);
+  assert.equal(modeFileOf(join(bare, "spec-worker.ts")), "specWorker", "a worker file by its name, though the old tree lacks it");
+  assert.equal(modeFileOf(join(REPO, "pi-config", "extensions", "spec", "index.ts")), null);
 });
 
-function fakePm() {
-  const meta = { source: "local", scope: "user", origin: "top-level" };
-  return class FakePm {
+type R = { path: string; enabled: boolean; metadata: Record<string, unknown> };
+const auto = (path: string, enabled = true): R => ({ path, enabled, metadata: { source: "auto", scope: "user", origin: "top-level", baseDir: join(t, "agent") } });
+const listed = (path: string): R => ({ path, enabled: true, metadata: { source: "local", scope: "user", origin: "top-level" } });
+
+/** resolve() of a fake pi package manager on `agentDir` answering `found`, through Sova's rewrite. */
+async function resolved(found: R[], env: NodeJS.ProcessEnv = {}): Promise<R[]> {
+  class FakePm {
+    agentDir = join(t, "agent");
     async resolve() {
-      return {
-        extensions: [
-          { path: ext("spec"), enabled: true, metadata: meta },
-          { path: join(t, "agent", "extensions", "mode", "index.ts"), enabled: false, metadata: meta },
-          { path: join(t, "pkg", "a.ts"), enabled: true, metadata: meta },
-        ],
-      };
+      return { extensions: found.map((r) => ({ ...r })) };
     }
-  };
+  }
+  // The shipped extensions' injection is the loader's own test (own-code.test.ts); here only the mode slot.
+  const unpatch = patchResolve(FakePm as never, null, () => {}, { own: join(t, "sova"), entry: ENTRY, env: { PI_CODING_AGENT_DIR: join(t, "agent"), SOVA_OWN_EXTENSIONS: "linked", ...env } });
+  try {
+    return (await new FakePm().resolve()).extensions as R[];
+  } finally {
+    unpatch();
+  }
 }
 
-test("under withModesEntry the mode extension's slot becomes the entry, its flags kept; elsewhere nothing changes", async () => {
-  const Pm = fakePm();
-  const unpatch = patchResolve(Pm as never, null);
+test("the discovered mode slot becomes Sova's entry in its own place, always on (an /extensions off doesn't stop modes)", async () => {
+  for (const enabled of [true, false]) {
+    const out = await resolved([auto(join(t, "agent", "extensions", "alpha", "index.ts")), auto(join(t, "agent", "extensions", "mode", "index.ts"), enabled), auto(join(t, "agent", "extensions", "zeta.ts"))]);
+    assert.deepEqual(out.map((r) => r.path), [join(t, "agent", "extensions", "alpha", "index.ts"), ENTRY, join(t, "agent", "extensions", "zeta.ts")], "same slot, nothing added or dropped");
+    assert.equal(out[1]!.enabled, true, `on, though pi said ${enabled}`);
+  }
+});
+
+test("only one mode owner: a second mode slot (a listed copy, another tree's) is dropped, never loaded", async () => {
+  const out = await resolved([auto(join(t, "agent", "extensions", "mode", "index.ts")), listed(bare), listed(join(t, "pkg", "a.ts"))]);
+  assert.deepEqual(out.map((r) => r.path), [ENTRY, join(t, "pkg", "a.ts")]);
+});
+
+test("no mode slot at all: the engine is added among the agent dir's own extensions, where a link named mode would sit", async () => {
+  const out = await resolved([auto(join(t, "agent", "extensions", "alpha", "index.ts")), auto(join(t, "agent", "extensions", "zeta.ts")), listed(join(t, "pkg", "a.ts"))]);
+  assert.deepEqual(out.map((r) => r.path), [join(t, "agent", "extensions", "alpha", "index.ts"), ENTRY, join(t, "agent", "extensions", "zeta.ts"), join(t, "pkg", "a.ts")]);
+  assert.equal(out[1]!.enabled, true);
+  assert.deepEqual((await resolved([])).map((r) => r.path), [ENTRY], "an empty agent dir too");
+});
+
+test("a worktree-config process (another agent dir's state) gets Sova's engine in its tree's mode slot too", async () => {
+  const env = { SOVA_CHAT_STATE_ROOT: join(t, "tree", ".agent", "sova") };
+  class TreePm {
+    agentDir = join(t, "tree", ".agent");
+    async resolve() {
+      return { extensions: [auto(join(t, "tree", ".agent", "extensions", "mode"))] };
+    }
+  }
+  const unpatch = patchResolve(TreePm as never, null, () => {}, { own: join(t, "sova"), entry: ENTRY, env: { PI_CODING_AGENT_DIR: join(t, "tree", ".agent"), SOVA_OWN_EXTENSIONS: "linked", ...env } });
   try {
-    const sova = await withModesEntry(ENTRY, () => new Pm().resolve());
-    assert.deepEqual(sova.extensions.map((r) => r.path), [ext("spec"), ENTRY, join(t, "pkg", "a.ts")], "same slot, nothing added or dropped");
-    assert.equal(sova.extensions[1]!.enabled, false, "pi's enabled flag kept");
-    const off = await withModesEntry(null, () => new Pm().resolve());
-    assert.equal(off.extensions[1]!.path, join(t, "agent", "extensions", "mode", "index.ts"), "flag off: the extension");
-    const none = await new Pm().resolve();
-    assert.equal(none.extensions[1]!.path, join(t, "agent", "extensions", "mode", "index.ts"), "no scope: the extension");
+    assert.deepEqual((await new TreePm().resolve()).extensions.map((r) => r.path), [ENTRY]);
   } finally {
     unpatch();
   }
 });
 
-test("a package manager keeps the owner it was built under on a later resolve() outside the scope (a pi reload)", async () => {
-  const Pm = fakePm();
-  const unpatch = patchResolve(Pm as never, null);
-  try {
-    const sovaPm = new Pm();
-    const extPm = new Pm();
-    await withModesEntry(ENTRY, () => sovaPm.resolve());
-    await withModesEntry(null, () => extPm.resolve());
-    assert.equal((await sovaPm.resolve()).extensions[1]!.path, ENTRY);
-    assert.equal((await withModesEntry(null, () => sovaPm.resolve())).extensions[1]!.path, ENTRY, "never flips mid-life");
-    assert.equal((await withModesEntry(ENTRY, () => extPm.resolve())).extensions[1]!.path, join(t, "agent", "extensions", "mode", "index.ts"));
-  } finally {
-    unpatch();
-  }
-});
-
-test("a Sova-owned worker's mode files map in place, order kept; flags and other paths untouched", () => {
-  const list = [ext("spec"), join(t, "agent", "extensions", "mode"), ext("mode", "spec-worker.ts"), ext("mode", "project-tools-worker.ts"), "npm:x", join(t, "pkg", "a.ts")];
-  assert.deepEqual(workerModePaths(list, true, entries, null), [ext("spec"), entries.entry, entries.specWorker, entries.projectToolsWorker, "npm:x", join(t, "pkg", "a.ts")]);
-});
-
-test("a Sova-owned worker's mode slot maps even when the tree's mode extension lies outside any pi-config", () => {
-  const odd = join(t, "other", "extensions", "mode");
-  assert.deepEqual(workerModePaths([odd, join(odd, "index.ts")], true, entries, null), [entries.entry, entries.entry]);
-  assert.deepEqual(workerModePaths([odd], false, entries, null), [odd], "the extension's way: the tree's copy, as before");
-});
-
-test("a worker whose parent ran the extension keeps every mode file it lists, but one this copy lacks maps instead of failing", () => {
-  const list = [ext("mode"), ext("mode", "spec-worker.ts"), ext("mode", "project-tools-worker.ts")];
-  assert.deepEqual(workerModePaths(list, false, entries, null), list, "exactly today");
-  const gone = join(live, "pi-config", "extensions", "mode", "retired-spec-worker");
-  const retired = [join(gone, "..", "spec-worker-old.ts"), join(t, "gen", "pi-config", "extensions", "mode", "spec-worker.ts")];
-  assert.deepEqual(workerModePaths(retired, false, entries, null), [retired[0], entries.specWorker], "only a known worker file that is missing maps");
+test("a worker's mode files map in place, order kept, whichever tree they lie in; other paths untouched", () => {
+  const list = [join(REPO, "pi-config", "extensions", "spec"), join(t, "agent", "extensions", "mode"), join(REPO_MODE, "spec-worker.ts"), join(REPO_MODE, "project-tools-worker.ts"), "npm:x", join(t, "pkg", "a.ts")];
+  assert.deepEqual(workerModePaths(list, entries), [list[0], entries.entry, entries.specWorker, entries.projectToolsWorker, "npm:x", join(t, "pkg", "a.ts")]);
+  assert.deepEqual(workerModePaths([join(t, "tree", ".agent", "extensions", "mode"), join(bare, "index.ts"), join(bare, "spec-worker.ts")], entries), [entries.entry, entries.entry, entries.specWorker], "an old tree's mode files, though it lacks them");
+  assert.deepEqual(workerModePaths([join(t, "elsewhere", "mode", "index.ts")], entries), [join(t, "elsewhere", "mode", "index.ts")], "a folder named mode outside an extensions folder is no slot");
 });

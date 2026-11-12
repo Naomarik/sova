@@ -1,6 +1,6 @@
 // Run: pnpm exec tsx --test server/project-coding-runtime.test.ts
 // A project's coding sessions against REAL hosted runtimes, in a throwaway PI_CODING_AGENT_DIR whose
-// only extension is this repo's mode extension and whose default (mode.json) is the busy host's
+// only mode owner is Sova's engine (no settings entry) and whose default (mode.json) is the busy host's
 // delegate · align · spec. A git client project and a plain folder project, in the OS temp dir
 // (deleted after). No model request is made: no auth exists, so each first turn fails after the
 // session was created, its worktree cut and its mode set — which is what is checked.
@@ -20,7 +20,7 @@ const tmp = scratchRoot("sova-po-coding-");
 process.on("exit", () => rmSync(tmp, { recursive: true, force: true }));
 const agentDir = join(tmp, "agent");
 mkdirSync(join(agentDir, "sessions", "live"), { recursive: true });
-writeFileSync(join(agentDir, "settings.json"), JSON.stringify({ extensions: [resolve(here, "../pi-config/extensions/mode")] }));
+writeFileSync(join(agentDir, "settings.json"), JSON.stringify({}));
 const writeDefault = (mode: string, minorModes: string[]) => writeFileSync(join(agentDir, "mode.json"), JSON.stringify({ version: 1, mode, strict: false, minorModes }));
 writeDefault("delegate", ["align", "spec"]);
 process.env.PI_CODING_AGENT_DIR = agentDir;
@@ -65,6 +65,28 @@ const modeEntries = (path: string) =>
     .map((l) => JSON.parse(l))
     .filter((e) => e.type === "custom" && e.customType === "mode");
 type Chat = Awaited<ReturnType<typeof acquireChat>>;
+const { markOwned } = await import("./write-guard");
+/**
+ * Run `fn` with every chat refusing a mode switch, as a chat with no modes does (applyMode's "unsupported"). Sova's
+ * engine runs in every ordinary chat, whatever the pi folder holds, so a pi folder can no longer take a chat's modes
+ * away: the refusal is the chat's own answer, stood in for on ChatSession's prototype.
+ */
+async function withModesRefused<T>(fn: () => Promise<T>): Promise<T> {
+  const dir = join(agentDir, "sessions", "--refuse--");
+  mkdirSync(dir, { recursive: true });
+  const path = join(dir, `2026-11-12T00-00-00-000Z_01234567-89ab-7cde-8f0f-${String(Date.now()).padStart(12, "0").slice(-12)}.jsonl`);
+  writeFileSync(path, `${JSON.stringify({ type: "session", version: 3, id: "refuse", timestamp: "2026-11-12T00:00:00.000Z", cwd: tmp })}\n`);
+  markOwned(path);
+  const proto = Object.getPrototypeOf(await acquireChat(path)) as { applyMode: Chat["applyMode"] };
+  await disposeHeldChat(path, "test probe");
+  const real = proto.applyMode;
+  proto.applyMode = async () => "unsupported";
+  try {
+    return await fn();
+  } finally {
+    proto.applyMode = real;
+  }
+}
 const held = (chat: Chat) => ({ mode: chat.modeState.mode, minorModes: [...chat.modeState.minorModes] });
 const onBranch = (chat: Chat) => {
   const s = resolveChatMode(piSession(chat).sessionManager.getBranch());
@@ -361,20 +383,14 @@ describe("a project's coding sessions", async () => {
   });
 
   test("a mode that can't be set sends no prompt; the session stays, listed", async () => {
-    // No mode extension in the next runtime: nothing can take the mode.
-    const settingsFile = join(agentDir, "settings.json");
-    const had = readFileSync(settingsFile, "utf8");
-    writeFileSync(settingsFile, JSON.stringify({ extensions: [] }));
-    try {
+    await withModesRefused(async () => {
       const p = store.projectOverseerPaths(plain.id);
       const todo = addTodo({ text: "Never prompted" }, p.todos, p.ideas);
       const made = await po.codeItem(plain.id, { todoId: todo.id });
       assert.equal(made.notPrompted, "Started, but not prompted: its mode could not be set.");
       assert.ok(readBuilds(plain.id).some((r) => r.sessionId === made.sessionId), "listed and counted");
       assert.doesNotMatch(readFileSync(made.path, "utf8"), /"role":"user"/, "no prompt reached it");
-    } finally {
-      writeFileSync(settingsFile, had);
-    }
+    });
   });
 
   test("New Coding Session: a worktree, pinned, the commit paragraph as a note, nothing sent, no reason to look", async () => {
@@ -466,18 +482,13 @@ describe("a project's coding sessions", async () => {
   });
 
   test("New Coding Session whose mode can't be set: started and listed, and it says so", async () => {
-    const settingsFile = join(agentDir, "settings.json");
-    const had = readFileSync(settingsFile, "utf8");
-    writeFileSync(settingsFile, JSON.stringify({ extensions: [] }));
-    try {
+    await withModesRefused(async () => {
       const made = await po.startCoding(project.id, {});
       assert.equal(made.modeNotSet, "Started, but its mode could not be set. Set it from the chat's mode menu before you send.");
       const info = await po.projectOverseerInfo(project.id);
       assert.ok(info.coding.some((s) => s.sessionId === made.sessionId), "listed");
       assert.doesNotMatch(readFileSync(made.path, "utf8"), /sova-coding-worktree|"type":"message"/, "no note, nothing sent");
-    } finally {
-      writeFileSync(settingsFile, had);
-    }
+    });
   });
 
   test("a loadout that loads no extension is handed no extension flag (no \"Unknown option\" line)", async () => {
@@ -531,10 +542,7 @@ describe("a project's coding sessions", async () => {
   });
 
   test("F20: the statechart's own build whose mode can't be set is not prompted, and its Pipeline row says so", async () => {
-    const settingsFile = join(agentDir, "settings.json");
-    const had = readFileSync(settingsFile, "utf8");
-    writeFileSync(settingsFile, JSON.stringify({ extensions: [] }));
-    try {
+    await withModesRefused(async () => {
       await po.patchProjectOverseer(project.id, { autonomy: "L3", holdMin: 0 });
       const envelope = envelopeFor(org.id, project.id, { by: "overseer", attended: true });
       await hostOf(org.id).act(orgs.placementSid(org.id, project.id), "gap/file", { gapId: "g_build2", ideaId: "§gap/logout" }, envelope, { settle: true });
@@ -555,9 +563,7 @@ describe("a project's coding sessions", async () => {
       assert.doesNotMatch(readFileSync(row.path!, "utf8"), /"role":"user"/, "no prompt reached it");
       const b = pipelineInfo(org.id, project.id).rows.find((r) => r.gap === "§gap/logout")?.builds.find((x) => x.sessionId === row!.sessionId);
       assert.equal(b?.notPrompted, "Started, but not prompted: its mode could not be set.");
-    } finally {
-      writeFileSync(settingsFile, had);
-    }
+    });
   });
 
   test("F21: a build's turn start reaches its statechart: the Pipeline reads it working, and the at-once cap counts it", async () => {
@@ -638,7 +644,7 @@ describe("a project's coding sessions", async () => {
     const path = (out.details as { path: string }).path;
     const chat = await acquireChat(path);
     assert.equal(chat.special, "baton");
-    assert.equal(piSession(chat).extensionRunner.getCommand("mode"), undefined, "no mode extension");
+    assert.equal(piSession(chat).extensionRunner.getCommand("mode"), undefined, "no mode engine: a gathering chat loads no extension");
     assert.deepEqual(modeEntries(path), [], "no mode entry");
   });
 });

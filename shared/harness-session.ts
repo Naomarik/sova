@@ -244,7 +244,7 @@ export interface CompactHooks extends WriteGuardHooks {
 
 /** The extension commands Sova runs directly (never through a send, so no command text reaches the
     model), each named as the extension that owns it registers it. */
-export type CommandOwner = "mode" | "claude-login" | "sandbox" | "agent-resume";
+export type CommandOwner = "claude-login" | "sandbox" | "agent-resume";
 
 /** An extension's own command, as the session found it: run its handler with a context the session made. */
 export interface OwnedCommand {

@@ -281,18 +281,22 @@ worktree-confined, since nothing confines it.
 
 `useWorktreeConfig: true` (agent_spawn, pi or claude-code, cwd inside an active tracked worktree with a
 `.agent`) runs the worker on `<worktree>/.agent`: `PI_CODING_AGENT_DIR` set to it, its session
-in the parent's sessions directory for that cwd (so Sova lists and watches it like any worker), the
-tree's `extensions/mode` loaded by path with the flag `major normal` (and `minor spec` while the parent has spec on), and the
-project's files trusted as for every chat.
+in the parent's sessions directory for that cwd (so Sova lists and watches it like any worker), a mode
+slot with the flag `major normal` (and `minor spec` while the parent has spec on), and the
+project's files trusted as for every chat. With a worker host announced (the session runs under a host
+such as Sova, which runs every worker's modes itself), the slot names the tree's `extensions/mode` folder,
+or this copy's `mode` folder when the tree has none, known by the folder alone, and the host loads its own
+engine there; the host's `modes` field is no longer read. With no host (a plain pi terminal) the slot is
+the tree's mode extension by path, and a tree without one is refused.
 Discovery stays off and the model policy is the parent's. It is recorded in the launch spec, so
 `agent_resume` applies it again. A worker never loads any copy of `subagents` or `worktrees`
-through `extensions`. The tree's mode extension learns it runs in a worker from the worker marker
+through `extensions`. The worker's mode runner (the host's engine, or the tree's mode extension) learns it runs in a worker from the worker marker
 (`subagents:worker` on the child's bus, `mode/events.ts`): it ignores the parent's `mode`
 snapshots a `fork` copied and offers no spec writer.
 
 ## The parent's modes
 
-The mode extension announces what this session's workers get of its modes on the bus
+The session's mode runner (the mode extension, or a host's engine in its place) announces what this session's workers get of its modes on the bus
 (`mode:worker`, `mode/events.ts`; asked for at load with `mode:worker-discover`): the spec block
 plus a worker note while spec is on, and the saved copy of each project mode that is on and marked
 `workers: yes` (`projectModes`; see the mode extension's README), nothing otherwise. Every worker started from then on —

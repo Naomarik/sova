@@ -16,13 +16,11 @@ export type ApprovedFn = (root: string, id: string, toolsHash: string) => boolea
 const NO_LISTING: ProjectModeListing = { root: null, name: "", modes: [], problems: [] };
 
 /**
- * The project modes `cwd`'s checkout offers now; none for a remote cwd (`remote`) or a relative one. With
- * `personal` (the chat runs on Sova's modes, §chat.mode-menu/sova-runs-modes), the user's own modes are merged in,
- * yours winning on an id (§chat.mode-menu/personal-modes); without it, the listing is exactly the project's.
+ * The project modes `cwd`'s checkout offers now, with the user's own modes merged in, yours winning on an id
+ * (§chat.mode-menu/personal-modes); none for a remote cwd (`remote`) or a relative one.
  */
-export function listingFor(cwd: string | undefined, remote: boolean, personal = false): ProjectModeListing | MergedModeListing {
+export function listingFor(cwd: string | undefined, remote: boolean): ProjectModeListing | MergedModeListing {
   if (!cwd || remote) return NO_LISTING;
-  if (!personal) return discoverProjectModes(cwd);
   // The engine's own merge (registry.ts), so the menu and the chat read one listing. A chat with no checkout
   // offers no project modes, so none of yours either.
   const merged = registryListingFor(cwd);

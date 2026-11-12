@@ -453,6 +453,34 @@ check "$(yes_if [ -L "$ext/gamma" ])" "foreign extensions: the others are still 
 check "$(yes_if grep -q '"claudeCodeProvider":false' "$home/.pi/agent/sova/settings.json")" \
 	"foreign extensions: an existing Sova settings file is kept as it was"
 
+# 13b. A link into another copy of Sova (an older checkout or install: package.json names it sova, it has
+#     pi-config/install.sh) is pointed at this install, and the installer says so; a link of the same shape
+#     into a tree that is not Sova is kept, and its extension skipped.
+fresh_home other-sova-copy
+ext=$home/.pi/agent/extensions
+old=$home/webapps/sova
+mkdir -p "$ext" "$old/pi-config/extensions/alpha" "$old/pi-config/extensions/gamma"
+printf '{\n  "name": "sova",\n  "version": "0.9.0"\n}\n' > "$old/package.json"
+printf '#!/bin/sh\n' > "$old/pi-config/install.sh"
+printf 'old\n' > "$old/pi-config/extensions/alpha/index.ts"
+mkdir -p "$home/notsova/pi-config/extensions/gamma"
+printf '{"name":"other"}\n' > "$home/notsova/package.json"
+printf '#!/bin/sh\n' > "$home/notsova/pi-config/install.sh"
+ln -s "$old/pi-config/extensions/alpha" "$ext/alpha"
+ln -s "../../../webapps/sova/pi-config/extensions/beta.ts" "$ext/beta.ts"
+ln -s "$home/notsova/pi-config/extensions/gamma" "$ext/gamma"
+inst
+src=$home/.local/share/sova/pi-config/extensions
+check "$([ "$status" -eq 0 ] && echo true || echo false)" "other Sova copy: exits 0"
+check "$(yes_if [ "$(readlink "$ext/alpha")" = "$src/alpha" ])" "other Sova copy: its link now leads into this install"
+check "$(yes_if said "relinked $ext/alpha (was $old/pi-config/extensions/alpha, another Sova copy)")" \
+	"other Sova copy: says it relinked, and from where"
+check "$(yes_if [ "$(readlink "$ext/beta.ts")" = "$src/beta.ts" ])" "other Sova copy: a relative link (dangling there) is relinked too"
+check "$(yes_if [ "$(readlink "$ext/gamma")" = "$home/notsova/pi-config/extensions/gamma" ])" \
+	"other Sova copy: a link into a tree that is not Sova is kept"
+check "$(yes_if said 'skipped the gamma extension')" "other Sova copy: names the skipped one"
+check "$(yes_if [ "$(cat "$old/pi-config/extensions/alpha/index.ts")" = old ])" "other Sova copy: the other copy itself is untouched"
+
 # 14. --no-extensions links nothing and writes nothing in the agent dir.
 run_install no-extensions --no-extensions
 check "$([ "$status" -eq 0 ] && echo true || echo false)" "--no-extensions: exits 0"

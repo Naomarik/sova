@@ -58,6 +58,8 @@ import {
   ChatSupervisor,
   chatDriver,
   chatEnv,
+  SPEC_CORE_ENV,
+  specCoreOf,
   chooseChatHost,
   nextEpoch,
   supervisorConfig,
@@ -261,6 +263,9 @@ export class ChatHostRouter {
             SOVA_CHAT_BUILD: id,
             SOVA_CHAT_LIVE_ROOT: REPO,
             SOVA_CHAT_COPIES_ROOT: codeRoot(),
+            // The spec tools of the copy it runs on (spec-mode.md's `$core` line reads it first); a worker on its
+            // worktree's own .agent keeps that tree's tools, through its agent dir.
+            ...(w?.spec.agentDir ? {} : { [SPEC_CORE_ENV]: specCoreOf(code) }),
             // The project's Claude login for a chat in its folder, and the logins saved for other work
             // (§app.claude-logins/project-login); none on a host with no assignment.
             ...loginContextEnv(c.cwd),
@@ -330,8 +335,6 @@ export class ChatHostRouter {
       codeId: () => build,
       collect: () => this.gc?.collect() ?? Promise.resolve(),
       drain: (id) => {
-        // A reload asked for only because of "Sova runs chat modes", flipped back since: nothing reloads for nothing.
-        if (this.modesAsked.has(id) && !this.modesWaiting.has(id) && (this.builds.get(id) ?? this.build) === this.build) return Promise.resolve({ ok: false });
         return this.handleOf(id)?.drain("reload") ?? Promise.resolve({ ok: false });
       },
       open: async (id, rep, link) => {
@@ -419,7 +422,6 @@ export class ChatHostRouter {
         ...(w ? { worker: { parentPath: w.parent.path, parentSessionId: w.parent.sessionId, workerId: w.parent.workerId } } : {}),
       });
       if (w) this.workers.onState(h);
-      else this.modesFollow(h);
       // Every chat process's model calls, counted once here (§6 of the stage-4 design): its producer is
       // then folded, so its live record (an ordinary chat's) is never summed again. Never this
       // process's own counts (a chat host in this process, as in tests): they would count themselves.
@@ -547,60 +549,6 @@ export class ChatHostRouter {
   /** Every special chat this server runs in a process: its composer as its kind says it is now. */
   composersChanged(): void {
     for (const h of this.remotes.values()) if (!h.closed) this.pushSpecial(h);
-  }
-
-  /** "Sova runs chat modes" as last saved here (null: no save this server life). */
-  private modesWanted: boolean | null = null;
-  /** Chats whose mode owner differs from the saved switch, waiting for a quiet moment to reload. */
-  private readonly modesWaiting = new Set<string>();
-  /** Chats whose modes reload is queued with the rollout now, with the quiet stretch it was asked in. */
-  private readonly modesAsked = new Map<string, number>();
-  /** The quiet stretch a refused modes reload was asked in: asked again only in a new one. */
-  private readonly modesRefusedIn = new Map<string, number>();
-
-  /**
-   * A save changed "Sova runs chat modes" (§chat.mode-menu/sova-runs-modes): each open chat a mode owner
-   * applies to (an ordinary chat, the Overseer; never a worker, which keeps its start's owner) whose owner
-   * differs reloads at its next quiet moment, through the same two-phase rollout as "On older code": the
-   * replacement boots first, the old process closes only if quiet, so a chat never has both owners. The
-   * replacement's open reads the switch anew. A flip back before then cancels it.
-   */
-  modesSwitched(on: boolean): void {
-    this.modesWanted = on;
-    this.modesWaiting.clear();
-    this.modesRefusedIn.clear();
-    for (const h of this.remotes.values()) {
-      if (h.closed || this.workerPaths.has(h.path)) continue;
-      const owner = h.mirror.modesOwner;
-      if (owner === "sova" || owner === "extension") {
-        if ((owner === "sova") !== on) this.modesWaiting.add(h.mirror.sessionId);
-      }
-    }
-    for (const h of this.remotes.values()) if (this.modesWaiting.has(h.mirror.sessionId)) this.modesFollow(h);
-  }
-
-  /** At a state push: a chat waiting for its modes reload asks for it once quiet (workers in its process done). */
-  private modesFollow(h: RemoteChatHandle): void {
-    const m = h.mirror;
-    const id = m.sessionId;
-    if (!this.modesWaiting.has(id)) return;
-    if (h.closed || this.modesWanted === null || m.modesOwner == null || (m.modesOwner === "sova") === this.modesWanted) {
-      this.modesWaiting.delete(id);
-      return;
-    }
-    if (!m.quiet.quiet || m.quiet.workersWorking > 0 || this.modesAsked.has(id) || this.modesRefusedIn.get(id) === m.quiet.since) return;
-    const since = m.quiet.since;
-    this.modesAsked.set(id, since);
-    void this.rollout
-      .request(id, { auto: true })
-      .then(
-        (outcome) => {
-          if (outcome === "refused") this.modesRefusedIn.set(id, since);
-          else this.modesWaiting.delete(id);
-        },
-        () => this.modesWaiting.delete(id),
-      )
-      .finally(() => this.modesAsked.delete(id));
   }
 
   /** A chat process booted and opened its chat on its code: that copy is the last known good one. */
@@ -1104,7 +1052,6 @@ export function startChatHost(): void {
     },
     close: (path, message, opts) => (router ? router.close(path, message, opts) : Promise.resolve(false)),
     composersChanged: () => router?.composersChanged(),
-    modesSwitched: (on) => router?.modesSwitched(on),
     // The router itself first (as acquire), then that chat's take-back.
     takenBack: async (path) => {
       await Promise.race([boot, new Promise<void>((r) => setTimeout(r, TAKE_BACK_MAX_MS).unref?.())]);

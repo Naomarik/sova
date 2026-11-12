@@ -10,8 +10,6 @@ import { fileURLToPath } from "node:url";
 const HERE = dirname(fileURLToPath(import.meta.url));
 export const GOLDEN_DIR = join(HERE, "../golden/cases");
 export const RECORD = process.env.SOVA_MODES_GOLDEN === "record";
-/** Which owner runs the modes: "extension" (the pi-config mode extension, today) or "sova". */
-export type Owner = "extension" | "sova";
 
 // ── Recordings ────────────────────────────────────────────────────────────────────────────────────
 
@@ -85,23 +83,14 @@ export function firstDiff(a: unknown, b: unknown, path = "$"): string | null {
   return `${path}\n  recorded: ${show(b)}\n  now:      ${show(a)}`;
 }
 
-/** Two records compared byte for byte (their encodings), with the first difference named. */
-export function assertSameRecord(what: string, a: unknown, b: unknown): void {
-  const x = encode(a);
-  const y = encode(b);
-  if (x.text === y.text) return;
-  assert.fail(`${what} at ${firstDiff(decode(x.text, x.blobs), decode(y.text, y.blobs)) ?? "the encoding"}`);
-}
-
 /**
  * Compare a case's record with its recording, byte for byte: the case file's bytes, and through its
- * content-named references every big value's. In record mode (owner "extension" only) rewrite it.
+ * content-named references every big value's. In record mode rewrite it (from Sova's engine, the only owner).
  */
-export function matchRecording(name: string, record: unknown, owner: Owner, view?: (v: unknown) => unknown): void {
+export function matchRecording(name: string, record: unknown): void {
   const file = join(GOLDEN_DIR, `${name}.json`);
   const now = encode(record);
   if (RECORD) {
-    assert.equal(owner, "extension", "recordings are taken only from the mode extension (today's code)");
     mkdirSync(GOLDEN_DIR, { recursive: true });
     mkdirSync(STORE_DIR, { recursive: true });
     for (const [key, json] of now.blobs) {
@@ -111,19 +100,12 @@ export function matchRecording(name: string, record: unknown, owner: Owner, view
     writeFileSync(file, now.text);
     return;
   }
-  assert.ok(existsSync(file), `no recording ${file}: take it with SOVA_MODES_GOLDEN=record (flag off)`);
+  assert.ok(existsSync(file), `no recording ${file}: take it with SOVA_MODES_GOLDEN=record`);
   const was = readFileSync(file, "utf8");
-  if (view) {
-    // Compared through `view` (both sides): the bytes of the two views' encodings.
-    const a = encode(view(decode(now.text, now.blobs)));
-    const b = encode(view(decode(was)));
-    if (a.text === b.text) return;
-    assert.fail(`${name} (${owner}) differs from its recording at ${firstDiff(decode(a.text, a.blobs), decode(b.text, b.blobs)) ?? "the encoding"}`);
-  }
   const missing = [...now.blobs.keys()].filter((k) => !existsSync(join(STORE_DIR, `${k.slice(1)}.json`)));
   if (was === now.text && missing.length === 0) return;
   const d = firstDiff(decode(now.text, now.blobs), decode(was));
-  assert.fail(`${name} (${owner}) differs from its recording at ${d ?? `the stored values ${missing.join(", ")}`}`);
+  assert.fail(`${name} differs from its recording at ${d ?? `the stored values ${missing.join(", ")}`}`);
 }
 
 /** Every store file some recording refers to (a re-record leaves the old ones: prune with this). */

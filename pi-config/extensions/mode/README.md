@@ -1,5 +1,9 @@
 # Mode switcher for Pi
 
+> **Who loads this extension.** Only a plain pi terminal loads `index.ts`. Sova never does: its own engine
+> runs every Sova chat's modes, reading the texts, rules and settings files in this folder, whatever the pi
+> folder links to. What this README says about `/mode` and the extension's runtime is the terminal's.
+
 A **per-session** major mode: **normal** (pi as usual), **create** (below), or
 **delegate**, where the main agent becomes an orchestrator and routes work
 to background workers through the `subagents` extension (and `claude-code`, for
@@ -51,7 +55,7 @@ edit" is a prompt-level rule the orchestrator checks.
 | Sova's mode menu, or `/mode create` typed in a Sova chat | Picks **create**, per chat; a terminal refuses it (see **Create**) |
 | `/mode status` | Show this session's mode, the default for new sessions, the Delegate routing (and, in delegate, what each profile is actually using), the spec writer (and, with spec on, what it is actually using), strict flag, minor modes, state file |
 | `/mode default` | Save this session's mode, strict flag and minor modes as the default for new sessions (the only command here that writes `mode.json`) |
-| `/mode sync` | Change nothing and say nothing: keep this session's mode block in the prompt whoever starts the turn (see below). Sova runs it at every chat open |
+| `/mode sync` | Change nothing and say nothing: keep this session's mode block in the prompt whoever starts the turn (see below) |
 | `/mode strict on\|off` | Also remove `edit`/`write` from the orchestrator while in delegate or create (off by default) |
 | `/mode align [on\|off]` | Toggle (or set) the `align` minor mode |
 | `/mode spec [on\|off]` | Toggle (or set) the `spec` minor mode |
@@ -467,8 +471,8 @@ sections. Left alone, that patched the mode section out mid-turn and back in at
 the next user prompt, and the claude-code provider restarted its CLI (and
 re-sent the whole history) at every switch. So the extension also keeps the
 block in the base options: they are reachable only through a command context
-(`ctx.getSystemPromptOptions`), which `/mode` and `/align` adopt — Sova runs
-the quiet `/mode sync` at every chat open — and from then on every switch, every
+(`ctx.getSystemPromptOptions`), which `/mode` and `/align` adopt (the quiet
+`/mode sync` adopts it without switching anything) — and from then on every switch, every
 `before_agent_start` and every run start (`agent_start`, after pi may have
 rebuilt the base on a tool change) writes the current block there. A session
 driven only by the shortcut or the palette, with no `/mode` yet, keeps the old

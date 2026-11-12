@@ -4,7 +4,7 @@
 // For each §site.docs/* record at <root>, compares the text of the record and of each claim in its
 // `requires` at <base> with <root>, using the trusted spec tools. Reads only the spec. Exits 0.
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir, homedir } from "node:os";
 import { join, resolve } from "node:path";
 
@@ -15,9 +15,13 @@ const root = resolve(opt("--root") ?? ".");
 const json = args.includes("--json");
 if (!base) { console.error("usage: docs-drift.mjs --base <rev> [--root <dir>] [--json]"); process.exit(2); }
 
-let core = process.env.PI_CODING_AGENT_DIR || join(homedir(), ".pi/agent");
-if (core === "~" || core.startsWith("~/")) core = homedir() + core.slice(1);
-const tool = join(core, "extensions/spec/core/sova-spec.mjs");
+// The trusted tools as spec-mode.md's `$core` line finds them: SOVA_SPEC_CORE (Sova sets it to the running copy's
+// own in each of its chats and merge checks), else the agent dir's.
+let agent = process.env.PI_CODING_AGENT_DIR || join(homedir(), ".pi/agent");
+if (agent === "~" || agent.startsWith("~/")) agent = homedir() + agent.slice(1);
+const core = process.env.SOVA_SPEC_CORE || join(agent, "extensions/spec/core");
+const tool = join(core, "sova-spec.mjs");
+if (!existsSync(tool)) { console.error(`docs-drift: the spec tools aren't at ${core}`); process.exit(2); }
 
 const baseRoot = mkdtempSync(join(tmpdir(), "sova-release-base-spec-"));
 try {

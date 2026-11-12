@@ -136,6 +136,8 @@ function sessionNames(root) {
 }
 
 const WAKE_NUDGE = "wake-nudge.ts";
+// Sova reads the same marker: it adds every shipped extension an agent dir lacks, but never wake-nudge to
+// one that holds it (server/harness/pi/own-code.ts COPIED_SESSIONS_MARKER), so leaving the link out is enough.
 const copiedMarker = join(AGENT, "copied-sessions.json");
 let marked = null;
 try {

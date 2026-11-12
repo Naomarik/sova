@@ -1,23 +1,22 @@
 // The modes recorder (al_1 a2/a6): what a chat's or a worker's model sees of its modes, recorded from
 // real chats in this process (the chat manager, the real pi runtime, a scripted model), and compared byte
-// for byte with server/modes/golden/cases/<case>.json (store.fixture.ts; big values in golden/store/). The recordings were taken at master
-// 659c8dcd6, with the pi-config mode extension running every mode (today's behaviour); the same cases
-// run again with the switch off (the extension) and on (Sova's engine) and must give the same bytes.
+// for byte with server/modes/golden/cases/<case>.json (store.fixture.ts; big values in golden/store/). The recordings were taken
+// from Sova's engine at f425253eb (where they matched the pi-config mode extension's own recordings, a1's additions aside):
+// Sova's engine is the only mode owner, and the recordings are its yardstick, so no prompt or tool moves.
 //
 // What one recording holds, per step of a case: every model call the step made, as the messages pi sent
 // (system messages with their sections and tool lists in order, hidden notes, tool results), stored as a
 // diff against the call before (`keep` messages of it, then `add`); the chat's active tools after the
 // step, in order; the mode entries the step wrote to the session file (custom `mode`, `mode-head`,
 // `mode-project-snapshot`, custom messages `mode-note`, `align-state`, `align-nudge`, …); at a chat's
-// open, the extensions it loaded, in order, with the mode slot named `<mode-slot:…>` whichever owner
-// fills it. Machine paths and session ids are placeholders (<repo>, <agent>, <ws:…>, <sid:N>);
+// open, the extensions it loaded, in order, with the mode slot named `<mode-slot:…>`. Machine paths and session ids are placeholders (<repo>, <agent>, <ws:…>, <sid:N>);
 // timestamps, entry ids and durations are dropped.
 //
 // Two checks on every request and every chat, whatever the recording says:
 // - each mode block's heading (`# Mode: …`, `# Minor mode: …`, `# Project minor mode: …`) appears at most
 //   once in the system prompt in effect (assertOnce);
-// - the mode slot holds exactly one owner, the one the switch selected (assertOwner): the extension's
-//   file with the switch off, Sova's entry module with it on, never both and never the other.
+// - the mode slot holds exactly one owner, Sova's entry module (assertOwner): the pi-config mode extension's own
+//   file never loads, whatever the pi folder links.
 //
 // Importing this module sets PI_CODING_AGENT_DIR to a throwaway agent dir first: import it before
 // anything that computes its paths (the test files import it dynamically, first).
@@ -29,8 +28,6 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { piSession } from "../../harness/pi/testing/handle";
 import { ScriptedModel, scriptedModelsJson, type ScriptedStep } from "../../harness/pi/testing/scripted-model";
-import type { Owner } from "./store.fixture";
-export type { Owner };
 
 export const REPO = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
 
@@ -51,12 +48,15 @@ writeFileSync(join(agentDir, "models.json"), JSON.stringify(scriptedModelsJson()
 mkdirSync(join(agentDir, "extensions"), { recursive: true });
 symlinkSync(join(REPO, "pi-config/extensions/spec"), join(agentDir, "extensions/spec"));
 
-/** The extensions every recorded chat loads, as a user's settings list them (the mode extension, then subagents). */
+/**
+ * The extensions every recorded chat lists, as an installed pi folder has them: the mode folder, then subagents.
+ * The mode folder is the slot Sova's engine takes, in place, so tool and prompt-section order stay as recorded
+ * (a chat with no mode entry at all is server/sova-modes-owner.test.ts's).
+ */
 export const CHAT_EXTENSIONS = [join(REPO, "pi-config/extensions/mode"), join(REPO, "pi-config/extensions/subagents")];
-/** The settings list for chats started now (the same for either owner: the switch swaps the slot), then `more`. */
+/** The settings list for chats started now, then `more`. */
 export const chatExtensions = (more: string[] = []): string[] => [...CHAT_EXTENSIONS, ...more];
 const writeSettings = (more: string[] = [], extra: Record<string, unknown> = {}) => writeFileSync(join(agentDir, "settings.json"), JSON.stringify({ extensions: chatExtensions(more), ...extra }));
-let owner: Owner = "extension";
 writeSettings();
 
 await import("../../testing/in-process-chats"); // chats open in this process
@@ -65,22 +65,8 @@ const { markOwned } = await import("../../write-guard");
 
 export type Chat = Awaited<ReturnType<typeof cm.acquireChat>>;
 
-// ── The switch, and who fills the mode slot ───────────────────────────────────────────────────────
+// ── Who fills the mode slot ───────────────────────────────────────────────────────────────────────
 
-/** The Experimental key of "Sova runs chat modes" (cutover's reader: on unless stored `false`). */
-export const MODES_FLAG_KEY = "sovaModes";
-/** Sova's settings file in this agent dir (server/web-settings.ts reads it). */
-const WEB_SETTINGS = join(agentDir, "sova", "settings.json");
-/** Select the owner for chats and workers started from now on: the switch written as the user's page would store it. */
-export function setOwner(next: Owner): void {
-  const was = existsSync(WEB_SETTINGS) ? (JSON.parse(readFileSync(WEB_SETTINGS, "utf8")) as Record<string, unknown>) : { version: 1 };
-  const experimental = { ...((was.experimental as Record<string, unknown>) ?? {}), [MODES_FLAG_KEY]: next === "sova" };
-  mkdirSync(dirname(WEB_SETTINGS), { recursive: true });
-  writeFileSync(WEB_SETTINGS, JSON.stringify({ ...was, experimental }));
-  owner = next;
-  writeSettings();
-}
-export const ownerNow = (): Owner => owner;
 /** Run `fn` with chats started inside it also loading `more` (after the usual list), and pi settings `extra`. */
 export async function withExtensions<T>(more: string[], fn: () => Promise<T>, extra: Record<string, unknown> = {}): Promise<T> {
   writeSettings(more, extra);
@@ -91,17 +77,12 @@ export async function withExtensions<T>(more: string[], fn: () => Promise<T>, ex
   }
 }
 
-/** The files that fill a mode slot, by owner: the extension's own, and Sova's entry modules in their place. */
-const SLOT_FILES: Record<Owner, RegExp> = {
-  extension: /\/pi-config\/extensions\/mode(?:\/(index|spec-worker|project-tools-worker)\.ts)?$/,
-  sova: /\/server\/harness\/pi\/modes-(entry|spec-worker|project-tools-worker)\.ts$/,
-};
+/** Sova's entry modules, which fill the mode slots, and the pi-config mode extension's own files, which never load. */
+const ENGINE_FILES = /\/server\/harness\/pi\/modes-(entry|spec-worker|project-tools-worker)\.ts$/;
+const EXTENSION_FILES = /\/extensions\/mode(?:\/(?:index|spec-worker|project-tools-worker)\.ts)?$/;
 const slotName = (path: string): string | null => {
-  for (const re of Object.values(SLOT_FILES)) {
-    const m = re.exec(path);
-    if (m) return `<mode-slot:${m[1] === "entry" || m[1] === undefined ? "index" : m[1]}>`;
-  }
-  return null;
+  const m = ENGINE_FILES.exec(path);
+  return m ? `<mode-slot:${m[1] === "entry" ? "index" : m[1]}>` : null;
 };
 const MODES_BRIDGE = "<inline:sova-modes-bridge>";
 /** The extensions a chat's runtime loaded, in load order (pi's resource loader; inline factories have no path). */
@@ -111,32 +92,32 @@ function loadedExtensions(chat: Chat): string[] {
     .extensions.map((e) => (e as { resolvedPath?: string }).resolvedPath ?? e.path ?? "<inline>");
 }
 /**
- * The one-owner rule, per chat and worker: every mode slot it loaded is the selected owner's file, and
- * none is the other owner's. Returns the load order with each slot named, for the recording.
+ * The one-owner rule, per chat and worker: every mode slot it loaded is Sova's entry module, and no mode
+ * extension's own file loads (any copy's). Returns the load order with each slot named, for the recording.
  */
 export function assertOwner(chat: Chat, where: string, expectSlot: boolean): string[] {
   const paths = loadedExtensions(chat);
-  const other: Owner = owner === "sova" ? "extension" : "sova";
-  const mine = paths.filter((p) => SLOT_FILES[owner].test(p));
-  const theirs = paths.filter((p) => SLOT_FILES[other].test(p));
-  assert.deepEqual(theirs, [], `${where}: with the switch ${owner === "sova" ? "on" : "off"}, ${other === "sova" ? "Sova's engine" : "the mode extension"} must not load (${theirs.join(", ")})`);
+  const mine = paths.filter((p) => ENGINE_FILES.test(p));
+  const theirs = paths.filter((p) => EXTENSION_FILES.test(p));
+  assert.deepEqual(theirs, [], `${where}: the mode extension must never load in Sova (${theirs.join(", ")})`);
   // Each slot once: the mode itself (a chat's, or a worktree-config worker's), the worker census, the worker project tools.
   const kinds = mine.map((p) => slotName(p)!);
   for (const k of new Set(kinds)) assert.equal(kinds.filter((x) => x === k).length, 1, `${where}: ${k} loads twice (${mine.join(", ")})`);
-  if (expectSlot) assert.ok(kinds.includes("<mode-slot:index>"), `${where}: the mode slot is ${owner === "sova" ? "Sova's engine" : "the mode extension"} (${paths.join(", ")})`);
+  if (expectSlot) assert.ok(kinds.includes("<mode-slot:index>"), `${where}: Sova's engine runs the modes (${paths.join(", ")})`);
   // Never the whole mode beside a worker's census: the worker census is the mode's own hook, not a second owner.
   if (kinds.includes("<mode-slot:index>")) assert.ok(!kinds.includes("<mode-slot:spec-worker>"), `${where}: the mode and the worker census both load (${mine.join(", ")})`);
-  // The bridge that hands ChatSession the engine's handle (cutover's, the switch on only) listens on the bus and
+  // The bridge that hands ChatSession the engine's handle listens on the bus and
   // registers nothing a model sees (the tool and section comparison would show it if it did): not in the load order.
   return paths.filter((p) => p !== MODES_BRIDGE).map((p) => slotName(p) ?? (normalize(p) as string));
 }
 
-// ── Runs: each owner's chats in folders and sessions of their own, recorded alike ──────────────────
+// ── Runs: each case's chats in folders and sessions of their own ──────────────────────────────────
 
-let run = "extension";
+/** The run's tag in folder names: "sova", as the recordings were taken. */
+let run = "sova";
 let caseSeq = 0;
-/** Start a case in `tag`'s run: fresh numbering, so the same case gives the same names in either run. */
-export function beginCase(tag: string): void {
+/** Start a case: fresh numbering, so a case gives the same names whatever ran before it. */
+export function beginCase(tag = "sova"): void {
   run = tag;
   caseSeq = 0;
   SHAS.clear();
@@ -474,42 +455,7 @@ export class Recorded {
   }
 }
 
-// ── The intended changes since the recordings (al_1 a1) ───────────────────────────────────────────
-
-/** The coding spec tool (server/spec-coding-tool.ts): new in every chat and worker, not behind the switch. */
+/** The coding spec tool (server/spec-coding-tool.ts), in every chat and worker. */
 export const SPEC_TOOL = "spec";
-/** The inline extension that serves it, as a chat's load order names it. */
-export const SPEC_TOOL_EXTENSION = "<inline:sova-spec>";
-/**
- * The sentences a1 added to what the model reads (spec-mode.md, the worker spec brief), each exact, with
- * the text it follows. The comparison with the recordings drops them; nothing else.
- */
-export const A1_SENTENCES = [
-  " A `spec` tool, if offered, runs these same reads without a shell.",
-  "\nA `spec` tool, if offered, runs the read-only commands (where, map, toc, read, impact) without a shell; its root defaults to your working directory.",
-];
-/**
- * A record as master would have recorded it, a1's additions taken out: the `spec` tool from every tool
- * list (declared, removed, active), its line in the tools section and its inline extension in the load
- * order; a1's sentences from every string.
- * Applied to both sides of the comparison with the recordings, never to the off/on comparison.
- */
-export function withoutA1(v: unknown, key = ""): unknown {
-  if (typeof v === "string") {
-    let s = v;
-    for (const a of A1_SENTENCES) s = s.split(a).join("");
-    return key === "tools" ? s.replace(/^- spec: .*\n/m, "") : s;
-  }
-  if (Array.isArray(v)) {
-    const kept =
-      key === "activeTools" ? v.filter((x) => x !== SPEC_TOOL)
-      : key === "extensions" ? v.filter((x) => x !== SPEC_TOOL_EXTENSION)
-      : key === "toolsAdded" || key === "toolsRemoved" ? v.filter((x) => (x as { name?: unknown } | null)?.name !== SPEC_TOOL)
-      : v;
-    return kept.map((x) => withoutA1(x));
-  }
-  if (v && typeof v === "object") return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, withoutA1(x, k)]));
-  return v;
-}
 
 export { matchRecording } from "./store.fixture";

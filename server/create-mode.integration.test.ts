@@ -6,11 +6,10 @@ import assert from "node:assert/strict";
 import { readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { createServer, request } from "node:http";
 import type { AddressInfo } from "node:net";
-import { join, resolve } from "node:path";
+import { join } from "node:path";
 import { test } from "node:test";
 import { startHermeticServer } from "./testing/hermetic-server";
 
-const ROOT = resolve(import.meta.dirname, "..");
 
 /** A loopback proxy before the stand-in model that keeps every request body. */
 async function recorder(mockPort: number): Promise<{ port: number; bodies: string[]; close: () => void }> {
@@ -38,9 +37,6 @@ test("a real chat enters Create: the model gets the three blocks and the lookup,
   const server = await startHermeticServer();
   const proxy = await recorder(server.mockPort);
   try {
-    const settingsFile = join(server.agentDir, "settings.json");
-    const settings = JSON.parse(readFileSync(settingsFile, "utf8"));
-    writeFileSync(settingsFile, JSON.stringify({ ...settings, extensions: [join(ROOT, "pi-config", "extensions", "mode")] }, null, 2));
     const modelsFile = join(server.agentDir, "models.json");
     writeFileSync(modelsFile, readFileSync(modelsFile, "utf8").replaceAll(`127.0.0.1:${server.mockPort}`, `127.0.0.1:${proxy.port}`));
     // Strict is the chat's own flag, taken from the default it starts on.
@@ -82,9 +78,6 @@ test("a real chat enters Create: the model gets the three blocks and the lookup,
 test("typed /mode strict on in a real chat process reaches the page and the mode route", { timeout: 120_000 }, async () => {
   const server = await startHermeticServer();
   try {
-    const settingsFile = join(server.agentDir, "settings.json");
-    const settings = JSON.parse(readFileSync(settingsFile, "utf8"));
-    writeFileSync(settingsFile, JSON.stringify({ ...settings, extensions: [join(ROOT, "pi-config", "extensions", "mode")] }, null, 2));
     const headers = { "content-type": "application/json", "x-sova-token": server.token };
     const res = await fetch(`${server.base}/api/sessions`, { method: "POST", headers, body: JSON.stringify({ cwd: realpathSync(server.work) }) });
     const { path } = (await res.json()) as { path: string };

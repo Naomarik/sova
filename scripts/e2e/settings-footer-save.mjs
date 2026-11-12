@@ -184,7 +184,7 @@ try {
     ["Public links", dialog.locator("#settings-public-links-title")],
     ["Outreach", dialog.locator("#outreach-heading")],
     ["Voice", dialog.locator("#voice-settings-title")],
-    ["Experimental", panel.getByText("Sova runs chat modes", { exact: true })],
+    ["Experimental", panel.getByText("No experimental features right now.", { exact: true })],
   ];
 
   await check("the rail's tabs are exactly the tabs this script visits, in the same order", async () => {

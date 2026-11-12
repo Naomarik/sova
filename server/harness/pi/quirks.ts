@@ -356,12 +356,12 @@ export const PI_QUIRKS: readonly PiQuirk[] = [
     name: "own-code-discovery",
     kind: "monkey-patch",
     relies:
-      "DefaultResourceLoader takes the extensions it discovers only from its package manager's resolve() (reload and loadCurrentExtensionSet), so rewriting the paths resolve() answers on DefaultPackageManager.prototype loads the same extensions, with pi's own enabled flags, metadata and trust, from the rewritten paths; additionalExtensionPaths never pass through resolve(). The same rewrite puts Sova's mode engine (modes-entry.ts) in the discovered mode extension's own slot, at that slot's position, for a build Sova runs the modes of (withModesEntry around createAgentSessionServices), so tool and prompt-section order stay as the extension had them.",
+      "DefaultResourceLoader takes the extensions it discovers only from its package manager's resolve() (reload and loadCurrentExtensionSet), so rewriting the paths resolve() answers on DefaultPackageManager.prototype loads the same extensions, with pi's own enabled flags, metadata and trust, from the rewritten paths; additionalExtensionPaths never pass through resolve(). The same rewrite (ownExtensions, in every process) puts Sova's mode engine (modes-entry.ts) in the first discovered mode slot, at that slot's position and always on, so tool and prompt-section order stay as the extension had them, and adds it, and on the server's own agent dir each shipped extension the agent dir lacks, among the agent dir's own discovered extensions; pi ignores resolve()'s extensions for a loader with noExtensions, so nothing is added there. The test runner's SOVA_TEST_OWN_EXTENSIONS=linked (scripts/test-env.mjs) skips only the adding of missing non-mode extensions.",
     pi: ["DefaultPackageManager.resolve", "DefaultResourceLoader.reload", "DefaultResourceLoader.loadCurrentExtensionSet", "createAgentSessionServices"],
     where: [
       { file: "server/harness/pi/own-code.ts", symbol: "patchResolve" },
       { file: "server/harness/pi/own-code.ts", symbol: "installOwnCode" },
-      { file: "server/harness/pi/own-code.ts", symbol: "withModesEntry" },
+      { file: "server/harness/pi/own-code.ts", symbol: "ownExtensions" },
       { file: OPEN, symbol: "servicesForCwd" },
     ],
     canary: "P24 own-code-discovery: resolve() is the loader's only source of discovered extension paths: patched, the same extensions load, Sova's from the copy",

@@ -205,7 +205,8 @@ The server runs on Bun; Node only when the user asks (server guide). An agent ne
   your worktree's gitignored `.cache/`: `mkdir -p .cache/<name> && git archive <rev> | tar -x -C
   .cache/<name>`, and delete it when done; never `git worktree add` (it writes the shared `.git`). Never
   `~/.cache`: inside the sandbox that is a private copy shared by every sandboxed chat, which nobody
-  outside it sees. Throwaway files go in the temp dir (`$TMPDIR`, else `/tmp`).
+  outside it sees. Use `$TMPDIR` for scratch; files another chat reads (briefs, reports, alignment
+  files) go in the chat's shared folder (`$SOVA_SHARED_DIR` in a worker; agent_spawn's result names it).
 - Run `mise trust <worktree>` in a fresh worktree before any node/pnpm command (again after a
   `mise.toml` change).
 - Retire a worker past 50% of its context window: have it write a checkpoint, then hand off to a fresh

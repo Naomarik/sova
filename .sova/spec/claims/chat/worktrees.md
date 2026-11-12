@@ -202,25 +202,28 @@ A **pi** worker started inside an active worktree writes only inside that worktr
 dirs, §chat.sandbox/what-on-enforces) unless the session's sandbox is Off
 (§chat.sandbox/states): under On its sandbox scope is narrowed to the worktree; under Subagents
 only it starts under the sandbox in **write-only** confinement: its writes go only to the
-worktree, its git dirs and a private scratch tmp (and the sandbox's private copies of the host
-caches). Its reads are the host's, no secret is hidden, the network is the host's (its resolver
+worktree, its git dirs, a private scratch tmp, its chat's shared folder (§chat.sandbox/shared-folder)
+and the sandbox's private copies of the host caches and toolchain homes
+(§chat.sandbox/what-on-enforces). Its reads are the host's, no secret is hidden, the network is the host's (its resolver
 included) and the environment is passed as it is, but for `TMPDIR` (below) and the
 sandbox's own git config, `GIT_CONFIG_SYSTEM` (§chat.sandbox/git-cleanup). No policy file is read
 for it, except that it gets the parent's `browser` setting (§chat.sandbox/policy-file): the parent
 reads its own policy file and its cwd's project file when the worker starts, and a file it cannot
 read means no browser, never a refused start.
 
-- **`/tmp`.** On Linux it sees the host's `/tmp` read-only, so a file another session wrote
-  there (a brief) is readable, and every Unix socket found there as its command or its process
-  starts reads as an empty file, so it cannot drive a terminal multiplexer, an ssh agent or
-  another service through one. The sockets are found in the kernel's list of bound sockets
-  (`/proc/net/unix`), so how many files `/tmp` holds does not matter, and in a shallow scan of
-  `/tmp` and the folders directly in it. `TMPDIR` points at its private scratch, which is where
-  Claude Code and other tools that honour it keep their temp files; a tool that writes a literal
-  `/tmp` path fails with "Read-only file system". When that list cannot be read, or cannot be
-  read unambiguously (a socket path with a line break in it, or one bound by a relative path),
-  its `/tmp` is the private scratch instead. On macOS Seatbelt never remapped `/tmp`: the host's
-  is readable there, as before.
+- **`/tmp`.** On Linux it gets a private `/tmp`, as under On (§chat.sandbox/what-on-enforces):
+  its commands see only its own scratch mounted at `/tmp`, writable, and `TMPDIR` is `/tmp`, so a
+  tool that writes a literal `/tmp` path (pnpm's locks, tmux's socket folder, a pid file) works,
+  and a Unix socket made there fits the path limit. Its commands never see the host's `/tmp`, so
+  no host service listening on a socket there (a terminal multiplexer, an ssh agent) is reachable
+  from them, and nothing they write there reaches another chat. Its file tools map `/tmp` to that
+  same private `/tmp` (§chat.sandbox/what-on-enforces): every write goes there, and a read (`read`,
+  `ls`, `find`, `grep`) goes there when the private `/tmp` holds the path, else falls back to the
+  host's `/tmp`, so a brief another session left there stays readable to the file tools, never to
+  its commands. A file meant for another chat goes in the shared folder,
+  never `/tmp` (§chat.sandbox/limits). On macOS Seatbelt never remaps `/tmp`: the host's is
+  readable there, a write to a literal `/tmp` path stays refused ("Operation not permitted"), and
+  `TMPDIR` points at its private scratch.
 - **Still a sandbox.** `/run` is empty, so the Docker socket and the user's D-Bus and systemd are
   gone, and the worker runs in a user namespace, where root-owned files belong to the overflow
   user: ssh refuses a root-owned config file ("Bad owner or permissions"; `ssh -F /dev/null`

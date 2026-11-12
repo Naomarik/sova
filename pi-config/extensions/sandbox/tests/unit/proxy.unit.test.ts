@@ -6,9 +6,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { forbiddenAddress, hostAllowed, PROXY_DENY_TEXT, proxySocketPath, startProxy, type ProxyDecision } from "../../proxy.ts";
 
-// These tests' Unix sockets live outside the host's /tmp: the linux-bwrap write-only-worker test
-// (hostTmp), running beside them, masks every socket it finds there, and one removed between its scan
-// and bwrap's start fails that one command by design. Production is unchanged.
+// These tests' Unix sockets live on a short path outside the host's /tmp (/dev/shm on Linux): a
+// socket path must fit 108 bytes, and a long TMPDIR would not. Production is unchanged.
 const SOCKET_ROOT = process.platform === "linux" && existsSync("/dev/shm") ? "/dev/shm" : tmpdir();
 
 test("hostAllowed: exact names, *.suffix wildcards, IP literals only exactly", () => {

@@ -74,7 +74,8 @@
    "record_tour",
    "show_tour",
    "zoom",
-   "date"
+   "date",
+   "recall"
   ],
   "entries": [
    {
@@ -182,16 +183,16 @@
        "rules": "@898a2a6e09208de2",
        "docs": "@0f5fabf6c3c47c4c",
        "cwd": "<cwd>\n<ws:plain>\n</cwd>",
-       "mode": "@b7a76c93fb6630e5"
+       "mode": "@396419e75540d169"
       },
-      "toolsAdded": "@09f085f30facb631"
+      "toolsAdded": "@75cf2c79f7ac6364"
      },
      {
       "role": "user",
       "content": [
        {
         "type": "text",
-        "text": "@56d9d8cc295b5910"
+        "text": "@0727b6c02df18749"
        },
        {
         "type": "text",
@@ -237,7 +238,8 @@
    "record_tour",
    "show_tour",
    "zoom",
-   "date"
+   "date",
+   "recall"
   ],
   "entries": [
    {
@@ -259,9 +261,9 @@
       "rules": "@898a2a6e09208de2",
       "docs": "@0f5fabf6c3c47c4c",
       "cwd": "<cwd>\n<ws:plain>\n</cwd>",
-      "mode": "@b7a76c93fb6630e5"
+      "mode": "@396419e75540d169"
      },
-     "toolsAdded": "@e65ae272e44a56da"
+     "toolsAdded": "@47cd139bf3f35c38"
     }
    }
   ],

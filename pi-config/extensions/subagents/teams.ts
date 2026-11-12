@@ -4,7 +4,7 @@
  * the manager in index.ts owns all worker creation and control.
  */
 import * as path from "node:path";
-import { roleSlug } from "./coordination.ts";
+import { handoffDir, notePathOf, roleSlug } from "./coordination.ts";
 import type { MemberDuty } from "./mailbox.ts";
 import type { AgentStatus, TaskOutcome } from "./runner.ts";
 import type { MonitorDefaults, TeamDefaultsFile, WorkerTuple } from "./team-defaults.ts";
@@ -198,7 +198,7 @@ export type TeamActionKind =
 export type TeamActionSource = "parent" | "user" | "member" | "orchestrator" | "monitor" | "system";
 /** A coordinated team's fixed facts, set at team_create. */
 export interface TeamCoordination {
-	/** `<agent dir>/sova/teams/<parent session key>/<team_id>/handoffs`; each member's note is `<role slug>.md` there. */
+	/** `<shared folder>/teams/<parent session key>/<team_id>`; each member's note is `<role slug>/handover.md` there, in a folder only that member may write. */
 	handoffDir: string;
 }
 export interface TeamAction {
@@ -681,7 +681,7 @@ const copyMember = (m: PersistedMember): PersistedMember => ({
 function coordinationHeader(coordination: { handoffDir: string; defaults: TeamDefaultsFile }, coordinatorRole: string): CoordinationHeader {
 	return {
 		coordinatorRole,
-		handoff: (role) => path.join(coordination.handoffDir, `${roleSlug(role)}.md`),
+		handoff: (role) => notePathOf(coordination.handoffDir, role),
 		defaults: coordination.defaults,
 	};
 }
@@ -790,13 +790,14 @@ export class TeamStore {
 	private pendingTeams = 0;
 
 	/**
-	 * `teamsDir`: where coordinated teams keep handover notes, `<teamsDir>/<session key>/<team_id>/handoffs`.
+	 * `teamsDir`: where coordinated teams keep handover notes, `<teamsDir>/<session key>/<team_id>/<role>/handover.md`
+	 * (the chat's shared folder's `teams/`, read when a team is created or restored).
 	 * `sessionKey` names the parent session (read when a team is created or restored): team IDs
 	 * restart in every session, so without it two sessions' team_01 would share notes.
 	 */
-	constructor(private readonly teamsDir = "", private readonly sessionKey: () => string = () => "") {}
+	constructor(private readonly teamsDir: string | (() => string) = "", private readonly sessionKey: () => string = () => "") {}
 
-	private handoffDir(teamId: string): string { return path.join(this.teamsDir, this.sessionKey(), teamId, "handoffs"); }
+	private handoffDir(teamId: string): string { return handoffDir(typeof this.teamsDir === "function" ? this.teamsDir() : this.teamsDir, this.sessionKey(), teamId); }
 
 	get teamCounter(): number { return this.counter; }
 
@@ -871,13 +872,22 @@ export class TeamStore {
 	private checkMembers(members: readonly TeamMemberInput[], taken: Set<string>, defaults: TeamDefaults | undefined): { role: string; ownedPaths: string[]; orchestrator: boolean; duty?: MemberDuty; successorOf?: string; successorOfId?: string; task: string; input: TeamMemberInput }[] {
 		if (!Array.isArray(members) || !members.length) throw new Error("Provide at least one team member.");
 		const seen = new Set<string>();
+		// Each member's note folder is named after its role's slug, which its confinement may write: two roles with one slug would share it.
+		const slugKey = (role: string) => roleSlug(role).toLowerCase();
+		const takenSlugs = new Set([...taken].map(slugKey));
+		const seenSlugs = new Map<string, string>();
 		return members.map((input) => {
 			const role = checkLabel("role", input.role);
 			if (WORKER_ID.test(role)) throw new Error(`Role ${role} looks like a worker ID; choose a descriptive role.`);
 			const key = labelKey(role);
 			if (seen.has(key)) throw new Error(`Duplicate role in request: ${role}. Each member needs a unique role.`);
 			if (taken.has(key)) throw new Error(`Role ${role} already exists in this team (or is being added concurrently); roles are unique per team.`);
+			const slug = slugKey(role);
+			const clash = seenSlugs.get(slug);
+			if (clash !== undefined) throw new Error(`Roles ${clash} and ${role} in this request share one handover-note folder (${roleSlug(role)}); each member needs a distinct role.`);
+			if (takenSlugs.has(slug)) throw new Error(`A role like ${role} (note folder ${roleSlug(role)}) already exists in this team (or is being added concurrently); roles are unique per team.`);
 			seen.add(key);
+			seenSlugs.set(slug, role);
 			if (typeof input.prompt !== "string" || !input.prompt.trim()) throw new Error(`Task for ${role} must not be blank.`);
 			const orchestrator = input.orchestrator === true;
 			if ((input.duty === "coordinator" || input.duty === "monitor") && memberTooling(memberBackend(input, defaults)) === "none")

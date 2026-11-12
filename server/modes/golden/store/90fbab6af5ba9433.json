@@ -478,162 +478,63 @@
   }
  },
  {
-  "name": "align",
-  "description": "@10b18c09da2ac44c",
+  "name": "spec",
+  "description": "@c7d79fc694bf9ff4",
   "parameters": {
    "type": "object",
-   "required": [
-    "ops"
-   ],
    "properties": {
-    "doc": {
-     "type": "string",
-     "minLength": 1,
-     "description": "The alignment to change, e.g. \"al_2\". Required while more than one alignment is open; omit for create, import, exempt and change_request.",
-     "pattern": "^al_[1-9][0-9]*$"
-    },
-    "ops": {
-     "type": "array",
-     "items": {
-      "anyOf": "@efddf5ee21db1c1d"
-     },
-     "description": "Operations, applied in order. change_request, when given, comes before every other op; create or import comes next (else first) and appears once.",
-     "minItems": 1
-    }
-   },
-   "additionalProperties": false
-  }
- },
- {
-  "name": "vis_guide",
-  "description": "@b90c146a99d490af",
-  "parameters": {
-   "type": "object",
-   "required": [
-    "kind"
-   ],
-   "properties": {
-    "kind": {
+    "op": {
      "type": "string",
      "enum": [
-      "flow",
-      "sequence",
-      "state",
-      "layers",
-      "tree",
-      "chart",
-      "timeline",
-      "steps",
-      "wireframe",
-      "matrix",
-      "code",
-      "html",
-      "svg",
-      "tour",
-      "lookbook",
-      "tour-signin",
-      "tour-sites",
-      "tour-sova",
-      "tour-sharing",
-      "lookbook-setup",
-      "lookbook-directions",
-      "lookbook-passing-on"
-     ],
-     "description": "The drawing kind or tool-backed entry (tour, lookbook), as the vis minor mode lists it, or a part its guide names"
-    }
-   },
-   "additionalProperties": false
-  }
- },
- {
-  "name": "vis_check",
-  "description": "@2327d56265ca0751",
-  "parameters": {
-   "type": "object",
-   "properties": {
-    "kind": {
+      "where",
+      "map",
+      "toc",
+      "read",
+      "impact"
+     ]
+    },
+    "query": {
+     "type": "string",
+     "description": "where: the words, path or name; map: a namespace"
+    },
+    "dir": {
      "type": "string",
      "enum": [
-      "html",
-      "svg",
-      "wireframe"
+      "out",
+      "in",
+      "down",
+      "up",
+      "mentions"
      ],
-     "description": "The fence's kind: html, svg or wireframe"
+     "description": "toc: which links (default out)"
     },
-    "source": {
+    "whole": {
+     "type": "boolean",
+     "description": "read: the whole claim"
+    },
+    "noFrame": {
+     "type": "boolean",
+     "description": "read: without the frame (every read after the first)"
+    },
+    "near": {
+     "type": "boolean",
+     "description": "impact: what relies on it, nearest first"
+    },
+    "cursor": {
      "type": "string",
-     "description": "The fence body, without the ``` lines"
+     "description": "The previous answer's next cursor"
+    },
+    "root": {
+     "type": "string",
+     "description": "Project root (default your working directory): it or a folder below it, or a worktree you track"
+    },
+    "draft": {
+     "type": "string",
+     "description": "A draft's name, read instead of the current spec"
     }
    },
-   "required": [
-    "kind",
-    "source"
-   ],
-   "additionalProperties": false
-  }
- },
- {
-  "name": "record_tour",
-  "description": "@f2a84afb9f865e94",
-  "parameters": {
-   "type": "object",
-   "properties": "@852078159a752148",
    "required": [
     "op"
-   ],
-   "additionalProperties": false
-  }
- },
- {
-  "name": "show_tour",
-  "description": "Present one complete checked tour edition from this chat. Record and visually check it first; never records on display. Read vis_guide with tour for the workflow.",
-  "parameters": {
-   "type": "object",
-   "properties": {
-    "tourId": {
-     "type": "string",
-     "minLength": 1,
-     "maxLength": 100
-    },
-    "editionId": {
-     "type": "string",
-     "minLength": 1,
-     "maxLength": 100
-    }
-   },
-   "required": [
-    "tourId"
-   ],
-   "additionalProperties": false
-  }
- },
- {
-  "name": "zoom",
-  "description": "@9fb1f34e406e16f8",
-  "parameters": {
-   "type": "object",
-   "properties": {
-    "n": {
-     "type": "integer",
-     "minimum": 1,
-     "description": "How many messages the line covers (a power of 2)"
-    }
-   },
-   "required": [
-    "id",
-    "n"
-   ],
-   "additionalProperties": false
-  }
- },
- {
-  "name": "date",
-  "description": "The date and time of message id in the memory view.",
-  "parameters": {
-   "type": "object",
-   "properties": {},
-   "required": [
-    "id"
    ],
    "additionalProperties": false
   }

@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { lstatSync, mkdirSync, mkdtempSync, readlinkSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { lstatSync, mkdirSync, mkdtempSync, readlinkSync, realpathSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { backendFor, canonicalizePath, classifyRun, isWithin, policyKey, type Confined, type Policy } from "../../backend.ts";
@@ -217,6 +217,82 @@ test("checkWrite: git, trust stores, hidden, outside, tmp, symlinks, non-repo .g
 	const ro = policy({ ...p, level: "read-only" });
 	assert.ok(!checkWrite(ro, join(ws, "a")).ok);
 	assert.ok(checkWrite(ro, join(tmp, "a")).ok);
+});
+
+test("checkWrite: a trust store inside a shadow is the sandbox's own copy, writable; outside one it stays pinned", async (t) => {
+	const { checkWrite } = await import("../../backend.ts");
+	const base = realpathSync(mkdtempSync(join(tmpdir(), "sbx-cws-")));
+	t.after(() => rmSync(base, { recursive: true, force: true }));
+	const ws = join(base, "ws");
+	const home = join(base, "home");
+	const mise = join(home, ".local", "state", "mise");
+	for (const d of [ws, join(mise, "trusted-configs"), join(base, "src")]) mkdirSync(d, { recursive: true });
+	const env = { HOME: home, XDG_STATE_HOME: join(home, ".local", "state") };
+	const shadowed = policy({ workspaceRoot: ws, writable: [ws], tmpDir: join(base, "tmp"), env, shadowed: [{ path: mise, source: join(base, "src") }] });
+	assert.ok(checkWrite(shadowed, join(mise, "trusted-configs", "x")).ok);
+	assert.ok(checkWrite(shadowed, join(mise, "tracked-configs", "y")).ok);
+	const writable = policy({ workspaceRoot: ws, writable: [ws, mise], tmpDir: join(base, "tmp"), env });
+	assert.ok(!checkWrite(writable, join(mise, "trusted-configs", "x")).ok, "a host-writable state dir keeps its trust store read-only");
+});
+
+test("seedShadow: mise's trust and ignore links mirrored from the host, the copy's own kept, a host removal mirrored; other shadows untouched", async (t) => {
+	const { seedShadow, seededListPath } = await import("../../backend.ts");
+	const base = realpathSync(mkdtempSync(join(tmpdir(), "sbx-seed-")));
+	t.after(() => rmSync(base, { recursive: true, force: true }));
+	const host = join(base, "mise");
+	const source = join(base, "copy");
+	mkdirSync(join(host, "trusted-configs"), { recursive: true });
+	mkdirSync(join(host, "ignored-configs"), { recursive: true });
+	mkdirSync(join(source, "trusted-configs"), { recursive: true });
+	symlinkSync("/w/a/mise.toml", join(host, "trusted-configs", "a"));
+	symlinkSync("/w/b/mise.toml", join(host, "trusted-configs", "b"));
+	symlinkSync("/w/i/mise.toml", join(host, "ignored-configs", "i"));
+	symlinkSync("/w/own/mise.toml", join(source, "trusted-configs", "own"));
+	seedShadow({ path: host, source });
+	assert.equal(readlinkSync(join(source, "trusted-configs", "a")), "/w/a/mise.toml");
+	assert.equal(readlinkSync(join(source, "trusted-configs", "b")), "/w/b/mise.toml");
+	assert.equal(readlinkSync(join(source, "ignored-configs", "i")), "/w/i/mise.toml");
+	unlinkSync(join(host, "trusted-configs", "b"));
+	seedShadow({ path: host, source });
+	assert.throws(() => lstatSync(join(source, "trusted-configs", "b")), /ENOENT/, "the host untrusted it: so does the copy");
+	assert.equal(readlinkSync(join(source, "trusted-configs", "own")), "/w/own/mise.toml", "a trust made inside stays");
+	assert.equal(readlinkSync(join(source, "trusted-configs", "a")), "/w/a/mise.toml");
+	// A cache shadow (no trusted-configs on the host) is left as it is.
+	const cache = join(base, "cache");
+	const cacheCopy = join(base, "cache-copy");
+	mkdirSync(cache);
+	mkdirSync(cacheCopy);
+	seedShadow({ path: cache, source: cacheCopy });
+	assert.throws(() => lstatSync(seededListPath(cacheCopy)), /ENOENT/);
+});
+
+test("seedShadow's list survives the cache cleanup: a host removal is still mirrored after the copy's trust dir was pruned", async (t) => {
+	const { seedShadow, seededListPath } = await import("../../backend.ts");
+	const { scanShadows, DEFAULT_CACHE_SETTINGS } = await import("../../shadow-prune.ts");
+	const base = realpathSync(mkdtempSync(join(tmpdir(), "sbx-seedp-")));
+	t.after(() => rmSync(base, { recursive: true, force: true }));
+	const host = join(base, "mise");
+	const root = join(base, "shadow");
+	const source = join(root, "home-.local%2Fstate%2Fmise");
+	mkdirSync(join(host, "trusted-configs"), { recursive: true });
+	mkdirSync(source, { recursive: true });
+	symlinkSync("/w/a/mise.toml", join(host, "trusted-configs", "a"));
+	symlinkSync("/w/b/mise.toml", join(host, "trusted-configs", "b"));
+	seedShadow({ path: host, source });
+	assert.ok(lstatSync(seededListPath(source)).isFile());
+	const units = scanShadows(root, DEFAULT_CACHE_SETTINGS).map((e) => `${e.root}/${e.name}`);
+	assert.ok(units.length > 0 && units.every((u) => u.startsWith("home-.local%2Fstate%2Fmise/")), `the list is no cleanup unit: ${units}`);
+	// The cleanup removes the copy's whole trust dir; the host then untrusts b.
+	rmSync(join(source, "trusted-configs"), { recursive: true, force: true });
+	unlinkSync(join(host, "trusted-configs", "b"));
+	seedShadow({ path: host, source });
+	assert.equal(readlinkSync(join(source, "trusted-configs", "a")), "/w/a/mise.toml");
+	assert.throws(() => lstatSync(join(source, "trusted-configs", "b")), /ENOENT/);
+	// And a b the copy got back from somewhere is removed on the next seed, since the list still names it.
+	symlinkSync("/w/b/mise.toml", join(source, "trusted-configs", "b"));
+	writeFileSync(seededListPath(source), JSON.stringify({ "trusted-configs": ["a", "b"] }));
+	seedShadow({ path: host, source });
+	assert.throws(() => lstatSync(join(source, "trusted-configs", "b")), /ENOENT/);
 });
 
 test("checkWrite in a linked worktree: own admin dir and objects writable, redirects and main checkout not", async (t) => {

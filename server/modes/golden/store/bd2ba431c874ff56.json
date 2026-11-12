@@ -126,7 +126,13 @@
    "required": [
     "id"
    ],
-   "properties": {},
+   "properties": {
+    "id": {
+     "type": "string",
+     "pattern": "^ag_\\d+$",
+     "description": "Exact worker ID (ag_NN)."
+    }
+   },
    "additionalProperties": false
   }
  },
@@ -177,6 +183,10 @@
     "id"
    ],
    "properties": {
+    "id": {
+     "type": "string",
+     "minLength": 1
+    },
     "full": {
      "type": "boolean"
     },
@@ -204,6 +214,10 @@
     "message"
    ],
    "properties": {
+    "id": {
+     "type": "string",
+     "minLength": 1
+    },
     "message": {
      "type": "string",
      "minLength": 1
@@ -224,6 +238,10 @@
   "parameters": {
    "type": "object",
    "properties": {
+    "id": {
+     "type": "string",
+     "minLength": 1
+    },
     "group": {
      "type": "string",
      "minLength": 1
@@ -478,32 +496,67 @@
   }
  },
  {
-  "name": "zoom",
-  "description": "@9fb1f34e406e16f8",
+  "name": "spec",
+  "description": "@c7d79fc694bf9ff4",
   "parameters": {
    "type": "object",
    "properties": {
-    "n": {
-     "type": "integer",
-     "minimum": 1,
-     "description": "How many messages the line covers (a power of 2)"
+    "op": {
+     "type": "string",
+     "enum": [
+      "where",
+      "map",
+      "toc",
+      "read",
+      "impact"
+     ]
+    },
+    "query": {
+     "type": "string",
+     "description": "where: the words, path or name; map: a namespace"
+    },
+    "id": {
+     "type": "string",
+     "description": "A §id (toc, read, impact, map)"
+    },
+    "dir": {
+     "type": "string",
+     "enum": [
+      "out",
+      "in",
+      "down",
+      "up",
+      "mentions"
+     ],
+     "description": "toc: which links (default out)"
+    },
+    "whole": {
+     "type": "boolean",
+     "description": "read: the whole claim"
+    },
+    "noFrame": {
+     "type": "boolean",
+     "description": "read: without the frame (every read after the first)"
+    },
+    "near": {
+     "type": "boolean",
+     "description": "impact: what relies on it, nearest first"
+    },
+    "cursor": {
+     "type": "string",
+     "description": "The previous answer's next cursor"
+    },
+    "root": {
+     "type": "string",
+     "description": "Project root (default your working directory): it or a folder below it, or a worktree you track"
+    },
+    "draft": {
+     "type": "string",
+     "description": "A draft's name, read instead of the current spec"
     }
    },
    "required": [
-    "id",
-    "n"
-   ],
-   "additionalProperties": false
-  }
- },
- {
-  "name": "date",
-  "description": "The date and time of message id in the memory view.",
-  "parameters": {
-   "type": "object",
-   "properties": {},
-   "required": [
-    "id"
+    "op"
    ],
    "additionalProperties": false
   }

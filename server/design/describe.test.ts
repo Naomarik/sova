@@ -464,3 +464,19 @@ test("the helper judges roles from each colour's facts: its share, how saturated
   assert.match(d.DESCRIBER_PROMPT, /never call a small saturated colour a background or a divider/);
   assert.match(d.DESCRIBER_PROMPT, /A neutral on thin strokes far from the background's lightness is text/);
 });
+
+test("the helper's screenshot words are kept whole: a long role, feel and description are never cut", async () => {
+  const shot = addYours(11);
+  d.describeAssets(parent, [shot]);
+  await until(() => helpers.length === 1, "started");
+  const role = `active tab underline under the selected tab, ${"and the focus ring on the search field, ".repeat(8)}nothing else`;
+  const description = "A dark sessions board. ".repeat(40).trim();
+  await call(helpers[0]!, [{ ...row(shot, "screenshot"), description, feel: "Quiet. ".repeat(250).trim(), roles: [{ hex: "#4a43d8", role }] }]);
+  settle(helpers[0]!);
+  await settledOut();
+  assert.ok(role.length > 300);
+  assert.equal(asset(shot).description!.roles![0]!.role, role);
+  assert.equal(asset(shot).description!.description, description);
+  assert.equal(asset(shot).description!.feel!.length, "Quiet. ".repeat(250).trim().length);
+  assert.ok(!d.assetsForCoordinator(parent.sessionId).includes("…"));
+});

@@ -57,9 +57,12 @@ export const setDescriberModelsForTest = (fn: (() => Promise<string[]>) | null):
 
 // ---- what a page said is content, never instructions --------------------------------------------------------
 
-const CAPS = { description: 500, placement: 300, usage: 300, context: 200, note: 2000, feel: 1200, role: 80 } as const;
+/** What each kind of text may hold. A screenshot's words (its feel, each colour's role, what it shows) are never cut:
+    what designers are told of a screenshot reaches them whole (the user's decision). */
+const CAPS = { description: 500, placement: 300, usage: 300, context: 200, note: 2000, feel: Infinity, role: Infinity, shot: Infinity } as const;
 
-/** One piece of text a page or a model wrote, safe to set down in another model's message. */
+/** One piece of text a page or a model wrote, safe to set down in another model's message: one line, no fence marks,
+    within its cap (Infinity: never cut). */
 export function cleanWords(v: unknown, cap: number): string {
   if (typeof v !== "string") return "";
   const flat = v
@@ -126,7 +129,8 @@ For each image:
 - for a screenshot only: feel, a short draft (2-3 sentences) of its look for designers to follow: mood, density, type and how colour is used; and roles, one entry per measured colour listed for it, naming exactly what that colour paints, found by looking for it in the picture. Use exactly the hex values given. Judge each from its facts and the picture:
   - Label by where a colour sits, not by how much of the picture it covers. The neutral covering most of the screen's outer edge is the page background, even when a panel inside covers more of the picture. A neutral that fills areas but sits mostly inside the screen is a surface: a table, card, panel, row or sidebar on the page. A grey on thin strokes near the background's lightness is a divider or border.
   - A neutral on thin strokes far from the background's lightness is text: the lightest (on a dark screen) or darkest (on a light one) is primary text, a middle one muted or secondary text.
-  - A saturated colour on thin strokes or a small share is an accent: say what it marks (active tab underline, link, focus ring, status label, left-edge marker, badge). A saturated colour filling areas is a button, banner or highlight fill.
+  - A saturated colour on thin strokes or a small share is an accent: find it in the picture and name the very element it paints, as a designer would label it ("active tab underline", "Needs you label and left-edge marker", "link text", "focus ring"). Never describe its kind instead ("accent used on thin marks", "secondary highlights"): a designer can't place that. A saturated colour filling areas is a button, banner or highlight fill.
+  - Name the element first in each role, then anything else a designer needs to place it.
   - Never call a colour a background unless it fills a large area, and never call a small saturated colour a background or a divider.
 
 Describe what you see in each picture. Pictures may look alike, so take care to pair each one with its own id. Call ${ASSET_REPORT_TOOL}, then stop.`;
@@ -605,7 +609,8 @@ export function describerTools(parent: { sessionId: string }, workerId: string):
             problems.push(`${id}: kind must be one of ${DESIGN_ASSET_KINDS.join(", ")}`);
             continue;
           }
-          const description = cleanWords(r.description, CAPS.description);
+          // A screenshot's description is what words-only designers rebuild from: never cut.
+          const description = cleanWords(r.description, r.kind === "screenshot" ? CAPS.shot : CAPS.description);
           if (!description) {
             problems.push(`${id}: description is empty`);
             continue;
@@ -657,7 +662,7 @@ export function assetsForCoordinator(sessionId: string, names?: string[]): strin
   const rows = assets.map((a) =>
     [
       `${a.name} · ${kindOf(a)} · ${a.width}x${a.height}${a.source === "yours" ? " · from the user" : ""}`,
-      line("shows", cleanWords(a.description?.description, CAPS.description)),
+      line("shows", cleanWords(a.description?.description, isScreenshot(a) ? CAPS.shot : CAPS.description)),
       line("sat", cleanWords(a.description?.placement, CAPS.placement)),
       line("use", cleanWords(a.description?.usage, CAPS.usage)),
       a.describeError && !a.description ? line("not described", cleanWords(a.describeError, 200)) : "",
@@ -742,7 +747,7 @@ export function screenshotBlock(sessionId: string, names: readonly string[], use
     const how = rebuild ? "Rebuild this screen: it is the screen being redesigned, so keep its content and purpose and give it your own design." : "Just its feel: take its mood, type and colour, never its layout.";
     const text = w ? wordsLine(w.words) : "";
     // What the screen holds, in words, for a rebuild: the content every designer keeps, a words-only one included.
-    const shows = rebuild && a.description?.description ? `\n  What it shows: ${cleanWords(a.description.description, CAPS.description)}` : "";
+    const shows = rebuild && a.description?.description ? `\n  What it shows: ${cleanWords(a.description.description, CAPS.shot)}` : "";
     return [`- ${n} (${a.width}x${a.height}): ${how}${text ? `\n  ${text}` : "\n  The feel couldn't be read from it."}${shows}`];
   });
   if (!rows.length) return "";

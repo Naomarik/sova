@@ -1213,3 +1213,18 @@ test("design_brief: a pasted screenshot's name in shots is refused with the fiel
   const ok = await t.design_brief({ baseRev: 0, summary: "S", images: [{ name: shot, kind: "screenshot", screen: "rebuild" }] });
   assert.doesNotMatch(textOf(ok), /^Refused/);
 });
+
+test("a screenshot's words reach the designers whole: a 300+ character role and a long feel are never cut", async () => {
+  const run = runWith(2, 3, { createdAt: "2026-01-01T00:00:00Z" });
+  const t = await started(run);
+  const shot = pasted(1);
+  const role = `active tab underline: the 2px violet line under the selected Sessions tab at the top left, ${"and the same violet on the focus ring of the search field and the selected row's left edge, ".repeat(3)}and nowhere else on the screen`;
+  const feel = "Dense and calm. ".repeat(60).trim();
+  assert.ok(role.length > 300);
+  await t.design_brief({ baseRev: 0, summary: "S", prompt: "P", images: [{ name: shot, screen: "rebuild", words: { feel, colors: [{ hex: "#4a43d8", role }] } }] });
+  await start(run);
+  const text = log.launches[0]!.brief;
+  assert.ok(text.includes(`#4a43d8 ${role}`), "the whole role");
+  assert.ok(text.includes(feel), "the whole feel");
+  assert.ok(!text.slice(text.indexOf("REFERENCE SCREENSHOTS")).includes("…"), "nothing cut");
+});

@@ -1,7 +1,7 @@
 /** Pure derivations behind the Design Brief on the Design card: no DOM, no Solid, so they are unit-tested. */
 import type { DesignBrief, DesignBriefQuestion, DesignLink, DesignLinkUse, DesignRun, DesignSetup } from "../../shared/design";
 import type { DesignAsset, DesignAssetCatalogue, DesignShotWords } from "../../shared/design-assets";
-import { DESIGN_ASSET_KINDS, kindAllowed, screenshotsInUse } from "../../shared/design-assets";
+import { DESIGN_ASSET_KINDS, kindAllowed, screenshotsInUse, SHOT_COLORS_LIMIT } from "../../shared/design-assets";
 import { designBriefBlock, designLinksIn, runOwnImage } from "../../shared/design";
 import { recommendedOption } from "./align";
 
@@ -138,8 +138,8 @@ export function shotWordsText(w: DesignShotWords): string {
   return [w.feel.trim(), lines.join("\n")].filter(Boolean).join("\n\n");
 }
 
-/** The most colours a screenshot's words carry: the server refuses more. */
-export const SHOT_COLORS_MAX = 8;
+/** The most colours a screenshot's words carry: the shared limit the server holds them to. */
+export const SHOT_COLORS_MAX = SHOT_COLORS_LIMIT;
 
 /** That text read back: lines that start with a hex value are colours with their role, the rest is the feel. A colour
     is kept as #rrggbb, as the server stores it: #rgb is spelled out, and an alpha (#rrggbbaa, #rgba) is dropped. */

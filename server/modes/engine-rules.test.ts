@@ -264,16 +264,14 @@ test("spec writer: re-read at the turn boundary and probed while spec is on, out
   prompt = (await p.turn()) ?? "";
   assert.match(prompt, /Spec writer: .* → backend "claude-code", model "claude-opus-5-5", effort "medium";/, "re-read at the turn boundary");
   assert.doesNotMatch(prompt, /# Mode: delegate/, "the writer needs no Delegate");
-  await flush();
-  await flush();
+  await p.probed();
   assert.equal(calls, 1, "outside Delegate, spec on probes the writer's backend");
   prompt = (await p.turn()) ?? "";
   assert.match(prompt, /Spec writer: .* → backend "claude-code", model "claude-fable-5-2", effort "high"\. This is the configured FALLBACK/, "the probe found opus without medium");
   // A changed writer that lands on its fallback is announced once its probe lands.
   writeSetting("mode-spec.json", { version: 1, writer: { primary: { backend: "claude-code", model: "claude-opus-5-5", effort: "max" }, fallback: { backend: "claude-code", model: "claude-fable-5-2", effort: "high" } } });
   prompt = (await p.turn()) ?? "";
-  await flush();
-  await flush();
+  await p.probed();
   assert.ok(p.notes.some((n) => n.level === "warning" && /^Spec writer: fallback claude-code · claude-fable-5-2 · high \(claude-opus-5-5 does not support effort "max"/.test(n.text)), JSON.stringify(p.notes));
   prompt = (await p.turn()) ?? "";
 

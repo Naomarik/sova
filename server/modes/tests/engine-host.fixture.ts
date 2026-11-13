@@ -82,7 +82,7 @@ export function fakePi(entries: Entry[], opts: { cwd?: string; flags?: Record<st
     ui: { notify: (text: string, level: string) => notes.push({ text, level }), setStatus: noop, setWidget: noop, theme: { fg: (_t: string, s: string) => s, bold: (s: string) => s, bg: (_t: string, s: string) => s } },
     modelRegistry: { getAvailable: () => opts.models ?? [] },
   };
-  modesExtension(pi as never, { claudeModels: opts.claudeModels ?? (async () => []) });
+  const handle = modesExtension(pi as never, { claudeModels: opts.claudeModels ?? (async () => []) });
   const fire = async (name: string, event: unknown = {}) => {
     let result: unknown;
     for (const fn of handlers.get(name) ?? []) result = (await fn(event, ctx)) ?? result;
@@ -98,6 +98,9 @@ export function fakePi(entries: Entry[], opts: { cwd?: string; flags?: Record<st
     ctx,
     workerEvents,
     fire,
+    /** The engine's background routing probe now in flight, its own promise (the engine's private `inflight`):
+        resolves once that probe has landed, its routes and notices in; at once when none runs. */
+    probed: () => (handle.engine as unknown as { inflight?: { done: Promise<void> } }).inflight?.done ?? Promise.resolve(),
     on: (event: string, fn: (data: unknown) => void) => (base.events as { on: (e: string, f: (d: unknown) => void) => void }).on(event, fn),
     activeTools: () => [...active],
     /** Another extension changing the loadout. */

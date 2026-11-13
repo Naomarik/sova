@@ -425,10 +425,16 @@ export const MARKER_EXTENSION = path.join(SELF_DIR, "worker-mark.ts");
 export const SPEC_WORKER_EXTENSION = realpathOr(path.join(SELF_DIR, "..", "mode", "spec-worker.ts"));
 /**
  * The project mode tools for pi workers: a worker handed project modes with tools (`workers: yes`) lists this
- * path with `-e`, and reads the parent's copies from the file PROJECT_TOOLS_FILE_ENV names. It names a slot, no
- * file here: Sova's loader puts its own module in it (only Sova announces modes, so only a Sova chat's worker
- * lists it). Only a worker that can run commands (bash) gets them: a project tool is a program, so a read-only
- * worker never gains one. None for a remote worker (project modes are local only).
+ * with `-e`, and reads the parent's copies from the file PROJECT_TOOLS_FILE_ENV names.
+ *
+ * A slot name, not a file path: no file `mode/project-tools-worker.ts` exists, and none is meant to. Sova's
+ * loader (server/harness/pi/own-code.ts modeFileOf / workerModePaths) recognises it by its name (the file
+ * name in an `extensions/mode` folder) and puts its own module in this place of the worker's list, so a
+ * worker never loads this path as written. Keep the name as it is: the loader, its tests and earlier workers'
+ * recorded lists match it. Only Sova announces modes, so only a Sova chat's worker lists it.
+ *
+ * Only a worker that can run commands (bash) gets it: a project tool is a program, so a read-only worker
+ * never gains one. None for a remote worker (project modes are local only).
  */
 export const PROJECT_TOOLS_WORKER_EXTENSION = realpathOr(path.join(SELF_DIR, "..", "mode", "project-tools-worker.ts"));
 /**

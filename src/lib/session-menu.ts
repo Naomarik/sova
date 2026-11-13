@@ -1,7 +1,7 @@
 // The session menu (§app.extensions/session-menu, §app.insights/team-cards), as one declaration
 // (lib/menu-place): a right-click or touch/pen hold on an Agents board row or on a session row in
 // any section of the sidebar draws it. Each door differs only in its `SessionMenuCtx`: where Session
-// Details and Open Subagents lead from there.
+// Details leads from there.
 
 import { SESSION_TITLE_MAX, type SessionSummary } from "../../shared/protocol";
 import { gistTitle } from "./agents-board";
@@ -19,7 +19,6 @@ import { announce, copyText, toast } from "./ui-state";
 export interface SessionMenuCtx {
   onRefresh(): void;
   onArchiveChanged(path: string, archived: boolean): void;
-  onOpenSubagents(path: string): void;
   /** The session whose Session details pane this door's Session Details would close, if any. */
   detailsPath: string | null;
   onOpenDetails(path: string): void;
@@ -124,7 +123,6 @@ export const SESSION_MENU: MenuDecl<SessionMenuSubject> = {
         name: "Open",
         rows: [
           { label: detailsOpen ? "Close Session Details" : "Session Details", aria: `${detailsOpen ? "Close the session details" : "Session details"} of ${name}`, icon: "info", act: { local: () => ctx.onOpenDetails(s.path) } },
-          { label: "Open Subagents", aria: `Open the subagents pane of ${name}`, icon: "worker", act: { local: () => ctx.onOpenSubagents(s.path), keepFocus: true } },
         ],
       },
       {
@@ -157,13 +155,13 @@ export function renameValue(opened: string, typed: string | null, via: "enter" |
 /**
  * The sidebar's door (§app.session-list/accessibility "The session menu"): Session Details opens the
  * session with its Session details pane on the Session tab (and closes it when that pane already
- * shows it there); Open Subagents opens it on the Agents tab. Route first: the pane only opens
- * beside a session that is on screen. `app` is App's pane wiring.
+ * shows it there). Route first: the pane only opens beside a session that is on screen. `app` is
+ * App's pane wiring.
  */
 export function sidebarSessionMenuCtx(app: {
   route(path: string): void;
-  paneOn(path: string, tab: "session" | "agents"): boolean;
-  openPane(path: string, tab: "session" | "agents"): void;
+  paneOn(path: string, tab: "session"): boolean;
+  openPane(path: string, tab: "session"): void;
   closePane(): void;
   /** The session whose Session details pane is on its Session tab, if any. */
   detailsOnSession(): string | null;
@@ -178,10 +176,6 @@ export function sidebarSessionMenuCtx(app: {
       if (app.paneOn(path, "session")) return app.closePane();
       app.route(path);
       if (!app.paneOn(path, "session")) app.openPane(path, "session");
-    },
-    onOpenSubagents: (path) => {
-      app.route(path);
-      if (!app.paneOn(path, "agents")) app.openPane(path, "agents");
     },
     onRefresh: () => app.onRefresh(),
     onArchiveChanged: (path, archived) => app.onArchiveChanged(path, archived),

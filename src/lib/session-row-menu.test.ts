@@ -41,7 +41,6 @@ const ctx = (detailsPath: string | null = null) => ({
   setRenaming() {},
   onRefresh() {},
   onArchiveChanged() {},
-  onOpenSubagents() {},
   detailsPath,
   onOpenDetails() {},
 });
@@ -93,7 +92,7 @@ test("Sova's own items in the session menu are drawn exactly as before", () => {
 test("the snapshot holds every item, in order", () => {
   const html = drawMenu(CASES.plain!);
   const labels = [...html.matchAll(/<span class="popover-item-label">([^<]*)<\/span>/g)].map((m) => m[1]);
-  assert.deepEqual(labels, ["Session Details", "Open Subagents", "Rename…", "Use Gist as Title", "Reset to Original Title", "Move to Group…", "Archive", "Copy Path"]);
+  assert.deepEqual(labels, ["Session Details", "Rename…", "Use Gist as Title", "Reset to Original Title", "Move to Group…", "Archive", "Copy Path"]);
   const groups = [...html.matchAll(/role="group" aria-label="([^"]*)"/g)].map((m) => m[1]);
   assert.deepEqual(groups, ["Open", "Title", "Organize"]);
 });
@@ -130,7 +129,7 @@ test("a session on another host shows no extension rows: an extension is this ho
 
 test("extension rows come after every one of Sova's items, one group per extension, headed by its title", () => {
   const html = drawMenu(CASES.plain!, [tickets, notes]);
-  assert.deepEqual(labels(html), ["Session Details", "Open Subagents", "Rename…", "Use Gist as Title", "Reset to Original Title", "Move to Group…", "Archive", "Copy Path", "File Issue", "Pin Note"]);
+  assert.deepEqual(labels(html), ["Session Details", "Rename…", "Use Gist as Title", "Reset to Original Title", "Move to Group…", "Archive", "Copy Path", "File Issue", "Pin Note"]);
   const groups = [...html.matchAll(/role="group" aria-label="([^"]*)"/g)].map((m) => m[1]);
   assert.deepEqual(groups, ["Open", "Title", "Organize"], "Sova's groups, named by aria-label");
   // Each extension group is named by its visible heading.

@@ -66,7 +66,6 @@ interface BoardCtx {
   toggle(path: string): void;
   onRefresh(): void;
   onArchiveChanged(path: string, archived: boolean): void;
-  onOpenSubagents(path: string): void;
   /** The session whose Session details pane is open beside the board, if any. */
   detailsPath: string | null;
   onOpenDetails(path: string): void;
@@ -502,7 +501,6 @@ export function AgentsView(props: {
   titleRef(el: HTMLHeadingElement): void;
   onRefresh(): void;
   onArchiveChanged(path: string, archived: boolean): void;
-  onOpenSubagents(path: string): void;
   detailsPath: string | null;
   onOpenDetails(path: string): void;
   onOpenAgents(path: string): void;
@@ -676,7 +674,6 @@ export function AgentsView(props: {
       }),
     onRefresh: () => props.onRefresh(),
     onArchiveChanged: (p, a) => props.onArchiveChanged(p, a),
-    onOpenSubagents: (p) => props.onOpenSubagents(p),
     get detailsPath() {
       return props.detailsPath;
     },

@@ -1756,8 +1756,8 @@ Sova that aren't archived. An archived session is in it only while it is open in
   Leaving the page closes it. With no chat on screen, workers come from the polled
   insight, the Timeline can't rewind ("Only a chat open in Sova can rewind."), and a row's jump
   says the message isn't in the transcript on screen.
-- **Row menu.** Session Details (Close Session Details while that row's pane is open), Open
-  Subagents (opens the session with its pane on the Agents tab), Rename…, Use Gist as Title (the gist on one line,
+- **Row menu.** Its Open section has Session Details (Close Session Details while that row's pane is open) alone:
+  the Open Subagents shortcut is gone, not the Agents pane. Then Rename…, Use Gist as Title (the gist on one line,
   cut to the title limit; off, with the reason, when there's none or it already is the title),
   Reset to Original Title (off when not renamed), Move to Group… (a screen of the groups, with
   "No group"), Archive or Unarchive, Copy Path. After them, for a session on this host, comes
@@ -1783,7 +1783,7 @@ Sova that aren't archived. An archived session is in it only while it is open in
   /api/insights/session` when the row opens, kept while it stays open, never polled; while it
   runs the list says "Reading topics…", and a failed read says "Couldn't read the topics." with
   nothing else. Workers and teams aren't in it: the Workers column counts them, and a team chip
-  or its menu's Open Subagents shows them. Everything starts at the title's left edge at every width,
+  shows them. Everything starts at the title's left edge at every width,
   behind one thin guide rule drawn down from under the twist: that rule, not width, says it
   belongs to the session.
 - **Deep link.** `#/agents/{teamKey}` (a bare team id from an older link: the newest team with

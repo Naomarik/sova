@@ -201,14 +201,7 @@ Timeline · Agents · Usage · Time Spent · Context · Sharing · Gallery** (`.
 `role="tabpanel"`; roving `tabindex`, Left/Right wrapping, Home/End). Every tab is always in the
 strip, empty or not, so the strip never shifts under the reader.
 
-- **Which tab opens.** Every door names its own tab (the head's Session details button, the
-  remote chip, and the Agents board's Session details button and row-menu item: Session; the board
-  row menu's Open Subagents, its team chips, their `+{n}` chip and the `{n} teams` chip that stands for them from 1000 to 1599px, and `#/agents/{teamKey}` links: Agents; the composer's subagents row: Agents; the Timeline doors,
-  §chat.timeline/opening-it; the head's token chip: Usage). The pane keeps the chosen tab per
-  session path, in memory only. With none kept, it opens on Agents when a worker is working at
-  open, else on Session, settled once at open so the tab never moves when the last worker
-  finishes. Usage, Time Spent, Context and Sharing are never the default. A kept tab the strip
-  doesn't have opens as if none were kept; one kept on the tab's old name, Explain, opens on Gallery.
+- **Which tab opens.** Every door names its tab: Session details (head, remote chip, board button and row-menu item) opens Session; board team chips (`+{n}`, or `{n} teams` from 1000 to 1599px), `#/agents/{teamKey}` links and the composer's subagents row open Agents; Timeline doors (§chat.timeline/opening-it) open Timeline; the head's token chip opens Usage. The session row menu has no Open Subagents shortcut; Agents stays in an open session's tab strip and reachable from the board's chips and links. The chosen tab is kept per session path in memory. With none kept, opening chooses Agents if a worker is working, else Session, once, so the tab never moves when the last worker finishes. Usage, Time Spent, Context and Sharing are never defaults. A kept tab absent from the strip is ignored; the old name Explain opens Gallery.
 - **The strip never wraps** (§app.subagents-pane/tab-strip).
 - **Session** is what the session is, in this order: Path (with Copy Session Path and Copy Resume
   Command), Repository, Worktrees (§chat.worktrees/pane), Background jobs while it has any

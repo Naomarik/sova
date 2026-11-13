@@ -50,8 +50,8 @@ them, a project's own modes as one row), and links to the feature, extending and
 The major and minor modes side by side, the three major modes in the mode menu's words, switching
 them per chat from the composer's mode menu,
 the default for new sessions (memory's type with it; never Create, which is chosen per chat),
-strict, that Sova runs every chat's modes with no switch (§chat.mode-menu/sova-runs-modes), a short memory section that
-links to its own page (§site.docs/memory), the terminal's commands, which offer no Create, what workers get (spec, and each
+strict, that Sova runs every chat's modes with no switch and with no pi mode extension linked (§chat.mode-menu/sova-runs-modes), a short memory section that
+links to its own page (§site.docs/memory), that a pi terminal has no modes (§chat.mode-menu/terminal), what workers get (spec, and each
 project mode that says so), and the sessions that choose their own mode, and a project's own minor modes (§site.docs/project-modes).
 
 ## §site.docs/normal — Normal (`/docs/modes/normal/`)
@@ -229,7 +229,7 @@ running turn, and switching models mid-session (favorites and the saved default)
 ## §site.docs/install — Install (`/docs/install/`)
 
 Installing Sova on a Mac or Linux machine with one command and its options, starting it and
-opening it unlocked, the pi extension links (a leftover link into another copy of Sova repointed, anything
+opening it unlocked, the pi extension links (no `mode` link, and one an older install left removed; a leftover link into another copy of Sova repointed, anything
 else kept and named; Sova's own chats run their own copy's extensions whatever the links say,
 §app.installer/pi-extensions), the app-launcher entry that opens it in its own window (on macOS, an app of its own with its own
 Dock icon and no title bar), the access token,

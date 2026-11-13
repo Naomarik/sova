@@ -117,13 +117,10 @@
     "authority": "accepted",
     "evidence": "reviewed",
     "code": [
-      "pi-config/extensions/mode/index.ts",
       "pi-config/extensions/mode/vis-guide-tool.ts",
       "pi-config/extensions/mode/prompt.ts",
       "pi-config/extensions/mode/state.ts",
-      "pi-config/extensions/mode/index.test.ts",
-      "pi-config/extensions/mode/tests/smoke.mjs",
-      "pi-config/extensions/mode/tests/note-turn.mjs",
+      "pi-config/extensions/mode/modes.test.ts",
       "pi-config/extensions/mode/README.md",
       "pi-config/extensions/claude-code/provider/bridge.test.ts",
       "server/mode-state.ts",
@@ -131,7 +128,6 @@
       "pi-config/extensions/mode/minor.ts",
       "pi-config/extensions/claude-code/provider/session-bridge.ts",
       "server/vis-check.ts",
-      "pi-config/extensions/mode/tests/style-turn.mjs",
       "server/vis-tools-sync.test.ts",
       "server/served-tools.ts",
       "server/chat-handle.ts",
@@ -288,7 +284,6 @@
       "pi-config/extensions/mode/project-tools.ts",
       "pi-config/extensions/mode/project-tools-approval.ts",
       "server/project-mode-approvals.ts",
-      "pi-config/extensions/mode/project-tools-worker.ts",
       "pi-config/extensions/subagents/index.ts",
       "server/project-mode-menu.ts",
       "server/mode-state.ts",
@@ -309,18 +304,17 @@
       "src/lib/mode-menu.test.ts",
       "pi-config/extensions/mode/project-format.ts",
       "pi-config/extensions/mode/project-discovery.ts",
-      "pi-config/extensions/mode/index.ts",
       "pi-config/extensions/mode/prompt.ts",
       "pi-config/extensions/mode/state.ts",
-      "pi-config/extensions/mode/palette.ts",
       "pi-config/extensions/mode/events.ts",
       "pi-config/extensions/mode/project-modes.test.ts",
-      "pi-config/extensions/mode/project-mode-extension.test.ts",
       "pi-config/extensions/mode/project-tools.test.ts",
       "pi-config/extensions/subagents/index.test.ts",
       "pi-config/extensions/mode/README.md",
       "server/mode-commands.ts",
-      "src/lib/mode-menu-actions.test.ts"
+      "src/lib/mode-menu-actions.test.ts",
+      "server/modes/engine-hooks.test.ts",
+      "server/modes/engine-project-tools.integration.test.ts"
     ],
     "evidence": "reviewed"
   },
@@ -333,7 +327,6 @@
     "authority": "accepted",
     "evidence": "reviewed",
     "code": [
-      "pi-config/extensions/mode/index.ts",
       "server/chat-manager.ts",
       "server/chat-mode-sync.test.ts",
       "server/modes/engine.ts",
@@ -404,7 +397,7 @@
       "server/modes/tests/harness.fixture.ts",
       "server/modes/tests/show.fixture.ts",
       "server/modes/tests/store.fixture.ts",
-      "pi-config/extensions/mode/index.test.ts",
+      "pi-config/extensions/mode/modes.test.ts",
       "server/harness/pi/golden/session/S5-rewind.trace",
       "server/harness/pi/golden/session/S6-regenerate.trace",
       "server/harness/pi/golden/session/S7-compact-manual.trace",
@@ -457,7 +450,9 @@
       "server/project-mode-menu.ts",
       "shared/harness-session.ts",
       "server/modes/golden/cases/c23-spec-reads-one-source.json",
-      "server/modes/golden/cases/w09-tree-config-parent-spec-off.json"
+      "server/modes/golden/cases/w09-tree-config-parent-spec-off.json",
+      "server/modes/engine-rules.test.ts",
+      "server/modes/tests/engine-host.fixture.ts"
     ],
     "evidence": "verified"
   },
@@ -484,16 +479,15 @@
     "authority": "accepted",
     "evidence": "reviewed",
     "code": [
-      "pi-config/extensions/mode/index.ts",
       "pi-config/extensions/mode/prompt.ts",
       "pi-config/extensions/mode/state.ts",
       "server/mode-state.ts",
       "server/transcript.ts",
       "src/components/ModeMenu.tsx",
       "src/lib/mode-menu.ts",
-      "pi-config/extensions/mode/index.test.ts",
+      "pi-config/extensions/mode/modes.test.ts",
       "server/modes/engine.ts",
-      "pi-config/extensions/mode/tests/smoke.mjs"
+      "server/modes/engine-rules.test.ts"
     ],
     "agreed": {
       "by": "naomarik",
@@ -510,19 +504,18 @@
     "authority": "accepted",
     "evidence": "reviewed",
     "code": [
-      "pi-config/extensions/mode/index.ts",
-      "pi-config/extensions/mode/palette.ts",
       "pi-config/extensions/mode/minor.ts",
       "pi-config/extensions/mode/state.ts",
       "pi-config/extensions/mode/prompt.ts",
-      "pi-config/extensions/mode/tests/smoke.mjs",
-      "pi-config/extensions/mode/index.test.ts",
-      "server/modes/engine.ts"
+      "pi-config/extensions/mode/modes.test.ts",
+      "server/modes/engine.ts",
+      "scripts/install.sh",
+      "pi-config/install.sh"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-11-05T03:06Z",
-      "source": "pi-session:144e6ae4-8742-4902-b7f2-31eecad9142b#5844cea0"
+      "by": "user",
+      "at": "2026-11-13T05:15Z",
+      "source": "pi-session:01a1d023-6988-7481-af78-b02082042586#f37a584f"
     }
   },
   "§chat.mode-menu/tokens": {
@@ -576,7 +569,8 @@
       "server/chat-manager.ts",
       "server/sova-modes-owner.test.ts",
       "server/harness/pi/golden/session/S15-mode-command.trace",
-      "server/mode-commands-routes.test.ts"
+      "server/mode-commands-routes.test.ts",
+      "server/modes/engine-rules.test.ts"
     ],
     "evidence": "reviewed"
   },
@@ -596,7 +590,6 @@
       "pi-config/extensions/mode/minor.ts",
       "pi-config/extensions/mode/prompt.ts",
       "pi-config/extensions/mode/events.ts",
-      "pi-config/extensions/mode/index.ts",
       "pi-config/extensions/mode/README.md",
       "pi-config/extensions/subagents/index.ts",
       "pi-config/extensions/subagents/worker-mark.ts",
@@ -611,18 +604,17 @@
       "server/insights.ts",
       "server/worker-restore.ts",
       "src/components/SubagentPane.tsx",
-      "pi-config/extensions/mode/index.test.ts",
-      "pi-config/extensions/mode/tests/smoke.mjs",
+      "pi-config/extensions/mode/modes.test.ts",
       "pi-config/extensions/subagents/index.test.ts",
       "pi-config/extensions/subagents/restore.test.ts",
       "pi-config/extensions/subagents/worker-transcript.test.ts",
       "pi-config/extensions/sessions/test.mjs",
       "server/insights-workers.test.ts",
       "server/insights-restored.test.ts",
-      "pi-config/extensions/mode/project-tools-worker.ts",
       "server/team-member-tools.test.ts",
       "server/modes/engine.ts",
-      "server/harness/pi/modes.ts"
+      "server/harness/pi/modes.ts",
+      "server/modes/engine-project-tools.integration.test.ts"
     ],
     "agreed": {
       "by": "user",

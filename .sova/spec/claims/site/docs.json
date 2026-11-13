@@ -386,8 +386,9 @@
       "site/src/content/docs/install.md"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-10-11T11:27Z"
+      "by": "user",
+      "at": "2026-11-13T05:15Z",
+      "source": "pi-session:01a1d023-6988-7481-af78-b02082042586#f37a584f"
     }
   },
   "§site.docs/mcp-servers": {
@@ -543,8 +544,8 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-04T06:59Z",
-      "source": "pi-session:5b3349ca-a4e6-4bb7-8a78-16e639eb61df#40d50679"
+      "at": "2026-11-13T05:15Z",
+      "source": "pi-session:01a1d023-6988-7481-af78-b02082042586#f37a584f"
     }
   },
   "§site.docs/needs-you": {

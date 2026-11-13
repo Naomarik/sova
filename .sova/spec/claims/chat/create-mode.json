@@ -103,7 +103,6 @@
     "evidence": "reviewed",
     "code": [
       "pi-config/extensions/mode/prompt.ts",
-      "pi-config/extensions/mode/index.ts",
       "pi-config/extensions/mode/delegate.ts",
       "src/components/ModeMenu.tsx"
     ],
@@ -178,7 +177,7 @@
     "code": [
       "server/chat-manager.ts",
       "server/mode-state.ts",
-      "pi-config/extensions/mode/index.ts"
+      "server/modes/engine-hooks.test.ts"
     ],
     "agreed": {
       "by": "user",
@@ -229,7 +228,8 @@
       "server/create-mode-refusals.test.ts",
       "server/create-mode-chat.test.ts",
       "pi-config/extensions/mode/create-mode.test.ts",
-      "src/lib/mode-menu.ts"
+      "src/lib/mode-menu.ts",
+      "server/modes/engine-hooks.test.ts"
     ],
     "agreed": {
       "by": "naomarik",
@@ -344,7 +344,6 @@
     "evidence": "verified",
     "code": [
       "pi-config/extensions/mode/state.ts",
-      "pi-config/extensions/mode/index.ts",
       "pi-config/extensions/mode/prompt.ts",
       "pi-config/extensions/mode/create/guide.ts",
       "server/mode-state.ts",

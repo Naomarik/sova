@@ -101,12 +101,15 @@
     "evidence": "verified",
     "code": [
       "scripts/install.sh",
-      "scripts/install.test.sh"
+      "scripts/install.test.sh",
+      "pi-config/install.sh",
+      "pi-config/install.test.mjs",
+      "scripts/hermetic-agent-dir.mjs"
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-12T16:06Z",
-      "source": "pi-session:01a1d023-6988-7481-af78-b02082042586#96bae24a"
+      "at": "2026-11-13T05:15Z",
+      "source": "pi-session:01a1d023-6988-7481-af78-b02082042586#f37a584f"
     }
   },
   "§app.installer/portable": {

@@ -52,6 +52,15 @@ default. The agent dir is `$PI_CODING_AGENT_DIR` when set (a leading `~` expande
   skipped.
 - **Ours, and gone upstream.** A symlink of ours whose target no longer exists (an extension the
   new version removed) is removed.
+- **No `mode` link.** `pi-config/extensions/mode/` holds the texts, settings and modules Sova's own
+  modes use, not a pi extension (§chat.mode-menu/terminal), so it is never linked. A `mode` link
+  left by an earlier install, into this install or into another copy of Sova, is removed on every
+  run and named ("removed <link> (mode is no pi extension in this version)", the other copy's
+  saying it links to another Sova copy); anything else there is left as it is.
+  `pi-config/install.sh` links no `mode` either: its full run and `--links` remove a `mode` link
+  into its own folder, and `--check` changes nothing and fails on one ("stale link, mode is not an
+  extension: <link>"). A hermetic test server's agent dir links only what pi would load, so it has
+  no `mode` link, and one left from before is removed as stale.
 - **No personal configuration.** It writes no `settings.json`, `models.json`,
   `keybindings.json`, `vision-delegate.json`, `auth.json` or sandbox policy, and links no
   `pi-sessions` command. `pi-config/install.sh`, which does install a whole personal setup,

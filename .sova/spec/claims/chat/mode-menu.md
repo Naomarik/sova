@@ -477,8 +477,8 @@ spec's block, from the parent's saved copy of it, with its tools when the worker
 - **On its worktree's own agent dir.** A worker there (§chat.worktrees/worktree-config) follows the
   chat that started it too: while that chat has spec on, it has spec in its worker form (the same
   block and note, no writer paragraph); with spec off in that chat, its prompt carries nothing from
-  spec. The block comes from Sova, never from a copy of the mode extension in its tree, which it
-  never needs to start (§chat.mode-menu/sova-runs-modes).
+  spec. The block comes from Sova, never from its tree's mode files or an older Sova's mode
+  extension its `.agent` links (§chat.mode-menu/sova-runs-modes).
 - **A snapshot, taken at spawn.** The worker gets the modes the parent has when it starts; a
   later switch in the chat doesn't reach a running worker (§chat.mode-menu/how-a-switch-reaches-the-chat:
   there is no reload). A resumed worker takes the parent's **current** worker modes, exactly as at
@@ -877,21 +877,24 @@ launch flags). A chat's modes are Sova's: its mode menu (§chat.mode-menu/menu) 
 typed in it (§chat.mode-menu/typed-commands). A session's saved mode stays in its file as it was, so a
 session that was opened in a terminal has its modes again when Sova opens it.
 
-The pi mode extension may still be installed and load in a terminal as it did; Sova never loads it
+Sova ships no pi mode extension: a terminal has no modes at all, and `/mode` is no command there.
+`pi-config/extensions/mode/` holds the mode texts, settings and modules Sova's modes use; it is no
+pi extension (it has no entry point pi loads), the installers link no `mode` into the pi folder and
+remove a `mode` link of ours left from an earlier install (§app.installer/pi-extensions). A `mode`
+link into an older copy of Sova still loads that copy's extension in a terminal; Sova never loads it
 in its own chats (§chat.mode-menu/sova-runs-modes) and keeps no promise for it in a terminal.
 
 ## §chat.mode-menu/sova-runs-modes — Sova runs every chat's modes
 
 Sova runs every chat's modes itself: the major modes (Delegate, Create, strict), the built-in minor
 modes, project modes and personal modes, from one list, and what of them reaches the chat's
-workers. There is no switch for it and no other way: no copy of the pi mode extension ever loads in
-a Sova chat or its workers.
+workers. There is no switch for it and no other way: Sova ships no pi mode extension, and an older
+Sova's copy of it never loads in a Sova chat or its workers.
 
 - **Whatever the pi folder holds.** Every ordinary chat, the Overseer, every helper (pi and Claude
   Code), every team member and a worker on its worktree's own agent dir
-  (§chat.worktrees/worktree-config) runs Sova's modes, whether the pi folder links the mode
-  extension, links another Sova's copy of it, or doesn't link it at all, and whether `/extensions`
-  has it off: in Sova, the mode menu turns modes on and off, never `/extensions`. A session whose
+  (§chat.worktrees/worktree-config) runs Sova's modes, whether or not the pi folder still links an
+  older Sova's `mode` extension, and whether `/extensions` has it off: in Sova, the mode menu turns modes on and off, never `/extensions`. A session whose
   loadout loads no extensions (a hidden or special session) has no modes, as before.
 - **Exactly once.** The mode section appears exactly once in the prompt of a chat with a mode on,
   and in the prompt of each worker its modes reach.

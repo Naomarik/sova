@@ -6,7 +6,7 @@
     "code": [
       "pi-config/extensions/mode/vis/overview.md",
       "server/design/tools.ts",
-      "pi-config/extensions/mode/index.test.ts"
+      "pi-config/extensions/mode/modes.test.ts"
     ],
     "requires": [
       "§chat.design-mode/turning-on",
@@ -1137,7 +1137,7 @@
     "code": [
       "pi-config/extensions/mode/minor.ts",
       "pi-config/extensions/mode/project-format.ts",
-      "pi-config/extensions/mode/index.test.ts",
+      "pi-config/extensions/mode/modes.test.ts",
       "server/chat-manager.ts",
       "server/mode-state.test.ts",
       "src/components/ui.tsx",

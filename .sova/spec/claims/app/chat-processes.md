@@ -335,11 +335,13 @@ loads that tree's own extensions from where they are, and a hermetic test server
 branch's checkout on that branch's own agent dir, loads that branch's; a hermetic server whose agent dir holds copied sessions loads no wake-nudge
 extension, linked or not. A worker whose extension is
 missing from its copy (renamed since its parent's copy was made) does not start, and says
-"<file> is not in this chat's code (<id>); reload the parent chat", except the mode extension's own
-worker files (`spec-worker.ts`, `project-tools-worker.ts`), which Sova's modules take the place of
-so the worker starts (§chat.mode-menu/sova-runs-modes). Where a chat or worker's list has the mode
-extension, Sova's modes take its place in the list (a second one is dropped); where it has none,
-they load where `mode` sorts among the agent dir's own extensions. Settings, models, skills,
+"<file> is not in this chat's code (<id>); reload the parent chat", except the mode folder's
+worker slots (`mode/spec-worker.ts`, `mode/project-tools-worker.ts`, whether or not the file is
+there), which Sova's modules take the place of so the worker starts
+(§chat.mode-menu/sova-runs-modes). Where a chat or worker's list has a `mode` entry (a link left
+into an older Sova's mode extension, or a worker's mode slot), Sova's modes take its place in the
+list (a second one is dropped); where it has none, they load where `mode` sorts among the agent
+dir's own extensions. Settings, models, skills,
 prompts, themes and the agent dir's other files are read live.
 
 When the copy can't be made (a checkout whose Git fails, no space, no tree), chats run from the checkout as before;

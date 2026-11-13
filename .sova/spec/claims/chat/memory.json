@@ -339,11 +339,8 @@
     "evidence": "verified",
     "code": [
       "pi-config/extensions/mode/minor.ts",
-      "pi-config/extensions/mode/index.ts",
-      "pi-config/extensions/mode/palette.ts",
       "server/memory/permit.ts",
       "server/memory/permit.test.ts",
-      "pi-config/extensions/mode/tests/smoke.mjs",
       "server/chat-manager.ts",
       "shared/profiles.ts",
       "server/sessions-configure.ts",
@@ -355,7 +352,8 @@
       "server/app.ts",
       "server/merge-queue/thread.ts",
       "server/merge-queue/thread-modes.test.ts",
-      "server/modes/engine.ts"
+      "server/modes/engine.ts",
+      "server/modes/engine-rules.test.ts"
     ],
     "agreed": {
       "by": "naomarik",

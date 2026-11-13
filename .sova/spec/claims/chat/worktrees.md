@@ -252,9 +252,9 @@ parent's. The choice is recorded with the worker, so a resume applies it again.
 
 No mode extension is loaded from the tree and none needs to be there: Sova gives the worker its
 modes itself (§chat.mode-menu/sova-runs-modes) whenever Sova started it, whatever the tree's
-`.agent` holds, and it no longer looks at what its parent announces about its modes. Only a worker
-the pi terminal starts, with no Sova behind it, loads the tree's own `mode` extension (its real path
-must be a mode extension) explicitly instead. Its spec tools are the tree's own (§tools.spec/mode-reading).
+`.agent` holds, and it no longer looks at what its parent announces about its modes. A worker the
+pi terminal starts, with no Sova behind it, has no modes (§chat.mode-menu/terminal): it loads no
+mode extension from the tree, needs none there, and gets no mode flags. Its spec tools are the tree's own (§tools.spec/mode-reading).
 
 Sova's modes know they run in a worker: they ignore the `mode` snapshots a `fork` copied
 from the parent's branch and the tree's `mode.json`, so the worker is always in normal mode and

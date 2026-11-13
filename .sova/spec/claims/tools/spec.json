@@ -30,10 +30,9 @@
     "code": [
       "pi-config/extensions/mode/spec-agree.ts",
       "pi-config/extensions/mode/spec-agree.test.ts",
-      "pi-config/extensions/mode/index.ts",
       "pi-config/extensions/subagents/index.ts",
       "pi-config/extensions/mode/spec-mode.md",
-      "pi-config/extensions/mode/index.test.ts",
+      "pi-config/extensions/mode/modes.test.ts",
       "pi-config/extensions/spec/docs/MODE.md"
     ],
     "agreed": {
@@ -73,9 +72,8 @@
     ],
     "code": [
       "pi-config/extensions/mode/align-tool.ts",
-      "pi-config/extensions/mode/index.ts",
-      "pi-config/extensions/mode/tests/agree-turn.mjs",
-      "pi-config/extensions/spec/docs/MODE.md"
+      "pi-config/extensions/spec/docs/MODE.md",
+      "server/modes/engine-hooks.test.ts"
     ],
     "evidence": "verified",
     "agreed": {
@@ -126,7 +124,6 @@
       "pi-config/extensions/mode/README.md",
       "pi-config/extensions/claude-code/README.md",
       "pi-config/extensions/mode/spec-worker.ts",
-      "pi-config/extensions/mode/index.ts",
       "pi-config/extensions/subagents/index.test.ts"
     ],
     "agreed": {
@@ -208,7 +205,7 @@
       "pi-config/extensions/subagents/spec-brief.test.ts",
       "pi-config/extensions/spec/tests/packet.test.mjs",
       "pi-config/extensions/mode/spec-mode.md",
-      "pi-config/extensions/mode/index.test.ts",
+      "pi-config/extensions/mode/modes.test.ts",
       "pi-config/extensions/mode/README.md",
       "pi-config/extensions/spec/README.md",
       "pi-config/extensions/spec/core/README.md",
@@ -448,10 +445,10 @@
       "pi-config/extensions/mode/spec-guard.ts",
       "pi-config/extensions/subagents/spec-brief.ts",
       "pi-config/extensions/subagents/spec-brief.test.ts",
-      "pi-config/extensions/mode/index.test.ts",
+      "pi-config/extensions/mode/modes.test.ts",
       "pi-config/extensions/mode/prompt.ts",
       "pi-config/extensions/spec/PROMOTE.md",
-      "pi-config/extensions/mode/tests/fixtures/flag-off-master.json",
+      "server/modes/tests/fixtures/align-flag-off-master.json",
       "pi-config/extensions/spec/docs/CHANGELOG.md",
       "pi-config/extensions/mode/spec-mode.test.ts",
       "pi-config/extensions/mode/spec-guard.test.ts",
@@ -494,7 +491,6 @@
     "requires": [],
     "authority": "accepted",
     "code": [
-      "pi-config/extensions/mode/index.ts",
       "pi-config/extensions/mode/spec-guard.ts",
       "pi-config/extensions/mode/spec-worker.ts",
       "pi-config/extensions/mode/spec-mode.md",
@@ -753,7 +749,6 @@
     "code": [
       "pi-config/extensions/mode/spec-guard.ts",
       "pi-config/extensions/mode/spec-worker.ts",
-      "pi-config/extensions/mode/index.ts",
       "pi-config/extensions/subagents/index.ts",
       "pi-config/extensions/subagents/README.md",
       "pi-config/extensions/mode/README.md",
@@ -791,14 +786,11 @@
       "pi-config/extensions/mode/spec-guard.ts",
       "pi-config/extensions/mode/spec-guard.test.ts",
       "pi-config/extensions/mode/spec-worker.ts",
-      "pi-config/extensions/mode/index.ts",
       "pi-config/extensions/mode/align-tool.ts",
       "pi-config/extensions/mode/prompt.ts",
       "pi-config/extensions/subagents/spec-brief.ts",
       "pi-config/extensions/subagents/spec-brief.test.ts",
-      "pi-config/extensions/mode/tests/spec-turn.mjs",
       "pi-config/extensions/mode/tests/spec-worker.mjs",
-      "pi-config/extensions/mode/tests/agree-turn.mjs",
       "scripts/spec-pointers.test.ts",
       "pi-config/extensions/spec/docs/MODE.md",
       "server/harness/pi/modes.ts",

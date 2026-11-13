@@ -283,9 +283,9 @@
       "server/create-guide-growth.json",
       "server/modes/golden/cases/c06-create.json",
       "server/modes/golden/cases/c13-create-align-spec.json",
-      "server/modes/golden/store/7ac66de8a46b172d.json",
-      "server/modes/golden/store/8bdda316ab44e99e.json",
-      "server/modes/golden/store/9975a21f684a4236.json"
+      "server/modes/golden/store/9975a21f684a4236.json",
+      "server/modes/golden/store/1a09b733f6373d98.json",
+      "server/modes/golden/store/937c230a16a084d6.json"
     ],
     "agreed": {
       "by": "user",

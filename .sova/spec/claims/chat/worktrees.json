@@ -687,12 +687,15 @@
       "server/chat-manager.ts",
       "server/harness/pi/own-code.ts",
       "server/sova-modes-workers.test.ts",
-      "server/modes/worker-slots.golden.test.ts"
+      "server/modes/worker-slots.golden.test.ts",
+      "server/harness/pi/own-extensions.test.ts",
+      "server/chat-host.ts",
+      "server/chat-host-caller-key.test.ts"
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-06T22:14Z",
-      "source": "pi-session:b406e4de-b015-4dbb-b201-14ab20b5da44#2b9be4c7"
+      "at": "2026-11-12T16:06Z",
+      "source": "pi-session:01a1d023-6988-7481-af78-b02082042586#96bae24a"
     }
   },
   "§chat/worktrees": {

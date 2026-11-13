@@ -1144,7 +1144,8 @@
       "src/lib/mode-glyphs.ts",
       "pi-config/extensions/mode/create/modes.md",
       "pi-config/extensions/mode/create/tools.md",
-      "server/create-guide-growth.json"
+      "server/create-guide-growth.json",
+      "server/harness/pi/modes.ts"
     ],
     "requires": [
       "§chat/mode-menu",
@@ -1156,8 +1157,8 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-12T10:39Z",
-      "source": "pi-session:c6e7f9da-6608-46f4-a4d9-6db219882520#b5acf41a"
+      "at": "2026-11-13T03:00Z",
+      "source": "pi-session:01a1d023-6988-7481-af78-b02082042586#71ebdfba"
     }
   },
   "§chat/design-mode": {

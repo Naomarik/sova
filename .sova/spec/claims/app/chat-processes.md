@@ -167,11 +167,12 @@ starts a chat again.
   directory of the Claude program the server resolved, then the server's `PATH`. It also gets
   `HOME`, `PI_CODING_AGENT_DIR` and the chat's own `SOVA_CHAT_*` (among them the checkout's and the
   copies' places, `SOVA_CHAT_LIVE_ROOT` and `SOVA_CHAT_COPIES_ROOT`), and its own key,
-  `SOVA_CALLER_KEY` (§app.command-audit/keys), `SOVA_URL`, its own server's address on the port it is
+  `SOVA_CALLER_KEY` (§app.command-audit/keys), `SOVA_SPEC_CORE`, the spec tools in the code copy it runs
+  (§tools.spec/mode-reading; not for a worker on its worktree's own agent dir), `SOVA_URL`, its own server's address on the port it is
   really bound to, left out when the server is bound to one address loopback can't reach, and `GIT_CONFIG_SYSTEM` naming Sova's git system
   config, so nothing it runs starts git's background cleanup (§app.git-cleanup/no-background). A chat process's own
   variables (`SOVA_CHAT_SOCK`, `_PATH`, `_ID`, `_UNIT`, `_BUILD`, `_STATE_ROOT`, `_LIVE_ROOT`,
-  `_COPIES_ROOT`, `SOVA_CALLER_KEY`, and `SOVA_URL`) are never passed on from the server's environment, and a server deletes them from
+  `_COPIES_ROOT`, `SOVA_CALLER_KEY`, `SOVA_SPEC_CORE`, and `SOVA_URL`) are never passed on from the server's environment, and a server deletes them from
   its own at start, so a server started from a chat's tools never acts as that chat or its server. All of it is passed in a file only
   the user can read, never on a command line. A variable that file can't carry (a name that is no
   variable name, or a value on more than one line) is left out, and the server logs its name once.
@@ -314,17 +315,31 @@ tree except any `node_modules` (linked per lockfile as above), `.git`, the top-l
 `.accept`, `dist` and `dist-share`, and anything inside the agent dir, the state root or the
 copies root when they lie inside the tree, so no session, login or earlier copy goes into it.
 
-Sova's own extensions load from the chat's copy: an extension the agent dir links into a Sova
-checkout's `pi-config/`, or into another copy's, loads from the same place in the chat's copy, and
-extensions switched off with /extensions stay off. A Sova extension added to the checkout after
-the chat's copy was made is left out of that chat until it reloads onto newer code; the chat
-process logs it. Installed packages, a project's own
-extensions and a worktree's own agent dir load from where they are. A worker whose extension is
+Sova's own extensions load from the chat's copy: every extension Sova ships (each one in its
+`pi-config/extensions/`) loads from the same place in the chat's copy, whatever the agent dir's
+`extensions/` holds for it: a link into this Sova's checkout or one of its copies, a link into any
+other copy of Sova (an older install, a developer checkout), or no link at all. One with no link
+loads among the agent dir's own extensions where its name sorts, as a link of that name would,
+unless the agent dir's settings turn it off by name or the project has its own extension of that
+name. So a chat, its
+workers and the start-up warm-up never run another Sova's code because of a leftover link, and the
+pi terminal, which follows the links, is not changed by it. An extension switched off with
+/extensions stays off, matched by its name, wherever its link led; Sova's modes are the one
+exception and always run (§chat.mode-menu/sova-runs-modes). A Sova extension added to the checkout
+after the chat's copy was made is left out of that chat until it reloads onto newer code; the chat
+process logs it. Likewise an extension the agent dir links from another copy of Sova that this
+chat's copy doesn't ship is not loaded at all: the chat process logs its name and the other copy's
+path, and nothing else says so. Installed packages, a project's own extensions and extensions
+outside any copy of Sova load from where they are. A worker on its worktree's own agent dir (§chat.worktrees/worktree-config)
+loads that tree's own extensions from where they are, and a hermetic test server, run from a
+branch's checkout on that branch's own agent dir, loads that branch's; a hermetic server whose agent dir holds copied sessions loads no wake-nudge
+extension, linked or not. A worker whose extension is
 missing from its copy (renamed since its parent's copy was made) does not start, and says
 "<file> is not in this chat's code (<id>); reload the parent chat", except the mode extension's own
 worker files (`spec-worker.ts`, `project-tools-worker.ts`), which Sova's modules take the place of
-so the worker starts (§chat.mode-menu/sova-runs-modes). While Sova runs chat modes, the mode
-extension a chat or worker would load is Sova's own, in the same place in its list. Settings, models, skills,
+so the worker starts (§chat.mode-menu/sova-runs-modes). Where a chat or worker's list has the mode
+extension, Sova's modes take its place in the list (a second one is dropped); where it has none,
+they load where `mode` sorts among the agent dir's own extensions. Settings, models, skills,
 prompts, themes and the agent dir's other files are read live.
 
 When the copy can't be made (a checkout whose Git fails, no space, no tree), chats run from the checkout as before;

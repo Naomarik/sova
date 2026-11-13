@@ -533,7 +533,8 @@
       "§chat.memory/overseer",
       "§app.project-overseer/memory-switch",
       "§app.overseer/memory-switch",
-      "§chat/create-mode"
+      "§chat/create-mode",
+      "§chat.mode-menu/sova-runs-modes"
     ],
     "authority": "accepted",
     "evidence": "reviewed",

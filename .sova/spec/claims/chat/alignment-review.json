@@ -32,7 +32,6 @@
       "server/chat-manager.ts",
       "server/adversarial-review-flag.test.ts",
       "src/components/SettingsDialog.tsx",
-      "src/lib/experimental-draft.ts",
       "src/App.tsx",
       "src/lib/align-review.ts",
       "server/harness/state-kinds.ts",

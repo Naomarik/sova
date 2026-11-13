@@ -50,7 +50,7 @@ them, a project's own modes as one row), and links to the feature, extending and
 The major and minor modes side by side, the three major modes in the mode menu's words, switching
 them per chat from the composer's mode menu,
 the default for new sessions (memory's type with it; never Create, which is chosen per chat),
-strict, a short memory section that
+strict, that Sova runs every chat's modes with no switch (§chat.mode-menu/sova-runs-modes), a short memory section that
 links to its own page (§site.docs/memory), the terminal's commands, which offer no Create, what workers get (spec, and each
 project mode that says so), and the sessions that choose their own mode, and a project's own minor modes (§site.docs/project-modes).
 
@@ -123,7 +123,8 @@ route, when it runs, blockers, and what the card shows.
 The spec minor mode: its guide's two parts (finding your way on every turn, the writing procedure
 once, before the first behavior-changing edit or with the first census note or an alignment's
 go-ahead), working from the project's spec, the read-only `spec` tool every chat you code in and
-every worker but a team's monitor has for those look-ups, spec on or off (§app.spec-lookup/spec-tool), the census note and its one unread line before
+every worker but a team's monitor has for those look-ups, spec on or off (§app.spec-lookup/spec-tool), whose copy of
+the spec tools a chat, its workers, the merge queue and releases run (§tools.spec/mode-reading), the census note and its one unread line before
 finishing, updating a claim the task didn't create without asking and listing it in the reply's one
 spec line ("Also updates …"), the Agree step when align is on too, drafts and promotion, the spec
 writer, what workers get (and the claims a finished worker's changes landed in), and project coding
@@ -228,7 +229,9 @@ running turn, and switching models mid-session (favorites and the saved default)
 ## §site.docs/install — Install (`/docs/install/`)
 
 Installing Sova on a Mac or Linux machine with one command and its options, starting it and
-opening it unlocked, the app-launcher entry that opens it in its own window (on macOS, an app of its own with its own
+opening it unlocked, the pi extension links (a leftover link into another copy of Sova repointed, anything
+else kept and named; Sova's own chats run their own copy's extensions whatever the links say,
+§app.installer/pi-extensions), the app-launcher entry that opens it in its own window (on macOS, an app of its own with its own
 Dock icon and no title bar), the access token,
 the login service, running the installer again and the self-update from Settings it points to
 (§site.docs/updates), removing it (the service, the extension links,

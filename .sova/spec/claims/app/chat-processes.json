@@ -46,17 +46,23 @@
       "server/chat-runtime/supervisor.test.ts",
       "server/chat-runtime/trial-s5-generations.integration.test.ts",
       "server/chat-host.test.ts",
-      "server/harness/pi/own-code-modes.test.ts"
+      "server/harness/pi/own-code-modes.test.ts",
+      "server/harness/pi/own-extensions.test.ts",
+      "server/chat-manager.ts",
+      "scripts/test-env.mjs",
+      "scripts/hermetic-agent-dir.mjs",
+      "server/harness/pi/modes-entry.ts"
     ],
     "requires": [
       "§app.chat-processes/supervision",
       "§app.chat-processes/code-pickup"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-11-05T05:46Z",
-      "source": "pi-session:144e6ae4-8742-4902-b7f2-31eecad9142b#5844cea0"
-    }
+      "by": "user",
+      "at": "2026-11-12T16:06Z",
+      "source": "pi-session:01a1d023-6988-7481-af78-b02082042586#96bae24a"
+    },
+    "evidence": "verified"
   },
   "§app.chat-processes/code-pickup": {
     "kind": "behavior",
@@ -345,7 +351,8 @@
       "server/auth.ts",
       "server/chat-server-url.integration.test.ts",
       "server/chat-host-caller-key.test.ts",
-      "server/background-jobs-capture.ts"
+      "server/background-jobs-capture.ts",
+      "scripts/test-env.mjs"
     ],
     "requires": [
       "§app/chat-processes",

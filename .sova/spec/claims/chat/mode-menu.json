@@ -32,12 +32,11 @@
   "§chat.mode-menu/how-a-switch-reaches-the-chat": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "code": [
       "server/chat-manager.ts",
       "server/index.ts",
       "server/app.ts",
-      "pi-config/extensions/mode/index.ts",
       "src/components/Thread.tsx",
       "server/quiet-close-actions.test.ts",
       "server/project-mode-menu.ts",
@@ -46,7 +45,9 @@
       "server/harness/pi/modes.ts",
       "server/sova-modes-owner.test.ts",
       "server/profile-editor-routes.ts",
-      "server/create-mode-chat.test.ts"
+      "server/create-mode-chat.test.ts",
+      "src/components/ModeMenu.tsx",
+      "server/chat-mode-sync.test.ts"
     ],
     "agreed": {
       "by": "naomarik",
@@ -88,7 +89,7 @@
   "§chat.mode-menu/menu": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "code": [
       "src/components/ModeMenu.tsx",
       "src/lib/mode-menu.ts",
@@ -158,9 +159,9 @@
     ],
     "authority": "accepted",
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-11-05T03:06Z",
-      "source": "pi-session:144e6ae4-8742-4902-b7f2-31eecad9142b#5844cea0"
+      "by": "user",
+      "at": "2026-11-12T16:05Z",
+      "source": "pi-session:01a1d023-6988-7481-af78-b02082042586#96bae24a"
     },
     "code": [
       "server/modes/personal.ts",
@@ -330,7 +331,7 @@
       "§app.worker-restore/claude-bridge-restart"
     ],
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "code": [
       "pi-config/extensions/mode/index.ts",
       "server/chat-manager.ts",
@@ -354,7 +355,6 @@
   "§chat.mode-menu/sova-runs-modes": {
     "kind": "behavior",
     "requires": [
-      "§app.settings-dialog/save-bar",
       "§chat.mode-menu/workers",
       "§chat.mode-menu/minor-toggle-keeps-prompt",
       "§app.chat-processes/code-generations",
@@ -362,9 +362,9 @@
     ],
     "authority": "accepted",
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-11-10T11:43Z",
-      "source": "pi-session:0e2ea24a-22d2-4ec7-a1df-46bf85135214#c54c09bf"
+      "by": "user",
+      "at": "2026-11-12T16:05Z",
+      "source": "pi-session:01a1d023-6988-7481-af78-b02082042586#96bae24a"
     },
     "code": [
       "server/web-settings.ts",
@@ -394,18 +394,9 @@
       "pi-config/extensions/subagents/index.test.ts",
       "pi-config/extensions/subagents/worker-host.ts",
       "pi-config/extensions/subagents/fork/background.ts",
-      "src/components/SettingsDialog.tsx",
-      "src/lib/experimental-draft.ts",
-      "src/lib/experimental-draft.test.ts",
       "server/sova-modes-owner.test.ts",
       "server/sova-modes-workers.test.ts",
-      "server/sova-modes-flip.integration.test.ts",
-      "server/chat-runtime/trial-modes-flip.integration.test.ts",
       "scripts/chat-runtime-trial/run.mjs",
-      "scripts/run-tests.mjs",
-      "server/modes/engine-parity.test.ts",
-      "server/modes/modes-extension.golden.test.ts",
-      "server/modes/modes-extension.golden.integration.test.ts",
       "server/modes/modes-sova.golden.test.ts",
       "server/modes/modes-sova.golden.integration.test.ts",
       "server/modes/worker-slots.golden.test.ts",
@@ -455,9 +446,20 @@
       "server/chat-runtime/warm-modes.test.ts",
       "server/harness/pi/session.ts",
       "server/harness/pi/session.test.ts",
-      "server/modes/tool-source-word.test.ts"
+      "server/modes/tool-source-word.test.ts",
+      "server/harness/pi/own-extensions.test.ts",
+      "server/harness/pi/own-code.test.ts",
+      "server/build-loadout.ts",
+      "server/harness/pi/commands.ts",
+      "scripts/test-env.mjs",
+      "scripts/hermetic-agent-dir.mjs",
+      "src/components/ModeMenu.tsx",
+      "server/project-mode-menu.ts",
+      "shared/harness-session.ts",
+      "server/modes/golden/cases/c23-spec-reads-one-source.json",
+      "server/modes/golden/cases/w09-tree-config-parent-spec-off.json"
     ],
-    "evidence": "reviewed"
+    "evidence": "verified"
   },
   "§chat.mode-menu/states": {
     "kind": "behavior",
@@ -491,7 +493,6 @@
       "src/lib/mode-menu.ts",
       "pi-config/extensions/mode/index.test.ts",
       "server/modes/engine.ts",
-      "server/modes/engine-parity.test.ts",
       "pi-config/extensions/mode/tests/smoke.mjs"
     ],
     "agreed": {
@@ -516,8 +517,7 @@
       "pi-config/extensions/mode/prompt.ts",
       "pi-config/extensions/mode/tests/smoke.mjs",
       "pi-config/extensions/mode/index.test.ts",
-      "server/modes/engine.ts",
-      "server/modes/engine-parity.test.ts"
+      "server/modes/engine.ts"
     ],
     "agreed": {
       "by": "naomarik",
@@ -575,8 +575,8 @@
       "server/harness/pi/modes.ts",
       "server/chat-manager.ts",
       "server/sova-modes-owner.test.ts",
-      "server/modes/engine-parity.test.ts",
-      "server/harness/pi/golden/session/S15-mode-command.trace"
+      "server/harness/pi/golden/session/S15-mode-command.trace",
+      "server/mode-commands-routes.test.ts"
     ],
     "evidence": "reviewed"
   },
@@ -620,12 +620,14 @@
       "server/insights-workers.test.ts",
       "server/insights-restored.test.ts",
       "pi-config/extensions/mode/project-tools-worker.ts",
-      "server/team-member-tools.test.ts"
+      "server/team-member-tools.test.ts",
+      "server/modes/engine.ts",
+      "server/harness/pi/modes.ts"
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-12T10:40Z",
-      "source": "pi-session:c6e7f9da-6608-46f4-a4d9-6db219882520#b5acf41a"
+      "at": "2026-11-13T03:00Z",
+      "source": "pi-session:01a1d023-6988-7481-af78-b02082042586#71ebdfba"
     }
   },
   "§chat/mode-menu": {
@@ -636,7 +638,7 @@
       "§chat.create-mode/per-chat-only"
     ],
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "code": [
       "pi-config/extensions/mode/state.ts",
       "server/mode-state.ts",

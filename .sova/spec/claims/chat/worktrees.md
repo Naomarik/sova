@@ -244,20 +244,19 @@ By default a worker runs on the session's agent dir. `agent_spawn {useWorktreeCo
 valid only for a pi worker whose cwd is inside an active worktree that has a `.agent`
 directory, runs it on `<worktree>/.agent` instead: `PI_CODING_AGENT_DIR` points there, its
 session file is still written in the parent's sessions directory (so Sova shows its
-transcript), that tree's `mode` extension (its real path must be a mode extension) is loaded
-explicitly in normal mode, with the spec minor mode only while the chat that started it has spec
-on, and the project is trusted for the run (`--approve`). A Claude Code worker, being a pi worker, may use it too. It is refused outside an
+transcript), it runs in normal mode, with the spec minor mode only while the chat that started it
+has spec on, and the project is trusted for the run (`--approve`). A Claude Code worker, being a pi worker, may use it too. It is refused outside an
 active tracked worktree, or when the worktree has no `.agent`. Extension discovery stays off, and
 the tree's subagents and worktrees extensions are never loaded. The model policy is still the
 parent's. The choice is recorded with the worker, so a resume applies it again.
 
-While Sova runs chat modes (§chat.mode-menu/sova-runs-modes), no mode extension is loaded from the
-tree and none needs to be there: Sova gives the worker its modes itself, exactly as the next
-paragraph says the tree's extension does. With the switch off, the tree's own extension is loaded as
-above.
+No mode extension is loaded from the tree and none needs to be there: Sova gives the worker its
+modes itself (§chat.mode-menu/sova-runs-modes) whenever Sova started it, whatever the tree's
+`.agent` holds, and it no longer looks at what its parent announces about its modes. Only a worker
+the pi terminal starts, with no Sova behind it, loads the tree's own `mode` extension (its real path
+must be a mode extension) explicitly instead. Its spec tools are the tree's own (§tools.spec/mode-reading).
 
-That mode extension knows it runs in a worker (the worker marker tells it on the extension bus,
-so an older tree's extension just doesn't hear it): it ignores the `mode` snapshots a `fork` copied
+Sova's modes know they run in a worker: they ignore the `mode` snapshots a `fork` copied
 from the parent's branch and the tree's `mode.json`, so the worker is always in normal mode and
 never strict, with spec as the chat that started it has it when the worker starts or resumes; it is
 never offered a spec writer; and its spec block, when it has one, is the worker form

@@ -374,7 +374,7 @@ words, in the composer, the session pane, the chat's queue cards and the project
 | Save failed | **Couldn't save the default.** {reason}. The server reason states which default was written on a partial failure; no blanket "Nothing was saved" suffix contradicts it |
 | Saved (announcement) | Default: {name}. New chats start here. · Updated {name}. |
 | Pending | **Applies after this turn.** This turn keeps the old mode, and so do messages queued during it. Your next message follows the new one. |
-| Can't switch | **This chat can't switch.** This chat can't switch: the mode extension isn't loaded here, or another program wrote this session. |
+| Can't switch | **This chat can't switch.** Modes aren't available in this chat, or another program wrote this session. |
 | Switch failed | **Couldn't switch the mode.** {reason}. Your mode is unchanged. |
 | Load failed | **Couldn't load the modes.** Your mode is unchanged. Close this and try again. |
 | Transcript marker | Mode → {mode} · Minor mode: {minor} on\|off (a project mode by its id, the same way) · Strict mode on\|off (shown as recorded) |
@@ -847,11 +847,7 @@ en-US separators ("from 0 to 1,000", "at most 8,000 characters").
 
 | Where | Copy |
 |---|---|
-| Intro | Unfinished features. They can change or disappear, and each one says when a change reaches your chats. |
-| Sova runs chat modes switch · hint (§chat.mode-menu/sova-runs-modes) | Sova runs chat modes · Sova runs every chat's modes itself, instead of the pi mode extension. Turn it off to go back to the old way; nothing is lost either way. Open chats switch over at their next quiet moment; workers already running finish the way they started. |
-| Empty state (no switch to show; the tab has one today, so it isn't shown) | No experimental features right now. |
-| Load failed (banner-error) | **Couldn't read the experimental settings.** Nothing was changed. |
-| Save failed (banner-error) | **Couldn't save the change.** {reason}. Your saved setting is unchanged. |
+| Empty state (the tab has no switch today, so this line is all it shows; Sova runs chat modes, its last switch, is gone, §chat.mode-menu/sova-runs-modes) | No experimental features right now. |
 | Buttons | none in the tab — the dialog footer's Save Changes · Cancel (§design.copy-deck/settings-modes-delegate) |
 
 ## §design.copy-deck/settings-alignment — Settings · Alignment (§app.settings-dialog/alignment)

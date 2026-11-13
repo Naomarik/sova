@@ -50,7 +50,7 @@
   "§app.project-overseer/coding-mode": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "requires": [
       "§app.project-overseer/tools",
       "§chat/mode-menu",

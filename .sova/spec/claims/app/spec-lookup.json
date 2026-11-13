@@ -83,9 +83,10 @@
       "pi-config/extensions/spec/docs/CHANGELOG.md",
       "site/src/content/docs/modes/spec.md",
       "server/harness/pi/spec-tool-result.integration.test.ts",
-      "server/team-member-tools.test.ts"
+      "server/team-member-tools.test.ts",
+      "pi-config/extensions/mode/spec-mode.test.ts"
     ],
-    "evidence": "verified"
+    "evidence": "reviewed"
   },
   "§app.spec-lookup/tool": {
     "kind": "behavior",

@@ -34,7 +34,7 @@ A Lookbook is no mode of its own: it is an entry in the vis catalogue, tool-back
 it is there only with vis on.
 
 - **Its tool comes with vis.** In a Sova chat with the vis minor mode on, the main chat has one
-  Lookbook tool, `lookbook`, served by Sova itself under either owner of the chat's modes
+  Lookbook tool, `lookbook`, served by Sova itself, which runs the chat's modes
   (§chat.mode-menu/sova-runs-modes). It enters and leaves the chat's tools with vis, in the same one
   tool-set change as vis's other tools (§chat.mode-menu/minor-toggle-keeps-prompt), so a chat with
   vis on from its start sees no change in its tools when a Lookbook starts, and its cached prompt

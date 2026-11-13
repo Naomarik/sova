@@ -316,8 +316,7 @@
       "pi-config/extensions/mode/align.ts",
       "pi-config/extensions/mode/align.test.ts",
       "server/modes/engine.ts",
-      "server/harness/pi/modes.ts",
-      "server/modes/engine-parity.test.ts"
+      "server/harness/pi/modes.ts"
     ],
     "requires": [
       "§chat.alignment/state",

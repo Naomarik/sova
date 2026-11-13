@@ -462,6 +462,38 @@ describe("§app.owner-page/send: the Overseer sends the owner their page link", 
     assert.equal(sender.sent(), n + 1, "delivered once");
   });
 
+  test("on Cloudflare Free a client's link goes out with Free's note, also while its address is still coming online (q5)", async () => {
+    const { LINK_WARNINGS } = await import("../shared/public-links");
+    const links = await import("./public-links");
+    const { setShareTunnelForTest } = await import("./share/share-state");
+    const { UNVERIFIED } = await import("./share/tunnel/manager");
+    await setOwner(org.id, omar.id);
+    const quickEnv = process.env.SOVA_QUICK_TUNNEL;
+    delete process.env.SOVA_SHARE_PUBLIC_URL;
+    process.env.SOVA_QUICK_TUNNEL = "on";
+    links.recordTunnelConsent();
+    links.patchPublicLinks({ route: "quick" });
+    const tunnel = (reason?: string) => () => ({ key: { kind: "share" as const }, mode: "quick" as const, state: "up" as const, origin: "https://able-baker-charlie-delta.trycloudflare.com", epoch: 1, ...(reason ? { reason } : {}) });
+    try {
+      for (const [name, reason, code] of [
+        ["still coming online", `${UNVERIFIED}.`, "quick-verifying"],
+        ["verified", undefined, "quick"],
+      ] as const) {
+        setShareTunnelForTest(tunnel(reason));
+        const r = await send({ orgId: org.id, personId: omar.id, link: { kind: "owner" }, by: "operator-via-overseer", key: `k-free-${code}` });
+        assert.equal(r.outcome, "sent", `${name}: the link goes out`);
+        assert.equal(r.linkWarning, LINK_WARNINGS[code], `${name}: with its note`);
+      }
+    } finally {
+      setShareTunnelForTest(null);
+      rmSync(links.publicLinksFile(), { force: true });
+      rmSync(links.tunnelConsentFile(), { force: true });
+      process.env.SOVA_SHARE_PUBLIC_URL = PUBLIC;
+      if (quickEnv === undefined) delete process.env.SOVA_QUICK_TUNNEL;
+      else process.env.SOVA_QUICK_TUNNEL = quickEnv;
+    }
+  });
+
   test("runs the user didn't start, and approvals for later or standing rules, never send", async () => {
     attended = false;
     permit = () => ({ id: "ap_1", label: "any act until 6:00 PM" });

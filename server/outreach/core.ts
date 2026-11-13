@@ -36,6 +36,8 @@ export interface SendResult {
   retryable?: boolean;
   /** An owner page link send made a new link (§app.owner-page/send): it stays whatever the outcome. */
   madeLink?: boolean;
+  /** A sent link's address note (Cloudflare Free), for whoever sent it. */
+  linkWarning?: string;
 }
 
 export interface SendInput {

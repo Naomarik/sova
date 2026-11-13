@@ -94,8 +94,13 @@ function addressAfterWait(): LinkRefusal | null {
   return addressRefusal();
 }
 
-/** Free's note for the sender, while the link goes at a Free tunnel's address. */
-const quickNote = (): { warning?: string } => (shareState().warningCode === "quick" ? { warning: LINK_WARNINGS.quick } : {});
+/** Free's note for the sender, in every Free state a link goes out in (§app.outreach/links): its
+    address changes when this computer restarts, or it is still coming online. */
+const QUICK_NOTES: ReadonlySet<LinkWarningCode> = new Set(["quick", "quick-verifying"]);
+const quickNote = (): { warning?: string } => {
+  const s = shareState();
+  return s.warningCode && QUICK_NOTES.has(s.warningCode) ? { warning: s.warning ?? LINK_WARNINGS[s.warningCode] } : {};
+};
 
 const no = (code: string, why: string): LinkRefusal => ({ code, why });
 

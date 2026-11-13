@@ -3,6 +3,7 @@ import { quickTunnelAllowed, readPublicLinks } from "../../public-links";
 import { bindForTunnel, releaseTunnelBind } from "../listener";
 import { onShareLinksChanged, setMintWait, type ShareLinksChange } from "../links-events";
 import { liveLinks } from "../registry-push";
+import { shareTunnelStatus } from "../share-state";
 import { onPublicLinksChanged } from "../setting-events";
 import { readCandidateToken } from "./account-token";
 import { onCloudflaredChanged } from "./binary";
@@ -77,6 +78,8 @@ async function ensureShare(by: string, waitMs?: number): Promise<TunnelStatus | 
 /** Make the share address ready for a link sent without a new mint (a kept link): under Free (after
     Turn On) or Account, start the share tunnel if needed and wait for it as a mint would. */
 export async function readyShareAddress(): Promise<void> {
+  // Up already (as links read it): nothing to start or wait for.
+  if (shareTunnelStatus().state === "up") return;
   const r = route();
   if (r === "account" || (r === "quick" && quickTunnelAllowed(env))) await ensureShare("send", r === "quick" ? QUICK_MINT_WAIT_MS : undefined);
 }

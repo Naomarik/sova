@@ -110,11 +110,18 @@ export function accountState(file: PublicLinksFile, t: TunnelStatus): ShareState
   return ownState("account", url, file);
 }
 
+/** The share tunnel's state as links read it: the manager's cache (memory only). Tests set their own. */
+let shareTunnel = (): TunnelStatus => tunnelStatus({ kind: "share" });
+export const shareTunnelStatus = (): TunnelStatus => shareTunnel();
+export function setShareTunnelForTest(read: (() => TunnelStatus) | null): void {
+  shareTunnel = read ?? (() => tunnelStatus({ kind: "share" }));
+}
+
 function effectiveState(env: NodeJS.ProcessEnv, file: PublicLinksFile): ShareState {
   const pin = sharePin(env);
   if (pin) return ownState("env", pin, file);
-  if (file.route === "quick") return quickState(tunnelStatus({ kind: "share" }), { enabled: quickTunnelEnabled(env), consentAt: readTunnelConsent() });
-  if (file.route === "account") return accountState(file, tunnelStatus({ kind: "share" }));
+  if (file.route === "quick") return quickState(shareTunnel(), { enabled: quickTunnelEnabled(env), consentAt: readTunnelConsent() });
+  if (file.route === "account") return accountState(file, shareTunnel());
   if (file.route === "self" && file.gateway) return ownState("setting", file.gateway.publicUrl, file);
   if (typeof file.route === "object") {
     const status = viaGatewayStatus();

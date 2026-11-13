@@ -1151,15 +1151,8 @@ export function App() {
     subagentsTrigger = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     setSubagents({ path, selected: null, board: true });
   };
-  /** The Agents board's Open Subagents: open the session, then its pane on the Agents tab.
-      Route first: the pane only opens beside a session that is on screen. */
-  const openSubagentsFor = (path: string) => {
-    location.hash = sessionHref(path);
-    batch(onHash);
-    if (!paneOn(path, "agents")) openPane(path, "agents");
-  };
-  /** The session menu from a sidebar row (lib/session-menu): Session Details and Open Subagents
-      open the session with its pane, on the Session or the Agents tab. */
+  /** The session menu from a sidebar row (lib/session-menu): Session Details opens the session
+      with its Session details pane on the Session tab. */
   const sidebarMenu = sidebarSessionMenuCtx({
     route: (path) => {
       location.hash = sessionHref(path);
@@ -1322,7 +1315,6 @@ export function App() {
                     titleRef={(el) => (insightsTitleEl = el)}
                     onRefresh={refresh}
                     onArchiveChanged={onArchived}
-                    onOpenSubagents={openSubagentsFor}
                     detailsPath={boardPanePath()}
                     onOpenDetails={openDetailsFor}
                     onOpenAgents={openAgentsFor}

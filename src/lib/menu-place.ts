@@ -124,7 +124,6 @@ export const MENU_NAMES: readonly string[] = [
   "Open Session",
   "Session Details",
   "Close Session Details",
-  "Open Subagents",
   "Rename…",
   "Use Gist as Title",
   "Reset to Original Title",

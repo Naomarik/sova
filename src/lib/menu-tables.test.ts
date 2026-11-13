@@ -49,7 +49,6 @@ const session = (over: Partial<SessionSummary> = {}): SessionSummary =>
 const ctx = (calls: string[], detailsPath: string | null = null): SessionMenuCtx => ({
   detailsPath,
   onOpenDetails: (p) => calls.push(`details ${p}`),
-  onOpenSubagents: (p) => calls.push(`subagents ${p}`),
   onRefresh: () => calls.push("refresh"),
   onArchiveChanged: (p, a) => calls.push(`archived ${p} ${a}`),
 });
@@ -59,7 +58,6 @@ test("the session menu: its rows, reasons and acts, every command the catalogue'
   const p = JSON.stringify({ session: P });
   assert.deepEqual(table(SESSION_MENU, sub(session())), [
     ["Open", "Session Details", "", "local"],
-    ["Open", "Open Subagents", "", "local"],
     ["Title", "Rename…", "", "name screen"],
     ["Title", "Use Gist as Title", "No gist yet.", `cmd session.title.set ${JSON.stringify({ session: P, title: "" })}`],
     ["Title", "Reset to Original Title", "Not renamed.", `cmd session.title.reset ${p}`],
@@ -68,14 +66,14 @@ test("the session menu: its rows, reasons and acts, every command the catalogue'
     ["Organize", "Copy Path", "", "local"],
   ]);
   const renamed = sub(session({ title: "Mine", originalTitle: "Fix the build", outlineGist: "Repairs CI", archived: true }));
-  assert.deepEqual(table(SESSION_MENU, renamed).slice(3, 7), [
+  assert.deepEqual(table(SESSION_MENU, renamed).slice(2, 6), [
     ["Title", "Use Gist as Title", "", `cmd session.title.set ${JSON.stringify({ session: P, title: "Repairs CI" })}`],
     ["Title", "Reset to Original Title", "", `cmd session.title.reset ${p}`],
     ["Organize", "Move to Group…", "", "rows screen"],
     ["Organize", "Unarchive", "", `cmd session.unarchive ${p}`],
   ]);
   // A chat Sova names itself has no title rows; one started outside Sova has no Archive.
-  assert.deepEqual(table(SESSION_MENU, sub(session({ fixedName: "project-overseer" } as Partial<SessionSummary>))).map((r) => r[1]), ["Session Details", "Open Subagents", "Move to Group…", "Archive", "Copy Path"]);
+  assert.deepEqual(table(SESSION_MENU, sub(session({ fixedName: "project-overseer" } as Partial<SessionSummary>))).map((r) => r[1]), ["Session Details", "Move to Group…", "Archive", "Copy Path"]);
   assert.deepEqual(table(SESSION_MENU, sub(session({ origin: "external" } as Partial<SessionSummary>))).map((r) => r[1]).slice(-2), ["Move to Group…", "Copy Path"]);
   // An organization's session stays with its project: the drag's own reason.
   const org = session({ org: { id: "o-1", name: "Acme", project: "p-1" } } as unknown as Partial<SessionSummary>);

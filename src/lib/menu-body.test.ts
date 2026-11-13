@@ -52,7 +52,7 @@ const door = <T,>(decl: MenuDecl<T>, subject: T, screen: string | null = null, e
 const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 const P = "/state/sessions/a.jsonl";
 const session = (over: Partial<SessionSummary> = {}) => ({ id: "s-1", path: P, cwd: "/w", title: "Fix the build", createdAt: "", lastActiveAt: "", model: null, origin: "web", ...over }) as SessionSummary;
-const ctx = { detailsPath: null, onOpenDetails() {}, onOpenSubagents() {}, onRefresh() {}, onArchiveChanged() {} };
+const ctx = { detailsPath: null, onOpenDetails() {}, onRefresh() {}, onArchiveChanged() {} };
 const sessionMenu = (s = session()) => ({ session: s, ctx, archive: sessionArchiveRow(s, {}) });
 const groupMenu = (count = 2) => ({ group: { id: "g-1", name: "Work" } as SessionGroup, count, onChanged() {} });
 const w = { nameOf: () => "Tests", groupName: () => "Work", split: () => true, panes: () => [P], labelOf: () => null, href: () => "#", resize() {}, move() {}, focusPane() {}, rename() {}, detach() {}, promote() {} } as PaneMenuWiring;

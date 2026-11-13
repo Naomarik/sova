@@ -119,7 +119,7 @@ export function buildSpecWriterPrompt(route: SlotRoute): string {
  * Everything to append to this turn's system prompt: delegate block first, then Create's in that mode, then minor blocks in
  * registry order. Takes just the session-scoped triple, so a `ModeActive` satisfies it too.
  * `writer` is the routed spec writer, or null when none is set. `headMinors` is the set of minor
- * modes the session's prompt was built with (the head, see index.ts), when it differs from the
+ * modes the session's prompt was built with (the head), when it differs from the
  * active one: their blocks are the ones written, while the delegate block's align bridge follows the
  * active align (turning align on changes the tool set anyway, so it can't keep the prefix). `align`: the
  * writing style and Visuals the head's align block was built with (absent: Default, Visuals off).
@@ -264,7 +264,7 @@ export function buildAlignEagernessNote(to: AlignEagerness): string {
  * Appended to the spec block in a worker's prompt (never the parent's): spec-mode.md is written to the
  * session that plans, promotes and briefs, and stays byte-identical, so what differs for a worker is said
  * here. The branch's landing makes drafts official; the worker's brief says what it commits. The writing procedure's Workers paragraph
- * (`spec/WRITING.md`, which the census hands a worker, that section first) says the same words; index.test.ts
+ * (`spec/WRITING.md`, which the census hands a worker, that section first) says the same words; modes.test.ts
  * holds them equal.
  */
 export const SPEC_WORKER_NOTE = `You are a worker: a parent session started you, and its branch's landing makes the drafts official. Your brief is your go-ahead. Work in the draft your brief names, or say which one you started, and record your notes there. Commit only when your brief says to, and then only on its branch, never by landing on the default branch. List each foreign § you updated in your final report.`;

@@ -1,8 +1,9 @@
-# Mode switcher for Pi
+# Modes
 
-> **Who loads this extension.** Only a plain pi terminal loads `index.ts`. Sova never does: its own engine
-> runs every Sova chat's modes, reading the texts, rules and settings files in this folder, whatever the pi
-> folder links to. What this README says about `/mode` and the extension's runtime is the terminal's.
+> **No pi extension.** This folder holds the mode texts, shared rules and settings files that Sova's own mode
+> engine runs in every Sova chat and worker (Sova's `server/modes/`). It has no `index.ts`: pi never loads it,
+> `install.sh` doesn't link it, and a plain pi terminal has no modes and no `/mode`. Sova reads this folder from
+> its own copy of the code, whatever the pi folder links to.
 
 A **per-session** major mode: **normal** (pi as usual), **create** (below), or
 **delegate**, where the main agent becomes an orchestrator and routes work
@@ -38,77 +39,30 @@ profile on that backend; no changes to pi and no Claude plan mode are involved
 — workers keep their usual permissions, so "Planning and Investigation don't
 edit" is a prompt-level rule the orchestrator checks.
 
-## Install
-
-```sh
-~/pi-config/install.sh   # links this directory into ~/.pi/agent/extensions/
-# /reload in pi
-```
-
 ## Usage
 
-| Action | Effect |
+A Sova chat switches modes from its mode menu; typed commands reach the same engine:
+
+| Command | Effect |
 | --- | --- |
-| `ctrl+p` → **Mode**, or bare `/mode` | Open the mode selector (see below) |
-| `alt+m` | Toggle normal ↔ delegate |
 | `/mode normal` · `/mode delegate` | Set explicitly |
-| Sova's mode menu, or `/mode create` typed in a Sova chat | Picks **create**, per chat; a terminal refuses it (see **Create**) |
-| `/mode status` | Show this session's mode, the default for new sessions, the Delegate routing (and, in delegate, what each profile is actually using), the spec writer (and, with spec on, what it is actually using), strict flag, minor modes, state file |
-| `/mode default` | Save this session's mode, strict flag and minor modes as the default for new sessions (the only command here that writes `mode.json`) |
+| Sova's mode menu, or `/mode create` typed in a Sova chat | Picks **create**, per chat (see **Create**) |
 | `/mode sync` | Change nothing and say nothing: keep this session's mode block in the prompt whoever starts the turn (see below) |
 | `/mode strict on\|off` | Also remove `edit`/`write` from the orchestrator while in delegate or create (off by default) |
+| `/mode subagents <profile>` | Pick this chat's subagent profile (by id or name; `off` for none) |
 | `/mode align [on\|off]` | Toggle (or set) the `align` minor mode |
 | `/mode spec [on\|off]` | Toggle (or set) the `spec` minor mode |
 | `/mode project:<id> [on\|off]` | Toggle (or set) one of this checkout's project minor modes; the bare `<id>` works when no built-in has that name (see **Project minor modes**) |
-| `/align`, or `alt+a` | Open the read-only alignments viewer (see below) |
-| `/align status` · `/align export [path]` · `/align on\|off` | List the alignments, write the open ones to a file (default `.pi/align.md`), or toggle align |
-| `pi --major delegate` | Start that launch in a mode (not persisted) |
-| `pi --minor align` | Start that launch with these minor modes on, comma-separated; `none` clears them (not persisted) |
+| `/align on\|off` | Toggle align |
+| `--major delegate` | Start that launch in a mode (not persisted; Sova's launch and worker flags) |
+| `--minor align` | Start that launch with these minor modes on, comma-separated; `none` clears them (not persisted) |
 
-Note: `--mode` is pi's own flag (the output mode: `text | json | rpc`), so the
-mode switcher's launch flag is `--major`. Core consumes `--mode <value>` before
-extension flags are read; `--mode=<value>` only ever reached this extension by
-accident.
+Bare `/mode`, `/mode status` and `/mode default` answer with the usage line and change nothing: the mode menu
+shows the state, and Settings saves the default. `--mode` is pi's own flag (the output mode), so the launch flag
+is `--major`.
 
-### Mode selector
-
-The command palette (`ctrl+p`) has a **Mode** category right after *Models &
-thinking*; bare `/mode` opens the palette straight at it. It lists:
-
-- **normal** and **delegate**, radio-style: the current one is marked `✓`,
-  and Enter switches to the highlighted mode and closes the palette.
-- One row per minor mode (`align`, …) with a live `◉` on / `○` off marker.
-  Enter toggles it **in place**; the palette stays open so several can be
-  flipped in one visit. Esc goes back, Ctrl+P closes.
-- **align: open viewer**, which opens the alignments overlay.
-- **save as default**, the same as `/mode default`. Everything above it
-  changes this session only; this row is the one that changes `mode.json`.
-
-Root-level palette search finds these rows too (type `align`, press Enter).
-Without an interactive palette (print/RPC mode, or the `command-palette`
-extension not loaded), bare `/mode` shows the current status and usage as a
-warning instead of changing anything; the `/mode <argument>` forms are the
-scriptable interface. The category is registered through
-`command-palette/contracts.ts`; rows are built in `palette.ts`.
-
-The footer always shows the current mode:
-
-- `normal` (dim)
-- `delegate` (accent)
-- `delegate · fallback:plan` (warning: Planning & specs is on its fallback)
-- `delegate · ask:routine,complex` (warning: those profiles have no worker that
-  can run; the orchestrator asks before routing that work)
-- `delegate · strict`
-- `normal · align` (accent: a minor mode is on)
-- `normal · spec · writer:fallback` (warning: the spec writer is on its
-  fallback; `writer:ask` when neither can run)
-- `delegate · strict · align`
-
-Every switch appends a `── mode → … ──` marker to the transcript; minor-mode
-switches append `── align on ──` / `── align off ──`, and strict toggles
-`── strict on ──` / `── strict off ──`. Each of those entries also carries the
-full post-switch snapshot, which is what makes the state per session (see
-**Behaviour**).
+Every switch appends a `mode` entry to the session carrying the full post-switch snapshot, which is what makes
+the state per session (see **Behaviour**).
 
 ## Minor modes
 
@@ -278,11 +232,11 @@ writer**).
   See `../spec/README.md`.
 - **memory** — Sova's endless chat (its engine is Sova's, `server/memory/`):
   the model works from summaries of the whole chat and opens any part with
-  `zoom`/`date`. Web-only (`MINOR_SURFACES` in `minor.ts`): the extension takes
+  `zoom`/`date`. Web-only (`MINOR_SURFACES` in `minor.ts`): the engine takes
   `/mode memory on` only while Sova's server applies a switch for that very
   session, through the `sova:web-minor` hook (`WEB_MINOR_HOOK`,
-  `webMinorRefusal`); typed by hand, from `--minor`, a profile, the palette or
-  a shortcut it is refused or not offered, and workers never get it. Turning
+  `webMinorRefusal`); typed by hand, from `--minor` or a profile it is refused
+  or not offered, and workers never get it. Turning
   it off always works. It has no prompt block and no mode note
   (`MINOR_PROMPTLESS`): its guide rides the view message Sova sends.
 
@@ -291,7 +245,7 @@ next prompt. The active triple (`mode`, `strict`, `minorModes`) is published
 on `pi.events` as `mode:state` (`state.ts` `MODE_STATE_EVENT`) on every change,
 and again on `mode:discover`: the subagents extension reads it to brief the
 workers a spec-on session spawns. Unknown names hand-edited into `minorModes` are dropped on load.
-Toggle them from the palette's Mode category or with `/mode <minor> [on|off]`.
+Toggle them from Sova's mode menu or with `/mode <minor> [on|off]`.
 
 ### Alignments
 
@@ -376,27 +330,14 @@ they are listed, and a recommendation that names an option by its label reads
   `align-nudge` and one more request; never twice in a run. Only a successful
   align call that changed a document or recorded an exemption counts as recorded:
   a refused call, a bare `get` or the mark alone does not.
-- **Widget** — one line above the editor while align is on and an alignment is
-  open: `◇ align · al_3 2/7 open · al_2 implementing · alt+a view`.
-- **Tool row** — the call as one dim line (`◇ align al_3 · decide q3 · → implementing`),
-  the result as a compact card (the whole document when expanded).
-- **Viewer** — `/align`, `alt+a`, or the palette row open a read-only overlay
-  rendering one alignment as markdown; `←/→` switch between them, `↑↓` or
-  `j/k` scroll, `pgup/pgdn` page, `g/G` top/bottom, `q`/`esc` close. It
-  refreshes live after each call. Outside the TUI (RPC hosts such as Sova)
-  `/align` shows them as a notification. `/align status` lists them (also the
-  `alignments:` line of `/mode status`); `/align export [path]` writes the open
-  ones as markdown (default `.pi/align.md`).
 - **Older sessions** — before the tool, the agent wrote a markdown block that
-  the extension parsed into `align-doc` custom entries. Those stay read-only:
-  the viewer shows the newest one when a session has no tool alignments, the
-  transcript keeps its dim `── alignment v2 · questions open · 1/2 settled ──`
-  marker, and nothing parses markdown any more.
+  was parsed into `align-doc` custom entries. Those stay read-only history, and
+  nothing parses markdown any more.
 
 - **Adversarial review** — behind the boolean launch flag
   `--adversarial-review` (off by default; Sova passes it per hosted session).
   Off, nothing here exists: the tool, its schema and the prompt are exactly as
-  without the feature (`tests/review-smoke.mjs` pins them to a fixture). On,
+  without the feature (Sova's `server/modes/engine-review.test.ts` pins them to a fixture). On,
   from `session_start` the tool is re-registered with two more ops — `review
   {phase: plan | diff, state, reason, model?, blockers?}` and `close_blocker
   {phase, id, by: check | evidence | waiver, evidence}` — and the rules for when
@@ -412,13 +353,9 @@ they are listed, and a recommendation that names an option by its label reads
   claude-code `Read, Grep, Glob`) with the fixed prompt `review-prompt.ts`
   writes, which the start's result carries filled in.
 
-The viewer key is `alt+a` by default; set `"viewerShortcut"` in `mode.json`
-to change it. If it collides with the mode toggle or the `align` toggle key,
-it is not registered and a warning says so at session start.
-
 ## Behaviour
 
-While in delegate, the extension appends orchestration instructions to the system
+While in delegate, the engine appends orchestration instructions to the system
 prompt on every turn (`before_agent_start`), so toggling takes effect on the
 next prompt without `/reload`.
 
@@ -469,14 +406,12 @@ skips it, and pi's own refresh before that turn's second request rebuilds the
 prompt from the session's *base* options, which know nothing of extension
 sections. Left alone, that patched the mode section out mid-turn and back in at
 the next user prompt, and the claude-code provider restarted its CLI (and
-re-sent the whole history) at every switch. So the extension also keeps the
+re-sent the whole history) at every switch. So the engine also keeps the
 block in the base options: they are reachable only through a command context
 (`ctx.getSystemPromptOptions`), which `/mode` and `/align` adopt (the quiet
-`/mode sync` adopts it without switching anything) — and from then on every switch, every
+`/mode sync` adopts it without switching anything; Sova runs it at every chat open) — and from then on every switch, every
 `before_agent_start` and every run start (`agent_start`, after pi may have
-rebuilt the base on a tool change) writes the current block there. A session
-driven only by the shortcut or the palette, with no `/mode` yet, keeps the old
-behaviour until one runs. Covered by `tests/wake-turn.mjs`.
+rebuilt the base on a tool change) writes the current block there.
 
 ### Two scopes
 
@@ -505,29 +440,15 @@ starts from**:
 ```
 
 A session that has never switched anything follows that default, re-read on
-every start — so editing the file (or `/mode default`) moves every untouched
+every start — so editing the file (Settings saves it) moves every untouched
 session at once. The first switch in a session pins it, and it stops following.
 Launch flags (`--major`, `--minor`) apply on top of the default at startup only,
 and lose to a session's own snapshot.
 
-`/mode default` and the palette's **save as default** row are the only things
-here that write `mode.json`; `/mode <x>`, `/mode strict on|off`, `/align
-on|off`, `alt+m` and the palette toggles never do. Other fields in the file are
-preserved when it is rewritten.
-
-**Migration.** Files written before this change are read as the default, so a
-global `"minorModes": ["align"]` would still start every new session in align.
-Set the file to what new sessions should start as — by hand, or with
-`/mode default` from a session already in that state. Sessions that predate
-this change carry no snapshot, so they follow the default until their next
-switch.
-
-An optional `"shortcut"` field (a pi-tui KeyId such as `"alt+h"`) changes the
-toggle key on the next reload. An optional `"minorShortcuts"` object (for
-example `{ "align": "alt+l" }`) binds a toggle key per minor mode, also on the
-next reload; there are none by default. An optional `"viewerShortcut"`
-(default `"alt+a"`) opens the alignments viewer. Files written before minor modes
-existed load with no minor modes on.
+Saving the default in Sova's Settings is what writes `mode.json`; `/mode <x>`, `/mode strict on|off`
+and `/align on|off` never do. Other fields in the file are preserved when it is rewritten. Files
+written before minor modes existed load with no minor modes on; the older `shortcut`,
+`minorShortcuts` and `viewerShortcut` fields (the terminal's keys) are kept and unused.
 
 ## Create
 
@@ -544,14 +465,14 @@ Sova. Its own block follows delegate's and changes nothing in it.
 - Switching to create turns `align` on and moves no other minor mode.
 - No default holds it: `mode.json`, profiles and automations can't name it. Saving the default in a
   create chat saves its last normal or delegate choice.
-- The terminal offers no create and has no shortcut for it. A terminal session that opens a chat saved
-  in create doesn't break.
+- Only Sova permits the switch (the `sova:web-mode` hook, `WEB_MODE_HOOK`); a process without the hook
+  refuses `/mode create`, and opens a chat saved in create as delegate, leaving its entry as it is.
 
 ## Delegate routing
 
 `~/.pi/agent/mode-delegate.json` holds the four profiles. It is **its own
 file** on purpose — `mode.json` is rebuilt from known fields on every write, so
-a routing kept there would vanish on the next `/mode default`:
+a routing kept there would vanish on the next save of the default:
 
 ```json
 { "version": 1, "profiles": {
@@ -572,7 +493,7 @@ a routing kept there would vanish on the next `/mode default`:
   library and is its fallback. Nothing in this extension writes it.
 
 **Global, read at every turn boundary, never snapshotted.** The file is shared
-by every session, TUI and Sova alike. A session in delegate re-reads it (one
+by every session. A session in delegate re-reads it (one
 `stat`) in `before_agent_start`, so an edit reaches sessions already in delegate
 from their next prompt. Normal mode never reads it. No session keeps a copy:
 transcripts carry the mode, never the routing.
@@ -643,7 +564,7 @@ there is no executable `vis tour` fence and merely reading a message never recor
 The catalogue's second tool-backed entry is the Lookbook: `vis_guide {kind:"lookbook"}` returns
 `vis/lookbook.md` alone (when the user has asked for one, how to start, read and pass on), and its parts
 `lookbook-setup`, `lookbook-directions` and `lookbook-passing-on` each alone. Sova serves the `lookbook`
-tool itself, only while vis is on, so a terminal has nothing to run. `design-guide.ts` (node builtins
+tool itself, only while vis is on. `design-guide.ts` (node builtins
 only) reads `vis/lookbook-directions.md` for the 20 styles (one `- Name: definition` line each, or the
 module refuses to load) and `design/` for a design session's system prompt (`session/`) and the
 coordinator's (`coordinator.md`). Nothing autoloads for these sessions (no skills, no context files). A run's design skills are only those the user
@@ -655,7 +576,7 @@ in `minor.ts`, a `globalThis` function `(sessionId) => [{kind, guide, line}]`; S
 from the session's card snapshot). At `session_start`, when it gives any, `vis_guide` is registered again
 with those kinds in its `kind` list and one line each in its description, and returns each one's guide
 for it. Only namespaced words (`<owner>.<name>`, with a dot) count, so it never replaces a kind of the
-catalogue; with the hook unset (a terminal, a worker) the tool is exactly the catalogue's.
+catalogue; with the hook unset (a worker) the tool is exactly the catalogue's.
 Drawing entries still return `vis/shared.md` followed by their own file, unchanged.
 
 Sova supplies `record_tour` and `show_tour` through its hosted tools (also on its Claude Code
@@ -785,7 +706,7 @@ product claim is §chat.mode-menu/project-modes.
   first hash line is canonical JSON of `{tools, commands, hooks}`, without both it is the tools array
   as before (so no earlier approval is asked again), and it is `""` only when all three are empty.
   `refuseCall` re-hashes with them. Sova runs them in the chat's own process (its
-  `server/mode-commands.ts`); in the plain pi TUI they do nothing. Hooks need the user's own approval:
+  `server/mode-commands.ts`). Hooks need the user's own approval:
   `isApprovedByUser` (project-tools-approval.ts), and `recordApproval` keeps a `user` record `user` when
   the Overseer records the same hash.
 - **Discovery** (`project-discovery.ts`, node builtins only): `discoverProjectModes(cwd)` lists
@@ -793,7 +714,7 @@ product claim is §chat.mode-menu/project-modes.
   throws; one bad folder never hides the others. The server imports it for the menu.
 - **Namespace.** Project modes never enter `minorModes`. The `mode` entry and the mode-note
   details carry `projectModes: [{id, sha}]` (turn-on order; older readers ignore it). At turn-on
-  the extension writes a `mode-project-snapshot` custom entry with the block text, description,
+  the engine writes a `mode-project-snapshot` custom entry with the block text, description,
   `workers`, the tools and `toolsHash`; its `sha` (`snapshotShaInput`) is the copy's identity, so the
   server's "changed" is one compare of the listing's sha with the on ref's (reference files are not
   in it: the agent reads them live); while a mode is on, it is rebuilt from that entry on the branch, never re-read from
@@ -812,10 +733,10 @@ product claim is §chat.mode-menu/project-modes.
   every call while the session's sandbox is On (the sandbox confines only the session's own tools).
   Approvals (`server/project-mode-approvals.ts`) keep the last 8 approved `toolsHash`es per
   checkout realpath and mode.
-- **Approval.** At `/mode <id> on` the extension reads the same approval store Sova's menu
+- **Approval.** At `/mode <id> on` the engine reads the same approval store Sova's menu
   writes: a mode with tools turns on only when that exact `toolsHash` is approved for its
   checkout, otherwise it is refused ("Minor mode <id> not turned on: <id> runs the project's own
-  tools: approve it from a Sova chat's mode menu first"); it never asks in a terminal. A worker
+  tools: approve it from a Sova chat's mode menu first"); it never asks. A worker
   never turns a project mode on itself: it gets them from the session that started it. `toolsHash` covers the declared tools and every file in the mode folder,
   recursively, dotfiles included, except the top-level `MODE.md` (`./path sha` lines, sorted; a
   symlink hashes as its target path), so a sourced helper or an imported sibling can't change
@@ -872,30 +793,24 @@ decides which profile a task is, and a user can always name a worker outright.
 Even in strict mode the orchestrator
 keeps `bash`, so nothing hard-forces delegation; strict only makes `edit` and
 `write` unavailable. Mid-turn toggles apply from the next prompt. Alignments
-are agent-driven: the viewer cannot answer a question, and the user's answers
-reach a document only through the agent's `align` calls.
+are agent-driven: the user's answers reach a document only through the agent's `align` calls.
 
 ## Verification
 
 ```sh
 cd extensions/mode
-node --test index.test.ts     # pure state/prompt/minor/palette logic
+node --test modes.test.ts     # pure state/prompt/minor/routing/events logic
 node --test delegate.test.ts  # the routing file: defaults, parsing, persistence, per-turn re-read
 node --test routing.test.ts   # primary → fallback → ask, discovery failure, policy
 node --test spec.test.ts      # the spec writer file: parsing, persistence, per-turn re-read
 node --test align-settings.test.ts # mode-align.json: strict parse, tolerant read, profile override, the paragraphs, the trigger per Eagerness, the style and eagerness notes, visToolsWanted
 node --test align.test.ts     # alignments: ops, strict input and import, hints, fold, echo, note, nudge heuristic, legacy entries
 node --test review.test.ts    # adversarial review: the review and close_blocker ops, slots, guards, the record's normalization, the reviewer prompt
-node tests/smoke.mjs          # real index.ts against a fake pi host, no model requests
-node tests/review-smoke.mjs   # the adversarial-review flag through index.ts: off equals master's tool and prompt (fixture); on registers and runs the ops
-node tests/wake-turn.mjs      # real pi session + scripted provider: same prompt whoever starts the turn
-node tests/note-turn.mjs      # real pi session + scripted provider: a minor toggle keeps the head; notes, reopen, compaction
-node tests/align-turn.mjs     # real pi session + scripted provider: the align tool, its hidden notes (per prompt, after a compaction) and the settle nudge
-node tests/style-turn.mjs     # real pi session + scripted provider: the writing style and Eagerness in the head, their one note each, reopen; Visuals by flag and file
 node --test spec-guard.test.ts # the census: digest, per tree (real Git + spec tools), failure once per cause, write guard, drift note, command detection
-node tests/spec-turn.mjs      # real pi session + scripted provider: census digest, forbidden writes, drift note, no turn-end check, mode:state
 node tests/spec-worker.mjs    # real pi session loading only spec-worker.ts (a pi worker's -e): the census digest; no turn-end check, no ledger
 ```
 
-The extension and its portable tests import no Sova runtime, so they run on a standalone copy of
-`pi-config/`.
+These files and their tests import no Sova runtime, so they run on a standalone copy of `pi-config/`.
+How the engine runs them (its hooks, commands, re-reads per turn, the prompt it builds) is tested in
+Sova's `server/modes/` (`engine-hooks`, `engine-rules`, `engine-review`, `engine-project-tools`, and the golden
+recordings).

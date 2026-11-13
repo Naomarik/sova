@@ -29,7 +29,7 @@ installs with `install.sh` alone, without the web app.
 | `extensions/provider-limits/` | How many model requests each provider runs at once on this device (`provider-limits.json`, written by Sova's Settings → Models); requests over the limit wait instead of failing. Every pi worker loads it. Its `gate.ts` (builtins only) is imported by Sova |
 | `extensions/model-levels/` | The real thinking levels of models pi has no catalog for (every `models.json` provider without a built-in base: Ollama Cloud, local Ollama), from Ollama's `/api/show` and models.dev, cached in `model-levels.json` and refreshed daily in the background; retired models drop out. Every pi worker loads it. Its `core.ts` (builtins only) is imported by Sova |
 | `extensions/llm-inflight/` | Counts this process's logical LLM calls in flight (issue to end; queue waits, cooldowns and tool time never count) at its model runtime and from the Claude Code CLI's stream; the session's live record carries the count (`presence.llm`), and a pi worker reports its count to the session running it. Every pi worker loads it. Its `tracker.ts` and `runtime.ts` (builtins only) are imported by Sova |
-| `extensions/mode/` | Per-session normal ↔ delegate mode switcher plus minor modes (`alt+m`, `ctrl+p` → Mode, `/mode`). Delegate orchestrates workers by four profiles — planning, investigation, routine and complex implementation — each a configurable backend/model/effort with an optional fallback (`mode-delegate.json`); the `spec` minor mode can hand its spec writing to one such worker (`mode-spec.json`); the `align` minor mode's Eagerness, writing style and Visuals live in `mode-align.json` |
+| `extensions/mode/` | Not a pi extension (no `index.ts`; pi skips it, `install.sh` doesn't link it): the texts, rules and settings files of Sova's per-session modes, which Sova's own engine runs (a plain pi terminal has no modes): normal, delegate and create, plus minor modes. Delegate orchestrates workers by four profiles — planning, investigation, routine and complex implementation — each a configurable backend/model/effort with an optional fallback (`mode-delegate.json`); the `spec` minor mode can hand its spec writing to one such worker (`mode-spec.json`); the `align` minor mode's Eagerness, writing style and Visuals live in `mode-align.json` |
 | `extensions/spec/` | Not a pi extension (no `index.ts`; pi skips it): standalone `.sova/spec` tools that the `spec` minor mode in `extensions/mode/` tells the agent to run. `core/sova-spec.mjs` is read-only; `core/sova-spec-draft.mjs` keeps proposed documentation in full-copy drafts and promotes the implemented, verified part, plus decisions (notes, sections, agreed records not built yet) and `embeds`/`core`/`notOwned`-only changes (not on an agreed record that maps code) on doc-only evidence, writing only with `--write`; `core/sova-spec-review.mjs` records review evidence, and writes only under `.sova/spec/reviews/` and only with `--write` or `record` |
 | `extensions/sessions/` | Live pi sessions on this machine find each other through a filesystem presence registry; ships the `pi-sessions` CLI (`bin/pi-sessions.ts`) and the record schema (`public/SCHEMA.md`) |
 | `extensions/link/` | The tools of a session Sova has linked with sessions on other mesh hosts (`link_members`, `link_send`, `link_inbox`, and the file tools `link_offer`, `link_accept`, `link_decline`, `link_offers`): registered in a link member session the Overseer creates (Sova's `sova-link-tools` flag `member`) from its first request, and in any other session Sova hosts once Sova's `sova:link-live` hook says it is in a live link (at its next request, mid-run included; withdrawn at a compaction in no live link); none in a TUI, a worker or a session in no link; every call goes to the session's own Sova host, which moves the files |
@@ -45,7 +45,7 @@ installs with `install.sh` alone, without the web app.
 | `extensions/wake-nudge.ts` | Lets the model schedule one-shot wakeups |
 | `extensions/working-subagent-count.ts` | Busy subagent and team-member counts on the "Working" line and in an idle widget |
 | `sandbox-policy/` | Templates of the sandbox policy (`<platform>/policy.json` + `CLAUDE.md`), copied (never linked) into the agent dir by `install.sh` |
-| `install.sh` | Merges `settings.json` into `~/.pi/agent/settings.json`, symlinks the other config files and every `extensions/*` directory and single-file `extensions/*.ts` extension into `~/.pi/agent`, and `pi-sessions` into `~/.local/bin` |
+| `install.sh` | Merges `settings.json` into `~/.pi/agent/settings.json`, symlinks the other config files and every `extensions/*` directory but `mode` and single-file `extensions/*.ts` extension into `~/.pi/agent`, and `pi-sessions` into `~/.local/bin` |
 
 Each extension directory has its own README with usage and verification steps.
 `claude-code` only works alongside `subagents` and needs an installed,
@@ -89,8 +89,10 @@ A copy of this directory can live anywhere. `install.sh` resolves its own
 location, and the links it creates point at the real path of the copy.
 
 For each of `keybindings.json`, `models.json`, `vision-delegate.json`, every
-`extensions/*/` directory and every `extensions/*.ts` file, `install.sh`
-creates a symlink in the agent directory. It also links
+`extensions/*/` directory but `mode` and every `extensions/*.ts` file, `install.sh`
+creates a symlink in the agent directory. `extensions/mode` is no pi extension:
+a link to it an older version made is removed (`--links` too), and `--check`
+fails on one. It also links
 `extensions/sessions/bin/pi-sessions.ts` to `~/.local/bin/pi-sessions`. An
 existing symlink at a target is replaced, and an existing regular file or
 directory is moved to `<name>.bak`. Nothing else under `~/.pi/agent` is
@@ -180,7 +182,7 @@ cd extensions/subagents && node tests/run.mjs && node tests/smoke.mjs && node te
 cd extensions/claude-code && node tests/run.mjs && node tests/smoke.mjs
 cd extensions/extension-toggle && node --test index.test.ts command.test.ts
 cd extensions/compact-handoff && node tests/run.mjs && node tests/compact-turn.mjs
-cd extensions/mode && node --test index.test.ts spec-mode.test.ts delegate.test.ts routing.test.ts align.test.ts review.test.ts spec.test.ts align-settings.test.ts spec-guard.test.ts project-modes.test.ts project-tools.test.ts project-mode-extension.test.ts project-actions.test.ts create-mode.test.ts && node tests/smoke.mjs && node tests/review-smoke.mjs && node tests/wake-turn.mjs && node tests/align-turn.mjs && node tests/style-turn.mjs && node tests/note-turn.mjs && node tests/spec-turn.mjs && node tests/spec-worker.mjs
+cd extensions/mode && node --test modes.test.ts spec-mode.test.ts delegate.test.ts routing.test.ts align.test.ts review.test.ts spec.test.ts align-settings.test.ts spec-guard.test.ts project-modes.test.ts project-tools.test.ts project-actions.test.ts create-mode.test.ts spec-agree.test.ts && node tests/spec-worker.mjs
 cd extensions/model-policy && node --test policy.test.ts index.test.ts
 cd extensions/provider-limits && node tests/run.mjs
 cd extensions/model-levels && node tests/run.mjs

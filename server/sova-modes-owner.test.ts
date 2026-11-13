@@ -1,6 +1,6 @@
 // Run: pnpm test -- server/sova-modes-owner.test.ts. Sova's engine is the only mode owner, whatever the pi folder
-// links (§chat.mode-menu/sova-runs-modes): with this copy's mode folder listed, linked and turned off with
-// /extensions, or not there at all, every ordinary chat runs exactly one owner, Sova's engine, and the menu's
+// links (§chat.mode-menu/sova-runs-modes): with no mode folder in it (as install.sh links it now), or an older
+// install's mode link left there, every ordinary chat runs exactly one owner, Sova's engine, and the menu's
 // switch, typed /mode and the slash menu go to it; an old saved "off" switch changes nothing. Real chats built by
 // the chat manager; the model is a script. A throwaway PI_CODING_AGENT_DIR; ~/.pi is never read or written.
 import assert from "node:assert/strict";
@@ -27,12 +27,12 @@ mkdirSync(dirname(SETTINGS), { recursive: true });
 mkdirSync(join(agentDir, "extensions"), { recursive: true });
 /** The pi folder each case starts its chats on. */
 const PI_FOLDERS = {
-  "the settings list this copy's mode folder": () => writeFileSync(join(agentDir, "settings.json"), JSON.stringify({ extensions: [MODE_EXT] })),
   "no mode folder anywhere in the pi folder": () => writeFileSync(join(agentDir, "settings.json"), JSON.stringify({})),
-  "the mode link turned off with /extensions": () => {
+  // An older install linked the mode folder; it is no pi extension now (no index.ts), so pi skips it.
+  "an older install's mode link left in the pi folder": () => {
     rmSync(join(agentDir, "extensions", "mode"), { force: true });
     symlinkSync(MODE_EXT, join(agentDir, "extensions", "mode"));
-    writeFileSync(join(agentDir, "settings.json"), JSON.stringify({ extensions: ["!extensions/mode/index.ts"] }));
+    writeFileSync(join(agentDir, "settings.json"), JSON.stringify({}));
   },
   // A file saved before the switch was retired, with it off: ignored.
   "no mode folder, and an old saved \"Sova runs chat modes\" off": () => {
@@ -138,7 +138,7 @@ for (const [label, piFolder] of Object.entries(PI_FOLDERS)) {
 
 test("a chat reopened on another pi folder keeps its modes: Sova's engine reads the same saved state", async () => {
   resetPiFolder();
-  PI_FOLDERS["the settings list this copy's mode folder"]();
+  PI_FOLDERS["an older install's mode link left in the pi folder"]();
   const path = sessionFile();
   const chat = await acquireChat(path);
   await set(chat, { minorModes: ["vis"] });

@@ -24,7 +24,7 @@ with a guide of its own lists its contracts.
 
 | Extension | Guide | What Sova takes from it |
 |---|---|---|
-| `mode` | [modes](../modes/overview.md) | mode state, minor modes, Delegate routing, align, the spec text (Sova's engine reads them; Sova never loads `index.ts`) |
+| `mode` | [modes](../modes/overview.md) | mode state, minor modes, Delegate routing, align, the spec text (Sova's engine reads them; no pi extension, not linked) |
 | `spec` | [modes/spec](../modes/spec/overview.md) | the `.sova/spec` tools (not a pi extension) |
 | `claude-code` | [claude-code](claude-code/overview.md) | Claude logins and the pool, the model catalog, transcripts, `fixed-settings.ts` |
 | `subagents` | [subagents](subagents/overview.md) | subagent profiles, team defaults, the worker-transcript protocol, the fork core, worker priority |
@@ -63,7 +63,7 @@ Extensions with no guide, and the contract Sova parses where there is one:
 - **Sova loads its own copy.** A Sova chat, its workers and the warm-up load every extension in this directory
   from the chat's own copy of Sova's code, whatever `~/.pi/agent/extensions/` links to (another Sova copy, or
   nothing): `server/harness/pi/own-code.ts`, §app.chat-processes/code-generations. `/extensions` off stays off,
-  by name; the mode slot is always Sova's engine. Only the pi terminal follows the links. A worker on a
+  by name; the mode slot is always Sova's engine (and a pi terminal has no modes). Only the pi terminal follows the links. A worker on a
   worktree's own `.agent` and a hermetic server on a branch keep that branch's extensions.
 - **What Sova imports.** Sova's tsconfig doesn't cover `pi-config/`, except the files the server or the web
   app imports (hence `allowImportingTsExtensions`). Each guide names them. Every such file stays
@@ -95,7 +95,8 @@ Extensions with no guide, and the contract Sova parses where there is one:
 ### install.sh
 
 - `pi-config/install.sh` must stay standalone, needing nothing outside `pi-config/`.
-- It links `pi-config/` into `~/.pi/agent`, except `settings.json`. That file is a seed, deep-merged into the real
+- It links `pi-config/` into `~/.pi/agent`, except `settings.json` and `extensions/mode` (no pi extension; a link an
+  older version made is removed, and `--check` fails on one). That file is a seed, deep-merged into the real
   `~/.pi/agent/settings.json`: seed keys win, and runtime keys (the chosen model) stay there, never in the repo.
 - `--check` verifies the links and the seed keys and changes nothing. `--save` copies the live values of
   seed-declared keys back into the seed. `--links` refreshes only the extension links.

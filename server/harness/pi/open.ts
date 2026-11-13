@@ -41,9 +41,9 @@ export type { PiExtensionFactory, PiLoaderOptions, PiModelRuntime, PiToolDefinit
  * - `target`: a remote session's target, switching pi-config's remote extension on (`target`).
  * - `claudeCode`: the claude-code extension registers the Claude Code CLI's models (`claude-code-provider`,
  *   pi-config/extensions/claude-code/provider/index.ts CLAUDE_PROVIDER_FLAG).
- * - `review`: adversarial review (`adversarial-review`, pi-config/extensions/mode/index.ts REVIEW_FLAG).
+ * - `review`: adversarial review (`adversarial-review`, server/modes/engine.ts REVIEW_FLAG).
  * - `alignVisuals`: the align mode's Visuals as the chat's launch record has them (`align-visuals`, `on` or
- *   `off`, pi-config/extensions/mode/index.ts VISUALS_FLAG); absent, the extension reads mode-align.json.
+ *   `off`, server/modes/engine.ts VISUALS_FLAG); absent, the engine reads mode-align.json.
  * - `link`: this server's bound origin and its per-install token for the `link` extension (`sova-link`,
  *   `sova-link-token`), and which of its tools the session gets (`sova-link-tools`): `member`, all seven
  *   from its start; `legacy`, all seven once the server's `sova:link-live` hook says it is in a live
@@ -215,8 +215,7 @@ async function servicesForCwd(cwd: string, modelRuntime: ModelRuntime, flags: ()
  *
  * `onStep` hears Sova's own name for each step as it begins (a chat process's start-up trail,
  * §app.chat-processes/boot-log); by default nothing does. The discovered extensions load here as in
- * a chat: Sova's own copy of each, and Sova's mode engine in the mode slot (own-code.ts), never the pi
- * mode extension.
+ * a chat: Sova's own copy of each, and Sova's mode engine in the mode slot (own-code.ts).
  */
 export async function warmClaudeCodeProvider(
   modelRuntime: ModelRuntime,

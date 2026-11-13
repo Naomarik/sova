@@ -1,8 +1,8 @@
 /**
- * TUI for the align minor mode: the read-only viewer overlay (one alignment at a time, ←/→
- * between them; an older session's markdown doc when it has only that), the widget line, and the
- * `align` tool's call and result renderers. The host (index.ts) owns the state, the overlay, and
- * closing.
+ * TUI for the align minor mode: the `align` tool's call and result renderers (align-tool.ts registers
+ * them), and the read-only viewer overlay (one alignment at a time, ←/→ between them; an older session's
+ * markdown doc when it has only that) and widget line the pi terminal's mode extension showed, which
+ * nothing opens since that extension was removed.
  *
  * Every rendered line is exactly `width` cells; render never throws.
  */

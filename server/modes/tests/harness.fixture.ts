@@ -24,7 +24,7 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { piSession } from "../../harness/pi/testing/handle";
 import { ScriptedModel, scriptedModelsJson, type ScriptedStep } from "../../harness/pi/testing/scripted-model";
@@ -49,14 +49,13 @@ mkdirSync(join(agentDir, "extensions"), { recursive: true });
 symlinkSync(join(REPO, "pi-config/extensions/spec"), join(agentDir, "extensions/spec"));
 
 /**
- * The extensions every recorded chat lists, as an installed pi folder has them: the mode folder, then subagents.
- * The mode folder is the slot Sova's engine takes, in place, so tool and prompt-section order stay as recorded
- * (a chat with no mode entry at all is server/sova-modes-owner.test.ts's).
+ * The extensions every recorded chat has, as an installed pi folder has them: subagents linked in the agent dir's
+ * extensions folder (install.sh links no mode folder: it is no pi extension). Sova's engine is added where a mode
+ * link would sort, before subagents, so tool and prompt-section order stay as recorded (a chat with an older
+ * install's mode link left in its folder is server/sova-modes-owner.test.ts's).
  */
-export const CHAT_EXTENSIONS = [join(REPO, "pi-config/extensions/mode"), join(REPO, "pi-config/extensions/subagents")];
-/** The settings list for chats started now, then `more`. */
-export const chatExtensions = (more: string[] = []): string[] => [...CHAT_EXTENSIONS, ...more];
-const writeSettings = (more: string[] = [], extra: Record<string, unknown> = {}) => writeFileSync(join(agentDir, "settings.json"), JSON.stringify({ extensions: chatExtensions(more), ...extra }));
+symlinkSync(join(REPO, "pi-config/extensions/subagents"), join(agentDir, "extensions/subagents"));
+const writeSettings = (extra: Record<string, unknown> = {}) => writeFileSync(join(agentDir, "settings.json"), JSON.stringify(extra));
 writeSettings();
 
 await import("../../testing/in-process-chats"); // chats open in this process
@@ -67,12 +66,16 @@ export type Chat = Awaited<ReturnType<typeof cm.acquireChat>>;
 
 // ── Who fills the mode slot ───────────────────────────────────────────────────────────────────────
 
-/** Run `fn` with chats started inside it also loading `more` (after the usual list), and pi settings `extra`. */
+/** Run `fn` with chats started inside it also loading the extension folders `more` (linked beside the usual ones,
+    as install.sh links them), and pi settings `extra`. */
 export async function withExtensions<T>(more: string[], fn: () => Promise<T>, extra: Record<string, unknown> = {}): Promise<T> {
-  writeSettings(more, extra);
+  const links = more.map((dir) => join(agentDir, "extensions", basename(dir)));
+  more.forEach((dir, i) => symlinkSync(dir, links[i]!));
+  writeSettings(extra);
   try {
     return await fn();
   } finally {
+    for (const link of links) rmSync(link, { force: true });
     writeSettings();
   }
 }

@@ -7,7 +7,7 @@ import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSyn
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { after, test } from "node:test";
-import { isModeSlot, modeFileOf, patchResolve, workerModePaths } from "./own-code";
+import { isModeSlot, modeFileOf, modesEntries, patchResolve, workerModePaths } from "./own-code";
 
 const REPO = resolve(import.meta.dirname, "..", "..", "..");
 const REPO_MODE = join(REPO, "pi-config", "extensions", "mode");
@@ -30,7 +30,7 @@ symlinkSync(bare, join(t, "tree", ".agent", "extensions", "mode"));
 const ENTRY = join(t, "sova", "server", "harness", "pi", "modes-entry.ts");
 const entries = { entry: ENTRY, specWorker: join(t, "sova", "spec-w.ts"), projectToolsWorker: join(t, "sova", "pt-w.ts") };
 
-test("the mode slot is its folder: this repo's real one, its index.ts, a link to it, a folder with no index.ts; nothing else", () => {
+test("the mode slot is its folder: this repo's real one, its index path (an older copy's file), a link to it, a folder with no index.ts; nothing else", () => {
   for (const p of [REPO_MODE, join(REPO_MODE, "index.ts"), join(t, "agent", "extensions", "mode"), join(t, "agent", "extensions", "mode", "index.ts"), bare, join(t, "tree", ".agent", "extensions", "mode")])
     assert.equal(isModeSlot(p), true, p);
   for (const p of [join(REPO, "pi-config", "extensions", "spec"), join(REPO_MODE, "spec-worker.ts"), join(t, "elsewhere", "mode", "index.ts"), join(t, "agent", "extensions", "alpha", "index.ts")])
@@ -104,4 +104,17 @@ test("a worker's mode files map in place, order kept, whichever tree they lie in
   assert.deepEqual(workerModePaths(list, entries), [list[0], entries.entry, entries.specWorker, entries.projectToolsWorker, "npm:x", join(t, "pkg", "a.ts")]);
   assert.deepEqual(workerModePaths([join(t, "tree", ".agent", "extensions", "mode"), join(bare, "index.ts"), join(bare, "spec-worker.ts")], entries), [entries.entry, entries.entry, entries.specWorker], "an old tree's mode files, though it lacks them");
   assert.deepEqual(workerModePaths([join(t, "elsewhere", "mode", "index.ts")], entries), [join(t, "elsewhere", "mode", "index.ts")], "a folder named mode outside an extensions folder is no slot");
+});
+
+test("the real mode folder has no pi extension in it, and the subagents extension's worker slot paths still map onto Sova's own modules", async () => {
+  const { existsSync } = await import("node:fs");
+  // By a computed path, as the other tests reach the subagents extension: its pi-typed code stays out of the typecheck.
+  const subagents = join(REPO, "pi-config", "extensions", "subagents", "index.ts");
+  const { OWN_MODE_EXTENSION, PROJECT_TOOLS_WORKER_EXTENSION, SPEC_WORKER_EXTENSION } = (await import(subagents)) as { OWN_MODE_EXTENSION: string; PROJECT_TOOLS_WORKER_EXTENSION: string; SPEC_WORKER_EXTENSION: string };
+  assert.equal(existsSync(join(REPO_MODE, "index.ts")), false, "no index.ts: the folder is texts and rules, no pi extension");
+  assert.equal(existsSync(PROJECT_TOOLS_WORKER_EXTENSION), false, "the project-tools slot names a file that no longer exists");
+  assert.equal(OWN_MODE_EXTENSION, realpathSync(REPO_MODE));
+  const real = modesEntries();
+  assert.deepEqual(workerModePaths([OWN_MODE_EXTENSION, SPEC_WORKER_EXTENSION, PROJECT_TOOLS_WORKER_EXTENSION]), [real.entry, real.specWorker, real.projectToolsWorker], "mapped by name, no existence check");
+  for (const p of Object.values(real)) assert.equal(existsSync(p), true, `Sova's module exists: ${p}`);
 });

@@ -535,10 +535,12 @@
   "§design.copy-deck/sidebar": {
     "kind": "note",
     "authority": "accepted",
-    "evidence": "reviewed",
+    "evidence": "verified",
     "code": [
       "src/components/Sidebar.tsx",
       "src/lib/drag-archive.ts",
+      "src/lib/drag-archive.test.ts",
+      "src/lib/drag-overlay.test.ts",
       "src/lib/archive-block.ts",
       "src/lib/org-region.ts",
       "src/lib/readiness.ts",
@@ -548,6 +550,9 @@
       "src/lib/regions.ts",
       "src/lib/needs-you-row.ts",
       "src/components/NeedsYouRow.tsx",
+      "src/lib/group-menu.ts",
+      "src/lib/menu-tables.test.ts",
+      "server/menus-browser.integration.test.ts",
       "src/lib/branch-status.ts",
       "src/lib/session-row.test.ts",
       "src/lib/branch-place.ts",
@@ -596,7 +601,15 @@
   "§design.copy-deck/workspace": {
     "kind": "note",
     "authority": "accepted",
-    "evidence": "reviewed"
+    "evidence": "verified",
+    "code": [
+      "src/lib/pane-menu.ts",
+      "src/components/GroupView.tsx",
+      "src/components/SessionView.tsx",
+      "src/design/base.css",
+      "server/menus-browser.integration.test.ts",
+      "src/lib/menu-tables.test.ts"
+    ]
   },
   "§design.copy-deck/worktree-cleanup": {
     "kind": "note",

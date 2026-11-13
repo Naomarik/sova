@@ -30,7 +30,7 @@ a group, and no group that can't be opened as a workspace.
 | The group composer is a mode, off by default | A workspace opens with each member's own composer and nothing else at the foot. `Send to All` in the head swaps every pane composer for the one group composer, and its `×` swaps them back. There is one kind of composer on screen at a time, never two rows of them |
 | The pre-check is also what makes this surface testable for nothing | A refused batch has no side effects, so the whole refusal path — parsing, the banner, every member named in Sova's words, `Send to the Rest`, the draft surviving — can be exercised against a real server with **zero model calls**, e.g. by a group whose members are all TUI-live. A transactional design would have something to undo on every run. Noted beside the decision because it is a property of it, not a testing trick |
 | All-or-nothing is a **pre-check**, not a transaction | The server checks every member before it prompts any of them, so the refusal is complete and nothing is half-sent by our own doing. A member lost *between* the check and the send (a TUI grabs it in the same second) makes the batch partial, and we say so — a prompt a model is already answering cannot be recalled, and claiming otherwise would be the one lie this surface can't afford |
-| Promote removes from the group; Archive removes and archives | Neither deletes a transcript. Both are the group's writes, never the session file's |
+| Promote and Remove From Group take a member out; a pane offers no Archive | Neither gesture deletes or archives a transcript. Membership changes are the group's writes, never the session file's |
 | A group survives being emptied | See "Emptying a group". Every group, an older build's `autoDissolve` group included (§workspace.groups/legacy-groups): nothing deletes a group but Dissolve and Delete group |
 | Announcements and DOM ids are pane-scoped | Three panes finishing in the same second must read as three facts, each naming its member |
 
@@ -155,8 +155,8 @@ The workspace is a third value of `.app`'s `data-view`, and it takes the whole m
           <span class="workspace-pane-name" id="pane-p1-name">control · Opus 5</span>
           <span class="context-gauge" title="…">…§chat/context-window…</span>
           <span class="chip chip-accent"><i class="chip-dot"></i>TUI</span>   <!-- state chips, see below -->
-          <button class="button button-icon button-ghost workspace-pane-tools"
-                  aria-haspopup="menu" aria-label="Pane actions · control · Opus 5">…more…</button>
+          <button class="button button-icon button-ghost session-details-open"
+                  aria-label="Session details · control · Opus 5">…info…</button>
         </header>
         <div class="workspace-pane-body">…§chat/transcript transcript, with pane-scoped ids…</div>
         <!-- mounted always; not displayed while Send to All is on -->
@@ -334,11 +334,13 @@ apply verbatim. What changes is scoping and chrome:
 - **Outside a workspace there is no scope and no suffix.** A session opened at `#/s/` renders the
   same view with bare ids, exactly as it does today, because there is nothing to disambiguate
   from. The scope is what a pane adds, not something the session view carries everywhere.
-- **The tools are one menu, not a row.** Seven controls do not fit beside a name at a 440px
-  pane, and a row that sheds controls as it narrows would hide different ones at different pane
-  widths in the same view. One `Pane actions` trigger, the skill's plain action menu, named for
-  the pane it acts on (`Pane actions · {pane name}`) so three of them on screen are three
-  different menus to AT. The labels inside are the ones below, unabbreviated.
+- **The tools are a pointer menu, not a row of controls.** Seven controls do not fit beside a name
+  at a 440px pane, and a row that sheds controls as it narrows would hide different ones at
+  different pane widths in the same view. The separate Session details info button stays visible.
+  The other tools share one pointer menu, opened on the pane head or its tab by a mouse right-click
+  or a stationary 500ms finger or pen hold; there is no `⋯` trigger (§app.context-menus/doors).
+  Its accessible name is `Pane actions · {pane name}`, so 3 on screen are 3 different menus to AT.
+  The labels inside are the ones below, unabbreviated.
 - **`Rename…` is the comparison's naming act.** The useful name — "the
   one that read the tests", "control" — is only known AFTER reading output, which is why this
   gesture lives in the pane that output is read in: a field
@@ -347,13 +349,11 @@ apply verbatim. What changes is scoping and chrome:
   Empty clears the label; the pane shows the title — or the repeat suffix — again. `Move Left`
   and `Move Right` carry the workspace's one keyboard hint in their `title`s, because they are
   the rows whose gesture most invites it, and it lived nowhere else.
-- **Three ways a member leaves, and each word does one thing.** `Promote` removes it and takes
-  you to it. `Remove From Group` removes it and leaves you here. `Archive` removes it and
-  archives it. All three are offered for a session Sova started; for one it didn't,
-  `Archive` is absent rather than relabelled, because the archive half isn't available (§app/session-list
-  "Archiving") and a word that only sometimes archives is the lie this set exists to avoid.
-  `Remove From Group` is what a member you want out but not archived has always needed — without
-  it the only remove-and-stay gesture would be `Promote`, which doesn't stay.
+- **Two ways a member leaves, and each word does one thing.** `Promote` removes it and takes
+  you to it. `Remove From Group` removes it and leaves you here. The pane menu offers no
+  `Archive`: taking a member out never archives or deletes its session
+  (§app.context-menus/pane). `Remove From Group` is the remove-and-stay gesture; `Promote` is
+  the remove-and-open one.
 - **`Open`** is a link to `#/s/{path}`: the member alone, at full width, out of the workspace but
   still in the group.
 - **Scroll** is the pane's own `.pane`. Jump to Latest (§chat/transcript) is per pane and sits inside it.
@@ -621,7 +621,7 @@ follows the mode alone — never where the caret is or what a box holds.
 
 ## §workspace.groups/group-lifecycle — Group lifecycle
 
-All three are writes to the group registry. None of them touches a session's JSONL. The workspace
+These gestures write to the group registry. None of them touches a session's JSONL. The workspace
 takes members out and dissolves the group; it never adds one. A session joins a group only from
 the sidebar (§app.session-list/groups: dragging a row onto the group),
 the session details' `Move into group` (§app.subagents-pane/tabs), or the Overseer
@@ -630,29 +630,11 @@ the session details' `Move into group` (§app.subagents-pane/tabs), or the Overs
 - **Promote** — `POST /api/session-groups/assign {path, groupId: null}`, then navigate to
   `#/s/{path}`. The member you picked is the answer; the workspace has done its job. There is no
   undo chip: putting it back is the sidebar's gesture, like adding any session.
-- **Archive** — the same assign-to-null, plus
-  `POST /api/sessions/archive {path, archived:true}`. Two writes, one gesture, and **the second
-  can refuse in three ways** (`archiveSession` in `server/sessions-index.ts`): the session
-  is open in a TUI, it wasn't started in Sova, or it is mid-turn. Two of the three the pane
-  already knows, so it says so **before** the press rather than half-succeeding: for a TUI-live
-  or mid-turn member, Archive is `aria-disabled` with the reason ("This session is open in a
-  terminal." · "It's mid-turn. Stop it or wait, then archive it."). Removed-but-not-archived is
-  a worse outcome than a button that explains itself, and it is left for the genuine race — a
-  turn that starts between the check and the write — where §design/copy-deck's "Removed **{title}** from
-  “{name}”, but couldn't archive it." is the honest report. The non-web case is not a refusal to
-  route around but a different gesture, below.
-  - **The pane goes.** A session taken out by Archive is no longer a member, so it leaves the workspace on
-    the next list refresh. It does not linger greyed out: a pane is a member, and a view that
-    kept showing one that isn't would be the workspace disagreeing with the group.
-  - **What "reversible" means, exactly.** Nothing is destroyed: the transcript is intact, the
-    session is readable at `#/s/{path}`, and it sits in the Archive. Getting it back is two
-    deliberate gestures — Unarchive, then move it into the group from the sidebar.
-
-  The toast names both writes: "Removed **{title}** and archived it." For a session Sova did not start, the
-  archive half is not available (§app/session-list "Archiving" is web-origin only), the button reads
-  `Remove From Group`, and its `title` says why: "This session wasn't started in Sova, so
-  removing it is all we can do — nothing is archived." One word for two behaviors would be the
-  lie here.
+- **Remove From Group** — the same assign-to-null, without navigating away and without an
+  archive write. The pane leaves the workspace on the next list refresh because it is no longer
+  a member. The session and its transcript stay, and putting it back is the sidebar's gesture.
+- **Archive** — not offered from a workspace pane (§app.context-menus/pane): archiving is never
+  also a membership-removal gesture.
 - **Dissolve** — `DELETE /api/session-groups/{id}`, the existing route, asked in place in the
   head: "Dissolve “{name}”? Its 4 sessions stay in the list." Then route to `#/`. Sessions are
   never touched, exactly as §app/session-list already promises. **The word differs from the sidebar's on
@@ -663,7 +645,7 @@ the session details' `Move into group` (§app.subagents-pane/tabs), or the Overs
 ### Emptying a group
 
 **A group stands empty.** Its name is the user's work, so taking out its last member — Promote,
-Remove From Group, Archive, or removing a member whose file is gone — leaves the group in the
+Remove From Group, or removing a member whose file is gone — leaves the group in the
 sidebar and the workspace on screen, showing the empty state below. There is no exception: a
 group an older build marked `autoDissolve` (§workspace.groups/legacy-groups) stands empty like any
 other. `POST /api/session-groups/assign` answers `{ok: true}` and never deletes a group; only

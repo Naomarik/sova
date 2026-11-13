@@ -23,6 +23,11 @@
       "§chat/mode-menu",
       "§chat/model-menu",
       "§chat.composer/composer-flyout"
-    ]
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-13T13:38Z",
+      "source": "pi-session:ce8c0c61-23bf-42d5-a3f2-2bacf213f06c#9fa373b6"
+    }
   }
 }

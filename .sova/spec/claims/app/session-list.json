@@ -130,7 +130,12 @@
       "server/overseer-tools.ts",
       "server/overseer-tools.test.ts",
       "server/fixed-names.test.ts"
-    ]
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-13T13:38Z",
+      "source": "pi-session:ce8c0c61-23bf-42d5-a3f2-2bacf213f06c#9fa373b6"
+    }
   },
   "§app.session-list/cleanup-org-guard": {
     "kind": "behavior",
@@ -202,7 +207,7 @@
       "§app.session-list/regions-top-and-archive"
     ],
     "authority": "accepted",
-    "evidence": "reviewed",
+    "evidence": "verified",
     "code": [
       "src/lib/drag-overlay.ts",
       "src/lib/drag-overlay.test.ts",
@@ -212,6 +217,9 @@
       "src/lib/drag-archive.test.ts",
       "src/lib/hold-select.ts",
       "src/lib/hold-select.test.ts",
+      "src/lib/context-menu.ts",
+      "src/components/ContextMenu.tsx",
+      "server/menus-browser.integration.test.ts",
       "src/design/base.css",
       "src/App.tsx",
       "src/lib/optimistic-archive.ts",
@@ -220,9 +228,9 @@
       "src/lib/archive-block.test.ts"
     ],
     "agreed": {
-      "by": "omar",
-      "at": "2026-10-27T08:48Z",
-      "source": "pi-session:01a1735d-d92b-70d4-a656-e4521f0fd84f#d9c4dc3f"
+      "by": "user",
+      "at": "2026-11-13T12:22Z",
+      "source": "pi-session:ce8c0c61-23bf-42d5-a3f2-2bacf213f06c#9fa373b6"
     }
   },
   "§app.session-list/first-listing": {
@@ -254,7 +262,7 @@
       "§app.merge-queue/chats"
     ],
     "authority": "accepted",
-    "evidence": "unreviewed",
+    "evidence": "verified",
     "code": [
       "server/sessions-index.ts",
       "server/app.ts",
@@ -278,6 +286,9 @@
       "server/project-services/release.ts",
       "server/project-services/release-wire.ts",
       "src/components/SessionRowMenu.tsx",
+      "src/components/AgentsView.tsx",
+      "src/lib/session-menu.ts",
+      "src/lib/menu-tables.test.ts",
       "src/lib/session-row-menu.test.ts",
       "src/lib/auto-title.ts",
       "src/lib/known-before-mount.ts",
@@ -288,8 +299,8 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-05T10:31Z",
-      "source": "pi-session:01a1ab0e-cb20-7081-a563-521c041eafdd#51e5317f"
+      "at": "2026-11-13T13:38Z",
+      "source": "pi-session:ce8c0c61-23bf-42d5-a3f2-2bacf213f06c#9fa373b6"
     }
   },
   "§app.session-list/group-picker": {
@@ -312,6 +323,9 @@
   "§app.session-list/groups": {
     "kind": "behavior",
     "authority": "accepted",
+    "requires": [
+      "§app.context-menus/doors"
+    ],
     "evidence": "verified",
     "code": [
       "src/design/base.css",
@@ -336,12 +350,17 @@
       "src/app.css",
       "server/session-feed.integration.test.ts",
       "server/sidebar-guide-lines.integration.test.ts",
+      "src/lib/group-menu.ts",
+      "src/components/MenuPlace.tsx",
+      "src/lib/context-menu.ts",
+      "src/lib/menu-tables.test.ts",
+      "server/menus-browser.integration.test.ts",
       "src/App.tsx"
     ],
     "agreed": {
-      "by": "omar",
-      "at": "2026-10-27T08:48Z",
-      "source": "pi-session:01a1735d-d92b-70d4-a656-e4521f0fd84f#d9c4dc3f"
+      "by": "user",
+      "at": "2026-11-13T13:38Z",
+      "source": "pi-session:ce8c0c61-23bf-42d5-a3f2-2bacf213f06c#9fa373b6"
     }
   },
   "§app.session-list/guide-lines": {
@@ -538,7 +557,7 @@
   "§app.session-list/organizations": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "reviewed",
+    "evidence": "verified",
     "requires": [
       "§app.session-list/ordinary-surfaces",
       "§app.organizations/org-sessions",
@@ -570,8 +589,8 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-06T01:40Z",
-      "source": "pi-session:01a1ac4a-4cc0-77e8-b78d-580fabeebc2e#f924065b"
+      "at": "2026-11-13T13:38Z",
+      "source": "pi-session:ce8c0c61-23bf-42d5-a3f2-2bacf213f06c#9fa373b6"
     }
   },
   "§app.session-list/recent": {

@@ -202,8 +202,8 @@ Timeline · Agents · Usage · Time Spent · Context · Sharing · Gallery** (`.
 strip, empty or not, so the strip never shifts under the reader.
 
 - **Which tab opens.** Every door names its own tab (the head's Session details button, the
-  remote chip, and the Agents board's Session details button and ⋯ item: Session; the board's ⋯
-  Open Subagents, its team chips, their `+{n}` chip and the `{n} teams` chip that stands for them from 1000 to 1599px, and `#/agents/{teamKey}` links: Agents; the composer's subagents row: Agents; the Timeline doors,
+  remote chip, and the Agents board's Session details button and row-menu item: Session; the board
+  row menu's Open Subagents, its team chips, their `+{n}` chip and the `{n} teams` chip that stands for them from 1000 to 1599px, and `#/agents/{teamKey}` links: Agents; the composer's subagents row: Agents; the Timeline doors,
   §chat.timeline/opening-it; the head's token chip: Usage). The pane keeps the chosen tab per
   session path, in memory only. With none kept, it opens on Agents when a worker is working at
   open, else on Session, settled once at open so the tab never moves when the last worker

@@ -1183,7 +1183,7 @@ unchanged.
   (`POST /api/sessions/prompt`), each a 409 where it is a request, and a message a closed tab
   handed the server for it comes back as the session's draft. A worker's report never opens an
   archived parent. Every way of archiving (the Archive button, a drop on the Archive tile, the
-  board's ⋯ menu, a project overseer's conversation pushed past its history) marks it archived,
+  board row's menu, a project overseer's conversation pushed past its history) marks it archived,
   closes its chat quietly, cancels any report still waiting to open it, cancels its pending wake
   nudges for good (§chat.wake-nudges/archive) and stops its background jobs
   (§app.background-jobs/stopping). A chat still starting

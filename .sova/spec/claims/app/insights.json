@@ -573,15 +573,21 @@
       "src/lib/agents-board.test.ts",
       "src/components/AgentsView.tsx",
       "src/agents-board.css",
-      "src/components/TitleField.tsx",
       "src/components/SessionRowMenu.tsx",
+      "src/components/MenuPlace.tsx",
+      "src/lib/context-menu.ts",
+      "src/lib/menu-position.ts",
+      "server/menus-browser.integration.test.ts",
       "src/lib/session-row-menu.test.ts",
-      "src/lib/session-row-menu.snapshot.json"
+      "src/lib/session-row-menu.snapshot.json",
+      "src/lib/session-menu.ts",
+      "src/lib/menu-tables.test.ts",
+      "src/design/base.css"
     ],
     "agreed": {
-      "by": "omar",
-      "at": "2026-10-27T08:51Z",
-      "source": "pi-session:5e21b0e4-1ae9-4f78-a787-4425529986b0#bbe646fd"
+      "by": "user",
+      "at": "2026-11-13T13:38Z",
+      "source": "pi-session:ce8c0c61-23bf-42d5-a3f2-2bacf213f06c#9fa373b6"
     }
   },
   "§app.insights/token-velocity": {
@@ -818,12 +824,14 @@
       "src/lib/agents-board.test.ts",
       "src/lib/api.ts",
       "shared/usage/wire.ts",
-      "src/design/base.css"
+      "src/design/base.css",
+      "src/lib/session-menu.ts",
+      "src/lib/menu-tables.test.ts"
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-10-25T20:41Z",
-      "source": "pi-session:5e21b0e4-1ae9-4f78-a787-4425529986b0#90d2ad0b"
+      "at": "2026-11-13T11:37Z",
+      "source": "pi-session:ce8c0c61-23bf-42d5-a3f2-2bacf213f06c#9792a627"
     }
   },
   "§app.insights/usage-refresh": {

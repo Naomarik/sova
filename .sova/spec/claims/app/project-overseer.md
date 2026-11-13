@@ -995,9 +995,9 @@ judgement.
   (the overseer, you, or you via the Overseer: an `operator-coding` row marked `via: "overseer"`,
   §app.overseer/org-project-overseers),
   state, age and its branch in mono (one line, cut with an ellipsis, the whole branch as its
-  `title`), then a **⋯** menu ("Actions · {title}") holding **Merge Branch** and **Remove
-  Worktree…** (each disabled with its reason, and absent when the row doesn't offer it); the
-  Remove confirmation opens under the row. "Sessions it started" keeps its gathering sessions and
+  `title`), then its row menu ("Actions · {title}") holding **Merge Branch** and **Remove
+  Worktree…** (each disabled with its reason, and absent when the row doesn't offer it). The Remove
+  confirmation opens in the menu. "Sessions it started" keeps its gathering sessions and
   offers. Copy: §design.copy-deck/project-coding.
 - **Read in two steps.** The page reads the list first and each row's branch facts after, so the
   rows never wait on git. `GET /api/projects/:pid/overseer` runs no git at all: it answers the
@@ -1018,13 +1018,13 @@ judgement.
   history entry; entries already recorded stay as they are. The page merges the two by session. Before the
   first rows answer, it lists the project's coding sessions the browser already holds from the
   session list, so the rows show with the page. A row shows its branch as recorded until its
-  branch facts arrive. Until then a row with a recorded branch, not removed, has its **⋯** menu
+  branch facts arrive. Until then a row with a recorded branch, not removed, has its pointer menu
   with Merge Branch and Remove Worktree… both disabled, "Reading its branch": no branch gesture
   acts on a state the page hasn't read. Once they arrive the menu is as above. Merge Branch and
   Remove Worktree
   answer the branch read's shape, and the page reads the overseer's state again after either.
   A refresh (either read again, or any chat changing) updates the rows in place, each matched by
-  its session, and never rebuilds the list: an open **⋯** menu stays open and the page keeps its
+  its session, and never rebuilds the list: an open row menu stays open and the page keeps its
   scroll position and keyboard focus, while a row's text, chips and menu entries still change as
   they arrive, and a menu entry acts on what its row shows when it is chosen.
 - **Merge Branch** is the operator's gesture; the overseer has no tool for it, and it passes only on

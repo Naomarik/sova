@@ -448,6 +448,10 @@
       "src/lib/menu-place.ts",
       "src/components/MenuPlace.tsx",
       "src/components/SessionRowMenu.tsx",
+      "src/components/AgentsView.tsx",
+      "src/lib/session-menu.ts",
+      "src/agents-board.css",
+      "shared/extension-contract.ts",
       "docs/customization.md",
       "server/extension-offers-menu.test.ts",
       "src/lib/menu-place.test.ts",
@@ -458,8 +462,8 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-10-25T20:41Z",
-      "source": "pi-session:5e21b0e4-1ae9-4f78-a787-4425529986b0#90d2ad0b"
+      "at": "2026-11-13T13:38Z",
+      "source": "pi-session:ce8c0c61-23bf-42d5-a3f2-2bacf213f06c#9fa373b6"
     }
   },
   "§app.extensions/trust": {
@@ -533,9 +537,9 @@
       "§app/shell"
     ],
     "agreed": {
-      "by": "Omar (user)",
-      "at": "2026-11-06T21:56Z",
-      "source": "pi-session:01a1acdc-5fed-7735-96f5-96f6019e339d#537ac0e8"
+      "by": "user",
+      "at": "2026-11-13T13:38Z",
+      "source": "pi-session:ce8c0c61-23bf-42d5-a3f2-2bacf213f06c#9fa373b6"
     }
   }
 }

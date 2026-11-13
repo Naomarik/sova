@@ -6,7 +6,7 @@ any of a built UI (a folder with an `index.html`), a program that runs on this m
 adds to Sova's screens and chats. Sova shows it as a card on the landing page and as a page at
 `#/ext/<id>`, serves its UI and forwards its API and sockets from Sova's own
 origin, and knows nothing about what it does. The host is generic: no extension is named, special
-cased or shipped by Sova. The interface is `ext-contract-v1.20`; any change to it is a version bump
+cased or shipped by Sova. The interface is `ext-contract-v1.22`; any change to it is a version bump
 agreed with the extensions built on it. v1.15 added what an extension offers (§app.extensions/offers)
 and what it adds under replies (§app.commands/reply-slot). v1.16 added each backend's own key
 (§app.extensions/backend-key), a command's `menu` key (§app.extensions/session-menu), and the `row`
@@ -22,6 +22,8 @@ narrowed what a key does: a message it sends carries its extension's name
 v1.20 added the folder and its description file (§app.extensions/folder), the list Sova writes and what you
 approve (§app.extensions/loader), the program Sova runs (§app.extensions/program), and entries with no
 page or no program. A hand-written entry still works once it is approved.
+v1.21 added the group, pane and worktree menu places. v1.22 makes the 4 places in
+§app.context-menus/places the served contract's complete menu-place list.
 
 An extension is a guest with a name badge. It can hear what happens, show things, ask the user with a
 card and say things to a chat, always under its own name. It can never be the user.
@@ -721,9 +723,9 @@ adds to rows, every row is exactly the row it was, and the pane asks nothing.
   which becomes `Show on Session Rows` while hidden. The choice is kept in this browser. While an
   extension is hidden, the pane asks it nothing and draws none of its chips.
 
-## §app.extensions/session-menu — Entries in a session's ⋯ menu
+## §app.extensions/session-menu — Entries in a session row's menu
 
-The ⋯ menu of a row on the Agents board (§app.insights/team-cards) is a place that Sova's own
+The menu of a row on the Agents board (§app.insights/team-cards) is a place that Sova's own
 items and extensions both add to. Sova's items come first, in their groups and order, as they
 were. Copy Path, the menu's last item, is the place's built-in: Sova draws it through the place,
 in the same spot. After Sova's items come the groups that extensions add.

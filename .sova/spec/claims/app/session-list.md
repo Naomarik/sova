@@ -1067,7 +1067,7 @@ reload and no wait for a poll. An older window that doesn't know the push ignore
       Groups <span class="sidebar-region-count">· 2</span>
       <!-- The region's one action, at the head's right end: there with the region shut. It opens
            the group picker (§app.session-list/group-picker) and makes nothing. Click and keydown
-           stop here, as a group's `⋯` does, or they would toggle the region. -->
+           stop here, or they would toggle the region. -->
       <button type="button" class="button button-icon button-ghost group-picker-open"
               aria-haspopup="dialog" aria-label="Open Groups" title="Open Groups">
         <svg class="icon icon-sm" aria-hidden="true">…external…</svg>
@@ -1077,17 +1077,14 @@ reload and no wait for a poll. An older window that doesn't know the push ignore
 
   <!-- One group: a <details>, like an Archive date section, and collapsed like one too. -->
   <details class="group-section">
-    <!-- The twist, the name, the count, the actions — and NO folder icon: a group is the user's
-         own name for a set of sessions, not a folder on disk. -->
+    <!-- The twist, the name and the count — and NO folder icon or menu trigger: a group is the
+         user's own name for a set of sessions, not a folder on disk. -->
     <summary class="list-group-label group-label" title="Work">
       <svg class="icon icon-sm icon-twist" aria-hidden="true">…chevron-right…</svg>
       <span class="group-name"><bdi>Work</bdi></span>
       <span class="text-num">4</span>
-      <!-- The group's own actions, on its own name row. Always shown, muted until the row is
-           hovered or focused. Click and keydown stop here, or they would toggle the section. -->
-      <button type="button" class="button button-icon button-ghost group-actions"
-              aria-haspopup="menu" aria-expanded="false" aria-label="Group actions · Work"
-              title="Group actions">…more…</button>
+      <!-- A conditional Name sessions button is a separate section-head action. The group's own
+           menu has no visible trigger; the name row's pointer doors open it. -->
     </summary>
     <!-- The panel is portaled to <body>, NOT left inside the summary: see "The actions menu". -->
     <!-- `.action-menu`: the model menu's shell at a menu's own width, placed by measuring the
@@ -1129,9 +1126,9 @@ with its rows one step (`--space-5`) plus a folder's own 4px in, where its folde
 sit, so no title moved (§app.session-list/guide-lines). Under a group name the line and the step
 are what tell its rows apart as the group's contents rather than the next group's; pressing the
 line collapses the group.
-- **The name row.** Twist, name, count, actions — and no folder icon. A group is the user's own
-name for a set of sessions, not a folder on disk, and the icon read as a claim about the file
-system that the `cwd` heads of Folders really make.
+- **The name row.** Twist, name and count, with no folder icon or menu trigger. A group is the
+  user's own name for a set of sessions, not a folder on disk, and the icon read as a claim about
+  the file system that the `cwd` heads of Folders really make.
 - **Count.** The region head counts **groups**. Within Groups only, a group's own session count
 (every member it draws, the operator's coding sessions included) appears only while that group is
 collapsed; an expanded group shows its rows instead of repeating the number. Folders' and the Archive's folder counts
@@ -1163,26 +1160,20 @@ creation order.
 (`.button-icon.button-ghost` with the `external` glyph, as `Open workspace` has, `aria-label` and `title` "Open Groups",
 `aria-haspopup="dialog"`), not a row: a row read as one of the groups and sat inside the list.
 On the head it is there with the region shut and while searching, and at the end the name and
-count keep their place. It is quiet like a group's `⋯` — the count's muted ink, coming up to full
-ink when the head is hovered or it has focus — with the standard 44px target, hung into the head's
-right padding so its glyph lines up with the `⋯` of the groups below. It stops its own click and
-keydown, as the `⋯` does, so a press on it is not also a press on the summary, and it never opens
-or shuts the region. Pressing it opens the group picker (§app.session-list/group-picker). With no
+count keep their place. Its muted ink comes up to full ink when the head is hovered or it has
+focus. Its standard 44px target hangs into the head's right padding. It stops its own click and
+keydown, so a press on it is not also a press on the summary, and it never opens or shuts the
+region. Pressing it opens the group picker (§app.session-list/group-picker). With no
 groups it is `aria-disabled` with the reason "No groups yet. Drag a session to start one." as its
 `title`, and a press only says that reason through the polite region.
-- **The actions menu.** A group's three actions live behind one `⋯` trigger on the group's own
-name row, in the `<summary>` after the count — not in a tool row under the section, which cost
-every group three buttons' worth of height whether or not anyone wanted them. The trigger is
-`.button-icon.button-ghost`, ALWAYS drawn — a hover-revealed one is invisible to a touch user and
-a guess to everyone else — in the count's muted ink, coming up to full ink on hover, on
-focus-within and while its menu is open. Its 44px target is the standard one; only the glyph is a
-step smaller (16px), and the box hangs into the sidebar's right gutter so the dots sit on the edge. It opens the same `popover="auto"` menu §chat/mode-menu and §workspace/groups use: `Open workspace`, `Rename…`,
-`Delete group…`. **A control inside a `<summary>` costs two things.** The trigger stops its own
-click and keydown, so a press on it is not also a press on the summary. And the menu's panel is
-rendered OUT of the summary's subtree (a portal to `<body>`): a popover paints in the top layer
-but stays where it is in the DOM, and a `<details>` toggles for a click on anything inside its
-summary that has no activation behaviour of its own — which is exactly what a `role="menuitem"`
-row is. Measured before the panel moved: pressing `Rename…` collapsed the group under the menu.
+- **The actions menu.** A group's 3 actions live in its name row's pointer menu, opened by a mouse
+  right-click or a stationary 500ms finger or pen hold. There is no `⋯` trigger
+  (§app.context-menus/doors). The menu holds `Open workspace`, `Rename…` and `Delete group…`.
+  Its panel is rendered OUT of the summary's subtree (a portal to `<body>`): a popover paints in
+  the top layer but stays where it is in the DOM, and a `<details>` toggles for a click on anything
+  inside its summary that has no activation behaviour of its own — which is exactly what a
+  `role="menuitem"` row is. Measured before the panel moved: pressing `Rename…` collapsed the group
+  under the menu.
 - **Opening it as a workspace.** `Open workspace` is the menu's first row, a link to `#/g/{id}` —
 the group's members side by side, each a whole chat, with one composer that writes to all of them
 (§workspace/groups). An empty group can't be opened as one: the row is `aria-disabled` with its reason under the
@@ -1221,10 +1212,9 @@ than one region's slice, and the region disappears when no group matches.
 `<summary>` and deliberately **not** a heading: headings inside `<summary>` are exposed
 inconsistently (the same rule the Archive's summary follows), so the outline reads the region's
 `h2` and then the group's rows, rather than a heading nobody can rely on. The label is a `<summary>`, so Enter or
-Space opens and closes the section and AT announces expanded or collapsed. The `⋯` trigger inside
-it keeps the section's own gestures: it stops click and keydown, so Enter or Space on the trigger
-opens the menu and does not also toggle the section, and Tab reaches the trigger after the
-summary. Escape closes the menu (and any screen it is showing) and returns focus to it. The region
+Space opens and closes the section and AT announces expanded or collapsed. Its pointer menu has no
+keyboard door (§app.context-menus/doors). Escape closes an open menu and any screen it is showing.
+The region
 head's `Open Groups` is a named button inside its `<summary>`, and it keeps the region's gestures
 the same way: it stops click and keydown, so Enter or Space on it opens the picker and does not
 also toggle the region. When the picker closes it hands focus back to `Open Groups`.
@@ -1363,9 +1353,9 @@ is the same gesture with a mouse and a thumb: one Pointer Events path. The pure 
   (surface fill, `--shadow-2`) and the phone buzzes briefly where it can (`navigator.vibrate`).
   Moving the lifted row more than 10px opens the overlay. A still mouse held 500ms lifts the row
   the same way. A touch that moves before the lift is a scroll or a tap, exactly as before.
-  **Letting go of a lifted row without moving it does nothing**: the row settles back, nothing
-  opens and nothing is picked. The list has no multi-select: a row is filed one at a time, here
-  or with the session pane's `Move into group`.
+  **A finger or pen hold opens the row's menu on release**; moving it opens the overlay instead.
+  A mouse hold opens nothing. The list has no multi-select: a row is filed one at a time, here or
+  with the session pane's `Move into group`.
 - **What a press is, and what it stops being.** A press becomes a hold only if it stays within
   10px of where it started and nothing interrupts it. Before the hold, a mouse that moves 6px
   opens the overlay, and a thumb that moves 10px is a scroll. A `pointercancel` (what touch sends
@@ -1434,8 +1424,8 @@ is the same gesture with a mouse and a thumb: one Pointer Events path. The pure 
   session gets "Groups hold this host's sessions only. That one lives on {host}." in the same
   way (a peer's own groups aren't this host's, so it gets no `Current` or `Remove` tile). Taking
   an organization session out of a group still works. Archive, when it can't archive, says why
-  under its label: "Can't archive: {reason}" in `archiveBlockReason`'s words (open in a TUI, not
-  started in Sova, mid-turn, with subagents working). A row that is already archived says
+  under its label with the same one-sentence refusal as the session menu and the refused-drop
+  toast (§app.context-menus/refusals). A row that is already archived says
   "Already archived.", and an external row the Archive already lists says "Already in the
   Archive." A drop on a disabled tile does nothing but say its reason, as a toast and through
   the polite region.
@@ -1603,7 +1593,7 @@ refused for length.
   row (§app.decisions/push).
 
 **The button.** On the heads of Folders, each user group, Organizations and the Archive, a
-quiet 44px ghost icon button (`pencil`) at the head's right end, before a group's `⋯`, shown only
+quiet 44px ghost icon button (`pencil`) at the head's right end, shown only
 while that section holds at least 1 **nameable** row: a row with no stored title (no `titleBy`,
 no `originalTitle`) that is not a draft-only row. Its `aria-label` and `title` are "Name {n}
 sessions" ("Name 1 session"), counting the section's rows as the search shows them, each session
@@ -1684,9 +1674,9 @@ the chat (cleared, pruned, or kept under another state root) does it read the ge
   sweep, Name sessions, Shorten long titles or Regenerate title, §app.session-list/auto-titles),
   not a rename by the user or by the Overseer (§app.session-list/session-titles), and not an alias
   (§app.overseer/session-names).
-- **Nothing offers to.** On such a chat the Agents board's ⋯ has no Rename…, Use Gist as Title or
-  Reset to Original Title (§app.insights/team-cards), and an open chat's head has no Regenerate
-  title. Every other way is refused (409 from the title route), nothing stored, with one plain
+- **Nothing offers to.** On such a chat the Agents board's row menu has no Rename…, Use Gist as
+  Title or Reset to Original Title (§app.insights/team-cards), and an open chat's head has no
+  Regenerate title. Every other way is refused (409 from the title route), nothing stored, with one plain
   sentence: "An overseer keeps its own name.", "The merge queue's chats keep the names Sova gives
   them.", "A release chat keeps the name Sova gives it." or "A gathering session keeps its public
   title as its name." That covers the Overseer's `sova_set_session` with a title or an alias (the
@@ -2207,7 +2197,7 @@ projects (§app.projects/list).
   region, since Folders no longer lists it; one Folders still lists (a peer's, or an archived one)
   opens nothing here.
 - **The org link.** Each org summary ends with a 44px ghost icon link to `#/orgs/<id>`, hung into the
-  right gutter like a group's `⋯`; it stops its own click and keydown so it doesn't also toggle the org.
+  right gutter; it stops its own click and keydown so it doesn't also toggle the org.
   Names truncate with an ellipsis, the full name in `title`.
 - **Archiving.** Org sessions are web sessions, so the session head's Archive button and the drop
   overlay's Archive tile (§app.session-list/drop-overlay) still work (§app.session-list/regions-top-and-archive "Archiving"). The row moves to its

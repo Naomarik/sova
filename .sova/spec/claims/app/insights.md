@@ -982,7 +982,7 @@ Both pages share one shell: a `.session-head` and a `.insights.pane` containing
   width. The container is named, per the skill.
 - **Polling** (frontend's call on intervals). Update in place and keep scroll position and
   focus. Don't show a skeleton again after the first load. The board keys its rows by session
-  path, so a poll keeps an open row open and a rename field focused.
+  path, so a poll keeps an open row open and focus in an open rename screen.
 - **Loading** (first load, after 300ms). The Usage page shows a skeleton in the rows' shape: one
   stack of 5 separate provider cards, each a title line beside 2 meter lines. The Agents page shows 1 skeleton list until the session list has loaded.
   Put `aria-busy` on `.insights-inner`.
@@ -1640,7 +1640,7 @@ Sova that aren't archived. An archived session is in it only while it is open in
         <div class="board-cell board-activity">model · context ring · 5m ago</div>   <!-- one muted line -->
         <div class="board-cell board-workers">2/5 working · $1.20 / team chip · team chip · +3 → its Session details pane, on Agents</div>
         <div class="board-cell board-tokens">48k tok/min</div>   <!-- §app.insights/session-token-rate; idle or unmeasurable: a muted dash -->
-        <div class="board-cell board-actions">Session details (aria-expanded) · ⋯</div>
+        <div class="board-cell board-actions">Session details (aria-expanded)</div>
       </div>
       <div class="board-detail">   <!-- open rows only: in the title column, behind a guide rule under the twist -->
         <p class="board-reason">…why it needs you…</p>
@@ -1698,14 +1698,14 @@ Sova that aren't archived. An archived session is in it only while it is open in
 - **Paging.** 50 rows render; "Show {n} More" adds 50. Paging counts the one sorted list, and
   the groups split only the rows it renders.
 - **Title link.** The title is a real link to the session (`href` its session address, the
-  sidebar's): Tab reaches it, Enter opens the session, and Ctrl/Cmd-click, a middle click and the
-  browser's own link menu open it in a new tab. A plain click on it opens the session in this tab.
+  sidebar's): Tab reaches it, Enter opens the session, and Ctrl/Cmd-click and a middle click open
+  it in a new tab. A plain click on it opens the session in this tab.
   A click on it that ends a text selection inside the row doesn't follow it. No row has an Open
-  button; while the rename field shows, it replaces the title, link included.
+  button.
 - **Row click.** A click or tap anywhere else on a row that isn't a control (the gist, the open
   row, its bare surface), at every width, opens the session, as the title link does. Every control
-  keeps its own action and never opens it: the twist, the team chips and their `+{n}`, the action buttons, ⋯ and
-  its menu, and the rename field with its hint. A click that ends a text selection inside the row
+  keeps its own action and never opens it: the twist, the team chips and their `+{n}`, and the
+  Session details button. A click that ends a text selection inside the row
   doesn't open it, nor does one with a modifier key. The row itself takes no focus: the title
   link is its keyboard target.
 - **Columns** (the `insights` container ≥1000px). Every row is at most 2 lines tall (an open
@@ -1720,8 +1720,8 @@ Sova that aren't archived. An archived session is in it only while it is open in
   `#/agents/{teamKey}`; a click on it, or on `+{n}`, opens that session's Session details pane in
   place on its Agents tab. Tokens/min: one line, §app.insights/session-token-rate. No cell shows
   a worktree, an ahead/behind count or a line count (the open row lists the worktrees,
-  §app.insights/subagent-cards). Actions: Session details and ⋯ (a 2-button track); Archive and
-  Move to group are in ⋯ only.
+  §app.insights/subagent-cards). Actions: Session details alone; Archive and Move to group are in
+  the row's pointer menu.
 - **Totals.** The totals line (working · live · spend today · unmerged, with its `title`,
   §app.insights/usage-page-and-agents-page) shows once on the Board tab at every width: on the
   count line directly above the board (`.board-caption`), never in the page head. From 768px it
@@ -1731,19 +1731,20 @@ Sova that aren't archived. An archived session is in it only while it is open in
   only ("◔ · 5m ago"), its model kept for screen readers and in the age's hover title; the team
   chips collapse into one `{n} teams` count chip (`1 team`) that opens the same pane as `+{n}`;
   and the Session track takes what Activity (5.5rem), Workers (8–9.5rem), Tokens/min (6rem) and
-  the 2-button actions leave, with `--space-2` between columns, so a typical title shows whole.
+  the 1-button actions leave, with `--space-2` between columns, so a typical title shows whole.
 - **Wide** (the `insights` container ≥1600px). Session takes the width the other columns leave
   (never under 20rem), Activity a 10rem track, Workers 17rem, Tokens/min 8rem, the actions their
-  fixed width (2 buttons), so Workers never wraps past its 2 lines.
+  fixed width (1 button), so Workers never wraps past its 2 lines.
 - **Page.** Only this page drops the 1280px page cap: side margins `--space-4` below 1600px and
   `--space-6` from there, the content capped at 2400px and centered; the head, the bar and the
   board share the same left and right edges. Other insights pages keep 1280px.
 - **Condensed** (768–999px): one column holds the Activity line over the Workers cell's first
-  line (the team chips are left out), then the Tokens/min column; the actions are Session
-  details and ⋯. **Folded** (<768px): stacked rows — the title across the full width, the gist, a micro line
+  line (the team chips are left out), then the Tokens/min column; the action is Session
+  details. **Folded** (<768px): stacked rows — the title across the full width, the gist, a micro line
   (model · `{working}/{total} working` or `{total} workers` · last active · the row's
-  `{n} tok/min` when it has a figure, §app.insights/session-token-rate) — no worktree chips, and
-  ⋯ is the door to every action. The group headings show at every width. Every target is 44px.
+  `{n} tok/min` when it has a figure, §app.insights/session-token-rate) — no worktree chips and
+  no action cell; its row menu holds every action. The group headings show at every width. Every
+  target is 44px.
 - **Session details.** The info button (`aria-controls="session-pane"`, named "Session details of
   “{title}”") opens that session's Session detail pane (§app/subagents-pane) on its Session tab in
   place: the board stays on `#/agents`, and no session view opens. `aria-expanded` says whether
@@ -1751,21 +1752,22 @@ Sova that aren't archived. An archived session is in it only while it is open in
   to that session, on Session again. A team chip (or its `+{n}`) opens the same pane on its Agents tab, and never
   closes it: on that session already, it only switches the tab. The pane follows the shell's
   bands, so from 1280px it takes a column and the board beside it reflows, usually to its folded
-  layout, where ⋯ is the door; below 1280px it covers the actions, and its own close comes first.
+  layout, where its row menu holds the actions; below 1280px it covers the actions, and its own close comes first.
   Leaving the page closes it. With no chat on screen, workers come from the polled
   insight, the Timeline can't rewind ("Only a chat open in Sova can rewind."), and a row's jump
   says the message isn't in the transcript on screen.
-- **⋯ menu.** Session Details (Close Session Details while that row's pane is open), Open
+- **Row menu.** Session Details (Close Session Details while that row's pane is open), Open
   Subagents (opens the session with its pane on the Agents tab), Rename…, Use Gist as Title (the gist on one line,
   cut to the title limit; off, with the reason, when there's none or it already is the title),
   Reset to Original Title (off when not renamed), Move to Group… (a screen of the groups, with
   "No group"), Archive or Unarchive, Copy Path. After them, for a session on this host, comes
   what extensions add to the menu (§app.extensions/session-menu).
-- **Rename.** Only ⋯ → Rename… renames on the board: nothing on the row starts it. In place, a
-  title field (Sova's title store, §app.session-list/session-titles): Enter saves, Escape cancels, an empty field restores the derived title,
-  and leaving the field saves what's in it (empty: cancels). A value equal to the title the field
-  opened with is a cancel, never a write, on Enter or on leaving, even when the row's title
-  changed while the field was open. Kept in Sova only.
+- **Rename.** Only the row menu's Rename… renames: nothing else on the row starts it. Rename… swaps
+  the menu's rows for its name screen (Sova's title store, §app.session-list/session-titles).
+  Enter or Save saves; Escape or Cancel closes the menu without writing. Clicking away saves a
+  typed nonempty title, but an empty field on click-away cancels; an empty field on Enter restores
+  the derived title. A value equal to the title the screen opened with is a cancel, never a write,
+  on Enter or on leaving, even when the row's title changed while the screen was open. Kept in Sova only.
 - **Archive.** Only for sessions started in Sova, or already archived. Refused with its reason
   (open in a TUI, mid-turn, subagents working) before the press, never after.
 - **Open row.** What the session is about and where it stands. Only the twist opens and closes
@@ -1781,7 +1783,7 @@ Sova that aren't archived. An archived session is in it only while it is open in
   /api/insights/session` when the row opens, kept while it stays open, never polled; while it
   runs the list says "Reading topics…", and a failed read says "Couldn't read the topics." with
   nothing else. Workers and teams aren't in it: the Workers column counts them, and a team chip
-  or ⋯ → Open Subagents shows them. Everything starts at the title's left edge at every width,
+  or its menu's Open Subagents shows them. Everything starts at the title's left edge at every width,
   behind one thin guide rule drawn down from under the twist: that rule, not width, says it
   belongs to the session.
 - **Deep link.** `#/agents/{teamKey}` (a bare team id from an older link: the newest team with

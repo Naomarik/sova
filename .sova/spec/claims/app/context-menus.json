@@ -1,0 +1,202 @@
+{
+  "§app.context-menus/doors": {
+    "kind": "behavior",
+    "requires": [
+      "§app/context-menus"
+    ],
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "src/commands/keys.ts",
+      "src/commands/keys.test.ts",
+      "src/lib/context-menu.ts",
+      "src/lib/context-menu.test.ts",
+      "src/lib/menu-position.ts",
+      "src/lib/menu-position.test.ts",
+      "src/components/ContextMenu.tsx",
+      "src/components/ActionMenu.tsx",
+      "src/components/SessionRowMenu.tsx",
+      "src/components/AgentsView.tsx",
+      "src/components/SessionView.tsx",
+      "src/components/GroupView.tsx",
+      "src/components/ProjectOverseerPanel.tsx",
+      "src/components/MenuPlace.tsx",
+      "src/components/Sidebar.tsx",
+      "src/lib/group-menu.ts",
+      "src/lib/message-actions.ts",
+      "src/lib/reply-place.ts",
+      "src/components/Thread.tsx",
+      "src/components/ChatView.tsx",
+      "src/components/WatchView.tsx",
+      "src/agents-board.css",
+      "src/app.css",
+      "src/projects.css",
+      "src/design/base.css",
+      "src/command-palette.css",
+      "server/menus-browser.integration.test.ts",
+      "server/commands-inventory/baseline.json",
+      "docs/commands.md"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-13T12:22Z",
+      "source": "pi-session:ce8c0c61-23bf-42d5-a3f2-2bacf213f06c#9fa373b6"
+    }
+  },
+  "§app.context-menus/pane": {
+    "kind": "behavior",
+    "requires": [
+      "§app/context-menus",
+      "§workspace.groups/a-pane"
+    ],
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "src/lib/pane-menu.ts",
+      "src/components/GroupView.tsx",
+      "src/lib/menu-tables.test.ts"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-13T10:33Z",
+      "source": "pi-session:ce8c0c61-23bf-42d5-a3f2-2bacf213f06c#9792a627"
+    }
+  },
+  "§app.context-menus/places": {
+    "kind": "behavior",
+    "requires": [
+      "§app/context-menus",
+      "§app.extensions/session-menu"
+    ],
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "shared/extension-offers.ts",
+      "shared/extension-contract.ts",
+      "server/extensions.ts",
+      "src/lib/menu-place.ts",
+      "src/components/MenuPlace.tsx",
+      "src/lib/session-menu.ts",
+      "src/lib/group-menu.ts",
+      "src/lib/pane-menu.ts",
+      "src/lib/worktree-menu.ts",
+      "src/lib/menu-place.test.ts",
+      "src/lib/menu-place-rule.test.ts",
+      "src/lib/menu-tables.test.ts",
+      "src/lib/menu-body.test.ts",
+      "shared/protocol.ts",
+      "docs/customization.md",
+      "agents/extensions/overview.md",
+      "agents/server/commands/overview.md",
+      "server/extension-loader.test.ts",
+      "server/commands-routes.test.ts",
+      "server/menus-browser.integration.test.ts",
+      "server/extension-offers-menu.test.ts"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-13T13:38Z",
+      "source": "pi-session:ce8c0c61-23bf-42d5-a3f2-2bacf213f06c#9fa373b6"
+    }
+  },
+  "§app.context-menus/refusals": {
+    "kind": "behavior",
+    "requires": [
+      "§app/context-menus",
+      "§design.copy-deck/sidebar"
+    ],
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "src/lib/archive-block.ts",
+      "src/lib/drag-archive.ts",
+      "src/lib/drag-archive.test.ts",
+      "src/lib/drag-overlay.test.ts",
+      "src/lib/session-menu.ts",
+      "src/components/SessionDetails.tsx"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-13T10:33Z",
+      "source": "pi-session:ce8c0c61-23bf-42d5-a3f2-2bacf213f06c#9792a627"
+    }
+  },
+  "§app.context-menus/touch": {
+    "kind": "behavior",
+    "requires": [
+      "§app/context-menus",
+      "§app.session-list/drop-overlay",
+      "§chat.transcript/message-actions"
+    ],
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "src/lib/hold-select.ts",
+      "src/lib/context-menu.ts",
+      "src/lib/context-menu.test.ts",
+      "src/lib/drag-overlay.ts",
+      "src/lib/drag-overlay.test.ts",
+      "src/components/ContextMenu.tsx",
+      "src/components/Thread.tsx",
+      "src/lib/reply-place.browser.test.ts",
+      "server/menus-browser.integration.test.ts"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-13T12:22Z",
+      "source": "pi-session:ce8c0c61-23bf-42d5-a3f2-2bacf213f06c#9fa373b6"
+    }
+  },
+  "§app.context-menus/worktree-removal": {
+    "kind": "behavior",
+    "requires": [
+      "§app/context-menus",
+      "§app.project-overseer/coding-worktrees",
+      "§chat.worktrees/leftovers"
+    ],
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "src/lib/worktree-menu.ts",
+      "src/lib/menu-place.ts",
+      "src/components/ProjectOverseerPanel.tsx",
+      "src/components/MenuPlace.tsx",
+      "src/lib/menu-body.test.ts"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-13T10:33Z",
+      "source": "pi-session:ce8c0c61-23bf-42d5-a3f2-2bacf213f06c#9792a627"
+    }
+  },
+  "§app/context-menus": {
+    "kind": "behavior",
+    "requires": [
+      "§design/menu-rows",
+      "§app.extensions/session-menu"
+    ],
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "src/lib/menu-place.ts",
+      "src/components/MenuPlace.tsx",
+      "src/components/ContextMenu.tsx",
+      "src/components/ActionMenu.tsx",
+      "src/App.tsx",
+      "src/lib/session-menu.ts",
+      "src/lib/group-menu.ts",
+      "src/lib/pane-menu.ts",
+      "src/lib/worktree-menu.ts",
+      "shared/extension-offers.ts",
+      "src/lib/menu-body.test.ts",
+      "src/lib/menu-tables.test.ts",
+      "src/lib/menu-place-rule.test.ts",
+      "src/lib/menu-panel-css.test.ts"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-13T12:22Z",
+      "source": "pi-session:ce8c0c61-23bf-42d5-a3f2-2bacf213f06c#9fa373b6"
+    }
+  }
+}

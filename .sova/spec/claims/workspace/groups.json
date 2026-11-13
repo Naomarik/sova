@@ -8,15 +8,21 @@
       "§chat/transcript"
     ],
     "authority": "accepted",
-    "evidence": "reviewed",
+    "evidence": "verified",
     "code": [
+      "src/lib/pane-menu.ts",
+      "src/components/GroupView.tsx",
       "src/components/SessionView.tsx",
-      "src/components/HostStateNotices.tsx"
+      "src/components/MenuPlace.tsx",
+      "src/lib/context-menu.ts",
+      "src/design/base.css",
+      "server/menus-browser.integration.test.ts",
+      "src/lib/menu-tables.test.ts"
     ],
     "agreed": {
-      "by": "user (omar)",
-      "at": "2026-11-03T22:12Z",
-      "source": "pi-session:6413deaf-6a52-4216-a1d2-16b457f0680d#b04f2c84"
+      "by": "user",
+      "at": "2026-11-13T13:38Z",
+      "source": "pi-session:ce8c0c61-23bf-42d5-a3f2-2bacf213f06c#9fa373b6"
     }
   },
   "§workspace.groups/accessibility": {
@@ -59,15 +65,27 @@
   "§workspace.groups/decisions": {
     "kind": "note",
     "authority": "accepted",
-    "evidence": "reviewed"
+    "evidence": "verified",
+    "code": [
+      "src/lib/pane-menu.ts",
+      "src/components/GroupView.tsx",
+      "src/lib/menu-tables.test.ts"
+    ]
   },
   "§workspace.groups/group-lifecycle": {
     "kind": "behavior",
     "authority": "accepted",
     "evidence": "verified",
     "code": [
-      "src/components/GroupView.tsx"
-    ]
+      "src/lib/pane-menu.ts",
+      "src/components/GroupView.tsx",
+      "src/lib/menu-tables.test.ts"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-13T10:33Z",
+      "source": "pi-session:ce8c0c61-23bf-42d5-a3f2-2bacf213f06c#9792a627"
+    }
   },
   "§workspace.groups/keyboard": {
     "kind": "behavior",
@@ -202,11 +220,21 @@
       "§app/shell"
     ],
     "authority": "accepted",
-    "evidence": "unreviewed",
+    "evidence": "verified",
     "code": [
       "src/App.tsx",
-      "src/components/GroupView.tsx"
-    ]
+      "src/components/GroupView.tsx",
+      "src/components/SessionView.tsx",
+      "src/components/MenuPlace.tsx",
+      "src/app.css",
+      "src/design/base.css",
+      "server/menus-browser.integration.test.ts"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-13T13:38Z",
+      "source": "pi-session:ce8c0c61-23bf-42d5-a3f2-2bacf213f06c#9fa373b6"
+    }
   },
   "§workspace.groups/the-group-composer": {
     "kind": "behavior",

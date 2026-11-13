@@ -155,6 +155,12 @@ environment every runner starts in, and the hermetic dev server.
   integration files only. A test that reads a new switch from its environment (`SLOW=1`,
   `*_UPDATE=1`) adds it to `TEST_SWITCHES`, or it never reaches the test; one that points tests at
   files outside the tree (a dist built elsewhere) goes in `RECORDS_NOTHING`.
+- **The one test knob a test never sets itself**: `testEnv` gives every test process
+  `SOVA_TEST_OWN_EXTENSIONS=linked`. A Sova chat on its server's agent dir adds every extension Sova ships
+  that the agent dir doesn't link (server/harness/pi/own-code.ts `ownExtensions`); a test's throwaway agent
+  dir links none, so under the knob nothing but Sova's mode engine is added and a test loads only what it
+  links or lists. It never turns off the remap to Sova's own copy nor the mode engine. Nothing outside the
+  runner sets it, so a live server's chats never have it; `own-extensions.test.ts` runs without it.
 
 - Every test runner starts in a throwaway home (`hermetic-env.mjs`: `pnpm test` loads it with
   `--import`, the extension runners import it first). A session that itself runs on an added Claude
@@ -211,7 +217,9 @@ environment every runner starts in, and the hermetic dev server.
 
 - Once `.agent` holds copies of real sessions (or `--copied-sessions` announces them), the script
   leaves out the wake-nudge extension and blanks the copied scheduler state, so no copied nudge or
-  schedule fires; the mode is sticky (`.agent/copied-sessions.json`).
+  schedule fires; the mode is sticky (`.agent/copied-sessions.json`). Sova itself checks that marker too:
+  on such an agent dir it never adds wake-nudge back (it adds every other shipped extension a `.agent`
+  lacks, server/harness/pi/own-code.ts).
 - Gaps: 4810 by default, one server per port (`SOVA_PORT` for a second), and a symlinked
   `node_modules` can break `pnpm run` in a worktree.
 - Claude logins in a hermetic run (fake `claude`, `SOVA_CLAUDE_ACCOUNTS_DEV`, the pool e2e):

@@ -246,8 +246,7 @@ You can keep modes of your own in `~/.pi/agent/sova/minor-modes/<id>/MODE.md`, i
 mode's format. Every chat that offers project modes lists them in its own **Your modes** group, in
 every project, with the same states and approval; one approval holds in every project. A personal mode
 with the same id as a project's mode replaces it in that chat, and its row says "Replaces this
-project's {id}." Its programs still run in the chat's checkout. Personal modes are offered only while
-Settings → Experimental's **Sova runs chat modes** is on.
+project's {id}." Its programs still run in the chat's checkout.
 
 ## When a mode is broken
 

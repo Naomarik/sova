@@ -43,7 +43,9 @@
 #   <agent dir>/extensions/<name>
 #                          one symlink per extension in <install dir>/pi-config/extensions, where
 #                          <agent dir> is $PI_CODING_AGENT_DIR, else ~/.pi/agent (--no-extensions
-#                          skips them). Anything already at one of those paths that is not our
+#                          skips them). A link there into another copy of Sova (its
+#                          pi-config/extensions/<name>) is pointed at this install instead, and
+#                          says so; anything else already at one of those paths that is not our
 #                          own link is left alone and that extension is skipped.
 #   a login service, only if you ask for one (--service, or yes at the prompt): the launchd agent
 #                          ~/Library/LaunchAgents/io.github.naomarik.sova.plist on macOS, the
@@ -807,6 +809,17 @@ case "$os" in Linux | Darwin) app_browser=$("$launcher" app --print-browser 2>/d
 
 linked=0
 skipped=
+# Whether a link's target is <root>/pi-config/extensions/<name> inside another copy of Sova (a checkout,
+# an older install): package.json names it sova and it has the personal pi-config/install.sh.
+other_sova_copy() { # <link target> <name>
+	local t=$1 r
+	case "$t" in /*) ;; *) t=$ext_dst/$t ;; esac
+	t=${t%/}
+	case "$t" in */pi-config/extensions/"$2") ;; *) return 1 ;; esac
+	r=${t%/pi-config/extensions/"$2"}
+	[ -n "$r" ] && [ "$r" != "$dir" ] && [ -f "$r/pi-config/install.sh" ] && [ -f "$r/package.json" ] &&
+		grep -Eq '^[[:space:]]*"name"[[:space:]]*:[[:space:]]*"sova"' "$r/package.json"
+}
 if $extensions; then
 	ext_src=$dir/pi-config/extensions
 	ext_dst=$agent/extensions
@@ -823,7 +836,13 @@ if $extensions; then
 			[ "$current" = "$src" ] && continue
 			case "$current" in
 				"$ext_src"/*) rm -f "$dst" ;;
-				*) skipped="$skipped $name"; say "kept $dst (links to $current, not to this install); skipped the $name extension"; continue ;;
+				*)
+					if other_sova_copy "$current" "$name"; then
+						rm -f "$dst"
+						say "relinked $dst (was $current, another Sova copy)"
+					else
+						skipped="$skipped $name"; say "kept $dst (links to $current, not to this install); skipped the $name extension"; continue
+					fi ;;
 			esac
 		elif [ -e "$dst" ]; then
 			skipped="$skipped $name"

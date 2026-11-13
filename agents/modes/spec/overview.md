@@ -50,8 +50,13 @@ The requirement is §tools/spec (`.sova/spec/claims/tools/spec.md`); MODE.md des
 - **What Sova imports.** `server/spec-drafts-state.ts` imports `core/official.mjs` (types in `official.d.mts`), the
   one rule for whether a draft is official, and through it `sova-spec.mjs`: both stay free of work at import. An
   edit to either can break Sova's typecheck and readiness: run `pnpm run typecheck` and `pnpm test` too.
-- **One copy of the tools.** The spec tools exist only in `core/`, run through the installed extension (`$core`).
-  No project, Sova included, keeps a copy; a copy found in a project is that project's code, never run without asking.
+- **One copy of the tools.** The spec tools exist only in `core/`, run as `$core`. In a Sova chat `$core` is
+  `$SOVA_SPEC_CORE`, the `core/` of the chat's own copy of Sova (set per local chat process in `chatEnv`, passed by
+  the sandbox, never forwarded to a remote target, stripped for a worker on a worktree's own `.agent`, scrubbed at
+  server boot and by `scripts/test-env.mjs`); elsewhere the shell line falls back to the agent dir's
+  `extensions/spec/core`. The merge queue runs the server's bundled copy, never the agent dir's (`deps.specCore` is for
+  Sova's tests only), and the release's `docs-drift.mjs` reads `$SOVA_SPEC_CORE` first, as the shell line does. No project, Sova included, keeps a copy; a copy found in a project
+  is that project's code, never run without asking.
 
 ## While working
 

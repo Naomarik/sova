@@ -9,6 +9,13 @@ The `mode` extension: the per-session major mode (normal, Delegate or Create) an
 (§chat.mode-menu/project-modes). Sova imports more of it than of any other extension, and the dev watcher watches all of it.
 This page is the extension's guide; each mode has its own below.
 
+In Sova, every chat's modes run on Sova's own engine (`server/modes/`, its pi glue in `server/harness/pi/modes*.ts`,
+loaded through `modes-entry.ts`; §chat.mode-menu/sova-runs-modes), which reads this folder's texts, shared rules and
+settings files. Sova never loads the extension's own entry (`index.ts`): the engine takes the mode slot when the
+pi folder lists the extension, or loads after the rest when it doesn't, whatever the folder links to and whether
+`/extensions` has it off. There is no switch back to the extension any more. `index.ts` stays only for the plain pi
+terminal, with nothing promised there, and goes in a later change; keep every file Sova imports free of it.
+
 ## What lives here
 
 - [`pi-config/extensions/mode/README.md`](../../pi-config/extensions/mode/README.md) (usage, minor modes, alignments,
@@ -39,8 +46,10 @@ writes that entry itself, `{mode, active: activeOf(state)}` (`pinEntryFor` in `s
 sessions it starts with a mode: a project's coding sessions, and the Overseer's `sova_create_session` /
 `sova_set_session`. So the entry's shape is a contract too.
 
-**The `/mode` command.** The web's mode switch calls the extension's `/mode` command handler directly
-(`ChatSession.applyMode` in `server/chat-manager.ts`), so its arguments are a contract.
+**Switching modes.** The web's mode switch and typed mode commands call Sova's engine directly
+(`ChatSession.applyMode` in `server/chat-manager.ts`, through the chat's modes handle); nothing in Sova calls the
+extension's `/mode` handler any more, so its arguments are no longer a Sova contract. A chat with no engine (a loadout
+that loads no extensions) refuses with "This chat has no modes."
 
 **Project modes.** A separate namespace from the built-in minors: they never enter `minorModes` (that set stays
 closed, and profiles, automations and coding sessions name only built-ins). `project-format.ts` holds the format

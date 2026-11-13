@@ -18,6 +18,8 @@ export const DEFAULT_ENV_ALLOW: readonly string[] = [
 	// Not a secret: where pi's agent dir is, so bash finds the same one (the spec tools' `core=` line).
 	// `$AGENT_DIR/auth.json` stays hidden.
 	"PI_CODING_AGENT_DIR",
+	// Not a secret either: the trusted spec tools of the Sova copy running the chat, read before the agent dir's.
+	"SOVA_SPEC_CORE",
 	"MISE_*", "CARGO_HOME", "RUSTUP_HOME", "GOPATH", "GOROOT", "JAVA_HOME", "NVM_DIR",
 	"EDITOR", "VISUAL", "PAGER", "NO_COLOR", "FORCE_COLOR", "CI",
 ];

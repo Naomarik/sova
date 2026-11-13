@@ -3,7 +3,7 @@
 import { after, describe, test } from "node:test";
 import { spawnSync } from "node:child_process";
 import { expect } from "./testing/expect";
-import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { MergeEntry, RunStep } from "../../shared/merge-queue";
 import { parseDefinition } from "../../shared/project-contract";
@@ -344,6 +344,37 @@ describe("a merge run", () => {
     const r2 = await run(fx, fx.branch("after", { "README.md": "y\n" }));
     expect(r2.out.verdict).toBe("passed");
     expect(existsSync(join(r2.out.copy!, ".sova/spec/drafts/docs"))).toBe(false);
+  });
+
+  test("the docs land with the running Sova's own spec tools: never the agent dir's (linked at an older copy with no `land`), nor a SOVA_SPEC_CORE the server was started with", async () => {
+    const fx = fixture();
+    await fx.withSpec();
+    const scratch = join(fx.root, "old-sova");
+    // An older copy of Sova whose draft tool predates `land`, and the pi folder's spec link leading into it.
+    const oldCore = join(scratch, "old", "pi-config", "extensions", "spec", "core");
+    mkdirSync(oldCore, { recursive: true });
+    writeFileSync(join(oldCore, "sova-spec-draft.mjs"), 'console.error("unknown command land"); process.exit(2);\n');
+    const agent = join(scratch, "agent");
+    mkdirSync(join(agent, "extensions"), { recursive: true });
+    symlinkSync(join(scratch, "old", "pi-config", "extensions", "spec"), join(agent, "extensions", "spec"));
+    const before = { agent: process.env.PI_CODING_AGENT_DIR, core: process.env.SOVA_SPEC_CORE };
+    process.env.PI_CODING_AGENT_DIR = agent;
+    process.env.SOVA_SPEC_CORE = join(scratch, "bogus", "core");
+    try {
+      const br = fx.branch("own-tools", { "src/app.txt": "documented\n" });
+      fx.draft(br.checkout, "docs");
+      // No test override: the run's own default.
+      const r = await run(fx, br, { drafts: true, deps: { specCore: undefined } });
+      expect(r.out.verdict).toBe("passed");
+      expect(r.steps.get("docs")!.result).toBe("passed");
+      expect(git(fx.project, ["show", `${r.out.tip}:.sova/spec/claims/b/docs.md`])).toContain("The docs feature");
+      expect(r.log("docs")).not.toContain(scratch);
+    } finally {
+      for (const [k, v] of [["PI_CODING_AGENT_DIR", before.agent], ["SOVA_SPEC_CORE", before.core]] as const) {
+        if (v === undefined) delete process.env[k];
+        else process.env[k] = v;
+      }
+    }
   });
 
   describe("tracked spec drafts (a project that commits its drafts)", () => {

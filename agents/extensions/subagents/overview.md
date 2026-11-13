@@ -38,7 +38,8 @@ switches, and a malformed legacy `team-defaults.json` postpones seeding. One res
 pick → this device's default → legacy files. A dangling pick falls to the default; a missing, malformed or dangling
 default reads as Off; an unusable library falls to the legacy files.
 - Written by the mode menu, Settings → Profiles, `/mode subagents <id|off>`, the Overseer and the limit row.
-- Read by the mode extension (Delegate routing and the spec writer at each turn boundary, either major mode), by
+- Read by Sova's mode engine, or the mode extension in a plain pi terminal (Delegate routing and the spec writer at each
+  turn boundary, either major mode), by
   this extension (`team_create`, `team_add`, `team_succeed`, roster answers, `/team defaults`), and by the server:
   `server/subagent-profiles.ts` (Settings → Profiles' Models part, the `/api/subagents` pick route, the session-create field;
   `server/sessions-configure.ts` and `server/overseer-tools.ts` validate through it), `server/sync/docs.ts` (the
@@ -87,6 +88,12 @@ this extension computes (`worker-host.ts`, `chat-worker.ts`). Every chat, worker
 of its own, so a server restart never ends them. A parent's reload never ends them: its next manager reattaches. The dev watcher doesn't watch
 this directory, so an edit to any file above reaches the server at its restart, and a running chat process at its
 next code reload.
+
+**Modes under a host.** A worker host's presence (`WorkerHostAnnouncement`) is what says Sova hosts the session, so
+a `useWorktreeConfig` worker gets Sova's engine in its mode slot whatever its tree holds (`worktreeConfig`, the slot
+recognised by the `mode` folder, never by an `index.ts` in it). The announcement's and `WorkerSpec`'s `modes:
+"sova"` are still stamped for a subagents copy on older code, and no longer read here; only a hostless pi terminal
+loads the tree's own mode extension.
 
 ## When you change it, also update
 

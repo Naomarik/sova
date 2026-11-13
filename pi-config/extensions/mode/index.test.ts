@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
 import test from "node:test";
-import { ALIGN_INSTRUCTIONS, buildMinorPrompt, isMinorMode, MINOR_DESCRIPTIONS, MINOR_MODES, MINOR_PROMPTLESS, MINOR_SURFACES, MINOR_WORKER, type MinorMode, normalizeMinorModes, parseMinorFlag, SPEC_CORE_SHELL, SPEC_INSTRUCTIONS, stripVisComments, VIS_FILES, VIS_INSTRUCTIONS, VIS_KIND_FILES, VIS_KINDS, visGuide, visOverview, WEB_MINOR_HOOK, WEB_ONLY_MINOR_MODES, webMinorRefusal, workerMinorModes } from "./minor.ts";
+import { ALIGN_INSTRUCTIONS, buildMinorPrompt, isMinorMode, MINOR_DESCRIPTIONS, MINOR_MODES, MINOR_PROMPTLESS, MINOR_SURFACES, MINOR_WORKER, type MinorMode, normalizeMinorModes, parseMinorFlag, SPEC_INSTRUCTIONS, stripVisComments, VIS_FILES, VIS_INSTRUCTIONS, VIS_KIND_FILES, VIS_KINDS, visGuide, visOverview, WEB_MINOR_HOOK, WEB_ONLY_MINOR_MODES, webMinorRefusal, workerMinorModes } from "./minor.ts";
 import { parseModeWorkerEvent } from "./events.ts";
 import { MODE_CATEGORY_ID, modeCategoryItems } from "./palette.ts";
 import { ALIGN_FILE_SCHEMA, ALIGN_NUDGE_MESSAGE, ALIGN_NUDGE_TEXT, ALIGN_OPS } from "./align.ts";
@@ -405,64 +405,6 @@ test("spec: a registered minor mode, composed after align and never bridged", ()
 		assert.equal((composePrompt(state, ALL_OK) ?? "").match(heading)?.length, 1, "spec on: one block");
 });
 
-test("spec: the prompt is spec-mode.md, byte for byte", () => {
-	const here = dirname(fileURLToPath(import.meta.url));
-	const canonical = readFileSync(join(here, "spec-mode.md"), "utf8");
-	assert.equal(buildMinorPrompt("spec"), canonical.trimEnd(), "the only normalization is trimEnd");
-	assert.ok(canonical.endsWith("\n") && !canonical.endsWith("\n\n"), "the file ends in exactly one newline");
-	// The shell prefix is the file's one ```sh block, and appears nowhere else.
-	assert.equal(canonical.match(/^```sh$/gm)?.length, 1);
-	assert.ok(canonical.includes(`\`\`\`sh\n${SPEC_CORE_SHELL}\n\`\`\``));
-	assert.equal(canonical.split(SPEC_CORE_SHELL).length, 2, "one occurrence");
-});
-
-test("spec: minor.ts reads its own spec-mode.md, from any cwd, and refuses a malformed one", () => {
-	const here = dirname(fileURLToPath(import.meta.url));
-	const canonical = readFileSync(join(here, "spec-mode.md"), "utf8");
-	// A standalone copy of just these files (minor.ts and the prompt texts it reads), imported from an unrelated cwd.
-	const load = (md: string) => {
-		const dir = mkdtempSync(join(tmpdir(), "spec-mode-"));
-		try {
-			writeFileSync(join(dir, "minor.ts"), readFileSync(join(here, "minor.ts")));
-			writeFileSync(join(dir, "spec-mode.md"), md);
-			cpSync(join(here, "vis"), join(dir, "vis"), { recursive: true });
-			const src = `import(${JSON.stringify(pathToFileURL(join(dir, "minor.ts")).href)}).then((m) => process.stdout.write(JSON.stringify([m.buildMinorPrompt("spec"), m.SPEC_CORE_SHELL])))`;
-			return spawnSync(process.execPath, ["--input-type=module", "-e", src], { cwd: tmpdir(), encoding: "utf8" });
-		} finally {
-			rmSync(dir, { recursive: true, force: true });
-		}
-	};
-	const ok = load(canonical);
-	assert.equal(ok.status, 0, ok.stderr);
-	assert.deepEqual(JSON.parse(ok.stdout), [canonical.trimEnd(), SPEC_CORE_SHELL]);
-	const edited = load(canonical.replace("Trusted tools:", "Edited tools:"));
-	assert.equal(edited.status, 0, edited.stderr);
-	assert.match(JSON.parse(edited.stdout)[0], /^Edited tools:/m, "the text comes from the file, not a copy");
-	const fence = `\`\`\`sh\n${SPEC_CORE_SHELL}\n\`\`\``;
-	for (const [what, md] of [
-		["no block", canonical.replace(fence, SPEC_CORE_SHELL)],
-		["two blocks", canonical.replace(fence, `${fence}\n\n${fence}`)],
-		["prefix repeated in prose", `${canonical}\n${SPEC_CORE_SHELL}\n`],
-	]) {
-		const bad = load(md);
-		assert.notEqual(bad.status, 0, `${what}: loading fails`);
-		assert.match(bad.stderr, /spec-mode\.md: /, `${what}: says why`);
-	}
-});
-
-test("spec: the shell prefix resolves the agent dir the way pi does", () => {
-	const resolve = (env: Record<string, string>) =>
-		spawnSync("bash", ["-c", `${SPEC_CORE_SHELL}; printf %s "$core"`], { encoding: "utf8", env: { PATH: process.env.PATH ?? "", HOME: "/h", ...env } }).stdout;
-	assert.equal(resolve({}), "/h/.pi/agent/extensions/spec/core");
-	assert.equal(resolve({ PI_CODING_AGENT_DIR: "" }), "/h/.pi/agent/extensions/spec/core", "empty is unset, as in getAgentDir");
-	assert.equal(resolve({ PI_CODING_AGENT_DIR: "/abs/agent" }), "/abs/agent/extensions/spec/core");
-	assert.equal(resolve({ PI_CODING_AGENT_DIR: "~/agent" }), "/h/agent/extensions/spec/core", "a leading ~ is home, as pi expands it");
-	assert.equal(resolve({ PI_CODING_AGENT_DIR: "~" }), "/h/extensions/spec/core");
-	assert.equal(resolve({ PI_CODING_AGENT_DIR: "/a/~b" }), "/a/~b/extensions/spec/core", "only a leading ~ expands");
-	assert.equal(resolve({ PI_CODING_AGENT_DIR: "~other/agent" }), "~other/agent/extensions/spec/core", "~user is not home: pi expands only ~ and ~/");
-	assert.equal(resolve({ PI_CODING_AGENT_DIR: "~other" }), "~other/extensions/spec/core");
-});
-
 test("spec: the prompt names the trusted tools, their real flags, and the draft workflow", () => {
 	// The guide is two parts (§tools.spec/writing-on-demand): the short one rides every turn, the writing
 	// procedure is handed over once. Every rule below holds of the two together; each part's own pins follow.
@@ -471,8 +413,6 @@ test("spec: the prompt names the trusted tools, their real flags, and the draft 
 	const coreDir = join(here, "../spec/core");
 	const writing = readFileSync(join(coreDir, "../WRITING.md"), "utf8").trimEnd();
 	const spec = `${short}\n\n${writing}`;
-	assert.ok(short.includes(`start each bash command with exactly this, never a guessed path:\n\n\`\`\`sh\n${SPEC_CORE_SHELL}\n\`\`\``));
-	assert.ok(!writing.includes(SPEC_CORE_SHELL), "the shell line is the short part's alone (minor.ts reads it there)");
 	// Every tool the prompt runs from $core ships in the linked directory, and so does the README it points to.
 	const named = [...new Set([...spec.matchAll(/"\$core\/([\w.-]+\.mjs)"/g)].map((m) => m[1]))];
 	assert.deepEqual(named, ["sova-spec.mjs", "sova-spec-draft.mjs"]);

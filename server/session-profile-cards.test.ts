@@ -8,17 +8,16 @@
 import assert from "node:assert/strict";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
 import { after, describe, test } from "node:test";
 
 const agentDir = realpathSync(mkdtempSync(join(tmpdir(), "sova-profile-cards-")));
 process.on("exit", () => rmSync(agentDir, { recursive: true, force: true }));
 process.env.PI_CODING_AGENT_DIR = agentDir;
-// This repo's mode extension by its real path: the subagent pick is the mode extension's entry.
+// Sova's mode engine runs in every chat (no settings entry): the subagent pick is its entry.
 writeFileSync(
   join(agentDir, "settings.json"),
-  JSON.stringify({ retry: { baseDelayMs: 1 }, extensions: [resolve(dirname(fileURLToPath(import.meta.url)), "../pi-config/extensions/mode")] }),
+  JSON.stringify({ retry: { baseDelayMs: 1 } }),
 );
 // The policy turns zai off, so a card on a zai model can't be picked.
 writeFileSync(join(agentDir, "model-policy.json"), JSON.stringify({ version: 1, disabledProviders: ["zai"], disabledModels: [], subagentDisabledProviders: [], subagentDisabledModels: [] }));

@@ -1,10 +1,9 @@
 // Run: pnpm test -- server/modes/worker-slots.golden.test.ts. A worker's mode files come from one source and
 // keep their place (al_1 a6): subagents names them once, as SPEC_WORKER_EXTENSION and
 // PROJECT_TOOLS_WORKER_EXTENSION (its only mention of either file in code), and own-code maps exactly those
-// (modeFileOf, workerModePaths) into Sova's modules in the same position. With the switch off, the list stays
-// as listed; a parent on older code listing a file this copy no longer has gets Sova's module in its slot.
-// The recordings (modes-sova.golden*.ts) show the same from outside: each worker's load order, slots named,
-// is the same with the switch on and off.
+// (modeFileOf, workerModePaths) into Sova's modules in the same position, whatever tree they lie in (a parent on
+// older code listing a file this copy no longer has included). The recordings (modes-sova.golden*.ts) show the same
+// from outside: each worker's load order, slots named.
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -35,15 +34,9 @@ test("subagents names each worker mode file once, in its constant, and own-code 
 
 const listed = [MARKER_EXTENSION, SPEC_WORKER_EXTENSION, join(REPO, "pi-config/extensions/model-levels/index.ts"), PROJECT_TOOLS_WORKER_EXTENSION];
 
-test("switch on: each listed mode file maps to Sova's module in its own slot, nothing moves or is added", () => {
-  const mapped = workerModePaths(listed, true, entries, null);
-  assert.deepEqual(mapped, [MARKER_EXTENSION, entries.specWorker, listed[2], entries.projectToolsWorker]);
-  assert.deepEqual(workerModePaths([MARKER_EXTENSION, MODE_DIR], true, entries, null), [MARKER_EXTENSION, entries.entry], "a worktree-config worker's mode slot too");
-});
-
-test("switch off: the list stays as listed; only a file this copy lacks (an older parent's) maps, in place", () => {
-  assert.deepEqual(workerModePaths(listed, false, entries, null), listed);
-  assert.deepEqual(workerModePaths([MARKER_EXTENSION, MODE_DIR], false, entries, null), [MARKER_EXTENSION, MODE_DIR], "the extension itself stays");
+test("each listed mode file maps to Sova's module in its own slot, nothing moves or is added", () => {
+  assert.deepEqual(workerModePaths(listed, entries), [MARKER_EXTENSION, entries.specWorker, listed[2], entries.projectToolsWorker]);
+  assert.deepEqual(workerModePaths([MARKER_EXTENSION, MODE_DIR], entries), [MARKER_EXTENSION, entries.entry], "a worktree-config worker's mode slot too");
   const retired = "/nowhere/pi-config/extensions/mode/spec-worker.ts";
-  assert.deepEqual(workerModePaths([MARKER_EXTENSION, retired], false, entries, null), [MARKER_EXTENSION, entries.specWorker]);
+  assert.deepEqual(workerModePaths([MARKER_EXTENSION, retired], entries), [MARKER_EXTENSION, entries.specWorker], "a file an older parent listed that this copy lacks");
 });

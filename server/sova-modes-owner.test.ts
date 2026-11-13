@@ -1,10 +1,10 @@
-// Run: pnpm test -- server/sova-modes-owner.test.ts. Who runs a chat's modes (§chat.mode-menu/sova-runs-modes):
-// the Experimental switch "Sova runs chat modes" (experimental.sovaModes, on by default) picks exactly one
-// owner per chat at its open: Sova's engine, loaded in the slot the pi mode extension had, or the extension
-// itself. Real chats built by the chat manager with the mode extension discovered as the agent dir lists it;
-// the model is a script. A throwaway PI_CODING_AGENT_DIR; ~/.pi is never read or written.
+// Run: pnpm test -- server/sova-modes-owner.test.ts. Sova's engine is the only mode owner, whatever the pi folder
+// links (§chat.mode-menu/sova-runs-modes): with this copy's mode folder listed, linked and turned off with
+// /extensions, or not there at all, every ordinary chat runs exactly one owner, Sova's engine, and the menu's
+// switch, typed /mode and the slash menu go to it; an old saved "off" switch changes nothing. Real chats built by
+// the chat manager; the model is a script. A throwaway PI_CODING_AGENT_DIR; ~/.pi is never read or written.
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -22,13 +22,27 @@ mkdirSync(join(agentDir, "sessions", "live"), { recursive: true });
 const cwd = join(agentDir, "cwd");
 mkdirSync(cwd, { recursive: true });
 const MODE_EXT = resolve(dirname(fileURLToPath(import.meta.url)), "../pi-config/extensions/mode");
-writeFileSync(join(agentDir, "settings.json"), JSON.stringify({ extensions: [MODE_EXT] }));
 const SETTINGS = join(agentDir, "sova", "settings.json");
 mkdirSync(dirname(SETTINGS), { recursive: true });
-/** The saved switch: undefined = no file (the default). */
-const saveSwitch = (on: boolean | undefined) => {
-  if (on === undefined) rmSync(SETTINGS, { force: true });
-  else writeFileSync(SETTINGS, JSON.stringify({ version: 1, experimental: { sovaModes: on } }));
+mkdirSync(join(agentDir, "extensions"), { recursive: true });
+/** The pi folder each case starts its chats on. */
+const PI_FOLDERS = {
+  "the settings list this copy's mode folder": () => writeFileSync(join(agentDir, "settings.json"), JSON.stringify({ extensions: [MODE_EXT] })),
+  "no mode folder anywhere in the pi folder": () => writeFileSync(join(agentDir, "settings.json"), JSON.stringify({})),
+  "the mode link turned off with /extensions": () => {
+    rmSync(join(agentDir, "extensions", "mode"), { force: true });
+    symlinkSync(MODE_EXT, join(agentDir, "extensions", "mode"));
+    writeFileSync(join(agentDir, "settings.json"), JSON.stringify({ extensions: ["!extensions/mode/index.ts"] }));
+  },
+  // A file saved before the switch was retired, with it off: ignored.
+  "no mode folder, and an old saved \"Sova runs chat modes\" off": () => {
+    writeFileSync(join(agentDir, "settings.json"), JSON.stringify({}));
+    writeFileSync(SETTINGS, JSON.stringify({ version: 1, experimental: { sovaModes: false } }));
+  },
+};
+const resetPiFolder = () => {
+  rmSync(join(agentDir, "extensions", "mode"), { force: true });
+  rmSync(SETTINGS, { force: true });
 };
 
 await import("./testing/in-process-chats"); // chats open in this process (the server hosts none)
@@ -38,7 +52,6 @@ const { MODE } = await import("./harness/state-kinds");
 
 after(async () => {
   await disposeAllChats();
-  saveSwitch(undefined);
 });
 
 type Chat = Awaited<ReturnType<typeof acquireChat>>;
@@ -64,26 +77,24 @@ function sessionFile(): string {
   return path;
 }
 
-/** The extension files the chat's runtime loaded, by name: "mode" (the pi extension) or "modes-entry" (Sova's). */
+/** The extension files the chat's runtime loaded that own modes: "sova" (modes-entry.ts) or "extension" (any mode folder's own file). */
 const modeOwners = (chat: Chat) =>
   piSession(chat)
     .resourceLoader.getExtensions()
     .extensions.map((e) => e.path)
-    .flatMap((p) => (basename(p) === "modes-entry.ts" ? ["sova"] : p.startsWith(MODE_EXT) ? ["extension"] : []));
+    .flatMap((p) => (basename(p) === "modes-entry.ts" ? ["sova"] : p.startsWith(MODE_EXT) || /[/\\]extensions[/\\]mode([/\\]|$)/.test(p) ? ["extension"] : []));
 const commands = (chat: Chat) => chat.commands();
 const set = (chat: Chat, patch: { mode?: "normal" | "delegate"; minorModes?: string[] }) => chat.applyMode({ ...chat.modeState, ...patch } as never);
 
-for (const saved of [undefined, true, false] as const) {
-  const sova = saved !== false;
-  const label = saved === undefined ? "no saved switch (on by default)" : `switch ${saved ? "on" : "off"}`;
-  test(`${label}: exactly one owner loads, and the menu's switch, typed /mode and the slash menu go to it`, async () => {
-    saveSwitch(saved);
+for (const [label, piFolder] of Object.entries(PI_FOLDERS)) {
+  test(`${label}: exactly one owner, Sova's engine, and the menu's switch, typed /mode and the slash menu go to it`, async () => {
+    resetPiFolder();
+    piFolder();
     const path = sessionFile();
     const chat = await acquireChat(path);
     try {
-      assert.equal(chat.sovaModes, sova);
-      assert.deepEqual(modeOwners(chat), [sova ? "sova" : "extension"], "one owner, never both, never neither");
-      // The slash menu lists the owner's commands, whoever it is (/review only with adversarial review on).
+      assert.deepEqual(modeOwners(chat), ["sova"], "one owner, Sova's engine, never the extension, never none");
+      // The slash menu lists the engine's commands (/review only with adversarial review on).
       const listed = commands(chat);
       assert.equal(listed.type, "commands");
       if (listed.type === "commands") for (const name of ["mode", "align"]) assert.equal(listed.commands.filter((c) => c.name === name).length, 1, `/${name} once`);
@@ -92,7 +103,7 @@ for (const saved of [undefined, true, false] as const) {
       assert.deepEqual(chat.modeState.minorModes, ["vis"]);
       assert.ok(chat.harness.activeTools().includes("vis_guide"), "vis_guide active");
       assert.ok(chat.harness.state.branch().latest(MODE), "the switch is saved as a mode entry");
-      // Typed /mode strict on: the owner answers it, and the menu reads it back.
+      // Typed /mode strict on: the engine answers it, and the menu reads it back.
       const model = new ScriptedModel().attach(piSession(chat));
       chat.handle(client, { type: "prompt", text: "/mode strict on" });
       await until(() => chat.modeState.strict === true);
@@ -105,7 +116,8 @@ for (const saved of [undefined, true, false] as const) {
   });
 
   test(`${label}: with spec on, the mode section is in the prompt exactly once`, async () => {
-    saveSwitch(saved);
+    resetPiFolder();
+    piFolder();
     const path = sessionFile();
     const chat = await acquireChat(path);
     try {
@@ -124,20 +136,20 @@ for (const saved of [undefined, true, false] as const) {
   });
 }
 
-test("a chat keeps the owner its open found when the switch flips; its next open takes the new one", async () => {
-  saveSwitch(true);
+test("a chat reopened on another pi folder keeps its modes: Sova's engine reads the same saved state", async () => {
+  resetPiFolder();
+  PI_FOLDERS["the settings list this copy's mode folder"]();
   const path = sessionFile();
   const chat = await acquireChat(path);
-  saveSwitch(false);
   await set(chat, { minorModes: ["vis"] });
-  assert.deepEqual(modeOwners(chat), ["sova"], "still Sova's until it reopens");
   await disposeHeldChat(path, "test done");
+  resetPiFolder();
+  PI_FOLDERS["no mode folder anywhere in the pi folder"]();
   const again = await acquireChat(path);
   try {
-    assert.deepEqual(modeOwners(again), ["extension"]);
-    assert.deepEqual(again.modeState.minorModes, ["vis"], "flipping lost nothing: vis is still on");
+    assert.deepEqual(modeOwners(again), ["sova"]);
+    assert.deepEqual(again.modeState.minorModes, ["vis"], "vis is still on");
   } finally {
     await disposeHeldChat(path, "test done");
-    saveSwitch(undefined);
   }
 });

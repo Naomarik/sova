@@ -115,8 +115,8 @@ process.env.PI_PACKAGE_DIR = join(root, "pi");
 const models = scriptedModelsJson();
 models.providers.scripted.models.push({ id: "scripted-think", reasoning: true, contextWindow: SCRIPTED_MODEL.contextWindow, maxTokens: SCRIPTED_MODEL.maxTokens } as never);
 writeFileSync(join(agentDir, "models.json"), JSON.stringify(models));
-// A fixture extension whose tool opens a select dialog (S13), the repo's mode extension by its real
-// path (S15), and the compaction fixture (S7, S8). keepRecentTokens 1: a two-turn session has
+// A fixture extension whose tool opens a select dialog (S13), Sova's mode engine (S15, no settings
+// entry: it runs in every chat), and the compaction fixture (S7, S8). keepRecentTokens 1: a two-turn session has
 // something to summarize.
 mkdirSync(join(agentDir, "extensions"), { recursive: true });
 writeFileSync(
@@ -137,7 +137,7 @@ writeFileSync(
     defaultModel: "scripted",
     retry: { baseDelayMs: 1 },
     compaction: { keepRecentTokens: 1 },
-    extensions: [join(REPO, "pi-config/extensions/mode"), join(import.meta.dirname, "testing/compact-fixture-ext.ts")],
+    extensions: [join(import.meta.dirname, "testing/compact-fixture-ext.ts")],
   }),
 );
 

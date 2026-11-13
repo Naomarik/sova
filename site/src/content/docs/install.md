@@ -37,7 +37,7 @@ What it puts on your machine:
 - **A launcher**, `~/.local/bin/sova`.
 - **Sova in your app launcher**, with its icon: `~/.local/share/applications/sova.desktop` on Linux, `~/Applications/Sova.app` on macOS. It's written on every run, and a file of the same name the installer didn't write stops it before it changes anything (`--no-app-entry` leaves the entry out).
 - **On macOS, Sova as an app of its own**, installed in the browser profile kept for Sova: its own icon and name in the Dock and the app switcher, and no title bar. The browser keeps its own launcher for it, `~/Applications/Chrome Apps.localized/sova.app` with Chrome. `--no-app-entry` leaves this out too.
-- **Sova's pi extensions**, linked one by one into `~/.pi/agent/extensions/` (or your `$PI_CODING_AGENT_DIR`). They're links, not copies, so an update brings them along. Anything already there that isn't Sova's own link is left alone, and the installer tells you which extension it skipped.
+- **Sova's pi extensions**, linked one by one into `~/.pi/agent/extensions/` (or your `$PI_CODING_AGENT_DIR`). They're links, not copies, so an update brings them along. A link left over from another copy of Sova (an older install, a developer checkout) is pointed at this install, and the installer tells you which, with where it used to lead. Anything else already there is left alone, and the installer tells you which extension it skipped. Sova's own chats always run the extensions of the Sova that runs them, whatever these links say; the links are for the pi terminal.
 - **A login service**, only if you say yes.
 
 It writes none of pi's configuration: no `settings.json`, `models.json`, `auth.json`, or sandbox policy.

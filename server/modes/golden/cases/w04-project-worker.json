@@ -22,7 +22,8 @@
     "team_succeed",
     "team_list",
     "project_verbs",
-    "queue_push"
+    "queue_push",
+    "spec"
    ],
    "entries": [],
    "extensions": [
@@ -43,7 +44,8 @@
     "<inline:sova-topics>",
     "<inline:sova-tours>",
     "<inline:sova-create-settings>",
-    "<inline:sova-transcript-cards>"
+    "<inline:sova-transcript-cards>",
+    "<inline:sova-spec>"
    ]
   },
   {
@@ -69,6 +71,7 @@
     "team_list",
     "project_verbs",
     "queue_push",
+    "spec",
     "rel__status"
    ],
    "entries": [
@@ -196,9 +199,9 @@
         "rules": "@9514ae33e1ebc3e7",
         "docs": "@0f5fabf6c3c47c4c",
         "cwd": "<cwd>\n<ws:project>\n</cwd>",
-        "mode": "@2f8f600eeb60d291"
+        "mode": "@ff21ebdf3528d30e"
        },
-       "toolsAdded": "@4bdd321f191d5406"
+       "toolsAdded": "@2d787ee0f0c069f6"
       },
       {
        "role": "user",
@@ -300,6 +303,7 @@
     "team_list",
     "project_verbs",
     "queue_push",
+    "spec",
     "rel__status"
    ],
    "entries": [
@@ -314,9 +318,9 @@
        "rules": "@9514ae33e1ebc3e7",
        "docs": "@0f5fabf6c3c47c4c",
        "cwd": "<cwd>\n<ws:project>\n</cwd>",
-       "mode": "@2f8f600eeb60d291"
+       "mode": "@ff21ebdf3528d30e"
       },
-      "toolsAdded": "@7f86c710a4499486"
+      "toolsAdded": "@5ad867b6f4a2ded0"
      }
     }
    ],
@@ -352,7 +356,7 @@
     "<repo>/pi-config/extensions/mode/project-tools-worker.ts"
    ],
    "flags": {},
-   "appendSystemPrompt": "@6bf0319e93ebfd53",
+   "appendSystemPrompt": "@19119c2ff82bc949",
    "env": {
     "SPEC_AGREE_SOURCE": "pi-session:<sid:1>#<entry>",
     "SPEC_AGREE_GIVEN": "pi-session:<sid:1>#<entry>",
@@ -386,10 +390,10 @@
         "tools": "@da87b165576f1968",
         "rules": "@367a111ecea93121",
         "docs": "@0f5fabf6c3c47c4c",
-        "addendum": "@fb6d1792828f25c1",
+        "addendum": "@6c8c8081fd747e03",
         "cwd": "<cwd>\n<ws:project>\n</cwd>"
        },
-       "toolsAdded": "@9ae39c7528acc27a"
+       "toolsAdded": "@7b1438065b8300cf"
       },
       {
        "role": "user",
@@ -409,6 +413,7 @@
     "edit",
     "write",
     "project_verbs",
+    "spec",
     "rel__status"
    ],
    "entries": [
@@ -422,10 +427,10 @@
        "tools": "@da87b165576f1968",
        "rules": "@367a111ecea93121",
        "docs": "@0f5fabf6c3c47c4c",
-       "addendum": "@fb6d1792828f25c1",
+       "addendum": "@6c8c8081fd747e03",
        "cwd": "<cwd>\n<ws:project>\n</cwd>"
       },
-      "toolsAdded": "@9ae39c7528acc27a"
+      "toolsAdded": "@f6272396a036bee4"
      }
     }
    ],
@@ -443,7 +448,8 @@
     "<inline:sova-shell-guard>",
     "<inline:sova-deeper-context>",
     "<inline:sova-background-jobs>",
-    "<inline:sova-project-verbs>"
+    "<inline:sova-project-verbs>",
+    "<inline:sova-spec>"
    ]
   }
  ]

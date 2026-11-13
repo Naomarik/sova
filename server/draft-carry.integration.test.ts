@@ -22,7 +22,7 @@ mkdirSync(join(agentDir, "sessions", "live"), { recursive: true });
 writeFileSync(join(agentDir, "models.json"), JSON.stringify(scriptedModelsJson()));
 writeFileSync(
   join(agentDir, "settings.json"),
-  JSON.stringify({ extensions: [resolve(import.meta.dirname, "../pi-config/extensions/mode")], defaultProvider: "scripted", defaultModel: "scripted", retry: { enabled: false } }),
+  JSON.stringify({ defaultProvider: "scripted", defaultModel: "scripted", retry: { enabled: false } }),
 );
 writeFileSync(join(agentDir, "mode.json"), JSON.stringify({ version: 1, mode: "normal", strict: false, minorModes: [] }));
 process.env.PI_CODING_AGENT_DIR = agentDir;

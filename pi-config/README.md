@@ -180,7 +180,7 @@ cd extensions/subagents && node tests/run.mjs && node tests/smoke.mjs && node te
 cd extensions/claude-code && node tests/run.mjs && node tests/smoke.mjs
 cd extensions/extension-toggle && node --test index.test.ts command.test.ts
 cd extensions/compact-handoff && node tests/run.mjs && node tests/compact-turn.mjs
-cd extensions/mode && node --test index.test.ts delegate.test.ts routing.test.ts align.test.ts review.test.ts spec.test.ts align-settings.test.ts spec-guard.test.ts project-modes.test.ts project-tools.test.ts project-mode-extension.test.ts project-actions.test.ts create-mode.test.ts && node tests/smoke.mjs && node tests/review-smoke.mjs && node tests/wake-turn.mjs && node tests/align-turn.mjs && node tests/style-turn.mjs && node tests/note-turn.mjs && node tests/spec-turn.mjs && node tests/spec-worker.mjs
+cd extensions/mode && node --test index.test.ts spec-mode.test.ts delegate.test.ts routing.test.ts align.test.ts review.test.ts spec.test.ts align-settings.test.ts spec-guard.test.ts project-modes.test.ts project-tools.test.ts project-mode-extension.test.ts project-actions.test.ts create-mode.test.ts && node tests/smoke.mjs && node tests/review-smoke.mjs && node tests/wake-turn.mjs && node tests/align-turn.mjs && node tests/style-turn.mjs && node tests/note-turn.mjs && node tests/spec-turn.mjs && node tests/spec-worker.mjs
 cd extensions/model-policy && node --test policy.test.ts index.test.ts
 cd extensions/provider-limits && node tests/run.mjs
 cd extensions/model-levels && node tests/run.mjs
@@ -191,7 +191,7 @@ cd extensions/spec && node --test --test-concurrency=4 tests/*.test.mjs
 cd extensions/codefold && node tests/run.mjs
 cd extensions/stamp && node --test format.test.ts index.test.ts
 cd extensions/usage-status && node --test fetch.test.ts index.test.ts ollama.test.ts && bun test ./overlay.test.ts
-cd extensions/remote && node --test argv.test.ts
+cd extensions/remote && node --test argv.test.ts index.test.ts
 cd extensions/link && node --test client.test.ts && node tests/run.mjs
 cd extensions/sandbox && node --test tests/*.unit.test.ts tests/unit/*.unit.test.ts tests/unit/darwin-seatbelt-browser.integration.test.ts && node tests/run.mjs
 cd extensions/worktrees && node --test state.test.ts git.test.ts spec.test.ts landing.test.ts && node tests/run.mjs

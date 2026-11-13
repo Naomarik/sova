@@ -546,29 +546,30 @@ export function resolveExtensionSource(source: string, cwd: string, agentDir = g
 /** Extension directories a child never loads, whichever copy: subagents (no nesting) and worktrees (the parent's tool). */
 const NEVER_IN_CHILD = new Set(["subagents", "worktrees"]);
 /**
- * The mode extension beside this one (its directory), listed in a worktree-config worker's mode slot when
- * the session's modes run on Sova and the tree has no mode extension of its own: Sova loads its own
- * engine there, so the tree needs none.
+ * The mode folder beside this one (its directory), listed in a worktree-config worker's mode slot when
+ * Sova hosts the session and the tree has no mode folder of its own: Sova loads its own engine there,
+ * so the tree needs none.
  */
 export const OWN_MODE_EXTENSION = realpathOr(path.join(SELF_DIR, "..", "mode"));
 /**
  * What a pi worker on its worktree's own agent dir needs (§chat.worktrees/worktree-config): the
  * tree's `.agent` as PI_CODING_AGENT_DIR, the mode slot, and its session file kept in the PARENT's
  * sessions directory (where it would be without the override), so Sova lists, watches and measures it
- * like any worker. The mode slot is that tree's mode extension by path, or, when the session's modes run
- * on Sova (`sovaModes`), OWN_MODE_EXTENSION, which Sova loads as its own (the tree's copy is never needed
- * nor loaded). Throws when the tree has no usable `.agent` (or, the extension's way, no mode extension).
+ * like any worker. Under Sova (`sovaHosted`: a worker host is announced, so Sova runs every worker's modes)
+ * the mode slot names the tree's mode folder, or OWN_MODE_EXTENSION when the tree has none; Sova loads its
+ * engine there either way, never the tree's copy. In a plain pi terminal (no host) it is that tree's mode
+ * extension by path. Throws when the tree has no usable `.agent` (or, in a terminal, no mode extension).
  */
-export function worktreeConfig(treePath: string, cwd: string, sovaModes = false): { env: Record<string, string>; modeExtension: string; sessionDir: string } {
+export function worktreeConfig(treePath: string, cwd: string, sovaHosted = false): { env: Record<string, string>; modeExtension: string; sessionDir: string } {
 	const agentDir = path.join(treePath, ".agent");
 	if (!fs.existsSync(agentDir) || !fs.statSync(agentDir).isDirectory()) throw new Error(`useWorktreeConfig: ${treePath} has no .agent directory (build one with scripts/hermetic-agent-dir.mjs).`);
 	const sessionDir = path.join(getAgentDir(), "sessions", sessionDirName(cwd));
 	const mode = realpathOr(path.join(agentDir, "extensions", "mode"));
-	if (sovaModes) {
-		// The slot names the tree's own mode extension whenever it has one, exactly as with the switch off (so the
-		// worker's line reads as it always did; Sova loads its engine there all the same, never the tree's copy),
-		// else this pi-config's.
-		const treeOwn = path.basename(mode) === "mode" && fs.existsSync(path.join(mode, "index.ts"));
+	if (sovaHosted) {
+		// The slot names the tree's own mode folder whenever it has one (so the worker's line reads as it always
+		// did; Sova loads its engine there all the same, never the tree's copy), else this pi-config's. Known by
+		// the folder, a directory named `mode`, never by an index.ts in it.
+		const treeOwn = path.basename(mode) === "mode" && fs.existsSync(mode) && fs.statSync(mode).isDirectory();
 		fs.mkdirSync(sessionDir, { recursive: true });
 		return { env: { PI_CODING_AGENT_DIR: agentDir }, modeExtension: treeOwn ? mode : OWN_MODE_EXTENSION, sessionDir };
 	}
@@ -1729,8 +1730,8 @@ export function registerSubagents(
 			// names the extension itself does not load it twice.
 			// Its worktree's own agent dir (§chat.worktrees/worktree-config): that tree's mode extension,
 			// loaded by path (discovery stays off), in normal mode, with the spec minor mode while this session has it on.
-			// With the session's modes on Sova (its host says so), the slot is Sova's engine, never the tree's copy.
-			const treeConfig = spec.useWorktreeConfig && tree ? worktreeConfig(tree.path, cwd, workerHost?.modes() === "sova") : undefined;
+			// Under Sova (a worker host is announced), the slot is Sova's engine, never the tree's copy.
+			const treeConfig = spec.useWorktreeConfig && tree ? worktreeConfig(tree.path, cwd, !!workerHost?.current()) : undefined;
 			// Spec on: a code-writing worker gets the brief (below) and the census hook; a worktree-config worker
 			// already loads the whole mode extension, and a remote one runs its tools elsewhere.
 			const specWorker = specOn && !remote && !treeConfig && writesCode(tools);

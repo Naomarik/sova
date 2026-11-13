@@ -1,12 +1,12 @@
 // Run: pnpm test:int -- server/project-skills-start.integration.test.ts. A to-do's Start into a folder that asks
 // first (the Sova-wide "Allow context files and skills without asking" off): from the operator's page, with a skill
 // still to decide, its message waits as the new chat's draft and nothing is sent; from no page it goes at once,
-// with the waiting skill off. Real build statecharts and runtimes in this process, with this repo's mode extension
+// with the waiting skill off. Real build statecharts and runtimes in this process, with Sova's mode engine
 // (a build sends its first prompt only once its mode is set); no model auth, so a sent turn fails after its send.
 // A throwaway PI_CODING_AGENT_DIR; ~/.pi is never read or written.
 import assert from "node:assert/strict";
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { after, test } from "node:test";
 import { scratchRoot } from "./test-scratch";
@@ -17,7 +17,7 @@ const tmp = scratchRoot("sova-skills-start-");
 process.on("exit", () => rmSync(tmp, { recursive: true, force: true }));
 const agentDir = join(tmp, "agent");
 mkdirSync(join(agentDir, "sessions", "live"), { recursive: true });
-writeFileSync(join(agentDir, "settings.json"), JSON.stringify({ retry: { enabled: false }, extensions: [resolve(here, "../pi-config/extensions/mode")] }));
+writeFileSync(join(agentDir, "settings.json"), JSON.stringify({ retry: { enabled: false } }));
 writeFileSync(join(agentDir, "mode.json"), JSON.stringify({ version: 1, mode: "normal", strict: false, minorModes: [] }));
 process.env.PI_CODING_AGENT_DIR = agentDir;
 process.env.HOME = join(tmp, "home");

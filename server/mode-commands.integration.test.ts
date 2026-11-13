@@ -118,10 +118,6 @@ test("closing the chat kills a running hook's whole process group", async () => 
 test("end to end: approve, turn on, then through sova run mode.rel.release_check, and a reply runs the hook once", { timeout: 120_000 }, async () => {
   const server = await startHermeticServer();
   try {
-    // The chats load this tree's mode extension (the hermetic agent dir has none of its own).
-    const settingsFile = join(server.agentDir, "settings.json");
-    const settings = JSON.parse(readFileSync(settingsFile, "utf8"));
-    writeFileSync(settingsFile, JSON.stringify({ ...settings, extensions: [join(ROOT, "pi-config", "extensions", "mode")] }, null, 2));
     const work = realpathSync(server.work);
     const copy = checkout(work);
     // The operator approved this version in the mode menu: that is not a command, so it is written as the menu writes it.

@@ -11,7 +11,7 @@ import { join } from "node:path";
 import { after, test } from "node:test";
 import type { Recorded as RecordedChat } from "./tests/harness.fixture";
 
-const { agentDir, beginCase, cm, Recorded, sessionFile, setOwner, workspace } = await import("./tests/harness.fixture");
+const { agentDir, beginCase, cm, Recorded, sessionFile, workspace } = await import("./tests/harness.fixture");
 const { checkoutRootOf } = await import("../../pi-config/extensions/mode/project-discovery.ts");
 const { discoverPersonalModes } = await import("./personal");
 const { recordApproval } = await import("../project-mode-approvals");
@@ -123,8 +123,7 @@ async function parentAndWorker(tag: string, c: { cwd: string; dir: string }, mod
 }
 
 test("a personal mode's tool is told the chat's checkout, in the chat and in its worker, whatever the process's own folder", async () => {
-  setOwner("sova");
-  beginCase("personal-on");
+  beginCase("personal");
   const c = checkout("personal");
   const { parent, worker } = await parentAndWorker("personal", c, "tidy");
   assert.equal(said(parent, "cwd"), c.cwd, "the chat's program runs in the chat's folder");
@@ -133,16 +132,13 @@ test("a personal mode's tool is told the chat's checkout, in the chat and in its
   assert.equal(said(worker, "root"), c.root, "the worker's program is told the worker's checkout, as its parent's is");
 });
 
-for (const owner of ["sova", "extension"] as const) {
-  test(`a project mode's tool is told the checkout it sits in, in the chat and in its worker (the switch ${owner === "sova" ? "on" : "off"})`, async () => {
-    setOwner(owner);
-    beginCase(`project-${owner}`);
-    const c = checkout("project");
-    const listing = discoverProjectModes(c.cwd);
-    recordApproval(listing.root!, "rel", listing.modes.find((m) => m.id === "rel")!.toolsHash, "user");
-    const { parent, worker } = await parentAndWorker(`project-${owner}`, c, "rel");
-    assert.equal(said(parent, "root"), c.root);
-    assert.equal(said(worker, "root"), c.root);
-    assert.equal(said(worker, "cwd"), c.cwd);
-  });
-}
+test("a project mode's tool is told the checkout it sits in, in the chat and in its worker", async () => {
+  beginCase("project");
+  const c = checkout("project");
+  const listing = discoverProjectModes(c.cwd);
+  recordApproval(listing.root!, "rel", listing.modes.find((m) => m.id === "rel")!.toolsHash, "user");
+  const { parent, worker } = await parentAndWorker("project", c, "rel");
+  assert.equal(said(parent, "root"), c.root);
+  assert.equal(said(worker, "root"), c.root);
+  assert.equal(said(worker, "cwd"), c.cwd);
+});

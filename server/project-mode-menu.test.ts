@@ -156,21 +156,20 @@ test("personal mode on but not offered now (removed, or the listing without your
   }
 });
 
-test("listingFor: yours only when asked (Sova runs the chat's modes), and never without a checkout", () => {
-  assert.deepEqual(listingFor(undefined, false, true), { root: null, name: "", modes: [], problems: [] });
-  assert.deepEqual(listingFor("/x", true, true), { root: null, name: "", modes: [], problems: [] }, "remote: none");
-  const rel = listingFor("relative/dir", false, true);
+test("listingFor: never without a checkout", () => {
+  assert.deepEqual(listingFor(undefined, false), { root: null, name: "", modes: [], problems: [] });
+  assert.deepEqual(listingFor("/x", true), { root: null, name: "", modes: [], problems: [] }, "remote: none");
+  const rel = listingFor("relative/dir", false);
   assert.equal(rel.root, null);
   assert.equal("personalIds" in rel, false, "no checkout: no personal merge");
 });
 
-test("switch off (Sova doesn't run the chat's modes): yours aren't offered, but one already on shows on and turns off", async () => {
+test("yours are offered beside the project's in every chat with a checkout; one on whose folder is deleted shows removed", async () => {
   const { mkdirSync, mkdtempSync, rmSync, writeFileSync } = await import("node:fs");
   const { tmpdir } = await import("node:os");
   const { join } = await import("node:path");
   const { discoverPersonalModes } = await import("./modes/personal");
-  const { projectRowState } = await import("../src/lib/mode-menu");
-  const base = mkdtempSync(join(tmpdir(), "personal-off-"));
+  const base = mkdtempSync(join(tmpdir(), "personal-on-"));
   const before = process.env.SOVA_CHAT_STATE_ROOT;
   process.env.SOVA_CHAT_STATE_ROOT = join(base, "state");
   try {
@@ -183,33 +182,16 @@ test("switch off (Sova doesn't run the chat's modes): yours aren't offered, but 
     writeFileSync(join(tidyDir, "MODE.md"), "---\ndescription: Tidy\n---\nTidy up.\n");
     const copy = discoverPersonalModes().modes[0]!;
 
-    // On: offered, in "Your modes".
-    const onListing = listingFor(repo, false, true);
-    assert.deepEqual(projectModesInfo(onListing, [], new Map(), never).projectMinors!.map((m) => [m.id, m.personal ?? false]), [["lint", false], ["tidy", true]]);
+    // Offered, in "Your modes".
+    const listing = listingFor(repo, false);
+    assert.deepEqual(projectModesInfo(listing, [], new Map(), never).projectMinors!.map((m) => [m.id, m.personal ?? false]), [["lint", false], ["tidy", true]]);
 
-    // Off: the project's modes only; turning one of yours on is refused.
-    const offListing = listingFor(repo, false, false);
-    assert.deepEqual(offListing.modes.map((m) => m.id), ["lint"]);
-    assert.deepEqual(projectModesInfo(offListing, [], new Map(), never).projectMinors!.map((m) => m.id), ["lint"], "not offered");
-    assert.match((checkProjectSwitch(offListing, [], ["tidy"], [], false, never) as { error: string }).error, /No project mode "tidy"/);
-
-    // Off, but already on in this chat from its copy: listed (yours), on, not removed, and it turns off.
+    // On from its copy, then its folder deleted: removed, as a project mode's would be, and it turns off.
     const on = [{ id: "tidy", sha: copy.sha }];
-    const info = projectModesInfo(offListing, on, new Map([[copy.sha, copy]]), never);
-    assert.deepEqual(info.projectModes, ["tidy"]);
-    const row = info.projectMinors!.find((m) => m.id === "tidy")!;
-    assert.equal(row.personal, true);
-    assert.equal(row.removed, undefined, "its folder is still there: it stays on, not 'removed'");
-    assert.equal(row.description, "Tidy");
-    const state = projectRowState(row, true);
-    assert.equal(state.canToggle, true);
-    assert.equal(state.note, null);
-    assert.deepEqual(checkProjectSwitch(offListing, ["tidy"], [], [], false, never), { ok: true, ids: [], record: [] }, "turning it off is always allowed");
-    assert.deepEqual(checkProjectSwitch(offListing, ["tidy"], ["tidy", "lint"], [], false, never), { ok: true, ids: ["tidy", "lint"], record: [] }, "staying on is never re-checked");
-
-    // Its folder deleted: removed, as a project mode's would be.
     rmSync(tidyDir, { recursive: true, force: true });
-    assert.equal(projectModesInfo(offListing, on, new Map([[copy.sha, copy]]), never).projectMinors!.find((m) => m.id === "tidy")!.removed, true);
+    const after = listingFor(repo, false);
+    assert.equal(projectModesInfo(after, on, new Map([[copy.sha, copy]]), never).projectMinors!.find((m) => m.id === "tidy")!.removed, true);
+    assert.deepEqual(checkProjectSwitch(after, ["tidy"], [], [], false, never), { ok: true, ids: [], record: [] }, "turning it off is always allowed");
   } finally {
     if (before === undefined) delete process.env.SOVA_CHAT_STATE_ROOT;
     else process.env.SOVA_CHAT_STATE_ROOT = before;

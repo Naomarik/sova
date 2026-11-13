@@ -1,9 +1,8 @@
 // Run: npx tsx --test server/overseer-mode.test.ts (or npm test)
 // The Overseer is always in the normal mode with no minor modes, against a REAL hosted runtime in a
-// throwaway PI_CODING_AGENT_DIR whose only extension is this repo's mode extension (named in
-// settings.json by its real path, so its imports of sibling extensions resolve), and
+// throwaway PI_CODING_AGENT_DIR with no extension listed (Sova's mode engine runs in every chat), and
 // whose default (mode.json) is Delegate with both minor modes on. No model request is made: every
-// switch runs the extension's own /mode handler, never a prompt. An ordinary session in the same
+// switch runs the engine's own /mode handler, never a prompt. An ordinary session in the same
 // dir is the control: its switches must take, or a refusal here would prove nothing.
 import assert from "node:assert/strict";
 import { mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
@@ -21,7 +20,7 @@ process.on("exit", () => rmSync(dir, { recursive: true, force: true }));
 const cwd = realpathSync(mkdtempSync(join(tmpdir(), "sova-overseer-mode-cwd-")));
 // A hosted runtime can still write here after after() ran (pi's catalogs, usage cache): exit is last.
 process.on("exit", () => rmSync(cwd, { recursive: true, force: true }));
-writeFileSync(join(dir, "settings.json"), JSON.stringify({ extensions: [resolve(here, "../pi-config/extensions/mode")] }));
+writeFileSync(join(dir, "settings.json"), JSON.stringify({}));
 const DEFAULT = { version: 1, mode: "delegate", strict: false, minorModes: ["align", "spec"] };
 writeFileSync(join(dir, "mode.json"), JSON.stringify(DEFAULT));
 process.env.PI_CODING_AGENT_DIR = dir;

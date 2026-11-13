@@ -6,27 +6,19 @@ import assert from "node:assert/strict";
 import { existsSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { piSession } from "../../harness/pi/testing/handle";
-import { agentDir, assertOnce, ownerNow, withExtensions, REPO, cm, normalize, type Owner, Recorded, sessionFile, modeEntry, workspace, type Where } from "./harness.fixture";
+import { agentDir, assertOnce, withExtensions, REPO, cm, normalize, Recorded, sessionFile, modeEntry, workspace, type Where } from "./harness.fixture";
 
 export interface Case {
   name: string;
   /** What it covers, one line. */
   covers: string;
-  // Run it after harness.beginCase(<run>): the same case runs once per owner, each run in folders of its own.
-  /**
-   * Where the switch on is meant to differ from off (a review check of al_1): instead of the byte
-   * comparison, this checks the on run's record, given the off run's.
-   */
-  onDiffers?: (on: unknown, off: unknown) => void;
-  /**
-   * Not recorded at master (it needs a1's `spec` tool): no recording file; this checks its record instead,
-   * and with the switch on the byte comparison with the off run still holds.
-   */
-  unrecorded?: (record: unknown) => void;
+  // Run it after harness.beginCase(): each case runs in folders of its own.
+  /** A check of the record's meaning, beside the byte comparison with its recording. */
+  check?: (record: unknown) => void;
   /** It runs programs (the spec census and drift check run the spec tools; a project tool is a program):
       the integration tier's (`*.golden.integration.test.ts`); the rest are unit-tier. */
   proc?: true;
-  run(owner: Owner): Promise<unknown>;
+  run(): Promise<unknown>;
 }
 
 const PLAN = "The plan is ready.\n\n**Open questions, with my suggested answers:**\n1. **Cap:** 400\n2. **Group:** by worker\n\nShould I go ahead with those answers?";
@@ -125,11 +117,8 @@ cm.setWorkerHostSource(
 
 /** A start as recorded: its key's random part and the per-process landed file names dropped. */
 function startRecord(s: Start): unknown {
-  // The owner the parent stamped (cutover: WorkerSpec.modes): "sova" with the switch on, none with it off.
-  // Asserted here and left out, so the record is the same either way.
-  const { modes, ...rest } = s.spec as Start["spec"] & { modes?: unknown };
-  if (ownerNow() === "sova") assert.equal(modes, "sova", "a worker of a parent on Sova's engine is stamped modes: \"sova\"");
-  else assert.equal(modes, undefined, "a worker of a parent on the mode extension carries no modes stamp");
+  // A modes stamp an older parent put on its worker's spec (WorkerSpec.modes) means nothing now: left out.
+  const { modes: _modes, ...rest } = s.spec as Start["spec"] & { modes?: unknown };
   s = { ...s, spec: rest as Start["spec"] };
   const spec = normalize({ ...s.spec, env: Object.fromEntries(Object.entries(s.spec.env).map(([k, v]) => [k, k === "SOVA_SPEC_LANDED_FILE" || k.endsWith("_FILE") ? "<file>" : v])) });
   return { spec, session: normalize(s.session), task: s.task };
@@ -362,7 +351,7 @@ export const CASES: Case[] = [
     name: "c23-spec-reads-one-source",
     proc: true,
     covers: "the census counts a spec tool read and a shell read through one function: the same note after either, another after none",
-    unrecorded: (record) => {
+    check: (record) => {
       const r = record as Record<"tool" | "bash" | "none", { calls: { add: { role?: string; toolName?: string; content?: { text?: string }[] }[] }[] }[]>;
       // The unread line comes on the first tool result after the last edit: the follow-up read's.
       const after = (steps: (typeof r)["tool"]) => {
@@ -405,12 +394,10 @@ export const CASES: Case[] = [
   {
     name: "w07-tree-config-bare",
     proc: true,
-    covers: "useWorktreeConfig, the tree's .agent has no mode extension (today: refused; with Sova's modes: starts, with the spec block once)",
-    onDiffers: (on, off) => {
-      const o = off as { start: unknown };
-      assert.equal(o.start, null, "switch off: refused, as at master (no mode extension in the tree)");
-      const n = on as { start: { spec: { extensions: string[]; flags: Record<string, unknown> } } | null; worker: { headers?: Record<string, number> }[] | null };
-      assert.ok(n.start, "switch on: the worker starts without the tree's mode extension");
+    covers: "useWorktreeConfig, the tree's .agent has no mode extension: Sova's engine runs its modes, with the spec block once",
+    check: (record) => {
+      const n = record as { start: { spec: { extensions: string[]; flags: Record<string, unknown> } } | null; worker: { headers?: Record<string, number> }[] | null };
+      assert.ok(n.start, "the worker starts without the tree's mode extension");
       assert.deepEqual(
         { major: n.start.spec.flags.major, minor: n.start.spec.flags.minor },
         { major: "normal", minor: "spec" },
@@ -428,7 +415,7 @@ export const CASES: Case[] = [
     name: "w09-tree-config-parent-spec-off",
     proc: true,
     covers: "useWorktreeConfig, the parent has spec off: the worker starts without --minor and its run's prompt has no spec block",
-    unrecorded: (record) => {
+    check: (record) => {
       const r = record as { start: { spec: { flags: Record<string, unknown> } }; worker: { headers?: Record<string, number> }[] };
       assert.equal(r.start.spec.flags.major, "normal");
       assert.equal("minor" in r.start.spec.flags, false, "no --minor for a parent with spec off");

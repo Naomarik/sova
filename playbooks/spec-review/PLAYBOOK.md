@@ -38,7 +38,7 @@ A `refused:` line ends the preflight before anything is listed: settle it with t
 **Metadata.** One call, with the scoped paths written out in place of `<paths>`:
 
 ```sh
-core="${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}"; case $core in "~"|"~/"*) core="$HOME${core#\~}";; esac; core="$core/extensions/spec/core"
+core="${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}"; case $core in "~"|"~/"*) core="$HOME${core#\~}";; esac; core="${SOVA_SPEC_CORE:-$core/extensions/spec/core}"
 R='<root>'; B='<base>'
 git -C "$R" -c core.fsmonitor=false log --oneline "$B"..HEAD -- <paths>
 git -C "$R" -c core.fsmonitor=false diff --no-ext-diff --no-textconv --stat "$B" -- <paths>
@@ -51,7 +51,7 @@ Census maps changed files to claims, and foreign lists claims whose text changed
 **Exact context.** For the brief's ids and the claims mapped to scoped files, with the same first two lines:
 
 ```sh
-core="${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}"; case $core in "~"|"~/"*) core="$HOME${core#\~}";; esac; core="$core/extensions/spec/core"
+core="${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}"; case $core in "~"|"~/"*) core="$HOME${core#\~}";; esac; core="${SOVA_SPEC_CORE:-$core/extensions/spec/core}"
 R='<root>'
 node "$core/sova-spec.mjs" toc '<§id>' --dir out --root "$R" --json
 node "$core/sova-spec.mjs" read '<§id>' --budget 12000 --root "$R" --json   # the first read; every later read adds --no-frame

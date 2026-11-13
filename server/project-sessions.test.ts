@@ -2,21 +2,19 @@
 // Which project a session belongs to (server/project-sessions.ts): an overseer's marker, then a build, then the
 // session's folder — a project root or inside it, a linked worktree of it (git's `.git` file), a gone worktree folder
 // as Sova names them. And the folder a project's coding session may start in (`startCoding`'s `cwd`). A throwaway
-// PI_CODING_AGENT_DIR (only the mode extension), git repositories under a scratch root; no model request is made.
+// PI_CODING_AGENT_DIR (no extension listed; Sova's mode engine), git repositories under a scratch root; no model request is made.
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
 import { after, describe, test } from "node:test";
 import { scratchRoot } from "./test-scratch";
 
-const here = dirname(fileURLToPath(import.meta.url));
 const tmp = realpathSync(scratchRoot("sova-project-sessions-"));
 process.on("exit", () => rmSync(tmp, { recursive: true, force: true }));
 const agentDir = join(tmp, "agent");
 mkdirSync(join(agentDir, "sessions", "live"), { recursive: true });
-writeFileSync(join(agentDir, "settings.json"), JSON.stringify({ extensions: [resolve(here, "../pi-config/extensions/mode")] }));
+writeFileSync(join(agentDir, "settings.json"), JSON.stringify({}));
 writeFileSync(join(agentDir, "mode.json"), JSON.stringify({ version: 1, mode: "normal", strict: false, minorModes: [] }));
 process.env.PI_CODING_AGENT_DIR = agentDir;
 await import("./testing/in-process-chats"); // chats open in this process (the server hosts none)

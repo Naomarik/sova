@@ -4838,7 +4838,7 @@ test("sandbox Off (§chat.sandbox/states): a worktree's workers start unconfined
 	}
 });
 
-test("worktrees: with the session's modes on Sova, a useWorktreeConfig worker needs no mode extension in the tree; its slot is this one's own, with spec as the parent has it", async () => {
+test("worktrees: under Sova (a worker host announced), a useWorktreeConfig worker needs no mode extension in the tree; its slot is this one's own, with spec as the parent has it", async () => {
 	const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "pi-subagents-wtconfig-sova-")));
 	const parentAgent = path.join(root, "parent-agent");
 	const wt = path.join(root, "wt");
@@ -4848,8 +4848,9 @@ test("worktrees: with the session's modes on Sova, a useWorktreeConfig worker ne
 	const h = harness();
 	h.ctx.sessionManager.getBranch = () => worktreesBranch([{ path: wt }]);
 	try {
-		// Sova's worker host says this session's modes run on Sova (the runner is the test's own).
-		h.bus.emit(WORKER_HOST_EVENT, { version: 1, host: {} as WorkerHost, modes: "sova" });
+		// Sova's worker host is announced, with no `modes` (the runner is the test's own): its presence alone
+		// says Sova runs the worker's modes.
+		h.bus.emit(WORKER_HOST_EVENT, { version: 1, host: {} as WorkerHost });
 		h.bus.emit(SANDBOX_STATE_EVENT, { ...SANDBOX_OFF, workerLaunch: workerLaunchOf() });
 		h.bus.emit(MODE_WORKER_EVENT, SPEC_ON);
 		h.bus.emit(MODE_STATE_EVENT, STATE_SPEC_ON);
@@ -4861,14 +4862,15 @@ test("worktrees: with the session's modes on Sova, a useWorktreeConfig worker ne
 		assert.deepEqual(w.flags, { major: "normal", minor: "spec", sandbox: "on", "sandbox-parent": wt }, "the parent has spec on");
 		const record = h.appended.find((e) => e.customType === "subagents-worker-manifest" && e.data.launch);
 		assert.deepEqual(record.data.modes, ["spec"]);
-		// A tree that has its own pi-config mode extension: the slot names it, as with the switch off (the
-		// worker's line reads the same); Sova still loads its engine there, never the tree's copy.
+		// A tree that has its own pi-config mode folder: the slot names it (the worker's line reads as before);
+		// Sova still loads its engine there, never the tree's copy. Known by the folder alone: it has only
+		// texts, no index.ts.
 		const treeMode = path.join(wt, "pi-config", "extensions", "mode");
 		fs.mkdirSync(treeMode, { recursive: true });
-		fs.writeFileSync(path.join(treeMode, "index.ts"), "export default () => {};\n");
+		fs.writeFileSync(path.join(treeMode, "spec-mode.md"), "texts only\n");
 		fs.symlinkSync(treeMode, path.join(wt, ".agent", "extensions", "mode"));
 		await h.call("agent_spawn", { prompt: "again", cwd: wt, useWorktreeConfig: true });
-		assert.equal(h.workers[1].extensions[3], treeMode, "the tree's mode directory, by its real path");
+		assert.equal(h.workers[1].extensions[3], treeMode, "the tree's mode directory, by its real path, with no index.ts in it");
 	} finally {
 		await h.close();
 		if (prev === undefined) delete process.env.PI_CODING_AGENT_DIR; else process.env.PI_CODING_AGENT_DIR = prev;

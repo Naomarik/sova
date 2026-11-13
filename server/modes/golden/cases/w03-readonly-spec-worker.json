@@ -22,7 +22,8 @@
     "team_succeed",
     "team_list",
     "project_verbs",
-    "queue_push"
+    "queue_push",
+    "spec"
    ],
    "entries": [],
    "extensions": [
@@ -43,7 +44,8 @@
     "<inline:sova-topics>",
     "<inline:sova-tours>",
     "<inline:sova-create-settings>",
-    "<inline:sova-transcript-cards>"
+    "<inline:sova-transcript-cards>",
+    "<inline:sova-spec>"
    ]
   },
   {
@@ -68,7 +70,8 @@
     "team_succeed",
     "team_list",
     "project_verbs",
-    "queue_push"
+    "queue_push",
+    "spec"
    ],
    "entries": [
     {
@@ -104,9 +107,9 @@
         "rules": "@9514ae33e1ebc3e7",
         "docs": "@0f5fabf6c3c47c4c",
         "cwd": "<cwd>\n<ws:plain>\n</cwd>",
-        "mode": "@d4cf9a33be021005"
+        "mode": "@8cb6214f079c2a20"
        },
-       "toolsAdded": "@ed596a5985c5d307"
+       "toolsAdded": "@bd2ba431c874ff56"
       },
       {
        "role": "user",
@@ -210,7 +213,8 @@
     "team_succeed",
     "team_list",
     "project_verbs",
-    "queue_push"
+    "queue_push",
+    "spec"
    ],
    "entries": [
     {
@@ -224,9 +228,9 @@
        "rules": "@9514ae33e1ebc3e7",
        "docs": "@0f5fabf6c3c47c4c",
        "cwd": "<cwd>\n<ws:plain>\n</cwd>",
-       "mode": "@d4cf9a33be021005"
+       "mode": "@8cb6214f079c2a20"
       },
-      "toolsAdded": "@619362e2e44edede"
+      "toolsAdded": "@90fbab6af5ba9433"
      }
     }
    ],
@@ -255,7 +259,7 @@
     "<repo>/pi-config/extensions/model-levels/index.ts"
    ],
    "flags": {},
-   "appendSystemPrompt": "@86c3b03079d98792",
+   "appendSystemPrompt": "@707e76717ccddf72",
    "env": {
     "SPEC_AGREE_SOURCE": "pi-session:<sid:1>#<entry>",
     "SPEC_AGREE_GIVEN": "pi-session:<sid:1>#<entry>",
@@ -287,51 +291,10 @@
         "tools": "@1c72f9c414aa847b",
         "rules": "<rules>\n- Use read to examine files instead of cat or sed.\n- Be concise in your responses\n- Show file paths clearly when working with files\n</rules>",
         "docs": "@0f5fabf6c3c47c4c",
-        "addendum": "@70d04e19ea7fff81",
+        "addendum": "@993be60b4d56f2d2",
         "cwd": "<cwd>\n<ws:plain>\n</cwd>"
        },
-       "toolsAdded": [
-        {
-         "name": "read",
-         "description": "@491fc972ef0356ca",
-         "parameters": {
-          "type": "object",
-          "required": [
-           "path"
-          ],
-          "properties": {
-           "path": {
-            "type": "string",
-            "description": "Path to the file to read (relative or absolute)"
-           },
-           "offset": {
-            "type": "number",
-            "description": "Line number to start reading from (1-indexed)"
-           },
-           "limit": {
-            "type": "number",
-            "description": "Maximum number of lines to read"
-           }
-          }
-         },
-         "constrainedSampling": {
-          "type": "json_schema",
-          "strict": "prefer"
-         }
-        },
-        {
-         "name": "project_verbs",
-         "description": "@92bd36452c3a5ac1",
-         "parameters": {
-          "type": "object",
-          "properties": "@1246128334de3733",
-          "required": [
-           "verb"
-          ],
-          "additionalProperties": false
-         }
-        }
-       ]
+       "toolsAdded": "@ca08bd57d8e2deb1"
       },
       {
        "role": "user",
@@ -347,7 +310,8 @@
    ],
    "activeTools": [
     "read",
-    "project_verbs"
+    "project_verbs",
+    "spec"
    ],
    "entries": [
     {
@@ -360,51 +324,10 @@
        "tools": "@1c72f9c414aa847b",
        "rules": "<rules>\n- Use read to examine files instead of cat or sed.\n- Be concise in your responses\n- Show file paths clearly when working with files\n</rules>",
        "docs": "@0f5fabf6c3c47c4c",
-       "addendum": "@70d04e19ea7fff81",
+       "addendum": "@993be60b4d56f2d2",
        "cwd": "<cwd>\n<ws:plain>\n</cwd>"
       },
-      "toolsAdded": [
-       {
-        "name": "read",
-        "description": "@491fc972ef0356ca",
-        "parameters": {
-         "type": "object",
-         "required": [
-          "path"
-         ],
-         "properties": {
-          "path": {
-           "type": "string",
-           "description": "Path to the file to read (relative or absolute)"
-          },
-          "offset": {
-           "type": "number",
-           "description": "Line number to start reading from (1-indexed)"
-          },
-          "limit": {
-           "type": "number",
-           "description": "Maximum number of lines to read"
-          }
-         }
-        },
-        "constrainedSampling": {
-         "type": "json_schema",
-         "strict": "prefer"
-        }
-       },
-       {
-        "name": "project_verbs",
-        "description": "@92bd36452c3a5ac1",
-        "parameters": {
-         "type": "object",
-         "properties": "@1246128334de3733",
-         "required": [
-          "verb"
-         ],
-         "additionalProperties": false
-        }
-       }
-      ]
+      "toolsAdded": "@146d950d63c2a27e"
      }
     }
    ],
@@ -417,7 +340,8 @@
     "<repo>/pi-config/extensions/model-levels/index.ts",
     "<inline:sova-shell-guard>",
     "<inline:sova-deeper-context>",
-    "<inline:sova-project-verbs>"
+    "<inline:sova-project-verbs>",
+    "<inline:sova-spec>"
    ]
   }
  ]

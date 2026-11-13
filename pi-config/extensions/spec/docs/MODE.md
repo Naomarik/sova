@@ -35,18 +35,21 @@ Paths are relative to `pi-config/extensions/` unless they start with `.sova/` or
 
 ## How they connect
 
-1. **Load.** `minor.ts` reads `spec-mode.md` beside it when the mode extension loads, and Sova's server
-   imports the same module. If the file doesn't hold exactly one single-line `sh` block, or that line
+1. **Load.** `minor.ts` reads `spec-mode.md` beside it when the mode extension loads, and a host that runs
+   modes itself (Sova's engine, which never loads `index.ts`) imports the same module. If the file doesn't hold exactly one single-line `sh` block, or that line
    appears again outside it, the load throws. So a malformed guide stops both pi and the server from
    starting; it never ships half-read.
-2. **Inject.** With spec on, `index.ts`'s `before_agent_start` appends the composed block to the
-   system prompt (`prompt.ts`). The block is `spec-mode.md` byte for byte, plus the writer paragraph
+2. **Inject.** With spec on, the mode runner's `before_agent_start` (`index.ts` in a plain pi terminal; the
+   host's engine where a host runs the modes) appends the composed block to the system prompt (`prompt.ts`). The block is `spec-mode.md` byte for byte, plus the writer paragraph
    when a spec writer is set. `mode/index.test.ts` pins the text:
    - every flag it spells is parsed by the command it is paired with;
    - its `--doc-only` cases are the draft tool's own;
    - its word count is capped.
-3. **Find the tools.** The guide's `sh` line resolves `$core` to `<agent dir>/extensions/spec/core`, where
-   `pi-config/install.sh` links these tools. The agent runs only that trusted copy. A copy inside a
+3. **Find the tools.** The guide's `sh` line resolves `$core` to `$SOVA_SPEC_CORE` when it is set, else to
+   `<agent dir>/extensions/spec/core`, where `pi-config/install.sh` links these tools. A host sets
+   `SOVA_SPEC_CORE` to the copy of these tools it runs (Sova: the chat's own copy of its code), so the guide's
+   text never changes while the tools it names follow the host; `spec-guard.ts`'s `coreDir` reads it the same
+   way. The agent runs only that trusted copy. A copy inside a
    project is foreign code, never run without asking; the installed extension is the only supported way to run the tools.
 3a. **The writing procedure.** The short part tells the agent to read `$core/../WRITING.md` before its
    first edit that changes behavior. If it hasn't (a read tool on a file named `WRITING.md`, or a shell

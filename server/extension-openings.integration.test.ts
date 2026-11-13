@@ -9,6 +9,7 @@ import { after, before, test } from "node:test";
 import { WebSocket } from "ws";
 import { applyAlignCall } from "../pi-config/extensions/mode/align.ts";
 import { newestUserMessage, typedGoAhead } from "../pi-config/extensions/worktrees/landing.ts";
+import { EXTENSION_CONTRACT } from "../shared/extension-contract";
 import { startHermeticServer, type HermeticServer } from "./testing/hermetic-server";
 import { authCookieName } from "./auth";
 import { keyFileName } from "./extension-keys";
@@ -284,7 +285,9 @@ test("the notes the door kept out aren't written, and the token's still are", as
 
 test("the served list says the contract's number", async () => {
   const body = (await call("GET", "/api/commands", asKey())).body;
-  assert.equal(body.server.extensionContract, 21);
+  // Against the constant, not a literal: the served number is the contract's current one, and a
+  // hand-written 21 here is a bump waiting to fail (§app.served-commands/route).
+  assert.equal(body.server.extensionContract, EXTENSION_CONTRACT);
 });
 
 test("card news over /ws/events with the key: raised, changed, answered, no data; a status card updates in place", async () => {

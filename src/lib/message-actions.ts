@@ -121,7 +121,7 @@ export const ACTION_LABEL: Record<MessageActionKind, string> = {
   remove: "Remove this queued message",
 };
 
-/** Each action's icon: the strip's buttons, and the message menu's rows (lib/message-menu). */
+/** Each action's icon in the strip. */
 export const ACTION_ICON: Record<MessageActionKind, IconName> = {
   copy: "copy",
   share: "share",
@@ -129,23 +129,6 @@ export const ACTION_ICON: Record<MessageActionKind, IconName> = {
   regenerate: "refresh",
   fork: "branch",
   remove: "close",
-};
-
-/** Each action's row in the message's right-click menu (§app/context-menus): Title Case menu words.
-    The row's accessible name stays the strip's (ACTION_LABEL). */
-export const MENU_LABEL: Record<LandedActionKind, string> = {
-  copy: "Copy",
-  share: "Share From Here",
-  rewind: "Rewind…",
-  regenerate: "Regenerate…",
-  fork: "Fork From Here",
-};
-
-/** The menu's one row of its own, right after Copy: the message as it reads, without Markdown's marks. */
-export const COPY_PLAIN = {
-  label: "Copy as Plain Text",
-  aria: "Copy message as plain text",
-  done: "Copied message as plain text.",
 };
 
 /** The strip's own accessible name, so a screen reader knows whose message these act on. */

@@ -1,20 +1,19 @@
 // Run: pnpm test -- src/lib/context-menu.test.ts
-// The right-click menu's rules (§app.context-menus/native, /doors, /touch), on plain facts and
-// stand-in elements: what opens Sova's menu, what stays the browser's (a keyboard context-menu
+// The pointer menu's rules (§app.context-menus/native, /doors, /touch), on plain facts and
+// stand-in elements: right-click, a touch/pen hold, what stays the browser's (a keyboard context-menu
 // event included), what a hold swallows, and a mouse's menu showing on the button's release
 // (§app.context-menus/placement).
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { createRowPress } from "./drag-overlay";
-import { HOLD_MS } from "./hold-select";
+import { HOLD_MOVE_PX, HOLD_MS, HOLD_SUPPRESS_MS } from "./hold-select";
 import {
   contextAction,
   type ContextFacts,
   contextPointerKind,
+  createMenuHold,
   createOpenOnRelease,
   createPressSelection,
   type ElementLike,
-  holdOwns,
   inPopover,
   inTextEntry,
   onContentLink,
@@ -38,8 +37,14 @@ test("the decision table: each exception, on its own, and what wins when two mee
     [{ onSelection: true }, "native", "a right-click on the selected text"],
     [{ contentLink: true }, "native", "a link inside content"],
     [{ inPopover: true }, "native", "inside an open menu or popover, Sova's own included"],
-    [{ kind: "touch" }, "native", "a finger never opens Sova's menu"],
-    [{ kind: "pen" }, "native", "nor does a pen"],
+    [{ kind: "touch" }, "native", "a browser contextmenu without Sova's completed hold stays native"],
+    [{ kind: "pen" }, "native", "nor does a pen's browser event alone open one"],
+    [{ kind: "touch", held: true }, "open", "a stationary finger hold opens at 500ms"],
+    [{ kind: "pen", held: true }, "open", "so does a stationary pen hold"],
+    [{ kind: "touch", held: true, textEntry: true }, "native", "a hold in a text field stays the browser's"],
+    [{ kind: "pen", held: true, inPopover: true }, "native", "a hold inside an open popover stays the browser's"],
+    [{ kind: "touch", held: true, onSelection: true }, "native", "a hold on live selected text stays the browser's"],
+    [{ kind: "pen", held: true, contentLink: true }, "native", "a content link keeps its own browser menu"],
     [{ holds: true }, "swallow", "the hold's echo: neither menu"],
     [{ holds: true, kind: "touch" }, "swallow", "Android's long-press menu during the press stays swallowed"],
     [{ holds: true, shiftKey: true }, "swallow", "a hold owns the event whatever the modifiers"],
@@ -76,39 +81,130 @@ test("a row's press: only the main mouse button without Ctrl, or any touch or pe
   assert.equal(startsPress({ pointerType: "pen", button: 0, ctrlKey: false }), true);
 });
 
-test("hold interplay: a finger's press owns the contextmenu before the hold fires, and after it for the suppression window", () => {
+/** The hold controller on a fake clock, with the row's optional drag handoff recorded. */
+function holdRig() {
   let at = 0;
-  const timers: { fn: () => void; due: number }[] = [];
-  const press = createRowPress({
-    onLift() {},
-    onDrag() {},
+  let due: { at: number; fn: () => void } | null = null;
+  const opened: string[] = [];
+  const drags: { x: number; y: number }[] = [];
+  const hold = createMenuHold({
     now: () => at,
-    schedule: (fn, ms) => timers.push({ fn, due: at + ms }),
-    unschedule: () => {},
+    schedule: (fn, ms) => (due = { at: at + ms, fn }),
+    unschedule: () => (due = null),
   });
-  const owns = (pointerKind: string, dragging = false) => holdOwns({ suppressed: press.suppressed(), dragging, phase: press.phase(), pointerKind });
-  // Touch: Android's long-press contextmenu can arrive before the 500ms hold fires.
-  press.start({ x: 0, y: 0 }, "touch");
-  at = HOLD_MS - 20;
-  assert.equal(owns("touch"), true, "the press is still down, the hold not fired yet");
-  assert.equal(act({ kind: "touch", holds: owns("touch") }), "swallow");
+  const start = (drag = true, key = "row") => hold.start({ key, pointerId: 1, at: { x: 100, y: 100 }, show: () => (opened.push(String(key)), true), drag: drag ? (p) => drags.push(p) : undefined });
+  const tick = (ms: number) => {
+    at += ms;
+    if (due && due.at <= at) {
+      const task = due;
+      due = null;
+      task.fn();
+    }
+  };
+  return { hold, opened, drags, start, tick };
+}
+
+test("the hold's 500ms boundary: not before, exactly then, once", () => {
+  const r = holdRig();
+  r.start(false);
+  r.tick(HOLD_MS - 1);
+  assert.deepEqual(r.opened, []);
+  r.tick(1);
+  assert.deepEqual(r.opened, ["row"]);
+  r.tick(HOLD_MS * 3);
+  assert.deepEqual(r.opened, ["row"], "a long press does not open it again");
+});
+
+test("the movement rule: either axis past 10px before firing abandons the hold and leaves the browser's scroll alone", () => {
+  for (const [dx, dy, opens] of [
+    [0, 0, true],
+    [HOLD_MOVE_PX, 0, true],
+    [0, -HOLD_MOVE_PX, true],
+    [HOLD_MOVE_PX + 1, 0, false],
+    [0, HOLD_MOVE_PX + 1, false],
+    [-HOLD_MOVE_PX - 1, 0, false],
+  ] as const) {
+    const r = holdRig();
+    r.start();
+    r.tick(100);
+    r.hold.move(1, { x: 100 + dx, y: 100 + dy });
+    r.tick(HOLD_MS);
+    r.hold.finish(1);
+    assert.equal(r.opened.length > 0, opens, `${dx},${dy}: hold`);
+    assert.deepEqual(r.drags, [], `${dx},${dy}: no drag before the row has lifted`);
+  }
+  const plain = holdRig();
+  plain.start(false);
+  plain.hold.move(1, { x: 111, y: 100 });
+  plain.tick(HOLD_MS);
+  assert.deepEqual(plain.opened, [], "a non-draggable place simply abandons a moved hold");
+});
+
+test("a draggable row's stationary 500ms hold opens its actions only on release", () => {
+  const r = holdRig();
+  r.start();
+  r.tick(HOLD_MS);
+  assert.deepEqual(r.opened, [], "the deadline lifts the row; it does not open the menu");
+  r.hold.finish(1);
+  assert.deepEqual(r.opened, ["row"], "the stationary release opens the actions");
+  assert.deepEqual(r.drags, []);
+});
+
+test("a draggable row that moves after its 500ms lift starts one drag and never opens the menu", () => {
+  const r = holdRig();
+  r.start();
+  r.tick(HOLD_MS);
+  r.hold.move(1, { x: 100, y: 100 + HOLD_MOVE_PX + 1 });
+  assert.deepEqual(r.drags, [{ x: 100, y: 100 + HOLD_MOVE_PX + 1 }]);
+  assert.deepEqual(r.opened, []);
+  r.hold.finish(1);
+  assert.deepEqual(r.opened, [], "the drag's release does not open the actions too");
+});
+
+test("a lift before 500ms is an ordinary tap; a completed hold owns its contextmenu and release click", () => {
+  const tap = holdRig();
+  tap.start(false);
+  tap.tick(HOLD_MS - 1);
+  tap.hold.finish(1);
+  tap.tick(HOLD_MS);
+  assert.deepEqual(tap.opened, []);
+  assert.equal(tap.hold.owned(), null, "the tap's click is free to follow the link");
+  assert.equal(tap.hold.echo(1), false);
+
+  const held = holdRig();
+  held.start(false);
+  held.tick(HOLD_MS);
+  assert.equal(held.hold.owned(), "row", "a browser long-press event during the press is swallowed");
+  held.hold.move(1, { x: 200, y: 200 });
+  assert.deepEqual(held.drags, [], "movement after the menu opened does not also drag");
+  held.hold.finish(1);
+  assert.equal(held.hold.owned(), "row", "the release click cannot follow the row's link");
+  assert.equal(held.hold.echo(1), true, "nor can it activate a panel row now under the finger");
+  assert.equal(held.hold.echo(2), false, "a new tap with another pointer id can use the menu");
+  held.tick(HOLD_SUPPRESS_MS + 1);
+  assert.equal(held.hold.owned(), null, "a later unrelated press is not suppressed");
+});
+
+test("pointercancel, scroll, blur and a hidden page abandon a press before it fires", () => {
+  for (const what of ["pointercancel", "scroll", "window blur", "hidden page"]) {
+    const r = holdRig();
+    r.start(false);
+    r.tick(HOLD_MS - 1);
+    r.hold.cancel(1); // the host maps each named event to this one abandonment
+    r.tick(HOLD_MS);
+    assert.deepEqual(r.opened, [], what);
+    assert.equal(r.hold.owned(), null, what);
+  }
+});
+
+test("a place that becomes ineligible before the timer shows nothing and leaves the browser's events alone", () => {
+  let at = 0;
+  let due: (() => void) | null = null;
+  const hold = createMenuHold({ now: () => at, schedule: (fn) => (due = fn), unschedule: () => (due = null) });
+  hold.start({ key: "row", pointerId: 1, at: { x: 0, y: 0 }, show: () => false });
   at = HOLD_MS;
-  timers.shift()!.fn();
-  assert.equal(press.phase(), "lifted");
-  assert.equal(owns("touch"), true, "lifted");
-  press.finish();
-  at += 500;
-  assert.equal(owns("touch"), true, "within the window after the release");
-  at += 1000;
-  assert.equal(owns("touch"), false, "the window ran out");
-  assert.equal(act({ kind: "touch", holds: owns("touch") }), "native", "a later long press elsewhere is the browser's, as before");
-  // A mouse press in flight doesn't own a right-click: it is a press of its own.
-  press.start({ x: 0, y: 0 }, "mouse");
-  assert.equal(owns("mouse"), false);
-  assert.equal(act({ kind: "mouse", holds: owns("mouse") }), "open");
-  press.cancel();
-  // A drag in flight owns it, whatever the pointer.
-  assert.equal(owns("mouse", true), true);
+  due!();
+  assert.equal(hold.owned(), null);
 });
 
 // ---- reading the facts on stand-in elements ----
@@ -168,7 +264,7 @@ test("text entry: a field you type in, editable text or a select; a checkbox or 
   assert.equal(inTextEntry(null), false);
 });
 
-test("inside an open popover: Sova's right-click menu, a ⋯ panel inside a row", () => {
+test("inside an open popover: Sova's pointer menu or another popover inside a row", () => {
   const row = el("li");
   const panel = el("div", { popover: "auto" }, row);
   assert.equal(inPopover(el("span", {}, el("div", {}, panel))), true);

@@ -1,5 +1,5 @@
 // Run: pnpm test -- server/extension-offers-menu.test.ts
-// A command's `menu` key (the five menu places, src/lib/menu-place.ts): validated with the rest
+// A command's `menu` key (the four menu places, src/lib/menu-place.ts): validated with the rest
 // of what an extension offers (shared/extension-offers.ts through server/extensions.ts
 // validateExtension). A bad value leaves the command out of every menu, never out of `commands`, and
 // never changes what the command line reads (shared/commands-ext.ts).
@@ -23,11 +23,11 @@ after(() => rmSync(tmp, { recursive: true, force: true }));
 const cmd = (name: string, extra: Record<string, unknown> = {}) => ({ name, label: `Do ${name}`, ...extra });
 
 describe("the menu key", () => {
-  test("the five menu places", () => {
-    assert.deepEqual([...MENU_PLACES], ["session", "group", "pane", "message", "worktree"]);
+  test("the four menu places", () => {
+    assert.deepEqual([...MENU_PLACES], ["session", "group", "pane", "worktree"]);
   });
 
-  test("each place rides on its command (v1.21 added group, pane, message and worktree)", () => {
+  test("each place rides on its command (v1.21 added group, pane and worktree)", () => {
     const got = offersOf("t", { commands: MENU_PLACES.map((menu) => cmd(menu, { menu })) });
     assert.deepEqual(got.offers!.commands!.map((c) => [c.name, c.menu]), MENU_PLACES.map((p) => [p, p]));
     assert.deepEqual(got.dropped, []);

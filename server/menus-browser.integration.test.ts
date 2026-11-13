@@ -1,8 +1,8 @@
 // Run: pnpm test:int -- server/menus-browser.integration.test.ts
-// Right-click menus in a real browser (§app.context-menus/placement): a right-button press and release
-// without moving leaves Sova's menu open, at the normal spot (a sidebar row, a message), flipped up,
-// flipped left and both (Agents board rows, which reach the window's right edge and, with enough
-// sessions, its bottom), and when the menu moves to another row. Real pointer input (page.mouse down and up with the right button,
+// Pointer menus in a real browser (§app.context-menus/placement): a right-button press and release
+// without moving leaves Sova's menu open at the pointer; a stationary 500ms touch hold opens the
+// same menu. Cases cover sidebar and Agents board rows, placement flips, drag handoff, own links,
+// transcript messages staying with the browser, and the reply place's existing action buttons. Real pointer input (page.mouse down and up with the right button,
 // trusted CDP events, never a synthetic dispatch), against a throwaway server serving this tree's
 // frontend (the harness is forms-browser.test.helper.ts). Per case: no menu while the button is held,
 // the menu open after the release and still open a frame and 300 ms later, its corner (or, flipped,
@@ -18,12 +18,13 @@ import { execFileSync } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { before, test } from "node:test";
-import type { Page } from "playwright-core";
+import type { CDPSession, Page } from "playwright-core";
 import { formsBrowser, until } from "./forms-browser.test.helper";
 
 const h = formsBrowser("sova-menus-browser-", { width: 1024, height: 720 });
 const skip = h.skip;
 let page: Page;
+let touch: CDPSession;
 let s: typeof h.s;
 
 /** The control's finding: undefined until it ran, false when this browser can't show the bug. */
@@ -50,7 +51,7 @@ async function codingWorktree(name: string): Promise<{ project: string; session:
   return { project: registered.project.id, session: started.sessionId, path: started.worktree.path };
 }
 
-/** The transcript on screen (the message cases'). */
+/** The transcript on screen (the no-message-menu and action-strip cases'). */
 let alpha: Session;
 /** The two newest sessions: the top of the sidebar's list, so both rows are drawn. */
 let newest: Session;
@@ -77,6 +78,10 @@ function recorder() {
   const w = window as unknown as { menuLog: [string, string][] };
   w.menuLog = [];
   for (const type of ["pointerdown", "pointerup", "contextmenu"]) addEventListener(type, (e) => w.menuLog.push([type, String((e as MouseEvent).buttons)]), true);
+  addEventListener("click", (e) => {
+    const p = e as PointerEvent;
+    w.menuLog.push(["click", `${p.pointerId}:${(e.target as Element)?.className ?? e.target}`]);
+  }, true);
   document.addEventListener("beforetoggle", (e) => w.menuLog.push([(e.target as Element).matches(".action-menu") ? "menu" : "toggle", (e as Event & { newState: string }).newState]), true);
 }
 const log = () => page.evaluate(() => (window as unknown as { menuLog: [string, string][] }).menuLog.splice(0));
@@ -119,6 +124,11 @@ async function rightClick(x: number, y: number): Promise<{ held: Open[]; after: 
   return { held, after: await openMenus(), events: await log() };
 }
 
+/** Trusted Chromium touch input, not a synthetic PointerEvent dispatched from the page. */
+const touchStart = (p: { x: number; y: number }) => touch.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ ...p, id: 1 }] });
+const touchMove = (p: { x: number; y: number }) => touch.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ ...p, id: 1 }] });
+const touchEnd = () => touch.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+
 /** The checks every case makes; answers the one open menu. */
 function opensOnRelease(what: string, r: Awaited<ReturnType<typeof rightClick>>): Open {
   const wrong = [r.held.length ? `${r.held.length} menu open while the button is held` : "", r.after.length !== 1 ? `${r.after.length} menus open after the release and 300 ms later` : ""].filter(Boolean);
@@ -132,7 +142,7 @@ function opensOnRelease(what: string, r: Awaited<ReturnType<typeof rightClick>>)
 const near = (a: number, b: number) => Math.abs(a - b) <= 1;
 
 type Spot = "normal" | "up" | "left" | "both";
-/** The places the cases press: a message (the transcript's `.entry` holding an `article.message`) and an Agents board row. */
+/** The places the cases press: transcript entries and Agents board rows. */
 const MESSAGES = ".entry:has(article.message)";
 const BOARD_ROWS = "li.board-row";
 /**
@@ -202,6 +212,7 @@ before(
   async () => {
     if (skip) return;
     ({ page, s } = h);
+    touch = await page.context().newCDPSession(page);
     alpha = await chat("Alpha menus check", 2);
     // More rows, so the Agents board reaches the window's bottom: a row there flips its menu up.
     for (const name of ["Beta", "Gamma", "Delta"]) await chat(`${name} menus check`, 1);
@@ -261,16 +272,37 @@ const cases = (name: string, fn: () => Promise<void>) =>
     }
   });
 
-/** The session menu's size, so the board cases choose a point where it can't fit: opened from its ⋯. */
+/** The session menu's size, so the board cases choose a point where it can't fit. */
 let sessionBox: { width: number; height: number } | undefined;
 async function sessionMenuBox() {
   if (sessionBox) return sessionBox;
-  await page.locator(`${BOARD_ROWS} button[aria-haspopup="menu"]`).first().click();
-  await until("the session menu, from its ⋯", async () => (await openMenus()).length === 1, 5_000);
-  const [m] = await openMenus();
+  assert.equal(await page.locator(`${BOARD_ROWS} button[aria-haspopup="menu"]`).count(), 0, "no board row has an ellipsis menu trigger");
+  const title = page.locator(`${BOARD_ROWS} a.board-title`).first();
+  const box = await title.boundingBox();
+  assert.ok(box);
+  const m = opensOnRelease("the session menu, from a right-click", await rightClick(box.x + box.width / 2, box.y + box.height / 2));
   await closeAll();
-  return (sessionBox = { width: Math.ceil(m!.right - m!.left), height: Math.ceil(m!.bottom - m!.top) });
+  return (sessionBox = { width: Math.ceil(m.right - m.left), height: Math.ceil(m.bottom - m.top) });
 }
+
+test("the reply place keeps Copy, Share, Rewind, Regenerate and Fork reachable", { skip }, async () => {
+  await page.goto(`${s.base}/#/s/${encodeURIComponent(alpha.path)}`);
+  await until("the transcript's action strips", async () => (await page.getByRole("group", { name: "Actions for this reply", exact: true }).count()) >= 2, 30_000);
+  const reply = page.getByRole("group", { name: "Actions for this reply", exact: true }).first();
+  const yours = page.getByRole("group", { name: "Actions for your message", exact: true }).first();
+  for (const [strip, names] of [
+    [reply, ["Copy message", "Share from here", "Regenerate this reply", "Fork from here"]],
+    [yours, ["Copy message", "Share from here", "Rewind to before this message"]],
+  ] as const) {
+    for (const name of names) {
+      const button = strip.getByRole("button", { name, exact: true });
+      assert.equal(await button.count(), 1, name);
+      await button.focus();
+      assert.equal(await button.isVisible(), true, `${name} is reachable in its strip`);
+      assert.notEqual(await button.getAttribute("aria-disabled"), "true", name);
+    }
+  }
+});
 
 test("Shift+F10 on a focused session row opens nothing and Sova does not prevent it", { skip }, async () => {
   await board();
@@ -301,13 +333,166 @@ cases("a right-click on a sidebar row: open after the release, its corner at the
   assert.ok(near(m.left, p.x) && near(m.top, p.y), `corner at the pointer: ${JSON.stringify({ m, p })}`);
 });
 
-cases("a right-click on a message at the normal spot: open after the release", async () => {
+test("a session row lifts at 500ms and a stationary release opens its menu, not its link", { skip }, async () => {
+  await page.goto(`${s.base}/#/s/${encodeURIComponent(alpha.path)}`);
+  const link = page.locator(`a.session-row[href="#/s/${encodeURIComponent(newest.path)}"]`);
+  await until("the session row's own link", async () => (await link.count()) === 1, 30_000);
+  const before = page.url();
+  const p = await rowPoint(newest);
+  await touchStart(p);
+  try {
+    await page.waitForTimeout(550); // the gesture's own 500ms timer, plus one frame of slack
+    assert.deepEqual(await openMenus(), [], "a draggable row lifts at the deadline; its menu waits for release");
+    assert.equal(await link.evaluate((el) => el.parentElement?.classList.contains("session-row-lifted")), true, "the row is lifted while the finger is down");
+    assert.equal(page.url(), before, "the held link was not followed");
+    await touchEnd();
+    await settle();
+    const after = await openMenus();
+    assert.equal(after.length, 1, `the stationary release opens the menu (events: ${JSON.stringify(await log())})`);
+    assert.match(after[0]!.label ?? "", /^Actions for “/);
+    assert.equal(await page.locator(".action-menu:popover-open").getAttribute("popover"), "manual", "the release's compatibility click cannot dismiss it");
+    assert.equal(await link.evaluate((el) => el.parentElement?.classList.contains("session-row-lifted")), false, "the released row settles");
+  } finally {
+    await touchEnd().catch(() => {});
+    await closeAll();
+  }
+});
+
+test("a touch press that moves after the row's 500ms lift becomes its existing drag", { skip }, async () => {
+  await page.goto(`${s.base}/#/s/${encodeURIComponent(alpha.path)}`);
+  const link = page.locator(`a.session-row[href="#/s/${encodeURIComponent(next.path)}"]`);
+  await until("the draggable session row", async () => (await link.count()) === 1, 30_000);
+  const p = await rowPoint(next);
+  await touchStart(p);
+  try {
+    await page.waitForTimeout(550);
+    assert.deepEqual(await openMenus(), [], "the lifted row has not opened its menu");
+    await touchMove({ x: p.x, y: p.y + 30 });
+    await until("the drop overlay owns the post-lift move", async () => (await page.locator(".drop-overlay").count()) === 1, 2_000);
+    assert.deepEqual(await openMenus(), [], "the drag does not also open the menu");
+  } finally {
+    await touchEnd().catch(() => {});
+    await closeAll();
+  }
+});
+
+test("moving vertically before 500ms scrolls the sidebar and never opens the drop overlay", { skip }, async () => {
+  await page.goto(`${s.base}/#/s/${encodeURIComponent(alpha.path)}`);
+  const link = page.locator(`a.session-row[href="#/s/${encodeURIComponent(next.path)}"]`);
+  await until("the row under the flick", async () => (await link.count()) === 1, 30_000);
+  const scroller = await link.evaluateHandle((el) => {
+    let p = el.parentElement;
+    while (p && p.scrollHeight <= p.clientHeight + 1) p = p.parentElement;
+    return (p ?? document.scrollingElement) as HTMLElement;
+  });
+  const before = await scroller.evaluate((el) => el.scrollTop);
+  await page.evaluate(() => {
+    const w = window as unknown as { dragOverlaySeen?: number; dragOverlayObserver?: MutationObserver };
+    w.dragOverlaySeen = 0;
+    w.dragOverlayObserver?.disconnect();
+    w.dragOverlayObserver = new MutationObserver(() => {
+      if (document.querySelector(".drop-overlay")) w.dragOverlaySeen!++;
+    });
+    w.dragOverlayObserver.observe(document.documentElement, { childList: true, subtree: true });
+  });
+  const p = await rowPoint(next);
+  await touchStart(p);
+  try {
+    await page.waitForTimeout(100);
+    await touchMove({ x: p.x, y: p.y - 80 });
+    await until("the browser scrolled the list", async () => (await scroller.evaluate((el) => el.scrollTop)) > before, 2_000);
+    await touchEnd();
+    await settle();
+    assert.equal(await page.evaluate(() => (window as unknown as { dragOverlaySeen?: number }).dragOverlaySeen), 0, "no drop overlay appeared at any point");
+    assert.deepEqual(await openMenus(), []);
+  } finally {
+    await touchEnd().catch(() => {});
+    await page.evaluate(() => (window as unknown as { dragOverlayObserver?: MutationObserver }).dragOverlayObserver?.disconnect());
+    await closeAll();
+  }
+});
+
+test("a touch hold on a reply's selected words opens nothing and leaves the selection", { skip }, async () => {
+  await page.goto(`${s.base}/#/s/${encodeURIComponent(alpha.path)}`);
+  const reply = page.locator(".entry:has(article.message)").filter({ has: page.getByRole("group", { name: "Actions for this reply", exact: true }) }).first();
+  await until("the reply's words", async () => (await reply.locator(".message-body").count()) > 0, 30_000);
+  const selected = await reply.locator(".message-body").first().evaluate((el) => {
+    const walk = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+    let words: Text | null = null;
+    for (let n = walk.nextNode(); n; n = walk.nextNode()) if (n.textContent?.trim()) { words = n as Text; break; }
+    if (!words) throw new Error("the reply has no text node");
+    const range = document.createRange();
+    range.selectNodeContents(words);
+    const rect = range.getClientRects()[0]!;
+    const sel = getSelection()!;
+    sel.removeAllRanges();
+    sel.addRange(range);
+    return { text: sel.toString(), x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+  });
+  await touchStart(selected);
+  try {
+    await page.waitForTimeout(550);
+    assert.deepEqual(await openMenus(), []);
+    await touchEnd();
+    await settle();
+    assert.deepEqual(await openMenus(), [], "a transcript message has no Sova pointer menu");
+    assert.equal(await page.evaluate(() => getSelection()?.toString()), selected.text, "the browser's text selection is untouched");
+  } finally {
+    await touchEnd().catch(() => {});
+    await closeAll();
+  }
+});
+
+test("a touch released before 500ms is an ordinary tap and follows the row's link", { skip }, async () => {
+  await board();
+  const link = page.locator(`${BOARD_ROWS} a.board-title[href="#/s/${encodeURIComponent(next.path)}"]`);
+  const box = await link.boundingBox();
+  assert.ok(box);
+  await touchStart({ x: box.x + box.width / 2, y: box.y + box.height / 2 });
+  try {
+    await page.waitForTimeout(100);
+    await touchEnd();
+    await until("the tap followed the link", async () => page.url().endsWith(`#/s/${encodeURIComponent(next.path)}`), 5_000);
+    assert.deepEqual(await openMenus(), []);
+  } finally {
+    await touchEnd().catch(() => {});
+    await closeAll();
+  }
+});
+
+test("a stationary hold on a non-draggable board row opens at 500ms and survives its release", { skip }, async () => {
+  await board();
+  const link = page.locator(`${BOARD_ROWS} a.board-title[href="#/s/${encodeURIComponent(next.path)}"]`);
+  const box = await link.boundingBox();
+  assert.ok(box);
+  const before = page.url();
+  await touchStart({ x: box.x + box.width / 2, y: box.y + box.height / 2 });
+  try {
+    await page.waitForTimeout(550);
+    await until("the non-draggable row's menu opened at the deadline", async () => (await openMenus()).length === 1, 2_000);
+    await touchEnd();
+    await settle();
+    assert.equal((await openMenus()).length, 1, "its release leaves the same menu open");
+    assert.equal(page.url(), before, "the row's own link was not followed");
+  } finally {
+    await touchEnd().catch(() => {});
+    await closeAll();
+  }
+});
+
+test("a right-click on a transcript message stays with the browser", { skip }, async () => {
   await page.goto(`${s.base}/#/s/${encodeURIComponent(alpha.path)}`);
   await until("the transcript is back on screen", async () => (await page.locator(".entry article.message").count()) >= 4, 30_000);
   await settle();
+  await page.evaluate(() => {
+    const w = window as unknown as { messageMenuDefaultPrevented?: boolean };
+    document.addEventListener("contextmenu", (e) => queueMicrotask(() => (w.messageMenuDefaultPrevented = e.defaultPrevented)), { once: true });
+  });
   const p = await placePoint(MESSAGES, "normal", { width: 320, height: 320 });
-  const m = opensOnRelease("message", await rightClick(p.x, p.y));
-  assert.ok(near(m.left, p.x) && near(m.top, p.y), `corner at the pointer: ${JSON.stringify({ m, p })}`);
+  const r = await rightClick(p.x, p.y);
+  assert.deepEqual(r.held, []);
+  assert.deepEqual(r.after, []);
+  assert.equal(await page.evaluate(() => (window as unknown as { messageMenuDefaultPrevented?: boolean }).messageMenuDefaultPrevented), false, "Sova does not prevent the browser's message menu");
 });
 
 for (const [spot, edge] of [
@@ -381,8 +566,11 @@ test("board Rename saves a typed title on click-away; empty, unchanged and Escap
   const originalTitle = await row.locator("a.board-title").innerText();
   const typed = "Typed from the board menu";
   const openRename = async () => {
-    await row.locator('button[aria-haspopup="menu"]').click();
-    await page.getByRole("menuitem", { name: `Rename “${await row.locator("a.board-title").innerText()}”` }).click();
+    const title = row.locator("a.board-title");
+    const box = await title.boundingBox();
+    assert.ok(box);
+    opensOnRelease("board row before Rename", await rightClick(box.x + box.width / 2, box.y + box.height / 2));
+    await page.getByRole("menuitem", { name: `Rename “${await title.innerText()}”` }).click();
     return page.locator('form[aria-label^="Rename "] input');
   };
   const writes = () => page.evaluate(() => (window as unknown as { titleWrites: number }).titleWrites);
@@ -424,7 +612,7 @@ test("Remove Anyway's listing starts on Back, and Tab reaches Delete and Remove 
   await page.goto(`${s.base}/#/projects/${wt.project}`);
   const row = page.locator("li.project-worktree", { hasText: "Menu removal focus" });
   await until("the coding worktree row", async () => (await row.count()) === 1, 30_000);
-  await row.locator('button[aria-haspopup="menu"]').click();
+  await row.click({ button: "right", position: { x: 20, y: 20 } });
   const remove = page.getByRole("menuitem", { name: /^Remove Worktree:/ });
   await until("Remove Worktree is available", async () => (await remove.getAttribute("aria-disabled")) === null, 30_000);
   await remove.click();
@@ -456,7 +644,7 @@ test("a hard dry-run hold moves focus to Cancel when the destructive button disa
     await r.fulfill({ json: { reason: "Its session is working. Stop it before removing the worktree." } });
   });
   try {
-    await row.locator('button[aria-haspopup="menu"]').click();
+    await row.click({ button: "right", position: { x: 20, y: 20 } });
     const remove = page.getByRole("menuitem", { name: /^Remove Worktree:/ });
     await until("Remove Worktree is available for the hard-hold case", async () => (await remove.getAttribute("aria-disabled")) === null, 30_000);
     await remove.click();
@@ -480,9 +668,8 @@ test("reopening removal never offers the retained hold while the fresh dry run i
   await page.reload();
   const row = page.locator("li.project-worktree", { hasText: "Menu reopened removal" });
   await until("the reopened worktree row", async () => (await row.count()) === 1, 10_000, () => page.locator("body").innerText());
-  const openRemoval = async (rightClick = false) => {
-    if (rightClick) await row.click({ button: "right", position: { x: 20, y: 20 } });
-    else await row.locator('button[aria-haspopup="menu"]').click();
+  const openRemoval = async () => {
+    await row.click({ button: "right", position: { x: 20, y: 20 } });
     const remove = page.getByRole("menuitem", { name: /^Remove Worktree:/ });
     await until("Remove Worktree is available for reopening", async () => (await remove.getAttribute("aria-disabled")) === null, 5_000, () => page.locator("body").innerText());
     await remove.click();
@@ -504,7 +691,7 @@ test("reopening removal never offers the retained hold while the fresh dry run i
     await r.fulfill({ json: { reason: "Fresh dry run: the worktree still cannot go." } });
   });
   try {
-    await openRemoval(true);
+    await openRemoval();
     await until("the second dry run started", async () => intercepted, 5_000, () => page.locator("body").innerText());
     const panel = page.locator(".action-menu:popover-open");
     assert.doesNotMatch(await panel.innerText(), new RegExp(first.reason.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")), "the old reason is not presented as the fresh answer");

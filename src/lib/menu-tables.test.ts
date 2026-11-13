@@ -10,12 +10,9 @@ import { buildRequest, findCommand } from "../../shared/commands-catalog";
 import { MENU_PLACES } from "../../shared/extension-offers";
 import type { WorktreeQueueInfo } from "../../shared/merge-queue";
 import type { SessionGroup, SessionSummary } from "../../shared/protocol";
-import type { MessageActionItem } from "../components/MessageActions";
 import type { CodingRow } from "./coding-worktrees";
 import { GROUP_MENU } from "./group-menu";
-import { ACTION_CONFIRM, COPY_PLAIN, type MessageStrip } from "./message-actions";
 import { SENT_BACK_LINE } from "./merge-queue";
-import { focusOnce, joinPlain, MESSAGE_MENU, menuStripOf, type PlainNode, plainReads, repliesByEntry, stripBlocks } from "./message-menu";
 import { MENU_NAMES, type MenuAct, type MenuDecl, type MenuScreen } from "./menu-place";
 import { notePeerProjects, notePeerSessions } from "./mesh";
 import { PANE_MENU, type PaneMenuWiring } from "./pane-menu";
@@ -243,7 +240,7 @@ test("the worktree menu: Merge Branch or Land by command, Remove Worktree… ask
   const land = `cmd project.verb.merge.add ${JSON.stringify({ checkout: "/wt/x", commit: "abcdef1234" })}`;
   assert.deepEqual(table(WORKTREE_MENU, wt(facts({ queued: true }))), [["", "Land", "", land], ["", "Remove Worktree…", "", "worktree-remove screen"]]);
   assert.deepEqual(request(find(WORKTREE_MENU, wt(facts({ queued: true })), "Land").act), { method: "POST", url: "/api/project-services/merge.add", body: { checkout: "/wt/x", commit: "abcdef1234" } });
-  // A sent-back entry: Land alone, with the queue's reason, as the row's ⋯ draws it; its fix redrafted, Land runs.
+  // A sent-back entry: Land alone, with the queue's reason, as the row's menu draws it; its fix redrafted, Land runs.
   for (const state of ["needs-fix", "with-chat"]) {
     const sentBack = { state, commit: "abcdef1234" } as WorktreeQueueInfo;
     assert.deepEqual(table(WORKTREE_MENU, wt(facts({ queued: true, queue: sentBack }))), [["", "Land", SENT_BACK_LINE, land], ["", "Remove Worktree…", "", "worktree-remove screen"]], state);
@@ -298,71 +295,6 @@ test("Remove Worktree's menu screen: dry run, hard hold, exact listing, Delete a
   assert.deepEqual(calls, ["listing true", "anyway digest-1", "listing false"]);
 });
 
-const mine: MessageStrip = { index: 1, entryId: "u1", role: "user", text: "q" };
-const reply: MessageStrip = { index: 3, entryId: "e1", role: "assistant", text: "hi" };
-const item = (kind: MessageActionItem["kind"], reason: string | null = null): MessageActionItem => ({ kind, reason, run() {} });
-
-const msg = (strip: MessageStrip, items: MessageActionItem[], session: string | null = null) => ({ strip, items, copyPlain() {}, session });
-
-test("the message menu: the strip's items in order, Copy as Plain Text after Copy, Rewind… and Regenerate… ask, nothing a command", () => {
-  assert.deepEqual(table(MESSAGE_MENU, msg(reply, [item("copy"), item("share"), item("regenerate"), item("fork")])), [
-    ["Copy and share", "Copy", "", "local"],
-    ["Copy and share", COPY_PLAIN.label, "", "local"],
-    ["Copy and share", "Share From Here", "", "local"],
-    ["Branch", "Regenerate…", "", "confirm screen"],
-    ["Branch", "Fork From Here", "", "local"],
-  ]);
-  const yours = msg(mine, [item("share", "Wait a moment."), item("rewind", "Stop the current turn first."), item("remove")]);
-  assert.deepEqual(table(MESSAGE_MENU, yours), [["Copy and share", "Share From Here", "Wait a moment.", "local"], ["Branch", "Rewind…", "Stop the current turn first.", "confirm screen"]]);
-  assert.equal(MESSAGE_MENU.label(yours), "Actions for your message");
-  // The confirm is the strip's own, and runs the strip's own act; Copy as Plain Text is off exactly when Copy is.
-  const ask = screenOf(MESSAGE_MENU, msg(mine, [item("rewind")]), "Rewind…");
-  assert.ok(ask.kind === "confirm" && "local" in ask.act);
-  assert.deepEqual([ask.note, ask.confirm], [ACTION_CONFIRM.rewind!.note, ACTION_CONFIRM.rewind!.label]);
-  assert.deepEqual(table(MESSAGE_MENU, msg(reply, [item("copy", "Nothing to copy.")])).map((r) => r[2]), ["Nothing to copy.", "Nothing to copy."]);
-});
-
-test("a reply's menu opens from any of its text blocks; Copy as Plain Text reads the message's own rows", () => {
-  const replies = repliesByEntry([mine, reply]);
-  const row = (kind: string, id: string) => ({ kind, id }) as never;
-  assert.equal(menuStripOf(row("assistant-text", "e1:2"), undefined, replies), reply);
-  assert.equal(menuStripOf(row("tool-call", "e1:1"), undefined, replies), undefined);
-  assert.equal(menuStripOf(row("user", "u1"), mine, replies), mine);
-  const rows = [row("user", "u1"), row("assistant-text", "e1:0"), row("tool-call", "e1:1"), row("assistant-text", "e1:2")].map((r: { kind: string; id: string }) => ({ ...r, text: r.id }));
-  assert.deepEqual(stripBlocks(rows as never, reply).map((b) => [b.id, b.markdown]), [["e1:0", true], ["e1:2", true]]);
-  assert.deepEqual(stripBlocks(rows as never, mine).map((b) => [b.id, b.markdown]), [["u1", false]]);
-});
-
-test("after a pointer-opened menu, focus can land on the message row, never a Tab stop, until it leaves for anything but the menu", () => {
-  const attrs = new Map<string, string>();
-  let blur: ((e: { relatedTarget: unknown }) => void) | null = null;
-  const el = {
-    hasAttribute: (n: string) => attrs.has(n),
-    setAttribute: (n: string, v: string) => void attrs.set(n, v),
-    removeAttribute: (n: string) => void attrs.delete(n),
-    addEventListener: (_: "blur", fn: typeof blur) => void (blur = fn),
-    removeEventListener: () => void (blur = null),
-  };
-  focusOnce(el, (to) => to === "menu");
-  assert.equal(attrs.get("tabindex"), "-1");
-  blur!({ relatedTarget: "menu" });
-  assert.equal(attrs.get("tabindex"), "-1", "into the menu: kept");
-  blur!({ relatedTarget: null });
-  assert.equal(attrs.has("tabindex"), false);
-});
-
-test("Copy as Plain Text reads a body's blocks one by one, working notes' too, and joins them by a blank line", () => {
-  type Node = PlainNode & { name: string; innerText: string; children: Node[] };
-  const el = (name: string, innerText: string, children: Node[] = [], cls = ""): Node => ({ name, innerText, children, classList: { contains: (c) => cls.split(" ").includes(c) } });
-  const list = el("ul", "• one\n• two");
-  const code = el("div.md-code", "x = 1");
-  const notes = el("details.md-working-notes", "Working notes\nstep\nrun it", [el("summary", "Working notes"), el("div.disclosure-body", "", [el("div.message-body", "", [el("ul", "• step"), el("pre", "run it")], "message-body md")])], "disclosure md-working-notes");
-  const body = el("div.message-body", "• one\n• two\nx = 1", [list, code, el("p", "  ")], "message-body md");
-  const yours = el("div.message-body", "just words", [], "message-body message-text");
-  assert.deepEqual([body, notes, yours].flatMap(plainReads).map((n) => n.name), ["ul", "div.md-code", "p", "summary", "ul", "pre", "div.message-body"]);
-  assert.equal(joinPlain([body, notes].flatMap(plainReads).map((n) => n.innerText)), "• one\n• two\n\nx = 1\n\nWorking notes\n\n• step\n\nrun it");
-});
-
 // ---- what extensions add, in every menu ----
 
 const FAR = "/far/sessions/b.jsonl";
@@ -380,9 +312,6 @@ test("every menu takes extension entries: each sends what it is about, for this 
       lane(GROUP_MENU, { group: group(), count: 2, onChanged() {} }),
       lane(PANE_MENU, { path: P, summary: session(), w: paneWiring([]) }),
       lane(PANE_MENU, { path: FAR, summary: far, w: paneWiring([]) }),
-      lane(MESSAGE_MENU, msg(reply, [], "s-1")),
-      lane(MESSAGE_MENU, msg(mine, [], "s-1")),
-      lane(MESSAGE_MENU, msg(reply, [], null)),
       lane(WORKTREE_MENU, wt()),
       lane(WORKTREE_MENU, wt(facts({ project: "p-far" }))),
       lane(WORKTREE_MENU, wt(facts({ row: coding({ branch: null }) }))),
@@ -394,20 +323,16 @@ test("every menu takes extension entries: each sends what it is about, for this 
       ["group", { group: "g-1" }, "“Work”"],
       ["pane", { session: "s-1" }, "“Tests”"],
       ["pane", null, "“Tests”"],
-      ["message", { session: "s-1", entry: "e1" }, "this reply"],
-      ["message", { session: "s-1", entry: "u1" }, "your message"],
-      // Another host's chat, or one whose session id isn't known yet (the reply place's menuSession).
-      ["message", null, "this reply"],
       ["worktree", { project: "p-1", branch: "sova/x", session: "c-1" }, "“Fix it”"],
       ["worktree", null, "“Fix it”"],
       ["worktree", null, "“Fix it”"],
     ],
   );
   // One declaration per menu place, in the list's order.
-  assert.deepEqual([SESSION_MENU, GROUP_MENU, PANE_MENU, MESSAGE_MENU, WORKTREE_MENU].map((d) => d.extensions!.place), [...MENU_PLACES]);
+  assert.deepEqual([SESSION_MENU, GROUP_MENU, PANE_MENU, WORKTREE_MENU].map((d) => d.extensions!.place), [...MENU_PLACES]);
 });
 
-test("the reserved names are exactly every label Sova's own rows show in the five menus", () => {
+test("the reserved names are exactly every label Sova's own rows show in the four menus", () => {
   const labels = <T>(decl: MenuDecl<T>, subject: T) => decl.table(subject).flatMap((s) => s.rows.map((r) => r.label));
   const sentBack = { state: "needs-fix", commit: "abcdef1234" } as WorktreeQueueInfo;
   const drawn = new Set([
@@ -415,8 +340,6 @@ test("the reserved names are exactly every label Sova's own rows show in the fiv
     ...labels(SESSION_MENU, { ...sub(session({ archived: true })), ctx: ctx([], P) }),
     ...labels(GROUP_MENU, { group: group(), count: 2, onChanged() {} }),
     ...labels(PANE_MENU, { path: P, summary: session(), w: paneWiring([]) }),
-    ...labels(MESSAGE_MENU, msg(reply, [item("copy"), item("share"), item("regenerate"), item("fork")])),
-    ...labels(MESSAGE_MENU, msg(mine, [item("share"), item("rewind")])),
     ...labels(WORKTREE_MENU, wt()),
     ...labels(WORKTREE_MENU, wt(facts({ queued: true, queue: sentBack }))),
     ...labels(WORKTREE_MENU, wt(facts({ queued: true, queue: sentBack, row: coding({ head: "fffffff999" }) }))),

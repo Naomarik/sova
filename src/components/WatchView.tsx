@@ -174,7 +174,6 @@ export function WatchView(props: {
     } }],
     added: additions.added,
     runChip: additions.runChip,
-    menuSession: additions.session,
   };
 
   const socket = createReconnectingSocket<WatchServerMessage>(newestOnly(wsUrl("/ws/watch", props.path)), {

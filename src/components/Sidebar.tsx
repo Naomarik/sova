@@ -73,11 +73,11 @@ import { reuseUnchanged } from "../lib/summary-diff";
 import { FOLDERS_KEY, readKey, removeKey, writeKey } from "../lib/storage-keys";
 import { monogram, setSpine, spine } from "../lib/spine";
 import { ARCHIVE_TILE, createRowPress, type DragInfo, dropAction, dropTiles, type TileId } from "../lib/drag-overlay";
-import { holdOwns, startsPress } from "../lib/context-menu";
+import { startsPress } from "../lib/context-menu";
 import { sessionArchiveRow } from "../lib/session-menu";
 import { closeContextMenuOf } from "./ContextMenu";
-import { openMenu, PlaceMenu } from "./MenuPlace";
-import { openSessionMenu, SidebarSessionMenu } from "./SessionRowMenu";
+import { holdMenu, openMenu } from "./MenuPlace";
+import { holdSessionMenu, openSessionMenu, SidebarSessionMenu } from "./SessionRowMenu";
 import { bindKey } from "../commands/keys";
 import { folderActive, folderOpen, folderOpenKey, readFolderOpenRaw, storedFolderOpen, writeFolderOpenRaw } from "../lib/folder-open";
 import { groupOpen as groupOpenRule, groupsRegionOpen as groupsRegionOpenRule } from "../lib/group-open";
@@ -325,13 +325,11 @@ export function SessionRow(props: {
     return fromList && fromList.window ? fromList : null;
   };
   /**
-   * Press-and-hold — a mouse button held down, a thumb held on the row — lifts the row; letting go
-   * in place does nothing. A lifted row that moves, or a mouse press that moves 6px, is a drag: it
-   * opens the drop overlay (§app.session-list/drop-overlay), which owns the gesture from then on.
-   * The press is off the moment it stops being a press in place: a scroll (the list moving under a
-   * still finger is `pointercancel` on touch and a `scroll` event on a mouse wheel), or the row
-   * going away. What a lift or a drag leaves behind — a `click`, and on touch a `contextmenu` — is
-   * swallowed below, or the row would navigate on top of what the gesture just did.
+   * A mouse press held down lifts the row; letting go in place does nothing. A lifted row that
+   * moves, or a mouse press that moves 6px, is a drag. Touch and pen use the shared menu hold
+   * instead: the deadline lifts the row, post-lift movement opens the drop overlay, and a
+   * stationary release opens the row's menu. Pre-lift movement remains the browser's scroll.
+   * Scroll, cancellation, blur and unmount abandon either gesture.
    */
   let shell: HTMLLIElement | undefined;
   let pointerId = 0;
@@ -357,11 +355,7 @@ export function SessionRow(props: {
     };
   };
   const press = createRowPress({
-    onLift: () => {
-      setLifted(true);
-      // A short buzz where a phone has one: the row has come off the list.
-      if (pointerKind !== "mouse") navigator.vibrate?.(10);
-    },
+    onLift: () => setLifted(true),
     onDrag: (at) => {
       setLifted(false);
       watchPress(false);
@@ -399,22 +393,15 @@ export function SessionRow(props: {
     f("pointercancel", cancelOwn as EventListener, true);
   };
   onCleanup(cancelPress);
-  /** A lifted row, or one in flight, must not scroll the list under the finger. Non-passive, and
-      on the row from the start: a listener added once the touch has begun may not be asked. */
-  const holdStill = (e: TouchEvent) => {
-    if (e.cancelable && (press.phase() === "lifted" || draggingPath() === s().path)) e.preventDefault();
-  };
-  onMount(() => shell?.addEventListener("touchmove", holdStill, { passive: false }));
-  onCleanup(() => shell?.removeEventListener("touchmove", holdStill));
   /** The rail's own controls (the state pills) are pressed, not held. */
   const onOwnControl = (e: PointerEvent) => e.target instanceof Element && !!e.target.closest("button, input, label");
-  /** The session menu (§app.session-list/accessibility "The session menu"): the board's ⋯ rows, from a right-click. */
+  /** The session menu (§app.session-list/accessibility "The session menu"): a right-click or touch/pen hold. */
   const menuCtx = useContext(SidebarSessionMenu);
   let link: HTMLAnchorElement | undefined;
   onCleanup(() => closeContextMenuOf(shell));
   const onContextMenu = (e: MouseEvent & { currentTarget: HTMLLIElement }) => {
-    // The long-press menu, and a drag's, belong to the hold, not to the browser or to Sova's menu.
-    const holds = holdOwns({ suppressed: press.suppressed(), dragging: !!draggingPath(), phase: press.phase(), pointerKind });
+    // A mouse lift's or a drag's contextmenu belongs to that gesture, not to either menu.
+    const holds = press.suppressed() || !!draggingPath();
     if (!menuCtx || !link) return holds && e.preventDefault();
     openSessionMenu(e, { el: e.currentTarget, link, holds }, s, menuCtx, () => sessionArchiveRow(s(), localRunning()));
   };
@@ -433,17 +420,15 @@ export function SessionRow(props: {
         if (onOwnControl(e) || draggingPath()) return;
         pointerId = e.pointerId;
         pointerKind = e.pointerType;
-        press.start({ x: e.clientX, y: e.clientY }, e.pointerType);
+        if (e.pointerType !== "mouse") {
+          if (menuCtx && link && shell)
+            holdSessionMenu(e, { el: shell, link, lift: (on) => setLifted(on), drag: (at) => shell && startRowDrag(dragInfo(), at, pointerId, shell, pointerKind) }, s, menuCtx, () => sessionArchiveRow(s(), localRunning()));
+          return;
+        }
+        press.start({ x: e.clientX, y: e.clientY });
         watchPress(true);
       }}
       onPointerCancel={cancelPress}
-      // A pointer that leaves the row before the hold is not a press in place — except a mouse
-      // that may still drag, whose moves the window keeps watching (6px is a drag, wherever it goes).
-      onPointerLeave={(e) => {
-        if (press.phase() !== "pressed") return;
-        if (e.pointerType === "mouse") return;
-        cancelPress();
-      }}
       // Capture went to someone else (a scrollbar, another element grabbing it), so the pointerup
       // belonging to this press will never arrive. A drag that took the capture has already
       // ended the press, so this changes nothing for it.
@@ -828,7 +813,7 @@ function GroupBlock(props: {
   let summary!: HTMLElement;
   onCleanup(() => closeContextMenuOf(summary));
   const menu = () => ({ group: group(), count: count(), onChanged: props.onChanged });
-  /** The name row's right-click: the ⋯'s own menu, at the pointer. */
+  /** The name row's right-click and touch/pen hold draw the same menu, at the pointer. */
   const onContextMenu = (e: MouseEvent & { currentTarget: HTMLElement }) => openMenu(e, GROUP_MENU, menu, { el: e.currentTarget, origin: () => summary });
 
   return (
@@ -839,18 +824,19 @@ function GroupBlock(props: {
     >
       {/* No folder icon here, unlike the cwd heads inside: a group is the user's own name for a set
           of sessions, not a folder on disk, and the icon claimed otherwise right above real ones. */}
-      <summary ref={summary} class="list-group-label group-label" title={group().name} onContextMenu={onContextMenu}>
+      <summary
+        ref={summary}
+        class="list-group-label group-label"
+        title={group().name}
+        onPointerDown={(e) => holdMenu(e, GROUP_MENU, menu, { el: e.currentTarget, origin: () => summary })}
+        onContextMenu={onContextMenu}
+      >
         <Icon name="chevron-right" small class="icon-twist" />
         <span class="group-name">
           <bdi>{group().name}</bdi>
         </span>
         <span class="text-num">{count()}</span>
         <NameSessionsButton section={`g-${group().id}`} rows={props.sessions} onDone={props.onChanged} />
-        {/* The group's own actions, on its own name row. `contain` is what makes a control inside a
-            <summary> possible at all: without it every click in here would toggle the section. The
-            trigger is quiet until the row is hovered or something in it takes focus (base.css), and
-            always visible to the keyboard. */}
-        <PlaceMenu decl={GROUP_MENU} subject={menu()} title="Group actions" class="group-actions" contain />
       </summary>
       <Show when={count() > 0} fallback={<p class="sidebar-region-note">No sessions yet. Drag a session to file it here.</p>}>
         {/* Flat: every member right under the group's name, newest first, as Recent draws them; no folder level

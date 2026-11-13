@@ -88,9 +88,9 @@ describe("menuGroups", () => {
     assert.equal(isSovaName("Archive Issue"), false);
   });
 
-  test("one list of Sova's names for every menu: a name of any menu is reserved in all five", () => {
+  test("one list of Sova's names for every menu: a name of any menu is reserved in all four", () => {
     for (const place of MENU_PLACES) {
-      const got = menuGroups([ext("x", [{ name: "a", label: "Copy", menu: place }, { name: "b", label: "Open", menu: place }, { name: "c", label: "Copy Path", menu: place }, { name: "d", label: "Real One", menu: place }])], place);
+      const got = menuGroups([ext("x", [{ name: "a", label: "Archive", menu: place }, { name: "b", label: "Open", menu: place }, { name: "c", label: "Copy Path", menu: place }, { name: "d", label: "Real One", menu: place }])], place);
       assert.deepEqual(got[0]!.entries.map((e) => e.label), ["Real One"], place);
     }
   });

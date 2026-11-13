@@ -2,8 +2,8 @@
  * The one menu body (src/lib/menu-place.ts): it draws any place's declaration — Sova's rows in their
  * sections, then what extensions add (`MenuAdded`, after every one of Sova's rows) — and the second
  * screens a row can open: the one name box, the one question, a list of rows, or a worktree's
- * removal flow. A place's ⋯ (`PlaceMenu`) and its right-click (`openMenu`, through the page's one
- * right-click menu, ContextMenu.tsx) both draw it, so the doors can't drift. Extension content is
+ * removal flow. A place's right-click (`openMenu`) and its touch/pen hold (`holdMenu`) both draw it
+ * through the page's one pointer menu, ContextMenu.tsx, so the doors can't drift. Extension content is
  * data drawn as ordinary menu rows, never markup.
  */
 import { createEffect, createMemo, createSignal, createUniqueId, For, Index, Match, on, onCleanup, onMount, Show, Switch, useContext } from "solid-js";
@@ -11,8 +11,8 @@ import { sendCommand } from "../lib/api";
 import { entryTitle, type MenuAct, type MenuDecl, type MenuEntry, type MenuGroup, type MenuItem, type MenuScreen, type MenuSection, menuGroups, runMenuEntry, sameGroups } from "../lib/menu-place";
 import { ExtensionsContext } from "../lib/reply-place";
 import { announce, toast } from "../lib/ui-state";
-import { type ActionMenuApi, ActionMenu } from "./ActionMenu";
-import { openContextMenu } from "./ContextMenu";
+import { type ActionMenuApi } from "./ActionMenu";
+import { type ContextPlace, holdContextMenu, openContextMenu } from "./ContextMenu";
 import { TextField } from "./form";
 import { RemoveAnywayListing } from "./RemoveAnywayListing";
 import { Icon } from "./ui";
@@ -297,27 +297,28 @@ export function MenuBody<T>(props: { menu: ActionMenuApi; decl: MenuDecl<T>; sub
   );
 }
 
-/** A place's ⋯: the declaration's menu, named as the declaration names it. */
-export function PlaceMenu<T>(props: { decl: MenuDecl<T>; subject: T; title: string; class?: string; contain?: boolean }) {
-  return (
-    <ActionMenu label={props.decl.label(props.subject)} title={props.title} class={props.class} contain={props.contain}>
-      {(menu) => <MenuBody menu={menu} decl={props.decl} subject={props.subject} />}
-    </ActionMenu>
-  );
-}
+/** Where a place's pointer menu opens, and where its focus returns. */
+type MenuAt = { el: Element; origin(): HTMLElement; ownLink?: Element | null; holds?: boolean; drag?: ContextPlace["drag"]; lift?: ContextPlace["lift"] };
 
-/**
- * A place's right-click (§app/context-menus): the same declaration's menu, at the pointer. `el` is
- * the place, `origin` where focus goes back to (read as the menu opens), `ownLink` the place's own
- * link, `holds` the place's own gesture owning the event.
- */
-export function openMenu<T>(e: MouseEvent, decl: MenuDecl<T>, subject: () => T, at: { el: Element; origin(): HTMLElement; ownLink?: Element | null; holds?: boolean }) {
-  return openContextMenu(e, {
+function placeOf<T>(decl: MenuDecl<T>, subject: () => T, at: MenuAt): ContextPlace {
+  return {
     el: at.el,
     ownLink: at.ownLink,
     holds: at.holds,
+    drag: at.drag,
+    lift: at.lift,
     menu: () => ({ origin: at.origin(), body: (menu) => <MenuBody menu={menu} decl={decl} subject={subject()} /> }),
-  });
+  };
+}
+
+/** A place's right-click: the same declaration's menu, at the pointer. */
+export function openMenu<T>(e: MouseEvent, decl: MenuDecl<T>, subject: () => T, at: MenuAt) {
+  return openContextMenu(e, placeOf(decl, subject, at));
+}
+
+/** A place's touch/pen press: at a stationary 500ms, the same declaration's menu opens. */
+export function holdMenu<T>(e: PointerEvent, decl: MenuDecl<T>, subject: () => T, at: MenuAt) {
+  holdContextMenu(e, placeOf(decl, subject, at));
 }
 
 /** What extensions add: one group per extension, headed by its title. Nothing at all with none. */

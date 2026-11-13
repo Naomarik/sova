@@ -39,7 +39,7 @@ import { sessionHref } from "./Sidebar";
 import { SessionView } from "./SessionView";
 import { GroupComposer } from "./GroupComposer";
 import { closeContextMenuOf } from "./ContextMenu";
-import { openMenu, PlaceMenu } from "./MenuPlace";
+import { holdMenu, openMenu } from "./MenuPlace";
 import { PANE_MENU, type PaneMenuWiring } from "../lib/pane-menu";
 import { Banner, Icon } from "./ui";
 
@@ -543,7 +543,7 @@ export function GroupView(props: {
   };
 
   // ---- Pane actions ------------------
-  /** Every pane's menu is built from here, for its head's ⋯, its head and its tab (lib/pane-menu). */
+  /** Every pane's menu is built from here, for its head's pointer doors (lib/pane-menu). */
   const paneWiring: PaneMenuWiring = {
     nameOf,
     groupName: () => props.group.name,
@@ -561,6 +561,9 @@ export function GroupView(props: {
   /** A right-click on a pane's head or its tab: that pane's Pane actions, at the pointer. */
   const openPaneMenu = (e: MouseEvent & { currentTarget: HTMLElement }, path: string, summary: () => SessionSummary, origin: HTMLElement) =>
     openMenu(e, PANE_MENU, () => ({ path, summary: summary(), w: paneWiring }), { el: e.currentTarget, origin: () => origin });
+  /** The same pane menu after a stationary touch/pen hold. */
+  const holdPaneMenu = (e: PointerEvent & { currentTarget: HTMLElement }, path: string, summary: () => SessionSummary, origin: HTMLElement) =>
+    holdMenu(e, PANE_MENU, () => ({ path, summary: summary(), w: paneWiring }), { el: e.currentTarget, origin: () => origin });
 
   // ---- Completion roll-up ------------------
   /**
@@ -790,8 +793,12 @@ export function GroupView(props: {
                    three names and one. */
                 aria-label={nameOf(path)}
                 onClick={() => focusPane(path, true)}
-                /* The pane's own Pane actions; a member whose file is gone has none, so its tab
-                   keeps the browser's menu. */
+                /* The pane's pointer menu; a member whose file is gone has none, so its tab
+                   keeps the browser's own behavior. */
+                onPointerDown={(e) => {
+                  const seen = summaryOf(path);
+                  if (seen && !ghostOf(path)) holdPaneMenu(e, path, () => summaryOf(path) ?? seen, e.currentTarget);
+                }}
                 onContextMenu={(e) => {
                   const seen = summaryOf(path);
                   if (seen && !ghostOf(path)) openPaneMenu(e, path, () => summaryOf(path) ?? seen, e.currentTarget);
@@ -908,10 +915,8 @@ export function GroupView(props: {
                     listVersion={props.wiring.listVersion}
                     now={props.wiring.now}
                     onTurnError={noteTurnError}
-                    actions={<PlaceMenu decl={PANE_MENU} subject={{ path, summary: summary(), w: paneWiring }} title="Pane actions" />}
-                    onHeadContextMenu={(e) =>
-                      openPaneMenu(e, path, summary, e.currentTarget.querySelector<HTMLElement>(".workspace-pane-tools > button[aria-haspopup='menu']") ?? e.currentTarget)
-                    }
+                    onHeadPointerDown={(e) => holdPaneMenu(e, path, summary, e.currentTarget)}
+                    onHeadContextMenu={(e) => openPaneMenu(e, path, summary, e.currentTarget)}
                     onRefresh={props.wiring.onRefresh}
                     onArchiveChanged={props.wiring.onArchiveChanged}
                     onInsight={props.wiring.onInsight}

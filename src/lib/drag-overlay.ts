@@ -18,14 +18,15 @@ export interface Point {
 }
 
 /**
- * One press on a row. `pressed`: down, not yet anything. `lifted`: held still past HOLD_MS, so a
- * move drags and a release in place does nothing (the row settles back). A move that starts the drag hands the press over (`onDrag`)
- * and the press is over: the drag lives outside the row, which a list poll may rebuild under it.
+ * One mouse press on a row. `pressed`: down, not yet anything. `lifted`: held still past HOLD_MS, so
+ * a move drags and a release in place does nothing (the row settles back). A move that starts the
+ * drag hands the press over (`onDrag`) and the press is over: the drag lives outside the row, which
+ * a list poll may rebuild under it. Touch/pen menu holds and their drag handoff live in context-menu.
  */
 export type PressPhase = "idle" | "pressed" | "lifted";
 
 export interface RowPressOptions {
-  /** The press was held still long enough: the row rises, and a move now drags it. */
+  /** The mouse press was held still long enough: the row rises, and a move now drags it. */
   onLift(): void;
   /** The press became a drag at this point. */
   onDrag(at: Point): void;
@@ -36,8 +37,8 @@ export interface RowPressOptions {
 }
 
 export interface RowPress {
-  /** A press began. */
-  start(at: Point, pointer: string): void;
+  /** A mouse press began. */
+  start(at: Point): void;
   move(at: Point): void;
   /** The press ended where it was. True when it had lifted; either way the release does nothing. */
   finish(): boolean;
@@ -50,7 +51,6 @@ export interface RowPress {
 
 export function createRowPress(opts: RowPressOptions): RowPress {
   let origin: Point | null = null;
-  let mouse = false;
   let phase: PressPhase = "idle";
   const hold = createHoldGesture({
     delayMs: opts.delayMs ?? HOLD_MS,
@@ -68,27 +68,22 @@ export function createRowPress(opts: RowPressOptions): RowPress {
     phase = "idle";
   };
   return {
-    start(at, pointer) {
+    start(at) {
       origin = at;
-      mouse = pointer === "mouse";
       phase = "pressed";
       hold.start(at);
     },
     move(at) {
       if (phase === "idle" || !origin) return;
       if (phase === "pressed") {
-        // A mouse drags before the hold's tolerance runs out; a thumb that moves is a scroll.
-        if (mouse && far(at, DRAG_MOUSE_PX)) {
+        // A mouse drags before the hold's tolerance runs out.
+        if (far(at, DRAG_MOUSE_PX)) {
           hold.cancel();
           end();
           opts.onDrag(at);
           return;
         }
         hold.move(at);
-        if (far(at, HOLD_MOVE_PX)) {
-          hold.cancel();
-          end();
-        }
         return;
       }
       // Lifted: a move is a drag.

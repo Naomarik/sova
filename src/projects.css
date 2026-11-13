@@ -218,7 +218,7 @@
 .project-chips { flex: none; display: flex; flex-direction: column; align-items: flex-end; gap: var(--space-1); }
 
 /* Coding worktrees: title and meta one line each (cut with an ellipsis, the whole text as their
-   titles), the row's ⋯ at its end; the Remove confirmation wraps under the row. */
+   titles). The row's pointer menu carries its actions. */
 .project-worktree { flex-wrap: wrap; }
 .orgs-row.project-worktree .list-main { flex: 1 1 0; min-width: 0; }
 .orgs-row.project-worktree .list-main > .project-worktree-title,

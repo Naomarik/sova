@@ -1,4 +1,4 @@
-// Where a menu panel goes (§app.context-menus/placement): under its ⋯ trigger or with its corner
+// Where a menu panel goes (§app.context-menus/placement): under an ActionMenu trigger or with its corner
 // at the pointer (a right-click). Pure, so the math runs under `pnpm test` with no window:
 // ActionMenu's panel reads the viewport and its own measured box, and hands them here.
 

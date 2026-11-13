@@ -76,7 +76,7 @@ function lane(opts: { extensions: ExtensionInfo[]; local?: boolean; answer?: unk
 }
 
 describe("the extension lane's requests", () => {
-  test("the message menu's session: this host's chat only, once its id is known", async () => {
+  test("the reply lane's session: this host's chat only, once its id is known", async () => {
     const here = lane({ extensions: [] });
     assert.equal(here.api.session(), null, "no id yet");
     here.setSession("s1");

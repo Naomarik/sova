@@ -55,17 +55,22 @@ export interface ActionMenuApi {
 
 /** What a panel's owner holds: open it where its anchor is, close it, ask whether it is open. */
 export interface MenuPanelControls {
-  open(): void;
+  /** `whileHeld`: a touch/pen hold opened this under a finger; its release must not light-dismiss it. */
+  open(whileHeld?: boolean): void;
+  /** Whether a touch/pen hold opened this panel; its host supplies outside-press and Escape dismissal. */
+  isHeldOpen(): boolean;
+  /** The host's pointerdown: a hold-opened panel closes outside itself. */
+  dismissOutside(target: EventTarget | null): void;
   close(): void;
   isOpen(): boolean;
 }
 
 /**
- * The menu itself, without a trigger: the `popover="auto"` panel, its rows' API, its placement and
- * its focus. ActionMenu below hangs it from a "⋯" trigger; the page's one right-click menu
- * (ContextMenu.tsx) hangs it from a pointer position that follows its place. The panel lives in the top
- * layer (no ancestor can clip it), light-dismisses, and answers Escape for free; `place()` puts it
- * at its anchor when that fits in the window, and moves it when it doesn't.
+ * The menu itself, without a trigger: the popover panel, its rows' API, its placement and its focus.
+ * ActionMenu below hangs it from a "⋯" trigger; the page's one pointer menu (ContextMenu.tsx) hangs
+ * it from a pointer position that follows its place. The panel lives in the top layer (no ancestor
+ * can clip it). Ordinarily it light-dismisses and answers Escape for free; a touch/pen hold's panel
+ * is manual so the release can't dismiss it, and its host supplies those two endings.
  */
 export function MenuPanel(props: {
   /** Where the panel hangs from, read each time it is placed. */
@@ -123,14 +128,22 @@ export function MenuPanel(props: {
     return el && matchMedia("(max-width: 767px)").matches ? el.getBoundingClientRect() : null;
   };
 
-  const openMenu = () => {
+  const openMenu = (whileHeld = false) => {
+    // A popover opened under a finger would otherwise be light-dismissed by that finger's release.
+    // A hold-open panel stays manual for its lifetime; ContextMenuHost supplies outside-press/Escape.
+    // Every other menu is auto throughout.
+    menu.popover = whileHeld ? "manual" : "auto";
     // A menu that moves to another thing while open starts on its rows, not the last one's screen.
     setScreen(null);
     menu.showPopover();
     place();
     queueMicrotask(() => menu.querySelector<HTMLElement>("[role^=menuitem]")?.focus());
   };
-  props.controls({ open: openMenu, close, isOpen: open });
+  const isHeldOpen = () => menu.popover === "manual" && menu.matches(":popover-open");
+  const dismissOutside = (target: EventTarget | null) => {
+    if (isHeldOpen() && !(target instanceof Node && menu.contains(target))) close();
+  };
+  props.controls({ open: openMenu, isHeldOpen, dismissOutside, close, isOpen: open });
   // A screen is a different height from the rows; the panel is re-placed once it has rendered.
   createEffect(() => {
     screen();
@@ -259,17 +272,17 @@ export function MenuPanel(props: {
 }
 
 /**
- * A "⋯" trigger and the popover menu it opens: the shape the workspace spec's pane head and the session list's group sections
- * both need, in one place. The panel (MenuPanel above) anchors under the trigger's right edge
+ * A "⋯" trigger and the popover menu it opens, shared by the model picker, split buttons and other
+ * visible menu triggers. The panel (MenuPanel above) anchors under the trigger's right edge
  * when that fits in the window, and moves when it doesn't.
  *
  * The body is a render prop rather than children, because every row needs the menu's own `run`
  * (close, then act) and a menu with a second screen needs `show`/`dismiss`.
  */
 export function ActionMenu(props: {
-  /** The trigger's accessible name, and the menu's: "Group actions · Work". */
+  /** The trigger's accessible name, and the menu's. */
   label: string;
-  /** The trigger's tooltip: the kind of thing, without the name ("Group actions"). */
+  /** The trigger's tooltip: the kind of thing it opens. */
   title?: string;
   /** The trigger's icon. `null` skips it: a word-plus-caret trigger for a narrow row. */
   icon?: IconName | null;

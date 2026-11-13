@@ -38,9 +38,6 @@ import { type MessageStrip, sameStrip, stripsByRow } from "../lib/message-action
 import { backWords } from "../lib/error-feed";
 import type { ReplyPlace } from "../lib/reply-place";
 import { ReplyPlaceView } from "./ReplyPlace";
-import { closeContextMenuOf } from "./ContextMenu";
-import { openMenu } from "./MenuPlace";
-import { focusOnce, MESSAGE_MENU, menuStripOf, messageMenuOf, repliesByEntry, stripBlocks } from "../lib/message-menu";
 import { InfoRow } from "./InfoRow";
 import { TranscriptKindRow } from "./TranscriptKind";
 import { kindOf, liveBlockInput, liveEndsOf, liveKindOf, outsideWork, sameHit, type KindContext, type KindHit, type LiveBlockFacts, type LiveInput } from "../lib/transcript-kinds";
@@ -365,8 +362,6 @@ export function HistoryItems(props: {
    * duplicating or dropping one.
    */
   const strips = createMemo(() => (props.actions ? stripsByRow(rows()) : new Map<number, MessageStrip>()));
-  /** Each reply's strip by its entry: every text block of a reply opens its menu, not only the one it hangs off. */
-  const replies = createMemo(() => repliesByEntry(strips().values()));
   // Only calls after the last user message (or wake nudge or link message — isTurnStart) can still be in flight.
   const lastUserIndex = createMemo(() => {
     for (let i = renderable().length - 1; i >= 0; i--) if (isTurnStart(renderable()[i]!)) return i;
@@ -562,19 +557,6 @@ export function HistoryItems(props: {
             data-chain-folded={foldedRun(chain()) ? "" : undefined}
             data-entry={item.id}
             style={{ "--entry-est": rowEst() }}
-            ref={(el) => onCleanup(() => closeContextMenuOf(el))}
-            onContextMenu={(e) => {
-              // A message with a strip opens its actions as a menu (lib/message-menu), from any of its
-              // text blocks; what extensions add under it and a work run's fold are not the message.
-              // Focus goes back to the row itself (`focusOnce`), so the strip isn't left showing.
-              const s = menuStripOf(item, strip(), replies());
-              const el = e.currentTarget;
-              if (!s || (e.target instanceof Element && e.target.closest(".reply-slot, .chain-fold"))) return;
-              openMenu(e, MESSAGE_MENU, () => messageMenuOf(props.actions!, s, () => stripBlocks(rows(), s), el.parentElement ?? document), {
-                el,
-                origin: () => focusOnce(el, (to) => to instanceof Element && !!to.closest("[popover]")),
-              });
-            }}
           >
             <Show when={foldable(chain()) ? chain() : null}>{(run) => <ChainFold run={run()} />}</Show>
             <Switch fallback={<Unknown raw={item.entry} />}>

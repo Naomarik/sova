@@ -51,7 +51,7 @@ import { ACTIVITY_SHOWN, LIMIT_COLUMN_LABEL, LIMIT_COLUMNS, LIMIT_ROWS, limitCel
 import { actionLine, allowanceLine, gapArea, gapWords, holdHint, holdWords, isGap, IDEA_TITLE_MAX, lastRunTail, limitsProblem, openIdeas, operatorIdeaId, pendingLine, soonWords, STARTED_KIND, waitingLines, watchHint } from "../lib/project-overseer-view";
 import { adoptSession, announce, home, toast } from "../lib/ui-state";
 import { closeContextMenuOf } from "./ContextMenu";
-import { openMenu, PlaceMenu } from "./MenuPlace";
+import { holdMenu, openMenu } from "./MenuPlace";
 import { WORKTREE_MENU, worktreeMenuOffered } from "../lib/worktree-menu";
 import { land, refusal } from "../lib/merge-queue-client";
 import { queueRow } from "../lib/merge-queue";
@@ -1062,7 +1062,7 @@ function CodingSessions(props: {
             // Remembered branch facts (a reopened project) show at once, but no gesture acts on them.
             const gestures = () => rowGestures(row(), po().worktrees.fresh());
             const facts = () => (row().facts && row().state !== undefined ? (row() as CodingRow & CodingWorktree) : null);
-            /** The ⋯'s menu, which a right-click on the row draws too: each row acts on the row as it reads when chosen. */
+            /** The row's menu acts on the row as it reads when chosen. */
             const menu = () => ({
               facts: {
                 project: po().projectId(),
@@ -1089,15 +1089,23 @@ function CodingSessions(props: {
             });
             let li!: HTMLLIElement;
             onCleanup(() => closeContextMenuOf(li));
-            /** A right-click on the row: its ⋯ menu, at the pointer. The title link is the row's own. */
+            /** Right-click and touch/pen hold draw the row's menu. The title link is the row's own. */
             const onContextMenu = (e: MouseEvent & { currentTarget: HTMLLIElement }) => {
               if (!worktreeMenuOffered(gestures())) return;
               const link = li.querySelector<HTMLElement>(":scope > .list-main > a.project-worktree-title");
-              const trigger = li.querySelector<HTMLElement>(":scope > button[aria-haspopup='menu']");
-              openMenu(e, WORKTREE_MENU, menu, { el: e.currentTarget, ownLink: link, origin: () => link ?? trigger ?? li });
+              openMenu(e, WORKTREE_MENU, menu, { el: e.currentTarget, ownLink: link, origin: () => link ?? li });
             };
             return (
-              <li ref={li} class="list-row orgs-row project-worktree" onContextMenu={onContextMenu}>
+              <li
+                ref={li}
+                class="list-row orgs-row project-worktree"
+                onPointerDown={(e) => {
+                  if (!worktreeMenuOffered(gestures())) return;
+                  const link = li.querySelector<HTMLElement>(":scope > .list-main > a.project-worktree-title");
+                  holdMenu(e, WORKTREE_MENU, menu, { el: e.currentTarget, ownLink: link, origin: () => link ?? li });
+                }}
+                onContextMenu={onContextMenu}
+              >
                 <span class="list-main project-worktree-main">
                   <Show when={row().path} fallback={<span class="list-title project-worktree-title" title={title()}>{title()}</span>}>
                     {(path) => (
@@ -1151,9 +1159,6 @@ function CodingSessions(props: {
                     }}
                   </Show>
                 </span>
-                <Show when={worktreeMenuOffered(gestures())}>
-                  <PlaceMenu decl={WORKTREE_MENU} subject={menu()} title="Actions" />
-                </Show>
                 <Show when={errors()[row().sessionId]}>{(e) => <p class="field-error project-worktree-note">{e()}</p>}</Show>
               </li>
             );

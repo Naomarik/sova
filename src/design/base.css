@@ -2071,9 +2071,7 @@ summary.sidebar-region-head .icon-twist { transition: transform var(--dur-fast) 
 
 /* The region's one action: `Open Groups` at the right end of the region head. On the
    head so it is there with the region shut, and at the end so the name and count keep
-   their place. Quiet like a group's `⋯` — muted until the head is hovered or the button
-   has focus — with the full 44px target, hung into the head's right padding so the
-   glyph lines up with the `⋯` of the groups below. */
+   their place. Quiet, with the full 44px target, hung into the head's right padding. */
 .sidebar-region-head .group-picker-open {
   flex: none;
   width: var(--tap-min);
@@ -2121,30 +2119,11 @@ summary.sidebar-region-head .icon-twist { transition: transform var(--dur-fast) 
    (app.css, Guide lines); sticky folder heads keep their own surface. */
 .session-group { padding-left: var(--space-1); }
 
-/* The group's actions, on the group's own name row. ALWAYS drawn — hover-only made the group's
-   whole menu invisible until the pointer happened to be in the right row, and on touch there is
-   no hover to find it with. Quiet rather than absent: it rests in the muted ink the row's own
-   count uses and comes up to full ink on hover, on focus within the row, and while its menu is
-   open (that one matters — the trigger is what the open panel is anchored to).
-   The glyph is a step smaller than a body icon so a standing control doesn't shout, and the
-   44px target is untouched: only the icon shrinks inside it. The box hangs into the sidebar's
-   own right gutter, so the dots sit against the edge instead of a button's width inside it. */
-.group-label .group-actions {
-  flex: none;
-  margin-right: calc(var(--space-4) * -1 + var(--space-1));
-  color: var(--color-ink-muted);
-  transition: color var(--dur-fast) var(--ease-standard);
-}
-.group-label .group-actions .icon { width: 16px; height: 16px; }
 /* In curated Groups, counts describe hidden rows only. Keep the other regions' counts. */
 .group-section[open] > .group-label > .text-num,
 .group-section .session-group[open] > .session-group-head > .list-group-label > .text-num {
   display: none;
 }
-.group-label:hover .group-actions,
-.group-label:focus-within .group-actions,
-.group-label .group-actions[aria-expanded="true"] { color: var(--color-ink); }
-
 /* A menu screen: the one question (a name field, a confirm) that replaces the rows. The rows are
    flush to the panel's edges by design; a screen is prose and a control, so it gets the padding. */
 .group-menu-screen {
@@ -2492,7 +2471,7 @@ a.group-picker-tile[aria-disabled="true"] { cursor: default; color: var(--color-
   .model-menu.group-menu-up { top: auto; bottom: var(--menu-bottom, 72px); }
 }
 
-/* ---- ACTION MENU (the "⋯" popover: the session list's group rows, the workspace spec's pane heads). The model menu's
+/* ---- ACTION MENU (the model picker, split buttons and other visible menu triggers). The model menu's
    shell at a MENU's size: its rows are short verbs, not model ids, so the picker's 360px was
    wider than the 350px sidebar it hangs off and the panel's left edge — icons, labels and all —
    fell outside the window. Width is the design system's popover (min 200px, content-sized), and

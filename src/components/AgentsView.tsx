@@ -48,7 +48,7 @@ import { home, localRunning, sessionContext } from "../lib/ui-state";
 import { capTitle } from "../lib/workers";
 import "../agents-board.css";
 import { closeContextMenuOf } from "./ContextMenu";
-import { openSessionMenu, RowMenu } from "./SessionRowMenu";
+import { holdSessionMenu, openSessionMenu } from "./SessionRowMenu";
 import { ContextRing } from "./ContextRing";
 import { CostsTab } from "./CostsTab";
 import { PerformanceTab } from "./PerformanceTab";
@@ -301,8 +301,9 @@ function BoardRowView(props: { row: BoardRow; ctx: BoardCtx }) {
       data-state={r().state}
       classList={{ "board-row-open": open() && hasDetail() }}
       onClick={onRowClick}
-      // Anywhere on the row, as its ⋯ (§app.insights/team-cards "Right-click"); its team chips and
+      // Anywhere on the row (§app.insights/team-cards "Right-click"); its team chips and
       // a selection keep the browser's menu (lib/context-menu).
+      onPointerDown={(e) => titleLink && holdSessionMenu(e, { el: e.currentTarget, link: titleLink }, s, props.ctx, archive)}
       onContextMenu={(e) => titleLink && openSessionMenu(e, { el: e.currentTarget, link: titleLink }, s, props.ctx, archive)}
     >
       <div class="board-line">
@@ -432,7 +433,6 @@ function BoardRowView(props: { row: BoardRow; ctx: BoardCtx }) {
           >
             <Icon name="info" />
           </button>
-          <RowMenu row={r()} ctx={props.ctx} archive={archive()} />
         </div>
       </div>
 

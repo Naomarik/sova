@@ -1,5 +1,5 @@
 // Run: pnpm test -- src/lib/session-row-menu.test.ts
-// The Agents board row's ⋯ menu (§app.insights/team-cards, §app.extensions/session-menu): Sova's own
+// The session menu (§app.insights/team-cards, §app.extensions/session-menu): Sova's own items keep
 // items keep their groups, order, labels and names. Drawn with Solid's SSR build
 // (src/lib/align-card-ssr.mjs) and compared with session-row-menu.snapshot.json, taken from the menu
 // as it stood before extensions could add to it. Hydration keys and marker comments are left out:
@@ -13,7 +13,9 @@ import { test } from "node:test";
 const { importSsr } = await import("./align-card-ssr.mjs");
 const solid = await import("solid-js");
 const { renderToString } = await import("solid-js/web");
-const { RowMenu } = await importSsr(new URL("../components/SessionRowMenu.tsx", import.meta.url), (s: string) => import.meta.resolve(s));
+const { MenuBody } = await importSsr(new URL("../components/MenuPlace.tsx", import.meta.url), (s: string) => import.meta.resolve(s));
+const { MenuPanel } = await importSsr(new URL("../components/ActionMenu.tsx", import.meta.url), (s: string) => import.meta.resolve(s));
+const { SESSION_MENU } = await import("./session-menu");
 const { ExtensionsContext } = await import("./reply-place");
 const { isSovaName, MENU_NAMES } = await import("./menu-place");
 const mesh = await import("./mesh");
@@ -51,7 +53,18 @@ const drawMenu = (props: Record<string, unknown>, extensions?: ExtensionInfo[]):
     solid.createComponent(ExtensionsContext.Provider, {
       value: () => extensions,
       get children() {
-        return solid.createComponent(RowMenu as never, props as never);
+        const p = props as unknown as { row: BoardRow; ctx: ReturnType<typeof ctx>; archive: unknown };
+        return solid.createComponent(MenuPanel, {
+          anchor: () => ({ kind: "point", x: 0, y: 0 }),
+          origin: () => undefined,
+          controls() {},
+          children: (menu: unknown) =>
+            solid.createComponent(MenuBody, {
+              menu,
+              decl: SESSION_MENU,
+              subject: { session: p.row.session, ctx: p.ctx, archive: p.archive },
+            } as never),
+        } as never);
       },
     }),
   )
@@ -69,7 +82,7 @@ const CASES: Record<string, Record<string, unknown>> = {
   "no archive": { row: row(session()), ctx: ctx(), archive: null },
 };
 
-test("Sova's own items in the session ⋯ menu are drawn exactly as before", () => {
+test("Sova's own items in the session menu are drawn exactly as before", () => {
   const got = Object.fromEntries(Object.entries(CASES).map(([name, props]) => [name, drawMenu(props)]));
   if (process.env.WRITE_MENU_SNAPSHOT === "1") writeFileSync(SNAPSHOT, `${JSON.stringify(got, null, 2)}\n`);
   const want = JSON.parse(readFileSync(SNAPSHOT, "utf8")) as Record<string, string>;

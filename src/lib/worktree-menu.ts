@@ -1,5 +1,5 @@
 // A project's coding-worktree row menu (§app.project-overseer/coding-worktrees "The project page
-// lists them"), as one declaration (lib/menu-place): its ⋯ and a right-click on the row both draw
+// lists them"), as one declaration (lib/menu-place): its right-click and touch/pen hold both draw
 // it, each row with its reason before the press. Merge Branch, or Land once the project's merge
 // queue is set up; then Remove Worktree…, whose whole question stays inside the menu.
 
@@ -83,7 +83,7 @@ function removeScreen(f: WorktreeMenuFacts, acts: WorktreeMenuActs): RemoveScree
   };
 }
 
-/** The row has a menu at all: neither gesture offered, no ⋯ and no right-click menu. */
+/** The row has a menu at all: neither gesture offered means no pointer menu. */
 export const worktreeMenuOffered = (g: WorktreeMenuFacts["gestures"]) => g.merge !== false || g.remove !== false;
 
 /** A menu place, for a row of this host's project that has a branch. */

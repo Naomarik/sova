@@ -1,7 +1,7 @@
-// The session menu (§app.extensions/session-menu, §app.insights/team-cards "⋯ menu"), as one
-// declaration (lib/menu-place): for every door — the Agents board row's ⋯ and a right-click on a
-// board row or on a session row in any section of the sidebar — so the doors can't drift. Each door
-// differs only in its `SessionMenuCtx`: where Session Details and Open Subagents lead from there.
+// The session menu (§app.extensions/session-menu, §app.insights/team-cards), as one declaration
+// (lib/menu-place): a right-click or touch/pen hold on an Agents board row or on a session row in
+// any section of the sidebar draws it. Each door differs only in its `SessionMenuCtx`: where Session
+// Details and Open Subagents lead from there.
 
 import { SESSION_TITLE_MAX, type SessionSummary } from "../../shared/protocol";
 import { gistTitle } from "./agents-board";

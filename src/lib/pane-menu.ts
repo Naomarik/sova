@@ -1,7 +1,6 @@
 // A workspace pane's Pane actions (§workspace.groups/a-pane "The tools are one menu"), as one
-// declaration (lib/menu-place): its head's ⋯ and a right-click on its head or tab all draw it,
-// from the workspace's own state and gestures (`PaneMenuWiring`), so the head and the tab can't
-// offer different menus for the same member.
+// declaration (lib/menu-place): a right-click or touch/pen hold on its head draws it, from the
+// workspace's own state and gestures (`PaneMenuWiring`).
 
 import { GROUP_LABEL_MAX, type SessionSummary } from "../../shared/protocol";
 import type { MenuAct, MenuDecl, MenuItem } from "./menu-place";

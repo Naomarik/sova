@@ -4,6 +4,7 @@
 // import, so the rules run under `pnpm test` with stand-in elements; components/ContextMenu.tsx
 // reads the facts off a real event and acts on the answer.
 
+import { createHoldGesture, HOLD_MOVE_PX, HOLD_MS, type HoldPoint } from "./hold-select";
 import { isTextEntry } from "./text-entry";
 
 /** What made the event: a mouse (or trackpad), a finger, a pen, or the browser's context-menu key. */
@@ -34,8 +35,10 @@ export interface ContextFacts {
   shiftKey: boolean;
   /** A place inside this one already took the event (`defaultPrevented`): innermost wins. */
   taken: boolean;
-  /** The place's own gesture claims the event: a session row's hold or drag, or a finger's press still down. */
+  /** The place's own mouse gesture claims the event: a lift or drag. A touch/pen hold is captured by its controller. */
   holds: boolean;
+  /** This is the shared controller's completed 500ms touch/pen hold, not a browser `contextmenu`. */
+  held?: boolean;
   /** Inside an input, a text area, editable text or a select. */
   textEntry: boolean;
   /** Inside an open menu or popover, Sova's own right-click menu included. */
@@ -60,22 +63,12 @@ export function contextAction(f: ContextFacts): ContextAction {
   if (f.holds) return "swallow";
   // Sova has no keyboard gesture: the browser's own keyboard context menu is always its own.
   if (f.kind === "keyboard") return "native";
-  // A finger or a pen never opens Sova's menu: whatever the browser does with a long press stays.
-  if (f.kind === "touch" || f.kind === "pen") return "native";
+  // A touch/pen `contextmenu` alone is the browser's. The shared hold calls back with `held` at 500ms.
+  if ((f.kind === "touch" || f.kind === "pen") && !f.held) return "native";
   if (f.shiftKey) return "native";
   if (f.textEntry || f.inPopover || f.contentLink) return "native";
   if (f.onSelection) return "native";
   return "open";
-}
-
-/**
- * Whether a session row's own gesture owns this `contextmenu` (§app.session-list/drop-overlay): a
- * hold that fired (its suppression window), a drag in flight, or a finger's or pen's press still
- * down — Android sends its long-press menu around the same 500ms the hold fires at, sometimes
- * before it. A mouse press in flight doesn't: a right-click is a press of its own.
- */
-export function holdOwns(p: { suppressed: boolean; dragging: boolean; phase: string; pointerKind: string }): boolean {
-  return p.suppressed || p.dragging || (p.phase !== "idle" && p.pointerKind !== "mouse");
 }
 
 /**
@@ -123,7 +116,7 @@ export function pointInRects(x: number, y: number, rects: Iterable<{ left: numbe
 }
 
 /**
- * What a right-click's "on the selection" reads (§app.context-menus/native): the text selected when
+ * What a pointer press's "on the selection" reads (§app.context-menus/native): the text selected when
  * its press went down. A Mac's browser selects the word (or the link) under a right press before
  * it sends `contextmenu`; that word was never the user's selection, so it doesn't hand the click to
  * the browser, and Sova's menu takes it back (`madeByPress`). Before any press: what is selected now.
@@ -143,6 +136,117 @@ export function createPressSelection<R>(read: () => R[]) {
     madeByPress(): boolean {
       return atPress !== null && atPress.length === 0 && read().length > 0;
     },
+  };
+}
+
+// ---- a finger or pen's menu shows at 500ms -----------------------------------------------------
+
+export interface MenuHoldPress {
+  /** The place's element: its own contextmenu belongs to the hold; `echo` also recognizes the release click. */
+  key: unknown;
+  pointerId: number;
+  at: HoldPoint;
+  /** Open the place's menu. False means it stopped being eligible; nothing is then suppressed. */
+  show(): boolean;
+  /** A draggable row's handoff when the press moves past tolerance AFTER the lift. */
+  drag?(at: HoldPoint): void;
+  /** A draggable row's visual lift at the deadline, then its settle on release/cancel/drag. */
+  lift?(on: boolean): void;
+}
+
+/**
+ * The one touch/pen hold behind every menu place. Movement within 10px is still stationary. Before
+ * the deadline, moving past it abandons the press to the browser's scroll. A draggable row lifts at
+ * the deadline without opening its menu: post-lift movement drags, while a stationary release opens.
+ * A place with no drag opens at the deadline. `owned` covers the place's native contextmenu; `echo` identifies
+ * the fired pointer's release click even when the newly opened panel is under the finger.
+ */
+export function createMenuHold(opts: { delayMs?: number; now?(): number; schedule?(fn: () => void, ms: number): unknown; unschedule?(handle: unknown): void } = {}) {
+  let active: MenuHoldPress | null = null;
+  let released: unknown = null;
+  let releasedPointer: number | null = null;
+  const hold = createHoldGesture({
+    delayMs: opts.delayMs ?? HOLD_MS,
+    now: opts.now,
+    schedule: opts.schedule,
+    unschedule: opts.unschedule,
+    onHold: () => {
+      const press = active;
+      if (!press) return;
+      if (press.drag) {
+        press.lift?.(true);
+        return;
+      }
+      if (press.show()) return;
+      active = null;
+      released = null;
+      releasedPointer = null;
+      hold.cancel();
+    },
+  });
+  const end = (fired: boolean, key: unknown, pointerId: number) => {
+    active?.lift?.(false);
+    active = null;
+    released = fired ? key : null;
+    releasedPointer = fired ? pointerId : null;
+  };
+  return {
+    /** Innermost place wins if pointerdown bubbles through another registered place. */
+    start(press: MenuHoldPress): boolean {
+      if (active?.pointerId === press.pointerId) return false;
+      if (active) {
+        const old = active;
+        const fired = hold.held();
+        hold.cancel();
+        end(fired, old.key, old.pointerId);
+      }
+      released = null;
+      releasedPointer = null;
+      active = press;
+      hold.start(press.at);
+      return true;
+    },
+    move(pointerId: number, at: HoldPoint) {
+      const press = active;
+      if (!press || press.pointerId !== pointerId) return;
+      const near = Math.abs(at.x - press.at.x) <= HOLD_MOVE_PX && Math.abs(at.y - press.at.y) <= HOLD_MOVE_PX;
+      if (hold.held()) {
+        if (!press.drag || near) return;
+        end(true, press.key, press.pointerId);
+        hold.cancel();
+        press.drag(at);
+        return;
+      }
+      if (near) return hold.move(at);
+      // Before the lift this is the browser's scroll, never the row's drag.
+      end(false, press.key, press.pointerId);
+      hold.cancel();
+    },
+    finish(pointerId: number) {
+      const press = active;
+      if (!press || press.pointerId !== pointerId) return;
+      const fired = hold.finish();
+      end(fired && press.drag ? press.show() : fired, press.key, press.pointerId);
+    },
+    /** Pointer cancellation, scroll, blur, hidden page, lost capture or teardown. */
+    cancel(pointerId?: number) {
+      const press = active;
+      if (!press || (pointerId !== undefined && press.pointerId !== pointerId)) return;
+      const fired = hold.held();
+      hold.cancel();
+      end(fired, press.key, press.pointerId);
+    },
+    /** This pointer's release click, even when the newly opened panel is now under the finger. */
+    echo(pointerId: number): boolean {
+      if (active && hold.held()) return active.pointerId === pointerId;
+      return releasedPointer === pointerId && hold.suppressed();
+    },
+    /** The place whose browser events belong to this press or its fired aftermath. */
+    owned(): unknown {
+      return active?.key ?? (released !== null && hold.suppressed() ? released : null);
+    },
+    /** A menu has opened under a finger still down: its touchmove must not pan the page. */
+    held: () => !!active && hold.held(),
   };
 }
 

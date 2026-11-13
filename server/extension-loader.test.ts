@@ -266,7 +266,7 @@ describe("two readers, and approval by version", () => {
     const e = ext.findExtension("cards-only")!;
     assert.equal(await ext.serveExtensionFile(e, "").text(), "This extension has no page.");
   });
-  test("a command in any of the five menus reaches the page's list, and so a menu, only while approved and on", async () => {
+  test("a command in any of the four menus reaches the page's list, and so a menu, only while approved and on", async () => {
     const e = { id: "menus", title: "M", commands: MENU_PLACES.map((menu) => ({ name: menu, label: `File ${menu}`, menu })) };
     const menus = async () => (await ext.listExtensions()).find((x) => x.id === "menus")?.offers?.commands?.map((c) => c.menu);
     writeList([e]);

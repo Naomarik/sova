@@ -33,9 +33,6 @@ export interface ReplyPlace {
   added?(entryId: string): SlotState | undefined;
   /** Run a chip's declared action for that entry; resolves to null, or what went wrong. */
   runChip?(chip: ReplyChip, entryId: string): Promise<string | null>;
-  /** The chat's session id, for what extensions add to a message's menu (lib/message-menu): null
-      for another host's chat, or before the id is known. Absent: none add to it. */
-  menuSession?(): string | null;
 }
 
 /** The strip's buttons: every built-in's, in order. */

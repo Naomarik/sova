@@ -1,13 +1,13 @@
 /**
- * Sova's menus, as data. Every menu — a session's, a group's, a pane's, a message's, a worktree's —
- * is one declaration (`MenuDecl`): its name, its table of rows, and, for a menu place, what
- * extensions add. One body draws any declaration (src/components/MenuPlace.tsx `MenuBody`), and a
- * place's ⋯ and its right-click (§app/context-menus) both draw it, so the doors can't drift and a
- * test reads each table without a DOM.
+ * Sova's menus, as data. Every menu — a session's, a group's, a pane's or a worktree's — is one
+ * declaration (`MenuDecl`): its name, its table of rows, and what extensions add. One body draws
+ * any declaration (src/components/MenuPlace.tsx `MenuBody`), and a place's right-click and
+ * touch/pen hold (§app/context-menus) both draw it, so the doors can't drift and a test reads each
+ * table without a DOM.
  * A menu place is a menu that Sova's own rows and extensions both add to, the reply place's pattern
  * (src/lib/reply-place.ts) for a menu: Sova's rows first (trusted, interactive), then what
  * extensions add (data Sova draws: a label, a summary and a declared command, never markup). All
- * five menus are menu places: "session", "group", "pane", "message" and "worktree". An extension
+ * All four menus are menu places: "session", "group", "pane" and "worktree". An extension
  * adds to one by declaring `"menu": "<place>"` on one of its manifest `commands`
  * (shared/extension-offers.ts MENU_PLACES); GET /api/extensions carries it in `offers.commands`. The extension lane costs nothing beyond the list the page already polls:
  * no request until a row runs, and none of its rows when no running extension declares one.
@@ -84,7 +84,7 @@ export interface MenuSection {
 
 /** One place's menu, for every door. */
 export interface MenuDecl<T> {
-  /** The menu's name, the ⋯ trigger's: every door names it the same. */
+  /** The menu's accessible name: every pointer door names it the same. */
   label(subject: T): string;
   /** Sova's rows, in their sections and order; a section with no rows isn't drawn. */
   table(subject: T): MenuSection[];
@@ -115,7 +115,7 @@ export const MENU_ROWS_MAX = 8;
 /** A running entry with no answer in this long tells the user its extension isn't answering. */
 export const MENU_RUN_TIMEOUT_MS = 10_000;
 
-/** Every label Sova's own rows can show in any of the five menus, one list for all of them: an
+/** Every label Sova's own rows can show in any of the four menus, one list for all of them: an
     extension entry may not take one in any menu, so no row of an extension's reads as Sova's (the
     reply chips' rule). The tables' test fails when a label a table draws is missing here, or when one
     here is no table's. Open Session stays reserved though the session menu no longer has it. */
@@ -144,13 +144,6 @@ export const MENU_NAMES: readonly string[] = [
   "Focus",
   "Promote",
   "Remove From Group",
-  // a message's
-  "Copy",
-  "Copy as Plain Text",
-  "Share From Here",
-  "Rewind…",
-  "Regenerate…",
-  "Fork From Here",
   // a worktree row's
   "Merge Branch",
   "Land",
@@ -214,8 +207,7 @@ type Fetch = (url: string, init: RequestInit) => Promise<Response>;
 /**
  * Run one extension entry: POST /ext/<id>/api/commands/<name> with its menu's payload, as the
  * place's declaration builds it (`MenuDecl.extensions.payload`: a session's `{session}`, a group's
- * `{group}`, a pane's `{session}`, a message's `{session, entry}`, a worktree row's
- * `{project, branch, session}`), sent as it is, through Sova's extension proxy (which takes Sova's token off), the path a reply chip's action
+ * `{group}`, a pane's `{session}`, a worktree row's `{project, branch, session}`), sent as it is, through Sova's extension proxy (which takes Sova's token off), the path a reply chip's action
  * takes. Resolves to the sentence to tell the user; never throws. No answer within `timeoutMs`
  * (headers and body) is the same as no answer at all.
  */

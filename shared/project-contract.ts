@@ -79,7 +79,7 @@ export const VERB_PARAMS: readonly VerbParam[] = [
   { wire: "keepData", type: "boolean", tool: { name: "keep_data", description: "teardown: keep the data resources." }, cli: { flag: "keep-data", description: "Keep the instance's data" } },
   { wire: "resources", type: "list", tool: { name: "resources", description: "reset: only these data resources." }, cli: { flag: "resources", description: "Resource names, comma-separated" } },
   { wire: "ref", type: "string", tool: { name: "ref", description: "conform: the branch or commit whose definition to prove (default the main checkout's HEAD)." }, cli: { flag: "ref", description: "A git ref" } },
-  { wire: "select", type: "list", tool: { name: "select", description: "test: selectors appended to the project's test command (files, namespaces, test names); none runs the whole suite. merge.extend: part of a pick: the selectors the picked check runs with (a slow test group, files, tours: the pick's select); a check that takes one runs bare without it and fails.", maxItems: 50 }, cli: { flag: "select", description: "Test selectors, comma-separated" } },
+  { wire: "select", type: "list", tool: { name: "select", description: "test: selectors appended to the project's test command (files, namespaces, test names); none runs the whole suite. merge.extend: part of a pick: the selectors the picked check runs with (a slow test group, files, tours: the pick's select); a pick of a check that declares needsSelect is refused without one.", maxItems: 50 }, cli: { flag: "select", description: "Test selectors, comma-separated" } },
   { wire: "endpoint", type: "string", tool: { name: "endpoint", description: 'share/revoke: the endpoint, "<service>.<port>", one of the definition\'s share.endpoints.' }, cli: { flag: "endpoint", description: "A service endpoint, service.port" } },
   { wire: "days", type: "integer", tool: { name: "days", description: "share: how many days the link lasts (default 1, at most 7 or the definition's share.maxDays).", minimum: 1, maximum: 7 }, cli: { flag: "days", description: "How many days a share link lasts" } },
   { wire: "link", type: "string", tool: { name: "link", description: "revoke: one share link, by its id (pv_…)." }, cli: { flag: "link", description: "A share link id" } },
@@ -346,7 +346,8 @@ export const RELEASE_QUIET_MAX = 1440;
 /** One check the merge queue runs on a merged commit, in declaration order. `run` may use the definition's template
  *  variables and `${merge.base}`, `${merge.tip}`, `${merge.target}`. `rerun`: its failures name test files, and
  *  `run` + those files reruns only them (attribution). `requires`: services brought up in the merge copy first.
- *  `optional`: not part of the required set; runs only when the merge thread picks it. */
+ *  `optional`: not part of the required set; runs only when the merge thread picks it. `needsSelect`: a pick of it
+ *  (merge.extend) must name its select (a group, files, walkthroughs); one that names none is refused. */
 export interface MergeCheckDecl {
   id: string;
   label: string;
@@ -355,6 +356,7 @@ export interface MergeCheckDecl {
   rerun: boolean;
   requires: string[];
   optional?: true;
+  needsSelect?: true;
 }
 /** The definition's `merge` section. `checks`: the required set, `"none"` (declared: no automated tests), or absent
  *  (the queue falls back to `test.run`, else the project isn't set up). `target`: the branch it lands on (absent: the
@@ -517,7 +519,7 @@ export const DEFINITION_KEYS = {
   credential: ["name", "kind", "check"],
   requires: ["tests"],
   merge: ["target", "push", "checks", "install", "review", "land", "request", "reuse", "deleteBranches"],
-  mergeCheck: ["id", "label", "run", "timeout", "rerun", "requires", "optional"],
+  mergeCheck: ["id", "label", "run", "timeout", "rerun", "requires", "optional", "needsSelect"],
   mergeInstall: ["run", "inputs", "timeout"],
   release: ["playbook", "tag", "scheme", "channels", "commit", "checks", "quietMin"],
   releaseCheck: ["id", "label", "run", "timeout", "rerun", "requires"],
@@ -952,9 +954,10 @@ function mergeDecl(v: unknown, services: readonly ServiceDecl[]): MergeDecl {
       if (x.label !== undefined && (typeof x.label !== "string" || !x.label.trim() || x.label.length > 60)) throw new DefinitionError(`${path}.label`, "must be a short label (1 to 60 characters)");
       if (x.rerun !== undefined && typeof x.rerun !== "boolean") throw new DefinitionError(`${path}.rerun`, "must be true or false");
       if (x.optional !== undefined && typeof x.optional !== "boolean") throw new DefinitionError(`${path}.optional`, "must be true or false");
+      if (x.needsSelect !== undefined && typeof x.needsSelect !== "boolean") throw new DefinitionError(`${path}.needsSelect`, "must be true or false");
       const requires = strList(x.requires, `${path}.requires`);
       for (const r of requires) if (!services.some((s) => s.name === r)) throw new DefinitionError(`${path}.requires`, `names no service "${r}"`);
-      return { id, label: typeof x.label === "string" ? x.label.trim() : id, run: argv(x.run, `${path}.run`), timeout: timeout(x.timeout, `${path}.timeout`, TEST_TIMEOUT_DEFAULT, HOOK_TIMEOUT_MAX), rerun: x.rerun === true, requires, ...(x.optional === true ? { optional: true as const } : {}) };
+      return { id, label: typeof x.label === "string" ? x.label.trim() : id, run: argv(x.run, `${path}.run`), timeout: timeout(x.timeout, `${path}.timeout`, TEST_TIMEOUT_DEFAULT, HOOK_TIMEOUT_MAX), rerun: x.rerun === true, requires, ...(x.optional === true ? { optional: true as const } : {}), ...(x.needsSelect === true ? { needsSelect: true as const } : {}) };
     });
     if (!out.checks.some((c) => !c.optional)) throw new DefinitionError("$.merge.checks", "at least one check is required (not optional)");
     if (new Set(out.checks.map((c) => c.id)).size !== out.checks.length) throw new DefinitionError("$.merge.checks", "check ids must be unique");
@@ -1050,7 +1053,7 @@ function releaseDecl(v: unknown, merge: MergeDecl | undefined, services: readonl
       if (typeof c === "string") {
         const m = merged.find((x) => x.id === c);
         if (!m) throw new DefinitionError(path, `names no merge check "${c}" (declare it in merge.checks, or here as {id, run})`);
-        const { optional: _o, ...rest } = m;
+        const { optional: _o, needsSelect: _n, ...rest } = m;
         checks.push(rest);
         continue;
       }

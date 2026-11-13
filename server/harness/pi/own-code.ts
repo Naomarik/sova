@@ -2,7 +2,9 @@ import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from "n
 import { homedir } from "node:os";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import { DefaultPackageManager } from "@earendil-works/pi-coding-agent";
+import { PROJECT_TOOLS_WORKER_SLOT } from "../../../pi-config/extensions/mode/project-tools.ts";
 import type { PiLoaderOptions } from "./extension-types";
+import { requireFromPi } from "./package";
 
 /**
  * Sova's own extensions from the process's own code (§app.chat-processes/code-generations): every
@@ -113,8 +115,9 @@ export function shippedOwn(path: string, own: string = OWN_ROOT): string | null 
 }
 
 /** pi's own rule for a directory's extension entries (package-manager.js resolveExtensionEntries): its
-    package.json `pi.extensions` that exist, else index.ts, else index.js; null when none. */
-function extensionEntries(dir: string): string[] | null {
+    package.json `pi.extensions` that exist, else index.ts, else index.js; null when none. A copy of pi's
+    rule: quirk P44 (QUIRKS.md) pins it against pi's. */
+export function extensionEntries(dir: string): string[] | null {
   try {
     const manifest = JSON.parse(readFileSync(join(dir, "package.json"), "utf8"))?.pi?.extensions;
     if (Array.isArray(manifest)) {
@@ -179,7 +182,7 @@ export interface ModesEntries {
   entry: string;
   /** For mode/spec-worker.ts. */
   specWorker: string;
-  /** For mode/project-tools-worker.ts: a slot name, no file (see PROJECT_TOOLS_WORKER_EXTENSION in subagents/index.ts). */
+  /** For the project-tools slot (PROJECT_TOOLS_WORKER_SLOT in a mode folder): a name, no file (see PROJECT_TOOLS_WORKER_EXTENSION in subagents/index.ts). */
   projectToolsWorker: string;
 }
 
@@ -191,8 +194,9 @@ export function modesEntries(own = OWN_ROOT): ModesEntries {
 
 /**
  * Which of the mode extension's files a listed path is, through any link, or null. By name only, never by
- * existence: `project-tools-worker.ts` is a slot name the subagents extension lists
- * (PROJECT_TOOLS_WORKER_EXTENSION in pi-config/extensions/subagents/index.ts), not a file path.
+ * existence: PROJECT_TOOLS_WORKER_SLOT (mode/project-tools.ts) is a slot name the subagents extension lists
+ * (PROJECT_TOOLS_WORKER_EXTENSION in pi-config/extensions/subagents/index.ts), not a file path, and the name
+ * older workers' recorded lists carry.
  */
 export function modeFileOf(path: string): keyof ModesEntries | null {
   if (isModeSlot(path)) return "entry";
@@ -200,7 +204,7 @@ export function modeFileOf(path: string): keyof ModesEntries | null {
     const dir = dirname(p);
     if (basename(dir) !== MODE_DIR || basename(dirname(dir)) !== "extensions") continue;
     if (basename(p) === "spec-worker.ts") return "specWorker";
-    if (basename(p) === "project-tools-worker.ts") return "projectToolsWorker";
+    if (basename(p) === PROJECT_TOOLS_WORKER_SLOT) return "projectToolsWorker";
   }
   return null;
 }
@@ -259,37 +263,46 @@ interface PmFacts {
   settingsManager?: { getGlobalSettings(): { extensions?: unknown } };
 }
 
-/** A settings pattern (pi's subset: `*`, `**`, `?`) as a whole-path regular expression. */
-function globRe(glob: string): RegExp {
-  const src = glob
-    .replace(/^\.\//, "")
-    .split("/")
-    .map((seg) => (seg === "**" ? "\u0000" : seg.replace(/[.+^${}()|[\]\\]/g, "\\$&").replace(/\*/g, "[^/]*").replace(/\?/g, "[^/]")))
-    .join("/")
-    .replace(/\u0000\//g, "(?:[^/]+/)*")
-    .replace(/\/\u0000/g, "(?:/[^/]+)*")
-    .replace(/\u0000/g, ".*");
-  return new RegExp(`^${src}$`);
+/** pi's own glob matcher: the minimatch its package manager matches extension patterns with, taken from pi's own
+    dependencies so a pattern means here what it means to pi (quirk P44). Loaded at the first pattern. */
+let piGlob: ((path: string, pattern: string) => boolean) | undefined;
+function piMinimatch(): (path: string, pattern: string) => boolean {
+  piGlob ??= (requireFromPi("minimatch") as { minimatch: (path: string, pattern: string) => boolean }).minimatch;
+  return piGlob;
 }
 
-/** Whether `name` (a shipped extension the agent dir doesn't have) stays off by the user's /extensions
-    patterns (the agent dir's settings.json `extensions`), matched as if it were linked there, by pi's
-    override rule (package-manager.js isEnabledByOverrides): `!glob` off, `+path` on, `-path` off. */
-function offByName(name: string, isFile: boolean, pm: PmFacts): boolean {
-  let patterns: unknown;
+/** A path with `/` separators, as pi compares them (package-manager.js toPosixPath). */
+const posixOf = (p: string) => p.split(sep).join("/");
+
+/**
+ * Whether pi would load the extension entry `path`, found under the agent dir `baseDir`, by the user's extension
+ * patterns (settings.json `extensions`): pi's override rule (package-manager.js isEnabledByOverrides) to the
+ * letter. `!glob` (pi's minimatch, against the path relative to `baseDir`, its file name, or the whole path) turns
+ * it off; `+path` (exact: relative or whole, a leading `./` dropped) back on; `-path` (the same) off over both.
+ * Anything else in the list doesn't count here. A copy of pi's rule: quirk P44 pins it against pi's.
+ */
+export function enabledByOverrides(path: string, patterns: readonly unknown[], baseDir: string): boolean {
+  const of = (kind: string) => patterns.filter((p): p is string => typeof p === "string" && p.startsWith(kind)).map((p) => posixOf(p.slice(1)));
+  const rel = posixOf(relative(baseDir, path));
+  const whole = posixOf(path);
+  const name = basename(path);
+  const glob = (ps: string[]) => ps.length > 0 && ps.some((p) => piMinimatch()(rel, p) || piMinimatch()(name, p) || piMinimatch()(whole, p));
+  const exact = (ps: string[]) => ps.map((p) => (p.startsWith("./") ? p.slice(2) : p)).some((p) => p === rel || p === whole);
+  let on = true;
+  if (glob(of("!"))) on = false;
+  if (exact(of("+"))) on = true;
+  if (exact(of("-"))) on = false;
+  return on;
+}
+
+/** The user's extension patterns (the agent dir's settings.json `extensions`); none: an empty list. */
+function patternsOf(pm: PmFacts): readonly unknown[] {
   try {
-    patterns = pm.settingsManager?.getGlobalSettings().extensions;
+    const patterns = pm.settingsManager?.getGlobalSettings().extensions;
+    return Array.isArray(patterns) ? patterns : [];
   } catch {
-    return false;
+    return [];
   }
-  if (!Array.isArray(patterns)) return false;
-  const rels = isFile ? [`extensions/${name}`] : [`extensions/${name}/index.ts`, `extensions/${name}`];
-  const hits = (kind: string, exact: boolean) =>
-    patterns.some((p) => typeof p === "string" && p.startsWith(kind) && rels.some((rel) => (exact ? p.slice(1).replace(/^\.\//, "") === rel : globRe(p.slice(1)).test(rel))));
-  let on = !hits("!", false);
-  if (hits("+", true)) on = true;
-  if (hits("-", true)) on = false;
-  return !on;
 }
 
 /** The process's own log for these lines. */
@@ -309,11 +322,12 @@ export interface OwnExtensionsOptions {
 
 /**
  * One resolve()'s extensions as Sova loads them (`pm`: the package manager that answered):
- * - the mode slot: the first discovered one is Sova's engine, always on (/extensions can't turn modes off;
- *   the mode menu does); any other is dropped; with none, the engine is added;
+ * - the mode slot: the first discovered one is Sova's engine, always on (extension patterns can't turn modes
+ *   off; the mode menu does); any other is dropped; with none, the engine is added;
  * - on the server's own agent dir: each one in a Sova tree's `pi-config/extensions/` is this copy's, in its
- *   slot, with pi's enabled flag (an /extensions "off" stays off); one this copy doesn't ship is left out;
- *   each shipped one the agent dir doesn't name is added, unless the user's patterns turn it off by name;
+ *   slot, with pi's enabled flag (a pattern's "off" stays off); one this copy doesn't ship is left out;
+ *   each shipped one the agent dir doesn't name is added, each entry on or off as the user's patterns would
+ *   have it were the extension linked there (enabledByOverrides);
  * - on another agent dir (a worktree's `.agent`): only the generation mapping (`o`);
  * - an agent dir holding copied sessions (COPIED_SESSIONS_MARKER) never runs wake-nudge.
  * What is added goes among the agent dir's own extensions by name, where a link to it would be found.
@@ -378,10 +392,12 @@ export function ownExtensions(extensions: readonly Resolved[], pm: PmFacts, o: O
   const meta = { source: "auto", scope: "user", origin: "top-level", baseDir: resolve(agentDir) };
   if (!mode) added.push({ path: entry, enabled: true, metadata: meta, name: MODE_DIR });
   if (ownDir && addsMissing(env)) {
+    const patterns = patternsOf(pm);
     for (const s of shippedExtensions(own)) {
       if (named.has(s.name) || (copied && s.name === WAKE_NUDGE)) continue;
-      const enabled = !offByName(s.name, s.paths.length === 1 && s.paths[0] === join(own, "pi-config", "extensions", s.name), pm);
-      for (const path of s.paths) if (!seen.has(path)) added.push({ path, enabled, metadata: meta, name: s.name });
+      // Each entry on or off as pi would have it were the extension linked into the agent dir (each entry by itself).
+      const asLinked = (path: string) => join(userExtensions, relative(join(own, "pi-config", "extensions"), path));
+      for (const path of s.paths) if (!seen.has(path)) added.push({ path, enabled: enabledByOverrides(asLinked(path), patterns, resolve(agentDir)), metadata: meta, name: s.name });
     }
   }
   for (const a of added) {

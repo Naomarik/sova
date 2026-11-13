@@ -39,25 +39,31 @@
 # extensions/mode is never linked: it holds the mode texts, rules and settings
 # files Sova reads from its own copy, and no pi extension (pi has no modes).
 # Every run but --check removes a link to it an older version made; --check
-# reports one.
+# reports one. The same goes for a link to an extension this version removed
+# (extension-toggle, the old /extensions command).
 set -euo pipefail
 here=$(cd "$(dirname "$0")" && pwd -P)
 agent=${PI_AGENT_DIR:-${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}}
 # Folders under extensions/ that are not linked into the agent dir (see above).
 not_linked=" mode "
+# Extensions an older version linked that this version removed.
+removed=" extension-toggle "
 unlinked() { case "$not_linked" in *" $1 "*) return 0 ;; esac; return 1; }
-# A link of ours to a folder that is no longer linked: removed (--check: reported).
+# A link of ours to a folder that is no longer linked, or to a removed extension:
+# removed (--check: reported).
 drop_unlinked() {
-	local name dst
-	for name in $not_linked; do
+	local name dst why
+	for name in $not_linked $removed; do
 		dst="$agent/extensions/$name"
 		[ -L "$dst" ] && [ "$(readlink "$dst")" = "$here/extensions/$name" ] || continue
+		why="$name is not an extension"
+		case "$removed" in *" $name "*) why="$name was removed" ;; esac
 		if $check; then
-			echo "stale link, $name is not an extension: $dst"
+			echo "stale link, $why: $dst"
 			bad=1
 		else
 			rm "$dst"
-			echo "removed $dst ($name is not an extension)"
+			echo "removed $dst ($why)"
 		fi
 	done
 }

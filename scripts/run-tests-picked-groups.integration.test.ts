@@ -56,6 +56,14 @@ test("a bare --picked-groups runs exactly the slow groups a landing runs for the
   assert.equal(self.code, 0, self.out);
   assert.deepEqual(self.ran, []);
   assert.equal(self.report?.skipped, SKIPPED);
+  // No merge base with the target: an error, like --changed's and --landing's (stderr, exit 2, no report), never a
+  // usage error's "no test ran" report.
+  const lost = p.run(["--integration", "--picked-groups"], { SOVA_MERGE_TARGET: "no-such-branch" });
+  assert.equal(lost.code, 2, lost.out);
+  assert.match(lost.out, /--picked-groups: no merge base with no-such-branch/);
+  assert.doesNotMatch(lost.out, /^usage:/m, "not a usage error");
+  assert.equal(lost.report, null, "no report: nothing was decided about the tests");
+  assert.deepEqual(lost.ran, []);
 });
 
 test("--picked-groups with names runs only those groups, as --groups does, whatever the branch changed", { timeout: 240_000 }, () => {
@@ -77,4 +85,11 @@ test("--picked-groups with names runs only those groups, as --groups does, whate
   assert.equal(unknown.code, 2, unknown.out);
   assert.match(unknown.out, /no test group no-such-group/);
   assert.deepEqual(unknown.ran, []);
+  // --base only steers a bare --picked-groups; beside named groups it would be dropped unread, so it is refused.
+  for (const names of [["trial"], ["all"]]) {
+    const based = p.run(["--integration", "--base", "master", "--picked-groups", ...names], env);
+    assert.equal(based.code, 2, `--base with ${names}: ${based.out}`);
+    assert.match(based.out, /--base goes with a bare --picked-groups/);
+    assert.deepEqual(based.ran, [], "nothing ran");
+  }
 });

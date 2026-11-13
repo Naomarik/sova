@@ -1110,6 +1110,12 @@ export class ModeEngine {
     this.syncHostSection();
   }
 
+  /** The background routing probe now in flight, settled: resolves once it has landed (its routes and notices
+      in), at once when none runs. For tests, which otherwise could only guess when a probe is done. */
+  routingSettled(): Promise<void> {
+    return this.inflight?.done ?? Promise.resolve();
+  }
+
   /** Whether the prompt head is fixed (the `context` filter drops pre-compaction notes only then; modes.ts). */
   headFixed(): boolean {
     return this.head !== undefined;

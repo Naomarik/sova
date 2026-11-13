@@ -326,3 +326,41 @@ test("extensions/mode is never linked: install, --links and --check each drop or
 	assert.equal(fs.readlinkSync(mode), path.join(s.root, "elsewhere"));
 	fs.rmSync(s.root, { recursive: true, force: true });
 });
+
+test("a removed extension's old link (extension-toggle): install and --links drop it, --check reports it", () => {
+	const s = sandbox();
+	const copy = path.join(s.root, "pi-config");
+	fs.cpSync(path.join(here, "sandbox-policy"), path.join(copy, "sandbox-policy"), { recursive: true });
+	fs.mkdirSync(path.join(copy, "extensions/alpha"));
+	const ext = path.join(s.agent, "extensions");
+	const toggle = path.join(ext, "extension-toggle");
+	const linked = () => fs.lstatSync(toggle, { throwIfNoEntry: false }) !== undefined;
+	let r = s.run();
+	assert.equal(r.code, 0, r.out);
+
+	// An older version's link to it (dangling now): --check fails and changes nothing; install removes it.
+	fs.symlinkSync(path.join(copy, "extensions/extension-toggle"), toggle);
+	r = s.run("--check");
+	assert.equal(r.code, 1, r.out);
+	assert.match(r.out, /stale link, extension-toggle was removed: .*extensions\/extension-toggle/);
+	assert.equal(linked(), true);
+	r = s.run();
+	assert.equal(r.code, 0, r.out);
+	assert.match(r.out, /removed .*extensions\/extension-toggle \(extension-toggle was removed\)/);
+	assert.equal(linked(), false);
+	assert.equal(s.run("--check").code, 0);
+
+	// --links removes it too.
+	fs.symlinkSync(path.join(copy, "extensions/extension-toggle"), toggle);
+	r = s.run("--links");
+	assert.equal(r.code, 0, r.out);
+	assert.equal(linked(), false, r.out);
+	assert.equal(r.out.trim(), `removed ${toggle} (extension-toggle was removed)`);
+
+	// A link of someone else's by that name is not ours: kept.
+	fs.mkdirSync(path.join(s.root, "elsewhere"));
+	fs.symlinkSync(path.join(s.root, "elsewhere"), toggle);
+	assert.equal(s.run().code, 0);
+	assert.equal(fs.readlinkSync(toggle), path.join(s.root, "elsewhere"));
+	fs.rmSync(s.root, { recursive: true, force: true });
+});

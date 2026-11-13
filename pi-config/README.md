@@ -22,7 +22,6 @@ installs with `install.sh` alone, without the web app.
 | `extensions/subagents/` | Background subagents with steering, wake-on-complete, fork, a monitor, and native coordinated teams |
 | `extensions/claude-code/` | `claude-code` worker backend for the subagent tools, driving the installed Claude Code CLI |
 | `extensions/command-palette/` | `Ctrl+P` palette over models, sessions, settings and extension commands |
-| `extensions/extension-toggle/` | `/extensions` to switch extensions on and off in-session |
 | `extensions/compact-handoff/` | `/compact-handoff [focus \| cancel]`: a read-only background fork of the session writes a handoff note, which is saved to `~/.pi/agent/compact-handoffs/<session id>.md` and the session's `compact-handoff` entry, then the session compacts; after this and every later compaction the newest note on the branch is added back, hidden, right after the summary |
 | `extensions/explain/` | `/explain <topic>`: one forked subagent writes a self-contained HTML explanation into `~/.pi/agent/explanations/`, kept forever and read in Sova |
 | `extensions/model-policy/` | The shared model policy (`model-policy.json`): which providers and models may be used at all, and which of them subagents may be given. Written by Sova's Settings → Models tab; this extension enforces the global half in the TUI |
@@ -90,9 +89,10 @@ location, and the links it creates point at the real path of the copy.
 
 For each of `keybindings.json`, `models.json`, `vision-delegate.json`, every
 `extensions/*/` directory but `mode` and every `extensions/*.ts` file, `install.sh`
-creates a symlink in the agent directory. `extensions/mode` is no pi extension:
-a link to it an older version made is removed (`--links` too), and `--check`
-fails on one. It also links
+creates a symlink in the agent directory. `extensions/mode` is no pi extension,
+and `extension-toggle` (the old `/extensions` command) is gone: a link to either
+an older version made is removed (`--links` too), and `--check` fails on one.
+It also links
 `extensions/sessions/bin/pi-sessions.ts` to `~/.local/bin/pi-sessions`. An
 existing symlink at a target is replaced, and an existing regular file or
 directory is moved to `<name>.bak`. Nothing else under `~/.pi/agent` is
@@ -180,7 +180,6 @@ Install. `models.json` contains no keys; the local Ollama entry's
 node --test install.test.mjs
 cd extensions/subagents && node tests/run.mjs && node tests/smoke.mjs && node tests/team-smoke.mjs
 cd extensions/claude-code && node tests/run.mjs && node tests/smoke.mjs
-cd extensions/extension-toggle && node --test index.test.ts command.test.ts
 cd extensions/compact-handoff && node tests/run.mjs && node tests/compact-turn.mjs
 cd extensions/mode && node --test modes.test.ts spec-mode.test.ts delegate.test.ts routing.test.ts align.test.ts review.test.ts spec.test.ts align-settings.test.ts spec-guard.test.ts project-modes.test.ts project-tools.test.ts project-actions.test.ts create-mode.test.ts spec-agree.test.ts && node tests/spec-worker.mjs
 cd extensions/model-policy && node --test policy.test.ts index.test.ts

@@ -224,6 +224,11 @@ environment every runner starts in, and the hermetic dev server.
   `node_modules` can break `pnpm run` in a worktree.
 - Claude logins in a hermetic run (fake `claude`, `SOVA_CLAUDE_ACCOUNTS_DEV`, the pool e2e):
   [agents/extensions/claude-code/overview.md](../extensions/claude-code/overview.md).
+- A `claude-accounts.json` copied into a hermetic `.agent` keeps each login's `device` from the machine it
+  came from (its mesh id). The hermetic `.agent` has no `sova/peers.json`, so this host is `local`, and a
+  login assigned to another device is skipped (`assignedHere`, `pi-config/extensions/claude-code/accounts.ts`):
+  every login is skipped and only the agent dir's own default login is used, often expired. Set each login's
+  `"device"` to `"local"` in the copy.
 
 ### Ratchets and scenarios (the commands work)
 

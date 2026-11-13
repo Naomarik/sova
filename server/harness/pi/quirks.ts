@@ -617,6 +617,21 @@ export const PI_QUIRKS: readonly PiQuirk[] = [
     retireWhen: "pi reads settings without a lock, or offers a read-only settings load",
   },
   {
+    id: "P44",
+    name: "own-code-pi-rules",
+    kind: "semantic",
+    relies:
+      "On the server's own agent dir Sova adds each shipped extension the agent dir lacks as pi would discover it linked there, with rules pi keeps module-private in package-manager.js, so own-code copies them: a directory's entries by resolveExtensionEntries (its package.json pi.extensions that exist, else index.ts, else index.js), and each entry on or off by isEnabledByOverrides (a `!` glob, matched by minimatch against the path relative to the agent dir, its file name or the whole path, turns it off; an exact `+` path back on; an exact `-` path off over both). The globs are matched with the minimatch pi itself depends on, taken from pi's own dependencies.",
+    pi: ["resolveExtensionEntries", "isEnabledByOverrides", "DefaultPackageManager.resolve", "minimatch"],
+    where: [
+      { file: "server/harness/pi/own-code.ts", symbol: "extensionEntries" },
+      { file: "server/harness/pi/own-code.ts", symbol: "enabledByOverrides" },
+      { file: "server/harness/pi/own-code.ts", symbol: "piMinimatch" },
+    ],
+    canary: "P44 own-code-pi-rules: own-code's copies answer as pi does: a directory's extension entries, and each entry on or off by the user's patterns, over a table of shapes and patterns",
+    retireWhen: "pi exports its extension-entry and override rules, or resolves an extension it was not given as if it were linked",
+  },
+  {
     id: "T1",
     name: "scripted-model (test-only)",
     kind: "private-write",

@@ -393,6 +393,13 @@ export function withdrawnDefinition(name: string) {
 	};
 }
 
+/**
+ * The project-tools slot's name: the file name a pi worker's extension list gives it, under a `mode` folder
+ * (subagents' PROJECT_TOOLS_WORKER_EXTENSION). No such file exists: Sova's loader (own-code.ts modeFileOf)
+ * knows the slot by this name and loads its own module there. The name is the one older workers' recorded
+ * lists carry, so keep it.
+ */
+export const PROJECT_TOOLS_WORKER_SLOT = "project-tools-worker.ts";
 /** Names the file a worker reads its project modes' copies from (the worker's project-tools slot, which Sova fills). */
 export const PROJECT_TOOLS_FILE_ENV = "SOVA_PROJECT_TOOLS_FILE";
 /** Where `writeWorkerToolsFile` keeps the hand-off files, under the agent dir. */

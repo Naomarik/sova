@@ -114,7 +114,7 @@ import { canonicalClaudeId, claudeBareId, claudeOffer, unverifiedClaudeNote } fr
 import { CLAUDE_CODE_BACKEND, claudeOnPi, continuationMessage, continuationOptions, continuationTools, seedContinuationSession } from "./claude-workers.ts";
 import { workerSpecBrief, writesCode } from "./spec-brief.ts";
 import { usageOut } from "../provider-limits/usage-out.ts";
-import { PROJECT_TOOLS_FILE_ENV, writeWorkerToolsFile } from "../mode/project-tools.ts";
+import { PROJECT_TOOLS_FILE_ENV, PROJECT_TOOLS_WORKER_SLOT, writeWorkerToolsFile } from "../mode/project-tools.ts";
 import { restoreActive as restoreWorktrees, treeOf, workerCwdRefusal as worktreeCwdRefusal, type WorktreesActive } from "../worktrees/state.ts";
 
 /** Workers a chat may have live at once (idle ones, a team's coordinator and monitor included). No per-request limit. */
@@ -186,7 +186,7 @@ const AgentSpec = Type.Object(
 		useWorktreeConfig: Type.Optional(
 			Type.Boolean({
 				description:
-					"Pi only: run the worker on its worktree's own agent dir (<worktree>/.agent: its settings and auth; normal mode, spec only while this session has it on). Valid only when cwd is inside an active worktree this session tracks that has a .agent.",
+					"Pi only: run the worker on its worktree's own agent dir (<worktree>/.agent: its settings and auth). Modes come only from Sova: under Sova it gets them as any worker does; outside Sova it has none. Valid only when cwd is inside an active worktree this session tracks that has a .agent.",
 			}),
 		),
 	},
@@ -427,16 +427,17 @@ export const SPEC_WORKER_EXTENSION = realpathOr(path.join(SELF_DIR, "..", "mode"
  * The project mode tools for pi workers: a worker handed project modes with tools (`workers: yes`) lists this
  * with `-e`, and reads the parent's copies from the file PROJECT_TOOLS_FILE_ENV names.
  *
- * A slot name, not a file path: no file `mode/project-tools-worker.ts` exists, and none is meant to. Sova's
- * loader (server/harness/pi/own-code.ts modeFileOf / workerModePaths) recognises it by its name (the file
- * name in an `extensions/mode` folder) and puts its own module in this place of the worker's list, so a
- * worker never loads this path as written. Keep the name as it is: the loader, its tests and earlier workers'
- * recorded lists match it. Only Sova announces modes, so only a Sova chat's worker lists it.
+ * A slot, not a file: the mode folder beside this one joined with PROJECT_TOOLS_WORKER_SLOT
+ * (mode/project-tools.ts), a name no file carries and none is meant to. Sova's loader
+ * (server/harness/pi/own-code.ts modeFileOf / workerModePaths) recognises it by that name in an
+ * `extensions/mode` folder and puts its own module in this place of the worker's list, so a worker never
+ * loads this path as written; earlier workers' recorded lists carry the same name and resolve alike. Only
+ * Sova announces modes, so only a Sova chat's worker lists it.
  *
  * Only a worker that can run commands (bash) gets it: a project tool is a program, so a read-only worker
  * never gains one. None for a remote worker (project modes are local only).
  */
-export const PROJECT_TOOLS_WORKER_EXTENSION = realpathOr(path.join(SELF_DIR, "..", "mode", "project-tools-worker.ts"));
+export const PROJECT_TOOLS_WORKER_EXTENSION = path.join(SELF_DIR, "..", "mode", PROJECT_TOOLS_WORKER_SLOT);
 /**
  * The per-provider request limits (provider-limits/, a sibling extension), loaded right after the
  * marker into every pi worker: a worker's model requests claim its provider's slots on this device

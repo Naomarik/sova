@@ -736,7 +736,7 @@ function quietProject(): string {
 	for (const args of [["init", "-q", "-b", "main"], ["add", "-A"], ["commit", "-qm", "base"]]) assert.equal(spawnSync("git", [...G, "-C", at, ...args]).status, 0);
 	return at;
 }
-/** pi's two hooks around one tool call, as mode/index.ts runs them; a bash call's command really runs in between. */
+/** pi's two hooks around one tool call, as Sova's mode engine (server/modes/engine.ts) runs them; a bash call's command really runs in between. */
 function quietSession(core = CORE) {
 	const census = new CensusHook({ core: () => core });
 	const guard = new SpecWriteGuard();

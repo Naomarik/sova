@@ -1,6 +1,6 @@
-// Press-and-hold on a session row: the timer that lifts one row, on a mouse and under a thumb
-// alike, and the window that swallows what the hold leaves behind. A lifted row released in place
-// does nothing; one that moves becomes a drag (drag-overlay.ts wraps this for both).
+// The shared press-and-hold timer and the window that swallows what a fired hold leaves behind.
+// Callers decide what a hold means: a pointer menu at 500ms, or a mouse row lifting for its drag.
+// A hold's click and contextmenu must not also act on the place underneath.
 // Framework-free and clock-injected, so the rules below are testable without a browser, and
 // `suppressed()` says what to do with the click and the context menu the hold leaves behind.
 

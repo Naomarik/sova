@@ -5,6 +5,7 @@
 // without a browser.
 
 import type { TranscriptItem } from "../../shared/protocol";
+import type { IconName } from "../components/ui";
 import { entryIdOf } from "./jump";
 
 export type MessageActionKind = "copy" | "share" | "rewind" | "regenerate" | "fork" | "remove";
@@ -118,6 +119,16 @@ export const ACTION_LABEL: Record<MessageActionKind, string> = {
   regenerate: "Regenerate this reply",
   fork: "Fork from here",
   remove: "Remove this queued message",
+};
+
+/** Each action's icon in the strip. */
+export const ACTION_ICON: Record<MessageActionKind, IconName> = {
+  copy: "copy",
+  share: "share",
+  rewind: "undo",
+  regenerate: "refresh",
+  fork: "branch",
+  remove: "close",
 };
 
 /** The strip's own accessible name, so a screen reader knows whose message these act on. */

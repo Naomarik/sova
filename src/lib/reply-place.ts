@@ -141,6 +141,8 @@ export function createReplyAdditions(opts: {
 
   return {
     added: (entryId: string): SlotState | undefined => byEntry()?.get(entryId),
+    /** The session an extension may be told about: this host's chat only, once its id is known. */
+    session: (): string | null => (opts.local() && opts.session()) || null,
     /** POST /ext/<id>/api/commands/<action> with {session, entry}, then ask again. */
     async runChip(chip: ReplyChip, entryId: string): Promise<string | null> {
       const session = opts.session();

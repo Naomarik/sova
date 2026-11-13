@@ -81,10 +81,12 @@
   word-break: break-word;
 }
 
-.shortcut-list { margin: 0; display: flex; flex-direction: column; }
+/* One key column for every row, as wide as the widest shortcut label. */
+.shortcut-list { margin: 0; display: grid; grid-template-columns: max-content 1fr; }
 .shortcut-row {
+  grid-column: 1 / -1;
   display: grid;
-  grid-template-columns: 9em 1fr;
+  grid-template-columns: subgrid;
   gap: var(--space-3);
   padding: var(--space-2) 0;
   border-bottom: var(--stroke-thin) solid var(--color-border);

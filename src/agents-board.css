@@ -76,7 +76,6 @@
 .board-group-head + .board-list > .board-row:first-child { border-top: var(--stroke-thin) solid var(--color-border); }
 .board-row { position: relative; cursor: pointer; transition: background var(--dur-fast) var(--ease-standard); }
 .board-row:hover { background: var(--color-sunken); }
-.board-rename { cursor: auto; }
 .board-row + .board-row { border-top: var(--stroke-thin) solid var(--color-border); }
 /* The state rail: the row's left edge. Decorative — the heading and a hidden word after the title say it. */
 .board-rail { position: absolute; inset: 0 auto 0 0; width: 3px; background: var(--color-border); }
@@ -84,11 +83,11 @@
 .board-row[data-state="needs-you"] .board-rail { background: var(--status-warn); }
 .board-row[data-state="idle"] .board-rail { background: var(--color-border-strong); }
 
-/* Folded: the session and its ⋯ on one line; the tokens figure rides the micro line. */
+/* Folded: the session takes the row; the tokens figure rides the micro line. */
 .board-line {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) var(--control-md);
-  grid-template-areas: "session actions";
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas: "session";
   gap: var(--space-1) var(--space-2);
   align-items: center;
   padding: var(--space-2) var(--space-2) var(--space-2) var(--space-2);
@@ -134,10 +133,6 @@
 }
 .board-title:hover { text-decoration: underline; text-underline-offset: 2px; }
 .board-title:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
-.board-rename { display: flex; flex-direction: column; gap: var(--space-1); padding-right: var(--space-2); }
-.board-rename .group-field { flex-wrap: wrap; }
-.board-rename .input { flex: 1; min-width: 12rem; }
-.board-rename p { margin: 0; }
 
 .board-gist {
   margin: 0;
@@ -179,8 +174,8 @@ button.board-team:focus-visible { outline: var(--focus-ring); outline-offset: va
 .board-dirty { flex: none; display: inline-block; width: 8px; height: 8px; border-radius: var(--r-full); background: var(--status-warn); }
 .board-dirty-word { display: inline-flex; align-items: center; gap: var(--space-1); color: var(--color-ink-2); }
 
-/* Folded: the ⋯ is the one door to the actions. */
-.board-actions { display: flex; flex-wrap: nowrap; justify-content: flex-end; gap: var(--space-1); }
+/* Session Details joins the row at unfolded width. */
+.board-actions { display: none; flex-wrap: nowrap; justify-content: flex-end; gap: var(--space-1); }
 .board-act { display: none; }
 
 /* ---- The open row: where the session stands, what it's about, and its worktrees ----
@@ -214,10 +209,10 @@ button.board-team:focus-visible { outline: var(--focus-ring); outline-offset: va
 
 .board-head { display: none; }
 
-/* ---- Unfolded, condensed: the Activity line over Workers' first line in one column; details and ⋯ ---- */
+/* ---- Unfolded, condensed: the Activity line over Workers' first line in one column; details ---- */
 @container insights (min-width: 768px) {
   .board-line {
-    grid-template-columns: minmax(0, 1.6fr) minmax(9.5rem, 1fr) 6rem calc(var(--control-md) * 2 + var(--space-1));
+    grid-template-columns: minmax(0, 1.6fr) minmax(9.5rem, 1fr) 6rem var(--control-md);
     grid-template-areas: "session activity tokens actions" "session workers tokens actions";
     gap: 2px var(--space-3);
     padding: var(--space-1) var(--space-2) var(--space-1) var(--space-2);
@@ -229,6 +224,7 @@ button.board-team:focus-visible { outline: var(--focus-ring); outline-offset: va
   .board-workers { align-self: start; }
   .board-micro { display: none; }
   .board-act { display: inline-flex; }
+  .board-actions { display: flex; }
   .board-caption { flex-direction: row; align-items: baseline; justify-content: space-between; }
 }
 
@@ -236,7 +232,7 @@ button.board-team:focus-visible { outline: var(--focus-ring); outline-offset: va
 @container insights (min-width: 1000px) {
   .board-line,
   .board-head {
-    grid-template-columns: minmax(0, 1fr) 10rem minmax(9rem, 14rem) 7rem calc(var(--control-md) * 2 + var(--space-1));
+    grid-template-columns: minmax(0, 1fr) 10rem minmax(9rem, 14rem) 7rem var(--control-md);
     grid-template-areas: "session activity workers tokens actions";
     column-gap: var(--space-3);
   }
@@ -260,7 +256,7 @@ button.board-team:focus-visible { outline: var(--focus-ring); outline-offset: va
 @container insights (1000px <= width < 1600px) {
   .board-line,
   .board-head {
-    grid-template-columns: minmax(0, 1fr) 5.5rem minmax(8rem, 9.5rem) 6rem calc(var(--control-md) * 2 + var(--space-1));
+    grid-template-columns: minmax(0, 1fr) 5.5rem minmax(8rem, 9.5rem) 6rem var(--control-md);
     column-gap: var(--space-2);
   }
   .board-activity-line .board-model {
@@ -283,6 +279,6 @@ button.board-team:focus-visible { outline: var(--focus-ring); outline-offset: va
 @container insights (min-width: 1600px) {
   .board-line,
   .board-head {
-    grid-template-columns: minmax(20rem, 1fr) 10rem 17rem 8rem calc(var(--control-md) * 2 + var(--space-1));
+    grid-template-columns: minmax(20rem, 1fr) 10rem 17rem 8rem var(--control-md);
   }
 }

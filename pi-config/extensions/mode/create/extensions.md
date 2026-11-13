@@ -63,8 +63,8 @@ createServer((req, res) => {
 
 ## Things it adds to Sova's screens
 
-- Change: chips under replies, a chip on session rows, one status line on its home card, and rows in a session's ⋯ menu.
-- Lives: its description file (`"screens": ["reply", "row", "card"]`, and `"menu": "session"` on a command), plus answers from its backend at `/api/screens/<place>`. Sova draws what the backend answers as data.
+- Change: chips under replies, a chip on session rows, one status line on its home card, and rows in Sova's menus (a session's, a group's, a pane's, a message's or a worktree row's).
+- Lives: its description file (`"screens": ["reply", "row", "card"]`, and `"menu": "session"` on a command, or `"group"`, `"pane"`, `"message"` or `"worktree"` with `"needsContract": "1.21"`), plus answers from its backend at `/api/screens/<place>`. Sova draws what the backend answers as data.
 - Approves: the person, in the review. They hide any of them from the extension's page with Hide Under Replies, Hide on Session Rows or Hide on Home Card.
 - By: OK.
 - Live: now. Three bad answers in a row stop Sova asking until the page reloads.

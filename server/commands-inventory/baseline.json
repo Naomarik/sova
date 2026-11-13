@@ -632,6 +632,7 @@
   "keydown": {
     "src/commands/keys.ts": ["window","document"],
     "src/components/ChangesViewer.tsx": ["document"],
+    "src/components/ContextMenu.tsx": ["global"],
     "src/components/FolderApprovalsDialog.tsx": ["document"],
     "src/components/GroupView.tsx": ["window"],
     "src/components/InsightStrip.tsx": ["document"],

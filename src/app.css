@@ -587,7 +587,7 @@ html, body { overflow: clip; overscroll-behavior: none; }
 .org-section + .org-section { border-top: var(--stroke-thin) solid var(--color-border); }
 /* The org head's count stays, open or shut (unlike a user's group, whose rows say it). */
 .org-section[open] > .group-label > .text-num { display: inline; }
-/* The org page link: a 44px ghost icon hung into the gutter, like a group's ⋯. */
+/* The org page link: a 44px ghost icon hung into the gutter. */
 .org-label .org-link {
   flex: none;
   margin-right: calc(var(--space-4) * -1 + var(--space-1));
@@ -596,10 +596,9 @@ html, body { overflow: clip; overscroll-behavior: none; }
 .org-label .org-link:hover,
 .org-label .org-link:focus-visible { color: var(--color-ink); }
 .org-label .org-link .icon { width: 16px; height: 16px; }
-/* A section head's Name sessions button (§app.session-list/auto-titles): quiet like a group's `⋯`,
-   muted until hovered or focused, with the full 44px target and a 16px glyph. At the end of a
-   region head it hangs into the head's right padding, like Groups' `+`; on a group's head it sits
-   before the `⋯`, which already takes that place. Present only while there is something to name. */
+/* A section head's Name sessions button (§app.session-list/auto-titles): quiet, muted until
+   hovered or focused, with the full 44px target and a 16px glyph. At the end of a region head it
+   hangs into the head's right padding, like Groups' `+`. Present only while there is something to name. */
 .name-sessions {
   flex: none;
   color: var(--color-ink-muted);

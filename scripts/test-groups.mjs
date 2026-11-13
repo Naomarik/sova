@@ -184,6 +184,29 @@ export const GROUPS = [
     landing: "triggered",
     triggers: [...RETIRE_LAB, ...TEST_SETUP, ...SELF],
   },
+  {
+    name: "menus",
+    title: "Menus in a browser",
+    // Right-click menus driven in Chrome with real pointer input (§app.context-menus/placement): a press
+    // and release leaves the menu open, at the normal spot, flipped, and moved to another row. Menu code only.
+    files: ["server/menus-browser.integration.test.ts"],
+    except: [],
+    landing: "triggered",
+    triggers: [
+      "src/components/ContextMenu.tsx",
+      "src/components/ActionMenu.tsx",
+      "src/components/MenuPlace.tsx",
+      "src/lib/context-menu.ts",
+      "src/lib/menu-position.ts",
+      "src/lib/menu-place.ts",
+      "src/lib/*-menu.ts",
+      "server/forms-browser.test.helper.ts",
+      "server/settings-browser-temp.test.helper.ts",
+      "server/tours/browser.ts",
+      ...TEST_SETUP,
+      ...SELF,
+    ],
+  },
 ];
 
 /** The name of the everyday set: every integration file in no group. */

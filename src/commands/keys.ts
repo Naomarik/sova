@@ -3,11 +3,10 @@
 // Each row is one chord with the rules for where it fires. The first four rules are exactly what
 // each key did before this table existed (Alt+O in App, Ctrl/⌘+P in ComposerMenu, Ctrl/⌘+B and "/"
 // in Sidebar). Ctrl/⌘+K (the command palette) and "?" (the shortcut sheet) came after, both owned
-// by App (§app/command-palette). A typed character (compose.type) came last, owned by App too: it
+// by App (§app/command-palette). A typed character (compose.type) came next, owned by App too: it
 // starts the message in the chat's message box (lib/type-anywhere). Keys scoped to a widget
 // (GroupView, ChangesViewer, InsightStrip, VoiceInput, a chart's Escape, the message box's Escape in
-// Composer) stay with their widget and
-// are not here.
+// Composer) stay with their widget and are not here.
 //
 // Scope words:
 // - `textEntry`: "ignored" means a keydown whose target is a caret-bearing field (lib/text-entry)

@@ -3,7 +3,7 @@ import type { ArchiveMutation } from "../lib/optimistic-archive";
 import { profileIconName } from "../lib/profiles";
 import { builtOnceOpen } from "../lib/built-once";
 import { projectSummaryKey, remember } from "../lib/page-cache";
-import { createEffect, createMemo, createResource, createSignal, For, type JSX, Match, on, onCleanup, onMount, Show, Switch } from "solid-js";
+import { createEffect, createMemo, createResource, createSignal, For, type JSX, Match, on, onCleanup, onMount, Show, Switch, useContext } from "solid-js";
 import { Portal } from "solid-js/web";
 import type { AgentsInsight, AttentionDigest, AttentionItem, ContextInfo, OverseerInfo, SessionGroup, SessionSummary, UsageInsight } from "../../shared/protocol";
 import { OVERSEER_HASH, overseerButtonLabel } from "../lib/overseer";
@@ -55,8 +55,6 @@ import {
   groupSections,
   loadSessionGroups,
   quoted,
-  removeGroup,
-  renameGroup,
   sessionGroups,
   setSessionGroup,
 } from "../lib/session-groups";
@@ -75,6 +73,11 @@ import { reuseUnchanged } from "../lib/summary-diff";
 import { FOLDERS_KEY, readKey, removeKey, writeKey } from "../lib/storage-keys";
 import { monogram, setSpine, spine } from "../lib/spine";
 import { ARCHIVE_TILE, createRowPress, type DragInfo, dropAction, dropTiles, type TileId } from "../lib/drag-overlay";
+import { startsPress } from "../lib/context-menu";
+import { sessionArchiveRow } from "../lib/session-menu";
+import { closeContextMenuOf } from "./ContextMenu";
+import { holdMenu, openMenu } from "./MenuPlace";
+import { holdSessionMenu, openSessionMenu, SidebarSessionMenu } from "./SessionRowMenu";
 import { bindKey } from "../commands/keys";
 import { folderActive, folderOpen, folderOpenKey, readFolderOpenRaw, storedFolderOpen, writeFolderOpenRaw } from "../lib/folder-open";
 import { groupOpen as groupOpenRule, groupsRegionOpen as groupsRegionOpenRule } from "../lib/group-open";
@@ -104,11 +107,10 @@ import { ContextRing } from "./ContextRing";
 import { CancelHeldButton } from "./HeldAct";
 import { NeedsYouChatRow } from "./PlaybookReview";
 import { waitingWords } from "../lib/working-hours";
-import { groupHref } from "../lib/group-route";
-import { GroupNameField } from "./Groups";
+import { GROUP_MENU } from "../lib/group-menu";
 import { draggingPath, dragSuppressesClick, DropOverlay, openNewGroupFor, startRowDrag } from "./DropOverlay";
 import { GroupPicker } from "./GroupPicker";
-import { EMPTY_GROUP_REASON, NO_GROUPS_NOTE } from "../lib/group-picker";
+import { NO_GROUPS_NOTE } from "../lib/group-picker";
 import { RemoteGroupDot } from "./RemoteStatus";
 import { Banner, Icon, trapFocus } from "./ui";
 import { showSummaries } from "../lib/summary-line";
@@ -323,13 +325,11 @@ export function SessionRow(props: {
     return fromList && fromList.window ? fromList : null;
   };
   /**
-   * Press-and-hold — a mouse button held down, a thumb held on the row — lifts the row; letting go
-   * in place does nothing. A lifted row that moves, or a mouse press that moves 6px, is a drag: it
-   * opens the drop overlay (§app.session-list/drop-overlay), which owns the gesture from then on.
-   * The press is off the moment it stops being a press in place: a scroll (the list moving under a
-   * still finger is `pointercancel` on touch and a `scroll` event on a mouse wheel), or the row
-   * going away. What a lift or a drag leaves behind — a `click`, and on touch a `contextmenu` — is
-   * swallowed below, or the row would navigate on top of what the gesture just did.
+   * A mouse press held down lifts the row; letting go in place does nothing. A lifted row that
+   * moves, or a mouse press that moves 6px, is a drag. Touch and pen use the shared menu hold
+   * instead: the deadline lifts the row, post-lift movement opens the drop overlay, and a
+   * stationary release opens the row's menu. Pre-lift movement remains the browser's scroll.
+   * Scroll, cancellation, blur and unmount abandon either gesture.
    */
   let shell: HTMLLIElement | undefined;
   let pointerId = 0;
@@ -355,11 +355,7 @@ export function SessionRow(props: {
     };
   };
   const press = createRowPress({
-    onLift: () => {
-      setLifted(true);
-      // A short buzz where a phone has one: the row has come off the list.
-      if (pointerKind !== "mouse") navigator.vibrate?.(10);
-    },
+    onLift: () => setLifted(true),
     onDrag: (at) => {
       setLifted(false);
       watchPress(false);
@@ -397,15 +393,18 @@ export function SessionRow(props: {
     f("pointercancel", cancelOwn as EventListener, true);
   };
   onCleanup(cancelPress);
-  /** A lifted row, or one in flight, must not scroll the list under the finger. Non-passive, and
-      on the row from the start: a listener added once the touch has begun may not be asked. */
-  const holdStill = (e: TouchEvent) => {
-    if (e.cancelable && (press.phase() === "lifted" || draggingPath() === s().path)) e.preventDefault();
-  };
-  onMount(() => shell?.addEventListener("touchmove", holdStill, { passive: false }));
-  onCleanup(() => shell?.removeEventListener("touchmove", holdStill));
   /** The rail's own controls (the state pills) are pressed, not held. */
   const onOwnControl = (e: PointerEvent) => e.target instanceof Element && !!e.target.closest("button, input, label");
+  /** The session menu (§app.session-list/accessibility "The session menu"): a right-click or touch/pen hold. */
+  const menuCtx = useContext(SidebarSessionMenu);
+  let link: HTMLAnchorElement | undefined;
+  onCleanup(() => closeContextMenuOf(shell));
+  const onContextMenu = (e: MouseEvent & { currentTarget: HTMLLIElement }) => {
+    // A mouse lift's or a drag's contextmenu belongs to that gesture, not to either menu.
+    const holds = press.suppressed() || !!draggingPath();
+    if (!menuCtx || !link) return holds && e.preventDefault();
+    openSessionMenu(e, { el: e.currentTarget, link, holds }, s, menuCtx, () => sessionArchiveRow(s(), localRunning()));
+  };
 
   return (
     <li
@@ -417,27 +416,24 @@ export function SessionRow(props: {
         "session-row-lifted": lifted(),
       }}
       onPointerDown={(e) => {
-        if (e.pointerType === "mouse" && e.button !== 0) return; // right-click is not a hold
+        if (!startsPress(e)) return; // a right-click (a Mac's Ctrl+click too) is not a hold
         if (onOwnControl(e) || draggingPath()) return;
         pointerId = e.pointerId;
         pointerKind = e.pointerType;
-        press.start({ x: e.clientX, y: e.clientY }, e.pointerType);
+        if (e.pointerType !== "mouse") {
+          if (menuCtx && link && shell)
+            holdSessionMenu(e, { el: shell, link, lift: (on) => setLifted(on), drag: (at) => shell && startRowDrag(dragInfo(), at, pointerId, shell, pointerKind) }, s, menuCtx, () => sessionArchiveRow(s(), localRunning()));
+          return;
+        }
+        press.start({ x: e.clientX, y: e.clientY });
         watchPress(true);
       }}
       onPointerCancel={cancelPress}
-      // A pointer that leaves the row before the hold is not a press in place — except a mouse
-      // that may still drag, whose moves the window keeps watching (6px is a drag, wherever it goes).
-      onPointerLeave={(e) => {
-        if (press.phase() !== "pressed") return;
-        if (e.pointerType === "mouse") return;
-        cancelPress();
-      }}
       // Capture went to someone else (a scrollbar, another element grabbing it), so the pointerup
       // belonging to this press will never arrive. A drag that took the capture has already
       // ended the press, so this changes nothing for it.
       onLostPointerCapture={() => press.phase() !== "idle" && cancelPress()}
-      // The long-press context menu belongs to the hold, not to the browser.
-      onContextMenu={(e) => (press.suppressed() || draggingPath()) && e.preventDefault()}
+      onContextMenu={onContextMenu}
     >
       <div class="session-rail">
         {/* At most one state: live wins over busy. TUI is a static word; Busy is a pulsing dot. */}
@@ -483,6 +479,7 @@ export function SessionRow(props: {
         </Show>
       </div>
       <a
+        ref={link}
         class="list-row list-row-interactive session-row"
         href={sessionHref(s().path)}
         draggable={false}
@@ -813,23 +810,11 @@ function GroupBlock(props: {
   const group = () => props.group;
   const count = () => props.sessions.length;
 
-  /** The confirm question, one sentence, in both its forms: what goes away, then what doesn't. */
-  const question = () =>
-    count() === 0
-      ? `Delete ${quoted(group().name)}? Nothing is in it.`
-      : `Delete ${quoted(group().name)}? Its ${sessionsWord(count())} stay${count() === 1 ? "s" : ""} in the list.`;
-
-  const deleteGroup = async () => {
-    const n = count();
-    const name = group().name;
-    if (!(await removeGroup(group().id))) return;
-    toast(
-      n === 0
-        ? `Deleted ${quoted(name)}. It had no sessions.`
-        : `Deleted ${quoted(name)}. Its ${sessionsWord(n)} ${n === 1 ? "is" : "are"} ungrouped.`,
-    );
-    props.onChanged(); // the rows it held carry a groupId that is gone
-  };
+  let summary!: HTMLElement;
+  onCleanup(() => closeContextMenuOf(summary));
+  const menu = () => ({ group: group(), count: count(), onChanged: props.onChanged });
+  /** The name row's right-click and touch/pen hold draw the same menu, at the pointer. */
+  const onContextMenu = (e: MouseEvent & { currentTarget: HTMLElement }) => openMenu(e, GROUP_MENU, menu, { el: e.currentTarget, origin: () => summary });
 
   return (
     <details
@@ -839,87 +824,19 @@ function GroupBlock(props: {
     >
       {/* No folder icon here, unlike the cwd heads inside: a group is the user's own name for a set
           of sessions, not a folder on disk, and the icon claimed otherwise right above real ones. */}
-      <summary class="list-group-label group-label" title={group().name}>
+      <summary
+        ref={summary}
+        class="list-group-label group-label"
+        title={group().name}
+        onPointerDown={(e) => holdMenu(e, GROUP_MENU, menu, { el: e.currentTarget, origin: () => summary })}
+        onContextMenu={onContextMenu}
+      >
         <Icon name="chevron-right" small class="icon-twist" />
         <span class="group-name">
           <bdi>{group().name}</bdi>
         </span>
         <span class="text-num">{count()}</span>
         <NameSessionsButton section={`g-${group().id}`} rows={props.sessions} onDone={props.onChanged} />
-        {/* The group's own actions, on its own name row. `contain` is what makes a control inside a
-            <summary> possible at all: without it every click in here would toggle the section. The
-            trigger is quiet until the row is hovered or something in it takes focus (base.css), and
-            always visible to the keyboard. */}
-        <ActionMenu label={`Group actions · ${group().name}`} title="Group actions" class="group-actions" contain>
-          {(menu) => (
-            <Show
-              when={menu.screen()}
-              fallback={
-                <div class="model-menu-list" role="menu" aria-label={`Group actions · ${group().name}`}>
-                  {/* The workspace: every session of this group on screen at once (#/g/<id>).
-                      Purely additive — the rows above still open one session at a time. */}
-                  <menu.Item
-                    label="Open workspace"
-                    aria={`Open ${quoted(group().name)} as a workspace`}
-                    title={`Open ${quoted(group().name)} as a workspace`}
-                    icon={<Icon name="external" small />}
-                    href={groupHref(group().id)}
-                    disabled={count() === 0 ? EMPTY_GROUP_REASON : ""}
-                  />
-                  <menu.Item
-                    label="Rename…"
-                    aria={`Rename ${quoted(group().name)}`}
-                    icon={<Icon name="pencil" small />}
-                    stayOpen
-                    onRun={() => menu.show("rename")}
-                  />
-                  <menu.Item
-                    label="Delete group…"
-                    aria={`Delete ${quoted(group().name)}`}
-                    icon={<Icon name="close" small />}
-                    stayOpen
-                    onRun={() => menu.show("delete")}
-                  />
-                </div>
-              }
-            >
-              {/* The menu's second screen: one question at a time, in the menu the press came from,
-                  so nothing moves in the list below while it is answered. */}
-              <Show
-                when={menu.screen() === "delete"}
-                fallback={
-                  <div class="group-menu-screen">
-                    <GroupNameField
-                      label={`Rename ${quoted(group().name)}`}
-                      initial={group().name}
-                      onDone={(name) => {
-                        menu.dismiss();
-                        if (name !== group().name) void renameGroup(group().id, name);
-                      }}
-                      onCancel={() => menu.dismiss()}
-                    />
-                  </div>
-                }
-              >
-                <div class="group-menu-screen">
-                  <p class="group-tools-question">{question()}</p>
-                  <div class="cluster">
-                    <button
-                      type="button"
-                      class="button button-sm button-destructive"
-                      onClick={() => menu.run(() => void deleteGroup())}
-                    >
-                      Delete group
-                    </button>
-                    <button type="button" class="button button-sm button-ghost" onClick={() => menu.dismiss()}>
-                      Cancel
-                    </button>
-                  </div>
-                </div>
-              </Show>
-            </Show>
-          )}
-        </ActionMenu>
       </summary>
       <Show when={count() > 0} fallback={<p class="sidebar-region-note">No sessions yet. Drag a session to file it here.</p>}>
         {/* Flat: every member right under the group's name, newest first, as Recent draws them; no folder level

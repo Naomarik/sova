@@ -1,12 +1,7 @@
 import { createEffect, createSignal, onCleanup, type JSX, Show } from "solid-js";
 import { Portal } from "solid-js/web";
+import { EDGE_GAP, type MenuAnchor, menuRoom, menuSpot } from "../lib/menu-position";
 import { Icon, type IconName } from "./ui";
-
-/** The gap the panel keeps from every viewport edge, and the one it keeps from its trigger. */
-const EDGE_GAP = 8;
-const TRIGGER_GAP = 4;
-/** A panel squeezed below this scrolls and overlaps the trigger rather than becoming a sliver. */
-const MIN_PANEL_HEIGHT = 140;
 
 /**
  * One menu row, keyboard-complete: a `role="menuitem"` is not a button, so Enter and Space have to
@@ -58,64 +53,41 @@ export interface ActionMenuApi {
   Item(props: ActionMenuItemProps): JSX.Element;
 }
 
+/** What a panel's owner holds: open it where its anchor is, close it, ask whether it is open. */
+export interface MenuPanelControls {
+  /** `whileHeld`: a touch/pen hold opened this under a finger; its release must not light-dismiss it. */
+  open(whileHeld?: boolean): void;
+  /** Whether a touch/pen hold opened this panel; its host supplies outside-press and Escape dismissal. */
+  isHeldOpen(): boolean;
+  /** The host's pointerdown: a hold-opened panel closes outside itself. */
+  dismissOutside(target: EventTarget | null): void;
+  close(): void;
+  isOpen(): boolean;
+}
+
 /**
- * A "⋯" trigger and the popover menu it opens: the shape the workspace spec's pane head and the session list's group sections
- * both need, in one place. The panel is a `popover="auto"`, so it lives in the top layer (no
- * ancestor can clip it), light-dismisses, and answers Escape for free; `place()` below anchors
- * it under the trigger's right edge when that fits in the window, and moves it when it doesn't.
- *
- * The body is a render prop rather than children, because every row needs the menu's own `run`
- * (close, then act) and a menu with a second screen needs `show`/`dismiss`.
+ * The menu itself, without a trigger: the popover panel, its rows' API, its placement and its focus.
+ * ActionMenu below hangs it from a "⋯" trigger; the page's one pointer menu (ContextMenu.tsx) hangs
+ * it from a pointer position that follows its place. The panel lives in the top layer (no ancestor
+ * can clip it). Ordinarily it light-dismisses and answers Escape for free; a touch/pen hold's panel
+ * is manual so the release can't dismiss it, and its host supplies those two endings.
  */
-export function ActionMenu(props: {
-  /** The trigger's accessible name, and the menu's: "Group actions · Work". */
-  label: string;
-  /** The trigger's tooltip: the kind of thing, without the name ("Group actions"). */
-  title?: string;
-  /** The trigger's icon. `null` skips it: a word-plus-caret trigger for a narrow row. */
-  icon?: IconName | null;
-  /** The word trigger's dropdown caret. `false` skips it: the narrowest rows keep only the word. */
-  caret?: boolean;
-  /** Extra classes on the trigger, for a head that reveals it on hover. */
-  class?: string;
-  /** A toolbar trigger says what it opens in words: the icon-only "⋯" is the default, and this
-      turns it into a labelled button with a chevron, like every other menu trigger with room. */
-  text?: string;
-  /** Which trigger edge the panel lines up with. "end" (default) suits a trailing "⋯"; "start"
-      suits a leading trigger, whose panel would otherwise hang off to the left and be clamped. */
-  align?: "start" | "end";
-  /**
-   * The trigger lives inside a `<summary>`. Two things follow, and both are load-bearing:
-   *
-   * - The panel is rendered through a `<Portal>`, OUT of the summary's subtree. A popover paints
-   *   in the top layer but stays where it is in the DOM, and a `<details>` toggles for a click on
-   *   anything inside its summary that has no activation behaviour of its own — which is exactly
-   *   what a `role="menuitem"` div is. Measured: clicking `Rename…` collapsed the group under the
-   *   menu. `stopPropagation` does NOT fix it (Solid delegates click at the document, and
-   *   activation behaviour survives a stopped propagation anyway); `preventDefault` would fix it
-   *   and break the link row. Moving the panel out is the fix that can't be half-applied.
-   * - Click and keydown on the trigger itself stop there, so a press can't read as a press on the
-   *   summary.
-   */
+export function MenuPanel(props: {
+  /** Where the panel hangs from, read each time it is placed. */
+  anchor(): MenuAnchor;
+  /** Where focus goes back to: the trigger, or the thing a right-click menu is about. */
+  origin(): HTMLElement | undefined;
+  /** Rendered through a `<Portal>`, out of a `<summary>`'s subtree (ActionMenu's `contain`). */
   contain?: boolean;
-  /** Called as the panel opens and closes: a trigger that would otherwise unmount can stay while open. */
   onToggle?(open: boolean): void;
-  /** The panel is a `role="menu"` named this (a menu of rows only, no screens). */
   menuName?: string;
-  /** More classes on the panel. */
   panelClass?: string;
-  /** Escape or a click outside puts focus back on the trigger, unless the click focused something else. */
   returnFocus?: boolean;
-  /** Below 768px the panel drops as a dropdown under the trigger, as wide as this element (the pane),
-      not as the bottom sheet every other menu becomes there. */
   span?: () => HTMLElement | undefined;
-  /** `false`: an icon trigger with its border (a split button's ▾), not the ghost "⋯". */
-  ghost?: boolean;
-  /** Drawn inside the trigger after its icon: a dot, say. Its words belong in `label`. */
-  badge?: JSX.Element;
+  /** Hands the owner its controls, once. */
+  controls(c: MenuPanelControls): void;
   children: (api: ActionMenuApi) => JSX.Element;
 }) {
-  let trigger!: HTMLButtonElement;
   let menu!: HTMLDivElement;
   const [open, setOpen] = createSignal(false);
   const [screen, setScreen] = createSignal<string | null>(null);
@@ -123,6 +95,7 @@ export function ActionMenu(props: {
   const close = () => {
     if (menu.matches(":popover-open")) menu.hidePopover();
   };
+  const focusOrigin = () => props.origin()?.focus();
   /**
    * Put the open panel inside the window, measured rather than guessed.
    *
@@ -131,30 +104,23 @@ export function ActionMenu(props: {
    * the window with no way to scroll to it. Nothing about the panel's own box was ever read.
    *
    * So: give it the room it has (`--menu-max`), measure what it then renders as, and clamp that
-   * box on both axes. It is right-aligned to the trigger and below it WHEN THAT FITS, and
-   * otherwise moves — not the other way round. Re-runs whenever the box can change: a screen
-   * swap (rename/delete are a different height), a resize, a scroll under the panel.
+   * box on both axes (lib/menu-position). It sits at its anchor WHEN THAT FITS, and otherwise
+   * moves — not the other way round. Re-runs whenever the box can change: a screen swap
+   * (rename/delete are a different height), a resize, a scroll under the panel.
    */
   const place = () => {
     if (!menu.isConnected || !menu.matches(":popover-open")) return;
-    const r = trigger.getBoundingClientRect();
+    const anchor = props.anchor();
+    const view = { width: innerWidth, height: innerHeight };
     const spanBox = spanning();
     if (spanBox) menu.style.setProperty("--menu-width", `${Math.round(Math.max(spanBox.width - 2 * EDGE_GAP, 0))}px`);
-    const below = innerHeight - EDGE_GAP - (r.bottom + TRIGGER_GAP);
-    const above = r.top - TRIGGER_GAP - EDGE_GAP;
     // Measure AFTER handing it the larger side's room, so the height read back is the height
     // it will paint at — a panel measured unclamped reports one that never happens.
-    menu.style.setProperty("--menu-max", `${Math.round(Math.max(below, above, MIN_PANEL_HEIGHT))}px`);
+    menu.style.setProperty("--menu-max", `${menuRoom(anchor, view)}px`);
     const box = menu.getBoundingClientRect();
-    const fitsBelow = box.height <= below;
-    const top = fitsBelow ? r.bottom + TRIGGER_GAP : r.top - TRIGGER_GAP - box.height;
-    // The clamps are what make this true in the cases the preference can't cover: a trigger
-    // near an edge, a window shorter than the panel, a panel wider than the viewport.
-    const maxTop = Math.max(EDGE_GAP, innerHeight - EDGE_GAP - box.height);
-    const maxLeft = Math.max(EDGE_GAP, innerWidth - EDGE_GAP - box.width);
-    menu.style.setProperty("--menu-top", `${Math.round(Math.min(Math.max(top, EDGE_GAP), maxTop))}px`);
-    const left = spanBox ? spanBox.left + EDGE_GAP : props.align === "start" ? r.left : r.right - box.width;
-    menu.style.setProperty("--menu-left", `${Math.round(Math.min(Math.max(left, EDGE_GAP), maxLeft))}px`);
+    const spot = menuSpot(anchor, box, view, spanBox?.left);
+    menu.style.setProperty("--menu-top", `${spot.top}px`);
+    menu.style.setProperty("--menu-left", `${spot.left}px`);
   };
   /** The pane's box while the panel spans it: only below 768px, where it would otherwise be a sheet. */
   const spanning = (): DOMRect | null => {
@@ -162,11 +128,22 @@ export function ActionMenu(props: {
     return el && matchMedia("(max-width: 767px)").matches ? el.getBoundingClientRect() : null;
   };
 
-  const openMenu = () => {
+  const openMenu = (whileHeld = false) => {
+    // A popover opened under a finger would otherwise be light-dismissed by that finger's release.
+    // A hold-open panel stays manual for its lifetime; ContextMenuHost supplies outside-press/Escape.
+    // Every other menu is auto throughout.
+    menu.popover = whileHeld ? "manual" : "auto";
+    // A menu that moves to another thing while open starts on its rows, not the last one's screen.
+    setScreen(null);
     menu.showPopover();
     place();
     queueMicrotask(() => menu.querySelector<HTMLElement>("[role^=menuitem]")?.focus());
   };
+  const isHeldOpen = () => menu.popover === "manual" && menu.matches(":popover-open");
+  const dismissOutside = (target: EventTarget | null) => {
+    if (isHeldOpen() && !(target instanceof Node && menu.contains(target))) close();
+  };
+  props.controls({ open: openMenu, isHeldOpen, dismissOutside, close, isOpen: open });
   // A screen is a different height from the rows; the panel is re-placed once it has rendered.
   createEffect(() => {
     screen();
@@ -182,13 +159,13 @@ export function ActionMenu(props: {
   /** Every row closes the menu; the ones that move focus themselves don't take it back. */
   const run = (act: () => void, keepFocus = false) => {
     close();
-    if (!keepFocus) trigger.focus();
+    if (!keepFocus) focusOrigin();
     act();
   };
   const dismiss = () => {
     setScreen(null);
     close();
-    trigger.focus();
+    focusOrigin();
   };
 
   const Item = (p: ActionMenuItemProps) => {
@@ -262,9 +239,7 @@ export function ActionMenu(props: {
     );
   };
 
-  const api: ActionMenuApi = { close, run, screen, show: (name) => setScreen(name), dismiss, focusTrigger: () => trigger.focus(), Item };
-  /** The trigger's own events, kept off the summary. The panel's are handled by moving it out. */
-  const stop = (e: Event) => props.contain && e.stopPropagation();
+  const api: ActionMenuApi = { close, run, screen, show: (name) => setScreen(name), dismiss, focusTrigger: focusOrigin, Item };
 
   const panel = (
     <div
@@ -280,7 +255,7 @@ export function ActionMenu(props: {
           // Escape, or a click on nothing focusable: focus would be lost with the panel, so it goes
           // back to the trigger. A click that focused something else keeps it there.
           const at = document.activeElement;
-          if (props.returnFocus && (!at || at === document.body || menu.contains(at))) trigger.focus();
+          if (props.returnFocus && (!at || at === document.body || menu.contains(at))) focusOrigin();
         }
         props.onToggle?.(open());
       }}
@@ -288,6 +263,75 @@ export function ActionMenu(props: {
       {props.children(api)}
     </div>
   );
+
+  return (
+    <Show when={props.contain} fallback={panel}>
+      <Portal>{panel}</Portal>
+    </Show>
+  );
+}
+
+/**
+ * A "⋯" trigger and the popover menu it opens, shared by the model picker, split buttons and other
+ * visible menu triggers. The panel (MenuPanel above) anchors under the trigger's right edge
+ * when that fits in the window, and moves when it doesn't.
+ *
+ * The body is a render prop rather than children, because every row needs the menu's own `run`
+ * (close, then act) and a menu with a second screen needs `show`/`dismiss`.
+ */
+export function ActionMenu(props: {
+  /** The trigger's accessible name, and the menu's. */
+  label: string;
+  /** The trigger's tooltip: the kind of thing it opens. */
+  title?: string;
+  /** The trigger's icon. `null` skips it: a word-plus-caret trigger for a narrow row. */
+  icon?: IconName | null;
+  /** The word trigger's dropdown caret. `false` skips it: the narrowest rows keep only the word. */
+  caret?: boolean;
+  /** Extra classes on the trigger, for a head that reveals it on hover. */
+  class?: string;
+  /** A toolbar trigger says what it opens in words: the icon-only "⋯" is the default, and this
+      turns it into a labelled button with a chevron, like every other menu trigger with room. */
+  text?: string;
+  /** Which trigger edge the panel lines up with. "end" (default) suits a trailing "⋯"; "start"
+      suits a leading trigger, whose panel would otherwise hang off to the left and be clamped. */
+  align?: "start" | "end";
+  /**
+   * The trigger lives inside a `<summary>`. Two things follow, and both are load-bearing:
+   *
+   * - The panel is rendered through a `<Portal>`, OUT of the summary's subtree. A popover paints
+   *   in the top layer but stays where it is in the DOM, and a `<details>` toggles for a click on
+   *   anything inside its summary that has no activation behaviour of its own — which is exactly
+   *   what a `role="menuitem"` div is. Measured: clicking `Rename…` collapsed the group under the
+   *   menu. `stopPropagation` does NOT fix it (Solid delegates click at the document, and
+   *   activation behaviour survives a stopped propagation anyway); `preventDefault` would fix it
+   *   and break the link row. Moving the panel out is the fix that can't be half-applied.
+   * - Click and keydown on the trigger itself stop there, so a press can't read as a press on the
+   *   summary.
+   */
+  contain?: boolean;
+  /** Called as the panel opens and closes: a trigger that would otherwise unmount can stay while open. */
+  onToggle?(open: boolean): void;
+  /** The panel is a `role="menu"` named this (a menu of rows only, no screens). */
+  menuName?: string;
+  /** More classes on the panel. */
+  panelClass?: string;
+  /** Escape or a click outside puts focus back on the trigger, unless the click focused something else. */
+  returnFocus?: boolean;
+  /** Below 768px the panel drops as a dropdown under the trigger, as wide as this element (the pane),
+      not as the bottom sheet every other menu becomes there. */
+  span?: () => HTMLElement | undefined;
+  /** `false`: an icon trigger with its border (a split button's ▾), not the ghost "⋯". */
+  ghost?: boolean;
+  /** Drawn inside the trigger after its icon: a dot, say. Its words belong in `label`. */
+  badge?: JSX.Element;
+  children: (api: ActionMenuApi) => JSX.Element;
+}) {
+  let trigger!: HTMLButtonElement;
+  let panel!: MenuPanelControls;
+  const [open, setOpen] = createSignal(false);
+  /** The trigger's own events, kept off the summary. The panel's are handled by moving it out. */
+  const stop = (e: Event) => props.contain && e.stopPropagation();
 
   return (
     <>
@@ -301,7 +345,7 @@ export function ActionMenu(props: {
         title={props.title}
         onClick={(e) => {
           stop(e);
-          open() ? close() : openMenu();
+          open() ? panel.close() : panel.open();
         }}
         onKeyDown={stop}
       >
@@ -316,9 +360,22 @@ export function ActionMenu(props: {
           )}
         </Show>
       </button>
-      <Show when={props.contain} fallback={panel}>
-        <Portal>{panel}</Portal>
-      </Show>
+      <MenuPanel
+        anchor={() => ({ kind: "rect", rect: trigger.getBoundingClientRect(), align: props.align ?? "end" })}
+        origin={() => trigger}
+        contain={props.contain}
+        onToggle={(o) => {
+          setOpen(o);
+          props.onToggle?.(o);
+        }}
+        menuName={props.menuName}
+        panelClass={props.panelClass}
+        returnFocus={props.returnFocus}
+        span={props.span}
+        controls={(c) => (panel = c)}
+      >
+        {(api) => props.children(api)}
+      </MenuPanel>
     </>
   );
 }

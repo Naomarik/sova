@@ -1,7 +1,6 @@
 import { createEffect, createMemo, createSignal, For, on, onCleanup, Show, type JSX } from "solid-js";
 import type { ChatClaudeLogin, SessionGroup, SessionSummary, WorkerInfo } from "../../shared/protocol";
-import { GROUP_LABEL_MAX } from "../../shared/protocol";
-import { setSessionArchived, unassignSessionById } from "../lib/api";
+import { unassignSessionById } from "../lib/api";
 import { groupHref } from "../lib/group-route";
 import {
   defaultPaneWidth,
@@ -39,7 +38,9 @@ import type { PaneInsight, TabId } from "./SessionPane";
 import { sessionHref } from "./Sidebar";
 import { SessionView } from "./SessionView";
 import { GroupComposer } from "./GroupComposer";
-import { ActionMenu, type ActionMenuApi } from "./ActionMenu";
+import { closeContextMenuOf } from "./ContextMenu";
+import { holdMenu, openMenu } from "./MenuPlace";
+import { PANE_MENU, type PaneMenuWiring } from "../lib/pane-menu";
 import { Banner, Icon } from "./ui";
 
 /**
@@ -71,7 +72,7 @@ const composerOf = (path: string) => document.getElementById(`composer-input-${p
 const [workspaceFocus, setWorkspaceFocus] = createSignal<string | null>(null);
 export { workspaceFocus };
 
-/** Whether a member is mid-turn: what the tab's live dot and Archive's refusal both read. */
+/** Whether a member is mid-turn: what the tab's live dot and the completion roll-up both read. */
 const running = (s: SessionSummary | undefined) => !!s && (s.busy || sessionWorking(s) > 0);
 
 /** What SessionView needs from App, forwarded through the workspace unchanged. */
@@ -512,31 +513,18 @@ export function GroupView(props: {
     if (next && !next.startsWith("gone:")) focusPane(next, true);
   };
 
-  /** Takes the session out of the group — and, for Archive, archives it in the same gesture. */
-  const detach = async (path: string, archive: boolean) => {
+  /** Takes the session out of the group without archiving or deleting it. */
+  const detach = async (path: string, send?: () => Promise<unknown>) => {
     const s = summaryOf(path);
     const title = s?.title ?? "this session";
     const next = neighbourOf(panes(), path);
-    if (!(await setSessionGroup(path, null))) return;
-    let done: string;
-    if (!archive) {
-      // Remove-only on a session Sova didn't start is the whole story, and says so: there was
-      // never an archive half to leave out.
-      done =
-        s?.origin === "web"
-          ? `Removed ${title} from ${quoted(props.group.name)}.`
-          : `Removed ${title} from ${quoted(props.group.name)}. It wasn't started in Sova, so nothing was archived.`;
-    } else {
-      try {
-        await setSessionArchived(path, true);
-        props.wiring.onArchiveChanged(path, true);
-        done = `Removed ${title} and archived it.`;
-      } catch (err) {
-        // The genuine race the pre-disabled rows can't cover: a turn started between the check and
-        // the write. Both halves, and the server's own reason for the one that failed.
-        done = `Removed ${title} from ${quoted(props.group.name)}, but couldn't archive it. ${(err as Error).message}`;
-      }
-    }
+    if (!(await setSessionGroup(path, null, undefined, send))) return;
+    // Remove-only on a session Sova didn't start is the whole story, and says so: there was
+    // never an archive half to leave out.
+    const done =
+      s?.origin === "web"
+        ? `Removed ${title} from ${quoted(props.group.name)}.`
+        : `Removed ${title} from ${quoted(props.group.name)}. It wasn't started in Sova, so nothing was archived.`;
     toast(done);
     announce(done);
     props.wiring.onRefresh();
@@ -545,14 +533,37 @@ export function GroupView(props: {
 
   /** Promote: the member you picked is the answer, so it leaves the group and opens on its own.
       No undo here: putting it back is the sidebar's gesture, like adding any session. */
-  const promote = async (path: string) => {
+  const promote = async (path: string, send?: () => Promise<unknown>) => {
     const s = summaryOf(path);
     const title = s?.title ?? "this session";
-    if (!(await setSessionGroup(path, null))) return;
+    if (!(await setSessionGroup(path, null, undefined, send))) return;
     props.wiring.onRefresh();
     toast(`Took ${title} out of ${quoted(props.group.name)}.`);
     location.hash = sessionHref(path);
   };
+
+  // ---- Pane actions ------------------
+  /** Every pane's menu is built from here, for its head's pointer doors (lib/pane-menu). */
+  const paneWiring: PaneMenuWiring = {
+    nameOf,
+    groupName: () => props.group.name,
+    split: () => mode() === "split",
+    panes,
+    labelOf,
+    detach: (path, send) => void detach(path, send),
+    href: sessionHref,
+    resize,
+    move: (path, direction) => void move(path, direction),
+    focusPane,
+    rename: (path, label) => void rename(path, label),
+    promote: (path, send) => void promote(path, send),
+  };
+  /** A right-click on a pane's head or its tab: that pane's Pane actions, at the pointer. */
+  const openPaneMenu = (e: MouseEvent & { currentTarget: HTMLElement }, path: string, summary: () => SessionSummary, origin: HTMLElement) =>
+    openMenu(e, PANE_MENU, () => ({ path, summary: summary(), w: paneWiring }), { el: e.currentTarget, origin: () => origin });
+  /** The same pane menu after a stationary touch/pen hold. */
+  const holdPaneMenu = (e: PointerEvent & { currentTarget: HTMLElement }, path: string, summary: () => SessionSummary, origin: HTMLElement) =>
+    holdMenu(e, PANE_MENU, () => ({ path, summary: summary(), w: paneWiring }), { el: e.currentTarget, origin: () => origin });
 
   // ---- Completion roll-up ------------------
   /**
@@ -768,6 +779,7 @@ export function GroupView(props: {
           <For each={panes()}>
             {(path) => (
               <button
+                ref={(el) => onCleanup(() => closeContextMenuOf(el))}
                 type="button"
                 class="workspace-tab"
                 role="tab"
@@ -781,6 +793,16 @@ export function GroupView(props: {
                    three names and one. */
                 aria-label={nameOf(path)}
                 onClick={() => focusPane(path, true)}
+                /* The pane's pointer menu; a member whose file is gone has none, so its tab
+                   keeps the browser's own behavior. */
+                onPointerDown={(e) => {
+                  const seen = summaryOf(path);
+                  if (seen && !ghostOf(path)) holdPaneMenu(e, path, () => summaryOf(path) ?? seen, e.currentTarget);
+                }}
+                onContextMenu={(e) => {
+                  const seen = summaryOf(path);
+                  if (seen && !ghostOf(path)) openPaneMenu(e, path, () => summaryOf(path) ?? seen, e.currentTarget);
+                }}
                 onKeyDown={(e) => {
                   if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
                   const list = panes();
@@ -860,6 +882,7 @@ export function GroupView(props: {
               const summary = () => (last = summaryOf(path) ?? last);
               return (
                 <section
+                  ref={(el) => onCleanup(() => closeContextMenuOf(el))}
                   class="workspace-pane"
                   id={`pane-${paneId}`}
                   data-time-session={path}
@@ -892,35 +915,8 @@ export function GroupView(props: {
                     listVersion={props.wiring.listVersion}
                     now={props.wiring.now}
                     onTurnError={noteTurnError}
-                    actions={
-                      <PaneMenu
-                        name={nameOf(path)}
-                        groupName={props.group.name}
-                        split={mode() === "split"}
-                        first={panes()[0] === path}
-                        last={panes()[panes().length - 1] === path}
-                        eliminate={
-                          summary().origin !== "web"
-                            ? null
-                            : summary().live
-                              ? "This session is open in a terminal."
-                              : running(summary())
-                                ? "It's mid-turn. Stop it or wait, then archive it."
-                                : ""
-                        }
-                        label={labelOf(path)}
-                        standaloneHref={sessionHref(path)}
-                        onWider={() => resize(path, 1)}
-                        onNarrower={() => resize(path, -1)}
-                        onLeft={() => void move(path, -1)}
-                        onRight={() => void move(path, 1)}
-                        onFocus={() => focusPane(path, true)}
-                        onRename={(label) => void rename(path, label)}
-                        onRemove={() => void detach(path, false)}
-                        onEliminate={() => void detach(path, true)}
-                        onPromote={() => void promote(path)}
-                      />
-                    }
+                    onHeadPointerDown={(e) => holdPaneMenu(e, path, summary, e.currentTarget)}
+                    onHeadContextMenu={(e) => openPaneMenu(e, path, summary, e.currentTarget)}
                     onRefresh={props.wiring.onRefresh}
                     onArchiveChanged={props.wiring.onArchiveChanged}
                     onInsight={props.wiring.onInsight}
@@ -964,196 +960,6 @@ export function GroupView(props: {
         />
       </Show>
     </>
-  );
-}
-
-/**
- * One pane's tools, as a menu: at 440px a row of seven buttons
- * is not a thing a pane head can hold. What can be done to the pane (width, place, focus, open on
- * its own) and to its membership — three separate words on purpose: Promote takes it out and
- * opens it, Archive takes it out and archives it, Remove From Group only takes it out.
- */
-function PaneMenu(props: {
-  /** The pane's name, so every row here says which member it acts on. */
-  name: string;
-  /** The group's name, which the membership rows' titles quote. */
-  groupName: string;
-  /** Width and order only mean something in the split row. */
-  split: boolean;
-  first: boolean;
-  last: boolean;
-  /**
-   * Archive's state: `null` when this session was not started in Sova (there is nothing to
-   * archive, so the row is absent), `""` when it can be archived, and otherwise the reason it
-   * can't — said before the press rather than discovered as a half-finished gesture.
-   */
-  eliminate: string | null;
-  /** The member's label today, or null: what `Rename` starts the field from. */
-  label: string | null;
-  standaloneHref: string;
-  onWider(): void;
-  onNarrower(): void;
-  onLeft(): void;
-  onRight(): void;
-  onFocus(): void;
-  /** Set a label (`string`) or clear it (`null`) — the comparison's naming act. */
-  onRename(label: string | null): void;
-  onRemove(): void;
-  onEliminate(): void;
-  onPromote(): void;
-}) {
-  /**
-   * The rename screen: the menu's one non-menu screen, same shape as the narrow head's dissolve
-   * question. The field starts from the current label, `maxlength` is the wire's own
-   * GROUP_LABEL_MAX, and an empty field CLEARS the label — that is the gesture's other half, and
-   * a disabled Save would hide it. Enter saves, Escape cancels, both keep the menu's focus rules.
-   */
-  let nameInput!: HTMLInputElement;
-  const startNaming = (menu: ActionMenuApi) => {
-    menu.show("rename");
-    queueMicrotask(() => nameInput?.focus());
-  };
-  const saveName = (menu: ActionMenuApi) => {
-    const raw = nameInput?.value.trim() ?? "";
-    menu.show(null);
-    menu.run(() => props.onRename(raw.length > 0 ? raw : null), true);
-  };
-
-  return (
-    <ActionMenu label={`Pane actions · ${props.name}`} title="Pane actions">
-      {(menu) => (
-        // The rename screen: the menu's one input, given the whole menu while it is up — the
-        // same "one question at a time" shape the narrow head's dissolve ask uses. Empty CLEARS
-        // the label (that half of the gesture is invisible if Save refuses it), Enter saves,
-        // Escape cancels, and the field caps at the wire's GROUP_LABEL_MAX.
-        <Show
-          when={menu.screen() === "rename"}
-          fallback={
-            <div class="model-menu-list" role="menu" aria-label={`Pane actions · ${props.name}`}>
-              <div class="model-menu-group" role="group" aria-label="This member">
-                <menu.Item
-                  label="Rename…"
-                  aria={`Rename ${props.name}`}
-                  title="Give this member your own name — the useful one is only known after reading its output"
-                  icon={<Icon name="pencil" small />}
-                  stayOpen
-                  onRun={() => startNaming(menu)}
-                />
-              </div>
-              <div class="model-menu-group" role="group" aria-label="This pane">
-                <menu.Item
-                  label="Open"
-                  aria={`Open ${props.name}`}
-                  title="Open this session on its own"
-                  icon={<Icon name="external" small />}
-                  keepFocus
-                  onRun={() => (location.hash = props.standaloneHref)}
-                />
-                <Show when={props.split}>
-                  <menu.Item label="Wider" aria={`Make ${props.name} wider`} icon={<Icon name="chevron-right" small />} onRun={props.onWider} />
-                  <menu.Item label="Narrower" aria={`Make ${props.name} narrower`} icon={<Icon name="chevron-left" small />} onRun={props.onNarrower} />
-                  <menu.Item
-                    label="Move Left"
-                    aria={`Move ${props.name} left`}
-                    /* The keyboard hint lives where it is first needed: order moves are mouseless
-                       by nature, and the row hint was nowhere in the product. */
-                    title={`Swap ${props.name} with its left-hand neighbour. Ctrl+Alt+← moves focus, not the pane.`}
-                    icon={<Icon name="chevron-left" small />}
-                    disabled={props.first ? "It's already first." : ""}
-                    onRun={props.onLeft}
-                  />
-                  <menu.Item
-                    label="Move Right"
-                    aria={`Move ${props.name} right`}
-                    title={`Swap ${props.name} with its right-hand neighbour. Ctrl+Alt+→ moves focus, not the pane.`}
-                    icon={<Icon name="chevron-right" small />}
-                    disabled={props.last ? "It's already last." : ""}
-                    onRun={props.onRight}
-                  />
-                </Show>
-                {/* Not in the copy deck's row list: a workspace needs a way to put the keyboard in a pane that
-                    doesn't depend on reaching its composer, which a read-only member doesn't have. */}
-                <menu.Item label="Focus" aria={`Focus ${props.name}`} icon={<Icon name="chat" small />} keepFocus onRun={props.onFocus} />
-              </div>
-              <div class="model-menu-group" role="group" aria-label="This session's membership">
-                <menu.Item
-                  label="Promote"
-                  aria={`Promote ${props.name}`}
-                  title={`Take it out of ${quoted(props.groupName)} and open it on its own`}
-                  icon={<Icon name="arrow-right" small />}
-                  keepFocus
-                  onRun={props.onPromote}
-                />
-                <menu.Item
-                  label="Remove From Group"
-                  aria={`Remove ${props.name} from the group`}
-                  title={
-                    props.eliminate === null
-                      ? "This session wasn't started in Sova, so removing it is all we can do — nothing is archived"
-                      : `Take it out of ${quoted(props.groupName)} and stay here. Nothing is archived and nothing is deleted`
-                  }
-                  icon={<Icon name="close" small />}
-                  keepFocus
-                  onRun={props.onRemove}
-                />
-                {/* Absent, not disabled, when the session wasn't started in Sova: there is nothing
-                    to archive, and it is a different gesture rather than a refusal. */}
-                <Show when={props.eliminate !== null}>
-                  <menu.Item
-                    label="Archive"
-                    aria={`Archive ${props.name}`}
-                    title={`Take it out of ${quoted(props.groupName)} and archive it. The transcript stays; unarchiving brings it back`}
-                    icon={<Icon name="archive" small />}
-                    disabled={props.eliminate!}
-                    keepFocus
-                    onRun={props.onEliminate}
-                  />
-                </Show>
-              </div>
-            </div>
-          }
-        >
-          <div class="model-menu-list">
-            <div class="group-menu-field">
-              <input
-                ref={nameInput}
-                class="input"
-                type="text"
-                aria-label={`Name ${props.name}`}
-                maxlength={GROUP_LABEL_MAX}
-                placeholder={props.name}
-                value={props.label ?? ""}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    e.preventDefault();
-                    saveName(menu);
-                  } else if (e.key === "Escape") {
-                    e.preventDefault();
-                    menu.dismiss(); // Escape means "leave this screen AND the menu", as everywhere else
-                  }
-                }}
-              />
-            </div>
-            <div class="cluster">
-              <button type="button" class="button button-sm" onClick={() => saveName(menu)}>
-                Save
-              </button>
-              <button
-                type="button"
-                class="button button-sm button-ghost"
-                onClick={() => {
-                  menu.show(null);
-                  menu.focusTrigger();
-                }}
-              >
-                Cancel
-              </button>
-            </div>
-            <p class="sidebar-region-note">Empty clears the label — the pane shows the title again.</p>
-          </div>
-        </Show>
-      )}
-    </ActionMenu>
   );
 }
 

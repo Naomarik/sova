@@ -1099,15 +1099,15 @@ for (const width of [1280, 390]) {
       await until("a land of the run's branch", () => o.calls.some((c) => c.verb === "merge.add" && c.body.branch === "sova/project-verbs"));
       assert.equal(lastCall(o, "merge.add").body.project, ROOT_DIR);
       assert.equal(lastCall(o, "merge.add").body.commit, sha("7"), "the run's reviewed tip is pinned");
-      // A coding row: its ⋯ holds Land (not Merge Branch); Land queues its worktree.
+      // A coding row's right-click menu holds Land (not Merge Branch); Land queues its worktree.
       const cart = page.locator(".project-worktree", { hasText: "Fix the cart" });
-      await cart.getByRole("button", { name: /^Actions · / }).click();
+      await cart.click({ button: "right", position: { x: 20, y: 20 } });
       assert.equal(await page.getByRole("menuitem", { name: /^Merge Branch/ }).count(), 0);
       await page.getByRole("menuitem", { name: "Land sova/fix-cart on master" }).click();
       await until("a land of the coding worktree", () => o.calls.some((c) => c.verb === "merge.add" && c.body.checkout === "/w/.worktrees/sova-fix-cart"));
       assert.equal(lastCall(o, "merge.add").body.commit, sha("8"), "the row's shown head is pinned");
       // A queued row's Land says why it can't.
-      await badge.getByRole("button", { name: /^Actions · / }).click();
+      await badge.click({ button: "right", position: { x: 20, y: 20 } });
       assert.equal(await page.getByRole("menuitem", { name: "Land sova/fix-badge on master" }).getAttribute("aria-disabled"), "true");
       await page.keyboard.press("Escape");
       assert.equal(o.calls.filter((c) => c.verb === "worktrees.merge" || c.verb === "runtime.merge").length, 0, "nothing merged directly");
@@ -1127,7 +1127,7 @@ for (const width of [1280, 390]) {
       await run.click();
       await until("the run's Merge Branch", () => o.calls.some((c) => c.verb === "runtime.merge"));
       const cart = page.locator(".project-worktree", { hasText: "Fix the cart" });
-      await cart.getByRole("button", { name: /^Actions · / }).click();
+      await cart.click({ button: "right", position: { x: 20, y: 20 } });
       await page.getByRole("menuitem", { name: "Merge Branch: sova/fix-cart into master" }).click();
       await until("the row's Merge Branch", () => o.calls.some((c) => c.verb === "worktrees.merge"));
       assert.equal(o.calls.filter((c) => c.verb === "merge.add").length, 0);
@@ -1341,7 +1341,7 @@ for (const width of [1280, 390]) {
       await page.goto(`${ORIGIN}/#/projects/${PID}`);
       await page.getByRole("button", { name: "Land sova/project-verbs" }).first().waitFor({ timeout: 20_000 });
       const cart = page.locator(".project-worktree", { hasText: "Fix the cart" });
-      await cart.getByRole("button", { name: /^Actions · / }).click();
+      await cart.click({ button: "right", position: { x: 20, y: 20 } });
       await page.getByRole("menuitem", { name: "Land sova/fix-cart on master" }).waitFor();
       assert.equal(await page.getByRole("menuitem", { name: /^Merge Branch/ }).count(), 0);
       await page.keyboard.press("Escape");

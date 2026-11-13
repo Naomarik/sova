@@ -34,7 +34,7 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | Class: Approvals and grants | 18 |
 | Pending (not yet a command) | 23 |
 | Chat socket frame types | 14 |
-| Document/window keydown listeners | 12 |
+| Document/window keydown listeners | 13 |
 | Hand-written tool specs | 150 |
 
 ## Catalogue entries
@@ -1083,6 +1083,7 @@ The `type` of every `ChatClientMessage` (`shared/protocol.ts`), the frames a pag
 | --- | --- |
 | `src/commands/keys.ts` | window, document |
 | `src/components/ChangesViewer.tsx` | document |
+| `src/components/ContextMenu.tsx` | global |
 | `src/components/FolderApprovalsDialog.tsx` | document |
 | `src/components/GroupView.tsx` | window |
 | `src/components/InsightStrip.tsx` | document |

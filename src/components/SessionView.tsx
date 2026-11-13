@@ -121,8 +121,10 @@ export function SessionView(props: {
   name?: () => string;
   /** Leading control in the head (the single view's Back link, a pane's nothing). */
   lead?: JSX.Element;
-  /** Trailing controls in the head: a pane's own menu. */
-  actions?: JSX.Element;
+  /** A touch/pen press on a pane's head may become its menu's 500ms hold. */
+  onHeadPointerDown?(e: PointerEvent & { currentTarget: HTMLElement }): void;
+  /** A right-click on a pane's head: the workspace opens that pane's menu (§app/context-menus). */
+  onHeadContextMenu?(e: MouseEvent & { currentTarget: HTMLElement }): void;
   /** The head's title element, for the folded-width focus move. */
   titleRef?: (el: HTMLHeadingElement) => void;
   onRefresh(): void;
@@ -368,7 +370,7 @@ export function SessionView(props: {
         {/* One pane of a workspace: a 40px head under the
             workspace's own, carrying only what tells this member apart — its name, its context
             fill, its state chip, and its tools. The pane's accessible name IS this name. */}
-        <header class="workspace-pane-head">
+        <header class="workspace-pane-head" onPointerDown={(e) => props.onHeadPointerDown?.(e)} onContextMenu={(e) => props.onHeadContextMenu?.(e)}>
           <span class="workspace-pane-name" id={`pane-${props.paneId}-name`} title={paneTitle()}>
             {paneName()}
           </span>
@@ -409,7 +411,6 @@ export function SessionView(props: {
             >
               <Icon name="info" />
             </button>
-            {props.actions}
           </div>
         </header>
       </Show>

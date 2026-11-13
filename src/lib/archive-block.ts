@@ -26,3 +26,6 @@ export function archiveBlockReason(s: ArchivableSession): string | null {
   if (sessionWorking(s) > 0) return "with subagents working";
   return null;
 }
+
+/** The one refusal sentence for one archive block, on the menu, drag tile, toast and session pane. */
+export const archiveRefusal = (reason: string): string => `Can't archive: ${reason}.`;

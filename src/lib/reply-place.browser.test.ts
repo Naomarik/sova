@@ -76,6 +76,18 @@ function lane(opts: { extensions: ExtensionInfo[]; local?: boolean; answer?: unk
 }
 
 describe("the extension lane's requests", () => {
+  test("the reply lane's session: this host's chat only, once its id is known", async () => {
+    const here = lane({ extensions: [] });
+    assert.equal(here.api.session(), null, "no id yet");
+    here.setSession("s1");
+    assert.equal(here.api.session(), "s1");
+    here.dispose();
+    const far = lane({ extensions: [], local: false });
+    far.setSession("s1");
+    assert.equal(far.api.session(), null, "another host's chat");
+    far.dispose();
+  });
+
   test("no extension adds to replies: no request at all, ever, and nothing added", async () => {
     const l = lane({ extensions: [plain, commandsOnly] });
     l.setSession("s1");

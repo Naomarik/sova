@@ -1,5 +1,5 @@
-// Run: npx tsx --test src/lib/drag-overlay.test.ts
-// The row's press (lift, drag; a release in place does nothing) and what the drop overlay offers and hits.
+// Run: pnpm test -- src/lib/drag-overlay.test.ts
+// The mouse row's press (lift, drag; a release in place does nothing) and the drop overlay's offers and hits.
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { SessionGroup } from "../../shared/protocol";
@@ -28,7 +28,7 @@ import { HOLD_MS, HOLD_SUPPRESS_MS } from "./hold-select";
 import { groupRefusal } from "./regions";
 
 /** A press on a fake clock: `advance` runs the hold timer when its time comes. */
-function rig(opts: { pointer?: string } = {}) {
+function rig() {
   let t = 0;
   let pending: { fn: () => void; at: number } | null = null;
   const log: string[] = [];
@@ -51,11 +51,11 @@ function rig(opts: { pointer?: string } = {}) {
       p.fn();
     }
   };
-  const down = (at: Point = { x: 100, y: 100 }) => press.start(at, opts.pointer ?? "touch");
+  const down = (at: Point = { x: 100, y: 100 }) => press.start(at);
   return { press, log, drags, advance, down };
 }
 
-test("a thumb held still lifts the row, and the release in place only settles it", () => {
+test("a mouse held still lifts the row, and the release in place only settles it", () => {
   const r = rig();
   r.down();
   r.advance(HOLD_MS - 1);
@@ -63,7 +63,7 @@ test("a thumb held still lifts the row, and the release in place only settles it
   r.advance(1);
   assert.deepEqual(r.log, ["lift"]);
   assert.equal(r.press.phase(), "lifted");
-  r.press.move({ x: 104, y: 97 }); // a thumb is never perfectly still
+  r.press.move({ x: 104, y: 97 }); // small drift is still the same press
   assert.equal(r.press.finish(), true, "it had lifted");
   assert.deepEqual(r.log, ["lift"], "the release in place starts nothing: no drag, no other act");
   assert.equal(r.press.phase(), "idle");
@@ -85,19 +85,8 @@ test("a lifted row that moves past 10px becomes a drag, and its release is the d
   assert.equal(r.press.suppressed(), true, "the drag's click never reaches the row");
 });
 
-test("a thumb that moves before the lift is a scroll: no lift, no drag", () => {
-  const r = rig();
-  r.down();
-  r.advance(200);
-  r.press.move({ x: 100, y: 130 });
-  r.advance(HOLD_MS);
-  assert.deepEqual(r.log, []);
-  assert.equal(r.press.finish(), false);
-  assert.equal(r.press.suppressed(), false, "a tap after it is an ordinary tap");
-});
-
 test("a mouse drags after 6px with no hold; 6px itself is still a press", () => {
-  const r = rig({ pointer: "mouse" });
+  const r = rig();
   r.down();
   r.press.move({ x: 106, y: 100 });
   assert.deepEqual(r.log, []);
@@ -107,18 +96,13 @@ test("a mouse drags after 6px with no hold; 6px itself is still a press", () => 
   assert.deepEqual(r.log, ["drag"], "the hold timer is gone with the press");
 });
 
-test("a still mouse held 500ms lifts, as a thumb does, and then drags on a move", () => {
-  const r = rig({ pointer: "mouse" });
+test("a still mouse held 500ms lifts", () => {
+  const r = rig();
   r.down();
   r.advance(HOLD_MS);
   assert.deepEqual(r.log, ["lift"]);
   assert.equal(r.press.finish(), true);
   assert.deepEqual(r.log, ["lift"], "released in place: nothing more");
-  const m = rig({ pointer: "mouse" });
-  m.down();
-  m.advance(HOLD_MS);
-  m.press.move({ x: 100, y: 111 });
-  assert.deepEqual(m.log, ["lift", "drag"]);
 });
 
 test("a tap is a tap: no lift, nothing suppressed", () => {
@@ -221,7 +205,7 @@ test("a peer's session: no group of this host, no Current, no Remove — its gro
 
 test("Archive refused says why; a refused drop only says it", () => {
   const blocked = dropTiles(info({ archive: { kind: "blocked", reason: "open in a TUI" } }), GROUPS, COUNTS);
-  assert.deepEqual(dropAction(ARCHIVE_TILE, blocked), { kind: "refused", reason: "Can't archive: open in a TUI" });
+  assert.deepEqual(dropAction(ARCHIVE_TILE, blocked), { kind: "refused", reason: "Can't archive: open in a TUI." });
   const archived = dropTiles(info({ archive: { kind: "none" }, archived: true }), GROUPS, COUNTS);
   assert.equal(archived.archiveDisabled, "Already archived.");
 });

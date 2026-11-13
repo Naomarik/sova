@@ -81,7 +81,7 @@ test("keys stay where they were: Alt+O on the window, the rest on the document; 
 });
 
 test("conflict: no keydown fires two rows, in any target, on a Mac or not", () => {
-  const keys = [..."abcdefghijklmnopqrstuvwxyz0123456789/?.,;'[]-=`\\@é", "Process", "Escape", "Enter", "ø", "Dead", " ", "Tab", "ArrowLeft"];
+  const keys = [..."abcdefghijklmnopqrstuvwxyz0123456789/?.,;'[]-=`\\@é", "Process", "Escape", "Enter", "ø", "Dead", " ", "Tab", "ArrowLeft", "F10", "ContextMenu"];
   const targets = [button, field, checkbox, editable, null];
   for (const mac of [false, true])
     onPlatform(mac, () => {
@@ -101,7 +101,7 @@ test("conflict: no keydown fires two rows, in any target, on a Mac or not", () =
             }
       assert.ok(seen > 0); // the sweep reached the chords at all
       assert.ok(typed.has("a") && typed.has("A") && typed.has("@") && typed.has("Dead"), `mac=${mac}: the sweep reached typed characters`);
-      for (const own of ["/", "?", " ", "Tab", "ArrowLeft", "Enter", "Escape", "Process"]) assert.equal(typed.has(own), false, `mac=${mac}: ${own} is not a typed character`);
+      for (const own of ["/", "?", " ", "Tab", "ArrowLeft", "Enter", "Escape", "Process", "F10", "ContextMenu"]) assert.equal(typed.has(own), false, `mac=${mac}: ${own} is not a typed character`);
     });
 });
 

@@ -396,22 +396,35 @@ item. The merge queue's own chats take none of an extension's card types.
 is open. Answering one never answers the question or ends the chat's wait on it: the question stays
 open and in Needs You.
 
-**In a session's ⋯ menu** (extension contract v1.16). A command with `"menu": "session"`
-is also an entry in the ⋯ menu of each Agents board row for a session on this machine, after
-Sova's own items, under a heading with your extension's title:
+**In Sova's menus** (extension contract v1.16; group, pane and worktree menus v1.21). A command with `"menu":
+"<menu>"` is also an entry in that menu, after Sova's own items, under a heading with your
+extension's title. Each menu sends what it is about:
+
+| `menu` | The menu | Choosing the entry sends |
+| --- | --- | --- |
+| `"session"` | an Agents board row's or session row's right-click or touch/pen hold | `{"session": "<session id>"}` |
+| `"group"` (v1.21) | a sidebar group's right-click or touch/pen hold | `{"group": "<group id>"}` |
+| `"pane"` (v1.21) | a workspace pane's right-click or touch/pen hold | `{"session": "<the pane's session id>"}` |
+| `"worktree"` (v1.21) | a project page worktree row's right-click or touch/pen hold | `{"project": "<project id>", "branch": "<branch>", "session": "<session id>"}` |
 
 ```json
 "commands": [ { "name": "file", "label": "File Issue", "summary": "Opens an issue for it", "menu": "session" } ]
 ```
 
 - The row shows `label`, with `summary` under it, and its tooltip says `File Issue · From
-  <title>`. Choosing it sends `POST /ext/<id>/api/commands/<name>` with `{"session": "<session
-  id>"}` through the proxy, and Sova tells the user `Sent to <title>.` on a 2xx answer, or the
-  HTTP status, or that your backend isn't answering (no answer within 10 seconds counts as none).
-- `menu` takes only `"session"`. Any other value leaves the command out of the menu (logged once),
-  never out of `commands`. The menu shows at most 8 extension rows in all, first extensions first.
-  A `label` that is one of Sova's own item names in that menu (`Archive`, `Copy Path`, `Rename…`
-  and the rest; case, spacing and a trailing `…` are ignored) is left out of the menu too.
+  <title>`. Choosing it sends `POST /ext/<id>/api/commands/<name>` with the menu's JSON above
+  through the proxy, and Sova tells the user `Sent to <title>.` on a 2xx answer, or the HTTP
+  status, or that your backend isn't answering (no answer within 10 seconds counts as none).
+- Entries show only for things on this machine: not for another machine's session, pane, chat or
+  project. A group's menu always shows them, since groups are this machine's own. A worktree row
+  with no branch shows none.
+- `menu` takes one of the four names. Any other value leaves the command out of every menu (logged
+  once), never out of `commands`. Group, pane and worktree need `server.extensionContract` `21` or higher: an
+  older Sova leaves them out of its menus. A folder's description that uses them says
+  `"needsContract": "1.21"`, and an older Sova reads it Needs a Newer Sova. A menu shows at most 8
+  extension rows in all, first extensions first. A `label` that is one of Sova's own item names in
+  any of the four menus (`Archive`, `Copy Path`, `Rename…`, `Open`, `Land` and the rest;
+  case, spacing and a trailing `…` are ignored) is left out of the menu too.
 - While your backend's health check fails, your rows are hidden.
 
 **On session rows** (extension contract v1.16). With `"screens": ["row"]`, Sova shows what your

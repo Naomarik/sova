@@ -1,5 +1,5 @@
 // Run: pnpm test -- server/extension-offers-menu.test.ts
-// A command's `menu` key (the session ⋯ menu place, src/lib/menu-place.ts): validated with the rest
+// A command's `menu` key (the four menu places, src/lib/menu-place.ts): validated with the rest
 // of what an extension offers (shared/extension-offers.ts through server/extensions.ts
 // validateExtension). A bad value leaves the command out of every menu, never out of `commands`, and
 // never changes what the command line reads (shared/commands-ext.ts).
@@ -23,8 +23,14 @@ after(() => rmSync(tmp, { recursive: true, force: true }));
 const cmd = (name: string, extra: Record<string, unknown> = {}) => ({ name, label: `Do ${name}`, ...extra });
 
 describe("the menu key", () => {
-  test("the one menu place", () => {
-    assert.deepEqual([...MENU_PLACES], ["session"]);
+  test("the four menu places", () => {
+    assert.deepEqual([...MENU_PLACES], ["session", "group", "pane", "worktree"]);
+  });
+
+  test("each place rides on its command (v1.21 added group, pane and worktree)", () => {
+    const got = offersOf("t", { commands: MENU_PLACES.map((menu) => cmd(menu, { menu })) });
+    assert.deepEqual(got.offers!.commands!.map((c) => [c.name, c.menu]), MENU_PLACES.map((p) => [p, p]));
+    assert.deepEqual(got.dropped, []);
   });
 
   test('"session" rides on the command; a command without it has no menu key', () => {
@@ -37,13 +43,13 @@ describe("the menu key", () => {
   });
 
   test("a bad menu value drops the menu entry alone: the command stays, and the drop is logged", () => {
-    const bad = [cmd("a", { menu: "sidebar" }), cmd("b", { menu: 7 }), cmd("c", { menu: ["session"] }), cmd("d", { menu: null }), cmd("e", { menu: "Session" }), cmd("f", { menu: "session" })];
+    const bad = [cmd("a", { menu: "sidebar" }), cmd("b", { menu: 7 }), cmd("c", { menu: ["session"] }), cmd("d", { menu: null }), cmd("e", { menu: "Session" }), cmd("f", { menu: "session" }), cmd("g", { menu: "Group" }), cmd("h", { menu: "groups" })];
     const got = offersOf("t", { commands: bad });
     assert.deepEqual(
       got.offers!.commands!.map((c) => [c.name, c.menu]),
-      [["a", undefined], ["b", undefined], ["c", undefined], ["d", undefined], ["e", undefined], ["f", "session"]],
+      [["a", undefined], ["b", undefined], ["c", undefined], ["d", undefined], ["e", undefined], ["f", "session"], ["g", undefined], ["h", undefined]],
     );
-    assert.deepEqual(got.dropped, ["5 of its menu entries"]);
+    assert.deepEqual(got.dropped, ["7 of its menu entries"]);
   });
 
   test("a command that isn't valid adds no menu entry, whatever its menu says", () => {

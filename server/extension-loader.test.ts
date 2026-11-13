@@ -8,6 +8,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { after, beforeEach, describe, test } from "node:test";
 import type { SessionSummary } from "../shared/protocol";
+import { MENU_PLACES } from "../shared/extension-offers";
 
 const root = realpathSync(mkdtempSync(join(tmpdir(), "sova-ext-loader-")));
 process.env.PI_CODING_AGENT_DIR = join(root, "agent");
@@ -264,6 +265,20 @@ describe("two readers, and approval by version", () => {
     assert.deepEqual(info, { id: "cards-only", title: "C", status: "ok", page: false });
     const e = ext.findExtension("cards-only")!;
     assert.equal(await ext.serveExtensionFile(e, "").text(), "This extension has no page.");
+  });
+  test("a command in any of the four menus reaches the page's list, and so a menu, only while approved and on", async () => {
+    const e = { id: "menus", title: "M", commands: MENU_PLACES.map((menu) => ({ name: menu, label: `File ${menu}`, menu })) };
+    const menus = async () => (await ext.listExtensions()).find((x) => x.id === "menus")?.offers?.commands?.map((c) => c.menu);
+    writeList([e]);
+    assert.equal(await menus(), undefined, "waiting for you: not on the page's list");
+    approve(e);
+    assert.deepEqual(await menus(), [...MENU_PLACES]);
+    writeList([{ ...e, off: true }]);
+    assert.equal(await menus(), undefined, "turned off");
+    writeList([e]);
+    assert.deepEqual(await menus(), [...MENU_PLACES], "turned on again, with no new review");
+    writeList([]);
+    assert.equal(await menus(), undefined, "removed");
   });
 });
 

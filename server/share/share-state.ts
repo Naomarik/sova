@@ -2,7 +2,7 @@ import { LINK_WARNINGS, type LinkWarningCode, type PublicLinksFile, type ShareLi
 import { SESSION_SHARE_GATEWAY_OLD, type SessionShareWarningCode } from "../../shared/session-share";
 import { readPeers } from "../mesh/peers";
 import { quickTunnelEnabled, readPublicLinks, readStoredPublicLinks, readTunnelConsent, sharePin } from "../public-links";
-import { tunnelStatus, UNVERIFIED } from "./tunnel/manager";
+import { checkTunnel, tunnelStatus, UNVERIFIED } from "./tunnel/manager";
 import { viaGatewayStatus } from "./gateway-client";
 import type { IngressInfo } from "./ingress";
 import type { ShareLinksOutcome } from "./links-events";
@@ -110,11 +110,15 @@ export function accountState(file: PublicLinksFile, t: TunnelStatus): ShareState
   return ownState("account", url, file);
 }
 
-/** The share tunnel's state as links read it: the manager's cache (memory only). Tests set their own. */
+/** The share tunnel's state as links read it: the manager's cache (memory only), and its on-demand
+    check (§mesh.tunnel/lifetime: the 60 s window, loopback only, starts nothing). Tests set their own. */
 let shareTunnel = (): TunnelStatus => tunnelStatus({ kind: "share" });
+let shareCheck = (): Promise<TunnelStatus> => checkTunnel({ kind: "share" });
 export const shareTunnelStatus = (): TunnelStatus => shareTunnel();
-export function setShareTunnelForTest(read: (() => TunnelStatus) | null): void {
+export const checkShareTunnel = (): Promise<TunnelStatus> => shareCheck();
+export function setShareTunnelForTest(read: (() => TunnelStatus) | null, check?: () => Promise<TunnelStatus>): void {
   shareTunnel = read ?? (() => tunnelStatus({ kind: "share" }));
+  shareCheck = check ?? (read ? async () => read() : () => checkTunnel({ kind: "share" }));
 }
 
 function effectiveState(env: NodeJS.ProcessEnv, file: PublicLinksFile): ShareState {

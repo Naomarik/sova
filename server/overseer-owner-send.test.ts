@@ -484,6 +484,21 @@ describe("§app.owner-page/send: the Overseer sends the owner their page link", 
         assert.equal(r.outcome, "sent", `${name}: the link goes out`);
         assert.equal(r.linkWarning, LINK_WARNINGS[code], `${name}: with its note`);
       }
+      // A link handed out with the tunnel reading up still gets the on-demand check (§mesh.tunnel/lifetime):
+      // one the check finds dead is refused, never sent as it was.
+      let state = tunnel()();
+      let checks = 0;
+      setShareTunnelForTest(
+        () => state,
+        async () => {
+          checks++;
+          state = { ...state, state: "degraded" as never, reason: "The tunnel doesn't answer." };
+          return state;
+        },
+      );
+      const dead = await send({ orgId: org.id, personId: omar.id, link: { kind: "owner" }, by: "operator-via-overseer", key: "k-free-dead" });
+      assert.equal(checks, 1, "the send asked the tunnel, once");
+      assert.deepEqual([dead.outcome, dead.code], ["refused", "address-down"]);
     } finally {
       setShareTunnelForTest(null);
       rmSync(links.publicLinksFile(), { force: true });

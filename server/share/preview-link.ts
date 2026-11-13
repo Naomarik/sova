@@ -6,7 +6,7 @@ import { quickTunnelAllowed, quickTunnelEnabled, readTunnelConsent } from "../pu
 import { previewAddress, previewOrigin } from "./preview-address";
 import { OPEN_PREFIX } from "./preview-tunnel";
 import { assertSharingOn } from "./sharing-off";
-import { checkTunnel, configureTunnels, ensureTunnel, runningTunnels, stopTunnel, tunnelStatus } from "./tunnel/manager";
+import { checkTunnel, configureTunnels, ensureTunnel, runningTunnels, stopTunnel, tunnelStatus, UNVERIFIED } from "./tunnel/manager";
 
 /**
  * Where a preview minted here is published, and its link (§mesh.public/preview, /preview-tunnels): the one
@@ -21,7 +21,8 @@ import { checkTunnel, configureTunnels, ensureTunnel, runningTunnels, stopTunnel
  * that didn't come up (`tunnel-down`).
  */
 
-export type PreviewHome = { mode: "wildcard"; url: string } | { mode: "tunnel"; origin: string; port: number };
+/** `verifying`: the app's tunnel is up but its address hasn't answered from outside yet. */
+export type PreviewHome = { mode: "wildcard"; url: string } | { mode: "tunnel"; origin: string; port: number; verifying?: true };
 
 /** How long a mint waits for its app's tunnel to have an address. */
 export const PREVIEW_TUNNEL_WAIT_MS = 20_000;
@@ -78,7 +79,7 @@ export async function previewHome(port: number, by?: string): Promise<PreviewHom
   }
   if (s.state === "needs-cloudflared") throw new PreviewRefused("quick-setup", SETUP());
   if (!HAS_ADDRESS.has(s.state) || !s.origin) throw new PreviewRefused("tunnel-down", s.reason ? `${DOWN()} (${s.reason})` : DOWN());
-  return { mode: "tunnel", origin: s.origin, port };
+  return { mode: "tunnel", origin: s.origin, port, ...(s.state === "up" && s.reason?.startsWith(UNVERIFIED) ? { verifying: true as const } : {}) };
 }
 
 /** A preview's link under its home. Pure. */

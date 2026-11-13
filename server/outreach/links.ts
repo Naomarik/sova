@@ -239,8 +239,9 @@ const preview: LinkResolver = {
     } catch (err) {
       console.warn(`[outreach] a person's preview link isn't kept (${err instanceof Error ? err.name : "error"}); it still goes`);
     }
-    // On Cloudflare Free the sender hears that its address changes when this computer restarts (§app.outreach/links).
-    return { url, line: `${operatorName()} shared a preview with you.`, ...(home.mode === "tunnel" ? { warning: LINK_WARNINGS.quick } : {}), log: { previewId: result.record.id }, minted: { previewId: result.record.id } };
+    // On Cloudflare Free the sender hears Free's note from the app's own tunnel: still coming online, or its
+    // address changes when this computer restarts (§app.outreach/links).
+    return { url, line: `${operatorName()} shared a preview with you.`, ...(home.mode === "tunnel" ? { warning: LINK_WARNINGS[home.verifying ? "quick-verifying" : "quick"] } : {}), log: { previewId: result.record.id }, minted: { previewId: result.record.id } };
   },
   revoke(minted) {
     const id = minted.previewId;

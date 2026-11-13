@@ -35,9 +35,32 @@
 # leaves anything that is not a symlink alone with a warning. It touches no
 # settings, config file or sandbox policy, prints only what it changed, and
 # exits 0 unless its arguments are wrong.
+#
+# extensions/mode is never linked: it holds the mode texts, rules and settings
+# files Sova reads from its own copy, and no pi extension (pi has no modes).
+# Every run but --check removes a link to it an older version made; --check
+# reports one.
 set -euo pipefail
 here=$(cd "$(dirname "$0")" && pwd -P)
 agent=${PI_AGENT_DIR:-${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}}
+# Folders under extensions/ that are not linked into the agent dir (see above).
+not_linked=" mode "
+unlinked() { case "$not_linked" in *" $1 "*) return 0 ;; esac; return 1; }
+# A link of ours to a folder that is no longer linked: removed (--check: reported).
+drop_unlinked() {
+	local name dst
+	for name in $not_linked; do
+		dst="$agent/extensions/$name"
+		[ -L "$dst" ] && [ "$(readlink "$dst")" = "$here/extensions/$name" ] || continue
+		if $check; then
+			echo "stale link, $name is not an extension: $dst"
+			bad=1
+		else
+			rm "$dst"
+			echo "removed $dst ($name is not an extension)"
+		fi
+	done
+}
 mode=install
 case "${1:-}" in
 	"") ;;
@@ -188,8 +211,10 @@ if [ "$mode" = links ]; then
 	}
 	for d in "$here"/extensions/*/; do
 		d=${d%/}
+		unlinked "$(basename "$d")" && continue
 		relink "$d" "$ext/$(basename "$d")"
 	done
+	drop_unlinked
 	for f in "$here"/extensions/*.ts; do
 		[ -e "$f" ] || continue
 		relink "$f" "$ext/$(basename "$f")"
@@ -235,8 +260,10 @@ for f in keybindings.json models.json vision-delegate.json; do
 done
 for d in "$here"/extensions/*/; do
 	d=${d%/}
+	unlinked "$(basename "$d")" && continue
 	link "$d" "$agent/extensions/$(basename "$d")"
 done
+drop_unlinked
 for f in "$here"/extensions/*.ts; do
 	[ -e "$f" ] || continue
 	link "$f" "$agent/extensions/$(basename "$f")"

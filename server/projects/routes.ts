@@ -1,16 +1,17 @@
 import type { Context, Hono } from "hono";
 import { appendHistory } from "../project-settings";
-import type { ProjectList, ProjectRegistered } from "../../shared/projects";
+import type { ArchiveCopies, ProjectList, ProjectRegistered } from "../../shared/projects";
 import { BusyError } from "../chat-handle";
 import { localRequest } from "../mesh/proxy";
 import { OrgError } from "../org-error";
 import { guardedFolderProblem, overseerFolder } from "../overseer-folders";
 import { OVERSEER_CARD_HEADER, OVERSEER_SENDER_HEADER, overseerCard, overseerSender } from "../overseer-sender";
 import { cancelHeld } from "../project-holds";
-import { archiveBlockers } from "../project-overseer";
+import { archiveBlockers, archiveCopies } from "../project-overseer";
 import { nudgeMarks } from "../session-feed";
 import { knownLogin, loginOptions, UNKNOWN_LOGIN } from "../claude-login-known";
 import { projectLoginView, setProjectLogin } from "./claude-login";
+import { registerApprovalRoutes } from "../approvals-routes";
 import { cloneRepo, overseerRepoProblem } from "./clone";
 import { reservedRoots } from "./contributions";
 import { RegistryError, reservedRootProblem } from "./registry";
@@ -126,6 +127,10 @@ export function registerProjectRoutes(app: Hono<any>): void {
     }),
   );
 
+  // The project's context files and skills (shared/approvals.ts), the folder lists and the Sova-wide setting: kept on
+  // this host, for chats not yet started.
+  registerApprovalRoutes(app);
+
   app.patch(
     "/api/projects/:pid",
     handle(async (c) => {
@@ -142,15 +147,31 @@ export function registerProjectRoutes(app: Hono<any>): void {
     }),
   );
 
-  // Archive (§app.organizations/archive): refused while anything in it is open, naming each.
+  // Archive (§app.organizations/archive): refused while anything in it is open, naming each; while its copies run
+  // (or wait to restart), the refusal lists them as the archive dialog does.
   app.post(
     "/api/projects/:pid/archive",
     handle(async (c) => {
       const pid = pidOf(c);
       readProject(pid);
-      const out = await setProjectArchived(pid, true, operatorBy(c), await archiveBlockers(pid));
-      nudgeMarks(); // its sessions leave their region: re-diff the list now
-      return c.json(out, 200, NO_STORE);
+      const copies = await archiveCopies(pid);
+      try {
+        const out = await setProjectArchived(pid, true, operatorBy(c), await archiveBlockers(pid, copies));
+        nudgeMarks(); // its sessions leave their region: re-diff the list now
+        return c.json(out, 200, NO_STORE);
+      } catch (err) {
+        if (err instanceof OrgError && copies.some((x) => !x.adopted)) return c.json({ error: err.message, copies }, err.status);
+        throw err;
+      }
+    }),
+  );
+  // What the archive dialog lists: every copy that runs or waits to restart, adopted ones included.
+  app.get(
+    "/api/projects/:pid/running-copies",
+    handle(async (c) => {
+      const pid = pidOf(c);
+      readProject(pid);
+      return c.json({ copies: await archiveCopies(pid) } satisfies ArchiveCopies, 200, NO_STORE);
     }),
   );
   app.post(

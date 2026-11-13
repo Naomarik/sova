@@ -1860,6 +1860,15 @@ the top region doesn't keep every one of them forever.
   toast is "Deleted. It had no messages, so there was nothing to archive." with no Undo.
   Otherwise the toast is "Archived. Find it under Archive." The row moves to the Archive, and case 2 keeps it
   visible while it's open.
+- **Changed outside this server.** The file is the archived set, whoever wrote it. When another
+  process changes `archived-sessions.json` (another Sova server on the same state, a test, a script,
+  an edit by hand), this server reads it again at its next look at a session's archived state after
+  the write, within about a second, not only at its own next archive or its restart. So the chat's
+  archived state follows the file: opening it reads only or starts it, and its refusals
+  (§chat.transcript/instant-open, "An archived chat") hold or end, as the file now says; its row
+  moves between regions at the next listing, as any change made outside Sova does
+  (§app.session-list/listing-reuse). An archive or unarchive this server makes reads the file again
+  and changes only that one id, so what another process wrote survives it.
 - **Undo.** On an archived session the same button, not red and with the undo icon
   (`undo.svg`), is Unarchive Session. Toast: "Moved back to Folders.", or "Moved back to
   {project}." when it goes back to a project of this computer (a session in its folder, listed

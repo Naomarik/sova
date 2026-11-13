@@ -22,7 +22,8 @@
     "team_succeed",
     "team_list",
     "project_verbs",
-    "queue_push"
+    "queue_push",
+    "spec"
    ],
    "entries": [],
    "extensions": [
@@ -43,7 +44,8 @@
     "<inline:sova-topics>",
     "<inline:sova-tours>",
     "<inline:sova-create-settings>",
-    "<inline:sova-transcript-cards>"
+    "<inline:sova-transcript-cards>",
+    "<inline:sova-spec>"
    ]
   },
   {
@@ -68,7 +70,8 @@
     "team_succeed",
     "team_list",
     "project_verbs",
-    "queue_push"
+    "queue_push",
+    "spec"
    ],
    "entries": [
     {
@@ -104,9 +107,9 @@
         "rules": "@9514ae33e1ebc3e7",
         "docs": "@0f5fabf6c3c47c4c",
         "cwd": "<cwd>\n<ws:plain>\n</cwd>",
-        "mode": "@d4cf9a33be021005"
+        "mode": "@8cb6214f079c2a20"
        },
-       "toolsAdded": "@ed596a5985c5d307"
+       "toolsAdded": "@fc4ee54c7a94b7b3"
       },
       {
        "role": "user",
@@ -164,7 +167,7 @@
        "content": [
         {
          "type": "text",
-         "text": "@09d1f4b82d06584f"
+         "text": "@319d32d623d020bc"
         }
        ],
        "details": {
@@ -208,7 +211,8 @@
     "team_succeed",
     "team_list",
     "project_verbs",
-    "queue_push"
+    "queue_push",
+    "spec"
    ],
    "entries": [
     {
@@ -222,9 +226,9 @@
        "rules": "@9514ae33e1ebc3e7",
        "docs": "@0f5fabf6c3c47c4c",
        "cwd": "<cwd>\n<ws:plain>\n</cwd>",
-       "mode": "@d4cf9a33be021005"
+       "mode": "@8cb6214f079c2a20"
       },
-      "toolsAdded": "@619362e2e44edede"
+      "toolsAdded": "@498bd9a2273199b5"
      }
     }
    ],
@@ -264,11 +268,12 @@
     "claude-code-provider": true,
     "claude-code-model": "claude-sonnet-4-5"
    },
-   "appendSystemPrompt": "@86c3b03079d98792",
+   "appendSystemPrompt": "@707e76717ccddf72",
    "env": {
     "SPEC_AGREE_SOURCE": "pi-session:<sid:1>#<entry>",
     "SPEC_AGREE_GIVEN": "pi-session:<sid:1>#<entry>",
     "SOVA_SPEC_LANDED_FILE": "<file>",
+    "SOVA_SHARED_DIR": "<shared>/<sid:1>",
     "PI_SUBAGENT_BUILTIN_TOOLS": "read,bash,edit,write,grep,find,ls"
    },
    "agentDir": null,

@@ -6,7 +6,8 @@ topics are chapter markers, each message sent to the session is a row — yours,
 session, the Overseer or a teammate sent, under a line naming who sent it — and what the agent did
 between two messages is a single line of counts under the row it belongs to — "3 replies · 14 tools ·
 6m". Notable moments (a compaction, a rewind, a subagent spawning or retiring, a model, thinking
-or mode change, an earlier summary of the session) get their own marker rows, and a stretch with
+or mode change, an earlier summary of the session) get their own marker rows (a run of identical
+ones shares one), and a stretch with
 nothing in it gets a dotless "idle 38m".
 
 It answers a question the transcript doesn't: *what shape did this session have?* The transcript
@@ -173,7 +174,7 @@ the kinds are the whole vocabulary — `input`, `chapter`, `marker`, `density`, 
 |---|---|---|---|---|---|
 | `input` | One message sent to the session, clamped to two lines (`.timeline-title`, full text in `title`); images-only reads "1 image" / "{n} images"; a sender line above it when someone other than you sent it | Solid, muted | Yes | Its own message | Rewind, on the active branch |
 | `chapter` | An outline topic, at its anchored message's time (`.timeline-chapter`, one line, ellipsized; `.outline-hash` for a `manual` topic) | Hollow, larger | Yes | The anchored message | — |
-| `marker` | A notable moment, in regular weight ink-2 | Hollow, small | Yes | The entry it happened on, when there is one — a rewind, a past summary or a settings change has none, so it is text | — |
+| `marker` | A notable moment, in regular weight ink-2 | Hollow, small | Yes | The entry it happened on, if any; else it is text | — |
 | `density` | What the agent did after the input directly above it — an input and its density line stay together, input on top | — | — | — | — |
 | `gap` | A stretch over the idle threshold, between the two rows it separates: the later one above it, the earlier one below | — | — | — | — |
 
@@ -260,7 +261,7 @@ a topic missing from an outline you can see in the strip above reads as a bug.
 
 ### Markers
 
-One row each:
+One row each; identical runs fold into one (§chat.timeline/marker-runs):
 
 | Marker | Copy |
 |---|---|
@@ -329,6 +330,51 @@ is inputs, density, markers and gaps — still a timeline, just without headings
 
 "0 messages in this session yet." with "The timeline draws itself as you and the agent work."
 An empty state leads with a live fact and states the absence second (§design/ground-rules).
+
+## §chat.timeline/marker-runs — Marker runs
+
+```html
+<li class="timeline-row" data-kind="marker">
+  <span class="timeline-time" title="2026-09-19T14:37:02Z to 2026-09-19T15:00:41Z · 2d ago">3:00 PM</span>
+  <span class="timeline-dot" aria-hidden="true"></span>
+  <button type="button" class="timeline-body">
+    <span class="visually-hidden">Jump to this message: </span>
+    <span class="timeline-title" aria-hidden="true">coordinator finished ×31</span>
+    <span class="timeline-meta" aria-hidden="true">2:37–3:00 PM</span>
+    <span class="visually-hidden">coordinator finished, 31 times, 2:37 PM to 3:00 PM</span>
+  </button>
+</li>
+```
+
+**Two or more consecutive markers of the same kind with the same copy are one row.** A session
+that retires a worker thirty-one times in twenty minutes would otherwise spend thirty-one rows
+saying one sentence, and push everything else off the pane. The row stays a `marker` row — the
+five kinds are still the whole vocabulary — and reads:
+
+- **Title**: the shared copy and the count, `{copy} ×{n}` ("coordinator finished ×31").
+- **The line under it** (`.timeline-meta`): the time range from the oldest member to the newest,
+  "2:37–3:00 PM"; "11:50 AM–12:10 PM" when the two ends fall either side of noon or midnight; a
+  single time ("3:00 PM") when both ends show the same minute.
+- **Clock**: the newest member's time, so the row sits where its latest moment does. The clock's
+  `title` carries both absolute times and the newest's relative one: "{oldest} to {newest} ·
+  {relative}".
+- **Tooltip**: the newest member's, when the marker has one.
+
+**It never opens.** There is no disclosure and no list of the members: the exact moments are not
+shown anywhere on the axis. The count and the span are what the run is for; each moment is still
+in the transcript, one jump away.
+
+**It jumps like a single marker**, to the newest member's entry. A run of markers with no entry
+behind them (a rewind, a model/thinking/mode change) is static text, as each of them is alone.
+
+**Anything between splits a run.** Runs are only of rows that are next to each other in time: a
+different marker, an input, a chapter or a gap (idle) line between two identical markers leaves
+two rows, or two runs. "coordinator finished" and "coordinator stopped" differ in copy, so they
+never share a row. Only markers fold: inputs, chapters, density and gap lines are never grouped,
+however alike. Runs are found in the chronological order, a display step over `timelineRows()`'s
+output (`groupRuns()`), before the axis turns over; `timelineRows()` itself is unchanged. A run
+keeps its oldest member's key, so a member arriving while you watch grows the row without
+remounting it. Inputs Only hides markers, runs included, so the filter is unchanged.
 
 ## §chat.timeline/inputs-only — Inputs Only
 
@@ -505,6 +551,8 @@ body lands on that message exactly as it would unfiltered, and the filter stays 
   the branch without what only the thread draws (a reply's text, a tool's output, image bytes, a
   report's body), a small fraction of the transcript's size, so on a slow link its list is there
   and a jump's fetch has the link to itself.
+- **A marker run** (§chat.timeline/marker-runs) jumps to its newest member's entry, as a
+  single marker would; a run with no entry behind it is text.
 - **Density and gap rows aren't buttons.** They describe a stretch, and a stretch has no one
   message to land on. The input above the density line is the landing, and it is one row away.
   The rewind, past-summary and model/thinking/mode change markers aren't buttons either, for the
@@ -558,6 +606,10 @@ refetch or an armed Rewind never remounts the row under focus.
   nothing is armed.
 - **The abandoned rows** carry a visually hidden "Left behind by the rewind.", because muted ink
   and a missing button say nothing out loud.
+- **A run reads in words.** The visible `{copy} ×{n}` and the range under it are `aria-hidden`,
+  and a visually hidden twin says them out loud: "coordinator finished, 31 times, 2:37 PM to 3:00
+  PM" (one time when both ends show the same minute), after the jump prefix on a button, alone on
+  a static run. "×31" and an en dash read badly; the words don't.
 - **A row that can't be jumped to isn't a button.** The rewind, past-summary and
   model/thinking/mode change markers are `span`s, so a screen reader reads them as the lines of
   text they are and they never appear in the tab order — a control that could only fail is worse
@@ -622,7 +674,7 @@ refetch or an armed Rewind never remounts the row under focus.
 | The list | `ol.timeline` (named by `aria-label`) · `li.timeline-row[data-kind="input\|chapter\|marker\|density\|gap"]` (+ `.timeline-row-flagged`; input rows `[data-input="<entry id>"]`, + `.input-row-boundary` / `.input-row-abandoned`) |
 | Rail | `.timeline-dot` (`aria-hidden`); the line itself is `.timeline-row::before`, trimmed at the first and last row |
 | Time | `.timeline-time` (mono, right-aligned) `.timeline-time-flagged` |
-| Row body | `button.timeline-body` (the whole hit area and the jump) · `span.timeline-body.timeline-body-static` (a marker with nothing to land on) `.timeline-title` (2-line clamp) `.timeline-chapter` (+ `.outline-hash`) `.timeline-meta` |
+| Row body | `button.timeline-body` (the whole hit area and the jump) · `span.timeline-body.timeline-body-static` (a marker with nothing to land on) `.timeline-title` (2-line clamp) `.timeline-chapter` (+ `.outline-hash`) `.timeline-meta` (also a marker run's time range; the run's title and range are `aria-hidden` beside a `.visually-hidden` spoken twin) |
 | Input row | a third-column wrapper · `.input-row-line` · `button.timeline-body.input-row-body` · `.timeline-title.input-row-title` · `.input-row-actions` (Rewind; armed: `.button-destructive` Rewind Here + ghost Cancel) · `.input-row-note` (confirm, boundary, `.text-error` refusal) |
 | Between rows | `.timeline-gap` |
 | Sender line | `p.session-sender.timeline-sender` (the transcript's sender header, `.timeline-sender` resets its margins for the row) · an `.icon` (`network`, `eye` or `chat`) · the session link |

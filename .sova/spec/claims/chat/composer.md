@@ -381,7 +381,8 @@ is always on: there is no switch.
 ## §chat.composer/disabled-states — Disabled states
 
 While the composer can't send (the session is open in a TUI, the chat is reconnecting after its
-socket dropped, or a model switch is pending), the reason goes in `.composer-reason` and the
+socket dropped, a model switch is pending, or a new chat waits for decisions on its context files
+and skills), the reason goes in `.composer-reason` and the
 control is disabled. The reason is one line, per
 the skill's copy ladder. While the chat is reconnecting, the reason there is
 for assistive technology only (visually hidden): what the eye reads is the note floating over the
@@ -400,6 +401,8 @@ one of the rows below: a notice takes the composer's place, Stop included
 | Session is live in a TUI | `disabled` | Send hidden | `attention` — "Read only while this session is open in the TUI." |
 | Chat connecting or starting (a new session or a chat this tab opens, on its first connect; a chat this tab woke; until this connection's `hello`) | enabled (typing is fine) | Send and the model, thinking, mode, sandbox and login controls work: a message shows at once as `Sending…` and what each asks goes to the chat in the order asked; Stop is `aria-disabled` until the socket is open, then takes a waiting message back (§chat.transcript/send-while-starting) | none in the composer; the "Connecting to chat…" note floats over the transcript (§chat.transcript/instant-open) |
 | Chat socket dropped, or its chat failed to start for now (until the next `hello`) | enabled | Send `aria-disabled` until the `hello`, Stop until the socket is open | `clock` — "Reconnecting. Your draft is kept." (hidden; shown as the floating note) |
+| New chat with items to decide (asking mode, before its first message, while any context file or skill it could load is Waiting; §chat.context-approval/held-send) | enabled (typing and the draft kept) | Send `aria-disabled` until nothing waits, also when it is decided in another tab or on the project page; **Review** opens the setup card's notice; the per-chat switch alone doesn't release it | `attention` — "Approve or disallow {n context files and m skills} to send." ("2 context files and 1 skill", "3 skills"), with a ghost **Review** after it |
+| New chat whose setup card has a decision made here whose save the server hasn't answered, and nothing Waiting (either mode, before its first message; §chat.context-approval/at-once) | enabled (typing and the draft kept) | Send `aria-disabled` until every such save is accepted (a read after it that fails doesn't hold it), fails or times out (then its items go back as they were) | `clock` — "Saving…" |
 | Model switch pending (§chat/model-menu) | enabled | Send `aria-disabled` until `{type:"model"}` or an error | `clock` — "Switching model…" |
 | Session is archived (§chat.transcript/instant-open, "An archived chat"; no socket is held) | enabled (typing and the draft kept) | `Unarchive` in place of Send; the model, mode, sandbox and login controls wait | `archive` — "This session is archived. Unarchive it to send." |
 | Server `error` with `code:"busy"` (the session reopens read only) | `disabled` | Send hidden | `attention` — "Read only while this session is open in the TUI." |

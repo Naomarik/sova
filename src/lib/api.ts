@@ -6,6 +6,8 @@ import type { CardAnswerValue, CardInfo, ProjectCardsAnswer, SessionCardsAnswer 
 import type { ProjectSettingsInfo, SettingsApplyResult, SettingsCardView, SettingsHistoryRow, SovaCardsInfo } from "../../shared/project-settings";
 import type { ExtensionInspect, ExtensionsInstalled } from "../../shared/extension-loader";
 import type { McpNewServer, McpProjectServers, McpServerRow, McpServers, McpSignIn } from "../../shared/mcp";
+import type { ProjectSkillsView } from "../../shared/project-skills";
+import type { ApprovalState, ContextApprovalSetting, ContextFilesView, FolderApprovalsView } from "../../shared/approvals";
 import type { ProfileSaveRequest, ProfilesListing, ProfileWriteAnswer } from "../../shared/profiles";
 import type { ProjectFilesAnswer } from "../../shared/project-files";
 import type { DeployVerb, VerbResult } from "../../shared/project-contract";
@@ -125,7 +127,7 @@ import type { OrgCosts, ProjectCost } from "../../shared/costs";
 import type { UsagePerformance } from "../../shared/usage/perf";
 import { MAX_USAGE_SESSIONS, type PricesInfo, type UsageCosts, type UsageSessionSpend, type UsageSessionsRequest, type UsageSessionsTotals, type UsageToday } from "../../shared/usage/wire";
 import type { ProjectRuntimeView } from "../../shared/project-runtime";
-import type { ProjectIconInfo, ProjectList, ProjectRegistered, ProjectSummary } from "../../shared/projects";
+import type { ArchiveCopies, ProjectIconInfo, ProjectList, ProjectRegistered, ProjectSummary } from "../../shared/projects";
 import type { CodingStartInput, CodingStartResult, ItemCodeInput, ItemCodeResult, ItemSendInput, ItemSendResult, ProjectOverseerInfo, ProjectOverseerPatch, ProjectWorktrees } from "../../shared/project-overseer";
 import type { HostBrowserAccessChange, HostBrowserAccessResult, HostRename, HostRenameResult, MeshDetails } from "../../shared/mesh-details";
 import type { MeshResync, ResyncJob, ResyncStart } from "../../shared/mesh-resync";
@@ -1412,6 +1414,8 @@ export const patchProject = (pid: string, patch: { name?: string; root?: string 
 /** Archive a project (§app.organizations/archive): 409 naming what is open; Unarchive brings it back. */
 export const archiveProject = (pid: string) => request<ProjectSummary>(`${projectPath(pid)}/archive`, jsonInit("POST", {}));
 export const unarchiveProject = (pid: string) => request<ProjectSummary>(`${projectPath(pid)}/unarchive`, jsonInit("POST", {}));
+/** What of the project runs or waits to restart now: the archive ask lists it, and a 409 from archive carries the same list (`copies`). */
+export const getRunningCopies = (pid: string) => request<ArchiveCopies>(`${projectPath(pid)}/running-copies`, { cache: "no-store" });
 /** A project's icon (§app.projects/icon): what it is now (rescans the folder), an upload, letters on or off, the upload removed. */
 export const getProjectIconInfo = (pid: string) => request<ProjectIconInfo>(`${projectPath(pid)}/icon/info`, { cache: "no-store" });
 export const uploadProjectIcon = (pid: string, png: string) => request<ProjectIconInfo>(`${projectPath(pid)}/icon`, jsonInit("PUT", { png }));
@@ -1889,6 +1893,25 @@ export const removeExtension = (id: string, deleteData: boolean) => request<{ ok
 // -- MCP servers (§app/mcp) --
 const mcpRow = (id: string, tail = "") => `/api/mcp/rows/${encodeURIComponent(id)}${tail}`;
 export const getMcpServers = () => request<McpServers>("/api/mcp/servers");
+/** A project's skill defaults for new chats, kept on this computer. */
+export const getProjectSkills = (projectId: string) => request<ProjectSkillsView>(`${projectPath(projectId)}/skills`, { cache: "no-store" });
+/** Approve or disallow skills (only the names given); answers the fresh view. */
+export const setProjectSkills = (projectId: string, skills: Record<string, ApprovalState>) =>
+  request<ProjectSkillsView>(`${projectPath(projectId)}/skills`, jsonInit("PUT", { skills }));
+/** A project's context files for new chats, kept on this computer (shared/approvals.ts). */
+export const getProjectContextFiles = (projectId: string) => request<ContextFilesView>(`${projectPath(projectId)}/context-files`, { cache: "no-store" });
+export const setProjectContextFiles = (projectId: string, files: Record<string, ApprovalState>) =>
+  request<ContextFilesView>(`${projectPath(projectId)}/context-files`, jsonInit("PUT", { files }));
+/** Any folder's list, a project's or not: what the new chat's card decides through. */
+export const getFolderApprovals = (cwd: string) => request<FolderApprovalsView>(`/api/folder-approvals?cwd=${encodeURIComponent(cwd)}`, { cache: "no-store" });
+export const setFolderApprovals = (cwd: string, change: { files?: Record<string, ApprovalState>; skills?: Record<string, ApprovalState> }) =>
+  request<FolderApprovalsView>("/api/folder-approvals", jsonInit("PUT", { cwd, ...change }));
+/** Settings → General: "Allow context files and skills without asking", this computer's. */
+/** A mid-chat line's Approve or Disallow: into the folder's list, and Approve loads it in this chat too (the page's only). */
+export const decideInChat = (path: string, kind: "context" | "skill", item: string, state: "approved" | "disallowed") =>
+  request<unknown>("/api/sessions/approval", jsonInit("POST", { path, kind, item, state }));
+export const getContextApproval = () => request<ContextApprovalSetting>("/api/settings/context-approval", { cache: "no-store" });
+export const setContextApproval = (allowWithoutAsking: boolean) => request<ContextApprovalSetting>("/api/settings/context-approval", jsonInit("PUT", { allowWithoutAsking }));
 export const getProjectMcp = (projectId: string) => request<McpProjectServers>(`/api/projects/${encodeURIComponent(projectId)}/mcp`);
 /** Add and Check: answers once the Check has finished; a failed Check is a row in state failed. */
 export const addMcpServer = (server: McpNewServer) => request<McpServerRow>("/api/mcp/servers", jsonInit("POST", server));

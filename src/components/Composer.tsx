@@ -117,6 +117,8 @@ export interface ComposerReason {
   code?: boolean;
   /** Long: on a line of its own under the foot's controls, which keep their size. */
   wide?: boolean;
+  /** One button after the words (Review, for a Send held for decisions): a ghost, never the only way there. */
+  action?: { label: string; run(): void };
 }
 
 /** `KB` under 1 MB, rounded; otherwise one decimal. */
@@ -1560,6 +1562,13 @@ export function Composer(props: {
                     <span>
                       <For each={codeSpans(r().text)}>{(s) => (s.code ? <code>{s.text}</code> : s.text)}</For>
                     </span>
+                  </Show>
+                  <Show when={r().action}>
+                    {(act) => (
+                      <button type="button" class="button button-sm button-ghost composer-reason-action" onClick={() => act().run()}>
+                        {act().label}
+                      </button>
+                    )}
                   </Show>
                 </Show>
               )}

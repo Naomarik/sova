@@ -38,13 +38,29 @@ default. The agent dir is `$PI_CODING_AGENT_DIR` when set (a leading `~` expande
 
 - **Links, not copies.** Each entry is a symlink to `<install dir>/pi-config/extensions/<name>`.
   An update replaces the install directory under the same path, so the links follow it with no
-  relinking, and pi and Sova always load the extensions of the Sova that is installed.
-- **Nothing that is not ours is replaced.** A target that is a symlink into this install
-  directory's `pi-config/extensions/` is ours. Anything else at a target path — a regular file,
-  a directory, or a symlink to anywhere else (for example a pi-config checkout the user linked
-  by hand) — is kept as it is, and the installer names it and says that extension was skipped.
+  relinking, and the pi terminal loads the extensions of the Sova that is installed. Sova's own
+  chats load them from their own copy whatever the links say (§app.chat-processes/code-generations).
+- **A link into another Sova is repointed.** A target that is a symlink into this install
+  directory's `pi-config/extensions/` is ours. A symlink into another copy of Sova (a folder
+  `<other>/pi-config/extensions/<name>` where `<other>` is a Sova tree: its `package.json` is named
+  `sova` and it has `pi-config/install.sh`), an older install or a developer checkout, is left
+  over from before: the installer points it at this install instead and names it, with the old
+  target, so it is easy to undo ("relinked <link> (was <old target>, another Sova copy)").
+- **Nothing that is not Sova's is replaced.** Anything else at a target path — a regular file, a
+  directory, or a symlink to anywhere that is not a Sova tree (for example a pi-config folder the
+  user linked by hand) — is kept as it is, and the installer names it and says that extension was
+  skipped.
 - **Ours, and gone upstream.** A symlink of ours whose target no longer exists (an extension the
   new version removed) is removed.
+- **No `mode` link.** `pi-config/extensions/mode/` holds the texts, settings and modules Sova's own
+  modes use, not a pi extension (§chat.mode-menu/terminal), so it is never linked. A `mode` link
+  left by an earlier install, into this install or into another copy of Sova, is removed on every
+  run and named ("removed <link> (mode is no pi extension in this version)", the other copy's
+  saying it links to another Sova copy); anything else there is left as it is.
+  `pi-config/install.sh` links no `mode` either: its full run and `--links` remove a `mode` link
+  into its own folder, and `--check` changes nothing and fails on one ("stale link, mode is not an
+  extension: <link>"). A hermetic test server's agent dir links only what pi would load, so it has
+  no `mode` link, and one left from before is removed as stale.
 - **No personal configuration.** It writes no `settings.json`, `models.json`,
   `keybindings.json`, `vision-delegate.json`, `auth.json` or sandbox policy, and links no
   `pi-sessions` command. `pi-config/install.sh`, which does install a whole personal setup,

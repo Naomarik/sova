@@ -41,6 +41,9 @@ export interface RemoteHooks {
   beforeMessage?(h: RemoteChatHandle): Promise<void>;
   /** Cheap and sync: whether beforeMessage has anything to do for this chat now. */
   needsBeforeMessage?(h: RemoteChatHandle): boolean;
+  /** A page's first message into a chat that asks first: how many context files and skills still wait for a
+      decision (§chat.context-approval/held-send). Above 0 the message is refused and goes back as the draft. */
+  waitingBeforeFirst?(h: RemoteChatHandle): Promise<number>;
   /** A `state` frame arrived (idle stop, the Claude cap, the resource monitor). */
   state?(h: RemoteChatHandle): void;
   /** The chat said it exits on purpose. */
@@ -390,7 +393,40 @@ export class RemoteChatHandle extends ChatHandle {
       },
     });
   }
+  /** Whether a page's message is a first send that must wait for the folder's decisions: the chat is ordinary,
+      before its first message, and was built asking first, or hasn't said yet how it was built (then the count, from
+      the folder's rule, decides: "not loaded yet" is never "nothing waiting"). A program's (notUser) never waits. */
+  holdsFirst(client: Pick<ChatClient, "notUser" | "unwatched">, msg: ChatClientMessage): boolean {
+    const m = this.mirror;
+    return msg.type === "prompt" && !client.notUser && !client.unwatched && !!this.hooks.waitingBeforeFirst && !!m.pristine && !m.special && (!m.loadout || !!m.loadout.off?.asking);
+  }
   clientMessage(client: ChatClient, msg: ChatClientMessage): void {
+    if (this.holdsFirst(client, msg)) {
+      this.gating++;
+      this.messageGate = this.messageGate
+        .then(() => this.hooks.waitingBeforeFirst!(this))
+        .catch(() => 0)
+        .then((waiting) => {
+          this.gating--;
+          if (waiting > 0) {
+            const clientId = (msg as { clientId?: unknown }).clientId;
+            client.send({
+              type: "error",
+              code: "refused",
+              decide: "first",
+              waiting,
+              message: `Approve or disallow ${waiting === 1 ? "1 context file or skill" : `${waiting} context files and skills`} to send.`,
+              ...(typeof clientId === "string" ? { clientId } : {}),
+            });
+            return;
+          }
+          this.clientMessageOn(client, msg);
+        });
+      return;
+    }
+    this.clientMessageOn(client, msg);
+  }
+  private clientMessageOn(client: ChatClient, msg: ChatClientMessage): void {
     if ((msg.type === "prompt" || msg.type === "steer") && (this.gating > 0 || this.hooks.needsBeforeMessage?.(this))) {
       // In order, each after the folder is back; a chat whose folder is there costs one stat.
       this.gating++;
@@ -508,6 +544,10 @@ export class RemoteChatHandle extends ChatHandle {
   pushLinksChanged(sessionIds: readonly string[]): void {
     this.link.send({ t: "push", kind: "links-changed", sessionIds: [...sessionIds] });
     this.pushLinkLive();
+  }
+  /** Every pane of this chat re-reads its setup (§chat.context-approval/live): its folder's list changed. */
+  pushSetupChanged(): void {
+    for (const c of this.clients.values()) c.send({ type: "setup_changed" });
   }
   /** A special chat's composer, as its kind says it is now (closed: why; open: null). */
   pushComposerClosed(text: string | null): void {

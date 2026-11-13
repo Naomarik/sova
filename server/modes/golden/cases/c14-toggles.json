@@ -21,7 +21,8 @@
    "team_succeed",
    "team_list",
    "project_verbs",
-   "queue_push"
+   "queue_push",
+   "spec"
   ],
   "entries": [],
   "extensions": [
@@ -42,7 +43,8 @@
    "<inline:sova-topics>",
    "<inline:sova-tours>",
    "<inline:sova-create-settings>",
-   "<inline:sova-transcript-cards>"
+   "<inline:sova-transcript-cards>",
+   "<inline:sova-spec>"
   ]
  },
  {
@@ -61,7 +63,7 @@
        "docs": "@0f5fabf6c3c47c4c",
        "cwd": "<cwd>\n<ws:plain>\n</cwd>"
       },
-      "toolsAdded": "@ed596a5985c5d307"
+      "toolsAdded": "@fc4ee54c7a94b7b3"
      },
      {
       "role": "user",
@@ -94,7 +96,8 @@
    "team_succeed",
    "team_list",
    "project_verbs",
-   "queue_push"
+   "queue_push",
+   "spec"
   ],
   "entries": [
    {
@@ -109,7 +112,7 @@
       "docs": "@0f5fabf6c3c47c4c",
       "cwd": "<cwd>\n<ws:plain>\n</cwd>"
      },
-     "toolsAdded": "@619362e2e44edede"
+     "toolsAdded": "@498bd9a2273199b5"
     }
    }
   ],
@@ -138,6 +141,7 @@
    "team_list",
    "project_verbs",
    "queue_push",
+   "spec",
    "vis_guide",
    "vis_check",
    "record_tour",
@@ -246,6 +250,7 @@
    "team_list",
    "project_verbs",
    "queue_push",
+   "spec",
    "vis_guide",
    "vis_check",
    "record_tour",
@@ -303,7 +308,8 @@
    "team_succeed",
    "team_list",
    "project_verbs",
-   "queue_push"
+   "queue_push",
+   "spec"
   ],
   "entries": [
    {
@@ -412,7 +418,7 @@
       "content": [
        {
         "type": "text",
-        "text": "@aa375cdbe179dd10"
+        "text": "@e99da773c9afe9a8"
        }
       ]
      }
@@ -438,7 +444,8 @@
    "team_succeed",
    "team_list",
    "project_verbs",
-   "queue_push"
+   "queue_push",
+   "spec"
   ],
   "entries": [
    {
@@ -468,7 +475,7 @@
    {
     "type": "custom_message",
     "customType": "mode-note",
-    "content": "@aa375cdbe179dd10",
+    "content": "@e99da773c9afe9a8",
     "display": false,
     "details": {
      "v": 1,
@@ -505,7 +512,8 @@
    "team_succeed",
    "team_list",
    "project_verbs",
-   "queue_push"
+   "queue_push",
+   "spec"
   ],
   "entries": [
    {
@@ -598,7 +606,8 @@
    "team_succeed",
    "team_list",
    "project_verbs",
-   "queue_push"
+   "queue_push",
+   "spec"
   ],
   "entries": [
    {
@@ -639,6 +648,7 @@
    "team_list",
    "project_verbs",
    "queue_push",
+   "spec",
    "align"
   ],
   "entries": [
@@ -702,7 +712,7 @@
       "sections": {
        "tools": "@14069dc67c42c871",
        "rules": "@898a2a6e09208de2",
-       "mode": "@0e47e24b618b8548"
+       "mode": "@7c8719d2e6540e12"
       },
       "toolsAdded": [
        {
@@ -775,6 +785,7 @@
    "team_list",
    "project_verbs",
    "queue_push",
+   "spec",
    "align"
   ],
   "entries": [
@@ -786,7 +797,7 @@
      "sections": {
       "tools": "@14069dc67c42c871",
       "rules": "@898a2a6e09208de2",
-      "mode": "@0e47e24b618b8548"
+      "mode": "@7c8719d2e6540e12"
      },
      "toolsAdded": [
       {
@@ -867,6 +878,7 @@
    "team_list",
    "project_verbs",
    "queue_push",
+   "spec",
    "align"
   ],
   "entries": [
@@ -962,6 +974,7 @@
    "team_list",
    "project_verbs",
    "queue_push",
+   "spec",
    "align"
   ],
   "entries": [
@@ -1001,6 +1014,7 @@
    "team_list",
    "project_verbs",
    "queue_push",
+   "spec",
    "align"
   ],
   "entries": [
@@ -1089,6 +1103,7 @@
    "team_list",
    "project_verbs",
    "queue_push",
+   "spec",
    "align"
   ],
   "entries": [],

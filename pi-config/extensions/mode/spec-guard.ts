@@ -95,8 +95,12 @@ export const localIO: SpecIO = {
 	},
 };
 
-/** The trusted core directory, resolved as spec-mode.md's `$core` shell line does (minor.ts SPEC_CORE_SHELL). */
+/**
+ * The trusted core directory, resolved as spec-mode.md's `$core` shell line does (minor.ts SPEC_CORE_SHELL):
+ * SOVA_SPEC_CORE (Sova sets it in each local chat process: its own copy's tools), else the agent dir's.
+ */
 export function coreDir(env: Record<string, string | undefined>, home: string): string {
+	if (env.SOVA_SPEC_CORE) return env.SOVA_SPEC_CORE;
 	let agent = env.PI_CODING_AGENT_DIR || `${home}/.pi/agent`;
 	if (agent === "~" || agent.startsWith("~/")) agent = home + agent.slice(1);
 	return `${agent}/extensions/spec/core`;

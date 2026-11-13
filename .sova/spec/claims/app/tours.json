@@ -20,8 +20,7 @@
       "pi-config/extensions/mode/vis/tour-sites.md",
       "pi-config/extensions/mode/vis/tour-sova.md",
       "pi-config/extensions/mode/vis/tour-sharing.md",
-      "pi-config/extensions/mode/index.test.ts",
-      "pi-config/extensions/mode/tests/smoke.mjs",
+      "pi-config/extensions/mode/modes.test.ts",
       "pi-config/extensions/mode/README.md",
       "agents/modes/vis/overview.md",
       "src/vis/guide.test.ts",
@@ -446,7 +445,8 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-10-15T19:49Z"
+      "at": "2026-11-12T10:39Z",
+      "source": "pi-session:c6e7f9da-6608-46f4-a4d9-6db219882520#b5acf41a"
     }
   },
   "§app.tours/source-identity": {

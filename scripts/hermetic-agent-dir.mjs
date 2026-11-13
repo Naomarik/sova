@@ -136,6 +136,8 @@ function sessionNames(root) {
 }
 
 const WAKE_NUDGE = "wake-nudge.ts";
+// Sova reads the same marker: it adds every shipped extension an agent dir lacks, but never wake-nudge to
+// one that holds it (server/harness/pi/own-code.ts COPIED_SESSIONS_MARKER), so leaving the link out is enough.
 const copiedMarker = join(AGENT, "copied-sessions.json");
 let marked = null;
 try {
@@ -194,7 +196,7 @@ if (copiedMode) {
 // Every extension of THIS worktree: loose *.ts files, and directories that actually hold one.
 // pi's own rule (dist/core/extensions/loader.js, resolveExtensionEntries): a directory is an
 // extension only if it has package.json with a "pi.extensions" manifest, an index.ts, or an
-// index.js — anything else it skips. install.sh links every directory regardless; here we apply
+// index.js — anything else it skips (the mode folder too: no index.ts). install.sh links every other directory; here we apply
 // pi's rule so .agent/extensions lists exactly what the runtime will load, and a docs-only
 // directory (claude-cli) or a loose file inside a directory (btw/btw.ts) does not masquerade as
 // an installed extension.

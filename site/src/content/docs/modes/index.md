@@ -89,7 +89,7 @@ the transcript. This keeps the model provider's prompt cache, so a toggle doesn'
 conversation. Turning **align** or **vis** on or off does change the agent's tools:
 align adds its `align` tool and vis its drawing tools and the Lookbook's tool. A project mode
 with tools adds or removes its own tools the same way. **memory** sends no note at all: it changes
-the history the model is sent from the next turn, and adds its `zoom` and `date` tools.
+the history the model is sent from the next turn, and adds its `zoom`, `date` and `recall` tools.
 
 Each switch is recorded in the session. It draws nothing in the thread, but it shows in the Session
 pane's Changes and as a marker on the Timeline.
@@ -134,16 +134,16 @@ answers with the usage line.
 
 A pi terminal session has no modes from Sova: no Delegate or Create, no align, spec, vis, memory,
 project or personal modes, and no mode palette, shortcuts or launch flags. A session's saved modes
-stay in its file, so a session you opened in a terminal has them again when Sova opens it. While
-Settings → Experimental's switch below is still there, the older mode extension may still load in a
-terminal as it did, with nothing promised.
+stay in its file, so a session you opened in a terminal has them again when Sova opens it.
 
 ## Who runs the modes
 
-Settings → Experimental has one switch, **Sova runs chat modes**, on by default: Sova runs every
-chat's modes itself, built-in, project and personal ones. Turned off, the older pi mode extension
-runs them as it did before this release, and personal modes aren't offered. A flip reaches each open
-chat at its next quiet moment, and the model sees the same instructions and tools either way.
+Sova runs every chat's modes itself, built-in, project and personal ones, in every chat, helper and
+team member, whatever your pi folder links to. There's no switch for it any more: the old
+**Sova runs chat modes** switch in Settings → Experimental is gone, and so is the older pi mode
+extension: the installer no longer links a `mode` folder into your pi folder, and removes the link an
+older install made. Only the mode menu turns modes off. A chat that ran its modes the old way moves over at its next quiet
+moment, with the same modes, alignments and approvals.
 
 ## What workers get
 
@@ -157,7 +157,8 @@ mode whose file says `workers: yes`. A worker gets at most 8 modes, built-in and
   promotes. See [Spec](/docs/modes/spec/).
 - **align** doesn't: aligning is a conversation with you, and a worker doesn't have one.
 - **vis** doesn't: drawings are for you, and a worker's replies are read by its parent. So no
-  worker has a Lookbook, and a Lookbook's design sessions take none of the chat's modes.
+  worker has a Lookbook, and a Lookbook's design sessions and its Creative Director take none of
+  the chat's modes.
 - **memory** doesn't: it is the chat's own memory of its conversation, and a worker starts fresh
   from its brief.
 - A **project mode** does when its file says `workers: yes`: the worker gets the chat's copy of it,
@@ -187,7 +188,7 @@ and every other tool stay, and the agent's instructions read the same either way
 Memory lets a chat outgrow its context. A cheap model, the summarizer, folds each message into a
 one-line summary, and older lines into lines that cover more. The model reads those lines instead of
 the whole history, and opens any of them back down to the original message with its `zoom` tool
-(`date` gives a message's date and time). Each recall shows as a tool row, such as "Recalled
+(`date` gives a message's date and time, and `recall` finds a message by its words). Each recall shows as a tool row, such as "Recalled
 messages 40–47". The transcript you read never changes, so turning memory off gives the model the
 chat's full history back.
 

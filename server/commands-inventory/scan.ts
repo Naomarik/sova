@@ -75,7 +75,7 @@ export const GRANTS: readonly RouteKey[] = [
   "POST /api/schedules/approve", "POST /api/schedules/revoke", "GET /api/overseer/autonomy", "POST /api/overseer/autonomy/revoke",
   "POST /api/projects/:pid/draft-specs/:sid/approve",
   // A coordinator's questions and the Design Brief: a yes launches, spends, starts a copy or opens a site. Only the person's own click.
-  "POST /api/design/runs/:run/brief/start", "POST /api/design/runs/:run/brief/edit", "POST /api/design/runs/:run/brief/answers", "POST /api/design/runs/:run/brief/conflict", "POST /api/design/runs/:run/brief/link", "POST /api/design/runs/:run/brief/image", "POST /api/design/runs/:run/brief/not-this-screen", "POST /api/design/coordinator/answer",
+  "POST /api/design/runs/:run/brief/start", "POST /api/design/runs/:run/brief/edit", "POST /api/design/runs/:run/brief/answers", "POST /api/design/runs/:run/brief/conflict", "POST /api/design/runs/:run/brief/link", "POST /api/design/runs/:run/brief/image", "POST /api/design/runs/:run/brief/screenshot", "POST /api/design/runs/:run/brief/not-this-screen", "POST /api/design/coordinator/answer",
   // Bringing images into a chat's set, and agreeing to capture a signed-in page.
   "POST /api/design/assets/own", "POST /api/design/assets/signed-in-consent",
   // A person's own words and Describe Again on one image of the brief's grid.

@@ -82,7 +82,7 @@ terminal has the session open, `new` makes a new one) and a `meshNeed`.
   `project.icon.upload`, `project.icon.letters`, `project.icon.remove`,
   `project.merge-queue.landing-summary`, `project.glance`, `session.job.list`,
   `session.job.stop`, `session.pairs.list`, `session.pairs.unpair`, `session.pairs.resume`,
-  `attention.dismiss`, `attention.undismiss`.
+  `attention.dismiss`, `attention.undismiss`, `project.copies.running`.
   `attention.dismiss` and `attention.undismiss` are Needs you's Dismiss and its Undo
   (§app.session-list/needs-you-dismiss), `meshNeed` `full`.
   The `project.verb.*` ids are made from the verb lists of `shared/project-contract.ts`, so a new
@@ -95,10 +95,10 @@ terminal has the session open, `new` makes a new one) and a `meshNeed`.
   Assistant's default model (§app.project-assistant/models). The `session.offers.*` entries read
   a session's offer cards, show one from another chat, click a button, and set or clear Not Now;
   `project.offers.list` is the project page's Offers list (§chat/offers). The `design.*` entries list
-  a chat's designs, read a page, change a run's Setup, Start Coordinator, message, refine, retry or
-  delete a design, and message the coordinator, the Lookbook-wide ones named for the Lookbook
+  a chat's designs, read a page, change a run's Setup, Start Creative Director, message, refine, retry or
+  delete a design, and message the Creative Director, the Lookbook-wide ones named for the Lookbook
   (§chat.design-mode/commands); a Lookbook brief's
-  Start, answers and edits, the coordinator's questions, bringing images in and an image's own note
+  Start, answers and edits, the Creative Director's questions, bringing images in and an image's own note
   are the person's click and no entry (§app.access/your-click). Approving an offers
   file's run buttons, a profile's powers or a schedule is a trust grant and no entry
   (§chat.offers/approval, §chat.profiles/trust, §chat.schedules/approval). `session.sandbox.set`

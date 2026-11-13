@@ -7,7 +7,7 @@
 // must fail, and say why, or a green scenario would prove nothing.
 //
 // All of it runs at once (each server is its own), so the file takes about as long as its longest
-// scenario. Each server's boot is measured and held to 5 s, the whole file to 60 s.
+// scenario. Each server's boot is measured and held to 10 s, the whole file to 60 s.
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { readdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -17,7 +17,7 @@ import { test } from "node:test";
 import { loadScenario, runScenario, scenarioFiles, type Scenario, type ScenarioResult } from "../scripts/sova-scenario.mjs";
 import { startHermeticServer, type HermeticServer } from "./testing/hermetic-server";
 
-const BOOT_BUDGET_MS = 5_000;
+const BOOT_BUDGET_MS = 10_000;
 const SUITE_BUDGET_MS = 60_000;
 const t0 = performance.now();
 

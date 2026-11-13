@@ -123,9 +123,38 @@ project registered there is that folder, not the checkout around it.
   refs, worktrees and files as they were; and a folder made under the preload's temp root
   registers as itself, not as the repository's main checkout.
 
+## §app.server-runtime/test-agent-fence — Tests never write into the real agent dir
+
+A test writes pi's and Sova's state (session files, the state root's stores, merge queue records)
+only into an agent dir it made itself, however it is started: through the runner, whose throwaway
+home holds no real agent dir, or bare, a `bun test` or `node --test` on the file against the
+caller's own home and `~/.pi/agent`. A bare run breaks the rule of §app.server-runtime/test-tiers
+("Only through the runner"), and still writes nothing there.
+
+- **A test that names its own agent dir does so before any product module loads.** It imports
+  `server/testing/scratch-agent-dir.ts` first, which makes a throwaway agent dir in the temp dir,
+  with its `sova/` and `sessions/` folders, and points `PI_CODING_AGENT_DIR` at it as it loads, so
+  a path a module fixes when it loads (the sessions folder) is the scratch one too. The test
+  removes that dir when it ends. Setting the variable in a `before` hook is too late for such paths.
+- **The archived set finds its file at each use**, under the agent dir of that moment, never at a
+  path fixed when its module loaded.
+- `server/merge-queue/wire-unserved.integration.test.ts`, which set its agent dir in a `before`
+  hook, wrote a session file into the real sessions folder and archived it in the real
+  `archived-sessions.json` when run bare; it now takes its agent dir this way and writes only into
+  its scratch dir, under the runner or bare.
+
 ## §app.server-runtime/test-tiers — Two test tiers: in-process unit tests, and integration tests
 
 The suite has two tiers, told apart by file name alone, so a file's tier can't drift from a list.
+
+- **Only through the runner.** Tests run only through the runner: `pnpm test`, `pnpm test:int`,
+  `pnpm test:all`, and the project's `test` verb and the merge queue's checks, which start it.
+  `AGENTS.md` and the testing guide say so as one rule, with its reason: a bare `bun test` or
+  `node --test` on a test file gets none of what the runner sets up (the throwaway home, the one
+  list of settings, the stand-in `claude`, the tier guard, the temp-root refusal), so it runs
+  against the caller's real home and agent dir. Nothing refuses a bare run: it is a rule, not a
+  wall, and a test run bare anyway still writes nothing into the real agent dir
+  (§app.server-runtime/test-agent-fence).
 
 - **The unit tier** is every test file the runner's patterns match except `*.integration.test.ts`:
   in-process tests. They may run Git (Sova's own org store is a Git repository), but no other
@@ -155,7 +184,14 @@ The suite has two tiers, told apart by file name alone, so a file's tier can't d
   queue, Forms in a browser) only when the change since the merge base touches its triggers; Tours never run
   at landing. It prints one line per group it skipped, with its file
   count, its recorded time and why (no change to its triggers, or never at landing). `--groups
-  <name,…|all>` runs only those groups' files, `--plan` prints the selection as JSON (the files,
+  <name,…|all>` runs only those groups' files, and given no name it is a usage error (exit 2), so a
+  command typed by hand never passes having run nothing. `--picked-groups [<name,…|all> …]` is the
+  merge queue's form (Sova's Slow test group check, which appends the merge thread's selection):
+  with names it runs those groups as `--groups` does; with none it runs only the slow groups
+  `--landing` would add for the change since the merge base with `--base <rev>`, else the queue's
+  target (`SOVA_MERGE_TARGET`), else `master`, never the everyday set, and prints which and why;
+  when the change triggers none it runs nothing, prints and reports (`SOVA_OUT` `skipped`) "no slow
+  group applies to this branch's changes", and exits 0. `--plan` prints the selection as JSON (the files,
   the groups run and skipped, the lane count and an estimate from the recorded file times: their
   sum over the lanes, never less than the longest file) and runs nothing. Plain `pnpm test:int`
   still runs the whole tier, every group included, and a release runs it so
@@ -336,6 +372,8 @@ This changes what a test sees: before, it saw the caller's whole shell bar a cha
 the variables that point Git or pi elsewhere, on the caller's own `PATH`; now it sees what the
 queue's checks see, so a pass in one can stand for the other (§app.server-runtime/test-reuse). A
 guard test fails when a test file reads a setting the list lacks, or the list names a credential.
+A bare `bun test` or `node --test` is not a run the runner starts and gets none of this
+(§app.server-runtime/test-tiers, "Only through the runner").
 
 ## §app.server-runtime/typecheck-reuse — The type check isn't run again on identical code
 

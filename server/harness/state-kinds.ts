@@ -163,6 +163,21 @@ export const MCP_LIST = kind<McpChatList>("sova-mcp-list", "newest-on-branch", (
 /** A server's failure in this chat (§app.mcp/in-a-chat). */
 export const MCP_NOTE = kind<McpNote>("sova-mcp-note", "branch-list", (d) => (isRecord(d) && filled(d.server) && filled(d.how) ? (d as unknown as McpNote) : null));
 
+/** An item found after a chat's first message that its fixed list doesn't name, so it wasn't loaded
+    (asking mode): a transcript line with Approve and Disallow, never sent to the model. */
+export interface ApprovalPendingData {
+  kind: "context" | "skill";
+  /** The file, absolute (a skill's SKILL.md). */
+  path: string;
+  /** A skill's name; a context file's place below the chat's folder ("sub/AGENTS.md"). */
+  name?: string;
+}
+export const APPROVAL_PENDING = kind<ApprovalPendingData>("sova-approval-pending", "branch-list", (d) =>
+  isRecord(d) && (d.kind === "context" || d.kind === "skill") && filled(d.path) && String(d.path).startsWith("/") && (d.name === undefined || filled(d.name))
+    ? ({ kind: d.kind, path: d.path, ...(d.name !== undefined ? { name: d.name } : {}) } as ApprovalPendingData)
+    : null,
+);
+
 /** Beside a user message another session sent, as the transcript's row reads it. */
 export const SESSION_SENT = kind<SessionSentData>(SESSION_SENT_ENTRY, "branch-list", (d) =>
   isObject(d) && filled(d.targetId) && typeof d.from?.sessionId === "string" ? (d as SessionSentData) : null,
@@ -314,7 +329,7 @@ export const MEMORY = kind<MemoryChoiceData>("sova-memory", "newest-on-branch", 
 /** Every registered kind, by type. */
 export const STATE_KINDS: ReadonlyMap<string, StateKind<unknown>> = new Map(
   [
-    REWIND, TOPIC_DELIVERED, SHELL_CLOSED, SHELL_RUN, FANOUT_MEMBER, PROFILE, CHAT_PROFILE, LOADOUT, MCP_LIST, MCP_NOTE, SESSION_SENT, OVERSEER, OVERSEER_SENT, OVERSEER_DIALOG_ANSWER,
+    REWIND, TOPIC_DELIVERED, SHELL_CLOSED, SHELL_RUN, FANOUT_MEMBER, PROFILE, CHAT_PROFILE, LOADOUT, MCP_LIST, MCP_NOTE, APPROVAL_PENDING, SESSION_SENT, OVERSEER, OVERSEER_SENT, OVERSEER_DIALOG_ANSWER,
     GRANT, RULE, REVOKE, GRANT_USE, PROJECT_OVERSEER, PROJECT_ASSISTANT, LINK_MEMBER, ALIGN_LAUNCH,
     BATON, BATON_SENT, BATON_HANDOFF, BATON_OFFER, BATON_LEASE, BATON_DECISION, BATON_DONE, BATON_PROPOSAL, BATON_WRAPUP, TOUR_ATTACHMENT, TOUR_DETACHMENT, DESIGN_RUN,
     MODE, SUBAGENT_PROFILE, FORK_CACHE, WORKER_SESSION, SANDBOX, WORKTREES, CLAUDE_LOGIN, ALIGN_DOC, MEMORY,

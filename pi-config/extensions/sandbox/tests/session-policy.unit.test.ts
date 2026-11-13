@@ -10,6 +10,7 @@ import { mountPlan } from "../backends/linux-bwrap.ts";
 import { BROWSER_RULES, DarwinSeatbeltBackend } from "../backends/darwin-seatbelt.ts";
 import { spawnSync } from "node:child_process";
 import { ensureSessionTmpDir, prepareSessionCommand, resolveSessionPolicy, sessionTmpBase, sessionTmpDir } from "../session-policy.ts";
+import { chatSharedFolder } from "../shared-folder.ts";
 
 const TEMPLATE_DIR = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "sandbox-policy");
 
@@ -38,6 +39,8 @@ test("the session policy is exactly what the extension's snapshot resolved befor
 		agentDir, cwd: ws, tmpDir, home, platform: "linux",
 		defaults: backend.platformDefaults({ home, agentDir }), shadowSource, git: gitProtectedPaths,
 		extraWritable: [wt], extraReadOnly: [join(wt, ".agent")],
+		// The chat's own shared folder, by its session id (shared-folder.ts).
+		shared: chatSharedFolder("s1", home),
 	});
 	assert.deepEqual(got, want);
 	assert.ok(got.ok);
@@ -180,9 +183,7 @@ test("prepareSessionCommand: a caller's own tmp is the attempt's, and goes with 
 test("prepareSessionCommand: a caller's own tmp keeps the attempt's proxy socket beside it, whatever TMPDIR is", async (t) => {
 	const { home, agentDir, ws } = rig(t);
 	let parent: string;
-	// A socket path needs to be short: /tmp, which a sandboxed chat running this test can't write. On
-	// Linux /dev/shm instead, as proxy.unit.test.ts does: linux-bwrap's hostTmp test, running beside
-	// this one, masks every socket in /tmp, and one removed between its scan and bwrap's start fails it.
+	// A socket path needs to be short: on Linux /dev/shm, as proxy.unit.test.ts does, else /tmp.
 	const shortRoot = process.platform === "linux" && existsSync("/dev/shm") ? "/dev/shm" : "/tmp";
 	try { parent = realpathSync(mkdtempSync(join(shortRoot, "own-"))); } catch { t.skip(`${shortRoot} is closed here`); return; }
 	t.after(() => rmSync(parent, { recursive: true, force: true }));

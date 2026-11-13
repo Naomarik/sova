@@ -6,8 +6,8 @@ import { after, describe, test } from "node:test";
 import { gunzipSync } from "node:zlib";
 import { Hono } from "hono";
 import { RUN_LOG_CLEANED_LINE, RUN_LOGS_KEEP_NEWEST, sizeLabel, type RunLogsInfo } from "../../shared/merge-run-logs";
-import type { MergeEntry, MergeRun } from "../../shared/merge-queue";
-import { CLEANED_MARK, cleanRunLogs, packRun, readRunLogText, runLogsInfo, startRunLogSweep, sweepRunLogs, type RunLogsQueue } from "./run-logs";
+import type { MergeRun } from "../../shared/merge-queue";
+import { CLEANED_MARK, cleanRunLogs, dropRunDrafts, packRun, readRunLogText, runLogsInfo, type RunLogsEntry, startRunLogSweep, sweepRunLogs, type RunLogsQueue } from "./run-logs";
 import { registerRunLogsRoutes } from "./run-logs-routes";
 import { stepLog } from "./run";
 import { QueueStore } from "./store";
@@ -23,7 +23,14 @@ let seq = 0;
 /** A run id ordered by `at` (the store orders runs by id). */
 const runId = (at: number) => `mr_${at.toString(36)}${(seq++).toString(16).padStart(8, "0")}`;
 
-function kit(): { q: RunLogsQueue & { root: string; entriesList: Pick<MergeEntry, "state" | "run" | "runs">[]; current: { id: string } | null }; store: QueueStore } {
+let entrySeq = 0;
+/** An entry as the sweep reads it: of feat/x unless said, created in order. */
+const ent = (o: Partial<RunLogsEntry> & Pick<RunLogsEntry, "state">): RunLogsEntry => {
+  const n = entrySeq++;
+  return { id: `mq_${n}`, seq: n, branch: "feat/x", target: "master", createdAt: new Date(NOW - 10 * DAY + n * 1000).toISOString(), runs: [], ...o } as RunLogsEntry;
+};
+
+function kit(): { q: RunLogsQueue & { root: string; entriesList: RunLogsEntry[]; current: { id: string } | null; settledFacts: Map<string, "merged" | "gone">; refreshed: number }; store: QueueStore } {
   const base = mkdtempSync(join(tmpdir(), "mq-run-logs-"));
   temps.push(base);
   const store = new QueueStore(base, "/projects/demo");
@@ -31,10 +38,18 @@ function kit(): { q: RunLogsQueue & { root: string; entriesList: Pick<MergeEntry
     id: "demo",
     root: "/projects/demo",
     store,
-    entriesList: [] as Pick<MergeEntry, "state" | "run" | "runs">[],
+    entriesList: [] as RunLogsEntry[],
     current: null as { id: string } | null,
+    settledFacts: new Map<string, "merged" | "gone">(),
+    refreshed: 0,
     entries() {
       return this.entriesList;
+    },
+    settled() {
+      return this.settledFacts;
+    },
+    async refreshSettled() {
+      this.refreshed++;
     },
     currentRun() {
       return this.current;
@@ -45,8 +60,8 @@ function kit(): { q: RunLogsQueue & { root: string; entriesList: Pick<MergeEntry
 
 const LOG = Array.from({ length: 400 }, (_, i) => `line ${i} of the unit check: ok ${"x".repeat(40)}`).join("\n") + "\n";
 
-/** A run folder as a real run leaves it: its record, step logs, a counts file, the drafts snapshot. */
-function makeRun(store: QueueStore, o: { endedAt?: number; verdict?: MergeRun["verdict"]; startedAt: number; longDraftPath?: boolean }): string {
+/** A run folder as a run left it before its drafts copy was deleted: its record, step logs, a counts file, the drafts copy. */
+function makeRun(store: QueueStore, o: { endedAt?: number; verdict?: MergeRun["verdict"]; startedAt: number; oldArchive?: boolean }): string {
   const id = runId(o.startedAt);
   const d = store.runDir(id);
   mkdirSync(join(d, "logs"), { recursive: true });
@@ -57,10 +72,10 @@ function makeRun(store: QueueStore, o: { endedAt?: number; verdict?: MergeRun["v
   const claims = join(d, "drafts", "t3-risks", "base", "claims", "app");
   mkdirSync(claims, { recursive: true });
   for (let i = 0; i < 20; i++) writeFileSync(join(claims, `claim-${i}.md`), `# Claim ${i}\n\n${"The queue keeps its promise. ".repeat(80)}\n`);
-  if (o.longDraftPath) {
-    const deep = join(d, "drafts", "t3-risks", "base", "claims", "a-rather-long-namespace-folder-name", "another-long-nested-folder-for-the-test");
-    mkdirSync(deep, { recursive: true });
-    writeFileSync(join(deep, "a-file-whose-name-is-long-enough-to-push-the-path-past-one-hundred-bytes.md"), "deep\n");
+  // What sweeps before drafts were deleted left: the copy packed into an archive (and a half-written one).
+  if (o.oldArchive) {
+    writeFileSync(join(d, "drafts.tar.gz"), "an old archive");
+    writeFileSync(join(d, "drafts.tar.gz.99.tmp"), "half");
   }
   const run: MergeRun = {
     id,
@@ -82,51 +97,22 @@ function makeRun(store: QueueStore, o: { endedAt?: number; verdict?: MergeRun["v
   return id;
 }
 
-/** A minimal ustar reader: every entry's name and body (the test's own, so the format is checked independently). */
-function untar(buf: Buffer): Map<string, Buffer | "dir"> {
-  const out = new Map<string, Buffer | "dir">();
-  let off = 0;
-  while (off + 512 <= buf.length) {
-    const h = buf.subarray(off, off + 512);
-    if (h.every((b) => b === 0)) break;
-    const str = (a: number, n: number) => h.subarray(a, a + n).toString("utf8").replace(/\0.*$/s, "");
-    let sum = 0;
-    for (let i = 0; i < 512; i++) sum += i >= 148 && i < 156 ? 32 : h[i]!;
-    assert.equal(parseInt(str(148, 8).trim(), 8), sum, "the header's checksum");
-    assert.equal(str(257, 6), "ustar");
-    const prefix = str(345, 155);
-    const name = (prefix ? `${prefix}/` : "") + str(0, 100);
-    const size = parseInt(str(124, 12), 8);
-    const type = str(156, 1);
-    off += 512;
-    out.set(name, type === "5" ? "dir" : buf.subarray(off, off + size));
-    off += Math.ceil(size / 512) * 512;
-  }
-  return out;
-}
-
 describe("run logs: packing a finished run", () => {
-  test("a run that ended over a day ago: its step logs gzipped, its drafts snapshot one archive, its record as it was; its logs read the same", async () => {
+  test("a run that ended over a day ago: its step logs gzipped, its drafts copy deleted (no archive made), its record as it was; its logs read the same", async () => {
     const { q, store } = kit();
-    const id = makeRun(store, { startedAt: NOW - 3 * DAY, endedAt: NOW - 2 * DAY, longDraftPath: true });
+    const id = makeRun(store, { startedAt: NOW - 3 * DAY, endedAt: NOW - 2 * DAY });
     const d = store.runDir(id);
     const before = store.readLog(id, "logs/02-check_unit.log", 50);
     const record = readFileSync(join(d, "run.json"), "utf8");
-    const draftFile = readFileSync(join(d, "drafts", "t3-risks", "base", "claims", "app", "claim-3.md"));
     const sizeBefore = runLogsInfo(q).bytes;
 
     assert.deepEqual(await sweepRunLogs(q, { now: NOW }), [id]);
 
     assert.deepEqual(readdirSync(join(d, "logs")).sort(), ["01-copy.log.gz", "02-check_unit.log.gz", "02-check_unit.log.out.json.gz"]);
-    assert.equal(existsSync(join(d, "drafts")), false, "the snapshot folder is packed");
+    assert.deepEqual(readdirSync(d).sort(), ["changed.txt", "logs", "run.json"], "the drafts copy is gone, and no archive of it made");
     assert.equal(readFileSync(join(d, "run.json"), "utf8"), record, "the record is untouched");
     assert.equal(readFileSync(join(d, "changed.txt"), "utf8"), "server/a.ts\n");
     assert.equal(gunzipSync(readFileSync(join(d, "logs", "02-check_unit.log.gz"))).toString(), LOG);
-    const tar = untar(gunzipSync(readFileSync(join(d, "drafts.tar.gz"))));
-    assert.deepEqual(tar.get("drafts/t3-risks/base/claims/app/claim-3.md"), draftFile);
-    assert.equal(tar.get("drafts/"), "dir");
-    const deep = [...tar.keys()].find((k) => k.endsWith("past-one-hundred-bytes.md"));
-    assert.ok(deep && deep.length > 100 && deep.startsWith("drafts/t3-risks/base/claims/a-rather-long"), `a long path keeps its whole name: ${deep}`);
 
     // Read as before: the store's tail, the run's own reader, its line count.
     assert.deepEqual(store.readLog(id, "logs/02-check_unit.log", 50), before);
@@ -138,7 +124,7 @@ describe("run logs: packing a finished run", () => {
     assert.deepEqual(await sweepRunLogs(q, { now: NOW }), [], "a packed run is left alone");
   });
 
-  test("never a run in use or too young: the one checking now, one an entry is checking, one an entry sent back to fix or queued again names, one recorded running, one without an end, one ended an hour ago", async () => {
+  test("never a run in use: the one checking now, one an entry is checking, one an entry sent back to fix or queued again names, one recorded running, one without an end; one ended an hour ago, or one an entry names, loses only its drafts copy", async () => {
     const { q, store } = kit();
     const current = makeRun(store, { startedAt: NOW - 5 * DAY, endedAt: NOW - 4 * DAY });
     const checking = makeRun(store, { startedAt: NOW - 5 * DAY + 1, endedAt: NOW - 4 * DAY });
@@ -151,16 +137,82 @@ describe("run logs: packing a finished run", () => {
     const old = makeRun(store, { startedAt: NOW - 5 * DAY + 4, endedAt: NOW - 4 * DAY });
     q.current = { id: current };
     q.entriesList = [
-      { state: "checking", run: checking, runs: [checking] },
-      { state: "needs-fix", run: sentBack, runs: [sentBack] },
-      { state: "queued", runs: [queuedAgain] },
-      { state: "landed", run: landed, runs: [landed] },
-    ] as Pick<MergeEntry, "state" | "run" | "runs">[];
-    assert.deepEqual((await sweepRunLogs(q, { now: NOW })).sort(), [old, landed].sort(), "a landed entry's run is packed");
-    for (const id of [current, checking, running, noEnd, young, sentBack, queuedAgain]) {
-      assert.ok(existsSync(join(store.runDir(id), "drafts")), `${id} keeps its snapshot`);
-      assert.ok(existsSync(join(store.runDir(id), "logs", "02-check_unit.log")), `${id} keeps its plain log`);
-    }
+      ent({ state: "checking", branch: "feat/c", run: checking, runs: [checking] }),
+      ent({ state: "needs-fix", branch: "feat/s", run: sentBack, runs: [sentBack] }),
+      ent({ state: "queued", branch: "feat/q", runs: [queuedAgain] }),
+      ent({ state: "landed", branch: "feat/l", run: landed, runs: [landed] }),
+    ];
+    assert.deepEqual((await sweepRunLogs(q, { now: NOW })).sort(), [old, landed, young, sentBack, queuedAgain].sort(), "a landed entry's run is packed");
+    assert.equal(q.refreshed, 1, "the sweep reads git's settled facts afresh first");
+    for (const id of [current, checking, running, noEnd]) assert.ok(existsSync(join(store.runDir(id), "drafts")), `${id} keeps its drafts copy`);
+    for (const id of [current, checking, running, noEnd, young, sentBack, queuedAgain]) assert.ok(existsSync(join(store.runDir(id), "logs", "02-check_unit.log")), `${id} keeps its plain log`);
+    // Ended, not checking: its drafts copy is read by nothing, whoever names the run (a stop cut short leaves one).
+    for (const id of [young, sentBack, queuedAgain]) assert.equal(existsSync(join(store.runDir(id), "drafts")), false, `${id}: its drafts copy goes at once`);
+  });
+
+  test("a sent-back entry done for good no longer holds its runs: superseded by a later entry of its branch, or settled by git (merged, gone); one still waiting for its fix does", async () => {
+    const { q, store } = kit();
+    const at = (i: number) => makeRun(store, { startedAt: NOW - 5 * DAY + i, endedAt: NOW - 4 * DAY });
+    const [first, retry, superseding, merged, gone, waiting, otherTarget] = [0, 1, 2, 3, 4, 5, 6].map(at) as string[];
+    q.entriesList = [
+      // Sent back twice, then approved again: the later entry stands for it (whatever its state).
+      ent({ state: "needs-fix", branch: "feat/a", run: retry, runs: [first!, retry!] }),
+      ent({ state: "landed", branch: "feat/a", run: superseding, runs: [superseding!] }),
+      ent({ id: "mq_merged", state: "needs-fix", branch: "feat/m", run: merged, runs: [merged!] }),
+      ent({ id: "mq_gone", state: "needs-fix", branch: "feat/g", run: gone, runs: [gone!] }),
+      ent({ state: "needs-fix", branch: "feat/w", run: waiting, runs: [waiting!] }),
+      // A later entry of the same branch for another target supersedes nothing.
+      ent({ state: "needs-fix", branch: "feat/t", target: "release", run: otherTarget, runs: [otherTarget!] }),
+      ent({ state: "landed", branch: "feat/t", target: "master", runs: [] }),
+    ];
+    q.settledFacts = new Map([
+      ["mq_merged", "merged"],
+      ["mq_gone", "gone"],
+    ]);
+    assert.deepEqual((await sweepRunLogs(q, { now: NOW })).sort(), [first, retry, superseding, merged, gone, waiting, otherTarget].sort(), "the two still waiting lose only their drafts copy");
+    for (const id of [waiting!, otherTarget!]) assert.ok(existsSync(join(store.runDir(id), "logs", "02-check_unit.log")), `${id} keeps its plain log: its chat may read it`);
+    for (const id of [first!, merged!]) assert.deepEqual(readdirSync(join(store.runDir(id), "logs")).sort(), ["01-copy.log.gz", "02-check_unit.log.gz", "02-check_unit.log.out.json.gz"]);
+    // Clean Logs reads the same rule.
+    for (let i = 0; i < RUN_LOGS_KEEP_NEWEST; i++) makeRun(store, { startedAt: NOW - DAY + i, endedAt: NOW - DAY + i + 1 });
+    assert.equal(runLogsInfo(q).cleanable.runs, 5, "the five done for good, not the two still waiting");
+  });
+
+  test("a sent-back entry the history filed as done stays done after the entry that superseded it left the working list", async () => {
+    const { q, store } = kit();
+    const run = makeRun(store, { startedAt: NOW - 5 * DAY, endedAt: NOW - 4 * DAY });
+    const old = ent({ state: "needs-fix", branch: "feat/h", run, runs: [run] });
+    const newer = ent({ state: "landed", branch: "feat/h", runs: [] });
+    store.history.sync([old, newer], 100, { now: new Date(NOW).toISOString() });
+    // Put in front of the line later, the superseding entry got the lower seq and was trimmed first.
+    q.entriesList = [old];
+    assert.deepEqual(await sweepRunLogs(q, { now: NOW }), [run]);
+    assert.ok(existsSync(join(store.runDir(run), "logs", "02-check_unit.log.gz")), "its logs are packed");
+  });
+
+  test("drafts already on disk: a finished run's drafts copy and the archive older sweeps made go, at any age; a packed run with only its old archive is swept again", async () => {
+    const { q, store } = kit();
+    const packedLongAgo = makeRun(store, { startedAt: NOW - 30 * DAY, endedAt: NOW - 29 * DAY, oldArchive: true });
+    const d = store.runDir(packedLongAgo);
+    await packRun(d);
+    writeFileSync(join(d, "drafts.tar.gz"), "an old archive");
+    const young = makeRun(store, { startedAt: NOW - 60_000, endedAt: NOW - 30_000, oldArchive: true });
+    assert.equal(runLogsInfo(q).packed, 0, "a folder with an old archive isn't packed yet");
+    assert.deepEqual((await sweepRunLogs(q, { now: NOW })).sort(), [packedLongAgo, young].sort());
+    assert.deepEqual(readdirSync(d).sort(), ["changed.txt", "logs", "run.json"]);
+    assert.deepEqual(readdirSync(store.runDir(young)).sort(), ["changed.txt", "logs", "run.json"]);
+    assert.deepEqual(await sweepRunLogs(q, { now: NOW }), [], "nothing left the second time");
+    assert.equal(runLogsInfo(q).packed, 1, "the young run's logs are still plain");
+  });
+
+  test("dropRunDrafts: the drafts copy, the old archive and a half-written one go; nothing else; a missing folder is no error", () => {
+    const { store } = kit();
+    const id = makeRun(store, { startedAt: NOW - 3 * DAY, oldArchive: true });
+    const d = store.runDir(id);
+    writeFileSync(join(d, "docs-landed.json"), "{}\n");
+    assert.equal(dropRunDrafts(d), true);
+    assert.deepEqual(readdirSync(d).sort(), ["changed.txt", "docs-landed.json", "logs", "run.json"]);
+    assert.equal(dropRunDrafts(d), false, "nothing left to drop");
+    assert.equal(dropRunDrafts(join(d, "nope")), false);
   });
 
   test("a pack a stop cut short (both the log and its .gz there, a leftover temp file): the log reads, and the next sweep finishes it", async () => {
@@ -182,7 +234,8 @@ describe("run logs: packing a finished run", () => {
     const s = startRunLogSweep({ queues: async () => [q], firstAfterMs: 10_000_000, everyMs: 10_000_000, log: (l) => lines.push(l) });
     try {
       await Promise.all([s.now(), s.now()]);
-      assert.ok(existsSync(join(store.runDir(old), "drafts.tar.gz")));
+      assert.equal(existsSync(join(store.runDir(old), "drafts")), false);
+      assert.ok(existsSync(join(store.runDir(old), "logs", "02-check_unit.log.gz")));
       assert.deepEqual(lines, ["demo: packed the logs of 1 finished run"]);
     } finally {
       s.stop();
@@ -201,10 +254,7 @@ describe("run logs: Clean Logs", () => {
     await packRun(store.runDir(ids[1]!));
     const openRun = ids[2]!;
     const checkingRun = ids[3]!;
-    q.entriesList = [
-      { state: "needs-fix", run: openRun, runs: [openRun] },
-      { state: "landed", run: ids[0]!, runs: [ids[0]!] },
-    ] as Pick<MergeEntry, "state" | "run" | "runs">[];
+    q.entriesList = [ent({ state: "needs-fix", branch: "feat/open", run: openRun, runs: [openRun] }), ent({ state: "landed", run: ids[0]!, runs: [ids[0]!] })];
     q.current = { id: checkingRun };
 
     const info = runLogsInfo(q);

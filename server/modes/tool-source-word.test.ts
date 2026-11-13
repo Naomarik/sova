@@ -1,13 +1,13 @@
 // Run: pnpm test -- server/modes/tool-source-word.test.ts. The word the setup card's Tools group draws beside a tool
 // (GET /api/sessions/tools through src/lib/session-tools.ts sourceWord), read from real chats and a real worker on a
-// scripted model with the switch off and on (§chat.mode-menu/sova-runs-modes: who runs the modes is not the user's
-// tool list's business). Which module fills the mode slot never shows: the same tools, the same words.
+// scripted model (§chat.mode-menu/sova-runs-modes): Sova's engine fills the mode slot, and its tools carry the word
+// the mode's tools have always had ("mode"), never the module that runs them.
 // A throwaway agent dir (harness.fixture); ~/.pi is never read or written.
 import assert from "node:assert/strict";
 import { mkdirSync } from "node:fs";
 import { after, test } from "node:test";
 
-const { beginCase, cm, Recorded, sessionFile, setOwner, workspace } = await import("./tests/harness.fixture");
+const { beginCase, cm, Recorded, sessionFile, workspace } = await import("./tests/harness.fixture");
 const { getSessionTools } = await import("../session-tools");
 const { sourceWord } = await import("../../src/lib/session-tools");
 const { discoverProjectModes } = await import("../../pi-config/extensions/mode/project-discovery.ts");
@@ -52,10 +52,9 @@ async function words(path: string): Promise<Record<string, string>> {
   return Object.fromEntries(answer.tools.map((t) => [t.name, sourceWord(t)]));
 }
 
-/** What one owner's chat, across the modes that bring tools, and its worker show. */
-async function shown(owner: "extension" | "sova"): Promise<{ chat: Record<string, string>; worker: Record<string, string> }> {
-  setOwner(owner);
-  beginCase(`words-${owner}`);
+/** What a chat, across the modes that bring tools, and its worker show. */
+async function shown(): Promise<{ chat: Record<string, string>; worker: Record<string, string> }> {
+  beginCase("words");
   const w = workspace("rel", { git: true, files: { ".sova/minor-modes/rel/MODE.md": MODE, ".sova/minor-modes/rel/status.mjs": "console.log(1);\n" } });
   const listing = discoverProjectModes(w.cwd);
   recordApproval(listing.root!, "rel", listing.modes.find((m) => m.id === "rel")!.toolsHash, "user");
@@ -68,7 +67,7 @@ async function shown(owner: "extension" | "sova"): Promise<{ chat: Record<string
     await r.switch({ mode: "create" });
     Object.assign(chat, await words(r.path));
     await r.switch({ mode: "normal" });
-    await r.prompt("spawn", { toolCall: { name: "agent_spawn", arguments: { prompt: "t", name: `w-${owner}`, model: "scripted/scripted" } } }, { text: "ok" });
+    await r.prompt("spawn", { toolCall: { name: "agent_spawn", arguments: { prompt: "t", name: "w", model: "scripted/scripted" } } }, { text: "ok" });
   } finally {
     await r.dispose();
   }
@@ -99,12 +98,9 @@ async function shown(owner: "extension" | "sova"): Promise<{ chat: Record<string
   return { chat, worker };
 }
 
-test("a mode's tools carry the same word with the switch on as off, in a chat and in its worker", async () => {
-  const off = await shown("extension");
-  const on = await shown("sova");
-  for (const name of ["align", "vis_guide", "create_guide", "rel__status"]) assert.ok(name in off.chat, `${name} is listed with the switch off (${Object.keys(off.chat).join(", ")})`);
-  assert.equal(on.chat.align, "mode", "the word the mode's tool has always had");
-  assert.deepEqual(on.chat, off.chat);
-  assert.ok("rel__status" in off.worker, `the worker's project tool is listed (${Object.keys(off.worker).join(", ")})`);
-  assert.deepEqual(on.worker, off.worker);
+test("a mode's tools carry the mode's word, in a chat and in its worker", async () => {
+  const { chat, worker } = await shown();
+  const pick = (from: Record<string, string>, names: string[]) => Object.fromEntries(names.map((n) => [n, from[n]]));
+  assert.deepEqual(pick(chat, ["align", "vis_guide", "create_guide", "rel__status"]), { align: "mode", vis_guide: "mode", create_guide: "mode", rel__status: "mode" }, `the chat's words (${JSON.stringify(chat)})`);
+  assert.deepEqual(pick(worker, ["rel__status"]), { rel__status: "project-tools-worker" }, `the worker's project tool (${JSON.stringify(worker)})`);
 });

@@ -244,7 +244,7 @@ export interface CompactHooks extends WriteGuardHooks {
 
 /** The extension commands Sova runs directly (never through a send, so no command text reaches the
     model), each named as the extension that owns it registers it. */
-export type CommandOwner = "mode" | "claude-login" | "sandbox" | "agent-resume";
+export type CommandOwner = "claude-login" | "sandbox" | "agent-resume";
 
 /** An extension's own command, as the session found it: run its handler with a context the session made. */
 export interface OwnedCommand {
@@ -345,7 +345,9 @@ export interface HarnessSession extends SessionRead {
   promptSections(): Record<string, string>;
   /** An extension's registered tool, by name, as a Sova tool (the Overseer's subagent tools). */
   registeredTool(name: string): ToolSpec | undefined;
-  commands(): HarnessCommand[];
+  /** Its commands; `subfolderSkills: false` leaves out the skills a subfolder's block offered (a chat that doesn't
+      look below its folder, server/skill-descent.ts). */
+  commands(o?: { subfolderSkills?: boolean }): HarnessCommand[];
   /** `owner`'s own command in this runtime, or undefined (not loaded, or a same-named command another
       extension registered). */
   command(owner: CommandOwner): OwnedCommand | undefined;

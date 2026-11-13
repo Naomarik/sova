@@ -256,7 +256,7 @@ strip, empty or not, so the strip never shifts under the reader.
   "Sharing, {n} viewing now"; at zero there is no chip and the name is "Sharing".
 - **Context** is what fills this chat's context window (§app.subagents-pane/context-tab).
 - **Time Spent** is §app.message-labels/time-spent-tab, **Timeline** §chat/timeline, **Agents** the list and transcript below, and **Gallery** holds the chat's
-  prototypes on top (§chat.design-mode/gallery) and the session's /explain pages below them. Which skills the chat has read is Context's Skills offered.
+  prototypes on top (§chat.design-mode/gallery) and the session's /explain pages below them. Which skills the chat has read is Context's Skills offered; which it and its workers opened, Context's Everyone.
 
 ## §app.subagents-pane/tab-strip — The tab strip never wraps
 
@@ -465,8 +465,9 @@ sent. Each part is read as the chat's folder and the chat hold it now (`GET
 /api/sessions/context-view`, the catalogue's `session.context.view`).
 
 - **Whose window.** When the chat has workers with a session file, a **Whose context** picker
-  leads the tab: This chat, then each worker by its name. A worker's window reads the same way,
-  from that worker's own session. A picked worker that leaves the list falls back to this chat.
+  leads the tab: This chat, **Everyone** (§app.subagents-pane/context-tab-skills-read), then each
+  worker by its name. A worker's window reads the same way, from that worker's own session. A
+  picked worker that leaves the list falls back to this chat.
 - **The top line**, under **Context window**, is the fill as of the last reply, counted as the
   context readout counts it (§chat.context-window/last-reply): `{n} of {window} tokens · {p}%`,
   then the room left (`· {free} left`). Under it, once the window and the total are known, a fill
@@ -500,7 +501,8 @@ sent. Each part is read as the chat's folder and the chat hold it now (`GET
   chat's folder that haven't loaded yet come last, under **Not yet loaded · not counted**: each shows
   what it would cost (`+≈{n}`), draws no share bar and isn't in any total. The folder walk follows
   the loading's skip rule and stops after 5,000 folders; then the group says "This list may be
-  incomplete."
+  incomplete." A chat Sova doesn't look below (§chat.subfolder-skills/offering) lists no file of a
+  folder below its own, and says nothing about it.
 - **Skills offered** lists each skill by its name, its description under it, and a chip that tells
   a full read from a skim, counting only the conversation since the latest compaction: **Read**
   only when the whole `SKILL.md` has loaded (an invocation of it, a read of it, or a shell command
@@ -511,8 +513,9 @@ sent. Each part is read as the chat's folder and the chat hold it now (`GET
   lines Sova can tell it printed (such as `cat`, `head`, `tail` or `sed -n` with line numbers, and
   pipes through them); one it can't follow (`grep`, a pipe into another filter) counts none. When
   the file can't be measured, a read with no bounds shows Read and any other Not read yet. The
-  line's `{r} read` counts whole reads only. A skill loaded before the latest compaction shows Not
-  read yet; its text has left the window. The line's own short line stays `{n} skills · {r} read`,
+  line's `{r} read` counts whole reads only. A skill offered and not read at all in the window that
+  the chat opened before its latest compaction shows **Read before the last compaction**; its text
+  has left the window, so it counts and sorts as Not read yet. The line's own short line stays `{n} skills · {r} read`,
   `{n}` the skills in the window. Its sheet is laid out as Instruction files' is: on top `{r} read`,
   then `· {p} partly read` while some are and `· {m} not read yet` while some are, then a card of
   the skills read, biggest first, then those partly read, biggest first, then the rest, biggest
@@ -539,8 +542,9 @@ sent. Each part is read as the chat's folder and the chat hold it now (`GET
   `≈0`, last in the card, a manual-only skill included: its text is under Conversation, and no listing
   of it is in the window. The line's short line adds `· {k} not offered yet` while there are some, and
   the sheet's top line does too. The line stays while it has any row, even at `≈0`. A chat that loads no
-  skills, or a worker whose tools can't touch and read a file, lists no skill of a folder below its own
-  here.
+  skills, a worker whose tools can't touch and read a file, or a chat Sova doesn't look below
+  (§chat.subfolder-skills/offering) lists no skill of a folder below its own here, with no line saying
+  why.
 - **Conversation** opens to its parts: **Tool results**, **Replies** and **Your messages**, each
   with its count and ≈ size, then **Other messages** (an extension's messages and branch summaries)
   only while there are some, and, once the chat has compacted, the **Compaction summary** the
@@ -569,6 +573,50 @@ sent. Each part is read as the chat's folder and the chat hold it now (`GET
   failed read: "Couldn't read this chat's context." and the reason.
 - **Where it is.** Every Session detail pane has it, an overseer's included; nothing is added to
   the overseer screens. A share page never shows it.
+
+## §app.subagents-pane/context-tab-skills-read — Everyone: the skills this chat and its workers read
+
+Picking **Everyone** in the Context tab's Whose context (§app.subagents-pane/context-tab) replaces
+the window view: no Context window top line, no fill bar and no lines. In their place, **Skills
+read** counts the skills opened by this chat and every one of its workers.
+
+- **Whose reads count.** This chat and all of its workers on the branch the chat kept, not only the
+  newest the Agents tab lists: ended workers and team members included. The server sends each
+  worker's record, listed or not; a worker the list leaves out joins once the pane has read its name
+  (§app.subagents-pane/hidden-workers), and from then on it is in Whose context too, so a reader
+  picked from Everyone can be shown. A worker with no Sova session file (an older Claude Code
+  worker) isn't counted.
+- **What a read is.** Every opening of a skill counts once: running it (`/skill:{name}`), a read of
+  its `SKILL.md`, or a shell command that prints it. A file read in pages counts once per page. The
+  overview doesn't tell a full read from a skim: it has no Read or Partly read marks.
+- **Over the whole history.** Each chat's openings are counted over its whole history, not only its
+  window: before its compactions too, along the path the chat kept. An opening on a branch the chat
+  rewound away from doesn't count. A one-line note under the heading says so.
+- **The list.** One row per skill name; when one name was opened at two or more `SKILL.md` paths,
+  each path is a row of its own with the path on it. Rows come most openings first, then the one
+  read by more chats, then by name. Each row looks like a Skills offered row: the skill's name, its
+  full description under it, its ≈ size on the right, and a line of its total openings and how many
+  chats opened it. The row names none of the chats that opened it; they are on its sheet. The size
+  is the estimate Skills offered shows for that skill, what it costs to be offered (name,
+  description, location), never its whole text. The description and size come from the listing a
+  chat was offered, while Skills offered reads the `SKILL.md` on disk now, so the two differ only
+  for a `SKILL.md` edited after it was offered; a skill no chat was offered has no description. Before
+  any of them has opened a skill, a line says so in place of the rows.
+- **A skill's sheet.** Pressing a skill opens the tab's sheet (Context › Skills read › {skill}),
+  titled by the skill with its ≈ size, as every sheet is. On top are its description and the row's
+  openings line; then an **Open Skill** row, which opens the skill's full text as a Skills offered
+  row does, shown only when some chat's record names the skill's full path; then the chats that opened it, most openings first, then the latest: each with its name
+  (this chat as This chat, a worker by its name), its openings and when it last opened it. Pressing
+  a chat there switches Whose context to that chat, closing the sheet, and focus moves to the picker.
+- **Not read by anyone.** A last section lists, by name, the skills offered to this chat or any
+  counted worker whose name none of them opened, each once: its name, its description under it and
+  its ≈ size, the same estimate. Its rows don't open. With none, the section isn't shown.
+- **Live.** The list follows the pane's insight, read every 3 s while the pane is open: it updates
+  as this chat or a worker opens more, and as a worker joins, with no reload. The server keeps each
+  worker's parsed record per file until the file changes, so a poll of a chat with many workers
+  reads again only the files that changed.
+- **Rejected.** A grid of workers by skills, a Skills tab of its own, and counts across the whole
+  project.
 
 ## §app.subagents-pane/body-list-transcript — Body: list | transcript
 
@@ -725,8 +773,10 @@ When the record's worker count is larger than the list, the end of the list says
   worker that was alive when its host went away reads Restored or Interrupted, as after a
   restart), model, and its tokens from the usage ledger, like every row. They look like
   any other settled row and open the same read-only transcript.
-- **Nothing runs in the background for it.** Polls, pushes and the insight never read these
-  rows; only the click does. While the request runs the button is disabled and reads
+- **Nothing runs in the background for the rows.** Polls and pushes never build these rows; only
+  the click does, or the Context tab's Everyone, which reads the same list once to name the workers
+  whose skills it counts (§app.subagents-pane/context-tab-skills-read). The insight reads those
+  workers' skill records only, for Everyone, never their rows. While the request runs the button is disabled and reads
   "Loading…"; a failure leaves the button for another try, with the reason in its `title`.
 - **Out of reach.** `#/agents` and the Usage tab keep the live record's rows (the Agents board
   only gains the live-first order).

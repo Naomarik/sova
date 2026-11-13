@@ -87,6 +87,7 @@ test("an open chat's own loader is the answer, and the fallback is never asked",
   let loaderCalls = 0;
   const runtime: Loadout = loadout({ context: [{ path: join(dir, "AGENTS.md") }], skills: [{ name: "a", filePath: join(cwd, "SKILL.md"), description: "does a" }] });
   const setup = await S.getSessionSetup(sessionFile(cwd), {}, {
+    approvals: () => null,
     runtime: () => runtime,
     loader: () => {
       loaderCalls++;
@@ -114,6 +115,7 @@ test("with nothing open, pi's loader answers — and says it is the lower bound"
 test("a listed file is sized from disk, a project prompt source is reported when there is one", async () => {
   const dir = fresh({ "AGENTS.md": "one\ntwo\n", "SYSTEM.md": "sys\n", "APPEND.md": "app\n" });
   const setup = await S.getSessionSetup(sessionFile(dir), {}, {
+    approvals: () => null,
     runtime: () => null,
     loader: () => Promise.resolve(loadout({ context: [{ path: join(dir, "AGENTS.md") }], systemPrompt: join(dir, "SYSTEM.md"), appendSystemPrompt: [join(dir, "APPEND.md")] })),
     exists: () => true,
@@ -310,4 +312,33 @@ test("a remote session's files are never read", async () => {
   mkdirSync(placeholder, { recursive: true });
   const r = await S.readSetupFile(sessionFile(placeholder), join(placeholder, "AGENTS.md"), { runtime: () => { throw new Error("must not be asked"); } });
   assert.deepEqual(r, { ok: false, status: 409, error: "This session's files are on another machine." });
+});
+
+// ---------------------------------------------------------------------------
+// the home folder (server/skill-descent.ts)
+
+test("home as a project: a new chat in home lists no subfolder's rows, its file or its skill", async () => {
+  const { realpathSync } = await import("node:fs");
+  const { homedir } = await import("node:os");
+  const home = realpathSync(homedir()); // the runner's throwaway home
+  const made = [join(home, "AGENTS.md"), join(home, "sub")];
+  after(() => made.forEach((p) => rmSync(p, { recursive: true, force: true })));
+  writeFileSync(join(home, "AGENTS.md"), "# home\n");
+  mkdirSync(join(home, "sub", ".agents", "skills", "foo"), { recursive: true });
+  writeFileSync(join(home, "sub", "AGENTS.md"), "# sub\n");
+  writeFileSync(join(home, "sub", ".agents", "skills", "foo", "SKILL.md"), "---\nname: foo\ndescription: Foo things.\n---\nBody.\n");
+  const { registerProjectIn } = await import("./projects/spaces");
+  const { projectFolder } = await import("./approvals");
+  const p = await registerProjectIn("standalone", home, { name: "Home", origin: "folder" });
+  const setup = await S.getSessionSetup(sessionFile(home), { fresh: true }, { runtime: () => null, loader: () => Promise.resolve(loadout()) });
+  assert.equal(setup.state, "ok");
+  if (setup.state !== "ok") return;
+  assert.deepEqual(setup.approvals?.folder, { kind: "project", id: p.project.id, name: "Home" }, "the project's list, read for real");
+  assert.deepEqual([...setup.context, ...setup.skills].filter((r) => r.approval?.group === "subfolder").map((r) => r.path), []);
+  assert.ok(!setup.skills.some((k) => k.name === "foo"));
+  assert.ok(!setup.context.some((f) => f.path === join(home, "sub", "AGENTS.md")));
+  // The project's own card: home is the home folder, so no subfolder walk there either.
+  const { folderQuickScan } = await import("./approvals");
+  const scan = await folderQuickScan(projectFolder(p.project.id), { checkouts: async (root) => ({ dirs: [realpathSync(root)], complete: true }) });
+  assert.deepEqual(scan.items.filter((i) => i.group === "subfolder"), []);
 });

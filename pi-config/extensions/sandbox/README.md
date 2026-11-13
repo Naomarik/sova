@@ -18,7 +18,7 @@ worker uses it today. Spec: `§chat/sandbox`, `§chat.sandbox/workers`.
 | Flag | `--sandbox on\|subagents\|off`: the initial state of a new runtime. Workers get it from their parent. A session started with `--sandbox on` cannot lower it (a parent's agent could otherwise send `/sandbox off` to its worker). |
 | Entry | `custom` entry `sandbox`: `{version: 1, on, level, backend, enforcement, reasons?, workers?}` (`state.ts` `SandboxActive`; `workers: "off"` only with `on: false` is Off, an entry without it Subagents only, and `on: true` with it reads as On), appended on every change; `restoreActive(branch)` reads the newest. Opening a session writes nothing, except when it comes up **on** without an entry saying so (the flag or `defaultOn`): then the state is pinned so a later default change cannot loosen it. Turning On when the newest entry isn't already On first appends a provisional entry `{on: true, enforcement: "unavailable", reasons: ["starting"]}` (`SANDBOX_STARTING`, `isStarting`) before the confined tools are registered, then the real state after the probe, also when the probe fails or throws: whenever the tools are confined, the newest entry says On. A provisional entry left newest by an interrupted start is not a record, so the next start records the real state. Changes run one at a time. `describeActive` reads it as "Sandbox turning on…". |
 | Workers | Every worker start goes through ONE call, the event's `workerLaunch({cwd, root?, backend, owner})` (`state.ts` `WorkerLaunch`). It returns `{kind: "pi", extensionPath, flags}` for a pi worker (`{sandbox: "on", "sandbox-parent": <ParentScope JSON>}`: the parent's level, writable roots without its session tmp, and its read-only paths inside them, each tracked worktree's `.agent` included), `{kind: "confine", scope}` for any other backend (the opaque serializable scope its whole process would run under, `launch.ts`; the subagents extension refuses such a start), `{kind: "refused", reason}` (the cwd outside the parent's roots, the sandbox unavailable, or partial without `acceptPartial`), or `{kind: "none"}` (Subagents only and no tracked worktree, or Off for every worker; the event then carries `workers: "off"`, and the subagents gate accepts `none` for a worktree's worker only with it). A worker started with `--sandbox-parent` is on, writes exactly where its parent may (its own cwd is never added), and refuses every tool with `Sandbox: worker cwd <x> is outside the parent's sandbox` when its cwd is outside them. A malformed flag fails closed. Grandchildren inherit the same roots. |
-| Worktrees | The worktrees extension's `worktrees:state` (`{version: 1, active: string[]}`) lists the session's active tracked worktrees. While on, each is a writable root of the session (and of its workers' scope), and each `<worktree>/.agent` stays read-only inside it (`ResolveInput.extraWritable` / `extraReadOnly`). `workerLaunch` with `root` set confines a worker started inside one of them, so it writes only there (its `.agent` read-only): on, the parent's scope narrowed to `root`; **off**, a write-only scope (`writeOnly: true`: no policy file is read, nothing is hidden, the network is the host's (`network.mode: "host"`, no `--unshare-net`) and the environment is passed as is; only writes are confined, to `root`, its git dirs and the session tmp; on Linux the host's `/tmp` stays visible read-only with every Unix socket in it masked (`Policy.hostTmp`, `tmpSockets`: the pathnames in `/proc/net/unix` under `/tmp`, canonicalised and still a socket by `lstat`, plus a walk of `/tmp` and the folders directly in it of at most `TMP_WALK_BUDGET` entries, for sockets bound from another namespace), `TMPDIR` names the worker's own tmp, and a list that cannot be read unambiguously (a malformed line, a relative path, a name with a line break) falls back to the private one); **Off**, `none`. Absent in a remote session. §chat.worktrees/workers. |
+| Worktrees | The worktrees extension's `worktrees:state` (`{version: 1, active: string[]}`) lists the session's active tracked worktrees. While on, each is a writable root of the session (and of its workers' scope), and each `<worktree>/.agent` stays read-only inside it (`ResolveInput.extraWritable` / `extraReadOnly`). `workerLaunch` with `root` set confines a worker started inside one of them, so it writes only there (its `.agent` read-only): on, the parent's scope narrowed to `root`; **off**, a write-only scope (`writeOnly: true`: no policy file is read, nothing is hidden, the network is the host's (`network.mode: "host"`, no `--unshare-net`) and the environment is passed as is; only writes are confined, to `root`, its git dirs, the session tmp and the private copies (caches, tool state); on Linux its `/tmp` is its own session tmp, exactly as On's (`TMPDIR=/tmp`, short enough for any Unix socket path): `bash` no longer sees the host's `/tmp` or its sockets, writes there land in the private tmp, and the file tools map `/tmp/x` to the same place, while a file-tool **read** of a `/tmp` path the private tmp lacks still falls back to the host's (a brief another chat left there). Nothing in the host's `/tmp` is scanned or masked, so a socket vanishing there can never stop a command from starting. On macOS nothing is remapped: a literal `/tmp` stays refused and `TMPDIR` names the session tmp); **Off**, `none`. Absent in a remote session. §chat.worktrees/workers. |
 | Parent scope | `--sandbox-parent` also carries the parent's resolved `hidden`, `proxyAllow` and `envAllow`: a worker's hidden list is its own plus the parent's, and the two allowlists are the parent's, never the worker's own file's (a worktree's `.agent` may hold a looser one). `browser: true` (only a literal `true` parses) is the parent's policy `browser`, the same way: a worker's is its parent's. A write-only scope gets it from the parent's own policy file and its cwd's project file (`parentBrowser`), read when the worker starts; a file that cannot be read means no browser, and the worker still starts write-only. |
 | Stand-in cwd | `--sandbox-cwd-not-writable` (boolean, Sova sets it on a session that runs in the home folder because its own folder is gone): the cwd is not a writable root; the session writes only in its tmp, the policy's `writable` roots and its tracked worktrees, and its workers' scope carries the same roots. `resolveSessionPolicy({cwdWritable: false})` is the same rule for a caller outside the extension. |
 | Presence | `extensionRunner.getCommand("sandbox") !== undefined`. |
@@ -101,10 +101,21 @@ outside the sandbox). That holds when the agent dir is inside the workspace (the
 `<worktree>/.agent`): the file tools refuse by canonical path, and the backend masks (Seatbelt:
 denies) the files and pins their ancestors.
 
+The chat's shared folder (`shared-folder.ts`): `~/.local/state/sova/shared/<session id>`, outside
+the agent dir and every repository, is a writable root of every confined session that knows it
+(On or write-only; never at the read-only level). A top-level chat's is its own, by its session id
+(`resolveSessionPolicy`); a worker's rides in its scope as `ParentScope.shared` (the root chat's,
+at every depth; `narrowScope` and `parentScopeOf` keep it, never as a plain writable root). Its
+`teams/` is read-only; `ParentScope.note`, a team member's own note folder inside `teams/`, is
+writable for that member alone and never handed on (a note folder anywhere else is ignored). The
+folder and the note folder are made before a worker starts (a missing path can't be bound).
+
 ## File tools
 
-Paths resolve like pi's, then (Linux) `/tmp` maps into the session tmp (bash sees that at `/tmp`)
-unless a writable root is bound over it, then `canonicalize` (realpath of the deepest existing ancestor,
+Paths resolve like pi's, then (Linux, On and write-only alike) `/tmp` maps into the session tmp
+(bash sees that at `/tmp`) unless a writable root is bound over it; a read of a `/tmp` path the
+session tmp lacks stays at the host's `/tmp` (pi's own truncated-output files, a brief another chat
+left there). Then `canonicalize` (realpath of the deepest existing ancestor,
 dangling links followed). Reads are refused under `hidden`. Writes are refused outside the
 writable roots, under `hidden` or `readOnlyWithinWritable`, and when creating an ancestor of a
 protected path; they open the checked canonical path with `O_NOFOLLOW`. `find` and `grep` (pi
@@ -119,6 +130,43 @@ trust stores), and a path under a shadowed cache is read and written at its priv
 Known gap (decided, plan OQ9): in a linked worktree the main checkout's git dir is writable so
 commits work, so a sandboxed session can move other branches' refs there. Its hooks, config,
 `HEAD`, index and the other worktrees' admin dirs stay read-only.
+
+## Tool state (mise, pnpm)
+
+Beside the policy's `shadowed` caches, the backend's `privateState` (`PlatformDefaults`) gets a
+private copy for every confined session, On and write-only alike, whatever the policy file says:
+Linux `~/.local/state/mise`, `~/.local/state/pnpm`, `~/.local/share/pnpm/store` and
+`~/.local/share/pnpm/package-manager-store`; macOS `~/.local/state/mise` (through `MISE_STATE_DIR`).
+A `writable` entry at or inside one (older templates listed `~/.local/state/mise`) is dropped, never
+failing closed; the file's own `writable` inside its own `shadowed` still does. Each is a shadow
+with `ifPresent`: unlike a cache's, a missing host path is never created as a mount point (bwrap's
+`mountPlan` skips it, so it gets no copy and stays absent; seatbelt never makes one), so a confined
+command can't add `~/.local/state/mise` or `pnpm` to a home that never had them.
+
+- **mise.** Before each command `seedShadow` links every host trust and ignore entry
+  (`trusted-configs`, `ignored-configs`) into the copy and removes one it linked earlier that the
+  host has since removed (`<copy>.seeded.json` beside the copy names them: a file in the shadow root,
+  which the cleanup never removes, so a pruned trust dir is re-seeded and a host removal still
+  mirrored), so the sandbox trusts what the host trusts. The host trust stores (`trustStores`) stay pinned read-only wherever a real
+  writable root holds them, but not inside a copy, which no host tool reads: `mise trust` and mise's
+  tracking list write only the copy, and the host's trust list never changes. The copy is shared
+  by every sandboxed session, as the caches are, so a config one confined session trusts is trusted
+  in every other one (never on the host).
+- **pnpm.** Its store, its own package-manager downloads and its state live in the copies, so an
+  install works in a worker. Global installs (`~/.local/share/pnpm/global`) stay read-only.
+  Known limit: the store copy is a separate mount from the worktree, and link(2) across mounts
+  fails (EXDEV), so pnpm treats it as another drive and installs into a project-local store
+  (`node_modules/.pnpm-store`, gitignored): each worktree downloads cold, and the store copy
+  itself mostly goes unused (the package-manager store and the state copy still matter).
+- **Cleanup.** These copies are tool caches for the cache cleanup (`toolCacheDays`, removed after
+  the scratch entries).
+- **Paths.** The default locations only: a host that moves mise's or pnpm's state elsewhere
+  (`MISE_STATE_DIR`, `XDG_STATE_HOME`, `XDG_DATA_HOME`, a store-dir setting) gets no copy of it on
+  Linux, where those stay read-only as before; on macOS `MISE_STATE_DIR` names the copy whatever the
+  host's says.
+- **The denial note.** `classifyRun` drops mise's `tracking config` warning (`BENIGN_DENIAL_LINES`)
+  before matching the denial signatures: that warning alone never earns
+  `[sandbox: a write or connection outside the policy was refused]`.
 
 ## Backends
 
@@ -158,7 +206,8 @@ siblings). Spec: §chat.sandbox/cache-cleanup.
   `os.setPriority(19)` in the child. The walk never runs in the chat's process.
 - **Units.** Each top-level entry of each shadow dir (`home-.cache/pnpm`, `home-.npm/_cacache`, an
   older layout's entries). A shadow dir itself is a live bind source and is never removed. Tool
-  caches: every entry of `home-.npm` and `home-.m2`, and the `toolCaches` names in `home-.cache`.
+  caches: every entry of `home-.npm`, `home-.m2` and the mise and pnpm state copies ("Tool state"),
+  and the `toolCaches` names in `home-.cache`. A file in the shadow root (a seeded list) is no unit.
 - **Measure.** `lstat` only, never following a link, never leaving the shadow dir's `st_dev`. Size is
   `st_blocks * 512`, a hard-linked file counted once (by dev and inode) over the whole scan. Recency
   is the newest regular file's mtime (protected 24 h) and atime (protected 48 h); directory atimes

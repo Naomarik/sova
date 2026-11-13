@@ -40,6 +40,11 @@ one of its drafts, in the chat's own folder or a worktree it tracks. In a projec
 answers "This project has no spec here." For a folder that doesn't exist it answers with an error
 saying so.
 
+The spec tools a chat and its workers run, for look-ups and drafts alike, are the ones of the copy
+of Sova that runs that chat, and the merge queue and releases use the running Sova's own, so a link
+in your pi folder into an older copy of Sova never changes them. A pi terminal, and a chat on a
+remote machine, use the tools installed in their own agent folder.
+
 ## Before coding
 
 Before its first edit that changes what the product does, the agent reads the writing procedure.

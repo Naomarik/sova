@@ -3,11 +3,11 @@
 // sova_create_session with `host`) is pinned exactly as the local sova_create_session pins one:
 // the same `mode` entry (pinEntryFor), even for a mode equal to the default, which the mode
 // extension alone never writes. A REAL hosted runtime in a throwaway PI_CODING_AGENT_DIR whose only
-// extension is this repo's mode extension; no model request is made.
+// mode owner is Sova's engine (no settings entry); no model request is made.
 import assert from "node:assert/strict";
 import { mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { after, test } from "node:test";
 
@@ -18,7 +18,7 @@ process.on("exit", () => rmSync(dir, { recursive: true, force: true }));
 const cwd = realpathSync(mkdtempSync(join(tmpdir(), "sova-configure-pin-cwd-")));
 // A hosted runtime can still write here after after() ran (pi's catalogs, usage cache): exit is last.
 process.on("exit", () => rmSync(cwd, { recursive: true, force: true }));
-writeFileSync(join(dir, "settings.json"), JSON.stringify({ extensions: [resolve(here, "../pi-config/extensions/mode")] }));
+writeFileSync(join(dir, "settings.json"), JSON.stringify({}));
 writeFileSync(join(dir, "mode.json"), JSON.stringify({ version: 1, mode: "normal", strict: false, minorModes: [] }));
 process.env.PI_CODING_AGENT_DIR = dir;
 await import("./testing/in-process-chats"); // chats open in this process (the server hosts none)

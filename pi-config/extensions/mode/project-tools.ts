@@ -5,7 +5,7 @@
  * stderr and exit code.
  *
  * Node builtins and the format/discovery siblings only, no pi import (the harness registers the
- * definitions; Sova's server may import this file). The mode extension (index.ts) registers
+ * definitions; Sova's server may import this file). Sova's mode engine registers
  * `projectToolDefinitions` once per snapshot (never active by registration) and moves their names in
  * and out of the active set as the mode goes on and off; a `direct` tool outside the active set is
  * neither declared to the model nor callable from scripts. A Claude Code chat reaches them like any
@@ -393,7 +393,7 @@ export function withdrawnDefinition(name: string) {
 	};
 }
 
-/** Names the file a worker reads its project modes' copies from (project-tools-worker.ts). */
+/** Names the file a worker reads its project modes' copies from (the worker's project-tools slot, which Sova fills). */
 export const PROJECT_TOOLS_FILE_ENV = "SOVA_PROJECT_TOOLS_FILE";
 /** Where `writeWorkerToolsFile` keeps the hand-off files, under the agent dir. */
 export const WORKER_TOOLS_DIR = ["sova", "project-tools"] as const;

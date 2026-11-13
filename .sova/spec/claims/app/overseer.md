@@ -558,7 +558,7 @@ summary may lag it; it never tells the Overseer to prefer the summary.
 
 `sova_alignment {session, doc?}` is a read tool: it returns a session's alignments
 (§chat/alignment) as the session's own `align` results fold them on its active branch, with the
-mode extension's own fold, so the Overseer never greps a session file for them.
+same fold Sova's modes use (`pi-config/extensions/mode/align.ts`), so the Overseer never greps a session file for them.
 
 - **Without `doc`:** every open alignment (not done or dropped), the last touched last. With
   `doc` (`al_N`): that one alignment in any state, open or not; an id the branch doesn't have is a

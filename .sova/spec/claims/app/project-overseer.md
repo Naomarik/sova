@@ -49,7 +49,7 @@ which is also its live view: its tool calls render as tool cards as they happen.
   agent dir's or a folder's above the root (the home folder's `AGENTS.md`). An instruction file in a
   folder below the root loads as its file tools work there (§chat/subfolder-instructions), never a
   secret one. Its tools
-  (§app.project-overseer/tools), memory's `zoom` and `date` while its memory is on
+  (§app.project-overseer/tools), memory's `zoom`, `date` and `recall` while its memory is on
   (§chat.memory/overseer), plus read-only `read`, `grep`, `find` and `ls` **anywhere on the host
   but other clients' work, Sova's and pi's own state, and secrets**: every path, as written (`..`,
   `~`, absolute) and at its realpath (a symlink that leads elsewhere), must be outside every
@@ -131,7 +131,7 @@ beside the conversation (§chat.memory/log).
 - **Its turns.** Switched on (or on by default) in a conversation with history, it is prepared in
   the background from its next turn (§chat.memory/preparing) and its run-status row shows
   "Preparing memory: n of m messages"; then every run, its watch-loop looks included, gets the view
-  in place of the early turns, and `zoom` and `date` are among its tools, on Claude Code as on pi.
+  in place of the early turns, and `zoom`, `date` and `recall` are among its tools, on Claude Code as on pi.
   Switched off, its next turn sends its full history again.
 - Its mode switch stays refused (§chat.memory/where), and the coding sessions it starts never get
   memory.
@@ -618,12 +618,16 @@ user row.
   its project, Sova-kept and in the project's files: its own settings (Watch, the powers in both
   columns, the models, extra instructions, the limits and pace, the hold, its abilities, its memory
   switch), the project's name, the project's copy limit on this machine
-  (§app.project-services/instances), and, in an organization's project, its main stakeholder
+  (§app.project-services/instances), which context files and skills its new chats start with (Context Files
+  and Skills, each Approved, Disallowed or Waiting, §chat.context-approval/context-card,
+  §chat.skill-sources/project-defaults; the Sova-wide switch that says whether chats ask first,
+  §chat.context-approval/setting, is listed but isn't the project's, and it can't propose it), and, in an organization's project, its main stakeholder
   (§app.organizations/stakeholder), whether it shows on the owner's page (§app.owner-page/controls)
   and whether its spec is frozen (§app.requirements/frozen-spec), and the files `.sova/project.json` (services), `.sova/profiles/<id>.json`,
   a playbook's `PLAYBOOK.md` with its schedule lines, a project mode's `MODE.md`
   (`.sova/minor-modes/<id>/`) and `.sova/offers.json`. One tool does it, `sova_settings {op}`, always
-  allowed (like `sova_card`): `get` lists every setting with its state, the cards waiting and the
+  allowed (like `sova_card`): `get` lists every setting with its state (each context file's and skill's too, by key, with where it
+  comes from), the cards waiting and the
   uncommitted settings edits in the project folder; `reference {setting}` gives one setting's full
   entry (its keys, what each means, what needs your approval); `propose {why, edits}` makes a
   change; `withdraw {card}` drops one of its cards. Its prompt carries the settings' short index.
@@ -632,14 +636,17 @@ user row.
 - **The reference comes from the parsers.** Each entry is generated from the key lists the
   parsers accept (the services contract, the profile file, a playbook's frontmatter and schedule,
   `MODE.md`, the offers file, the overseer's settings patch, the project's own patch, the placement
-  patch, the spec patch and the copy limit's edit): a key a parser reads with no reference entry fails a test. Archiving has
+  patch, the spec patch, the copy limit's edit, the skills edit and the context files edit): a key a parser reads with no reference entry fails a test. Archiving has
   an entry too (`project.archive`): it says archiving is yours on the project page, with its own confirm.
 - **Structured edits, checked by the same parsers.** `edits` name a setting, never a path:
   `{setting: "overseer", patch}` (the overseer settings' fields), `{setting: "memory", on, type?}`
   (a `size` is ignored: its size is Settings → Memory's, §chat.memory/overseer), `{setting: "project", name?, stakeholder?, ownerHidden?, frozen?}` (the last three an
   organization's project only: a standalone project's is refused in words), `{setting: "profile", id, profile | null}`, `{setting:
   "playbook", id, text | null}`, `{setting: "copies", limit: 1–16 | null}` (null: back to the
-  main checkout's file's value), `{setting: "mode", id, text | null}`, `{setting: "offers", file |
+  main checkout's file's value), `{setting: "skills", skills: {<skill key or name>: "approved" |
+  "disallowed" | "waiting"}}` and `{setting: "context-files", files: {<context file key>: "approved" |
+  "disallowed" | "waiting"}}` (only the items it changes; one the project's scan doesn't find is
+  refused), `{setting: "mode", id, text | null}`, `{setting: "offers", file |
   null}`, `{setting: "services", file | null}` (null removes the file). Each is checked exactly as
   Sova reads it; the first problem is the refusal and nothing is written. Moving the project's
   folder and archiving it are refused: they are yours on the project page, archiving with its own
@@ -653,10 +660,11 @@ user row.
   covers those powers (§chat.profiles/trust); a
   schedule's `when:`, `tz:` or `profile:` (§chat.schedules/approval); a project mode with tools,
   commands or hooks (§chat.mode-menu/project-modes); an offers file with run buttons
-  (§chat.offers/approval) whose run buttons aren't approved as they are; and any change to the services file; the spec unfrozen; the project shown on the owner's page again. The overseer never approves one.
+  (§chat.offers/approval) whose run buttons aren't approved as they are; and any change to the services file; the spec unfrozen; the project shown on the owner's page again; a context file or skill approved, or a
+  Disallowed one made Approved or Waiting (§chat.context-approval/who). The overseer never approves one.
 - **What narrows applies at once, in your turn.** In a turn the operator started, each Sova-kept
-  change that is no grant (a power Off, a limit lowered, the copy limit lowered, a model, its memory switch, the name, the
-  spec frozen, the project hidden from the owner's page, the main stakeholder changed)
+  change that is no grant (a power Off, a limit lowered, the copy limit lowered, a model, its memory switch, the name, a context file
+  or skill disallowed, the spec frozen, the project hidden from the owner's page, the main stakeholder changed)
   applies at once and its result says so, each with **Undo**. Everything else goes on a **Settings
   change card**: grants, and every change to the project's files. In a run the operator did not start
   (a look, Run Now, a wake-up) nothing applies: it only prepares a card. A chat in Create only ever
@@ -715,19 +723,28 @@ user row.
 - **Settings history.** Each change to a Sova-kept setting, however made (the Settings tab, a
   script, the global Overseer, this tool, a card), and each file a card landed is one line of
   `settings-history.jsonl` beside `overseer.json`: `{id, at, field, from, to, by: {kind, via?},
-  revertOf?}` (a file line's from and to are the file's blob ids, with the commit). A model or thinking
+  revertOf?}` (a file line's from and to are the file's blob ids, with the commit). Context files and skills write
+  one line per item whose state changed (`field: "context.<key>"` or `"skills.<key>"`), from every place
+  they change, the cards, a new chat's setup card and a chat's "wasn't loaded" line included
+  (§chat.skill-sources/project-defaults). A model or thinking
   name the overseer's settings take is at most 200 characters. The Settings tab
   lists it newest first (`project.settings.history`). **Undo** (`project.settings.undo {id}`) puts a
   Sova-kept field back, refused (409) when the field changed since ("{field} changed since: undo the
   newer change first."); undoing a file change makes a new card that puts the file back, applied like
   any other. An undo that is itself a grant (it puts back what widens: a power turned Off back On, a
   limit raised again, the hold lifted, the extra instructions restored, the spec unfrozen, the project
-  shown on the owner's page again) is the operator's own page only, as Apply is: from a chat's key,
+  shown on the owner's page again, a context file's or skill's disallow undone, an approval put back) is the operator's own page only, as Apply is: from a chat's key,
   the token in a header, the Overseer's sender mark, an extension's key or a peer it is refused (403)
   and nothing changes. Any other undo is open to any caller, as before.
 - **The Settings tab lists every setting.** Its **All settings** section lists each project setting,
   Sova-kept and in the project's files (the **Copy limit**, its value and "set on this machine" or
-  "from the project's file", linking to the Branches tab; services, profiles, playbooks and their schedules, modes,
+  "from the project's file", linking to the Branches tab; the **Context Files** row and, next to it, the
+  **Skills** row, each "No preference" while none is approved or disallowed (while asking, "{m}
+  waiting" if any wait), else "{n} disallowed · {m} waiting · {c} changed" (each part left out at 0,
+  the waiting part shown only while asking; "{k} approved" when all are), "kept on this computer; new
+  chats start with these", with **Show Context Files** or **Show Skills** scrolling to its card, §chat.context-approval/context-card, §chat.skill-sources/project-defaults; the
+  read-only **Context files and skills** row, "Allowed without asking (Sova-wide)" or "Ask first
+  (Sova-wide)", linking to Settings → General, §chat.context-approval/setting; services, profiles, playbooks and their schedules, modes,
   offers; the **Merge queue**, linking to Settings → Merge Queue on this project, §app.merge-queue/settings,
   which the project overseer's `sova_settings` refuses to change; a Create chat's card can,
   §chat.create-mode/settings-cards), with its state (on, off, set, not set, broken, needs approval, approved) and a link to
@@ -763,8 +780,8 @@ user row.
   as Start Coding Session does, before its first prompt. The mode is applied, and written into the
   session file as its `mode` entry (§chat/mode-menu), before the first prompt, even when it equals
   the default, so the session's first turn runs in it and a later change to `mode.json` never
-  moves it. A mode that can't be applied (the session is held elsewhere, the mode extension is
-  missing) sends no prompt: the session stays, listed and counted, and the tool result (or the
+  moves it. A mode that can't be applied (the session is held elsewhere, or it loads no modes,
+  §chat.mode-menu/sova-runs-modes) sends no prompt: the session stays, listed and counted, and the tool result (or the
   page's error) says "Started, but not prompted: its mode could not be set." New Coding Session
   sends no prompt anyway; its page error says "Started, but its mode could not be set. Set it from
   the chat's mode menu before you send." Neither has a mode picker; the chat's own mode menu can

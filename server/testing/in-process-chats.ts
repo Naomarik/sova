@@ -6,7 +6,7 @@ import { randomUUID } from "node:crypto";
 import type { ChatCall, ChatId, ChatMethod, ChatMethods, ChatRunEvent, ChatStateMirror, ServerToolCall, ServerToolOutcome } from "../../shared/chat-runtime";
 import type { HookCtx, ToolResult } from "../../shared/harness";
 import type { ChatClientMessage } from "../../shared/protocol";
-import { acquireChat, chatModesSwitchedHere, type ChatClient, type ChatSession, disposeHeldChat, heldChat, heldChats, onChatEvent, type SpecialPort } from "../chat-manager";
+import { acquireChat, type ChatClient, type ChatSession, disposeHeldChat, heldChat, heldChats, onChatEvent, type SpecialPort } from "../chat-manager";
 import { ChatHandle, chatHandle, deliverServerToolCall, fileHookCtx, serverSpecials, setChatRouter, setSpecialsHere, type SpecialHost, specialHostOf } from "../chat-handle";
 import { type CallCtx, runMethod } from "../chat-runtime/methods";
 import { LiveMirror } from "../chat-runtime/mirror";
@@ -143,7 +143,6 @@ export function installInProcessChats(): void {
     all: () => heldChats().map(handleOf),
     acquire: async (path, force) => handleOf(await acquireChat(path, force)),
     close: (path, message) => disposeHeldChat(path, message),
-    modesSwitched: (on) => void chatModesSwitchedHere(on),
   });
 }
 installInProcessChats();

@@ -184,7 +184,24 @@ test("a pasted image is drawn in the darkroom with no network, and an SVG comes 
   assert.deepEqual(out.refused, []);
   assert.deepEqual(out.added.map((x) => x.source), ["yours", "yours"]);
   assert.equal(out.added[1]!.width, 300);
+  // Its colours were measured in the darkroom from what it drew: the red rect, all of it.
+  assert.deepEqual(out.added[1]!.palette, [{ hex: "#ff0000", share: 1, saturation: 1, frame: 1 }]);
   assert.equal(b.hits.filter((h) => h.url.startsWith("/phone-home")).length, 0);
+});
+
+test("the darkroom bins a picture's pixels in its page exactly as binPixels does, so only bins leave it", { skip: !browser }, async () => {
+  const { binPixels } = await import("../tours/palette");
+  const chrome = await launchTourBrowser();
+  try {
+    const room = await openDarkroom(chrome);
+    for (const pic of [png(300, 200, 3), png(640, 400, 9, true)]) {
+      const px = await room.pixels(new Uint8Array(pic), "image/png", 1600);
+      const got = await room.bins(new Uint8Array(pic), "image/png", 1600);
+      assert.equal(got.width, px.width);
+      assert.deepEqual(got.bins, binPixels(px.rgba, px.width));
+    }
+    await room.close();
+  } finally { await chrome.close(); }
 });
 
 test("while a page is written its images show a plain block, never a broken-image mark", { skip: !browser }, async () => {

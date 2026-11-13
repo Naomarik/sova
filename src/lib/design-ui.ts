@@ -152,14 +152,14 @@ export function shufflePairs(setup: DesignSetup, random: () => number = Math.ran
   return setup;
 }
 
-/** Why Start Coordinator can't be pressed yet, or null. */
+/** Why Start Creative Director can't be pressed yet, or null. */
 export function setupBlocked(setup: DesignSetup, caps: DesignCaps): string | null {
   const c = setupCount(setup);
   if (!setup.brief.trim()) return "Say what to design first.";
   if (c.models === 0) return "Pick at least 1 model to design.";
   if (c.styles === 0) return "Pick at least 1 style.";
   if (c.designs > caps.batchMax) return `${c.designs} designs is more than 1 run can make (${caps.batchMax}). Choose fewer models, styles or layouts.`;
-  if (!setup.models.some((m) => m.coordinator)) return "Pick a model to be the coordinator.";
+  if (!setup.models.some((m) => m.coordinator)) return "Pick a model to be the Creative Director.";
   return null;
 }
 
@@ -179,6 +179,7 @@ export const STATUS_WORD: Record<DesignStatus, string> = { queued: "Queued", wri
 /** The word on a design's chip: what its session is doing now, which can be more than its page's status. */
 export function designStatusWord(d: DesignRecord): string {
   if (d.delivery?.state === "queued") return "Queued";
+  if (d.status === "writing" && d.readingSkill && !d.live) return "Reading";
   if (d.status === "writing" && d.thinking) return "Thinking";
   if (d.status === "ready" && d.workerState === "working") return "Working";
   return STATUS_WORD[d.status];

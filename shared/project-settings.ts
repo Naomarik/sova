@@ -24,6 +24,15 @@ export const COPIES_EDIT_KEYS = ["limit"] as const;
 /** The history field of this machine's copy limit (its value: 1–16, or null for the project's file's). */
 export const COPIES_FIELD = "copies";
 
+/** The keys `{setting: "skills", …}` takes in sova_settings propose: the project's skill defaults for new chats. */
+export const SKILLS_EDIT_KEYS = ["skills"] as const;
+/** A skill's history field is this prefix and its key (a version 1 line: its name); its value: "approved", "disallowed" or "waiting". */
+export const SKILL_FIELD_PREFIX = "skills.";
+/** The keys `{setting: "context-files", …}` takes in sova_settings propose: the project's context files for new chats. */
+export const CONTEXT_EDIT_KEYS = ["files"] as const;
+/** A context file's history field is this prefix and its key; its value as a skill's. */
+export const CONTEXT_FIELD_PREFIX = "context.";
+
 /** Who made a change. `via`: through what. */
 export interface SettingsBy {
   kind: "operator" | "project-overseer" | "overseer" | "create";

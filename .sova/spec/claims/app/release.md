@@ -542,7 +542,9 @@ Sova's `.sova/playbooks/release/` is its project release playbook in this form: 
 version, notes, bump, stamps, docs and commit before the checks; try-live (held: the operator's Apply on the live server, then a health check; Sova's merge thread never restarts Sova while a release is open, nor for its commit, §chat.merge-queue/sova-restart) before Publish;
 release-page (the notes out, `gh release create --verify-tag`) and outside-checks (held) after Publish;
 and release-page-withdrawn after a Withdraw. The **docs** step runs in every release unless the operator's Release Note
-says otherwise, and finishes on its own (never held): it lists every Docs page whose spec sources
+says otherwise, and finishes on its own (never held): it lists, with the spec tools of the release
+chat's own copy of Sova (§tools.spec/mode-reading; where there are none, the listing stops at
+once and names where it looked), every Docs page whose spec sources
 changed, left stale, or new, fixes each in its own commit, and writes a new page for each new feature
 that has none (one whose record won't promote is left without a page, and the step says why). Since a release entry carries no spec drafts, a new page's `§site.docs/<page>` record
 is drafted, promoted and committed by explicit path on the release branch, in its own commit before

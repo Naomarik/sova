@@ -287,6 +287,8 @@ const READ_PREFIXES = [
   "session-cards",
   // The merge queue's chat cards (GET /api/merge-queue/cards): a read. Its verbs stay under project-services.
   "merge-queue",
+  // Any folder's context files and skills (shared/approvals.ts): reading is a read; a decision an admin act, as a project's.
+  "folder-approvals",
 ];
 // Never below `full`: the operator's credentials, the share pages' own routes, this machine's
 // updates (whose writes refuse the peer listener outright), and conversations' draft specs (the

@@ -3,15 +3,14 @@
 
 While the **align** minor mode is on (§chat/mode-menu), the agent agrees with the user on what to
 build before building it, and records each agreement as an **alignment**: a structured document it
-keeps with one tool, `align`, from pi's `mode` extension (`pi-config/extensions/mode`). A session
-can hold several alignments at once, one per concern. The user never edits one: they answer in
-chat, and the agent records the answer. Sova shows each alignment as a card in the transcript, in
-the composer's waiting badge, and a count on the session's row. It works the same in the TUI and in Sova,
-for sessions Sova holds and sessions it only watches, with one web-only shortcut: in a chat Sova
-holds, the card can tick recommendations to take, pick an option as a question's answer, and go
-with all of the recommendations (§chat.alignment/card).
-Those only compose an ordinary message for the agent to record, exactly as if it were typed; the
-TUI user types the same words. How readily an alignment opens (Eagerness), how the agent writes
+keeps with one tool, `align`, from Sova's modes (`pi-config/extensions/mode/align-tool.ts`). A
+session can hold several alignments at once, one per concern. The user never edits one: they answer
+in chat, and the agent records the answer. Sova shows each alignment as a card in the transcript, in
+the composer's waiting badge, and a count on the session's row, for sessions Sova holds and sessions
+it only watches; a pi terminal has no align (§chat.alignment/tui). In a chat Sova holds, the card
+can also tick recommendations to take, pick an option as a question's answer, and go with all of the
+recommendations (§chat.alignment/card).
+Those only compose an ordinary message for the agent to record, exactly as if it were typed. How readily an alignment opens (Eagerness), how the agent writes
 alignments (its writing style) and whether it draws on the card (Visuals) are set in Settings →
 Alignment (§chat.alignment/settings-file, §chat.alignment/eagerness, §chat.alignment/style,
 §chat.alignment/visuals).
@@ -157,8 +156,8 @@ questions decided, accepted, reopened or dropped, a status move) and a one-line 
 snapshot wins, in the order documents were last touched. So a rewind, `/tree`, a fork and a
 compaction all land on the right state with nothing extra written, and a failed call (an error
 result) is never state. Opening a session writes nothing. One fold function
-(`pi-config/extensions/mode/align.ts`, node builtins only) is shared by the extension and Sova's
-server.
+(`pi-config/extensions/mode/align.ts`, node builtins only) is shared by Sova's modes and the rest
+of Sova's server.
 
 **Older sessions** keep their `align-doc` entries from before the tool (a markdown document the
 extension parsed from the agent's reply). They are read-only history: their card renders as it did
@@ -188,9 +187,13 @@ any more, and they count toward no badge, row or digest.
   other is answered (or delegated) as the delegate block says, with no planning worker for an
   alignment. For a change request, the investigation goes to at most one non-editing Planning & specs
   worker (never the Investigation profile), whose one permitted write is the alignment JSON for
-  `import` at an absolute path outside the repository that the agent names (the delegate block's
-  own no-edit rule names no exception: the bridge does; in a remote session the worker reports the
-  JSON and the agent creates inline), and the agent imports that file, never retyping it. When the
+  `import` in the chat's shared folder (§chat.sandbox/shared-folder), outside every repository and
+  writable for a confined worker too, at a name the agent gives in the brief (the bridge's example is
+  `$SOVA_SHARED_DIR/align-<topic>-<n>.json`, and it says never `/tmp`, which a sandboxed worker
+  can't share; the bridge names the variable, never a path, so the system prompt stays the same in
+  every chat). The worker reports the absolute path it wrote (the delegate block's own no-edit rule
+  names no exception: the bridge does; in a remote session the worker reports the JSON and the agent
+  creates inline), and the agent imports that path, never retyping the file. When the
   same matter was first investigated by a lighter worker (an Investigation worker the delegate block
   sent on a bug report or a question) and the user then asks for the change, the agent's brief to the
   planning worker carries the root cause that worker found, so the planning worker starts from it
@@ -227,7 +230,7 @@ any more, and they count toward no badge, row or digest.
   question is open: a dead worker or a parallel concern must never leave the session stuck.
 - **One nudge per run.** When a run is about to settle, align is on, the run made no `align` call,
   its final reply reads like a plan that asks the user to decide, and, **under Careful only, the
-  run is marked as a change request** (§chat.alignment/eagerness), the extension adds one hidden
+  run is marked as a change request** (§chat.alignment/eagerness), Sova's modes add one hidden
   message (`align-nudge`) telling the agent to record it with `align` (or `exempt` if it isn't a
   design decision) and continues the run once. It never nudges twice in one run (until the run
   settles). Only a successful call that changed a document or recorded an exemption counts as an
@@ -590,8 +593,8 @@ before and reads as Eager; the writer stores the field only for Careful, so a fi
 is the same bytes an older device already accepts. The
 stored `default` is the style the user reads as **Technical**; it is kept as written, never migrated
 or rewritten, so every device and the mesh keep accepting the file. Settings →
-Alignment writes it (§app.settings-dialog/alignment). The mode extension reads it, in the TUI and in
-every runtime Sova hosts — the style and Eagerness at each turn boundary, Visuals at each session start — and
+Alignment writes it (§app.settings-dialog/alignment). Sova's modes read it in every runtime Sova
+hosts — the style and Eagerness at each turn boundary, Visuals at each session start — and
 Sova's server reads Visuals at a chat's first start (§chat.alignment/visuals). With the mesh on it
 syncs like `mode-spec.json`: whole file, newest edit wins, checked with the module's own parser
 before it is written.
@@ -677,8 +680,8 @@ question's or the document's `visual` (§chat.alignment/document).
 
 - **Start only.** Visuals reach a chat at its first start and never change for it: Sova records
   them with the review flag in the chat's hidden `sova-align-launch` state entry
-  (§chat.alignment-review/flag) and every later start reuses it, handing the mode extension the
-  `align-visuals` flag (`on` or `off`); the TUI, with no such flag, reads `mode-align.json` (and the
+  (§chat.alignment-review/flag) and every later start reuses it, handing Sova's modes the
+  `align-visuals` flag (`on` or `off`); a session with no such flag reads `mode-align.json` (and the
   chat's profile override) at session start.
 - **The prompt.** With align on, a paragraph after the align block (and after the style's): visuals
   go in the align tool's `visual` fields, never as a vis fence in the reply; add one only when it
@@ -698,7 +701,7 @@ question's or the document's `visual` (§chat.alignment/document).
   is about a screen or the change is a flow, draw it now with edit_question or edit_doc, before the
   reply. It never adds one itself, and nothing else changes.
 - **The vis tools.** One rule decides whether the vis tools are wanted: vis on, or align on with the
-  chat's Visuals. Every place that syncs them — the mode extension's `vis_guide` and, in Sova's hosted
+  chat's Visuals. Every place that syncs them — the `vis_guide` of Sova's modes and, in Sova's hosted
   sessions, `vis_check` at session start, after a switch made between runs, when a run starts and
   when it settles — asks that rule, so the tool set changes only when its answer does, never each run.
   Sova's vis retry (§chat.markdown/visuals, "Feedback to the model") asks the same rule: in a chat

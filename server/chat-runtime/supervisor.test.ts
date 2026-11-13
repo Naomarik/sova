@@ -1001,7 +1001,7 @@ test("the chat env names Sova's git system config: git run by the chat starts no
 });
 
 test("a chat process's own variables: never inherited from its server, and deleted from a server's env at boot", () => {
-  const leaked = { SOVA_CHAT_SOCK: "/s", SOVA_CHAT_PATH: "/p", SOVA_CHAT_ID: "x", SOVA_CHAT_UNIT: "u", SOVA_CHAT_BUILD: "b", SOVA_CHAT_STATE_ROOT: "/live/sova", SOVA_CHAT_LIVE_ROOT: "/live", SOVA_CHAT_COPIES_ROOT: "/live/sova/chats/code" };
+  const leaked = { SOVA_CHAT_SOCK: "/s", SOVA_CHAT_PATH: "/p", SOVA_CHAT_ID: "x", SOVA_CHAT_UNIT: "u", SOVA_CHAT_BUILD: "b", SOVA_CHAT_STATE_ROOT: "/live/sova", SOVA_CHAT_LIVE_ROOT: "/live", SOVA_CHAT_COPIES_ROOT: "/live/sova/chats/code", SOVA_SPEC_CORE: "/old/sova/pi-config/extensions/spec/core" };
   const env = chatEnv({ serverEnv: { ...leaked, SOVA_CHAT_CODE_ROOT: "/scratch", LANG: "C" }, bun: "/opt/bun/bin/bun", home: "/h", agentDir: "/h/a", extra: { SOVA_CHAT_ID: "c1" } });
   for (const k of CHAT_PROCESS_ENV) assert.equal(env[k], k === "SOVA_CHAT_ID" ? "c1" : undefined, k);
   assert.equal(env.SOVA_CHAT_CODE_ROOT, undefined, "the server's own code root");

@@ -14,7 +14,6 @@
       "server/index.ts",
       "server/app.ts",
       "shared/protocol.ts",
-      "src/lib/experimental-draft.ts",
       "src/lib/api.ts",
       "server/project-coding-runtime.test.ts",
       "pi-config/extensions/claude-code/provider/index.ts",

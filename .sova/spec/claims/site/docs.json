@@ -148,6 +148,34 @@
       "site/src/styles/tokens.css"
     ]
   },
+  "§site.docs/context-files-and-skills": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "unreviewed",
+    "code": [
+      "site/src/content/docs/context-files-and-skills.md",
+      "site/src/data/docs.ts"
+    ],
+    "requires": [
+      "§chat/context-approval",
+      "§chat.context-approval/setting",
+      "§chat.context-approval/modes",
+      "§chat.context-approval/who",
+      "§chat.context-approval/list",
+      "§chat.context-approval/fingerprint",
+      "§chat.context-approval/context-card",
+      "§chat.context-approval/folders",
+      "§chat.context-approval/held-send",
+      "§chat.context-approval/unwatched",
+      "§chat.context-approval/live",
+      "§chat.context-approval/mid-chat",
+      "§chat.context-approval/fixed",
+      "§chat.skill-sources/project-defaults",
+      "§chat.skill-sources/project-new-chats",
+      "§app.subagents-pane/context-tab",
+      "§app.subagents-pane/context-tab-skills-read"
+    ]
+  },
   "§site.docs/create": {
     "kind": "behavior",
     "requires": [
@@ -216,7 +244,7 @@
   "§site.docs/design": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "code": [
       "site/src/content/docs/modes/vis/lookbook.md"
     ],
@@ -224,9 +252,9 @@
       "§chat/design-mode"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-11-10T08:52Z",
-      "source": "pi-session:0e2ea24a-22d2-4ec7-a1df-46bf85135214#f36f41aa"
+      "by": "user",
+      "at": "2026-11-12T10:40Z",
+      "source": "pi-session:c6e7f9da-6608-46f4-a4d9-6db219882520#b5acf41a"
     }
   },
   "§site.docs/drawing-kinds": {
@@ -358,8 +386,9 @@
       "site/src/content/docs/install.md"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-10-11T11:27Z"
+      "by": "user",
+      "at": "2026-11-13T05:15Z",
+      "source": "pi-session:01a1d023-6988-7481-af78-b02082042586#f37a584f"
     }
   },
   "§site.docs/mcp-servers": {
@@ -505,7 +534,8 @@
       "§chat.memory/overseer",
       "§app.project-overseer/memory-switch",
       "§app.overseer/memory-switch",
-      "§chat/create-mode"
+      "§chat/create-mode",
+      "§chat.mode-menu/sova-runs-modes"
     ],
     "authority": "accepted",
     "evidence": "reviewed",
@@ -514,8 +544,8 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-04T06:59Z",
-      "source": "pi-session:5b3349ca-a4e6-4bb7-8a78-16e639eb61df#40d50679"
+      "at": "2026-11-13T05:15Z",
+      "source": "pi-session:01a1d023-6988-7481-af78-b02082042586#f37a584f"
     }
   },
   "§site.docs/needs-you": {

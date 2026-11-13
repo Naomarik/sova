@@ -2,7 +2,8 @@ import { createHash, randomBytes } from "node:crypto";
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { readRunLogText } from "./run-logs";
-import { ENTRY_FINAL, type LandHow, type MergeEntry, type MergeRun, type PauseInfo } from "../../shared/merge-queue";
+import { MergeHistory } from "./history";
+import { ENTRY_FINAL, type LandHow, type MergeEntry, type MergeHistoryRow, type MergeRun, type PauseInfo } from "../../shared/merge-queue";
 
 /**
  * The merge queue's records, per project, under the state root (records only: the merge COPY lives beside the
@@ -11,9 +12,12 @@ import { ENTRY_FINAL, type LandHow, type MergeEntry, type MergeRun, type PauseIn
  *   <state>/merge-queue/<key>/queue.json       QueueFile (entries, pause, the landing intent, heads)
  *   <state>/merge-queue/<key>/runs/<run>/run.json   MergeRun
  *   <state>/merge-queue/<key>/runs/<run>/<step>.log every step's log, from its first line
+ *   <state>/merge-queue/<key>/history/YYYY-MM.jsonl  every truly final entry, for good (history.ts)
  *
  * Every write re-writes the whole file atomically (tmp + rename). A damaged queue.json is kept aside and read as
- * empty, with a warning.
+ * empty, with a warning. queue.json holds the open entries and the newest KEEP_FINAL truly final ones; every write
+ * first files the final ones' changed rows in the history, then trims the in-memory list to the same window (q.entries replaced, never spliced), so the
+ * queue reads the same whether it started a minute or a month ago.
  */
 
 /** Written before master moves and cleared after (server/merge-queue/land.ts): at start, recover.ts reconciles one
@@ -48,7 +52,8 @@ export interface QueueFile {
   project: string;
   root: string;
   target: string;
-  /** Open entries in line order first is not implied: order by `seq`. Final ones kept (newest 60). */
+  /** Open entries in line order first is not implied: order by `seq`. Truly final ones kept: the newest 60 (the rest
+   *  live in the history only); a sent-back entry still waiting on its chat is always kept. */
   entries: (MergeEntry & { seq: number })[];
   paused?: PauseInfo;
   /** The merge thread's hold (merge.hold): no new run starts until `until` (epoch ms) or its clear; cleared at start. */
@@ -79,7 +84,7 @@ export interface QueueFile {
   release?: import("../../shared/merge-queue").MergeReleaseHold & { checks?: import("../../shared/project-contract").MergeCheckDecl[] };
 }
 
-const KEEP_FINAL = 60;
+export const KEEP_FINAL = 60;
 const KEEP_LANDED = 500;
 
 export const projectKey = (root: string): string => createHash("sha256").update(root).digest("hex").slice(0, 16);
@@ -98,11 +103,13 @@ function writeAtomic(file: string, text: string): void {
 
 export class QueueStore {
   readonly dir: string;
+  readonly history: MergeHistory;
   constructor(
     base: string,
     readonly root: string,
   ) {
     this.dir = join(base, projectKey(root));
+    this.history = new MergeHistory(this.dir);
   }
 
   private get file(): string {
@@ -140,12 +147,34 @@ export class QueueStore {
     }
   }
 
-  write(q: QueueFile): void {
+  /** Save the queue: truly final entries' new and changed rows go to the history, `q.entries` becomes (a new array
+   *  when any left) the open ones plus the newest KEEP_FINAL truly final ones, then queue.json is written. `settled`: sent-back entries
+   *  git last said need no fix any more (merged, or branch or worktree gone). */
+  write(q: QueueFile, opts?: { settled?: ReadonlySet<string>; now?: string }): void {
     mkdirSync(this.dir, { recursive: true });
-    const open = q.entries.filter((e) => !isFinal(e));
-    const final = q.entries.filter((e) => isFinal(e)).sort((a, b) => a.seq - b.seq).slice(-KEEP_FINAL);
-    const entries = [...open, ...final].sort((a, b) => a.seq - b.seq);
+    // A history that can't be written never blocks queue.json: nothing is trimmed then (an entry leaves the working
+    // list only once its row is filed), and the next save tries again.
+    try {
+      q.entries = this.history.sync(q.entries, KEEP_FINAL, { ...(opts?.settled ? { settled: opts.settled } : {}), now: opts?.now ?? new Date().toISOString() });
+    } catch (err) {
+      console.warn(`[merge-queue] history under ${this.history.dir} not written (${err instanceof Error ? err.message : err}); nothing trimmed`);
+    }
+    const entries = [...q.entries].sort((a, b) => a.seq - b.seq);
     writeAtomic(this.file, `${JSON.stringify({ ...q, entries, landed: q.landed.slice(-KEEP_LANDED) }, null, 1)}\n`);
+  }
+
+  /** An entry only the history holds (read-only), or null. */
+  historyRow(id: string): MergeHistoryRow | null {
+    return this.history.get(id);
+  }
+
+  /** The one-time backfill (history.ts): partial rows for runs whose entry neither queue.json nor the history has. */
+  backfillHistory(q: QueueFile): number {
+    if (this.history.backfilled()) return 0;
+    const runs = this.runIds()
+      .map((id) => this.readRun(id))
+      .filter((r): r is MergeRun => !!r);
+    return this.history.backfill(runs, new Set(q.entries.map((e) => e.id)), q.target);
   }
 
   runDir(run: string): string {

@@ -372,13 +372,19 @@ function authorize(deps: MergerDeps, verb: MergeVerb, caller: Caller, root: stri
   throw new MergeFailure("forbidden", `only the project's merge thread calls ${verb}`);
 }
 
+/** A history row's run: its entry's last, or a partial row's newest. */
+const historyRun = (h: import("../../shared/merge-queue").MergeHistoryRow | null): string | undefined => h?.entry?.run ?? h?.runs?.at(-1);
+
 async function dispatch(deps: MergerDeps, verb: MergeVerb, req: Req, q: ProjectQueue, caller: Caller): Promise<{ changed: boolean; report: MergeReport }> {
   const by = caller.kind === "operator" ? ("operator" as const) : ("thread" as const);
   const viewOf = async () => q.view();
+  // An entry only the history holds is read-only: every verb that would change it refuses, naming the history.
+  if (req.entry && !MERGE_READ_VERBS.includes(verb)) q.refuseHistory(req.entry);
   switch (verb) {
     case "merge.status": {
       const view = await viewOf();
       if (!req.entry) return { changed: false, report: { view } };
+      const kept = q.historyEntry(req.entry);
       // One entry: the rest of the view stays (counts, hold, settings), its lists narrowed to that entry.
       const one = (xs: MergeEntry[]): MergeEntry[] => xs.filter((x) => x.id === req.entry);
       const narrowed: MergeQueueView = {
@@ -390,10 +396,10 @@ async function dispatch(deps: MergerDeps, verb: MergeVerb, req: Req, q: ProjectQ
         ...(view.waitingOnHost ? { waitingOnHost: one(view.waitingOnHost) } : {}),
         recent: view.recent.filter((x) => x.entry.id === req.entry),
       };
-      return { changed: false, report: { view: narrowed } };
+      return { changed: false, report: { view: narrowed, ...(kept ? { history: kept } : {}) } };
     }
     case "merge.logs": {
-      const runId = req.run ?? (req.entry ? q.entry(req.entry)?.run : undefined);
+      const runId = req.run ?? (req.entry ? (q.entry(req.entry)?.run ?? historyRun(q.historyEntry(req.entry))) : undefined);
       if (!runId) throw new MergeFailure("invalid-request", "name the run (or an entry that had one)");
       const run = q.currentRun()?.id === runId ? q.currentRun()! : q.store.readRun(runId);
       if (!run) throw new MergeFailure("not-found", `no merge run ${runId}`);

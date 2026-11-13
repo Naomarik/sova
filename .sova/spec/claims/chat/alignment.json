@@ -89,15 +89,12 @@
       "pi-config/extensions/mode/minor.ts",
       "pi-config/extensions/mode/prompt.ts",
       "pi-config/extensions/mode/align-tool.ts",
-      "pi-config/extensions/mode/index.ts",
       "pi-config/extensions/mode/state.ts",
       "pi-config/extensions/subagents/subagent-profiles.ts",
       "server/align-settings.ts",
       "pi-config/extensions/mode/align-settings.test.ts",
-      "pi-config/extensions/mode/index.test.ts",
-      "pi-config/extensions/mode/tests/style-turn.mjs",
-      "pi-config/extensions/mode/tests/smoke.mjs",
-      "pi-config/extensions/mode/tests/align-turn.mjs"
+      "pi-config/extensions/mode/modes.test.ts",
+      "server/modes/engine-hooks.test.ts"
     ],
     "requires": [
       "§chat.alignment/settings-file",
@@ -120,15 +117,11 @@
       "pi-config/extensions/mode/prompt.ts",
       "pi-config/extensions/mode/align-tool.ts",
       "pi-config/extensions/mode/align.ts",
-      "pi-config/extensions/mode/index.ts",
-      "pi-config/extensions/mode/index.test.ts",
+      "pi-config/extensions/mode/modes.test.ts",
       "pi-config/extensions/mode/align.test.ts",
-      "pi-config/extensions/mode/tests/align-turn.mjs",
-      "pi-config/extensions/mode/tests/smoke.mjs",
       "pi-config/extensions/mode/README.md",
       "pi-config/extensions/mode/align-settings.test.ts",
-      "pi-config/extensions/mode/tests/fixtures/flag-off-master.json",
-      "pi-config/extensions/mode/tests/review-smoke.mjs",
+      "server/modes/tests/fixtures/align-flag-off-master.json",
       "pi-config/extensions/mode/align-settings.ts"
     ],
     "requires": [
@@ -136,22 +129,20 @@
       "§chat/mode-menu"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-10-30T01:15Z",
-      "source": "pi-session:01a16fc3-76aa-7539-b91a-753e2e7fee8b#00a2d68b"
+      "by": "user",
+      "at": "2026-11-11T14:16Z",
+      "source": "pi-session:01a1ca84-b3de-7601-9d6d-7e61cbb746c9#a4b61b34"
     }
   },
   "§chat.alignment/reply": {
     "kind": "behavior",
     "code": [
       "pi-config/extensions/mode/minor.ts",
-      "pi-config/extensions/mode/index.ts",
       "pi-config/extensions/mode/align.ts",
       "pi-config/extensions/mode/align.test.ts",
-      "pi-config/extensions/mode/index.test.ts",
+      "pi-config/extensions/mode/modes.test.ts",
       "pi-config/extensions/mode/README.md",
-      "pi-config/extensions/mode/tests/align-turn.mjs",
-      "pi-config/extensions/mode/tests/fixtures/flag-off-master.json"
+      "server/modes/tests/fixtures/align-flag-off-master.json"
     ],
     "requires": [
       "§chat.alignment/model",
@@ -219,7 +210,6 @@
       "pi-config/extensions/mode/README.md",
       "pi-config/README.md",
       "agents/modes/align/overview.md",
-      "pi-config/extensions/mode/index.ts",
       "src/components/AlignmentSettings.tsx",
       "src/lib/alignment-draft.ts"
     ],
@@ -238,7 +228,6 @@
     "evidence": "verified",
     "code": [
       "pi-config/extensions/mode/align.ts",
-      "pi-config/extensions/mode/index.ts",
       "server/transcript.ts",
       "server/align-state.ts",
       "server/align-state.test.ts",
@@ -256,13 +245,12 @@
       "pi-config/extensions/mode/minor.ts",
       "pi-config/extensions/mode/prompt.ts",
       "pi-config/extensions/mode/state.ts",
-      "pi-config/extensions/mode/index.ts",
       "pi-config/extensions/mode/align.ts",
       "pi-config/extensions/mode/align-tool.ts",
       "pi-config/extensions/mode/align-settings.test.ts",
       "pi-config/extensions/mode/align.test.ts",
-      "pi-config/extensions/mode/tests/style-turn.mjs",
-      "pi-config/extensions/mode/README.md"
+      "pi-config/extensions/mode/README.md",
+      "server/modes/engine-rules.test.ts"
     ],
     "requires": [
       "§chat.alignment/settings-file",
@@ -283,15 +271,11 @@
       "pi-config/extensions/mode/align.ts",
       "pi-config/extensions/mode/align-tool.ts",
       "pi-config/extensions/mode/align.test.ts",
-      "pi-config/extensions/mode/index.ts",
-      "pi-config/extensions/mode/tests/smoke.mjs",
-      "pi-config/extensions/mode/tests/align-turn.mjs",
       "pi-config/extensions/mode/align-file.ts",
       "pi-config/extensions/mode/tests/align-old-ops.jsonl",
       "pi-config/extensions/mode/README.md",
-      "pi-config/extensions/mode/tests/fixtures/flag-off-master.json",
-      "pi-config/extensions/mode/index.test.ts",
-      "pi-config/extensions/mode/tests/review-smoke.mjs",
+      "server/modes/tests/fixtures/align-flag-off-master.json",
+      "pi-config/extensions/mode/modes.test.ts",
       "pi-config/extensions/mode/minor.ts",
       "pi-config/extensions/mode/prompt.ts"
     ],
@@ -310,14 +294,10 @@
     "evidence": "verified",
     "code": [
       "pi-config/extensions/mode/align-ui.ts",
-      "pi-config/extensions/mode/index.ts",
-      "pi-config/extensions/mode/palette.ts",
-      "pi-config/extensions/mode/tests/smoke.mjs",
       "pi-config/extensions/mode/align.ts",
       "pi-config/extensions/mode/align.test.ts",
       "server/modes/engine.ts",
-      "server/harness/pi/modes.ts",
-      "server/modes/engine-parity.test.ts"
+      "server/harness/pi/modes.ts"
     ],
     "requires": [
       "§chat.alignment/state",
@@ -336,14 +316,12 @@
     "evidence": "verified",
     "code": [
       "pi-config/extensions/mode/minor.ts",
-      "pi-config/extensions/mode/index.ts",
       "pi-config/extensions/mode/align.ts",
       "pi-config/extensions/mode/align-tool.ts",
       "pi-config/extensions/mode/align-settings.test.ts",
-      "pi-config/extensions/mode/tests/style-turn.mjs",
       "pi-config/extensions/mode/prompt.ts",
       "pi-config/extensions/mode/align.test.ts",
-      "pi-config/extensions/mode/index.test.ts",
+      "pi-config/extensions/mode/modes.test.ts",
       "server/vis-check.ts",
       "server/chat-manager.ts",
       "server/harness/state-kinds.ts",
@@ -352,7 +330,8 @@
       "server/align-launch.test.ts",
       "src/components/AlignDocCard.tsx",
       "src/lib/align.ts",
-      "src/lib/align-card.test.ts"
+      "src/lib/align-card.test.ts",
+      "server/modes/engine-rules.test.ts"
     ],
     "requires": [
       "§chat.alignment/settings-file",
@@ -372,15 +351,12 @@
     "code": [
       "pi-config/extensions/mode/minor.ts",
       "pi-config/extensions/mode/prompt.ts",
-      "pi-config/extensions/mode/index.ts",
       "pi-config/extensions/mode/align.ts",
       "pi-config/extensions/mode/align-tool.ts",
-      "pi-config/extensions/mode/index.test.ts",
+      "pi-config/extensions/mode/modes.test.ts",
       "pi-config/extensions/mode/align.test.ts",
       "pi-config/extensions/mode/README.md",
-      "pi-config/extensions/mode/tests/smoke.mjs",
-      "pi-config/extensions/mode/tests/align-turn.mjs",
-      "pi-config/extensions/mode/tests/fixtures/flag-off-master.json",
+      "server/modes/tests/fixtures/align-flag-off-master.json",
       "pi-config/extensions/mode/align-settings.ts"
     ],
     "requires": [
@@ -402,7 +378,6 @@
     "code": [
       "pi-config/extensions/mode/README.md",
       "pi-config/extensions/mode/align.ts",
-      "pi-config/extensions/mode/index.ts",
       "src/components/AlignmentSettings.tsx",
       "pi-config/extensions/mode/align-settings.ts"
     ],
@@ -410,6 +385,11 @@
       "§chat/alignment-review",
       "§chat/mode-menu",
       "§chat.composer/anatomy"
-    ]
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-13T05:15Z",
+      "source": "pi-session:01a1d023-6988-7481-af78-b02082042586#f37a584f"
+    }
   }
 }

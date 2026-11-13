@@ -1,12 +1,11 @@
 // A chat's align launch record (§chat.alignment-review/flag, §chat.alignment/visuals): adversarial review and
 // Visuals are taken at the chat's first start, written with its first message, and every later start of the
 // same chat gets the same flags — whatever the settings say by then — and so does the web's review gate
-// (the hello's `alignReview`). Real SDK runs, the real mode extension; only the model is a stub.
+// (the hello's `alignReview`). Real SDK runs, Sova's mode engine; only the model is a stub.
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
 import { after, test } from "node:test";
 import type { ChatServerMessage } from "../shared/protocol";
 import { piSession } from "./harness/pi/testing/handle";
@@ -19,7 +18,7 @@ mkdirSync(sessionsDir, { recursive: true });
 mkdirSync(join(agentDir, "sessions", "live"), { recursive: true });
 const cwd = join(agentDir, "cwd");
 mkdirSync(cwd, { recursive: true });
-writeFileSync(join(agentDir, "settings.json"), JSON.stringify({ extensions: [resolve(dirname(fileURLToPath(import.meta.url)), "../pi-config/extensions/mode")] }));
+writeFileSync(join(agentDir, "settings.json"), JSON.stringify({}));
 
 const { acquireChat, disposeAllChats, disposeHeldChat } = await import("./chat-manager");
 const { markOwned } = await import("./write-guard");

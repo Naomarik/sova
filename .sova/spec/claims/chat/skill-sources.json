@@ -41,6 +41,90 @@
       "source": "pi-session:01a1b07d-be49-727f-8989-d4d0378c61bb#55377061"
     }
   },
+  "§chat.skill-sources/project-defaults": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "unreviewed",
+    "requires": [
+      "§app/projects",
+      "§chat.skill-sources/starting",
+      "§chat/subfolder-skills",
+      "§app.mcp/project-servers",
+      "§chat/context-approval"
+    ],
+    "code": [
+      "server/project-skills-store.ts",
+      "server/projects/skills.ts",
+      "server/projects/skills-chats.ts",
+      "server/projects/routes.ts",
+      "shared/project-skills.ts",
+      "src/components/ProjectSkillsCard.tsx",
+      "src/components/ProjectPage.tsx",
+      "src/lib/project-skills.ts",
+      "src/lib/api.ts",
+      "src/projects.css",
+      "server/project-skills.test.ts",
+      "server/project-skills.integration.test.ts",
+      "src/lib/project-skills.test.ts",
+      "server/project-settings.ts",
+      "server/project-settings.test.ts",
+      "server/approvals.ts",
+      "server/approvals-routes.ts",
+      "shared/approvals.ts",
+      "server/approvals.test.ts",
+      "server/skill-descent.ts",
+      "server/session-setup.test.ts"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-12T16:08Z",
+      "source": "pi-session:ec6da819-fb0b-454b-9ba9-97db0affcbfb#723cbddc"
+    }
+  },
+  "§chat.skill-sources/project-new-chats": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "unreviewed",
+    "requires": [
+      "§chat.skill-sources/project-defaults",
+      "§chat.transcript/setup-card-toggles",
+      "§chat.transcript/setup-card-skills",
+      "§chat.context-approval/held-send",
+      "§chat.context-approval/fixed"
+    ],
+    "code": [
+      "server/session-loadout.ts",
+      "server/session-setup.ts",
+      "server/chat-manager.ts",
+      "server/chat-host.ts",
+      "server/chat-runtime/host.ts",
+      "shared/chat-runtime-wire.ts",
+      "shared/chat-runtime.ts",
+      "shared/protocol.ts",
+      "server/harness/pi/deeper-context.ts",
+      "server/harness/pi/session.ts",
+      "pi-config/extensions/subagents/worker-host.ts",
+      "server/projects/skills.ts",
+      "src/components/SessionSetup.tsx",
+      "src/lib/project-skills.ts",
+      "src/lib/api.ts",
+      "src/app.css",
+      "server/project-skills.test.ts",
+      "server/project-skills.integration.test.ts",
+      "server/project-skills-processes.integration.test.ts",
+      "src/lib/project-skills.test.ts",
+      "src/lib/setup-approvals.ts",
+      "server/session-loadout-runtime.test.ts",
+      "server/session-setup.test.ts",
+      "server/skill-descent.ts",
+      "server/chat-host.test.ts"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-12T16:08Z",
+      "source": "pi-session:ec6da819-fb0b-454b-9ba9-97db0affcbfb#723cbddc"
+    }
+  },
   "§chat.skill-sources/rescue": {
     "kind": "behavior",
     "authority": "accepted",
@@ -85,7 +169,7 @@
   "§chat/skill-sources": {
     "kind": "surface",
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "unreviewed",
     "code": [
       "server/skill-sources.ts",
       "server/harness/pi/skill-sources.ts"

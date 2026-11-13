@@ -277,7 +277,8 @@
     "authority": "accepted",
     "evidence": "verified",
     "code": [
-      "src/components/ProjectPage.tsx"
+      "src/components/ProjectPage.tsx",
+      "src/lib/archive-copies.ts"
     ]
   },
   "§design.copy-deck/owner-page": {

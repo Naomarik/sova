@@ -187,9 +187,10 @@ printf 'start-server stub ran: SOVA_BUN=%s args=%s PORT=%s\n' "${SOVA_BUN:-}" "$
 STUB
 printf '// placeholder: the stub bun answers for it\n' > "$seed/scripts/mac-app.ts"
 chmod 755 "$seed/scripts/fetch-bun.sh" "$seed/scripts/start-server.sh"
-# pi-config: two extensions (a directory and a single file), a non-extension file, and the
-# personal config the installer must not install.
-mkdir -p "$seed/pi-config/extensions/alpha" "$seed/pi-config/extensions/gamma"
+# pi-config: two extensions (a directory and a single file), a non-extension file, the mode folder
+# (Sova's mode texts, never linked), and the personal config the installer must not install.
+mkdir -p "$seed/pi-config/extensions/alpha" "$seed/pi-config/extensions/gamma" "$seed/pi-config/extensions/mode"
+printf 'export const x = 1;\n' > "$seed/pi-config/extensions/mode/state.ts"
 printf 'export default function () {}\n' > "$seed/pi-config/extensions/alpha/index.ts"
 printf 'export default function () {}\n' > "$seed/pi-config/extensions/gamma/index.ts"
 printf 'export default function () {}\n' > "$seed/pi-config/extensions/beta.ts"
@@ -423,6 +424,7 @@ check "$(yes_if [ "$(readlink "$ext/alpha")" = "$src/alpha" ])" "extensions: a d
 check "$(yes_if [ "$(readlink "$ext/beta.ts")" = "$src/beta.ts" ])" "extensions: a single-file extension links into the clone"
 check "$(yes_if [ -f "$ext/gamma/index.ts" ])" "extensions: the links resolve"
 check "$(yes_if [ ! -e "$ext/NOTES.md" ])" "extensions: a file that is not an extension is not linked"
+check "$(yes_if [ ! -e "$ext/mode" ] && [ ! -L "$ext/mode" ])" "extensions: the mode folder is not linked"
 check "$(yes_if pi_untouched)" "extensions: pi's settings.json untouched, no other file written"
 for f in models.json keybindings.json vision-delegate.json; do
 	check "$(yes_if [ ! -e "$home/.pi/agent/$f" ])" "extensions: no personal $f"
@@ -440,6 +442,8 @@ mkdir -p "$ext/alpha" "$home/elsewhere" "$home/.pi/agent/sova"
 printf 'mine\n' > "$ext/alpha/index.ts"
 printf 'mine too\n' > "$home/elsewhere/beta.ts"
 ln -s "$home/elsewhere/beta.ts" "$ext/beta.ts"
+mkdir -p "$home/elsewhere/mode"
+ln -s "$home/elsewhere/mode" "$ext/mode"
 printf '{"version":1,"experimental":{"claudeCodeProvider":false}}\n' > "$home/.pi/agent/sova/settings.json"
 inst
 check "$([ "$status" -eq 0 ] && echo true || echo false)" "foreign extensions: exits 0"
@@ -449,9 +453,42 @@ check "$(yes_if [ "$(readlink "$ext/beta.ts")" = "$home/elsewhere/beta.ts" ])" \
 	"foreign extensions: a link to elsewhere is kept"
 check "$(yes_if said 'skipped the alpha extension')" "foreign extensions: names the skipped directory"
 check "$(yes_if said 'skipped the beta.ts extension')" "foreign extensions: names the skipped link"
+check "$(yes_if [ "$(readlink "$ext/mode")" = "$home/elsewhere/mode" ])" "foreign extensions: a mode link into a tree that isn't Sova is kept"
 check "$(yes_if [ -L "$ext/gamma" ])" "foreign extensions: the others are still linked"
 check "$(yes_if grep -q '"claudeCodeProvider":false' "$home/.pi/agent/sova/settings.json")" \
 	"foreign extensions: an existing Sova settings file is kept as it was"
+
+# 13b. A link into another copy of Sova (an older checkout or install: package.json names it sova, it has
+#     pi-config/install.sh) is pointed at this install, and the installer says so; a link of the same shape
+#     into a tree that is not Sova is kept, and its extension skipped.
+fresh_home other-sova-copy
+ext=$home/.pi/agent/extensions
+old=$home/webapps/sova
+mkdir -p "$ext" "$old/pi-config/extensions/alpha" "$old/pi-config/extensions/gamma"
+printf '{\n  "name": "sova",\n  "version": "0.9.0"\n}\n' > "$old/package.json"
+printf '#!/bin/sh\n' > "$old/pi-config/install.sh"
+printf 'old\n' > "$old/pi-config/extensions/alpha/index.ts"
+mkdir -p "$home/notsova/pi-config/extensions/gamma"
+printf '{"name":"other"}\n' > "$home/notsova/package.json"
+printf '#!/bin/sh\n' > "$home/notsova/pi-config/install.sh"
+ln -s "$old/pi-config/extensions/alpha" "$ext/alpha"
+ln -s "../../../webapps/sova/pi-config/extensions/beta.ts" "$ext/beta.ts"
+ln -s "$home/notsova/pi-config/extensions/gamma" "$ext/gamma"
+mkdir -p "$old/pi-config/extensions/mode"
+ln -s "$old/pi-config/extensions/mode" "$ext/mode"
+inst
+src=$home/.local/share/sova/pi-config/extensions
+check "$([ "$status" -eq 0 ] && echo true || echo false)" "other Sova copy: exits 0"
+check "$(yes_if [ "$(readlink "$ext/alpha")" = "$src/alpha" ])" "other Sova copy: its link now leads into this install"
+check "$(yes_if said "relinked $ext/alpha (was $old/pi-config/extensions/alpha, another Sova copy)")" \
+	"other Sova copy: says it relinked, and from where"
+check "$(yes_if [ "$(readlink "$ext/beta.ts")" = "$src/beta.ts" ])" "other Sova copy: a relative link (dangling there) is relinked too"
+check "$(yes_if [ "$(readlink "$ext/gamma")" = "$home/notsova/pi-config/extensions/gamma" ])" \
+	"other Sova copy: a link into a tree that is not Sova is kept"
+check "$(yes_if said 'skipped the gamma extension')" "other Sova copy: names the skipped one"
+check "$(yes_if [ "$(cat "$old/pi-config/extensions/alpha/index.ts")" = old ])" "other Sova copy: the other copy itself is untouched"
+check "$(yes_if [ ! -e "$ext/mode" ] && [ ! -L "$ext/mode" ])" "other Sova copy: its mode link is removed, never relinked"
+check "$(yes_if said "removed $ext/mode (links to another Sova copy")" "other Sova copy: says it removed the mode link"
 
 # 14. --no-extensions links nothing and writes nothing in the agent dir.
 run_install no-extensions --no-extensions
@@ -488,6 +525,7 @@ check "$(yes_if said 'unchanged and running')" "rerun, same inputs: says the ser
 # 17. A new commit rebuilds, restarts the running service, and drops our link to an extension
 #     that version no longer has.
 git -C "$seed" -c user.email=t@t -c user.name=t rm --quiet -r pi-config/extensions/gamma
+ln -s "$home/.local/share/sova/pi-config/extensions/mode" "$home/.pi/agent/extensions/mode"
 git -C "$seed" -c user.email=t@t -c user.name=t commit --quiet -m 'drop gamma'
 git -C "$seed" branch --quiet next
 git -C "$seed" reset --quiet --hard v0.1.0
@@ -498,6 +536,8 @@ check "$(yes_if [ -s "$case_dir/pnpm.log" ])" "new commit: rebuilt"
 check "$(yes_if [ ! -e "$home/.pi/agent/extensions/gamma" ] && [ ! -L "$home/.pi/agent/extensions/gamma" ])" \
 	"new commit: our link to the removed extension is gone"
 check "$(yes_if [ -L "$home/.pi/agent/extensions/alpha" ])" "new commit: the other links stay"
+check "$(yes_if [ ! -e "$home/.pi/agent/extensions/mode" ] && [ ! -L "$home/.pi/agent/extensions/mode" ])" \
+	"new commit: an older version's link to the mode folder is gone"
 check "$(yes_if grep -q 'restart sova.service' "$case_dir/svc.log")" "new commit: the running service restarted"
 
 # 18. systemd: --service writes a unit with the port, a PATH that finds brew and ~/.local/bin, and

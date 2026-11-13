@@ -1042,8 +1042,14 @@ Public tour titles, summaries, step/view explanations, callouts and reference te
   ({titles})" (while placed: a baton session or offer of the project not done or closed, the
   phrase the org contributes), "{n} coding session(s)
   running ({titles})" (a coding session of the project that is mid-turn or has workers
-  running) and "its overseer is working" (a turn of its overseer is running). Nothing is written.
+  running) and "its overseer is working" (a turn of its overseer is running), and "{n} cop(y/ies)
+  running ({names})" ("1 copy running (Main copy)", "2 copies running (Main copy; feat/x,
+  restarting)") while copies of it run or wait to start again, with those copies listed
+  (§app.organizations/archive-copies). Nothing is written. Unarchiving starts no copy: the operator
+  starts each again by hand.
 - **While archived:**
+  - its copies are not started, and those that still run are shown with their Stop, its shared
+    services' Stop on the banner (§app.organizations/archive-copies);
   - its overseer is paused: the watch loop starts nothing for it and its reasons wait
     (§app.project-overseer/watch-loop), Run Now and a message to it (its composer, the global
     Overseer's route) are refused with "{project} is archived. Unarchive it to use its overseer.",
@@ -1069,10 +1075,70 @@ Public tour titles, summaries, step/view explanations, callouts and reference te
   looking. Nothing is deleted; Unarchive brings it back." (`Archive Project` · `Cancel`); a refusal
   shows under it in the server's words. Archived, the page shows an info banner, "{project} was
   archived {when}. Its overseer is paused and nothing new starts here. Nothing was deleted."
-  ("… archived by you, via the Overseer {when} …" for a `via` record), with **Unarchive**, and the
+  ("… archived by you, via the Overseer {when} …" for a `via` record), with **Unarchive** (and
+  **Stop Shared Services** while its shared services run, §app.organizations/archive-copies), and the
   start gestures (Start Overseer, Run Now, Start Coding Session, New Coding Session, Send to
   person…) are disabled with
   the reason "Archived". Copy: §design.copy-deck/overseer-orgs.
+
+## §app.organizations/archive-copies — Archiving a project with running copies
+
+- **What blocks.** A copy of the project (§app.project-services/instances) blocks archiving while a
+  service of it runs, starts, or is failing and waits to be started again (`activating`/auto-restart,
+  within the restart limit of §app.project-services/supervisor); the project's shared services
+  that run block it the same way, as one entry. The server counts them itself, so no path archives
+  around the confirm. `GET /api/projects/:pid/running-copies` lists them, `{copies}`, one entry per
+  copy and one for the shared services: its name ("Main copy", its branch, its checkout's folder,
+  or "Shared services"), the services it runs, each `running`, `starting` or `restarting`, and the
+  `down` that stops it with its data kept, or none, with `why`, where Sova can't stop it. The
+  shared services' entry always carries the project's shared down, `{project, shared: true,
+  confirm: true}` (§app.project-services/down), which needs no copy: it stops them when no copy of
+  the project is left, and while the project is archived. The
+  archive refusal (§app.organizations/archive) carries the same `copies`. A main copy that runs as
+  an adopted unit (§app.project-services/adopt) is listed as running outside Sova and never blocks.
+- **The confirm.** While anything is listed, the archive ask (the head's ⋯ or the Danger zone, where
+  it was pressed) shows under its sentence "This still runs. Stop it to archive the project; its
+  data stays." (or "These still run. Stop them …; their data stays."), then one row per entry: its
+  name, a chip (Running, Starting, or Restarting while a service fails and waits to start again)
+  and what it runs, its service names in mono. The list is read every 2 s while the ask is open,
+  and again after each stop; a 409 refusal's `copies` replace it at once, the server's sentence
+  under the ask as before. **Archive Project** is unavailable while a blocking entry is listed, its
+  reason "Stop the running copy first" ("Stop the {n} running copies first"; "Reading what runs"
+  before the first read). While what runs can't be read, it stays unavailable, its reason "Couldn't
+  read what runs", and "Couldn't read what runs. {error}" shows under the ask; a server without the
+  read (404) counts as nothing listed. **Cancel** closes the ask without archiving.
+- **Stop Running Copies** stops each entry Sova can stop, one at a time, with its `down`
+  (§app.project-services/down) as the operator: the click confirms what otherwise asks (the main
+  copy, shared services, a copy with share links); data, slot and worktree stay. The shared
+  services stop with their own entry's down, through no copy, and stay stopped after a restart of
+  Sova. It reads "Stopping
+  {i} of {n}…" while it works, then announces "Stopped {n} copies." or "Stopped {k} of {n}. {m}
+  didn't stop; its reason is on its row." A copy that didn't stop stays listed with the engine's
+  sentence under it. An adopted main reads "Runs outside Sova; stop it yourself.", with no Stop, and
+  doesn't block; any other entry Sova can't stop shows its `why`, still blocks, and is skipped.
+- **While archived**, its copies are not started: `create`, `up`, `apply`, `test` and `reset` of any
+  of them are refused before anything changes, `refused-archived` ("This project is archived;
+  unarchive it first"), whoever calls, Sova's own onMerge apply included (§app.project-services/up,
+  /on-merge); `down`, `status`, `logs`, `teardown`, `doctor` and `share` still run. A copy that
+  still runs then (one archived before this rule) is left running: nothing stops it, and the
+  server's start neither starts nor stops anything of the project (§app.project-services/reconcile). The archived banner
+  says so while one runs: "1 copy of it still runs. Stop it on Branches." ("{n} copies of it still
+  run. Stop them on Branches.", "1 copy and its shared services still run. Stop the copy on
+  Branches.", "{n} copies and its shared services still run. Stop the copies on Branches.", "Its
+  shared services still run."), Branches a link to the tab, read every 15 s, an adopted main not
+  counted. While its shared services run, the banner has **Stop Shared Services** (destructive)
+  beside Unarchive, since they may run with no copy to show them on Branches: the first press arms
+  it, reading **Confirm Stop** (leaving the button disarms it), the second stops them with their
+  entry's down, reading "Stopping…" meanwhile, then announces "Stopped its shared services."; a
+  refusal shows under the banner in the engine's words ("Couldn't reach the engine. {error}" when
+  it can't be reached). (A server whose shared entry has no down gets "Its shared services still
+  run. Stop them on Branches." and no button.) The Branches tab (§app.project-services/services-ui) reads
+  "Archived: its copies can be stopped or torn down, not started. Unarchive it to start one." and
+  offers each copy only Stop (running or degraded), Logs and Teardown (not the main copy), and each
+  shared service only Stop; Start, Apply, Reset, Share and Start Main are not shown. Existing share
+  links can still be deleted. A refused verb that gets through shows the engine's sentence under
+  its row.
+- **Unarchiving** starts no copy: each is started again by hand. Copy: §design.copy-deck/overseer-orgs.
 
 ## §app.organizations/stakeholder — A project's main stakeholder
 

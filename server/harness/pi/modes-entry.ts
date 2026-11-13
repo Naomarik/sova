@@ -1,5 +1,6 @@
-// The engine as a loadable extension file: what the loader's in-place rewrite (own-code.ts modesEntries/modeFileOf)
-// answers for a discovered or listed pi-config `mode` extension while Sova runs chat modes.
+// The engine as a loadable extension file: what the loader puts in every discovering chat's mode slot
+// (own-code.ts ownExtensions: a discovered `mode` extension's place, or added when there is none) and in a
+// worker's listed mode slot (workerModePaths).
 import type { PiExtensionAPI } from "./extension-types";
 import { modesExtension } from "./modes";
 import { personalModesSource } from "../../modes/registry";

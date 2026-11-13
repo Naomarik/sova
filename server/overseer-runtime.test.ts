@@ -11,8 +11,7 @@
 import assert from "node:assert/strict";
 import { existsSync, mkdirSync, mkdtempSync, realpathSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join, resolve } from "node:path";
 import { after, before, describe, test } from "node:test";
 import type { ChatServerMessage } from "../shared/protocol";
 import { piRuntime, piSession } from "./harness/pi/testing/handle";
@@ -63,12 +62,12 @@ writeFileSync(
 }
 `,
 );
-// Automatic retries without the 2 s back-off. And this repo's mode extension (by its real path, so
-// its imports of sibling extensions resolve), so a mode sova_create_session sets is really applied.
+// Automatic retries without the 2 s back-off. Sova's mode engine runs in every chat
+// (no settings entry), so a mode sova_create_session sets is really applied.
 // No mode.json: the default is normal with no minor modes.
 writeFileSync(
   join(agentDir, "settings.json"),
-  JSON.stringify({ retry: { baseDelayMs: 1 }, extensions: [resolve(dirname(fileURLToPath(import.meta.url)), "../pi-config/extensions/mode")] }),
+  JSON.stringify({ retry: { baseDelayMs: 1 } }),
 );
 mkdirSync(join(agentDir, "prompts"), { recursive: true });
 writeFileSync(join(agentDir, "prompts", "mk.md"), "---\ndescription: make a session\n---\nCreate one empty session titled $1.\n");

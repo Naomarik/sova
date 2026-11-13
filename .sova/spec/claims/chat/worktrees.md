@@ -202,25 +202,28 @@ A **pi** worker started inside an active worktree writes only inside that worktr
 dirs, §chat.sandbox/what-on-enforces) unless the session's sandbox is Off
 (§chat.sandbox/states): under On its sandbox scope is narrowed to the worktree; under Subagents
 only it starts under the sandbox in **write-only** confinement: its writes go only to the
-worktree, its git dirs and a private scratch tmp (and the sandbox's private copies of the host
-caches). Its reads are the host's, no secret is hidden, the network is the host's (its resolver
+worktree, its git dirs, a private scratch tmp, its chat's shared folder (§chat.sandbox/shared-folder)
+and the sandbox's private copies of the host caches and toolchain homes
+(§chat.sandbox/what-on-enforces). Its reads are the host's, no secret is hidden, the network is the host's (its resolver
 included) and the environment is passed as it is, but for `TMPDIR` (below) and the
 sandbox's own git config, `GIT_CONFIG_SYSTEM` (§chat.sandbox/git-cleanup). No policy file is read
 for it, except that it gets the parent's `browser` setting (§chat.sandbox/policy-file): the parent
 reads its own policy file and its cwd's project file when the worker starts, and a file it cannot
 read means no browser, never a refused start.
 
-- **`/tmp`.** On Linux it sees the host's `/tmp` read-only, so a file another session wrote
-  there (a brief) is readable, and every Unix socket found there as its command or its process
-  starts reads as an empty file, so it cannot drive a terminal multiplexer, an ssh agent or
-  another service through one. The sockets are found in the kernel's list of bound sockets
-  (`/proc/net/unix`), so how many files `/tmp` holds does not matter, and in a shallow scan of
-  `/tmp` and the folders directly in it. `TMPDIR` points at its private scratch, which is where
-  Claude Code and other tools that honour it keep their temp files; a tool that writes a literal
-  `/tmp` path fails with "Read-only file system". When that list cannot be read, or cannot be
-  read unambiguously (a socket path with a line break in it, or one bound by a relative path),
-  its `/tmp` is the private scratch instead. On macOS Seatbelt never remapped `/tmp`: the host's
-  is readable there, as before.
+- **`/tmp`.** On Linux it gets a private `/tmp`, as under On (§chat.sandbox/what-on-enforces):
+  its commands see only its own scratch mounted at `/tmp`, writable, and `TMPDIR` is `/tmp`, so a
+  tool that writes a literal `/tmp` path (pnpm's locks, tmux's socket folder, a pid file) works,
+  and a Unix socket made there fits the path limit. Its commands never see the host's `/tmp`, so
+  no host service listening on a socket there (a terminal multiplexer, an ssh agent) is reachable
+  from them, and nothing they write there reaches another chat. Its file tools map `/tmp` to that
+  same private `/tmp` (§chat.sandbox/what-on-enforces): every write goes there, and a read (`read`,
+  `ls`, `find`, `grep`) goes there when the private `/tmp` holds the path, else falls back to the
+  host's `/tmp`, so a brief another session left there stays readable to the file tools, never to
+  its commands. A file meant for another chat goes in the shared folder,
+  never `/tmp` (§chat.sandbox/limits). On macOS Seatbelt never remaps `/tmp`: the host's is
+  readable there, a write to a literal `/tmp` path stays refused ("Operation not permitted"), and
+  `TMPDIR` points at its private scratch.
 - **Still a sandbox.** `/run` is empty, so the Docker socket and the user's D-Bus and systemd are
   gone, and the worker runs in a user namespace, where root-owned files belong to the overflow
   user: ssh refuses a root-owned config file ("Bad owner or permissions"; `ssh -F /dev/null`
@@ -241,20 +244,19 @@ By default a worker runs on the session's agent dir. `agent_spawn {useWorktreeCo
 valid only for a pi worker whose cwd is inside an active worktree that has a `.agent`
 directory, runs it on `<worktree>/.agent` instead: `PI_CODING_AGENT_DIR` points there, its
 session file is still written in the parent's sessions directory (so Sova shows its
-transcript), that tree's `mode` extension (its real path must be a mode extension) is loaded
-explicitly in normal mode, with the spec minor mode only while the chat that started it has spec
-on, and the project is trusted for the run (`--approve`). A Claude Code worker, being a pi worker, may use it too. It is refused outside an
+transcript), it runs in normal mode, with the spec minor mode only while the chat that started it
+has spec on, and the project is trusted for the run (`--approve`). A Claude Code worker, being a pi worker, may use it too. It is refused outside an
 active tracked worktree, or when the worktree has no `.agent`. Extension discovery stays off, and
 the tree's subagents and worktrees extensions are never loaded. The model policy is still the
 parent's. The choice is recorded with the worker, so a resume applies it again.
 
-While Sova runs chat modes (§chat.mode-menu/sova-runs-modes), no mode extension is loaded from the
-tree and none needs to be there: Sova gives the worker its modes itself, exactly as the next
-paragraph says the tree's extension does. With the switch off, the tree's own extension is loaded as
-above.
+No mode extension is loaded from the tree and none needs to be there: Sova gives the worker its
+modes itself (§chat.mode-menu/sova-runs-modes) whenever Sova started it, whatever the tree's
+`.agent` holds, and it no longer looks at what its parent announces about its modes. A worker the
+pi terminal starts, with no Sova behind it, has no modes (§chat.mode-menu/terminal): it loads no
+mode extension from the tree, needs none there, and gets no mode flags. Its spec tools are the tree's own (§tools.spec/mode-reading).
 
-That mode extension knows it runs in a worker (the worker marker tells it on the extension bus,
-so an older tree's extension just doesn't hear it): it ignores the `mode` snapshots a `fork` copied
+Sova's modes know they run in a worker: they ignore the `mode` snapshots a `fork` copied
 from the parent's branch and the tree's `mode.json`, so the worker is always in normal mode and
 never strict, with spec as the chat that started it has it when the worker starts or resumes; it is
 never offered a spec writer; and its spec block, when it has one, is the worker form
@@ -381,8 +383,8 @@ none of them. A branch with no commit left but such a draft still has something 
 lands just the drafts (§app.merge-queue/approve).
 
 **How recently it landed doesn't matter.** The answer doesn't depend on when the branch landed, how
-many landings came after it or which landings the queue's view still shows: it reads every entry the
-queue has, and a host's landing is kept past its entry (per branch the newest 8, for the newest 500
+many landings came after it or which landings the queue's view still shows: it reads every entry in
+the queue's list (its open entries and newest 60 finished ones, §app.merge-queue/history), and a host's landing is kept past its entry (per branch the newest 8, for the newest 500
 branches); one from before they were kept is read in at load, from its landed entries still there. So it never changes by itself as newer landings
 arrive. Only a new commit on the branch or an edited draft changes it.
 

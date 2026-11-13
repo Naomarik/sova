@@ -56,7 +56,7 @@ import { deliverFrames, framesDraft, postedFrames, POSTED_FRAMES_MAX } from "./w
 import { COMPOSER_HEADER, type NewSessionBody, type SessionPromptBody } from "../shared/wire-areas";
 import { mountWritingGate, refusedAnswer, writingRefused } from "./wire-gate";
 import { mountChatActions } from "./chat-actions";
-import { acquireChatHandle, type ChatHandle, chatHandle, chatHandleById, chatHandles, chatModesSwitched, getModelRuntime, ModeRefusedError, setOpeningChoice } from "./chat-handle";
+import { acquireChatHandle, type ChatHandle, chatHandle, chatHandleById, chatHandles, getModelRuntime, ModeRefusedError, setOpeningChoice } from "./chat-handle";
 import { restorePick } from "../pi-config/extensions/subagents/subagent-profiles.ts";
 import { canonicalPath, resolveSessionPath, SESSIONS_DIR } from "./paths";
 import { agentRoot, stateRoot } from "./state-root";
@@ -94,7 +94,9 @@ import { realRetireDeps, removeFinished, restoreRetired } from "./worktree-retir
 import { retirementViewOf } from "./worktree-retire-view";
 import { cleanupAnswer, pendingWhileOff, removeGate, summaryWhileOff, viewWhileOff } from "./cleanup-switch";
 import type { WorktreeRestoreRequest } from "../shared/protocol";
-import { applyLoadout, getSessionSetup, readSetupFile } from "./session-setup";
+import { applyLoadout, getSessionSetup, readSetupFile, waitingForSession } from "./session-setup";
+import { notPageNorProven } from "./mesh/click-proof";
+import { OrgError } from "./org-error";
 import { getContextView } from "./context-tab";
 import { getSessionTools } from "./session-tools";
 import { isOrgSession, ORG_NOT_GROUPED } from "./org-sessions";
@@ -186,7 +188,7 @@ import { routeOpName } from "./stall-recorder-route";
 import { opEnd, opStart, stallRecording } from "./stall-recorder";
 import { authGate, CALLER_HEADER, extensionCaller, isExtensionKey, SERVER_HEADER, TOKEN_HEADER, unlock, pair, revealToken, setExtensionKeyCheck } from "./auth";
 import { localRequest } from "./mesh/proxy";
-import { notPage, pageOnlyRefusal, yourClickBody, yourClickRefusal } from "./page-only";
+import { notPage, pageOnlyRefusal, personWatching, yourClickBody, yourClickRefusal } from "./page-only";
 import { registerProjectSettingsRoutes } from "./project-settings-routes";
 import { registerSovaSettingsRoutes } from "./sova-settings-routes";
 import { setSovaSettingsDeps } from "./sova-settings";
@@ -665,7 +667,7 @@ export function buildApp(deps: AppDeps) {
     if (typeof body.text !== "string") return c.json({ error: "text must be a string" }, 400);
     if (body.members !== undefined && (!Array.isArray(body.members) || body.members.some((m) => typeof m !== "string")))
       return c.json({ error: "members must be an array of session ids" }, 400);
-    const r = await promptGroup(c.req.param("id"), body.text, body.members as string[] | undefined);
+    const r = await promptGroup(c.req.param("id"), body.text, body.members as string[] | undefined, undefined, personWatching(c));
     if (r.ok) return c.json(r.result);
     return r.status === 409 ? c.json({ refused: r.refused }, 409) : c.json({ error: r.error }, r.status);
   });
@@ -1075,13 +1077,47 @@ export function buildApp(deps: AppDeps) {
   // Switch a new session's context files and skills off or on (§chat.transcript/setup-card-toggles):
   // the whole off set, written as the session's hidden `sova-loadout` entry; the runtime is rebuilt
   // and the answer is the card's fresh read. 409 once a message is sent, mid-turn, TUI-live, etc.
+  // Turning on a row the folder keeps off (disallowed, or waiting while asking first) is the operator's page
+  // alone, here or a proven click from another of their computers (§chat.context-approval/who).
   app.post("/api/sessions/loadout", async (c) => {
-    const body = (await c.req.json().catch(() => null)) as { path?: unknown } | null;
+    const raw = await c.req.text().catch(() => "");
+    let body: { path?: unknown } | null = null;
+    try {
+      body = JSON.parse(raw) as { path?: unknown } | null;
+    } catch {
+      body = null;
+    }
     const path = resolveSessionPath(typeof body?.path === "string" ? body.path : null);
     if (!path) return c.json({ error: "Invalid or missing path" }, 400);
     if (!existsSync(path)) return c.json({ error: "Session file not found" }, 404);
-    const r = await applyLoadout(path, body);
-    return r.ok ? c.json(r.setup) : c.json({ error: r.error }, r.status);
+    const page = !(await notPageNorProven(c, raw));
+    const r = await applyLoadout(path, body, { page });
+    return r.ok ? c.json(r.setup) : c.json({ error: r.error, ...(r.yourClick ? { yourClick: true } : {}) }, r.status);
+  });
+
+  // Approve or Disallow one context file or skill of a chat's folder, by its file (a chat's "wasn't loaded" line):
+  // saved in the folder's list, and an approval joins a started asking chat's list (§chat.context-approval/mid-chat).
+  // Approving is the operator's page alone, here or a proven click from another of their computers.
+  app.post("/api/sessions/approval", async (c) => {
+    const raw = await c.req.text().catch(() => "");
+    let body: { path?: unknown; state?: unknown } | null = null;
+    try {
+      body = JSON.parse(raw) as { path?: unknown; state?: unknown } | null;
+    } catch {
+      body = null;
+    }
+    const path = resolveSessionPath(typeof body?.path === "string" ? body.path : null);
+    if (!path) return c.json({ error: "Invalid or missing path" }, 400);
+    if (!existsSync(path)) return c.json({ error: "Session file not found" }, 404);
+    if (body?.state === "approved" && (await notPageNorProven(c, raw)))
+      return c.json({ error: "Only you can approve a context file or skill: press Approve in Sova's page. Nothing was approved.", yourClick: true }, 403);
+    try {
+      const by = { kind: "operator" as const, via: c.req.header("x-sova-token") !== undefined ? ("script" as const) : ("page" as const) };
+      return c.json(await (await import("./approval-in-chat")).approveInChat(path, body, by));
+    } catch (err) {
+      if (err instanceof OrgError) return c.json({ error: err.message }, err.status);
+      throw err;
+    }
   });
 
   app.get("/api/models", async (c) => c.json(await listModels()));
@@ -1167,11 +1203,8 @@ export function buildApp(deps: AppDeps) {
     } catch {
       return c.json({ error: "Expected JSON body { experimental?: { ... }, alignment?: { ... } }" }, 400);
     }
-    const before = readWebSettings().experimental.sovaModes;
     const result = writeWebSettings(body);
     if ("error" in result) return c.json({ error: result.error }, 400);
-    // "Sova runs chat modes" changed (§chat.mode-menu/sova-runs-modes): open chats follow at their next quiet moment.
-    if (result.experimental.sovaModes !== before) chatModesSwitched(result.experimental.sovaModes);
     return c.json(result);
   });
 
@@ -2048,6 +2081,12 @@ export function buildApp(deps: AppDeps) {
       const got = await chatFor(path);
       if ("error" in got) return c.json({ error: got.error }, got.status);
       if (sandboxLowers((await got.chat.sandboxInfo())?.state, asked)) return c.json(yourClickBody("sandbox", notPage(c) ?? "script"), 403);
+    }
+    // A watched page's first message (this computer's or another's) into a chat that asks first waits until nothing is left to decide; a program's never
+    // does (§chat.context-approval/held-send).
+    if (personWatching(c)) {
+      const waiting = await waitingForSession(path).catch(() => 0);
+      if (waiting > 0) return c.json({ error: `Approve or disallow ${waiting === 1 ? "1 context file or skill" : `${waiting} context files and skills`} to send.`, code: "decide-first", waiting }, 409);
     }
     const r = await promptSession(path, body.text, overseerSender(c.req.header(OVERSEER_SENDER_HEADER)), body.delivery, undefined, undefined, extensionSenderOf(c));
     return r.ok ? c.json({ ok: true, queued: r.queued, kind: r.kind, ...(r.compacting ? { compacting: true } : {}) }) : c.json({ error: r.error }, r.status);

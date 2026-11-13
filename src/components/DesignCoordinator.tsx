@@ -148,7 +148,7 @@ export function DesignAskPanel(props: { ask: DesignAsk; store: DesignStore }) {
   const formFields = () => (props.ask.kind === "sign-in" ? props.ask.fields : props.ask.kind === "test-account" ? ["username", "password"] : null);
   const ready = () => (formFields() ?? []).every((f) => (fields()[f] ?? "").trim() !== "");
   return (
-    <div class="design-ask" role="group" aria-label="The coordinator needs your say">
+    <div class="design-ask" role="group" aria-label="The Creative Director needs your say">
       <p>{props.ask.text}</p>
       <Show when={props.ask.kind === "site" && props.ask.origin}>{(o) => <code>{o()}</code>}</Show>
       <Show
@@ -199,14 +199,14 @@ export function DesignAskPanel(props: { ask: DesignAsk; store: DesignStore }) {
   );
 }
 
-/** What the coordinator has concluded and made so far, with a box to prompt it further. */
+/** What the Creative Director has concluded and made so far, with a box to prompt it further. */
 export function DesignCoordinatorPanel(props: { coordinator: DesignCoordinatorInfo; view: DesignChatView | null; store: DesignStore; onOpen?(): void; bare?: boolean; /** Only its status and its box: during the brief, its words are on the brief and its question lays over it. */ strip?: boolean }) {
   const tracking = () => props.view?.designs.length ?? 0;
   return (
     <div class="design-coordinator" classList={{ "design-coordinator-bare": props.bare }}>
       <div class="design-coordinator-head">
         <strong class="design-coordinator-title" classList={{ "visually-hidden": props.bare }}>
-          Coordinator
+          Creative Director
         </strong>
         <Chip live={props.coordinator.status === "running" || props.coordinator.status === "starting"} tone={props.coordinator.status === "running" ? "accent" : undefined}>
           {tracking() > 0 ? `Tracking ${tracking()} designs` : STATUS_WORD[props.coordinator.status]}
@@ -227,15 +227,15 @@ export function DesignCoordinatorPanel(props: { coordinator: DesignCoordinatorIn
       </Show>
       <Show when={props.bare}>
         <div class="design-box-status">
-          <DesignDeliveryLine delivery={props.coordinator.delivery} name="the coordinator" />
+          <DesignDeliveryLine delivery={props.coordinator.delivery} name="the Creative Director" />
         </div>
       </Show>
       <Show when={!props.bare}>
         <DesignMessageBox
-          label="Message the coordinator"
-          placeholder={props.strip ? "Tell the coordinator what to change" : "Message the coordinator"}
+          label="Message the Creative Director"
+          placeholder={props.strip ? "Tell the Creative Director what to change" : "Message the Creative Director"}
           delivery={props.coordinator.delivery}
-          name="the coordinator"
+          name="the Creative Director"
           send={(text, key, images) => props.store.api.coordinatorMessage(text, key, images)}
           upload={props.store.api.uploadImage}
           onSent={() => props.store.refresh()}

@@ -1,6 +1,11 @@
-import { createEffect, createMemo, createSignal, For, Match, on, onCleanup, Show, Switch } from "solid-js";
-import type { GitSummary, SessionSetup } from "../../shared/protocol";
-import { fetchSessionSetup, fetchSessionTools, fetchSetupFile, setSessionLoadout } from "../lib/api";
+import { batch, createEffect, createMemo, createSignal, For, Index, Match, on, onCleanup, Show, Switch, untrack } from "solid-js";
+import type { GitSummary, SessionSetup, SessionSetupFile } from "../../shared/protocol";
+import { fetchSessionSetup, fetchSessionTools, fetchSetupFile, setFolderApprovals, setSessionLoadout } from "../lib/api";
+import { ABOVE_PROJECT, ACTION_DECISION, ACTION_WORD, APPROVE_ALL, approveNotice, CHANGED_LINE, PARTIAL_FINGERPRINT_LINE, decideAll, DISALLOW_ALL, itemsPhrase, REVIEW, rowActions, WAITING_LINE, type Approval, type Decision } from "../lib/approvals";
+import { acked, begin, EMPTY, failed, inOrder, pendingAny, queueOf, setupHold, readLanded, type Overlay } from "../lib/approval-overlay";
+import { offWords, rowApproval, type Row } from "../lib/setup-approvals";
+import { askReread, rereadAsked, reviewAsked, setHold } from "../lib/approval-hold";
+import { FolderApprovalsDialog } from "./FolderApprovalsDialog";
 import { mcpFlips, NOT_PROJECT, setupLine, setupOffLine, setupShows, setupSwitchLabel, setupTokens, SETUP_LABEL } from "../lib/mcp";
 import { openMarkdown } from "../lib/markdown-viewer";
 import { loadGitSummary, UPSTREAM_TITLE } from "../lib/git-summary";
@@ -39,6 +44,8 @@ import { Icon } from "./ui";
 import type { SetupMcp } from "../../shared/mcp";
 
 type Answer<T> = { ok: T } | { error: string };
+/** After a saved decision's read failed, the one more read's wait. */
+const REREAD_MS = 1500;
 
 /**
  * The setup card of a new, empty session: what pi loads into
@@ -66,6 +73,22 @@ export function SessionSetupCard(props: { path: string; editable?: boolean; tool
   let run = 0;
   let rev = 0;
   const settle = <T,>(p: Promise<T>): Promise<Answer<T>> => p.then((ok) => ({ ok }), (err: Error) => ({ error: err.message }));
+  // Decisions shown at the click while their save runs (lib/approval-overlay); `reads` numbers the
+  // loadout reads started, so only a read that began after a save answered retires its rows.
+  const [overlay, setOverlay] = createSignal<Overlay>(EMPTY);
+  let reads = 0;
+  let saves = 0;
+  const readSetup = (p: string, fresh?: boolean): Promise<{ answer: Answer<SessionSetup>; n: number }> => {
+    const n = ++reads;
+    return settle(fresh ? fetchSessionSetup(p, true) : fetchSessionSetup(p)).then((answer) => ({ answer, n }));
+  };
+  /** A later read's answer, drawn in place: the rows stay mounted and only what changed redraws. */
+  const draw = (next: Answer<SessionSetup>, n: number) =>
+    batch(() => {
+      rev++;
+      setSetup(next);
+      setOverlay((o) => readLanded(o, n));
+    });
   // The Tools group's reads (§chat.transcript/setup-card-tools): the first is one of the card's three;
   // later ones redraw only the group, an older answer never over a newer one.
   const tools = createToolsReads(fetchSessionTools);
@@ -76,10 +99,14 @@ export function SessionSetupCard(props: { path: string; editable?: boolean; tool
       const mine = ++run;
       const seen = rev;
       setLanded(false);
+      setOverlay(EMPTY);
       tools.reset();
-      void Promise.all([settle(fetchSessionSetup(p)), settle(loadGitSummary(p)), tools.read(p)]).then(([s, g]) => {
+      void Promise.all([readSetup(p), settle(loadGitSummary(p)), tools.read(p)]).then(([{ answer: s, n }, g]) => {
         if (mine !== run) return;
-        if (seen === rev) setSetup(s);
+        if (seen === rev) {
+          setSetup(s);
+          setOverlay((o) => readLanded(o, n));
+        }
         setGit(g);
         setLanded(true);
       });
@@ -104,10 +131,9 @@ export function SessionSetupCard(props: { path: string; editable?: boolean; tool
       const s = setup();
       if (s && "ok" in s && s.ok.state === "ok" && s.ok.toggleable) return;
       const mine = run;
-      void settle(fetchSessionSetup(path(), true)).then((next) => {
+      void readSetup(path(), true).then(({ answer: next, n }) => {
         if (mine !== run || !("ok" in next)) return;
-        rev++;
-        setSetup(next);
+        draw(next, n);
       });
     }),
   );
@@ -120,10 +146,9 @@ export function SessionSetupCard(props: { path: string; editable?: boolean; tool
       serversKey,
       () => {
         const mine = run;
-        void settle(fetchSessionSetup(path(), true)).then((next) => {
+        void readSetup(path(), true).then(({ answer: next, n }) => {
           if (mine !== run || !("ok" in next)) return;
-          rev++;
-          setSetup(next);
+          draw(next, n);
         });
       },
       { defer: true },
@@ -177,6 +202,145 @@ export function SessionSetupCard(props: { path: string; editable?: boolean; tool
     return !!props.editable && !!s && "ok" in s && s.ok.state === "ok" && !!s.ok.toggleable;
   };
 
+  /** This new chat's list (whose decisions its rows make) while it can still change, else null. */
+  const approvals = () => {
+    const s = setup();
+    return switchable() && s && "ok" in s && s.ok.state === "ok" ? (s.ok.approvals ?? null) : null;
+  };
+  const asking = () => !!approvals()?.asking;
+  /** The folder whose list this chat's rows belong to, before or after its first message. */
+  const listFolder = () => {
+    const s = setup();
+    return s && "ok" in s && s.ok.state === "ok" ? (s.ok.approvals?.folder ?? null) : null;
+  };
+  const [folderOpen, setFolderOpen] = createSignal(false);
+  /** Every decidable row, context files then skills. */
+  const decidable = (): Row[] => {
+    const s = setup();
+    if (!approvals() || !s || !("ok" in s) || s.ok.state !== "ok") return [];
+    return [...s.ok.context.map((f) => ({ kind: "context" as const, f })), ...s.ok.skills.map((f) => ({ kind: "skill" as const, f }))].filter((r) => !!r.f.approval);
+  };
+  /** A row's decision as shown: the one clicked here while it saves, else the server's. */
+  const shownApproval = (f: SessionSetupFile): Approval => {
+    const p = f.approval ? overlay()[f.approval.key] : undefined;
+    return p ? p.to : rowApproval(f);
+  };
+  /** Whether a row reads as off: what it will be once its decision is saved, else the server's. */
+  const shownOff = (f: SessionSetupFile): boolean => {
+    const p = f.approval ? overlay()[f.approval.key] : undefined;
+    return p ? p.to === "disallowed" || (p.to === "waiting" && asking()) : isOff(f);
+  };
+  /** What waits for a decision: asking mode only; a changed item stays loaded and never waits. */
+  const waiting = () => (asking() ? decidable().filter((r) => shownApproval(r.f) === "waiting") : []);
+  /** A decision shown here isn't read back yet: the switches wait (they send the off set the last read drew). */
+  const saving = () => pendingAny(overlay());
+  /** One row's decision, into the folder's list. */
+  const decide = (r: Row, to: Decision, label: string) => save([r], to, label);
+  /** Approve All / Disallow All: every waiting row in one save. */
+  const decideWaiting = (to: Decision) => {
+    const rows = waiting();
+    if (rows.length) save(rows, to, itemsPhrase(rows.filter((r) => r.kind === "context").length, rows.filter((r) => r.kind === "skill").length));
+  };
+  /**
+   * The rows show the decision at once (lib/approval-overlay) and the save runs behind them, in
+   * click order with the folder's other saves; every row stays clickable meanwhile. The server's answer, then a read of the setup, retire them; a refusal or failure
+   * puts them back with its toast. Nothing loads on the overlay: the server decides what loads.
+   */
+  const save = (rows: Row[], to: Decision, what: string) => {
+    const s = setup();
+    const a = approvals();
+    if (!a || !s || !("ok" in s)) return;
+    const mine = run;
+    const id = ++saves;
+    const cwd = s.ok.cwd;
+    setOverlay((o) => begin(o, rows.map((r) => r.f.approval!.key), to, id));
+    const pick = (kind: "context" | "skill") => decideAll(rows.filter((r) => r.kind === kind).map((r) => ({ key: r.f.approval!.key })), to);
+    // An answer after its time (its rows went back): the setup is read again to show what the server did.
+    const p = path();
+    inOrder(queueOf(a.folder), () => setFolderApprovals(cwd, { files: pick("context"), skills: pick("skill") }), { late: () => askReread(p) })
+      .then(() => {
+        if (mine !== run) return;
+        setOverlay((o) => acked(o, id, reads));
+        // Saved: Send no longer waits for it (setupHold), and the rows keep the decision until a
+        // read after the answer lands (a failed read leaves them for the next one: once more here,
+        // then the rebuild's own broadcast and each hello read it again).
+        const reread = (again: boolean): Promise<void> =>
+          readSetup(path(), true).then(({ answer: next, n }) => {
+            if (mine !== run) return;
+            if ("ok" in next) draw(next, n);
+            else if (again) setTimeout(() => void reread(false), REREAD_MS);
+          });
+        return reread(true);
+      })
+      .catch((err: Error) => {
+        if (mine !== run) return;
+        setOverlay((o) => failed(o, id));
+        toast(`Couldn't save ${what} for ${a.folder.name}. ${err.message}`);
+      });
+  };
+  // The composer's hold (lib/approval-hold): what waits, by kind, while this chat can't send yet,
+  // and while a decision made here is still being saved.
+  createEffect(() => setHold(path(), setupHold(waiting(), overlay())));
+  onCleanup(() => setHold(untrack(path), null));
+  // A decision made elsewhere (another tab, the project page) or a send refused for decisions: read again.
+  createEffect(
+    on(rereadAsked, (ask) => {
+      if (!ask || ask.path !== untrack(path)) return;
+      const mine = run;
+      void readSetup(ask.path, true).then(({ answer: next, n }) => {
+        if (mine !== run || !("ok" in next)) return;
+        draw(next, n);
+      });
+    }, { defer: true }),
+  );
+  let card: HTMLElement | undefined;
+  // The composer's Review: open the list and bring the card into view.
+  createEffect(
+    on(reviewAsked, (ask) => {
+      if (!ask || ask.path !== untrack(path)) return;
+      setSetupContextOpen(ask.path, true);
+      setFoldOpen(true);
+      requestAnimationFrame(() => card?.scrollIntoView({ block: "start", behavior: "smooth" }));
+    }, { defer: true }),
+  );
+  /** The lines and buttons under a row's name: its decision, in the words this mode uses. */
+  const RowDecision = (rp: { r: Row; label: string }) => {
+    const a = () => shownApproval(rp.r.f);
+    const acts = () => (approvals() ? rowActions(a(), asking(), "setup") : []);
+    return (
+      <>
+        <Show when={approvals() && a() === "disallowed"}>
+          <span class="setup-manual">{offWords(approvals()!.folder, shownOff(rp.r.f))}</span>
+        </Show>
+        <Show when={approvals() && a() === "changed"}>
+          <span class="setup-manual">{CHANGED_LINE}</span>
+        </Show>
+        <Show when={approvals() && a() === "waiting" && asking()}>
+          <span class="setup-manual">{WAITING_LINE}</span>
+        </Show>
+        <Show when={approvals() && rp.r.f.approval?.fingerprintPartial}>
+          <span class="setup-manual">{PARTIAL_FINGERPRINT_LINE}</span>
+        </Show>
+        <Show when={acts().length}>
+          <span class="setup-decide">
+            <For each={acts()}>
+              {(act) => (
+                <button
+                  type="button"
+                  class="button button-sm"
+                  aria-label={`${ACTION_WORD[act]} ${rp.label}`}
+                  onClick={() => decide(rp.r, ACTION_DECISION[act], rp.label)}
+                >
+                  {ACTION_WORD[act]}
+                </button>
+              )}
+            </For>
+          </span>
+        </Show>
+      </>
+    );
+  };
+
   const view = () => {
     const s = setup();
     return s && "ok" in s ? loadoutView(s.ok) : null;
@@ -202,7 +366,44 @@ export function SessionSetupCard(props: { path: string; editable?: boolean; tool
 
   return (
     <Show when={landed()}>
-      <section class="setup-card" aria-label="Session setup">
+      <section ref={card} class="setup-card" aria-label="Session setup">
+        <Show when={approvals() && approveNotice(waiting().length, approvals()!.folder.kind === "project" ? "project" : "adhoc")}>
+          {(line) => (
+            <div class="setup-group setup-waiting">
+              <p class="setup-note" role="status">
+                {line()}
+              </p>
+              <span class="setup-waiting-actions">
+                <Show when={!foldOpen()}>
+                  <button
+                    type="button"
+                    class="button button-sm button-ghost"
+                    onClick={() => {
+                      setSetupContextOpen(path(), true);
+                      setFoldOpen(true);
+                    }}
+                  >
+                    {REVIEW}
+                  </button>
+                </Show>
+                <button
+                  type="button"
+                  class="button button-sm"
+                  onClick={() => decideWaiting("disallowed")}
+                >
+                  {DISALLOW_ALL}
+                </button>
+                <button
+                  type="button"
+                  class="button button-sm button-primary"
+                  onClick={() => decideWaiting("approved")}
+                >
+                  {APPROVE_ALL}
+                </button>
+              </span>
+            </div>
+          )}
+        </Show>
         <details
           class="setup-context"
           open={foldOpen()}
@@ -246,31 +447,32 @@ export function SessionSetupCard(props: { path: string; editable?: boolean; tool
                       <Show when={rows().length > 0} fallback={<p class="setup-note">{CONTEXT_NONE}</p>}>
                         <p class="setup-note">{contextNote(s())}</p>
                         <ul class="setup-list">
-                          <For each={rows()}>
+                          <Index each={rows()}>
                             {(r) => (
-                              <li class="setup-row" classList={{ "setup-row-off": isOff(r.file) }} title={r.file.path}>
+                              <li class="setup-row" classList={{ "setup-row-off": shownOff(r().file) }} title={r().file.path}>
                                 <span class="setup-name">
-                                  <button class="setup-path setup-open" type="button" aria-label={openFileLabel(r.label)} onClick={() => void openFile(r.label, r.file.path)}>
-                                    {r.label}
+                                  <button class="setup-path setup-open" type="button" aria-label={openFileLabel(r().label)} onClick={() => void openFile(r().label, r().file.path)}>
+                                    {r().label}
                                   </button>
-                                  <Show when={r.role}>{(role) => <span class="setup-role">{role()}</span>}</Show>
+                                  <Show when={r().role ?? (r().file.approval?.group === "above" ? ABOVE_PROJECT : undefined)}>{(role) => <span class="setup-role">{role()}</span>}</Show>
+                                  <RowDecision r={{ kind: "context", f: r().file }} label={r().label} />
                                 </span>
-                                <span class="setup-facts">{fileFacts(r.file)}</span>
-                                <Show when={switchable() && r.switchable}>
+                                <span class="setup-facts">{fileFacts(r().file)}</span>
+                                <Show when={switchable() && r().switchable && !r().file.scanOnly}>
                                   <label class="toggle toggle-switch setup-toggle">
                                     <input
                                       type="checkbox"
-                                      aria-label={contextSwitchLabel(r.label)}
-                                      checked={!isOff(r.file)}
-                                      disabled={applying()}
-                                      onChange={(e) => flip("context", r.file.path, e.currentTarget)}
+                                      aria-label={contextSwitchLabel(r().label)}
+                                      checked={!shownOff(r().file)}
+                                      disabled={applying() || saving()}
+                                      onChange={(e) => flip("context", r().file.path, e.currentTarget)}
                                     />
                                     <span class="toggle-box" />
                                   </label>
                                 </Show>
                               </li>
                             )}
-                          </For>
+                          </Index>
                         </ul>
                       </Show>
                     </div>
@@ -284,37 +486,59 @@ export function SessionSetupCard(props: { path: string; editable?: boolean; tool
                       <Show when={s().skills.length > 0} fallback={<p class="setup-note">{skillsNone(s())}</p>}>
                         <p class="setup-note">{skillsNote(s())}</p>
                         <ul class="setup-list">
-                          <For each={s().skills}>
+                          <Index each={s().skills}>
                             {(k) => (
-                              <li class="setup-row" classList={{ "setup-row-off": isOff(k) }} title={k.description ? `${k.path}\n${k.description}` : k.path}>
+                              <li class="setup-row" classList={{ "setup-row-off": shownOff(k()) }} title={k().description ? `${k().path}\n${k().description}` : k().path}>
                                 <span class="setup-name">
-                                  <button class="setup-path setup-open" type="button" aria-label={openFileLabel(k.name)} onClick={() => void openFile(k.name, k.path)}>
-                                    {k.name}
+                                  <button class="setup-path setup-open" type="button" aria-label={openFileLabel(k().name)} onClick={() => void openFile(k().name, k().path)}>
+                                    {k().name}
                                   </button>
-                                  <Show when={k.manualOnly}>
+                                  <Show when={k().manualOnly}>
                                     <span class="setup-manual">Manual only</span>
                                   </Show>
+                                  <RowDecision r={{ kind: "skill", f: k() }} label={k().name} />
                                 </span>
-                                <span class="setup-facts">{fileFacts(k)}</span>
-                                <Show when={switchable()}>
+                                <span class="setup-facts">{fileFacts(k())}</span>
+                                <Show when={switchable() && !k().scanOnly}>
                                   <label class="toggle toggle-switch setup-toggle">
                                     <input
                                       type="checkbox"
-                                      aria-label={skillSwitchLabel(k.name)}
-                                      checked={!isOff(k)}
-                                      disabled={applying()}
-                                      onChange={(e) => flip("skill", k.name, e.currentTarget)}
+                                      aria-label={skillSwitchLabel(k().name)}
+                                      checked={!shownOff(k())}
+                                      disabled={applying() || saving()}
+                                      onChange={(e) => flip("skill", k().path, e.currentTarget)}
                                     />
                                     <span class="toggle-box" />
                                   </label>
                                 </Show>
                               </li>
                             )}
-                          </For>
+                          </Index>
                         </ul>
                       </Show>
                       <Show when={skillProblemsLine(s())}>{(line) => <p class="setup-note">{line()}</p>}</Show>
                     </div>
+                    <Show when={listFolder()}>
+                      {(f) => (
+                        <div class="setup-group setup-list-link">
+                          <p class="setup-note">{f().kind === "project" ? "Kept for this project on this computer." : "Kept for this folder on this computer."}</p>
+                          <Show
+                            when={f().kind === "project" && (f() as { id: string })}
+                            fallback={
+                              <button type="button" class="button button-sm button-ghost" onClick={() => setFolderOpen(true)}>
+                                Edit Folder List
+                              </button>
+                            }
+                          >
+                            {(p) => (
+                              <a class="button button-sm button-ghost" href={`#/projects/${encodeURIComponent(p().id)}/settings`}>
+                                Open Project Settings
+                              </a>
+                            )}
+                          </Show>
+                        </div>
+                      )}
+                    </Show>
                   </>
                 );
               }}
@@ -346,6 +570,19 @@ export function SessionSetupCard(props: { path: string; editable?: boolean; tool
           <h2 class="text-eyebrow setup-label">Repository</h2>
           <GitFacts answer={git()!} />
         </div>
+        <Show when={folderOpen() && listFolder()?.kind === "folder" && setup()}>
+          {(sv) => {
+            const ok = sv() as { ok: { cwd: string } };
+            return (
+              <FolderApprovalsDialog
+                cwd={ok.ok.cwd}
+                name={listFolder()!.name}
+                onClose={() => setFolderOpen(false)}
+                onChanged={() => askReread(path())}
+              />
+            );
+          }}
+        </Show>
       </section>
     </Show>
   );

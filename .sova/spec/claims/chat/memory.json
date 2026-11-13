@@ -111,7 +111,12 @@
       "server/overseer-memory-claude.integration.test.ts",
       "server/memory/overseer-outline.test.ts",
       "server/overseer-store.ts"
-    ]
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-12T09:35Z",
+      "source": "pi-session:01a1c9c0-9d0b-7601-9d6d-7dfaeea30a3a#9199d10f"
+    }
   },
   "§chat.memory/preparing": {
     "kind": "behavior",
@@ -143,11 +148,43 @@
     "evidence": "verified",
     "code": [
       "server/memory/tools.ts",
+      "server/memory/engine.ts",
       "shared/memory.ts",
       "src/lib/message.ts",
       "shared/memory.test.ts",
-      "server/memory/prompts.test.ts"
-    ]
+      "server/memory/engine.test.ts",
+      "server/memory/prompts.test.ts",
+      "server/memory/recall.ts",
+      "server/memory/recall.test.ts"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-12T09:35Z",
+      "source": "pi-session:01a1c9c0-9d0b-7601-9d6d-7dfaeea30a3a#9199d10f"
+    }
+  },
+  "§chat.memory/recall-words": {
+    "kind": "behavior",
+    "requires": [
+      "§chat.memory/log",
+      "§chat.memory/recall"
+    ],
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "server/memory/tools.ts",
+      "server/memory/engine.ts",
+      "shared/memory.ts",
+      "server/memory/engine.test.ts",
+      "shared/memory.test.ts",
+      "server/memory/recall.ts",
+      "server/memory/recall.test.ts"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-12T09:35Z",
+      "source": "pi-session:01a1c9c0-9d0b-7601-9d6d-7dfaeea30a3a#9199d10f"
+    }
   },
   "§chat.memory/recovery": {
     "kind": "behavior",
@@ -270,7 +307,12 @@
       "server/memory/tree.test.ts",
       "server/memory/engine.test.ts",
       "server/memory/prompts.test.ts"
-    ]
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-12T09:35Z",
+      "source": "pi-session:01a1c9c0-9d0b-7601-9d6d-7dfaeea30a3a#9199d10f"
+    }
   },
   "§chat.memory/types": {
     "kind": "behavior",
@@ -297,11 +339,8 @@
     "evidence": "verified",
     "code": [
       "pi-config/extensions/mode/minor.ts",
-      "pi-config/extensions/mode/index.ts",
-      "pi-config/extensions/mode/palette.ts",
       "server/memory/permit.ts",
       "server/memory/permit.test.ts",
-      "pi-config/extensions/mode/tests/smoke.mjs",
       "server/chat-manager.ts",
       "shared/profiles.ts",
       "server/sessions-configure.ts",
@@ -313,7 +352,8 @@
       "server/app.ts",
       "server/merge-queue/thread.ts",
       "server/merge-queue/thread-modes.test.ts",
-      "server/modes/engine.ts"
+      "server/modes/engine.ts",
+      "server/modes/engine-rules.test.ts"
     ],
     "agreed": {
       "by": "naomarik",
@@ -332,8 +372,15 @@
     "code": [
       "server/memory/engine.ts",
       "server/harness/pi/memory.ts",
-      "server/memory/chat-memory.test.ts"
-    ]
+      "server/memory/chat-memory.test.ts",
+      "server/memory/prompts.ts",
+      "server/memory/engine.test.ts"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-12T14:42Z",
+      "source": "pi-session:01a1c9c0-9d0b-7601-9d6d-7dfaeea30a3a#604b32c6"
+    }
   },
   "§chat/memory": {
     "kind": "surface",
@@ -353,9 +400,9 @@
       "§app.claude-code-provider/no-memory"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-10-22T02:32Z",
-      "source": "pi-session:457b0871-a9ab-4440-ad9e-96ef012e0adf#b2ae2249"
+      "by": "user",
+      "at": "2026-11-12T09:35Z",
+      "source": "pi-session:01a1c9c0-9d0b-7601-9d6d-7dfaeea30a3a#9199d10f"
     }
   }
 }

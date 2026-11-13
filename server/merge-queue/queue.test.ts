@@ -1,7 +1,7 @@
 import type { QueueFile } from "./store";
 import assert from "node:assert/strict";
 import { decisionPush } from "./rulings";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, test } from "node:test";
 import { draftsHash } from "../spec-drafts-state";
@@ -217,12 +217,19 @@ describe("approval", () => {
         assert.deepEqual(entry.approval.drafts?.names, ["fresh", "old-3"]);
         // Editing a draft the branch doesn't own (uncommitted, outside the approval) is not "drafts changed".
         writeFileSync(join(b.path, ".sova/spec/drafts/old-7/spec/claims/a.md"), "local edit\n");
+        // What the run carried, read while it runs: the copy is deleted once the run is done with it.
+        let carried: string[] = [];
+        k.run.set((input) => {
+          carried = input.draftsDir && existsSync(input.draftsDir) ? readdirSync(input.draftsDir).sort() : [];
+          return {};
+        });
         await q.resume();
         await landed(k, entry.id);
         const input = k.run.inputs[0]!;
         assert.ok(input.draftsDir);
-        assert.ok(existsSync(join(input.draftsDir!, "old-3")) && existsSync(join(input.draftsDir!, "fresh")));
-        assert.equal(existsSync(join(input.draftsDir!, "old-7")), false);
+        assert.deepEqual(carried, ["fresh", "old-3"], "the branch's own drafts, not old-7");
+        assert.equal(existsSync(input.draftsDir!), false, "the run's drafts copy is gone once it ended");
+        assert.ok(existsSync(join(input.runDir, "run.json")), "its record stays");
       } finally {
         await k.done();
       }

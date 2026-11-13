@@ -48,3 +48,16 @@ test("site-video stops a deploy without its hero video: SOVA_SITE_VIDEO_DIR unse
   assert.match(missing.stderr, /missing hero video/);
   assert.equal(run(["site-pages", "abc1234"], { SOVA_SITE_PAGES_PROJECT: "" }, r).status, 2);
 });
+
+test("docs-drift finds the trusted tools as spec-mode.md's line does: SOVA_SPEC_CORE, else the agent dir's (a leading ~ is home); none there: exit 2 naming where it looked", () => {
+  const drift = join(import.meta.dirname, "..", ".sova/playbooks/release/scripts/docs-drift.mjs");
+  const looked = (env: Record<string, string>) => {
+    const r = spawnSync(process.execPath, [drift, "--base", "HEAD", "--root", dir], { encoding: "utf8", cwd: dir, env: { PATH: process.env.PATH ?? "", HOME: dir, ...env } });
+    assert.equal(r.status, 2, r.stderr);
+    return r.stderr.match(/^docs-drift: the spec tools aren't at (.*)$/m)?.[1];
+  };
+  assert.equal(looked({ SOVA_SPEC_CORE: join(dir, "own", "core"), PI_CODING_AGENT_DIR: join(dir, "agent") }), join(dir, "own", "core"), "Sova's own copy first");
+  assert.equal(looked({ SOVA_SPEC_CORE: "", PI_CODING_AGENT_DIR: join(dir, "agent") }), join(dir, "agent", "extensions/spec/core"), "empty is unset");
+  assert.equal(looked({ PI_CODING_AGENT_DIR: "~/a" }), join(dir, "a", "extensions/spec/core"));
+  assert.equal(looked({}), join(dir, ".pi/agent", "extensions/spec/core"));
+});

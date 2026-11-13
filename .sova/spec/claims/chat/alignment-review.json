@@ -20,10 +20,8 @@
     "authority": "accepted",
     "evidence": "reviewed",
     "code": [
-      "pi-config/extensions/mode/index.ts",
       "pi-config/extensions/mode/align-tool.ts",
-      "pi-config/extensions/mode/tests/review-smoke.mjs",
-      "pi-config/extensions/mode/tests/fixtures/flag-off-master.json",
+      "server/modes/tests/fixtures/align-flag-off-master.json",
       "pi-config/extensions/mode/README.md",
       "pi-config/README.md",
       "server/web-settings.ts",
@@ -32,7 +30,6 @@
       "server/chat-manager.ts",
       "server/adversarial-review-flag.test.ts",
       "src/components/SettingsDialog.tsx",
-      "src/lib/experimental-draft.ts",
       "src/App.tsx",
       "src/lib/align-review.ts",
       "server/harness/state-kinds.ts",
@@ -65,7 +62,8 @@
       "server/harness/pi/golden/state/G3-topic-delivered.jsonl",
       "server/harness/pi/golden/state/G4-pristine-setup.jsonl",
       "server/harness/pi/golden/state/G7-overseer-target.jsonl",
-      "server/harness/pi/golden/state/G9-dialog-answer.jsonl"
+      "server/harness/pi/golden/state/G9-dialog-answer.jsonl",
+      "server/modes/engine-review.test.ts"
     ],
     "requires": [
       "§chat.alignment/tool"
@@ -79,8 +77,7 @@
       "pi-config/extensions/mode/align.ts",
       "pi-config/extensions/mode/align-tool.ts",
       "pi-config/extensions/mode/review.test.ts",
-      "pi-config/extensions/mode/index.ts",
-      "pi-config/extensions/mode/tests/review-smoke.mjs"
+      "server/modes/engine-review.test.ts"
     ],
     "requires": [
       "§chat.alignment-review/record",
@@ -120,7 +117,6 @@
     "code": [
       "pi-config/extensions/subagents/subagent-profiles.ts",
       "pi-config/extensions/subagents/subagent-profiles.test.ts",
-      "pi-config/extensions/mode/index.ts",
       "src/components/SubagentProfilesSettings.tsx",
       "src/lib/subagent-profiles-draft.ts",
       "server/web-settings.ts",
@@ -147,12 +143,11 @@
     "authority": "accepted",
     "evidence": "verified",
     "code": [
-      "pi-config/extensions/mode/index.ts",
       "pi-config/extensions/mode/align-ui.ts",
       "pi-config/extensions/mode/align.ts",
-      "pi-config/extensions/mode/tests/review-smoke.mjs",
       "server/modes/engine.ts",
-      "server/harness/pi/modes.ts"
+      "server/harness/pi/modes.ts",
+      "server/modes/engine-review.test.ts"
     ],
     "requires": [
       "§chat.alignment/tui"
@@ -168,8 +163,7 @@
     "authority": "accepted",
     "evidence": "verified",
     "code": [
-      "pi-config/extensions/mode/align.ts",
-      "pi-config/extensions/mode/index.ts"
+      "pi-config/extensions/mode/align.ts"
     ],
     "notOwned": [
       "§chat.alignment/tool",

@@ -281,27 +281,31 @@ worktree-confined, since nothing confines it.
 
 `useWorktreeConfig: true` (agent_spawn, pi or claude-code, cwd inside an active tracked worktree with a
 `.agent`) runs the worker on `<worktree>/.agent`: `PI_CODING_AGENT_DIR` set to it, its session
-in the parent's sessions directory for that cwd (so Sova lists and watches it like any worker), the
-tree's `extensions/mode` loaded by path with the flag `major normal` (and `minor spec` while the parent has spec on), and the
-project's files trusted as for every chat.
+in the parent's sessions directory for that cwd (so Sova lists and watches it like any worker), a mode
+slot with the flag `major normal` (and `minor spec` while the parent has spec on), and the
+project's files trusted as for every chat. With a worker host announced (the session runs under a host
+such as Sova, which runs every worker's modes itself), the slot names the tree's `extensions/mode` folder,
+or this copy's `mode` folder when the tree has none, known by the folder alone, and the host loads its own
+engine there; the host's `modes` field is no longer read. With no host (a plain pi terminal, which has no
+modes) the worker gets no mode slot and no mode flags, and is recorded as given none.
 Discovery stays off and the model policy is the parent's. It is recorded in the launch spec, so
 `agent_resume` applies it again. A worker never loads any copy of `subagents` or `worktrees`
-through `extensions`. The tree's mode extension learns it runs in a worker from the worker marker
+through `extensions`. The worker's mode runner (the host's engine) learns it runs in a worker from the worker marker
 (`subagents:worker` on the child's bus, `mode/events.ts`): it ignores the parent's `mode`
 snapshots a `fork` copied and offers no spec writer.
 
 ## The parent's modes
 
-The mode extension announces what this session's workers get of its modes on the bus
+The session's mode runner (Sova's engine; a plain pi terminal has none) announces what this session's workers get of its modes on the bus
 (`mode:worker`, `mode/events.ts`; asked for at load with `mode:worker-discover`): the spec block
 plus a worker note while spec is on, and the saved copy of each project mode that is on and marked
-`workers: yes` (`projectModes`; see the mode extension's README), nothing otherwise. Every worker started from then on —
+`workers: yes` (`projectModes`; see `../mode/README.md`), nothing otherwise. Every worker started from then on —
 pi or Claude Code, plain, remote, sandboxed, team member or successor — gets that text
 appended last to its system prompt (after its agent type, its brief and any remote instructions);
 the text is never interpreted here. It is a snapshot: a later switch never reaches a running
 worker, and `agent_resume` takes the session's current announcement (the launch spec keeps the raw
 brief). Two exceptions get nothing: a team's monitor (it has no tools) and a `useWorktreeConfig`
-worker (its mode extension gives it spec itself, while the parent has spec on). The minor modes given are recorded with
+worker (its mode slot gives it spec itself, while the parent has spec on). The minor modes given are recorded with
 the worker (the manifest's `modes`, newest start winning; `[]` for none; project modes by id after
 the built-in ones) and published in the workers snapshot (`modes`, absent for none), which Sova
 shows on the worker's view head.
@@ -355,7 +359,7 @@ Sova's tools in a new session (see "Restored workers and `agent_resume`").
 
 ## Spec mode
 
-While the spawning session has the `spec` minor mode on (the mode extension announces its active
+While the spawning session has the `spec` minor mode on (Sova's mode engine announces its active
 modes as `mode:state` on `pi.events`; `mode:discover` asks), every worker that can change code
 (`bash`, `edit` or `write`, a Claude Code worker's included) gets the **worker spec brief** appended to its system prompt: `spec-brief.ts`,
 whole sentences quoted by anchor from the spec mode's two parts, `mode/spec-mode.md` and the writing
@@ -365,7 +369,7 @@ text, so a change to a carried rule in either file fails there until the brief i
 remote workers and `useWorktreeConfig` workers (which load the spec mode itself) do not get it.
 
 pi workers (a Claude Code worker included), which load only their listed extensions, also load
-`../mode/spec-worker.ts` (the mode extension's census hook alone: a census digest after a
+`../mode/spec-worker.ts` (the spec census hook alone, which Sova fills that slot with: a census digest after a
 tool call that changes `git status`; its first note hands the worker the writing procedure once, its
 Workers section first), under the same condition as the brief; it is plumbing, so
 the spawn summary does not list it. No worker is given a spec ledger.
@@ -800,10 +804,24 @@ is the usage pause's switch. The extension never writes the file.
   member: the worker's `contextTokens` over the spawned model's window (a Claude model: the
   catalog's, through the extension's `claudeContextWindow` — 1M for `[1m]` or a natively 1M
   model, else 200k; any other: the registry), rounded down.
-- **Handovers.** Notes live in `<agent dir>/sova/teams/<parent session id>/<team_id>/handoffs/<role>.md`
-  (team IDs restart in every session, so the session id keeps two sessions' `team_01` apart; a
-  session without an id uses `unsaved-<pid>-<time>`), named in each worker's and the coordinator's
-  header. The monitor has no file tools and no note: it briefs its successor over `team_msg`, and
+- **Shared folder.** Each top-level chat has one, `~/.local/state/sova/shared/<session id>`
+  (`sandbox/shared-folder.ts`), outside the agent dir and every repository: the chat, every worker it
+  starts (any backend, any depth) and every team member read and write it. Every worker gets it as
+  `SOVA_SHARED_DIR` (a worker's spawns inherit it: always the root chat's), a confined one also in its
+  sandbox scope (`ParentScope.shared`); `agent_spawn` and `team_create` results name it. Sova never
+  loads code from it. Archiving (or deleting) the chat removes it. A hermetic server (`pnpm run dev:hermetic`)
+  keeps its chats' folders under `$SOVA_SHARED_BASE` (`<worktree>/.cache/sova-shared`), never the real home.
+  A team created before this layout keeps no old path (notes are placed by the layout at restore), but a
+  member already running still has the old agent-dir note path in its header until it is succeeded.
+- **Handovers.** Notes live in the shared folder,
+  `<shared>/teams/<parent session id>/<team_id>/<role>/handover.md` (team IDs restart in every
+  session, so the session id keeps two sessions' — or a worker's and its parent's — `team_01` apart;
+  a session without an id uses `unsaved-<pid>-<time>`), named in each worker's and the coordinator's
+  header. `<shared>/teams` is read-only to every confined agent; a coordinated member's own `<role>`
+  folder is writable for it alone (the spawn asks the sandbox for it as `WorkerLaunchRequest.note`,
+  and the scope never hands it on), so a member can't write another member's note, and only
+  `<role>/handover.md` itself starts that role's successor. The mailbox stays in the agent dir,
+  read-only to workers. The monitor has no file tools and no note: it briefs its successor over `team_msg`, and
   its successor's task is the monitor task ("you take over from <old>"), with `team_ready` like any
   successor (an ended monitor's successor is told nobody is left to ask). `team_succeed { role }`
   (routing coordinator only, itself included) starts

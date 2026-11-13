@@ -623,7 +623,7 @@ would have expired, and answers them 410 too.
   "of the main checkout's copy"), with the copy's branch; its chip is the copy's state as the
   engine's status reads it at each poll, from the endpoint's service: `Running` (success: ready or
   degraded), `Starting` (info) or `Stopped` (warn, anything else). A stopped copy's row offers
-  **Start**, the operator's `up` of that copy (its tooltip: "Starts this copy. A visit to its link
+  **Start** (none while the project is archived, §app.organizations/archive-copies), the operator's `up` of that copy (its tooltip: "Starts this copy. A visit to its link
   never starts it."; the chip reads Starting until it answers; done: "Copy started.", else
   "Couldn't start the copy. {reason}"). Reading the card never starts anything, and a turned-off
   link's copy is not read.

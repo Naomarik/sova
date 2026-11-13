@@ -22,13 +22,14 @@
     "team_succeed",
     "team_list",
     "project_verbs",
-    "queue_push"
+    "queue_push",
+    "spec"
    ],
    "entries": [],
    "extensions": [
     "<mode-slot:index>",
-    "<repo>/pi-config/extensions/subagents/index.ts",
     "<repo>/pi-config/extensions/sandbox/index.ts",
+    "<repo>/pi-config/extensions/subagents/index.ts",
     "<inline:sova-resource-monitor>",
     "<inline:sova-fork-cache>",
     "<inline:sova-shell-guard>",
@@ -44,7 +45,8 @@
     "<inline:sova-topics>",
     "<inline:sova-tours>",
     "<inline:sova-create-settings>",
-    "<inline:sova-transcript-cards>"
+    "<inline:sova-transcript-cards>",
+    "<inline:sova-spec>"
    ]
   },
   {
@@ -69,7 +71,8 @@
     "team_succeed",
     "team_list",
     "project_verbs",
-    "queue_push"
+    "queue_push",
+    "spec"
    ],
    "entries": [
     {
@@ -105,9 +108,9 @@
         "rules": "@9514ae33e1ebc3e7",
         "docs": "@0f5fabf6c3c47c4c",
         "cwd": "<cwd>\n<ws:tree-mode>\n</cwd>",
-        "mode": "@d4cf9a33be021005"
+        "mode": "@8cb6214f079c2a20"
        },
-       "toolsAdded": "@ed596a5985c5d307"
+       "toolsAdded": "@fc4ee54c7a94b7b3"
       },
       {
        "role": "user",
@@ -166,7 +169,7 @@
        "content": [
         {
          "type": "text",
-         "text": "@69fa83a24472c935"
+         "text": "@f2f339ee4074cfe6"
         }
        ],
        "details": {
@@ -210,7 +213,8 @@
     "team_succeed",
     "team_list",
     "project_verbs",
-    "queue_push"
+    "queue_push",
+    "spec"
    ],
    "entries": [
     {
@@ -224,9 +228,9 @@
        "rules": "@9514ae33e1ebc3e7",
        "docs": "@0f5fabf6c3c47c4c",
        "cwd": "<cwd>\n<ws:tree-mode>\n</cwd>",
-       "mode": "@d4cf9a33be021005"
+       "mode": "@8cb6214f079c2a20"
       },
-      "toolsAdded": "@619362e2e44edede"
+      "toolsAdded": "@498bd9a2273199b5"
      }
     }
    ],
@@ -263,13 +267,14 @@
     "major": "normal",
     "minor": "spec",
     "sandbox": "on",
-    "sandbox-parent": "{\"version\":1,\"level\":\"workspace-write\",\"workspaceRoot\":\"<ws:tree-mode>\",\"writable\":[\"<ws:tree-mode>\"],\"readOnly\":[\"<ws:tree-mode>/.agent\"],\"writeOnly\":true}"
+    "sandbox-parent": "{\"version\":1,\"level\":\"workspace-write\",\"workspaceRoot\":\"<ws:tree-mode>\",\"writable\":[\"<ws:tree-mode>\"],\"readOnly\":[\"<ws:tree-mode>/.agent\"],\"writeOnly\":true,\"shared\":\"<shared>/<sid:1>\"}"
    },
    "appendSystemPrompt": null,
    "env": {
     "SPEC_AGREE_SOURCE": "pi-session:<sid:1>#<entry>",
     "SPEC_AGREE_GIVEN": "pi-session:<sid:1>#<entry>",
     "SOVA_SPEC_LANDED_FILE": "<file>",
+    "SOVA_SHARED_DIR": "<shared>/<sid:1>",
     "PI_SUBAGENT_BUILTIN_TOOLS": "read,bash,edit,write"
    },
    "agentDir": "<ws:tree-mode>/.agent",
@@ -298,9 +303,9 @@
         "rules": "@367a111ecea93121",
         "docs": "@0f5fabf6c3c47c4c",
         "cwd": "<cwd>\n<ws:tree-mode>\n</cwd>",
-        "mode": "@1aae69296415268d"
+        "mode": "@6c51ded44cbcb821"
        },
-       "toolsAdded": "@2397e9aca7f149ff"
+       "toolsAdded": "@c0348cafaab0e950"
       },
       {
        "role": "user",
@@ -308,6 +313,15 @@
         {
          "type": "text",
          "text": "do the task"
+        }
+       ]
+      },
+      {
+       "role": "user",
+       "content": [
+        {
+         "type": "text",
+         "text": "Sandbox: you can write only in <ws:tree-mode> and $TMPDIR. /tmp and ~/.cache are private to you: leave files for other chats in <shared>/<sid:1>. Set up, serve and test through project_verbs."
         }
        ]
       }
@@ -319,7 +333,8 @@
     "bash",
     "edit",
     "write",
-    "project_verbs"
+    "project_verbs",
+    "spec"
    ],
    "entries": [
     {
@@ -333,9 +348,9 @@
        "rules": "@367a111ecea93121",
        "docs": "@0f5fabf6c3c47c4c",
        "cwd": "<cwd>\n<ws:tree-mode>\n</cwd>",
-       "mode": "@1aae69296415268d"
+       "mode": "@6c51ded44cbcb821"
       },
-      "toolsAdded": "@2397e9aca7f149ff"
+      "toolsAdded": "@9e0c194f7854181b"
      }
     }
    ],
@@ -351,7 +366,8 @@
     "<inline:sova-shell-guard>",
     "<inline:sova-deeper-context>",
     "<inline:sova-background-jobs>",
-    "<inline:sova-project-verbs>"
+    "<inline:sova-project-verbs>",
+    "<inline:sova-spec>"
    ]
   }
  ]

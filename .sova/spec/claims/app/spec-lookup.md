@@ -167,8 +167,7 @@ Every chat you code in (an ordinary chat, a project's coding session included) a
 or Claude Code, but a team's monitor has a read-only tool for the spec of the project it works in: **`spec`**.
 
 - **Always there.** It is in the tool list from the chat's or worker's start, in every major mode,
-  whatever its minor modes and whether or not spec is on, with or without the switch of
-  §chat.mode-menu/sova-runs-modes. No switch adds or removes it, so it never changes a chat's tool
+  whatever its minor modes and whether or not spec is on. No switch adds or removes it, so it never changes a chat's tool
   set (§chat.mode-menu/minor-toggle-keeps-prompt). The chats with a loadout of their own in
   §app.spec-lookup/who-gets-what keep theirs and don't get it.
 - **The spec tools' reading commands.** `op` is `where` (a path, a name or a few words of a topic),
@@ -201,4 +200,5 @@ or Claude Code, but a team's monitor has a read-only tool for the spec of the pr
   (§tools.spec/unread-landed), and the census skips the tool like any tool that can't write
   (§tools.spec/census-note).
 - **Taught.** The spec guide's short part and a code-writing worker's spec brief point their
-  lookups at it, and keep the one shell line for the write tools (§tools.spec/mode-reading).
+  lookups at it, and keep the one shell line for the write tools, which runs the chat's own copy of
+  the tools (§tools.spec/mode-reading).

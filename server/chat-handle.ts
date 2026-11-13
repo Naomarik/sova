@@ -70,6 +70,7 @@ import { branchOf, readPi, strictBranchTo } from "./harness/pi/reader";
 import { stateView } from "./harness/state-view";
 import { playbookHost } from "./playbook-host";
 import { projectEngine } from "./project-services/routes";
+import type { ProjectEngine } from "./project-services/engine";
 import { sessionInstanceNote, sessionVerbsTool } from "./project-services/tools";
 import { coordinatorTools } from "./design/coordinator";
 import { agentRoot, stateRoot } from "./state-root";
@@ -237,6 +238,9 @@ export abstract class ChatHandle {
   }
   writeLoadout(data: LoadoutEntryData): Promise<null> {
     return this.call("writeLoadout", { data });
+  }
+  allowInLoadout(kind: "context" | "skill", path: string): Promise<boolean> {
+    return this.call("allowInLoadout", { kind, path });
   }
 
   noteMcp(note: McpNote): Promise<null> {
@@ -491,9 +495,6 @@ export interface ChatRouter {
   close(path: string, message: string, opts?: CloseOpts): Promise<boolean>;
   /** A special chat's composer may have changed: each in a process of its own is told. */
   composersChanged?(): void;
-  /** A save changed "Sova runs chat modes" (§chat.mode-menu/sova-runs-modes): every open chat whose mode owner
-      differs reloads at its next quiet moment; a flip back first cancels it. */
-  modesSwitched?(on: boolean): void;
   /** Resolves once this path's chat, if a previous server left it running, is taken back (bounded),
       so `get` can be trusted for it; at once when none of it was left running. */
   takenBack?(path: string): Promise<void>;
@@ -509,9 +510,6 @@ export function setChatRouter(r: ChatRouter | null): void {
 
 /** A special chat's composer may have changed (a project archived or not): each chat in a process of its own is told. */
 export const specialComposersChanged = (): void => router?.composersChanged?.();
-
-/** A save changed "Sova runs chat modes": the router has each open chat follow at its next quiet moment. */
-export const chatModesSwitched = (on: boolean): void => router?.modesSwitched?.(on);
 
 /** Set by a server that will install a router (server/index.ts, before its orgs open): until it is
     installed, chatsReady waits for it, so a reader at boot never mistakes "not taken back yet" for "none". */
@@ -582,6 +580,7 @@ function serveOnce(): void {
   onChatEvent((e) => {
     if (e.type !== "closed") return;
     hostedTools.delete(e.chatId);
+    servedWorkerFlags.delete(e.chatId);
     // What a special kind kept for the chat goes with it.
     const kind = kindOfChat.get(e.chatId);
     kindOfChat.delete(e.chatId);
@@ -731,11 +730,15 @@ export function servedToolsFor(chatId: ChatId, sessionId: string, known: () => s
   return specs.map(declOfTool);
 }
 
+/** The launch flags of each worker chat this server serves tools to: its own confinement, for its instance note. */
+const servedWorkerFlags = new Map<ChatId, Record<string, string | true>>();
+
 /** The server-hosted tools of a worker or team member (WorkerKind "worker", never a hidden chat), hosted
     here: `project_verbs`, under an ordinary session's rules (§app.project-services/callers), and
     `background_job` under the worker's own confinement, read from its launch flags (§app.background-jobs/request). */
 export function servedWorkerTools(chatId: ChatId, spec?: Pick<WorkerSpec, "flags" | "parent">): ServerToolDecl[] {
-  const specs: ToolSpec[] = [sessionVerbsTool(() => projectEngine()), jobTool({ path: chatId, ...(spec ? { worker: { flags: spec.flags, workerId: spec.parent.workerId } } : {}) })];
+  if (spec) servedWorkerFlags.set(chatId, spec.flags);
+  const specs: ToolSpec[] = [sessionVerbsTool(() => projectEngine(), spec?.flags), jobTool({ path: chatId, ...(spec ? { worker: { flags: spec.flags, workerId: spec.parent.workerId } } : {}) })];
   serveTools(chatId, specs);
   return specs.map(declOfTool);
 }
@@ -854,12 +857,18 @@ export async function trialActWait(at: "before" | "after", tool: string, toolCal
   log("act-done");
 }
 
+/** A chat process's instance note (its `project.note` ask), read from its session file under its own confinement:
+    a worker's, from the launch flags this server served its tools under (servedWorkerTools). */
+export async function servedInstanceNote(path: string, w: { sessionId: string; cwd?: string; leafId: string | null }, engine: () => ProjectEngine = () => projectEngine()): Promise<string | null> {
+  return sessionInstanceNote(engine, await fileHookCtx(path, w), servedWorkerFlags.get(path));
+}
+
 /** One ask of a chat process, answered from this server's own sources. */
 export async function answerChatAsk(path: string, method: ChatAskMethod, args: unknown): Promise<unknown> {
   const a = (args ?? {}) as Record<string, any>;
   switch (method) {
     case "project.note":
-      return sessionInstanceNote(() => projectEngine(), await fileHookCtx(path, { sessionId: a.sessionId, cwd: a.cwd, leafId: a.leafId ?? null }));
+      return servedInstanceNote(path, { sessionId: a.sessionId, cwd: a.cwd, leafId: a.leafId ?? null });
     case "playbook.bundleFor":
       return playbookHost.bundleFor(a.sessionId, a.hint);
     case "playbook.reprime":

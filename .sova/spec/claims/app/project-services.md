@@ -213,7 +213,7 @@ Every verb answers one JSON object with keys in this order: `v` (1), `verb`, `pr
 `instance`, `slot`, `generation`, `checkout`, `branch`, `ok`, `changed`, `state` (`absent`,
 `stopped`, `running` or `degraded`), `steps` (`{id, kind, result: done|skipped|failed, ms, detail?,
 fingerprint?}`), `services` (`{name, scope, kind: process|static|container, state: stopped|starting|
-ready|degraded|failed|external, unit, pid, ports, ready?, detail?, rssBytes?}`), `data` (`{name, kind, ref, exists}`),
+ready|degraded|failed|external, unit, pid, ports, ready?, detail?, rssBytes?, gaveUp?}`), `data` (`{name, kind, ref, exists}`),
 `links` (`{id, instance, endpoint, port, createdAt, expiresAt, state: active|expired|revoked,
 createdBy, url?}`, §app.project-services/share: share's link, the links revoke ended, and the active
 links of the instance status reads; empty otherwise), then the verb's own key (`instances` for status of a whole
@@ -229,12 +229,12 @@ The error codes are a closed list: `not-found`, `invalid-request`, `invalid-defi
 `not-conformant`, `cap-reached`, `slots-blocked`, `port-held`, `not-ready`, `start-failed`,
 `hook-failed`, `tests-failed`, `dirty-worktree`, `busy`, `unsupported`, `refused-slot0`, `share-denied`,
 `forbidden`, `needs-confirm`, `deploy-refused`, `needs-override`, `deploy-failed`, `verify-failed`,
-`release-refused`. Each maps to one exit class, the CLI's exit code and the route's
+`release-refused`, `refused-archived`. Each maps to one exit class, the CLI's exit code and the route's
 status: **0** done, a no-op included (200); **1** failed part-way — `not-ready`, `start-failed`,
 `hook-failed`, `tests-failed`, `deploy-failed`, `verify-failed` — with `state` saying what runs, and a re-run converges from there (502); **2**
 refused, nothing changed — `not-conformant`, `cap-reached`, `slots-blocked`, `port-held`,
 `dirty-worktree`, `unsupported`, `refused-slot0`, `share-denied`, `forbidden`, `needs-confirm`,
-`deploy-refused`, `needs-override`, `release-refused` (409); **3** invalid — `invalid-request`, `invalid-definition`, `not-found` (400, 404 for
+`deploy-refused`, `needs-override`, `release-refused`, `refused-archived` (409); **3** invalid — `invalid-request`, `invalid-definition`, `not-found` (400, 404 for
 not-found); **4** `busy` (423). `status`, `logs` and `doctor` answer 0 when the app is unhealthy;
 the object says so.
 
@@ -259,7 +259,8 @@ probe's answer).
 - **systemd**: each `cmd` service is a transient user unit
   `sova-svc-<state hash>-<instance id>-<service>` in `sova-services.slice`, started with
   `systemd-run --user` by argv, outside the Sova server's own cgroup, so it survives a restart of the
-  server, and started again 2 s after it fails (`Restart=on-failure`). Its logs are the unit's
+  server, and started again 2 s after it fails (`Restart=on-failure`), within the restart limit
+  below. Its logs are the unit's
   journal. Hooks, setup and build steps run the same way as their own transient units
   (`sova-hook-…`), waited for, killed whole at their timeout (default 120 s, at most 1800 s), with
   stdin from `/dev/null` and no terminal; a unit of the same name still loaded is stopped and
@@ -278,10 +279,27 @@ probe's answer).
   it created. A process that starts a session of its own escapes the stop; without session ids, so
   does an orphan that left for a process group of its own. systemd has no such gap. While the server
   runs, a unit that ends with a failure (an exit other than 0, or one the server did not see) is
-  started again after 2 s, at most 5 starts in 10 s, after which it stays failed. Meanwhile its
+  started again after 2 s, within the restart limit below. Meanwhile its
   status is `activating` (auto-restart), as with systemd. Hooks run the same way and are waited for;
   whatever they leave behind is killed with them. Which process listens on a port is read from
   `/proc` on Linux, else from `lsof`.
+
+**The restart limit**, with either driver and in every project: a service whose unit fails 5 starts
+in a row, however long each ran before it failed, is given up on and stays failed: status shows it
+`failed`, and the Branches tab shows its copy Failed, with Start (§app.project-services/services-ui).
+A run that stayed up 60 s before it failed starts a fresh count, so a service that runs a while
+between failures is started again each time. The detached driver keeps the count in the unit's
+record, so a restart of Sova doesn't reset it. systemd counts starts within a window, never
+failures in a row: its units get `StartLimitBurst=5` and `StartLimitIntervalSec=310` (5 × the 2 s
+delay plus the 60 s run), so 5 failed runs each shorter than 60 s give up however slowly each
+failed, and a service that stays up 60 s before each failure never does; where quick failures and
+long runs mix inside one window, systemd may give up sooner than the detached driver's count.
+It waits there for someone to start it again: nothing restarts it, the server's own start included
+(§app.project-services/reconcile), since the give-up is kept in its unit's record and holds
+through a restart of Sova (systemd keeps the unit loaded as failed, `start-limit-hit`; the detached
+driver writes `gaveUp` into the unit's record and kills what it left). Any start of the unit by
+hand clears it (`up` of its copy, §app.project-services/up, an `apply` restart, `reset`'s restart),
+and so does `down`.
 
 A requested background job runs through this same driver (§app.background-jobs/request). Sova stops,
 restarts and signals only units with its own prefix and state hash, never a process it
@@ -331,6 +349,12 @@ is stopped and marked stopped first, as a `stop:<name>` step that says so; so is
 that is in no definition any more, by down's rule (§app.project-services/down), when it still runs
 or is still wanted.
 An adopted slot 0 refuses `up` (`refused-slot0`); see §app.project-services/adopt.
+A service its unit's restart limit gave up on (§app.project-services/supervisor) is started like a
+stopped one, and the give-up is cleared.
+In an archived project (§app.organizations/archive-copies) `create`, `up`, `apply`, `test` and
+`reset` (which starts again what it stopped) of any of its copies are refused before anything
+changes, for every caller, with `refused-archived` ("This project is archived; unarchive it
+first"); `down`, `status`, `logs`, `teardown`, `doctor` and `share` still run.
 
 ## §app.project-services/down — down
 
@@ -344,6 +368,14 @@ gives. A shared service the project's record still names that no definition decl
 (neither the main checkout's nor any registered instance's checkout's, each readable) is the
 exception: down stops it by its unit's name and marks it stopped, as a `stop:<name>` step that says
 it is shared and in no definition; while any of those definitions is unreadable it is left alone.
+The project's shared services alone are stopped with no copy by `down {project, shared: true,
+confirm}` (`services` optional, naming some of them), the operator's only and confirmed: unconfirmed
+or from any other caller (a coding session included) it answers `needs-confirm`, and with an
+instance or checkout, or on another verb, `invalid-request`. It stops each shared service the main
+checkout's definition declares, in reverse `requires` order, after any the project's record names
+that it doesn't declare (all of them when it is unreadable), each kept with its data and marked
+stopped, so the server's start (§app.project-services/reconcile) leaves it stopped. It runs while
+the project is archived, so what still runs in one can be stopped with no copy left to go through.
 Idempotent: a second down answers `changed: false`. Down of an instance with an active share link
 (§app.project-services/share) needs a confirm, which the operator gives, or for an Overseer a turn
 the user started (their typed word or a click, §app.overseer/copies); `needs-confirm` otherwise,
@@ -370,7 +402,10 @@ on Linux resident less shared pages, on macOS resident memory), each data resour
 as the one check `supervisor` (informational: it never makes `ok` false). A service the definition
 no longer declares whose unit (or static serve) still runs is listed too, after the declared ones,
 as `degraded` with its unit and pid and the detail "no longer in the definition" (a shared one:
-"shared, no longer in any definition"), so what still runs is never hidden. `status` of a project
+"shared, no longer in any definition"), so what still runs is never hidden. A service its restart
+limit gave up on (§app.project-services/supervisor) is `failed`, `gaveUp: true`, with the detail "start limit hit: 5
+failed starts in a row; it waits to be started again", through Sova's restarts, until a start or
+`down` clears it. `status` of a project
 lists every instance as `instances`, with the shared services; each instance also carries its active
 share links (`links`, their `url` only for the operator) and `share` (`{endpoints, refused}`: the
 endpoints its definition lists, and the sentence saying why it can't be shared, null when it can).
@@ -431,8 +466,11 @@ the service's readiness is http on that port, and "shared" for a shared service'
 rendered `about` and whether it is on-demand; each data resource's name and where it is; how tests
 run ("project_verbs {verb: "test", select: [...]} runs them in this instance; no select runs the
 whole suite", with the smoke selection) or that the project declares none; "Start, reload and stop
-these through project_verbs, never by hand."; and, when the session's sandbox is on, "Your shell is
-sandboxed and cannot reach these ports: use project_verbs." A checkout with a definition but no
+these through project_verbs, never by hand."; and, when the agent's tools run under the sandbox's
+On (a chat or worker whose sandbox is On, §chat.sandbox/states), "Your shell is sandboxed and
+cannot reach these ports: use project_verbs." A write-only worker in a tracked worktree, whose
+network is the host's (§chat.worktrees/workers), never gets that line, though it starts with its
+sandbox on; its own launch tells the two apart. A checkout with a definition but no
 instance gets one line saying it has no running copy yet and that project_verbs up gives it its own
 ports; one whose definition is invalid, one line naming the problem. A project without a definition
 gets no note, even where something else offers the tool (§app.project-services/tool-offered). Every
@@ -441,7 +479,7 @@ checkout the note covers has a definition, valid or not, so a chat with a note a
 The note reaches the model as a hidden message (`sova-instance-note`, never shown in the
 transcript) at the start of a turn, only when its text differs from the last such message on the
 branch: the text holds no live state (no pids, no running or stopped), so it changes only when a
-slot, port, data ref, `about`, the test command or the sandbox does. After a
+slot, port, data ref, `about`, the test command or the sandbox line does. After a
 compaction the current note is sent again. The system prompt never carries the note. The same text follows
 the result of `project_verbs` and `sova_project_verbs` for create, up, apply and status of one
 instance, so a turn that just ran up learns its ports at once, and status is the note on demand.
@@ -535,7 +573,11 @@ definition does not declare, and a unit of one that left the definition is stopp
 removed, and the service marked stopped; a project's shared service that no definition declares
 any more (down's rule, §app.project-services/down) is stopped and marked stopped the same way, and
 never started again; then the detached driver's restart watch takes charge
-of the units already running. It never touches a process it did not start. When the server's own
+of the units already running. A service its restart limit gave up on (§app.project-services/supervisor)
+is not started: it stays failed until someone starts it by hand, the log saying so. In an archived
+project (§app.organizations/archive-copies) nothing is started, its copies' services nor its
+shared ones (the log: "left {service} stopped (the project is archived)"), and nothing that runs
+is stopped, but for the cleanup of services that left the definition, as above. It never touches a process it did not start. When the server's own
 checkout's slot 0 adopts a unit (§app.project-services/adopt), that unit is this server: nothing is
 started for it, and the log notes the server's start time and the commit its checkout had then
 (as `GET /api/health` answers them).
@@ -639,7 +681,7 @@ same engine in-process, never over HTTP:
   the engine's.
 - **The design coordinator** (the `design-coordinator` caller, §chat.design-mode/project-reach):
   `status` of any of your projects. `up` and `down` of a copy, in any project, only after the user says
-  yes on the coordinator's card, and then only the request the card named; until then they answer
+  yes on the Creative Director's card, and then only the request the card named; until then they answer
   `needs-confirm`. Never on a project's main checkout or its main copy (`forbidden`). Every other verb
   is `forbidden`. A design session has no project tool at all.
 - **The Project Assistant** (the `assistant` caller, §app.project-assistant/tools): only `up`, and
@@ -705,7 +747,8 @@ The merge queue (§app/merge-queue) is worked through verbs beside the deploy ve
 the same route (`POST /api/project-services/<verb>`), the same CLI and the same tools, each
 answering the one result shape with its own `merge` key (§app.project-services/result).
 
-- **Reads**: `merge.status` (a project, or one entry, which narrows the view to it: the queue's view, its state and why it is paused, the
+- **Reads**: `merge.status` (a project, or one entry, which narrows the view to it, the queue's
+  history too, read-only: §app.merge-queue/history; the queue's view, its state and why it is paused, the
   current run, the waiting line with estimates, what needs the user, what needs a fix, recent
   landings with their runs, the target's and pushed heads, and the test checks flagged broken on the
   target) and `merge.logs` (a run, optionally one step and a line count).
@@ -886,7 +929,8 @@ restarts in either case.
 - **A note for each outcome.** Each outcome is a line in the project's Software card feed
   (§app.project-runtime/software-card) and the server's log: "Main moved to {sha7}: onMerge
   reloaded {services} on the main checkout's copy.", "Main moved to {sha7}: onMerge could not
-  reload {services}: {reason}." or "Main moved to {sha7}: onMerge never reloads the checkout this
+  reload {services}: {reason}." (an archived project's apply is refused, §app.organizations/archive-copies,
+and the reason is its refusal) or "Main moved to {sha7}: onMerge never reloads the checkout this
   Sova runs from; apply it from the Branches tab." The newest 10 per project are kept. A move with
   nothing carrying the key running writes no line.
 
@@ -908,7 +952,9 @@ The operator sees and drives every running copy from two places, both on this ho
   memory (the sum of its services' memory, each process's own memory as the resource monitor
   measures it, as a project card counts a copy, §app.projects/home-glance, which leaves out Sova's
   own server; "—" when none reports one), its state as a chip
-  (Running, Starting, Degraded, Stopped, Absent; Starting while the copy is degraded only because a
+  (Running, Starting, Degraded, Failed, Stopped, Absent; Failed, error, while a service gave up
+  retrying, §app.project-services/supervisor, named under the row "{service} failed and stopped
+  retrying; Start runs it again"; Starting while the copy is degraded only because a
   service is still starting, none failed or degraded; a service that is not ready is named under the
   row with its state), and who created it ("by you", "by a coding session", "by its overseer", "by the Overseer",
   "by conformance"; the caller's tag is its title). While the main checkout has no copy, **Start

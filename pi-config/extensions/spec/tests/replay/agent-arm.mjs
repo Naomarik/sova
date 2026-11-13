@@ -117,14 +117,15 @@ export function workDir(base, tree, pinnedRoot) {
 /**
  * The instructions the agent gets: the tree under test's spec-mode text (`<tree>/mode/spec-mode.md`), or `--instructions
  * <file>` to experiment, or none with `--no-instructions`. Adapted only mechanically, the same in every arm: the
- * trusted-core line resolves to the work directory's `tools/`. → { source, sha256, adaptedSha256, text } | null
+ * trusted-core line (old `.../spec/core"` or new `${SOVA_SPEC_CORE:-.../spec/core}"` form) becomes `core="$PWD/tools"`, so
+ * it resolves to the work directory's `tools/` and SOVA_SPEC_CORE can't override it. → { source, sha256, adaptedSha256, text } | null
  */
 export function instructionsFor(tree, o = {}) {
   if (o.noInstructions) return null;
   const source = o.instructions ? resolve(o.instructions) : join(tree, "mode/spec-mode.md");
   if (!existsSync(source)) { if (o.instructions) throw new Error(`instructions ${source} not found`); return null; }
   const raw = readFileSync(source, "utf8");
-  const text = raw.replace(/^core=.*\/extensions\/spec\/core"\s*$/m, 'core="$PWD/tools"');
+  const text = raw.replace(/^core=.*\/extensions\/spec\/core\}?"\s*$/m, 'core="$PWD/tools"');
   if (text === raw && /^core=/m.test(raw)) throw new Error("the instructions' core= line has an unexpected form; adapt the harness, not the text");
   const sha = (s) => createHash("sha256").update(s).digest("hex");
   return { source: o.instructions ? source : "<tree>/mode/spec-mode.md", sha256: sha(raw), adaptedSha256: sha(text), text };

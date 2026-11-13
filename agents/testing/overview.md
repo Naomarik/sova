@@ -16,7 +16,10 @@ environment every runner starts in, and the hermetic dev server.
 - `scripts/test-cache.mjs`: the tree fingerprint and the store of remembered passes; `scripts/checked.mjs`
   does the same for the type check (`pnpm run typecheck`, Build's first step).
 - `scripts/test-changed.mjs`: the `--changed` selection.
-- `scripts/test-groups.mjs`: the slow groups and their triggers (`--landing`, `--changed`, `--groups`).
+- `scripts/test-groups.mjs`: the slow groups and their triggers (`--landing`, `--changed`, `--groups`,
+  `--picked-groups`).
+- `scripts/runner-copy.test.helper.ts`: the runner copied into a throwaway repository, for the tests
+  that run it end to end (reuse, `--picked-groups`, Sova's own optional checks run bare).
 - `pi-config/extensions/claude-code/tests/hermetic-env.mjs`: the throwaway-home preload.
 - `scripts/test-sentinel.mjs`, `server/test-scratch.ts` (`scratchRoot`).
 - `scripts/hermetic-agent-dir.mjs`: builds the hermetic `.agent` for `pnpm run dev:hermetic`.
@@ -30,6 +33,21 @@ environment every runner starts in, and the hermetic dev server.
   [agents/frontend/overview.md](../frontend/overview.md).
 
 ## Rules and contracts
+
+### Run tests only through the runner
+
+- **Only through the project's runner**: `pnpm test <file>` (a unit file), `pnpm test:int <file>` (an
+  `*.integration.test.ts`), or the `project_verbs` `test` verb with `select: [<file>]` when the sandbox
+  blocks a direct run. Never a bare `bun test`, `node --test`, `tsx --test` or `npx tsx --test` on a
+  Sova test file, not even for one file or a folder: without the runner's preload and throwaway home a
+  test that points its agent dir anywhere late writes into the user's real `~/.pi` (a bare
+  `bun test server/merge-queue/` once wrote a fixture chat into the user's real sessions and
+  archived it). A file header's `// Run:` line naming another command is stale: use the runner.
+- A test sets its agent dir before any product module loads: import `server/testing/scratch-agent-dir.ts`
+  first (or set `PI_CODING_AGENT_DIR` before dynamic imports), and build fixture paths from that dir,
+  never from an imported constant such as `SESSIONS_DIR`.
+- pi-config's own extension tests (self-contained, outside the runner's GLOBS) are the one exception:
+  run each with the command its guide names, nothing shorter.
 
 ### Two tiers, by file name (§app.server-runtime/test-tiers)
 
@@ -62,7 +80,11 @@ environment every runner starts in, and the hermetic dev server.
   file, or a new area such a test drives from outside, goes in that list.
 - **At landing** the merge queue runs `pnpm test`, then `pnpm test:int -- --landing --base <master>`:
   the everyday set, plus Chat processes when the branch triggers it; Tours never. It names what it
-  skipped. `--groups <name,…|all>` runs only those groups, `--plan` prints the selection as JSON
+  skipped. `--groups <name,…|all>` runs only those groups (bare: a usage error), `--picked-groups
+  [<name,…|all> …]` is the queue's form (the Slow test group check: the thread's selection appended;
+  none, as in a trial, runs the slow groups `--landing` would add for the change since the merge base
+  with `$SOVA_MERGE_TARGET`, or skips, exit 0, "no slow group applies to this branch's changes"),
+  `--plan` prints the selection as JSON
   and runs nothing, and plain `pnpm test:int` runs every group: a release does that (the only
   catch-up for what landings skip).
 - The tier guard records what each file starts, binds, connects to, fetches and whether it imports
@@ -86,7 +108,8 @@ environment every runner starts in, and the hermetic dev server.
   extensionless imports) or `SOVA_RUNTIME=node pnpm test`; an explicit `--runtime` wins. No Bun found:
   the runner exits 2 naming `pnpm run test:node`, never a quiet Node pass. `pnpm run test:bun` is kept
   as an explicit Bun alias.
-- Tests run on Bun only through the runner (`pnpm test`, `test:int`): it sets HOME before bun starts
+- Tests run on Bun only through the runner (`pnpm test`, `test:int`; see "Run tests only through the
+  runner"): it sets HOME before bun starts
   (Bun's `os.homedir()` ignores an in-process change), puts the real node and `mise bin-paths` first
   on PATH (shims refuse in a throwaway HOME; tests spawn `node` and `python3`), and sets
   `SOVA_PRICES_FETCH=off` and `SOVA_GIT_MAINTENANCE=off` (no server a test starts registers a
@@ -135,6 +158,12 @@ environment every runner starts in, and the hermetic dev server.
   integration files only. A test that reads a new switch from its environment (`SLOW=1`,
   `*_UPDATE=1`) adds it to `TEST_SWITCHES`, or it never reaches the test; one that points tests at
   files outside the tree (a dist built elsewhere) goes in `RECORDS_NOTHING`.
+- **The one test knob a test never sets itself**: `testEnv` gives every test process
+  `SOVA_TEST_OWN_EXTENSIONS=linked`. A Sova chat on its server's agent dir adds every extension Sova ships
+  that the agent dir doesn't link (server/harness/pi/own-code.ts `ownExtensions`); a test's throwaway agent
+  dir links none, so under the knob nothing but Sova's mode engine is added and a test loads only what it
+  links or lists. It never turns off the remap to Sova's own copy nor the mode engine. Nothing outside the
+  runner sets it, so a live server's chats never have it; `own-extensions.test.ts` runs without it.
 
 - Every test runner starts in a throwaway home (`hermetic-env.mjs`: `pnpm test` loads it with
   `--import`, the extension runners import it first). A session that itself runs on an added Claude
@@ -191,7 +220,9 @@ environment every runner starts in, and the hermetic dev server.
 
 - Once `.agent` holds copies of real sessions (or `--copied-sessions` announces them), the script
   leaves out the wake-nudge extension and blanks the copied scheduler state, so no copied nudge or
-  schedule fires; the mode is sticky (`.agent/copied-sessions.json`).
+  schedule fires; the mode is sticky (`.agent/copied-sessions.json`). Sova itself checks that marker too:
+  on such an agent dir it never adds wake-nudge back (it adds every other shipped extension a `.agent`
+  lacks, server/harness/pi/own-code.ts).
 - Gaps: 4810 by default, one server per port (`SOVA_PORT` for a second), and a symlinked
   `node_modules` can break `pnpm run` in a worktree.
 - Claude logins in a hermetic run (fake `claude`, `SOVA_CLAUDE_ACCOUNTS_DEV`, the pool e2e):

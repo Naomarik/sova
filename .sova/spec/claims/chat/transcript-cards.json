@@ -143,7 +143,7 @@
       "src/vis/markdown.test.ts",
       "pi-config/extensions/mode/vis-guide-tool.ts",
       "pi-config/extensions/mode/minor.ts",
-      "pi-config/extensions/mode/index.test.ts"
+      "pi-config/extensions/mode/modes.test.ts"
     ]
   },
   "§chat.transcript-cards/files": {

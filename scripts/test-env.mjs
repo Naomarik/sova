@@ -23,6 +23,7 @@ export const CHAT_ENV = [
   "SOVA_JOBS_UNIT_PREFIX",
   "SOVA_JOB_CARDS",
   "SOVA_JOB_CALL",
+  "SOVA_SPEC_CORE",
   "PI_SESSION_ID",
   "PI_SESSION_FILE",
   "PI_SUBAGENTS_TEAM_MEMBER",
@@ -115,5 +116,8 @@ export function testEnv(source, tier) {
   // The default a project's processes get (server/project-services/env-allow.ts inheritedEnv), so a merge check and a
   // chat's shell started from a server with no LANG give tests the same one.
   out.LANG ??= "C.UTF-8";
+  // A test's throwaway agent dir links no extension: Sova adds no missing shipped one in a test (own-code.ts
+  // ownExtensions; the remapping and the mode engine are unchanged). Test-only: nothing else ever sets it.
+  out.SOVA_TEST_OWN_EXTENSIONS ??= "linked";
   return out;
 }

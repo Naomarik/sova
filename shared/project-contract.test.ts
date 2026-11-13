@@ -147,7 +147,7 @@ test("templates render every known variable and $$ as a literal $", () => {
 test("every error code has one exit class and one status", () => {
   const want: Record<number, string[]> = {
     1: ["not-ready", "start-failed", "hook-failed", "tests-failed", "deploy-failed", "verify-failed"],
-    2: ["not-conformant", "cap-reached", "slots-blocked", "port-held", "dirty-worktree", "unsupported", "refused-slot0", "share-denied", "forbidden", "needs-confirm", "deploy-refused", "release-refused", "needs-override"],
+    2: ["not-conformant", "cap-reached", "slots-blocked", "port-held", "dirty-worktree", "unsupported", "refused-slot0", "share-denied", "forbidden", "needs-confirm", "deploy-refused", "release-refused", "refused-archived", "needs-override"],
     3: ["invalid-request", "invalid-definition", "not-found"],
     4: ["busy"],
   };

@@ -6,7 +6,7 @@ import { fetchDraft, putDraft } from "./api";
 import type { SessionSummary, UploadResult } from "../../shared/protocol";
 import type { ContextState } from "./context";
 import { draftCounts } from "./draft-mark";
-import { registerPutBack } from "./chat-outbox";
+import { giveToOpenView, registerPutBack } from "./chat-outbox";
 import { createDraftSaver, type DraftPayload, type ShellDraftMode } from "./draft-save";
 import { readKey, writeKey } from "./storage-keys";
 import { makeToast, placeToast, type Toast, type ToastOptions } from "./toast";
@@ -234,6 +234,21 @@ registerPutBack((path, texts) => {
     setDraftText(path, [...texts, ...(now.trim() ? [now] : [])].join("\n\n"));
   });
 });
+
+/**
+ * A group message a member held for decisions (§chat.context-approval/held-send): the server already put
+ * it ahead of the member's stored draft. An open view here takes it into its composer; a draft this tab
+ * knows takes it the same way; otherwise this tab reads the server's copy, which already holds it once.
+ */
+export function heldMessageBack(path: string, text: string): void {
+  if (giveToOpenView(path, [text])) return;
+  if (draftKnown.has(path)) {
+    const now = draftMessage(path);
+    setDraftText(path, [text, ...(now.trim() ? [now] : [])].join("\n\n"));
+    return;
+  }
+  void loadDraft(path);
+}
 
 /** Sends every pending draft save now. */
 export function flushDrafts(): void {

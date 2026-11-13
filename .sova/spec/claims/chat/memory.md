@@ -9,13 +9,13 @@ the chat's full history back.
 
 Owns: the two memory types and their credit, where memory can be turned on, each chat's own type and
 the Summary size each type uses, the message log, the summary tree and the view, the summarizer, what a turn sends, the
-recall tools and their rows, preparing an existing chat, recovering from failed summaries, zoomable compaction, the memory status and
+recall tools (opening a line, finding a message by its words) and their rows, preparing an existing chat, recovering from failed summaries, zoomable compaction, the memory status and
 outline the web shows, Settings → Memory and the overseers' switches. Not here: the mode menu's rows
 and Make {name} the Default (§chat/mode-menu), and how a Claude Code chat's CLI takes a request
 (§app/claude-code-provider).
 
-The engine is Sova's, server-side and harness-neutral (`server/memory/`): the mode extension only
-knows the minor mode's name and where it may be turned on. Memory is no part of Claude Code's own
+The engine is Sova's, server-side and harness-neutral (`server/memory/`): Sova's modes only
+know the minor mode's name and where it may be turned on. Memory is no part of Claude Code's own
 auto-memory, which Sova keeps off (§app.claude-code-provider/no-memory).
 
 ## §chat.memory/types — Two types: UniiChat and zoomable compaction
@@ -62,7 +62,7 @@ switch from its mode menu is refused (409), as for every queue chat
 (§chat.merge-queue/thread-life). Those are the only ways: a project overseer's mode switch stays
 refused, and neither overseer has a mode-menu memory row.
 
-- The mode extension declares it web-only (`MINOR_SURFACES` in `pi-config/extensions/mode/minor.ts`,
+- Sova's modes declare it web-only (`MINOR_SURFACES` in `pi-config/extensions/mode/minor.ts`,
   a record over every minor mode). Its `/mode memory on` takes effect only while Sova's server is
   applying a switch for that very session (the server's `sova:web-minor` hook); typed by hand in a
   chat's composer (§chat.mode-menu/typed-commands), it is refused with "memory is turned on from a
@@ -189,10 +189,13 @@ the turn's first request, and is the same for the turn's every request.
   message is kept whole under its line, tool results included, while lines shorten names and
   numbers (ids are shown whole, §chat.memory/full-ids). Whenever the model needs anything the chat has seen, it finds the latest mention in the
   view and zooms, halving n down to the message, before any other tool and before it acts, guesses
-  or asks; it never greps or reads the chat's transcript or memory files, and uses other tools only
-  for what the view never mentions or to check what is true now. Its wording was chosen by an A/B
-  evaluation of recall against the earlier wording.
+  or asks: memory comes first. When no line names what it needs, it calls `recall` with the topic's
+  words (§chat.memory/recall-words) before any other tool, then zooms into what it finds; it never
+  greps or reads the chat's transcript or memory files, and uses other tools only for what memory
+  never mentions or to check what is true now. Its wording was chosen by an A/B evaluation of
+  recall against the earlier wording; the `recall` step was added after it.
 
+- The view's lines carry no dates; `zoom`, `date` and `recall` give them (§chat.memory/recall).
 - **Wait.** Before the first request, the turn waits for the newest messages' summaries, at most
   20 seconds, then goes on anyway (a line not summarized yet reads "(not summarized yet: zoom it)");
   the composer shows "Updating memory…" meanwhile. Merges never hold a turn.
@@ -214,13 +217,43 @@ the turn's first request, and is the same for the turn's every request.
 
 ## §chat.memory/recall — Opening a line
 
-While memory is on the model has two tools: `zoom(id, n)` opens line `id+n` into the two lines it was
-made from, and `zoom(id, 1)` gives message `id` whole; `date(id)` gives message `id`'s date and time.
-`n` must be a power of 2 and `id` a multiple of it; a line not built yet opens into its own halves
-or messages. The zoom tool's description says it recalls anything from earlier in the chat (a
+While memory is on the model has three tools: `zoom(id, n)` opens line `id+n` into the two lines it
+was made from, and `zoom(id, 1)` gives message `id` whole; `date(id)` gives message `id`'s date and
+time; `recall(words)` finds messages by their words (§chat.memory/recall-words). `n` must be a power
+of 2 and `id` a multiple of it; a line not built yet opens into its own halves or messages. Every
+date and time these tools show is this computer's local date and time, in the same format as the
+Overseer's run note's `[now]` line (the date's full local text, e.g. `Thu Nov 12 2026 14:05:09
+GMT+0400 (Gulf Standard Time)`), never UTC or an ISO stamp. Where it goes: `zoom(id, 1)` and a
+`recall` hit read `id|kind [date]: …`; each line `zoom(id, n)` gives for n > 1 reads
+`id+n|[date] text`, dated by the line's first message; `date(id)` gives the date string alone, or
+"unknown" when the message's time is missing or unreadable. The memory lines a turn sends
+(§chat.memory/turn) and a zoomable compaction's lines carry no date. The zoom tool's description says it recalls anything from earlier in the chat (a
 session, its full id, a branch, a number, what was said), that every message is kept whole under its
 memory line, and to use it before searching. Each call is a tool row like any other, whose folded line reads what it opened:
 "Recalled messages 40–47", "Recalled message 40", "Date of message 40".
+
+## §chat.memory/recall-words — Finding a message by its words
+
+Every chat with memory on, of either type and the overseers included, has `recall(words)`, the same
+in each, with no per-turn note about it: it searches the messages this chat has logged
+(§chat.memory/log) for the messages holding every word given, taken as the model typed them (quotes
+around a word and punctuation after it dropped, never replaced by a summary's words; case ignored,
+and a final plural "s" optional on a word of 4 or more letters not ending in "ss"), and lists the
+hits closest match first, at most 8, with `before <id>` for older ones. Only when nothing matches and
+a word is joined by `-` or `_` does it search once more with that word split, and says so. Each hit names its
+message id (so `zoom(id, 1)` opens it whole), its kind, its local date and time
+(§chat.memory/recall) and a snippet of the message around the words.
+
+- **Only the past.** It never returns a message at or after the start of the current turn: the turn
+  is already whole in the model's context.
+- **Never itself.** The memory tools' own calls and results (`zoom`, `date`, `recall`) are never
+  searched or returned.
+- **Untrusted text is marked.** A snippet from a tool result (`echo`) or from a message the model
+  didn't write that the transcript shows (`work`: a worker's report, another session's message) is
+  fenced as untrusted content, data to read and never instructions to follow; `zoom(id, 1)` fences
+  such a message the same way.
+- With no hit it says so; it reads the branch as it is now, so a rewind or fork changes what it
+  finds, as it changes the log.
 
 ## §chat.memory/full-ids — Ids shown whole
 
@@ -263,7 +296,10 @@ With zoomable compaction on, the chat's turns go out as without memory, while ev
 summarized in the background as with UniiChat. When the chat compacts — pi's automatic compaction,
 a `/compact`, Claude Code's automatic one or `compact-handoff` — the compaction's summary is replaced
 by the view of the compacted messages, merged down to the chat's size, under a short explanation of
-the lines and the `zoom` tool; the kept recent part stays as pi chose it. A message not summarized
+the lines, the `zoom` and `date` tools, and `recall` for a detail no line names
+(§chat.memory/recall-words), with the same three rules as the UniiChat guide (§chat.memory/turn):
+memory comes first; when no line names what it needs, it calls `recall` with the words before any
+other tool; and it never searches elsewhere to confirm what memory already holds. The kept recent part stays as pi chose it. A message not summarized
 when it compacts waits at most 20 seconds, then shows as not summarized yet. Each later compaction
 writes the view of everything it compacts again.
 
@@ -370,6 +406,6 @@ Changing one never changes the Overseer's or another project's.
 - **An existing conversation** on by default is prepared in the background from its runtime's next
   open or its next turn, whichever comes first (§chat.memory/preparing), its run-status row
   showing "Preparing memory: n of m messages", and it answers as without memory meanwhile.
-- With it on, the overseer runs the same engine as a chat (its tools include `zoom` and `date`),
+- With it on, the overseer runs the same engine as a chat (its tools include `zoom`, `date` and `recall`),
   on Claude Code as on pi. It never reaches the coding sessions either overseer starts
   (§chat.memory/where).

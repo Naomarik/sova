@@ -26,6 +26,7 @@ import { estimateTokens, getSessionSetup, measureFile } from "./session-setup";
 import { toolTokens } from "./session-tools";
 import { fileLinesOf, linesLoaded } from "./skill-lines";
 import { collectSkillLoads, type SkillLoad, skillLinesOf } from "./skills";
+import { inProjectHere, skillDescentAllowed } from "./skill-descent";
 import { listSubfolderSkills, offeredSkills } from "./subfolder-skills";
 import { readBranch } from "./harness/pi/reader";
 import { piSkillsIn } from "./harness/pi/skill-sources";
@@ -52,6 +53,9 @@ export interface ContextViewDeps {
   context?: typeof resolveContext;
   nested?: typeof listSubfolderInstructions;
   nestedSkills?: (cwd: string) => ReturnType<typeof listSubfolderSkills>;
+  /** Whether the chat looks below its folder at all (server/skill-descent.ts; default: its folder's git and
+      projects now, from the home folder). */
+  descends?: (cwd: string) => boolean;
   /** A skill's SKILL.md as it is now, to count the lines its reads loaded. */
   readText?: (path: string) => Promise<string>;
   now?: () => number;
@@ -242,19 +246,22 @@ export async function getContextView(path: string, deps: ContextViewDeps = {}): 
   const [held, branch] = await Promise.all([(deps.held ?? heldPrompt)(path), (deps.branch ?? readBranch)(path).catch(() => [] as HEntry[])]);
   const ctx = await (deps.context ?? resolveContext)(contextOfBranch(branch));
 
+  // What loads at the start only: a row the folder's scan lists for a decision (scanOnly) isn't loaded there.
   const instructions: SessionContextPart[] = setup.context
-    .filter((f) => !f.off)
+    .filter((f) => !f.off && !f.scanOnly)
     .map((f) => ({ id: `file:${f.path}`, label: labelOf(cwd, f.path), path: f.path, tokens: f.tokens ?? Math.ceil(f.bytes / CHARS_PER_TOKEN) }));
   const loads = skillsRead(branch, cwd);
   // The skills a folder below cwd has, for a chat that gets them: none where it loads no skills, or where its
   // tools can't both touch a file and read one (§chat.subfolder-skills/offering).
   const toolNames = held ? new Set(held.tools.map((t) => t.name)) : null;
-  const getsNested = !held?.loader?.noSkills && (!toolNames || (["read", "edit", "write"].some((t) => toolNames.has(t)) && ["read", "bash"].some((t) => toolNames.has(t))));
+  // None at all where the chat doesn't look below its folder (server/skill-descent.ts): its hook offers none.
+  const descends = deps.descends ? deps.descends(cwd) : skillDescentAllowed(cwd, { home: homedir(), inProject: await inProjectHere(cwd) });
+  const getsNested = descends && !held?.loader?.noSkills && (!toolNames || (["read", "edit", "write"].some((t) => toolNames.has(t)) && ["read", "bash"].some((t) => toolNames.has(t))));
   const skillWalk = getsNested ? (deps.nestedSkills ?? ((c) => listSubfolderSkills(c, piSkillsIn)))(cwd) : { skills: [], incomplete: false };
-  const startingPaths = new Set(setup.skills.map((k) => k.path));
+  const startingPaths = new Set(setup.skills.filter((k) => !k.scanOnly).map((k) => k.path));
   // A name two rows share matches by path alone: reading one of them says nothing of the other.
   const uses = new Map<string, number>();
-  for (const n of [...setup.skills.filter((k) => !k.off).map((k) => k.name), ...skillWalk.skills.filter((s) => !startingPaths.has(s.filePath)).map((s) => s.name), ...offeredSkills(branch).filter((s) => !skillWalk.skills.some((w) => w.filePath === s.filePath)).map((s) => s.name)]) uses.set(n, (uses.get(n) ?? 0) + 1);
+  for (const n of [...setup.skills.filter((k) => !k.off && !k.scanOnly).map((k) => k.name), ...skillWalk.skills.filter((s) => !startingPaths.has(s.filePath)).map((s) => s.name), ...offeredSkills(branch).filter((s) => !skillWalk.skills.some((w) => w.filePath === s.filePath)).map((s) => s.name)]) uses.set(n, (uses.get(n) ?? 0) + 1);
   const readText = deps.readText ?? ((p: string) => readFile(p, "utf8"));
   const readStateOf: SkillReadStateOf = async (name, path, lines) => {
     const byPath = loads.paths.get(resolveToolPath(cwd, path)) ?? [];
@@ -265,7 +272,7 @@ export async function getContextView(path: string, deps: ContextViewDeps = {}): 
   };
   const skills: SessionContextPart[] = await Promise.all(
     setup.skills
-      .filter((k) => !k.off)
+      .filter((k) => !k.off && !k.scanOnly)
       .map(async (k) => ({
         id: `skill:${k.name}`,
         label: k.name,
@@ -297,7 +304,7 @@ export async function getContextView(path: string, deps: ContextViewDeps = {}): 
 
   // Only what the chat's hook would load: none for a loadout with no context files, and a special chat's
   // files only where its file tools may read (the hook's own allow, server/chat-special.ts).
-  const allow = held?.loader ? deeperContextAllow(held.loader) : () => true;
+  const allow = !descends ? null : held?.loader ? deeperContextAllow(held.loader) : () => true;
   const walk = allow ? (deps.nested ?? listSubfolderInstructions)(cwd, branch) : { files: [], incomplete: false };
   const nested: SessionContextNested[] = walk.files.filter((f) => allow!(f.abs)).map((f) => ({ path: f.path, abs: f.abs, folder: f.dir, tokens: Math.ceil(f.chars / CHARS_PER_TOKEN), loaded: f.loaded }));
   const loadedNested = nested.reduce((n, f) => n + (f.loaded ? f.tokens : 0), 0);

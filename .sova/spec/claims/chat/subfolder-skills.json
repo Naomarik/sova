@@ -12,12 +12,15 @@
       "server/subfolder-skills.integration.test.ts",
       "server/harness/pi/deeper-context.ts",
       "server/harness/pi/session.ts",
-      "server/chat-manager.ts"
+      "server/chat-manager.ts",
+      "server/skill-descent.ts",
+      "server/deeper-context.test.ts",
+      "shared/harness-session.ts"
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-06T18:26Z",
-      "source": "pi-session:01a1b07d-be49-727f-8989-d4d0378c61bb#55377061"
+      "at": "2026-11-12T16:08Z",
+      "source": "pi-session:ec6da819-fb0b-454b-9ba9-97db0affcbfb#723cbddc"
     }
   },
   "§chat.subfolder-skills/offering": {
@@ -25,10 +28,11 @@
     "requires": [
       "§chat.subfolder-instructions/loading",
       "§chat.skill-sources/manual-only",
-      "§chat.transcript/setup-card-toggles"
+      "§chat.transcript/setup-card-toggles",
+      "§app/projects"
     ],
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "unreviewed",
     "code": [
       "server/subfolder-skills.ts",
       "server/subfolder-skills.test.ts",
@@ -38,12 +42,18 @@
       "server/harness/pi/deeper-context.ts",
       "server/chat-manager.ts",
       "server/chat-special.ts",
-      "server/subfolder-skills-claude.integration.test.ts"
+      "server/subfolder-skills-claude.integration.test.ts",
+      "server/chat-host.ts",
+      "server/chat-runtime/host.ts",
+      "shared/chat-runtime-wire.ts",
+      "server/skill-descent.ts",
+      "server/skill-descent.test.ts",
+      "server/chat-host.test.ts"
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-06T18:26Z",
-      "source": "pi-session:01a1b07d-be49-727f-8989-d4d0378c61bb#55377061"
+      "at": "2026-11-12T16:08Z",
+      "source": "pi-session:ec6da819-fb0b-454b-9ba9-97db0affcbfb#723cbddc"
     }
   },
   "§chat/subfolder-skills": {
@@ -52,12 +62,13 @@
     "evidence": "verified",
     "code": [
       "server/subfolder-skills.ts",
-      "server/harness/pi/deeper-context.ts"
+      "server/harness/pi/deeper-context.ts",
+      "server/skill-descent.ts"
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-06T18:26Z",
-      "source": "pi-session:01a1b07d-be49-727f-8989-d4d0378c61bb#55377061"
+      "at": "2026-11-12T16:08Z",
+      "source": "pi-session:ec6da819-fb0b-454b-9ba9-97db0affcbfb#723cbddc"
     }
   }
 }

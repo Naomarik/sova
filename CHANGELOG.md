@@ -4,6 +4,83 @@ What changed in each Sova release, newest first: the highlights, written by hand
 list. The install command installs the newest release (the `stable` tag); `SOVA_REF=vX.Y.Z` installs
 or keeps one release. How a release is cut: [CONTRIBUTING.md](CONTRIBUTING.md#releases).
 
+## v0.16.0 — 2026-11-12
+
+Lookbooks that use your design skills and pasted screenshots, a recall tool for memory chats, one
+shared folder per chat for its workers, and approvals that answer at once. 11 commits on the main
+line since v0.15.0 (6 merged branches). The highlights:
+
+- **Lookbook: the Creative Director.** The Lookbook's coordinator is now called the **Creative
+  Director** everywhere you read it: the Setup dropdown, **Start Creative Director**, its questions
+  and **Open Creative Director** in the Gallery tab.
+- **Lookbook: design skills.** A Lookbook loads no skill and no project file by itself. Name a design
+  skill to your chat ("use the brand skill", or a folder holding a `SKILL.md`) and Setup lists it
+  under **Design skills**; one that can't be found becomes a question on the brief. The Creative
+  Director reads them (it can also read files you point it to, but writes and runs nothing), picks
+  which ones the designers use, and the brief's **Design skills** line shows that choice. A designer
+  reading its skill says **Reading the design skill** on its tile, and the estimate counts it.
+- **Lookbook: screenshots.** A screenshot you paste joins the Lookbook's images as a **Screenshot**,
+  with up to 8 colours measured from its pixels and **words for designers** (its feel and what each
+  colour is for), which you can change with **Edit Words**. Before Start, each ticked screenshot needs
+  **Rebuild This Screen** (designers that read pictures get it attached, up to 4 reference pictures a
+  design) or **Just Its Feel** (words and colours only). Images attached when you ask for a Lookbook
+  now join the run and show in Setup's image row.
+- **Memory: recall.** Every memory chat has a new **recall** tool that finds earlier messages by their
+  words, closest match first, each dated in your local time; zoom and date show the same local dates.
+- **One shared folder per chat.** A chat and its workers now share one folder, outside the project,
+  for briefs, reports, alignment files and team handover notes. A write-only worker gets its own
+  private `/tmp` and private mise and pnpm state, and a confined worker is told what it can reach.
+- **Approvals answer at once.** On a new chat's setup card, **Approve** and **Disallow** show their
+  answer immediately with no jump, and Send waits only for answers still being saved.
+- **Smaller changes.** Test runs no longer write outside their own scratch folders.
+
+**What you may need to do:** Nothing. To give a Lookbook a design skill, name it to your chat when
+you ask for the Lookbook.
+
+Going back to `v0.15.0` (`SOVA_REF=v0.15.0`) hasn't been tested on this release. v0.15.0 doesn't know
+a run's design skills or screenshot words, so an open Lookbook loses them there; chats' shared
+folders stay on disk, unused.
+
+## v0.15.0 — 2026-11-11
+
+Skills and context files you decide on per project, a Context tab that shows which skills a chat and
+its workers actually read, and a merge queue that keeps every finished entry. 53 commits since
+v0.14.0. The highlights:
+
+- **A project's Skills and Context Files.** The project page's Settings tab has two new cards,
+  **Context Files** and **Skills**, listing everything a chat in the project (its folders and its
+  worktrees included) could load. **Disallow** keeps one out of new chats; open chats keep what they
+  have. A folder that is no project has the same lists, from a new chat's setup card (**Edit Folder
+  List**), and so does the Overseer's folder.
+- **Ask first, if you want it.** Settings → General has one new switch, **Allow context files and
+  skills without asking**, on by default, so nothing changes until you turn it off. Off, anything you
+  haven't approved stays off: a new chat lists what waits ("{n} to approve for this project"), with
+  **Approve All**, **Disallow All** and a button per row, and holds Send until you decide. A skill or
+  file that changes after you approved it is marked **Changed since you approved**. Each chat's list
+  is fixed at its first message, and its workers get the same one. Turning the switch back on is your
+  own page's click only.
+- **Which skills were read.** The Context tab's Whose context has a new **Everyone** view: every
+  skill this chat and all of its workers opened over the whole history, most opened first, with a
+  sheet per skill naming the chats that opened it, and the skills offered that nobody opened.
+- **Merge queue history.** Every finished entry is now kept for good in a per-project history on
+  this computer, so `merge.status` and `merge.logs` still find an old entry after it leaves the
+  view. Each run's copy of the branch's drafts is deleted when the run ends.
+- **Quieter, faster.** Repeated identical timeline markers fold into one row ("coordinator finished
+  ×31" with its time range). The session list is built once and kept until something in it changes;
+  the session feed is serialized once for every window; chats untouched for 30 days let go of their
+  scan memory; refreshing a project page no longer adds "Git was checked" history lines when nothing
+  changed.
+- **Smaller changes.** A group's pane menu says **Archive** where it said Eliminate.
+
+**What you may need to do:** Nothing for most installs: with the new switch on (the default), every
+context file and skill loads as before unless you disallow it. To be asked first, turn **Allow
+context files and skills without asking** off in Settings → General.
+
+Going back to `v0.14.0` (`SOVA_REF=v0.14.0`) hasn't been tested on this release. v0.14.0 doesn't know
+the approval list or the switch, so every context file and skill loads again, disallowed ones and
+chats started in asking mode included; the decisions stay in their files and return if you update
+again. The merge queue history stays on disk, unread.
+
 ## v0.14.0 — 2026-11-10
 
 Lookbooks, Discard Branch, `!` commands in your own zsh, and a Claude model list that keeps itself

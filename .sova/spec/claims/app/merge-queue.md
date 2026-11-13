@@ -450,7 +450,9 @@ own folder, so a failure at any step, the first included, has its log.
 4. **Install.** When the branch changes one of the definition's install inputs (Sova's: the lockfile
    or `package.json`), the install runs offline.
 5. **Docs.** The branch's own drafts pinned at approval, and no other, are copied into the copy and
-   turned into docs there (the spec tool's `land`), as one docs commit on top of the merge. A
+   turned into docs there (the spec tool's `land`), as one docs commit on top of the merge. The
+   spec tools that run are the running Sova's own, never the ones a link in the pi folder leads to,
+   so a link into an older Sova's tools can't fail or change a landing (§tools.spec/mode-reading). A
    branch's own drafts are the untracked ones, plus the tracked ones it added or changed since its
    merge base with the target. Tracked drafts already on the target are never landed, changed or
    deleted. A draft of the branch's own that doesn't fit sends the entry back to its chat by itself
@@ -557,12 +559,16 @@ never "passed".
 - the spec replay, when the spec engine changed;
 - statecharts tests, when statecharts changed;
 - the build;
-- the spec check and census;
+- the spec check and census, with the running Sova's own spec tools, as the Docs step;
 - the leak scan over what would be pushed (§app.merge-queue/push).
 
 A check the project marks optional runs only when the merge thread picks it (Sova's: `e2e`, one
 build and then each picked end-to-end walkthrough, and
-`integration-group`, one slow integration group per pick). A pick on a required check that would
+`integration-group`, one slow integration group per pick). An optional check that takes a selection
+and is given none (a trial picks every optional check with none, §app.project-setup/trial) never
+fails for it: `e2e` reads "skipped: no walkthrough selected", and `integration-group` runs the slow
+groups a landing runs for the branch's changes since its merge base with the target, or reads
+"skipped: no slow group applies to this branch's changes" when there are none. A pick on a required check that would
 skip itself (the
 statecharts check skips unless statecharts changed) makes it run. A check with nothing to do for
 this change exits clean and says why ("Spec replay · skipped: no
@@ -1633,14 +1639,25 @@ Discard Branch… (§app.merge-queue/discard-branch) asks first, listing what go
 
 ## §app.merge-queue/run-logs — Run logs: packed as they age, cleaned only by you
 
-Each run keeps its step logs and the spec drafts snapshot it carried (copied in at the run's start,
-read only during the run) in its folder on this computer. Sova packs a finished run's logs on its
+Each run keeps its step logs in its folder on this computer. Sova packs a finished run's logs on its
 own and never deletes them: once a run ended at least a day ago, each step log (and its counts
-file) is gzipped in place and the drafts snapshot is packed into one archive in the run's folder;
-the run's record (`run.json`) and its small records stay as they are. A run in use is never
-touched: the queue's current run, a run an entry still checking, still open or sent back to fix
-names, a run whose record says it is running, and one with no recorded end. The sweep runs 1 minute after the queue starts, then
-hourly, one at a time.
+file) is gzipped in place; the run's record (`run.json`) and its small records stay as they are,
+its landed-drafts receipt (`docs-landed.json`) included, and a run's record is never deleted, by
+the sweep or by Clean Logs. A run in use is never touched: the queue's current run, a run an entry
+still checking, still open or sent back and still waiting on its chat names, a run whose record says
+it is running, and one with no recorded end. A sent-back entry that is done for good, by the same
+rule as the history's (§app.merge-queue/history: a newer attempt replaced it, its branch landed, or
+its branch or worktree folder is gone), no longer holds its runs in use: they are packed and
+cleanable like any other finished run's. The sweep runs 1 minute after the queue starts, then
+hourly, one at a time; each pass first asks git about the sent-back entries (§app.merge-queue/history).
+
+**A run's drafts copy goes when the run ends.** The copy of the branch's spec drafts a run takes
+into its folder at its start (read only during the run, §app.merge-queue/run) is deleted as the run
+ends, whatever its result; nothing packs it. A later run of the same entry copies the drafts afresh.
+A copy still on disk (a run a stop cut short, or a folder from before this rule), with any archive
+an older sweep packed it into, goes at the next sweep once its run has ended and isn't checking,
+whatever its age and even when an open entry names the run. Only the receipt of what the run landed
+stays.
 
 - **A packed log opens as before**: `merge.logs` and the run page's logs (§app.merge-queue/view)
   read it the same way, its tail and line count included.
@@ -1657,9 +1674,9 @@ hourly, one at a time.
   `Clean Logs…`; Escape closes the popover from either step and gives focus back to the chip; focus
   moving outside the chip and its popover closes it, and a click on the popover's own text (not a
   button) keeps it open at the step it shows. It takes from each cleanable run (a
-  finished run older than the newest 10, not checking, named by no entry still open or sent back to
-  fix) everything in its folder but `run.json`, `changed.txt` and `docs-landed.json`: step logs,
-  the drafts snapshot or its archive, the run's service data. Toast, shown once (a second clean
+  finished run older than the newest 10, not checking, named by no entry still open or sent back and
+  still waiting on its chat) everything in its folder but `run.json`, `changed.txt` and
+  `docs-landed.json`: step logs, any drafts copy or archive still left, the run's service data. Toast, shown once (a second clean
   replaces it): "Cleaned the logs of {n} runs: {size} freed." Each cleaned run is marked so, and its steps' logs read one line, "(log cleaned)",
   in `merge.logs` and on the run page.
 - **Only your click cleans.** Any other caller is refused (`forbidden`: "A chat can't clean the merge
@@ -1668,6 +1685,51 @@ hourly, one at a time.
 - **Commands** (§app/commands): `project.merge-queue.run-logs` (looks, `GET
   /api/merge-queue/run-logs?project=|session=`) and `project.merge-queue.run-logs.clean` (changes,
   `POST /api/merge-queue/run-logs/clean {project, confirm}`).
+
+## §app.merge-queue/history — Every finished entry, kept for good
+
+**The working list and the history.** Each project's queue works from its list: every open entry,
+and its newest 60 finished ones. Every finished entry is also kept for good in the project's
+history, on this computer beside the queue's records, filed by the month it finished; nothing is
+ever removed from it. The Merge Queue view (§app.merge-queue/view) and every reading of the queue
+work from the list as before: the Landed tab still shows the newest 20 landings, with no Show older,
+and the history has no screen of its own.
+
+**Written once it is truly finished, one row per entry.** An entry is written to the history once it
+is truly finished: it landed, was pushed, or was removed or cancelled; or it is a sent-back (or
+closed) attempt that a newer attempt of the same branch replaced, whose commit or branch is already
+in the target, or whose branch or worktree folder is gone. A missing worktree folder alone counts as
+gone. Once filed as finished it stays finished, even if the folder comes back or the newer attempt
+later leaves the list. If it changes again after that, its row is updated in place: the history
+holds one row per entry, never two, and never a copy older than the entry as the queue last had it.
+It is filed by the month it first became truly finished, and stays in that month.
+
+**Which sent-back entries git is asked about.** Saving the queue never asks git: it uses what git
+last said. The Merge Queue view's reading asks about its newest sent-back entries; the hourly sweep
+(§app.merge-queue/run-logs) asks about every sent-back entry, at most 500 a pass, starting each pass
+where the last stopped, so each is reached within a few passes however many there are. One it finds
+done is filed and leaves the list like any other.
+
+**What leaves the list.** Only finished entries beyond the newest 60 leave the list, oldest first,
+and only once they are in the history. A sent-back entry still waiting on its chat is never dropped,
+however old. The running server drops them the same way the saved file does, so what the queue
+reads is the same however long Sova has been running and after a restart. A history that can't be
+written never stops the queue's own save: nothing leaves the list then, and the next save tries
+again.
+
+**Looking up an entry, read-only.** `merge.status` for one entry (§app.project-services/merge-verbs)
+finds it in the history too once it has left the list, and answers its history row beside the view;
+`merge.logs` for that entry reads its last run. Every verb that changes an entry (`merge.note`,
+`merge.cancel`, `merge.retry`, `merge.extend`, `merge.resolve`, `merge.rule`, `merge.answer` and the
+rest), the user's and the merge thread's alike, refuses an entry in the history (`invalid-request`),
+changing nothing: "{entry} ({branch}) is finished and kept in the merge queue's history ({month}, …):
+the history is read-only, nothing changes it; Land the branch again for a new entry".
+
+**Filled in once from older runs.** Once per project, when its queue first loads, the history is
+filled in from the run records still on disk (§app.merge-queue/run-logs) for entries neither the
+list nor the history has. Each such row is marked partial: its branch, commit, runs, the newest
+run's result, blame and failing tests, and its times are known; its fix rounds, review findings and
+requests are not. A refusal naming a partial row says "partial".
 
 ## §app.merge-queue/branch-summary — What a branch does, in a few bullets
 

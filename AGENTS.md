@@ -20,7 +20,7 @@ also update Y" list live in its guide: read the guide of every area your task to
 | Frontend | [agents/frontend/overview.md](agents/frontend/overview.md) | `src/`: Solid, files the server imports, browser testing, project skills |
 | Testing | [agents/testing/overview.md](agents/testing/overview.md) | test tiers, the runner, tier guard, hermetic test env |
 | pi-config extensions | [agents/extensions/overview.md](agents/extensions/overview.md) | `pi-config/`: the contracts Sova parses, what the server imports, one guide per extension |
-| Modes | [agents/modes/overview.md](agents/modes/overview.md) | the mode extension and its minor modes; the spec mode and spec tools in [agents/modes/spec/overview.md](agents/modes/spec/overview.md) (CHANGELOG, EVOLUTION, GOALS, replay) |
+| Modes | [agents/modes/overview.md](agents/modes/overview.md) | Sova's modes (the `mode` folder's texts and rules, `server/modes/`) and their minor modes; the spec mode and spec tools in [agents/modes/spec/overview.md](agents/modes/spec/overview.md) (CHANGELOG, EVOLUTION, GOALS, replay) |
 | Statecharts | [agents/statecharts/overview.md](agents/statecharts/overview.md) | `statecharts/`: the org's statecharts |
 
 ## Layout & ownership
@@ -78,6 +78,11 @@ also update Y" list live in its guide: read the guide of every area your task to
   (the everyday integration set plus the slow groups the branch triggers, `scripts/test-groups.mjs`),
   plus what the merge thread picks for the branch; a release runs every group. Verify on Bun (the
   runner's default, the user's runtime); Node only when the user asks.
+- Run Sova's tests only through the runner: `pnpm test <file>`, `pnpm test:int <file>` (an
+  integration file), or the `project_verbs` `test` verb (`select: [<file>]`). Never a bare `bun test`,
+  `node --test` or `tsx --test`, not even for one file: it skips the throwaway home, and one such run
+  wrote a test chat into the user's real sessions. A file's `// Run:` header naming another command is
+  stale. pi-config extension tests run as their guides say (testing guide).
 - Write tests as the testing guide's "Writing tests" says: a rule over its edges where one exists,
   else one example per edge; each behaviour once, in the smallest harness; wait on events.
 - Never run the spec replay suite (`pi-config/extensions/spec/tests/replay`) while working: it is a
@@ -200,7 +205,8 @@ The server runs on Bun; Node only when the user asks (server guide). An agent ne
   your worktree's gitignored `.cache/`: `mkdir -p .cache/<name> && git archive <rev> | tar -x -C
   .cache/<name>`, and delete it when done; never `git worktree add` (it writes the shared `.git`). Never
   `~/.cache`: inside the sandbox that is a private copy shared by every sandboxed chat, which nobody
-  outside it sees. Throwaway files go in the temp dir (`$TMPDIR`, else `/tmp`).
+  outside it sees. Use `$TMPDIR` for scratch; files another chat reads (briefs, reports, alignment
+  files) go in the chat's shared folder (`$SOVA_SHARED_DIR` in a worker; agent_spawn's result names it).
 - Run `mise trust <worktree>` in a fresh worktree before any node/pnpm command (again after a
   `mise.toml` change).
 - Retire a worker past 50% of its context window: have it write a checkpoint, then hand off to a fresh

@@ -22,13 +22,14 @@
     "team_succeed",
     "team_list",
     "project_verbs",
-    "queue_push"
+    "queue_push",
+    "spec"
    ],
    "entries": [],
    "extensions": [
     "<mode-slot:index>",
-    "<repo>/pi-config/extensions/subagents/index.ts",
     "<repo>/pi-config/extensions/sandbox/index.ts",
+    "<repo>/pi-config/extensions/subagents/index.ts",
     "<inline:sova-resource-monitor>",
     "<inline:sova-fork-cache>",
     "<inline:sova-shell-guard>",
@@ -44,7 +45,8 @@
     "<inline:sova-topics>",
     "<inline:sova-tours>",
     "<inline:sova-create-settings>",
-    "<inline:sova-transcript-cards>"
+    "<inline:sova-transcript-cards>",
+    "<inline:sova-spec>"
    ]
   },
   {
@@ -69,7 +71,8 @@
     "team_succeed",
     "team_list",
     "project_verbs",
-    "queue_push"
+    "queue_push",
+    "spec"
    ],
    "entries": [
     {
@@ -105,9 +108,9 @@
         "rules": "@9514ae33e1ebc3e7",
         "docs": "@0f5fabf6c3c47c4c",
         "cwd": "<cwd>\n<ws:tree-bare>\n</cwd>",
-        "mode": "@d4cf9a33be021005"
+        "mode": "@8cb6214f079c2a20"
        },
-       "toolsAdded": "@ed596a5985c5d307"
+       "toolsAdded": "@fc4ee54c7a94b7b3"
       },
       {
        "role": "user",
@@ -166,11 +169,27 @@
        "content": [
         {
          "type": "text",
-         "text": "useWorktreeConfig: <ws:tree-bare>/.agent/extensions/mode is not a mode extension."
+         "text": "@f2f339ee4074cfe6"
         }
        ],
-       "details": {},
-       "isError": true
+       "details": {
+        "groupId": "run_01",
+        "label": "run 1 · w",
+        "spawned": [
+         {
+          "id": "ag_01",
+          "name": "w",
+          "backend": "pi",
+          "model": "scripted/scripted"
+         }
+        ],
+        "retention": {
+         "maxFinished": 50,
+         "evictedWorkers": 0,
+         "evictedRuns": 0
+        }
+       },
+       "isError": false
       }
      ]
     }
@@ -194,7 +213,8 @@
     "team_succeed",
     "team_list",
     "project_verbs",
-    "queue_push"
+    "queue_push",
+    "spec"
    ],
    "entries": [
     {
@@ -208,9 +228,9 @@
        "rules": "@9514ae33e1ebc3e7",
        "docs": "@0f5fabf6c3c47c4c",
        "cwd": "<cwd>\n<ws:tree-bare>\n</cwd>",
-       "mode": "@d4cf9a33be021005"
+       "mode": "@8cb6214f079c2a20"
       },
-      "toolsAdded": "@619362e2e44edede"
+      "toolsAdded": "@498bd9a2273199b5"
      }
     }
    ],
@@ -219,6 +239,136 @@
    }
   }
  ],
- "start": null,
- "worker": null
+ "start": {
+  "spec": {
+   "kind": "worker",
+   "parent": {
+    "sessionId": "<sid:1>",
+    "path": "<sessions:tree-bare>/2026-10-06T00-00-00-000Z_<sid:1>.jsonl",
+    "workerId": "ag_01"
+   },
+   "cwd": "<ws:tree-bare>",
+   "model": "scripted/scripted",
+   "thinking": "off",
+   "builtins": [
+    "read",
+    "bash",
+    "edit",
+    "write"
+   ],
+   "extensions": [
+    "<repo>/pi-config/extensions/subagents/worker-mark.ts",
+    "<repo>/pi-config/extensions/provider-limits/index.ts",
+    "<repo>/pi-config/extensions/model-levels/index.ts",
+    "<repo>/pi-config/extensions/mode",
+    "<repo>/pi-config/extensions/sandbox"
+   ],
+   "flags": {
+    "major": "normal",
+    "minor": "spec",
+    "sandbox": "on",
+    "sandbox-parent": "{\"version\":1,\"level\":\"workspace-write\",\"workspaceRoot\":\"<ws:tree-bare>\",\"writable\":[\"<ws:tree-bare>\"],\"readOnly\":[\"<ws:tree-bare>/.agent\"],\"writeOnly\":true,\"shared\":\"<shared>/<sid:1>\"}"
+   },
+   "appendSystemPrompt": null,
+   "env": {
+    "SPEC_AGREE_SOURCE": "pi-session:<sid:1>#<entry>",
+    "SPEC_AGREE_GIVEN": "pi-session:<sid:1>#<entry>",
+    "SOVA_SPEC_LANDED_FILE": "<file>",
+    "SOVA_SHARED_DIR": "<shared>/<sid:1>",
+    "PI_SUBAGENT_BUILTIN_TOOLS": "read,bash,edit,write"
+   },
+   "agentDir": "<ws:tree-bare>/.agent",
+   "lowered": true
+  },
+  "session": {
+   "new": {
+    "dir": "<agent>/sessions/--_ws_tree-bare_--"
+   }
+  },
+  "task": "do the task"
+ },
+ "worker": [
+  {
+   "step": "prompt \"do the task\"",
+   "calls": [
+    {
+     "keep": 0,
+     "add": [
+      {
+       "role": "system",
+       "content": "",
+       "sections": {
+        "preamble": "You are an expert coding assistant operating inside pi, a coding agent harness. You help users by reading files, executing commands, editing code, and writing new files.",
+        "tools": "@da87b165576f1968",
+        "rules": "@367a111ecea93121",
+        "docs": "@0f5fabf6c3c47c4c",
+        "cwd": "<cwd>\n<ws:tree-bare>\n</cwd>",
+        "mode": "@6c51ded44cbcb821"
+       },
+       "toolsAdded": "@c0348cafaab0e950"
+      },
+      {
+       "role": "user",
+       "content": [
+        {
+         "type": "text",
+         "text": "do the task"
+        }
+       ]
+      },
+      {
+       "role": "user",
+       "content": [
+        {
+         "type": "text",
+         "text": "Sandbox: you can write only in <ws:tree-bare> and $TMPDIR. /tmp and ~/.cache are private to you: leave files for other chats in <shared>/<sid:1>. Set up, serve and test through project_verbs."
+        }
+       ]
+      }
+     ]
+    }
+   ],
+   "activeTools": [
+    "read",
+    "bash",
+    "edit",
+    "write",
+    "project_verbs",
+    "spec"
+   ],
+   "entries": [
+    {
+     "type": "message",
+     "message": {
+      "role": "system",
+      "content": "",
+      "sections": {
+       "preamble": "You are an expert coding assistant operating inside pi, a coding agent harness. You help users by reading files, executing commands, editing code, and writing new files.",
+       "tools": "@da87b165576f1968",
+       "rules": "@367a111ecea93121",
+       "docs": "@0f5fabf6c3c47c4c",
+       "cwd": "<cwd>\n<ws:tree-bare>\n</cwd>",
+       "mode": "@6c51ded44cbcb821"
+      },
+      "toolsAdded": "@9e0c194f7854181b"
+     }
+    }
+   ],
+   "headers": {
+    "# Minor mode: spec": 1
+   },
+   "extensions": [
+    "<repo>/pi-config/extensions/subagents/worker-mark.ts",
+    "<repo>/pi-config/extensions/provider-limits/index.ts",
+    "<repo>/pi-config/extensions/model-levels/index.ts",
+    "<mode-slot:index>",
+    "<repo>/pi-config/extensions/sandbox",
+    "<inline:sova-shell-guard>",
+    "<inline:sova-deeper-context>",
+    "<inline:sova-background-jobs>",
+    "<inline:sova-project-verbs>",
+    "<inline:sova-spec>"
+   ]
+  }
+ ]
 }

@@ -7,6 +7,9 @@ import { inputRows, rewoundAt, viewRows } from "./inputs";
 import {
   anchorTime,
   chapterRows,
+  clockRange,
+  groupRuns,
+  runLabel,
   densityLine,
   GAP_MS,
   inputTurns,
@@ -536,4 +539,61 @@ test("a header line with no marker is the user's own text, untouched", () => {
   assert.equal(rows.length, 1);
   assert.equal(rows[0]!.sender, undefined);
   assert.equal(rows[0]!.title, '[from session "Planner" (sid-planner), hop 1]');
+});
+
+// ---- Runs ---------------------------------------------------------------------------------------
+
+/** A local wall-clock time today, so the meridiem cases hold in any time zone. */
+const local = (h: number, m: number) => new Date(2026, 8, 21, h, m).toISOString();
+const mark = (id: string, iso: string, title = "coordinator finished", marker: TimelineRow["marker"] = "retire", entryId: string | null = id): TimelineRow => {
+  const row: TimelineRow = { key: `marker:${marker}:${id}`, kind: "marker", marker, at: iso, title };
+  if (entryId !== null) row.entryId = entryId;
+  return row;
+};
+
+test("a run of 31 identical markers becomes one row: oldest key, newest jump, count and range", () => {
+  const rows = Array.from({ length: 31 }, (_, i) => mark(`r${i}`, local(14, 37 + Math.floor((i * 23) / 30))));
+  const out = groupRuns(rows);
+  assert.equal(out.length, 1);
+  const g = out[0]!;
+  assert.equal(g.key, "marker:retire:r0");
+  assert.equal(g.entryId, "r30");
+  assert.equal(g.at, local(15, 0));
+  assert.equal(g.title, "coordinator finished \u00d731");
+  assert.equal(g.meta, "2:37\u20133:00 PM");
+  assert.equal(runLabel(g), "coordinator finished, 31 times, 2:37 PM to 3:00 PM");
+});
+
+test("a run of 2 groups; a lone marker stays as it was", () => {
+  const out = groupRuns([mark("a", local(9, 0)), mark("b", local(9, 5)), mark("c", local(9, 6), "other finished")]);
+  assert.deepEqual(out.map((r) => r.run?.count ?? 1), [2, 1]);
+  assert.equal(out[1]!.run, undefined);
+  assert.equal(runLabel(out[1]!), "");
+});
+
+test("anything between two identical markers splits them: another marker, a stopped one, a gap", () => {
+  const interleaved = [mark("a", local(9, 0)), mark("b", local(9, 1), "x finished"), mark("c", local(9, 2)), mark("d", local(9, 3), "x finished")];
+  assert.equal(groupRuns(interleaved).length, 4);
+  assert.equal(groupRuns([mark("a", local(9, 0)), mark("b", local(9, 1), "coordinator stopped")]).length, 2);
+  const gap: TimelineRow = { key: "gap:2", kind: "gap", title: "idle 20m" };
+  const out = groupRuns([mark("a", local(9, 0)), mark("b", local(9, 1)), gap, mark("c", local(9, 30)), mark("d", local(9, 31))]);
+  assert.deepEqual(out.map((r) => r.kind + (r.run ? r.run.count : "")), ["marker2", "gap", "marker2"]);
+});
+
+test("same title but another marker kind never groups, nor do inputs", () => {
+  assert.equal(groupRuns([mark("a", local(9, 0), "same", "change"), mark("b", local(9, 1), "same", "rewind")]).length, 2);
+  const input = (id: string): TimelineRow => ({ key: `input:${id}`, kind: "input", at: local(9, 0), entryId: id, title: "hi" });
+  assert.equal(groupRuns([input("a"), input("b")]).length, 2);
+});
+
+test("a run whose newest member has no entry stays jump-less", () => {
+  const out = groupRuns([mark("a", local(9, 0), "Model \u2192 x", "change", null), mark("b", local(9, 4), "Model \u2192 x", "change", null)]);
+  assert.equal(out.length, 1);
+  assert.equal("entryId" in out[0]!, false);
+});
+
+test("clockRange: shared meridiem, crossing noon, same minute", () => {
+  assert.equal(clockRange(local(14, 37), local(15, 0)), "2:37\u20133:00 PM");
+  assert.equal(clockRange(local(11, 50), local(12, 10)), "11:50 AM\u201312:10 PM");
+  assert.equal(clockRange(local(9, 5), new Date(2026, 8, 21, 9, 5, 40).toISOString()), "9:05 AM");
 });

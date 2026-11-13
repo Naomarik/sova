@@ -59,7 +59,6 @@ const { gatedForms, resetAllDrafts } = await import("./settings-draft");
 const alignment = await import("./alignment-draft");
 const baton = await import("./baton-settings-draft");
 const decision = await import("./decision-draft");
-const experimental = await import("./experimental-draft");
 const memory = await import("./memory-settings-draft");
 const mesh = await import("./mesh-draft");
 const policy = await import("./model-policy-draft");
@@ -406,14 +405,6 @@ const ROWS: Row[] = [
       labels: { elsewhere: "a label names a sender entry, and every entry is probed" },
       acceptFrom: { valid: "all" },
     },
-  },
-  {
-    label: "Experimental",
-    load: async () => experimental.setExperimentalSaved((await api.getWebSettings()).experimental),
-    draft: () => experimental.experimentalDraft(),
-    setDraft: experimental.setExperimentalDraft,
-    // On unless saved off, so the edit that changes something is off.
-    fields: { sovaModes: { valid: false } },
   },
   // Last: the providers it turns off would refuse the model picks of the forms above.
   {

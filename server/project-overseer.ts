@@ -1,5 +1,6 @@
 import { powersView, type PowersView } from "../shared/powers";
 import type { ThinkingLevel } from "../shared/profiles";
+import type { ArchiveCopy } from "../shared/projects";
 import { existsSync, mkdirSync, readdirSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, relative } from "node:path";
@@ -33,7 +34,7 @@ import {
 } from "../shared/project-overseer";
 import type { CodingWorktreeHold, OverseerState } from "../shared/protocol";
 import { noteBuildMerged } from "./build-merged";
-import { adoptWorktree, buildSessionPath, buildSetupEnded, buildSid, buildOfSession, buildStartedBy, newBuildSessionId, noteBuildSettled, noteBuildStarted, probeBuild, readBuild, readBuilds, syncBuildTurn, syncProjectBuilds, withWorktreePath, type BuildRow } from "./build-loadout";
+import { adoptWorktree, holdFirstPrompt, takeHeldFirst, buildSessionPath, buildSetupEnded, buildSid, buildOfSession, buildStartedBy, newBuildSessionId, noteBuildSettled, noteBuildStarted, probeBuild, readBuild, readBuilds, syncBuildTurn, syncProjectBuilds, withWorktreePath, type BuildRow } from "./build-loadout";
 import { acquireChatHandle, BusyError, chatHandle, closeChat, isSessionBusy, onAgentSettled, onAgentStarted, declOfTool, registerSpecialHost, serverToolCall, serveTools, type SessionMarks, specialComposersChanged } from "./chat-handle";
 import type { ChatStreamTrip } from "../shared/chat-runtime";
 import type { HEntry, ToolSpec } from "../shared/harness";
@@ -1082,6 +1083,8 @@ export interface StartedCoding {
   confirmBrief?: true;
   /** A Build from a conversation's draft: the branch its worktree got that draft on (server/draft-carry.ts). */
   carriedTo?: string;
+  /** Its first prompt waits as the chat's draft: this many context files and skills are still to decide (page starts only). */
+  decideFirst?: number;
 }
 
 export const NOT_PROMPTED = "Started, but not prompted: its mode could not be set.";
@@ -1118,6 +1121,8 @@ async function startCodingSession(
     /** An Overseer's start (§app.project-overseer/confirm-brief): unless the operator already agreed what to build, its
         first prompt asks them to confirm the brief first (with align on in its mode). Absent: the brief as given. */
     overseerBrief?: { alreadyAgreed: boolean };
+    /** The operator's page started it: a first prompt into a chat that asks first, with items still to decide, waits as its draft. */
+    holdFirst?: boolean;
   },
 ): Promise<StartedCoding> {
   const brief = input.prompt?.trim() ?? "";
@@ -1147,6 +1152,7 @@ async function startCodingSession(
   const envelope = input.envelope ?? projectEnvelope(projectId, { by: "operator", attended: true, ...(input.via ? { via: input.via } : {}) });
   // F21: the project's builds as their runtimes stand now (a turn running, workers), so the at-once cap counts them.
   await syncProjectBuilds(projectId);
+  if (input.holdFirst && prompt) holdFirstPrompt(sessionId, true);
   let out;
   try {
     // A gap's build starts where its layer says (`item`: it rests on the gap's promoted decisions); any other on the project.
@@ -1172,17 +1178,25 @@ async function startCodingSession(
       { settle: true },
     );
   } catch (err) {
+    holdFirstPrompt(sessionId, false);
+    takeHeldFirst(sessionId);
     if (title) setSessionTitle(sessionId, null);
     if (carry) carriedBranch(sessionId);
     throw err;
   }
   if (out.held) {
+    holdFirstPrompt(sessionId, false);
     if (title) setSessionTitle(sessionId, null);
     if (carry) carriedBranch(sessionId);
     return { sessionId, path: "", cwd: "", mode, held: { ...out.held, ...heldAt(input.item ?? projectSid(projectId), out.held) }, ...(asked.confirm ? { confirmBrief: true as const } : {}) };
   }
   const sid = buildSid(projectId, sessionId);
-  await buildSetupEnded(projectId, sid);
+  try {
+    await buildSetupEnded(projectId, sid);
+  } finally {
+    holdFirstPrompt(sessionId, false);
+  }
+  const decideFirst = takeHeldFirst(sessionId);
   const row = readBuild(projectId, sessionId);
   const carriedTo = carry ? carriedBranch(sessionId) : undefined;
   if (!row || row.notStarted) {
@@ -1200,6 +1214,7 @@ async function startCodingSession(
     ...(row.inRoot ? { note: row.inRoot } : {}),
     ...(asked.confirm ? { confirmBrief: true as const } : {}),
     ...(carriedTo ? { carriedTo } : {}),
+    ...(decideFirst ? { decideFirst } : {}),
   };
   if (row.modeNotSet) return { ...made, notPrompted: NOT_PROMPTED };
   if (row.promptError) throw new OrgError(row.promptError, 409);
@@ -1459,7 +1474,16 @@ registerSpecialHost({
       // None of the operator's pi-config extensions, skills or templates: no mode, no subagents,
       // no input rewriting. The project's own context files (AGENTS.md) stay; the host's (the
       // agent dir's, and those of folders above the root, like the home folder's) don't.
-      loader: { noExtensions: true, noSkills: true, noPromptTemplates: true, noThemes: true, append: "none", contextFilesWithin: { root: project.root, out: confinedOut() } },
+      // Of those, only what its folder's list lets a new chat load (§chat.context-approval/unwatched).
+      loader: {
+        noExtensions: true,
+        noSkills: true,
+        noPromptTemplates: true,
+        noThemes: true,
+        append: "none",
+        contextFilesWithin: { root: project.root, out: confinedOut() },
+        folderRule: await (await import("./projects/folder-rule")).folderRuleForCwd(project.root),
+      },
       model: settings.model ?? defaults.model ?? null,
       thinking: settings.thinking ?? defaults.thinking ?? null,
       // Its memory, by its own switch in its overseer.json, on by default: the
@@ -1644,7 +1668,7 @@ export const MODE_NOT_SET = "Started, but its mode could not be set. Set it from
  * linked to it. `via: "overseer"`: the global Overseer started it for the operator
  * (§app.overseer/org-project-overseers), which alone may give no item, with `prompt` and `title`.
  */
-export async function codeItem(projectId: string, body: ItemCodeInput, via?: "overseer"): Promise<ItemCodeResult> {
+export async function codeItem(projectId: string, body: ItemCodeInput, via?: "overseer", fromPage = false): Promise<ItemCodeResult> {
   const p = projectOverseerPaths(projectId);
   const hasItem = (typeof body.todoId === "string" && !!body.todoId) || (typeof body.ideaId === "string" && !!body.ideaId);
   const item = hasItem || !via ? itemOf(p, body) : null;
@@ -1672,6 +1696,7 @@ export async function codeItem(projectId: string, body: ItemCodeInput, via?: "ov
     ...(via ? { via, overseerBrief: { alreadyAgreed: alreadyAgreedOf(body.already_agreed) } } : {}),
     // a plain session on a gap's idea names the gap's item in its act, so its record names the gap it was started from
     ...(onGap ? { item: onGap } : gapTarget ? { extra: { gapItem: gapTarget } } : {}),
+    ...(fromPage && !via ? { holdFirst: true } : {}),
   });
   if (item) linkItem(p, item, made.sessionId);
   return {
@@ -1681,6 +1706,7 @@ export async function codeItem(projectId: string, body: ItemCodeInput, via?: "ov
     ...(made.note ? { note: made.note } : {}),
     ...(made.notPrompted ? { notPrompted: made.notPrompted } : {}),
     ...(made.confirmBrief ? { confirmBrief: true } : {}),
+    ...(made.decideFirst ? { decideFirst: made.decideFirst } : {}),
   };
 }
 
@@ -1880,13 +1906,31 @@ async function runReleaseAct(projectId: string, e: Record<string, unknown>): Pro
 
 // ---- archive: what must stop first (§app.organizations/archive) -------------------------------------------
 
+/** The project's copies that run or wait to restart, adopted ones included (§app.organizations/archive): what the
+    archive dialog lists, each with the down that stops it. */
+export async function archiveCopies(projectId: string): Promise<ArchiveCopy[]> {
+  const { projectEngine } = await import("./project-services/routes");
+  return projectEngine().liveCopies(projectOf(projectId).root);
+}
+
+/** The blocker phrase for the copies that hold an archive up (an adopted one never does), or null: none. */
+export function copiesPhrase(copies: readonly ArchiveCopy[]): string | null {
+  const held = copies.filter((c) => !c.adopted);
+  if (!held.length) return null;
+  const named = held.map((c) => (c.services.some((s) => s.state === "restarting") ? `${c.name}, restarting` : c.name));
+  return `${held.length} ${held.length === 1 ? "copy" : "copies"} running (${named.join("; ")})`;
+}
+
 /**
  * What is open in the project, for the archive act's `blockers` stamp (§app.organizations/archive): what
- * other layers name (an org's open gathering sessions), its coding sessions mid-turn or with workers
- * running, and whether its overseer is working. The project statechart words the refusal ("Stop these first: …").
+ * other layers name (an org's open gathering sessions), its copies that run or wait to restart (`copies`, as
+ * archiveCopies read them), its coding sessions mid-turn or with workers running, and whether its overseer is
+ * working. The project statechart words the refusal ("Stop these first: …").
  */
-export async function archiveBlockers(projectId: string): Promise<ArchiveBlockers> {
+export async function archiveBlockers(projectId: string, copies: readonly ArchiveCopy[] = []): Promise<ArchiveBlockers> {
   const phrases = contributedBlockers(engineOrThrow(projectId), projectId);
+  const running = copiesPhrase(copies);
+  if (running) phrases.push(running);
   const p = projectOverseerPaths(projectId);
   const coding: string[] = [];
   for (const r of readBuilds(projectId)) {

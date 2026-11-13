@@ -11,4 +11,6 @@
 | `integration-group` + `select: ["trial"]` | the Chat processes slow group | ~6 min | chat processes changed (its trigger already runs it; pick it so the reason shows) |
 | `integration-group` + `select: ["merge-queue"]` | the merge queue's own slow group | ~5 min | the queue, its checks or `.sova/project.json` changed |
 
+`integration-group` runs `run-tests.mjs --integration --picked-groups <select>`. Sent with no `select` it runs the slow groups a landing already runs for the branch's changes (or skips: "no slow group applies to this branch's changes"), never the one you meant: always send the group.
+
 The required floor (typecheck, unit with browser tests, the landing integration set with its triggers, changed extensions' suites, build, spec check, leak scan) runs whatever you pick.

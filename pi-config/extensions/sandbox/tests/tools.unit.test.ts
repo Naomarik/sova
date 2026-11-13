@@ -8,7 +8,7 @@ import type { Backend, Confined, Policy } from "../backend.ts";
 import { backendFor, gitProtectedPaths, mapShadowed, shadowSource } from "../backend.ts";
 import { spawnSync } from "node:child_process";
 import { scrubEnv } from "../env.ts";
-import { canonicalize, isWithin, readDenial, resolvePolicy, type ResolvedPolicy, writeDenial } from "../policy.ts";
+import { canonicalize, isWithin, readDenial, resolvePolicy, type ResolvedPolicy, writeDenial, writeOnlyScope } from "../policy.ts";
 import { type AnyToolDefinition, confinedDefinitions, sandboxView, filterHidden, mapTmp, type Snapshot, stockDefinitions, TOOL_NAMES } from "../tools.ts";
 
 const TEMPLATE_DIR = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "sandbox-policy");
@@ -216,12 +216,40 @@ test("mapTmp maps /tmp into the session tmp, never out of it", { skip: process.p
 	assert.equal(mapTmp("/home/u/x", p, "write"), "/home/u/x");
 	assert.equal(mapTmp("/tmp/ws/a.txt", p, "write"), "/tmp/ws/a.txt");
 	assert.equal(mapTmp("/tmp/does-not-exist-anywhere", p, "read"), "/tmp/does-not-exist-anywhere");
-	// A write-only worker sees the host's /tmp (read-only): nothing is mapped, so a write there is
-	// checked, and refused, at the host path, as bwrap's read-only /tmp refuses it.
+	// A write-only worker's /tmp is its session tmp too: the same mapping.
 	const wo = { ...p, writeOnly: true };
-	assert.equal(mapTmp("/tmp/x", wo, "write"), "/tmp/x");
-	assert.equal(mapTmp("/tmp/x", wo, "read"), "/tmp/x");
+	assert.equal(mapTmp("/tmp/x", wo, "write"), "/s/tmp/x");
 	assert.equal(mapTmp("/s/tmp/x", wo, "write"), "/s/tmp/x");
+	assert.equal(mapTmp("/tmp/x", p, "write", "darwin"), "/tmp/x", "macOS never maps /tmp");
+});
+
+test("F2: in a write-only worker the file tools and bash name the same /tmp/x; a read the private tmp lacks falls back to the host's", { skip: process.platform !== "linux" || !existsSync("/usr/bin/bwrap") }, async () => {
+	const { ws, agentDir, home, tmpDir, cleanup } = setup();
+	const r = resolvePolicy({ agentDir, cwd: ws, tmpDir, platform: "linux", home, git: gitProtectedPaths, parent: writeOnlyScope(ws) });
+	assert.ok(r.ok && r.value.writeOnly, r.ok ? "" : r.error);
+	const policy = r.value;
+	const bp: Policy = { ...backendPolicy(policy), network: { mode: "host" } };
+	const snap = async (): Promise<Snapshot> => ({ ok: true, policy, backendPolicy: bp, backend: backendFor("linux"), enforcement: "full" });
+	const d = defs(ws, snap);
+	const tag = `sbx-f2-${process.pid}-${Date.now()}`;
+	// A brief another chat left in the host's /tmp (the literal one: the worker's view of it).
+	const brief = join("/tmp", `${tag}-brief.md`);
+	writeFileSync(brief, "the brief");
+	try {
+		await run(d.get("write")!, { path: `/tmp/${tag}-a`, content: "from write" }, ws);
+		assert.equal(readFileSync(join(tmpDir, `${tag}-a`), "utf8"), "from write", "a file-tool write to /tmp lands in its private tmp");
+		assert.equal(existsSync(`/tmp/${tag}-a`), false, "never in the host's /tmp");
+		const out = text(await run(d.get("bash")!, { command: `cat /tmp/${tag}-a; echo; echo from-bash > /tmp/${tag}-b; echo "tmpdir=$TMPDIR"; cat ${brief} 2>/dev/null || echo NO-BRIEF` }, ws));
+		assert.match(out, /^from write$/m, "bash reads the file tool's /tmp/x");
+		const tmpdirInside = /^tmpdir=(.*)$/m.exec(out)?.[1] ?? "";
+		assert.ok(tmpdirInside.length > 0 && tmpdirInside.length < 40, `TMPDIR inside is short: ${tmpdirInside}`);
+		assert.match(out, /NO-BRIEF/, "bash does not see the host's /tmp");
+		assert.equal(text(await run(d.get("read")!, { path: `/tmp/${tag}-b` }, ws)).trim(), "from-bash", "the file tool reads bash's /tmp/x");
+		assert.equal(text(await run(d.get("read")!, { path: brief }, ws)).trim(), "the brief", "a read of a host /tmp file the private tmp lacks still works");
+	} finally {
+		rmSync(brief, { force: true });
+		cleanup();
+	}
 });
 
 test("bash: denial note, runner failure, per-call env only from PATH and PI_*", async () => {

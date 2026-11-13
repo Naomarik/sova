@@ -1216,6 +1216,12 @@ const declsOf = (path: string, specs: ToolSpec[]): ServerToolDecl[] => {
   return specs.map(declOfTool);
 };
 
+/** The Overseer's folder's decisions (its session's own folder), read at each build. */
+async function overseerFolderRule(path: string) {
+  const { folderRuleForSession } = await import("./projects/folder-rule");
+  return folderRuleForSession(path);
+}
+
 registerSpecialHost({
   kind: "overseer",
   matches: (marks) => isOverseerFile(marks),
@@ -1236,7 +1242,8 @@ registerSpecialHost({
       tools: declsOf(path, tools),
       customTools: declsOf(path, files),
       allow: [...tools.map((t) => t.name), ...BUILTIN_ALLOWED, ...MEMORY_TOOLS],
-      loader: { append: "user-then-ours" },
+      // Its folder's list, like any chat no person watches: with asking first, what waits stays off (§chat.context-approval/unwatched).
+      loader: { append: "user-then-ours", folderRule: await overseerFolderRule(path) },
       model: settings.model,
       thinking: settings.thinking,
       // Its memory, when its own switch is on (§chat.memory/overseer): the same engine as a chat's.

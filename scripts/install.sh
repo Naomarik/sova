@@ -43,7 +43,9 @@
 #   <agent dir>/extensions/<name>
 #                          one symlink per extension in <install dir>/pi-config/extensions, where
 #                          <agent dir> is $PI_CODING_AGENT_DIR, else ~/.pi/agent (--no-extensions
-#                          skips them). Anything already at one of those paths that is not our
+#                          skips them). A link there into another copy of Sova (its
+#                          pi-config/extensions/<name>) is pointed at this install instead, and
+#                          says so; anything else already at one of those paths that is not our
 #                          own link is left alone and that extension is skipped.
 #   a login service, only if you ask for one (--service, or yes at the prompt): the launchd agent
 #                          ~/Library/LaunchAgents/io.github.naomarik.sova.plist on macOS, the
@@ -807,6 +809,17 @@ case "$os" in Linux | Darwin) app_browser=$("$launcher" app --print-browser 2>/d
 
 linked=0
 skipped=
+# Whether a link's target is <root>/pi-config/extensions/<name> inside another copy of Sova (a checkout,
+# an older install): package.json names it sova and it has the personal pi-config/install.sh.
+other_sova_copy() { # <link target> <name>
+	local t=$1 r
+	case "$t" in /*) ;; *) t=$ext_dst/$t ;; esac
+	t=${t%/}
+	case "$t" in */pi-config/extensions/"$2") ;; *) return 1 ;; esac
+	r=${t%/pi-config/extensions/"$2"}
+	[ -n "$r" ] && [ "$r" != "$dir" ] && [ -f "$r/pi-config/install.sh" ] && [ -f "$r/package.json" ] &&
+		grep -Eq '^[[:space:]]*"name"[[:space:]]*:[[:space:]]*"sova"' "$r/package.json"
+}
 if $extensions; then
 	ext_src=$dir/pi-config/extensions
 	ext_dst=$agent/extensions
@@ -814,6 +827,15 @@ if $extensions; then
 	for src in "$ext_src"/*; do
 		[ -e "$src" ] || continue
 		name=$(basename "$src")
+		# The mode folder holds the texts and rules Sova's own modes read from this copy, no pi extension:
+		# never linked, and a link into another Sova copy's (an extension there once) is removed.
+		if [ "$name" = mode ]; then
+			if [ -L "$ext_dst/mode" ] && other_sova_copy "$(readlink "$ext_dst/mode")" mode; then
+				rm -f "$ext_dst/mode"
+				say "removed $ext_dst/mode (links to another Sova copy; mode is no pi extension in this version)"
+			fi
+			continue
+		fi
 		if [ ! -d "$src" ]; then
 			case "$name" in *.ts) ;; *) continue ;; esac
 		fi
@@ -823,7 +845,13 @@ if $extensions; then
 			[ "$current" = "$src" ] && continue
 			case "$current" in
 				"$ext_src"/*) rm -f "$dst" ;;
-				*) skipped="$skipped $name"; say "kept $dst (links to $current, not to this install); skipped the $name extension"; continue ;;
+				*)
+					if other_sova_copy "$current" "$name"; then
+						rm -f "$dst"
+						say "relinked $dst (was $current, another Sova copy)"
+					else
+						skipped="$skipped $name"; say "kept $dst (links to $current, not to this install); skipped the $name extension"; continue
+					fi ;;
 			esac
 		elif [ -e "$dst" ]; then
 			skipped="$skipped $name"
@@ -833,11 +861,12 @@ if $extensions; then
 		ln -s "$src" "$dst"
 		linked=$((linked + 1))
 	done
-	# Our links to extensions this version no longer has.
+	# Our links to extensions this version no longer has, and to the mode folder (an extension once).
 	for dst in "$ext_dst"/* "$ext_dst"/.[!.]*; do
 		[ -L "$dst" ] || continue
 		current=$(readlink "$dst")
 		case "$current" in
+			"$ext_src"/mode) rm -f "$dst"; say "removed $dst (mode is no pi extension in this version)" ;;
 			"$ext_src"/*) [ -e "$dst" ] || { rm -f "$dst"; say "removed $dst (gone from this version)"; } ;;
 		esac
 	done

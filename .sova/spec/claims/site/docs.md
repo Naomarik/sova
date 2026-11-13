@@ -50,8 +50,8 @@ them, a project's own modes as one row), and links to the feature, extending and
 The major and minor modes side by side, the three major modes in the mode menu's words, switching
 them per chat from the composer's mode menu,
 the default for new sessions (memory's type with it; never Create, which is chosen per chat),
-strict, a short memory section that
-links to its own page (§site.docs/memory), the terminal's commands, which offer no Create, what workers get (spec, and each
+strict, that Sova runs every chat's modes with no switch and with no pi mode extension linked (§chat.mode-menu/sova-runs-modes), a short memory section that
+links to its own page (§site.docs/memory), that a pi terminal has no modes (§chat.mode-menu/terminal), what workers get (spec, and each
 project mode that says so), and the sessions that choose their own mode, and a project's own minor modes (§site.docs/project-modes).
 
 ## §site.docs/normal — Normal (`/docs/modes/normal/`)
@@ -123,7 +123,8 @@ route, when it runs, blockers, and what the card shows.
 The spec minor mode: its guide's two parts (finding your way on every turn, the writing procedure
 once, before the first behavior-changing edit or with the first census note or an alignment's
 go-ahead), working from the project's spec, the read-only `spec` tool every chat you code in and
-every worker but a team's monitor has for those look-ups, spec on or off (§app.spec-lookup/spec-tool), the census note and its one unread line before
+every worker but a team's monitor has for those look-ups, spec on or off (§app.spec-lookup/spec-tool), whose copy of
+the spec tools a chat, its workers, the merge queue and releases run (§tools.spec/mode-reading), the census note and its one unread line before
 finishing, updating a claim the task didn't create without asking and listing it in the reply's one
 spec line ("Also updates …"), the Agree step when align is on too, drafts and promotion, the spec
 writer, what workers get (and the claims a finished worker's changes landed in), and project coding
@@ -136,11 +137,21 @@ one-page prototypes from hidden sessions on several models, drawn live on a card
 tab, the main chat staying out of the work and reading a page only when asked); how to get one: with
 vis on, ask for a Lookbook, by name or in words that plainly mean it (an ordinary ask to sketch or mock up gets a quick drawing
 instead), never for workers; a run, from Lookbook · Setup (what to design, models by
-provider with the Coordinator dropdown, styles in their 5 families and the 12 layouts, Pair Up or
-Every Mix, the batch size and its limits) through Start Coordinator and
-Lookbook · Brief to Start; how a link is used; and working with designs: statuses and cost, a page
-being written, Google Fonts only, Refine, Chat, the coordinator and designs made from others. It
-ends with how long designs are kept and that they aren't on share links.
+provider with the Creative Director dropdown, styles in their 5 families and the 12 layouts, Pair Up or
+Every Mix, the batch size and its limits) through Start Creative Director and
+Lookbook · Brief to Start; how a link is used; how skills reach a run (only the skills you name, by
+name or by folder, with nothing loaded by itself; shown on Setup and, when you named some, on the
+brief's Design skills line; the Creative Director choosing which reach the designers and reading
+files you point it to, and designers reading only inside those skills, §chat.design-mode/skills); a Screenshots section on pasted screenshots (only your own
+images can be one, the helper marks the kind and you can change it; up to 8 measured colours as
+swatches with hex values; words for designers drafted by a helper, tuned by the Creative Director,
+yours always winning; Rebuild This Screen or Just Its Feel before Start, at most 4 reference
+pictures a design with Rebuild screenshots first and the rest as words only; every designer gets
+the words, and a screenshot is never put in the page, §chat.design-mode/own-images,
+§chat.design-mode/brief-start); and working with designs: statuses and cost, a page
+being written, Google Fonts only, Refine, Chat, the Creative Director and designs made from others. It
+ends with how long designs are kept and that they aren't on share links. The page calls the run's
+lead session the Creative Director throughout (§chat.design-mode/creative-director).
 
 ## §site.docs/vis — Vis (`/docs/modes/vis/`)
 
@@ -218,7 +229,9 @@ running turn, and switching models mid-session (favorites and the saved default)
 ## §site.docs/install — Install (`/docs/install/`)
 
 Installing Sova on a Mac or Linux machine with one command and its options, starting it and
-opening it unlocked, the app-launcher entry that opens it in its own window (on macOS, an app of its own with its own
+opening it unlocked, the pi extension links (no `mode` link, and one an older install left removed; a leftover link into another copy of Sova repointed, anything
+else kept and named; Sova's own chats run their own copy's extensions whatever the links say,
+§app.installer/pi-extensions), the app-launcher entry that opens it in its own window (on macOS, an app of its own with its own
 Dock icon and no title bar), the access token,
 the login service, running the installer again and the self-update from Settings it points to
 (§site.docs/updates), removing it (the service, the extension links,
@@ -313,6 +326,17 @@ the page waits for you, and that any change asks again; saving a secret; a proje
 that each worktree's copy is approved on its own; what a server costs in tokens and the switches that
 trim it; workers and profiles; and what the sandbox and remote chats change. It says a server stays
 on its computer, and that chats don't ask before a tool runs.
+
+## §site.docs/context-files-and-skills — Context files and skills (`/docs/context-files-and-skills/`)
+
+In Features, after MCP servers: what a chat loads from its folders, context files and skills; the
+default, where everything loads but what you disallow on the project's Context Files and Skills
+cards, and that only new chats change; a skill known by its place, not its name; the Sova-wide
+switch that asks first, with Waiting items off, a new chat's notice and held Send, Changed since you
+approved, and Re-approve; each chat's list fixed at its first message and shared with its workers,
+and the transcript line for an item found later; chats no one watches never wait; who may decide,
+only your own click approving; a folder that isn't a project and the Overseer's folder; and the
+Context tab's Everyone view of the skills a chat and its workers opened.
 
 ## §site.docs/themes — Themes (`/docs/themes/`)
 

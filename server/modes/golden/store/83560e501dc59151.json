@@ -1,0 +1,758 @@
+[
+ {
+  "name": "read",
+  "description": "@491fc972ef0356ca",
+  "parameters": {
+   "type": "object",
+   "required": [
+    "path"
+   ],
+   "properties": {
+    "path": {
+     "type": "string",
+     "description": "Path to the file to read (relative or absolute)"
+    },
+    "offset": {
+     "type": "number",
+     "description": "Line number to start reading from (1-indexed)"
+    },
+    "limit": {
+     "type": "number",
+     "description": "Maximum number of lines to read"
+    }
+   }
+  },
+  "constrainedSampling": {
+   "type": "json_schema",
+   "strict": "prefer"
+  }
+ },
+ {
+  "name": "bash",
+  "description": "@478d9ffb376862b1",
+  "parameters": {
+   "type": "object",
+   "required": [
+    "command"
+   ],
+   "properties": {
+    "command": {
+     "type": "string",
+     "description": "Shell command to execute"
+    },
+    "timeout": {
+     "type": "number",
+     "description": "Timeout in seconds (optional, no default timeout)"
+    }
+   }
+  },
+  "constrainedSampling": {
+   "type": "json_schema",
+   "strict": "prefer"
+  }
+ },
+ {
+  "name": "edit",
+  "description": "@b5267b50ea0f1f04",
+  "parameters": {
+   "type": "object",
+   "required": [
+    "path",
+    "edits"
+   ],
+   "properties": {
+    "path": {
+     "type": "string",
+     "description": "Path to the file to edit (relative or absolute)"
+    },
+    "edits": {
+     "type": "array",
+     "items": {
+      "type": "object",
+      "required": [
+       "oldText",
+       "newText"
+      ],
+      "properties": {
+       "oldText": {
+        "type": "string",
+        "description": "Exact text for one targeted replacement. It must be unique in the original file and must not overlap with any other edits[].oldText in the same call."
+       },
+       "newText": {
+        "type": "string",
+        "description": "Replacement text for this targeted edit."
+       }
+      }
+     },
+     "description": "One or more targeted replacements. Each edit is matched against the original file, not incrementally. Do not include overlapping or nested edits. If two changes touch the same block or nearby lines, merge them into one edit instead."
+    }
+   }
+  },
+  "constrainedSampling": {
+   "type": "json_schema",
+   "strict": "prefer"
+  }
+ },
+ {
+  "name": "write",
+  "description": "Write content to a file. Creates the file if it doesn't exist, overwrites if it does. Automatically creates parent directories.",
+  "parameters": {
+   "type": "object",
+   "required": [
+    "path",
+    "content"
+   ],
+   "properties": {
+    "path": {
+     "type": "string",
+     "description": "Path to the file to write (relative or absolute)"
+    },
+    "content": {
+     "type": "string",
+     "description": "Content to write to the file"
+    }
+   }
+  },
+  "constrainedSampling": {
+   "type": "json_schema",
+   "strict": "prefer"
+  }
+ },
+ {
+  "name": "agent_resume",
+  "description": "@9b561521c66f37e1",
+  "parameters": {
+   "type": "object",
+   "required": [
+    "id"
+   ],
+   "properties": {
+    "id": {
+     "type": "string",
+     "pattern": "^ag_\\d+$",
+     "description": "Exact worker ID (ag_NN)."
+    }
+   },
+   "additionalProperties": false
+  }
+ },
+ {
+  "name": "agent_models",
+  "description": "@5fe18a873cf360cb",
+  "parameters": {
+   "type": "object",
+   "properties": {
+    "query": {
+     "type": "string"
+    },
+    "backend": {
+     "type": "string",
+     "minLength": 1
+    },
+    "limit": {
+     "type": "integer",
+     "minimum": 1,
+     "maximum": 100
+    }
+   }
+  }
+ },
+ {
+  "name": "agent_spawn",
+  "description": "@0d908603ee9b8814",
+  "parameters": {
+   "type": "object",
+   "properties": "@f3942387b48652ba",
+   "additionalProperties": false
+  }
+ },
+ {
+  "name": "agent_list",
+  "description": "List subagents grouped by run, with status, model and usage. Output capped at 47,000 bytes/2000 lines with full snapshot path.",
+  "parameters": {
+   "type": "object",
+   "properties": {}
+  }
+ },
+ {
+  "name": "agent_transcript",
+  "description": "@847d7c660c98fbec",
+  "parameters": {
+   "type": "object",
+   "required": [
+    "id"
+   ],
+   "properties": {
+    "id": {
+     "type": "string",
+     "minLength": 1
+    },
+    "full": {
+     "type": "boolean"
+    },
+    "offset": {
+     "type": "integer",
+     "minimum": 0,
+     "description": "Character offset into the current task's final answer (default 0). Ignored with full=true."
+    },
+    "limit": {
+     "type": "integer",
+     "minimum": 1,
+     "maximum": 40000,
+     "description": "Characters of the final answer to return (default and maximum 40000). Ignored with full=true."
+    }
+   }
+  }
+ },
+ {
+  "name": "agent_steer",
+  "description": "@76c78fc1509895e0",
+  "parameters": {
+   "type": "object",
+   "required": [
+    "id",
+    "message"
+   ],
+   "properties": {
+    "id": {
+     "type": "string",
+     "minLength": 1
+    },
+    "message": {
+     "type": "string",
+     "minLength": 1
+    },
+    "mode": {
+     "type": "string",
+     "enum": [
+      "redirect",
+      "followUp"
+     ]
+    }
+   }
+  }
+ },
+ {
+  "name": "agent_kill",
+  "description": "Stop one subagent, one run, or all live subagents. Waits for child termination.",
+  "parameters": {
+   "type": "object",
+   "properties": {
+    "id": {
+     "type": "string",
+     "minLength": 1
+    },
+    "group": {
+     "type": "string",
+     "minLength": 1
+    },
+    "all": {
+     "type": "boolean"
+    },
+    "reason": {
+     "type": "string"
+    }
+   }
+  }
+ },
+ {
+  "name": "agent_wait",
+  "description": "@37fe184a3c12b987",
+  "parameters": {
+   "type": "object",
+   "properties": {
+    "ids": {
+     "type": "array",
+     "items": {
+      "type": "string",
+      "minLength": 1
+     },
+     "minItems": 1
+    },
+    "group": {
+     "type": "string",
+     "minLength": 1
+    },
+    "timeoutSeconds": {
+     "type": "number",
+     "minimum": 0,
+     "maximum": 3600,
+     "default": 600
+    }
+   }
+  }
+ },
+ {
+  "name": "team_create",
+  "description": "@7fe7276dc4e1f6d6",
+  "parameters": {
+   "type": "object",
+   "required": [
+    "name",
+    "objective",
+    "members"
+   ],
+   "properties": {
+    "name": {
+     "type": "string",
+     "minLength": 1,
+     "maxLength": 64,
+     "description": "Unique team name (trimmed, case-insensitive)."
+    },
+    "objective": {
+     "type": "string",
+     "minLength": 1,
+     "maxLength": 4000
+    },
+    "defaults": {
+     "type": "object",
+     "properties": {
+      "backend": {
+       "type": "string",
+       "minLength": 1
+      },
+      "model": {
+       "type": "string"
+      },
+      "effort": {
+       "type": "string",
+       "enum": [
+        "off",
+        "minimal",
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max"
+       ]
+      },
+      "backendOptions": {
+       "type": "object",
+       "patternProperties": {
+        "^.*$": {}
+       }
+      }
+     },
+     "description": "Applied only to members whose backend equals defaults.backend (default pi); member fields win and backendOptions merge shallowly. team_add reuses them."
+    },
+    "members": {
+     "anyOf": [
+      {
+       "type": "array",
+       "items": {
+        "type": "object",
+        "required": [
+         "role",
+         "prompt"
+        ],
+        "properties": "@90da50fff887dd4a"
+       },
+       "minItems": 1
+      },
+      {
+       "type": "string"
+      }
+     ],
+     "description": "A list of member objects, one per role (no per-request limit; a team seats 24, and a chat runs at most 24 workers). A JSON string of that list is read as the list."
+    }
+   },
+   "additionalProperties": false
+  }
+ },
+ {
+  "name": "team_add",
+  "description": "@513dab073dde87c9",
+  "parameters": {
+   "type": "object",
+   "required": [
+    "team",
+    "members"
+   ],
+   "properties": {
+    "team": {
+     "type": "string",
+     "minLength": 1,
+     "description": "Team ID (team_NN) or unique team name."
+    },
+    "members": {
+     "anyOf": [
+      {
+       "type": "array",
+       "items": {
+        "type": "object",
+        "required": [
+         "role",
+         "prompt"
+        ],
+        "properties": "@90da50fff887dd4a"
+       },
+       "minItems": 1
+      },
+      {
+       "type": "string"
+      }
+     ],
+     "description": "A list of member objects, one per role (no per-request limit; a team seats 24, and a chat runs at most 24 workers). A JSON string of that list is read as the list."
+    }
+   },
+   "additionalProperties": false
+  }
+ },
+ {
+  "name": "team_eject",
+  "description": "@06c596f75d16b2d5",
+  "parameters": {
+   "type": "object",
+   "required": [
+    "team",
+    "member"
+   ],
+   "properties": {
+    "team": {
+     "type": "string",
+     "minLength": 1,
+     "description": "Team ID (team_NN) or unique team name."
+    },
+    "member": {
+     "type": "string",
+     "minLength": 1,
+     "description": "Exact worker ID (ag_NN) or role."
+    }
+   },
+   "additionalProperties": false
+  }
+ },
+ {
+  "name": "team_succeed",
+  "description": "@d6bd0a68820ec8d3",
+  "parameters": {
+   "type": "object",
+   "required": [
+    "team",
+    "role"
+   ],
+   "properties": {
+    "team": {
+     "type": "string",
+     "minLength": 1,
+     "description": "Team ID (team_NN) or unique team name."
+    },
+    "role": {
+     "type": "string",
+     "minLength": 1,
+     "description": "Role or worker ID (ag_NN) of the ended coordinator or monitor."
+    }
+   },
+   "additionalProperties": false
+  }
+ },
+ {
+  "name": "team_list",
+  "description": "@ac21b243ba9d11f2",
+  "parameters": {
+   "type": "object",
+   "properties": {
+    "team": {
+     "type": "string",
+     "minLength": 1,
+     "description": "Team ID or unique name."
+    }
+   },
+   "additionalProperties": false
+  }
+ },
+ {
+  "name": "project_verbs",
+  "description": "@92bd36452c3a5ac1",
+  "parameters": {
+   "type": "object",
+   "properties": "@1246128334de3733",
+   "required": [
+    "verb"
+   ],
+   "additionalProperties": false
+  }
+ },
+ {
+  "name": "queue_push",
+  "description": "Push a short note to a topic. Use only when told which topic; never guess one.",
+  "parameters": {
+   "type": "object",
+   "properties": {
+    "topic": {
+     "type": "string",
+     "description": "The topic you were told to use."
+    },
+    "text": {
+     "type": "string",
+     "description": "The note. One line is best."
+    }
+   },
+   "required": [
+    "topic",
+    "text"
+   ],
+   "additionalProperties": false
+  }
+ },
+ {
+  "name": "spec",
+  "description": "@c7d79fc694bf9ff4",
+  "parameters": {
+   "type": "object",
+   "properties": {
+    "op": {
+     "type": "string",
+     "enum": [
+      "where",
+      "map",
+      "toc",
+      "read",
+      "impact"
+     ]
+    },
+    "query": {
+     "type": "string",
+     "description": "where: the words, path or name; map: a namespace"
+    },
+    "id": {
+     "type": "string",
+     "description": "A §id (toc, read, impact, map)"
+    },
+    "dir": {
+     "type": "string",
+     "enum": [
+      "out",
+      "in",
+      "down",
+      "up",
+      "mentions"
+     ],
+     "description": "toc: which links (default out)"
+    },
+    "whole": {
+     "type": "boolean",
+     "description": "read: the whole claim"
+    },
+    "noFrame": {
+     "type": "boolean",
+     "description": "read: without the frame (every read after the first)"
+    },
+    "near": {
+     "type": "boolean",
+     "description": "impact: what relies on it, nearest first"
+    },
+    "cursor": {
+     "type": "string",
+     "description": "The previous answer's next cursor"
+    },
+    "root": {
+     "type": "string",
+     "description": "Project root (default your working directory): it or a folder below it, or a worktree you track"
+    },
+    "draft": {
+     "type": "string",
+     "description": "A draft's name, read instead of the current spec"
+    }
+   },
+   "required": [
+    "op"
+   ],
+   "additionalProperties": false
+  }
+ },
+ {
+  "name": "align",
+  "description": "@10b18c09da2ac44c",
+  "parameters": {
+   "type": "object",
+   "required": [
+    "ops"
+   ],
+   "properties": {
+    "doc": {
+     "type": "string",
+     "minLength": 1,
+     "description": "The alignment to change, e.g. \"al_2\". Required while more than one alignment is open; omit for create, import, exempt and change_request.",
+     "pattern": "^al_[1-9][0-9]*$"
+    },
+    "ops": {
+     "type": "array",
+     "items": {
+      "anyOf": "@8f0d66a627303464"
+     },
+     "description": "Operations, applied in order. change_request, when given, comes before every other op; create or import comes next (else first) and appears once.",
+     "minItems": 1
+    }
+   },
+   "additionalProperties": false
+  }
+ },
+ {
+  "name": "vis_guide",
+  "description": "@b90c146a99d490af",
+  "parameters": {
+   "type": "object",
+   "required": [
+    "kind"
+   ],
+   "properties": {
+    "kind": {
+     "type": "string",
+     "enum": [
+      "flow",
+      "sequence",
+      "state",
+      "layers",
+      "tree",
+      "chart",
+      "timeline",
+      "steps",
+      "wireframe",
+      "matrix",
+      "code",
+      "html",
+      "svg",
+      "tour",
+      "lookbook",
+      "tour-signin",
+      "tour-sites",
+      "tour-sova",
+      "tour-sharing",
+      "lookbook-setup",
+      "lookbook-directions",
+      "lookbook-passing-on"
+     ],
+     "description": "The drawing kind or tool-backed entry (tour, lookbook), as the vis minor mode lists it, or a part its guide names"
+    }
+   },
+   "additionalProperties": false
+  }
+ },
+ {
+  "name": "vis_check",
+  "description": "@2327d56265ca0751",
+  "parameters": {
+   "type": "object",
+   "properties": {
+    "kind": {
+     "type": "string",
+     "enum": [
+      "html",
+      "svg",
+      "wireframe"
+     ],
+     "description": "The fence's kind: html, svg or wireframe"
+    },
+    "source": {
+     "type": "string",
+     "description": "The fence body, without the ``` lines"
+    }
+   },
+   "required": [
+    "kind",
+    "source"
+   ],
+   "additionalProperties": false
+  }
+ },
+ {
+  "name": "record_tour",
+  "description": "@f2a84afb9f865e94",
+  "parameters": {
+   "type": "object",
+   "properties": "@852078159a752148",
+   "required": [
+    "op"
+   ],
+   "additionalProperties": false
+  }
+ },
+ {
+  "name": "show_tour",
+  "description": "Present one complete checked tour edition from this chat. Record and visually check it first; never records on display. Read vis_guide with tour for the workflow.",
+  "parameters": {
+   "type": "object",
+   "properties": {
+    "tourId": {
+     "type": "string",
+     "minLength": 1,
+     "maxLength": 100
+    },
+    "editionId": {
+     "type": "string",
+     "minLength": 1,
+     "maxLength": 100
+    }
+   },
+   "required": [
+    "tourId"
+   ],
+   "additionalProperties": false
+  }
+ },
+ {
+  "name": "zoom",
+  "description": "@9fb1f34e406e16f8",
+  "parameters": {
+   "type": "object",
+   "properties": {
+    "id": {
+     "type": "integer",
+     "minimum": 0,
+     "description": "The line's first message id"
+    },
+    "n": {
+     "type": "integer",
+     "minimum": 1,
+     "description": "How many messages the line covers (a power of 2)"
+    }
+   },
+   "required": [
+    "id",
+    "n"
+   ],
+   "additionalProperties": false
+  }
+ },
+ {
+  "name": "date",
+  "description": "The date and time of message id in the memory view.",
+  "parameters": {
+   "type": "object",
+   "properties": {
+    "id": {
+     "type": "integer",
+     "minimum": 0,
+     "description": "The message id"
+    }
+   },
+   "required": [
+    "id"
+   ],
+   "additionalProperties": false
+  }
+ },
+ {
+  "name": "recall",
+  "description": "@477e826208c0f88b",
+  "parameters": {
+   "type": "object",
+   "properties": {
+    "words": {
+     "type": "string",
+     "description": "Space-separated; all in one message."
+    },
+    "before": {
+     "type": "integer",
+     "minimum": 1,
+     "description": "Only messages below this id, to look at older ones."
+    }
+   },
+   "required": [
+    "words"
+   ],
+   "additionalProperties": false
+  }
+ }
+]

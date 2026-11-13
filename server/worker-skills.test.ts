@@ -1,23 +1,22 @@
 // Run: npx tsx --test server/worker-skills.test.ts
-// Creates real files in /tmp (the reader stats and reads them) and removes them afterwards.
+// Creates real files in the temp dir (the reader stats and reads them) and removes them afterwards.
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
-import { rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { after, describe, test } from "node:test";
 import type { WorkerInfo } from "../shared/protocol";
-import { forgetWorkerSkills, workerSkills } from "./worker-skills";
+import { forgetWorkerSkills, workerSkills, workerSkillsParses } from "./worker-skills";
 
-const created: string[] = [];
+const dir = mkdtempSync(join(tmpdir(), "worker-skills-"));
 function tmpSession(name: string, lines: unknown[]): string {
-  const p = `/tmp/${name}-${randomUUID().slice(0, 8)}.jsonl`;
+  const p = join(dir, `${name}-${randomUUID().slice(0, 8)}.jsonl`);
   writeFileSync(p, lines.map((l) => JSON.stringify(l)).join("\n") + "\n");
-  created.push(p);
   forgetWorkerSkills(p); // a reused path would otherwise serve the previous file's parse
   return p;
 }
-after(() => {
-  for (const p of created) rmSync(p, { force: true });
-});
+after(() => rmSync(dir, { recursive: true, force: true }));
 
 const header = (cwd = "/home/u/project") => ({ type: "session", version: 3, id: "01a0", timestamp: "2026-01-01T00:00:00.000Z", cwd });
 const system = (id: string, at: string, names: string[], parent: string | null = null) => ({
@@ -78,6 +77,21 @@ describe("workerSkills", () => {
     // mtime resolution can be coarse on some filesystems; the key includes size, which changed.
     const second = await workerSkills([worker("ag_1", file)], at(file));
     assert.deepEqual(second!.ag_1!.used.map((u) => u.name), ["alpha", "beta"]);
+  });
+
+  test("a poll over more workers than the old 64-file cache re-reads none of their unchanged files", async () => {
+    // Under a clear-on-overflow cache of 64 the 65th parse emptied it, so every poll re-read them all.
+    const files = Array.from({ length: 70 }, (_, i) => tmpSession(`m${i}`, [header(), readCall("e1", "t1", `/s/s${i}/SKILL.md`)]));
+    const ws = files.map((f, i) => worker(`ag_${i}`, f));
+    const fileOf = (w: WorkerInfo) => w.sessionFile ?? null;
+    const before = workerSkillsParses();
+    const first = await workerSkills(ws, fileOf);
+    assert.equal(workerSkillsParses() - before, 70);
+    assert.equal(Object.keys(first ?? {}).length, 70);
+    const again = workerSkillsParses();
+    const second = await workerSkills(ws, fileOf);
+    assert.equal(workerSkillsParses() - again, 0);
+    assert.deepEqual(second, first);
   });
 
   test("does not attribute a nested agent's load to the worker that hosts the file", async () => {

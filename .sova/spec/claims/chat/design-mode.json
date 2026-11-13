@@ -2,20 +2,20 @@
   "§chat.design-mode/asking": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "code": [
       "pi-config/extensions/mode/vis/overview.md",
       "server/design/tools.ts",
-      "pi-config/extensions/mode/index.test.ts"
+      "pi-config/extensions/mode/modes.test.ts"
     ],
     "requires": [
       "§chat.design-mode/turning-on",
       "§chat.markdown/visuals"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-11-10T11:43Z",
-      "source": "pi-session:0e2ea24a-22d2-4ec7-a1df-46bf85135214#c54c09bf"
+      "by": "user",
+      "at": "2026-11-12T10:39Z",
+      "source": "pi-session:c6e7f9da-6608-46f4-a4d9-6db219882520#b5acf41a"
     }
   },
   "§chat.design-mode/asset-storage": {
@@ -41,7 +41,7 @@
   "§chat.design-mode/brief": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "code": [
       "shared/design.ts",
       "server/design/brief.ts",
@@ -50,7 +50,8 @@
       "src/components/DesignBrief.tsx",
       "src/components/DesignBrief.css",
       "src/lib/design-brief.ts",
-      "src/lib/design-brief.test.ts"
+      "src/lib/design-brief.test.ts",
+      "src/components/DesignSkills.tsx"
     ],
     "requires": [
       "§chat.design-mode/brief-layers",
@@ -62,33 +63,34 @@
       "§chat.design-mode/steady-cards"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-11-10T11:43Z",
-      "source": "pi-session:0e2ea24a-22d2-4ec7-a1df-46bf85135214#c54c09bf"
+      "by": "user",
+      "at": "2026-11-12T10:39Z",
+      "source": "pi-session:c6e7f9da-6608-46f4-a4d9-6db219882520#b5acf41a"
     }
   },
   "§chat.design-mode/brief-images": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "code": [
       "src/components/DesignBriefImages.tsx",
       "server/design/describe-routes.ts",
       "server/design/coordinator-routes.ts",
       "server/design/assets.ts",
-      "shared/design-assets.ts"
+      "shared/design-assets.ts",
+      "server/design/coordinator.ts"
     ],
     "requires": [],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-11-10T00:34Z",
-      "source": "pi-session:0e2ea24a-22d2-4ec7-a1df-46bf85135214#9497cb80"
+      "by": "user",
+      "at": "2026-11-12T12:09Z",
+      "source": "pi-session:c6e7f9da-6608-46f4-a4d9-6db219882520#b5acf41a"
     }
   },
   "§chat.design-mode/brief-layers": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "code": [
       "server/design/brief.ts",
       "server/design/brief.test.ts",
@@ -102,9 +104,9 @@
       "§chat.design-mode/brief-start"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-11-10T11:43Z",
-      "source": "pi-session:0e2ea24a-22d2-4ec7-a1df-46bf85135214#7bd94752"
+      "by": "user",
+      "at": "2026-11-12T10:39Z",
+      "source": "pi-session:c6e7f9da-6608-46f4-a4d9-6db219882520#b5acf41a"
     }
   },
   "§chat.design-mode/brief-questions": {
@@ -120,9 +122,9 @@
     ],
     "requires": [],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-11-10T11:43Z",
-      "source": "pi-session:0e2ea24a-22d2-4ec7-a1df-46bf85135214#7bd94752"
+      "by": "user",
+      "at": "2026-11-12T10:39Z",
+      "source": "pi-session:c6e7f9da-6608-46f4-a4d9-6db219882520#b5acf41a"
     }
   },
   "§chat.design-mode/brief-start": {
@@ -136,21 +138,23 @@
       "server/design/batch.ts",
       "server/design/coordinator.ts",
       "src/components/DesignBrief.tsx",
-      "src/lib/design-brief.ts"
+      "src/lib/design-brief.ts",
+      "server/design/describe.ts"
     ],
     "requires": [
-      "§chat.design-mode/launch-limits"
+      "§chat.design-mode/launch-limits",
+      "§chat.design-mode/own-images"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-11-10T11:43Z",
-      "source": "pi-session:0e2ea24a-22d2-4ec7-a1df-46bf85135214#7bd94752"
+      "by": "user",
+      "at": "2026-11-12T10:39Z",
+      "source": "pi-session:c6e7f9da-6608-46f4-a4d9-6db219882520#b5acf41a"
     }
   },
   "§chat.design-mode/capture": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "code": [
       "server/design/capture.ts",
       "server/design/capture.integration.test.ts",
@@ -165,15 +169,15 @@
       "§app.tours/recording"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-11-10T00:34Z",
-      "source": "pi-session:0e2ea24a-22d2-4ec7-a1df-46bf85135214#9497cb80"
+      "by": "user",
+      "at": "2026-11-12T10:39Z",
+      "source": "pi-session:c6e7f9da-6608-46f4-a4d9-6db219882520#b5acf41a"
     }
   },
   "§chat.design-mode/card": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "code": [
       "shared/design.ts",
       "server/design/batch.ts",
@@ -206,9 +210,9 @@
       "§chat.design-mode/coordinator-card"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-11-10T11:43Z",
-      "source": "pi-session:0e2ea24a-22d2-4ec7-a1df-46bf85135214#c54c09bf"
+      "by": "user",
+      "at": "2026-11-12T10:39Z",
+      "source": "pi-session:c6e7f9da-6608-46f4-a4d9-6db219882520#b5acf41a"
     }
   },
   "§chat.design-mode/chat-placement": {
@@ -219,12 +223,17 @@
       "src/components/DesignOpen.tsx",
       "src/components/DesignCard.css"
     ],
-    "requires": []
+    "requires": [],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-12T10:39Z",
+      "source": "pi-session:c6e7f9da-6608-46f4-a4d9-6db219882520#b5acf41a"
+    }
   },
   "§chat.design-mode/chat-with": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "code": [
       "src/components/DesignOpen.tsx",
       "src/components/DesignCoordinator.tsx",
@@ -238,9 +247,9 @@
       "§chat.design-mode/chat-placement"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-11-10T11:43Z",
-      "source": "pi-session:0e2ea24a-22d2-4ec7-a1df-46bf85135214#1341c7a7"
+      "by": "user",
+      "at": "2026-11-12T10:39Z",
+      "source": "pi-session:c6e7f9da-6608-46f4-a4d9-6db219882520#b5acf41a"
     }
   },
   "§chat.design-mode/commands": {
@@ -261,9 +270,9 @@
       "§app/commands"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-11-10T11:43Z",
-      "source": "pi-session:0e2ea24a-22d2-4ec7-a1df-46bf85135214#c54c09bf"
+      "by": "user",
+      "at": "2026-11-12T10:39Z",
+      "source": "pi-session:c6e7f9da-6608-46f4-a4d9-6db219882520#b5acf41a"
     }
   },
   "§chat.design-mode/coordinator": {
@@ -275,7 +284,9 @@
       "server/design/coordinator.test.ts",
       "server/chat-workers.ts",
       "server/chat-host.ts",
-      "pi-config/extensions/mode/design/coordinator.md"
+      "pi-config/extensions/mode/design/coordinator.md",
+      "server/design/skills.ts",
+      "server/design/tools.ts"
     ],
     "requires": [
       "§app.chat-processes/workers",
@@ -285,15 +296,15 @@
       "§chat.design-mode/delivery"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-11-10T08:52Z",
-      "source": "pi-session:0e2ea24a-22d2-4ec7-a1df-46bf85135214#f36f41aa"
+      "by": "user",
+      "at": "2026-11-12T10:39Z",
+      "source": "pi-session:c6e7f9da-6608-46f4-a4d9-6db219882520#b5acf41a"
     }
   },
   "§chat.design-mode/coordinator-card": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "code": [
       "src/components/DesignCoordinator.tsx",
       "server/design/coordinator.ts",
@@ -304,9 +315,44 @@
       "§chat.design-mode/delivery"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-11-10T11:43Z",
-      "source": "pi-session:0e2ea24a-22d2-4ec7-a1df-46bf85135214#c54c09bf"
+      "by": "user",
+      "at": "2026-11-12T10:39Z",
+      "source": "pi-session:c6e7f9da-6608-46f4-a4d9-6db219882520#b5acf41a"
+    }
+  },
+  "§chat.design-mode/creative-director": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "reviewed",
+    "code": [
+      "src/components/DesignCard.tsx",
+      "src/components/DesignBrief.tsx",
+      "src/components/DesignBriefImages.tsx",
+      "src/components/DesignCoordinator.tsx",
+      "src/components/DesignGallery.tsx",
+      "src/components/DesignOpen.tsx",
+      "src/components/DesignSetupControls.tsx",
+      "src/lib/design-brief.ts",
+      "src/lib/design-ui.ts",
+      "shared/commands/design.ts",
+      "server/design/browse.ts",
+      "server/design/coordinator-routes.ts",
+      "server/design/coordinator.ts",
+      "pi-config/extensions/mode/design/coordinator.md",
+      "pi-config/extensions/mode/vis/lookbook.md",
+      "pi-config/extensions/mode/vis/lookbook-setup.md",
+      "site/src/content/docs/modes/vis/lookbook.md",
+      "server/design/setup.ts"
+    ],
+    "requires": [
+      "§chat.design-mode/commands",
+      "§chat.design-mode/open-history",
+      "§site.docs/design"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-12T10:39Z",
+      "source": "pi-session:c6e7f9da-6608-46f4-a4d9-6db219882520#b5acf41a"
     }
   },
   "§chat.design-mode/delivery": {
@@ -324,7 +370,12 @@
     "requires": [
       "§app.worker-restore/resume",
       "§app.chat-processes/workers"
-    ]
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-12T10:39Z",
+      "source": "pi-session:c6e7f9da-6608-46f4-a4d9-6db219882520#b5acf41a"
+    }
   },
   "§chat.design-mode/describers": {
     "kind": "behavior",
@@ -342,9 +393,9 @@
       "§chat.design-mode/design-sessions"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-11-10T00:34Z",
-      "source": "pi-session:0e2ea24a-22d2-4ec7-a1df-46bf85135214#9497cb80"
+      "by": "user",
+      "at": "2026-11-12T10:39Z",
+      "source": "pi-session:c6e7f9da-6608-46f4-a4d9-6db219882520#b5acf41a"
     }
   },
   "§chat.design-mode/design-sessions": {
@@ -375,7 +426,12 @@
       "§chat.design-mode/gallery",
       "§chat.design-mode/main-chat",
       "§chat.design-mode/delivery"
-    ]
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-12T10:39Z",
+      "source": "pi-session:c6e7f9da-6608-46f4-a4d9-6db219882520#b5acf41a"
+    }
   },
   "§chat.design-mode/directions": {
     "kind": "behavior",
@@ -404,7 +460,7 @@
   "§chat.design-mode/failed-designs": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "code": [
       "shared/design.ts",
       "server/design/batch.ts",
@@ -420,15 +476,15 @@
       "§chat.design-mode/landing-checks"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-11-10T00:05Z",
-      "source": "pi-session:0e2ea24a-22d2-4ec7-a1df-46bf85135214#9497cb80"
+      "by": "user",
+      "at": "2026-11-12T10:39Z",
+      "source": "pi-session:c6e7f9da-6608-46f4-a4d9-6db219882520#b5acf41a"
     }
   },
   "§chat.design-mode/gallery": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "code": [
       "src/components/DesignGallery.tsx",
       "src/components/DesignBriefImages.tsx",
@@ -439,9 +495,9 @@
       "§app.insights/explanations-page"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-11-10T11:43Z",
-      "source": "pi-session:0e2ea24a-22d2-4ec7-a1df-46bf85135214#c54c09bf"
+      "by": "user",
+      "at": "2026-11-12T10:39Z",
+      "source": "pi-session:c6e7f9da-6608-46f4-a4d9-6db219882520#b5acf41a"
     }
   },
   "§chat.design-mode/guide": {
@@ -474,15 +530,15 @@
       "§chat.design-mode/layouts"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-11-10T11:43Z",
-      "source": "pi-session:0e2ea24a-22d2-4ec7-a1df-46bf85135214#c54c09bf"
+      "by": "user",
+      "at": "2026-11-12T10:39Z",
+      "source": "pi-session:c6e7f9da-6608-46f4-a4d9-6db219882520#b5acf41a"
     }
   },
   "§chat.design-mode/labels": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "code": [
       "shared/design.ts",
       "server/design/store.ts",
@@ -491,9 +547,9 @@
     ],
     "requires": [],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-11-10T11:43Z",
-      "source": "pi-session:0e2ea24a-22d2-4ec7-a1df-46bf85135214#7bd94752"
+      "by": "user",
+      "at": "2026-11-12T10:39Z",
+      "source": "pi-session:c6e7f9da-6608-46f4-a4d9-6db219882520#b5acf41a"
     }
   },
   "§chat.design-mode/landing-checks": {
@@ -534,9 +590,9 @@
       "§chat.design-mode/pairing"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-11-10T11:43Z",
-      "source": "pi-session:0e2ea24a-22d2-4ec7-a1df-46bf85135214#7bd94752"
+      "by": "user",
+      "at": "2026-11-12T10:39Z",
+      "source": "pi-session:c6e7f9da-6608-46f4-a4d9-6db219882520#b5acf41a"
     }
   },
   "§chat.design-mode/layouts": {
@@ -559,7 +615,7 @@
   "§chat.design-mode/link-modes": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "code": [
       "shared/design.ts",
       "server/design/coordinator.ts",
@@ -574,9 +630,9 @@
       "§chat.design-mode/describers"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-11-10T00:33Z",
-      "source": "pi-session:0e2ea24a-22d2-4ec7-a1df-46bf85135214#9497cb80"
+      "by": "user",
+      "at": "2026-11-12T10:39Z",
+      "source": "pi-session:c6e7f9da-6608-46f4-a4d9-6db219882520#b5acf41a"
     }
   },
   "§chat.design-mode/link-reach": {
@@ -614,9 +670,9 @@
       "§app.tours/sites"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-11-10T00:34Z",
-      "source": "pi-session:0e2ea24a-22d2-4ec7-a1df-46bf85135214#9497cb80"
+      "by": "user",
+      "at": "2026-11-12T10:39Z",
+      "source": "pi-session:c6e7f9da-6608-46f4-a4d9-6db219882520#b5acf41a"
     }
   },
   "§chat.design-mode/main-chat": {
@@ -628,13 +684,18 @@
       "server/design/own-images.ts",
       "server/design/tell-images.test.ts",
       "pi-config/extensions/mode/vis/lookbook-passing-on.md",
-      "pi-config/extensions/mode/vis/lookbook.md"
+      "pi-config/extensions/mode/vis/lookbook.md",
+      "server/design/setup.ts",
+      "src/components/DesignCard.tsx",
+      "server/design/coordinator.ts"
     ],
-    "requires": [],
+    "requires": [
+      "§chat.design-mode/own-images"
+    ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-11-10T11:43Z",
-      "source": "pi-session:0e2ea24a-22d2-4ec7-a1df-46bf85135214#c54c09bf"
+      "by": "user",
+      "at": "2026-11-12T10:39Z",
+      "source": "pi-session:c6e7f9da-6608-46f4-a4d9-6db219882520#b5acf41a"
     }
   },
   "§chat.design-mode/model-picker": {
@@ -657,15 +718,15 @@
       "§chat.design-mode/coordinator"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-11-10T08:52Z",
-      "source": "pi-session:0e2ea24a-22d2-4ec7-a1df-46bf85135214#f36f41aa"
+      "by": "user",
+      "at": "2026-11-12T10:39Z",
+      "source": "pi-session:c6e7f9da-6608-46f4-a4d9-6db219882520#b5acf41a"
     }
   },
   "§chat.design-mode/new-from-parents": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "code": [
       "server/design/batch.ts",
       "server/design/batch.test.ts",
@@ -676,15 +737,15 @@
       "§chat.design-mode/labels"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-11-10T11:43Z",
-      "source": "pi-session:0e2ea24a-22d2-4ec7-a1df-46bf85135214#7bd94752"
+      "by": "user",
+      "at": "2026-11-12T10:39Z",
+      "source": "pi-session:c6e7f9da-6608-46f4-a4d9-6db219882520#b5acf41a"
     }
   },
   "§chat.design-mode/open-history": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "code": [
       "src/components/DesignOpen.tsx",
       "src/components/DesignCard.tsx",
@@ -697,9 +758,9 @@
       "§app/shell"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-11-10T11:43Z",
-      "source": "pi-session:0e2ea24a-22d2-4ec7-a1df-46bf85135214#1341c7a7"
+      "by": "user",
+      "at": "2026-11-12T10:39Z",
+      "source": "pi-session:c6e7f9da-6608-46f4-a4d9-6db219882520#b5acf41a"
     }
   },
   "§chat.design-mode/own-images": {
@@ -713,22 +774,30 @@
       "server/design/assets.ts",
       "server/design/coordinator-routes.ts",
       "server/tours/darkroom-child.ts",
-      "src/components/DesignCoordinator.tsx"
+      "src/components/DesignCoordinator.tsx",
+      "shared/design-assets.ts",
+      "server/design/describe.ts",
+      "server/design/coordinator.ts",
+      "src/components/DesignBriefImages.tsx",
+      "server/tours/palette.ts",
+      "server/tours/palette.test.ts"
     ],
     "requires": [
       "§chat.design-mode/describers",
-      "§chat.design-mode/brief-images"
+      "§chat.design-mode/brief-images",
+      "§chat.design-mode/link-modes",
+      "§chat.design-mode/rebuilds"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-11-10T00:34Z",
-      "source": "pi-session:0e2ea24a-22d2-4ec7-a1df-46bf85135214#9497cb80"
+      "by": "user",
+      "at": "2026-11-12T10:39Z",
+      "source": "pi-session:c6e7f9da-6608-46f4-a4d9-6db219882520#b5acf41a"
     }
   },
   "§chat.design-mode/page-images": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "code": [
       "server/design/assets.ts",
       "server/design/assets.test.ts",
@@ -741,9 +810,9 @@
       "§chat.design-mode/prototype-frame"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-11-10T00:34Z",
-      "source": "pi-session:0e2ea24a-22d2-4ec7-a1df-46bf85135214#9497cb80"
+      "by": "user",
+      "at": "2026-11-12T10:39Z",
+      "source": "pi-session:c6e7f9da-6608-46f4-a4d9-6db219882520#b5acf41a"
     }
   },
   "§chat.design-mode/pairing": {
@@ -779,7 +848,12 @@
     ],
     "requires": [
       "§app.project-services/callers"
-    ]
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-12T10:39Z",
+      "source": "pi-session:c6e7f9da-6608-46f4-a4d9-6db219882520#b5acf41a"
+    }
   },
   "§chat.design-mode/prototype-frame": {
     "kind": "behavior",
@@ -805,7 +879,8 @@
       "pi-config/extensions/mode/design/session/task-description.md",
       "pi-config/extensions/mode/design/session/task-description-layout.md",
       "pi-config/extensions/mode/design/session/task-screenshot-layout.md",
-      "server/design-layouts.test.ts"
+      "server/design-layouts.test.ts",
+      "server/design/batch.ts"
     ],
     "requires": [
       "§chat.design-mode/layouts",
@@ -813,9 +888,9 @@
       "§chat.design-mode/link-modes"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-11-10T11:43Z",
-      "source": "pi-session:0e2ea24a-22d2-4ec7-a1df-46bf85135214#7bd94752"
+      "by": "user",
+      "at": "2026-11-12T10:39Z",
+      "source": "pi-session:c6e7f9da-6608-46f4-a4d9-6db219882520#b5acf41a"
     }
   },
   "§chat.design-mode/refine": {
@@ -855,7 +930,7 @@
   "§chat.design-mode/research": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "code": [
       "server/design/browse.ts",
       "server/design/browse.test.ts",
@@ -876,15 +951,15 @@
       "§chat.design-mode/link-modes"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-11-10T00:35Z",
-      "source": "pi-session:0e2ea24a-22d2-4ec7-a1df-46bf85135214#9497cb80"
+      "by": "user",
+      "at": "2026-11-12T10:39Z",
+      "source": "pi-session:c6e7f9da-6608-46f4-a4d9-6db219882520#b5acf41a"
     }
   },
   "§chat.design-mode/setup-card": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "code": [
       "shared/design.ts",
       "server/design/setup.ts",
@@ -897,7 +972,8 @@
       "src/lib/design-api.ts",
       "src/lib/design-store.ts",
       "pi-config/extensions/mode/vis/lookbook-setup.md",
-      "server/design/setup.test.ts"
+      "server/design/setup.test.ts",
+      "src/components/DesignSkills.tsx"
     ],
     "requires": [
       "§chat.design-mode/model-picker",
@@ -908,9 +984,9 @@
       "§chat.design-mode/pairing"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-11-10T08:52Z",
-      "source": "pi-session:0e2ea24a-22d2-4ec7-a1df-46bf85135214#f36f41aa"
+      "by": "user",
+      "at": "2026-11-12T10:39Z",
+      "source": "pi-session:c6e7f9da-6608-46f4-a4d9-6db219882520#b5acf41a"
     }
   },
   "§chat.design-mode/sites": {
@@ -929,15 +1005,53 @@
       "§app.tours/sites"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-11-10T00:35Z",
-      "source": "pi-session:0e2ea24a-22d2-4ec7-a1df-46bf85135214#9497cb80"
+      "by": "user",
+      "at": "2026-11-12T10:39Z",
+      "source": "pi-session:c6e7f9da-6608-46f4-a4d9-6db219882520#b5acf41a"
+    }
+  },
+  "§chat.design-mode/skills": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "server/design/skills.ts",
+      "server/design/batch.ts",
+      "server/design/coordinator.ts",
+      "server/design/tools.ts",
+      "shared/design.ts",
+      "pi-config/extensions/mode/design/session/brief.md",
+      "pi-config/extensions/mode/design/coordinator.md",
+      "src/components/DesignBrief.tsx",
+      "src/components/DesignCard.tsx",
+      "pi-config/extensions/mode/vis/lookbook.md",
+      "pi-config/extensions/mode/vis/lookbook-setup.md",
+      "src/components/DesignSkills.tsx",
+      "server/design/skills.test.ts",
+      "src/lib/design-skills.ts",
+      "src/lib/design-skills.test.ts",
+      "server/chat-manager.ts",
+      "server/harness/pi/worker-tools.test.ts",
+      "server/design/setup.ts"
+    ],
+    "requires": [
+      "§chat.design-mode/brief-questions",
+      "§chat.design-mode/setup-card",
+      "§chat.design-mode/brief",
+      "§chat.design-mode/design-sessions",
+      "§chat.design-mode/prototype-frame",
+      "§chat.design-mode/coordinator"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-12T10:39Z",
+      "source": "pi-session:c6e7f9da-6608-46f4-a4d9-6db219882520#b5acf41a"
     }
   },
   "§chat.design-mode/steady-cards": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "code": [
       "src/components/DesignFrame.tsx",
       "src/components/DesignCard.tsx",
@@ -958,9 +1072,9 @@
       "§chat.design-mode/directions"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-11-10T08:52Z",
-      "source": "pi-session:0e2ea24a-22d2-4ec7-a1df-46bf85135214#f36f41aa"
+      "by": "user",
+      "at": "2026-11-12T10:39Z",
+      "source": "pi-session:c6e7f9da-6608-46f4-a4d9-6db219882520#b5acf41a"
     }
   },
   "§chat.design-mode/storage": {
@@ -1019,18 +1133,19 @@
   "§chat.design-mode/turning-on": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "code": [
       "pi-config/extensions/mode/minor.ts",
       "pi-config/extensions/mode/project-format.ts",
-      "pi-config/extensions/mode/index.test.ts",
+      "pi-config/extensions/mode/modes.test.ts",
       "server/chat-manager.ts",
       "server/mode-state.test.ts",
       "src/components/ui.tsx",
       "src/lib/mode-glyphs.ts",
       "pi-config/extensions/mode/create/modes.md",
       "pi-config/extensions/mode/create/tools.md",
-      "server/create-guide-growth.json"
+      "server/create-guide-growth.json",
+      "server/harness/pi/modes.ts"
     ],
     "requires": [
       "§chat/mode-menu",
@@ -1041,9 +1156,9 @@
       "§app.tours/authoring"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-11-10T11:43Z",
-      "source": "pi-session:0e2ea24a-22d2-4ec7-a1df-46bf85135214#c54c09bf"
+      "by": "user",
+      "at": "2026-11-13T03:00Z",
+      "source": "pi-session:01a1d023-6988-7481-af78-b02082042586#71ebdfba"
     }
   },
   "§chat/design-mode": {
@@ -1060,9 +1175,9 @@
       "§chat/mode-menu"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-11-10T11:43Z",
-      "source": "pi-session:0e2ea24a-22d2-4ec7-a1df-46bf85135214#c54c09bf"
+      "by": "user",
+      "at": "2026-11-12T10:40Z",
+      "source": "pi-session:c6e7f9da-6608-46f4-a4d9-6db219882520#b5acf41a"
     }
   }
 }

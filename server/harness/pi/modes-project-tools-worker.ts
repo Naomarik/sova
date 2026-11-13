@@ -1,4 +1,4 @@
-// A pi worker's project mode tools while Sova runs chat modes: the loader's in-place rewrite answers
+// A pi worker's project mode tools under Sova's engine: the loader's in-place rewrite answers
 // mode/project-tools-worker.ts with this file, in the same slot. The same hooks as the extension's file
 // (project-tools-worker.ts): the parent's saved copies, the same definitions, on for the worker's life,
 // refused while its sandbox is on. One addition: a personal mode's programs are told the worker's checkout

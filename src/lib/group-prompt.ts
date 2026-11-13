@@ -97,6 +97,7 @@ const REFUSAL_CLAUSE: Partial<Record<BatchRefusalCode, (name: string) => string>
   config: (n) => `${n} can't be opened`,
   busy: (n) => `${n} is busy`,
   missing: (n) => `${n}'s file is gone`,
+  "decide-first": (n) => `${n} has context files or skills to decide`,
 };
 
 /**
@@ -193,4 +194,18 @@ export function composerParts(members: number, enterSends: boolean): string[] {
 /** The placeholder as written, its parts joined by an em dash. */
 export function composerPlaceholder(members: number, enterSends: boolean): string {
   return composerParts(members, enterSends).join("—");
+}
+
+/** Members held for decisions (a new chat that asks first): the banner's title. */
+export function heldTitle(held: number, sent: number): string {
+  const who = held === 1 ? "1 member is" : `${held} members are`;
+  return sent > 0 ? `Sent to ${sent}. ${who} waiting for your decisions.` : `${who} waiting for your decisions.`;
+}
+
+/** …and its body: who, and where the message is. */
+export function heldBody(names: string[]): string {
+  const list = names.length <= 1 ? (names[0] ?? "") : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
+  const has = names.length === 1 ? "has" : "have";
+  const where = names.length === 1 ? "its composer" : "each one's composer";
+  return `${list} ${has} context files or skills to decide. The message waits in ${where} and goes once you decide there.`;
 }

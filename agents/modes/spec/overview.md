@@ -34,7 +34,7 @@ The requirement is §tools/spec (`.sova/spec/claims/tools/spec.md`); MODE.md des
   `spec/WRITING.md` (the writing procedure, never in the prompt) are the only texts; everything else quotes or loads
   them. `minor.ts` reads `spec-mode.md` once at load and refuses to load (pi and Sova's server alike) unless it holds
   exactly one single-line `sh` block. The census hook reads `WRITING.md` from the installed tools at hand-over
-  (`CensusHook.takeProcedure`). `mode/index.test.ts` pins both: every flag they spell is parsed by its command, the
+  (`CensusHook.takeProcedure`). `mode/modes.test.ts` and `mode/spec-mode.test.ts` pin both: every flag they spell is parsed by its command, the
   procedure's `--doc-only` cases are the draft tool's own, and each part's word count is capped. `subagents/spec-brief.ts`
   quotes rules from both by anchor, so moving a rule can break the worker brief, and `SPEC_WORKER_NOTE` must equal
   the procedure's Workers paragraph.
@@ -50,15 +50,20 @@ The requirement is §tools/spec (`.sova/spec/claims/tools/spec.md`); MODE.md des
 - **What Sova imports.** `server/spec-drafts-state.ts` imports `core/official.mjs` (types in `official.d.mts`), the
   one rule for whether a draft is official, and through it `sova-spec.mjs`: both stay free of work at import. An
   edit to either can break Sova's typecheck and readiness: run `pnpm run typecheck` and `pnpm test` too.
-- **One copy of the tools.** The spec tools exist only in `core/`, run through the installed extension (`$core`).
-  No project, Sova included, keeps a copy; a copy found in a project is that project's code, never run without asking.
+- **One copy of the tools.** The spec tools exist only in `core/`, run as `$core`. In a Sova chat `$core` is
+  `$SOVA_SPEC_CORE`, the `core/` of the chat's own copy of Sova (set per local chat process in `chatEnv`, passed by
+  the sandbox, never forwarded to a remote target, stripped for a worker on a worktree's own `.agent`, scrubbed at
+  server boot and by `scripts/test-env.mjs`); elsewhere the shell line falls back to the agent dir's
+  `extensions/spec/core`. The merge queue runs the server's bundled copy, never the agent dir's (`deps.specCore` is for
+  Sova's tests only), and the release's `docs-drift.mjs` reads `$SOVA_SPEC_CORE` first, as the shell line does. No project, Sova included, keeps a copy; a copy found in a project
+  is that project's code, never run without asking.
 
 ## While working
 
 - Tool tests (about a minute):
   `cd pi-config/extensions/spec && node --test --test-concurrency=4 tests/*.test.mjs`.
 - Mode tests: the `mode` line in `pi-config/README.md` "Tests" (`spec.test.ts`, `spec-guard.test.ts`,
-  `tests/spec-turn.mjs`, `tests/spec-worker.mjs`, …).
+  `tests/spec-worker.mjs`, …); the engine's census in a chat: the golden cases `c21-spec-census`, `c23-spec-reads-one-source`.
 - Search changes: the topic bench in `tests/search/` (its README; a held-out set is run once).
 - Measuring a tool change: `tests/replay/run.mjs` against a baseline tree (`make-tree.mjs master …`), as its README
   shows. That is the measurement, not the gate.
@@ -78,7 +83,7 @@ The requirement is §tools/spec (`.sova/spec/claims/tools/spec.md`); MODE.md des
 - **When commands or output change:** `core/README.md`, `spec/README.md`, `DRAFTS.md` / `PROMOTE.md` (the draft
   tool), `.sova/spec/USAGE.md`, the site page `site/src/content/docs/modes/spec.md`, and the usage line
   (`tests/usage.test.mjs` pins it to the commands).
-- **`spec-mode.md` or `spec/WRITING.md`:** `mode/index.test.ts`'s pins, the brief's anchors
-  (`subagents/spec-brief.test.ts`), the review-smoke fixture (`mode/tests/fixtures/flag-off-master.json`, for
+- **`spec-mode.md` or `spec/WRITING.md`:** `mode/modes.test.ts`'s and `mode/spec-mode.test.ts`'s pins, the brief's anchors
+  (`subagents/spec-brief.test.ts`), the review flag-off fixture (`server/modes/tests/fixtures/align-flag-off-master.json`, for
   `spec-mode.md`), the site page, and an UPGRADING step.
 - Commit spec docs by explicit path, as `.sova/spec/README.md` shows; drafts and reviews stay local.

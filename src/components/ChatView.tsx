@@ -181,6 +181,10 @@ import { Banner, Icon } from "./ui";
 import { UiDialog } from "./UiDialog";
 import type { QueueWorktree } from "./WorktreesModal";
 import { heldAskLine, heldComposerLine, heldDecisionOf } from "../lib/merge-standing";
+import { askReread, askReview, holdOf } from "../lib/approval-hold";
+import { createProfileHold } from "../lib/hello-steady";
+import { noteChatFolder } from "../lib/approval-overlay";
+import { holdLine, REVIEW, SAVING_LINE } from "../lib/approvals";
 import { clearPick, pickedDecision } from "../lib/merge-decision-pick";
 import { mergeChanged, mergeFeed, readQueue } from "../lib/merge-queue-client";
 
@@ -583,6 +587,14 @@ export function ChatView(props: {
     }, LOGIN_UNSAID_MS);
   };
   onCleanup(() => clearTimeout(loginUnsaid));
+  // A hello keeps the chat's profile as shown until the messages after it settle it (lib/hello-steady).
+  const profileHold = createProfileHold<ChatProfileInfo>(setProfileInfo, LOGIN_UNSAID_MS);
+  onCleanup(() => profileHold.dispose());
+  // The chat's folder, for its mid-chat lines' save queue (lib/approval-overlay).
+  createEffect(() => {
+    const cwd = props.summary?.()?.cwd;
+    if (cwd) noteChatFolder(props.path, cwd);
+  });
   /** Local "Ran /name args" rows; `tui` marks one that asked for a UI Sova can't show, `note` one
       that was refused (a /compact), whose row then says why instead of "Ran". */
   const [commandRows, setCommandRows] = createSignal<{ label: string; tui: boolean; note?: string }[]>([]);
@@ -890,6 +902,8 @@ export function ChatView(props: {
       switch (msg.type) {
         case "hello":
           dropNotFound();
+          // A new chat's setup is read again on each hello: a decision on its folder's list rebuilds it.
+          askReread(props.path);
           // A hello starts the socket's account again: memory says itself right after it, or is off;
           // so does the code, or it is current.
           setMemoryStatus(null);
@@ -943,7 +957,7 @@ export function ChatView(props: {
           setCwdFallback(msg.cwdFallback ?? null);
           // The shield and the login stay as shown until the messages after the hello settle them
           // ("commands", "sandbox", "claude_login"), so neither blinks out and back.
-          setProfileInfo(null); // a "profile" message follows for a profile or a session before its first message
+          profileHold.hello(); // a "profile" message follows for a profile or a session before its first message
           setChatProfile(null); // and a "chat_profile" one from a server that has it
           awaitLogin();
           batch(() => {
@@ -1058,6 +1072,9 @@ export function ChatView(props: {
          * no message_start will ever come for it. The row goes and the text comes back, in the tab
          * that sent it — the only tab with anywhere to put it.
          */
+        case "setup_changed":
+          askReread(props.path);
+          break;
         case "queue_item_gone": {
           unacked.settled(msg.itemId);
           const effect = queueGoneEffect(msg.reason);
@@ -1209,7 +1226,7 @@ export function ChatView(props: {
           break;
         case "profile": {
           const { type: _t, ...info } = msg;
-          setProfileInfo(info);
+          profileHold.said(info);
           props.onProfile?.(info);
           if (info.locked) setProfileRace(null);
           break;
@@ -1218,6 +1235,8 @@ export function ChatView(props: {
           clearTimeout(loginUnsaid);
           loginUnsaid = undefined;
           setClaudeLogin(msg.login);
+          // It follows the profile's place after a hello: no profile said by now means none.
+          profileHold.settled();
           break;
         case "event":
           // A design's page and state go to its card and the Gallery, never into the turn's rows.
@@ -1264,6 +1283,8 @@ export function ChatView(props: {
             // turn failure. The composer's own blocked reason says the same once the list catches up.
             case "refused":
             {
+              // Held for decisions (asking mode): the setup card reads again, so the hold shows.
+              if (msg.decide === "first") askReread(props.path);
               // A command it names makes no user row: its text comes back from here (a click: its card).
               const taken = handBackSends([unacked.take(msg.clientId, handedBack)].filter((u): u is Unsent => u !== null));
               // Refused before the hello, the chat never had it: its row goes, as the text is back.
@@ -1857,6 +1878,13 @@ export function ChatView(props: {
     // server in order, behind what woke it (a model switch, then Send), and the server applies each
     // before the next (§chat.transcript/send-while-starting). The note still floats (`waitNote`).
     const waking = !!wait().waking;
+    // Asking mode: a new chat sends once every context file and skill it could load is decided. The
+    // draft stays and typing goes on; Review opens the setup card's list. The server holds it too.
+    const hold = holdOf(props.path);
+    if (hold && hold.context + hold.skills > 0) return { icon: "attention", text: holdLine(hold.context, hold.skills), action: { label: REVIEW, run: () => askReview(props.path) } };
+    // Every waiting item is decided here, and the last decisions are still being saved: Send waits
+    // for the server to have them, so a message never bounces.
+    if (hold?.saving) return { icon: "clock", text: SAVING_LINE };
     // Connecting, starting or reconnecting: the words float over the transcript's end (`waitNote`),
     // the composer's reason carries them for assistive technology only (§chat.transcript/instant-open).
     const waiting = composerWait(wait(), waitingReason());

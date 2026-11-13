@@ -149,6 +149,34 @@ test("a worker's spec env can't choose its key", async () => {
   t.router.detach();
 });
 
+test("each chat process and worker is told its own copy's spec tools (SOVA_SPEC_CORE); a worker on its worktree's own .agent is not, nor does a server's own value reach any", async () => {
+  const before = process.env.SOVA_SPEC_CORE;
+  process.env.SOVA_SPEC_CORE = "/old/sova/pi-config/extensions/spec/core";
+  try {
+    const t = setup();
+    await t.router.ready();
+    const s = session();
+    await t.router.acquire(s.path, false);
+    const chat = t.driver.started.at(-1)!;
+    assert.equal(chat.env.SOVA_SPEC_CORE, join(chat.cwd, "pi-config", "extensions", "spec", "core"), "the copy its process runs from");
+    assert.ok(existsSync(join(chat.env.SOVA_SPEC_CORE!, "sova-spec.mjs")), "the tools are there");
+    const parent = { sessionId: s.id, path: s.path, workerId: "ag_01" };
+    const base = { kind: "pi", parent, cwd, model: null, thinking: null, builtins: null, extensions: [], flags: {}, appendSystemPrompt: null, env: {}, lowered: true as const };
+    await t.router.workers.start({ key: "key:w1", spec: { ...base, agentDir: null } as never, session: { new: { dir: join(agentDir, "sessions", "--w1--") } }, task: null });
+    assert.equal(t.driver.started.at(-1)!.env.SOVA_SPEC_CORE, chat.env.SOVA_SPEC_CORE, "a worker: its own copy's too");
+    const tree = join(agentDir, "tree", ".agent");
+    mkdirSync(tree, { recursive: true });
+    await t.router.workers.start({ key: "key:w2", spec: { ...base, parent: { ...parent, workerId: "ag_02" }, agentDir: tree } as never, session: { new: { dir: join(agentDir, "sessions", "--w2--") } }, task: null });
+    const own = t.driver.started.at(-1)!.env;
+    assert.equal(own.PI_CODING_AGENT_DIR, tree);
+    assert.equal(own.SOVA_SPEC_CORE, undefined, "its tree's own tools, through its agent dir");
+    t.router.detach();
+  } finally {
+    if (before === undefined) delete process.env.SOVA_SPEC_CORE;
+    else process.env.SOVA_SPEC_CORE = before;
+  }
+});
+
 test("a prune that throws never stops the start: ready resolves, chats still open", async () => {
   const t = setup({ before: () => {}, prune: () => { throw new Error("injected"); } });
   await t.router.ready();

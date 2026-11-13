@@ -47,6 +47,8 @@ import {
   setLinksSource,
   setLinkToken,
   setOpeningChoice,
+  setFolderRule,
+  setProjectFact,
   setRunRecorder,
   serverToolSpec,
   setServedTools,
@@ -78,6 +80,7 @@ import { LinkWorkerHost, DESIGN_PROTO, WORKER_PROTO } from "./worker-port";
 /** The provider and model runtime warm-up, once per process (main.ts awaits it before "ready"). */
 export { warmChatRuntime } from "../chat-manager";
 import { setReplyTimingsSource } from "../reply-facts";
+import { fallbackRule } from "../projects/folder-rule";
 
 /** `globalThis[LINK_LIVE](sessionId)`: whether a session is in a live link (the link extension asks). */
 const LINK_LIVE = Symbol.for("sova:link-live");
@@ -446,6 +449,9 @@ export class ChatRuntimeHost {
       return void reply({ t: "opened", id: f.id, ok: false, error: { message: "A worker chat needs a server that speaks protocol 3." } });
     if (f.worker) setWorkerSpec(this.o.path, f.worker);
     if (f.opening) setOpeningChoice(this.o.path, f.opening);
+    setFolderRule(this.o.path, f.folderRule ?? null);
+    // Every kind's: an older server that sends none says it is in no project (its folder's git and home alone decide).
+    setProjectFact(this.o.path, f.inProject ?? false);
     setServedTools(f.served);
     // A special loadout opens from the server's data, its kind answered over this socket.
     if (f.special) {
@@ -499,6 +505,9 @@ export class ChatRuntimeHost {
       mcpList: (ask) => this.ask("mcp.list", ask) as never,
       mcpTell: (parent, note) => void this.ask("mcp.tell", { parent, note }).catch(() => {}),
       cardNote: (sessionId, since) => this.ask("cards.note", { sessionId, since }),
+      // The server sends the folder's decisions in each open (setFolderRule): an ask during the build would wait on the open itself.
+      // A build with no rule from an open (another path made in this process) fails closed: nothing decided, in the setting's mode.
+      folderRule: async () => fallbackRule(),
     });
     setSingletonCheck((key, path) => this.ask("singleton", { key, path }));
     setLinksSource((sessionId, path) => this.ask("links", { sessionId, path }) as never);

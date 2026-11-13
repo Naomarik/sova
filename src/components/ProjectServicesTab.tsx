@@ -5,6 +5,8 @@ import { getProjectServices, runProjectVerb, setCopyLimit } from "../lib/api";
 import { createPoll } from "../lib/poll";
 import {
   adoptedLine,
+  ARCHIVED_COPIES_LINE,
+  archivedVerbs,
   ASKS_FIRST,
   confirmLabel,
   copyChip,
@@ -16,6 +18,7 @@ import {
   doneLine,
   entryHref,
   entryTitle,
+  gaveUp,
   httpHref,
   limitHint,
   limitInputProblem,
@@ -472,6 +475,9 @@ export function ProjectServicesTab(props: { projectId: string; archived: boolean
             >
               {(l) => <CopyLimit projectId={props.projectId} limit={l()} archived={props.archived} changed={() => poll.refetch()} />}
             </Show>
+            <Show when={props.archived}>
+              <p class="orgs-line">{ARCHIVED_COPIES_LINE}</p>
+            </Show>
             <Show when={v().error}>{(e) => <p class="field-error">Couldn't read their status. {e()}</p>}</Show>
             <Show when={poll.error()}>{(e) => <p class="field-error">The last read failed; this is what it showed before. {e()}</p>}</Show>
             <Show when={copies().length}>
@@ -480,10 +486,11 @@ export function ProjectServicesTab(props: { projectId: string; archived: boolean
                   {(c) => (
                     <CopyRow
                       copy={c}
+                      archived={props.archived}
                       said={said()[c.instance] ?? null}
                       verbs={(verb, quiet) => <VerbButton row={c.instance} verb={verb} name={copyName(c)} body={{ instance: c.instance }} asksFirst={ASKS_FIRST.has(verb)} quiet={quiet} />}
                       share={<ShareParts copy={c} />}
-                      shareButton={<ShareButton copy={c} />}
+                      shareButton={props.archived ? null : <ShareButton copy={c} />}
                       onLogs={() => setLogs({ instance: c.instance, name: copyName(c) })}
                     />
                   )}
@@ -530,13 +537,17 @@ export function ProjectServicesTab(props: { projectId: string; archived: boolean
                                   when={s.state === "ready" || s.state === "starting"}
                                   fallback={
                                     <>
-                                      <VerbButton row={row} verb="up" name={s.name} body={{ instance: via().instance, services: [s.name] }} />
+                                      <Show when={!props.archived}>
+                                        <VerbButton row={row} verb="up" name={s.name} body={{ instance: via().instance, services: [s.name] }} />
+                                      </Show>
                                       <VerbButton row={row} verb="down" name={s.name} body={{ instance: via().instance, services: [s.name] }} asksFirst quiet />
                                     </>
                                   }
                                 >
                                   <VerbButton row={row} verb="down" name={s.name} body={{ instance: via().instance, services: [s.name] }} asksFirst />
-                                  <VerbButton row={row} verb="up" name={s.name} body={{ instance: via().instance, services: [s.name] }} quiet />
+                                  <Show when={!props.archived}>
+                                    <VerbButton row={row} verb="up" name={s.name} body={{ instance: via().instance, services: [s.name] }} quiet />
+                                  </Show>
                                 </Show>
                               </div>
                             </div>
@@ -564,11 +575,11 @@ export function ProjectServicesTab(props: { projectId: string; archived: boolean
  * all ghost; else the verb its state calls for plain, the quieter rest; the destructive ones apart); at narrow widths the actions wrap
  * under the facts.
  */
-function CopyRow(props: { copy: CopyView; said: string | null; verbs(v: RowVerb, quiet: boolean): JSX.Element; share: JSX.Element; shareButton: JSX.Element; onLogs(): void }) {
+function CopyRow(props: { copy: CopyView; archived: boolean; said: string | null; verbs(v: RowVerb, quiet: boolean): JSX.Element; share: JSX.Element; shareButton: JSX.Element; onLogs(): void }) {
   const c = () => props.copy;
-  const chip = () => copyChip(c().state, isStarting(c().state, c().services));
+  const chip = () => copyChip(c().state, isStarting(c().state, c().services), gaveUp(c().services));
   const entry = () => openEntry(c());
-  const groups = () => verbGroups(rowVerbs(c()), !!entry());
+  const groups = () => verbGroups(props.archived ? archivedVerbs(rowVerbs(c())) : rowVerbs(c()), !!entry());
   const ported = () => c().services.filter((s) => Object.keys(s.ports).length);
   return (
     <li class="list-row services-row">

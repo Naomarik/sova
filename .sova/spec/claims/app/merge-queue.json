@@ -267,8 +267,8 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-05T19:18Z",
-      "source": "pi-session:01a1acf3-91f6-7735-96f5-970a0699e9c9#85bf6ed9"
+      "at": "2026-11-13T03:00Z",
+      "source": "pi-session:01a1d023-6988-7481-af78-b02082042586#71ebdfba"
     },
     "code": [
       "server/merge-queue/checks.ts",
@@ -292,7 +292,8 @@
       "server/merge-queue/estimate.test.ts",
       "shared/merge-queue.ts",
       "server/merge-queue/testing/repo.ts",
-      "server/test-cache-guard.test.ts"
+      "server/test-cache-guard.test.ts",
+      "server/spec-runner.ts"
     ]
   },
   "§app.merge-queue/conflicts": {
@@ -433,6 +434,34 @@
       "by": "user",
       "at": "2026-11-07T16:08Z",
       "source": "pi-session:01a1b63e-6ef3-71fd-af21-1389de50cc23#92eb7761"
+    }
+  },
+  "§app.merge-queue/history": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "requires": [
+      "§app.merge-queue/view",
+      "§app.merge-queue/send-back",
+      "§app.merge-queue/run-logs",
+      "§app.project-services/merge-verbs"
+    ],
+    "code": [
+      "server/merge-queue/store.ts",
+      "server/merge-queue/queue.ts",
+      "server/merge-queue/history.ts",
+      "server/merge-queue/settled.ts",
+      "server/merge-queue/routes.ts",
+      "shared/merge-queue.ts",
+      "server/merge-queue/history.test.ts",
+      "server/merge-queue/queue-history.test.ts",
+      "server/merge-queue/settled.test.ts",
+      "server/merge-queue/verbs.test.ts"
+    ],
+    "evidence": "unreviewed",
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-11T11:22Z",
+      "source": "pi-session:153d255f-fbbd-46ec-933b-56f5b0674df1#79716458"
     }
   },
   "§app.merge-queue/hosts": {
@@ -975,7 +1004,7 @@
   "§app.merge-queue/run": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "reviewed",
+    "evidence": "verified",
     "requires": [
       "§app.project-services/instances",
       "§app.project-services/contract",
@@ -984,9 +1013,9 @@
       "§app.merge-queue/pausing"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-11-09T00:22Z",
-      "source": "pi-session:01a1b2f4-86c6-73d4-9fe9-b847b27035f9#e2a66e41"
+      "by": "user",
+      "at": "2026-11-12T16:06Z",
+      "source": "pi-session:01a1d023-6988-7481-af78-b02082042586#96bae24a"
     },
     "code": [
       "server/merge-queue/run.ts",
@@ -1011,7 +1040,8 @@
       "server/merge-queue/scenarios-landed-drafts-edges.integration.test.ts",
       "server/merge-queue/notices.ts",
       "server/merge-queue/scenarios-nothing-left.integration.test.ts",
-      "server/landed-branch-agreement.integration.test.ts"
+      "server/landed-branch-agreement.integration.test.ts",
+      "server/spec-runner.ts"
     ]
   },
   "§app.merge-queue/run-logs": {
@@ -1022,9 +1052,9 @@
       "§chat.merge-queue/thread"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-11-07T17:04Z",
-      "source": "pi-session:a08b61c6-6f44-4ae1-ace0-ced83f26f0b0#55f8e26b"
+      "by": "user",
+      "at": "2026-11-11T11:22Z",
+      "source": "pi-session:153d255f-fbbd-46ec-933b-56f5b0674df1#79716458"
     },
     "code": [
       "server/merge-queue/run-logs.ts",
@@ -1048,7 +1078,11 @@
       "server/commands-fuzz.test.ts",
       "src/lib/popover-focus.ts",
       "src/lib/popover-focus.test.ts",
-      "server/run-logs-chip-browser.integration.test.ts"
+      "server/run-logs-chip-browser.integration.test.ts",
+      "server/merge-queue/history.ts",
+      "server/merge-queue/settled.ts",
+      "server/merge-queue/queue.ts",
+      "server/merge-queue/queue.test.ts"
     ],
     "evidence": "verified"
   },

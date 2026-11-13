@@ -18,8 +18,8 @@ Every chat with modes offers all of them, in that order, except that only Sova's
 turns `memory` on (§chat.memory/where). A chat in a project's checkout also offers that project's
 own minor modes, from its `.sova/minor-modes/` folder (§chat.mode-menu/project-modes), and your
 personal modes, from your own folder, in every project (§chat.mode-menu/personal-modes); none is ever on
-until someone turns it on in that chat. Sova runs them all itself; with the Experimental switch
-**Sova runs chat modes** off, the pi mode extension runs them the old way (§chat.mode-menu/sova-runs-modes).
+until someone turns it on in that chat. Sova runs them all itself, in every chat, whatever the pi
+folder holds (§chat.mode-menu/sova-runs-modes).
 A pi terminal has no modes (§chat.mode-menu/terminal). What Delegate routes where is the Models
 part of this chat's profile (§chat/subagent-profiles), edited in Settings → Profiles
 (§app.settings-dialog/profile-editor). The menu always offers its Profile picker, in every major mode.
@@ -217,7 +217,7 @@ popover (§chat.subagent-profiles/menu), with Off first and the current profile 
   true }`). In a chat in Create the mode it saves is the chat's last normal or Delegate choice, never
   Create (§chat.create-mode/per-chat-only). The request carries no profile of its own: the server
   takes this chat's profile and its effective subagent profile (its helper pick). The write re-reads each file first, so
-  `mode.json`'s shortcuts and anything else in it are kept, and the mode extension reads it at each
+  `mode.json`'s shortcuts and anything else in it are kept, and a chat's modes read it at each
   `session_start`: the next session starts on it. **`Update {name}`**, whose button sits beside it,
   saves this chat's model, effort, mode and add-on modes into its profile (§chat.subagent-profiles/menu).
 - **What it moves, and when.** This chat keeps what it is on; pinned chats keep their own picks.
@@ -284,9 +284,9 @@ The chat then:
   composer send, without images, is the menu's switch, with its refusals, and nothing reaches the model.
   Every other typed mode command is answered by Sova too (§chat.mode-menu/typed-commands), and the
   menu stays right.
-- **Runs the chat's own mode switch** directly: Sova's, or with the switch off the old extension's
-  `/mode` handler (§chat.mode-menu/sova-runs-modes). Either leaves the same **marker** ("Mode → delegate", "Minor mode: align on", "Strict mode
-  on/off") plus the snapshot the extension restores from. The marker renders nothing in the
+- **Runs Sova's own mode switch** directly (§chat.mode-menu/sova-runs-modes). It leaves a
+  **marker** ("Mode → delegate", "Minor mode: align on", "Strict mode on/off") plus the snapshot a
+  reopen restores from. The marker renders nothing in the
   thread (§chat.transcript/transcript-items); its history is visible on the Session pane's
   Changes disclosure and the Timeline's change markers (§chat.timeline/rows). The command text
   never goes to the model. There's no reload, so the chat's subagent workers keep running. A chat
@@ -297,9 +297,8 @@ The chat then:
 - **Create.** A switch to Create also turns align on (§chat.create-mode/minor-modes), in the same
   step. A chat that doesn't offer Create refuses it (409), and a chat still on code older than
   Create can't take it: the switch fails with its reason, and the mode is unchanged.
-- **Can't switch.** If no mode runner is loaded in that chat (neither Sova's nor, with the switch
-  off, the mode extension), or another program wrote the
-  session, the chat isn't touched. Its menu shows a warn banner, "This chat can't switch." Only
+- **Can't switch.** If that chat has no modes (its loadout loads no extensions,
+  §chat.mode-menu/sova-runs-modes), or another program wrote the session, the chat isn't touched. Its menu shows a warn banner, "This chat can't switch." Only
   the default applies then.
 - **Project modes** (§chat.mode-menu/project-modes) ride the same route as `projectModes`, the
   whole set to have on, with `approve: [{id, hash}]` for the approval the user just gave. Turning
@@ -326,17 +325,17 @@ already says; a body that also names `mode`, `minorModes` or `projectModes` (or 
 is a 400, because the save takes the chat's state, never the body's fields; and a session this
 server doesn't hold open is a 404.
 
-**Where a chat's mode comes from when it opens.** `bind()` resolves it once, with the extension's
-own rule (`resolveChatMode`, `restoreActive` from pi-config `state.ts`): the newest `mode` entry
-on the branch that carries a snapshot wins, otherwise the default from `mode.json`. Server and
-extension therefore always agree, including after a server restart. Nothing is broadcast to other
+**Where a chat's mode comes from when it opens.** `bind()` resolves it once, with the rule Sova's
+modes use (`resolveChatMode`, `restoreActive` from pi-config `state.ts`): the newest `mode` entry
+on the branch that carries a snapshot wins, otherwise the default from `mode.json`. The server and
+the chat's modes therefore always agree, including after a server restart. Nothing is broadcast to other
 chats, and nothing watches `mode.json`.
 
 ## §chat.mode-menu/prompt-holds-across-turn-starters — The mode prompt holds whoever starts the turn
 
 A chat's system prompt is the same whether its turn was started by the user's message or by an
 extension's message: a subagent settling (`subagent-complete`), a team question, an Overseer
-wake-up. In particular the mode extension's `<mode>` section (delegate instructions, minor-mode
+wake-up. In particular the chat's `<mode>` section (delegate instructions, minor-mode
 biases) is neither dropped nor re-added because of *who* started the turn; it changes only when
 the major mode, Delegate routing, a spec-writer route already present in the prompt head, or align
 while in delegate changes, and at the first run after a compaction. Spec-writer routing introduced
@@ -344,8 +343,8 @@ by a mode note is refreshed by another note instead of rewriting that head. Any 
 toggle leaves it alone
 (§chat.mode-menu/minor-toggle-keeps-prompt).
 
-Why this needs saying: pi builds a user turn's prompt in `before_agent_start`, where the mode
-extension writes its block into that turn's prompt sections. A turn an extension's message starts
+Why this needs saying: pi builds a user turn's prompt in `before_agent_start`, where the chat's
+modes write their block into that turn's prompt sections. A turn an extension's message starts
 (`sendMessage(…, {triggerTurn: true})`) skips that hook, and pi's own refresh before the turn's
 second request rebuilds the prompt from the session's **base** prompt options, which know nothing
 of extension sections. Left alone, that patched the section out mid-turn (`mode: null` in the
@@ -354,14 +353,12 @@ and the claude-code bridge, which restarts its CLI on any prompt change
 (§app.worker-restore/claude-bridge-restart), re-sent the whole conversation at every switch: in
 one team session, 22 restarts of up to 220K tokens each.
 
-The rule is kept by whoever runs the chat's modes (§chat.mode-menu/sova-runs-modes), not the bridge (the bridge cannot change a running CLI's
+The rule is kept by Sova's modes (§chat.mode-menu/sova-runs-modes), not the bridge (the bridge cannot change a running CLI's
 prompt, and must not guess which prompt changes are benign): it also keeps its block in pi's base
 options, so a turn built without `before_agent_start` reads the same prompt. Those options are
 reachable only through a command context (`ctx.getSystemPromptOptions`): every `/mode` and
 `/align` call adopts the getter. Every time Sova opens a chat (`bind()`, a first open and every
-reopen, including after a server restart) it runs the mode runner's sync: Sova's own, called
-directly, or with the switch off the extension's own handler with
-**`/mode sync`**, an argument; either switches nothing, writes no entry, shows no notice and leaves
+reopen, including after a server restart) it runs Sova's own mode sync, called directly; it switches nothing, writes no entry, shows no notice and leaves
 the status alone: it only adopts the getter and puts the session's already-restored mode block
 into the base. So every Sova chat has it before its first turn, whether or not it is ever
 switched — a chat whose mode is pinned and never touched in this runtime included — and from then
@@ -459,7 +456,7 @@ does not (aligning is a conversation with the user, which a worker doesn't have)
 (its visuals are for the user, and a worker's replies are read by its parent session), nor does `memory`
 (it is the chat's own memory of its conversation; a worker starts fresh from its brief, and its report
 enters the parent's memory like any other message). So no worker has a Lookbook, and a Lookbook's
-design sessions and coordinator take nothing of the chat's modes (§chat.design-mode/turning-on). A project mode declares it in its own file
+design sessions and Creative Director take nothing of the chat's modes (§chat.design-mode/turning-on). A project mode declares it in its own file
 (§chat.mode-menu/project-modes), `no` unless it says `yes`; one that reaches workers comes after
 spec's block, from the parent's saved copy of it, with its tools when the worker can run commands
 (a remote worker gets the block, never the tools), and the worker never reads the project's folder. A worker gets at most 8 modes, built-in and project together.
@@ -480,9 +477,8 @@ spec's block, from the parent's saved copy of it, with its tools when the worker
 - **On its worktree's own agent dir.** A worker there (§chat.worktrees/worktree-config) follows the
   chat that started it too: while that chat has spec on, it has spec in its worker form (the same
   block and note, no writer paragraph); with spec off in that chat, its prompt carries nothing from
-  spec. The block comes from Sova while Sova runs chat modes, never from a copy of the mode extension
-  in its tree, which it never needs to start; with the switch off, from its tree's own mode extension
-  (§chat.mode-menu/sova-runs-modes).
+  spec. The block comes from Sova, never from its tree's mode files or an older Sova's mode
+  extension its `.agent` links (§chat.mode-menu/sova-runs-modes).
 - **A snapshot, taken at spawn.** The worker gets the modes the parent has when it starts; a
   later switch in the chat doesn't reach a running worker (§chat.mode-menu/how-a-switch-reaches-the-chat:
   there is no reload). A resumed worker takes the parent's **current** worker modes, exactly as at
@@ -494,11 +490,10 @@ spec's block, from the parent's saved copy of it, with its tools when the worker
   its status chip. A worker given none, and one recorded by an
   older pi-config, shows nothing.
 
-The parent learns nothing new: the mode extension publishes the parent's worker modes and the
+The parent learns nothing new: the chat's modes publish the parent's worker modes and the
 worker prompt on the extension bus (`mode:worker`), the way the sandbox publishes its state
 (§chat.sandbox/workers), and the subagents extension appends that text at spawn without
-interpreting it. A parent without the mode extension publishes nothing, and its workers get
-nothing.
+interpreting it. A parent with no modes publishes nothing, and its workers get nothing.
 
 ## §chat.mode-menu/project-modes — A project's own minor modes
 
@@ -719,8 +714,7 @@ every chat that offers project modes offers them too, in every project.
   (§chat.mode-menu/project-mode-hooks), broken folders, the saved copy a chat works from, and how
   its block reaches the model and its workers. Its `Folder:` line and `SOVA_MODE_DIR` name its own
   folder; `SOVA_PROJECT_ROOT` is still the chat's checkout, where its programs run, and for its tool in
-  a worker the worker's checkout, worked out at each call, never Sova's own code. The switch being off
-  is the one exception, under "Only while Sova runs chat modes" below.
+  a worker the worker's checkout, worked out at each call, never Sova's own code.
 - **Where it is offered.** In every chat that offers project modes, whatever its checkout, in the
   menu's "Your modes" group (§chat.mode-menu/menu); a chat that offers none (a remote chat, the
   Overseer, Sova's special sessions, a chat whose folder is no checkout) offers no personal mode either.
@@ -737,13 +731,9 @@ every chat that offers project modes offers them too, in every project.
   why it's broken. A built-in mode's id stays reserved: a
   personal folder named `align`, `spec`, `vis`, `memory` or any built-in added later is broken, as
   a project's is, and never replaces the built-in.
-- **Only while Sova runs chat modes** (§chat.mode-menu/sova-runs-modes): with the switch off, no menu
-  offers personal modes and none can be turned on. One already on in a chat stays on from the copy the chat
-  keeps, listed under "Your modes" as on, and can be turned off like any mode; nothing is lost either way.
-  Its row says it was removed only when its folder is gone.
-  **Known exception, not fixed:** in a chat the pi mode extension runs, and in its workers, that mode's
-  tool is told the agent dir (by default) as `SOVA_PROJECT_ROOT`, not the checkout: the extension works
-  the root out from the mode's own folder, which is right only for a project mode.
+- **Always offered.** Sova runs every chat's modes (§chat.mode-menu/sova-runs-modes), so no setting
+  hides personal modes: wherever project modes are offered, yours are too. A personal mode's row says
+  it was removed only when its folder is gone.
 
 ## §chat.mode-menu/memory-panel — The memory row and its Memory type panel
 
@@ -848,7 +838,7 @@ choose between a team (`team_create`) and separate workers (`agent_spawn`):
 
 ## §chat.mode-menu/typed-commands — Mode commands typed in a chat
 
-While Sova runs chat modes (§chat.mode-menu/sova-runs-modes), a mode command typed in a chat's
+Sova runs every chat's modes (§chat.mode-menu/sova-runs-modes), so a mode command typed in a chat's
 composer is answered by Sova itself: it never reaches the model or a pi extension, and it does
 exactly what the menu's same switch does, with its refusals (§chat.mode-menu/how-a-switch-reaches-the-chat).
 
@@ -875,8 +865,7 @@ What it leaves is the menu's: the "Ran" row (§chat.slash-commands/in-the-thread
 toast, the menu following at once, and mid-turn the same "Applies after this turn." A refusal says
 why and changes nothing. The composer's slash menu lists `mode`, `align` and `review` (only while the
 chat's review flag is on), each with its description, in every chat that has modes; the Overseer's
-stays as it is (§chat.slash-commands/in-the-thread). With the switch off, typed mode commands reach
-the old mode extension as before.
+stays as it is (§chat.slash-commands/in-the-thread).
 
 ## §chat.mode-menu/terminal — From a terminal
 
@@ -888,57 +877,46 @@ launch flags). A chat's modes are Sova's: its mode menu (§chat.mode-menu/menu) 
 typed in it (§chat.mode-menu/typed-commands). A session's saved mode stays in its file as it was, so a
 session that was opened in a terminal has its modes again when Sova opens it.
 
-Until you retire the old way (§chat.mode-menu/sova-runs-modes), the old mode extension stays
-installed and may still load in a terminal as it did; Sova keeps no promise for it there, and it goes
-with the old way.
+Sova ships no pi mode extension: a terminal has no modes at all, and `/mode` is no command there.
+`pi-config/extensions/mode/` holds the mode texts, settings and modules Sova's modes use; it is no
+pi extension (it has no entry point pi loads), the installers link no `mode` into the pi folder and
+remove a `mode` link of ours left from an earlier install (§app.installer/pi-extensions). A `mode`
+link into an older copy of Sova still loads that copy's extension in a terminal; Sova never loads it
+in its own chats (§chat.mode-menu/sova-runs-modes) and keeps no promise for it in a terminal.
 
-## §chat.mode-menu/sova-runs-modes — Who runs a chat's modes: Sova runs chat modes
+## §chat.mode-menu/sova-runs-modes — Sova runs every chat's modes
 
-Settings → Experimental has one switch, **Sova runs chat modes**, on by default
-(§app.settings-dialog/save-bar). It decides who runs every chat's modes: the major modes (Delegate,
-Create, strict), the built-in minor modes, project modes and personal modes, and what of them reaches
-the chat's workers.
+Sova runs every chat's modes itself: the major modes (Delegate, Create, strict), the built-in minor
+modes, project modes and personal modes, from one list, and what of them reaches the chat's
+workers. There is no switch for it and no other way: Sova ships no pi mode extension, and an older
+Sova's copy of it never loads in a Sova chat or its workers.
 
-- **On:** Sova runs them itself, built-in, project and personal modes from one list, for every chat
-  and its workers. No copy of the pi mode extension loads in that chat or its workers, a worker on its
-  worktree's own agent dir included (§chat.worktrees/worktree-config).
-- **Off:** the old way: the pi mode extension runs them in every chat and its workers, exactly as
-  before this switch existed. Personal modes aren't offered; one already on stays on from its saved
-  copy until you turn it off (§chat.mode-menu/personal-modes).
-- **Exactly one owner.** A chat and its workers always have exactly one of the two, never both and
-  never neither: the mode section appears exactly once in the prompt of a chat with a mode on, and in
-  the prompt of each worker its modes reach. A chat takes the saved switch when it starts or reloads
-  (§app.chat-processes/code-generations). When the switch is saved with a new value, every open chat
-  whose owner differs reloads at its next quiet moment, one chat at a time, the way a chat on older
-  code does (§app.chat-processes/code-pickup), and takes the new owner then; a chat mid-reply finishes
-  on the owner it began with, and a flip back before its reload cancels it. While automatic reloads
-  are halted after a failed boot, an open chat keeps its owner until its next start or reload, as a
-  chat on older code does. A worker takes its
-  parent's owner at its spawn or resume, so a worker already running keeps its owner, and one started
-  after its parent reloaded follows the new one.
-- **The warm-up follows the switch too.** A chat process and the server each open one throwaway session
-  at their start to make Claude Code's models available. It takes the owner the switch names as saved
-  when that start runs: on, Sova's own, so no copy of the pi mode extension loads there either; off, the
-  extension, as before. Under either owner it seeds an absent subagent library
-  (`subagent-profiles.json` and `subagent-profiles-default.json`) and writes nothing else of the owner's.
-  A flip while a process runs changes nothing for it: that session is already gone, and the chat opened
-  next takes the owner its own open reads. So a server started with the switch off keeps the extension's
-  module in memory, running no session, until its next restart, and a worker started just after a flip
-  warms up under the new setting while its own session keeps its parent's owner.
-- **What the model sees is the same.** For the same modes, either owner gives the model the same
-  mode section, the same tools with the same names, descriptions and schemas, activated at the same
-  moments, and the same hidden notes, so a flip never adds a prompt or tool change of its own beyond
-  the restart a reload already is.
-- **What the tools list says is the same.** In a chat's tools list (the setup card's Tools group), each
-  of those tools names the same source with either owner: `mode` for `align`, `vis_guide`,
-  `create_guide` and a project or personal mode's tool, never the name of Sova's own module. The Lookbook's
-  `lookbook` tool is served by Sova under either owner, and names the same source with either.
-- **Flipping loses nothing.** Both read and write the same saved state: each chat's `mode` entries,
-  its project modes' saved copies, its alignments, `mode.json` and the mode settings files. A chat
-  reopened after a flip, either way, has the same modes on, the same alignments and the same
-  approvals.
-- **Kept until you retire it.** The old way stays in Sova, kept working, until you decide to retire
-  it; retiring it removes the switch, and is a change of its own.
+- **Whatever the pi folder holds.** Every ordinary chat, the Overseer, every helper (pi and Claude
+  Code), every team member and a worker on its worktree's own agent dir
+  (§chat.worktrees/worktree-config) runs Sova's modes, whether or not the pi folder still links an
+  older Sova's `mode` extension, and whether `/extensions` has it off: in Sova, the mode menu turns modes on and off, never `/extensions`. A session whose
+  loadout loads no extensions (a hidden or special session) has no modes, as before.
+- **Exactly once.** The mode section appears exactly once in the prompt of a chat with a mode on,
+  and in the prompt of each worker its modes reach.
+- **The warm-up too.** A chat process and the server each open one throwaway session at their start
+  to make Claude Code's models available. It runs Sova's modes as well, so no copy of the pi mode
+  extension loads there either; it seeds an absent subagent library (`subagent-profiles.json` and
+  `subagent-profiles-default.json`) and writes nothing else of the modes'.
+- **What the model sees.** Sova's modes give the model the same mode section, the same tools with
+  the same names, descriptions and schemas, activated at the same moments, and the same hidden
+  notes as the pi mode extension did, so Sova running every chat's modes adds no prompt or tool
+  change of its own.
+- **What the tools list says.** In a chat's tools list (the setup card's Tools group), each of those
+  tools names `mode` as its source: `align`, `vis_guide`, `create_guide` and a project or personal
+  mode's tool, never the name of Sova's own module. The Lookbook's `lookbook` tool is served by Sova
+  and names the same source.
+- **Nothing from before is lost.** Sova reads and writes the saved state the old way did: each
+  chat's `mode` entries, its project modes' saved copies, its alignments, `mode.json` and the mode
+  settings files. A chat that ran its modes through the pi mode extension under an older Sova moves
+  to Sova's at its next start or reload (§app.chat-processes/code-pickup), with the same modes on,
+  the same alignments and the same approvals; a worker already running finishes the way it started.
+  An older Sova's saved `experimental.sovaModes` (`false` included) is ignored and never written
+  again, and so is a chat's report of who runs its modes from a chat process still on older code.
 
 ## §chat.mode-menu/states — States
 

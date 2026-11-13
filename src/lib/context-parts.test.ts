@@ -294,6 +294,10 @@ describe("a part's row and reading", () => {
     assert.deepEqual(skillChip({ read: false, linesRead: 1 }), { chip: { word: "Partly read", done: false }, beside: "1 line" });
     assert.deepEqual(skillChip({ read: false }), { chip: { word: "Not read yet", done: false } });
     assert.deepEqual(skillChip({}), { chip: { word: "Not read yet", done: false } });
+    // Opened only before the latest compaction: says so, but a read in the window outranks it.
+    assert.deepEqual(skillChip({ readBefore: true }), { chip: { word: "Read before the last compaction", done: false } });
+    assert.equal(skillChip({ read: true, readBefore: true }).chip.word, "Read");
+    assert.equal(skillChip({ linesRead: 3, readBefore: true }).chip.word, "Partly read");
   });
 
   test("short lines: a file's folder and Loaded, a skill's description and Read or Not read yet, a count's words", () => {

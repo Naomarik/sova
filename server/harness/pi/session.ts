@@ -39,7 +39,7 @@ import { resourcesOf } from "./resources";
 import { piShell, sandboxOf } from "./shell";
 import { piSessionState } from "./state";
 import { fromPiTool } from "./tools";
-import { loadoutOnBranch } from "../../session-loadout";
+import { isSkillOff, loadoutOnBranch } from "../../session-loadout";
 import { offeredSkills } from "../../subfolder-skills";
 import { steerTicket } from "./steer-ticket";
 import { watchUserMessages } from "./turns";
@@ -450,7 +450,7 @@ export class PiHarnessSession implements HarnessSession {
   }
   /** pi's rpc get_commands enumeration (rpc-mode.js "get_commands"): extension commands, prompt templates,
       skills. */
-  commands(): HarnessCommand[] {
+  commands(o: { subfolderSkills?: boolean } = {}): HarnessCommand[] {
     const s = this.s;
     const out: HarnessCommand[] = [];
     for (const c of s.extensionRunner.getRegisteredCommands()) out.push({ name: c.invocationName, description: c.description, source: "extension", path: c.sourceInfo?.path });
@@ -459,12 +459,13 @@ export class PiHarnessSession implements HarnessSession {
     for (const k of starting)
       out.push({ name: `skill:${k.name}`, description: k.description, source: "skill", location: sourceLocation(k.sourceInfo), path: k.filePath });
     // A subfolder's skills, while the model still sees the block that offered them; the name stays with the
-    // skill offered first (§chat.subfolder-skills/command).
+    // skill offered first (§chat.subfolder-skills/command). None where the chat doesn't look below its folder.
+    if (o.subfolderSkills === false) return out;
     const branch = historyOf(s.sessionManager.getBranch());
-    const off = new Set(loadoutOnBranch(branch)?.offSkills ?? []);
+    const loadout = loadoutOnBranch(branch);
     const named = new Set(starting.map((k) => k.name));
     for (const k of offeredSkills(branch)) {
-      if (named.has(k.name) || off.has(k.name)) continue;
+      if (named.has(k.name) || isSkillOff(loadout, k)) continue;
       named.add(k.name);
       out.push({ name: `skill:${k.name}`, description: k.description, source: "skill", location: "path", path: k.filePath });
     }

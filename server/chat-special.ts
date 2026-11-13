@@ -5,12 +5,13 @@
 // the chat's SpecialPort: a loopback in the server's process, the chat's socket in a process of its
 // own. Imports only shared types, the adapter's tool and extension types, and pure helpers
 // (chat-special.test.ts holds the list).
+import { isContextOff, isSkillOff, pristineLoadout } from "./session-loadout";
 import type { RunStartAnswer, ServerToolDecl, SpecialSpec } from "../shared/chat-runtime";
 import { NOT_RUN_NO_SERVER } from "../shared/chat-runtime-wire";
 import type { HEntry, HookCtx, SessionStateWriter } from "../shared/harness";
 import type { SpecialPort } from "./chat-manager";
 import { authorNotes, batonContextPhrases, labelAuthors, redactContext } from "./author-context";
-import type { PiExtensionAPI, PiExtensionFactory, PiLoaderOptions, PiToolDefinition } from "./harness/pi/extension-types";
+import type { PiExtensionAPI, PiExtensionFactory, PiLoaderOptions, PiResourceDiagnostic, PiSkill, PiToolDefinition } from "./harness/pi/extension-types";
 import { toolStateWriter } from "./harness/pi/state";
 import { toolCtx } from "./harness/pi/tools";
 import { deeperContextExtension } from "./harness/pi/deeper-context";
@@ -46,6 +47,8 @@ export interface SpecialDeps {
   visRetry?: () => PiExtensionFactory;
   /** A run start whose answer did not come: logged by the caller. */
   log?(line: string): void;
+  /** Its folder belongs to a project added to Sova (server/skill-descent.ts): the subfolder hook looks below it. */
+  inProject?: boolean;
 }
 
 /** The built loadout: the loader's options, the tool allowlist, the SDK's custom tools, the prompt a run starts on. */
@@ -64,7 +67,8 @@ export interface SpecialBuild {
 export function deeperContextAllow(l: SpecialSpec["loader"]): ((abs: string) => boolean) | null {
   if (l.noContextFiles) return null;
   const within = l.contextFilesWithin;
-  return (p) => !new SecretGuard().isSecret(p) && (!within || new RootConfinement(within.root, within.out).problem(p) === null);
+  const kept = l.folderRule ? pristineLoadout(null, l.folderRule) : null;
+  return (p) => !new SecretGuard().isSecret(p) && (!within || new RootConfinement(within.root, within.out).problem(p) === null) && !isContextOff(kept, p);
 }
 
 export function specialLoadout(chatId: string, spec: SpecialSpec, port: SpecialPort, deps: SpecialDeps): SpecialBuild {
@@ -144,17 +148,22 @@ export function specialLoadout(chatId: string, spec: SpecialSpec, port: SpecialP
 
   const l = spec.loader;
   const within = l.contextFilesWithin;
+  const kept = l.folderRule ? pristineLoadout(null, l.folderRule) : null;
   const deeperAllow = deeperContextAllow(l);
   const loader: PiLoaderOptions = {
     // The project overseer's: the context files pi found inside its root and outside what its file
     // tools never read (the project's own AGENTS.md, never the host's).
-    ...(within
+    ...(within || kept
       ? {
           agentsFilesOverride: ({ agentsFiles }: { agentsFiles: { path: string }[] }) => {
-            const c = new RootConfinement(within.root, within.out);
-            return { agentsFiles: agentsFiles.filter((f) => c.problem(f.path) === null) };
+            const c = within ? new RootConfinement(within.root, within.out) : null;
+            return { agentsFiles: agentsFiles.filter((f) => (!c || c.problem(f.path) === null) && !isContextOff(kept, f.path)) };
           },
         }
+      : {}),
+    // Its folder's skills it keeps off (§chat.context-approval/unwatched).
+    ...(kept && !l.noSkills
+      ? { skillsOverride: (base: { skills: PiSkill[]; diagnostics: PiResourceDiagnostic[] }) => ({ skills: base.skills.filter((s) => !isSkillOff(kept, s)), diagnostics: base.diagnostics }) }
       : {}),
     ...(l.noExtensions ? { noExtensions: true } : {}),
     ...(l.noSkills ? { noSkills: true } : {}),
@@ -167,7 +176,7 @@ export function specialLoadout(chatId: string, spec: SpecialSpec, port: SpecialP
       ...(spec.visRetry && deps.visRetry ? [deps.visRetry()] : []),
       // Subfolder instruction files, never outside what its file tools may read (a loadout with no
       // context files gets none).
-      ...(deeperAllow ? [deeperContextExtension({ allow: deeperAllow, skills: !l.noSkills })] : []),
+      ...(deeperAllow ? [deeperContextExtension({ allow: deeperAllow, skills: !l.noSkills, inProject: deps.inProject === true, ...(kept ? { skillOff: (s: { name: string; filePath: string }) => isSkillOff(kept, s) } : {}) })] : []),
     ],
     // The OVERRIDE, not appendSystemPrompt: passing appendSystemPrompt suppresses discovery of the
     // user's own APPEND_SYSTEM.md, and the override keeps it (resource-loader.js:386-396).

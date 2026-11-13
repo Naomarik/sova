@@ -374,7 +374,7 @@ words, in the composer, the session pane, the chat's queue cards and the project
 | Save failed | **Couldn't save the default.** {reason}. The server reason states which default was written on a partial failure; no blanket "Nothing was saved" suffix contradicts it |
 | Saved (announcement) | Default: {name}. New chats start here. · Updated {name}. |
 | Pending | **Applies after this turn.** This turn keeps the old mode, and so do messages queued during it. Your next message follows the new one. |
-| Can't switch | **This chat can't switch.** This chat can't switch: the mode extension isn't loaded here, or another program wrote this session. |
+| Can't switch | **This chat can't switch.** Modes aren't available in this chat, or another program wrote this session. |
 | Switch failed | **Couldn't switch the mode.** {reason}. Your mode is unchanged. |
 | Load failed | **Couldn't load the modes.** Your mode is unchanged. Close this and try again. |
 | Transcript marker | Mode → {mode} · Minor mode: {minor} on\|off (a project mode by its id, the same way) · Strict mode on\|off (shown as recorded) |
@@ -398,7 +398,7 @@ the person clicks.
 | Restarting Sova | Only the user restarts Sova. Ask them to press Restart Sova in Settings → General. Nothing was restarted. |
 | Updating Sova | Only the user updates Sova. Ask them to do it in Settings → General. Nothing was changed. |
 | A design run's Start | Only your own click on the Lookbook's brief in Sova's page starts the designs. |
-| A design run's brief, and answering a design coordinator | Only your own click on the coordinator's card or the Lookbook's brief in Sova's page answers this. |
+| A design run's brief, and answering a Lookbook Creative Director | Only your own click on the Creative Director's card or the Lookbook's brief in Sova's page answers this. |
 | Bringing in a design image, or a signed-in capture | Only your own click on the Lookbook card in Sova's page answers this. |
 | A design image's note, or Describe Again | Only your own click on the image in Sova's page changes this. |
 | Apply of Sova's own checkout | Only the user restarts Sova. Ask them to press Apply on the Branches tab of Sova's project page. Nothing was restarted. |
@@ -600,7 +600,7 @@ the person clicks.
 | Where | Copy |
 |---|---|
 | Tab | Context |
-| Picker | label: Whose context · This chat · each worker by its name |
+| Picker | label: Whose context · This chat · Everyone · each worker by its name |
 | Top line | heading: Context window · `{n}` of `{window}` tokens · `{p}`% · `{free}` left · no window: `{n}` tokens · this model's limit is unknown · before a reply: Nothing sent yet |
 | Note | As of the last reply. Each part is an estimate (≈); Other is what the estimates don't explain. · before a reply: Each size below is an estimate (≈). · a chat not running here, added: This chat isn't running here, so its mode, rules and tools are unknown and fall under Other. |
 | Lines | Instruction files · Mode · Rules and docs · Skills offered · Tools · Conversation; sizes `≈{n}` · apart, below them: Other, under it: What the estimates don't explain, such as Claude Code's own prompt. |
@@ -608,6 +608,8 @@ the person clicks.
 | Line's short line | Instruction files: `{n}` loaded · `{m}` not yet loaded (none not yet loaded: `{n}` loaded) · Skills offered: `{n}` skills · `{r}` read (`{r}` counts whole reads only; 1: 1 skill) · Tools: `{n}` tools (1: 1 tool) · Rules and docs: `{n}` sections (1: 1 section) · Mode: its parts' names, joined with · · Conversation: Since the last compaction · `{n}` messages (no compaction yet: `{n}` messages; 1: 1 message) |
 | Instruction files | each file by its path (relative in the chat's folder, `~/...` under home, else whole) · its folder: This chat's folder · Your home folder · `{folder}/` · chip Loaded · heading: Not yet loaded · not counted · note: Each loads the first time the agent reads, edits or writes a file in its folder. · size `+≈{n}` · cut walk: This list may be incomplete. |
 | Skills offered | each skill by its name · its description under it · chip Read (the whole SKILL.md) · Partly read (part of it), beside it as plain text: `{n}` of `{total}` lines · Not read yet (none of it) · on the sheet's top: `{r}` read · `{p}` partly read (only when some are) · `{m}` not read yet (only when some are) · heading: Not read yet · note: Each is in the window by its name and description, so its size counts. · size `≈{n}` · subfolder skills: `{folder}/ · {description}` · line and sheet top, added: `{k}` not offered yet · heading: Not offered yet · not counted · note: Each is offered the first time the agent reads, edits or writes a file in its folder. Manual-only skills are never offered. · size `+≈{n}` · chip Manual only |
+| Skills offered, compacted | chip: Read before the last compaction |
+| Everyone | heading: Skills read · note: Counts every opening in each chat's whole history, not only what its window holds now. · a row: the skill's name · its description under it · size `≈{n}` · `{n}` openings · `{c}` chats (1: 1 opening, 1 chat), then · `{path}` when one name was opened at two paths · nothing opened yet: This chat and its workers haven't opened a skill yet. · heading: Not read by anyone · its row: the skill's name · its description · size `≈{n}` · a skill's sheet: breadcrumb Context › Skills read › `{skill}` · title: the skill's name · size `≈{n}` · on top: its description · `{n}` openings · `{c}` chats · row: Open Skill (only when a full path to the skill is known) · each chat: its name (this chat as This chat) · `{n}` openings · last `{when}` (relative time; no time: the count alone), accessible name Show `{name}`'s context |
 | Conversation | Tool results, `{n}` results · Replies, `{n}` replies · Your messages, `{n}` messages · Other messages, `{n}` messages, only while there are some (1: 1 result, 1 reply, 1 message) · Compaction summary, Kept from the compaction at `{HH:MM}` (local 24-hour time; no readable time: Kept from the latest compaction) |
 | Sheet | breadcrumb (accessible name Breadcrumb): Context › `{group}` › `{part}`, the current step not a button · Back (an arrow button, accessible name Back) · title: the row's name · size `≈{n}` · subtitle: the full path (a file, a skill) or the group's name · Source · Copy |
 | Sheet notes | a file not yet loaded: Not counted yet. It loads the first time the agent reads, edits or writes a file in `{folder}`. · a skill not offered yet: Not counted yet. The model is offered it the first time the agent reads, edits or writes a file in `{folder}`. · a manual-only skill: The model is never offered it. `/skill:{name}` runs it, and adds its text to Conversation. · a skill run without being offered: `/skill:` ran it, so its text counts under Conversation. No listing of it is in the window. · a skill: Its size counts only what the model is offered: name and description. The full SKILL.md loads when the agent reads it, then counts under Conversation. · a failed read (toast): Couldn't open that file. `{reason}` |
@@ -845,11 +847,7 @@ en-US separators ("from 0 to 1,000", "at most 8,000 characters").
 
 | Where | Copy |
 |---|---|
-| Intro | Unfinished features. They can change or disappear, and each one says when a change reaches your chats. |
-| Sova runs chat modes switch · hint (§chat.mode-menu/sova-runs-modes) | Sova runs chat modes · Sova runs every chat's modes itself, instead of the pi mode extension. Turn it off to go back to the old way; nothing is lost either way. Open chats switch over at their next quiet moment; workers already running finish the way they started. |
-| Empty state (no switch to show; the tab has one today, so it isn't shown) | No experimental features right now. |
-| Load failed (banner-error) | **Couldn't read the experimental settings.** Nothing was changed. |
-| Save failed (banner-error) | **Couldn't save the change.** {reason}. Your saved setting is unchanged. |
+| Empty state (the tab has no switch today, so this line is all it shows; Sova runs chat modes, its last switch, is gone, §chat.mode-menu/sova-runs-modes) | No experimental features right now. |
 | Buttons | none in the tab — the dialog footer's Save Changes · Cancel (§design.copy-deck/settings-modes-delegate) |
 
 ## §design.copy-deck/settings-alignment — Settings · Alignment (§app.settings-dialog/alignment)
@@ -996,6 +994,7 @@ en-US separators ("from 0 to 1,000", "at most 8,000 characters").
 | Density line | `{n} replies · {n} tools · {duration}` — e.g. `3 replies · 14 tools · 6m`; 1: `1 reply` / `1 tool`; a clause at 0 is dropped, and the row with it |
 | Idle gap | `idle {duration}` — e.g. `idle 38m` (`duration()` in `src/lib/format.ts`, the one the density line uses) |
 | Chapter fallback | `summary time` (after the topic, in the row's meta; the clock dims with it) |
+| Marker run (2+ identical in a row) | `{copy} ×{n}` — e.g. `coordinator finished ×31` · under it: `{from}–{to}` — e.g. `2:37–3:00 PM`, across noon `11:50 AM–12:10 PM`, same minute: one time · spoken: `{copy}, {n} times, {from} to {to}` (button: after `Jump to this message: `) · clock `title`: `{oldest absolute} to {newest absolute} · {relative}` |
 | Marker: compaction | `Compacted · {n} tokens summarized` |
 | Marker: rewind | `Rewound to an earlier message` |
 | Marker: subagent | `{name} started` · `{name} finished` · `{name} stopped` (errored or killed) |
@@ -1260,10 +1259,14 @@ either. The switches show what is set; while a brake holds them all Off, the Pau
 | Confirm card rows | project: `{project}` then `{org}` (muted) · person: `{name}` then `{org}` (muted) and, unless active, the status chip (`Proposed`, `Left`) |
 | Extra instructions (the project page's Settings tab) | label `Extra instructions` · hint "Added last to this overseer's prompt, after the organization's About text, and they win over it. It reads them at its next run." · counter `{n} / 8,000` · `Save` (secondary) · `Cancel` (ghost) · saved (toast): "Extra instructions saved." · blank: "Extra instructions removed." · refused (`.field-error`): "Extra instructions can be at most 8,000 characters." |
 | Archive (project page: the head's ⋯ and Settings' Danger zone) | ⋯ item `Archive Project…` (`Unarchive Project` while archived) · danger zone `Archive Project` (destructive, outlined) · confirm: "{project} leaves the Projects list and its overseer stops looking. Nothing is deleted; Unarchive brings it back." · buttons `Archive Project` · `Cancel` · done (toast): "{project} archived." |
-| …refused (`.field-error`, the server's words) | "Stop these first: {list}." — items joined with "; ": "{n} gathering session open ({titles})" / "{n} gathering sessions open (…)" · "{n} coding session running (…)" / "{n} coding sessions running (…)" · "its overseer is working" |
+| …refused (`.field-error`, the server's words) | "Stop these first: {list}." — items joined with "; ": "{n} gathering session open ({titles})" / "{n} gathering sessions open (…)" · "{n} coding session running (…)" / "{n} coding sessions running (…)" · "its overseer is working" · "1 copy running ({name})" / "{n} copies running ({name}; {name}, restarting)" |
+| …running copies, in the ask (§app.organizations/archive-copies) | lead: "This still runs. Stop it to archive the project; its data stays." / "These still run. Stop them to archive the project; their data stays." · row: name ("Main copy", the branch, the folder, "Shared services") · chip `Running` / `Starting` / `Restarting` · its services, comma-joined (mono) · button `Stop Running Copies` ("Stopping {i} of {n}…") · announced: "Stopped {n} copies." / "Stopped {k} of {n}. {m} didn't stop; its reason is on its row." · a copy that didn't stop: the engine's sentence under its row (`.field-error`) · adopted main: "Runs outside Sova; stop it yourself." (no Stop) · Archive Project unavailable: "Stop the running copy first" / "Stop the {n} running copies first" / "Reading what runs" / "Couldn't read what runs" · under the ask: "Couldn't read what runs. {error}" |
+| Archived banner, while copies run | "1 copy of it still runs. Stop it on Branches." / "{n} copies of it still run. Stop them on Branches." / "1 copy and its shared services still run. Stop the copy on Branches." / "{n} copies and its shared services still run. Stop the copies on Branches." / "Its shared services still run." (Branches links to the tab) |
+| …its shared services' Stop (§app.organizations/archive-copies) | button `Stop Shared Services` (destructive, beside `Unarchive`) · armed: `Confirm Stop` · working: `Stopping…` · announced: "Stopped its shared services." · refused (`.field-error`, under the banner): the engine's sentence / "Couldn't reach the engine. {error}" |
+| Branches tab, archived | "Archived: its copies can be stopped or torn down, not started. Unarchive it to start one." |
 | Archived banner (info) | "{project} was archived {relative time}. Its overseer is paused and nothing new starts here. Nothing was deleted." · via: "{project} was archived by you, via the Overseer {relative time}. …" · button `Unarchive` (secondary) · done (toast): "{project} is back." |
 | Archived, disabled reason | "Archived" (Start Overseer, Run Now, Start Coding Session, Send to Person…) |
-| Archived, refused (server) | "{project} is archived. Unarchive it first." · the overseer: "{project} is archived. Unarchive it to use its overseer." |
+| Archived, refused (server) | "{project} is archived. Unarchive it first." · a copy's `create`, `up`, `apply`, `test`, `reset`: "This project is archived; unarchive it first" · the overseer: "{project} is archived. Unarchive it to use its overseer." |
 | Projects tab | disclosure `Archived Projects ({n})` (collapsed; absent with none) · row: the project link · "archived {relative time}" · `Unarchive` (ghost) · every project archived, in place of "No projects yet…": "The 1 project here is archived. Unarchive one below, or add a project." / "All {n} projects here are archived. Unarchive one below, or add a project." |
 | Overseer tool refusals and notes (the model reads them; the action log keeps the refusals) | "This reaches people or ends something: ask with sova_card, listing {what} in its items, and act in the turn the user's click starts." · "Only the Overseer sends here. Write in the overseer's own composer." (403) · "Send words; use op clear to clear it." · "That folder is an organization's workspace; read it with sova_orgs and sova_read_session." · "No link was made: Needs you asks you to send {name} their link." |
 

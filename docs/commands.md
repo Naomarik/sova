@@ -13,9 +13,9 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 
 | What | Count |
 | --- | ---: |
-| Routes registered | 616 |
-| Routes a catalogue entry points at | 196 |
-| Catalogue entries | 267 |
+| Routes registered | 627 |
+| Routes a catalogue entry points at | 204 |
+| Catalogue entries | 275 |
 | Class: Peer protocol | 39 |
 | Class: Auth | 4 |
 | Class: Share pages | 0 |
@@ -27,15 +27,15 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | Class: Trust grants | 25 |
 | Class: A card view's own calls | 4 |
 | Class: Middleware and fallbacks | 2 |
-| Class: Left as is, by choice | 267 |
+| Class: Left as is, by choice | 269 |
 | Class: Page plumbing | 22 |
 | Class: Steps of starting a chat | 2 |
 | Class: Live capability links | 1 |
-| Class: Approvals and grants | 17 |
+| Class: Approvals and grants | 18 |
 | Pending (not yet a command) | 23 |
 | Chat socket frame types | 14 |
-| Document/window keydown listeners | 12 |
-| Hand-written tool specs | 147 |
+| Document/window keydown listeners | 13 |
+| Hand-written tool specs | 150 |
 
 ## Catalogue entries
 
@@ -67,6 +67,9 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | `session.workers.checks` | Show Worker Report Checks | looks | `GET /api/sessions/worker-checks` | sessions |
 | `session.context` | Show Session Context | looks | `GET /api/sessions/context` | sessions |
 | `session.context.file` | Read Context File | looks | `GET /api/sessions/context/file` | sessions |
+| `session.folder-approvals.get` | Show Folder Context Files and Skills | looks | `GET /api/folder-approvals` | sessions |
+| `session.folder-approvals.set` | Set Folder Context Files and Skills | changes | `PUT /api/folder-approvals` | admin |
+| `session.approval.set` | Approve or Disallow in a Chat | changes | `POST /api/sessions/approval` | sessions |
 | `session.context.view` | Show Context Window | looks | `GET /api/sessions/context-view` | sessions |
 | `session.group.list` | List Groups | looks | `GET /api/session-groups` | sessions |
 | `session.group.create` | New Group | changes | `POST /api/session-groups` | sessions |
@@ -177,6 +180,10 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | `project.update` | Edit Project | changes | `PATCH /api/projects/:pid` | admin |
 | `project.claude-login.get` | Show Project Claude Login | looks | `GET /api/projects/:pid/claude-login` | sessions |
 | `project.claude-login.set` | Set Project Claude Login | changes | `PUT /api/projects/:pid/claude-login` | admin |
+| `project.skills.get` | Show Project Skills | looks | `GET /api/projects/:pid/skills` | sessions |
+| `project.skills.set` | Set Project Skills | changes | `PUT /api/projects/:pid/skills` | admin |
+| `project.context-files.get` | Show Project Context Files | looks | `GET /api/projects/:pid/context-files` | sessions |
+| `project.context-files.set` | Set Project Context Files | changes | `PUT /api/projects/:pid/context-files` | admin |
 | `project.coding.start` | New Chat in Project | changes | `POST /api/projects/:pid/overseer/coding` | admin |
 | `project.setup.get` | Show Setup Chat | looks | `GET /api/projects/:pid/setup` | sessions |
 | `project.setup.open` | Set Up with a Chat | changes | `POST /api/projects/:pid/setup` | admin |
@@ -187,6 +194,7 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | `project.icon.remove` | Remove Project Icon | changes | `DELETE /api/projects/:pid/icon` | admin |
 | `project.archive` | Archive Project | changes | `POST /api/projects/:pid/archive` | admin |
 | `project.unarchive` | Unarchive Project | changes | `POST /api/projects/:pid/unarchive` | admin |
+| `project.copies.running` | List Running Copies | looks | `GET /api/projects/:pid/running-copies` | sessions |
 | `project.preview.off` | Turn Off Preview Link | changes | `POST /api/previews/:id/off` | admin |
 | `project.worktree.list` | List Project Worktrees | looks | `GET /api/projects/:pid/overseer/worktrees` | sessions |
 | `project.worktree.merge` | Merge Worktree | changes | `POST /api/projects/:pid/overseer/worktrees/merge` | admin |
@@ -302,11 +310,11 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | `design.list` | List Designs | looks | `GET /api/design` | full |
 | `design.page` | Read Design Page | looks | `GET /api/design/:label/page` | full |
 | `design.setup.set` | Change Lookbook Setup | changes | `PATCH /api/design/runs/:run/setup` | full |
-| `design.start` | Start Lookbook Coordinator | changes | `POST /api/design/runs/:run/start` | full |
+| `design.start` | Start Lookbook Creative Director | changes | `POST /api/design/runs/:run/start` | full |
 | `design.message` | Message a Design | changes | `POST /api/design/:label/message` | full |
 | `design.refine` | Refine a Design | changes | `POST /api/design/:label/refine` | full |
 | `design.retry` | Retry a Design | changes | `POST /api/design/:label/retry` | full |
-| `design.coordinator.message` | Message the Lookbook Coordinator | changes | `POST /api/design/coordinator/message` | full |
+| `design.coordinator.message` | Message the Lookbook Creative Director | changes | `POST /api/design/coordinator/message` | full |
 | `design.delete` | Delete a Design | changes | `DELETE /api/design/:label` | full |
 
 ## Pending routes
@@ -505,7 +513,7 @@ What a transcript card's or a drawing's sealed view asks through its box, for it
 | `ALL /*` | full |
 | `ALL /api/*` | full |
 
-### Left as is, by choice (267)
+### Left as is, by choice (269)
 
 Areas the user chose not to make scriptable (`OPTED_OUT` in `server/commands-inventory/scan.ts`). A route there that a catalogue entry points at stays a command; the rest are not pending, and a new route there needs no entry.
 
@@ -704,6 +712,8 @@ Areas the user chose not to make scriptable (`OPTED_OUT` in `server/commands-inv
 | `POST /api/settings/accounts/openai/login/answer` | admin |
 | `POST /api/settings/apply` | admin |
 | `GET /api/settings/claude-status` | sessions |
+| `GET /api/settings/context-approval` | sessions |
+| `PUT /api/settings/context-approval` | admin |
 | `GET /api/settings/decisions` | sessions |
 | `PUT /api/settings/decisions` | admin |
 | `DELETE /api/settings/decisions/key` | admin |
@@ -825,7 +835,7 @@ A list that prints live preview links, which open a project's port to whoever ho
 | --- | --- |
 | `GET /api/projects/:pid/previews` | sessions |
 
-### Approvals and grants (17)
+### Approvals and grants (18)
 
 Approving a schedule or a draft spec, the Overseer's permits and their revoke: any chat can run catalogue actions with the operator's token, so none of these is one. Exactly these routes (`GRANTS`).
 
@@ -842,6 +852,7 @@ Approving a schedule or a draft spec, the Overseer's permits and their revoke: a
 | `POST /api/design/runs/:run/brief/image` | full |
 | `POST /api/design/runs/:run/brief/link` | full |
 | `POST /api/design/runs/:run/brief/not-this-screen` | full |
+| `POST /api/design/runs/:run/brief/screenshot` | full |
 | `POST /api/design/runs/:run/brief/start` | full |
 | `GET /api/overseer/autonomy` | sessions |
 | `POST /api/overseer/autonomy/revoke` | admin |
@@ -871,6 +882,8 @@ Approving a schedule or a draft spec, the Overseer's permits and their revoke: a
 | `GET /api/draft-specs` | full | `draft-spec.list` |
 | `GET /api/extensions` | sessions | `extensions.list` |
 | `GET /api/files` | sessions | `files.list` |
+| `GET /api/folder-approvals` | sessions | `session.folder-approvals.get` |
+| `PUT /api/folder-approvals` | admin | `session.folder-approvals.set` |
 | `GET /api/folders` | sessions | `folders.list` |
 | `GET /api/folders/list` | sessions | `project.folder.list` |
 | `GET /api/folders/read` | sessions | `project.folder.read` |
@@ -936,6 +949,8 @@ Approving a schedule or a draft spec, the Overseer's permits and their revoke: a
 | `GET /api/projects/:pid/cards` | sessions | `project.cards.list` |
 | `GET /api/projects/:pid/claude-login` | sessions | `project.claude-login.get` |
 | `PUT /api/projects/:pid/claude-login` | admin | `project.claude-login.set` |
+| `GET /api/projects/:pid/context-files` | sessions | `project.context-files.get` |
+| `PUT /api/projects/:pid/context-files` | admin | `project.context-files.set` |
 | `GET /api/projects/:pid/costs` | sessions | `project.costs` |
 | `GET /api/projects/:pid/files` | sessions | `project.files.list` |
 | `DELETE /api/projects/:pid/icon` | admin | `project.icon.remove` |
@@ -961,6 +976,7 @@ Approving a schedule or a draft spec, the Overseer's permits and their revoke: a
 | `GET /api/projects/:pid/overseer/worktrees` | sessions | `project.worktree.list` |
 | `POST /api/projects/:pid/overseer/worktrees/merge` | admin | `project.worktree.merge` |
 | `POST /api/projects/:pid/overseer/worktrees/remove` | admin | `project.worktree.remove` |
+| `GET /api/projects/:pid/running-copies` | sessions | `project.copies.running` |
 | `GET /api/projects/:pid/services` | sessions | `project.services.view` |
 | `GET /api/projects/:pid/settings` | sessions | `project.settings.get` |
 | `POST /api/projects/:pid/settings/cards/:card/withdraw` | admin | `project.settings.propose.withdraw` |
@@ -969,6 +985,8 @@ Approving a schedule or a draft spec, the Overseer's permits and their revoke: a
 | `GET /api/projects/:pid/setup` | sessions | `project.setup.get` |
 | `POST /api/projects/:pid/setup` | admin | `project.setup.open` |
 | `POST /api/projects/:pid/setup/merge` | admin | `project.setup.merge` |
+| `GET /api/projects/:pid/skills` | sessions | `project.skills.get` |
+| `PUT /api/projects/:pid/skills` | admin | `project.skills.set` |
 | `POST /api/projects/:pid/unarchive` | admin | `project.unarchive` |
 | `GET /api/projects/glance` | sessions | `project.glance` |
 | `POST /api/push/test` | admin | `push.test` |
@@ -991,6 +1009,7 @@ Approving a schedule or a draft spec, the Overseer's permits and their revoke: a
 | `GET /api/sessions` | sessions | `session.list` |
 | `POST /api/sessions` | sessions | `session.create` |
 | `GET /api/sessions/align-triage` | sessions | `session.align.triage` |
+| `POST /api/sessions/approval` | sessions | `session.approval.set` |
 | `POST /api/sessions/archive` | sessions | `session.archive`, `session.unarchive` |
 | `POST /api/sessions/auto-title` | sessions | `session.title.auto` |
 | `POST /api/sessions/cleanup` | sessions | `session.cleanup` |
@@ -1065,6 +1084,7 @@ The `type` of every `ChatClientMessage` (`shared/protocol.ts`), the frames a pag
 | `src/commands/keys.ts` | window, document |
 | `src/components/ChangesViewer.tsx` | document |
 | `src/components/ContextMenu.tsx` | global |
+| `src/components/FolderApprovalsDialog.tsx` | document |
 | `src/components/GroupView.tsx` | window |
 | `src/components/InsightStrip.tsx` | document |
 | `src/components/LandingBar.tsx` | document, document |
@@ -1091,12 +1111,12 @@ Per file, the tool names its object literals declare (`<computed: …>` where th
 | `server/conversation-draft-routes.ts` | 3 | `sova_draft_specs`, `sova_draft_approve`, `sova_draft_build` |
 | `server/conversation-draft-tools.ts` | 3 | `requirement_drop`, `requirements_summary`, `requirements_confirm` |
 | `server/create-settings-tool.ts` | 1 | `sova_settings` |
-| `server/design/coordinator.ts` | 8 | `design_status`, `design_brief`, `design_browse`, `design_capture`, `design_send`, `design_new`, `coordinator_card`, `project_verbs` |
+| `server/design/coordinator.ts` | 9 | `design_status`, `design_brief`, `design_browse`, `design_capture`, `design_send`, `design_new`, `coordinator_card`, `project_verbs`, `design_images` |
 | `server/design/describe.ts` | 1 | `asset_report` |
-| `server/design/tools.ts` | 4 | `lookbook`, `design_look`, `design_stream`, `design_hand_in` |
+| `server/design/tools.ts` | 5 | `lookbook`, `design_skill`, `design_look`, `design_stream`, `design_hand_in` |
 | `server/feature-chat-align.ts` | 1 | `align` |
 | `server/harness/pi/session.ts` | 1 | `<computed: t.name>` |
-| `server/memory/tools.ts` | 2 | `<computed: MEMORY_ZOOM_TOOL>`, `<computed: MEMORY_DATE_TOOL>` |
+| `server/memory/tools.ts` | 3 | `<computed: MEMORY_ZOOM_TOOL>`, `<computed: MEMORY_DATE_TOOL>`, `<computed: MEMORY_RECALL_TOOL>` |
 | `server/org-history-tools.ts` | 2 | `sova_history`, `sova_decide` |
 | `server/overseer-card-tool.ts` | 1 | `<computed: CARD_TOOL>` |
 | `server/overseer-code-history.ts` | 2 | `sova_project_git`, `sova_server_log` |

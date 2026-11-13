@@ -1,5 +1,4 @@
 import { ClaudeLoginCard } from "./ClaudeLoginCard";
-import { RemoveAnywayListing } from "./RemoveAnywayListing";
 import { createEffect, createMemo, createResource, createSignal, For, type JSX, on, onCleanup, onMount, Show } from "solid-js";
 import { TODO_TEXT_MAX, type IdeaRecord, type OverseerAction, type OverseerTodosInfo } from "../../shared/protocol";
 import {
@@ -34,7 +33,6 @@ import {
   projectOverseerActions,
   projectOverseerIdeas,
   projectOverseerTodos,
-  removeCodingWorktree,
   removeCodingWorktreeAnyway,
   codingWorktreeHold,
   runProjectOverseer,
@@ -1048,8 +1046,8 @@ function CodingSessions(props: {
         <ForKey each={rows()} by={(r) => r.sessionId}>
           {(row) => {
             const armed = () => confirming() === row().sessionId;
-            // Remove Worktree asks first what the folder holds that git can't bring back (§chat.worktrees/leftovers):
-            // a held folder shows why, and Remove Anyway's exact listing when that is the only reason.
+            // Remove Worktree's dry run stays inside its menu: a held folder shows why, and Remove
+            // Anyway replaces the reason with the exact listing when that is the only hold.
             const [hold] = createResource(
               () => (armed() ? row().sessionId : null),
               (sid) => codingWorktreeHold(po().projectId(), sid).catch((x): CodingWorktreeHold => ({ reason: errText(x) })),
@@ -1066,19 +1064,32 @@ function CodingSessions(props: {
             const facts = () => (row().facts && row().state !== undefined ? (row() as CodingRow & CodingWorktree) : null);
             /** The ⋯'s menu, which a right-click on the row draws too: each row acts on the row as it reads when chosen. */
             const menu = () => ({
-              facts: { project: po().projectId(), row: row(), title: title(), gestures: gestures(), queued: queue.setUp(), queue: queue.info(row().branch), working: !!working() },
+              facts: {
+                project: po().projectId(),
+                row: row(),
+                title: title(),
+                gestures: gestures(),
+                queued: queue.setUp(),
+                queue: queue.info(row().branch),
+                removal: { folder: folder(), home: home(), hold: hold(), loading: hold.loading, listing: listing() },
+                working: !!working(),
+              },
               acts: {
                 merge: (send: () => Promise<unknown>) => void act(row(), send, `Merged ${row().branch} into ${row().target}.`),
                 land: (send: () => Promise<unknown>) => {
                   const r = row();
                   if (r.worktree) void landRow({ ...r, worktree: r.worktree }, send);
                 },
-                remove: () => setConfirming(row().sessionId),
+                remove: (send: () => Promise<unknown>) => void act(row(), send, "Worktree removed."),
+                removeAnyway: (digest: string) => void act(row(), () => removeCodingWorktreeAnyway(po().projectId(), row().sessionId, digest), "Worktree removed."),
+                loadRemove: () => setConfirming(row().sessionId),
+                unloadRemove: () => (setConfirming(null), setListing(false)),
+                showRemoveListing: setListing,
               },
             });
             let li!: HTMLLIElement;
             onCleanup(() => closeContextMenuOf(li));
-            /** A right-click or Shift+F10 on the row: its ⋯ menu, at the pointer or under the row. The title link is the row's own. */
+            /** A right-click on the row: its ⋯ menu, at the pointer. The title link is the row's own. */
             const onContextMenu = (e: MouseEvent & { currentTarget: HTMLLIElement }) => {
               if (!worktreeMenuOffered(gestures())) return;
               const link = li.querySelector<HTMLElement>(":scope > .list-main > a.project-worktree-title");
@@ -1144,70 +1155,6 @@ function CodingSessions(props: {
                   <PlaceMenu decl={WORKTREE_MENU} subject={menu()} title="Actions" />
                 </Show>
                 <Show when={errors()[row().sessionId]}>{(e) => <p class="field-error project-worktree-note">{e()}</p>}</Show>
-                <Show when={armed() && facts() && po().worktrees.fresh()}>
-                  <div class="person-confirm project-worktree-note" role="group" aria-label="Remove worktree">
-                    <Show when={listing() && hold()?.removeAnyway} fallback={
-                      <Show when={hold()?.reason} fallback={
-                        <p class="orgs-line">
-                        <Show
-                          when={row().merged}
-                          fallback={
-                            <>
-                              The folder <span class="orgs-mono">{folder()}</span> goes away. The branch <span class="orgs-mono">{row().branch}</span> keeps its commits, and the session and its transcript stay.
-                            </>
-                          }
-                        >
-                          The folder <span class="orgs-mono">{folder()}</span> and the merged branch <span class="orgs-mono">{row().branch}</span> go away. The session and its transcript stay.
-                        </Show>
-                      </p>
-                      }>
-                        {(r) => <p class="orgs-line">{r()}</p>}
-                      </Show>
-                    }>
-                      {(a) => <RemoveAnywayListing listing={a()} home={home()} />}
-                    </Show>
-                    <div class="button-row">
-                      <Show
-                        when={listing() && hold()?.removeAnyway}
-                        fallback={
-                          <Show
-                            when={!hold()?.reason}
-                            fallback={
-                              <Show when={hold()?.removeAnyway}>
-                                <button type="button" class="button button-sm button-destructive" onClick={() => setListing(true)}>
-                                  Remove Anyway
-                                </button>
-                              </Show>
-                            }
-                          >
-                            <button
-                              type="button"
-                              class="button button-sm button-destructive"
-                              aria-disabled={working() || hold.loading ? "true" : undefined}
-                              onClick={() => !hold.loading && void act(row(), () => removeCodingWorktree(po().projectId(), row().sessionId), "Worktree removed.")}
-                            >
-                              Remove Worktree
-                            </button>
-                          </Show>
-                        }
-                      >
-                        {(a) => (
-                          <button
-                            type="button"
-                            class="button button-sm button-destructive"
-                            aria-disabled={working() ? "true" : undefined}
-                            onClick={() => void act(row(), () => removeCodingWorktreeAnyway(po().projectId(), row().sessionId, a().digest), "Worktree removed.")}
-                          >
-                            Delete and Remove Worktree
-                          </button>
-                        )}
-                      </Show>
-                      <button type="button" class="button button-sm button-ghost" onClick={() => (listing() ? setListing(false) : setConfirming(null))}>
-                        {listing() ? "Back" : "Cancel"}
-                      </button>
-                    </div>
-                  </div>
-                </Show>
               </li>
             );
           }}

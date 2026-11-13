@@ -14,6 +14,9 @@
 // (scripts/test-groups.mjs): a landing runs it when menu code changes. The browser is found as the
 // tour tests find it (discoverTourBrowser; on macOS Playwright's chrome-headless-shell first).
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
+import { mkdirSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { before, test } from "node:test";
 import type { Page } from "playwright-core";
 import { formsBrowser, until } from "./forms-browser.test.helper";
@@ -31,6 +34,22 @@ interface Session {
   id: string;
   path: string;
 }
+/** A real coding worktree in a throwaway repository, with one uncommitted file. */
+async function codingWorktree(name: string): Promise<{ project: string; session: string; path: string }> {
+  const root = join(s.work, name.toLowerCase().replaceAll(" ", "-"));
+  mkdirSync(root, { recursive: true });
+  const git = (...args: string[]) => execFileSync("git", args, { cwd: root, stdio: "pipe" });
+  git("init", "-q", "-b", "master");
+  writeFileSync(join(root, "README.md"), `${name}\n`);
+  git("add", "README.md");
+  git("-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "-q", "-m", "init");
+  const registered = await api("POST", "/api/projects", { root, name });
+  const started = await api("POST", `/api/projects/${registered.project.id}/overseer/coding`, { title: name });
+  assert.ok(started.worktree?.path, "the coding session has a worktree");
+  writeFileSync(join(started.worktree.path, "keep.txt"), "uncommitted work the listing must name\n");
+  return { project: registered.project.id, session: started.sessionId, path: started.worktree.path };
+}
+
 /** The transcript on screen (the message cases'). */
 let alpha: Session;
 /** The two newest sessions: the top of the sidebar's list, so both rows are drawn. */
@@ -242,18 +261,38 @@ const cases = (name: string, fn: () => Promise<void>) =>
     }
   });
 
-/** The session menu's size, so the board cases choose a point where it can't fit: opened from the
-    keyboard (Shift+F10 on a board row's title link), which no pointer can close. */
+/** The session menu's size, so the board cases choose a point where it can't fit: opened from its ⋯. */
 let sessionBox: { width: number; height: number } | undefined;
 async function sessionMenuBox() {
   if (sessionBox) return sessionBox;
-  await page.locator(`${BOARD_ROWS} a[href^="#/s/"]`).first().focus();
-  await page.keyboard.press("Shift+F10");
-  await until("the session menu, from Shift+F10", async () => (await openMenus()).length === 1, 5_000);
+  await page.locator(`${BOARD_ROWS} button[aria-haspopup="menu"]`).first().click();
+  await until("the session menu, from its ⋯", async () => (await openMenus()).length === 1, 5_000);
   const [m] = await openMenus();
   await closeAll();
   return (sessionBox = { width: Math.ceil(m!.right - m!.left), height: Math.ceil(m!.bottom - m!.top) });
 }
+
+test("Shift+F10 on a focused session row opens nothing and Sova does not prevent it", { skip }, async () => {
+  await board();
+  const link = page.locator(`${BOARD_ROWS} a[href^="#/s/"]`).first();
+  await link.focus();
+  await page.evaluate(() => {
+    const w = window as unknown as { menuKeyDefaultPrevented?: boolean; menuKeyContext?: unknown };
+    addEventListener("keydown", (e) => {
+      if (e.key === "F10" && e.shiftKey) w.menuKeyDefaultPrevented = e.defaultPrevented;
+    });
+    addEventListener("contextmenu", (e) => {
+      const m = e as MouseEvent & { pointerType?: string; mozInputSource?: number };
+      w.menuKeyContext = { pointerType: m.pointerType, mozInputSource: m.mozInputSource, detail: m.detail, button: m.button, buttons: m.buttons, ctrlKey: m.ctrlKey, x: m.clientX, y: m.clientY };
+    });
+  });
+  await page.keyboard.press("Shift+F10");
+  await frame();
+  const keyContext = await page.evaluate(() => (window as unknown as { menuKeyContext?: unknown }).menuKeyContext);
+  assert.deepEqual(await openMenus(), [], `Sova has no keyboard menu gesture (native event: ${JSON.stringify(keyContext)})`);
+  assert.equal(await page.evaluate(() => (window as unknown as { menuKeyDefaultPrevented?: boolean }).menuKeyDefaultPrevented), false, "the browser keeps its own keyboard context-menu key");
+  await closeAll();
+});
 
 cases("a right-click on a sidebar row: open after the release, its corner at the pointer", async () => {
   const p = await rowPoint(newest);
@@ -263,6 +302,9 @@ cases("a right-click on a sidebar row: open after the release, its corner at the
 });
 
 cases("a right-click on a message at the normal spot: open after the release", async () => {
+  await page.goto(`${s.base}/#/s/${encodeURIComponent(alpha.path)}`);
+  await until("the transcript is back on screen", async () => (await page.locator(".entry article.message").count()) >= 4, 30_000);
+  await settle();
   const p = await placePoint(MESSAGES, "normal", { width: 320, height: 320 });
   const m = opensOnRelease("message", await rightClick(p.x, p.y));
   assert.ok(near(m.left, p.x) && near(m.top, p.y), `corner at the pointer: ${JSON.stringify({ m, p })}`);
@@ -292,4 +334,190 @@ cases("moving the menu to another row: the next press closes it, the new one ope
   assert.notEqual(second.label, first.label, "row B's own menu");
   assert.match(second.label ?? "", /^Actions for “/);
   assert.ok(near(second.left, b.x) && near(second.top, b.y), `corner at the pointer: ${JSON.stringify({ second, b })}`);
+});
+
+cases("a right-click menu follows its row when the sidebar scrolls under it", async () => {
+  const link = page.locator(`a.session-row[href="#/s/${encodeURIComponent(next.path)}"]`);
+  const scroller = () => link.evaluateHandle((el) => {
+    let p = el.parentElement;
+    while (p && p.scrollHeight <= p.clientHeight + 1) p = p.parentElement;
+    return (p ?? document.scrollingElement) as HTMLElement;
+  });
+  const beforeScroll = await scroller().then((h) => h.evaluate((el) => {
+    el.scrollTop = Math.min(80, el.scrollHeight - el.clientHeight);
+    return el.scrollTop;
+  }));
+  assert.ok(beforeScroll > 0, "the sidebar can scroll far enough to move the row");
+  await settle();
+  const p = await rowPoint(next);
+  const m = opensOnRelease("row before its sidebar scrolls", await rightClick(p.x, p.y));
+  const before = await link.boundingBox();
+  assert.ok(before);
+  await scroller().then((h) => h.evaluate((el) => (el.scrollTop = 0)));
+  await settle();
+  const after = await link.boundingBox();
+  assert.ok(after);
+  const [moved] = await openMenus();
+  assert.ok(moved, "the menu stays open");
+  const dy = after.y - before.y;
+  assert.ok(Math.abs(dy) >= beforeScroll - 1, `the row moved with the scroll: ${dy}`);
+  assert.ok(near(moved.top - m.top, dy), `the menu follows that row, not its captured viewport point: ${JSON.stringify({ before: m, after: moved, dy })}`);
+  assert.ok(near(moved.left - m.left, after.x - before.x), "the horizontal point follows too");
+});
+
+test("board Rename saves a typed title on click-away; empty, unchanged and Escape write nothing", { skip }, async () => {
+  await board();
+  await page.evaluate(() => {
+    const w = window as unknown as { titleWrites: number };
+    w.titleWrites = 0;
+    const original = window.fetch.bind(window);
+    window.fetch = async (input, init) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      if (url.includes("/api/sessions/title")) w.titleWrites++;
+      return original(input, init);
+    };
+  });
+  const row = page.locator(BOARD_ROWS).first();
+  const originalTitle = await row.locator("a.board-title").innerText();
+  const typed = "Typed from the board menu";
+  const openRename = async () => {
+    await row.locator('button[aria-haspopup="menu"]').click();
+    await page.getByRole("menuitem", { name: `Rename “${await row.locator("a.board-title").innerText()}”` }).click();
+    return page.locator('form[aria-label^="Rename "] input');
+  };
+  const writes = () => page.evaluate(() => (window as unknown as { titleWrites: number }).titleWrites);
+  const clickAway = async () => {
+    await page.locator("h1").click();
+    await until("the rename menu closed", async () => (await openMenus()).length === 0, 5_000);
+  };
+  try {
+    const box = await openRename();
+    await box.fill(typed);
+    await clickAway();
+    await until("the typed title is on the board", async () => (await row.locator("a.board-title").innerText()) === typed, 5_000);
+    assert.equal(await writes(), 1, "click-away saved the typed nonempty title once");
+
+    await (await openRename()).fill("   ");
+    await clickAway();
+    assert.equal(await row.locator("a.board-title").innerText(), typed);
+    assert.equal(await writes(), 1, "an empty box on click-away cancels, as the old field did");
+
+    await (await openRename()).fill("Not saved");
+    await page.locator('form[aria-label^="Rename "] input').press("Escape");
+    await until("Escape closed the rename menu", async () => (await openMenus()).length === 0, 5_000);
+    assert.equal(await writes(), 1, "Escape cancels");
+
+    await openRename();
+    await clickAway();
+    assert.equal(await writes(), 1, "an unchanged title writes nothing");
+    assert.equal(await row.locator("a.board-title").innerText(), typed);
+    assert.notEqual(originalTitle, typed, "the case really changed the title");
+  } finally {
+    await closeAll();
+  }
+});
+
+test("Remove Anyway's listing starts on Back, and Tab reaches Delete and Remove Worktree", { skip }, async () => {
+  const wt = await codingWorktree("Menu removal focus");
+  const hold = await api("POST", `/api/projects/${wt.project}/overseer/worktrees/remove`, { sessionId: wt.session, dryRun: true });
+  assert.ok(hold.removeAnyway, `the uncommitted file offers Remove Anyway: ${hold.reason}`);
+  await page.goto(`${s.base}/#/projects/${wt.project}`);
+  const row = page.locator("li.project-worktree", { hasText: "Menu removal focus" });
+  await until("the coding worktree row", async () => (await row.count()) === 1, 30_000);
+  await row.locator('button[aria-haspopup="menu"]').click();
+  const remove = page.getByRole("menuitem", { name: /^Remove Worktree:/ });
+  await until("Remove Worktree is available", async () => (await remove.getAttribute("aria-disabled")) === null, 30_000);
+  await remove.click();
+  const anyway = page.getByRole("button", { name: "Remove Anyway", exact: true });
+  await until("the dry run offers Remove Anyway", async () => (await anyway.count()) === 1, 10_000, () => page.locator(".action-menu:popover-open").innerText());
+  await anyway.click();
+  const back = page.getByRole("button", { name: "Back", exact: true });
+  const del = page.getByRole("button", { name: "Delete and Remove Worktree", exact: true });
+  await until("focus starts on Back", async () => back.evaluate((el) => el === document.activeElement), 5_000);
+  assert.match(await page.locator(".remove-anyway-listing").innerText(), /keep\.txt/, "the exact uncommitted listing is in the menu");
+  await page.keyboard.press("Tab");
+  assert.equal(await del.evaluate((el) => el === document.activeElement), true, "Tab reaches the destructive choice without activating it");
+  await page.keyboard.press("Escape");
+  await until("Escape closes the menu", async () => (await openMenus()).length === 0, 5_000);
+});
+
+test("a hard dry-run hold moves focus to Cancel when the destructive button disappears", { skip }, async () => {
+  const wt = await codingWorktree("Menu hard hold focus");
+  await page.goto(`${s.base}/#/projects/${wt.project}`);
+  await page.reload();
+  const row = page.locator("li.project-worktree", { hasText: "Menu hard hold focus" });
+  await until("the hard-hold worktree row", async () => (await row.count()) === 1, 10_000, () => page.locator("body").innerText());
+  const route = `**/api/projects/${wt.project}/overseer/worktrees/remove`;
+  let release!: () => void;
+  const gate = new Promise<void>((r) => (release = r));
+  await page.route(route, async (r) => {
+    if (r.request().postDataJSON()?.dryRun !== true) return r.continue();
+    await gate;
+    await r.fulfill({ json: { reason: "Its session is working. Stop it before removing the worktree." } });
+  });
+  try {
+    await row.locator('button[aria-haspopup="menu"]').click();
+    const remove = page.getByRole("menuitem", { name: /^Remove Worktree:/ });
+    await until("Remove Worktree is available for the hard-hold case", async () => (await remove.getAttribute("aria-disabled")) === null, 30_000);
+    await remove.click();
+    const destructive = page.getByRole("button", { name: "Remove Worktree", exact: true });
+    await until("the loading question's button has focus", async () => destructive.evaluate((el) => el === document.activeElement), 5_000);
+    release();
+    const cancel = page.getByRole("button", { name: "Cancel", exact: true });
+    await until("Cancel takes focus when the hard hold removes the destructive button", async () => cancel.evaluate((el) => el === document.activeElement), 5_000);
+  } finally {
+    release();
+    await page.unroute(route);
+    await closeAll();
+  }
+});
+
+test("reopening removal never offers the retained hold while the fresh dry run is pending", { skip }, async () => {
+  const wt = await codingWorktree("Menu reopened removal");
+  const first = await api("POST", `/api/projects/${wt.project}/overseer/worktrees/remove`, { sessionId: wt.session, dryRun: true });
+  assert.ok(first.removeAnyway, `the first dry run offers Remove Anyway: ${first.reason}`);
+  await page.goto(`${s.base}/#/projects/${wt.project}`);
+  await page.reload();
+  const row = page.locator("li.project-worktree", { hasText: "Menu reopened removal" });
+  await until("the reopened worktree row", async () => (await row.count()) === 1, 10_000, () => page.locator("body").innerText());
+  const openRemoval = async (rightClick = false) => {
+    if (rightClick) await row.click({ button: "right", position: { x: 20, y: 20 } });
+    else await row.locator('button[aria-haspopup="menu"]').click();
+    const remove = page.getByRole("menuitem", { name: /^Remove Worktree:/ });
+    await until("Remove Worktree is available for reopening", async () => (await remove.getAttribute("aria-disabled")) === null, 5_000, () => page.locator("body").innerText());
+    await remove.click();
+  };
+  await openRemoval();
+  const anyway = page.getByRole("button", { name: "Remove Anyway", exact: true });
+  await until("the first dry run is visible", async () => (await anyway.count()) === 1, 10_000);
+  await page.getByRole("button", { name: "Cancel", exact: true }).press("Enter");
+  await until("the first removal closed", async () => (await openMenus()).length === 0, 5_000, async () => `${JSON.stringify(await openMenus())}\n${await page.locator(".action-menu:popover-open").allInnerTexts()}`);
+
+  const route = `**/api/projects/${wt.project}/overseer/worktrees/remove`;
+  let release!: () => void;
+  let intercepted = false;
+  const gate = new Promise<void>((r) => (release = r));
+  await page.route(route, async (r) => {
+    if (r.request().postDataJSON()?.dryRun !== true) return r.continue();
+    intercepted = true;
+    await gate;
+    await r.fulfill({ json: { reason: "Fresh dry run: the worktree still cannot go." } });
+  });
+  try {
+    await openRemoval(true);
+    await until("the second dry run started", async () => intercepted, 5_000, () => page.locator("body").innerText());
+    const panel = page.locator(".action-menu:popover-open");
+    assert.doesNotMatch(await panel.innerText(), new RegExp(first.reason.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")), "the old reason is not presented as the fresh answer");
+    assert.equal(await panel.getByRole("button", { name: "Remove Anyway", exact: true }).count(), 0, "no Remove Anyway from the retained hold");
+    assert.equal(await panel.locator(".remove-anyway-listing").count(), 0, "no old exact listing");
+    assert.equal(await panel.getByRole("button", { name: "Delete and Remove Worktree", exact: true }).count(), 0, "no old destructive confirmation");
+    assert.equal(await panel.getByRole("button", { name: "Remove Worktree", exact: true }).getAttribute("aria-disabled"), "true", "the ordinary removal waits for the fresh dry run");
+    release();
+    await until("the fresh answer replaces the retained one", async () => (await panel.innerText()).includes("Fresh dry run: the worktree still cannot go."), 5_000);
+    assert.doesNotMatch(await panel.innerText(), /keep\.txt/, "nothing from the old listing survives the fresh answer");
+  } finally {
+    release();
+    await page.unroute(route);
+    await closeAll();
+  }
 });

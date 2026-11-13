@@ -81,7 +81,7 @@
   word-break: break-word;
 }
 
-/* One key column for every row, as wide as the widest key ("Shift+F10 · Menu key"). */
+/* One key column for every row, as wide as the widest shortcut label. */
 .shortcut-list { margin: 0; display: grid; grid-template-columns: max-content 1fr; }
 .shortcut-row {
   grid-column: 1 / -1;

@@ -63,7 +63,7 @@ export interface MenuPanelControls {
 /**
  * The menu itself, without a trigger: the `popover="auto"` panel, its rows' API, its placement and
  * its focus. ActionMenu below hangs it from a "⋯" trigger; the page's one right-click menu
- * (ContextMenu.tsx) hangs it from a point or from a focused element. The panel lives in the top
+ * (ContextMenu.tsx) hangs it from a pointer position that follows its place. The panel lives in the top
  * layer (no ancestor can clip it), light-dismisses, and answers Escape for free; `place()` puts it
  * at its anchor when that fits in the window, and moves it when it doesn't.
  */

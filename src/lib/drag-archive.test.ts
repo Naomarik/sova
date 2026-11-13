@@ -50,8 +50,8 @@ test("a blocked row's Archive tile shows archiveBlockReason's own words and refu
   for (const [over, reason] of cases) {
     const drag = archiveDragOf(row(over));
     assert.deepEqual(drag, { kind: "blocked", reason });
-    assert.equal(archiveTileReason(drag, false), `Can't archive: ${reason}`);
-    assert.equal(blockedDropSentence(drag), `Can't archive this session: ${reason}.`);
+    assert.equal(archiveTileReason(drag, false), `Can't archive: ${reason}.`);
+    assert.equal(blockedDropSentence(drag), `Can't archive: ${reason}.`);
   }
 });
 

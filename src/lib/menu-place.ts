@@ -2,9 +2,8 @@
  * Sova's menus, as data. Every menu — a session's, a group's, a pane's, a message's, a worktree's —
  * is one declaration (`MenuDecl`): its name, its table of rows, and, for a menu place, what
  * extensions add. One body draws any declaration (src/components/MenuPlace.tsx `MenuBody`), and a
- * place's ⋯ and its right-click or Shift+F10 (§app/context-menus) both draw it, so the doors can't
- * drift and a test reads each table without a DOM.
- *
+ * place's ⋯ and its right-click (§app/context-menus) both draw it, so the doors can't drift and a
+ * test reads each table without a DOM.
  * A menu place is a menu that Sova's own rows and extensions both add to, the reply place's pattern
  * (src/lib/reply-place.ts) for a menu: Sova's rows first (trusted, interactive), then what
  * extensions add (data Sova draws: a label, a summary and a declared command, never markup). All
@@ -13,7 +12,7 @@
  * (shared/extension-offers.ts MENU_PLACES); GET /api/extensions carries it in `offers.commands`. The extension lane costs nothing beyond the list the page already polls:
  * no request until a row runs, and none of its rows when no running extension declares one.
  */
-import type { ExtensionInfo } from "../../shared/protocol";
+import type { ExtensionInfo, WorktreeRemoveAnyway } from "../../shared/protocol";
 import type { MenuPlace } from "../../shared/extension-offers";
 import type { IconName } from "../components/ui";
 
@@ -44,10 +43,24 @@ export type MenuScreen =
       /** Leaving the box (a click outside) saves what's there; otherwise it saves nothing. */
       leaveSaves?: boolean;
       /** What saving `value` (as typed) does; `opened` is what the box opened with. Null: nothing to write. */
-      save(value: string, opened: string): MenuAct | null;
+      save(value: string, opened: string, via: "enter" | "leave"): MenuAct | null;
     }
   | { kind: "confirm"; note: string; confirm: string; act: MenuAct }
-  | { kind: "rows"; label: string; sections: MenuSection[]; load?(): void };
+  | { kind: "rows"; label: string; sections: MenuSection[]; load?(): void }
+  | {
+      kind: "worktree-remove";
+      /** The ordinary question or the dry run's reason. The listing replaces it on Remove Anyway. */
+      note: string;
+      /** The exact confirmed listing, once Remove Anyway asks for it. */
+      listing?: { data: WorktreeRemoveAnyway; home: string | null };
+      /** Remove Worktree, Remove Anyway, or Delete and Remove Worktree. No button for a hard hold. */
+      confirm?: ({ label: string; disabled?: boolean } & ({ act: MenuAct } | { show(): void }));
+      /** Back from the exact listing to the reason. */
+      back?(): void;
+      /** Start the dry run when this screen opens; stop holding its state when it closes. */
+      load?(): void;
+      unload?(): void;
+    };
 
 /** One row, in every menu: its words, its icon, why it can't run, and what it does. */
 export interface MenuItem {
@@ -79,9 +92,6 @@ export interface MenuDecl<T> {
       (null: none here, such as another computer's); `name` how its rows name the subject. */
   extensions?: { place: MenuPlace; payload(subject: T): Record<string, string> | null; name(subject: T): string };
 }
-
-/** An act's kind, as the tables are tested: a command, a local act (a link included), or a screen. */
-export const actKind = (a: MenuAct): "command" | "local" | "screen" => ("command" in a ? "command" : "screen" in a ? "screen" : "local");
 
 /** One extension's entry in a menu: copied field by field from its validated offers. */
 export interface MenuEntry {

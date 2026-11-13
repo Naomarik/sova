@@ -1,5 +1,5 @@
 // A sidebar group's actions menu (§app.session-list/groups "The actions menu"), as one declaration
-// (lib/menu-place): its name row's ⋯ and a right-click or Shift+F10 on that row both draw it.
+// (lib/menu-place): its name row's ⋯ and a right-click on that row both draw it.
 
 import { GROUP_NAME_MAX, type SessionGroup } from "../../shared/protocol";
 import { sessionsWord } from "./archive";

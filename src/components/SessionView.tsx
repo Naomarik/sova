@@ -123,7 +123,7 @@ export function SessionView(props: {
   lead?: JSX.Element;
   /** Trailing controls in the head: a pane's own menu. */
   actions?: JSX.Element;
-  /** A right-click or Shift+F10 on a pane's head: the workspace opens that pane's menu (§app/context-menus). */
+  /** A right-click on a pane's head: the workspace opens that pane's menu (§app/context-menus). */
   onHeadContextMenu?(e: MouseEvent & { currentTarget: HTMLElement }): void;
   /** The head's title element, for the folded-width focus move. */
   titleRef?: (el: HTMLHeadingElement) => void;

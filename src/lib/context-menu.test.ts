@@ -1,7 +1,8 @@
 // Run: pnpm test -- src/lib/context-menu.test.ts
-// The right-click menu's rules (§app.context-menus/native, /keyboard, /touch), on plain facts and
-// stand-in elements: what opens Sova's menu, what stays the browser's, what a hold swallows, one
-// menu per key press, and a mouse's menu showing on the button's release (§app.context-menus/placement).
+// The right-click menu's rules (§app.context-menus/native, /doors, /touch), on plain facts and
+// stand-in elements: what opens Sova's menu, what stays the browser's (a keyboard context-menu
+// event included), what a hold swallows, and a mouse's menu showing on the button's release
+// (§app.context-menus/placement).
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { createRowPress } from "./drag-overlay";
@@ -10,15 +11,12 @@ import {
   contextAction,
   type ContextFacts,
   contextPointerKind,
-  createKeyEcho,
   createOpenOnRelease,
   createPressSelection,
   type ElementLike,
   holdOwns,
   inPopover,
   inTextEntry,
-  isContextMenuKey,
-  KEYBOARD_ECHO_MS,
   onContentLink,
   pointInRects,
   pressHeld,
@@ -28,9 +26,9 @@ import {
 const plain: ContextFacts = { kind: "mouse", shiftKey: false, taken: false, holds: false, textEntry: false, inPopover: false, onSelection: false, contentLink: false };
 const act = (over: Partial<ContextFacts>) => contextAction({ ...plain, ...over });
 
-test("a plain right-click on a place opens Sova's menu; so does a key", () => {
+test("a plain right-click on a place opens Sova's menu; a keyboard event stays the browser's", () => {
   assert.equal(act({}), "open");
-  assert.equal(act({ kind: "keyboard" }), "open");
+  assert.equal(act({ kind: "keyboard" }), "native");
 });
 
 test("the decision table: each exception, on its own, and what wins when two meet", () => {
@@ -47,8 +45,8 @@ test("the decision table: each exception, on its own, and what wins when two mee
     [{ holds: true, shiftKey: true }, "swallow", "a hold owns the event whatever the modifiers"],
     [{ taken: true }, "taken", "an inner place already opened its menu: innermost wins"],
     [{ taken: true, holds: true }, "taken", "an inner place's answer stands"],
-    [{ kind: "keyboard", shiftKey: true }, "open", "Shift+F10's own Shift is no request for the browser's menu"],
-    [{ kind: "keyboard", onSelection: true }, "open", "a key has no pointer on the selection"],
+    [{ kind: "keyboard", shiftKey: true }, "native", "Shift+F10's browser event is never taken"],
+    [{ kind: "keyboard", onSelection: true }, "native", "nor is the Menu key's"],
     [{ kind: "keyboard", textEntry: true }, "native", "in a text field the keys stay the browser's"],
     [{ kind: "keyboard", contentLink: true }, "native", "on a link inside content they stay the browser's"],
   ];
@@ -111,19 +109,6 @@ test("hold interplay: a finger's press owns the contextmenu before the hold fire
   press.cancel();
   // A drag in flight owns it, whatever the pointer.
   assert.equal(owns("mouse", true), true);
-});
-
-test("Shift+F10 and the Menu key, and nothing else", () => {
-  const k = (key: string, over: Partial<{ altKey: boolean; ctrlKey: boolean; metaKey: boolean; shiftKey: boolean }> = {}) =>
-    isContextMenuKey({ key, altKey: false, ctrlKey: false, metaKey: false, shiftKey: false, ...over });
-  assert.equal(k("F10", { shiftKey: true }), true);
-  assert.equal(k("ContextMenu"), true);
-  assert.equal(k("F10"), false, "plain F10 is the browser's menu bar");
-  assert.equal(k("ContextMenu", { shiftKey: true }), false);
-  for (const mod of ["altKey", "ctrlKey", "metaKey"] as const) {
-    assert.equal(k("F10", { shiftKey: true, [mod]: true }), false, mod);
-    assert.equal(k("ContextMenu", { [mod]: true }), false, mod);
-  }
 });
 
 // ---- reading the facts on stand-in elements ----
@@ -220,34 +205,6 @@ test("on the selection: the pointer inside one of its boxes, edges included", ()
   assert.equal(pointInRects(5, 15, []), false, "no selection boxes");
 });
 
-test("one press of the key opens one menu: the browser's own keyboard menu after it is swallowed once", () => {
-  let at = 0;
-  const echo = createKeyEcho(() => at);
-  assert.equal(echo.isEcho(), false, "nothing opened: a contextmenu is no echo");
-  echo.opened();
-  at += 50;
-  assert.equal(echo.isEcho(), true, "Shift+F10's native menu right after");
-  assert.equal(echo.isEcho(), false, "only once per press");
-  // Chromium on Windows sends the Menu key's on keyup: a key held a while counts from its release.
-  echo.opened();
-  at += KEYBOARD_ECHO_MS + 500;
-  echo.keyUp();
-  at += 30;
-  assert.equal(echo.isEcho(), true);
-  // A right-click after a keyboard open is a pointer's: its pointerdown comes first.
-  echo.opened();
-  at += 10;
-  echo.pointerDown();
-  assert.equal(echo.isEcho(), false);
-  // No echo came (macOS): a much later contextmenu is no echo.
-  echo.opened();
-  at += KEYBOARD_ECHO_MS + 1;
-  assert.equal(echo.isEcho(), false);
-  // keyUp with nothing pending opens no window.
-  echo.keyUp();
-  assert.equal(echo.isEcho(), false);
-});
-
 // ---- a mouse's menu shows on the release ----
 
 /** A stand-in window and document that record listeners, and a scheduler run by hand. */
@@ -278,9 +235,9 @@ function releaseRig() {
     pointerdown: (buttons = 2) => fire("pointerdown", { buttons }),
     pointerup: (buttons = 0) => fire("pointerup", { buttons }),
     /** A contextmenu reaching a place that answers `open`, with `buttons` as the event carries them. */
-    contextmenu(place: string, buttons: number, kind: "mouse" | "keyboard" = "mouse") {
+    contextmenu(place: string, buttons: number) {
       fire("contextmenu", { buttons });
-      release.request(pressHeld(kind, buttons), place, () => opened.push(place));
+      release.request(pressHeld("mouse", buttons), place, () => opened.push(place));
     },
     fire,
     hide() {
@@ -302,11 +259,9 @@ test("held: only a mouse contextmenu that comes with a button still down", () =>
   assert.equal(pressHeld("mouse", 1), true, "a Mac's Ctrl+click: the left button");
   assert.equal(pressHeld("mouse", 0), false, "Windows: on the release");
   assert.equal(pressHeld("mouse", undefined), false);
-  assert.equal(pressHeld("keyboard", 0), false);
-  assert.equal(pressHeld("keyboard", 2), false, "a key while a button is down: a key's menu, at once");
 });
 
-test("a contextmenu after the release (Windows) or from a key opens at once, with no further event", () => {
+test("a contextmenu after the release (Windows) opens at once, with no further event", () => {
   const r = releaseRig();
   r.pointerdown();
   r.pointerup();
@@ -314,8 +269,6 @@ test("a contextmenu after the release (Windows) or from a key opens at once, wit
   assert.deepEqual(r.opened, ["row A"]);
   assert.equal(r.release.waiting(), false);
   assert.equal(r.listening(), 0, "nothing left listening");
-  r.contextmenu("row B", 0, "keyboard");
-  assert.deepEqual(r.opened, ["row A", "row B"]);
 });
 
 test("a contextmenu during the press (Linux, macOS) opens one task after the release, never before", () => {
@@ -408,7 +361,7 @@ test("a newer contextmenu abandons the waiting one: only the newer place's menu 
   // A newer one after the release opens at once and ends the wait.
   const w = releaseRig();
   w.contextmenu("row A", 2);
-  w.contextmenu("row B", 0, "keyboard");
+  w.contextmenu("row B", 0);
   w.pointerup();
   w.tick();
   assert.deepEqual(w.opened, ["row B"]);

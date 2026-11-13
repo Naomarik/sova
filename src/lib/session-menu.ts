@@ -1,12 +1,11 @@
 // The session menu (§app.extensions/session-menu, §app.insights/team-cards "⋯ menu"), as one
-// declaration (lib/menu-place): for every door — the Agents board row's ⋯, a right-click (or
-// Shift+F10) on a board row or on a session row in any section of the sidebar — so the doors can't
-// drift. Each door differs only in its `SessionMenuCtx`: where Session Details and Open Subagents
-// lead from there.
+// declaration (lib/menu-place): for every door — the Agents board row's ⋯ and a right-click on a
+// board row or on a session row in any section of the sidebar — so the doors can't drift. Each door
+// differs only in its `SessionMenuCtx`: where Session Details and Open Subagents lead from there.
 
 import { SESSION_TITLE_MAX, type SessionSummary } from "../../shared/protocol";
 import { gistTitle } from "./agents-board";
-import { archiveBlockReason } from "./archive-block";
+import { archiveBlockReason, archiveRefusal } from "./archive-block";
 import { archivedProjectOf, unarchivedProjectOf } from "./drag-archive";
 import { hostOf } from "./mesh";
 import { groupRefusal } from "./regions";
@@ -37,7 +36,7 @@ export type SessionArchiveRow = { label: string; blocked: string | null } | null
 export function sessionArchiveRow(s: SessionSummary, running: Readonly<Record<string, boolean>>): SessionArchiveRow {
   if (!s.archived && s.origin !== "web") return null;
   const reason = archiveBlockReason({ ...s, busy: !s.live && !!(running[s.path] ?? s.busy) });
-  return { label: s.archived ? "Unarchive" : "Archive", blocked: reason ? `Can't archive: ${reason}.` : null };
+  return { label: s.archived ? "Unarchive" : "Archive", blocked: reason ? archiveRefusal(reason) : null };
 }
 
 /** What the session menu is about, and the door's context. */
@@ -113,8 +112,9 @@ export const SESSION_MENU: MenuDecl<SessionMenuSubject> = {
         placeholder: "Session title",
         max: SESSION_TITLE_MAX,
         hint: `Kept in Sova only. Empty restores ${quoted(s.originalTitle ?? s.title)}.`,
-        save: (typed, opened) => {
-          const to = renameValue(opened, typed);
+        leaveSaves: true,
+        save: (typed, opened, via) => {
+          const to = renameValue(opened, typed, via);
           return to === undefined ? null : to === null ? reset : set(to);
         },
       },
@@ -144,14 +144,14 @@ export const SESSION_MENU: MenuDecl<SessionMenuSubject> = {
 };
 
 /**
- * What the rename box saves: the trimmed name, `null` (empty: back to the derived title), or
- * `undefined` for a cancel — the title the box opened with, which is never a write, even when
- * the session's title moved while the box was open. Pure.
+ * What the rename box saves: the trimmed name, `null` (empty on Enter: back to the derived title),
+ * or `undefined` for a cancel — the title the box opened with, or an empty box on click-away.
+ * An unchanged title is never a write, even when the session's title moved while the box was open. Pure.
  */
-export function renameValue(opened: string, typed: string | null): string | null | undefined {
+export function renameValue(opened: string, typed: string | null, via: "enter" | "leave" = "enter"): string | null | undefined {
   const t = typed?.trim() ?? "";
-  if (!t) return null;
-  return t === opened ? undefined : t;
+  if (!t) return via === "leave" ? undefined : null;
+  return t === opened.trim() ? undefined : t;
 }
 
 /**

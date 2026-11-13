@@ -2,7 +2,8 @@
 // The one menu body (components/MenuPlace.tsx), drawn with Solid's SSR build (src/lib/align-card-ssr.mjs):
 // every place's ⋯ and its right-click draw the same declaration, a menu named as its ⋯ is; and the
 // three screens a row opens are the same everywhere: the one name box (its box, hint, Save and
-// Cancel), the one question (its sentence said to its button, then Cancel), a list of rows.
+// Cancel), the one question (its sentence said to its button, then Cancel), a list of rows, and
+// Remove Worktree's reason and exact-listing screens.
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { ExtensionInfo, SessionGroup, SessionSummary } from "../../shared/protocol";
@@ -14,7 +15,7 @@ import type { MenuPlace } from "../../shared/extension-offers";
 import type { MenuDecl } from "./menu-place";
 import { PANE_MENU, type PaneMenuWiring } from "./pane-menu";
 import { SESSION_MENU, sessionArchiveRow } from "./session-menu";
-import { WORKTREE_MENU } from "./worktree-menu";
+import { WORKTREE_MENU, type WorktreeMenuFacts } from "./worktree-menu";
 
 // @ts-expect-error untyped .mjs import
 const { importSsr } = await import("./align-card-ssr.mjs");
@@ -59,17 +60,29 @@ const session = (over: Partial<SessionSummary> = {}) => ({ id: "s-1", path: P, c
 const ctx = { detailsPath: null, onOpenDetails() {}, onOpenSubagents() {}, onRefresh() {}, onArchiveChanged() {} };
 const sessionMenu = (s = session()) => ({ session: s, ctx, archive: sessionArchiveRow(s, {}) });
 const groupMenu = (count = 2) => ({ group: { id: "g-1", name: "Work" } as SessionGroup, count, onChanged() {} });
-const w = { nameOf: () => "Tests", groupName: () => "Work", split: () => true, panes: () => [P], labelOf: () => null, running: () => false, href: () => "#", resize() {}, move() {}, focusPane() {}, rename() {}, detach() {}, promote() {} } as PaneMenuWiring;
+const w = { nameOf: () => "Tests", groupName: () => "Work", split: () => true, panes: () => [P], labelOf: () => null, href: () => "#", resize() {}, move() {}, focusPane() {}, rename() {}, detach() {}, promote() {} } as PaneMenuWiring;
 const item = (kind: MessageActionItem["kind"], reason: string | null = null): MessageActionItem => ({ kind, reason, run() {} });
 const reply = (reason: string | null = null) => ({ strip: { index: 3, entryId: "e1", role: "assistant" as const, text: "hi" }, items: [item("copy"), item("share"), item("regenerate", reason), item("fork")], copyPlain() {}, session: "s-1" });
-const worktree = { facts: { project: "p-1", row: { sessionId: "c-1", branch: "sova/x", target: "master", worktree: "/wt/x", head: "abc" } as CodingRow, title: "Fix it", gestures: { merge: "" as const, remove: "" as const }, queued: false, queue: undefined, working: false }, acts: { merge() {}, land() {}, remove() {} } };
+const worktree = (removal: Partial<WorktreeMenuFacts["removal"]> = {}) => ({
+  facts: {
+    project: "p-1",
+    row: { sessionId: "c-1", branch: "sova/x", target: "master", worktree: "/wt/x", head: "abc" } as CodingRow,
+    title: "Fix it",
+    gestures: { merge: "" as const, remove: "" as const },
+    queued: false,
+    queue: undefined,
+    removal: { folder: "/wt/x", home: "/home/me", hold: undefined, loading: false, listing: false, ...removal },
+    working: false,
+  },
+  acts: { merge() {}, land() {}, remove() {}, removeAnyway() {}, loadRemove() {}, unloadRemove() {}, showRemoveListing() {} },
+});
 
 const PLACES: [string, MenuDecl<never>, unknown][] = [
   ["session", SESSION_MENU as MenuDecl<never>, sessionMenu()],
   ["group", GROUP_MENU as MenuDecl<never>, groupMenu()],
   ["pane", PANE_MENU as MenuDecl<never>, { path: P, summary: session(), w }],
   ["message", MESSAGE_MENU as MenuDecl<never>, reply()],
-  ["worktree", WORKTREE_MENU as MenuDecl<never>, worktree],
+  ["worktree", WORKTREE_MENU as MenuDecl<never>, worktree()],
 ];
 
 test("every place's ⋯ and its right-click draw the same menu, named as its ⋯ is", () => {
@@ -121,6 +134,26 @@ test("the one question: its sentence said to its button, then Cancel; gone once 
 test("a list of rows in place of the menu's own: Move to Group…", () => {
   const html = door(SESSION_MENU, sessionMenu(), "Move to Group…");
   assert.match(html, /^<div class="model-menu-list" role="menu" aria-label="Move to group"><div class="model-menu-group" role="group" aria-label="Groups"><div class="list-group-label">Groups<\/div><div class="popover-item " role="menuitem" tabindex="0" aria-label="Take “Fix the build” out of its group" >/);
+});
+
+test("Remove Worktree replaces the rows with its question, then the exact listing and Back", () => {
+  const ordinary = door(WORKTREE_MENU, worktree(), "Remove Worktree…");
+  assert.match(ordinary, /The folder \/wt\/x goes away\. The branch sova\/x keeps its commits, and the session and its transcript stay\./);
+  assert.match(ordinary, /button-destructive" aria-describedby="…">Remove Worktree<\/button><button type="button" class="button button-sm button-ghost">Cancel/);
+  assert.doesNotMatch(ordinary, /role="menuitem"/);
+
+  const data = { uncommitted: ["src/a.ts"], ignored: [], nested: [], rebuildable: ["dist/"], counts: { uncommitted: 1, ignored: 0, nested: 0, rebuildable: 1 }, digest: "digest-1" };
+  const hold = { reason: "It holds uncommitted work.", removeAnyway: data };
+  const reason = door(WORKTREE_MENU, worktree({ hold }), "Remove Worktree…");
+  assert.match(reason, /It holds uncommitted work\./);
+  assert.match(reason, />Remove Anyway<\/button>/);
+  const listing = door(WORKTREE_MENU, worktree({ hold, listing: true }), "Remove Worktree…");
+  assert.match(listing, /Uncommitted · 1/);
+  assert.match(listing, /<code>src\/a\.ts<\/code>/);
+  assert.match(listing, /Rebuildable, also goes · 1/);
+  assert.match(listing, /<code>dist\/<\/code>/);
+  assert.match(listing, />Delete and Remove Worktree<\/button><button type="button" class="button button-sm button-ghost">Back<\/button>/);
+  assert.doesNotMatch(listing, /role="menuitem"/);
 });
 
 test("every menu draws its extension entries after all of Sova's rows, named for what it is about; another menu's, never", () => {

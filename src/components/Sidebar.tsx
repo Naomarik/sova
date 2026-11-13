@@ -408,7 +408,7 @@ export function SessionRow(props: {
   onCleanup(() => shell?.removeEventListener("touchmove", holdStill));
   /** The rail's own controls (the state pills) are pressed, not held. */
   const onOwnControl = (e: PointerEvent) => e.target instanceof Element && !!e.target.closest("button, input, label");
-  /** The session menu (§app.session-list/accessibility "The session menu"): the board's ⋯ rows, from a right-click or Shift+F10. */
+  /** The session menu (§app.session-list/accessibility "The session menu"): the board's ⋯ rows, from a right-click. */
   const menuCtx = useContext(SidebarSessionMenu);
   let link: HTMLAnchorElement | undefined;
   onCleanup(() => closeContextMenuOf(shell));
@@ -828,7 +828,7 @@ function GroupBlock(props: {
   let summary!: HTMLElement;
   onCleanup(() => closeContextMenuOf(summary));
   const menu = () => ({ group: group(), count: count(), onChanged: props.onChanged });
-  /** The name row's right-click and Shift+F10: the ⋯'s own menu, at the pointer or under the row. */
+  /** The name row's right-click: the ⋯'s own menu, at the pointer. */
   const onContextMenu = (e: MouseEvent & { currentTarget: HTMLElement }) => openMenu(e, GROUP_MENU, menu, { el: e.currentTarget, origin: () => summary });
 
   return (

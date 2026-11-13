@@ -221,7 +221,7 @@ test("a peer's session: no group of this host, no Current, no Remove — its gro
 
 test("Archive refused says why; a refused drop only says it", () => {
   const blocked = dropTiles(info({ archive: { kind: "blocked", reason: "open in a TUI" } }), GROUPS, COUNTS);
-  assert.deepEqual(dropAction(ARCHIVE_TILE, blocked), { kind: "refused", reason: "Can't archive: open in a TUI" });
+  assert.deepEqual(dropAction(ARCHIVE_TILE, blocked), { kind: "refused", reason: "Can't archive: open in a TUI." });
   const archived = dropTiles(info({ archive: { kind: "none" }, archived: true }), GROUPS, COUNTS);
   assert.equal(archived.archiveDisabled, "Already archived.");
 });

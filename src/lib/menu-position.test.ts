@@ -1,6 +1,6 @@
 // Run: pnpm test -- src/lib/menu-position.test.ts
 // Where a menu panel goes (§app.context-menus/placement): at the pointer, flipping and clamping;
-// under a focused element; and under a ⋯ trigger exactly as ActionMenu placed it before.
+// and under a ⋯ trigger exactly as ActionMenu placed it before.
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { EDGE_GAP, MIN_PANEL_HEIGHT, menuRoom, menuSpot, TRIGGER_GAP } from "./menu-position";
@@ -40,7 +40,7 @@ test("the room handed to the panel before it is measured: the larger side, never
   assert.equal(menuRoom(at(100, 100), { width: 300, height: 200 }), MIN_PANEL_HEIGHT);
 });
 
-// ---- under an element: a ⋯ trigger, or the focused thing from the keyboard ----
+// ---- under an element: a ⋯ trigger ----
 
 const trigger = { top: 100, bottom: 140, left: 900, right: 940 };
 const under = (align: "start" | "end", rect = trigger) => ({ kind: "rect" as const, rect, align });
@@ -67,13 +67,6 @@ test("under a trigger: the same numbers ActionMenu's own placement gave, in ever
         assert.equal(menuRoom(under(align, r), view), want.max);
         assert.deepEqual(menuSpot(under(align, r), b, view), { top: want.top, left: want.left }, JSON.stringify({ r, b, align }));
       }
-});
-
-test("from the keyboard: under the focused element, its left edges lined up, above when there's no room below", () => {
-  const row = { top: 200, bottom: 244, left: 16, right: 336 };
-  assert.deepEqual(menuSpot(under("start", row), box, view), { top: 244 + TRIGGER_GAP, left: 16 });
-  const low = { top: 700, bottom: 744, left: 16, right: 336 };
-  assert.deepEqual(menuSpot(under("start", low), box, view), { top: 700 - TRIGGER_GAP - 300, left: 16 });
 });
 
 test("a spanned panel starts at the spanned element's left edge, inside the gap", () => {

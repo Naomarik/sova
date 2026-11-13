@@ -1,6 +1,6 @@
 import { createEffect, createMemo, createSignal, For, on, onCleanup, Show, type JSX } from "solid-js";
 import type { ChatClaudeLogin, SessionGroup, SessionSummary, WorkerInfo } from "../../shared/protocol";
-import { setSessionArchived, unassignSessionById } from "../lib/api";
+import { unassignSessionById } from "../lib/api";
 import { groupHref } from "../lib/group-route";
 import {
   defaultPaneWidth,
@@ -72,7 +72,7 @@ const composerOf = (path: string) => document.getElementById(`composer-input-${p
 const [workspaceFocus, setWorkspaceFocus] = createSignal<string | null>(null);
 export { workspaceFocus };
 
-/** Whether a member is mid-turn: what the tab's live dot and Archive's refusal both read. */
+/** Whether a member is mid-turn: what the tab's live dot and the completion roll-up both read. */
 const running = (s: SessionSummary | undefined) => !!s && (s.busy || sessionWorking(s) > 0);
 
 /** What SessionView needs from App, forwarded through the workspace unchanged. */
@@ -513,31 +513,18 @@ export function GroupView(props: {
     if (next && !next.startsWith("gone:")) focusPane(next, true);
   };
 
-  /** Takes the session out of the group — and, for Archive, archives it in the same gesture. */
-  const detach = async (path: string, archive: boolean, send?: () => Promise<unknown>) => {
+  /** Takes the session out of the group without archiving or deleting it. */
+  const detach = async (path: string, send?: () => Promise<unknown>) => {
     const s = summaryOf(path);
     const title = s?.title ?? "this session";
     const next = neighbourOf(panes(), path);
     if (!(await setSessionGroup(path, null, undefined, send))) return;
-    let done: string;
-    if (!archive) {
-      // Remove-only on a session Sova didn't start is the whole story, and says so: there was
-      // never an archive half to leave out.
-      done =
-        s?.origin === "web"
-          ? `Removed ${title} from ${quoted(props.group.name)}.`
-          : `Removed ${title} from ${quoted(props.group.name)}. It wasn't started in Sova, so nothing was archived.`;
-    } else {
-      try {
-        await setSessionArchived(path, true);
-        props.wiring.onArchiveChanged(path, true);
-        done = `Removed ${title} and archived it.`;
-      } catch (err) {
-        // The genuine race the pre-disabled rows can't cover: a turn started between the check and
-        // the write. Both halves, and the server's own reason for the one that failed.
-        done = `Removed ${title} from ${quoted(props.group.name)}, but couldn't archive it. ${(err as Error).message}`;
-      }
-    }
+    // Remove-only on a session Sova didn't start is the whole story, and says so: there was
+    // never an archive half to leave out.
+    const done =
+      s?.origin === "web"
+        ? `Removed ${title} from ${quoted(props.group.name)}.`
+        : `Removed ${title} from ${quoted(props.group.name)}. It wasn't started in Sova, so nothing was archived.`;
     toast(done);
     announce(done);
     props.wiring.onRefresh();
@@ -563,16 +550,15 @@ export function GroupView(props: {
     split: () => mode() === "split",
     panes,
     labelOf,
-    running,
+    detach: (path, send) => void detach(path, send),
     href: sessionHref,
     resize,
     move: (path, direction) => void move(path, direction),
     focusPane,
     rename: (path, label) => void rename(path, label),
-    detach: (path, archive, send) => void detach(path, archive, send),
     promote: (path, send) => void promote(path, send),
   };
-  /** A right-click or Shift+F10 on a pane's head or its tab: that pane's Pane actions, at the pointer or under it. */
+  /** A right-click on a pane's head or its tab: that pane's Pane actions, at the pointer. */
   const openPaneMenu = (e: MouseEvent & { currentTarget: HTMLElement }, path: string, summary: () => SessionSummary, origin: HTMLElement) =>
     openMenu(e, PANE_MENU, () => ({ path, summary: summary(), w: paneWiring }), { el: e.currentTarget, origin: () => origin });
 

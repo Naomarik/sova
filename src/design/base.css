@@ -2699,10 +2699,6 @@ a.group-picker-tile[aria-disabled="true"] { cursor: default; color: var(--color-
   -webkit-user-select: none;
   -webkit-touch-callout: none;
 }
-/* The inline title field (TitleField: the Agents board's Rename…). */
-.session-title-field { width: 100%; }
-.session-title-field .input { flex: 1; min-width: 0; }
-
 /* The link keeps the title block; the shell owns ground, divider and tint. */
 .session-row {
   flex: 1;

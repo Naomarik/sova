@@ -1,12 +1,12 @@
 /**
  * The one menu body (src/lib/menu-place.ts): it draws any place's declaration — Sova's rows in their
- * sections, then what extensions add (`MenuAdded`, after every one of Sova's rows) — and the three
- * second screens a row can open: the one name box, the one question, a list of rows. A place's ⋯
- * (`PlaceMenu`) and its right-click or Shift+F10 (`openMenu`, through the page's one right-click
- * menu, ContextMenu.tsx) both draw it, so the doors can't drift. Extension content is data drawn as
- * ordinary menu rows, never markup.
+ * sections, then what extensions add (`MenuAdded`, after every one of Sova's rows) — and the second
+ * screens a row can open: the one name box, the one question, a list of rows, or a worktree's
+ * removal flow. A place's ⋯ (`PlaceMenu`) and its right-click (`openMenu`, through the page's one
+ * right-click menu, ContextMenu.tsx) both draw it, so the doors can't drift. Extension content is
+ * data drawn as ordinary menu rows, never markup.
  */
-import { createEffect, createMemo, createSignal, createUniqueId, For, Index, Match, on, onMount, Show, Switch, useContext } from "solid-js";
+import { createEffect, createMemo, createSignal, createUniqueId, For, Index, Match, on, onCleanup, onMount, Show, Switch, useContext } from "solid-js";
 import { sendCommand } from "../lib/api";
 import { entryTitle, type MenuAct, type MenuDecl, type MenuEntry, type MenuGroup, type MenuItem, type MenuScreen, type MenuSection, menuGroups, runMenuEntry, sameGroups } from "../lib/menu-place";
 import { ExtensionsContext } from "../lib/reply-place";
@@ -14,6 +14,7 @@ import { announce, toast } from "../lib/ui-state";
 import { type ActionMenuApi, ActionMenu } from "./ActionMenu";
 import { openContextMenu } from "./ContextMenu";
 import { TextField } from "./form";
+import { RemoveAnywayListing } from "./RemoveAnywayListing";
 import { Icon } from "./ui";
 
 type Screen<K extends MenuScreen["kind"]> = Extract<MenuScreen, { kind: K }>;
@@ -71,8 +72,8 @@ function Sections(props: { menu: ActionMenuApi; sections: readonly MenuSection[]
 
 /**
  * The one name box (every menu's Rename…): the box, its hint, then Save and Cancel. Enter or Save
- * saves; Escape or Cancel closes the whole menu. Leaving the box saves only where `leaveSaves`
- * says so (a group's name); elsewhere a click outside closes the menu and saves nothing. What
+ * saves; Escape or Cancel closes the whole menu. Leaving the box saves where `leaveSaves` says so
+ * (a group or session name); elsewhere a click outside closes the menu and saves nothing. What
  * saving means (an empty box restores, clears or cancels) is the row's `save`.
  */
 function NameScreen(props: { menu: ActionMenuApi; screen: Screen<"name"> }) {
@@ -81,10 +82,10 @@ function NameScreen(props: { menu: ActionMenuApi; screen: Screen<"name"> }) {
   let form!: HTMLFormElement;
   // One ending per box: saving closes the menu, and that blur must not save again (or cancel after a save).
   let settled = false;
-  const end = (save: boolean) => {
+  const end = (save: boolean, via: "enter" | "leave" = "enter") => {
     if (settled) return;
     settled = true;
-    const then = save ? props.screen.save(value(), opened) : null;
+    const then = save ? props.screen.save(value(), opened, via) : null;
     if (then) runNow(props.menu, then);
     else props.menu.dismiss();
   };
@@ -117,7 +118,7 @@ function NameScreen(props: { menu: ActionMenuApi; screen: Screen<"name"> }) {
         }}
         onBlur={(e) => {
           // Settled first: a box that has ended is gone with its screen, and so is what it read.
-          if (!settled && props.screen.leaveSaves && !(e.relatedTarget instanceof Node && form.contains(e.relatedTarget))) end(true);
+          if (!settled && props.screen.leaveSaves && !(e.relatedTarget instanceof Node && form.contains(e.relatedTarget))) end(true, "leave");
         }}
       />
       <div class="cluster">
@@ -144,6 +145,83 @@ function ConfirmScreen(props: { menu: ActionMenuApi; screen: Screen<"confirm">; 
         </button>
         <button type="button" class="button button-sm button-ghost" onClick={() => props.menu.dismiss()}>
           Cancel
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/** Remove Worktree's dry run, reason and, when offered, its exact Remove Anyway listing. */
+function WorktreeRemoveScreen(props: { menu: ActionMenuApi; screen: Screen<"worktree-remove">; name: string }) {
+  const note = createUniqueId();
+  let live = true;
+  let unload: (() => void) | undefined;
+  onMount(() => {
+    props.screen.load?.();
+    unload = props.screen.unload;
+  });
+  onCleanup(() => {
+    live = false;
+    unload?.();
+  });
+  const listing = () => props.screen.listing;
+  let destructive: HTMLButtonElement | undefined;
+  let back!: HTMLButtonElement;
+  // Listing starts on Back. If a dry-run hard hold removes the focused destructive button, the
+  // screen's remaining safe control takes focus instead of dropping it back to the page.
+  createEffect(() => {
+    if (!live) return;
+    if (listing() || !props.screen.confirm) queueMicrotask(() => live && back.focus());
+  });
+  return (
+    <div class="group-menu-screen" role="group" aria-label={props.name}>
+      <Show when={listing()} fallback={<p class="group-tools-question" id={note}>{props.screen.note}</p>}>
+        {(a) => <RemoveAnywayListing listing={a().data} home={a().home} />}
+      </Show>
+      <div class="cluster">
+        <Show when={props.screen.confirm}>
+          {(c) => {
+            return (
+              <button
+                ref={(b) => {
+                  destructive = b;
+                  const focus = !listing();
+                  queueMicrotask(() => live && focus && b.focus());
+                }}
+                type="button"
+                class="button button-sm button-destructive"
+                aria-describedby={listing() ? undefined : note}
+                aria-disabled={c().disabled ? "true" : undefined}
+                onClick={() => {
+                  const current = c();
+                  if (current.disabled) return;
+                  if ("show" in current) current.show();
+                  else runNow(props.menu, current.act);
+                }}
+              >
+                {c().label}
+              </button>
+            );
+          }}
+        </Show>
+        <button
+          ref={(b) => {
+            back = b;
+            if (!props.screen.confirm) queueMicrotask(() => live && b.focus());
+          }}
+          type="button"
+          class="button button-sm button-ghost"
+          onKeyDown={(e) => {
+            if (!listing() || e.key !== "Tab" || e.shiftKey) return;
+            e.preventDefault();
+            destructive?.focus();
+          }}
+          onClick={() => {
+            if (listing()) props.screen.back?.();
+            else props.menu.dismiss();
+          }}
+        >
+          {listing() ? "Back" : "Cancel"}
         </button>
       </div>
     </div>
@@ -214,6 +292,7 @@ export function MenuBody<T>(props: { menu: ActionMenuApi; decl: MenuDecl<T>; sub
       <Match when={screen("name")}>{(s) => <NameScreen menu={menu} screen={s()} />}</Match>
       <Match when={screen("confirm")}>{(s) => <ConfirmScreen menu={menu} screen={s()} name={asking()!.aria} />}</Match>
       <Match when={screen("rows")}>{(s) => <RowsScreen menu={menu} screen={s()} />}</Match>
+      <Match when={screen("worktree-remove")}>{(s) => <WorktreeRemoveScreen menu={menu} screen={s()} name={asking()!.aria} />}</Match>
     </Switch>
   );
 }
@@ -228,9 +307,9 @@ export function PlaceMenu<T>(props: { decl: MenuDecl<T>; subject: T; title: stri
 }
 
 /**
- * A place's right-click and Shift+F10 (§app/context-menus): the same declaration's menu, at the
- * pointer or under the focused element. `el` is the place, `origin` where focus goes back to (read
- * as the menu opens), `ownLink` the place's own link, `holds` the place's own gesture owning the event.
+ * A place's right-click (§app/context-menus): the same declaration's menu, at the pointer. `el` is
+ * the place, `origin` where focus goes back to (read as the menu opens), `ownLink` the place's own
+ * link, `holds` the place's own gesture owning the event.
  */
 export function openMenu<T>(e: MouseEvent, decl: MenuDecl<T>, subject: () => T, at: { el: Element; origin(): HTMLElement; ownLink?: Element | null; holds?: boolean }) {
   return openContextMenu(e, {

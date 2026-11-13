@@ -1,7 +1,7 @@
 /**
  * The session menu's doors (§app.extensions/session-menu), in a file of its own so a test can draw
  * them (src/lib/session-row-menu.test.ts): the Agents board row's ⋯ (`RowMenu`), and a right-click
- * or Shift+F10 on a board row or on a session row in the sidebar (`openSessionMenu`). Both draw the
+ * on a board row or on a session row in the sidebar (`openSessionMenu`). Both draw the
  * one declaration, lib/session-menu `SESSION_MENU`: Sova's own rows, then what extensions add.
  */
 import { createContext } from "solid-js";
@@ -22,9 +22,9 @@ export function RowMenu(props: { row: BoardRow; ctx: RowMenuCtx; archive: Sessio
 }
 
 /**
- * A session row's right-click and Shift+F10 (§app/context-menus): the same menu, at the pointer or
- * under the row. `el` is the row, `link` its own link (the row itself, and where focus goes back
- * to); `holds` is the row's own gesture owning the event.
+ * A session row's right-click (§app/context-menus): the same menu, at the pointer. `el` is the row,
+ * `link` its own link (the row itself, and where focus goes back to); `holds` is the row's own
+ * gesture owning the event.
  */
 export const openSessionMenu = (e: MouseEvent, place: { el: Element; link: HTMLElement; holds?: boolean }, session: () => SessionSummary, ctx: SessionMenuCtx, archive: () => SessionArchiveRow) =>
   openMenu(e, SESSION_MENU, () => ({ session: session(), ctx, archive: archive() }), { el: place.el, origin: () => place.link, ownLink: place.link, holds: place.holds });

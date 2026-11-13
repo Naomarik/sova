@@ -7,6 +7,7 @@ import { noteMergeChanged } from "../lib/merge-queue-client";
 import { WorktreeQueueRow, type QueueWorktree } from "./WorktreesModal";
 import { queueLinksOf } from "../lib/branch-place";
 import { absoluteTime, firstLine, timelineEntries } from "../lib/spend";
+import { archiveRefusal } from "../lib/archive-block";
 import { archivedProjectOf, unarchivedProjectOf } from "../lib/drag-archive";
 import { archiveSession } from "../lib/session-actions";
 import { cwdLabel, remotePlaceOf } from "../lib/remote-session";
@@ -751,9 +752,9 @@ function ArchiveAction(props: { session: SessionSummary; archived: boolean; work
   const [pending, setPending] = createSignal(false);
   const blocked = (): string | null => {
     if (props.archived) return null;
-    if (props.session.live !== null) return "Open in a TUI. It stays on top while live.";
+    if (props.session.live !== null) return archiveRefusal("open in a TUI");
     const n = props.working;
-    if (n > 0) return `${n} ${n === 1 ? "subagent" : "subagents"} working. Archiving closes this session's runtime, so ${n === 1 ? "it stops" : "they stop"}.`;
+    if (n > 0) return archiveRefusal("with subagents working");
     return null;
   };
   const click = async () => {

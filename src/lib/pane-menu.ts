@@ -1,23 +1,12 @@
 // A workspace pane's Pane actions (§workspace.groups/a-pane "The tools are one menu"), as one
-// declaration (lib/menu-place): its head's ⋯, a right-click or Shift+F10 on its head and one on its
-// tab all draw it, from the workspace's own state and gestures (`PaneMenuWiring`), so the head and
-// the tab can't offer different menus for the same member.
+// declaration (lib/menu-place): its head's ⋯ and a right-click on its head or tab all draw it,
+// from the workspace's own state and gestures (`PaneMenuWiring`), so the head and the tab can't
+// offer different menus for the same member.
 
 import { GROUP_LABEL_MAX, type SessionSummary } from "../../shared/protocol";
 import type { MenuAct, MenuDecl, MenuItem } from "./menu-place";
 import { hostOf } from "./mesh";
 import { quoted } from "./session-groups";
-
-/**
- * Archive's state: `null` when this session was not started in Sova (there is nothing to archive,
- * so the row is absent), `""` when it can be archived, and otherwise the reason it can't — said
- * before the press rather than discovered as a half-finished gesture. Pure.
- */
-export function paneArchive(s: SessionSummary, running: boolean): string | null {
-  if (s.origin !== "web") return null;
-  if (s.live) return "This session is open in a terminal.";
-  return running ? "It's mid-turn. Stop it or wait, then archive it." : "";
-}
 
 /** The workspace's side of every pane's menu: GroupView's own state and gestures. */
 export interface PaneMenuWiring {
@@ -28,7 +17,8 @@ export interface PaneMenuWiring {
   /** The members in display order. */
   panes(): readonly string[];
   labelOf(path: string): string | null;
-  running(s: SessionSummary): boolean;
+  /** Out of the group (`send`: the command's request); the session itself stays untouched. */
+  detach(path: string, send?: () => Promise<unknown>): void;
   /** The session on its own (`#/s/…`). */
   href(path: string): string;
   resize(path: string, direction: 1 | -1): void;
@@ -36,8 +26,6 @@ export interface PaneMenuWiring {
   focusPane(path: string, moveFocus: boolean): void;
   /** Set a label (`string`) or clear it (`null`) — the comparison's naming act. */
   rename(path: string, label: string | null): void;
-  /** Out of the group (`send`: the command's request); `archive` archives it too (Archive). */
-  detach(path: string, archive: boolean, send?: () => Promise<unknown>): void;
   promote(path: string, send: () => Promise<unknown>): void;
 }
 
@@ -50,9 +38,8 @@ export interface PaneMenuSubject {
 
 /**
  * The rows, in their three groups: this member (its name), this pane (width, place, focus, open on
- * its own) and its membership — three separate words on purpose: Promote takes it out and opens
- * it, Archive takes it out and archives it, Remove From Group only takes it out. A menu place,
- * for a pane whose session is on this host.
+ * its own) and its membership. Promote takes it out and opens it; Remove From Group only takes it
+ * out, never archiving or deleting the session. A menu place, for a pane whose session is on this host.
  */
 export const PANE_MENU: MenuDecl<PaneMenuSubject> = {
   label: ({ path, w }) => `Pane actions · ${w.nameOf(path)}`,
@@ -61,7 +48,6 @@ export const PANE_MENU: MenuDecl<PaneMenuSubject> = {
     const name = w.nameOf(path);
     const group = quoted(w.groupName());
     const list = w.panes();
-    const archive = paneArchive(summary, w.running(summary));
     const out = { command: "session.group.assign", params: { session: path, group: null }, keepFocus: true } as const;
     const pane: MenuItem[] = [{ label: "Open", aria: `Open ${name}`, title: "Open this session on its own", icon: "external", act: { local: () => (location.hash = w.href(path)), keepFocus: true } }];
     if (w.split())
@@ -95,24 +81,13 @@ export const PANE_MENU: MenuDecl<PaneMenuSubject> = {
         label: "Remove From Group",
         aria: `Remove ${name} from the group`,
         title:
-          archive === null
-            ? "This session wasn't started in Sova, so removing it is all we can do — nothing is archived"
-            : `Take it out of ${group} and stay here. Nothing is archived and nothing is deleted`,
+          summary.origin === "web"
+            ? `Take it out of ${group} and stay here. Nothing is archived and nothing is deleted`
+            : "This session wasn't started in Sova, so removing it is all we can do — nothing is archived",
         icon: "close",
-        act: { ...out, via: (send) => w.detach(path, false, send) },
+        act: { ...out, via: (send) => w.detach(path, send) },
       },
     ];
-    // Absent, not disabled, when the session wasn't started in Sova: there is nothing to archive, and
-    // it is a different gesture rather than a refusal.
-    if (archive !== null)
-      membership.push({
-        label: "Archive",
-        aria: `Archive ${name}`,
-        title: `Take it out of ${group} and archive it. The transcript stays; unarchiving brings it back`,
-        icon: "archive",
-        disabled: archive,
-        act: { local: () => w.detach(path, true), keepFocus: true },
-      });
     // Empty CLEARS the label: that is the gesture's other half, and a refused Save would hide it.
     const naming: MenuAct = {
       screen: { kind: "name", label: `Name ${name}`, initial: w.labelOf(path) ?? "", placeholder: name, max: GROUP_LABEL_MAX, hint: "Empty clears the label — the pane shows the title again.", save: (typed) => ({ local: () => w.rename(path, typed.trim() || null), keepFocus: true }) },

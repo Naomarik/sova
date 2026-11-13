@@ -1,25 +1,23 @@
-// Right-click menus (§app/context-menus): what a `contextmenu` event, Shift+F10 or the Menu key
-// does — Sova's menu for the innermost thing that has one, the browser's own menu, or nothing (the
-// echo of a gesture that already meant something). Framework-free and DOM-free at import, so the
-// rules run under `pnpm test` with stand-in elements; components/ContextMenu.tsx reads the facts
-// off a real event and acts on the answer.
+// Right-click menus (§app/context-menus): what a `contextmenu` event does — Sova's menu for the
+// innermost thing that has one, the browser's own menu (including every keyboard-made event), or
+// nothing (the echo of a gesture that already meant something). Framework-free and DOM-free at
+// import, so the rules run under `pnpm test` with stand-in elements; components/ContextMenu.tsx
+// reads the facts off a real event and acts on the answer.
 
 import { isTextEntry } from "./text-entry";
 
-/** What made the event: a mouse (or trackpad), a finger, a pen, or a key. */
+/** What made the event: a mouse (or trackpad), a finger, a pen, or the browser's context-menu key. */
 export type PointerKind = "mouse" | "touch" | "pen" | "keyboard";
 
 /** Firefox's `mozInputSource` codes (MouseEvent.MOZ_SOURCE_*). */
 const MOZ_SOURCE: Record<number, PointerKind> = { 1: "mouse", 2: "pen", 5: "touch", 6: "keyboard" };
 
 /**
- * The input a `contextmenu` came from. Chromium sends it as a PointerEvent with a `pointerType`, but
- * for a key that can't be relied on: some builds send the empty string, read here as a key, and
- * Linux Chromium sends "mouse". So a key is never known by it: Sova's own Shift+F10 and Menu key are
- * known by their keydown (ContextMenu.tsx `fromKey`), and the browser's menu after them is their
- * echo. A key-made event read as "mouse" has no button down, so it opens at once, as a key's does.
- * Firefox says it in `mozInputSource`. A browser that says neither (a plain MouseEvent) gets the kind
- * of the last pointer that went down, so a long press there is still a finger's.
+ * The input a `contextmenu` came from. Chromium sends it as a PointerEvent with a `pointerType`;
+ * an empty one reads as a key. Linux Chromium can report a keyboard-made event as "mouse", so
+ * ContextMenu.tsx also keeps that native event away from Sova's places. Firefox says the source
+ * in `mozInputSource`. A browser that says neither (a plain MouseEvent) gets the kind of the last
+ * pointer that went down, so a long press there is still a finger's.
  */
 export function contextPointerKind(e: { pointerType?: unknown; mozInputSource?: unknown }, lastPointer: string | null): PointerKind {
   if (typeof e.pointerType === "string") {
@@ -60,13 +58,13 @@ export type ContextAction = "open" | "native" | "swallow" | "taken";
 export function contextAction(f: ContextFacts): ContextAction {
   if (f.taken) return "taken";
   if (f.holds) return "swallow";
+  // Sova has no keyboard gesture: the browser's own keyboard context menu is always its own.
+  if (f.kind === "keyboard") return "native";
   // A finger or a pen never opens Sova's menu: whatever the browser does with a long press stays.
   if (f.kind === "touch" || f.kind === "pen") return "native";
-  // Shift+F10 is a key's own chord, not a request for the browser's menu.
-  if (f.shiftKey && f.kind !== "keyboard") return "native";
+  if (f.shiftKey) return "native";
   if (f.textEntry || f.inPopover || f.contentLink) return "native";
-  // A key has no pointer to be on the selection with.
-  if (f.onSelection && f.kind !== "keyboard") return "native";
+  if (f.onSelection) return "native";
   return "open";
 }
 
@@ -86,12 +84,6 @@ export function holdOwns(p: { suppressed: boolean; dragging: boolean; phase: str
  * hold or a drag. Touch and pen always may.
  */
 export const startsPress = (e: { pointerType: string; button: number; ctrlKey: boolean }): boolean => !(e.pointerType === "mouse" && (e.button !== 0 || e.ctrlKey));
-
-/** Shift+F10, or the Menu key alone (§app.context-menus/keyboard). Any other modifier is another chord. */
-export function isContextMenuKey(e: { key: string; altKey: boolean; ctrlKey: boolean; metaKey: boolean; shiftKey: boolean }): boolean {
-  if (e.altKey || e.ctrlKey || e.metaKey) return false;
-  return (e.key === "F10" && e.shiftKey) || (e.key === "ContextMenu" && !e.shiftKey);
-}
 
 // ---- reading the facts, on anything shaped like an element ------------------------------------
 
@@ -130,45 +122,6 @@ export function pointInRects(x: number, y: number, rects: Iterable<{ left: numbe
   return false;
 }
 
-// ---- one press of the key opens one menu ------------------------------------------------------
-
-/**
- * How long after a key opened Sova's menu (or after that key came back up) the browser's own
- * keyboard menu may still arrive. Chromium on Windows sends it on the Menu key's keyup.
- */
-export const KEYBOARD_ECHO_MS = 1000;
-
-/**
- * Shift+F10 and the Menu key open Sova's menu on their keydown; Windows and Linux browsers then send
- * a `contextmenu` of their own for the same press, which must not open (or move) a second one.
- * `isEcho` answers once per keyboard open: the first `contextmenu` in the window that no pointer
- * press came before is the key's echo. A real right-click always has its pointerdown first.
- */
-export function createKeyEcho(now: () => number = () => Date.now()) {
-  let pendingAt: number | null = null;
-  return {
-    /** A key opened Sova's menu just now. */
-    opened() {
-      pendingAt = now();
-    },
-    /** The key came back up: the window runs from here, for a key held down a while. */
-    keyUp() {
-      if (pendingAt !== null) pendingAt = now();
-    },
-    /** A pointer went down: what follows is a pointer's, not the key's echo. */
-    pointerDown() {
-      pendingAt = null;
-    },
-    /** Whether a `contextmenu` arriving now is the echo; answers true at most once per open. */
-    isEcho(): boolean {
-      if (pendingAt === null) return false;
-      const echo = now() - pendingAt <= KEYBOARD_ECHO_MS;
-      pendingAt = null;
-      return echo;
-    },
-  };
-}
-
 /**
  * What a right-click's "on the selection" reads (§app.context-menus/native): the text selected when
  * its press went down. A Mac's browser selects the word (or the link) under a right press before
@@ -197,10 +150,10 @@ export function createPressSelection<R>(read: () => R[]) {
 
 /**
  * Whether a `contextmenu` came while a mouse button is still held (`buttons` not 0): Linux and macOS
- * browsers send it on the press, Windows on the release (`buttons` 0), and a key's has no button.
- * Shown during the press, the menu sits under the pointer with its corner (or, flipped, its far
- * edge) at it, so the release lands on the row beneath and the browser's light dismiss closes it.
- * A held press's menu waits for the release instead (§app.context-menus/placement). Pure.
+ * browsers send it on the press, Windows on the release (`buttons` 0). Shown during the press, the
+ * menu sits under the pointer with its corner (or, flipped, its far edge) at it, so the release lands
+ * on the row beneath and the browser's light dismiss closes it. A held press's menu waits for the
+ * release instead (§app.context-menus/placement). Pure.
  */
 export const pressHeld = (kind: PointerKind, buttons: number | undefined): boolean => kind === "mouse" && !!buttons;
 

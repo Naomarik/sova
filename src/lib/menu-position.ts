@@ -1,7 +1,6 @@
-// Where a menu panel goes (§app.context-menus/placement): under its trigger (a ⋯ menu), under a
-// focused element (a menu opened from the keyboard) or with its corner at the pointer (a
-// right-click). Pure, so the math runs under `pnpm test` with no window: ActionMenu's panel reads
-// the viewport and its own measured box, and hands them here.
+// Where a menu panel goes (§app.context-menus/placement): under its ⋯ trigger or with its corner
+// at the pointer (a right-click). Pure, so the math runs under `pnpm test` with no window:
+// ActionMenu's panel reads the viewport and its own measured box, and hands them here.
 
 /** The gap the panel keeps from every viewport edge, and the one it keeps from its trigger. */
 export const EDGE_GAP = 8;

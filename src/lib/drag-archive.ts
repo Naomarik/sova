@@ -4,7 +4,7 @@
 
 import type { SessionSummary } from "../../shared/protocol";
 import { isTopSession, listedWithLocalProject } from "./regions";
-import { archiveBlockReason, type ArchivableSession } from "./archive-block";
+import { archiveBlockReason, archiveRefusal, type ArchivableSession } from "./archive-block";
 
 /**
  * What a drop on the Archive tile would do with this row. `none`: nothing at all, and nothing
@@ -27,7 +27,7 @@ export function archiveDragOf(s: ArchivableSession): ArchiveDrag {
  */
 export function archiveTileReason(drag: ArchiveDrag, archived: boolean | undefined): string | null {
   if (drag.kind === "archive") return null;
-  if (drag.kind === "blocked") return `Can't archive: ${drag.reason}`;
+  if (drag.kind === "blocked") return archiveRefusal(drag.reason);
   return archived ? "Already archived." : "Already in the Archive.";
 }
 
@@ -64,5 +64,5 @@ export const archivedProjectOf = (s: Pick<SessionSummary, "org" | "project">): s
 
 /** What a drop on a refused Archive tile says as a toast, or null when it archives (or does nothing). */
 export function blockedDropSentence(drag: ArchiveDrag): string | null {
-  return drag.kind === "blocked" ? `Can't archive this session: ${drag.reason}.` : null;
+  return drag.kind === "blocked" ? archiveRefusal(drag.reason) : null;
 }

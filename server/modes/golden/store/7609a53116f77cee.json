@@ -1,1 +1,0 @@
-"Pi only: run the worker on its worktree's own agent dir (<worktree>/.agent: its settings, auth and mode extension, normal mode, spec only while this session has it on). Valid only when cwd is inside an active worktree this session tracks that has a .agent."

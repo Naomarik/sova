@@ -38,7 +38,7 @@ switches, and a malformed legacy `team-defaults.json` postpones seeding. One res
 pick → this device's default → legacy files. A dangling pick falls to the default; a missing, malformed or dangling
 default reads as Off; an unusable library falls to the legacy files.
 - Written by the mode menu, Settings → Profiles, `/mode subagents <id|off>`, the Overseer and the limit row.
-- Read by Sova's mode engine, or the mode extension in a plain pi terminal (Delegate routing and the spec writer at each
+- Read by Sova's mode engine (Delegate routing and the spec writer at each
   turn boundary, either major mode), by
   this extension (`team_create`, `team_add`, `team_succeed`, roster answers, `/team defaults`), and by the server:
   `server/subagent-profiles.ts` (Settings → Profiles' Models part, the `/api/subagents` pick route, the session-create field;
@@ -92,8 +92,8 @@ next code reload.
 **Modes under a host.** A worker host's presence (`WorkerHostAnnouncement`) is what says Sova hosts the session, so
 a `useWorktreeConfig` worker gets Sova's engine in its mode slot whatever its tree holds (`worktreeConfig`, the slot
 recognised by the `mode` folder, never by an `index.ts` in it). The announcement's and `WorkerSpec`'s `modes:
-"sova"` are still stamped for a subagents copy on older code, and no longer read here; only a hostless pi terminal
-loads the tree's own mode extension.
+"sova"` are still stamped for a subagents copy on older code, and no longer read here; a hostless pi terminal has
+no modes, so its `useWorktreeConfig` worker gets no mode slot.
 
 ## When you change it, also update
 

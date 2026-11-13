@@ -827,6 +827,15 @@ if $extensions; then
 	for src in "$ext_src"/*; do
 		[ -e "$src" ] || continue
 		name=$(basename "$src")
+		# The mode folder holds the texts and rules Sova's own modes read from this copy, no pi extension:
+		# never linked, and a link into another Sova copy's (an extension there once) is removed.
+		if [ "$name" = mode ]; then
+			if [ -L "$ext_dst/mode" ] && other_sova_copy "$(readlink "$ext_dst/mode")" mode; then
+				rm -f "$ext_dst/mode"
+				say "removed $ext_dst/mode (links to another Sova copy; mode is no pi extension in this version)"
+			fi
+			continue
+		fi
 		if [ ! -d "$src" ]; then
 			case "$name" in *.ts) ;; *) continue ;; esac
 		fi
@@ -852,11 +861,12 @@ if $extensions; then
 		ln -s "$src" "$dst"
 		linked=$((linked + 1))
 	done
-	# Our links to extensions this version no longer has.
+	# Our links to extensions this version no longer has, and to the mode folder (an extension once).
 	for dst in "$ext_dst"/* "$ext_dst"/.[!.]*; do
 		[ -L "$dst" ] || continue
 		current=$(readlink "$dst")
 		case "$current" in
+			"$ext_src"/mode) rm -f "$dst"; say "removed $dst (mode is no pi extension in this version)" ;;
 			"$ext_src"/*) [ -e "$dst" ] || { rm -f "$dst"; say "removed $dst (gone from this version)"; } ;;
 		esac
 	done

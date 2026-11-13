@@ -557,7 +557,7 @@ export const PI_QUIRKS: readonly PiQuirk[] = [
     ],
     canary: "P39 base-prompt-sections: a command context's getSystemPromptOptions() is the live base options, whose sections build the prompt, and a tool change replaces it",
     retireWhen: "pi keeps extension sections across prompt rebuilds, or lets an extension own a section for the session's life",
-    note: "The pi-config mode extension relies on the same, through its `/mode sync` (index.ts adoptHost); that reach goes when the extension is retired.",
+    note: "The pi-config mode extension relied on the same, through its `/mode sync`; it is retired, and Sova's engine keeps `/mode sync` (adoptHost).",
   },
   {
     id: "P40",

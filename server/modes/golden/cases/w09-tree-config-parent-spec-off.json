@@ -28,8 +28,8 @@
    "entries": [],
    "extensions": [
     "<mode-slot:index>",
-    "<repo>/pi-config/extensions/subagents/index.ts",
     "<repo>/pi-config/extensions/sandbox/index.ts",
+    "<repo>/pi-config/extensions/subagents/index.ts",
     "<inline:sova-resource-monitor>",
     "<inline:sova-fork-cache>",
     "<inline:sova-shell-guard>",
@@ -92,7 +92,7 @@
         "docs": "@0f5fabf6c3c47c4c",
         "cwd": "<cwd>\n<ws:tree-mode>\n</cwd>"
        },
-       "toolsAdded": "@bd2ba431c874ff56"
+       "toolsAdded": "@fc4ee54c7a94b7b3"
       },
       {
        "role": "user",
@@ -211,7 +211,7 @@
        "docs": "@0f5fabf6c3c47c4c",
        "cwd": "<cwd>\n<ws:tree-mode>\n</cwd>"
       },
-      "toolsAdded": "@90fbab6af5ba9433"
+      "toolsAdded": "@498bd9a2273199b5"
      }
     }
    ],

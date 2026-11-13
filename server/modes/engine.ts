@@ -1,6 +1,6 @@
 // Sova's chat mode engine (§chat.mode-menu/sova-runs-modes): the major modes (normal, Delegate, Create)
 // and the minor modes (align, spec, vis, memory, project and personal modes) of one chat or worker,
-// lifted from the hub of pi-config/extensions/mode/index.ts with no change in what the model sees: the
+// lifted from the hub of the pi mode extension (since removed) with no change in what the model sees: the
 // same `mode` prompt section, the same hidden notes at the same moments, the same entries, the same
 // tools at the same times. Only the terminal's surfaces (status line, palette, shortcuts, the align
 // viewer and widget, `/mode status`, `/mode default`) are gone.

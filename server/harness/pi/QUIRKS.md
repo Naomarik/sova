@@ -295,7 +295,7 @@ Canary: `P38 api-key-login: the api-key login asks one secret prompt and stores 
 
 ### P39 base-prompt-sections
 
-A command context's `getSystemPromptOptions()` hands out the session's live base prompt options: the `sections` object in them builds the prompt of a turn no `before_agent_start` built (one an extension's message starts) and of a run's later requests. A tool change replaces the object. So the mode engine keeps the getter, adopted from the chat's command context at every bind (the replacement for `/mode sync`), and writes its `mode` section there again at every run start and every switch. The pi-config mode extension relies on the same through `/mode sync`, until it is retired.
+A command context's `getSystemPromptOptions()` hands out the session's live base prompt options: the `sections` object in them builds the prompt of a turn no `before_agent_start` built (one an extension's message starts) and of a run's later requests. A tool change replaces the object. So the mode engine keeps the getter, adopted from the chat's command context at every bind (the replacement for `/mode sync`), and writes its `mode` section there again at every run start and every switch. The pi-config mode extension relied on the same through `/mode sync`; it is retired, and Sova's engine keeps `/mode sync`.
 
 Canary: `P39 base-prompt-sections: a command context's getSystemPromptOptions() is the live base options, whose sections build the prompt, and a tool change replaces it`.
 

@@ -286,26 +286,26 @@ slot with the flag `major normal` (and `minor spec` while the parent has spec on
 project's files trusted as for every chat. With a worker host announced (the session runs under a host
 such as Sova, which runs every worker's modes itself), the slot names the tree's `extensions/mode` folder,
 or this copy's `mode` folder when the tree has none, known by the folder alone, and the host loads its own
-engine there; the host's `modes` field is no longer read. With no host (a plain pi terminal) the slot is
-the tree's mode extension by path, and a tree without one is refused.
+engine there; the host's `modes` field is no longer read. With no host (a plain pi terminal, which has no
+modes) the worker gets no mode slot and no mode flags, and is recorded as given none.
 Discovery stays off and the model policy is the parent's. It is recorded in the launch spec, so
 `agent_resume` applies it again. A worker never loads any copy of `subagents` or `worktrees`
-through `extensions`. The worker's mode runner (the host's engine, or the tree's mode extension) learns it runs in a worker from the worker marker
+through `extensions`. The worker's mode runner (the host's engine) learns it runs in a worker from the worker marker
 (`subagents:worker` on the child's bus, `mode/events.ts`): it ignores the parent's `mode`
 snapshots a `fork` copied and offers no spec writer.
 
 ## The parent's modes
 
-The session's mode runner (the mode extension, or a host's engine in its place) announces what this session's workers get of its modes on the bus
+The session's mode runner (Sova's engine; a plain pi terminal has none) announces what this session's workers get of its modes on the bus
 (`mode:worker`, `mode/events.ts`; asked for at load with `mode:worker-discover`): the spec block
 plus a worker note while spec is on, and the saved copy of each project mode that is on and marked
-`workers: yes` (`projectModes`; see the mode extension's README), nothing otherwise. Every worker started from then on —
+`workers: yes` (`projectModes`; see `../mode/README.md`), nothing otherwise. Every worker started from then on —
 pi or Claude Code, plain, remote, sandboxed, team member or successor — gets that text
 appended last to its system prompt (after its agent type, its brief and any remote instructions);
 the text is never interpreted here. It is a snapshot: a later switch never reaches a running
 worker, and `agent_resume` takes the session's current announcement (the launch spec keeps the raw
 brief). Two exceptions get nothing: a team's monitor (it has no tools) and a `useWorktreeConfig`
-worker (its mode extension gives it spec itself, while the parent has spec on). The minor modes given are recorded with
+worker (its mode slot gives it spec itself, while the parent has spec on). The minor modes given are recorded with
 the worker (the manifest's `modes`, newest start winning; `[]` for none; project modes by id after
 the built-in ones) and published in the workers snapshot (`modes`, absent for none), which Sova
 shows on the worker's view head.
@@ -359,7 +359,7 @@ Sova's tools in a new session (see "Restored workers and `agent_resume`").
 
 ## Spec mode
 
-While the spawning session has the `spec` minor mode on (the mode extension announces its active
+While the spawning session has the `spec` minor mode on (Sova's mode engine announces its active
 modes as `mode:state` on `pi.events`; `mode:discover` asks), every worker that can change code
 (`bash`, `edit` or `write`, a Claude Code worker's included) gets the **worker spec brief** appended to its system prompt: `spec-brief.ts`,
 whole sentences quoted by anchor from the spec mode's two parts, `mode/spec-mode.md` and the writing
@@ -369,7 +369,7 @@ text, so a change to a carried rule in either file fails there until the brief i
 remote workers and `useWorktreeConfig` workers (which load the spec mode itself) do not get it.
 
 pi workers (a Claude Code worker included), which load only their listed extensions, also load
-`../mode/spec-worker.ts` (the mode extension's census hook alone: a census digest after a
+`../mode/spec-worker.ts` (the spec census hook alone, which Sova fills that slot with: a census digest after a
 tool call that changes `git status`; its first note hands the worker the writing procedure once, its
 Workers section first), under the same condition as the brief; it is plumbing, so
 the spawn summary does not list it. No worker is given a spec ledger.

@@ -4,17 +4,18 @@ alsoUpdate: ["pi-config/extensions/mode/README.md"]
 ---
 # Modes
 
-The `mode` extension: the per-session major mode (normal, Delegate or Create) and the minor modes (`align`, `spec`, `vis`,
+The `mode` folder (`pi-config/extensions/mode/`): the per-session major mode (normal, Delegate or Create) and the minor modes (`align`, `spec`, `vis`,
 `memory`; vis also carries the Lookbook), plus a project's own minor modes from `.sova/minor-modes/<id>/MODE.md`
-(§chat.mode-menu/project-modes). Sova imports more of it than of any other extension, and the dev watcher watches all of it.
-This page is the extension's guide; each mode has its own below.
+(§chat.mode-menu/project-modes). It is no pi extension (no `index.ts`; pi never loads it, the installers don't link
+it, and a plain pi terminal has no modes): it is the texts, shared rules and settings files Sova's engine runs. Sova
+imports more of it than of any other pi-config folder, and the dev watcher watches all of it. This page is its guide;
+each mode has its own below.
 
 In Sova, every chat's modes run on Sova's own engine (`server/modes/`, its pi glue in `server/harness/pi/modes*.ts`,
 loaded through `modes-entry.ts`; §chat.mode-menu/sova-runs-modes), which reads this folder's texts, shared rules and
-settings files. Sova never loads the extension's own entry (`index.ts`): the engine takes the mode slot when the
-pi folder lists the extension, or loads after the rest when it doesn't, whatever the folder links to and whether
-`/extensions` has it off. There is no switch back to the extension any more. `index.ts` stays only for the plain pi
-terminal, with nothing promised there, and goes in a later change; keep every file Sova imports free of it.
+settings files. The engine takes a discovered mode slot in place (an older install's link, a worker's listed mode
+files), or is added where a `mode` link would sort among the agent dir's extensions when there is none. Keep every
+file here pi-runtime-free where Sova imports it; nothing here may need a pi extension host of its own.
 
 ## What lives here
 
@@ -24,8 +25,9 @@ terminal, with nothing promised there, and goes in a later change; keep every fi
   `project-modes.md`, `vis/lookbook.md`, `align/`).
 - Guides: [delegate](delegate/overview.md), [create](create/overview.md), [align](align/overview.md), [spec](spec/overview.md),
   [vis](vis/overview.md), [memory](memory/overview.md), [lookbook](design/overview.md).
-- Tests: the `mode` line of `pi-config/README.md` "Tests" (`cd pi-config/extensions/mode && node --test index.test.ts …`;
-  the README's Verification section says what each file covers).
+- Tests: the `mode` line of `pi-config/README.md` "Tests" (`cd pi-config/extensions/mode && node --test modes.test.ts …`;
+  the README's Verification section says what each file covers). How the engine runs them is tested in
+  `server/modes/` (`engine-hooks`, `engine-rules`, `engine-review`, `engine-project-tools`, the golden recordings).
 
 ## What Sova relies on
 
@@ -47,8 +49,7 @@ sessions it starts with a mode: a project's coding sessions, and the Overseer's 
 `sova_set_session`. So the entry's shape is a contract too.
 
 **Switching modes.** The web's mode switch and typed mode commands call Sova's engine directly
-(`ChatSession.applyMode` in `server/chat-manager.ts`, through the chat's modes handle); nothing in Sova calls the
-extension's `/mode` handler any more, so its arguments are no longer a Sova contract. A chat with no engine (a loadout
+(`ChatSession.applyMode` in `server/chat-manager.ts`, through the chat's modes handle). A chat with no engine (a loadout
 that loads no extensions) refuses with "This chat has no modes."
 
 **Project modes.** A separate namespace from the built-in minors: they never enter `minorModes` (that set stays
@@ -61,10 +62,10 @@ checkout is the nearest folder with `.git`, never the main checkout `server/proj
 playbooks. A chat stores the on set as `projectModes: [{id, sha}]` on its `mode` entry and its note details, and
 each mode's text and tools as a `mode-project-snapshot` custom entry at turn-on; while a mode is on it is rebuilt
 from that entry, never re-read from disk. `/mode project:<id> on|off` is the command form Sova sends. A mode with
-tools turns on only when the approval store (`server/project-mode-approvals.ts`, read by the extension too) holds its
+tools turns on only when the approval store (`server/project-mode-approvals.ts`, read by the engine through `project-tools-approval.ts`) holds its
 `toolsHash` for that checkout; the tool runner (`project-tools.ts`) checks the hash on disk again at every call. A mode's
 `commands` and `hooks` (§chat.mode-menu/project-mode-commands, …/project-mode-hooks) are parsed here and covered by
-the same hash, but Sova runs them, never this extension: `server/mode-commands.ts`, owned by the chat's ChatSession in
+the same hash, and Sova runs them: `server/mode-commands.ts`, owned by the chat's ChatSession in
 the chat's own process, from the copy on the branch, re-checking approval (hooks: the user's own) at every run. The user-facing page is
 `site/src/content/docs/modes/project-modes.md`: a change to the format changes its worked example too.
 

@@ -179,7 +179,7 @@ export interface ModesEntries {
   entry: string;
   /** For mode/spec-worker.ts. */
   specWorker: string;
-  /** For mode/project-tools-worker.ts. */
+  /** For mode/project-tools-worker.ts: a slot name, no file (see PROJECT_TOOLS_WORKER_EXTENSION in subagents/index.ts). */
   projectToolsWorker: string;
 }
 
@@ -189,7 +189,11 @@ export function modesEntries(own = OWN_ROOT): ModesEntries {
   return { entry: join(dir, "modes-entry.ts"), specWorker: join(dir, "modes-spec-worker.ts"), projectToolsWorker: join(dir, "modes-project-tools-worker.ts") };
 }
 
-/** Which of the mode extension's files a listed path is, through any link, or null. */
+/**
+ * Which of the mode extension's files a listed path is, through any link, or null. By name only, never by
+ * existence: `project-tools-worker.ts` is a slot name the subagents extension lists
+ * (PROJECT_TOOLS_WORKER_EXTENSION in pi-config/extensions/subagents/index.ts), not a file path.
+ */
 export function modeFileOf(path: string): keyof ModesEntries | null {
   if (isModeSlot(path)) return "entry";
   for (const p of [resolve(path), real(path)]) {

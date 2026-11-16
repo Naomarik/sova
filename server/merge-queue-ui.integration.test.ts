@@ -245,6 +245,15 @@ const tree = (s: SessionSummary, branch: string) => ({
   dirty: false,
 });
 const WORKTREES = { available: true, sessions: [tree(CODING, "sova/fix-cart"), tree(CODING_B, "sova/fix-badge")] };
+/** The cart session as the session list reads it once its branch is Ready to land at the head the page shows (the
+    Sessions tab's Land comes from that reading). `served`: the merge queue serves its repo; `invalid`: the project's
+    .sova/project.json doesn't parse. */
+const codingReady = (served: boolean, invalid?: string): SessionSummary =>
+  ({
+    ...CODING,
+    branches: [{ path: "/w/.worktrees/sova-fix-cart", branch: "sova/fix-cart", status: "active", exists: true, ...(served ? { mergeServed: true } : {}), mergeProject: { target: "master", checks: served && !invalid ? "declared" : "unset", ...(invalid ? { invalid } : {}) } }],
+    readiness: { trees: [{ path: "/w/.worktrees/sova-fix-cart", branch: "sova/fix-cart", state: "ready", landing: { state: "ready", commit: sha("8") } }], since: 0 },
+  }) as unknown as SessionSummary;
 /** A proposed playbook run, its branch's hash valid: Merge Branch, or Land once the queue is set up. */
 const RUNTIME = {
   projectId: PID,
@@ -1085,11 +1094,10 @@ for (const width of [1280, 390]) {
 
     test("set up: the coding rows offer Land and show their queue state; the playbook run's button is Land", async () => {
       const view = viewOf({ waiting: [entry({ id: "me_badge", branch: "sova/fix-badge", state: "queued", position: 1, eta: { startsInMs: 3 * 60_000, takesMs: 9 * 60_000 } })] });
-      const o = await open(width, `#/projects/${PID}`, { view });
+      const o = await open(width, `#/projects/${PID}`, { view, sessions: [SESSION, codingReady(true), CODING_B] });
       const { page } = o;
-      const badge = page.locator(".project-worktree", { hasText: "Fix the badge" });
-      await badge.getByText("Queued · 1st").waitFor({ timeout: 20_000 });
-      assert.match(await words(badge), /starts in ~3 min · takes ~9 min/);
+      const badge = page.locator(".psess-row", { hasText: "Fix the badge" });
+      await badge.getByText("In line · 1st").waitFor({ timeout: 20_000 });
       // The playbook run: Land, through the queue at its branch.
       const landRun = page.getByRole("button", { name: "Land sova/project-verbs" }).first();
       await landRun.waitFor();
@@ -1099,17 +1107,18 @@ for (const width of [1280, 390]) {
       await until("a land of the run's branch", () => o.calls.some((c) => c.verb === "merge.add" && c.body.branch === "sova/project-verbs"));
       assert.equal(lastCall(o, "merge.add").body.project, ROOT_DIR);
       assert.equal(lastCall(o, "merge.add").body.commit, sha("7"), "the run's reviewed tip is pinned");
-      // A coding row: its ⋯ holds Land (not Merge Branch); Land queues its worktree.
-      const cart = page.locator(".project-worktree", { hasText: "Fix the cart" });
-      await cart.getByRole("button", { name: /^Actions · / }).click();
+      // A coding row Ready to land: Land on the row queues its worktree at the head it read; its ⋯ has no Merge Branch.
+      const cart = page.locator(".psess-row", { hasText: "Fix the cart" });
+      await cart.getByText("Ready to land").waitFor();
+      await cart.getByRole("button", { name: "More for Fix the cart" }).click();
+      await page.getByRole("menuitem", { name: /^Remove Worktree/ }).waitFor();
       assert.equal(await page.getByRole("menuitem", { name: /^Merge Branch/ }).count(), 0);
-      await page.getByRole("menuitem", { name: "Land sova/fix-cart on master" }).click();
+      await page.keyboard.press("Escape");
+      await cart.getByRole("button", { name: "Land sova/fix-cart" }).click();
       await until("a land of the coding worktree", () => o.calls.some((c) => c.verb === "merge.add" && c.body.checkout === "/w/.worktrees/sova-fix-cart"));
       assert.equal(lastCall(o, "merge.add").body.commit, sha("8"), "the row's shown head is pinned");
-      // A queued row's Land says why it can't.
-      await badge.getByRole("button", { name: /^Actions · / }).click();
-      assert.equal(await page.getByRole("menuitem", { name: "Land sova/fix-badge on master" }).getAttribute("aria-disabled"), "true");
-      await page.keyboard.press("Escape");
+      // A queued row is in line: no Land on it.
+      assert.equal(await badge.getByRole("button", { name: /^Land / }).count(), 0);
       assert.equal(o.calls.filter((c) => c.verb === "worktrees.merge" || c.verb === "runtime.merge").length, 0, "nothing merged directly");
       await noSideScroll(page);
       await shot(page, `${width}-project-rows-setup`);
@@ -1117,7 +1126,7 @@ for (const width of [1280, 390]) {
     });
 
     test("not set up: the coding rows and the playbook run keep Merge Branch", async () => {
-      const o = await open(width, `#/projects/${PID}`, { view: viewOf({ checks: "unset", state: "idle", current: undefined, checking: [], waiting: [], needsYou: [], needsFix: [], recent: [] }) });
+      const o = await open(width, `#/projects/${PID}`, { view: viewOf({ checks: "unset", state: "idle", current: undefined, checking: [], waiting: [], needsYou: [], needsFix: [], recent: [] }), sessions: [SESSION, codingReady(false), CODING_B] });
       const { page } = o;
       const run = page.getByRole("button", { name: "Merge Branch" }).first();
       await run.waitFor({ timeout: 20_000 });
@@ -1126,8 +1135,9 @@ for (const width of [1280, 390]) {
       assert.equal(await page.getByRole("button", { name: "Land sova/project-verbs" }).count(), 0);
       await run.click();
       await until("the run's Merge Branch", () => o.calls.some((c) => c.verb === "runtime.merge"));
-      const cart = page.locator(".project-worktree", { hasText: "Fix the cart" });
-      await cart.getByRole("button", { name: /^Actions · / }).click();
+      const cart = page.locator(".psess-row", { hasText: "Fix the cart" });
+      assert.equal(await cart.getByRole("button", { name: /^Land / }).count(), 0, "no Land where the queue isn't set up");
+      await cart.getByRole("button", { name: "More for Fix the cart" }).click();
       await page.getByRole("menuitem", { name: "Merge Branch: sova/fix-cart into master" }).click();
       await until("the row's Merge Branch", () => o.calls.some((c) => c.verb === "worktrees.merge"));
       assert.equal(o.calls.filter((c) => c.verb === "merge.add").length, 0);
@@ -1321,7 +1331,7 @@ for (const width of [1280, 390]) {
       const bad = '$.merge.checks[0].run[2]: a lone "$"';
       const why = `The project's .sova/project.json is invalid: ${bad}. Fix it on the target; nothing lands until it parses`;
       const view = viewOf({ checks: "unset", invalid: bad, state: "paused", paused: { kind: "definition-invalid", why, at: iso(1) }, current: undefined, checking: [] });
-      const o = await open(width, `#/projects/${PID}/merge-queue`, { view });
+      const o = await open(width, `#/projects/${PID}/merge-queue`, { view, sessions: [SESSION, codingReady(true, bad), CODING_B] });
       const { page } = o;
       const tab = page.locator(".mq-tab");
       await tab.getByText("This project's .sova/project.json doesn't parse.").waitFor({ timeout: 20_000 });
@@ -1340,9 +1350,10 @@ for (const width of [1280, 390]) {
       // The project page: every merge goes through the queue (it takes a branch that fixes the file), so it says Land.
       await page.goto(`${ORIGIN}/#/projects/${PID}`);
       await page.getByRole("button", { name: "Land sova/project-verbs" }).first().waitFor({ timeout: 20_000 });
-      const cart = page.locator(".project-worktree", { hasText: "Fix the cart" });
-      await cart.getByRole("button", { name: /^Actions · / }).click();
-      await page.getByRole("menuitem", { name: "Land sova/fix-cart on master" }).waitFor();
+      const cart = page.locator(".psess-row", { hasText: "Fix the cart" });
+      await cart.getByRole("button", { name: "Land sova/fix-cart" }).waitFor();
+      await cart.getByRole("button", { name: "More for Fix the cart" }).click();
+      await page.getByRole("menuitem", { name: /^Remove Worktree/ }).waitFor();
       assert.equal(await page.getByRole("menuitem", { name: /^Merge Branch/ }).count(), 0);
       await page.keyboard.press("Escape");
       await o.ctx.close();

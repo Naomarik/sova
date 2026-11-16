@@ -11,6 +11,7 @@ import {
   playbookCommandIn,
   playbookRows,
   playbooksRunHere,
+  revealStep,
   runStatus,
   controlLabel,
   type RunChatNow,
@@ -171,4 +172,18 @@ test("playbook cards run in ordinary chats only: never the Overseer, a project o
   assert.equal(playbooksRunHere({ overseer: true }), false);
   assert.equal(playbooksRunHere({ projectOverseer: true }), false);
   assert.equal(playbooksRunHere({ baton: true }), false);
+});
+
+test("Open Card goes to the pane that was clicked: the other pane never takes a put-away run's record", () => {
+  const paneA = { pane: "A" };
+  const paneB = { pane: "B" };
+  // Clicked in B, the run put away (among neither pane's cards): B reads its record at once, A leaves it.
+  assert.equal(revealStep({ id: "pr_1", store: paneB }, paneB, false), "record");
+  assert.equal(revealStep({ id: "pr_1", store: paneB }, paneA, false), "skip");
+  // Clicked in B, the run among both panes' cards: only B opens it.
+  assert.equal(revealStep({ id: "pr_1", store: paneB }, paneB, true), "open");
+  assert.equal(revealStep({ id: "pr_1", store: paneB }, paneA, true), "skip");
+  // A way in that names no pane: the chat with the card opens it; else one reads the record after the others had their look.
+  assert.equal(revealStep({ id: "pr_1" }, paneA, true), "open");
+  assert.equal(revealStep({ id: "pr_1" }, paneA, false), "later");
 });

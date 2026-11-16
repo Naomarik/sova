@@ -1,4 +1,4 @@
-import { createEffect, createMemo, createSignal, createUniqueId, For, Index, Match, onCleanup, onMount, Show, Switch, type Accessor, type JSX } from "solid-js";
+import { createContext, createEffect, createMemo, createSignal, createUniqueId, For, Index, Match, onCleanup, onMount, Show, Switch, type Accessor, type JSX } from "solid-js";
 import type { PlaybookCardEdits, PlaybookChoiceView, PlaybookModelPick, PlaybookRoleView, PlaybookRunView, PlaybookStepView } from "../../shared/playbook-run";
 import {
   cardEyebrow,
@@ -27,6 +27,7 @@ import {
   stepRunsLine,
   stepsSummary,
   toPick,
+  revealStep,
 } from "../lib/playbook-card";
 import type { PlaybookRunsStore } from "../lib/playbook-runs";
 import { ApiError } from "../lib/api";
@@ -41,13 +42,19 @@ import "./PlaybookCard.css";
 /** How long typing waits before the card saves its draft. */
 const TYPE_SAVE_MS = 400;
 
-/** The card a way in last asked to show (a /name, a Playbooks pick, Open Card on the run's entry). */
-const [revealed, setRevealed] = createSignal<{ id: string } | null>(null, { equals: false });
+/** The card a way in last asked to show (a /name, a Playbooks pick, Open Card on the run's entry),
+    with the pane it was asked from when it knows one. */
+const [revealed, setRevealed] = createSignal<{ id: string; store?: PlaybookRunsStore | null } | null>(null, { equals: false });
 
-/** Opens a run's card over the conversation, in whichever chat shows that run. */
-export function showPlaybookCard(id: string): void {
-  setRevealed({ id });
+/** Opens a run's card over the conversation: in the pane whose store is given (the one clicked), else
+    in whichever chat shows that run. */
+export function showPlaybookCard(id: string, store?: PlaybookRunsStore | null): void {
+  setRevealed({ id, store });
 }
+
+/** The chat's playbook runs, for its conversation's rows (Open Card on a run's entry): so a click
+    opens the card in that pane, never in another pane showing the same run. */
+export const PlaybookRunsContext = createContext<PlaybookRunsStore | null>(null);
 
 /** One chat's cards: which is open (one at a time) and which have been opened, so each keeps what
     was typed, an open prompt and its place while it is minimized. */
@@ -170,15 +177,17 @@ export function PlaybookFloat(props: { store: PlaybookRunsStore; host: string | 
   createEffect(() => {
     const r = revealed();
     if (!r) return;
-    if (runOf(r.id)) {
+    const step = revealStep(r, props.store, !!runOf(r.id));
+    // Asked from another pane: that pane's cards answer it.
+    if (step === "skip") return;
+    if (step === "open") {
       setRevealed(null);
       setRecord(null);
       float.show(r.id);
       focusCard(r.id);
       return;
     }
-    // Not among this chat's cards: once every chat on the page has had its look, read it by its id.
-    queueMicrotask(() => {
+    const readRecord = () => {
       if (revealed() !== r) return;
       setRevealed(null);
       props.store.record(r.id).then(
@@ -192,7 +201,11 @@ export function PlaybookFloat(props: { store: PlaybookRunsStore; host: string | 
           announce("That run's card isn't here any more.");
         },
       );
-    });
+    };
+    // Asked from this pane: its record, here. Asked from nowhere in particular: once every chat on
+    // the page has had its look.
+    if (step === "record") readRecord();
+    else queueMicrotask(readRecord);
   });
   // One card at a time: opening a card from its control puts the record away.
   createEffect(() => {

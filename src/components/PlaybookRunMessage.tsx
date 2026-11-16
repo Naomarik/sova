@@ -1,7 +1,7 @@
-import { Show } from "solid-js";
+import { Show, useContext } from "solid-js";
 import type { RunMessageInfo } from "../../shared/playbook-run";
 import { clockTime } from "../lib/format";
-import { showPlaybookCard } from "./PlaybookCard";
+import { PlaybookRunsContext, showPlaybookCard } from "./PlaybookCard";
 import { Icon } from "./ui";
 import "./PlaybookCard.css";
 
@@ -10,6 +10,8 @@ import "./PlaybookCard.css";
     control under the message box; Open Card opens that card, and the whole text the chat was sent
     is one click away, exactly as sent. */
 export function PlaybookRunMessage(props: { run: RunMessageInfo; text: string; time?: string }) {
+  /** This pane's runs, when a chat view shows the row: Open Card opens the card here. */
+  const store = useContext(PlaybookRunsContext);
   return (
     <div class="pb-mark">
       <details class="toolcard">
@@ -27,7 +29,7 @@ export function PlaybookRunMessage(props: { run: RunMessageInfo; text: string; t
         </div>
       </details>
       {/* Beside the row, never inside its summary: a button in a summary loses its own press. */}
-      <button type="button" class="button button-sm button-ghost pb-mark-open" onClick={() => showPlaybookCard(props.run.runId)}>
+      <button type="button" class="button button-sm button-ghost pb-mark-open" onClick={() => showPlaybookCard(props.run.runId, store)}>
         Open Card
       </button>
     </div>

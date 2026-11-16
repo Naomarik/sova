@@ -153,7 +153,7 @@ import { triageKey, triageOf } from "../lib/align-triage";
 import { Composer, type ComposerReason } from "./Composer";
 import { ShellCard } from "./ShellCard";
 import { ShellDock } from "./ShellDock";
-import { PlaybookBar, PlaybookFloat, showPlaybookCard, type PlaybookChatNow } from "./PlaybookCard";
+import { PlaybookBar, PlaybookFloat, PlaybookRunsContext, showPlaybookCard, type PlaybookChatNow } from "./PlaybookCard";
 import { isPlaybookRunEvent, playbookRunEvent, usePlaybookRuns } from "../lib/playbook-runs";
 import { boardState } from "../lib/agents-board";
 import { NO_PLAYBOOKS_HERE, playbookRows, playbooksRunHere, withoutPlaybookRows, withPlaybookRows } from "../lib/playbook-card";
@@ -671,7 +671,7 @@ export function ChatView(props: {
     if (!playbookRuns || !playbooksHere()) return false;
     try {
       const run = await playbookRuns.open(playbook, text);
-      showPlaybookCard(run.id);
+      showPlaybookCard(run.id, playbookRuns);
       announce(`${run.playbook.title}: its card is open over the conversation.`);
       return true;
     } catch (e) {
@@ -2725,6 +2725,7 @@ export function ChatView(props: {
             <CardJumpContext.Provider value={jumpToCardId}>
             <AlignAnswerContext.Provider value={alignAnswer}>
               <ChangesSession.Provider value={{ get path() { return props.path; }, get cwd() { return props.summary?.()?.cwd; } }}>
+              <PlaybookRunsContext.Provider value={playbookRuns}>
               <DesignSessionContext.Provider value={{ path: () => props.path, host: () => hostOf(props.path) }}>
               <TourSessionContext.Provider value={{
                 sessionId: () => props.summary?.()?.id,
@@ -2779,6 +2780,7 @@ export function ChatView(props: {
               </SettingsCardContext.Provider>
               </TourSessionContext.Provider>
               </DesignSessionContext.Provider>
+              </PlaybookRunsContext.Provider>
               </ChangesSession.Provider>
               <For each={commandRows()}>
                 {(row) => (

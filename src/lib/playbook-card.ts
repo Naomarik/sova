@@ -325,3 +325,13 @@ export const NO_PLAYBOOKS_HERE = "This chat runs no playbooks.";
 export function playbooksRunHere(chat: { overseer?: boolean; projectOverseer?: boolean; baton?: boolean }): boolean {
   return !chat.overseer && !chat.projectOverseer && !chat.baton;
 }
+
+/** What one pane's cards do with an Open Card (or another way in) for a run: open it among its own
+    cards, read the put-away run's record, wait until every pane had its look (a way in that names no
+    pane), or leave it to the pane that was clicked. */
+export type RevealStep = "open" | "record" | "later" | "skip";
+export function revealStep<S>(reveal: { id: string; store?: S | null }, here: S, hasRun: boolean): RevealStep {
+  if (reveal.store && reveal.store !== here) return "skip";
+  if (hasRun) return "open";
+  return reveal.store ? "record" : "later";
+}

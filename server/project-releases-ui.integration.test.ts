@@ -359,7 +359,8 @@ describe("the Releases tab", () => {
       await card.getByRole("button", { name: "Retry GitHub release page" }).waitFor();
       await card.getByRole("button", { name: "Plan Deploy of v0.10.0" }).click();
       await o.page.waitForURL(`${ORIGIN}/#/projects/${PID}/deploy`);
-      assert.equal(await o.page.getByRole("tab", { name: /^Deploy/, selected: true }).count(), 1, "the Deploy tab is open");
+      // The Deploy tab is the one open.
+      await o.page.getByRole("tab", { name: /^Deploy/, selected: true }).waitFor();
       await called(o, "deploy.plan");
       assert.deepEqual(lastCall(o, "deploy.plan").body, { project: ROOT_DIR, target: "prod", commit: sha("c") });
       const deploy = o.page.getByRole("region", { name: "Deploy targets" });

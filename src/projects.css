@@ -392,6 +392,8 @@ a.pipeline-link:hover, button.pipeline-link:hover, summary.pipeline-link:hover {
 .services-glist > .services-list > .services-row + .services-row { border-top: var(--stroke-thin) solid var(--color-border); }
 .services-glist > .services-main-start { margin: 0; padding: var(--space-3) 0; border-top: var(--stroke-thin) solid var(--color-border); }
 .services-glist > .services-main-start:first-child { border-top: 0; }
+/* The list's last line: the sentence quiet, Start Main at the row's end (under it where the row is narrow). */
+.services-glist > .services-main-start > .orgs-line { flex: 1 1 14rem; color: var(--color-ink-muted); }
 .services-gempty { margin: 0; padding: var(--space-5) 0; align-items: flex-start; text-align: left; gap: 2px; }
 .services-why { color: var(--color-ink-2); }
 @container services (max-width: 767px) {

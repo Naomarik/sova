@@ -30,7 +30,7 @@ writeFileSync(
       { id: "topic", label: "Topic", type: "text", ask: "always", required: true },
       { id: "level", label: "Level", type: "choice", ask: "always", required: true, options: [{ id: "lo", label: "Low" }, { id: "hi", label: "High" }], default: "lo" },
     ],
-    roles: { main: { label: "Main chat" }, helper: { label: "Helper", prompt: "roles/helper.md", kind: "routine", optional: true } },
+    roles: { main: { label: "Main chat", models: [{ model: "zai/glm-5.3", effort: "low" }] }, helper: { label: "Helper", prompt: "roles/helper.md", kind: "routine", optional: true } },
     steps: [{ id: "look", label: "Look", roles: ["main", "helper"], stop: "optional" }],
   }),
 );
@@ -64,6 +64,14 @@ describe("a playbook card", () => {
     assert.equal(v.startBlocked, "Fill in Topic first.");
     // Opening it again in the same chat gives the same draft.
     assert.equal((await open()).id, v.id);
+  });
+
+  test("a model this computer has no sign-in for isn't skipped: only Settings → Models turns one off", async () => {
+    const v = await open();
+    const main = v.roles.find((r) => r.id === "main")!;
+    assert.equal(main.resolved?.model, "zai/glm-5.3");
+    assert.equal(main.models[0]!.usable, true);
+    assert.equal(main.resolved?.reason, undefined);
   });
 
   test("an edit saves against the revision shown; a stale revision is refused with the card as it is", async () => {

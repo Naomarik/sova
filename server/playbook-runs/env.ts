@@ -63,12 +63,12 @@ export function readPrompts(spec: PlaybookSpec, info: Pick<PlaybookInfo, "dir" |
 export async function liveEnv(spec: PlaybookSpec, info: PlaybookInfo, chatPath?: string, cwd?: string): Promise<CardEnv> {
   const policy = readModelPolicy();
   const [known, names] = await Promise.all([listModels().catch(() => null), modelNames()]);
-  const signedIn = known ? new Set(known.map((m) => m.ref)) : null;
+  // Only Settings → Models turns a model off here. Sign-ins and usage are checked later, where each role runs;
+  // until then the card claims neither.
   const denial = (c: WorkerChoice, as: "main" | "helper"): string | null => {
     const ref = chatRefOf(c);
     const off = as === "main" ? modelDenial(policy, ref) : workerDenial(policy, c.backend, c.model);
     if (off) return off;
-    if (signedIn && !signedIn.has(ref)) return `${c.model} isn't signed in on this computer`;
     return null;
   };
   // An effort the model doesn't take moves to the nearest one it does (a model with no levels: "off").

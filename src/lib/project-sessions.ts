@@ -120,7 +120,7 @@ export function groupCount(key: SessionGroupKey, stages: readonly (readonly Bran
       return parts.filter(([k]) => k > 0).map(([k, w]) => `${k} ${w}`).join(" · ") || sessions;
     }
     case "old":
-      return `${n} with no activity for ${OLD_DAYS}+ days`;
+      return `${n} idle for ${OLD_DAYS} days or more`;
     default:
       return sessions;
   }

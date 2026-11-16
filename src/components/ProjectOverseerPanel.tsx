@@ -18,8 +18,7 @@ import {
   type ProjectOverseerCaps,
 } from "../../shared/project-overseer";
 import { type ItemCodeInput, type ItemCodeResult, type ItemSendResult, type CodingSession, type ProjectOverseerInfo, type ProjectOverseerPatch, type ProjectWorktrees } from "../../shared/project-overseer";
-import type { AttentionDigest, SessionSummary } from "../../shared/protocol";
-import { SessionsTab } from "./ProjectSessionsTab";
+import type { SessionSummary } from "../../shared/protocol";
 import {
   addProjectOverseerIdea,
   addProjectOverseerTodo,
@@ -83,8 +82,6 @@ export interface ProjectOverseer {
   worktrees: Poll<ProjectWorktrees>;
   /** The project's coding sessions this browser already holds from the session list: rows before any read answers. */
   listed(): CodingSession[];
-  /** The sidebar's session list as this page holds it: the Sessions tab joins its rows' activity, summary and branches by id. */
-  summaries(): readonly SessionSummary[];
   actions: Poll<OverseerAction[]>;
   ideas: Poll<{ ideas: IdeaRecord[] }>;
   todos: Poll<OverseerTodosInfo>;
@@ -137,8 +134,7 @@ export function createProjectOverseer(props: {
       setBusy(false);
     }
   };
-  const summaries = () => props.sessions?.() ?? [];
-  return { projectId: p, host, info, worktrees, listed, summaries, actions, ideas, todos, error, links, setLinks, busy, run };
+  return { projectId: p, host, info, worktrees, listed, actions, ideas, todos, error, links, setLinks, busy, run };
 }
 
 const resume = (po: ProjectOverseer) => void po.run(() => patchProjectOverseer(po.projectId(), { resume: true }), brakeDone);
@@ -860,12 +856,6 @@ export function Started(props: { info: ProjectOverseerInfo }) {
       </ul>
     </Show>
   );
-}
-
-/** The Sessions tab's body (ProjectSessionsTab.tsx): every coding session, grouped by what needs you first. Kept under
-    this name while the page still renders it; the gathering sessions it started list on Requirements. */
-export function CodingSessionsCard(props: { po: ProjectOverseer; archived?: boolean; attention?: () => AttentionDigest | undefined }) {
-  return <SessionsTab po={props.po} archived={props.archived} sessions={props.po.summaries} attention={props.attention} />;
 }
 
 /** Overview's Activity: the newest few acts, then Show All. A done act has no chip; the rest keep theirs. */

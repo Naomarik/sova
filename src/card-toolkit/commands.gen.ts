@@ -221,6 +221,11 @@ export type CommandId =
   | "insights.usage.refresh"
   | "schedule.list"
   | "playbook.list"
+  | "playbook.run.open"
+  | "playbook.run.list"
+  | "playbook.run.get"
+  | "playbook.run.edit"
+  | "playbook.run.close"
   | "mcp.servers.list"
   | "mcp.server.status"
   | "draft-spec.list"
@@ -4237,6 +4242,41 @@ export interface CommandParams {
     /** A folder whose project playbooks to list */
     "cwd"?: string;
   };
+  /** Open the card of a playbook with a description: a new draft, or the chat's open draft of it. Starts nothing. (changes something; needs the card's owner trusted) */
+  "playbook.run.open": {
+    /** The playbook: { source: sova | user | project, id } */
+    "playbook": unknown;
+    /** The folder the run belongs to (default: the chat's) */
+    "cwd"?: string;
+    /** The chat showing the card, by id or by path */
+    "session"?: string;
+    /** Words that go with the card */
+    "text"?: string;
+  };
+  /** The playbook cards a chat shows, started from or conducts, newest first, each as the card draws it. (only looks; needs the card's owner trusted) */
+  "playbook.run.list": {
+    /** The chat, by id or by path */
+    "session"?: string;
+  };
+  /** One playbook run's card: its choices, who runs on which model and why, the steps, and what blocks Start; after Start, the plan it froze. (only looks; needs the card's owner trusted) */
+  "playbook.run.get": {
+    /** The run's id (pr_…) */
+    "run": string;
+  };
+  /** Fill in a card's choices before Start (the person's page also changes models, roles, stops and cycle settings). Names the revision it changes; a stale one is refused. (changes something; needs the card's owner trusted) */
+  "playbook.run.edit": {
+    /** The run's id (pr_…) */
+    "run": string;
+    /** The card's revision you are changing */
+    "revision": number;
+    /** { choices: { <choice id>: value } } */
+    "edits": unknown;
+  };
+  /** Close a card that wasn't started. A started run's card stays as its record. (changes something; needs the card's owner trusted) */
+  "playbook.run.close": {
+    /** The run's id (pr_…) */
+    "run": string;
+  };
   /** This computer's MCP servers: each one's name, where it comes from, its state, tool count, tool names and last Check. Never a secret's value. (only looks; needs the card's owner trusted) */
   "mcp.servers.list": Record<string, never>;
   /** One MCP server's status, by its row id from the list. Never a secret's value. (only looks; needs the card's owner trusted) */
@@ -4826,6 +4866,11 @@ export const COMMAND_EFFECTS: Record<CommandId, "looks" | "changes"> = {
   "insights.usage.refresh": "changes",
   "schedule.list": "looks",
   "playbook.list": "looks",
+  "playbook.run.open": "changes",
+  "playbook.run.list": "looks",
+  "playbook.run.get": "looks",
+  "playbook.run.edit": "changes",
+  "playbook.run.close": "changes",
   "mcp.servers.list": "looks",
   "mcp.server.status": "looks",
   "draft-spec.list": "looks",

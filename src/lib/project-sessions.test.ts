@@ -11,6 +11,7 @@ import {
   OLD_DAYS,
   recordedBranchState,
   rowLand,
+  sessionBranches,
   sessionGroup,
   shownBranches,
   type BranchStage,
@@ -125,6 +126,26 @@ test("a recorded branch falls back to git's facts; a queue stage wins over them"
   assert.equal(recordedBranchState({ branch: "b", state: "open", ahead: 0 }, null).word, "No commits yet");
   const line = branchStateOf("b", qrow("queued"), { position: 1 });
   assert.equal(recordedBranchState({ branch: "b", state: "open", dirty: true }, line), line);
+});
+
+test("a branch reads from its chat's own worktree row where the chat tracks it; the recorded branch only stands in where it doesn't", () => {
+  const recorded = { branch: "sova/own", state: "open" as const, ahead: 2, target: "master", worktree: "/w/own" };
+  const none = () => undefined;
+  // What the session list carries for a chat's worktree that is Ready to land where the queue serves the repo.
+  const tracks = (branch: string, path: string) => ({
+    branches: [{ path, branch, status: "active" as const, exists: true, mergeServed: true as const, mergeProject: { target: "master", checks: "declared" as const } }],
+    readiness: { badge: "ready", since: 0, trees: [{ path, branch, state: "ready", reason: "Ready to land", landing: { state: "ready", commit: "abc" } }] },
+  });
+  // No row from the session list (another host, before its first read, a session with no `worktrees` entry): recorded.
+  for (const s of [undefined, {}, { branches: [] }]) assert.deepEqual(sessionBranches(recorded, s as never, none).map((b) => [b.branch, b.word]), [["sova/own", "2 commits ahead"]]);
+  // The chat tracks the branch: its own reading, once, with the queue's Land; the recorded "2 commits ahead" is gone.
+  const own = sessionBranches(recorded, tracks("sova/own", "/w/own") as never, none);
+  assert.deepEqual(own.map((b) => [b.branch, b.stage, b.word]), [["sova/own", "ready", "Ready to land"]]);
+  assert.deepEqual(own[0]!.land, { worktree: "/w/own", commit: "abc", target: "master" });
+  // The chat tracks only another branch: the session's own recorded branch still lists, first.
+  assert.deepEqual(sessionBranches(recorded, tracks("feat/other", "/w/other") as never, none).map((b) => [b.branch, b.word]), [["sova/own", "2 commits ahead"], ["feat/other", "Ready to land"]]);
+  // A session in the project root with nothing tracked has no branch.
+  assert.deepEqual(sessionBranches({ branch: null }, undefined, none), []);
 });
 
 test("up to 3 branches show, then +N more; opened, all", () => {

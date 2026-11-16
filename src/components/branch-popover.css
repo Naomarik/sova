@@ -1,0 +1,61 @@
+/* A ready branch's name and the card it opens (BranchPopover.tsx): the branch's own row from its chat's Worktrees
+   window, anchored under the name; a bottom sheet at folded width. An overlay is window chrome, so the sheet asks the
+   window, as the modal does. Token values only. */
+
+/* The name: a quiet text button. The green dot says the branch is ready to land (the READY chip's green, with the
+   words "Ready to land" beside it, never the hue alone); the chevron says the name opens something. */
+.branch-pop-open {
+  position: relative;
+  display: inline-flex; align-items: center; gap: 6px;
+  max-width: 100%; min-width: 0; min-height: 24px;
+  margin: 0; padding: 0 2px 0 0;
+  border: 0; border-radius: var(--r-xs); background: none;
+  color: var(--color-ink); font-size: var(--fs-mono); line-height: var(--lh-mono); text-align: start; cursor: pointer;
+}
+/* 44px to the touch without taking the room. */
+.branch-pop-open::after { content: ""; position: absolute; inset: -10px -4px; }
+.branch-pop-dot { display: inline-block; flex: none; width: 7px; height: 7px; border-radius: var(--r-full); background: var(--status-success); }
+.branch-pop-name { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.branch-pop-open > .icon { flex: none; color: var(--color-ink-muted); transition: transform var(--dur-fast) var(--ease-standard); }
+.branch-pop-open:hover .branch-pop-name,
+.branch-pop-open[aria-expanded="true"] .branch-pop-name { text-decoration: underline; text-decoration-color: var(--color-border-strong); text-underline-offset: 3px; }
+.branch-pop-open:hover > .icon,
+.branch-pop-open[aria-expanded="true"] > .icon { color: var(--color-ink); }
+.branch-pop-open[aria-expanded="true"] > .icon { transform: rotate(180deg); }
+.branch-pop-open:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
+
+/* The card. Under the page's modals (the changes viewer covers it), over everything else. */
+.branch-pop {
+  position: fixed; z-index: 49;
+  top: var(--branch-pop-top, 64px); left: var(--branch-pop-left, var(--space-2));
+  display: flex; flex-direction: column;
+  width: min(460px, calc(100vw - var(--space-4)));
+  max-height: min(600px, calc(100dvh - var(--space-4)));
+  overflow-y: auto; overscroll-behavior: contain;
+  border: var(--stroke-thin) solid var(--color-border); border-radius: var(--r-lg);
+  background: var(--color-surface); box-shadow: var(--shadow-2); color: var(--color-ink);
+  animation: enter-fade var(--dur-base) var(--ease-standard);
+}
+.branch-pop:focus-visible { outline: var(--focus-ring); outline-offset: calc(var(--focus-width) * -1); }
+.branch-pop-scrim { display: none; }
+.branch-pop-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); padding: var(--space-1) var(--space-1) 0 var(--space-4); }
+.branch-pop-title { margin: 0; font-size: var(--fs-micro); line-height: var(--lh-micro); font-weight: var(--fw-medium); font-family: var(--font-mono); letter-spacing: var(--ls-eyebrow); text-transform: uppercase; color: var(--color-ink-muted); }
+.branch-pop-body { padding: 0 var(--space-4) var(--space-4); min-width: 0; }
+.branch-pop-body > p { margin: 0; }
+.branch-pop-body > .placeholder { margin: var(--space-1) 0; }
+/* The row is the card's whole body: it gives up its own row padding, rule and hover, and keeps everything else. */
+.branch-pop-list { border: 0; background: none; }
+.branch-pop-list > .wt-queue-row { min-height: 0; padding: 0; border: 0; }
+
+@media (max-width: 767px) {
+  .branch-pop-scrim { display: block; }
+  .branch-pop {
+    z-index: 51;
+    top: auto; left: 0; right: 0; bottom: 0;
+    width: auto; max-height: 85dvh;
+    border-bottom: 0; border-radius: var(--r-xl) var(--r-xl) 0 0;
+    box-shadow: var(--shadow-3);
+    padding-bottom: env(safe-area-inset-bottom, 0);
+  }
+  .branch-pop-head { padding-top: 0; }
+}

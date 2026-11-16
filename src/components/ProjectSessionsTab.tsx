@@ -32,6 +32,7 @@ import {
 import { unchangedError } from "../lib/unchanged-error";
 import { adoptSession, announce, home, toast } from "../lib/ui-state";
 import { ActionMenu } from "./ActionMenu";
+import { BranchPopover } from "./BranchPopover";
 import { createLandConfirm, LandConfirms } from "./WorktreesModal";
 import type { ProjectOverseer } from "./ProjectOverseerPanel";
 import { RemoveAnywayListing } from "./RemoveAnywayListing";
@@ -242,6 +243,27 @@ export function SessionsTab(props: {
     };
     const workers = () => v().s?.workers ?? v().s?.live?.workers;
     const questions = () => v().s?.align?.openQuestions ?? 0;
+    /** A branch's name. Ready to land, it leads with the READY chip's green dot; and where its chat tracks the branch
+        (the session list has its row), the name is a button that opens the Worktrees window's own row for it. */
+    const BranchName = (np: { b: BranchState; of?: boolean }) => {
+      const ready = () => np.b.stage === "ready";
+      const opens = () => ready() && !!row().path && !!v().s?.branches?.some((x) => x.branch === np.b.branch && x.exists);
+      return (
+        <Show
+          when={opens()}
+          fallback={
+            <span class={`${np.of ? "psess-of" : "psess-branch"} text-mono`} classList={{ "psess-ready-name": ready() }} title={np.b.branch}>
+              <Show when={ready()}>
+                <span class="branch-pop-dot" aria-hidden="true" />
+              </Show>
+              {np.b.branch}
+            </span>
+          }
+        >
+          <BranchPopover class={np.of ? "psess-of-open" : "psess-branch-open"} branch={np.b.branch} sessionPath={row().path!} cwd={v().s?.cwd} onChanged={() => po().worktrees.refetch()} />
+        </Show>
+      );
+    };
     const hasFacts = () => !landed() && (ctx() !== null || !!workers()?.total || questions() > 0);
     return (
       <li class="psess-row" classList={{ "psess-row-quiet": quiet() }} ref={confirm.rowRef}>
@@ -294,25 +316,16 @@ export function SessionsTab(props: {
           <Show when={v().branches.length} fallback={<span class="psess-nobranch">No branch</span>}>
             <For each={column().lines}>
               {(l) => (
-                <Show
-                  when={l.said}
-                  fallback={
-                    <span class="psess-branch text-mono" title={l.b.branch}>
-                      {l.b.branch}
-                    </span>
-                  }
-                >
+                <Show when={l.said} fallback={<BranchName b={l.b} />}>
                   <span class="psess-state" title={l.b.why ? `${l.b.word} · ${l.b.why}` : undefined}>
                     <span class={`psess-word psess-tone-${l.b.tone} psess-stage-${l.b.stage}`}>{l.b.stage === "landed" && l.b.landedAt ? `Landed ${relativeTime(l.b.landedAt, now())}` : l.b.word}</span>
                     <Show when={v().branches.length > 1}>
-                      <span class="psess-of text-mono">{l.b.branch}</span>
+                      <BranchName b={l.b} of />
                     </Show>
                     <Show when={l.b.why}>{(w) => <span class="psess-why">{w()}</span>}</Show>
                   </span>
                   <Show when={v().branches.length === 1}>
-                    <span class="psess-branch text-mono" title={l.b.branch}>
-                      {l.b.branch}
-                    </span>
+                    <BranchName b={l.b} />
                   </Show>
                 </Show>
               )}
@@ -548,7 +561,7 @@ export function SessionsTab(props: {
           const counts = () => groupCount(g.key, g.items.map((v) => v.facts.stages));
           if (g.key !== "landed")
             return (
-              <section class="psess-group" aria-label={GROUP_NAME[g.key]}>
+              <section class="psess-group" data-group={g.key} aria-label={GROUP_NAME[g.key]}>
                 <div class="psess-gside">
                   <h3 class="psess-gname">{GROUP_NAME[g.key]}</h3>
                   <span class="psess-gcount">{counts()}</span>
@@ -562,7 +575,7 @@ export function SessionsTab(props: {
             return v ? { title: v.row.title || UNTITLED_CODING, when: at ? relativeTime(at, now()) : "" } : undefined;
           };
           return (
-            <section class="psess-group" aria-label="Landed">
+            <section class="psess-group" data-group="landed" aria-label="Landed">
               <div class="psess-gside">
                 <button type="button" class="psess-twist" aria-expanded={landedOpen() ? "true" : "false"} onClick={() => setLandedOpen((o) => !o)}>
                   <Icon name={landedOpen() ? "chevron-down" : "chevron-right"} small />

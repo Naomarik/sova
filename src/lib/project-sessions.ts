@@ -217,9 +217,12 @@ export interface QueueExtra {
 }
 
 /**
- * A session's branches: the session list's own (each the chat's row, read by the one rule) when it has them, else
- * the recorded branch with the queue's word for it. `queueOf` gives what the page's queue read adds (place, landing
- * time); `served` says the project's queue is set up (only then does a ready branch carry Land).
+ * A session's branches: the session list's own (each the chat's row, read by the one rule), which is the chat's
+ * `worktrees` entry as its Worktrees window reads it. The recorded branch (the project's own record of the worktree
+ * it cut or adopted, with the queue's word for it) only stands in where the chat tracks no worktree for that branch:
+ * a session on another host, before its first read, or one started before Sova wrote the entry for the worktree it
+ * cut. It then lists first, as the session's own branch. `queueOf` gives what the page's queue read adds (place,
+ * landing time).
  */
 export function sessionBranches(
   row: Pick<CodingRow, "branch"> & Partial<Pick<CodingRow, "state" | "merged" | "mergedAt" | "target" | "dirty" | "ahead" | "head" | "worktree">>,
@@ -227,23 +230,22 @@ export function sessionBranches(
   queueOf: (branch: string) => (QueueExtra & { row?: QueueRow }) | undefined,
 ): BranchState[] {
   const inputs: QueueRowInput[] = s ? chatRowsOf(s) : [];
-  if (inputs.length) {
-    return inputs.map((w, i) => {
-      const q = queueOf(w.branch);
-      const path = s?.branches?.[i]?.path;
-      return branchStateOf(w.branch, queueRow(w), {
-        position: w.queue?.position ?? q?.position,
-        landedAt: q?.landedAt ?? (w.readiness?.merged && s?.readiness?.badge === "merged" ? new Date(s.readiness.since).toISOString() : undefined),
-        worktree: w.exists ? path : undefined,
-        commit: w.readiness?.landing?.commit,
-        target: w.mergeProject?.target,
-      });
+  const tracked = inputs.map((w, i) => {
+    const q = queueOf(w.branch);
+    const path = s?.branches?.[i]?.path;
+    return branchStateOf(w.branch, queueRow(w), {
+      position: w.queue?.position ?? q?.position,
+      landedAt: q?.landedAt ?? (w.readiness?.merged && s?.readiness?.badge === "merged" ? new Date(s.readiness.since).toISOString() : undefined),
+      worktree: w.exists ? path : undefined,
+      commit: w.readiness?.landing?.commit,
+      target: w.mergeProject?.target,
     });
-  }
-  if (!row.branch) return [];
+  });
+  // The chat's own reading of the branch is there: the recorded one says nothing more.
+  if (!row.branch || inputs.some((w) => w.branch === row.branch)) return tracked;
   const q = queueOf(row.branch);
   const queued = q?.row ? branchStateOf(row.branch, q.row, { position: q.position, landedAt: q.landedAt ?? row.mergedAt, worktree: row.worktree ?? undefined, commit: row.head }) : null;
-  return [recordedBranchState({ branch: row.branch, state: row.state, merged: row.merged, mergedAt: row.mergedAt, target: row.target, dirty: row.dirty, ahead: row.ahead }, queued)];
+  return [recordedBranchState({ branch: row.branch, state: row.state, merged: row.merged, mergedAt: row.mergedAt, target: row.target, dirty: row.dirty, ahead: row.ahead }, queued), ...tracked];
 }
 
 /** The ids of the sessions the sidebar's Needs you lists (§app.session-list/needs-you), among `sessions`. */

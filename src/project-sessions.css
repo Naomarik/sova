@@ -23,6 +23,9 @@
 .psess-gside { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 var(--space-2); min-width: 0; }
 .psess-gname { margin: 0; font-size: var(--fs-heading-s); line-height: var(--lh-heading-s); font-weight: var(--fw-semibold); letter-spacing: var(--ls-heading-s); color: var(--color-ink); }
 .psess-gcount { font-size: var(--fs-caption); line-height: var(--lh-caption); color: var(--color-ink-muted); }
+/* Needs you: its name and count in the home page's needs-you amber (the Agents board's group head). The words
+   carry it; no band, no fill. */
+.psess-group[data-group="needs-you"] :is(.psess-gname, .psess-gcount) { color: var(--status-warn); }
 .psess-gbody { min-width: 0; }
 /* Landed's name is its fold's button: the chevron and the name, a 44px target that takes no extra room. */
 .psess-twist {
@@ -63,7 +66,7 @@
 .psess-link::after { content: ""; position: absolute; inset: 0; }
 .psess-link:focus-visible { outline: none; }
 .psess-row:has(.psess-link:focus-visible) { outline: var(--focus-ring); outline-offset: calc(var(--focus-offset) * -1); }
-.psess-acts, .psess-more, .psess-note { position: relative; z-index: 1; }
+.psess-acts, .psess-more, .psess-note, .psess-row .branch-pop-open { position: relative; z-index: 1; }
 
 .psess-main { grid-column: 1; grid-row: 1; display: flex; flex-direction: column; min-width: 0; }
 .psess-title { display: block; min-width: 0; font-size: var(--fs-body); line-height: var(--lh-body); font-weight: var(--fw-semibold); color: var(--color-ink); overflow-wrap: anywhere; }
@@ -102,6 +105,13 @@ a.psess-link, a.psess-link:hover { color: var(--color-ink); text-decoration: non
 .psess-of::before { content: "· "; }
 .psess-why { flex-basis: 100%; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; min-width: 0; font-size: var(--fs-caption); line-height: var(--lh-caption); color: var(--color-ink-muted); overflow-wrap: anywhere; }
 .psess-branch { display: block; min-width: 0; color: var(--color-ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* A ready branch: the READY chip's green dot before its name (its words, "Ready to land", are green beside it).
+   Where its chat tracks it the name is a button (BranchPopover) that opens the branch's summary. */
+.psess-ready-name > .branch-pop-dot { margin-inline-end: 6px; vertical-align: 1px; }
+.psess-branch-open { align-self: flex-start; margin-top: 2px; color: var(--color-ink-2); }
+.psess-of-open { flex: 0 1 auto; font-size: var(--fs-micro); color: var(--color-ink-2); }
+.psess-of-open::before { content: "·"; color: var(--color-ink-muted); }
+.psess-of.psess-ready-name::before { content: "· "; }
 .psess-nobranch { font-size: var(--fs-caption); line-height: var(--lh-caption); color: var(--color-ink-muted); }
 /* "+N more" / "Show fewer": a quiet text button, 44px to the touch without taking the room. */
 .psess-more {

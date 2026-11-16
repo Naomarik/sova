@@ -217,8 +217,9 @@ export function SessionsTab(props: {
     const folder = () => (row().worktree ? tildePath(row().worktree!, home()) : "");
     const gestures = () => rowGestures(row(), po().worktrees.fresh());
     const facts = () => (row().facts && row().state !== undefined ? (row() as CodingRow & CodingWorktree) : null);
-    const quiet = () => !v().facts.working && isQuiet(v().facts.lastActive, now());
     const landed = () => v().facts.stages.length > 0 && v().facts.stages.every((s) => s === "landed");
+    // The ring means idle and worth a look: a landed session is done, so it never carries it.
+    const quiet = () => !v().facts.working && !landed() && isQuiet(v().facts.lastActive, now());
     const summary = () => (v().s && showSummaries() ? summaryLineOf(v().s!) : "");
     const by = () => (row().playbook ? "Project verbs playbook run" : row().startedBy === "overseer" ? "Started by the overseer" : null);
     const ready = () => (v().facts.working ? undefined : v().branches.find((b) => b.land));

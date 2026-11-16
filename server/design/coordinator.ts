@@ -25,11 +25,14 @@ import { DESIGN_COORDINATOR_PROMPT, DESIGN_DIRECTIONS, DESIGN_LAYOUTS } from "..
 import { claudeCodeProviderLoad, sessionDirName } from "../../pi-config/extensions/subagents/worker-load.ts";
 import type { WorkerHost, WorkerSpec, WorkerStart } from "../../shared/chat-runtime";
 import { SESSIONS_DIR } from "../paths";
-import { assertLaunchAllowed, deliverDesign, designCount, designRunLaunched, DesignLimitError, launchDesigns, newDesign, onDesignHandIn } from "./batch";
+import { assertLaunchAllowed, deliverDesign, designCount, designRunLaunched, DesignLimitError, launchDesigns, newDesign, onDesignHandIn, removeDesign, restoreDesign, retryDesign, stopDesign } from "./batch";
+import { listModels } from "../models";
+import { retiredModelRefs } from "../harness/pi/model-sync";
+import { recordHistory } from "./history";
 import { answerQuestions, BRIEF_LIMITS, coordinatorWrote, fillNotes, sameAddress, isHttpUrl, keepPrompt, keptImages, launchText, lookNote, mergeLinks, newBrief, openQuestions, parseBriefQuestions, rewritePrompt, turnEnded, userEditedPrompt, userEditedSummary, userTold, type BriefPick } from "./brief";
 import { DESIGN_BROWSE_TOUR_ID, designBrowse, type BrowseParent, type DesignBrowseStores } from "./browse";
 import { lookAtDesign } from "./look";
-import { estimateUsd } from "./setup";
+import { designModelOptions, estimateUsd, type DesignModelOption } from "./setup";
 import { coordinatorSkillsBlock, skillReadTokens } from "./skills";
 import { changeDesigns, designRoot, designSessions, runOf, setCoordinator, setRunPhase, viewOf } from "./store";
 
@@ -76,6 +79,9 @@ export interface CoordinatorState {
   newThisTurn: number;
   /** The user's yes to a turn's `design_new` going above the free limit. */
   spendOk: boolean;
+  /** This turn was woken by the user's own words (its box, the main chat passing them on, the brief): only then may it
+      stop, remove, restore or start a design again (q2). Any other wake clears it. */
+  userTurn?: boolean;
   shotSeq: number;
 }
 
@@ -89,8 +95,12 @@ export interface CoordinatorPorts {
   capture: typeof captureDesignPage;
   describing(sessionId: string): boolean;
   readLook(parent: BrowseParent, a: { key: string; png: Uint8Array; url: string }): Promise<{ text: string; model: string } | "none">;
-  newDesign(parent: BrowseParent, a: { parents: string[]; instructions: string; model: string; direction?: string; layout?: string; runId?: string }): Promise<string>;
-  deliverDesign(parent: BrowseParent, label: string, a: { text: string; key: string; by: "user" | "coordinator" | "main" }): Promise<{ queued: boolean }>;
+  newDesign(parent: BrowseParent, a: { parents: string[]; instructions: string; model: string; effort?: string; direction?: string; layout?: string; runId?: string; toolCallId?: string }): Promise<string>;
+  deliverDesign(parent: BrowseParent, label: string, a: { text: string; key: string; by: "user" | "coordinator" | "main"; toolCallId?: string }): Promise<{ queued: boolean }>;
+  /** Stop, remove, restore or start again one design, as the Creative Director. Throws with words for it when it can't. */
+  lifecycle(parent: BrowseParent, label: string, act: "stop" | "remove" | "restore" | "again", toolCallId?: string): void;
+  /** Every model a design may run on, for its run's Setup. */
+  models(sessionId: string, runId: string): Promise<DesignModelOption[]>;
   lookAtDesign(parent: BrowseParent, label: string, a: { version?: number; sizes?: TourSize[] }): Promise<{ shots: { size: TourSize; png: Uint8Array }[]; outline: string }>;
   systemPrompt(): string;
   specFor(parent: BrowseParent, cwd: string, model: string, systemPrompt: string): WorkerSpec;
@@ -180,8 +190,10 @@ const realPorts: CoordinatorPorts = {
   readLook: (parent, a) => readPageLook(parent, a),
   capture: (...a) => captureDesignPage(...a),
   describing: (sessionId) => describing(sessionId),
-  newDesign: async (parent, a) => newDesign(parent, a),
+  newDesign: (parent, a) => newDesign(parent, a),
   deliverDesign: (parent, label, a) => deliverDesign(parent, label, a),
+  lifecycle: (parent, label, act, toolCallId) => void (act === "stop" ? stopDesign(parent, label, "coordinator", toolCallId) : act === "remove" ? removeDesign(parent, label, "coordinator", toolCallId) : act === "restore" ? restoreDesign(parent, label, "coordinator", toolCallId) : retryDesign(parent, label, "coordinator", toolCallId)),
+  models: async (sessionId, runId) => designModelOptions(await listModels(), readModelPolicy(), retiredModelRefs(), runOf(sessionId, runId)?.setup),
   lookAtDesign,
   systemPrompt: () => DESIGN_COORDINATOR_PROMPT,
   specFor: realCoordinatorSpec,
@@ -232,7 +244,8 @@ function viewFor(st: CoordinatorState): DesignCoordinatorView {
     status: state ?? "idle",
     card: st.card,
     revision: st.revision,
-    tracking: ports().designsFor(st.sessionId).length,
+    // Removed designs are set aside: the card's count leaves them out.
+    tracking: ports().designsFor(st.sessionId).filter((d) => !d.removed).length,
     ...(st.ask ? { ask: st.ask } : {}),
   };
 }
@@ -348,7 +361,7 @@ function shownPictures(st: Pick<CoordinatorState, "sessionId" | "vision">, names
   return out;
 }
 
-async function wake(st: CoordinatorState, text: string, key: string, sameTurn = false, pictures: readonly string[] = []): Promise<{ queued: boolean }> {
+async function wake(st: CoordinatorState, text: string, key: string, sameTurn = false, pictures: readonly string[] = [], fromUser = false): Promise<{ queued: boolean }> {
   const notes = st.notes;
   // Sova's notes first, under Sova's own heading; what a model wrote inside them is fenced where it was noted.
   const body = notes.length ? `Sova's notes since your last turn (Sova wrote these; text marked untrusted was written by a model):\n${notes.join("\n")}\n\n${text}` : text;
@@ -356,6 +369,7 @@ async function wake(st: CoordinatorState, text: string, key: string, sameTurn = 
   if (!sameTurn) {
     st.newThisTurn = 0;
     st.spendOk = false;
+    st.userTurn = fromUser;
   }
   save(st);
   try {
@@ -373,11 +387,12 @@ async function wake(st: CoordinatorState, text: string, key: string, sameTurn = 
 }
 
 /** A design's other news (finished without a note, failed, being fixed): one line of context, and it wakes nothing. */
-export function noteDesignEvent(sessionId: string, a: { label: string; kind: "finished" | "failed" | "fixing"; reason?: string }): void {
+export function noteDesignEvent(sessionId: string, a: { label: string; kind: "finished" | "failed" | "fixing" | "stopped" | "removed" | "restored"; reason?: string }): void {
   const st = load(sessionId);
   if (!st) return;
   const reason = a.reason?.replace(/\s+/g, " ").trim().slice(0, 300);
-  st.notes.push(`${a.label} ${a.kind === "fixing" ? "is fixing its page" : a.kind}${reason ? `:\n${modelWords(reason)}` : "."}`);
+  const what = a.kind === "fixing" ? "is fixing its page" : a.kind === "stopped" ? "was stopped by the user" : a.kind === "removed" ? "was removed by the user (set aside; it can be restored)" : a.kind === "restored" ? "was restored by the user" : a.kind;
+  st.notes.push(`${a.label} ${what}${reason ? `:\n${modelWords(reason)}` : "."}`);
   if (st.notes.length > COORDINATOR_LIMITS.notes) st.notes.splice(0, st.notes.length - COORDINATOR_LIMITS.notes);
   save(st);
 }
@@ -562,7 +577,7 @@ export async function messageCoordinator(parent: BrowseParent, text: string, key
   st.briefNudged = false;
   save(st);
   // Images pasted with it: a Creative Director that reads pictures sees them on this turn.
-  return wake(st, briefHeard(st, userWords("box", text)), key, false, pictures);
+  return wake(st, briefHeard(st, userWords("box", text)), key, false, pictures, true);
 }
 
 /** The main chat passing something on, word for word. A model typed this, so no address in it is vouched for. */
@@ -570,7 +585,7 @@ export async function tellCoordinator(parent: BrowseParent, text: string, key: s
   const st = mine(parent);
   st.briefNudged = false;
   save(st);
-  return wake(st, briefHeard(st, userWords("main", text)), key, false, pictures);
+  return wake(st, briefHeard(st, userWords("main", text)), key, false, pictures, true);
 }
 
 /** The coordinator's card, for the main chat to read when it needs to. */
@@ -620,9 +635,9 @@ function openBrief(parent: BrowseParent, runId: string): { st: CoordinatorState;
 }
 
 /** The coordinator couldn't be reached: Start says so rather than waiting on a turn that isn't coming. */
-async function wakeForBrief(st: CoordinatorState, text: string, key: string): Promise<void> {
+async function wakeForBrief(st: CoordinatorState, text: string, key: string, fromUser = false): Promise<void> {
   try {
-    await wake(st, text, key);
+    await wake(st, text, key, false, [], fromUser);
   } catch (err) {
     console.warn(`[design] the coordinator of ${st.sessionId} wasn't reached: ${err instanceof Error ? err.message : String(err)}`);
     changeBrief(st, (b) => {
@@ -688,13 +703,14 @@ export async function editBrief(parent: BrowseParent, runId: string, a: { field:
   const key = `${runId}:brief:edit:${a.field}:${run.brief.rev}`;
   if (a.field === "prompt") {
     const rev = changeBrief(st, (b) => (userEditedPrompt(b, text), b.textRev));
-    await wakeForBrief(st, `The user saved their own Full Prompt. It launches as they left it, and you can't change it. Bring only the summary in line with it, with design_brief (summary, baseRev ${rev}). Their Full Prompt:\n${userWords("card", text)}`, key);
+    recordHistory(st.sessionId, { kind: "prompt", by: "user", runId, rev, text });
+    await wakeForBrief(st, `The user saved their own Full Prompt. It launches as they left it, and you can't change it. Bring only the summary in line with it, with design_brief (summary, baseRev ${rev}). Their Full Prompt:\n${userWords("card", text)}`, key, true);
     return;
   }
   const after = changeBrief(st, (b) => (userEditedSummary(b, text), { rev: b.textRev, conflict: !!b.conflict, open: openQuestions(b).length }));
   const line = `The user edited the summary. It now reads:\n${userWords("card", text)}`;
   if (after.conflict || after.open) return noteForNextTurn(st, line);
-  await wakeForBrief(st, `${line}\nRewrite the Full Prompt to match it, with design_brief (prompt or promptEdits, baseRev ${after.rev}). Don't change the summary.`, key);
+  await wakeForBrief(st, `${line}\nRewrite the Full Prompt to match it, with design_brief (prompt or promptEdits, baseRev ${after.rev}). Don't change the summary.`, key, true);
 }
 
 /** The picks on the card, or every recommendation at once. They go to the coordinator directly, never through the main chat. */
@@ -710,7 +726,7 @@ export async function answerBrief(parent: BrowseParent, runId: string, picks: Br
   const next = out.theirs
     ? `The Full Prompt is the user's own, so don't change it. Bring the summary in line if these answers change it, with design_brief (baseRev ${out.rev}); the brief asks them whether to keep their prompt or have it rewritten.`
     : `${out.unwritten ? "Write" : "Rewrite"} the Full Prompt now, with design_brief (prompt, baseRev ${out.rev}).`;
-  await wakeForBrief(st, `The user answered:\n${userWords("card", out.lines.join("\n"))}\n\n${next}`, `${runId}:brief:answers:${run.brief.rev}`);
+  await wakeForBrief(st, `The user answered:\n${userWords("card", out.lines.join("\n"))}\n\n${next}`, `${runId}:brief:answers:${run.brief.rev}`, true);
 }
 
 /** Keep My Prompt or Rewrite It. Works with the coordinator stopped: a prompt you kept can still start. */
@@ -803,7 +819,7 @@ export async function notThisScreen(parent: BrowseParent, runId: string, text?: 
     delete b.screen;
     userTold(b, "screen");
   });
-  await wakeForBrief(st, `The user pressed Not This Screen.${text ? ` They said:\n${userWords("card", text)}\n` : " Ask on your card which screen they mean."} Update the brief with design_brief once you have the right one.`, `${runId}:brief:not-this:${run.brief.rev}`);
+  await wakeForBrief(st, `The user pressed Not This Screen.${text ? ` They said:\n${userWords("card", text)}\n` : " Ask on your card which screen they mean."} Update the brief with design_brief once you have the right one.`, `${runId}:brief:not-this:${run.brief.rev}`, true);
 }
 
 /** The images are all described: the coordinator hears them once, as data, to judge which suit the brief. */
@@ -868,6 +884,9 @@ export async function startBrief(parent: BrowseParent, runId: string, a: { rev: 
     b.startedAt = new Date().toISOString();
   });
   noteForNextTurn(st, startNote(run.brief.textRev, labels));
+  // What each design was told: its style and layout from its record, and the text they all got.
+  const made = ports().designsFor(parent.sessionId).filter((d) => labels.includes(d.label));
+  recordHistory(parent.sessionId, { kind: "start", by: "user", runId, rev: run.brief.textRev, text, designs: made.map((d) => ({ label: d.label, direction: d.direction, ...(d.layout ? { layout: d.layout } : {}), model: d.model })) });
   // Its card was about the brief, which is over: Sova says what happened instead of spending a turn on it.
   const card = `The designs started from the brief: ${labels.join(", ")}. Each one's note reaches me as it finishes.`;
   st.revision++;
@@ -1096,7 +1115,7 @@ function raiseAsk(st: CoordinatorState, ask: NewAsk, grant?: CoordinatorState["g
 }
 
 const metadata = (d: DesignRecord) => ({
-  label: d.label, direction: d.direction, ...(d.layout ? { layout: d.layout } : {}), model: d.model, parents: d.parents, status: d.status, ...(d.error ? { error: d.error } : {}),
+  label: d.label, direction: d.direction, ...(d.layout ? { layout: d.layout } : {}), model: d.model, parents: d.parents, status: d.status, ...(d.removed ? { removed: true } : {}), ...(d.error ? { error: d.error } : {}),
   versions: d.versions.map((v) => ({ n: v.n, at: v.at, ...(v.note ? { note: v.note } : {}) })), ...(d.usage ? { cost: d.usage.cost } : {}), ...(d.delivery ? { delivery: d.delivery.state } : {}),
 });
 
@@ -1149,10 +1168,11 @@ export function coordinatorTools(sessionId: string): ToolSpec[] {
       required: ["baseRev"],
       additionalProperties: false,
     },
-    async execute(_id, params: { baseRev?: number; summary?: string; prompt?: string; promptEdits?: { find: string; replace: string }[]; text?: string; shots?: unknown; url?: string; sources?: unknown; questions?: unknown; images?: unknown; skills?: unknown }) {
+    async execute(toolCallId, params: { baseRev?: number; summary?: string; prompt?: string; promptEdits?: { find: string; replace: string }[]; text?: string; shots?: unknown; url?: string; sources?: unknown; questions?: unknown; images?: unknown; skills?: unknown }) {
       const st = state();
       if (isResult(st)) return st;
       const run = runOf(parent.sessionId, st.runId);
+      const promptBefore = run?.brief?.prompt ?? null;
       if (!run || (run.phase !== "researching" && run.phase !== "brief")) return refuse("this run's brief was frozen when the designs started. Changes go through design_send.");
       const current = run.brief?.textRev ?? 0;
       if (params?.baseRev !== current) return say(`Refused: the brief has moved on to revision ${current}. It reads:\nSummary: ${run.brief?.summary ?? "(none)"}\nFull Prompt (${run.brief?.promptBy ?? "not written"}): ${run.brief?.prompt ?? "(none)"}\nSend your change against it, with baseRev ${current}.`, { refused: true, rev: current });
@@ -1236,9 +1256,11 @@ export function coordinatorTools(sessionId: string): ToolSpec[] {
         if (estimate !== null) b.estimateUsd = estimate;
         r.phase = "brief";
         r.updatedAt = new Date().toISOString();
-        return { rev: b.textRev, open: openQuestions(b).length, unwritten: b.prompt === null, theirs: b.promptBy === "user" };
+        return { rev: b.textRev, open: openQuestions(b).length, unwritten: b.prompt === null, theirs: b.promptBy === "user", prompt: b.prompt };
       });
       if (outcome.why !== undefined) return refuse(outcome.why);
+      // Each Full Prompt it writes is a revision in the Lookbook's history, whole, with the call that wrote it.
+      if (outcome.prompt !== null && outcome.prompt !== promptBefore) recordHistory(parent.sessionId, { kind: "prompt", by: "coordinator", runId: st.runId, rev: outcome.rev, text: outcome.prompt, ...(toolCallId ? { toolCallId } : {}) });
       // Its kind and words have their own fields: the user's (chosenKind, userWords) are never written here, and win.
       const assetEdits = imageEdits.filter((x) => x.kind || x.words);
       // Every design_brief call already raises the brief's version (coordinatorWrote), so Start names a retune too.
@@ -1358,26 +1380,27 @@ export function coordinatorTools(sessionId: string): ToolSpec[] {
     name: "design_send", label: "Message a design session",
     description: "Send instructions to one design session by its label. They reach it in order; if it is busy, they wait.",
     parameters: { type: "object", properties: { label: { type: "string" }, text: { type: "string" } }, required: ["label", "text"], additionalProperties: false },
-    async execute(_id, params: { label?: string; text?: string }) {
+    async execute(toolCallId, params: { label?: string; text?: string }) {
       const label = str(params?.label);
       const text = str(params?.text);
       if (!label || !text || text.length > COORDINATOR_LIMITS.textChars) return refuse("design_send needs a label and your instructions.");
-      const r = await p().deliverDesign(parent, label, { text, key: `coordinator:${effect()}`, by: "coordinator" });
+      const r = await p().deliverDesign(parent, label, { text, key: `coordinator:${effect()}`, by: "coordinator", ...(toolCallId ? { toolCallId } : {}) });
       return say(r.queued ? `${label} is busy; your message waits behind it.` : `${label} has your message.`);
     },
   };
 
   const create: ToolSpec = {
-    name: "design_new", label: "Make a new design from others",
-    description: "Start a new design that takes from others. parents are labels; Sova gives their pages to the new session. Say in instructions what to take from each. Its style reads Mixed unless you name one in style; layout is optional. All your design_new calls in one turn count as one launch against the spending limits.",
-    parameters: { type: "object", properties: { parents: { type: "array", items: { type: "string" }, minItems: 1 }, instructions: { type: "string" }, model: { type: "string" }, style: { type: "string", description: "One of the 20 style names, exactly; leave out for Mixed." }, layout: { type: "string", description: "One of the 12 layout names, exactly; leave out to let it arrange its own page." } }, required: ["parents", "instructions", "model"], additionalProperties: false },
-    async execute(_id, params: { parents?: unknown; instructions?: string; model?: string; style?: unknown; layout?: unknown }) {
+    name: "design_new", label: "Add a design",
+    description: "Start a new design after Start: from others (parents are labels; Sova gives their pages to the new session, and you say in instructions what to take from each), or with parents [] from the brief the designs launched with, plus your instructions. model: any provider/id the user may use, ticked on the Setup card or not (design_models lists them). effort: only the thinking level the user named; leave it out otherwise. Its style reads Mixed unless you name one in style; layout is optional. All your design_new calls in one turn count as one launch against the spending limits.",
+    parameters: { type: "object", properties: { parents: { type: "array", items: { type: "string" }, description: "The labels it takes from; [] for a design from the brief." }, instructions: { type: "string" }, model: { type: "string", description: "provider/modelId, as design_models lists them." }, effort: { type: "string", description: "The thinking level the user named (low, medium, high ...); leave out unless they named one." }, style: { type: "string", description: "One of the 20 style names, exactly; leave out for Mixed." }, layout: { type: "string", description: "One of the 12 layout names, exactly; leave out to let it arrange its own page." } }, required: ["parents", "instructions", "model"], additionalProperties: false },
+    async execute(toolCallId, params: { parents?: unknown; instructions?: string; model?: string; effort?: unknown; style?: unknown; layout?: unknown }) {
       const st = state();
       if (isResult(st)) return st;
       const parents = Array.isArray(params?.parents) ? params.parents.filter((x): x is string => typeof x === "string") : [];
       const instructions = str(params?.instructions);
       const model = str(params?.model);
-      if (!parents.length || !instructions || !model) return refuse("design_new needs parents, instructions and a model.");
+      const effortAsked = str(params?.effort);
+      if (!Array.isArray(params?.parents) || !instructions || !model) return refuse("design_new needs parents (a list, [] for a design from the brief), instructions and a model.");
       const style = typeof params?.style === "string" && params.style.trim() ? DESIGN_DIRECTIONS.find((d) => d.name.toLowerCase() === (params.style as string).trim().toLowerCase())?.name ?? null : undefined;
       const layout = typeof params?.layout === "string" && params.layout.trim() ? DESIGN_LAYOUTS.find((d) => d.name.toLowerCase() === (params.layout as string).trim().toLowerCase())?.name ?? null : undefined;
       if (style === null) return refuse(`style must be one of: ${DESIGN_DIRECTIONS.map((d) => d.name).join(", ")}.`);
@@ -1394,13 +1417,47 @@ export function coordinatorTools(sessionId: string): ToolSpec[] {
       st.newThisTurn++;
       save(st);
       try {
-        const label = await p().newDesign(parent, { parents, instructions, model, ...(style ? { direction: style } : {}), ...(layout ? { layout } : {}), runId: st.runId });
+        const label = await p().newDesign(parent, { parents, instructions, model, ...(effortAsked ? { effort: effortAsked.toLowerCase() } : {}), ...(style ? { direction: style } : {}), ...(layout ? { layout } : {}), runId: st.runId, ...(toolCallId ? { toolCallId } : {}) });
         return say(`Started ${label}.`, { label });
       } catch (err) {
         st.newThisTurn--;
         save(st);
         return refuse(err instanceof Error ? err.message : "That design couldn't be started.");
       }
+    },
+  };
+
+  /** Stop, remove, restore, start again: only on a turn the user's own words woke (q2); otherwise it suggests it on its card. */
+  const act = (verb: "stop" | "remove" | "restore" | "again", done: (l: string) => string): Pick<ToolSpec, "parameters" | "execute"> => ({
+    parameters: { type: "object", properties: { label: { type: "string" } }, required: ["label"], additionalProperties: false },
+    async execute(toolCallId, params: { label?: string }) {
+      const st = state();
+      if (isResult(st)) return st;
+      const l = str(params?.label);
+      if (!l) return refuse("this needs a design's label.");
+      if (!st.userTurn) return refuse(`only the user can ask for this, and nothing they said woke this turn. If you think ${l} should be ${verb === "again" ? "started again" : verb === "stop" ? "stopped" : verb === "remove" ? "removed" : "restored"}, suggest it on your card and let them decide.`);
+      try {
+        p().lifecycle(parent, l, verb, toolCallId || undefined);
+      } catch (err) {
+        return refuse(err instanceof Error ? err.message : String(err));
+      }
+      return say(done(l), { label: l, [verb]: true });
+    },
+  });
+  const stop: ToolSpec = { name: "design_stop", label: "Stop a design", description: "Stop a design that is queued or being written, only when the user asks you to. What it had written stays on its tile as a still, marked Stopped; one stopped while changing keeps its last finished version. It never starts again by itself.", ...act("stop", (l) => `Stopped ${l}.`) };
+  const remove: ToolSpec = { name: "design_remove", label: "Remove a design", description: "Set a design aside, only when the user asks you to: it moves to the folded Removed section, one still being written is stopped first, and nothing is deleted. design_restore puts it back.", ...act("remove", (l) => `Removed ${l}: it is set aside, and can be restored.`) };
+  const restore: ToolSpec = { name: "design_restore", label: "Restore a design", description: "Put a removed design back where it was, as it was, only when the user asks you to. One that hadn't started stays waiting until it is started again.", ...act("restore", (l) => `Restored ${l}.`) };
+  const again: ToolSpec = { name: "design_start_again", label: "Start a design again", description: "Start a Stopped, Failed or waiting design again in a fresh session, only when the user asks you to. It writes its page afresh, at the cost of a new design.", ...act("again", (l) => `Started ${l} again.`) };
+
+  const models: ToolSpec = {
+    name: "design_models", label: "Models for designs",
+    description: "The models a new design may run on: each one the user is allowed to use for workers, with whether it reads images, the thinking levels it takes, and whether it was ticked on the Setup card. design_new takes any of them.",
+    parameters: { type: "object", properties: {}, additionalProperties: false },
+    async execute() {
+      const st = state();
+      if (isResult(st)) return st;
+      const list = await p().models(parent.sessionId, st.runId);
+      return say(list.length ? list.map((m) => `${m.ref}${m.onSetup ? " (on the Setup card)" : ""}${m.vision ? ", reads images" : ""}${m.efforts.length ? `, effort: ${m.efforts.join("/")}` : ""}`).join("\n") : "No model may run a design: the user's Settings bar them all.");
     },
   };
 
@@ -1498,7 +1555,7 @@ export function coordinatorTools(sessionId: string): ToolSpec[] {
     },
   };
 
-  return [status, brief, browse, capture, send, create, card, verbs, images];
+  return [status, brief, browse, capture, send, create, stop, remove, restore, again, models, card, verbs, images];
 }
 
 /** What a coordinator needs of a project's copies: which is running, and the addresses to open. */

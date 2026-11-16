@@ -9,7 +9,8 @@ import type { ToolSpec } from "../../shared/harness";
 const agentDir = mkdtempSync(join(tmpdir(), "sova-coordinator-"));
 process.env.PI_CODING_AGENT_DIR = agentDir;
 const { answerBrief, answerCoordinator, BriefRefused, coordinatorCard, coordinatorTools, editBrief, messageCoordinator, noteHandIn, notThisScreen, originsIn, resolveBriefConflict, setBriefLink, setCoordinatorPorts, startBrief, startCoordinator, tellCoordinator } = await import("./coordinator");
-const { changeDesigns, forgetDesignCache, runOf } = await import("./store");
+const { changeDesigns, forgetDesignCache, runOf, viewOf } = await import("./store");
+const { readHistory } = await import("./history");
 after(() => rmSync(agentDir, { recursive: true, force: true }));
 
 const PNG = new Uint8Array([137, 80, 78, 71]);
@@ -26,6 +27,9 @@ let capture: (...a: unknown[]) => Promise<never>;
 let describingNow = false;
 let browseCalls = 0;
 let imageCalls: string[][] = [];
+let acts: { label: string; act: string; toolCallId?: string }[] = [];
+let designList: DesignRecord[] = [];
+const DESIGN_A = { label: "A", direction: "D0", model: "zai/m0", parents: [], status: "ready", route: "tool", versions: [{ n: 1, at: "t", chars: 50000, note: { layout: "l", sections: "s", type: "t", color: "c" } }], vision: true, createdAt: "", updatedAt: "", runId: "r" } as unknown as DesignRecord;
 
 const model = (ref: string, over: Partial<DesignModelChoice> = {}): DesignModelChoice => ({ ref, name: ref, design: true, coordinator: false, vision: true, route: "tool", ...over });
 const runWith = (designers: number, directions: number, over: Partial<DesignRun> = {}): DesignRun => ({
@@ -42,6 +46,8 @@ beforeEach(() => {
   describingNow = false;
   browseCalls = 0;
   imageCalls = [];
+  acts = [];
+  designList = [DESIGN_A];
   capture = async () => ({ kind: "refused", message: "no capture in this test" }) as never;
   readLook = async () => ({ text: "Calm navy on white.", model: "zai/vision" });
   nextBrowse = { kind: "pictures", url: "/settings", origin: "http://127.0.0.1:4810", outline: "OUTLINE", signedIn: false, shots: [{ size: "desktop", png: PNG, viewport: { w: 1440, h: 960 } }] };
@@ -53,7 +59,7 @@ beforeEach(() => {
       state: () => workerState,
       watch: (_c, fn) => ((turnListener = fn), () => {}),
     }),
-    designsFor: () => [{ label: "A", direction: "D0", model: "zai/m0", parents: [], status: "ready", route: "tool", versions: [{ n: 1, at: "t", chars: 50000, note: { layout: "l", sections: "s", type: "t", color: "c" } }], vision: true, createdAt: "", updatedAt: "", runId: "r" } as unknown as DesignRecord],
+    designsFor: () => designList,
     launchDesigns: async (_p, r, a) => {
       log.launches.push(a);
       changeDesigns(parent.sessionId, (s) => void (s.runs.find((x) => x.id === r)!.phase = "generating"));
@@ -64,6 +70,8 @@ beforeEach(() => {
     describing: () => describingNow,
     newDesign: async (_p, a) => (log.news.push(a), "G"),
     deliverDesign: async (_p, label, a) => (log.delivered.push({ label, ...a }), { queued: true }),
+    lifecycle: (_p, label, act, toolCallId) => void acts.push({ label, act, ...(toolCallId ? { toolCallId } : {}) }),
+    models: async () => [{ ref: "openai/astra", name: "astra", vision: false, route: "tool", efforts: ["low", "high"], onSetup: false }],
     lookAtDesign: async () => ({ shots: [{ size: "desktop", png: PNG }], outline: "O" }),
     systemPrompt: () => "PROMPT",
     specFor: (_p, _c, model) => ({ model }) as never,
@@ -83,7 +91,7 @@ afterEach(() => {
 });
 
 type Tool = (args: unknown) => Promise<{ content: { type: string; text?: string }[]; details: any }>;
-type Tools = Record<"design_status" | "design_brief" | "design_capture" | "design_browse" | "design_send" | "design_new" | "coordinator_card" | "project_verbs", Tool>;
+type Tools = Record<"design_status" | "design_brief" | "design_capture" | "design_browse" | "design_send" | "design_new" | "design_stop" | "design_remove" | "design_restore" | "design_start_again" | "design_models" | "coordinator_card" | "project_verbs", Tool>;
 async function started(run: DesignRun) {
   changeDesigns(parent.sessionId, (s) => {
     s.runs.push(run);
@@ -1009,7 +1017,7 @@ test("the card's yes is the person's: a chat's key or the token in a header is r
 test("a coordinator's process is served its tools and no others, and of the built-ins has pi's read only", async () => {
   const { workerServed } = await import("../chat-host");
   const decls = workerServed({ kind: "design-coordinator", parent: { sessionId: "p", path: "/p.jsonl", workerId: "design-coordinator" } }, "/w.jsonl");
-  assert.deepEqual(decls.map((d) => d.name).sort(), ["coordinator_card", "design_brief", "design_browse", "design_capture", "design_images", "design_new", "design_send", "design_status", "project_verbs"]);
+  assert.deepEqual(decls.map((d) => d.name).sort(), ["coordinator_card", "design_brief", "design_browse", "design_capture", "design_images", "design_models", "design_new", "design_remove", "design_restore", "design_send", "design_start_again", "design_status", "design_stop", "project_verbs"]);
   // After a restart its mirror names only the parent's id: the same tools come back.
   assert.equal(workerServed({ kind: "design-coordinator", parentSessionId: "p" }, "/w2.jsonl").length, decls.length);
   const spec = (await import("./coordinator")).realCoordinatorSpec({ sessionId: "p", path: "/p.jsonl" }, "/cwd", "zai/glm-5.3-flash", "P");
@@ -1254,4 +1262,69 @@ test("a screenshot's words reach the designers whole: a 300+ character role and 
   assert.ok(text.includes(`#4a43d8 ${role}`), "the whole role");
   assert.ok(text.includes(feel), "the whole feel");
   assert.ok(!text.slice(text.indexOf("REFERENCE SCREENSHOTS")).includes("…"), "nothing cut");
+});
+
+// ---- al_1: stopping, removing and restoring only at the user's word; any model; the prompt's history ---------
+
+test("stop, remove, restore and start again act only on a turn the user's own words woke; any other turn suggests it instead", async () => {
+  const t = await launched();
+  const tools = [t.design_stop, t.design_remove, t.design_restore, t.design_start_again];
+  const all = async () => Promise.all(tools.map((tool) => tool({ label: "A" })));
+  // Each way a turn is woken, and whether it is the user's word: the first message is Sova's, a site's answer a click on the
+  // Creative Director's own question, a pass-on from the main chat carries the user's words.
+  const wakes: [string, () => Promise<unknown>, boolean][] = [
+    ["its first message", async () => {}, false],
+    ["the user's box", () => messageCoordinator(parent, "stop A and take it off", "k1"), true],
+    ["its own question answered", async () => {
+      changeDesigns(parent.sessionId, () => {});
+      await t.design_browse({ url: "https://elsewhere.example" }).catch(() => {});
+      const asked = viewOf(parent.sessionId).coordinator?.ask;
+      if (asked) await answerCoordinator(parent, asked.id, "no");
+    }, false],
+    ["the main chat passing their words on", () => tellCoordinator(parent, "remove A", "k2"), true],
+  ];
+  nextBrowse = { kind: "needs-site", origin: "https://elsewhere.example" } as Outcome;
+  for (const [name, wake, mine] of wakes) {
+    await wake();
+    acts = [];
+    const out = await all();
+    if (mine) {
+      assert.deepEqual(acts.map((a) => a.act), ["stop", "remove", "restore", "again"], name);
+      assert.ok(acts.every((a) => a.toolCallId === "c1"), "the call's id rides along, so its row folds into the history item");
+    } else {
+      assert.equal(acts.length, 0, name);
+      for (const r of out) assert.match(textOf(r), /^Refused: only the user can ask for this.*suggest it on your card/s, name);
+    }
+  }
+});
+
+test("removed designs leave the card's count, and the Creative Director sees them marked", async () => {
+  const t = await launched();
+  designList = [DESIGN_A, { ...DESIGN_A, label: "B", removed: { at: "t", by: "user" } } as DesignRecord];
+  await messageCoordinator(parent, "hi", "k");
+  assert.equal(viewOf(parent.sessionId).coordinator!.tracking, 1);
+  const status = JSON.parse(textOf(await t.design_status({})));
+  assert.deepEqual(status.designs.map((d: { label: string; removed?: true }) => [d.label, d.removed ?? false]), [["A", false], ["B", true]]);
+});
+
+test("design_new takes any model and a design from the brief, passing the effort only when named; design_models lists them", async () => {
+  const t = await launched();
+  assert.equal((await t.design_new({ parents: [], instructions: "a bolder take", model: "openai/astra" })).details.label, "G");
+  await t.design_new({ parents: ["A"], instructions: "mix", model: "openai/astra", effort: "High" });
+  assert.deepEqual(log.news.map((a) => { const x = a as { parents: string[]; effort?: string; toolCallId?: string }; return [x.parents, x.effort, x.toolCallId]; }), [[[], undefined, "c1"], [["A"], "high", "c1"]]);
+  refused(await t.design_new({ instructions: "x", model: "openai/astra" }));
+  assert.match(textOf(await t.design_models({})), /^openai\/astra, effort: low\/high$/);
+});
+
+test("each Full Prompt revision and the Start are kept in the history, whole, with who wrote it; a call that leaves the prompt as it was adds none", async () => {
+  const run = runWith(2, 3);
+  const t = await ready(run, { summary: "S", prompt: "First prompt." });
+  await t.design_brief({ baseRev: brief(run.id).textRev, summary: "S2" });
+  await editBrief(parent, run.id, { field: "prompt", text: "The user's own prompt." });
+  await start(run);
+  const items = readHistory(parent.sessionId).items;
+  assert.deepEqual(items.filter((i) => i.kind === "prompt").map((i) => [i.by, i.text, i.toolCallId]), [["coordinator", "First prompt.", "c1"], ["user", "The user's own prompt.", undefined]]);
+  const started = items.find((i) => i.kind === "start")!;
+  assert.equal(started.rev, brief(run.id).textRev);
+  assert.ok(started.text!.startsWith("The user's own prompt."), "what the designs got");
 });

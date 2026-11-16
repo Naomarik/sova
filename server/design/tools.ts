@@ -7,7 +7,7 @@ import { DESIGN_ASK_ABOVE, DESIGN_BATCH_MAX, DESIGN_TOOL, designDirectionLine, i
 import { coordinatorCard, tellCoordinator } from "./coordinator";
 import { createRun } from "./setup";
 import { ownImages } from "./asset-routes";
-import { DESIGN_HAND_IN_TOOL, editBase, handIn, pageProblem, readingSkill, refusedPage, replyPageThisTurn, savePage, takeLook, type DesignParent } from "./batch";
+import { assertTakesPages, DESIGN_HAND_IN_TOOL, editBase, handIn, pageProblem, readingSkill, refusedPage, replyPageThisTurn, savePage, takeLook, type DesignParent } from "./batch";
 import { listSkillFiles, readSkillFile, SKILL_LIMITS, SkillReadRefused, skillNamesOf } from "./skills";
 import { livePage } from "./live";
 import { lookAtDesign } from "./look";
@@ -154,6 +154,7 @@ function skillTool(parent: DesignParent, label: string): ToolSpec {
 function allSessionTools(parent: DesignParent, label: string): ToolSpec[] {
   const own = (asked: unknown): void => {
     if (asked !== label) throw new Error(`You are design ${label}; label must be ${label}.`);
+    assertTakesPages(parent.sessionId, label);
   };
   return [
     {

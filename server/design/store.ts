@@ -41,6 +41,14 @@ export interface DesignInternal {
   context?: number;
   /** Why a design tool refused a page this turn, until the turn ends. */
   refused?: string;
+  /** Stills kept of this design so far: the next one's number is one more. */
+  stills?: number;
+  /** The history item (server/design/history.ts) the page being written answers: its version is filled in when it lands. */
+  historyId?: string;
+  /** The keys of the last messages recorded in the history, so a send retried under its key is recorded once. */
+  sentKeys?: string[];
+  /** A design the Creative Director added with no parents: its first message is the launched brief, then its instructions. */
+  fromBrief?: true;
 }
 
 export const designRoot = (): string => join(agentRoot(), "design");
@@ -189,6 +197,27 @@ export function writePage(sessionId: string, label: string, n: number, html: str
   mkdirSync(join(dirOf(sessionId), label), { recursive: true, mode: 0o700 });
   writeFileSync(`${f}.tmp`, html, { mode: 0o600 });
   renameSync(`${f}.tmp`, f);
+}
+
+const stillPath = (sessionId: string, label: string, n: number): string => join(dirOf(sessionId), label, `still${n}.html`);
+
+/** What a stopped design had written, kept as a still: never a version. */
+export function writeStill(sessionId: string, label: string, n: number, html: string): void {
+  if (deleted.has(sessionId) || !isDesignLabel(label)) return;
+  const f = stillPath(sessionId, label, n);
+  mkdirSync(join(dirOf(sessionId), label), { recursive: true, mode: 0o700 });
+  writeFileSync(`${f}.tmp`, html, { mode: 0o600 });
+  renameSync(`${f}.tmp`, f);
+}
+
+/** A still's text; null when there is no such still. */
+export function readStill(sessionId: string, label: string, n: number): string | null {
+  if (!isDesignLabel(label) || !Number.isInteger(n) || n < 1) return null;
+  try {
+    return readFileSync(stillPath(sessionId, label, n), "utf8");
+  } catch {
+    return null;
+  }
 }
 
 /** The unfinished page of a label, written by design_stream and not yet handed in. */

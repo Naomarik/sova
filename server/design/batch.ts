@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import type { WorkerHost, WorkerSpec, WorkerStart, WorkerState } from "../../shared/chat-runtime";
 import type { HEntry } from "../../shared/harness";
-import { DESIGN_ASK_ABOVE, DESIGN_BATCH_MAX, DESIGN_CONCURRENT, DESIGN_FIX_TRIES, designerSkills, designPlan, type DesignNote, type DesignRecord, type DesignRun, type DesignSetup, type DesignVersion } from "../../shared/design";
+import { DESIGN_ASK_ABOVE, DESIGN_BATCH_MAX, DESIGN_CONCURRENT, DESIGN_FIX_TRIES, designerSkills, designPlan, type DesignActor, type DesignHistoryItem, type DesignNote, type DesignRecord, type DesignRun, type DesignSetup, type DesignStill, type DesignVersion } from "../../shared/design";
 import { DESIGN_PAGE_END, DESIGN_PAGE_START, designSessionPrompt } from "../../pi-config/extensions/mode/design-guide.ts";
 import { claudeCodeProviderLoad, sessionDirName } from "../../pi-config/extensions/subagents/worker-load.ts";
 import { SESSIONS_DIR } from "../paths";
@@ -16,11 +16,15 @@ import { agentRoot } from "../state-root";
 import { applySlice, clearLivePage, livePage } from "./live";
 import { noteDesignEvent } from "./coordinator";
 import { pageProblem } from "./lint";
-import { replyCost } from "./setup";
+import { replyCost, resolveDesignModel } from "./setup";
+import { listModels } from "../models";
+import { readModelPolicy } from "../model-policy";
+import { retiredModelRefs } from "../harness/pi/model-sync";
+import { historyVersion, recordHistory } from "./history";
 import { pageInReply } from "./stream-decode";
 import { designerSkillsBlock } from "./skills";
 import { SCREENSHOTS_HEADING, WORDS_ONLY_NOTE } from "../../shared/design-assets";
-import { changeDesign, changeDesigns, designOf, designRoot, designSessions, nextLabel, pendingPage, readDesigns, readPage, runOf, setPendingPage, setRunPhase, viewOf, writePage } from "./store";
+import { changeDesign, changeDesigns, designOf, designRoot, designSessions, nextLabel, pendingPage, readDesigns, readPage, runOf, setPendingPage, setRunPhase, viewOf, writePage, writeStill } from "./store";
 
 export interface DesignParent {
   sessionId: string;
@@ -78,7 +82,7 @@ export const designCount = (setup: DesignSetup): number => designPlan(setup).ite
 
 // ---- starting -----------------------------------------------------------------------------------
 
-export function specFor(parent: DesignParent, d: Pick<DesignRecord, "label" | "direction" | "layout" | "model" | "route" | "vision">, cwd: string, reference: "none" | "screenshot" | "description"): WorkerSpec {
+export function specFor(parent: DesignParent, d: Pick<DesignRecord, "label" | "direction" | "layout" | "model" | "route" | "vision" | "effort">, cwd: string, reference: "none" | "screenshot" | "description"): WorkerSpec {
   const loaded = claudeCodeProviderLoad(d.model, [WORKER_MARK], undefined);
   return {
     kind: "design",
@@ -86,7 +90,9 @@ export function specFor(parent: DesignParent, d: Pick<DesignRecord, "label" | "d
     cwd,
     model: d.model,
     // Low: a page is written, not reasoned about; at higher levels a model spends its minutes and money on thinking.
-    thinking: "low",
+    // A design the Creative Director added runs at the level the user named, or on a model not ticked at Setup at the
+    // model's own default (null).
+    thinking: d.effort === undefined ? "low" : d.effort,
     // No file tools and no shell: a design session has only the design tools the server gives it.
     builtins: [],
     extensions: loaded.extensions,
@@ -105,9 +111,11 @@ const skillRootsOf = (run: Pick<DesignRun, "skills" | "brief">): Pick<DesignReco
   return mine.length ? { skills: mine.map((k) => ({ name: k.name, dir: k.dir })) } : {};
 };
 
-export function firstMessage(d: DesignRecord, brief: string, refs: DesignReference[], parents: { label: string; html: string }[], instructions: string | null, run?: Pick<DesignRun, "skills">): { text: string; images: NonNullable<WorkerStart["images"]> } {
+export function firstMessage(d: DesignRecord, brief: string, refs: DesignReference[], parents: { label: string; html: string }[], instructions: string | null, run?: Pick<DesignRun, "skills">, fromBrief = false): { text: string; images: NonNullable<WorkerStart["images"]> } {
   const parts: string[] = [];
-  if (instructions) parts.push(instructions);
+  // A design added from the brief gets the brief its run launched with, then what the Creative Director asked of it.
+  if (instructions && fromBrief) parts.push(brief, `The Creative Director's instructions for your design:\n${instructions}`);
+  else if (instructions) parts.push(instructions);
   else parts.push(brief);
   // Sova writes the skills list itself, from the design's own record; a description comes from its run when it still has it.
   const skills = (d.skills ?? []).map((k) => ({ name: k.name, description: run?.skills?.find((r) => r.dir === k.dir)?.description ?? "" }));
@@ -170,38 +178,61 @@ export function launchDesigns(parent: DesignParent, runId: string, input: { brie
   return labels;
 }
 
-/** A new design made from others (Phase 3): the server, not the coordinator, puts the parents' pages in its first message. */
-export function newDesign(parent: DesignParent, input: { parents: string[]; instructions: string; model: string; direction?: string; layout?: string; runId?: string }): string {
+/** What a new design may run on: the models this server lists, under the user's model rules. Tests stand in for it. */
+let modelSource: () => Promise<{ listed: Awaited<ReturnType<typeof listModels>>; policy: ReturnType<typeof readModelPolicy>; retired: ReadonlySet<string> }> = async () => ({ listed: await listModels(), policy: readModelPolicy(), retired: retiredModelRefs() });
+export const setDesignModelSourceForTest = (fn: typeof modelSource | null): void => void (modelSource = fn ?? (async () => ({ listed: await listModels(), policy: readModelPolicy(), retired: retiredModelRefs() })));
+
+/** A new design the Creative Director adds after Start: made from others (the server, not the coordinator, puts the
+    parents' pages in its first message), or with no parents from the brief its run launched with. On any model the user
+    may use for workers, ticked at Setup or not; at the effort named, else as resolveDesignModel says. */
+export async function newDesign(parent: DesignParent, input: { parents: string[]; instructions: string; model: string; effort?: string; direction?: string; layout?: string; runId?: string; toolCallId?: string }): Promise<string> {
   const sid = parent.sessionId;
   const view = viewOf(sid);
   const runId = input.runId ?? view.runs.at(-1)?.id;
   const run = runId ? runOf(sid, runId) : undefined;
   if (!run) throw new Error("This chat has no design run to add to.");
-  if (!designRunLaunched(run)) throw new Error("This run hasn't launched yet: launch it first, then make new designs from others.");
-  const model = run.setup.models.find((m) => m.ref === input.model && m.design);
-  if (!model) throw new Error(`${input.model} isn't ticked for design on this run's Setup card.`);
+  if (!designRunLaunched(run)) throw new Error("This run hasn't launched yet: launch it first, then add designs.");
+  const src = await modelSource();
+  const model = resolveDesignModel(src.listed, src.policy, src.retired, run.setup, input.model, input.effort);
+  if (typeof model === "string") throw new Error(model);
   for (const p of input.parents) if (!readPage(sid, p)) throw new Error(`Design ${p} has no finished page to draw from.`);
   const now = new Date().toISOString();
+  const fromBrief = !input.parents.length;
   const label = changeDesigns(sid, (s) => {
     const made = nextLabel(s);
-    s.designs.push({ label: made, runId: run.id, direction: input.direction ?? "Mixed", ...(input.layout ? { layout: input.layout } : {}), model: model.ref, modelName: model.name, parents: input.parents, status: "queued", route: model.route, versions: [], workerState: "stopped", vision: model.vision, ...skillRootsOf(run), createdAt: now, updatedAt: now });
-    (s.internal ??= {})[made] = { attempt: 0, brief: run.setup.brief, by: "coordinator", instructions: input.instructions, parentPath: parent.path };
-    run.labels.push(made);
-    if (run.phase === "done") run.phase = "generating";
+    // From the brief: the text its run's own designs launched with, Sova's additions and all.
+    const launched = fromBrief ? run.labels.map((l) => s.internal?.[l]).find((i) => i && !i.instructions)?.brief : undefined;
+    s.designs.push({ label: made, runId: run.id, direction: input.direction ?? "Mixed", ...(input.layout ? { layout: input.layout } : {}), model: model.ref, modelName: model.name, ...(model.effort !== undefined ? { effort: model.effort } : {}), parents: input.parents, status: "queued", route: model.route, versions: [], workerState: "stopped", vision: model.vision, ...skillRootsOf(run), createdAt: now, updatedAt: now });
+    (s.internal ??= {})[made] = { attempt: 0, brief: launched ?? run.brief?.prompt ?? run.setup.brief, by: "coordinator", instructions: input.instructions, parentPath: parent.path, ...(fromBrief ? { fromBrief: true as const } : {}) };
+    s.runs.find((r) => r.id === run.id)!.labels.push(made);
+    const r = s.runs.find((x) => x.id === run.id)!;
+    if (r.phase === "done") r.phase = "generating";
     return made;
   });
+  const id = recordHistory(sid, { kind: "new", by: "coordinator", runId: run.id, label, parents: input.parents, text: input.instructions, model: model.ref, direction: input.direction ?? "Mixed", ...(input.layout ? { layout: input.layout } : {}), ...(input.toolCallId ? { toolCallId: input.toolCallId } : {}) });
+  setHistoryId(sid, label, id);
   pump(parent);
   return label;
 }
 
-const atWork = (d: DesignRecord): boolean => d.status === "writing" || d.status === "fixing" || d.status === "queued";
+/** The history item the page now being written answers. */
+function setHistoryId(sid: string, label: string, id: string): void {
+  if (!id) return;
+  changeDesigns(sid, (s) => {
+    const i = s.internal?.[label];
+    if (i) i.historyId = id;
+  });
+}
+
+/** A removed design is never at work: it was stopped before it was set aside, and nothing starts it while it is. */
+const atWork = (d: DesignRecord): boolean => !d.removed && (d.status === "writing" || d.status === "fixing" || d.status === "queued");
 /** Designs whose session is being started: no session id until the start answers, and a pump meanwhile must neither
     start them again nor count them as free room. In memory: a restart ends every start in flight with it. */
 const starting = new Set<string>();
 const startKey = (sid: string, label: string): string => `${sid}\0${label}`;
 
 const working = (sid: string, d: DesignRecord): boolean =>
-  d.status === "writing" || d.status === "fixing" || (d.status === "queued" && ((!!d.sessionId && !d.sessionEnded) || starting.has(startKey(sid, d.label))));
+  !d.removed && d.status === "writing" || d.status === "fixing" || (d.status === "queued" && ((!!d.sessionId && !d.sessionEnded) || starting.has(startKey(sid, d.label))));
 
 /** Start queued designs while the chat has room. */
 export function pump(parent: DesignParent): void {
@@ -210,7 +241,8 @@ export function pump(parent: DesignParent): void {
   let room = DESIGN_CONCURRENT - view.designs.filter((d) => working(sid, d)).length;
   for (const d of view.designs) {
     if (room <= 0) return;
-    if (d.status !== "queued" || d.sessionId || starting.has(startKey(sid, d.label))) continue;
+    // Only a queued design waiting for its first session: never a stopped or a removed one.
+    if (d.status !== "queued" || d.removed || d.sessionId || starting.has(startKey(sid, d.label))) continue;
     room--;
     void startSession(parent, d.label);
   }
@@ -225,7 +257,7 @@ async function startSession(parent: DesignParent, label: string, seed?: { text: 
     const i = (s.internal ??= {})[label] ?? { attempt: 0, brief: "", by: "first" as const, parentPath: parent.path };
     i.attempt++;
     s.internal[label] = i;
-    return { attempt: i.attempt, brief: i.brief, instructions: i.instructions };
+    return { attempt: i.attempt, brief: i.brief, instructions: i.instructions, fromBrief: !!i.fromBrief };
   });
   // Marked before the first await: every pump from here until the start answers sees it.
   starting.add(key);
@@ -235,7 +267,7 @@ async function startSession(parent: DesignParent, label: string, seed?: { text: 
     // A designer that can't read pictures works from an outline: with none (only screenshots' pictures), it has no reference.
     const reference = refs.length ? (d.vision ? "screenshot" : refs.some((r) => r.outline.trim()) ? "description" : "none") : "none";
     const parents = d.parents.map((p) => ({ label: p, html: readPage(sid, p) ?? "" }));
-    const first = seed ?? firstMessage(d, st.brief, refs, parents, st.instructions ?? null, runOf(sid, d.runId));
+    const first = seed ?? firstMessage(d, st.brief, refs, parents, st.instructions ?? null, runOf(sid, d.runId), st.fromBrief);
     const ref = await workers(parent).start({
       key: `design:${sid}:${label}:${st.attempt}`,
       spec: specFor(parent, d, cwd, reference),
@@ -244,8 +276,9 @@ async function startSession(parent: DesignParent, label: string, seed?: { text: 
       ...(first.images?.length ? { images: first.images } : {}),
     });
     starting.delete(key);
-    // Deleted while it started: its session goes too.
+    // Deleted, stopped or removed while it started: its session goes too, and the card stays as the stop left it.
     if (!designOf(sid, label)) return void workers(parent).stop(ref.chatId, "design deleted").catch(() => {});
+    if (haltedWhileStarting.delete(key)) return void workers(parent).stop(ref.chatId, "design stopped").catch(() => {});
     changeDesign(sid, label, (x) => {
       x.sessionId = ref.chatId;
       x.sessionFile = ref.sessionFile;
@@ -255,9 +288,13 @@ async function startSession(parent: DesignParent, label: string, seed?: { text: 
     follow(parent, label, ref.chatId);
   } catch (err) {
     starting.delete(key);
+    if (haltedWhileStarting.delete(key)) return;
     if (designOf(sid, label)) fail(parent, label, err instanceof Error ? err.message : String(err));
   }
 }
+
+/** Starts a stop came in during: when the start answers, its session is stopped at once. */
+const haltedWhileStarting = new Set<string>();
 
 const viewCwd = (sessionId: string): string => readDesigns(sessionId).cwd ?? agentRoot();
 
@@ -285,7 +322,7 @@ function finishRun(parent: DesignParent, label: string): void {
   if (!d) return;
   const run = runOf(parent.sessionId, d.runId);
   const view = viewOf(parent.sessionId);
-  if (run?.phase === "generating" && view.designs.filter((x) => x.runId === run.id).every((x) => x.status === "ready" || x.status === "failed")) setRunPhase(parent.sessionId, run.id, "done");
+  if (run?.phase === "generating" && view.designs.filter((x) => x.runId === run.id).every((x) => x.removed || x.status === "ready" || x.status === "failed" || x.status === "stopped")) setRunPhase(parent.sessionId, run.id, "done");
 }
 
 // ---- following a session -------------------------------------------------------------------------
@@ -586,13 +623,17 @@ export function onDesignHandIn(fn: (e: { sessionId: string; label: string; versi
 
 function commitVersion(parent: DesignParent, label: string, html: string, note: DesignNote | undefined): DesignVersion {
   const sid = parent.sessionId;
-  const by = changeDesigns(sid, (s) => {
+  const { by, historyId } = changeDesigns(sid, (s) => {
     const i = s.internal?.[label];
-    const out = i?.by ?? "chat";
-    if (i) i.by = "chat";
+    const out = { by: i?.by ?? "chat", historyId: i?.historyId };
+    if (i) {
+      i.by = "chat";
+      delete i.historyId;
+    }
     return out;
   });
   const n = (designOf(sid, label)?.versions.at(-1)?.n ?? 0) + 1;
+  if (historyId) historyVersion(sid, historyId, n);
   writePage(sid, label, n, html);
   const version: DesignVersion = { n, at: new Date().toISOString(), chars: html.length, by, ...(note ? { note } : {}) };
   setPendingPage(sid, label, null);
@@ -632,6 +673,7 @@ export { pageProblem };
     card says Fixing; the turn's end knows why if it stops there. With its tries used up the turn is over. */
 export function refusedPage(parent: DesignParent, label: string, problem: string, html?: string): never {
   const sid = parent.sessionId;
+  assertTakesPages(sid, label);
   // The page it was refused for is what its next edits apply to, so a fix can be a small edit, not the page again.
   if (html !== undefined) refusedPages.set(`${sid}\0${label}`, html);
   const tried = takeFixTry(sid, label);
@@ -690,12 +732,21 @@ export function readingSkill(parent: DesignParent, label: string): void {
   });
 }
 
+/** A design stopped or set aside takes no page, and spends no try, from a session that is still winding down: every
+    design tool asks this first. */
+export function assertTakesPages(sid: string, label: string): void {
+  const d = designOf(sid, label);
+  if (d && (d.status === "stopped" || d.removed)) throw new Error("This design was stopped, so this page isn't kept. Stop now.");
+}
+
 export function savePage(parent: DesignParent, label: string, html: string): void {
+  assertTakesPages(parent.sessionId, label);
   setPendingPage(parent.sessionId, label, html);
   clearRefused(parent.sessionId, label);
 }
 
 export function handIn(parent: DesignParent, label: string, html: string, note: DesignNote): DesignVersion {
+  assertTakesPages(parent.sessionId, label);
   return commitVersion(parent, label, html, note);
 }
 
@@ -706,7 +757,8 @@ export function onLiveFrame(chatId: string, f: { thinking?: true; gen: number; a
   if (!owner || !label) return;
   const sid = owner.parent.sessionId;
   const d = designOf(sid, label);
-  if (!d) return;
+  // A stopped or removed design keeps what the stop left: a slice its dying session still sent changes nothing.
+  if (!d || d.sessionId !== chatId || d.sessionEnded || d.status === "stopped" || d.removed) return;
   // A chat that came back re-telling the page it already finished: that is no new page.
   if (f.at === 0 && !f.thinking && !livePage(sid, label) && f.text.trim() === readPage(sid, label)?.trim()) return;
   heard(owner.parent, label);
@@ -737,6 +789,10 @@ export interface DesignSend {
   by: "user" | "coordinator" | "main" | "server";
   /** What the page shows this version came from. */
   version?: "refine" | "chat" | "coordinator";
+  /** The words the history keeps, when they differ from what the session gets (a Refine's, without Sova's own lines). */
+  historyText?: string;
+  /** The Creative Director's tool call that sent it. */
+  toolCallId?: string;
 }
 
 /**
@@ -750,6 +806,8 @@ export async function deliverDesign(parent: DesignParent, label: string, send: D
   const sid = parent.sessionId;
   const d = designOf(sid, label);
   if (!d) throw new Error(`No design ${label} in this chat.`);
+  if (d.removed) throw new DesignRefused(`Design ${label} is removed: restore it first.`);
+  if (d.status === "stopped") throw new DesignRefused(`Design ${label} is stopped: Start Again first.`);
   if (!d.sessionId) throw new Error(`Design ${label} hasn't started yet.`);
   const key = `design-send:${send.key}`;
   const by = send.version ?? (send.by === "coordinator" ? "coordinator" : "chat");
@@ -768,8 +826,13 @@ export async function deliverDesign(parent: DesignParent, label: string, send: D
   };
   try {
     const alive = (await workers(parent).list()).some((r) => r.chatId === d.sessionId);
-    if (!alive) return await restartFromPage(parent, d, send.text);
+    if (!alive) {
+      const out = await restartFromPage(parent, d, send.text);
+      noteSent(sid, label, send, key, by, true);
+      return out;
+    }
     const { queued } = await workers(parent).send(d.sessionId, { text: send.text, delivery: "followUp", key });
+    noteSent(sid, label, send, key, by, false);
     if (!following.has(`${sid}\0${label}`)) follow(parent, label, d.sessionId);
     changeDesign(sid, label, (x) => {
       // A failed design's reason stays until a Retry: a message doesn't make it not have failed.
@@ -784,6 +847,25 @@ export async function deliverDesign(parent: DesignParent, label: string, send: D
   }
 }
 
+/** A message a design was given, in the history, once per key; the version it leads to fills in when it lands. */
+function noteSent(sid: string, label: string, send: DesignSend, key: string, by: "refine" | "chat" | "coordinator", fresh: boolean): void {
+  const seen = changeDesigns(sid, (s) => {
+    const i = s.internal?.[label];
+    if (!i) return false;
+    if (i.sentKeys?.includes(key)) return true;
+    i.sentKeys = [...(i.sentKeys ?? []), key].slice(-20);
+    return false;
+  });
+  if (seen) return;
+  const via: DesignHistoryItem["via"] = send.by === "server" ? "fix" : send.by === "main" && !send.version ? "main" : by;
+  const d = designOf(sid, label);
+  const id = recordHistory(sid, { kind: "message", by: send.by, ...(d ? { runId: d.runId } : {}), label, via, text: send.historyText ?? send.text, ...(fresh ? { fresh: true as const } : {}), ...(send.toolCallId ? { toolCallId: send.toolCallId } : {}) });
+  setHistoryId(sid, label, id);
+}
+
+/** A refusal a person can act on (a removed or stopped design): the routes answer 409. */
+export class DesignRefused extends Error {}
+
 /** A session stopped for good: a new one starts from the stored page and is given the message. */
 async function restartFromPage(parent: DesignParent, d: DesignRecord, text: string): Promise<{ queued: boolean }> {
   const page = readPage(parent.sessionId, d.label);
@@ -797,16 +879,18 @@ async function restartFromPage(parent: DesignParent, d: DesignRecord, text: stri
   return { queued: false };
 }
 
-/** Try a failed design again, in a fresh session. */
-export function retryDesign(parent: DesignParent, label: string): void {
+/** Try a failed design again, or Start Again a stopped one: in a fresh session, writing its page afresh. */
+export function retryDesign(parent: DesignParent, label: string, by: DesignActor = "user", toolCallId?: string): void {
   const d = designOf(parent.sessionId, label);
   if (!d) throw new Error(`No design ${label} in this chat.`);
-  if (d.status !== "failed") throw new Error(`Design ${label} hasn't failed.`);
+  if (d.removed) throw new DesignRefused(`Design ${label} is removed: restore it first.`);
+  if (d.status !== "failed" && d.status !== "stopped") throw new DesignRefused(`Design ${label} hasn't failed or been stopped.`);
   if (d.sessionId) void workers(parent).stop(d.sessionId, "retrying this design").catch(() => {});
   changeDesign(parent.sessionId, label, (x) => {
     x.status = "queued";
     delete x.error;
     delete x.fix;
+    delete x.stopped;
     delete x.sessionId;
     delete x.sessionFile;
     delete x.delivery;
@@ -823,7 +907,118 @@ export function retryDesign(parent: DesignParent, label: string): void {
   refusedPages.delete(`${parent.sessionId}\0${label}`);
   const run = runOf(parent.sessionId, d.runId);
   if (run?.phase === "done") setRunPhase(parent.sessionId, run.id, "generating");
+  setHistoryId(parent.sessionId, label, recordHistory(parent.sessionId, { kind: "again", by, runId: d.runId, label, ...(toolCallId ? { toolCallId } : {}) }));
   pump(parent);
+}
+
+/** A design that is queued, starting, or whose session is at work: what Stop can stop. */
+export function designStoppable(sid: string, d: DesignRecord): boolean {
+  return !d.removed && (atWork(d) || starting.has(startKey(sid, d.label)) || (!!d.sessionId && !d.sessionEnded && d.workerState === "working"));
+}
+
+/**
+ * Stop a design. Nothing its session still sends changes the card from here: the watch on it ends first. What it had
+ * written is kept as a still before its session goes, so the still is on disk whatever happens next. One with no
+ * version reads Stopped (never Failed) and never starts by itself, a restart included; one stopped mid-change keeps its
+ * last finished version and reads Ready, saying the change was stopped.
+ */
+export function stopDesign(parent: DesignParent, label: string, by: DesignActor, toolCallId?: string): DesignRecord {
+  const sid = parent.sessionId;
+  const d = designOf(sid, label);
+  if (!d) throw new Error(`No design ${label} in this chat.`);
+  if (d.removed) throw new DesignRefused(`Design ${label} is removed, so it isn't running.`);
+  if (!designStoppable(sid, d)) throw new DesignRefused(`Design ${label} isn't queued or being written, so there's nothing to stop.`);
+  return halt(parent, label, by, toolCallId);
+}
+
+function halt(parent: DesignParent, label: string, by: DesignActor, toolCallId?: string, removing = false): DesignRecord {
+  const sid = parent.sessionId;
+  const key = `${sid}\0${label}`;
+  following.get(key)?.();
+  following.delete(key);
+  stopWatching(sid, label);
+  if (starting.has(startKey(sid, label))) haltedWhileStarting.add(startKey(sid, label));
+  const d = designOf(sid, label)!;
+  const written = livePage(sid, label)?.text || pendingPage(sid, label) || "";
+  const at = new Date().toISOString();
+  let still: DesignStill | undefined;
+  if (!d.versions.length && written.trim()) {
+    const n = changeDesigns(sid, (s) => {
+      const i = ((s.internal ??= {})[label] ??= { attempt: 0, brief: "", by: "first", parentPath: parent.path });
+      return (i.stills = (i.stills ?? 0) + 1);
+    });
+    // Saved before the session is stopped: the live page is only this server's memory.
+    writeStill(sid, label, n, written);
+    still = { n, chars: written.length, at };
+  }
+  clearLivePage(sid, label);
+  setPendingPage(sid, label, null);
+  refusedPages.delete(key);
+  const sessionId = d.sessionId;
+  // Removed before it ever started: it was waiting, and reads so once restored.
+  const waiting = removing && d.status === "queued" && !d.sessionId && !starting.has(startKey(sid, label));
+  const out = changeDesign(sid, label, (x) => {
+    if (x.versions.length) {
+      x.status = "ready";
+      x.unchanged = { reason: `${by === "coordinator" ? "The Creative Director" : "You"} stopped it before it finished, so its last version stands.`, at };
+    } else {
+      x.status = "stopped";
+      x.stopped = { at, by, ...(still ? { still } : {}), ...(waiting ? { waiting: true as const } : {}) };
+    }
+    delete x.error;
+    delete x.fix;
+    delete x.live;
+    delete x.thinking;
+    delete x.readingSkill;
+    delete x.delivery;
+    if (x.sessionId) {
+      x.sessionEnded = true;
+      x.workerState = "ended";
+    }
+  });
+  changeDesigns(sid, (s) => {
+    const i = s.internal?.[label];
+    if (!i) return;
+    i.by = "chat";
+    delete i.fixes;
+    delete i.refused;
+    delete i.historyId;
+  });
+  if (sessionId) void workers(parent).stop(sessionId, "design stopped").catch(() => {});
+  // A waiting design set aside wasn't stopped: its removal is the one thing that happened to it.
+  if (!waiting) {
+    recordHistory(sid, { kind: "stop", by, runId: d.runId, label, ...(still ? { still } : {}), ...(toolCallId ? { toolCallId } : {}) });
+    if (by !== "coordinator") noteDesignEvent(sid, { label, kind: "stopped" });
+  }
+  finishRun(parent, label);
+  return out;
+}
+
+/** Set a design aside: one still at work is stopped first. It keeps its label, versions and session, never starts by
+    itself, and still counts against the limits, so Restore always works. */
+export function removeDesign(parent: DesignParent, label: string, by: DesignActor, toolCallId?: string): DesignRecord {
+  const sid = parent.sessionId;
+  const d = designOf(sid, label);
+  if (!d) throw new Error(`No design ${label} in this chat.`);
+  if (d.removed) throw new DesignRefused(`Design ${label} is already removed.`);
+  if (designStoppable(sid, d)) halt(parent, label, by, toolCallId, true);
+  const out = changeDesign(sid, label, (x) => void (x.removed = { at: new Date().toISOString(), by }));
+  recordHistory(sid, { kind: "remove", by, runId: d.runId, label, ...(toolCallId ? { toolCallId } : {}) });
+  if (by !== "coordinator") noteDesignEvent(sid, { label, kind: "removed" });
+  finishRun(parent, label);
+  return out;
+}
+
+/** Put a removed design back exactly as it was. One that was waiting stays Stopped until someone starts it again. */
+export function restoreDesign(parent: DesignParent, label: string, by: DesignActor, toolCallId?: string): DesignRecord {
+  const sid = parent.sessionId;
+  const d = designOf(sid, label);
+  if (!d) throw new Error(`No design ${label} in this chat.`);
+  if (!d.removed) throw new DesignRefused(`Design ${label} isn't removed.`);
+  const out = changeDesign(sid, label, (x) => void delete x.removed);
+  recordHistory(sid, { kind: "restore", by, runId: d.runId, label, ...(toolCallId ? { toolCallId } : {}) });
+  if (by !== "coordinator") noteDesignEvent(sid, { label, kind: "restored" });
+  return out;
 }
 
 /** Delete one design, its session and its pages stay out of the view from here on. */
@@ -843,10 +1038,10 @@ export function deleteDesign(parent: DesignParent, label: string): void {
 }
 
 /** Metadata only, never a page: what the coordinator may know of every design. */
-export function designsFor(sessionId: string): { label: string; direction: string; layout?: string; model: string; parents: string[]; status: DesignRecord["status"]; version: number; note?: DesignNote; costUsd?: number }[] {
+export function designsFor(sessionId: string): { label: string; direction: string; layout?: string; model: string; parents: string[]; status: DesignRecord["status"]; removed?: true; version: number; note?: DesignNote; costUsd?: number }[] {
   return viewOf(sessionId).designs.map((d) => {
     const last = d.versions.at(-1);
-    return { label: d.label, direction: d.direction, ...(d.layout ? { layout: d.layout } : {}), model: d.model, parents: d.parents, status: d.status, version: last?.n ?? 0, ...(last?.note ? { note: last.note } : {}), ...(d.usage ? { costUsd: d.usage.cost } : {}) };
+    return { label: d.label, direction: d.direction, ...(d.layout ? { layout: d.layout } : {}), model: d.model, parents: d.parents, status: d.status, ...(d.removed ? { removed: true as const } : {}), version: last?.n ?? 0, ...(last?.note ? { note: last.note } : {}), ...(d.usage ? { costUsd: d.usage.cost } : {}) };
   });
 }
 

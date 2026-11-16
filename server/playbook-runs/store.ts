@@ -88,13 +88,22 @@ export function onPlaybookRunChanged(fn: (run: PlaybookRunRecord) => void): () =
   return () => listeners.delete(fn);
 }
 
+/** What of a run the session list reads, per run, as last written. */
+const listed = new Map<string, string>();
+const listKey = (r: PlaybookRunRecord): string => JSON.stringify([r.closed ?? false, r.state === "started", r.shownIn?.id, r.started?.chat.id, r.playbook.title]);
+
 function write(r: PlaybookRunRecord): void {
   mkdirSync(playbookRunsDir(), { recursive: true, mode: 0o700 });
   const f = fileOf(r.id);
   writeFileSync(`${f}.tmp`, JSON.stringify(r), { mode: 0o600 });
   renameSync(`${f}.tmp`, f);
-  // A chat showing a card is listed even before its first message (sessions-index.ts), so the list reads again.
-  sessionsChanged();
+  // A chat showing a card is listed even before its first message (sessions-index.ts): the list reads again
+  // when that could change (a run made, closed or started, or moved to another chat), never for an edit.
+  const key = listKey(r);
+  if (listed.get(r.id) !== key) {
+    listed.set(r.id, key);
+    sessionsChanged();
+  }
   for (const fn of listeners) {
     try {
       fn(r);
@@ -155,4 +164,5 @@ export const chatsOfRun = (r: PlaybookRunRecord): string[] => [...new Set([r.sho
 /** Tests: forget the kept copies, so the next read comes from disk (a restart). */
 export function forgetPlaybookRuns(): void {
   runs = null;
+  listed.clear();
 }

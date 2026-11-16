@@ -181,3 +181,19 @@ describe("a playbook card", () => {
     assert.match(back.startError ?? "", /Sova stopped while this run was starting/);
   });
 });
+
+describe("the session list", () => {
+  test("reads again when a card opens or closes, never for an edit", async () => {
+    const { storesGeneration } = await import("../list-generation");
+    const path = join(scratchAgentDir, "sessions", "--proj--", "2026-11-16T00-00-08-000Z_chat-gen.jsonl");
+    writeFileSync(path, `${JSON.stringify({ type: "session", version: 3, id: "chat-gen", timestamp: "2026-11-16T00:00:08.000Z", cwd: scratchAgentDir })}\n`);
+    let g = storesGeneration();
+    const v = (await (await app.request("/api/playbook-runs", json({ playbook: { source: "user", id: "trial" }, cwd: scratchAgentDir, path }))).json()) as PlaybookRunView;
+    assert.notEqual(storesGeneration(), g, "a card opened");
+    g = storesGeneration();
+    await asPage(`/api/playbook-runs/${v.id}`, patch({ revision: v.revision, edits: { choices: { topic: "typed" } } }));
+    assert.equal(storesGeneration(), g, "an edit changes nothing the list reads");
+    await app.request(`/api/playbook-runs/${v.id}`, { method: "DELETE" });
+    assert.notEqual(storesGeneration(), g, "a card closed");
+  });
+});

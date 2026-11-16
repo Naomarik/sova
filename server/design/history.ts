@@ -106,11 +106,12 @@ export function readHistory(sessionId: string): DesignHistory {
   for (const run of s.runs) {
     const b = run.brief;
     if (!b?.prompt) continue;
-    // Rebuilt only for a run the history never saw: one recorded from its start has its own items.
-    if (recorded.some((i) => i.runId === run.id)) continue;
+    // Rebuilt only for what the history never saw: a run recorded from its start has its own prompt and Start, while one
+    // made before has only what happened since (a message, a removal), which mustn't hide what is recoverable.
+    const has = (kind: DesignHistoryItem["kind"]): boolean => recorded.some((i) => i.runId === run.id && i.kind === kind);
     const at = b.startedAt ?? run.updatedAt;
-    recovered.push({ id: `r-${run.id}-prompt`, at, kind: "prompt", by: b.promptBy ?? "coordinator", runId: run.id, rev: b.textRev, text: b.prompt, recovered: true });
-    if (b.startedAt) {
+    if (!has("prompt")) recovered.push({ id: `r-${run.id}-prompt`, at, kind: "prompt", by: b.promptBy ?? "coordinator", runId: run.id, rev: b.textRev, text: b.prompt, recovered: true });
+    if (b.startedAt && !has("start")) {
       const designs = s.designs.filter((d) => d.runId === run.id && !d.parents.length && run.labels.includes(d.label));
       recovered.push({ id: `r-${run.id}-start`, at: b.startedAt, kind: "start", by: "user", runId: run.id, rev: b.textRev, designs: designs.map((d) => ({ label: d.label, direction: d.direction, ...(d.layout ? { layout: d.layout } : {}), model: d.model })), recovered: true });
     }

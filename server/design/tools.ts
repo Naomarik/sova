@@ -33,7 +33,7 @@ export function mainDesignTools(parent: () => DesignParent, cwd: () => string): 
     {
       name: "lookbook",
       label: "lookbook",
-      description: `The Lookbook: one page designed by several models side by side. op "start" puts a Lookbook Setup card in the chat (the user finishes it there, up to ${DESIGN_BATCH_MAX} designs), only when the user asked for a Lookbook. op "read" gets the Creative Director's card (the coordinator), or one design's whole page with label. op "tell" passes text word for word to the Creative Director. images (the paths of images the user attached) join the Lookbook's images, on start as on tell. Call vis_guide with kind "lookbook" first.`,
+      description: `The Lookbook: one page designed by several models side by side. op "start" puts a Lookbook Setup card in the chat (the user finishes it there, up to ${DESIGN_BATCH_MAX} designs), only when the user asked for a Lookbook. op "read" gets the Creative Director's card (the coordinator), or with label a design's whole page: its latest version, unless label names one ("A11"); several at once with commas ("A11, A16"). op "tell" passes text word for word to the Creative Director. images (the paths of images the user attached) join the Lookbook's images, on start as on tell. Call vis_guide with kind "lookbook" first.`,
       parameters: {
         type: "object",
         properties: {
@@ -46,7 +46,7 @@ export function mainDesignTools(parent: () => DesignParent, cwd: () => string): 
           coordinator: str("start: the model id for the Creative Director (the coordinator), only when the user named one."),
           skills: list("start: design skills the user named for this Lookbook, each a skill's name (this project's skills are found by name) or a folder holding SKILL.md (an absolute or ~ path). None loads by itself: with none named, pass none."),
           images: list("start or tell: the paths of images the user attached (a screenshot, a logo), to add to this Lookbook's images. On start they join the run itself."),
-          label: str("read: a design's label, for its whole page."),
+          label: str('read: the page to read: a design\'s label ("A") for its latest version, a label with a version number ("A11") for that version, or several separated by commas ("A11, A16").'),
           text: str("tell: the words to pass on, exactly as the user said them."),
         },
         required: ["op"],
@@ -76,12 +76,7 @@ export function mainDesignTools(parent: () => DesignParent, cwd: () => string): 
           return say(`The Setup card is on screen (run ${run.id}${picked ? `, ${picked} models ticked` : ""}).${skills}${missing}${imagesLine}${failed} The user finishes it there and starts the run; above ${DESIGN_ASK_ABOVE} designs Sova asks them first. Nothing more is needed from you, and nothing about it will reach you.`, { designCard: { runId: run.id } });
         }
         if (params?.op === "read") {
-          if (params.label) {
-            if (!isDesignLabel(params.label) || !designOf(p.sessionId, params.label)) throw new Error(`No design ${params.label} in this chat.`);
-            const page = readPage(p.sessionId, params.label);
-            if (!page) throw new Error(`Design ${params.label} has no finished page yet.`);
-            return say(page);
-          }
+          if (params.label) return say(readDesignPages(p.sessionId, params.label));
           const card = coordinatorCard(p.sessionId);
           const lines = viewOf(p.sessionId).designs.map((d) => `${d.label} · ${designDirectionLine(d)} · ${d.model} · ${d.status}`);
           return say([card?.card || "The Creative Director has no card yet.", lines.length ? `Designs:\n${lines.join("\n")}` : ""].filter(Boolean).join("\n\n"));
@@ -98,6 +93,44 @@ export function mainDesignTools(parent: () => DesignParent, cwd: () => string): 
       },
     },
   ];
+}
+
+/** One page a read names: "A" (its latest version) or "A11" (version 11). */
+const PAGE_NAME = /^([A-Z]{1,4})(\d+)?$/;
+
+const when = (iso: string): string => iso.replace("T", " ").replace(/:\d\d(\.\d+)?Z$/, " UTC");
+
+/**
+ * The pages the main chat's read names, each under a line saying which version it is, of how many, and when it was
+ * made, and whether a newer one is being written. "A" is its latest version; "A11" version 11; several are separated by
+ * commas or spaces. A name that isn't a design, or a version it doesn't have, throws, naming what there is; nothing is
+ * read then.
+ */
+export function readDesignPages(sessionId: string, asked: string): string {
+  const names = [...new Set(asked.split(/[\s,]+/).map((x) => x.trim().toUpperCase()).filter(Boolean))];
+  if (!names.length) throw new Error("label names no design: give a label such as A, or A11 for its version 11.");
+  const designs = viewOf(sessionId).designs;
+  const labels = designs.map((d) => d.label).join(", ") || "none yet";
+  const picked = names.map((name) => {
+    const m = PAGE_NAME.exec(name);
+    const d = m && isDesignLabel(m[1]) ? designOf(sessionId, m[1]!) : undefined;
+    if (!m || !d) throw new Error(`No design ${name} in this chat. Its designs: ${labels}.`);
+    const last = d.versions.at(-1);
+    if (!last) throw new Error(`Design ${d.label} has no finished page yet.`);
+    const n = m[2] === undefined ? last.n : Number(m[2]);
+    const v = d.versions.find((x) => x.n === n);
+    if (!v) throw new Error(`Design ${d.label} has no version ${n}: it has ${d.versions.length === 1 ? `version ${last.n}` : `versions ${d.versions[0]!.n} to ${last.n}`}.`);
+    return { d, v, last };
+  });
+  return picked
+    .map(({ d, v, last }) => {
+      const page = readPage(sessionId, d.label, v.n);
+      if (page === null) throw new Error(`Design ${d.label}'s version ${v.n} couldn't be read.`);
+      const head = `Design ${d.label} · version ${v.n} of ${last.n} · ${v.n === last.n ? "latest" : `not the latest (version ${last.n} is, from ${when(last.at)})`} · ${when(v.at)}`;
+      const writing = d.live ? `Version ${d.live.version} is being written now; this isn't it.` : d.status === "writing" || d.status === "fixing" ? "A newer version is being written now; this isn't it." : "";
+      return [head, writing, "", page].filter((x, i) => i === 2 || x).join("\n");
+    })
+    .join("\n\n");
 }
 
 const noteOf = (v: unknown): DesignNote | null => {

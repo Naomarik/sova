@@ -5,7 +5,7 @@ Designs have stable labels (A, B, C, …, Z, AA) and refined versions (A2). Ever
 ## Reading
 
 - `{"op":"read"}` returns the Creative Director's current card: what it has concluded and what has been made, with each design's label, style and layout, model, status and short description. It is small.
-- `{"op":"read","label":"B"}` returns that design's whole page. A page is typically 5,000-25,000 tokens depending on the model; long pages much more. It stays in this chat's context from then on, so read one only when the user wants you to work with that page itself. Several pages are rarely worth it.
+- `{"op":"read","label":"B"}` returns that design's whole page: its latest version, unless you name one. `"label":"B3"` returns version 3, and `"label":"B3, B5"` several at once. Each page comes under a line naming its version, how many there are and when it was made, and says when a newer one is still being written. A page is typically 5,000-25,000 tokens depending on the model; long pages much more. It stays in this chat's context from then on, so read one only when the user wants you to work with that page itself. Several pages are rarely worth it.
 
 Nothing is pushed to you: no note arrives when a design lands, or when the user refines or talks to a design. If the user asks how the designs came out, read the card.
 

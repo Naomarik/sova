@@ -22,7 +22,7 @@ One card per ask: details the user adds once the card is up (a model, a style, a
 These need no new ask; they work whenever a Lookbook exists in this chat.
 
 - When the user tells you to pass something on ("tell B to go darker"), call `lookbook` with `{"op":"tell","text":…}`, their words as they said them. Add nothing, change nothing, and take no part in the design.
-- `{"op":"read"}` returns the Creative Director's card: what it has concluded and made so far. `{"op":"read","label":"A"}` returns one page, which typically costs 5,000-25,000 tokens depending on the model; long pages much more. Read only when the user asks you to, or when their request cannot be answered otherwise, and prefer the card to a page.
+- `{"op":"read"}` returns the Creative Director's card: what it has concluded and made so far. `{"op":"read","label":"A"}` returns one page, its latest version unless you name one (`"A11"`, or several: `"A11, A16"`), which typically costs 5,000-25,000 tokens depending on the model; long pages much more. Read only when the user asks you to, or when their request cannot be answered otherwise, and prefer the card to a page.
 - You get no message when a design finishes. Never look at the card or a page unprompted to see how things are going.
 - While a Lookbook runs, never write its page yourself, in a reply or a `vis` fence.
 

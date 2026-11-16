@@ -168,6 +168,23 @@ function record(sid: string, label: string, n: number, views: DesignView[]): voi
 // One pass at a time on this computer: each is a browser, and a batch of designs lands its versions together.
 const queue: { parent: BrowseParent; label: string; n: number }[] = [];
 let busy = false;
+/** When each version's pass last began, so a version whose pass couldn't run is tried again, but not on every read. */
+const lastTried = new Map<string, number>();
+export const VIEWS_RETRY_MS = 5 * 60_000;
+
+/**
+ * A pass can't run while its chat has no running process to vouch for its sandbox (a chat closed or archived when its
+ * designs finished): its views stay unchecked. A read or look of such a version, made while the chat is open again,
+ * queues the pass once more, at most once every few minutes per version. Nothing waits for it.
+ */
+export function recheckViews(parent: BrowseParent, label: string, v: Pick<DesignVersion, "n" | "views">, deps: DesignLookDeps = {}, now = Date.now()): boolean {
+  if (!v.views?.length || !v.views.every((x) => x.state === "unchecked")) return false;
+  const key = `${parent.sessionId}\0${label}\0${v.n}`;
+  if (queue.some((x) => x.parent.sessionId === parent.sessionId && x.label === label && x.n === v.n)) return false;
+  if (now - (lastTried.get(key) ?? -Infinity) < VIEWS_RETRY_MS) return false;
+  void queueViewsCheck(parent, label, v.n, deps);
+  return true;
+}
 
 /** Check a just-kept version's views in the background. A pass for a version a newer one of the same design has
     overtaken in the queue is skipped: its views stay unchecked. */
@@ -183,6 +200,7 @@ async function drain(deps: DesignLookDeps): Promise<void> {
     for (let job = queue.shift(); job; job = queue.shift()) {
       const { parent, label, n } = job;
       if (queue.some((x) => x.parent.sessionId === parent.sessionId && x.label === label && x.n > n)) continue;
+      lastTried.set(`${parent.sessionId}\0${label}\0${n}`, Date.now());
       try {
         const views = await checkVersionViews(parent, label, n, deps);
         if (views) record(parent.sessionId, label, n, views);

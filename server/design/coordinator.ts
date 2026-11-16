@@ -31,7 +31,7 @@ import { retiredModelRefs } from "../harness/pi/model-sync";
 import { recordHistory } from "./history";
 import { answerQuestions, BRIEF_LIMITS, coordinatorWrote, fillNotes, sameAddress, isHttpUrl, keepPrompt, keptImages, launchText, lookNote, mergeLinks, newBrief, openQuestions, parseBriefQuestions, rewritePrompt, turnEnded, userEditedPrompt, userEditedSummary, userTold, type BriefPick } from "./brief";
 import { DESIGN_BROWSE_TOUR_ID, designBrowse, walkProblem, type BrowseParent, type DesignBrowseStores } from "./browse";
-import { lookAtDesignPage, viewsLineFor } from "./views";
+import { lookAtDesignPage, recheckViews, viewsLineFor } from "./views";
 import type { TourWalkAction } from "../tours/runner-protocol";
 import { pageSize, pickVersions, versionHeading, type PickedVersion } from "./versions";
 import { designModelOptions, estimateUsd, type DesignModelOption } from "./setup";
@@ -1361,6 +1361,7 @@ export function coordinatorTools(sessionId: string): ToolSpec[] {
           const text = readPage(parent.sessionId, x.d.label, x.v.n);
           const size = text !== null ? pageSize(text) : `${x.v.chars.toLocaleString("en-US")} characters`;
           const views = viewsLineFor(x.v, text);
+          recheckViews(parent, x.d.label, x.v);
           const shown = r.view ? `The view ${r.view}.\n` : "";
           content.push({ type: "text", text: `${versionHeading(x)}\nSize: ${size}.\n${views ? `${views}\n` : ""}${shown}${(first as { text: string }).text}` }, ...images);
           ids.push(...shots.map((s) => s.id));

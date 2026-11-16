@@ -10,7 +10,7 @@ import { TourCaptureFailure } from "../tours/targets";
 
 process.env.PI_CODING_AGENT_DIR = mkdtempSync(join(tmpdir(), "design-views-"));
 after(() => rmSync(process.env.PI_CODING_AGENT_DIR!, { recursive: true, force: true }));
-const { checkVersionViews, lookAtDesignPage, pageViews, viewsLine } = await import("./views");
+const { checkVersionViews, lookAtDesignPage, pageViews, recheckViews, viewsLine, VIEWS_RETRY_MS } = await import("./views");
 const { pageProblem } = await import("./lint");
 const store = await import("./store");
 
@@ -212,4 +212,25 @@ test("a version kept before views were read still lists the views its page names
   const tool = mainDesignTools(() => ({ sessionId: sid4, path: parent.path }), () => "/cwd").find((t) => t.name === "lookbook")!;
   const read = (await tool.execute("t", { op: "read", label: "A" }, undefined, undefined, undefined as never)).content[0] as { text: string };
   assert.match(read.text, /\nViews \(found from its tabs; the page declares none\): the first screen · Sessions · Deploy · not yet checked in a browser\n/);
+});
+
+test("a version whose views no browser could check yet is checked again when it is read, at most once every few minutes", async () => {
+  const sid5 = "views-5";
+  store.changeDesigns(sid5, (s) => void s.designs.push({ ...record(), versions: [{ ...record().versions[0]!, views: [{ name: "Overview", source: "declared", state: "unchecked" }] }] }));
+  store.writePage(sid5, "A", 1, tabsPage);
+  const b = browser(new Set());
+  const p5 = { sessionId: sid5, path: parent.path };
+  const version = () => store.designOf(sid5, "A")!.versions[0]!;
+  const t0 = Date.now();
+  assert.equal(recheckViews(p5, "A", version(), b.deps, t0), true);
+  // Its pass is queued once: the same read again asks for nothing.
+  assert.equal(recheckViews(p5, "A", version(), b.deps, t0), false);
+  for (let i = 0; i < 100 && version().views!.every((v) => v.state === "unchecked"); i++) await new Promise((r) => setTimeout(r, 5));
+  assert.equal(b.attempts.length, 1);
+  assert.ok(version().views!.some((v) => v.state !== "unchecked"), "its findings are recorded on the version");
+  // Checked now: no read asks again. Still unchecked a while after a pass that couldn't run: asked again.
+  assert.equal(recheckViews(p5, "A", version(), b.deps, t0 + VIEWS_RETRY_MS + 1), false);
+  store.changeDesign(sid5, "A", (d) => void (d.versions[0]!.views = [{ name: "Overview", source: "declared", state: "unchecked" }]));
+  assert.equal(recheckViews(p5, "A", version(), b.deps, t0 + 1000), false);
+  assert.equal(recheckViews(p5, "A", version(), b.deps, Date.now() + VIEWS_RETRY_MS + 1), true);
 });

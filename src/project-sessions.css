@@ -130,7 +130,12 @@ a.psess-link, a.psess-link:hover { color: var(--color-ink); text-decoration: non
 .psess-row:hover .psess-meter { background: var(--color-surface); }
 
 /* A refusal or the Remove Worktree question: under the row, its whole width, above the stretched link. */
-.psess-note { grid-column: 1 / -1; margin: 0; min-width: 0; }
+/* The row's end padding is tighter than its start (the ⋯ sits there): a note takes the difference back, so it is
+   inset the same on both sides. */
+.psess-note { grid-column: 1 / -1; margin: 0 var(--space-2) 0 0; min-width: 0; }
+/* Land's question (the Worktrees window's confirm): at the row's end, under where Land was, as the queue's own
+   lists place it; the row's whole width where the row is narrower than the box. */
+.psess-note > .wt-queue-confirm { width: 100%; max-width: 420px; margin: 0 0 0 auto; }
 .psess-note .button-row { display: flex; flex-wrap: wrap; gap: var(--space-2); }
 
 /* Landed, folded: its latest in one line and Show Landed; open, more a page at a time. */

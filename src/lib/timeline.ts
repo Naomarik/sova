@@ -8,7 +8,7 @@
 // every past outline summary. The rewind rules (which row may act, the boundary and the rows a
 // rewind left behind) stay in inputs.ts; this module only places their rows on the axis.
 
-import type { OutlineSnapshot, RewindInfo, SessionOutline, TranscriptItem } from "../../shared/protocol";
+import type { AlignChangeInfo, OutlineSnapshot, RewindInfo, SessionOutline, TranscriptItem } from "../../shared/protocol";
 import { clockTime, duration, relativeTime, thousands } from "./format";
 import { inputPreview, inputRows, typedByUser, type RowState, type Sender, type ViewRow } from "./inputs";
 import { SPAWN_TOOLS } from "./message";
@@ -25,7 +25,7 @@ export type TimelineKind = "input" | "chapter" | "marker" | "density" | "gap";
  * emits one only when that list is passed in. An `outline` is a past summary of the session, from
  * the insight's `outlines`: a marker, because it is the axis reporting, not the session speaking.
  */
-export type MarkerKind = "compaction" | "spawn" | "retire" | "change" | "rewind" | "outline";
+export type MarkerKind = "compaction" | "spawn" | "retire" | "change" | "rewind" | "outline" | "align";
 
 /** The default title of a marker kind, when the row has nothing more specific to say. */
 export const MARKER_TITLE: Record<MarkerKind, string> = {
@@ -35,7 +35,29 @@ export const MARKER_TITLE: Record<MarkerKind, string> = {
   change: "Changed the session's settings",
   rewind: "Rewound to an earlier message",
   outline: "Goal",
+  align: "Alignment",
 };
+
+/**
+ * The words an alignment's lifecycle change reads with on the axis: "Alignment al_1 dropped".
+ * Only the lifecycle gets a row — started, implementing, done, dropped, and back to open — so
+ * every other change kind (questions answered, items edited, reviews, blockers) answers null.
+ */
+export function alignLifecycleVerb(change: AlignChangeInfo): string | null {
+  switch (change.kind) {
+    case "created":
+      return "started";
+    case "dropped":
+      return "dropped";
+    case "status":
+      return change.to === "open" ? "reopened" : change.to;
+    default:
+      return null;
+  }
+}
+
+/** The visually hidden words before a jumping row's text: what pressing it does. */
+export const jumpPrefix = (row: TimelineRow): string => (row.marker === "align" ? "Jump to this alignment: " : "Jump to this message: ");
 
 /** One row of the axis. `at` is absent only on a gap, which marks the space between two rows. */
 export interface TimelineRow {
@@ -305,6 +327,25 @@ export function markerRows(items: readonly TranscriptItem[], rewinds: readonly R
         at,
         entryId: it.id,
         title: agent.name ? `${agent.name} ${stopped ? "stopped" : "finished"}` : MARKER_TITLE.retire,
+      });
+    } else if (it.kind === "align" && it.align?.doc) {
+      // One row per lifecycle change the call made, jumping to the call's own row (the full card
+      // when it is the document's newest, its one-line copy otherwise). An exemption has no doc.
+      const doc = it.align.doc;
+      it.align.changes.forEach((change, n) => {
+        const verb = alignLifecycleVerb(change);
+        if (!verb) return;
+        const row: TimelineRow = {
+          key: `marker:align:${it.id}:${n}`,
+          kind: "marker",
+          marker: "align",
+          at,
+          entryId: it.id,
+          title: `${MARKER_TITLE.align} ${doc.id} ${verb} · ${doc.title}`,
+        };
+        const full = (change.kind === "dropped" ? doc.droppedWhy : doc.summary)?.trim();
+        if (full) row.full = full;
+        out.push(row);
       });
     }
   }

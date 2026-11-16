@@ -102,6 +102,29 @@ test("DOM: an earlier revision stays one closed line that opens to that revision
   assert.ok(rev.includes("align-approach"), "opened, that revision's body — approach included");
 });
 
+test("DOM: rule over phase × newest — newest dropped/done folds to a closed line with its chip; other newest phases draw the card; earlier copies stay the revision line", () => {
+  const phases = ["open", "implementing", "done", "dropped"] as const;
+  for (const phase of phases) {
+    const d = doc({ phase, droppedWhy: phase === "dropped" ? "superseded by al_9" : undefined });
+    const row: AlignRowInfo = { v: 1, doc: d, changes: [], line: "" };
+    const newest = draw(AlignRow, { row, newest: true });
+    const older = draw(AlignRow, { row, newest: false });
+    assert.match(older, /<details class="disclosure align-rev">/, `${phase}: earlier copy is the revision line`);
+    assert.ok(!older.includes("<article"), `${phase}: earlier copy has no card`);
+    if (phase === "done" || phase === "dropped") {
+      assert.ok(!newest.includes("<article"), `${phase}: no card`);
+      assert.match(newest, /<details class="disclosure align-rev align-closed"/, `${phase}: the closed line`);
+      assert.ok(!/<details[^>]*\bopen\b/.test(newest.slice(0, newest.indexOf("<summary"))), `${phase}: folded`);
+      const summary = between(newest, "<summary", "</summary>");
+      assert.ok(summary.includes(phase === "done" ? "Done" : "Dropped"), `${phase}: chip in the line`);
+      assert.ok(summary.includes(phase === "done" ? d.summary : "Dropped: superseded by al_9"), `${phase}: detail in the line`);
+      assert.ok(newest.includes("align-approach"), `${phase}: opened, the body`);
+    } else {
+      assert.ok(newest.includes("<article"), `${phase}: the full card`);
+    }
+  }
+});
+
 test("DOM: the fold is per render — a fresh render is open again, nothing persists", () => {
   const first = draw(AlignDocCard, { doc: doc() });
   const second = draw(AlignDocCard, { doc: doc() });

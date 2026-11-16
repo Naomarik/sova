@@ -266,7 +266,8 @@ export async function startRun(runId: string, revision: number, deps: StartDeps)
       x.state = "draft";
       x.startError = why;
     });
-    throw new RunRefused(500, why, { run: await runView(runById(r.id)!) });
+    // Refused, not broken: the card is a draft again and says why (a model without a sign-in here, a chat a terminal holds).
+    throw new RunRefused(409, why, { run: await runView(runById(r.id)!) });
   }
 }
 

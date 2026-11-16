@@ -234,7 +234,7 @@ describe("Start", () => {
     const chats = new Chats();
     chats.refuse = "the chat is open in a terminal";
     const mine = await draft("trial");
-    await assert.rejects(startRun(mine.run.id, mine.run.revision, { request: chats.request, contents: () => [], host: chats.host() }), /the chat is open in a terminal/);
+    await assert.rejects(startRun(mine.run.id, mine.run.revision, { request: chats.request, contents: () => [], host: chats.host() }), (e: unknown) => e instanceof RunRefused && e.status === 409 && /the chat is open in a terminal/.test(e.message));
     assert.equal(store.runById(mine.run.id)!.state, "draft");
     assert.deepEqual(chats.set.slice(-2), [{ path: mine.shownIn.path, what: "model", to: "ollama-cloud/qwen" }, { path: mine.shownIn.path, what: "thinking", to: "low" }]);
 

@@ -31,7 +31,7 @@ writeFileSync(
       { id: "topic", label: "Topic", type: "text", ask: "always", required: true },
       { id: "level", label: "Level", type: "choice", ask: "always", required: true, options: [{ id: "lo", label: "Low" }, { id: "hi", label: "High" }], default: "lo" },
     ],
-    roles: { main: { label: "Main chat", models: [{ model: "zai/glm-5.3", effort: "low" }] }, helper: { label: "Helper", prompt: "roles/helper.md", kind: "routine", optional: true } },
+    roles: { main: { label: "Main chat", models: [{ model: "zai/glm-5.3", effort: "low" }, { model: "zai/glm-5.2", effort: "low" }] }, helper: { label: "Helper", prompt: "roles/helper.md", kind: "routine", optional: true } },
     steps: [{ id: "look", label: "Look", roles: ["main", "helper"], stop: "optional" }],
   }),
 );
@@ -73,6 +73,19 @@ describe("a playbook card", () => {
     assert.equal(main.resolved?.model, "zai/glm-5.3");
     assert.equal(main.models[0]!.usable, true);
     assert.equal(main.resolved?.reason, undefined);
+  });
+
+  test("a model Settings → Models turns off is skipped, and the reason reads in words", async () => {
+    const { writeModelPolicy } = await import("../model-policy");
+    writeModelPolicy({ disabledProviders: [], disabledModels: ["zai/glm-5.3"], subagentDisabledProviders: [], subagentDisabledModels: [] });
+    try {
+      const v = await open();
+      const main = (((await (await app.request(`/api/playbook-runs/${v.id}`)).json()) as PlaybookRunView).roles.find((r) => r.id === "main"))!;
+      assert.equal(main.resolved?.model, "zai/glm-5.2");
+      assert.equal(main.resolved?.reason, "Glm-5.3 · z.ai is turned off in Settings → Models, so glm-5.2 · z.ai");
+    } finally {
+      writeModelPolicy({ disabledProviders: [], disabledModels: [], subagentDisabledProviders: [], subagentDisabledModels: [] });
+    }
   });
 
   test("an edit saves against the revision shown; a stale revision is refused with the card as it is", async () => {
@@ -168,6 +181,19 @@ describe("a playbook card", () => {
     assert.equal((await row())?.draftPreview, "Playbook: Trial");
     await app.request(`/api/playbook-runs/${v.id}`, { method: "DELETE" });
     assert.equal(await row(), undefined);
+  });
+
+  test("/ rows: one per playbook with a description, a broken one included; opening the broken one says its fault", async () => {
+    const broken = join(scratchAgentDir, "sova", "playbooks", "broken");
+    mkdirSync(broken, { recursive: true });
+    writeFileSync(join(broken, "PLAYBOOK.md"), "---\ntitle: Broken\n---\nBody.\n");
+    writeFileSync(join(broken, "playbook.json"), JSON.stringify({ version: 1, nope: true }));
+    const { playbookCommandRows } = await import("./commands");
+    const rows = await playbookCommandRows(scratchAgentDir);
+    assert.deepEqual(rows.filter((r) => r.name === "broken" || r.name === "trial").map((r) => [r.name, r.source, r.playbook]), [["broken", "builtin", { source: "user", id: "broken" }], ["trial", "builtin", { source: "user", id: "trial" }]]);
+    const res = await app.request("/api/playbook-runs", json({ playbook: { source: "user", id: "broken" }, cwd: scratchAgentDir, path: chatPath }));
+    assert.equal(res.status, 400);
+    assert.match(((await res.json()) as { error: string }).error, /^The playbook's description can't be read: .*nope/);
   });
 
   test("a run reads back after a restart; one stopped while starting is a draft again, saying so", async () => {

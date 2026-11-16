@@ -228,3 +228,30 @@ export function playbookHasCard(p: PlaybookInfo): boolean {
 export function playbookCardError(p: PlaybookInfo): string | null {
   return p.specError ?? null;
 }
+
+/** Which shelf wins when two share an id: the project's, then yours, then Sova's (as the server's rows). */
+const SHELF_RANK = { project: 0, user: 1, sova: 2 } as const;
+
+/**
+ * The "/" rows of the playbooks with a description, as the page builds them from the Playbooks list:
+ * a new chat has no runtime yet, so no commands of its own, and a playbook is what you'd start there.
+ * A description that can't be read keeps its row: opening it says what is wrong.
+ */
+export function playbookRows(playbooks: readonly PlaybookInfo[]): SlashCommand[] {
+  const best = new Map<string, { row: SlashCommand; rank: number }>();
+  for (const p of playbooks) {
+    if (!p.spec && !p.specError) continue;
+    const rank = SHELF_RANK[p.source];
+    const have = best.get(p.id);
+    if (have && have.rank <= rank) continue;
+    best.set(p.id, { row: { name: p.id, description: p.description || p.title, source: "builtin", playbook: { source: p.source, id: p.id } }, rank });
+  }
+  return [...best.values()].map((b) => b.row).sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/** The chat's commands with the page's playbook rows under them: a name the chat already has (its own
+    command, or the server's row for that playbook) keeps the chat's. */
+export function withPlaybookRows(commands: readonly SlashCommand[], rows: readonly SlashCommand[]): SlashCommand[] {
+  const have = new Set(commands.map((c) => c.name));
+  return [...commands, ...rows.filter((r) => !have.has(r.name))];
+}

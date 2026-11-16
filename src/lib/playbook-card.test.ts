@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { PlaybookRoleView, PlaybookRunView, PlaybookStepView, PlaybookTeamView } from "../../shared/playbook-run";
+import type { PlaybookInfo } from "../../shared/protocol";
 import {
   cardChip,
   cycleLine,
@@ -8,6 +9,8 @@ import {
   foldedLine,
   hasEdits,
   playbookCommandIn,
+  playbookRows,
+  withPlaybookRows,
   roleWhy,
   splitChoices,
   stackEdits,
@@ -107,4 +110,12 @@ test("a started card's folded line says its revision, when and where it runs", (
   assert.equal(foldedLine(v, "/a.jsonl", clock), "Revision 3, started 00:27 in this chat");
   assert.equal(foldedLine(v, "/b.jsonl", clock), "Revision 3, started 00:27 in another chat");
   assert.equal(foldedLine({ ...v, started: { ...v.started!, chat: { id: "c", path: "/a.jsonl", title: "Card check run" } } }, "/b.jsonl", clock), "Revision 3, started 00:27 in Card check run");
+});
+
+test("the page's / rows: playbooks with a description (or a broken one), the project's shelf first; the chat's own names win", () => {
+  const pb = (source: "sova" | "user" | "project", id: string, extra: Record<string, unknown> = {}) => ({ source, id, title: id, dir: `/${source}/${id}`, body: "", description: "", ...extra }) as unknown as PlaybookInfo;
+  const rows = playbookRows([pb("sova", "ab-cycle", { spec: {} }), pb("project", "ab-cycle", { spec: {} }), pb("sova", "plain"), pb("user", "broken", { specError: "x" })]);
+  assert.deepEqual(rows.map((r) => [r.name, r.playbook?.source]), [["ab-cycle", "project"], ["broken", "user"]]);
+  const merged = withPlaybookRows([{ name: "broken", source: "prompt" }, { name: "compact", source: "builtin" }], rows);
+  assert.deepEqual(merged.map((r) => [r.name, r.source]), [["broken", "prompt"], ["compact", "builtin"], ["ab-cycle", "builtin"]]);
 });

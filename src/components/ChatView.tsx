@@ -44,7 +44,7 @@ import { BatonStrip } from "./BatonStrip";
 import { PairedLines } from "./PairedLines";
 import { createLimits } from "../lib/mode-menu";
 import { sandboxOffMissing, sandboxStateOf, type SandboxState } from "../lib/sandbox";
-import { ApiError, approveSchedule, fetchTranscriptRows, forkSession, getAlignTriage, getChatClaudeAccounts, getOverseerAutonomy, getSubagentProfiles, revokeOverseerPermit, revokeSchedule, setSandbox, setSessionArchived, wsUrl } from "../lib/api";
+import { ApiError, fetchPlaybooks, approveSchedule, fetchTranscriptRows, forkSession, getAlignTriage, getChatClaudeAccounts, getOverseerAutonomy, getSubagentProfiles, revokeOverseerPermit, revokeSchedule, setSandbox, setSessionArchived, wsUrl } from "../lib/api";
 import { adversarialReview, NO_REVIEWER, reviewRequestMessage } from "../lib/align-review";
 import type { MemoryStatus, OverseerAutonomy, ScheduleInfo, V1EventFrame, V2EventFrame } from "../../shared/protocol";
 import { memoryRowWords, memoryTurnWords } from "../lib/memory-ui";
@@ -155,6 +155,8 @@ import { ShellCard } from "./ShellCard";
 import { ShellDock } from "./ShellDock";
 import { PlaybookDock, showPlaybookCard } from "./PlaybookCard";
 import { isPlaybookRunEvent, playbookRunEvent, usePlaybookRuns } from "../lib/playbook-runs";
+import { playbookRows, withPlaybookRows } from "../lib/playbook-card";
+import { socketReconnects } from "../lib/socket";
 import type { PlaybookRunView } from "../../shared/playbook-run";
 import { answersAtHello, cardOfRun, nextShellRuns, runShell, SHELL_DROPPED, shellAnswerOf, shellOffered, stopOnClose } from "../lib/shell-runs";
 import { createShellBar } from "../lib/shell-bar";
@@ -644,6 +646,20 @@ export function ChatView(props: {
   /** This chat's playbook cards: the drafts it opened, the runs it started
       or conducts. Not the Overseers': no playbook runs there. */
   const playbookRuns = props.overseer || props.projectOverseer ? null : usePlaybookRuns(props.path, () => props.summary?.()?.cwd ?? null, hostOf(props.path));
+  /** The "/" rows of the playbooks this chat's folder sees, built here: a new chat has no runtime, so
+      no commands of its own yet. Read again on a reconnect; the chat's own names win a clash. */
+  const [pageRows, setPageRows] = createSignal<SlashCommand[]>([]);
+  if (playbookRuns) {
+    const cwdNow = createMemo(() => props.summary?.()?.cwd ?? null);
+    const readRows = () => {
+      const cwd = cwdNow();
+      void fetchPlaybooks(cwd, hostOf(props.path))
+        .then((c) => cwd === cwdNow() && setPageRows(playbookRows(c.playbooks)))
+        .catch(() => {});
+    };
+    createEffect(on(cwdNow, readRows));
+    createEffect(on(socketReconnects, readRows, { defer: true }));
+  }
   /** Opens (or finds) this chat's card for a playbook with a description, with the words typed after
       its name, and brings it into view open. False: it couldn't, said in a toast. */
   const openPlaybookCard = async (playbook: Pick<PlaybookRunView["playbook"], "source" | "id">, text?: string): Promise<boolean> => {
@@ -2830,7 +2846,7 @@ export function ChatView(props: {
         blocked={blocked()}
         readOnly={batonGate()}
         unarchive={archivedPane() && !batonGate() ? { run: () => void unarchive(), busy: unarchiving() } : null}
-        commands={props.overseer ? commands().filter((c) => c.name !== "mode") : commands()}
+        commands={props.overseer ? commands().filter((c) => c.name !== "mode") : withPlaybookRows(commands(), pageRows())}
         running={live.running}
         compacting={compacting()}
         stopping={live.stopping}

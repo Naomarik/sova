@@ -799,7 +799,11 @@ worker, are opened from the Gallery and the Lookbook card and read with a messag
 their transcript (§chat.design-mode/chat-with, §chat.design-mode/chat-placement). What is sent goes
 through the worker's delivery path (§chat.design-mode/delivery), so the webapp still never writes the
 session file, and a shut-down one comes back by itself when a message reaches it
-(§app.worker-restore/resume). They have no Steer, Stop or attach.
+(§app.worker-restore/resume). They have no Steer, Stop or attach. Their transcripts read as
+§chat.design-mode/chat-with says: your words under a label for where you wrote them, with no marks,
+Sova's additions folded under a closed "Sova's note", a design's first message as "The brief", and,
+in the Creative Director's, the prompt items of §chat.design-mode/prompt-history among its messages.
+That reading is for the sessions a chat's Lookbook names, and changes nothing the models receive.
 
 ```html
 <div class="subagents-view">

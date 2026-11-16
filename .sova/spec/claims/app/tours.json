@@ -212,7 +212,8 @@
       "server/tours/runner-signin.integration.fixture.ts",
       "server/design/browse.ts",
       "server/tours/page-capture.ts",
-      "server/tours/darkroom-child.ts"
+      "server/tours/darkroom-child.ts",
+      "server/design/look.ts"
     ],
     "requires": [
       "§app.tours/sandbox",

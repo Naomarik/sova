@@ -455,7 +455,8 @@
       "§app.worker-restore/resume",
       "§app.subagents-pane/context-fill",
       "§chat.context-window/last-reply",
-      "§chat.context-window/sidebar-ring"
+      "§chat.context-window/sidebar-ring",
+      "§chat.design-mode/chat-with"
     ],
     "code": [
       "src/components/ConnectionBanner.tsx",
@@ -472,7 +473,10 @@
       "server/usage-helper/query.ts",
       "shared/usage/wire.ts",
       "shared/protocol.ts",
-      "src/components/DesignOpen.tsx"
+      "src/components/DesignOpen.tsx",
+      "shared/lookbook-words.ts",
+      "server/design/transcript.ts",
+      "src/components/MessageRows.tsx"
     ],
     "agreed": {
       "by": "naomarik",

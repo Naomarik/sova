@@ -50,6 +50,7 @@ function playbook(id: string, extra: Record<string, unknown> = {}): void {
   );
 }
 playbook("trial");
+playbook("delegated", { run: { mode: "delegate" } });
 playbook("powered", { run: { permissions: { remove: [], grant: [], oneAtATime: false, limits: {}, overseerMayStart: false } } });
 
 let chats = 0;
@@ -85,8 +86,13 @@ class Chats {
         self.set.push({ path, what: "thinking", to: level });
         mirror.thinking = level;
       },
-      async switchMode() {},
-      async pinMode() {},
+      async switchMode(patch) {
+        self.set.push({ path, what: "mode", to: `${patch.mode ?? mirror.mode.mode}${patch.minorModes ? `+${patch.minorModes.join(",")}` : ""}` });
+        mirror.mode = { mode: patch.mode ?? mirror.mode.mode, minorModes: patch.minorModes ? [...patch.minorModes] : mirror.mode.minorModes };
+      },
+      async pinMode() {
+        self.set.push({ path, what: "pin", to: mirror.mode.mode });
+      },
       async branch() {
         return self.written.has(path) ? ([{ kind: "user", id: "u1", parentId: null, blocks: [{ type: "text", text: "hi" }] }] as never) : [];
       },
@@ -250,6 +256,15 @@ describe("Start", () => {
     await assert.rejects(startRun(mine.run.id, mine.run.revision, { request: chats.request, contents: () => [], host: chats.host() }), (e: unknown) => e instanceof RunRefused && e.status === 409 && /the chat is open in a terminal/.test(e.message));
     assert.equal(store.runById(mine.run.id)!.state, "draft");
     assert.deepEqual(chats.set.slice(-2), [{ path: mine.shownIn.path, what: "model", to: "ollama-cloud/qwen" }, { path: mine.shownIn.path, what: "thinking", to: "low" }]);
+
+    // A playbook that switches this chat's mode: a refused message leaves the chat in its own mode, pinned as it was.
+    const delegated = await draft("delegated");
+    chats.set = [];
+    await assert.rejects(startRun(delegated.run.id, delegated.run.revision, { request: chats.request, contents: () => [], host: chats.host() }), /the chat is open in a terminal/);
+    assert.deepEqual(
+      chats.set.filter((x) => x.what === "mode" || x.what === "pin").map((x) => [x.what, x.to]),
+      [["mode", "delegate"], ["pin", "delegate"], ["mode", "normal+"], ["pin", "normal"]],
+    );
 
     const powered = await draft("powered");
     await assert.rejects(startRun(powered.run.id, powered.run.revision, { request: chats.request, contents: () => [], host: chats.host() }), /A chat was made for the run \(chat-\d+\); pressing Start again uses it/);

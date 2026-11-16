@@ -110,7 +110,8 @@ function playbookSnapshot(r: PlaybookRunRecord, spec: PlaybookSpec, root: string
 }
 
 /** Make the conducting chat's model, effort and mode the plan's, where they differ. */
-async function setUpChat(chat: StartChat, use: { model: string; effort?: string } | null, spec: PlaybookSpec): Promise<void> {
+/** Make the conducting chat's model, effort and mode the plan's, where they differ; true when its mode was switched (and pinned). */
+async function setUpChat(chat: StartChat, use: { model: string; effort?: string } | null, spec: PlaybookSpec): Promise<boolean> {
   if (use) {
     if (chat.mirror.model?.ref !== use.model) await chat.setModel(use.model);
     if (use.effort && chat.mirror.thinking !== use.effort) await chat.setThinking(use.effort);
@@ -122,7 +123,9 @@ async function setUpChat(chat: StartChat, use: { model: string; effort?: string 
   if (modeDiffers) {
     await chat.switchMode({ ...(want ? { mode: want } : {}), ...(minors ? { minorModes: minors as ChatModePatch["minorModes"] } : {}) });
     await chat.pinMode();
+    return true;
   }
+  return false;
 }
 
 async function newChat(request: AppRequest, cwd: string): Promise<{ id: string; path: string }> {
@@ -187,7 +190,7 @@ export async function startRun(runId: string, revision: number, deps: StartDeps)
 
   // What this Start changed, so a failure halfway can say it or put it back.
   let made: { id: string; path: string } | null = r.halfMade ?? null;
-  let before: { path: string; model?: string; thinking?: string } | null = null;
+  let before: { path: string; model?: string; thinking?: string; mode: { mode: string; minorModes: string[] }; modeSwitched?: true } | null = null;
   try {
     const at = new Date().toISOString();
     const toNew = runsInNewChat(spec, r);
@@ -210,8 +213,9 @@ export async function startRun(runId: string, revision: number, deps: StartDeps)
     } else chat = r.shownIn!;
     const main = card.resolved[MAIN_ROLE]?.use ?? null;
     const conducting = await host.chat(chat.path);
-    if (!toNew) before = { path: chat.path, ...(conducting.mirror.model?.ref ? { model: conducting.mirror.model.ref } : {}), ...(conducting.mirror.thinking ? { thinking: conducting.mirror.thinking } : {}) };
-    await setUpChat(conducting, main ? { model: chatRefOf(main), ...(main.effort ? { effort: main.effort } : {}) } : null, spec);
+    if (!toNew) before = { path: chat.path, ...(conducting.mirror.model?.ref ? { model: conducting.mirror.model.ref } : {}), ...(conducting.mirror.thinking ? { thinking: conducting.mirror.thinking } : {}), mode: { mode: conducting.mirror.mode.mode, minorModes: [...conducting.mirror.mode.minorModes] } };
+    const switched = await setUpChat(conducting, main ? { model: chatRefOf(main), ...(main.effort ? { effort: main.effort } : {}) } : null, spec);
+    if (switched && before) before.modeSwitched = true;
 
     const folder = runFolderOf(chat.id, r.id);
     const frozen = freezePlan(r, spec, env, card, toNew, at, folder);
@@ -254,14 +258,18 @@ export async function startRun(runId: string, revision: number, deps: StartDeps)
     return runView(runById(r.id)!);
   } catch (err) {
     let why = err instanceof Error ? err.message : String(err);
-    // This chat's model and effort go back to what they were; a chat made for the run stays, and is named.
+    // This chat's model, effort and mode go back to what they were (its mode pinned again as it was); a chat made for the run stays, and is named.
     if (before) {
       try {
         const held = await host.chat(before.path);
         if (before.model && held.mirror.model?.ref !== before.model) await held.setModel(before.model);
         if (before.thinking && held.mirror.thinking !== before.thinking) await held.setThinking(before.thinking);
+        if (before.modeSwitched) {
+          await held.switchMode({ mode: before.mode.mode as ChatModePatch["mode"], minorModes: before.mode.minorModes as ChatModePatch["minorModes"] });
+          await held.pinMode();
+        }
       } catch {
-        why += " This chat's model may have changed: check it before you start again.";
+        why += " This chat's model or mode may have changed: check them before you start again.";
       }
     }
     if (made) why += ` A chat was made for the run (${made.id}); pressing Start again uses it.`;

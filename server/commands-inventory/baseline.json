@@ -28,7 +28,7 @@
     "DELETE /api/orgs/:id/conversations/:session/tours/:handle": {"need":"admin","is":"opted-out"},
     "DELETE /api/overseer/todo": {"need":"admin","is":"command","ids":["overseer.todo.remove"]},
     "DELETE /api/overseer/todos/done": {"need":"admin","is":"command","ids":["overseer.todo.clear-done"]},
-    "DELETE /api/playbook-runs/:run": {"need":"full","is":"command","ids":["playbook.run.close"]},
+    "DELETE /api/playbook-runs/:run": {"need":"full","is":"grants"},
     "DELETE /api/projects/:pid/files/:id": {"need":"admin","is":"pending"},
     "DELETE /api/projects/:pid/icon": {"need":"admin","is":"command","ids":["project.icon.remove"]},
     "DELETE /api/projects/:pid/overseer/todo": {"need":"admin","is":"command","ids":["project.overseer.todo.remove"]},

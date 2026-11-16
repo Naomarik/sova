@@ -511,7 +511,6 @@ const FIXTURES: Record<string, Fixture> = {
   "playbook.run.get": { values: () => ({ run: "pr_aaaaaaaaaaaa" }), status: 404 },
   "playbook.run.open": { values: () => ({ playbook: { source: "user", id: fuzzPlaybook() }, cwd: root }), status: 201, oracle: async (b) => assert.equal((await read("GET", `/api/playbook-runs/${(b as { id: string }).id}`)).state, "draft") },
   "playbook.run.edit": { values: () => fuzzRun((v) => ({ ...v, revision: 1, edits: { choices: { topic: "fuzzed" } } })), status: 200, oracle: async (_b, v) => assert.equal(((await read("GET", `/api/playbook-runs/${String(v.run)}`)).choices as { value: unknown }[])[0]!.value, "fuzzed") },
-  "playbook.run.close": { values: () => fuzzRun((v) => v), status: 200, oracle: async (_b, v) => assert.equal((await sendTo(app, "GET", `/api/playbook-runs/${String(v.run)}`)).status, 404) },
   "session.list": { values: () => ({}), status: 200 },
   "session.get": { values: () => ({ session: session()[1] }), status: 200 },
   "session.read": { values: () => ({ session: session()[0] }), status: 200 },

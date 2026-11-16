@@ -78,9 +78,9 @@ export const GRANTS: readonly RouteKey[] = [
   "POST /api/design/runs/:run/brief/start", "POST /api/design/runs/:run/brief/edit", "POST /api/design/runs/:run/brief/answers", "POST /api/design/runs/:run/brief/conflict", "POST /api/design/runs/:run/brief/link", "POST /api/design/runs/:run/brief/image", "POST /api/design/runs/:run/brief/screenshot", "POST /api/design/runs/:run/brief/not-this-screen", "POST /api/design/coordinator/answer",
   // Bringing images into a chat's set, and agreeing to capture a signed-in page.
   "POST /api/design/assets/own", "POST /api/design/assets/signed-in-consent",
-  // A playbook card's Start (it opens chats, grants a playbook's powers and starts its run) and Save as My Defaults
-  // (the person's standing answers). Only the person's own click.
-  "POST /api/playbook-runs/:run/start", "POST /api/playbook-runs/:run/defaults",
+  // A playbook card's Start (it opens chats, grants a playbook's powers and starts its run), Save as My Defaults
+  // (the person's standing answers) and closing the card. Only the person's own click.
+  "POST /api/playbook-runs/:run/start", "POST /api/playbook-runs/:run/defaults", "DELETE /api/playbook-runs/:run",
   // A person's own words and Describe Again on one image of the brief's grid.
   "PATCH /api/design/images/:name", "POST /api/design/images/:name/describe",
 ];

@@ -409,7 +409,7 @@ export const OTHER_ENTRIES: CommandEntry[] = [
     sessionFile: "never",
     meshNeed: "sessions",
   },
-  // A playbook's card. Start and Save as My Defaults are the person's own click on the card, never commands.
+  // A playbook's card. Start, Save as My Defaults and closing a card are the person's own click on it, never commands.
   {
     id: "playbook.run.open",
     label: "Open a Playbook Card",
@@ -459,17 +459,6 @@ export const OTHER_ENTRIES: CommandEntry[] = [
       edits: { type: "json", description: "{ choices: { <choice id>: value } }", in: "body", required: true },
     },
     route: { method: "PATCH", path: "/api/playbook-runs/:run" },
-    sessionKey: null,
-    sessionFile: "never",
-    meshNeed: "full",
-  },
-  {
-    id: "playbook.run.close",
-    label: "Close a Playbook Card",
-    summary: "Close a card that wasn't started. A started run's card stays as its record.",
-    effect: "changes",
-    params: { run: { type: "string", description: "The run's id (pr_…)", in: "path", required: true } },
-    route: { method: "DELETE", path: "/api/playbook-runs/:run" },
     sessionKey: null,
     sessionFile: "never",
     meshNeed: "full",

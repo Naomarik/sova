@@ -225,7 +225,6 @@ export type CommandId =
   | "playbook.run.list"
   | "playbook.run.get"
   | "playbook.run.edit"
-  | "playbook.run.close"
   | "mcp.servers.list"
   | "mcp.server.status"
   | "draft-spec.list"
@@ -4272,11 +4271,6 @@ export interface CommandParams {
     /** { choices: { <choice id>: value } } */
     "edits": unknown;
   };
-  /** Close a card that wasn't started. A started run's card stays as its record. (changes something; needs the card's owner trusted) */
-  "playbook.run.close": {
-    /** The run's id (pr_…) */
-    "run": string;
-  };
   /** This computer's MCP servers: each one's name, where it comes from, its state, tool count, tool names and last Check. Never a secret's value. (only looks; needs the card's owner trusted) */
   "mcp.servers.list": Record<string, never>;
   /** One MCP server's status, by its row id from the list. Never a secret's value. (only looks; needs the card's owner trusted) */
@@ -4870,7 +4864,6 @@ export const COMMAND_EFFECTS: Record<CommandId, "looks" | "changes"> = {
   "playbook.run.list": "looks",
   "playbook.run.get": "looks",
   "playbook.run.edit": "changes",
-  "playbook.run.close": "changes",
   "mcp.servers.list": "looks",
   "mcp.server.status": "looks",
   "draft-spec.list": "looks",

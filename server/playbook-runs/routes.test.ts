@@ -136,6 +136,17 @@ describe("a playbook card", () => {
     assert.equal(store.runById(v.id)!.state, "draft");
   });
 
+  test("a chat or a script can't close the person's card", async () => {
+    const v = await open();
+    for (const call of [app.request(`/api/playbook-runs/${v.id}`, { method: "DELETE" }), asChat(`/api/playbook-runs/${v.id}`, { method: "DELETE" })]) {
+      const res = await call;
+      assert.equal(res.status, 403);
+      assert.match(((await res.json()) as { error: string }).error, /Only the person closes a playbook card/);
+    }
+    assert.equal(store.runById(v.id)!.closed, undefined);
+    assert.equal((await app.request(`/api/playbook-runs/${v.id}`)).status, 200);
+  });
+
   test("a chat fills in choices; models, roles, stops and cycles are the person's", async () => {
     const v = await open();
     const roles = await asChat(`/api/playbook-runs/${v.id}`, patch({ revision: v.revision, edits: { roles: { helper: { on: true } } } }));
@@ -152,7 +163,7 @@ describe("a playbook card", () => {
     const off = onPlaybookRunNews((n) => heard.push({ sessionId: n.sessionId, type: n.event.type, id: (n.event.run as PlaybookRunView).id, ...((n.event.run as PlaybookRunView).closed ? { closed: true } : {}) }));
     const listed = (await (await app.request(`/api/playbook-runs?path=${encodeURIComponent(chatPath)}`)).json()) as { runs: PlaybookRunView[] };
     assert.ok(listed.runs.some((r) => r.id === v.id));
-    assert.equal((await app.request(`/api/playbook-runs/${v.id}`, { method: "DELETE" })).status, 200);
+    assert.equal((await asPage(`/api/playbook-runs/${v.id}`, { method: "DELETE" })).status, 200);
     const after = (await (await app.request(`/api/playbook-runs?path=${encodeURIComponent(chatPath)}`)).json()) as { runs: PlaybookRunView[] };
     assert.ok(!after.runs.some((r) => r.id === v.id));
     await new Promise((r) => setTimeout(r, 300));
@@ -165,7 +176,7 @@ describe("a playbook card", () => {
     const edited = (await (await app.request(`/api/playbook-runs/${v.id}`, patch({ revision: v.revision, edits: { choices: { level: "hi" } } }))).json()) as PlaybookRunView;
     assert.equal((await app.request(`/api/playbook-runs/${v.id}/defaults`, json({ revision: edited.revision }))).status, 403, "only the person's click saves defaults");
     assert.equal((await asPage(`/api/playbook-runs/${v.id}/defaults`, json({ revision: edited.revision }))).status, 200);
-    await app.request(`/api/playbook-runs/${v.id}`, { method: "DELETE" });
+    await asPage(`/api/playbook-runs/${v.id}`, { method: "DELETE" });
     const next = await open();
     assert.notEqual(next.id, v.id);
     assert.deepEqual(next.choices.find((c) => c.id === "level")!, { ...next.choices.find((c) => c.id === "level")!, value: "hi", origin: "standing" });
@@ -179,7 +190,7 @@ describe("a playbook card", () => {
     const res = await app.request("/api/playbook-runs", json({ playbook: { source: "user", id: "trial" }, cwd: scratchAgentDir, path }));
     const v = (await res.json()) as PlaybookRunView;
     assert.equal((await row())?.draftPreview, "Playbook: Trial");
-    await app.request(`/api/playbook-runs/${v.id}`, { method: "DELETE" });
+    await asPage(`/api/playbook-runs/${v.id}`, { method: "DELETE" });
     assert.equal(await row(), undefined);
   });
 
@@ -219,7 +230,7 @@ describe("the session list", () => {
     g = storesGeneration();
     await asPage(`/api/playbook-runs/${v.id}`, patch({ revision: v.revision, edits: { choices: { topic: "typed" } } }));
     assert.equal(storesGeneration(), g, "an edit changes nothing the list reads");
-    await app.request(`/api/playbook-runs/${v.id}`, { method: "DELETE" });
+    await asPage(`/api/playbook-runs/${v.id}`, { method: "DELETE" });
     assert.notEqual(storesGeneration(), g, "a card closed");
   });
 });

@@ -239,6 +239,8 @@ export function mountPlaybookRunRoutes(app: Hono, deps: PlaybookRunRouteDeps): v
   });
 
   app.delete("/api/playbook-runs/:run", (c) => {
+    // The person's card: a chat or a script reads and fills it in, never closes it.
+    if (notPage(c)) return c.json({ error: "Only the person closes a playbook card, on the card in Sova's page. Nothing was closed." }, 403);
     const r = runById(c.req.param("run"));
     if (!r || r.closed) return c.json({ error: "No such playbook run." }, 404);
     if (r.state !== "draft") return c.json({ error: "A started run's card stays as its record." }, 409);

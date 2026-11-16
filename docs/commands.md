@@ -14,8 +14,8 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | What | Count |
 | --- | ---: |
 | Routes registered | 638 |
-| Routes a catalogue entry points at | 213 |
-| Catalogue entries | 284 |
+| Routes a catalogue entry points at | 212 |
+| Catalogue entries | 283 |
 | Class: Peer protocol | 39 |
 | Class: Auth | 4 |
 | Class: Share pages | 0 |
@@ -31,7 +31,7 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | Class: Page plumbing | 22 |
 | Class: Steps of starting a chat | 2 |
 | Class: Live capability links | 1 |
-| Class: Approvals and grants | 20 |
+| Class: Approvals and grants | 21 |
 | Pending (not yet a command) | 23 |
 | Chat socket frame types | 14 |
 | Document/window keydown listeners | 12 |
@@ -263,7 +263,6 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | `playbook.run.list` | List a Chat's Playbook Cards | looks | `GET /api/playbook-runs` | full |
 | `playbook.run.get` | Read a Playbook Card | looks | `GET /api/playbook-runs/:run` | full |
 | `playbook.run.edit` | Change a Playbook Card | changes | `PATCH /api/playbook-runs/:run` | full |
-| `playbook.run.close` | Close a Playbook Card | changes | `DELETE /api/playbook-runs/:run` | full |
 | `mcp.servers.list` | List MCP Servers | looks | `GET /api/mcp/servers` | full |
 | `mcp.server.status` | Show MCP Server | looks | `GET /api/mcp/rows/:id` | full |
 | `draft-spec.list` | List Draft Specs | looks | `GET /api/draft-specs` | full |
@@ -844,7 +843,7 @@ A list that prints live preview links, which open a project's port to whoever ho
 | --- | --- |
 | `GET /api/projects/:pid/previews` | sessions |
 
-### Approvals and grants (20)
+### Approvals and grants (21)
 
 Approving a schedule or a draft spec, the Overseer's permits and their revoke: any chat can run catalogue actions with the operator's token, so none of these is one. Exactly these routes (`GRANTS`).
 
@@ -865,6 +864,7 @@ Approving a schedule or a draft spec, the Overseer's permits and their revoke: a
 | `POST /api/design/runs/:run/brief/start` | full |
 | `GET /api/overseer/autonomy` | sessions |
 | `POST /api/overseer/autonomy/revoke` | admin |
+| `DELETE /api/playbook-runs/:run` | full |
 | `POST /api/playbook-runs/:run/defaults` | full |
 | `POST /api/playbook-runs/:run/start` | full |
 | `POST /api/projects/:pid/draft-specs/:sid/approve` | full |
@@ -955,7 +955,6 @@ Approving a schedule or a draft spec, the Overseer's permits and their revoke: a
 | `PUT /api/overseer/todos/order` | admin | `overseer.todo.reorder` |
 | `GET /api/playbook-runs` | full | `playbook.run.list` |
 | `POST /api/playbook-runs` | full | `playbook.run.open` |
-| `DELETE /api/playbook-runs/:run` | full | `playbook.run.close` |
 | `GET /api/playbook-runs/:run` | full | `playbook.run.get` |
 | `PATCH /api/playbook-runs/:run` | full | `playbook.run.edit` |
 | `GET /api/playbooks` | sessions | `playbook.list` |

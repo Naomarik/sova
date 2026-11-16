@@ -2,12 +2,15 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { QueueRow } from "./merge-queue";
 import {
+  branchLines,
   branchStateOf,
+  type BranchState,
   GROUP_ORDER,
   groupCount,
   groupSessions,
   OLD_DAYS,
   recordedBranchState,
+  rowLand,
   sessionGroup,
   shownBranches,
   type BranchStage,
@@ -108,7 +111,9 @@ test("a ready branch carries Land only when the queue offers it and its folder i
 });
 
 test("a recorded branch falls back to git's facts; a queue stage wins over them", () => {
-  assert.equal(recordedBranchState({ branch: "b", state: "merged", merged: true }, null).stage, "landed");
+  // Git finding the tip in the target isn't a landing: a branch with no commit of its own that took master's newest reads so.
+  assert.deepEqual(recordedBranchState({ branch: "b", state: "merged", merged: true, target: "master" }, null), { branch: "b", stage: "other", word: "Already in master", tone: "muted" });
+  assert.equal(recordedBranchState({ branch: "b", state: "merged", merged: true, mergedAt: "2026-11-10T00:00:00Z" }, null).stage, "landed");
   assert.equal(recordedBranchState({ branch: "b", state: "open", dirty: true }, null).word, "Uncommitted changes");
   assert.equal(recordedBranchState({ branch: "b", state: "open", ahead: 1 }, null).word, "1 commit ahead");
   assert.equal(recordedBranchState({ branch: "b", state: "open", ahead: 3 }, null).word, "3 commits ahead");
@@ -121,4 +126,24 @@ test("up to 3 branches show, then +N more; opened, all", () => {
   assert.deepEqual(shownBranches([1, 2, 3], false), { shown: [1, 2, 3], more: 0 });
   assert.deepEqual(shownBranches([1, 2, 3, 4], false), { shown: [1, 2, 3], more: 1 });
   assert.deepEqual(shownBranches([1, 2, 3, 4], true), { shown: [1, 2, 3, 4], more: 0 });
+});
+
+const bs = (branch: string, stage: BranchState["stage"], land = false): BranchState => ({ branch, stage, word: stage, tone: "muted", ...(land ? { land: { worktree: `/w/${branch}` } } : {}) });
+
+test("the branch column names each branch once: words first for those on their way, then names, 3 while closed", () => {
+  const all = [bs("a", "other"), bs("b", "ready"), bs("c", "other"), bs("d", "in-line"), bs("e", "other")];
+  const closed = branchLines(all, false);
+  assert.deepEqual(closed.lines.map((l) => [l.b.branch, l.said]), [["b", true], ["d", true], ["a", false]]);
+  assert.equal(closed.more, 2);
+  const open = branchLines(all, true);
+  assert.deepEqual(open.lines.map((l) => l.b.branch).sort(), ["a", "b", "c", "d", "e"]);
+  // None on its way: the first still says its state, so the row always has words.
+  assert.deepEqual(branchLines([bs("a", "other"), bs("b", "other")], false).lines.map((l) => l.said), [true, false]);
+  assert.deepEqual(branchLines([bs("a", "other")], false).lines.map((l) => l.said), [true]);
+});
+
+test("the row carries Land only when exactly one branch is ready to land", () => {
+  assert.equal(rowLand([bs("a", "ready", true), bs("b", "other")])?.branch, "a");
+  assert.equal(rowLand([bs("a", "ready", true), bs("b", "ready", true)]), undefined);
+  assert.equal(rowLand([bs("a", "ready")]), undefined);
 });

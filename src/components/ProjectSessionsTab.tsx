@@ -22,7 +22,8 @@ import {
   needsYouIds,
   OLD_DAYS,
   sessionBranches,
-  shownBranches,
+  branchLines,
+  rowLand,
   waitsOnYou,
   type BranchState,
   type SessionFacts,
@@ -222,16 +223,9 @@ export function SessionsTab(props: {
     const quiet = () => !v().facts.working && !landed() && isQuiet(v().facts.lastActive, now());
     const summary = () => (v().s && showSummaries() ? summaryLineOf(v().s!) : "");
     const by = () => (row().playbook ? "Project verbs playbook run" : row().startedBy === "overseer" ? "Started by the overseer" : null);
-    const ready = () => (v().facts.working ? undefined : v().branches.find((b) => b.land));
+    const ready = () => (v().facts.working ? undefined : rowLand(v().branches));
     const open = () => openBranches().has(id());
-    const names = () => shownBranches(v().branches, open());
-    // Each branch's landing words; while closed, as many as the names shown, those on their way first.
-    const states = () => {
-      const all = v().branches;
-      const notable = all.filter((b) => b.stage !== "other");
-      const said = notable.length ? notable : all;
-      return open() ? said : said.slice(0, 3);
-    };
+    const column = () => branchLines(v().branches, open());
     const rate = () => (v().facts.working ? rateCell(v().s ?? { live: null }, rates().get(id()), { reported: tokensReported(), remote: !row().path }) : null);
     const ctx = () => {
       const c = v().s?.context;
@@ -289,24 +283,29 @@ export function SessionsTab(props: {
         </div>
         <div class="psess-branches">
           <Show when={v().branches.length} fallback={<span class="psess-nobranch">No branch</span>}>
-            <div class="psess-states">
-              <For each={states()}>
-                {(b) => (
-                  <span class="psess-state" title={b.why ? `${b.word} · ${b.why}` : undefined}>
-                    <span class={`psess-word psess-tone-${b.tone} psess-stage-${b.stage}`}>{b.stage === "landed" && b.landedAt ? `Landed ${relativeTime(b.landedAt, now())}` : b.word}</span>
+            <For each={column().lines}>
+              {(l) => (
+                <Show
+                  when={l.said}
+                  fallback={
+                    <span class="psess-branch text-mono" title={l.b.branch}>
+                      {l.b.branch}
+                    </span>
+                  }
+                >
+                  <span class="psess-state" title={l.b.why ? `${l.b.word} · ${l.b.why}` : undefined}>
+                    <span class={`psess-word psess-tone-${l.b.tone} psess-stage-${l.b.stage}`}>{l.b.stage === "landed" && l.b.landedAt ? `Landed ${relativeTime(l.b.landedAt, now())}` : l.b.word}</span>
                     <Show when={v().branches.length > 1}>
-                      <span class="psess-of text-mono">{b.branch}</span>
+                      <span class="psess-of text-mono">{l.b.branch}</span>
                     </Show>
-                    <Show when={b.why}>{(w) => <span class="psess-why">{w()}</span>}</Show>
+                    <Show when={l.b.why}>{(w) => <span class="psess-why">{w()}</span>}</Show>
                   </span>
-                )}
-              </For>
-            </div>
-            <For each={names().shown}>
-              {(b) => (
-                <span class="psess-branch text-mono" title={b.branch}>
-                  {b.branch}
-                </span>
+                  <Show when={v().branches.length === 1}>
+                    <span class="psess-branch text-mono" title={l.b.branch}>
+                      {l.b.branch}
+                    </span>
+                  </Show>
+                </Show>
               )}
             </For>
             <Show when={v().branches.length > 3}>
@@ -322,7 +321,7 @@ export function SessionsTab(props: {
                   })
                 }
               >
-                {open() ? "Show fewer" : `+${names().more} more`}
+                {open() ? "Show fewer" : `+${column().more} more`}
               </button>
             </Show>
           </Show>

@@ -180,13 +180,18 @@ export interface RecordedBranch {
   state?: "open" | "merged" | "removed" | "missing" | "root";
   merged?: boolean;
   mergedAt?: string;
+  /** The branch it merges into. */
+  target?: string | null;
   dirty?: boolean;
   ahead?: number;
 }
 
 export function recordedBranchState(r: RecordedBranch, queued: BranchState | null): BranchState {
   if (queued && queued.stage !== "other") return queued;
-  if (r.merged || r.state === "merged") return { branch: r.branch, stage: "landed", word: "Landed", tone: "success", ...(r.mergedAt ? { landedAt: r.mergedAt } : {}) };
+  // Landed only when a merge was recorded (Merge Branch, or the queue above): git finding the tip in the target is also
+  // true of a branch with no commit of its own that took the target's newest commits.
+  if (r.mergedAt) return { branch: r.branch, stage: "landed", word: "Landed", tone: "success", landedAt: r.mergedAt };
+  if (r.merged || r.state === "merged") return { branch: r.branch, stage: "other", word: r.target ? `Already in ${r.target}` : "Already in its target", tone: "muted" };
   if (r.state === "removed") return { branch: r.branch, stage: "other", word: "Worktree removed", tone: "muted" };
   if (r.state === "missing") return { branch: r.branch, stage: "other", word: "Worktree folder missing", tone: "muted" };
   if (r.dirty) return { branch: r.branch, stage: "other", word: "Uncommitted changes", tone: "muted" };
@@ -209,7 +214,7 @@ export interface QueueExtra {
  * time); `served` says the project's queue is set up (only then does a ready branch carry Land).
  */
 export function sessionBranches(
-  row: Pick<CodingRow, "branch"> & Partial<Pick<CodingRow, "state" | "merged" | "mergedAt" | "dirty" | "ahead" | "head" | "worktree">>,
+  row: Pick<CodingRow, "branch"> & Partial<Pick<CodingRow, "state" | "merged" | "mergedAt" | "target" | "dirty" | "ahead" | "head" | "worktree">>,
   s: Pick<SessionSummary, "branches" | "readiness"> | undefined,
   queueOf: (branch: string) => (QueueExtra & { row?: QueueRow }) | undefined,
 ): BranchState[] {
@@ -229,7 +234,7 @@ export function sessionBranches(
   if (!row.branch) return [];
   const q = queueOf(row.branch);
   const queued = q?.row ? branchStateOf(row.branch, q.row, { position: q.position, landedAt: q.landedAt ?? row.mergedAt, worktree: row.worktree ?? undefined, commit: row.head }) : null;
-  return [recordedBranchState({ branch: row.branch, state: row.state, merged: row.merged, mergedAt: row.mergedAt, dirty: row.dirty, ahead: row.ahead }, queued)];
+  return [recordedBranchState({ branch: row.branch, state: row.state, merged: row.merged, mergedAt: row.mergedAt, target: row.target, dirty: row.dirty, ahead: row.ahead }, queued)];
 }
 
 /** The ids of the sessions the sidebar's Needs you lists (§app.session-list/needs-you), among `sessions`. */
@@ -245,6 +250,36 @@ export const waitsOnYou = (s: Pick<SessionSummary, "align" | "pendingDialogs" | 
 export const BRANCHES_SHOWN = 3;
 export function shownBranches<T>(all: readonly T[], open: boolean): { shown: readonly T[]; more: number } {
   return open || all.length <= BRANCHES_SHOWN ? { shown: all, more: 0 } : { shown: all.slice(0, BRANCHES_SHOWN), more: all.length - BRANCHES_SHOWN };
+}
+
+/** One line of a row's branch column: a branch with its landing words, or its name alone. */
+export interface BranchLine {
+  b: BranchState;
+  /** Its landing words show on the line. */
+  said: boolean;
+}
+
+/**
+ * A row's branch column, each branch once: one branch reads its words, then its name. Several: those on their way in
+ * (or landed) read "{words} · {branch}" first, then the rest by name alone (with none on its way, the first says its
+ * own state, so the row always has words). Closed, BRANCHES_SHOWN lines, then "+N more".
+ */
+export function branchLines(all: readonly BranchState[], open: boolean): { lines: BranchLine[]; more: number } {
+  let lines: BranchLine[];
+  if (all.length <= 1) lines = all.map((b) => ({ b, said: true }));
+  else {
+    const notable = all.filter((b) => b.stage !== "other");
+    const rest = all.filter((b) => b.stage === "other");
+    lines = notable.length ? [...notable.map((b) => ({ b, said: true })), ...rest.map((b) => ({ b, said: false }))] : rest.map((b, i) => ({ b, said: i === 0 }));
+  }
+  const { shown, more } = shownBranches(lines, open);
+  return { lines: [...shown], more };
+}
+
+/** The row's Land: only when exactly one branch reads Ready to land with the queue's Land, so it is plain which. */
+export function rowLand(all: readonly BranchState[]): BranchState | undefined {
+  const ready = all.filter((b) => b.stage === "ready");
+  return ready.length === 1 && ready[0]!.land ? ready[0] : undefined;
 }
 
 /** The age cell's second line: "started today", or "3d old · Nov 13". */

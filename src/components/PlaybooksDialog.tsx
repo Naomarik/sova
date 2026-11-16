@@ -203,9 +203,12 @@ export function PlaybooksDialog(props: {
     setChosen(null);
     queueMicrotask(() => (lastKey && rows.get(lastKey)?.focus()) || undefined);
   };
+  /** Why Send Playbook is off: the chat can't send, or the chosen playbook's description is broken
+      (it runs from its card or not at all, never as bare text without its cast and stops). */
+  const reason = (): ComposerReason | null => props.blocked ?? (chosen() && playbookCardError(chosen()!) ? { icon: "attention", text: "Fix its playbook.json first." } : null);
   const send = () => {
     const p = chosen();
-    if (!p || props.blocked) return;
+    if (!p || reason()) return;
     if (!props.onSend(playbookTurnText(p, text()))) return; // refused here: keep everything
     leaving = true;
     const rest = sentPlaybookDraft(drafts(), playbookKey(p));
@@ -343,6 +346,9 @@ export function PlaybooksDialog(props: {
               <Show when={p().description}>
                 <p class="text-caption text-muted">{p().description}</p>
               </Show>
+              <Show when={playbookCardError(p())}>
+                {(err) => <Banner tone="warn" title="Its playbook.json can't be read, so it can't run." body={err()} />}
+              </Show>
               <Show when={p().schedule}>
                 {(sch) => (
                   <ScheduleCard
@@ -389,7 +395,7 @@ export function PlaybooksDialog(props: {
               Back
             </button>
           </Show>
-          <Show when={chosen() && props.blocked}>
+          <Show when={chosen() && reason()}>
             {(r) => (
               <span class="text-caption text-muted" id="playbooks-reason">
                 <Icon name={r().icon} small /> {r().text}
@@ -408,8 +414,8 @@ export function PlaybooksDialog(props: {
             <button
               type="button"
               class="button button-primary"
-              aria-disabled={props.blocked ? "true" : undefined}
-              aria-describedby={props.blocked ? "playbooks-reason" : undefined}
+              aria-disabled={reason() ? "true" : undefined}
+              aria-describedby={reason() ? "playbooks-reason" : undefined}
               onClick={send}
             >
               Send Playbook

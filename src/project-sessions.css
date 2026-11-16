@@ -82,10 +82,11 @@ a.psess-link, a.psess-link:hover { color: var(--color-ink); text-decoration: non
 .psess-rate b { font-weight: var(--fw-semibold); color: var(--color-ink); }
 .psess-unit { font-size: var(--fs-micro); color: var(--color-ink-muted); }
 
-/* Its branches: each one's landing state in words, then up to 3 names, then +N more / Show fewer. */
+/* Its branches, one line each, up to 3, then +N more / Show fewer: a branch with something to say is its landing
+   state in words (then its name, where the session has several); one with nothing to say is its name alone. A
+   session's one branch is its words, then its name under them. */
 .psess-branches { grid-column: 1 / -1; display: flex; flex-direction: column; gap: 3px; min-width: 0; padding-top: 6px; border-top: var(--stroke-thin) dashed var(--color-border); }
-.psess-states { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-.psess-states:not(:empty) { margin-bottom: var(--space-1); }
+.psess-state + .psess-branch { margin-top: 2px; }
 .psess-state { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 6px; min-width: 0; }
 .psess-word { font-size: var(--fs-caption); line-height: var(--lh-caption); font-weight: var(--fw-semibold); color: var(--color-ink); white-space: nowrap; }
 /* A branch on its way (ready, in line, checking, stuck, landed) reads strong; one that isn't says its own state
@@ -95,7 +96,7 @@ a.psess-link, a.psess-link:hover { color: var(--color-ink); text-decoration: non
 .psess-tone-error { color: var(--status-error); }
 .psess-tone-success { color: var(--status-success); }
 /* The branch a word is about takes what the line has left and cuts there: it never wraps under its word. */
-.psess-of { flex: 1 1 0; min-width: 0; font-size: var(--fs-micro); color: var(--color-ink-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.psess-of { flex: 1 1 0; min-width: 0; font-size: var(--fs-micro); color: var(--color-ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .psess-of::before { content: "· "; }
 .psess-why { flex-basis: 100%; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; min-width: 0; font-size: var(--fs-caption); line-height: var(--lh-caption); color: var(--color-ink-muted); overflow-wrap: anywhere; }
 .psess-branch { display: block; min-width: 0; color: var(--color-ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

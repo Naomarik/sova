@@ -32,10 +32,10 @@ import { recordHistory } from "./history";
 import { answerQuestions, BRIEF_LIMITS, coordinatorWrote, fillNotes, sameAddress, isHttpUrl, keepPrompt, keptImages, launchText, lookNote, mergeLinks, newBrief, openQuestions, parseBriefQuestions, rewritePrompt, turnEnded, userEditedPrompt, userEditedSummary, userTold, type BriefPick } from "./brief";
 import { DESIGN_BROWSE_TOUR_ID, designBrowse, type BrowseParent, type DesignBrowseStores } from "./browse";
 import { lookAtDesign } from "./look";
-import { pickVersions, versionHeading, type PickedVersion } from "./versions";
+import { pageSize, pickVersions, versionHeading, type PickedVersion } from "./versions";
 import { designModelOptions, estimateUsd, type DesignModelOption } from "./setup";
 import { coordinatorSkillsBlock, skillReadTokens } from "./skills";
-import { changeDesigns, designRoot, designSessions, runOf, setCoordinator, setRunPhase, viewOf } from "./store";
+import { changeDesigns, designRoot, designSessions, readPage, runOf, setCoordinator, setRunPhase, viewOf } from "./store";
 
 export const COORDINATOR_LIMITS = Object.freeze({ cardChars: 20_000, briefChars: 20_000, revisions: 50, shots: 200, notes: 200, textChars: 20_000 });
 
@@ -1315,7 +1315,7 @@ export function coordinatorTools(sessionId: string): ToolSpec[] {
 
   const browse: ToolSpec = {
     name: "design_browse", label: "Look at a screen",
-    description: "Open an address in a real browser at desktop and phone widths and get pictures and a list of what is on the page, or look at a finished design by label: its latest version, unless label names one (A11), or several at once (\"A11, A16\"); each starts with a header naming the version returned, when it was made, and the versions that exist. actions: click to navigate, reveal, wait, scroll; never typing and never a form. Only a declared signIn submits anything. Your own running copies and addresses the user gave open at once; any other site asks the user first.",
+    description: "Open an address in a real browser at desktop and phone widths and get pictures and a list of what is on the page, or look at a finished design by label: its latest version, unless label names one (A11), or several at once (\"A11, A16\"); each starts with a header naming the version returned, when it was made, the versions that exist and the page's size; you get pictures, never the page's code. actions: click to navigate, reveal, wait, scroll; never typing and never a form. Only a declared signIn submits anything. Your own running copies and addresses the user gave open at once; any other site asks the user first.",
     parameters: {
       type: "object",
       properties: {
@@ -1343,7 +1343,10 @@ export function coordinatorTools(sessionId: string): ToolSpec[] {
           const shots = saveShots(st, r.shots, r.outline);
           const one = picturesResult(st, shots, r.shots.map((s) => s.png), r.outline);
           const [first, ...images] = one.content;
-          content.push({ type: "text", text: `${versionHeading(x)}\n${(first as { text: string }).text}` }, ...images);
+          // Its size, never its text: a Creative Director works from pictures and notes, not a page's code.
+          const text = readPage(parent.sessionId, x.d.label, x.v.n);
+          const size = text !== null ? pageSize(text) : `${x.v.chars.toLocaleString("en-US")} characters`;
+          content.push({ type: "text", text: `${versionHeading(x)}\nSize: ${size}.\n${(first as { text: string }).text}` }, ...images);
           ids.push(...shots.map((s) => s.id));
         }
         save(st);

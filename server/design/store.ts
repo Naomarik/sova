@@ -178,6 +178,8 @@ export function nextLabel(s: DiskState): string {
 }
 
 const pagePath = (sessionId: string, label: string, n: number): string => join(dirOf(sessionId), label, `v${n}.html`);
+/** Where a finished version's page is saved, absolute: what a read hands a chat instead of the page itself. */
+export const pageFile = pagePath;
 
 /** A finished page's text; null when there is no such version. */
 export function readPage(sessionId: string, label: string, version?: number): string | null {

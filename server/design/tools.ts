@@ -14,7 +14,8 @@ import { lookAtDesign } from "./look";
 import type { TourSize } from "../../shared/tour";
 import { changeDesigns, designOf, pendingPage, readPage, viewOf } from "./store";
 import { applyEdits, type Edit } from "./edits";
-import { pickVersions, versionCount, versionHeading } from "./versions";
+import { pageSize, pickVersions, versionCount, versionHeading } from "./versions";
+import { pagePathFor, type PageReader } from "./page-paths";
 
 export { applyEdits };
 
@@ -34,7 +35,7 @@ export function mainDesignTools(parent: () => DesignParent, cwd: () => string): 
     {
       name: "lookbook",
       label: "lookbook",
-      description: `The Lookbook: one page designed by several models side by side. op "start" puts a Lookbook Setup card in the chat (the user finishes it there, up to ${DESIGN_BATCH_MAX} designs), only when the user asked for a Lookbook. op "read" gets the Creative Director's card (the coordinator) and each design's version count, or with label a design's whole page: its latest version, unless label names one ("A11"); several at once with commas ("A11, A16"). Each page starts with a header naming the version returned, when it was made, and the versions that exist. op "tell" passes text word for word to the Creative Director. images (the paths of images the user attached) join the Lookbook's images, on start as on tell. Call vis_guide with kind "lookbook" first.`,
+      description: `The Lookbook: one page designed by several models side by side. op "start" puts a Lookbook Setup card in the chat (the user finishes it there, up to ${DESIGN_BATCH_MAX} designs), only when the user asked for a Lookbook. op "read" gets the Creative Director's card (the coordinator) and each design's version count, or with label where a design's page is: its latest version, unless label names one ("A11"); several at once with commas ("A11, A16"). Each comes as a header naming the version returned, when it was made and the versions that exist, its size, and the path of its saved file; the page itself isn't in the reply, so read the file (with offset and limit, or grep it). op "tell" passes text word for word to the Creative Director. images (the paths of images the user attached) join the Lookbook's images, on start as on tell. Call vis_guide with kind "lookbook" first.`,
       parameters: {
         type: "object",
         properties: {
@@ -47,12 +48,12 @@ export function mainDesignTools(parent: () => DesignParent, cwd: () => string): 
           coordinator: str("start: the model id for the Creative Director (the coordinator), only when the user named one."),
           skills: list("start: design skills the user named for this Lookbook, each a skill's name (this project's skills are found by name) or a folder holding SKILL.md (an absolute or ~ path). None loads by itself: with none named, pass none."),
           images: list("start or tell: the paths of images the user attached (a screenshot, a logo), to add to this Lookbook's images. On start they join the run itself."),
-          label: str('read: the page to read: a design\'s label ("A") for its latest version, a label with a version number ("A11") for that version, or several separated by commas ("A11, A16").'),
+          label: str('read: the page to locate: a design\'s label ("A") for its latest version, a label with a version number ("A11") for that version, or several separated by commas ("A11, A16"). You get each page\'s file path and size, not its text.'),
           text: str("tell: the words to pass on, exactly as the user said them."),
         },
         required: ["op"],
       },
-      async execute(toolCallId, params: { op?: string; brief?: string; models?: string[]; modelGroups?: string[]; directions?: string[]; layouts?: string[]; coordinator?: string; skills?: unknown; label?: string; text?: string; images?: unknown }) {
+      async execute(toolCallId, params: { op?: string; brief?: string; models?: string[]; modelGroups?: string[]; directions?: string[]; layouts?: string[]; coordinator?: string; skills?: unknown; label?: string; text?: string; images?: unknown }, _signal, _update, ctx) {
         const p = parent();
         if (params?.op === "start") {
           const run = await createRun(p, cwd(), { ...params, skills: skillNamesOf(params.skills) });
@@ -77,7 +78,7 @@ export function mainDesignTools(parent: () => DesignParent, cwd: () => string): 
           return say(`The Setup card is on screen (run ${run.id}${picked ? `, ${picked} models ticked` : ""}).${skills}${missing}${imagesLine}${failed} The user finishes it there and starts the run; above ${DESIGN_ASK_ABOVE} designs Sova asks them first. Nothing more is needed from you, and nothing about it will reach you.`, { designCard: { runId: run.id } });
         }
         if (params?.op === "read") {
-          if (params.label) return say(readDesignPages(p.sessionId, params.label));
+          if (params.label) return say(readDesignPages(p.sessionId, params.label, ctx ? { sessionId: ctx.sessionId, cwd: ctx.cwd, branch: () => ctx.branch() } : undefined));
           const card = coordinatorCard(p.sessionId);
           const lines = viewOf(p.sessionId).designs.map((d) => `${d.label} · ${designDirectionLine(d)} · ${d.model} · ${d.status}${d.removed ? " (removed)" : ""} · ${versionCount(d)}`);
           return say([card?.card || "The Creative Director has no card yet.", lines.length ? `Designs:\n${lines.join("\n")}` : ""].filter(Boolean).join("\n\n"));
@@ -96,16 +97,18 @@ export function mainDesignTools(parent: () => DesignParent, cwd: () => string): 
   ];
 }
 
-/** The pages the main chat's read names (server/design/versions.ts), each under its version line. Throws, naming what
-    there is, for a design or version that isn't there; nothing is read then. */
-export function readDesignPages(sessionId: string, asked: string): string {
-  return pickVersions(viewOf(sessionId).designs, asked)
-    .map((x) => {
-      const page = readPage(sessionId, x.d.label, x.v.n);
-      if (page === null) throw new Error(`Design ${x.d.label}'s version ${x.v.n} couldn't be read.`);
-      return `${versionHeading(x)}\n\n${page}`;
-    })
-    .join("\n\n");
+/** The pages the main chat's read names (server/design/versions.ts): for each, a header saying which version it is and
+    which exist, its size, and the path of its saved file, never the page itself, so it enters the chat's context only as
+    far as the chat reads the file. The path is one `reader` can open, its sandbox included (server/design/page-paths.ts).
+    Throws, naming what there is, for a design or version that isn't there. */
+export function readDesignPages(sessionId: string, asked: string, reader?: PageReader): string {
+  const blocks = pickVersions(viewOf(sessionId).designs, asked).map((x) => {
+    const page = readPage(sessionId, x.d.label, x.v.n);
+    if (page === null) throw new Error(`Design ${x.d.label}'s version ${x.v.n} couldn't be read.`);
+    const at = pagePathFor(sessionId, x.d.label, x.v.n, reader);
+    return `${versionHeading(x)}\nSize: ${pageSize(page)}.\nFile: ${at.path}${at.exposed ? " (a read-only copy where your sandbox can read it)" : ""}`;
+  });
+  return `${blocks.join("\n\n")}\n\nThe page isn't in this reply: read the file, in parts with offset and limit, or grep it for what you need.`;
 }
 
 const noteOf = (v: unknown): DesignNote | null => {

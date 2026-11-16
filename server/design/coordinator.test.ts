@@ -1335,9 +1335,10 @@ test("the Creative Director looks at a design's latest version unless it names o
   const t = await launched();
   const v = (n: number) => ({ n, at: `2026-11-16T10:0${n}:30.000Z`, chars: 10, by: "first" });
   designList = [{ ...DESIGN_A, versions: [v(1), v(2), v(3)] } as DesignRecord, { ...DESIGN_A, label: "B", status: "writing", live: { version: 2, chars: 9 }, versions: [v(1)] } as DesignRecord, { ...DESIGN_A, label: "C", status: "queued", versions: [] } as DesignRecord];
+  // The header and its size (the stand-in designs have no saved page, so their record's chars stand in), then pictures.
   const heads = (r: { content: { type: string; text?: string }[] }) => r.content.filter((b) => b.type === "text").map((b) => b.text!.split("\nPictures")[0]);
-  assert.deepEqual(heads(await t.design_browse({ label: "A" })), ["Design A · version 3 of 3 (latest) · made 2026-11-16 10:03 UTC · versions 1–3"]);
-  assert.deepEqual(heads(await t.design_browse({ label: "a1, B" })), ["Design A · version 1 of 3 · made 2026-11-16 10:01 UTC · versions 1–3", "Design B · version 1 of 1 (latest) · made 2026-11-16 10:01 UTC · version 1\nVersion 2 is being written now; this isn't it."]);
+  assert.deepEqual(heads(await t.design_browse({ label: "A" })), ["Design A · version 3 of 3 (latest) · made 2026-11-16 10:03 UTC · versions 1–3\nSize: 10 characters."]);
+  assert.deepEqual(heads(await t.design_browse({ label: "a1, B" })), ["Design A · version 1 of 3 · made 2026-11-16 10:01 UTC · versions 1–3\nSize: 10 characters.", "Design B · version 1 of 1 (latest) · made 2026-11-16 10:01 UTC · version 1\nVersion 2 is being written now; this isn't it.\nSize: 10 characters."]);
   // The older form, a bare label with version, reads the same.
   await t.design_browse({ label: "A", version: 2 });
   assert.deepEqual(lookedAt, ["A3", "A1", "B1", "A2"]);

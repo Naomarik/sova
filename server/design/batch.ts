@@ -235,7 +235,7 @@ const starting = new Set<string>();
 const startKey = (sid: string, label: string): string => `${sid}\0${label}`;
 
 const working = (sid: string, d: DesignRecord): boolean =>
-  !d.removed && d.status === "writing" || d.status === "fixing" || (d.status === "queued" && ((!!d.sessionId && !d.sessionEnded) || starting.has(startKey(sid, d.label))));
+  !d.removed && (d.status === "writing" || d.status === "fixing" || (d.status === "queued" && ((!!d.sessionId && !d.sessionEnded) || starting.has(startKey(sid, d.label)))));
 
 /** Start queued designs while the chat has room. */
 export function pump(parent: DesignParent): void {

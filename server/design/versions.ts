@@ -1,7 +1,7 @@
 // Naming a design's versions, for anything that reads or looks at a page on a model's behalf (the main chat's lookbook
 // read, the Creative Director's design_browse and design_status): "A" is its latest version, "A11" version 11, several
-// separated by commas or spaces. Each page read comes under one line saying which version it is, of how many, when it
-// was made, and whether a newer one is being written. Pure: it reads only the records it is given.
+// separated by commas or spaces. Each page read starts with a header saying which version it is, of how many, when it
+// was made, which versions exist, and whether a newer one is being written. Pure: it reads only the records it is given.
 import { isDesignLabel, type DesignRecord, type DesignVersion } from "../../shared/design";
 
 export interface PickedVersion {
@@ -58,3 +58,9 @@ export function versionHeading({ d, v, last }: PickedVersion): string {
 
 /** A design's version count, for an overview line: "16 versions", "1 version", "no version yet". */
 export const versionCount = (d: Pick<DesignRecord, "versions">): string => (d.versions.length ? `${d.versions.length} version${d.versions.length === 1 ? "" : "s"}` : "no version yet");
+
+/** A page's size, for a read that hands over its file instead of its text: "14,393 characters, 312 lines". */
+export function pageSize(text: string): string {
+  const lines = text ? text.split("\n").length - (text.endsWith("\n") ? 1 : 0) : 0;
+  return `${text.length.toLocaleString("en-US")} characters, ${lines.toLocaleString("en-US")} line${lines === 1 ? "" : "s"}`;
+}

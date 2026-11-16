@@ -963,6 +963,16 @@ test("the Creative Director gets a page's size and the path of its saved file, w
   assert.equal(readFileSync(pageFile(parent.sessionId, "A", 1), "utf8"), html, "the path is that version's own file");
 });
 
+test("design_status gives a version's size by the same measure as every read's Size line, non-ASCII text included", async () => {
+  const t = await started(runWith(2, 3));
+  // Characters and bytes part ways here: a dash, quotes and an accent take 2 to 3 bytes each, the emoji 4.
+  writePage(parent.sessionId, "A", 1, "<p>— “é” 😀</p>".repeat(200));
+  const status = JSON.parse(textOf(await t.design_status({ label: "A1" })));
+  const read = /Size: ([\d.,]+ KB) ·/.exec(textOf(await t.design_browse({ label: "A1" })))?.[1];
+  assert.equal(status.designs[0].versions[0].size, read);
+  assert.notEqual(read, "0.0 KB");
+});
+
 test("a coordinator with no vision gets the outline and no pictures", async () => {
   const run = runWith(2, 3);
   run.setup.models[0]!.vision = false;

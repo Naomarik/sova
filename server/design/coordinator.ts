@@ -7,7 +7,7 @@ import { changeAssets, noteSignedInConsent, readAssetPart, readAssets } from "./
 import { askVision, assetBlock, assetsForCoordinator, cleanShotWords, describerModels, describing, onAssetsSettled, onDescribingStarted, screenshotBlock } from "./describe";
 import { DESIGN_ASSET_KINDS, isDesignAssetKind, isScreenshot, kindAllowed, screenshotsInUse, type DesignAssetKind, type DesignShotWords } from "../../shared/design-assets";
 import { randomBytes } from "node:crypto";
-import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { ToolSpec } from "../../shared/harness";
@@ -37,7 +37,7 @@ import { kb, pageSize, pickVersions, versionHeading, type PickedVersion } from "
 import { pagePathFor } from "./page-paths";
 import { designModelOptions, estimateUsd, type DesignModelOption } from "./setup";
 import { coordinatorSkillsBlock, skillReadTokens } from "./skills";
-import { changeDesigns, designRoot, designSessions, readPage, runOf, setCoordinator, setRunPhase, viewOf } from "./store";
+import { changeDesigns, designRoot, designSessions, pageFile, readPage, runOf, setCoordinator, setRunPhase, viewOf } from "./store";
 
 export const COORDINATOR_LIMITS = Object.freeze({ cardChars: 20_000, briefChars: 20_000, revisions: 50, shots: 200, notes: 200, textChars: 20_000 });
 
@@ -1169,7 +1169,14 @@ export function coordinatorTools(sessionId: string): ToolSpec[] {
       // Each version shown with its size and the path of its saved file, one the Creative Director's session can open.
       const reader = { sessionId: st.chatId };
       for (const d of list) for (const v of d.versions as ({ n: number; size?: string; file?: string } & Record<string, unknown>)[]) {
-        v.size = kb(all.find((x) => x.label === d.label)?.versions.find((x) => x.n === v.n)?.chars ?? 0);
+        // The saved file's bytes, the measure every read's Size line uses; its record's chars only when the file is gone.
+        let bytes: number;
+        try {
+          bytes = statSync(pageFile(parent.sessionId, d.label, v.n)).size;
+        } catch {
+          bytes = all.find((x) => x.label === d.label)?.versions.find((x) => x.n === v.n)?.chars ?? 0;
+        }
+        v.size = kb(bytes);
         v.file = (await pagePathFor(parent.sessionId, d.label, v.n, reader)).path;
       }
       const run = runOf(parent.sessionId, st.runId);

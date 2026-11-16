@@ -115,7 +115,8 @@ export function progressLine(r: DeployRecordView, steps: readonly ProgressStep[]
 export function historyResult(r: DeployRecordView): { chip?: { word: string; tone?: "success" | "warn" | "error" | "accent" }; text: string } {
   if (r.verify && r.verify.status !== null) return { chip: { word: String(r.verify.status), tone: r.verify.ok ? "success" : "error" }, text: `${r.verify.url.replace(/^https?:\/\//, "").replace(/\/$/, "")} answered` };
   const c = DEPLOY_STATE_CHIP[r.state];
-  return { chip: { word: r.kind === "rollback" && r.state === "succeeded" ? "Rolled back" : c.word, tone: c.tone }, text: "" };
+  const broke = r.state === "failed" ? r.steps.find((s) => s.exit !== 0 || s.timedOut) : undefined;
+  return { chip: { word: r.kind === "rollback" && r.state === "succeeded" ? "Rolled back" : c.word, tone: c.tone }, text: broke ? `at ${stepLabel(broke.key).toLowerCase()}` : "" };
 }
 
 /** Every target's records, newest first: what the History list shows. */

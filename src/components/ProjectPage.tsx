@@ -195,7 +195,7 @@ export function ProjectPage(props: {
     const a = attention();
     return {
       backlog: { count: todos || undefined },
-      deploy: dot ? { dot: dot === "running" ? "live" : "warn", text: dot === "running" ? "a deploy is running" : "the overseer asks for a deploy" } : {},
+      deploy: dot ? { dot: dot === "running" ? "live" : "warn", text: dot === "running" ? "deploying now" : "a deploy is asked for" } : {},
       requirements: a.count ? { dot: "warn", text: `needs you: ${a.line ?? ""}` } : {},
     };
   };
@@ -510,7 +510,14 @@ function ProjectTabs(props: { tabs: readonly ProjectTab[]; tab: ProjectTab; href
               onKeyDown={(e) => onKey(e, i())}
             >
               {TAB_LABEL[t]}
-              <Show when={mark()?.count}>{(n) => <span class="text-num org-tab-count">{n()}</span>}</Show>
+              <Show when={mark()?.count}>
+                {(n) => (
+                  <>
+                    <span class="text-num org-tab-count">{n()}</span>
+                    <span class="visually-hidden"> open {n() === 1 ? "to-do" : "to-dos"}</span>
+                  </>
+                )}
+              </Show>
               <Show when={mark()?.dot}>
                 {(d) => (
                   <>

@@ -84,7 +84,8 @@ test("a History row's result: the URL check when there was one, else the record'
   assert.equal(historyResult(rec({ state: "verify-failed", verify: { url: "https://a/", status: 502, ok: false, detail: "" } })).chip!.tone, "error");
   assert.deepEqual(historyResult(rec({ state: "succeeded" })).chip, { word: "Deployed", tone: "success" });
   assert.deepEqual(historyResult(rec({ state: "succeeded", kind: "rollback" })).chip!.word, "Rolled back");
-  assert.deepEqual(historyResult(rec({ state: "failed" })).chip, { word: "Failed", tone: "error" });
+  assert.deepEqual(historyResult(rec({ state: "failed" })), { chip: { word: "Failed", tone: "error" }, text: "" });
+  assert.deepEqual(historyResult(rec({ state: "failed", steps: [step("build.build"), step("steps.upload", 1)] })).text, "at upload");
 });
 
 test("History merges every target's records, newest first, each once", () => {

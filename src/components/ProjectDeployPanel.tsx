@@ -486,7 +486,7 @@ function DeployHistory(props: { records: readonly DeployRecordView[] | undefined
       </div>
       <Show when={props.records} fallback={<p class="orgs-empty">{props.error ? `Couldn't read the deploy history. ${props.error}` : "Reading the deploy history."}</p>}>
         {(rs) => (
-          <Show when={rs().length} fallback={<p class="orgs-empty">Nothing deployed from here yet.</p>}>
+          <Show when={rs().length} fallback={<p class="orgs-empty">No deploys yet. Each one lists here with its commit and result.</p>}>
             <ul class="deploy-history">
               <For each={rs()}>
                 {(r) => {

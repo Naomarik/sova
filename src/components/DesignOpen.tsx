@@ -186,7 +186,7 @@ export function DesignOpen(props: { target: DesignOpenTarget; store: DesignStore
                 <DesignTiles designs={designGrid(view())} store={props.store} cacheKey={props.path} class="design-open-grid" onOpen={(label) => props.onSwitch({ kind: "design", label })} />
               </div>
               <Show when={!hideChat()}>
-                <ChatPane sessionFile={c().sessionFile} host={hostOf()} name="the Creative Director" author="Creative Director" streaming={c().status === "running"} note="It knows what each design is, not its code." rows={withPromptItems}>
+                <ChatPane sessionFile={c().sessionFile} host={hostOf()} name="the Creative Director" author="Creative Director" streaming={c().status === "running"} note="It knows each design and can open its saved page." rows={withPromptItems}>
                   <DesignMessageBox label="Message the Creative Director" placeholder="Message the Creative Director" delivery={c().delivery} name="the Creative Director" send={(text, key, images) => props.store.api.coordinatorMessage(text, key, images)} upload={props.store.api.uploadImage} onSent={() => props.store.refresh()} />
                 </ChatPane>
               </Show>

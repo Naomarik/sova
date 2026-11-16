@@ -414,7 +414,8 @@ export function PlaybookCard(props: { run: PlaybookRunView; store: PlaybookRunsS
               >
                 {busy() === "start" || run().state === "starting" ? "Starting…" : "Start"}
               </button>
-              <button type="button" class="button button-sm" disabled={!!busy() || !editable()} onClick={() => void saveDefaults()}>
+              {/* Off with the reason when the playbook can't be read: there is nothing to save defaults for. */}
+              <button type="button" class="button button-sm" disabled={!!busy() || !editable() || !!run().error} title={run().error ?? undefined} onClick={() => void saveDefaults()}>
                 {busy() === "defaults" ? "Saving…" : "Save as My Defaults"}
               </button>
               <button type="button" class="button button-sm button-ghost" disabled title="Repeats come in a later release.">

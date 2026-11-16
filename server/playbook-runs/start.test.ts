@@ -213,6 +213,14 @@ describe("Start", () => {
     assert.equal(chats.sent.length, 1);
   });
 
+  test("a settings read that fails puts the card back to a draft, saying why", async () => {
+    const chats = new Chats();
+    const { run } = await draft("trial");
+    const host = { ...chats.host(), env: async () => { throw new Error("team-defaults.json is unreadable"); } };
+    await assert.rejects(startRun(run.id, run.revision, { request: chats.request, contents: () => [], host }), (e: unknown) => e instanceof RunRefused && e.status === 409 && /couldn't be read: team-defaults.json is unreadable/.test(e.message));
+    assert.equal(store.runById(run.id)!.state, "draft");
+  });
+
   test("a stale revision starts nothing", async () => {
     const chats = new Chats();
     const { run } = await draft("trial");

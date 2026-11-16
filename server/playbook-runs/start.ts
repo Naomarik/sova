@@ -176,7 +176,12 @@ export async function startRun(runId: string, revision: number, deps: StartDeps)
   if (!loaded?.spec) return back(409, loaded?.error ? `The playbook's description can't be read: ${loaded.error}` : "The playbook is gone.");
   const spec = loaded.spec;
   const host: StartHost = { ...realHost, ...deps.host };
-  const env = await host.env(spec, loaded.info, r.shownIn?.path, r.cwd);
+  let env: CardEnv;
+  try {
+    env = await host.env(spec, loaded.info, r.shownIn?.path, r.cwd);
+  } catch (err) {
+    return back(409, `This computer's models and settings couldn't be read: ${err instanceof Error ? err.message : String(err)}`);
+  }
   const card = runCard({ ...r, state: "draft" }, spec, env);
   if (card.view.startBlocked) return back(400, card.view.startBlocked, { startBlocked: card.view.startBlocked });
 

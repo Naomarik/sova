@@ -35,7 +35,7 @@ const argsAt = (s: string, open: number): string => {
 };
 
 test("only the shared piece opens, places and times a pointer's menu", () => {
-  for (const name of ["createOpenOnRelease", "pointMenuSpot", "pointMenuRoom", "createKeyMenuMark", "contextMenuAction", "createMenuHold", "contextPointerKind", "pressHeld"])
+  for (const name of ["createOpenOnRelease", "pointMenuSpot", "pointMenuRoom", "createKeyMenuMark", "contextMenuAction", "createMenuHold", "contextPointerKind", "pressHeld", "createOutsidePress"])
     assert.deepEqual(calling(new RegExp(`\\b${name}\\(`)).filter((f) => f !== RULES), [SHARED], name);
   // No `open` leaves the piece: a door is the only way in.
   assert.doesNotMatch(src(SHARED), /return \{[^}]*\bopen\b[^}]*\};?\s*\}\s*$/);

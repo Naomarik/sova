@@ -611,7 +611,7 @@ a.pipeline-link:hover, button.pipeline-link:hover, summary.pipeline-link:hover {
 .deploy-facts > dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
 /* History: the commit, the target, what came of it, and when at the row's end. */
 .deploy-history { margin: 0; padding: 0; list-style: none; }
-.deploy-history-row { display: grid; grid-template-columns: 100px 70px minmax(0, 1fr) auto; align-items: center; gap: var(--space-1) var(--space-3); min-height: var(--row-height); padding: var(--space-2) 0; border-top: var(--stroke-thin) solid var(--color-border); }
+.deploy-history-row { display: grid; grid-template-columns: 96px 128px minmax(0, 1fr) auto; align-items: center; gap: var(--space-1) var(--space-3); min-height: var(--row-height); padding: var(--space-2) 0; border-top: var(--stroke-thin) solid var(--color-border); }
 .deploy-history-row:first-child { border-top: 0; }
 .deploy-history-commit { font-family: var(--font-mono); font-size: var(--fs-mono); font-weight: var(--fw-medium); color: var(--color-ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .deploy-history-target { font-family: var(--font-mono); font-size: var(--fs-mono); color: var(--color-ink-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

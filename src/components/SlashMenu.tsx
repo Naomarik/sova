@@ -1,13 +1,8 @@
 import { createEffect, createMemo, For, on, Show } from "solid-js";
 import type { SlashCommand } from "../../shared/protocol";
 import { usePaneId } from "../lib/pane-scope";
+import { sourceChip } from "../lib/slash";
 
-const SOURCE_LABEL: Record<SlashCommand["source"], string> = {
-  extension: "ext",
-  prompt: "prompt",
-  skill: "skill",
-  builtin: "built-in",
-};
 
 /** `cmd-` + the name with anything outside [a-z0-9-] as "-", suffixed when two names collide, and
     by the pane's id when the composer is one of a workspace's (aria-activedescendant resolves
@@ -76,7 +71,7 @@ export function SlashMenu(props: {
                 }}
               >
                 <span class="command-option-name">/{cmd.name}</span>
-                <span class="chip">{SOURCE_LABEL[cmd.source]}</span>
+                <span class="chip">{sourceChip(cmd)}</span>
                 <Show when={cmd.description}>
                   <span class="command-option-desc" title={cmd.description}>
                     {cmd.description}

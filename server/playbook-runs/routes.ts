@@ -3,7 +3,8 @@
 // which only the person's own click on Sova's page passes.
 import { existsSync } from "node:fs";
 import type { Context, Hono } from "hono";
-import { MAIN_ROLE, parseModelsValue, type PlaybookSpec } from "../../shared/playbook-format";
+import { CYCLE_MAX, MAIN_ROLE, parseModelsValue, type PlaybookSpec } from "../../shared/playbook-format";
+import { THINKING_LEVELS } from "../../shared/profiles";
 import { isPlaybookRunId, mergeEdits, type PlaybookCardEdits, type PlaybookRoleEdit } from "../../shared/playbook-run";
 import { chatHandle } from "../chat-handle";
 import { notPage, yourClickRefusal } from "../page-only";
@@ -79,7 +80,7 @@ export function cleanEdits(spec: PlaybookSpec, sent: unknown): PlaybookCardEdits
       const pick = e.pick;
       if (pick === null) next.pick = null;
       else if (pick !== undefined) {
-        if (!isRecord(pick) || typeof pick.model !== "string" || !/^[^/\s]+\/\S+$/.test(pick.model) || pick.model.length > 200 || (pick.effort !== undefined && typeof pick.effort !== "string")) return `${role.label}'s model must be { model: "provider/id", effort? }.`;
+        if (!isRecord(pick) || typeof pick.model !== "string" || !/^[^/\s]+\/\S+$/.test(pick.model) || pick.model.length > 200 || (pick.effort !== undefined && !(THINKING_LEVELS as readonly unknown[]).includes(pick.effort))) return `${role.label}'s model must be { model: "provider/id", effort?: ${THINKING_LEVELS.join(" | ")} }.`;
         const model = pick.model;
         if (role.only && !role.models.some((m) => m.ref === model)) return `${role.label} runs only on the models its playbook lists.`;
         next.pick = { model, ...(typeof pick.effort === "string" && pick.effort ? { effort: pick.effort } : {}) };
@@ -114,7 +115,7 @@ export function cleanEdits(spec: PlaybookSpec, sent: unknown): PlaybookCardEdits
     for (const k of Object.keys(sent.cycle)) if (k !== "max" && k !== "askEvery" && k !== "until") return `edits.cycle has no "${k}".`;
     const { max, askEvery, until } = sent.cycle;
     if (until !== undefined && until !== "rule" && until !== "max") return "The cycle's until must be rule or max.";
-    if (max !== undefined && !(Number.isInteger(max) && (max as number) >= 1)) return "The cycle's max must be a whole number of at least 1.";
+    if (max !== undefined && !(Number.isInteger(max) && (max as number) >= 1 && (max as number) <= CYCLE_MAX)) return `The cycle's max must be a whole number from 1 to ${CYCLE_MAX}.`;
     if (askEvery !== undefined && !(Number.isInteger(askEvery) && (askEvery as number) >= 1)) return "The cycle's ask-every must be a whole number of at least 1.";
     out.cycle = { ...(max !== undefined ? { max: max as number } : {}), ...(askEvery !== undefined ? { askEvery: askEvery as number } : {}), ...(until !== undefined ? { until: until as "rule" | "max" } : {}) };
   }

@@ -40,6 +40,8 @@ export interface PlaybookRunRecord {
   /** The plan Start froze: what the card showed at the revision Start named. */
   plan?: PlaybookPlan;
   startError?: string;
+  /** A chat an unfinished Start made: the next Start uses it rather than make another. */
+  halfMade?: { id: string; path: string };
   /** A draft the person closed: kept on disk, never listed. */
   closed?: true;
 }

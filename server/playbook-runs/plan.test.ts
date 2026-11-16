@@ -66,6 +66,7 @@ function record(s: PlaybookSpec, edits: PlaybookRunRecord["edits"] = {}): Playbo
 function env(off: (c: WorkerChoice) => string | null = (c) => (c.model === "claude-opus-5-5" ? "claude-opus-5-5 is turned off in Settings → Models" : null)): CardEnv {
   const name = (c: WorkerChoice) => ({ label: c.model, provider: c.backend === "claude-code" ? "claude-code-cli" : c.model.split("/")[0]! });
   return {
+    needs: null,
     denial: (c) => off(c),
     name,
     routes: { planning: { primary: { backend: "pi", model: "zai/glm-5.3", effort: "medium" }, fallback: null } },
@@ -87,6 +88,12 @@ describe("the card a run draws", () => {
     assert.equal(card.view.startBlocked, "Fill in Under test first.");
     const filled = runCard(record(s, { choices: { subject: "the read tool" } }), s, env());
     assert.equal(filled.view.startBlocked, null);
+  });
+
+  test("a folder the playbook can't run in keeps Start off, saying why", () => {
+    const s = spec();
+    const e = { ...env(), needs: "This playbook runs only in a project's folder: open it from a chat in one." };
+    assert.equal(runCard(record(s, { choices: { subject: "x" } }), s, e).view.startBlocked, "This playbook runs only in a project's folder: open it from a chat in one.");
   });
 
   test("a role skips a model that can't run, and says why", () => {
@@ -195,7 +202,7 @@ describe("the frozen plan", () => {
     for (const want of [
       '<run id="pr_aaaaaaaaaaaa" playbook="ab" revision="3" folder="/shared/c/playbook-runs/pr_aaaaaaaaaaaa">',
       "- Under test [subject]: the read tool",
-      "- Grader [grader]: claude-code/claude-opus-5-5 (high) [can't run now: claude-opus-5-5 is turned off in Settings → Models] → ollama-cloud/deepseek-v4.1-flash (high). Only these models: if none of them can run, stop and ask the user; never pick another.",
+      "- Grader [grader]. Models in order: claude-code/claude-opus-5-5 (high) [can't run now: claude-opus-5-5 is turned off in Settings → Models] → ollama-cloud/deepseek-v4.1-flash (high). Only these models: if none of them can run, stop and ask the user; never pick another.",
       'Runs in team "run".',
       "- Run the arms [run]: /shared/c/playbook-runs/pr_aaaaaaaaaaaa/teams/run.json (roles: runner, grader)",
       "1. Baseline [baseline]: you. STOP after it",

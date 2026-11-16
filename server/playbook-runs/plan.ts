@@ -8,6 +8,8 @@ import type { DelegateProfileId, WorkerChoice } from "../../shared/protocol";
 import type { PlaybookRef, PlaybookRunRecord } from "./store";
 
 export interface CardEnv {
+  /** Why this folder can't run the playbook (its run.needs: a project, one the merge queue serves), or null. */
+  needs: string | null;
   /** Why this model can't run here now, for a helper (a worker) or for the main chat; null: it can. */
   denial(c: WorkerChoice, as: "main" | "helper"): string | null;
   /** "GLM 5.3", and the provider's id ("zai", "claude-code"). */
@@ -307,6 +309,7 @@ function howItRuns(spec: PlaybookSpec, r: PlaybookRunRecord): string {
 
 function blocked(view: PlaybookRunView, spec: PlaybookSpec, edits: PlaybookCardEdits, env: CardEnv, teams: PlaybookTeamView[]): string | null {
   if (view.state !== "draft") return view.state === "starting" ? "Starting…" : "This run has started.";
+  if (env.needs) return env.needs;
   for (const input of spec.inputs) {
     const v = valueOf(edits, input);
     if (isEmpty(v)) {

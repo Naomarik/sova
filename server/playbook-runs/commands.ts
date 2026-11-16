@@ -10,7 +10,8 @@ export async function playbookCommandRows(cwd: string | undefined): Promise<Slas
   const { playbooks } = await listPlaybooks(cwd || undefined);
   const best = new Map<string, SlashCommand & { rank: number }>();
   for (const p of playbooks) {
-    if (!p.spec) continue;
+    // A broken description still gets its row: opening it says what is wrong.
+    if (!p.spec && !p.specError) continue;
     const rank = RANK[p.source];
     const have = best.get(p.id);
     if (have && have.rank <= rank) continue;

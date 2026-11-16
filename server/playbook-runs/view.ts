@@ -32,6 +32,6 @@ export async function runView(r: PlaybookRunRecord): Promise<PlaybookRunView> {
   const loaded = await loadPlaybook(r.playbook, r.cwd).catch(() => null);
   if (!loaded) return bare(r, "The playbook is gone.");
   if (!loaded.spec) return bare(r, loaded.error ? `The playbook's description can't be read: ${loaded.error}` : "The playbook has no description.");
-  const env = await liveEnv(loaded.spec, loaded.info, r.started?.chat.path ?? r.shownIn?.path);
+  const env = await liveEnv(loaded.spec, loaded.info, r.started?.chat.path ?? r.shownIn?.path, r.cwd);
   return runCard(r, loaded.spec, env).view;
 }

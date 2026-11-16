@@ -37,9 +37,9 @@ export function runBlock(plan: PlaybookPlan, folder: string, opts: { contents: C
       continue;
     }
     const how = r.team ? `in team "${r.team}"` : "as separate helpers (agent_spawn, one per brief)";
-    const many = r.items?.length ? ` ×${r.count}, one per item: ${r.items.join(", ")}` : r.count > 1 ? ` ×${r.count}` : "";
+    const many = r.items?.length ? ` ×${r.count}, one per item (${r.items.join("; ")})` : r.count > 1 ? ` ×${r.count}` : "";
     const parts = [
-      `- ${r.label} [${r.id}]${many}${r.kind ? `, kind ${r.kind}` : ""}: ${list}.`,
+      `- ${r.label} [${r.id}]${many}${r.kind ? `, kind ${r.kind}` : ""}. Models in order: ${list}.`,
       r.only ? "Only these models: if none of them can run, stop and ask the user; never pick another." : "When the list runs out, use the kind's model from the user's profile, then this chat's model.",
       r.reason ? `Starts on entry ${r.use + 1}: ${r.reason}.` : "",
       `Runs ${how}.`,

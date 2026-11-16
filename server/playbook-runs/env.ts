@@ -2,7 +2,7 @@
 // models can run here now (Settings → Models, sign-ins), their names, your profile's model per kind of work,
 // the team defaults, the playbook's own pages, and your saved answers. Read fresh for every card drawn.
 import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { findCommand } from "../../shared/commands-catalog";
 import { checkInputValue, inputValueText, MAIN_ROLE, type InputValue, type PlaybookSpec } from "../../shared/playbook-format";
 import { resolveRoleModel } from "../../shared/playbook-models";
@@ -15,6 +15,8 @@ import { modelDenial, readModelPolicy } from "../model-policy";
 import { CLAUDE_CODE_PROVIDER, listModels, modelNames } from "../models";
 import { bundleFile } from "../playbook-payload";
 import { listPlaybooks } from "../playbooks";
+import { projectOf } from "../project-root";
+import { servedByQueue } from "../merge-queue/served";
 import { agentRoot } from "../state-root";
 import type { CardEnv } from "./plan";
 import type { PlaybookRef } from "./store";
@@ -58,7 +60,7 @@ export function readPrompts(spec: PlaybookSpec, info: Pick<PlaybookInfo, "dir" |
 }
 
 /** The live environment: read once per card drawn (one model list, one policy read). */
-export async function liveEnv(spec: PlaybookSpec, info: PlaybookInfo, chatPath?: string): Promise<CardEnv> {
+export async function liveEnv(spec: PlaybookSpec, info: PlaybookInfo, chatPath?: string, cwd?: string): Promise<CardEnv> {
   const policy = readModelPolicy();
   const [known, names] = await Promise.all([listModels().catch(() => null), modelNames()]);
   const signedIn = known ? new Set(known.map((m) => m.ref)) : null;
@@ -93,6 +95,7 @@ export async function liveEnv(spec: PlaybookSpec, info: PlaybookInfo, chatPath?:
     monitor: teams ? { model: teams.monitor.primary.backend === "claude-code" ? `claude-code/${teams.monitor.primary.model}` : teams.monitor.primary.model, ...(teams.monitor.primary.effort ? { effort: teams.monitor.primary.effort } : {}) } : own,
   };
   return {
+    needs: await needsRefusal(spec, cwd),
     denial,
     name,
     routes,
@@ -110,8 +113,17 @@ export async function liveEnv(spec: PlaybookSpec, info: PlaybookInfo, chatPath?:
   };
 }
 
+/** Why the folder can't run this playbook (its run.needs), or null. */
+async function needsRefusal(spec: PlaybookSpec, cwd: string | undefined): Promise<string | null> {
+  if (!spec.run.needs.length) return null;
+  const p = cwd ? await projectOf(cwd).catch(() => null) : null;
+  if (!p || p.state !== "ok") return "This playbook runs only in a project's folder: open it from a chat in one.";
+  if (spec.run.needs.includes("merge-queue") && !(await servedByQueue(p.root).catch(() => false))) return "This playbook runs only in a project the merge queue serves: set up its merge queue first.";
+  return null;
+}
+
 /** Sova's command line, absolute: what the contents page's commands entry tells a run to use. */
-export const SOVA_SCRIPT = join(new URL("../../scripts/", import.meta.url).pathname, "sova.mjs");
+export const SOVA_SCRIPT = fileURLToPath(new URL("../../scripts/sova.mjs", import.meta.url));
 
 /** A file as text, or null. */
 export function readText(path: string): string | null {

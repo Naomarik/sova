@@ -4,7 +4,7 @@ import type { DeployPlanView, DeployRecordView, DeployReport, DeployReview, Depl
 import { ApiError, runDeployVerb } from "../lib/api";
 import { relativeTime } from "../lib/format";
 import { createPoll } from "../lib/poll";
-import { checksLine, DEPLOY_STANDING_CHIP, DEPLOY_STATE_CHIP, deployHistory, deployProgress, hash12, historyResult, overridesAsked, planDeadline, progressLine, recordLine, rollbackWord, shipConfirmLine, short } from "../lib/project-deploy";
+import { checksLine, DEPLOY_STANDING_CHIP, DEPLOY_STATE_CHIP, deployHistory, deployProgress, hash12, historyResult, overridesAsked, stepCaption, planDeadline, progressLine, recordLine, rollbackWord, shipConfirmLine, short } from "../lib/project-deploy";
 import { announce, toast } from "../lib/ui-state";
 import { deployHandOff, takeDeployHandOff } from "../lib/releases-client";
 import { releaseAt, releaseOfTarget } from "../lib/releases";
@@ -465,7 +465,7 @@ function DeployProgress(props: { record: DeployRecordView }) {
         <For each={steps()}>
           {(s, i) => (
             <li class="deploy-stepper-step" data-state={s.state} aria-current={s.state === "now" ? "step" : undefined}>
-              {i() + 1} · {s.label}
+              {stepCaption(s, i())}
               <span class="visually-hidden">{s.state === "done" ? ", done" : s.state === "failed" ? ", failed" : s.state === "now" ? ", running" : ", waiting"}</span>
             </li>
           )}

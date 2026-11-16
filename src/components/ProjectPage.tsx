@@ -6,7 +6,7 @@ import type { AttentionDigest, SessionSummary } from "../../shared/protocol";
 import { ApiError, archiveProject, runDeployVerb, runProjectVerb, unarchiveProject } from "../lib/api";
 import { createPoll } from "../lib/poll";
 import { deployDot } from "../lib/project-deploy";
-import type { DeployReport } from "../../shared/project-contract";
+import type { DeployReport, VerbResult } from "../../shared/project-contract";
 import { relativeTime } from "../lib/format";
 import { PROJECT_TABS, PROJECTS_HREF, projectTabHref, TAB_LABEL, type ProjectTab, type QueueTab } from "../lib/projects-route";
 import { openIdeas } from "../lib/project-overseer-view";
@@ -185,7 +185,19 @@ export function ProjectPage(props: {
   const attention = () => org?.attention() ?? { count: 0, line: null };
   // The Deploy tab's dot: the page reads deploy.status now and then (the tab's own panel every few seconds, which it
   // hands up while it shows), so a deploy started elsewhere or an overseer's request marks the tab from any tab.
-  const deployRead = createPoll(() => runDeployVerb(project().root, "deploy.status", {}), DEPLOY_DOT_POLL_MS, { cacheKey: `project:${projectId}:deploy-dot` });
+  // A project that declares no deploy (no project file, no deploy section) answers not-found: read no more until
+  // Refresh Project, so the page doesn't ask every 30 s for what isn't there.
+  let noDeploy = false;
+  const deployRead = createPoll(
+    async () => {
+      if (noDeploy) return {} as Partial<VerbResult>;
+      const r = await runDeployVerb(project().root, "deploy.status", {});
+      if (r.error?.code === "not-found") noDeploy = true;
+      return r as Partial<VerbResult>;
+    },
+    DEPLOY_DOT_POLL_MS,
+    { cacheKey: `project:${projectId}:deploy-dot` },
+  );
   // Whichever read answered last, the page's or the panel's.
   const [deployNow, setDeployNow] = createSignal<DeployReport | undefined>();
   createEffect(on(() => deployRead.data(), (d) => d && setDeployNow(d.deploy)));
@@ -255,6 +267,8 @@ export function ProjectPage(props: {
         po.actions.refetch();
         po.ideas.refetch();
         po.todos.refetch();
+        noDeploy = false;
+        deployRead.refetch();
         setCostTick((n) => n + 1);
       }}
       error={org?.error() ?? null}

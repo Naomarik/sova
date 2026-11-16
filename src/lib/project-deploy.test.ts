@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { DeployRecordView } from "../../shared/project-contract";
-import { checksLine, deployDot, deployHistory, deployProgress, historyResult, overridesAsked, planDeadline, progressLine, recordLine, rollbackWord, shipConfirmLine } from "./project-deploy";
+import { checksLine, deployDot, stepCaption, deployHistory, deployProgress, historyResult, overridesAsked, planDeadline, progressLine, recordLine, rollbackWord, shipConfirmLine } from "./project-deploy";
 
 // The Deploy panel's words (§app.project-runtime/deploy-panel).
 
@@ -63,7 +63,8 @@ test("the progress strip: steps ran, the one running, what waits, the URL check 
   // Every step ran, the check not yet back: the check is what runs.
   assert.equal(strip(deployProgress(rec({ steps: PLAN.steps.map((s) => step(s.key)) }), PLAN)), "Build:done Upload:done Switch:done Check URL:now");
   // Without the plan the strip ends at the running step and invents nothing after it.
-  assert.equal(strip(deployProgress(rec({ steps: [step("build.build")] }))), "Build:done Step 2:now");
+  assert.equal(strip(deployProgress(rec({ steps: [step("build.build")] }))), "Build:done :now");
+  assert.deepEqual(deployProgress(rec({ steps: [step("build.build")] })).map(stepCaption), ["1 · Build", "Step 2"]);
   // Ended: a failed step and the check each say so; nothing is running.
   assert.equal(strip(deployProgress(rec({ state: "failed", steps: [step("build.build"), step("steps.upload", 3)] }))), "Build:done Upload:failed");
   const ok = rec({ state: "succeeded", steps: PLAN.steps.map((s) => step(s.key)), verify: { url: "https://x/", status: 200, ok: true, detail: "" } });

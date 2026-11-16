@@ -68,7 +68,8 @@ export function overridesAsked(message: string): { tests: boolean; dirty: boolea
 /** One step on the Deploy tab's progress strip. */
 export interface ProgressStep {
   key: string;
-  /** "Build", "Upload", "Check URL": the step's id as the recipe names it, its first letter raised. */
+  /** "Build", "Upload", "Check URL": the step's id as the recipe names it, its first letter raised; "" for the step
+      running now when nothing names it yet (drawn as "Step N"). */
   label: string;
   state: "done" | "now" | "failed" | "waiting";
 }
@@ -90,7 +91,7 @@ export function deployProgress(r: DeployRecordView, planned?: { steps: readonly 
   const ranAll = planned ? rest.length === 0 : false;
   if (running && !ranAll) {
     const [now, ...after] = rest.length ? rest : [{ key: `step.${r.steps.length + 1}` }];
-    out.push({ key: now!.key, label: rest.length ? stepLabel(now!.key) : `Step ${r.steps.length + 1}`, state: "now" });
+    out.push({ key: now!.key, label: rest.length ? stepLabel(now!.key) : "", state: "now" });
     for (const s of after) out.push({ key: s.key, label: stepLabel(s.key), state: "waiting" });
   } else if (!running) for (const s of rest) out.push({ key: s.key, label: stepLabel(s.key), state: "waiting" });
   const verify = r.verify ? true : planned ? planned.verify !== null : false;
@@ -101,10 +102,13 @@ export function deployProgress(r: DeployRecordView, planned?: { steps: readonly 
   return out;
 }
 
+/** A step as the strip draws it: "2 · Upload", or "Step 2" when nothing names it. */
+export const stepCaption = (s: ProgressStep, i: number): string => (s.label ? `${i + 1} · ${s.label}` : `Step ${i + 1}`);
+
 /** The progress card's line: "Deploying 1a2b3c4 to site · step 2 of 4 · upload" (of N only when the strip knows N). */
 export function progressLine(r: DeployRecordView, steps: readonly ProgressStep[]): string {
   const i = steps.findIndex((s) => s.state === "now");
-  const known = steps.every((s) => !s.label.startsWith("Step "));
+  const known = steps.every((s) => s.label);
   const verb = r.kind === "rollback" ? "Rolling back" : "Deploying";
   const where = `${verb} ${short(r.commit)} to ${r.target}`;
   if (i < 0) return where;

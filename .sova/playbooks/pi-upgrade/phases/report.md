@@ -8,11 +8,11 @@ In this order:
 2. **Wins.** Things a person would notice getting better, then workarounds Sova can drop.
 3. **Tradeoffs.** Gains that cost something: both sides, plainly.
 4. **Risks.** What could go wrong for Sova, worst first: lost or corrupted work, then chats behaving wrongly, then cost and speed, then engineering effort. Say what would happen, to whom, and whether it would be silent. Each risk is numbered and ends with its main `file:line`; one with none isn't a finding yet and goes back to the team.
-5. **The rest.** Entries that touch nothing Sova uses: one short row each, so the user sees they were looked at.
+5. **The rest.** Entries that touch nothing Sova uses, summarised per release: how many, and what kinds, in a line each. Every one of them has its row in the changelog reader's file, `<W>/reports/changelog.md`; name that file here, so the user can see each was looked at.
 6. **Verdict**: **Upgrade now, to `<v>`** (the risks are fixed by known, bounded work and the wins are real), **Upgrade later** (name what it waits for), or **Skip `<v>`** (net harm; say what would change your mind). It may name a version below the latest.
 7. **Questions**, numbered, each with your recommendation: only what is the user's. Each in four parts: what it is, what could happen, what yes does, what happens if we don't.
 
-Sections 2 to 5 are tables, one row per changelog entry after `<old>`, every entry in exactly one section:
+Sections 2 to 4 are tables, one row per changelog entry; with section 5's file, every entry after `<old>` is in exactly one place:
 
 | Entry | What Sova uses today | What we gain | What it costs | How we know |
 |---|---|---|---|---|

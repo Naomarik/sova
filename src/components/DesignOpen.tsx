@@ -1,6 +1,8 @@
-import { createEffect, createMemo, createSignal, For, onCleanup, onMount, Show, untrack } from "solid-js";
+import { createEffect, createMemo, createResource, createSignal, For, onCleanup, onMount, Show, untrack } from "solid-js";
 import { Portal } from "solid-js/web";
-import { designDirectionLine, type DesignRecord } from "../../shared/design";
+import { designDirectionLine, type DesignHistoryItem, type DesignRecord } from "../../shared/design";
+import type { TranscriptItem } from "../../shared/protocol";
+import { foldedCalls, historyRows, mergeHistory } from "../lib/lookbook-history";
 import { versionLabel } from "../lib/design-frame";
 import type { DesignOpener } from "../lib/design-history";
 import { createPageSlots } from "../lib/design-page-slots";
@@ -65,7 +67,7 @@ function PageFrame(props: { d: DesignRecord; version: number; following: boolean
   );
 }
 
-function ChatPane(props: { sessionFile?: string; host: string | null; name: string; author: string; streaming: boolean; children: any; note?: string }) {
+function ChatPane(props: { sessionFile?: string; host: string | null; name: string; author: string; streaming: boolean; children: any; note?: string; rows?: (items: TranscriptItem[]) => TranscriptItem[] }) {
   return (
     <section class="design-open-chat" aria-label={`Chat with ${props.name}`}>
       <h3 class="design-open-chat-title">Chat with {props.name}</h3>
@@ -79,7 +81,7 @@ function ChatPane(props: { sessionFile?: string; host: string | null; name: stri
             </div>
           }
         >
-          {(file) => <WorkerTranscript source={{ kind: "pi", path: file }} host={props.host} name={props.name} author={props.author} streaming={props.streaming} onContext={() => {}} />}
+          {(file) => <WorkerTranscript source={{ kind: "pi", path: file }} host={props.host} name={props.name} author={props.author} streaming={props.streaming} onContext={() => {}} rows={props.rows} />}
         </Show>
       </div>
       <Show when={props.note}>
@@ -104,6 +106,15 @@ export function DesignOpen(props: { target: DesignOpenTarget; store: DesignStore
   const view = () => props.store.view();
   const d = createMemo(() => (props.target.kind === "design" ? view()?.designs.find((x) => x.label === (props.target as { label: string }).label) : undefined));
   const coordinator = () => coordinatorOf(view());
+  // The Creative Director's chat lists what each design was told among its messages: fetched again
+  // whenever the history's count or newest item moves (it rides on the design events, its items don't).
+  const historyMark = createMemo(() => (props.target.kind === "coordinator" ? `h:${view()?.history?.count ?? 0}:${view()?.history?.last ?? ""}` : false));
+  const [history] = createResource(historyMark, () => props.store.api.history().then((h) => h.items).catch(() => [] as DesignHistoryItem[]));
+  const promptItems = createMemo(() => {
+    const items = history.latest ?? [];
+    return { rows: historyRows(items), folded: foldedCalls(items) };
+  });
+  const withPromptItems = (list: TranscriptItem[]) => mergeHistory(list, promptItems().rows, promptItems().folded);
   const [hideChat, setHideChat] = createSignal(false);
   // What the More menu's last click came to, when it didn't go through: said in the head's line.
   const [actError, setActError] = createSignal("");
@@ -159,7 +170,7 @@ export function DesignOpen(props: { target: DesignOpenTarget; store: DesignStore
                   name={x().label}
                   author={x().label}
                   streaming={x().status === "writing"}
-                  note={x().workerState === "stopped" ? `${x().label}'s session has shut down. A message starts it again.` : x().sessionEnded ? `${x().label}'s session has ended. Refine starts a fresh one from the stored page.` : undefined}
+                  note={x().workerState === "stopped" ? `${x().label}'s session has shut down. A message starts it again.` : x().sessionEnded ? `${x().label}'s session has ended. A message starts a fresh one from its stored page.` : undefined}
                 >
                   <DesignMessageBox label={`Message ${x().label}`} placeholder={`Message ${x().label}`} delivery={x().delivery} name={x().label} send={(text, key) => props.store.api.message(x().label, text, key)} onSent={() => props.store.refresh()} />
                 </ChatPane>
@@ -175,7 +186,7 @@ export function DesignOpen(props: { target: DesignOpenTarget; store: DesignStore
                 <DesignTiles designs={designGrid(view())} store={props.store} cacheKey={props.path} class="design-open-grid" onOpen={(label) => props.onSwitch({ kind: "design", label })} />
               </div>
               <Show when={!hideChat()}>
-                <ChatPane sessionFile={c().sessionFile} host={hostOf()} name="the Creative Director" author="Creative Director" streaming={c().status === "running"} note="It knows what each design is, not its code.">
+                <ChatPane sessionFile={c().sessionFile} host={hostOf()} name="the Creative Director" author="Creative Director" streaming={c().status === "running"} note="It knows what each design is, not its code." rows={withPromptItems}>
                   <DesignMessageBox label="Message the Creative Director" placeholder="Message the Creative Director" delivery={c().delivery} name="the Creative Director" send={(text, key, images) => props.store.api.coordinatorMessage(text, key, images)} upload={props.store.api.uploadImage} onSent={() => props.store.refresh()} />
                 </ChatPane>
               </Show>

@@ -13,6 +13,7 @@ import {
   rowLand,
   sessionBranches,
   sessionGroup,
+  startedWords,
   shownBranches,
   type BranchStage,
   type SessionFacts,
@@ -146,6 +147,15 @@ test("a branch reads from its chat's own worktree row where the chat tracks it; 
   assert.deepEqual(sessionBranches(recorded, tracks("feat/other", "/w/other") as never, none).map((b) => [b.branch, b.word]), [["sova/own", "2 commits ahead"], ["feat/other", "Ready to land"]]);
   // A session in the project root with nothing tracked has no branch.
   assert.deepEqual(sessionBranches({ branch: null }, undefined, none), []);
+});
+
+test("a finished session's age cell says its start date once", () => {
+  const date = () => "Nov 5";
+  // The two lines never repeat a date or the word "started": the first names the day, the second only the age.
+  assert.deepEqual(startedWords("2026-11-05T09:00:00Z", NOW, date), { started: "started Nov 5", age: "11d old" });
+  assert.deepEqual(startedWords("2026-11-15T11:00:00Z", NOW, date), { started: "started Nov 5", age: "1d old" });
+  assert.deepEqual(startedWords("2026-11-16T09:00:00Z", NOW, date), { started: "started today", age: "" });
+  assert.deepEqual(startedWords("not a date", NOW, date), { started: "", age: "" });
 });
 
 test("up to 3 branches show, then +N more; opened, all", () => {

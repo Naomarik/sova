@@ -301,6 +301,15 @@ export function ageWords(createdAt: string, now: number, date: (ms: number) => s
   return days < 1 ? "started today" : `${days}d old · ${date(t)}`;
 }
 
+/** A finished session's age cell, its start date said once: "started Nov 5" then "11d old"; one started today reads
+    "started today" alone. */
+export function startedWords(createdAt: string, now: number, date: (ms: number) => string): { started: string; age: string } {
+  const t = Date.parse(createdAt);
+  if (!Number.isFinite(t)) return { started: "", age: "" };
+  const days = Math.floor((now - t) / DAY_MS);
+  return days < 1 ? { started: "started today", age: "" } : { started: `started ${date(t)}`, age: `${days}d old` };
+}
+
 /** The folded Landed group's line, over every finished session (landed, removed or already in its target):
     "Latest: {title} · landed 6d ago, and 185 more"; the time only when the latest one landed. */
 export function landedFoldWords(latest: { title: string; when: string } | undefined, n: number): string {

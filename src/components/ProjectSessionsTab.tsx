@@ -23,6 +23,7 @@ import {
   needsYouIds,
   OLD_DAYS,
   sessionBranches,
+  startedWords,
   branchLines,
   rowLand,
   waitsOnYou,
@@ -225,6 +226,7 @@ export function SessionsTab(props: {
     const landed = () => isFinished(v().facts.stages);
     // The ring means idle and worth a look: a landed session is done, so it never carries it.
     const quiet = () => !v().facts.working && !landed() && isQuiet(v().facts.lastActive, now());
+    const started = () => startedWords(row().createdAt, now(), (t) => shortDate(t, now()));
     const summary = () => (v().s && showSummaries() ? summaryLineOf(v().s!) : "");
     const by = () => (row().playbook ? "Project verbs playbook run" : row().startedBy === "overseer" ? "Started by the overseer" : null);
     const ready = () => (v().facts.working ? undefined : rowLand(v().branches));
@@ -292,7 +294,7 @@ export function SessionsTab(props: {
                   <span class="psess-quiet-mark" aria-hidden="true" />
                 </Show>
                 <Show when={landed()} fallback={<>active {relativeTime(v().facts.lastActive, now())}</>}>
-                  started {shortDate(Date.parse(row().createdAt), now())}
+                  {started().started}
                 </Show>
               </span>
             }
@@ -310,7 +312,8 @@ export function SessionsTab(props: {
               </span>
             )}
           </Show>
-          <span class="psess-age-2">{ageWords(row().createdAt, now(), (t) => shortDate(t, now()))}</span>
+          {/* A finished row's first line already says when it started: its second is the age alone. */}
+          <span class="psess-age-2">{landed() ? started().age : ageWords(row().createdAt, now(), (t) => shortDate(t, now()))}</span>
         </div>
         <div class="psess-branches">
           <Show when={v().branches.length} fallback={<span class="psess-nobranch">No branch</span>}>

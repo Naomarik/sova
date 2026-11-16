@@ -55,20 +55,24 @@ export interface PlaybookRun {
 /**
  * One entry of a model chain as written: `{"model": "provider/id", "effort": "high"}`. The provider
  * `claude-code` means Sova's Claude backend (`claude-code/claude-opus-5-5`); any other provider is a
- * pi model (`zai/glm-5.3`). `effort` absent: the model's default.
+ * pi model (`zai/glm-5.3`). `effort` absent: DEFAULT_EFFORT (the server may move it to the nearest
+ * effort the model takes, and says so). A WorkerChoice built here never has an empty effort.
  */
 export interface PlaybookModel {
   /** As written: "provider/id". */
   ref: string;
-  /** In agent_spawn's terms (WorkerChoice); `effort` is "" when the entry names none. */
+  /** In agent_spawn's terms (WorkerChoice); `effort` is DEFAULT_EFFORT when the entry names none. */
   choice: WorkerChoice;
 }
+
+/** A chain entry's effort when it names none: agent_spawn's own default for both backends. */
+export const DEFAULT_EFFORT = "medium";
 
 /** A model ref as written → agent_spawn's terms. */
 export function choiceOfRef(ref: string, effort?: string): WorkerChoice {
   const slash = ref.indexOf("/");
-  if (ref.slice(0, slash) === "claude-code") return { backend: "claude-code", model: ref.slice(slash + 1), effort: effort ?? "" };
-  return { backend: "pi", model: ref, effort: effort ?? "" };
+  if (ref.slice(0, slash) === "claude-code") return { backend: "claude-code", model: ref.slice(slash + 1), effort: effort || DEFAULT_EFFORT };
+  return { backend: "pi", model: ref, effort: effort || DEFAULT_EFFORT };
 }
 
 /** agent_spawn's terms → the ref a playbook writes. */
@@ -256,7 +260,8 @@ export interface PlaybookSpec {
       beyond main (a declaration that only sets listed or run). */
   steps: PlaybookFlowItem[];
   machine?: PlaybookMachine;
-  /** Catalogue ids (shared/commands-ids.json) of Sova commands that change things the run may use. */
+  /** Catalogue ids (shared/commands-ids.json) of the Sova commands the run uses. Those that change
+      things are the ones the card lists (looking is free, so listing one that only looks is harmless). */
   commands: string[];
 }
 
@@ -689,7 +694,6 @@ function parseCommands(v: unknown): string[] {
   xs.forEach((c, i) => {
     const entry = typeof c === "string" ? findCommand(c) : undefined;
     if (!entry) fail(`commands[${i}]`, `must be a command id from Sova's catalogue (\`sova list\`).`);
-    else if (entry.effect === "looks") fail(`commands[${i}]`, `"${c as string}" only looks, and looking is free: list only commands that change things.`);
     if (xs.indexOf(c) !== i) fail(`commands[${i}]`, `"${c as string}" is listed twice.`);
   });
   return xs as string[];
@@ -801,6 +805,45 @@ export function pagesOf(spec: PlaybookSpec): { path: string; file: string }[] {
 
 /** A cycle's rule written as a page in the folder ("phases/stop-rule.md") rather than in words. */
 export const isPageRef = (rule: string): boolean => rule.endsWith(".md") && !/\s/.test(rule);
+
+// ── slots ────────────────────────────────────────────────────────────────────────────────────────
+
+/** Slots every role prompt may use besides its inputs and facts, filled at Start: `run`, the run's
+    folder (where a helper writes); `note`, your note for the role on the card (empty when none). */
+export const RUN_SLOTS = ["run", "note"] as const;
+/** The slot a role with `count` or `per` may use: which one it is (the item of `per`'s input, as
+    inputValueText words it, or "2 of 3" for `count`). */
+export const EACH_SLOT = "each";
+const SLOT_RE = /\{\{\s*([^{}\s]+)\s*\}\}/g;
+
+/** The `{{slot}}` names a page uses, each once, in order. */
+export function slotsIn(text: string): string[] {
+  return [...new Set([...text.matchAll(SLOT_RE)].map((m) => m[1]!))];
+}
+
+/**
+ * Every `{{slot}}` in a helper's prompt names an input, a fact or a built-in slot (§chat.playbooks/description-file:
+ * a broken reference is a fault). `pages` maps each prompt page (relative) to its text; a page not in
+ * it is skipped. Returns the faults, first first.
+ */
+export function validatePromptSlots(spec: PlaybookSpec, pages: Readonly<Record<string, string>>): string[] {
+  const known = new Set<string>([...spec.inputs.map((x) => x.id), ...spec.facts.map((x) => x.id), ...RUN_SLOTS]);
+  const out: string[] = [];
+  for (const r of spec.roles) {
+    // The main chat's page is its own text, not a brief Sova fills: it gets your choices in the run's message.
+    if (r.id === MAIN_ROLE || !r.prompt || pages[r.prompt] === undefined) continue;
+    const many = r.count !== undefined || r.per !== undefined;
+    for (const slot of slotsIn(pages[r.prompt]!)) {
+      if (known.has(slot) || (many && slot === EACH_SLOT)) continue;
+      out.push(
+        slot === EACH_SLOT
+          ? `roles.${r.id}.prompt: "{{each}}" is only for a role with "count" or "per".`
+          : `roles.${r.id}.prompt: "{{${slot}}}" isn't an input or fact (${[...known].map((k) => `"${k}"`).join(", ")}${many ? `, "each"` : ""}).`,
+      );
+    }
+  }
+  return out;
+}
 
 // ── values ───────────────────────────────────────────────────────────────────────────────────────
 

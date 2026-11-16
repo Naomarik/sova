@@ -2,7 +2,7 @@
 // at every level, every reference checked, the exact path and fault), the folder check, and input values.
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { checkCycleSettings, checkInputValue, cycleOf, inputValueText, parsePlaybookSpec, stepsOf, validatePlaybookFiles, type PlaybookSpec } from "./playbook-format";
+import { checkCycleSettings, checkInputValue, cycleOf, inputValueText, parsePlaybookSpec, stepsOf, validatePlaybookFiles, validatePromptSlots, type PlaybookSpec } from "./playbook-format";
 
 /** A description using every key the format has (the A/B cycle's shape, cut down). */
 const FULL = {
@@ -32,7 +32,7 @@ const FULL = {
       { id: "run", label: "Run", roles: ["runner", "grader"], stop: "optional", startsOff: true },
     ] },
   ],
-  commands: ["session.create"],
+  commands: ["session.create", "session.list"],
 };
 const clone = <T>(v: T): T => JSON.parse(JSON.stringify(v)) as T;
 const ok = (raw: unknown): PlaybookSpec => {
@@ -52,13 +52,13 @@ test("the full description reads as written, with derived values where it leaves
   assert.deepEqual(s.run.permissions?.grant, ["sessions.read"]);
   assert.deepEqual(s.roles.map((r) => r.id), ["main", "consultant", "runner", "grader"]);
   const consultant = s.roles[1]!;
-  assert.deepEqual(consultant.models.map((m) => m.choice), [{ backend: "claude-code", model: "claude-opus-5-5", effort: "high" }, { backend: "claude-code", model: "claude-fable-5-2", effort: "" }]);
+  assert.deepEqual(consultant.models.map((m) => m.choice), [{ backend: "claude-code", model: "claude-opus-5-5", effort: "high" }, { backend: "claude-code", model: "claude-fable-5-2", effort: "medium" }], "an entry naming no effort gets the default, never an empty one");
   assert.deepEqual(s.roles[2]!.models[0]!.choice, { backend: "pi", model: "zai/glm-5.3", effort: "low" });
   assert.deepEqual(consultant.count, { input: "rivals" });
   assert.deepEqual(s.roles[3]!.count, { n: 1 });
   assert.equal(cycleOf(s)?.settings.askEvery, 2);
   assert.deepEqual(stepsOf(s.steps).map((x) => [x.id, x.team]), [["measure", false], ["fix", false], ["run", true]]);
-  assert.deepEqual(s.commands, ["session.create"]);
+  assert.deepEqual(s.commands, ["session.create", "session.list"], "a command that only looks may be listed too: looking is free");
 });
 
 test("a description that sets nothing else is a plain playbook with a main chat", () => {
@@ -125,8 +125,8 @@ test("each fault is refused with its exact path and words", () => {
     ["powers in this chat", (r) => (r.run.where = "this-chat"), `run.where: a playbook that asks for powers runs in a new chat (a chat's powers are fixed at its first message); use "new-chat" or leave it out.`],
     ["bad power", (r) => (r.run.permissions.grant = ["everything"]), /^run\.permissions\.grant: must be a list of /],
     ["create mode", (r) => (r.run.mode = "create"), `run.mode: a playbook never runs in Create mode; use "normal" or "delegate".`],
-    ["unknown command", (r) => r.commands.push("no.such"), "commands[1]: must be a command id from Sova's catalogue (`sova list`)."],
-    ["a looking command", (r) => r.commands.push("session.list"), `commands[1]: "session.list" only looks, and looking is free: list only commands that change things.`],
+    ["unknown command", (r) => r.commands.push("no.such"), "commands[2]: must be a command id from Sova's catalogue (`sova list`)."],
+    ["a command twice", (r) => r.commands.push("session.create"), `commands[2]: "session.create" is listed twice.`],
     ["steps and machine", (r) => (r.machine = {}), `playbook.json: has both "steps" and "machine"; use one.`],
     ["helpers without steps", (r) => delete r.steps, `playbook.json: declares helper roles but no "steps" (or "machine") that use them.`],
   ];
@@ -207,4 +207,20 @@ test("input values: what each type accepts, and the words a prompt's slot gets",
   assert.equal(inputValueText(input("fast"), false), "no");
   assert.equal(inputValueText(input("cases"), ["one", "two"]), "- one\n- two");
   assert.equal(inputValueText(input("testModels"), input("testModels").default as never), "zai/glm-5.3 (low)");
+});
+
+test("a helper's prompt {{slots}} name an input, a fact, run or note; {{each}} only where there are several", () => {
+  const s = ok({
+    version: 1,
+    inputs: [{ id: "target", label: "T", type: "text" }],
+    facts: [{ id: "latest", label: "L" }],
+    roles: { one: { label: "One", prompt: "roles/one.md" }, many: { label: "Many", prompt: "roles/many.md", count: 2 } },
+    steps: [{ id: "s", label: "S", roles: ["one", "many"] }],
+  });
+  const all = "{{target}} {{ latest }} {{run}} {{note}}";
+  assert.deepEqual(validatePromptSlots(s, { "roles/one.md": all, "roles/many.md": `${all} {{each}}` }), []);
+  assert.deepEqual(validatePromptSlots(s, { "roles/one.md": "{{versoin}} {{each}}", "roles/many.md": "{{each}}" }), [
+    `roles.one.prompt: "{{versoin}}" isn't an input or fact ("target", "latest", "run", "note").`,
+    `roles.one.prompt: "{{each}}" is only for a role with "count" or "per".`,
+  ]);
 });

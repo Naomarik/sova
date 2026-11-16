@@ -131,6 +131,7 @@ function fakeEnv(dir: string, spec: { roles: { id: string; prompt?: string }[] }
     chat: { backend: "pi", model: "ollama-cloud/qwen", effort: "low" },
     team: { coordinator: { model: "zai/glm-5.3", effort: "medium" }, monitor: { model: "zai/glm-5.3", effort: "low" } },
     prompts,
+    page: (rel) => (rel === "phases/stop.md" ? "# Stop rule\n\nStop after **two rounds** in a row with no win.\n\nMore detail.\n" : null),
     commandLabel: (id) => id,
     commandChanges: () => true,
     resolve: (input) => resolveRoleModel(input, { routes: null, chat: { backend: "pi", model: "ollama-cloud/qwen", effort: "low" }, denial: off, name: (c) => name(c).label }),

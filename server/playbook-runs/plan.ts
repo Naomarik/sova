@@ -1,7 +1,7 @@
 // The card a run draws and the plan Start freezes, from the
 // playbook's description, the run's draft and what this computer can run now. Pure: the environment (which
 // models can run, their names, your profile's routes, team defaults, the prompt pages) comes in as `CardEnv`.
-import { choiceOfRef, CYCLE_MAX, EACH_SLOT, MAIN_ROLE, refOfChoice, type InputValue, type PlaybookFlowItem, type PlaybookInput, type PlaybookModel, type PlaybookRole, type PlaybookSpec, type PlaybookStep } from "../../shared/playbook-format";
+import { choiceOfRef, CYCLE_MAX, EACH_SLOT, isPageRef, MAIN_ROLE, refOfChoice, type InputValue, type PlaybookFlowItem, type PlaybookInput, type PlaybookModel, type PlaybookRole, type PlaybookSpec, type PlaybookStep } from "../../shared/playbook-format";
 import type { ChainEntry, KindRoute, ResolvedRoleModel } from "../../shared/playbook-models";
 import { HELPER_LIMIT, mergeEdits, type PlaybookCardEdits, type PlaybookChoiceView, type PlaybookModelPick, type PlaybookModelSource, type PlaybookModelView, type PlaybookRoleView, type PlaybookRunView, type PlaybookStepView, type PlaybookTeamView } from "../../shared/playbook-run";
 import type { DelegateProfileId, WorkerChoice } from "../../shared/protocol";
@@ -22,6 +22,8 @@ export interface CardEnv {
   team: { coordinator: { model: string; effort?: string }; monitor: { model: string; effort?: string } };
   /** Each role's prompt page as written (main: the recipe page's body), or why it can't be read. */
   prompts: Record<string, string | { error: string }>;
+  /** A page of the playbook's folder (relative), or null when it can't be read. */
+  page(rel: string): string | null;
   /** A catalogue command's label. */
   commandLabel(id: string): string;
   /** Whether a catalogue command changes things (only those are shown and listed: looking ones are free). */
@@ -267,7 +269,7 @@ export function runCard(r: PlaybookRunRecord, spec: PlaybookSpec, env: CardEnv, 
         maxCap: CYCLE_MAX,
         askEvery: edits.cycle?.askEvery ?? group.settings.askEvery,
         until: edits.cycle?.until ?? group.settings.until,
-        ...(group.rule ? { rule: group.rule } : {}),
+        ...(group.rule ? { rule: ruleWords(group.rule, env) } : {}),
       }
     : null;
 
@@ -292,6 +294,24 @@ export function runCard(r: PlaybookRunRecord, spec: PlaybookSpec, env: CardEnv, 
   };
   view.startBlocked = blocked(view, spec, edits, env, teams);
   return { view, resolved };
+}
+
+/** A cycle's stop rule in words: written out, or a page's first paragraph, plain. */
+export function ruleWords(rule: string, env: Pick<CardEnv, "page">): string {
+  if (!isPageRef(rule)) return rule;
+  const text = env.page(rule);
+  if (!text) return rule;
+  const plain = (p: string) => p.replace(/\[([^\]]*)\]\([^)]*\)/g, "$1").replace(/[*_`]+/g, "");
+  const paras = text
+    .replace(/^---\n[\s\S]*?\n---\n/, "")
+    .split(/\n\s*\n/)
+    .map((p) => p.trim())
+    .filter((p) => p && !p.startsWith("#"));
+  if (!paras.length) return rule;
+  let words = plain(paras[0]!).replace(/\s+/g, " ").trim();
+  // A lead-in ("…when any of these holds:") takes the list after it.
+  if (words.endsWith(":") && paras[1]) words += ` ${plain(paras[1]).split("\n").map((l) => l.replace(/^\s*(?:[-*]|\d+\.)\s+/, "").trim().replace(/\.$/, "")).filter(Boolean).join("; ")}.`;
+  return words;
 }
 
 /** Whether the run goes to a new chat: the playbook asks for one (its own powers always do), or no chat showed the card. */

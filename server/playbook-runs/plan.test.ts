@@ -73,6 +73,7 @@ function env(off: (c: WorkerChoice) => string | null = (c) => (c.model === "clau
     chat: { backend: "pi", model: "zai/glm-5.3", effort: "" },
     team: { coordinator: { model: "claude-code/claude-opus-5-5", effort: "medium" }, monitor: { model: "ollama-cloud/deepseek-v4.1-flash", effort: "low" } },
     prompts: { main: "Conduct.", runner: "Run {{subject}} on {{each}}, depth {{depth}}, into {{run}}; scripts in {{folder}}/scripts.", grader: "Grade {{subject}}.", critic: "Critique." },
+    page: (rel) => (rel === "phases/stop.md" ? "# Stop rule\n\nStop after **two rounds** in a row with no win.\n\nMore detail.\n" : rel === "phases/list.md" ? "# Stop rule\n\nStop going round when any of these holds:\n\n- Every model passes.\n- Two rounds with no win.\n\nOtherwise go round.\n" : null),
     commandLabel: (id) => id,
     commandChanges: (id) => id !== "session.list",
     resolve: (input, as) => resolveRoleModel(input, { routes: { planning: { primary: { backend: "pi", model: "zai/glm-5.3", effort: "medium" }, fallback: null } }, chat: { backend: "pi", model: "zai/glm-5.3", effort: "" }, denial: (c) => off(c), name: (c) => `${name(c).label} · ${name(c).provider}` }),
@@ -155,6 +156,17 @@ describe("the card a run draws", () => {
     e.prompts.grader = "Grade {{subject}}. Note: {{note}}";
     const card = runCard(record(s, { choices: { subject: "x" }, roles: { grader: { note: "Be strict." } } }), s, e);
     assert.equal(card.view.roles.find((r) => r.id === "grader")!.prompt, "Grade x. Note: Be strict.\n\nYou judge blind: you are never told which arm or version produced what you are given, and you must not try to find out.\n");
+  });
+
+  test("a stop rule kept on a page reads as that page's first paragraph", () => {
+    const s = spec((r) => {
+      (r.steps[1] as { repeat: { rule: string } }).repeat.rule = "phases/stop.md";
+    });
+    assert.equal(runCard(record(s, { choices: { subject: "x" } }), s, env()).view.cycle?.rule, "Stop after two rounds in a row with no win.");
+    const listed = spec((r) => {
+      (r.steps[1] as { repeat: { rule: string } }).repeat.rule = "phases/list.md";
+    });
+    assert.equal(runCard(record(listed, { choices: { subject: "x" } }), listed, env()).view.cycle?.rule, "Stop going round when any of these holds: Every model passes; Two rounds with no win.");
   });
 
   test("each choice says where its value came from; a value you set says so", () => {

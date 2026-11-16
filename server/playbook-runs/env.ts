@@ -102,6 +102,10 @@ export async function liveEnv(spec: PlaybookSpec, info: PlaybookInfo, chatPath?:
     chat: chatModel,
     team,
     prompts: readPrompts(spec, info),
+    page: (rel) => {
+      const f = bundleFile(info.dir, rel);
+      return "text" in f ? f.text : null;
+    },
     commandLabel: (id) => findCommand(id)?.label ?? id,
     commandChanges: (id) => findCommand(id)?.effect !== "looks",
     resolve: (input, as) => {

@@ -182,7 +182,7 @@ export function createProjectOrgPart(orgId: string, ctx: ProjectPartContext): Pr
             {/* The sessions its overseer started to gather requirements: shown once it has started one. */}
             <Show when={ctx.po.info.data()?.started.some((x) => x.kind !== "coding") ? ctx.po.info.data() : undefined}>
               {(pi) => (
-                <section class="card orgs-section project-card" aria-label="Sessions it started">
+                <section class="card orgs-section project-card" aria-labelledby="project-started">
                   <Started info={pi()} />
                 </section>
               )}

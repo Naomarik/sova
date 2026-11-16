@@ -833,7 +833,10 @@ export function Started(props: { info: ProjectOverseerInfo }) {
   const rows = createMemo(() => props.info.started.filter((s) => s.kind !== "coding"));
   return (
     <Show when={rows().length}>
-      <h3 class="orgs-h3">Sessions it started</h3>
+      {/* Its card's own heading (Requirements): on that tab "it" has nothing to point at, so it names the overseer. */}
+      <h2 class="orgs-h2" id="project-started">
+        Sessions the overseer started
+      </h2>
       <ul class="list">
         <For each={rows()}>
           {(s) => (

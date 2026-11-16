@@ -23,6 +23,7 @@ import {
   toPick,
 } from "../lib/playbook-card";
 import type { PlaybookRunsStore } from "../lib/playbook-runs";
+import { ApiError } from "../lib/api";
 import { sessionHrefOn } from "../lib/mesh";
 import { providerName } from "../lib/cost-history";
 import { announce } from "../lib/ui-state";
@@ -112,10 +113,17 @@ export function PlaybookCard(props: { run: PlaybookRunView; store: PlaybookRunsS
         await props.store.edit(run().id, run().revision, batch);
         setSaveError(null);
       } catch (e) {
-        // A stale revision brought the newer view: what you changed goes again on top of it, once.
+        // Only a stale revision is retried: its refusal brought the newer view, and what you changed
+        // goes again on top of it, once, and the card says so.
+        if (!(e instanceof ApiError && e.status === 409)) {
+          setPending((p) => stackEdits(batch, p));
+          setSaveError(`Your change wasn't saved: ${e instanceof Error ? e.message : String(e)}`);
+          return;
+        }
         try {
           await props.store.edit(run().id, run().revision, batch);
           setSaveError(null);
+          setDone("The card changed in another tab; your change was added on top.");
         } catch {
           setPending((p) => stackEdits(batch, p));
           setSaveError(`Your change wasn't saved: ${e instanceof Error ? e.message : String(e)}`);
@@ -144,6 +152,7 @@ export function PlaybookCard(props: { run: PlaybookRunView; store: PlaybookRunsS
   const stopOn = (s: PlaybookStepView) => shown().stops?.[s.id] ?? s.stopOn;
   const cycleMax = () => shown().cycle?.max ?? run().cycle?.max ?? 1;
   const cycleAsk = () => shown().cycle?.askEvery ?? run().cycle?.askEvery ?? 1;
+  const cycleUntil = () => shown().cycle?.until ?? run().cycle?.until ?? "rule";
 
   const changing = () => hasEdits(shown()) || !!sending;
   const startWhy = () =>
@@ -348,7 +357,29 @@ export function PlaybookCard(props: { run: PlaybookRunView; store: PlaybookRunsS
                       <span>{cycleAsk() === 1 ? "cycle." : "cycles."}</span>
                     </p>
                   </Show>
-                  <Show when={c().rule}>{(rule) => <p class="pb-note">Stops early when {rule()}</p>}</Show>
+                  <Show when={c().rule}>
+                    {(rule) => (
+                      <Show when={editable()} fallback={<p class="pb-note">{cycleUntil() === "rule" ? `Stops early when ${rule()}` : "Runs every cycle, whatever the stop rule says."}</p>}>
+                        <p class="pb-cycle-line">
+                          <label for={id("cycle-until")}>Keep going until</label>
+                          <span class="select-wrap pb-until">
+                            <select id={id("cycle-until")} class="select" onChange={(e) => queue({ cycle: { until: e.currentTarget.value as "rule" | "max" } })}>
+                              <option value="rule" selected={cycleUntil() === "rule"}>
+                                the stop rule is met
+                              </option>
+                              <option value="max" selected={cycleUntil() === "max"}>
+                                all cycles have run
+                              </option>
+                            </select>
+                            <span class="select-caret" aria-hidden="true">
+                              ▾
+                            </span>
+                          </span>
+                        </p>
+                        <p class="pb-note">The stop rule: {rule()}</p>
+                      </Show>
+                    )}
+                  </Show>
                 </div>
               )}
             </Show>

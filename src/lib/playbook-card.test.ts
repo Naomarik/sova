@@ -51,8 +51,8 @@ test("stops count the always stops and the optional ones turned on", () => {
 });
 
 test("the cycle line says the cap and when it asks", () => {
-  assert.equal(cycleLine({ steps: [], max: 5, maxCap: 10, askEvery: 1 }), "Up to 5 cycles; asks you after each cycle.");
-  assert.equal(cycleLine({ steps: [], max: 3, maxCap: 10, askEvery: 3 }), "Up to 3 cycles; asks you after every 3 cycles.");
+  assert.equal(cycleLine({ steps: [], max: 5, maxCap: 10, askEvery: 1, until: "rule" }), "Up to 5 cycles; asks you after each cycle.");
+  assert.equal(cycleLine({ steps: [], max: 3, maxCap: 10, askEvery: 3, until: "rule" }), "Up to 3 cycles; asks you after every 3 cycles.");
 });
 
 test("a role's why: the resolver's reason when it gave one, else where the model came from; only-roles say so", () => {

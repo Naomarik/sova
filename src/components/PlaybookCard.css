@@ -118,7 +118,7 @@
 .pb-cycle-line .pb-num { width: 4.5rem; min-height: var(--control-sm); }
 .pb-toggle { min-height: var(--control-sm); }
 .pb-multi { display: flex; flex-wrap: wrap; gap: 0 var(--space-3); }
-.pb-only-select .select { min-height: var(--control-sm); }
+.pb-only-select .select, .pb-until .select { min-height: var(--control-sm); }
 
 .pb-models { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1); }
 .pb-model-chip {

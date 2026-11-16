@@ -1718,6 +1718,14 @@ html, body { overflow: clip; overscroll-behavior: none; }
 .mq-cell p { margin: 0; }
 .mq-cell-value { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); margin: var(--space-1) 0; font-weight: var(--fw-medium); }
 .mq-red { color: var(--status-error); }
+/* The target's card: its head at the start, what origin has at the card's end (right-aligned there). Without the
+   room for both on a line, origin goes under the head and reads from the start like it. */
+.mq-heads { display: flex; flex-wrap: wrap; justify-content: space-between; gap: var(--space-3) var(--space-5); }
+.mq-heads > .mq-cell { min-width: 0; }
+@container insights (min-width: 632px) {
+  .mq-heads > .mq-cell-end { margin-inline-start: auto; text-align: end; }
+  .mq-heads > .mq-cell-end > .mq-cell-value { justify-content: flex-end; }
+}
 .mq-card { display: grid; gap: var(--space-2); padding: var(--space-3) var(--space-4); border: 1px solid var(--color-border); border-radius: var(--r-lg); background: var(--color-surface); }
 /* The Merge thread card, its question and confirms, the History's filters (§app.merge-queue/view). */
 .mq-thread-card { display: grid; gap: var(--space-2); padding: var(--space-3) var(--space-4); border: 1px solid var(--color-border); border-radius: var(--r-lg); background: var(--color-surface); }

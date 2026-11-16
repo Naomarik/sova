@@ -253,7 +253,13 @@ export function ProjectDeployPanel(props: {
         <p class="project-tab-lede">Plans from Releases land here.</p>
       </div>
       <span class="cluster">
-        <Show when={report()?.deployHash}>{(h) => <span class="list-meta text-mono" title="The deploy section's hash on main">{hash12(h())}</span>}</Show>
+        <Show when={report()?.deployHash}>
+          {(h) => (
+            <span class="list-meta deploy-setup-hash" title="The deploy section's hash on main: it changes when the setup does">
+              Setup <span class="text-mono">{hash12(h())}</span>
+            </span>
+          )}
+        </Show>
         <Show when={!props.archived && report()?.targets?.length}>
           <SetupChatButton projectId={props.projectId} setUp from="deploy" poll={setup} />
         </Show>

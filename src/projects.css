@@ -537,6 +537,8 @@ a.pipeline-link:hover, button.pipeline-link:hover, summary.pipeline-link:hover {
 .deploy-targets { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
 .deploy-target { display: flex; flex-direction: column; gap: var(--space-3); padding: var(--space-3) 0; }
 .deploy-target:first-child { padding-top: 0; }
+.deploy-target:last-child { padding-bottom: 0; }
+.deploy-setup-hash { white-space: nowrap; }
 .deploy-target + .deploy-target { border-top: var(--stroke-thin) solid var(--color-border); padding-top: var(--space-3); }
 /* The target's about under its name and standing. */
 .deploy-about { display: block; margin-top: 2px; color: var(--color-ink-2); }

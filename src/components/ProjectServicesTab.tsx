@@ -715,7 +715,10 @@ function CopyRow(props: { copy: CopyView; why?: string; archived: boolean; said:
           <span class="services-row-meta">
             <Show when={props.why}>{(w) => <span class="services-why">{w()}</span>}</Show>
             <span>slot {c().slot}</span>
-            <span title="Resident memory of its services now">{copyMemory(c().services)}</span>
+            {/* Memory only once it was read: a stopped copy has none, and a bare dash says nothing. */}
+            <Show when={copyMemory(c().services) !== "—"}>
+              <span title="Resident memory of its services now">{copyMemory(c().services)}</span>
+            </Show>
             <span title={c().createdBy}>by {createdByWord(c().createdBy)}</span>
           </span>
         </p>

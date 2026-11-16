@@ -255,3 +255,10 @@ export function withPlaybookRows(commands: readonly SlashCommand[], rows: readon
   const have = new Set(commands.map((c) => c.name));
   return [...commands, ...rows.filter((r) => !have.has(r.name))];
 }
+
+/** What Start refuses in a chat, the card never offers: no playbook card, "/" row or card pick in the
+    Overseer, a project overseer or a baton (hand-off) chat. */
+export const NO_PLAYBOOKS_HERE = "This chat runs no playbooks.";
+export function playbooksRunHere(chat: { overseer?: boolean; projectOverseer?: boolean; baton?: boolean }): boolean {
+  return !chat.overseer && !chat.projectOverseer && !chat.baton;
+}

@@ -56,6 +56,9 @@ export function PlaybooksDialog(props: {
   /** A playbook with a description opens its card above the message box instead of the text step.
       False: it didn't open (said in a toast); the dialog stays. */
   onOpenCard?(playbook: PlaybookInfo): Promise<boolean>;
+  /** Why this chat runs no playbook cards (a baton chat, an overseer), or null: a playbook with a
+      description then can't be sent as bare text here either, since it would skip its cast and stops. */
+  cardsOff?: string | null;
 }) {
   const [catalog, setCatalog] = createSignal<PlaybookCatalog | null>(null);
   const [error, setError] = createSignal<string | null>(null);
@@ -205,7 +208,13 @@ export function PlaybooksDialog(props: {
   };
   /** Why Send Playbook is off: the chat can't send, or the chosen playbook's description is broken
       (it runs from its card or not at all, never as bare text without its cast and stops). */
-  const reason = (): ComposerReason | null => props.blocked ?? (chosen() && playbookCardError(chosen()!) ? { icon: "attention", text: "Fix its playbook.json first." } : null);
+  const reason = (): ComposerReason | null => {
+    const p = chosen();
+    if (props.blocked) return props.blocked;
+    if (p && playbookCardError(p)) return { icon: "attention", text: "Fix its playbook.json first." };
+    if (p && playbookHasCard(p) && props.cardsOff) return { icon: "attention", text: props.cardsOff };
+    return null;
+  };
   const send = () => {
     const p = chosen();
     if (!p || reason()) return;

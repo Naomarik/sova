@@ -10,6 +10,7 @@ import {
   hasEdits,
   playbookCommandIn,
   playbookRows,
+  playbooksRunHere,
   withPlaybookRows,
   roleWhy,
   splitChoices,
@@ -118,4 +119,11 @@ test("the page's / rows: playbooks with a description (or a broken one), the pro
   assert.deepEqual(rows.map((r) => [r.name, r.playbook?.source]), [["ab-cycle", "project"], ["broken", "user"]]);
   const merged = withPlaybookRows([{ name: "broken", source: "prompt" }, { name: "compact", source: "builtin" }], rows);
   assert.deepEqual(merged.map((r) => [r.name, r.source]), [["broken", "prompt"], ["compact", "builtin"], ["ab-cycle", "builtin"]]);
+});
+
+test("playbook cards run in ordinary chats only: never the Overseer, a project overseer or a baton chat", () => {
+  assert.equal(playbooksRunHere({}), true);
+  assert.equal(playbooksRunHere({ overseer: true }), false);
+  assert.equal(playbooksRunHere({ projectOverseer: true }), false);
+  assert.equal(playbooksRunHere({ baton: true }), false);
 });

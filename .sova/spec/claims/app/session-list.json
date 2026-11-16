@@ -454,7 +454,9 @@
       "src/lib/needs-you-row.test.ts",
       "src/components/NeedsYouRow.tsx",
       "server/needs-you-rows-ui.integration.test.ts",
-      "shared/tell-apart.ts"
+      "shared/tell-apart.ts",
+      "server/project-services/deploy-attention.ts",
+      "server/project-services/deploy-status.integration.test.ts"
     ],
     "requires": [
       "§app.overseer/attention-digest",

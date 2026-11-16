@@ -797,7 +797,7 @@ reading view, at every width, desktop included.
 - **What Focus hides.** In the head, everything but the title: the path line and Regenerate title,
   the context readout, the profile, code and remote chips, the `TUI` chip, Share session and Session
   details; on the Overseer's head its proactivity, Ideas, Todos, Schedules, History, Clear and ⋯;
-  on a project overseer's head its state chip, Without you, Run Now, ⋯ and Session details, and its
+  on a project overseer's head its state chip, Without you, Look Now, ⋯ and Session details, and its
   status strip. Back stays where it shows (below a 768px window), so the head is one line: Back and
   the title. Under the head, the Current goal strip (§app.insights/insight-strip) and a baton
   session's strip go. The whole composer goes: the run-status and workers row, staged answers, the

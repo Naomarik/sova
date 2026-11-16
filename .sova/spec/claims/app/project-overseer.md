@@ -161,7 +161,7 @@ user row.
   <span class="chip chip-accent"><i class="chip-dot live"></i>Working</span>   <!-- or the warn chip "Paused" -->
   …context gauge…
   <button class="button button-sm button-ghost po-level" aria-label="What may happen without you: on its own 5 of 14 on, from a client 0 of 5 on. Change.">Without you ▾</button>
-  <button class="button button-sm button-ghost po-run">Run Now</button>
+  <button class="button button-sm button-ghost po-run">Look Now</button>
   <button class="button button-icon button-ghost" aria-label="Overseer actions · Rakiba site">⋯</button>
   <button class="button button-icon button-ghost session-details-open" aria-label="Session details">ⓘ</button>
 </header>
@@ -173,7 +173,7 @@ user row.
 ```
 
 - **Line 1**: back to Sessions, the title **Overseer**, its state chip, the context gauge, the
-  **Without you** button, **Run Now**, the **⋯** menu and Session details. In Focus
+  **Without you** button, **Look Now**, the **⋯** menu and Session details. In Focus
   (§chat.transcript/focus-view) only back (below a 768px window) and the title, with no meta line,
   and the status strip is hidden unless it says its status couldn't be read.
 - **Meta line**: the project (a link to its page) · the org · "Watching" or "Not watching" · "{n}
@@ -181,7 +181,7 @@ user row.
   host, with its kind and state ("Gathering · open", "Coding · working"); omitted while it started
   none.
 - **State chip**: **Working** (accent, the live dot) while its turn runs, whoever started it (the
-  operator, a watch-loop look, Run Now); otherwise, while a brake holds every switch Off (an attach on
+  operator, a watch-loop look, Look Now); otherwise, while a brake holds every switch Off (an attach on
   this host, or the organization's empty roster, §app.project-overseer/autonomy-levels), a warn chip,
   dot and word, "Paused", its `title` the server's reason; otherwise none. No level shows anywhere on
   the page.
@@ -192,15 +192,16 @@ user row.
   columns, the groups and, opened, their acts, the Paused banner with **Resume** while braked; each
   switch saves at once (`PATCH …/overseer {powers}`) with the same toasts. Full settings (limits, models, watch pace) stay on the project page
   (§app.project-overseer/limits).
-- **Run Now** (`POST …/overseer/run`, §app.project-overseer/watch-loop): disabled while it works, with
-  the reason "Working now"; done: "The overseer is looking now."; refused: the server's sentence.
+- **Look Now** (`POST …/overseer/run`, §app.project-overseer/watch-loop; once named Run Now, and no
+  longer on the project page; its `title` "Look at the project now, as the watch loop would."): disabled while it works, with the reason "Working now"; done: "The overseer is looking now.";
+  refused: the server's sentence.
 - **⋯**: **Stop Watching** / **Start Watching** (`PATCH {watch}`: "Watching." / "Not watching."),
   **History…** (earlier conversations, newest first, each what it was about — "No messages" for an
   untitled one — and its age, opening it; none: "No earlier conversations yet."), **Clear**
   ("Start a new conversation. This one moves to History."), and **Project Page**. Below 480px the level
-  and Run Now leave line 1 and are in ⋯ too (Run Now, and "Without You…" with the same switches).
+  and Look Now leave line 1 and are in ⋯ too (Look Now, and "Without You…" with the same switches).
 - **Status strip**, at most 3 lines, each only when it has something to say:
-  1. **The last run**, in the project page's own words ("Last looked on its own {time}{how it went}."
+  1. **The last run**, in the watch loop's words (§app.project-overseer/watch-loop: "Last looked on its own {time}{how it went}."
      or "It hasn't looked on its own yet."), then "Waiting to look at {n} things." (1: "1 thing") while
      the watch loop has reasons waiting, the reasons in its `title`. **No time for the next look**: the
      loop's timing can't be promised from here. While a brake holds every switch Off, this line is
@@ -220,7 +221,7 @@ user row.
 - **An earlier conversation** (a cleared one, opened from History) opens read only, under the head
   "Earlier Overseer Conversation", its meta "{title} · {age}", the back link going to the current
   conversation ("Back to the overseer"), and the read-only line "An earlier conversation. Read only."
-  It has no Without you button, Run Now, ⋯ or status strip.
+  It has no Without you button, Look Now, ⋯ or status strip.
 - **Phone** (below 480px): line 1 keeps back, the title, the state chip, the context readout
   (§chat.context-window/width-budget: its ring and "222k"), ⋯ and Session details; the
   meta line keeps only the project (the org and the watch word go; ⋯ says Stop or Start Watching),
@@ -407,9 +408,10 @@ user row.
   pace selects; one form, **Save Limits** (one PATCH; saved, the table is read-only again),
   **Reset Limits** (the defaults, into the form, unsaved) and **Cancel** (the saved values back,
   read-only), with the first problem under it before anything is sent. Under 560px of pane width
-  each row stacks, every figure under its column's name. Under the status line, what it has
-  used today on its own and in the operator's last message, and a **Waiting** line per held item
-  that isn't the message allowance's. The Watch hint is built from the pace. Copy:
+  each row stacks, every figure under its column's name. What it has used today on its own and in
+  the operator's last message, and a **Waiting** line per held item that isn't the message
+  allowance's, show in the status strip of the overseer's own page (§app.project-overseer/page),
+  not on the project page. The Watch hint is built from the pace. Copy:
   §design.copy-deck/project-limits.
 - `GET …/overseer` answers `usage.allowance` (`message` and `today`: per kind, `used` and `max`,
   `null` = Unlimited) and `usage.held`; no token count and no cost. `sova_project`
@@ -738,7 +740,7 @@ user row.
   and nothing changes. Any other undo is open to any caller, as before.
 - **The Settings tab lists every setting.** Its **All settings** section lists each project setting,
   Sova-kept and in the project's files (the **Copy limit**, its value and "set on this machine" or
-  "from the project's file", linking to the Branches tab; the **Context Files** row and, next to it, the
+  "from the project's file", linking to the Running Copies tab; the **Context Files** row and, next to it, the
   **Skills** row, each "No preference" while none is approved or disallowed (while asking, "{m}
   waiting" if any wait), else "{n} disallowed · {m} waiting · {c} changed" (each part left out at 0,
   the waiting part shown only while asking; "{k} approved" when all are), "kept on this computer; new
@@ -749,7 +751,7 @@ user row.
   which the project overseer's `sova_settings` refuses to change; a Create chat's card can,
   §chat.create-mode/settings-cards), with its state (on, off, set, not set, broken, needs approval, approved) and a link to
   where it is changed or approved (its section on the tab, Settings → Profiles, the Playbooks dialog,
-  a chat's mode menu, the Offers list, the Branches tab; a section of the tab itself scrolls into view).
+  a chat's mode menu, the Offers list, the Running Copies tab; a section of the tab itself scrolls into view).
   The Offers list is one of its sections.
 - **Commands.** `project.settings.get`, `project.settings.history`, `project.settings.undo`,
   `project.settings.propose.withdraw` (Dismiss; on the uncommitted edits' card it is Discard), and
@@ -970,7 +972,21 @@ judgement.
   `worktree: {branch, base, target, path}` (`base` the commit it was
   cut from, `target` the branch it merges into) and its later `merged: {at, commit}` (the last
   Merge Branch: history, not the branch's state) or `removed: at`, or `inRoot` (the reason it runs
-  in the root). A worktree folder deleted by hand shows as missing ("Worktree folder missing");
+  in the root). The session's own file records it too, from the start: a session Sova cuts a
+  worktree for is made with its `worktrees` entry (§chat.worktrees/entry) already in its file,
+  written as the file is made, before its runtime opens it, tracking that worktree as the
+  session's own (`created`, active, its path, branch, base and its target as the base branch), as
+  the session's own `worktree` tool records one it makes. So the session's readiness reads it
+  (§chat.worktrees/readiness), the branch can reach Ready to land and show Land on the Sessions tab
+  (§app.project-overseer/sessions-list), the chat's own Worktrees control shows it, its tool keeps
+  it in the set it writes next, posts its merge card when it lands, and worktree retirement covers
+  its folder (§chat.worktrees/retirement), as for any worktree the tool made. A session in the
+  project root or started with `worktree: "later"` gets no such entry from Sova. The Merge Queue tab's
+  Ready to land list lists these `sova/…` branches like any other (§app.merge-queue/view). A
+  session made before Sova wrote this entry has none, so its branch never reads Ready to land on the
+  Sessions tab while the queue's list, which reads git, can still show it: the Sessions tab can
+  show fewer ready branches than the queue.
+  A worktree folder deleted by hand shows as missing ("Worktree folder missing");
   its branch can still be merged. The tool result and the Start Coding Session and New Coding
   Session answers name the branch and the path.
   `path` is this host's, like the row's session path: on a host where it doesn't exist the row
@@ -990,15 +1006,11 @@ judgement.
   the list is longer than 200 only while more than 200 are live, and trims back as they
   settle. A retired session is no longer organizational (§app.organizations/org-sessions); its
   transcript and its cost stay.
-- **The project page lists them.** "Coding sessions" lists every coding session the project started
-  (the overseer's and the operator's), newest first: title (a link on this host), who started it
-  (the overseer, you, or you via the Overseer: an `operator-coding` row marked `via: "overseer"`,
-  §app.overseer/org-project-overseers),
-  state, age and its branch in mono (one line, cut with an ellipsis, the whole branch as its
-  `title`), then a **⋯** menu ("Actions · {title}") holding **Merge Branch** and **Remove
-  Worktree…** (each disabled with its reason, and absent when the row doesn't offer it); the
-  Remove confirmation opens under the row. "Sessions it started" keeps its gathering sessions and
-  offers. Copy: §design.copy-deck/project-coding.
+- **The project page lists them** on its Sessions tab, every coding session the project started
+  (the overseer's and the operator's), grouped by what needs you first, each row with its branches,
+  its landing state in words and its **⋯** menu (§app.project-overseer/sessions-list). "Sessions
+  the overseer started" (the gathering sessions and offers, while placed) is on the Requirements
+  tab. Copy: §design.copy-deck/project-coding.
 - **Read in two steps.** The page reads the list first and each row's branch facts after, so the
   rows never wait on git. `GET /api/projects/:pid/overseer` runs no git at all: it answers the
   overseer's own state (exists, busy, unread, paused, settings, usage) and `coding`, each coding
@@ -1020,7 +1032,10 @@ judgement.
   session list, so the rows show with the page. A row shows its branch as recorded until its
   branch facts arrive. Until then a row with a recorded branch, not removed, has its **⋯** menu
   with Merge Branch and Remove Worktree… both disabled, "Reading its branch": no branch gesture
-  acts on a state the page hasn't read. Once they arrive the menu is as above. Merge Branch and
+  acts on a state the page hasn't read. Its landing words and Land come from the session list's own
+  reading of its branches, so they don't wait on this read; a row the session list has no branches
+  for reads "Reading its branch". Once they arrive the menu is as the list says
+  (§app.project-overseer/sessions-list). Merge Branch and
   Remove Worktree
   answer the branch read's shape, and the page reads the overseer's state again after either.
   A refresh (either read again, or any chat changing) updates the rows in place, each matched by
@@ -1038,18 +1053,15 @@ judgement.
   no commits beyond `target`. After it the row says "Merged into <target>" with the time, and the
   merge is a reason for the overseer to look (§app.project-overseer/watch-loop), so it learns the
   branch reached `target` without being told.
-- **Land, once the project's merge queue is set up** (§app/merge-queue). Merge Branch then reads
-  **Land** and approves the branch at the head the row showed in the project's merge queue
-  (§app.merge-queue/approve) instead of merging it in the project root; once it has an entry the row
-  reads its queue state in the chips the composer's modal uses (§chat.composer/worktrees-control),
-  with its estimates or reason, and while it is queued, checking or waiting for the user its Land is
-  disabled: "Already in the merge queue.". While it is back with its chat, its Land is disabled too,
-  "Your Land stands: it goes back in line by itself once its chat's fix is checked."
-  (§chat.composer/worktrees-control, §app.merge-queue/standing-approval); this menu offers no
-  re-land item and no send-back. Out of tries, and an entry that no longer stands (removed, already
-  in the target, or its branch or folder gone), read Land as for any branch. Remove from Queue isn't
-  in this menu.
-  Drafts changed keeps Land. The queue's refusals are shown under the row as Merge
+- **Land, once the project's merge queue is set up** (§app/merge-queue). Merge Branch then leaves
+  the ⋯ menu, and **Land** sits on the row while exactly one of its branches reads Ready to land,
+  asked first (§app.project-overseer/sessions-list): it approves the branch at the head the row
+  showed in the project's merge queue (§app.merge-queue/approve) instead of merging it in the
+  project root; once it has an entry the row reads its queue state in words in Land's place (In
+  line, Checking, or Stuck in the queue and why, back with its chat included,
+  §app.merge-queue/standing-approval); the row offers no re-land item and no send-back. Out of
+  tries, and an entry that no longer stands (removed, already in the target, or its branch or folder
+  gone), read Land as for any branch once ready again. Remove from Queue isn't in this menu. The queue's refusals are shown under the row as Merge
   Branch's are. A project whose queue isn't set up keeps Merge Branch as above, and its Merge Queue
   tab shows the note "No merge queue settings are set up for this project" with Set Up with a Chat
   (§app.merge-queue/setup). A project whose definition doesn't parse
@@ -1099,6 +1111,106 @@ judgement.
   row: it reads "Worktree folder missing", as for a folder deleted by hand, and `sova_send` isn't refused: a
   message to its session brings the worktree back, fresh from the project's target, as for any chat.
 - A session started before this change keeps running where it was; nothing is moved.
+
+## §app.project-overseer/sessions-list — The Sessions tab's list of coding sessions
+
+The project page's Sessions tab (§app.organizations/project-page) lists every coding session the
+project started (the overseer's and the operator's, §app.project-overseer/coding-worktrees) under
+the heading "Coding sessions", "Sorted by what needs you first." and what the quiet mark means,
+with **New Coding Session** (primary) at its right, as one full-width list in groups, each with its
+name and count beside it, in this order, an empty group left out; a session lists in the first
+that holds:
+
+- **Needs you** ("{n} waiting on you"): by the sidebar's own Needs-you rule
+  (§app.session-list/needs-you), so it matches the sidebar; its name and count in the home
+  page's needs-you amber (warn), a subtle tint, never a filled band;
+- **Working** ("{n} sessions"): its turn runs or its workers do;
+- **Ready to land**: one of its branches is ready to land, in line, checking or stuck in the queue;
+  its count says how many are each, each session counted once by its best ("1 ready · 1 stuck");
+  within it, ready first, then checking, in line by place, stuck;
+- **Landed** ("{n} sessions"): it has branches and every one landed; closed when the page opens,
+  as one line "Latest: {title} · landed {time}, and {n} more" with **Show Landed**, which opens it
+  (the chevron beside its name closes it again); open, it lists the first 50, then **Show {n}
+  More**;
+- **Old** ("{n} idle for 7 days or more"): no activity for 7 days or more;
+- **Idle** ("{n} sessions"): the rest.
+
+Within a group the last active comes first. A row's facts come from the project's two reads
+(§app.project-overseer/coding-worktrees, **Read in two steps**) joined, by session, with the
+session list the page already holds (`lastActiveAt`, its signals, its open alignments, each branch
+it tracks with its readiness and queue state) and the merge queue's view (place in line, when it
+landed). A worktree the server cut is tracked by its chat from the start
+(§app.project-overseer/coding-worktrees), so it can read Ready to land. The recorded branch, with
+git's facts and the queue's word, stands in only where the chat tracks no worktree for it (on
+another host, before its first read, or started before Sova wrote it), and then lists first;
+it is never Ready to land and shows no Land. A row changes group only when a fresh read changes what
+places it; the refresh rule holds as before (an open **⋯** menu stays open, scroll and focus are
+kept).
+
+**A row.** The title is a plain bold link to its session (on this host; never underlined, the row
+tinting on hover; a remote row's title is plain text). On it:
+
+- under the title, its one-line summary (the session list's summary line; "No summary yet" when it
+  has none, none on a landed row), then "Started by the overseer" only when the overseer started
+  it, or "Project verbs playbook run" for one; a row run in the project root says "In the project
+  root: {reason}";
+- its age: while it works, the live dot and its tokens a minute ("1.3k tok/min", as the agents feed
+  reads it, §app.insights/session-token-rate); otherwise "active {time}" (its last activity, not its
+  start), under it "started today" or "{n}d old · {date}"; a finished (Landed) row says
+  "started {date}" over "{n}d old", or "started today" alone; a
+  session idle 7 days or more, not landed, carries the quiet mark, titled "No activity for 7 days or
+  more";
+- its branches on the right, in mono, each named once, the whole name as its `title`: a single
+  branch reads its landing words, then its name; with several, those on their way in or landed
+  read "{words} · {branch}" first, then the rest by name alone (with none on its way, the first
+  says its own state, so the row always has words). Up to 3, then "+{n} more" (**Show fewer** once
+  opened); "No branch" when it has none; a Ready to land branch has a small green dot before its
+  name and its words in green, the Worktrees Ready chip's (success);
+- a Ready to land branch's name opens its summary in a popover
+  (§app.project-overseer/ready-branch-popover);
+- the landing words: "Ready to land", "In line · {nth}" (or "In line"), "Checking", "Stuck in the
+  queue" with the queue's words for why ("Needs a fix: the last check failed"), "Landed {time}";
+  otherwise the branch's own state in words: the merge queue's row words for it ("{n} files not
+  committed", "No commits yet", "Conflicts with {target}"), or from git's facts "Uncommitted
+  changes", "{n} commit(s) ahead", "Already in {target}" (git finds its tip in the target with no recorded merge, which is never
+  Landed), "Worktree removed", "Worktree folder missing", "Reading its branch"; never a bare "Not
+  ready";
+- **Land** (primary, small, named "Land {branch}") only while the session isn't working and exactly
+  one of its branches reads Ready to land with the queue's Land, so it is plain which. It asks first
+  with the Worktrees window's own confirm (§chat.composer/land-confirm), under the row: "Land
+  {branch}?", "{n} commits go to the merge queue; {target} moves once checks pass.", **Not Yet** and
+  **Land {n} Commits** (**Land 1 Commit**; **Land Branch** while the count isn't read); Not Yet queues nothing and gives focus back to Land; confirmed, the
+  branch joins the merge queue at the commit the read saw, "Queued {branch} to land on {target}.";
+- a **⋯** menu ("More for {title}") holding **Merge Branch** ("{branch} into {target}"; only for a
+  project whose merge queue isn't set up) and **Remove Worktree…** (each disabled with its reason,
+  and absent when the row doesn't offer it); the Remove confirmation opens under the row;
+- under it, while not landed and only what it has, its facts in mono: "ctx {n}%" with a meter (the
+  main thread's context used), "{n} open question(s)" and "{working}/{total} worker(s) active".
+
+With no coding session: "No coding sessions yet. Yours and the overseer's are listed here." At
+390px a row stacks: title and summary, then age, then branches and their words, with Land and ⋯
+kept in reach. Copy: §design.copy-deck/project-sessions.
+
+## §app.project-overseer/ready-branch-popover — A ready branch's summary from the Sessions tab
+
+On the Sessions tab (§app.project-overseer/sessions-list), a branch that reads Ready to land, whose
+chat tracks it (its `worktrees` entry, §chat.worktrees/entry) and whose folder is there, has its
+name as a button, with a chevron after it; a ready branch the chat doesn't track keeps its green dot and words, its name plain
+text. A click or tap opens a popover under the name (above it when only that side has room); at
+phone width it is a bottom sheet over a dimmed page. It holds the Worktrees window's own row for
+that branch (§chat.composer/worktrees-control: the same component, not a copy): its **Ready** chip,
+commits ahead, lines added and removed and when it last changed, its place line, its summary
+bullets (§app.merge-queue/branch-summary), **Review Changes**, which opens the changes viewer over
+it (§chat.changes/viewer; Escape then closes only the viewer), and **Land** with its menu, which asks
+first with the window's own confirm (§chat.composer/land-confirm) and, confirmed, queues the branch
+as the row's Land does.
+
+It closes only on Escape, its ×, the name again or a press outside it, and gives focus back to the
+name; nothing pressed inside it closes it. It stays open through every refresh of the tab, the same popover, so an open confirm or
+menu in it is kept. After a confirmed Land it stays open and shows what became of the branch ("Queued ·
+2nd", with Remove from Queue), as the window's row does; while it is open its name stays the
+button whatever the branch becomes, and once closed a branch that no longer reads Ready to land has
+a plain name again. A branch in any other state has no popover: its name does nothing new.
 
 ## §app.project-overseer/previews — Showing a coding session's app to a stakeholder
 
@@ -1270,9 +1382,11 @@ judgement.
   noted, without waiting for the gap; everything else about the run
   (the daily limit, watching on, not paused, an idle overseer) still holds, and the run lists every
   reason waiting.
-- **Run Now** (`POST …/overseer/run`) starts one now, skipping the reasons and the gap
-  but not the looks per day, a busy overseer or an archived project (409 with why). The project page shows the last run
-  and the reasons waiting: running ("Last looked on its own {time}, running now, after
+- **Look Now** on the overseer's own page (`POST …/overseer/run`, §app.project-overseer/page; once
+  named Run Now) starts one now, skipping the reasons and the gap
+  but not the looks per day, a busy overseer or an archived project (409 with why). The overseer's own
+  page shows the last run and the reasons waiting (its status strip); the project page shows none of
+  it, only Open Overseer and its state word (§app.organizations/project-page). The last run reads: running ("Last looked on its own {time}, running now, after
   {reasons}."), finished ("…, after {reasons}."), stopped and why ("…, stopped: {why}.": the stream
   guard's trip, the model's error, or "Stopped" for an abort), cut off by a restart ("…, cut off by
   a restart.": the server stopped during the run, recorded when it next starts) or skipped and why
@@ -1341,7 +1455,9 @@ judgement.
 - `POST /api/projects/:pid/overseer/coding` `{title?, model?, thinking?}` answers 201
   `{path, sessionId, worktree?, note?, modeNotSet?}` (404 for an unknown project). It starts the
   same kind of session Start Coding Session does: in its own worktree and branch
-  (§app.project-overseer/coding-worktrees; `sova/coding-<hex>` with no title), on the project's
+  (§app.project-overseer/coding-worktrees; `sova/coding-<hex>` with no title), which its session
+  tracks from the start in its own `worktrees` entry, so the branch can read Ready to land
+  (**Recorded with the session**), on the project's
   coding model and thinking, on this computer's default profile with no other profile picked, pinned
   (§app.project-overseer/coding-mode), recorded as an `operator-coding` row (listed under Coding
   sessions as "Started by you", in the sidebar's Builds and the Cost card, never counted by the

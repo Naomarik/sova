@@ -2,7 +2,7 @@
   "§app.project-services/adopt": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "requires": [
       "§app.project-services/contract",
       "§app.project-services/self-host",
@@ -19,12 +19,14 @@
       "server/project-services/adopt.test.ts",
       "server/project-services/adopt.integration.test.ts",
       "AGENTS.md",
-      "server/project-services/restart.test.ts"
+      "server/project-services/restart.test.ts",
+      "src/lib/services-view.ts",
+      "src/lib/services-view.test.ts"
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-05T13:41Z",
-      "source": "pi-session:01a1ab30-f643-72b7-9a70-76331f9c7523#21128e50"
+      "at": "2026-11-16T21:47Z",
+      "source": "pi-session:a7186a10-5049-46ef-a82e-98966bf92a24#e8259d6a"
     }
   },
   "§app.project-services/apply": {
@@ -379,6 +381,29 @@
       "server/project-services/conform.ts"
     ]
   },
+  "§app.project-services/free-up-slots": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "requires": [
+      "§app.project-services/services-ui",
+      "§app.project-services/teardown",
+      "§app.project-overseer/coding-worktrees",
+      "§app.organizations/archive-copies"
+    ],
+    "code": [
+      "src/components/ProjectServicesTab.tsx",
+      "src/lib/free-slots.ts",
+      "src/lib/free-slots.test.ts",
+      "src/components/ProjectPage.tsx",
+      "src/projects.css"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-16T16:31Z",
+      "source": "pi-session:a7186a10-5049-46ef-a82e-98966bf92a24#2bfdf484"
+    },
+    "evidence": "verified"
+  },
   "§app.project-services/instance-note": {
     "kind": "behavior",
     "authority": "accepted",
@@ -425,7 +450,9 @@
       "server/project-services/slots.test.ts",
       "shared/project-contract.test.ts",
       "server/project-services/copy-limit.ts",
-      "shared/project-contract.ts"
+      "shared/project-contract.ts",
+      "server/project-services/places.ts",
+      "server/project-services/conform.ts"
     ],
     "agreed": {
       "by": "the user (al_1 go)",
@@ -701,9 +728,9 @@
       "server/project-services/store.ts"
     ],
     "agreed": {
-      "by": "the user (al_1 go)",
-      "at": "2026-11-09T02:05Z",
-      "source": "pi-session:01a1bdb7-6cb9-7045-be9f-f2f059380b8e#01f472b9"
+      "by": "user",
+      "at": "2026-11-16T19:06Z",
+      "source": "pi-session:a7186a10-5049-46ef-a82e-98966bf92a24#a73053a7"
     }
   },
   "§app.project-services/share": {
@@ -774,7 +801,7 @@
   "§app.project-services/supervisor": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "requires": [
       "§app.project-services/contract",
       "§mesh.public/preview-serve"
@@ -795,7 +822,8 @@
       "server/project-services/engine.integration.test.ts",
       "server/project-services/restart.test.ts",
       "server/background-jobs-request.ts",
-      "server/project-services/archive-copies.test.ts"
+      "server/project-services/archive-copies.test.ts",
+      "src/components/ProjectServicesTab.tsx"
     ],
     "agreed": {
       "by": "user",

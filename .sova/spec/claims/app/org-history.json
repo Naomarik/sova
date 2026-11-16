@@ -2,7 +2,7 @@
   "§app.org-history/actors": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "requires": [
       "§app.project-overseer/autonomy-levels",
       "§app.requirements/decisions"
@@ -22,7 +22,7 @@
   "§app.org-history/capture": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "code": [
       "server/org-history-capture.ts",
       "shared/org-history.ts",

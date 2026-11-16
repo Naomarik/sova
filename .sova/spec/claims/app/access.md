@@ -259,7 +259,7 @@ refused too (§app.access/other-roads).
 | Lowering a chat's sandbox | `POST /api/sandbox` | The Sandbox rows in that chat's composer |
 | Approving a project tool | `POST /api/mode` with `projectModes` and `approve` | **Approve and Turn On** in that chat's mode menu |
 | Trusting a project's or an extension's cards | `POST /api/session-cards/trust` with `on: true` | **Trust {name}'s Cards** on one of its cards |
-| Restarting Sova | `POST /api/updates/restart`, or Apply of Sova's own checkout (`POST /api/project-services/apply`, `POST /api/projects/:pid/services/apply`) | **Restart Sova** in Settings → General, or **Apply** on the Branches tab of Sova's project page |
+| Restarting Sova | `POST /api/updates/restart`, or Apply of Sova's own checkout (`POST /api/project-services/apply`, `POST /api/projects/:pid/services/apply`) | **Restart Sova** in Settings → General (the Running Copies tab offers no Apply) |
 | Updating Sova | `POST /api/updates/check`, `POST /api/updates/apply`, `PUT /api/updates/settings` | Settings → General |
 | How much CPU agents may use | `PUT /api/settings/agent-cpu` | **Limit agents' CPU** and its cores in Settings → General (§app.load-priority/ceiling) |
 | Opening public links to the internet | `POST /api/public-links/turn-on`, `POST /api/public-links/cloudflared/download`, `PUT` and `DELETE /api/public-links/account-token` | **Turn On** and **Download** in Settings → Public links or a share screen's prompt, and the Account token's save and remove there (§mesh.tunnel/turn-on, §mesh.tunnel/cloudflared, §mesh.tunnel/account) |

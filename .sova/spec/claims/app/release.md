@@ -408,7 +408,7 @@ On, an overseer told to release, publish and deploy does the whole chain, each a
 
 The project page has a **Releases** tab after Merge Queue (§app.organizations/project-page), at
 `#/projects/<pid>/releases`, reading `release.status` every 5 seconds and following the session feed's
-`release` frames; the tab, the Overview card and the Deploy card share that one read. The same frames,
+`release` frames; the tab and the Deploy tab share that one read. The same frames,
 every project's, also drive the sidebar's landing bar, which never publishes or abandons: its Open
 Releases opens this tab for both (§app.merge-queue/landing-bar). Top to bottom:
 
@@ -427,7 +427,8 @@ Releases opens this tab for both (§app.merge-queue/landing-bar). Top to bottom:
   project, the server reads the saved note itself, and an empty note changes nothing.
 - **Strip**: Latest release (its tag, or "None yet"); Since then ("{n} landings since {tag}", "No
   landings since {tag}"); and where it publishes, "On {target}, published to origin" or "on this
-  machine only".
+  machine only". Since then sits against the card's right edge, its words aligned right, in the
+  Merge Queue strip's own style (§app.merge-queue/view).
 - **Not set up**: "Releases aren't set up for this project", what a release is and how a set-up
   works (the project's Setup chat reads the project, asks how it releases, then proposes a release
   playbook and a `release` section of `.sova/project.json` on a branch to land, with the merge queue
@@ -443,7 +444,7 @@ Releases opens this tab for both (§app.merge-queue/landing-bar). Top to bottom:
   playbook; {target} waits on it until you publish or abandon."
 - **Release in progress** (also a published or withdrawn release while its after or withdraw steps
   have work: "Published, finishing", "Withdrawn, finishing"): the state chip (**Publish failed** while
-  the publish step is failed, here and on the Overview card, and Ready to publish again once it isn't;
+  the publish step is failed, and Ready to publish again once it isn't;
   the record's state doesn't change), **Open Release Chat**, its
   name (the tag, or "The new release"), who started it and when (you, or the release power), its base
   and commit, its last report; "Step {i} of {n} · {label} · {k} done" (the step's words "{label} failed" or "{label},
@@ -467,7 +468,7 @@ Releases opens this tab for both (§app.merge-queue/landing-bar). Top to bottom:
 - **Abandon Release** (destructive) asks for a reason and says the chat stops, nothing is published, a
   landed release commit is reverted as a landing, and waiting landings go ahead.
 - **Plan Deploy of {tag}**, per deploy target, on a published release and on the latest release's
-  history row (§app.release/deploy).
+  history row: it opens the Deploy tab and plans that target there (§app.release/deploy).
 - **History**, newest first, read from the project's numbered tags (withdrawn markers and channels
   skipped): each tag with its channel badges (`stable`), **Withdrawn** with "Withdrawn {when}: {why}",
   its commit and date, "Runs on {targets}", and its notes, folded (the tag's section of `CHANGELOG.md`
@@ -477,15 +478,14 @@ Releases opens this tab for both (§app.merge-queue/landing-bar). Top to bottom:
   rolled back, and requires a reason. With none: "No numbered release yet. Each one shows here from its
   tag, with its notes."
 
-The project's Overview has a **Releases** card in its second column above the Deploy card: "Latest
-{tag} · {n} landings since", "{tag} in progress" with its state chip, "No release yet." or "Releases
-aren't set up for this project.", and **Open Releases**. On a phone (390px) nothing scrolls sideways.
+The project page has no Releases card elsewhere: this tab's strip says what it said. On a phone
+(390px) nothing scrolls sideways.
 
 ## §app.release/deploy — Release to Deploy: the hand-off and releases-only targets
 
 Release and Deploy stay two actions. After Publish, the release offers **Plan Deploy of {tag}** for each
-declared deploy target: it opens the Overview's Deploy card and plans that target at the release's
-commit, saying "Planning release {tag} ({sha7})." with **Plan the Branch Tip Instead**. Each Deploy row
+declared deploy target: it opens the project page's Deploy tab (§app.project-runtime/deploy-panel) and
+plans that target there at the release's commit, saying "Planning release {tag} ({sha7})." with **Plan the Branch Tip Instead**. Each Deploy row
 says which release its target runs, "Runs {tag}" ("(withdrawn)" when it is): the release whose commit
 is the target's newest succeeded deploy (verified, where the target declares a verify). A deploy target
 may say `releases: "only"` (§app.project-services/deploy): its plan then refuses (`deploy-refused`) a

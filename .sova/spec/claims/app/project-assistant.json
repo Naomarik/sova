@@ -430,7 +430,8 @@
       "server/owner-versions.ts",
       "server/project-holds.ts",
       "server/project-overseer.ts",
-      "server/owner-request-close-holds.test.ts"
+      "server/owner-request-close-holds.test.ts",
+      "server/project-assistant-versions.integration.test.ts"
     ],
     "agreed": {
       "by": "Omar (al_1 go-ahead)",

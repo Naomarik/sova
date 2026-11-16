@@ -192,7 +192,7 @@
   "§app.project-setup/start": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "unreviewed",
+    "evidence": "reviewed",
     "requires": [
       "§app.merge-queue/view",
       "§app.merge-queue/settings",

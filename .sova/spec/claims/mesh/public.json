@@ -344,7 +344,8 @@
       "server/project-previews.integration.test.ts",
       "shared/preview-links.ts",
       "src/lib/two-step.ts",
-      "src/components/OpensAt.tsx"
+      "src/components/OpensAt.tsx",
+      "src/components/ProjectServicesTab.tsx"
     ],
     "agreed": {
       "by": "user",

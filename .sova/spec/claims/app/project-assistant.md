@@ -344,7 +344,7 @@ The owner is never the operator: nothing an owner writes is operator identity, w
   opened for it; back to `with-team` when that chat is archived while the request is still
   `started` (archiving a fix's own coding session changes nothing); `done` or `declined`
   by the operator, except that an open `try` request is `done` on its own once its version's copy is
-  running, whoever started it (the operator from the Branches tab, or a later `start_version`);
+  running, whoever started it (the operator from the Running Copies tab, or a later `start_version`);
   `closed` by the owner, from their page's `Close` or through their assistant after their yes
   (§app.project-assistant/closing). Every change is an appended `status` line. A request is
   **closed** when it is `done`, `declined` or `closed` (one shared test, `isRequestClosed`), and
@@ -362,7 +362,7 @@ The owner is never the operator: nothing an owner writes is operator identity, w
   `owner-link-request` item (§app.owner-page/link). A request's item opens the org's Requests tab at
   that request (`#/orgs/<id>/requests/<rid>`, §app.project-assistant/requests-tab); a link ask opens
   the People tab; an open `try` request is an `owner-version-request` item and opens the project's
-  Branches tab. A second ask to try the same version while its request is open files none: the open
+  Running Copies tab. A second ask to try the same version while its request is open files none: the open
   one stands. A `feature` request with a feature request chat reads as that chat stands
   (§app.project-assistant/feature-chats), and one whose chat ended because its owner stopped being
   the owner is an `owner-feature-ended` item. A request the owner closed leaves Needs you and sends
@@ -533,7 +533,7 @@ The owner is never the operator: nothing an owner writes is operator identity, w
   answers, and one that never answers is not marked failed). Home and the chat show `Starting…` (disabled) while it starts and re-read every 3 seconds
   until it is running or failed; a failed copy says "It didn't start. The team knows." with no
   `Open`; the operator learns of it from its `try` request in Needs you, and a start the engine
-  failed also shows on the project's Branches tab as the engine reports it. `/i/<token>/v/<handle>` of a starting copy
+  failed also shows on the project's Running Copies tab as the engine reports it. `/i/<token>/v/<handle>` of a starting copy
   answers a small page saying it is starting that reloads itself every 3 seconds (200, `Refresh:
   3`), so an `Open` pressed early lands on the copy once it answers; of a failed one, 409 "This
   version didn't start. The team knows."
@@ -542,7 +542,7 @@ The owner is never the operator: nothing an owner writes is operator identity, w
   shape), resolved again at each read, so the chat draws it with `Open`, `Starting…` or the failed
   line as Home does. The model's text never carries an address.
 - **They run until stopped.** Nothing stops a copy on its own: one the assistant started runs
-  until the operator stops it (the project's Branches tab), within the project's slots.
+  until the operator stops it (the project's Running Copies tab), within the project's slots.
 - **Opened through the owner link**: the page's `Open` is `/i/<token>/v/<handle>` (an HMAC handle of
   the copy, §app.owner-page/conversations), which checks the link and the copy again, then sends
   the browser on (302) to a preview link (§mesh.public/preview) bound to the owner link. No answer

@@ -2,7 +2,7 @@
   "§app.project-runtime/deploy-panel": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "reviewed",
+    "evidence": "verified",
     "requires": [
       "§app.project-runtime/deploy-standing",
       "§app.project-services/deploy-plan",
@@ -18,12 +18,13 @@
       "src/projects.css",
       "src/lib/releases-client.ts",
       "server/project-releases-ui.integration.test.ts",
-      "src/components/SetupChat.tsx"
+      "src/components/SetupChat.tsx",
+      "src/components/ReleasesTab.tsx"
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-03T20:12Z",
-      "source": "pi-session:01a1a10e-e34d-75b6-8a92-b6101087b33f#38f36ba9"
+      "at": "2026-11-16T16:31Z",
+      "source": "pi-session:a7186a10-5049-46ef-a82e-98966bf92a24#2bfdf484"
     }
   },
   "§app.project-runtime/deploy-playbook": {
@@ -67,21 +68,21 @@
   "§app.project-runtime/merge": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "code": [
       "server/projects/runtime.ts",
       "server/projects/runtime-routes.ts",
       "server/projects/playbook-review.integration.test.ts",
       "src/lib/api.ts",
       "src/components/PlaybookReview.tsx",
-      "src/components/ProjectSoftwareCard.tsx",
       "src/lib/project-queue.ts",
       "src/lib/project-queue.test.ts",
       "server/merge-queue-ui.integration.test.ts",
       "server/projects/playbook-review.ts",
       "server/projects/release-proposal.ts",
       "server/projects/runtime.test.ts",
-      "shared/playbook-review.ts"
+      "shared/playbook-review.ts",
+      "src/components/ProjectServicesTab.tsx"
     ],
     "requires": [
       "§app.project-runtime/review",
@@ -96,7 +97,7 @@
   "§app.project-runtime/onboard": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "code": [
       "statecharts/src/sova/statecharts/proj.cljc",
       "statecharts/src/sova/statecharts/runtime.cljc",
@@ -115,7 +116,8 @@
       "statecharts/src/sova/statecharts/build.cljc",
       "statecharts/src/sova/statecharts/rules/runtime.cljc",
       "statecharts/EVENTS.md",
-      "src/components/ReleasesTab.tsx"
+      "src/components/ReleasesTab.tsx",
+      "src/components/ProjectServicesTab.tsx"
     ],
     "requires": [
       "§app.project-overseer/coding-worktrees"
@@ -176,7 +178,7 @@
   "§app.project-runtime/review": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "code": [
       "server/projects/playbook-review.ts",
       "server/projects/playbook-review.integration.test.ts",
@@ -197,7 +199,6 @@
       "server/push.test.ts",
       "src/app.css",
       "src/lib/push-draft.test.ts",
-      "src/components/ProjectSoftwareCard.tsx",
       "src/lib/project-software.ts",
       "src/lib/project-software.test.ts",
       "src/components/NeedsYouRow.tsx",
@@ -225,15 +226,15 @@
   "§app.project-runtime/run-progress": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "code": [
       "server/projects/runtime.ts",
       "shared/project-runtime.ts",
-      "src/components/ProjectSoftwareCard.tsx",
       "src/lib/project-software.ts",
       "src/lib/project-software.test.ts",
       "server/projects/playbook-review.ts",
-      "server/projects/playbook-review.integration.test.ts"
+      "server/projects/playbook-review.integration.test.ts",
+      "src/components/ProjectServicesTab.tsx"
     ],
     "requires": [
       "§app.project-runtime/onboard"
@@ -242,12 +243,11 @@
   "§app.project-runtime/run-report": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "code": [
       "server/projects/playbook-review.ts",
       "server/projects/runtime.ts",
       "shared/project-runtime.ts",
-      "src/components/ProjectSoftwareCard.tsx",
       "src/lib/project-software.ts",
       "src/lib/project-software.test.ts",
       "src/components/ProjectDeployPanel.tsx",
@@ -256,7 +256,8 @@
       "server/project-services/deploy-recipe.test.ts",
       "server/projects/release-proposal.ts",
       "src/components/ReleasesTab.tsx",
-      "server/project-services/observe.ts"
+      "server/project-services/observe.ts",
+      "src/components/ProjectServicesTab.tsx"
     ],
     "requires": [
       "§app.project-runtime/registry"
@@ -272,7 +273,6 @@
     "authority": "accepted",
     "evidence": "verified",
     "code": [
-      "src/components/ProjectSoftwareCard.tsx",
       "src/components/ProjectPage.tsx",
       "src/lib/project-software.ts",
       "src/lib/project-software.test.ts",
@@ -282,21 +282,22 @@
       "server/project-services/on-merge.ts",
       "server/project-services/on-merge.test.ts",
       "server/project-services/on-merge.integration.test.ts",
-      "src/components/PlaybookReview.tsx"
+      "src/components/PlaybookReview.tsx",
+      "src/components/ProjectServicesTab.tsx"
     ],
     "requires": [
       "§app.project-runtime/registry"
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-03T20:12Z",
-      "source": "pi-session:01a1a10e-e34d-75b6-8a92-b6101087b33f#38f36ba9"
+      "at": "2026-11-16T16:31Z",
+      "source": "pi-session:a7186a10-5049-46ef-a82e-98966bf92a24#2bfdf484"
     }
   },
   "§app.project-runtime/standing": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "code": [
       "statecharts/src/sova/statecharts/runtime.cljc",
       "statecharts/src/sova/statecharts/rules/runtime.cljc",
@@ -304,7 +305,8 @@
       "statecharts/test/sova/statecharts/refit/runtime_test.cljs",
       "server/projects/runtime.ts",
       "server/projects/runtime-feed.ts",
-      "server/projects/runtime.test.ts"
+      "server/projects/runtime.test.ts",
+      "src/components/ProjectServicesTab.tsx"
     ],
     "requires": [
       "§app.project-services/conform"
@@ -351,11 +353,12 @@
   "§app/project-runtime": {
     "kind": "surface",
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "code": [
       "server/projects/runtime.ts",
       "server/projects/runtime-routes.ts",
-      "shared/project-runtime.ts"
+      "shared/project-runtime.ts",
+      "src/components/ProjectServicesTab.tsx"
     ],
     "notOwned": [
       "§app.project-services/conform",

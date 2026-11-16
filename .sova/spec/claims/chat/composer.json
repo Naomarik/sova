@@ -226,7 +226,7 @@
   "§chat.composer/land-confirm": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "reviewed",
+    "evidence": "verified",
     "requires": [
       "§chat.composer/worktrees-control",
       "§chat.worktrees/pane",
@@ -242,7 +242,8 @@
       "src/lib/merge-queue.ts",
       "src/lib/land-confirm.test.ts",
       "shared/merge-queue.ts",
-      "server/merge-queue/wire.ts"
+      "server/merge-queue/wire.ts",
+      "src/components/ProjectSessionsTab.tsx"
     ],
     "agreed": {
       "by": "user",

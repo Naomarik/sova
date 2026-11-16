@@ -266,7 +266,8 @@
       "server/share/setup-chat.test.ts",
       "docs/commands.md",
       "server/agent-cpu.ts",
-      "server/agent-cpu.test.ts"
+      "server/agent-cpu.test.ts",
+      "AGENTS.md"
     ],
     "agreed": {
       "by": "naomarik",

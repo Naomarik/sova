@@ -104,7 +104,7 @@ shell string is accepted anywhere: every command is an argv array of non-empty s
   app. `endpoint` is `"<service>.<port>"`, a declared port of a checkout service (never a shared
   service's); `path` starts with `/` (default `/`). It exposes nothing (a copy's entry is a port the
   copy already listens on), so it is outside the definition's hash; conformance checks that it answers
-  (§app.project-services/conform), and the Branches tab opens it (§app.project-services/services-ui).
+  (§app.project-services/conform), and the Running Copies tab opens it (§app.project-services/services-ui).
 - **`merge`** (optional): how the project's branches land through its merge queue
   (§app/merge-queue), outside the definition's hash. `target` (a branch; default the main
   checkout's branch), `push` (boolean; absent: push when the repository has an `origin` remote),
@@ -182,7 +182,7 @@ The **copy limit** is how many of the project's copies may run at once on this h
 the limit in force, and every reader goes through it: this machine's own copy limit for the
 project when one is set (kept in Sova's state, `<state root>/project-services/copy-limits.json`, by
 project root; never in the project's files, never in `host.json`, never in the definition or its
-hash, set on the Branches tab or through the project's settings, §app.project-overseer/settings);
+hash, set on the Running Copies tab or through the project's settings, §app.project-overseer/settings);
 else the main checkout's saved file's `slots.cap`; else, with that file missing or invalid, the
 definition in use's; else 4. Only **running** copies count: a copy other than the main checkout's
 (slot 0) and conformance's scratch copies, whose record wants a service running (an `up` that a
@@ -198,7 +198,7 @@ this machine, or the project's file). A create with room under the limit but no 
 slot, its branch or id and whether it is running or stopped; names for each other slot the port and
 its holder: a Sova instance's id, or a listener's pid and folder when this user can read them; and
 ends with what to do: tear down a copy this session made, otherwise ask the user to free a place
-with Teardown on the Branches tab. It never tells a chat to tear down a copy the chat didn't make.
+with Teardown on the Running Copies tab. It never tells a chat to tear down a copy the chat didn't make.
 
 A slot is free when
 no instance of the project holds it and none of its allocated ports is held by any other instance
@@ -286,7 +286,7 @@ probe's answer).
 
 **The restart limit**, with either driver and in every project: a service whose unit fails 5 starts
 in a row, however long each ran before it failed, is given up on and stays failed: status shows it
-`failed`, and the Branches tab shows its copy Failed, with Start (§app.project-services/services-ui).
+`failed`, and the Running Copies tab shows its copy Failed, with Start (§app.project-services/services-ui).
 A run that stayed up 60 s before it failed starts a fresh count, so a service that runs a while
 between failures is started again each time. The detached driver keeps the count in the unit's
 record, so a restart of Sova doesn't reset it. systemd counts starts within a window, never
@@ -544,7 +544,7 @@ like the others: one result shape, every caller.
   not-running page.
 - **Idempotent.** Sharing the same instance and endpoint again while its link is active answers
   that same link, its expiry moved to the later of its current one and `days` from now.
-- **Who shares.** The operator, confirmed (`confirm`; the Branches tab's confirm, the CLI's
+- **Who shares.** The operator, confirmed (`confirm`; the Running Copies tab's confirm, the CLI's
   `--confirm`), else `needs-confirm`. The project overseer through its statechart's act `services/share` (power `share`, people-facing, held like a preview; §app.project-services/callers). The
   global Overseer in a turn the user started, on the same limits as everyone (a declared endpoint
   only, never a copy whose data is `sensitive`, at most 7 days or `share.maxDays`); in a run the
@@ -906,7 +906,9 @@ restart 3 s out, long enough for the answer to get out: `systemd-run --user --on
 `systemctl --user restart <unit>`, each schedule a transient unit of its own (on macOS, a process in
 a session of its own that waits the 3 s and runs `launchctl kickstart -k gui/<uid>/<label>`, which
 outlives the restart it causes). The step says "restart scheduled", and `apply` answers at once
-without waiting for readiness, since the server may be the unit it restarts. Nothing checks for
+without waiting for readiness, since the server may be the unit it restarts. Any caller but the operator gets
+`needs-confirm`, its message naming only the CLI's way (`sova-project apply … --confirm`): the
+Running Copies tab offers no Apply (§app.project-services/services-ui). Nothing checks for
 busy sessions, and nothing is held: a restart cuts off no chat, worker or reply
 (§app/chat-processes). A unit that is not loaded answers `not-found`; a host where `systemd-run`
 can't schedule it (on macOS, where that process can't be started) answers `unsupported`; nothing
@@ -931,19 +933,20 @@ restarts in either case.
 - **Never on Sova itself.** On the checkout this Sova server runs from
   (§app.project-services/self-host) nothing reloads; the note says so. An adopted slot 0
   (§app.project-services/adopt) is under the self-host rule, which refuses the system caller.
-- **A note for each outcome.** Each outcome is a line in the project's Software card feed
-  (§app.project-runtime/software-card) and the server's log: "Main moved to {sha7}: onMerge
+- **A note for each outcome.** Each outcome is a line in the project's registry feed, shown in the
+  **Recent** list on its Running Copies tab (§app.project-runtime/software-card), and the server's log: "Main moved to {sha7}: onMerge
   reloaded {services} on the main checkout's copy.", "Main moved to {sha7}: onMerge could not
   reload {services}: {reason}." (an archived project's apply is refused, §app.organizations/archive-copies,
 and the reason is its refusal) or "Main moved to {sha7}: onMerge never reloads the checkout this
-  Sova runs from; apply it from the Branches tab." The newest 10 per project are kept. A move with
+  Sova runs from; Restart Sova in Settings → General picks it up." The newest 10 per project are kept. A move with
   nothing carrying the key running writes no line.
 
-## §app.project-services/services-ui — The Branches tab and Running branches
+## §app.project-services/services-ui — The Running Copies tab and Running branches
 
 The operator sees and drives every running copy from two places, both on this host's engine.
 
-- **The Branches tab** (`#/projects/<pid>/branches`; `…/services` is no address of it) reads
+- **The Running Copies tab** (`#/projects/<pid>/running-copies`; it was named Branches, and
+  `…/branches` still opens it; `…/services` is no address of it) reads
   `GET /api/projects/:pid/services`: the
   project's status (§app.project-services/status-logs) with, per service, the port its readiness
   probes over HTTP (a static service's first port too, at `/`) and that path; per copy, its entry
@@ -951,19 +954,22 @@ The operator sees and drives every running copy from two places, both on this ho
   (§app.project-services/contract) and the copy has that port; and whether the main
   checkout's definition declares sensitive data; and the copy limit, `limit: {value, source (machine
   or file), file (the file's own value, or null), copies, running, over (the over-limit sentence, or
-  null), usable (how many slots of 1 to 16 the layout can use), unavailable (one sentence per unusable slot), places (how many of the usable places are stopped, used elsewhere and free, free absent where other programs were not checked), estimate (what a copy takes, or null), host: {totalBytes, availableBytes}}`. It is read every 5 seconds while the tab shows. One row per copy: the main checkout's (slot 0) first, named
+  null), usable (how many slots of 1 to 16 the layout can use), unavailable (one sentence per unusable slot), places (how many of the usable places are stopped, used elsewhere and free, free absent where other programs were not checked), estimate (what a copy takes, or null), host: {totalBytes, availableBytes}}`. It is read every 5 seconds while the tab shows. Under the heading "Running copies" ("Live copies of
+  the app on this host, 1 per slot."), the copies are in two groups, **In use** ("{r} running · {s}
+  stopped") and **Can go** (§app.project-services/free-up-slots); in each, one row per copy: the
+  main checkout's (slot 0) first, named
   `main`, then each branch copy by slot. A row shows the branch, `slot {n}`, each checkout service's
   ports (a port with HTTP readiness is a link to the site at `http://<this page's host>:<port>/`, never the readiness check's path), the copy's
   memory (the sum of its services' memory, each process's own memory as the resource monitor
   measures it, as a project card counts a copy, §app.projects/home-glance, which leaves out Sova's
-  own server; "—" when none reports one), its state as a chip
+  own server; none shown until one is read, never a bare "—"), its state as a chip
   (Running, Starting, Degraded, Failed, Stopped, Absent; Failed, error, while a service gave up
   retrying, §app.project-services/supervisor, named under the row "{service} failed and stopped
   retrying; Start runs it again"; Starting while the copy is degraded only because a
   service is still starting, none failed or degraded; a service that is not ready is named under the
   row with its state), and who created it ("by you", "by a coding session", "by its overseer", "by the Overseer",
-  "by conformance"; the caller's tag is its title). While the main checkout has no copy, **Start
-  Main** (`up` of the project) sits under the rows. Shared services are listed in their own block
+  "by conformance"; the caller's tag is its title). While the main checkout has no copy, "The main checkout has no copy here yet." and **Start
+  Main** (`up` of the project) sit under In use's rows (not while archived). Shared services are listed in their own block
   under the copies, once each, with their ports, state and memory, and Start and Stop of their own.
 - **The copy limit** (§app.project-services/instances) opens the tab, above the rows: "{n} copies on
   this host, {r} running · up to {cap} at once on this machine" ({n} counts the copies in the
@@ -994,31 +1000,41 @@ The operator sees and drives every running copy from two places, both on this ho
   (§app.project-services/conform) from the newest passing stamp of the main checkout's current
   definition; with none, from the newest stamp of an older definition that has a reading, the line
   then starting "Measured {date} on an older definition: each copy took about …"; with neither, "Not
-  measured yet: Run Again on the Software card measures it." (and still this machine's memory).
+  measured yet: Run Again on this tab's setup line measures it." (and still this machine's memory).
+- **The setup line** ends the copy-limit card: whether the project's services are set up, with
+  **Run Playbook** or **Run Again**, the live run's strip and a proposed run's review
+  (§app.project-runtime/software-card). The tab's other parts read as before whatever it says.
 - **Open**: while a copy has an entry and the entry's own service is ready, whatever the copy's
   state (Degraded or Starting included), Open is its row's first action and carries the row's one
   plain-button weight: a link that opens the copy's entry, `http://<this page's host>:<port><path>`,
-  in a new tab, and the verb the state calls for (Start, Stop) joins the ghost group with Apply,
+  in a new tab, and the verb the state calls for (Start, Stop) joins the ghost group with
   Share and Logs. While that service is not ready, or without an entry, the row offers no Open and
   is drawn as it is without one; its port links stay as they are.
-- **Actions per copy**, each only where the copy's state allows it: **Start** (`up`) while it is
-  stopped, absent or degraded; **Stop** (`down`) while it is running or degraded; **Apply**
-  (`apply`), **Reset** (`reset`) and **Logs** always; **Teardown** (`teardown`) on every copy but
-  the main checkout's (slot 0), which the engine never tears down. Each runs as the operator through
+- **Actions per copy**: a copy's verbs on the page are only these four, each only where the copy's
+  state allows it: **Start** (`up`) while it is stopped, absent or degraded; **Stop** (`down`) while
+  it is running or degraded; **Logs** always; **Teardown** (`teardown`) on every copy but the main
+  checkout's (slot 0), which the engine never tears down. The page offers no Apply and no Reset
+  (Start Main stays): those verbs stay the agents', through their own tools
+  (§app.project-services/callers), and the route below still runs them. Each runs as the operator through
   `POST /api/projects/:pid/services/:verb` (`{instance, services?, confirm?, lines?}`), which answers
-  the verb's result with the status of its exit class. Reset, Teardown, and Stop of a shared service
-  ask first: the first click turns the button into its confirm ("Confirm Teardown"), the second runs
+  the verb's result with the status of its exit class. Teardown, and Stop of a shared service, ask
+  first: the first click turns the button into its confirm ("Confirm Teardown"), the second runs
   it with `confirm`, and leaving the button disarms it. While a verb runs its button says so
   ("Stopping…") and the other buttons wait. A refusal is a sentence under the row, the engine's
   message without the CLI's `(sova-project …)` hint: `needs-confirm` adds "Press it again to
   confirm." and arms that button, so its next click sends `confirm` (Stop of a copy with an active
-  link, Apply or Stop of Sova's own main); `busy` adds "Try again once they are idle." unless the
+  link, or Stop of Sova's own main); `busy` adds "Try again once they are idle." unless the
   message already says when; any other failure is its message alone. A done verb toasts what it did
   ("Stopped main.", "Tore down feat-x. Its slot is free.").
 - **Logs** opens the copy's logs over the page (a modal; a sheet at folded width): its last 200
   lines (`logs`, `lines: 200`), oldest first, each with its 24-hour time and its service, in mono,
   re-read every 3 seconds while open and kept at the bottom unless the operator scrolled up; Close,
   Escape or the scrim closes it and focus returns to the Logs button.
+- **Free Up Slots**, beside Can go's name, removes in one go the branch copies that can go: landed,
+  or left by the merge queue (§app.project-services/free-up-slots).
+- **Previews** and **Recent**: under the copies, the **Previews** card (§mesh.public/preview-card),
+  then the shared services' block, then the registry's **Recent** list, closed when the tab opens
+  (§app.project-runtime/software-card).
 - **Narrow**: below 480px of the tab's width each row stacks (facts, then the actions wrapping
   under them), and nothing scrolls sideways.
 - **Running branches** on `#/projects` (`GET /api/services`): one section listing, for every project
@@ -1026,7 +1042,7 @@ The operator sees and drives every running copy from two places, both on this ho
   (branch or `main`, slot, state as on the tab, memory; while the copy has an entry whose service is ready (`open.ready`),
   its name is a link to that entry, in a new tab, as Open is on the tab) and each running shared service, with a
   **Stop** that stops it (`down` as the operator; an adopted main has none, its "Runs as {unit}" line stands there instead; a shared service's asks first, and a refusal reads as on the
-  tab). It is read every 15 seconds. The project's name links to its Branches tab, with "In {org}"
+  tab). It is read every 15 seconds. The project's name links to its Running Copies tab, with "In {org}"
   while placed. A copy whose root no registered project holds is listed under its folder, without a
   link. With nothing running it says "Nothing runs on this host now. Copies you
   start show here."
@@ -1049,10 +1065,43 @@ The operator sees and drives every running copy from two places, both on this ho
   that sentence under the row.
 
 On an adopted slot 0's row (§app.project-services/adopt: a service of its definition adopts a unit)
-only **Apply** and **Logs** are offered, under the line "Runs as {unit}; Apply schedules a guarded
-restart." Apply asks for the confirm, then schedules the unit's restart; Start, Stop, Reset and
-Teardown, which the engine refuses there with `refused-slot0`, are not offered, and Start Main
-still answers `refused-slot0`, shown as the engine's sentence.
+no verb and no Share are offered: only **Logs**, under the line "Runs as {unit}.", and, as on every
+row, **Open** while the copy has an entry whose service is ready (Sova's own declares none, so its
+row is Logs alone). Its guarded
+restart (Apply) is not on the page: for Sova's own main the user restarts Sova with **Restart
+Sova** in Settings → General.
+Start, Stop, Reset and Teardown, which the engine refuses there with `refused-slot0`, are not
+offered, and Start Main still answers `refused-slot0`, shown as the engine's sentence.
+
+## §app.project-services/free-up-slots — In use, Can go and Free Up Slots on the Running Copies tab
+
+The Running Copies tab (§app.project-services/services-ui) splits the copies into **In use** and
+**Can go**. A copy can go when:
+
+- its branch landed: the project's coding session on that worktree or branch reads merged, with
+  commits of its own or a recorded merge and none since (§app.project-overseer/coding-worktrees),
+  or a session's tracked worktree at that path reads merged, or merged into its target with the
+  merge queue saying it landed; its row says "landed {time}" ("landed" when the time isn't known);
+- or the merge queue made it (its checkout is the queue's own copy, `<parent>/.worktrees/<repo>-merge`)
+  and it is stopped: "left by the merge queue". Running, a check uses it, so it stays in use.
+
+Never the main checkout's copy (slot 0) or an adopted one. A copy that has only sat idle doesn't
+count: the engine keeps no idle time per copy. In use's count reads "{r} running · {s} stopped";
+with none in use, "No copy is in use. The ones under Can go are landed or left by the merge queue."
+(or "No copies on this host."). Can go's reads "{n} copies · {n} slots back" ("1 copy · 1 slot
+back"), or "nothing to free"; with none, "{n} copies in use. None ready to tear down." and "Copies
+show here once their branch lands, or when the merge queue leaves one stopped."
+
+**Free Up Slots · {n}** (destructive) beside Can go's name opens a dialog: "Free up {n} slots" ("Free
+up 1 slot"), "These copies stop and are removed. Each is landed or left by the merge queue.", one
+line per copy ("{branch} · slot {n} · {why}"), "The branches, commits and sessions stay. Removing a
+copy can't be undone, but you can start a new one.", and **Cancel** · **Remove {n} Copies** (**Remove
+1 Copy**, destructive), focus starting on Cancel; Escape, Cancel or the scrim closes it. The list is
+the one shown when it opened. Removing ("Removing…") runs Teardown of each copy in turn, confirmed,
+as the operator; done: "Removed {n} copies. Slots {list} are free." ("Removed 1 copy. Slot {n} is
+free."); a copy whose teardown is refused stays, its sentence under its line in the dialog, which
+then offers only **Close**. With no copy that can go, the button reads **Free Up Slots**, disabled,
+with "Nothing has landed or been left by the merge queue." beside it.
 
 ## §app.project-services/deploy — How a project ships
 
@@ -1150,12 +1199,14 @@ confirmed: it plans and runs the target's undo, its rollback steps at the commit
 (branch, pushed, host values, credential checks; no tests and no dirty check, since it shipped
 before); a target whose rollback is `{none}` answers `unsupported` with that reason, and with no earlier
 verified deploy `not-found`. `deploy.request {project, target, commit?, why}` is an overseer's ask that
-the operator ship, one per target (a newer one replaces it); the feed says "The project overseer asks
+the operator ship, one per target (a newer one replaces it); the project's registry feed (the **Recent**
+list on its Running Copies tab, §app.project-runtime/software-card) says "The project overseer asks
 you to deploy {commit7} to {target}: {why}" (or "The Overseer …"); the operator's plan of that target,
 or `deploy.request {target, dismiss: true}` ("You dismissed the request to deploy {target}."), clears
 it. A target whose latest deploy failed, failed its verify or was interrupted, until a later one, and
 each open request, are act-tier attention items of no session (§app.overseer/attention-digest), kinds
-`deploy-failed` and `deploy-request`, linked to the project's page and never pushed.
+`deploy-failed` and `deploy-request`, linked to the project's Deploy tab (`#/projects/<pid>/deploy`)
+and never pushed.
 
 ## §app.project-services/deploy-callers — Who may ship
 

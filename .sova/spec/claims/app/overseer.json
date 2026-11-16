@@ -118,7 +118,9 @@
       "src/lib/needs-you.ts",
       "src/lib/needs-you.test.ts",
       "src/lib/org-region.ts",
-      "src/lib/org-region.test.ts"
+      "src/lib/org-region.test.ts",
+      "server/owner-attention.ts",
+      "server/project-services/deploy-status.integration.test.ts"
     ],
     "requires": [
       "§app.overseer/seen"

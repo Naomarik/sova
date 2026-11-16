@@ -45,7 +45,8 @@
     "authority": "accepted",
     "evidence": "reviewed",
     "code": [
-      "shared/commands/projects.ts"
+      "shared/commands/projects.ts",
+      "src/card-toolkit/commands.gen.ts"
     ]
   }
 }

@@ -771,7 +771,8 @@ would have expired, and answers them 410 too.
 
 ## §mesh.public/preview-card — Previews on the project page
 
-- The project page has a **Previews** card: one row per active preview, where a person's own link
+- The project page's **Running Copies** tab has a **Previews** card, under its copies and its
+  Recent list (§app.project-services/services-ui): one row per active preview, where a person's own link
   (a sibling, §mesh.public/preview) is not a row of its own but a recipient of its original's row.
   The row's title is its purpose, else "Preview of port {n}" or "Preview of {folder}" ("the
   worktree" for the worktree itself), as plain text. Under it its parts, in three groups, each part

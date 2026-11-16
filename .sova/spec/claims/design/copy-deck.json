@@ -275,7 +275,7 @@
   "§design.copy-deck/overseer-orgs": {
     "kind": "note",
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "code": [
       "src/components/ProjectPage.tsx",
       "src/lib/archive-copies.ts"
@@ -334,7 +334,7 @@
   "§design.copy-deck/project-overseer-head": {
     "kind": "note",
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "code": [
       "src/components/ProjectOverseerHead.tsx",
       "src/lib/project-overseer-view.ts",
@@ -359,6 +359,11 @@
       "§app.project-overseer/autonomy-levels",
       "§app.organizations/project-page"
     ]
+  },
+  "§design.copy-deck/project-sessions": {
+    "kind": "note",
+    "authority": "accepted",
+    "evidence": "reviewed"
   },
   "§design.copy-deck/project-setup": {
     "kind": "note",
@@ -635,7 +640,8 @@
       "server/design/coordinator-routes.ts",
       "server/design/asset-routes.ts",
       "server/design/describe-routes.ts",
-      "server/page-only.ts"
+      "server/page-only.ts",
+      "server/project-services/self-host.ts"
     ]
   },
   "§design/copy-deck": {

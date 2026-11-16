@@ -828,7 +828,7 @@ new.
   count, so the two agree but for the organization sessions the Overseer also counts.
 - **A project's deploy items** (`deploy-failed`, `deploy-request`, §app.project-services/deploy-status) belong
   to no session, so they list under the session rows as rows of their own, newest first, narrowed by the
-  search (project, folder or sentence), each opening the project page (its Deploy panel). The head's
+  search (project, folder or sentence), each opening the project page's Deploy tab (`#/projects/<pid>/deploy`). The head's
   count and the spine's door count them too, and the head's title says how many are deploy items ("The
   2 sessions waiting on you, newest first, and 1 deploy item." / "1 deploy item waiting on you.").
 - **A project's release items** (`release-ready`, `release-request`, `release-held`, `release-failed`,

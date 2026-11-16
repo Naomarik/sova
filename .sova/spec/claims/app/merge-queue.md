@@ -1207,7 +1207,7 @@ invalid:
 
 ## §app.merge-queue/view — The Merge Queue view
 
-The project page has a **Merge Queue** tab between Branches and Releases
+The project page has a **Merge Queue** tab between Running Copies and Releases
 (§app.organizations/project-page),
 at `#/projects/<pid>/merge-queue`. While the queue doesn't serve the project (a definition that
 doesn't parse aside, which shows its error instead), the tab shows only its head, "Merge queue"
@@ -1223,8 +1223,11 @@ shows the proposal, its newest trial and the chat's state in that banner's place
 sections, since retirement covers every listed project. For a project it serves, it
 shows, top to bottom:
 
-- **The strip**: the target at its commit, and the commit `origin` has for it
-  (§app.merge-queue/push), with **Pushed**, **Not pushed** or **No remote**. On a project that
+- **The strip**: the target at its commit at the card's left, and "Pushed to origin", the commit
+  `origin` has for it (§app.merge-queue/push), with **Pushed**, **Not pushed** or **No remote**,
+  against the card's right edge, its words aligned right, the two side by side at every width
+  (the first as wide as its words, at most 55% of the card); the Releases tab's strip has the same
+  style (§app.release/tab). On a project that
   lands on its host, the strip instead reads the host's target, and "Local main is {n} commits
   behind." with **Update Local Main** when it is, held with its reason while it can't run
   (§app.merge-queue/requests). Not pushed always carries one sentence: the queue's why ("Push
@@ -1334,7 +1337,10 @@ The tabs' rows:
 
 - **Ready to land**: the project's worktree branches with something left to land
   (§chat.worktrees/nothing-left), a clean tree, none of the queue's scratch copies
-  (§app.merge-queue/resolve-copy), a head that isn't a temporary commit, and no standing approval (in
+  (§app.merge-queue/resolve-copy), none of the branches Sova cuts for its own work, by their exact
+  shape (`sova/conform-<6 hex>-a` or `-b`, `sova/settings-<YYYYMMDD-HHMM>`,
+  `sova/release-revert-rl_…`; any other `sova/…` branch, a coding session's `sova/<name>-<6 hex>`
+  included, is listed like any other, §app.project-overseer/coding-worktrees), a head that isn't a temporary commit, and no standing approval (in
   line, checking, with its chat or waiting for the user) and no landing at that commit (a row with only
   drafts left is listed whatever its head's subject says, and though it landed at that commit; a branch removed from the queue shows here again;
   the list is read at most every 15 seconds, so that row may take that long to appear). Land on a
@@ -1772,7 +1778,11 @@ commit.** A repository the queue doesn't serve gets no bullets.
   until new ones are written for the new commit.
 - **When it fails**, the row says "Couldn't summarize this branch" with **Try Again**, which writes
   it again for the same commit. Try Again shows only after a failure: a summary that worked offers
-  no rewrite. Nothing else on the row changes, and Land works as before. Try Again is a catalogue
+  no rewrite. While its request is out the button is disabled and marked busy; once the server
+  takes it, the row reads "Summarizing…" in the error's place at once, on every row that shows the
+  summary (the Merge Queue tab's, the Worktrees rows and the Sessions tab's popover), until the new
+  summary is read or the failure is back (a read 1 s or more after it that still says failed is
+  the failure, back). Nothing else on the row changes, and Land works as before. Try Again is a catalogue
   command (§app/commands). A failure because no model answered (none could run or was signed in, a
   timeout, the model service failing) is tried once more by the sweep, by itself, about 10 minutes
   later, while the branch is still on the list with its chat idle; a failure whose models answered

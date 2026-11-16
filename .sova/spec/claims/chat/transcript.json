@@ -113,7 +113,7 @@
       "§chat/composer"
     ],
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "code": [
       "src/lib/ui-state.ts",
       "src/App.tsx",

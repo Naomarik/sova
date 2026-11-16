@@ -1575,7 +1575,7 @@ feed's last list while nothing has changed since it was built, and builds a list
   {target}" (or its no-definition form), dated by its last turn's end, carrying what Merge Branch
   needs (`playbook: {projectId, hash?, branch, target}`).
 - **Needs you, a deploy** (§app.project-services/deploy-status): items of no session, linking to the
-  project's page: `deploy-failed`, one per deploy target whose latest deploy failed, failed its verify
+  project's Deploy tab (`#/projects/<pid>/deploy`): `deploy-failed`, one per deploy target whose latest deploy failed, failed its verify
   or was interrupted, "Deploy of {commit7} to {target} failed: {why}" (or "… ran, and its verify
   failed: …", "… was interrupted: …"; "Rollback of …" for a rollback), until a later deploy of that
   target; and `deploy-request`, one per overseer's open request to deploy, "Deploy {commit7} to
@@ -1664,7 +1664,7 @@ feed's last list while nothing has changed since it was built, and builds a list
   (id `owner-link-request:<org id>`), until a new link is made. Each is act tier and of no session; a
   request's item opens the org's Requests tab at that request (`#/orgs/<id>/requests/<rid>`), a link
   ask the org's People tab, and an open `try` request is an `owner-version-request` item opening the
-  project's Branches tab (§app.project-assistant/requests).
+  project's Running Copies tab (§app.project-assistant/requests).
 - **Needs you, a message not sent** (§app.outreach/send): `outreach-not-sent`, one per project
   overseer's WhatsApp send whose last outcome is refused, failed or unknown, "The WhatsApp message
   to {name} was not sent: {reason}.", opening the person's page, until a later send to that person

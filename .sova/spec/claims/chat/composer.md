@@ -1001,12 +1001,13 @@ words in its hover; how far it can lag is §app.session-list/content-rules "Row 
 ## §chat.composer/land-confirm — Land asks once
 
 Everywhere Land appears (the composer's Worktrees modal, §chat.composer/worktrees-control, the
-session pane's Worktrees rows, §chat.worktrees/pane, and the Merge Queue tab, §app.merge-queue/view)
+session pane's Worktrees rows, §chat.worktrees/pane, the Merge Queue tab, §app.merge-queue/view, and
+the project page's Sessions rows, §app.project-overseer/sessions-list, whose Land has no ▾ menu)
 the button reads **Land**, a compact button with its ▾ menu as a narrow tab beside it, and pressing
 it queues nothing: it replaces the row's actions with a confirmation, right-aligned under the row:
 "Land {branch}?", then, from a chat's rows (the modal and the pane), "{n} commits go to {project}'s
 merge queue; {target} moves once checks pass.", {project} being the branch's place
-(§chat.worktrees/place); on the project's own Merge Queue tab, "{n} commits go to the merge queue;
+(§chat.worktrees/place); on the project's own Merge Queue and Sessions tabs, "{n} commits go to the merge queue;
 {target} moves once checks pass.". Under it, **Not Yet** on the left and **Land {n} Commits**
 rightmost. One commit reads "1 commit goes" and **Land 1 Commit**; a row whose count isn't known
 reads "Its commits go" and **Land Branch**; a Drafts to land row reads "{n} spec drafts go"

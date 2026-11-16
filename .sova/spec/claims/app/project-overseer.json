@@ -93,10 +93,12 @@
   "§app.project-overseer/coding-worktrees": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "reviewed",
+    "evidence": "verified",
     "requires": [
       "§app.project-overseer/tools",
-      "§chat.worktrees/tool"
+      "§chat.worktrees/tool",
+      "§chat.worktrees/entry",
+      "§chat.worktrees/readiness"
     ],
     "code": [
       "server/project-worktrees.ts",
@@ -147,12 +149,17 @@
       "src/components/RemoveAnywayListing.tsx",
       "src/components/EmptyWorktrees.tsx",
       "src/app.css",
-      "server/cleanup-dry-run.test.ts"
+      "server/cleanup-dry-run.test.ts",
+      "src/components/ProjectSessionsTab.tsx",
+      "src/lib/project-sessions.ts",
+      "src/lib/project-sessions.test.ts",
+      "server/merge-queue/queue.ts",
+      "server/merge-queue/queue.test.ts"
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-10T16:15Z",
-      "source": "pi-session:01a1c5d6-77b4-7248-87d0-5225867cac4b#a56c245f"
+      "at": "2026-11-16T21:48Z",
+      "source": "pi-session:a7186a10-5049-46ef-a82e-98966bf92a24#e8259d6a"
     }
   },
   "§app.project-overseer/confirm-brief": {
@@ -389,7 +396,7 @@
   "§app.project-overseer/limits": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "code": [
       "shared/project-overseer.ts",
       "server/project-overseer-store.ts",
@@ -498,14 +505,14 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-04T23:29Z",
-      "source": "pi-session:01a1a881-85c2-72d2-b9d3-5a1d4c60dbfe#b1ee7dfc"
+      "at": "2026-11-16T21:47Z",
+      "source": "pi-session:a7186a10-5049-46ef-a82e-98966bf92a24#e8259d6a"
     }
   },
   "§app.project-overseer/page": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "code": [
       "src/components/ProjectOverseerHead.tsx",
       "src/components/SessionView.tsx",
@@ -529,9 +536,9 @@
       "§app.overseer/identity-and-clear"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-11-05T03:54Z",
-      "source": "pi-session:4ff7a076-864d-4370-9783-4c5b6119e95c#5bc9ed14"
+      "by": "user",
+      "at": "2026-11-16T16:31Z",
+      "source": "pi-session:a7186a10-5049-46ef-a82e-98966bf92a24#2bfdf484"
     }
   },
   "§app.project-overseer/pipeline": {
@@ -603,6 +610,33 @@
       "at": "2026-11-12T12:42Z",
       "source": "pi-session:a43d715c-1eb4-4040-a159-23c4193273a4#55333f93"
     }
+  },
+  "§app.project-overseer/ready-branch-popover": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "requires": [
+      "§app.project-overseer/sessions-list",
+      "§chat.composer/worktrees-control",
+      "§app.merge-queue/branch-summary",
+      "§chat.changes/viewer",
+      "§chat.composer/land-confirm"
+    ],
+    "code": [
+      "src/components/ProjectSessionsTab.tsx",
+      "src/components/BranchPopover.tsx",
+      "src/components/branch-popover.css",
+      "src/components/WorktreesModal.tsx",
+      "src/lib/project-sessions.ts",
+      "src/lib/project-sessions.test.ts",
+      "src/project-sessions.css",
+      "server/merge-queue-ui.integration.test.ts"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-16T19:06Z",
+      "source": "pi-session:a7186a10-5049-46ef-a82e-98966bf92a24#a73053a7"
+    },
+    "evidence": "verified"
   },
   "§app.project-overseer/reviews": {
     "kind": "behavior",
@@ -677,10 +711,40 @@
       "source": "pi-session:01a181b5-0126-7289-9604-86c617633d9d#8e5330a0"
     }
   },
+  "§app.project-overseer/sessions-list": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "requires": [
+      "§app.organizations/project-page",
+      "§app.project-overseer/coding-worktrees",
+      "§app.session-list/needs-you",
+      "§app.merge-queue/approve",
+      "§app.insights/session-token-rate",
+      "§chat.composer/land-confirm",
+      "§app.project-overseer/ready-branch-popover"
+    ],
+    "code": [
+      "src/components/ProjectSessionsTab.tsx",
+      "src/lib/project-sessions.ts",
+      "src/lib/project-sessions.test.ts",
+      "src/project-sessions.css",
+      "src/components/ProjectPage.tsx",
+      "src/components/ProjectsView.tsx",
+      "src/App.tsx",
+      "server/merge-queue-ui.integration.test.ts",
+      "src/components/BranchPopover.tsx"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-16T19:06Z",
+      "source": "pi-session:a7186a10-5049-46ef-a82e-98966bf92a24#a73053a7"
+    },
+    "evidence": "verified"
+  },
   "§app.project-overseer/settings": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "unreviewed",
+    "evidence": "verified",
     "code": [
       "server/project-settings.ts",
       "server/project-settings-git.ts",
@@ -707,7 +771,8 @@
       "server/merge-queue/queue-held-card.test.ts",
       "server/agent-loadouts.snapshot.json",
       "server/harness/pi/golden/special-model-view.json",
-      "server/approvals.ts"
+      "server/approvals.ts",
+      "server/create-settings-cards.test.ts"
     ],
     "requires": [
       "§app.project-overseer/autonomy-levels",
@@ -947,7 +1012,7 @@
   "§app.project-overseer/watch-loop": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "code": [
       "server/project-overseer.ts",
       "server/project-overseer-routes.ts",
@@ -975,11 +1040,17 @@
       "statecharts/test/sova/statecharts/refit/asks_golden.cljs",
       "statecharts/test/sova/statecharts/refit/asks_rules_test.cljc",
       "statecharts/test/sova/statecharts/refit/asks_test.cljs",
-      "server/app.ts"
+      "server/app.ts",
+      "src/components/ProjectOverseerHead.tsx"
     ],
     "requires": [
       "§app.project-overseer/autonomy-levels"
-    ]
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-16T16:32Z",
+      "source": "pi-session:a7186a10-5049-46ef-a82e-98966bf92a24#2bfdf484"
+    }
   },
   "§app/project-overseer": {
     "kind": "surface",

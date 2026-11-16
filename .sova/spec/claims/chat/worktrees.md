@@ -552,7 +552,7 @@ transcript (§chat.merge-queue/requests), the "not sent yet" note above the mess
 (§app.overseer/roundup) use it. With no place known (a card written before the line, a read that
 failed) such a line names the branch alone.
 
-**Left alone.** Pages inside one project (the Merge Queue tab's rows, run pages, the Branches tab)
+**Left alone.** Pages inside one project (the Merge Queue tab's rows, run pages, the Running Copies tab)
 show no place line, and old merged cards in a chat's history stay as they were.
 
 ## §chat.worktrees/readiness — Is it ready to merge, and what did a merge leave

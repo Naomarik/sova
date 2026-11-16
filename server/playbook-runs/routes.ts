@@ -161,12 +161,18 @@ export function mountPlaybookRunRoutes(app: Hono, deps: PlaybookRunRouteDeps): v
         });
       return c.json(await runView(runById(open.id)!));
     }
+    const t0 = Date.now();
     const loaded = await loadPlaybook(ref, cwd);
     if (!loaded) return c.json({ error: `No playbook ${ref.id} here.` }, 404);
     if (!loaded.spec) return c.json({ error: loaded.error ? `The playbook's description can't be read: ${loaded.error}` : "This playbook has no description, so it has no card: send it from the Playbooks dialog." }, 400);
+    const tLoad = Date.now();
     const first = firstValues(loaded.spec, readAnswers(answersKey(ref, await projectKeyOf(cwd))));
     const run = createRun({ playbook: refOf(loaded.info), cwd, ...(shownIn ? { shownIn } : {}), ...(text ? { text } : {}), initial: first });
-    return c.json(await runView(run), 201);
+    const tMade = Date.now();
+    const view = await runView(run);
+    const took = Date.now() - t0;
+    if (took > 1000) console.warn(`[playbook-runs] opening a card took ${took} ms (playbook ${tLoad - t0} ms, answers ${tMade - tLoad} ms, card ${Date.now() - tMade} ms)`);
+    return c.json(view, 201);
   });
 
   app.get("/api/playbook-runs", async (c) => {

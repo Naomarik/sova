@@ -258,7 +258,9 @@ broken block's source (§app.baton/outsider-view).
   numbered notes and its caption, and no buttons, toggles, warning line, step-through controls or
   wireframe screen picker; in the theme on screen; in pixels 1.5 times the card's size, at most
   1280 pixels wide (a card 480 px wide or narrower at twice its size), whatever the screen's
-  density; a wide drawing whole. Beside the PNG the clipboard holds the same picture as HTML at the
+  density; a wide drawing whole. Its text breaks into the same lines as on screen at any display
+  scaling or page zoom, a label shown whole never gains an ellipsis, and the picture never shows a
+  scrollbar: a table or code block wider than the card is copied whole too. Beside the PNG the clipboard holds the same picture as HTML at the
   card's size, so documents and mail still paste it at the card's size. Copy's accessible name says which it will take ("Copy picture", "Copy source"). A `vis html`
   drawing and a chat's own drawing kind (`vis <owner>.<name>`, §chat.transcript-cards/drawing-kinds),
   both sealed from the page, keep copying their fence as text. Where the clipboard won't take a

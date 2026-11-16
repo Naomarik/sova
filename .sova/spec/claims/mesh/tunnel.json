@@ -1,0 +1,199 @@
+{
+  "§mesh.tunnel/account": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "requires": [
+      "§mesh.tunnel/lifetime",
+      "§mesh.public/front",
+      "§mesh.public/preview-address",
+      "§app.access/your-click",
+      "§mesh.public/listener-failure",
+      "§mesh/tunnel"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-12T12:41Z",
+      "source": "pi-session:a43d715c-1eb4-4040-a159-23c4193273a4#55333f93"
+    },
+    "code": [
+      "server/share/tunnel/account-token.ts",
+      "server/share/tunnel/account-token.test.ts",
+      "server/page-only.ts",
+      "server/share/tunnel/manager.ts",
+      "server/share/tunnel/units.ts",
+      "server/overseer-deny.ts",
+      "server/overseer-redact.ts",
+      "server/overseer-prompt.md",
+      "pi-config/sandbox-policy/linux/policy.json",
+      "pi-config/sandbox-policy/darwin/policy.json",
+      "pi-config/extensions/sandbox/backends/linux-bwrap.ts",
+      "pi-config/extensions/sandbox/backends/darwin-seatbelt.ts",
+      "server/share/listener.ts",
+      "server/share/share-state.ts",
+      "server/share/tunnel/wiring.ts",
+      "server/public-links-routes.ts",
+      "src/components/PublicLinksSettings.tsx",
+      "src/lib/public-links.ts",
+      "src/lib/public-links.test.ts",
+      "src/lib/settings-forms-roundtrip.test.ts",
+      "server/share/tunnel/manager.test.ts",
+      "server/share/tunnel/manager.integration.test.ts",
+      "server/share/front.ts",
+      "server/share/candidate.ts",
+      "server/share/tunnel/candidate.integration.test.ts",
+      "server/share/tunnel/units.test.ts"
+    ]
+  },
+  "§mesh.tunnel/cloudflared": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "requires": [
+      "§app.access/your-click",
+      "§design.copy-deck/where-links-open"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-12T12:41Z",
+      "source": "pi-session:a43d715c-1eb4-4040-a159-23c4193273a4#55333f93"
+    },
+    "code": [
+      "server/share/tunnel/binary.ts",
+      "server/share/tunnel/download.ts",
+      "server/share/tunnel/release.ts",
+      "server/public-links-routes.ts",
+      "server/page-only.ts",
+      "server/share/tunnel/release.test.ts",
+      "server/share/tunnel/binary.test.ts",
+      "server/share/tunnel/download.test.ts",
+      "server/share/tunnel/download.integration.test.ts",
+      "server/testing/hermetic-server.ts",
+      "src/components/OpensAt.tsx",
+      "src/lib/public-links.ts",
+      "src/lib/opens-at.ts",
+      "src/lib/opens-at.test.ts"
+    ]
+  },
+  "§mesh.tunnel/lifetime": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "requires": [
+      "§mesh.public/setting",
+      "§mesh.tunnel/turn-on",
+      "§mesh.tunnel/cloudflared",
+      "§mesh.public/broken-links",
+      "§app.baton/share-listener"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-12T12:41Z",
+      "source": "pi-session:a43d715c-1eb4-4040-a159-23c4193273a4#55333f93"
+    },
+    "code": [
+      "server/share/tunnel/manager.ts",
+      "server/share/tunnel/units.ts",
+      "server/share/tunnel/state.ts",
+      "server/project-services/drivers.ts",
+      "scripts/stop-tunnels.ts",
+      "server/share/tunnel/manager.test.ts",
+      "server/share/tunnel/units.test.ts",
+      "server/share/tunnel/state.test.ts",
+      "server/share/tunnel/manager.integration.test.ts",
+      "server/share/tunnel/tunnel-standin.ts",
+      "server/testing/fake-cloudflared.mjs",
+      "server/share/preview-link.ts",
+      "server/preview-links-routes.ts",
+      "server/share/tunnel/wiring.ts",
+      "server/share/tunnel/wiring.integration.test.ts",
+      "server/share/listener.ts",
+      "server/share/links-events.ts",
+      "server/share/registry-push.ts",
+      "server/index.ts",
+      "server/public-links-routes.ts",
+      "server/share/tunnel/routes.ts",
+      "shared/protocol.ts",
+      "src/lib/session-feed.ts",
+      "src/lib/public-links.ts",
+      "server/share/share-state.ts",
+      "server/share/share-tunnel.test.ts"
+    ]
+  },
+  "§mesh.tunnel/setup-chat": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "requires": [
+      "§mesh.public/where-links-open",
+      "§mesh.public/front",
+      "§mesh.tunnel/account"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-12T12:41Z",
+      "source": "pi-session:a43d715c-1eb4-4040-a159-23c4193273a4#55333f93"
+    },
+    "code": [
+      "server/share/setup-chat.ts",
+      "server/share/setup-chat.test.ts",
+      "server/app.ts",
+      "server/page-only.ts",
+      "src/components/OpensAt.tsx",
+      "src/lib/public-links.ts"
+    ]
+  },
+  "§mesh.tunnel/turn-on": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "requires": [
+      "§mesh.public/free-default",
+      "§mesh.tunnel/cloudflared",
+      "§app.access/your-click",
+      "§design.copy-deck/where-links-open"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-12T12:41Z",
+      "source": "pi-session:a43d715c-1eb4-4040-a159-23c4193273a4#55333f93"
+    },
+    "code": [
+      "server/public-links.ts",
+      "server/public-links-effective.test.ts",
+      "server/share/tunnel/routes.ts",
+      "server/share/tunnel/routes.test.ts",
+      "server/page-only.ts",
+      "server/share/share-state.ts",
+      "server/public-links-routes.ts",
+      "server/share/tunnel/wiring.ts",
+      "server/share/tunnel/wiring.integration.test.ts",
+      "src/components/OpensAt.tsx",
+      "src/lib/public-links.ts",
+      "src/lib/opens-at.ts",
+      "src/lib/opens-at.test.ts"
+    ]
+  },
+  "§mesh/tunnel": {
+    "kind": "surface",
+    "authority": "accepted",
+    "evidence": "verified",
+    "requires": [
+      "§mesh/public",
+      "§mesh.public/where-links-open",
+      "§app.baton/share-listener"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-12T12:41Z",
+      "source": "pi-session:a43d715c-1eb4-4040-a159-23c4193273a4#55333f93"
+    },
+    "code": [
+      "server/share/listener.ts",
+      "server/share/edge.ts",
+      "server/share/share-tunnel.test.ts",
+      "server/share/tunnel/wiring.integration.test.ts",
+      "server/share/candidate.ts"
+    ]
+  }
+}

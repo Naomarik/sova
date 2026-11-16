@@ -407,9 +407,14 @@ this host's default for a standalone project.
   makes nothing; else it makes one as Get New Owner Link does, every older owner link of the org
   stopping at once (§app.owner-page/link). A failure turns nothing off: a link it made stays,
   marked `undelivered` and carrying the owner's ask, until a send of it goes.
-- All three refuse while the public address warning is `off`, `unreachable` or `not-accepted` (a link
-  nobody outside can open), with that warning's text (§app.baton/links), and a preview while no
-  preview address is set.
+- All three refuse while the public address warning is `off`, `unreachable`, `not-accepted`,
+  `broken`, `quick-turn-on`, `quick-setup`, `tunnel-down`, or `quick-starting` after the mint's wait
+  (a link nobody outside can open), with that warning's text (§app.baton/links); while sharing is
+  off (§mesh.public/sharing-off); and a preview while no preview address is set off Cloudflare Free.
+- On Cloudflare Free a link is sent, a client's included: the send's answer carries the `quick`
+  warning (its address changes when this computer restarts) as its optional `linkWarning` to
+  whoever sent it, and the send counts
+  as the link leaving Sova (§mesh.public/broken-links).
 - The preview resolver reads the preview address once, before it mints the sibling, and makes the
   URL from that reading. A routed host's address reads as unset for a moment each time its gateway
   comes back and states its kinds again (§mesh.public/registry), so a send whose check passed never
@@ -420,7 +425,9 @@ this host's default for a standalone project.
   `preview-unknown`, `other-project`, `preview-off`, `preview-expired`, `preview-address` (a
   preview: no preview address, or a gateway that doesn't route previews); `not-owner` (an owner
   page link); `address-off`,
-  `address-unreachable`, `address-not-accepted` (the public address's warning). `link` is left for
+  `address-unreachable`, `address-not-accepted`, `address-broken`, `address-turn-on`,
+  `address-setup`, `address-down`, `address-starting` (the public address's warning); `sharing-off`;
+  `too-many-tunnels` (a preview past Free's cap). `link` is left for
   a reference of the wrong kind or an unexpected error.
 - No model sees a hand-off or owner link, a person's own link to a preview, a token or a number:
   tools take ids and answer with the outcome. A preview's own link is the one exception: the

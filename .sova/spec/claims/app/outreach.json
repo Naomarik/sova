@@ -83,7 +83,7 @@
   "§app.outreach/links": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "code": [
       "server/outreach/links.ts",
       "shared/outreach.ts",
@@ -101,7 +101,11 @@
       "server/outreach.integration.test.ts",
       "server/outreach/core.ts",
       "server/baton-links.ts",
-      "server/baton.ts"
+      "server/baton.ts",
+      "server/share/preview-link.ts",
+      "server/overseer-owner-send.test.ts",
+      "server/share/tunnel/routes.ts",
+      "server/share/tunnel/wiring.ts"
     ],
     "requires": [
       "§app.baton/links",
@@ -109,8 +113,8 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-10-28T13:39Z",
-      "source": "pi-session:01a181b5-0126-7289-9604-86c617633d9d#8e5330a0"
+      "at": "2026-11-12T12:42Z",
+      "source": "pi-session:a43d715c-1eb4-4040-a159-23c4193273a4#55333f93"
     }
   },
   "§app.outreach/log": {

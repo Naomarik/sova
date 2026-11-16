@@ -240,10 +240,12 @@ Every caller keeps working with no new step for the person:
 
 ## §app.access/your-click — What only your own click passes
 
-Fourteen approvals pass only on what Sova takes for the person's own click in its page on this
-machine, but for what the Overseer keeps and a schedule on another computer
-(§app.access/other-roads). Each one lets something act later without asking, so the ordinary roads
-of a chat, a script or another computer are refused. This stops a chat following its instructions,
+Seventeen approvals are listed here. Sixteen pass only on what Sova takes for the person's own click
+in its page on this machine; the seventeenth, choosing where links open, is a narrower door that a
+script holding the operator token passes too (**Where links open**, below). Both hold but for what
+the Overseer keeps and a schedule on another computer (§app.access/other-roads). Each one lets
+something act later without asking, so the ordinary roads of a chat, a script (but at that narrower
+door) or another computer are refused. This stops a chat following its instructions,
 not a program on this computer posing as your browser (§app.access/click-limits). This holds in
 every chat, not only Create, and it ships before Create does. The same act sent by another road is
 refused too (§app.access/other-roads).
@@ -259,6 +261,9 @@ refused too (§app.access/other-roads).
 | Trusting a project's or an extension's cards | `POST /api/session-cards/trust` with `on: true` | **Trust {name}'s Cards** on one of its cards |
 | Restarting Sova | `POST /api/updates/restart`, or Apply of Sova's own checkout (`POST /api/project-services/apply`, `POST /api/projects/:pid/services/apply`) | **Restart Sova** in Settings → General, or **Apply** on the Branches tab of Sova's project page |
 | Updating Sova | `POST /api/updates/check`, `POST /api/updates/apply`, `PUT /api/updates/settings` | Settings → General |
+| Opening public links to the internet | `POST /api/public-links/turn-on`, `POST /api/public-links/cloudflared/download`, `PUT` and `DELETE /api/public-links/account-token` | **Turn On** and **Download** in Settings → Public links or a share screen's prompt, and the Account token's save and remove there (§mesh.tunnel/turn-on, §mesh.tunnel/cloudflared, §mesh.tunnel/account) |
+| Starting a setup chat for public links | `POST /api/public-links/setup-chat` | **Set Up With a Chat** in an option's setup help in Settings → Public links (§mesh.tunnel/setup-chat) |
+| Choosing where links open (a narrower door) | `PUT /api/public-links`, `DELETE /api/public-links/candidate`, and `POST /api/public-links/verify` while a new address waits for its Verify | The **Where links open** list and its fields in Settings → Public links, and **Verify Address** and **Cancel** on its Waiting for verification banner (§mesh.public/setting, §mesh.public/where-links-open) |
 | Adding or changing an extension | `POST /api/extensions/inspect`, `/install`, `/:id/approve`, `/:id/folder`, `/:id/on`, `/:id/off`, `/:id/program`, `DELETE /api/extensions/:id` | Settings → Extensions |
 | A design run's brief | `POST /api/design/runs/:run/brief/start`, and `/brief/edit`, `/brief/answers`, `/brief/conflict`, `/brief/link`, `/brief/image` and `/brief/not-this-screen` | **Start**, **Edit**, **Go With Recommendations** or **Send Answers**, **Keep My Prompt** or **Rewrite It**, a link's use, an image's Use tick, and **Not This Screen**, on the Lookbook's brief (§chat.design-mode/brief-start, §chat.design-mode/brief-layers, §chat.design-mode/brief-questions, §chat.design-mode/link-modes, §chat.design-mode/brief-images) |
 | Answering a Lookbook Creative Director's question | `POST /api/design/coordinator/answer`, and a message to it that carries images (`POST /api/design/coordinator/message`) | The question on the Creative Director's card: starting or stopping a copy, opening a site, a sign-in or more than 12 designs in a turn; and images pasted into its box (§chat.design-mode/project-reach, §chat.design-mode/sites, §chat.design-mode/own-images) |
@@ -274,6 +279,14 @@ refused too (§app.access/other-roads).
   (§chat.mode-menu/project-mode-hooks). A mesh peer is known only by the peer listener. The relay
   header proves nothing on the main listener: a request carrying it is judged by what else it shows,
   so a chat's key with it is a chat, whose card click is refused and whose turns aren't attended.
+- **Where links open.** `PUT /api/public-links` is refused by caller classification only, and so
+  are Cancel of a new address waiting for its Verify and that Verify, whose pass moves every link
+  (§mesh.public/setting); a Verify with nothing waiting is no approval. The
+  Overseer's sender mark, a chat's key, an extension's key and a mesh peer get the 403 above, while
+  a script holding the operator token in a header passes, as the headless-gateway `curl` in
+  `docs/public-links.md` and the mesh lab do. Its **Turn On** (`POST /api/public-links/turn-on`) stays a
+  strict your-click door, so a script can choose a route but opens no Free tunnel before the
+  person's click (§mesh.tunnel/turn-on).
 - **Each refusal says where to click,** in the words of §design.copy-deck/your-click, so a chat can
   tell the person what to do.
 - **Only the widening closes.** Turning a power Off, raising a sandbox, turning a mode off, turning

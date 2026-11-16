@@ -1345,7 +1345,8 @@ card). On a phone it is `#/overview`, under the list's head row, and opening Sov
    with none, "No explanations yet. Run `/explain` in a session to write one." Before the first
    list has loaded the line reads "Reading explanations…". It is the way to the page at every
    width, and on a phone the only one outside a session (list → Overview → the card).
-7. **The Shares card**, always (with no public link too), under a `Shares` section eyebrow, after
+7. **The Shares card**, always (with no public link too) except while sharing is off
+   (§mesh.public/sharing-off), under a `Shares` section eyebrow, after
    the Explanations card and before Organizations: the Explanations card's shape — one full-width
    `a.card.ext-card` to `#/shares` (§app.session-share/shares-page) with the `external` icon, the
    title `Shares`, a count chip (`{n}`: every live public link counted on the line), and one line:

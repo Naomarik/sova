@@ -1,4 +1,42 @@
 {
+  "§mesh.public/broken-links": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "reviewed",
+    "requires": [
+      "§mesh.tunnel/lifetime",
+      "§app.session-share/shares-page",
+      "§app.session-share/sheet",
+      "§mesh.public/preview-card",
+      "§design.copy-deck/where-links-open"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-12T12:41Z",
+      "source": "pi-session:a43d715c-1eb4-4040-a159-23c4193273a4#55333f93"
+    },
+    "code": [
+      "server/share/tunnel/handouts.ts",
+      "server/share/tunnel/routes.ts",
+      "server/share/tunnel/routes.test.ts",
+      "server/share/tunnel/wiring.ts",
+      "server/public-links-routes.ts",
+      "server/baton-links.ts",
+      "server/person-links.ts",
+      "server/share/share-tunnel.test.ts",
+      "src/components/OpensAt.tsx",
+      "src/lib/copy-link.ts",
+      "src/lib/public-links.ts",
+      "src/components/SharesPage.tsx",
+      "src/components/ShareSheet.tsx",
+      "src/components/PreviewsCard.tsx",
+      "src/components/LinksBanner.tsx",
+      "src/components/BatonStrip.tsx",
+      "src/components/PersonPage.tsx",
+      "src/components/OwnerCard.tsx",
+      "src/lib/session-feed.ts"
+    ]
+  },
   "§mesh.public/forwarded-for": {
     "kind": "behavior",
     "requires": [],
@@ -14,19 +52,54 @@
       "server/share-security.integration.test.ts"
     ]
   },
+  "§mesh.public/free-default": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "requires": [
+      "§mesh.public/setting",
+      "§mesh.tunnel/turn-on",
+      "§mesh.public/sharing-off",
+      "§design.copy-deck/where-links-open"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-12T12:41Z",
+      "source": "pi-session:a43d715c-1eb4-4040-a159-23c4193273a4#55333f93"
+    },
+    "code": [
+      "server/public-links.ts",
+      "shared/public-links.ts",
+      "server/public-links-effective.test.ts",
+      "scripts/run-tests.mjs",
+      "server/testing/hermetic-server.ts",
+      "server/share/share-state.ts",
+      "server/public-links-routes.ts",
+      "src/lib/opens-at.ts",
+      "src/lib/opens-at.test.ts",
+      "src/components/OpensAt.tsx",
+      "src/lib/public-links.ts"
+    ]
+  },
   "§mesh.public/front": {
     "kind": "behavior",
     "requires": [
       "§mesh.public/setting"
     ],
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "code": [
       "server/share/front.ts",
       "server/public-links-routes.ts",
       "server/share-front.test.ts",
-      "server/share-front.integration.test.ts"
-    ]
+      "server/share-front.integration.test.ts",
+      "server/share/setup-chat.ts"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-12T12:41Z",
+      "source": "pi-session:a43d715c-1eb4-4040-a159-23c4193273a4#55333f93"
+    }
   },
   "§mesh.public/front-cdn": {
     "kind": "behavior",
@@ -64,9 +137,9 @@
       "server/share/tour-transport.test.ts"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-10-20T10:13Z",
-      "source": "pi-session:7e747394-a347-4897-8abf-5d4e398f08cc#1b67d1a6"
+      "by": "user",
+      "at": "2026-11-12T12:41Z",
+      "source": "pi-session:a43d715c-1eb4-4040-a159-23c4193273a4#55333f93"
     }
   },
   "§mesh.public/ingress": {
@@ -113,7 +186,12 @@
       "server/public-links.integration.test.ts",
       "src/lib/public-links.test.ts",
       "server/share/share-state.ts"
-    ]
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-12T12:42Z",
+      "source": "pi-session:a43d715c-1eb4-4040-a159-23c4193273a4#55333f93"
+    }
   },
   "§mesh.public/offline": {
     "kind": "behavior",
@@ -150,7 +228,7 @@
       "§design.copy-deck/public-links"
     ],
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "code": [
       "src/components/PublicLinksSettings.tsx",
       "src/lib/public-links.ts",
@@ -160,12 +238,15 @@
       "server/public-links-routes.ts",
       "shared/public-links-limits.ts",
       "server/public-links.ts",
-      "src/components/form/index.tsx"
+      "src/components/form/index.tsx",
+      "src/components/OpensAt.tsx",
+      "src/lib/settings-forms-roundtrip.test.ts",
+      "src/app.css"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-10-20T10:13Z",
-      "source": "pi-session:7e747394-a347-4897-8abf-5d4e398f08cc#1b67d1a6"
+      "by": "user",
+      "at": "2026-11-12T12:41Z",
+      "source": "pi-session:a43d715c-1eb4-4040-a159-23c4193273a4#55333f93"
     }
   },
   "§mesh.public/preview": {
@@ -197,12 +278,15 @@
       "server/app.ts",
       "server/share-preview-router.integration.test.ts",
       "server/project-overseer-tools.ts",
-      "server/overseer-tools.ts"
+      "server/overseer-tools.ts",
+      "server/share/preview-link.ts",
+      "server/preview-kept.test.ts",
+      "server/share/preview-tunnel.integration.test.ts"
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-10-28T13:39Z",
-      "source": "pi-session:01a181b5-0126-7289-9604-86c617633d9d#8e5330a0"
+      "at": "2026-11-12T12:41Z",
+      "source": "pi-session:a43d715c-1eb4-4040-a159-23c4193273a4#55333f93"
     }
   },
   "§mesh.public/preview-address": {
@@ -229,8 +313,15 @@
       "src/components/PublicLinksSettings.tsx",
       "server/share-preview-address.test.ts",
       "server/share-preview-proxy.test.ts",
-      "server/share-preview-proxy.integration.test.ts"
-    ]
+      "server/share-preview-proxy.integration.test.ts",
+      "server/share/preview-tunnel.ts",
+      "server/share/preview-tunnel.test.ts"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-12T12:41Z",
+      "source": "pi-session:a43d715c-1eb4-4040-a159-23c4193273a4#55333f93"
+    }
   },
   "§mesh.public/preview-card": {
     "kind": "behavior",
@@ -252,8 +343,14 @@
       "server/project-previews.ts",
       "server/project-previews.integration.test.ts",
       "shared/preview-links.ts",
-      "src/lib/two-step.ts"
-    ]
+      "src/lib/two-step.ts",
+      "src/components/OpensAt.tsx"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-12T12:41Z",
+      "source": "pi-session:a43d715c-1eb4-4040-a159-23c4193273a4#55333f93"
+    }
   },
   "§mesh.public/preview-limits": {
     "kind": "behavior",
@@ -268,7 +365,12 @@
       "shared/public-links.ts",
       "server/share-preview-proxy.test.ts",
       "server/share-preview-proxy.integration.test.ts"
-    ]
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-12T12:41Z",
+      "source": "pi-session:a43d715c-1eb4-4040-a159-23c4193273a4#55333f93"
+    }
   },
   "§mesh.public/preview-offline": {
     "kind": "behavior",
@@ -304,7 +406,12 @@
       "server/share-preview-proxy.integration.test.ts",
       "server/share-preview-router.test.ts",
       "server/share-preview-router.integration.test.ts"
-    ]
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-12T12:41Z",
+      "source": "pi-session:a43d715c-1eb4-4040-a159-23c4193273a4#55333f93"
+    }
   },
   "§mesh.public/preview-serve": {
     "kind": "behavior",
@@ -325,6 +432,47 @@
       "src/components/PreviewsCard.tsx",
       "server/project-previews.integration.test.ts",
       "server/app.ts"
+    ]
+  },
+  "§mesh.public/preview-tunnels": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "requires": [
+      "§mesh.public/preview",
+      "§mesh.tunnel/lifetime",
+      "§mesh.public/preview-offline",
+      "§mesh.public/preview-address",
+      "§mesh.public/broken-links",
+      "§design.copy-deck/where-links-open"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-12T12:41Z",
+      "source": "pi-session:a43d715c-1eb4-4040-a159-23c4193273a4#55333f93"
+    },
+    "code": [
+      "server/share/preview-tunnel.ts",
+      "server/share/preview-tunnel.test.ts",
+      "server/share/preview-tunnel.integration.test.ts",
+      "server/share/preview-link.ts",
+      "server/preview-kept.ts",
+      "server/preview-kept.test.ts",
+      "server/share/edge.ts",
+      "server/share/preview-proxy.ts",
+      "server/share-preview-proxy.test.ts",
+      "server/project-previews.ts",
+      "server/preview-links-routes.ts",
+      "shared/preview-links.ts",
+      "server/share/preview-address.ts",
+      "server/outreach/links.ts",
+      "server/project-services/share.ts",
+      "server/owner-versions.ts",
+      "server/project-overseer.ts",
+      "server/project-overseer-tools.ts",
+      "src/components/PreviewsCard.tsx",
+      "src/components/OpensAt.tsx",
+      "server/index.ts"
     ]
   },
   "§mesh.public/registry": {
@@ -419,8 +567,19 @@
       "server/public-links.integration.test.ts",
       "server/share-edge.integration.test.ts",
       "server/share/tour-transport.test.ts",
-      "server/share/tour-transport.integration.test.ts"
-    ]
+      "server/share/tour-transport.integration.test.ts",
+      "server/public-links-effective.test.ts",
+      "server/share/share-tunnel.test.ts",
+      "server/share/tunnel/routes.test.ts",
+      "shared/protocol.ts",
+      "server/share/candidate.ts",
+      "server/share/tunnel/candidate.integration.test.ts"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-12T12:41Z",
+      "source": "pi-session:a43d715c-1eb4-4040-a159-23c4193273a4#55333f93"
+    }
   },
   "§mesh.public/share-protocol": {
     "kind": "behavior",
@@ -456,6 +615,63 @@
       "at": "2026-10-20T10:13Z",
       "source": "pi-session:7e747394-a347-4897-8abf-5d4e398f08cc#1b67d1a6"
     }
+  },
+  "§mesh.public/sharing-off": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "requires": [
+      "§mesh.public/setting",
+      "§mesh.public/where-links-open",
+      "§app.session-share/sheet",
+      "§mesh.public/preview-card",
+      "§app.baton/links",
+      "§chat.transcript/landing-page",
+      "§app.project-overseer/previews",
+      "§app.project-services/share",
+      "§app.outreach/links",
+      "§design.copy-deck/where-links-open"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-12T12:41Z",
+      "source": "pi-session:a43d715c-1eb4-4040-a159-23c4193273a4#55333f93"
+    },
+    "code": [
+      "shared/public-links.ts",
+      "server/public-links.ts",
+      "server/share/sharing-off.ts",
+      "server/share/sharing-off.test.ts",
+      "server/baton-links.ts",
+      "server/baton.ts",
+      "server/person-links.ts",
+      "server/preview-links.ts",
+      "server/session-shares.ts",
+      "server/tours/shares.ts",
+      "server/app.ts",
+      "server/public-links-routes.ts",
+      "server/page-only.ts",
+      "server/share/tunnel/routes.test.ts",
+      "src/lib/public-links.ts",
+      "src/App.tsx",
+      "src/components/SessionDetails.tsx",
+      "src/components/SessionView.tsx",
+      "src/components/ChatView.tsx",
+      "src/components/WatchView.tsx",
+      "src/components/SharePage.tsx",
+      "src/components/TourCard.tsx",
+      "src/components/PreviewsCard.tsx",
+      "src/components/BatonStrip.tsx",
+      "src/components/PersonPage.tsx",
+      "src/components/OwnerCard.tsx",
+      "src/lib/opens-at.ts",
+      "src/lib/opens-at.test.ts",
+      "server/outreach/links.ts",
+      "server/overseer-owner-send.test.ts",
+      "src/components/OpensAt.tsx",
+      "src/components/ShareSheet.tsx",
+      "src/components/SharesPage.tsx"
+    ]
   },
   "§mesh.public/via-answer": {
     "kind": "behavior",
@@ -511,6 +727,48 @@
       "server/tour-routes.integration.test.ts"
     ]
   },
+  "§mesh.public/where-links-open": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "reviewed",
+    "requires": [
+      "§mesh.public/setting",
+      "§mesh.public/free-default",
+      "§mesh.public/sharing-off",
+      "§mesh.public/front",
+      "§mesh.tunnel/account",
+      "§mesh.tunnel/setup-chat",
+      "§mesh.tunnel/turn-on",
+      "§mesh.tunnel/cloudflared",
+      "§design.copy-deck/where-links-open"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-12T12:41Z",
+      "source": "pi-session:a43d715c-1eb4-4040-a159-23c4193273a4#55333f93"
+    },
+    "code": [
+      "src/lib/opens-at.ts",
+      "src/lib/opens-at.test.ts",
+      "src/components/OpensAt.tsx",
+      "src/lib/public-links.ts",
+      "src/app.css",
+      "src/components/PublicLinksSettings.tsx",
+      "src/components/LinksBanner.tsx",
+      "src/components/ShareSheet.tsx",
+      "src/components/SharePage.tsx",
+      "src/components/SharesPage.tsx",
+      "src/components/TourShare.tsx",
+      "src/components/PreviewsCard.tsx",
+      "server/share/candidate.ts",
+      "server/public-links-routes.ts",
+      "server/share/listener.ts",
+      "server/share/tunnel/wiring.ts",
+      "server/share/tunnel/routes.test.ts",
+      "server/share/tunnel/candidate.integration.test.ts",
+      "src/lib/public-links.test.ts"
+    ]
+  },
   "§mesh.public/withdrawn-hop": {
     "kind": "behavior",
     "requires": [
@@ -537,7 +795,7 @@
   "§mesh/public": {
     "kind": "surface",
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "code": [
       "shared/public-links.ts",
       "server/share/runtime.ts",
@@ -547,6 +805,11 @@
       "§app.baton/share-listener",
       "§app/session-share",
       "§app.project-services/share"
-    ]
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-12T12:41Z",
+      "source": "pi-session:a43d715c-1eb4-4040-a159-23c4193273a4#55333f93"
+    }
   }
 }

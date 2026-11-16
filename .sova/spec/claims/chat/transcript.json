@@ -228,7 +228,7 @@
   "§chat.transcript/landing-page": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "code": [
       "src/App.tsx",
       "src/components/ExtensionView.tsx",
@@ -263,8 +263,8 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-04T22:53Z",
-      "source": "pi-session:01a1a881-85c2-72d2-b9d3-5a1d4c60dbfe#b1ee7dfc"
+      "at": "2026-11-12T12:42Z",
+      "source": "pi-session:a43d715c-1eb4-4040-a159-23c4193273a4#55333f93"
     }
   },
   "§chat.transcript/live-watch": {

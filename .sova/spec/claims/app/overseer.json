@@ -1488,7 +1488,7 @@
   "§app.overseer/tools": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "reviewed",
+    "evidence": "verified",
     "code": [
       "server/overseer-tools.ts",
       "server/overseer-deny.ts",
@@ -1530,7 +1530,8 @@
       "server/harness/pi/golden/special-model-view.json",
       "server/overseer-profiles.ts",
       "server/session-profiles-runtime.test.ts",
-      "server/default-start.ts"
+      "server/default-start.ts",
+      "server/share/tunnel/account-token.test.ts"
     ],
     "requires": [
       "§app.overseer/caps",

@@ -393,6 +393,10 @@ commits, and the turn card's stored kind says what counts as this ask. Every oth
   never on connect) at once, from the group store itself, not after a comparison: each window
   reads its groups and the list again (§app.session-list/groups), and reads its groups after every
   reconnect too. A window that predates it ignores it.
+- A frame published at once on this socket (`groups_changed`, `public_links_changed`, merge queue
+  frames and the like) while a window's feed is still joining reaches it once, right after its join
+  frames; joined windows get it at once, in the same order as before. A failed or closed join gets
+  nothing. The comparison's own frames go to joined windows only.
 - The sidebar holds the feed open while it is mounted. Once the snapshot arrives, the feed's
   signals, tags and turn error replace the list's on this server's rows, matched by session path (rows from mesh peers keep their list
   fields); each change applies at once, and a cleared field is removed. While the socket is not

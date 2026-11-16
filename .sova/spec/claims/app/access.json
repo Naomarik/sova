@@ -201,7 +201,7 @@
       "§app.access/click-limits"
     ],
     "authority": "accepted",
-    "evidence": "reviewed",
+    "evidence": "verified",
     "code": [
       "server/page-only.ts",
       "server/session-offers-routes.ts",
@@ -256,12 +256,20 @@
       "server/design/coordinator-routes.ts",
       "server/design/routes.ts",
       "server/design/asset-routes.ts",
-      "server/design/describe-routes.ts"
+      "server/design/describe-routes.ts",
+      "server/share/tunnel/download.ts",
+      "server/share/tunnel/account-token.ts",
+      "server/share/setup-chat.ts",
+      "server/share/tunnel/routes.ts",
+      "server/share/tunnel/routes.test.ts",
+      "server/public-links-routes.ts",
+      "server/share/setup-chat.test.ts",
+      "docs/commands.md"
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-12T10:39Z",
-      "source": "pi-session:c6e7f9da-6608-46f4-a4d9-6db219882520#b5acf41a"
+      "at": "2026-11-12T12:42Z",
+      "source": "pi-session:a43d715c-1eb4-4040-a159-23c4193273a4#55333f93"
     }
   },
   "§app/access": {

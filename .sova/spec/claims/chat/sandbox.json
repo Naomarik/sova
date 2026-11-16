@@ -159,7 +159,8 @@
       "pi-config/extensions/sandbox/README.md",
       "pi-config/install.test.mjs",
       "pi-config/extensions/sandbox/shared-folder.ts",
-      "pi-config/extensions/sandbox/tests/policy.unit.test.ts"
+      "pi-config/extensions/sandbox/tests/policy.unit.test.ts",
+      "server/share/tunnel/account-token.test.ts"
     ],
     "agreed": {
       "by": "user",

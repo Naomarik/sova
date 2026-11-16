@@ -14,7 +14,7 @@ import { lookAtDesign } from "./look";
 import type { TourSize } from "../../shared/tour";
 import { changeDesigns, designOf, pendingPage, readPage, viewOf } from "./store";
 import { applyEdits, type Edit } from "./edits";
-import { pickVersions, versionHeading } from "./versions";
+import { pickVersions, versionCount, versionHeading } from "./versions";
 
 export { applyEdits };
 
@@ -34,7 +34,7 @@ export function mainDesignTools(parent: () => DesignParent, cwd: () => string): 
     {
       name: "lookbook",
       label: "lookbook",
-      description: `The Lookbook: one page designed by several models side by side. op "start" puts a Lookbook Setup card in the chat (the user finishes it there, up to ${DESIGN_BATCH_MAX} designs), only when the user asked for a Lookbook. op "read" gets the Creative Director's card (the coordinator), or with label a design's whole page: its latest version, unless label names one ("A11"); several at once with commas ("A11, A16"). op "tell" passes text word for word to the Creative Director. images (the paths of images the user attached) join the Lookbook's images, on start as on tell. Call vis_guide with kind "lookbook" first.`,
+      description: `The Lookbook: one page designed by several models side by side. op "start" puts a Lookbook Setup card in the chat (the user finishes it there, up to ${DESIGN_BATCH_MAX} designs), only when the user asked for a Lookbook. op "read" gets the Creative Director's card (the coordinator) and each design's version count, or with label a design's whole page: its latest version, unless label names one ("A11"); several at once with commas ("A11, A16"). Each page starts with a header naming the version returned, when it was made, and the versions that exist. op "tell" passes text word for word to the Creative Director. images (the paths of images the user attached) join the Lookbook's images, on start as on tell. Call vis_guide with kind "lookbook" first.`,
       parameters: {
         type: "object",
         properties: {
@@ -79,7 +79,7 @@ export function mainDesignTools(parent: () => DesignParent, cwd: () => string): 
         if (params?.op === "read") {
           if (params.label) return say(readDesignPages(p.sessionId, params.label));
           const card = coordinatorCard(p.sessionId);
-          const lines = viewOf(p.sessionId).designs.map((d) => `${d.label} · ${designDirectionLine(d)} · ${d.model} · ${d.status}`);
+          const lines = viewOf(p.sessionId).designs.map((d) => `${d.label} · ${designDirectionLine(d)} · ${d.model} · ${d.status}${d.removed ? " (removed)" : ""} · ${versionCount(d)}`);
           return say([card?.card || "The Creative Director has no card yet.", lines.length ? `Designs:\n${lines.join("\n")}` : ""].filter(Boolean).join("\n\n"));
         }
         if (params?.op === "tell") {

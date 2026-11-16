@@ -30,14 +30,31 @@ export function pickVersions(designs: readonly DesignRecord[], asked: string, ve
     if (!last) throw new Error(`Design ${d.label} has no finished page yet.`);
     const n = m[2] !== undefined ? Number(m[2]) : (version ?? last.n);
     const v = d.versions.find((x) => x.n === n);
-    if (!v) throw new Error(`Design ${d.label} has no version ${n}: it has ${d.versions.length === 1 ? `version ${last.n}` : `versions ${d.versions[0]!.n} to ${last.n}`}.`);
+    if (!v) throw new Error(`Design ${d.label} has no version ${n}. Its versions: ${versionsLine(d.versions)}.`);
     return { d, v, last };
   });
 }
 
-/** The line a page read comes under, and a second when a newer version is being written. */
+/** A design's versions as ranges: "1–16", or "1–3, 5" where one is missing. */
+export function versionsLine(versions: readonly Pick<DesignVersion, "n">[]): string {
+  const ns = [...versions.map((v) => v.n)].sort((a, b) => a - b);
+  const runs: string[] = [];
+  for (let i = 0; i < ns.length; i++) {
+    let j = i;
+    while (j + 1 < ns.length && ns[j + 1] === ns[j]! + 1) j++;
+    runs.push(j > i ? `${ns[i]}\u2013${ns[j]}` : `${ns[i]}`);
+    i = j;
+  }
+  return runs.join(", ");
+}
+
+/** The header a page read starts with: exactly which version it is and which versions exist, and a second line when a
+    newer version is being written. */
 export function versionHeading({ d, v, last }: PickedVersion): string {
-  const head = `Design ${d.label} · version ${v.n} of ${last.n} · ${v.n === last.n ? "latest" : `not the latest (version ${last.n} is, from ${versionTime(last.at)})`} · ${versionTime(v.at)}`;
+  const head = `Design ${d.label} \u00b7 version ${v.n} of ${last.n}${v.n === last.n ? " (latest)" : ""} \u00b7 made ${versionTime(v.at)} \u00b7 ${d.versions.length === 1 ? "version" : "versions"} ${versionsLine(d.versions)}`;
   const writing = d.live ? `Version ${d.live.version} is being written now; this isn't it.` : d.status === "writing" || d.status === "fixing" ? "A newer version is being written now; this isn't it." : "";
   return writing ? `${head}\n${writing}` : head;
 }
+
+/** A design's version count, for an overview line: "16 versions", "1 version", "no version yet". */
+export const versionCount = (d: Pick<DesignRecord, "versions">): string => (d.versions.length ? `${d.versions.length} version${d.versions.length === 1 ? "" : "s"}` : "no version yet");

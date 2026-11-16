@@ -1315,7 +1315,7 @@ export function coordinatorTools(sessionId: string): ToolSpec[] {
 
   const browse: ToolSpec = {
     name: "design_browse", label: "Look at a screen",
-    description: "Open an address in a real browser at desktop and phone widths and get pictures and a list of what is on the page, or look at a finished design by label: its latest version, unless label names one (A11), or several at once (\"A11, A16\"); each comes under a line naming its version, how many there are and when it was made. actions: click to navigate, reveal, wait, scroll; never typing and never a form. Only a declared signIn submits anything. Your own running copies and addresses the user gave open at once; any other site asks the user first.",
+    description: "Open an address in a real browser at desktop and phone widths and get pictures and a list of what is on the page, or look at a finished design by label: its latest version, unless label names one (A11), or several at once (\"A11, A16\"); each starts with a header naming the version returned, when it was made, and the versions that exist. actions: click to navigate, reveal, wait, scroll; never typing and never a form. Only a declared signIn submits anything. Your own running copies and addresses the user gave open at once; any other site asks the user first.",
     parameters: {
       type: "object",
       properties: {

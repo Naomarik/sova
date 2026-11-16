@@ -1336,14 +1336,14 @@ test("the Creative Director looks at a design's latest version unless it names o
   const v = (n: number) => ({ n, at: `2026-11-16T10:0${n}:30.000Z`, chars: 10, by: "first" });
   designList = [{ ...DESIGN_A, versions: [v(1), v(2), v(3)] } as DesignRecord, { ...DESIGN_A, label: "B", status: "writing", live: { version: 2, chars: 9 }, versions: [v(1)] } as DesignRecord, { ...DESIGN_A, label: "C", status: "queued", versions: [] } as DesignRecord];
   const heads = (r: { content: { type: string; text?: string }[] }) => r.content.filter((b) => b.type === "text").map((b) => b.text!.split("\nPictures")[0]);
-  assert.deepEqual(heads(await t.design_browse({ label: "A" })), ["Design A · version 3 of 3 · latest · 2026-11-16 10:03 UTC"]);
-  assert.deepEqual(heads(await t.design_browse({ label: "a1, B" })), ["Design A · version 1 of 3 · not the latest (version 3 is, from 2026-11-16 10:03 UTC) · 2026-11-16 10:01 UTC", "Design B · version 1 of 1 · latest · 2026-11-16 10:01 UTC\nVersion 2 is being written now; this isn't it."]);
+  assert.deepEqual(heads(await t.design_browse({ label: "A" })), ["Design A · version 3 of 3 (latest) · made 2026-11-16 10:03 UTC · versions 1–3"]);
+  assert.deepEqual(heads(await t.design_browse({ label: "a1, B" })), ["Design A · version 1 of 3 · made 2026-11-16 10:01 UTC · versions 1–3", "Design B · version 1 of 1 (latest) · made 2026-11-16 10:01 UTC · version 1\nVersion 2 is being written now; this isn't it."]);
   // The older form, a bare label with version, reads the same.
   await t.design_browse({ label: "A", version: 2 });
   assert.deepEqual(lookedAt, ["A3", "A1", "B1", "A2"]);
   // An unknown design or version is refused by name, and nothing is looked at.
   lookedAt = [];
-  for (const [label, why] of [["A9", /no version 9: it has versions 1 to 3/], ["A1, Z", /No design Z in this chat\. Its designs: A, B, C/], ["C", /C has no finished page yet/]] as const) assert.match(textOf(await t.design_browse({ label })), why);
+  for (const [label, why] of [["A9", /no version 9\. Its versions: 1–3/], ["A1, Z", /No design Z in this chat\. Its designs: A, B, C/], ["C", /C has no finished page yet/]] as const) assert.match(textOf(await t.design_browse({ label })), why);
   assert.deepEqual(lookedAt, []);
   // design_status takes the same names: a version named shows only it; the latest and a page being written are said.
   const status = JSON.parse(textOf(await t.design_status({ label: "A2, B" })));

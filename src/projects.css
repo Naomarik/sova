@@ -23,7 +23,7 @@
 /* Backlog: To-do and Ideas side by side from 768px of pane, one below; Activity under them. Cards fill the width. */
 .project-backlog { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-5); align-items: start; }
 @container insights (min-width: 768px) {
-  .project-backlog { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .project-backlog:not(.project-backlog-one) { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
 }
 .project-tabpanel .card.orgs-section { max-width: none; }
 /* A tab's own head (Backlog, Deploy; Sessions and Running Copies draw the same): its name at heading-m and one

@@ -361,10 +361,13 @@ export function ProjectPage(props: {
                 <p class="project-tab-lede">What you and the overseer filed for this project.</p>
               </div>
             </div>
-            {/* To-do and Ideas side by side, the overseer's activity under them. */}
-            <div class="project-backlog">
+            {/* To-do and Ideas side by side (a placed project's Ideas are on Requirements), the overseer's activity under them. */}
+            <div class="project-backlog" classList={{ "project-backlog-one": !!org }}>
               <TodosCard po={po} send={org?.send} archived={!!archived()} />
-              <IdeasCard po={po} title="Ideas" empty="No open ideas. Add one with +, or the overseer files them as it looks." send={org?.send} archived={!!archived()} />
+              {/* A placed project's ideas sit with its requirements; a standalone one's here. */}
+              <Show when={!org}>
+                <IdeasCard po={po} title="Ideas" empty="No open ideas. Add one with +, or the overseer files them as it looks." archived={!!archived()} />
+              </Show>
             </div>
             <ActivityCard po={po} />
             {/* Files people sent it (§app.organizations/files-card): a standalone project's, once it holds one; a placed one's are on Requirements. */}

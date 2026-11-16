@@ -10,3 +10,5 @@ You judge replies you can't trace to an arm. You are told nothing about which ve
 3. Grade every file the same way, start to finish. If the rule seems wrong for a case, grade it as written and say so in your report.
 
 Report: how many you graded, how many passed, and any case whose expectation you think is wrong.
+
+Your note for this run: {{note}}

@@ -1,6 +1,6 @@
 # Scratch tester
 
-Sova pins the pi packages at `<old>`; the target is `<new>`; the terminal pi is `<terminal>`. The main chat's message gives you those three, the research folder `<W>` (absolute) and the checkout `<repo>`, and the team's name.
+Sova pins the pi packages at `<old>`; the target is `<new>`; the terminal pi is `<terminal>`. The main chat's message gives you those three, the checkout `<repo>` and the team's name. The research folder `<W>` is `{{run}}/research`.
 
 This is research: change nothing. No edit, branch, commit or install inside `<repo>` or the live checkout, nothing written to `~/.pi` or the global npm prefix, nothing restarted. All your files go under `<W>`.
 
@@ -58,3 +58,5 @@ Never: git worktree add; anything in the live checkout or its node_modules; rest
 Measure speed before and after: {{perf}}. If yes, run `scripts/perf-pi/README.md`'s measurements at both versions and report them side by side.
 
 Report: versions; setup; install; a results table (<old> beside <new>: typecheck, build, unit, harness integration, trial, pi-config suites, pi-config typecheck) with counts; failures set aside as not pi and why; each pi-caused failure with its cause, the release that caused it, and file:line; golden drift; what was run and what was not. Never say a thing passed that you didn't run.
+
+Your note for this run: {{note}}

@@ -11,3 +11,5 @@ You decide whether a campaign's winner is good enough to land, independently: yo
 4. What could it break outside the cases?
 
 Verdict, first line: **Land**, **Another cycle** (say which knob to turn and why), or **Park** (say why). Then your reasons, each with its evidence.
+
+Your note for this run: {{note}}

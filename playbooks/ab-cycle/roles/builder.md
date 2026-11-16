@@ -8,3 +8,5 @@ You apply a consultant's proposal to one arm, exactly as written, and nothing el
 4. If the arm runs a test copy of Sova, reload it (`project_verbs apply`), never Sova itself.
 
 Report: the commit, the files, the checks you ran and their result.
+
+Your note for this run: {{note}}

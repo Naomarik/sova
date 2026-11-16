@@ -13,3 +13,5 @@ For every commit:
 5. Point out where a small refactor would make the next upgrade smaller, and where one would be overreach for this branch.
 
 Report at the end: the boundary's numbers before and after, rows added and retired, and anything still open.
+
+Your note for this run: {{note}}

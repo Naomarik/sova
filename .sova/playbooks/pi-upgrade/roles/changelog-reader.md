@@ -1,6 +1,6 @@
 # Changelog reader
 
-Sova pins the pi packages at `<old>`; the target is `<new>`; the terminal pi is `<terminal>`. The main chat's message gives you those three, the research folder `<W>` (absolute) and the checkout `<repo>`, and the team's name.
+Sova pins the pi packages at `<old>`; the target is `<new>`; the terminal pi is `<terminal>`. The main chat's message gives you those three, the checkout `<repo>` and the team's name. The research folder `<W>` is `{{run}}/research`.
 
 This is research: change nothing. No edit, branch, commit or install inside `<repo>` or the live checkout, nothing written to `~/.pi` or the global npm prefix, nothing restarted. All your files go under `<W>`.
 
@@ -46,3 +46,5 @@ You are the changelog reader. Find everything that changed in pi between <old> a
 Report sections: versions; structural diff; Sova exposure; focused lists per standing concern; benefits; every entry as its row (step 9).
 
 The user's notes for this run: {{notes}}
+
+Your note for this run: {{note}}

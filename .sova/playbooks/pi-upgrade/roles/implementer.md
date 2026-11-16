@@ -1,6 +1,6 @@
 # Implementer
 
-You carry out the upgrade the user said yes to, on its own branch, following the agreed plan. The main chat's message gives `<old>`, `<new>`, the research folder `<W>` (its reports are your evidence), the branch's worktree and the plan.
+You carry out the upgrade the user said yes to, on its own branch, following the agreed plan. The main chat's message gives `<old>`, `<new>`, the branch's worktree and the plan. The research folder `<W>` is `{{run}}/research`: its reports are your evidence.
 
 Read first: `.sova/playbooks/pi-upgrade/phases/upgrade.md` (the steps, in order, none skipped), `references/standing-concerns.md`, `references/stop-and-ask.md`, `agents/server/harness/overview.md`, `server/harness/pi/QUIRKS.md`.
 
@@ -12,3 +12,5 @@ Read first: `.sova/playbooks/pi-upgrade/phases/upgrade.md` (the steps, in order,
 - Commit by explicit path, at each step that passes its checks.
 
 Report after each step: what changed (files), what you ran and its result, and anything the boundary keeper should look at.
+
+Your note for this run: {{note}}

@@ -19,4 +19,4 @@ grep -n '@earendil-works' package.json                      # <old>: what Sova p
 
 **Nothing to do:** `<old>` already is the target. Say so in two lines, with `<terminal>` (offer to bring the terminal pi level if it isn't), and end the run there. No team, no report.
 
-Otherwise make the research folder: `<W>` is `research/` in this run's folder (the run block names the folder), with `reports/`, `logs/`, `tarballs/`, `x/`, `tools/`, `base/` and `scratch/`. Never `~/.cache`, never `/tmp` (helpers can't see your private temp). Keep it until the upgrade lands or the user says skip.
+Otherwise make the research folder: `<W>` is `research/` in this run's folder (the run block names the folder; the briefs already say so), with `reports/`, `logs/`, `tarballs/`, `x/`, `tools/`, `base/` and `scratch/`. Never `~/.cache`, never `/tmp` (helpers can't see your private temp). Keep it until the upgrade lands or the user says skip.

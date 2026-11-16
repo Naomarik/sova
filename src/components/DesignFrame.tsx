@@ -227,7 +227,10 @@ export function DesignStreamFrame(props: { api: DesignApi; label: string; versio
       </Show>
       <Show when={!painted() && !props.over}>
         <div class="design-frame-note" role="status">
-          {note()}
+          {/* A new node for each wording (the count moves often): new words re-centred in the old node count as a layout shift. */}
+          <Show when={note()} keyed>
+            {(words) => <span>{words}</span>}
+          </Show>
         </div>
       </Show>
     </>

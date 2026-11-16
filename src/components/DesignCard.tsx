@@ -689,8 +689,15 @@ export function DesignThumb(props: {
           </Show>
         </Show>
       </DesignScale>
+      {/* A new node for each wording: new words re-centred in the old node count as a layout shift. */}
       <Show when={designQueuedLine(props.d)}>
-        {(line) => <div class="design-tile-state">{line()}</div>}
+        {(line) => (
+          <div class="design-tile-state">
+            <Show when={line()} keyed>
+              {(words) => <span>{words}</span>}
+            </Show>
+          </div>
+        )}
       </Show>
       <Show when={props.d.status === "stopped" && !props.d.stopped?.still}>
         <div class="design-tile-state">{designNeverStarted(props.d) ? "Not started yet" : "Stopped before it wrote anything"}</div>

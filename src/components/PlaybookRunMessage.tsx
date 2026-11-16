@@ -28,10 +28,15 @@ export function PlaybookRunMessage(props: { run: RunMessageInfo; text: string; t
           </div>
         </div>
       </details>
-      {/* Beside the row, never inside its summary: a button in a summary loses its own press. */}
-      <button type="button" class="button button-sm button-ghost pb-mark-open" onClick={() => showPlaybookCard(props.run.runId, store)}>
-        Open Card
-      </button>
+      {/* Beside the row, never inside its summary: a button in a summary loses its own press. Only
+          where a chat's cards can open it: a read-only watch has none, so no button there. */}
+      <Show when={store}>
+        {(here) => (
+          <button type="button" class="button button-sm button-ghost pb-mark-open" onClick={() => showPlaybookCard(props.run.runId, here())}>
+            Open Card
+          </button>
+        )}
+      </Show>
     </div>
   );
 }

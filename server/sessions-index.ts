@@ -5,6 +5,7 @@ import { profileField, profileOnBranch } from "./session-profile";
 import { type Dirent, lstatSync, readdirSync, statSync } from "node:fs";
 import { type FileHandle, lstat, open, readdir, stat, unlink } from "node:fs/promises";
 import { removeChatSharedFolder } from "../pi-config/extensions/sandbox/shared-folder.ts";
+import { runsOfChat } from "./playbook-runs/store";
 import { basename, dirname, join } from "node:path";
 import { OVERSEER_ENTRY, type SessionSummary, type SessionTags } from "../shared/protocol";
 import { activityOf, type LiveRecord, type RawLiveRecord, readLive, readOwnLiveRecords, workerCountsOf, workingSubagents } from "./live";
@@ -1839,8 +1840,11 @@ async function rowFor(s: BaseSummary, r: RowReads): Promise<SessionSummary | nul
       // A husk waiting on a dialog (a command run in a new session) is waiting on the user: listed.
       // So is one that carries a profile: a One at a time profile counts from its pick, so the
       // session holding it must be somewhere the user can find it (§chat.profiles/singleton).
-      if (!hasDraft && pendingDialogCount(s.path) === 0 && !special.baton && !special.projectOverseer && !s.profile) return null;
+      // So is one showing a playbook's card: the card is where the user starts the chat's work.
+      const card = runsOfChat(s.id)[0];
+      if (!hasDraft && !card && pendingDialogCount(s.path) === 0 && !special.baton && !special.projectOverseer && !s.profile) return null;
       if (hasDraft) preview = draftPreview(redactPreviewLinks(draft.text), draft.attachments);
+      else if (card) preview = `Playbook: ${card.playbook.title}`;
     }
   }
   const l = r.live.get(s.path);

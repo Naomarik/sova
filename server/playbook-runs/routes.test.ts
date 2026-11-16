@@ -14,6 +14,7 @@ const store = await import("./store");
 const { PLAYBOOK_RUN_EVENT } = await import("../../shared/playbook-run");
 const { onPlaybookRunNews } = await import("./news");
 const { AUTH_COOKIE, CALLER_HEADER, sovaToken } = await import("../auth");
+const { listSessions } = await import("../sessions-index");
 
 after(() => dropScratchAgentDir());
 
@@ -155,6 +156,18 @@ describe("a playbook card", () => {
     const next = await open();
     assert.notEqual(next.id, v.id);
     assert.deepEqual(next.choices.find((c) => c.id === "level")!, { ...next.choices.find((c) => c.id === "level")!, value: "hi", origin: "standing" });
+  });
+
+  test("a chat with no message yet is listed while it shows a card, and hidden again once the card is closed", async () => {
+    const path = join(scratchAgentDir, "sessions", "--proj--", "2026-11-16T00-00-09-000Z_chat-empty.jsonl");
+    writeFileSync(path, `${JSON.stringify({ type: "session", version: 3, id: "chat-empty", timestamp: "2026-11-16T00:00:09.000Z", cwd: scratchAgentDir })}\n`);
+    const row = async () => (await listSessions()).find((r) => r.id === "chat-empty");
+    assert.equal(await row(), undefined, "an empty chat is an abandoned stub");
+    const res = await app.request("/api/playbook-runs", json({ playbook: { source: "user", id: "trial" }, cwd: scratchAgentDir, path }));
+    const v = (await res.json()) as PlaybookRunView;
+    assert.equal((await row())?.draftPreview, "Playbook: Trial");
+    await app.request(`/api/playbook-runs/${v.id}`, { method: "DELETE" });
+    assert.equal(await row(), undefined);
   });
 
   test("a run reads back after a restart; one stopped while starting is a draft again, saying so", async () => {

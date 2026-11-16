@@ -6,6 +6,7 @@ import { mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from 
 import { join } from "node:path";
 import { isPlaybookRunId, type PlaybookCardEdits, type PlaybookChoiceOrigin, type PlaybookRoleEdit, type PlaybookRunStarted, type PlaybookRunState } from "../../shared/playbook-run";
 import type { PlaybookPlan } from "./plan";
+import { sessionsChanged } from "../list-generation";
 import { stateRoot } from "../state-root";
 
 export interface PlaybookRef {
@@ -92,6 +93,8 @@ function write(r: PlaybookRunRecord): void {
   const f = fileOf(r.id);
   writeFileSync(`${f}.tmp`, JSON.stringify(r), { mode: 0o600 });
   renameSync(`${f}.tmp`, f);
+  // A chat showing a card is listed even before its first message (sessions-index.ts), so the list reads again.
+  sessionsChanged();
   for (const fn of listeners) {
     try {
       fn(r);

@@ -1,8 +1,9 @@
-import { createEffect, createMemo, createSignal, For, on, onCleanup, onMount, Show, untrack } from "solid-js";
+import { createEffect, createMemo, createSignal, For, onCleanup, onMount, Show, untrack } from "solid-js";
 import { Portal } from "solid-js/web";
 import { designDirectionLine, type DesignRecord } from "../../shared/design";
 import { versionLabel } from "../lib/design-frame";
 import type { DesignOpener } from "../lib/design-history";
+import { createPageSlots } from "../lib/design-page-slots";
 import { designPageText, type DesignStore } from "../lib/design-store";
 import { coordinatorOf, designCanRefine, designHoldEnds, designIsBusy, designIsWriting, designNoteLine, designLatest, designMeta, designStatusWord, parentsLine, QUICK_PROMPTS } from "../lib/design-ui";
 import { designStatusTone, DesignTile, designGrid, designWaiting, type DesignOpenTarget } from "./DesignCard";
@@ -78,21 +79,11 @@ export function DesignRefinePanel(props: { d: DesignRecord; store: DesignStore; 
 }
 
 function PageFrame(props: { d: DesignRecord; version: number; following: boolean; store: DesignStore; cacheKey: string }) {
-  const [html, setHtml] = createSignal<string | null>(null);
-  const [error, setError] = createSignal("");
-  createEffect(
-    on(
-      () => [props.d.label, props.version] as const,
-      ([label, v]) => {
-        setHtml(null);
-        setError("");
-        if (v > 0) {
-          designPageText(props.store, props.cacheKey, label, v, "full")
-            .then((t) => setHtml(t))
-            .catch((e) => setError(e instanceof Error ? e.message : "This page couldn't be loaded."));
-        }
-      },
-    ),
+  // Keyed on the version on show by value: every other design's progress, and this one's status and
+  // costs, hand in a fresh record and must leave the page (and its scroll) alone.
+  const pages = createPageSlots(
+    () => ({ label: props.d.label, v: props.version }),
+    (label, v) => designPageText(props.store, props.cacheKey, label, v, "full"),
   );
   const title = () => `Design ${versionLabel(props.d.label, props.version)}`;
   const live = () => props.store.live(props.d.label);
@@ -109,9 +100,21 @@ function PageFrame(props: { d: DesignRecord; version: number; following: boolean
   });
   return (
     <div class="design-open-frame">
-      <Show when={html() !== null}>
-        <DesignSealedFrame html={html()!} motion title={title()} onDrawn={() => setHeld(false)} />
-      </Show>
+      <For each={pages.slots()}>
+        {(slot) => (
+          <div class="design-frame-layer" style={{ "z-index": pages.front() === slot.key ? 2 : 1 }}>
+            <DesignSealedFrame
+              html={slot.html}
+              motion
+              title={title()}
+              onDrawn={() => {
+                pages.drawn(slot);
+                if (slot.key === pages.key()) setHeld(false);
+              }}
+            />
+          </div>
+        )}
+      </For>
       <Show when={streaming() || held()}>
         <div inert class="design-frame-layer" style={{ "z-index": 3 }}>
           <DesignStreamFrame api={props.store.api} label={props.d.label} version={live()?.version} text={live()?.text ?? ""} title={title()} waiting={designWaiting(props.d)} over={props.version > 0} priority />
@@ -120,8 +123,8 @@ function PageFrame(props: { d: DesignRecord; version: number; following: boolean
       <Show when={props.version === 0 && !designIsWriting(props.d)}>
         <div class="design-frame-note">No page has been written yet.</div>
       </Show>
-      <Show when={error()}>
-        <div class="design-frame-note">{error()}</div>
+      <Show when={pages.error()}>
+        <div class="design-frame-note">{pages.error()}</div>
       </Show>
     </div>
   );

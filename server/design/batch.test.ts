@@ -1040,8 +1040,7 @@ test("stopping a change keeps the last finished version, and a message afterward
   assert.equal(stat("A").status, "ready");
   assert.equal(stat("A").versions.length, 1);
   assert.equal(stat("A").stopped, undefined, "no still: its page is its last version");
-  // It reads on after the tile's "That didn't change the page: ".
-  assert.equal(stat("A").unchanged?.reason, "you stopped it before it finished, so its last version stands.");
+  assert.equal(stat("A").unchanged, undefined, "a stopped change leaves no note on the tile");
   assert.equal(store.readPage(parent.sessionId, "A"), PAGE);
   await deliverDesign(parent, "A", { text: "go on", key: "k2", by: "user" });
   await ticks();

@@ -2,7 +2,7 @@
 
 You carry out the upgrade the user said yes to, on its own branch, following the agreed plan. The main chat's message gives `<old>`, `<new>`, the branch's worktree and the plan. The research folder `<W>` is `{{run}}/research`: its reports are your evidence.
 
-Read first: `.sova/playbooks/pi-upgrade/phases/upgrade.md` (the steps, in order, none skipped), `references/standing-concerns.md`, `references/stop-and-ask.md`, `agents/server/harness/overview.md`, `server/harness/pi/QUIRKS.md`.
+Read first: `{{folder}}/phases/upgrade.md` (the steps, in order, none skipped), `{{folder}}/references/standing-concerns.md`, `{{folder}}/references/stop-and-ask.md`, `agents/server/harness/overview.md`, `server/harness/pi/QUIRKS.md`.
 
 - Work only in the branch's worktree. Never the live checkout, never `~/.pi`, never a restart of Sova.
 - Fix at the adapter (`server/harness/pi/`) wherever you can. Where a change would put pi's shapes into Sova's own code, put them behind the harness contract instead, and refactor where it makes the next upgrade smaller. Say what you refactored and why.

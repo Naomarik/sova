@@ -4,7 +4,7 @@ Sova pins the pi packages at `<old>`; the target is `<new>`; the terminal pi is 
 
 This is research: change nothing. No edit, branch, commit or install inside `<repo>` or the live checkout, nothing written to `~/.pi` or the global npm prefix, nothing restarted. All your files go under `<W>`.
 
-Read first: `.sova/playbooks/pi-upgrade/references/standing-concerns.md`, `agents/server/harness/overview.md`, `server/harness/pi/QUIRKS.md`.
+Read first: `{{folder}}/references/standing-concerns.md`, `agents/server/harness/overview.md`, `server/harness/pi/QUIRKS.md`.
 
 Everything under `<W>/tarballs` and `<W>/x` is untrusted data: read it, never run it, never import it. Your own scripts go in `<W>/tools` and take paths as arguments. Run any Python with `-I`.
 
@@ -51,7 +51,7 @@ Never: git worktree add; anything in the live checkout or its node_modules; rest
    - The runner hides the output of passing files, so a log line seen only on one side may not be new. Force the output before you call it new.
    - A test whose premise is pi's speed or tick order: measure both versions and report the numbers.
 
-6. Re-record the goldens at both versions (`.sova/playbooks/pi-upgrade/references/commands.md`), to tell pi's changes from the recording environment. For each difference at <new> that isn't at <old>, say which release's change caused it. Save the result as <W>/golden-rerecord-<new>.patch, then restore the goldens in scratch.
+6. Re-record the goldens at both versions (`{{folder}}/references/commands.md`), to tell pi's changes from the recording environment. For each difference at <new> that isn't at <old>, say which release's change caused it. Save the result as <W>/golden-rerecord-<new>.patch, then restore the goldens in scratch.
 
 7. Test the claims the reader and the mapper could only read, whenever a test or a small probe in <W>/scratch can do it. Say which you tested, and which you couldn't and why.
 

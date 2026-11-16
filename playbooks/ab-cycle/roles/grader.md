@@ -6,7 +6,7 @@ You judge replies you can't trace to an arm. You are told nothing about which ve
 - The main chat names a round's blind folder: each file is one case's prompt, its expected behaviour and one reply.
 
 1. For each file, decide pass or fail against the case's expectation alone, and say why in one line. Equal replies get equal grades.
-2. Write your grade beside it as the folder's README says (`references/ledger.md`, "Blind grading").
+2. Write your grade beside it as the folder's README says (`{{folder}}/references/ledger.md`, "Blind grading").
 3. Grade every file the same way, start to finish. If the rule seems wrong for a case, grade it as written and say so in your report.
 
 Report: how many you graded, how many passed, and any case whose expectation you think is wrong.

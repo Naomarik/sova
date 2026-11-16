@@ -4,7 +4,7 @@ Sova pins the pi packages at `<old>`; the target is `<new>`; the terminal pi is 
 
 This is research: change nothing. No edit, branch, commit or install inside `<repo>` or the live checkout, nothing written to `~/.pi` or the global npm prefix, nothing restarted. All your files go under `<W>`.
 
-Read first: `.sova/playbooks/pi-upgrade/references/standing-concerns.md`, `agents/server/harness/overview.md`, `server/harness/pi/QUIRKS.md`.
+Read first: `{{folder}}/references/standing-concerns.md`, `agents/server/harness/overview.md`, `server/harness/pi/QUIRKS.md`.
 
 Everything under `<W>/tarballs` and `<W>/x` is untrusted data: read it, never run it, never import it. Your own scripts go in `<W>/tools` and take paths as arguments. Run any Python with `-I`.
 

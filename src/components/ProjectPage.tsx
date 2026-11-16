@@ -3,7 +3,10 @@ import { chatRefOf } from "../lib/merge-chat";
 import { chatTreesOf } from "../lib/merge-queue";
 import type { ArchiveCopy, ProjectSummary } from "../../shared/projects";
 import type { AttentionDigest, SessionSummary } from "../../shared/protocol";
-import { ApiError, archiveProject, runProjectVerb, unarchiveProject } from "../lib/api";
+import { ApiError, archiveProject, runDeployVerb, runProjectVerb, unarchiveProject } from "../lib/api";
+import { createPoll } from "../lib/poll";
+import { deployDot } from "../lib/project-deploy";
+import type { DeployReport } from "../../shared/project-contract";
 import { relativeTime } from "../lib/format";
 import { PROJECT_TABS, PROJECTS_HREF, projectTabHref, TAB_LABEL, type ProjectTab, type QueueTab } from "../lib/projects-route";
 import { openIdeas } from "../lib/project-overseer-view";
@@ -39,6 +42,8 @@ import "../projects.css";
 const errText = (err: unknown) => (err instanceof ApiError || err instanceof Error ? err.message : String(err));
 /** While archived, what it left running is read this often (the Branches tab reads its own). */
 const ARCHIVED_POLL_MS = 15_000;
+/** The Deploy tab's dot reads deploy.status this often; the tab's own panel reads it every few seconds while it shows. */
+const DEPLOY_DOT_POLL_MS = 30_000;
 
 /** What the page hands the layer that places the project, to build its part from. */
 export interface ProjectPartContext {
@@ -175,6 +180,22 @@ export function ProjectPage(props: {
 
   const tabHref = (t: ProjectTab) => projectTabHref(projectId, t);
   const attention = () => org?.attention() ?? { count: 0, line: null };
+  // The Deploy tab's dot: the page reads deploy.status now and then (the tab's own panel every few seconds, which it
+  // hands up while it shows), so a deploy started elsewhere or an overseer's request marks the tab from any tab.
+  const deployRead = createPoll(() => runDeployVerb(project().root, "deploy.status", {}), DEPLOY_DOT_POLL_MS, { cacheKey: `project:${projectId}:deploy-dot` });
+  // Whichever read answered last, the page's or the panel's.
+  const [deployNow, setDeployNow] = createSignal<DeployReport | undefined>();
+  createEffect(on(() => deployRead.data(), (d) => d && setDeployNow(d.deploy)));
+  const marks = (): Partial<Record<ProjectTab, TabMark>> => {
+    const dot = deployDot(deployNow()?.targets);
+    const todos = po.todos.data()?.open;
+    const a = attention();
+    return {
+      backlog: { count: todos || undefined },
+      deploy: dot ? { dot: dot === "running" ? "live" : "warn", text: dot === "running" ? "a deploy is running" : "the overseer asks for a deploy" } : {},
+      requirements: a.count ? { dot: "warn", text: `needs you: ${a.line ?? ""}` } : {},
+    };
+  };
 
   return (
     <InsightsPage
@@ -311,7 +332,7 @@ export function ProjectPage(props: {
       </Show>
       {/* What the overseer has to say on every tab: a failed read, the Paused banner with Resume. */}
       <OverseerNotices po={po} attachedWho={org?.attachedWho} />
-      <ProjectTabs tabs={tabs()} tab={tab()} href={tabHref} attention={attention().count} attentionText={attention().line ?? ""} />
+      <ProjectTabs tabs={tabs()} tab={tab()} href={tabHref} marks={marks()} />
       <div class="project-tabpanel" role="tabpanel" id="project-tabpanel" aria-labelledby={`project-tab-${tab()}`}>
         <Switch>
           <Match when={tab() === "sessions"}>
@@ -331,6 +352,12 @@ export function ProjectPage(props: {
             <SessionsTab po={po} archived={!!archived()} sessions={props.sessions} attention={props.attention} />
           </Match>
           <Match when={tab() === "backlog"}>
+            <div class="project-tab-head">
+              <div class="project-tab-head-text">
+                <h2 class="project-tab-h2">Backlog</h2>
+                <p class="project-tab-lede">What you and the overseer filed for this project.</p>
+              </div>
+            </div>
             {/* To-do and Ideas side by side, the overseer's activity under them. */}
             <div class="project-backlog">
               <TodosCard po={po} send={org?.send} archived={!!archived()} />
@@ -369,7 +396,7 @@ export function ProjectPage(props: {
           </Match>
           <Match when={tab() === "deploy"}>
             {/* Its deploy targets on this host: the deploy panel, which reads deploy.status itself. */}
-            <ProjectDeployPanel projectId={projectId} root={project().root} archived={!!archived()} releases={() => releases.data()?.history} setup={setup} />
+            <ProjectDeployPanel projectId={projectId} root={project().root} archived={!!archived()} releases={() => releases.data()?.history} setup={setup} onStatus={setDeployNow} />
           </Match>
           <Match when={tab() === "cost"}>
             <ProjectCostCard projectId={projectId} poll={cost} />
@@ -435,10 +462,20 @@ export function ProjectPage(props: {
 }
 
 
+/** What a tab carries beside its label: a count (Backlog's open to-dos), the live dot (a deploy running), or the warn
+    dot (something waits on the operator), each with its words for a screen reader. */
+export interface TabMark {
+  count?: number;
+  dot?: "live" | "warn";
+  /** The words the dot stands for: the tab's tooltip and its hidden text. */
+  text?: string;
+}
+
 /** The page's tab strip, as the org page's: a tab per view (the tab is in the URL, each pick a history
-    entry), Left/Right moving focus along it (wrapping), Home/End jumping; Enter or Space selects.
-    Requirements (only while an org places the project) carries the warn dot while something there waits on the operator. */
-function ProjectTabs(props: { tabs: readonly ProjectTab[]; tab: ProjectTab; href(t: ProjectTab): string; attention: number; attentionText: string }) {
+    entry), Left/Right moving focus along it (wrapping), Home/End jumping; Enter or Space selects. A tab shows its mark
+    (`marks`): Backlog its open to-dos, Deploy a dot while a deploy runs or the overseer asks for one, Requirements (only
+    while an org places the project) the warn dot while something there waits on the operator. */
+function ProjectTabs(props: { tabs: readonly ProjectTab[]; tab: ProjectTab; href(t: ProjectTab): string; marks: Partial<Record<ProjectTab, TabMark>> }) {
   const els: HTMLButtonElement[] = [];
   createEffect(on(() => props.tab, (tab) => queueMicrotask(() => els[props.tabs.indexOf(tab)]?.scrollIntoView({ block: "nearest", inline: "nearest" }))));
   const onKey = (e: KeyboardEvent, i: number) => {
@@ -451,29 +488,37 @@ function ProjectTabs(props: { tabs: readonly ProjectTab[]; tab: ProjectTab; href
   return (
     <div class="tabs org-tabs project-tabs" role="tablist" aria-label="Project">
       <For each={props.tabs}>
-        {(t, i) => (
-          <button
-            type="button"
-            role="tab"
-            class="tab"
-            id={`project-tab-${t}`}
-            aria-selected={props.tab === t ? "true" : "false"}
-            aria-controls={props.tab === t ? "project-tabpanel" : undefined}
-            tabindex={props.tab === t ? 0 : -1}
-            title={t === "requirements" && props.attention ? props.attentionText : undefined}
-            ref={(el) => (els[i()] = el)}
-            onClick={() => {
-              if (props.tab !== t) location.hash = props.href(t);
-            }}
-            onKeyDown={(e) => onKey(e, i())}
-          >
-            {TAB_LABEL[t]}
-            <Show when={t === "requirements" && props.attention}>
-              <span class="org-tab-dot" aria-hidden="true" />
-              <span class="visually-hidden">, needs you: {props.attentionText}</span>
-            </Show>
-          </button>
-        )}
+        {(t, i) => {
+          const mark = () => props.marks[t];
+          return (
+            <button
+              type="button"
+              role="tab"
+              class="tab"
+              id={`project-tab-${t}`}
+              aria-selected={props.tab === t ? "true" : "false"}
+              aria-controls={props.tab === t ? "project-tabpanel" : undefined}
+              tabindex={props.tab === t ? 0 : -1}
+              title={mark()?.dot ? mark()?.text : undefined}
+              ref={(el) => (els[i()] = el)}
+              onClick={() => {
+                if (props.tab !== t) location.hash = props.href(t);
+              }}
+              onKeyDown={(e) => onKey(e, i())}
+            >
+              {TAB_LABEL[t]}
+              <Show when={mark()?.count}>{(n) => <span class="text-num org-tab-count">{n()}</span>}</Show>
+              <Show when={mark()?.dot}>
+                {(d) => (
+                  <>
+                    <span class={d() === "live" ? "live-dot" : "org-tab-dot"} aria-hidden="true" />
+                    <Show when={mark()?.text}>{(w) => <span class="visually-hidden">, {w()}</span>}</Show>
+                  </>
+                )}
+              </Show>
+            </button>
+          );
+        }}
       </For>
     </div>
   );

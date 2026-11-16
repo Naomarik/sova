@@ -379,12 +379,12 @@
 .org-overseer .icon.session-turn-error { top: 6px; right: 6px; width: 12px; height: 12px; color: var(--status-error); }
 
 /* ---- A project overseer's chat head (§app.project-overseer/page): the global Overseer head's
-   shape (.overseer-head), with the level, Run Now and ⋯, then a short status strip under it. */
+   shape (.overseer-head), with the level, Look Now and ⋯, then a short status strip under it. */
 .po-head > .chip { flex: none; }
 .po-head-meta > .po-head-project { flex: none; max-width: 50%; color: inherit; }
 .po-head-meta > .po-head-project:hover { color: var(--color-ink); }
 .po-head-meta > .po-head-part { flex: 0 1 auto; white-space: nowrap; }
-/* Below 480px the level and Run Now leave line 1 for ⋯; the menu's own copies show only then.
+/* Below 480px the level and Look Now leave line 1 for ⋯; the menu's own copies show only then.
    A viewport rule on purpose: the menu is in the top layer, outside the head's container. */
 .po-menu-narrow { display: none; }
 @media (max-width: 479px) {

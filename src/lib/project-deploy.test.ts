@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { DeployRecordView } from "../../shared/project-contract";
-import { checksLine, overridesAsked, planDeadline, recordLine, rollbackWord, shipConfirmLine } from "./project-deploy";
+import { checksLine, deployDot, deployHistory, deployProgress, historyResult, overridesAsked, planDeadline, progressLine, recordLine, rollbackWord, shipConfirmLine } from "./project-deploy";
 
 // The Deploy panel's words (§app.project-runtime/deploy-panel).
 
@@ -50,4 +50,55 @@ test("a plan's checks fold to one line, open when any was let through", () => {
   assert.deepEqual(checksLine([ok, ok, ok, ok, ok, ok]), { line: "6 checks passed", open: false });
   assert.deepEqual(checksLine([ok, ok, { ok: false }]), { line: "2 checks passed · 1 let through", open: true });
   assert.deepEqual(checksLine([ok]), { line: "1 check passed", open: false });
+});
+
+const step = (key: string, exit: number | null = 0) => ({ key, exit, ms: 1000 });
+const strip = (steps: { label: string; state: string }[]) => steps.map((s) => `${s.label}:${s.state}`).join(" ");
+const PLAN = { steps: [{ key: "build.build" }, { key: "steps.upload" }, { key: "steps.switch" }], verify: { url: "https://x/", expect: 200 } };
+
+test("the progress strip: steps ran, the one running, what waits, the URL check last", () => {
+  // With the plan in hand every step is named, running or not.
+  assert.equal(strip(deployProgress(rec({ steps: [step("build.build")] }), PLAN)), "Build:done Upload:now Switch:waiting Check URL:waiting");
+  assert.equal(strip(deployProgress(rec({ steps: [] }), PLAN)), "Build:now Upload:waiting Switch:waiting Check URL:waiting");
+  // Every step ran, the check not yet back: the check is what runs.
+  assert.equal(strip(deployProgress(rec({ steps: PLAN.steps.map((s) => step(s.key)) }), PLAN)), "Build:done Upload:done Switch:done Check URL:now");
+  // Without the plan the strip ends at the running step and invents nothing after it.
+  assert.equal(strip(deployProgress(rec({ steps: [step("build.build")] }))), "Build:done Step 2:now");
+  // Ended: a failed step and the check each say so; nothing is running.
+  assert.equal(strip(deployProgress(rec({ state: "failed", steps: [step("build.build"), step("steps.upload", 3)] }))), "Build:done Upload:failed");
+  const ok = rec({ state: "succeeded", steps: PLAN.steps.map((s) => step(s.key)), verify: { url: "https://x/", status: 200, ok: true, detail: "" } });
+  assert.equal(strip(deployProgress(ok)), "Build:done Upload:done Switch:done Check URL:done");
+  assert.equal(deployProgress(ok).filter((s) => s.state === "now").length, 0);
+});
+
+test("the progress line counts the steps only when the strip knows them all", () => {
+  const r = rec({ target: "site", steps: [step("build.build")] });
+  assert.equal(progressLine(r, deployProgress(r, PLAN)), "Deploying 1a2b3c4 to site · step 2 of 4 · upload");
+  assert.equal(progressLine(r, deployProgress(r)), "Deploying 1a2b3c4 to site · step 2");
+  assert.equal(progressLine(rec({ kind: "rollback", target: "site" }), deployProgress(rec({ kind: "rollback" }), PLAN)), "Rolling back 1a2b3c4 to site · step 1 of 4 · build");
+});
+
+test("a History row's result: the URL check when there was one, else the record's state", () => {
+  const checked = historyResult(rec({ state: "succeeded", verify: { url: "https://sova.example/", status: 200, ok: true, detail: "" } }));
+  assert.deepEqual(checked, { chip: { word: "200", tone: "success" }, text: "sova.example answered" });
+  assert.equal(historyResult(rec({ state: "verify-failed", verify: { url: "https://a/", status: 502, ok: false, detail: "" } })).chip!.tone, "error");
+  assert.deepEqual(historyResult(rec({ state: "succeeded" })).chip, { word: "Deployed", tone: "success" });
+  assert.deepEqual(historyResult(rec({ state: "succeeded", kind: "rollback" })).chip!.word, "Rolled back");
+  assert.deepEqual(historyResult(rec({ state: "failed" })).chip, { word: "Failed", tone: "error" });
+});
+
+test("History merges every target's records, newest first, each once", () => {
+  const a = rec({ id: "a", startedAt: "2026-10-01T00:00:00Z" });
+  const b = rec({ id: "b", target: "site", startedAt: "2026-10-03T00:00:00Z" });
+  const c = rec({ id: "c", startedAt: "2026-10-02T00:00:00Z" });
+  assert.deepEqual(deployHistory([[c, a], [b], [a]]).map((r) => r.id), ["b", "c", "a"]);
+});
+
+test("the Deploy tab's dot: a deploy running, else an overseer's request, else none", () => {
+  const req = { id: "rq", target: "prod", commit: null, why: "", by: "overseer", at: "" };
+  assert.equal(deployDot(undefined), null);
+  assert.equal(deployDot([]), null);
+  assert.equal(deployDot([{ last: rec({ state: "succeeded" }), request: null }]), null);
+  assert.equal(deployDot([{ last: rec({ state: "succeeded" }), request: req }]), "asked");
+  assert.equal(deployDot([{ last: null, request: req }, { last: rec({}), request: null }]), "running");
 });

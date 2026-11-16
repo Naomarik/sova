@@ -362,7 +362,7 @@ describe("the Releases tab", () => {
       assert.equal(await o.page.getByRole("tab", { name: /^Deploy/, selected: true }).count(), 1, "the Deploy tab is open");
       await called(o, "deploy.plan");
       assert.deepEqual(lastCall(o, "deploy.plan").body, { project: ROOT_DIR, target: "prod", commit: sha("c") });
-      const deploy = o.page.locator("section", { has: o.page.getByRole("heading", { name: "Deploy", exact: true }) });
+      const deploy = o.page.getByRole("region", { name: "Deploy targets" });
       await deploy.getByText(/Planning release v0\.10\.0/).waitFor();
       await deploy.getByRole("button", { name: `Deploy ${sha("c").slice(0, 7)}` }).waitFor();
       await shot(o.page, "deploy-handoff");
@@ -374,7 +374,7 @@ describe("the Releases tab", () => {
   test("the Deploy tab's row says which release the target runs", async () => {
     const o = await open(390, `#/projects/${PID}/deploy`, view());
     try {
-      const deploy = o.page.locator("section", { has: o.page.getByRole("heading", { name: "Deploy", exact: true }) });
+      const deploy = o.page.getByRole("region", { name: "Deploy targets" });
       await deploy.getByText(/Runs\s*v0\.9\.0/).waitFor();
       await noSideScroll(o.page);
     } finally {

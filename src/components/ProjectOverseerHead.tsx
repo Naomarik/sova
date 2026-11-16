@@ -98,7 +98,7 @@ export function createProjectOverseerControl(o: { projectId: string; path: strin
 
 /**
  * The project overseer's own head, in place of the session head on its current conversation
- * (§app.project-overseer/page): What may happen without you, Run Now and ⋯ (Watch, History…, Clear, Project Page)
+ * (§app.project-overseer/page): What may happen without you, Look Now and ⋯ (Watch, History…, Clear, Project Page)
  * on line 1, the project and what it started on the meta line, then the status strip. On an
  * earlier conversation: its title, age and the way back to the current one, nothing else.
  */
@@ -270,7 +270,7 @@ export function ProjectOverseerHead(props: {
           title={runTitle()}
           onClick={runNow}
         >
-          Run Now
+          Look Now
         </button>
         <ActionMenu label={`Overseer actions · ${projectName()}`} title="Overseer actions" icon="more" class="po-more">
           {(menu) => (
@@ -292,9 +292,9 @@ export function ProjectOverseerHead(props: {
                 </Show>
               }
             >
-              {/* Below 480px What may happen without you and Run Now leave line 1 and live here. */}
+              {/* Below 480px What may happen without you and Look Now leave line 1 and live here. */}
               <div class="po-menu-narrow">
-                <menu.Item label="Run Now" aria="Run Now" disabled={c.busy() ? "Working now" : undefined} onRun={runNow} />
+                <menu.Item label="Look Now" aria="Look Now" disabled={c.busy() ? "Working now" : undefined} onRun={runNow} />
                 <menu.Item label="Without You…" aria={c.info() ? powersName(c.info()!) : "What may happen without you"} stayOpen onRun={() => showScreen(menu, "powers")} />
               </div>
               <Show when={c.info()}>

@@ -538,12 +538,8 @@ a.pipeline-link:hover, button.pipeline-link:hover, summary.pipeline-link:hover {
 .deploy-target { display: flex; flex-direction: column; gap: var(--space-3); padding: var(--space-3) 0; }
 .deploy-target:first-child { padding-top: 0; }
 .deploy-target + .deploy-target { border-top: var(--stroke-thin) solid var(--color-border); padding-top: var(--space-3); }
-/* Name, then the standing and the last deploy as two rows of one grid: the chips share a column, the words the next. */
-.deploy-target-facts { display: grid; grid-template-columns: max-content max-content minmax(0, 1fr); align-items: baseline; gap: var(--space-2) var(--space-3); }
-.deploy-fact { display: contents; }
-.deploy-target-facts > .project-software-name { grid-column: 1; }
-.deploy-fact > .chip { grid-column: 2; justify-self: start; }
-.deploy-fact > :not(.chip) { grid-column: 3; min-width: 0; }
+/* The target's about under its name and standing. */
+.deploy-about { display: block; margin-top: 2px; color: var(--color-ink-2); }
 .deploy-last-line { color: var(--color-ink-2); overflow-wrap: anywhere; }
 .deploy-when { font-size: var(--fs-caption); color: var(--color-ink-muted); white-space: nowrap; }
 .deploy-target-body { display: flex; flex-direction: column; gap: var(--space-3); min-width: 0; }

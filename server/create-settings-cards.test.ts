@@ -412,6 +412,38 @@ describe("a Sova-wide card", () => {
       rmSync(limits);
     });
 
+    test("an agents' CPU ceiling put back by a refused card is put back in systemd too", async () => {
+      // A stand-in user manager: never the real one. This server runs as the installed service, so the ceiling applies.
+      const { AgentCpu, setAgentCpuForTest } = await import("./agent-cpu");
+      const sets: string[][] = [];
+      let quota = "infinity";
+      const exec = async (_file: string, args: string[]) => {
+        const [verb, ...rest] = args.slice(1);
+        if (verb === "show") return { code: 0, stdout: rest[0] === "--property=Version" ? "Version=258\n" : `CPUWeight=20\nCPUQuotaPerSecUSec=${quota}\n`, stderr: "" };
+        sets.push(rest);
+        const q = rest.find((a) => a.startsWith("CPUQuota="))!.slice("CPUQuota=".length);
+        quota = q === "" ? "infinity" : `${Number(q.replace("%", "")) / 100}s`;
+        return { code: 0, stdout: "", stderr: "" };
+      };
+      setAgentCpuForTest(new AgentCpu({ exec, env: {}, platform: "linux", cores: () => 8, ownCgroup: () => "0::/user.slice/user-1000.slice/user@1000.service/app.slice/sova-runtime.service\n" }));
+      try {
+        const file = join(agentDir, "sova", "agent-cpu.json");
+        const { card } = (await runCreateSettingsTool(chat(null), { op: "propose", why: "Both.", edits: [{ setting: "sova", id: "agents.cpu-ceiling", value: 4 }, { setting: "sova", id: "models.limits", value: { limits: { zai: 3 } } }] })).details as { card: { id: string; fingerprint: string } };
+        await stubbing("models.limits", { write: async () => "The disk said no." }, async () => {
+          assert.equal((await apply(card)).status, 409);
+        });
+        assert.equal(existsSync(file), false, "no ceiling in the file");
+        assert.deepEqual(sets, [["--runtime", "sova.slice", "CPUQuota=400%"], ["--runtime", "sova.slice", "CPUQuota="]], "systemd set, then put back");
+        assert.equal((await apply(card)).status, 200, "the card can still be applied");
+        assert.deepEqual(JSON.parse(readFileSync(file, "utf8")), { maxCores: 4 });
+        assert.equal(quota, "4s");
+        rmSync(file);
+        rmSync(limits);
+      } finally {
+        setAgentCpuForTest(null);
+      }
+    });
+
     test("a write that throws is put back the same way", async () => {
       const { card } = await two();
       const before = text(priority);

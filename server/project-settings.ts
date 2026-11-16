@@ -915,12 +915,13 @@ export async function proposeSettings(projectId: string, input: { edits: unknown
   if (Object.keys(skillsTo).length || Object.keys(contextTo).length) {
     // The list's own check, made now so the overseer hears it before any card: an item no chat in the
     // project could load is refused (a scan that couldn't see every checkout refuses none), and a skill
-    // named by name becomes its key. An approval is a grant, so it waits for the operator on a card.
+    // named by name becomes its key. An approval is a grant, so it waits for the operator on a card. Read fresh, as
+    // every save's scan is (server/folder-walk.ts).
     const { projectScan } = await import("./projects/skills");
     const { resolveChanges } = await import("./approvals");
     let resolved;
     try {
-      resolved = resolveChanges(await projectScan(projectId), { context: contextTo, skills: skillsTo });
+      resolved = resolveChanges(await projectScan(projectId, { fresh: true }), { context: contextTo, skills: skillsTo });
     } catch (err) {
       if (err instanceof OrgError) refuse(`${err.message} (sova_settings get lists them).`);
       throw err;

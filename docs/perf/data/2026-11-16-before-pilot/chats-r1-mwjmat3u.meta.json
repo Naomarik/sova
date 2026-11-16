@@ -1,0 +1,30 @@
+{
+ "runId": "chats-r1-mwjmat3u",
+ "variant": "chats",
+ "rep": 1,
+ "nice": 10,
+ "weight": null,
+ "mix": "test=1,tsc=1",
+ "T": {
+  "idle": 30,
+  "ramp": 20,
+  "load": 60,
+  "cool": 20
+ },
+ "systemd": false,
+ "bigPath": "sessions/\u2026/2026-10-01T09-51-43-081Z_01a0f6e0-7fe9-7271-b42d-a82970163772.jsonl",
+ "runtime": "bun",
+ "serverRoot": ".cache/baseline",
+ "serverHead": "c66ac037a8dc270f36b40bc4e4616c3c9f5e384f",
+ "standins": 3,
+ "disk": 1,
+ "chats": [
+  "sessions/\u2026/2026-11-16T18-35-33-842Z_01a1e5a4-a052-742e-ba13-b1103e84ff33.jsonl",
+  "sessions/\u2026/2026-11-16T18-38-12-881Z_01a1e5a7-0d91-742e-ba13-b1168b54786b.jsonl",
+  "sessions/\u2026/2026-11-16T18-38-12-882Z_01a1e5a7-0d92-742e-ba13-b11fae22a765.jsonl",
+  "sessions/\u2026/2026-11-16T18-38-12-882Z_01a1e5a7-0d92-742e-ba13-b11d5978b7bf.jsonl",
+  "sessions/\u2026/2026-11-16T18-38-12-883Z_01a1e5a7-0d93-742e-ba13-b122ab44fc93.jsonl",
+  "sessions/\u2026/2026-10-24T21-01-58-383Z_01a16fb8-66ef-7539-b91a-750e70105d42.jsonl"
+ ],
+ "approvalsCwd": "~/webapps/sova"
+}

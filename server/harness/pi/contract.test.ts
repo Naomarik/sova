@@ -5,7 +5,7 @@
 // faux provider, registered through the public ModelRuntime API: no network, no private fields.
 // C1 the session manager's append* methods (the entry union), C2 the custom entry's line, C3 the event
 // names and fields chat-manager's bind() reads, C5 image content as prompt/steer take and store it.
-// P1-P42 and T1 are the quirk canaries (QUIRKS.md, quirks.ts): each asserts that a pi behaviour a Sova
+// P1-P43 and T1 are the quirk canaries (QUIRKS.md, quirks.ts): each asserts that a pi behaviour a Sova
 // workaround or assumption rests on still holds. Their turns run on testing/scripted-model.ts (a held
 // reply makes the mid-turn windows deterministic). When one fails, triage it by its QUIRKS.md row.
 import assert from "node:assert/strict";
@@ -750,6 +750,38 @@ describe("pi contract", () => {
     const none = await load({ noSkills: true, additionalSkillPaths: [join(at, "c/solo")] });
     assert.deepEqual(none.skills.map((s: { name: string }) => s.name), ["solo"], "fixed: noSkills now wins, and withSkillSources's guard may go; a skill folder path stops at its own SKILL.md");
     assert.deepEqual(pi.agent.loadSkillsFromDir({ dir: join(at, "c"), source: "project" }).skills.map((s: { name: string }) => s.name), ["solo"]);
+  });
+
+  test("P43 settings-files: pi's settings are <agentDir>/settings.json and <cwd>/<CONFIG_DIR_NAME>/settings.json read through SettingsStorage.withLock, and a folder's loader reload reads them and writes none", async () => {
+    const at = join(dir, `p43-${Math.random().toString(36).slice(2)}`);
+    const cwd = join(at, "cwd");
+    const agentDir = join(at, "agent");
+    mkdirSync(join(cwd, pi.agent.CONFIG_DIR_NAME), { recursive: true });
+    mkdirSync(join(at, "gs", "g"), { recursive: true });
+    mkdirSync(join(at, "ps", "p"), { recursive: true });
+    mkdirSync(agentDir, { recursive: true });
+    writeFileSync(join(at, "gs", "g", "SKILL.md"), "---\nname: g\ndescription: g\n---\nbody\n");
+    writeFileSync(join(at, "ps", "p", "SKILL.md"), "---\nname: p\ndescription: p\n---\nbody\n");
+    const global = { skills: [join(at, "gs")] };
+    const project = { skills: [join(at, "ps")] };
+    writeFileSync(join(agentDir, "settings.json"), JSON.stringify(global));
+    writeFileSync(join(cwd, pi.agent.CONFIG_DIR_NAME, "settings.json"), JSON.stringify(project));
+    const own = SettingsManager.create(cwd, agentDir);
+    assert.deepEqual([own.getGlobalSettings().skills, own.getProjectSettings().skills], [global.skills, project.skills], "pi's files are where Sova reads them");
+    const reads: string[] = [];
+    let writes = 0;
+    const text = { global: JSON.stringify(global), project: JSON.stringify(project) } as Record<string, string>;
+    const settingsManager = SettingsManager.fromStorage({
+      withLock(scope: string, fn: (current: string | undefined) => string | undefined) {
+        reads.push(scope);
+        if (fn(text[scope]) !== undefined) writes++;
+      },
+    });
+    const loader = new DefaultResourceLoader({ cwd, agentDir, settingsManager, noExtensions: true } as never);
+    await loader.reload();
+    assert.deepEqual(loader.getSkills().skills.map((s: { name: string }) => s.name).sort(), ["g", "p"], "the loader takes both scopes from the storage");
+    assert.ok(reads.includes("global") && reads.includes("project"), "each scope is read through withLock");
+    assert.equal(writes, 0, "a reload writes no settings");
   });
 
   test("P39 base-prompt-sections: a command context's getSystemPromptOptions() is the live base options, whose sections build the prompt, and a tool change replaces it", async () => {

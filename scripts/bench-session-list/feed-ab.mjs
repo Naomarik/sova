@@ -49,7 +49,7 @@ for (const v of variants) {
   console.log(`== ${v.label}: ${n} sessions, src ${v.src} @ ${commit}`);
   const r = spawnSync("bun", [join(ROOT, "scripts", "bench-session-list", "feed.ts"), "--src", v.src, "--label", v.label, "--out", out, "--commit", commit, ...rest], {
     stdio: "inherit",
-    env: { ...process.env, PI_CODING_AGENT_DIR: agent, SOVA_UPDATES_CHECK: "off", SOVA_GIT_MAINTENANCE: "off" },
+    env: { ...process.env, PI_CODING_AGENT_DIR: agent, SOVA_UPDATES_CHECK: "off", SOVA_GIT_MAINTENANCE: "off", SOVA_AGENT_CPU: "off" },
   });
   if (r.status !== 0) { console.error(`${v.label}: exited ${r.status}`); process.exit(1); }
 }

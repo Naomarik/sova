@@ -607,6 +607,16 @@ export const PI_QUIRKS: readonly PiQuirk[] = [
     retireWhen: "pi reports dropped skills in a typed way, honours noSkills for additional paths, or loads Claude's folders and front matter itself",
   },
   {
+    id: "P43",
+    name: "settings-files",
+    kind: "semantic",
+    relies: "folderResources reads pi's two settings files itself, without pi's lock (a mkdir and rmdir per read that wait on a busy disk), and hands pi a SettingsManager over them: it relies on where pi keeps them (<agentDir>/settings.json, <cwd>/<CONFIG_DIR_NAME>/settings.json), on pi reading each through SettingsStorage.withLock, and on a loader's reload never writing settings.",
+    pi: ["SettingsManager.fromStorage", "SettingsManager.create", "SettingsStorage.withLock", "CONFIG_DIR_NAME", "DefaultResourceLoader.reload"],
+    where: [{ file: "server/harness/pi/resources.ts", symbol: "settingsWithoutLock" }],
+    canary: "P43 settings-files: pi's settings are <agentDir>/settings.json and <cwd>/<CONFIG_DIR_NAME>/settings.json read through SettingsStorage.withLock, and a folder's loader reload reads them and writes none",
+    retireWhen: "pi reads settings without a lock, or offers a read-only settings load",
+  },
+  {
     id: "T1",
     name: "scripted-model (test-only)",
     kind: "private-write",

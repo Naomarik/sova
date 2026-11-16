@@ -138,7 +138,7 @@ export interface CleanupDeps {
   readBranch: (path: string) => Promise<readonly unknown[]>;
   /** The active branch entries of a session file's text already read (the scan's bytes): the same answer as
       readBranch with no second read of the file. Absent: readBranch reads it again. */
-  parseBranch?: (text: string) => readonly unknown[];
+  parseBranch?: (text: string) => readonly unknown[] | Promise<readonly unknown[]>;
   /** A session file's bytes, read only when it changed since the last check (the scan's cache). */
   readFile: (path: string) => Promise<Buffer>;
   /** Which worktrees one of the merge queue's own chats made (merge-queue/wire.ts worktreeQueueMadeNow), asked once per
@@ -488,7 +488,7 @@ async function scanFile(path: string, d: CleanupDeps, failed?: string[]): Promis
     // Its marker is there: a branch that can't be read says nothing about what it tracks, so the file counts as unreadable.
     let branch: readonly unknown[];
     try {
-      branch = d.parseBranch ? d.parseBranch(buf.toString("utf8")) : await d.readBranch(path);
+      branch = d.parseBranch ? await d.parseBranch(buf.toString("utf8")) : await d.readBranch(path);
     } catch {
       failed?.push(path);
       return null;

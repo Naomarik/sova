@@ -11,7 +11,7 @@ import { type FileHandle, open, readFile, stat } from "node:fs/promises";
 import type { AgentSession, ExtensionContext, SessionManager } from "@earendil-works/pi-coding-agent";
 import type { EntryId, HBlock, HEntry, HHeader, HUsage, SessionRead } from "../../../shared/harness";
 import { stripImageNotes } from "../../../shared/image-note";
-import { parseJsonl, type JsonObject } from "../../jsonl";
+import { parseJsonl, parseJsonlYielding, type JsonObject } from "../../jsonl";
 import { messageContextTokens } from "./usage";
 
 /** A raw pi entry, as parsed from its line. */
@@ -49,9 +49,11 @@ function walkUp(byId: ReadonlyMap<string, Entry>, leaf: Entry): Entry[] {
   return path.reverse();
 }
 
-/** Read a session file and return its active-branch entries (root-first). */
+/** Read a session file and return its active-branch entries (root-first). The file's lines are parsed in
+    slices, letting the event loop run between them (parseJsonlYielding): a long file never holds the
+    server up for its whole parse. */
 export async function readActiveBranch(path: string): Promise<Entry[]> {
-  return activeBranch(parseLines(await readFile(path, "utf8")));
+  return activeBranch(await parseJsonlYielding(await readFile(path, "utf8")));
 }
 
 // ---- Neutral entries -------------------------------------------------------------------------------
@@ -307,9 +309,14 @@ export interface PiFile {
 
 /** A whole pi session file's text: today's parse (blank and malformed lines skipped). */
 export function parsePi(text: string): PiFile {
+  return piFileOfLines(parseLines(text));
+}
+
+/** parsePi over lines already parsed (parseLines' result). */
+function piFileOfLines(lines: Entry[]): PiFile {
   let header: HHeader | null = null;
   const entries: HEntry[] = [];
-  for (const raw of parseLines(text)) {
+  for (const raw of lines) {
     if (raw.type === "session") {
       header ??= headerOf(raw);
       continue;
@@ -341,8 +348,12 @@ export interface PiBranch {
  * in the file is counted, in file order, as parsePi counts it.
  */
 export function parsePiBranch(text: string, opts: { ids?: boolean; states?: ReadonlySet<unknown> } = {}): PiBranch {
+  return branchOfLines(parseLines(text), opts);
+}
+
+/** parsePiBranch over lines already parsed (parseLines' result). */
+function branchOfLines(all: Entry[], opts: { ids?: boolean; states?: ReadonlySet<unknown> }): PiBranch {
   let header: HHeader | null = null;
-  const all = parseLines(text);
   // One pass (each entry's type and id read once): the header, the unknown count, and activeBranch's index.
   const body: Entry[] = [];
   const byId = new Map<string, Entry>();
@@ -380,8 +391,16 @@ export function parsePiBranch(text: string, opts: { ids?: boolean; states?: Read
   return out;
 }
 
+/** A session file as parsePi reads it, its lines parsed in slices (parseJsonlYielding). */
 export async function readPi(path: string): Promise<PiFile> {
-  return parsePi(await readFile(path, "utf8"));
+  return piFileOfLines(await parseJsonlYielding(await readFile(path, "utf8")));
+}
+
+/** parsePiBranch's result for a file's text, its lines parsed in slices with the event loop let run between
+    them (parseJsonlYielding): what every async reader of a whole file uses, so a long transcript holds the
+    server up for one slice at a time, never its whole parse. */
+export async function parsePiBranchYielding(text: string, opts: { ids?: boolean; states?: ReadonlySet<unknown> } = {}): Promise<PiBranch> {
+  return branchOfLines(await parseJsonlYielding(text), opts);
 }
 
 /**
@@ -445,7 +464,7 @@ export function strictBranchTo(file: PiFile, cutEntryId: string | null): HEntry[
 
 /** A session file's active branch as HEntries. */
 export async function readBranch(path: string): Promise<HEntry[]> {
-  return parsePiBranch(await readFile(path, "utf8")).branch;
+  return (await parsePiBranchYielding(await readFile(path, "utf8"))).branch;
 }
 
 /** The active branch as far as the file's last `maxBytes` show it (the first, cut line dropped): a recent
@@ -459,7 +478,7 @@ export async function readTailBranch(path: string, maxBytes: number): Promise<HE
     const { bytesRead } = await fh.read(buf, 0, buf.length, start);
     let text = buf.subarray(0, bytesRead).toString("utf8");
     if (start > 0) text = text.slice(text.indexOf("\n") + 1);
-    return parsePiBranch(text).branch;
+    return (await parsePiBranchYielding(text)).branch;
   } finally {
     await fh.close();
   }
@@ -588,13 +607,20 @@ export async function appendLines(file: string | FileHandle, from: number, size:
   try {
     const buf = Buffer.alloc(CHUNK);
     let pos = from;
-    let carry = Buffer.alloc(0);
+    // A line not yet ended, in pieces: joined once its newline comes, so a line many chunks long is copied
+    // once, not once per chunk.
+    let carry: Buffer[] = [];
     let consumed = from;
     while (pos < size) {
       const { bytesRead } = await fh.read(buf, 0, Math.min(buf.length, size - pos), pos);
       if (bytesRead <= 0) break;
       pos += bytesRead;
-      const data = carry.length > 0 ? Buffer.concat([carry, buf.subarray(0, bytesRead)]) : buf.subarray(0, bytesRead);
+      const chunk = buf.subarray(0, bytesRead);
+      if (chunk.indexOf(10) === -1) {
+        carry.push(Buffer.from(chunk));
+        continue;
+      }
+      const data = carry.length > 0 ? Buffer.concat([...carry, chunk]) : chunk;
       let start = 0;
       for (let nl = data.indexOf(10, start); nl !== -1; nl = data.indexOf(10, start)) {
         const line = data.toString("utf8", start, nl);
@@ -603,7 +629,7 @@ export async function appendLines(file: string | FileHandle, from: number, size:
       }
       consumed += start;
       if (start > 0) onBytes?.(data.subarray(0, start));
-      carry = Buffer.from(data.subarray(start));
+      carry = start < data.length ? [Buffer.from(data.subarray(start))] : [];
     }
     return consumed;
   } finally {

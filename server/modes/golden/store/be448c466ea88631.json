@@ -49,6 +49,7 @@
    "remote.targets",
    "sandbox.policy",
    "workers.priority",
+   "agents.cpu-ceiling",
    "workers.profiles",
    "workers.default-profile",
    "alignment.style",

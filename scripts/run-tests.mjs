@@ -83,9 +83,10 @@
 // XDG_RUNTIME_DIR for the integration tier only; never a credential. A new switch a test reads goes
 // in that list or never reaches it. PATH is built, never inherited: the stand-in claude, the real
 // node's directory and mise's tool paths (shims refuse an untrusted config in a throwaway HOME), then
-// the system's directories (SYSTEM_PATH). Then SOVA_PRICES_FETCH=off (bun test sets no NODE_TEST_CONTEXT), and SOVA_GIT_MAINTENANCE=off (a server a
+// the system's directories (SYSTEM_PATH). Then SOVA_PRICES_FETCH=off (bun test sets no NODE_TEST_CONTEXT), SOVA_GIT_MAINTENANCE=off (a server a
 // test starts registers no repository with git's scheduled maintenance and starts no systemd
-// timer; server/git-maintenance.ts's own tests drive it with their own deps). bun test itself sets TZ=UTC and
+// timer; server/git-maintenance.ts's own tests drive it with their own deps), and SOVA_AGENT_CPU=off (it sets no
+// CPU weight or ceiling on systemd's sova.slice; server/agent-cpu.test.ts drives that with a stand-in systemctl). bun test itself sets TZ=UTC and
 // NODE_ENV=test. Both runtimes: a stand-in `claude` (scripts/fake-claude.mjs) leads every test
 // process's PATH, so no test runs the installed Claude CLI, or a paid model through it; a test that
 // needs another `claude` sets its own PATH.
@@ -776,6 +777,8 @@ function hermeticEnv(tier) {
     PATH: testPath([fakeClaudeDir(root), path.dirname(process.execPath), misePaths], path.delimiter),
     SOVA_PRICES_FETCH: "off",
     SOVA_GIT_MAINTENANCE: "off",
+    // A server a test starts leaves systemd's sova.slice alone (server/agent-cpu.ts): no CPU weight or ceiling on the real one.
+    SOVA_AGENT_CPU: "off",
     // No per-server copy of the code (§app.chat-processes/code-generations): a server a test starts has
     // its state root here, on another filesystem than the checkout, where each copy is ~350 MB.
     SOVA_CHAT_CODE: "live",

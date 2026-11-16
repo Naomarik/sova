@@ -56,6 +56,7 @@ import { monitorJobs, startJobKeeper, stopJobsOf, sweepJobs } from "./background
 import { onWorkerKilled } from "./chat-workers";
 import { attachWebSockets, upgradeSovaSocket, upgradeSovaStreamSocket } from "./ws";
 import { detachChatHost, startChatHost, stopWorkersOf, wakeOwnerOf, workerChatsOf } from "./chat-host";
+import { agentCpu } from "./agent-cpu";
 import { expectChatRouter } from "./chat-handle";
 import { meshApi, startMesh, stopMesh } from "./mesh";
 import { captureBootBuild } from "./mesh/build-id";
@@ -252,6 +253,8 @@ server.on("error", (err) => {
 // Where ordinary chats run, and the chats a previous server left running taken back: a browser's
 // connect waits for that (bounded) rather than open a chat its process still holds (§app/chat-processes).
 startChatHost();
+// The agents' slice (sova.slice) below the server's side in CPU weight, and the user's optional ceiling on it (server/agent-cpu.ts).
+void agentCpu().applyAtStart();
 // An archived chat's workers stop with it (§app.chat-processes/workers).
 onSessionArchived((sessionId) => void stopWorkersOf(sessionId, "its parent was archived").catch(() => {}));
 // Archiving or deleting a chat cancels its wake nudges for good, its workers' too (§chat.wake-nudges/archive).

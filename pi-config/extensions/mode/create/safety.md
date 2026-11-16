@@ -106,3 +106,12 @@ An installed Sova extension's page runs in Sova's own page, so what it does pass
 - By: Card. Propose `workers.priority`; `sova_settings` reference gives its shape. It reaches the person's other computers when sync is on, so say so before Apply.
 - Live: next worker start.
 - Check: `sova_settings` get shows the value, and a new worker's process runs at that niceness.
+
+## Agents' CPU ceiling
+
+- Change: at most how many of this computer's cores all agents together may use (chats, their background jobs and project services), as "Agents may use at most N of M cores". Off by default. When the cores are all busy, Sova's server always comes ahead of the agents, ceiling or not.
+- Lives: this computer, as `maxCores` in `<agent dir>/sova/agent-cpu.json` (no file: no ceiling), held by systemd as a CPU quota on `sova.slice`. Linux only, and only when Sova runs as its installed service; `SOVA_AGENT_CPU=off` in the server's environment makes Sova leave `sova.slice` alone.
+- Approves: the person, with Apply.
+- By: Card. Propose `agents.cpu-ceiling` (a whole number of cores, or null for none); `sova_settings` reference gives its shape. Or Settings → General, Agents' CPU.
+- Live: at once.
+- Check: `sova_settings` get shows the value, and Settings → General shows the same.

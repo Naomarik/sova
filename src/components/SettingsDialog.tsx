@@ -73,6 +73,7 @@ import { BatonSettingsSection } from "./BatonSettings";
 import { ProfilesSettingsSection } from "./ProfilesSettings";
 import { TypographySection } from "./TypographySection";
 import { ServerSettingsSection } from "./ServerSettings";
+import { AgentCpuSection } from "./AgentCpuSettings";
 import { ContextApprovalSection } from "./ContextApprovalSetting";
 import { UpdatesSettingsSection } from "./UpdatesSettings";
 import { VoiceSettingsSection } from "./VoiceSetup";
@@ -425,7 +426,7 @@ function ExperimentalPanel() {
  * line between it and Models, and the reason the sidebar's Recent region has no control of its own:
  * a count that could be set in two places would disagree in one of them. The Updates section at the
  * bottom is the machine's, Save-gated like every server-backed form (UpdatesSettings.tsx); above it,
- * the machine's server and Restart Sova (ServerSettings.tsx).
+ * the agents' CPU ceiling (AgentCpuSettings.tsx), then the machine's server and Restart Sova (ServerSettings.tsx).
  */
 function GeneralPanel() {
   /**
@@ -484,6 +485,7 @@ function GeneralPanel() {
         onChange={setShowSummaries}
       />
       <ContextApprovalSection />
+      <AgentCpuSection />
       <ServerSettingsSection />
       <UpdatesSettingsSection />
     </>

@@ -1445,6 +1445,10 @@ html, body { overflow: clip; overscroll-behavior: none; }
   margin-top: var(--space-2);
   border-top: var(--stroke-thin) solid var(--color-border);
 }
+/* Settings → General's Agents' CPU: "Agents may use at most [N] of 16 cores" on one line. */
+.agent-cpu-row { display: flex; align-items: center; gap: var(--space-3); }
+.agent-cpu-row > .input { flex: 0 1 6rem; min-width: 0; }
+.agent-cpu-of { color: var(--color-ink-2); }
 .settings-updates-running { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
 .settings-updates-version { font-weight: var(--fw-medium); }
 .settings-updates-sha { font-family: var(--font-mono); font-size: var(--fs-mono); color: var(--color-ink-muted); }

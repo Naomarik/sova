@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { type Dirent, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { sessionTmpBase } from "../pi-config/extensions/sandbox/session-policy.ts";
 import { dirname, join } from "node:path";
 import {
@@ -302,6 +302,62 @@ export function chatJobs(sessionId: string, workers: Map<string, string>, dir = 
 
 /** How many running jobs a chat has (no worker's): the session list's marker. */
 export const runningJobCount = (sessionId: string, dir = jobsDir()): number => (existsSync(dir) ? runningJobs(readSessionJobs(dir, sessionId)).length : 0);
+
+/** Every chat's running-job count, as one listing reads it (runningJobCounts). */
+export interface JobCounts {
+  /** Session id → its running jobs (no worker's), only chats with at least one. */
+  counts: ReadonlyMap<string, number>;
+  /** Each chat's job folder as `<folder name>:<mtimeMs>`, one per line: moves with every record written. */
+  stamp: string;
+}
+
+/** A folder written this recently is read again at every call: a later write in the same clock tick
+    could leave its mtime where it was. */
+export const JOB_FOLDER_SETTLE_MS = 2_000;
+const folderReads = new Map<string, Map<string, { mtimeMs: number; running: number }>>();
+
+/**
+ * Every chat's running-job count in one pass over the jobs folder: one listing, one stat per chat
+ * that ever had a job, and a chat's records read again only when its folder moved (a record is
+ * written whole, by rename, so the folder's mtime moves with each) or was written within
+ * JOB_FOLDER_SETTLE_MS. Counts are what runningJobCount says for each chat.
+ */
+export function runningJobCounts(dir = jobsDir(), now = Date.now()): JobCounts {
+  let names: Dirent[];
+  try {
+    names = readdirSync(dir, { withFileTypes: true });
+  } catch {
+    folderReads.delete(dir);
+    return { counts: new Map(), stamp: "" };
+  }
+  const prev = folderReads.get(dir);
+  const next = new Map<string, { mtimeMs: number; running: number }>();
+  const counts = new Map<string, number>();
+  const stamp: string[] = [];
+  for (const d of names) {
+    if (!d.isDirectory()) continue;
+    let mtimeMs: number | null = null;
+    try {
+      mtimeMs = statSync(join(dir, d.name)).mtimeMs;
+    } catch {
+      // gone since the listing
+    }
+    stamp.push(`${d.name}:${mtimeMs ?? "-"}`);
+    if (mtimeMs === null) continue;
+    let sessionId: string;
+    try {
+      sessionId = decodeURIComponent(d.name);
+    } catch {
+      continue;
+    }
+    const had = prev?.get(d.name);
+    const running = had && had.mtimeMs === mtimeMs && now - mtimeMs >= JOB_FOLDER_SETTLE_MS ? had.running : runningJobs(readSessionJobs(dir, sessionId)).length;
+    next.set(d.name, { mtimeMs, running });
+    if (running > 0) counts.set(sessionId, (counts.get(sessionId) ?? 0) + running);
+  }
+  folderReads.set(dir, next);
+  return { counts, stamp: stamp.join("\n") };
+}
 
 /** The running jobs as the resource monitor charges them: each
     with its unit's cgroup, to the chat that left it; a worker's to its parent session as that worker

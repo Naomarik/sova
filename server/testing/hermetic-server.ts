@@ -335,6 +335,7 @@ export async function startHermeticServer(opts: HermeticServerOptions = {}): Pro
       SOVA_USAGE_POLL: "off",
       SOVA_UPDATES_CHECK: "off",
       SOVA_GIT_MAINTENANCE: "off",
+      SOVA_AGENT_CPU: "off",
       // Its own test data (server/worktree-retire-gate.ts): what `sova_archive` may remove worktrees from.
       SOVA_TEST_DATA: scratch,
       // Its chats' shared folders (pi-config/extensions/sandbox/shared-folder.ts): in the scratch root, never the

@@ -164,7 +164,7 @@ function ReleasesBody(props: { projectId: string; name: string; archived: boolea
           <p class="text-eyebrow">Latest release</p>
           <p class="mq-cell-value text-mono">{v().latest ?? "None yet"}</p>
         </div>
-        <div class="mq-cell">
+        <div class="mq-cell mq-cell-end">
           <p class="text-eyebrow">Since then</p>
           <p class="mq-cell-value">{sinceLine(v()) ?? (v().latest ? "—" : "Every landing so far")}</p>
           <p class="text-caption text-muted">

@@ -106,7 +106,7 @@ export function HeadsStrip(props: { view: MergeQueueView }) {
   const v = () => props.view;
   const pushed = () => pushedWords(v().heads);
   return (
-    <div class="mq-strip mq-heads" role="group" aria-label={`${v().target} and origin`}>
+    <div class="mq-strip" role="group" aria-label={`${v().target} and origin`}>
       <div class="mq-cell">
         <p class="text-eyebrow">{v().target}</p>
         <p class="mq-cell-value text-mono">{short(v().heads.target)}</p>

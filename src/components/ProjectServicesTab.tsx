@@ -612,9 +612,7 @@ export function ProjectServicesTab(props: {
         </div>
       </Show>
       {/* Preview links (§mesh.public/preview-card): this project's apps, on this host. */}
-      <div id="project-previews" class="project-anchor">
-        <PreviewsCard projectId={props.projectId} archived={props.archived} />
-      </div>
+      <PreviewsCard projectId={props.projectId} archived={props.archived} />
       <Show when={(view()?.shared.length ?? 0) > 0 && copies()[0]}>
         {(via) => (
           <section class="card orgs-section services-shared" aria-labelledby="services-shared">

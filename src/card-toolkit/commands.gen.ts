@@ -3575,7 +3575,7 @@ export interface CommandParams {
     /** Dismiss the request */
     "dismiss"?: boolean;
   };
-  /** A project's Branches tab: its copies, their services and the supervisor. (only looks; needs the card's owner trusted) */
+  /** A project's Running Copies tab: its copies, their services and the supervisor. (only looks; needs the card's owner trusted) */
   "project.services.view": {
     /** The project's id */
     "pid": string;

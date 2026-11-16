@@ -427,7 +427,7 @@ describe("this machine's copy limit (§app.project-services/instances): a Sova-k
     assert.equal(machineCopyLimit(dir), 1, "nothing written");
   });
 
-  test("the Branches tab's PUT is the operator's page only; its change is a history line whose raise only the page may undo", async () => {
+  test("the Running Copies tab's PUT is the operator's page only; its change is a history line whose raise only the page may undo", async () => {
     for (const headers of [{ "x-sova-caller": "k" }, { "x-sova-token": "x" }, { [OVERSEER_SENDER_HEADER]: senderSecret() }] as Record<string, string>[]) {
       const r = await put({ cap: 9 }, headers);
       assert.equal(r.status, 403, JSON.stringify(headers));
@@ -455,7 +455,7 @@ describe("this machine's copy limit (§app.project-services/instances): a Sova-k
     assert.deepEqual([h[0].label, h[0].fromText, h[0].toText], ["Copy limit", "3 at once", "9 at once"]);
     const info = await settings.settingsInfo(pid);
     const rowInfo = info.rows.find((x) => x.setting === "copies")!;
-    assert.deepEqual([rowInfo.label, rowInfo.state, rowInfo.detail, rowInfo.href], ["Copy limit", "9 at once", "set on this machine", `#/projects/${pid}/branches`]);
+    assert.deepEqual([rowInfo.label, rowInfo.state, rowInfo.detail, rowInfo.href], ["Copy limit", "9 at once", "set on this machine", `#/projects/${pid}/running-copies`]);
     assert.equal((await put({ cap: null })).status, 200);
     assert.deepEqual([machineCopyLimit(dir), (await settings.settingsInfo(pid)).rows.find((x) => x.setting === "copies")!.detail], [null, "from the project's file"]);
     // The merge queue's row links to its tab in the Settings dialog, for this project.

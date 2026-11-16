@@ -94,7 +94,7 @@ const topKeys: Record<string, string> = {
   setup: "steps that set a copy up",
   data: "each copy's data (a file copied or a provisioned store)",
   services: "the services by name: each a command or static folder, its ports, readiness, scope and isolation",
-  open: "the endpoint the Branches tab opens",
+  open: "the endpoint the Running Copies tab opens",
   hooks: "the probe",
   test: "the test verb",
   share: "which endpoints may be shared, for how long",
@@ -312,7 +312,7 @@ export const SETTINGS_REFERENCE: Record<SettingId, ReferenceEntry> = {
     edit: '{setting: "copies", limit: <1–16> | null}',
     grant: "Raised (a reset to the file's value counts when that is higher).",
     keys: copiesKeys,
-    changedAt: "the Branches tab (Change)",
+    changedAt: "the Running Copies tab (Change)",
   },
   skills: {
     id: "skills",
@@ -353,7 +353,7 @@ export const SETTINGS_REFERENCE: Record<SettingId, ReferenceEntry> = {
     edit: '{setting: "services", file: {…the whole .sova/project.json…} | null}',
     grant: "Any change: it decides what runs on this computer.",
     keys: { ...serviceTop, ...serviceKeys, ...releaseKeys },
-    changedAt: "the Branches tab and the Software card",
+    changedAt: "the Running Copies tab",
   },
   "merge-queue": {
     id: "merge-queue",

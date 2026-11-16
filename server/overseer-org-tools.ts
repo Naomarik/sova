@@ -805,7 +805,7 @@ export function orgTools(d: OrgToolDeps): Tool[] {
     name: "sova_project_overseer",
     label: "Project overseer",
     description:
-      "A project's overseer, for the user (only in a turn the user started). start (create it, as Start Overseer). settings {powers?: {overseer?: {<power>: true|false}, assistant?: {…}}, resume?: true, model?, thinking?, coding_model?, coding_thinking?, gathering_model?, gathering_thinking?, watch?, watch_gap_min?, soon_look_sec?, caps?, extra_instructions?}: one change, refused whole as the page's is. run_now (Run Now). clear (a new conversation; only in the turn a confirm card's click opened, listing the project). " +
+      "A project's overseer, for the user (only in a turn the user started). start (create it, as Start Overseer). settings {powers?: {overseer?: {<power>: true|false}, assistant?: {…}}, resume?: true, model?, thinking?, coding_model?, coding_thinking?, gathering_model?, gathering_thinking?, watch?, watch_gap_min?, soon_look_sec?, caps?, extra_instructions?}: one change, refused whole as the page's is. run_now (Look Now). clear (a new conversation; only in the turn a confirm card's click opened, listing the project). " +
       "idea {action: add|edit, id?, title?, text?, status?} and todo {action: add|edit|tick|untick|remove, id?, text?, idea?}: the project's ideas and to-dos. " +
       "message {text}: send words into the overseer's conversation as the user (idle it starts a turn; mid-turn it waits as a follow-up); it counts as a prompt to another session. Never a /command, never the About text or a cost figure. " +
       "code {prompt?, title?, item?, model?, thinking?, mode?, minor_modes?, profile?, subagent_profile?, already_agreed?}: start a coding session as the project's (its own worktree; any mode, minor modes and profile you name, else this computer's default profile), from an item (a td_ to-do or an § idea) or from prompt and title; it counts as a session created. Unless you pass already_agreed: true (only when the user said, in their own words, they want exactly this built), align is turned on in its mode (whatever minor_modes says) and its first turn asks the user whether this is what they want built and waits for their answer. Talk to a coding session with sova_send; never answer its alignment questions: they are the user's. Its reply names the mode and profile it started with.",
@@ -869,7 +869,7 @@ export function orgTools(d: OrgToolDeps): Tool[] {
             return { content: text(`${project.name}'s overseer: ${said.join(", ")} saved.`), details };
           }
           case "run_now": {
-            await counted("org", async () => ok(await d.call("POST", `${at}/run`), "Run Now"));
+            await counted("org", async () => ok(await d.call("POST", `${at}/run`), "Look Now"));
             return { content: text(`${project.name}'s overseer is looking now.`), details };
           }
           case "clear": {

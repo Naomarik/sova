@@ -5,7 +5,7 @@ import { slotStanding, type InstanceRecord, type SlotRegistry } from "./store";
 
 /**
  * A project's usable places, each by what stands on it (§app.projects/home-glance): the project cards' Copies and the
- * Branches tab's line, by the rule a new copy's start uses (`slotStanding`).
+ * Running Copies tab's line, by the rule a new copy's start uses (`slotStanding`).
  */
 
 export type PlaceState = "running" | "stopped" | "elsewhere" | "free" | "unchecked";

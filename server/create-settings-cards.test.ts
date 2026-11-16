@@ -584,7 +584,7 @@ describe("the added cards", async () => {
   test("a plain value that reads like a key is refused, and the refusal says where the person can change it", async () => {
     await assert.rejects(sw("models.providers", { providers: { mine: { token: "plain-label" } } }), /If this isn't a key.*~a\/models\.json/);
     await assert.rejects(sw("alignment.review", { token: "plain-label" }), /If this isn't a key.*Settings → Alignment/);
-    await assert.rejects(runCreateSettingsTool(chat(pid), { op: "propose", why: "x", edits: [{ setting: "services", file: { token: "plain-label" } }] }), /If this isn't a key.*Branches tab/);
+    await assert.rejects(runCreateSettingsTool(chat(pid), { op: "propose", why: "x", edits: [{ setting: "services", file: { token: "plain-label" } }] }), /If this isn't a key.*Running Copies tab/);
   });
 });
 

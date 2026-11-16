@@ -180,7 +180,7 @@ export function readStamp(project: string, defHash: string): Stamp | null {
   return s && typeof s === "object" ? s : null;
 }
 
-/** Every stamp of `project` on this host, by definition hash (the Branches tab's memory estimate reads them). */
+/** Every stamp of `project` on this host, by definition hash (the Running Copies tab's memory estimate reads them). */
 export function stampsOf(project: string): Record<string, Stamp> {
   const all = readStamps().stamps[project];
   return all && typeof all === "object" ? all : {};

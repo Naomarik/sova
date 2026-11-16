@@ -4128,8 +4128,8 @@ export type AttentionKind =
   | "card-waiting"        // act tier, never pushed or briefed: the session shows an open transcript card waiting on an answer (§chat.transcript-cards/answering), one per card, idle or working
   | "tour-sign-in"        // act tier, never pushed: one of the session's tour recordings waits for the user to sign in on its card (§app.tours/sites; from the server's memory, gone on restart)
   | "playbook-review"     // act tier: a verb playbook's run is proposed and waits on Merge Branch (§app.project-runtime/review; the run's session, `playbook` set)
-  | "deploy-failed"       // act tier, never pushed: a deploy target's latest deploy failed, its verify failed or its runner stopped (§app.project-services/deploy-status; no session: `path` "", `href` the project page)
-  | "deploy-request"      // act tier, never pushed: an overseer asks the operator to deploy (deploy.request; no session: `path` "", `href` the project page)
+  | "deploy-failed"       // act tier, never pushed: a deploy target's latest deploy failed, its verify failed or its runner stopped (§app.project-services/deploy-status; no session: `path` "", `href` the project's Deploy tab)
+  | "deploy-request"      // act tier, never pushed: an overseer asks the operator to deploy (deploy.request; no session: `path` "", `href` the project's Deploy tab)
   | "release-ready"       // act tier, never pushed: a project's open release passed every gate and waits for Publish (shared/release.ts; no session: `path` "", `href` the project's Releases tab)
   | "release-request"     // act tier, never pushed: an overseer or the Project Assistant asks the operator to release (release.request; no session: `path` "", `href` the Releases tab)
   | "release-quiet"       // act tier, never pushed: the release chat sent no report for the project's quietMin while the queue is frozen (Open Chat, Abandon Release; `href` the Releases tab)
@@ -4148,7 +4148,7 @@ export type AttentionKind =
   | "owner-request"      // act tier, never pushed: an org owner's open request from the Project Assistant (§app.project-assistant/requests; no session: `path` "", `href` the org's People tab)
   | "owner-outage"       // act tier, pushed (kind `owner-outage`): the owner reports the app is down
   | "owner-link-request" // act tier, never pushed: the owner asks for a new owner link (theirs turned off unused, §app.owner-page/link)
-  | "owner-version-request" // act tier, never pushed: the owner asks to try a version that wasn't started (an open `try` request; `href` the project's Branches tab)
+  | "owner-version-request" // act tier, never pushed: the owner asks to try a version that wasn't started (an open `try` request; `href` the project's Running Copies tab)
   | "owner-request-closed" // act tier, never pushed: the owner closed a request the team was working on, until the operator's Got It (§app.project-assistant/closing)
   | "owner-feature-ended"; // act tier, never pushed: a feature request chat ended because its owner stopped being the owner (its request still with the team; `href` the Requests tab)
 

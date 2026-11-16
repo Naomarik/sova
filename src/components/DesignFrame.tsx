@@ -70,14 +70,16 @@ export function createFontsSettled(): () => boolean {
   return ready;
 }
 
-/** A 1280px-wide page scaled into whatever box holds it. */
+/** A 1280px-wide page scaled into whatever box holds it, covering it: a box taller than 16:10 (a phone's
+    row tile) shows more of the page's top instead of a blank strip under it. */
 export function DesignScale(props: { children: JSX.Element; label: string }) {
   let box!: HTMLDivElement;
   const [scale, setScale] = createSignal(0.25);
+  const fit = () => setScale(Math.max(box.clientWidth / DESIGN_PAGE_WIDTH, box.clientHeight / DESIGN_PAGE_HEIGHT));
   onMount(() => {
-    const ro = new ResizeObserver(() => setScale(box.clientWidth / DESIGN_PAGE_WIDTH));
+    const ro = new ResizeObserver(fit);
     ro.observe(box);
-    setScale(box.clientWidth / DESIGN_PAGE_WIDTH);
+    fit();
     onCleanup(() => ro.disconnect());
   });
   return (

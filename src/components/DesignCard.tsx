@@ -529,18 +529,20 @@ export function DesignTiles(props: {
       </Show>
       <Show when={removed().length > 0}>
         <section class="design-removed" aria-label="Removed designs">
-          <button
-            type="button"
-            class="design-removed-fold"
-            aria-expanded={open()}
-            onClick={() => setOpen(!open())}
-          >
-            <Icon name="chevron-right" small class={`icon-twist${open() ? " design-removed-twist-open" : ""}`} />
-            <span class="design-removed-title">Removed · {removed().length}</span>
+          <div class="design-removed-head">
+            <button
+              type="button"
+              class="design-removed-fold"
+              aria-expanded={open()}
+              onClick={() => setOpen(!open())}
+            >
+              <Icon name="chevron-right" small class={`icon-twist${open() ? " design-removed-twist-open" : ""}`} />
+              <span class="design-removed-title">Removed · {removed().length}</span>
+            </button>
             <span class="text-caption text-muted design-removed-hint">
               Set aside, not deleted. Restore puts one back.
             </span>
-          </button>
+          </div>
           <Show when={open()}>
             <div class={`design-grid${props.class ? ` ${props.class}` : ""}`}>
               <For each={removed()}>{tile}</For>

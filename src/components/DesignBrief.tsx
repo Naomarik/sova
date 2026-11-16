@@ -1,4 +1,4 @@
-import { createEffect, createMemo, createSignal, For, on, Show, type Accessor } from "solid-js";
+import { createEffect, createMemo, createSignal, For, on, onCleanup, onMount, Show, type Accessor, type JSX } from "solid-js";
 import type { DesignBriefQuestion, DesignLinkUse, DesignLook } from "../../shared/design";
 import type { DesignAsset, DesignAssetCatalogue } from "../../shared/design-assets";
 import { assetKind, shotWords } from "../../shared/design-assets";
@@ -8,7 +8,8 @@ import { answerLine, assetsOfRun, pickIsRecommended, recommendedPick, runScreens
 import type { DesignStore } from "../lib/design-store";
 import { coordinatorOf, setupCount, setupSummary, type DesignRunView } from "../lib/design-ui";
 import { Inline, QuestionChoices, type QuestionPicker } from "./AlignDocCard";
-import { DesignAskPanel, DesignCoordinatorPanel } from "./DesignCoordinator";
+import { coordinatorChip, DesignAskPanel } from "./DesignCoordinator";
+import { DesignCardFoot } from "./DesignCardFoot";
 import { createSetupDraft, DesignLinkRow, DesignSetupPickers, type SetupDraft } from "./DesignSetupControls";
 import { createAssetCatalogue, DesignBriefImageDetail, DesignBriefImages } from "./DesignBriefImages";
 import { DesignSkillsLine } from "./DesignSkills";
@@ -309,7 +310,59 @@ function BriefShot(props: { asset: DesignAsset; run: DesignRunView; store: Desig
   );
 }
 
-/** The brief while it is open: what will be built, the choices around it, and Start. Takes over the card between its head and its foot. */
+/**
+ * The brief at full size: a native dialog over the window (a sheet on a phone), so it reads at its own
+ * length instead of scrolling inside the card. Opened with showModal, so the page behind is inert;
+ * Escape and Close put focus back on what opened it.
+ */
+export function DesignBriefDialog(props: { title: string; sub?: string; onClose(): void; children: JSX.Element; focus?: string | null }) {
+  let dialog!: HTMLDialogElement;
+  const opener = document.activeElement as HTMLElement | null;
+  onMount(() => {
+    dialog.showModal();
+    // Opened to settle something (a link's use): that thing is brought into view.
+    if (props.focus) queueMicrotask(() => dialog.querySelector(props.focus!)?.scrollIntoView({ block: "center" }));
+  });
+  onCleanup(() => {
+    if (opener?.isConnected) opener.focus();
+  });
+  return (
+    <dialog ref={dialog} class="design-brief-dialog" aria-label={props.title} onClose={() => props.onClose()}>
+      <div class="sheet-grip" aria-hidden="true" />
+      <div class="modal-head design-brief-dialog-head">
+        <div class="design-brief-dialog-titles">
+          <h2 class="modal-title">{props.title}</h2>
+          <Show when={props.sub}>
+            <p class="text-caption text-muted design-brief-dialog-sub">{props.sub}</p>
+          </Show>
+        </div>
+        <button type="button" class="button button-icon button-ghost" aria-label="Close" onClick={() => dialog.close()}>
+          <Icon name="close" />
+        </button>
+      </div>
+      <div class="modal-body design-brief-dialog-body">{props.children}</div>
+      <div class="modal-foot">
+        <span class="modal-spacer" />
+        <button type="button" class="button" autofocus onClick={() => dialog.close()}>
+          Close
+        </button>
+      </div>
+    </dialog>
+  );
+}
+
+/** "Revision 3 · 2 answers · 3 images used": the brief's line under its name. */
+function briefFacts(run: DesignRunView, imagesUsed: number): string {
+  const b = run.brief;
+  if (!b) return "";
+  const answered = b.questions.filter((q) => q.answer).length;
+  const parts = [`Revision ${b.rev}`];
+  if (answered) parts.push(`${answered} answer${answered === 1 ? "" : "s"}`);
+  if (imagesUsed) parts.push(`${imagesUsed} image${imagesUsed === 1 ? "" : "s"} used`);
+  return parts.join(" · ");
+}
+
+/** The brief while it is open: a short preview, the Creative Director's questions and Start. The rest opens full size. */
 export function DesignBriefStep(props: { run: DesignRunView; store: DesignStore; onOpenCoordinator(): void }) {
   const setup: SetupDraft = createSetupDraft(() => props.run, props.store);
   const [staged, setStaged] = createSignal<Record<string, StagedPick>>({});
@@ -319,9 +372,11 @@ export function DesignBriefStep(props: { run: DesignRunView; store: DesignStore;
   const [error, setError] = createSignal("");
   const [ask, setAsk] = createSignal<DesignSpendAsk | null>(null);
   const [openImage, setOpenImage] = createSignal<string | null>(null);
+  // The full-size brief: closed, or open (and on what it was opened to settle).
+  const [dialog, setDialog] = createSignal<{ focus: string | null } | null>(null);
   const catalogue = createAssetCatalogue(props.store);
   const opened = () => catalogue()?.assets.find((a) => a.name === openImage());
-  let scroller: HTMLDivElement | undefined;
+  let questions: HTMLOListElement | undefined;
   const brief = () => props.run.brief!;
   const urls = createMemo(() => (props.run.setup.links ?? []).map((l) => l.url), undefined, { equals: (a, b) => a.length === b.length && a.every((x, i) => x === b[i]) });
   const linkOf = (url: string) => props.run.setup.links?.find((l) => l.url === url);
@@ -384,10 +439,12 @@ export function DesignBriefStep(props: { run: DesignRunView; store: DesignStore;
   const recommend = async () => {
     if (await guard(() => props.store.api.briefAnswers(props.run.id, { recommended: true }), "That didn't reach the Creative Director. Try again.")) setStaged({});
   };
+  // Start waiting on something takes you to it: a question on the card, a choice in the full brief.
   const jumpToWhatBlocks = () => {
     const code = block()?.code;
-    const el = code === "question" ? scroller?.querySelector("[data-open-q]") : code === "link-use" ? scroller?.querySelector(".design-link-row") : code === "screenshot-use" ? scroller?.querySelector(".design-shot") : null;
-    if (el && scroller) scroller.scrollTop += el.getBoundingClientRect().top - scroller.getBoundingClientRect().top;
+    if (code === "question") questions?.querySelector("[data-open-q]")?.scrollIntoView({ block: "center", behavior: "smooth" });
+    else if (code === "link-use") setDialog({ focus: ".design-link-row" });
+    else if (code === "screenshot-use") setDialog({ focus: ".design-shot" });
   };
   const start = async (confirmSpend: boolean) => {
     if (block()) return jumpToWhatBlocks();
@@ -433,79 +490,56 @@ export function DesignBriefStep(props: { run: DesignRunView; store: DesignStore;
     answer: "You answered a question.",
     screen: "The screen changed.",
   };
+  const facts = () => briefFacts(props.run, usedCount(runAssets(), {}, brief()));
+  // What still waits on you inside the full brief, said on the card so Start's reason is never hidden.
+  const waitingInside = () => (block()?.code === "link-use" ? "Choose how to use your link in the full brief." : block()?.code === "screenshot-use" ? "Choose how to use your screenshot in the full brief." : "");
   return (
     <>
       <div class="design-brief-region">
-        <div class="design-card-scroll" ref={scroller}>
-          <div class="design-card-body design-brief" data-links={anyLinks() ? "" : undefined}>
-            <BriefText
-              title="Summary"
-              editLabel="Edit Summary"
-              text={brief().summary}
-              empty="The Creative Director is writing the summary."
-              boxClass="design-brief-summary"
-              canEdit
-              save={(text) => props.store.api.briefEdit(props.run.id, { field: "summary", text })}
-            />
-            <BriefText
-              fold
-              title="Full Prompt"
-              editLabel="Edit Prompt"
-              text={brief().prompt}
-              empty="The Creative Director writes this once your questions are answered."
-              note={promptNote()}
-              boxClass="design-brief-prompt"
-              canEdit={brief().prompt !== null}
-              noEditWhy="Waits until it's written."
-              save={(text) => props.store.api.briefEdit(props.run.id, { field: "prompt", text })}
-            />
-            <Show when={(props.run.skills?.length ?? 0) > 0}>
-              <DesignSkillsLine run={{ skills: designerSkills(props.run) }} />
-            </Show>
-            <Show when={anyLinks()}>
-              <div class="design-brief-links">
-                <For each={urls()}>{(url) => <DesignLinkRow url={url} use={useOf(url)} onUse={(use) => setUse(url, use)} />}</For>
+        <section class="design-sect design-brief-preview" aria-label="Design Brief">
+          <div class="design-sect-label">
+            <h4 class="design-sect-title">Design Brief</h4>
+            <p class="text-caption text-muted design-sect-sub">{facts()}</p>
+          </div>
+          <div class="design-sect-main">
+            {/* Four lines kept, whatever the summary's length: the summary being written moves nothing. */}
+            <p class={`design-brief-teaser${brief().summary ? "" : " text-muted"}`}>{brief().summary || "The Creative Director is writing the summary."}</p>
+            <div class="design-brief-preview-foot">
+              <span class={`text-caption design-brief-waiting${waitingInside() ? "" : " text-muted"}`}>{waitingInside() || promptNote()}</span>
+              <button type="button" class="button button-sm" onClick={() => setDialog({ focus: null })}>
+                Open Brief
+              </button>
+            </div>
+          </div>
+        </section>
+        <Show when={changing()}>
+          <section class="design-sect design-brief-change" aria-label="Change models and directions">
+            <div class="design-sect-label">
+              <h4 class="design-sect-title">Models and directions</h4>
+              <p class="text-caption text-muted design-sect-sub">{setupSummary(setupCount(setup.draft()))}</p>
+            </div>
+            <div class="design-sect-main design-setup">
+              <DesignSetupPickers setup={setup} />
+              <div class="design-brief-change-foot">
+                <button type="button" class="button button-primary" onClick={() => setChanging(false)}>
+                  Done
+                </button>
               </div>
-            </Show>
-            <Show when={anyLinks() || brief().screen}>
-              <BriefScreen run={props.run} store={props.store} contentOnly={urls().length > 0 && urls().every((u) => useOf(u) === "content")} />
-            </Show>
-            <Show when={anyLinks() || assetsOfRun(catalogue(), props.run).length > 0}>
-              <div class="design-brief-material">
-                <div class="design-brief-material-scroll">
-                  <Show when={feelLinks().length > 0 || imageLinks().length > 0 || assetsOfRun(catalogue(), props.run).length > 0} fallback={<p class="text-muted">{urls().every((u) => useOf(u) === "content") ? "Your link is part of the page's content, so nothing is read from it." : "Choose how to use your link, and what it gives the designers shows here."}</p>}>
-                    <For each={feelLinks()}>{(url) => <LookText url={url} look={brief().looks[url]} run={props.run} store={props.store} many={urls().length > 1} />}</For>
-                    <For each={imageLinks()}>
-                      {(url) => (
-                        <BriefText
-                          title={urls().length > 1 ? `Colors and fonts · ${url}` : "Colors and fonts from the page"}
-                          editLabel="Edit Notes"
-                          text={brief().notes?.[url]?.text ?? null}
-                          empty="Read from the page once it's captured. Designers get these after the image list."
-                          note={brief().notes?.[url]?.by === "user" ? "Yours" : ""}
-                          boxClass="design-brief-notes"
-                          canEdit
-                          save={(text) => props.store.api.briefEdit(props.run.id, { field: "notes", url, text })}
-                        />
-                      )}
-                    </For>
-                    <For each={shots()}>
-                      {(name) => <Show when={shotOf(name)}>{(a) => <BriefShot asset={a()} run={props.run} store={props.store} use={screenUseOf(brief(), shotUses(), name)} onUse={(use) => setShotUse(name, use)} onOpen={() => setOpenImage(name)} />}</Show>}
-                    </For>
-                    <Show when={imageLinks().length > 0 || assetsOfRun(catalogue(), props.run).length > 0}>
-                      <DesignBriefImages run={props.run} store={props.store} catalogue={catalogue()} onOpen={setOpenImage} />
-                    </Show>
-                  </Show>
-                </div>
-                <Show when={opened()}>{(a) => <DesignBriefImageDetail asset={a()} store={props.store} onClose={() => setOpenImage(null)} />}</Show>
-              </div>
-            </Show>
-            {/* On a narrow card the answers button sits with the questions, and the foot keeps only Start. */}
-            <Show when={brief().questions.length > 0}>
+            </div>
+          </section>
+        </Show>
+        <Show when={brief().questions.length > 0}>
+          <section class="design-sect design-brief-questions-sect" aria-label="Questions">
+            <div class="design-sect-label">
+              <h4 class="design-sect-title">Questions</h4>
+              <p class="text-caption text-muted design-sect-sub">
+                {brief().questions.length - openQuestions().length} of {brief().questions.length} answered
+              </p>
+            </div>
+            <div class="design-sect-main">
+              {/* On a narrow card the answers button sits with the questions, and the foot keeps only Start. */}
               <div class="design-brief-answers-narrow">{answersButton()}</div>
-            </Show>
-            <Show when={brief().questions.length > 0}>
-              <ol class="align-questions design-brief-questions" aria-label="The Creative Director's questions">
+              <ol class="align-questions design-brief-questions" aria-label="The Creative Director's questions" ref={questions}>
                 <For each={brief().questions}>
                   {(q) => (
                     <BriefQuestion
@@ -519,59 +553,54 @@ export function DesignBriefStep(props: { run: DesignRunView; store: DesignStore;
                   )}
                 </For>
               </ol>
-            </Show>
-          </div>
-        </div>
-        {/* What needs you right now lays over the foot of the brief: it takes no room, so nothing moves. */}
-        <Show when={brief().conflict || pendingAsk() || props.run.error}>
-          <div class="design-brief-overlays">
-            <Show when={props.run.error}>
-              {(e) => (
-                <div class="banner banner-compact banner-error design-brief-banner" role="alert">
-                  <Icon name="alert-circle" small class="banner-icon" />
-                  <p class="banner-body">{e()}</p>
-                </div>
-              )}
-            </Show>
-            <Show when={brief().conflict}>
-              {(c) => (
-                <div class="design-ask" role="group" aria-label="Your Full Prompt would change">
-                  <p>{conflictWords[c().cause]} Your saved Full Prompt doesn't match it now.</p>
-                  <div class="design-brief-choice">
-                    <button type="button" class="button button-sm" disabled={busy()} onClick={() => void guard(() => props.store.api.briefConflict(props.run.id, "keep"), "That choice couldn't be saved. Try again.")}>
-                      Keep My Prompt
-                    </button>
-                    <button type="button" class="button button-sm" disabled={busy()} onClick={() => void guard(() => props.store.api.briefConflict(props.run.id, "rewrite"), "That choice couldn't be saved. Try again.")}>
-                      Rewrite It
-                    </button>
-                  </div>
-                </div>
-              )}
-            </Show>
-            <Show when={pendingAsk()}>{(a) => <DesignAskPanel ask={a()} store={props.store} />}</Show>
-          </div>
+            </div>
+          </section>
         </Show>
-        <Show when={changing()}>
-          <div class="design-brief-change" role="group" aria-label="Change models and directions">
-            <div class="design-brief-change-scroll design-setup">
-              <DesignSetupPickers setup={setup} />
-            </div>
-            <div class="design-brief-change-foot">
-              <button type="button" class="button button-primary" onClick={() => setChanging(false)}>
-                Done
-              </button>
-            </div>
-          </div>
+        {/* The Creative Director last, so its asks coming and going move only what's below them. */}
+        <Show when={coordinator()}>
+          {(c) => {
+            const chip = () => coordinatorChip(c(), props.store.view());
+            return (
+              <section class="design-card-coordinator design-brief-coordinator" aria-label="Creative Director">
+                <div class="design-coordinator-head">
+                  <strong class="design-coordinator-title">Creative Director</strong>
+                  <Chip live={chip().live} tone={chip().tone}>
+                    {chip().text}
+                  </Chip>
+                  <button type="button" class="button button-sm" onClick={() => props.onOpenCoordinator()}>
+                    Chat with the Creative Director
+                  </button>
+                </div>
+                <Show when={props.run.error}>
+                  {(e) => (
+                    <div class="banner banner-compact banner-error design-brief-banner" role="alert">
+                      <Icon name="alert-circle" small class="banner-icon" />
+                      <p class="banner-body">{e()}</p>
+                    </div>
+                  )}
+                </Show>
+                <Show when={brief().conflict}>
+                  {(cf) => (
+                    <div class="design-ask" role="group" aria-label="Your Full Prompt would change">
+                      <p>{conflictWords[cf().cause]} Your saved Full Prompt doesn't match it now.</p>
+                      <div class="design-brief-choice">
+                        <button type="button" class="button button-sm" disabled={busy()} onClick={() => void guard(() => props.store.api.briefConflict(props.run.id, "keep"), "That choice couldn't be saved. Try again.")}>
+                          Keep My Prompt
+                        </button>
+                        <button type="button" class="button button-sm" disabled={busy()} onClick={() => void guard(() => props.store.api.briefConflict(props.run.id, "rewrite"), "That choice couldn't be saved. Try again.")}>
+                          Rewrite It
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </Show>
+                <Show when={pendingAsk()}>{(a) => <DesignAskPanel ask={a()} store={props.store} />}</Show>
+              </section>
+            );
+          }}
         </Show>
       </div>
-      <Show when={coordinator()}>
-        {(c) => (
-          <div class="design-brief-coordinator">
-            <DesignCoordinatorPanel strip coordinator={c()} view={props.store.view()} store={props.store} onOpen={props.onOpenCoordinator} />
-          </div>
-        )}
-      </Show>
-      <div class="card-foot design-brief-foot">
+      <DesignCardFoot class="design-brief-foot">
         <div class="design-brief-line">
           <Show
             when={ask()}
@@ -579,7 +608,7 @@ export function DesignBriefStep(props: { run: DesignRunView; store: DesignStore;
               <>
                 <span class="design-brief-count">
                   <span class="design-brief-count-text">{setupSummary(setupCount(setup.draft()))}{brief().estimateUsd ? ` · about $${brief().estimateUsd!.toFixed(2)}` : ""}</span>
-                  <button type="button" class="design-brief-change-link" onClick={() => setChanging(!changing())}>
+                  <button type="button" class="design-brief-change-link" aria-expanded={changing()} onClick={() => setChanging(!changing())}>
                     Change
                   </button>
                 </span>
@@ -603,10 +632,7 @@ export function DesignBriefStep(props: { run: DesignRunView; store: DesignStore;
           </Show>
         </div>
         <div class="design-brief-slot">
-          <Show
-            when={ask()}
-            fallback={answersButton()}
-          >
+          <Show when={ask()} fallback={answersButton()}>
             <button type="button" class="button button-ghost" disabled={busy()} onClick={() => setAsk(null)}>
               Cancel
             </button>
@@ -618,78 +644,157 @@ export function DesignBriefStep(props: { run: DesignRunView; store: DesignStore;
             {(label) => <span>{label}</span>}
           </Show>
         </button>
-      </div>
+      </DesignCardFoot>
+      <Show when={dialog()}>
+        {(d) => (
+          <DesignBriefDialog title="Design Brief" sub={facts()} focus={d().focus} onClose={() => setDialog(null)}>
+            <div class="design-brief" data-links={anyLinks() ? "" : undefined}>
+              <BriefText
+                title="Summary"
+                editLabel="Edit Summary"
+                text={brief().summary}
+                empty="The Creative Director is writing the summary."
+                boxClass="design-brief-summary"
+                canEdit
+                save={(text) => props.store.api.briefEdit(props.run.id, { field: "summary", text })}
+              />
+              <BriefText
+                title="Full Prompt"
+                editLabel="Edit Prompt"
+                text={brief().prompt}
+                empty="The Creative Director writes this once your questions are answered."
+                note={promptNote()}
+                boxClass="design-brief-prompt"
+                canEdit={brief().prompt !== null}
+                noEditWhy="Waits until it's written."
+                save={(text) => props.store.api.briefEdit(props.run.id, { field: "prompt", text })}
+              />
+              <Show when={(props.run.skills?.length ?? 0) > 0}>
+                <DesignSkillsLine run={{ skills: designerSkills(props.run) }} />
+              </Show>
+              <Show when={anyLinks()}>
+                <div class="design-brief-links">
+                  <For each={urls()}>{(url) => <DesignLinkRow url={url} use={useOf(url)} onUse={(use) => setUse(url, use)} />}</For>
+                </div>
+              </Show>
+              <Show when={anyLinks() || brief().screen}>
+                <BriefScreen run={props.run} store={props.store} contentOnly={urls().length > 0 && urls().every((u) => useOf(u) === "content")} />
+              </Show>
+              <Show when={anyLinks() || runAssets().length > 0}>
+                <div class="design-brief-material">
+                  <Show when={opened()}>{(a) => <DesignBriefImageDetail asset={a()} store={props.store} onClose={() => setOpenImage(null)} />}</Show>
+                  <Show when={feelLinks().length > 0 || imageLinks().length > 0 || runAssets().length > 0} fallback={<p class="text-muted">{urls().every((u) => useOf(u) === "content") ? "Your link is part of the page's content, so nothing is read from it." : "Choose how to use your link, and what it gives the designers shows here."}</p>}>
+                    <For each={feelLinks()}>{(url) => <LookText url={url} look={brief().looks[url]} run={props.run} store={props.store} many={urls().length > 1} />}</For>
+                    <For each={imageLinks()}>
+                      {(url) => (
+                        <BriefText
+                          title={urls().length > 1 ? `Colors and fonts · ${url}` : "Colors and fonts from the page"}
+                          editLabel="Edit Notes"
+                          text={brief().notes?.[url]?.text ?? null}
+                          empty="Read from the page once it's captured. Designers get these after the image list."
+                          note={brief().notes?.[url]?.by === "user" ? "Yours" : ""}
+                          boxClass="design-brief-notes"
+                          canEdit
+                          save={(text) => props.store.api.briefEdit(props.run.id, { field: "notes", url, text })}
+                        />
+                      )}
+                    </For>
+                    <For each={shots()}>
+                      {(name) => <Show when={shotOf(name)}>{(a) => <BriefShot asset={a()} run={props.run} store={props.store} use={screenUseOf(brief(), shotUses(), name)} onUse={(use) => setShotUse(name, use)} onOpen={() => setOpenImage(name)} />}</Show>}
+                    </For>
+                    <Show when={imageLinks().length > 0 || runAssets().length > 0}>
+                      <DesignBriefImages run={props.run} store={props.store} catalogue={catalogue()} onOpen={setOpenImage} />
+                    </Show>
+                  </Show>
+                </div>
+              </Show>
+            </div>
+          </DesignBriefDialog>
+        )}
+      </Show>
     </>
   );
 }
 
-/** The brief once designs are being made: one line, and Expand to read what they were started from. */
-export function DesignBriefCollapsed(props: { run: DesignRunView; store: DesignStore }) {
+/** The brief once designs are being made: one row, and Open Brief to read, full size, what they were started from. */
+export function DesignBriefRow(props: { run: DesignRunView; store: DesignStore }) {
   const [open, setOpen] = createSignal(false);
   const [catalogue, setCatalogue] = createSignal<DesignAssetCatalogue | null>(null);
   void props.store.api.assets().then(setCatalogue, () => {});
   const brief = () => props.run.brief;
-  const imagesUsed = () => usedCount(assetsOfRun(catalogue(), props.run), {}, brief());
+  const runAssets = createMemo(() => assetsOfRun(catalogue(), props.run));
+  const imagesUsed = () => usedCount(runAssets(), {}, brief());
   return (
     <Show when={brief()}>
       {(b) => (
-        <section class="design-brief-collapsed" aria-label="Design Brief">
-          <button type="button" class="design-brief-fold" aria-expanded={open()} aria-label={`${open() ? "Collapse" : "Expand"} the Design Brief`} onClick={() => setOpen(!open())}>
-            <Icon name="chevron-right" small class={`icon-twist${open() ? " design-brief-twist-open" : ""}`} />
-            <span class="design-brief-title">Design Brief</span>
-            <span class="text-caption text-muted design-brief-used">{imagesUsed() > 0 ? `${imagesUsed()} image${imagesUsed() === 1 ? "" : "s"} used` : ""}</span>
-            {/* A new node for each word, so the change can't count as a move. */}
-            <Show when={open() ? "Collapse" : "Expand"} keyed>
-              {(word) => <span class="text-caption text-muted design-brief-toggle-word">{word}</span>}
-            </Show>
-          </button>
+        <section class="design-sect design-brief-row" aria-label="Design Brief">
+          <div class="design-sect-label">
+            <h4 class="design-sect-title">Design Brief</h4>
+            <p class="text-caption text-muted design-sect-sub">{briefFacts(props.run, imagesUsed())}</p>
+          </div>
+          <div class="design-sect-main design-brief-row-main">
+            <p class="design-brief-row-text" title={b().summary}>
+              {b().summary}
+            </p>
+            <button type="button" class="button button-sm" onClick={() => setOpen(true)}>
+              Open Brief
+            </button>
+          </div>
           <Show when={open()}>
-            <div class="design-brief-frozen">
-              <Show when={b().startedAt}>
-                <p class="text-caption text-muted">This is what the designs were started from. Read only.</p>
-              </Show>
-              <p class="design-brief-read">{b().summary}</p>
-              <Show when={(props.run.skills?.length ?? 0) > 0}>
-                <DesignSkillsLine run={{ skills: designerSkills(props.run) }} />
-              </Show>
-              <For each={props.run.setup.links ?? []}>
-                {(l) => (
-                  <p class="text-caption">
-                    <code class="design-link-url">{l.url}</code> · {l.use === "feel" ? "Just Its Feel" : l.use === "images" ? "Use Its Images" : "Not chosen"}
-                  </p>
-                )}
-              </For>
-              <For each={Object.entries(b().screenUse ?? {})}>
-                {([name, u]) => (
-                  <p class="text-caption">
-                    <span class="text-mono">{name}</span> · {u.use === "rebuild" ? "Rebuild This Screen" : "Just Its Feel"}
-                  </p>
-                )}
-              </For>
-              <For each={Object.entries(b().looks).flatMap(([url, look]) => (look.state === "ready" ? [{ url, text: look.text }] : []))}>{(l) => <p class="design-brief-read">{l.text}</p>}</For>
-              <For each={b().questions}>
-                {(q) => (
-                  <p class="text-caption">
-                    <span class="text-mono">{q.id}</span> <strong>{q.topic}</strong>: {answerLine(q)}
-                  </p>
-                )}
-              </For>
-              <Show when={b().prompt}>
-                {(p) => (
-                  <details class="design-brief-frozen-prompt">
-                    <summary>
-                      <Icon name="chevron-right" small class="icon-twist" />
-                      Full Prompt
-                    </summary>
-                    <div class="design-brief-read">{p()}</div>
-                  </details>
-                )}
-              </Show>
-            </div>
+            <DesignBriefDialog title="Design Brief" sub={`${briefFacts(props.run, imagesUsed())}${b().startedAt ? " · what the designs were started from, read only" : ""}`} onClose={() => setOpen(false)}>
+              <div class="design-brief-frozen">
+                <section class="design-brief-text" aria-label="Summary">
+                  <h4 class="design-brief-title">Summary</h4>
+                  <p class="design-brief-read">{b().summary}</p>
+                </section>
+                <Show when={b().prompt}>
+                  {(p) => (
+                    <section class="design-brief-text" aria-label="Full Prompt">
+                      <h4 class="design-brief-title">Full Prompt</h4>
+                      <div class="design-brief-box">
+                        <div class="design-brief-read">{p()}</div>
+                      </div>
+                    </section>
+                  )}
+                </Show>
+                <Show when={(props.run.skills?.length ?? 0) > 0}>
+                  <DesignSkillsLine run={{ skills: designerSkills(props.run) }} />
+                </Show>
+                <For each={props.run.setup.links ?? []}>
+                  {(l) => (
+                    <p class="text-caption">
+                      <code class="design-link-url">{l.url}</code> · {l.use === "feel" ? "Just Its Feel" : l.use === "images" ? "Use Its Images" : "Not chosen"}
+                    </p>
+                  )}
+                </For>
+                <For each={Object.entries(b().screenUse ?? {})}>
+                  {([name, u]) => (
+                    <p class="text-caption">
+                      <span class="text-mono">{name}</span> · {u.use === "rebuild" ? "Rebuild This Screen" : "Just Its Feel"}
+                    </p>
+                  )}
+                </For>
+                <For each={Object.entries(b().looks).flatMap(([url, look]) => (look.state === "ready" ? [{ url, text: look.text }] : []))}>{(l) => <p class="design-brief-read">{l.text}</p>}</For>
+                <Show when={b().questions.length > 0}>
+                  <section class="design-brief-text" aria-label="Answers">
+                    <h4 class="design-brief-title">Answers</h4>
+                    <For each={b().questions}>
+                      {(q) => (
+                        <p class="text-caption">
+                          <span class="text-mono">{q.id}</span> <strong>{q.topic}</strong>: {answerLine(q)}
+                        </p>
+                      )}
+                    </For>
+                  </section>
+                </Show>
+                <Show when={runAssets().length > 0}>
+                  <DesignBriefImages run={props.run} store={props.store} catalogue={catalogue()} onOpen={() => {}} readOnly />
+                </Show>
+              </div>
+            </DesignBriefDialog>
           </Show>
         </section>
       )}
     </Show>
   );
 }
-

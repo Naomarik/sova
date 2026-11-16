@@ -174,7 +174,19 @@ export function lookbookTitle(designs: number): string {
   return `Lookbook · ${designs > 0 ? plural(designs, "design") : "Brief"}`;
 }
 
-export const STATUS_WORD: Record<DesignStatus, string> = { queued: "Queued", writing: "Writing", fixing: "Fixing", ready: "Ready", failed: "Failed" };
+export const STATUS_WORD: Record<DesignStatus, string> = { queued: "Queued", writing: "Writing", fixing: "Fixing", ready: "Ready", failed: "Failed", stopped: "Stopped" };
+
+/** Removed while still waiting for its first session: it never started, so it reads as waiting, never as stopped. */
+export const designNeverStarted = (d: DesignRecord): boolean => d.status === "stopped" && !!d.stopped?.waiting;
+
+/** Its session has started and waits on its model's first reply: it holds a session, so it isn't waiting for one. */
+export const designAwaitsModel = (d: DesignRecord): boolean => d.status === "queued" && !!d.sessionId && !d.sessionEnded;
+
+/** What a tile with no page yet says over its picture while queued, or "" for none. */
+export function designQueuedLine(d: DesignRecord): string {
+  if (d.status !== "queued") return "";
+  return designAwaitsModel(d) ? "Waiting for its model to answer" : "Waiting for a free session";
+}
 
 /** The word on a design's chip: what its session is doing now, which can be more than its page's status. */
 export function designStatusWord(d: DesignRecord): string {
@@ -182,6 +194,8 @@ export function designStatusWord(d: DesignRecord): string {
   if (d.status === "writing" && d.readingSkill && !d.live) return "Reading";
   if (d.status === "writing" && d.thinking) return "Thinking";
   if (d.status === "ready" && d.workerState === "working") return "Working";
+  if (designAwaitsModel(d)) return "Starting";
+  if (designNeverStarted(d)) return "Not started";
   return STATUS_WORD[d.status];
 }
 
@@ -209,16 +223,25 @@ export const designNoteLine = (d: DesignRecord): string => designFixLine(d) || d
 /** "$0.19"; a figure under a cent reads "under $0.01". */
 const dollars = (usd: number): string => (usd < 0.005 ? "under $0.01" : `$${usd.toFixed(2)}`);
 
-/** "2 ready · 1 writing · 3 queued", omitting what there are none of; failed counted last. */
+/** The designs in the grid: a removed one is set aside, in the folded Removed section, and counts nowhere on the card. */
+export const designsShown = (designs: readonly DesignRecord[]): DesignRecord[] => designs.filter((d) => !d.removed);
+export const designsRemoved = (designs: readonly DesignRecord[]): DesignRecord[] => designs.filter((d) => !!d.removed);
+
+/** "2 ready · 1 writing · 3 queued", omitting what there are none of; stopped and failed counted last. Removed designs aren't counted. */
 export function statusCounts(designs: readonly DesignRecord[]): string {
-  const of = (s: DesignStatus) => designs.filter((d) => d.status === s).length;
-  const parts = (["ready", "writing", "fixing", "queued", "failed"] as const).map((s) => (of(s) ? `${of(s)} ${s}` : "")).filter(Boolean);
-  return parts.join(" · ") || "0 designs";
+  const shown = designsShown(designs);
+  const waits = shown.filter(designNeverStarted).length;
+  const of = (s: DesignStatus) => shown.filter((d) => d.status === s).length - (s === "stopped" ? waits : 0);
+  const parts = (["ready", "writing", "fixing", "queued", "stopped", "failed"] as const).map((s) => (of(s) ? `${of(s)} ${s}` : ""));
+  parts.splice(4, 0, waits ? `${waits} not started` : "");
+  return parts.filter(Boolean).join(" · ") || "0 designs";
 }
+
 
 /** A launched run's size, worded as Setup's count line: "6 designs · 3 pairs · 2 models". Designs made from others
     count as designs; only the run's own styles and layouts count as styles and layouts. */
-export function batchLine(designs: readonly DesignRecord[], combine?: DesignCombine): string {
+export function batchLine(all: readonly DesignRecord[], combine?: DesignCombine): string {
+  const designs = designsShown(all);
   const own = designs.filter((d) => d.parents.length === 0);
   const styles = new Set(own.map((d) => d.direction)).size;
   const layouts = new Set(own.flatMap((d) => (d.layout ? [d.layout] : []))).size;
@@ -254,7 +277,10 @@ export const designOpenFollowsLive = (d: DesignRecord, picked: number | null): b
  * the version on show is still the right one.
  */
 export const designHoldEnds = (d: DesignRecord, latestAtStart: number): boolean => !designIsWriting(d) && designLatest(d) === latestAtStart;
-export const designCanRefine = (d: DesignRecord): boolean => d.versions.length > 0 && d.status === "ready";
+/** Stop: a design that is waiting or still writing, and isn't set aside. A Refine in progress counts as writing. */
+export const designCanStop = (d: DesignRecord): boolean => !d.removed && (d.status === "queued" || d.status === "writing" || d.status === "fixing");
+/** Start Again (or Retry): a design that ended with no page, or was stopped before its first. */
+export const designCanStartAgain = (d: DesignRecord): boolean => !d.removed && (d.status === "failed" || d.status === "stopped");
 export const designLatest = (d: DesignRecord): number => d.versions.at(-1)?.n ?? 0;
 
 /** Who a design was made from: "from A and C". */
@@ -263,5 +289,3 @@ export function parentsLine(parents: readonly string[]): string {
   if (parents.length === 1) return `from ${parents[0]}`;
   return `from ${parents.slice(0, -1).join(", ")} and ${parents.at(-1)}`;
 }
-
-export const QUICK_PROMPTS = ["Check Phone Width", "Tighten Spacing", "Fix Contrast", "Make Content Real"] as const;

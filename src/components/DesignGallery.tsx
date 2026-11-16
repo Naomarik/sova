@@ -1,10 +1,10 @@
-import { createMemo, createSignal, For, Show } from "solid-js";
+import { Show } from "solid-js";
 import { useDesignOpen } from "../lib/design-history";
 import { hostOf } from "../lib/mesh";
 import { useDesignStore } from "../lib/design-store";
 import { coordinatorOf } from "../lib/design-ui";
-import { designGrid, DesignTile } from "./DesignCard";
-import { DesignOpenSlot, DesignRefinePanel } from "./DesignOpen";
+import { designGrid, DesignTiles } from "./DesignCard";
+import { DesignOpenSlot } from "./DesignOpen";
 import { createFontsSettled } from "./DesignFrame";
 import "./DesignCard.css";
 
@@ -13,13 +13,8 @@ export function DesignGallery(props: { path: string }) {
   const store = useDesignStore(props.path, hostOf(props.path));
   // Shared with the chat's Lookbook card, and kept in the browser's history.
   const nav = useDesignOpen(props.path, hostOf(props.path));
-  const [refining, setRefining] = createSignal<string | null>(null);
   const designs = () => designGrid(store.view());
-  const labels = createMemo(() => designs().map((d) => d.label), undefined, {
-    equals: (a, b) => a.length === b.length && a.every((x, i) => x === b[i]),
-  });
   const fontsSettled = createFontsSettled();
-  const refined = () => designs().find((d) => d.label === refining());
   return (
     <section class="gallery-section" aria-labelledby="gallery-prototypes">
       <div class="gallery-head">
@@ -52,36 +47,15 @@ export function DesignGallery(props: { path: string }) {
               </Show>
             }
           >
-            <div class="design-grid gallery-grid">
-              <For each={labels()}>
-                {(label) => (
-                  <Show when={designs().find((d) => d.label === label)}>
-                    {(d) => (
-                      <DesignTile
-                        d={d()}
-                        store={store}
-                        cacheKey={props.path}
-                        onOpen={() => nav.open({ kind: "design", label })}
-                        onRefine={() => setRefining(label)}
-                      />
-                    )}
-                  </Show>
-                )}
-              </For>
-            </div>
+            <DesignTiles
+              designs={designs()}
+              store={store}
+              cacheKey={props.path}
+              class="gallery-grid"
+              onOpen={(label) => nav.open({ kind: "design", label })}
+            />
           </Show>
         </div>
-      </Show>
-      <Show when={refined()}>
-        {(d) => (
-          <div class="design-card-refine">
-            <DesignRefinePanel
-              d={d()}
-              store={store}
-              onClose={() => setRefining(null)}
-            />
-          </div>
-        )}
       </Show>
       <DesignOpenSlot nav={nav} store={store} path={props.path} />
     </section>

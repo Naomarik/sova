@@ -1,6 +1,43 @@
-/* The Design Brief. Every box whose words the server can change has one size of its own and scrolls inside
-   it; anything that needs you lays over the foot of the brief; so an update never moves what's around it. */
-.design-brief-region { position: relative; flex: 1 1 0; min-height: 0; display: flex; flex-direction: column; }
+/* The Design Brief. On the card: a four-line preview, the questions and Start; the rest opens full size in
+   its dialog, where every text reads at its own length. Nothing scrolls inside the card. */
+.design-brief-region { position: relative; display: flex; flex-direction: column; }
+/* The summary's preview keeps four lines whatever its length, so the summary being written moves nothing. */
+.design-brief-teaser { margin: 0; height: calc(4 * var(--fs-body) * var(--lh-body)); display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 4; overflow: hidden; white-space: pre-line; overflow-wrap: anywhere; color: var(--color-ink-2); }
+.design-brief-preview-foot { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); min-height: var(--control-sm); }
+.design-brief-waiting { flex: 1 1 0; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.design-brief-preview-foot .button { flex: none; }
+.design-brief-change-foot { display: flex; justify-content: flex-end; }
+/* After Start: one row, the summary's first line and Open Brief. */
+.design-sect-main.design-brief-row-main { flex-direction: row; align-items: center; gap: var(--space-3); }
+.design-brief-row-text { flex: 1 1 0; min-width: 0; margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--color-ink-2); }
+.design-brief-row-main .button { flex: none; }
+
+/* The full-size brief: a native dialog, nearly the window on a desktop and a tall sheet on a phone. Its
+   body is the one place that scrolls. */
+.design-brief-dialog { position: fixed; inset: 0; margin: auto; box-sizing: border-box; width: min(960px, calc(100vw - var(--space-8))); height: calc(100dvh - var(--space-8)); max-width: none; max-height: none; padding: 0; border: var(--stroke-thin) solid var(--color-border); border-radius: var(--r-xl); background: var(--color-surface); color: var(--color-ink); box-shadow: var(--shadow-3); overflow: clip; }
+.design-brief-dialog[open] { display: flex; flex-direction: column; animation: enter-fade var(--dur-base) var(--ease-standard); }
+.design-brief-dialog::backdrop { background: var(--scrim); }
+.design-brief-dialog-head { flex: none; display: flex; align-items: center; gap: var(--space-3); }
+.design-brief-dialog-titles { flex: 1 1 0; min-width: 0; }
+.design-brief-dialog-sub { margin: 0; }
+.design-brief-dialog-body { flex: 1 1 auto; min-height: 0; color: var(--color-ink); }
+.design-brief-dialog .modal-foot { flex: none; }
+@media (max-width: 767px) {
+  .design-brief-dialog { inset: auto 0 0 0; width: 100%; height: 92dvh; border-radius: var(--r-xl) var(--r-xl) 0 0; border-bottom: 0; }
+}
+/* In the dialog every text is its own length: no box of a fixed size, nothing scrolling inside. */
+.design-brief-dialog .design-brief-box { height: auto; }
+.design-brief-dialog .design-brief-read { height: auto; overflow: visible; }
+.design-brief-dialog .design-brief-area .textarea { height: auto; min-height: calc(10 * var(--fs-body) * var(--lh-body)); field-sizing: content; }
+.design-brief-dialog .design-brief-prompt .design-brief-area .textarea { min-height: calc(20 * var(--fs-body) * var(--lh-body)); }
+.design-brief-dialog .design-brief-screen { height: auto; }
+.design-brief-dialog .design-brief-screen-picture { flex: none; overflow: visible; }
+.design-brief-dialog .design-brief-screen-empty { height: auto; min-height: 96px; }
+.design-brief-dialog .design-brief-material { height: auto; display: flex; flex-direction: column; gap: var(--space-3); }
+.design-brief-dialog .design-brief-material > p { margin: 0; }
+.design-brief-dialog .design-asset-detail { position: relative; inset: auto; }
+.design-brief-dialog .design-asset-detail-body { overflow: visible; }
+.design-brief-dialog .design-shot-swatches { height: auto; overflow: visible; }
 .design-brief { gap: var(--space-4); }
 /* With no link, a screen or an image that turns up comes after the questions, so it pushes nothing down. */
 .design-brief:not([data-links]) .design-brief-screen, .design-brief:not([data-links]) .design-brief-material { order: 2; }
@@ -29,7 +66,7 @@
 .design-link-use .button { min-width: 0; padding-inline: var(--space-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 @container design-card (max-width: 500px) { .design-link-use .button { font-size: var(--fs-caption); white-space: normal; line-height: 1.2; } }
 .design-link-use .button[aria-pressed="true"] { background: var(--color-accent-tint); border-color: var(--color-accent); }
-.design-setup-links { flex: none; height: 104px; box-sizing: border-box; overflow-y: auto; scrollbar-width: thin; display: flex; flex-direction: column; gap: var(--space-2); }
+.design-setup-links { flex: none; display: flex; flex-direction: column; gap: var(--space-2); }
 .design-setup-links > * { flex: none; }
 .design-setup-links > p { margin: 0; }
 
@@ -43,25 +80,14 @@
 
 /* Where the look in words and the images go: one size, whichever it holds. */
 .design-brief-material { position: relative; flex: none; height: 300px; }
-.design-brief-material-scroll { height: 100%; box-sizing: border-box; overflow-y: auto; scrollbar-width: thin; display: flex; flex-direction: column; gap: var(--space-3); padding-right: var(--space-1); }
-.design-brief-material-scroll > * { flex: none; }
 .design-brief-material p { margin: 0; }
 
 .design-brief-questions { min-width: 0; }
 .design-brief-q { padding: var(--space-3) 0; }
 .design-brief-q:first-child { border-top: 0; padding-top: 0; }
 
-.design-brief-overlays { position: absolute; inset: auto 0 0 0; z-index: 3; max-height: 70%; overflow-y: auto; display: flex; flex-direction: column; padding: var(--space-2) var(--space-4) 0; background: var(--color-surface); border-top: 1px solid var(--color-border); box-shadow: var(--shadow-2); }
-.design-brief-change { position: absolute; inset: 0; z-index: 4; display: flex; flex-direction: column; background: var(--color-surface); }
-.design-brief-change-scroll { flex: 1 1 0; min-height: 0; overflow-y: auto; scrollbar-width: thin; display: flex; flex-direction: column; padding: var(--space-3) var(--space-4); }
-.design-brief-change-foot { flex: none; display: flex; justify-content: flex-end; padding: var(--space-2) var(--space-4); border-top: 1px solid var(--color-border); }
 
-/* During the brief the coordinator is only its status, its open question and its box. */
-.design-brief-coordinator { flex: none; height: 120px; box-sizing: border-box; padding: var(--space-1) var(--space-4) var(--space-2); border-top: 1px solid var(--color-border); overflow: hidden; }
-.design-brief-coordinator .design-coordinator { height: 100%; }
-.design-brief-coordinator .composer-input { max-height: 64px; }
-
-.design-brief-foot { flex: none; box-sizing: border-box; display: grid; grid-template-columns: minmax(300px, 1fr) 214px minmax(240px, 300px); align-items: center; gap: var(--space-2) var(--space-3); height: 72px; }
+.design-brief-foot { flex: none; box-sizing: border-box; flex-wrap: nowrap; display: grid; grid-template-columns: minmax(300px, 1fr) 214px minmax(240px, 300px); align-items: center; gap: var(--space-2) var(--space-3); height: 72px; }
 .design-brief-line { position: relative; display: flex; flex-direction: column; min-width: 0; font-size: var(--fs-caption); }
 .design-brief-line-cancel { display: none; position: absolute; right: 0; top: 50%; transform: translateY(-50%); }
 .design-brief-line > span { height: 18px; line-height: 18px; min-height: 1.45em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -88,12 +114,9 @@
   .design-brief-questions { order: 1; }
 }
 
-.design-brief-collapsed { border-bottom: 1px solid var(--color-border); padding: var(--space-1) var(--space-4); }
-.design-brief-collapsed > .design-brief-fold { width: 100%; }
-.design-brief-used { margin-left: var(--space-2); }
-.design-brief-frozen { display: flex; flex-direction: column; gap: var(--space-2); padding-bottom: var(--space-3); }
+.design-brief-frozen { display: flex; flex-direction: column; gap: var(--space-3); }
 .design-brief-frozen p { margin: 0; }
-.design-brief-frozen .design-brief-read { height: auto; padding: 0; overflow: visible; }
+.design-brief-frozen > .design-brief-text > .design-brief-read { padding: 0; }
 .design-brief-frozen-prompt summary { list-style: none; gap: var(--space-1); cursor: pointer; font-weight: var(--fw-semibold); font-size: var(--fs-caption); min-height: 36px; display: flex; align-items: center; }
 
 /* The image grid: every card one size, so one arriving or being described moves no other. */
@@ -121,9 +144,7 @@
 .design-asset-detail-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); }
 .design-brief-frozen-prompt summary::-webkit-details-marker { display: none; }
 .design-brief-frozen-prompt[open] .icon-twist { transform: rotate(90deg); }
-.design-brief-error-room { flex: none; height: 56px; }
-@container design-card (max-width: 560px) { .design-brief-error-room { height: 96px; } }
-.design-brief-banner { margin-bottom: var(--space-2); }
+.design-brief-banner { margin: 0; }
 .design-asset-row { flex: none; display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: var(--space-2); min-height: 36px; }
 .design-asset-name { font-size: var(--fs-caption); color: var(--color-ink-muted); }
 .design-page-assets .design-asset-detail { inset: var(--space-3) var(--space-4); }
@@ -132,10 +153,6 @@
 /* The Full Prompt opens over what follows it instead of pushing it down. */
 .design-brief-text[data-fold] { position: relative; }
 .design-brief-text[data-fold] > .design-brief-box { position: absolute; top: 100%; left: 0; right: 0; z-index: 3; background: var(--color-surface); box-shadow: var(--shadow-2); }
-/* The brief after Start opens over the grid instead of pushing it down. */
-.design-brief-collapsed { position: relative; z-index: 3; }
-.design-brief-collapsed > .design-brief-frozen { position: absolute; top: 100%; left: 0; right: 0; max-height: 420px; overflow-y: auto; scrollbar-width: thin; box-sizing: border-box; padding: var(--space-3) var(--space-4); background: var(--color-surface); border-bottom: 1px solid var(--color-border); box-shadow: var(--shadow-2); }
-.design-brief-toggle-word { margin-left: auto; }
 /* Page Assets' head is one line of one height, whatever the count and cost say. */
 .design-page-assets .gallery-head { flex-wrap: nowrap; height: 24px; }
 .design-page-assets .gallery-head > * { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 24px; }

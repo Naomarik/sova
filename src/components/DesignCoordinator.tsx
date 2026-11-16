@@ -199,47 +199,47 @@ export function DesignAskPanel(props: { ask: DesignAsk; store: DesignStore }) {
   );
 }
 
-/** What the Creative Director has concluded and made so far, with a box to prompt it further. */
-export function DesignCoordinatorPanel(props: { coordinator: DesignCoordinatorInfo; view: DesignChatView | null; store: DesignStore; onOpen?(): void; bare?: boolean; /** Only its status and its box: during the brief, its words are on the brief and its question lays over it. */ strip?: boolean }) {
-  const tracking = () => props.view?.designs.length ?? 0;
+export const COORDINATOR_STATUS_WORD = STATUS_WORD;
+
+/** The Creative Director's status on one chip: how many designs it tracks, else what it is doing. */
+export function coordinatorChip(coordinator: DesignCoordinatorInfo, view: DesignChatView | null): { text: string; live: boolean; tone?: "accent" } {
+  const tracking = (view?.designs ?? []).filter((d) => !d.removed).length;
+  return {
+    text: tracking > 0 ? `Tracking ${tracking} design${tracking === 1 ? "" : "s"}` : STATUS_WORD[coordinator.status],
+    live: coordinator.status === "running" || coordinator.status === "starting",
+    tone: coordinator.status === "running" ? "accent" : undefined,
+  };
+}
+
+/** What the Creative Director has concluded and made so far: its status, any yes-or-no it waits on, and its notes at full length.
+    You talk to it in its own chat, so there is no box here. */
+export function DesignCoordinatorPanel(props: { coordinator: DesignCoordinatorInfo; view: DesignChatView | null; store: DesignStore; onOpen?(): void; bare?: boolean }) {
+  const chip = () => coordinatorChip(props.coordinator, props.view);
   return (
     <div class="design-coordinator" classList={{ "design-coordinator-bare": props.bare }}>
       <div class="design-coordinator-head">
         <strong class="design-coordinator-title" classList={{ "visually-hidden": props.bare }}>
           Creative Director
         </strong>
-        <Chip live={props.coordinator.status === "running" || props.coordinator.status === "starting"} tone={props.coordinator.status === "running" ? "accent" : undefined}>
-          {tracking() > 0 ? `Tracking ${tracking()} designs` : STATUS_WORD[props.coordinator.status]}
+        <Chip live={chip().live} tone={chip().tone}>
+          {chip().text}
         </Chip>
         <Show when={props.onOpen}>
           <button type="button" class="button button-sm" onClick={() => props.onOpen!()}>
-            Open Chat
+            Chat with the Creative Director
           </button>
         </Show>
       </div>
-      <Show when={!props.strip}>
-        <div class="design-coordinator-card" classList={{ "design-coordinator-card-bare": props.bare }}>
-          <Show when={props.coordinator.ask}>{(a) => <DesignAskPanel ask={a()} store={props.store} />}</Show>
-          <Show when={props.coordinator.card} fallback={<p class="text-muted">Nothing on its card yet. It writes here as it goes.</p>}>
-            <Markdown text={props.coordinator.card} />
-          </Show>
-        </div>
-      </Show>
+      <div class="design-coordinator-card" classList={{ "design-coordinator-card-bare": props.bare }}>
+        <Show when={props.coordinator.ask}>{(a) => <DesignAskPanel ask={a()} store={props.store} />}</Show>
+        <Show when={props.coordinator.card} fallback={<p class="text-muted">Nothing on its card yet. It writes here as it goes.</p>}>
+          <Markdown text={props.coordinator.card} />
+        </Show>
+      </div>
       <Show when={props.bare}>
         <div class="design-box-status">
           <DesignDeliveryLine delivery={props.coordinator.delivery} name="the Creative Director" />
         </div>
-      </Show>
-      <Show when={!props.bare}>
-        <DesignMessageBox
-          label="Message the Creative Director"
-          placeholder={props.strip ? "Tell the Creative Director what to change" : "Message the Creative Director"}
-          delivery={props.coordinator.delivery}
-          name="the Creative Director"
-          send={(text, key, images) => props.store.api.coordinatorMessage(text, key, images)}
-          upload={props.store.api.uploadImage}
-          onSent={() => props.store.refresh()}
-        />
       </Show>
     </div>
   );

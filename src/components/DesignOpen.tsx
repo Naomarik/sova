@@ -5,78 +5,13 @@ import { versionLabel } from "../lib/design-frame";
 import type { DesignOpener } from "../lib/design-history";
 import { createPageSlots } from "../lib/design-page-slots";
 import { designPageText, type DesignStore } from "../lib/design-store";
-import { coordinatorOf, designCanRefine, designHoldEnds, designIsBusy, designIsWriting, designNoteLine, designLatest, designMeta, designStatusWord, parentsLine, QUICK_PROMPTS } from "../lib/design-ui";
-import { designStatusTone, DesignTile, designGrid, designWaiting, type DesignOpenTarget } from "./DesignCard";
-import { DesignCoordinatorPanel, designKey, DesignMessageBox } from "./DesignCoordinator";
+import { coordinatorOf, designHoldEnds, designIsBusy, designIsWriting, designNoteLine, designLatest, designMeta, designStatusWord, parentsLine } from "../lib/design-ui";
+import { DesignActionsMenu, designStatusTone, DesignTiles, designGrid, designWaiting, type DesignOpenTarget } from "./DesignCard";
+import { DesignCoordinatorPanel, DesignMessageBox } from "./DesignCoordinator";
 import { DesignSealedFrame, DesignStreamFrame } from "./DesignFrame";
 import { WorkerTranscript } from "./SubagentPane";
-import { Select, TextArea } from "./form";
+import { Select } from "./form";
 import { Chip, Icon } from "./ui";
-
-/** Refine: your words and quick prompts go back to the design's own session, which looks and fixes. */
-export function DesignRefinePanel(props: { d: DesignRecord; store: DesignStore; onClose(): void }) {
-  const [text, setText] = createSignal("");
-  const [quick, setQuick] = createSignal<string[]>([]);
-  const [busy, setBusy] = createSignal(false);
-  const [error, setError] = createSignal("");
-  let key = designKey();
-  const pick = (q: string) => setQuick((list) => (list.includes(q) ? list.filter((x) => x !== q) : [...list, q]));
-  const send = async () => {
-    setBusy(true);
-    setError("");
-    try {
-      await props.store.api.refine(props.d.label, text().trim(), quick(), key);
-      key = designKey();
-      props.store.refresh();
-      props.onClose();
-    } catch (e) {
-      setError(e instanceof Error ? `${e.message} Your text is still in the box.` : "That didn't go through. Your text is still in the box.");
-    } finally {
-      setBusy(false);
-    }
-  };
-  return (
-    <form
-      class="design-refine"
-      aria-label={`Refine ${props.d.label}`}
-      onSubmit={(e) => {
-        e.preventDefault();
-        void send();
-      }}
-    >
-      <strong>Refine {props.d.label}</strong>
-      <TextArea label={`What should ${props.d.label} change?`} hideLabel rows="2" placeholder="What should it change?" value={text()} onInput={setText} />
-      <div class="design-refine-quick" role="group" aria-label="Quick prompts">
-        <For each={QUICK_PROMPTS}>
-          {(q) => (
-            <button type="button" class="button button-sm" aria-pressed={quick().includes(q) ? "true" : "false"} onClick={() => pick(q)}>
-              {q}
-            </button>
-          )}
-        </For>
-      </div>
-      <Show when={!props.d.vision}>
-        <p class="field-hint">This model can't read images, so it checks a text outline of the page instead of screenshots.</p>
-      </Show>
-      <Show when={props.d.sessionEnded}>
-        <p class="field-hint">This design's session has ended. Refine starts a fresh one from the stored page.</p>
-      </Show>
-      <Show when={error()}>
-        <p class="field-error" role="alert">
-          {error()}
-        </p>
-      </Show>
-      <div class="button-row design-refine-actions">
-        <button type="button" class="button button-ghost" onClick={() => props.onClose()}>
-          Cancel
-        </button>
-        <button type="submit" class="button button-primary" disabled={busy() || (!text().trim() && quick().length === 0)}>
-          Send to Design
-        </button>
-      </div>
-    </form>
-  );
-}
 
 function PageFrame(props: { d: DesignRecord; version: number; following: boolean; store: DesignStore; cacheKey: string }) {
   // Keyed on the version on show by value: every other design's progress, and this one's status and
@@ -169,9 +104,9 @@ export function DesignOpen(props: { target: DesignOpenTarget; store: DesignStore
   const view = () => props.store.view();
   const d = createMemo(() => (props.target.kind === "design" ? view()?.designs.find((x) => x.label === (props.target as { label: string }).label) : undefined));
   const coordinator = () => coordinatorOf(view());
-  const labels = createMemo(() => designGrid(view()).map((x) => x.label), undefined, { equals: (a, b) => a.length === b.length && a.every((x, i) => x === b[i]) });
   const [hideChat, setHideChat] = createSignal(false);
-  const [refine, setRefine] = createSignal(false);
+  // What the More menu's last click came to, when it didn't go through: said in the head's line.
+  const [actError, setActError] = createSignal("");
   const [pick, setPick] = createSignal<number | null>(null);
   const version = () => pick() ?? (d() ? designLatest(d()!) : 0);
   const title = () => (d() ? `${d()!.label} · ${designDirectionLine(d()!)}` : "Creative Director");
@@ -187,9 +122,9 @@ export function DesignOpen(props: { target: DesignOpenTarget; store: DesignStore
         <Show when={d()}>
           {(x) => (
             <>
-              <span class="text-caption text-muted design-open-meta" title={designNoteLine(x()) || designMeta(x())}>
-                {designNoteLine(x()) || designMeta(x())}
-                <Show when={x().parents.length && !designNoteLine(x())}> · {parentsLine(x().parents)}</Show>
+              <span class={`text-caption design-open-meta${actError() ? " field-error" : " text-muted"}`} role={actError() ? "alert" : undefined} title={actError() || designNoteLine(x()) || designMeta(x())}>
+                {actError() || designNoteLine(x()) || designMeta(x())}
+                <Show when={!actError() && x().parents.length && !designNoteLine(x())}> · {parentsLine(x().parents)}</Show>
               </span>
               <span class="design-open-chip">
                 <Chip tone={designStatusTone(x())} live={designIsBusy(x())}>
@@ -198,9 +133,7 @@ export function DesignOpen(props: { target: DesignOpenTarget; store: DesignStore
               </span>
               {/* Always there, so a new version arriving moves nothing beside it. */}
               <Select class="design-open-version" label="Version" hideLabel disabled={x().versions.length < 2} value={String(version())} options={x().versions.length ? x().versions.map((v) => ({ value: String(v.n), label: versionLabel(x().label, v.n) })) : [{ value: "0", label: x().label }]} onChange={(v) => setPick(Number(v))} />
-              <button type="button" class="button button-sm" disabled={!designCanRefine(x())} onClick={() => setRefine(!refine())}>
-                Refine
-              </button>
+              <DesignActionsMenu d={x()} store={props.store} class="button-sm design-open-more" onError={setActError} />
             </>
           )}
         </Show>
@@ -218,11 +151,6 @@ export function DesignOpen(props: { target: DesignOpenTarget; store: DesignStore
             <>
               <div class="design-open-page">
                 <PageFrame d={x()} version={version()} following={pick() === null} store={props.store} cacheKey={props.path} />
-                <Show when={refine()}>
-                  <div class="design-open-refine">
-                    <DesignRefinePanel d={x()} store={props.store} onClose={() => setRefine(false)} />
-                  </div>
-                </Show>
               </div>
               <Show when={!hideChat()}>
                 <ChatPane
@@ -244,15 +172,7 @@ export function DesignOpen(props: { target: DesignOpenTarget; store: DesignStore
             <>
               <div class="design-open-page design-open-page-scroll">
                 <DesignCoordinatorPanel coordinator={c()} view={view()} store={props.store} bare />
-                <div class="design-grid design-open-grid">
-                  <For each={labels()}>
-                    {(label) => (
-                      <Show when={designGrid(view()).find((x) => x.label === label)}>
-                        {(item) => <DesignTile d={item()} store={props.store} cacheKey={props.path} onOpen={() => props.onSwitch({ kind: "design", label })} onRefine={() => props.onSwitch({ kind: "design", label })} />}
-                      </Show>
-                    )}
-                  </For>
-                </div>
+                <DesignTiles designs={designGrid(view())} store={props.store} cacheKey={props.path} class="design-open-grid" onOpen={(label) => props.onSwitch({ kind: "design", label })} />
               </div>
               <Show when={!hideChat()}>
                 <ChatPane sessionFile={c().sessionFile} host={hostOf()} name="the Creative Director" author="Creative Director" streaming={c().status === "running"} note="It knows what each design is, not its code.">

@@ -5,6 +5,8 @@ import {
   createSignal,
   For,
   on,
+  onCleanup,
+  onMount,
   Show,
   useContext,
 } from "solid-js";
@@ -32,11 +34,16 @@ import {
   lookbookTitle,
   coordinatorOf,
   designCanOpen,
-  designCanRefine,
+  designCanStartAgain,
+  designCanStop,
   designNoteLine,
   designIsBusy,
   designLatest,
   designMeta,
+  designNeverStarted,
+  designQueuedLine,
+  designsRemoved,
+  designsShown,
   designStatusWord,
   parentsLine,
   setupBlocked,
@@ -47,8 +54,12 @@ import {
   type DesignRunView,
 } from "../lib/design-ui";
 import { designPageText } from "../lib/design-store";
-import { DesignBriefCollapsed, DesignBriefStep } from "./DesignBrief";
-import { DesignCoordinatorPanel } from "./DesignCoordinator";
+import { rememberDesignCardHeight } from "../lib/design-card-size";
+import { DesignBriefRow, DesignBriefStep } from "./DesignBrief";
+import { coordinatorChip, DesignAskPanel, DesignDeliveryLine } from "./DesignCoordinator";
+import { DesignCardFoot } from "./DesignCardFoot";
+import { ActionMenu } from "./ActionMenu";
+import { Markdown } from "./Markdown";
 import {
   createSetupDraft,
   DesignLinkRow,
@@ -61,7 +72,7 @@ import {
   DesignSealedFrame,
   DesignStreamFrame,
 } from "./DesignFrame";
-import { DesignOpenSlot, DesignRefinePanel } from "./DesignOpen";
+import { DesignOpenSlot } from "./DesignOpen";
 import { DesignSkillsLine } from "./DesignSkills";
 import { DesignSetupImages } from "./DesignBriefImages";
 import { useDesignOpen } from "../lib/design-history";
@@ -104,6 +115,7 @@ export function designStatusTone(
 ): "success" | "accent" | "error" | "warn" | undefined {
   if (d.status === "fixing") return "warn";
   if (d.status === "ready" && d.workerState === "working") return "accent";
+  if (d.status === "queued" && d.sessionId && !d.sessionEnded) return "accent";
   return d.status === "ready"
     ? "success"
     : d.status === "writing"
@@ -146,8 +158,18 @@ function DesignCardIn(props: {
   );
   const newest = () => store.view()?.runs.at(-1)?.id === props.runId;
   const fontsSettled = createFontsSettled();
+  let card!: HTMLElement;
+  // The card takes the height it needs; the transcript estimates it at the height last seen here.
+  onMount(() => {
+    const ro = new ResizeObserver(() => {
+      if (run()) rememberDesignCardHeight(props.runId, card.getBoundingClientRect().height);
+    });
+    ro.observe(card);
+    onCleanup(() => ro.disconnect());
+  });
   return (
     <section
+      ref={card}
       class="card design-card"
       aria-label={`Lookbook: ${run() ? briefTitle(run()!.setup.brief) : "loading"}`}
     >
@@ -182,21 +204,19 @@ function DesignCardIn(props: {
           }
         >
           {(r) => (
-            <>
-              <Show
-                when={r().phase === "setup"}
-                fallback={
-                  <DesignRunBody
-                    run={r()}
-                    store={store}
-                    newest={newest()}
-                    cacheKey={props.path}
-                  />
-                }
-              >
-                <DesignSetupCard run={r()} store={store} />
-              </Show>
-            </>
+            <Show
+              when={r().phase === "setup"}
+              fallback={
+                <DesignRunBody
+                  run={r()}
+                  store={store}
+                  newest={newest()}
+                  cacheKey={props.path}
+                />
+              }
+            >
+              <DesignSetupCard run={r()} store={store} />
+            </Show>
           )}
         </Show>
       </Show>
@@ -239,39 +259,36 @@ function DesignSetupCard(props: { run: DesignRunView; store: DesignStore }) {
         <h3 class="card-title">Lookbook</h3>
         <Chip>Setup</Chip>
       </div>
-      <div class="design-card-scroll">
-        <div class="design-card-body design-setup">
-          <TextArea
-            label="What Do You Want to Design"
-            rows="2"
-            value={draft().brief}
-            onInput={(brief) => setup.change({ ...draft(), brief })}
-          />
-          {/* The links' place is kept whether or not there are any, so typing an address moves nothing under it. */}
-          <div class="design-setup-links" aria-label="Links">
-            <Show when={linkUrls().length > 0} fallback={<p class="text-caption text-muted">Paste a link to use a page's images or its feel.</p>}>
-              <For each={linkUrls()}>
-                {(url) => (
-                  <DesignLinkRow
-                    url={url}
-                    use={
-                      setupLinks(draft()).find((l) => l.url === url)?.use ??
-                      null
-                    }
-                    onUse={(use) =>
-                      setup.change(withLinkUse(draft(), url, use))
-                    }
-                  />
-                )}
-              </For>
-            </Show>
-          </div>
-          <DesignSkillsLine run={props.run} />
-          <DesignSetupImages run={props.run} store={props.store} />
-          <DesignSetupPickers setup={setup} currentCoordinator={props.store.view()?.coordinator?.model} />
+      <div class="design-card-body design-setup">
+        <TextArea
+          label="What Do You Want to Design"
+          rows="2"
+          value={draft().brief}
+          onInput={(brief) => setup.change({ ...draft(), brief })}
+        />
+        <div class="design-setup-links" aria-label="Links">
+          <Show when={linkUrls().length > 0} fallback={<p class="text-caption text-muted">Paste a link to use a page's images or its feel.</p>}>
+            <For each={linkUrls()}>
+              {(url) => (
+                <DesignLinkRow
+                  url={url}
+                  use={
+                    setupLinks(draft()).find((l) => l.url === url)?.use ??
+                    null
+                  }
+                  onUse={(use) =>
+                    setup.change(withLinkUse(draft(), url, use))
+                  }
+                />
+              )}
+            </For>
+          </Show>
         </div>
+        <DesignSkillsLine run={props.run} />
+        <DesignSetupImages run={props.run} store={props.store} />
+        <DesignSetupPickers setup={setup} currentCoordinator={props.store.view()?.coordinator?.model} />
       </div>
-      <div class="card-foot design-setup-foot">
+      <DesignCardFoot class="design-setup-foot">
         <div class="design-setup-summary">
           <span>{setupSummary(count())}</span>
           <span
@@ -295,7 +312,7 @@ function DesignSetupCard(props: { run: DesignRunView; store: DesignStore }) {
         >
           Start Creative Director
         </button>
-      </div>
+      </DesignCardFoot>
     </>
   );
 }
@@ -308,20 +325,15 @@ function DesignRunBody(props: {
   newest: boolean;
   cacheKey: string;
 }) {
-  const [refining, setRefining] = createSignal<string | null>(null);
   // What this chat has open is shared with its other surfaces and kept in the browser's history.
   const nav = useDesignOpen(props.cacheKey, hostOf(props.cacheKey));
   const designs = createMemo(() =>
     designsOfRun(props.store.view(), props.run.id, props.run.labels),
   );
-  // Keyed by label: a record changing never rebuilds its tile or the frame in it.
-  const labels = createMemo(() => designs().map((d) => d.label), undefined, {
-    equals: (a, b) => a.length === b.length && a.every((x, i) => x === b[i]),
-  });
+  const shown = createMemo(() => designsShown(designs()));
   const counts = () => statusCounts(designs());
-  const anyLive = () => designs().some(designIsBusy);
+  const anyLive = () => shown().some(designIsBusy);
   const coordinator = () => coordinatorOf(props.store.view());
-  const refined = () => designs().find((d) => d.label === refining());
   const waitingChip = () =>
     props.run.phase === "brief" && props.run.brief
       ? briefStatus(props.run)
@@ -331,16 +343,17 @@ function DesignRunBody(props: {
           ? { text: "Preparing the brief", live: true }
           : { text: "Starting the designs", live: true };
   const briefOpen = () => props.run.phase === "brief" && !!props.run.brief;
+  const openCoordinator = () => nav.open({ kind: "coordinator" });
   return (
     <>
       <div class="card-head design-run-head">
         <h3 class="card-title design-run-title">
-          {lookbookTitle(designs().length)}
+          {lookbookTitle(shown().length)}
           <span class="text-muted"> · {briefTitle(props.run.setup.brief)}</span>
         </h3>
         <div class="design-run-sub">
           <span class="text-caption text-muted design-run-batch">
-            {designs().length > 0 ? batchLine(designs(), props.run.setup.combine) : ""}
+            {shown().length > 0 ? batchLine(designs(), props.run.setup.combine) : ""}
           </span>
           <Show
             when={designs().length > 0}
@@ -360,72 +373,71 @@ function DesignRunBody(props: {
         when={briefOpen()}
         fallback={
           <>
-            <div class="design-card-scroll">
-              <Show when={props.run.error}>
-                {(e) => (
-                  <div class="design-run-error">
-                    <div
-                      class="banner banner-compact banner-error"
-                      role="alert"
-                    >
-                      <Icon name="alert-circle" small class="banner-icon" />
-                      <p class="banner-body">{e()}</p>
-                    </div>
-                  </div>
-                )}
-              </Show>
-              <Show
-                when={
-                  props.run.phase === "researching" ||
-                  (props.run.phase === "brief" && !props.run.brief)
-                }
-              >
-                <div class="empty design-card-waiting">
-                  <p class="empty-body">
-                    The Creative Director is preparing your brief. Nothing is designed
-                    until you press Start.
-                  </p>
-                </div>
-              </Show>
-              {/* A run that stopped before any design keeps its error's room, so the brief's line under it can be read. */}
-              <Show when={props.run.error && designs().length === 0 && props.run.brief}>
-                <div class="design-brief-error-room" />
-              </Show>
-              <DesignBriefCollapsed run={props.run} store={props.store} />
-              <Show when={designs().length > 0}>
-                <div class="design-card-body">
-                  <div class="design-grid">
-                    <For each={labels()}>
-                      {(label) => (
-                        <Show when={designs().find((d) => d.label === label)}>
-                          {(d) => (
-                            <DesignTile
-                              d={d()}
-                              store={props.store}
-                              cacheKey={props.cacheKey}
-                              onOpen={() =>
-                                nav.open({ kind: "design", label })
-                              }
-                              onRefine={() => setRefining(label)}
-                            />
-                          )}
-                        </Show>
-                      )}
-                    </For>
-                  </div>
-                </div>
-              </Show>
-            </div>
-            <Show when={props.newest && coordinator()}>
+            <Show
+              when={
+                props.run.phase === "researching" ||
+                (props.run.phase === "brief" && !props.run.brief)
+              }
+            >
+              <div class="empty design-card-waiting">
+                <p class="empty-body">
+                  The Creative Director is preparing your brief. Nothing is designed
+                  until you press Start.
+                </p>
+              </div>
+            </Show>
+            <DesignBriefRow run={props.run} store={props.store} />
+            <Show when={designs().length > 0}>
+              <div class="design-card-body design-card-designs">
+                <DesignTiles
+                  designs={designs()}
+                  store={props.store}
+                  cacheKey={props.cacheKey}
+                  onOpen={(label) => nav.open({ kind: "design", label })}
+                />
+              </div>
+            </Show>
+            <Show
+              when={props.newest && coordinator()}
+              fallback={
+                <Show when={props.run.error}>
+                  {(e) => <RunError text={e()} />}
+                </Show>
+              }
+            >
               {(c) => (
-                <div class="design-card-coordinator">
-                  <DesignCoordinatorPanel
-                    coordinator={c()}
-                    view={props.store.view()}
-                    store={props.store}
-                    onOpen={() => nav.open({ kind: "coordinator" })}
-                  />
-                </div>
+                <>
+                  <section class="design-card-coordinator" aria-label="The Creative Director's notes">
+                    <Show when={props.run.error}>
+                      {(e) => <RunError text={e()} />}
+                    </Show>
+                    <Show when={c().ask}>
+                      {(a) => <DesignAskPanel ask={a()} store={props.store} />}
+                    </Show>
+                    <Show
+                      when={c().card}
+                      fallback={
+                        <p class="text-muted design-coordinator-empty">
+                          Nothing on its card yet. It writes here as it goes.
+                        </p>
+                      }
+                    >
+                      <div class="design-coordinator-notes">
+                        <Markdown text={c().card} />
+                      </div>
+                    </Show>
+                  </section>
+                  <DesignCardFoot class="design-run-foot" label="Creative Director">
+                    <CoordinatorLine store={props.store} />
+                    <button
+                      type="button"
+                      class="button button-primary design-run-chat"
+                      onClick={openCoordinator}
+                    >
+                      Chat with the Creative Director
+                    </button>
+                  </DesignCardFoot>
+                </>
               )}
             </Show>
           </>
@@ -434,21 +446,108 @@ function DesignRunBody(props: {
         <DesignBriefStep
           run={props.run}
           store={props.store}
-          onOpenCoordinator={() => nav.open({ kind: "coordinator" })}
+          onOpenCoordinator={openCoordinator}
         />
       </Show>
-      <Show when={refined()}>
-        {(d) => (
-          <div class="design-card-refine">
-            <DesignRefinePanel
-              d={d()}
-              store={props.store}
-              onClose={() => setRefining(null)}
-            />
-          </div>
-        )}
-      </Show>
       <DesignOpenSlot nav={nav} store={props.store} path={props.cacheKey} />
+    </>
+  );
+}
+
+function RunError(props: { text: string }) {
+  return (
+    <div class="banner banner-compact banner-error design-run-error" role="alert">
+      <Icon name="alert-circle" small class="banner-icon" />
+      <p class="banner-body">{props.text}</p>
+    </div>
+  );
+}
+
+/** The bar's words: who it is, its status, and where a message to it stands. */
+export function CoordinatorLine(props: { store: DesignStore }) {
+  const c = () => coordinatorOf(props.store.view());
+  return (
+    <Show when={c()}>
+      {(co) => {
+        const chip = () => coordinatorChip(co(), props.store.view());
+        return (
+          <div class="design-run-foot-line">
+            <span class="design-run-foot-name">
+              <strong>Creative Director</strong>
+              <Chip live={chip().live} tone={chip().tone}>
+                {chip().text}
+              </Chip>
+            </span>
+            <span class="text-caption design-run-foot-note">
+              <DesignDeliveryLine delivery={co().delivery} name="the Creative Director" />
+            </span>
+          </div>
+        );
+      }}
+    </Show>
+  );
+}
+
+// ---- The grid ---------------------------------------------------------------------------------
+
+/**
+ * A run's (or a chat's) designs: the grid, then the designs set aside, folded under "Removed · n".
+ * Keyed by label: a record changing never rebuilds its tile or the frame in it. Only a click, a
+ * design added, Remove and Restore change what the grid holds.
+ */
+export function DesignTiles(props: {
+  designs: readonly DesignRecord[];
+  store: DesignStore;
+  cacheKey: string;
+  onOpen(label: string): void;
+  class?: string;
+}) {
+  const sameList = (a: readonly string[], b: readonly string[]) =>
+    a.length === b.length && a.every((x, i) => x === b[i]);
+  const shown = createMemo(() => designsShown(props.designs).map((d) => d.label), undefined, { equals: sameList });
+  const removed = createMemo(() => designsRemoved(props.designs).map((d) => d.label), undefined, { equals: sameList });
+  const [open, setOpen] = createSignal(false);
+  const recordOf = (label: string) => props.designs.find((d) => d.label === label);
+  const tile = (label: string) => (
+    <Show when={recordOf(label)}>
+      {(d) => (
+        <DesignTile
+          d={d()}
+          store={props.store}
+          cacheKey={props.cacheKey}
+          onOpen={() => props.onOpen(label)}
+        />
+      )}
+    </Show>
+  );
+  return (
+    <>
+      <Show when={shown().length > 0}>
+        <div class={`design-grid${props.class ? ` ${props.class}` : ""}`}>
+          <For each={shown()}>{tile}</For>
+        </div>
+      </Show>
+      <Show when={removed().length > 0}>
+        <section class="design-removed" aria-label="Removed designs">
+          <button
+            type="button"
+            class="design-removed-fold"
+            aria-expanded={open()}
+            onClick={() => setOpen(!open())}
+          >
+            <Icon name="chevron-right" small class={`icon-twist${open() ? " design-removed-twist-open" : ""}`} />
+            <span class="design-removed-title">Removed · {removed().length}</span>
+            <span class="text-caption text-muted design-removed-hint">
+              Set aside, not deleted. Restore puts one back.
+            </span>
+          </button>
+          <Show when={open()}>
+            <div class={`design-grid${props.class ? ` ${props.class}` : ""}`}>
+              <For each={removed()}>{tile}</For>
+            </div>
+          </Show>
+        </section>
+      </Show>
     </>
   );
 }
@@ -461,6 +560,19 @@ interface PageSlot {
   html: string;
 }
 
+const stillCache = new Map<string, Promise<string>>();
+/** A stopped design's still, fetched once per browser while it is wanted. */
+function designStillText(store: DesignStore, cacheKey: string, label: string, n: number, images: "small" | "full"): Promise<string> {
+  const key = `${cacheKey}|${label}|${n}|${images}`;
+  const held = stillCache.get(key);
+  if (held) return held;
+  const fetched = store.api.stillPage(label, n, images);
+  fetched.catch(() => stillCache.delete(key));
+  stillCache.set(key, fetched);
+  while (stillCache.size > 24) stillCache.delete(stillCache.keys().next().value!);
+  return fetched;
+}
+
 /** One design's picture in a grid: the page as far as it has been written, then finished. */
 export function DesignThumb(props: {
   d: DesignRecord;
@@ -471,6 +583,9 @@ export function DesignThumb(props: {
   const near = createNearViewport(() => box);
   const live = () => props.store.live(props.d.label);
   const version = createMemo(() => designLatest(props.d));
+  // A design stopped before its first page shows what it had written, held still.
+  const still = createMemo(() => (props.d.status === "stopped" ? (props.d.stopped?.still?.n ?? 0) : 0));
+  const [stillHtml, setStillHtml] = createSignal<string | null>(null);
   const [slots, setSlots] = createSignal<PageSlot[]>([]);
   const [front, setFront] = createSignal(0);
   const [failed, setFailed] = createSignal("");
@@ -509,6 +624,16 @@ export function DesignThumb(props: {
         );
     }),
   );
+  createEffect(
+    on([still, near], ([n, isNear]) => {
+      if (!n || !isNear) return setStillHtml(null);
+      designStillText(props.store, props.cacheKey, props.d.label, n, "small")
+        .then((html) => {
+          if (n === still()) setStillHtml(html);
+        })
+        .catch((e) => setFailed(e instanceof Error ? e.message : "What it had written couldn't be loaded."));
+    }),
+  );
   const drawn = (slot: PageSlot) => {
     if (slot.v < front()) return;
     setFront(slot.v);
@@ -539,6 +664,13 @@ export function DesignThumb(props: {
               </div>
             )}
           </For>
+          <Show when={stillHtml()} keyed>
+            {(html) => (
+              <div class="design-frame-layer" style={{ "z-index": 2 }}>
+                <DesignSealedFrame html={html} motion={false} title={`${title()}, stopped`} />
+              </div>
+            )}
+          </Show>
           <Show when={showStream()}>
             <div class="design-frame-layer" style={{ "z-index": 3 }}>
               <DesignStreamFrame
@@ -549,13 +681,17 @@ export function DesignThumb(props: {
                 title={title()}
                 waiting={designWaiting(props.d)}
                 over={version() > 0}
+                still
               />
             </div>
           </Show>
         </Show>
       </DesignScale>
-      <Show when={props.d.status === "queued"}>
-        <div class="design-tile-state">Waiting for a free session</div>
+      <Show when={designQueuedLine(props.d)}>
+        {(line) => <div class="design-tile-state">{line()}</div>}
+      </Show>
+      <Show when={props.d.status === "stopped" && !props.d.stopped?.still}>
+        <div class="design-tile-state">{designNeverStarted(props.d) ? "Not started yet" : "Stopped before it wrote anything"}</div>
       </Show>
       <Show when={props.d.status === "failed" && props.d.versions.length === 0}>
         <div class="design-tile-state design-tile-state-error">
@@ -569,36 +705,124 @@ export function DesignThumb(props: {
   );
 }
 
+const STOPPED_BY = { user: "Stopped by you.", coordinator: "Stopped by the Creative Director.", main: "Stopped from your chat." } as const;
+
+/** Why Stop can't run on a design, in its menu row; "" when it can. */
+function stopWhyNot(d: DesignRecord): string {
+  if (designCanStop(d)) return "";
+  if (designNeverStarted(d)) return "It hasn't started.";
+  if (d.status === "stopped") return "It's already stopped.";
+  if (d.status === "failed") return "It isn't running.";
+  return "It's finished: nothing is being written.";
+}
+
+/**
+ * A design's More menu, on its tile and in its open view: Stop and Remove (Restore once removed). A
+ * menu, so the tile's buttons never change in number or size. The failure, if any, goes to `onError`.
+ */
+export function DesignActionsMenu(props: {
+  d: DesignRecord;
+  store: DesignStore;
+  class?: string;
+  /** An Open row, for a place whose own Open button is taken by Start Again. */
+  onOpen?(): void;
+  onError(text: string): void;
+}) {
+  const [busy, setBusy] = createSignal(false);
+  const act = async (run: () => Promise<unknown>, fallback: string) => {
+    setBusy(true);
+    props.onError("");
+    try {
+      await run();
+      props.store.refresh();
+    } catch (e) {
+      props.onError(e instanceof Error ? e.message : fallback);
+    } finally {
+      setBusy(false);
+    }
+  };
+  const label = () => props.d.label;
+  const waiting = () => (busy() ? "Working on your last click." : "");
+  return (
+    <ActionMenu
+      label={`More for design ${label()}`}
+      title="More"
+      ghost={false}
+      class={props.class}
+      menuName={`Design ${label()}`}
+      returnFocus
+    >
+      {(menu) => (
+        <Show
+          when={!props.d.removed}
+          fallback={
+            <menu.Item
+              label={`Restore ${label()}`}
+              aria={`Restore design ${label()}`}
+              disabled={waiting()}
+              description="Puts it back in the grid as it was."
+              onRun={() => void act(() => props.store.api.restore(label()), `${label()} couldn't be restored. Try again.`)}
+            />
+          }
+        >
+          <Show when={props.onOpen}>
+            <menu.Item label="Open" aria={`Open design ${label()}`} onRun={() => props.onOpen!()} />
+          </Show>
+          <menu.Item
+            label={`Stop ${label()}`}
+            aria={`Stop design ${label()}`}
+            disabled={stopWhyNot(props.d) || waiting()}
+            description="Keeps what it has written. Start Again writes it afresh."
+            onRun={() => void act(() => props.store.api.stop(label()), `${label()} couldn't be stopped. Try again.`)}
+          />
+          <div class="popover-sep" role="separator" />
+          <menu.Item
+            label={`Remove ${label()}`}
+            aria={`Remove design ${label()}`}
+            disabled={waiting()}
+            description={designCanStop(props.d) ? "Stops it, then sets it aside under Removed." : "Sets it aside under Removed. Restore puts it back."}
+            onRun={() => void act(() => props.store.api.remove(label()), `${label()} couldn't be removed. Try again.`)}
+          />
+        </Show>
+      )}
+    </ActionMenu>
+  );
+}
+
 export function DesignTile(props: {
   d: DesignRecord;
   store: DesignStore;
   cacheKey: string;
   onOpen(): void;
-  onRefine(): void;
 }) {
   const [busy, setBusy] = createSignal(false);
   const [error, setError] = createSignal("");
-  const retry = async () => {
+  const act = async (run: () => Promise<unknown>, fallback: string) => {
     setBusy(true);
     setError("");
     try {
-      await props.store.api.retry(props.d.label);
+      await run();
       props.store.refresh();
     } catch (e) {
-      setError(
-        e instanceof Error ? e.message : "Retry didn't go through. Try again.",
-      );
+      setError(e instanceof Error ? e.message : fallback);
     } finally {
       setBusy(false);
     }
   };
+  const retry = () => act(() => props.store.api.retry(props.d.label), "That didn't go through. Try again.");
+  const restore = () => act(() => props.store.api.restore(props.d.label), `${props.d.label} couldn't be restored. Try again.`);
   const meta = () =>
     designMeta(props.d, props.store.live(props.d.label)?.text.length);
+  const removed = () => !!props.d.removed;
   // One two-line place for why a design isn't simply fine: nothing around it ever moves for it.
   const reason = () => {
     if (error()) return { text: error(), error: true, alert: true };
     if (props.d.status === "failed" && props.d.error)
       return { text: props.d.error, error: true, alert: false };
+    if (designNeverStarted(props.d))
+      return { text: "It waits until you or the Creative Director start it.", error: false, alert: false };
+    if (props.d.status === "stopped")
+      return { text: `${STOPPED_BY[props.d.stopped?.by ?? "user"]} Start Again writes the page afresh.`, error: false, alert: false };
     if (props.d.delivery?.state === "undelivered")
       return {
         text:
@@ -609,8 +833,25 @@ export function DesignTile(props: {
       };
     return { text: designNoteLine(props.d), error: false, alert: false };
   };
+  // The first place is the design's next step: Open, or Start Again for one that ended with no page.
+  const startAgain = () => !removed() && designCanStartAgain(props.d);
+  const openButton = () => (
+    <button
+      type="button"
+      class="button button-sm"
+      disabled={!designCanOpen(props.d)}
+      title={
+        designCanOpen(props.d)
+          ? undefined
+          : "Opens once a page is being written."
+      }
+      onClick={() => props.onOpen()}
+    >
+      Open
+    </button>
+  );
   return (
-    <article class="design-tile" aria-label={`Design ${props.d.label}`}>
+    <article class="design-tile" aria-label={`Design ${props.d.label}`} data-removed={removed() ? "" : undefined}>
       <DesignThumb d={props.d} store={props.store} cacheKey={props.cacheKey} />
       <div class="design-tile-info">
         <div class="design-tile-title">
@@ -648,44 +889,14 @@ export function DesignTile(props: {
           {reason().text}
         </p>
         <div class="design-tile-actions">
-          <button
-            type="button"
-            class="button button-sm"
-            disabled={!designCanOpen(props.d)}
-            title={
-              designCanOpen(props.d)
-                ? undefined
-                : "Opens once a page is being written."
-            }
-            onClick={() => props.onOpen()}
-          >
-            Open
-          </button>
-          <Show
-            when={props.d.status === "failed"}
-            fallback={
-              <button
-                type="button"
-                class="button button-sm"
-                disabled={!designCanRefine(props.d)}
-                title={
-                  designCanRefine(props.d)
-                    ? undefined
-                    : "Refine waits for a finished page."
-                }
-                onClick={() => props.onRefine()}
-              >
-                Refine
-              </button>
-            }
-          >
+          <Show when={startAgain()} fallback={openButton()}>
             <button
               type="button"
               class="button button-sm"
               disabled={busy()}
               onClick={() => void retry()}
             >
-              Retry
+              {designNeverStarted(props.d) ? "Start" : props.d.status === "stopped" ? "Start Again" : "Retry"}
             </button>
           </Show>
           <button
@@ -699,6 +910,27 @@ export function DesignTile(props: {
           >
             Chat
           </button>
+          <Show
+            when={!removed()}
+            fallback={
+              <button
+                type="button"
+                class="button button-sm"
+                disabled={busy()}
+                onClick={() => void restore()}
+              >
+                Restore
+              </button>
+            }
+          >
+            <DesignActionsMenu
+              d={props.d}
+              store={props.store}
+              class="button-sm design-tile-more"
+              onOpen={startAgain() && designCanOpen(props.d) ? () => props.onOpen() : undefined}
+              onError={setError}
+            />
+          </Show>
         </div>
       </div>
     </article>
@@ -711,3 +943,4 @@ export function designGrid(view: DesignChatView | null): DesignRecord[] {
     a.createdAt.localeCompare(b.createdAt),
   );
 }
+

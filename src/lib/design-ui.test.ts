@@ -4,7 +4,7 @@ import type { TranscriptItem } from "../../shared/protocol";
 import type { DesignRecord, DesignSetup } from "../../shared/design";
 import type { LiveTool } from "./live";
 import { designFold, liveDesignCalls, newestDesignRows, normalizeDesignCard } from "./design-rows";
-import { batchLine, briefTitle, lookbookTitle, canShuffle, designSections, pairsLine, setCombine, shufflePairs, tickedLine, toggleLayout, searchModels, sectionSummary, designFixLine, designCanOpen, designHoldEnds, designIsBusy, designMeta, designOpenFollowsLive, designNoteLine, designUnchangedLine, designStatusWord, moveCoordinator, parentsLine, setupBlocked, setupCount, setupSummary, statusCounts, toggleDirection, toggleGroup, toggleModel } from "./design-ui";
+import { batchLine, briefTitle, lookbookTitle, canShuffle, designSections, pairsLine, setCombine, shufflePairs, tickedLine, toggleLayout, searchModels, sectionSummary, designFixLine, designCanOpen, designHoldEnds, designIsBusy, designMeta, designOpenFollowsLive, designNoteLine, designUnchangedLine, designStatusWord, designQueuedLine, designCanStop, designCanStartAgain, designsShown, designsRemoved, moveCoordinator, parentsLine, setupBlocked, setupCount, setupSummary, statusCounts, toggleDirection, toggleGroup, toggleModel } from "./design-ui";
 
 const caps = { batchDefault: 6, askAbove: 12, batchMax: 24, concurrent: 6 };
 const m = (ref: string, design = true, coordinator = false) => ({ ref, name: ref, design, coordinator, vision: true, route: "tool" as const });
@@ -101,6 +101,44 @@ test("the card's status line counts what there is, and nothing there isn't", () 
   assert.equal(statusCounts([rec("A", "ready"), rec("B", "ready"), rec("C", "writing"), rec("D", "failed")]), "2 ready · 1 writing · 1 failed");
   assert.equal(statusCounts([]), "0 designs");
   assert.equal(batchLine([rec("A", "ready", "M", "a"), rec("B", "ready", "H", "b")]), "2 designs · 2 styles · 2 models");
+});
+
+test("a removed design counts nowhere on the card, and a stopped one is counted as stopped, never failed", () => {
+  const removed: DesignRecord = { ...rec("B", "ready", "Heritage", "z/w"), removed: { at: "", by: "user" } };
+  const stopped: DesignRecord = { ...rec("C", "stopped"), stopped: { at: "", by: "user" } };
+  const all = [rec("A", "ready"), removed, stopped, rec("D", "failed")];
+  assert.equal(statusCounts(all), "1 ready · 1 stopped · 1 failed");
+  assert.equal(batchLine(all), "3 designs · 1 style · 1 model", "the removed design's style and model aren't counted either");
+  assert.deepEqual(designsShown(all).map((d) => d.label), ["A", "C", "D"]);
+  assert.deepEqual(designsRemoved(all).map((d) => d.label), ["B"]);
+  assert.equal(statusCounts([removed]), "0 designs");
+  const waiting: DesignRecord = { ...rec("E", "stopped"), stopped: { at: "", by: "user", waiting: true } };
+  assert.equal(statusCounts([waiting, stopped]), "1 not started · 1 stopped", "removed while queued and restored: it never started, so it isn't stopped");
+  assert.equal(designStatusWord(waiting), "Not started");
+});
+
+test("Stop is offered while a design waits or writes; Start Again once it ended with no page; neither once it is set aside", () => {
+  const can = (status: DesignRecord["status"], removed = false) => {
+    const d: DesignRecord = { ...rec("A", status), ...(removed ? { removed: { at: "", by: "user" as const } } : {}) };
+    return [designCanStop(d), designCanStartAgain(d)];
+  };
+  assert.deepEqual(can("queued"), [true, false]);
+  assert.deepEqual(can("writing"), [true, false]);
+  assert.deepEqual(can("fixing"), [true, false]);
+  assert.deepEqual(can("ready"), [false, false]);
+  assert.deepEqual(can("stopped"), [false, true]);
+  assert.deepEqual(can("failed"), [false, true]);
+  for (const s of ["queued", "writing", "fixing", "ready", "stopped", "failed"] as const) assert.deepEqual(can(s, true), [false, false], s);
+});
+
+test("a queued design whose session has started waits on its model, not for a session", () => {
+  assert.equal(designQueuedLine(rec("A", "queued")), "Waiting for a free session");
+  assert.equal(designStatusWord(rec("A", "queued")), "Queued");
+  const started: DesignRecord = { ...rec("A", "queued"), sessionId: "s1" };
+  assert.equal(designQueuedLine(started), "Waiting for its model to answer");
+  assert.equal(designStatusWord(started), "Starting");
+  assert.equal(designQueuedLine({ ...started, sessionEnded: true }), "Waiting for a free session", "an ended session is no session");
+  assert.equal(designQueuedLine(rec("A", "writing")), "", "only while queued");
 });
 
 test("a design's chip says what its session is doing", () => {

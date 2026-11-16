@@ -973,7 +973,7 @@ en-US separators ("from 0 to 1,000", "at most 8,000 characters").
 | Filter toggle | `Inputs Only` (`aria-pressed`; pressed adds a `check` icon before the words) |
 | Current goal strip button | `Open Timeline` |
 | Composer trigger | `{n} inputs` (1: `1 input`) · accessible name: `{n} inputs in this chat — show them on the Timeline` (1: `1 input in this chat — show it on the Timeline`) · absent at 0 |
-| Row name prefix (visually hidden) | `Jump to this message: ` |
+| Row name prefix (visually hidden) | `Jump to this message: ` (an alignment row: `Jump to this alignment: `) |
 | Images-only row | `1 image` / `{n} images` |
 | Sender line, another session | `From {title}` (the title links to that session) `· hop {n}` · no title: `From another session` |
 | Sender line, Overseer | `From the Overseer` |
@@ -999,6 +999,7 @@ en-US separators ("from 0 to 1,000", "at most 8,000 characters").
 | Marker: rewind | `Rewound to an earlier message` |
 | Marker: subagent | `{name} started` · `{name} finished` · `{name} stopped` (errored or killed) |
 | Marker: settings | `Model → {model}` · `Thinking → {level}` · `Mode → {mode}` |
+| Marker: alignment | `Alignment {al_N} started · {title}` · `… implementing · {title}` · `… done · {title}` · `… dropped · {title}` · `… reopened · {title}` · `title`: the drop reason (dropped), else the alignment's one-line summary |
 | Marker: past summary | `Goal · {now}` (no `now`: the first line of `overall`) · `title`: the snapshot's `overall` · the newest snapshot gets no row |
 | State line | Updated {relative} ago · behind the latest messages · (current: `Updated {relative} ago · current`; a summarizer running: `Updating`) — §app/insights's words, unchanged |
 | Time `title` | `{absolute} · {relative}` — e.g. `2026-09-19T14:06:11Z · 2d ago` |

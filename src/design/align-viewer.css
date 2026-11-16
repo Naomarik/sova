@@ -246,6 +246,8 @@
 .align-rev-summary { min-width: 0; }
 .align-rev-id { color: var(--color-ink-2); }
 .align-rev-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* A dropped or done alignment's newest copy: the same line, its status chip at the right end. */
+.align-closed-end { flex: none; display: inline-flex; align-items: center; margin-left: auto; padding-left: var(--space-2); }
 .align-rev > .disclosure-body { display: grid; gap: var(--space-2); max-width: var(--measure); }
 
 /* The answers picked on a card (recommendations ticked, options clicked), staged above the composer

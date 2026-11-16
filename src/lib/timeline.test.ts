@@ -1,11 +1,13 @@
 // Run: npx tsx --test src/lib/timeline.test.ts (or npm test)
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import type { OutlineSnapshot, RewindInfo, SessionOutline, TranscriptItem } from "../../shared/protocol";
+import type { AlignChangeInfo, AlignDocInfo, OutlineSnapshot, RewindInfo, SessionOutline, TranscriptItem } from "../../shared/protocol";
 import { inputCount } from "./input-count";
 import { inputRows, rewoundAt, viewRows } from "./inputs";
 import {
+  alignLifecycleVerb,
   anchorTime,
+  jumpPrefix,
   chapterRows,
   clockRange,
   groupRuns,
@@ -228,6 +230,113 @@ test("a rewind with no timestamp gets no row: it cannot be placed on an axis", (
 
 test("markerRows skips an entry with no timestamp: it cannot be placed on an axis", () => {
   assert.deepEqual(markerRows([{ id: "c1", kind: "info", text: "Compacted", meta: { type: "compaction" } }]), []);
+});
+
+// ---- Alignment lifecycle ------------------------------------------------------------------------
+
+const alignDoc = (over: Partial<AlignDocInfo> = {}): AlignDocInfo => ({
+  id: "al_1",
+  title: "Fold the timeline",
+  summary: "Alignment lifecycle rows on the Timeline.",
+  findings: [],
+  approach: [],
+  rejected: [],
+  questions: [],
+  phase: "open",
+  next: { f: 1, a: 1, x: 1, q: 1 },
+  rev: 1,
+  createdAt: at(0),
+  updatedAt: at(0),
+  ...over,
+});
+const alignRow = (id: string, min: number, changes: AlignChangeInfo[], doc: AlignDocInfo | undefined = alignDoc()): TranscriptItem => ({
+  id,
+  kind: "align",
+  text: "",
+  toolCallId: `call-${id}`,
+  at: at(min),
+  align: { v: 1, ...(doc ? { doc } : {}), changes, line: "" },
+});
+
+/** Every change an `align` call can report, and the word its Timeline row says (null: no row).
+    Typed over the union's kinds, so a new kind fails the typecheck until it is placed here. */
+const LIFECYCLE: Record<AlignChangeInfo["kind"], [AlignChangeInfo, string | null][]> = {
+  created: [[{ kind: "created" }, "started"], [{ kind: "created", fromFile: true }, "started"]],
+  status: [
+    [{ kind: "status", to: "implementing" }, "implementing"],
+    [{ kind: "status", to: "done" }, "done"],
+    [{ kind: "status", to: "open" }, "reopened"],
+  ],
+  dropped: [[{ kind: "dropped" }, "dropped"]],
+  added: [[{ kind: "added", ids: ["f2"] }, null]],
+  edited: [[{ kind: "edited", ids: ["a1"] }, null]],
+  removed: [[{ kind: "removed", ids: ["x1"] }, null]],
+  decided: [[{ kind: "decided", q: "q1" }, null]],
+  reopened: [[{ kind: "reopened", q: "q1" }, null]],
+  "question-dropped": [[{ kind: "question-dropped", q: "q1" }, null]],
+  accepted: [[{ kind: "accepted", qs: ["q1", "q2"] }, null]],
+  review: [[{ kind: "review", phase: "plan", state: "clear" }, null]],
+  "blocker-closed": [[{ kind: "blocker-closed", phase: "diff", id: "b1" }, null]],
+};
+
+test("an alignment's lifecycle changes each get a marker; answers, edits and reviews get none", () => {
+  for (const [change, verb] of Object.values(LIFECYCLE).flat()) {
+    assert.equal(alignLifecycleVerb(change), verb, JSON.stringify(change));
+    const rows = markerRows([alignRow("r1", 3, [change], alignDoc({ phase: "dropped", droppedWhy: "Superseded by al_2" }))]);
+    if (verb === null) {
+      assert.deepEqual(rows, [], JSON.stringify(change));
+      continue;
+    }
+    assert.deepEqual(
+      rows,
+      [
+        {
+          key: "marker:align:r1:0",
+          kind: "marker",
+          marker: "align",
+          at: at(3),
+          // The call's own row: what the composer chip jumps to, the card or its one-line copy.
+          entryId: "r1",
+          title: `Alignment al_1 ${verb} · Fold the timeline`,
+          // A drop's hover is its reason; every other row's is the summary.
+          full: change.kind === "dropped" ? "Superseded by al_2" : "Alignment lifecycle rows on the Timeline.",
+        },
+      ],
+      JSON.stringify(change),
+    );
+  }
+});
+
+test("one align call with several lifecycle changes gives one row each, in the call's order", () => {
+  const rows = markerRows([alignRow("r1", 3, [{ kind: "created" }, { kind: "decided", q: "q1" }, { kind: "status", to: "implementing" }])]);
+  assert.deepEqual(
+    rows.map((r) => [r.key, r.title]),
+    [
+      ["marker:align:r1:0", "Alignment al_1 started · Fold the timeline"],
+      ["marker:align:r1:2", "Alignment al_1 implementing · Fold the timeline"],
+    ],
+  );
+});
+
+test("an align exemption gets no row: it is about no alignment", () => {
+  const exempt: TranscriptItem = { ...alignRow("r1", 3, [], undefined), align: { v: 1, changes: [], line: "exempt", exempt: { why: "a one-line fix" } } };
+  assert.deepEqual(markerRows([exempt]), []);
+  assert.deepEqual(timelineRows([user("u1", 0), exempt], null).filter((r) => r.kind !== "density").map((r) => r.kind), ["input"]);
+});
+
+test("alignment rows sit on the axis by time, jump with their own words, and Inputs Only hides them", () => {
+  const items = [user("u1", 0), alignRow("r1", 1, [{ kind: "created" }]), user("u2", 2), alignRow("r2", 3, [{ kind: "dropped" }])];
+  const all = timelineRows(items, null).filter((r) => r.kind !== "density");
+  assert.deepEqual(
+    all.map((r) => r.key),
+    ["input:u1", "marker:align:r1:0", "input:u2", "marker:align:r2:0"],
+  );
+  assert.equal(jumpPrefix(all[1]!), "Jump to this alignment: ");
+  assert.equal(jumpPrefix(all[0]!), "Jump to this message: ");
+  assert.deepEqual(
+    timelineRows(items, null, [], GAP_MS, { inputsOnly: true }).filter((r) => r.kind !== "density").map((r) => r.key),
+    ["input:u1", "input:u2"],
+  );
 });
 
 // ---- Gaps ---------------------------------------------------------------------------------------

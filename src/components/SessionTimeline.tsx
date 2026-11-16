@@ -19,7 +19,7 @@ import {
 import { getBaton } from "../lib/api";
 import { jumpWhenArrived } from "../lib/jump";
 import { absoluteTime } from "../lib/spend";
-import { GAP_MS, groupRuns, runLabel, newestFirst, timelineRows, timelineState, type TimelineRow } from "../lib/timeline";
+import { GAP_MS, groupRuns, jumpPrefix, runLabel, newestFirst, timelineRows, timelineState, type TimelineRow } from "../lib/timeline";
 import { toast } from "../lib/ui-state";
 import { capTitle } from "../lib/workers";
 import { Icon } from "./ui";
@@ -310,7 +310,7 @@ function Row(props: {
               }
             >
               <button type="button" class="timeline-body" title={capTitle(row().full ?? "") || undefined} onClick={() => props.onJump(row().entryId)}>
-                <span class="visually-hidden">Jump to this message: </span>
+                <span class="visually-hidden">{jumpPrefix(row())}</span>
                 <Body row={row()} />
               </button>
             </Show>

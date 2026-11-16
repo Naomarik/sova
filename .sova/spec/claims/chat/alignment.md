@@ -323,9 +323,18 @@ unchanged.
 
 An `align` call that changed a document renders **where the call is**, as a card, instead of the
 generic tool card; its tool-call row has no row of its own once the result is there. The **newest
-revision of each document on the branch** is the full card; every earlier revision of the same
-document collapses to one line built from its changes, which opens to show that revision in place.
-A failed call keeps the generic tool card with its error, and a `get` its tool card with the
+revision of each document on the branch** is the full card while the document is aligning,
+confirmed or implementing; every earlier revision of the same document collapses to one line built
+from its changes, which opens to show that revision in place. **A dropped or done document's newest
+revision folds to one line** too: a twist, its id and version, its title, then for a dropped one
+"Dropped:" and its reason, for a done one its summary, cut to fit with an ellipsis (the full text
+as the hover title), and its Dropped or Done chip at the line's right end. A click opens it in
+place, read-only, reading as the card does (the summary, the visual, the full reason, the approach,
+the questions and the closed sections); a second click folds it. The fold is per render and not
+remembered: the line draws folded again whenever the transcript redraws. It folds the same
+everywhere the card draws: a chat Sova holds, a live watch, a worker transcript, and a run still
+streaming. A reopened document's new revision is a full card again. Folded, it isn't that
+alignment on screen for Time Spent; opened, it is (§app.subagents-pane/time-spent). A failed call keeps the generic tool card with its error, and a `get` its tool card with the
 markdown; an `exempt` is one info row, "No alignment needed: {why}". "Hide tool calls" never folds
 an `align` call that changed a document or recorded an exemption: it is the message, not its
 working. A change-request mark alone (§chat.alignment/tool) is working: it keeps the generic tool
@@ -403,6 +412,17 @@ card, which "Hide tool calls" folds like any other.
   <summary class="disclosure-summary"><span class="text-mono">al_3</span> v4 Autonomy settings · q3 decided · +q11</summary>
   <div class="disclosure-body">…that revision's card body…</div>
 </details>
+<!-- the newest revision of a dropped or done document, folded until clicked -->
+<details class="disclosure align-rev align-closed" data-phase="dropped|done">
+  <summary class="disclosure-summary align-rev-summary">
+    <svg class="icon icon-sm icon-twist" aria-hidden="true">…chevron-right…</svg>
+    <span class="text-mono align-rev-id">al_3</span> <span class="text-mono text-num">v6</span>
+    <span class="align-rev-text" title="Autonomy settings · Dropped: {the full reason}">Autonomy settings · Dropped: superseded by…</span>
+    <!-- done: "Autonomy settings · {summary}" -->
+    <span class="align-closed-end"><span class="chip"><i class="chip-dot"></i>Dropped</span></span>
+  </summary>
+  <div class="disclosure-body">…the card's body, read-only…</div>
+</details>
 ```
 
 - **Card** is capped at `--measure`, `--space-3`/`--space-4` padding; the eyebrow is `micro`
@@ -438,7 +458,9 @@ card, which "Hide tool calls" folds like any other.
   source as a code block with the chat's own one line saying it couldn't be drawn, as a reply's fence
   does. A folded question draws its visual only once opened.
 - **Status chip**, dot and word, only once the document is past aligning: Confirmed (success),
-  Implementing (accent), Done (success), Dropped (neutral). An aligning document shows none.
+  Implementing (accent), Done (success), Dropped (neutral). An aligning document shows none. A
+  dropped or done document's folded newest revision carries its Done or Dropped chip at the right
+  end of its one line.
 - **Questions** show their parts distinctly: the ask, the context, the options as a list lettered
   a, b, c… (the letter in the bullet's place, in its own column so a wrapped line aligns under the
   text), each its label in bold on one line and its trade-off on the next, set in slightly (no

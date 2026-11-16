@@ -220,9 +220,9 @@
       "src/lib/archive-block.test.ts"
     ],
     "agreed": {
-      "by": "omar",
-      "at": "2026-10-27T08:48Z",
-      "source": "pi-session:01a1735d-d92b-70d4-a656-e4521f0fd84f#d9c4dc3f"
+      "by": "user",
+      "at": "2026-11-16T13:19Z",
+      "source": "pi-session:5068e8f9-2d24-48d8-abd8-090a2bcad97b#905b1a76"
     }
   },
   "§app.session-list/first-listing": {
@@ -288,8 +288,8 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-05T10:31Z",
-      "source": "pi-session:01a1ab0e-cb20-7081-a563-521c041eafdd#51e5317f"
+      "at": "2026-11-16T13:19Z",
+      "source": "pi-session:5068e8f9-2d24-48d8-abd8-090a2bcad97b#905b1a76"
     }
   },
   "§app.session-list/group-picker": {
@@ -633,6 +633,31 @@
       "by": "user",
       "at": "2026-11-11T14:09Z",
       "source": "pi-session:01a1ca84-b3de-7601-9d6d-7e61cbb746c9#a4b61b34"
+    }
+  },
+  "§app.session-list/row-menu": {
+    "kind": "behavior",
+    "requires": [
+      "§app.session-list/drop-overlay",
+      "§app.session-list/groups",
+      "§app.session-list/regions-top-and-archive",
+      "§app.session-list/session-titles",
+      "§app.session-list/fixed-names",
+      "§app.insights/team-cards",
+      "§design/context-menus"
+    ],
+    "authority": "accepted",
+    "evidence": "unreviewed",
+    "code": [
+      "src/components/SessionContextMenu.tsx",
+      "src/lib/session-context-menu.ts",
+      "src/lib/session-context-menu.test.ts",
+      "src/components/Sidebar.tsx"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-16T16:07Z",
+      "source": "pi-session:5068e8f9-2d24-48d8-abd8-090a2bcad97b#94a91edd"
     }
   },
   "§app.session-list/search": {

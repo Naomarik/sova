@@ -6,7 +6,8 @@ topics are chapter markers, each message sent to the session is a row — yours,
 session, the Overseer or a teammate sent, under a line naming who sent it — and what the agent did
 between two messages is a single line of counts under the row it belongs to — "3 replies · 14 tools ·
 6m". Notable moments (a compaction, a rewind, a subagent spawning or retiring, a model, thinking
-or mode change, an earlier summary of the session) get their own marker rows (a run of identical
+or mode change, an alignment starting, moving to implementing, done, dropped or reopened, an
+earlier summary of the session) get their own marker rows (a run of identical
 ones shares one), and a stretch with
 nothing in it gets a dotless "idle 38m".
 
@@ -272,7 +273,19 @@ One row each; identical runs fold into one (§chat.timeline/marker-runs):
 | Model change | `Model → {model}` |
 | Thinking change | `Thinking → {level}` |
 | Mode change | `Mode → {mode}` |
+| Alignment | `Alignment {al_N} {started \| implementing \| done \| dropped \| reopened} · {title}` |
 | Past summary | `Goal · {now}` |
+
+**Alignments.** Each lifecycle change an `align` call makes to a document (§chat.alignment/tool) is
+one marker row at the call's time: the alignment started, moved to implementing, done, dropped, or
+reopened. Nothing else an alignment does gets a row: no answers, edits, additions, removals,
+reviews or blockers, and no "No alignment needed" exemption. The row reads "Alignment al_1 dropped ·
+{title}", clamped to two lines like an input's, in the quiet marker style the model, mode and
+subagent rows use; its hover title is the drop reason on a dropped row and the alignment's one-line
+summary on every other. Pressing it jumps to that call's alignment row in the transcript, as other
+jumping rows do: the full card (or the folded line of a dropped or done one, §chat.alignment/card)
+when it is the document's newest revision, its one-line earlier revision otherwise. The rows are
+built from the transcript, so a past chat has them too.
 
 **The rewind marker names no turns.** It says a rewind happened and when, and stops. Naming what
 was abandoned would need the whole session file — the branch the timeline reads is, by
@@ -307,7 +320,7 @@ and gap rows already set — nothing to land on, so nothing to press — and it 
 the one way that matters: it happened at a time, on the axis, so it keeps the clock and the dot
 they don't have.
 
-Every marker that names a single entry jumps to it, and a row whose message is gone from the
+Every marker that names a single entry jumps to it (a subagent's, an alignment's), and a row whose message is gone from the
 transcript — a chapter whose anchor was compacted away — still has a button and still says so
 when it can't land. That is a jump that failed, not a row with nowhere to go.
 
@@ -387,7 +400,7 @@ before the words, so the state has a shape and never rests on colour (§design/g
 typed renders, each with its own density line under it (replies · tools · duration) and its
 Rewind; the `gap` rows are measured again between the rows that remain, so "idle 43m" is the
 silence between two of your messages. Every other row goes: chapters, compactions, rewind markers,
-subagents started and finished, model/thinking/mode changes and past summaries, and the input rows
+subagents started and finished, model/thinking/mode changes, alignment rows and past summaries, and the input rows
 you didn't type, with their density lines — a message another session sent, one the Overseer sent
 (its briefs included), one a teammate sent in a shared session, a turn the merge queue started
 ("From the merge queue", §chat.merge-queue/chat-turns), and a fired wake nudge. The rows a
@@ -590,8 +603,8 @@ refetch or an armed Rewind never remounts the row under focus.
 - **The filter** is one `button[aria-pressed]`, "Inputs Only": its name stays the same and the
   pressed state is announced, the way a toggle should read. The `check` icon is the visible twin
   of `aria-pressed`, not colour.
-- **Each jump button opens with a visually hidden "Jump to this message: "**, so its name says
-  what it does, not just what it contains.
+- **Each jump button opens with a visually hidden "Jump to this message: "** (an alignment row's
+  with "Jump to this alignment: "), so its name says what it does, not just what it contains.
 - **A sender line reads first.** It sits before the row's jump button in the DOM, as text with
   one link (the sending session's), so a screen reader hears who sent a message before its words,
   and the link and the jump are separate tab stops, never one inside the other.

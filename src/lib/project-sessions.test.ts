@@ -110,6 +110,9 @@ test("a ready branch carries Land only when the queue offers it and its folder i
 test("a recorded branch falls back to git's facts; a queue stage wins over them", () => {
   assert.equal(recordedBranchState({ branch: "b", state: "merged", merged: true }, null).stage, "landed");
   assert.equal(recordedBranchState({ branch: "b", state: "open", dirty: true }, null).word, "Uncommitted changes");
+  assert.equal(recordedBranchState({ branch: "b", state: "open", ahead: 1 }, null).word, "1 commit ahead");
+  assert.equal(recordedBranchState({ branch: "b", state: "open", ahead: 3 }, null).word, "3 commits ahead");
+  assert.equal(recordedBranchState({ branch: "b", state: "open", ahead: 0 }, null).word, "No commits yet");
   const line = branchStateOf("b", qrow("queued"), { position: 1 });
   assert.equal(recordedBranchState({ branch: "b", state: "open", dirty: true }, line), line);
 });

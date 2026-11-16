@@ -173,7 +173,8 @@ export function branchStateOf(branch: string, row: QueueRow, extra: { position?:
 }
 
 /** What the recorded facts (the project's branch read) say of a session's one branch, when the session list has no
-    reading of it (a session on another host, or before its first read). */
+    reading of it: a session on another host, before its first read, or one whose worktree the server cut (New Coding
+    Session), which the session list's readiness never covers. */
 export interface RecordedBranch {
   branch: string;
   state?: "open" | "merged" | "removed" | "missing" | "root";
@@ -190,8 +191,8 @@ export function recordedBranchState(r: RecordedBranch, queued: BranchState | nul
   if (r.state === "missing") return { branch: r.branch, stage: "other", word: "Worktree folder missing", tone: "muted" };
   if (r.dirty) return { branch: r.branch, stage: "other", word: "Uncommitted changes", tone: "muted" };
   if (r.ahead === 0) return { branch: r.branch, stage: "other", word: "No commits yet", tone: "muted" };
-  if (r.state === undefined) return { branch: r.branch, stage: "other", word: "Reading its branch", tone: "muted" };
-  return { branch: r.branch, stage: "other", word: "Not finished yet", tone: "muted" };
+  if (r.state === undefined || r.ahead === undefined) return { branch: r.branch, stage: "other", word: "Reading its branch", tone: "muted" };
+  return { branch: r.branch, stage: "other", word: `${r.ahead} ${r.ahead === 1 ? "commit" : "commits"} ahead`, tone: "muted" };
 }
 
 // ---- one session's row --------------------------------------------------------------------------------

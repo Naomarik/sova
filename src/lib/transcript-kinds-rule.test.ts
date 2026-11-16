@@ -67,6 +67,7 @@ const MOVED: Record<string, string[]> = {
   "lookbook-item": ["LookbookHistoryItem"],
   lookbook: ["LookbookMessage"],
   brief: ["BriefRow"],
+  "playbook-run": ["PlaybookRunMessage"],
   explain: ["ExplainCard"],
   "team-report": ["TeamMessageCard"],
   report: ["ReportRow"],

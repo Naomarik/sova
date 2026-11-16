@@ -217,7 +217,10 @@ export async function startRun(runId: string, revision: number, deps: StartDeps)
     const frozen = freezePlan(r, spec, env, card, toNew, at, folder);
     const contents = writeFiles(folder, frozen.files, deps.contents());
     const bundle = { id: loaded.info.id, dir: loaded.info.dir, entry: loaded.info.entry };
-    const block = playbookPayload(bundle, toNew ? null : { branch: await conducting.branch(), cwd: conducting.mirror.cwd || r.cwd }).block;
+    const branch = toNew ? null : await conducting.branch();
+    const block = playbookPayload(bundle, branch ? { branch, cwd: conducting.mirror.cwd || r.cwd } : null).block;
+    // A chat with no message and no name yet is named for the run, never by the run message's first words.
+    if (branch && !branch.some((h) => h.kind === "user" || (h.kind === "setting" && h.what === "name"))) host.title(chat.id, `${r.playbook.title} (playbook)`);
     const text = runMessage(frozen.plan, block, runBlock(frozen.plan, folder, { contents, sovaScript: SOVA_SCRIPT }));
     const sent = await host.prompt(chat.path, text);
     if (!sent.ok) throw new Error(`The run's message was refused: ${sent.error}`);

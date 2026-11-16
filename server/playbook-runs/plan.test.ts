@@ -4,6 +4,7 @@ import { checkInputValue, inputValueText, parsePlaybookSpec, type InputValue, ty
 import { resolveRoleModel } from "../../shared/playbook-models";
 import type { WorkerChoice } from "../../shared/protocol";
 import { runBlock, runMessage } from "./message";
+import { parseRunMessage } from "../../shared/playbook-run";
 import { freezePlan, runCard, type CardEnv } from "./plan";
 import type { PlaybookRunRecord } from "./store";
 
@@ -228,5 +229,8 @@ describe("the frozen plan", () => {
       assert.ok(block.includes(want), `missing: ${want}\n---\n${block}`);
     const msg = runMessage(plan, "<playbook id=\"ab\">…</playbook>", block);
     assert.match(msg, /^Run the playbook "A\/B" as its conductor/);
+    // The page folds exactly this message: what Start builds, the thread recognizes.
+    assert.deepEqual(parseRunMessage(msg), { runId: "pr_aaaaaaaaaaaa", playbook: "ab", title: "A/B", revision: 3 });
+    assert.equal(parseRunMessage(msg.replace("</run>", "")), null);
   });
 });

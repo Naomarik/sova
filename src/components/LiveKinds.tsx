@@ -26,6 +26,8 @@ import { AssistantText, Thinking, TurnError, UserTurn } from "./MessageRows";
 import { MessageActions } from "./MessageActions";
 import { InfoRow } from "./InfoRow";
 import { WakeCard } from "./WakeCard";
+import { PlaybookRunMessage } from "./PlaybookRunMessage";
+import type { RunMessageInfo } from "../../shared/playbook-run";
 import { TopicCard } from "./TopicCard";
 import { SubagentLimitRow } from "./SubagentLimitRow";
 import { AlignRow } from "./AlignDocCard";
@@ -50,6 +52,7 @@ export const LIVE_VIEWS: { [K in LiveView]: Component<LiveKindViewProps<never>> 
   wake: (props: LiveKindViewProps<WakeInfo>) => <WakeCard nudge={props.value} text={userOf(props.input).text} />,
   topic: (props: LiveKindViewProps<TopicBatchInfo>) => <TopicCard batch={props.value} />,
   brief: (props: LiveKindViewProps<LiveUserEntry>) => <BriefRow text={props.value.text} />,
+  "playbook-run": (props: LiveKindViewProps<RunMessageInfo>) => <PlaybookRunMessage run={props.value} text={userOf(props.input).text} />,
   user: LiveUserRow,
   "assistant-text": (props: LiveKindViewProps<Extract<LiveBlock, { type: "text" }>>) => {
     const facts = factsOf(props.input);

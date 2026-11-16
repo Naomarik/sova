@@ -4,6 +4,8 @@ import { Chip, Icon } from "./ui";
 import type { KindViewProps } from "../lib/transcript-kinds";
 import type { HandoffRunInfo, TranscriptItem } from "../../shared/protocol";
 import { WorktreeMergeCard } from "./WorktreeMergeCard";
+import { PlaybookRunMessage } from "./PlaybookRunMessage";
+import type { RunMessageInfo } from "../../shared/playbook-run";
 import { isMergeQueueText } from "../../shared/senders";
 import { SettingsToolCard } from "./SettingsChangeCard";
 import type { SettingsToolDetails } from "../../shared/project-settings";
@@ -63,6 +65,7 @@ export const BUILTIN_VIEWS = {
   "lookbook-item": (props: KindViewProps<LookbookHistoryRow>) => <LookbookHistoryItem row={props.value} />,
   lookbook: (props: KindViewProps<NonNullable<TranscriptItem["lookbook"]>>) => <LookbookMessage row={props.value} time={props.item.at} images={props.item.images} attachments={props.item.attachments} />,
   brief: (props: KindViewProps) => <BriefRow text={props.item.text ?? ""} time={props.item.at} />,
+  "playbook-run": (props: KindViewProps<RunMessageInfo>) => <PlaybookRunMessage run={props.value} text={props.item.text ?? ""} time={props.item.at} />,
   explain: (props: KindViewProps<NonNullable<NonNullable<TranscriptItem["report"]>["explain"]>>) => <ExplainCard explain={props.value} />,
   "team-report": (props: KindViewProps<NonNullable<NonNullable<TranscriptItem["report"]>["team"]>>) => (
     <TeamMessageCard report={props.item.report!} team={props.value} time={props.item.at} attachments={props.item.attachments} />

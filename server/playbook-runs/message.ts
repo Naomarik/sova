@@ -2,6 +2,7 @@
 // instruction line, the playbook block (shared/playbook-delivery.ts) and the run block: your choices, the cast
 // with each role's whole model list, which steps run as a team and which as separate helpers, the steps and
 // their stops, the cycle, and the playbook contents page with its entry for Sova's commands. Pure.
+import { runInstruction } from "../../shared/playbook-run";
 import type { PlanModel, PlaybookPlan } from "./plan";
 
 export interface ContentsSection {
@@ -15,10 +16,6 @@ export interface ContentsSection {
 const q = (s: string) => s.replaceAll("&", "&amp;").replaceAll('"', "&quot;");
 
 const modelWords = (m: PlanModel): string => `${m.model}${m.effort ? ` (${m.effort})` : ""}${m.why ? ` [can't run now: ${m.why}]` : ""}`;
-
-/** The instruction line before the blocks. */
-export const runInstruction = (title: string): string =>
-  `Run the playbook "${title}" as its conductor: its recipe is in the playbook block below and this run's plan, frozen from the card the user started, in the run block after it. Start the helpers and teams yourself, exactly as the run block says.`;
 
 export function runBlock(plan: PlaybookPlan, folder: string, opts: { contents: ContentsSection[]; sovaScript: string }): string {
   const lines: string[] = [`<run id="${plan.runId}" playbook="${q(plan.playbook.id)}" revision="${plan.revision}" folder="${q(folder)}">`];

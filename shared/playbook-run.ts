@@ -190,6 +190,34 @@ export interface PlaybookRunRevisionBody {
   revision: number;
 }
 
+// ── The run message ─────────────────────────────────────────────────────────────────────────────
+
+/** The instruction line Start's message opens with (server/playbook-runs/message.ts builds the rest). */
+export const runInstruction = (title: string): string =>
+  `Run the playbook "${title}" as its conductor: its recipe is in the playbook block below and this run's plan, frozen from the card the user started, in the run block after it. Start the helpers and teams yourself, exactly as the run block says.`;
+
+/** What a chat's thread shows of Start's message: which run of which playbook, at which revision. */
+export interface RunMessageInfo {
+  runId: string;
+  playbook: string;
+  title: string;
+  revision: number;
+}
+
+const INSTRUCTION_RE = /^Run the playbook "(.*)" as its conductor: /;
+const RUN_TAG_RE = /^<run id="(pr_[a-z0-9]{12})" playbook="([^"]*)" revision="(\d+)" folder="[^"]*">$/m;
+
+/** Start's message, recognized: its first line is the instruction and it carries a run block; null for any other text. */
+export function parseRunMessage(text: string | undefined | null): RunMessageInfo | null {
+  if (!text) return null;
+  const head = INSTRUCTION_RE.exec(text);
+  if (!head) return null;
+  const tag = RUN_TAG_RE.exec(text);
+  if (!tag || !text.trimEnd().endsWith("</run>")) return null;
+  const unq = (v: string) => v.replaceAll("&quot;", '"').replaceAll("&amp;", "&");
+  return { runId: tag[1]!, playbook: unq(tag[2]!), title: head[1]!, revision: Number(tag[3]) };
+}
+
 /** The SovaEvent a chat's sockets hear when one of its runs changes. */
 export const PLAYBOOK_RUN_EVENT = "playbook.run";
 

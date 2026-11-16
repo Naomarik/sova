@@ -67,7 +67,10 @@ class Chats {
   marks: { path: string; data: unknown }[] = [];
   set: { path: string; what: string; to: string }[] = [];
   snapshots: string[] = [];
+  titles: { id: string; title: string }[] = [];
   refuse: string | null = null;
+  /** Chats that already have a message of the person's. */
+  written = new Set<string>();
   readonly made: { id: string; path: string }[] = [];
   chat(path: string): StartChat {
     const self = this;
@@ -85,7 +88,7 @@ class Chats {
       async switchMode() {},
       async pinMode() {},
       async branch() {
-        return [];
+        return self.written.has(path) ? ([{ kind: "user", id: "u1", parentId: null, blocks: [{ type: "text", text: "hi" }] }] as never) : [];
       },
       async appendState(kind, data) {
         self.marks.push({ path, data: { type: kind.type, ...(data as object) } });
@@ -105,7 +108,7 @@ class Chats {
         this.snapshots.push(path);
         return { ok: true };
       },
-      title: () => {},
+      title: (id, title) => void this.titles.push({ id, title }),
       env: async (spec, info) => fakeEnv(info.dir, spec),
     };
   }
@@ -172,6 +175,8 @@ describe("Start", () => {
     assert.match(text, /\n<playbook id="trial" dir="[^"]+" entry="PLAYBOOK.md" sha="[0-9a-f]+" load="full">\n---\ntitle: trial\n---\nConduct the trial.\n<\/playbook>\n<run id="pr_/);
     assert.ok(text.includes(`${folder}/teams/run.json (roles: runner, grader)`));
     assert.ok(text.trimEnd().endsWith("</run>"));
+    // An empty chat is named for the run, not by the message's first words.
+    assert.deepEqual(chats.titles, [{ id: shownIn.id, title: "trial (playbook)" }]);
     // This chat now runs on the main role's model and effort.
     assert.deepEqual(chats.set, [{ path: shownIn.path, what: "model", to: "zai/glm-5.3" }, { path: shownIn.path, what: "thinking", to: "high" }]);
     await new Promise((r) => setTimeout(r, 20));
@@ -201,6 +206,14 @@ describe("Start", () => {
     assert.deepEqual(store.runsOfChat(made.id).map((r) => r.id), [run.id]);
     await assert.rejects(startRun(run.id, run.revision, { request: chats.request, contents: () => [], host: chats.host() }), /already started/);
     assert.equal(chats.made.length, 1);
+  });
+
+  test("a chat that already has a message keeps its name", async () => {
+    const chats = new Chats();
+    const { run, shownIn } = await draft("trial");
+    chats.written.add(shownIn.path);
+    await startRun(run.id, run.revision, { request: chats.request, contents: () => [], host: chats.host() });
+    assert.deepEqual(chats.titles, []);
   });
 
   test("two Starts at once start one run", async () => {

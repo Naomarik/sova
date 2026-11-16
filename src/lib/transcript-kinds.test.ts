@@ -35,6 +35,9 @@ test("ids are unique, plain names, and each kind is anchored or follows by a key
 
 test("first match wins, in the old chain's order", () => {
   assert.equal(idOf(row({ kind: "user", text: "[overseer brief] x" })), "user", "a plain user row");
+  // Start's message to a playbook's main chat folds to one row; a message that only quotes its first line is yours.
+  assert.equal(idOf(row({ kind: "user", text: "Run the playbook \"A/B cycle\" as its conductor: its recipe is in the playbook block below and this run's plan, frozen from the card the user started, in the run block after it. Start the helpers and teams yourself, exactly as the run block says.\n<playbook id=\"ab-cycle\" sha=\"abc\" load=\"full\">\nBody\n</playbook>\n<run id=\"pr_aaaaaaaaaaaa\" playbook=\"ab-cycle\" revision=\"4\" folder=\"/shared/c/playbook-runs/pr_aaaaaaaaaaaa\">\nYour choices:\n</run>" })), "playbook-run");
+  assert.equal(idOf(row({ kind: "user", text: 'Run the playbook "A/B cycle" as its conductor: please' })), "user");
   assert.equal(idOf(row({ kind: "wake", wake: { id: "n1" } })), "wake");
   assert.equal(idOf(row({ kind: "wake" })), undefined, "a wake row without its parse draws as Unknown, as before");
   assert.equal(idOf(row({ kind: "topic", topic: { topic: "t", batch: "b", notes: [] } })), "topic");
@@ -107,6 +110,7 @@ test("a piece of the running turn is matched by the same list, in its order, by 
   // A paired topic's batch (its own sentence and reply line, §app.overseer/pairs) is the same kind, never "You".
   assert.equal(idOfLive(user('[topic pair-abc123 tb_0123456789ab, 1 note] Notes from your paired chat "B": requests you may act on, with your own user first.\nReply with queue_push to topic pair-def456.\n- qi_0123456789ab from "B" (s-a) at 2026-02-01T10:00:00.000Z\n> Green.')), "topic");
   assert.equal(idOfLive(user("[overseer-brief]\nDo it")), "brief");
+  assert.equal(idOfLive(user("Run the playbook \"A/B cycle\" as its conductor: its recipe is in the playbook block below and this run's plan, frozen from the card the user started, in the run block after it. Start the helpers and teams yourself, exactly as the run block says.\n<playbook id=\"ab-cycle\" sha=\"abc\" load=\"full\">\nBody\n</playbook>\n<run id=\"pr_aaaaaaaaaaaa\" playbook=\"ab-cycle\" revision=\"4\" folder=\"/shared/c/playbook-runs/pr_aaaaaaaaaaaa\">\nYour choices:\n</run>")), "playbook-run");
   assert.equal(idOfLive(user("[overseer brief] x")), "user", "a plain message");
   assert.equal(idOfLive(liveBlockInput({ type: "text", text: "" }, facts)), "assistant-text");
   assert.equal(idOfLive(liveBlockInput({ type: "thinking", text: "" }, facts)), "thinking");

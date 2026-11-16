@@ -26,6 +26,15 @@
   .project-backlog { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
 }
 .project-tabpanel .card.orgs-section { max-width: none; }
+/* A tab's own head (Backlog, Deploy; Sessions and Running Copies draw the same): its name at heading-m and one
+   line under it, an action at its end. It sits 16px above the tab's first card, closer than the cards are apart. */
+.project-tab-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-3); margin-bottom: calc(-1 * var(--space-2)); }
+.project-tab-head-text { flex: 1 1 18rem; min-width: 0; }
+.project-tab-h2 { margin: 0; font-size: var(--fs-heading-m); line-height: var(--lh-heading-m); font-weight: var(--fw-semibold); letter-spacing: var(--ls-heading); color: var(--color-ink); }
+.project-tab-lede { margin: 2px 0 0; font-size: var(--fs-caption); line-height: var(--lh-caption); color: var(--color-ink-muted); }
+/* A tab's marks: a count in the label (Backlog's open to-dos) is `.org-tab-count`; a deploy running now is the
+   live dot; one that waits on the operator is the warn dot (`.org-tab-dot`). The words are in the tab's hidden text. */
+.project-tabs > .tab > .live-dot { width: 7px; height: 7px; }
 .project-anchor, .project-tabpanel .orgs-section { scroll-margin-top: var(--space-4); }
 .project-empty-line { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); max-width: 880px; }
 .project-empty-line > .orgs-empty { margin: 0; }
@@ -588,6 +597,38 @@ a.pipeline-link:hover, button.pipeline-link:hover, summary.pipeline-link:hover {
   .deploy-actions > .deploy-rollback { flex-basis: 100%; margin: var(--space-2) 0 0; }
   .deploy-step { padding: var(--space-2); }
   .deploy-check-list { padding-left: var(--space-3); }
+}
+
+/* The Deploy tab: a deploy under way (its line, then its steps), the target's facts, and History. */
+.deploy-progress { display: flex; flex-direction: column; gap: var(--space-3); padding: var(--space-4); border: var(--stroke-icon) solid var(--color-accent); border-radius: var(--r-lg); background: var(--color-surface); container: project-card / inline-size; }
+.deploy-progress-line { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-3); margin: 0; min-width: 0; overflow-wrap: anywhere; }
+/* One column per step: a rule over its number and name. Done is ink-2, the one running now is the accent and
+   medium weight (and aria-current), one still to come is the border; a failed one is the error hue and says so. */
+.deploy-stepper { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: var(--space-2); margin: 0; padding: 0; list-style: none; }
+.deploy-stepper-step { padding-top: var(--space-2); border-top: 3px solid var(--color-border); font-size: var(--fs-caption); line-height: var(--lh-caption); color: var(--color-ink-muted); overflow-wrap: anywhere; }
+.deploy-stepper-step[data-state="done"] { border-top-color: var(--color-ink-2); color: var(--color-ink-2); }
+.deploy-stepper-step[data-state="now"] { border-top-color: var(--color-accent); color: var(--color-ink); font-weight: var(--fw-medium); }
+.deploy-stepper-step[data-state="failed"] { border-top-color: var(--status-error); color: var(--status-error); font-weight: var(--fw-medium); }
+/* The target's facts: a label column, then the value. */
+.deploy-facts { display: grid; grid-template-columns: 120px minmax(0, 1fr); gap: var(--space-2) var(--space-4); margin: 0; }
+.deploy-facts > dt { padding-top: 2px; font-size: var(--fs-caption); line-height: var(--lh-caption); color: var(--color-ink-muted); }
+.deploy-facts > dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+/* History: the commit, the target, what came of it, and when at the row's end. */
+.deploy-history { margin: 0; padding: 0; list-style: none; }
+.deploy-history-row { display: grid; grid-template-columns: 100px 70px minmax(0, 1fr) auto; align-items: center; gap: var(--space-1) var(--space-3); min-height: var(--row-height); padding: var(--space-2) 0; border-top: var(--stroke-thin) solid var(--color-border); }
+.deploy-history-row:first-child { border-top: 0; }
+.deploy-history-commit { font-family: var(--font-mono); font-size: var(--fs-mono); font-weight: var(--fw-medium); color: var(--color-ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.deploy-history-target { font-family: var(--font-mono); font-size: var(--fs-mono); color: var(--color-ink-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.deploy-history-result { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1) var(--space-2); min-width: 0; color: var(--color-ink-2); overflow-wrap: anywhere; }
+.deploy-history-when { font-size: var(--fs-caption); line-height: var(--lh-caption); color: var(--color-ink-muted); white-space: nowrap; text-align: end; }
+@container project-card (max-width: 479px) {
+  .deploy-stepper { grid-auto-flow: row; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-3) var(--space-2); }
+  .deploy-facts { grid-template-columns: minmax(0, 1fr); gap: 2px; }
+  .deploy-facts > dd { margin-bottom: var(--space-2); }
+  .deploy-facts > dd:last-child { margin-bottom: 0; }
+  .deploy-history-row { grid-template-columns: auto minmax(0, 1fr) auto; }
+  .deploy-history-result { grid-column: 1 / -1; grid-row: 2; }
+  .deploy-history-when { grid-column: 3; grid-row: 1; }
 }
 
 /* Files people sent the project (§app.organizations/files-card): a row each, name over its meta,

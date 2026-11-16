@@ -1,0 +1,262 @@
+// The project page's Sessions tab: every coding session in one full-width list, grouped by what needs you first
+// (Needs you, Working, Ready to land, Idle, Old, Landed), each row saying its branches' landing state in words.
+// Pure: no Solid, no DOM, so the rules run under the unit runner.
+
+import type { AttentionDigest, SessionSummary } from "../../shared/protocol";
+import type { CodingRow } from "./coding-worktrees";
+import { ordinal, queueRow, type QueueRow, type QueueRowInput } from "./merge-queue";
+import { chatRowsOf } from "./branch-status";
+import { needsYouRows } from "./needs-you";
+
+// ---- groups ---------------------------------------------------------------------------------------
+
+export type SessionGroupKey = "needs-you" | "working" | "ready" | "idle" | "old" | "landed";
+
+/** The list's order: what needs you first. */
+export const GROUP_ORDER: readonly SessionGroupKey[] = ["needs-you", "working", "ready", "idle", "old", "landed"];
+
+export const GROUP_NAME: Record<SessionGroupKey, string> = {
+  "needs-you": "Needs you",
+  working: "Working",
+  ready: "Ready to land",
+  idle: "Idle",
+  old: "Old",
+  landed: "Landed",
+};
+
+/** No activity for this many days makes an idle session Old (and marks its row quiet). */
+export const OLD_DAYS = 7;
+const DAY_MS = 86_400_000;
+
+/** Where a branch stands on its way to the target. */
+export type BranchStage = "ready" | "in-line" | "checking" | "stuck" | "landed" | "other";
+
+/** The stages that put a session in Ready to land: it is on its way in, or waits for your Land. */
+const ON_ITS_WAY: readonly BranchStage[] = ["ready", "in-line", "checking", "stuck"];
+
+/** What the grouping reads of one session. */
+export interface SessionFacts {
+  /** The sidebar's Needs you rule lists it (the attention digest), or, with no digest, it waits on your answer. */
+  needsYou: boolean;
+  /** The session (or one of its workers) is working now. */
+  working: boolean;
+  /** ms epoch of its last activity; 0 unknown. */
+  lastActive: number;
+  /** Its branches' stages, in its own order; empty when it has none. */
+  stages: readonly BranchStage[];
+}
+
+/**
+ * The one group a session lists in, first rule that holds: Needs you; Working; Ready to land (a branch is ready,
+ * in line, checking or stuck in the queue); Landed (it has branches and every one landed); Old (no activity for
+ * OLD_DAYS or more); else Idle.
+ */
+export function sessionGroup(f: SessionFacts, now: number): SessionGroupKey {
+  if (f.needsYou) return "needs-you";
+  if (f.working) return "working";
+  if (f.stages.some((s) => ON_ITS_WAY.includes(s))) return "ready";
+  if (f.stages.length && f.stages.every((s) => s === "landed")) return "landed";
+  if (isQuiet(f.lastActive, now)) return "old";
+  return "idle";
+}
+
+/** No activity for OLD_DAYS or more (an unknown time is never quiet). */
+export const isQuiet = (lastActive: number, now: number): boolean => lastActive > 0 && now - lastActive >= OLD_DAYS * DAY_MS;
+
+/** Within Ready to land: ready first, then checking, in line (by place), stuck. */
+const STAGE_RANK: Record<BranchStage, number> = { ready: 0, checking: 1, "in-line": 2, stuck: 3, landed: 4, other: 5 };
+
+const LAST = Number.MAX_SAFE_INTEGER;
+
+export interface Grouped<T> {
+  key: SessionGroupKey;
+  items: T[];
+}
+
+/**
+ * The groups in GROUP_ORDER, empty ones left out. Within a group, newest activity first; Ready to land by its best
+ * stage first (ready, checking, in line, stuck), then its place in line, then newest activity.
+ */
+export function groupSessions<T>(items: readonly T[], facts: (t: T) => SessionFacts & { position?: number }, now: number): Grouped<T>[] {
+  const by = new Map<SessionGroupKey, { t: T; f: SessionFacts & { position?: number } }[]>();
+  for (const t of items) {
+    const f = facts(t);
+    const k = sessionGroup(f, now);
+    let list = by.get(k);
+    if (!list) by.set(k, (list = []));
+    list.push({ t, f });
+  }
+  const best = (f: SessionFacts) => Math.min(...f.stages.map((s) => STAGE_RANK[s]), STAGE_RANK.other);
+  return GROUP_ORDER.filter((k) => by.has(k)).map((key) => {
+    const list = by.get(key)!;
+    list.sort((a, b) => {
+      if (key === "ready") {
+        const d = best(a.f) - best(b.f) || (a.f.position ?? LAST) - (b.f.position ?? LAST);
+        if (d) return d;
+      }
+      return b.f.lastActive - a.f.lastActive;
+    });
+    return { key, items: list.map((x) => x.t) };
+  });
+}
+
+/** The count under a group's name. */
+export function groupCount(key: SessionGroupKey, stages: readonly (readonly BranchStage[])[]): string {
+  const n = stages.length;
+  const sessions = `${n} ${n === 1 ? "session" : "sessions"}`;
+  switch (key) {
+    case "needs-you":
+      return `${n} waiting on you`;
+    case "ready": {
+      // Each session counts once, by its best stage.
+      const best = stages.map((s) => [...s].sort((a, b) => STAGE_RANK[a] - STAGE_RANK[b])[0]);
+      const c = (s: BranchStage) => best.filter((b) => b === s).length;
+      const parts = [
+        [c("ready"), "ready"],
+        [c("checking"), "checking"],
+        [c("in-line"), "in line"],
+        [c("stuck"), "stuck"],
+      ] as const;
+      return parts.filter(([k]) => k > 0).map(([k, w]) => `${k} ${w}`).join(" · ") || sessions;
+    }
+    case "old":
+      return `${n} with no activity for ${OLD_DAYS}+ days`;
+    default:
+      return sessions;
+  }
+}
+
+// ---- a branch's landing state in words --------------------------------------------------------------
+
+export type BranchTone = "success" | "info" | "error" | "muted";
+
+/** One branch as a row says it: its stage, the words for it and why when stuck. Never a bare "Not ready". */
+export interface BranchState {
+  branch: string;
+  stage: BranchStage;
+  /** "Ready to land", "In line · 2nd", "Checking", "Stuck in the queue", "Landed" (the row adds the time), or the
+      branch's own state ("2 files not committed", "No commits yet", "Conflicts with master"). */
+  word: string;
+  tone: BranchTone;
+  /** Stuck: what holds it ("Needs a fix: the last check failed"). */
+  why?: string;
+  /** Landed: when, ISO, when known. */
+  landedAt?: string;
+  /** Ready with the queue's Land: what Land queues (its folder and the commit the read saw). */
+  land?: { worktree: string; commit?: string };
+  /** Its queue place, for the order inside Ready to land. */
+  position?: number;
+}
+
+const STUCK_KEYS = new Set<QueueRow["key"]>(["with-chat", "needs-fix", "needs-you", "behaviour-differs", "unattributed", "review-flagged", "drafts-changed", "conflict"]);
+const LANDED_KEYS = new Set<QueueRow["key"]>(["landed", "cleaned-up", "merged"]);
+
+const firstLine = (s: string | undefined): string | undefined => s?.split("\n")[0]?.trim() || undefined;
+
+/** A queue row (merge-queue.ts queueRow, the one rule every branch row reads) in the Sessions tab's words. */
+export function branchStateOf(branch: string, row: QueueRow, extra: { position?: number; landedAt?: string; worktree?: string; commit?: string } = {}): BranchState {
+  const k = row.key;
+  if (k === "ready") {
+    const land = row.action === "land" && extra.worktree ? { land: { worktree: extra.worktree, ...(extra.commit ? { commit: extra.commit } : {}) } } : {};
+    return { branch, stage: "ready", word: "Ready to land", tone: "success", ...land };
+  }
+  if (k === "queued") return { branch, stage: "in-line", word: extra.position ? `In line · ${ordinal(extra.position)}` : "In line", tone: "muted", ...(extra.position ? { position: extra.position } : {}) };
+  if (k === "checking" || k === "request-review") return { branch, stage: "checking", word: k === "checking" ? "Checking" : row.label, tone: "info" };
+  if (k === "requested" || k === "pushed") return { branch, stage: "in-line", word: row.label, tone: "muted" };
+  if (STUCK_KEYS.has(k)) {
+    const reason = firstLine(row.reason);
+    return { branch, stage: "stuck", word: "Stuck in the queue", tone: "error", why: reason && reason !== row.label ? `${row.label}: ${reason}` : row.label };
+  }
+  if (LANDED_KEYS.has(k)) return { branch, stage: "landed", word: "Landed", tone: "success", ...(extra.landedAt ? { landedAt: extra.landedAt } : {}) };
+  // Not on its way: the branch's own state, in its own words, never a bare "Not ready".
+  return { branch, stage: "other", word: k === "uncommitted" && row.detail ? row.detail : row.label, tone: "muted" };
+}
+
+/** What the recorded facts (the project's branch read) say of a session's one branch, when the session list has no
+    reading of it (a session on another host, or before its first read). */
+export interface RecordedBranch {
+  branch: string;
+  state?: "open" | "merged" | "removed" | "missing" | "root";
+  merged?: boolean;
+  mergedAt?: string;
+  dirty?: boolean;
+  ahead?: number;
+}
+
+export function recordedBranchState(r: RecordedBranch, queued: BranchState | null): BranchState {
+  if (queued && queued.stage !== "other") return queued;
+  if (r.merged || r.state === "merged") return { branch: r.branch, stage: "landed", word: "Landed", tone: "success", ...(r.mergedAt ? { landedAt: r.mergedAt } : {}) };
+  if (r.state === "removed") return { branch: r.branch, stage: "other", word: "Worktree removed", tone: "muted" };
+  if (r.state === "missing") return { branch: r.branch, stage: "other", word: "Worktree folder missing", tone: "muted" };
+  if (r.dirty) return { branch: r.branch, stage: "other", word: "Uncommitted changes", tone: "muted" };
+  if (r.ahead === 0) return { branch: r.branch, stage: "other", word: "No commits yet", tone: "muted" };
+  if (r.state === undefined) return { branch: r.branch, stage: "other", word: "Reading its branch", tone: "muted" };
+  return { branch: r.branch, stage: "other", word: "Not finished yet", tone: "muted" };
+}
+
+// ---- one session's row --------------------------------------------------------------------------------
+
+/** The queue facts a page holds for a branch beyond the session list's cut (its place and landing time). */
+export interface QueueExtra {
+  position?: number;
+  landedAt?: string;
+}
+
+/**
+ * A session's branches: the session list's own (each the chat's row, read by the one rule) when it has them, else
+ * the recorded branch with the queue's word for it. `queueOf` gives what the page's queue read adds (place, landing
+ * time); `served` says the project's queue is set up (only then does a ready branch carry Land).
+ */
+export function sessionBranches(
+  row: Pick<CodingRow, "branch"> & Partial<Pick<CodingRow, "state" | "merged" | "mergedAt" | "dirty" | "ahead" | "head" | "worktree">>,
+  s: Pick<SessionSummary, "branches" | "readiness"> | undefined,
+  queueOf: (branch: string) => (QueueExtra & { row?: QueueRow }) | undefined,
+): BranchState[] {
+  const inputs: QueueRowInput[] = s ? chatRowsOf(s) : [];
+  if (inputs.length) {
+    return inputs.map((w, i) => {
+      const q = queueOf(w.branch);
+      const path = s?.branches?.[i]?.path;
+      return branchStateOf(w.branch, queueRow(w), {
+        position: w.queue?.position ?? q?.position,
+        landedAt: q?.landedAt ?? (w.readiness?.merged && s?.readiness?.badge === "merged" ? new Date(s.readiness.since).toISOString() : undefined),
+        worktree: w.exists ? path : undefined,
+        commit: w.readiness?.landing?.commit,
+      });
+    });
+  }
+  if (!row.branch) return [];
+  const q = queueOf(row.branch);
+  const queued = q?.row ? branchStateOf(row.branch, q.row, { position: q.position, landedAt: q.landedAt ?? row.mergedAt, worktree: row.worktree ?? undefined, commit: row.head }) : null;
+  return [recordedBranchState({ branch: row.branch, state: row.state, merged: row.merged, mergedAt: row.mergedAt, dirty: row.dirty, ahead: row.ahead }, queued)];
+}
+
+/** The ids of the sessions the sidebar's Needs you lists (§app.session-list/needs-you), among `sessions`. */
+export function needsYouIds(digest: Pick<AttentionDigest, "items" | "newestListed"> | undefined, sessions: readonly SessionSummary[]): Set<string> {
+  return new Set(needsYouRows(digest, sessions).map((r) => r.session.id));
+}
+
+/** With no digest read: the session waits on your answer (open alignment questions, a dialog, a failed turn). */
+export const waitsOnYou = (s: Pick<SessionSummary, "align" | "pendingDialogs" | "turnError" | "busy">): boolean =>
+  !s.busy && (!!s.align?.openQuestions || !!s.pendingDialogs || !!s.turnError);
+
+/** Shown branches: up to 3, or all once opened ("+N more" / "Show fewer"). */
+export const BRANCHES_SHOWN = 3;
+export function shownBranches<T>(all: readonly T[], open: boolean): { shown: readonly T[]; more: number } {
+  return open || all.length <= BRANCHES_SHOWN ? { shown: all, more: 0 } : { shown: all.slice(0, BRANCHES_SHOWN), more: all.length - BRANCHES_SHOWN };
+}
+
+/** The age cell's second line: "started today", or "3d old · Nov 13". */
+export function ageWords(createdAt: string, now: number, date: (ms: number) => string): string {
+  const t = Date.parse(createdAt);
+  if (!Number.isFinite(t)) return "";
+  const days = Math.floor((now - t) / DAY_MS);
+  return days < 1 ? "started today" : `${days}d old · ${date(t)}`;
+}
+
+/** The folded Landed group's line: "Latest: {title} · landed 6d ago, and 185 more". */
+export function landedFoldWords(latest: { title: string; when: string } | undefined, n: number): string {
+  if (!latest) return `${n} ${n === 1 ? "session" : "sessions"}`;
+  const rest = n - 1;
+  return `Latest: ${latest.title}${latest.when ? ` · landed ${latest.when}` : ""}${rest > 0 ? `, and ${rest} more` : ""}`;
+}

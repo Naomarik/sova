@@ -8,7 +8,6 @@ import {
   NOTE_MAX,
   noteDraft,
   savedNoteLine,
-  cardLine,
   countdown,
   previousRelease,
   progressLine,
@@ -136,14 +135,6 @@ test("the power's waiting period counts down to the second and never runs negati
   assert.equal(countdown("2026-11-03T09:00:00Z", now), "Publishing now");
 });
 
-test("the Overview card: the open release first, else the latest with its landings since, else not set up", () => {
-  const base: Pick<ReleaseView, "initialized" | "latest" | "landingsSince" | "open"> = { initialized: true, latest: "v0.9.0", landingsSince: 479, open: null };
-  assert.equal(cardLine(base), "Latest v0.9.0 · 479 landings since");
-  assert.equal(cardLine({ ...base, landingsSince: 0 }), "Latest v0.9.0 · no landings since");
-  assert.equal(cardLine({ ...base, open: record({ state: "checking" }) }), "v0.10.0 in progress", "the chip beside it says the state");
-  assert.equal(cardLine({ ...base, latest: null, landingsSince: null }), "No release yet.");
-  assert.equal(cardLine({ initialized: false, latest: null, landingsSince: null, open: null }), "Releases aren't set up for this project.");
-});
 
 test("a failed Publish offers Retry Publish on the Publish button, never Retry Step, which would publish nothing", () => {
   assert.deepEqual(stepActions({ state: "ready" }, { id: "publish", state: "failed", phase: "sova" }), { continue: false, retry: false });

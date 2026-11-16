@@ -155,7 +155,7 @@ test("the copy limit in words: the opening line, its source, the hint, the input
     costLine({ value: 1, host, estimate: { steadyBytes: 1.5e9, peakBytes: 1.5e9, source: "older", at: "2026-10-10T10:00:00Z" } }).text,
     "Measured Oct 10 on an older definition: each copy took about 1.5 GB (up to 1.5 GB at peak), so 1 copy needs about 1.5 GB. This machine: 121 GB, 30 GB available now.",
   );
-  assert.deepEqual(costLine({ value: 4, host, estimate: null }), { text: "Not measured yet: Run Again on the Software card measures it. This machine: 121 GB, 30 GB available now.", warn: false });
+  assert.deepEqual(costLine({ value: 4, host, estimate: null }), { text: "Not measured yet: Run Again on the services line measures it. This machine: 121 GB, 30 GB available now.", warn: false });
   assert.equal(gbWord(800e6), "0.8 GB");
   assert.equal(gbWord(40e6), "40 MB");
 });

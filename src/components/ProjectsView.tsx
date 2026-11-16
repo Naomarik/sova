@@ -28,7 +28,7 @@ const errText = (err: unknown) => (err instanceof ApiError || err instanceof Err
  * the placing organization's part while one places it (`space.kind === "org"`).
  */
 export function ProjectsView(props: { route: ProjectsRoute; titleRef(el: HTMLHeadingElement): void; /** The sidebar's session list. */ sessions?: () => readonly SessionSummary[] | undefined }) {
-  const tab = createMemo((): ProjectTab => (props.route.kind === "project" ? (props.route.tab ?? "overview") : "overview"));
+  const tab = createMemo((): ProjectTab => (props.route.kind === "project" ? (props.route.tab ?? "sessions") : "sessions"));
   const run = createMemo(() => (props.route.kind === "project" ? props.route.run : undefined));
   const queueTab = createMemo(() => (props.route.kind === "project" ? props.route.queueTab : undefined));
   return (
@@ -110,7 +110,7 @@ function OverseerDoor(props: { projectId: string; titleRef(el: HTMLHeadingElemen
       {(e) => (
         <>
           <Banner tone="error" title="Couldn't open the overseer." body={e()} />
-          <ProjectRoute projectId={props.projectId} tab="overview" titleRef={props.titleRef} />
+          <ProjectRoute projectId={props.projectId} tab="sessions" titleRef={props.titleRef} />
         </>
       )}
     </Show>
@@ -275,7 +275,7 @@ function RunningCopies() {
                   <li class="running-copies-project">
                     <p class="list-title running-copies-head">
                       <Show when={p.projectId} fallback={<span class="orgs-mono" title={p.root}>{p.root}</span>}>
-                        {(pid) => <a href={projectTabHref(pid(), "branches")}>{p.name}</a>}
+                        {(pid) => <a href={projectTabHref(pid(), "running-copies")}>{p.name}</a>}
                       </Show>
                       <Show when={p.orgName}>{(o) => <span class="list-meta">In {o()}</span>}</Show>
                     </p>

@@ -244,7 +244,7 @@ export function limitInputProblem(text: string): string | null {
 export function costLine(l: Pick<CopyLimitView, "value" | "estimate" | "host">): { text: string; warn: boolean } {
   const host = l.host ? ` This machine: ${gbWord(l.host.totalBytes)}, ${gbWord(l.host.availableBytes)} available now.` : "";
   const e = l.estimate;
-  if (!e) return { text: `Not measured yet: Run Again on the Software card measures it.${host}`, warn: false };
+  if (!e) return { text: `Not measured yet: Run Again on the services line measures it.${host}`, warn: false };
   const total = e.steadyBytes * l.value;
   const copies = l.value === 1 ? "1 copy needs" : `${l.value} copies need`;
   const head =

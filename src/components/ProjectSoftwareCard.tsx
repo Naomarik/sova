@@ -117,7 +117,7 @@ export function ProjectSoftwareCard(props: { projectId: string; archived: boolea
             </Show>
             {/* Where each copy is started, stopped, opened and read (§app.project-services/services-ui). */}
             <p class="orgs-line">
-              <a class="project-software-open" href={projectTabHref(props.projectId, "branches")}>
+              <a class="project-software-open" href={projectTabHref(props.projectId, "running-copies")}>
                 Open Branches
                 <Icon name="chevron-right" small />
               </a>

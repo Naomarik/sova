@@ -1,14 +1,12 @@
-import { createEffect, createMemo, createSignal, For, type JSX, Match, on, Show, Switch } from "solid-js";
+import { createEffect, createSignal, For, type JSX, Match, on, Show, Switch } from "solid-js";
 import { chatRefOf } from "../lib/merge-chat";
 import { chatTreesOf } from "../lib/merge-queue";
 import type { ArchiveCopy, ProjectSummary } from "../../shared/projects";
 import type { SessionSummary } from "../../shared/protocol";
-import { ApiError, archiveProject, getProjectPreviews, runProjectVerb, unarchiveProject } from "../lib/api";
+import { ApiError, archiveProject, runProjectVerb, unarchiveProject } from "../lib/api";
 import { relativeTime } from "../lib/format";
-import { createPoll } from "../lib/poll";
-import { PROJECT_TABS, PROJECTS_HREF, projectTabHref, type ProjectTab, type QueueTab } from "../lib/projects-route";
-import { summaryChips } from "../lib/project-page";
-import { isGap, openIdeas } from "../lib/project-overseer-view";
+import { PROJECT_TABS, PROJECTS_HREF, projectTabHref, TAB_LABEL, type ProjectTab, type QueueTab } from "../lib/projects-route";
+import { openIdeas } from "../lib/project-overseer-view";
 import { projectHostOf } from "../lib/mesh";
 import { announce, toast } from "../lib/ui-state";
 import { InsightsPage } from "./InsightsPage";
@@ -17,13 +15,13 @@ import { archivedRunningLine, STOP_SHARED_CONFIRM, STOP_SHARED_LABEL, STOP_SHARE
 import { refusalLine } from "../lib/services-view";
 import { PreviewsCard } from "./PreviewsCard";
 import { ActionMenu } from "./ActionMenu";
-import { costFigure, createProjectCost, ProjectCostCard } from "./ProjectCostCard";
+import { createProjectCost, ProjectCostCard } from "./ProjectCostCard";
 import { ProjectServicesTab } from "./ProjectServicesTab";
 import { MergeQueueTab } from "./MergeQueueTab";
-import { createReleasesPoll, ReleasesCard, ReleasesTab } from "./ReleasesTab";
+import { createReleasesPoll, ReleasesTab } from "./ReleasesTab";
 import { PlaybookReviewBanner } from "./PlaybookReview";
 import { ProjectDeployPanel } from "./ProjectDeployPanel";
-import { createRuntimePoll, ProjectSoftwareCard } from "./ProjectSoftwareCard";
+import { createRuntimePoll } from "./ProjectSoftwareCard";
 import { ProjectFilesCard } from "./ProjectFilesCard";
 import { ProjectCardsCard } from "./ProjectCardsCard";
 import { ProjectMcpCard } from "./ProjectMcpCard";
@@ -32,15 +30,13 @@ import { ProjectOffersCard } from "./ProjectOffersCard";
 import { ProjectIcon } from "./ProjectIcon";
 import { ProjectIconCard } from "./ProjectIconCard";
 import { createProjectSettings, ProjectAllSettings, ProjectSettingsChanges, ProjectSettingsHistory } from "./ProjectSettingsCards";
-import { ActivityCard, CodingSessionsCard, createProjectOverseer, IdeasCard, type ItemSendForm, OverseerSettings, OverseerSummary, type ProjectOverseer, TodosCard } from "./ProjectOverseerPanel";
+import { ActivityCard, CodingSessionsCard, createProjectOverseer, IdeasCard, type ItemSendForm, OverseerHeadActions, OverseerNotices, OverseerSettings, type ProjectOverseer, TodosCard } from "./ProjectOverseerPanel";
 import { Banner, Icon } from "./ui";
 import { createSetupPoll, SetupProposalBanner } from "./SetupChat";
 import "../orgs.css";
 import "../projects.css";
 
 const errText = (err: unknown) => (err instanceof ApiError || err instanceof Error ? err.message : String(err));
-/** The previews chip's count; the Previews card reads its own, more often. */
-const PREVIEWS_POLL_MS = 30_000;
 /** While archived, what it left running is read this often (the Branches tab reads its own). */
 const ARCHIVED_POLL_MS = 15_000;
 
@@ -65,15 +61,13 @@ export interface ProjectOrgPart {
   orgLink(): JSX.Element;
   /** Who the overseer's attach pause names ("This organization"). */
   attachedWho: string;
-  /** The Overview's Open History: the placing layer's history of this project (the page never builds it). */
+  /** Open History in the head's ⋯ menu: the placing layer's history of this project (the page never builds it). */
   historyHref(): string;
   /** Where the head's back arrow goes: the org's Projects tab. */
   back(): { href: string; label: string };
-  /** Its counts for the summary strip; a count not read yet is absent. */
-  counts(): { conflicts?: number; decisions?: { total: number; ready: number } };
-  /** What waits on the operator in the part: the Requirements tab's dot and the Overview's banner. */
+  /** What waits on the operator in the part: the Requirements tab's dot and the Sessions tab's banner. */
   attention(): { count: number; line: string | null };
-  /** The Requirements tab. */
+  /** The Requirements tab: the part's own sections, with the project's Files and the sessions its overseer started. */
   requirements(): JSX.Element;
   /** Its cards on Settings, above the danger zone. */
   settings(): JSX.Element;
@@ -85,12 +79,11 @@ export interface ProjectOrgPart {
 }
 
 /**
- * One project (`#/projects/<pid>[/<tab>]`, §app.organizations/project-page): a summary of its
- * overseer and counts, then its tabs. Overview is the live work — coding sessions, previews,
- * activity, to-dos and ideas — with anything that waits on the operator first; Branches is its
- * running copies on this host, one per branch; Cost is what its
- * sessions cost; Settings is its overseer's settings (§app/project-overseer) and archiving. While an
- * organization places it, the route adds that org's part (`org`): Requirements and the rest.
+ * One project (`#/projects/<pid>[/<tab>]`, §app.organizations/project-page): a head with its overseer's state word and
+ * Open Overseer, then its tabs. Sessions is its coding sessions, what needs the operator first; Backlog its to-dos,
+ * ideas and the overseer's activity; Running Copies its copies on this host, one per branch, and their previews;
+ * Deploy its deploy targets; Cost what its sessions cost; Settings its overseer's settings (§app/project-overseer) and
+ * archiving. While an organization places it, the route adds that org's part (`org`): Requirements and the rest.
  */
 export function ProjectPage(props: {
   project: ProjectSummary;
@@ -114,10 +107,9 @@ export function ProjectPage(props: {
   // Read once for the whole page: the summary counts them, and each tab shows its part.
   const po = createProjectOverseer({ projectId, onBusy: setOverseerBusy, sessions: props.sessions });
   const cost = createProjectCost({ projectId, tick: costTick });
-  const previews = createPoll(() => getProjectPreviews(projectId), PREVIEWS_POLL_MS, { cacheKey: `project:${projectId}:previews-chip` });
-  // The software registry, read once for the page: the Software card and a proposed run's banner.
+  // The software registry, read once for the page: Running Copies' setup line and a proposed run's banner.
   const runtime = createRuntimePoll(projectId);
-  // The project's releases, read once for the page: the Releases tab, its Overview card and the Deploy card's "Runs vX".
+  // The project's releases, read once for the page: the Releases tab and the Deploy card's "Runs vX".
   const releases = createReleasesPoll(projectId, () => project().root);
   // The project's Setup chat, read once for every surface that offers it (Merge Queue, Releases, Deploy).
   const setup = createSetupPoll(projectId);
@@ -132,8 +124,8 @@ export function ProjectPage(props: {
     ideasRead: () => !!po.ideas.data(),
   });
   const tabs = (): readonly ProjectTab[] => (org ? PROJECT_TABS : PROJECT_TABS.filter((t) => t !== "requirements"));
-  // Requirements is an org's: a standalone project's address for it shows the Overview.
-  const tab = (): ProjectTab => (tabs().includes(props.tab) ? props.tab : "overview");
+  // Requirements is an org's: a standalone project's address for it shows Sessions.
+  const tab = (): ProjectTab => (tabs().includes(props.tab) ? props.tab : "sessions");
 
   // Archive Project (§app.organizations/archive): asked where it was pressed (the head's ⋯ or
   // Settings' danger zone), the server's refusal under the question.
@@ -179,27 +171,6 @@ export function ProjectPage(props: {
     setRefused(null);
   };
 
-  // ---- the summary's counts ----------------------------------------------------------------------
-  const ideasTab = (): ProjectTab => (org ? "requirements" : "overview");
-  const chips = createMemo(() => {
-    const w = po.info.data();
-    const ideas = ideaList();
-    const c = cost.data();
-    const pv = previews.data();
-    const oc = org?.counts() ?? {};
-    return summaryChips({
-      sessions: w ? w.coding.length : undefined,
-      previews: pv ? pv.previews.filter((x) => x.state === "active").length : undefined,
-      cost: c ? costFigure(c) : undefined,
-      conflicts: oc.conflicts,
-      decisions: oc.decisions,
-      ideas: ideas ? { gaps: ideas.filter(isGap).length, other: ideas.filter((x) => !isGap(x)).length } : undefined,
-      ideasTab: ideasTab(),
-      todos: po.todos.data()?.open,
-    });
-  });
-  /** A chip's section, brought into view once its tab shows (the tab renders on the hash change). */
-  const reveal = (section: string) => requestAnimationFrame(() => requestAnimationFrame(() => document.getElementById(section)?.scrollIntoView({ block: "start" })));
   const tabHref = (t: ProjectTab) => projectTabHref(projectId, t);
   const attention = () => org?.attention() ?? { count: 0, line: null };
 
@@ -211,9 +182,17 @@ export function ProjectPage(props: {
       class="project-page"
       back={org?.back() ?? { href: PROJECTS_HREF, label: "Back to Projects" }}
       actions={
+        <div class="cluster project-head-actions">
+        {/* One box, so a narrow head can give the overseer part a row of its own. */}
+        <div class="project-head-overseer">
+          <OverseerHeadActions po={po} archived={!!archived()} />
+        </div>
         <ActionMenu label={`Project actions · ${project().name}`} title="Project actions" icon="more">
           {(menu) => (
             <>
+              <Show when={org}>
+                {(o) => <menu.Item label="Open History" aria={`Open History · ${project().name}`} icon={<Icon name="clock" small />} href={o().historyHref()} />}
+              </Show>
               <menu.Item label="Settings" aria={`Settings · ${project().name}`} icon={<Icon name="settings" small />} href={tabHref("settings")} />
               <Show
                 when={!archived()}
@@ -224,6 +203,7 @@ export function ProjectPage(props: {
             </>
           )}
         </ActionMenu>
+        </div>
       }
       meta={
         <>
@@ -249,7 +229,6 @@ export function ProjectPage(props: {
         po.actions.refetch();
         po.ideas.refetch();
         po.todos.refetch();
-        previews.refetch();
         setCostTick((n) => n + 1);
       }}
       error={org?.error() ?? null}
@@ -298,10 +277,10 @@ export function ProjectPage(props: {
                 body={
                   leftLine() ? (
                     <>
-                      {leftLine()!.endsWith(" on Branches.") ? (
+                      {leftLine()!.endsWith(" on Running Copies.") ? (
                         <>
-                          {leftLine()!.slice(0, -"Branches.".length)}
-                          <a href={tabHref("branches")}>Branches</a>.
+                          {leftLine()!.slice(0, -"Running Copies.".length)}
+                          <a href={tabHref("running-copies")}>Running Copies</a>.
                         </>
                       ) : (
                         leftLine()
@@ -328,27 +307,12 @@ export function ProjectPage(props: {
           );
         }}
       </Show>
-      <div class="project-summary">
-        <OverseerSummary po={po} archived={!!archived()} placed={!!org} attachedWho={org?.attachedWho} />
-        <Show when={chips().length}>
-          <nav class="project-counts" aria-label="Project counts">
-            <For each={chips()}>
-              {(c) => (
-                <a class="project-count" classList={{ "project-count-warn": c.tone === "warn" }} href={tabHref(c.tab)} title={c.title} onClick={() => reveal(c.section)}>
-                  <Show when={c.tone === "warn"}>
-                    <i class="chip-dot" aria-hidden="true" />
-                  </Show>
-                  {c.label}
-                </a>
-              )}
-            </For>
-          </nav>
-        </Show>
-      </div>
+      {/* What the overseer has to say on every tab: a failed read, the Paused banner with Resume. */}
+      <OverseerNotices po={po} attachedWho={org?.attachedWho} />
       <ProjectTabs tabs={tabs()} tab={tab()} href={tabHref} attention={attention().count} attentionText={attention().line ?? ""} />
       <div class="project-tabpanel" role="tabpanel" id="project-tabpanel" aria-labelledby={`project-tab-${tab()}`}>
         <Switch>
-          <Match when={tab() === "overview"}>
+          <Match when={tab() === "sessions"}>
             <Show when={attention().line}>
               {(line) => (
                 <Banner
@@ -362,51 +326,28 @@ export function ProjectPage(props: {
                 />
               )}
             </Show>
-            <div class="project-overview">
-              <div class="project-col">
-                <CodingSessionsCard po={po} archived={!!archived()} />
-                {/* Preview links (§mesh.public/preview-card): this project's apps, on this host. */}
-                <div id="project-previews" class="project-anchor">
-                  <PreviewsCard projectId={projectId} archived={!!archived()} />
-                </div>
-              </div>
-              <div class="project-col">
-                {/* Its software registry on this host (§app.project-runtime/software-card). */}
-                <ProjectSoftwareCard projectId={projectId} archived={!!archived()} runtime={runtime} />
-                {/* Its numbered releases: the latest and what landed since, or the one in progress. */}
-                <ReleasesCard projectId={projectId} poll={releases} />
-                {/* Its deploy targets on this host: the deploy panel, which reads deploy.status itself. */}
-                <ProjectDeployPanel projectId={projectId} root={project().root} archived={!!archived()} releases={() => releases.data()?.history} setup={setup} />
-                {/* Files people sent it (§app.organizations/files-card): while placed, or once it holds one. */}
-                <ProjectFilesCard projectId={projectId} placed={!!org} tick={costTick} />
-                <Show when={org}>
-                  {(o) => (
-                    <section class="card orgs-section project-history-card" aria-labelledby="project-history">
-                      <div class="orgs-head">
-                        <h2 class="orgs-h2" id="project-history">
-                          History
-                        </h2>
-                        <a class="button" href={o().historyHref()}>
-                          Open History
-                        </a>
-                      </div>
-                      <p class="orgs-line">What happened in this project, who decided it, and the reason recorded.</p>
-                    </section>
-                  )}
-                </Show>
-                <ActivityCard po={po} />
-                <TodosCard po={po} send={org?.send} archived={!!archived()} />
-                {/* A placed project's ideas sit with its requirements; a standalone one's here. */}
-                <Show when={!org}>
-                  <IdeasCard po={po} title="Ideas" empty="No open ideas. Add one with +, or the overseer files them as it looks." archived={!!archived()} />
-                </Show>
-              </div>
+            <CodingSessionsCard po={po} archived={!!archived()} />
+          </Match>
+          <Match when={tab() === "backlog"}>
+            {/* To-do and Ideas side by side, the overseer's activity under them. */}
+            <div class="project-backlog">
+              <TodosCard po={po} send={org?.send} archived={!!archived()} />
+              <IdeasCard po={po} title="Ideas" empty="No open ideas. Add one with +, or the overseer files them as it looks." send={org?.send} archived={!!archived()} />
             </div>
+            <ActivityCard po={po} />
+            {/* Files people sent it (§app.organizations/files-card): a standalone project's, once it holds one; a placed one's are on Requirements. */}
+            <Show when={!org}>
+              <ProjectFilesCard projectId={projectId} placed={false} tick={costTick} />
+            </Show>
           </Match>
           <Match when={tab() === "requirements" && org}>{(o) => o().requirements()}</Match>
-          <Match when={tab() === "branches"}>
-            {/* Its copies on this host and their verbs (§app.project-services/services-ui). */}
-            <ProjectServicesTab projectId={projectId} archived={!!archived()} />
+          <Match when={tab() === "running-copies"}>
+            {/* Its setup line and copies on this host, and their verbs (§app.project-services/services-ui). */}
+            <ProjectServicesTab projectId={projectId} archived={!!archived()} runtime={runtime} />
+            {/* Preview links (§mesh.public/preview-card): this project's apps, on this host. */}
+            <div id="project-previews" class="project-anchor">
+              <PreviewsCard projectId={projectId} archived={!!archived()} />
+            </div>
           </Match>
           <Match when={tab() === "merge-queue"}>
             {/* One branch at a time onto the target: what's checking, the line, what waits for you, recent landings. */}
@@ -427,6 +368,10 @@ export function ProjectPage(props: {
           <Match when={tab() === "releases"}>
             {/* The release in progress, then every numbered release. */}
             <ReleasesTab projectId={projectId} root={project().root} name={project().name} archived={!!archived()} poll={releases} setup={setup} />
+          </Match>
+          <Match when={tab() === "deploy"}>
+            {/* Its deploy targets on this host: the deploy panel, which reads deploy.status itself. */}
+            <ProjectDeployPanel projectId={projectId} root={project().root} archived={!!archived()} releases={() => releases.data()?.history} setup={setup} />
           </Match>
           <Match when={tab() === "cost"}>
             <ProjectCostCard projectId={projectId} poll={cost} />
@@ -491,7 +436,6 @@ export function ProjectPage(props: {
   );
 }
 
-const TAB_LABEL: Record<ProjectTab, string> = { overview: "Overview", requirements: "Requirements", branches: "Branches", "merge-queue": "Merge Queue", releases: "Releases", cost: "Cost", settings: "Settings" };
 
 /** The page's tab strip, as the org page's: a tab per view (the tab is in the URL, each pick a history
     entry), Left/Right moving focus along it (wrapping), Home/End jumping; Enter or Space selects.

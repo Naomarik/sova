@@ -7,7 +7,6 @@ import { mergeRunHref, projectSessionHref, projectTabHref } from "../lib/project
 import {
   abandonConfirmLine,
   askerWord,
-  cardLine as cardLineOf,
   NOTE_MAX,
   noteDraft,
   savedNoteLine,
@@ -552,7 +551,7 @@ function DeployHandOff(props: { projectId: string; version: string; commit: stri
               class="button button-sm"
               onClick={() => {
                 askDeployPlan({ projectId: props.projectId, target: t, commit: props.commit, version: props.version });
-                location.hash = projectTabHref(props.projectId, "overview");
+                location.hash = projectTabHref(props.projectId, "deploy");
               }}
             >
               Plan Deploy of {props.version}
@@ -660,31 +659,6 @@ function HistoryRow(props: { projectId: string; view: ReleaseView; item: Release
 }
 
 const formatBytes = (n: number): string => (n >= 1 << 20 ? `${(n / (1 << 20)).toFixed(1)} MB` : n >= 1024 ? `${Math.round(n / 1024)} KB` : `${n} B`);
-
-/** The Overview's small card: the latest release and what landed since, or the open release; opens the tab. */
-export function ReleasesCard(props: { projectId: string; poll: Poll<ReleaseView> }): JSX.Element {
-  const v = () => props.poll.data();
-  return (
-    <section class="card orgs-section project-card rel-mini" aria-labelledby="project-releases">
-      <div class="orgs-head">
-        <h2 class="orgs-h2" id="project-releases">
-          Releases
-        </h2>
-        <a class="button button-sm" href={projectTabHref(props.projectId, "releases")}>
-          Open Releases
-        </a>
-      </div>
-      <Show when={v()} fallback={<p class="orgs-empty">{props.poll.error() ? `Couldn't read the releases. ${props.poll.error()}` : "Reading the releases."}</p>}>
-        {(x) => (
-          <p class="orgs-line cluster">
-            <Show when={x().open}>{(o) => chip(releaseChip(o()))}</Show>
-            <span>{cardLineOf(x())}</span>
-          </p>
-        )}
-      </Show>
-    </section>
-  );
-}
 
 /**
  * What a Set Up Releases run proposes on its branch (its run report): the `release` settings Sova acts on

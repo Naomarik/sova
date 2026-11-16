@@ -129,10 +129,6 @@ export function createProjectOrgPart(orgId: string, ctx: ProjectPartContext): Pr
         )}
       </Show>
     ),
-    counts: () => {
-      const i = info();
-      return i ? { conflicts: openConflicts(), decisions: { total: i.decisions.filter((d) => d.state !== "superseded").length, ready: ready() } } : {};
-    },
     attention: () => ({ count: openConflicts() + ready(), line: attentionLine(openConflicts(), ready()) }),
     send,
     refresh: () => {

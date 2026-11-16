@@ -1,0 +1,160 @@
+/* The project page's Sessions tab (components/ProjectSessionsTab.tsx): every coding session in one
+   full-width list, grouped by what needs you first. Token values only.
+   The tab is its own container, so each step asks the tab's width, never the window's: under 720px
+   a row stacks; from 720px it is four columns; from 1040px a group's name sits beside its list
+   instead of above it. (The row's ⋯ menu is in the top layer, so the containment never clips it.) */
+.psess { container: psess / inline-size; display: flex; flex-direction: column; min-width: 0; }
+
+/* ---- The head: what the list is and how it is sorted, New Coding Session at its end. */
+.psess-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-3); margin-bottom: var(--space-2); }
+.psess-head-text { flex: 1 1 18rem; min-width: 0; }
+.psess-h2 { margin: 0; font-size: var(--fs-heading-m); line-height: var(--lh-heading-m); font-weight: var(--fw-semibold); letter-spacing: var(--ls-heading); color: var(--color-ink); }
+.psess-lede { margin: 2px 0 0; font-size: var(--fs-caption); line-height: var(--lh-caption); color: var(--color-ink-muted); }
+.psess > .field-error, .psess > .orgs-line, .psess > .orgs-empty, .psess > .placeholder { margin: var(--space-2) 0; }
+
+/* No activity for 7 days or more: an open ring, with the words in the lede and in the cell's title. */
+.psess-quiet-mark { display: inline-block; width: 7px; height: 7px; border: var(--stroke-icon) solid var(--color-ink-muted); border-radius: var(--r-full); flex: none; }
+.psess-age-1 > .psess-quiet-mark { margin-inline-end: 6px; vertical-align: 1px; }
+
+/* ---- A group: its name and count, then its list. */
+.psess-group { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-2); padding: var(--space-4) 0; border-top: var(--stroke-thin) solid var(--color-border); }
+.psess-group:first-of-type { border-top: 0; padding-top: var(--space-2); }
+.psess-group:last-of-type { padding-bottom: 0; }
+.psess-gside { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 var(--space-2); min-width: 0; }
+.psess-gname { margin: 0; font-size: var(--fs-heading-s); line-height: var(--lh-heading-s); font-weight: var(--fw-semibold); letter-spacing: var(--ls-heading-s); color: var(--color-ink); }
+.psess-gcount { font-size: var(--fs-caption); line-height: var(--lh-caption); color: var(--color-ink-muted); }
+.psess-gbody { min-width: 0; }
+/* Landed's name is its fold's button: the chevron and the name, a 44px target that takes no extra room. */
+.psess-twist {
+  display: inline-flex; align-items: center; gap: var(--space-1);
+  min-height: var(--tap-min); margin: -10px 0 -10px -4px; padding: 0 var(--space-1) 0 0;
+  border: 0; border-radius: var(--r-sm); background: none; color: inherit; font: inherit; cursor: pointer;
+}
+.psess-twist .icon { color: var(--color-ink-muted); flex: none; }
+.psess-twist:hover .psess-gname { color: var(--color-accent-hover); }
+.psess-twist:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
+
+@container psess (min-width: 1040px) {
+  .psess-group { grid-template-columns: 150px minmax(0, 1fr); gap: var(--space-5); padding: var(--space-5) 0; }
+  .psess-gside { display: block; padding-top: var(--space-3); }
+  .psess-gcount { display: block; margin-top: 2px; }
+  .psess-twist { margin: -12px 0 -10px -4px; }
+}
+
+/* ---- The list: one surface, a row per session. Rounded as a whole; its end rows take its corners. */
+.psess-list { margin: 0; padding: 0; list-style: none; min-width: 0; background: var(--color-surface); border: var(--stroke-thin) solid var(--color-border); border-radius: var(--r-lg); }
+.psess-row {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 6px var(--space-2);
+  min-height: 56px;
+  padding: var(--space-3) var(--space-1) var(--space-3) var(--space-3);
+  border-top: var(--stroke-thin) solid var(--color-border);
+  transition: background-color var(--dur-fast) var(--ease-standard);
+}
+.psess-row:first-child { border-top: 0; border-start-start-radius: inherit; border-start-end-radius: inherit; }
+.psess-row:last-child { border-end-start-radius: inherit; border-end-end-radius: inherit; }
+.psess-row:has(.psess-link):hover { background: var(--color-sunken); }
+
+/* The whole row is the link: the title's <a> covers it (one tab stop, no underline); the row's own
+   controls sit above. The ring is drawn on the row, so it follows the row's corners. */
+.psess-link::after { content: ""; position: absolute; inset: 0; }
+.psess-link:focus-visible { outline: none; }
+.psess-row:has(.psess-link:focus-visible) { outline: var(--focus-ring); outline-offset: calc(var(--focus-offset) * -1); }
+.psess-acts, .psess-more, .psess-note { position: relative; z-index: 1; }
+
+.psess-main { grid-column: 1; grid-row: 1; display: flex; flex-direction: column; min-width: 0; }
+.psess-title { display: block; min-width: 0; font-size: var(--fs-body); line-height: var(--lh-body); font-weight: var(--fw-semibold); color: var(--color-ink); overflow-wrap: anywhere; }
+a.psess-link, a.psess-link:hover { color: var(--color-ink); text-decoration: none; }
+.psess-summary { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 1; line-clamp: 1; overflow: hidden; margin-top: 1px; font-size: var(--fs-caption); line-height: var(--lh-caption); color: var(--color-ink-2); overflow-wrap: anywhere; }
+.psess-summary-none { color: var(--color-ink-muted); font-style: italic; }
+.psess-by { display: block; margin-top: 1px; font-size: var(--fs-caption); line-height: var(--lh-caption); color: var(--color-ink-muted); overflow-wrap: anywhere; }
+
+/* When it was last active (its token rate while it works), then how old it is. */
+.psess-age { grid-column: 1; min-width: 0; font-size: var(--fs-caption); line-height: var(--lh-caption); }
+.psess-age-1 { color: var(--color-ink); font-weight: var(--fw-medium); white-space: nowrap; }
+.psess-age-2 { color: var(--color-ink-muted); white-space: nowrap; }
+.psess-age-1:not(.psess-rate) + .psess-age-2:not(:empty)::before { content: " · "; }
+.psess-row-quiet .psess-age-1 { color: var(--color-ink-2); font-weight: var(--fw-regular); }
+.psess-rate { display: inline-flex; align-items: center; gap: 5px; margin-inline-end: var(--space-2); font-family: var(--font-mono); font-size: var(--fs-mono); font-weight: var(--fw-regular); }
+.psess-rate b { font-weight: var(--fw-semibold); color: var(--color-ink); }
+.psess-unit { font-size: var(--fs-micro); color: var(--color-ink-muted); }
+
+/* Its branches: each one's landing state in words, then up to 3 names, then +N more / Show fewer. */
+.psess-branches { grid-column: 1 / -1; display: flex; flex-direction: column; gap: 3px; min-width: 0; padding-top: 6px; border-top: var(--stroke-thin) dashed var(--color-border); }
+.psess-states { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.psess-states:not(:empty) { margin-bottom: var(--space-1); }
+.psess-state { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 6px; min-width: 0; }
+.psess-word { font-size: var(--fs-caption); line-height: var(--lh-caption); font-weight: var(--fw-semibold); color: var(--color-ink); white-space: nowrap; }
+/* A branch on its way (ready, in line, checking, stuck, landed) reads strong; one that isn't says its own state
+   quietly. The word carries it, the hue only helps. */
+.psess-stage-other { font-weight: var(--fw-regular); color: var(--color-ink-2); white-space: normal; overflow-wrap: anywhere; }
+.psess-tone-info { color: var(--status-info); }
+.psess-tone-error { color: var(--status-error); }
+.psess-tone-success { color: var(--status-success); }
+/* The branch a word is about takes what the line has left and cuts there: it never wraps under its word. */
+.psess-of { flex: 1 1 0; min-width: 0; font-size: var(--fs-micro); color: var(--color-ink-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.psess-of::before { content: "· "; }
+.psess-why { flex-basis: 100%; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; min-width: 0; font-size: var(--fs-caption); line-height: var(--lh-caption); color: var(--color-ink-muted); overflow-wrap: anywhere; }
+.psess-branch { display: block; min-width: 0; color: var(--color-ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.psess-nobranch { font-size: var(--fs-caption); line-height: var(--lh-caption); color: var(--color-ink-muted); }
+/* "+N more" / "Show fewer": a quiet text button, 44px to the touch without taking the room. */
+.psess-more {
+  align-self: flex-start; min-height: 32px; margin-inline-start: -6px; padding: var(--space-1) 6px;
+  border: 0; border-radius: var(--r-sm); background: none; color: var(--color-ink-muted); font: inherit; font-size: var(--fs-caption); cursor: pointer;
+}
+.psess-more::after { content: ""; position: absolute; inset: -6px 0; }
+.psess-more:hover { color: var(--color-ink); background: var(--color-surface); }
+.psess-more:focus-visible { outline: var(--focus-ring); outline-offset: 0; }
+
+/* Land and the row's ⋯. */
+.psess-acts { grid-column: 2; grid-row: 1 / span 2; display: flex; flex-direction: column; align-items: flex-end; gap: var(--space-2); }
+
+/* The session's own facts (context, open questions, workers), one quiet line under the row. */
+.psess-facts { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 2px 0; font-size: var(--fs-micro); line-height: 1.4; color: var(--color-ink-2); white-space: nowrap; }
+.psess-fact { display: inline-flex; align-items: center; gap: var(--space-1); padding: 0 10px; border-inline-start: var(--stroke-thin) solid var(--color-border); }
+.psess-fact:first-child { padding-inline-start: 0; border-inline-start: 0; }
+.psess-fl { font-style: normal; color: var(--color-ink-muted); }
+/* Stacked, the facts wrap: a gap parts them there, since a rule would open a wrapped line. */
+@container psess (max-width: 719px) {
+  /* Land above the ⋯, clear of the list's edge, at full touch height. */
+  .psess-acts > .button-primary { min-height: var(--tap-min); margin-inline-end: var(--space-2); }
+  .psess-facts { gap: 2px var(--space-3); }
+  .psess-fact { padding: 0; border-inline-start: 0; }
+}
+.psess-meter { display: inline-block; width: 26px; height: 4px; margin-inline-start: var(--space-1); border-radius: var(--r-full); background: var(--color-sunken); outline: var(--stroke-thin) solid var(--color-border); overflow: hidden; }
+.psess-meter > b { display: block; height: 100%; background: var(--color-ink-muted); }
+.psess-row:hover .psess-meter { background: var(--color-surface); }
+
+/* A refusal or the Remove Worktree question: under the row, its whole width, above the stretched link. */
+.psess-note { grid-column: 1 / -1; margin: 0; min-width: 0; }
+.psess-note .button-row { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+
+/* Landed, folded: its latest in one line and Show Landed; open, more a page at a time. */
+.psess-folded { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-2) var(--space-3); min-height: 56px; padding: var(--space-2) var(--space-2) var(--space-2) var(--space-3); font-size: var(--fs-caption); line-height: var(--lh-caption); color: var(--color-ink-muted); }
+.psess-folded > span { flex: 1 1 12rem; min-width: 0; overflow-wrap: anywhere; }
+.psess-more-landed { display: flex; justify-content: center; padding: var(--space-2); }
+
+/* ---- From 720px of tab: four columns. The title and summary cut to a line each. */
+@container psess (min-width: 720px) {
+  .psess-row {
+    /* The last column holds Land and ⋯ at a fixed width, so every row's columns line up whether it has Land or not. */
+    grid-template-columns: minmax(0, 1fr) 132px minmax(0, 220px) 108px;
+    gap: var(--space-2) var(--space-4);
+    padding: var(--space-3) var(--space-2) var(--space-3) var(--space-4);
+  }
+  .psess-title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; overflow-wrap: normal; }
+  .psess-summary { display: block; white-space: nowrap; text-overflow: ellipsis; overflow-wrap: normal; }
+  .psess-age { grid-column: 2; grid-row: 1; }
+  .psess-age-1, .psess-age-2 { display: block; }
+  .psess-age-1.psess-rate { display: flex; margin-inline-end: 0; }
+  .psess-age-1:not(.psess-rate) + .psess-age-2:not(:empty)::before { content: none; }
+  .psess-branches { grid-column: 3; grid-row: 1; padding-top: 2px; border-top: 0; }
+  .psess-acts { grid-column: 4; grid-row: 1; flex-direction: row; align-items: center; align-self: center; justify-content: flex-end; }
+  .psess-folded { padding-inline-start: var(--space-4); }
+}
+@container psess (min-width: 1040px) {
+  .psess-row { grid-template-columns: minmax(0, 1fr) 140px minmax(0, 280px) 108px; }
+}

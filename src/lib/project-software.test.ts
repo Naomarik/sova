@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { ProjectRuntimeView } from "../../shared/project-runtime";
-import { elapsedWord, failedLine, liveWord, memoryWord, openWord, playbookLabel, provenTail, reviewDefProblem, reviewProofWord, runStrip, runWord, serviceFacts, shareWord, STANDING_CHIP } from "./project-software";
+import { elapsedWord, failedLine, liveWord, memoryWord, openWord, playbookLabel, provenTail, reviewDefProblem, reviewProofWord, runStrip, runWord, serviceFacts, setupStatus, shareWord, STANDING_CHIP } from "./project-software";
 
 const base: ProjectRuntimeView = {
   projectId: "prj_1",
@@ -103,4 +103,15 @@ test("a proposed run's review in words, from the branch's definition and its con
   assert.equal(reviewDefProblem(r), null);
   assert.equal(reviewDefProblem({ ...r, def: { state: "absent" } }), "Its branch has no .sova/project.json.");
   assert.equal(reviewDefProblem({ ...r, def: { state: "invalid", error: "$.services: required" } }), "The definition on its branch is invalid: $.services: required");
+});
+
+test("Running Copies' setup status: one chip per standing, when it was checked, and why while failed or out of date", () => {
+  const at = "2026-10-03T00:00:00.000Z";
+  assert.deepEqual(setupStatus(base), { word: "Services set up", tone: "success", checked: at, why: null });
+  assert.deepEqual(setupStatus({ ...base, standing: "unregistered", proof: null, registered: null }), { word: "Not set up yet", tone: "warn", checked: null, why: null });
+  assert.deepEqual(setupStatus({ ...base, standing: "conforming" }), { word: "Checking the services", tone: "info", checked: null, why: null });
+  assert.deepEqual(setupStatus({ ...base, standing: "stale", drift: ["bb.edn", "deps.edn"] }), { word: "Out of date", tone: "warn", checked: at, why: "Changed since: bb.edn, deps.edn" });
+  const failed = setupStatus({ ...base, standing: "failed", proof: { ...base.proof!, pass: false, failed: { check: "ready", detail: "web never listened" } } });
+  assert.deepEqual(failed, { word: "Setup failed", tone: "error", checked: at, why: "Failed at ready: web never listened" });
+  assert.equal(setupStatus({ ...base, proof: null }).checked, at, "no proof: the registration's time");
 });

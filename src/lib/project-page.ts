@@ -1,60 +1,12 @@
-// The project page's summary and tabs (§app.organizations/project-page): the count chips, the
-// Overview's attention line, the Requirements tab's counts line, the Settings tab's summaries
+// The project page's tabs (§app.organizations/project-page): the Sessions tab's attention line, the Requirements tab's counts line, the Settings tab's summaries
 // and the Limits table. Pure: no Solid, no DOM.
 
 import type { ProjectOverseerCaps } from "../../shared/project-overseer";
 import { gapWords, holdWords, soonWords } from "./project-overseer-view";
-import type { ProjectTab } from "./projects-route";
 
 const count = (n: number, one: string, many = `${one}s`): string => `${n} ${n === 1 ? one : many}`;
 
-/** The section a chip brings into view: an element id on its tab. */
-export type ChipSection = "project-coding" | "project-previews" | "project-cost" | "project-conflicts" | "project-decisions" | "project-ideas" | "project-todos";
-
-export interface SummaryChip {
-  id: string;
-  label: string;
-  tab: ProjectTab;
-  section: ChipSection;
-  tone?: "warn";
-  title?: string;
-}
-
-/** What the summary counts; a count not read yet is undefined and its chip is left out (never 0). */
-export interface SummaryCounts {
-  sessions?: number;
-  previews?: number;
-  /** The total as the Cost card writes it (`$27.21`, `≈$4.10`). */
-  cost?: string;
-  conflicts?: number;
-  /** Live decisions (not superseded), and how many are ready to promote. */
-  decisions?: { total: number; ready: number };
-  /** Open ideas: the gaps the overseer filed, and the rest. */
-  ideas?: { gaps: number; other: number };
-  /** Where the ideas list is: Requirements while an org places the project, else Overview. */
-  ideasTab?: ProjectTab;
-  todos?: number;
-}
-
-/** The strip of count chips under the overseer line, in the page's order. */
-export function summaryChips(c: SummaryCounts): SummaryChip[] {
-  const out: SummaryChip[] = [];
-  if (c.sessions !== undefined) out.push({ id: "sessions", label: count(c.sessions, "session"), tab: "overview", section: "project-coding", title: "Coding sessions" });
-  if (c.previews !== undefined) out.push({ id: "previews", label: count(c.previews, "preview"), tab: "overview", section: "project-previews", title: "Active preview links" });
-  if (c.cost !== undefined) out.push({ id: "cost", label: c.cost, tab: "cost", section: "project-cost", title: "At API prices" });
-  if (c.conflicts !== undefined)
-    out.push({ id: "conflicts", label: count(c.conflicts, "conflict"), tab: "requirements", section: "project-conflicts", tone: c.conflicts > 0 ? "warn" : undefined, title: "Open conflicts" });
-  if (c.decisions !== undefined)
-    out.push({ id: "decisions", label: count(c.decisions.total, "decision"), tab: "requirements", section: "project-decisions", title: `${c.decisions.ready} ready to promote` });
-  if (c.ideas !== undefined) {
-    const { gaps, other } = c.ideas;
-    out.push({ id: "ideas", label: !gaps && c.ideasTab === "overview" ? count(other, "idea") : other ? `${count(gaps, "gap")} · ${count(other, "idea")}` : count(gaps, "gap"), section: "project-ideas", title: "Open gaps and ideas", tab: c.ideasTab ?? "requirements" });
-  }
-  if (c.todos !== undefined) out.push({ id: "todos", label: count(c.todos, "to-do"), tab: "overview", section: "project-todos", title: "Open to-do items" });
-  return out;
-}
-
-/** The Overview's banner while something waits on the operator; null when nothing does. */
+/** The Sessions tab's banner while something waits on the operator; null when nothing does. */
 export function attentionLine(openConflicts: number, ready: number): string | null {
   const parts = [openConflicts ? `${count(openConflicts, "conflict")} open` : "", ready ? `${count(ready, "decision")} ready to promote` : ""].filter(Boolean);
   return parts.length ? `${parts.join(" · ")}.` : null;

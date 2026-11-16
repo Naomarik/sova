@@ -21,7 +21,7 @@ const parent = { sessionId: sid, path: join(process.env.PI_CODING_AGENT_DIR!, "m
 const at = (n: number) => `2026-11-16T10:0${n}:30.000Z`;
 // Pages no header could hold by chance, of a known size: 3 lines.
 const page = (label: string, n: number) => `<!doctype html>\n<p>${label} page ${n} PAGE-BODY-MARK</p>\n</html>`;
-const size = (label: string, n: number) => `Size: ${page(label, n).length} characters, 3 lines.`;
+const size = (label: string, n: number) => `Size: ${(page(label, n).length / 1024).toFixed(1)} KB · ${page(label, n).length} characters, 3 lines.`;
 const file = (label: string, n: number) => store.pageFile(sid, label, n);
 const TAIL = "\n\nThe page isn't in this reply: read the file, in parts with offset and limit, or grep it for what you need.";
 const design = (label: string, versions: number, over: Partial<DesignRecord> = {}): DesignRecord => ({

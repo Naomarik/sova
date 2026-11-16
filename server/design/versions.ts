@@ -59,8 +59,11 @@ export function versionHeading({ d, v, last }: PickedVersion): string {
 /** A design's version count, for an overview line: "16 versions", "1 version", "no version yet". */
 export const versionCount = (d: Pick<DesignRecord, "versions">): string => (d.versions.length ? `${d.versions.length} version${d.versions.length === 1 ? "" : "s"}` : "no version yet");
 
-/** A page's size, for a read that hands over its file instead of its text: "14,393 characters, 312 lines". */
+/** Kilobytes, to one decimal: "14.1 KB". */
+export const kb = (bytes: number): string => `${(bytes / 1024).toLocaleString("en-US", { minimumFractionDigits: 1, maximumFractionDigits: 1 })} KB`;
+
+/** A page's size, for a read that hands over its file instead of its text: "14.1 KB · 14,393 characters, 312 lines". */
 export function pageSize(text: string): string {
   const lines = text ? text.split("\n").length - (text.endsWith("\n") ? 1 : 0) : 0;
-  return `${text.length.toLocaleString("en-US")} characters, ${lines.toLocaleString("en-US")} line${lines === 1 ? "" : "s"}`;
+  return `${kb(Buffer.byteLength(text, "utf8"))} \u00b7 ${text.length.toLocaleString("en-US")} characters, ${lines.toLocaleString("en-US")} line${lines === 1 ? "" : "s"}`;
 }

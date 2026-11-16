@@ -9,7 +9,7 @@ import type { ToolSpec } from "../../shared/harness";
 const agentDir = mkdtempSync(join(tmpdir(), "sova-coordinator-"));
 process.env.PI_CODING_AGENT_DIR = agentDir;
 const { answerBrief, answerCoordinator, BriefRefused, coordinatorCard, coordinatorTools, editBrief, messageCoordinator, noteHandIn, notThisScreen, originsIn, resolveBriefConflict, setBriefLink, setCoordinatorPorts, startBrief, startCoordinator, tellCoordinator } = await import("./coordinator");
-const { changeDesigns, forgetDesignCache, runOf, viewOf } = await import("./store");
+const { changeDesigns, forgetDesignCache, pageFile, runOf, viewOf, writePage } = await import("./store");
 const { readHistory } = await import("./history");
 after(() => rmSync(agentDir, { recursive: true, force: true }));
 
@@ -948,17 +948,19 @@ test("news of a chat with no coordinator goes nowhere and throws nothing", async
   assert.equal(log.sends.length, 0);
 });
 
-test("design_status holds metadata only", async () => {
+test("the Creative Director gets a page's size and the path of its saved file, which it can read, never the page in a reply", async () => {
   const t = await started(runWith(2, 3));
-  const out = textOf(await t.design_status({}));
-  assert.match(out, /"label": "A"/);
-  assert.doesNotMatch(out, /html|chars/i);
-});
-
-test("a look at a design gives pictures, never its text", async () => {
-  const t = await started(runWith(2, 3));
+  const html = "<!doctype html><p>PAGE-BODY-MARK</p>";
+  writePage(parent.sessionId, "A", 1, html);
+  const status = textOf(await t.design_status({}));
   const r = await t.design_browse({ label: "A" });
   assert.deepEqual(r.content.map((b: { type: string }) => b.type), ["text", "image"]);
+  for (const out of [status, textOf(r)]) {
+    assert.ok(out.includes(pageFile(parent.sessionId, "A", 1)));
+    assert.doesNotMatch(out, /PAGE-BODY-MARK/);
+  }
+  assert.match(textOf(r), new RegExp(`Size: 0\\.0 KB · ${html.length} characters, 1 line\\.`));
+  assert.equal(readFileSync(pageFile(parent.sessionId, "A", 1), "utf8"), html, "the path is that version's own file");
 });
 
 test("a coordinator with no vision gets the outline and no pictures", async () => {
@@ -1339,10 +1341,12 @@ test("the Creative Director looks at a design's latest version unless it names o
   const t = await launched();
   const v = (n: number) => ({ n, at: `2026-11-16T10:0${n}:30.000Z`, chars: 10, by: "first" });
   designList = [{ ...DESIGN_A, versions: [v(1), v(2), v(3)] } as DesignRecord, { ...DESIGN_A, label: "B", status: "writing", live: { version: 2, chars: 9 }, versions: [v(1)] } as DesignRecord, { ...DESIGN_A, label: "C", status: "queued", versions: [] } as DesignRecord];
-  // The header and its size (the stand-in designs have no saved page, so their record's chars stand in), then pictures.
+  // The header, its size (the stand-in designs have no saved page, so their record's chars stand in) and its saved file's
+  // path, which the Creative Director may read, then pictures.
   const heads = (r: { content: { type: string; text?: string }[] }) => r.content.filter((b) => b.type === "text").map((b) => b.text!.split("\nPictures")[0]);
-  assert.deepEqual(heads(await t.design_browse({ label: "A" })), ["Design A · version 3 of 3 (latest) · made 2026-11-16 10:03 UTC · versions 1–3\nSize: 10 characters."]);
-  assert.deepEqual(heads(await t.design_browse({ label: "a1, B" })), ["Design A · version 1 of 3 · made 2026-11-16 10:01 UTC · versions 1–3\nSize: 10 characters.", "Design B · version 1 of 1 (latest) · made 2026-11-16 10:01 UTC · version 1\nVersion 2 is being written now; this isn't it.\nSize: 10 characters."]);
+  const at = (label: string, n: number) => `Size: 0.0 KB · 10 characters.\nFile: ${pageFile(parent.sessionId, label, n)}`;
+  assert.deepEqual(heads(await t.design_browse({ label: "A" })), [`Design A · version 3 of 3 (latest) · made 2026-11-16 10:03 UTC · versions 1–3\n${at("A", 3)}`]);
+  assert.deepEqual(heads(await t.design_browse({ label: "a1, B" })), [`Design A · version 1 of 3 · made 2026-11-16 10:01 UTC · versions 1–3\n${at("A", 1)}`, `Design B · version 1 of 1 (latest) · made 2026-11-16 10:01 UTC · version 1\nVersion 2 is being written now; this isn't it.\n${at("B", 1)}`]);
   // The older form, a bare label with version, reads the same.
   await t.design_browse({ label: "A", version: 2 });
   assert.deepEqual(lookedAt, ["A3", "A1", "B1", "A2"]);
@@ -1353,6 +1357,8 @@ test("the Creative Director looks at a design's latest version unless it names o
   // design_status takes the same names: a version named shows only it; the latest and a page being written are said.
   const status = JSON.parse(textOf(await t.design_status({ label: "A2, B" })));
   assert.deepEqual(status.designs.map((d: { label: string; versions: { n: number }[]; latest?: number; writing?: string }) => [d.label, d.versions.map((x) => x.n), d.latest, d.writing ?? null]), [["A", [2], 3, null], ["B", [1], 1, "version 2 is being written now"]]);
+  // Each version shown with its size and its saved file's path.
+  assert.deepEqual(status.designs.flatMap((d: { label: string; versions: { n: number; size: string; file: string }[] }) => d.versions.map((x) => [x.size, x.file])), [["0.0 KB", pageFile(parent.sessionId, "A", 2)], ["0.0 KB", pageFile(parent.sessionId, "B", 1)]]);
   refused(await t.design_status({ label: "A7" }));
 });
 
@@ -1362,7 +1368,7 @@ test("the Creative Director's look lists a version's views, pictures one by name
   designList = [{ ...DESIGN_A, versions: [{ n: 1, at: "2026-11-16T10:01:30.000Z", chars: 10, by: "first", views }] } as DesignRecord];
   lookedAt = [];
   const text = (r: { content: { type: string; text?: string }[] }) => r.content.filter((b) => b.type === "text").map((b) => b.text!.split("\nPictures")[0]).join("\n\n");
-  assert.equal(text(await t.design_browse({ label: "A1", view: "deploy", sizes: ["phone"] })), "Design A · version 1 of 1 (latest) · made 2026-11-16 10:01 UTC · version 1\nSize: 10 characters.\nViews: Sessions (the first screen) · Deploy · Billing (via User menu; unreachable: Target matched 0 visible controls)\nThe view Deploy.");
+  assert.equal(text(await t.design_browse({ label: "A1", view: "deploy", sizes: ["phone"] })), `Design A · version 1 of 1 (latest) · made 2026-11-16 10:01 UTC · version 1\nSize: 0.0 KB · 10 characters.\nViews: Sessions (the first screen) · Deploy · Billing (via User menu; unreachable: Target matched 0 visible controls)\nFile: ${pageFile(parent.sessionId, "A", 1)}\nThe view Deploy.`);
   await t.design_browse({ label: "A", actions: [{ op: "click", target: { kind: "text", text: "More" } }] });
   assert.deepEqual(lookedAt, ["A1·deploy", "A1·1 actions"]);
   assert.match(textOf(await t.design_browse({ label: "A", view: "Nowhere" })), /has no view "Nowhere"\. Its views: the first screen, Deploy\./);

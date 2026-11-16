@@ -1,7 +1,7 @@
 // A chat's design coordinator: one hidden session per chat, started at Start Coordinator. It finds the screen,
 // launches the design team inside what the Setup card allows, and directs the sessions afterwards. It knows about
-// designs and never holds their pages: nothing in this file gives it a page's text. Every power it has is a tool
-// here, and each tool decides from server-held state, never from what the model says about itself.
+// designs from their records, its looks at them, and each version's saved file, which it may read. Every power it has
+// is a tool here, and each tool decides from server-held state, never from what the model says about itself.
 import { captureDesignPage } from "./capture";
 import { changeAssets, noteSignedInConsent, readAssetPart, readAssets } from "./assets";
 import { askVision, assetBlock, assetsForCoordinator, cleanShotWords, describerModels, describing, onAssetsSettled, onDescribingStarted, screenshotBlock } from "./describe";
@@ -33,7 +33,8 @@ import { answerQuestions, BRIEF_LIMITS, coordinatorWrote, fillNotes, sameAddress
 import { DESIGN_BROWSE_TOUR_ID, designBrowse, walkProblem, type BrowseParent, type DesignBrowseStores } from "./browse";
 import { lookAtDesignPage, recheckViews, viewsLineFor } from "./views";
 import type { TourWalkAction } from "../tours/runner-protocol";
-import { pageSize, pickVersions, versionHeading, type PickedVersion } from "./versions";
+import { kb, pageSize, pickVersions, versionHeading, type PickedVersion } from "./versions";
+import { pagePathFor } from "./page-paths";
 import { designModelOptions, estimateUsd, type DesignModelOption } from "./setup";
 import { coordinatorSkillsBlock, skillReadTokens } from "./skills";
 import { changeDesigns, designRoot, designSessions, readPage, runOf, setCoordinator, setRunPhase, viewOf } from "./store";
@@ -1133,7 +1134,7 @@ export function coordinatorTools(sessionId: string): ToolSpec[] {
 
   const status: ToolSpec = {
     name: "design_status", label: "Design status",
-    description: "What you know of this chat's designs: label, direction (its style), layout, model, parents, status, versions (each with its time and the note its session handed in), its latest version, and one being written. Never a page's code. label narrows it: \"A\" for one design, \"A11\" for its version 11 only, several with commas (\"A11, B\").",
+    description: "What you know of this chat's designs: label, direction (its style), layout, model, parents, status, versions (each with its time, size, the note its session handed in and the path of its saved file, which you can read), its latest version, and one being written. label narrows it: \"A\" for one design, \"A11\" for its version 11 only, several with commas (\"A11, B\").",
     parameters: { type: "object", properties: { label: { type: "string", description: "A design's label, or a label with a version number (A11); several separated by commas. Omit for all." } }, additionalProperties: false },
     async execute(_id, params: { label?: string }) {
       const st = state();
@@ -1164,6 +1165,12 @@ export function coordinatorTools(sessionId: string): ToolSpec[] {
           const d = metadata(all.find((x) => x.label === label)!);
           return which === "all" ? d : { ...d, versions: d.versions.filter((v) => which.includes(v.n)) };
         });
+      }
+      // Each version shown with its size and the path of its saved file, one the Creative Director's session can open.
+      const reader = { sessionId: st.chatId };
+      for (const d of list) for (const v of d.versions as ({ n: number; size?: string; file?: string } & Record<string, unknown>)[]) {
+        v.size = kb(all.find((x) => x.label === d.label)?.versions.find((x) => x.n === v.n)?.chars ?? 0);
+        v.file = (await pagePathFor(parent.sessionId, d.label, v.n, reader)).path;
       }
       const run = runOf(parent.sessionId, st.runId);
       return say(JSON.stringify({ run: run ? { id: run.id, phase: run.phase, ...(run.brief ? { brief: { rev: run.brief.textRev, promptBy: run.brief.promptBy, openQuestions: openQuestions(run.brief).length, conflict: !!run.brief.conflict, started: run.brief.startedRev !== undefined } } : {}) } : null, waitingOnUser: st.ask?.text ?? null, designs: list }, null, 1));
@@ -1317,7 +1324,7 @@ export function coordinatorTools(sessionId: string): ToolSpec[] {
 
   const browse: ToolSpec = {
     name: "design_browse", label: "Look at a screen",
-    description: "Open an address in a real browser at desktop and phone widths and get pictures and a list of what is on the page, or look at a finished design by label: its latest version, unless label names one (A11), or several at once (\"A11, A16\"); each starts with a header naming the version returned, when it was made, the versions that exist, the page's size and its views (the screens it names: tabs, other pages, menus, dialogs); you get pictures, never the page's code. With label, view names one of its views to picture instead of the screen it opens on, and actions walk on from there to a screen it doesn't name. actions: click to navigate, reveal, wait, scroll; never typing and never a form. Only a declared signIn submits anything. Your own running copies and addresses the user gave open at once; any other site asks the user first.",
+    description: "Open an address in a real browser at desktop and phone widths and get pictures and a list of what is on the page, or look at a finished design by label: its latest version, unless label names one (A11), or several at once (\"A11, A16\"); each starts with a header naming the version returned, when it was made, the versions that exist, the page's size, its views (the screens it names: tabs, other pages, menus, dialogs) and the path of its saved file, which you can read, then its pictures. With label, view names one of its views to picture instead of the screen it opens on, and actions walk on from there to a screen it doesn't name. actions: click to navigate, reveal, wait, scroll; never typing and never a form. Only a declared signIn submits anything. Your own running copies and addresses the user gave open at once; any other site asks the user first.",
     parameters: {
       type: "object",
       properties: {
@@ -1357,13 +1364,14 @@ export function coordinatorTools(sessionId: string): ToolSpec[] {
           const shots = saveShots(st, r.shots, r.outline);
           const one = picturesResult(st, shots, r.shots.map((s) => s.png), r.outline);
           const [first, ...images] = one.content;
-          // Its size, never its text: a Creative Director works from pictures and notes, not a page's code.
+          // Its size and its saved file's path, never its text in the reply: the file is there to read when it wants.
           const text = readPage(parent.sessionId, x.d.label, x.v.n);
-          const size = text !== null ? pageSize(text) : `${x.v.chars.toLocaleString("en-US")} characters`;
+          const size = text !== null ? pageSize(text) : `${kb(x.v.chars)} \u00b7 ${x.v.chars.toLocaleString("en-US")} characters`;
+          const at = await pagePathFor(parent.sessionId, x.d.label, x.v.n, { sessionId: st.chatId });
           const views = viewsLineFor(x.v, text);
           recheckViews(parent, x.d.label, x.v);
           const shown = r.view ? `The view ${r.view}.\n` : "";
-          content.push({ type: "text", text: `${versionHeading(x)}\nSize: ${size}.\n${views ? `${views}\n` : ""}${shown}${(first as { text: string }).text}` }, ...images);
+          content.push({ type: "text", text: `${versionHeading(x)}\nSize: ${size}.\n${views ? `${views}\n` : ""}File: ${at.path}${at.exposed ? " (a read-only copy where your sandbox can read it)" : ""}\n${shown}${(first as { text: string }).text}` }, ...images);
           ids.push(...shots.map((s) => s.id));
         }
         save(st);

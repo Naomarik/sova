@@ -30,6 +30,7 @@ import { sessionHrefOn } from "../lib/mesh";
 import { providerName } from "../lib/cost-history";
 import { announce } from "../lib/ui-state";
 import { ModelPickButton } from "./ModelPickButton";
+import { NumberField, Select, TextArea, TextField, Toggle } from "./form";
 import { Chip, Icon } from "./ui";
 import "./PlaybookCard.css";
 
@@ -284,7 +285,7 @@ export function PlaybookCard(props: { run: PlaybookRunView; store: PlaybookRunsS
             <Index each={run().roles}>
               {(r) => (
                 <RoleRow
-                  role={r()}
+                  part={r()}
                   on={roleOn(r())}
                   note={roleNote(r())}
                   pick={roleEdit(r())?.pick}
@@ -337,11 +338,7 @@ export function PlaybookCard(props: { run: PlaybookRunView; store: PlaybookRunsS
                         <Chip>Stops for you</Chip>
                       </Show>
                       <Show when={s().stop === "optional"}>
-                        <label class="toggle pb-toggle">
-                          <input type="checkbox" checked={stopOn(s())} disabled={!editable()} onChange={(e) => queue({ stops: { [s().id]: e.currentTarget.checked } })} />
-                          <span class="toggle-box" aria-hidden="true" />
-                          <span>Stop for me here</span>
-                        </label>
+                        <Toggle class="pb-toggle" label="Stop for me here" checked={stopOn(s())} disabled={!editable()} onChange={(on) => queue({ stops: { [s().id]: on } })} />
                       </Show>
                     </span>
                   </li>
@@ -352,35 +349,31 @@ export function PlaybookCard(props: { run: PlaybookRunView; store: PlaybookRunsS
               {(c) => (
                 <div class="pb-cycle">
                   <Show when={editable()} fallback={<p class="pb-note">{cycleLine({ ...c(), max: cycleMax(), askEvery: cycleAsk() })}</p>}>
-                    <p class="pb-cycle-line">
+                    <div class="pb-cycle-line">
                       <span>{cycleStepsLine(c().steps.map((sid) => run().steps.findIndex((s) => s.id === sid) + 1).filter((n) => n > 0))} as a cycle: up to</span>
-                      <NumberBox id={id("cycle-max")} label="Most cycles" value={cycleMax()} min={1} max={c().maxCap} onChange={(n) => queue({ cycle: { max: n } }, TYPE_SAVE_MS)} />
+                      <NumberBox label="Most cycles" value={cycleMax()} min={1} max={c().maxCap} onChange={(n) => queue({ cycle: { max: n } }, TYPE_SAVE_MS)} />
                       <span>
                         cycles, at most <span class="text-num">{c().maxCap}</span>; asks you after every
                       </span>
-                      <NumberBox id={id("cycle-ask")} label="Cycles before it asks you" value={cycleAsk()} min={1} max={cycleMax()} onChange={(n) => queue({ cycle: { askEvery: n } }, TYPE_SAVE_MS)} />
+                      <NumberBox label="Cycles before it asks you" value={cycleAsk()} min={1} max={cycleMax()} onChange={(n) => queue({ cycle: { askEvery: n } }, TYPE_SAVE_MS)} />
                       <span>{cycleAsk() === 1 ? "cycle." : "cycles."}</span>
-                    </p>
+                    </div>
                   </Show>
                   <Show when={c().rule}>
                     {(rule) => (
                       <Show when={editable()} fallback={<p class="pb-note">{cycleUntil() === "rule" ? `Stops early when ${rule()}` : "Runs every cycle, whatever the stop rule says."}</p>}>
-                        <p class="pb-cycle-line">
-                          <label for={id("cycle-until")}>Keep going until</label>
-                          <span class="select-wrap pb-until">
-                            <select id={id("cycle-until")} class="select" onChange={(e) => queue({ cycle: { until: e.currentTarget.value as "rule" | "max" } })}>
-                              <option value="rule" selected={cycleUntil() === "rule"}>
-                                the stop rule is met
-                              </option>
-                              <option value="max" selected={cycleUntil() === "max"}>
-                                all cycles have run
-                              </option>
-                            </select>
-                            <span class="select-caret" aria-hidden="true">
-                              ▾
-                            </span>
-                          </span>
-                        </p>
+                        <div class="pb-cycle-line">
+                          <Select
+                            class="pb-until"
+                            label="Keep going until"
+                            value={cycleUntil()}
+                            options={[
+                              { value: "rule", label: "the stop rule is met" },
+                              { value: "max", label: "all cycles have run" },
+                            ]}
+                            onChange={(v) => queue({ cycle: { until: v as "rule" | "max" } })}
+                          />
+                        </div>
                         <p class="pb-note">The stop rule: {rule()}</p>
                       </Show>
                     )}
@@ -424,8 +417,8 @@ export function PlaybookCard(props: { run: PlaybookRunView; store: PlaybookRunsS
               <button type="button" class="button button-sm" disabled={!!busy() || !editable()} onClick={() => void saveDefaults()}>
                 {busy() === "defaults" ? "Saving…" : "Save as My Defaults"}
               </button>
-              <button type="button" class="button button-sm button-ghost" aria-disabled="true" title="Repeats come in a later release.">
-                Repeat…
+              <button type="button" class="button button-sm button-ghost" disabled title="Repeats come in a later release.">
+                Repeat… <span class="pb-coming">Coming</span>
               </button>
               <span class="pb-foot-hint" id={id("why")}>
                 {startWhy() ?? done() ?? (changing() ? "Saving your changes…" : `Revision ${run().revision}. Start runs exactly this card.`)}
@@ -442,26 +435,20 @@ export function PlaybookCard(props: { run: PlaybookRunView; store: PlaybookRunsS
 }
 
 /** A small number box inside a sentence; it keeps what was typed and saves a whole number in range. */
-function NumberBox(props: { id: string; label: string; value: number; min: number; max: number; onChange(n: number): void }) {
+function NumberBox(props: { label: string; value: number; min: number; max: number; onChange(n: number): void }) {
+  const [raw, setRaw] = createSignal(String(props.value));
   return (
-    <>
-      <label class="visually-hidden" for={props.id}>
-        {props.label}
-      </label>
-      <input
-        id={props.id}
-        class="input text-num pb-num"
-        type="number"
-        inputmode="numeric"
-        min={props.min}
-        max={props.max}
-        value={props.value}
-        onInput={(e) => {
-          const n = Number(e.currentTarget.value);
-          if (Number.isInteger(n) && n >= props.min && n <= props.max) props.onChange(n);
-        }}
-      />
-    </>
+    <NumberField
+      class="pb-num"
+      hideLabel
+      label={props.label}
+      value={raw()}
+      onInput={(text) => {
+        setRaw(text);
+        const n = Number(text);
+        if (text.trim() && Number.isInteger(n) && n >= props.min && n <= props.max) props.onChange(n);
+      }}
+    />
   );
 }
 
@@ -472,85 +459,62 @@ function ChoiceRow(props: { choice: PlaybookChoiceView; value: unknown; editable
   const empty = () => c().required && isEmpty(props.value);
   /** A list box keeps what was typed, blank lines included; what's saved is its non-empty lines. */
   const [listText, setListText] = createSignal(listValue<string>(props.value).join("\n"));
-  // One control per type, built once: only its value follows the card, so typing keeps focus.
+  /** A number box keeps what was typed ("", "1e"); what's saved is a number, or none. */
+  const [numText, setNumText] = createSignal(typeof props.value === "number" ? String(props.value) : "");
+  const choiceOptions = () => [...(isEmpty(props.value) ? [{ value: "", label: "Pick one" }] : []), ...(c().options ?? [])];
+  // One control per type, built once: only its value follows the card, so typing keeps focus. Each
+  // is the form kit's, its label read aloud (the row's own label shows it).
   const control = (): JSX.Element => (
-    <Switch
-      fallback={
-        <input id={cid} class="input pb-text" type="text" value={typeof props.value === "string" ? props.value : ""} onInput={(e) => props.onChange(e.currentTarget.value, TYPE_SAVE_MS)} />
-      }
-    >
+    <Switch fallback={<TextField class="pb-text" hideLabel label={c().label} value={typeof props.value === "string" ? props.value : ""} onInput={(v) => props.onChange(v, TYPE_SAVE_MS)} />}>
       <Match when={c().type === "toggle"}>
-        <label class="toggle pb-toggle">
-          <input id={cid} type="checkbox" checked={!!props.value} onChange={(e) => props.onChange(e.currentTarget.checked)} />
-          <span class="toggle-box" aria-hidden="true" />
-          <span>{props.value ? "On" : "Off"}</span>
-        </label>
+        <Toggle class="pb-toggle" label={props.value ? "On" : "Off"} ariaLabel={c().label} checked={!!props.value} onChange={(on) => props.onChange(on)} />
       </Match>
       <Match when={c().type === "number"}>
-        <input
-          id={cid}
-          class="input text-num pb-num"
-          type="number"
-          inputmode="numeric"
-          min={c().min}
-          max={c().max}
-          value={typeof props.value === "number" ? props.value : ""}
-          onInput={(e) => {
-            const raw = e.currentTarget.value;
-            props.onChange(raw === "" ? null : Number(raw), TYPE_SAVE_MS);
+        <NumberField
+          class="pb-num"
+          hideLabel
+          label={c().label}
+          value={numText()}
+          onInput={(text) => {
+            setNumText(text);
+            const n = Number(text);
+            if (!text.trim()) props.onChange(null, TYPE_SAVE_MS);
+            else if (Number.isFinite(n)) props.onChange(n, TYPE_SAVE_MS);
           }}
         />
       </Match>
       <Match when={c().type === "choice"}>
-        <div class="select-wrap">
-          <select id={cid} class="select" onChange={(e) => props.onChange(e.currentTarget.value || null)}>
-            <Show when={isEmpty(props.value)}>
-              <option value="">Pick one</option>
-            </Show>
-            <For each={c().options ?? []}>
-              {(o) => (
-                <option value={o.value} selected={o.value === props.value}>
-                  {o.label}
-                </option>
-              )}
-            </For>
-          </select>
-          <span class="select-caret" aria-hidden="true">
-            ▾
-          </span>
-        </div>
+        <Select hideLabel label={c().label} value={typeof props.value === "string" ? props.value : ""} options={choiceOptions()} onChange={(v) => props.onChange(v || null)} />
       </Match>
       <Match when={c().type === "multi"}>
-        <span class="pb-multi" role="group" aria-labelledby={`${cid}-label`}>
+        <span class="pb-multi" role="group" aria-label={c().label}>
           <For each={c().options ?? []}>
             {(o) => (
-              <label class="toggle pb-toggle">
-                <input
-                  type="checkbox"
-                  checked={listValue(props.value).includes(o.value)}
-                  onChange={(e) => {
-                    const now = listValue(props.value).filter((v) => v !== o.value);
-                    props.onChange(e.currentTarget.checked ? [...now, o.value] : now);
-                  }}
-                />
-                <span class="toggle-box" aria-hidden="true" />
-                <span>{o.label}</span>
-              </label>
+              <Toggle
+                class="pb-toggle"
+                label={o.label}
+                checked={listValue(props.value).includes(o.value)}
+                onChange={(on) => {
+                  const now = listValue(props.value).filter((v) => v !== o.value);
+                  props.onChange(on ? [...now, o.value] : now);
+                }}
+              />
             )}
           </For>
         </span>
       </Match>
       <Match when={c().type === "list"}>
-        <textarea
-          id={cid}
-          class="input textarea pb-list"
+        <TextArea
+          class="pb-list"
+          hideLabel
+          label={c().label}
           rows={Math.min(6, Math.max(2, listValue(props.value).length + 1))}
           placeholder="One per line"
           value={listText()}
-          onInput={(e) => {
-            setListText(e.currentTarget.value);
+          onInput={(text) => {
+            setListText(text);
             props.onChange(
-              e.currentTarget.value
+              text
                 .split("\n")
                 .map((l) => l.trim())
                 .filter(Boolean),
@@ -566,11 +530,10 @@ function ChoiceRow(props: { choice: PlaybookChoiceView; value: unknown; editable
   );
   return (
     <div class="pb-row" data-empty={empty() ? "" : undefined}>
-      <Show when={props.editable && c().type !== "multi" && c().type !== "models"} fallback={<span class="pb-row-label" id={`${cid}-label`}>{c().label}</span>}>
-        <label class="pb-row-label" for={cid} id={`${cid}-label`}>
-          {c().label}
-        </label>
-      </Show>
+      {/* Shown, not read: each control carries its own name. */}
+      <span class="pb-row-label" aria-hidden={props.editable ? "true" : undefined}>
+        {c().label}
+      </span>
       <span class="pb-row-value">
         <Show when={props.editable} fallback={<span>{valueText(c(), props.value)}</span>}>
           {control()}
@@ -619,7 +582,8 @@ function ModelsControl(props: { id: string; label: string; value: PlaybookModelP
 
 /** One role in Who runs: its model and why, on or off when it's optional, View Prompt and its note. */
 function RoleRow(props: {
-  role: PlaybookRoleView;
+  /** The role (not named `role`: that is an ARIA attribute's name). */
+  part: PlaybookRoleView;
   on: boolean;
   note: string;
   pick: PlaybookModelPick | null | undefined;
@@ -630,7 +594,7 @@ function RoleRow(props: {
 }) {
   const rid = `pbr-${createUniqueId()}`;
   const [promptOpen, setPromptOpen] = createSignal(false);
-  const r = () => props.role;
+  const r = () => props.part;
   /** What the row shows as its model: your pick while it saves, else the resolved one. */
   const modelText = () => (props.pick ? pickLine(props.pick) : roleModelLine(r()));
   const off = () => r().optional && !props.on;
@@ -657,42 +621,32 @@ function RoleRow(props: {
               />
             }
           >
-            <span class="select-wrap pb-only-select">
-              <label class="visually-hidden" for={`${rid}-only`}>
-                Model for {r().label}, only these
-              </label>
-              <select
-                id={`${rid}-only`}
-                class="select"
-                onChange={(e) => {
-                  const m = r().models[Number(e.currentTarget.value)];
-                  if (m) props.onPick({ model: m.model, ...(m.effort ? { effort: m.effort } : {}) });
-                }}
-              >
-                <For each={r().models}>
-                  {(m, i) => (
-                    <option value={i()} disabled={!m.usable} selected={m.model === (props.pick?.model ?? r().resolved?.model)}>
-                      {[m.label, providerName(m.provider), m.effort].filter(Boolean).join(" · ")}
-                      {m.usable ? "" : ` (${m.why ?? "can't run"})`}
-                    </option>
-                  )}
-                </For>
-              </select>
-              <span class="select-caret" aria-hidden="true">
-                ▾
-              </span>
-            </span>
+            <Select
+              class="pb-only-select"
+              hideLabel
+              label={`Model for ${r().label}, only these`}
+              value={String(Math.max(0, r().models.findIndex((m) => m.model === (props.pick?.model ?? r().resolved?.model))))}
+              onChange={(v) => {
+                const m = r().models[Number(v)];
+                if (m) props.onPick({ model: m.model, ...(m.effort ? { effort: m.effort } : {}) });
+              }}
+            >
+              <For each={r().models}>
+                {(m, i) => (
+                  <option value={i()} disabled={!m.usable} selected={m.model === (props.pick?.model ?? r().resolved?.model)}>
+                    {[m.label, providerName(m.provider), m.effort].filter(Boolean).join(" · ")}
+                    {m.usable ? "" : ` (${m.why ?? "can't run"})`}
+                  </option>
+                )}
+              </For>
+            </Select>
           </Show>
         </Show>
         <Show when={!off() && roleWhy(r())}>{(why) => <span class="pb-row-why">{why()}</span>}</Show>
       </span>
       <span class="pb-role-actions">
         <Show when={r().optional && props.editable}>
-          <label class="toggle pb-toggle">
-            <input type="checkbox" checked={props.on} onChange={(e) => props.onOn(e.currentTarget.checked)} aria-label={`${r().label} runs`} />
-            <span class="toggle-box" aria-hidden="true" />
-            <span>Runs</span>
-          </label>
+          <Toggle class="pb-toggle" label="Runs" ariaLabel={`${r().label} runs`} checked={props.on} onChange={(on) => props.onOn(on)} />
         </Show>
         <button type="button" class="button button-sm button-ghost" aria-expanded={promptOpen()} aria-controls={`${rid}-prompt`} onClick={() => setPromptOpen(!promptOpen())}>
           {promptOpen() ? "Hide Prompt" : "View Prompt"}
@@ -702,10 +656,7 @@ function RoleRow(props: {
         <div class="pb-prompt" id={`${rid}-prompt`}>
           <pre class="pb-prompt-text">{r().prompt || "No prompt of its own: it gets Sova's standard conductor instructions."}</pre>
           <Show when={props.editable} fallback={<Show when={props.note}>{(n) => <p class="pb-note">Note for this run: {n()}</p>}</Show>}>
-            <label class="field-label" for={`${rid}-note`}>
-              Note for this run
-            </label>
-            <textarea id={`${rid}-note`} class="input textarea pb-role-note" rows={2} value={props.note} placeholder="Added after its prompt, for this run only" onInput={(e) => props.onNote(e.currentTarget.value)} />
+            <TextArea class="pb-role-note" label="Note for this run" rows={2} value={props.note} placeholder="Added after its prompt, for this run only" onInput={(v) => props.onNote(v)} />
           </Show>
         </div>
       </Show>

@@ -224,3 +224,10 @@ details[open] > .pb-more-summary .icon-twist { transform: rotate(90deg); }
   .pb-step-stop { grid-column: 2; }
   .pb-cycle { padding-left: 0; }
 }
+
+/* The form kit's fields inside the card's rows and sentences. */
+.pb-row-value > .field, .pb-cycle-line > .field { margin: 0; }
+.pb-text, .pb-list { flex: 1 1 16rem; }
+.pb-until { flex-direction: row; align-items: center; gap: var(--space-2); }
+.pb-until .field-label { font-weight: var(--fw-regular); font-size: inherit; }
+.pb-coming { margin-left: var(--space-1); font-size: var(--fs-micro); letter-spacing: var(--ls-eyebrow); text-transform: uppercase; }

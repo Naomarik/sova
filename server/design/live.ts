@@ -6,6 +6,7 @@ import type { SovaEvent } from "../../shared/harness";
 import { tokensOfText } from "../../src/lib/design-frame";
 import { FIRST_INPUT_TOKENS, tokenRates } from "./setup";
 import { onDesignChanged, readDesigns, viewOf } from "./store";
+import { historyMark } from "./history";
 
 /** How long changes gather before the view goes out. */
 const VIEW_EVERY_MS = 250;
@@ -116,6 +117,7 @@ export function designView(sessionId: string): DesignChatView {
   const v = viewOf(sessionId);
   return {
     ...v,
+    history: historyMark(sessionId),
     designs: v.designs.map((d) => {
       if (!d.live) return d;
       const chars = livePage(sessionId, d.label)?.chars ?? d.live.chars;

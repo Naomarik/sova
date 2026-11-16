@@ -18,11 +18,11 @@ Paths are relative to `pi-config/extensions/` unless they start with `.sova/` or
 |---|---|---|
 | The guide | `mode/spec-mode.md` | The short part, injected while the mode is on: search, read, verify in the code, cite files, and where the writing procedure is. It is the only copy: everything else quotes or loads it. |
 | The writing procedure | `spec/WRITING.md` | The second part: drafts, agreeing, evidence, promotion, a worker's duties (its `## Workers` section). Never in the prompt; the agent opens it as `$core/../WRITING.md`. The only copy. |
-| Hand-over | `mode/spec-guard.ts` (`CensusHook.takeProcedure`, `procedureToldIn`, `readsProcedure`), `mode/index.ts`, `mode/align-tool.ts`, `mode/spec-worker.ts` | Once per chat, the session's first census note of any kind (or, with align on, the go-ahead's result) appends the procedure read from the installed copy, unless the agent read it itself. A compaction re-arms it; a reopened session restores it from its history. A worker's copy leads with its Workers section. |
+| Hand-over | `mode/spec-guard.ts` (`CensusHook.takeProcedure`, `procedureToldIn`, `readsProcedure`), Sova's mode engine, `mode/align-tool.ts`, `mode/spec-worker.ts` | Once per chat, the session's first census note of any kind (or, with align on, the go-ahead's result) appends the procedure read from the installed copy, unless the agent read it itself. A compaction re-arms it; a reopened session restores it from its history. A worker's copy leads with its Workers section. |
 | Loading | `mode/minor.ts` | Reads `spec-mode.md` once at load (`SPEC_INSTRUCTIONS`, trailing whitespace trimmed) and extracts its one `sh` block as `SPEC_CORE_SHELL`, the line that finds the trusted tools. |
 | Prompt composition | `mode/prompt.ts` | `composePrompt` appends minor blocks after the major mode's in registry order; with a spec writer set, the spec block gains the writer paragraph (`buildSpecWriterPrompt`). `composeWorkerPrompt` gives a worker the spec block plus `SPEC_WORKER_NOTE`. |
-| Agree step | `mode/align-tool.ts` (`alignSpecAgreeText`), `mode/index.ts` (`specOn`) | With align on too, the `align` call that sets an alignment implementing ends its result text (never its `details`) with the Agree step: write the decisions as promises in a draft, `agree` them (which promotes the ones that map no code). Neither mode's prompt block changes. |
-| Session hooks | `mode/index.ts` | `before_agent_start` injects the block. `tool_call`/`tool_result` run the census. Worker modes are published on an event. |
+| Agree step | `mode/align-tool.ts` (`alignSpecAgreeText`), Sova's mode engine (`specOn`) | With align on too, the `align` call that sets an alignment implementing ends its result text (never its `details`) with the Agree step: write the decisions as promises in a draft, `agree` them (which promotes the ones that map no code). Neither mode's prompt block changes. |
+| Session hooks | Sova's mode engine (`server/modes/`) | `before_agent_start` injects the block. `tool_call`/`tool_result` run the census. Worker modes are published on an event. |
 | The census note | `mode/spec-guard.ts` (`CensusHook`, `CENSUS_SKIP_TOOLS`) | After a tool call that can write, it compares the work tree's `git status` with the last look. On the first changed file in the spec boundary, and on each new file, it runs `sova-spec.mjs census --changed` and appends a short `[spec census]` digest to that tool result. At the first call after the session's last edit it runs `census --changed --related` once and adds one line, `Unread § your change landed in`, naming the foreign § the session's own files landed in that it hasn't `read` (`specReads` over its shell commands and its `spec` tool reads, both from `bashCommands`), at most 10 marked read first (census relevance 0.036 or more, or a stale literal), the rest left, uncounted, to the census command that lists them ("lower-ranked: <command>"). |
 | Forbidden writes | `mode/spec-guard.ts` (`SpecWriteGuard`) | It says so, in the same digest, when the current spec is written by hand, or when commits that a draft's evidence names are rewritten. |
 | pi worker checks | `mode/spec-worker.ts` | The same census for a pi worker, a Claude Code worker included (it is a pi worker on the Claude Code provider). Workers start with `--no-extensions`, so the spawn path loads this file with `-e`. |
@@ -35,18 +35,20 @@ Paths are relative to `pi-config/extensions/` unless they start with `.sova/` or
 
 ## How they connect
 
-1. **Load.** `minor.ts` reads `spec-mode.md` beside it when the mode extension loads, and Sova's server
-   imports the same module. If the file doesn't hold exactly one single-line `sh` block, or that line
+1. **Load.** `minor.ts` reads `spec-mode.md` beside it at load; Sova's mode engine, the one host that runs
+   modes, imports it (a plain pi terminal has no modes). If the file doesn't hold exactly one single-line `sh` block, or that line
    appears again outside it, the load throws. So a malformed guide stops both pi and the server from
    starting; it never ships half-read.
-2. **Inject.** With spec on, `index.ts`'s `before_agent_start` appends the composed block to the
-   system prompt (`prompt.ts`). The block is `spec-mode.md` byte for byte, plus the writer paragraph
-   when a spec writer is set. `mode/index.test.ts` pins the text:
+2. **Inject.** With spec on, Sova's mode engine's `before_agent_start` appends the composed block to the system prompt (`prompt.ts`). The block is `spec-mode.md` byte for byte, plus the writer paragraph
+   when a spec writer is set. `mode/modes.test.ts` and `mode/spec-mode.test.ts` pin the text:
    - every flag it spells is parsed by the command it is paired with;
    - its `--doc-only` cases are the draft tool's own;
    - its word count is capped.
-3. **Find the tools.** The guide's `sh` line resolves `$core` to `<agent dir>/extensions/spec/core`, where
-   `pi-config/install.sh` links these tools. The agent runs only that trusted copy. A copy inside a
+3. **Find the tools.** The guide's `sh` line resolves `$core` to `$SOVA_SPEC_CORE` when it is set, else to
+   `<agent dir>/extensions/spec/core`, where `pi-config/install.sh` links these tools. A host sets
+   `SOVA_SPEC_CORE` to the copy of these tools it runs (Sova: the chat's own copy of its code), so the guide's
+   text never changes while the tools it names follow the host; `spec-guard.ts`'s `coreDir` reads it the same
+   way. The agent runs only that trusted copy. A copy inside a
    project is foreign code, never run without asking; the installed extension is the only supported way to run the tools.
 3a. **The writing procedure.** The short part tells the agent to read `$core/../WRITING.md` before its
    first edit that changes behavior. If it hasn't (a read tool on a file named `WRITING.md`, or a shell
@@ -76,7 +78,7 @@ Paths are relative to `pi-config/extensions/` unless they start with `.sova/` or
    clean), before any code. The build updates the same records. `promote` notes `agreed-kept-on-change` when a later
    change edits an agreed record's numbers or backticked tokens and keeps the old `agreed`.
 5a. **Where the go-ahead is.** `spec-agree.ts`: before each tool call of a session that is not a worker,
-   the mode extension sets `SPEC_AGREE_SOURCE` to `pi-session:<session id>#<entry id>` of the latest user
+   Sova's mode engine sets `SPEC_AGREE_SOURCE` to `pi-session:<session id>#<entry id>` of the latest user
    message while spec is on (and clears it while off), so the bash tool's `agree` records it as
    `agreed.source` (the tool refuses a `--source` that differs from a set variable, and a description). The subagents spawn path puts the same reference in each spec-on worker's environment,
    in `SPEC_AGREE_SOURCE` and in `SPEC_AGREE_GIVEN` (empty when it has none). Only `SPEC_AGREE_GIVEN`, which no

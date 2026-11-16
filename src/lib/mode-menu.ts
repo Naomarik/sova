@@ -63,8 +63,8 @@ export function createLimits(facts: { sandboxOn: boolean; remote: boolean }): st
   return lines.length ? lines.join(" ") : null;
 }
 
-/** "delegate · strict · align" — a mode the way the extension's own "Default mode saved" toast
-    writes it (activeSummary in pi-config/extensions/mode/index.ts): strict is named only when on. */
+/** "delegate · strict · align" — a mode the way the removed pi mode extension's "Default mode saved"
+    toast wrote it: strict is named only when on. */
 export function modeSummary(m: ShownMode): string {
   return [m.mode, ...(m.strict ? ["strict"] : []), ...m.minorModes].join(" · ");
 }

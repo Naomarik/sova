@@ -267,8 +267,8 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-12T21:09Z",
-      "source": "pi-session:01a1d023-6988-7481-af78-b02082042586#f2373ebf"
+      "at": "2026-11-13T03:00Z",
+      "source": "pi-session:01a1d023-6988-7481-af78-b02082042586#71ebdfba"
     },
     "code": [
       "server/merge-queue/checks.ts",
@@ -292,7 +292,8 @@
       "server/merge-queue/estimate.test.ts",
       "shared/merge-queue.ts",
       "server/merge-queue/testing/repo.ts",
-      "server/test-cache-guard.test.ts"
+      "server/test-cache-guard.test.ts",
+      "server/spec-runner.ts"
     ]
   },
   "§app.merge-queue/conflicts": {
@@ -1003,7 +1004,7 @@
   "§app.merge-queue/run": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "reviewed",
+    "evidence": "verified",
     "requires": [
       "§app.project-services/instances",
       "§app.project-services/contract",
@@ -1012,9 +1013,9 @@
       "§app.merge-queue/pausing"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-11-09T00:22Z",
-      "source": "pi-session:01a1b2f4-86c6-73d4-9fe9-b847b27035f9#e2a66e41"
+      "by": "user",
+      "at": "2026-11-12T16:06Z",
+      "source": "pi-session:01a1d023-6988-7481-af78-b02082042586#96bae24a"
     },
     "code": [
       "server/merge-queue/run.ts",
@@ -1039,7 +1040,8 @@
       "server/merge-queue/scenarios-landed-drafts-edges.integration.test.ts",
       "server/merge-queue/notices.ts",
       "server/merge-queue/scenarios-nothing-left.integration.test.ts",
-      "server/landed-branch-agreement.integration.test.ts"
+      "server/landed-branch-agreement.integration.test.ts",
+      "server/spec-runner.ts"
     ]
   },
   "§app.merge-queue/run-logs": {

@@ -4,8 +4,20 @@
 
 /** A design's life on its card. Queued: waiting for a seat or a provider slot; Writing: its session is
     at work; Fixing: the server sent its session back to repair a page that didn't land (`fix` says why);
-    Ready: a finished page exists; Failed: the last attempt produced none. */
-export type DesignStatus = "queued" | "writing" | "fixing" | "ready" | "failed";
+    Ready: a finished page exists; Failed: the last attempt produced none; Stopped: someone stopped it before its
+    first page, and it never starts again by itself (Start Again does). */
+export type DesignStatus = "queued" | "writing" | "fixing" | "ready" | "failed" | "stopped";
+
+/** Who stopped, removed or restored a design: the person (their click or a script), the Creative Director, or the main chat. */
+export type DesignActor = "user" | "coordinator" | "main";
+
+/** What a stopped design had written when it was stopped, kept as a still picture (never a version). */
+export interface DesignStill {
+  /** Its number among this design's stills, from 1: `GET /api/design/:label/page?still=<n>` reads it. */
+  n: number;
+  chars: number;
+  at: string;
+}
 
 /** Why a design is being fixed (status "fixing"), for its card. */
 export interface DesignFix {
@@ -37,6 +49,25 @@ export interface DesignVersion {
   /** What asked for it. */
   by: "first" | "refine" | "chat" | "coordinator";
   note?: DesignNote;
+  /** The views its page names (data-sova-view, else its role="tab" controls), in page order; absent: none, or a page
+      saved before views were read. The first screen is never listed. */
+  views?: DesignView[];
+}
+
+/** One view of a version's page, and what Sova's browser found when it clicked its way there. */
+export interface DesignView {
+  name: string;
+  /** The view that must be open for its control to be on screen; absent: the first screen. */
+  via?: string;
+  /** declared: the designer named it; found: a role="tab" control in a page that names none. */
+  source: "declared" | "found";
+  /** unchecked: not yet clicked in a browser; unreachable: its control couldn't be clicked; unchanged: clicking it
+      left the screen as it was. Both are warnings, never a reason to send the page back. */
+  state: "ok" | "unreachable" | "unchanged" | "unchecked";
+  /** It is the screen the page opens on: its control left the first screen unchanged, and it was the only one. */
+  start?: true;
+  /** What went wrong, in words a model can act on. */
+  problem?: string;
 }
 
 /** What is known of the message a person or the main chat last sent a design's session (t20). */
@@ -99,6 +130,20 @@ export interface DesignRecord {
   sessionEnded?: boolean;
   /** The model's name as the picker shows it. */
   modelName: string;
+  /** The thinking level its session runs at. Absent: low (the Setup card's designs); null: the model's own default. */
+  effort?: string | null;
+  /** Set while status is "stopped": who stopped it, and the still of what it had written, when it had written any. */
+  stopped?: {
+    at: string;
+    by: DesignActor;
+    still?: DesignStill;
+    /** It was removed while still waiting for its first session, so it never started: it reads as waiting, not stopped,
+        once restored, until someone starts it. */
+    waiting?: true;
+  };
+  /** Set aside: shown in the folded Removed section, never started by itself, and still counted against the limits.
+      Its status, versions and session are as they were; Restore clears this. */
+  removed?: { at: string; by: DesignActor };
   /** The session's process, as far as the server knows. */
   workerState: "idle" | "working" | "stopped" | "ended";
   /** The model can read images; if false, Refine looks at a text outline and the card says so. */
@@ -212,12 +257,62 @@ export interface DesignRun {
   updatedAt: string;
 }
 
+/** One thing a Lookbook's designs were told, or done to them, in time order (`GET /api/design/history?path=`): each
+    Full Prompt revision, a Start, every message a design was given (by whom, its words, the version it led to), a new
+    design and what it was made from, and each stop, removal and restore. Never a page's code. */
+export interface DesignHistoryItem {
+  /** h1, h2 ...: never reused in a chat. */
+  id: string;
+  at: string;
+  kind: "prompt" | "start" | "message" | "new" | "again" | "stop" | "remove" | "restore";
+  /** user: the person (their box, card, Chat or click); coordinator: the Creative Director; main: the main chat passing
+      something on; server: Sova itself (a page sent back to be fixed). */
+  by: "user" | "coordinator" | "main" | "server";
+  runId?: string;
+  /** The design it concerns (message, new, again, stop, remove, restore). */
+  label?: string;
+  /** prompt: the Full Prompt's revision (the brief's textRev); start: the revision Start launched. */
+  rev?: number;
+  /** prompt: the whole Full Prompt; start: what each design was given beyond its style and layout (the Full Prompt with
+      Sova's additions); message: the words as sent; new: the Creative Director's instructions. */
+  text?: string;
+  /** start: each design it launched. */
+  designs?: { label: string; direction: string; layout?: string; model: string }[];
+  /** new: the labels it was made from (empty: made from the brief); its model, style and layout. */
+  parents?: string[];
+  model?: string;
+  direction?: string;
+  layout?: string;
+  /** message: what sent it. refine and chat are a person's; fix is Sova sending a page back. */
+  via?: "refine" | "chat" | "coordinator" | "main" | "fix";
+  /** message: its session had ended, so a fresh one started from the stored page. */
+  fresh?: true;
+  /** The version this led to, once it landed (message, new, again). */
+  version?: number;
+  /** stop: the still kept of what it had written. */
+  still?: DesignStill;
+  /** The Creative Director's tool call that did this, so its raw tool row can fold into this item. */
+  toolCallId?: string;
+  /** Rebuilt from what an older Lookbook kept, not recorded at the time. */
+  recovered?: true;
+}
+
+/** `GET /api/design/history?path=`. */
+export interface DesignHistory {
+  v: 1;
+  items: DesignHistoryItem[];
+  /** Items were dropped from the front to stay within the cap. */
+  trimmed?: true;
+}
+
 /** Everything a chat's Design card and Gallery tab read (`GET /api/design?path=`). */
 export interface DesignChatView {
   v: 1;
   sessionId: string;
   runs: DesignRun[];
   designs: DesignRecord[];
+  /** The history's newest item and count: when either moves, fetch `GET /api/design/history` again. */
+  history?: { count: number; last?: string };
   /** Filled in by the coordinator's own code (a2); null before it starts. */
   coordinator: DesignCoordinatorView | null;
   caps: DesignCaps;

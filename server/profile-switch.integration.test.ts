@@ -7,8 +7,7 @@
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
 import { after, describe, test } from "node:test";
 import type { ChatServerMessage } from "../shared/protocol";
 import type { ChatProfileState } from "../shared/profile-switch";
@@ -20,10 +19,10 @@ const agentDir = realpathSync(mkdtempSync(join(tmpdir(), "sova-profile-switch-")
 process.on("exit", () => rmSync(agentDir, { recursive: true, force: true }));
 process.env.PI_CODING_AGENT_DIR = agentDir;
 writeFileSync(join(agentDir, "models.json"), JSON.stringify(scriptedModelsJson()));
-// The mode extension by its real path: the helper pick is its entry, and a chat without a mode owner can't switch.
+// Sova's mode engine runs in every chat (no settings entry): the helper pick is its entry.
 writeFileSync(
   join(agentDir, "settings.json"),
-  JSON.stringify({ defaultProvider: "scripted", defaultModel: "scripted", retry: { enabled: false }, extensions: [resolve(dirname(fileURLToPath(import.meta.url)), "../pi-config/extensions/mode")] }),
+  JSON.stringify({ defaultProvider: "scripted", defaultModel: "scripted", retry: { enabled: false } }),
 );
 // Settings → Models turns zai off: a profile on a zai model is refused before anything is written.
 writeFileSync(join(agentDir, "model-policy.json"), JSON.stringify({ version: 1, disabledProviders: ["zai"], disabledModels: [], subagentDisabledProviders: [], subagentDisabledModels: [] }));

@@ -1,17 +1,15 @@
 // Run: bun test server/project-modes-chat.test.ts (or pnpm test)
 // A project's own minor modes through the mode route (§chat.mode-menu/project-modes), against a REAL hosted
-// runtime whose only extension is this repo's mode extension, in a throwaway agent dir and a throwaway
+// runtime whose only mode owner is Sova's engine (no settings entry), in a throwaway agent dir and a throwaway
 // checkout with two modes (one plain, one with a tool) and one broken folder. No model request is made:
 // every switch runs the extension's own /mode handler.
 import assert from "node:assert/strict";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
 import { after, test } from "node:test";
 import type { ChatModeResult, ProjectModeApprovalNeeded } from "../shared/protocol";
 
-const here = dirname(fileURLToPath(import.meta.url));
 const dir = realpathSync(mkdtempSync(join(tmpdir(), "sova-project-modes-")));
 process.on("exit", () => rmSync(dir, { recursive: true, force: true }));
 const repo = realpathSync(mkdtempSync(join(tmpdir(), "sova-project-modes-repo-")));
@@ -31,7 +29,7 @@ mode("plain", "---\ndescription: Plain words\n---\nSay hello first.\n");
 mode("rel", '---\ndescription: Release checks\ntools: [{"name": "status", "description": "Shows the status", "command": ["./status.sh"]}]\n---\nCheck the release.\n', { "status.sh": "#!/bin/sh\necho ok\n" });
 mode("broken", "---\ndefault: on\n---\nNo.\n");
 
-writeFileSync(join(dir, "settings.json"), JSON.stringify({ extensions: [resolve(here, "../pi-config/extensions/mode")] }));
+writeFileSync(join(dir, "settings.json"), JSON.stringify({}));
 writeFileSync(join(dir, "mode.json"), JSON.stringify({ version: 1, mode: "normal", strict: false, minorModes: [] }));
 process.env.PI_CODING_AGENT_DIR = dir;
 delete process.env.SOVA_CHAT_STATE_ROOT;

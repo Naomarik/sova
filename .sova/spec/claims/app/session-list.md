@@ -1363,8 +1363,9 @@ is the same gesture with a mouse and a thumb: one Pointer Events path. The pure 
   (surface fill, `--shadow-2`) and the phone buzzes briefly where it can (`navigator.vibrate`).
   Moving the lifted row more than 10px opens the overlay. A still mouse held 500ms lifts the row
   the same way. A touch that moves before the lift is a scroll or a tap, exactly as before.
-  **Letting go of a lifted row without moving it does nothing**: the row settles back, nothing
-  opens and nothing is picked. The list has no multi-select: a row is filed one at a time, here
+  **Letting go of a lifted row without moving it** does nothing with a mouse: the row settles back,
+  nothing opens and nothing is picked. With a finger or a pen it opens the row's menu
+  (§app.session-list/row-menu), and still nothing is picked. The list has no multi-select: a row is filed one at a time, here
   or with the session pane's `Move into group`.
 - **What a press is, and what it stops being.** A press becomes a hold only if it stays within
   10px of where it started and nothing interrupts it. Before the hold, a mouse that moves 6px
@@ -1467,6 +1468,62 @@ is the same gesture with a mouse and a thumb: one Pointer Events path. The pure 
 group, or Cancel." through the polite region. Escape cancels. Every tile carries its words, and
 disabled tiles carry `aria-disabled` and their reason. The overlay is a pointer gesture: a
 keyboard files a session with the session pane's `Move into group`, which does the same change.
+
+## §app.session-list/row-menu — A session row's menu: right-click or hold
+
+A session row in the sidebar has a menu of its own, opened from the row itself: a right-click with
+a mouse, a hold with a finger or a pen. It is one of Sova's right-click and hold menus, and opens,
+sits and closes as they all do (§design/context-menus). Every row in it is an action Sova already
+offers elsewhere (the Agents board's ⋯, §app.insights/team-cards; the drop overlay,
+§app.session-list/drop-overlay; the session pane's Archive Session,
+§app.session-list/regions-top-and-archive), and it does exactly what that action does, with the
+same toasts.
+
+- **Where.** On every session row the sidebar draws, whatever region holds it: Recent, a group, a
+  folder, a project, the Archive, Automations, and a search's hits in any of them. Nowhere else:
+  a Needs you row is not a session row and has no menu (§app.session-list/needs-you), and group
+  headings, project headings, panes, messages and the Agents board keep their own menus.
+- **With a mouse.** The right-click never opens the session, and a right-click on another row
+  while a menu is open moves the menu to that row. Holding a still mouse until the row lifts and
+  letting go still does nothing.
+- **With a finger or a pen.** The hold is the one that lifts the row for dragging: hold the row
+  until it lifts (about 500ms, with a short buzz where the phone can,
+  §app.session-list/drop-overlay), then let go without moving, and the menu opens. Moving the
+  lifted row still drags it to the drop overlay instead, a touch that moves before the lift still
+  scrolls, and a tap still opens the session. The phone's own long-press menu never shows over a
+  row. The row gains no ⋯ button.
+- **Its heading.** The session's title, on one line, cut short when long.
+- **Its rows**, in two groups: the title's (Rename…, Use Gist as Title, Reset to Original Title)
+  and the session's (Move to Group…, Copy Path, Archive or Unarchive). A row that can't apply to
+  this session is left out or disabled, and a disabled row says why on its second line.
+  - **Rename…** turns the menu into a title field holding the current title, without closing it:
+    Enter saves it to Sova's title store (§app.session-list/session-titles), Escape cancels, an
+    empty field goes back to the original title, and a value equal to the title it opened with
+    changes nothing, as the board's Rename… does.
+  - **Use Gist as Title** shows the gist under its label and makes it the title, cut to the title
+    limit; disabled with "No gist yet." or "The gist is already the title." **Reset to Original
+    Title** shows the original title under its label and clears the rename; disabled with "Not
+    renamed." Both as the board's ⋯ has them.
+  - A chat Sova names itself (§app.session-list/fixed-names) has none of these three rows.
+  - **Move to Group…** turns the menu into the list of places: No group, then each group in its
+    creation order with the row's current one checked, then New Group…. Picking a group files the
+    session there with the group toasts ("Added to “{name}”." · "Moved to “{name}”." ·
+    "Removed from “{name}”."); picking its current group does nothing; New Group… closes the menu
+    and opens the New group dialog the drop overlay opens. An organization session or a peer's
+    session has Move to Group… disabled, with the drop overlay's reason: "Organization sessions
+    stay with their project." or "Groups hold this host's sessions only. That one lives on
+    {host}."
+  - **Copy Path** copies the session file's path: "Copied path.", or "Couldn't reach the
+    clipboard. Nothing was copied."
+  - **Archive** does what a drop on Archive does: the row moves at once, "Archived. Find it under
+    Archive." with Undo, an organization session going to its project's Done and an empty one
+    being deleted instead. When the drop overlay's Archive can't take the row, the row here is
+    disabled with the same words ("Can't archive: {reason}", "Already in the Archive."). On an
+    archived session it reads **Unarchive** and does what Undo does: the row moves back at once,
+    "Moved back to Folders." or "Moved back to {project}.".
+- **While it is open.** The menu stays on its session: a list refresh redraws its rows from the
+  session as it is now, and closes the menu when the session has left the list.
+
 
 ## §app.session-list/session-titles — Session titles: Sova's own store
 
@@ -1684,8 +1741,9 @@ the chat (cleared, pruned, or kept under another state root) does it read the ge
   sweep, Name sessions, Shorten long titles or Regenerate title, §app.session-list/auto-titles),
   not a rename by the user or by the Overseer (§app.session-list/session-titles), and not an alias
   (§app.overseer/session-names).
-- **Nothing offers to.** On such a chat the Agents board's ⋯ has no Rename…, Use Gist as Title or
-  Reset to Original Title (§app.insights/team-cards), and an open chat's head has no Regenerate
+- **Nothing offers to.** On such a chat the Agents board's ⋯ and the sidebar row's menu have no
+  Rename…, Use Gist as Title or Reset to Original Title (§app.insights/team-cards,
+  §app.session-list/row-menu), and an open chat's head has no Regenerate
   title. Every other way is refused (409 from the title route), nothing stored, with one plain
   sentence: "An overseer keeps its own name.", "The merge queue's chats keep the names Sova gives
   them.", "A release chat keeps the name Sova gives it." or "A gathering session keeps its public

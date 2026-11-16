@@ -3,6 +3,7 @@ import { expect } from "./testing/expect";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { parseDefinition, type ProjectDef } from "../../shared/project-contract";
+import { SPEC_CORE } from "../spec-runner";
 import { scratchRoot } from "../test-scratch";
 import { checksOf, envOf, failingFilesIn, freshOf, planChecks, readCheckOut, rerunArgvOf, reusedWords, templateVarsOf, testKey } from "./checks";
 import { isReleaseRun, passedEnd } from "./run";
@@ -68,6 +69,7 @@ describe("what a run checks", () => {
     process.env.MISE_STATE_DIR = "/ws/mise-state";
     process.env.MISE_GITHUB_TOKEN = "leak";
     process.env.XDG_DATA_HOME = "/ws/data";
+    process.env.SOVA_SPEC_CORE = "/old/sova/pi-config/extensions/spec/core";
     try {
       const scope = { project: "/p/demo", projectId: "demo1", copy: "/p/.worktrees/demo-merge", slot: 19, data: "/s/data", target: "master", base: "b".repeat(40), tip: "t".repeat(40), changedFile: "/s/changed.txt" };
       const e = envOf(declared, scope, { step: "unit", out: "/s/out.json", picked: true });
@@ -78,6 +80,8 @@ describe("what a run checks", () => {
       expect(e.MISE_STATE_DIR).toBe("/ws/mise-state");
       expect(e.XDG_DATA_HOME).toBe("/ws/data");
       expect(e.MISE_GITHUB_TOKEN).toBeUndefined();
+      // The spec tools are the running Sova's own, whatever the server's env or the agent dir's links say.
+      expect(e.SOVA_SPEC_CORE).toBe(SPEC_CORE);
       // No names set up for this project: a file that doesn't exist (scan secrets only, push held), never the server's.
       expect(e.SOVA_LEAK_NAMES).toBe("/s/data/no-private-names.json");
       expect(envOf(declared, { ...scope, leakNames: "/s/names.json" }).SOVA_LEAK_NAMES).toBe("/s/names.json");
@@ -85,6 +89,7 @@ describe("what a run checks", () => {
       expect(templateVarsOf(declared, scope)).toMatchObject({ "merge.base": scope.base, "merge.tip": scope.tip, "merge.target": "master", checkout: scope.copy, main: "/p/demo", "ports.web.http": String(5100 + 19) });
     } finally {
       delete process.env.CLAUDE_CONFIG_DIR;
+      delete process.env.SOVA_SPEC_CORE;
       delete process.env.SOVA_CHAT_ID;
       delete process.env.ANTHROPIC_API_KEY;
       delete process.env.MISE_STATE_DIR;

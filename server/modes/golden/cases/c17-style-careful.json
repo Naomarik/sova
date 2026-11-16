@@ -21,7 +21,8 @@
    "team_succeed",
    "team_list",
    "project_verbs",
-   "queue_push"
+   "queue_push",
+   "spec"
   ],
   "entries": [],
   "extensions": [
@@ -42,7 +43,8 @@
    "<inline:sova-topics>",
    "<inline:sova-tours>",
    "<inline:sova-create-settings>",
-   "<inline:sova-transcript-cards>"
+   "<inline:sova-transcript-cards>",
+   "<inline:sova-spec>"
   ]
  },
  {
@@ -68,6 +70,7 @@
    "team_list",
    "project_verbs",
    "queue_push",
+   "spec",
    "align",
    "vis_guide",
    "vis_check"
@@ -108,7 +111,7 @@
        "cwd": "<cwd>\n<ws:plain>\n</cwd>",
        "mode": "@7086c0dc51f6cc75"
       },
-      "toolsAdded": "@5981e0956e011c4c"
+      "toolsAdded": "@eea2056e6ec26e7d"
      },
      {
       "role": "user",
@@ -142,6 +145,7 @@
    "team_list",
    "project_verbs",
    "queue_push",
+   "spec",
    "align",
    "vis_guide",
    "vis_check"
@@ -169,7 +173,7 @@
       "cwd": "<cwd>\n<ws:plain>\n</cwd>",
       "mode": "@7086c0dc51f6cc75"
      },
-     "toolsAdded": "@a4a67b88c2ada0cb"
+     "toolsAdded": "@2a57b0d11fbbfa3a"
     }
    }
   ],

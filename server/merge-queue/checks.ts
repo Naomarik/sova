@@ -12,6 +12,7 @@ import type { CheckPick, CheckSource, ChecksDeclared, RunStep } from "../../shar
 import type { Argv, MergeCheckDecl, ProjectDef } from "../../shared/project-contract";
 import { portsFor, render } from "../../shared/project-contract";
 import { inheritedEnv } from "../project-services/env-allow";
+import { SPEC_CORE } from "../spec-runner";
 import { runProc, type Proc } from "./copy";
 
 /** What the project declares for its checks. */
@@ -98,8 +99,8 @@ export const picksOf = (list: readonly PlannedCheck[]): CheckPick[] =>
 // ---- environment ----------------------------------------------------------------------------------
 
 /** What a check inherits from the server: the engine's own allow-list (no secret, no chat or repository variable;
- *  the XDG homes and mise's settings, so its mise is the server's), plus where the agent dir and spec tools are. */
-const CHECK_EXTRA = ["PI_CODING_AGENT_DIR", "SOVA_SPEC_CORE", "SOVA_RUNTIME", "SOVA_BUN"];
+ *  the XDG homes and mise's settings, so its mise is the server's), plus where the agent dir is. */
+const CHECK_EXTRA = ["PI_CODING_AGENT_DIR", "SOVA_RUNTIME", "SOVA_BUN"];
 
 /** The facts a run gives its processes and templates. */
 export interface CopyScope {
@@ -158,6 +159,8 @@ export function envOf(def: ProjectDef, s: CopyScope, extra: { step?: string; out
   const e: Record<string, string> = inheritedEnv(process.env, CHECK_EXTRA);
   Object.assign(e, {
     SOVA_V: "1",
+    // The running Sova's own spec tools (a check's spec step runs them), whatever the agent dir links to.
+    SOVA_SPEC_CORE: SPEC_CORE,
     SOVA_PROJECT: s.project,
     SOVA_INSTANCE: `merge-${s.projectId}`,
     SOVA_SLOT: String(s.slot),

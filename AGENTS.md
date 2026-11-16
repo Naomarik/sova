@@ -20,7 +20,7 @@ also update Y" list live in its guide: read the guide of every area your task to
 | Frontend | [agents/frontend/overview.md](agents/frontend/overview.md) | `src/`: Solid, files the server imports, browser testing, project skills |
 | Testing | [agents/testing/overview.md](agents/testing/overview.md) | test tiers, the runner, tier guard, hermetic test env |
 | pi-config extensions | [agents/extensions/overview.md](agents/extensions/overview.md) | `pi-config/`: the contracts Sova parses, what the server imports, one guide per extension |
-| Modes | [agents/modes/overview.md](agents/modes/overview.md) | the mode extension and its minor modes; the spec mode and spec tools in [agents/modes/spec/overview.md](agents/modes/spec/overview.md) (CHANGELOG, EVOLUTION, GOALS, replay) |
+| Modes | [agents/modes/overview.md](agents/modes/overview.md) | Sova's modes (the `mode` folder's texts and rules, `server/modes/`) and their minor modes; the spec mode and spec tools in [agents/modes/spec/overview.md](agents/modes/spec/overview.md) (CHANGELOG, EVOLUTION, GOALS, replay) |
 | Statecharts | [agents/statecharts/overview.md](agents/statecharts/overview.md) | `statecharts/`: the org's statecharts |
 
 ## Layout & ownership

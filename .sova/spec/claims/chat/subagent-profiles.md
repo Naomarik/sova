@@ -34,8 +34,8 @@ put the previous library back (§chat.subagent-profiles/replaced).
   `<agent dir>/subagent-profiles.json` — the shape, the strict parse, the reader, the seeding and
   an atomic writer — and the **device default** `<agent dir>/subagent-profiles-default.json`,
   which profile new chats on this device start from, written when this computer's default profile
-  is chosen (§chat.profiles/default). The mode extension, the subagents extension
-  and Sova's server all read both through that module.
+  is chosen (§chat.profiles/default). Sova's modes, the subagents extension
+  and the rest of Sova's server all read both through that module.
 - **Shape (version 1).** The library is `{version: 1, profiles: [{id, name, delegate, teams,
   members, specWriter}]}`. `delegate` is the four work kinds' `{primary, fallback}`; `teams` is
   `{coordinator, monitor, handover}` as in `team-defaults.json`, or `null` (no models chosen: both
@@ -121,7 +121,7 @@ chat keeps its own model and modes, and the agent picks every worker."
   the library) reads as Off. Malformed or dangling defaults carry a reason where the current
   profile is shown; an absent default simply shows Off. A malformed or unreadable library falls
   through to the legacy files.
-- **Where it is read.** The mode extension resolves it for Delegate's routing and the spec writer
+- **Where it is read.** Sova's modes resolve it for Delegate's routing and the spec writer
   at each turn boundary, in every major mode. The subagents extension resolves it, from the
   parent session's branch, at every `team_create` and `team_add`, at `team_succeed` (the retire
   timeout), at every roster answer to a coordinator or monitor (the monitor's thresholds), and for

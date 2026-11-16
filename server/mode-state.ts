@@ -1,4 +1,4 @@
-// The mode extension's settings file (~/.pi/agent/mode.json), owned by pi-config's mode extension.
+// The modes' default file (~/.pi/agent/mode.json), its format in pi-config/extensions/mode/state.ts.
 // The mode itself is per session; this file is the DEFAULT new sessions start from. We import
 // exactly its three pure modules (state.ts, minor.ts, and delegate.ts in server/delegate.ts:
 // node:fs/node:path only) so validation, the mode and minor-mode lists and
@@ -160,8 +160,7 @@ export function parseModeRequest(body: unknown): ModeRequest {
 /**
  * What `Save as default` writes for a chat on `state`: its major mode (in Create, its last normal or
  * Delegate choice, §chat.create-mode/per-chat-only), strict flag and minor modes —
- * exactly the three fields `/mode default` writes in the TUI (saveDefault in
- * pi-config/extensions/mode/index.ts), and nothing else, so shortcuts and any other field in the
+ * exactly the three fields the mode default holds (state.ts saveState), and nothing else, so shortcuts and any other field in the
  * file are kept by writeMode's re-read. The minors are copied, never shared with the chat's state.
  */
 export function defaultPatchOf(state: Pick<ModeState, "mode" | "lastMode" | "strict" | "minorModes">): Required<Pick<ModePatch, "mode" | "strict" | "minorModes">> {

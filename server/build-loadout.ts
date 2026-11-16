@@ -350,7 +350,7 @@ export async function applyCodingMode(path: string, mode: CodingModeSwitch): Pro
   if (Object.keys(patch).length || mode.subagentProfile === undefined) {
     const plan = await chat.applyMode(patch);
     if (plan !== "command")
-      throw new OrgError(plan === "unsupported" ? "the mode extension is not loaded in it" : "it is open in another writer (a terminal, or a process Sova doesn't know)", 409);
+      throw new OrgError(plan === "unsupported" ? "it has no modes" : "it is open in another writer (a terminal, or a process Sova doesn't know)", 409);
     if (!(await chat.pinMode())) throw new OrgError("its mode entry could not be written", 409);
   }
   // A named profile switches its whole Models part, checked first, all or nothing (§chat.profiles/switch); never its

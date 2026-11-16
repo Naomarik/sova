@@ -8,12 +8,11 @@
 // context reaches. bind() hands them to the extension with `/mode sync`; without it the wake
 // turn's tool call patched the section out (`mode: null`) and the next user turn patched it back.
 //
-// Real SDK runs, the real mode extension; only the model is a stub (no credentials here).
+// Real SDK runs, Sova's mode engine; only the model is a stub (no credentials here).
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join, resolve } from "node:path";
 import { after, test } from "node:test";
 import type { ChatServerMessage } from "../shared/protocol";
 import { piSession } from "./harness/pi/testing/handle";
@@ -38,9 +37,9 @@ writeFileSync(
 }
 `,
 );
-// This repo's mode extension, by its real path so its imports of sibling extensions resolve. No
+// No mode entry in settings: Sova's engine runs the modes in every chat. No
 // mode.json: the default is normal with no minor modes, so only the session's pin turns align on.
-writeFileSync(join(agentDir, "settings.json"), JSON.stringify({ extensions: [resolve(dirname(fileURLToPath(import.meta.url)), "../pi-config/extensions/mode")] }));
+writeFileSync(join(agentDir, "settings.json"), JSON.stringify({}));
 
 const { acquireChat, disposeAllChats, disposeHeldChat } = await import("./chat-manager");
 const { markOwned } = await import("./write-guard");

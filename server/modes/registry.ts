@@ -16,7 +16,7 @@ export function listingFor(cwd: string): MergedModeListing {
   return mergeModeListings(project, project.root === null ? null : discoverPersonalModes());
 }
 
-/** The source the engine reads while Sova runs chat modes: project and personal modes on one listing. */
+/** The source the engine reads: project and personal modes on one listing. */
 export const PERSONAL_AND_PROJECT: ModeSource = {
   listing: (cwd) => listingFor(cwd),
   read: (listing, id) =>

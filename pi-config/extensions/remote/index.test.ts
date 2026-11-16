@@ -44,6 +44,34 @@ async function setup(opts: { delayMs?: number; deps?: RemoteDeps } = {}) {
 	return { far, calls, remote, done: () => (remote.dispose(), rmSync(far, { recursive: true, force: true })) };
 }
 
+test("a remote chat's bash never carries this machine's SOVA_SPEC_CORE: the spec line finds the far machine's own tools", async () => {
+	const { SPEC_CORE_SHELL } = await import("../mode/minor.ts");
+	const far = mkdtempSync(join(tmpdir(), "pi-remote-far-"));
+	const farHome = join(far, "home");
+	const sent: string[] = [];
+	// The far machine: its own environment (a login's HOME and PATH), none of this process's.
+	const exec = async (argv: readonly string[], o?: RunOptions) => {
+		sent.push(argv[argv.length - 1]!);
+		return runArgv(["env", "-i", `HOME=${farHome}`, `PATH=${process.env.PATH ?? ""}`, "sh", "-c", argv[argv.length - 1]!], o);
+	};
+	const before = process.env.SOVA_SPEC_CORE;
+	process.env.SOVA_SPEC_CORE = "/local/sova/pi-config/extensions/spec/core";
+	const remote = new Remote({ name: "t", kind: "ssh", ssh: { host: "example.invalid" }, cwd: far }, [], far, { exec });
+	try {
+		await remote.preflight();
+		sent.length = 0;
+		const bash = createBashToolDefinition(far, { operations: remote.bashOps() });
+		const r = await bash.execute("1", { command: `${SPEC_CORE_SHELL}; printf '%s' "$core"` }, undefined, undefined, undefined as never);
+		assert.equal(text(r).trim(), `${farHome}/.pi/agent/extensions/spec/core`);
+		assert.ok(sent.length > 0 && sent.every((c) => !c.includes("/local/sova")), "nothing local is sent along");
+	} finally {
+		if (before === undefined) delete process.env.SOVA_SPEC_CORE;
+		else process.env.SOVA_SPEC_CORE = before;
+		remote.dispose();
+		rmSync(far, { recursive: true, force: true });
+	}
+});
+
 test("read costs one invocation", async () => {
 	const { far, calls, remote, done } = await setup();
 	writeFileSync(join(far, "a.txt"), "hello\nworld\n");

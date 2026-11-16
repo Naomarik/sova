@@ -495,9 +495,6 @@ export interface ChatRouter {
   close(path: string, message: string, opts?: CloseOpts): Promise<boolean>;
   /** A special chat's composer may have changed: each in a process of its own is told. */
   composersChanged?(): void;
-  /** A save changed "Sova runs chat modes" (§chat.mode-menu/sova-runs-modes): every open chat whose mode owner
-      differs reloads at its next quiet moment; a flip back first cancels it. */
-  modesSwitched?(on: boolean): void;
   /** Resolves once this path's chat, if a previous server left it running, is taken back (bounded),
       so `get` can be trusted for it; at once when none of it was left running. */
   takenBack?(path: string): Promise<void>;
@@ -513,9 +510,6 @@ export function setChatRouter(r: ChatRouter | null): void {
 
 /** A special chat's composer may have changed (a project archived or not): each chat in a process of its own is told. */
 export const specialComposersChanged = (): void => router?.composersChanged?.();
-
-/** A save changed "Sova runs chat modes": the router has each open chat follow at its next quiet moment. */
-export const chatModesSwitched = (on: boolean): void => router?.modesSwitched?.(on);
 
 /** Set by a server that will install a router (server/index.ts, before its orgs open): until it is
     installed, chatsReady waits for it, so a reader at boot never mistakes "not taken back yet" for "none". */

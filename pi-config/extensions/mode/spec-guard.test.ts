@@ -55,6 +55,7 @@ test("coreDir resolves like spec-mode.md's $core line", () => {
 	assert.equal(coreDir({}, "/home/u"), "/home/u/.pi/agent/extensions/spec/core");
 	assert.equal(coreDir({ PI_CODING_AGENT_DIR: "/x/agent" }, "/home/u"), "/x/agent/extensions/spec/core");
 	assert.equal(coreDir({ PI_CODING_AGENT_DIR: "~/a" }, "/home/u"), "/home/u/a/extensions/spec/core");
+	assert.equal(coreDir({ SOVA_SPEC_CORE: "/own/pi-config/extensions/spec/core", PI_CODING_AGENT_DIR: "/x/agent" }, "/home/u"), "/own/pi-config/extensions/spec/core", "Sova's own copy first");
 	assert.ok(SPEC_CORE_SHELL.includes("/extensions/spec/core"), "the prompt's line names the same directory");
 });
 

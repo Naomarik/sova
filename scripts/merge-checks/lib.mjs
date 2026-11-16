@@ -78,7 +78,8 @@ export function agentDir(env = process.env) {
   return v === "~" ? homedir() : v.startsWith("~/") ? join(homedir(), v.slice(2)) : v;
 }
 
-/** The spec tools: SOVA_SPEC_CORE, else the agent's installed extensions/spec/core. */
+/** The spec tools: SOVA_SPEC_CORE (the merge queue and every Sova chat set it to the running Sova's own), else the
+ *  agent's installed extensions/spec/core (a run by hand from a terminal). */
 export const specCore = (env = process.env) => env.SOVA_SPEC_CORE || join(agentDir(env), "extensions", "spec", "core");
 
 /** One extension's line from pi-config/README.md's Tests block, as commands of argv (no shell). */

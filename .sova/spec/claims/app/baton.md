@@ -117,7 +117,7 @@ Scoped `show_tour` presents only checked, operator-reviewed editions already bou
   own loadout: the tools above but `propose_roster_edit`, `read_link`, `inspect_files` and
   `confirm_file`, plus a Sova-served `align`; its prompt adds the planning section that claim
   describes.
-- It has no mode (no mode extension loads); its composer has no mode switch. What it can do is its
+- It has no mode (Sova runs no modes in it); its composer has no mode switch. What it can do is its
   abilities (§app.baton/abilities), shown and changed on its strip.
 - **Budget**: a message limit — messages in, outsiders' and operator's together (the wrap-up's
   prompt is not one). The default is 60, changed in Settings → Organizations

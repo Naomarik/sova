@@ -180,7 +180,7 @@ answered by Sova itself and never sent.
   - **Prompt templates and skills** expand into a **user** message (the expanded text), then an
     assistant turn.
   - **Extension commands** may add `custom` entries, which render as **info rows** (or
-    **unknown** rows with the Raw entry disclosure) — except the mode extension's markers, which
+    **unknown** rows with the Raw entry disclosure) — except the markers of Sova's modes, which
     render nothing (§chat.transcript/transcript-items). They may also send `ui_request`s (§app/extension-dialogs), or
     produce nothing visible.
   - **A persisted running row.** An extension command may also append a `custom` entry at the

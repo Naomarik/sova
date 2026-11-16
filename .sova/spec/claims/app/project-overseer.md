@@ -780,8 +780,8 @@ user row.
   as Start Coding Session does, before its first prompt. The mode is applied, and written into the
   session file as its `mode` entry (§chat/mode-menu), before the first prompt, even when it equals
   the default, so the session's first turn runs in it and a later change to `mode.json` never
-  moves it. A mode that can't be applied (the session is held elsewhere, the mode extension is
-  missing) sends no prompt: the session stays, listed and counted, and the tool result (or the
+  moves it. A mode that can't be applied (the session is held elsewhere, or it loads no modes,
+  §chat.mode-menu/sova-runs-modes) sends no prompt: the session stays, listed and counted, and the tool result (or the
   page's error) says "Started, but not prompted: its mode could not be set." New Coding Session
   sends no prompt anyway; its page error says "Started, but its mode could not be set. Set it from
   the chat's mode menu before you send." Neither has a mode picker; the chat's own mode menu can

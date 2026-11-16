@@ -3,15 +3,14 @@
 
 While the **align** minor mode is on (§chat/mode-menu), the agent agrees with the user on what to
 build before building it, and records each agreement as an **alignment**: a structured document it
-keeps with one tool, `align`, from pi's `mode` extension (`pi-config/extensions/mode`). A session
-can hold several alignments at once, one per concern. The user never edits one: they answer in
-chat, and the agent records the answer. Sova shows each alignment as a card in the transcript, in
-the composer's waiting badge, and a count on the session's row. It works the same in the TUI and in Sova,
-for sessions Sova holds and sessions it only watches, with one web-only shortcut: in a chat Sova
-holds, the card can tick recommendations to take, pick an option as a question's answer, and go
-with all of the recommendations (§chat.alignment/card).
-Those only compose an ordinary message for the agent to record, exactly as if it were typed; the
-TUI user types the same words. How readily an alignment opens (Eagerness), how the agent writes
+keeps with one tool, `align`, from Sova's modes (`pi-config/extensions/mode/align-tool.ts`). A
+session can hold several alignments at once, one per concern. The user never edits one: they answer
+in chat, and the agent records the answer. Sova shows each alignment as a card in the transcript, in
+the composer's waiting badge, and a count on the session's row, for sessions Sova holds and sessions
+it only watches; a pi terminal has no align (§chat.alignment/tui). In a chat Sova holds, the card
+can also tick recommendations to take, pick an option as a question's answer, and go with all of the
+recommendations (§chat.alignment/card).
+Those only compose an ordinary message for the agent to record, exactly as if it were typed. How readily an alignment opens (Eagerness), how the agent writes
 alignments (its writing style) and whether it draws on the card (Visuals) are set in Settings →
 Alignment (§chat.alignment/settings-file, §chat.alignment/eagerness, §chat.alignment/style,
 §chat.alignment/visuals).
@@ -157,8 +156,8 @@ questions decided, accepted, reopened or dropped, a status move) and a one-line 
 snapshot wins, in the order documents were last touched. So a rewind, `/tree`, a fork and a
 compaction all land on the right state with nothing extra written, and a failed call (an error
 result) is never state. Opening a session writes nothing. One fold function
-(`pi-config/extensions/mode/align.ts`, node builtins only) is shared by the extension and Sova's
-server.
+(`pi-config/extensions/mode/align.ts`, node builtins only) is shared by Sova's modes and the rest
+of Sova's server.
 
 **Older sessions** keep their `align-doc` entries from before the tool (a markdown document the
 extension parsed from the agent's reply). They are read-only history: their card renders as it did
@@ -231,7 +230,7 @@ any more, and they count toward no badge, row or digest.
   question is open: a dead worker or a parallel concern must never leave the session stuck.
 - **One nudge per run.** When a run is about to settle, align is on, the run made no `align` call,
   its final reply reads like a plan that asks the user to decide, and, **under Careful only, the
-  run is marked as a change request** (§chat.alignment/eagerness), the extension adds one hidden
+  run is marked as a change request** (§chat.alignment/eagerness), Sova's modes add one hidden
   message (`align-nudge`) telling the agent to record it with `align` (or `exempt` if it isn't a
   design decision) and continues the run once. It never nudges twice in one run (until the run
   settles). Only a successful call that changed a document or recorded an exemption counts as an
@@ -324,9 +323,18 @@ unchanged.
 
 An `align` call that changed a document renders **where the call is**, as a card, instead of the
 generic tool card; its tool-call row has no row of its own once the result is there. The **newest
-revision of each document on the branch** is the full card; every earlier revision of the same
-document collapses to one line built from its changes, which opens to show that revision in place.
-A failed call keeps the generic tool card with its error, and a `get` its tool card with the
+revision of each document on the branch** is the full card while the document is aligning,
+confirmed or implementing; every earlier revision of the same document collapses to one line built
+from its changes, which opens to show that revision in place. **A dropped or done document's newest
+revision folds to one line** too: a twist, its id and version, its title, then for a dropped one
+"Dropped:" and its reason, for a done one its summary, cut to fit with an ellipsis (the full text
+as the hover title), and its Dropped or Done chip at the line's right end. A click opens it in
+place, read-only, reading as the card does (the summary, the visual, the full reason, the approach,
+the questions and the closed sections); a second click folds it. The fold is per render and not
+remembered: the line draws folded again whenever the transcript redraws. It folds the same
+everywhere the card draws: a chat Sova holds, a live watch, a worker transcript, and a run still
+streaming. A reopened document's new revision is a full card again. Folded, it isn't that
+alignment on screen for Time Spent; opened, it is (§app.subagents-pane/time-spent). A failed call keeps the generic tool card with its error, and a `get` its tool card with the
 markdown; an `exempt` is one info row, "No alignment needed: {why}". "Hide tool calls" never folds
 an `align` call that changed a document or recorded an exemption: it is the message, not its
 working. A change-request mark alone (§chat.alignment/tool) is working: it keeps the generic tool
@@ -404,6 +412,17 @@ card, which "Hide tool calls" folds like any other.
   <summary class="disclosure-summary"><span class="text-mono">al_3</span> v4 Autonomy settings · q3 decided · +q11</summary>
   <div class="disclosure-body">…that revision's card body…</div>
 </details>
+<!-- the newest revision of a dropped or done document, folded until clicked -->
+<details class="disclosure align-rev align-closed" data-phase="dropped|done">
+  <summary class="disclosure-summary align-rev-summary">
+    <svg class="icon icon-sm icon-twist" aria-hidden="true">…chevron-right…</svg>
+    <span class="text-mono align-rev-id">al_3</span> <span class="text-mono text-num">v6</span>
+    <span class="align-rev-text" title="Autonomy settings · Dropped: {the full reason}">Autonomy settings · Dropped: superseded by…</span>
+    <!-- done: "Autonomy settings · {summary}" -->
+    <span class="align-closed-end"><span class="chip"><i class="chip-dot"></i>Dropped</span></span>
+  </summary>
+  <div class="disclosure-body">…the card's body, read-only…</div>
+</details>
 ```
 
 - **Card** is capped at `--measure`, `--space-3`/`--space-4` padding; the eyebrow is `micro`
@@ -439,7 +458,9 @@ card, which "Hide tool calls" folds like any other.
   source as a code block with the chat's own one line saying it couldn't be drawn, as a reply's fence
   does. A folded question draws its visual only once opened.
 - **Status chip**, dot and word, only once the document is past aligning: Confirmed (success),
-  Implementing (accent), Done (success), Dropped (neutral). An aligning document shows none.
+  Implementing (accent), Done (success), Dropped (neutral). An aligning document shows none. A
+  dropped or done document's folded newest revision carries its Done or Dropped chip at the right
+  end of its one line.
 - **Questions** show their parts distinctly: the ask, the context, the options as a list lettered
   a, b, c… (the letter in the bullet's place, in its own column so a wrapped line aligns under the
   text), each its label in bold on one line and its trade-off on the next, set in slightly (no
@@ -594,8 +615,8 @@ before and reads as Eager; the writer stores the field only for Careful, so a fi
 is the same bytes an older device already accepts. The
 stored `default` is the style the user reads as **Technical**; it is kept as written, never migrated
 or rewritten, so every device and the mesh keep accepting the file. Settings →
-Alignment writes it (§app.settings-dialog/alignment). The mode extension reads it, in the TUI and in
-every runtime Sova hosts — the style and Eagerness at each turn boundary, Visuals at each session start — and
+Alignment writes it (§app.settings-dialog/alignment). Sova's modes read it in every runtime Sova
+hosts — the style and Eagerness at each turn boundary, Visuals at each session start — and
 Sova's server reads Visuals at a chat's first start (§chat.alignment/visuals). With the mesh on it
 syncs like `mode-spec.json`: whole file, newest edit wins, checked with the module's own parser
 before it is written.
@@ -681,8 +702,8 @@ question's or the document's `visual` (§chat.alignment/document).
 
 - **Start only.** Visuals reach a chat at its first start and never change for it: Sova records
   them with the review flag in the chat's hidden `sova-align-launch` state entry
-  (§chat.alignment-review/flag) and every later start reuses it, handing the mode extension the
-  `align-visuals` flag (`on` or `off`); the TUI, with no such flag, reads `mode-align.json` (and the
+  (§chat.alignment-review/flag) and every later start reuses it, handing Sova's modes the
+  `align-visuals` flag (`on` or `off`); a session with no such flag reads `mode-align.json` (and the
   chat's profile override) at session start.
 - **The prompt.** With align on, a paragraph after the align block (and after the style's): visuals
   go in the align tool's `visual` fields, never as a vis fence in the reply; add one only when it
@@ -702,7 +723,7 @@ question's or the document's `visual` (§chat.alignment/document).
   is about a screen or the change is a flow, draw it now with edit_question or edit_doc, before the
   reply. It never adds one itself, and nothing else changes.
 - **The vis tools.** One rule decides whether the vis tools are wanted: vis on, or align on with the
-  chat's Visuals. Every place that syncs them — the mode extension's `vis_guide` and, in Sova's hosted
+  chat's Visuals. Every place that syncs them — the `vis_guide` of Sova's modes and, in Sova's hosted
   sessions, `vis_check` at session start, after a switch made between runs, when a run starts and
   when it settles — asks that rule, so the tool set changes only when its answer does, never each run.
   Sova's vis retry (§chat.markdown/visuals, "Feedback to the model") asks the same rule: in a chat

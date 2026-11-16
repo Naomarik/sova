@@ -374,7 +374,7 @@ words, in the composer, the session pane, the chat's queue cards and the project
 | Save failed | **Couldn't save the default.** {reason}. The server reason states which default was written on a partial failure; no blanket "Nothing was saved" suffix contradicts it |
 | Saved (announcement) | Default: {name}. New chats start here. · Updated {name}. |
 | Pending | **Applies after this turn.** This turn keeps the old mode, and so do messages queued during it. Your next message follows the new one. |
-| Can't switch | **This chat can't switch.** This chat can't switch: the mode extension isn't loaded here, or another program wrote this session. |
+| Can't switch | **This chat can't switch.** Modes aren't available in this chat, or another program wrote this session. |
 | Switch failed | **Couldn't switch the mode.** {reason}. Your mode is unchanged. |
 | Load failed | **Couldn't load the modes.** Your mode is unchanged. Close this and try again. |
 | Transcript marker | Mode → {mode} · Minor mode: {minor} on\|off (a project mode by its id, the same way) · Strict mode on\|off (shown as recorded) |
@@ -847,11 +847,7 @@ en-US separators ("from 0 to 1,000", "at most 8,000 characters").
 
 | Where | Copy |
 |---|---|
-| Intro | Unfinished features. They can change or disappear, and each one says when a change reaches your chats. |
-| Sova runs chat modes switch · hint (§chat.mode-menu/sova-runs-modes) | Sova runs chat modes · Sova runs every chat's modes itself, instead of the pi mode extension. Turn it off to go back to the old way; nothing is lost either way. Open chats switch over at their next quiet moment; workers already running finish the way they started. |
-| Empty state (no switch to show; the tab has one today, so it isn't shown) | No experimental features right now. |
-| Load failed (banner-error) | **Couldn't read the experimental settings.** Nothing was changed. |
-| Save failed (banner-error) | **Couldn't save the change.** {reason}. Your saved setting is unchanged. |
+| Empty state (the tab has no switch today, so this line is all it shows; Sova runs chat modes, its last switch, is gone, §chat.mode-menu/sova-runs-modes) | No experimental features right now. |
 | Buttons | none in the tab — the dialog footer's Save Changes · Cancel (§design.copy-deck/settings-modes-delegate) |
 
 ## §design.copy-deck/settings-alignment — Settings · Alignment (§app.settings-dialog/alignment)
@@ -977,7 +973,7 @@ en-US separators ("from 0 to 1,000", "at most 8,000 characters").
 | Filter toggle | `Inputs Only` (`aria-pressed`; pressed adds a `check` icon before the words) |
 | Current goal strip button | `Open Timeline` |
 | Composer trigger | `{n} inputs` (1: `1 input`) · accessible name: `{n} inputs in this chat — show them on the Timeline` (1: `1 input in this chat — show it on the Timeline`) · absent at 0 |
-| Row name prefix (visually hidden) | `Jump to this message: ` |
+| Row name prefix (visually hidden) | `Jump to this message: ` (an alignment row: `Jump to this alignment: `) |
 | Images-only row | `1 image` / `{n} images` |
 | Sender line, another session | `From {title}` (the title links to that session) `· hop {n}` · no title: `From another session` |
 | Sender line, Overseer | `From the Overseer` |
@@ -1003,6 +999,7 @@ en-US separators ("from 0 to 1,000", "at most 8,000 characters").
 | Marker: rewind | `Rewound to an earlier message` |
 | Marker: subagent | `{name} started` · `{name} finished` · `{name} stopped` (errored or killed) |
 | Marker: settings | `Model → {model}` · `Thinking → {level}` · `Mode → {mode}` |
+| Marker: alignment | `Alignment {al_N} started · {title}` · `… implementing · {title}` · `… done · {title}` · `… dropped · {title}` · `… reopened · {title}` · `title`: the drop reason (dropped), else the alignment's one-line summary |
 | Marker: past summary | `Goal · {now}` (no `now`: the first line of `overall`) · `title`: the snapshot's `overall` · the newest snapshot gets no row |
 | State line | Updated {relative} ago · behind the latest messages · (current: `Updated {relative} ago · current`; a summarizer running: `Updating`) — §app/insights's words, unchanged |
 | Time `title` | `{absolute} · {relative}` — e.g. `2026-09-19T14:06:11Z · 2d ago` |

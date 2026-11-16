@@ -455,7 +455,7 @@
   "§app.settings-dialog/save-bar": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "reviewed",
+    "evidence": "verified",
     "code": [
       "src/lib/settings-draft.ts",
       "src/lib/settings-draft.test.ts",
@@ -468,7 +468,6 @@
       "src/lib/summarizer-draft.ts",
       "src/lib/summarizer-form.ts",
       "src/lib/mesh-draft.ts",
-      "src/lib/experimental-draft.ts",
       "src/components/SubagentProfilesSettings.tsx",
       "src/components/OverseerSettings.tsx",
       "src/components/DecisionSettings.tsx",
@@ -486,12 +485,12 @@
       "src/lib/updates-draft.ts",
       "src/lib/settings-forms-roundtrip.test.ts",
       "server/settings-roundtrip.integration.test.ts",
-      "src/lib/experimental-draft.test.ts",
       "server/web-settings.ts",
       "server/web-settings.test.ts",
       "src/lib/profiles-draft.ts",
       "src/components/ProfilesSettings.tsx",
-      "server/settings-browser.integration.test.ts"
+      "server/settings-browser.integration.test.ts",
+      "scripts/e2e/settings-footer-save.mjs"
     ],
     "requires": [
       "§app/settings-dialog",
@@ -499,9 +498,9 @@
       "§design.copy-deck/settings-modes-delegate"
     ],
     "agreed": {
-      "by": "Omar (user)",
-      "at": "2026-11-06T21:56Z",
-      "source": "pi-session:01a1acdc-5fed-7735-96f5-96f6019e339d#537ac0e8"
+      "by": "user",
+      "at": "2026-11-12T16:05Z",
+      "source": "pi-session:01a1d023-6988-7481-af78-b02082042586#96bae24a"
     }
   },
   "§app.settings-dialog/summaries": {

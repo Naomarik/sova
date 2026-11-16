@@ -143,3 +143,20 @@ test("load-experiment --prepare asks for the mode", () => {
   const users = execFileSync("grep", ["-rl", "--include=*.mjs", "agent\", \"sessions\"", resolve(import.meta.dirname)], { encoding: "utf8" }).trim().split("\n").filter(Boolean);
   for (const f of users) if (/hermetic/.test(readFileSync(f, "utf8")) && !f.endsWith("hermetic-agent-dir.test.mjs") && !f.endsWith("hermetic-agent-dir.mjs")) assert.match(readFileSync(f, "utf8"), /--copied-sessions/, f);
 });
+
+test("the mode folder is no pi extension: never linked; a leftover link is pruned, and --check reports one", async () => {
+  const { symlinkSync } = await import("node:fs");
+  const d = setup();
+  d.ok();
+  const mode = join(d.agent, "extensions", "mode");
+  const present = () => lstatSync(mode, { throwIfNoEntry: false }) !== undefined;
+  assert.equal(present(), false, "not linked");
+  assert.ok(lstatSync(join(d.agent, "extensions", "subagents")).isSymbolicLink(), "the extensions are");
+  symlinkSync(resolve(import.meta.dirname, "..", "pi-config", "extensions", "mode"), mode);
+  const r = d.run("--check");
+  assert.notEqual(r.status, 0, "--check fails on a leftover mode link");
+  assert.match(`${r.stdout}${r.stderr}`, /stale, not an extension of .*: .*extensions\/mode/);
+  assert.equal(present(), true, "--check changes nothing");
+  assert.match(d.ok(), /removed stale .*extensions\/mode/);
+  assert.equal(present(), false, "a run prunes it");
+});

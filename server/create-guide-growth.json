@@ -172,6 +172,7 @@
   "SOVA_TAR_FIXTURES_WRITE",
   "SOVA_TEST_AUDIT",
   "SOVA_TEST_HOME",
+  "SOVA_TEST_OWN_EXTENSIONS",
   "SOVA_TEST_SYSTEMD"
  ],
  "items": {
@@ -603,6 +604,10 @@
    "design.retry": "scripts",
    "design.delete": "scripts",
    "design.coordinator.message": "scripts",
+   "design.stop": "scripts",
+   "design.remove": "scripts",
+   "design.restore": "scripts",
+   "design.history": "scripts",
    "usage.prices": "scripts",
    "usage.prices.refresh": "scripts",
    "insights.usage": "scripts",

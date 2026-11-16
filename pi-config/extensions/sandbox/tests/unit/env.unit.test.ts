@@ -16,6 +16,11 @@ test("scrubEnv keeps the allowlist and drops everything else", () => {
 	assert.deepEqual(Object.keys(out).sort(), ["HOME", "LC_ALL", "MISE_SHELL", "PATH", "PI_SESSION_ID"]);
 });
 
+test("the spec tools' location passes through: the agent dir and the chat's own copy's SOVA_SPEC_CORE", () => {
+	const out = scrubEnv({ PI_CODING_AGENT_DIR: "/a/agent", SOVA_SPEC_CORE: "/s/gen/pi-config/extensions/spec/core", SOVA_CHAT_SOCK: "/run/c.sock" });
+	assert.deepEqual(out, { PI_CODING_AGENT_DIR: "/a/agent", SOVA_SPEC_CORE: "/s/gen/pi-config/extensions/spec/core" });
+});
+
 test("extra allow widens, but never past the NEVER list", () => {
 	const src = { FOO: "1", FOO_BAR: "2", SSH_AUTH_SOCK: "/s", LD_PRELOAD: "/x.so", HTTPS_PROXY: "http://evil", TMPDIR: "/tmp/x" };
 	const out = scrubEnv(src, ["FOO", "SSH_AUTH_SOCK", "LD_*", "HTTPS_PROXY", "TMPDIR"]);

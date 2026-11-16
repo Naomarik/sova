@@ -1,7 +1,7 @@
 /**
  * The `create_guide` tool: one topic of Create's guide, looked up before the chat acts on that topic
  * (create/guide.ts `createGuide`: create/shared.md, then the topic's file). It runs in this process,
- * never on a remote target, so it answers in any project and in any folder. The host (index.ts) owns
+ * never on a remote target, so it answers in any project and in any folder. The host (Sova's mode engine) owns
  * when the tool is in the loadout: only while the chat is in Create, so a worker never has it.
  */
 import { StringEnum } from "@earendil-works/pi-ai";

@@ -869,7 +869,7 @@ export function ModeMenu(props: { control: ModeControl }) {
           <Banner
             tone="warn"
             title="This chat can't switch."
-            body="This chat can't switch: the mode extension isn't loaded here, or another program wrote this session."
+            body="Modes aren't available in this chat, or another program wrote this session."
           />
         </Show>
         <Show when={error()}>{(e) => <Banner tone="error" title={e().title} body={e().body} />}</Show>

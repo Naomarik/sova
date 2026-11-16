@@ -17,8 +17,8 @@ const agentDir = realpathSync(mkdtempSync(join(tmpdir(), "sova-profiles-runtime-
 process.on("exit", () => rmSync(agentDir, { recursive: true, force: true }));
 process.env.PI_CODING_AGENT_DIR = agentDir;
 // Stand-ins for the subagents extension's tools and others (the removals must take them; link_send is no
-// capability's, so no removal takes it), and this
-// repo's mode extension by its real path, so strict mode really rewrites the active tools.
+// capability's, so no removal takes it), and Sova's
+// mode engine (in every chat, no settings entry), so strict mode really rewrites the active tools.
 mkdirSync(join(agentDir, "extensions"), { recursive: true });
 writeFileSync(
   join(agentDir, "extensions", "fake-tools.ts"),
@@ -35,7 +35,7 @@ writeFileSync(
 );
 writeFileSync(
   join(agentDir, "settings.json"),
-  JSON.stringify({ retry: { baseDelayMs: 1 }, extensions: [resolve(dirname(fileURLToPath(import.meta.url)), "../pi-config/extensions/mode")] }),
+  JSON.stringify({ retry: { baseDelayMs: 1 } }),
 );
 const sessionsDir = join(agentDir, "sessions", "--tmp-profiles--");
 mkdirSync(sessionsDir, { recursive: true });

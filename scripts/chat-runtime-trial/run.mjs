@@ -55,8 +55,6 @@
 //     t17c      the same for a claude-code worker (scripts/fake-claude.mjs on the server's PATH)
 //     t18       the parent reloads (Reload now, build a → b) mid worker run: the worker keeps its pid,
 //               agent_list shows it running, a steer after the reload reaches it once, one completion
-//     tmodes    a save of "Sova runs chat modes" reaches an open chat at its next quiet moment through the
-//               rollout: never mid-reply, a new process after it settles; a flip back before then reloads nothing
 //     t18b      kill -9 of the parent mid-run: its crash resume; the worker keeps its process; one
 //               completion
 //     t19       a team across a restart: alpha's team_msg to beta just before it arrives once; a
@@ -166,7 +164,7 @@ const opt = (name, fallback) => {
   const i = argv.indexOf(`--${name}`);
   return i >= 0 && argv[i + 1] !== undefined ? argv[i + 1] : fallback;
 };
-const ALL = ["t1", "t1b", "t1c", "t1d", "t1e", "t2", "t3", "t4", "t4fail", "t6", "t7", "t8", "t9", "t10", "t11", "t11b", "t11c", "t12a", "t12b", "t12c", "t12d", "t13", "t14", "t15", "t16", "t17", "t17c", "t18", "t18b", "tmodes", "t19", "t19n", "t20", "t21", "t21c", "t21h", "t21l", "t21r", "t21rx", "tsend", "t23", "t24", "t25", "t27", "trestart", "tdefault", "tserverless", "tstopchats", "tw1", "tw2", "tw3", "tw4", "tw5", "tw6", "tw7", "tw8", "tj1", "tj2", "tj3", "tj4", "tj5", "tj6", "tj6b", "hermetic", "tyourclick", "tprofile"];
+const ALL = ["t1", "t1b", "t1c", "t1d", "t1e", "t2", "t3", "t4", "t4fail", "t6", "t7", "t8", "t9", "t10", "t11", "t11b", "t11c", "t12a", "t12b", "t12c", "t12d", "t13", "t14", "t15", "t16", "t17", "t17c", "t18", "t18b", "t19", "t19n", "t20", "t21", "t21c", "t21h", "t21l", "t21r", "t21rx", "tsend", "t23", "t24", "t25", "t27", "trestart", "tdefault", "tserverless", "tstopchats", "tw1", "tw2", "tw3", "tw4", "tw5", "tw6", "tw7", "tw8", "tj1", "tj2", "tj3", "tj4", "tj5", "tj6", "tj6b", "hermetic", "tyourclick", "tprofile"];
 const valued = new Set(["--port", "--scratch", "--slice", "--model", "--auth", "--mode", "--driver"]);
 const asked = argv.filter((a, i) => !a.startsWith("--") && !valued.has(argv[i - 1]));
 for (const a of asked) if (![...ALL, "plumbing", "serve", "real", "all"].includes(a)) (console.error(`unknown check ${a}; checks: ${ALL.join(" ")} real`), process.exit(2));
@@ -1855,40 +1853,6 @@ async function t18() {
   await nextServer();
 }
 
-async function tmodes() {
-  const putModes = (on) => c.api("/api/settings", { method: "PUT", body: JSON.stringify({ experimental: { sovaModes: on } }) });
-  await putModes(true);
-  const { path, s } = await newChat();
-  const p1 = chatPid(path);
-  // A flip and a flip back during a reply: nothing reloads, then or after it settles.
-  let from = s.got.length;
-  prompt(s, "[long 6 #tmodesa] a reply");
-  await s.until(delta(/part 1\//), 60000, "the reply streams", from);
-  await putModes(false);
-  await putModes(true);
-  await settled(s, from, 60000);
-  await sleep(3000);
-  R.check(chatPid(path) === p1, `tmodes: a flip back before the quiet moment reloads nothing (pid ${p1} → ${chatPid(path) || "none"})`);
-  // A flip during a reply: the chat keeps its process until the reply settles, then moves to a new one.
-  from = s.got.length;
-  prompt(s, "[long 6 #tmodesb] another reply");
-  await s.until(delta(/part 1\//), 60000, "the reply streams", from);
-  await putModes(false);
-  await sleep(1000);
-  R.check(chatPid(path) === p1, `tmodes: not reloaded mid-reply (pid ${p1} → ${chatPid(path) || "none"})`);
-  await settled(s, from, 60000);
-  const moved = await waitFor(() => chatPid(path) && chatPid(path) !== p1, 60000);
-  R.check(moved, `tmodes: reloaded at its quiet moment into a new process (pid ${p1} → ${chatPid(path) || "none"})`);
-  // Its replacement opened on the switch as saved: it answers a turn there.
-  const s2 = await chat(c, path);
-  const f2 = s2.got.length;
-  prompt(s2, "hello again");
-  await settled(s2, f2, 60000);
-  R.check(chatPid(path) !== p1, "tmodes: the reloaded chat answers a turn in its new process");
-  s2.close();
-  await putModes(true);
-}
-
 // T18b: kill -9 of the parent mid-run while its worker runs: the parent's crash resume reopens it;
 // the worker keeps its process; its completion arrives and is announced once.
 async function t18b() {
@@ -3556,16 +3520,18 @@ async function tw3() {
   await nextServer();
 }
 
-// tw4: a chat that starts and doesn't fire (its extension gone): one start, the record dropped, no
-// loop; the nudge waits and fires at the next open with the extension back. A record the chat
-// doesn't know costs one start and goes.
+// tw4: a chat that starts and doesn't fire (its extension turned off with /extensions: Sova loads its own
+// extensions whatever the agent dir links, so unlinking it no longer takes it away, and an "off" stays off):
+// one start, the record dropped, no loop; the nudge waits and fires at the next open with the extension
+// back on. A record the chat doesn't know costs one start and goes.
 async function tw4() {
   await wakeBoot();
   const a = await newChat();
   const { id } = await nudgeThenShutDown(a, "12s", "NO-EXTENSION");
-  const link = join(agent, "extensions", "wake-nudge.ts");
-  const target = readlinkSync(link);
-  rmSync(link);
+  const settings = join(agent, "settings.json");
+  const had = existsSync(settings) ? readFileSync(settings, "utf8") : null;
+  // As /extensions writes an "off" for a loose file in the agent dir (extension-toggle's `-` pattern).
+  writeFileSync(settings, JSON.stringify({ ...(readJson(settings) ?? {}), extensions: ["-extensions/wake-nudge.ts"] }, null, 2));
   try {
     await wakeWait(() => wakeLog().some((l) => l.includes("doesn't know it")), 60000);
     R.check(wakeLog().filter((l) => l.includes("bringing it back")).length === 1, `tw4: a start that fired nothing, once (${wakeLog().length})`);
@@ -3575,7 +3541,8 @@ async function tw4() {
     await sleep(3000);
     R.check(!chatPid(a.path), "tw4: the shut-down chat stays down: it can't loop");
   } finally {
-    symlinkSync(target, link);
+    if (had === null) rmSync(settings, { force: true });
+    else writeFileSync(settings, had);
   }
   // Nudges from a record no chat holds: one start, gone.
   const b = await newChat();
@@ -4165,7 +4132,7 @@ async function jobWakesWorker(name, idleMs) {
 const tj6 = () => jobWakesWorker("tj6", 120000);
 const tj6b = () => jobWakesWorker("tj6b", 4000);
 
-const table = { tyourclick, t1: () => t1(), t1b, t1c, t1d, t1e, t2, t3, t4, t4fail, t6, t7, t8, t9, t10, t11, t11b, t11c, t12a, t12b, t12c, t12d, t13, t14, t15, t16, t17: () => t17(), t17c: () => t17(true), t18, t18b, tmodes, t19, t19n, t20, t21, t21c, t21h, t21l, t21r: () => t21r(), t21rx: () => t21r("either"), tsend, t23, t24, t25, t27, trestart, tdefault, tserverless, tstopchats, tw1, tw2, tw3, tw4, tw5, tw6, tw7, tw8, tj1, tj2, tj3, tj4, tj5, tj6, tj6b, hermetic, tprofile, plumbing, serve, real: () => t1(opt("model")) };
+const table = { tyourclick, t1: () => t1(), t1b, t1c, t1d, t1e, t2, t3, t4, t4fail, t6, t7, t8, t9, t10, t11, t11b, t11c, t12a, t12b, t12c, t12d, t13, t14, t15, t16, t17: () => t17(), t17c: () => t17(true), t18, t18b, t19, t19n, t20, t21, t21c, t21h, t21l, t21r: () => t21r(), t21rx: () => t21r("either"), tsend, t23, t24, t25, t27, trestart, tdefault, tserverless, tstopchats, tw1, tw2, tw3, tw4, tw5, tw6, tw7, tw8, tj1, tj2, tj3, tj4, tj5, tj6, tj6b, hermetic, tprofile, plumbing, serve, real: () => t1(opt("model")) };
 let code = 0;
 let finished = null;
 /** Stops the server, every chat process and the mock, and writes results.json; once. */

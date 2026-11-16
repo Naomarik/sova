@@ -1,11 +1,13 @@
 # Modes recordings
 
-What a chat's or a worker's model sees of its modes, recorded at master `7c4750f0a` with the pi-config mode
-extension running every mode (the team tools' wording re-taken since, when every team got Sova's coordinator and
-monitor: recorded from that tree through `withoutA1`, so a1's additions still stay out and only that wording moved; and
-again, the same way, when team members got Delegate's work kinds: the team tools' `kind`, their texts and the Delegate block's team sentence), and the yardstick for Sova's engine (al_1, Settings → Experimental → "Sova
-runs chat modes"). The code is in `server/modes/tests/` (`harness.fixture.ts` says what a recording holds;
-`cases.fixture.ts` lists the cases).
+What a chat's or a worker's model sees of its modes, from Sova's engine, the only mode owner in Sova. First taken at
+master `7c4750f0a` from the pi-config mode extension (the team tools' wording re-taken since, when every team got
+Sova's coordinator and monitor, and when team members got Delegate's work kinds), then re-taken from Sova's engine at
+`f425253eb`, where its records matched the extension's byte for byte apart from al_1 a1's additions (the `spec` tool
+and its two sentences) and w07 (a worktree-config worker whose tree has no mode extension: refused by the extension,
+started by the engine). Since then only intended changes moved them: the spec block's trusted-tools line reads
+`SOVA_SPEC_CORE` first (al_1 q1). They are the yardstick that keeps every prompt and tool where it is. The code is in
+`server/modes/tests/` (`harness.fixture.ts` says what a recording holds; `cases.fixture.ts` lists the cases).
 
 ```
 cases/<case>.json      one recording per case: its steps, each big value a "@<hash>" reference
@@ -14,19 +16,17 @@ store/<hash>.json      the big values (system prompts, tool lists, notes), once 
 
 | | |
 |---|---|
-| `pnpm test -- server/modes/modes-extension.golden.test.ts` (+ `.integration.test.ts`) | switch off: each case vs its recording, a1's additions aside (`withoutA1`) |
-| `pnpm test -- server/modes/modes-sova.golden.test.ts` (+ `.integration.test.ts`) | each case off, then on: on must give off's bytes, unfiltered; every chat and worker of the on run loads Sova's engine in the mode slot |
+| `pnpm test -- server/modes/modes-sova.golden.test.ts` (+ `.integration.test.ts`) | each case vs its recording, unfiltered; every chat and worker loads Sova's engine in the mode slot and never a mode extension's own file |
 | `bun server/modes/tests/show.fixture.ts <case> [path]` | a recording read back whole, e.g. `c14-toggles 5.calls.0.add` |
-| `SOVA_MODES_GOLDEN=record pnpm test -- server/modes/modes-extension.golden*.ts` | re-take them (switch off only) |
+| `SOVA_MODES_GOLDEN=record pnpm test -- server/modes/modes-sova.golden*.ts` | re-take them (delete `cases/` and `store/` first: the store check fails on files nothing uses) |
 | `SOVA_MODES_DUMP=<dir>` | a request that failed the once-only check, written whole |
 
-Re-take them from master's code, never from a tree in the middle of the move: `git archive <rev>` into
-`.cache/<name>`, link `node_modules`, copy `server/modes/tests/`, the four test files, the runner's
-`server/modes/**/*.test.ts` glob and `SOVA_MODES_GOLDEN` in `scripts/test-env.mjs`'s allowed list in (while master lacks them), record there with `node scripts/run-tests.mjs -- <files>`, and copy
-`golden/cases` and `golden/store` back (delete both first: the store check fails on files nothing uses).
-Review the diff as the change's effect on every case.
+Re-take them only for an intended change, and review the diff as that change's effect on every case: decode the old
+and new recordings and compare them with the intended edit applied to the old side, so nothing else moved.
 
-Cases that run a program (the spec tools, a project tool) are in the integration files; the rest are unit.
-A case with `unrecorded` (c23: it needs a1's `spec` tool, which master lacks) has no file: it checks its own
-record, and the on/off byte comparison still covers it. `worker-slots.golden.test.ts` pins the worker mode
-files' single source (subagents' constants, own-code's in-place mapping).
+Cases that run a program (the spec tools, a project tool) are in the integration file; the rest are unit. A case's
+`check` asserts what its record means beside the byte comparison (c23: one census counter for a tool read and a shell
+read; w07, w09: a worktree-config worker's start and prompt). The recorded chats list the mode folder and subagents
+in their settings, as an installed pi folder does: the engine takes the mode folder's slot in place. A chat with no
+mode entry at all is `server/sova-modes-owner.test.ts`'s. `worker-slots.golden.test.ts` pins the worker mode files'
+single source (subagents' constants, own-code's in-place mapping).

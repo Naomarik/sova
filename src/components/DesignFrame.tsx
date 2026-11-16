@@ -70,14 +70,16 @@ export function createFontsSettled(): () => boolean {
   return ready;
 }
 
-/** A 1280px-wide page scaled into whatever box holds it. */
+/** A 1280px-wide page scaled into whatever box holds it, covering it: a box taller than 16:10 (a phone's
+    row tile) shows more of the page's top instead of a blank strip under it. */
 export function DesignScale(props: { children: JSX.Element; label: string }) {
   let box!: HTMLDivElement;
   const [scale, setScale] = createSignal(0.25);
+  const fit = () => setScale(Math.max(box.clientWidth / DESIGN_PAGE_WIDTH, box.clientHeight / DESIGN_PAGE_HEIGHT));
   onMount(() => {
-    const ro = new ResizeObserver(() => setScale(box.clientWidth / DESIGN_PAGE_WIDTH));
+    const ro = new ResizeObserver(fit);
     ro.observe(box);
-    setScale(box.clientWidth / DESIGN_PAGE_WIDTH);
+    fit();
     onCleanup(() => ro.disconnect());
   });
   return (
@@ -132,8 +134,9 @@ const FIRST_PAINT_MS = 250;
  * given back and the document stays, so the last picture holds until the finished page has drawn.
  * `over`: an earlier version is on show beneath, so instead of the note the frame stays see-through
  * until the new page has something to see, and the earlier picture holds until then.
+ * `still`: a small preview nobody scrolls (a grid tile): the page shows no scrollbar of its own.
  */
-export function DesignStreamFrame(props: { api: DesignApi; label: string; version: number | undefined; text: string; title: string; waiting?: string; priority?: boolean; over?: boolean }) {
+export function DesignStreamFrame(props: { api: DesignApi; label: string; version: number | undefined; text: string; title: string; waiting?: string; priority?: boolean; over?: boolean; still?: boolean }) {
   const [src, setSrc] = createSignal("");
   const [turn, setTurn] = createSignal(false);
   const [painted, setPainted] = createSignal(false);
@@ -206,6 +209,9 @@ export function DesignStreamFrame(props: { api: DesignApi; label: string; versio
   // The policy and sandbox have to be on the element before its document is named.
   const seal = (el: HTMLIFrameElement, url: string) => {
     for (const [k, v] of Object.entries(DESIGN_STREAM_ATTRS)) el.setAttribute(k, v);
+    // The page's own scrollbar is drawn by the browser inside the frame, where no style of ours
+    // reaches: `scrolling="no"` is the one switch that turns it off from outside.
+    if (props.still) el.setAttribute("scrolling", "no");
     el.src = url;
   };
   const tokens = () => tokensOfText(props.text.length).toLocaleString("en-US");
@@ -221,7 +227,10 @@ export function DesignStreamFrame(props: { api: DesignApi; label: string; versio
       </Show>
       <Show when={!painted() && !props.over}>
         <div class="design-frame-note" role="status">
-          {note()}
+          {/* A new node for each wording (the count moves often): new words re-centred in the old node count as a layout shift. */}
+          <Show when={note()} keyed>
+            {(words) => <span>{words}</span>}
+          </Show>
         </div>
       </Show>
     </>

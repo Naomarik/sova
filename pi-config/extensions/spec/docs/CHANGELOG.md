@@ -1153,6 +1153,30 @@ Numbers: on a copy of 70 real worktrees with drafts, the same 70 answers; every 
 - Numbers: **not measured.** The al_3 rule asks for a context-test arm for any `spec-mode.md` change; the
   main chat chose to land this one sentence without it. Round 3's verdict covers bd4831dc… only.
 
+### 2026-11-12
+
+**A host can name the trusted tools: `$SOVA_SPEC_CORE` first, then the agent dir's** (branch `feat/sova-owns-modes`, alignment al_1; not on master yet).
+
+- Goal: 1, one copy of the tools a chat's instructions, checks and commands agree on. A pi folder whose
+  `extensions/spec` linked into an older Sova copy made a Sova chat, its helpers and the merge queue's landing
+  run that copy's tools (one with no `land` command failed the landing, and an older reader called new drafts
+  corrupt). No constraint moves: the tools stay one copy and standalone, and outside a host the line resolves
+  exactly as before.
+- Changed:
+  - `mode/spec-mode.md`'s shell line ends `core="${SOVA_SPEC_CORE:-$core/extensions/spec/core}"` instead of
+    `core="$core/extensions/spec/core"`. The same text in every chat and every version, so no prompt changes at an
+    update. 318 words, unchanged; hash 3fc86bdb… → 3bf9affe…. The pins and the review-smoke fixture follow.
+  - `mode/spec-guard.ts` `coreDir` reads `SOVA_SPEC_CORE` first, as the line does, so the census, the writing
+    procedure's hand-over and a worker's checks use the same copy.
+  - Sova sets `SOVA_SPEC_CORE` in each local chat process to its own copy's `spec/core`, passes it to helpers
+    and through the sandbox, never to a remote target or a worker on a worktree's own agent dir, and ignores one
+    it was started with; its merge queue and spec check run the server's own copy; the release's docs-drift reads
+    the variable first.
+- §: computed at landing with `sova-spec.mjs foreign` (expected §tools/spec, §tools.spec/mode-reading,
+  §tools.spec/writing-on-demand, §app.merge-queue/run, §app.merge-queue/checks, §app.release/sova).
+- Numbers: **not measured.** A `spec-mode.md` change asks for a context-test arm (al_3); the words are the same
+  but one shell expression, so the main chat decides whether to measure.
+
 ## Integration → master
 
 The integration merges after 96ab3014 and the master commits that re-applied them. The integration
@@ -1382,3 +1406,9 @@ The tools are Node standard library only. Nothing is installed.
     without a shell." Outside Sova no such tool is offered and the shell line works as before; nothing to
     copy. A hook of your own that counts `sova-spec.mjs read` in shell commands may also count a `spec`
     tool call with `op: "read"` (`specToolReadCommand` in `mode/spec-guard.ts`).
+19. **`$SOVA_SPEC_CORE` names the trusted tools first** (2026-11-12, branch `feat/sova-owns-modes`). A project
+    that copies `mode/spec-mode.md`'s shell line into its own agent instructions or scripts takes the new line:
+    `core="${SOVA_SPEC_CORE:-$core/extensions/spec/core}"` as its last assignment. With the variable unset it
+    resolves as before. A host of your own that runs chats may set it to the tools it ships, and should not pass
+    it to a machine where that path doesn't exist. A script of yours that resolves `$core` itself reads
+    `SOVA_SPEC_CORE` first too (`coreDir` in `mode/spec-guard.ts` does).

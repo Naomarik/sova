@@ -192,7 +192,20 @@ export const CHAT_PROCESS_ENV = [
   "SOVA_URL",
   // accounts.ts LOGIN_CONTEXT_ENV: a chat's project login, handed over per chat (never inherited by a server).
   "SOVA_CLAUDE_LOGIN_CONTEXT",
+  // SPEC_CORE_ENV: the spec tools of the copy a chat runs on.
+  "SOVA_SPEC_CORE",
 ] as const;
+
+/**
+ * Where a local chat process finds the trusted spec tools: its own copy of Sova's (spec-mode.md's `$core`
+ * line, spec-guard.ts coreDir and the engine's census read it before the agent dir). Set per chat at its
+ * launch, never for a worker on its worktree's own .agent (that tree's tools stay), never forwarded to a
+ * remote target (its commands find that machine's own).
+ */
+export const SPEC_CORE_ENV = "SOVA_SPEC_CORE";
+
+/** The spec tools inside one copy of Sova's code (the checkout or a code generation). */
+export const specCoreOf = (code: string): string => join(code, "pi-config", "extensions", "spec", "core");
 
 /** Delete every chat process's own variable from a server's env (the server: at boot, before anything reads it); the names it held. */
 export function scrubChatProcessEnv(env: NodeJS.ProcessEnv = process.env): string[] {

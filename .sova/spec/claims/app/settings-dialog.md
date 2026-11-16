@@ -845,7 +845,7 @@ Folders box or the tab writes nothing.
 
 Every Settings tab that writes a file on the server is Save-gated: **Models**, **Profiles**
 (both halves and the default), **Overseer**, **Notifications** (the **Phone Notifications** form), **Decisions**, **Summaries**, **Memory**, **Organizations**,
-**Mesh**, **Alignment** and **Experimental**, and on General the **Updates** form (§app/updates). A change on them is staged, never written as it is made. No form has a Save or
+**Mesh** and **Alignment**, and on General the **Updates** form (§app/updates). A change on them is staged, never written as it is made. No form has a Save or
 Discard button of its own: saving is the dialog's. Merge Queue (below), MCP Servers (§app.mcp/settings-tab) and Extensions (§app.settings-dialog/extensions) are the tabs that save on their own.
 
 - **The footer.** Left to right: a status line, then **Save Changes**
@@ -897,9 +897,10 @@ Discard button of its own: saving is the dialog's. Merge Queue (below), MCP Serv
   (§app.settings-dialog/alignment); Save Changes writes the review switch to Sova's settings and the
   eagerness, style and visuals to `mode-align.json`, each a write of its own, and the status line names the form
   "Alignment" whichever of the two failed.
-- **Experimental** holds one switch, **Sova runs chat modes**, on by default, with one line saying
-  what it does and when a change reaches open chats (§chat.mode-menu/sova-runs-modes); it waits
-  disabled until the saved settings load. Adversarial
+- **Experimental** has nothing to save today: it shows only "No experimental features right now."
+  (§design.copy-deck/settings-experimental). Its last switch, **Sova runs chat modes**, is gone:
+  Sova runs every chat's modes (§chat.mode-menu/sova-runs-modes). An experiment added later stages
+  its switch and saves with the footer like the other forms. Adversarial
   review moved to Alignment; the Claude Code provider is no switch there, it is always on (§app.claude-code-provider/always-on).
 - **Merge Queue saves on its own** (§app.merge-queue/settings-save): its project-file changes are a
   commit on the project's target with a confirm of their own, and its models save as they are

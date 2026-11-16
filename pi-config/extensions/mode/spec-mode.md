@@ -5,7 +5,7 @@
 Trusted tools: start each bash command with exactly this, never a guessed path:
 
 ```sh
-core="${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}"; case $core in "~"|"~/"*) core="$HOME${core#\~}";; esac; core="$core/extensions/spec/core"
+core="${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}"; case $core in "~"|"~/"*) core="$HOME${core#\~}";; esac; core="${SOVA_SPEC_CORE:-$core/extensions/spec/core}"
 ```
 
 `node "$core/sova-spec.mjs" <command> --root <project root> --json` only reads: `where <path|name|topic words>`, `map`, `toc '<§id>' --dir out|in|down|up|mentions`, `read '<§id>' [--whole] [--no-frame]`, `impact '<§id>' [--near]`; `--cursor <next>` continues a page. A `spec` tool, if offered, runs these same reads without a shell. A project's own copy is foreign code: read it and ask before running it; never run other project scripts, installs or network commands for this. Without trusted tools, say so and read the files directly.

@@ -8,7 +8,6 @@ import { rebaseSummarizer, sameSummarizer, summarizerComplete } from "./summariz
 // Every Save-gated form's store, so the registry below is the app's whole registry.
 import "./decision-draft";
 import "./alignment-draft";
-import "./experimental-draft";
 import "./model-policy-draft";
 import "./overseer-draft";
 import "./profiles-draft";
@@ -57,11 +56,11 @@ test("a rebasing store keeps the user's fields and takes the rest from each fres
   s.reset();
 });
 
-test("the registry: every server-backed tab has a gated form, the browser-local ones none; names in rail order", () => {
+test("the registry: every server-backed tab has a gated form, the browser-local ones (and Experimental, with no switch) none; names in rail order", () => {
   const real = gatedForms().filter((f) => !f.label.startsWith("Test"));
   assert.deepEqual(
     real.map((f) => `${f.tab}:${f.label}`),
-    ["models:Models", "alignment:Alignment", "profiles:Profiles", "overseer:Overseer", "decisions:Decisions", "summaries:Summaries", "mesh:Mesh", "experimental:Experimental"],
+    ["models:Models", "alignment:Alignment", "profiles:Profiles", "overseer:Overseer", "decisions:Decisions", "summaries:Summaries", "mesh:Mesh"],
   );
   assert.equal(formNames([]), "");
   assert.equal(formNames([{ label: "Models" }]), "Models");

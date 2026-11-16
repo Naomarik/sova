@@ -1,10 +1,10 @@
-// Run: pnpm test -- server/sova-modes-workers.test.ts. A worker takes its parent's modes owner at its spawn
-// or resume (§chat.mode-menu/sova-runs-modes): the parent's worker host stamps `modes: "sova"` on every start
-// it makes for a parent whose modes run on Sova (never trusting the request), and the worker's build puts
-// Sova's modules in the mode extension's listed slots, in place, or keeps the list as given.
+// Run: pnpm test -- server/sova-modes-workers.test.ts. Every worker runs Sova's mode engine (§chat.mode-menu/sova-runs-modes):
+// the parent's worker host stamps `modes: "sova"` on every start (never trusting the request; a pi worker on older
+// code reads it), and the worker's build puts Sova's modules in the mode files' listed slots, in place, whatever
+// tree they lie in and whether or not the start carries the stamp (a parent on older code).
 // A throwaway PI_CODING_AGENT_DIR; ~/.pi is never read or written.
 import assert from "node:assert/strict";
-import { mkdtempSync, realpathSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -56,47 +56,44 @@ function recordingHost(): { host: WorkerHost; starts: WorkerStart[] } {
   return { host, starts };
 }
 
-test("a Sova-owned parent's host stamps modes: \"sova\" on every start, spawn and resume alike", async () => {
+test("a parent's host stamps modes: \"sova\" on every start, spawn and resume alike, whatever the request carried", async () => {
   const { host, starts } = recordingHost();
-  const stamped = modesStamped(host, true);
+  const stamped = modesStamped(host);
   await stamped.start({ key: "k1", spec: spec(), session: { new: { dir: "/d" } }, task: "go" });
   await stamped.start({ key: "k2", spec: spec(), session: { resume: { file: "/f" } }, task: null });
-  assert.deepEqual(starts.map((s) => s.spec.modes), ["sova", "sova"]);
+  await stamped.start({ key: "k3", spec: spec({ modes: "nonsense" as never }), session: { new: { dir: "/d" } }, task: "go" });
+  assert.deepEqual(starts.map((s) => s.spec.modes), ["sova", "sova", "sova"], "Sova's word, not the request's");
 });
 
-test("an extension-owned parent's host stamps nothing, and drops a modes a request carried", async () => {
-  const { host, starts } = recordingHost();
-  const stamped = modesStamped(host, false);
-  await stamped.start({ key: "k1", spec: spec({ modes: "sova" }), session: { new: { dir: "/d" } }, task: "go" });
-  assert.equal("modes" in starts[0]!.spec, false);
-  const { host: h2, starts: s2 } = recordingHost();
-  await modesStamped(h2, true).start({ key: "k1", spec: spec({ modes: "nonsense" as never }), session: { new: { dir: "/d" } }, task: "go" });
-  assert.equal(s2[0]!.spec.modes, "sova", "Sova's word, not the request's");
-});
-
-test("a Sova-owned worker's build puts Sova's modules in the mode slots, in place; flags and other paths kept", () => {
+test("a worker's build puts Sova's modules in the mode slots, in place, stamped or not; flags and other paths kept", () => {
   const e = modesEntries();
-  const build = workerBuild(spec({ modes: "sova" }), "/w.jsonl");
-  assert.deepEqual(build.loader.additionalExtensionPaths, [OTHER, e.entry, e.specWorker, e.projectToolsWorker]);
-  assert.deepEqual(build.flags(), { extra: { major: "normal", minor: "spec" } }, "the entry reads the same flags");
+  for (const w of [spec({ modes: "sova" }), spec()]) {
+    const build = workerBuild(w, "/w.jsonl");
+    assert.deepEqual(build.loader.additionalExtensionPaths, [OTHER, e.entry, e.specWorker, e.projectToolsWorker], `modes: ${w.modes ?? "none"}`);
+    assert.deepEqual(build.flags(), { extra: { major: "normal", minor: "spec" } }, "the entry reads the same flags");
+  }
 });
 
-test("job cards load whichever owner runs modes: Sova's slots in place, one each, the cards file after them", () => {
+test("a worktree-config worker's mode slot (its .agent's link, wherever it leads, or an older tree's mode folder) is Sova's engine", () => {
+  const e = modesEntries();
+  // A tree's .agent/extensions/mode linking into the tree's own pi-config, and an older tree's mode folder with no index.ts at all.
+  const tree = join(agentDir, "tree");
+  mkdirSync(join(tree, "pi-config", "extensions", "mode"), { recursive: true });
+  mkdirSync(join(tree, ".agent", "extensions"), { recursive: true });
+  symlinkSync(join(tree, "pi-config", "extensions", "mode"), join(tree, ".agent", "extensions", "mode"));
+  const listed = [OTHER, join(tree, ".agent", "extensions", "mode"), join(tree, "pi-config", "extensions", "mode", "spec-worker.ts")];
+  assert.deepEqual(workerBuild(spec({ extensions: listed }), "/w.jsonl").loader.additionalExtensionPaths, [OTHER, e.entry, e.specWorker]);
+});
+
+test("job cards load beside Sova's slots: in place, one each, the cards file after them", () => {
   const e = modesEntries();
   const cards = join(ROOT, "pi-config", "extensions", "wake-nudge.ts");
   const was = process.env.SOVA_JOB_CARDS;
   process.env.SOVA_JOB_CARDS = "only";
   try {
-    assert.deepEqual(workerBuild(spec({ modes: "sova" }), "/w.jsonl").loader.additionalExtensionPaths, [OTHER, e.entry, e.specWorker, e.projectToolsWorker, cards]);
-    const w = spec();
-    assert.deepEqual(workerBuild(w, "/w.jsonl").loader.additionalExtensionPaths, [...w.extensions, cards]);
+    assert.deepEqual(workerBuild(spec(), "/w.jsonl").loader.additionalExtensionPaths, [OTHER, e.entry, e.specWorker, e.projectToolsWorker, cards]);
   } finally {
     if (was === undefined) delete process.env.SOVA_JOB_CARDS;
     else process.env.SOVA_JOB_CARDS = was;
   }
-});
-
-test("an extension-owned worker's build lists exactly what its parent listed", () => {
-  const w = spec();
-  assert.deepEqual(workerBuild(w, "/w.jsonl").loader.additionalExtensionPaths, w.extensions);
 });

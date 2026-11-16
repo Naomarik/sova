@@ -283,3 +283,46 @@ test("--links links new extensions, prunes dangling ones into this dir, and touc
 	assert.equal(fs.existsSync(path.join(ext, "delta.bak")), false);
 	fs.rmSync(s.root, { recursive: true, force: true });
 });
+
+test("extensions/mode is never linked: install, --links and --check each drop or report an older version's link", () => {
+	const s = sandbox();
+	const copy = path.join(s.root, "pi-config");
+	fs.cpSync(path.join(here, "sandbox-policy"), path.join(copy, "sandbox-policy"), { recursive: true });
+	fs.mkdirSync(path.join(copy, "extensions/mode"));
+	fs.writeFileSync(path.join(copy, "extensions/mode/state.ts"), "");
+	fs.mkdirSync(path.join(copy, "extensions/alpha"));
+	const ext = path.join(s.agent, "extensions");
+	const mode = path.join(ext, "mode");
+	const linked = () => fs.lstatSync(mode, { throwIfNoEntry: false }) !== undefined;
+
+	// A fresh install links the extensions, never the mode folder.
+	let r = s.run();
+	assert.equal(r.code, 0, r.out);
+	assert.equal(fs.readlinkSync(path.join(ext, "alpha")), path.join(copy, "extensions/alpha"));
+	assert.equal(linked(), false, r.out);
+	assert.equal(s.run("--check").code, 0);
+
+	// An older version's link to it: --check fails and changes nothing; install removes it.
+	fs.symlinkSync(path.join(copy, "extensions/mode"), mode);
+	r = s.run("--check");
+	assert.equal(r.code, 1, r.out);
+	assert.match(r.out, /stale link, mode is not an extension: .*extensions\/mode/);
+	assert.equal(linked(), true);
+	r = s.run();
+	assert.equal(r.code, 0, r.out);
+	assert.match(r.out, /removed .*extensions\/mode \(mode is not an extension\)/);
+	assert.equal(linked(), false);
+
+	// --links removes it too.
+	fs.symlinkSync(path.join(copy, "extensions/mode"), mode);
+	r = s.run("--links");
+	assert.equal(r.code, 0, r.out);
+	assert.equal(linked(), false, r.out);
+	assert.equal(r.out.trim(), `removed ${mode} (mode is not an extension)`);
+
+	// Someone else's mode link or folder is not ours: kept.
+	fs.symlinkSync(path.join(s.root, "elsewhere"), mode);
+	assert.equal(s.run("--links").code, 0);
+	assert.equal(fs.readlinkSync(mode), path.join(s.root, "elsewhere"));
+	fs.rmSync(s.root, { recursive: true, force: true });
+});

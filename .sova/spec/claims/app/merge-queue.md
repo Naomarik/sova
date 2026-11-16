@@ -450,7 +450,9 @@ own folder, so a failure at any step, the first included, has its log.
 4. **Install.** When the branch changes one of the definition's install inputs (Sova's: the lockfile
    or `package.json`), the install runs offline.
 5. **Docs.** The branch's own drafts pinned at approval, and no other, are copied into the copy and
-   turned into docs there (the spec tool's `land`), as one docs commit on top of the merge. A
+   turned into docs there (the spec tool's `land`), as one docs commit on top of the merge. The
+   spec tools that run are the running Sova's own, never the ones a link in the pi folder leads to,
+   so a link into an older Sova's tools can't fail or change a landing (§tools.spec/mode-reading). A
    branch's own drafts are the untracked ones, plus the tracked ones it added or changed since its
    merge base with the target. Tracked drafts already on the target are never landed, changed or
    deleted. A draft of the branch's own that doesn't fit sends the entry back to its chat by itself
@@ -557,7 +559,7 @@ never "passed".
 - the spec replay, when the spec engine changed;
 - statecharts tests, when statecharts changed;
 - the build;
-- the spec check and census;
+- the spec check and census, with the running Sova's own spec tools, as the Docs step;
 - the leak scan over what would be pushed (§app.merge-queue/push).
 
 A check the project marks optional runs only when the merge thread picks it (Sova's: `e2e`, one

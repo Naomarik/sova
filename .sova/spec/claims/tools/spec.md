@@ -25,6 +25,9 @@ note serves), `notOwned` (on an area, the claims elsewhere that own what a reade
 always-on frame that arrives with the first page of a `read`.
 A claim over the size cap is warned about when a draft takes it there or grows it, and never refused.
 They change context delivery, not release policy.
+In Sova, every chat and worker, the merge queue and releases run the spec tools of the copy of Sova
+that runs them, never another copy a link in the pi folder leads to (§tools.spec/mode-reading); the
+pi terminal and a remote target use their agent dir's.
 A shipped playbook runs these tools for a review the operator starts, inside limits the operator
 sets, and only then.
 
@@ -243,6 +246,20 @@ parse, with the flags it pairs with it. The short part says in one sentence that
 offered (§app.spec-lookup/spec-tool), runs these same reads without a shell, and keeps its one shell
 line, which the write tools still need; a code-writing worker's spec brief says the same after its
 trusted-tools line.
+
+That shell line (and the same line in the shipped spec review playbook) sets `$core` to
+`$SOVA_SPEC_CORE` when it is set and not empty, else to the agent dir's
+`extensions/spec/core` (`$PI_CODING_AGENT_DIR`, a leading `~` expanded, else `~/.pi/agent`), and it
+reads the same in every chat and every version, so an update never changes a chat's prompt.
+Sova sets `SOVA_SPEC_CORE` in each local chat process to the spec tools in that chat's own copy of
+its code (§app.chat-processes/code-generations), and each of the chat's helpers (pi, Claude Code,
+team members) gets the same for the copy it runs; the sandbox lets it through. The census and the
+writing procedure's hand-over read the tools from the same place, so a chat's instructions, its
+census and the tools it runs are always one version, whatever the pi folder links to. The exceptions use their agent dir's: a worker on its
+worktree's own agent dir (§chat.worktrees/worktree-config), which runs that tree's own tools, and
+a remote target, which never receives it and finds its own machine's tools or says it has none.
+Sova never lets it leak: a server ignores one it was started with, and its tests never inherit a
+chat's.
 
 The writing procedure has the chat record one note per changed promise on what it verified
 (`evidence --note`, §tools.spec/land) and names no doc-only case, which the landing picks per record
@@ -522,7 +539,8 @@ second is the session's first `[spec census]` note of any kind. The third, with 
 the `align` result that sets an alignment implementing, after its Agree step
 (§tools.spec/align-agree). The census note and the align result carry it as text appended to that
 tool result, headed as the writing procedure, said once, with the file's path. The text comes from
-the installed tools' own copy. When that file is missing, they carry only a one-line pointer to it.
+the copy beside the tools the chat's `$core` line names: in a Sova chat, the chat's own copy of
+Sova's tools (§tools.spec/mode-reading). When that file is missing, they carry only a one-line pointer to it.
 After the session is compacted it is handed over again at the next of those moments, even if it
 was read or handed over before. It never goes into the system prompt or the mode section, so a
 Claude Code chat never restarts for it (§chat.mode-menu/minor-toggle-keeps-prompt).

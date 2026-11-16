@@ -283,7 +283,7 @@ or from pi's own terminal: its card at its position (§chat.shell-mode/card), ne
 reply streams shows under that reply.
 
 **info.** Compaction, labels, branch summaries and other short machine notes. Model changes,
-thinking-level changes and the mode extension's markers are the exception: they render
+thinking-level changes and the markers of Sova's modes are the exception: they render
 **nothing** in the thread — they are settings history, not conversation. That history stays where
 it belongs, on the Session pane's Changes disclosure and the Timeline's change markers
 (§chat.timeline/rows); a switch's own feedback is the toast and the announcement

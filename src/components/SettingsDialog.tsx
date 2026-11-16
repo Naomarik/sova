@@ -1,7 +1,7 @@
 import { createEffect, createMemo, createResource, createSignal, For, on, onCleanup, onMount, Show } from "solid-js";
 import type { ThemeInfo } from "../../shared/protocol";
 import type { ThemeBase } from "../../shared/theme";
-import { getClaudeCliStatus, getModelCheck, getProviderLimits, getThemes, getWebSettings, runModelCheck } from "../lib/api";
+import { getClaudeCliStatus, getModelCheck, getProviderLimits, getThemes, runModelCheck } from "../lib/api";
 import { clockTime, tildePath } from "../lib/format";
 import {
   CLAUDE_CODE_PROVIDER,
@@ -39,7 +39,6 @@ import { Choice, NumberField, SearchField, Toggle } from "./form";
 import { compressWork, setCompressWork } from "../lib/work-compression";
 import { checkedThemeId, droppedNotice, droppedTheme, pickTheme, reconcileTheme, setThemeMode, shownBase, themeMode, type ThemeMode, typography } from "../lib/theme";
 import { openSettings, settingsProject, type SettingsTab } from "../lib/settings-nav";
-import { experimentalDraft, experimentalSaveError, experimentalSaving, setExperimentalDraft, setExperimentalSaved } from "../lib/experimental-draft";
 import { AlignmentSettings } from "./AlignmentSettings";
 import { policyDraft, policySaveError, policySaving, setPolicyDraft, setPolicySaved } from "../lib/model-policy-draft";
 import { limitsDraft, limitsSaveError, limitsSaveResult, limitsSaving, setLimitsDraft, setLimitsSaved } from "../lib/provider-limits-draft";
@@ -412,48 +411,12 @@ function ClaudeCliStatusLine() {
 }
 
 /**
- * Experimental: unfinished features, staged like every server-backed form and written by Save
- * Changes. The settings are read when the tab opens (the panel is mounted only while its tab is),
- * so each switch starts from what's saved; each is bound to experimentalDraft / setExperimentalDraft.
- * One switch: Sova runs chat modes (§chat.mode-menu/sova-runs-modes), on unless saved off.
+ * Experimental: unfinished features. None right now, so the tab says only that ("Sova runs chat modes",
+ * its last switch, retired: Sova always runs chat modes). The next experiment brings back its switch,
+ * staged and saved like every server-backed form.
  */
 function ExperimentalPanel() {
-  const [webSettings] = createResource(() => getWebSettings());
-  // setExperimentalSaved is untracked (settings-draft.ts), so this tracks the loaded settings only.
-  createEffect(() => {
-    const s = webSettings.error ? undefined : webSettings();
-    if (s) setExperimentalSaved(s.experimental);
-  });
-
-  return (
-    <>
-      <p class="settings-intro">
-        Unfinished features. They can change or disappear, and each one says when a change reaches
-        your chats.
-      </p>
-      <div>
-        <Toggle
-          switch
-          class="settings-team-enable"
-          label="Sova runs chat modes"
-          hint="Sova runs every chat's modes itself, instead of the pi mode extension. Turn it off to go back to the old way; nothing is lost either way. Open chats switch over at their next quiet moment; workers already running finish the way they started."
-          // The server answers every switch; before it does, the switch waits disabled (never a guessed value).
-          checked={experimentalDraft()?.sovaModes ?? false}
-          disabled={experimentalSaving() || experimentalDraft() === null}
-          onChange={(on) => {
-            const d = experimentalDraft();
-            if (d) setExperimentalDraft({ ...d, sovaModes: on });
-          }}
-        />
-      </div>
-      <Show when={webSettings.error}>
-        <Banner tone="error" title="Couldn't read the experimental settings." body="Nothing was changed." />
-      </Show>
-      <Show when={experimentalSaveError()}>
-        {(err) => <Banner tone="error" title="Couldn't save the change." body={`${sentence(err().message)} Your saved setting is unchanged.`} />}
-      </Show>
-    </>
-  );
+  return <p class="settings-intro">No experimental features right now.</p>;
 }
 
 /**

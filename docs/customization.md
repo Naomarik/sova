@@ -138,7 +138,7 @@ The Sova installer does **not** activate the bundled configuration.
 | [subagents](../pi-config/extensions/subagents/README.md) | Background workers and coordinated teams, visible with their transcripts |
 | [remote](../pi-config/extensions/remote/README.md) | Tool execution on your SSH, AWS SSM, Docker, or Incus targets |
 | [usage-status](../pi-config/extensions/usage-status/) | Subscription and spend meters |
-| [mode](../pi-config/extensions/mode/README.md) | Per-session modes in the composer |
+| [mode](../pi-config/extensions/mode/README.md) | Per-session modes in the composer (no pi extension: the texts and rules Sova's own engine runs) |
 | [explain](../pi-config/extensions/explain/README.md) | Saved HTML explanations browsable from Sova |
 | [topic-outline](../pi-config/extensions/topic-outline/README.md) | Conversation chapters in the outline strip |
 

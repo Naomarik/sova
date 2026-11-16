@@ -7,16 +7,14 @@
 import assert from "node:assert/strict";
 import { mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
 import { after, test } from "node:test";
 
-const here = dirname(fileURLToPath(import.meta.url));
 const dir = realpathSync(mkdtempSync(join(tmpdir(), "sova-mq-modes-")));
 process.on("exit", () => rmSync(dir, { recursive: true, force: true }));
 const cwd = realpathSync(mkdtempSync(join(tmpdir(), "sova-mq-modes-cwd-")));
 process.on("exit", () => rmSync(cwd, { recursive: true, force: true }));
-writeFileSync(join(dir, "settings.json"), JSON.stringify({ extensions: [resolve(here, "../../pi-config/extensions/mode")] }));
+writeFileSync(join(dir, "settings.json"), JSON.stringify({}));
 const DEFAULT = { version: 1, mode: "delegate", strict: false, minorModes: ["align", "spec", "vis"] };
 writeFileSync(join(dir, "mode.json"), JSON.stringify(DEFAULT));
 process.env.PI_CODING_AGENT_DIR = dir;

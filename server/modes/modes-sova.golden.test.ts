@@ -1,31 +1,33 @@
-// Run: pnpm test -- server/modes/modes-sova.golden.test.ts. The modes recordings (server/modes/tests/harness.fixture.ts) with the switch on
-// (Settings → Experimental → "Sova runs chat modes"): each case runs with the switch off, then on, in this
-// process, each run in folders of its own; the on run must give exactly the off run's bytes (no filter),
-// and the off run its recording (a1's intended additions aside). Every chat and worker of the on run
-// loads Sova's engine in the mode slot and never the extension (assertOwner), so it can't pass on old code.
+// The modes recordings (server/modes/tests/harness.fixture.ts): Sova's engine runs every mode in every chat and worker,
+// and each case must give its recording's bytes, unfiltered (golden/README.md). Every chat and worker loads Sova's
+// engine in the mode slot and never the pi-config mode extension (assertOwner), whatever the pi folder links.
 // The cases that run no program; those that do are in the .integration.test.ts beside it.
+// SOVA_MODES_GOLDEN=record re-takes the recordings from here.
 // Real chats in this process on a scripted model; a throwaway agent dir, ~/.pi is never read or written.
+import assert from "node:assert/strict";
+import { readdirSync } from "node:fs";
 import { after, test } from "node:test";
 
-const { beginCase, cm, matchRecording, setOwner, withoutA1 } = await import("./tests/harness.fixture");
-const { assertSameRecord } = await import("./tests/store.fixture");
+const { beginCase, cm, matchRecording } = await import("./tests/harness.fixture");
 const { CASES } = await import("./tests/cases.fixture");
+const { RECORD, referencedBlobs, STORE_DIR } = await import("./tests/store.fixture");
 
 after(async () => {
   await cm.disposeAllChats();
 });
 
 for (const c of CASES.filter((c) => (c.proc === true) === false)) {
-  test(`${c.name}: Sova's engine gives the extension's bytes; ${c.covers}`, async () => {
-    setOwner("extension");
-    beginCase("extension");
-    const off = await c.run("extension");
-    if (c.unrecorded) c.unrecorded(off);
-    else matchRecording(c.name, off, "extension", withoutA1);
-    setOwner("sova");
-    beginCase("sova");
-    const on = await c.run("sova");
-    if (c.onDiffers) c.onDiffers(on, off);
-    else assertSameRecord(`${c.name}: with the switch on, the record differs from the switch off`, on, off);
+  test(`${c.name}: ${c.covers}`, async () => {
+    beginCase();
+    const rec = await c.run();
+    c.check?.(rec);
+    matchRecording(c.name, rec);
   });
 }
+
+test("the store holds exactly what the recordings refer to (a re-record deletes what it no longer uses)", { skip: RECORD ? "recording" : false }, () => {
+  const used = referencedBlobs();
+  const stored = readdirSync(STORE_DIR).map((f) => f.replace(/\.json$/, ""));
+  assert.deepEqual(stored.filter((k) => !used.has(k)), [], "store files no recording refers to");
+  assert.deepEqual([...used].filter((k) => !stored.includes(k)), [], "references with no store file");
+});

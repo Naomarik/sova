@@ -9,12 +9,17 @@ machine output.
 | `sova-spec-draft.mjs` | Only with `--write`: drafts under `drafts/`, and the current docs on `promote`. |
 | `sova-spec-review.mjs` | Only on `prepare --write` and `record`, under `reviews/`. |
 
-The tools run only from the installed spec extension (`$core`); no project, Sova included, keeps a
-copy. Resolve `$core` with exactly this line:
+The tools run only from one trusted copy (`$core`); no project, Sova included, keeps a copy of its
+own. Resolve `$core` with exactly this line:
 
 ```sh
-core="${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}"; case $core in "~"|"~/"*) core="$HOME${core#\~}";; esac; core="$core/extensions/spec/core"
+core="${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}"; case $core in "~"|"~/"*) core="$HOME${core#\~}";; esac; core="${SOVA_SPEC_CORE:-$core/extensions/spec/core}"
 ```
+
+In a Sova chat, `SOVA_SPEC_CORE` names the spec tools in that chat's own copy of Sova, so the chat,
+its helpers, the merge queue and releases run the tools of the Sova that runs them, whatever the
+agent dir links to. Elsewhere (a pi terminal, a remote target) it is unset and the line finds the
+installed spec extension.
 
 Never guess a path such as `$HOME/.pi/agent/...`: the agent dir may be elsewhere (`PI_CODING_AGENT_DIR`),
 and a guessed path that finds nothing doesn't mean the tools are missing. `$core` exists only after

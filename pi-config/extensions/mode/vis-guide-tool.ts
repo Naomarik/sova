@@ -1,7 +1,7 @@
 /**
  * The `vis_guide` tool: the drawing rules for one `vis` kind, looked up when the model is about to draw
  * it (minor.ts `visGuide`: vis/shared.md, then that kind's file). It runs in this process, never on a
- * remote target, so it answers in every session the vis minor mode reaches. The host (index.ts) owns
+ * remote target, so it answers in every session the vis minor mode reaches. The host (Sova's mode engine) owns
  * when the tool is in the loadout (only while vis is on).
  */
 import { StringEnum } from "@earendil-works/pi-ai";

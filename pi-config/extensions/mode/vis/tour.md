@@ -1,7 +1,7 @@
 <!--
   The tour CORE: what `vis_guide {kind:"tour"}` returns. Paid for once per chat that records a tour, so keep
   it at most 13,500 chars after comments (about 3,000 tokens; glm-5.3 reads ~4.44 chars per token; tested in
-  pi-config/extensions/mode/index.test.ts). It covers the ordinary case alone: a chat recording an ordinary
+  pi-config/extensions/mode/modes.test.ts). It covers the ordinary case alone: a chat recording an ordinary
   tour reads no part. Rare cases live in the parts beside it (tour-signin.md, tour-sites.md, tour-sova.md,
   tour-sharing.md), each pointed to with "only when …", returned by `vis_guide` with the part's name. Each rule
   lives in exactly one file. Written for a cheap model: short lines, must-know first (the hands-off rule, then

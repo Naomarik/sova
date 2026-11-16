@@ -86,7 +86,7 @@ export type AlignDocStyle = "default" | "simplified" | "pm";
 /** Each recorded style as the card, `get` and the viewer name it (align-settings.ts ALIGN_STYLE_LABELS). */
 export const ALIGN_DOC_STYLE_LABELS: Record<AlignDocStyle, string> = { pm: "Project manager", simplified: "Simplified", default: "Technical" };
 
-/** Adversarial review (behind the mode extension's `adversarial-review` flag): its two phases. */
+/** Adversarial review (behind the `adversarial-review` launch flag): its two phases. */
 export type AlignReviewPhase = "plan" | "diff";
 export const ALIGN_REVIEW_PHASES: readonly AlignReviewPhase[] = ["plan", "diff"];
 export type AlignReviewState = "skipped" | "running" | "clear" | "blocking" | "incomplete";
@@ -465,7 +465,7 @@ export const ALIGN_FILE_SCHEMA = alignFileSchema();
 /**
  * The change-request mark (§chat.alignment/tool): the agent records that the user's latest prompt asks
  * for something to be built, fixed or changed. It touches no document; only the settle nudge reads it,
- * from the call's arguments (index.ts), for the run it is made in.
+ * from the call's arguments, for the run it is made in.
  */
 export const CHANGE_REQUEST_OP = "change_request" as const;
 /** The mark's whole answer when it is alone in its call; before other ops it opens their answer. */

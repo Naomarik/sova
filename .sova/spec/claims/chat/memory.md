@@ -14,8 +14,8 @@ outline the web shows, Settings → Memory and the overseers' switches. Not here
 and Make {name} the Default (§chat/mode-menu), and how a Claude Code chat's CLI takes a request
 (§app/claude-code-provider).
 
-The engine is Sova's, server-side and harness-neutral (`server/memory/`): the mode extension only
-knows the minor mode's name and where it may be turned on. Memory is no part of Claude Code's own
+The engine is Sova's, server-side and harness-neutral (`server/memory/`): Sova's modes only
+know the minor mode's name and where it may be turned on. Memory is no part of Claude Code's own
 auto-memory, which Sova keeps off (§app.claude-code-provider/no-memory).
 
 ## §chat.memory/types — Two types: UniiChat and zoomable compaction
@@ -62,7 +62,7 @@ switch from its mode menu is refused (409), as for every queue chat
 (§chat.merge-queue/thread-life). Those are the only ways: a project overseer's mode switch stays
 refused, and neither overseer has a mode-menu memory row.
 
-- The mode extension declares it web-only (`MINOR_SURFACES` in `pi-config/extensions/mode/minor.ts`,
+- Sova's modes declare it web-only (`MINOR_SURFACES` in `pi-config/extensions/mode/minor.ts`,
   a record over every minor mode). Its `/mode memory on` takes effect only while Sova's server is
   applying a switch for that very session (the server's `sova:web-minor` hook); typed by hand in a
   chat's composer (§chat.mode-menu/typed-commands), it is refused with "memory is turned on from a

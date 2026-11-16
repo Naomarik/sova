@@ -8,7 +8,7 @@ decides when; the user never has to ask, and nothing asks the user for approval 
 
 ## §chat.alignment-review/flag — Off means today, exactly
 
-Everything here is behind one boolean pi flag the mode extension registers, `adversarial-review`
+Everything here is behind one boolean pi flag Sova's modes register, `adversarial-review`
 (default off), read at `session_start` like the other launch flags. With it off a session is
 exactly as before: no review guidance in the system prompt, the `align` tool's schema, description
 and guidelines byte-identical to the flag's absence, no `review` or `close_blocker` op accepted
@@ -119,7 +119,7 @@ approach, decided questions and rejected alternatives.
 
 Each subagent profile (§chat/subagent-profiles) can carry a `reviewer`: `{primary, fallback}` of
 backend · model · effort, exactly like `specWriter`, or `null` (None: no review). A profile
-without the key still parses, and a parse never adds it. The mode extension resolves it with the
+without the key still parses, and a parse never adds it. Sova's modes resolve it with the
 profile at each turn boundary, assessed against discovery and the model policy like the spec
 writer (§chat.subagent-profiles/resolution), and the code uses only what the profile lists, never
 a model of its own: the primary, else the fallback once (disclosed), else `incomplete`. With the
@@ -144,8 +144,8 @@ constraint added", "Plan review: 2 blocking", "Plan review incomplete: …", and
 "Reviewing the implementation", "Implementation review: no blocking issues", "Implementation
 review: 2 blocking" ("Implementation review: 2 blocking (1 open)" once some are closed),
 "Implementation review skipped: …", "Implementation review incomplete: …". Each open blocker
-shows with its id, title and check. The extension's own lines (the TUI's result card and
-markdown) use the same words. On an answerable card (the chat view, align on, newest revision; never a watch,
+shows with its id, title and check. The `align` tool's own result text (what the model
+reads) uses the same words. On an answerable card (the chat view, align on, newest revision; never a watch,
 an Overseer or an older revision) the foot also shows while every question is answered and while
 implementing, not only while a question is open:
 

@@ -54,7 +54,7 @@ import type { PiExtensionAPI, PiLoaderOptions, PiToolDefinition } from "./harnes
 import { PiChatHost } from "./harness/pi/host";
 import { contextOfBranch } from "./harness/pi/usage";
 import { extensionEntries } from "./harness/pi/state";
-import { modesEntries, workerModePaths } from "./harness/pi/own-code";
+import { workerModePaths } from "./harness/pi/own-code";
 import { modesBridgeExtension, type ModesHandle } from "./harness/pi/modes";
 import { isAlreadyProcessing } from "./harness/pi/session";
 import { isCompactionInProgress } from "./harness/pi/history-ops";
@@ -107,7 +107,7 @@ import { isApproved, isApprovedByUser, recordApproval } from "./project-mode-app
 import { approvalRootOfDir } from "./modes/personal";
 import { ModeActions, notHereFor, type ModeCommandOutcome } from "./mode-commands";
 import { projectModesOf, restoreProjectSnapshots } from "../pi-config/extensions/mode/state.ts";
-import { PROJECT_MODE_PREFIX, type ProjectModeRef } from "../shared/project-modes";
+import type { ProjectModeRef } from "../shared/project-modes";
 import { overseerMemoryOf, type OverseerMemoryInForce, parseOverseerMemory, saveDefaultMemoryType } from "./memory/settings";
 import { MEMORY_TOOLS } from "../shared/memory";
 import { projectEngine } from "./project-services/routes";
@@ -140,7 +140,7 @@ const offerNoteHere = async (sessionId: string): Promise<string | null> => (awai
 const cardNoteHere = async (sessionId: string, since: string | null): Promise<string | null> =>
   (await import("./merge-queue/card-note")).withMergeCardNote((await import("./transcript-cards")).cardNoteFor(sessionId, since), sessionId, since);
 import { noteUsageSession, registerUsageSession, resolveUsageAttribution } from "../pi-config/extensions/llm-inflight/attribution.ts";
-import { reviewSaved, sovaRunsModesSaved } from "./web-settings";
+import { reviewSaved } from "./web-settings";
 import { visToolsWanted } from "../pi-config/extensions/mode/minor.ts";
 import { alignForPick } from "./align-settings";
 import { agentRoot } from "./state-root";
@@ -351,11 +351,10 @@ const mcpTellHere: NonNullable<ChatHosts["mcpTell"]> = (parent, note) => void im
 
 /** Register the Claude Code provider without waiting for the user to open a session: a throwaway
     session with the default extensions and the provider flag alone (server/harness/pi/open.ts).
-    Best-effort; never throws. `onStep` hears each step as it begins (§app.chat-processes/boot-log). Its modes
-    owner is the saved switch as this warm-up finds it, as a chat's open reads it (§chat.mode-menu/sova-runs-modes);
-    nothing of that owner outlives the throwaway session, so a later flip has nothing here to follow. */
+    Best-effort; never throws. `onStep` hears each step as it begins (§app.chat-processes/boot-log). Sova's
+    engine runs its modes, as in every chat (§chat.mode-menu/sova-runs-modes). */
 export function warmClaudeCodeProvider(modelRuntime: PiModelRuntime, cwd: string, onStep?: (step: string) => void): Promise<void> {
-  return warmPiProvider(modelRuntime, cwd, DEFAULT_EXTENSION_FACTORIES, onStep, sovaRunsModesSaved() ? modesEntries().entry : null);
+  return warmPiProvider(modelRuntime, cwd, DEFAULT_EXTENSION_FACTORIES, onStep);
 }
 
 let runtimeWarm: Promise<void> | null = null;
@@ -847,7 +846,7 @@ export function setWorkerHostSource(source: ((parent: { sessionId: string; path:
  * on each discover), bound to the session it runs: the subagents extension and the hidden chats start
  * every worker through it.
  */
-function workerHostExtension(sovaModes: boolean) {
+function workerHostExtension() {
   return (pi: PiExtensionAPI): void => {
     let announcement: WorkerHostAnnouncement | null = null;
     const announce = () => {
@@ -858,23 +857,24 @@ function workerHostExtension(sovaModes: boolean) {
       const c = toolCtx(ctx);
       const host = c.key && workerHostSource ? workerHostSource({ sessionId: c.sessionId, path: c.key }) : null;
       // Its workers take this chat's skills as fixed at its first message, read at each start.
-      announcement = host ? { version: 1, host: skillsStamped(modesStamped(host, sovaModes), () => loadoutOnBranch(c.branch())), ...(sovaModes ? { modes: "sova" as const } : {}) } : null;
+      // `modes: "sova"` always: Sova runs every chat's modes (a subagents extension on older code keys on it).
+      announcement = host ? { version: 1, host: skillsStamped(modesStamped(host), () => loadoutOnBranch(c.branch())), modes: "sova" as const } : null;
       announce();
     });
   };
 }
 
 /**
- * A parent's worker host with its modes owner on every start (§chat.mode-menu/sova-runs-modes): a worker
- * takes its parent's owner at its spawn or resume, both of which start through here. Sova's word, never
+ * A parent's worker host with `modes: "sova"` on every start (spawn or resume): Sova runs every worker's modes,
+ * and a worker process on older code still reads it to put Sova's engine in its mode slot. Sova's word, never
  * the request's: a `modes` a caller put on the spec is replaced.
  */
-export function modesStamped(host: WorkerHost, sovaModes: boolean): WorkerHost {
+export function modesStamped(host: WorkerHost): WorkerHost {
   return {
     ...host,
     start: (req) => {
       const { modes: _given, ...spec } = req.spec;
-      return host.start({ ...req, spec: sovaModes ? { ...spec, modes: "sova" } : spec });
+      return host.start({ ...req, spec: { ...spec, modes: "sova" } });
     },
   };
 }
@@ -970,10 +970,8 @@ export function workerBuild(w: WorkerSpec, path: string, inProject = false): PiB
       // A Lookbook's sessions load nothing by themselves: no skills (so no skills section in the prompt) and no context
       // files. The skills a run uses are named, and Sova lists them in its messages.
       ...(isLookbookKind(w.kind) ? { noSkills: true as const, noContextFiles: true as const } : {}),
-      // The mode extension's files in their own slots: Sova's when its parent's modes ran on Sova at this
-      // start (§chat.mode-menu/sova-runs-modes); otherwise as listed, but a worker file this copy no
-      // longer has (listed by a parent on older code) is Sova's instead of failing the start.
-      additionalExtensionPaths: [...workerModePaths(w.extensions, w.modes === "sova", modesEntries()), ...(process.env[JOB_CARDS_ENV] === "only" ? [JOB_CARDS_EXTENSION] : [])],
+      // The mode files it lists, whichever tree they lie in, are Sova's, each in its own slot (own-code.ts).
+      additionalExtensionPaths: [...workerModePaths(w.extensions), ...(process.env[JOB_CARDS_ENV] === "only" ? [JOB_CARDS_EXTENSION] : [])],
       extensionFactories: workerExtensionFactories(w, path, inProject),
       ...(w.appendSystemPrompt ? { appendSystemPrompt: [w.appendSystemPrompt] } : {}),
       // Its parent chat's fixed list, context files and skills, stamped at its start (skillsStamped).
@@ -1297,29 +1295,23 @@ class ChatSession {
   workerSpec: WorkerSpec | null = null;
   /** Set when this chat runs in the home folder because its stored local folder is gone (§app.shell/missing-folder-home). */
   cwdFallback: CwdFallback | null = null;
-  /** Whether Sova runs this chat's modes (§chat.mode-menu/sova-runs-modes): the switch as the open found it. */
-  sovaModes = false;
-  /** Whether a mode owner applies to this chat at all: an ordinary chat, or a special loadout that discovers
-      the operator's extensions (the Overseer). Never a worker (its owner is its spec's) nor a loadout that
-      loads no extension. Set by the open. */
+  /** Whether modes apply to this chat at all: false for a special loadout that loads no extension (Sova's
+      engine is never in it). An ordinary chat, the Overseer and a worker have Sova's engine wherever it loads.
+      Set by the open. */
   modesApply = false;
-  /** Who runs this chat's modes, as its open decided (the state mirror's `modesOwner`): null where none applies. */
-  get modesOwner(): "sova" | "extension" | null {
-    return this.modesApply ? (this.sovaModes ? "sova" : "extension") : null;
-  }
   /** Quiet enough to rebuild: no run, compaction, turn on its way, queued send or open dialog. */
   get quietForReload(): boolean {
     return !this.disposed && !this.harness.isRunning() && !this.isCompacting() && !this.turnStarting && !this.hasPendingSends() && this.pendingDialogs().length === 0;
   }
   /** Sova's mode engine in this chat's current runtime (modesBridgeExtension), once it announced itself;
-      null with the pi mode extension (the switch off), or before its session started. Set by the open. */
+      null where modes don't apply, a worker whose list has no mode slot, or before its session started. Set by the open. */
   modesSource: () => ModesHandle | null = () => null;
   private get modesHandle(): ModesHandle | null {
-    return this.sovaModes && !this.disposed ? this.modesSource() : null;
+    return this.modesApply && !this.disposed ? this.modesSource() : null;
   }
-  /** Whether something runs this chat's modes: Sova's engine, or the mode extension's /mode command. */
+  /** Whether Sova's engine runs this chat's modes. */
   private hasModeOwner(): boolean {
-    return this.modesHandle !== null || !!this.modeCommand();
+    return this.modesHandle !== null;
   }
   specialPort: SpecialPort | null = null;
   /** Composer messages a kind attributes (`@clientSend`), one at a time, in order. */
@@ -2392,7 +2384,7 @@ class ChatSession {
   }
 
   /**
-   * `/mode sync`: the extension's quiet argument that changes and writes nothing, only hands it
+   * The engine's quiet sync (what `/mode sync` does): it changes and writes nothing, only hands the engine
    * pi's base prompt options (reachable from a command context alone) and puts the session's mode
    * block there. Without it, a chat never switched in this runtime lost its mode section on every
    * turn an extension's message starts (a worker settling) at that turn's second request, and
@@ -2400,31 +2392,14 @@ class ChatSession {
    * before its first turn; safe on a foreign or terminal-live session, since nothing is written.
    */
   private async syncModePrompt(): Promise<void> {
-    // Sova's engine takes the same base options from the command context, without a command.
+    // Sova's engine takes the base options from the command context, without a command.
     const handle = this.modesHandle;
-    if (handle) {
-      try {
-        handle.sync(this.harness.commandContext());
-      } catch (err) {
-        console.error("[chat] mode sync failed", err);
-      }
-      return;
-    }
-    const cmd = this.modeCommand();
-    if (!cmd) return;
+    if (!handle) return;
     try {
-      await cmd.handler("sync", this.harness.commandContext());
+      handle.sync(this.harness.commandContext());
     } catch (err) {
-      console.error("[chat] /mode sync failed", err);
+      console.error("[chat] mode sync failed", err);
     }
-  }
-
-  /**
-   * The mode extension's own /mode command in this runtime, or undefined when it isn't loaded
-   * (extension-toggle, a name clash). Checked by source so another extension's "mode" never runs.
-   */
-  private modeCommand() {
-    return this.harness.command("mode");
   }
 
   /** The chat socket's `profile` message (§chat.profiles/applying). */
@@ -2596,8 +2571,8 @@ class ChatSession {
   private projectListing() {
     const cwd = this.harness.cwd || undefined;
     const none = this.overseer || !!this.specialRefuses("mode") || (cwd !== undefined && !!targetOfCwd(cwd));
-    // Your own modes are offered only while Sova runs this chat's modes (§chat.mode-menu/personal-modes): the owner its open found.
-    return listingFor(cwd, none, this.sovaModes);
+    // Your own modes beside the project's (§chat.mode-menu/personal-modes), the engine's one listing.
+    return listingFor(cwd, none);
   }
 
   /** The mode menu's project rows (§chat.mode-menu/project-modes), read from disk now. Empty (no keys) when
@@ -2814,7 +2789,7 @@ class ChatSession {
       pick checks this before it writes anything. */
   subagentSwitchRefusal(): string | null {
     if (this.disposed || this.overseer || this.specialRefuses("mode") || this.hasForeignWrites()) return "This session's subagent profile can't be switched here.";
-    if (!this.hasModeOwner()) return "The mode extension isn't loaded in this chat.";
+    if (!this.hasModeOwner()) return "Modes aren't available in this chat.";
     return null;
   }
 
@@ -2822,7 +2797,7 @@ class ChatSession {
     if (this.disposed || this.overseer || this.specialRefuses("mode") || this.hasForeignWrites()) throw new ModeRefusedError();
     assertNotLive(this.path);
     const profile = requireSubagentProfile(id);
-    if (!this.hasModeOwner()) throw new ModeRefusedError("The mode extension isn't loaded in this chat.");
+    if (!this.hasModeOwner()) throw new ModeRefusedError("Modes aren't available in this chat.");
     this.flushDeferredAppends();
     const entry = pickEntryFor(this.extensionBranch(), profile);
     if (entry) {
@@ -2909,7 +2884,7 @@ class ChatSession {
     } catch (err) {
       return err instanceof Error ? err.message : String(err);
     }
-    if (!this.hasModeOwner()) return "The mode extension isn't loaded in this chat.";
+    if (!this.hasModeOwner()) return "Modes aren't available in this chat.";
     return null;
   }
 
@@ -3080,11 +3055,11 @@ class ChatSession {
 
   /**
    * Make this runtime follow `state` from its next prompt (modeApplyPlan), and make it this
-   * chat's mode. The /mode handler is called directly, never sent through prompt(), so no command
-   * text can reach the model; it appends the marker entry this session later restores from.
-   * Resolves once the switch is in the extension's memory; the delegate routing probe it then
-   * starts isn't awaited. Returns the plan that ran ("command" = taken, "skip" = a foreign writer
-   * got it, "unsupported" = no /mode command loaded), so callers can decide what else to do.
+   * chat's mode. Sova's engine is called directly, never through prompt(), so no command text can
+   * reach the model; it appends the marker entry this session later restores from. Resolves once
+   * the switch is in the engine's memory; the delegate routing probe it then starts isn't awaited.
+   * Returns the plan that ran ("command" = taken, "skip" = a foreign writer got it, "unsupported" =
+   * no modes in this chat: no engine handle), so callers can decide what else to do.
    */
   async applyMode(state: ModeState, projectModes?: readonly string[]): Promise<"skip" | "unsupported" | "command"> {
     if (this.disposed) return "skip"; // a disposed runtime took nothing
@@ -3103,18 +3078,13 @@ class ChatSession {
     });
     let applies = appliesAfter(plan, streaming);
     if (plan === "command") {
-      // getCommand + createCommandContext + handler(args, ctx) is the SDK's own extension-command
-      // path (AgentSession._tryExecuteExtensionCommand, agent-session.js:1062 in pinned 0.86.0;
-      // the method body is byte-identical to 0.85.1's, it only moved),
-      // minus the prompt text that path falls back to when a command is missing. Internal-ish
-      // API: re-check on SDK upgrades. The SDK reports handler errors via emitError; so do we.
+      // Sova's engine, called directly with a command context (createCommandContext, the context the SDK's own
+      // extension-command path gives a handler; internal-ish API: re-check on SDK upgrades), never through a command.
       const ctx = this.harness.commandContext();
-      // Sova's engine when it runs this chat's modes (direct calls); else the mode extension's /mode handler.
-      const handle = this.modesHandle;
-      const cmd = handle ? undefined : this.modeCommand()!;
-      const minor = async (m: (typeof MINOR_MODES)[number], on: boolean) => (handle ? handle.setMinor(m, on, ctx) : cmd!.handler(`${m} ${on ? "on" : "off"}`, ctx));
-      const project = async (id: string, on: boolean) => (handle ? handle.setProject(id, on, ctx) : cmd!.handler(`${PROJECT_MODE_PREFIX}${id} ${on ? "on" : "off"}`, ctx));
-      const major = (mode: ModeState["mode"]) => (handle ? handle.setMode(mode, ctx) : cmd!.handler(mode, ctx));
+      const handle = this.modesHandle!;
+      const minor = async (m: (typeof MINOR_MODES)[number], on: boolean) => handle.setMinor(m, on, ctx);
+      const project = async (id: string, on: boolean) => handle.setProject(id, on, ctx);
+      const major = (mode: ModeState["mode"]) => handle.setMode(mode, ctx);
       this.flushDeferredAppends(); // open-time entries go before the extension's mode marker
       try {
         // memory is web-only: the extension takes it on only while this switch is being applied (permit.ts).
@@ -3137,13 +3107,13 @@ class ChatSession {
         }
         // Not awaited: after switching, setMode awaits the delegate routing probe (up to 15s).
         withWebMode(this.harness.id, state.mode, () => major(state.mode)).catch((err) => {
-          console.error("[chat] /mode handler failed", err);
+          console.error("[chat] mode switch failed", err);
           if (this.disposed) return;
           this.modeApplies = "new-chats";
           this.broadcast(this.modeMessage());
         });
       } catch (err) {
-        console.error("[chat] /mode handler failed", err);
+        console.error("[chat] mode switch failed", err);
         applies = "new-chats";
       }
       if (!this.foreignWrite) markOwned(this.path); // the marker entry is our write
@@ -3159,7 +3129,7 @@ class ChatSession {
 
   /**
    * Between runs, vis_check follows this chat's vis mode at once, as the mode extension's vis_guide does
-   * (§chat.mode-menu/minor-toggle-keeps-prompt): called after both /mode handlers ran and modeState took the
+   * (§chat.mode-menu/minor-toggle-keeps-prompt): called after the engine took both switches and modeState took the
    * new state, so a major switch's restored tool set (leaving strict delegate puts back a snapshot that never
    * saw vis_check change) is corrected too. Never from a MODE_STATE_EVENT listener, which fires inside the
    * handler while visOn still reads the old state. Mid-run the run keeps its tools; the vis-check
@@ -3242,8 +3212,8 @@ class ChatSession {
   }
 
   /**
-   * Apply the waiting pick through the extension's /claude-login handler, called directly like
-   * /mode (never through prompt()). The web queue holds while it lands, so no turn starts on the
+   * Apply the waiting pick through the extension's /claude-login handler, called directly (never
+   * through prompt()). The web queue holds while it lands, so no turn starts on the
    * old login in between; a refusal drops the pick and says why.
    */
   private async applyLoginPick(): Promise<void> {
@@ -5053,11 +5023,9 @@ async function openLocked(path: string, onDisposed: () => void, onStep: (step: s
   /** The last build's special loadout, if this chat is a special kind's. */
   const last: { special: { spec: SpecialSpec; port: SpecialPort } | null } = { special: null };
   const worker = presetWorkers.get(path) ?? null;
-  // Who runs this chat's modes (§chat.mode-menu/sova-runs-modes): the saved switch as this open finds it, kept for
-  // every runtime this open builds. A save that flips the switch has the chat reload at its next quiet moment
-  // (chat-host.ts modesSwitched through the rollout; chatModesSwitchedHere in-process), and that reload's open
-  // reads it anew; a flip back before then cancels it. A worker's is its spec's, stamped at its start (workerBuild).
-  const modes: { sova: boolean; applies: boolean; handle: ModesHandle | null } = { sova: !worker && sovaRunsModesSaved(), applies: false, handle: null };
+  // Sova's engine runs this chat's modes (§chat.mode-menu/sova-runs-modes): whether modes apply to it (never to a
+  // loadout that loads no extension), and the engine's handle in the runtime built last, once it announced itself.
+  const modes: { applies: boolean; handle: ModesHandle | null } = { applies: true, handle: null };
   const build = async ({ cwd, read }: { cwd: string; read: OpenRead }): Promise<PiBuild> => {
     // Whether its folder is a project's (server/skill-descent.ts), for every kind: read at each build, so a project
     // added while the chat is open counts from its next reload.
@@ -5067,7 +5035,12 @@ async function openLocked(path: string, onDisposed: () => void, onStep: (step: s
     // with the keys of the sends they came from (§app.chat-processes/worker-instructions).
     if (worker) {
       const b = workerBuild(worker, path, inProject);
-      return { ...b, built: (session) => (sendKeys.watch(session), b.built?.(session)) };
+      return {
+        ...b,
+        // Sova's engine's handle, in a worker whose list has a mode slot (Sova's engine is there; the bridge only listens).
+        loader: { ...b.loader, extensionFactories: [...(b.loader.extensionFactories ?? []), modesBridgeExtension((handle) => (modes.handle = handle))] },
+        built: (session) => (sendKeys.watch(session), b.built?.(session)),
+      };
     }
     if (!launch.recorded) {
       const now = alignLaunchOf(read.state);
@@ -5084,7 +5057,7 @@ async function openLocked(path: string, onDisposed: () => void, onStep: (step: s
     const special = kind ? await specialOf(kind, path) : null;
     last.special = special;
     const spec = special?.spec ?? null;
-    // A loadout that discovers no extension has no mode slot: no owner applies to it.
+    // A loadout that discovers no extension never has Sova's engine: modes don't apply to it.
     modes.applies = !spec?.loader.noExtensions;
     // A loadout that loads no extension never registers the provider itself: it waits for the
     // runtime's own start, when this process started it (the server at boot; a chat's own process).
@@ -5152,9 +5125,9 @@ async function openLocked(path: string, onDisposed: () => void, onStep: (step: s
               ...built.loader,
               extensionFactories: [
                 ...(built.loader.extensionFactories ?? []),
-                { name: "sova-worker-host", factory: workerHostExtension(modes.sova) },
-                // It discovers the operator's extensions, so its mode slot is Sova's engine when Sova runs modes.
-                ...(modes.sova ? [modesBridgeExtension((handle) => (modes.handle = handle))] : []),
+                { name: "sova-worker-host", factory: workerHostExtension() },
+                // It discovers the operator's extensions, so Sova's engine runs its modes: the engine's handle.
+                modesBridgeExtension((handle) => (modes.handle = handle)),
               ],
             }
         : {
@@ -5167,9 +5140,9 @@ async function openLocked(path: string, onDisposed: () => void, onStep: (step: s
                   snap?.remove.includes("mcp") || nothingDeclared(cwd) ? NO_MCP : (chatHosts.mcpList ?? mcpListHere)({ path, cwd, sandboxOn, offMcp: loadout.data?.offMcp ?? [], onMcp: loadout.data?.onMcp ?? [] }),
               }),
               // Its workers' and hidden chats' host (§app.chat-processes/workers).
-              { name: "sova-worker-host", factory: workerHostExtension(modes.sova) },
-              // Sova's mode engine's handle, for this chat (only a runtime whose modes Sova runs has one to announce).
-              ...(modes.sova ? [modesBridgeExtension((handle) => (modes.handle = handle))] : []),
+              { name: "sova-worker-host", factory: workerHostExtension() },
+              // Sova's mode engine's handle, for this chat.
+              modesBridgeExtension((handle) => (modes.handle = handle)),
               visCheckExtension(() => (visHost.chat && !visHost.chat.disposed ? visHost.chat.visCheckHost() : null)),
               // What the model is sent of a `!` command (§chat.shell-mode/model): before memory, which sees it so too.
               shellModelExtension(),
@@ -5202,8 +5175,6 @@ async function openLocked(path: string, onDisposed: () => void, onStep: (step: s
       // The merge thread (its Sova profile): its sandbox On from its start, at the read-only level (its tools write only
       // in their tmp) and the main checkout it starts in never a writable root; the rest goes through the merge verbs.
       flags: () => ({ ...sessionFlags(cwd, outline, linkTools, launch.data ?? undefined), ...(sovaNamedKind(snap) === "merge-thread" ? MERGE_THREAD_FLAGS : {}) }),
-      // Sova's engine in the discovered mode extension's slot, when Sova runs this chat's modes.
-      modesEntry: modes.sova ? modesEntries().entry : null,
       // Removals: the SDK's excludeTools, a filter on the registry itself, so no extension's
       // setActiveTools or re-registration brings a removed tool back.
       exclude: (present) => (profile.excluded = snap?.remove.length ? excludedTools(snap.remove, present) : []),
@@ -5276,8 +5247,7 @@ async function openLocked(path: string, onDisposed: () => void, onStep: (step: s
     });
     chat.sendKeys = sendKeys;
     chat.cwdFallback = fallback;
-    chat.sovaModes = modes.sova;
-    chat.modesApply = !worker && modes.applies;
+    chat.modesApply = modes.applies;
     chat.modesSource = () => modes.handle;
     // A Stop pressed before a restart still pauses its topic batches (§chat.topics/delivery).
     chat.topicsPaused = topicStore().receiverPaused(path);
@@ -5425,45 +5395,6 @@ export async function acquireChat(path: string, force = false, onStep: (step: st
     forget();
   });
   return p;
-}
-
-/**
- * A save that changed "Sova runs chat modes" (§chat.mode-menu/sova-runs-modes), for the chats held in this
- * process (in-process chats: tests, a server with no supervisor). Each held chat a mode owner applies to and
- * whose owner differs from `on` is rebuilt at its next quiet moment: disposed as a reload (its panes told
- * `reloaded`, so they reconnect and the next acquire opens it anew, re-reading the switch), the way a profile
- * pick or "Chat anyway" rebuilds an in-process runtime. A flip back before that moment cancels it; a worker
- * keeps the owner of its start. Returns the paths now waiting.
- */
-export function chatModesSwitchedHere(on: boolean): string[] {
-  modesWanted = on;
-  modesWaiting.clear();
-  for (const chat of heldChats()) {
-    if (chat.modesOwner === null || chat.sovaModes === on) continue;
-    modesWaiting.add(chat.path);
-  }
-  for (const path of [...modesWaiting]) modesReloadIfQuiet(path);
-  if (modesWaiting.size && !modesListening) {
-    modesListening = true;
-    onChatEvent((e) => {
-      if (e.type === "settled" || e.type === "receiverIdle") setTimeout(() => modesReloadIfQuiet(e.chatId), 0);
-    });
-  }
-  return [...modesWaiting];
-}
-let modesWanted: boolean | null = null;
-const modesWaiting = new Set<string>();
-let modesListening = false;
-function modesReloadIfQuiet(path: string): void {
-  if (!modesWaiting.has(path)) return;
-  const chat = held.get(path);
-  if (!chat || chat.disposed || chat.modesOwner === null || chat.sovaModes === modesWanted) {
-    modesWaiting.delete(path);
-    return;
-  }
-  if (!chat.quietForReload) return;
-  modesWaiting.delete(path);
-  void disposeHeldChat(path, "Sova runs chat modes changed: reconnect").catch((err) => console.error("[chat] modes reload failed", err));
 }
 
 /** Every fully opened runtime this server holds. Each keeps its own mode; there is no fan-out. */

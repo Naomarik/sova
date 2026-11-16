@@ -42,7 +42,7 @@ mkdirSync(join(agentDir, "sessions", "live"), { recursive: true });
 const cwd = join(root, "cwd");
 mkdirSync(cwd, { recursive: true });
 writeFileSync(join(agentDir, "models.json"), JSON.stringify(scriptedModelsJson()));
-// This repo's mode extension by its real path (the pick and mode writers need its /mode command), and a
+// Sova's mode engine, in every chat with no settings entry (the pick and mode writers need its /mode command), and a
 // fixture extension whose tool opens a select dialog (G9).
 mkdirSync(join(agentDir, "extensions"), { recursive: true });
 writeFileSync(
@@ -58,7 +58,7 @@ writeFileSync(
 );
 writeFileSync(
   join(agentDir, "settings.json"),
-  JSON.stringify({ defaultProvider: "scripted", defaultModel: "scripted", retry: { baseDelayMs: 1 }, extensions: [join(REPO, "pi-config/extensions/mode")] }),
+  JSON.stringify({ defaultProvider: "scripted", defaultModel: "scripted", retry: { baseDelayMs: 1 } }),
 );
 
 await import("../../testing/in-process-chats"); // chats open in this process (the server hosts none)

@@ -44,6 +44,7 @@ import { registerVoiceRoutes } from "./voice/service";
 import { registerSessionShareRoutes } from "./session-shares-routes";
 import { mountTourRoutes } from "./tour-routes";
 import { mountDesignRoutes } from "./design/routes";
+import { installPageReaderSandbox } from "./design/page-paths";
 import { ensureTourToolRuntime, setTourNeedsYou, setTourResumed } from "./tours/runtime";
 import { setTourSignInWaits, tourResumedNotifier, tourSignInNotifier } from "./tours/sign-in-notice";
 import { registerSessionForkRoutes } from "./session-fork-routes";
@@ -57,7 +58,7 @@ import { deliverFrames, framesDraft, postedFrames, POSTED_FRAMES_MAX } from "./w
 import { COMPOSER_HEADER, type NewSessionBody, type SessionPromptBody } from "../shared/wire-areas";
 import { mountWritingGate, refusedAnswer, writingRefused } from "./wire-gate";
 import { mountChatActions } from "./chat-actions";
-import { acquireChatHandle, type ChatHandle, chatHandle, chatHandleById, chatHandles, chatModesSwitched, getModelRuntime, ModeRefusedError, setOpeningChoice } from "./chat-handle";
+import { acquireChatHandle, type ChatHandle, chatHandle, chatHandleById, chatHandles, getModelRuntime, ModeRefusedError, setOpeningChoice } from "./chat-handle";
 import { restorePick } from "../pi-config/extensions/subagents/subagent-profiles.ts";
 import { canonicalPath, resolveSessionPath, SESSIONS_DIR } from "./paths";
 import { agentRoot, stateRoot } from "./state-root";
@@ -1219,11 +1220,8 @@ export function buildApp(deps: AppDeps) {
     } catch {
       return c.json({ error: "Expected JSON body { experimental?: { ... }, alignment?: { ... } }" }, 400);
     }
-    const before = readWebSettings().experimental.sovaModes;
     const result = writeWebSettings(body);
     if ("error" in result) return c.json({ error: result.error }, 400);
-    // "Sova runs chat modes" changed (§chat.mode-menu/sova-runs-modes): open chats follow at their next quiet moment.
-    if (result.experimental.sovaModes !== before) chatModesSwitched(result.experimental.sovaModes);
     return c.json(result);
   });
 
@@ -2155,6 +2153,8 @@ export function buildApp(deps: AppDeps) {
       agentDir: agentRoot,
     });
   setFileCopyGuards(async (sid, canonical) => linkSandbox.write(await sessionSandbox(sid), canonical, { creating: true }), () => [stateRoot(), SESSIONS_DIR]);
+  // A chat reading a design's saved page gets a path its own sandbox can open (server/design/page-paths.ts).
+  installPageReaderSandbox(sessionSandbox);
   mountLinks(app, meshApi, {
     root: stateRoot,
     summary: sessionById,

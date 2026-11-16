@@ -15,7 +15,7 @@ alignments as cards and owns its settings file.
   (§chat.alignment/settings-file, §chat.alignment/visuals).
 - Code: `align.ts` (the details shape and fold), `align-tool.ts`, `align-file.ts`, `align-ui.ts`,
   `align-settings.ts`, the align text in `minor.ts`, and the adversarial review (`review-prompt.ts`).
-- Tests: `cd pi-config/extensions/mode && node --test align.test.ts align-settings.test.ts review.test.ts && node tests/align-turn.mjs && node tests/style-turn.mjs`.
+- Tests: `cd pi-config/extensions/mode && node --test align.test.ts align-settings.test.ts review.test.ts`; how the engine runs align (the nudge, style, Eagerness, Visuals, review) in `server/modes/engine-hooks.test.ts`, `engine-rules.test.ts`, `engine-review.test.ts` and the golden recordings.
 
 ## What Sova relies on
 

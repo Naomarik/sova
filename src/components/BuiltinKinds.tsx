@@ -22,7 +22,7 @@ import type { McpNote } from "../../shared/mcp";
 import { chatNoteText, NOTE_LINK, noteOnHost } from "../lib/mcp";
 import { hostLabel } from "../lib/mesh";
 import { openMcpRow } from "../lib/mcp-link";
-import { AssistantText, Thinking, UserTurn } from "./MessageRows";
+import { AssistantText, LookbookMessage, Thinking, UserTurn } from "./MessageRows";
 import { modelLabel, modelMismatch } from "../lib/format";
 import { resultDetails as detailsOf, toolCallArgs, toolResultView } from "../lib/message";
 import { confirmDetails } from "../lib/overseer";
@@ -37,6 +37,8 @@ import { TeamMessageCard } from "./TeamMessageCard";
 import { ReportRow } from "./ReportRow";
 import { ApprovalPendingRow } from "./ApprovalPendingRow";
 import { AlignRow } from "./AlignDocCard";
+import { LookbookHistoryItem } from "./LookbookHistory";
+import type { LookbookHistoryRow } from "../../shared/lookbook-words";
 
 /**
  * The views of Sova's own transcript cards, moved onto the card toolkit one kind at a time
@@ -58,6 +60,8 @@ export const BUILTIN_VIEWS = {
   "approval-pending": (props: KindViewProps<NonNullable<TranscriptItem["approvalPending"]>>) => <ApprovalPendingRow item={props.value} text={props.item.text ?? ""} path={props.limitPath} />,
   "overseer-answer": (props: KindViewProps<Extract<NonNullable<TranscriptItem["overseerMark"]>, { kind: "dialog-answer" }>>) => <OverseerChoiceRow title={props.value.title} answer={props.value.answer} />,
   "profile-mark": ProfileMarkRow,
+  "lookbook-item": (props: KindViewProps<LookbookHistoryRow>) => <LookbookHistoryItem row={props.value} />,
+  lookbook: (props: KindViewProps<NonNullable<TranscriptItem["lookbook"]>>) => <LookbookMessage row={props.value} time={props.item.at} images={props.item.images} attachments={props.item.attachments} />,
   brief: (props: KindViewProps) => <BriefRow text={props.item.text ?? ""} time={props.item.at} />,
   explain: (props: KindViewProps<NonNullable<NonNullable<TranscriptItem["report"]>["explain"]>>) => <ExplainCard explain={props.value} />,
   "team-report": (props: KindViewProps<NonNullable<NonNullable<TranscriptItem["report"]>["team"]>>) => (

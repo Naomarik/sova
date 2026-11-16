@@ -9,6 +9,7 @@ import type { WakeInfo } from "./wake";
 import type { BatonMark, BatonSummaryField } from "./baton";
 import type { LinkMessageInfo } from "./link-message";
 import type { TopicBatchInfo } from "./topic-message";
+import type { LookbookRow } from "./lookbook-words";
 import type { LinkedAgentInfo } from "./mesh-links";
 import type { Permit } from "./overseer-grants";
 import type { OverseerCard } from "./overseer-card";
@@ -413,6 +414,10 @@ export interface TranscriptItem {
   /** kind "link" only: the parsed tag (shared/link-message.ts `parseLinkMessage`). `text` holds the
       whole message exactly as delivered. */
   link?: LinkMessageInfo;
+  /** kind "user" in a Lookbook helper's session (its Creative Director's or a design's, server/design/transcript.ts):
+      how the message reads (shared/lookbook-words.ts): the person's words and where they wrote them, Sova's additions
+      folded, a designer's first message as its brief. `text` stays the whole message exactly as the model read it. */
+  lookbook?: LookbookRow;
   /** kind "topic" only: the parsed batch (shared/topic-message.ts `parseTopicBatch`). `text` holds
       the whole message exactly as delivered. */
   topic?: TopicBatchInfo;
@@ -1113,17 +1118,11 @@ export interface WebSettings {
   alignment: AlignmentWebSettings;
 }
 
-/** Settings → Experimental's switches, each a boolean, off unless stored `true`, except `sovaModes`,
-    which is on unless stored `false` (a missing key reads on). Adversarial review moved to
-    `alignment.review`, and the Claude Code provider is always on (an old file's `claudeCodeProvider`
-    and `adversarialReview` are ignored here). A new switch is a key here and in
-    server/web-settings.ts EXPERIMENTAL_KEYS. */
-export interface ExperimentalSettings {
-  /** "Sova runs chat modes" (§chat.mode-menu/sova-runs-modes): Sova's own mode engine runs every chat's
-      modes and its workers'; off, the pi mode extension does. ON BY DEFAULT. Read at each chat's start
-      or reload; a worker takes its parent's owner at spawn or resume. */
-  sovaModes: boolean;
-}
+/** Settings → Experimental's switches, each a boolean, off unless stored `true`. None today (the tab says so).
+    Adversarial review moved to `alignment.review`, the Claude Code provider is always on, and Sova always
+    runs chat modes: an old file's `claudeCodeProvider`, `adversarialReview` and `sovaModes` are ignored here.
+    A new switch is a key here and in server/web-settings.ts EXPERIMENTAL_KEYS. */
+export type ExperimentalSettings = Record<never, boolean>;
 
 /** Settings → Alignment's switch stored in Sova's settings. */
 export interface AlignmentWebSettings {
@@ -2183,7 +2182,7 @@ export interface SpecSaveResult extends SpecSettingsInfo {
 
 /** Where a switch stands for the one chat it was sent to: "now" = its next message follows it;
     "after-turn" = switched mid-turn, so messages queued in this turn keep the old one;
-    "new-chats" = this chat can't take a switch at all (the mode extension isn't loaded in it, or
+    "new-chats" = this chat can't take a switch at all (it has no modes: Sova's engine isn't in it, or
     a foreign writer was seen), so only the default applies — to sessions started later. */
 export type ModeApplies = "now" | "after-turn" | "new-chats";
 

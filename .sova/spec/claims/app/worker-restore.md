@@ -167,8 +167,8 @@ exception, below.
   or `/agent-resume`. When Refine, a message or what the main chat passes on reaches one that has shut
   down, or that a restart left stopped, its session reopens by itself under the same record and takes
   the message (§chat.design-mode/delivery), and the main chat is neither told nor woken. One that has
-  been stopped for good doesn't reopen: its design keeps its page and Refine starts a fresh session
-  from that page.
+  been stopped for good doesn't reopen: its design keeps its page, and a message to it (or Refine)
+  starts a fresh session from that page.
 - **What the parent sees.** The resumed worker is listed under its group as "· resumed". The
   tool answers "Resumed {id} ({name}) idle in its own {backend} session …; nothing was sent to
   it. Give it work with agent_steer."

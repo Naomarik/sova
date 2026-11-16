@@ -2,7 +2,7 @@
 // Merge check: the product documentation (.sova/spec) reads and holds together: the spec tool's `check`
 // (errors fail; warnings are printed), then `census --changed` against the base (unclaimed files are
 // printed, never fail: the drafts already landed in this tree as its docs commit). Skipped when the
-// tree has no spec. The spec tools: SOVA_SPEC_CORE, else the agent's extensions/spec/core. See lib.mjs.
+// tree has no spec. The spec tools: SOVA_SPEC_CORE (the queue sets the running Sova's), else the agent's. See lib.mjs.
 //   node scripts/merge-checks/spec.mjs [--base <rev>] [--changed <file>]
 import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";

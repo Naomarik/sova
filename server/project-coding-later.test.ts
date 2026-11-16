@@ -1,13 +1,13 @@
 // Run: pnpm test -- server/project-coding-later.test.ts
 // New Session's Project tab (`worktree: "later"`): a project coding session started in the project root, whose row
 // adopts the first worktree its session makes itself with the `worktree` tool. REAL hosted runtimes in a throwaway
-// PI_CODING_AGENT_DIR (only the mode extension), a git client project under a scratch root. The `worktree` tool's
+// PI_CODING_AGENT_DIR (no extension listed; Sova's mode engine), a git client project under a scratch root. The `worktree` tool's
 // work is done here by hand, as it does it: `git worktree add -b feat/<name>` beside the repository, then its
 // `worktrees` entry in the session file. No model request is made.
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync, appendFileSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { after, describe, test } from "node:test";
 import { piSession } from "./harness/pi/testing/handle";
@@ -18,7 +18,7 @@ const tmp = realpathSync(scratchRoot("sova-po-later-"));
 process.on("exit", () => rmSync(tmp, { recursive: true, force: true }));
 const agentDir = join(tmp, "agent");
 mkdirSync(join(agentDir, "sessions", "live"), { recursive: true });
-writeFileSync(join(agentDir, "settings.json"), JSON.stringify({ extensions: [resolve(here, "../pi-config/extensions/mode")] }));
+writeFileSync(join(agentDir, "settings.json"), JSON.stringify({}));
 writeFileSync(join(agentDir, "mode.json"), JSON.stringify({ version: 1, mode: "normal", strict: false, minorModes: [] }));
 process.env.PI_CODING_AGENT_DIR = agentDir;
 await import("./testing/in-process-chats"); // chats open in this process (the server hosts none)

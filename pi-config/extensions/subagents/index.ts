@@ -186,7 +186,7 @@ const AgentSpec = Type.Object(
 		useWorktreeConfig: Type.Optional(
 			Type.Boolean({
 				description:
-					"Pi only: run the worker on its worktree's own agent dir (<worktree>/.agent: its settings, auth and mode extension, normal mode, spec only while this session has it on). Valid only when cwd is inside an active worktree this session tracks that has a .agent.",
+					"Pi only: run the worker on its worktree's own agent dir (<worktree>/.agent: its settings and auth; normal mode, spec only while this session has it on). Valid only when cwd is inside an active worktree this session tracks that has a .agent.",
 			}),
 		),
 	},
@@ -419,14 +419,22 @@ export const MARKER_EXTENSION = path.join(SELF_DIR, "worker-mark.ts");
 /**
  * The spec census hook for pi workers (mode/spec-worker.ts, a sibling extension): a code-writing pi worker
  * of a spec-on session loads it with `-e`, under the same condition as the worker spec brief, since workers
- * run with --no-extensions and so never have the mode extension's own census hook.
+ * run with --no-extensions and so have no mode slot of their own. Under Sova the path names the slot, which
+ * Sova's own module fills.
  */
 export const SPEC_WORKER_EXTENSION = realpathOr(path.join(SELF_DIR, "..", "mode", "spec-worker.ts"));
 /**
- * The project mode tools for pi workers (mode/project-tools-worker.ts, a sibling file): a worker handed
- * project modes with tools (`workers: yes`) loads it with `-e`, and reads the parent's copies from the file
- * PROJECT_TOOLS_FILE_ENV names. Only a worker that can run commands (bash) gets them: a project tool is a
- * program, so a read-only worker never gains one. None for a remote worker (project modes are local only).
+ * The project mode tools for pi workers: a worker handed project modes with tools (`workers: yes`) lists this
+ * with `-e`, and reads the parent's copies from the file PROJECT_TOOLS_FILE_ENV names.
+ *
+ * A slot name, not a file path: no file `mode/project-tools-worker.ts` exists, and none is meant to. Sova's
+ * loader (server/harness/pi/own-code.ts modeFileOf / workerModePaths) recognises it by its name (the file
+ * name in an `extensions/mode` folder) and puts its own module in this place of the worker's list, so a
+ * worker never loads this path as written. Keep the name as it is: the loader, its tests and earlier workers'
+ * recorded lists match it. Only Sova announces modes, so only a Sova chat's worker lists it.
+ *
+ * Only a worker that can run commands (bash) gets it: a project tool is a program, so a read-only worker
+ * never gains one. None for a remote worker (project modes are local only).
  */
 export const PROJECT_TOOLS_WORKER_EXTENSION = realpathOr(path.join(SELF_DIR, "..", "mode", "project-tools-worker.ts"));
 /**
@@ -546,35 +554,35 @@ export function resolveExtensionSource(source: string, cwd: string, agentDir = g
 /** Extension directories a child never loads, whichever copy: subagents (no nesting) and worktrees (the parent's tool). */
 const NEVER_IN_CHILD = new Set(["subagents", "worktrees"]);
 /**
- * The mode extension beside this one (its directory), listed in a worktree-config worker's mode slot when
- * the session's modes run on Sova and the tree has no mode extension of its own: Sova loads its own
- * engine there, so the tree needs none.
+ * The mode folder beside this one (its directory), listed in a worktree-config worker's mode slot when
+ * Sova hosts the session and the tree has no mode folder of its own: Sova loads its own engine there,
+ * so the tree needs none.
  */
 export const OWN_MODE_EXTENSION = realpathOr(path.join(SELF_DIR, "..", "mode"));
 /**
  * What a pi worker on its worktree's own agent dir needs (§chat.worktrees/worktree-config): the
  * tree's `.agent` as PI_CODING_AGENT_DIR, the mode slot, and its session file kept in the PARENT's
  * sessions directory (where it would be without the override), so Sova lists, watches and measures it
- * like any worker. The mode slot is that tree's mode extension by path, or, when the session's modes run
- * on Sova (`sovaModes`), OWN_MODE_EXTENSION, which Sova loads as its own (the tree's copy is never needed
- * nor loaded). Throws when the tree has no usable `.agent` (or, the extension's way, no mode extension).
+ * like any worker. Under Sova (`sovaHosted`: a worker host is announced, so Sova runs every worker's modes)
+ * the mode slot names the tree's mode folder, or OWN_MODE_EXTENSION when the tree has none; Sova loads its
+ * engine there either way, never the tree's copy. A plain pi terminal (no host) has no modes: no mode slot,
+ * so the worker runs the tree's config with none. Throws when the tree has no usable `.agent`.
  */
-export function worktreeConfig(treePath: string, cwd: string, sovaModes = false): { env: Record<string, string>; modeExtension: string; sessionDir: string } {
+export function worktreeConfig(treePath: string, cwd: string, sovaHosted = false): { env: Record<string, string>; modeExtension?: string; sessionDir: string } {
 	const agentDir = path.join(treePath, ".agent");
 	if (!fs.existsSync(agentDir) || !fs.statSync(agentDir).isDirectory()) throw new Error(`useWorktreeConfig: ${treePath} has no .agent directory (build one with scripts/hermetic-agent-dir.mjs).`);
 	const sessionDir = path.join(getAgentDir(), "sessions", sessionDirName(cwd));
 	const mode = realpathOr(path.join(agentDir, "extensions", "mode"));
-	if (sovaModes) {
-		// The slot names the tree's own mode extension whenever it has one, exactly as with the switch off (so the
-		// worker's line reads as it always did; Sova loads its engine there all the same, never the tree's copy),
-		// else this pi-config's.
-		const treeOwn = path.basename(mode) === "mode" && fs.existsSync(path.join(mode, "index.ts"));
+	if (sovaHosted) {
+		// The slot names the tree's own mode folder whenever it has one (so the worker's line reads as it always
+		// did; Sova loads its engine there all the same, never the tree's copy), else this pi-config's. Known by
+		// the folder, a directory named `mode`, never by an index.ts in it.
+		const treeOwn = path.basename(mode) === "mode" && fs.existsSync(mode) && fs.statSync(mode).isDirectory();
 		fs.mkdirSync(sessionDir, { recursive: true });
 		return { env: { PI_CODING_AGENT_DIR: agentDir }, modeExtension: treeOwn ? mode : OWN_MODE_EXTENSION, sessionDir };
 	}
-	if (!fs.existsSync(path.join(mode, "index.ts")) || path.basename(mode) !== "mode") throw new Error(`useWorktreeConfig: ${agentDir}/extensions/mode is not a mode extension.`);
 	fs.mkdirSync(sessionDir, { recursive: true });
-	return { env: { PI_CODING_AGENT_DIR: agentDir }, modeExtension: mode, sessionDir };
+	return { env: { PI_CODING_AGENT_DIR: agentDir }, sessionDir };
 }
 /** pi's own session directory name for a cwd (session-manager.js getDefaultSessionDirPath). */
 function sessionDirName(cwd: string): string {
@@ -856,7 +864,7 @@ export function registerSubagents(
 		sandboxState = e;
 	});
 	pi.events?.emit(SANDBOX_DISCOVER_EVENT, { version: 1 });
-	// The session's active modes (pi-config's mode extension, announced on every change): while spec
+	// The session's active modes (Sova's modes, announced on every change): while spec
 	// is on, a code-writing worker gets the spec census and line check (the hooks, or spec-worker.ts), and
 	// the worker spec brief when its mode prompt (below) doesn't already carry the spec block.
 	let specOn = false;
@@ -866,9 +874,9 @@ export function registerSubagents(
 		specOn = e.minorModes.includes("spec");
 	});
 	pi.events?.emit(MODE_DISCOVER_EVENT, { version: 1 });
-	// What this session's workers get of its modes (the mode extension's MODE_WORKER_EVENT,
-	// §chat.mode-menu/workers): the newest announcement, appended at spawn as it is. Nothing here
-	// interprets the text; without the mode extension there is none.
+	// What this session's workers get of its modes (Sova's MODE_WORKER_EVENT, §chat.mode-menu/workers):
+	// the newest announcement, appended at spawn as it is. Nothing here interprets the text; without
+	// Sova (a plain pi terminal) there is none.
 	let modeWorker: ModeWorkerEvent | undefined;
 	const unregisterModeListener = pi.events?.on(MODE_WORKER_EVENT, (data: unknown) => {
 		const e = parseModeWorkerEvent(data);
@@ -1727,17 +1735,17 @@ export function registerSubagents(
 			// A parent whose sandbox is on starts the worker under it, with the extension's own flags
 			// (`--sandbox on`, which a worker cannot turn off, and the parent's scope); a spec that
 			// names the extension itself does not load it twice.
-			// Its worktree's own agent dir (§chat.worktrees/worktree-config): that tree's mode extension,
-			// loaded by path (discovery stays off), in normal mode, with the spec minor mode while this session has it on.
-			// With the session's modes on Sova (its host says so), the slot is Sova's engine, never the tree's copy.
-			const treeConfig = spec.useWorktreeConfig && tree ? worktreeConfig(tree.path, cwd, workerHost?.modes() === "sova") : undefined;
+			// Its worktree's own agent dir (§chat.worktrees/worktree-config). Under Sova (a worker host is announced)
+			// a mode slot, which Sova's engine fills, in normal mode, with the spec minor mode while this session has it on;
+			// in a plain pi terminal, no modes at all.
+			const treeConfig = spec.useWorktreeConfig && tree ? worktreeConfig(tree.path, cwd, !!workerHost?.current()) : undefined;
 			// Spec on: a code-writing worker gets the brief (below) and the census hook; a worktree-config worker
-			// already loads the whole mode extension, and a remote one runs its tools elsewhere.
+			// has them from its mode slot, and a remote one runs its tools elsewhere.
 			const specWorker = specOn && !remote && !treeConfig && writesCode(tools);
 			// Its project modes' tools (PROJECT_TOOLS_WORKER_EXTENSION): the parent's copies, for a worker that has bash.
 			const projectToolsFile = modes?.projectModes?.length && !remote && !treeConfig && tools.includes("bash") ? writeWorkerToolsFile(agentDir(), modes.projectModes) : undefined;
-			const sources = [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, MODEL_LEVELS_EXTENSION, ...(remote ? [REMOTE_EXTENSION] : []), ...(treeConfig ? [treeConfig.modeExtension] : []), ...(specWorker ? [SPEC_WORKER_EXTENSION] : []), ...(projectToolsFile ? [PROJECT_TOOLS_WORKER_EXTENSION] : []), ...(own ?? [])];
-			const modeFlags = treeConfig ? { major: "normal", ...(specOn ? { minor: "spec" } : {}) } : undefined;
+			const sources = [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, MODEL_LEVELS_EXTENSION, ...(remote ? [REMOTE_EXTENSION] : []), ...(treeConfig?.modeExtension ? [treeConfig.modeExtension] : []), ...(specWorker ? [SPEC_WORKER_EXTENSION] : []), ...(projectToolsFile ? [PROJECT_TOOLS_WORKER_EXTENSION] : []), ...(own ?? [])];
+			const modeFlags = treeConfig?.modeExtension ? { major: "normal", ...(specOn ? { minor: "spec" } : {}) } : undefined;
 			// The sandbox's answer for a pi worker: its extension and flags (the parent's scope while on; in a
 			// tracked worktree, narrowed to it, or write-only while off).
 			const sandboxFlags = launch.kind === "pi" ? launch.flags : undefined;
@@ -1765,9 +1773,9 @@ export function registerSubagents(
 				flags: piFlags,
 				treeConfig,
 				// A tree-config worker is started with spec as this session has it (modeFlags); older records say nothing.
-				givenModes: treeConfig ? (specOn ? ["spec"] : []) : modePrompt ? givenModesOf(modes!) : [],
-				// Its census (spec-worker.ts, or a tree-config worker's whole mode extension) writes what landed.
-				landed: specOn && !remote && writesCode(tools),
+				givenModes: treeConfig ? (treeConfig.modeExtension && specOn ? ["spec"] : []) : modePrompt ? givenModesOf(modes!) : [],
+				// Its census (spec-worker.ts, or a tree-config worker's mode slot) writes what landed.
+				landed: specOn && !remote && writesCode(tools) && (!treeConfig || !!treeConfig.modeExtension),
 				projectToolsFile,
 			};
 		});

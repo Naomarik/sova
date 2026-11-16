@@ -10,7 +10,7 @@ flag it does nothing. Sova imports its argv builder.
 ## What lives here
 
 - [`README.md`](../../../pi-config/extensions/remote/README.md).
-- Tests: `cd pi-config/extensions/remote && node --test argv.test.ts`.
+- Tests: `cd pi-config/extensions/remote && node --test argv.test.ts index.test.ts`.
 
 ## What Sova relies on
 

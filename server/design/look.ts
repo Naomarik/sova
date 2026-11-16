@@ -5,11 +5,12 @@
 import { createServer, type Server } from "node:http";
 import { randomUUID } from "node:crypto";
 import type { AddressInfo } from "node:net";
-import type { TourSize, TourSource } from "../../shared/tour";
+import type { TourScriptRequest, TourSize, TourSource } from "../../shared/tour";
 import { resolveTourContext, tourCallerBySession } from "../tours/context";
 import { runTourAttempt } from "../tours/runner";
 import type { TourRecordingContext } from "../tours/sandbox";
 import { TourCaptureFailure } from "../tours/targets";
+import type { TourWalkAction } from "../tours/runner-protocol";
 import { browseOutline, browseScript, type BrowseParent } from "./browse";
 import { readPage } from "./store";
 import { showAssets } from "./assets";
@@ -24,6 +25,8 @@ export interface DesignLookDeps {
   readPage?: typeof readPage;
   /** Tests: the pictures put into the page. */
   showAssets?: typeof showAssets;
+  /** Tests: where the page is served (a unit test opens no port). */
+  serve?: <T>(html: string, fn: (origin: string) => Promise<T>) => Promise<T>;
 }
 
 /** Serve one page on a fresh loopback port, for the length of `fn`. */
@@ -49,42 +52,87 @@ const parentContext = async (parent: BrowseParent): Promise<TourRecordingContext
   return resolveTourContext(await tourCallerBySession(parent.sessionId));
 };
 
-/** Pictures of a stored page at both widths (or those asked for) and its outline for a model that reads no images. */
-export async function lookAtDesign(parent: BrowseParent, label: string, a: { version?: number; sizes?: TourSize[]; html?: string } = {}, deps: DesignLookDeps = {}): Promise<{ shots: { size: TourSize; png: Uint8Array }[]; outline: string }> {
-  const written = a.html ?? (deps.readPage ?? readPage)(parent.sessionId, label, a.version);
-  if (!written) throw new Error(`Design ${label} has no finished page to look at.`);
-  // The real pictures, carried inside the page: this browser refuses any answer from a Sova, so it can't fetch them.
-  const html = (deps.showAssets ?? showAssets)(parent.sessionId, written, "full");
-  const sizes: TourSize[] = a.sizes?.length ? [...new Set(a.sizes)] : ["desktop", "phone"];
+/** One screen of a walk through a design's page: its id (lowercase letters, digits and dashes) and the clicks reaching it. */
+export interface DesignWalkStep {
+  id: string;
+  actions: TourWalkAction[];
+}
+
+/** A walk through a design's page that couldn't reach one of its screens: which, and why. */
+export class DesignWalkFailure extends Error {
+  constructor(
+    message: string,
+    readonly stepId: string | undefined,
+  ) {
+    super(message);
+  }
+}
+
+/** The script a walk through a design's page runs: one step per screen, each loading the page fresh. */
+export function walkScript(source: TourSource, sizes: readonly TourSize[], steps: readonly DesignWalkStep[]): TourScriptRequest {
+  const one = browseScript(source, "/", sizes, FONT_ORIGINS, undefined);
+  const view = one.steps[0]!.views[0]!;
+  return { ...one, steps: steps.map((s) => ({ id: s.id, chapter: "look", title: s.id, summary: "A screen of the page.", views: [view] })) };
+}
+
+/**
+ * Walk through a design's page (already in the form it is served in: its pictures put in, any test ids added), one
+ * fresh load per step, and picture each screen at each size. One browser for every step. A step whose clicks fail ends
+ * the walk with a DesignWalkFailure naming it.
+ */
+export async function walkDesign(parent: BrowseParent, label: string, html: string, sizes: readonly TourSize[], steps: readonly DesignWalkStep[], deps: DesignLookDeps = {}, limitMs = LOOK_MS): Promise<Map<string, { shots: { size: TourSize; png: Uint8Array }[]; outline: string }>> {
   const context = await (deps.context ?? parentContext)(parent);
-  return withServedPage(html, async (origin) => {
+  return (deps.serve ?? withServedPage)(html, async (origin) => {
     // A project source, so the sandbox's proxy admits this one loopback address; its identity is this very server.
     const source: TourSource = { kind: "project", projectId: "design", instanceId: label, checkout: context.cwd, serviceId: "design", endpoint: "page" };
     try {
       const result = await (deps.run ?? runTourAttempt)({
         context,
-        script: browseScript(source, "/", sizes, FONT_ORIGINS, undefined) as never,
+        script: walkScript(source, sizes, steps) as never,
         tourId: `design-look-${label}`,
         editionId: randomUUID(),
         dryRun: false,
         walk: Object.fromEntries(sizes.map((s) => [s, []])),
-        limitMs: LOOK_MS,
+        walkSteps: Object.fromEntries(steps.map((st) => [st.id, Object.fromEntries(sizes.map((s) => [s, st.actions]))])),
+        limitMs,
         target: (async () => ({ origin, assertCurrent: async () => {} })) as never,
         beforeContact: async (o: string) => {
           if (o !== origin && !FONT_ORIGINS.includes(o)) throw new TourCaptureFailure({ message: `This page tried to reach ${o}, which designs may not do.`, guidance: "Remove that address from the page." });
         },
       });
-      const view = result.steps[0]?.views[0];
-      const shots = sizes.map((size) => {
-        const image = view?.captures[size]?.image;
-        const png = image ? result.assets.get(image) : undefined;
-        if (!png) throw new Error(`This look took no picture at ${size} width.`);
-        return { size, png };
-      });
-      return { shots, outline: result.look ? browseOutline(result.look, sizes) : "" };
+      const out = new Map<string, { shots: { size: TourSize; png: Uint8Array }[]; outline: string }>();
+      for (const [i, step] of steps.entries()) {
+        const view = result.steps[i]?.views[0];
+        const shots = sizes.map((size) => {
+          const image = view?.captures[size]?.image;
+          const png = image ? result.assets.get(image) : undefined;
+          if (!png) throw new DesignWalkFailure(`This look took no picture at ${size} width.`, step.id);
+          return { size, png };
+        });
+        const page = result.look?.pages[i];
+        out.set(step.id, { shots, outline: page ? browseOutline({ pages: [page] }, sizes) : "" });
+      }
+      return out;
     } catch (err) {
-      if (err instanceof TourCaptureFailure) throw new Error(`${err.failure.message}${err.failure.guidance ? ` ${err.failure.guidance}` : ""}`);
+      if (err instanceof TourCaptureFailure) throw new DesignWalkFailure(`${err.failure.message}${err.failure.guidance ? ` ${err.failure.guidance}` : ""}`, err.failure.stepId);
       throw err;
     }
   });
+}
+
+/** Pictures of a stored page at both widths (or those asked for) and its outline for a model that reads no images.
+    actions walk to a screen first; prepare rewrites the page this browser is served (its views' test ids), never the stored one. */
+export async function lookAtDesign(parent: BrowseParent, label: string, a: { version?: number; sizes?: TourSize[]; html?: string; actions?: TourWalkAction[]; prepare?: (html: string) => string } = {}, deps: DesignLookDeps = {}): Promise<{ shots: { size: TourSize; png: Uint8Array }[]; outline: string }> {
+  const written = a.html ?? (deps.readPage ?? readPage)(parent.sessionId, label, a.version);
+  if (!written) throw new Error(`Design ${label} has no finished page to look at.`);
+  // The real pictures, carried inside the page: this browser refuses any answer from a Sova, so it can't fetch them.
+  const html = (deps.showAssets ?? showAssets)(parent.sessionId, a.prepare ? a.prepare(written) : written, "full");
+  const sizes: TourSize[] = a.sizes?.length ? [...new Set(a.sizes)] : ["desktop", "phone"];
+  try {
+    const out = await walkDesign(parent, label, html, sizes, [{ id: "page", actions: a.actions ?? [] }], deps);
+    return out.get("page")!;
+  } catch (err) {
+    if (err instanceof DesignWalkFailure) throw new Error(err.message);
+    throw err;
+  }
 }

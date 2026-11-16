@@ -134,16 +134,16 @@ answers with the usage line.
 
 A pi terminal session has no modes from Sova: no Delegate or Create, no align, spec, vis, memory,
 project or personal modes, and no mode palette, shortcuts or launch flags. A session's saved modes
-stay in its file, so a session you opened in a terminal has them again when Sova opens it. While
-Settings → Experimental's switch below is still there, the older mode extension may still load in a
-terminal as it did, with nothing promised.
+stay in its file, so a session you opened in a terminal has them again when Sova opens it.
 
 ## Who runs the modes
 
-Settings → Experimental has one switch, **Sova runs chat modes**, on by default: Sova runs every
-chat's modes itself, built-in, project and personal ones. Turned off, the older pi mode extension
-runs them as it did before this release, and personal modes aren't offered. A flip reaches each open
-chat at its next quiet moment, and the model sees the same instructions and tools either way.
+Sova runs every chat's modes itself, built-in, project and personal ones, in every chat, helper and
+team member, whatever your pi folder links to. There's no switch for it any more: the old
+**Sova runs chat modes** switch in Settings → Experimental is gone, and so is the older pi mode
+extension: the installer no longer links a `mode` folder into your pi folder, and removes the link an
+older install made. Only the mode menu turns modes off. A chat that ran its modes the old way moves over at its next quiet
+moment, with the same modes, alignments and approvals.
 
 ## What workers get
 

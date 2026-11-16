@@ -20,7 +20,7 @@ import type { ProjectDef, StepDecl } from "../../shared/project-contract";
 import { render } from "../../shared/project-contract";
 import { slotLayoutOf } from "../../shared/project-slots";
 import { NO_BACKGROUND_CLEANUP } from "../git-no-background";
-import { agentRoot } from "../state-root";
+import { SPEC_CORE } from "../spec-runner";
 import { draftSpecHash } from "../spec-drafts-state";
 import { readRunLogText } from "./run-logs";
 import { LANDED_DRAFTS_FILE, type LandedDraftsRecord } from "./landed-drafts";
@@ -37,7 +37,8 @@ export interface RunDeps extends ReviewDeps {
   /** The state root and home the copy must stay out of (tests move them). */
   state?: string;
   home?: string;
-  /** The spec tools' folder (sova-spec-draft.mjs): SOVA_SPEC_CORE, else the agent's extensions/spec/core. */
+  /** The spec tools' folder (sova-spec-draft.mjs), for Sova's own tests; otherwise the running Sova's own
+   *  (SPEC_CORE), never the agent dir's (its links may lead into another, older copy) nor the env's. */
   specCore?: string;
   /** Brings up services a check requires, in the copy; returns the slot its ports are numbered by, and how to stop
    *  them. Absent: a check that requires services fails as a machine problem (nothing can start them). */
@@ -832,7 +833,7 @@ async function makeDocs(o: { input: RunInput; copy: string; steps: Steps; ident:
     st.end("failed", { detail: "the target has no .sova/spec to land drafts into" });
     return { kind: "refused", why: `spec drafts (${names.join(", ")}) but ${o.input.project.target} has no .sova/spec` };
   }
-  const core = o.deps.specCore ?? process.env.SOVA_SPEC_CORE ?? join(agentRoot(), "extensions", "spec", "core");
+  const core = o.deps.specCore ?? SPEC_CORE;
   const tool = join(core, "sova-spec-draft.mjs");
   if (!existsSync(tool)) {
     st.end("failed", { detail: `no spec tools at ${core}` });

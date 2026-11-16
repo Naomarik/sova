@@ -5,7 +5,9 @@
 import { execFile } from "node:child_process";
 import { join } from "node:path";
 
-export const SPEC_TOOL = join(import.meta.dirname, "..", "pi-config", "extensions", "spec", "core", "sova-spec.mjs");
+/** The spec tools this copy of Sova ships (the checkout in the server, a chat's code generation in a chat). */
+export const SPEC_CORE = join(import.meta.dirname, "..", "pi-config", "extensions", "spec", "core");
+export const SPEC_TOOL = join(SPEC_CORE, "sova-spec.mjs");
 const TOOL_TIMEOUT_MS = 10_000;
 
 export type SpecToolRunner = (specRoot: string, args: string[]) => Promise<Record<string, any>>;

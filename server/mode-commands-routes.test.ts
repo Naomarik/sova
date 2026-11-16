@@ -7,7 +7,7 @@
 import assert from "node:assert/strict";
 import { chmodSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { after, test } from "node:test";
 import type { ChatModeResult, ProjectMinorInfo, ProjectModeApprovalNeeded } from "../shared/protocol";
@@ -36,7 +36,7 @@ mode(
 );
 mode("cmd", '---\ndescription: Commands only\ncommands: [{"name": "check", "description": "Runs the check", "run": ["./check.sh"]}]\n---\nCheck.\n', { "check.sh": "#!/bin/sh\necho ok\n" });
 
-writeFileSync(join(dir, "settings.json"), JSON.stringify({ extensions: [resolve(here, "../pi-config/extensions/mode")] }));
+writeFileSync(join(dir, "settings.json"), JSON.stringify({}));
 writeFileSync(join(dir, "mode.json"), JSON.stringify({ version: 1, mode: "normal", strict: false, minorModes: [] }));
 mkdirSync(join(dir, "sova"), { recursive: true });
 process.env.PI_CODING_AGENT_DIR = dir;

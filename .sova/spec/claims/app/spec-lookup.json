@@ -76,16 +76,17 @@
       "pi-config/extensions/mode/spec-guard.ts",
       "pi-config/extensions/mode/spec-guard.test.ts",
       "pi-config/extensions/mode/spec-mode.md",
-      "pi-config/extensions/mode/tests/fixtures/flag-off-master.json",
+      "server/modes/tests/fixtures/align-flag-off-master.json",
       "pi-config/extensions/subagents/spec-brief.ts",
       "pi-config/extensions/subagents/spec-brief.test.ts",
       "pi-config/extensions/spec/docs/MODE.md",
       "pi-config/extensions/spec/docs/CHANGELOG.md",
       "site/src/content/docs/modes/spec.md",
       "server/harness/pi/spec-tool-result.integration.test.ts",
-      "server/team-member-tools.test.ts"
+      "server/team-member-tools.test.ts",
+      "pi-config/extensions/mode/spec-mode.test.ts"
     ],
-    "evidence": "verified"
+    "evidence": "reviewed"
   },
   "§app.spec-lookup/tool": {
     "kind": "behavior",

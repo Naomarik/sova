@@ -1,5 +1,5 @@
-// The extension commands Sova runs directly on pi (§app.harness/session-history, P14): `/mode`,
-// `/claude-login`, `/sandbox` and `agent-resume`, each called through its handler with a command context
+// The extension commands Sova runs directly on pi (§app.harness/session-history, P14): `/claude-login`,
+// `/sandbox` and `agent-resume` (a mode switch calls Sova's engine directly, no command), each called through its handler with a command context
 // (pi's own extension-command path, AgentSession._tryExecuteExtensionCommand, minus the prompt text it
 // falls back to), never through prompt(), so no command text reaches the model. A command counts only when
 // the extension that owns it registered it, told by its source path, so another extension's command of the
@@ -8,7 +8,6 @@ import type { CommandOwner } from "../../../shared/harness";
 
 /** The entry file of the extension that owns each command. */
 const OWNER_SOURCE: Record<CommandOwner, RegExp> = {
-  mode: /[\\/]extensions[\\/]mode[\\/]index\.ts$/,
   "claude-login": /[\\/]extensions[\\/]claude-code[\\/]index\.ts$/,
   sandbox: /[\\/]extensions[\\/]sandbox[\\/]index\.ts$/,
   "agent-resume": /[\\/]extensions[\\/]subagents[\\/]index\.ts$/,

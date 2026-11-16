@@ -30,10 +30,9 @@
     "code": [
       "pi-config/extensions/mode/spec-agree.ts",
       "pi-config/extensions/mode/spec-agree.test.ts",
-      "pi-config/extensions/mode/index.ts",
       "pi-config/extensions/subagents/index.ts",
       "pi-config/extensions/mode/spec-mode.md",
-      "pi-config/extensions/mode/index.test.ts",
+      "pi-config/extensions/mode/modes.test.ts",
       "pi-config/extensions/spec/docs/MODE.md"
     ],
     "agreed": {
@@ -73,9 +72,8 @@
     ],
     "code": [
       "pi-config/extensions/mode/align-tool.ts",
-      "pi-config/extensions/mode/index.ts",
-      "pi-config/extensions/mode/tests/agree-turn.mjs",
-      "pi-config/extensions/spec/docs/MODE.md"
+      "pi-config/extensions/spec/docs/MODE.md",
+      "server/modes/engine-hooks.test.ts"
     ],
     "evidence": "verified",
     "agreed": {
@@ -126,7 +124,6 @@
       "pi-config/extensions/mode/README.md",
       "pi-config/extensions/claude-code/README.md",
       "pi-config/extensions/mode/spec-worker.ts",
-      "pi-config/extensions/mode/index.ts",
       "pi-config/extensions/subagents/index.test.ts"
     ],
     "agreed": {
@@ -208,7 +205,7 @@
       "pi-config/extensions/subagents/spec-brief.test.ts",
       "pi-config/extensions/spec/tests/packet.test.mjs",
       "pi-config/extensions/mode/spec-mode.md",
-      "pi-config/extensions/mode/index.test.ts",
+      "pi-config/extensions/mode/modes.test.ts",
       "pi-config/extensions/mode/README.md",
       "pi-config/extensions/spec/README.md",
       "pi-config/extensions/spec/core/README.md",
@@ -448,16 +445,28 @@
       "pi-config/extensions/mode/spec-guard.ts",
       "pi-config/extensions/subagents/spec-brief.ts",
       "pi-config/extensions/subagents/spec-brief.test.ts",
-      "pi-config/extensions/mode/index.test.ts",
+      "pi-config/extensions/mode/modes.test.ts",
       "pi-config/extensions/mode/prompt.ts",
       "pi-config/extensions/spec/PROMOTE.md",
-      "pi-config/extensions/mode/tests/fixtures/flag-off-master.json",
-      "pi-config/extensions/spec/docs/CHANGELOG.md"
+      "server/modes/tests/fixtures/align-flag-off-master.json",
+      "pi-config/extensions/spec/docs/CHANGELOG.md",
+      "pi-config/extensions/mode/spec-mode.test.ts",
+      "pi-config/extensions/mode/spec-guard.test.ts",
+      "playbooks/spec-review/PLAYBOOK.md",
+      "server/spec-review-playbook.test.ts",
+      "server/chat-host.ts",
+      "server/chat-runtime/supervisor.ts",
+      "server/chat-runtime/supervisor.test.ts",
+      "server/chat-host-caller-key.test.ts",
+      "pi-config/extensions/sandbox/env.ts",
+      "pi-config/extensions/sandbox/tests/unit/env.unit.test.ts",
+      "pi-config/extensions/remote/index.test.ts",
+      "scripts/test-env.mjs"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-11-05T05:46Z",
-      "source": "pi-session:144e6ae4-8742-4902-b7f2-31eecad9142b#5844cea0"
+      "by": "user",
+      "at": "2026-11-12T16:06Z",
+      "source": "pi-session:01a1d023-6988-7481-af78-b02082042586#96bae24a"
     }
   },
   "§tools.spec/near-impact": {
@@ -482,7 +491,6 @@
     "requires": [],
     "authority": "accepted",
     "code": [
-      "pi-config/extensions/mode/index.ts",
       "pi-config/extensions/mode/spec-guard.ts",
       "pi-config/extensions/mode/spec-worker.ts",
       "pi-config/extensions/mode/spec-mode.md",
@@ -741,7 +749,6 @@
     "code": [
       "pi-config/extensions/mode/spec-guard.ts",
       "pi-config/extensions/mode/spec-worker.ts",
-      "pi-config/extensions/mode/index.ts",
       "pi-config/extensions/subagents/index.ts",
       "pi-config/extensions/subagents/README.md",
       "pi-config/extensions/mode/README.md",
@@ -779,43 +786,44 @@
       "pi-config/extensions/mode/spec-guard.ts",
       "pi-config/extensions/mode/spec-guard.test.ts",
       "pi-config/extensions/mode/spec-worker.ts",
-      "pi-config/extensions/mode/index.ts",
       "pi-config/extensions/mode/align-tool.ts",
       "pi-config/extensions/mode/prompt.ts",
       "pi-config/extensions/subagents/spec-brief.ts",
       "pi-config/extensions/subagents/spec-brief.test.ts",
-      "pi-config/extensions/mode/tests/spec-turn.mjs",
       "pi-config/extensions/mode/tests/spec-worker.mjs",
-      "pi-config/extensions/mode/tests/agree-turn.mjs",
       "scripts/spec-pointers.test.ts",
-      "pi-config/extensions/spec/docs/MODE.md"
+      "pi-config/extensions/spec/docs/MODE.md",
+      "server/harness/pi/modes.ts",
+      "pi-config/extensions/mode/spec-mode.test.ts"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-10-25T20:24Z",
-      "source": "pi-session:e71bdc07-0b42-4cbc-89dd-c261c9e10dd3#89e96b4f"
+      "by": "user",
+      "at": "2026-11-12T16:06Z",
+      "source": "pi-session:01a1d023-6988-7481-af78-b02082042586#96bae24a"
     },
-    "evidence": "verified"
+    "evidence": "reviewed"
   },
   "§tools/spec": {
     "kind": "surface",
     "requires": [],
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "code": [
       "pi-config/extensions/mode/spec-guard.ts",
       "pi-config/extensions/spec/core/sova-spec.mjs",
       "pi-config/extensions/spec/core/packet.mjs",
-      "pi-config/extensions/mode/spec-mode.md"
+      "pi-config/extensions/mode/spec-mode.md",
+      "server/merge-queue/run.ts",
+      "server/spec-runner.ts"
     ],
     "notOwned": [
       "§app.merge-queue/checks",
       "§chat/mode-menu"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-10-28T16:31Z",
-      "source": "pi-session:e71bdc07-0b42-4cbc-89dd-c261c9e10dd3#c123538a"
+      "by": "user",
+      "at": "2026-11-12T16:06Z",
+      "source": "pi-session:01a1d023-6988-7481-af78-b02082042586#96bae24a"
     }
   }
 }

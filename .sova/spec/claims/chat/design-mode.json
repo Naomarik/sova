@@ -6,7 +6,7 @@
     "code": [
       "pi-config/extensions/mode/vis/overview.md",
       "server/design/tools.ts",
-      "pi-config/extensions/mode/index.test.ts"
+      "pi-config/extensions/mode/modes.test.ts"
     ],
     "requires": [
       "§chat.design-mode/turning-on",
@@ -41,7 +41,7 @@
   "§chat.design-mode/brief": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "reviewed",
+    "evidence": "verified",
     "code": [
       "shared/design.ts",
       "server/design/brief.ts",
@@ -51,7 +51,9 @@
       "src/components/DesignBrief.css",
       "src/lib/design-brief.ts",
       "src/lib/design-brief.test.ts",
-      "src/components/DesignSkills.tsx"
+      "src/components/DesignSkills.tsx",
+      "src/components/DesignCardFoot.tsx",
+      "src/lib/design-history.ts"
     ],
     "requires": [
       "§chat.design-mode/brief-layers",
@@ -60,7 +62,9 @@
       "§chat.design-mode/brief-images",
       "§chat.design-mode/link-modes",
       "§chat.design-mode/research",
-      "§chat.design-mode/steady-cards"
+      "§chat.design-mode/steady-cards",
+      "§chat.design-mode/open-history",
+      "§chat.design-mode/coordinator-card"
     ],
     "agreed": {
       "by": "user",
@@ -90,7 +94,7 @@
   "§chat.design-mode/brief-layers": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "reviewed",
+    "evidence": "verified",
     "code": [
       "server/design/brief.ts",
       "server/design/brief.test.ts",
@@ -98,7 +102,8 @@
       "server/design/coordinator-routes.ts",
       "src/components/DesignBrief.tsx",
       "src/lib/design-brief.ts",
-      "src/lib/design-brief.test.ts"
+      "src/lib/design-brief.test.ts",
+      "src/components/DesignBrief.css"
     ],
     "requires": [
       "§chat.design-mode/brief-start"
@@ -130,7 +135,7 @@
   "§chat.design-mode/brief-start": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "code": [
       "server/design/brief.ts",
       "server/design/brief.test.ts",
@@ -177,7 +182,7 @@
   "§chat.design-mode/card": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "reviewed",
+    "evidence": "verified",
     "code": [
       "shared/design.ts",
       "server/design/batch.ts",
@@ -200,14 +205,19 @@
       "src/lib/transcript-kinds.ts",
       "src/lib/transcript-kinds.test.ts",
       "src/lib/transcript-kinds-rule.test.ts",
-      "server/app.ts"
+      "server/app.ts",
+      "src/components/DesignCardFoot.tsx",
+      "src/components/DesignCoordinator.tsx",
+      "src/components/DesignGallery.tsx"
     ],
     "requires": [
       "§app.tours/one-card",
       "§chat.transcript-cards/built-ins",
       "§chat.design-mode/streaming",
       "§chat.design-mode/labels",
-      "§chat.design-mode/coordinator-card"
+      "§chat.design-mode/coordinator-card",
+      "§chat.design-mode/stop-remove",
+      "§chat.design-mode/brief"
     ],
     "agreed": {
       "by": "user",
@@ -233,18 +243,31 @@
   "§chat.design-mode/chat-with": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "reviewed",
+    "evidence": "verified",
     "code": [
       "src/components/DesignOpen.tsx",
       "src/components/DesignCoordinator.tsx",
       "src/components/SubagentPane.tsx",
       "server/design/routes.ts",
-      "server/design/coordinator-routes.ts"
+      "server/design/coordinator-routes.ts",
+      "shared/lookbook-words.ts",
+      "server/design/lookbook-words.test.ts",
+      "server/design/transcript.ts",
+      "server/watch.ts",
+      "server/ws.ts",
+      "shared/protocol.ts",
+      "shared/wire-areas.json",
+      "src/components/MessageRows.tsx",
+      "src/components/BuiltinKinds.tsx",
+      "src/lib/transcript-kinds.ts",
+      "src/lib/transcript-kinds-rule.test.ts"
     ],
     "requires": [
       "§app.subagents-pane/transcript-view",
       "§chat.design-mode/delivery",
-      "§chat.design-mode/chat-placement"
+      "§chat.design-mode/chat-placement",
+      "§chat.design-mode/prompt-history",
+      "§chat.design-mode/coordinator-card"
     ],
     "agreed": {
       "by": "user",
@@ -264,7 +287,8 @@
       "server/commands-inventory/scan.ts",
       "server/commands-inventory/baseline.json",
       "server/commands-fuzz.test.ts",
-      "docs/commands.md"
+      "docs/commands.md",
+      "src/lib/design-api.ts"
     ],
     "requires": [
       "§app/commands"
@@ -286,33 +310,44 @@
       "server/chat-host.ts",
       "pi-config/extensions/mode/design/coordinator.md",
       "server/design/skills.ts",
-      "server/design/tools.ts"
+      "server/design/tools.ts",
+      "server/design/versions.ts",
+      "server/design/page-paths.ts",
+      "server/design/batch.ts",
+      "server/design/setup.ts"
     ],
     "requires": [
       "§app.chat-processes/workers",
       "§chat.design-mode/launch-limits",
       "§chat.design-mode/new-from-parents",
       "§chat.design-mode/main-chat",
-      "§chat.design-mode/delivery"
+      "§chat.design-mode/delivery",
+      "§chat.design-mode/stop-remove",
+      "§chat.design-mode/version-reads",
+      "§chat.design-mode/views"
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-12T10:39Z",
-      "source": "pi-session:c6e7f9da-6608-46f4-a4d9-6db219882520#b5acf41a"
+      "at": "2026-11-16T18:10Z",
+      "source": "pi-session:25837150-f0d7-4f22-8f0d-b46d3508306c#e76aa240"
     }
   },
   "§chat.design-mode/coordinator-card": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "reviewed",
+    "evidence": "verified",
     "code": [
       "src/components/DesignCoordinator.tsx",
       "server/design/coordinator.ts",
       "server/design/coordinator-routes.ts",
-      "server/design/coordinator.test.ts"
+      "server/design/coordinator.test.ts",
+      "src/components/DesignCard.tsx",
+      "src/components/DesignBrief.tsx",
+      "src/lib/design-ui.ts"
     ],
     "requires": [
-      "§chat.design-mode/delivery"
+      "§chat.design-mode/delivery",
+      "§chat.design-mode/chat-with"
     ],
     "agreed": {
       "by": "user",
@@ -358,7 +393,7 @@
   "§chat.design-mode/delivery": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "reviewed",
+    "evidence": "verified",
     "code": [
       "server/design/batch.ts",
       "server/design/batch.test.ts",
@@ -369,7 +404,8 @@
     ],
     "requires": [
       "§app.worker-restore/resume",
-      "§app.chat-processes/workers"
+      "§app.chat-processes/workers",
+      "§chat.design-mode/stop-remove"
     ],
     "agreed": {
       "by": "user",
@@ -417,7 +453,9 @@
       "pi-config/extensions/subagents/runner.ts",
       "pi-config/extensions/subagents/chat-worker.ts",
       "pi-config/extensions/mode/design/session/brief.md",
-      "src/components/DesignCard.tsx"
+      "src/components/DesignCard.tsx",
+      "src/lib/design-ui.ts",
+      "src/lib/design-ui.test.ts"
     ],
     "requires": [
       "§app.chat-processes/workers",
@@ -460,7 +498,7 @@
   "§chat.design-mode/failed-designs": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "reviewed",
+    "evidence": "verified",
     "code": [
       "shared/design.ts",
       "server/design/batch.ts",
@@ -473,7 +511,8 @@
       "src/components/DesignOpen.tsx"
     ],
     "requires": [
-      "§chat.design-mode/landing-checks"
+      "§chat.design-mode/landing-checks",
+      "§chat.design-mode/stop-remove"
     ],
     "agreed": {
       "by": "user",
@@ -484,15 +523,18 @@
   "§chat.design-mode/gallery": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "reviewed",
+    "evidence": "verified",
     "code": [
       "src/components/DesignGallery.tsx",
       "src/components/DesignBriefImages.tsx",
-      "src/components/SessionPane.tsx"
+      "src/components/SessionPane.tsx",
+      "src/components/DesignCard.tsx",
+      "src/lib/design-ui.ts"
     ],
     "requires": [
       "§app.subagents-pane/tabs",
-      "§app.insights/explanations-page"
+      "§app.insights/explanations-page",
+      "§chat.design-mode/stop-remove"
     ],
     "agreed": {
       "by": "user",
@@ -538,7 +580,7 @@
   "§chat.design-mode/labels": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "reviewed",
+    "evidence": "verified",
     "code": [
       "shared/design.ts",
       "server/design/store.ts",
@@ -560,7 +602,9 @@
       "server/design/lint.ts",
       "server/design/lint.test.ts",
       "server/design/batch.ts",
-      "server/design/tools.ts"
+      "server/design/tools.ts",
+      "server/design/view-marks.ts",
+      "server/design/views.test.ts"
     ],
     "requires": [
       "§chat.design-mode/prototype-frame"
@@ -687,10 +731,17 @@
       "pi-config/extensions/mode/vis/lookbook.md",
       "server/design/setup.ts",
       "src/components/DesignCard.tsx",
-      "server/design/coordinator.ts"
+      "server/design/coordinator.ts",
+      "server/design/versions.ts",
+      "server/design/page-paths.ts",
+      "server/design/page-paths.test.ts",
+      "server/design/read-pages.test.ts",
+      "server/app.ts"
     ],
     "requires": [
-      "§chat.design-mode/own-images"
+      "§chat.design-mode/own-images",
+      "§chat.design-mode/version-reads",
+      "§chat.design-mode/views"
     ],
     "agreed": {
       "by": "user",
@@ -726,12 +777,13 @@
   "§chat.design-mode/new-from-parents": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "reviewed",
+    "evidence": "verified",
     "code": [
       "server/design/batch.ts",
       "server/design/batch.test.ts",
       "server/design/coordinator.ts",
-      "server/design/coordinator.test.ts"
+      "server/design/coordinator.test.ts",
+      "server/design/setup.ts"
     ],
     "requires": [
       "§chat.design-mode/labels"
@@ -745,13 +797,14 @@
   "§chat.design-mode/open-history": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "reviewed",
+    "evidence": "verified",
     "code": [
       "src/components/DesignOpen.tsx",
       "src/components/DesignCard.tsx",
       "src/components/DesignGallery.tsx",
       "src/lib/design-history.ts",
-      "src/lib/design-history.browser.test.ts"
+      "src/lib/design-history.browser.test.ts",
+      "src/components/DesignBrief.tsx"
     ],
     "requires": [
       "§chat.design-mode/chat-with",
@@ -855,6 +908,36 @@
       "source": "pi-session:c6e7f9da-6608-46f4-a4d9-6db219882520#b5acf41a"
     }
   },
+  "§chat.design-mode/prompt-history": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "server/design/history.ts",
+      "server/design/history.test.ts",
+      "shared/design.ts",
+      "server/design/batch.ts",
+      "server/design/batch.test.ts",
+      "server/design/coordinator.ts",
+      "server/design/coordinator.test.ts",
+      "server/design/routes.ts",
+      "src/lib/lookbook-history.ts",
+      "src/lib/lookbook-history.test.ts",
+      "src/components/LookbookHistory.tsx",
+      "src/components/DesignOpen.tsx",
+      "src/components/SubagentPane.tsx",
+      "src/lib/design-api.ts",
+      "shared/commands/design.ts"
+    ],
+    "requires": [
+      "§chat.design-mode/storage"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-16T18:10Z",
+      "source": "pi-session:25837150-f0d7-4f22-8f0d-b46d3508306c#e76aa240"
+    }
+  },
   "§chat.design-mode/prototype-frame": {
     "kind": "behavior",
     "authority": "accepted",
@@ -903,11 +986,14 @@
       "server/design/look.ts",
       "server/design/edits.ts",
       "src/components/DesignOpen.tsx",
-      "src/components/DesignCard.tsx"
+      "src/components/DesignCard.tsx",
+      "src/components/DesignGallery.tsx",
+      "src/lib/design-ui.ts"
     ],
     "requires": [
       "§chat.design-mode/delivery",
-      "§chat.design-mode/labels"
+      "§chat.design-mode/labels",
+      "§chat.design-mode/chat-with"
     ]
   },
   "§chat.design-mode/reply-route": {
@@ -1051,7 +1137,7 @@
   "§chat.design-mode/steady-cards": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "reviewed",
+    "evidence": "verified",
     "code": [
       "src/components/DesignFrame.tsx",
       "src/components/DesignCard.tsx",
@@ -1061,7 +1147,15 @@
       "src/components/DesignBrief.tsx",
       "src/components/DesignBrief.css",
       "src/lib/design-store.ts",
-      "src/lib/design-live-slots.ts"
+      "src/lib/design-live-slots.ts",
+      "src/lib/design-page-slots.ts",
+      "src/lib/design-page-slots.browser.test.ts",
+      "src/lib/design-card-size.ts",
+      "src/lib/design-card-size.test.ts",
+      "src/lib/transcript-kinds.ts",
+      "src/lib/design-frame.ts",
+      "src/app.css",
+      "src/components/DesignCardFoot.tsx"
     ],
     "requires": [
       "§chat.design-mode/prototype-frame",
@@ -1069,7 +1163,8 @@
       "§chat.design-mode/card",
       "§chat.design-mode/gallery",
       "§chat.design-mode/model-picker",
-      "§chat.design-mode/directions"
+      "§chat.design-mode/directions",
+      "§chat.design-mode/stop-remove"
     ],
     "agreed": {
       "by": "user",
@@ -1077,14 +1172,52 @@
       "source": "pi-session:c6e7f9da-6608-46f4-a4d9-6db219882520#b5acf41a"
     }
   },
+  "§chat.design-mode/stop-remove": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "shared/design.ts",
+      "server/design/batch.ts",
+      "server/design/batch.test.ts",
+      "server/design/live.ts",
+      "server/design/store.ts",
+      "server/design/routes.ts",
+      "server/design/coordinator.ts",
+      "server/design/coordinator.test.ts",
+      "src/components/DesignCard.tsx",
+      "src/components/DesignCard.css",
+      "src/components/DesignGallery.tsx",
+      "src/components/DesignOpen.tsx",
+      "src/components/DesignCoordinator.tsx",
+      "src/lib/design-ui.ts",
+      "src/lib/design-ui.test.ts",
+      "src/lib/design-api.ts",
+      "shared/commands/design.ts"
+    ],
+    "requires": [
+      "§chat.design-mode/card",
+      "§chat.design-mode/labels",
+      "§chat.design-mode/storage",
+      "§chat.design-mode/gallery"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-16T18:10Z",
+      "source": "pi-session:25837150-f0d7-4f22-8f0d-b46d3508306c#e76aa240"
+    }
+  },
   "§chat.design-mode/storage": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "reviewed",
+    "evidence": "verified",
     "code": [
       "server/design/store.ts",
       "server/sessions-index.ts",
-      "server/mesh/access.ts"
+      "server/mesh/access.ts",
+      "server/design/history.ts",
+      "server/design/views.ts",
+      "server/design/batch.ts"
     ],
     "requires": [
       "§app.tours/storage"
@@ -1137,14 +1270,15 @@
     "code": [
       "pi-config/extensions/mode/minor.ts",
       "pi-config/extensions/mode/project-format.ts",
-      "pi-config/extensions/mode/index.test.ts",
+      "pi-config/extensions/mode/modes.test.ts",
       "server/chat-manager.ts",
       "server/mode-state.test.ts",
       "src/components/ui.tsx",
       "src/lib/mode-glyphs.ts",
       "pi-config/extensions/mode/create/modes.md",
       "pi-config/extensions/mode/create/tools.md",
-      "server/create-guide-growth.json"
+      "server/create-guide-growth.json",
+      "server/harness/pi/modes.ts"
     ],
     "requires": [
       "§chat/mode-menu",
@@ -1156,8 +1290,75 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-12T10:39Z",
-      "source": "pi-session:c6e7f9da-6608-46f4-a4d9-6db219882520#b5acf41a"
+      "at": "2026-11-13T03:00Z",
+      "source": "pi-session:01a1d023-6988-7481-af78-b02082042586#71ebdfba"
+    }
+  },
+  "§chat.design-mode/version-reads": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "server/design/versions.ts",
+      "server/design/page-paths.ts",
+      "server/design/page-paths.test.ts",
+      "server/design/read-pages.test.ts",
+      "server/design/tools.ts",
+      "server/design/coordinator.ts",
+      "server/design/coordinator.test.ts",
+      "server/app.ts",
+      "pi-config/extensions/mode/vis/lookbook.md",
+      "pi-config/extensions/mode/vis/lookbook-passing-on.md",
+      "pi-config/extensions/mode/design/coordinator.md"
+    ],
+    "requires": [
+      "§chat.design-mode/views",
+      "§chat.design-mode/storage"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-16T18:10Z",
+      "source": "pi-session:25837150-f0d7-4f22-8f0d-b46d3508306c#e76aa240"
+    }
+  },
+  "§chat.design-mode/views": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "server/design/view-marks.ts",
+      "server/design/views.ts",
+      "server/design/views.test.ts",
+      "server/design/png-diff.ts",
+      "server/design/png-diff.test.ts",
+      "server/design/look.ts",
+      "server/design/lint.ts",
+      "server/design/batch.ts",
+      "server/design/batch.test.ts",
+      "server/design/browse.ts",
+      "server/design/browse.integration.test.ts",
+      "server/design/tools.ts",
+      "server/design/coordinator.ts",
+      "server/design/coordinator.test.ts",
+      "server/chat-host.ts",
+      "shared/design.ts",
+      "server/tours/runner.ts",
+      "server/tours/runner-protocol.ts",
+      "server/tours/runner-child.ts",
+      "pi-config/extensions/mode/design/session/brief.md",
+      "pi-config/extensions/mode/design/coordinator.md",
+      "pi-config/extensions/mode/vis/lookbook.md",
+      "pi-config/extensions/mode/vis/lookbook-passing-on.md"
+    ],
+    "requires": [
+      "§chat.design-mode/landing-checks",
+      "§chat.design-mode/guide",
+      "§app.tours/recording"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-16T18:10Z",
+      "source": "pi-session:25837150-f0d7-4f22-8f0d-b46d3508306c#e76aa240"
     }
   },
   "§chat/design-mode": {

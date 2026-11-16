@@ -50,8 +50,8 @@ them, a project's own modes as one row), and links to the feature, extending and
 The major and minor modes side by side, the three major modes in the mode menu's words, switching
 them per chat from the composer's mode menu,
 the default for new sessions (memory's type with it; never Create, which is chosen per chat),
-strict, a short memory section that
-links to its own page (§site.docs/memory), the terminal's commands, which offer no Create, what workers get (spec, and each
+strict, that Sova runs every chat's modes with no switch and with no pi mode extension linked (§chat.mode-menu/sova-runs-modes), a short memory section that
+links to its own page (§site.docs/memory), that a pi terminal has no modes (§chat.mode-menu/terminal), what workers get (spec, and each
 project mode that says so), and the sessions that choose their own mode, and a project's own minor modes (§site.docs/project-modes).
 
 ## §site.docs/normal — Normal (`/docs/modes/normal/`)
@@ -123,7 +123,8 @@ route, when it runs, blockers, and what the card shows.
 The spec minor mode: its guide's two parts (finding your way on every turn, the writing procedure
 once, before the first behavior-changing edit or with the first census note or an alignment's
 go-ahead), working from the project's spec, the read-only `spec` tool every chat you code in and
-every worker but a team's monitor has for those look-ups, spec on or off (§app.spec-lookup/spec-tool), the census note and its one unread line before
+every worker but a team's monitor has for those look-ups, spec on or off (§app.spec-lookup/spec-tool), whose copy of
+the spec tools a chat, its workers, the merge queue and releases run (§tools.spec/mode-reading), the census note and its one unread line before
 finishing, updating a claim the task didn't create without asking and listing it in the reply's one
 spec line ("Also updates …"), the Agree step when align is on too, drafts and promotion, the spec
 writer, what workers get (and the claims a finished worker's changes landed in), and project coding
@@ -148,7 +149,14 @@ yours always winning; Rebuild This Screen or Just Its Feel before Start, at most
 pictures a design with Rebuild screenshots first and the rest as words only; every designer gets
 the words, and a screenshot is never put in the page, §chat.design-mode/own-images,
 §chat.design-mode/brief-start); and working with designs: statuses and cost, a page
-being written, Google Fonts only, Refine, Chat, the Creative Director and designs made from others. It
+being written, Google Fonts only, Open and Chat (changing a design by telling it in its chat, an
+ended session starting again from its saved page), More with Stop and Remove (a stopped design's
+still and Start Again, the folded Removed section and Restore, §chat.design-mode/stop-remove), the
+Creative Director (its section's Chat with the Creative Director, designs made from others on any
+allowed model, stopping or removing only when asked, its chat listing what each design was told,
+§chat.design-mode/prompt-history), and reads by reference (version, versions, size and saved
+path, never the page; any version or a picture of any view, §chat.design-mode/version-reads,
+§chat.design-mode/views). It
 ends with how long designs are kept and that they aren't on share links. The page calls the run's
 lead session the Creative Director throughout (§chat.design-mode/creative-director).
 
@@ -228,7 +236,9 @@ running turn, and switching models mid-session (favorites and the saved default)
 ## §site.docs/install — Install (`/docs/install/`)
 
 Installing Sova on a Mac or Linux machine with one command and its options, starting it and
-opening it unlocked, the app-launcher entry that opens it in its own window (on macOS, an app of its own with its own
+opening it unlocked, the pi extension links (no `mode` link, and one an older install left removed; a leftover link into another copy of Sova repointed, anything
+else kept and named; Sova's own chats run their own copy's extensions whatever the links say,
+§app.installer/pi-extensions), the app-launcher entry that opens it in its own window (on macOS, an app of its own with its own
 Dock icon and no title bar), the access token,
 the login service, running the installer again and the self-update from Settings it points to
 (§site.docs/updates), removing it (the service, the extension links,

@@ -90,3 +90,22 @@ test("a design's own page is pictured, its scripts run, and it can't leave", { s
   assert.equal(r.shots.length, 1);
   assert.match(r.outline, /After/);
 });
+
+test("a version's views: one browser clicks each path from a fresh load, and finds the open tab, a dead control and a click that changes nothing", { skip: !browser }, async () => {
+  const { checkVersionViews } = await import("./views");
+  const html = `<!doctype html><html><head><style>[hidden]{display:none}section{height:600px}#plans{background:#cde}#usage{background:#edc}#billing{background:#dec}</style></head><body>
+<div role="tablist"><button role="tab" type="button" aria-selected="true" data-sova-view="Plans" onclick="show('plans')">Plans</button><button role="tab" type="button" data-sova-view="Usage" onclick="show('usage')">Usage</button></div>
+<button type="button" data-sova-view="Account menu" onclick="document.getElementById('menu').hidden=false">Account</button>
+<div id="menu" hidden><a href="#billing" data-sova-view="Billing" data-sova-via="Account menu" onclick="show('billing')">Billing</a></div>
+<button type="button" data-sova-view="Ghost" style="display:none">Ghost</button>
+<button type="button" data-sova-view="Nothing">Nothing</button>
+<section id="plans"><h1>Plans</h1></section><section id="usage" hidden><h1>Usage</h1></section><section id="billing" hidden><h1>Billing</h1></section>
+<script>function show(id){for(const s of document.querySelectorAll("section"))s.hidden=s.id!==id;document.getElementById("menu").hidden=true}</script>
+</body></html>`;
+  const views = await checkVersionViews(parent, "A", 1, { context, readPage: () => html });
+  assert.deepEqual(
+    views?.map((v) => [v.name, v.state, v.start ?? false]),
+    [["Plans", "ok", true], ["Usage", "ok", false], ["Account menu", "ok", false], ["Billing", "ok", false], ["Ghost", "unreachable", false], ["Nothing", "unchanged", false]],
+  );
+  assert.match(views?.find((v) => v.name === "Ghost")?.problem ?? "", /matched 0 visible controls/);
+});

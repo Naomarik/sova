@@ -1,7 +1,7 @@
 /**
  * The `align` tool: its model-facing description and parameter schema, and the execute that
  * applies a call to the branch's alignments (align.ts `applyAlignCall`) and returns the touched
- * document's snapshot as the result's `details`. The host (index.ts) owns the state and when the
+ * document's snapshot as the result's `details`. The host (Sova's mode engine) owns the state and when the
  * tool is in the loadout (only while the align minor mode is on).
  */
 import { StringEnum } from "@earendil-works/pi-ai";

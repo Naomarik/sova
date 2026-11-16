@@ -1,21 +1,19 @@
 // Run: bun test server/create-mode-chat.test.ts (or pnpm test)
 // A switch to Create through the mode route (§chat.create-mode/per-chat-only, /minor-modes, /where-offered), against a
-// REAL hosted runtime whose only extension is this repo's mode extension. No model request is made: every switch runs
+// REAL hosted runtime whose only mode owner is Sova's engine (no settings entry). No model request is made: every switch runs
 // the extension's own /mode handler, so what reads back was taken by the extension, past its Sova-only check.
 import assert from "node:assert/strict";
 import { mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
 import { after, test } from "node:test";
 import { CREATE_NO_DEFAULT, CREATE_NOT_SENT, createNotNamed } from "../shared/profiles";
 import type { ChatModeResult } from "../shared/protocol";
 import { MODE } from "./harness/state-kinds";
 
-const here = dirname(fileURLToPath(import.meta.url));
 const dir = realpathSync(mkdtempSync(join(tmpdir(), "sova-create-chat-")));
 process.on("exit", () => rmSync(dir, { recursive: true, force: true }));
-writeFileSync(join(dir, "settings.json"), JSON.stringify({ extensions: [resolve(here, "../pi-config/extensions/mode")] }));
+writeFileSync(join(dir, "settings.json"), JSON.stringify({}));
 writeFileSync(join(dir, "mode.json"), JSON.stringify({ version: 1, mode: "delegate", strict: false, minorModes: ["vis"] }));
 process.env.PI_CODING_AGENT_DIR = dir;
 delete process.env.SOVA_CHAT_STATE_ROOT;

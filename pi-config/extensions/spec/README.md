@@ -342,9 +342,8 @@ writer on the same machine.
 
 ## What the minor mode checks by itself
 
-With spec on, `../mode/spec-guard.ts` runs these tools for the agent (in pi
-from `../mode/index.ts`; in Claude Code workers from the hooks the subagents
-spawn path installs): after any tool call, bash included, a `git status` delta
+With spec on, `../mode/spec-guard.ts` runs these tools for the agent (in a Sova
+chat from Sova's mode engine; in a pi worker from `../mode/spec-worker.ts`): after any tool call, bash included, a `git status` delta
 that shows a first changed file in the boundary, or a new one, runs
 `census --changed` and appends a short `[spec census]` digest to that tool
 result, saying so when the session has no draft yet. At the first call after
@@ -372,7 +371,7 @@ one `sh` block of [`../mode/spec-mode.md`](../mode/spec-mode.md). It sets
 `node "$core/sova-spec.mjs" check --root <project root> --json`. The prefix
 follows pi's own agent-dir rule: only an exact `~` or a leading `~/` means home,
 and `~other` stays literal. Pi's bash tool always runs bash.
-`../mode/index.test.ts` runs the prefix in bash against those cases. It also
+`../mode/spec-mode.test.ts` runs the prefix in bash against those cases. It also
 checks that every tool, flag and draft command the prompt names exists in these
 CLIs. The tools in that directory are the only ones the mode runs without
 asking.

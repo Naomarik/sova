@@ -115,6 +115,8 @@ test("each fault is refused with its exact path and words", () => {
     ["nested group", (r) => r.steps[1].steps.push({ id: "in", label: "In", repeat: { max: 2 }, steps: [] }), "steps[1].steps[2]: a repeating group holds plain steps only."],
     ["askEvery past max", (r) => (r.steps[1].repeat.askEvery = 6), "steps[1].repeat.askEvery: must be a whole number from 1 to 5."],
     ["until rule without one", (r) => delete r.steps[1].repeat.rule, `steps[1].repeat.until: "rule" needs the stop rule in "rule".`],
+    ["team of one role", (r) => (r.steps[1].steps[0].team = true), "steps[1].steps[0].team: a team is two or more helper roles; one role's helpers (however many) run as separate helpers."],
+    ["team of main and one role", (r) => (r.steps[0].roles = ["main", "grader"], r.steps[0].team = true), "steps[0].team: a team is two or more helper roles; one role's helpers (however many) run as separate helpers."],
     ["optional stop off", (r) => (r.steps[0].startsOff = true), `steps[0].startsOff: needs "stop": "optional" (only an optional stop can start off).`],
     ["duplicate step id", (r) => (r.steps[1].steps[0].id = "measure"), `steps: the step id "measure" is used twice.`],
     ["choice default", (r) => (r.inputs[3].default = "c"), `inputs[3].default: must be one of the options' ids: "a", "b".`],

@@ -167,7 +167,8 @@ export interface PlaybookStep {
   /** Role ids that work in this step; "main" may be named without being declared. */
   roles: string[];
   /** How the step's helpers run: as one team (Sova adds a coordinator and a monitor) or as
-      separate helpers. Written or derived: a team when two or more helper roles take part. */
+      separate helpers. A team is two or more helper ROLES (not one role with a count): derived so,
+      and `team: true` on a step with fewer is refused; `team: false` splits a multi-role step. */
   team: boolean;
   /** "always": the run waits for you here; "optional": a tick on the card; absent: runs through. */
   stop?: "always" | "optional";
@@ -551,7 +552,7 @@ function parseStepFields(o: Record<string, unknown>, path: string, roles: Playbo
   });
   const helpers = (rs as string[]).filter((r) => r !== MAIN_ROLE).length;
   const team = bool(o.team, `${path}.team`, helpers >= 2);
-  if (team && helpers === 0) fail(`${path}.team`, "a team needs at least one helper role.");
+  if (team && helpers < 2) fail(`${path}.team`, "a team is two or more helper roles; one role's helpers (however many) run as separate helpers.");
   const stop = o.stop === undefined ? undefined : oneOf(o.stop, ["always", "optional"] as const, `${path}.stop`);
   const startsOff = bool(o.startsOff, `${path}.startsOff`, false);
   if (startsOff && stop !== "optional") fail(`${path}.startsOff`, `needs "stop": "optional" (only an optional stop can start off).`);
@@ -635,7 +636,7 @@ function parseMachine(v: unknown, roles: PlaybookRole[]): PlaybookMachine {
     });
     const helpers = (rs as string[]).filter((r) => r !== MAIN_ROLE).length;
     const team = bool(s.team, `${path}.team`, helpers >= 2);
-    if (team && helpers === 0) fail(`${path}.team`, "a team needs at least one helper role.");
+    if (team && helpers < 2) fail(`${path}.team`, "a team is two or more helper roles; one role's helpers (however many) run as separate helpers.");
     const stop = s.stop === undefined ? undefined : oneOf(s.stop, ["always", "optional"] as const, `${path}.stop`);
     const startsOff = bool(s.startsOff, `${path}.startsOff`, false);
     if (startsOff && stop !== "optional") fail(`${path}.startsOff`, `needs "stop": "optional".`);

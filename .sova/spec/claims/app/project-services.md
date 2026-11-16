@@ -526,7 +526,12 @@ like the others: one result shape, every caller.
   shared."); the definition has no `share` key or says `allow: false`; the endpoint is not listed;
   any data resource of the definition is `sensitive` ("Derived from production: copies are never
   shared."); the instance is not running that endpoint's service (share never starts anything: up
-  first); or no preview address is set.
+  first); or no preview address is set and the route is neither Cloudflare Free nor Account. While sharing is off it
+  is refused `share-denied` with the sharing-off sentence (§mesh.public/sharing-off), before
+  anything, a link shared again included. Under Free the link rides the app's own preview tunnel;
+  a mint that can't have one (a seventh tunnel, Turn On not pressed, no cloudflared, a tunnel that
+  didn't start: §mesh.public/preview-tunnels) is refused `share-denied` with that refusal's text.
+  No new error code is added.
 - **The link.** A port preview of the endpoint's port in the copy's slot, kept in
   `preview-kept.json` with the target `instance` (the instance id, the endpoint, and for a static
   service the serve that must hold the port) and the copy's branch; preview-links.json's keys do not

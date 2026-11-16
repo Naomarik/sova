@@ -212,7 +212,8 @@
       "server/tours/runner-signin.integration.fixture.ts",
       "server/design/browse.ts",
       "server/tours/page-capture.ts",
-      "server/tours/darkroom-child.ts"
+      "server/tours/darkroom-child.ts",
+      "server/design/look.ts"
     ],
     "requires": [
       "§app.tours/sandbox",
@@ -321,7 +322,7 @@
   "§app.tours/sharing": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "code": [
       "server/tours/shares.ts",
       "server/tours/public-view.ts",
@@ -354,7 +355,9 @@
       "src/lib/tour-progress-save.test.ts",
       "src/lib/tour-share-preview.ts",
       "src/lib/tour-share-preview.test.ts",
-      "server/tours/shares-lock.integration.test.ts"
+      "server/tours/shares-lock.integration.test.ts",
+      "src/components/TourCard.tsx",
+      "src/components/OpensAt.tsx"
     ],
     "requires": [
       "§app.tours/editions",
@@ -365,7 +368,8 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-10-15T19:49Z"
+      "at": "2026-11-12T12:42Z",
+      "source": "pi-session:a43d715c-1eb4-4040-a159-23c4193273a4#55333f93"
     }
   },
   "§app.tours/sites": {

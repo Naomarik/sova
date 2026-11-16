@@ -770,6 +770,29 @@ html, body { overflow: clip; overscroll-behavior: none; }
 .public-links-choice-name { color: var(--color-ink); }
 .public-links-choice-meta { font-size: var(--fs-caption); color: var(--color-ink-muted); }
 .public-links-gateway { gap: var(--space-4); }
+/* Where links open (OpensAt.tsx): one radio list in sections, each section under a micro caps label.
+   An option not set up is greyed in its words, never only by tint: its row says "Needs setup". It
+   stays a full-ink target, selectable. */
+.opens-at { display: flex; flex-direction: column; gap: var(--space-3); min-width: 0; }
+.opens-at-section { display: flex; flex-direction: column; }
+.opens-at-section-title { margin: 0; font-family: var(--font-mono); font-size: var(--fs-micro); line-height: var(--lh-micro); letter-spacing: var(--ls-eyebrow); text-transform: uppercase; color: var(--color-ink-muted); }
+/* Not set up: the name and hint drop to the muted token (still 4.5:1 on surface, so readable), and the
+   "Needs setup" word carries the state in ink-2. The radio stays enabled: the row is selectable. */
+.opens-at-needs-setup :is(.public-links-choice-name, .public-links-choice-meta) { color: var(--color-ink-muted); }
+.opens-at-needs-setup .opens-at-tag { color: var(--color-ink-2); font-weight: var(--fw-medium); }
+.opens-at-needs-setup .toggle-box { border-style: dashed; }
+.opens-at-tag { font-size: var(--fs-caption); color: var(--color-ink-muted); }
+.opens-at-badge { margin-left: var(--space-2); vertical-align: middle; }
+.opens-at-note { font-style: normal; }
+.opens-at-setup { padding: var(--space-3); border: 1px solid var(--color-border); border-radius: var(--r-md); background: var(--color-surface); }
+.opens-at-setup p { margin: 0; }
+.opens-at-setup-title { font-weight: var(--fw-semibold); color: var(--color-ink); }
+/* A share screen's one line: the choice, then Change on the same line where it fits. */
+.opens-at-line { min-width: 0; }
+.opens-at-current { margin: 0; display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); font-size: var(--fs-caption); color: var(--color-ink-2); }
+.opens-at-install { overflow-wrap: anywhere; }
+.opens-at-broken { display: flex; flex-direction: column; gap: var(--space-1); }
+.opens-at-preview-note { margin: 0; }
 /* Settings → Outreach's sender panel (§app.settings-dialog/outreach): the state, its figures, and each
    control with what it does on the line beside it (wrapping under it when the pane is narrow). */
 .outreach-sender { display: flex; flex-direction: column; gap: var(--space-2); }
@@ -1218,6 +1241,21 @@ html, body { overflow: clip; overscroll-behavior: none; }
   color: var(--color-ink-2);
 }
 .message-from-session .message-body { background: var(--color-surface); border: var(--stroke-thin) solid var(--color-border-strong); }
+/* A Lookbook helper's chat: Sova's additions fold under the words they came with, at the bubble's side. */
+.message-user > .lookbook-note { align-self: flex-end; }
+/* The Creative Director's prompt items: one line each, folded; open, the full text and what changed. */
+.lookbook-item-line { display: flex; align-items: center; gap: var(--space-2); min-height: var(--control-sm); font-size: var(--fs-caption); color: var(--color-ink-muted); }
+/* Folded: the title on one line, the preview taking what's left, the time never squeezed. */
+.lookbook-item > .disclosure-summary > .disclosure-label { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lookbook-item > .disclosure-summary > .message-stamp, .lookbook-item-line > .message-stamp { flex: none; }
+.lookbook-item-body { display: flex; flex-direction: column; gap: var(--space-2); }
+.lookbook-item-body > p { margin: 0; }
+.lookbook-item-designs { margin: 0; padding-left: var(--space-5); }
+.lookbook-changes { list-style: none; margin: 0; padding: 0; font-family: var(--font-mono); font-size: var(--fs-mono); line-height: var(--lh-mono); border-radius: var(--r-sm); overflow: hidden; }
+.lookbook-changes > li { display: flex; gap: var(--space-2); padding: 0 var(--space-2); white-space: pre-wrap; overflow-wrap: anywhere; }
+.lookbook-change-add { background: var(--diff-add-bg); color: var(--diff-add-ink); }
+.lookbook-change-del { background: var(--diff-del-bg); color: var(--diff-del-ink); }
+.lookbook-change-sign { flex: none; width: 1ch; user-select: none; }
 .profile-card .card-head { display: flex; align-items: center; gap: var(--space-2); }
 .profile-card .card-title { font-size: var(--fs-body); margin: 0; }
 .profile-card .card-head > .text-muted { margin-left: auto; font-size: var(--fs-caption); }

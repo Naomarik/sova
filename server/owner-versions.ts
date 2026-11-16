@@ -11,7 +11,8 @@ import { holdsSensitive } from "./project-services/sensitive";
 import { endpointOf, shareRefusal } from "./project-services/share";
 import { realGit } from "./project-services/engine";
 import { readRegistry, type InstanceRecord } from "./project-services/store";
-import { previewAddress, previewOrigin } from "./share/preview-address";
+import { previewHome, previewLinkOf } from "./share/preview-link";
+import { sharingOff } from "./share/sharing-off";
 import { awaitShareLinks } from "./share/links-events";
 import { advanceRequest, orgRequests } from "./project-assistant-store";
 import { OWNER_REQUEST_TITLE_MAX, type OwnerRequest } from "../shared/project-assistant";
@@ -254,22 +255,30 @@ export function shownVersionSummary(orgId: string, v: Pick<OwnerVersion, "projec
 /** The owner-bound preview of a version for this owner link, kept or made now; its URL, or null when it can't be opened. */
 export async function openVersion(v: OwnerVersion, link: { hash: string; expiresAt: string }, now = Date.now()): Promise<string | null> {
   if (!v.running || !v.endpoint || v.port === null) return null;
+  // Sharing off opens no version, a kept one included (§mesh.public/sharing-off).
+  if (sharingOff()) return null;
   const kept = keptPreviews();
   for (const view of listPreviews({ projectId: v.projectId }, now)) {
     const k = kept[view.id];
     if (view.state !== "active" || k?.owner !== link.hash || k.target.kind !== "instance" || k.target.instance !== v.rec.id || k.target.endpoint !== v.endpoint || view.port !== v.port) continue;
     if (k.url) return k.url;
+    // A Free one whose tunnel has no address now: its tunnel is started again below, and its link read then.
+    if (k.key) {
+      const home = await previewHome(v.port, "session:owner-page").catch(() => null);
+      return home ? previewLinkOf(home, k.key) : null;
+    }
   }
-  const address = previewAddress();
-  if (!address.url) return null;
+  // Its home first (under Cloudflare Free its app's own tunnel): nothing is made when it can't have one.
+  const home = await previewHome(v.port, "session:owner-page").catch(() => null);
+  if (!home) return null;
   const left = Math.max(1, Math.ceil((Date.parse(link.expiresAt) - now) / 86_400_000));
   const ports = v.serve ? new Set([...sovaPorts()].filter((p) => p !== v.port)) : sovaPorts();
   const minted = (await awaitShareLinks(() => mintPreview({ projectId: v.projectId, port: v.port, days: Math.min(7, left), createdBy: "session:owner-page" }, ports, now))).result;
   // Exactly the owner link's deadline, never later.
   setPreviewExpiry(minted.record.id, Date.parse(link.expiresAt), now);
-  const url = `${previewOrigin(address.url, minted.label)}/`;
+  const url = previewLinkOf(home, minted.label);
   keepPreview(minted.record.id, {
-    url,
+    ...(home.mode === "tunnel" ? { key: minted.label } : { url }),
     target: { kind: "instance", instance: v.rec.id, endpoint: v.endpoint, generation: v.rec.generation, ...(v.serve ? { serve: v.serve } : {}) },
     ...(v.rec.branch ? { branch: v.rec.branch } : {}),
     purpose: "Owner page version",

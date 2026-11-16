@@ -9,7 +9,8 @@ import { after, beforeEach, test } from "node:test";
 process.env.PI_CODING_AGENT_DIR = mkdtempSync(join(tmpdir(), "design-batch-"));
 const { DESIGN_CONCURRENT, DESIGN_FIX_TRIES } = await import("../../shared/design");
 const { setCoordinatorPorts } = await import("./coordinator");
-const { assertLaunchAllowed, deleteDesign, deliverDesign, DesignLimitError, installDesignHost, launchDesigns, newDesign, pageProblem, pump, retryDesign, onDesignHandIn, onLiveFrame, setDesignQuietMsForTest } = await import("./batch");
+const { assertLaunchAllowed, deleteDesign, deliverDesign, DesignLimitError, installDesignHost, launchDesigns, newDesign, pageProblem, pump, reattachDesigns, removeDesign, restoreDesign, retryDesign, onDesignHandIn, onLiveFrame, setDesignModelSourceForTest, setDesignQuietMsForTest, stopDesign } = await import("./batch");
+const history = await import("./history");
 const store = await import("./store");
 const { sessionDesignTools } = await import("./tools");
 const { WorkerRegistry } = await import("../chat-workers");
@@ -84,8 +85,12 @@ function makeRegistry(): void {
       const r = registry.record(chatId);
       return r ? { parent: { sessionId: r.parent.sessionId, path: r.parent.path }, workerId: r.parent.workerId } : undefined;
     },
+    checkViews: (_p, label, version) => void viewChecks.push(`${label}${version}`),
   });
 }
+
+/** The browser passes asked for, as label and version. */
+const viewChecks: string[] = [];
 
 const settleKeyed = new Map<Fake, number>();
 function settle(f: Fake, outcome: "success" | "error" = "success", error?: string): void {
@@ -147,7 +152,14 @@ beforeEach(() => {
   settleKeyed.clear();
   parent = { sessionId: `s${++n}`, path: join(dir, "parent.jsonl") };
   makeRegistry();
+  policy = { disabledProviders: [], disabledModels: [], subagentDisabledProviders: [], subagentDisabledModels: [] };
+  setDesignModelSourceForTest(async () => ({ listed: LISTED, policy, retired: new Set(["ollama-cloud/gone"]) }));
 });
+
+/** The models this server lists, for a design the Creative Director adds: two the Setup cards tick, and others. */
+const listed = (ref: string, levels: string[] = ["off", "low", "medium", "high"], image = true) => ({ ref, provider: ref.split("/")[0]!, id: ref.split("/")[1]!, favorite: false, thinkingLevels: levels, ...(image ? { input: ["text", "image"] as ("text" | "image")[] } : {}) });
+const LISTED = [listed("zai/a"), listed("zai/b"), listed("openai/astra", ["low", "high"], false), listed("ollama-cloud/gone")];
+let policy: { disabledProviders: string[]; disabledModels: string[]; subagentDisabledProviders: string[]; subagentDisabledModels: string[] };
 after(() => rmSync(process.env.PI_CODING_AGENT_DIR!, { recursive: true, force: true }));
 
 test("a launch gives each model and direction its own label and session, and only the cap writes at once", async () => {
@@ -251,9 +263,9 @@ test("a Rebuild screenshot: a designer that reads pictures gets it attached; one
   assert.doesNotMatch(byModel("zai/blind").rec.spec.appendSystemPrompt ?? "", /detailed text description of a website design/);
 });
 
-test("a design made from others waits for the launch, and can't stand in for it", () => {
+test("a design made from others waits for the launch, and can't stand in for it", async () => {
   const run = newRun(["zai/a", "zai/b"], ["Minimalist", "Heritage", "Immersive"]);
-  assert.throws(() => newDesign(parent, { parents: ["A"], instructions: "mix", model: "zai/a", runId: run }), /hasn't launched/);
+  await assert.rejects(newDesign(parent, { parents: ["A"], instructions: "mix", model: "zai/a", runId: run }), /hasn't launched/);
   const labels = launchDesigns(parent, run, {});
   assert.equal(labels.length, 6);
   assert.deepEqual(launchDesigns(parent, run, {}), labels, "a second launch starts nothing");
@@ -406,6 +418,7 @@ test("a message a session can't take stays visibly undelivered and throws, so th
   };
   await assert.rejects(deliverDesign(parent, "A", { text: "x", key: "k", by: "user" }), /no such thing/);
   assert.equal(stat("A").delivery?.state, "undelivered");
+  assert.deepEqual(history.readHistory(parent.sessionId).items.filter((i) => i.kind === "message"), [], "a message never given leaves no item");
 });
 
 test("a session stopped for good is replaced by a fresh one seeded from its stored page", async () => {
@@ -457,6 +470,26 @@ test("the hand-in makes a version, and the page written so far is told in order"
   assert.deepEqual(heard, [{ sessionId: parent.sessionId, label: "A", version: 1, note: NOTE }]);
   assert.equal(livePage(parent.sessionId, "A"), null);
   assert.equal(store.readPage(parent.sessionId, "A"), PAGE);
+});
+
+test("a version keeps the views its page names and asks for a browser pass, handed in or not; a page naming none asks for none", async () => {
+  const tabs = `<!doctype html><html><body><button role="tab" data-sova-view="Plans">Plans</button><a href="#b" data-sova-view="Billing" data-sova-via="Plans">B</a></body></html>`;
+  const run = newRun(["zai/a", "zai/b"], ["Minimalist"]);
+  launchDesigns(parent, run, {});
+  await ticks();
+  const [a, b] = [fakes.at(-2)!, fakes.at(-1)!];
+  const [la, lb] = store.readDesigns(parent.sessionId).designs.slice(-2).map((d) => d.label) as [string, string];
+  viewChecks.length = 0;
+  // A: handed in. B: its turn ends with a saved page and no hand-in (the commit at the turn's end).
+  await finish(a, la);
+  store.setPendingPage(parent.sessionId, lb, tabs);
+  settle(b);
+  await waitFor(() => stat(lb).versions.length === 1);
+  assert.equal(stat(la).versions[0]!.views, undefined);
+  assert.deepEqual(stat(lb).versions[0]!.views, [{ name: "Plans", source: "declared", state: "unchecked" }, { name: "Billing", via: "Plans", source: "declared", state: "unchecked" }]);
+  assert.deepEqual(viewChecks, [`${lb}1`]);
+  // A declaration done wrong is refused at save, as a landing check is.
+  await assert.rejects(sessionDesignTools(parent, la).find((t) => t.name === "design_stream")!.execute("t", { label: la, html: tabs.replace('data-sova-via="Plans"', 'data-sova-via="Plan B"') }, undefined, undefined, undefined), /data-sova-via="Plan B" names no view/);
 });
 
 test("a chat's designs are what they were after a restart, an archive leaves them, a deletion removes them", async () => {
@@ -848,7 +881,7 @@ test("a design made from others starts its session on the real prompt, with no d
   const f = await start();
   await finish(f, "A");
   await ticks();
-  const label = newDesign(parent, { parents: ["A"], instructions: "take its header", model: "zai/a" });
+  const label = await newDesign(parent, { parents: ["A"], instructions: "take its header", model: "zai/a" });
   await waitFor(() => fakes[1]?.sends.length === 1);
   assert.equal(stat(label).direction, "Mixed");
   assert.notEqual(stat(label).status, "failed");
@@ -947,4 +980,162 @@ test("five six-design batches leave no session running once each has gone idle (
   const running = fakes.filter((f) => registry.wakeOwner(f.rec.chatId)?.running);
   assert.equal(running.length, 0);
   assert.equal(store.viewOf(parent.sessionId).designs.length, 30);
+});
+
+// ---- Stop, Remove, Restore, the history, and designs on any model (al_1) ---------------------------
+
+const HALF = "<!doctype html><html><body><h1>Half a page";
+const { DESIGN_DIRECTIONS } = await import("../../pi-config/extensions/mode/design-guide.ts");
+const DIRECTIONS = DESIGN_DIRECTIONS.map((d) => d.name);
+const ofKind = (kind: string) => history.readHistory(parent.sessionId).items.filter((i) => i.kind === kind);
+
+test("a stopped design keeps what it wrote as a still, reads Stopped and never Failed, and stays so through its session's end, a late page and a restart (t19)", async () => {
+  const f = await start();
+  onLiveFrame(f.rec.chatId, { gen: 1, at: 0, text: HALF });
+  assert.equal(stat("A").status, "writing");
+  stopDesign(parent, "A", "user");
+  const still = stat("A").stopped?.still;
+  assert.equal(stat("A").status, "stopped");
+  assert.deepEqual([still?.n, still?.chars], [1, HALF.length]);
+  // On disk before anything else happens: the live page was only this server's memory.
+  assert.equal(store.readStill(parent.sessionId, "A", 1), HALF);
+  assert.equal(livePage(parent.sessionId, "A"), null);
+  // What its dying session still sends changes nothing: a slice, a hand-in, its turn's end, its process's end.
+  onLiveFrame(f.rec.chatId, { gen: 1, at: HALF.length, text: "</h1></body></html>" });
+  await assert.rejects(sessionDesignTools(parent, "A").find((t) => t.name === "design_hand_in")!.execute("t", { label: "A", note: NOTE }, undefined, undefined, undefined));
+  settle(f, "error", "aborted");
+  await ticks();
+  assert.equal(stat("A").status, "stopped");
+  assert.equal(stat("A").versions.length, 0);
+  assert.equal(stat("A").error, undefined);
+  // A restart: the state is read again from disk and every chat's designs are picked back up.
+  store.forgetDesignCache();
+  history.forgetHistoryCache();
+  // Only this chat's: a restart picks up every chat's designs, earlier tests' included.
+  const mine = () => fakes.filter((x) => (x.rec.spec as unknown as { parent: { sessionId: string } }).parent.sessionId === parent.sessionId).length;
+  const started = mine();
+  makeRegistry();
+  reattachDesigns();
+  pump(parent);
+  await ticks();
+  assert.equal(stat("A").status, "stopped", "never failed, never started again by itself");
+  assert.deepEqual(stat("A").stopped?.still, still);
+  assert.equal(mine(), started);
+  assert.deepEqual(ofKind("stop").map((i) => [i.label, i.by, i.still?.n]), [["A", "user", 1]]);
+  // Start Again writes it afresh, in a fresh session.
+  retryDesign(parent, "A");
+  await ticks();
+  assert.equal(mine(), started + 1);
+  assert.equal(stat("A").stopped, undefined);
+});
+
+test("stopping a change keeps the last finished version, and a message afterwards starts a fresh session from that page", async () => {
+  const f = await start();
+  await finish(f, "A");
+  await ticks();
+  await deliverDesign(parent, "A", { text: "make it dark", key: "k1", by: "user" });
+  onLiveFrame(f.rec.chatId, { gen: 2, at: 0, text: HALF });
+  assert.equal(stat("A").status, "writing");
+  stopDesign(parent, "A", "user");
+  assert.equal(stat("A").status, "ready");
+  assert.equal(stat("A").versions.length, 1);
+  assert.equal(stat("A").stopped, undefined, "no still: its page is its last version");
+  assert.equal(stat("A").unchanged, undefined, "a stopped change leaves no note on the tile");
+  assert.equal(store.readPage(parent.sessionId, "A"), PAGE);
+  await deliverDesign(parent, "A", { text: "go on", key: "k2", by: "user" });
+  await ticks();
+  assert.equal(fakes.length, 2);
+  assert.ok(fakes[1]!.sends[0]!.text.includes(PAGE) && fakes[1]!.sends[0]!.text.endsWith("go on"));
+  assert.deepEqual(ofKind("message").map((i) => [i.text, i.fresh ?? false]), [["make it dark", false], ["go on", true]]);
+});
+
+test("a design removed while waiting is never started, by a pump or a restore; it waits until started again (t20)", async () => {
+  const run = newRun(["zai/a"], DIRECTIONS.slice(0, 7));
+  launchDesigns(parent, run, {});
+  await ticks();
+  assert.equal(fakes.length, DESIGN_CONCURRENT);
+  assert.equal(stat("G").sessionId, undefined);
+  removeDesign(parent, "G", "user");
+  assert.equal(stat("G").status, "stopped");
+  assert.equal(stat("G").stopped?.waiting, true, "it never started: once restored it reads as waiting");
+  assert.deepEqual(ofKind("stop"), [], "a waiting design set aside wasn't stopped");
+  await finish(fakes[0]!, "A");
+  pump(parent);
+  await ticks();
+  assert.equal(fakes.length, DESIGN_CONCURRENT, "the seat A freed went to no removed design");
+  restoreDesign(parent, "G", "user");
+  pump(parent);
+  await ticks();
+  assert.equal(fakes.length, DESIGN_CONCURRENT);
+  retryDesign(parent, "G");
+  await ticks();
+  assert.equal(fakes.length, DESIGN_CONCURRENT + 1);
+});
+
+test("remove then restore puts a design back exactly as it was, whatever it was, and it stays among the designs meanwhile", async () => {
+  const run = newRun(["zai/a"], DIRECTIONS.slice(0, 3));
+  launchDesigns(parent, run, {});
+  await ticks();
+  await finish(fakes[0]!, "A");
+  settle(fakes[1]!, "error", "the login expired");
+  onLiveFrame(fakes[2]!.rec.chatId, { gen: 1, at: 0, text: HALF });
+  stopDesign(parent, "C", "user");
+  await waitFor(() => stat("B").status === "failed");
+  for (const label of ["A", "B", "C"]) {
+    const { updatedAt: _u, ...before } = structuredClone(stat(label));
+    removeDesign(parent, label, "user");
+    assert.ok(stat(label).removed);
+    assert.equal(store.viewOf(parent.sessionId).designs.length, 3, "a removed design is set aside, never deleted");
+    await assert.rejects(deliverDesign(parent, label, { text: "x", key: `k-${label}`, by: "user" }), /restore it first/);
+    restoreDesign(parent, label, "user");
+    const { updatedAt: _v, ...after } = stat(label);
+    assert.deepEqual(after, before, label);
+  }
+  await assert.rejects(deliverDesign(parent, "C", { text: "x", key: "kc", by: "user" }), /Start Again first/);
+  assert.throws(() => restoreDesign(parent, "A", "user"), /isn't removed/);
+  assert.throws(() => stopDesign(parent, "A", "user"), /nothing to stop/);
+});
+
+test("every message a design is given is in the history once, word for word, with the version it led to", async () => {
+  const f = await start();
+  await finish(f, "A");
+  await ticks();
+  // In the history by the time the session has it: a reader of its file finds the item for each message.
+  const send = f.call;
+  let itemsAtSend = -1;
+  f.call = async (m, a) => ((itemsAtSend = ofKind("message").length), send(m, a));
+  await deliverDesign(parent, "A", { text: "make it blue", key: "k1", by: "user" });
+  assert.equal(itemsAtSend, 1);
+  await deliverDesign(parent, "A", { text: "make it blue", key: "k1", by: "user" });
+  await deliverDesign(parent, "A", { text: "and wider", key: "c1", by: "coordinator", toolCallId: "call_7" });
+  assert.deepEqual(ofKind("message").map((i) => [i.by, i.via, i.text, i.toolCallId]), [["user", "chat", "make it blue", undefined], ["coordinator", "coordinator", "and wider", "call_7"]]);
+  await finishInto("A");
+  assert.deepEqual(ofKind("message").map((i) => i.version), [undefined, 2], "the version lands on the message it answered");
+  assert.equal(store.viewOf(parent.sessionId).designs.length, 1);
+  // Never a page's code.
+  assert.ok(!JSON.stringify(history.readHistory(parent.sessionId)).includes(PAGE));
+});
+
+test("a design added after Start runs on any model the user may use, at the effort named or the model's own, and a barred one is refused", async () => {
+  const f = await start();
+  await finish(f, "A");
+  await ticks();
+  const spec = (label: string) => fakes.find((x) => x.rec.chatId === stat(label).sessionId)!.rec.spec as unknown as { model: string; thinking: string | null };
+  const fresh = await newDesign(parent, { parents: [], instructions: "a bolder take", model: "openai/astra", toolCallId: "call_n" });
+  await waitFor(() => !!stat(fresh).sessionId);
+  assert.deepEqual([stat(fresh).model, stat(fresh).modelName, stat(fresh).vision, spec(fresh).thinking], ["openai/astra", "astra", false, null]);
+  const first = fakes.at(-1)!.sends[0]!.text;
+  assert.ok(first.startsWith("a page") && first.endsWith("a bolder take"), "the brief its run launched with, then the instructions");
+  const named = await newDesign(parent, { parents: ["A"], instructions: "x", model: "astra", effort: "high" });
+  await waitFor(() => !!stat(named).sessionId);
+  assert.equal(spec(named).thinking, "high");
+  const ticked = await newDesign(parent, { parents: ["A"], instructions: "x", model: "zai/a" });
+  await waitFor(() => !!stat(ticked).sessionId);
+  assert.equal(spec(ticked).thinking, "low", "a Setup model runs as the Setup's designs do");
+  await assert.rejects(newDesign(parent, { parents: [], instructions: "x", model: "openai/astra", effort: "max" }), /doesn't take the effort max/);
+  await assert.rejects(newDesign(parent, { parents: [], instructions: "x", model: "ollama-cloud/gone" }), /can only fail/);
+  await assert.rejects(newDesign(parent, { parents: [], instructions: "x", model: "nowhere/x" }), /no model/);
+  policy.subagentDisabledModels = ["openai/astra"];
+  await assert.rejects(newDesign(parent, { parents: [], instructions: "x", model: "openai/astra" }), /barred for workers/);
+  assert.deepEqual(ofKind("new").map((i) => [i.label, i.parents, i.model, i.toolCallId]), [[fresh, [], "openai/astra", "call_n"], [named, ["A"], "openai/astra", undefined], [ticked, ["A"], "zai/a", undefined]]);
 });

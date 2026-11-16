@@ -3,6 +3,7 @@ import type { TourPresentation } from "../../shared/tour";
 import { tourPreviewItems } from "../lib/tour-state";
 import { tourPreviewSummary, tourPreviewText } from "../lib/tour-share-preview";
 import { Icon } from "./ui";
+import { OpensAtLine } from "./OpensAt";
 import "./TourViewer.css";
 
 export interface TourSharePreview { previewId: string; manifest: TourPresentation; expiresAt: string }
@@ -18,6 +19,8 @@ export interface TourShareProps {
   bind?(previewId: string, destinationSessionId: string): Promise<unknown>;
   onBound?(): void;
   onClose(): void;
+  /** The host that holds the tour (null: this one); Where links open is shown for this one only. */
+  host?: string | null;
 }
 const message = (e: unknown) => e instanceof Error ? e.message : "The request failed. Try again.";
 
@@ -76,6 +79,7 @@ export function TourShare(props: TourShareProps) {
   return <dialog ref={dialog} class="tour-share" aria-label="Share tour" onClose={props.onClose}>
     <header class="tour-share-head"><div><span class="text-eyebrow text-muted">Review before sharing</span><h2>Share tour</h2></div><button ref={close} type="button" class="button button-icon button-ghost" aria-label="Close Share" onClick={() => dialog.close()}><Icon name="close" /></button></header>
     <div class="tour-share-body">
+      <Show when={!destination()}><OpensAtLine host={props.host} mount={dialog} /></Show>
       <p>{destination() ? "Everyone allowed to read this part of the hand-off can read this edition. It gives no access to the recorded app or its accounts." : "Anyone with the link can read this edition until it expires. It gives no access to the recorded app or its accounts."}</p>
       <Show when={props.loadDestinations && props.loadBindingPreview && props.bind}><label class="field"><span class="field-label">Share destination</span><select class="select" value={destination()} disabled={busy()} onChange={e => { setDestination(e.currentTarget.value); void load(); }}><option value="">Create a link</option><For each={orgs()}>{org => <optgroup label={org.name}><For each={destinations().filter(d => d.orgId === org.id)}>{d => <option value={d.sessionId}>{d.publicTitle} · {d.holder ? `With ${d.holder}` : "With you"}</option>}</For></optgroup>}</For></select><span class="field-hint">Send to a hand-off, or create an expiring link.</span><Show when={!destinations().length}><span class="field-hint">No open hand-off conversations are available for this tour.</span></Show></label></Show>
       <Show when={handoff()}>{d => <p>Send to <b>{d().publicTitle}</b> · {d().orgName} · {d().holder ? `With ${d().holder}` : "With you"}</p>}</Show>

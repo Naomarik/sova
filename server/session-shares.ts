@@ -14,6 +14,7 @@ import {
 import { hashToken, TOKEN_RE } from "./baton-links";
 import { dropTokens, keepTokens } from "./link-tokens";
 import { shareLinksChanged } from "./share/links-events";
+import { assertSharingOn } from "./share/sharing-off";
 import { stateRoot } from "./state-root";
 
 /**
@@ -264,6 +265,7 @@ export function checkRecipients(labels: unknown, anyone: unknown): { labels: str
 
 /** Create a share and one link per recipient. */
 export function createShare(input: CreateInput, now = Date.now()): { share: ShareRecord; tokens: MintedToken[] } {
+  assertSharingOn();
   const store = read();
   const share: ShareRecord = {
     id: newId("ss_", 12),
@@ -309,6 +311,7 @@ function limitConflict(live: readonly ShareLinkRecord[], candidate: { label: str
 }
 
 export function addRecipient(shareId: string, who: { label: string } | { anyone: true }, now = Date.now()): MintedToken {
+  assertSharingOn();
   const store = read();
   const share = liveShareOf(store, shareId);
   const live = liveLinksOf(store, share, now);
@@ -339,6 +342,7 @@ function recipientLink(store: StoreFile, shareId: string, recipientId: string): 
 /** A new link for a recipient; the old one stops at once. Keeps the recipient's expiry when it is
     still ahead, else the share's. */
 export function relinkRecipient(shareId: string, recipientId: string, now = Date.now()): MintedToken {
+  assertSharingOn();
   const store = read();
   const share = liveShareOf(store, shareId);
   const old = recipientLink(store, shareId, recipientId);
@@ -426,6 +430,7 @@ export const stopSharesOfSession = (sessionId: string, now = Date.now()): { shar
  * how many expired links stayed expired.
  */
 export function extendShare(shareId: string, days: SessionShareDays, now = Date.now()): { renewed: number; kept: number } {
+  assertSharingOn();
   const store = read();
   const share = liveShareOf(store, shareId);
   const expiresAt = iso(now + days * DAY_MS);

@@ -68,6 +68,8 @@ export interface TourAttemptOptions {
   look?: { signInRoute?: string };
   /** A walk (a design browser): steps that replace the view's actions; each size is pictured and listed. Never with `look`. */
   walk?: Partial<Record<TourSize, TourWalkAction[]>>;
+  /** With a walk: a step named here (by its id) takes these steps instead of `walk`'s, so one attempt can walk to several screens. */
+  walkSteps?: Record<string, Partial<Record<TourSize, TourWalkAction[]>>>;
   /**
    * A look at a link the user gave: `beforeContact` decides each part of the page by what it is. A part it declines
    * is left out; a redirect of a part is asked about, not refused outright. Never for a tour's recording.
@@ -349,7 +351,7 @@ export async function runTourAttempt(options: TourAttemptOptions): Promise<TourA
   });
   try {
     const exited = new Promise<number | null>((resolve, reject) => { proc.once("error", reject); proc.once("close", resolve); });
-    write({ type: "start", input: { script, origin: target.origin, dryRun: options.dryRun, proxied, declared: [...declared], ...(browser ? { browser } : {}), ...(options.account ? { account: options.account } : {}), ...(sova ? { sova } : {}), ...(script.signIn ? { signIn: { origins: signInOrigins, ...(options.signInStorage ? { storage: options.signInStorage } : {}) } } : {}), ...(options.look ? { look: { ...(options.look.signInRoute ? { signInRoute: options.look.signInRoute } : {}) } } : {}), ...(options.walk ? { walk: options.walk } : {}), ...(options.reach ? { reach: true } : {}), ...(options.capture ? { capture: true } : {}) } });
+    write({ type: "start", input: { script, origin: target.origin, dryRun: options.dryRun, proxied, declared: [...declared], ...(browser ? { browser } : {}), ...(options.account ? { account: options.account } : {}), ...(sova ? { sova } : {}), ...(script.signIn ? { signIn: { origins: signInOrigins, ...(options.signInStorage ? { storage: options.signInStorage } : {}) } } : {}), ...(options.look ? { look: { ...(options.look.signInRoute ? { signInRoute: options.look.signInRoute } : {}) } } : {}), ...(options.walk ? { walk: options.walk, ...(options.walkSteps ? { walkSteps: options.walkSteps } : {}) } : {}), ...(options.reach ? { reach: true } : {}), ...(options.capture ? { capture: true } : {}) } });
     const code = await exited;
     if (policyError) throw policyError;
     if (failure) throw failure;

@@ -84,9 +84,10 @@ const frames=()=>new Promise((r)=>raf(()=>raf(r)));
 const settled=()=>Promise.race([Promise.all(document.getAnimations().filter((a)=>{const t=a.effect&&a.effect.getComputedTiming();return t&&isFinite(t.endTime);}).map((a)=>a.finished.catch(()=>0))),new Promise((r)=>setTimeout(r,1500))]);
 addEventListener("load",()=>{Promise.race([document.fonts.ready,new Promise((r)=>setTimeout(r,1500))]).then(frames).then(settled).then(frames).then(said);});}`;
 
-/** A grid card holds motion: animations jump to their end, and a script's animation loop stops after a moment. */
+/** A grid card holds motion: animations jump to their end, and a script's animation loop stops after a moment.
+    A held picture is never scrolled, so it draws no scrollbar (a tile, and a page still being written). */
 const HOLD_MOTION_SCRIPT = `{const r=requestAnimationFrame.bind(window);let n=0;window.requestAnimationFrame=(f)=>n++<90?r(f):0;}`;
-export const HOLD_MOTION_STYLE = `*,*::before,*::after{animation-duration:0s!important;animation-delay:0s!important;animation-iteration-count:1!important;transition:none!important;scroll-behavior:auto!important}`;
+export const HOLD_MOTION_STYLE = `*,*::before,*::after{animation-duration:0s!important;animation-delay:0s!important;animation-iteration-count:1!important;transition:none!important;scroll-behavior:auto!important}html{scrollbar-width:none!important}`;
 
 /**
  * A page being written can name a captured image Sova hasn't put in yet (`sova-asset:a3`), which the frame can't load:

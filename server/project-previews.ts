@@ -12,7 +12,9 @@ import { sensitivePortRefusal } from "./project-services/sensitive";
 import { readPublicLinks } from "./public-links";
 import { readSessionTitles } from "./session-titles";
 import { awaitShareLinks } from "./share/links-events";
-import { previewAddress, previewOrigin } from "./share/preview-address";
+import { LINK_WARNINGS } from "../shared/public-links";
+import { assertSharingOn } from "./share/sharing-off";
+import { previewHome, previewLinkOf, previewTunnelView, stopEndedPreviewTunnels, type PreviewHome } from "./share/preview-link";
 import { dialLoopback, previewDialable, previewRootId } from "./share/preview-proxy";
 import { ingressInfo, linkWarning, shareListenerState } from "./share/share-state";
 
@@ -180,18 +182,20 @@ export interface MadePreview {
 
 /** Mint what `resolvePreview` checked: a folder is served first (its port becomes the preview's), then the link is kept. */
 export async function makePreview(r: ResolvedPreview, sovaPorts: ReadonlySet<number>): Promise<MadePreview> {
-  const address = previewAddress();
-  if (!address.url) throw new PreviewRefused(address.reason ?? "no-address", address.message ?? "No preview address is set.");
+  // Sharing off refuses first; then a port's home (under Free its app's tunnel, started now): nothing is made when it can't have one.
+  assertSharingOn();
+  let home: PreviewHome | null = r.target.kind === "port" ? await previewHome(r.target.port, r.createdBy) : null;
   const staging = r.target.kind === "static" ? `staging-${process.pid}-${Date.now()}` : null;
   let port = r.target.kind === "port" ? r.target.port : 0;
   if (staging && r.target.kind === "static") port = (await startStaticServe({ id: staging, root: r.target.folder })).port;
   try {
+    home ??= await previewHome(port, r.createdBy);
     const { result, outcome } = await awaitShareLinks(() =>
       mintPreview({ projectId: r.projectId, port, days: r.days, createdBy: r.createdBy }, staging ? new Set([...sovaPorts].filter((p) => p !== port)) : sovaPorts),
     );
-    const url = `${previewOrigin(address.url, result.label)}/`;
+    const url = previewLinkOf(home, result.label);
     const kept: KeptPreview = {
-      url,
+      ...(home.mode === "tunnel" ? { key: result.label } : { url }),
       target: r.target.kind === "static" ? { kind: "static", folder: r.target.folder } : { kind: "port" },
       ...(r.tree ? { sessionId: r.tree.sessionId, branch: r.tree.branch } : {}),
       ...(r.purpose ? { purpose: r.purpose } : {}),
@@ -202,7 +206,8 @@ export async function makePreview(r: ResolvedPreview, sovaPorts: ReadonlySet<num
       await stopStaticServe(staging);
       await startStaticServe({ id: result.record.id, root: r.target.folder, port });
     }
-    const warning = typeof readPublicLinks().route === "object" ? linkWarning(outcome).linkWarning : undefined;
+    // A Free preview's address changes when its tunnel restarts (§mesh.public/preview-tunnels).
+    const warning = home.mode === "tunnel" ? LINK_WARNINGS.quick : typeof readPublicLinks().route === "object" ? linkWarning(outcome).linkWarning : undefined;
     return { record: result.record, url, ...(warning ? { linkWarning: warning } : {}) };
   } catch (err) {
     if (staging) await stopStaticServe(staging).catch(() => {});
@@ -215,6 +220,7 @@ export async function turnOffPreview(id: string): Promise<PreviewRecord | null> 
   const r = revokePreview(id);
   await stopStaticServe(id).catch(() => false);
   sweepSiblingLinks();
+  await stopEndedPreviewTunnels().catch(() => []);
   return r;
 }
 
@@ -288,6 +294,8 @@ export async function sweepStaticPreviews(now = Date.now()): Promise<void> {
     if (!v || v.state !== "active") await stopStaticServe(s.id).catch(() => false);
   }
   sweepSiblingLinks(now);
+  // A preview tunnel no active preview names stops (§mesh.public/preview-tunnels); nothing is read when none runs.
+  await stopEndedPreviewTunnels(now).catch(() => []);
 }
 
 let started = false;
@@ -302,6 +310,7 @@ export function startStaticPreviews(): void {
     const r = findPreviewByHash(hash);
     if (r) void stopStaticServe(r.id).catch(() => false);
     if (r?.siblingOf) sweepSiblingLinks();
+    void stopEndedPreviewTunnels().catch(() => []);
   });
 }
 
@@ -365,9 +374,16 @@ export async function previewViews(filter: { projectId?: string } = {}, deps: { 
       sessionPath: tree?.sessionPath ?? null,
       ...(copyTarget ? { instance: copyTarget.instance, endpoint: copyTarget.endpoint } : {}),
       ...(copy ? { copy } : {}),
+      ...(base.state === "active" ? tunnelOf(base.port) : {}),
     });
   }
   return out;
+}
+
+/** A Free preview's tunnel for the card (§mesh.public/preview-tunnels), when there is one to show. */
+function tunnelOf(port: number): { tunnel?: NonNullable<PreviewView["tunnel"]> } {
+  const t = previewTunnelView(port);
+  return t ? { tunnel: t } : {};
 }
 
 /** The one shape a preview leaves the tools in (shared/preview-links.ts PreviewHandoff): its own kept link, never a person's. Pure. */

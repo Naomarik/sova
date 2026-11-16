@@ -13,9 +13,9 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 
 | What | Count |
 | --- | ---: |
-| Routes registered | 627 |
-| Routes a catalogue entry points at | 204 |
-| Catalogue entries | 275 |
+| Routes registered | 639 |
+| Routes a catalogue entry points at | 208 |
+| Catalogue entries | 279 |
 | Class: Peer protocol | 39 |
 | Class: Auth | 4 |
 | Class: Share pages | 0 |
@@ -27,7 +27,7 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | Class: Trust grants | 25 |
 | Class: A card view's own calls | 4 |
 | Class: Middleware and fallbacks | 2 |
-| Class: Left as is, by choice | 269 |
+| Class: Left as is, by choice | 277 |
 | Class: Page plumbing | 22 |
 | Class: Steps of starting a chat | 2 |
 | Class: Live capability links | 1 |
@@ -35,7 +35,7 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | Pending (not yet a command) | 23 |
 | Chat socket frame types | 14 |
 | Document/window keydown listeners | 12 |
-| Hand-written tool specs | 150 |
+| Hand-written tool specs | 155 |
 
 ## Catalogue entries
 
@@ -315,6 +315,10 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | `design.refine` | Refine a Design | changes | `POST /api/design/:label/refine` | full |
 | `design.retry` | Retry a Design | changes | `POST /api/design/:label/retry` | full |
 | `design.coordinator.message` | Message the Lookbook Creative Director | changes | `POST /api/design/coordinator/message` | full |
+| `design.stop` | Stop a Design | changes | `POST /api/design/:label/stop` | full |
+| `design.remove` | Remove a Design | changes | `POST /api/design/:label/remove` | full |
+| `design.restore` | Restore a Design | changes | `POST /api/design/:label/restore` | full |
+| `design.history` | Read Lookbook History | looks | `GET /api/design/history` | full |
 | `design.delete` | Delete a Design | changes | `DELETE /api/design/:label` | full |
 
 ## Pending routes
@@ -513,7 +517,7 @@ What a transcript card's or a drawing's sealed view asks through its box, for it
 | `ALL /*` | full |
 | `ALL /api/*` | full |
 
-### Left as is, by choice (269)
+### Left as is, by choice (277)
 
 Areas the user chose not to make scriptable (`OPTED_OUT` in `server/commands-inventory/scan.ts`). A route there that a catalogue entry points at stays a command; the rest are not pending, and a new route there needs no entry.
 
@@ -678,6 +682,14 @@ Areas the user chose not to make scriptable (`OPTED_OUT` in `server/commands-inv
 | `GET /api/provider-limits/waiting` | sessions |
 | `GET /api/public-links` | sessions |
 | `PUT /api/public-links` | admin |
+| `DELETE /api/public-links/account-token` | admin |
+| `PUT /api/public-links/account-token` | admin |
+| `DELETE /api/public-links/candidate` | admin |
+| `POST /api/public-links/cloudflared/download` | admin |
+| `POST /api/public-links/handed-out` | admin |
+| `POST /api/public-links/setup-chat` | admin |
+| `POST /api/public-links/tunnel/start` | admin |
+| `POST /api/public-links/turn-on` | admin |
 | `POST /api/public-links/verify` | admin |
 | `GET /api/push` | sessions |
 | `PUT /api/push/settings` | admin |
@@ -874,8 +886,12 @@ Approving a schedule or a draft spec, the Overseer's permits and their revoke: a
 | `POST /api/design/:label/message` | full | `design.message` |
 | `GET /api/design/:label/page` | full | `design.page` |
 | `POST /api/design/:label/refine` | full | `design.refine` |
+| `POST /api/design/:label/remove` | full | `design.remove` |
+| `POST /api/design/:label/restore` | full | `design.restore` |
 | `POST /api/design/:label/retry` | full | `design.retry` |
+| `POST /api/design/:label/stop` | full | `design.stop` |
 | `POST /api/design/coordinator/message` | full | `design.coordinator.message` |
+| `GET /api/design/history` | full | `design.history` |
 | `PATCH /api/design/runs/:run/setup` | full | `design.setup.set` |
 | `POST /api/design/runs/:run/start` | full | `design.start` |
 | `GET /api/diff/summary` | sessions | `session.diff.summary` |
@@ -1110,7 +1126,7 @@ Per file, the tool names its object literals declare (`<computed: …>` where th
 | `server/conversation-draft-routes.ts` | 3 | `sova_draft_specs`, `sova_draft_approve`, `sova_draft_build` |
 | `server/conversation-draft-tools.ts` | 3 | `requirement_drop`, `requirements_summary`, `requirements_confirm` |
 | `server/create-settings-tool.ts` | 1 | `sova_settings` |
-| `server/design/coordinator.ts` | 9 | `design_status`, `design_brief`, `design_browse`, `design_capture`, `design_send`, `design_new`, `coordinator_card`, `project_verbs`, `design_images` |
+| `server/design/coordinator.ts` | 14 | `design_status`, `design_brief`, `design_browse`, `design_capture`, `design_send`, `design_new`, `design_stop`, `design_remove`, `design_restore`, `design_start_again`, `design_models`, `coordinator_card`, `project_verbs`, `design_images` |
 | `server/design/describe.ts` | 1 | `asset_report` |
 | `server/design/tools.ts` | 5 | `lookbook`, `design_skill`, `design_look`, `design_stream`, `design_hand_in` |
 | `server/feature-chat-align.ts` | 1 | `align` |

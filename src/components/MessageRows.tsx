@@ -12,6 +12,7 @@ import { PathAttachment } from "./PathAttachment";
 import { ReplyTimingHead } from "./ReplyTiming";
 import { Banner, Icon } from "./ui";
 import { splitHeldNote } from "../../shared/topic-message";
+import { LOOKBOOK_WHERE_LINE, type LookbookRow } from "../../shared/lookbook-words";
 
 /**
  * The message rows of a transcript (a user's turn, a reply's text, its thinking, a turn's error), drawn
@@ -216,5 +217,52 @@ export function Thinking(props: { text: string; streaming?: boolean }) {
       </summary>
       <div class="disclosure-body thinking-body">{props.text}</div>
     </details>
+  );
+}
+
+/**
+ * A message in a Lookbook helper's chat (the Creative Director's or a design's), as the server read it
+ * (TranscriptItem.lookbook): a person's words as theirs, with where they wrote them; the Creative
+ * Director's words to a design under its name; whatever Sova added folded under one closed "Sova's
+ * note"; a designer's first message folded as "The brief". The model read the whole message.
+ */
+export function LookbookMessage(props: { row: LookbookRow; time?: string; images?: string[]; attachments?: TmpAttachment[] }) {
+  const noteLabel = () => (props.row.from === "brief" ? "The brief" : props.row.fix ? "Sova's note · asked it to fix its page" : "Sova's note");
+  const note = () => (
+    <Show when={props.row.note}>
+      {(text) => (
+        <details class="disclosure lookbook-note">
+          <summary class="disclosure-summary">
+            <Icon name="chevron-right" small class="icon-twist" />
+            <span class="disclosure-label">{noteLabel()}</span>
+            <Show when={props.row.from === "sova" || props.row.from === "brief"}>
+              <Stamp iso={props.time} />
+            </Show>
+          </summary>
+          <div class="disclosure-body message-text">{text()}</div>
+        </details>
+      )}
+    </Show>
+  );
+  return (
+    <Show when={props.row.from === "you" || props.row.from === "coordinator"} fallback={<div class="lookbook-sova" role="note">{note()}</div>}>
+      <article
+        class="message message-user"
+        classList={{ "message-from-session": props.row.from === "coordinator" }}
+        aria-label={`${props.row.from === "you" ? "You" : "Creative Director"}${props.time ? `, ${stampTime(props.time)}` : ""}`}
+      >
+        <div class="message-head">
+          <span class="message-author">{props.row.from === "you" ? "You" : "Creative Director"}</span>
+          <Show when={props.row.where}>{(w) => <span class="message-where">{LOOKBOOK_WHERE_LINE[w()]}</span>}</Show>
+          <Stamp iso={props.time} />
+        </div>
+        <ImageStrip images={props.images} where="in your message" />
+        <For each={props.attachments}>{(a) => <PathAttachment attachment={a} where="in your message" />}</For>
+        <Show when={props.row.words}>
+          <div class="message-body message-text">{props.row.words}</div>
+        </Show>
+        {note()}
+      </article>
+    </Show>
   );
 }

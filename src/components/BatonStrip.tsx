@@ -1,4 +1,5 @@
 import { createEffect, createMemo, createResource, createSignal, createUniqueId, For, Match, on, onCleanup, onMount, Show, Switch } from "solid-js";
+import { copyLink } from "../lib/copy-link";
 import { offHoursNote, reachWords, withOffHours } from "../lib/working-hours";
 import { abilitiesOf, MESSAGES_CAP, OPERATOR, type BatonInfo, type OfferLink, type ProposedPerson } from "../../shared/baton";
 import type { SessionSummary } from "../../shared/protocol";
@@ -12,6 +13,7 @@ import { orgHref, rememberStartParent, startForHref } from "../lib/orgs-route";
 import { announce, copyText, toast } from "../lib/ui-state";
 import { LinksBanner } from "./LinksBanner";
 import { createSendOnWhatsApp, SendOnWhatsAppButtons, SendOnWhatsAppFallback } from "./SendOnWhatsApp";
+import { sharingOffHere } from "../lib/public-links";
 import { getBatonTold, retryWrapup, setBatonAbilities, setBatonHiddenFromOwner } from "../lib/api";
 import { abilityToast } from "../lib/gathering-abilities";
 import { firstName } from "../lib/person-page";
@@ -199,7 +201,11 @@ export function BatonStrip(props: {
   return (
     <Show when={info.latest}>
       {(i) => {
-        const acts = createMemo(() => stripActions(i()));
+        // Sharing off on this computer (§mesh.public/sharing-off): the strip makes and copies no /h link.
+        const acts = createMemo(() => {
+          const a = stripActions(i());
+          return sharingOffHere() ? { ...a, menu: a.menu.filter((m) => m !== "copy-link" && m !== "get-link" && m !== "new-link") } : a;
+        });
         const title = () => i().session.publicTitle;
         /** Org, project, what it can do, who started it: shown from 768px, folded under Details below. */
         const facts = () => (
@@ -295,7 +301,7 @@ export function BatonStrip(props: {
                 </Switch>
                 {/* The holder's one Send stays in the bar; an offer's, one per invitee, would fill the
                     pinned rows, so they sit with the invitees' links below. */}
-                <Show when={!liveOffer(i())}>
+                <Show when={!liveOffer(i()) && !sharingOffHere()}>
                   <SendOnWhatsAppButtons s={outreach} />
                 </Show>
                 <span class="baton-strip-bar-end">
@@ -447,7 +453,7 @@ export function BatonStrip(props: {
             <Show when={open(i()) && spent(i())}>
               <ExtendRow info={i()} act={act} />
             </Show>
-            <Show when={open(i()) && !i().share.publicUrl && (personHolds(i()) || liveOffer(i()))}>
+            <Show when={open(i()) && !i().share.publicUrl && !sharingOffHere() && (personHolds(i()) || liveOffer(i()))}>
               <div class="baton-strip-link">
                 <Banner
                   tone="warn"
@@ -460,7 +466,9 @@ export function BatonStrip(props: {
                 />
               </div>
             </Show>
-            <SendOnWhatsAppFallback s={outreach} />
+            <Show when={!sharingOffHere()}>
+              <SendOnWhatsAppFallback s={outreach} />
+            </Show>
             <Show when={liveOffer(i())}>
               {(o) => {
                 // r12: an invitee is reached (their link made) only in their own working hours; a waiting one has no link yet.
@@ -470,15 +478,15 @@ export function BatonStrip(props: {
                 const copyable = () => reached().filter((p) => i().links?.[p.id]);
                 return (
                   <>
-                    <Show when={copyable().length > 0}>
+                    <Show when={copyable().length > 0 && !sharingOffHere()}>
                       <div class="baton-strip-row baton-strip-invitees" role="group" aria-label="Invitees' links to copy">
                         <span class="baton-strip-meta">Copy link for</span>
                         <For each={copyable()}>
-                          {(p) => <CopyButton label={p.name} title={`Copy ${p.name}'s link`} text={() => i().links?.[p.id]?.link ?? ""} onCopy={(t) => copyText(t, "Link copied.")} />}
+                          {(p) => <CopyButton label={p.name} title={`Copy ${p.name}'s link`} text={() => i().links?.[p.id]?.link ?? ""} onCopy={(t) => copyLink(t, "Link copied.")} />}
                         </For>
                       </div>
                     </Show>
-                    <Show when={reached().length > 0}>
+                    <Show when={reached().length > 0 && !sharingOffHere()}>
                       <div class="baton-strip-row baton-strip-invitees" role="group" aria-label="Invitees' links">
                         <span class="baton-strip-meta">{waiting().length ? "Reached · new link for" : "New link for"}</span>
                         <For each={reached()}>
@@ -500,7 +508,7 @@ export function BatonStrip(props: {
                         </For>
                       </div>
                     </Show>
-                    <Show when={outreach.people().length > 0}>
+                    <Show when={outreach.people().length > 0 && !sharingOffHere()}>
                       <div class="baton-strip-row" role="group" aria-label="Send on WhatsApp">
                         <SendOnWhatsAppButtons s={outreach} />
                       </div>

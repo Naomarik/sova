@@ -1,4 +1,6 @@
 import { createMemo, createSignal, onMount, Show, For } from "solid-js";
+import { copyLink } from "../lib/copy-link";
+import { sharingOffHere } from "../lib/public-links";
 import { Portal } from "solid-js/web";
 import type { OfferLink } from "../../shared/baton";
 import type { OrgDetail } from "../../shared/orgs";
@@ -9,7 +11,7 @@ import { DELETE_OWNER_LINK, DELETE_OWNER_LINK_ASK, OWNER_LINK_DELETED } from "..
 import { deleteOwnerLine, ownerChangeLine, ownerLinkActions, ownerLinkLine, rotateLine } from "../lib/owner-card";
 import { ownerHash, type OwnerRoute, readsHome } from "../lib/owner-words";
 import { firstName } from "../lib/person-page";
-import { announce, copyText } from "../lib/ui-state";
+import { announce } from "../lib/ui-state";
 import { type OwnerAnswer, OwnerLoadError, OwnerPage } from "../share/owner-view";
 import { LinksBanner } from "./LinksBanner";
 import { Banner, Icon, trapFocus } from "./ui";
@@ -124,36 +126,38 @@ export function OwnerCard(props: { org: OrgDetail; act: Act }) {
       <Show when={shown()}>{(s) => <LinksBanner links={[s().link]} warning={s().warning} onDismiss={() => setShown(null)} />}</Show>
       <div class="orgs-owner-actions">
         <div class="button-row">
-          <Show
-            when={kept()}
-            fallback={
-              <button
-                type="button"
-                class="button button-sm"
-                aria-disabled={!owner() ? "true" : undefined}
-                aria-describedby={!owner() ? "orgs-owner-none" : undefined}
-                aria-expanded={live() ? confirm() === "rotate" : undefined}
-                onClick={() => {
-                  if (!owner()) return;
-                  // A live link that isn't kept can't be shown again: getting one replaces it, so ask first.
-                  if (actions().get === "ask") setConfirm(confirm() === "rotate" ? null : "rotate");
-                  else void getLink(true);
-                }}
-              >
-                Get Owner Link
+          <Show when={!sharingOffHere()}>
+            <Show
+              when={kept()}
+              fallback={
+                <button
+                  type="button"
+                  class="button button-sm"
+                  aria-disabled={!owner() ? "true" : undefined}
+                  aria-describedby={!owner() ? "orgs-owner-none" : undefined}
+                  aria-expanded={live() ? confirm() === "rotate" : undefined}
+                  onClick={() => {
+                    if (!owner()) return;
+                    // A live link that isn't kept can't be shown again: getting one replaces it, so ask first.
+                    if (actions().get === "ask") setConfirm(confirm() === "rotate" ? null : "rotate");
+                    else void getLink(true);
+                  }}
+                >
+                  Get Owner Link
+                </button>
+              }
+            >
+              {(url) => (
+                <button type="button" class="button button-sm" onClick={() => void copyLink(url(), "Link copied.")}>
+                  <Icon name="copy" small /> Copy Owner Link
+                </button>
+              )}
+            </Show>
+            <Show when={actions().rotate}>
+              <button type="button" class="button button-sm" aria-expanded={confirm() === "rotate"} onClick={() => setConfirm(confirm() === "rotate" ? null : "rotate")}>
+                Get New Owner Link
               </button>
-            }
-          >
-            {(url) => (
-              <button type="button" class="button button-sm" onClick={() => void copyText(url(), "Link copied.")}>
-                <Icon name="copy" small /> Copy Owner Link
-              </button>
-            )}
-          </Show>
-          <Show when={actions().rotate}>
-            <button type="button" class="button button-sm" aria-expanded={confirm() === "rotate"} onClick={() => setConfirm(confirm() === "rotate" ? null : "rotate")}>
-              Get New Owner Link
-            </button>
+            </Show>
           </Show>
           <button type="button" class="button button-sm" aria-disabled={!owner() ? "true" : undefined} onClick={() => owner() && setPreviewing(true)}>
             <Icon name="eye" small /> Preview Owner Page

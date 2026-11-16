@@ -47,6 +47,9 @@ const localOrigin = (port: number) => `http://localhost:${port}`;
 
 /** The proxy's own cookie: a preview visit's tab (§mesh.public/visitor-log). */
 export const VISIT_COOKIE = "__Host-sova-pv";
+/** A Free preview's key cookie (§mesh.public/preview-tunnels): never passed to the app. */
+export const KEY_COOKIE = "__Host-sova-pk";
+const OWN_COOKIES = new Set([VISIT_COOKIE, KEY_COOKIE]);
 
 /** The visit cookie's value in a Cookie header, when it has TAB_RE's shape. */
 export function visitCookie(cookie: string | undefined): string | null {
@@ -58,7 +61,7 @@ export function visitCookie(cookie: string | undefined): string | null {
 }
 
 /** The request headers the app gets: a browser on this computer's, with the preview's origin
-    swapped for localhost in Origin and Referer, the proxy's own cookie removed, and nothing
+    swapped for localhost in Origin and Referer, the proxy's own cookies removed, and nothing
     forwarded, unless `client` is given (the host sends the visitor's address): then exactly one
     X-Forwarded-For and X-Forwarded-Proto. */
 export function appRequestHeaders(headers: IncomingHttpHeaders, port: number, publicOrigin: string, client?: string): Record<string, string | string[]> {
@@ -77,7 +80,7 @@ export function appRequestHeaders(headers: IncomingHttpHeaders, port: number, pu
     const kept = out.cookie
       .split(";")
       .map((p) => p.trim())
-      .filter((p) => p && p.split("=")[0] !== VISIT_COOKIE);
+      .filter((p) => p && !OWN_COOKIES.has(p.split("=")[0]!.trim()));
     if (kept.length) out.cookie = kept.join("; ");
     else delete out.cookie;
   }
@@ -131,7 +134,11 @@ export function visitorResponseHeaders(raw: string[], port: number, publicOrigin
       continue;
     }
     if (k === "location" || k === "content-location" || k === "access-control-allow-origin") value = value.replace(local, publicOrigin);
-    else if (k === "set-cookie") value = hostOnlyCookie(value);
+    else if (k === "set-cookie") {
+      // The app never sets or clears the proxy's own cookies (§mesh.public/preview-proxy).
+      if (OWN_COOKIES.has(value.split(";")[0]!.split("=")[0]!.trim())) continue;
+      value = hostOnlyCookie(value);
+    }
     else if (k === "referrer-policy") referrer = true;
     out.push(name, value);
   }
@@ -280,7 +287,7 @@ export interface PreviewProxyOptions {
 export interface PreviewProxy {
   /** `client`: the address the share edge computed (§mesh.public/forwarded-for), for the visitor log
       and X-Forwarded-For. */
-  dispatch(req: IncomingMessage, res: ServerResponse, label: string, client?: string): void;
+  dispatch(req: IncomingMessage, res: ServerResponse, label: string, client?: string, extra?: readonly string[]): void;
   upgrade(req: IncomingMessage, socket: Duplex, head: Buffer, label: string, client?: string): void;
   /** Cut every open connection whose preview is no longer active. */
   sweep(): void;
@@ -329,7 +336,8 @@ export function createPreviewProxy(opts: PreviewProxyOptions): PreviewProxy {
     return had ? null : tab;
   };
 
-  const dispatch = (req: IncomingMessage, res: ServerResponse, label: string, client?: string): void => {
+  /** `extra`: header pairs added to the app's answer toward the visitor (a Free preview's key cookie, renewed). */
+  const dispatch = (req: IncomingMessage, res: ServerResponse, label: string, client?: string, extra?: readonly string[]): void => {
     if (disposed) return previewAnswer(req, res, "busy");
     const j = judge(label);
     if (j === "unknown") return previewAnswer(req, res, "unknown");
@@ -392,6 +400,7 @@ export function createPreviewProxy(opts: PreviewProxyOptions): PreviewProxy {
           previewAnswer(req, res, "notRunning");
           return finish();
         }
+        if (extra) out.push(...extra);
         res.writeHead(r.statusCode ?? 502, r.statusMessage, out);
         r.on("error", () => res.destroy());
         r.pipe(res);

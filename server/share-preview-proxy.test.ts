@@ -23,7 +23,8 @@ test("toward the app: Host and Origin are localhost's, the Referer's origin too,
       host: "abc.preview.example",
       origin: o,
       referer: `${o}/deep/route?x=1`,
-      cookie: "sid=1; theme=dark",
+      // The proxy's own cookies (the visit's tab, a Free preview's key) never reach the app.
+      cookie: `sid=1; __Host-sova-pk=${"a".repeat(52)}; theme=dark; __Host-sova-pv=tab`,
       "x-forwarded-for": "1.2.3.4",
       "x-forwarded-host": "abc.preview.example",
       "x-forwarded-proto": "https",
@@ -85,6 +86,12 @@ test("toward the visitor: Location, ACAO, cookies' Domain, Cache-Control and Ref
   // The app's own Referrer-Policy stays.
   assert.deepEqual(visitorResponseHeaders(["Referrer-Policy", "no-referrer"], 5173, o), ["Referrer-Policy", "no-referrer", "Cache-Control", "private"]);
   assert.equal(visitorResponseHeaders(["X-Sova-Mesh", "refused"], 5173, o), null);
+  // The app never sets or clears the proxy's own cookies: a Free preview's key, or the visit's tab.
+  const other = "b".repeat(52);
+  assert.deepEqual(
+    visitorResponseHeaders(["Set-Cookie", `__Host-sova-pk=${other}; Path=/; Secure; HttpOnly`, "Set-Cookie", "__Host-sova-pv=x; Path=/; Secure", "Set-Cookie", " __Host-sova-pk =; Max-Age=0", "Set-Cookie", "sid=1"], 5173, o),
+    ["Set-Cookie", "sid=1", "Cache-Control", "private", "Referrer-Policy", "same-origin"],
+  );
   assert.equal(privateCacheControl("no-store"), "no-store");
   assert.equal(privateCacheControl(undefined), "private");
   assert.equal(privateCacheControl("max-age=31536000,immutable"), "private, max-age=31536000, immutable");

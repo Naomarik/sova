@@ -3,6 +3,7 @@ import { deliverStranded, handOverWhenGoing } from "./lib/chat-outbox";
 import { chatCourier } from "./lib/chat-courier";
 import { loadAlignment } from "./lib/alignment-draft";
 import { batch, createEffect, createMemo, createResource, createSignal, lazy, Match, on, onCleanup, Show, Switch, untrack } from "solid-js";
+import { sharingOffHere } from "./lib/public-links";
 import { createStore, reconcile } from "solid-js/store";
 import { Portal } from "solid-js/web";
 import type { ChatClaudeLogin, SessionSummary, WorkerInfo } from "../shared/protocol";
@@ -1481,7 +1482,9 @@ export function App() {
                   <Show when={installed()}>{(list) => <ExtensionCards extensions={list()} />}</Show>
                   <ExplanationsCard explanations={explanations.data()} now={now()} />
                   {/* Every public link at a glance, and the way into #/shares. */}
-                  <OverviewSharesCard />
+                  <Show when={!sharingOffHere()}>
+                    <OverviewSharesCard />
+                  </Show>
                   {/* Last: every organization at a glance, and the way into #/orgs. */}
                   <OverviewOrgsCard now={now()} />
                 </div>

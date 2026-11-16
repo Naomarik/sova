@@ -17,6 +17,7 @@ import { readOutreach } from "./settings";
 import { orgTarget, targetsInUse, type SenderTarget } from "./targets";
 import type { Channel } from "./types";
 import { whatsapp } from "./whatsapp";
+import { noteSentLink } from "../share/tunnel/routes";
 
 /**
  * The outreach core (§app/outreach): send a roster person a link and/or a short note. The person's
@@ -35,6 +36,8 @@ export interface SendResult {
   retryable?: boolean;
   /** An owner page link send made a new link (§app.owner-page/send): it stays whatever the outcome. */
   madeLink?: boolean;
+  /** A sent link's address note (Cloudflare Free), for whoever sent it. */
+  linkWarning?: string;
 }
 
 export interface SendInput {
@@ -265,7 +268,9 @@ async function sendStep(input: SendInput, channel: Channel): Promise<SendResult>
     rememberRef(r.ref, orgId, line);
     if (resolver?.settle && resolved) resolver.settle(resolved.minted);
     setPending(key, null);
-    return { outcome: "sent", channel: channel.id, ...made };
+    // The link's full URL left Sova (§mesh.public/broken-links).
+    if (resolved?.url) noteSentLink(resolved.url);
+    return { outcome: "sent", channel: channel.id, ...made, ...(resolved?.warning ? { linkWarning: resolved.warning } : {}) };
   }
   setPending(key, null);
   // Uncertain (the request left, no answer): what the step made stays, and the send is logged as unknown.

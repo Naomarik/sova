@@ -1,8 +1,10 @@
 /* The Design card, its frames, and the open view. Every value is a token; nothing pulses but the live chip. */
-/* Nothing in a Design card or the Gallery may ever move what's around it, in any state: the card is
-   one fixed size, what it holds scrolls inside it, and every changing thing has its place reserved. */
-:root { --design-card-h: clamp(560px, calc(100dvh - 200px), 760px); }
-.design-card { padding: 0; overflow: hidden; container: design-card / inline-size; position: relative; height: var(--design-card-h); display: flex; flex-direction: column; }
+/* A Lookbook card takes the height it needs, with no scroll box inside it: the chat's own scroll reads it.
+   It holds still while designs are written: every design's box is one size from Start and every changing
+   word has its place, so only a click, a design added, Remove or Restore, or the Creative Director's notes
+   (which sit last) change its height. `clip`, not `hidden`: hidden would make the card a scroller and
+   its bottom bar would stick to the card instead of the screen. */
+.design-card { padding: 0; overflow: clip; container: design-card / inline-size; position: relative; display: flex; flex-direction: column; }
 .design-card .card-head { flex: none; display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); }
 .design-run-head { flex-direction: column; align-items: stretch !important; gap: var(--space-1) !important; }
 .design-run-title { min-width: 0; margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -15,15 +17,24 @@
   .design-run-sub { grid-template-columns: minmax(0, 1fr); grid-template-rows: 24px 18px; gap: var(--space-1); }
   .design-run-batch { grid-row: 2; grid-column: 1; }
 }
-.design-card-scroll { position: relative; flex: 1 1 0; min-height: 0; overflow-y: auto; scrollbar-gutter: stable; scrollbar-width: thin; display: flex; flex-direction: column; }
-.design-card-scroll > * { flex: none; }
 .design-card textarea, .design-open textarea, .gallery-section textarea { resize: none; }
 .design-card-body { padding: var(--space-3) var(--space-4); display: flex; flex-direction: column; gap: var(--space-3); }
 .design-card-body + .design-card-body { border-top: 1px solid var(--color-border); }
-.design-card-scroll > .design-card-waiting { flex: 1 1 auto; justify-content: center; padding: var(--space-5) var(--space-4); }
-/* A run's error lays over the top of the grid: it takes no room, so nothing under it moves. */
-.design-run-error { position: sticky; top: 0; z-index: 3; height: 0; overflow: visible; }
-.design-run-error .banner { margin: var(--space-2) var(--space-4) 0; box-shadow: var(--shadow-1); }
+.design-card > .design-card-waiting { justify-content: center; padding: var(--space-5) var(--space-4); }
+/* A run's error opens the Creative Director's section, which sits last: it moves only what's below it. */
+.design-run-error { margin: 0; }
+/* A section of the card, as design B lays them: its name and one line of facts on the left, its content on
+   the right; stacked on a narrow card. */
+.design-sect { display: grid; grid-template-columns: 12rem minmax(0, 1fr); gap: var(--space-2) var(--space-5); padding: var(--space-4); border-top: 1px solid var(--color-border); min-width: 0; }
+.card-head + .design-sect, .card-head + .design-brief-region > .design-sect:first-child { border-top: 0; }
+.design-sect-label { min-width: 0; }
+.design-sect-title { margin: 0; font-size: var(--fs-body); line-height: var(--lh-body); font-weight: var(--fw-semibold); color: var(--color-ink); }
+.design-sect-sub { margin: 0; }
+.design-sect-main { min-width: 0; display: flex; flex-direction: column; gap: var(--space-3); }
+@container design-card (max-width: 640px) {
+  .design-sect { grid-template-columns: minmax(0, 1fr); }
+}
+.design-card-designs { border-top: 1px solid var(--color-border); padding: var(--space-4); }
 
 /* Setup */
 .design-setup { gap: var(--space-4); }
@@ -96,7 +107,28 @@
 .design-model-found > div + div { border-top: 1px solid var(--color-border); }
 .design-section-label { margin: 0; padding: var(--space-2) var(--space-3) 0; font-size: var(--fs-caption); font-weight: var(--fw-semibold); }
 .design-model-none { margin: 0; padding: var(--space-3); }
-.design-setup-foot { flex: none; display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); height: 72px; box-sizing: border-box; }
+.design-setup-foot { flex: none; display: flex; align-items: center; justify-content: space-between; flex-wrap: nowrap; gap: var(--space-3); height: 72px; box-sizing: border-box; }
+/* The card's bottom bar: pinned to the bottom of the chat while the card is in view (DesignCardFoot), at
+   the card's end otherwise. Opaque, and lifted by a shadow only while pinned over what scrolls behind it. */
+.design-card-foot { position: sticky; bottom: 0; z-index: 4; background: var(--color-surface); }
+.design-card-foot[data-pinned] { box-shadow: var(--shadow-2); }
+/* The chat's floating controls rise above a pinned bar instead of covering it. `translate` composes with
+   their own centring transform. */
+.transcript-wrap[data-design-pinned] > .jump-latest,
+.transcript-wrap[data-design-pinned] > .chat-wait-note,
+.transcript-wrap[data-design-pinned] > .focus-toggle { translate: 0 calc(-1 * var(--design-pinned-h, 0px)); }
+/* After Start: the Creative Director's status and the way into its chat. One height whatever it says. */
+.design-run-foot { display: flex; align-items: center; justify-content: space-between; flex-wrap: nowrap; gap: var(--space-3); min-height: 68px; box-sizing: border-box; }
+.design-run-foot-line { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.design-run-foot-name { display: flex; align-items: center; gap: var(--space-2); min-width: 0; white-space: nowrap; }
+.design-run-foot-name .chip { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.design-run-foot-note { height: 18px; line-height: 18px; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.design-run-foot-note p { margin: 0; overflow: hidden; text-overflow: ellipsis; }
+.design-run-chat { flex: none; }
+@container design-card (max-width: 600px) {
+  .design-run-foot { flex-direction: column; align-items: stretch; gap: var(--space-2); }
+  .design-run-chat { width: 100%; }
+}
 .design-setup-summary { display: flex; flex-direction: column; font-size: var(--fs-caption); min-width: 0; flex: 1 1 0; }
 .design-setup-summary > span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-height: 1.45em; }
 
@@ -118,7 +150,32 @@
 .design-tile-note:empty { display: none; }
 .design-tile-note { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; overflow-wrap: anywhere; }
 .design-tile-error { color: var(--status-error); }
-.design-tile-actions { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-2); margin-top: var(--space-2); }
+/* Three places, each one size in every state: the next step (Open, Start Again or Retry), Chat, and More. */
+.design-tile-actions { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) var(--control-sm); gap: var(--space-2); margin-top: var(--space-2); }
+.design-tile[data-removed] .design-tile-actions { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.design-tile-actions .button { min-width: 0; }
+.design-tile-more, .design-open-more { flex: none; width: var(--control-sm); height: var(--control-sm); min-height: 0; padding: 0; }
+.design-tile[data-removed] .design-tile-page { opacity: .72; }
+/* On a phone a design is a row: its picture on the left, so more than one fits on the screen. */
+@container design-card (max-width: 520px) {
+  .design-card .design-tile { display: grid; grid-template-columns: 42% minmax(0, 1fr); position: relative; }
+  .design-card .design-tile-page { border-bottom: 0; border-right: 1px solid var(--color-border); align-self: stretch; aspect-ratio: auto; min-height: 100%; }
+  .design-card .design-tile-info { position: static; padding: var(--space-2); }
+  .design-card .design-tile-title { grid-template-columns: auto minmax(0, 1fr); }
+  .design-card .design-tile-chip { grid-column: 1 / -1; }
+  .design-card .design-tile-title { height: auto; grid-template-rows: 24px 24px; }
+  .design-card .design-tile-note { left: 0; right: auto; width: 42%; bottom: 0; box-sizing: border-box; }
+  .design-card .design-tile-actions { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) var(--control-sm); gap: var(--space-1); }
+}
+/* The designs set aside: one folded line, opened by a click. */
+.design-removed { margin-top: var(--space-3); display: flex; flex-direction: column; gap: var(--space-3); }
+.design-removed-head { display: flex; align-items: center; gap: var(--space-3); min-width: 0; }
+.design-removed-fold { flex: none; display: flex; align-items: center; gap: var(--space-2); min-height: var(--control-sm); padding: 0; border: 0; background: none; color: var(--color-ink); cursor: pointer; font: inherit; text-align: left; }
+.design-removed-fold:focus-visible { outline: var(--focus-width, 2px) solid var(--focus-color, var(--color-accent)); outline-offset: var(--focus-offset, 2px); border-radius: var(--r-xs); }
+.design-removed-fold .icon-twist { transition: transform var(--dur-fast) var(--ease-standard); }
+.design-removed-twist-open { transform: rotate(90deg); }
+.design-removed-title { font-weight: var(--fw-semibold); white-space: nowrap; }
+.design-removed-hint { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .design-tile-state { position: absolute; inset: 0; z-index: 2; background: var(--color-sunken); display: flex; align-items: center; justify-content: center; text-align: center; padding: var(--space-3); font-size: var(--fs-caption); color: var(--color-ink-muted); }
 .design-tile-state-error { color: var(--status-error); }
 
@@ -131,28 +188,19 @@
 /* Inside a scaled page: a true caption on every tile size. */
 .design-scale .design-frame-note { font-size: calc(var(--fs-caption) / var(--design-scale, .3)); padding: calc(var(--space-3) / var(--design-scale, .3)); }
 
-/* Refine and the message boxes */
-.design-refine, .design-coordinator { display: flex; flex-direction: column; gap: var(--space-2); min-width: 0; }
+/* The message boxes */
+.design-coordinator { display: flex; flex-direction: column; gap: var(--space-2); min-width: 0; }
 /* A message box is the main composer (.composer-inner, .composer-row, .composer-input); this adds only
    its one line of news, which lays upward over what's above it when it wraps, so nothing moves. */
 .design-message-box { position: relative; max-width: none; margin: 0; gap: 0; }
 .design-open-composer .design-message-box { position: static; }
 .design-message-field { flex: 1 1 0; min-width: 0; }
-.design-card .design-message-box .composer-input { max-height: 96px; }
 .design-box-status { position: relative; flex: none; height: 18px; font-size: var(--fs-caption); }
 .design-box-link { padding: 0; border: 0; background: none; color: var(--color-accent); cursor: pointer; font: inherit; text-decoration: underline; }
 .design-box-status p { position: absolute; left: 0; right: 0; bottom: 0; margin: 0; background: var(--color-surface); line-height: 18px; }
 .design-message-box .design-box-status { position: static; height: 0; }
 .design-message-box .design-box-status p { bottom: 100%; z-index: 2; padding-block: var(--space-1); }
 .design-open-composer .design-box-status p { padding: var(--space-1) var(--space-4); border-top: 1px solid var(--color-border); }
-.design-refine-head { font-weight: var(--fw-semibold); }
-.design-refine .textarea { min-height: 64px; }
-.design-refine-quick { display: flex; flex-wrap: wrap; gap: var(--space-2); }
-/* Plus to add, check once added: the same room either way, and a shape as well as a tint. */
-.design-refine-quick .button::before { content: ""; flex: none; width: 14px; height: 14px; background: currentColor; -webkit-mask: var(--quick-mark) center / contain no-repeat; mask: var(--quick-mark) center / contain no-repeat; --quick-mark: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 5v14M5 12h14'/%3E%3C/svg%3E"); }
-.design-refine-quick .button[aria-pressed="true"] { background: var(--color-accent-tint); border-color: var(--color-accent); }
-.design-refine-quick .button[aria-pressed="true"]::before { --quick-mark: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 12.5l4.5 4.5L19 7.5'/%3E%3C/svg%3E"); }
-.design-refine-actions { display: flex; justify-content: flex-end; gap: var(--space-2); }
 /* What the coordinator needs from you: words on the left, the answer on the right, always in sight. */
 .design-ask { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-3); min-width: 0; padding: var(--space-2) var(--space-3); margin-bottom: var(--space-2); background: var(--color-sunken); border-radius: var(--r-md); }
 .design-ask > p { flex: 1 1 200px; min-width: 0; margin: 0; }
@@ -160,16 +208,14 @@
 .design-ask > .button-row { flex: none; margin-left: auto; }
 .design-ask > form { flex: 1 1 100%; }
 .design-ask > .field-error { flex: 1 1 100%; }
-/* On a card it lays over the coordinator's text until it's answered, so that text never moves for it. */
-.design-card-coordinator .design-coordinator-card { position: relative; }
-.design-card-coordinator .design-ask { position: absolute; inset: 0 0 auto 0; z-index: 1; max-height: 100%; box-sizing: border-box; margin: 0; overflow-y: auto; }
 
 /* The coordinator */
-.design-card-coordinator { flex: none; height: 236px; box-sizing: border-box; padding: var(--space-2) var(--space-4) var(--space-3); border-top: 1px solid var(--color-border); overflow: hidden; }
-.design-card-coordinator .design-coordinator { height: 100%; }
-/* Refine lays over the card's foot instead of pushing it. */
-.design-card .design-card-refine { min-height: 236px; box-sizing: border-box; }
-.design-card-refine { position: absolute; inset: auto 0 0 0; z-index: 4; padding: var(--space-3) var(--space-4); background: var(--color-surface); border-top: 1px solid var(--color-border); box-shadow: var(--shadow-2); }
+/* The Creative Director's section: last on the card, at full length, with no box of its own to scroll. */
+.design-card-coordinator { display: flex; flex-direction: column; gap: var(--space-3); padding: var(--space-4); border-top: 1px solid var(--color-border); overflow-wrap: anywhere; }
+.design-card-coordinator .design-ask { margin: 0; }
+.design-coordinator-notes { font-size: var(--fs-body); }
+.design-coordinator-notes .message-body { padding: 0; border: 0; border-radius: 0; background: none; box-shadow: none; }
+.design-coordinator-empty { margin: 0; }
 .design-coordinator-head { flex: none; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: var(--space-2); height: 36px; }
 .design-coordinator-head .chip { justify-self: start; }
 .design-coordinator-title { font-weight: var(--fw-semibold); }
@@ -182,7 +228,7 @@
 .design-coordinator-card { flex: 1 1 0; min-height: 0; overflow-y: auto; scrollbar-gutter: stable; scrollbar-width: thin; font-size: var(--fs-body); overflow-wrap: anywhere; }
 .design-coordinator-card > .text-muted { margin: 0; }
 .design-coordinator-bare { flex: none; padding: var(--space-3) var(--space-4); border: 1px solid var(--color-border); border-radius: var(--r-lg); background: var(--color-surface); }
-.design-coordinator-card-bare { flex: none; height: auto; min-height: 64px; max-height: 240px; }
+.design-coordinator-card-bare { flex: none; height: auto; min-height: 64px; overflow: visible; }
 
 /* The open view: a native <dialog> covering the window */
 .design-open { position: fixed; inset: 0; width: 100vw; height: 100dvh; max-width: none; max-height: none; margin: 0; padding: 0; border: 0; background: var(--color-bg); color: var(--color-ink); }
@@ -201,8 +247,6 @@
 .design-open-page { position: relative; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
 .design-open-page-scroll { overflow-y: auto; padding: var(--space-4); gap: var(--space-4); }
 .design-open-frame { position: relative; flex: 1 1 auto; min-height: 0; background: var(--color-sunken); }
-/* Refine lays over the foot of the page, as it does on a card. */
-.design-open-refine { position: absolute; inset: auto 0 0 0; z-index: 3; padding: var(--space-3) var(--space-4); border-top: 1px solid var(--color-border); background: var(--color-surface); box-shadow: var(--shadow-2); }
 .design-open-grid { align-content: start; }
 .design-open-chat { min-width: 0; min-height: 0; display: flex; flex-direction: column; border-left: 1px solid var(--color-border); background: var(--color-surface); }
 .design-open-chat-title { flex: none; margin: 0; padding: var(--space-3) var(--space-4) var(--space-2); font-size: var(--fs-heading-s); font-weight: var(--fw-semibold); }
@@ -230,6 +274,11 @@
 .gallery-scroll { flex: 1 1 0; min-height: 0; overflow-y: auto; scrollbar-gutter: stable; scrollbar-width: thin; }
 .gallery-empty { height: 100%; justify-content: center; }
 .gallery-section + .gallery-section { border-top: 1px solid var(--color-border); }
+/* The Gallery's designs grow to fit, as the card does: the panel's own scroll reads them, with no box of
+   their own (Page Assets keeps its size, as its image detail lays over it). */
+.gallery-prototypes { height: auto; }
+.gallery-prototypes .gallery-scroll { flex: none; overflow: visible; }
+.gallery-prototypes .gallery-empty { height: auto; min-height: 160px; }
 .gallery-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); flex-wrap: wrap; }
 .gallery-grid { grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); }
 

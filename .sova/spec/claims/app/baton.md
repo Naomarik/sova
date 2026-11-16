@@ -375,15 +375,19 @@ Scoped `show_tour` presents only checked, operator-reviewed editions already bou
   limit), the same refusals and the same 10 a minute, text only. It mints, reads and turns off no
   link, and the hand-off's own link still works as above.
 - Whenever a minted link may not open from outside, Sova says so: the response carrying it also
-  carries `linkWarning` and its `linkWarningCode`, one of six (`off`, `unverified`, `unreachable`,
-  `not-accepted`, `unconfirmed`, `sleeps`; texts in §design.copy-deck/public-links). The address's
-  own warning comes first (no address; one not verified; a gateway that can't be reached or
-  doesn't accept this host); else, on a host routed through a gateway, the mint's own (the gateway
+  carries `linkWarning` and its `linkWarningCode`, one of the setting's thirteen
+  (§mesh.public/setting; texts in §design.copy-deck/public-links and
+  §design.copy-deck/where-links-open). The address's own warning comes first (no address; one not
+  verified; a gateway that can't be reached or doesn't accept this host; a Free tunnel's address
+  that changes when it starts again, or one not turned on, starting, still coming online, down or
+  without cloudflared); else, on a host routed through a gateway, the mint's own (the gateway
   didn't confirm it within 3 seconds, §mesh.public/registry). With no address a link is only a
   path nobody outside can open. The links banner (the org page, the person page, the owner card,
   the strip) shows the text verbatim in warn tone with an **Open Settings** button that opens
   Settings → Public links, and while a person or an offer holds the session and no address is set,
   the strip shows the `off` text as a warn banner with the same button.
+- While sharing is off (§mesh.public/sharing-off) the strip offers none of Get Link, New Link and
+  Send on WhatsApp.
 - The strip also offers **Send on WhatsApp** for the holder, or each reached invitee of an open
   offer, with its fallback after a failure (§app.outreach/send).
 - The operator can copy the current link again: `BatonInfo.links` gives, per person (the current
@@ -621,8 +625,8 @@ Tour pictures and public explanation follow the same active-branch, offer cut an
 The allowed public paths also include token-scoped reads for visible bound tour manifests and their exact listed pictures under `/api/h/<token>/tours/<opaque-handle>/…`, plus standalone read-only `/t/<token>` and narrowly scoped `/api/t/<token>/…` (§app.tours/sharing), and read-only owner-page tour reads under `/api/i/<token>/c/<conversation>/tours/<handle>` with current owner access and the already-exposed conversation cut (§app.tours/handoffs). These receive the same private response headers and raw-path rejection; operator `/api/tours` remains unreachable. Tour picture reads have a separate bounded rate bucket and byte cap, and final authorization is rechecked after asynchronous reads. Missing share builds refuse the tour shell like other public pages.
 
 - A second HTTP server, bound from the Public links setting (§mesh.public/setting): on
-  `127.0.0.1:<sharePort>` while this host is the public gateway, rebound without a restart when
-  the setting changes. `SOVA_SHARE_HOST` and `SOVA_SHARE_PORT` pin the address; with neither the
+  `127.0.0.1:<sharePort>` while this host is the public gateway or its Cloudflare share tunnel is
+  wanted (§mesh/tunnel), rebound without a restart when the setting changes. `SOVA_SHARE_HOST` and `SOVA_SHARE_PORT` pin the address; with neither the
   setting nor both variables there is no listener. A host routed through a gateway serves the same
   paths on its ingress instead (§mesh.public/ingress). It serves only: `GET /h/<token>` (the share page), `GET /h/assets/*` (the
   share page's own build, never the operator app's; a file it doesn't have is a 404, never a page), `GET /api/h/<token>` (the filtered view and
@@ -684,8 +688,9 @@ The allowed public paths also include token-scoped reads for visible bound tour 
   its assets are served from `dist-share/` unless `SOVA_SHARE_DIST` names another build, read per
   request (tests serve a stub page with it). With no built page, `/h/<token>` and `/i/<token>`
   answer 503 "The share page is not built on this host."
-- Public exposure goes through a gateway (§mesh/public): a front outside Sova terminates TLS and
-  forwards to the gateway's share port, and other hosts route their links through the gateway.
+- Public exposure goes through a Cloudflare tunnel Sova runs to the share port (§mesh/tunnel), or a
+  gateway (§mesh/public): a front outside Sova terminates TLS and forwards to the gateway's share
+  port, and other hosts route their links through the gateway.
 
 ## §app.baton/images — A person's photos
 

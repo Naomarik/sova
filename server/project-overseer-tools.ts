@@ -1119,7 +1119,8 @@ function ownPreviewLabels(projectId: string): string[] {
   const out: string[] = [];
   for (const v of listPreviews({ projectId })) {
     if (v.siblingOf) continue;
-    const l = linkLabel(keptPreview(v.id)?.url);
+    const k = keptPreview(v.id);
+    const l = k?.key ?? linkLabel(k?.url);
     if (l) out.push(l);
   }
   return out;

@@ -1,4 +1,4 @@
-import type { PreviewAddress } from "./public-links";
+import type { PreviewAddress, TunnelState } from "./public-links";
 
 /**
  * Preview links (§mesh.public/preview): the operator's REST contract. A preview publishes one web
@@ -66,6 +66,9 @@ export interface PreviewView {
   /** A copy link's copy as the engine's status reads it now: its endpoint's service `running`, `starting` or `stopped`
       (§mesh.public/preview-card: the operator may Start a stopped one; a visit never starts anything). Absent when the copy is gone. */
   copy?: { state: PreviewCopyState; slot: number };
+  /** Under Cloudflare Free (§mesh.public/preview-tunnels): its app's own preview tunnel now, on active ones only.
+      `url` is then built from the tunnel's current address, and is null while the tunnel has none. */
+  tunnel?: { state: TunnelState; origin: string | null; reason?: string };
 }
 
 export type PreviewCopyState = "running" | "starting" | "stopped";
@@ -111,7 +114,13 @@ export type PreviewErrorCode =
   | "gateway-old"
   | "unavailable"
   /** The port belongs to a copy whose project declares production-derived data (§app.project-services/share). */
-  | "sensitive";
+  | "sensitive"
+  /** Cloudflare Free (§mesh.public/preview-tunnels): a seventh preview tunnel; Turn On not pressed yet; no cloudflared;
+      the app's tunnel didn't come up. Nothing is made for any of them. */
+  | "too-many-tunnels"
+  | "quick-turn-on"
+  | "quick-setup"
+  | "tunnel-down";
 
 export interface PreviewError {
   error: string;
@@ -152,5 +161,7 @@ export const PREVIEW_WARNING = "Anyone with this link can use the app on port {n
 /** A mint refused for an old gateway; `{gateway}` is its label. */
 export const PREVIEW_GATEWAY_OLD = "{gateway} needs updating before it can carry preview links.";
 export const PREVIEW_NO_ADDRESS = "No preview address is set. Set one in Settings → Public links on the gateway.";
+/** A mint refused at Free's cap (§mesh.public/preview-tunnels; §design.copy-deck/where-links-open). */
+export const PREVIEW_TOO_MANY_TUNNELS = "This computer already has 6 app previews on free Cloudflare addresses. Turn one off, or set up Cloudflare Account or your own web server, which carry any number.";
 /** In place of the link of a preview made before links were kept (§mesh.public/preview-card). */
 export const PREVIEW_NOT_KEPT = "Link shown only when it was made.";

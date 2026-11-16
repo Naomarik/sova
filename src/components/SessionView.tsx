@@ -1,4 +1,5 @@
 import { createEffect, createMemo, createSignal, Match, on, onCleanup, Show, Switch, type JSX } from "solid-js";
+import { sharingOffHere } from "../lib/public-links";
 import { shareHref } from "../lib/share-slice";
 import type { ChatClaudeLogin, SessionSummary, WorkerInfo } from "../../shared/protocol";
 import { agentsFeed } from "../lib/agents-feed";
@@ -323,9 +324,11 @@ export function SessionView(props: {
         </Chip>
       </Show>
       {/* The share page, where a slice of this session is picked and shared. */}
-      <a class="button button-icon button-ghost session-share-open" href={shareHref(s().id, { host: hostOf(path) })} aria-label="Share session" title="Share session">
-        <Icon name="share" />
-      </a>
+      <Show when={!sharingOffHere(hostOf(path))}>
+        <a class="button button-icon button-ghost session-share-open" href={shareHref(s().id, { host: hostOf(path) })} aria-label="Share session" title="Share session">
+          <Icon name="share" />
+        </a>
+      </Show>
       <button
         type="button"
         class="button button-icon button-ghost session-details-open"

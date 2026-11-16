@@ -1,4 +1,6 @@
 import { createMemo, createResource, createSignal, For, onMount, Show } from "solid-js";
+import { copyLink } from "../lib/copy-link";
+import { sharingOffHere } from "../lib/public-links";
 import { hoursLine, withCompanyHours } from "../lib/working-hours";
 import { Portal } from "solid-js/web";
 import { OPERATOR, type BatonView, type BatonViewItem } from "../../shared/baton";
@@ -31,7 +33,7 @@ import {
 import { createPoll } from "../lib/poll";
 import { STATUS_CHIP, valueText, writerWord } from "../lib/profile-changes";
 import { numberWords } from "../lib/outreach";
-import { announce, copyText, toast } from "../lib/ui-state";
+import { announce, toast } from "../lib/ui-state";
 import { InsightsPage } from "./InsightsPage";
 import { LinksBanner } from "./LinksBanner";
 import { allDeleted, DELETE_ASK, DELETE_LINK, DELETE_OWNER_LINK, deleteAllConfirm, deleteAllLabel, deleteAllLine, LINK_DELETED, LINK_GONE, NEW_LINK_TIP, OWNER_LINK_DELETED } from "../lib/link-delete";
@@ -623,15 +625,15 @@ function LinksAndVisits(props: { data: PersonPageData; now: number; act: Act; on
                   </span>
                   <Show when={linkLive(l.state) || renew()}>
                     <div class="button-row person-row-actions">
-                      <Show when={l.link}>
-                        {(u) => <CopyButton label="Copy Link" title={`Copy ${p().name}'s link`} text={u} onCopy={(t) => copyText(t, "Link copied.")} />}
+                      <Show when={!sharingOffHere() && l.link}>
+                        {(u) => <CopyButton label="Copy Link" title={`Copy ${p().name}'s link`} text={u} onCopy={(t) => copyLink(t, "Link copied.")} />}
                       </Show>
-                      <Show when={renew() && !keptHere()}>
+                      <Show when={renew() && !keptHere() && !sharingOffHere()}>
                         <button type="button" class="button button-sm" onClick={() => void newLink(l.sessionId, renew() === "offer", true)}>
                           Get Link
                         </button>
                       </Show>
-                      <Show when={renew()}>
+                      <Show when={renew() && !sharingOffHere()}>
                         <button type="button" class="button button-sm" title={NEW_LINK_TIP} onClick={() => void newLink(l.sessionId, renew() === "offer", false)}>
                           New Link
                         </button>
@@ -680,7 +682,7 @@ function LinksAndVisits(props: { data: PersonPageData; now: number; act: Act; on
                   <Show when={l.state === "live"}>
                     <div class="button-row person-row-actions">
                       <Show when={l.link}>
-                        {(u) => <CopyButton label="Copy Link" title={`Copy ${p().name}'s owner link`} text={u} onCopy={(t) => copyText(t, "Link copied.")} />}
+                        {(u) => <CopyButton label="Copy Link" title={`Copy ${p().name}'s owner link`} text={u} onCopy={(t) => copyLink(t, "Link copied.")} />}
                       </Show>
                       <DeleteButton label={DELETE_OWNER_LINK} confirm={DELETE_ASK} note={LINK_GONE} onRun={() => void props.act(() => revokeOwnerLink(props.data.org.id), OWNER_LINK_DELETED)} />
                     </div>

@@ -4,6 +4,7 @@ import { dirname, join } from "node:path";
 import { hashToken, TOKEN_RE } from "./baton-links";
 import { dropTokens, keepTokens } from "./link-tokens";
 import { shareLinksChanged } from "./share/links-events";
+import { assertSharingOn } from "./share/sharing-off";
 import { stateRoot } from "./state-root";
 
 /**
@@ -137,6 +138,7 @@ export function personLinkState(l: PersonLinkRecord, now = Date.now()): "live" |
     `undelivered` (the Overseer's send, §app.owner-page/send): the new link carries the owner's pending ask
     (their newest link's `askedAt`, when it turned off unused) until its message went. */
 export function mintOwnerLink(orgId: string, personId: string, now = Date.now(), opts: { undelivered?: boolean } = {}): { token: string; record: PersonLinkRecord } {
+  assertSharingOn();
   const store = read();
   const at = new Date(now).toISOString();
   let gen = 0;
@@ -170,7 +172,7 @@ export function mintOwnerLink(orgId: string, personId: string, now = Date.now(),
   write(store);
   dropTokens(off);
   keepTokens("i", [token]);
-  shareLinksChanged({ kind: "i", cause: "mint" });
+  shareLinksChanged({ kind: "i", cause: "mint", hashes: [record.hash] });
   if (off.length) tell({ kind: "ended", hashes: off });
   return { token, record };
 }

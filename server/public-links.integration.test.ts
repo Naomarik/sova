@@ -22,6 +22,7 @@ const listener = await import("./share/listener");
 const events = await import("./share/links-events");
 const { mountPublicLinks } = await import("./public-links-routes");
 const { gatewayHooks } = await import("./share/router");
+const { pageHeaders } = await import("./testing/page");
 
 after(() => {
   listener.stopShareListener();
@@ -64,7 +65,7 @@ function app(): Hono {
   mountPublicLinks(a);
   return a;
 }
-const put = (body: unknown) => ({ method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+const put = (body: unknown) => ({ method: "PUT", headers: { "Content-Type": "application/json", ...pageHeaders() }, body: JSON.stringify(body) });
 
 describe("the listener follows the setting", () => {
   afterEach(reset);

@@ -1,12 +1,13 @@
 import { createEffect, createResource, createSignal, For, onCleanup, Show } from "solid-js";
 import { FRONT_LABELS, type PublicLinksInfo, type RoutedHost, type ShareFront, type VerifyResult } from "../../shared/public-links";
+import { keyOf, type OpensAtKey, type OpensAtOption } from "../lib/opens-at";
 import { agoTime, relativeTime } from "../lib/format";
 import { fetchMeshResync } from "../lib/api";
 import { meshPeers } from "../lib/mesh";
 import { type MeshResync, resyncView } from "../lib/mesh-resync";
 import {
   acceptPublicLinksInfo,
-  FRONTS,
+  deleteAccountToken,
   gatewayBehind,
   gatewayBehindText,
   gatewayResync,
@@ -28,30 +29,23 @@ import {
   sourceLabel,
   stateChip,
   verifyPublicLinks,
+  WEB_SERVER_FRONTS,
   type PublicLinksDraft,
 } from "../lib/public-links";
 import { copyText } from "../lib/ui-state";
 import { MeshResyncSheet } from "./MeshResyncSheet";
+import { CandidateNotice, OpensAtChoices, OpensAtSetup, TunnelPrompts, TunnelState } from "./OpensAt";
 import { Banner, Chip, CopyButton } from "./ui";
 import { Choice, NumberField, Select, TextField, Toggle } from "./form";
+import { closeSettings } from "../lib/settings-nav";
 import { INGRESS_PORT_RULE, PREVIEW_URL_RULE, PUBLIC_URL_RULE, SHARE_PORT_RULE } from "../../shared/public-links-limits";
 import { sentence } from "./WorkerSlotRow";
 
-/** One "Where links open" radio: Off, This host is the gateway, or Through one advertising peer. */
-interface RouteOption {
-  key: string;
-  route: "off" | "self" | "via";
-  nodeId?: string;
-  label: string;
-  hint: string;
-}
-
-const throughHint = (g: string) => `Links from this host open at ${g}'s address. ${g} must be on for them to open.`;
-
 /**
- * Settings → Public links (§mesh.public/setting): where the people you send a link open it. Off, or
- * this host is the gateway: its public address, the front that carries it, the local port, the
- * front's one-time step, and Verify. Every field is staged and written by the dialog's Save Changes
+ * Settings → Public links (§mesh.public/panel): where the people you send a link open it, as the
+ * sectioned list (OpensAt.tsx: Cloudflare Free or Account, Tailscale Funnel or Through a computer,
+ * Your own web server, Off), then the chosen option's own fields: Free's tunnel and its Turn On and
+ * Download; Account's address and token; a gateway's address, front, port, steps and Verify. Every field is staged and written by the dialog's Save Changes
  * (lib/public-links.ts); a field an environment variable decides is shown, not editable. Works with
  * the mesh off, so it is its own tab.
  */
@@ -93,12 +87,16 @@ export function PublicLinksSettingsSection() {
   const verifyBlocked = () => {
     const d = draft();
     const s = saved();
+    if (d?.route === "account") {
+      if (!s || s.route !== "account") return "Save the Account setting first.";
+      return normalizeUrl(d.accountUrl) !== (s.account?.publicUrl ?? "") ? "Save the new address first." : null;
+    }
     if (!d || !s || s.route !== "self" || d.route !== "self") return "Save the gateway setting first.";
     if (normalizeUrl(d.publicUrl) !== (s.gateway?.publicUrl ?? "") && !pinOf("publicUrl")) return "Save the new address first.";
     return null;
   };
   const verify = async () => {
-    const url = info()?.share.publicUrl ?? saved()?.gateway?.publicUrl ?? "";
+    const url = info()?.share.publicUrl ?? (saved()?.route === "account" ? saved()?.account?.publicUrl : saved()?.gateway?.publicUrl) ?? "";
     setVerifying(true);
     setFailed(null);
     try {
@@ -115,21 +113,39 @@ export function PublicLinksSettingsSection() {
     if (next) acceptPublicLinksInfo(next);
   };
 
-  /** Off, the gateway, then one Through per advertising peer; a saved via no longer advertised keeps its radio. */
-  const routes = (): RouteOption[] => {
-    const out: RouteOption[] = [
-      { key: "off", route: "off", label: "Off", hint: "Links work only on your own devices." },
-      { key: "self", route: "self", label: "This host is the gateway", hint: "This host serves every public link, including those from hosts that go through it." },
-    ];
-    for (const g of info()?.gateways ?? []) out.push({ key: `via:${g.nodeId}`, route: "via", nodeId: g.nodeId, label: `Through ${g.peer}`, hint: throughHint(g.peer) });
-    const r = saved()?.route;
-    if (typeof r === "object" && !out.some((o) => o.nodeId === r.via.nodeId)) {
-      const name = info()?.share.via ?? r.via.nodeId;
-      out.push({ key: `via:${r.via.nodeId}`, route: "via", nodeId: r.via.nodeId, label: `Through ${name}`, hint: throughHint(name) });
-    }
-    return out;
+  /** The option the draft picks (null while an unreadable setting is untouched: nothing is picked). */
+  const [touched, setTouched] = createSignal(false);
+  const selected = (): OpensAtKey | null => {
+    const d = draft();
+    if (!d || (info()?.broken && !touched())) return null;
+    return keyOf({ route: d.route === "via" ? { via: { nodeId: d.viaNodeId } } : d.route, gateway: { ...(saved()?.gateway ?? { publicUrl: "", sharePort: 0, acceptFrom: "all" }), front: d.front } });
   };
-  const checked = (o: RouteOption) => draft()?.route === o.route && (o.route !== "via" || draft()?.viaNodeId === o.nodeId);
+  /** The setup help an option not set up opened, under the list. */
+  const [help, setHelp] = createSignal<OpensAtOption | null>(null);
+  const pick = (o: OpensAtOption) => {
+    setTouched(true);
+    setHelp(o.state === "needs-setup" ? o : null);
+    const d = draft();
+    if (!d) return;
+    const web = WEB_SERVER_FRONTS.includes(d.front) ? d.front : WEB_SERVER_FRONTS.includes(saved()?.gateway?.front ?? "funnel") ? saved()!.gateway!.front : "vhost";
+    switch (o.key) {
+      case "free":
+        return edit({ route: "quick" });
+      case "account":
+        return edit({ route: "account" });
+      case "off":
+        return edit({ route: "off" });
+      case "you-run-it":
+        return edit({ route: "self", front: "cloudflared" });
+      case "funnel":
+        return edit({ route: "self", front: "funnel" });
+      case "web-server":
+        return edit({ route: "self", front: web });
+      default:
+        // Through: a computer that offers to carry links; none yet is only its help.
+        if (o.key !== "through:") edit({ route: "via", viaNodeId: o.key.slice("through:".length) });
+    }
+  };
   /** The chosen gateway's name, for the advice line. */
   const viaName = () => {
     const id = draft()?.viaNodeId;
@@ -163,13 +179,65 @@ export function PublicLinksSettingsSection() {
     return !d || !s || s.route !== "self" || !guide() || d.front !== s.gateway?.front;
   };
 
+  /** Verify Address and its answers: the gateway's and Account's alike. */
+  const VerifyRow = () => (
+    <>
+          <div class="public-links-verify">
+            <button
+              type="button"
+              class="button button-sm"
+              disabled={verifying() || !!verifyBlocked()}
+              title={verifyBlocked() ?? undefined}
+              onClick={() => void verify()}
+            >
+              {verifying() ? "Verifying…" : "Verify Address"}
+            </button>
+            <Show when={verifyBlocked()}>{(why) => <span class="field-hint">{why()}</span>}</Show>
+            <Show when={!verifyBlocked() && !failed() && verifiedAt()}>
+              {(at) => (
+                <span class="field-hint" role="status">
+                  Verified {agoTime(at())}. {info()?.share.publicUrl} reaches this gateway.
+                </span>
+              )}
+            </Show>
+          </div>
+          <Show when={!verifyBlocked() && previewCheck()}>
+            {(p) => (
+              <Show
+                when={p().ok}
+                fallback={
+                  <Banner
+                    tone="warn"
+                    title="Preview hosts don't reach this gateway yet."
+                    body={`${sentence(p().error ?? (p().status ? `It answered ${p().status}` : "No answer"))} Check the wildcard DNS record and the front, then verify again.`}
+                  />
+                }
+              >
+                <span class="field-hint" role="status">
+                  Preview hosts reach this gateway too.
+                </span>
+              </Show>
+            )}
+          </Show>
+          <Show when={!verifyBlocked() && failed()}>
+            {(v) => (
+              <Banner
+                tone="error"
+                title={`Couldn't reach ${v().url}.`}
+                body={`${sentence(v().error ?? (v().status ? `It answered ${v().status}` : "No answer"))} Links still open on your devices. Check the front, then verify again.`}
+              />
+            )}
+          </Show>
+    </>
+  );
+
   return (
     <section class="stack public-links-settings" aria-labelledby="settings-public-links-title">
       <div class="settings-type-head">
         <h3 class="settings-type-title" id="settings-public-links-title">
           Public links
         </h3>
-        <Show when={info()}>{(i) => <Chip tone={stateChip(i().share).tone}>{stateChip(i().share).word}</Chip>}</Show>
+        <Show when={info()}>{(i) => <Chip tone={stateChip(i().share, i()).tone}>{stateChip(i().share, i()).word}</Chip>}</Show>
       </div>
       <p class="settings-intro">People you send a link to open it at this address.</p>
       <Show when={stored.error}>
@@ -201,20 +269,15 @@ export function PublicLinksSettingsSection() {
         )}
       </Show>
 
+      <Show when={info()?.broken}>
+        <TunnelPrompts info={info()!} />
+      </Show>
       <fieldset class="field public-links-route">
         <legend class="field-label">Where links open</legend>
-        <Choice
-          class="public-links-route public-links-choices"
-          label="Where links open"
-          value={routes().find(checked)?.key ?? null}
-          options={routes().map((r) => ({ value: r.key, label: <span class="public-links-choice-main"><span class="public-links-choice-name">{r.label}</span><span class="public-links-choice-meta">{r.hint}</span></span> }))}
-          disabled={off()}
-          onChange={(k) => {
-            const r = routes().find((x) => x.key === k)!;
-            edit(r.route === "via" ? { route: "via", viaNodeId: r.nodeId! } : { route: r.route });
-          }}
-        />
+        <Show when={info()}>{(i) => <OpensAtChoices info={i()} selected={selected()} withOff disabled={off()} idPrefix="settings" onPick={pick} />}</Show>
+        <Show when={help()}>{(o) => <OpensAtSetup kind={o().setup ?? "through"} inSettings onOpened={closeSettings} />}</Show>
       </fieldset>
+      <Show when={info()}>{(i) => <CandidateNotice info={i()} />}</Show>
 
       <fieldset class="field public-links-route">
         <legend class="field-label">Visitor logging</legend>
@@ -236,6 +299,52 @@ export function PublicLinksSettingsSection() {
           {(e) => <Banner tone="error" title="Couldn't save visitor logging." body={`${sentence(e().message)} Your saved setting is unchanged.`} />}
         </Show>
       </fieldset>
+
+      <Show when={draft()?.route === "quick" && saved()?.route === "quick" && info()}>
+        {(i) => (
+          <div class="stack public-links-gateway">
+            <TunnelState info={i()} />
+            <TunnelPrompts info={i()} />
+          </div>
+        )}
+      </Show>
+
+      <Show when={draft()?.route === "account"}>
+        <div class="stack public-links-gateway">
+          <TextField
+            class="settings-field public-links-url"
+            inputClass="input-mono"
+            id="public-links-account-url"
+            label="Public address"
+            rule={PUBLIC_URL_RULE}
+            autocomplete="off"
+            spellcheck={false}
+            inputmode="url"
+            placeholder="https://share.example.com"
+            value={draft()?.accountUrl ?? ""}
+            disabled={off()}
+            onInput={(raw) => edit({ accountUrl: raw })}
+          />
+          <TextField
+            class="settings-field public-links-url"
+            inputClass="input-mono"
+            id="public-links-account-preview"
+            label="Preview address (optional)"
+            rule={PREVIEW_URL_RULE}
+            autocomplete="off"
+            spellcheck={false}
+            inputmode="url"
+            placeholder="https://*.example.com"
+            value={draft()?.accountPreviewUrl ?? ""}
+            disabled={off()}
+            onInput={(raw) => edit({ accountPreviewUrl: raw })}
+          />
+          <AccountToken disabled={off()} hasToken={!!info()?.account?.hasToken} value={draft()?.accountToken ?? ""} onInput={(raw) => edit({ accountToken: raw })} />
+          <Show when={saved()?.route === "account" && info()}>{(i) => <TunnelState info={i()} />}</Show>
+          <Show when={saved()?.route === "account" && info()}>{(i) => <TunnelPrompts info={i()} />}</Show>
+          <VerifyRow />
+        </div>
+      </Show>
 
       <Show when={draft()?.route === "self"}>
         <div class="stack public-links-gateway">
@@ -276,15 +385,17 @@ export function PublicLinksSettingsSection() {
           />
 
           <div class="public-links-row">
-            <Select
-              class="settings-field"
-              id="public-links-front"
-              label="Front"
-              value={draft()?.front ?? ""}
-              options={FRONTS.map((f) => ({ value: f, label: FRONT_LABELS[f] }))}
-              disabled={off()}
-              onChange={(v) => edit({ front: v as ShareFront })}
-            />
+            <Show when={WEB_SERVER_FRONTS.includes(draft()?.front ?? "vhost")}>
+              <Select
+                class="settings-field"
+                id="public-links-front"
+                label="Front"
+                value={draft()?.front ?? ""}
+                options={WEB_SERVER_FRONTS.map((f) => ({ value: f, label: FRONT_LABELS[f] }))}
+                disabled={off()}
+                onChange={(v) => edit({ front: v as ShareFront })}
+              />
+            </Show>
             <NumberField
               class="settings-field public-links-port"
               inputClass="input-mono"
@@ -367,52 +478,7 @@ export function PublicLinksSettingsSection() {
             )}
           </Show>
 
-          <div class="public-links-verify">
-            <button
-              type="button"
-              class="button button-sm"
-              disabled={verifying() || !!verifyBlocked()}
-              title={verifyBlocked() ?? undefined}
-              onClick={() => void verify()}
-            >
-              {verifying() ? "Verifying…" : "Verify Address"}
-            </button>
-            <Show when={verifyBlocked()}>{(why) => <span class="field-hint">{why()}</span>}</Show>
-            <Show when={!verifyBlocked() && !failed() && verifiedAt()}>
-              {(at) => (
-                <span class="field-hint" role="status">
-                  Verified {agoTime(at())}. {info()?.share.publicUrl} reaches this gateway.
-                </span>
-              )}
-            </Show>
-          </div>
-          <Show when={!verifyBlocked() && previewCheck()}>
-            {(p) => (
-              <Show
-                when={p().ok}
-                fallback={
-                  <Banner
-                    tone="warn"
-                    title="Preview hosts don't reach this gateway yet."
-                    body={`${sentence(p().error ?? (p().status ? `It answered ${p().status}` : "No answer"))} Check the wildcard DNS record and the front, then verify again.`}
-                  />
-                }
-              >
-                <span class="field-hint" role="status">
-                  Preview hosts reach this gateway too.
-                </span>
-              </Show>
-            )}
-          </Show>
-          <Show when={!verifyBlocked() && failed()}>
-            {(v) => (
-              <Banner
-                tone="error"
-                title={`Couldn't reach ${v().url}.`}
-                body={`${sentence(v().error ?? (v().status ? `It answered ${v().status}` : "No answer"))} Links still open on your devices. Check the front, then verify again.`}
-              />
-            )}
-          </Show>
+          <VerifyRow />
 
           <section class="public-links-routed" aria-labelledby="public-links-routed-title">
             <h4 class="public-links-front-title" id="public-links-routed-title">
@@ -543,5 +609,53 @@ function GatewayBehind(props: { peerId: string; name: string }) {
         )}
       </Show>
     </>
+  );
+}
+
+/**
+ * Cloudflare Account's connector token (§mesh.tunnel/account): pasted, staged like the panel's other
+ * fields and written by Save Changes, never shown back. Saved: "Token saved." and Remove Token.
+ */
+function AccountToken(props: { hasToken: boolean; value: string; disabled: boolean; onInput(raw: string): void }) {
+  const [removing, setRemoving] = createSignal(false);
+  const [error, setError] = createSignal<string | null>(null);
+  const remove = async () => {
+    setRemoving(true);
+    setError(null);
+    try {
+      await deleteAccountToken();
+      const next = await getPublicLinks().catch(() => null);
+      if (next) acceptPublicLinksInfo(next);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setRemoving(false);
+    }
+  };
+  return (
+    <div class="stack-2">
+      <TextField
+        class="settings-field public-links-url"
+        inputClass="input-mono"
+        id="public-links-account-token"
+        type="password"
+        label="Connector token"
+        hint={props.hasToken && !props.value ? "Token saved." : undefined}
+        autocomplete="off"
+        spellcheck={false}
+        placeholder="Paste the token from the Cloudflare dashboard"
+        value={props.value}
+        disabled={props.disabled}
+        onInput={props.onInput}
+      />
+      <Show when={props.hasToken}>
+        <div class="cluster">
+          <button type="button" class="button button-sm button-destructive" disabled={props.disabled || removing()} onClick={() => void remove()}>
+            {removing() ? "Removing…" : "Remove Token"}
+          </button>
+        </div>
+      </Show>
+      <Show when={error()}>{(e) => <span class="field-error">{sentence(e())} The token is unchanged.</span>}</Show>
+    </div>
   );
 }

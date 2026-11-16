@@ -3,6 +3,7 @@
 // are only compiled. Works on Bun and Node, module scripts and event-handler attributes included.
 import { Script } from "node:vm";
 import { DESIGN_PAGE_CSP } from "../../src/lib/design-frame";
+import { readViews } from "./view-marks";
 
 const words = (s: string) => new Set(s.split(" "));
 const VOID = words("area base br col embed hr img input link meta param source track wbr");
@@ -16,17 +17,20 @@ const JS_TYPES = words("text/javascript application/javascript text/ecmascript a
 /** Past this many a model has plenty to fix, and the list has to fit a card. */
 const MOST = 12;
 
-interface Tag {
+export interface Tag {
   name: string;
   attrs: Map<string, string>;
   line: number;
   selfClosing: boolean;
+  /** Where its "<" is in the page, and just past its ">". */
+  at: number;
+  end: number;
   /** A raw-text element's contents. */
   text?: string;
   /** The line its contents start on. */
   textLine?: number;
 }
-type Token = Tag | { close: string; line: number };
+export type Token = Tag | { close: string; line: number; at: number };
 
 const ENTITIES: Record<string, string> = { amp: "&", lt: "<", gt: ">", quot: '"', apos: "'" };
 const decode = (v: string): string =>
@@ -83,7 +87,7 @@ function tokens(html: string, problems: string[]): Token[] {
       const close = html.slice(lt + 2, j).toLowerCase();
       if (!skipTo(">", j, `</${close}> tag`)) return out;
       if (FOREIGN.has(close) && foreign > 0) foreign--;
-      out.push({ close, line });
+      out.push({ close, line, at: lt });
     } else if (isLetter(next)) {
       const tag = readTag(html, lt, line, foreign, lineAt, problems);
       if (!tag) return out;
@@ -135,8 +139,8 @@ function readTag(html: string, lt: number, line: number, foreign: number, lineAt
     }
     if (key && !attrs.has(key)) attrs.set(key, decode(value));
   }
-  const tag: Tag = { name, attrs, line, selfClosing };
   const open = j + 1;
+  const tag: Tag = { name, attrs, line, selfClosing, at: lt, end: open };
   if (!RAW_TEXT.has(name) || (selfClosing && foreign > 0)) return { tag, end: open };
   const close = new RegExp(`</${name}[\\s/>]`, "ig");
   close.lastIndex = open;
@@ -287,6 +291,9 @@ function checkLoads(tag: Tag, problems: string[]): void {
   if (tag.name === "style" && tag.text) checkCss(tag.text, tag.textLine ?? tag.line, "a <style>", problems);
 }
 
+/** The page's tags in order, as the checks read them (comments and raw text skipped), with where each sits. */
+export const pageTokens = (html: string): Token[] => tokens(html, []);
+
 /** What is really broken in a whole page, in plain and precise words; empty when nothing is. */
 export function lintPage(html: string): string[] {
   const problems: string[] = [];
@@ -299,6 +306,8 @@ export function lintPage(html: string): string[] {
     checkHandlers(t, problems);
     checkLoads(t, problems);
   }
+  // Its views as declared: a control that can't open its view is breakage too, found here with no browser.
+  problems.push(...readViews(list, html).problems);
   return [...new Set(problems)];
 }
 

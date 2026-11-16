@@ -49,6 +49,25 @@ export interface DesignVersion {
   /** What asked for it. */
   by: "first" | "refine" | "chat" | "coordinator";
   note?: DesignNote;
+  /** The views its page names (data-sova-view, else its role="tab" controls), in page order; absent: none, or a page
+      saved before views were read. The first screen is never listed. */
+  views?: DesignView[];
+}
+
+/** One view of a version's page, and what Sova's browser found when it clicked its way there. */
+export interface DesignView {
+  name: string;
+  /** The view that must be open for its control to be on screen; absent: the first screen. */
+  via?: string;
+  /** declared: the designer named it; found: a role="tab" control in a page that names none. */
+  source: "declared" | "found";
+  /** unchecked: not yet clicked in a browser; unreachable: its control couldn't be clicked; unchanged: clicking it
+      left the screen as it was. Both are warnings, never a reason to send the page back. */
+  state: "ok" | "unreachable" | "unchanged" | "unchecked";
+  /** It is the screen the page opens on: its control left the first screen unchanged, and it was the only one. */
+  start?: true;
+  /** What went wrong, in words a model can act on. */
+  problem?: string;
 }
 
 /** What is known of the message a person or the main chat last sent a design's session (t20). */

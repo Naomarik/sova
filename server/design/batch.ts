@@ -16,6 +16,7 @@ import { agentRoot } from "../state-root";
 import { applySlice, clearLivePage, livePage } from "./live";
 import { noteDesignEvent } from "./coordinator";
 import { pageProblem } from "./lint";
+import { versionViews } from "./views";
 import { replyCost, resolveDesignModel } from "./setup";
 import { listModels } from "../models";
 import { readModelPolicy } from "../model-policy";
@@ -36,6 +37,8 @@ export interface DesignHost {
   workers(parent: DesignParent): WorkerHost;
   /** A worker chat's parent and id, when this server knows it. */
   owner(chatId: string): { parent: DesignParent; workerId: string } | undefined;
+  /** Click through a just-kept version's views in a browser, in the background (server/design/views.ts). */
+  checkViews?(parent: DesignParent, label: string, version: number): void;
 }
 
 let host: DesignHost | null = null;
@@ -635,7 +638,9 @@ function commitVersion(parent: DesignParent, label: string, html: string, note: 
   const n = (designOf(sid, label)?.versions.at(-1)?.n ?? 0) + 1;
   if (historyId) historyVersion(sid, historyId, n);
   writePage(sid, label, n, html);
-  const version: DesignVersion = { n, at: new Date().toISOString(), chars: html.length, by, ...(note ? { note } : {}) };
+  // Its views, read from its markup: the browser pass below checks each one once the version is kept.
+  const views = versionViews(html);
+  const version: DesignVersion = { n, at: new Date().toISOString(), chars: html.length, by, ...(note ? { note } : {}), ...(views ? { views } : {}) };
   setPendingPage(sid, label, null);
   clearLivePage(sid, label);
   clearRefused(sid, label);
@@ -651,6 +656,7 @@ function commitVersion(parent: DesignParent, label: string, html: string, note: 
   });
   if (note) for (const fn of handInListeners) fn({ sessionId: sid, label, version: n, note });
   else noteDesignEvent(sid, { label, kind: "finished" });
+  if (views) host?.checkViews?.(parent, label, n);
   return version;
 }
 

@@ -85,8 +85,12 @@ function makeRegistry(): void {
       const r = registry.record(chatId);
       return r ? { parent: { sessionId: r.parent.sessionId, path: r.parent.path }, workerId: r.parent.workerId } : undefined;
     },
+    checkViews: (_p, label, version) => void viewChecks.push(`${label}${version}`),
   });
 }
+
+/** The browser passes asked for, as label and version. */
+const viewChecks: string[] = [];
 
 const settleKeyed = new Map<Fake, number>();
 function settle(f: Fake, outcome: "success" | "error" = "success", error?: string): void {
@@ -466,6 +470,26 @@ test("the hand-in makes a version, and the page written so far is told in order"
   assert.deepEqual(heard, [{ sessionId: parent.sessionId, label: "A", version: 1, note: NOTE }]);
   assert.equal(livePage(parent.sessionId, "A"), null);
   assert.equal(store.readPage(parent.sessionId, "A"), PAGE);
+});
+
+test("a version keeps the views its page names and asks for a browser pass, handed in or not; a page naming none asks for none", async () => {
+  const tabs = `<!doctype html><html><body><button role="tab" data-sova-view="Plans">Plans</button><a href="#b" data-sova-view="Billing" data-sova-via="Plans">B</a></body></html>`;
+  const run = newRun(["zai/a", "zai/b"], ["Minimalist"]);
+  launchDesigns(parent, run, {});
+  await ticks();
+  const [a, b] = [fakes.at(-2)!, fakes.at(-1)!];
+  const [la, lb] = store.readDesigns(parent.sessionId).designs.slice(-2).map((d) => d.label) as [string, string];
+  viewChecks.length = 0;
+  // A: handed in. B: its turn ends with a saved page and no hand-in (the commit at the turn's end).
+  await finish(a, la);
+  store.setPendingPage(parent.sessionId, lb, tabs);
+  settle(b);
+  await waitFor(() => stat(lb).versions.length === 1);
+  assert.equal(stat(la).versions[0]!.views, undefined);
+  assert.deepEqual(stat(lb).versions[0]!.views, [{ name: "Plans", source: "declared", state: "unchecked" }, { name: "Billing", via: "Plans", source: "declared", state: "unchecked" }]);
+  assert.deepEqual(viewChecks, [`${lb}1`]);
+  // A declaration done wrong is refused at save, as a landing check is.
+  await assert.rejects(sessionDesignTools(parent, la).find((t) => t.name === "design_stream")!.execute("t", { label: la, html: tabs.replace('data-sova-via="Plans"', 'data-sova-via="Plan B"') }, undefined, undefined, undefined), /data-sova-via="Plan B" names no view/);
 });
 
 test("a chat's designs are what they were after a restart, an archive leaves them, a deletion removes them", async () => {

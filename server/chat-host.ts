@@ -69,6 +69,7 @@ import { holderAlive, readLock, releaseLockOf } from "./chat-runtime/writer-lock
 import { chatBun, NO_BUN, NO_BUN_CHATS } from "./chat-runtime/bun";
 import { WORKER_PROTO } from "./chat-runtime/worker-port";
 import { installDesignHost, onLiveFrame, reattachDesigns } from "./design/batch";
+import { queueViewsCheck } from "./design/views";
 import { reattachDescribers } from "./design/describe";
 import { type WakeOwner, type WorkerProcesses, type WorkerRecord, WorkerRegistry } from "./chat-workers";
 import { installCoordinatorRegistry, reattachCoordinators } from "./design/coordinator";
@@ -329,6 +330,7 @@ export class ChatHostRouter {
         const r = this.workers.record(chatId);
         return r ? { parent: { sessionId: r.parent.sessionId, path: r.parent.path }, workerId: r.parent.workerId } : undefined;
       },
+      checkViews: (parent, label, version) => void queueViewsCheck(parent, label, version),
     });
     this.rollout = new Rollout<Link>({
       supervisor: this.sup,

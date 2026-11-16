@@ -217,7 +217,8 @@ export function SessionContextMenu(props: {
                 }
               >
                 <div class="model-menu-list" role="menu" aria-label={`Actions for ${name()}`}>
-                  <div class="popover-label" aria-hidden="true" title={r().title}>
+                  {/* One line, cut short when long: the full title is its tooltip. */}
+                  <div class="popover-label" aria-hidden="true" title={r().title} style={{ overflow: "hidden", "text-overflow": "ellipsis", "white-space": "nowrap" }}>
                     {r().title}
                   </div>
                   {/* A chat Sova names itself keeps that name: no title rows at all. */}
@@ -244,7 +245,7 @@ export function SessionContextMenu(props: {
                       </div>
                     )}
                   </Show>
-                  <div class="model-menu-group" role="group" aria-label="Organize">
+                  <div class="model-menu-group" role="group" aria-label="Session">
                     <Item
                       label="Move to Group…"
                       aria={`Move ${name()} into a group`}
@@ -257,8 +258,6 @@ export function SessionContextMenu(props: {
                       }}
                     />
                     <Item label="Copy Path" aria={`Copy the path of ${name()}`} icon="copy" onRun={() => run(() => void copyText(r().path, "Copied path."))} />
-                  </div>
-                  <div class="model-menu-group" role="group" aria-label="Archive">
                     <Item
                       label={v().m.archive.label}
                       aria={`${v().m.archive.label} ${name()}`}

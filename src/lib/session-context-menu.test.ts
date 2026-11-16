@@ -18,7 +18,7 @@ import {
 
 const row = (over: Partial<SessionSummary> = {}) => ({ title: "Fix the build", archived: false, ...over }) as SessionSummary;
 const ARCHIVES: ArchiveDrag = { kind: "archive" };
-const NO_NOTE = { groupNote: null, remove: null };
+const NO_NOTE = { groupNote: null };
 
 test("pointMenuSpot: the corner sits on the pointer when the panel fits there, flips when it doesn't, and stays inside the window", () => {
   const views = [
@@ -151,8 +151,9 @@ test("rowMenuOf: Archive and Move to Group refuse exactly what the drop panel re
   assert.deepEqual(rowMenuOf(row(), { kind: "blocked", reason: "its turn is running" }, NO_NOTE).archive, { label: "Archive", act: null, disabled: "Can't archive: its turn is running" });
   assert.equal(rowMenuOf(row(), { kind: "none" }, NO_NOTE).archive.disabled, "Already in the Archive.");
   const note = "Groups hold this host's sessions only. That one lives on box.";
-  assert.equal(rowMenuOf(row(), ARCHIVES, { groupNote: note, remove: null }).moveDisabled, note);
-  assert.equal(rowMenuOf(row(), ARCHIVES, { groupNote: note, remove: { name: "Work" } }).moveDisabled, "", "taking it out still works");
+  assert.equal(rowMenuOf(row(), ARCHIVES, { groupNote: note }).moveDisabled, note);
+  assert.equal(rowMenuOf(row(), ARCHIVES, { groupNote: "Organization sessions stay with their project." }).moveDisabled, "Organization sessions stay with their project.");
+  assert.equal(rowMenuOf(row(), ARCHIVES, NO_NOTE).moveDisabled, "");
   assert.deepEqual(
     groupChoices({ remove: { name: "Work" }, groups: [{ id: "g1", name: "Work", count: 2, current: true, disabled: null }, { id: "g2", name: "Play", count: 0, current: false, disabled: note }] }),
     [

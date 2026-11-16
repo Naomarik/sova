@@ -24,7 +24,7 @@ export interface RowMenuModel {
     original: string | undefined;
     resetDisabled: string;
   } | null;
-  /** Move to Group…: the drop panel's reason when no group can take it and it is in none. */
+  /** Move to Group…: the drop panel's reason when no group can take it (an organization's or a peer's session). */
   moveDisabled: string;
   /** Archive, or Unarchive on an archived row; `act` null when Archive can't run (`disabled` says why). */
   archive: { label: "Archive" | "Unarchive"; act: "archive" | "unarchive" | null; disabled: string };
@@ -35,7 +35,7 @@ export interface RowMenuModel {
  * shows it), `tiles` the drop panel's tiles for it: the menu refuses exactly what the panel refuses,
  * in the panel's words.
  */
-export function rowMenuOf(s: Pick<SessionSummary, "title" | "originalTitle" | "fixedName" | "archived" | "outlineGist" | "outlineNow">, drag: ArchiveDrag, tiles: Pick<DropTiles, "groupNote" | "remove">): RowMenuModel {
+export function rowMenuOf(s: Pick<SessionSummary, "title" | "originalTitle" | "fixedName" | "archived" | "outlineGist" | "outlineNow">, drag: ArchiveDrag, tiles: Pick<DropTiles, "groupNote">): RowMenuModel {
   const gist = gistTitle(s);
   const title = s.fixedName
     ? null
@@ -45,8 +45,7 @@ export function rowMenuOf(s: Pick<SessionSummary, "title" | "originalTitle" | "f
         original: s.originalTitle,
         resetDisabled: s.originalTitle === undefined ? "Not renamed." : "",
       };
-  // Taking a row out of its group always works, so a grouped row keeps the door even when no group could take it.
-  const moveDisabled = tiles.groupNote && !tiles.remove ? tiles.groupNote : "";
+  const moveDisabled = tiles.groupNote ?? "";
   const archive: RowMenuModel["archive"] = s.archived
     ? { label: "Unarchive", act: "unarchive", disabled: "" }
     : drag.kind === "archive"

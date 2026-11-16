@@ -16,6 +16,14 @@ INTERACTIVITY REQUIREMENTS (inline JavaScript):
 - Use <script> tags at the end of <body> for all JavaScript
 - Implement hover/focus states on all interactive elements
 
+VIEWS:
+When the page has more than one screen (tabs, another page of the site or app, a menu, a dialog), mark the control that opens each one, so each view can be shown:
+- data-sova-view="<name>" on the button, link, tab or menu item that opens it: the name a person would say, unique in the page, at most 40 characters. Example: <button role="tab" data-sova-view="Deploy">Deploy</button>
+- data-sova-via="<view>" as well on a control that is only on screen once another view is open, such as a menu's item: <a href="#billing" data-sova-view="Billing" data-sova-via="User menu">Billing</a>. At most 3 clicks deep.
+- Every view opens by clicks alone from a fresh load: never by typing, never by submitting a form (a button inside a form needs type="button"). The first screen needs no mark.
+- A design of an app opens signed in, with sample data; its sign-in screen, if it has one, is a view reached from Sign Out.
+- Write the marks in the HTML itself, not in markup a script adds later. A mark done wrong (two views with one name, a data-sova-via naming no view, a mark on something that can't be clicked) sends the page back, naming its line.
+
 CSS ARCHITECTURE:
 Define semantic CSS custom properties in :root:
 

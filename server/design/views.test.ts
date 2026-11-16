@@ -177,3 +177,29 @@ test("a look at a view the version doesn't have is refused, naming the views it 
   }) as never });
   assert.equal(new TextDecoder().decode(billing.shots[0]!.png), "sova-view-2>sova-view-3");
 });
+
+test("the main chat's read lists a version's views, and its look returns one picture of one view at one width", async () => {
+  const { mainDesignTools } = await import("./tools");
+  const { mkdirSync, writeFileSync } = await import("node:fs");
+  const sid3 = "views-3";
+  const views: DesignView[] = [{ name: "Sessions", source: "found", state: "ok", start: true }, { name: "Deploy", source: "found", state: "ok" }];
+  store.changeDesigns(sid3, (s) => void s.designs.push({ ...record(), versions: [{ ...record().versions[0]!, views }] }));
+  const tabs = page(`<button role="tab" aria-selected="true">Sessions</button><button role="tab">Deploy</button>`);
+  store.writePage(sid3, "A", 1, tabs);
+  // What the pass kept for Deploy at desktop width: the look answers from it, with no browser.
+  const dir = join(store.designDirOf(sid3), "A", "views", "v1");
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, "view-1.desktop.png"), "DEPLOY-PICTURE");
+  writeFileSync(join(dir, "view-1.desktop.txt"), "");
+  const tool = mainDesignTools(() => ({ sessionId: sid3, path: parent.path }), () => "/cwd").find((t) => t.name === "lookbook")!;
+  const call = (params: Record<string, unknown>) => tool.execute("t", params, undefined, undefined, undefined as never);
+  const read = (await call({ op: "read", label: "A" })).content[0] as { text: string };
+  assert.match(read.text, /\nViews \(found from its tabs; the page declares none\): Sessions \(the first screen\) · Deploy\nFile: /);
+  const look = await call({ op: "look", label: "A1", view: "DEPLOY" });
+  assert.deepEqual(look.content.map((b) => b.type), ["text", "image"]);
+  assert.match((look.content[0] as { text: string }).text, /^Design A · version 1 of 1 \(latest\).*\nThe view Deploy, at desktop width\.\nViews \(found/);
+  assert.equal(Buffer.from((look.content[1] as { data: string }).data, "base64").toString(), "DEPLOY-PICTURE");
+  // Refused before anything is opened: a bad width, two designs at once, a view the version doesn't have.
+  for (const [params, why] of [[{ size: "tablet" }, /size is "desktop" or "phone"/], [{ label: "A, A1" }, /one design at a time/], [{ view: "Billing" }, /has no view "Billing"\. Its views: the first screen, Sessions, Deploy\./]] as const)
+    await assert.rejects(call({ op: "look", label: "A", ...params }), why);
+});

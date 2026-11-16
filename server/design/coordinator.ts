@@ -30,8 +30,9 @@ import { listModels } from "../models";
 import { retiredModelRefs } from "../harness/pi/model-sync";
 import { recordHistory } from "./history";
 import { answerQuestions, BRIEF_LIMITS, coordinatorWrote, fillNotes, sameAddress, isHttpUrl, keepPrompt, keptImages, launchText, lookNote, mergeLinks, newBrief, openQuestions, parseBriefQuestions, rewritePrompt, turnEnded, userEditedPrompt, userEditedSummary, userTold, type BriefPick } from "./brief";
-import { DESIGN_BROWSE_TOUR_ID, designBrowse, type BrowseParent, type DesignBrowseStores } from "./browse";
-import { lookAtDesign } from "./look";
+import { DESIGN_BROWSE_TOUR_ID, designBrowse, walkProblem, type BrowseParent, type DesignBrowseStores } from "./browse";
+import { lookAtDesignPage, viewsLine } from "./views";
+import type { TourWalkAction } from "../tours/runner-protocol";
 import { pageSize, pickVersions, versionHeading, type PickedVersion } from "./versions";
 import { designModelOptions, estimateUsd, type DesignModelOption } from "./setup";
 import { coordinatorSkillsBlock, skillReadTokens } from "./skills";
@@ -102,7 +103,8 @@ export interface CoordinatorPorts {
   lifecycle(parent: BrowseParent, label: string, act: "stop" | "remove" | "restore" | "again", toolCallId?: string): void;
   /** Every model a design may run on, for its run's Setup. */
   models(sessionId: string, runId: string): Promise<DesignModelOption[]>;
-  lookAtDesign(parent: BrowseParent, label: string, a: { version?: number; sizes?: TourSize[] }): Promise<{ shots: { size: TourSize; png: Uint8Array }[]; outline: string }>;
+  /** A design's page in a browser: its first screen, one of its views by name, or after `actions`. */
+  lookAtDesign(parent: BrowseParent, label: string, a: { version?: number; sizes?: TourSize[]; view?: string; actions?: TourWalkAction[] }): Promise<{ shots: { size: TourSize; png: Uint8Array }[]; outline: string; view?: string }>;
   systemPrompt(): string;
   specFor(parent: BrowseParent, cwd: string, model: string, systemPrompt: string): WorkerSpec;
   sessionDir(cwd: string): string;
@@ -195,7 +197,7 @@ const realPorts: CoordinatorPorts = {
   deliverDesign: (parent, label, a) => deliverDesign(parent, label, a),
   lifecycle: (parent, label, act, toolCallId) => void (act === "stop" ? stopDesign(parent, label, "coordinator", toolCallId) : act === "remove" ? removeDesign(parent, label, "coordinator", toolCallId) : act === "restore" ? restoreDesign(parent, label, "coordinator", toolCallId) : retryDesign(parent, label, "coordinator", toolCallId)),
   models: async (sessionId, runId) => designModelOptions(await listModels(), readModelPolicy(), retiredModelRefs(), runOf(sessionId, runId)?.setup),
-  lookAtDesign,
+  lookAtDesign: lookAtDesignPage,
   systemPrompt: () => DESIGN_COORDINATOR_PROMPT,
   specFor: realCoordinatorSpec,
   sessionDir: (cwd) => join(SESSIONS_DIR, sessionDirName(cwd)),
@@ -1315,11 +1317,12 @@ export function coordinatorTools(sessionId: string): ToolSpec[] {
 
   const browse: ToolSpec = {
     name: "design_browse", label: "Look at a screen",
-    description: "Open an address in a real browser at desktop and phone widths and get pictures and a list of what is on the page, or look at a finished design by label: its latest version, unless label names one (A11), or several at once (\"A11, A16\"); each starts with a header naming the version returned, when it was made, the versions that exist and the page's size; you get pictures, never the page's code. actions: click to navigate, reveal, wait, scroll; never typing and never a form. Only a declared signIn submits anything. Your own running copies and addresses the user gave open at once; any other site asks the user first.",
+    description: "Open an address in a real browser at desktop and phone widths and get pictures and a list of what is on the page, or look at a finished design by label: its latest version, unless label names one (A11), or several at once (\"A11, A16\"); each starts with a header naming the version returned, when it was made, the versions that exist, the page's size and its views (the screens it names: tabs, other pages, menus, dialogs); you get pictures, never the page's code. With label, view names one of its views to picture instead of the screen it opens on, and actions walk on from there to a screen it doesn't name. actions: click to navigate, reveal, wait, scroll; never typing and never a form. Only a declared signIn submits anything. Your own running copies and addresses the user gave open at once; any other site asks the user first.",
     parameters: {
       type: "object",
       properties: {
         url: { type: "string" }, label: { type: "string", description: "Instead of url: a design's label for its latest version (A), a label with a version number (A11), or several separated by commas (A11, A16)." }, version: { type: "integer", description: "A version of a bare label; A11 in label says the same." },
+        view: { type: "string", description: "With label: one of the page's views, by the name its header lists (Deploy); none: the screen it opens on." },
         actions: { type: "array", items: { type: "object" } }, sizes: { type: "array", items: { type: "string", enum: ["desktop", "phone"] } }, signIn: { type: "object" },
       },
       additionalProperties: false,
@@ -1329,6 +1332,11 @@ export function coordinatorTools(sessionId: string): ToolSpec[] {
       if (isResult(st)) return st;
       const sizes = params?.sizes as TourSize[] | undefined;
       if (typeof params?.label === "string") {
+        if (params.view !== undefined && typeof params.view !== "string") return refuse("view is a view's name, as the page's header lists it.");
+        const walk = params.actions === undefined ? null : walkProblem(params.actions);
+        if (walk) return refuse(walk);
+        const view = typeof params.view === "string" && params.view.trim() ? params.view : undefined;
+        const actions = params.actions as TourWalkAction[] | undefined;
         // Its latest version unless one is named; each picture set under the line saying which version it is.
         let picked: PickedVersion[];
         try {
@@ -1339,14 +1347,22 @@ export function coordinatorTools(sessionId: string): ToolSpec[] {
         const content: Result["content"] = [];
         const ids: string[] = [];
         for (const x of picked) {
-          const r = await p().lookAtDesign(parent, x.d.label, { version: x.v.n, ...(sizes ? { sizes } : {}) });
+          let r: Awaited<ReturnType<CoordinatorPorts["lookAtDesign"]>>;
+          try {
+            r = await p().lookAtDesign(parent, x.d.label, { version: x.v.n, ...(sizes ? { sizes } : {}), ...(view ? { view } : {}), ...(actions?.length ? { actions } : {}) });
+          } catch (err) {
+            // A view it doesn't have, or a walk that couldn't go on: the words say what there is.
+            return refuse(err instanceof Error ? err.message : String(err));
+          }
           const shots = saveShots(st, r.shots, r.outline);
           const one = picturesResult(st, shots, r.shots.map((s) => s.png), r.outline);
           const [first, ...images] = one.content;
           // Its size, never its text: a Creative Director works from pictures and notes, not a page's code.
           const text = readPage(parent.sessionId, x.d.label, x.v.n);
           const size = text !== null ? pageSize(text) : `${x.v.chars.toLocaleString("en-US")} characters`;
-          content.push({ type: "text", text: `${versionHeading(x)}\nSize: ${size}.\n${(first as { text: string }).text}` }, ...images);
+          const views = viewsLine(x.v);
+          const shown = r.view ? `The view ${r.view}.\n` : "";
+          content.push({ type: "text", text: `${versionHeading(x)}\nSize: ${size}.\n${views ? `${views}\n` : ""}${shown}${(first as { text: string }).text}` }, ...images);
           ids.push(...shots.map((s) => s.id));
         }
         save(st);

@@ -16,6 +16,7 @@ import { changeDesigns, designOf, pendingPage, readPage, viewOf } from "./store"
 import { applyEdits, type Edit } from "./edits";
 import { pageSize, pickVersions, versionCount, versionHeading } from "./versions";
 import { pagePathFor, type PageReader } from "./page-paths";
+import { lookAtDesignPage, viewsLine } from "./views";
 
 export { applyEdits };
 
@@ -35,11 +36,11 @@ export function mainDesignTools(parent: () => DesignParent, cwd: () => string): 
     {
       name: "lookbook",
       label: "lookbook",
-      description: `The Lookbook: one page designed by several models side by side. op "start" puts a Lookbook Setup card in the chat (the user finishes it there, up to ${DESIGN_BATCH_MAX} designs), only when the user asked for a Lookbook. op "read" gets the Creative Director's card (the coordinator) and each design's version count, or with label where a design's page is: its latest version, unless label names one ("A11"); several at once with commas ("A11, A16"). Each comes as a header naming the version returned, when it was made and the versions that exist, its size, and the path of its saved file; the page itself isn't in the reply, so read the file (with offset and limit, or grep it). op "tell" passes text word for word to the Creative Director. images (the paths of images the user attached) join the Lookbook's images, on start as on tell. Call vis_guide with kind "lookbook" first.`,
+      description: `The Lookbook: one page designed by several models side by side. op "start" puts a Lookbook Setup card in the chat (the user finishes it there, up to ${DESIGN_BATCH_MAX} designs), only when the user asked for a Lookbook. op "read" gets the Creative Director's card (the coordinator) and each design's version count, or with label where a design's page is: its latest version, unless label names one ("A11"); several at once with commas ("A11, A16"). Each comes as a header naming the version returned, when it was made and the versions that exist, its size, its views (the screens the page names: tabs, other pages, menus, dialogs), and the path of its saved file; the page itself isn't in the reply, so read the file (with offset and limit, or grep it). op "look" returns one picture of one design: label (and version, or "A11"), view (one of its views by name; none: its first screen) and size ("desktop" or "phone"). op "tell" passes text word for word to the Creative Director. images (the paths of images the user attached) join the Lookbook's images, on start as on tell. Call vis_guide with kind "lookbook" first.`,
       parameters: {
         type: "object",
         properties: {
-          op: str("What to do.", { enum: ["start", "read", "tell"] }),
+          op: str("What to do.", { enum: ["start", "read", "look", "tell"] }),
           brief: str("start: what to design, in the user's words."),
           models: list("start: particular models the user named, as provider/modelId."),
           modelGroups: list('start: whole groups the user named, one picker section each: "claude", "gpt", "glm" (Z.ai), "deepseek", "ollama-cloud" (Ollama Cloud) or "ollama" (Ollama on this computer only).'),
@@ -48,12 +49,15 @@ export function mainDesignTools(parent: () => DesignParent, cwd: () => string): 
           coordinator: str("start: the model id for the Creative Director (the coordinator), only when the user named one."),
           skills: list("start: design skills the user named for this Lookbook, each a skill's name (this project's skills are found by name) or a folder holding SKILL.md (an absolute or ~ path). None loads by itself: with none named, pass none."),
           images: list("start or tell: the paths of images the user attached (a screenshot, a logo), to add to this Lookbook's images. On start they join the run itself."),
-          label: str('read: the page to locate: a design\'s label ("A") for its latest version, a label with a version number ("A11") for that version, or several separated by commas ("A11, A16"). You get each page\'s file path and size, not its text.'),
+          label: str('read: the page to locate: a design\'s label ("A") for its latest version, a label with a version number ("A11") for that version, or several separated by commas ("A11, A16"). You get each page\'s file path and size, not its text. look: one design\'s label ("A"), or with a version number ("A11").'),
+          version: { type: "integer", description: "look: the version to picture, when label doesn't name one; none: the latest." },
+          view: str("look: one of the page's views, by the name a read lists (\"Deploy\"); none: the screen it opens on."),
+          size: str("look: the width to picture it at.", { enum: ["desktop", "phone"] }),
           text: str("tell: the words to pass on, exactly as the user said them."),
         },
         required: ["op"],
       },
-      async execute(toolCallId, params: { op?: string; brief?: string; models?: string[]; modelGroups?: string[]; directions?: string[]; layouts?: string[]; coordinator?: string; skills?: unknown; label?: string; text?: string; images?: unknown }, _signal, _update, ctx) {
+      async execute(toolCallId, params: { op?: string; brief?: string; models?: string[]; modelGroups?: string[]; directions?: string[]; layouts?: string[]; coordinator?: string; skills?: unknown; label?: string; version?: unknown; view?: unknown; size?: unknown; text?: string; images?: unknown }, _signal, _update, ctx) {
         const p = parent();
         if (params?.op === "start") {
           const run = await createRun(p, cwd(), { ...params, skills: skillNamesOf(params.skills) });
@@ -83,6 +87,7 @@ export function mainDesignTools(parent: () => DesignParent, cwd: () => string): 
           const lines = viewOf(p.sessionId).designs.map((d) => `${d.label} · ${designDirectionLine(d)} · ${d.model} · ${d.status}${d.removed ? " (removed)" : ""} · ${versionCount(d)}`);
           return say([card?.card || "The Creative Director has no card yet.", lines.length ? `Designs:\n${lines.join("\n")}` : ""].filter(Boolean).join("\n\n"));
         }
+        if (params?.op === "look") return lookAtOne(p, params);
         if (params?.op === "tell") {
           const paths = Array.isArray(params.images) ? params.images.filter((x): x is string => typeof x === "string").slice(0, 20) : [];
           if (!params.text?.trim() && !paths.length) throw new Error("tell needs the text to pass on, or images.");
@@ -91,7 +96,7 @@ export function mainDesignTools(parent: () => DesignParent, cwd: () => string): 
           await tellCoordinator(p, [params.text?.trim(), added.line].filter(Boolean).join("\n\n"), `tell:${toolCallId}`, added.names);
           return say(added.line ? `Passed on. ${added.line}` : "Passed on.");
         }
-        throw new Error('op must be "start", "read" or "tell".');
+        throw new Error('op must be "start", "read", "look" or "tell".');
       },
     },
   ];
@@ -106,9 +111,26 @@ export function readDesignPages(sessionId: string, asked: string, reader?: PageR
     const page = readPage(sessionId, x.d.label, x.v.n);
     if (page === null) throw new Error(`Design ${x.d.label}'s version ${x.v.n} couldn't be read.`);
     const at = pagePathFor(sessionId, x.d.label, x.v.n, reader);
-    return `${versionHeading(x)}\nSize: ${pageSize(page)}.\nFile: ${at.path}${at.exposed ? " (a read-only copy where your sandbox can read it)" : ""}`;
+    const views = viewsLine(x.v);
+    return `${versionHeading(x)}\nSize: ${pageSize(page)}.${views ? `\n${views}` : ""}\nFile: ${at.path}${at.exposed ? " (a read-only copy where your sandbox can read it)" : ""}`;
   });
   return `${blocks.join("\n\n")}\n\nThe page isn't in this reply: read the file, in parts with offset and limit, or grep it for what you need.`;
+}
+
+/** The main chat's look: one picture of one version of one design, on its first screen or one of its views. */
+async function lookAtOne(p: DesignParent, params: { label?: string; version?: unknown; view?: unknown; size?: unknown }): Promise<ToolResult> {
+  if (!params.label?.trim()) throw new Error('look needs label: a design ("A"), or one of its versions ("A11").');
+  if (params.size !== undefined && params.size !== "desktop" && params.size !== "phone") throw new Error('size is "desktop" or "phone".');
+  if (params.view !== undefined && typeof params.view !== "string") throw new Error("view is a view's name, as a read lists it.");
+  if (params.version !== undefined && !(Number.isInteger(params.version) && (params.version as number) > 0)) throw new Error("version is a version's number.");
+  const picked = pickVersions(viewOf(p.sessionId).designs, params.label, params.version as number | undefined);
+  if (picked.length > 1) throw new Error("look pictures one design at a time: name one label, such as A or A11.");
+  const x = picked[0]!;
+  const size: TourSize = params.size === "phone" ? "phone" : "desktop";
+  const r = await lookAtDesignPage(p, x.d.label, { version: x.v.n, sizes: [size], ...(typeof params.view === "string" && params.view.trim() ? { view: params.view } : {}) });
+  const views = viewsLine(x.v);
+  const text = [versionHeading(x), `${r.view ? `The view ${r.view}` : "The screen it opens on"}, at ${size} width.`, views].filter(Boolean).join("\n");
+  return { content: [{ type: "text", text }, ...r.shots.map((s) => ({ type: "image" as const, data: Buffer.from(s.png).toString("base64"), mimeType: "image/png" }))], details: { label: x.d.label, version: x.v.n, ...(r.view ? { view: r.view } : {}), size } };
 }
 
 const noteOf = (v: unknown): DesignNote | null => {

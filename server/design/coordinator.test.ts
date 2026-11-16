@@ -74,7 +74,11 @@ beforeEach(() => {
     deliverDesign: async (_p, label, a) => (log.delivered.push({ label, ...a }), { queued: true }),
     lifecycle: (_p, label, act, toolCallId) => void acts.push({ label, act, ...(toolCallId ? { toolCallId } : {}) }),
     models: async () => [{ ref: "openai/astra", name: "astra", vision: false, route: "tool", efforts: ["low", "high"], onSetup: false }],
-    lookAtDesign: async (_p, label, a) => (lookedAt.push(`${label}${a.version ?? ""}`), { shots: [{ size: "desktop", png: PNG }], outline: "O" }),
+    lookAtDesign: async (_p, label, a) => {
+      lookedAt.push(`${label}${a.version ?? ""}${a.view ? `·${a.view}` : ""}${a.actions ? `·${a.actions.length} actions` : ""}`);
+      if (a.view === "Nowhere") throw new Error(`Design ${label}'s version ${a.version} has no view "Nowhere". Its views: the first screen, Deploy.`);
+      return { shots: [{ size: "desktop", png: PNG }], outline: "O", ...(a.view ? { view: "Deploy" } : {}) };
+    },
     systemPrompt: () => "PROMPT",
     specFor: (_p, _c, model) => ({ model }) as never,
     sessionDir: () => "/s",
@@ -1350,4 +1354,20 @@ test("the Creative Director looks at a design's latest version unless it names o
   const status = JSON.parse(textOf(await t.design_status({ label: "A2, B" })));
   assert.deepEqual(status.designs.map((d: { label: string; versions: { n: number }[]; latest?: number; writing?: string }) => [d.label, d.versions.map((x) => x.n), d.latest, d.writing ?? null]), [["A", [2], 3, null], ["B", [1], 1, "version 2 is being written now"]]);
   refused(await t.design_status({ label: "A7" }));
+});
+
+test("the Creative Director's look lists a version's views, pictures one by name, and walks on from it; a view it doesn't have is refused with the views it has", async () => {
+  const t = await launched();
+  const views = [{ name: "Sessions", source: "declared", state: "ok", start: true }, { name: "Deploy", source: "declared", state: "ok" }, { name: "Billing", via: "User menu", source: "declared", state: "unreachable", problem: "Target matched 0 visible controls" }];
+  designList = [{ ...DESIGN_A, versions: [{ n: 1, at: "2026-11-16T10:01:30.000Z", chars: 10, by: "first", views }] } as DesignRecord];
+  lookedAt = [];
+  const text = (r: { content: { type: string; text?: string }[] }) => r.content.filter((b) => b.type === "text").map((b) => b.text!.split("\nPictures")[0]).join("\n\n");
+  assert.equal(text(await t.design_browse({ label: "A1", view: "deploy", sizes: ["phone"] })), "Design A · version 1 of 1 (latest) · made 2026-11-16 10:01 UTC · version 1\nSize: 10 characters.\nViews: Sessions (the first screen) · Deploy · Billing (via User menu; unreachable: Target matched 0 visible controls)\nThe view Deploy.");
+  await t.design_browse({ label: "A", actions: [{ op: "click", target: { kind: "text", text: "More" } }] });
+  assert.deepEqual(lookedAt, ["A1·deploy", "A1·1 actions"]);
+  assert.match(textOf(await t.design_browse({ label: "A", view: "Nowhere" })), /has no view "Nowhere"\. Its views: the first screen, Deploy\./);
+  // A walk is checked as an address's is, before anything is looked at.
+  lookedAt = [];
+  refused(await t.design_browse({ label: "A", actions: [{ op: "type", target: { kind: "text", text: "x" } }] }));
+  assert.deepEqual(lookedAt, []);
 });

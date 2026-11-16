@@ -148,6 +148,16 @@ describe("the card a run draws", () => {
     assert.equal(card.view.helpers.total, 2);
   });
 
+  test("a step written as a team with one helper role, however many of it, runs as separate helpers: a team needs two roles on", () => {
+    const s = spec((r) => {
+      (r.steps[1] as { steps: { id: string; roles: string[]; team?: boolean }[] }).steps[0] = { id: "run", label: "Run the arms", roles: ["runner"], team: true } as never;
+      (r.steps[0] as { roles: string[] }).roles = ["main", "grader"];
+    });
+    const card = runCard(record(s, { choices: { subject: "x" } }), s, env());
+    assert.equal(card.view.roles.find((r) => r.id === "runner")!.count, 2);
+    assert.deepEqual([card.view.steps.find((x) => x.id === "run")!.runs, card.view.teams.length], ["helpers", 0]);
+  });
+
   test("more helpers than one chat runs at once keeps Start off", () => {
     const s = spec((r) => {
       delete r.roles.runner.per;

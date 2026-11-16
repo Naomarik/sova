@@ -84,7 +84,9 @@ export function AlignRow(props: { row: AlignRowInfo; newest: boolean }) {
     >
       {(doc) => (
         <Show when={props.newest} fallback={<AlignRevision doc={doc()} line={props.row.line} />}>
-          <AlignDocCard doc={doc()} line={props.row.line} />
+          <Show when={isOpenDoc(doc())} fallback={<AlignClosed doc={doc()} />}>
+            <AlignDocCard doc={doc()} line={props.row.line} />
+          </Show>
         </Show>
       )}
     </Show>
@@ -102,6 +104,35 @@ function AlignRevision(props: { doc: AlignDocInfo; line: string }) {
         <span class="align-rev-text">
           {props.doc.title}
           <Show when={props.line}> · {props.line}</Show>
+        </span>
+      </summary>
+      <div class="disclosure-body">
+        <AlignDocBody doc={props.doc} />
+      </div>
+    </details>
+  );
+}
+
+/**
+ * The newest copy of a dropped or done alignment: one line (twist, id, version, title, then the
+ * drop reason or the summary, cut to fit) with its status chip at the end; opening it shows the
+ * alignment read-only, as the card's body reads. Folded again on every redraw.
+ */
+function AlignClosed(props: { doc: AlignDocInfo }) {
+  const chip = () => ALIGN_STATUS_CHIP[alignStatusOf(props.doc)];
+  const detail = () => (props.doc.phase === "dropped" ? `Dropped: ${props.doc.droppedWhy ?? ""}`.trim() : props.doc.summary);
+  return (
+    <details class="disclosure align-rev align-closed" data-phase={props.doc.phase} ref={(el) => el.setAttribute("data-align-doc", props.doc.id)}>
+      <summary class="disclosure-summary align-rev-summary">
+        <Icon name="chevron-right" small class="icon-twist" />
+        <span class="text-mono align-rev-id">{props.doc.id}</span>
+        <span class="text-mono text-num">v{props.doc.rev}</span>
+        <span class="align-rev-text" title={`${props.doc.title} · ${detail()}`}>
+          {props.doc.title}
+          <Show when={detail()}> · {detail()}</Show>
+        </span>
+        <span class="align-closed-end">
+          <Chip tone={chip().tone}>{chip().label}</Chip>
         </span>
       </summary>
       <div class="disclosure-body">

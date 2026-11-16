@@ -11,6 +11,9 @@ import {
   playbookCommandIn,
   playbookRows,
   playbooksRunHere,
+  runStatus,
+  controlLabel,
+  type RunChatNow,
   withPlaybookRows,
   withoutPlaybookRows,
   roleWhy,
@@ -95,6 +98,45 @@ test("the chip: ready, blocked, or started", () => {
   assert.deepEqual(cardChip(v({})), { label: "Ready to start", tone: "success" });
   assert.deepEqual(cardChip(v({ startBlocked: "Pick a test model." })), { label: "Can't start yet", tone: "warn" });
   assert.deepEqual(cardChip(v({ state: "started" })), { label: "Started", tone: "accent" });
+});
+
+test("a started run's state is its conducting chat's: a question wins over nothing going on, work over both, and only a chat with nothing running takes an answer", () => {
+  const started = { state: "started", startBlocked: "This run has started." } as PlaybookRunView;
+  const now = (extra: Partial<RunChatNow> = {}): RunChatNow => ({ working: false, helpersWorking: 0, needsYou: null, done: false, ...extra });
+  // Every reading of the chat, by what it holds: the label and whether the card takes an answer.
+  const rows: [Partial<RunChatNow>, string, boolean][] = [
+    [{ working: true }, "Running", false],
+    [{ working: true, needsYou: "A question waits.", done: true }, "Running", false],
+    [{ helpersWorking: 2 }, "Running", false],
+    [{ helpersWorking: 1, needsYou: "A question waits." }, "Running", false],
+    [{ needsYou: "A question waits." }, "Needs you", true],
+    [{ needsYou: "A question waits.", done: true }, "Needs you", true],
+    [{ done: true }, "Done", false],
+    [{}, "Idle", true],
+  ];
+  for (const [chat, label, answer] of rows) {
+    const s = runStatus(started, now(chat));
+    assert.equal(s.label, label, JSON.stringify(chat));
+    assert.equal(!!s.answer, answer, JSON.stringify(chat));
+    assert.equal(!!s.live, label === "Running", JSON.stringify(chat));
+  }
+  assert.equal(runStatus(started, now({ working: true, helpersWorking: 3 })).detail, "This chat is working, with 3 helpers working.");
+  assert.equal(runStatus(started, now({ helpersWorking: 1 })).detail, "1 helper working; this chat picks up when they report.");
+  assert.equal(runStatus(started, now({ needsYou: "A dialog is waiting on you." })).detail, "A dialog is waiting on you.");
+});
+
+test("a run with no reading of its chat says only what the run itself knows: its draft state, starting, or started", () => {
+  const v = (extra: Partial<PlaybookRunView>) => ({ state: "draft", startBlocked: null, ...extra }) as PlaybookRunView;
+  const busy: RunChatNow = { working: true, helpersWorking: 2, needsYou: null, done: false };
+  // A draft's state never reads the chat, whatever the chat is doing.
+  for (const now of [null, busy]) {
+    assert.equal(runStatus(v({}), now).label, "Ready to start");
+    assert.equal(runStatus(v({ startBlocked: "Pick a test model." }), now).label, "Can't start yet");
+    assert.equal(runStatus(v({ state: "starting" }), now).label, "Starting");
+  }
+  assert.deepEqual(runStatus(v({ state: "started" }), null), { label: "Started", tone: "accent" });
+  assert.equal(controlLabel("A/B cycle", { label: "Needs you" }, false), "A/B cycle: Needs you. Open its card.");
+  assert.equal(controlLabel("A/B cycle", { label: "Running" }, true), "A/B cycle: Running. Minimize its card.");
 });
 
 test("a typed playbook command is the whole message's start, by a name that has a card", () => {

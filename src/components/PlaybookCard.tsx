@@ -1,7 +1,6 @@
-import { createEffect, createMemo, createSignal, createUniqueId, For, Index, Match, onCleanup, Show, Switch, type JSX } from "solid-js";
+import { createEffect, createMemo, createSignal, createUniqueId, For, Index, Match, onCleanup, onMount, Show, Switch, type Accessor, type JSX } from "solid-js";
 import type { PlaybookCardEdits, PlaybookChoiceView, PlaybookModelPick, PlaybookRoleView, PlaybookRunView, PlaybookStepView } from "../../shared/playbook-run";
 import {
-  cardChip,
   cardEyebrow,
   chainRest,
   cycleLine,
@@ -19,6 +18,11 @@ import {
   roleModelLine,
   roleTitle,
   roleWhy,
+  RUN_ANSWERS,
+  controlLabel,
+  runStatus,
+  type RunChatNow,
+  type RunStatus,
   splitChoices,
   stepRunsLine,
   stepsSummary,
@@ -28,7 +32,7 @@ import type { PlaybookRunsStore } from "../lib/playbook-runs";
 import { ApiError } from "../lib/api";
 import { sessionHrefOn } from "../lib/mesh";
 import { providerName } from "../lib/cost-history";
-import { announce } from "../lib/ui-state";
+import { announce, toast } from "../lib/ui-state";
 import { ModelPickButton } from "./ModelPickButton";
 import { NumberField, Select, TextArea, TextField, Toggle } from "./form";
 import { Chip, Icon } from "./ui";
@@ -37,33 +41,206 @@ import "./PlaybookCard.css";
 /** How long typing waits before the card saves its draft. */
 const TYPE_SAVE_MS = 400;
 
-/** Each card's fold, by run id, for the page's lifetime: a redraw never reopens a card you folded. */
-const folds = new Map<string, boolean>();
-
-/** The card a way in last asked to show: it opens, scrolls into the dock's view and takes focus. */
+/** The card a way in last asked to show (a /name, a Playbooks pick, Open Card on the run's entry). */
 const [revealed, setRevealed] = createSignal<{ id: string } | null>(null, { equals: false });
 
-/** Opens a run's card and brings it into view (a /name or a Playbooks dialog pick). */
+/** Opens a run's card over the conversation, in whichever chat shows that run. */
 export function showPlaybookCard(id: string): void {
-  folds.set(id, false);
   setRevealed({ id });
 }
 
+/** One chat's cards: which is open (one at a time) and which have been opened, so each keeps what
+    was typed, an open prompt and its place while it is minimized. */
+interface FloatState {
+  open: Accessor<string | null>;
+  mounted: Accessor<string[]>;
+  show(id: string | null): void;
+}
+const floats = new WeakMap<PlaybookRunsStore, FloatState>();
+function floatOf(store: PlaybookRunsStore): FloatState {
+  let f = floats.get(store);
+  if (f) return f;
+  const [open, setOpen] = createSignal<string | null>(null);
+  const [mounted, setMounted] = createSignal<string[]>([]);
+  f = {
+    open,
+    mounted,
+    show: (id) => {
+      if (id && !mounted().includes(id)) setMounted([...mounted(), id]);
+      setOpen(id);
+    },
+  };
+  floats.set(store, f);
+  return f;
+}
+
+const cardDomId = (run: string) => `pb-card-${run}`;
+const sameIds = { equals: (a: string[], b: string[]) => a.length === b.length && a.every((x, i) => x === b[i]) };
+
+/** What the chat showing the cards knows of itself, for a run it conducts. */
+export interface PlaybookChatNow {
+  /** This chat's session path. */
+  path: string;
+  now: Accessor<RunChatNow>;
+}
+
+/** The reading of the conducting chat a run's status may use: this chat's own, for a run it conducts. */
+const nowFor = (run: PlaybookRunView, chat: PlaybookChatNow): RunChatNow | null => (run.state === "started" && run.started?.chat.path === chat.path ? chat.now() : null);
+
 /**
- * The chat's playbook cards, docked above the message box (al_2 a16): newest first, each folding to
- * one line. Drafts open; a started run's record folds until you open it.
+ * The chat's playbook runs as small controls under the message box (al_2 a16, revised): one per run,
+ * its name and its state. No band of its own; the message box never scrolls, so a control is
+ * reachable wherever the conversation is. Pressing one opens that run's card, or minimizes it.
  */
-export function PlaybookDock(props: { store: PlaybookRunsStore; host: string | null; /** This chat's session path. */ path: string }) {
-  // Keyed by run id, never by the view object: each new view of a run (an edit's answer, an event)
-  // updates its card in place, so an open prompt, a pending edit or focus survives it.
-  const ids = createMemo(() => props.store.runs().map((r) => r.id), undefined, { equals: (a, b) => a.length === b.length && a.every((x, i) => x === b[i]) });
+export function PlaybookBar(props: { store: PlaybookRunsStore; chat: PlaybookChatNow }) {
+  const float = floatOf(props.store);
+  // Keyed by run id, never by the view object: a new view of a run updates its control in place.
+  const ids = createMemo(() => props.store.runs().map((r) => r.id), undefined, sameIds);
   const runOf = (id: string) => props.store.runs().find((r) => r.id === id);
   return (
     <Show when={ids().length > 0}>
-      <section class="pb-dock" aria-label="Playbooks">
-        <For each={ids()}>{(id) => <Show when={runOf(id)}>{(run) => <PlaybookCard run={run()} store={props.store} host={props.host} here={props.path} />}</Show>}</For>
-      </section>
+      <div class="pb-bar" role="group" aria-label="Playbooks">
+        <For each={ids()}>
+          {(id) => (
+            <Show when={runOf(id)}>
+              {(run) => {
+                const status = createMemo(() => runStatus(run(), nowFor(run(), props.chat)));
+                const open = () => float.open() === id;
+                return (
+                  <button
+                    type="button"
+                    class="pb-pill"
+                    data-run={id}
+                    data-state={run().state}
+                    aria-expanded={open()}
+                    aria-controls={cardDomId(id)}
+                    aria-label={controlLabel(run().playbook.title, status(), open())}
+                    title={`${run().playbook.title}: ${foldedLine(run(), props.chat.path)}`}
+                    onClick={() => float.show(open() ? null : id)}
+                    onKeyDown={(e) => {
+                      // Focus stays on the control that opened the card, so Esc minimizes from here too.
+                      if (e.key !== "Escape" || !open()) return;
+                      e.preventDefault();
+                      float.show(null);
+                    }}
+                  >
+                    <Icon name="activity" small />
+                    <span class="pb-pill-title">{run().playbook.title}</span>
+                    <Chip tone={status().tone} live={status().live}>
+                      {status().label}
+                    </Chip>
+                    <Icon name="chevron-right" small class="icon-twist" />
+                  </button>
+                );
+              }}
+            </Show>
+          )}
+        </For>
+      </div>
     </Show>
+  );
+}
+
+/** Sends one of a stop's answers as the person's message to this chat, and why it can't now. */
+export interface PlaybookAnswer {
+  send(text: string): boolean;
+  blocked: Accessor<string | null>;
+}
+
+/**
+ * The open card, floating over the end of the conversation from just above the message box: it
+ * never moves or resizes the conversation. Mounted between the thread and the message box as an
+ * anchor of no height. One card shows at a time; a card that was opened stays mounted while
+ * minimized, so an edit in flight, an open prompt and focus survive.
+ */
+export function PlaybookFloat(props: { store: PlaybookRunsStore; host: string | null; chat: PlaybookChatNow; answer?: PlaybookAnswer }) {
+  const float = floatOf(props.store);
+  let anchor!: HTMLDivElement;
+  const runOf = (id: string) => props.store.runs().find((r) => r.id === id);
+  const mounted = createMemo(() => float.mounted().filter((id) => !!runOf(id)), undefined, sameIds);
+  const focusCard = (id: string) => requestAnimationFrame(() => anchor.querySelector<HTMLElement>(`#${CSS.escape(cardDomId(id))}`)?.focus({ preventScroll: true }));
+  const minimize = (id: string) => {
+    float.show(null);
+    // Back to its control, as a popover returns focus to its trigger.
+    anchor.parentElement?.querySelector<HTMLElement>(`.pb-pill[data-run="${CSS.escape(id)}"]`)?.focus();
+  };
+  /** A started run that was put away, opened from its row in the conversation: its record, with no
+      control under the message box. */
+  const [record, setRecord] = createSignal<PlaybookRunView | null>(null);
+  createEffect(() => {
+    const r = revealed();
+    if (!r) return;
+    if (runOf(r.id)) {
+      setRevealed(null);
+      setRecord(null);
+      float.show(r.id);
+      focusCard(r.id);
+      return;
+    }
+    // Not among this chat's cards: once every chat on the page has had its look, read it by its id.
+    queueMicrotask(() => {
+      if (revealed() !== r) return;
+      setRevealed(null);
+      props.store.record(r.id).then(
+        (view) => {
+          float.show(null);
+          setRecord(view);
+          focusCard(view.id);
+        },
+        () => {
+          toast("That run's card isn't here any more.");
+          announce("That run's card isn't here any more.");
+        },
+      );
+    });
+  });
+  // One card at a time: opening a card from its control puts the record away.
+  createEffect(() => {
+    if (float.open()) setRecord(null);
+  });
+  // A card that went away (a closed draft) leaves nothing open.
+  createEffect(() => {
+    const id = float.open();
+    if (id && !runOf(id)) float.show(null);
+  });
+  // The card may cover the conversation and no more (never the chat's header): the anchor has no
+  // height of its own, so the room is the conversation's own height, measured as it changes (the
+  // message box growing a line shrinks it).
+  onMount(() => {
+    const thread = anchor.previousElementSibling;
+    if (!thread || typeof ResizeObserver === "undefined") return;
+    const measure = () => anchor.style.setProperty("--pb-room", `${Math.round(thread.getBoundingClientRect().height)}px`);
+    const ro = new ResizeObserver(measure);
+    ro.observe(thread);
+    measure();
+    onCleanup(() => ro.disconnect());
+  });
+  return (
+    <div class="pb-float" ref={anchor} data-open={float.open() || record() ? "" : undefined}>
+      <For each={mounted()}>
+        {(id) => (
+          <Show when={runOf(id)}>
+            {(run) => (
+              <PlaybookCard
+                run={run()}
+                store={props.store}
+                host={props.host}
+                here={props.chat.path}
+                shown={float.open() === id}
+                status={runStatus(run(), nowFor(run(), props.chat))}
+                answer={props.answer}
+                onMinimize={() => minimize(id)}
+              />
+            )}
+          </Show>
+        )}
+      </For>
+      <Show when={record()} keyed>
+        {(view) => (
+          <PlaybookCard run={view} store={props.store} host={props.host} here={props.chat.path} shown status={runStatus(view, nowFor(view, props.chat))} answer={props.answer} onMinimize={() => setRecord(null)} />
+        )}
+      </Show>
+    </div>
   );
 }
 
@@ -71,29 +248,25 @@ export function PlaybookDock(props: { store: PlaybookRunsStore; host: string | n
  * One playbook's card. Before Start it is the run's plan, editable: your choices, who runs on which
  * model, the steps and their stops, the cycle settings and a note per role. Every edit saves the
  * draft as a new revision; Start runs exactly the revision the card shows. After Start the same card
- * is the run's record, read-only.
+ * is the run's record, read-only, with how its chat stands now. Its head and its buttons stay put;
+ * the middle scrolls.
  */
-export function PlaybookCard(props: { run: PlaybookRunView; store: PlaybookRunsStore; host: string | null; /** The chat showing it. */ here?: string }) {
+export function PlaybookCard(props: {
+  run: PlaybookRunView;
+  store: PlaybookRunsStore;
+  host: string | null;
+  /** The chat showing it. */
+  here?: string;
+  /** Open over the conversation; false while minimized (it stays mounted). */
+  shown: boolean;
+  status: RunStatus;
+  answer?: PlaybookAnswer;
+  onMinimize(): void;
+}) {
   const uid = createUniqueId();
   const id = (s: string) => `pb-${uid}-${s}`;
   const run = () => props.run;
   const editable = () => run().state === "draft";
-  const [folded, setFolded] = createSignal(folds.get(props.run.id) ?? props.run.state !== "draft");
-  const fold = (v: boolean) => {
-    folds.set(run().id, v);
-    setFolded(v);
-  };
-  let foldButton: HTMLButtonElement | undefined;
-  createEffect(() => {
-    const r = revealed();
-    if (!r || r.id !== props.run.id) return;
-    setRevealed(null);
-    fold(false);
-    requestAnimationFrame(() => {
-      foldButton?.scrollIntoView({ block: "nearest" });
-      foldButton?.focus({ preventScroll: true });
-    });
-  });
 
   // ---- Edits: what you changed shows at once; it saves after a pause, as one revision. ----
   /** Changed here, not sent yet. */
@@ -206,38 +379,59 @@ export function PlaybookCard(props: { run: PlaybookRunView; store: PlaybookRunsS
     }
   };
 
-  const chip = () => (run().state === "starting" ? { label: "Starting", tone: "accent" as const } : cardChip(run()));
+  /** A stop's answer goes as your message to this chat; what stops Send stops it, with the reason. */
+  const answer = (text: string) => {
+    if (!props.answer || props.answer.blocked()) return;
+    if (props.answer.send(text)) {
+      announce(`Sent "${text}" to this chat.`);
+      props.onMinimize();
+    }
+  };
+  /** The line beside a started run's buttons. */
+  const startedHint = () => {
+    if (run().closed) return "You put this card away. The run was not changed.";
+    if (props.status.answer && props.answer) return props.answer.blocked() ?? "Sends that word as your message to this chat. Or answer in the message box.";
+    const st = elsewhere();
+    if (st) return `The run is in ${st.chat.title || "another chat"}; its state shows there.`;
+    return "Close Card puts its control away. The run goes on.";
+  };
+  const elsewhere = () => (run().state === "started" && run().started && run().started!.chat.path !== props.here ? run().started! : null);
   const choices = createMemo(() => splitChoices(run().choices));
 
   return (
-    <article class="card pb-card" data-run={run().id} aria-labelledby={id("title")} data-state={run().state} data-folded={folded() ? "" : undefined}>
+    <section
+      class="card pb-card"
+      id={cardDomId(run().id)}
+      role="dialog"
+      aria-modal="false"
+      aria-labelledby={id("title")}
+      tabindex={-1}
+      hidden={!props.shown}
+      data-run={run().id}
+      data-state={run().state}
+      onKeyDown={(e) => {
+        // Esc minimizes, unless something inside the card (a picker, a menu) already took it.
+        if (e.key !== "Escape" || e.defaultPrevented) return;
+        e.preventDefault();
+        props.onMinimize();
+      }}
+    >
       <header class="pb-head">
-        <button
-          ref={foldButton}
-          type="button"
-          class="pb-fold"
-          aria-expanded={!folded()}
-          aria-controls={id("body")}
-          onClick={() => fold(!folded())}
-          title={folded() ? "Open the card" : "Fold the card to one line"}
-        >
-          <Icon name="chevron-right" small class="icon-twist" />
-          <span class="pb-head-text">
-            <span class="pb-eyebrow">{cardEyebrow(run())}</span>
-            <span class="pb-title-line">
-              <span class="pb-title" id={id("title")}>
-                {run().playbook.title}
-              </span>
-              <Show when={folded()}>
-                <span class="pb-folded-line">{foldedLine(run(), props.here)}</span>
-              </Show>
-            </span>
+        <span class="pb-head-text">
+          <span class="pb-eyebrow">{cardEyebrow(run())}</span>
+          <span class="pb-title" id={id("title")}>
+            {run().playbook.title}
           </span>
+        </span>
+        <Chip tone={props.status.tone} live={props.status.live}>
+          {props.status.label}
+        </Chip>
+        <button type="button" class="button button-sm button-ghost pb-min" title="Minimize the card (Esc)" onClick={() => props.onMinimize()}>
+          <Icon name="chevron-down" small />
+          Minimize
         </button>
-        <Chip tone={chip().tone}>{chip().label}</Chip>
       </header>
 
-      <Show when={!folded()}>
         <div class="pb-body" id={id("body")}>
           <Show when={run().playbook.summary}>{(s) => <p class="pb-summary">{s()}</p>}</Show>
 
@@ -257,6 +451,7 @@ export function PlaybookCard(props: { run: PlaybookRunView; store: PlaybookRunsS
               </p>
             )}
           </Show>
+          <Show when={props.status.detail}>{(d) => <p class="pb-now">{d()}</p>}</Show>
 
           {/* Your choices */}
           <Show when={run().choices.length > 0}>
@@ -394,44 +589,90 @@ export function PlaybookCard(props: { run: PlaybookRunView; store: PlaybookRunsS
             </Show>
           </section>
 
-          <Show when={saveError() ?? run().startError ?? run().error}>
-            {(err) => (
-              <p class="pb-error" role="alert">
-                {err()}
-              </p>
+        </div>
+
+      <Show when={saveError() ?? run().startError ?? run().error}>
+        {(err) => (
+          <p class="pb-error" role="alert">
+            {err()}
+          </p>
+        )}
+      </Show>
+
+      <Show when={run().state !== "started"}>
+        <footer class="pb-foot">
+          <button
+            type="button"
+            class="button button-sm button-primary"
+            aria-disabled={startWhy() ? "true" : undefined}
+            aria-describedby={id("why")}
+            title={startWhy() ?? undefined}
+            onClick={() => void start()}
+          >
+            {busy() === "start" || run().state === "starting" ? "Starting…" : "Start"}
+          </button>
+          {/* Off with the reason when the playbook can't be read: there is nothing to save defaults for. */}
+          <button type="button" class="button button-sm" disabled={!!busy() || !editable() || !!run().error} title={run().error ?? undefined} onClick={() => void saveDefaults()}>
+            {busy() === "defaults" ? "Saving…" : "Save as My Defaults"}
+          </button>
+          <button type="button" class="button button-sm button-ghost" disabled title="Repeats come in a later release.">
+            Repeat… <span class="pb-coming">Coming</span>
+          </button>
+          <span class="pb-foot-hint" id={id("why")}>
+            {startWhy() ?? done() ?? (changing() ? "Saving your changes…" : `Revision ${run().revision}. Start runs exactly this card.`)}
+          </span>
+          <button type="button" class="button button-sm button-ghost pb-close" disabled={!!busy() || !editable()} onClick={() => void close()}>
+            Close Card
+          </button>
+        </footer>
+      </Show>
+
+      {/* A started run: when it waits for you, the two answers its conductor was told to wait for;
+          from another chat, the way to the chat that runs it; and Close Card, which puts it away. */}
+      <Show when={run().state === "started"}>
+        <footer class="pb-foot">
+          <Show when={!run().closed && props.status.answer && props.answer}>
+            {(a) => (
+              <For each={RUN_ANSWERS}>
+                {(ans, i) => (
+                  <button
+                    type="button"
+                    class={`button button-sm${i() === 0 ? " button-primary" : ""}`}
+                    aria-disabled={a().blocked() ? "true" : undefined}
+                    aria-describedby={id("why")}
+                    title={a().blocked() ?? undefined}
+                    onClick={() => answer(ans.text)}
+                  >
+                    {ans.label}
+                  </button>
+                )}
+              </For>
             )}
           </Show>
-
-          <Show when={run().state !== "started"}>
-            <footer class="pb-foot">
-              <button
-                type="button"
-                class="button button-sm button-primary"
-                aria-disabled={startWhy() ? "true" : undefined}
-                aria-describedby={id("why")}
-                title={startWhy() ?? undefined}
-                onClick={() => void start()}
-              >
-                {busy() === "start" || run().state === "starting" ? "Starting…" : "Start"}
-              </button>
-              {/* Off with the reason when the playbook can't be read: there is nothing to save defaults for. */}
-              <button type="button" class="button button-sm" disabled={!!busy() || !editable() || !!run().error} title={run().error ?? undefined} onClick={() => void saveDefaults()}>
-                {busy() === "defaults" ? "Saving…" : "Save as My Defaults"}
-              </button>
-              <button type="button" class="button button-sm button-ghost" disabled title="Repeats come in a later release.">
-                Repeat… <span class="pb-coming">Coming</span>
-              </button>
-              <span class="pb-foot-hint" id={id("why")}>
-                {startWhy() ?? done() ?? (changing() ? "Saving your changes…" : `Revision ${run().revision}. Start runs exactly this card.`)}
-              </span>
-              <button type="button" class="button button-sm button-ghost pb-close" disabled={!!busy() || !editable()} onClick={() => void close()}>
-                Close Card
-              </button>
-            </footer>
+          <Show when={elsewhere()}>
+            {(st) => (
+              <a class="button button-sm" href={sessionHrefOn(props.host, st().chat.path)}>
+                Open the Chat
+              </a>
+            )}
           </Show>
-        </div>
+          <span class="pb-foot-hint" id={id("why")}>
+            {startedHint()}
+          </span>
+          <Show when={!run().closed}>
+            <button
+              type="button"
+              class="button button-sm button-ghost pb-close"
+              disabled={!!busy()}
+              title="Puts this run's control away. The run goes on, and Open Card on its row in the conversation still shows this record."
+              onClick={() => void close()}
+            >
+              Close Card
+            </button>
+          </Show>
+        </footer>
       </Show>
-    </article>
+    </section>
   );
 }
 

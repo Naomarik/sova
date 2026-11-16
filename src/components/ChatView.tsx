@@ -153,8 +153,9 @@ import { triageKey, triageOf } from "../lib/align-triage";
 import { Composer, type ComposerReason } from "./Composer";
 import { ShellCard } from "./ShellCard";
 import { ShellDock } from "./ShellDock";
-import { PlaybookDock, showPlaybookCard } from "./PlaybookCard";
+import { PlaybookBar, PlaybookFloat, showPlaybookCard, type PlaybookChatNow } from "./PlaybookCard";
 import { isPlaybookRunEvent, playbookRunEvent, usePlaybookRuns } from "../lib/playbook-runs";
+import { boardState } from "../lib/agents-board";
 import { NO_PLAYBOOKS_HERE, playbookRows, playbooksRunHere, withoutPlaybookRows, withPlaybookRows } from "../lib/playbook-card";
 import { socketReconnects } from "../lib/socket";
 import type { PlaybookRunView } from "../../shared/playbook-run";
@@ -671,7 +672,7 @@ export function ChatView(props: {
     try {
       const run = await playbookRuns.open(playbook, text);
       showPlaybookCard(run.id);
-      announce(`${run.playbook.title}: its card is open above the message box.`);
+      announce(`${run.playbook.title}: its card is open over the conversation.`);
       return true;
     } catch (e) {
       // A refusal that says why (a description that can't be read) is said as is.
@@ -681,6 +682,23 @@ export function ChatView(props: {
   };
   /** This chat process's code (WS "code", §app.chat-processes/code-pickup); null: current, or no message since the hello. */
   const [code, setCode] = createSignal<CodeView | null>(null);
+  /** How this chat stands, for a run it conducts: its turn, its helpers, and what the session list
+      says its last turn left for you (the same reading, `boardState`). */
+  const playbookChat: PlaybookChatNow = {
+    path: props.path,
+    now: createMemo(() => {
+      const s = props.summary?.();
+      const board = s ? boardState(s, null, live.running) : null;
+      return {
+        working: live.running,
+        helpersWorking: workersWorking(),
+        needsYou: board?.state === "needs-you" ? board.reason : null,
+        done: board?.state === "idle" && board.word === "Done",
+      };
+    }),
+  };
+  /** The chat's playbook controls, the message box's last row. */
+  const playbookBar = () => <Show when={playbooksHere() && playbookRuns}>{(store) => <PlaybookBar store={store()} chat={playbookChat} />}</Show>;
   /** Reload Now, and the failed banner's Try Again: the chat reloads at once if quiet, else when it is. */
   const reloadCode = () => void chatSend({ type: "reload_code" });
   props.onCode?.({ view: () => (hostGate() ? null : code()), quiet: () => ({ running: live.running, workersWorking: workersWorking(), commandRunning: shellRuns().some((r) => r.state === "running") }), reload: reloadCode });
@@ -2841,10 +2859,29 @@ export function ChatView(props: {
         <ProfileSwitchLine path={props.path} state={chatProfile()} />
       </ThreadScroller>
       </ToolSourceContext.Provider>
-      <Show when={playbooksHere() && playbookRuns}>{(store) => <PlaybookDock store={store()} host={hostOf(props.path)} path={props.path} />}</Show>
+      <Show when={playbooksHere() && playbookRuns}>
+        {(store) => (
+          <PlaybookFloat
+            store={store()}
+            host={hostOf(props.path)}
+            chat={playbookChat}
+            // A stop's answer is your message: never a steer, and what stops Send stops it.
+            answer={hostGate() ? undefined : { send: (text) => send(text, false, []), blocked: () => blocked()?.text ?? null }}
+          />
+        )}
+      </Show>
       <ShellDock bar={shellBar} />
-      <Show when={!hostGate()} fallback={<HostSendNotice host={hostOf(props.path)!} reading={hostGate()!} />}>
+      <Show
+        when={!hostGate()}
+        fallback={
+          <>
+            <HostSendNotice host={hostOf(props.path)!} reading={hostGate()!} />
+            <div class="pb-bar-alone">{playbookBar()}</div>
+          </>
+        }
+      >
       <Composer
+        below={playbookBar}
         path={props.path}
         cwd={props.summary?.()?.cwd ?? null}
         blocked={blocked()}

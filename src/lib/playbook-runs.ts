@@ -18,7 +18,10 @@ export interface PlaybookRunsStore {
   edit(id: string, revision: number, edits: PlaybookCardEdits): Promise<PlaybookRunView>;
   start(id: string, revision: number): Promise<PlaybookRunView>;
   saveDefaults(id: string, revision: number): Promise<void>;
+  /** Closes a draft's card, or puts a started run's card away: either leaves the chat's cards. */
   close(id: string): Promise<void>;
+  /** One run by its id, in the chat's cards or not: a started run that was put away, as its record. */
+  record(id: string): Promise<PlaybookRunView>;
   refresh(): void;
 }
 
@@ -96,6 +99,7 @@ function make(path: string, cwd: () => string | null, host: string | null): Entr
       start: (id, revision) => api.start(id, revision).then((r) => (put(r), r), keepRun),
       saveDefaults: (id, revision) => api.defaults(id, revision).then(() => undefined, keepRun),
       close: (id) => api.close(id).then(() => void drop(id)),
+      record: (id) => api.get(id),
       refresh: () => void load(),
     };
     return { store, refs: 0, dispose };

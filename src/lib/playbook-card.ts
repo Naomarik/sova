@@ -44,6 +44,63 @@ export function cardChip(view: PlaybookRunView): { label: string; tone: ChipTone
   return { label: "Ready to start", tone: "success" };
 }
 
+/**
+ * How the chat conducting a run stands, in Sova's own reading of that chat (the session list's):
+ * its turn or its helpers working, what its last turn left for you, or nothing going on. The run
+ * itself records nothing after Start, so this is all the page says of a run in progress.
+ */
+export interface RunChatNow {
+  /** The chat's own turn is running. */
+  working: boolean;
+  helpersWorking: number;
+  /** Why the chat needs you, in the session list's words; null when it doesn't. */
+  needsYou: string | null;
+  /** Its last turn said the work is done. */
+  done: boolean;
+}
+
+export interface RunStatus {
+  label: string;
+  tone: ChipTone;
+  live?: boolean;
+  /** One sentence under the card's head, for a started run. */
+  detail?: string;
+  /** The run waits for the person's answer: the card offers Continue and Stop Here. */
+  answer?: boolean;
+}
+
+const helpersWorkingWords = (n: number): string => `${n} ${n === 1 ? "helper" : "helpers"} working`;
+
+/**
+ * A run's state, dot and word, on its control and its card. A draft: ready, or what blocks Start.
+ * A started run: how its conducting chat stands (`now`); with no reading of that chat (the card is
+ * in another chat), only that it started. A question the chat is blocked on wins over work, as in
+ * the session list; a chat with nothing going on waits for your answer unless its last turn said
+ * it was done.
+ */
+export function runStatus(view: PlaybookRunView, now: RunChatNow | null): RunStatus {
+  if (view.state === "starting") return { label: "Starting", tone: "accent" };
+  if (view.state !== "started") return cardChip(view);
+  if (!now) return { label: "Started", tone: "accent" };
+  if (now.working) return { label: "Running", tone: "accent", live: true, detail: now.helpersWorking > 0 ? `This chat is working, with ${helpersWorkingWords(now.helpersWorking)}.` : "This chat is working." };
+  if (now.helpersWorking > 0) return { label: "Running", tone: "accent", live: true, detail: `${helpersWorkingWords(now.helpersWorking)}; this chat picks up when they report.` };
+  if (now.needsYou) return { label: "Needs you", tone: "warn", detail: now.needsYou, answer: true };
+  if (now.done) return { label: "Done", tone: "success", detail: "This chat's last turn said the work is done." };
+  return { label: "Idle", tone: undefined, detail: "This chat's turn ended and no helper is working. The run goes on when you answer.", answer: true };
+}
+
+/** The two answers Start's message tells the conductor to wait for at a stop: the button's words and
+    the message it sends. */
+export const RUN_ANSWERS = [
+  { label: "Continue", text: "Continue" },
+  { label: "Stop Here", text: "Stop here" },
+] as const;
+
+/** What the control under the message box is called aloud: "A/B cycle: Needs you. Open its card." */
+export function controlLabel(title: string, status: Pick<RunStatus, "label">, open: boolean): string {
+  return `${title}: ${status.label}. ${open ? "Minimize its card." : "Open its card."}`;
+}
+
 /** A model pick as the card says it: "GLM 5.3 · zai · low" (name, provider, effort). */
 export function pickLine(p: PlaybookModelPick | null | undefined, provider = true): string {
   if (!p) return "No model";

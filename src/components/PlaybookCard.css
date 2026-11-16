@@ -1,54 +1,102 @@
-/* The playbook card, docked above the message box (al_2 a16). The dock never takes the whole pane:
-   the last turns stay readable above it, and an open card scrolls inside the dock. */
-.pb-dock {
-  flex: none;
+/* A playbook run in a chat (al_2 a16, revised): a small control under the message box, and its card
+   floating over the end of the conversation when opened. Neither has a band of its own. */
+
+/* ---- The controls, the message box's last row. Same column as .composer-inner. ---- */
+.pb-bar {
   display: flex;
-  flex-direction: column;
+  flex-wrap: wrap;
   gap: var(--space-2);
-  max-height: 55%;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  padding: var(--space-2) var(--space-3);
-  border-top: var(--stroke-thin) solid var(--color-border);
-  background: var(--color-sunken);
-  container: pb-dock / inline-size;
+  max-width: calc(var(--measure) + var(--space-9));
+  margin: var(--space-2) auto 0;
+}
+/* Alone (no message box: another computer's chat that can't be sent to): the same row on the page. */
+.pb-bar-alone { flex: none; padding: var(--space-2) var(--space-4) calc(var(--space-2) + env(safe-area-inset-bottom, 0px)); }
+.pb-bar-alone:empty { display: none; }
+.pb-pill {
+  position: relative;
+  flex: 0 1 auto;
+  min-width: 0;
+  min-height: var(--control-sm);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 0 var(--space-2);
+  border: var(--stroke-thin) solid var(--color-border);
+  border-radius: var(--r-md);
+  background: none;
+  color: var(--color-ink-2);
+  font: inherit;
+  font-size: var(--fs-caption);
+  cursor: pointer;
+}
+/* A 44px target on a 36px control. */
+.pb-pill::after { content: ""; position: absolute; inset: calc((var(--control-sm) - var(--tap-min)) / 2) 0; }
+.pb-pill:hover, .pb-pill[aria-expanded="true"] { background: var(--color-sunken); color: var(--color-ink); border-color: var(--color-border-strong); }
+.pb-pill:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
+.pb-pill > .icon { flex: none; color: var(--color-ink-muted); }
+.pb-pill > .chip { flex: none; }
+.pb-pill-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: var(--fw-medium); color: var(--color-ink); }
+/* The chevron points up at the card it opens, and down once it is open. */
+.pb-pill .icon-twist { transform: rotate(-90deg); transition: transform var(--dur-fast) var(--ease-standard); }
+.pb-pill[aria-expanded="true"] .icon-twist { transform: rotate(90deg); }
+/* A narrow message box: one row that scrolls sideways, never a second line under the box. */
+@container composer (max-width: 479px) {
+  .pb-bar { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; padding-block: calc((var(--tap-min) - var(--control-sm)) / 2); margin-top: 0; }
+  .pb-pill { flex: none; max-width: 100%; }
 }
 
-.pb-card {
+/* ---- The open card. Its anchor sits between the thread and the message box and has no height,
+   so the card rises over the conversation and never moves it. ---- */
+.pb-float {
+  position: relative;
   flex: none;
-  max-width: 880px;
-  width: 100%;
-  margin: 0 auto;
+  height: 0;
+  z-index: 5;
+  container: pb-float / inline-size;
+}
+.pb-card {
+  position: absolute;
+  bottom: var(--space-2);
+  left: max(var(--space-4), calc((100% - (var(--measure) + var(--space-9))) / 2));
+  width: min(720px, calc(100% - 2 * var(--space-4)));
+  max-height: min(calc(var(--pb-room, 60vh) - var(--space-4)), 640px);
+  display: flex;
+  flex-direction: column;
   background: var(--color-surface);
+  box-shadow: var(--shadow-2);
+  overflow: hidden;
+  container: pb-card / inline-size;
+}
+.pb-card[hidden] { display: none; }
+.pb-card:focus { outline: none; }
+.pb-card:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
+/* Phone width: a sheet from the message box's top edge, the full width. */
+@container pb-float (max-width: 560px) {
+  .pb-card {
+    left: 0;
+    bottom: 0;
+    width: 100%;
+    max-height: calc(var(--pb-room, 60vh) - var(--space-3));
+    border-radius: var(--r-xl) var(--r-xl) 0 0;
+    border-bottom: 0;
+  }
 }
 
 .pb-head {
+  flex: none;
   display: flex;
   align-items: center;
   gap: var(--space-2);
-  padding: 0 var(--space-3) 0 0;
+  padding: var(--space-2) var(--space-2) var(--space-2) var(--space-4);
+  border-bottom: var(--stroke-thin) solid var(--color-border);
 }
-.pb-fold {
-  flex: 1 1 auto;
-  min-width: 0;
-  min-height: var(--tap-min);
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  padding: var(--space-2) var(--space-3);
-  border: 0;
-  background: none;
-  color: inherit;
-  text-align: left;
-  cursor: pointer;
-  border-radius: var(--r-lg) 0 0 0;
-}
-.pb-fold:hover { background: var(--color-sunken); }
-.pb-fold:focus-visible { outline: var(--focus-ring); outline-offset: calc(-1 * var(--focus-width)); }
-.pb-fold .icon-twist { flex: none; color: var(--color-ink-muted); transition: transform var(--dur-fast) var(--ease-standard); }
-.pb-fold[aria-expanded="true"] .icon-twist { transform: rotate(90deg); }
-.pb-head-text { min-width: 0; display: flex; flex-direction: column; }
+.pb-head-text { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; }
+.pb-head > .chip { flex: none; }
+.pb-min { flex: none; }
 .pb-eyebrow {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-size: var(--fs-micro);
   line-height: var(--lh-micro);
   letter-spacing: var(--ls-eyebrow);
@@ -56,30 +104,29 @@
   color: var(--color-ink-muted);
   font-weight: var(--fw-semibold);
 }
-.pb-title-line { display: flex; align-items: baseline; gap: var(--space-2); min-width: 0; }
 .pb-title {
-  flex: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-size: var(--fs-heading-s);
   line-height: var(--lh-heading-s);
   font-weight: var(--fw-semibold);
 }
-.pb-folded-line {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--color-ink-2);
-  font-size: var(--fs-caption);
-}
 
 .pb-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
-  padding: var(--space-1) var(--space-4) var(--space-3);
+  padding: var(--space-3) var(--space-4);
 }
+.pb-body > * { flex: none; }
 .pb-summary, .pb-record, .pb-how { margin: 0; }
 .pb-record { color: var(--color-ink-2); }
+.pb-now { margin: 0; font-weight: var(--fw-medium); }
 
 .pb-section { display: flex; flex-direction: column; }
 .pb-section-label {
@@ -202,21 +249,25 @@ details[open] > .pb-more-summary .icon-twist { transform: rotate(90deg); }
 .pb-cycle-line { margin: 0; display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1) var(--space-2); }
 
 .pb-note { margin: var(--space-1) 0 0; color: var(--color-ink-muted); font-size: var(--fs-caption); }
-.pb-error { margin: 0; color: var(--status-error); }
+.pb-error { flex: none; margin: 0; padding: var(--space-2) var(--space-4) 0; color: var(--status-error); }
 
 .pb-foot {
+  flex: none;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: var(--space-2);
-  padding-top: var(--space-3);
+  padding: var(--space-3) var(--space-4);
   border-top: var(--stroke-thin) solid var(--color-border);
 }
 .pb-foot-hint { flex: 1 1 12rem; min-width: 0; color: var(--color-ink-muted); font-size: var(--fs-caption); }
 .pb-close { margin-left: auto; }
 
-/* Folded width: each row stacks, its label over its value. */
-@container pb-dock (max-width: 560px) {
+/* A narrow card: each row stacks, its label over its value. */
+@container pb-card (max-width: 560px) {
+  /* The buttons' reason first, on its own line, then the buttons. */
+  .pb-foot { padding-block: var(--space-2); }
+  .pb-foot-hint { order: -1; flex-basis: 100%; }
   .pb-row { grid-template-columns: minmax(0, 1fr) max-content; }
   .pb-row-label { grid-column: 1 / -1; }
   .pb-row-value { grid-column: 1 / -1; }
@@ -231,3 +282,8 @@ details[open] > .pb-more-summary .icon-twist { transform: rotate(90deg); }
 .pb-until { flex-direction: row; align-items: center; gap: var(--space-2); }
 .pb-until .field-label { font-weight: var(--fw-regular); font-size: inherit; }
 .pb-coming { margin-left: var(--space-1); font-size: var(--fs-micro); letter-spacing: var(--ls-eyebrow); text-transform: uppercase; }
+
+/* The run's mark in the conversation: Start's row, with Open Card beside it. */
+.pb-mark { display: flex; align-items: flex-start; gap: var(--space-2); }
+.pb-mark > .toolcard { flex: 1 1 auto; min-width: 0; }
+.pb-mark-open { flex: none; }

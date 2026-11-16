@@ -186,6 +186,8 @@ export function Composer(props: {
   onMode?: () => void;
   /** At the right end of the foot, in the mode switch's slot (the Overseer's quick actions). */
   accessory?: () => JSX.Element;
+  /** The message box's last row, under its foot line: the chat's playbook controls. */
+  below?: () => JSX.Element;
   /** Opens the session pane's Timeline tab: a bare "/timeline" unfiltered; a bare "/tree" and
       the run-status row's "N inputs" trigger with `inputsOnly`, on your own messages. */
   onShowTimeline?: (inputsOnly?: boolean) => void;
@@ -1630,6 +1632,7 @@ export function Composer(props: {
           </Show>
         </div>
       </form>
+      {props.below?.()}
     </footer>
   );
 }

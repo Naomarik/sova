@@ -97,6 +97,12 @@ places is a count that disagrees in one of them.
   browser's: the server keeps it on this computer only. A flip saves at once and is not part of any
   form, so Save Changes neither stages nor writes it; a save that fails puts the switch back with a
   toast. Turning it off is open to any caller; turning it back on is the operator's own page only.
+- **Agents' CPU · this computer** — after Context files and skills and before Server · this machine,
+  under its own heading: one switch, **Limit agents' CPU**, **off by default**, and when on, the box
+  **Agents may use at most [N] of M cores** (§app.load-priority/ceiling). It is this computer's, kept
+  by the server; the switch and the box save at once and are not part of any form, so Save Changes
+  neither stages nor writes them. Where it can't apply (macOS, no systemd user manager, a copy that
+  isn't Sova's installed service), the switch is disabled and its hint says why.
 - **Server · this machine** — after the browser's settings and before Updates, under its own
   heading: when this server started, the branch and commit it runs, and **Restart Sova**, an action
   that runs at once after its inline confirm; a copy no service runs shows the block with no button

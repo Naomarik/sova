@@ -207,12 +207,16 @@
       "server/approval-in-chat.ts",
       "server/session-setup.ts",
       "server/skill-descent.ts",
-      "server/session-setup.test.ts"
+      "server/session-setup.test.ts",
+      "server/folder-walk.ts",
+      "server/folder-walk.test.ts",
+      "server/approvals-routes.ts",
+      "server/project-settings.ts"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-11-12T16:08Z",
-      "source": "pi-session:ec6da819-fb0b-454b-9ba9-97db0affcbfb#723cbddc"
+      "by": "naomarik",
+      "at": "2026-11-16T18:47Z",
+      "source": "pi-session:a6acd616-a231-459f-bd68-f5bb4a996942#80590cfa"
     }
   },
   "§chat.context-approval/live": {

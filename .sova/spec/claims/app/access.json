@@ -264,12 +264,14 @@
       "server/share/tunnel/routes.test.ts",
       "server/public-links-routes.ts",
       "server/share/setup-chat.test.ts",
-      "docs/commands.md"
+      "docs/commands.md",
+      "server/agent-cpu.ts",
+      "server/agent-cpu.test.ts"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-11-12T12:42Z",
-      "source": "pi-session:a43d715c-1eb4-4040-a159-23c4193273a4#55333f93"
+      "by": "naomarik",
+      "at": "2026-11-16T19:56Z",
+      "source": "pi-session:a6acd616-a231-459f-bd68-f5bb4a996942#80590cfa"
     }
   },
   "§app/access": {

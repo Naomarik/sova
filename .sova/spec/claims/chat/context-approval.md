@@ -145,9 +145,20 @@ your decision before its first message.
   One row per key, the first found. A scan that stopped early (a walk at its limit,
   a checkout that couldn't be read) says so on the cards: "The search stopped early, so this list may
   miss some {context files | skills}."
+  What a scan finds is kept per checkout and read without holding up the server: pi's own lists (the
+  checkout's context files and skills, those above it and the user's own) and the subfolder walk. A
+  read of the list (the cards, a new chat's setup card) answers from the checkout's last read, and
+  when that read began 10 s or more ago it starts one new read behind it. So a file or skill added or
+  removed, at the root, below it, above it or in the user's own folders, shows from the first read
+  after a read that began after the change. A save (any Approve, Disallow or Waiting, from a card,
+  the setup card, a chat or the project overseer's proposal) and a setup read asked to be fresh read
+  the folder again first, so a save is always judged against the folder as it is. Fingerprints are
+  read at each scan; the list of checkouts is kept for 5 s.
 - **Where it is kept.** In `<state root>/project-skills.json`, version 2 (`folders[<folder key>]`, each
   with `context` and `skills` by key, an approval with its fingerprint), written atomically. A decision
-  on an item no longer found drops off, but only after a complete scan.
+  on an item no longer found drops off, but only after a complete scan that began, and whose walks
+  began, after the folder's latest save: a scan that read a walk from before a save drops nothing, and
+  a later one does it.
 - **Decisions from before.** A version 1 file still reads. Its Disallowed skills, kept by name, become
   the decision on the first skill a scan finds with that name. Its Approved ones are dropped: that
   skill is Waiting again.

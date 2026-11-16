@@ -397,6 +397,7 @@ the person clicks.
 | A schedule through a mesh peer, its proof failed or missing | This computer couldn't confirm your click with the one the schedule is on. Try Approve again, or approve it on that computer's page. Nothing was approved. |
 | Restarting Sova | Only the user restarts Sova. Ask them to press Restart Sova in Settings → General. Nothing was restarted. |
 | Updating Sova | Only the user updates Sova. Ask them to do it in Settings → General. Nothing was changed. |
+| How much CPU agents may use | Only the user changes how much CPU agents may use. Ask them to do it in Settings → General. Nothing was changed. |
 | Turning on public links | Only the user turns on public links. Ask them to press Turn On in Settings → Public links. Nothing was turned on. |
 | Downloading cloudflared | Only the user downloads programs. Ask them to press Download in Settings → Public links. Nothing was downloaded. |
 | The Cloudflare Account token | Only the user saves or removes the Cloudflare token. Ask them to do it in Settings → Public links. Nothing was changed. |

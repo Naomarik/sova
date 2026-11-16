@@ -240,8 +240,8 @@ Every caller keeps working with no new step for the person:
 
 ## §app.access/your-click — What only your own click passes
 
-Seventeen approvals are listed here. Sixteen pass only on what Sova takes for the person's own click
-in its page on this machine; the seventeenth, choosing where links open, is a narrower door that a
+Eighteen approvals are listed here. Seventeen pass only on what Sova takes for the person's own click
+in its page on this machine; the eighteenth, choosing where links open, is a narrower door that a
 script holding the operator token passes too (**Where links open**, below). Both hold but for what
 the Overseer keeps and a schedule on another computer (§app.access/other-roads). Each one lets
 something act later without asking, so the ordinary roads of a chat, a script (but at that narrower
@@ -261,6 +261,7 @@ refused too (§app.access/other-roads).
 | Trusting a project's or an extension's cards | `POST /api/session-cards/trust` with `on: true` | **Trust {name}'s Cards** on one of its cards |
 | Restarting Sova | `POST /api/updates/restart`, or Apply of Sova's own checkout (`POST /api/project-services/apply`, `POST /api/projects/:pid/services/apply`) | **Restart Sova** in Settings → General, or **Apply** on the Branches tab of Sova's project page |
 | Updating Sova | `POST /api/updates/check`, `POST /api/updates/apply`, `PUT /api/updates/settings` | Settings → General |
+| How much CPU agents may use | `PUT /api/settings/agent-cpu` | **Limit agents' CPU** and its cores in Settings → General (§app.load-priority/ceiling) |
 | Opening public links to the internet | `POST /api/public-links/turn-on`, `POST /api/public-links/cloudflared/download`, `PUT` and `DELETE /api/public-links/account-token` | **Turn On** and **Download** in Settings → Public links or a share screen's prompt, and the Account token's save and remove there (§mesh.tunnel/turn-on, §mesh.tunnel/cloudflared, §mesh.tunnel/account) |
 | Starting a setup chat for public links | `POST /api/public-links/setup-chat` | **Set Up With a Chat** in an option's setup help in Settings → Public links (§mesh.tunnel/setup-chat) |
 | Choosing where links open (a narrower door) | `PUT /api/public-links`, `DELETE /api/public-links/candidate`, and `POST /api/public-links/verify` while a new address waits for its Verify | The **Where links open** list and its fields in Settings → Public links, and **Verify Address** and **Cancel** on its Waiting for verification banner (§mesh.public/setting, §mesh.public/where-links-open) |
@@ -295,7 +296,8 @@ refused too (§app.access/other-roads).
   `session.sandbox.set` and `project.overseer.settings.set` stay commands, and answer a lowering or
   a power turned On with this refusal (§app.commands/catalogue). Extensions are the exception: Turn
   Off and Remove stay at the page too, as everything that changes an MCP server does
-  (§app.mcp/reads), so a misled chat can't quietly turn one off.
+  (§app.mcp/reads), so a misled chat can't quietly turn one off. The agents' CPU ceiling is another:
+  tightening it stays at the page too, so a misled chat can't slow every agent.
 - **What still passes.** **Apply and Approve** on a Settings change card is your click
   (§app.project-overseer/settings). A rewind or regenerate in the page past a raise still lowers the
   sandbox (§chat.sandbox/toggle). A fork opens at its fork point's sandbox state, so from an Off

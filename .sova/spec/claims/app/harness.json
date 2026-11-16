@@ -101,7 +101,8 @@
       "server/harness/pi/golden/fixtures/large.ts",
       "scripts/harness-golden.mjs",
       "scripts/harness-golden/faux-record.mjs",
-      "server/harness/pi/reader-retention.test.ts"
+      "server/harness/pi/reader-retention.test.ts",
+      "server/jsonl.test.ts"
     ],
     "requires": [
       "§app.harness/boundary"

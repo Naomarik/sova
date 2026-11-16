@@ -106,8 +106,9 @@ it starts, kept on this computer in its approval list (§chat.context-approval/l
   changed (`field: "skills.<key>"` or `"context.<key>"`, from and to `approved`, `disallowed` or
   `waiting`), and then the new chats below are rebuilt.
 - **A skill that is gone drops off.** A decided skill no longer found in any checkout leaves the card
-  and the list by itself. Only a scan that saw every checkout whole drops one: when git can't list the
-  worktrees, a folder can't be loaded, or a folder walk stops at its limit, every decision is kept.
+  and the list by itself. Only a scan that saw every checkout whole, and began after the folder's
+  latest save, drops one (§chat.context-approval/list): when git can't list the worktrees, a folder
+  can't be loaded, or a folder walk stops at its limit, every decision is kept.
 - **New chats take a change at once** (§chat.context-approval/live). A started chat is never touched
   (§chat.context-approval/fixed).
 - **The project overseer manages them.** Its `sova_settings` lists each skill's state by key and

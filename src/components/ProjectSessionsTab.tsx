@@ -31,6 +31,7 @@ import {
 import { unchangedError } from "../lib/unchanged-error";
 import { adoptSession, announce, home, toast } from "../lib/ui-state";
 import { ActionMenu } from "./ActionMenu";
+import { createLandConfirm, LandConfirms } from "./WorktreesModal";
 import type { ProjectOverseer } from "./ProjectOverseerPanel";
 import { RemoveAnywayListing } from "./RemoveAnywayListing";
 import { Icon, Placeholder } from "./ui";
@@ -224,6 +225,12 @@ export function SessionsTab(props: {
     const summary = () => (v().s && showSummaries() ? summaryLineOf(v().s!) : "");
     const by = () => (row().playbook ? "Project verbs playbook run" : row().startedBy === "overseer" ? "Started by the overseer" : null);
     const ready = () => (v().facts.working ? undefined : rowLand(v().branches));
+    // Land asks first, with the Worktrees window's own confirm ("Land 2 Commits" / Not Yet): Land is your approval to
+    // send the branch to its target, and one press in a dense list is easy to make by accident.
+    const confirm = createLandConfirm();
+    /** Its commits past its base, when the branch read has them for this branch. */
+    const landAhead = (b: BranchState) => (row().branch === b.branch && row().facts ? row().ahead : undefined);
+    const landTarget = (b: BranchState) => b.land?.target ?? row().target ?? undefined;
     const open = () => openBranches().has(id());
     const column = () => branchLines(v().branches, open());
     const rate = () => (v().facts.working ? rateCell(v().s ?? { live: null }, rates().get(id()), { reported: tokensReported(), remote: !row().path }) : null);
@@ -235,7 +242,7 @@ export function SessionsTab(props: {
     const questions = () => v().s?.align?.openQuestions ?? 0;
     const hasFacts = () => !landed() && (ctx() !== null || !!workers()?.total || questions() > 0);
     return (
-      <li class="psess-row" classList={{ "psess-row-quiet": quiet() }}>
+      <li class="psess-row" classList={{ "psess-row-quiet": quiet() }} ref={confirm.rowRef}>
         <div class="psess-main">
           <Show when={row().path} fallback={<span class="psess-title" title={title()}>{title()}</span>}>
             {(path) => (
@@ -327,14 +334,15 @@ export function SessionsTab(props: {
           </Show>
         </div>
         <div class="psess-acts">
-          <Show when={ready()}>
+          <Show when={!confirm.ask() && ready()}>
             {(b) => (
               <button
                 type="button"
                 class="button button-sm button-primary"
+                data-land
                 aria-label={`Land ${b().branch}`}
                 aria-disabled={working() ? "true" : undefined}
-                onClick={() => void landBranch(v(), b())}
+                onClick={() => !working() && confirm.open("land")}
               >
                 Land
               </button>
@@ -392,6 +400,17 @@ export function SessionsTab(props: {
               )}
             </Show>
           </div>
+        </Show>
+        <Show when={confirm.ask() && ready()}>
+          {(b) => (
+            <div class="psess-note">
+              <LandConfirms confirm={confirm} branch={b().branch} ahead={landAhead(b())} target={landTarget(b())} busy={!!working()} onLand={() => {
+                  // The confirm closes before this runs, which ends this Show: read the branch from the row.
+                  const r = ready();
+                  if (r) void landBranch(v(), r);
+                }} />
+            </div>
+          )}
         </Show>
         <Show when={errors()[id()]}>{(e) => <p class="field-error psess-note">{e()}</p>}</Show>
         <Show when={armed() && facts() && po().worktrees.fresh()}>

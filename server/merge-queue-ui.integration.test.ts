@@ -1114,7 +1114,13 @@ for (const width of [1280, 390]) {
       await page.getByRole("menuitem", { name: /^Remove Worktree/ }).waitFor();
       assert.equal(await page.getByRole("menuitem", { name: /^Merge Branch/ }).count(), 0);
       await page.keyboard.press("Escape");
-      await cart.getByRole("button", { name: "Land sova/fix-cart" }).click();
+      // Land asks first, with the Worktrees window's confirm: Not Yet queues nothing and gives Land back.
+      await cart.getByRole("button", { name: "Land sova/fix-cart", exact: true }).click();
+      const ask = cart.getByRole("group", { name: "Land sova/fix-cart", exact: true });
+      await ask.getByRole("button", { name: "Not Yet" }).click();
+      await ask.waitFor({ state: "detached" });
+      assert.equal(o.calls.filter((c) => c.verb === "merge.add" && c.body.checkout === "/w/.worktrees/sova-fix-cart").length, 0, "Not Yet queues nothing");
+      await confirmLand(o, cart, "sova/fix-cart", "Land 2 Commits");
       await until("a land of the coding worktree", () => o.calls.some((c) => c.verb === "merge.add" && c.body.checkout === "/w/.worktrees/sova-fix-cart"));
       assert.equal(lastCall(o, "merge.add").body.commit, sha("8"), "the row's shown head is pinned");
       // A queued row is in line: no Land on it.

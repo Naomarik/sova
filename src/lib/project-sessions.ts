@@ -143,7 +143,7 @@ export interface BranchState {
   /** Landed: when, ISO, when known. */
   landedAt?: string;
   /** Ready with the queue's Land: what Land queues (its folder and the commit the read saw). */
-  land?: { worktree: string; commit?: string };
+  land?: { worktree: string; commit?: string; target?: string };
   /** Its queue place, for the order inside Ready to land. */
   position?: number;
 }
@@ -154,10 +154,10 @@ const LANDED_KEYS = new Set<QueueRow["key"]>(["landed", "cleaned-up", "merged"])
 const firstLine = (s: string | undefined): string | undefined => s?.split("\n")[0]?.trim() || undefined;
 
 /** A queue row (merge-queue.ts queueRow, the one rule every branch row reads) in the Sessions tab's words. */
-export function branchStateOf(branch: string, row: QueueRow, extra: { position?: number; landedAt?: string; worktree?: string; commit?: string } = {}): BranchState {
+export function branchStateOf(branch: string, row: QueueRow, extra: { position?: number; landedAt?: string; worktree?: string; commit?: string; target?: string } = {}): BranchState {
   const k = row.key;
   if (k === "ready") {
-    const land = row.action === "land" && extra.worktree ? { land: { worktree: extra.worktree, ...(extra.commit ? { commit: extra.commit } : {}) } } : {};
+    const land = row.action === "land" && extra.worktree ? { land: { worktree: extra.worktree, ...(extra.commit ? { commit: extra.commit } : {}), ...(extra.target ? { target: extra.target } : {}) } } : {};
     return { branch, stage: "ready", word: "Ready to land", tone: "success", ...land };
   }
   if (k === "queued") return { branch, stage: "in-line", word: extra.position ? `In line · ${ordinal(extra.position)}` : "In line", tone: "muted", ...(extra.position ? { position: extra.position } : {}) };
@@ -228,6 +228,7 @@ export function sessionBranches(
         landedAt: q?.landedAt ?? (w.readiness?.merged && s?.readiness?.badge === "merged" ? new Date(s.readiness.since).toISOString() : undefined),
         worktree: w.exists ? path : undefined,
         commit: w.readiness?.landing?.commit,
+        target: w.mergeProject?.target,
       });
     });
   }

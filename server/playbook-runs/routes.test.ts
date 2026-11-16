@@ -171,6 +171,24 @@ describe("a playbook card", () => {
     assert.deepEqual(heard.at(-1), { sessionId: "chat-a", type: PLAYBOOK_RUN_EVENT, id: v.id, closed: true });
   });
 
+  test("a started run put away leaves the chat's cards but still answers by its id, marked closed; a closed draft doesn't", async () => {
+    const listedIds = async () => ((await (await app.request(`/api/playbook-runs?path=${encodeURIComponent(chatPath)}`)).json()) as { runs: PlaybookRunView[] }).runs.map((r) => r.id);
+    const started = await open();
+    store.changeRun(started.id, (x) => {
+      x.state = "started";
+    });
+    assert.equal((await app.request(`/api/playbook-runs/${started.id}`, { method: "DELETE" })).status, 403, "still only the person's click");
+    assert.equal((await asPage(`/api/playbook-runs/${started.id}`, { method: "DELETE" })).status, 200);
+    assert.ok(!(await listedIds()).includes(started.id));
+    const record = await app.request(`/api/playbook-runs/${started.id}`);
+    assert.equal(record.status, 200);
+    assert.deepEqual(((await record.json()) as PlaybookRunView & { closed?: boolean }).closed, true);
+    assert.equal((await asPage(`/api/playbook-runs/${started.id}`, { method: "DELETE" })).status, 404, "put away once");
+    const draft = await open();
+    assert.equal((await asPage(`/api/playbook-runs/${draft.id}`, { method: "DELETE" })).status, 200);
+    assert.equal((await app.request(`/api/playbook-runs/${draft.id}`)).status, 404);
+  });
+
   test("Save as My Defaults gives the next card those values, marked as your standing answer", async () => {
     const v = await open();
     const edited = (await (await app.request(`/api/playbook-runs/${v.id}`, patch({ revision: v.revision, edits: { choices: { level: "hi" } } }))).json()) as PlaybookRunView;

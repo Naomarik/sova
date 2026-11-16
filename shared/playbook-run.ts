@@ -150,7 +150,8 @@ export interface PlaybookRunView {
   startError?: string;
   /** The playbook's description can't be read now (a draft whose playbook.json broke). */
   error?: string;
-  /** Only in a socket's news: the draft was closed, so the card goes away. */
+  /** The person closed the card: a draft's is gone (only a socket's news says so); a started run's was put away,
+   * so it leaves the chat's cards, while reading it by its id still answers its record, marked closed. */
   closed?: true;
 }
 

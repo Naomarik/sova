@@ -184,8 +184,10 @@ export function mountPlaybookRunRoutes(app: Hono, deps: PlaybookRunRouteDeps): v
 
   app.get("/api/playbook-runs/:run", async (c) => {
     const r = runById(c.req.param("run"));
-    if (!r || r.closed) return c.json({ error: "No such playbook run." }, 404);
-    return c.json(await runView(r), 200, { "Cache-Control": "no-store" });
+    // A closed draft is gone; a started run put away still answers, as its record.
+    if (!r || (r.closed && r.state === "draft")) return c.json({ error: "No such playbook run." }, 404);
+    const view = await runView(r);
+    return c.json(r.closed ? { ...view, closed: true } : view, 200, { "Cache-Control": "no-store" });
   });
 
   app.patch("/api/playbook-runs/:run", async (c) => {
@@ -243,7 +245,8 @@ export function mountPlaybookRunRoutes(app: Hono, deps: PlaybookRunRouteDeps): v
     if (notPage(c)) return c.json({ error: "Only the person closes a playbook card, on the card in Sova's page. Nothing was closed." }, 403);
     const r = runById(c.req.param("run"));
     if (!r || r.closed) return c.json({ error: "No such playbook run." }, 404);
-    if (r.state !== "draft") return c.json({ error: "A started run's card stays as its record." }, 409);
+    // A draft closed is gone; a started run put away leaves the chat's cards but keeps its record (GET above).
+    if (r.state === "starting") return c.json({ error: "This run is starting; close its card once it has started." }, 409);
     changeRun(r.id, (x) => {
       x.closed = true;
     });

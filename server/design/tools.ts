@@ -14,6 +14,7 @@ import { lookAtDesign } from "./look";
 import type { TourSize } from "../../shared/tour";
 import { changeDesigns, designOf, pendingPage, readPage, viewOf } from "./store";
 import { applyEdits, type Edit } from "./edits";
+import { pickVersions, versionHeading } from "./versions";
 
 export { applyEdits };
 
@@ -95,40 +96,14 @@ export function mainDesignTools(parent: () => DesignParent, cwd: () => string): 
   ];
 }
 
-/** One page a read names: "A" (its latest version) or "A11" (version 11). */
-const PAGE_NAME = /^([A-Z]{1,4})(\d+)?$/;
-
-const when = (iso: string): string => iso.replace("T", " ").replace(/:\d\d(\.\d+)?Z$/, " UTC");
-
-/**
- * The pages the main chat's read names, each under a line saying which version it is, of how many, and when it was
- * made, and whether a newer one is being written. "A" is its latest version; "A11" version 11; several are separated by
- * commas or spaces. A name that isn't a design, or a version it doesn't have, throws, naming what there is; nothing is
- * read then.
- */
+/** The pages the main chat's read names (server/design/versions.ts), each under its version line. Throws, naming what
+    there is, for a design or version that isn't there; nothing is read then. */
 export function readDesignPages(sessionId: string, asked: string): string {
-  const names = [...new Set(asked.split(/[\s,]+/).map((x) => x.trim().toUpperCase()).filter(Boolean))];
-  if (!names.length) throw new Error("label names no design: give a label such as A, or A11 for its version 11.");
-  const designs = viewOf(sessionId).designs;
-  const labels = designs.map((d) => d.label).join(", ") || "none yet";
-  const picked = names.map((name) => {
-    const m = PAGE_NAME.exec(name);
-    const d = m && isDesignLabel(m[1]) ? designOf(sessionId, m[1]!) : undefined;
-    if (!m || !d) throw new Error(`No design ${name} in this chat. Its designs: ${labels}.`);
-    const last = d.versions.at(-1);
-    if (!last) throw new Error(`Design ${d.label} has no finished page yet.`);
-    const n = m[2] === undefined ? last.n : Number(m[2]);
-    const v = d.versions.find((x) => x.n === n);
-    if (!v) throw new Error(`Design ${d.label} has no version ${n}: it has ${d.versions.length === 1 ? `version ${last.n}` : `versions ${d.versions[0]!.n} to ${last.n}`}.`);
-    return { d, v, last };
-  });
-  return picked
-    .map(({ d, v, last }) => {
-      const page = readPage(sessionId, d.label, v.n);
-      if (page === null) throw new Error(`Design ${d.label}'s version ${v.n} couldn't be read.`);
-      const head = `Design ${d.label} · version ${v.n} of ${last.n} · ${v.n === last.n ? "latest" : `not the latest (version ${last.n} is, from ${when(last.at)})`} · ${when(v.at)}`;
-      const writing = d.live ? `Version ${d.live.version} is being written now; this isn't it.` : d.status === "writing" || d.status === "fixing" ? "A newer version is being written now; this isn't it." : "";
-      return [head, writing, "", page].filter((x, i) => i === 2 || x).join("\n");
+  return pickVersions(viewOf(sessionId).designs, asked)
+    .map((x) => {
+      const page = readPage(sessionId, x.d.label, x.v.n);
+      if (page === null) throw new Error(`Design ${x.d.label}'s version ${x.v.n} couldn't be read.`);
+      return `${versionHeading(x)}\n\n${page}`;
     })
     .join("\n\n");
 }

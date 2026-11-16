@@ -32,6 +32,7 @@ import { recordHistory } from "./history";
 import { answerQuestions, BRIEF_LIMITS, coordinatorWrote, fillNotes, sameAddress, isHttpUrl, keepPrompt, keptImages, launchText, lookNote, mergeLinks, newBrief, openQuestions, parseBriefQuestions, rewritePrompt, turnEnded, userEditedPrompt, userEditedSummary, userTold, type BriefPick } from "./brief";
 import { DESIGN_BROWSE_TOUR_ID, designBrowse, type BrowseParent, type DesignBrowseStores } from "./browse";
 import { lookAtDesign } from "./look";
+import { pickVersions, versionHeading, type PickedVersion } from "./versions";
 import { designModelOptions, estimateUsd, type DesignModelOption } from "./setup";
 import { coordinatorSkillsBlock, skillReadTokens } from "./skills";
 import { changeDesigns, designRoot, designSessions, runOf, setCoordinator, setRunPhase, viewOf } from "./store";
@@ -1116,7 +1117,9 @@ function raiseAsk(st: CoordinatorState, ask: NewAsk, grant?: CoordinatorState["g
 
 const metadata = (d: DesignRecord) => ({
   label: d.label, direction: d.direction, ...(d.layout ? { layout: d.layout } : {}), model: d.model, parents: d.parents, status: d.status, ...(d.removed ? { removed: true } : {}), ...(d.error ? { error: d.error } : {}),
-  versions: d.versions.map((v) => ({ n: v.n, at: v.at, ...(v.note ? { note: v.note } : {}) })), ...(d.usage ? { cost: d.usage.cost } : {}), ...(d.delivery ? { delivery: d.delivery.state } : {}),
+  versions: d.versions.map((v) => ({ n: v.n, at: v.at, ...(v.note ? { note: v.note } : {}) })), ...(d.versions.length ? { latest: d.versions.at(-1)!.n } : {}),
+  ...(d.live ? { writing: `version ${d.live.version} is being written now` } : d.status === "writing" || d.status === "fixing" ? { writing: "a newer version is being written now" } : {}),
+  ...(d.usage ? { cost: d.usage.cost } : {}), ...(d.delivery ? { delivery: d.delivery.state } : {}),
 });
 
 /** A coordinator's tools, closed over the chat its record names; none takes a chat id from the model. */
@@ -1128,15 +1131,40 @@ export function coordinatorTools(sessionId: string): ToolSpec[] {
 
   const status: ToolSpec = {
     name: "design_status", label: "Design status",
-    description: "What you know of this chat's designs: label, direction (its style), layout, model, parents, status, versions and the note each session handed in. Never a page's code.",
-    parameters: { type: "object", properties: { label: { type: "string", description: "One design's label; omit for all." } }, additionalProperties: false },
+    description: "What you know of this chat's designs: label, direction (its style), layout, model, parents, status, versions (each with its time and the note its session handed in), its latest version, and one being written. Never a page's code. label narrows it: \"A\" for one design, \"A11\" for its version 11 only, several with commas (\"A11, B\").",
+    parameters: { type: "object", properties: { label: { type: "string", description: "A design's label, or a label with a version number (A11); several separated by commas. Omit for all." } }, additionalProperties: false },
     async execute(_id, params: { label?: string }) {
       const st = state();
       if (isResult(st)) return st;
       const all = p().designsFor(parent.sessionId);
-      const list = params?.label ? all.filter((d) => d.label === params.label) : all;
+      let list = all.map(metadata);
+      if (params?.label?.trim()) {
+        // A bare label shows the design with all its versions; one with a number (A11) only that version. Each name is
+        // checked as a read checks it, so an unknown design or version is refused by name.
+        const names = [...new Set(params.label.split(/[\s,]+/).map((x) => x.trim().toUpperCase()).filter(Boolean))];
+        const shown = new Map<string, number[] | "all">();
+        for (const name of names) {
+          const bare = /^[A-Z]{1,4}$/.test(name);
+          if (bare && !all.some((d) => d.label === name)) return refuse(`No design ${name} in this chat. Its designs: ${all.map((d) => d.label).join(", ") || "none yet"}.`);
+          let one: PickedVersion | undefined;
+          if (!bare) {
+            try {
+              one = pickVersions(all, name)[0];
+            } catch (err) {
+              return refuse(err instanceof Error ? err.message : String(err));
+            }
+          }
+          const label = one?.d.label ?? name;
+          const had = shown.get(label);
+          shown.set(label, !one || had === "all" ? "all" : [...(had ?? []), one.v.n]);
+        }
+        list = [...shown].map(([label, which]) => {
+          const d = metadata(all.find((x) => x.label === label)!);
+          return which === "all" ? d : { ...d, versions: d.versions.filter((v) => which.includes(v.n)) };
+        });
+      }
       const run = runOf(parent.sessionId, st.runId);
-      return say(JSON.stringify({ run: run ? { id: run.id, phase: run.phase, ...(run.brief ? { brief: { rev: run.brief.textRev, promptBy: run.brief.promptBy, openQuestions: openQuestions(run.brief).length, conflict: !!run.brief.conflict, started: run.brief.startedRev !== undefined } } : {}) } : null, waitingOnUser: st.ask?.text ?? null, designs: list.map(metadata) }, null, 1));
+      return say(JSON.stringify({ run: run ? { id: run.id, phase: run.phase, ...(run.brief ? { brief: { rev: run.brief.textRev, promptBy: run.brief.promptBy, openQuestions: openQuestions(run.brief).length, conflict: !!run.brief.conflict, started: run.brief.startedRev !== undefined } } : {}) } : null, waitingOnUser: st.ask?.text ?? null, designs: list }, null, 1));
     },
   };
 
@@ -1287,11 +1315,11 @@ export function coordinatorTools(sessionId: string): ToolSpec[] {
 
   const browse: ToolSpec = {
     name: "design_browse", label: "Look at a screen",
-    description: "Open an address in a real browser at desktop and phone widths and get pictures and a list of what is on the page, or look at a finished design by label. actions: click to navigate, reveal, wait, scroll; never typing and never a form. Only a declared signIn submits anything. Your own running copies and addresses the user gave open at once; any other site asks the user first.",
+    description: "Open an address in a real browser at desktop and phone widths and get pictures and a list of what is on the page, or look at a finished design by label: its latest version, unless label names one (A11), or several at once (\"A11, A16\"); each comes under a line naming its version, how many there are and when it was made. actions: click to navigate, reveal, wait, scroll; never typing and never a form. Only a declared signIn submits anything. Your own running copies and addresses the user gave open at once; any other site asks the user first.",
     parameters: {
       type: "object",
       properties: {
-        url: { type: "string" }, label: { type: "string", description: "A design's label, instead of url." }, version: { type: "integer" },
+        url: { type: "string" }, label: { type: "string", description: "Instead of url: a design's label for its latest version (A), a label with a version number (A11), or several separated by commas (A11, A16)." }, version: { type: "integer", description: "A version of a bare label; A11 in label says the same." },
         actions: { type: "array", items: { type: "object" } }, sizes: { type: "array", items: { type: "string", enum: ["desktop", "phone"] } }, signIn: { type: "object" },
       },
       additionalProperties: false,
@@ -1301,10 +1329,25 @@ export function coordinatorTools(sessionId: string): ToolSpec[] {
       if (isResult(st)) return st;
       const sizes = params?.sizes as TourSize[] | undefined;
       if (typeof params?.label === "string") {
-        const r = await p().lookAtDesign(parent, params.label, { ...(typeof params.version === "number" ? { version: params.version } : {}), ...(sizes ? { sizes } : {}) });
-        const shots = saveShots(st, r.shots, r.outline);
+        // Its latest version unless one is named; each picture set under the line saying which version it is.
+        let picked: PickedVersion[];
+        try {
+          picked = pickVersions(p().designsFor(parent.sessionId), params.label, typeof params.version === "number" ? params.version : undefined);
+        } catch (err) {
+          return refuse(err instanceof Error ? err.message : String(err));
+        }
+        const content: Result["content"] = [];
+        const ids: string[] = [];
+        for (const x of picked) {
+          const r = await p().lookAtDesign(parent, x.d.label, { version: x.v.n, ...(sizes ? { sizes } : {}) });
+          const shots = saveShots(st, r.shots, r.outline);
+          const one = picturesResult(st, shots, r.shots.map((s) => s.png), r.outline);
+          const [first, ...images] = one.content;
+          content.push({ type: "text", text: `${versionHeading(x)}\n${(first as { text: string }).text}` }, ...images);
+          ids.push(...shots.map((s) => s.id));
+        }
         save(st);
-        return picturesResult(st, shots, r.shots.map((s) => s.png), r.outline);
+        return { content, details: { v: 1, shots: ids, versions: picked.map((x) => `${x.d.label}${x.v.n}`) } };
       }
       const content = notAReference(st, params?.url);
       if (content) return refuse(`${content} is Not a Reference: it is part of the page's content, so it is never opened. Write it into the brief as it is.`);

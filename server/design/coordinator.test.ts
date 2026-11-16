@@ -28,6 +28,7 @@ let describingNow = false;
 let browseCalls = 0;
 let imageCalls: string[][] = [];
 let acts: { label: string; act: string; toolCallId?: string }[] = [];
+let lookedAt: string[] = [];
 let designList: DesignRecord[] = [];
 const DESIGN_A = { label: "A", direction: "D0", model: "zai/m0", parents: [], status: "ready", route: "tool", versions: [{ n: 1, at: "t", chars: 50000, note: { layout: "l", sections: "s", type: "t", color: "c" } }], vision: true, createdAt: "", updatedAt: "", runId: "r" } as unknown as DesignRecord;
 
@@ -47,6 +48,7 @@ beforeEach(() => {
   browseCalls = 0;
   imageCalls = [];
   acts = [];
+  lookedAt = [];
   designList = [DESIGN_A];
   capture = async () => ({ kind: "refused", message: "no capture in this test" }) as never;
   readLook = async () => ({ text: "Calm navy on white.", model: "zai/vision" });
@@ -72,7 +74,7 @@ beforeEach(() => {
     deliverDesign: async (_p, label, a) => (log.delivered.push({ label, ...a }), { queued: true }),
     lifecycle: (_p, label, act, toolCallId) => void acts.push({ label, act, ...(toolCallId ? { toolCallId } : {}) }),
     models: async () => [{ ref: "openai/astra", name: "astra", vision: false, route: "tool", efforts: ["low", "high"], onSetup: false }],
-    lookAtDesign: async () => ({ shots: [{ size: "desktop", png: PNG }], outline: "O" }),
+    lookAtDesign: async (_p, label, a) => (lookedAt.push(`${label}${a.version ?? ""}`), { shots: [{ size: "desktop", png: PNG }], outline: "O" }),
     systemPrompt: () => "PROMPT",
     specFor: (_p, _c, model) => ({ model }) as never,
     sessionDir: () => "/s",
@@ -1327,4 +1329,24 @@ test("each Full Prompt revision and the Start are kept in the history, whole, wi
   const started = items.find((i) => i.kind === "start")!;
   assert.equal(started.rev, brief(run.id).textRev);
   assert.ok(started.text!.startsWith("The user's own prompt."), "what the designs got");
+});
+
+test("the Creative Director looks at a design's latest version unless it names one, several at once, each labelled with its version and time", async () => {
+  const t = await launched();
+  const v = (n: number) => ({ n, at: `2026-11-16T10:0${n}:30.000Z`, chars: 10, by: "first" });
+  designList = [{ ...DESIGN_A, versions: [v(1), v(2), v(3)] } as DesignRecord, { ...DESIGN_A, label: "B", status: "writing", live: { version: 2, chars: 9 }, versions: [v(1)] } as DesignRecord, { ...DESIGN_A, label: "C", status: "queued", versions: [] } as DesignRecord];
+  const heads = (r: { content: { type: string; text?: string }[] }) => r.content.filter((b) => b.type === "text").map((b) => b.text!.split("\nPictures")[0]);
+  assert.deepEqual(heads(await t.design_browse({ label: "A" })), ["Design A · version 3 of 3 · latest · 2026-11-16 10:03 UTC"]);
+  assert.deepEqual(heads(await t.design_browse({ label: "a1, B" })), ["Design A · version 1 of 3 · not the latest (version 3 is, from 2026-11-16 10:03 UTC) · 2026-11-16 10:01 UTC", "Design B · version 1 of 1 · latest · 2026-11-16 10:01 UTC\nVersion 2 is being written now; this isn't it."]);
+  // The older form, a bare label with version, reads the same.
+  await t.design_browse({ label: "A", version: 2 });
+  assert.deepEqual(lookedAt, ["A3", "A1", "B1", "A2"]);
+  // An unknown design or version is refused by name, and nothing is looked at.
+  lookedAt = [];
+  for (const [label, why] of [["A9", /no version 9: it has versions 1 to 3/], ["A1, Z", /No design Z in this chat\. Its designs: A, B, C/], ["C", /C has no finished page yet/]] as const) assert.match(textOf(await t.design_browse({ label })), why);
+  assert.deepEqual(lookedAt, []);
+  // design_status takes the same names: a version named shows only it; the latest and a page being written are said.
+  const status = JSON.parse(textOf(await t.design_status({ label: "A2, B" })));
+  assert.deepEqual(status.designs.map((d: { label: string; versions: { n: number }[]; latest?: number; writing?: string }) => [d.label, d.versions.map((x) => x.n), d.latest, d.writing ?? null]), [["A", [2], 3, null], ["B", [1], 1, "version 2 is being written now"]]);
+  refused(await t.design_status({ label: "A7" }));
 });

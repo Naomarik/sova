@@ -11,6 +11,7 @@ import {
   OLD_DAYS,
   recordedBranchState,
   rowLand,
+  opensSummary,
   sessionBranches,
   sessionGroup,
   startedWords,
@@ -147,6 +148,17 @@ test("a branch reads from its chat's own worktree row where the chat tracks it; 
   assert.deepEqual(sessionBranches(recorded, tracks("feat/other", "/w/other") as never, none).map((b) => [b.branch, b.word]), [["sova/own", "2 commits ahead"], ["feat/other", "Ready to land"]]);
   // A session in the project root with nothing tracked has no branch.
   assert.deepEqual(sessionBranches({ branch: null }, undefined, none), []);
+});
+
+test("a branch's name opens its summary only when Ready to land and tracked; an open summary keeps its button whatever the branch becomes", () => {
+  const STAGES: BranchStage[] = ["ready", "in-line", "checking", "stuck", "landed", "done", "other"];
+  for (const stage of STAGES)
+    for (const tracked of [false, true]) {
+      // Closed: only a ready branch its chat tracks. Every other state's name does nothing new.
+      assert.equal(opensSummary({ stage }, { tracked, open: false }), stage === "ready" && tracked, `${stage} tracked=${tracked}`);
+      // Open: it stays, so a Land or Try Again pressed inside it (which moves the branch on) never closes it.
+      assert.equal(opensSummary({ stage }, { tracked, open: true }), true, `${stage} tracked=${tracked} open`);
+    }
 });
 
 test("a finished session's age cell says its start date once", () => {

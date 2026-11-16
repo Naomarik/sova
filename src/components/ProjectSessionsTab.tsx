@@ -25,6 +25,7 @@ import {
   sessionBranches,
   startedWords,
   branchLines,
+  opensSummary,
   rowLand,
   waitsOnYou,
   type BranchState,
@@ -140,6 +141,23 @@ export function SessionsTab(props: {
   const [errors, setErrors] = createSignal<Record<string, string>>({});
   const [openBranches, setOpenBranches] = createSignal<ReadonlySet<string>>(new Set());
   const [landedOpen, setLandedOpen] = createSignal(false);
+  // Which branch's summary is open (its session and branch), held here: a refresh of the list rebuilds rows and their
+  // branch lines, and an open summary must come through that. Only the user closes it (Escape, its ×, the name again,
+  // a press outside); it also goes once nothing on the page shows that branch's name any more.
+  const [summaryOpen, setSummaryOpen] = createSignal<string | null>(null);
+  const summaryKey = (sessionId: string, branch: string) => `${sessionId}\n${branch}`;
+  const summariesShown = new Map<string, number>();
+  /** Called as a branch's summary button is drawn: an open one whose button is rebuilt at once (the row moved to
+      another group) stays open; one whose button is gone for good is closed. */
+  const summaryDrawn = (key: string) => {
+    summariesShown.set(key, (summariesShown.get(key) ?? 0) + 1);
+    onCleanup(() => {
+      const n = (summariesShown.get(key) ?? 1) - 1;
+      if (n > 0) summariesShown.set(key, n);
+      else summariesShown.delete(key);
+      queueMicrotask(() => !summariesShown.has(key) && summaryOpen() === key && setSummaryOpen(null));
+    });
+  };
   const [landedShown, setLandedShown] = createSignal(LANDED_PAGE);
 
   const start = async () => {
@@ -246,10 +264,31 @@ export function SessionsTab(props: {
     const workers = () => v().s?.workers ?? v().s?.live?.workers;
     const questions = () => v().s?.align?.openQuestions ?? 0;
     /** A branch's name. Ready to land, it leads with the READY chip's green dot; and where its chat tracks the branch
-        (the session list has its row), the name is a button that opens the Worktrees window's own row for it. */
+        (the session list has its row), the name is a button that opens the Worktrees window's own row for it. A
+        summary that is open keeps its button whatever the branch becomes (project-sessions.ts opensSummary). */
     const BranchName = (np: { b: BranchState; of?: boolean }) => {
       const ready = () => np.b.stage === "ready";
-      const opens = () => ready() && !!row().path && !!v().s?.branches?.some((x) => x.branch === np.b.branch && x.exists);
+      const key = () => summaryKey(id(), np.b.branch);
+      const isOpen = () => summaryOpen() === key();
+      const tracked = () => !!row().path && !!v().s?.branches?.some((x) => x.branch === np.b.branch && x.exists);
+      const opens = () => !!row().path && opensSummary(np.b, { tracked: tracked(), open: isOpen() });
+      // A component of its own: its body runs once, when the button is drawn, and reads nothing the <Show> around it
+      // would then follow (a read of the row there would rebuild the button, and its open card, on every refresh).
+      const Button = () => {
+        summaryDrawn(key());
+        return (
+          <BranchPopover
+            class={np.of ? "psess-of-open" : "psess-branch-open"}
+            branch={np.b.branch}
+            ready={ready()}
+            open={isOpen()}
+            onOpen={(o) => setSummaryOpen(o ? key() : summaryOpen() === key() ? null : summaryOpen())}
+            sessionPath={row().path!}
+            cwd={v().s?.cwd}
+            onChanged={() => po().worktrees.refetch()}
+          />
+        );
+      };
       return (
         <Show
           when={opens()}
@@ -262,7 +301,7 @@ export function SessionsTab(props: {
             </span>
           }
         >
-          <BranchPopover class={np.of ? "psess-of-open" : "psess-branch-open"} branch={np.b.branch} sessionPath={row().path!} cwd={v().s?.cwd} onChanged={() => po().worktrees.refetch()} />
+          <Button />
         </Show>
       );
     };
@@ -317,22 +356,24 @@ export function SessionsTab(props: {
         </div>
         <div class="psess-branches">
           <Show when={v().branches.length} fallback={<span class="psess-nobranch">No branch</span>}>
-            <For each={column().lines}>
+            {/* Keyed by its branch: every refresh of the list makes each line a new object, and a line rebuilt for
+                that would take its open summary with it. */}
+            <ForKey each={column().lines} by={(l) => l.b.branch}>
               {(l) => (
-                <Show when={l.said} fallback={<BranchName b={l.b} />}>
-                  <span class="psess-state" title={l.b.why ? `${l.b.word} · ${l.b.why}` : undefined}>
-                    <span class={`psess-word psess-tone-${l.b.tone} psess-stage-${l.b.stage}`}>{l.b.stage === "landed" && l.b.landedAt ? `Landed ${relativeTime(l.b.landedAt, now())}` : l.b.word}</span>
+                <Show when={l().said} fallback={<BranchName b={l().b} />}>
+                  <span class="psess-state" title={l().b.why ? `${l().b.word} · ${l().b.why}` : undefined}>
+                    <span class={`psess-word psess-tone-${l().b.tone} psess-stage-${l().b.stage}`}>{l().b.stage === "landed" && l().b.landedAt ? `Landed ${relativeTime(l().b.landedAt!, now())}` : l().b.word}</span>
                     <Show when={v().branches.length > 1}>
-                      <BranchName b={l.b} of />
+                      <BranchName b={l().b} of />
                     </Show>
-                    <Show when={l.b.why}>{(w) => <span class="psess-why">{w()}</span>}</Show>
+                    <Show when={l().b.why}>{(w) => <span class="psess-why">{w()}</span>}</Show>
                   </span>
                   <Show when={v().branches.length === 1}>
-                    <BranchName b={l.b} />
+                    <BranchName b={l().b} />
                   </Show>
                 </Show>
               )}
-            </For>
+            </ForKey>
             <Show when={v().branches.length > 3}>
               <button
                 type="button"

@@ -9,6 +9,9 @@ import "./branch-popover.css";
 const errText = (err: unknown) => (err instanceof Error ? err.message : String(err));
 /** While the card is open it reads its branch again this often: a Land moves it to In line, then Checking. */
 const REREAD_MS = 5000;
+/** And this often while its summary is being written, and for a while after something on the row changed it. */
+const REREAD_FAST_MS = 1500;
+const FAST_FOR_MS = 20_000;
 let seq = 0;
 
 /**
@@ -19,10 +22,17 @@ let seq = 0;
  *
  * The card is a non-modal dialog under the name (above it when only that side has room), a bottom sheet at folded
  * width. It is not in the top layer: the changes viewer its Review Changes opens is a modal of the page's, and covers
- * it. It closes on Escape, its ×, or a press outside it, and gives focus back to the name.
+ * it. It closes on Escape, its ×, the name again, or a press outside it, and gives focus back to the name. Nothing
+ * pressed inside it closes it: whether it is open is the caller's to hold (`open`, `onOpen`), so it stays open through
+ * a re-render of the row around it and through whatever its own buttons do to the branch (Land, Try Again).
  */
 export function BranchPopover(props: {
   branch: string;
+  /** The card is open. Held by the caller, outside anything a refresh of the list rebuilds. */
+  open: boolean;
+  onOpen(open: boolean): void;
+  /** The branch reads Ready to land now: the name leads with the green dot. An open card's branch may have moved on. */
+  ready: boolean;
   /** The chat that tracks the branch: its session file, and the folder it runs in (Review Changes reads there). */
   sessionPath: string;
   cwd?: string;
@@ -33,7 +43,10 @@ export function BranchPopover(props: {
 }) {
   const id = `branch-pop-${++seq}`;
   let button!: HTMLButtonElement;
-  const [open, setOpen] = createSignal(false);
+  const open = () => props.open;
+  const setOpen = (o: boolean) => props.onOpen(o);
+  /** Until when the card reads fast: something on its row just changed the branch. */
+  const [fastUntil, setFastUntil] = createSignal(0);
   const [rows, { refetch }] = createResource(
     () => (open() ? props.sessionPath : null),
     // A failed read is an answer, not a throw: the card says so and offers Retry.
@@ -59,6 +72,7 @@ export function BranchPopover(props: {
     if (refocus) queueMicrotask(() => button.isConnected && button.focus());
   };
   const changed = () => {
+    setFastUntil(Date.now() + FAST_FOR_MS);
     void refetch();
     props.onChanged?.();
   };
@@ -95,7 +109,13 @@ export function BranchPopover(props: {
       queueMicrotask(() => card.isConnected && (!document.activeElement || document.activeElement === document.body) && card.focus());
     };
     const grown = new ResizeObserver(place);
-    const reread = setInterval(() => !rows.loading && void refetch(), REREAD_MS);
+    let lastRead = Date.now();
+    const reread = setInterval(() => {
+      const fast = tree()?.mergeSummary?.state === "writing" || Date.now() < fastUntil();
+      if (rows.loading || Date.now() - lastRead < (fast ? REREAD_FAST_MS : REREAD_MS) - 50) return;
+      lastRead = Date.now();
+      void refetch();
+    }, REREAD_FAST_MS);
     addEventListener("pointerdown", onPointerDown, true);
     addEventListener("resize", place);
     addEventListener("scroll", place, true);
@@ -177,11 +197,13 @@ export function BranchPopover(props: {
         aria-haspopup="dialog"
         aria-expanded={open() ? "true" : "false"}
         aria-controls={open() ? id : undefined}
-        aria-label={`${props.branch}: ready to land. Show its summary`}
+        aria-label={props.ready ? `${props.branch}: ready to land. Show its summary` : `${props.branch}. Show its summary`}
         title={props.branch}
         onClick={() => (open() ? close(false) : setOpen(true))}
       >
-        <span class="branch-pop-dot" aria-hidden="true" />
+        <Show when={props.ready}>
+          <span class="branch-pop-dot" aria-hidden="true" />
+        </Show>
         <span class="branch-pop-name">{props.branch}</span>
         <Icon name="chevron-down" small />
       </button>

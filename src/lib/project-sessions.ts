@@ -287,6 +287,15 @@ export function branchLines(all: readonly BranchState[], open: boolean): { lines
   return { lines: [...shown], more };
 }
 
+/**
+ * Whether a branch's name is the button that opens its summary: a branch that reads Ready to land whose chat tracks
+ * it with its folder there, and any branch whose summary is open now. An open one stays a button whatever the branch
+ * turns into (in line after its Land, written again, gone from the chat's set), so nothing but the user closes it.
+ */
+export function opensSummary(b: Pick<BranchState, "stage">, at: { tracked: boolean; open: boolean }): boolean {
+  return at.open || (b.stage === "ready" && at.tracked);
+}
+
 /** The row's Land: only when exactly one branch reads Ready to land with the queue's Land, so it is plain which. */
 export function rowLand(all: readonly BranchState[]): BranchState | undefined {
   const ready = all.filter((b) => b.stage === "ready");

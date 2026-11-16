@@ -346,7 +346,7 @@ export function WorktreeQueueRow(props: {
           {props.chips}
         </div>
         <Show when={w().mergeServed}>
-          <BranchSummaryView summary={w().mergeSummary} projectId={projectId()} branch={w().branch} />
+          <BranchSummaryView summary={w().mergeSummary} projectId={projectId()} branch={w().branch} onRetried={props.onChanged} />
         </Show>
         <Show when={row().newer}>{(n) => <p class="list-meta wt-queue-reason">{n()}</p>}</Show>
         <Show when={row().reason}>

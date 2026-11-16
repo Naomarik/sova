@@ -1194,6 +1194,79 @@ for (const width of [1280, 390]) {
       await o.ctx.close();
     });
 
+    test("nothing pressed inside a branch's summary closes it: Try Again says Summarizing… where the error was, and the card is never rebuilt", async () => {
+      // The chat's row for the branch as each read finds it: its summary failed, then (once Try Again was taken) being
+      // written, then written.
+      const summary = (mergeSummary: SessionWorktreeInfo["mergeSummary"]) =>
+        wt("sova/fix-cart", { readiness: { path: "", branch: "sova/fix-cart", state: "ready", landing: { state: "ready", commit: sha("8") } }, mergeStats: { ahead: 2, added: 12, removed: 3, head: sha("8"), headAt: iso(5) } as SessionWorktreeInfo["mergeStats"], mergeSummary });
+      let opened: Opened | undefined;
+      let written = false;
+      const retried = () => !!opened?.calls.some((c) => c.verb === "branch-summary.retry");
+      const opts = {
+        view: viewOf({ waiting: [] }),
+        sessions: [SESSION, codingReady(true), CODING_B],
+        get rows() {
+          return [summary(!retried() ? { commit: sha("8"), state: "failed" } : written ? { commit: sha("8"), state: "ready", bullets: ["Keeps the cart through a reload"] } : { commit: sha("8"), state: "writing" })];
+        },
+      };
+      const o = (opened = await open(width, `#/projects/${PID}`, opts));
+      const { page } = o;
+      const cart = page.locator(".psess-row", { hasText: "Fix the cart" });
+      const name = cart.getByRole("button", { name: "sova/fix-cart: ready to land. Show its summary" });
+      await name.click({ timeout: 20_000 });
+      const card = page.getByRole("dialog", { name: "Worktree", exact: true });
+      const again = card.getByRole("button", { name: "Try summarizing sova/fix-cart again" });
+      await again.waitFor();
+      // The very nodes that are on the page now: a card that was closed and opened again, or a name rebuilt under it
+      // (which takes its card with it), would be other nodes.
+      await page.evaluate(() => {
+        for (const sel of [".branch-pop", ".branch-pop .wt-queue-row", '.branch-pop-open[aria-expanded="true"]']) document.querySelector<HTMLElement>(sel)!.dataset.kept = "1";
+      });
+      const kept = () => page.evaluate(() => document.querySelectorAll('[data-kept="1"]').length);
+      // Try Again: taken, the line reads Summarizing… where the error was; the row tells the page to read its branches
+      // again (which makes every row and branch line anew), and the card comes through it.
+      await again.click();
+      await called(o, "branch-summary.retry");
+      const busy = card.locator('.mq-summary [role="status"][aria-busy="true"]');
+      await busy.waitFor();
+      assert.equal(await words(busy), "Summarizing…");
+      assert.equal(await again.count(), 0, "no Try Again while it is being written");
+      assert.match(await words(card.locator(".mq-summary")), /^\s*Summarizing…\s*$/, "the error is gone");
+      assert.equal(await kept(), 3, "the card, its row and its name are the ones that were there");
+      // The new summary, read while the card is open: the line goes and the bullets are there.
+      written = true;
+      await card.getByText("Keeps the cart through a reload").waitFor({ timeout: 10_000 });
+      assert.equal(await busy.count(), 0);
+      assert.equal(await kept(), 3, "still the same card");
+      // The other controls inside it: Review Changes (its viewer opens over the card, on purpose, and closing it gives
+      // the card back), the ▾ menu and its confirm, Land's Not Yet.
+      const row = card.locator('.wt-queue-row[data-branch="sova/fix-cart"]');
+      await row.getByRole("button", { name: "Review Changes on sova/fix-cart" }).click();
+      const viewer = page.locator(".changes-dialog");
+      await viewer.waitFor();
+      await page.keyboard.press("Escape");
+      await viewer.waitFor({ state: "detached" });
+      assert.equal(await card.count(), 1, "Escape closed the viewer only");
+      await row.getByRole("button", { name: "More ways to land sova/fix-cart" }).click();
+      await page.getByRole("menuitem", { name: "Land sova/fix-cart without its specs" }).click();
+      const specs = row.getByRole("group", { name: "Land sova/fix-cart without its specs" });
+      await specs.getByRole("button", { name: "Cancel" }).click();
+      await specs.waitFor({ state: "detached" });
+      await row.getByRole("button", { name: "Land sova/fix-cart", exact: true }).click();
+      await row.getByRole("group", { name: "Land sova/fix-cart", exact: true }).getByRole("button", { name: "Not Yet" }).click();
+      assert.equal(await kept(), 3, "none of them closed or rebuilt it");
+      // A confirmed Land queues the branch, and the card is still there to say what became of it.
+      await confirmLand(o, row, "sova/fix-cart", "Land 2 Commits");
+      await called(o, "merge.add");
+      await page.getByText("Queued sova/fix-cart.").first().waitFor();
+      assert.equal(await kept(), 3, "the card stays open after Land");
+      await noSideScroll(page);
+      // Only these close it: the name again (and Escape and a press outside, above).
+      await page.evaluate(() => document.querySelector<HTMLElement>('.branch-pop-open[data-kept="1"]')!.click());
+      await card.waitFor({ state: "detached" });
+      await o.ctx.close();
+    });
+
     test("not set up: the coding rows and the playbook run keep Merge Branch", async () => {
       const o = await open(width, `#/projects/${PID}`, { view: viewOf({ checks: "unset", state: "idle", current: undefined, checking: [], waiting: [], needsYou: [], needsFix: [], recent: [] }), sessions: [SESSION, codingReady(false), CODING_B] });
       const { page } = o;

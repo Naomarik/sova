@@ -191,6 +191,10 @@ function choiceView(input: PlaybookInput, r: Pick<PlaybookRunRecord, "initial" |
 const helperRoles = (step: PlaybookStep, spec: PlaybookSpec, edits: PlaybookCardEdits): PlaybookRole[] =>
   step.roles.filter((id) => id !== MAIN_ROLE).map((id) => spec.roles.find((r) => r.id === id)).filter((r): r is PlaybookRole => !!r && roleOn(r, edits));
 
+/** A step runs as a team only while two or more of its helper roles are on: with the others turned off on the
+    card, the one left runs as separate helpers, with no coordinator and monitor to pay for. */
+const asTeam = (step: PlaybookStep, spec: PlaybookSpec, edits: PlaybookCardEdits): boolean => step.team && helperRoles(step, spec, edits).length >= 2;
+
 export interface BuiltCard {
   view: PlaybookRunView;
   /** Each role resolved (on roles only). */
@@ -203,7 +207,7 @@ export function runCard(r: PlaybookRunRecord, spec: PlaybookSpec, env: CardEnv, 
   const resolved: Record<string, ResolvedRoleModel> = {};
   const steps = flatSteps(spec.steps);
   const teamOf = new Map<string, string>();
-  for (const { step } of steps) if (step.team) for (const role of helperRoles(step, spec, edits)) if (!teamOf.has(role.id)) teamOf.set(role.id, step.id);
+  for (const { step } of steps) if (asTeam(step, spec, edits)) for (const role of helperRoles(step, spec, edits)) if (!teamOf.has(role.id)) teamOf.set(role.id, step.id);
 
   const roles: PlaybookRoleView[] = spec.roles.map((role) => {
     const on = roleOn(role, edits);
@@ -237,7 +241,8 @@ export function runCard(r: PlaybookRunRecord, spec: PlaybookSpec, env: CardEnv, 
   const teams: PlaybookTeamView[] = [];
   const stepViews: PlaybookStepView[] = steps.map(({ step, cycle }) => {
     const helpers = helperRoles(step, spec, edits);
-    if (step.team && helpers.length) {
+    const team = asTeam(step, spec, edits);
+    if (team) {
       const c = env.name(choiceOfRef(env.team.coordinator.model, env.team.coordinator.effort));
       const m = env.name(choiceOfRef(env.team.monitor.model, env.team.monitor.effort));
       teams.push({
@@ -253,8 +258,8 @@ export function runCard(r: PlaybookRunRecord, spec: PlaybookSpec, env: CardEnv, 
       title: step.label,
       stop: step.stop ?? "never",
       stopOn: stopOn(step, edits),
-      runs: !helpers.length ? "main" : step.team ? "team" : "helpers",
-      ...(step.team && helpers.length ? { team: step.id } : {}),
+      runs: !helpers.length ? "main" : team ? "team" : "helpers",
+      ...(team ? { team: step.id } : {}),
       roles: step.roles,
       ...(step.report ? { report: step.report } : {}),
       ...(cycle ? { cycle: true } : {}),

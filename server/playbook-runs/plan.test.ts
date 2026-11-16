@@ -135,6 +135,19 @@ describe("the card a run draws", () => {
     assert.equal(card.view.helpers.total, 6);
   });
 
+  test("a team step left with one role on runs it as separate helpers, without a coordinator and monitor", () => {
+    const s = spec((r) => {
+      (r.roles.grader as Record<string, unknown>).optional = true;
+    });
+    const card = runCard(record(s, { choices: { subject: "x" }, roles: { grader: { on: false } } }), s, env());
+    const run = card.view.steps.find((x) => x.id === "run")!;
+    assert.deepEqual([run.runs, run.team], ["helpers", undefined]);
+    assert.deepEqual(card.view.teams, []);
+    assert.equal(card.view.roles.find((r) => r.id === "runner")!.team, undefined);
+    // 2 runners, no coordinator or monitor.
+    assert.equal(card.view.helpers.total, 2);
+  });
+
   test("more helpers than one chat runs at once keeps Start off", () => {
     const s = spec((r) => {
       delete r.roles.runner.per;

@@ -1,0 +1,237 @@
+{
+  "version": 1,
+  "listed": true,
+  "run": {
+    "where": "new-chat",
+    "worktree": "new",
+    "mode": "delegate",
+    "needs": ["project"]
+  },
+  "inputs": [
+    {
+      "id": "subject",
+      "label": "Under test",
+      "type": "choice",
+      "ask": "always",
+      "required": true,
+      "options": [
+        { "id": "tool-description", "label": "A tool's description", "help": "The words the model reads about a tool" },
+        { "id": "tool-code", "label": "A tool's code", "help": "What the tool does or returns" },
+        { "id": "mode-text", "label": "A mode's text", "help": "The block a mode adds to every turn" },
+        { "id": "instructions", "label": "Agent instructions", "help": "A project's or a folder's standing rules" },
+        { "id": "other", "label": "Something else", "help": "Say what in Where it fails" }
+      ]
+    },
+    {
+      "id": "knobs",
+      "label": "What may change",
+      "help": "Asked again before each cycle",
+      "type": "multi",
+      "ask": "always",
+      "required": true,
+      "each": "cycle",
+      "options": [
+        { "id": "wording", "label": "Wording only", "help": "The cheapest change, and the one to prefer" },
+        { "id": "tool-description", "label": "Tool descriptions" },
+        { "id": "tool-code", "label": "Tool code" },
+        { "id": "mode-text", "label": "Mode text" },
+        { "id": "instructions", "label": "Agent instructions" }
+      ],
+      "default": ["wording"]
+    },
+    {
+      "id": "source",
+      "label": "Where it fails",
+      "help": "A chat's path, a pasted reply, or what you saw. Cases come from real history.",
+      "type": "text",
+      "multiline": true,
+      "ask": "always",
+      "required": false
+    },
+    {
+      "id": "testModels",
+      "label": "Test models",
+      "help": "Cheap models: if they pass, everything can. The provider counts: ZAI's GLM is not Ollama's.",
+      "type": "models",
+      "ask": "always",
+      "required": true,
+      "default": [
+        { "model": "zai/glm-5.3", "effort": "low" },
+        { "model": "ollama-cloud/deepseek-v4.1-flash", "effort": "low" },
+        { "model": "claude-code/claude-haiku-5-5", "effort": "low" }
+      ]
+    },
+    {
+      "id": "fails",
+      "label": "Failing cases per round",
+      "type": "number",
+      "integer": true,
+      "min": 1,
+      "max": 100,
+      "default": 10,
+      "ask": "always",
+      "required": true
+    },
+    {
+      "id": "passes",
+      "label": "Passing cases per round",
+      "help": "So a fix can't cause a regression unseen",
+      "type": "number",
+      "integer": true,
+      "min": 0,
+      "max": 100,
+      "default": 10,
+      "ask": "always",
+      "required": true
+    },
+    {
+      "id": "sealed",
+      "label": "Sealed cases for the confirm run",
+      "help": "Held back: no consultant sees them",
+      "type": "number",
+      "integer": true,
+      "min": 0,
+      "max": 100,
+      "default": 10,
+      "ask": "optional",
+      "required": false
+    },
+    {
+      "id": "bars",
+      "label": "Good enough when",
+      "help": "The acceptance bars, in words; the first stop shows them on a sample chart",
+      "type": "text",
+      "default": "Every test model passes at least 90% of the cases, and none does worse than master",
+      "ask": "always",
+      "required": true
+    },
+    {
+      "id": "rivals",
+      "label": "Rival consultants",
+      "help": "Each proposes its own fix in its own arm",
+      "type": "number",
+      "integer": true,
+      "min": 1,
+      "max": 3,
+      "default": 1,
+      "ask": "optional",
+      "required": true
+    },
+    {
+      "id": "arms",
+      "label": "How an arm is made",
+      "type": "choice",
+      "ask": "optional",
+      "required": true,
+      "default": "copy",
+      "options": [
+        { "id": "copy", "label": "Its own worktree and test copy of Sova", "help": "Real chats on the test models; the most faithful, the slowest" },
+        { "id": "variant", "label": "A prompt variant file", "help": "Model calls with each variant; fast, for text alone" },
+        { "id": "rescore", "label": "Re-score saved replies", "help": "Free; only when the change is to how replies are read" }
+      ]
+    },
+    {
+      "id": "warnAt",
+      "label": "Warn me at usage (%)",
+      "type": "number",
+      "integer": true,
+      "min": 50,
+      "max": 100,
+      "default": 98,
+      "ask": "once",
+      "required": true
+    }
+  ],
+  "roles": {
+    "main": { "label": "Main chat", "kind": "planning" },
+    "questions": {
+      "label": "Case finder",
+      "prompt": "roles/questions.md",
+      "kind": "investigation",
+      "models": [
+        { "model": "claude-code/claude-opus-5-5", "effort": "medium" },
+        { "model": "claude-code/claude-fable-5-2", "effort": "medium" }
+      ]
+    },
+    "bench": {
+      "label": "Bench keeper",
+      "prompt": "roles/bench.md",
+      "kind": "routine"
+    },
+    "consultant": {
+      "label": "Consultant",
+      "prompt": "roles/consultant.md",
+      "kind": "planning",
+      "models": [
+        { "model": "claude-code/claude-opus-5-5", "effort": "high" },
+        { "model": "claude-code/claude-fable-5-2", "effort": "high" }
+      ],
+      "count": { "input": "rivals" },
+      "fresh": "cycle"
+    },
+    "builder": {
+      "label": "Builder",
+      "prompt": "roles/builder.md",
+      "kind": "routine"
+    },
+    "runner": {
+      "label": "Runner",
+      "prompt": "roles/runner.md",
+      "kind": "routine",
+      "models": [
+        { "model": "zai/glm-5.3", "effort": "low" },
+        { "model": "claude-code/claude-haiku-5-5", "effort": "low" }
+      ],
+      "only": true,
+      "per": { "input": "testModels" }
+    },
+    "grader": {
+      "label": "Grader",
+      "prompt": "roles/grader.md",
+      "kind": "investigation",
+      "models": [
+        { "model": "claude-code/claude-haiku-5-5", "effort": "high" },
+        { "model": "ollama-cloud/deepseek-v4.1-flash", "effort": "high" }
+      ],
+      "only": true,
+      "sees": "blind",
+      "optional": true
+    },
+    "reviewer": {
+      "label": "Landing reviewer",
+      "prompt": "roles/reviewer.md",
+      "kind": "planning",
+      "models": [
+        { "model": "claude-code/claude-fable-5-2", "effort": "high" },
+        { "model": "claude-code/claude-haiku-5-5", "effort": "high" },
+        { "model": "ollama-cloud/deepseek-v4.1-flash", "effort": "high" }
+      ]
+    }
+  },
+  "steps": [
+    { "id": "diagnose", "label": "Find what fails, in real chats", "roles": ["main", "questions"], "phase": "phases/diagnose.md" },
+    { "id": "measure", "label": "Agree what is measured", "roles": ["main"], "stop": "always", "report": "chart", "phase": "phases/measure.md" },
+    { "id": "bench", "label": "Build the bench and freeze the cases", "roles": ["questions", "bench"], "phase": "phases/bench.md" },
+    { "id": "baseline", "label": "Baseline on master, once", "roles": ["runner", "grader"], "stop": "always", "report": "chart", "phase": "phases/baseline.md" },
+    {
+      "id": "cycle",
+      "label": "Improve and re-test",
+      "repeat": {
+        "max": 5,
+        "askEvery": 1,
+        "until": "rule",
+        "rule": "phases/stop-rule.md",
+        "carry": "The winner becomes the next cycle's base and the losing change is reverted; master stays Round 0 in every chart."
+      },
+      "steps": [
+        { "id": "fix", "label": "Consultant picks one change, builder commits it", "roles": ["consultant", "builder"], "phase": "phases/fix.md" },
+        { "id": "run", "label": "Run every test model on every arm", "roles": ["runner"], "phase": "phases/run.md" },
+        { "id": "score", "label": "Score and chart the round", "roles": ["grader"], "report": "chart", "phase": "phases/score.md" }
+      ]
+    },
+    { "id": "confirm", "label": "Confirm on the sealed cases", "roles": ["runner", "grader"], "stop": "optional", "startsOff": true, "report": "chart", "phase": "phases/confirm.md" },
+    { "id": "review", "label": "Is it good enough to land?", "roles": ["reviewer"], "report": "verdict", "phase": "phases/review.md" },
+    { "id": "decide", "label": "Land, cycle again or park", "roles": ["main"], "stop": "always", "report": "table", "phase": "phases/decide.md" }
+  ],
+  "commands": ["session.create", "session.configure", "session.send", "project.verb.create", "project.verb.up", "project.verb.down"]
+}

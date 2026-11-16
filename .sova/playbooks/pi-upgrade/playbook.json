@@ -1,0 +1,148 @@
+{
+  "version": 1,
+  "listed": true,
+  "run": {
+    "where": "new-chat",
+    "worktree": "none",
+    "mode": "delegate",
+    "needs": ["project", "merge-queue"]
+  },
+  "inputs": [
+    {
+      "id": "target",
+      "label": "Move to",
+      "help": "A version, or \"latest\" (pi's latest release; never a beta or another tag unless you name it)",
+      "type": "text",
+      "default": "latest",
+      "ask": "always",
+      "required": true
+    },
+    {
+      "id": "terminal",
+      "label": "Update the terminal pi too",
+      "help": "The terminal pi shares your pi settings and extensions with Sova, so it moves at the landing",
+      "type": "toggle",
+      "default": true,
+      "ask": "once",
+      "required": true
+    },
+    {
+      "id": "perf",
+      "label": "Measure speed before and after",
+      "help": "Start-up, memory and turn latency against master; worth it for a large jump",
+      "type": "toggle",
+      "default": false,
+      "ask": "optional",
+      "required": false
+    },
+    {
+      "id": "notes",
+      "label": "Anything to look at closely",
+      "help": "A worry, a feature you want from the release, a past problem",
+      "type": "text",
+      "multiline": true,
+      "ask": "optional",
+      "required": false
+    }
+  ],
+  "facts": [
+    { "id": "pinned", "label": "Sova pins now" },
+    { "id": "latest", "label": "Latest release", "help": "With its date" },
+    { "id": "between", "label": "Releases in between" },
+    { "id": "installed", "label": "Terminal pi on this computer" }
+  ],
+  "roles": {
+    "main": {
+      "label": "Main chat",
+      "kind": "planning",
+      "models": [
+        { "model": "claude-code/claude-fable-5-2", "effort": "high" },
+        { "model": "claude-code/claude-opus-5-5", "effort": "high" }
+      ]
+    },
+    "changelog-reader": {
+      "label": "Changelog reader",
+      "prompt": "roles/changelog-reader.md",
+      "kind": "investigation",
+      "models": [
+        { "model": "claude-code/claude-opus-5-5", "effort": "medium" },
+        { "model": "claude-code/claude-fable-5-2", "effort": "medium" }
+      ]
+    },
+    "dep-mapper": {
+      "label": "Dependency mapper",
+      "prompt": "roles/dep-mapper.md",
+      "kind": "investigation",
+      "models": [
+        { "model": "claude-code/claude-opus-5-5", "effort": "medium" },
+        { "model": "claude-code/claude-fable-5-2", "effort": "medium" }
+      ]
+    },
+    "scratch-tester": {
+      "label": "Scratch tester",
+      "prompt": "roles/scratch-tester.md",
+      "kind": "routine",
+      "models": [
+        { "model": "claude-code/claude-opus-5-5", "effort": "medium" },
+        { "model": "claude-code/claude-fable-5-2", "effort": "medium" }
+      ]
+    },
+    "judge": {
+      "label": "Judge",
+      "prompt": "roles/judge.md",
+      "kind": "planning",
+      "models": [
+        { "model": "claude-code/claude-fable-5-2", "effort": "high" },
+        { "model": "claude-code/claude-opus-5-5", "effort": "high" }
+      ]
+    },
+    "implementer": {
+      "label": "Implementer",
+      "prompt": "roles/implementer.md",
+      "kind": "complex",
+      "models": [
+        { "model": "claude-code/claude-fable-5-2", "effort": "high" },
+        { "model": "claude-code/claude-opus-5-5", "effort": "high" }
+      ]
+    },
+    "boundary-keeper": {
+      "label": "Boundary keeper",
+      "prompt": "roles/boundary-keeper.md",
+      "kind": "investigation",
+      "models": [
+        { "model": "claude-code/claude-opus-5-5", "effort": "high" },
+        { "model": "claude-code/claude-fable-5-2", "effort": "high" }
+      ]
+    },
+    "verifier": {
+      "label": "Regression checker",
+      "prompt": "roles/verifier.md",
+      "kind": "routine",
+      "models": [
+        { "model": "claude-code/claude-opus-5-5", "effort": "medium" },
+        { "model": "claude-code/claude-fable-5-2", "effort": "medium" }
+      ]
+    }
+  },
+  "steps": [
+    { "id": "find", "label": "Find the target; nothing to do ends here", "roles": ["main"], "phase": "phases/find.md" },
+    { "id": "research", "label": "Research every changelog entry and Sova's code, changing nothing", "roles": ["changelog-reader", "dep-mapper", "scratch-tester", "judge"], "phase": "phases/research.md" },
+    { "id": "report", "label": "The report: wins, tradeoffs, risks, the rest", "roles": ["main"], "report": "table", "phase": "phases/report.md" },
+    { "id": "plan", "label": "A plan ready to carry out; asks you before anything changes", "roles": ["main", "judge"], "stop": "always", "report": "verdict", "phase": "phases/plan.md" },
+    {
+      "id": "upgrade",
+      "label": "The upgrade, on its own branch",
+      "roles": ["implementer", "boundary-keeper"],
+      "asks": [
+        "the boundary baseline would have to grow",
+        "a package wants an install script",
+        "a session version bump nobody foresaw",
+        "anything you'd see that the plan didn't cover",
+        "a queue check fails only on the old terminal pi"
+      ],
+      "phase": "phases/upgrade.md"
+    },
+    { "id": "check", "label": "Check it went smoothly, with no regressions", "roles": ["verifier"], "stop": "always", "report": "table", "phase": "phases/check.md" },
+    { "id": "after", "label": "After landing: the terminal pi and what to tell you", "roles": ["main"], "phase": "phases/after-landing.md" }
+  ]
+}

@@ -277,8 +277,10 @@ export const designOpenFollowsLive = (d: DesignRecord, picked: number | null): b
  * the version on show is still the right one.
  */
 export const designHoldEnds = (d: DesignRecord, latestAtStart: number): boolean => !designIsWriting(d) && designLatest(d) === latestAtStart;
-/** Stop: a design that is waiting or still writing, and isn't set aside. A Refine in progress counts as writing. */
-export const designCanStop = (d: DesignRecord): boolean => !d.removed && (d.status === "queued" || d.status === "writing" || d.status === "fixing");
+/** Stop: a design that is waiting or still writing, and isn't set aside; also a finished one whose session is at work
+    on a message (it reads Working), as the server's stop allows. Stopping that keeps its last finished version. */
+export const designCanStop = (d: DesignRecord): boolean =>
+  !d.removed && (d.status === "queued" || d.status === "writing" || d.status === "fixing" || (!!d.sessionId && !d.sessionEnded && d.workerState === "working"));
 /** Start Again (or Retry): a design that ended with no page, or was stopped before its first. */
 export const designCanStartAgain = (d: DesignRecord): boolean => !d.removed && (d.status === "failed" || d.status === "stopped");
 export const designLatest = (d: DesignRecord): number => d.versions.at(-1)?.n ?? 0;

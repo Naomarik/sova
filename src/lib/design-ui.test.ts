@@ -129,6 +129,10 @@ test("Stop is offered while a design waits or writes; Start Again once it ended 
   assert.deepEqual(can("stopped"), [false, true]);
   assert.deepEqual(can("failed"), [false, true]);
   for (const s of ["queued", "writing", "fixing", "ready", "stopped", "failed"] as const) assert.deepEqual(can(s, true), [false, false], s);
+  const working: DesignRecord = { ...rec("A", "ready"), versions: [{ n: 1, at: "" } as DesignRecord["versions"][number]], sessionId: "s1", workerState: "working" };
+  assert.equal(designCanStop(working), true, "a finished design at work on a message can be stopped (its last version stays)");
+  assert.equal(designCanStop({ ...working, sessionEnded: true }), false, "an ended session has nothing to stop");
+  assert.equal(designCanStop({ ...working, workerState: "idle" }), false);
 });
 
 test("a queued design whose session has started waits on its model, not for a session", () => {

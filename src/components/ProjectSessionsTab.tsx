@@ -17,6 +17,7 @@ import {
   GROUP_NAME,
   groupCount,
   groupSessions,
+  isFinished,
   isQuiet,
   landedFoldWords,
   needsYouIds,
@@ -219,7 +220,8 @@ export function SessionsTab(props: {
     const folder = () => (row().worktree ? tildePath(row().worktree!, home()) : "");
     const gestures = () => rowGestures(row(), po().worktrees.fresh());
     const facts = () => (row().facts && row().state !== undefined ? (row() as CodingRow & CodingWorktree) : null);
-    const landed = () => v().facts.stages.length > 0 && v().facts.stages.every((s) => s === "landed");
+    /** Finished: landed, removed or already in its target (the Landed group). */
+    const landed = () => isFinished(v().facts.stages);
     // The ring means idle and worth a look: a landed session is done, so it never carries it.
     const quiet = () => !v().facts.working && !landed() && isQuiet(v().facts.lastActive, now());
     const summary = () => (v().s && showSummaries() ? summaryLineOf(v().s!) : "");

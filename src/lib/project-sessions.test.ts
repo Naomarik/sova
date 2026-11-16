@@ -27,14 +27,19 @@ const HOLDS: Record<SessionGroupKey, (f: SessionFacts) => boolean> = {
   "needs-you": (f) => f.needsYou,
   working: (f) => f.working,
   ready: (f) => f.stages.some((s) => ON_ITS_WAY.includes(s)),
-  landed: (f) => f.stages.length > 0 && f.stages.every((s) => s === "landed"),
+  // Finished: it has a branch and none is still live (each landed, or done: removed, missing, already in its target).
+  landed: (f) => f.stages.length > 0 && f.stages.every((s) => s === "landed" || s === "done"),
   old: (f) => f.lastActive > 0 && NOW - f.lastActive >= OLD_DAYS * DAY,
   idle: () => true,
 };
 
 // Every combination of the facts at their edges: the stage lists cover none, all landed, landed beside not landed,
-// each stage on its way alone and beside a landed one; the times cover unknown, just under and exactly OLD_DAYS.
-const STAGE_LISTS: BranchStage[][] = [[], ["landed"], ["landed", "landed"], ["landed", "other"], ["other"], ...ON_ITS_WAY.map((s) => [s]), ...ON_ITS_WAY.map((s) => ["landed", s] as BranchStage[])];
+// each stage on its way alone and beside a landed or done one, done alone and beside landed or a live branch; the times
+// cover unknown, just under and exactly OLD_DAYS.
+const STAGE_LISTS: BranchStage[][] = [
+  [], ["landed"], ["landed", "landed"], ["landed", "other"], ["other"], ["done"], ["done", "landed"], ["done", "other"],
+  ...ON_ITS_WAY.map((s) => [s]), ...ON_ITS_WAY.map((s) => ["landed", s] as BranchStage[]), ...ON_ITS_WAY.map((s) => ["done", s] as BranchStage[]),
+];
 const TIMES = [0, NOW, NOW - OLD_DAYS * DAY + 1, NOW - OLD_DAYS * DAY, NOW - 30 * DAY];
 const ALL: SessionFacts[] = [];
 for (const needsYou of [false, true]) for (const working of [false, true]) for (const stages of STAGE_LISTS) for (const lastActive of TIMES) ALL.push({ needsYou, working, stages, lastActive });
@@ -112,7 +117,7 @@ test("a ready branch carries Land only when the queue offers it and its folder i
 
 test("a recorded branch falls back to git's facts; a queue stage wins over them", () => {
   // Git finding the tip in the target isn't a landing: a branch with no commit of its own that took master's newest reads so.
-  assert.deepEqual(recordedBranchState({ branch: "b", state: "merged", merged: true, target: "master" }, null), { branch: "b", stage: "other", word: "Already in master", tone: "muted" });
+  assert.deepEqual(recordedBranchState({ branch: "b", state: "merged", merged: true, target: "master" }, null), { branch: "b", stage: "done", word: "Already in master", tone: "muted" });
   assert.equal(recordedBranchState({ branch: "b", state: "merged", merged: true, mergedAt: "2026-11-10T00:00:00Z" }, null).stage, "landed");
   assert.equal(recordedBranchState({ branch: "b", state: "open", dirty: true }, null).word, "Uncommitted changes");
   assert.equal(recordedBranchState({ branch: "b", state: "open", ahead: 1 }, null).word, "1 commit ahead");
@@ -146,4 +151,28 @@ test("the row carries Land only when exactly one branch is ready to land", () =>
   assert.equal(rowLand([bs("a", "ready", true), bs("b", "other")])?.branch, "a");
   assert.equal(rowLand([bs("a", "ready", true), bs("b", "ready", true)]), undefined);
   assert.equal(rowLand([bs("a", "ready")]), undefined);
+});
+
+test("a session with a branch and none still live is finished: Landed, whether its branches landed, were removed, went missing or are already in their target", () => {
+  const idle = (stages: BranchStage[], lastActive = NOW): SessionFacts => ({ needsYou: false, working: false, stages, lastActive });
+  const removed = recordedBranchState({ branch: "b", state: "removed", ahead: 2 }, null);
+  const missing = recordedBranchState({ branch: "b", state: "missing", ahead: 2 }, null);
+  const inTarget = recordedBranchState({ branch: "b", state: "merged", merged: true, ahead: 2, target: "master" }, null);
+  const live = recordedBranchState({ branch: "c", state: "open", ahead: 2 }, null);
+  for (const done of [removed, missing, inTarget]) {
+    assert.equal(sessionGroup(idle([done.stage]), NOW), "landed", done.word);
+    assert.equal(sessionGroup(idle([done.stage], NOW - 30 * DAY), NOW), "landed", `${done.word}: never Old`);
+    // Its own words, never "Landed {time}".
+    assert.notEqual(done.word, "Landed");
+    assert.equal(done.landedAt, undefined);
+    // One live branch beside it keeps the session in its live group.
+    assert.equal(sessionGroup(idle([done.stage, live.stage]), NOW), "idle");
+    assert.equal(sessionGroup(idle([done.stage, live.stage], NOW - 30 * DAY), NOW), "old");
+  }
+  assert.equal(removed.word, "Removed");
+  assert.equal(inTarget.word, "Already in master");
+  assert.equal(branchStateOf("b", qrow("removed", { label: "Removed" })).stage, "done");
+  // No branch at all is not finished.
+  assert.equal(sessionGroup(idle([]), NOW), "idle");
+  assert.equal(sessionGroup(idle([], NOW - 30 * DAY), NOW), "old");
 });

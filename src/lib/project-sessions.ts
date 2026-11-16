@@ -28,8 +28,14 @@ export const GROUP_NAME: Record<SessionGroupKey, string> = {
 export const OLD_DAYS = 7;
 const DAY_MS = 86_400_000;
 
-/** Where a branch stands on its way to the target. */
-export type BranchStage = "ready" | "in-line" | "checking" | "stuck" | "landed" | "other";
+/** Where a branch stands on its way to the target. `done`: nothing is left to land, but it didn't land here: its
+    worktree removed or missing, or its work already in its target. */
+export type BranchStage = "ready" | "in-line" | "checking" | "stuck" | "landed" | "done" | "other";
+
+/** A branch with nothing left live: landed, or done another way. */
+export const FINISHED: readonly BranchStage[] = ["landed", "done"];
+/** A session is finished once it has a branch and none is still live. */
+export const isFinished = (stages: readonly BranchStage[]): boolean => stages.length > 0 && stages.every((s) => FINISHED.includes(s));
 
 /** The stages that put a session in Ready to land: it is on its way in, or waits for your Land. */
 const ON_ITS_WAY: readonly BranchStage[] = ["ready", "in-line", "checking", "stuck"];
@@ -48,14 +54,14 @@ export interface SessionFacts {
 
 /**
  * The one group a session lists in, first rule that holds: Needs you; Working; Ready to land (a branch is ready,
- * in line, checking or stuck in the queue); Landed (it has branches and every one landed); Old (no activity for
- * OLD_DAYS or more); else Idle.
+ * in line, checking or stuck in the queue); Landed (it has branches and none is still live: each landed, removed,
+ * missing or already in its target); Old (no activity for OLD_DAYS or more); else Idle.
  */
 export function sessionGroup(f: SessionFacts, now: number): SessionGroupKey {
   if (f.needsYou) return "needs-you";
   if (f.working) return "working";
   if (f.stages.some((s) => ON_ITS_WAY.includes(s))) return "ready";
-  if (f.stages.length && f.stages.every((s) => s === "landed")) return "landed";
+  if (isFinished(f.stages)) return "landed";
   if (isQuiet(f.lastActive, now)) return "old";
   return "idle";
 }
@@ -64,7 +70,7 @@ export function sessionGroup(f: SessionFacts, now: number): SessionGroupKey {
 export const isQuiet = (lastActive: number, now: number): boolean => lastActive > 0 && now - lastActive >= OLD_DAYS * DAY_MS;
 
 /** Within Ready to land: ready first, then checking, in line (by place), stuck. */
-const STAGE_RANK: Record<BranchStage, number> = { ready: 0, checking: 1, "in-line": 2, stuck: 3, landed: 4, other: 5 };
+const STAGE_RANK: Record<BranchStage, number> = { ready: 0, checking: 1, "in-line": 2, stuck: 3, landed: 4, done: 5, other: 6 };
 
 const LAST = Number.MAX_SAFE_INTEGER;
 
@@ -150,6 +156,7 @@ export interface BranchState {
 
 const STUCK_KEYS = new Set<QueueRow["key"]>(["with-chat", "needs-fix", "needs-you", "behaviour-differs", "unattributed", "review-flagged", "drafts-changed", "conflict"]);
 const LANDED_KEYS = new Set<QueueRow["key"]>(["landed", "cleaned-up", "merged"]);
+const DONE_KEYS = new Set<QueueRow["key"]>(["removed", "dropped"]);
 
 const firstLine = (s: string | undefined): string | undefined => s?.split("\n")[0]?.trim() || undefined;
 
@@ -168,6 +175,7 @@ export function branchStateOf(branch: string, row: QueueRow, extra: { position?:
     return { branch, stage: "stuck", word: "Stuck in the queue", tone: "error", why: reason && reason !== row.label ? `${row.label}: ${reason}` : row.label };
   }
   if (LANDED_KEYS.has(k)) return { branch, stage: "landed", word: "Landed", tone: "success", ...(extra.landedAt ? { landedAt: extra.landedAt } : {}) };
+  if (DONE_KEYS.has(k)) return { branch, stage: "done", word: row.label, tone: "muted" };
   // Not on its way: the branch's own state, in its own words, never a bare "Not ready".
   return { branch, stage: "other", word: k === "uncommitted" && row.detail ? row.detail : row.label, tone: "muted" };
 }
@@ -191,9 +199,9 @@ export function recordedBranchState(r: RecordedBranch, queued: BranchState | nul
   // Landed only when a merge was recorded (Merge Branch, or the queue above): git finding the tip in the target is also
   // true of a branch with no commit of its own that took the target's newest commits.
   if (r.mergedAt) return { branch: r.branch, stage: "landed", word: "Landed", tone: "success", landedAt: r.mergedAt };
-  if (r.merged || r.state === "merged") return { branch: r.branch, stage: "other", word: r.target ? `Already in ${r.target}` : "Already in its target", tone: "muted" };
-  if (r.state === "removed") return { branch: r.branch, stage: "other", word: "Worktree removed", tone: "muted" };
-  if (r.state === "missing") return { branch: r.branch, stage: "other", word: "Worktree folder missing", tone: "muted" };
+  if (r.merged || r.state === "merged") return { branch: r.branch, stage: "done", word: r.target ? `Already in ${r.target}` : "Already in its target", tone: "muted" };
+  if (r.state === "removed") return { branch: r.branch, stage: "done", word: "Removed", tone: "muted" };
+  if (r.state === "missing") return { branch: r.branch, stage: "done", word: "Worktree folder missing", tone: "muted" };
   if (r.dirty) return { branch: r.branch, stage: "other", word: "Uncommitted changes", tone: "muted" };
   if (r.ahead === 0) return { branch: r.branch, stage: "other", word: "No commits yet", tone: "muted" };
   if (r.state === undefined || r.ahead === undefined) return { branch: r.branch, stage: "other", word: "Reading its branch", tone: "muted" };
@@ -291,7 +299,8 @@ export function ageWords(createdAt: string, now: number, date: (ms: number) => s
   return days < 1 ? "started today" : `${days}d old · ${date(t)}`;
 }
 
-/** The folded Landed group's line: "Latest: {title} · landed 6d ago, and 185 more". */
+/** The folded Landed group's line, over every finished session (landed, removed or already in its target):
+    "Latest: {title} · landed 6d ago, and 185 more"; the time only when the latest one landed. */
 export function landedFoldWords(latest: { title: string; when: string } | undefined, n: number): string {
   if (!latest) return `${n} ${n === 1 ? "session" : "sessions"}`;
   const rest = n - 1;

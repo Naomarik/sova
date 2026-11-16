@@ -414,6 +414,7 @@ test("a message a session can't take stays visibly undelivered and throws, so th
   };
   await assert.rejects(deliverDesign(parent, "A", { text: "x", key: "k", by: "user" }), /no such thing/);
   assert.equal(stat("A").delivery?.state, "undelivered");
+  assert.deepEqual(history.readHistory(parent.sessionId).items.filter((i) => i.kind === "message"), [], "a message never given leaves no item");
 });
 
 test("a session stopped for good is replaced by a fresh one seeded from its stored page", async () => {
@@ -1075,7 +1076,12 @@ test("every message a design is given is in the history once, word for word, wit
   const f = await start();
   await finish(f, "A");
   await ticks();
+  // In the history by the time the session has it: a reader of its file finds the item for each message.
+  const send = f.call;
+  let itemsAtSend = -1;
+  f.call = async (m, a) => ((itemsAtSend = ofKind("message").length), send(m, a));
   await deliverDesign(parent, "A", { text: "make it blue", key: "k1", by: "user" });
+  assert.equal(itemsAtSend, 1);
   await deliverDesign(parent, "A", { text: "make it blue", key: "k1", by: "user" });
   await deliverDesign(parent, "A", { text: "and wider", key: "c1", by: "coordinator", toolCallId: "call_7" });
   assert.deepEqual(ofKind("message").map((i) => [i.by, i.via, i.text, i.toolCallId]), [["user", "chat", "make it blue", undefined], ["coordinator", "coordinator", "and wider", "call_7"]]);

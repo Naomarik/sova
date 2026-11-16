@@ -74,6 +74,14 @@ export function historyVersion(sessionId: string, id: string, version: number): 
   save(sessionId, f);
 }
 
+/** Take back an item that never happened (a message that couldn't be delivered). */
+export function dropHistory(sessionId: string, id: string): void {
+  const f = load(sessionId);
+  if (!f || !f.items.some((i) => i.id === id)) return;
+  f.items = f.items.filter((i) => i.id !== id);
+  save(sessionId, f);
+}
+
 /** The newest Full Prompt this history holds for a run, to tell whether a brief's prompt is a new revision. */
 export function lastPrompt(sessionId: string, runId: string): string | null {
   const items = load(sessionId)?.items ?? [];

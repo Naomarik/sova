@@ -20,7 +20,7 @@ import { replyCost, resolveDesignModel } from "./setup";
 import { listModels } from "../models";
 import { readModelPolicy } from "../model-policy";
 import { retiredModelRefs } from "../harness/pi/model-sync";
-import { historyVersion, recordHistory } from "./history";
+import { dropHistory, historyVersion, recordHistory } from "./history";
 import { pageInReply } from "./stream-decode";
 import { designerSkillsBlock } from "./skills";
 import { SCREENSHOTS_HEADING, WORDS_ONLY_NOTE } from "../../shared/design-assets";
@@ -824,15 +824,13 @@ export async function deliverDesign(parent: DesignParent, label: string, send: D
     changeDesign(sid, label, (x) => void (x.delivery = { state: "undelivered", key, at: new Date().toISOString(), error }));
     throw new Error(error);
   };
+  let noted: string | null = null;
   try {
     const alive = (await workers(parent).list()).some((r) => r.chatId === d.sessionId);
-    if (!alive) {
-      const out = await restartFromPage(parent, d, send.text);
-      noteSent(sid, label, send, key, by, true);
-      return out;
-    }
+    // In the history before the session can have it: a reader of the session's file finds the item for each message.
+    noted = noteSent(sid, label, send, key, by, !alive);
+    if (!alive) return await restartFromPage(parent, d, send.text);
     const { queued } = await workers(parent).send(d.sessionId, { text: send.text, delivery: "followUp", key });
-    noteSent(sid, label, send, key, by, false);
     if (!following.has(`${sid}\0${label}`)) follow(parent, label, d.sessionId);
     changeDesign(sid, label, (x) => {
       // A failed design's reason stays until a Retry: a message doesn't make it not have failed.
@@ -843,12 +841,14 @@ export async function deliverDesign(parent: DesignParent, label: string, send: D
     });
     return { queued };
   } catch (err) {
+    // Never given: it leaves the history, and a retry under its key is recorded afresh.
+    if (noted) unnoteSent(sid, label, key, noted);
     return undelivered(err instanceof Error ? err.message : String(err));
   }
 }
 
 /** A message a design was given, in the history, once per key; the version it leads to fills in when it lands. */
-function noteSent(sid: string, label: string, send: DesignSend, key: string, by: "refine" | "chat" | "coordinator", fresh: boolean): void {
+function noteSent(sid: string, label: string, send: DesignSend, key: string, by: "refine" | "chat" | "coordinator", fresh: boolean): string | null {
   const seen = changeDesigns(sid, (s) => {
     const i = s.internal?.[label];
     if (!i) return false;
@@ -856,11 +856,22 @@ function noteSent(sid: string, label: string, send: DesignSend, key: string, by:
     i.sentKeys = [...(i.sentKeys ?? []), key].slice(-20);
     return false;
   });
-  if (seen) return;
+  if (seen) return null;
   const via: DesignHistoryItem["via"] = send.by === "server" ? "fix" : send.by === "main" && !send.version ? "main" : by;
   const d = designOf(sid, label);
   const id = recordHistory(sid, { kind: "message", by: send.by, ...(d ? { runId: d.runId } : {}), label, via, text: send.historyText ?? send.text, ...(fresh ? { fresh: true as const } : {}), ...(send.toolCallId ? { toolCallId: send.toolCallId } : {}) });
   setHistoryId(sid, label, id);
+  return id;
+}
+
+function unnoteSent(sid: string, label: string, key: string, id: string): void {
+  dropHistory(sid, id);
+  changeDesigns(sid, (s) => {
+    const i = s.internal?.[label];
+    if (!i) return;
+    i.sentKeys = i.sentKeys?.filter((k) => k !== key);
+    if (i.historyId === id) delete i.historyId;
+  });
 }
 
 /** A refusal a person can act on (a removed or stopped design): the routes answer 409. */

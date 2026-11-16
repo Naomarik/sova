@@ -1,0 +1,21 @@
+{
+  "§design/context-menus": {
+    "kind": "behavior",
+    "requires": [
+      "§design/menu-rows"
+    ],
+    "authority": "accepted",
+    "evidence": "unreviewed",
+    "code": [
+      "src/components/ContextMenu.tsx",
+      "src/lib/context-menu.ts",
+      "src/lib/context-menu.test.ts",
+      "src/lib/context-menu-rule.test.ts"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-16T16:07Z",
+      "source": "pi-session:5068e8f9-2d24-48d8-abd8-090a2bcad97b#94a91edd"
+    }
+  }
+}

@@ -52,6 +52,8 @@ export interface ProjectPartContext {
   archived(): boolean;
   /** The overseer works now: its acts (a promotion) change what a part shows. */
   overseerBusy(): boolean;
+  /** Bumped by Refresh Project: a part's own reads read again. */
+  refreshed(): number;
   /** The overseer's open ideas, and whether they have been read. */
   openIdeas(): number;
   ideasRead(): boolean;
@@ -127,6 +129,7 @@ export function ProjectPage(props: {
     po,
     archived: () => !!archived(),
     overseerBusy,
+    refreshed: costTick,
     openIdeas: () => ideaList()?.length ?? 0,
     ideasRead: () => !!po.ideas.data(),
   });

@@ -4,10 +4,10 @@
 // which has none. Both are drawn with Solid's SSR build (src/lib/align-card-ssr.mjs) from one entry
 // that imports the row and the context together, so the context the row reads is the one provided.
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
-import { test } from "node:test";
+import { after, test } from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 // @ts-expect-error untyped .mjs import
@@ -16,6 +16,7 @@ const solid = await import("solid-js");
 const { renderToString } = await import("solid-js/web");
 
 const dir = mkdtempSync(join(tmpdir(), "sova-run-entry-"));
+after(() => rmSync(dir, { recursive: true, force: true }));
 const components = relative(dir, fileURLToPath(new URL("../components/", import.meta.url)));
 const entry = join(dir, "entry.tsx");
 writeFileSync(

@@ -132,14 +132,43 @@ export const holdOwns = (p: { suppressed: boolean; dragging: boolean; phase: str
 
 /**
  * What a row's `contextmenu` gets. `swallow`: neither menu (the echo of a hold or a drag);
- * `native`: the browser's own (Shift held, or a finger's or pen's long press the row doesn't own);
- * `open`: the row's menu.
+ * `native`: the browser's own (Shift held, a key's menu, or a finger's or pen's long press the row
+ * doesn't own); `open`: the row's menu. Only a mouse's right-click opens it: a finger or pen opens
+ * it by the hold's release instead, and the keyboard keeps the browser's.
  */
 export function rowContextAction(f: { owned: boolean; kind: PointerKind; shiftKey: boolean }): "swallow" | "native" | "open" {
   if (f.owned) return "swallow";
-  if (f.kind === "touch" || f.kind === "pen") return "native";
-  if (f.shiftKey && f.kind !== "keyboard") return "native";
+  if (f.kind !== "mouse" || f.shiftKey) return "native";
   return "open";
+}
+
+/** The Menu key alone, or Shift+F10: the keys that make a `contextmenu`. */
+export const isContextMenuKey = (e: { key: string; altKey: boolean; ctrlKey: boolean; metaKey: boolean; shiftKey: boolean }): boolean =>
+  !e.altKey && !e.ctrlKey && !e.metaKey && ((e.key === "F10" && e.shiftKey) || (e.key === "ContextMenu" && !e.shiftKey));
+
+/** How long after a menu key's keydown the `contextmenu` it makes may arrive (Windows sends it on the key's release). */
+export const KEY_MENU_MS = 1500;
+
+/**
+ * Tells a key-made `contextmenu` from a right-click. Chromium on Linux sends a key's as a mouse's,
+ * so the row marks the menu key's keydown and the next `contextmenu` takes the mark (once, and
+ * only within KEY_MENU_MS, so a mark whose event never came can't turn a later right-click into a
+ * key's). An event at (0, 0) is a key's too.
+ */
+export function createKeyMenuMark(now: () => number = Date.now) {
+  let at: number | null = null;
+  return {
+    /** A keydown on the row: marked when it is a menu key. */
+    keydown(e: Parameters<typeof isContextMenuKey>[0]) {
+      if (isContextMenuKey(e)) at = now();
+    },
+    /** The `contextmenu` now arriving came from a key. Consumes the mark. */
+    take(e: { clientX: number; clientY: number }): boolean {
+      const marked = at !== null && now() - at <= KEY_MENU_MS;
+      at = null;
+      return marked || (e.clientX === 0 && e.clientY === 0);
+    },
+  };
 }
 
 // ---- a mouse's menu shows on the release ------------------------------------------------------

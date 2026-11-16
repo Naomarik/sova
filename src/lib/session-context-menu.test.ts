@@ -5,8 +5,10 @@ import { test } from "node:test";
 import type { SessionSummary } from "../../shared/protocol";
 import type { ArchiveDrag } from "./drag-archive";
 import {
+  createKeyMenuMark,
   createOpenOnRelease,
   EDGE_GAP,
+  KEY_MENU_MS,
   groupChoices,
   holdOwns,
   type PointerKind,
@@ -50,14 +52,40 @@ test("pointMenuSpot: the corner sits on the pointer when the panel fits there, f
         }
 });
 
-test("rowContextAction: the hold's echo is swallowed, Shift and a finger's long press keep the browser's menu, the rest open the row's", () => {
+test("rowContextAction: the hold's echo is swallowed; only a mouse's right-click without Shift opens the row's menu, the rest keep the browser's", () => {
   const kinds: PointerKind[] = ["mouse", "touch", "pen", "keyboard"];
   for (const owned of [false, true])
     for (const kind of kinds)
       for (const shiftKey of [false, true]) {
-        const want = owned ? "swallow" : kind === "touch" || kind === "pen" ? "native" : shiftKey && kind === "mouse" ? "native" : "open";
+        const want = owned ? "swallow" : kind === "mouse" && !shiftKey ? "open" : "native";
         assert.equal(rowContextAction({ owned, kind, shiftKey }), want, JSON.stringify({ owned, kind, shiftKey }));
       }
+});
+
+test("createKeyMenuMark: the Menu key or Shift+F10 marks the next contextmenu as a key's, once and only for a while; (0, 0) is a key's too", () => {
+  let t = 0;
+  const key = (k: string, mods: Partial<{ shiftKey: boolean; ctrlKey: boolean; altKey: boolean; metaKey: boolean }> = {}) => ({ key: k, shiftKey: false, ctrlKey: false, altKey: false, metaKey: false, ...mods });
+  const at = { clientX: 120, clientY: 300 };
+  const cases: [ReturnType<typeof key>, boolean][] = [
+    [key("ContextMenu"), true],
+    [key("F10", { shiftKey: true }), true],
+    [key("F10"), false],
+    [key("ContextMenu", { shiftKey: true }), false],
+    [key("F10", { shiftKey: true, ctrlKey: true }), false],
+    [key("Enter"), false],
+  ];
+  for (const [k, want] of cases) {
+    const mark = createKeyMenuMark(() => t);
+    mark.keydown(k);
+    assert.equal(mark.take(at), want, JSON.stringify(k));
+    assert.equal(mark.take(at), false, "consumed: the next right-click is a mouse's");
+  }
+  const late = createKeyMenuMark(() => t);
+  t = 0;
+  late.keydown(key("ContextMenu"));
+  t = KEY_MENU_MS + 1;
+  assert.equal(late.take(at), false, "a mark whose event never came expires");
+  assert.equal(createKeyMenuMark(() => t).take({ clientX: 0, clientY: 0 }), true);
 });
 
 test("holdOwns: a fired hold, a drag, or a finger's or pen's press still down; never a mouse press in flight", () => {

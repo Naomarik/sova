@@ -107,7 +107,7 @@ import { waitingWords } from "../lib/working-hours";
 import { groupHref } from "../lib/group-route";
 import { GroupNameField } from "./Groups";
 import { draggingPath, dragSuppressesClick, DropOverlay, openNewGroupFor, startRowDrag } from "./DropOverlay";
-import { contextPointerKind, holdOwns, pressHeld, rowContextAction } from "../lib/session-context-menu";
+import { contextPointerKind, createKeyMenuMark, holdOwns, pressHeld, rowContextAction } from "../lib/session-context-menu";
 import { openSessionMenu, SessionContextMenu } from "./SessionContextMenu";
 import { GroupPicker } from "./GroupPicker";
 import { EMPTY_GROUP_REASON, NO_GROUPS_NOTE } from "../lib/group-picker";
@@ -336,6 +336,8 @@ export function SessionRow(props: {
   let shell: HTMLLIElement | undefined;
   /** The row's link: where focus goes back when its menu closes. */
   let link: HTMLAnchorElement | undefined;
+  /** A menu key's keydown, so the contextmenu it makes keeps the browser's menu. */
+  const keyMenu = createKeyMenuMark();
   let pointerId = 0;
   let pointerKind = "mouse";
   /** The row is held: it rises off the list, and the list stops scrolling under it. */
@@ -446,19 +448,17 @@ export function SessionRow(props: {
       // belonging to this press will never arrive. A drag that took the capture has already
       // ended the press, so this changes nothing for it.
       onLostPointerCapture={() => press.phase() !== "idle" && cancelPress()}
+      onKeyDown={(e) => keyMenu.keydown(e)}
       // The long-press context menu belongs to the hold, not to the browser. A mouse's right-click
-      // (or the Menu key) opens the row's own menu, once its button is up; Shift keeps the browser's.
+      // opens the row's own menu, once its button is up; Shift, and a key's menu, keep the browser's.
       onContextMenu={(e) => {
-        const kind = contextPointerKind(e as MouseEvent & { pointerType?: unknown }, pointerKind);
+        const kind = keyMenu.take(e) ? "keyboard" : contextPointerKind(e as MouseEvent & { pointerType?: unknown }, pointerKind);
         const owned = holdOwns({ suppressed: press.suppressed(), dragging: !!draggingPath(), phase: press.phase(), pointerKind });
         const act = rowContextAction({ owned, kind, shiftKey: e.shiftKey });
         if (act === "native") return;
         e.preventDefault();
         if (act !== "open") return;
-        // A key's event has no pointer: the menu hangs from the row's link instead.
-        const box = (link ?? e.currentTarget).getBoundingClientRect();
-        const at = kind === "keyboard" || (e.clientX === 0 && e.clientY === 0) ? { x: box.left + 16, y: box.bottom } : { x: e.clientX, y: e.clientY };
-        openSessionMenu({ path: s().path, at, kind, returnTo: link ?? null }, pressHeld(kind, e.buttons));
+        openSessionMenu({ path: s().path, at: { x: e.clientX, y: e.clientY }, kind, returnTo: link ?? null }, pressHeld(kind, e.buttons));
       }}
     >
       <div class="session-rail">

@@ -29,12 +29,19 @@ export function liveDelegateOptions(): ResourceReturn<DelegateOptions> {
   return resource;
 }
 
-/** Best-effort: without an answer the page keeps the list it has. */
-export async function loadClaudeCatalog(): Promise<void> {
+/**
+ * Best-effort: without an answer the page keeps the list it has. `serverChanged`: the server said its list
+ * changed (`claude_models_changed`), so the rows it builds (model options, the model list) are read again
+ * even when this read brings the page nothing new. The catalog is read from the file, which can be ahead of
+ * the server's own list: an earlier change's notice can arrive after a later write, and the page then holds
+ * the new list while the rows it just read were built from the old one. The server's notice of that later
+ * write is the moment its rows have it.
+ */
+export async function loadClaudeCatalog(opts: { serverChanged?: boolean } = {}): Promise<void> {
   const info = await getClaudeCatalog().catch(() => null);
   if (!info) return;
   setLastKnown(info.lastKnown);
-  if (!mergeClaudeCatalog(info.data)) return;
+  if (!mergeClaudeCatalog(info.data) && !opts.serverChanged) return;
   setChanges((n) => n + 1);
   if (modelList()) void loadModels().catch(() => undefined);
 }

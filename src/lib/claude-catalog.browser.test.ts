@@ -89,6 +89,20 @@ test("a catalog with no change reads nothing; only the last-known flag moves", a
   assert.equal(claudeListIsLastKnown(), false);
 });
 
+test("the server's notice reads the rows again even when the page already holds the list", async () => {
+  // The race: the page read the new list from the file before the server's own list had it, so the rows
+  // it read then were the old ones; the server's later notice brings the page nothing new.
+  const s = server();
+  const tab = openTab();
+  await tab.lists("claude-opus-5-5");
+  s.catalog = { data: { models: [{ id: NEW }] }, lastKnown: false };
+  await loadClaudeCatalog({ serverChanged: true });
+
+  s.options = optionsWith("claude-opus-5-5", NEW);
+  await loadClaudeCatalog({ serverChanged: true });
+  await tab.lists(NEW);
+});
+
 test("a re-read that fails leaves the rows as they are", async () => {
   const s = server();
   const tab = openTab();

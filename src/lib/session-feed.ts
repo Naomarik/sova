@@ -125,7 +125,7 @@ export function openSessionFeed(refreshList: () => void): void {
         nudges.nudge();
       }
       // A new Claude model, or one Claude Code dropped: no restart, no reload (§app.claude-code-provider/catalog).
-      else if (msg.type === "claude_models_changed") void loadClaudeCatalog();
+      else if (msg.type === "claude_models_changed") void loadClaudeCatalog({ serverChanged: true });
       // Never a reason to re-read the list: the count is its own fact.
       else if (msg.type === "llm_inflight") setInflight(msg.inflight);
       else if (msg.type === "attention") for (const l of listeners) l.attention(msg.digest);

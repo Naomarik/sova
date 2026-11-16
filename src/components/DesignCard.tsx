@@ -386,7 +386,7 @@ function DesignRunBody(props: {
                 </p>
               </div>
             </Show>
-            <DesignBriefRow run={props.run} store={props.store} />
+            <DesignBriefRow run={props.run} store={props.store} nav={nav} />
             <Show when={designs().length > 0}>
               <div class="design-card-body design-card-designs">
                 <DesignTiles
@@ -446,6 +446,7 @@ function DesignRunBody(props: {
         <DesignBriefStep
           run={props.run}
           store={props.store}
+          nav={nav}
           onOpenCoordinator={openCoordinator}
         />
       </Show>

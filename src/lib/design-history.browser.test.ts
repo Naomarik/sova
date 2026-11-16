@@ -54,7 +54,7 @@ const reset = (hash: string, state: unknown = null) => {
 };
 const shown = (nav: ReturnType<typeof useDesignOpen>) => {
   const t = nav.target();
-  return t ? (t.kind === "coordinator" ? "coordinator" : t.label) : null;
+  return t ? (t.kind === "coordinator" ? "coordinator" : t.kind === "brief" ? `brief ${t.runId}` : t.label) : null;
 };
 const mount = () => solid.createRoot((dispose) => ({ nav: useDesignOpen(PATH, null), dispose }));
 
@@ -94,6 +94,29 @@ test("coordinator, then a design: Back retraces both, Forward reopens them, the 
   await forward();
   assert.equal(shown(nav), "A");
   for (const e of entries.slice(1)) assert.equal(sessionRouteFromHash(e.hash)?.path, PATH);
+  dispose();
+});
+
+test("a run's brief is one step too: the address names it, Back closes it, and closing leaves no step to reopen", async () => {
+  const b = hashWithDesign(CHAT, { kind: "brief", runId: "r1" });
+  assert.equal(b, `${CHAT}?design=brief.r1`);
+  assert.deepEqual(designOfHash(b), { kind: "brief", runId: "r1" });
+  assert.equal(designOfHash(`${CHAT}?design=brief.`), null, "a brief that names no run is nothing");
+  assert.deepEqual(sessionRouteFromHash(b), sessionRouteFromHash(CHAT));
+  reset(CHAT);
+  const { nav, dispose } = mount();
+  nav.open({ kind: "brief", runId: "r1" });
+  assert.equal(shown(nav), "brief r1");
+  assert.equal(location.hash, b);
+  await back();
+  assert.equal(shown(nav), null, "Back closes the brief");
+  assert.equal(location.hash, CHAT);
+  await forward();
+  assert.equal(shown(nav), "brief r1");
+  nav.close();
+  await settle();
+  assert.equal(shown(nav), null);
+  assert.equal(at, 1);
   dispose();
 });
 

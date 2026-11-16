@@ -208,7 +208,7 @@ export function DesignOpenSlot(props: { nav: DesignOpener; store: DesignStore; p
     const t = props.nav.target();
     const view = props.store.view();
     if (!t || !view) return null;
-    const there = t.kind === "coordinator" ? !!coordinatorOf(view) : view.designs.some((x) => x.label === t.label);
+    const there = t.kind === "coordinator" ? !!coordinatorOf(view) : t.kind === "brief" ? view.runs.some((r) => r.id === t.runId && !!r.brief) : view.designs.some((x) => x.label === t.label);
     return there ? t : "gone";
   });
   createEffect(() => shown() === "gone" && props.nav.drop());
@@ -220,7 +220,8 @@ export function DesignOpenSlot(props: { nav: DesignOpener; store: DesignStore; p
   // one in place, so nothing in it moves; the next one opens where the last one was.
   const key = createMemo(() => {
     const t = target();
-    return t ? (t.kind === "design" ? `design:${t.label}` : "coordinator") : null;
+    // A run's brief is drawn by its own card, as a dialog over the chat, not here.
+    return t && t.kind !== "brief" ? (t.kind === "design" ? `design:${t.label}` : "coordinator") : null;
   });
   return (
     <Show when={key()} keyed>

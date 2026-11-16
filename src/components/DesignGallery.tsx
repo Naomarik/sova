@@ -16,7 +16,7 @@ export function DesignGallery(props: { path: string }) {
   const designs = () => designGrid(store.view());
   const fontsSettled = createFontsSettled();
   return (
-    <section class="gallery-section" aria-labelledby="gallery-prototypes">
+    <section class="gallery-section gallery-prototypes" aria-labelledby="gallery-prototypes">
       <div class="gallery-head">
         <h3 class="text-eyebrow" id="gallery-prototypes">
           Prototypes

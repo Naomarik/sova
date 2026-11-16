@@ -6,6 +6,7 @@ import { designBriefBlock, designerSkills } from "../../shared/design";
 import type { DesignSpendAsk } from "../lib/design-api";
 import { answerLine, assetsOfRun, pickIsRecommended, recommendedPick, runScreenshots, screenUseBy, screenUseOf, shotWordsText, shotWordsToSave, stagedAnswers, startLabel, usedCount, type StagedPick } from "../lib/design-brief";
 import type { DesignStore } from "../lib/design-store";
+import type { DesignOpener } from "../lib/design-history";
 import { coordinatorOf, setupCount, setupSummary, type DesignRunView } from "../lib/design-ui";
 import { Inline, QuestionChoices, type QuestionPicker } from "./AlignDocCard";
 import { coordinatorChip, DesignAskPanel } from "./DesignCoordinator";
@@ -351,6 +352,12 @@ export function DesignBriefDialog(props: { title: string; sub?: string; onClose(
   );
 }
 
+/** Whether the chat's open Lookbook view is this run's brief. */
+const briefShown = (nav: DesignOpener, runId: string): boolean => {
+  const t = nav.target();
+  return t?.kind === "brief" && t.runId === runId;
+};
+
 /** "Revision 3 · 2 answers · 3 images used": the brief's line under its name. */
 function briefFacts(run: DesignRunView, imagesUsed: number): string {
   const b = run.brief;
@@ -363,7 +370,7 @@ function briefFacts(run: DesignRunView, imagesUsed: number): string {
 }
 
 /** The brief while it is open: a short preview, the Creative Director's questions and Start. The rest opens full size. */
-export function DesignBriefStep(props: { run: DesignRunView; store: DesignStore; onOpenCoordinator(): void }) {
+export function DesignBriefStep(props: { run: DesignRunView; store: DesignStore; nav: DesignOpener; onOpenCoordinator(): void }) {
   const setup: SetupDraft = createSetupDraft(() => props.run, props.store);
   const [staged, setStaged] = createSignal<Record<string, StagedPick>>({});
   const [uses, setUses] = createSignal<Record<string, DesignLinkUse>>({});
@@ -372,8 +379,14 @@ export function DesignBriefStep(props: { run: DesignRunView; store: DesignStore;
   const [error, setError] = createSignal("");
   const [ask, setAsk] = createSignal<DesignSpendAsk | null>(null);
   const [openImage, setOpenImage] = createSignal<string | null>(null);
-  // The full-size brief: closed, or open (and on what it was opened to settle).
-  const [dialog, setDialog] = createSignal<{ focus: string | null } | null>(null);
+  // The full-size brief is one step in the browser's history (Back closes it), shared with the chat's
+  // other Lookbook views; `focus` is what it was last opened to settle.
+  const [focus, setFocus] = createSignal<string | null>(null);
+  const dialogOpen = () => briefShown(props.nav, props.run.id);
+  const setDialog = (d: { focus: string | null }) => {
+    setFocus(d.focus);
+    props.nav.open({ kind: "brief", runId: props.run.id });
+  };
   const catalogue = createAssetCatalogue(props.store);
   const opened = () => catalogue()?.assets.find((a) => a.name === openImage());
   let questions: HTMLOListElement | undefined;
@@ -645,9 +658,9 @@ export function DesignBriefStep(props: { run: DesignRunView; store: DesignStore;
           </Show>
         </button>
       </DesignCardFoot>
-      <Show when={dialog()}>
-        {(d) => (
-          <DesignBriefDialog title="Design Brief" sub={facts()} focus={d().focus} onClose={() => setDialog(null)}>
+      <Show when={dialogOpen()}>
+        {(_open) => (
+          <DesignBriefDialog title="Design Brief" sub={facts()} focus={focus()} onClose={() => props.nav.close()}>
             <div class="design-brief" data-links={anyLinks() ? "" : undefined}>
               <BriefText
                 title="Summary"
@@ -717,8 +730,9 @@ export function DesignBriefStep(props: { run: DesignRunView; store: DesignStore;
 }
 
 /** The brief once designs are being made: one row, and Open Brief to read, full size, what they were started from. */
-export function DesignBriefRow(props: { run: DesignRunView; store: DesignStore }) {
-  const [open, setOpen] = createSignal(false);
+export function DesignBriefRow(props: { run: DesignRunView; store: DesignStore; nav: DesignOpener }) {
+  const open = () => briefShown(props.nav, props.run.id);
+  const setOpen = (on: boolean) => (on ? props.nav.open({ kind: "brief", runId: props.run.id }) : props.nav.close());
   const [catalogue, setCatalogue] = createSignal<DesignAssetCatalogue | null>(null);
   void props.store.api.assets().then(setCatalogue, () => {});
   const brief = () => props.run.brief;

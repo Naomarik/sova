@@ -277,6 +277,10 @@ export type CommandId =
   | "design.refine"
   | "design.retry"
   | "design.coordinator.message"
+  | "design.stop"
+  | "design.remove"
+  | "design.restore"
+  | "design.history"
   | "design.delete";
 
 /** Each command's params, as its catalogue entry declares them. */
@@ -4551,7 +4555,7 @@ export interface CommandParams {
     /** Quick prompts to add */
     "quick"?: string[];
   };
-  /** Try a failed design again in a fresh session. (changes something; needs the card's owner trusted) */
+  /** Try a failed design again, or start a stopped one again, in a fresh session. (changes something; needs the card's owner trusted) */
   "design.retry": {
     /** The chat the designs belong to, by id or by path */
     "session"?: string;
@@ -4566,6 +4570,32 @@ export interface CommandParams {
     "text": string;
     /** A key you make: sending again under it delivers nothing twice */
     "key": string;
+  };
+  /** Stop a design that is queued or being written. What it had written is kept as a still; one stopped mid-change keeps its last version. (changes something; needs the card's owner trusted) */
+  "design.stop": {
+    /** The chat the designs belong to, by id or by path */
+    "session"?: string;
+    /** The design's label (A, B, … AA) */
+    "label": string;
+  };
+  /** Set a design aside in its Lookbook's Removed section, stopping it first if it is being written. Nothing is deleted. (changes something; needs the card's owner trusted) */
+  "design.remove": {
+    /** The chat the designs belong to, by id or by path */
+    "session"?: string;
+    /** The design's label (A, B, … AA) */
+    "label": string;
+  };
+  /** Put a removed design back where it was, as it was. (changes something; needs the card's owner trusted) */
+  "design.restore": {
+    /** The chat the designs belong to, by id or by path */
+    "session"?: string;
+    /** The design's label (A, B, … AA) */
+    "label": string;
+  };
+  /** What a chat's designs were told, in time order: each Full Prompt revision, each Start, every message a design was given and the version it led to, and each stop, removal and restore. Never a page's code. (only looks; needs the card's owner trusted) */
+  "design.history": {
+    /** The chat the designs belong to, by id or by path */
+    "session"?: string;
   };
   /** Remove one design from its chat. (changes something; needs the card's owner trusted) */
   "design.delete": {
@@ -4852,5 +4882,9 @@ export const COMMAND_EFFECTS: Record<CommandId, "looks" | "changes"> = {
   "design.refine": "changes",
   "design.retry": "changes",
   "design.coordinator.message": "changes",
+  "design.stop": "changes",
+  "design.remove": "changes",
+  "design.restore": "changes",
+  "design.history": "looks",
   "design.delete": "changes",
 };

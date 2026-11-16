@@ -44,6 +44,7 @@ import { registerVoiceRoutes } from "./voice/service";
 import { registerSessionShareRoutes } from "./session-shares-routes";
 import { mountTourRoutes } from "./tour-routes";
 import { mountDesignRoutes } from "./design/routes";
+import { installPageReaderSandbox } from "./design/page-paths";
 import { ensureTourToolRuntime, setTourNeedsYou, setTourResumed } from "./tours/runtime";
 import { setTourSignInWaits, tourResumedNotifier, tourSignInNotifier } from "./tours/sign-in-notice";
 import { registerSessionForkRoutes } from "./session-fork-routes";
@@ -2136,6 +2137,8 @@ export function buildApp(deps: AppDeps) {
       agentDir: agentRoot,
     });
   setFileCopyGuards(async (sid, canonical) => linkSandbox.write(await sessionSandbox(sid), canonical, { creating: true }), () => [stateRoot(), SESSIONS_DIR]);
+  // A chat reading a design's saved page gets a path its own sandbox can open (server/design/page-paths.ts).
+  installPageReaderSandbox(sessionSandbox);
   mountLinks(app, meshApi, {
     root: stateRoot,
     summary: sessionById,

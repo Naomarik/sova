@@ -1,4 +1,4 @@
-import type { DesignChatView, DesignLinkUse, DesignSetup } from "../../shared/design";
+import type { DesignChatView, DesignHistory, DesignLinkUse, DesignSetup } from "../../shared/design";
 import type { DesignAssetCatalogue, DesignAssetShown, DesignShotWords } from "../../shared/design-assets";
 import { ApiError, uploadImage, withJsonType } from "./api";
 import { onAuthorized, onUnauthorized } from "./auth";
@@ -62,6 +62,11 @@ export function designApi(path: string, host: string | null) {
     message: (l: string, text: string, key: string) => json<{ queued?: boolean }>(url(`${label(l)}/message`), post({ text, key })),
     refine: (l: string, text: string, quick: readonly string[], key: string) => json<{ queued?: boolean }>(url(`${label(l)}/refine`), post({ text, quick, key })),
     retry: (l: string) => json<unknown>(url(`${label(l)}/retry`), post()),
+    /** Stop, Remove, Restore: the card's More menu. Start Again is retry. */
+    stop: (l: string) => json<unknown>(url(`${label(l)}/stop`), post()),
+    remove: (l: string) => json<unknown>(url(`${label(l)}/remove`), post()),
+    restore: (l: string) => json<unknown>(url(`${label(l)}/restore`), post()),
+    history: () => json<DesignHistory>(url("/history")),
     coordinatorMessage: (text: string, key: string, images?: readonly string[]) => json<{ queued?: boolean }>(url("/coordinator/message"), post({ text, key, ...(images?.length ? { images } : {}) })),
     /** Stores a pasted image where the coordinator's box can name it. */
     uploadImage: (file: File) => uploadImage(file, path),
@@ -89,6 +94,12 @@ export function designApi(path: string, host: string | null) {
     /** A finished page's text; the page is never loaded as a document from Sova's origin. */
     page: async (l: string, version: number, images?: "small" | "full"): Promise<string> => {
       const res = await send(url(`${label(l)}/page`, `&v=${version}${images ? `&images=${images}` : ""}`));
+      if (!res.ok) throw new ApiError(res.status === 404 ? "This page isn't there." : `This page couldn't be loaded (${res.status}).`, res.status);
+      return res.text();
+    },
+    /** What a stopped design had written, kept as a still: sealed like a page. */
+    stillPage: async (l: string, n: number, images?: "small" | "full"): Promise<string> => {
+      const res = await send(url(`${label(l)}/page`, `&still=${n}${images ? `&images=${images}` : ""}`));
       if (!res.ok) throw new ApiError(res.status === 404 ? "This page isn't there." : `This page couldn't be loaded (${res.status}).`, res.status);
       return res.text();
     },

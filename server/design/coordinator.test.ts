@@ -9,7 +9,8 @@ import type { ToolSpec } from "../../shared/harness";
 const agentDir = mkdtempSync(join(tmpdir(), "sova-coordinator-"));
 process.env.PI_CODING_AGENT_DIR = agentDir;
 const { answerBrief, answerCoordinator, BriefRefused, coordinatorCard, coordinatorTools, editBrief, messageCoordinator, noteHandIn, notThisScreen, originsIn, resolveBriefConflict, setBriefLink, setCoordinatorPorts, startBrief, startCoordinator, tellCoordinator } = await import("./coordinator");
-const { changeDesigns, forgetDesignCache, runOf } = await import("./store");
+const { changeDesigns, forgetDesignCache, pageFile, runOf, viewOf, writePage } = await import("./store");
+const { readHistory } = await import("./history");
 after(() => rmSync(agentDir, { recursive: true, force: true }));
 
 const PNG = new Uint8Array([137, 80, 78, 71]);
@@ -26,6 +27,10 @@ let capture: (...a: unknown[]) => Promise<never>;
 let describingNow = false;
 let browseCalls = 0;
 let imageCalls: string[][] = [];
+let acts: { label: string; act: string; toolCallId?: string }[] = [];
+let lookedAt: string[] = [];
+let designList: DesignRecord[] = [];
+const DESIGN_A = { label: "A", direction: "D0", model: "zai/m0", parents: [], status: "ready", route: "tool", versions: [{ n: 1, at: "t", chars: 50000, note: { layout: "l", sections: "s", type: "t", color: "c" } }], vision: true, createdAt: "", updatedAt: "", runId: "r" } as unknown as DesignRecord;
 
 const model = (ref: string, over: Partial<DesignModelChoice> = {}): DesignModelChoice => ({ ref, name: ref, design: true, coordinator: false, vision: true, route: "tool", ...over });
 const runWith = (designers: number, directions: number, over: Partial<DesignRun> = {}): DesignRun => ({
@@ -42,6 +47,9 @@ beforeEach(() => {
   describingNow = false;
   browseCalls = 0;
   imageCalls = [];
+  acts = [];
+  lookedAt = [];
+  designList = [DESIGN_A];
   capture = async () => ({ kind: "refused", message: "no capture in this test" }) as never;
   readLook = async () => ({ text: "Calm navy on white.", model: "zai/vision" });
   nextBrowse = { kind: "pictures", url: "/settings", origin: "http://127.0.0.1:4810", outline: "OUTLINE", signedIn: false, shots: [{ size: "desktop", png: PNG, viewport: { w: 1440, h: 960 } }] };
@@ -53,7 +61,7 @@ beforeEach(() => {
       state: () => workerState,
       watch: (_c, fn) => ((turnListener = fn), () => {}),
     }),
-    designsFor: () => [{ label: "A", direction: "D0", model: "zai/m0", parents: [], status: "ready", route: "tool", versions: [{ n: 1, at: "t", chars: 50000, note: { layout: "l", sections: "s", type: "t", color: "c" } }], vision: true, createdAt: "", updatedAt: "", runId: "r" } as unknown as DesignRecord],
+    designsFor: () => designList,
     launchDesigns: async (_p, r, a) => {
       log.launches.push(a);
       changeDesigns(parent.sessionId, (s) => void (s.runs.find((x) => x.id === r)!.phase = "generating"));
@@ -64,7 +72,13 @@ beforeEach(() => {
     describing: () => describingNow,
     newDesign: async (_p, a) => (log.news.push(a), "G"),
     deliverDesign: async (_p, label, a) => (log.delivered.push({ label, ...a }), { queued: true }),
-    lookAtDesign: async () => ({ shots: [{ size: "desktop", png: PNG }], outline: "O" }),
+    lifecycle: (_p, label, act, toolCallId) => void acts.push({ label, act, ...(toolCallId ? { toolCallId } : {}) }),
+    models: async () => [{ ref: "openai/astra", name: "astra", vision: false, route: "tool", efforts: ["low", "high"], onSetup: false }],
+    lookAtDesign: async (_p, label, a) => {
+      lookedAt.push(`${label}${a.version ?? ""}${a.view ? `·${a.view}` : ""}${a.actions ? `·${a.actions.length} actions` : ""}`);
+      if (a.view === "Nowhere") throw new Error(`Design ${label}'s version ${a.version} has no view "Nowhere". Its views: the first screen, Deploy.`);
+      return { shots: [{ size: "desktop", png: PNG }], outline: "O", ...(a.view ? { view: "Deploy" } : {}) };
+    },
     systemPrompt: () => "PROMPT",
     specFor: (_p, _c, model) => ({ model }) as never,
     sessionDir: () => "/s",
@@ -83,7 +97,7 @@ afterEach(() => {
 });
 
 type Tool = (args: unknown) => Promise<{ content: { type: string; text?: string }[]; details: any }>;
-type Tools = Record<"design_status" | "design_brief" | "design_capture" | "design_browse" | "design_send" | "design_new" | "coordinator_card" | "project_verbs", Tool>;
+type Tools = Record<"design_status" | "design_brief" | "design_capture" | "design_browse" | "design_send" | "design_new" | "design_stop" | "design_remove" | "design_restore" | "design_start_again" | "design_models" | "coordinator_card" | "project_verbs", Tool>;
 async function started(run: DesignRun) {
   changeDesigns(parent.sessionId, (s) => {
     s.runs.push(run);
@@ -934,17 +948,29 @@ test("news of a chat with no coordinator goes nowhere and throws nothing", async
   assert.equal(log.sends.length, 0);
 });
 
-test("design_status holds metadata only", async () => {
+test("the Creative Director gets a page's size and the path of its saved file, which it can read, never the page in a reply", async () => {
   const t = await started(runWith(2, 3));
-  const out = textOf(await t.design_status({}));
-  assert.match(out, /"label": "A"/);
-  assert.doesNotMatch(out, /html|chars/i);
-});
-
-test("a look at a design gives pictures, never its text", async () => {
-  const t = await started(runWith(2, 3));
+  const html = "<!doctype html><p>PAGE-BODY-MARK</p>";
+  writePage(parent.sessionId, "A", 1, html);
+  const status = textOf(await t.design_status({}));
   const r = await t.design_browse({ label: "A" });
   assert.deepEqual(r.content.map((b: { type: string }) => b.type), ["text", "image"]);
+  for (const out of [status, textOf(r)]) {
+    assert.ok(out.includes(pageFile(parent.sessionId, "A", 1)));
+    assert.doesNotMatch(out, /PAGE-BODY-MARK/);
+  }
+  assert.match(textOf(r), new RegExp(`Size: 0\\.0 KB · ${html.length} characters, 1 line\\.`));
+  assert.equal(readFileSync(pageFile(parent.sessionId, "A", 1), "utf8"), html, "the path is that version's own file");
+});
+
+test("design_status gives a version's size by the same measure as every read's Size line, non-ASCII text included", async () => {
+  const t = await started(runWith(2, 3));
+  // Characters and bytes part ways here: a dash, quotes and an accent take 2 to 3 bytes each, the emoji 4.
+  writePage(parent.sessionId, "A", 1, "<p>— “é” 😀</p>".repeat(200));
+  const status = JSON.parse(textOf(await t.design_status({ label: "A1" })));
+  const read = /Size: ([\d.,]+ KB) ·/.exec(textOf(await t.design_browse({ label: "A1" })))?.[1];
+  assert.equal(status.designs[0].versions[0].size, read);
+  assert.notEqual(read, "0.0 KB");
 });
 
 test("a coordinator with no vision gets the outline and no pictures", async () => {
@@ -1009,7 +1035,7 @@ test("the card's yes is the person's: a chat's key or the token in a header is r
 test("a coordinator's process is served its tools and no others, and of the built-ins has pi's read only", async () => {
   const { workerServed } = await import("../chat-host");
   const decls = workerServed({ kind: "design-coordinator", parent: { sessionId: "p", path: "/p.jsonl", workerId: "design-coordinator" } }, "/w.jsonl");
-  assert.deepEqual(decls.map((d) => d.name).sort(), ["coordinator_card", "design_brief", "design_browse", "design_capture", "design_images", "design_new", "design_send", "design_status", "project_verbs"]);
+  assert.deepEqual(decls.map((d) => d.name).sort(), ["coordinator_card", "design_brief", "design_browse", "design_capture", "design_images", "design_models", "design_new", "design_remove", "design_restore", "design_send", "design_start_again", "design_status", "design_stop", "project_verbs"]);
   // After a restart its mirror names only the parent's id: the same tools come back.
   assert.equal(workerServed({ kind: "design-coordinator", parentSessionId: "p" }, "/w2.jsonl").length, decls.length);
   const spec = (await import("./coordinator")).realCoordinatorSpec({ sessionId: "p", path: "/p.jsonl" }, "/cwd", "zai/glm-5.3-flash", "P");
@@ -1254,4 +1280,110 @@ test("a screenshot's words reach the designers whole: a 300+ character role and 
   assert.ok(text.includes(`#4a43d8 ${role}`), "the whole role");
   assert.ok(text.includes(feel), "the whole feel");
   assert.ok(!text.slice(text.indexOf("REFERENCE SCREENSHOTS")).includes("…"), "nothing cut");
+});
+
+// ---- al_1: stopping, removing and restoring only at the user's word; any model; the prompt's history ---------
+
+test("stop, remove, restore and start again act only on a turn the user's own words woke; any other turn suggests it instead", async () => {
+  const t = await launched();
+  const tools = [t.design_stop, t.design_remove, t.design_restore, t.design_start_again];
+  const all = async () => Promise.all(tools.map((tool) => tool({ label: "A" })));
+  // Each way a turn is woken, and whether it is the user's word: the first message is Sova's, a site's answer a click on the
+  // Creative Director's own question, a pass-on from the main chat carries the user's words.
+  const wakes: [string, () => Promise<unknown>, boolean][] = [
+    ["its first message", async () => {}, false],
+    ["the user's box", () => messageCoordinator(parent, "stop A and take it off", "k1"), true],
+    ["its own question answered", async () => {
+      changeDesigns(parent.sessionId, () => {});
+      await t.design_browse({ url: "https://elsewhere.example" }).catch(() => {});
+      const asked = viewOf(parent.sessionId).coordinator?.ask;
+      if (asked) await answerCoordinator(parent, asked.id, "no");
+    }, false],
+    ["the main chat passing their words on", () => tellCoordinator(parent, "remove A", "k2"), true],
+  ];
+  nextBrowse = { kind: "needs-site", origin: "https://elsewhere.example" } as Outcome;
+  for (const [name, wake, mine] of wakes) {
+    await wake();
+    acts = [];
+    const out = await all();
+    if (mine) {
+      assert.deepEqual(acts.map((a) => a.act), ["stop", "remove", "restore", "again"], name);
+      assert.ok(acts.every((a) => a.toolCallId === "c1"), "the call's id rides along, so its row folds into the history item");
+    } else {
+      assert.equal(acts.length, 0, name);
+      for (const r of out) assert.match(textOf(r), /^Refused: only the user can ask for this.*suggest it on your card/s, name);
+    }
+  }
+});
+
+test("removed designs leave the card's count, and the Creative Director sees them marked", async () => {
+  const t = await launched();
+  designList = [DESIGN_A, { ...DESIGN_A, label: "B", removed: { at: "t", by: "user" } } as DesignRecord];
+  await messageCoordinator(parent, "hi", "k");
+  assert.equal(viewOf(parent.sessionId).coordinator!.tracking, 1);
+  const status = JSON.parse(textOf(await t.design_status({})));
+  assert.deepEqual(status.designs.map((d: { label: string; removed?: true }) => [d.label, d.removed ?? false]), [["A", false], ["B", true]]);
+});
+
+test("design_new takes any model and a design from the brief, passing the effort only when named; design_models lists them", async () => {
+  const t = await launched();
+  assert.equal((await t.design_new({ parents: [], instructions: "a bolder take", model: "openai/astra" })).details.label, "G");
+  await t.design_new({ parents: ["A"], instructions: "mix", model: "openai/astra", effort: "High" });
+  assert.deepEqual(log.news.map((a) => { const x = a as { parents: string[]; effort?: string; toolCallId?: string }; return [x.parents, x.effort, x.toolCallId]; }), [[[], undefined, "c1"], [["A"], "high", "c1"]]);
+  refused(await t.design_new({ instructions: "x", model: "openai/astra" }));
+  assert.match(textOf(await t.design_models({})), /^openai\/astra, effort: low\/high$/);
+});
+
+test("each Full Prompt revision and the Start are kept in the history, whole, with who wrote it; a call that leaves the prompt as it was adds none", async () => {
+  const run = runWith(2, 3);
+  const t = await ready(run, { summary: "S", prompt: "First prompt." });
+  await t.design_brief({ baseRev: brief(run.id).textRev, summary: "S2" });
+  await editBrief(parent, run.id, { field: "prompt", text: "The user's own prompt." });
+  await start(run);
+  const items = readHistory(parent.sessionId).items;
+  assert.deepEqual(items.filter((i) => i.kind === "prompt").map((i) => [i.by, i.text, i.toolCallId]), [["coordinator", "First prompt.", "c1"], ["user", "The user's own prompt.", undefined]]);
+  const started = items.find((i) => i.kind === "start")!;
+  assert.equal(started.rev, brief(run.id).textRev);
+  assert.ok(started.text!.startsWith("The user's own prompt."), "what the designs got");
+});
+
+test("the Creative Director looks at a design's latest version unless it names one, several at once, each labelled with its version and time", async () => {
+  const t = await launched();
+  const v = (n: number) => ({ n, at: `2026-11-16T10:0${n}:30.000Z`, chars: 10, by: "first" });
+  designList = [{ ...DESIGN_A, versions: [v(1), v(2), v(3)] } as DesignRecord, { ...DESIGN_A, label: "B", status: "writing", live: { version: 2, chars: 9 }, versions: [v(1)] } as DesignRecord, { ...DESIGN_A, label: "C", status: "queued", versions: [] } as DesignRecord];
+  // The header, its size (the stand-in designs have no saved page, so their record's chars stand in) and its saved file's
+  // path, which the Creative Director may read, then pictures.
+  const heads = (r: { content: { type: string; text?: string }[] }) => r.content.filter((b) => b.type === "text").map((b) => b.text!.split("\nPictures")[0]);
+  const at = (label: string, n: number) => `Size: 0.0 KB · 10 characters.\nFile: ${pageFile(parent.sessionId, label, n)}`;
+  assert.deepEqual(heads(await t.design_browse({ label: "A" })), [`Design A · version 3 of 3 (latest) · made 2026-11-16 10:03 UTC · versions 1–3\n${at("A", 3)}`]);
+  assert.deepEqual(heads(await t.design_browse({ label: "a1, B" })), [`Design A · version 1 of 3 · made 2026-11-16 10:01 UTC · versions 1–3\n${at("A", 1)}`, `Design B · version 1 of 1 (latest) · made 2026-11-16 10:01 UTC · version 1\nVersion 2 is being written now; this isn't it.\n${at("B", 1)}`]);
+  // The older form, a bare label with version, reads the same.
+  await t.design_browse({ label: "A", version: 2 });
+  assert.deepEqual(lookedAt, ["A3", "A1", "B1", "A2"]);
+  // An unknown design or version is refused by name, and nothing is looked at.
+  lookedAt = [];
+  for (const [label, why] of [["A9", /no version 9\. Its versions: 1–3/], ["A1, Z", /No design Z in this chat\. Its designs: A, B, C/], ["C", /C has no finished page yet/]] as const) assert.match(textOf(await t.design_browse({ label })), why);
+  assert.deepEqual(lookedAt, []);
+  // design_status takes the same names: a version named shows only it; the latest and a page being written are said.
+  const status = JSON.parse(textOf(await t.design_status({ label: "A2, B" })));
+  assert.deepEqual(status.designs.map((d: { label: string; versions: { n: number }[]; latest?: number; writing?: string }) => [d.label, d.versions.map((x) => x.n), d.latest, d.writing ?? null]), [["A", [2], 3, null], ["B", [1], 1, "version 2 is being written now"]]);
+  // Each version shown with its size and its saved file's path.
+  assert.deepEqual(status.designs.flatMap((d: { label: string; versions: { n: number; size: string; file: string }[] }) => d.versions.map((x) => [x.size, x.file])), [["0.0 KB", pageFile(parent.sessionId, "A", 2)], ["0.0 KB", pageFile(parent.sessionId, "B", 1)]]);
+  refused(await t.design_status({ label: "A7" }));
+});
+
+test("the Creative Director's look lists a version's views, pictures one by name, and walks on from it; a view it doesn't have is refused with the views it has", async () => {
+  const t = await launched();
+  const views = [{ name: "Sessions", source: "declared", state: "ok", start: true }, { name: "Deploy", source: "declared", state: "ok" }, { name: "Billing", via: "User menu", source: "declared", state: "unreachable", problem: "Target matched 0 visible controls" }];
+  designList = [{ ...DESIGN_A, versions: [{ n: 1, at: "2026-11-16T10:01:30.000Z", chars: 10, by: "first", views }] } as DesignRecord];
+  lookedAt = [];
+  const text = (r: { content: { type: string; text?: string }[] }) => r.content.filter((b) => b.type === "text").map((b) => b.text!.split("\nPictures")[0]).join("\n\n");
+  assert.equal(text(await t.design_browse({ label: "A1", view: "deploy", sizes: ["phone"] })), `Design A · version 1 of 1 (latest) · made 2026-11-16 10:01 UTC · version 1\nSize: 0.0 KB · 10 characters.\nViews: Sessions (the first screen) · Deploy · Billing (via User menu; unreachable: Target matched 0 visible controls)\nFile: ${pageFile(parent.sessionId, "A", 1)}\nThe view Deploy.`);
+  await t.design_browse({ label: "A", actions: [{ op: "click", target: { kind: "text", text: "More" } }] });
+  assert.deepEqual(lookedAt, ["A1·deploy", "A1·1 actions"]);
+  assert.match(textOf(await t.design_browse({ label: "A", view: "Nowhere" })), /has no view "Nowhere"\. Its views: the first screen, Deploy\./);
+  // A walk is checked as an address's is, before anything is looked at.
+  lookedAt = [];
+  refused(await t.design_browse({ label: "A", actions: [{ op: "type", target: { kind: "text", text: "x" } }] }));
+  assert.deepEqual(lookedAt, []);
 });

@@ -14,11 +14,12 @@ import { mountDesignLiveRoutes } from "./live-route";
 import { mountDesignAssetRoutes } from "./asset-routes";
 import { showAssets } from "./assets";
 import { mountDescribeRoutes } from "./describe-routes";
-import { assertLaunchAllowed, deleteDesign, deliverDesign, DesignLimitError, designCount, retryDesign, type DesignParent } from "./batch";
+import { assertLaunchAllowed, deleteDesign, deliverDesign, DesignLimitError, DesignRefused, designCount, removeDesign, restoreDesign, retryDesign, stopDesign, type DesignParent } from "./batch";
+import { readHistory } from "./history";
 import { designView, livePage } from "./live";
 import { cleanSetup, estimateUsd } from "./setup";
 import { skillReadTokens } from "./skills";
-import { changeDesigns, designOf, readDesigns, readPage, runOf } from "./store";
+import { changeDesigns, designOf, readDesigns, readPage, readStill, runOf } from "./store";
 
 const BAD_PATH = "Invalid or missing ?path= (must be a .jsonl under the pi sessions dir)";
 const ONLY_YOUR_CLICK = "Only your own click on the Lookbook's brief in Sova's page starts the designs.";
@@ -50,6 +51,13 @@ export function mountDesignRoutes(app: Hono): void {
     const p = parentOf(c);
     if (!p) return c.json({ error: BAD_PATH }, 400);
     return c.json(designView(p.sessionId), 200, { "Cache-Control": "no-store" });
+  });
+
+  // What each design was told and done to, in time order: never a page's code.
+  app.get("/api/design/history", (c) => {
+    const p = parentOf(c);
+    if (!p) return c.json({ error: BAD_PATH }, 400);
+    return c.json(readHistory(p.sessionId), 200, { "Cache-Control": "no-store" });
   });
 
   app.patch("/api/design/runs/:run/setup", async (c) => {
@@ -142,9 +150,10 @@ export function mountDesignRoutes(app: Hono): void {
       if (!isDesignLabel(label) || !designOf(p.sessionId, label)) return c.json({ error: `No design ${label} in this chat.` }, 404);
       try {
         const words = name === "refine" ? refineMessage(text, quick) : text;
-        return c.json(await deliverDesign(p, label, { text: words, key, by: "user", version: name === "refine" ? "refine" : "chat" }));
+        const asked = [...quick, ...(text ? [text] : [])].join("\n");
+        return c.json(await deliverDesign(p, label, { text: words, key, by: "user", version: name === "refine" ? "refine" : "chat", ...(name === "refine" ? { historyText: asked } : {}) }));
       } catch (err) {
-        return c.json({ error: message(err) }, 502);
+        return c.json({ error: message(err) }, err instanceof DesignRefused ? 409 : 502);
       }
     });
   send("message");
@@ -163,6 +172,21 @@ export function mountDesignRoutes(app: Hono): void {
     }
   });
 
+  // The person's Stop, Remove and Restore (the card's More menu, a script): each answers the view, or 409 with why not.
+  for (const [name, act] of [["stop", stopDesign], ["remove", removeDesign], ["restore", restoreDesign]] as const)
+    app.post(`/api/design/:label/${name}`, (c) => {
+      const p = parentOf(c);
+      if (!p) return c.json({ error: BAD_PATH }, 400);
+      const label = c.req.param("label");
+      if (!isDesignLabel(label) || !designOf(p.sessionId, label)) return c.json({ error: `No design ${label} in this chat.` }, 404);
+      try {
+        act(p, label, "user");
+        return c.json(designView(p.sessionId));
+      } catch (err) {
+        return c.json({ error: message(err) }, 409);
+      }
+    });
+
   app.delete("/api/design/:label", (c) => {
     const p = parentOf(c);
     if (!p) return c.json({ error: BAD_PATH }, 400);
@@ -179,7 +203,11 @@ export function mountDesignRoutes(app: Hono): void {
     const v = c.req.query("v");
     const n = v === undefined ? undefined : Number(v);
     if (n !== undefined && (!Number.isInteger(n) || n < 1)) return c.json({ error: "?v= must be a version number" }, 400);
-    const stored = readPage(p.sessionId, label, n);
+    // ?still=<n>: what a stopped design had written, kept as a still; never with ?v=.
+    const s = c.req.query("still");
+    const still = s === undefined ? undefined : Number(s);
+    if (still !== undefined && (!Number.isInteger(still) || still < 1 || n !== undefined)) return c.json({ error: "?still= must be a still's number, without ?v=." }, 400);
+    const stored = still !== undefined ? readStill(p.sessionId, label, still) : readPage(p.sessionId, label, n);
     if (stored === null) return c.json({ error: "No such page." }, 404);
     const images = c.req.query("images");
     if (images !== undefined && images !== "small" && images !== "full") return c.json({ error: "?images= must be small or full." }, 400);

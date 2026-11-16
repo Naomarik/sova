@@ -107,8 +107,8 @@ import { waitingWords } from "../lib/working-hours";
 import { groupHref } from "../lib/group-route";
 import { GroupNameField } from "./Groups";
 import { draggingPath, dragSuppressesClick, DropOverlay, openNewGroupFor, startRowDrag } from "./DropOverlay";
-import { contextPointerKind, createKeyMenuMark, holdOwns, pressHeld, rowContextAction } from "../lib/session-context-menu";
-import { openSessionMenu, SessionContextMenu } from "./SessionContextMenu";
+import { holdOwns } from "../lib/context-menu";
+import { SessionContextMenu, sessionMenu } from "./SessionContextMenu";
 import { GroupPicker } from "./GroupPicker";
 import { EMPTY_GROUP_REASON, NO_GROUPS_NOTE } from "../lib/group-picker";
 import { RemoteGroupDot } from "./RemoteStatus";
@@ -336,8 +336,6 @@ export function SessionRow(props: {
   let shell: HTMLLIElement | undefined;
   /** The row's link: where focus goes back when its menu closes. */
   let link: HTMLAnchorElement | undefined;
-  /** A menu key's keydown, so the contextmenu it makes keeps the browser's menu. */
-  const keyMenu = createKeyMenuMark();
   let pointerId = 0;
   let pointerKind = "mouse";
   /** The row is held: it rises off the list, and the list stops scrolling under it. */
@@ -372,6 +370,16 @@ export function SessionRow(props: {
       if (shell) startRowDrag(dragInfo(), at, pointerId, shell, pointerKind);
     },
   });
+  /** The row's menu (§app.session-list/row-menu): a right-click, or the lift above let go in place.
+      The long-press context menu belongs to the hold, not to the browser. */
+  const menuDoor = sessionMenu.door({
+    key: () => s().path,
+    returnTo: () => link ?? null,
+    hold: {
+      owned: () => holdOwns({ suppressed: press.suppressed(), dragging: !!draggingPath(), phase: press.phase(), pointerKind }),
+      lastPointer: () => pointerKind,
+    },
+  });
   const cancelPress = () => {
     press.cancel();
     setLifted(false);
@@ -384,10 +392,7 @@ export function SessionRow(props: {
     const wasLifted = press.finish();
     setLifted(false);
     watchPress(false);
-    if (wasLifted && pointerKind !== "mouse" && at) {
-      const ask = { path: s().path, at, kind: pointerKind === "pen" ? ("pen" as const) : ("touch" as const), returnTo: link ?? null };
-      setTimeout(() => openSessionMenu(ask, false), 0);
-    }
+    if (wasLifted && at) menuDoor.held(at, pointerKind);
   };
   const movePress = (e: PointerEvent) => e.pointerId === pointerId && press.move({ x: e.clientX, y: e.clientY });
   const cancelOwn = (e: PointerEvent) => e.pointerId === pointerId && cancelPress();
@@ -421,7 +426,10 @@ export function SessionRow(props: {
 
   return (
     <li
-      ref={shell}
+      ref={(el) => {
+        shell = el;
+        menuDoor.attach(el);
+      }}
       class="session-row-shell"
       classList={{
         "session-row-shell-current": props.selected === s().path,
@@ -448,18 +456,6 @@ export function SessionRow(props: {
       // belonging to this press will never arrive. A drag that took the capture has already
       // ended the press, so this changes nothing for it.
       onLostPointerCapture={() => press.phase() !== "idle" && cancelPress()}
-      onKeyDown={(e) => keyMenu.keydown(e)}
-      // The long-press context menu belongs to the hold, not to the browser. A mouse's right-click
-      // opens the row's own menu, once its button is up; Shift, and a key's menu, keep the browser's.
-      onContextMenu={(e) => {
-        const kind = keyMenu.take(e) ? "keyboard" : contextPointerKind(e as MouseEvent & { pointerType?: unknown }, pointerKind);
-        const owned = holdOwns({ suppressed: press.suppressed(), dragging: !!draggingPath(), phase: press.phase(), pointerKind });
-        const act = rowContextAction({ owned, kind, shiftKey: e.shiftKey });
-        if (act === "native") return;
-        e.preventDefault();
-        if (act !== "open") return;
-        openSessionMenu({ path: s().path, at: { x: e.clientX, y: e.clientY }, kind, returnTo: link ?? null }, pressHeld(kind, e.buttons));
-      }}
     >
       <div class="session-rail">
         {/* At most one state: live wins over busy. TUI is a static word; Busy is a pulsing dot. */}

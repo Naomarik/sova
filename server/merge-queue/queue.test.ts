@@ -1690,6 +1690,33 @@ describe("the view's extras", () => {
       await k.done();
     }
   });
+  test("ready: a New Coding Session's sova/ branch is listed; a conformance run's sova/ scratch copies and Sova's own sova/ branches are not", async () => {
+    const k = makeKit();
+    try {
+      const q = await k.q();
+      await q.pause("hold");
+      const coding = k.repo.branch("sova/fix-login-1a2b3c", { "c.txt": "c\n" });
+      const untitled = k.repo.branch("sova/coding-0f9e8d", { "u.txt": "u\n" });
+      // A session titled like one of Sova's own still ends in its 6 hex and is listed.
+      const lookalike = k.repo.branch("sova/conform-tests-abcdef", { "l.txt": "l\n" });
+      k.repo.branch("sova/conform-abc123-a", { "a.txt": "a\n" });
+      k.repo.branch("sova/conform-abc123-b", { "b.txt": "b\n" });
+      k.repo.branch("sova/settings-20261117-1200", { "s.txt": "s\n" });
+      k.repo.branch("sova/release-revert-rl_abc123", { "r.txt": "r\n" });
+      const v = await q.view();
+      assert.deepEqual(
+        v.ready!.map((r) => [r.branch, r.commit]).sort(),
+        [
+          ["sova/coding-0f9e8d", untitled.head],
+          ["sova/conform-tests-abcdef", lookalike.head],
+          ["sova/fix-login-1a2b3c", coding.head],
+        ],
+      );
+      assert.deepEqual((await q.readyRows()).map((r) => r.branch).sort(), ["sova/coding-0f9e8d", "sova/conform-tests-abcdef", "sova/fix-login-1a2b3c"], "the summaries' sweep reads the same list");
+    } finally {
+      await k.done();
+    }
+  });
   test("branch summaries: a Ready row and an entry carry theirs, at their commits; a write publishes the view again; none is started by a read", async () => {
     let asked = 0;
     let summaries: BranchSummaries | null = null;

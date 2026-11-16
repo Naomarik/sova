@@ -977,7 +977,7 @@ function halt(parent: DesignParent, label: string, by: DesignActor, toolCallId?:
   const out = changeDesign(sid, label, (x) => {
     if (x.versions.length) {
       x.status = "ready";
-      x.unchanged = { reason: `${by === "coordinator" ? "The Creative Director" : "You"} stopped it before it finished, so its last version stands.`, at };
+      x.unchanged = { reason: `${by === "coordinator" ? "the Creative Director" : "you"} stopped it before it finished, so its last version stands.`, at };
     } else {
       x.status = "stopped";
       x.stopped = { at, by, ...(still ? { still } : {}), ...(waiting ? { waiting: true as const } : {}) };

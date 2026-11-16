@@ -5,7 +5,7 @@
     "where": "new-chat",
     "worktree": "none",
     "mode": "delegate",
-    "needs": ["project", "merge-queue"]
+    "needs": ["project"]
   },
   "inputs": [
     {

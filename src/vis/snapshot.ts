@@ -4,7 +4,11 @@
  * the step-through controls or the warnings line. Loaded on the first Copy only.
  *
  * The figure is cloned with every element's computed style written inline (so tokens and custom themes
- * are already resolved), its sideways-scrolling boxes opened to their full width, the fonts and images
+ * are already resolved), every size as the page computed it, each line of text ending where the page
+ * ends it (a `<br>` where it wrapped, and no wrapping of its own: the picture is laid out again at a
+ * device scale of 1, where text runs a fraction of a pixel wider or narrower than on a 125% screen, and
+ * a box frozen at its text's width would wrap its last word), its sideways-scrolling boxes (any that
+ * scroll: a matrix, a code block) opened to their full width, the fonts and images
  * it uses inlined as data URLs, and the whole drawn as an SVG `<foreignObject>` through an `<img>` onto a
  * canvas at pictureScale (copy-plan.ts): 2 for a phone card, else up to 1.5 and at most 1280 px wide. Its logical size is the card's. A `vis svg` frame becomes the
  * still image the share page draws (svg-image.ts). Safari refuses to read back a canvas that drew a
@@ -95,12 +99,25 @@ function pseudo(orig: Element, clone: Element, which: "::before" | "::after", pa
   else clone.appendChild(span);
 }
 
+let wrapModeOk: boolean | undefined;
+/** No line of an HTML element wraps in the picture (its breaks are the page's `<br>`s, pinLines), a
+    clipped label that fit shows no "…" for a hair more width, and no box scrolls (a scrollbar in a
+    picture is only a cut). */
+function pictureRules(orig: Element, cs: CSSStyleDeclaration): string {
+  wrapModeOk ??= typeof CSS !== "undefined" && CSS.supports("text-wrap-mode", "nowrap");
+  let out = wrapModeOk ? "text-wrap-mode:nowrap;" : `white-space:${/^(pre|pre-wrap|pre-line|break-spaces)$/.test(cs.getPropertyValue("white-space")) ? "pre" : "nowrap"};`;
+  if (cs.textOverflow && cs.textOverflow !== "clip" && orig.scrollWidth <= orig.clientWidth) out += "text-overflow:clip;";
+  if (/auto|scroll/.test(cs.overflowX)) out += "overflow-x:hidden;";
+  if (/auto|scroll/.test(cs.overflowY)) out += "overflow-y:hidden;";
+  return out;
+}
+
 /** Writes each element's computed style onto its clone, original and clone walked together. */
 function inline(orig: Element, clone: Element, parent: CSSStyleDeclaration | null) {
   const cs = getComputedStyle(orig);
   const isSvg = orig.namespaceURI === SVG_NS;
   const skip = isSvg && orig.localName !== "svg" ? SVG_GEOMETRY : NO_RING;
-  (clone as HTMLElement).setAttribute("style", styleText(cs, defaultStyle(orig), parent, skip));
+  (clone as HTMLElement).setAttribute("style", styleText(cs, defaultStyle(orig), parent, skip) + (isSvg ? "" : pictureRules(orig, cs)));
   clone.removeAttribute("class");
   if (cs.display === "none") return;
   const oc = orig.children;
@@ -109,6 +126,129 @@ function inline(orig: Element, clone: Element, parent: CSSStyleDeclaration | nul
   if (!isSvg) {
     pseudo(orig, clone, "::before", cs);
     pseudo(orig, clone, "::after", cs);
+  }
+}
+
+/** A line break the clone takes from the page: before `before`, or inside `text` at `at` (`item`: the
+    text is a flex or grid item of its own, kept one by a span around it). */
+type Pin = { before: Node } | { text: Text; at: number; item: boolean };
+interface Line {
+  top: number;
+  bottom: number;
+}
+/** `r` sits on a line after `prev`'s: it starts below the middle of the shorter of the two. */
+const later = (r: Line, prev: Line) => r.top >= prev.bottom - Math.min(r.bottom - r.top, prev.bottom - prev.top) / 2;
+const REPLACED = new Set(["img", "svg", "canvas", "video"]);
+
+/**
+ * Where the page starts each line of the figure's text, as pins on the clone (cloned, nothing added yet):
+ * per box that lays out lines (the nearest ancestor that isn't inline), a text that runs over several
+ * lines is split where each later line starts, and a text or an inline box (a badge, an icon) that starts
+ * on a later line than what came before it in that box breaks before it.
+ */
+function lineStarts(figure: Element, clone: Element): Pin[] {
+  const pins: Pin[] = [];
+  const last = new Map<Node, Line>();
+  const twin = new Map<Node, Node>([[figure, clone]]);
+  const range = document.createRange();
+  // The box `n`'s lines belong to; a text straight in a flex or grid box is an item, lines of its own.
+  const box = (n: Node): { key: Node; item: boolean } => {
+    for (let el = n.parentElement; el; el = el.parentElement) {
+      const d = getComputedStyle(el).display;
+      if (d === "inline" || d === "contents") continue;
+      return /flex|grid/.test(d) && n.nodeType === Node.TEXT_NODE ? { key: n, item: true } : { key: el, item: false };
+    }
+    return { key: figure, item: false };
+  };
+  // A break before `n`, moved out of the inline boxes it opens (a `code`'s padding stays with its text).
+  const breakBefore = (n: Node, key: Node) => {
+    for (let p = n.parentElement; p && p !== key && getComputedStyle(p).display === "inline"; p = p.parentElement) {
+      let s = n.previousSibling;
+      while (s && (s.nodeType === Node.COMMENT_NODE || (s.nodeType === Node.TEXT_NODE && !/\S/.test(s.textContent ?? "")))) s = s.previousSibling;
+      if (s) break;
+      n = p;
+    }
+    const c = twin.get(n);
+    if (c) pins.push({ before: c });
+  };
+  const place = (n: Node, first: Line, end: Line) => {
+    const { key } = box(n);
+    const prev = last.get(key);
+    if (prev && later(first, prev)) breakBefore(n, key);
+    last.set(key, end);
+  };
+  const text = (t: Text, c: Text) => {
+    if (!/\S/.test(t.data)) return;
+    range.selectNodeContents(t);
+    const rects = [...range.getClientRects()].filter((r) => r.width || r.height);
+    if (!rects.length) return;
+    place(t, rects[0]!, rects[rects.length - 1]!);
+    if (rects.length < 2) return;
+    const { item } = box(t);
+    let line: Line = rects[0]!;
+    for (let i = 0; i < t.length; ) {
+      const code = t.data.charCodeAt(i);
+      const n = code >= 0xd800 && code < 0xdc00 && i + 1 < t.length ? 2 : 1;
+      range.setStart(t, i);
+      range.setEnd(t, i + n);
+      const r = range.getBoundingClientRect();
+      if ((r.width || r.height) && later(r, line)) {
+        if (i > 0) pins.push({ text: c, at: i, item });
+        line = r;
+      }
+      i += n;
+    }
+  };
+  const walk = (o: Element, c: Element) => {
+    const oc = o.childNodes;
+    const cc = c.childNodes;
+    for (let i = 0; i < oc.length; i++) {
+      const on = oc[i]!;
+      const cn = cc[i]!;
+      if (on.nodeType === Node.TEXT_NODE) {
+        twin.set(on, cn);
+        if (o.namespaceURI !== SVG_NS) text(on as Text, cn as Text);
+        continue;
+      }
+      if (on.nodeType !== Node.ELEMENT_NODE) continue;
+      const el = on as Element;
+      const cs = getComputedStyle(el);
+      if (cs.display === "none" || el.localName === "iframe") continue;
+      twin.set(el, cn);
+      const atomic = o.namespaceURI !== SVG_NS && cs.position !== "absolute" && cs.position !== "fixed" && cs.float === "none" && (cs.display.startsWith("inline-") || (cs.display === "inline" && REPLACED.has(el.localName)));
+      if (atomic) {
+        const r = el.getBoundingClientRect();
+        if (r.width || r.height) place(el, r, r);
+      }
+      walk(el, cn as Element);
+    }
+  };
+  walk(figure, clone);
+  return pins;
+}
+
+/** Puts the page's line breaks into the clone (after inline(): the `<br>`s shift its children). */
+function pinLines(pins: Pin[]) {
+  const br = () => document.createElementNS(XHTML_NS, "br");
+  const splits = new Map<Text, { at: number[]; item: boolean }>();
+  for (const p of pins) {
+    if ("before" in p) p.before.parentNode?.insertBefore(br(), p.before);
+    else {
+      const s = splits.get(p.text) ?? { at: [], item: p.item };
+      s.at.push(p.at);
+      splits.set(p.text, s);
+    }
+  }
+  for (const [t, s] of splits) {
+    if (s.item) {
+      const span = document.createElementNS(XHTML_NS, "span");
+      t.replaceWith(span);
+      span.appendChild(t);
+    }
+    for (const at of s.at.sort((a, b) => b - a)) {
+      const tail = t.splitText(at);
+      tail.parentNode!.insertBefore(br(), tail);
+    }
   }
 }
 
@@ -230,12 +370,19 @@ function pathIn(clone: Element, figure: Element, o: Element): Element | null {
   return c ?? null;
 }
 
+export interface PictureClone {
+  /** The picture's page: the clone on the card's backdrop, its styles all inline (urls not yet inlined). */
+  wrap: HTMLDivElement;
+  width: number;
+  height: number;
+}
+
 /**
- * Draws `figure` (a `figure.vis` in the page) as a PNG of its own size at `scale` (2, or the screen's
- * density when higher) pixels per CSS px. `svgSource`: a `vis svg` card's document, drawn in place
- * of its frame.
+ * `figure` (a `figure.vis` in the page) cloned for its picture, at the size the picture will have: every
+ * computed style inline, the page's line breaks pinned, the controls left out, each box that scrolls
+ * sideways opened. `svgSource`: a `vis svg` card's document, drawn in place of its frame.
  */
-export async function snapshot(figure: HTMLElement, opts: { svgSource?: string } = {}): Promise<Picture> {
+export function pictureClone(figure: HTMLElement, opts: { svgSource?: string } = {}): PictureClone {
   const head = figure.querySelector(".vis-head");
   const titled = !!head?.querySelector(":scope > .vis-title");
   const headLeft = !head ? [] : titled ? [...head.children].filter((c) => !c.matches(".vis-title")) : [head];
@@ -249,8 +396,9 @@ export async function snapshot(figure: HTMLElement, opts: { svgSource?: string }
   let rect: DOMRect;
   let clone: HTMLElement;
   let frames: (readonly [HTMLIFrameElement, HTMLElement | null])[];
-  let scrolls: (readonly [HTMLElement, HTMLElement | null, number])[];
+  let scrolls: (readonly [HTMLElement, HTMLElement | null, number, number])[];
   let drop: (HTMLElement | null)[];
+  let pins: Pin[];
   let headClone: HTMLElement | null = null;
   try {
     rect = figure.getBoundingClientRect();
@@ -258,20 +406,27 @@ export async function snapshot(figure: HTMLElement, opts: { svgSource?: string }
     // Found before the styles go in: the walk adds spans for ::before/::after, which would shift the paths.
     const at = (o: Element) => pathIn(clone, figure, o) as HTMLElement | null;
     frames = [...figure.querySelectorAll("iframe")].map((o) => [o, at(o)] as const);
-    // A box that scrolls sideways is shown whole: the figure grows by the widest one's hidden part.
-    scrolls = [...figure.querySelectorAll<HTMLElement>(".vis-scroll")]
-      .map((o) => [o, at(o), o.scrollWidth - o.clientWidth] as const)
-      .filter(([, , hidden]) => hidden > 0);
+    // A box that scrolls sideways is shown whole: the figure grows by the widest one's hidden part. A
+    // classic scrollbar's strip (its height under the box's content) goes, with nothing left to scroll.
+    scrolls = [...figure.querySelectorAll<HTMLElement>("*")]
+      .filter((o) => o instanceof HTMLElement && /auto|scroll/.test(getComputedStyle(o).overflowX) && o.scrollWidth > o.clientWidth)
+      .map((o) => {
+        const cs = getComputedStyle(o);
+        const strip = o.offsetHeight - o.clientHeight - parseFloat(cs.borderTopWidth) - parseFloat(cs.borderBottomWidth);
+        return [o, at(o), o.scrollWidth - o.clientWidth, Math.max(0, strip)] as const;
+      });
     drop = left.map(at);
     if (head && titled) headClone = at(head);
+    pins = lineStarts(figure, clone);
     inline(figure, clone, null);
+    pinLines(pins);
   } finally {
     left.forEach((el, i) => el.style.setProperty("display", saved[i]![0], saved[i]![1]));
     if (active instanceof HTMLElement && active.isConnected && document.activeElement !== active) active.focus({ preventScroll: true });
   }
   const extra = Math.max(0, ...scrolls.map(([, , hidden]) => hidden));
   const width = Math.ceil(rect.width + extra);
-  const height = Math.ceil(rect.height);
+  const height = Math.ceil(rect.height - scrolls.reduce((a, [, c, , strip]) => a + (c ? strip : 0), 0));
 
   const tokens = tokenCss(readTokens(document.documentElement), appTheme());
   for (const [o, c] of frames) {
@@ -283,14 +438,19 @@ export async function snapshot(figure: HTMLElement, opts: { svgSource?: string }
     if (opts.svgSource) img.setAttribute("src", svgImageSrc(opts.svgSource, tokens));
     c.replaceWith(img);
   }
-  for (const [o, c, hidden] of scrolls) {
+  for (const [o, c, hidden, strip] of scrolls) {
     if (!c) continue;
     Object.assign(c.style, { overflow: "visible", width: `${o.scrollWidth}px`, maxWidth: "none" });
-    // Its boxes up to the card widen with it (their widths were written in px, as computed).
-    for (let a = c.parentElement; a && a !== clone; a = a.parentElement) {
-      const w = parseFloat(a.style.width);
-      if (Number.isFinite(w)) a.style.width = `${w + hidden}px`;
-      a.style.maxWidth = "none";
+    // Its boxes up to the card widen with it (their widths were written in px, as computed), and lose
+    // the scrollbar's strip.
+    for (let a: HTMLElement | null = c; a && a !== clone; a = a.parentElement) {
+      if (a !== c) {
+        const w = parseFloat(a.style.width);
+        if (Number.isFinite(w)) a.style.width = `${w + hidden}px`;
+        a.style.maxWidth = "none";
+      }
+      const h = parseFloat(a.style.height);
+      if (strip && Number.isFinite(h)) a.style.height = `${h - strip}px`;
     }
   }
   // The head's rule runs the picture's full width.
@@ -302,6 +462,16 @@ export async function snapshot(figure: HTMLElement, opts: { svgSource?: string }
   const wrap = document.createElementNS(XHTML_NS, "div") as HTMLDivElement;
   wrap.setAttribute("style", `width:${width}px;height:${height}px;background:${backdrop(figure.parentElement)};overflow:hidden`);
   wrap.appendChild(clone);
+  return { wrap, width, height };
+}
+
+/**
+ * Draws `figure` (a `figure.vis` in the page) as a PNG of its own size at `scale` (2, or the screen's
+ * density when higher) pixels per CSS px. `svgSource`: a `vis svg` card's document, drawn in place
+ * of its frame.
+ */
+export async function snapshot(figure: HTMLElement, opts: { svgSource?: string } = {}): Promise<Picture> {
+  const { wrap, width, height } = pictureClone(figure, opts);
   await inlineUrls(wrap);
   const fonts = await fontCss(wrap);
 

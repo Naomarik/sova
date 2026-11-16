@@ -147,3 +147,13 @@ describe("the Setup chat's lifecycle", () => {
     assert.equal(await ask({ "x-sova-token": "t" }), SETUP_MERGE_WORDS.script, "a script holding the token");
   });
 });
+
+test("the Setup chat finds its own recipe, project-setup, which the Playbooks list leaves out (listed: false)", async () => {
+  // onboardFacts reads the catalog with includeUnlisted: without it, `playbook` comes back null.
+  const { onboardFacts, SETUP_PLAYBOOK_ID } = await import("./onboard");
+  const { listPlaybooks } = await import("../playbooks");
+  const p = await project();
+  const facts = await onboardFacts(p.id, SETUP_PLAYBOOK_ID);
+  assert.match(facts.playbook?.dir ?? "", /[/\\]playbooks[/\\]project-setup$/);
+  assert.ok(!(await listPlaybooks(p.root)).playbooks.some((x) => x.id === SETUP_PLAYBOOK_ID), "the Playbooks list leaves it out");
+});

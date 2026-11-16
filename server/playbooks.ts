@@ -49,7 +49,7 @@ export interface PlaybooksDeps {
   userDir?: string;
   /** The remote reading of a cwd (default: server/files.ts's, lexical). */
   remoteOf?: (path: string) => RemoteCwd | null;
-  /** Also list the playbooks whose description says `listed: false` (§chat.playbooks/unlisted): Sova's
+  /** Also list the playbooks whose description says `listed: false`: Sova's
       own callers, which look up their chat's recipe (the Setup chat's project-setup) or start a run. */
   includeUnlisted?: boolean;
 }
@@ -127,7 +127,7 @@ export async function playbookProposes(dir: string): Promise<boolean> {
 }
 
 /**
- * A playbook folder's `playbook.json` (§chat.playbooks/description-file), read strictly: null when the
+ * A playbook folder's `playbook.json`, read strictly: null when the
  * folder has none (a plain playbook), else the description or the exact fault. A page it names that
  * isn't in the folder is a fault too, and so is a role prompt's `{{slot}}` that names nothing.
  */
@@ -286,7 +286,7 @@ async function projectPlaybooks(
 export const FOLDED_SETUP_PLAYBOOKS: readonly string[] = ["release-maker", "project-deploy"];
 
 /** Listed in the Playbooks dialog and the / rows: every playbook but one whose description says
-    `listed: false` (§chat.playbooks/unlisted). A refused description lists it, so its error shows. */
+    `listed: false`. A refused description lists it, so its error shows. */
 export const isListed = (p: PlaybookInfo): boolean => p.spec?.listed !== false;
 
 /**

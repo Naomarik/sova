@@ -1,4 +1,4 @@
-// Which model each playbook role gets (§chat.playbooks/model-order): the order rule over every
+// Which model each playbook role gets: the order rule over every
 // combination of what can run, "only these models", the reason words, and the whole chain kept.
 import assert from "node:assert/strict";
 import { test } from "node:test";

@@ -235,7 +235,7 @@ test("a schedule is read from a project playbook only; a bad line is invalid wit
   assert.equal(by("plain"), undefined);
 });
 
-test("a playbook.json beside the entry is read strictly: its description, or its exact fault, and never hides the rest (§chat.playbooks/description-file)", async () => {
+test("a playbook.json beside the entry is read strictly: its description, or its exact fault, and never hides the rest", async () => {
   const deps = base();
   const pb = (id: string, json: unknown, extra: Record<string, string> = {}) => {
     drop(deps.shippedDir, id, fm({ title: id }, "b"));
@@ -264,7 +264,7 @@ test("a playbook.json beside the entry is read strictly: its description, or its
   for (const id of ["no-page", "bad-key", "not-json", "bad-slot"]) assert.equal(by[id]!.spec, undefined);
 });
 
-test("listed: false leaves a playbook out of the list in every folder, unless Sova's own caller asks for it (§chat.playbooks/unlisted)", async () => {
+test("listed: false leaves a playbook out of the list in every folder, unless Sova's own caller asks for it", async () => {
   const deps = base();
   const cwd = fresh("project");
   const hidden = JSON.stringify({ version: 1, listed: false });

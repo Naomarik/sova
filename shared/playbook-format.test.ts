@@ -1,4 +1,4 @@
-// A playbook's description file (§chat.playbooks/description-file): the strict parse (every key known
+// A playbook's description file: the strict parse (every key known
 // at every level, every reference checked, the exact path and fault), the folder check, and input values.
 import assert from "node:assert/strict";
 import { test } from "node:test";

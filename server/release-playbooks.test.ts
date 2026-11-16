@@ -51,7 +51,7 @@ test("the maker proposes release but is folded into the Setup chat: never listed
   const head = readFileSync(new URL("../playbooks/release-maker/PLAYBOOK.md", import.meta.url), "utf8").split("\n---")[0]!;
   assert.match(head, /^title: Release playbook maker$/m);
   assert.match(head, /^proposes: release$/m);
-  assert.equal(cat.playbooks.find((p) => p.id === "release"), undefined, "only release chats run it (§chat.playbooks/unlisted)");
+  assert.equal(cat.playbooks.find((p) => p.id === "release"), undefined, "only release chats run it");
   const gen = (await listPlaybooks(dir, { includeUnlisted: true })).playbooks.find((p) => p.id === "release");
   assert.ok(gen, "shipped");
   assert.equal(gen!.proposes, undefined);

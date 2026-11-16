@@ -1,5 +1,5 @@
 /**
- * A playbook's declaration (§chat/playbooks): the optional `playbook.json` beside its PLAYBOOK.md,
+ * A playbook's declaration: the optional `playbook.json` beside its PLAYBOOK.md,
  * strictly parsed like an automation file (shared/automations.ts parseAutomation): every key known,
  * every type right, or the exact error. A playbook without one works exactly as before (text only).
  *
@@ -700,7 +700,7 @@ function parseCommands(v: unknown): string[] {
 }
 
 /**
- * A playbook.json's parsed JSON, strictly (§chat.playbooks/description-file): every key known, every
+ * A playbook.json's parsed JSON, strictly: every key known, every
  * type and reference right, or `{error: "<path>: <fault>"}` naming the first fault.
  */
 export function parsePlaybookSpec(raw: unknown): ParseResult<PlaybookSpec> {
@@ -773,7 +773,7 @@ export function checkCycleSettings(s: CycleSettings): string | null {
 }
 
 /**
- * The folder checks a parse can't make (§chat.playbooks/description-file, "a broken reference"):
+ * The folder checks a parse can't make:
  * every prompt, phase and rule page the description names exists. `files` lists the folder's files,
  * relative, "/"-separated (at least every page pagesOf names that exists). Returns the faults, first
  * first; [] when none.
@@ -822,7 +822,7 @@ export function slotsIn(text: string): string[] {
 }
 
 /**
- * Every `{{slot}}` in a helper's prompt names an input, a fact or a built-in slot (§chat.playbooks/description-file:
+ * Every `{{slot}}` in a helper's prompt names an input, a fact or a built-in slot (
  * a broken reference is a fault). `pages` maps each prompt page (relative) to its text; a page not in
  * it is skipped. Returns the faults, first first.
  */

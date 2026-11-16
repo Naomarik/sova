@@ -1,5 +1,5 @@
 /**
- * Which model each playbook role gets (§chat/playbooks): one pure resolver, used by the card, by
+ * Which model each playbook role gets: one pure resolver, used by the card, by
  * Start (the frozen plan) and later by every scheduled fire. The order, first usable wins:
  *
  *   1. your pick on the card (or your saved default for this playbook);
@@ -74,7 +74,7 @@ const same = (a: WorkerChoice, b: WorkerChoice) => a.backend === b.backend && a.
 const sameModel = (a: WorkerChoice, b: WorkerChoice) => a.backend === b.backend && a.model === b.model;
 const cap = (t: string) => t.charAt(0).toUpperCase() + t.slice(1);
 
-/** One role's model (§chat.playbooks/model-order). */
+/** One role's model. */
 export function resolveRoleModel(input: ResolveRoleInput, ctx: ResolveContext): ResolvedRoleModel {
   const name = ctx.name ?? ((c: WorkerChoice) => c.model);
   const chain: ChainEntry[] = [];

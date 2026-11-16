@@ -41,6 +41,11 @@ test("the setting keeps previewUrl strictly; a PUT may send capitals, a trailing
   // This host is the gateway: previews point at its own address, once set.
   assert.equal(previewAddress({}, { version: 1, route: "self", gateway: G }).reason, "no-address");
   assert.deepEqual(previewAddress({}, { version: 1, route: "self", gateway: { ...G, previewUrl: "https://*.example.com" } }), { url: "https://*.example.com", source: "setting" });
+  // Cloudflare Free, and Account without a preview address: each app gets its own tunnel (§mesh.public/preview-tunnels);
+  // Account with one keeps the wildcard.
+  assert.deepEqual(previewAddress({}, { version: 1, route: "quick" }), { url: null, source: null, mode: "tunnel" });
+  assert.deepEqual(previewAddress({}, { version: 1, route: "account", account: { publicUrl: "https://share.example.com" } }), { url: null, source: null, mode: "tunnel" });
+  assert.deepEqual(previewAddress({}, { version: 1, route: "account", account: { publicUrl: "https://share.example.com", previewUrl: "https://*.example.com" } }), { url: "https://*.example.com", source: "setting" });
   assert.equal(previewAddress({ SOVA_SHARE_PREVIEW_URL: "http://*.preview.test" }, { version: 1, route: "off" }).source, "env");
 });
 

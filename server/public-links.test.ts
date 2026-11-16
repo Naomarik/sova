@@ -21,6 +21,7 @@ const listener = await import("./share/listener");
 const events = await import("./share/links-events");
 const { mountPublicLinks } = await import("./public-links-routes");
 const { gatewayHooks } = await import("./share/router");
+const { pageHeaders } = await import("./testing/page");
 
 after(() => {
   listener.stopShareListener();
@@ -42,7 +43,8 @@ function app(): Hono {
   mountPublicLinks(a);
   return a;
 }
-const put = (body: unknown) => ({ method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+/** A PUT as the operator's page sends it: only the page (or the token in a script) changes where links open. */
+const put = (body: unknown) => ({ method: "PUT", headers: { "Content-Type": "application/json", ...pageHeaders() }, body: JSON.stringify(body) });
 
 describe("the file", () => {
   afterEach(reset);
@@ -309,7 +311,7 @@ describe("the routes", () => {
     const bad = await a.request("/api/public-links", put({ verifiedAt: 5 }));
     assert.equal(bad.status, 400);
     assert.match((await bad.json()).error, /unknown key "verifiedAt"/);
-    assert.equal((await a.request("/api/public-links", { method: "PUT", body: "{" })).status, 400);
+    assert.equal((await a.request("/api/public-links", { method: "PUT", headers: pageHeaders(), body: "{" })).status, 400);
   });
 
   test("routed (only while route is self) and gateways, on GET and PUT; a failing source leaves its field out or empty", async () => {

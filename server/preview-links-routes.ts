@@ -8,6 +8,7 @@ import { engineOf } from "./projects/spaces";
 import { keptSiblingLink } from "./preview-kept";
 import { extendPreview, PreviewRefused, PreviewUnavailable, viewOf } from "./preview-links";
 import { makePreview, previewViews, resolvePreview, sovaPorts, turnOffPreview } from "./project-previews";
+import { checkPreviewTunnels } from "./share/preview-link";
 import { previewAddress } from "./share/preview-address";
 
 /**
@@ -71,12 +72,15 @@ export function mountPreviewLinks(app: Hono): void {
   app.get("/api/previews", async (c) => {
     if (!local(c)) return notFound(c);
     const projectId = c.req.query("projectId");
+    // The Previews card opened: its Free tunnels are checked now, on demand (§mesh.tunnel/lifetime).
+    await checkPreviewTunnels();
     const previews = (await previewViews(projectId ? { projectId } : {})).map(forOperator);
     return c.json({ previews, address: previewAddress() } satisfies PreviewList, 200, NO_STORE);
   });
 
   app.get("/api/projects/:pid/previews", async (c) => {
     if (!local(c)) return notFound(c);
+    await checkPreviewTunnels();
     const previews = (await previewViews({ projectId: c.req.param("pid") })).map(forOperator);
     return c.json({ previews, address: previewAddress() } satisfies PreviewList, 200, NO_STORE);
   });

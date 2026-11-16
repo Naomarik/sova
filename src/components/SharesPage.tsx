@@ -1,4 +1,6 @@
 import { createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
+import { copyLink } from "../lib/copy-link";
+import { sharingOffHere } from "../lib/public-links";
 import type { OrgLinkRow, SessionShare, SessionShareVisit, TourLinkRow } from "../../shared/session-share";
 import { projectHref } from "../lib/projects-route";
 import { relativeTime } from "../lib/format";
@@ -28,10 +30,11 @@ import {
   sentToLine,
 } from "../lib/previews";
 import { DELETE_LINK, DELETE_THIS_LINK, deleteLinkConfirm, LINK_DELETED, LINK_GONE, linkGone } from "../lib/link-delete";
-import { copyText, toast } from "../lib/ui-state";
+import { toast } from "../lib/ui-state";
 import { copyableLink, expiresWord, type HostShares, openedLine, presenceWord, readShares, revokeHandoff, revokeOwnerLink, revokeTourLink, sharesOverview, shareLine, shareLive, stopShare, linksViewingNow, visitLine, visitTitle } from "../lib/session-shares";
 import { DeleteButton } from "./DeleteButton";
 import { InsightsPage } from "./InsightsPage";
+import { BrokenLinksNotice, OpensAtLine } from "./OpensAt";
 import { RecipientChip, ShareSheet } from "./ShareSheet";
 import { CopyButton, Icon } from "./ui";
 import "../shares.css";
@@ -122,6 +125,8 @@ export function SharesPage(props: { now: number; titleRef(el: HTMLHeadingElement
       busy={!loaded()}
       titleRef={props.titleRef}
     >
+      <OpensAtLine />
+      <BrokenLinksNotice />
       <For each={down()}>{(h) => <p class="usage-note">{hostName(h.host)} can't be reached, so its links aren't listed.</p>}</For>
 
       <Show when={loaded() && shares().length === 0 && orgLinks().length === 0 && tourLinks().length === 0 && previews().length === 0 && down().length === 0}>
@@ -223,9 +228,9 @@ export function SharesPage(props: { now: number; titleRef(el: HTMLHeadingElement
                                     {recipientName(r)}
                                   </span>
                                   {/* Their own link, while it is kept: Copy only, never Open. */}
-                                  <Show when={r.sentLink}>
+                                  <Show when={!sharingOffHere() && r.sentLink}>
                                     {(link) => (
-                                      <button type="button" class="button button-sm previews-recipient-copy" title={recipientCopyTip(recipientName(r))} onClick={() => void copyText(link(), recipientCopied(recipientName(r)))}>
+                                      <button type="button" class="button button-sm previews-recipient-copy" title={recipientCopyTip(recipientName(r))} onClick={() => void copyLink(link(), recipientCopied(recipientName(r)))}>
                                         {recipientCopyLabel(recipientName(r))}
                                       </button>
                                     )}
@@ -249,9 +254,9 @@ export function SharesPage(props: { now: number; titleRef(el: HTMLHeadingElement
                       <Visits id={`preview:${v.id}`} visits={previewVisits(v.id)} now={props.now} />
                     </div>
                     <div class="shares-row-actions">
-                      <Show when={v.siblingOf && v.sentLink}>
+                      <Show when={!sharingOffHere() && v.siblingOf && v.sentLink}>
                         {(link) => (
-                          <button type="button" class="button button-sm" title={recipientCopyTip(recipientName(v))} onClick={() => void copyText(link(), recipientCopied(recipientName(v)))}>
+                          <button type="button" class="button button-sm" title={recipientCopyTip(recipientName(v))} onClick={() => void copyLink(link(), recipientCopied(recipientName(v)))}>
                             {recipientCopyLabel(recipientName(v))}
                           </button>
                         )}
@@ -346,8 +351,8 @@ function ShareRow(props: { host: string | null; share: SessionShare; now: number
                   {openedLine(r.opened, r.lastAt, (iso) => relativeTime(iso, props.now))}
                   <Show when={r.state === "live"}> · {expiresWord(r.expiresAt, props.now)}</Show>
                 </span>
-                <Show when={copyableLink(r)}>
-                  {(link) => <CopyButton label="Copy Link" title={r.anyone ? "Copy this link" : `Copy ${r.label}'s link`} text={link} onCopy={(t) => copyText(t, "Link copied.")} />}
+                <Show when={!sharingOffHere(props.host) && copyableLink(r)}>
+                  {(link) => <CopyButton label="Copy Link" title={r.anyone ? "Copy this link" : `Copy ${r.label}'s link`} text={link} onCopy={(t) => copyLink(t, "Link copied.")} />}
                 </Show>
                 <Visits id={`share:${props.host ?? ""}:${r.id}`} visits={r.visits ?? []} now={props.now} />
               </li>
@@ -432,8 +437,8 @@ function OrgLinkItem(props: { link: OrgLinkRow; now: number; hostName: string | 
         <Visits id={`org:${l().orgId}:${l().kind}:${l().sessionId ?? ""}:${l().n ?? ""}`} visits={l().visits} now={props.now} />
       </div>
       <div class="shares-row-actions">
-        <Show when={l().link}>
-          {(link) => <CopyButton label="Copy Link" title={`Copy ${l().personName}'s link`} text={link} onCopy={(t) => copyText(t, "Link copied.")} />}
+        <Show when={!sharingOffHere() && l().link}>
+          {(link) => <CopyButton label="Copy Link" title={`Copy ${l().personName}'s link`} text={link} onCopy={(t) => copyLink(t, "Link copied.")} />}
         </Show>
         <DeleteButton label={DELETE_LINK} confirm={deleteLinkConfirm(l().personName)} note={linkGone(l().personName)} onRun={() => props.onRevoke()} />
       </div>
@@ -459,8 +464,8 @@ function TourLinkItem(props: { host: string | null; link: TourLinkRow; now: numb
         <Visits id={`tour:${props.host ?? ""}:${l().id}`} visits={l().visits} now={props.now} />
       </div>
       <div class="shares-row-actions">
-        <Show when={l().link}>
-          {(link) => <CopyButton label="Copy Link" title={`Copy the link to ${l().title}`} text={link} onCopy={(t) => copyText(t, "Link copied.")} />}
+        <Show when={!sharingOffHere(props.host) && l().link}>
+          {(link) => <CopyButton label="Copy Link" title={`Copy the link to ${l().title}`} text={link} onCopy={(t) => copyLink(t, "Link copied.")} />}
         </Show>
         <DeleteButton label={DELETE_LINK} confirm={DELETE_THIS_LINK} note={LINK_GONE} onRun={() => props.onRevoke()} />
       </div>

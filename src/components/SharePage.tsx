@@ -34,6 +34,9 @@ import { applyHint, bounds, canFollowLive, endsLine, HINT_WORDS, hints, inSlice,
 import { toast } from "../lib/ui-state";
 import { InsightsPage } from "./InsightsPage";
 import { ImagesShared, MintedLinks, NO_THUMBS, PreviewBody } from "./ShareSheet";
+import { OpensAtLine } from "./OpensAt";
+import { sharingOffHere } from "../lib/public-links";
+import { openSettings } from "../lib/settings-nav";
 import { Banner, Icon } from "./ui";
 import "../shares.css";
 import "../share-page.css";
@@ -268,6 +271,17 @@ export function SharePage(props: { route: ShareRoute; titleRef(el: HTMLHeadingEl
       titleRef={props.titleRef}
     >
       <Switch>
+        <Match when={sharingOffHere(host) && !changing() && step() !== "done"}>
+          <div class="empty">
+            <p class="empty-title">Sharing is off on this computer.</p>
+            <p class="empty-body">Nothing is shared. Turn it on in Settings → Public links.</p>
+            <div class="empty-action">
+              <button type="button" class="button" onClick={() => openSettings("public-links")}>
+                Open Settings
+              </button>
+            </div>
+          </div>
+        </Match>
         <Match when={phase() === "old"}>
           <div class="empty">
             <p class="empty-title">This host needs an update to share part of a session.</p>
@@ -313,6 +327,9 @@ export function SharePage(props: { route: ShareRoute; titleRef(el: HTMLHeadingEl
               <strong>{rangeLabel(span())}.</strong>{" "}
               {changing() ? "Open pages start over with the new slice." : "People you send a link to can read these messages and the replies, with their drawings and images. Never tool steps, thinking, paths or costs."}
             </p>
+            <Show when={!changing()}>
+              <OpensAtLine host={host} />
+            </Show>
             <Show when={!changing()}>
               <CreateFields
                 title={title()}

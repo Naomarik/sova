@@ -19,6 +19,7 @@ import { UPLOAD_BODY_SLACK } from "../baton-images";
 import { FILE_BODY_SLACK } from "../project-files";
 import { cappedWebSocketServer } from "../runtime-quirks";
 import { RateLimiter } from "./rate-limit";
+import type { PreviewTunnelHooks } from "./preview-tunnel";
 
 // The old client-address rule lives with the other trust helpers; its old import path stays.
 export { clientAddress };
@@ -302,6 +303,13 @@ export interface ShareServerOptions {
   upgrade?: ShareUpgrade;
   /** Preview hosts (§mesh.public/preview-address); absent: none. */
   preview?: PreviewHooks;
+  /** Free preview tunnels' hosts (§mesh.public/preview-tunnels): judged first, by exact Host, on every
+      request and upgrade; a match is only ever a preview, never the share host. Absent: none. */
+  previewTunnel?: PreviewTunnelHooks;
+  /** Whether a request that is no preview's may reach the share routes, judged by its Host after
+      the preview splits (§mesh/tunnel: under Cloudflare Free and Account, only the tunnel's own
+      host and loopback). false or a throw: the plain 404. Absent: every Host. */
+  shareHost?: (req: IncomingMessage) => boolean;
   /** Whether the forward-only tier is on now (the gateway's router: while this host is a
       gateway). Absent: the strict ROUTES alone, as on a routed host's ingress. */
   forward?: () => boolean;
@@ -521,9 +529,43 @@ export function createShareServer(opts: ShareServerOptions = {}): Server {
     // How often Node looks for requests past those limits (default 30 s).
     connectionsCheckingInterval: opts.checkMs ?? 1000,
   };
+  /** The app port of the preview tunnel a request's Host names, or null; a throw is the share host's. */
+  const hostRefused = (req: IncomingMessage): boolean => {
+    if (!opts.shareHost) return false;
+    try {
+      return !opts.shareHost(req);
+    } catch {
+      return true;
+    }
+  };
+  const tunnelOf = (req: IncomingMessage): number | null => {
+    try {
+      return opts.previewTunnel?.match(req) ?? null;
+    } catch {
+      return null;
+    }
+  };
   const serve = (req: IncomingMessage, res: ServerResponse): void => {
+    const tunnelPort = tunnelOf(req);
+    if (tunnelPort !== null) {
+      let client: string;
+      try {
+        client = clientOf(req);
+      } catch {
+        return json(res, 500, { error: "Internal error" });
+      }
+      return guarded(
+        () => opts.previewTunnel!.dispatch(req, res, tunnelPort, client),
+        (err) => {
+          console.warn(`[share] preview tunnel dispatch failed (${err instanceof Error ? err.name : typeof err})`);
+          if (!res.headersSent && !res.destroyed) json(res, 500, { error: "Internal error" });
+          else res.destroy();
+        },
+      );
+    }
     const label = previewOf(req);
     if (label) return servePreview(req, res, label);
+    if (hostRefused(req)) return json(res, 404, { error: "Not found" });
     // A service-worker script fetch: no script on the share host, whoever's link served it, may
     // become a worker over every host's links. A preview (its own origin) is never judged here.
     if (isWorkerFetch(req)) return json(res, 404, { error: "Not found" });
@@ -585,8 +627,22 @@ export function createShareServer(opts: ShareServerOptions = {}): Server {
     guarded(() => dispatch(req, res, { url, client }), failed("dispatch"));
   };
   const serveUpgrade = (req: IncomingMessage, socket: Duplex, head: Buffer): void => {
+    const tunnelPort = tunnelOf(req);
+    if (tunnelPort !== null) {
+      let client: string;
+      try {
+        client = clientOf(req);
+      } catch {
+        return void socket.destroy();
+      }
+      return guarded(
+        () => opts.previewTunnel!.upgrade(req, socket, head, tunnelPort, client),
+        () => socket.destroy(),
+      );
+    }
     const label = previewOf(req);
     if (label) return upgradePreview(req, socket, head, label);
+    if (hostRefused(req)) return refuse(socket, 404, { error: "Not found" });
     if (isWorkerFetch(req)) return refuse(socket, 404, { error: "Not found" });
     const target = rawTarget(req.url);
     if (!target) {

@@ -69,11 +69,21 @@ export function shareLinksChanged(change: ShareLinksChange): void {
   }
 }
 
+/** How long a mint waits by default: MINT_ACK_TIMEOUT_MS, or longer while a Cloudflare Free
+    tunnel has to start first (server/share/tunnel/wiring.ts sets it: §mesh.tunnel/lifetime's
+    20 s, so the first share answers a full link). */
+let mintWait: () => number = () => MINT_ACK_TIMEOUT_MS;
+export function setMintWait(read: (() => number) | null): void {
+  mintWait = read ?? (() => MINT_ACK_TIMEOUT_MS);
+}
+export const mintWaitMs = (): number => mintWait();
+
 /** Run `mint` (sync or async), then wait up to `waitMs` for the answers to what it emitted. */
-export async function awaitShareLinks<T>(mint: () => T | Promise<T>, waitMs = MINT_ACK_TIMEOUT_MS): Promise<{ result: T; outcome: ShareLinksOutcome }> {
+export async function awaitShareLinks<T>(mint: () => T | Promise<T>, waitMs?: number): Promise<{ result: T; outcome: ShareLinksOutcome }> {
   const owed: Promise<Answer>[] = [];
   const result = await scope.run(owed, mint);
   if (!owed.length) return { result, outcome: { warning: null, timedOut: false, failed: false } };
+  waitMs ??= mintWait();
   let timer: NodeJS.Timeout | undefined;
   const late = new Promise<"late">((resolve) => {
     timer = setTimeout(() => resolve("late"), waitMs);

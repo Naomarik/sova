@@ -1,4 +1,5 @@
 import { createEffect, createMemo, createResource, createSignal, For, Match, on, onCleanup, Show, Switch, type JSX } from "solid-js";
+import { sharingOffHere } from "../lib/public-links";
 import type { CompactionInfo, GitFileChange, GitRepoSummary, GitSummary, SessionInsight, SessionSummary, TranscriptItem } from "../../shared/protocol";
 import { relativeTime, thousands, tildePath } from "../lib/format";
 import { NO_WORKTREES, type WorktreeChip, worktreeChips } from "../lib/worktrees";
@@ -347,7 +348,7 @@ export function SharingSection(props: {
           </ul>
         </Match>
       </Switch>
-      <Show when={!props.error}>
+      <Show when={!props.error && !sharingOffHere(host())}>
         <div class="cluster">
           <a class="button" href={newShare()}>
             Share Session

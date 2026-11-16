@@ -1,11 +1,13 @@
-import { createEffect, createMemo, createSignal, createUniqueId, For, Index, onCleanup, Show, type JSX } from "solid-js";
+import { createEffect, createMemo, createSignal, createUniqueId, For, Index, Match, onCleanup, Show, Switch, type JSX } from "solid-js";
 import type { PlaybookCardEdits, PlaybookChoiceView, PlaybookModelPick, PlaybookRoleView, PlaybookRunView, PlaybookStepView } from "../../shared/playbook-run";
 import {
   cardChip,
   cardEyebrow,
   chainRest,
   cycleLine,
+  cycleStepsLine,
   foldedLine,
+  shortClock,
   fromPick,
   hasEdits,
   helpersLine,
@@ -50,11 +52,15 @@ export function showPlaybookCard(id: string): void {
  * The chat's playbook cards, docked above the message box (al_2 a16): newest first, each folding to
  * one line. Drafts open; a started run's record folds until you open it.
  */
-export function PlaybookDock(props: { store: PlaybookRunsStore; host: string | null }) {
+export function PlaybookDock(props: { store: PlaybookRunsStore; host: string | null; /** This chat's session path. */ path: string }) {
+  // Keyed by run id, never by the view object: each new view of a run (an edit's answer, an event)
+  // updates its card in place, so an open prompt, a pending edit or focus survives it.
+  const ids = createMemo(() => props.store.runs().map((r) => r.id), undefined, { equals: (a, b) => a.length === b.length && a.every((x, i) => x === b[i]) });
+  const runOf = (id: string) => props.store.runs().find((r) => r.id === id);
   return (
-    <Show when={props.store.runs().length > 0}>
+    <Show when={ids().length > 0}>
       <section class="pb-dock" aria-label="Playbooks">
-        <For each={props.store.runs()}>{(run) => <PlaybookCard run={run} store={props.store} host={props.host} />}</For>
+        <For each={ids()}>{(id) => <Show when={runOf(id)}>{(run) => <PlaybookCard run={run()} store={props.store} host={props.host} here={props.path} />}</Show>}</For>
       </section>
     </Show>
   );
@@ -66,7 +72,7 @@ export function PlaybookDock(props: { store: PlaybookRunsStore; host: string | n
  * draft as a new revision; Start runs exactly the revision the card shows. After Start the same card
  * is the run's record, read-only.
  */
-export function PlaybookCard(props: { run: PlaybookRunView; store: PlaybookRunsStore; host: string | null }) {
+export function PlaybookCard(props: { run: PlaybookRunView; store: PlaybookRunsStore; host: string | null; /** The chat showing it. */ here?: string }) {
   const uid = createUniqueId();
   const id = (s: string) => `pb-${uid}-${s}`;
   const run = () => props.run;
@@ -222,7 +228,7 @@ export function PlaybookCard(props: { run: PlaybookRunView; store: PlaybookRunsS
                 {run().playbook.title}
               </span>
               <Show when={folded()}>
-                <span class="pb-folded-line">{foldedLine(run())}</span>
+                <span class="pb-folded-line">{foldedLine(run(), props.here)}</span>
               </Show>
             </span>
           </span>
@@ -237,9 +243,8 @@ export function PlaybookCard(props: { run: PlaybookRunView; store: PlaybookRunsS
           <Show when={run().state !== "draft" && run().started}>
             {(st) => (
               <p class="pb-record">
-                Started {new Date(st().at).toLocaleString([], { dateStyle: "medium", timeStyle: "short" })} as revision{" "}
-                <span class="text-num">{st().revision}</span>
-                {st().newChat ? (
+                Started <span class="text-num">{shortClock(st().at)}</span> as revision <span class="text-num">{st().revision}</span>
+                {st().chat.path !== props.here ? (
                   <>
                     {" "}
                     in <a href={sessionHrefOn(props.host, st().chat.path)}>{st().chat.title || "a new chat"}</a>.
@@ -258,14 +263,14 @@ export function PlaybookCard(props: { run: PlaybookRunView; store: PlaybookRunsS
               <h4 class="pb-section-label" id={id("choices")}>
                 Your choices
               </h4>
-              <For each={choices().shown}>{(c) => <ChoiceRow choice={c} value={choiceValue(c)} editable={editable()} onChange={(v, delay) => queue({ choices: { [c.id]: v } }, delay)} />}</For>
+              <Index each={choices().shown}>{(c) => <ChoiceRow choice={c()} value={choiceValue(c())} editable={editable()} onChange={(v, delay) => queue({ choices: { [c().id]: v } }, delay)} />}</Index>
               <Show when={choices().more.length > 0}>
                 <details class="pb-more">
                   <summary class="pb-more-summary">
                     <Icon name="chevron-right" small class="icon-twist" />
                     More options · <span class="text-num">{choices().more.length}</span>
                   </summary>
-                  <For each={choices().more}>{(c) => <ChoiceRow choice={c} value={choiceValue(c)} editable={editable()} onChange={(v, delay) => queue({ choices: { [c.id]: v } }, delay)} />}</For>
+                  <Index each={choices().more}>{(c) => <ChoiceRow choice={c()} value={choiceValue(c())} editable={editable()} onChange={(v, delay) => queue({ choices: { [c().id]: v } }, delay)} />}</Index>
                 </details>
               </Show>
             </section>
@@ -276,20 +281,20 @@ export function PlaybookCard(props: { run: PlaybookRunView; store: PlaybookRunsS
             <h4 class="pb-section-label" id={id("cast")}>
               Who runs
             </h4>
-            <For each={run().roles}>
+            <Index each={run().roles}>
               {(r) => (
                 <RoleRow
-                  role={r}
-                  on={roleOn(r)}
-                  note={roleNote(r)}
-                  pick={roleEdit(r)?.pick}
+                  role={r()}
+                  on={roleOn(r())}
+                  note={roleNote(r())}
+                  pick={roleEdit(r())?.pick}
                   editable={editable()}
-                  onPick={(pick) => queue({ roles: { [r.id]: { pick } } })}
-                  onOn={(on) => queue({ roles: { [r.id]: { on } } })}
-                  onNote={(note) => queue({ roles: { [r.id]: { note } } }, TYPE_SAVE_MS)}
+                  onPick={(pick) => queue({ roles: { [r().id]: { pick } } })}
+                  onOn={(on) => queue({ roles: { [r().id]: { on } } })}
+                  onNote={(note) => queue({ roles: { [r().id]: { note } } }, TYPE_SAVE_MS)}
                 />
               )}
-            </For>
+            </Index>
             <For each={run().teams}>
               {(t) => (
                 <div class="pb-team">
@@ -348,7 +353,7 @@ export function PlaybookCard(props: { run: PlaybookRunView; store: PlaybookRunsS
                 <div class="pb-cycle">
                   <Show when={editable()} fallback={<p class="pb-note">{cycleLine({ ...c(), max: cycleMax(), askEvery: cycleAsk() })}</p>}>
                     <p class="pb-cycle-line">
-                      <span>Steps {c().steps.map((sid) => run().steps.findIndex((s) => s.id === sid) + 1).filter((n) => n > 0).join(", ")} repeat as a cycle: up to</span>
+                      <span>{cycleStepsLine(c().steps.map((sid) => run().steps.findIndex((s) => s.id === sid) + 1).filter((n) => n > 0))} as a cycle: up to</span>
                       <NumberBox id={id("cycle-max")} label="Most cycles" value={cycleMax()} min={1} max={c().maxCap} onChange={(n) => queue({ cycle: { max: n } }, TYPE_SAVE_MS)} />
                       <span>
                         cycles, at most <span class="text-num">{c().maxCap}</span>; asks you after every
@@ -465,101 +470,100 @@ function ChoiceRow(props: { choice: PlaybookChoiceView; value: unknown; editable
   const cid = `pbc-${createUniqueId()}`;
   const c = () => props.choice;
   const empty = () => c().required && isEmpty(props.value);
-  const control = (): JSX.Element => {
-    const ch = c();
-    switch (ch.type) {
-      case "toggle":
-        return (
-          <label class="toggle pb-toggle">
-            <input id={cid} type="checkbox" checked={!!props.value} onChange={(e) => props.onChange(e.currentTarget.checked)} />
-            <span class="toggle-box" aria-hidden="true" />
-            <span>{props.value ? "On" : "Off"}</span>
-          </label>
-        );
-      case "number":
-        return (
-          <input
-            id={cid}
-            class="input text-num pb-num"
-            type="number"
-            inputmode="numeric"
-            min={ch.min}
-            max={ch.max}
-            value={typeof props.value === "number" ? props.value : ""}
-            onInput={(e) => {
-              const raw = e.currentTarget.value;
-              props.onChange(raw === "" ? null : Number(raw), TYPE_SAVE_MS);
-            }}
-          />
-        );
-      case "choice":
-        return (
-          <div class="select-wrap">
-            <select id={cid} class="select" onChange={(e) => props.onChange(e.currentTarget.value || null)}>
-              <Show when={isEmpty(props.value)}>
-                <option value="">Pick one</option>
-              </Show>
-              <For each={ch.options ?? []}>
-                {(o) => (
-                  <option value={o.value} selected={o.value === props.value}>
-                    {o.label}
-                  </option>
-                )}
-              </For>
-            </select>
-            <span class="select-caret" aria-hidden="true">
-              ▾
-            </span>
-          </div>
-        );
-      case "multi":
-        return (
-          <span class="pb-multi" role="group" aria-labelledby={`${cid}-label`}>
-            <For each={ch.options ?? []}>
+  /** A list box keeps what was typed, blank lines included; what's saved is its non-empty lines. */
+  const [listText, setListText] = createSignal(listValue<string>(props.value).join("\n"));
+  // One control per type, built once: only its value follows the card, so typing keeps focus.
+  const control = (): JSX.Element => (
+    <Switch
+      fallback={
+        <input id={cid} class="input pb-text" type="text" value={typeof props.value === "string" ? props.value : ""} onInput={(e) => props.onChange(e.currentTarget.value, TYPE_SAVE_MS)} />
+      }
+    >
+      <Match when={c().type === "toggle"}>
+        <label class="toggle pb-toggle">
+          <input id={cid} type="checkbox" checked={!!props.value} onChange={(e) => props.onChange(e.currentTarget.checked)} />
+          <span class="toggle-box" aria-hidden="true" />
+          <span>{props.value ? "On" : "Off"}</span>
+        </label>
+      </Match>
+      <Match when={c().type === "number"}>
+        <input
+          id={cid}
+          class="input text-num pb-num"
+          type="number"
+          inputmode="numeric"
+          min={c().min}
+          max={c().max}
+          value={typeof props.value === "number" ? props.value : ""}
+          onInput={(e) => {
+            const raw = e.currentTarget.value;
+            props.onChange(raw === "" ? null : Number(raw), TYPE_SAVE_MS);
+          }}
+        />
+      </Match>
+      <Match when={c().type === "choice"}>
+        <div class="select-wrap">
+          <select id={cid} class="select" onChange={(e) => props.onChange(e.currentTarget.value || null)}>
+            <Show when={isEmpty(props.value)}>
+              <option value="">Pick one</option>
+            </Show>
+            <For each={c().options ?? []}>
               {(o) => (
-                <label class="toggle pb-toggle">
-                  <input
-                    type="checkbox"
-                    checked={listValue(props.value).includes(o.value)}
-                    onChange={(e) => {
-                      const now = listValue(props.value).filter((v) => v !== o.value);
-                      props.onChange(e.currentTarget.checked ? [...now, o.value] : now);
-                    }}
-                  />
-                  <span class="toggle-box" aria-hidden="true" />
-                  <span>{o.label}</span>
-                </label>
+                <option value={o.value} selected={o.value === props.value}>
+                  {o.label}
+                </option>
               )}
             </For>
+          </select>
+          <span class="select-caret" aria-hidden="true">
+            ▾
           </span>
-        );
-      case "list":
-        return (
-          <textarea
-            id={cid}
-            class="input textarea pb-list"
-            rows={Math.min(6, Math.max(2, listValue(props.value).length + 1))}
-            placeholder="One per line"
-            value={listValue<string>(props.value).join("\n")}
-            onInput={(e) =>
-              props.onChange(
-                e.currentTarget.value
-                  .split("\n")
-                  .map((l) => l.trim())
-                  .filter(Boolean),
-                TYPE_SAVE_MS,
-              )
-            }
-          />
-        );
-      case "models":
-        return <ModelsControl id={cid} label={ch.label} value={listValue<PlaybookModelPick>(props.value)} onChange={(v) => props.onChange(v)} />;
-      default:
-        return (
-          <input id={cid} class="input pb-text" type="text" value={typeof props.value === "string" ? props.value : ""} onInput={(e) => props.onChange(e.currentTarget.value, TYPE_SAVE_MS)} />
-        );
-    }
-  };
+        </div>
+      </Match>
+      <Match when={c().type === "multi"}>
+        <span class="pb-multi" role="group" aria-labelledby={`${cid}-label`}>
+          <For each={c().options ?? []}>
+            {(o) => (
+              <label class="toggle pb-toggle">
+                <input
+                  type="checkbox"
+                  checked={listValue(props.value).includes(o.value)}
+                  onChange={(e) => {
+                    const now = listValue(props.value).filter((v) => v !== o.value);
+                    props.onChange(e.currentTarget.checked ? [...now, o.value] : now);
+                  }}
+                />
+                <span class="toggle-box" aria-hidden="true" />
+                <span>{o.label}</span>
+              </label>
+            )}
+          </For>
+        </span>
+      </Match>
+      <Match when={c().type === "list"}>
+        <textarea
+          id={cid}
+          class="input textarea pb-list"
+          rows={Math.min(6, Math.max(2, listValue(props.value).length + 1))}
+          placeholder="One per line"
+          value={listText()}
+          onInput={(e) => {
+            setListText(e.currentTarget.value);
+            props.onChange(
+              e.currentTarget.value
+                .split("\n")
+                .map((l) => l.trim())
+                .filter(Boolean),
+              TYPE_SAVE_MS,
+            );
+          }}
+        />
+      </Match>
+      <Match when={c().type === "models"}>
+        <ModelsControl id={cid} label={c().label} value={listValue<PlaybookModelPick>(props.value)} onChange={(v) => props.onChange(v)} />
+      </Match>
+    </Switch>
+  );
   return (
     <div class="pb-row" data-empty={empty() ? "" : undefined}>
       <Show when={props.editable && c().type !== "multi" && c().type !== "models"} fallback={<span class="pb-row-label" id={`${cid}-label`}>{c().label}</span>}>
@@ -634,7 +638,7 @@ function RoleRow(props: {
     <div class="pb-row pb-role" data-off={off() ? "" : undefined} data-blocked={!r().runnable ? "" : undefined}>
       <span class="pb-row-label">
         {roleTitle(r())}
-        <Show when={r().per}>{(per) => <span class="pb-row-help">{per()}</span>}</Show>
+        <Show when={r().per}>{(per) => <span class="pb-row-help">One for each of {per()}</span>}</Show>
       </span>
       <span class="pb-row-value">
         <span class="pb-model" title={chainRest(r()) ?? undefined}>
@@ -680,8 +684,8 @@ function RoleRow(props: {
             </span>
           </Show>
         </Show>
+        <Show when={!off() && roleWhy(r())}>{(why) => <span class="pb-row-why">{why()}</span>}</Show>
       </span>
-      <span class="pb-row-origin">{off() ? "" : roleWhy(r())}</span>
       <span class="pb-role-actions">
         <Show when={r().optional && props.editable}>
           <label class="toggle pb-toggle">

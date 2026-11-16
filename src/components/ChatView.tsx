@@ -44,7 +44,7 @@ import { BatonStrip } from "./BatonStrip";
 import { PairedLines } from "./PairedLines";
 import { createLimits } from "../lib/mode-menu";
 import { sandboxOffMissing, sandboxStateOf, type SandboxState } from "../lib/sandbox";
-import { approveSchedule, fetchTranscriptRows, forkSession, getAlignTriage, getChatClaudeAccounts, getOverseerAutonomy, getSubagentProfiles, revokeOverseerPermit, revokeSchedule, setSandbox, setSessionArchived, wsUrl } from "../lib/api";
+import { ApiError, approveSchedule, fetchTranscriptRows, forkSession, getAlignTriage, getChatClaudeAccounts, getOverseerAutonomy, getSubagentProfiles, revokeOverseerPermit, revokeSchedule, setSandbox, setSessionArchived, wsUrl } from "../lib/api";
 import { adversarialReview, NO_REVIEWER, reviewRequestMessage } from "../lib/align-review";
 import type { MemoryStatus, OverseerAutonomy, ScheduleInfo, V1EventFrame, V2EventFrame } from "../../shared/protocol";
 import { memoryRowWords, memoryTurnWords } from "../lib/memory-ui";
@@ -654,7 +654,8 @@ export function ChatView(props: {
       announce(`${run.playbook.title}: its card is open above the message box.`);
       return true;
     } catch (e) {
-      toast(`The playbook's card didn't open: ${e instanceof Error ? e.message : String(e)}`);
+      // A refusal that says why (a description that can't be read) is said as is.
+      toast(e instanceof ApiError && e.status === 400 ? e.message : `The playbook's card didn't open: ${e instanceof Error ? e.message : String(e)}`);
       return false;
     }
   };
@@ -2820,7 +2821,7 @@ export function ChatView(props: {
         <ProfileSwitchLine path={props.path} state={chatProfile()} />
       </ThreadScroller>
       </ToolSourceContext.Provider>
-      <Show when={playbookRuns}>{(store) => <PlaybookDock store={store()} host={hostOf(props.path)} />}</Show>
+      <Show when={playbookRuns}>{(store) => <PlaybookDock store={store()} host={hostOf(props.path)} path={props.path} />}</Show>
       <ShellDock bar={shellBar} />
       <Show when={!hostGate()} fallback={<HostSendNotice host={hostOf(props.path)!} reading={hostGate()!} />}>
       <Composer

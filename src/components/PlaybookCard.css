@@ -76,7 +76,7 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
-  padding: 0 var(--space-4) var(--space-3);
+  padding: var(--space-1) var(--space-4) var(--space-3);
 }
 .pb-summary, .pb-record, .pb-how { margin: 0; }
 .pb-record { color: var(--color-ink-2); }
@@ -110,6 +110,8 @@
 .pb-row-standing .pb-row-label { font-weight: var(--fw-regular); color: var(--color-ink-2); padding-left: var(--space-3); }
 .pb-role[data-off] .pb-model { color: var(--color-ink-muted); }
 .pb-role[data-blocked] .pb-model { color: var(--status-warn); }
+.pb-role { grid-template-columns: minmax(8rem, 11rem) minmax(0, 1fr) max-content; }
+.pb-row-why { flex-basis: 100%; color: var(--color-ink-muted); font-size: var(--fs-caption); }
 .pb-role-actions { display: flex; align-items: center; gap: var(--space-2); justify-content: flex-end; }
 .pb-model { font-variant-numeric: tabular-nums; }
 

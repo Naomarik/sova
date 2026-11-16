@@ -4,6 +4,8 @@ import type { PlaybookRoleView, PlaybookRunView, PlaybookStepView, PlaybookTeamV
 import {
   cardChip,
   cycleLine,
+  cycleStepsLine,
+  foldedLine,
   hasEdits,
   playbookCommandIn,
   roleWhy,
@@ -55,6 +57,12 @@ test("the cycle line says the cap and when it asks", () => {
   assert.equal(cycleLine({ steps: [], max: 3, maxCap: 10, askEvery: 3, until: "rule" }), "Up to 3 cycles; asks you after every 3 cycles.");
 });
 
+test("the cycle's steps by number: one repeats, several repeat", () => {
+  assert.equal(cycleStepsLine([3]), "Step 3 repeats");
+  assert.equal(cycleStepsLine([3, 4]), "Steps 3 and 4 repeat");
+  assert.equal(cycleStepsLine([3, 4, 5]), "Steps 3, 4, and 5 repeat");
+});
+
 test("a role's why: the resolver's reason when it gave one, else where the model came from; only-roles say so", () => {
   assert.equal(roleWhy(role()), "First choice");
   assert.equal(roleWhy(role({ resolved: { model: "x/y", modelLabel: "y", provider: "x", source: "profile", reason: "Opus 5.5 is turned off, so your profile's model" } })), "Opus 5.5 is turned off, so your profile's model");
@@ -91,4 +99,12 @@ test("a typed playbook command is the whole message's start, by a name that has 
   assert.equal(playbookCommandIn("/ab-cyclex", names), null);
   assert.equal(playbookCommandIn("run /ab-cycle", names), null);
   assert.equal(playbookCommandIn("/other", names), null);
+});
+
+test("a started card's folded line says its revision, when and where it runs", () => {
+  const v = { state: "started", startBlocked: "This run has started.", started: { at: "2026-11-17T00:27:00Z", revision: 3, chat: { id: "c", path: "/a.jsonl" }, newChat: false, folder: "/f" } } as unknown as PlaybookRunView;
+  const clock = () => "00:27";
+  assert.equal(foldedLine(v, "/a.jsonl", clock), "Revision 3, started 00:27 in this chat");
+  assert.equal(foldedLine(v, "/b.jsonl", clock), "Revision 3, started 00:27 in another chat");
+  assert.equal(foldedLine({ ...v, started: { ...v.started!, chat: { id: "c", path: "/a.jsonl", title: "Card check run" } } }, "/b.jsonl", clock), "Revision 3, started 00:27 in Card check run");
 });

@@ -111,14 +111,33 @@ export function cycleLine(c: PlaybookCycleView): string {
   return `Up to ${c.max} ${c.max === 1 ? "cycle" : "cycles"}; asks you ${every}.`;
 }
 
+/** "Step 3 repeats" or "Steps 3, 4 and 5 repeat": the cycle's steps by their numbers on the card. */
+export function cycleStepsLine(numbers: readonly number[]): string {
+  if (numbers.length === 1) return `Step ${numbers[0]} repeats`;
+  const list = numbers.length === 2 ? numbers.join(" and ") : `${numbers.slice(0, -1).join(", ")}, and ${numbers[numbers.length - 1]}`;
+  return `Steps ${list} repeat`;
+}
+
 /** "9 helpers at once, of 24." The coordinator and monitor of each team count. */
 export function helpersLine(h: PlaybookRunView["helpers"]): string {
   return `${h.total} ${h.total === 1 ? "helper" : "helpers"} at once, of ${h.limit}.`;
 }
 
+/** "14:06" today, else "Mar 4, 14:06": a 24-hour clock, as logs and records read. */
+export function shortClock(iso: string, now = new Date()): string {
+  const d = new Date(iso);
+  const time = d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false });
+  return d.toDateString() === now.toDateString() ? time : `${d.toLocaleDateString([], { month: "short", day: "numeric" })}, ${time}`;
+}
+
 /** The folded card's one line after its title: where it is, or what it needs. */
-export function foldedLine(view: PlaybookRunView): string {
-  if (view.state === "started") return view.started?.chat.title ? `Started in ${view.started.chat.title}` : "Started";
+export function foldedLine(view: PlaybookRunView, here?: string, clock: (iso: string) => string = shortClock): string {
+  const st = view.started;
+  if (view.state === "started" && st) {
+    const where = st.chat.path === here ? "in this chat" : st.chat.title ? `in ${st.chat.title}` : "in another chat";
+    return `Revision ${st.revision}, started ${clock(st.at)} ${where}`;
+  }
+  if (view.state === "starting") return "Starting…";
   return view.startBlocked ?? `${view.roles.filter((r) => r.on).length} roles · ${stepsSummary(view.steps).replace(/^Steps · /, "").replace(/^(\d+)/, "$1 steps")}`;
 }
 

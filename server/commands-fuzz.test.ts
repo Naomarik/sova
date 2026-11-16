@@ -411,6 +411,28 @@ function anchors(c: CommandEntry): Anchor[] {
 
 /** A valid call and what it must do: `looks` changes nothing on disk; `changes` changes it and the oracle reads it back. */
 interface Fixture { values: () => Record<string, unknown>; status: number; oracle?: (body: unknown, values: Record<string, unknown>) => Promise<void> }
+/** A playbook of the user's own with a description (one choice, topic), made once. */
+let fuzzPlaybookMade = false;
+function fuzzPlaybook(): string {
+  if (!fuzzPlaybookMade) {
+    const dir = join(agentDir, "sova", "playbooks", "fuzz-card");
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, "PLAYBOOK.md"), "---\ntitle: Fuzz card\n---\nConduct.\n");
+    writeFileSync(join(dir, "playbook.json"), JSON.stringify({ version: 1, inputs: [{ id: "topic", label: "Topic", type: "text", ask: "always", required: true }] }));
+    fuzzPlaybookMade = true;
+  }
+  return "fuzz-card";
+}
+/** A draft card of that playbook, opened in-process before the call; `more` adds the call's other values. */
+function fuzzRun(more: (v: Record<string, unknown>) => Record<string, unknown>): Record<string, unknown> {
+  const v: Record<string, unknown> = {};
+  pendingSetup.push(async () => {
+    const opened = await sendTo(app, "POST", "/api/playbook-runs", JSON.stringify({ playbook: { source: "user", id: fuzzPlaybook() }, cwd: root }));
+    v.run = (opened.body as { id: string }).id;
+    Object.assign(v, more({}));
+  });
+  return v;
+}
 const read = async (method: string, url: string) => (await sendTo(app, method, url)).body as Record<string, unknown>;
 const titleOf = async (id: string) => (await read("GET", `/api/sessions/summary?id=${id}`)).title;
 const pathToId = (p: unknown) => /_(fuzz-\d+)\.jsonl$/.exec(String(p))![1]!;
@@ -485,6 +507,11 @@ const FIXTURES: Record<string, Fixture> = {
   "design.list": { values: () => ({ session: session()[0] }), status: 200 },
   "design.page": { values: () => ({ session: session()[0], label: "A" }), status: 404 },
   "design.history": { values: () => ({ session: session()[0] }), status: 200 },
+  "playbook.run.list": { values: () => ({ session: session()[0] }), status: 200 },
+  "playbook.run.get": { values: () => ({ run: "pr_aaaaaaaaaaaa" }), status: 404 },
+  "playbook.run.open": { values: () => ({ playbook: { source: "user", id: fuzzPlaybook() }, cwd: root }), status: 201, oracle: async (b) => assert.equal((await read("GET", `/api/playbook-runs/${(b as { id: string }).id}`)).state, "draft") },
+  "playbook.run.edit": { values: () => fuzzRun((v) => ({ ...v, revision: 1, edits: { choices: { topic: "fuzzed" } } })), status: 200, oracle: async (_b, v) => assert.equal(((await read("GET", `/api/playbook-runs/${String(v.run)}`)).choices as { value: unknown }[])[0]!.value, "fuzzed") },
+  "playbook.run.close": { values: () => fuzzRun((v) => v), status: 200, oracle: async (_b, v) => assert.equal((await sendTo(app, "GET", `/api/playbook-runs/${String(v.run)}`)).status, 404) },
   "session.list": { values: () => ({}), status: 200 },
   "session.get": { values: () => ({ session: session()[1] }), status: 200 },
   "session.read": { values: () => ({ session: session()[0] }), status: 200 },

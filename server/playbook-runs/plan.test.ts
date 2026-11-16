@@ -73,6 +73,7 @@ function env(off: (c: WorkerChoice) => string | null = (c) => (c.model === "clau
     team: { coordinator: { model: "claude-code/claude-opus-5-5", effort: "medium" }, monitor: { model: "ollama-cloud/deepseek-v4.1-flash", effort: "low" } },
     prompts: { main: "Conduct.", runner: "Run {{subject}} on {{each}}, depth {{depth}}, into {{run}}; scripts in {{folder}}/scripts.", grader: "Grade {{subject}}.", critic: "Critique." },
     commandLabel: (id) => id,
+    commandChanges: (id) => id !== "session.list",
     resolve: (input, as) => resolveRoleModel(input, { routes: { planning: { primary: { backend: "pi", model: "zai/glm-5.3", effort: "medium" }, fallback: null } }, chat: { backend: "pi", model: "zai/glm-5.3", effort: "" }, denial: (c) => off(c), name: (c) => `${name(c).label} · ${name(c).provider}` }),
     checkValue: (i, v) => checkInputValue(i, v),
     valueText: (i, v) => inputValueText(i, v as InputValue),
@@ -159,7 +160,7 @@ describe("the card a run draws", () => {
 
   test("a cycle shows its settings, and the card's edits replace them", () => {
     const s = spec();
-    assert.deepEqual(runCard(record(s, { choices: { subject: "x" } }), s, env()).view.cycle, { steps: ["run", "review"], max: 3, maxCap: 50, askEvery: 1, rule: "two rounds in a row with no win" });
+    assert.deepEqual(runCard(record(s, { choices: { subject: "x" } }), s, env()).view.cycle, { steps: ["run", "review"], max: 3, maxCap: 50, askEvery: 1, until: "rule", rule: "two rounds in a row with no win" });
     const edited = runCard(record(s, { choices: { subject: "x" }, cycle: { max: 2, askEvery: 3 } }), s, env());
     assert.match(edited.view.startBlocked ?? "", /cycle settings don't fit/);
   });

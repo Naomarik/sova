@@ -30,7 +30,7 @@ export interface PlaybookRunRecord {
   text?: string;
   revision: number;
   /** The card's first values, with where each came from (Default, Same as last time, …). */
-  initial: { choices: Record<string, unknown>; origins: Record<string, PlaybookChoiceOrigin>; roles?: Record<string, PlaybookRoleEdit>; stops?: Record<string, boolean>; cycle?: { max?: number; askEvery?: number } };
+  initial: { choices: Record<string, unknown>; origins: Record<string, PlaybookChoiceOrigin>; roles?: Record<string, PlaybookRoleEdit>; stops?: Record<string, boolean>; cycle?: { max?: number; askEvery?: number; until?: "rule" | "max" } };
   /** Everything the person changed on the card since. */
   edits: PlaybookCardEdits;
   state: PlaybookRunState;

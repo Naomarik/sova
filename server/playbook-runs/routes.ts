@@ -6,7 +6,7 @@ import type { Context, Hono } from "hono";
 import { MAIN_ROLE, parseModelsValue, type PlaybookSpec } from "../../shared/playbook-format";
 import { isPlaybookRunId, mergeEdits, type PlaybookCardEdits, type PlaybookRoleEdit } from "../../shared/playbook-run";
 import { chatHandle } from "../chat-handle";
-import { yourClickRefusal } from "../page-only";
+import { notPage, yourClickRefusal } from "../page-only";
 import { resolveSessionPath } from "../paths";
 import { idOf } from "../sessions-index";
 import { statingOwnNumber } from "../wire-gate";
@@ -109,13 +109,14 @@ export function cleanEdits(spec: PlaybookSpec, sent: unknown): PlaybookCardEdits
     }
   }
   if (sent.cycle !== undefined) {
-    if (!isRecord(sent.cycle)) return "edits.cycle must be { max?, askEvery? }.";
+    if (!isRecord(sent.cycle)) return "edits.cycle must be { max?, askEvery?, until? }.";
     if (!spec.steps.some((s) => s.kind === "cycle")) return "This playbook has no cycle.";
-    for (const k of Object.keys(sent.cycle)) if (k !== "max" && k !== "askEvery") return `edits.cycle has no "${k}".`;
-    const { max, askEvery } = sent.cycle;
+    for (const k of Object.keys(sent.cycle)) if (k !== "max" && k !== "askEvery" && k !== "until") return `edits.cycle has no "${k}".`;
+    const { max, askEvery, until } = sent.cycle;
+    if (until !== undefined && until !== "rule" && until !== "max") return "The cycle's until must be rule or max.";
     if (max !== undefined && !(Number.isInteger(max) && (max as number) >= 1)) return "The cycle's max must be a whole number of at least 1.";
     if (askEvery !== undefined && !(Number.isInteger(askEvery) && (askEvery as number) >= 1)) return "The cycle's ask-every must be a whole number of at least 1.";
-    out.cycle = { ...(max !== undefined ? { max: max as number } : {}), ...(askEvery !== undefined ? { askEvery: askEvery as number } : {}) };
+    out.cycle = { ...(max !== undefined ? { max: max as number } : {}), ...(askEvery !== undefined ? { askEvery: askEvery as number } : {}), ...(until !== undefined ? { until: until as "rule" | "max" } : {}) };
   }
   return out;
 }
@@ -135,11 +136,13 @@ export function mountPlaybookRunRoutes(app: Hono, deps: PlaybookRunRouteDeps): v
   // Open a card: a new draft, or this chat's open draft of that playbook.
   app.post("/api/playbook-runs", async (c) => {
     const b = await body(c);
+    if (b.cwd !== undefined && typeof b.cwd !== "string") return c.json({ error: "cwd must be an absolute folder." }, 400);
+    if (b.path !== undefined && typeof b.path !== "string") return c.json({ error: "path must be a chat's session path." }, 400);
+    if (b.text !== undefined && (typeof b.text !== "string" || b.text.length > MAX_TEXT)) return c.json({ error: `text must be text, at most ${MAX_TEXT} characters.` }, 400);
     const p = b.playbook;
-    if (!isRecord(p) || !SOURCES.includes(p.source as (typeof SOURCES)[number]) || typeof p.id !== "string" || !p.id) return c.json({ error: "Expected { playbook: { source, id }, cwd, path?, text? }." }, 400);
-    if (b.text !== undefined && (typeof b.text !== "string" || b.text.length > MAX_TEXT)) return c.json({ error: `text must be at most ${MAX_TEXT} characters.` }, 400);
+    if (!isRecord(p) || !SOURCES.includes(p.source as (typeof SOURCES)[number]) || typeof p.id !== "string" || !p.id) return c.json({ error: "playbook must be { source: sova | user | project, id }." }, 400);
     let shownIn: { id: string; path: string } | undefined;
-    if (b.path !== undefined && b.path !== null && b.path !== "") {
+    if (b.path !== undefined && b.path !== "") {
       const chat = chatOf(b.path);
       if (!chat) return c.json({ error: "Invalid ?path: not a session file under the pi sessions dir." }, 400);
       shownIn = chat;
@@ -179,16 +182,19 @@ export function mountPlaybookRunRoutes(app: Hono, deps: PlaybookRunRouteDeps): v
   });
 
   app.patch("/api/playbook-runs/:run", async (c) => {
+    const b = await body(c);
+    if (!Number.isInteger(b.revision)) return c.json({ error: "revision must be the card's revision, a whole number." }, 400);
+    if (!isRecord(b.edits)) return c.json({ error: "edits must be an object { choices?, roles?, stops?, cycle? }." }, 400);
     const r = runById(c.req.param("run"));
     if (!r || r.closed) return c.json({ error: "No such playbook run." }, 404);
-    const b = await body(c);
-    if (typeof b.revision !== "number") return c.json({ error: "Expected { revision, edits }." }, 400);
     if (r.state !== "draft") return c.json({ error: "This run has started, so its card is closed.", run: await runView(r) }, 409);
     if (b.revision !== r.revision) return c.json({ error: "The card changed since you saw it.", run: await runView(r) }, 409);
     const loaded = await loadPlaybook(r.playbook, r.cwd);
     if (!loaded?.spec) return c.json({ error: loaded?.error ? `The playbook's description can't be read: ${loaded.error}` : "The playbook is gone." }, 409);
     const edits = cleanEdits(loaded.spec, b.edits);
     if (typeof edits === "string") return c.json({ error: edits }, 400);
+    // A chat or a script fills in the playbook's own choices; models, roles, stops and cycles are the person's.
+    if (notPage(c) && (edits.roles || edits.stops || edits.cycle)) return c.json({ error: "Only the person changes a card's models, roles, stops and cycle settings, on the card in Sova's page. A chat may fill in its choices. Nothing was changed." }, 403);
     changeRun(r.id, (x) => {
       x.edits = mergeEdits(x.edits, edits);
       x.revision++;
@@ -201,21 +207,23 @@ export function mountPlaybookRunRoutes(app: Hono, deps: PlaybookRunRouteDeps): v
     const refused = yourClickRefusal(c, "playbookStart");
     if (refused) return refused;
     const b = await body(c);
-    if (typeof b.revision !== "number") return c.json({ error: "Expected { revision }." }, 400);
+    if (!Number.isInteger(b.revision)) return c.json({ error: "revision must be the card's revision, a whole number." }, 400);
     const id = c.req.param("run");
     if (!isPlaybookRunId(id)) return c.json({ error: "No such playbook run." }, 404);
     try {
-      return c.json(await startRun(id, b.revision, { request, contents: deps.contents }));
+      return c.json(await startRun(id, b.revision as number, { request, contents: deps.contents }));
     } catch (err) {
       return fail(c, err);
     }
   });
 
   app.post("/api/playbook-runs/:run/defaults", async (c) => {
+    const refused = yourClickRefusal(c, "playbookDefaults");
+    if (refused) return refused;
+    const b = await body(c);
+    if (!Number.isInteger(b.revision)) return c.json({ error: "revision must be the card's revision, a whole number." }, 400);
     const r = runById(c.req.param("run"));
     if (!r || r.closed) return c.json({ error: "No such playbook run." }, 404);
-    const b = await body(c);
-    if (typeof b.revision !== "number") return c.json({ error: "Expected { revision }." }, 400);
     if (b.revision !== r.revision) return c.json({ error: "The card changed since you saw it.", run: await runView(r) }, 409);
     const e = r.plan ? null : effectiveEdits(r);
     if (!e) return c.json({ error: "Save as My Defaults works on a card before Start." }, 409);

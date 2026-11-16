@@ -284,7 +284,6 @@
     "playbook.run.list",
     "playbook.run.get",
     "playbook.run.edit",
-    "playbook.run.defaults",
     "playbook.run.close"
   ],
   "retired": [

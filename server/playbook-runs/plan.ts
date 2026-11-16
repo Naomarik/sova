@@ -22,6 +22,8 @@ export interface CardEnv {
   prompts: Record<string, string | { error: string }>;
   /** A catalogue command's label. */
   commandLabel(id: string): string;
+  /** Whether a catalogue command changes things (only those are shown and listed: looking ones are free). */
+  commandChanges(id: string): boolean;
   /** The model resolver (shared/playbook-models.ts resolveRoleModel). */
   resolve(input: { pick?: WorkerChoice | null; list: readonly WorkerChoice[]; only: boolean; kind?: DelegateProfileId }, as: "main" | "helper"): ResolvedRoleModel;
   /** A choice's value checked against its input: why it is wrong, or null (shared/playbook-format.ts). */
@@ -102,7 +104,9 @@ const RUN_FOLDER_LATER = "(the run folder, made at Start)";
 
 /** A role's prompt with its {{slots}} filled: each input by its id, the built-in run, folder, note and each. */
 export function fillSlots(text: string, spec: PlaybookSpec, edits: PlaybookCardEdits, env: Pick<CardEnv, "valueText">, ctx: SlotContext & { note?: string }): string {
-  return text.replace(/\{\{\s*([^{}\s]+)\s*\}\}/g, (whole, id: string) => {
+  // With no note, a line that only carries the note goes, rather than reading as a dangling label.
+  const lines = ctx.note ? text : text.split("\n").filter((l) => !/\{\{\s*note\s*\}\}/.test(l)).join("\n");
+  return lines.replace(/\{\{\s*([^{}\s]+)\s*\}\}/g, (whole, id: string) => {
     if (id === "run") return ctx.run ?? RUN_FOLDER_LATER;
     if (id === "folder") return ctx.folder;
     if (id === "note") return ctx.note ?? "";
@@ -260,6 +264,7 @@ export function runCard(r: PlaybookRunRecord, spec: PlaybookSpec, env: CardEnv, 
         max: edits.cycle?.max ?? group.settings.max,
         maxCap: CYCLE_MAX,
         askEvery: edits.cycle?.askEvery ?? group.settings.askEvery,
+        until: edits.cycle?.until ?? group.settings.until,
         ...(group.rule ? { rule: group.rule } : {}),
       }
     : null;
@@ -277,7 +282,7 @@ export function runCard(r: PlaybookRunRecord, spec: PlaybookSpec, env: CardEnv, 
     steps: stepViews,
     cycle,
     howItRuns: howItRuns(spec, r),
-    commands: spec.commands.map((id) => env.commandLabel(id)),
+    commands: spec.commands.filter((id) => env.commandChanges(id)).map((id) => env.commandLabel(id)),
     helpers: { total: helperTotal, limit: HELPER_LIMIT },
     startBlocked: null,
     ...(r.started ? { started: r.started } : {}),
@@ -497,9 +502,9 @@ export function freezePlan(r: PlaybookRunRecord, spec: PlaybookSpec, env: CardEn
     roles,
     teams,
     steps,
-    cycle: group && card.view.cycle ? { id: group.id, label: group.label, max: card.view.cycle.max, askEvery: card.view.cycle.askEvery, until: group.settings.until, ...(group.rule ? { rule: group.rule } : {}), ...(group.carry ? { carry: group.carry } : {}), steps: group.steps.map((s) => s.id) } : null,
+    cycle: group && card.view.cycle ? { id: group.id, label: group.label, max: card.view.cycle.max, askEvery: card.view.cycle.askEvery, until: card.view.cycle.until ?? group.settings.until, ...(group.rule ? { rule: group.rule } : {}), ...(group.carry ? { carry: group.carry } : {}), steps: group.steps.map((s) => s.id) } : null,
     run: { chat: newChat ? "new" : "this", worktree: spec.run.worktree, ...(spec.run.mode ? { mode: spec.run.mode } : {}), ...(spec.run.minorModes ? { minorModes: [...spec.run.minorModes] } : {}), permissions: !!spec.run.permissions },
-    commands: [...spec.commands],
+    commands: spec.commands.filter((id) => env.commandChanges(id)),
     ...(r.text?.trim() ? { text: r.text.trim() } : {}),
     view: card.view,
   };

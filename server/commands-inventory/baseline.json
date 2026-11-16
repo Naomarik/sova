@@ -452,7 +452,7 @@
     "POST /api/peer/sync/extensions": {"need":"sync.extensions","is":"peer"},
     "POST /api/peer/sync/push": {"need":"sync.docs","is":"peer"},
     "POST /api/playbook-runs": {"need":"full","is":"command","ids":["playbook.run.open"]},
-    "POST /api/playbook-runs/:run/defaults": {"need":"full","is":"command","ids":["playbook.run.defaults"]},
+    "POST /api/playbook-runs/:run/defaults": {"need":"full","is":"grants"},
     "POST /api/playbook-runs/:run/start": {"need":"full","is":"grants"},
     "POST /api/previews": {"need":"admin","is":"opted-out"},
     "POST /api/previews/:id/extend": {"need":"admin","is":"opted-out"},

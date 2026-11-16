@@ -109,6 +109,8 @@ export interface PlaybookCycleView {
   max: number;
   maxCap: number;
   askEvery: number;
+  /** Keep going until the stop rule is met ("rule"), or run every cycle ("max"). */
+  until?: "rule" | "max";
   rule?: string;
 }
 
@@ -164,7 +166,7 @@ export interface PlaybookCardEdits {
   choices?: Record<string, unknown>;
   roles?: Record<string, PlaybookRoleEdit>;
   stops?: Record<string, boolean>;
-  cycle?: { max?: number; askEvery?: number };
+  cycle?: { max?: number; askEvery?: number; until?: "rule" | "max" };
 }
 
 // ── Wire bodies ─────────────────────────────────────────────────────────────────────────────────

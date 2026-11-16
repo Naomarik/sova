@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { findCommand } from "../../shared/commands-catalog";
 import { checkInputValue, inputValueText, MAIN_ROLE, type InputValue, type PlaybookSpec } from "../../shared/playbook-format";
 import { resolveRoleModel } from "../../shared/playbook-models";
+import { THINKING_LEVELS } from "../../shared/profiles";
 import type { PlaybookInfo, WorkerChoice } from "../../shared/protocol";
 import { resolveSubagents } from "../../pi-config/extensions/subagents/subagent-profiles.ts";
 import { chatHandle } from "../chat-handle";
@@ -68,6 +69,15 @@ export async function liveEnv(spec: PlaybookSpec, info: PlaybookInfo, chatPath?:
     if (signedIn && !signedIn.has(ref)) return `${c.model} isn't signed in on this computer`;
     return null;
   };
+  // An effort the model doesn't take moves to the nearest one it does (a model with no levels: "off").
+  const levels = new Map((known ?? []).map((m) => [m.ref, m.thinkingLevels]));
+  const clampEffort = (c: WorkerChoice): WorkerChoice => {
+    const have = levels.get(chatRefOf(c));
+    if (!have?.length || !c.effort || have.includes(c.effort)) return c;
+    const at = THINKING_LEVELS.indexOf(c.effort as (typeof THINKING_LEVELS)[number]);
+    const near = [...have].sort((a, b) => Math.abs(THINKING_LEVELS.indexOf(a as (typeof THINKING_LEVELS)[number]) - at) - Math.abs(THINKING_LEVELS.indexOf(b as (typeof THINKING_LEVELS)[number]) - at))[0]!;
+    return { ...c, effort: near };
+  };
   const name = (c: WorkerChoice) => {
     const ref = chatRefOf(c);
     return { label: names.get(ref) ?? c.model.replace(/^.*\//, ""), provider: ref.slice(0, Math.max(0, ref.indexOf("/"))) };
@@ -90,7 +100,11 @@ export async function liveEnv(spec: PlaybookSpec, info: PlaybookInfo, chatPath?:
     team,
     prompts: readPrompts(spec, info),
     commandLabel: (id) => findCommand(id)?.label ?? id,
-    resolve: (input, as) => resolveRoleModel(input, { routes, chat: chatModel, denial: (c) => denial(c, as), name: (c) => `${name(c).label} · ${name(c).provider}` }),
+    commandChanges: (id) => findCommand(id)?.effect !== "looks",
+    resolve: (input, as) => {
+      const r = resolveRoleModel(input, { routes, chat: chatModel, denial: (c) => denial(c, as), name: (c) => `${name(c).label} · ${name(c).provider}` });
+      return { ...r, ...(r.use ? { use: clampEffort(r.use) } : {}), chain: r.chain.map((e) => ({ ...e, choice: clampEffort(e.choice) })) };
+    },
     checkValue: (input, value) => checkInputValue(input, value),
     valueText: (input, value) => inputValueText(input, value as InputValue),
   };

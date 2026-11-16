@@ -2317,8 +2317,9 @@ class ChatSession {
       }
     });
     this.lastCommands = null;
+    // The playbooks' / rows go in the first commands message, so a tab hears the list once.
+    this.playbookRows = await playbookCommandRows(harness.cwd).catch(() => []);
     this.refreshCommands(); // extension commands exist only after bindExtensions
-    this.readPlaybookRows();
     this.sendSandbox((m) => this.broadcast(m));
     // The same rule the extension's own session_start runs, so both agree on this session's mode.
     this.modeState = chatModeOf(harness.state.branch());
@@ -3388,7 +3389,8 @@ class ChatSession {
         this.playbookRows = rows;
         this.refreshCommands();
       })
-      .catch((err) => console.warn(`[chat] the playbooks' / rows weren't read: ${err instanceof Error ? err.message : String(err)}`))
+      // listPlaybooks reports a remote or missing folder in its answer: a failure here is rare, and the next turn tries again.
+      .catch(() => {})
       .finally(() => {
         this.playbookRowsReading = false;
       });

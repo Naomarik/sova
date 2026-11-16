@@ -10,7 +10,7 @@ export interface SavedAnswers {
   choices: Record<string, unknown>;
   roles?: Record<string, PlaybookRoleEdit>;
   stops?: Record<string, boolean>;
-  cycle?: { max?: number; askEvery?: number };
+  cycle?: { max?: number; askEvery?: number; until?: "rule" | "max" };
   at: string;
 }
 

@@ -6,6 +6,8 @@
 //
 //   node collage.mjs <campaign> [--case <id>] [--model m@effort] [--rounds 0,1,2] [--extra "Label=path.png" ...]
 //
+// Rows: the ledger's rounds that ran the case shown, Round 0 first (--rounds names others).
+//
 // --case: the case shown in every cell (default: the first case whose verdict differs between arms, else
 // the first case). --model: the test model shown (default the first). --extra: more pictures, such as
 // the playbook card at key moments, in a last row (repeat the flag, or join with ";").
@@ -23,8 +25,9 @@ if (!pos[0]) die("usage: collage.mjs <campaign> [--case id] [--model m@effort] [
 const K = campaign(pos[0]);
 const model = opt.model ? parseModel(opt.model) : K.models()[0];
 const ledger = K.ledger();
-const roundNs = opt.rounds ? String(opt.rounds).split(",").map(Number) : listDir(join(K.W, "rounds")).map(Number).filter((x) => Number.isInteger(x)).sort((a, b) => a - b);
-if (!roundNs.length) die("no rounds yet", 3);
+// The rounds the ledger records (scratch rounds, such as a noise check's, never reach it), unless named.
+let roundNs = opt.rounds ? String(opt.rounds).split(",").map(Number) : ledger.map((r) => r.round).sort((a, b) => a - b);
+if (!roundNs.length) die("no rounds in the ledger yet (score.mjs total writes them)", 3);
 
 const verdict = (n, a, id) => {
   const g = K.grade(n, a, model, id);
@@ -44,17 +47,29 @@ if (!caseId) {
     }) ?? ids[0];
 }
 
+// A row only for a round that ran the case shown (a confirm round runs other cases).
+if (!opt.rounds) roundNs = roundNs.filter((n) => Object.keys(K.arms(n)).some((a) => existsSync(K.result(n, a, model, caseId))));
+// Master's Round 0 picture opens every later row too, so each round reads against the fixed baseline.
+const r0 = roundNs.includes(0) ? Object.entries(K.arms(0)).find(([, arm]) => arm.baseline) : undefined;
+const r0Row = ledger.find((r) => r.round === 0);
+const masterCell = r0 && {
+  label: `${r0[0]} · master (Round 0)`,
+  sub: "the fixed baseline",
+  tag: `${caseId}: ${verdict(0, r0[0], caseId)} · round ${r0Row?.arms?.[r0[0]]?.rate ?? "-"}%`,
+  img: K.shot(0, r0[0], model, caseId),
+};
 const rows = roundNs.map((n) => {
   const arms = K.arms(n);
   const row = ledger.find((r) => r.round === n);
+  const own = Object.entries(arms).filter(([, arm]) => !(n > 0 && arm.baseline && masterCell));
   return {
-    title: n === 0 ? "Round 0 · master" : `Cycle ${n}`,
-    cells: Object.entries(arms).map(([a, arm]) => ({
+    title: n === 0 ? "Round 0 · master" : `Round ${n}`,
+    cells: [...(n > 0 && masterCell ? [masterCell] : []), ...own.map(([a, arm]) => ({
       label: `${a}${arm.baseline ? " · master" : ""}${row?.best === a ? " · best" : ""}`,
       sub: `${arm.change ?? arm.label ?? ""}`.slice(0, 120),
       tag: `${caseId}: ${verdict(n, a, caseId)} · round ${row?.arms?.[a]?.rate ?? "-"}%`,
       img: K.shot(n, a, model, caseId),
-    })),
+    }))],
   };
 });
 if (extras.length)
@@ -101,7 +116,7 @@ let made = false;
 try {
   const browser = await launchBrowser();
   try {
-    const ctx = await browser.newContext({ viewport: { width: 380 * cols + 180, height: 200 }, deviceScaleFactor: 1 });
+    const ctx = await browser.newContext({ viewport: { width: Math.max(1100, 480 * cols + 180), height: 200 }, deviceScaleFactor: 1 });
     await ctx.route("**/*", (route) => (route.request().url().startsWith("data:") ? route.continue() : route.abort()));
     const page = await ctx.newPage();
     await page.setContent(html);

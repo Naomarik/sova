@@ -107,6 +107,7 @@ describe("New Session's Project tab: a coding session in the root, adopting the 
     assert.equal(readdirSync(join(tmp, "src")).includes(".worktrees"), false);
     assert.deepEqual(notes(made.path), [], "no commit paragraph before it has a branch");
     assert.ok(!lines(made.path).some((e) => e.type === "message"), "nothing was sent");
+    assert.ok(!lines(made.path).some((e) => e.customType === "worktrees"), "Sova records no worktree for it: its own tool writes the first");
     const row = readBuild(project.id, made.sessionId)!;
     assert.deepEqual([row.kind, row.later, row.worktree, row.inRoot], ["operator-coding", true, undefined, undefined]);
     const info = await po.projectWorktrees(project.id);

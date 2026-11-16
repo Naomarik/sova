@@ -10,4 +10,4 @@ Read first: `.sova/playbooks/pi-upgrade/phases/check.md`, which lists exactly wh
 
 Report: one table, check by check: what you ran, master's result, the branch's result, and the verdict (same, better, regression, environment). Then each regression with its cause and `file:line`.
 
-Your note for this run: {{note}}
+The person's note for this run, if any: {{note}}

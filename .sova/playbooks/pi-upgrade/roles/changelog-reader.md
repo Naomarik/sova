@@ -47,4 +47,4 @@ Report sections: versions; structural diff; Sova exposure; focused lists per sta
 
 The user's notes for this run: {{notes}}
 
-Your note for this run: {{note}}
+The person's note for this run, if any: {{note}}

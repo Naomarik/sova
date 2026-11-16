@@ -32,4 +32,4 @@ You are the dependency mapper. Find every place Sova depends on pi, above all th
 
 End with: "Not covered by any test or canary", the list that matters most, ranked by what would break silently.
 
-Your note for this run: {{note}}
+The person's note for this run, if any: {{note}}

@@ -14,4 +14,4 @@ For every commit:
 
 Report at the end: the boundary's numbers before and after, rows added and retired, and anything still open.
 
-Your note for this run: {{note}}
+The person's note for this run, if any: {{note}}

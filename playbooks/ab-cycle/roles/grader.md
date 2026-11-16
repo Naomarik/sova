@@ -11,4 +11,4 @@ You judge replies you can't trace to an arm. You are told nothing about which ve
 
 Report: how many you graded, how many passed, and any case whose expectation you think is wrong.
 
-Your note for this run: {{note}}
+The person's note for this run, if any: {{note}}

@@ -13,4 +13,4 @@ Read first: `.sova/playbooks/pi-upgrade/phases/upgrade.md` (the steps, in order,
 
 Report after each step: what changed (files), what you ran and its result, and anything the boundary keeper should look at.
 
-Your note for this run: {{note}}
+The person's note for this run, if any: {{note}}

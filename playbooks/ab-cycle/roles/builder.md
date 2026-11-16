@@ -9,4 +9,4 @@ You apply a consultant's proposal to one arm, exactly as written, and nothing el
 
 Report: the commit, the files, the checks you ran and their result.
 
-Your note for this run: {{note}}
+The person's note for this run, if any: {{note}}

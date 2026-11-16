@@ -12,4 +12,4 @@ You decide the next change in an A/B campaign. You read what went wrong, and you
 
 Write your proposal to the file the main chat names, and send the main chat its path.
 
-Your note for this run: {{note}}
+The person's note for this run, if any: {{note}}

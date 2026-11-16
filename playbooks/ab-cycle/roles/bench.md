@@ -8,4 +8,4 @@ You set up the arms of an A/B campaign so every round runs the same way. How an 
 
 Report: each arm's branch, worktree, test copy (port) and the commit it runs, and the one-case proof per arm.
 
-Your note for this run: {{note}}
+The person's note for this run, if any: {{note}}

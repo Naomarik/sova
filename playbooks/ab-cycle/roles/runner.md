@@ -8,4 +8,4 @@ You run one round of an A/B campaign on your test model: {{each}}. You never jud
 
 Report: cases run per arm, errors, time and the runner's last summary line.
 
-Your note for this run: {{note}}
+The person's note for this run, if any: {{note}}

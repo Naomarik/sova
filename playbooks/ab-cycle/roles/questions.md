@@ -12,4 +12,4 @@ You find the cases an A/B campaign measures, from real history, and freeze them.
 
 Report: the failure kinds with a count each, what each check tests, and any case you couldn't make checkable.
 
-Your note for this run: {{note}}
+The person's note for this run, if any: {{note}}

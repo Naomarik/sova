@@ -30,4 +30,4 @@ You are the judge. You don't research; you decide what stands. Read <W>/reports/
 
 When nothing is left to send back, state "research complete" at the top of judge.md and tell the coordinator.
 
-Your note for this run: {{note}}
+The person's note for this run, if any: {{note}}

@@ -59,4 +59,4 @@ Measure speed before and after: {{perf}}. If yes, run `scripts/perf-pi/README.md
 
 Report: versions; setup; install; a results table (<old> beside <new>: typecheck, build, unit, harness integration, trial, pi-config suites, pi-config typecheck) with counts; failures set aside as not pi and why; each pi-caused failure with its cause, the release that caused it, and file:line; golden drift; what was run and what was not. Never say a thing passed that you didn't run.
 
-Your note for this run: {{note}}
+The person's note for this run, if any: {{note}}

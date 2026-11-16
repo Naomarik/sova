@@ -1131,6 +1131,69 @@ for (const width of [1280, 390]) {
       await o.ctx.close();
     });
 
+    test("a Ready to land branch's name opens its summary: the Worktrees window's own row beside it; any other branch's name is plain", async () => {
+      // The chat's own row for the branch, as its Worktrees window reads it (GET /api/insights/session).
+      const cartRow = wt("sova/fix-cart", {
+        readiness: { path: "", branch: "sova/fix-cart", state: "ready", landing: { state: "ready", commit: sha("8") } },
+        mergeStats: { ahead: 2, added: 12, removed: 3, head: sha("8"), headAt: iso(5) } as SessionWorktreeInfo["mergeStats"],
+        mergeSummary: { commit: sha("8"), state: "ready", bullets: ["Keeps the cart through a reload"] },
+      });
+      const view = viewOf({ waiting: [entry({ id: "me_badge", branch: "sova/fix-badge", state: "queued", position: 1 })] });
+      const o = await open(width, `#/projects/${PID}`, { view, sessions: [SESSION, codingReady(true), CODING_B], rows: [cartRow] });
+      const { page } = o;
+      const cart = page.locator(".psess-row", { hasText: "Fix the cart" });
+      const name = cart.getByRole("button", { name: "sova/fix-cart: ready to land. Show its summary" });
+      await name.waitFor({ timeout: 20_000 });
+      // A branch in any other state: its name is text, with no dot and nothing to press.
+      const badge = page.locator(".psess-row", { hasText: "Fix the badge" });
+      await badge.getByText("In line · 1st").waitFor();
+      assert.equal(await badge.locator(".psess-branches button, .psess-branches .branch-pop-dot").count(), 0, "a branch in line has no popover and no dot");
+      // The dot before the name and the words beside it are the READY chip's green.
+      const green = (l: Locator, prop: "color" | "backgroundColor") => l.evaluate((el, p) => getComputedStyle(el)[p as "color"], prop);
+      await name.click();
+      const card = page.getByRole("dialog", { name: "Worktree", exact: true });
+      await card.waitFor();
+      const chip = card.locator(".chip", { hasText: "Ready" });
+      await chip.waitFor();
+      const chipGreen = await green(chip, "color");
+      assert.equal(await green(cart.locator(".branch-pop-dot"), "backgroundColor"), chipGreen, "the dot is the chip's green");
+      assert.equal(await green(cart.getByText("Ready to land"), "color"), chipGreen, "the words are the chip's green");
+      // The Worktrees window's own row: the chip, its size and age, what the branch does, Review Changes, Land.
+      const row = card.locator('.wt-queue-row[data-branch="sova/fix-cart"]');
+      assert.match(await words(row), /2 commits · \+12 −3 · /);
+      assert.match(await words(row), /Keeps the cart through a reload/);
+      assert.equal(await row.getByRole("button", { name: "Review Changes on sova/fix-cart" }).count(), 1);
+      await noSideScroll(page);
+      await shot(page, `${width}-project-branch-popover`);
+      // The row's chat is not opened by a press in the card.
+      const hash = await page.evaluate(() => location.hash);
+      // Land asks first, with the row's own confirm: Not Yet queues nothing, and the card stays.
+      await row.getByRole("button", { name: "Land sova/fix-cart", exact: true }).click();
+      const ask = row.getByRole("group", { name: "Land sova/fix-cart", exact: true });
+      await ask.getByRole("button", { name: "Not Yet" }).click();
+      await ask.waitFor({ state: "detached" });
+      assert.equal(o.calls.filter((c) => c.verb === "merge.add").length, 0, "Not Yet queues nothing");
+      assert.equal(await card.count(), 1);
+      // Escape closes the card and gives focus back to the name; a press outside closes it too.
+      await page.keyboard.press("Escape");
+      await card.waitFor({ state: "detached" });
+      await until("focus back on the name", () => name.evaluate((el) => el === document.activeElement));
+      await name.click();
+      await card.waitFor();
+      // (By its place, not a locator's click: folded, the sheet's scrim covers the page and takes the press.)
+      const head = await box(page.locator(".psess-h2"));
+      await page.mouse.click(head.x + 4, head.y + 4);
+      await card.waitFor({ state: "detached" });
+      assert.equal(await page.evaluate(() => location.hash), hash, "nothing was opened");
+      // Confirmed, it queues the branch at the head the row shows, as the row's Land does.
+      await name.click();
+      await card.waitFor();
+      await confirmLand(o, row, "sova/fix-cart", "Land 2 Commits");
+      await until("a land of the coding worktree", () => o.calls.some((c) => c.verb === "merge.add" && c.body.checkout === "/w/.worktrees/sova-fix-cart"));
+      assert.equal(lastCall(o, "merge.add").body.commit, sha("8"), "the row's shown head is pinned");
+      await o.ctx.close();
+    });
+
     test("not set up: the coding rows and the playbook run keep Merge Branch", async () => {
       const o = await open(width, `#/projects/${PID}`, { view: viewOf({ checks: "unset", state: "idle", current: undefined, checking: [], waiting: [], needsYou: [], needsFix: [], recent: [] }), sessions: [SESSION, codingReady(false), CODING_B] });
       const { page } = o;

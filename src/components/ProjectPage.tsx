@@ -2,7 +2,7 @@ import { createEffect, createSignal, For, type JSX, Match, on, Show, Switch } fr
 import { chatRefOf } from "../lib/merge-chat";
 import { chatTreesOf } from "../lib/merge-queue";
 import type { ArchiveCopy, ProjectSummary } from "../../shared/projects";
-import type { SessionSummary } from "../../shared/protocol";
+import type { AttentionDigest, SessionSummary } from "../../shared/protocol";
 import { ApiError, archiveProject, runProjectVerb, unarchiveProject } from "../lib/api";
 import { relativeTime } from "../lib/format";
 import { PROJECT_TABS, PROJECTS_HREF, projectTabHref, TAB_LABEL, type ProjectTab, type QueueTab } from "../lib/projects-route";
@@ -13,15 +13,15 @@ import { InsightsPage } from "./InsightsPage";
 import { createRunningCopies, ProjectArchiveAsk, refusedCopies } from "./ProjectArchiveAsk";
 import { archivedRunningLine, STOP_SHARED_CONFIRM, STOP_SHARED_LABEL, STOP_SHARED_RUNNING, stoppableShared } from "../lib/archive-copies";
 import { refusalLine } from "../lib/services-view";
-import { PreviewsCard } from "./PreviewsCard";
 import { ActionMenu } from "./ActionMenu";
 import { createProjectCost, ProjectCostCard } from "./ProjectCostCard";
-import { ProjectServicesTab } from "./ProjectServicesTab";
+import { createRuntimePoll, ProjectServicesTab } from "./ProjectServicesTab";
+import { SessionsTab } from "./ProjectSessionsTab";
+import { landedCopies } from "../lib/free-slots";
 import { MergeQueueTab } from "./MergeQueueTab";
 import { createReleasesPoll, ReleasesTab } from "./ReleasesTab";
 import { PlaybookReviewBanner } from "./PlaybookReview";
 import { ProjectDeployPanel } from "./ProjectDeployPanel";
-import { createRuntimePoll } from "./ProjectSoftwareCard";
 import { ProjectFilesCard } from "./ProjectFilesCard";
 import { ProjectCardsCard } from "./ProjectCardsCard";
 import { ProjectMcpCard } from "./ProjectMcpCard";
@@ -30,7 +30,7 @@ import { ProjectOffersCard } from "./ProjectOffersCard";
 import { ProjectIcon } from "./ProjectIcon";
 import { ProjectIconCard } from "./ProjectIconCard";
 import { createProjectSettings, ProjectAllSettings, ProjectSettingsChanges, ProjectSettingsHistory } from "./ProjectSettingsCards";
-import { ActivityCard, CodingSessionsCard, createProjectOverseer, IdeasCard, type ItemSendForm, OverseerHeadActions, OverseerNotices, OverseerSettings, type ProjectOverseer, TodosCard } from "./ProjectOverseerPanel";
+import { ActivityCard, createProjectOverseer, IdeasCard, type ItemSendForm, OverseerHeadActions, OverseerNotices, OverseerSettings, type ProjectOverseer, TodosCard } from "./ProjectOverseerPanel";
 import { Banner, Icon } from "./ui";
 import { createSetupPoll, SetupProposalBanner } from "./SetupChat";
 import "../orgs.css";
@@ -98,6 +98,8 @@ export function ProjectPage(props: {
   org?: (ctx: ProjectPartContext) => ProjectOrgPart;
   /** The session list the sidebar holds: Coding sessions lists from it before its own read answers. */
   sessions?: () => readonly SessionSummary[] | undefined;
+  /** The attention digest App holds: the Sessions tab's Needs you is the sidebar's own rule over it. */
+  attention?: () => AttentionDigest | undefined;
 }) {
   const projectId = props.project.id;
   const project = () => props.project;
@@ -326,7 +328,7 @@ export function ProjectPage(props: {
                 />
               )}
             </Show>
-            <CodingSessionsCard po={po} archived={!!archived()} />
+            <SessionsTab po={po} archived={!!archived()} sessions={props.sessions} attention={props.attention} />
           </Match>
           <Match when={tab() === "backlog"}>
             {/* To-do and Ideas side by side, the overseer's activity under them. */}
@@ -342,12 +344,8 @@ export function ProjectPage(props: {
           </Match>
           <Match when={tab() === "requirements" && org}>{(o) => o().requirements()}</Match>
           <Match when={tab() === "running-copies"}>
-            {/* Its setup line and copies on this host, and their verbs (§app.project-services/services-ui). */}
-            <ProjectServicesTab projectId={projectId} archived={!!archived()} runtime={runtime} />
-            {/* Preview links (§mesh.public/preview-card): this project's apps, on this host. */}
-            <div id="project-previews" class="project-anchor">
-              <PreviewsCard projectId={projectId} archived={!!archived()} />
-            </div>
+            {/* Its setup line, copies on this host and their verbs, previews and recent runs (§app.project-services/services-ui). */}
+            <ProjectServicesTab projectId={projectId} archived={!!archived()} runtime={runtime} landed={() => landedCopies(po.worktrees.data(), props.sessions?.())} />
           </Match>
           <Match when={tab() === "merge-queue"}>
             {/* One branch at a time onto the target: what's checking, the line, what waits for you, recent landings. */}

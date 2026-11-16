@@ -1044,8 +1044,8 @@ for (const width of [1280, 390]) {
       assert.ok((await stripAtTop(strip)).scroll > 0, "the pane scrolled to it");
       // The project's own Merge Queue tab opens Ready to land.
       assert.equal(await page.getByRole("tab", { name: "Merge Queue" }).count(), 1);
-      await page.getByRole("tab", { name: "Branches" }).click();
-      await until("on Branches", async () => (await hashOf(page)) === `#/projects/${PID}/branches`);
+      await page.getByRole("tab", { name: "Running Copies" }).click();
+      await until("on Running Copies", async () => (await hashOf(page)) === `#/projects/${PID}/running-copies`);
       await page.getByRole("tab", { name: "Merge Queue" }).click();
       await until("on Ready to land", async () => (await strip.getByRole("tab", { selected: true }).getAttribute("aria-label").catch(() => null)) === "Ready to land · 1");
       assert.equal(await hashOf(page), `#/projects/${PID}/merge-queue`);

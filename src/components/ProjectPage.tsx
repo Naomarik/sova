@@ -40,7 +40,7 @@ import "../orgs.css";
 import "../projects.css";
 
 const errText = (err: unknown) => (err instanceof ApiError || err instanceof Error ? err.message : String(err));
-/** While archived, what it left running is read this often (the Branches tab reads its own). */
+/** While archived, what it left running is read this often (the Running Copies tab reads its own). */
 const ARCHIVED_POLL_MS = 15_000;
 /** The Deploy tab's dot reads deploy.status this often; the tab's own panel reads it every few seconds while it shows. */
 const DEPLOY_DOT_POLL_MS = 30_000;

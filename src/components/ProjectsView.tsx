@@ -212,7 +212,7 @@ const RUNNING_POLL_MS = 15_000;
 /**
  * Running branches (§app.project-services/services-ui): every copy and shared service that runs on this
  * host now, by project, standalone or placed, each with its memory and a Stop; the project's name opens
- * its Branches tab, and a running copy's name its app's entry, when it declares one. A shared service's Stop asks first: it stops it for every copy of the project.
+ * its Running Copies tab, and a running copy's name its app's entry, when it declares one. A shared service's Stop asks first: it stops it for every copy of the project.
  */
 function RunningCopies() {
   const poll = createPoll(getHostServices, RUNNING_POLL_MS);
@@ -309,7 +309,7 @@ function RunningCopies() {
                                 <Show when={said()[key()]}>{(line) => <p class="field-error services-said">{line()}</p>}</Show>
                               </div>
                               <div class="services-actions">
-                                {/* An adopted main is never Sova's to stop: Apply on its Branches tab restarts it. */}
+                                {/* An adopted main is never Sova's to stop: Apply on its Running Copies tab restarts it. */}
                                 <Show when={!c.adopted} fallback={<p class="list-meta services-actions-note">{adoptedLine(c.adopted!)}</p>}>
                                   <StopButton p={p} id={key()} name={name()} body={{ instance: c.instance }} />
                                 </Show>

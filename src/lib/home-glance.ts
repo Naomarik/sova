@@ -93,7 +93,7 @@ export interface CardRuntime {
   /** null: "—" (no project file, or not read yet). */
   slots: SlotsRow | null;
   memory: MemoryRow;
-  /** Whether the project has a project file (Copies and Memory then open the Branches tab). */
+  /** Whether the project has a project file (Copies and Memory then open the Running Copies tab). */
   hasSetup: boolean;
   progress: ProgressRow[];
 }

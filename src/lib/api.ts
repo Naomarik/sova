@@ -1574,7 +1574,7 @@ export const getUsageSessions = (sids: string[]) =>
 export const refreshPrices = () => request<PricesInfo>("/api/usage/prices/refresh", jsonInit("POST", {}));
 
 // ---- a project's software registry (§app/project-runtime) -------------------------------------------
-/** The project's copies on this host, for its Branches tab (§app.project-services/services-ui). */
+/** The project's copies on this host, for its Running Copies tab (§app.project-services/services-ui). */
 export const getProjectServices = (projectId: string) => request<ProjectServicesView>(`${projectPath(projectId)}/services`);
 /** Set this machine's copy limit for the project (null: back to the project's file's): the operator's own page only. */
 export const setCopyLimit = (projectId: string, cap: number | null) =>

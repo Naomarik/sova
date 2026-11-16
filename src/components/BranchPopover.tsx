@@ -80,26 +80,31 @@ export function BranchPopover(props: {
       if (!t || card.contains(t) || button.contains(t) || above(t)) return;
       close(false);
     };
+    // Escape, heard on the card itself (focus stays inside it, below): no page-wide key listener. A menu or the
+    // changes viewer above the card takes the key first; the row's own confirm stops it itself.
     const onKey = (e: KeyboardEvent) => {
-      // A menu or the changes viewer above the card takes the key first; the row's own confirm stops it itself.
       if (e.key !== "Escape" || e.defaultPrevented || document.querySelector(":popover-open, .changes-dialog")) return;
       e.preventDefault();
       e.stopPropagation();
       close(true);
+    };
+    // A control that goes away under the focus (a button turning busy) would drop focus to the page, where Escape no
+    // longer reaches the card: the card takes it back.
+    const onFocusOut = (e: FocusEvent) => {
+      if (e.relatedTarget) return;
+      queueMicrotask(() => card.isConnected && (!document.activeElement || document.activeElement === document.body) && card.focus());
     };
     const grown = new ResizeObserver(place);
     const reread = setInterval(() => !rows.loading && void refetch(), REREAD_MS);
     addEventListener("pointerdown", onPointerDown, true);
     addEventListener("resize", place);
     addEventListener("scroll", place, true);
-    document.addEventListener("keydown", onKey);
     onCleanup(() => {
       grown.disconnect();
       clearInterval(reread);
       removeEventListener("pointerdown", onPointerDown, true);
       removeEventListener("resize", place);
       removeEventListener("scroll", place, true);
-      document.removeEventListener("keydown", onKey);
     });
     return (
       <Portal>
@@ -110,6 +115,8 @@ export function BranchPopover(props: {
           role="dialog"
           aria-labelledby={`${id}-title`}
           tabindex="-1"
+          on:keydown={onKey}
+          on:focusout={onFocusOut}
           ref={(el) => {
             card = el;
             // Focus starts on the card itself (its name is read), not on its ×; Tab then walks its controls.

@@ -15,7 +15,8 @@ import type { StartChat, StartHost } from "./start";
 process.env.SOVA_SHARED_BASE = join(scratchAgentDir, "shared");
 const store = await import("./store");
 const { startRun, RunRefused } = await import("./start");
-const { PLAYBOOK_RUN } = await import("../harness/state-kinds");
+const { PLAYBOOK_RUN, MODE } = await import("../harness/state-kinds");
+const PLAYBOOK_MODE_TYPE = MODE.type;
 const { firstValues } = await import("./answers");
 const { loadPlaybook, refOf } = await import("./env");
 
@@ -72,6 +73,10 @@ class Chats {
   refuse: string | null = null;
   /** Chats that already have a message of the person's. */
   written = new Set<string>();
+  /** Chats pinned to a mode (a mode entry on their branch). */
+  pinned = new Set<string>();
+  /** What the chat's file says would refuse the message (a terminal holds it…). */
+  blocked = new Map<string, string>();
   readonly made: { id: string; path: string }[] = [];
   chat(path: string): StartChat {
     const self = this;
@@ -94,7 +99,10 @@ class Chats {
         self.set.push({ path, what: "pin", to: mirror.mode.mode });
       },
       async branch() {
-        return self.written.has(path) ? ([{ kind: "user", id: "u1", parentId: null, blocks: [{ type: "text", text: "hi" }] }] as never) : [];
+        return [
+          ...(self.written.has(path) ? [{ kind: "user", id: "u1", parentId: null, blocks: [{ type: "text", text: "hi" }] }] : []),
+          ...(self.pinned.has(path) ? [{ kind: "state", id: "m1", parentId: null, key: PLAYBOOK_MODE_TYPE, data: {} }] : []),
+        ] as never;
       },
       async appendState(kind, data) {
         self.marks.push({ path, data: { type: kind.type, ...(data as object) } });
@@ -115,6 +123,7 @@ class Chats {
         return { ok: true };
       },
       title: (id, title) => void this.titles.push({ id, title }),
+      preflight: async (path) => this.blocked.get(path) ?? null,
       env: async (spec, info) => fakeEnv(info.dir, spec),
     };
   }
@@ -214,6 +223,16 @@ describe("Start", () => {
     assert.equal(chats.made.length, 1);
   });
 
+  test("a chat Sova knows would refuse the message is never changed", async () => {
+    const chats = new Chats();
+    const { run, shownIn } = await draft("delegated");
+    chats.blocked.set(shownIn.path, "This chat is open in a terminal (pid 7), so Sova must not write to it.");
+    await assert.rejects(startRun(run.id, run.revision, { request: chats.request, contents: () => [], host: chats.host() }), (e: unknown) => e instanceof RunRefused && e.status === 409 && /open in a terminal/.test(e.message));
+    assert.deepEqual(chats.set, [], "no model, effort or mode was touched");
+    assert.equal(chats.sent.length, 0);
+    assert.equal(store.runById(run.id)!.state, "draft");
+  });
+
   test("a chat that already has a message keeps its name", async () => {
     const chats = new Chats();
     const { run, shownIn } = await draft("trial");
@@ -257,14 +276,17 @@ describe("Start", () => {
     assert.equal(store.runById(mine.run.id)!.state, "draft");
     assert.deepEqual(chats.set.slice(-2), [{ path: mine.shownIn.path, what: "model", to: "ollama-cloud/qwen" }, { path: mine.shownIn.path, what: "thinking", to: "low" }]);
 
-    // A playbook that switches this chat's mode: a refused message leaves the chat in its own mode, pinned as it was.
-    const delegated = await draft("delegated");
+    // A playbook that switches this chat's mode: a refused message switches it back, re-pinned only if it was pinned.
+    const modes = () => chats.set.filter((x) => x.what === "mode" || x.what === "pin").map((x) => [x.what, x.to]);
+    const unpinned = await draft("delegated");
     chats.set = [];
-    await assert.rejects(startRun(delegated.run.id, delegated.run.revision, { request: chats.request, contents: () => [], host: chats.host() }), /the chat is open in a terminal/);
-    assert.deepEqual(
-      chats.set.filter((x) => x.what === "mode" || x.what === "pin").map((x) => [x.what, x.to]),
-      [["mode", "delegate"], ["pin", "delegate"], ["mode", "normal+"], ["pin", "normal"]],
-    );
+    await assert.rejects(startRun(unpinned.run.id, unpinned.run.revision, { request: chats.request, contents: () => [], host: chats.host() }), /the chat is open in a terminal/);
+    assert.deepEqual(modes(), [["mode", "delegate"], ["pin", "delegate"], ["mode", "normal+"]], "an unpinned chat isn't pinned again");
+    const pinned = await draft("delegated");
+    chats.pinned.add(pinned.shownIn.path);
+    chats.set = [];
+    await assert.rejects(startRun(pinned.run.id, pinned.run.revision, { request: chats.request, contents: () => [], host: chats.host() }), /the chat is open in a terminal/);
+    assert.deepEqual(modes(), [["mode", "delegate"], ["pin", "delegate"], ["mode", "normal+"], ["pin", "normal"]], "a pinned chat is pinned to its own mode again");
 
     const powered = await draft("powered");
     await assert.rejects(startRun(powered.run.id, powered.run.revision, { request: chats.request, contents: () => [], host: chats.host() }), /A chat was made for the run \(chat-\d+\); pressing Start again uses it/);

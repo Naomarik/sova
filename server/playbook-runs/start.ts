@@ -12,13 +12,15 @@ import { PROFILE_MINOR_MODES, type ProfileMinorMode, type SnapshotProfile } from
 import type { ChatModePatch } from "../../shared/chat-runtime";
 import { chatSharedFolder } from "../../pi-config/extensions/sandbox/shared-folder.ts";
 import { acquireChatHandle } from "../chat-handle";
-import { PLAYBOOK_RUN } from "../harness/state-kinds";
+import { MODE, PLAYBOOK_RUN } from "../harness/state-kinds";
 import { playbookPayload } from "../playbook-payload";
 import { projectOf } from "../project-root";
 import { inlineChoice } from "../session-profile";
 import { applyProfile } from "../session-profile-routes";
 import { promptSession } from "../session-prompt";
 import { writeAutoTitle } from "../session-titles";
+import { getSessionSummary } from "../sessions-index";
+import { projectOverseerOfPath } from "../project-overseer-store";
 import { answersKey, saveAnswers } from "./answers";
 import { chatRefOf, liveEnv, loadPlaybook, SOVA_SCRIPT } from "./env";
 import { runBlock, runMessage, type ContentsSection } from "./message";
@@ -55,6 +57,9 @@ export interface StartHost {
   prompt(path: string, text: string): Promise<{ ok: true } | { ok: false; error: string }>;
   applyProfile(path: string, snapshot: SnapshotProfile): Promise<{ ok: true } | { ok: false; error: string }>;
   title(id: string, title: string): void;
+  /** Why this chat would refuse the run's message, known before anything in it changes (a terminal holds it, it
+      is archived, it is an overseer's or a baton's); null: nothing known against it. */
+  preflight(path: string): Promise<string | null>;
   env(spec: PlaybookSpec, info: PlaybookInfo, chatPath: string | undefined, cwd: string): Promise<CardEnv>;
 }
 
@@ -69,6 +74,14 @@ const realHost: StartHost = {
     return r.ok ? { ok: true } : { ok: false, error: r.error };
   },
   title: (id, title) => void writeAutoTitle(id, title),
+  preflight: async (path) => {
+    const s = await getSessionSummary(path);
+    if (!s) return "This chat's file is gone.";
+    if (s.live) return `This chat is open in a terminal (pid ${s.live.pid}), so Sova must not write to it.`;
+    if (s.archived) return "This chat is archived: open it again first.";
+    if (s.overseer || s.baton || projectOverseerOfPath(path)) return "This chat runs no playbooks.";
+    return null;
+  },
   env: (spec, info, chatPath, cwd) => liveEnv(spec, info, chatPath, cwd),
 };
 
@@ -190,7 +203,7 @@ export async function startRun(runId: string, revision: number, deps: StartDeps)
 
   // What this Start changed, so a failure halfway can say it or put it back.
   let made: { id: string; path: string } | null = r.halfMade ?? null;
-  let before: { path: string; model?: string; thinking?: string; mode: { mode: string; minorModes: string[] }; modeSwitched?: true } | null = null;
+  let before: { path: string; model?: string; thinking?: string; mode: { mode: string; minorModes: string[] }; pinned: boolean; modeSwitched?: true } | null = null;
   try {
     const at = new Date().toISOString();
     const toNew = runsInNewChat(spec, r);
@@ -212,8 +225,17 @@ export async function startRun(runId: string, revision: number, deps: StartDeps)
       host.title(chat.id, `${r.playbook.title} (playbook)`);
     } else chat = r.shownIn!;
     const main = card.resolved[MAIN_ROLE]?.use ?? null;
+    if (!toNew) {
+      // What would refuse the message is asked first, so a chat that can't take the run is never changed.
+      const refused = await host.preflight(chat.path);
+      if (refused) throw new Error(refused);
+    }
     const conducting = await host.chat(chat.path);
-    if (!toNew) before = { path: chat.path, ...(conducting.mirror.model?.ref ? { model: conducting.mirror.model.ref } : {}), ...(conducting.mirror.thinking ? { thinking: conducting.mirror.thinking } : {}), mode: { mode: conducting.mirror.mode.mode, minorModes: [...conducting.mirror.mode.minorModes] } };
+    if (!toNew) {
+      // A chat with no mode entry follows the default mode; one with an entry is pinned to it.
+      const pinned = (await conducting.branch()).some((h) => h.kind === "state" && h.key === MODE.type);
+      before = { path: chat.path, ...(conducting.mirror.model?.ref ? { model: conducting.mirror.model.ref } : {}), ...(conducting.mirror.thinking ? { thinking: conducting.mirror.thinking } : {}), mode: { mode: conducting.mirror.mode.mode, minorModes: [...conducting.mirror.mode.minorModes] }, pinned };
+    }
     const switched = await setUpChat(conducting, main ? { model: chatRefOf(main), ...(main.effort ? { effort: main.effort } : {}) } : null, spec);
     if (switched && before) before.modeSwitched = true;
 
@@ -264,9 +286,11 @@ export async function startRun(runId: string, revision: number, deps: StartDeps)
         const held = await host.chat(before.path);
         if (before.model && held.mirror.model?.ref !== before.model) await held.setModel(before.model);
         if (before.thinking && held.mirror.thinking !== before.thinking) await held.setThinking(before.thinking);
+        // The switch back writes a mode entry of its own: a chat that followed the default mode is now held at the
+        // mode it had (entries are never taken out of a chat's history). Re-pinned only when it was pinned before.
         if (before.modeSwitched) {
           await held.switchMode({ mode: before.mode.mode as ChatModePatch["mode"], minorModes: before.mode.minorModes as ChatModePatch["minorModes"] });
-          await held.pinMode();
+          if (before.pinned) await held.pinMode();
         }
       } catch {
         why += " This chat's model or mode may have changed: check them before you start again.";

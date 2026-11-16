@@ -172,11 +172,12 @@
   "§app/shell": {
     "kind": "surface",
     "authority": "accepted",
-    "evidence": "reviewed",
+    "evidence": "verified",
     "code": [
       "src/App.tsx",
       "src/design/base.css",
-      "server/forms-dialog-frame-browser.integration.test.ts"
+      "server/forms-dialog-frame-browser.integration.test.ts",
+      "src/lib/design-history.ts"
     ],
     "notOwned": [
       "§app/session-list",

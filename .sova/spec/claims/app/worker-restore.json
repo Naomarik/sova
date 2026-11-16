@@ -77,7 +77,7 @@
       "§chat.sandbox/workers"
     ],
     "authority": "accepted",
-    "evidence": "reviewed",
+    "evidence": "verified",
     "code": [
       "pi-config/extensions/subagents/index.ts",
       "pi-config/extensions/subagents/registry.ts",

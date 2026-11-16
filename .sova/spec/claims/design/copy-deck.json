@@ -593,6 +593,21 @@
     "authority": "accepted",
     "evidence": "reviewed"
   },
+  "§design.copy-deck/where-links-open": {
+    "kind": "note",
+    "authority": "accepted",
+    "evidence": "reviewed",
+    "code": [
+      "server/share/tunnel/account-token.ts",
+      "server/share/front.ts",
+      "src/lib/opens-at.ts",
+      "src/lib/opens-at.test.ts",
+      "src/components/OpensAt.tsx",
+      "src/lib/public-links.ts",
+      "src/lib/public-links.test.ts",
+      "shared/public-links.ts"
+    ]
+  },
   "§design.copy-deck/workspace": {
     "kind": "note",
     "authority": "accepted",
@@ -619,7 +634,8 @@
       "server/design/routes.ts",
       "server/design/coordinator-routes.ts",
       "server/design/asset-routes.ts",
-      "server/design/describe-routes.ts"
+      "server/design/describe-routes.ts",
+      "server/page-only.ts"
     ]
   },
   "§design/copy-deck": {

@@ -1130,7 +1130,8 @@ judgement.
   process listens is refused, naming why, and so is a port of Sova's own. `purpose` (required, one
   line, at most 200 characters) says what it shows and to whom. `days` is 1 to 30, default 1.
   Every preview rule holds (§mesh.public/preview): loopback only, never Sova's own ports, a
-  preview address needed. The link is kept (§mesh.public/preview); the result names the preview
+  preview address or Cloudflare Free needed, Free's cap of 6 (§mesh.public/preview-tunnels), and
+  none while sharing is off (`sharing-off`, §mesh.public/sharing-off). The link is kept (§mesh.public/preview); the result names the preview
   by its id and carries its link.
 - **Guarded as the people-facing act it is.** A start is the project statechart's `preview/start` act: power `share` (§app.project-overseer/autonomy-levels), held (§app.project-overseer/holds). In a turn the operator
   started it goes ahead at once; in a run the operator did not start it needs `share` On and no brake, then waits in the hold ("A preview link: {purpose}"), cancellable from Needs you and the Pipeline, and goes ahead when the hold ends. The session, target and port

@@ -149,7 +149,14 @@ yours always winning; Rebuild This Screen or Just Its Feel before Start, at most
 pictures a design with Rebuild screenshots first and the rest as words only; every designer gets
 the words, and a screenshot is never put in the page, §chat.design-mode/own-images,
 §chat.design-mode/brief-start); and working with designs: statuses and cost, a page
-being written, Google Fonts only, Refine, Chat, the Creative Director and designs made from others. It
+being written, Google Fonts only, Open and Chat (changing a design by telling it in its chat, an
+ended session starting again from its saved page), More with Stop and Remove (a stopped design's
+still and Start Again, the folded Removed section and Restore, §chat.design-mode/stop-remove), the
+Creative Director (its section's Chat with the Creative Director, designs made from others on any
+allowed model, stopping or removing only when asked, its chat listing what each design was told,
+§chat.design-mode/prompt-history), and reads by reference (version, versions, size and saved
+path, never the page; any version or a picture of any view, §chat.design-mode/version-reads,
+§chat.design-mode/views). It
 ends with how long designs are kept and that they aren't on share links. The page calls the run's
 lead session the Creative Director throughout (§chat.design-mode/creative-director).
 

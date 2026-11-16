@@ -243,6 +243,8 @@ export interface SendAnswer {
   held?: { id: string; goesAt: string; what: string };
   /** An owner page link send made a new link (every older one of the org stopped): it stays even when the send failed. */
   madeLink?: boolean;
+  /** A sent link's address note for whoever sent it (Cloudflare Free: the address changes when this computer restarts). */
+  linkWarning?: string;
 }
 /** @deprecated the operator's Send on WhatsApp answer: a SendAnswer. */
 export type SendLinkAnswer = SendAnswer;
@@ -341,6 +343,12 @@ export const NOT_SENT_REASONS: Record<string, string> = {
   "address-off": "no public address is set (Settings → Public links)",
   "address-unreachable": "the public address can't be reached",
   "address-not-accepted": "the gateway doesn't accept this host's links",
+  "address-broken": "the public links setup can't be read (Settings → Public links)",
+  "address-turn-on": "public links aren't turned on yet (Settings → Public links)",
+  "address-setup": "Cloudflare's tunnel program isn't on this computer (Settings → Public links)",
+  "address-down": "the public address is down",
+  "address-starting": "the public address didn't start in time",
+  "sharing-off": "sharing is off on this computer (Settings → Public links)",
   "not-on-whatsapp": "the number has no WhatsApp account",
   limited: "the sender's rate limit was reached",
   "not-connected": "the sender wasn't connected",

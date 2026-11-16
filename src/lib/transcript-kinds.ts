@@ -26,6 +26,7 @@
  * imported lazily), so its order and matching are tested in plain unit tests.
  */
 
+import { lookbookItemOf } from "./lookbook-history";
 import type { Component } from "solid-js";
 import type { TranscriptItem } from "../../shared/protocol";
 import { rowFacts } from "../../shared/wire-v1";
@@ -36,6 +37,7 @@ import { checkCardData, dataCardHeight } from "../../shared/view-cards";
 import { normalizeShowChangesDetails, SHOW_CHANGES_TOOL } from "../../pi-config/extensions/show-changes/details";
 import { normalizeTourCardDetails, TOUR_TOOLS } from "../../shared/tour";
 import { DESIGN_TOOL, normalizeDesignCard } from "./design-rows";
+import { designCardEstimate } from "./design-card-size";
 import { isSettingsToolDetails } from "../../shared/project-settings";
 import { parseWakeNudge } from "../../shared/wake";
 import { parseTopicBatch } from "../../shared/topic-message";
@@ -153,7 +155,7 @@ export interface LiveForm {
 }
 
 /** The views drawn in the page (components/TranscriptKind.tsx `PAGE_VIEWS`), by name. */
-export type PageView = "wake" | "topic" | "compaction" | "info" | "shell" | "worktree-merge" | "settings" | "offer" | "show-changes" | "tour" | "design" | "owner-request" | "handoff-run" | "mcp-note" | "approval-pending" | "overseer-answer" | "profile-mark" | "brief" | "explain" | "team-report" | "report" | "baton" | "user" | "assistant-text" | "thinking" | "tool-result" | "tool" | "align-report" | "align";
+export type PageView = "wake" | "topic" | "compaction" | "info" | "shell" | "worktree-merge" | "settings" | "offer" | "show-changes" | "tour" | "design" | "owner-request" | "handoff-run" | "mcp-note" | "approval-pending" | "overseer-answer" | "profile-mark" | "lookbook-item" | "lookbook" | "brief" | "explain" | "team-report" | "report" | "baton" | "user" | "assistant-text" | "thinking" | "tool-result" | "tool" | "align-report" | "align";
 
 /**
  * A kind's view: one of Sova's page views by name (drawn at once, as before, in the page's own
@@ -233,6 +235,9 @@ export const TRANSCRIPT_KINDS: readonly TranscriptKind[] = [
     view: { page: "topic" },
     live: { match: (input) => input.kind === "user" && parseTopicBatch(input.entry.text), view: "topic" },
   }),
+  // A Lookbook helper's message, as the server read it: before the brief and yours, which would draw its raw text.
+  kind({ id: "lookbook-item", match: (it) => lookbookItemOf(it), estimate: () => "40px", host: "page", placement: "anchored", view: { page: "lookbook-item" } }),
+  kind({ id: "lookbook", match: (it) => it.kind === "user" && it.lookbook, host: "page", placement: "anchored", view: { page: "lookbook" } }),
   kind({
     id: "brief",
     match: (it) => it.kind === "user" && isBriefText(it.text),
@@ -319,7 +324,8 @@ export const TRANSCRIPT_KINDS: readonly TranscriptKind[] = [
   kind({
     id: "design",
     outsideWork: true,
-    estimate: () => "var(--design-card-h)",
+    // The card grows to fit: estimated at the height this browser last drew it at, so it lands near it.
+    estimate: (_it, card) => `${designCardEstimate((card as { runId?: string } | undefined)?.runId)}px`,
     match: (it, ctx) => isCall(it) && ctx.designCard?.(it),
     host: "page",
     placement: "anchored",

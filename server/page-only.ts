@@ -88,6 +88,11 @@ const DOORS = {
   cardClick: "Only the user answers a card. Ask them to click it in that chat. Nothing was sent.",
   extensions: "Only the user changes extensions. Ask them to do it in Settings → Extensions. Nothing was changed.",
   agentCpu: "Only the user changes how much CPU agents may use. Ask them to do it in Settings → General. Nothing was changed.",
+  accountToken: "Only the user saves or removes the Cloudflare token. Ask them to do it in Settings → Public links. Nothing was changed.",
+  setupChat: "Only the user starts a setup chat. Ask them to press Set Up With a Chat in Settings → Public links. Nothing was started.",
+  cloudflared: "Only the user downloads programs. Ask them to press Download in Settings → Public links. Nothing was downloaded.",
+  turnOn: "Only the user turns on public links. Ask them to press Turn On in Settings → Public links. Nothing was turned on.",
+  publicLinks: "Only the user changes where links open. Ask them to pick it in Settings → Public links. Nothing was changed.",
 } as const;
 export type YourClickDoor = keyof typeof DOORS | { projectTool: string } | { cardsOf: string };
 
@@ -106,10 +111,13 @@ export function yourClickBody(door: YourClickDoor, who: NotPage): { error: strin
   return who === "local" ? { error: door === "schedule" ? SCHEDULE_THROUGH_A_PEER : THROUGH_A_PEER, yourClick: true, peer: true } : { error: doorWords(door), yourClick: true };
 }
 
-/** The 403 of a door, or null when this is the page. `overseerKeeps`: what the Overseer can do stays its own. */
-export function yourClickRefusal(c: Context, door: YourClickDoor, opts: { overseerKeeps?: boolean } = {}): Response | null {
+/** The 403 of a door, or null when this is the page. `overseerKeeps`: what the Overseer can do stays its own.
+    `tokenScriptPasses`: a program that shows only the install's token (the operator's own terminal, a headless
+    gateway's setup over ssh) passes too; a chat's key, the Overseer, an extension and a peer are still refused. */
+export function yourClickRefusal(c: Context, door: YourClickDoor, opts: { overseerKeeps?: boolean; tokenScriptPasses?: boolean } = {}): Response | null {
   const who = notPage(c);
   if (who === null || (who === "overseer" && opts.overseerKeeps)) return null;
+  if (who === "script" && opts.tokenScriptPasses && c.req.header(TOKEN_HEADER) !== undefined) return null;
   return c.json(yourClickBody(door, who), 403);
 }
 

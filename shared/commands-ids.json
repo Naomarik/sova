@@ -275,7 +275,11 @@
     "session.folder-approvals.get",
     "session.folder-approvals.set",
     "session.approval.set",
-    "project.copies.running"
+    "project.copies.running",
+    "design.stop",
+    "design.remove",
+    "design.restore",
+    "design.history"
   ],
   "retired": [
     "settings.agents.get",

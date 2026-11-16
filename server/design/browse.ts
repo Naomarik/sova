@@ -88,7 +88,8 @@ function targetOk(v: unknown): v is TourTarget {
   return false;
 }
 
-function walkProblem(actions: unknown): string | null {
+/** Why a walk's steps are refused, or null. */
+export function walkProblem(actions: unknown): string | null {
   if (!Array.isArray(actions)) return `actions must be a list; ${ONLY_WHAT}.`;
   if (actions.length > BROWSE_LIMITS.actions) return `actions takes at most ${BROWSE_LIMITS.actions} steps per look; look again for the rest.`;
   for (const [i, a] of actions.entries()) {

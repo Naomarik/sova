@@ -397,6 +397,11 @@ the person clicks.
 | A schedule through a mesh peer, its proof failed or missing | This computer couldn't confirm your click with the one the schedule is on. Try Approve again, or approve it on that computer's page. Nothing was approved. |
 | Restarting Sova | Only the user restarts Sova. Ask them to press Restart Sova in Settings → General. Nothing was restarted. |
 | Updating Sova | Only the user updates Sova. Ask them to do it in Settings → General. Nothing was changed. |
+| Turning on public links | Only the user turns on public links. Ask them to press Turn On in Settings → Public links. Nothing was turned on. |
+| Downloading cloudflared | Only the user downloads programs. Ask them to press Download in Settings → Public links. Nothing was downloaded. |
+| The Cloudflare Account token | Only the user saves or removes the Cloudflare token. Ask them to do it in Settings → Public links. Nothing was changed. |
+| Starting a setup chat for public links | Only the user starts a setup chat. Ask them to press Set Up With a Chat in Settings → Public links. Nothing was started. |
+| Choosing where links open (a chat, the Overseer, an extension) | Only the user changes where links open. Ask them to pick it in Settings → Public links. Nothing was changed. |
 | A design run's Start | Only your own click on the Lookbook's brief in Sova's page starts the designs. |
 | A design run's brief, and answering a Lookbook Creative Director | Only your own click on the Creative Director's card or the Lookbook's brief in Sova's page answers this. |
 | Bringing in a design image, or a signed-in capture | Only your own click on the Lookbook card in Sova's page answers this. |
@@ -1282,10 +1287,10 @@ page never names a host or a person.
 | Where | Copy |
 |---|---|
 | Title · line | Public links · People you send a link to open it at this address. |
-| State chip | `Off` · `Not verified` (warn) · `Verified` (success) · `Unreachable` (error) · `Not listening` (error, §mesh.public/listener-failure) |
+| State chip | `Off` · `Not verified` (warn) · `Verified` (success) · `Unreachable` (error) · `Not listening` (error, §mesh.public/listener-failure) · Free's and an unreadable setting's: §design.copy-deck/where-links-open |
 | Share port won't open (error banner under the Address row) | **The share port isn't open.** {reason} Links from this host can't be opened from outside until it is. Fix it, then save a different port or restart Sova. · {reason} (server): Another program is already using {host}:{port}. · This host doesn't let Sova use port {port}. · {host} isn't an address of this host. · SOVA_SHARE_PORT isn't a port number. · Couldn't open {host}:{port} ({code}). |
-| Address row | Address · {url}, or `None` · source `Set by environment ({var})` / `From this setting` / `From {gateway}` / `Bound address` |
-| Route legend and choices | Where links open · `Off` "Links work only on your own devices." · `This host is the gateway` "This host serves every public link, including those from hosts that go through it." · `Through {gateway}` "Links from this host open at {gateway}'s address. {gateway} must be on for them to open." |
+| Address row | Address · {url}, or `None` · source `Set by environment ({var})` / `Cloudflare Free tunnel` / `Cloudflare Account` / `From this setting` / `From {gateway}` / `Bound address` |
+| Route legend and choices | §design.copy-deck/where-links-open |
 | Visitor logging (§mesh.public/visitor-log) | `Log visitors` "Records each visitor's IP address, browser, language and pages opened on this host's links." · `Send the visitor's address to preview apps` "Preview apps get X-Forwarded-For." · save failure (error banner): **Couldn't save visitor logging.** {reason} Your saved setting is unchanged. |
 | Gateway fields | Public address · Front (`Your web server` · `Caddy on this host` · `Tailscale Funnel` · `Cloudflare Tunnel`) · Local port · Accept links from (`All hosts` · `These hosts`) |
 | Pinned field hint | Set by environment ({var}). Change it there, then restart Sova. |
@@ -1297,9 +1302,9 @@ page never names a host or a person.
 | Gateway behind (warn banner, §mesh.public/share-protocol) | **{gateway} runs an older version of public links.** Some pages of this host's links may not open until {gateway} is updated. · `Resync` (the host menu's, §mesh.peers/resync; disabled with its reason) |
 | Field errors | Enter the public address. · The public address must start with https://. · Enter the public address as https://share.example.com. · The public address is a host only, with no path. · The local port must be a whole number from 1 to 65,535. · Pick the gateway. · The ingress port must be a whole number from 1 to 65,535. (under each field; the save bar: "Public links: {first}"; the server says the same) |
 | Read and save failures (error banner) | **Couldn't read the public links setting.** Nothing was changed. {reason} · **Couldn't save the public links setting.** {reason} Your saved setting is unchanged. |
-| Mesh card chip (§mesh.ui/card) | `Public links: gateway` · `Public links: through {gateway}` |
+| Mesh card chip (§mesh.ui/card) | `Public links: gateway` · `Public links: through {gateway}` · `Public links: Cloudflare` |
 
-**`linkWarning` (§app.baton/links; `linkWarningCode` names it; the server's text, shown verbatim, with `Open Settings`)**
+**`linkWarning` (§app.baton/links; `linkWarningCode` names it; the server's text, shown verbatim, with `Open Settings`; Free's codes and `broken`: §design.copy-deck/where-links-open)**
 
 | Code | Copy |
 |---|---|
@@ -1323,6 +1328,58 @@ address is set, is the `off` text.
 | Offline page shell (§mesh.public/offline) | title "Not available right now" · heading "This page can't be opened right now." · "The computer it lives on is offline. Try again in a minute." |
 | Offline API body | `{error: "offline", retryAfter: 60}` |
 | Share page, offline | Reconnecting. Your draft is kept. · a send refused: "Not sent. The page is offline; your message is still here." |
+
+## §design.copy-deck/where-links-open — Where links open and the tunnels Sova runs (§mesh.public/where-links-open, §mesh/tunnel)
+
+`{computer}` is a computer's name, `{option}` an option's label, `{command}` the install command for
+this system, `{n}` a count, `{time}` a time, `{reason}` the answer's own sentence.
+
+**The list (Settings → Public links and every share screen)**
+
+| Where | Copy |
+|---|---|
+| Legend | Where links open |
+| Cloudflare | section `Cloudflare` · `Free` "No account needed. The address is random and changes when this computer restarts." with the badge `Default` while picked by default · `Account` "Your own address, through your Cloudflare account. Sova runs the tunnel." · `You run it` "A Cloudflare tunnel you run yourself." |
+| Tailscale | section `Tailscale` · `Funnel` "A public address from Tailscale Funnel, for this computer." · `Through {computer}` "Links go over Tailscale to {computer}. {computer} must be on for them to open." and its note "{computer} serves these with its own web server (Your own domain)." |
+| Your own web server | section and option `Your own web server` "Your own domain, served by Caddy or nginx on this computer." |
+| Off | section and option `Off` "Sharing is off: no Share buttons, and nothing makes a link." |
+| Option state | a tag after the name: · On · · Ready · · Needs setup (the name and hint in the muted ink, still readable; the row stays selectable) · Free picked before Turn On: · Not turned on |
+| One line on a share screen | Links open with {option}. · `Change` |
+| Sharing is off (in place of the one line: the Shares page, the Previews card, every share screen) | Sharing is off. · `Open Settings` (Settings → Public links) |
+| Picking a ready option | Applies to every link from this computer. · `Use {option}` · `Cancel` |
+| Setup help | heading "Set up {option}" · the steps · `Set Up With a Chat` · "Your links keep opening where they open now until you save this." |
+| A new address waiting for its Verify (Settings → Public links and under every share screen's line) | banner (info; warn after a failed Verify) **Waiting for verification** · "{address} ({option}) is saved, not in use yet. Links keep opening with {current choice} until it passes Verify." · `Verify Address` (`Verifying…`) · `Cancel` (`Canceling…`) · failed: "Verify failed: {reason}" · here `{address}` is the new address, `{option}` one of `Cloudflare Account`, `Tailscale Funnel`, `your own Cloudflare tunnel`, `Your own web server`, and `{current choice}` the current choice as the one line names it |
+| Free's state chip | `Starting` (info) · `Verified` (success) · `Not turned on` (warn) · `Needs cloudflared` (warn) · `Tunnel down` (error) |
+| Turn On prompt | **Turn on public links?** Links you share will open from anywhere, through a free Cloudflare address. Nothing is public until you turn it on. · `Turn On` |
+| Download prompt | **Cloudflare's tunnel program isn't on this computer.** · `Download` (`Downloading…`) · "Or install it yourself: {command}" · failed: "Couldn't download cloudflared. {reason}" · "The download didn't match its checksum, so it was deleted." · another platform: "Install cloudflared yourself, then reload this page." |
+| Account fields | Public address · Preview address (optional) · Connector token, placeholder "Paste the token from the Cloudflare dashboard" · saved: "Token saved." · `Remove Token` · refused: "That isn't a Cloudflare tunnel token." · missing at save: "Paste the tunnel's token first." |
+| Unreadable setting | chip `Can't read setting` (error) · banner: Your public links setup can't be read. Fix it or save it again in Settings → Public links. |
+| Sharing off (an agent's refusal) | Sharing is off on this computer. The user can turn it on in Settings → Public links. |
+
+**`linkWarning`, Free's codes and `broken` (§app.baton/links)**
+
+| Code | Copy |
+|---|---|
+| `quick` | This link's address changes when this computer restarts. |
+| `quick-starting` | The public address is starting. This link opens from outside in a moment. |
+| `quick-verifying` | This link's address is still coming online. It should open within a couple of minutes. |
+| `quick-turn-on` | This link isn't public yet. Turn on public links in Settings → Public links. |
+| `quick-setup` | Links can't open from outside until Cloudflare's tunnel program is on this computer. Set it up in Settings → Public links. |
+| `tunnel-down` | The public address is down, so this link won't open until it's back. |
+| `broken` | Your public links setup can't be read. Fix it or save it again in Settings → Public links. |
+
+**Links that broke (§mesh.public/broken-links)**
+
+| Where | Copy |
+|---|---|
+| Banner (warn) | **The public address changed.** Links sent before {time} no longer open. · per link: its title · `Copy New Link` ("New link copied.") · for a link not kept: `Share again` |
+
+**Previews on Free (§mesh.public/preview-tunnels)**
+
+| Where | Copy |
+|---|---|
+| Previews card note | Free previews open in a browser only. Scripts, webhooks and apps that stream with server-sent events need Cloudflare Account or your own web server. · "{n} of 6 free previews running." |
+| `too-many-tunnels` | This computer already has 6 app previews on free Cloudflare addresses. Turn one off, or set up Cloudflare Account or your own web server, which carry any number. |
 
 ## §design.copy-deck/owner-page — Owner page (§app/owner-page)
 

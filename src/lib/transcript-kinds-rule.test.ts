@@ -64,6 +64,8 @@ const MOVED: Record<string, string[]> = {
   "approval-pending": ["ApprovalPendingRow"],
   "overseer-answer": ["OverseerChoiceRow"],
   "profile-mark": [],
+  "lookbook-item": ["LookbookHistoryItem"],
+  lookbook: ["LookbookMessage"],
   brief: ["BriefRow"],
   explain: ["ExplainCard"],
   "team-report": ["TeamMessageCard"],

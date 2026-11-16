@@ -67,6 +67,8 @@ export function secretRules(home = homedir(), agentDir = agentRoot(), state = st
       join(home, ".aws"),
       // Claude Code's backups (of `.claude.json`, which may hold `primaryApiKey`).
       join(home, ".claude", "backups"),
+      // The Cloudflare tunnels Sova runs: the Account tunnel's token and each unit's environment (§mesh.tunnel/account).
+      join(state, "tunnels"),
       // The GitLab CLI's config, which holds its tokens (`config.yml`), wherever glab keeps it: XDG, macOS, or the
       // folder GLAB_CONFIG_DIR names. The merge queue opens merge requests with it from the server; chats never.
       ...glabConfigDirs(home),

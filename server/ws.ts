@@ -16,6 +16,7 @@ import { acquireChatHandle, ArchivedError, BusyError, ConfigError, type ChatClie
 import { normalizeClaudeText, resolveClaudeSession } from "./claude-transcript";
 import { resolveSessionPath } from "./paths";
 import { onDesignNews } from "./design/live";
+import { lookbookNormalize, lookbookSessionOf } from "./design/transcript";
 import { trackViewer } from "./seen";
 import { nudgeMarks, sessionFeed } from "./session-feed";
 import { llmInflight } from "./llm-inflight";
@@ -25,7 +26,7 @@ import { extensionSocketRoute, upgradeExtensionSocket } from "./extensions";
 import { meshUpgrade } from "./mesh";
 import { EVENTS_PATH } from "../shared/events";
 import { upgradeEventsSocket } from "./events-ws";
-import { type Normalize, SessionTail } from "./watch";
+import { type Normalize, piNormalize, SessionTail } from "./watch";
 import { sharedWorkerWindowResolver } from "./models";
 import { contextTally, type Format, type WindowResolver } from "./worker-context";
 import { wireOf } from "./wire-rows";
@@ -496,10 +497,10 @@ function handleWatch(ws: WebSocket, path: string, ask: TailAsk, wire: WireVersio
     ask.tail && ask.pull ? { prefetch: ask.prefetch } : undefined,
     wire,
     // Wire 2 on a pi session file: replies carry their measured timing, as on REST and /ws/chat.
-    wire === 2 && format === "pi" && !normalize ? () => replyTimingsOf(sessionIdOfPath(path)) : undefined,
+    wire === 2 && format === "pi" ? () => replyTimingsOf(sessionIdOfPath(path)) : undefined,
   );
   // A claude-code worker's own file has no Sova session id: nothing to stamp.
-  const id = normalize ? "" : idOf(path);
+  const id = format === "pi" ? idOf(path) : "";
   if (id) {
     trackViewer(id, 1);
     nudgeMarks();
@@ -647,7 +648,9 @@ function upgradeWith(server: typeof wss, req: IncomingMessage, socket: Duplex, h
         ws.close(4500, "internal");
       });
     } else {
-      handleWatch(ws, path, tail, wire);
+      // A Lookbook helper's chat reads as its messages say (server/design/transcript.ts); any other is as it is.
+      const lookbook = lookbookSessionOf(path);
+      handleWatch(ws, path, tail, wire, lookbook ? lookbookNormalize(piNormalize, lookbook) : undefined);
     }
   });
 }

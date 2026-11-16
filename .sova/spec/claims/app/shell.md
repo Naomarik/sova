@@ -45,8 +45,8 @@ unfolded (≥768)                                  folded (<768)
   The other routes follow the same rule: `#/overview` (§app.shell/overview), `#/usage` and `#/agents` (§app/insights), and a group opened as a
   workspace at `#/g/<id>` (split) or `#/g/<id>/<encodeURIComponent(path)>` (one member focused,
   §workspace/groups). `#/s/` never changes meaning: it is one session, alone, grouped or not; a Lookbook's open design or
-  coordinator rides on it as a `design=<label>` or `design=coordinator` parameter (beside `host=` on a
-  remote session), and each one opened is a
+  coordinator, or its open brief, rides on it as a `design=<label>`, `design=coordinator` or
+  `design=brief.<run>` parameter (beside `host=` on a remote session), and each one opened is a
   history step (§chat.design-mode/open-history). An unknown group
   id routes to `#/` with a toast rather than rendering an empty frame. `#/overseer` is the
   Overseer (§app.overseer/identity-and-clear): the normal session view on whichever Overseer file

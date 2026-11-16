@@ -9,7 +9,7 @@ import { DESIGN_NEVER_IDS, DESIGN_NEVER_REFS, designInGroup, designModelOrder } 
 import { retiredModelRefs } from "../harness/pi/model-sync";
 import { DESIGN_DEFAULT_DIRECTION_SETS, DESIGN_DIRECTIONS, DESIGN_LAYOUTS } from "../../pi-config/extensions/mode/design-guide.ts";
 import { listModels } from "../models";
-import { modelAllowed, readModelPolicy } from "../model-policy";
+import { modelAllowed, modelDenial, readModelPolicy } from "../model-policy";
 import type { ModelInfo, ModelPolicy } from "../../shared/protocol";
 import type { DesignParent } from "./batch";
 import { linksFromText } from "./brief";
@@ -38,6 +38,56 @@ export function designModelAllowed(policy: ModelPolicy, ref: string, retired: Re
   const id = ref.slice(slash + 1);
   if (DESIGN_NEVER_IDS.has(id) || DESIGN_NEVER_REFS.has(ref) || retired.has(ref)) return false;
   return !policy.subagentDisabledProviders.includes(provider) && !policy.subagentDisabledModels.includes(ref.toLowerCase());
+}
+
+/** Why a design may not run on this model, in words for the Creative Director's card; null when it may. */
+export function designModelRefusal(policy: ModelPolicy, ref: string, retired: ReadonlySet<string> = new Set()): string | null {
+  if (designModelAllowed(policy, ref, retired)) return null;
+  if (!modelAllowed(policy, ref)) return modelDenial(policy, ref) ?? `${ref} isn't allowed in Settings → Models.`;
+  const id = ref.slice(ref.indexOf("/") + 1);
+  if (DESIGN_NEVER_IDS.has(id) || DESIGN_NEVER_REFS.has(ref) || retired.has(ref)) return `${ref} can't write a design: Sova knows it can only fail.`;
+  return `${ref} is barred for workers in Settings, so no design can run on it.`;
+}
+
+/** One model a design may run on, as the Creative Director lists and names them. */
+export interface DesignModelOption {
+  ref: string;
+  name: string;
+  vision: boolean;
+  route: DesignModelChoice["route"];
+  /** The thinking levels it supports, in order. */
+  efforts: string[];
+  /** Ticked for design on the run's Setup card. */
+  onSetup: boolean;
+}
+
+/** Every model a design may run on, ticked at Setup or not: what the user is allowed to use, best first. */
+export function designModelOptions(listed: readonly ModelInfo[], policy: ModelPolicy, retired: ReadonlySet<string>, setup?: Pick<DesignSetup, "models">): DesignModelOption[] {
+  const ticked = new Set((setup?.models ?? []).filter((m) => m.design).map((m) => m.ref));
+  return designModelOrder(listed.filter((m) => designModelAllowed(policy, m.ref, retired))).map((m) => ({ ref: m.ref, name: m.id, vision: !!m.input?.includes("image"), route: designRouteOf(m.ref), efforts: m.thinkingLevels ?? [], onSetup: ticked.has(m.ref) }));
+}
+
+/** The model a new design runs on, from a provider/id or a bare id, and its thinking level: the one named, else low for a
+    model ticked at Setup (as its designs run) and the model's own default for any other. A string when it can't. */
+export function resolveDesignModel(listed: readonly ModelInfo[], policy: ModelPolicy, retired: ReadonlySet<string>, setup: Pick<DesignSetup, "models">, asked: string, effort?: string): { ref: string; name: string; vision: boolean; route: DesignModelChoice["route"]; effort?: string | null } | string {
+  const want = asked.trim().toLowerCase();
+  const ticked = setup.models.filter((m) => m.design);
+  // A bare id goes to a model the Setup card ticked first, then to the first in the picker's order.
+  const known = listed.find((m) => m.ref.toLowerCase() === want) ?? (want.includes("/") ? undefined : (listed.find((m) => m.id.toLowerCase() === want && ticked.some((t) => t.ref === m.ref)) ?? designModelOrder(listed.filter((m) => m.id.toLowerCase() === want))[0]));
+  if (!known) {
+    const onCard = ticked.find((m) => m.ref.toLowerCase() === want || m.name.toLowerCase() === want);
+    if (!onCard) return `there is no model ${asked} on this computer. design_models lists the ones you can use.`;
+    // On the card but no longer listed (its provider is offline): the card's own record still names it.
+    const refusal = designModelRefusal(policy, onCard.ref, retired);
+    if (refusal) return refusal;
+    return { ref: onCard.ref, name: onCard.name, vision: onCard.vision, route: onCard.route, ...(effort ? { effort } : {}) };
+  }
+  const refusal = designModelRefusal(policy, known.ref, retired);
+  if (refusal) return refusal;
+  const levels = known.thinkingLevels ?? [];
+  if (effort && !levels.includes(effort)) return `${known.ref} doesn't take the effort ${effort}${levels.length ? `; it takes ${levels.join(", ")}` : ""}.`;
+  const onSetup = ticked.some((m) => m.ref === known.ref);
+  return { ref: known.ref, name: known.id, vision: !!known.input?.includes("image"), route: designRouteOf(known.ref), ...(effort ? { effort } : onSetup ? {} : { effort: null }) };
 }
 
 export interface SetupInput {

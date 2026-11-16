@@ -311,7 +311,9 @@ host's sender secret never leaves it. The peer's own routes and refusals apply.
     `$GLAB_CONFIG_DIR`, macOS's `~/Library/Application Support/glab-cli`), `/proc` (every
     process's environment and command line, the server's own included), `/sys` and `/dev/fd`
     (the server's own open files; on Linux it resolves into `/proc`, on macOS it does not), and
-    the WhatsApp sender's home and its auth directory wherever configured (§app.outreach/secrets);
+    the WhatsApp sender's home and its auth directory wherever configured (§app.outreach/secrets),
+    and the Cloudflare tunnels' folder `sova/tunnels` in the state folder, beside `sova/auth-token`
+    (the Account tunnel's token, §mesh.tunnel/account);
   - names, anywhere on the machine, so a copy is denied like the original (another worktree's
     `.agent/auth.json`, a `.credentials.json.mtn` backup): `auth.json` and `auth.json.*`;
     `.claude.json` and `.claude.json.*`; any name containing `credentials`; `.env` and `.env.*`
@@ -343,7 +345,9 @@ host's sender secret never leaves it. The peer's own routes and refusals apply.
   rate-limit tier) and `~/.claude.json`'s `primaryApiKey`, the literal `apiKey` and header values
   in both `models.json` files (the literal parts of a `$NAME` template; a `!command` is never run
   and never taken as a value), Sova's access token (`sova/auth-token` in `~/.pi/agent` and in the
-  active agent dir, the whole file), every extension backend's key (each file in `sova/extension-keys/`
+  active agent dir, the whole file), the Cloudflare Account tunnel's token (the `TUNNEL_TOKEN` of
+  `sova/tunnels/account-token.env` and of each tunnel unit's environment file in `sova/tunnels/env`
+  in the active agent dir), every extension backend's key (each file in `sova/extension-keys/`
   in both, the whole file; §app.extensions/backend-key), and the server's environment variables whose name contains `KEY`,
   `TOKEN`, `SECRET`, `PASSWORD` or `AUTH` (not `AUTHOR`/`AUTHORITY`). A value counts only when it
   is at least 12 characters and not a boolean, a number, a path or a URL without credentials. A

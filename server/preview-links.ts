@@ -6,6 +6,7 @@ import type { PreviewErrorCode, PreviewState, PreviewView } from "../shared/prev
 import { SHARE_DAYS_MAX } from "../shared/project-contract";
 import { keptPreview } from "./preview-kept";
 import { shareLinksChanged } from "./share/links-events";
+import { assertSharingOn } from "./share/sharing-off";
 import { stateRoot } from "./state-root";
 
 /**
@@ -250,6 +251,7 @@ export interface MintInput {
  * (`operator`, or the sending overseer's `session:<id>`).
  */
 export function mintSibling(of: string, sentTo: string, createdBy = "operator", now = Date.now()): { record: PreviewRecord; label: string } {
+  assertSharingOn();
   const store = read();
   const o = store.links.find((l) => l.id === of);
   if (!o || previewState(o, now) !== "active") throw new PreviewRefused("bad-project", "That preview is not active.");
@@ -292,6 +294,7 @@ function checkProject(projectId: unknown): string {
 
 /** Mint one preview. The label is returned once and never stored. Emits a `p` link change. */
 export function mintPreview(input: MintInput, sovaPorts: ReadonlySet<number>, now = Date.now()): { record: PreviewRecord; label: string } {
+  assertSharingOn();
   const projectId = checkProject(input.projectId);
   const port = checkPort(input.port, sovaPorts);
   const days = checkDays(input.days);
@@ -333,6 +336,7 @@ export function revokePreview(id: string, now = Date.now()): PreviewRecord | nul
 
 /** Move an active one's expiry to `days` from now (a running copy's link, §app.project-services/share: at most 7). */
 export function extendPreview(id: string, days: unknown, now = Date.now()): PreviewRecord | null {
+  assertSharingOn();
   const d = checkDays(days);
   const store = read();
   const r = store.links.find((l) => l.id === id);
@@ -364,6 +368,7 @@ export function setPreviewExpiry(id: string, at: number, now = Date.now()): Prev
 
 /** A shared copy's link shared again (§app.project-services/share): its expiry moves to the later of its own and `days` from now. */
 export function renewPreview(id: string, days: number, now = Date.now()): PreviewRecord | null {
+  assertSharingOn();
   const store = read();
   const r = store.links.find((l) => l.id === id);
   if (!r || previewState(r, now) !== "active") return null;

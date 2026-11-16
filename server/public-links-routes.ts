@@ -1,16 +1,28 @@
 import type { Context, Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
-import type { AdvertisedGateway, PublicLinksFile, PublicLinksInfo, RoutedHost, VerifyResult, VisitorLogging } from "../shared/public-links";
+import { SHARE_PORT_DEFAULT, type AdvertisedGateway, type BrokenLinks, type PublicLinksCandidate, type PublicLinksFile, type PublicLinksInfo, type PublicLinksReading, type PublicLinksTunnelInfo, type RoutedHost, type VerifyResult, type VisitorLogging } from "../shared/public-links";
 import { advertisedGateways } from "./mesh/hello";
 import { meshApi } from "./mesh/index";
 import { localRequest } from "./mesh/proxy";
-import { patchPublicLinks, pinnedByEnv, readPublicLinks, writeServerFields } from "./public-links";
-import { frontGuide, verifyPreviewUrl, verifyPublicUrl } from "./share/front";
+import { tokenFor, type LinkTokenKind } from "./link-tokens";
+import { yourClickRefusal } from "./page-only";
+import { patchPublicLinks, pinnedByEnv, planPublicLinksPatch, readPublicLinks, readPublicLinksSetting, readTunnelConsent, writeServerFields } from "./public-links";
+import { candidateUrl, dropCandidate, noteCandidateFailure, readCandidate, saveCandidate, type StoredCandidate } from "./share/candidate";
+import { linkByHash } from "./session-shares";
+import { accountGuide, frontGuide, verifyPreviewUrl, verifyPublicUrl } from "./share/front";
 import { previewAddress } from "./share/preview-address";
 import { gatewayProtocol, refreshGateway } from "./share/gateway-client";
-import { noteVerify, shareListenerSettled, shareState } from "./share/listener";
+import { linkUrl, noteVerify, shareListenerSettled, shareState, withCandidate } from "./share/listener";
+import { liveLinks } from "./share/registry-push";
 import { routedHosts } from "./share/registry";
+import { mountCloudflaredDownload } from "./share/tunnel/download";
 import { publicLinksChanged } from "./share/setting-events";
+import { dropCandidateToken, hasAccountToken, hasCandidateToken, mountAccountRoutes, promoteCandidateToken } from "./share/tunnel/account-token";
+import { cloudflaredInfo, resolveCloudflared } from "./share/tunnel/binary";
+import { brokenLinks } from "./share/tunnel/handouts";
+import { checkTunnel, ensureTunnel, restartTunnel, runningTunnels, stopTunnel, tunnelStatus } from "./share/tunnel/manager";
+import { mountTunnelRoutes } from "./share/tunnel/routes";
+import { shareWanted } from "./share/tunnel/wiring";
 import { parseVisitorLogging, readVisitorLogging, writeVisitorLogging } from "./visitor-logging";
 
 /**
@@ -36,6 +48,8 @@ export interface PublicLinksSources {
   gateways: () => Promise<AdvertisedGateway[]>;
   /** The longest a via PUT waits for the gateway's answer; absent: VIA_ANSWER_WAIT_MS. */
   viaAnswerWait?: () => Promise<void>;
+  /** A candidate's outside check; absent: verifyPublicUrl (tests pass their own, never a fetch). */
+  verify?: (url: string) => Promise<VerifyResult>;
 }
 const SOURCES: PublicLinksSources = {
   routed: () => routedHosts(),
@@ -43,22 +57,147 @@ const SOURCES: PublicLinksSources = {
   gateways: () => advertisedGateways(() => meshApi.config()?.peers ?? []),
 };
 
+const SHARE = { kind: "share" } as const;
+const BROKEN_TITLES: Record<"h" | "i" | "s" | "t", string> = { h: "Hand-off link", i: "Owner link", s: "Session share", t: "Tour link" };
+
+/** The share tunnel's live links handed out before its current address began (§mesh.public/broken-links). */
+function shareBroken(epoch: number | null): BrokenLinks | undefined {
+  const live = liveLinks(Date.now()).filter((l) => l.kind === "h" || l.kind === "i" || l.kind === "s" || l.kind === "t");
+  return brokenLinks(live, epoch, (l) => {
+    const kind = l.kind as "h" | "i" | "s" | "t";
+    const token = tokenFor(l.h, kind as LinkTokenKind);
+    const shared = kind === "s" ? linkByHash(l.h) : null;
+    const title = shared ? `${shared.share.title || BROKEN_TITLES.s} · ${shared.link.label}` : BROKEN_TITLES[kind];
+    return { kind, id: l.h, title, kept: token !== null, ...(token ? { url: linkUrl(kind, token) } : {}) };
+  });
+}
+
+/** The tunnels' part of the answer, under Free or Account or while a tunnel runs: the on-demand
+    check of the share tunnel (at most once a minute, loopback only, §mesh.tunnel/lifetime), the
+    preview tunnels, cloudflared (looked for once per server lifetime) and the broken links. */
+async function tunnelInfo(file: PublicLinksFile): Promise<PublicLinksTunnelInfo | undefined> {
+  const routeRuns = file.route === "quick" || file.route === "account";
+  const previews = runningTunnels().filter((t) => t.key.kind === "preview");
+  if (!routeRuns && !previews.length) return undefined;
+  const share = routeRuns ? await checkTunnel(SHARE).catch(() => tunnelStatus(SHARE)) : null;
+  if (routeRuns) await resolveCloudflared().catch(() => null);
+  const cloudflared = cloudflaredInfo() ?? { found: false, source: null, version: null, canDownload: false, install: "" };
+  const broken = share ? shareBroken(share.epoch) : undefined;
+  return { share, previews, cloudflared, ...(broken ? { broken } : {}) };
+}
+
+// ---- a new address waits for its Verify (§mesh.public/where-links-open) ---------------------------
+
+const CANDIDATE = { kind: "candidate" } as const;
+
+/** Whether the current route works: Free's tunnel up, or any other route's address verified (its
+    Verify passed, or the via gateway confirmed). Off, a broken setting, an unverified address, a Free
+    tunnel not up: nothing to keep, so a new setup takes over at once. Memory and one file read. */
+export function routeWorks(file: PublicLinksFile): boolean {
+  if (file.route === "off") return false;
+  if (file.route === "quick") return tunnelStatus(SHARE).state === "up";
+  return shareState(process.env, file).state === "verified";
+}
+
+/** Whether a PUT's next setting waits as a candidate rather than switching: it moves to Account or
+    to this host as the gateway, at an address other than today's, while today's route works. Pure
+    over its inputs. */
+export function waitsForVerify(next: PublicLinksFile, current: PublicLinksFile, works: boolean, newToken = false): boolean {
+  if (next.route !== "account" && next.route !== "self") return false;
+  // The same address waits too when a new Account token was pasted for it: a new tunnel to check.
+  if (next.route === current.route && candidateUrl(next) === candidateUrl(current) && !(next.route === "account" && newToken)) return false;
+  return works && candidateUrl(next) !== null;
+}
+
+/** The candidate as the page sees it. */
+function candidateView(c: StoredCandidate): PublicLinksCandidate {
+  const f = c.file;
+  const previewUrl = f.route === "account" ? f.account?.previewUrl : f.gateway?.previewUrl;
+  return {
+    route: f.route as "account" | "self",
+    publicUrl: candidateUrl(f)!,
+    ...(previewUrl ? { previewUrl } : {}),
+    ...(f.route === "self" && f.gateway ? { front: f.gateway.front } : {}),
+    savedAt: c.savedAt,
+    ...(c.failure ? { failure: c.failure } : {}),
+  };
+}
+
+/** Drop a waiting candidate, its pasted token, and its tunnel if one runs. */
+async function cancelCandidate(): Promise<void> {
+  dropCandidateToken();
+  if (!readCandidate()) return;
+  dropCandidate();
+  if (tunnelStatus(CANDIDATE).state !== "stopped") await stopTunnel(CANDIDATE, "candidate dropped").catch(() => undefined);
+}
+
+/**
+ * Verify a waiting candidate: run its address for the check only (an Account candidate's own tunnel,
+ * beside the current one; a gateway's port on the share listener when nothing else is bound; its
+ * host let through the Host gate), check it from outside, and only on a pass make it the route.
+ * A failure keeps today's route and the candidate, with the reason. Runs only on a call.
+ */
+async function verifyCandidate(c: StoredCandidate, check: (url: string) => Promise<VerifyResult> = verifyPublicUrl): Promise<VerifyResult> {
+  const url = candidateUrl(c.file)!;
+  const host = new URL(url).hostname;
+  const port = c.file.route === "self" ? (c.file.gateway?.sharePort ?? SHARE_PORT_DEFAULT) : null;
+  const result = await withCandidate({ host, port }, async (): Promise<VerifyResult> => {
+    if (c.file.route === "account") {
+      const t = await ensureTunnel(CANDIDATE, { by: "operator" }).catch((err) => ({ state: "failed", reason: err instanceof Error ? err.message : String(err) }) as const);
+      if (t.state !== "up" && t.state !== "degraded") return { ok: false, error: t.reason ?? "The Account tunnel didn't connect." };
+    }
+    const r: VerifyResult = await check(url);
+    const preview = c.file.route === "self" ? c.file.gateway?.previewUrl : undefined;
+    if (preview?.startsWith("https://")) r.preview = await verifyPreviewUrl(preview);
+    return r;
+  });
+  if (c.file.route === "account") await stopTunnel(CANDIDATE, result.ok ? "verified" : "verify failed").catch(() => undefined);
+  if (!result.ok) {
+    noteCandidateFailure(result.error ?? "The new address didn't answer from outside.");
+    return result;
+  }
+  // Passed: it becomes the route, over the setting as it is now.
+  const r = patchPublicLinks(c.patch);
+  dropCandidate();
+  if ("error" in r) return { ok: false, error: r.error };
+  noteVerify(url, true);
+  writeServerFields({ verifiedAt: Date.now() });
+  publicLinksChanged(r.file);
+  await shareListenerSettled();
+  // Account's tunnel takes over, on the token just verified (its address is fixed: only a reconnect).
+  if (r.file.route === "account") {
+    promoteCandidateToken();
+    await restartTunnel(SHARE, "Account verified").catch(() => undefined);
+  }
+  return result;
+}
+
 /** The answer of GET and PUT: `routed` only while this host is the gateway (route "self"),
-    `gateways` always (none while the mesh is off). */
-export async function publicLinksInfo(file: PublicLinksFile = readPublicLinks(), sources: PublicLinksSources = SOURCES): Promise<PublicLinksInfo> {
+    `gateways` always (none while the mesh is off); the setting's flags (implicit, broken, sharing
+    off), Turn On, the Account token's presence and the tunnels (§mesh.public/setting). */
+export async function publicLinksInfo(file: PublicLinksFile = readPublicLinks(), sources: PublicLinksSources = SOURCES, reading: PublicLinksReading = readPublicLinksSetting()): Promise<PublicLinksInfo> {
   const self = file.route === "self" && !!file.gateway;
   // Only on a routed host whose current gateway answered its info (§mesh.public/share-protocol).
   const protocol = typeof file.route === "object" ? gatewayProtocol() : null;
-  const [routed, gateways] = await Promise.all([self ? sources.routed().catch(() => null) : null, sources.gateways().catch(() => [])]);
+  const waiting = readCandidate();
+  const [routed, gateways, tunnel] = await Promise.all([self ? sources.routed().catch(() => null) : null, sources.gateways().catch(() => []), tunnelInfo(file)]);
+  const account = file.route === "account" ? accountGuide({ sharePort: file.gateway?.sharePort ?? SHARE_PORT_DEFAULT, ...(file.account ? { publicUrl: file.account.publicUrl, ...(file.account.previewUrl ? { previewUrl: file.account.previewUrl } : {}) } : {}) }) : null;
   return {
     file,
     share: shareState(process.env, file),
     pinnedByEnv: pinnedByEnv(),
     preview: previewAddress(process.env, file),
-    ...(self && file.gateway ? { front: frontGuide(file.gateway) } : {}),
+    ...(self && file.gateway ? { front: frontGuide(file.gateway) } : account ? { front: account } : {}),
     ...(self && routed ? { routed } : {}),
     gateways,
     ...(protocol ? { gatewayProtocol: protocol } : {}),
+    ...(reading.implicit ? { implicit: true } : {}),
+    ...(reading.broken ? { broken: true } : {}),
+    ...(reading.sharingOff ? { sharingOff: true } : {}),
+    ...(file.route === "quick" ? { consentAt: readTunnelConsent() } : {}),
+    account: { hasToken: hasAccountToken() },
+    ...(tunnel ? { tunnel } : {}),
+    ...(waiting ? { candidate: candidateView(waiting) } : {}),
   };
 }
 
@@ -67,9 +206,37 @@ export function mountPublicLinks(app: Hono, sources: PublicLinksSources = SOURCE
 
   app.put("/api/public-links", small, async (c) => {
     if (!local(c)) return notFound(c);
+    // Where every link points, and Off, stay the user's (§mesh.public/sharing-off): a chat, the
+    // Overseer, an extension and a peer are refused; the operator's own token script passes.
+    const refused = yourClickRefusal(c, "publicLinks", { tokenScriptPasses: true });
+    if (refused) return refused;
     const body = await c.req.json().catch(() => undefined);
+    if ((body as { route?: unknown } | undefined)?.route === "account" && !hasAccountToken()) return c.json({ error: "Paste the tunnel's token first." }, 400);
+    const plan = planPublicLinksPatch(body);
+    if ("error" in plan) return c.json({ error: plan.error }, 400);
+    // Links keep opening where they open now until a new address is saved and verified: a move to
+    // Account or to this host as the gateway waits as a candidate while today's route works.
+    const current = readPublicLinks();
+    if (waitsForVerify(plan.file, current, routeWorks(current), hasCandidateToken())) {
+      // A new setup replaces a waiting one, its pasted token kept for it.
+      if (readCandidate()) dropCandidate();
+      if (tunnelStatus(CANDIDATE).state !== "stopped") await stopTunnel(CANDIDATE, "candidate replaced").catch(() => undefined);
+      saveCandidate(body as Record<string, unknown>, plan.file);
+      return c.json(await publicLinksInfo(current, sources), 200, NO_STORE);
+    }
+    // A route chosen outright replaces a waiting candidate; a token pasted for an Account taken at
+    // once (nothing works to keep) is that Account's token now.
+    const newToken = plan.file.route === "account" && hasCandidateToken();
     const r = patchPublicLinks(body);
     if ("error" in r) return c.json({ error: r.error }, 400);
+    // Only once the save stands: a refused PUT changes no token and drops nothing.
+    if (body && typeof body === "object" && "route" in body) {
+      if (newToken) {
+        if (readCandidate()) dropCandidate();
+        promoteCandidateToken();
+        if (tunnelStatus(SHARE).state !== "stopped") await restartTunnel(SHARE, "a new Account token").catch(() => undefined);
+      } else await cancelCandidate();
+    }
     publicLinksChanged(r.file);
     // The answer carries the bind as it came out (§mesh.public/listener-failure).
     await shareListenerSettled();
@@ -79,8 +246,20 @@ export function mountPublicLinks(app: Hono, sources: PublicLinksSources = SOURCE
       await Promise.race([refreshGateway().catch(() => null), waited]);
       clearTimeout(timer);
     }
-    return c.json(await publicLinksInfo(r.file, sources), 200, NO_STORE);
+    // The reading as written, read again: the patch answers the effective file, whose flags (implicit) it can't carry.
+    return c.json(await publicLinksInfo(r.file, sources, readPublicLinksSetting()), 200, NO_STORE);
   });
+
+  app.delete("/api/public-links/candidate", async (c) => {
+    if (!local(c)) return notFound(c);
+    const refused = yourClickRefusal(c, "publicLinks", { tokenScriptPasses: true });
+    if (refused) return refused;
+    await cancelCandidate();
+    return c.json(await publicLinksInfo(readPublicLinks(), sources), 200, NO_STORE);
+  });
+
+  mountTunnelRoutes(app, { info: () => publicLinksInfo(readPublicLinks(), sources), wanted: () => shareWanted() });
+  mountAccountRoutes(app);
 
   app.get("/api/visitor-logging", (c) => (local(c) ? c.json(readVisitorLogging() satisfies VisitorLogging, 200, NO_STORE) : notFound(c)));
   app.put("/api/visitor-logging", small, async (c) => {
@@ -94,6 +273,14 @@ export function mountPublicLinks(app: Hono, sources: PublicLinksSources = SOURCE
   // unreachable until a later check passes.
   app.post("/api/public-links/verify", async (c) => {
     if (!local(c)) return notFound(c);
+    // A new address waiting for its check is what Verify checks (and, on a pass, switches to).
+    const waiting = readCandidate();
+    if (waiting) {
+      // Its pass changes where every link points: the PUT's own door.
+      const refused = yourClickRefusal(c, "publicLinks", { tokenScriptPasses: true });
+      if (refused) return refused;
+      return c.json((await verifyCandidate(waiting, sources.verify)) satisfies VerifyResult, 200, NO_STORE);
+    }
     const url = shareState().publicUrl;
     if (!url) return c.json({ ok: false, error: "No public address is set." } satisfies VerifyResult, 200, NO_STORE);
     const result: VerifyResult = await verifyPublicUrl(url);
@@ -104,4 +291,7 @@ export function mountPublicLinks(app: Hono, sources: PublicLinksSources = SOURCE
     if (shareState().publicUrl === url) writeServerFields({ verifiedAt: result.ok ? Date.now() : null });
     return c.json(result satisfies VerifyResult, 200, NO_STORE);
   });
+
+  // The one-click cloudflared download, your click only (§mesh.tunnel/cloudflared).
+  mountCloudflaredDownload(app);
 }

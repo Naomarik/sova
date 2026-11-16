@@ -2,19 +2,20 @@ import { createRoot, createSignal, onCleanup, type Accessor } from "solid-js";
 import { sessionHashParts, sessionRouteFromHash } from "./mesh";
 
 /**
- * What a chat's Lookbook has open (a design's page and chat, or the coordinator), kept in the
+ * What a chat's Lookbook has open (a design's page and chat, the coordinator, or a run's brief), kept in the
  * browser's history and the page's address: each open is one history step, Back and Forward retrace
- * them, closing goes back past them, and `#/s/<path>?design=A` / `?design=coordinator` reopens the
+ * them, closing goes back past them, and `#/s/<path>?design=A` / `?design=coordinator` / `?design=brief.<run>` reopens the
  * view on a reload or from a copied address. Opening only ever pushes or replaces history entries
  * (no hashchange of its own); Back and Forward between them change only the `design` parameter,
  * which names the same session, so the app's route stays as it was.
  */
-export type DesignOpenTarget = { kind: "design"; label: string } | { kind: "coordinator" };
+export type DesignOpenTarget = { kind: "design"; label: string } | { kind: "coordinator" } | { kind: "brief"; runId: string };
 
 const COORDINATOR = "coordinator";
+const BRIEF = "brief.";
 
-/** The address's word for a target. A design's label never reads "coordinator" (they are letters). */
-export const designParamOf = (t: DesignOpenTarget): string => (t.kind === "coordinator" ? COORDINATOR : t.label);
+/** The address's word for a target. A design's label never reads "coordinator" or starts "brief." (labels are capital letters). */
+export const designParamOf = (t: DesignOpenTarget): string => (t.kind === "coordinator" ? COORDINATOR : t.kind === "brief" ? `${BRIEF}${t.runId}` : t.label);
 
 /** The target a session hash's `design` parameter names, or null (none, or not a session hash). */
 export function designOfHash(hash: string): DesignOpenTarget | null {
@@ -26,7 +27,9 @@ export function designOfHash(hash: string): DesignOpenTarget | null {
   } catch {
     return null;
   }
-  return v === COORDINATOR ? { kind: "coordinator" } : { kind: "design", label: v };
+  if (v === COORDINATOR) return { kind: "coordinator" };
+  if (v.startsWith(BRIEF)) return v.length > BRIEF.length ? { kind: "brief", runId: v.slice(BRIEF.length) } : null;
+  return { kind: "design", label: v };
 }
 
 /** The hash with its `design` parameter set to the target (removed for null). A hash that isn't a

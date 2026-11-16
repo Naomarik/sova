@@ -85,8 +85,10 @@
 // node's directory and mise's tool paths (shims refuse an untrusted config in a throwaway HOME), then
 // the system's directories (SYSTEM_PATH). Then SOVA_PRICES_FETCH=off (bun test sets no NODE_TEST_CONTEXT), SOVA_GIT_MAINTENANCE=off (a server a
 // test starts registers no repository with git's scheduled maintenance and starts no systemd
-// timer; server/git-maintenance.ts's own tests drive it with their own deps), and SOVA_AGENT_CPU=off (it sets no
-// CPU weight or ceiling on systemd's sova.slice; server/agent-cpu.test.ts drives that with a stand-in systemctl). bun test itself sets TZ=UTC and
+// timer; server/git-maintenance.ts's own tests drive it with their own deps), SOVA_AGENT_CPU=off (it sets no
+// CPU weight or ceiling on systemd's sova.slice; server/agent-cpu.test.ts drives that with a stand-in systemctl), and SOVA_QUICK_TUNNEL=off
+// (a missing Public links setting reads as off, never a Cloudflare Free tunnel; a tunnel test opts in). SOVA_CLOUDFLARED=off
+// (no installed cloudflared is found on PATH; a tunnel test names its fake). bun test itself sets TZ=UTC and
 // NODE_ENV=test. Both runtimes: a stand-in `claude` (scripts/fake-claude.mjs) leads every test
 // process's PATH, so no test runs the installed Claude CLI, or a paid model through it; a test that
 // needs another `claude` sets its own PATH.
@@ -151,6 +153,7 @@ const GLOBS = [
   "server/tours/*.test.ts",
   "server/design/*.test.ts",
   "server/share/*.test.ts",
+  "server/share/tunnel/*.test.ts",
   "server/chat-runtime/*.test.ts",
   "server/projects/*.test.ts",
   "server/mesh/*.test.ts",
@@ -779,6 +782,12 @@ function hermeticEnv(tier) {
     SOVA_GIT_MAINTENANCE: "off",
     // A server a test starts leaves systemd's sova.slice alone (server/agent-cpu.ts): no CPU weight or ceiling on the real one.
     SOVA_AGENT_CPU: "off",
+    // No Cloudflare Free tunnel by default (server/public-links.ts): a missing setting reads as off, as before
+    // the Free default; a test that drives a tunnel turns it on for itself.
+    SOVA_QUICK_TUNNEL: "off",
+    // No installed cloudflared is ever run (server/share/tunnel/binary.ts): PATH is skipped; a tunnel test names
+    // its fake, and a test that wants "none" gets it on every machine.
+    SOVA_CLOUDFLARED: process.env.SOVA_CLOUDFLARED || "off",
     // No per-server copy of the code (§app.chat-processes/code-generations): a server a test starts has
     // its state root here, on another filesystem than the checkout, where each copy is ~350 MB.
     SOVA_CHAT_CODE: "live",

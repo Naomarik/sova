@@ -487,7 +487,7 @@ async function run(input: TourAttemptInput): Promise<void> {
             await page.waitForLoadState("networkidle", { timeout: 6000 }).catch(error => { assertSafe(); throw error; });
             assertSafe();
             // A walk (a design coordinator's browser): its own list stands in for the script's, click included.
-            const steps_ = (input.walk?.[size] ?? view.actions[size] ?? []) as (TourAction | TourWalkAction)[];
+            const steps_ = ((input.walk ? input.walkSteps?.[step.id]?.[size] ?? input.walk[size] : undefined) ?? view.actions[size] ?? []) as (TourAction | TourWalkAction)[];
             if (steps_.length && await signedOutHere()) { await reSignIn(); continue attempt; }
             for (const [ai, action] of steps_.entries()) {
               location = { stepId: step.id, viewId: view.id, size, action: ai, ...("target" in action ? { target: action.target } : {}) };
@@ -530,6 +530,8 @@ async function run(input: TourAttemptInput): Promise<void> {
               assertSafe();
             }
             location = { stepId: step.id, viewId: view.id, size };
+            // A walk through several screens pictures each as it stands, not with the last control it clicked hovered.
+            if (input.walkSteps && steps_.length) { await page.mouse.move(-1, -1); assertSafe(); }
             if (await signedOutHere()) { await reSignIn(); continue attempt; }
             if (input.look) {
               lookPages.get(si)![size] = await lookHere();

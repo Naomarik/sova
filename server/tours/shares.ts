@@ -8,6 +8,7 @@ import { stateRoot } from "../state-root";
 import { containedPath, digest, readBounded, writePrivate } from "./assets";
 import { publicTour } from "./public-view";
 import { TourProgressStore } from "./progress";
+import { assertSharingOn } from "../share/sharing-off";
 import { isTourSessionDeleted } from "./deleted";
 import { isTourSession, TourStore, tourStore } from "./store";
 
@@ -86,6 +87,7 @@ export class TourShares {
     for (const [id, p] of previews) if (p.root === this.root && p.audience === audience) previews.delete(id);
   }
   create(session: string, tour: string, edition: string, previewId: string, expiresAt: string, now = Date.now()): { link: TourShare; token: string } {
+    assertSharingOn();
     const expiry = typeof expiresAt === "string" ? Date.parse(expiresAt) : NaN;
     if (!Number.isFinite(expiry) || expiry <= now || expiry > now + MAX_EXPIRY) throw new TourShareError(400, "bad-expiry", "Choose an expiry within the next 90 days.");
     const file = this.read();

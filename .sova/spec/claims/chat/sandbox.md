@@ -371,6 +371,9 @@ is the workspace. `install.sh --check` reports drift from the template and never
   before that keeps its own list: `install.sh --check` reports the drift.
 - **The template hides MCP's secrets and sign-ins**, `$AGENT_DIR/sova/secrets/mcp` and
   `$AGENT_DIR/mcp-auth.json` (§app.mcp/secrets, §app.mcp/sign-in), the same way.
+- **The template hides the Cloudflare tunnels' folder**, `$AGENT_DIR/sova/tunnels` (the Account
+  tunnel's token, §mesh.tunnel/account), the same way, and both backends' built-in hidden lists
+  hide it too.
 - **The template's `writable` is empty.** mise's state, which it used to list, is now a private
   copy whatever the file says (§chat.sandbox/what-on-enforces); a policy seeded before keeps its
   entry, which is dropped rather than failing closed, and `install.sh --check` reports the drift.

@@ -29,6 +29,48 @@ export function previewNotes(zone: string): string[] {
   ];
 }
 
+/**
+ * Cloudflare Account's steps (§mesh.public/front, §mesh.tunnel/account): the dashboard's, since Sova runs the
+ * tunnel itself from its token. The user makes the tunnel and its hostnames in the dashboard and copies the token;
+ * nothing here is a command to run. Without a saved address the steps name a placeholder host.
+ */
+export function accountGuide(opts: { sharePort: number; publicUrl?: string; previewUrl?: string }): FrontGuide {
+  const host = opts.publicUrl ? hostOf(opts.publicUrl) : "share.example.com";
+  const upstream = `127.0.0.1:${opts.sharePort}`;
+  const zone = opts.previewUrl ? opts.previewUrl.replace(/^https?:\/\/\*\./, "") : null;
+  return {
+    front: "cloudflared",
+    steps: [
+      {
+        label: "Create the tunnel in the Cloudflare dashboard",
+        root: false,
+        text: "Zero Trust → Networks → Tunnels → Create a tunnel → Cloudflared. Name it sova-share. Skip installing it on this computer: Sova runs the tunnel.",
+      },
+      { label: "Give it a public hostname", root: false, text: `Public hostname: ${host}\nService: HTTP, ${upstream}` },
+      {
+        label: "For preview links, add a wildcard hostname (optional)",
+        root: false,
+        text: `Public hostname: *.${zone ?? "example.com"}\nService: HTTP, ${upstream}`,
+      },
+      {
+        label: "Copy the tunnel's token",
+        root: false,
+        text: "The dashboard's install command ends with the token (cloudflared service install <token>). Paste the token, or the whole command, under Connector token here.",
+      },
+    ],
+    notes: [
+      "Sova runs this tunnel from its token and keeps it running. Don't also install it as a service on this computer.",
+      "Preview: it isn't confirmed yet that the tunnel's X-Forwarded-For ends with each visitor's address. Until it is, every visitor may share one rate limit.",
+      ...(zone
+        ? [
+            `Preview links open at <label>.${zone}. Cloudflare's free edge certificate covers one wildcard level below your domain; a deeper name needs a paid certificate.`,
+            "Never add a hostname per preview: a preview's name is its secret, and Certificate Transparency logs publish every issued name.",
+          ]
+        : []),
+    ],
+  };
+}
+
 function withPreview(guide: FrontGuide, setting: ShareGatewaySetting, zone: string): FrontGuide {
   const host = hostOf(setting.publicUrl);
   const upstream = `127.0.0.1:${setting.sharePort}`;

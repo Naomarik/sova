@@ -95,8 +95,9 @@ terminal has the session open, `new` makes a new one) and a `meshNeed`.
   Assistant's default model (§app.project-assistant/models). The `session.offers.*` entries read
   a session's offer cards, show one from another chat, click a button, and set or clear Not Now;
   `project.offers.list` is the project page's Offers list (§chat/offers). The `design.*` entries list
-  a chat's designs, read a page, change a run's Setup, Start Creative Director, message, refine, retry or
-  delete a design, and message the Creative Director, the Lookbook-wide ones named for the Lookbook
+  a chat's designs, read a page, change a run's Setup, Start Creative Director, message, refine, retry,
+  stop, remove, restore or delete a design, message the Creative Director, and read what the designs
+  were told, the Lookbook-wide ones named for the Lookbook
   (§chat.design-mode/commands); a Lookbook brief's
   Start, answers and edits, the Creative Director's questions, bringing images in and an image's own note
   are the person's click and no entry (§app.access/your-click). Approving an offers

@@ -133,16 +133,23 @@ waiting for a free session says so. While a page is being written it fills in as
 scripts off, so its buttons and animations work once it's finished. Up to four pages show live at
 once; others say "Waiting for a free preview". A page loads only Google Fonts from the web.
 
-- **Refine** hands a design back with your guidance and any quick prompts (Check Phone Width,
-  Tighten Spacing, Fix Contrast, Make Content Real). The session opens the
-  page at desktop and phone widths, looks at it, and fixes what it sees, up to two times. Every
-  version is kept (A, A2).
 - **Open** (or **Chat**) shows a design full size with its own conversation beside it, even while
-  its first page is being written. **Hide Chat** gives the page the room. A session that has shut down starts again when you message it.
+  its first page is being written. To change a design, tell it in its chat; every version is kept
+  (A, A2). **Hide Chat** gives the page the room. A session that has shut down starts again from its
+  saved page when you message it.
+- **More** on a design (on its tile or in the open view) holds **Stop** and **Remove**. A stopped
+  design keeps what it had written as a still picture, reads Stopped, and offers **Start Again**.
+  A removed one moves to a folded **Removed** section, where you can still open it, read its chat
+  and **Restore** it as it was.
 - **Retry** tries a failed design again in a fresh session.
-- The **Creative Director** has its own card and box. It knows what each design is, but not its code.
-  Tell it what you want, such as "the header from A with the cards from C", and it starts a new
-  design that names its parents.
+- The **Creative Director** has its own section on the card, with **Chat with the Creative
+  Director**, which opens its chat. Tell it what you want, such as "the header from A with the
+  cards from C", and it starts a new design that names its parents, on any model you're allowed to
+  use. It stops or removes a design only when you ask. Its chat also lists what each design was
+  told: every revision of the Full Prompt and every message to a design, labelled by who sent it.
+- Reading a design, from your main chat or the Creative Director, gives which version it is, which
+  versions exist, its size and where its page is saved, never the page itself. Either can ask for
+  any version ("A11, A16") or a picture of any of a design's views, such as "A16 · Deploy · phone".
 
 None of this wakes your main chat. You can also tell the main chat "tell B to go darker", and it
 passes that on word for word.

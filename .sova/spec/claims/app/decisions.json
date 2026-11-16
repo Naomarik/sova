@@ -308,7 +308,8 @@
       "server/chat-handle-remote.ts",
       "server/worktrees.ts",
       "server/merge-readiness.test.ts",
-      "server/session-groups.ts"
+      "server/session-groups.ts",
+      "server/session-feed-publish.test.ts"
     ],
     "requires": [
       "§app.decisions/attention-signals",

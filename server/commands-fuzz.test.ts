@@ -281,6 +281,9 @@ const VALIDATE_ONLY: Record<string, string> = {
   "design.retry": "starts a model session again",
   "design.coordinator.message": "drives the coordinator's model session",
   "design.delete": "acts on a design only a model session makes; server/design/batch.test.ts covers it",
+  "design.stop": "acts on a design only a model session makes; server/design/batch.test.ts covers it",
+  "design.remove": "acts on a design only a model session makes; server/design/batch.test.ts covers it",
+  "design.restore": "acts on a design only a model session makes; server/design/batch.test.ts covers it",
   "session.send": "starts a chat process for the turn",
   "session.approval.set": "acquires a chat handle, which starts the chat's process (server/approval-in-chat.ts's own tests drive it)",
   "session.configure": "acquires a chat handle, which starts the chat's process",
@@ -481,6 +484,7 @@ function iconProject(values: Record<string, unknown>, uploaded = false): Record<
 const FIXTURES: Record<string, Fixture> = {
   "design.list": { values: () => ({ session: session()[0] }), status: 200 },
   "design.page": { values: () => ({ session: session()[0], label: "A" }), status: 404 },
+  "design.history": { values: () => ({ session: session()[0] }), status: 200 },
   "session.list": { values: () => ({}), status: 200 },
   "session.get": { values: () => ({ session: session()[1] }), status: 200 },
   "session.read": { values: () => ({ session: session()[0] }), status: 200 },

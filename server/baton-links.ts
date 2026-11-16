@@ -4,6 +4,7 @@ import { dirname, join } from "node:path";
 import { dropTokens, keepTokens } from "./link-tokens";
 import { nudgeMarks } from "./session-feed";
 import { shareLinksChanged } from "./share/links-events";
+import { assertSharingOn } from "./share/sharing-off";
 import { stateRoot } from "./state-root";
 
 /**
@@ -68,6 +69,7 @@ function write(links: LinkRecord[]): void {
 
 /** Mint a link for hand-off `n` of a session to `personId`. Returns the token (kept, server/link-tokens.ts). */
 export function mintLink(input: { orgId: string; sessionId: string; n: number; personId: string; offerId?: string; key?: string }, now = Date.now()): string {
+  assertSharingOn();
   const token = randomBytes(32).toString("base64url");
   const rec: LinkRecord = {
     hash: hashToken(token),
@@ -77,7 +79,7 @@ export function mintLink(input: { orgId: string; sessionId: string; n: number; p
   };
   write([...read(), rec]);
   keepTokens("h", [token]);
-  shareLinksChanged({ kind: "h", cause: "mint" });
+  shareLinksChanged({ kind: "h", cause: "mint", hashes: [rec.hash] });
   return token;
 }
 

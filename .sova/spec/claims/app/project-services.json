@@ -709,7 +709,7 @@
   "§app.project-services/share": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "requires": [
       "§app.project-services/result",
       "§app.project-services/teardown",
@@ -729,12 +729,13 @@
       "scripts/sova-project.mjs",
       "server/project-services/copy-approvals.test.ts",
       "server/overseer-tools.ts",
-      "server/project-overseer-tools.ts"
+      "server/project-overseer-tools.ts",
+      "server/share/preview-link.ts"
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-10-28T13:39Z",
-      "source": "pi-session:01a181b5-0126-7289-9604-86c617633d9d#8e5330a0"
+      "at": "2026-11-12T12:42Z",
+      "source": "pi-session:a43d715c-1eb4-4040-a159-23c4193273a4#55333f93"
     }
   },
   "§app.project-services/status-logs": {

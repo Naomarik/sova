@@ -95,7 +95,8 @@ test("rule: an unknown key anywhere is refused with its exact path, and nothing 
 });
 
 test("each fault is refused with its exact path and words", () => {
-  const cases: [string, (r: any) => void, string][] = [
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- a mutation of the raw JSON
+  const cases: [string, (r: any) => void, string | RegExp][] = [
     ["version", (r) => (r.version = 2), "version: must be 1."],
     ["effort", (r) => (r.roles.consultant.models[1].effort = "huge"), `roles.consultant.models[1].effort: must be one of "off", "minimal", "low", "medium", "high", "xhigh", "max".`],
     ["model ref", (r) => (r.roles.runner.models[0].model = "glm"), `roles.runner.models[0].model: must be a model ref, "provider/id" ("claude-code/claude-opus-5-5", "zai/glm-5.3").`],
@@ -128,13 +129,13 @@ test("each fault is refused with its exact path and words", () => {
     ["a looking command", (r) => r.commands.push("session.list"), `commands[1]: "session.list" only looks, and looking is free: list only commands that change things.`],
     ["steps and machine", (r) => (r.machine = {}), `playbook.json: has both "steps" and "machine"; use one.`],
     ["helpers without steps", (r) => delete r.steps, `playbook.json: declares helper roles but no "steps" (or "machine") that use them.`],
-  ].map(([n, f, e]) => [n as string, f as (r: any) => void, e as never]);
+  ];
   for (const [name, mutate, expected] of cases) {
     const raw = clone(FULL);
     mutate(raw);
     const got = err(raw);
     if (typeof expected === "string") assert.equal(got, expected, name);
-    else assert.match(got, expected as RegExp, name);
+    else assert.match(got, expected, name);
   }
 });
 

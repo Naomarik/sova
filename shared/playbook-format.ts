@@ -771,28 +771,36 @@ export function checkCycleSettings(s: CycleSettings): string | null {
 /**
  * The folder checks a parse can't make (§chat.playbooks/description-file, "a broken reference"):
  * every prompt, phase and rule page the description names exists. `files` lists the folder's files,
- * relative, "/"-separated. Returns the faults, first first; [] when none.
+ * relative, "/"-separated (at least every page pagesOf names that exists). Returns the faults, first
+ * first; [] when none.
  */
 export function validatePlaybookFiles(spec: PlaybookSpec, files: readonly string[]): string[] {
   const have = new Set(files);
-  const out: string[] = [];
-  const need = (path: string, file: string) => {
-    if (!have.has(file)) out.push(`${path}: "${file}" isn't in the playbook's folder.`);
-  };
-  for (const r of spec.roles) if (r.prompt) need(`roles.${r.id}.prompt`, r.prompt);
+  return pagesOf(spec)
+    .filter((p) => !have.has(p.file))
+    .map((p) => `${p.path}: "${p.file}" isn't in the playbook's folder.`);
+}
+
+/** Every page in the folder the description points at, with where it says so; in file order. */
+export function pagesOf(spec: PlaybookSpec): { path: string; file: string }[] {
+  const out: { path: string; file: string }[] = [];
+  for (const r of spec.roles) if (r.prompt) out.push({ path: `roles.${r.id}.prompt`, file: r.prompt });
   spec.steps.forEach((it, i) => {
     if (it.kind === "step") {
-      if (it.phase) need(`steps[${i}].phase`, it.phase);
+      if (it.phase) out.push({ path: `steps[${i}].phase`, file: it.phase });
       return;
     }
-    if (it.rule?.endsWith(".md") && !/\s/.test(it.rule)) need(`steps[${i}].repeat.rule`, it.rule);
+    if (it.rule && isPageRef(it.rule)) out.push({ path: `steps[${i}].repeat.rule`, file: it.rule });
     it.steps.forEach((s, j) => {
-      if (s.phase) need(`steps[${i}].steps[${j}].phase`, s.phase);
+      if (s.phase) out.push({ path: `steps[${i}].steps[${j}].phase`, file: s.phase });
     });
   });
-  for (const s of spec.machine?.states ?? []) if (s.phase) need(`machine.states.${s.id}.phase`, s.phase);
+  for (const s of spec.machine?.states ?? []) if (s.phase) out.push({ path: `machine.states.${s.id}.phase`, file: s.phase });
   return out;
 }
+
+/** A cycle's rule written as a page in the folder ("phases/stop-rule.md") rather than in words. */
+export const isPageRef = (rule: string): boolean => rule.endsWith(".md") && !/\s/.test(rule);
 
 // ── values ───────────────────────────────────────────────────────────────────────────────────────
 

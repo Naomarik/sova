@@ -13,6 +13,7 @@ import type { LookbookRow } from "./lookbook-words";
 import type { LinkedAgentInfo } from "./mesh-links";
 import type { Permit } from "./overseer-grants";
 import type { OverseerCard } from "./overseer-card";
+import type { PlaybookSpec } from "./playbook-format";
 import type { ReplyTiming, RowFacts, SovaEvent, SovaPart } from "./harness-wire";
 import type { OwnerRequestCard } from "./project-assistant";
 import type { CardInfo } from "./transcript-cards";
@@ -1042,6 +1043,11 @@ export interface PlaybookInfo {
   replacesSova?: boolean;     // a user playbook with the same id as a shipped one
   /** Its schedule (§chat/schedules), when its frontmatter has `when:`. */
   schedule?: PlaybookSchedule;
+  /** Its `playbook.json`, read strictly (§chat.playbooks/description-file): picking it opens its card. */
+  spec?: PlaybookSpec;
+  /** Why its `playbook.json` was refused ("roles.grader.models[1].effort: must be one of …"): shown
+      instead of a card. Never with `spec`. */
+  specError?: string;
 }
 
 /** A schedule's state as the Playbooks dialog and the permits panel read it (§chat.schedules/where-shown). */

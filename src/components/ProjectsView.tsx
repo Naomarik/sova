@@ -309,7 +309,7 @@ function RunningCopies() {
                                 <Show when={said()[key()]}>{(line) => <p class="field-error services-said">{line()}</p>}</Show>
                               </div>
                               <div class="services-actions">
-                                {/* An adopted main is never Sova's to stop: Apply on its Running Copies tab restarts it. */}
+                                {/* An adopted main is never Sova's to stop: it runs as a unit of its own, and the line says so. */}
                                 <Show when={!c.adopted} fallback={<p class="list-meta services-actions-note">{adoptedLine(c.adopted!)}</p>}>
                                   <StopButton p={p} id={key()} name={name()} body={{ instance: c.instance }} />
                                 </Show>

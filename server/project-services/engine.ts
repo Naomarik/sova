@@ -737,7 +737,7 @@ export class ProjectEngine {
       throw new VerbFailure("refused-slot0", `slot 0's ${s.name} is the adopted unit ${unit}, which Sova never starts or stops: apply schedules its restart (the operator, confirmed)`);
     if (run.verb !== "apply") return;
     const what = `apply of slot 0 restarts the adopted unit ${unit}`;
-    if (run.caller.kind !== "operator") throw new VerbFailure("needs-confirm", `${what}: the operator does it, confirmed (sova-project apply … --confirm, or Apply on the project's Running Copies tab)`);
+    if (run.caller.kind !== "operator") throw new VerbFailure("needs-confirm", `${what}: the operator does it, confirmed (sova-project apply … --confirm)`);
     if (run.caller.notPage && this.selfCheckout() === run.project) throw new VerbFailure("forbidden", SELF_APPLY_REFUSAL);
     if (!run.req.confirm) throw new VerbFailure("needs-confirm", `${what}: confirm it (sova-project apply … --confirm)`);
   }

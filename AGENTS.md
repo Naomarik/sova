@@ -179,12 +179,12 @@ goes live on `systemctl --user restart sova-runtime.service` (macOS:
   queue is idle" says: it holds the queue (`merge.hold`), builds the main checkout, restarts
   `sova-runtime.service` and checks `/api/health`'s head. No other chat, worker or script does;
   `POST /api/updates/restart` still refuses every chat.
-- The operator's ways: **Restart Sova** in Settings → General, Apply on the project's Branches tab, or
-  from their own terminal the raw `systemctl` or `launchctl` line above.
+- The operator's ways: **Restart Sova** in Settings → General, or from their own terminal the raw
+  `systemctl` or `launchctl` line above.
 - The verb form (Sova as its own project, `.sova/project.json`; slot 0 adopts `sova-runtime.service`)
-  is that Apply, which always needs the operator's confirm, then restarts the unit 3 s later. A page on
-  another of the user's computers can press it too. `sova-project apply` of Sova's own slot 0 is refused,
-  confirmed or not. up, down, reset and teardown of slot 0 are refused.
+  is `apply`, which always needs the operator's confirm, then restarts the unit 3 s later. The project's
+  Running Copies tab offers no Apply, so no button runs it. `sova-project apply` of Sova's own slot 0 is
+  refused, confirmed or not. up, down, reset and teardown of slot 0 are refused.
 - Never restart `sova-runtime.service` to test something: tests use hermetic servers and stand-in
   units.
 

@@ -227,8 +227,9 @@ function CopyLimit(props: { projectId: string; limit: CopyLimitView; archived: b
  * this host in two groups, In use and Can go (landed, or left stopped by the merge queue; Free Up Slots tears
  * those down at once, asked first), Previews, the shared services, and the registry's Recent feed, closed. The
  * main checkout's first, each with its ports, memory, state and who made it, Open (its app's entry, while
- * the entry's service is ready) first, and Start, Stop, Apply, Reset, Logs and Teardown run as the operator; the shared services in their own block. Reset and
- * Teardown (and Stop of a shared service) ask first; a refusal reads as a sentence under its row.
+ * the entry's service is ready) first, and Start, Stop, Logs and Teardown run as the operator (Apply and Reset are
+ * not on the page: a chat runs them with its own tools); the shared services in their own block.
+ * Teardown (and Stop of a shared service) asks first; a refusal reads as a sentence under its row.
  */
 export function ProjectServicesTab(props: {
   projectId: string;

@@ -39,6 +39,10 @@ export function viewsLine(v: Pick<DesignVersion, "views">): string {
   return `Views${found}: ${names.join(" · ")}${unchecked}`;
 }
 
+/** A read's views line for a version whose page is `html`: its kept views, or for a version saved before views were
+    kept, the ones its page names (not yet checked in a browser). */
+export const viewsLineFor = (v: Pick<DesignVersion, "views">, html: string | null): string => viewsLine(v.views || html === null ? v : { views: versionViews(html) });
+
 /** The view a look asks for, by name whatever its case; throws naming the views there are. */
 export function pickView(views: readonly DesignView[], asked: string, what: string): DesignView {
   const v = views.find((x) => viewKey(x.name) === viewKey(asked));

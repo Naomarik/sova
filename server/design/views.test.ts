@@ -203,3 +203,13 @@ test("the main chat's read lists a version's views, and its look returns one pic
   for (const [params, why] of [[{ size: "tablet" }, /size is "desktop" or "phone"/], [{ label: "A, A1" }, /one design at a time/], [{ view: "Billing" }, /has no view "Billing"\. Its views: the first screen, Sessions, Deploy\./]] as const)
     await assert.rejects(call({ op: "look", label: "A", ...params }), why);
 });
+
+test("a version kept before views were read still lists the views its page names, not yet checked", async () => {
+  const { mainDesignTools } = await import("./tools");
+  const sid4 = "views-4";
+  store.changeDesigns(sid4, (s) => void s.designs.push(record()));
+  store.writePage(sid4, "A", 1, page(`<button role="tab">Sessions</button><button role="tab">Deploy</button>`));
+  const tool = mainDesignTools(() => ({ sessionId: sid4, path: parent.path }), () => "/cwd").find((t) => t.name === "lookbook")!;
+  const read = (await tool.execute("t", { op: "read", label: "A" }, undefined, undefined, undefined as never)).content[0] as { text: string };
+  assert.match(read.text, /\nViews \(found from its tabs; the page declares none\): the first screen · Sessions · Deploy · not yet checked in a browser\n/);
+});

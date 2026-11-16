@@ -16,7 +16,7 @@ import { changeDesigns, designOf, pendingPage, readPage, viewOf } from "./store"
 import { applyEdits, type Edit } from "./edits";
 import { pageSize, pickVersions, versionCount, versionHeading } from "./versions";
 import { pagePathFor, type PageReader } from "./page-paths";
-import { lookAtDesignPage, viewsLine } from "./views";
+import { lookAtDesignPage, viewsLineFor } from "./views";
 
 export { applyEdits };
 
@@ -111,7 +111,7 @@ export function readDesignPages(sessionId: string, asked: string, reader?: PageR
     const page = readPage(sessionId, x.d.label, x.v.n);
     if (page === null) throw new Error(`Design ${x.d.label}'s version ${x.v.n} couldn't be read.`);
     const at = pagePathFor(sessionId, x.d.label, x.v.n, reader);
-    const views = viewsLine(x.v);
+    const views = viewsLineFor(x.v, page);
     return `${versionHeading(x)}\nSize: ${pageSize(page)}.${views ? `\n${views}` : ""}\nFile: ${at.path}${at.exposed ? " (a read-only copy where your sandbox can read it)" : ""}`;
   });
   return `${blocks.join("\n\n")}\n\nThe page isn't in this reply: read the file, in parts with offset and limit, or grep it for what you need.`;
@@ -128,7 +128,7 @@ async function lookAtOne(p: DesignParent, params: { label?: string; version?: un
   const x = picked[0]!;
   const size: TourSize = params.size === "phone" ? "phone" : "desktop";
   const r = await lookAtDesignPage(p, x.d.label, { version: x.v.n, sizes: [size], ...(typeof params.view === "string" && params.view.trim() ? { view: params.view } : {}) });
-  const views = viewsLine(x.v);
+  const views = viewsLineFor(x.v, readPage(p.sessionId, x.d.label, x.v.n));
   const text = [versionHeading(x), `${r.view ? `The view ${r.view}` : "The screen it opens on"}, at ${size} width.`, views].filter(Boolean).join("\n");
   return { content: [{ type: "text", text }, ...r.shots.map((s) => ({ type: "image" as const, data: Buffer.from(s.png).toString("base64"), mimeType: "image/png" }))], details: { label: x.d.label, version: x.v.n, ...(r.view ? { view: r.view } : {}), size } };
 }

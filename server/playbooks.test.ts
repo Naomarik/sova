@@ -260,7 +260,7 @@ test("a playbook.json beside the entry is read strictly: its description, or its
   assert.equal(by["no-page"]!.specError, `roles.r.prompt: "roles/r.md" isn't in the playbook's folder.`);
   assert.equal(by["bad-key"]!.specError, `playbook.json: unknown key "colour". Known: version, listed, run, inputs, facts, roles, steps, machine, commands.`);
   assert.match(by["not-json"]!.specError!, /^playbook\.json: isn't valid JSON \(/);
-  assert.equal(by["bad-slot"]!.specError, `roles.r.prompt: "{{nope}}" isn't an input or fact ("run", "note").`);
+  assert.equal(by["bad-slot"]!.specError, `roles.r.prompt: "{{nope}}" isn't an input or fact ("run", "folder", "note").`);
   for (const id of ["no-page", "bad-key", "not-json", "bad-slot"]) assert.equal(by[id]!.spec, undefined);
 });
 

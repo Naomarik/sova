@@ -809,8 +809,9 @@ export const isPageRef = (rule: string): boolean => rule.endsWith(".md") && !/\s
 // ── slots ────────────────────────────────────────────────────────────────────────────────────────
 
 /** Slots every role prompt may use besides its inputs and facts, filled at Start: `run`, the run's
-    folder (where a helper writes); `note`, your note for the role on the card (empty when none). */
-export const RUN_SLOTS = ["run", "note"] as const;
+    folder (where a helper writes); `folder`, the playbook's own folder (its scripts and references:
+    helpers get no playbook block); `note`, your note for the role on the card (empty when none). */
+export const RUN_SLOTS = ["run", "folder", "note"] as const;
 /** The slot a role with `count` or `per` may use: which one it is (the item of `per`'s input, as
     inputValueText words it, or "2 of 3" for `count`). */
 export const EACH_SLOT = "each";

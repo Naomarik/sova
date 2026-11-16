@@ -217,10 +217,10 @@ test("a helper's prompt {{slots}} name an input, a fact, run or note; {{each}} o
     roles: { one: { label: "One", prompt: "roles/one.md" }, many: { label: "Many", prompt: "roles/many.md", count: 2 } },
     steps: [{ id: "s", label: "S", roles: ["one", "many"] }],
   });
-  const all = "{{target}} {{ latest }} {{run}} {{note}}";
+  const all = "{{target}} {{ latest }} {{run}} {{folder}} {{note}}";
   assert.deepEqual(validatePromptSlots(s, { "roles/one.md": all, "roles/many.md": `${all} {{each}}` }), []);
   assert.deepEqual(validatePromptSlots(s, { "roles/one.md": "{{versoin}} {{each}}", "roles/many.md": "{{each}}" }), [
-    `roles.one.prompt: "{{versoin}}" isn't an input or fact ("target", "latest", "run", "note").`,
+    `roles.one.prompt: "{{versoin}}" isn't an input or fact ("target", "latest", "run", "folder", "note").`,
     `roles.one.prompt: "{{each}}" is only for a role with "count" or "per".`,
   ]);
 });

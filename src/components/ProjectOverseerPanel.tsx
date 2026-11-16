@@ -885,7 +885,7 @@ export function ActivityCard(props: { po: ProjectOverseer }) {
         when={actions()?.length}
         fallback={
           <Show when={!props.po.actions.pending() || props.po.actions.data()} fallback={<Placeholder lines={3} label="Activity" />}>
-            <p class="orgs-empty">Nothing yet. Every act it takes, refused or not, lists here.</p>
+            <p class="orgs-empty">Nothing yet. Every act the overseer takes, refused or not, lists here.</p>
           </Show>
         }
       >
@@ -1077,7 +1077,7 @@ export function TodosCard(props: { po: ProjectOverseer; send?: ItemSendForm; arc
         when={open().length}
         fallback={
           <Show when={info() || po().todos.error()} fallback={<Placeholder lines={2} label="To-do" />}>
-            <p class="orgs-empty">{info()?.done ? `${info()!.done} done. Nothing open.` : "Nothing to do yet."}</p>
+            <p class="orgs-empty">{info()?.done ? `${info()!.done} done. Nothing open.` : "Nothing on the to-do list. Add one with +, or the overseer files them as it looks."}</p>
           </Show>
         }
       >

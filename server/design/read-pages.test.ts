@@ -12,7 +12,7 @@ process.env.PI_CODING_AGENT_DIR = mkdtempSync(join(tmpdir(), "design-read-"));
 after(() => rmSync(process.env.PI_CODING_AGENT_DIR!, { recursive: true, force: true }));
 const { mainDesignTools } = await import("./tools");
 const { versionsLine } = await import("./versions");
-const { setPageReaderSandboxForTest } = await import("./page-paths");
+const { installPageReaderSandbox } = await import("./page-paths");
 const { existsSync, readFileSync, statSync } = await import("node:fs");
 const store = await import("./store");
 
@@ -72,6 +72,7 @@ test("several pages at once, in the order named, each once", async () => {
 
 test("a reader whose sandbox can see the design folder gets the file; one whose sandbox hides it gets a read-only copy where it can read, never the page", async () => {
   const ctx = { sessionId: "main-chat", cwd: "/cwd", branch: () => [] };
+  const setPageReaderSandboxForTest = (box: (() => unknown) | null) => installPageReaderSandbox(box ? async () => box() as never : null);
   const tmpDir = join(process.env.PI_CODING_AGENT_DIR!, "session-tmp");
   const policy = (hidden: string[]) => ({ on: true, policy: { hidden, tmpDir } }) as never;
   setPageReaderSandboxForTest(() => ({ on: false }));

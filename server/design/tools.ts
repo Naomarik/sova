@@ -82,7 +82,7 @@ export function mainDesignTools(parent: () => DesignParent, cwd: () => string): 
           return say(`The Setup card is on screen (run ${run.id}${picked ? `, ${picked} models ticked` : ""}).${skills}${missing}${imagesLine}${failed} The user finishes it there and starts the run; above ${DESIGN_ASK_ABOVE} designs Sova asks them first. Nothing more is needed from you, and nothing about it will reach you.`, { designCard: { runId: run.id } });
         }
         if (params?.op === "read") {
-          if (params.label) return say(readDesignPages(p.sessionId, params.label, ctx ? { sessionId: ctx.sessionId, cwd: ctx.cwd, branch: () => ctx.branch() } : undefined, p));
+          if (params.label) return say(await readDesignPages(p.sessionId, params.label, ctx ? { sessionId: ctx.sessionId } : undefined, p));
           const card = coordinatorCard(p.sessionId);
           const lines = viewOf(p.sessionId).designs.map((d) => `${d.label} · ${designDirectionLine(d)} · ${d.model} · ${d.status}${d.removed ? " (removed)" : ""} · ${versionCount(d)}`);
           return say([card?.card || "The Creative Director has no card yet.", lines.length ? `Designs:\n${lines.join("\n")}` : ""].filter(Boolean).join("\n\n"));
@@ -106,16 +106,17 @@ export function mainDesignTools(parent: () => DesignParent, cwd: () => string): 
     which exist, its size, and the path of its saved file, never the page itself, so it enters the chat's context only as
     far as the chat reads the file. The path is one `reader` can open, its sandbox included (server/design/page-paths.ts).
     Throws, naming what there is, for a design or version that isn't there. */
-export function readDesignPages(sessionId: string, asked: string, reader?: PageReader, parent?: DesignParent): string {
-  const blocks = pickVersions(viewOf(sessionId).designs, asked).map((x) => {
+export async function readDesignPages(sessionId: string, asked: string, reader?: PageReader, parent?: DesignParent): Promise<string> {
+  const blocks: string[] = [];
+  for (const x of pickVersions(viewOf(sessionId).designs, asked)) {
     // Views no browser could check yet (their chat was closed): this read, made from the open chat, has them checked.
     if (parent) recheckViews(parent, x.d.label, x.v);
     const page = readPage(sessionId, x.d.label, x.v.n);
     if (page === null) throw new Error(`Design ${x.d.label}'s version ${x.v.n} couldn't be read.`);
-    const at = pagePathFor(sessionId, x.d.label, x.v.n, reader);
+    const at = await pagePathFor(sessionId, x.d.label, x.v.n, reader);
     const views = viewsLineFor(x.v, page);
-    return `${versionHeading(x)}\nSize: ${pageSize(page)}.${views ? `\n${views}` : ""}\nFile: ${at.path}${at.exposed ? " (a read-only copy where your sandbox can read it)" : ""}`;
-  });
+    blocks.push(`${versionHeading(x)}\nSize: ${pageSize(page)}.${views ? `\n${views}` : ""}\nFile: ${at.path}${at.exposed ? " (a read-only copy where your sandbox can read it)" : ""}`);
+  }
   return `${blocks.join("\n\n")}\n\nThe page isn't in this reply: read the file, in parts with offset and limit, or grep it for what you need.`;
 }
 

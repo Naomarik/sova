@@ -5,6 +5,8 @@ import { onCleanup, onMount, type JSX } from "solid-js";
  * so none of them ever covers it. Per transcript, the tallest pinned bar wins.
  */
 const pinned = new WeakMap<HTMLElement, Map<HTMLElement, number>>();
+/** How far up from the chat's bottom edge its floating controls reach (Jump to Latest: 16px + 44px, and room). */
+const FLOAT_BAND = 96;
 
 function lift(wrap: HTMLElement, foot: HTMLElement, px: number | null): void {
   let bars = pinned.get(wrap);
@@ -43,7 +45,13 @@ export function DesignCardFoot(props: { class?: string; label?: string; children
       const now = f.height > 0 && c.bottom - f.bottom > 1;
       if (now !== was) foot.toggleAttribute("data-pinned", now);
       was = now;
-      if (wrap) lift(wrap, foot, now ? wrap.getBoundingClientRect().bottom - f.top : null);
+      // The floating controls lift whenever the bar is in their band at the bottom of the chat, stuck
+      // there or simply scrolled to it, so they never cover it.
+      if (wrap) {
+        const w = wrap.getBoundingClientRect();
+        const inBand = f.height > 0 && f.top < w.bottom && f.bottom > w.bottom - FLOAT_BAND;
+        lift(wrap, foot, inBand ? w.bottom - f.top : null);
+      }
     };
     const soon = () => {
       if (!frame) frame = requestAnimationFrame(check);

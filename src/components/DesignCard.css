@@ -154,7 +154,7 @@
 .design-tile-actions { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) var(--control-sm); gap: var(--space-2); margin-top: var(--space-2); }
 .design-tile[data-removed] .design-tile-actions { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .design-tile-actions .button { min-width: 0; }
-.design-tile-more { width: var(--control-sm); height: var(--control-sm); min-height: 0; padding: 0; }
+.design-tile-more, .design-open-more { flex: none; width: var(--control-sm); height: var(--control-sm); min-height: 0; padding: 0; }
 .design-tile[data-removed] .design-tile-page { opacity: .72; }
 /* On a phone a design is a row: its picture on the left, so more than one fits on the screen. */
 @container design-card (max-width: 520px) {

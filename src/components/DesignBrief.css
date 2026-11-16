@@ -26,6 +26,7 @@
   .design-brief-dialog { inset: auto 0 0 0; width: 100%; height: 92dvh; border-radius: var(--r-xl) var(--r-xl) 0 0; border-bottom: 0; }
 }
 /* In the dialog every text is its own length: no box of a fixed size, nothing scrolling inside. */
+.design-brief-dialog .design-brief, .design-brief-dialog .design-brief-frozen { display: flex; flex-direction: column; gap: var(--space-5); }
 .design-brief-dialog .design-brief-box { height: auto; }
 .design-brief-dialog .design-brief-read { height: auto; overflow: visible; }
 .design-brief-dialog .design-brief-area .textarea { height: auto; min-height: calc(10 * var(--fs-body) * var(--lh-body)); field-sizing: content; }

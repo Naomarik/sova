@@ -1,36 +1,8 @@
 # automation: recipes you run by hand, or that run by themselves
 
-Recommend a playbook for a recipe the person runs by hand. For one that runs by itself, recommend a schedule on a playbook when an existing profile fits, and an automation file when the run needs its own model, mode or permissions. For something that runs by itself after every reply in one project, see Reply hooks in the `modes` topic: no schedule does that.
+A recipe the person runs by hand is a playbook: the `playbooks` topic says how one is made and saved. This topic is for a project's playbook that runs by itself: recommend an automation file, which names its own model, mode and permissions. A schedule in a playbook's head lines is the older way, kept working for the ones that exist; repeats from a playbook's card will replace it. For something that runs by itself after every reply in one project, see Reply hooks in the `modes` topic: no schedule does that.
 
-A project's playbooks, schedules and automation files need a project in Git. In a project with no merge queue the same branch is the person's to merge; in a folder that isn't in Git they're made by hand. In a folder that isn't a project, the person's own playbooks still work, and the project-only things need Add as Project (the `project` topic). A project's playbooks and automations count once they are on its main branch: a branch's copy does nothing.
-
-## Your own playbooks
-
-- Change: a recipe available in all the person's chats on this computer, optionally replacing a shipped one with the same id.
-- Lives: `<agent dir>/sova/playbooks/<id>/PLAYBOOK.md`. The id is lowercase letters, digits and dashes. Files the entry names sit beside it, and relative paths in it resolve against its own folder.
-- Approves: the person, by their OK on the whole file.
-- By: OK. Show the path and the whole file first.
-- Live: now: the Playbooks dialog reads the folder each time it opens. It doesn't spread to other computers.
-- Check: the composer's plus, Playbooks, lists it under Yours.
-
-The entry's head is `key: value` lines, one line each, not YAML. Sova reads `title`, `name`, `description` and `promptHint`:
-
-```markdown
----
-title: Weekly tidy
-description: Clear finished worktrees and report what's left.
----
-List this project's worktrees. For each finished one, say what's left in it.
-```
-
-## A project's playbooks
-
-- Change: a recipe for everyone on the project.
-- Lives: `.sova/playbooks/<id>/PLAYBOOK.md` in the project, the same grammar. A folder written as a skill, with `SKILL.md`, works too. Sova never runs a playbook's scripts: the agent runs them under the chat's own permissions.
-- Approves: the person, by Land or Apply.
-- By: Land or Card. Land when it has more than its one `PLAYBOOK.md`. The card is the `playbook` setting, with its id and the file's text.
-- Live: after landing, or once the card is applied, the next time the Playbooks dialog opens.
-- Check: the Playbooks dialog lists it under This project.
+Schedules and automation files need a project in Git. In a project with no merge queue the same branch is the person's to merge; in a folder that isn't in Git they're made by hand. In a folder that isn't a project they need Add as Project (the `project` topic). They count once they are on the project's main branch: a branch's copy does nothing.
 
 ## Schedules
 

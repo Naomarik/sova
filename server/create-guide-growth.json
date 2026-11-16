@@ -347,7 +347,7 @@
    "services": "project",
    "merge-queue": "landing",
    "profile": "profiles",
-   "playbook": "automation",
+   "playbook": "playbooks",
    "schedule": "automation",
    "mode": "modes",
    "offers": "cards"

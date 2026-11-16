@@ -182,7 +182,6 @@
         { "model": "zai/glm-5.3", "effort": "low" },
         { "model": "claude-code/claude-haiku-5-5", "effort": "low" }
       ],
-      "only": true,
       "per": { "input": "testModels" }
     },
     "grader": {
@@ -233,5 +232,5 @@
     { "id": "review", "label": "Is it good enough to land?", "roles": ["reviewer"], "report": "verdict", "phase": "phases/review.md" },
     { "id": "decide", "label": "Land, cycle again or park", "roles": ["main"], "stop": "always", "report": "table", "phase": "phases/decide.md" }
   ],
-  "commands": ["session.create", "session.configure", "session.send", "project.verb.create", "project.verb.up", "project.verb.down"]
+  "commands": ["session.create", "session.configure", "session.send", "project.verb.up", "project.verb.apply"]
 }

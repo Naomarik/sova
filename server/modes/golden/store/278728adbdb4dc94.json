@@ -590,7 +590,7 @@
  },
  {
   "name": "create_guide",
-  "description": "@d8d27a6f2379e44a",
+  "description": "@f71802cf827cb044",
   "parameters": {
    "type": "object",
    "required": [
@@ -615,6 +615,7 @@
       "project",
       "landing",
       "releases",
+      "playbooks",
       "automation",
       "cards",
       "overseers",
@@ -622,6 +623,20 @@
       "computers"
      ],
      "description": "The topic, as Create's table of contents lists it"
+    },
+    "section": {
+     "type": "string",
+     "enum": [
+      "what",
+      "cast",
+      "choices",
+      "steps",
+      "card",
+      "repeats",
+      "commands",
+      "saving"
+     ],
+     "description": "With topic playbooks: one section of its contents page"
     }
    },
    "additionalProperties": false

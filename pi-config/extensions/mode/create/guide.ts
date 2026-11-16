@@ -10,6 +10,7 @@
  * The file format is in shared.md's owner note; HTML comments (owner notes) never reach the model.
  */
 import { readdirSync, readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { restoreActive } from "../../sandbox/state.ts";
 
 /** The groups and their topics, in the table of contents' order. A topic with no file isn't listed or looked up. */
@@ -18,7 +19,7 @@ export const CREATE_GROUPS: readonly { title: string; topics: readonly string[] 
 	{ title: "Teach your chats.", topics: ["instructions", "skills", "modes", "profiles"] },
 	{ title: "Give them new abilities.", topics: ["tools", "extensions", "pi-extensions", "scripts"] },
 	{ title: "Keep it safe.", topics: ["safety"] },
-	{ title: "Run your project.", topics: ["project", "landing", "releases", "automation", "cards", "overseers"] },
+	{ title: "Run your project.", topics: ["project", "landing", "releases", "playbooks", "automation", "cards", "overseers"] },
 	{ title: "Reach you and others.", topics: ["attention", "computers"] },
 ];
 
@@ -82,8 +83,64 @@ export function sandboxNote(entries: readonly { type: string; customType?: strin
 	return "This chat's sandbox is On: you can't write files on this computer, reach Sova's commands or run project tools here. If you haven't told the person, say so first, before you offer a change.";
 }
 
-/** What `create_guide {topic}` returns: the shared rules, then that topic's entry. A topic that isn't listed is refused, naming the topics (§design.copy-deck/create-mode). */
-export function createGuide(topic: string): string {
+/**
+ * The playbook know-how's sections, in the contents page's order: one file each in `playbooks/` beside this
+ * module, whose first line is its contents line, `# <section>: <words>`, as a topic's is. Making a playbook
+ * (Create's `playbooks` topic) and running one (the run's message, which the server builds from
+ * `playbookSections`) share this one contents page, so neither can drift from the files.
+ */
+export const PLAYBOOK_SECTION_ORDER: readonly string[] = ["what", "cast", "choices", "steps", "card", "repeats", "commands", "saving"];
+
+const sectionsDir = new URL("./playbooks/", import.meta.url);
+/** The section files, by name without `.md`, as written. */
+export const PLAYBOOK_SECTION_FILES: Readonly<Record<string, string>> = Object.fromEntries(
+	readdirSync(sectionsDir)
+		.filter((name) => name.endsWith(".md"))
+		.sort()
+		.map((name) => [name.slice(0, -3), readFileSync(new URL(name, sectionsDir), "utf8")]),
+);
+
+/** A section is listed and opened only when its file's header names it. */
+const sectionLine = (name: string): string | undefined => {
+	const file = PLAYBOOK_SECTION_FILES[name];
+	const header = file === undefined ? undefined : parseHeader(file);
+	return header?.topic === name ? header.line : undefined;
+};
+
+/** The sections a lookup opens, in order. */
+export const PLAYBOOK_SECTION_NAMES: readonly string[] = PLAYBOOK_SECTION_ORDER.filter((name) => sectionLine(name) !== undefined);
+
+/** The contents page's sections, for a run's message: each name, its contents line, and its file (absolute). */
+export function playbookSections(): { name: string; line: string; file: string }[] {
+	return PLAYBOOK_SECTION_NAMES.map((name) => ({ name, line: sectionLine(name)!, file: fileURLToPath(new URL(`${name}.md`, sectionsDir)) }));
+}
+
+/** The contents list, one line per section: `- \`cast\`: who runs it, …`. */
+export function playbookContents(): string {
+	return PLAYBOOK_SECTION_NAMES.map((name) => `- \`${name}\`: ${sectionLine(name)}`).join("\n");
+}
+
+/** One section's text, owner notes out. */
+export function playbookSection(name: string): string {
+	if (!PLAYBOOK_SECTION_NAMES.includes(name)) throw new Error(`No section ${name} in playbooks. Sections: ${PLAYBOOK_SECTION_NAMES.join(", ")}.`);
+	return stripOwnerNotes(PLAYBOOK_SECTION_FILES[name]!);
+}
+
+/** The topics that have sections: only `playbooks`. */
+export const TOPICS_WITH_SECTIONS: readonly string[] = ["playbooks"];
+
+/**
+ * What `create_guide {topic}` returns: the shared rules, then that topic's entry (the `playbooks` entry with its
+ * contents list in its `{{SECTIONS}}` place). With a section, only that section (§chat.create-mode/entries): the
+ * shared rules came with the topic. A topic that isn't listed is refused, naming the topics, and so is a section
+ * that isn't (§design.copy-deck/create-mode).
+ */
+export function createGuide(topic: string, section?: string): string {
 	if (!CREATE_GUIDE_NAMES.includes(topic)) throw new Error(`No topic ${topic}. Topics: ${CREATE_GUIDE_NAMES.join(", ")}.`);
-	return `${stripOwnerNotes(CREATE_FILES.shared ?? "")}\n\n${stripOwnerNotes(CREATE_FILES[topic]!)}`;
+	if (section !== undefined && section !== "") {
+		if (!TOPICS_WITH_SECTIONS.includes(topic)) throw new Error(`The ${topic} topic has no sections: open it with the topic alone.`);
+		return playbookSection(section);
+	}
+	const entry = stripOwnerNotes(CREATE_FILES[topic]!).replace("{{SECTIONS}}", () => playbookContents());
+	return `${stripOwnerNotes(CREATE_FILES.shared ?? "")}\n\n${entry}`;
 }

@@ -86,6 +86,7 @@ import type { McpNote } from "../shared/mcp";
 import { LOADING_TOOLS } from "./deeper-context";
 import { playbookExtension, type PlaybookHost } from "./harness/pi/playbook";
 import { playbookHost } from "./playbook-host";
+import { playbookCommandRows } from "./playbook-runs/commands";
 import { ChatMemory } from "./memory/chat";
 import { readOverseerSettings } from "./overseer-store";
 
@@ -1134,11 +1135,14 @@ function imageBlocks(content: unknown): QueueImage[] | undefined {
 }
 
 /** The runtime's commands as pi's rpc get_commands lists them, per runtime/cwd. */
-function listCommands(harness: HarnessSession, subfolderSkills = true): SlashCommand[] {
+function listCommands(harness: HarnessSession, subfolderSkills = true, playbooks: readonly SlashCommand[] = []): SlashCommand[] {
   // Sova's own `compact` leads; an extension command of that name could never run from here,
   // because the text is intercepted before pi sees it (ChatSession.handle), so it is not offered.
   // A subfolder's skills only where the chat looks below its folder.
-  return [COMPACT_COMMAND, ...harness.commands({ subfolderSkills }).filter((c) => !(c.source === "extension" && c.name === COMPACT_COMMAND.name))];
+  const own = [COMPACT_COMMAND, ...harness.commands({ subfolderSkills }).filter((c) => !(c.source === "extension" && c.name === COMPACT_COMMAND.name))];
+  // A playbook's card row only where no command of the chat's own has its name.
+  const taken = new Set(own.map((c) => c.name));
+  return [...own, ...playbooks.filter((c) => !taken.has(c.name))];
 }
 
 /** A session's title as the list would say it: its name, else its first message, else "Untitled". A first
@@ -2197,7 +2201,10 @@ class ChatSession {
       // another tool made (nested) doesn't: its caller's end does, once.
       if ((event.type === "tool.end" && !event.nested) || event.type === "run.start" || event.type === "run.settled") sessionsChanged();
       // A subfolder's skills join the / menu once offered, and leave with the block (§chat.subfolder-skills/command).
-      if (event.type === "run.settled" || event.type === "compaction.end") this.refreshCommands();
+      if (event.type === "run.settled" || event.type === "compaction.end") {
+        this.refreshCommands();
+        this.readPlaybookRows();
+      }
       // A Claude login picked during the reply goes in now, before the queue wake below can start
       // the next turn: applyLoginPick holds the web queue until it has landed
       // (§app.claude-logins/switch-queue).
@@ -2311,6 +2318,7 @@ class ChatSession {
     });
     this.lastCommands = null;
     this.refreshCommands(); // extension commands exist only after bindExtensions
+    this.readPlaybookRows();
     this.sendSandbox((m) => this.broadcast(m));
     // The same rule the extension's own session_start runs, so both agree on this session's mode.
     this.modeState = chatModeOf(harness.state.branch());
@@ -3367,9 +3375,28 @@ class ChatSession {
     this.broadcast(next);
   }
 
+  /** The / rows of this folder's playbooks that open a card, read after each turn. */
+  private playbookRows: SlashCommand[] = [];
+  private playbookRowsReading = false;
+
+  private readPlaybookRows(): void {
+    if (this.playbookRowsReading) return;
+    this.playbookRowsReading = true;
+    void playbookCommandRows(this.harness.cwd)
+      .then((rows) => {
+        if (JSON.stringify(rows) === JSON.stringify(this.playbookRows)) return;
+        this.playbookRows = rows;
+        this.refreshCommands();
+      })
+      .catch((err) => console.warn(`[chat] the playbooks' / rows weren't read: ${err instanceof Error ? err.message : String(err)}`))
+      .finally(() => {
+        this.playbookRowsReading = false;
+      });
+  }
+
   commands(): ChatServerMessage {
     try {
-      return { type: "commands", commands: listCommands(this.harness, descendsHere(this.path, this.harness.cwd)) };
+      return { type: "commands", commands: listCommands(this.harness, descendsHere(this.path, this.harness.cwd), this.playbookRows) };
     } catch (err) {
       console.error("[chat] listing commands failed", err);
       return { type: "commands", commands: [] };

@@ -88,7 +88,10 @@ export type SovaEvent =
       characters reads the page so far from the design's live route. Sent to the parent chat's panes only. */
   | { type: "design.live"; label: string; version: number; at: number; text: string; chars: number }
   /** The chat's designs, whole, when anything about them changed (coalesced): a DesignChatView (shared/design.ts). */
-  | { type: "design.state"; state: unknown };
+  | { type: "design.state"; state: unknown }
+  /** One playbook run this chat shows, starts or conducts, whole, when anything about it changed (coalesced): a
+      PlaybookRunView (shared/playbook-run.ts). */
+  | { type: "playbook.run"; run: unknown };
 
 /**
  * What a row's entry says beyond the row, on the entry's first row only (where EntryMeta is today);

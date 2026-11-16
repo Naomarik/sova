@@ -1043,7 +1043,7 @@ export interface PlaybookInfo {
   replacesSova?: boolean;     // a user playbook with the same id as a shipped one
   /** Its schedule (§chat/schedules), when its frontmatter has `when:`. */
   schedule?: PlaybookSchedule;
-  /** Its `playbook.json`, read strictly (§chat.playbooks/description-file): picking it opens its card. */
+  /** Its `playbook.json`, read strictly: picking it opens its card. */
   spec?: PlaybookSpec;
   /** Why its `playbook.json` was refused ("roles.grader.models[1].effort: must be one of …"): shown
       instead of a card. Never with `spec`. */
@@ -2850,6 +2850,8 @@ export interface SlashCommand {
   /** Where it comes from: extension path, or template/skill location (project, user, …) + path. */
   location?: string;
   path?: string;
+  /** A playbook's row (source "builtin"): the page opens that playbook's card instead of sending text. */
+  playbook?: { source: "sova" | "user" | "project"; id: string };
 }
 
 /**

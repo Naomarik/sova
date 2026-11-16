@@ -279,7 +279,13 @@
     "design.stop",
     "design.remove",
     "design.restore",
-    "design.history"
+    "design.history",
+    "playbook.run.open",
+    "playbook.run.list",
+    "playbook.run.get",
+    "playbook.run.edit",
+    "playbook.run.defaults",
+    "playbook.run.close"
   ],
   "retired": [
     "settings.agents.get",

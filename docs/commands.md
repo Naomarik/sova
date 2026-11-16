@@ -13,9 +13,9 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 
 | What | Count |
 | --- | ---: |
-| Routes registered | 631 |
-| Routes a catalogue entry points at | 208 |
-| Catalogue entries | 279 |
+| Routes registered | 638 |
+| Routes a catalogue entry points at | 214 |
+| Catalogue entries | 285 |
 | Class: Peer protocol | 39 |
 | Class: Auth | 4 |
 | Class: Share pages | 0 |
@@ -31,7 +31,7 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | Class: Page plumbing | 22 |
 | Class: Steps of starting a chat | 2 |
 | Class: Live capability links | 1 |
-| Class: Approvals and grants | 18 |
+| Class: Approvals and grants | 19 |
 | Pending (not yet a command) | 23 |
 | Chat socket frame types | 14 |
 | Document/window keydown listeners | 12 |
@@ -259,6 +259,12 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | `insights.usage.refresh` | Refresh Usage Limits | changes | `POST /api/insights/usage/refresh` | sessions |
 | `schedule.list` | List Schedules | looks | `GET /api/schedules` | sessions |
 | `playbook.list` | List Playbooks | looks | `GET /api/playbooks` | sessions |
+| `playbook.run.open` | Open a Playbook Card | changes | `POST /api/playbook-runs` | full |
+| `playbook.run.list` | List a Chat's Playbook Cards | looks | `GET /api/playbook-runs` | full |
+| `playbook.run.get` | Read a Playbook Card | looks | `GET /api/playbook-runs/:run` | full |
+| `playbook.run.edit` | Change a Playbook Card | changes | `PATCH /api/playbook-runs/:run` | full |
+| `playbook.run.defaults` | Save Playbook Card as My Defaults | changes | `POST /api/playbook-runs/:run/defaults` | full |
+| `playbook.run.close` | Close a Playbook Card | changes | `DELETE /api/playbook-runs/:run` | full |
 | `mcp.servers.list` | List MCP Servers | looks | `GET /api/mcp/servers` | full |
 | `mcp.server.status` | Show MCP Server | looks | `GET /api/mcp/rows/:id` | full |
 | `draft-spec.list` | List Draft Specs | looks | `GET /api/draft-specs` | full |
@@ -839,7 +845,7 @@ A list that prints live preview links, which open a project's port to whoever ho
 | --- | --- |
 | `GET /api/projects/:pid/previews` | sessions |
 
-### Approvals and grants (18)
+### Approvals and grants (19)
 
 Approving a schedule or a draft spec, the Overseer's permits and their revoke: any chat can run catalogue actions with the operator's token, so none of these is one. Exactly these routes (`GRANTS`).
 
@@ -860,6 +866,7 @@ Approving a schedule or a draft spec, the Overseer's permits and their revoke: a
 | `POST /api/design/runs/:run/brief/start` | full |
 | `GET /api/overseer/autonomy` | sessions |
 | `POST /api/overseer/autonomy/revoke` | admin |
+| `POST /api/playbook-runs/:run/start` | full |
 | `POST /api/projects/:pid/draft-specs/:sid/approve` | full |
 | `POST /api/schedules/approve` | admin |
 | `POST /api/schedules/revoke` | admin |
@@ -946,6 +953,12 @@ Approving a schedule or a draft spec, the Overseer's permits and their revoke: a
 | `POST /api/overseer/todos` | admin | `overseer.todo.add` |
 | `DELETE /api/overseer/todos/done` | admin | `overseer.todo.clear-done` |
 | `PUT /api/overseer/todos/order` | admin | `overseer.todo.reorder` |
+| `GET /api/playbook-runs` | full | `playbook.run.list` |
+| `POST /api/playbook-runs` | full | `playbook.run.open` |
+| `DELETE /api/playbook-runs/:run` | full | `playbook.run.close` |
+| `GET /api/playbook-runs/:run` | full | `playbook.run.get` |
+| `PATCH /api/playbook-runs/:run` | full | `playbook.run.edit` |
+| `POST /api/playbook-runs/:run/defaults` | full | `playbook.run.defaults` |
 | `GET /api/playbooks` | sessions | `playbook.list` |
 | `POST /api/previews/:id/off` | admin | `project.preview.off` |
 | `POST /api/project-services/:verb` | admin | `project.verb.apply`, `project.verb.conform`, `project.verb.create`, `project.verb.deploy.check`, `project.verb.deploy.logs`, `project.verb.deploy.plan`, `project.verb.deploy.request`, `project.verb.deploy.rollback`, `project.verb.deploy.run`, `project.verb.deploy.status`, `project.verb.doctor`, `project.verb.down`, `project.verb.logs`, `project.verb.merge.add`, `project.verb.merge.answer`, `project.verb.merge.ask`, `project.verb.merge.cancel`, `project.verb.merge.clear`, `project.verb.merge.extend`, `project.verb.merge.fresh`, `project.verb.merge.hold`, `project.verb.merge.live`, `project.verb.merge.logs`, `project.verb.merge.names`, `project.verb.merge.note`, `project.verb.merge.pause`, `project.verb.merge.reply`, `project.verb.merge.resolve`, `project.verb.merge.respond`, `project.verb.merge.restart`, `project.verb.merge.resume`, `project.verb.merge.retry`, `project.verb.merge.review`, `project.verb.merge.rule`, `project.verb.merge.setup`, `project.verb.merge.status`, `project.verb.merge.test`, `project.verb.merge.try`, `project.verb.release.abandon`, `project.verb.release.continue`, `project.verb.release.logs`, `project.verb.release.note`, `project.verb.release.notes`, `project.verb.release.publish`, `project.verb.release.request`, `project.verb.release.retry`, `project.verb.release.start`, `project.verb.release.status`, `project.verb.release.step`, `project.verb.release.withdraw`, `project.verb.reset`, `project.verb.revoke`, `project.verb.share`, `project.verb.status`, `project.verb.teardown`, `project.verb.test`, `project.verb.up` |

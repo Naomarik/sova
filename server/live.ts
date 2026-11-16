@@ -1,4 +1,4 @@
-import { readdirSync, readFileSync, statSync } from "node:fs";
+import { type FSWatcher, readdirSync, readFileSync, statSync, watch } from "node:fs";
 import { join } from "node:path";
 import { canonicalPath, LIVE_DIR } from "./paths";
 
@@ -101,20 +101,94 @@ const count = (v: unknown) => (typeof v === "number" && Number.isInteger(v) && v
 const parsed = new Map<string, { stamp: string; record: RawLiveRecord | null }>();
 
 /**
+ * The last listing's records, shared by every caller while it holds. It holds while the folder's
+ * own stamp is unchanged (writers rename a temp file over their record, SCHEMA.md, and every
+ * rename, new record or removal moves it, so those are seen at once, in the same tick), no event
+ * arrived on the folder's watch since (an in-place rewrite, or two renames inside one timestamp
+ * tick), and it is younger than VIEW_MAX_AGE_MS (a missed event). Without a watch (none could be
+ * set, or it errored) every call lists the folder again, as before.
+ *
+ * File times are coarse (a clock tick of a few ms): a change in the same tick as the listing can
+ * leave the stamp as it was. So a listing made while the folder's stamp is younger than
+ * SETTLE_MS is never kept: once it is older, any later change gets a newer stamp.
+ */
+let view: { dirStamp: string; at: number; records: RawLiveRecord[] } | null = null;
+let watcher: { w: FSWatcher; ino: bigint } | null = null;
+export const VIEW_MAX_AGE_MS = 2_000;
+const SETTLE_MS = 50;
+/** How many times the folder was listed (tests and measurement). */
+export let liveListings = 0;
+
+function unwatch(): void {
+  watcher?.w.close();
+  watcher = null;
+  view = null;
+}
+
+function ensureWatch(ino: bigint): void {
+  if (watcher?.ino === ino) return;
+  unwatch(); // a folder replaced by another (new inode): the old watch sees nothing more
+  try {
+    const w = watch(LIVE_DIR, { persistent: false }, () => {
+      view = null;
+    });
+    w.on("error", () => {
+      if (watcher?.w === w) unwatch();
+      else w.close();
+    });
+    watcher = { w, ino };
+  } catch {
+    // unwatchable: list on every call
+  }
+}
+
+/**
  * All live files (~/.pi/agent/sessions/live/*.json) with an alive pid. The folder is listed and
- * each file stat'ed on every call; a file is read and parsed again only when its stamp moved.
- * Contract: pi-config/extensions/sessions/public/SCHEMA.md. Read-only: never delete or
- * rewrite anything there, not even dead records (pi writers clean those up). `rec` is shared
- * between calls: consumers never mutate it.
+ * each file stat'ed only when the shared view no longer holds (see `view`); a file is read and
+ * parsed again only when its stamp moved. Pids are checked on every call (a process that dies
+ * writes nothing). Contract: pi-config/extensions/sessions/public/SCHEMA.md. Read-only: never
+ * delete or rewrite anything there, not even dead records (pi writers clean those up). `rec` is
+ * shared between calls: consumers never mutate it.
  */
 export function readLiveRecords(opts: { includeOwn?: boolean } = {}): RawLiveRecord[] {
+  const out: RawLiveRecord[] = [];
+  for (const r of liveView()) {
+    if ((isOwnPid(r.pid) && !opts.includeOwn) || !pidAlive(r.pid)) continue;
+    out.push({ sessionFile: r.sessionFile, pid: r.pid, rec: r.rec });
+  }
+  return out;
+}
+
+function liveView(): RawLiveRecord[] {
+  let dir;
+  try {
+    dir = statSync(LIVE_DIR, { bigint: true });
+  } catch {
+    parsed.clear();
+    unwatch();
+    return [];
+  }
+  const dirStamp = `${dir.ino}:${dir.size}:${dir.mtimeNs}:${dir.ctimeNs}`;
+  const now = Date.now();
+  if (view && watcher && view.dirStamp === dirStamp && now - view.at < VIEW_MAX_AGE_MS) return view.records;
+  ensureWatch(dir.ino);
+  const records = listLive();
+  // Kept only with a watch armed before the listing: an event after it clears the view.
+  const changedMs = Number((dir.mtimeNs > dir.ctimeNs ? dir.mtimeNs : dir.ctimeNs) / 1_000_000n);
+  view = watcher && records && now - changedMs >= SETTLE_MS ? { dirStamp, at: now, records } : null;
+  return records ?? [];
+}
+
+/** Every parseable record in the folder, dead pids included; null when it can't be listed. */
+function listLive(): RawLiveRecord[] | null {
+  liveListings++;
   const out: RawLiveRecord[] = [];
   let names: string[];
   try {
     names = readdirSync(LIVE_DIR);
   } catch {
     parsed.clear();
-    return out;
+    return null;
   }
   const seen = new Set<string>();
   for (const name of names) {
@@ -141,9 +215,7 @@ export function readLiveRecords(opts: { includeOwn?: boolean } = {}): RawLiveRec
       hit = { stamp, record };
       parsed.set(name, hit);
     }
-    const r = hit.record;
-    if (!r || (isOwnPid(r.pid) && !opts.includeOwn) || !pidAlive(r.pid)) continue;
-    out.push({ sessionFile: r.sessionFile, pid: r.pid, rec: r.rec });
+    if (hit.record) out.push(hit.record);
   }
   for (const name of parsed.keys()) if (!seen.has(name)) parsed.delete(name);
   return out;

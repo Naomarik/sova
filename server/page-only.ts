@@ -87,6 +87,7 @@ const DOORS = {
   update: "Only the user updates Sova. Ask them to do it in Settings → General. Nothing was changed.",
   cardClick: "Only the user answers a card. Ask them to click it in that chat. Nothing was sent.",
   extensions: "Only the user changes extensions. Ask them to do it in Settings → Extensions. Nothing was changed.",
+  agentCpu: "Only the user changes how much CPU agents may use. Ask them to do it in Settings → General. Nothing was changed.",
   accountToken: "Only the user saves or removes the Cloudflare token. Ask them to do it in Settings → Public links. Nothing was changed.",
   setupChat: "Only the user starts a setup chat. Ask them to press Set Up With a Chat in Settings → Public links. Nothing was started.",
   cloudflared: "Only the user downloads programs. Ask them to press Download in Settings → Public links. Nothing was downloaded.",

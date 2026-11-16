@@ -80,7 +80,7 @@ import { QUEUE_CHAT_MODE_REFUSAL, queueChatRole } from "../shared/merge-queue";
 import { cleanSessionTitle, readSessionTitleRecords, SESSION_TITLE_MAX, setSessionTitle } from "./session-titles";
 import { fixedNameRefusal } from "../shared/fixed-names";
 import { rowsOf } from "./transcript";
-import { parsePiBranch, readBranch, unknownEntries } from "./harness/pi/reader";
+import { parsePiBranchYielding, readBranch, unknownEntries } from "./harness/pi/reader";
 import { contextOfBranch } from "./harness/pi/usage";
 import { appendToClosedFile, createSessionFile, type NewSessionFile } from "./harness/pi/state";
 import { modelCheck, modelCheckStatus } from "./harness/pi/model-sync";
@@ -194,6 +194,7 @@ import { localRequest } from "./mesh/proxy";
 import { notPage, pageOnlyRefusal, personWatching, yourClickBody, yourClickRefusal } from "./page-only";
 import { registerProjectSettingsRoutes } from "./project-settings-routes";
 import { registerSovaSettingsRoutes } from "./sova-settings-routes";
+import { registerAgentCpuRoutes } from "./agent-cpu";
 import { setSovaSettingsDeps } from "./sova-settings";
 import { setCreateSettingsRun } from "./create-settings-tool";
 import { runCreateSettings } from "./create-settings-run";
@@ -537,6 +538,8 @@ export function buildApp(deps: AppDeps) {
   registerProjectOverseerRoutes(app);
   registerProjectSettingsRoutes(app);
   registerSovaSettingsRoutes(app);
+  // Settings → General's Agents' CPU: the optional ceiling on sova.slice (server/agent-cpu.ts).
+  registerAgentCpuRoutes(app);
   setCreateSettingsRun(runCreateSettings);
   registerProjectCostRoutes(app);
   registerProjectFileRoutes(app);
@@ -977,7 +980,7 @@ export function buildApp(deps: AppDeps) {
     summary: (path) => getSessionSummary(path),
     sessionFiles: listSessionFiles,
     readBranch,
-    parseBranch: (text) => parsePiBranch(text).branch,
+    parseBranch: async (text) => (await parsePiBranchYielding(text)).branch,
     // A conflict's scratch copy the merge thread made itself: the queue's own, never listed (merge-queue/owners.ts).
     queueMade: async () => (await import("./merge-queue/wire")).worktreeQueueMadeNow(),
     targetOf: async (main) => (await import("./merge-queue/wire")).landingTargetOf(main),

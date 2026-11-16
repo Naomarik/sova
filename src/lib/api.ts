@@ -8,6 +8,7 @@ import type { ExtensionInspect, ExtensionsInstalled } from "../../shared/extensi
 import type { McpNewServer, McpProjectServers, McpServerRow, McpServers, McpSignIn } from "../../shared/mcp";
 import type { ProjectSkillsView } from "../../shared/project-skills";
 import type { ApprovalState, ContextApprovalSetting, ContextFilesView, FolderApprovalsView } from "../../shared/approvals";
+import type { AgentCpuSet, AgentCpuState } from "../../shared/agent-cpu";
 import type { ProfileSaveRequest, ProfilesListing, ProfileWriteAnswer } from "../../shared/profiles";
 import type { ProjectFilesAnswer } from "../../shared/project-files";
 import type { DeployVerb, VerbResult } from "../../shared/project-contract";
@@ -1898,6 +1899,9 @@ export const decideInChat = (path: string, kind: "context" | "skill", item: stri
   request<unknown>("/api/sessions/approval", jsonInit("POST", { path, kind, item, state }));
 export const getContextApproval = () => request<ContextApprovalSetting>("/api/settings/context-approval", { cache: "no-store" });
 export const setContextApproval = (allowWithoutAsking: boolean) => request<ContextApprovalSetting>("/api/settings/context-approval", jsonInit("PUT", { allowWithoutAsking }));
+/** Settings → General's Agents' CPU (server/agent-cpu.ts): the optional ceiling on every agent's CPU together. */
+export const getAgentCpu = () => request<AgentCpuState>("/api/settings/agent-cpu", { cache: "no-store" });
+export const setAgentCpu = (maxCores: number | null) => request<AgentCpuState>("/api/settings/agent-cpu", jsonInit("PUT", { maxCores } satisfies AgentCpuSet));
 export const getProjectMcp = (projectId: string) => request<McpProjectServers>(`/api/projects/${encodeURIComponent(projectId)}/mcp`);
 /** Add and Check: answers once the Check has finished; a failed Check is a row in state failed. */
 export const addMcpServer = (server: McpNewServer) => request<McpServerRow>("/api/mcp/servers", jsonInit("POST", server));

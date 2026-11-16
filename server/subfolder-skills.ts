@@ -22,7 +22,7 @@ export type SkillsIn = (skillsDir: string) => FolderSkill[];
 const TAG = "sova-skills";
 const HEADER = new RegExp(`^<${TAG} dir="([^"\\n]+)">`);
 /** Inside one folder, in the order a chat's start takes them. */
-const SKILL_FOLDERS = [".agents/skills", ".claude/skills"] as const;
+export const SKILL_FOLDERS = [".agents/skills", ".claude/skills"] as const;
 
 const posix = (p: string) => p.split(sep).join("/");
 const escapeXml = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&apos;");

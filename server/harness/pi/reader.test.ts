@@ -13,8 +13,8 @@ import { normalizeEntries, normalizeEntry, rowsOf, rowsOfEntry } from "../../tra
 import { fixtureSets } from "./golden/golden";
 import { largeSessionText } from "./golden/fixtures/large.ts";
 import {
-  activeBranch, BranchScan, branchOf, firstText, historyOf, joinedText, lineEntry, lineHead, lineHeader, lineMay, liveHistory, liveRead, parseLines, parsePi, parsePiBranch,
-  rawOf, readBranch, readTailBranch, resetUnknownEntries, toHEntry, typedText, unknownEntries, type Entry,
+  activeBranch, appendLines, BranchScan, branchOf, firstText, historyOf, joinedText, lineEntry, lineHead, lineHeader, lineMay, liveHistory, liveRead, parseLines, parsePi, parsePiBranch,
+  parsePiBranchYielding, rawOf, readActiveBranch, readBranch, readPi, readTailBranch, resetUnknownEntries, toHEntry, typedText, unknownEntries, type Entry,
 } from "./reader";
 import { loadPi } from "./testing/load-pi.ts";
 import { contextForBranch, contextOfBranch, contextStep, messageContextTokens, piContextOf } from "./usage";
@@ -233,6 +233,56 @@ describe("files", () => {
 
   test("readBranch reads a file as parsePi + branchOf", async () => {
     assert.deepEqual((await readBranch(all.path)).map((h) => h.id), branchOf(parsePi(all.text).entries).map((h) => h.id));
+  });
+
+  test("the yielding reads (readBranch, readActiveBranch, readTailBranch, parsePiBranchYielding) give the sync parse's answer on every fixture", async () => {
+    for (const f of fixtures) {
+      const keys = new Set<unknown>(["mode", "subagents-registry"]);
+      const want = parsePiBranch(f.text, { ids: true, states: keys });
+      const got = await parsePiBranchYielding(f.text, { ids: true, states: keys });
+      assert.deepEqual(got, want, label(f));
+      assert.deepEqual(got.branch.map(rawOf), want.branch.map(rawOf), label(f));
+      const read = await readBranch(f.path);
+      assert.deepEqual(read, want.branch, `${label(f)}: readBranch`);
+      assert.deepEqual(read.map(rawOf), want.branch.map(rawOf), `${label(f)}: readBranch raw`);
+      assert.deepEqual(await readTailBranch(f.path, 1 << 30), want.branch, `${label(f)}: readTailBranch`);
+      assert.deepEqual(await readActiveBranch(f.path), activeBranch(parseLines(f.text)), `${label(f)}: readActiveBranch`);
+      assert.deepEqual(await readPi(f.path), parsePi(f.text), `${label(f)}: readPi`);
+    }
+  });
+
+  test("readBranch lets the event loop run while it parses a long file", async () => {
+    const large = fixtures.find((f) => f.set === "large")!;
+    let turns = 0;
+    let on = true;
+    const tick = () => {
+      if (!on) return;
+      turns++;
+      setImmediate(tick);
+    };
+    setImmediate(tick);
+    const branch = await readBranch(large.path);
+    on = false;
+    assert.ok(branch.length > 0);
+    assert.ok(turns > 1, `other work ran during the parse (${turns} turns)`);
+  });
+
+  test("appendLines: a line many chunks long, blank lines and a torn last line read as a split does", async () => {
+    const path = join(dir, "long-lines.jsonl");
+    const long = JSON.stringify({ type: "message", id: "x", text: "y".repeat(300 * 1024) });
+    const body = `{"a":1}\n\n${long}\n{"b":2}\n${long}\n{"torn":`;
+    writeFileSync(path, body);
+    const size = Buffer.byteLength(body);
+    const lines: string[] = [];
+    const bytes: Buffer[] = [];
+    const end = await appendLines(path, 0, size, (l) => lines.push(l), (b) => bytes.push(Buffer.from(b)));
+    assert.deepEqual(lines, ['{"a":1}', long, '{"b":2}', long]);
+    assert.equal(end, body.lastIndexOf("\n") + 1, "stops after the last complete line");
+    assert.equal(Buffer.concat(bytes).toString("utf8"), body.slice(0, end), "onBytes sees every byte up to there, in order");
+    const rest: string[] = [];
+    appendFileSync(path, "1}\n");
+    assert.equal(await appendLines(path, end, size + 3, (l) => rest.push(l)), size + 3);
+    assert.deepEqual(rest, ['{"torn":1}'], "the torn line is read whole from its first byte");
   });
 
   test("readTailBranch: the whole file when it fits; else the branch of the window, its cut first line dropped", async () => {

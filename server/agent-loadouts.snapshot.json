@@ -7477,7 +7477,7 @@
       ]
     },
     "create-settings": {
-      "bytes": 2888,
+      "bytes": 2909,
       "tools": [
         {
           "name": "sova_settings",
@@ -7537,6 +7537,7 @@
                   "remote.targets",
                   "sandbox.policy",
                   "workers.priority",
+                  "agents.cpu-ceiling",
                   "workers.profiles",
                   "workers.default-profile",
                   "alignment.style",

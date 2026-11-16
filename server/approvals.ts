@@ -8,7 +8,7 @@ import { defaultClaudeDir } from "../pi-config/extensions/claude-code/accounts.t
 import { checkoutOf, fileSha256, groupOf, itemKey, type ApprovalLookup, type FolderRef } from "./approvals-lookup";
 import { askingFirst } from "./context-approval-setting";
 import { skillFolderFingerprint, type Fingerprint } from "./skill-fingerprint";
-import { listSubfolderInstructions } from "./deeper-context";
+import { keptRead, subfolderWalk, walkMark } from "./folder-walk";
 import { folderResources } from "./harness/pi/resources";
 import { piSkillsIn } from "./harness/pi/skill-sources";
 import { real } from "./mcp/folder";
@@ -18,7 +18,6 @@ import { folderMatcher } from "./project-folder";
 import { dirFolderKey, folderDecisions, isItemKey, isSkillName, projectFolderKey, readApprovalStore, updateApprovalStore, type Decision, type ItemKind } from "./project-skills-store";
 import { listProjects, readProject } from "./projects/spaces";
 import { agentRoot } from "./state-root";
-import { listSubfolderSkills } from "./subfolder-skills";
 
 export * from "./approvals-lookup";
 export { allowWithoutAsking, askingFirst, setAllowWithoutAsking } from "./context-approval-setting";
@@ -98,6 +97,11 @@ export interface ScanDeps {
   checkouts?: (root: string) => Promise<{ dirs: string[]; complete: boolean }>;
   /** The subfolder walks' cap (default the deeper-context walk's). */
   cap?: number;
+  /** Read pi's lists and walk the subfolders again now rather than answer from the checkout's last ones
+      (server/folder-walk.ts): a save's scan, so it is judged against the folder as it is. */
+  fresh?: boolean;
+  /** The clock the kept walks are aged by (tests). */
+  now?: () => number;
 }
 
 /** The root and each git worktree of it, by real path; incomplete when git couldn't answer. */
@@ -187,13 +191,16 @@ const homeShort = (dir: string) => {
  * Everything a chat in the folder could load at its start or meet in its folders: for each checkout (the root
  * first), pi's own context files (pi's settings folder's, then the checkout's and every folder above it) and
  * skills, and the subfolder walk's instruction files and skills, each walk bounded as the deeper-context walk is.
- * One row per key, the first found. No subfolder walk for a folder whose chats don't look below it (server/skill-descent.ts:
+ * One row per key, the first found. pi's lists and the subfolder walks are kept per checkout and read again in the
+ * background (server/folder-walk.ts has the freshness rule; `deps.fresh` reads them now). No subfolder walk for a folder whose chats don't look below it (server/skill-descent.ts:
  * a plain folder, the home folder or above); a project's walks, a chat anywhere inside it may, unless its root is the
  * home folder or above it.
  */
 export async function folderQuickScan(where: string | FolderRef, deps: ScanDeps = {}): Promise<FolderScan> {
   const folder = typeof where === "string" ? folderForCwd(where) : where;
   const main = folder.root;
+  // When what this scan read was found: its start, or the oldest kept read it took.
+  let readFrom = walkMark();
   const listed = await checkoutsFor(main, deps);
   let complete = listed.complete;
   const checkouts = listed.dirs.includes(main) ? listed.dirs : [main, ...listed.dirs];
@@ -218,7 +225,10 @@ export async function folderQuickScan(where: string | FolderRef, deps: ScanDeps 
   for (const checkout of checkouts) {
     const top = checkout === main ? main : checkout;
     try {
-      const res = await (deps.loader ?? folderResources)(top, agentRoot());
+      const agentDir = agentRoot();
+      const kept = await keptRead(`pi\0${agentDir}\0${top}`, () => (deps.loader ?? folderResources)(top, agentDir), { serial: true, ...(deps.fresh ? { fresh: true } : {}), ...(deps.now ? { now: deps.now } : {}) });
+      readFrom = Math.min(readFrom, kept.seq);
+      const res = kept.value;
       for (const c of res.context) add("context", c.path, checkout);
       for (const s of res.skills) add("skill", s.filePath, checkout, { name: s.name, description: s.description });
       // A skill another of the same name shadows is a row of its own: told by its place, never by its name.
@@ -227,31 +237,34 @@ export async function folderQuickScan(where: string | FolderRef, deps: ScanDeps 
       complete = false;
     }
     if (!descends) continue;
-    const opts = deps.cap !== undefined ? { cap: deps.cap } : {};
-    const files = listSubfolderInstructions(top, [], opts);
-    if (files.incomplete) complete = false;
-    for (const f of files.files) add("context", f.abs, checkout, { dir: join(top, f.dir) });
-    const sub = listSubfolderSkills(top, piSkillsIn, opts);
-    if (sub.incomplete) complete = false;
-    for (const s of sub.skills) add("skill", s.filePath, checkout, { name: s.name, description: s.description, dir: join(top, s.dir) });
+    const walk = await subfolderWalk(top, { read: piSkillsIn, ...(deps.cap !== undefined ? { cap: deps.cap } : {}), ...(deps.fresh ? { fresh: true } : {}), ...(deps.now ? { now: deps.now } : {}) });
+    readFrom = Math.min(readFrom, walk.seq);
+    if (walk.incomplete) complete = false;
+    for (const f of walk.files) add("context", f.abs, checkout, { dir: join(top, f.dir) });
+    for (const s of walk.skills) add("skill", s.filePath, checkout, { name: s.name, description: s.description, dir: join(top, s.dir) });
   }
   const scan: FolderScan = { folder, checkouts, items: [...out.values()], complete };
-  settleAfterScan(scan);
+  settleAfterScan(scan, readFrom);
   return scan;
 }
+
+/** Each folder's latest decision write, by walkMark: a scan that read anything found before it drops nothing. */
+const decidedAt = new Map<string, number>();
 
 /**
  * What a scan settles in the store: version 1's name-keyed Disallowed skills go to the first skill found of that
  * name, and, after a complete scan, decisions on items no longer
- * found drop off (with the names no skill has). Writes only when something changes.
+ * found drop off (with the names no skill has). Writes only when something changes. A scan that read a walk (or
+ * began) before the folder's latest decision write drops no decision: what it lacks may be what was just decided.
  */
-function settleAfterScan(scan: FolderScan): void {
+function settleAfterScan(scan: FolderScan, readFrom: number): void {
   const d = folderDecisions(scan.folder.key);
   const found = { context: new Set<string>(), skills: new Set<string>() };
   for (const i of scan.items) found[i.kind === "context" ? "context" : "skills"].add(i.key);
   const legacy = Object.entries(d.legacySkills ?? {});
-  const goneContext = scan.complete ? Object.keys(d.context).filter((k) => !found.context.has(k)) : [];
-  const goneSkills = scan.complete ? Object.keys(d.skills).filter((k) => !found.skills.has(k)) : [];
+  const drops = scan.complete && readFrom > (decidedAt.get(scan.folder.key) ?? 0);
+  const goneContext = drops ? Object.keys(d.context).filter((k) => !found.context.has(k)) : [];
+  const goneSkills = drops ? Object.keys(d.skills).filter((k) => !found.skills.has(k)) : [];
   if (!legacy.length && !goneContext.length && !goneSkills.length) return;
   updateApprovalStore((s) => {
     const f = s.folders[scan.folder.key];
@@ -389,7 +402,7 @@ export interface ApprovalWrite {
  * already checked who may make them (changesNeedPage).
  */
 export async function writeFolderApprovals(folder: FolderRef, raw: ApprovalChanges, deps: ScanDeps = {}, opts: { scan?: FolderScan } = {}): Promise<ApprovalWrite> {
-  const scan = opts.scan ?? (await folderQuickScan(folder, deps));
+  const scan = opts.scan ?? (await folderQuickScan(folder, { ...deps, fresh: true }));
   const changes = resolveChanges(scan, raw);
   // An approval is of the content it was given for: an item this scan didn't find, or couldn't read, can't be approved.
   for (const kind of ["context", "skills"] as const) {
@@ -401,6 +414,7 @@ export async function writeFolderApprovals(folder: FolderRef, raw: ApprovalChang
   }
   const before = folderDecisions(folder.key);
   const changed: ApprovalWrite["changed"] = [];
+  decidedAt.set(folder.key, walkMark());
   updateApprovalStore((s) => {
     const f = (s.folders[folder.key] ??= { context: {}, skills: {} });
     for (const kind of ["context", "skills"] as const) {

@@ -159,7 +159,7 @@ async function approvalsOfFolder(cwd: string, fresh: boolean, now: () => number)
     const hit = scanCache.get(lookup.folder.key);
     let scan: FolderScan | null = !fresh && hit && now() - hit.at < SETUP_TTL_MS ? hit.scan : null;
     if (!scan) {
-      scan = await m.folderQuickScan(lookup.folder).catch(() => null);
+      scan = await m.folderQuickScan(lookup.folder, fresh ? { fresh: true } : {}).catch(() => null);
       if (scan) scanCache.set(lookup.folder.key, { at: now(), scan });
     }
     // The scan is the folder's; a chat whose own folder isn't looked below (the home folder, a project's or not:

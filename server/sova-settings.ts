@@ -21,6 +21,7 @@ import { parsePushSettings, pushSettingsFile, readPushSettings, writePushSetting
 import { parseSessionTitleSettings, readSessionTitleSettings, sessionTitleSettingsFile, writeSessionTitleSettings } from "./session-titles-settings";
 import { cardCredential, credentialRefusal } from "./card-refusals";
 import { agentRoot, stateRoot } from "./state-root";
+import { agentCpu, agentCpuPath } from "./agent-cpu";
 import { saveSubagentProfileDefault, saveSubagentProfiles, subagentProfilesInfo } from "./subagent-profiles";
 import { settingsSpreadNow } from "./sync/spreads";
 import { parseTargets, targetsFile, loadTargets, writeTargets } from "./targets";
@@ -225,6 +226,22 @@ export const SOVA_ADAPTERS: Record<SovaSettingId, Adapter> = {
       mergeKeys(settingsFile(), { workerNice: v });
       return null;
     },
+  },
+  // The same set as Settings → General's: systemd first, then the file (server/agent-cpu.ts); refused where it can't apply.
+  "agents.cpu-ceiling": {
+    files: () => [agentCpuPath()],
+    read: () => agentCpu().saved(),
+    check: (v) => (v === null || (typeof v === "number" && Number.isInteger(v) && v >= 1) ? null : "Expected a whole number of cores, 1 or more, or null for no ceiling."),
+    async write(v) {
+      try {
+        await agentCpu().set(v);
+        return null;
+      } catch (err) {
+        return err instanceof Error ? err.message : String(err);
+      }
+    },
+    // Its file was put back (a later edit of the card failed): systemd follows it, so the two never disagree.
+    restored: () => agentCpu().matchFile(),
   },
   "workers.profiles": {
     files: () => [join(agentRoot(), "subagent-profiles.json")],

@@ -709,6 +709,7 @@
    "SOVA_CHAT_IDLE_MIN": "computers",
    "SOVA_CHAT_CLAUDE_IDLE_MAX": "computers",
    "SOVA_WORKER_NICE": "safety",
+   "SOVA_AGENT_CPU": "safety",
    "SOVA_SCRIPT_NICE": "computers",
    "SOVA_BATON_UPLOADS_MAX_MB": "computers",
    "SOVA_BATON_UPLOADS_FREE_MB": "computers",

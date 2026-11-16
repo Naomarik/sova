@@ -55,3 +55,57 @@ test("a shut-down chat's running jobs are counted on its row; an ended job, or n
   assert.equal((await getSessionSummary(a))?.jobsRunning, 2);
   assert.equal((await getSessionSummary(c))?.jobsRunning, undefined);
 });
+
+// The listing reads every chat's jobs in one pass (runningJobCounts), not one folder per row, and keeps a
+// chat's count while its folder hasn't moved: a job started or ended still shows on the next listing.
+test("a job started or ended after a listing shows on the next one", async () => {
+  const ID_D = "01234567-89ab-7cde-8f01-234567890aad";
+  const d = session(ID_D, "Jobs come and go");
+  const { sessionsChanged } = await import("./list-generation");
+  // A new listing each time (past the 1 s reuse of the last one), every row built.
+  const count = async () => {
+    sessionsChanged();
+    return (await listSessions()).find((s) => s.id === ID_D)?.jobsRunning;
+  };
+  assert.equal(await count(), undefined);
+  writeJob(jobsDir(), job(ID_D, d, "j1"));
+  assert.equal(await count(), 1);
+  writeJob(jobsDir(), job(ID_D, d, "j2"));
+  assert.equal(await count(), 2);
+  writeJob(jobsDir(), job(ID_D, d, "j1", { ended: { at: 3, how: "exited", card: "none" } }));
+  assert.equal(await count(), 1);
+  writeJob(jobsDir(), job(ID_D, d, "j2", { ended: { at: 3, how: "stopped", card: "note" } }));
+  assert.equal(await count(), undefined);
+});
+
+test("runningJobCounts: one pass over every chat's folder, read again only when the folder moved or is fresh", async () => {
+  const { runningJobCounts, JOB_FOLDER_SETTLE_MS } = await import("./background-jobs");
+  const { jobFile } = await import("../pi-config/extensions/subagents/job-store.ts");
+  const { utimesSync } = await import("node:fs");
+  const dir = join(agentDir, "counts-jobs");
+  assert.deepEqual(runningJobCounts(dir), { counts: new Map(), stamp: "" }, "no folder: no jobs");
+  const X = "sess/x"; // an id the folder name encodes
+  writeJob(dir, job(X, "/x.jsonl", "j1"));
+  writeJob(dir, job(X, "/x.jsonl", "j2", { ended: { at: 2, how: "exited", card: "none" } }));
+  writeJob(dir, job("y", "/y.jsonl", "j1", { ended: { at: 2, how: "exited", card: "none" } }));
+  // A whole-second mtime, so it can be put back exactly below.
+  const xDir = join(dir, encodeURIComponent(X));
+  const mtime = Math.floor(Date.now() / 1000) - 60;
+  utimesSync(xDir, mtime, mtime);
+  const settled = Date.now() + JOB_FOLDER_SETTLE_MS + 1_000;
+  const first = runningJobCounts(dir, settled);
+  assert.deepEqual([...first.counts], [[X, 1]]);
+  assert.match(first.stamp, /^sess%2Fx:\d/m);
+  assert.match(first.stamp, /^y:\d/m);
+  // Rewritten in place (no rename, the folder's mtime put back): a settled folder's count is the one read.
+  writeFileSync(jobFile(dir, X, "j1"), `${JSON.stringify(job(X, "/x.jsonl", "j1", { ended: { at: 4, how: "exited", card: "none" } }))}\n`);
+  utimesSync(xDir, mtime, mtime);
+  assert.deepEqual([...runningJobCounts(dir, settled).counts], [[X, 1]], "kept while the folder hasn't moved");
+  // A folder written within the settle window is read every time.
+  assert.deepEqual([...runningJobCounts(dir, mtime * 1000 + 1).counts], [], "fresh: read again");
+  // Its folder moving reads it again.
+  writeJob(dir, job(X, "/x.jsonl", "j3"));
+  assert.deepEqual([...runningJobCounts(dir, Date.now() + JOB_FOLDER_SETTLE_MS + 5_000).counts], [[X, 1]]);
+  rmSync(xDir, { recursive: true, force: true });
+  assert.deepEqual([...runningJobCounts(dir, settled).counts], [], "a dropped chat's folder counts nothing");
+});

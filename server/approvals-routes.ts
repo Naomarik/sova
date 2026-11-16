@@ -148,7 +148,7 @@ export function registerApprovalRoutes(app: Hono<any>): void {
         const asked: ApprovalChanges = kind === "context" ? { context: parseContextChanges(body), skills: {} } : { context: {}, skills: parseSkillChanges(body) };
         // By key before who may is judged: a skill named by its name is the decision on its place.
         const folder = projectFolder(pid);
-        const changes = resolveChanges(await folderQuickScan(folder), asked);
+        const changes = resolveChanges(await folderQuickScan(folder, { fresh: true }), asked);
         const no = changesNeedPage(folder.key, changes) ? await pageRefusal(c, raw, APPROVE_WORDS) : null;
         if (no) return no;
         const r = await saveProject(pid, changes, byOf(c));
@@ -172,7 +172,7 @@ export function registerApprovalRoutes(app: Hono<any>): void {
         skills: body.skills === undefined ? {} : parseItemChanges(body.skills, "skills", "skills"),
       };
       if (!Object.keys(asked.context).length && !Object.keys(asked.skills).length) throw new OrgError('Expected { cwd, files?: { <key>: "approved" | "disallowed" | "waiting" }, skills?: { … } } with at least one change');
-      const scan = await folderQuickScan(folder);
+      const scan = await folderQuickScan(folder, { fresh: true });
       const changes = resolveChanges(scan, asked);
       const no = changesNeedPage(folder.key, changes) ? await pageRefusal(c, raw, APPROVE_WORDS) : null;
       if (no) return no;

@@ -83,9 +83,10 @@
 // XDG_RUNTIME_DIR for the integration tier only; never a credential. A new switch a test reads goes
 // in that list or never reaches it. PATH is built, never inherited: the stand-in claude, the real
 // node's directory and mise's tool paths (shims refuse an untrusted config in a throwaway HOME), then
-// the system's directories (SYSTEM_PATH). Then SOVA_PRICES_FETCH=off (bun test sets no NODE_TEST_CONTEXT), and SOVA_GIT_MAINTENANCE=off (a server a
+// the system's directories (SYSTEM_PATH). Then SOVA_PRICES_FETCH=off (bun test sets no NODE_TEST_CONTEXT), SOVA_GIT_MAINTENANCE=off (a server a
 // test starts registers no repository with git's scheduled maintenance and starts no systemd
-// timer; server/git-maintenance.ts's own tests drive it with their own deps), and SOVA_QUICK_TUNNEL=off
+// timer; server/git-maintenance.ts's own tests drive it with their own deps), SOVA_AGENT_CPU=off (it sets no
+// CPU weight or ceiling on systemd's sova.slice; server/agent-cpu.test.ts drives that with a stand-in systemctl), and SOVA_QUICK_TUNNEL=off
 // (a missing Public links setting reads as off, never a Cloudflare Free tunnel; a tunnel test opts in). SOVA_CLOUDFLARED=off
 // (no installed cloudflared is found on PATH; a tunnel test names its fake). bun test itself sets TZ=UTC and
 // NODE_ENV=test. Both runtimes: a stand-in `claude` (scripts/fake-claude.mjs) leads every test
@@ -779,6 +780,8 @@ function hermeticEnv(tier) {
     PATH: testPath([fakeClaudeDir(root), path.dirname(process.execPath), misePaths], path.delimiter),
     SOVA_PRICES_FETCH: "off",
     SOVA_GIT_MAINTENANCE: "off",
+    // A server a test starts leaves systemd's sova.slice alone (server/agent-cpu.ts): no CPU weight or ceiling on the real one.
+    SOVA_AGENT_CPU: "off",
     // No Cloudflare Free tunnel by default (server/public-links.ts): a missing setting reads as off, as before
     // the Free default; a test that drives a tunnel turns it on for itself.
     SOVA_QUICK_TUNNEL: "off",

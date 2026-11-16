@@ -32,6 +32,7 @@ const store = await import("./project-skills-store");
 const A = await import("./approvals");
 const setting = await import("./context-approval-setting");
 const { parseContextChanges, parseSkillChanges, skillsRowState } = await import("./projects/skills");
+const { folderWalksIdle, WALK_TTL_MS } = await import("./folder-walk");
 
 const put = (p: string, text: string) => {
   mkdirSync(dirname(p), { recursive: true });
@@ -332,15 +333,23 @@ describe("a folder's lists", () => {
     assert.equal(A.itemChanged(l, "context", join(wt, "AGENTS.md"), A.fileSha256(readFileSync(join(wt, "AGENTS.md")))), true, "the worktree's differing copy reads as changed");
   });
 
-  test("an item gone drops off after a complete scan only; an unknown one is a 404 unless the scan was partial", async () => {
+  test("an item gone drops off after a complete scan only, once a walk has seen it gone; an unknown one is a 404 unless the scan was partial", async () => {
     const w = world("prune");
+    let t = 1_000_000;
+    const deps = { ...w.deps, now: () => t };
     const f = A.folderForCwd(w.repo);
-    await A.writeFolderApprovals(f, { context: { "svc/AGENTS.md": "disallowed" }, skills: {} }, w.deps);
+    await A.writeFolderApprovals(f, { context: { "svc/AGENTS.md": "disallowed" }, skills: {} }, deps);
     rmSync(join(w.repo, "svc", "AGENTS.md"));
-    await A.folderApprovalsView(f, { ...w.deps, checkouts: async () => ({ dirs: [w.repo], complete: false }) });
+    await A.folderApprovalsView(f, { ...deps, checkouts: async () => ({ dirs: [w.repo], complete: false }) });
     assert.ok(store.folderDecisions(f.key).context["svc/AGENTS.md"], "a partial scan keeps it");
-    await A.folderApprovalsView(f, w.deps);
-    assert.equal(store.folderDecisions(f.key).context["svc/AGENTS.md"], undefined);
+    // A read answers from the checkout's last walk (server/folder-walk.ts): the save's, which still saw the file.
+    await A.folderApprovalsView(f, deps);
+    assert.ok(store.folderDecisions(f.key).context["svc/AGENTS.md"], "the kept walk still lists it");
+    t += WALK_TTL_MS;
+    await A.folderApprovalsView(f, deps);
+    await folderWalksIdle();
+    await A.folderApprovalsView(f, deps);
+    assert.equal(store.folderDecisions(f.key).context["svc/AGENTS.md"], undefined, "the walk the aged read started saw it gone");
     await assert.rejects(A.writeFolderApprovals(f, { context: { "nope/AGENTS.md": "disallowed" }, skills: {} }, w.deps), /Nothing named "nope\/AGENTS.md"/);
     await A.writeFolderApprovals(f, { context: { "nope/AGENTS.md": "waiting" }, skills: {} }, w.deps);
     // A partial scan takes a decision on an item it didn't see, but never an approval: there is nothing to fingerprint.
@@ -348,6 +357,61 @@ describe("a folder's lists", () => {
     await A.writeFolderApprovals(f, { context: { "unseen/AGENTS.md": "disallowed" }, skills: {} }, partial);
     await assert.rejects(A.writeFolderApprovals(f, { context: { "unseen/AGENTS.md": "approved" }, skills: {} }, partial), /can't be approved: it wasn't found/);
     assert.equal(store.folderDecisions(f.key).context["unseen/AGENTS.md"]?.state, "disallowed");
+  });
+
+  test("pi's own lists are kept per checkout too: a skill added shows after the next read behind the kept one; a save reads them now", async () => {
+    const w = world("kept-pi");
+    let t = 9_000_000;
+    const deps = { ...w.deps, now: () => t };
+    const f = A.folderForCwd(w.repo);
+    const names = async (more = {}) => (await A.folderApprovalsView(f, { ...deps, ...more })).skills.map((s) => s.key).filter((k) => k.startsWith(".agents/")).sort();
+    assert.deepEqual(await names(), [".agents/skills/tidy/SKILL.md"]);
+    skill(join(w.repo, ".agents", "skills"), "fresh-one");
+    assert.deepEqual(await names(), [".agents/skills/tidy/SKILL.md"], "answered from the kept read");
+    t += WALK_TTL_MS;
+    await names();
+    await folderWalksIdle();
+    assert.deepEqual(await names(), [".agents/skills/fresh-one/SKILL.md", ".agents/skills/tidy/SKILL.md"], "the read started behind it found the skill");
+    skill(join(w.repo, ".agents", "skills"), "saved-one");
+    const saved = await A.writeFolderApprovals(f, { context: {}, skills: { "saved-one": "disallowed" } }, deps);
+    assert.deepEqual(saved.changed.map((c) => c.key), [".agents/skills/saved-one/SKILL.md"], "a save reads pi's lists now: the new skill is found by name");
+  });
+
+  test("a scan that read a walk from before a save drops none of its decisions: a file approved meanwhile stays approved", async () => {
+    const w = world("race");
+    const wt = join(w.above, "race-wt");
+    const wt2 = join(w.above, "race-wt2");
+    mkdirSync(wt, { recursive: true });
+    mkdirSync(wt2, { recursive: true });
+    const { folderResources } = await import("./harness/pi/resources");
+    let park = false;
+    let parked!: () => void;
+    const inside = new Promise<void>((go) => (parked = go));
+    let release!: () => void;
+    const gate = new Promise<void>((go) => (release = go));
+    const loader: typeof folderResources = async (cwd, agentDir) => {
+      if (park && cwd === wt2) {
+        park = false;
+        parked();
+        await gate;
+      }
+      return folderResources(cwd, agentDir);
+    };
+    const deps = { checkouts: async () => ({ dirs: [w.repo, wt], complete: true }), loader };
+    const f = A.folderForCwd(w.repo);
+    await A.folderApprovalsView(f, deps); // the kept walks: no new/AGENTS.md yet
+    park = true;
+    // Takes the repo's kept reads, then waits on pi's first read of a worktree it hasn't seen.
+    const slow = A.folderApprovalsView(f, { ...deps, checkouts: async () => ({ dirs: [w.repo, wt2], complete: true }) });
+    await inside;
+    put(join(w.repo, "new", "AGENTS.md"), "# just written by an agent\n");
+    await A.writeFolderApprovals(f, { context: { "new/AGENTS.md": "approved" }, skills: {} }, deps);
+    release();
+    const v = await slow;
+    assert.equal(v.complete, true);
+    assert.ok(!v.files.some((x) => x.key === "new/AGENTS.md"), "the slow scan's walk predates the file");
+    assert.equal(store.folderDecisions(f.key).context["new/AGENTS.md"]?.state, "approved", "and it didn't drop the approval");
+    assert.equal((await A.folderApprovalsView(f, deps)).files.find((x) => x.key === "new/AGENTS.md")?.state, "approved");
   });
 
   test("a Disallowed by name (version 1) goes to the first skill of that name at the next scan; asking on, nothing is approved by it", async () => {

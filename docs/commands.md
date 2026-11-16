@@ -13,7 +13,7 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 
 | What | Count |
 | --- | ---: |
-| Routes registered | 639 |
+| Routes registered | 641 |
 | Routes a catalogue entry points at | 208 |
 | Catalogue entries | 279 |
 | Class: Peer protocol | 39 |
@@ -27,7 +27,7 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | Class: Trust grants | 25 |
 | Class: A card view's own calls | 4 |
 | Class: Middleware and fallbacks | 2 |
-| Class: Left as is, by choice | 277 |
+| Class: Left as is, by choice | 279 |
 | Class: Page plumbing | 22 |
 | Class: Steps of starting a chat | 2 |
 | Class: Live capability links | 1 |
@@ -517,7 +517,7 @@ What a transcript card's or a drawing's sealed view asks through its box, for it
 | `ALL /*` | full |
 | `ALL /api/*` | full |
 
-### Left as is, by choice (277)
+### Left as is, by choice (279)
 
 Areas the user chose not to make scriptable (`OPTED_OUT` in `server/commands-inventory/scan.ts`). A route there that a catalogue entry points at stays a command; the rest are not pending, and a new route there needs no entry.
 
@@ -722,6 +722,8 @@ Areas the user chose not to make scriptable (`OPTED_OUT` in `server/commands-inv
 | `GET /api/settings/accounts/openai/login` | sessions |
 | `POST /api/settings/accounts/openai/login` | admin |
 | `POST /api/settings/accounts/openai/login/answer` | admin |
+| `GET /api/settings/agent-cpu` | sessions |
+| `PUT /api/settings/agent-cpu` | admin |
 | `POST /api/settings/apply` | admin |
 | `GET /api/settings/claude-status` | sessions |
 | `GET /api/settings/context-approval` | sessions |

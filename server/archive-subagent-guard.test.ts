@@ -7,7 +7,7 @@
 // sessions extension runs inside it); the runner that started this file
 // (process.ppid, alive for all of it) stands in for another live process.
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, renameSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, afterEach, test } from "node:test";
@@ -49,11 +49,13 @@ function session(id: string): string {
   return canonicalPath(path);
 }
 
+/** Writes a record as the sessions extension does (SCHEMA.md): a dotfile temp renamed over it. */
 function live(name: string, pid: number, sessionFile: string, working: number, heartbeat = Date.now()): void {
   writeFileSync(
-    join(liveDir, name),
+    join(liveDir, `.${name}.tmp`),
     JSON.stringify({ heartbeat, session: { pid, sessionFile, mode: "rpc" }, presence: { status: "Idle", workerCounts: { working, total: working + 1 } } }),
   );
+  renameSync(join(liveDir, `.${name}.tmp`), join(liveDir, name));
 }
 
 test("refused with subagents working in this server's own runtime; nothing is marked", async () => {

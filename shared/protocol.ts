@@ -9,6 +9,7 @@ import type { WakeInfo } from "./wake";
 import type { BatonMark, BatonSummaryField } from "./baton";
 import type { LinkMessageInfo } from "./link-message";
 import type { TopicBatchInfo } from "./topic-message";
+import type { LookbookRow } from "./lookbook-words";
 import type { LinkedAgentInfo } from "./mesh-links";
 import type { Permit } from "./overseer-grants";
 import type { OverseerCard } from "./overseer-card";
@@ -413,6 +414,10 @@ export interface TranscriptItem {
   /** kind "link" only: the parsed tag (shared/link-message.ts `parseLinkMessage`). `text` holds the
       whole message exactly as delivered. */
   link?: LinkMessageInfo;
+  /** kind "user" in a Lookbook helper's session (its Creative Director's or a design's, server/design/transcript.ts):
+      how the message reads (shared/lookbook-words.ts): the person's words and where they wrote them, Sova's additions
+      folded, a designer's first message as its brief. `text` stays the whole message exactly as the model read it. */
+  lookbook?: LookbookRow;
   /** kind "topic" only: the parsed batch (shared/topic-message.ts `parseTopicBatch`). `text` holds
       the whole message exactly as delivered. */
   topic?: TopicBatchInfo;

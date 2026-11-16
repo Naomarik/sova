@@ -892,8 +892,14 @@ export function WorkerTranscript(props: {
   what?: "worker" | "session";
   /** Each snapshot/append that carries a context fill (the whole message; the caller reads it). */
   onContext(msg: WatchServerMessage): void;
+  /** Rows the caller draws among the session's own (the Creative Director's prompt items): the list as drawn. */
+  rows?: (items: TranscriptItem[]) => TranscriptItem[];
 }) {
   const [items, setItems] = createSignal<TranscriptItem[] | null>(null);
+  const shown = createMemo(() => {
+    const list = items();
+    return list && props.rows ? props.rows(list) : list;
+  });
   const [error, setError] = createSignal<string | null>(null);
   const [gone, setGone] = createSignal(false);
   const [lastUpdate, setLastUpdate] = createSignal<string | null>(null);
@@ -1021,7 +1027,7 @@ export function WorkerTranscript(props: {
             if (props.parent) (props.what === "session" ? trackLinkedTranscript : trackWorkerTranscript)(props.parent, thread);
           }}
         >
-          <Show when={items()} fallback={<Show when={!error()}><TranscriptSkeleton /></Show>}>
+          <Show when={shown()} fallback={<Show when={!error()}><TranscriptSkeleton /></Show>}>
             {(list) => (
               <Show
                 when={list().length > 0}

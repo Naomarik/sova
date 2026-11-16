@@ -1218,6 +1218,18 @@ html, body { overflow: clip; overscroll-behavior: none; }
   color: var(--color-ink-2);
 }
 .message-from-session .message-body { background: var(--color-surface); border: var(--stroke-thin) solid var(--color-border-strong); }
+/* A Lookbook helper's chat: Sova's additions fold under the words they came with, at the bubble's side. */
+.message-user > .lookbook-note { align-self: flex-end; }
+/* The Creative Director's prompt items: one line each, folded; open, the full text and what changed. */
+.lookbook-item-line { display: flex; align-items: center; gap: var(--space-2); min-height: var(--control-sm); font-size: var(--fs-caption); color: var(--color-ink-muted); }
+.lookbook-item-body { display: flex; flex-direction: column; gap: var(--space-2); }
+.lookbook-item-body > p { margin: 0; }
+.lookbook-item-designs { margin: 0; padding-left: var(--space-5); }
+.lookbook-changes { list-style: none; margin: 0; padding: 0; font-family: var(--font-mono); font-size: var(--fs-mono); line-height: var(--lh-mono); border-radius: var(--r-sm); overflow: hidden; }
+.lookbook-changes > li { display: flex; gap: var(--space-2); padding: 0 var(--space-2); white-space: pre-wrap; overflow-wrap: anywhere; }
+.lookbook-change-add { background: var(--diff-add-bg); color: var(--diff-add-ink); }
+.lookbook-change-del { background: var(--diff-del-bg); color: var(--diff-del-ink); }
+.lookbook-change-sign { flex: none; width: 1ch; user-select: none; }
 .profile-card .card-head { display: flex; align-items: center; gap: var(--space-2); }
 .profile-card .card-title { font-size: var(--fs-body); margin: 0; }
 .profile-card .card-head > .text-muted { margin-left: auto; font-size: var(--fs-caption); }

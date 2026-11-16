@@ -242,7 +242,7 @@ export function OverviewProjects(props: {
                             </a>
                           )}
                         </Show>
-                        <RuntimeRow href={rt().slots ? tab("branches") : undefined} label="Copies" title={rt().slots?.title}>
+                        <RuntimeRow href={rt().slots ? tab("running-copies") : undefined} label="Copies" title={rt().slots?.title}>
                           <Show when={rt().slots} fallback={<span class="overview-project-card-val overview-project-card-muted">{DASH}</span>}>
                             {(sl) => (
                               <span class="overview-project-card-val text-num" classList={{ "overview-project-card-muted": sl().muted }}>
@@ -257,7 +257,7 @@ export function OverviewProjects(props: {
                             )}
                           </Show>
                         </RuntimeRow>
-                        <RuntimeRow href={rt().hasSetup ? tab("branches") : undefined} label="Memory in use" title={rt().memory.parts ?? undefined}>
+                        <RuntimeRow href={rt().hasSetup ? tab("running-copies") : undefined} label="Memory in use" title={rt().memory.parts ?? undefined}>
                           <span class="overview-project-card-val text-num" classList={{ "overview-project-card-muted": rt().memory.muted }}>
                             <Show when={rt().memory.bar}>
                               {(b) => (
@@ -340,7 +340,7 @@ export function OverviewProjects(props: {
                                 />
                                 <menu.Item label="Overseer" aria={`Overseer · ${name()}`} icon={<Icon name="eye" small />} href={projectOverseerHref(c().project.id)} />
                                 <menu.Item label="Merge Queue" aria={`Merge Queue · ${name()}`} icon={<Icon name="branch" small />} href={tab("merge-queue")} />
-                                <menu.Item label="Branches" aria={`Branches · ${name()}`} icon={<Icon name="terminal" small />} href={tab("branches")} />
+                                <menu.Item label="Running Copies" aria={`Running Copies · ${name()}`} icon={<Icon name="terminal" small />} href={tab("running-copies")} />
                                 <menu.Item label="Settings" aria={`Settings · ${name()}`} icon={<Icon name="settings" small />} href={tab("settings")} />
                               </div>
                             )}

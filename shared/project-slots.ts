@@ -169,7 +169,7 @@ export function checkoutPortsAt(def: Pick<ProjectDef, "services">, numbering: Pi
  * The sentence a start or create meets when `running` copies already run and the limit is `cap`
  * (§app.project-services/instances), or null: there is room. At the limit: "{n} copies are running, and
  * this machine allows {cap} at once: stop one first."; above it: "{n} running, {k} over the limit of {cap}: no new
- * copy starts until {k + 1} stop." (digits, as the design system writes numbers). Pure: the Branches tab shows the second one too.
+ * copy starts until {k + 1} stop." (digits, as the design system writes numbers). Pure: the Running Copies tab shows the second one too.
  */
 export function overLimitSentence(running: number, cap: number): string | null {
   if (running < cap) return null;

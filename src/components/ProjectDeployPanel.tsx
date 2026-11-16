@@ -1,10 +1,10 @@
-import { createEffect, createSignal, For, type JSX, Show } from "solid-js";
+import { createEffect, createMemo, createResource, createSignal, For, type JSX, Show } from "solid-js";
 import type { ReleaseHistoryItem } from "../../shared/release";
-import type { DeployPlanView, DeployReview, DeployTargetView, LogLine, VerbResult } from "../../shared/project-contract";
+import type { DeployPlanView, DeployRecordView, DeployReport, DeployReview, DeployTargetView, LogLine, VerbResult } from "../../shared/project-contract";
 import { ApiError, runDeployVerb } from "../lib/api";
 import { relativeTime } from "../lib/format";
 import { createPoll } from "../lib/poll";
-import { checksLine, DEPLOY_STANDING_CHIP, DEPLOY_STATE_CHIP, hash12, overridesAsked, planDeadline, recordLine, rollbackWord, shipConfirmLine, short } from "../lib/project-deploy";
+import { checksLine, DEPLOY_STANDING_CHIP, DEPLOY_STATE_CHIP, deployHistory, deployProgress, hash12, historyResult, overridesAsked, stepCaption, planDeadline, progressLine, recordLine, rollbackWord, shipConfirmLine, short } from "../lib/project-deploy";
 import { announce, toast } from "../lib/ui-state";
 import { deployHandOff, takeDeployHandOff } from "../lib/releases-client";
 import { releaseAt, releaseOfTarget } from "../lib/releases";
@@ -14,6 +14,11 @@ import { Chip } from "./ui";
 /** A deploy's record changes step by step: read often enough to follow one. */
 const DEPLOY_POLL_MS = 5_000;
 const LOG_LINES = 200;
+/** The History list's length: deploy.status keeps 20 per target. */
+const HISTORY_SHOWN = 20;
+
+// The plans this page shipped, by plan id: a running deploy's record names only the steps that ended, its plan the rest.
+const [shipped, setShipped] = createSignal<Record<string, DeployPlanView>>({});
 
 const errText = (err: unknown) => (err instanceof ApiError || err instanceof Error ? err.message : String(err));
 
@@ -134,8 +139,14 @@ export function ProjectDeployPanel(props: {
   releases?: () => readonly ReleaseHistoryItem[] | undefined;
   /** The page's read of the project's Setup chat (one of its own when absent). */
   setup?: SetupPoll;
+  /** Each read of deploy.status, for the page's tab dot. */
+  onStatus?(report: DeployReport | undefined): void;
 }) {
   const poll = createPoll(() => runDeployVerb(props.root, "deploy.status", {}), DEPLOY_POLL_MS);
+  createEffect(() => {
+    const d = poll.data();
+    if (d) props.onStatus?.(d.deploy);
+  });
   const setup = props.setup ?? createSetupPoll(props.projectId);
   const [busy, setBusy] = createSignal<string | null>(null);
   const [error, setError] = createSignal<string | null>(null);
@@ -145,15 +156,13 @@ export function ProjectDeployPanel(props: {
   const [logs, setLogs] = createSignal<Record<string, LogLine[]>>({});
 
   const report = () => poll.data()?.deploy;
-  // A hand-off waits until the targets are read, then plans once and brings the card into view.
-  let card: HTMLElement | undefined;
+  // A hand-off (Plan Deploy of vX on Releases opened this tab) waits until the targets are read, then plans once.
   createEffect(() => {
     if (!deployHandOff() || !report()?.targets) return;
     const h = takeDeployHandOff(props.projectId);
     const t = h && report()!.targets!.find((x) => x.name === h.target);
     if (!h || !t) return;
     setPinned((p) => ({ ...p, [t.name]: { commit: h.commit, version: h.version } }));
-    requestAnimationFrame(() => card?.scrollIntoView({ block: "start" }));
     void plan(t);
   });
   const act = async (key: string, fn: () => Promise<string | null>) => {
@@ -190,6 +199,7 @@ export function ProjectDeployPanel(props: {
     act(`run:${t.name}`, async () => {
       const r = await runDeployVerb(props.root, "deploy.run", { plan: p.planId, confirm: true });
       setConfirm(null);
+      if (!r.error) setShipped((x) => ({ ...x, [p.planId]: p }));
       setPlans((x) => ({ ...x, [t.name]: undefined as never }));
       const why = failed(r);
       if (why) throw new Error(why);
@@ -221,19 +231,42 @@ export function ProjectDeployPanel(props: {
       if (why) throw new Error(why);
       return `Dismissed the request to deploy ${t.name}.`;
     });
+  // What runs now, one progress card per target deploying.
+  const runningNow = () => (report()?.targets ?? []).flatMap((t) => (t.last?.state === "running" ? [t.last] : []));
+  // History: every target's records (deploy.status keeps them per target), read again when any target's last one changes.
+  const historyKey = createMemo(() => {
+    const ts = report()?.targets;
+    return ts ? ts.map((t) => `${t.name}:${t.last?.id ?? ""}:${t.last?.state ?? ""}`).join("|") : null;
+  });
+  const [history] = createResource(historyKey, async () => {
+    const names = (report()?.targets ?? []).map((t) => t.name);
+    const per = await Promise.all(names.map((target) => runDeployVerb(props.root, "deploy.status", { target }).then((r) => r.deploy?.history ?? [])));
+    return deployHistory(per).slice(0, HISTORY_SHOWN);
+  });
   return (
-    <section class="card orgs-section project-card" aria-labelledby="project-deploy" ref={card}>
-      <div class="orgs-head">
-        <h2 class="orgs-h2" id="project-deploy">
+    <>
+    <div class="project-tab-head">
+      <div class="project-tab-head-text">
+        <h2 class="project-tab-h2" id="project-deploy">
           Deploy
         </h2>
-        <span class="cluster">
-          <Show when={report()?.deployHash}>{(h) => <span class="list-meta text-mono">{hash12(h())}</span>}</Show>
-          <Show when={!props.archived && report()?.targets?.length}>
-            <SetupChatButton projectId={props.projectId} setUp from="deploy" poll={setup} />
-          </Show>
-        </span>
+        <p class="project-tab-lede">Plans from Releases land here.</p>
       </div>
+      <span class="cluster">
+        <Show when={report()?.deployHash}>
+          {(h) => (
+            <span class="list-meta deploy-setup-hash" title="The deploy section's hash on main: it changes when the setup does">
+              Setup <span class="text-mono">{hash12(h())}</span>
+            </span>
+          )}
+        </Show>
+        <Show when={!props.archived && report()?.targets?.length}>
+          <SetupChatButton projectId={props.projectId} setUp from="deploy" poll={setup} />
+        </Show>
+      </span>
+    </div>
+    <For each={runningNow()}>{(r) => <DeployProgress record={r} />}</For>
+    <section class="card orgs-section project-card" aria-label="Deploy targets">
       <Show
         when={report()}
         fallback={
@@ -259,35 +292,47 @@ export function ProjectDeployPanel(props: {
                   const refused = () => (p() && "refused" in p()! ? (p() as { refused: VerbResult["error"] }).refused : null);
                   const running = () => t.last?.state === "running";
                   const can = () => t.standing === "declared" && !props.archived;
+                  // The numbered release it runs (the one deployed to it, else the one at its verified commit).
+                  const rel = () => releaseOfTarget(props.releases?.(), t.name) ?? releaseAt(props.releases?.(), t.verifiedCommit);
                   return (
                     <li class="deploy-target">
-                      {/* Two rows on one grid: the target and its standing, then its last deploy and its state, chips in one column. */}
-                      <div class="deploy-target-facts">
-                        <span class="project-software-name">{t.name}</span>
-                        <span class="deploy-fact">
-                          <Chip tone={DEPLOY_STANDING_CHIP[t.standing].tone}>{DEPLOY_STANDING_CHIP[t.standing].word}</Chip> <span class="project-card-note">{t.about}</span>
-                          <Show when={releaseOfTarget(props.releases?.(), t.name) ?? releaseAt(props.releases?.(), t.verifiedCommit)}>
-                            {(rel) => (
-                              <span class="project-card-note deploy-release" title={rel().withdrawn ? `Withdrawn: ${rel().withdrawn!.why}` : undefined}>
-                                Runs <span class="text-mono">{rel().tag}</span>
-                                {rel().withdrawn ? " (withdrawn)" : ""}
-                              </span>
-                            )}
-                          </Show>
-                        </span>
+                      {/* The target's facts: what it is, what it runs now, and its last deploy. */}
+                      <dl class="deploy-facts">
+                        <dt>Target</dt>
+                        <dd>
+                          <span class="project-software-name text-mono">{t.name}</span> <Chip tone={DEPLOY_STANDING_CHIP[t.standing].tone}>{DEPLOY_STANDING_CHIP[t.standing].word}</Chip>
+                          <span class="project-card-note deploy-about">{t.about}</span>
+                        </dd>
+                        <Show when={rel() || t.verifiedCommit}>
+                          <dt>Running now</dt>
+                          <dd class="deploy-release" title={rel()?.withdrawn ? `Withdrawn: ${rel()!.withdrawn!.why}` : undefined}>
+                            <Show when={rel()}>
+                              {(x) => (
+                                <>
+                                  Runs <span class="text-mono">{x().tag}</span>
+                                  {x().withdrawn ? " (withdrawn)" : ""}{" "}
+                                </>
+                              )}
+                            </Show>
+                            <Show when={t.verifiedCommit}>{(c) => <span class="text-mono project-card-note">{short(c())}</span>}</Show>
+                          </dd>
+                        </Show>
                         <Show when={t.last}>
                           {(r) => (
-                            <span class="deploy-fact deploy-last">
-                              <Chip tone={DEPLOY_STATE_CHIP[r().state].tone} live={r().state === "running"}>
-                                {DEPLOY_STATE_CHIP[r().state].word}
-                              </Chip>{" "}
-                              <span class="deploy-last-line">
-                                {recordLine(r())} <span class="deploy-when">· <time title={r().startedAt}>{relativeTime(r().startedAt)}</time></span>
-                              </span>
-                            </span>
+                            <>
+                              <dt>Last deploy</dt>
+                              <dd class="deploy-last">
+                                <Chip tone={DEPLOY_STATE_CHIP[r().state].tone} live={r().state === "running"}>
+                                  {DEPLOY_STATE_CHIP[r().state].word}
+                                </Chip>{" "}
+                                <span class="deploy-last-line">
+                                  {recordLine(r())} <span class="deploy-when">· <time title={r().startedAt}>{relativeTime(r().startedAt)}</time></span>
+                                </span>
+                              </dd>
+                            </>
                           )}
                         </Show>
-                      </div>
+                      </dl>
                       <div class="deploy-target-body">
                         <Show when={t.request}>
                           {(q) => (
@@ -401,6 +446,81 @@ export function ProjectDeployPanel(props: {
             </ul>
             <Show when={error()}>{(e) => <p class="field-error" role="status">{e()}</p>}</Show>
           </>
+        )}
+      </Show>
+    </section>
+    <Show when={report()?.targets?.length}>
+      <DeployHistory records={history.latest} error={history.error ? errText(history.error) : null} />
+    </Show>
+    </>
+  );
+}
+
+/** A deploy running now (§app.project-runtime/deploy-panel): its line and its steps, done, now and waiting. */
+function DeployProgress(props: { record: DeployRecordView }) {
+  const steps = () => deployProgress(props.record, shipped()[props.record.planId]);
+  return (
+    <section class="card deploy-progress" aria-label={`${props.record.kind === "rollback" ? "Rollback" : "Deploy"} of ${props.record.target} in progress`}>
+      <p class="deploy-progress-line">
+        <Chip tone="accent" live>
+          {DEPLOY_STATE_CHIP.running.word}
+        </Chip>{" "}
+        <span>{progressLine(props.record, steps())}</span>
+      </p>
+      <ol class="deploy-stepper">
+        <For each={steps()}>
+          {(s, i) => (
+            <li class="deploy-stepper-step" data-state={s.state} aria-current={s.state === "now" ? "step" : undefined}>
+              {stepCaption(s, i())}
+              <span class="visually-hidden">{s.state === "done" ? ", done" : s.state === "failed" ? ", failed" : s.state === "now" ? ", running" : ", waiting"}</span>
+            </li>
+          )}
+        </For>
+      </ol>
+    </section>
+  );
+}
+
+/** Every target's deploys and rollbacks, newest first: commit, target, what came of it, when. */
+function DeployHistory(props: { records: readonly DeployRecordView[] | undefined; error: string | null }) {
+  return (
+    <section class="card orgs-section project-card" aria-labelledby="project-deploy-history">
+      <div class="orgs-head">
+        <h2 class="orgs-h2" id="project-deploy-history">
+          History
+        </h2>
+      </div>
+      <Show when={props.records} fallback={<p class="orgs-empty">{props.error ? `Couldn't read the deploy history. ${props.error}` : "Reading the deploy history."}</p>}>
+        {(rs) => (
+          <Show when={rs().length} fallback={<p class="orgs-empty">No deploys yet. Each one lists here with its commit and result.</p>}>
+            <ul class="deploy-history">
+              <For each={rs()}>
+                {(r) => {
+                  const res = () => historyResult(r);
+                  return (
+                    <li class="deploy-history-row" title={r.detail}>
+                      <span class="text-mono deploy-history-commit">{short(r.commit)}</span>
+                      <span class="text-mono deploy-history-target">{r.target}</span>
+                      <span class="deploy-history-result">
+                        <Show when={r.kind === "rollback"}>
+                          <span class="project-card-note">Rollback · </span>
+                        </Show>
+                        <Show when={res().chip}>{(c) => <Chip tone={c().tone} live={r.state === "running"}>{c().word}</Chip>}</Show>
+                        <Show when={res().text}>
+                          {" "}
+                          <span class="project-card-note">{res().text}</span>
+                        </Show>{" "}
+                        <span class="text-mono project-card-note">{r.id}</span>
+                      </span>
+                      <time class="deploy-history-when" datetime={r.startedAt} title={r.startedAt}>
+                        {relativeTime(r.startedAt)}
+                      </time>
+                    </li>
+                  );
+                }}
+              </For>
+            </ul>
+          </Show>
         )}
       </Show>
     </section>

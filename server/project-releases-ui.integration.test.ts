@@ -1,7 +1,7 @@
 // A project's Releases screens in a real Chrome, at 1280px and 390px: the Releases tab not set up (Set Up Releases),
 // a release in progress (its steps, Continue, Retry Step, Publish held by its gates, then Publish with its confirm, the
 // release power's countdown with Cancel, Abandon with a reason), the history with channel badges and Withdraw, and on
-// the Overview the Releases card, the Deploy row's "Runs vX" and the Plan Deploy of vX hand-off. The app's own build,
+// the Deploy tab the Deploy row's "Runs vX" and the Plan Deploy of vX hand-off. The app's own build,
 // served from a scratch build with every request answered here (no server, no network); each verb call is recorded.
 // Chrome or Chromium must be installed (as the tour tests: nothing is downloaded).
 import assert from "node:assert/strict";
@@ -349,7 +349,7 @@ describe("the Releases tab", () => {
     }
   });
 
-  test("published: its after-publish steps stay with Retry Step, and Plan Deploy of vX plans that commit on the Overview's Deploy card", async () => {
+  test("published: its after-publish steps stay with Retry Step, and Plan Deploy of vX plans that commit on the Deploy tab", async () => {
     const steps = record().steps.map((s) => (s.phase === "withdraw" ? s : s.phase === "after" ? { ...s, state: "failed" as const, summary: "gh: not logged in" } : { ...s, state: "done" as const }));
     const published = record({ state: "published", steps, publish: { at: iso(1), by: "operator", pushed: "pushed" as never, channelsFrom: { stable: sha("9") } } });
     const o = await open(1280, TAB, view({ last: published, history: [hist("v0.10.0", { sha: sha("c"), channels: ["stable"] }), ...HISTORY] }));
@@ -358,25 +358,24 @@ describe("the Releases tab", () => {
       await card.getByText("Published, finishing").waitFor();
       await card.getByRole("button", { name: "Retry GitHub release page" }).waitFor();
       await card.getByRole("button", { name: "Plan Deploy of v0.10.0" }).click();
-      await o.page.waitForURL(`${ORIGIN}/#/projects/${PID}`);
+      await o.page.waitForURL(`${ORIGIN}/#/projects/${PID}/deploy`);
+      // The Deploy tab is the one open.
+      await o.page.getByRole("tab", { name: /^Deploy/, selected: true }).waitFor();
       await called(o, "deploy.plan");
       assert.deepEqual(lastCall(o, "deploy.plan").body, { project: ROOT_DIR, target: "prod", commit: sha("c") });
-      const deploy = o.page.locator("section", { has: o.page.getByRole("heading", { name: "Deploy", exact: true }) });
+      const deploy = o.page.getByRole("region", { name: "Deploy targets" });
       await deploy.getByText(/Planning release v0\.10\.0/).waitFor();
       await deploy.getByRole("button", { name: `Deploy ${sha("c").slice(0, 7)}` }).waitFor();
-      // The Overview's Releases card.
-      const rel = o.page.locator("section", { has: o.page.getByRole("heading", { name: "Releases", exact: true }) });
-      await rel.getByText("Latest v0.9.0 · 479 landings since").waitFor();
-      await shot(o.page, "overview-handoff");
+      await shot(o.page, "deploy-handoff");
     } finally {
       await o.ctx.close();
     }
   });
 
-  test("the Overview's Deploy row says which release the target runs", async () => {
-    const o = await open(390, `#/projects/${PID}`, view());
+  test("the Deploy tab's row says which release the target runs", async () => {
+    const o = await open(390, `#/projects/${PID}/deploy`, view());
     try {
-      const deploy = o.page.locator("section", { has: o.page.getByRole("heading", { name: "Deploy", exact: true }) });
+      const deploy = o.page.getByRole("region", { name: "Deploy targets" });
       await deploy.getByText(/Runs\s*v0\.9\.0/).waitFor();
       await noSideScroll(o.page);
     } finally {

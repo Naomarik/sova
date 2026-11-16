@@ -262,7 +262,7 @@ function copiesChange(projectId: string, to: number | null): KeptChange | null {
 
 /**
  * Set this machine's copy limit for the project (null: back to the project's file's) and write its history
- * line. The Branches tab's Change (the route checks the request is the operator's own page) and the settings'
+ * line. The Running Copies tab's Change (the route checks the request is the operator's own page) and the settings'
  * apply and undo come here. A value outside 1 to 16 is refused in words (400).
  */
 export function setCopyLimit(projectId: string, to: unknown, by: SettingsBy, meta: { card?: string; revertOf?: string } = {}): SettingsHistoryRow[] {
@@ -1694,7 +1694,7 @@ export async function settingsInfo(projectId: string): Promise<ProjectSettingsIn
   {
     const machine = machineCopyLimit(root);
     const limit = copyLimitOf(root, { machine });
-    rows.push({ setting: "copies", label: SETTINGS_REFERENCE.copies.label, state: `${limit.cap} at once`, where: "sova", href: `#/projects/${projectId}/branches`, hrefLabel: "the Branches tab", detail: machine !== null ? "set on this machine" : "from the project's file" });
+    rows.push({ setting: "copies", label: SETTINGS_REFERENCE.copies.label, state: `${limit.cap} at once`, where: "sova", href: `#/projects/${projectId}/running-copies`, hrefLabel: "the Running Copies tab", detail: machine !== null ? "set on this machine" : "from the project's file" });
   }
 
   // Context files and skills: the project's list for new chats, kept on this computer (server/approvals.ts),
@@ -1717,14 +1717,14 @@ export async function settingsInfo(projectId: string): Promise<ProjectSettingsIn
     rows.push({ setting, label: SETTINGS_REFERENCE[setting].label, state, where: "file", href, hrefLabel, ...extra });
   // Services.
   const svc = readText(join(root, CONTRACT_FILE));
-  if (svc === null) file("services", "Not set", `#/projects/${projectId}/branches`, "the Branches tab", { detail: CONTRACT_FILE });
+  if (svc === null) file("services", "Not set", `#/projects/${projectId}/running-copies`, "the Running Copies tab", { detail: CONTRACT_FILE });
   else
     try {
       const def = parseDefinition(svc);
       const names = def.services.map((x) => x.name);
-      file("services", `${names.length} service${names.length === 1 ? "" : "s"}`, `#/projects/${projectId}/branches`, "the Branches tab", { detail: names.join(", ") || CONTRACT_FILE });
+      file("services", `${names.length} service${names.length === 1 ? "" : "s"}`, `#/projects/${projectId}/running-copies`, "the Running Copies tab", { detail: names.join(", ") || CONTRACT_FILE });
     } catch (err) {
-      file("services", "Broken", `#/projects/${projectId}/branches`, "the Branches tab", { detail: err instanceof Error ? err.message : String(err) });
+      file("services", "Broken", `#/projects/${projectId}/running-copies`, "the Running Copies tab", { detail: err instanceof Error ? err.message : String(err) });
     }
   // The merge queue (its settings live in Settings → Merge Queue).
   {

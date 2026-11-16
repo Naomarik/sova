@@ -12,8 +12,9 @@ import { stateHash } from "./store";
 
 let checkout: string | null | undefined;
 
-/** Apply of this server's own checkout from anything but the user's page (§app.access/your-click, §design.copy-deck/your-click). */
-export const SELF_APPLY_REFUSAL = "Only the user restarts Sova. Ask them to press Apply on the Branches tab of Sova's project page. Nothing was restarted.";
+/** Apply of this server's own checkout from anything but the user's page (§app.access/your-click, §design.copy-deck/your-click).
+    The Running Copies tab offers no Apply, so it names the user's own way: Restart Sova (server/page-only.ts says the same). */
+export const SELF_APPLY_REFUSAL = "Only the user restarts Sova. Ask them to press Restart Sova in Settings → General. Nothing was restarted.";
 
 /** The git checkout the running server was loaded from, or null outside one. */
 export function serverCheckout(): string | null {

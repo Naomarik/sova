@@ -48,7 +48,7 @@ test("the project's other settings (stakeholder, owner's page, Frozen, archive) 
   assert.deepEqual(missing(PROJECT_EDIT_KEYS, project), []);
 });
 
-test("the copy limit's edit: every key it takes has an entry, and it is Sova-kept, changed on the Branches tab", () => {
+test("the copy limit's edit: every key it takes has an entry, and it is Sova-kept, changed on the Running Copies tab", () => {
   assert.deepEqual(missing(COPIES_EDIT_KEYS, keysOf("copies")), []);
   assert.deepEqual(Object.keys(SETTINGS_REFERENCE.copies.keys), [...COPIES_EDIT_KEYS]);
   assert.equal(SETTINGS_REFERENCE.copies.where, "sova");

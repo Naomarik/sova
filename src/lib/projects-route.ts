@@ -1,6 +1,8 @@
 // The projects pages (§app/projects): `#/projects` lists the projects registered on this host (and
-// the peers'), `#/projects/<id>` is one project on its Overview, `…/requirements`, `…/branches`,
-// `…/merge-queue` (one of its tabs, `…/merge-queue/<tab>`, and one run of it, `…/merge-queue[/<tab>]/<run>`), `…/releases`, `…/cost` and `…/settings` on its other tabs (Requirements only while an organization places it), and
+// the peers'), `#/projects/<id>` is one project on its Sessions tab, `…/backlog`, `…/requirements`, `…/running-copies`
+// (once `…/branches`, which still opens it), `…/merge-queue` (one of its tabs, `…/merge-queue/<tab>`, and one run of it,
+// `…/merge-queue[/<tab>]/<run>`), `…/releases`, `…/deploy`, `…/cost` and `…/settings` on its other tabs (Requirements
+// only while an organization places it), and
 // `…/overseer` is that project's overseer (§app/project-overseer). `?host=<id>` names the peer that
 // holds the project (§mesh.remote-sessions/org-pages). Ids are the server's (`prj_…`): plain
 // characters that never need encoding, so anything else in the hash is not this route.
@@ -9,9 +11,23 @@ import { hostOf, projectHostOf, sessionHrefOn } from "./mesh";
 
 const ID_RE = /^[A-Za-z0-9_-]+$/;
 
-/** A project page's tabs; Overview is the bare address. Requirements exists only while placed. */
-export const PROJECT_TABS = ["overview", "requirements", "branches", "merge-queue", "releases", "cost", "settings"] as const;
+/** A project page's tabs, in their order; Sessions is the bare address. Requirements exists only while placed. */
+export const PROJECT_TABS = ["sessions", "backlog", "requirements", "running-copies", "merge-queue", "releases", "deploy", "cost", "settings"] as const;
 export type ProjectTab = (typeof PROJECT_TABS)[number];
+/** Each tab's label on the strip. */
+export const TAB_LABEL: Record<ProjectTab, string> = {
+  sessions: "Sessions",
+  backlog: "Backlog",
+  requirements: "Requirements",
+  "running-copies": "Running Copies",
+  "merge-queue": "Merge Queue",
+  releases: "Releases",
+  deploy: "Deploy",
+  cost: "Cost",
+  settings: "Settings",
+};
+/** Running Copies was Branches: its old address (links the server writes, bookmarks) still opens it. */
+const TAB_ALIASES: Record<string, Exclude<ProjectTab, "sessions">> = { branches: "running-copies" };
 
 /**
  * The Merge Queue tab's own tabs, by the word each takes in the address; the first, Ready to land, is the bare
@@ -25,8 +41,8 @@ const isQueueTab = (s: string): s is QueueTab => (QUEUE_TABS as readonly string[
 
 export type ProjectsRoute =
   | { kind: "list" }
-  /** No tab = Overview. */
-  | { kind: "project"; projectId: string; tab?: Exclude<ProjectTab, "overview">; host?: string; /** On the Merge Queue tab: one run's page. */ run?: string; /** On the Merge Queue tab: which of its tabs (absent: Ready to land). On a run's page: the tab it was opened from. */ queueTab?: QueueTab }
+  /** No tab = Sessions. */
+  | { kind: "project"; projectId: string; tab?: Exclude<ProjectTab, "sessions">; host?: string; /** On the Merge Queue tab: one run's page. */ run?: string; /** On the Merge Queue tab: which of its tabs (absent: Ready to land). On a run's page: the tab it was opened from. */ queueTab?: QueueTab }
   | { kind: "overseer"; projectId: string; host?: string };
 
 export const PROJECTS_HREF = "#/projects";
@@ -47,14 +63,14 @@ export function projectsRouteFromHash(hash: string): ProjectsRoute | null {
 
 function hashRoute(hash: string): ProjectsRoute | null {
   if (hash === PROJECTS_HREF || hash === `${PROJECTS_HREF}/`) return { kind: "list" };
-  const m = /^#\/projects\/([^/]+)(?:\/(requirements|branches|merge-queue|releases|cost|settings|overseer))?(?:\/([^/]+))?(?:\/([^/]+))?\/?$/.exec(hash);
+  const m = /^#\/projects\/([^/]+)(?:\/(backlog|requirements|running-copies|branches|merge-queue|releases|deploy|cost|settings|overseer))?(?:\/([^/]+))?(?:\/([^/]+))?\/?$/.exec(hash);
   if (!m || !ID_RE.test(m[1]!)) return null;
   const projectId = m[1]!;
   // Only the Merge Queue tab has pages under it: one of its tabs by its word, one run by its id, or both (a run opened
   // from that tab).
   if (m[3] !== undefined) {
     if (m[2] !== "merge-queue") return null;
-    // `ready` names Ready to land, whose address is the bare one: it is read as no tab (canonicalQueueHash drops it).
+    // `ready` names Ready to land, whose address is the bare one: it is read as no tab (canonicalProjectHash drops it).
     const word = QUEUE_TAB_WORDS.includes(m[3]) ? (m[3] as QueueTab) : undefined;
     const named = word !== undefined || m[3] === "ready";
     if (!named && m[4] !== undefined) return null;
@@ -64,13 +80,15 @@ function hashRoute(hash: string): ProjectsRoute | null {
   }
   if (m[2] === undefined) return { kind: "project", projectId };
   if (m[2] === "overseer") return { kind: "overseer", projectId };
-  return { kind: "project", projectId, tab: m[2] as Exclude<ProjectTab, "overview"> };
+  return { kind: "project", projectId, tab: TAB_ALIASES[m[2]] ?? (m[2] as Exclude<ProjectTab, "sessions">) };
 }
 
-/** A typed or pasted `…/merge-queue/ready[/<run>]` as its one address, the bare `…/merge-queue[/<run>]`; null when
-    the hash is already canonical. */
-export function canonicalQueueHash(hash: string): string | null {
-  const to = hash.replace(/^(#\/projects\/[^/?]+\/merge-queue)\/ready(?=[/?]|$)/, "$1");
+/** A typed or pasted `…/merge-queue/ready[/<run>]` as its one address, the bare `…/merge-queue[/<run>]`, and a tab's
+    old address (`…/branches`) as its new one; null when the hash is already canonical. */
+export function canonicalProjectHash(hash: string): string | null {
+  const to = hash
+    .replace(/^(#\/projects\/[^/?]+\/merge-queue)\/ready(?=[/?]|$)/, "$1")
+    .replace(/^(#\/projects\/[^/?]+\/)([a-z-]+)(?=\/?(?:\?|$))/, (all, head: string, word: string) => (TAB_ALIASES[word] ? head + TAB_ALIASES[word] : all));
   return to === hash ? null : to;
 }
 
@@ -80,8 +98,8 @@ const onHost = (id: string, tail: string): string => {
   return `${PROJECTS_HREF}/${id}${tail}${host ? `?host=${encodeURIComponent(host)}` : ""}`;
 };
 export const projectHref = (projectId: string): string => onHost(projectId, "");
-/** One tab of a project's page; Overview is the bare project address. */
-export const projectTabHref = (projectId: string, tab: ProjectTab): string => onHost(projectId, tab === "overview" ? "" : `/${tab}`);
+/** One tab of a project's page; Sessions is the bare project address. */
+export const projectTabHref = (projectId: string, tab: ProjectTab): string => onHost(projectId, tab === "sessions" ? "" : `/${tab}`);
 /** One of the Merge Queue tab's tabs; Ready to land is the bare tab address. */
 export const mergeQueueTabHref = (projectId: string, tab: QueueTab = "ready"): string => onHost(projectId, `/merge-queue${tab === "ready" ? "" : `/${tab}`}`);
 /** One run of a project's merge queue: its steps, why each ran, and their logs. `from`: the queue's tab it is opened

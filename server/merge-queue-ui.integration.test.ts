@@ -245,6 +245,15 @@ const tree = (s: SessionSummary, branch: string) => ({
   dirty: false,
 });
 const WORKTREES = { available: true, sessions: [tree(CODING, "sova/fix-cart"), tree(CODING_B, "sova/fix-badge")] };
+/** The cart session as the session list reads it once its branch is Ready to land at the head the page shows (the
+    Sessions tab's Land comes from that reading). `served`: the merge queue serves its repo; `invalid`: the project's
+    .sova/project.json doesn't parse. */
+const codingReady = (served: boolean, invalid?: string): SessionSummary =>
+  ({
+    ...CODING,
+    branches: [{ path: "/w/.worktrees/sova-fix-cart", branch: "sova/fix-cart", status: "active", exists: true, ...(served ? { mergeServed: true } : {}), mergeProject: { target: "master", checks: served && !invalid ? "declared" : "unset", ...(invalid ? { invalid } : {}) } }],
+    readiness: { trees: [{ path: "/w/.worktrees/sova-fix-cart", branch: "sova/fix-cart", state: "ready", landing: { state: "ready", commit: sha("8") } }], since: 0 },
+  }) as unknown as SessionSummary;
 /** A proposed playbook run, its branch's hash valid: Merge Branch, or Land once the queue is set up. */
 const RUNTIME = {
   projectId: PID,
@@ -1044,8 +1053,8 @@ for (const width of [1280, 390]) {
       assert.ok((await stripAtTop(strip)).scroll > 0, "the pane scrolled to it");
       // The project's own Merge Queue tab opens Ready to land.
       assert.equal(await page.getByRole("tab", { name: "Merge Queue" }).count(), 1);
-      await page.getByRole("tab", { name: "Branches" }).click();
-      await until("on Branches", async () => (await hashOf(page)) === `#/projects/${PID}/branches`);
+      await page.getByRole("tab", { name: "Running Copies" }).click();
+      await until("on Running Copies", async () => (await hashOf(page)) === `#/projects/${PID}/running-copies`);
       await page.getByRole("tab", { name: "Merge Queue" }).click();
       await until("on Ready to land", async () => (await strip.getByRole("tab", { selected: true }).getAttribute("aria-label").catch(() => null)) === "Ready to land · 1");
       assert.equal(await hashOf(page), `#/projects/${PID}/merge-queue`);
@@ -1085,11 +1094,10 @@ for (const width of [1280, 390]) {
 
     test("set up: the coding rows offer Land and show their queue state; the playbook run's button is Land", async () => {
       const view = viewOf({ waiting: [entry({ id: "me_badge", branch: "sova/fix-badge", state: "queued", position: 1, eta: { startsInMs: 3 * 60_000, takesMs: 9 * 60_000 } })] });
-      const o = await open(width, `#/projects/${PID}`, { view });
+      const o = await open(width, `#/projects/${PID}`, { view, sessions: [SESSION, codingReady(true), CODING_B] });
       const { page } = o;
-      const badge = page.locator(".project-worktree", { hasText: "Fix the badge" });
-      await badge.getByText("Queued · 1st").waitFor({ timeout: 20_000 });
-      assert.match(await words(badge), /starts in ~3 min · takes ~9 min/);
+      const badge = page.locator(".psess-row", { hasText: "Fix the badge" });
+      await badge.getByText("In line · 1st").waitFor({ timeout: 20_000 });
       // The playbook run: Land, through the queue at its branch.
       const landRun = page.getByRole("button", { name: "Land sova/project-verbs" }).first();
       await landRun.waitFor();
@@ -1099,25 +1107,168 @@ for (const width of [1280, 390]) {
       await until("a land of the run's branch", () => o.calls.some((c) => c.verb === "merge.add" && c.body.branch === "sova/project-verbs"));
       assert.equal(lastCall(o, "merge.add").body.project, ROOT_DIR);
       assert.equal(lastCall(o, "merge.add").body.commit, sha("7"), "the run's reviewed tip is pinned");
-      // A coding row: its ⋯ holds Land (not Merge Branch); Land queues its worktree.
-      const cart = page.locator(".project-worktree", { hasText: "Fix the cart" });
-      await cart.getByRole("button", { name: /^Actions · / }).click();
+      // A coding row Ready to land: Land on the row queues its worktree at the head it read; its ⋯ has no Merge Branch.
+      const cart = page.locator(".psess-row", { hasText: "Fix the cart" });
+      await cart.getByText("Ready to land").waitFor();
+      await cart.getByRole("button", { name: "More for Fix the cart" }).click();
+      await page.getByRole("menuitem", { name: /^Remove Worktree/ }).waitFor();
       assert.equal(await page.getByRole("menuitem", { name: /^Merge Branch/ }).count(), 0);
-      await page.getByRole("menuitem", { name: "Land sova/fix-cart on master" }).click();
+      await page.keyboard.press("Escape");
+      // Land asks first, with the Worktrees window's confirm: Not Yet queues nothing and gives Land back.
+      await cart.getByRole("button", { name: "Land sova/fix-cart", exact: true }).click();
+      const ask = cart.getByRole("group", { name: "Land sova/fix-cart", exact: true });
+      await ask.getByRole("button", { name: "Not Yet" }).click();
+      await ask.waitFor({ state: "detached" });
+      assert.equal(o.calls.filter((c) => c.verb === "merge.add" && c.body.checkout === "/w/.worktrees/sova-fix-cart").length, 0, "Not Yet queues nothing");
+      await confirmLand(o, cart, "sova/fix-cart", "Land 2 Commits");
       await until("a land of the coding worktree", () => o.calls.some((c) => c.verb === "merge.add" && c.body.checkout === "/w/.worktrees/sova-fix-cart"));
       assert.equal(lastCall(o, "merge.add").body.commit, sha("8"), "the row's shown head is pinned");
-      // A queued row's Land says why it can't.
-      await badge.getByRole("button", { name: /^Actions · / }).click();
-      assert.equal(await page.getByRole("menuitem", { name: "Land sova/fix-badge on master" }).getAttribute("aria-disabled"), "true");
-      await page.keyboard.press("Escape");
+      // A queued row is in line: no Land on it.
+      assert.equal(await badge.getByRole("button", { name: /^Land / }).count(), 0);
       assert.equal(o.calls.filter((c) => c.verb === "worktrees.merge" || c.verb === "runtime.merge").length, 0, "nothing merged directly");
       await noSideScroll(page);
       await shot(page, `${width}-project-rows-setup`);
       await o.ctx.close();
     });
 
+    test("a Ready to land branch's name opens its summary: the Worktrees window's own row beside it; any other branch's name is plain", async () => {
+      // The chat's own row for the branch, as its Worktrees window reads it (GET /api/insights/session).
+      const cartRow = wt("sova/fix-cart", {
+        readiness: { path: "", branch: "sova/fix-cart", state: "ready", landing: { state: "ready", commit: sha("8") } },
+        mergeStats: { ahead: 2, added: 12, removed: 3, head: sha("8"), headAt: iso(5) } as SessionWorktreeInfo["mergeStats"],
+        mergeSummary: { commit: sha("8"), state: "ready", bullets: ["Keeps the cart through a reload"] },
+      });
+      const view = viewOf({ waiting: [entry({ id: "me_badge", branch: "sova/fix-badge", state: "queued", position: 1 })] });
+      const o = await open(width, `#/projects/${PID}`, { view, sessions: [SESSION, codingReady(true), CODING_B], rows: [cartRow] });
+      const { page } = o;
+      const cart = page.locator(".psess-row", { hasText: "Fix the cart" });
+      const name = cart.getByRole("button", { name: "sova/fix-cart: ready to land. Show its summary" });
+      await name.waitFor({ timeout: 20_000 });
+      // A branch in any other state: its name is text, with no dot and nothing to press.
+      const badge = page.locator(".psess-row", { hasText: "Fix the badge" });
+      await badge.getByText("In line · 1st").waitFor();
+      assert.equal(await badge.locator(".psess-branches button, .psess-branches .branch-pop-dot").count(), 0, "a branch in line has no popover and no dot");
+      // The dot before the name and the words beside it are the READY chip's green.
+      const green = (l: Locator, prop: "color" | "backgroundColor") => l.evaluate((el, p) => getComputedStyle(el)[p as "color"], prop);
+      await name.click();
+      const card = page.getByRole("dialog", { name: "Worktree", exact: true });
+      await card.waitFor();
+      const chip = card.locator(".chip", { hasText: "Ready" });
+      await chip.waitFor();
+      const chipGreen = await green(chip, "color");
+      assert.equal(await green(cart.locator(".branch-pop-dot"), "backgroundColor"), chipGreen, "the dot is the chip's green");
+      assert.equal(await green(cart.getByText("Ready to land"), "color"), chipGreen, "the words are the chip's green");
+      // The Worktrees window's own row: the chip, its size and age, what the branch does, Review Changes, Land.
+      const row = card.locator('.wt-queue-row[data-branch="sova/fix-cart"]');
+      assert.match(await words(row), /2 commits · \+12 −3 · /);
+      assert.match(await words(row), /Keeps the cart through a reload/);
+      assert.equal(await row.getByRole("button", { name: "Review Changes on sova/fix-cart" }).count(), 1);
+      await noSideScroll(page);
+      await shot(page, `${width}-project-branch-popover`);
+      // The row's chat is not opened by a press in the card.
+      const hash = await page.evaluate(() => location.hash);
+      // Land asks first, with the row's own confirm: Not Yet queues nothing, and the card stays.
+      await row.getByRole("button", { name: "Land sova/fix-cart", exact: true }).click();
+      const ask = row.getByRole("group", { name: "Land sova/fix-cart", exact: true });
+      await ask.getByRole("button", { name: "Not Yet" }).click();
+      await ask.waitFor({ state: "detached" });
+      assert.equal(o.calls.filter((c) => c.verb === "merge.add").length, 0, "Not Yet queues nothing");
+      assert.equal(await card.count(), 1);
+      // Escape closes the card and gives focus back to the name; a press outside closes it too.
+      await page.keyboard.press("Escape");
+      await card.waitFor({ state: "detached" });
+      await until("focus back on the name", () => name.evaluate((el) => el === document.activeElement));
+      await name.click();
+      await card.waitFor();
+      // (By its place, not a locator's click: folded, the sheet's scrim covers the page and takes the press.)
+      const head = await box(page.locator(".psess-h2"));
+      await page.mouse.click(head.x + 4, head.y + 4);
+      await card.waitFor({ state: "detached" });
+      assert.equal(await page.evaluate(() => location.hash), hash, "nothing was opened");
+      // Confirmed, it queues the branch at the head the row shows, as the row's Land does.
+      await name.click();
+      await card.waitFor();
+      await confirmLand(o, row, "sova/fix-cart", "Land 2 Commits");
+      await until("a land of the coding worktree", () => o.calls.some((c) => c.verb === "merge.add" && c.body.checkout === "/w/.worktrees/sova-fix-cart"));
+      assert.equal(lastCall(o, "merge.add").body.commit, sha("8"), "the row's shown head is pinned");
+      await o.ctx.close();
+    });
+
+    test("nothing pressed inside a branch's summary closes it: Try Again says Summarizing… where the error was, and the card is never rebuilt", async () => {
+      // The chat's row for the branch as each read finds it: its summary failed, then (once Try Again was taken) being
+      // written, then written.
+      const summary = (mergeSummary: SessionWorktreeInfo["mergeSummary"]) =>
+        wt("sova/fix-cart", { readiness: { path: "", branch: "sova/fix-cart", state: "ready", landing: { state: "ready", commit: sha("8") } }, mergeStats: { ahead: 2, added: 12, removed: 3, head: sha("8"), headAt: iso(5) } as SessionWorktreeInfo["mergeStats"], mergeSummary });
+      let opened: Opened | undefined;
+      let written = false;
+      const retried = () => !!opened?.calls.some((c) => c.verb === "branch-summary.retry");
+      const opts = {
+        view: viewOf({ waiting: [] }),
+        sessions: [SESSION, codingReady(true), CODING_B],
+        get rows() {
+          return [summary(!retried() ? { commit: sha("8"), state: "failed" } : written ? { commit: sha("8"), state: "ready", bullets: ["Keeps the cart through a reload"] } : { commit: sha("8"), state: "writing" })];
+        },
+      };
+      const o = (opened = await open(width, `#/projects/${PID}`, opts));
+      const { page } = o;
+      const cart = page.locator(".psess-row", { hasText: "Fix the cart" });
+      const name = cart.getByRole("button", { name: "sova/fix-cart: ready to land. Show its summary" });
+      await name.click({ timeout: 20_000 });
+      const card = page.getByRole("dialog", { name: "Worktree", exact: true });
+      const again = card.getByRole("button", { name: "Try summarizing sova/fix-cart again" });
+      await again.waitFor();
+      // The very nodes that are on the page now: a card that was closed and opened again, or a name rebuilt under it
+      // (which takes its card with it), would be other nodes.
+      await page.evaluate(() => {
+        for (const sel of [".branch-pop", ".branch-pop .wt-queue-row", '.branch-pop-open[aria-expanded="true"]']) document.querySelector<HTMLElement>(sel)!.dataset.kept = "1";
+      });
+      const kept = () => page.evaluate(() => document.querySelectorAll('[data-kept="1"]').length);
+      // Try Again: taken, the line reads Summarizing… where the error was; the row tells the page to read its branches
+      // again (which makes every row and branch line anew), and the card comes through it.
+      await again.click();
+      await called(o, "branch-summary.retry");
+      const busy = card.locator('.mq-summary [role="status"][aria-busy="true"]');
+      await busy.waitFor();
+      assert.equal(await words(busy), "Summarizing…");
+      assert.equal(await again.count(), 0, "no Try Again while it is being written");
+      assert.match(await words(card.locator(".mq-summary")), /^\s*Summarizing…\s*$/, "the error is gone");
+      assert.equal(await kept(), 3, "the card, its row and its name are the ones that were there");
+      // The new summary, read while the card is open: the line goes and the bullets are there.
+      written = true;
+      await card.getByText("Keeps the cart through a reload").waitFor({ timeout: 10_000 });
+      assert.equal(await busy.count(), 0);
+      assert.equal(await kept(), 3, "still the same card");
+      // The other controls inside it: Review Changes (its viewer opens over the card, on purpose, and closing it gives
+      // the card back), the ▾ menu and its confirm, Land's Not Yet.
+      const row = card.locator('.wt-queue-row[data-branch="sova/fix-cart"]');
+      await row.getByRole("button", { name: "Review Changes on sova/fix-cart" }).click();
+      const viewer = page.locator(".changes-dialog");
+      await viewer.waitFor();
+      await page.keyboard.press("Escape");
+      await viewer.waitFor({ state: "detached" });
+      assert.equal(await card.count(), 1, "Escape closed the viewer only");
+      await row.getByRole("button", { name: "More ways to land sova/fix-cart" }).click();
+      await page.getByRole("menuitem", { name: "Land sova/fix-cart without its specs" }).click();
+      const specs = row.getByRole("group", { name: "Land sova/fix-cart without its specs" });
+      await specs.getByRole("button", { name: "Cancel" }).click();
+      await specs.waitFor({ state: "detached" });
+      await row.getByRole("button", { name: "Land sova/fix-cart", exact: true }).click();
+      await row.getByRole("group", { name: "Land sova/fix-cart", exact: true }).getByRole("button", { name: "Not Yet" }).click();
+      assert.equal(await kept(), 3, "none of them closed or rebuilt it");
+      // A confirmed Land queues the branch, and the card is still there to say what became of it.
+      await confirmLand(o, row, "sova/fix-cart", "Land 2 Commits");
+      await called(o, "merge.add");
+      await page.getByText("Queued sova/fix-cart.").first().waitFor();
+      assert.equal(await kept(), 3, "the card stays open after Land");
+      await noSideScroll(page);
+      // Only these close it: the name again (and Escape and a press outside, above).
+      await page.evaluate(() => document.querySelector<HTMLElement>('.branch-pop-open[data-kept="1"]')!.click());
+      await card.waitFor({ state: "detached" });
+      await o.ctx.close();
+    });
+
     test("not set up: the coding rows and the playbook run keep Merge Branch", async () => {
-      const o = await open(width, `#/projects/${PID}`, { view: viewOf({ checks: "unset", state: "idle", current: undefined, checking: [], waiting: [], needsYou: [], needsFix: [], recent: [] }) });
+      const o = await open(width, `#/projects/${PID}`, { view: viewOf({ checks: "unset", state: "idle", current: undefined, checking: [], waiting: [], needsYou: [], needsFix: [], recent: [] }), sessions: [SESSION, codingReady(false), CODING_B] });
       const { page } = o;
       const run = page.getByRole("button", { name: "Merge Branch" }).first();
       await run.waitFor({ timeout: 20_000 });
@@ -1126,8 +1277,9 @@ for (const width of [1280, 390]) {
       assert.equal(await page.getByRole("button", { name: "Land sova/project-verbs" }).count(), 0);
       await run.click();
       await until("the run's Merge Branch", () => o.calls.some((c) => c.verb === "runtime.merge"));
-      const cart = page.locator(".project-worktree", { hasText: "Fix the cart" });
-      await cart.getByRole("button", { name: /^Actions · / }).click();
+      const cart = page.locator(".psess-row", { hasText: "Fix the cart" });
+      assert.equal(await cart.getByRole("button", { name: /^Land / }).count(), 0, "no Land where the queue isn't set up");
+      await cart.getByRole("button", { name: "More for Fix the cart" }).click();
       await page.getByRole("menuitem", { name: "Merge Branch: sova/fix-cart into master" }).click();
       await until("the row's Merge Branch", () => o.calls.some((c) => c.verb === "worktrees.merge"));
       assert.equal(o.calls.filter((c) => c.verb === "merge.add").length, 0);
@@ -1321,7 +1473,7 @@ for (const width of [1280, 390]) {
       const bad = '$.merge.checks[0].run[2]: a lone "$"';
       const why = `The project's .sova/project.json is invalid: ${bad}. Fix it on the target; nothing lands until it parses`;
       const view = viewOf({ checks: "unset", invalid: bad, state: "paused", paused: { kind: "definition-invalid", why, at: iso(1) }, current: undefined, checking: [] });
-      const o = await open(width, `#/projects/${PID}/merge-queue`, { view });
+      const o = await open(width, `#/projects/${PID}/merge-queue`, { view, sessions: [SESSION, codingReady(true, bad), CODING_B] });
       const { page } = o;
       const tab = page.locator(".mq-tab");
       await tab.getByText("This project's .sova/project.json doesn't parse.").waitFor({ timeout: 20_000 });
@@ -1340,9 +1492,10 @@ for (const width of [1280, 390]) {
       // The project page: every merge goes through the queue (it takes a branch that fixes the file), so it says Land.
       await page.goto(`${ORIGIN}/#/projects/${PID}`);
       await page.getByRole("button", { name: "Land sova/project-verbs" }).first().waitFor({ timeout: 20_000 });
-      const cart = page.locator(".project-worktree", { hasText: "Fix the cart" });
-      await cart.getByRole("button", { name: /^Actions · / }).click();
-      await page.getByRole("menuitem", { name: "Land sova/fix-cart on master" }).waitFor();
+      const cart = page.locator(".psess-row", { hasText: "Fix the cart" });
+      await cart.getByRole("button", { name: "Land sova/fix-cart" }).waitFor();
+      await cart.getByRole("button", { name: "More for Fix the cart" }).click();
+      await page.getByRole("menuitem", { name: /^Remove Worktree/ }).waitFor();
       assert.equal(await page.getByRole("menuitem", { name: /^Merge Branch/ }).count(), 0);
       await page.keyboard.press("Escape");
       await o.ctx.close();

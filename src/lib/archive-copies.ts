@@ -53,16 +53,16 @@ export function archiveUnavailable(copies: readonly ArchiveCopy[] | undefined): 
 }
 
 /** The archived banner's line while copies of it still run (they are left running). Copies are stopped on Branches;
-    the shared services by the banner's own Stop when it has one (they may run with no copy to show them on Branches). */
+    the shared services by the banner's own Stop when it has one (they may run with no copy to show them on Running Copies). */
 export function archivedRunningLine(copies: readonly ArchiveCopy[]): string | null {
   const left = blockingCopies(copies);
   const n = left.filter((c) => c.instance !== null).length;
   const shared = left.find((c) => c.instance === null);
   if (!n && !shared) return null;
   const what = n && shared ? `${copiesWord(n)} and its shared services still run` : n ? `${copiesWord(n)} of it still ${n === 1 ? "runs" : "run"}` : "Its shared services still run";
-  if (!n) return shared?.down ? `${what}.` : `${what}. Stop them on Branches.`;
-  if (shared && !shared.down) return `${what}. Stop them on Branches.`;
-  return `${what}. Stop ${shared ? (n === 1 ? "the copy" : "the copies") : n === 1 ? "it" : "them"} on Branches.`;
+  if (!n) return shared?.down ? `${what}.` : `${what}. Stop them on Running Copies.`;
+  if (shared && !shared.down) return `${what}. Stop them on Running Copies.`;
+  return `${what}. Stop ${shared ? (n === 1 ? "the copy" : "the copies") : n === 1 ? "it" : "them"} on Running Copies.`;
 }
 
 /** After a stop pass: the copies still listed, each failed stop's sentence kept on its row. */

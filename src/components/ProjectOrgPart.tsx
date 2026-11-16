@@ -31,7 +31,8 @@ import { announce, toast } from "../lib/ui-state";
 import { unchangedError } from "../lib/unchanged-error";
 import { OwnerProjectCard } from "./OwnerProjectCard";
 import { PipelineCard } from "./PipelineCard";
-import { IdeasCard, type ItemSendForm } from "./ProjectOverseerPanel";
+import { IdeasCard, type ItemSendForm, Started } from "./ProjectOverseerPanel";
+import { ProjectFilesCard } from "./ProjectFilesCard";
 import type { ProjectOrgPart, ProjectPartContext } from "./ProjectPage";
 import { Banner, Chip, Icon } from "./ui";
 import "../orgs.css";
@@ -129,10 +130,6 @@ export function createProjectOrgPart(orgId: string, ctx: ProjectPartContext): Pr
         )}
       </Show>
     ),
-    counts: () => {
-      const i = info();
-      return i ? { conflicts: openConflicts(), decisions: { total: i.decisions.filter((d) => d.state !== "superseded").length, ready: ready() } } : {};
-    },
     attention: () => ({ count: openConflicts() + ready(), line: attentionLine(openConflicts(), ready()) }),
     send,
     refresh: () => {
@@ -179,6 +176,16 @@ export function createProjectOrgPart(orgId: string, ctx: ProjectPartContext): Pr
             <PipelineCard orgId={orgId} projectId={projectId} onEmpty={setPipelineEmpty} />
             <Show when={openIdeaCount() || addingIdea()}>
               <IdeasCard po={ctx.po} title="Gaps and ideas" empty="No open ideas. Gaps it finds between the decisions and who decides them land here." send={send} archived={ctx.archived()} adding={addingIdea()} onAdding={setAddingIdea} />
+            </Show>
+            {/* Files people sent it (§app.organizations/files-card). */}
+            <ProjectFilesCard projectId={projectId} placed tick={ctx.refreshed} />
+            {/* The sessions its overseer started to gather requirements: shown once it has started one. */}
+            <Show when={ctx.po.info.data()?.started.some((x) => x.kind !== "coding") ? ctx.po.info.data() : undefined}>
+              {(pi) => (
+                <section class="card orgs-section project-card" aria-labelledby="project-started">
+                  <Started info={pi()} />
+                </section>
+              )}
             </Show>
           </>
         )}

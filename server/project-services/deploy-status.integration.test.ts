@@ -135,7 +135,7 @@ test("a failed deploy is an act-tier item until a later deploy of the target suc
   const facts = deployAttention().filter((a) => a.root === project);
   assert.deepEqual(facts.map((f) => [f.kind, f.target]), [["deploy-failed", "bad"]]);
   const items = deployItems(facts, () => ({ id: "p1", name: "Site" }));
-  assert.deepEqual([items[0]!.tier, items[0]!.kind, items[0]!.path, items[0]!.href], ["act", "deploy-failed", "", "#/projects/p1"]);
+  assert.deepEqual([items[0]!.tier, items[0]!.kind, items[0]!.path, items[0]!.href], ["act", "deploy-failed", "", "#/projects/p1/deploy"]);
   assert.match(items[0]!.detail!, /^Deploy of [0-9a-f]{7} to bad failed: steps\.ship exited with 3$/);
   assert.match((await deployer.run("deploy.logs", { project, deploy: rec.id }, op)).lines!.map((l) => l.text).join("\n"), /the target refused/);
 });

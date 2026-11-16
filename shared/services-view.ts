@@ -1,5 +1,5 @@
 /**
- * The Branches tab and the host-wide Running branches (§app.project-services/services-ui), as the pages
+ * The Running Copies tab and the host-wide Running branches (§app.project-services/services-ui), as the pages
  * read them: `GET /api/projects/:pid/services` and `GET /api/services`. The engine's status joined with
  * what the definition says about each service's HTTP readiness, the copy's share endpoints and its entry point. The
  * verbs answer the engine's own result (`VerbResult`, shared/project-contract.ts).
@@ -29,7 +29,7 @@ export interface CopyView extends Omit<InstanceSummary, "services"> {
 }
 
 /**
- * The copy limit as the Branches tab shows it (§app.project-services/services-ui): the limit in force and where
+ * The copy limit as the Running Copies tab shows it (§app.project-services/services-ui): the limit in force and where
  * it comes from, how many copies there are and run, the sentence while more run than it allows, what a copy
  * takes in memory (conformance's reading) and this machine's memory.
  */
@@ -114,7 +114,7 @@ export interface HostServicesView {
   projects: RunningProject[];
 }
 
-/** Verbs the Branches tab's routes run as the operator. */
+/** Verbs the Running Copies tab's routes run as the operator. */
 export const SERVICES_UI_VERBS = ["up", "down", "apply", "reset", "teardown", "logs", "share", "revoke"] as const;
 export type ServicesUiVerb = (typeof SERVICES_UI_VERBS)[number];
 export const SERVICES_LOG_LINES = 200;

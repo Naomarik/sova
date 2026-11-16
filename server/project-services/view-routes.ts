@@ -24,7 +24,7 @@ import { countPlaces, placeSlots } from "./places";
 import { readRegistry, type Registry } from "./store";
 
 /**
- * The Branches tab's and Running branches' routes (§app.project-services/services-ui):
+ * The Running Copies tab's and Running branches' routes (§app.project-services/services-ui):
  * `GET /api/projects/:pid/services` (the project's status, joined with its definitions),
  * `POST /api/projects/:pid/services/:verb` (one verb on the project as the operator, answered with the
  * status of its exit class) and `GET /api/services` (what runs on this host now, every project's).
@@ -174,7 +174,7 @@ const LIMIT_WORDS = {
   overseer: "Only you change the copy limit here: the Overseer can't.",
   local: "The copy limit is changed only on this machine.",
   chat: "A chat can't change the copy limit: its project overseer proposes it through sova_settings.",
-  script: "A script can't change the copy limit: change it on the Branches tab.",
+  script: "A script can't change the copy limit: change it on the Running Copies tab.",
   extension: "An extension can't change the copy limit.",
 };
 
@@ -251,7 +251,7 @@ export function registerServicesViewRoutes(app: Hono<any>): void {
     "/api/projects/:pid/services/:verb",
     handle(async (c) => {
       const verb = c.req.param("verb") ?? "";
-      if (!(SERVICES_UI_VERBS as readonly string[]).includes(verb)) return c.json({ error: `The Branches tab doesn't run ${verb}.` }, 400);
+      if (!(SERVICES_UI_VERBS as readonly string[]).includes(verb)) return c.json({ error: `The Running Copies tab doesn't run ${verb}.` }, 400);
       const root = readProject(c.req.param("pid") ?? "").root;
       const raw = await c.req.text().catch(() => "");
       let body: unknown;

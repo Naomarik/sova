@@ -1,7 +1,7 @@
 import { createMemo, createResource, createSignal, For, Match, Show, Switch } from "solid-js";
 import type { ProjectSummary } from "../../shared/projects";
 import type { RunningProject } from "../../shared/services-view";
-import type { SessionSummary } from "../../shared/protocol";
+import type { AttentionDigest, SessionSummary } from "../../shared/protocol";
 import { projectSummaryKey, recall, remember } from "../lib/page-cache";
 import { ApiError, getHostServices, getProject, listProjects, openProjectOverseer, runProjectVerb, runRootVerb } from "../lib/api";
 import { relativeTime } from "../lib/format";
@@ -27,8 +27,8 @@ const errText = (err: unknown) => (err instanceof ApiError || err instanceof Err
  * `#/projects/<pid>/overseer`. This route composes a project's page: the project layer's page, plus
  * the placing organization's part while one places it (`space.kind === "org"`).
  */
-export function ProjectsView(props: { route: ProjectsRoute; titleRef(el: HTMLHeadingElement): void; /** The sidebar's session list. */ sessions?: () => readonly SessionSummary[] | undefined }) {
-  const tab = createMemo((): ProjectTab => (props.route.kind === "project" ? (props.route.tab ?? "overview") : "overview"));
+export function ProjectsView(props: { route: ProjectsRoute; titleRef(el: HTMLHeadingElement): void; /** The sidebar's session list. */ sessions?: () => readonly SessionSummary[] | undefined; /** The attention digest App holds. */ attention?: () => AttentionDigest | undefined }) {
+  const tab = createMemo((): ProjectTab => (props.route.kind === "project" ? (props.route.tab ?? "sessions") : "sessions"));
   const run = createMemo(() => (props.route.kind === "project" ? props.route.run : undefined));
   const queueTab = createMemo(() => (props.route.kind === "project" ? props.route.queueTab : undefined));
   return (
@@ -38,7 +38,7 @@ export function ProjectsView(props: { route: ProjectsRoute; titleRef(el: HTMLHea
       </Match>
       {/* Keyed on the project alone: a tab change keeps the page and what it fetched. */}
       <Match when={props.route.kind === "project" && props.route.projectId} keyed>
-        {(pid) => <ProjectRoute projectId={pid} tab={tab()} run={run()} queueTab={queueTab()} titleRef={props.titleRef} sessions={props.sessions} />}
+        {(pid) => <ProjectRoute projectId={pid} tab={tab()} run={run()} queueTab={queueTab()} titleRef={props.titleRef} sessions={props.sessions} attention={props.attention} />}
       </Match>
       <Match when={props.route.kind === "overseer" && props.route.projectId} keyed>
         {(pid) => <OverseerDoor projectId={pid} titleRef={props.titleRef} />}
@@ -48,7 +48,7 @@ export function ProjectsView(props: { route: ProjectsRoute; titleRef(el: HTMLHea
 }
 
 /** One project's page, once its read lands: the org's part composed in only while one places it. */
-function ProjectRoute(props: { projectId: string; tab: ProjectTab; run?: string; queueTab?: QueueTab; titleRef(el: HTMLHeadingElement): void; sessions?: () => readonly SessionSummary[] | undefined }) {
+function ProjectRoute(props: { projectId: string; tab: ProjectTab; run?: string; queueTab?: QueueTab; titleRef(el: HTMLHeadingElement): void; sessions?: () => readonly SessionSummary[] | undefined; attention?: () => AttentionDigest | undefined }) {
   // What this tab last read of it (here, or the sidebar's project list) draws the page at once; the read updates it.
   const [project, { refetch, mutate }] = createResource(
     () => props.projectId,
@@ -78,7 +78,7 @@ function ProjectRoute(props: { projectId: string; tab: ProjectTab; run?: string;
         </InsightsPage>
       }
     >
-      <Show when={space()} keyed fallback={<ProjectPage project={latest()!} tab={props.tab} run={props.run} queueTab={props.queueTab} titleRef={props.titleRef} onProject={mutate} refetchProject={() => void refetch()} sessions={props.sessions} />}>
+      <Show when={space()} keyed fallback={<ProjectPage project={latest()!} tab={props.tab} run={props.run} queueTab={props.queueTab} titleRef={props.titleRef} onProject={mutate} refetchProject={() => void refetch()} sessions={props.sessions} attention={props.attention} />}>
         {(orgId) => (
           <ProjectPage
             project={latest()!}
@@ -89,6 +89,7 @@ function ProjectRoute(props: { projectId: string; tab: ProjectTab; run?: string;
             onProject={mutate}
             refetchProject={() => void refetch()}
             sessions={props.sessions}
+            attention={props.attention}
             org={(ctx) => createProjectOrgPart(orgId, ctx)}
           />
         )}
@@ -110,7 +111,7 @@ function OverseerDoor(props: { projectId: string; titleRef(el: HTMLHeadingElemen
       {(e) => (
         <>
           <Banner tone="error" title="Couldn't open the overseer." body={e()} />
-          <ProjectRoute projectId={props.projectId} tab="overview" titleRef={props.titleRef} />
+          <ProjectRoute projectId={props.projectId} tab="sessions" titleRef={props.titleRef} />
         </>
       )}
     </Show>
@@ -211,7 +212,7 @@ const RUNNING_POLL_MS = 15_000;
 /**
  * Running branches (§app.project-services/services-ui): every copy and shared service that runs on this
  * host now, by project, standalone or placed, each with its memory and a Stop; the project's name opens
- * its Branches tab, and a running copy's name its app's entry, when it declares one. A shared service's Stop asks first: it stops it for every copy of the project.
+ * its Running Copies tab, and a running copy's name its app's entry, when it declares one. A shared service's Stop asks first: it stops it for every copy of the project.
  */
 function RunningCopies() {
   const poll = createPoll(getHostServices, RUNNING_POLL_MS);
@@ -275,7 +276,7 @@ function RunningCopies() {
                   <li class="running-copies-project">
                     <p class="list-title running-copies-head">
                       <Show when={p.projectId} fallback={<span class="orgs-mono" title={p.root}>{p.root}</span>}>
-                        {(pid) => <a href={projectTabHref(pid(), "branches")}>{p.name}</a>}
+                        {(pid) => <a href={projectTabHref(pid(), "running-copies")}>{p.name}</a>}
                       </Show>
                       <Show when={p.orgName}>{(o) => <span class="list-meta">In {o()}</span>}</Show>
                     </p>
@@ -308,7 +309,7 @@ function RunningCopies() {
                                 <Show when={said()[key()]}>{(line) => <p class="field-error services-said">{line()}</p>}</Show>
                               </div>
                               <div class="services-actions">
-                                {/* An adopted main is never Sova's to stop: Apply on its Branches tab restarts it. */}
+                                {/* An adopted main is never Sova's to stop: it runs as a unit of its own, and the line says so. */}
                                 <Show when={!c.adopted} fallback={<p class="list-meta services-actions-note">{adoptedLine(c.adopted!)}</p>}>
                                   <StopButton p={p} id={key()} name={name()} body={{ instance: c.instance }} />
                                 </Show>

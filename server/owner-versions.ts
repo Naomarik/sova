@@ -308,7 +308,7 @@ export function endOwnerPreviews(hashes: readonly string[], now = Date.now()): n
   return n;
 }
 
-/** Whether a preview id is an owner-bound version (the Branches tab may say so). */
+/** Whether a preview id is an owner-bound version (the Running Copies tab may say so). */
 export const isOwnerVersion = (id: string): boolean => !!keptPreview(id)?.owner;
 export { findPreviewByHash, previewState };
 

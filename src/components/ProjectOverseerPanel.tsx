@@ -1,6 +1,5 @@
 import { decideFirstLine } from "../lib/approvals";
 import { ClaudeLoginCard } from "./ClaudeLoginCard";
-import { RemoveAnywayListing } from "./RemoveAnywayListing";
 import { createEffect, createMemo, createResource, createSignal, For, type JSX, on, onMount, Show } from "solid-js";
 import { TODO_TEXT_MAX, type IdeaRecord, type OverseerAction, type OverseerTodosInfo } from "../../shared/protocol";
 import {
@@ -18,8 +17,8 @@ import {
   SOON_CHOICES,
   type ProjectOverseerCaps,
 } from "../../shared/project-overseer";
-import { type CodingStartResult, type ItemCodeInput, type ItemCodeResult, type ItemSendResult, type CodingSession, type CodingWorktree, type ProjectOverseerInfo, type ProjectOverseerPatch, type ProjectWorktrees } from "../../shared/project-overseer";
-import type { CodingWorktreeHold, SessionSummary } from "../../shared/protocol";
+import { type ItemCodeInput, type ItemCodeResult, type ItemSendResult, type CodingSession, type ProjectOverseerInfo, type ProjectOverseerPatch, type ProjectWorktrees } from "../../shared/project-overseer";
+import type { SessionSummary } from "../../shared/protocol";
 import {
   addProjectOverseerIdea,
   addProjectOverseerTodo,
@@ -27,7 +26,6 @@ import {
   codeProjectItem,
   getProjectOverseer,
   getProjectWorktrees,
-  getSessionSummaryById,
   listModels,
   openProjectOverseer,
   patchProjectOverseer,
@@ -35,29 +33,19 @@ import {
   projectOverseerActions,
   projectOverseerIdeas,
   projectOverseerTodos,
-  removeCodingWorktree,
-  removeCodingWorktreeAnyway,
-  codingWorktreeHold,
-  runProjectOverseer,
-  mergeCodingWorktree,
-  startProjectCoding,
 } from "../lib/api";
-import { ForKey } from "../lib/for-key";
 import type { GatheringAbilities } from "../../shared/baton";
 import { ABILITIES_KEYS, abilitiesKey, abilitiesLabel, abilitiesOfKey, abilitiesWords, drawHtmlSavedToast, drawHtmlSettable, type AbilitiesKey } from "../lib/gathering-abilities";
-import { codingFromList, codingModeHint, codingRows, folderNote, mergeNote, rowGestures, startedBy, type CodingRow } from "../lib/coding-worktrees";
-import { relativeTime, tildePath } from "../lib/format";
+import { codingFromList, codingModeHint } from "../lib/coding-worktrees";
+import { relativeTime } from "../lib/format";
 import { hostLabel, projectHostOf } from "../lib/mesh";
 import { unchangedError } from "../lib/unchanged-error";
 import { createPoll, type Poll } from "../lib/poll";
 import { ACTIVITY_SHOWN, LIMIT_COLUMN_LABEL, LIMIT_COLUMNS, LIMIT_ROWS, limitCell, paceLine, type LimitColumn } from "../lib/project-page";
-import { actionLine, allowanceLine, gapArea, gapWords, holdHint, holdWords, isGap, IDEA_TITLE_MAX, lastRunTail, limitsProblem, openIdeas, operatorIdeaId, pendingLine, soonWords, STARTED_KIND, waitingLines, watchHint } from "../lib/project-overseer-view";
-import { adoptSession, announce, home, toast } from "../lib/ui-state";
+import { actionLine, gapArea, gapWords, holdHint, holdWords, isGap, IDEA_TITLE_MAX, limitsProblem, openIdeas, operatorIdeaId, soonWords, STARTED_KIND, watchHint } from "../lib/project-overseer-view";
+import { announce, toast } from "../lib/ui-state";
 import { ActionMenu } from "./ActionMenu";
-import { land, refusal } from "../lib/merge-queue-client";
-import { queueRow, entryLandBlock } from "../lib/merge-queue";
-import { createProjectQueue } from "../lib/project-queue";
-import { QueueChip } from "./WorktreesModal";
+import { refusal } from "../lib/merge-queue-client";
 import { LinksBanner, type Links } from "./LinksBanner";
 import { Banner, Chip, Icon, Placeholder } from "./ui";
 import { PowersPanel } from "./PowersGrid";
@@ -151,12 +139,20 @@ export function createProjectOverseer(props: {
 
 const resume = (po: ProjectOverseer) => void po.run(() => patchProjectOverseer(po.projectId(), { resume: true }), brakeDone);
 
+/** The one state word beside Open Overseer: Working while it works, else Paused under a brake, else Not watching; null
+    when it watches and waits (nothing to say). */
+export function overseerStateWord(i: Pick<ProjectOverseerInfo, "busy" | "settings">): "Working" | "Paused" | "Not watching" | null {
+  if (i.busy) return "Working";
+  if (i.settings.powers.brake) return "Paused";
+  if (!i.settings.watch) return "Not watching";
+  return null;
+}
+
 /**
- * The summary's overseer line (§app.organizations/project-page): the level in force, watching, the
- * last run in the page's own words and today's runs, with Working, Run Now and Open Overseer
- * beside it; under it, only when true, what it waits to look at, the allowance used and what waits.
+ * The page head's overseer part (§app.organizations/project-page): one state word when one applies, then Open Overseer
+ * (Start Overseer before it has a conversation) with its unread count. Nothing else of the overseer sits at the top.
  */
-export function OverseerSummary(props: { po: ProjectOverseer; archived?: boolean; /** An organization places the project: the level lines are the org's. */ placed: boolean; /** Who an attach pause names: only a placed project's workspace is ever attached, so the placing layer says it. */ attachedWho?: string }) {
+export function OverseerHeadActions(props: { po: ProjectOverseer; archived?: boolean }) {
   const po = () => props.po;
   const i = () => po().info.data();
   const openChat = () =>
@@ -168,44 +164,52 @@ export function OverseerSummary(props: { po: ProjectOverseer; archived?: boolean
   const cantOpen = () => !!props.archived && !i()?.exists;
   // Open Overseer or Start Overseer: which one is the overseer's own state's, so it waits for that (no git) read.
   const unread = () => !i();
+  const word = () => (i() ? overseerStateWord(i()!) : null);
   return (
-    <section class="project-summary-overseer" aria-label="Overseer">
-      <div class="project-summary-line">
-        <Show when={i()} fallback={<Placeholder lines={1} class="placeholder-inline" label="Overseer" />}>
-          {(x) => (
-            <p class="project-summary-status">
-              <StatusWords info={x()} placed={props.placed} />
-            </p>
+    <>
+      <Show when={word()}>
+        {(w) => (
+          <span class="project-state-word" title={w() === "Paused" ? (i()?.settings.powers.brake?.reason ?? undefined) : undefined}>
+            <Show when={w() === "Working"}>
+              <span class="live-dot" aria-hidden="true" />
+            </Show>
+            {w()}
+          </span>
+        )}
+      </Show>
+      <button
+        type="button"
+        class="button button-sm project-open-overseer"
+        aria-disabled={po().busy() || unread() || cantOpen() ? "true" : undefined}
+        title={cantOpen() ? "Archived" : unread() ? "Not read yet" : undefined}
+        onClick={() => !cantOpen() && !unread() && openChat()}
+      >
+        <Icon name="eye" small />
+        {i()?.exists ? "Open Overseer" : "Start Overseer"}
+        <Show when={i()?.unread}>
+          {(n) => (
+            <>
+              <span class="chip chip-count" aria-hidden="true">
+                {n()}
+              </span>
+              <span class="visually-hidden">, {n()} unread</span>
+            </>
           )}
         </Show>
-        <div class="cluster project-summary-actions">
-          <Show when={i()?.busy}>
-            <Chip tone="accent" live>
-              Working
-            </Chip>
-          </Show>
-          <button
-            type="button"
-            class="button button-sm button-ghost"
-            aria-disabled={po().busy() || !i() || i()?.busy || props.archived ? "true" : undefined}
-            title={props.archived ? "Archived" : !i() ? "Not read yet" : i()?.busy ? "Working now" : "Look at the project now, as the watch loop would."}
-            onClick={() => !props.archived && i() && !i()!.busy && void po().run(() => runProjectOverseer(po().projectId()), "The overseer is looking now.")}
-          >
-            Run Now
-          </button>
-          <button
-            type="button"
-            class="button button-sm"
-            aria-disabled={po().busy() || unread() || cantOpen() ? "true" : undefined}
-            title={cantOpen() ? "Archived" : unread() ? "Not read yet" : undefined}
-            onClick={() => !cantOpen() && !unread() && openChat()}
-          >
-            <Icon name="eye" small />
-            {i()?.exists ? "Open Overseer" : "Start Overseer"}
-            <Show when={i()?.unread}>{(n) => <span class="chip chip-count">{n()}</span>}</Show>
-          </button>
-        </div>
-      </div>
+      </button>
+    </>
+  );
+}
+
+/**
+ * What the overseer has to tell the operator on every tab, each only when true: a write it refused, a read that failed
+ * (with Retry), the links an act left, and the Paused banner with Resume.
+ */
+export function OverseerNotices(props: { po: ProjectOverseer; /** Who an attach pause names: only a placed project's workspace is ever attached, so the placing layer says it. */ attachedWho?: string }) {
+  const po = () => props.po;
+  const i = () => po().info.data();
+  return (
+    <>
       <Show when={po().error()}>{(e) => <Banner tone="error" title="The overseer didn't answer." body={e()} />}</Show>
       <Show when={!i() && po().info.error()}>
         {(e) => (
@@ -222,77 +226,21 @@ export function OverseerSummary(props: { po: ProjectOverseer; archived?: boolean
         )}
       </Show>
       <Show when={po().links()}>{(l) => <LinksBanner links={l()} onDismiss={() => po().setLinks(null)} />}</Show>
-      <Show when={i()}>
-        {(x) => (
-          <>
-            <StatusMore info={x()} />
-            {/* A brake (an attach on this host, an empty roster): every switch acts as Off until Resume. */}
-            <Show when={x().settings.powers.brake}>
-              {(b) => (
-                <Banner
-                  tone="warn"
-                  title={b().kind === "paused" ? `Paused on ${po().host() ? hostLabel(po().host()!) : "this host"}` : "Paused"}
-                  body={b().kind === "paused" && x().paused ? `${props.attachedWho ?? "It"} was attached ${po().host() ? `on ${hostLabel(po().host()!)}` : "here"} ${relativeTime(x().paused!)}. Until you resume, every switch acts as Off: the overseer only proposes and its watch loop waits.` : b().reason}
-                  action={
-                    <button type="button" class="button button-sm" aria-disabled={po().busy() ? "true" : undefined} onClick={() => !po().busy() && resume(po())}>
-                      Resume
-                    </button>
-                  }
-                />
-              )}
-            </Show>
-          </>
-        )}
-      </Show>
-    </section>
-  );
-}
-
-/** "Paused · Watching · Last looked on its own 2h ago, after …. 0 runs today." */
-function StatusWords(props: { info: ProjectOverseerInfo; placed: boolean }) {
-  const i = () => props.info;
-  const u = () => i().usage;
-  const brake = () => i().settings.powers.brake;
-  return (
-    <>
-      <Show when={brake()}>
+      {/* A brake (an attach on this host, an empty roster): every switch acts as Off until Resume. */}
+      <Show when={i()?.settings.powers.brake}>
         {(b) => (
-          <>
-            <span class="project-level" title={b().reason}>
-              Paused
-            </span>
-            {" · "}
-          </>
+          <Banner
+            tone="warn"
+            title={b().kind === "paused" ? `Paused on ${po().host() ? hostLabel(po().host()!) : "this host"}` : "Paused"}
+            body={b().kind === "paused" && i()?.paused ? `${props.attachedWho ?? "It"} was attached ${po().host() ? `on ${hostLabel(po().host()!)}` : "here"} ${relativeTime(i()!.paused!)}. Until you resume, every switch acts as Off: the overseer only proposes and its watch loop waits.` : b().reason}
+            action={
+              <button type="button" class="button button-sm" aria-disabled={po().busy() ? "true" : undefined} onClick={() => !po().busy() && resume(po())}>
+                Resume
+              </button>
+            }
+          />
         )}
       </Show>
-      {i().settings.watch ? "Watching" : "Not watching"}
-      {" · "}
-      <Show when={i().lastRun} fallback="It hasn't looked on its own yet.">
-        {(r) => (
-          <>
-            Last looked on its own <time title={r().at}>{relativeTime(r().at)}</time>
-            {lastRunTail(r())}.
-          </>
-        )}
-      </Show>{" "}
-      {u().unattendedToday} {u().unattendedToday === 1 ? "run" : "runs"} today.
-    </>
-  );
-}
-
-/** The status line's extra lines, each only when it has something to say. */
-function StatusMore(props: { info: ProjectOverseerInfo }) {
-  const i = () => props.info;
-  const u = () => i().usage;
-  return (
-    <>
-      <Show when={u().pending.length}>
-        <p class="orgs-line project-muted">Waiting to look at: {pendingLine(u().pending)}</p>
-      </Show>
-      <For each={[allowanceLine("Today on its own", u().allowance.today), allowanceLine("Your last message", u().allowance.message)].filter((l): l is string => !!l)}>
-        {(line) => <p class="orgs-line project-muted">{line}</p>}
-      </For>
-      <For each={waitingLines(u().held, i().settings)}>{(line) => <p class="orgs-line project-waiting">{line}</p>}</For>
     </>
   );
 }
@@ -881,11 +829,14 @@ function CodingMode(props: { info: ProjectOverseerInfo }) {
 }
 
 /** Its gathering sessions and offers; coding sessions list under "Coding sessions". */
-function Started(props: { info: ProjectOverseerInfo }) {
+export function Started(props: { info: ProjectOverseerInfo }) {
   const rows = createMemo(() => props.info.started.filter((s) => s.kind !== "coding"));
   return (
     <Show when={rows().length}>
-      <h3 class="orgs-h3">Sessions it started</h3>
+      {/* Its card's own heading (Requirements): on that tab "it" has nothing to point at, so it names the overseer. */}
+      <h2 class="orgs-h2" id="project-started">
+        Sessions the overseer started
+      </h2>
       <ul class="list">
         <For each={rows()}>
           {(s) => (
@@ -907,359 +858,6 @@ function Started(props: { info: ProjectOverseerInfo }) {
         </For>
       </ul>
     </Show>
-  );
-}
-
-/**
- * Every coding session the project started, the overseer's and the operator's (§app.project-overseer/
- * coding-worktrees): each runs in a worktree and branch of its own, cut from the root's branch, or
- * in the root when it can't. Merging the branch back, and removing the worktree, are the operator's.
- * The heading and New Coding Session show at once; the rows come from the overseer read (no git),
- * else the session list, and each row's branch facts from the branch read, a moment later
- * ("Read in two steps"): until then its branch gestures are disabled.
- */
-function CodingSessions(props: {
-  po: ProjectOverseer;
-  /** The project is archived: New Coding Session is disabled, "Archived". */
-  archived?: boolean;
-}) {
-  const po = () => props.po;
-  const wt = () => po().worktrees.data();
-  const rows = createMemo(() => codingRows(po().info.data()?.coding, po().listed(), wt()?.sessions));
-  /** The project's merge queue: set up, Land replaces Merge Branch and each row shows its queue state. */
-  const queue = createProjectQueue(() => po().projectId());
-  /** Nothing to list yet, and nothing read: placeholders, not "None yet". */
-  const unknown = () => !rows().length && !po().info.data() && !wt();
-  const [confirming, setConfirming] = createSignal<string | null>(null);
-  const [working, setWorking] = createSignal<string | null>(null);
-  const [starting, setStarting] = createSignal(false);
-  /** New Coding Session's own refusal, under the heading. */
-  const [startError, setStartError] = createSignal<string | null>(null);
-  const start = async () => {
-    if (starting() || props.archived) return;
-    setStarting(true);
-    try {
-      const r = await startProjectCoding(po().projectId());
-      po().info.refetch();
-      po().worktrees.refetch();
-      // Started, but its mode isn't set: it stays on this page, listed, to be opened and set by hand.
-      if (r.modeNotSet) {
-        setStartError(r.modeNotSet);
-        return;
-      }
-      setStartError(null);
-      toast(r.worktree ? `Coding session started on ${r.worktree.branch}.` : "Coding session started in the project root.");
-      // Empty until the operator writes, so the list hides it: the app adopts it, as New Session's.
-      const s = await getSessionSummaryById(r.sessionId).catch(() => null);
-      if (!s || !adoptSession(s)) location.hash = sessionHref(r.path);
-    } catch (x) {
-      setStartError(unchangedError(errText(x), "No session was started."));
-    } finally {
-      setStarting(false);
-    }
-  };
-  /** A refusal stays under its own row. */
-  const [errors, setErrors] = createSignal<Record<string, string>>({});
-  const act = async (w: CodingRow, fn: () => Promise<ProjectWorktrees>, done: string) => {
-    if (working() || !po().worktrees.fresh()) return;
-    setWorking(w.sessionId);
-    try {
-      po().worktrees.set(await fn());
-      po().info.refetch();
-      setErrors(({ [w.sessionId]: _, ...rest }) => rest);
-      toast(done);
-      announce(done);
-    } catch (x) {
-      setErrors((e) => ({ ...e, [w.sessionId]: errText(x) }));
-    } finally {
-      // Done or refused, the confirmation has had its answer; a refusal stays under the row.
-      setConfirming(null);
-      setWorking(null);
-    }
-  };
-  /** Land: the branch joins the project's merge queue at its head commit; the queue merges it onto
-      the target in its own copy, checks it there and moves the target to exactly that commit. */
-  const landRow = async (w: CodingRow & { worktree: string }) => {
-    if (working() || !po().worktrees.fresh()) return;
-    setWorking(w.sessionId);
-    try {
-      // The head this page read (CodingWorktree.head): the queue pins it, never a newer one.
-      const no = refusal(await land(w.worktree, { commit: w.head }));
-      if (no) throw new Error(no);
-      po().worktrees.refetch();
-      setErrors(({ [w.sessionId]: _, ...rest }) => rest);
-      const done = `Queued ${w.branch} to land on ${w.target}.`;
-      toast(done);
-      announce(done);
-    } catch (x) {
-      setErrors((e) => ({ ...e, [w.sessionId]: errText(x) }));
-    } finally {
-      setWorking(null);
-    }
-  };
-  const retry = () => {
-    po().info.refetch();
-    po().worktrees.refetch();
-  };
-  return (
-    <>
-      <div class="orgs-head">
-        <h2 class="orgs-h2" id="project-coding">
-          Coding sessions
-        </h2>
-        <button
-          type="button"
-          class="button button-sm"
-          aria-disabled={starting() || props.archived ? "true" : undefined}
-          title={props.archived ? "Archived" : undefined}
-          onClick={() => void start()}
-        >
-          <Icon name="terminal" small /> New Coding Session
-        </button>
-      </div>
-      <Show when={startError()}>{(e) => <p class="field-error">{e()}</p>}</Show>
-      <Show when={!po().info.data() && po().info.error()}>
-        <p class="field-error">
-          Couldn't read the coding sessions.{" "}
-          <button type="button" class="button button-sm" onClick={retry}>
-            Retry
-          </button>
-        </p>
-      </Show>
-      <Show when={po().info.data() && !wt() && po().worktrees.error()}>
-        {(_) => (
-          <p class="field-error">
-            Couldn't read the branches. {po().worktrees.error()}{" "}
-            <button type="button" class="button button-sm" onClick={() => po().worktrees.refetch()}>
-              Retry
-            </button>
-          </p>
-        )}
-      </Show>
-      <Show when={wt() && !wt()!.available && wt()!.reason}>{(r) => <p class="orgs-line project-muted">Coding sessions run in the project root: {r()}</p>}</Show>
-      <Show when={unknown() && !po().info.error()}>
-        <Placeholder lines={3} label="Coding sessions" />
-      </Show>
-      <Show when={!rows().length && !unknown()}>
-        <p class="orgs-empty">None yet. Yours and the overseer's are listed here.</p>
-      </Show>
-      <ul class="list project-worktrees">
-        <ForKey each={rows()} by={(r) => r.sessionId}>
-          {(row) => {
-            const armed = () => confirming() === row().sessionId;
-            // Remove Worktree asks first what the folder holds that git can't bring back (§chat.worktrees/leftovers):
-            // a held folder shows why, and Remove Anyway's exact listing when that is the only reason.
-            const [hold] = createResource(
-              () => (armed() ? row().sessionId : null),
-              (sid) => codingWorktreeHold(po().projectId(), sid).catch((x): CodingWorktreeHold => ({ reason: errText(x) })),
-            );
-            const [listing, setListing] = createSignal(false);
-            createEffect(on(armed, (a) => !a && setListing(false)));
-            const folder = () => {
-              const w = row().worktree;
-              return w ? tildePath(w, home()) : "";
-            };
-            const title = () => row().title || UNTITLED_CODING;
-            // Remembered branch facts (a reopened project) show at once, but no gesture acts on them.
-            const gestures = () => rowGestures(row(), po().worktrees.fresh());
-            const facts = () => (row().facts && row().state !== undefined ? (row() as CodingRow & CodingWorktree) : null);
-            return (
-              <li class="list-row orgs-row project-worktree">
-                <span class="list-main project-worktree-main">
-                  <Show when={row().path} fallback={<span class="list-title project-worktree-title" title={title()}>{title()}</span>}>
-                    {(path) => (
-                      <a class="list-title project-worktree-title" href={sessionHref(path())} title={title()} onClick={(e) => !row().title && openUntitled(e, row().sessionId)}>
-                        {title()}
-                      </a>
-                    )}
-                  </Show>
-                  <span class="list-meta project-worktree-meta">
-                    {startedBy(row())} · {row().running ? "working" : "idle"} · <time title={row().createdAt}>{relativeTime(row().createdAt)}</time>
-                    <Show when={row().branch}>
-                      {(b) => (
-                        <>
-                          {" · "}
-                          <span class="orgs-mono project-worktree-branch" title={b()}>
-                            {b()}
-                          </span>
-                        </>
-                      )}
-                    </Show>
-                  </span>
-                  <Show when={!row().branch && row().inRoot}>{(why) => <span class="list-meta">In the project root: {why()}</span>}</Show>
-                  <Show when={!row().branch && !row().inRoot && row().later}>
-                    <span class="list-meta">In the project root until it makes a worktree.</span>
-                  </Show>
-                  <Show when={facts()}>
-                    {(f) => (
-                      <>
-                        <Show when={mergeNote(f())}>
-                          {(lead) => (
-                            <span class="list-meta">
-                              {lead()} <span class="orgs-mono">{f().target}</span>
-                              <Show when={f().mergedAt}>{(at) => <> <time title={at()}>{relativeTime(at())}</time></>}</Show>
-                            </span>
-                          )}
-                        </Show>
-                        <Show when={folderNote(f())}>{(note) => <span class="list-meta">{note()}</span>}</Show>
-                      </>
-                    )}
-                  </Show>
-                  <Show when={queue.info(row().branch)}>
-                    {(q) => {
-                      const qr = () => queueRow({ status: "active", exists: true, readiness: undefined, branch: row().branch ?? "", queue: q(), mergeServed: true });
-                      return (
-                        <span class="list-meta project-worktree-queue cluster">
-                          <QueueChip row={qr()} />
-                          <Show when={qr().detail}>{(d) => <span class="text-mono">{d()}</span>}</Show>
-                          <Show when={qr().reason ?? qr().notes[0]?.text}>{(why) => <span>{why()}</span>}</Show>
-                        </span>
-                      );
-                    }}
-                  </Show>
-                </span>
-                <Show when={gestures().merge !== false || gestures().remove !== false}>
-                  <ActionMenu label={`Actions · ${title()}`} title="Actions" icon="more">
-                    {(menu) => (
-                      <>
-                        <Show when={gestures().merge !== false}>
-                          <Show
-                            when={queue.setUp()}
-                            fallback={
-                              <menu.Item
-                                label="Merge Branch"
-                                aria={`Merge Branch: ${row().branch} into ${row().target}`}
-                                icon={<Icon name="branch" small />}
-                                description={`${row().branch} into ${row().target}`}
-                                disabled={(gestures().merge || undefined) ?? (working() ? "Working" : undefined)}
-                                onRun={() => void act(row(), () => mergeCodingWorktree(po().projectId(), row().sessionId), `Merged ${row().branch} into ${row().target}.`)}
-                              />
-                            }
-                          >
-                            <menu.Item
-                              label="Land"
-                              aria={`Land ${row().branch} on ${row().target}`}
-                              icon={<Icon name="branch" small />}
-                              description={`Queues ${row().branch}: checked on ${row().target} first, then ${row().target} moves to it.`}
-                              disabled={
-                                (gestures().merge || undefined) ??
-                                (working() ? "Working" : !row().worktree ? "Its folder is gone: land it from its chat." : entryLandBlock(queue.info(row().branch)))
-                              }
-                              onRun={() => {
-                                const r = row();
-                                if (r.worktree) void landRow({ ...r, worktree: r.worktree });
-                              }}
-                            />
-                          </Show>
-                        </Show>
-                        <Show when={gestures().remove !== false}>
-                          <menu.Item
-                            label="Remove Worktree…"
-                            aria={`Remove Worktree: ${title()}`}
-                            disabled={(gestures().remove || undefined) ?? (working() ? "Working" : undefined)}
-                            onRun={() => setConfirming(row().sessionId)}
-                          />
-                        </Show>
-                      </>
-                    )}
-                  </ActionMenu>
-                </Show>
-                <Show when={errors()[row().sessionId]}>{(e) => <p class="field-error project-worktree-note">{e()}</p>}</Show>
-                <Show when={armed() && facts() && po().worktrees.fresh()}>
-                  <div class="person-confirm project-worktree-note" role="group" aria-label="Remove worktree">
-                    <Show when={listing() && hold()?.removeAnyway} fallback={
-                      <Show when={hold()?.reason} fallback={
-                        <p class="orgs-line">
-                        <Show
-                          when={row().merged}
-                          fallback={
-                            <>
-                              The folder <span class="orgs-mono">{folder()}</span> goes away. The branch <span class="orgs-mono">{row().branch}</span> keeps its commits, and the session and its transcript stay.
-                            </>
-                          }
-                        >
-                          The folder <span class="orgs-mono">{folder()}</span> and the merged branch <span class="orgs-mono">{row().branch}</span> go away. The session and its transcript stay.
-                        </Show>
-                      </p>
-                      }>
-                        {(r) => <p class="orgs-line">{r()}</p>}
-                      </Show>
-                    }>
-                      {(a) => <RemoveAnywayListing listing={a()} home={home()} />}
-                    </Show>
-                    <div class="button-row">
-                      <Show
-                        when={listing() && hold()?.removeAnyway}
-                        fallback={
-                          <Show
-                            when={!hold()?.reason}
-                            fallback={
-                              <Show when={hold()?.removeAnyway}>
-                                <button type="button" class="button button-sm button-destructive" onClick={() => setListing(true)}>
-                                  Remove Anyway
-                                </button>
-                              </Show>
-                            }
-                          >
-                            <button
-                              type="button"
-                              class="button button-sm button-destructive"
-                              aria-disabled={working() || hold.loading ? "true" : undefined}
-                              onClick={() => !hold.loading && void act(row(), () => removeCodingWorktree(po().projectId(), row().sessionId), "Worktree removed.")}
-                            >
-                              Remove Worktree
-                            </button>
-                          </Show>
-                        }
-                      >
-                        {(a) => (
-                          <button
-                            type="button"
-                            class="button button-sm button-destructive"
-                            aria-disabled={working() ? "true" : undefined}
-                            onClick={() => void act(row(), () => removeCodingWorktreeAnyway(po().projectId(), row().sessionId, a().digest), "Worktree removed.")}
-                          >
-                            Delete and Remove Worktree
-                          </button>
-                        )}
-                      </Show>
-                      <button type="button" class="button button-sm button-ghost" onClick={() => (listing() ? setListing(false) : setConfirming(null))}>
-                        {listing() ? "Back" : "Cancel"}
-                      </button>
-                    </div>
-                  </div>
-                </Show>
-              </li>
-            );
-          }}
-        </ForKey>
-      </ul>
-    </>
-  );
-}
-
-/** Overview's Coding sessions card: every coding session, then the gathering sessions it started. Its heading and
-    New Coding Session are there from the first moment, whatever the reads answer. */
-export function CodingSessionsCard(props: { po: ProjectOverseer; archived?: boolean }) {
-  return (
-    <section class="card orgs-section" aria-labelledby="project-coding">
-      <CodingSessions po={props.po} archived={props.archived} />
-      <Show when={props.po.info.data()}>{(i) => <Started info={i()} />}</Show>
-    </section>
-  );
-}
-
-/** A coding session nobody has written in yet (New Coding Session, before its first message). */
-const UNTITLED_CODING = "Untitled coding session";
-
-/** Opens an untitled coding session: the list hides an empty one, so the app adopts it (else the plain link). */
-function openUntitled(e: MouseEvent, sessionId: string): void {
-  if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
-  e.preventDefault();
-  const href = (e.currentTarget as HTMLAnchorElement).getAttribute("href") ?? "";
-  void getSessionSummaryById(sessionId).then(
-    (s) => adoptSession(s) || (location.hash = href),
-    () => (location.hash = href),
   );
 }
 
@@ -1290,7 +888,7 @@ export function ActivityCard(props: { po: ProjectOverseer }) {
         when={actions()?.length}
         fallback={
           <Show when={!props.po.actions.pending() || props.po.actions.data()} fallback={<Placeholder lines={3} label="Activity" />}>
-            <p class="orgs-empty">Nothing yet. Every act it takes, refused or not, lists here.</p>
+            <p class="orgs-empty">Nothing yet. Every act the overseer takes, refused or not, lists here.</p>
           </Show>
         }
       >
@@ -1482,7 +1080,7 @@ export function TodosCard(props: { po: ProjectOverseer; send?: ItemSendForm; arc
         when={open().length}
         fallback={
           <Show when={info() || po().todos.error()} fallback={<Placeholder lines={2} label="To-do" />}>
-            <p class="orgs-empty">{info()?.done ? `${info()!.done} done. Nothing open.` : "Nothing to do yet."}</p>
+            <p class="orgs-empty">{info()?.done ? `${info()!.done} done. Nothing open.` : "Nothing on the to-do list. Add one with +, or the overseer files them as it looks."}</p>
           </Show>
         }
       >

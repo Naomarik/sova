@@ -737,7 +737,7 @@ export class ProjectEngine {
       throw new VerbFailure("refused-slot0", `slot 0's ${s.name} is the adopted unit ${unit}, which Sova never starts or stops: apply schedules its restart (the operator, confirmed)`);
     if (run.verb !== "apply") return;
     const what = `apply of slot 0 restarts the adopted unit ${unit}`;
-    if (run.caller.kind !== "operator") throw new VerbFailure("needs-confirm", `${what}: the operator does it, confirmed (sova-project apply … --confirm, or Apply on the project's Branches tab)`);
+    if (run.caller.kind !== "operator") throw new VerbFailure("needs-confirm", `${what}: the operator does it, confirmed (sova-project apply … --confirm)`);
     if (run.caller.notPage && this.selfCheckout() === run.project) throw new VerbFailure("forbidden", SELF_APPLY_REFUSAL);
     if (!run.req.confirm) throw new VerbFailure("needs-confirm", `${what}: confirm it (sova-project apply … --confirm)`);
   }
@@ -767,7 +767,7 @@ export class ProjectEngine {
         throw new VerbFailure("needs-confirm", "a share link lets anyone who has it use this copy as if they were on this computer: confirm it (sova-project share … --confirm)");
       // The global Overseer shares in a turn the user started, on everyone's limits (shareChecks, after this).
       if (caller.kind === "overseer" && caller.word?.() !== true) throw new VerbFailure("needs-confirm", OVERSEER_SHARE_UNATTENDED);
-      if (caller.kind === "session") throw new VerbFailure("forbidden", "a coding session never shares a copy: the operator does, from the project's Branches tab");
+      if (caller.kind === "session") throw new VerbFailure("forbidden", "a coding session never shares a copy: the operator does, from the project's Running Copies tab");
       if (caller.kind === "conform") throw new VerbFailure("forbidden", "conformance never shares a copy");
     }
     if (caller.kind === "operator") {
@@ -1061,7 +1061,7 @@ export class ProjectEngine {
         if (!main && !conforming) this.refuseOverLimit(runningCopies(r, project), limit);
         const copies = r.instances.filter((i) => i.project === project && i.slot !== 0 && !i.createdBy.startsWith("conform:")).sort((x, y) => x.slot - y.slot);
         const held = copies.length ? copies.map((i) => `slot ${i.slot} (${i.branch ?? i.id}, ${countsAsRunning(i) ? "running" : "stopped"})`).join(", ") : "none";
-        const nextAction = "Tear down a copy this session made; otherwise ask the user to free a place with Teardown on the Branches tab.";
+        const nextAction = "Tear down a copy this session made; otherwise ask the user to free a place with Teardown on the Running Copies tab.";
         const pick = main ? pickSlot(r, project, checkoutPorts, [], () => false, 0) : pickSlot(r, project, checkoutPorts, layout.ordinary, listening, run.req.slot);
         if ("refused" in pick)
           throw new VerbFailure(
@@ -1124,7 +1124,7 @@ export class ProjectEngine {
     const sentence = overLimitSentence(running.length, limit.cap);
     if (!sentence) return;
     const names = running.map((i) => `slot ${i.slot} (${i.branch ?? i.id}, ${i.id})`).join(", ");
-    throw new VerbFailure("cap-reached", `${sentence} Running: ${names}. The limit of ${limit.cap} is ${limit.from}; the Branches tab changes it.`);
+    throw new VerbFailure("cap-reached", `${sentence} Running: ${names}. The limit of ${limit.cap} is ${limit.from}; the Running Copies tab changes it.`);
   }
 
   /** An adopted slot 0 runs no setup and no data step: its unit is set up outside Sova (§app.project-services/adopt). */

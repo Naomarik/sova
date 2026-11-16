@@ -51,7 +51,7 @@ import { transcriptRoot } from "./lib/jump";
 import { groupRouteFromHash } from "./lib/group-route";
 import { extHref, extRouteFromHash } from "./lib/ext-route";
 import { movedOrgHash, orgsRouteFromHash } from "./lib/orgs-route";
-import { canonicalQueueHash, projectsRouteFromHash } from "./lib/projects-route";
+import { canonicalProjectHash, projectsRouteFromHash } from "./lib/projects-route";
 import { projectSummaryKey, recall } from "./lib/page-cache";
 import type { ProjectSummary } from "../shared/projects";
 import { onListRefresh } from "./lib/list-refresh";
@@ -440,7 +440,7 @@ export function App() {
   /** A project page's address names its host when the project is a peer's: noted before the page reads it. */
   const projectsRouteOf = (hash: string) => {
     // `…/merge-queue/ready` is Ready to land's bare address, put in its place with no history entry.
-    const canon = canonicalQueueHash(hash);
+    const canon = canonicalProjectHash(hash);
     if (canon) history.replaceState(history.state, "", (hash = canon));
     const r = projectsRouteFromHash(hash);
     if (r && r.kind !== "list" && r.host) notePeerProjects(r.host, [r.projectId]);
@@ -1408,7 +1408,7 @@ export function App() {
               </Match>
               {/* Projects, placed or not (#/projects[/<project>[/<tab>|/overseer]]). Not keyed: ProjectsView keys each page. */}
               <Match when={projectsRoute()}>
-                {(r) => <ProjectsView route={r()} titleRef={(el) => (projectsTitleEl = el)} sessions={list} />}
+                {(r) => <ProjectsView route={r()} titleRef={(el) => (projectsTitleEl = el)} sessions={list} attention={() => attention.data()} />}
               </Match>
               {/* Organizations, their rosters and hand-off sessions (#/orgs[/<id>[/<tab>|/people/<person>]]). */}
               {/* Not keyed: a tab change on an org's page (#/orgs/<id>/<tab>) is a new route object,

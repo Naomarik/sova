@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { existsSync, statSync } from "node:fs";
 import { resolve } from "node:path";
-import { createSessionFile } from "./harness/pi/state";
+import { createSessionFile, type NewSessionFile } from "./harness/pi/state";
+import { WORKTREES } from "./harness/state-kinds";
 import { readAlignScan } from "./align-state";
 import { acquireChatHandle, isSessionBusy, onAgentSettled, setOpeningChoice } from "./chat-handle";
 import { noteBuildMerged } from "./build-merged";
@@ -277,11 +278,12 @@ export function buildSetupEnded(projectId: string, sid: string, ms = 120_000): P
   });
 }
 
-/** A web session's file with a given id, in `cwd`, as POST /api/sessions writes one (its cwd checked the same way). */
-async function makeSessionFile(cwd: string, sessionId: string): Promise<string> {
+/** A web session's file with a given id, in `cwd`, as POST /api/sessions writes one (its cwd checked the same way).
+    `seed`: the state records it starts with, written with the file, so the first runtime to open it reads them. */
+async function makeSessionFile(cwd: string, sessionId: string, seed?: NewSessionFile["seed"]): Promise<string> {
   const cwdError = await validateNewSessionCwd(cwd);
   if (cwdError) throw new Error(cwdError);
-  const path = canonicalPath(createSessionFile({ cwd: resolve(cwd), id: sessionId }).path);
+  const path = canonicalPath(createSessionFile({ cwd: resolve(cwd), id: sessionId, ...(seed?.length ? { seed } : {}) }).path);
   markOwned(path);
   addWebSession(sessionId);
   markSeen(sessionId);
@@ -289,15 +291,28 @@ async function makeSessionFile(cwd: string, sessionId: string): Promise<string> 
 }
 let sessionMaker = makeSessionFile;
 /** Tests: where a build's session file is made (a stub runtime's), or null for the real one. */
-export function setBuildSessionMakerForTest(fn: ((cwd: string, sessionId: string) => Promise<string>) | null): void {
+export function setBuildSessionMakerForTest(fn: ((cwd: string, sessionId: string, seed?: NewSessionFile["seed"]) => Promise<string>) | null): void {
   sessionMaker = fn ?? makeSessionFile;
 }
 
-/** A new session file with the build's id, in `cwd` (as POST /api/sessions makes one), opened on its model and thinking. */
-async function createBuildSession(cwd: string, sessionId: string, d: Record<string, unknown>): Promise<string> {
+/**
+ * The worktree Sova cut for a build, as its session's own `worktree` tool records one it creates: the session's
+ * `worktrees` entry (pi-config/extensions/worktrees). The session list's merge readiness reads a branch only from
+ * that entry (merge-readiness.ts factsOf), so without it the branch never reads Ready to land; with it the session's
+ * tool, its chat's Worktrees window and the project page all name the same tree.
+ */
+export const cutTreeEntry = (w: WorktreeRecord, sessionId: string, at = Date.now()): WorktreesActive => ({
+  version: 1,
+  trees: [{ path: w.path, branch: w.branch, base: w.base, baseBranch: w.target, status: "active", session: sessionId, how: "created", at }],
+});
+
+/** A new session file with the build's id, in `cwd` (as POST /api/sessions makes one), opened on its model and thinking.
+    `cut`: the worktree Sova cut for it, recorded in the file as it is made (before its runtime opens it and its
+    `worktree` tool restores its set). */
+async function createBuildSession(cwd: string, sessionId: string, d: Record<string, unknown>, cut?: WorktreeRecord): Promise<string> {
   const have = buildSessionPath(sessionId);
   if (have) return have;
-  const path = await sessionMaker(cwd, sessionId);
+  const path = await sessionMaker(cwd, sessionId, cut ? [[WORKTREES, cutTreeEntry(cut, sessionId)]] : undefined);
   fresh.set(sessionId, path);
   let choice = { model: typeof d.model === "string" && d.model ? d.model : null, thinking: typeof d.thinking === "string" && d.thinking ? d.thinking : null };
   // A build the item statechart started itself (L3) names no model: the project's coding model, as Start coding gives it.
@@ -437,7 +452,7 @@ export function registerBuildEffects(host: OrgHostApi, engine: string): void {
     // A Build from a conversation's draft: the draft goes into the worktree before the session starts.
     await carryOnCut(sessionId, (repo as GitRoot).top, cut.worktree.path, cut.worktree.branch);
     try {
-      await createBuildSession(cut.cwd, sessionId, d);
+      await createBuildSession(cut.cwd, sessionId, d, cut.worktree);
     } catch (err) {
       // Nothing runs in it: the worktree goes again (it holds nothing).
       await removeWorktree(cut.worktree, project.root).catch(() => {});

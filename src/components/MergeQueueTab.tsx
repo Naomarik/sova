@@ -114,7 +114,7 @@ export function HeadsStrip(props: { view: MergeQueueView }) {
           <p class="text-caption mq-red">Red on {v().target} alone: {v().heads.targetRed!.join(", ")}</p>
         </Show>
       </div>
-      <div class="mq-cell">
+      <div class="mq-cell mq-cell-end">
         <p class="text-eyebrow">Pushed to origin</p>
         <p class="mq-cell-value">
           <Show when={v().heads.pushed}>

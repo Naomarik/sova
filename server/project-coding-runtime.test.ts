@@ -6,7 +6,7 @@
 // session was created, its worktree cut and its mode set — which is what is checked.
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, utimesSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, utimesSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { after, describe, test } from "node:test";
@@ -460,6 +460,30 @@ describe("a project's coding sessions", async () => {
     rmSync(husk);
   });
 
+  test("a session Sova cuts a worktree for tracks it as its own: the `worktrees` entry its tool would write, in the file before its runtime opens", async () => {
+    const { worktreesOf } = await import("./worktrees-state");
+    const { readBranch } = await import("./harness/pi/reader");
+    const { readReadinessScan } = await import("./merge-readiness");
+    const { restoreActive } = await import("../pi-config/extensions/worktrees/state.ts");
+    const head = git(client, "rev-parse", "HEAD");
+    const made = await po.startCoding(project.id, {});
+    assert.ok(made.worktree, JSON.stringify(made));
+    const tree = { path: made.worktree.path, branch: made.worktree.branch, base: head, baseBranch: "master", status: "active", session: made.sessionId, how: "created" };
+    const tracked = (set: { trees: { at: number }[] } | undefined) => set?.trees.map(({ at: _at, ...t }) => t);
+    // What `worktree create` records (pi-config/extensions/worktrees/index.ts): the same tree, by the file's own fold.
+    assert.deepEqual(tracked(worktreesOf(await readBranch(made.path))), [tree]);
+    // Merge readiness reads a branch only from that entry: with it the session's branch can read Ready to land.
+    const { facts } = await readReadinessScan(made.path, statSync(made.path).size, null);
+    assert.deepEqual(tracked(facts ?? undefined), [tree], "merge readiness reads its branch");
+    // Its runtime restores the set from its branch when it opens, so its `worktree` tool holds the tree (a later
+    // `create` or merge writes the whole set: a tree it never restored would drop out of it). The mode pin and the
+    // commit note went in after it, on the same branch.
+    await disposeHeldChat(made.path, "test: reopen");
+    const chat = await acquireChat(made.path);
+    assert.deepEqual(tracked(restoreActive(piSession(chat).sessionManager.getBranch())), [tree], "the tool's own restore reads it");
+    assert.equal(modeEntries(made.path).length, 1, "and the mode pin is on that branch too");
+  });
+
   test("New Coding Session in a plain folder: in the root, with the reason and no note; an unknown project is 404", async () => {
     const { Hono } = await import("hono");
     const { registerProjectOverseerRoutes } = await import("./project-overseer-routes");
@@ -468,7 +492,7 @@ describe("a project's coding sessions", async () => {
     const made = await po.startCoding(plain.id, {});
     assert.deepEqual([made.worktree, made.note], [undefined, "it isn't a Git repository."]);
     assert.equal(JSON.parse(readFileSync(made.path, "utf8").split("\n")[0]!).cwd, plainRoot);
-    assert.doesNotMatch(readFileSync(made.path, "utf8"), /sova-coding-worktree|"type":"message"/);
+    assert.doesNotMatch(readFileSync(made.path, "utf8"), /sova-coding-worktree|"type":"message"|"customType":"worktrees"/, "no note, nothing sent, no worktree tracked");
     const res = await app.request(`/api/projects/prj_zzzzzzzz/overseer/coding`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
     assert.equal(res.status, 404);
     const listed = () => readdirSync(dirname(made.path)).length;

@@ -1756,7 +1756,14 @@ html, body { overflow: clip; overscroll-behavior: none; }
 @media (pointer: coarse) {
   .mq-tab :is(.mq-head, .mq-thread-card, .banner-action, .mq-history > .spread, .mq-run-actions, .mq-crumbs) .button { min-height: var(--tap-min); }
 }
-.mq-strip { display: grid; grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr)); gap: var(--space-3); padding: var(--space-3) var(--space-4); border: 1px solid var(--color-border); border-radius: var(--r-lg); background: var(--color-sunken); }
+/* The strip that heads a tab's card (the Merge Queue's target and origin, Releases' latest release and what came
+   since): one style for both, so they can't drift apart. Two cells: the first at the start, the second
+   (.mq-cell-end) against the card's right edge with its words aligned right, at every width. The first is as wide
+   as its words (at most 55% of the card), so a short label never breaks; the second has the rest and wraps in it. */
+.mq-strip { display: grid; grid-template-columns: fit-content(55%) minmax(0, 1fr); gap: var(--space-3) var(--space-5); padding: var(--space-3) var(--space-4); border: 1px solid var(--color-border); border-radius: var(--r-lg); background: var(--color-sunken); }
+.mq-strip > .mq-cell { min-width: 0; overflow-wrap: anywhere; }
+.mq-strip > .mq-cell-end { text-align: end; }
+.mq-strip > .mq-cell-end > .mq-cell-value { justify-content: flex-end; }
 .mq-cell p { margin: 0; }
 .mq-cell-value { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); margin: var(--space-1) 0; font-weight: var(--fw-medium); }
 .mq-red { color: var(--status-error); }

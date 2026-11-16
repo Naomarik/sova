@@ -155,7 +155,7 @@ import { ShellCard } from "./ShellCard";
 import { ShellDock } from "./ShellDock";
 import { PlaybookDock, showPlaybookCard } from "./PlaybookCard";
 import { isPlaybookRunEvent, playbookRunEvent, usePlaybookRuns } from "../lib/playbook-runs";
-import { NO_PLAYBOOKS_HERE, playbookRows, playbooksRunHere, withPlaybookRows } from "../lib/playbook-card";
+import { NO_PLAYBOOKS_HERE, playbookRows, playbooksRunHere, withoutPlaybookRows, withPlaybookRows } from "../lib/playbook-card";
 import { socketReconnects } from "../lib/socket";
 import type { PlaybookRunView } from "../../shared/playbook-run";
 import { answersAtHello, cardOfRun, nextShellRuns, runShell, SHELL_DROPPED, shellAnswerOf, shellOffered, stopOnClose } from "../lib/shell-runs";
@@ -2850,7 +2850,7 @@ export function ChatView(props: {
         blocked={blocked()}
         readOnly={batonGate()}
         unarchive={archivedPane() && !batonGate() ? { run: () => void unarchive(), busy: unarchiving() } : null}
-        commands={props.overseer ? commands().filter((c) => c.name !== "mode") : playbooksHere() ? withPlaybookRows(commands(), pageRows()) : commands()}
+        commands={props.overseer ? commands().filter((c) => c.name !== "mode") : playbooksHere() ? withPlaybookRows(commands(), pageRows()) : withoutPlaybookRows(commands())}
         running={live.running}
         compacting={compacting()}
         stopping={live.stopping}

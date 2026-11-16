@@ -249,6 +249,12 @@ export function playbookRows(playbooks: readonly PlaybookInfo[]): SlashCommand[]
   return [...best.values()].map((b) => b.row).sort((a, b) => a.name.localeCompare(b.name));
 }
 
+/** The chat's commands without any playbook row: for a chat that runs no playbooks, where the server's
+    own rows would otherwise go out as plain text. */
+export function withoutPlaybookRows(commands: readonly SlashCommand[]): SlashCommand[] {
+  return commands.filter((c) => !c.playbook);
+}
+
 /** The chat's commands with the page's playbook rows under them: a name the chat already has (its own
     command, or the server's row for that playbook) keeps the chat's. */
 export function withPlaybookRows(commands: readonly SlashCommand[], rows: readonly SlashCommand[]): SlashCommand[] {

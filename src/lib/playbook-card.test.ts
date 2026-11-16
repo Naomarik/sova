@@ -12,6 +12,7 @@ import {
   playbookRows,
   playbooksRunHere,
   withPlaybookRows,
+  withoutPlaybookRows,
   roleWhy,
   splitChoices,
   stackEdits,
@@ -119,6 +120,8 @@ test("the page's / rows: playbooks with a description (or a broken one), the pro
   assert.deepEqual(rows.map((r) => [r.name, r.playbook?.source]), [["ab-cycle", "project"], ["broken", "user"]]);
   const merged = withPlaybookRows([{ name: "broken", source: "prompt" }, { name: "compact", source: "builtin" }], rows);
   assert.deepEqual(merged.map((r) => [r.name, r.source]), [["broken", "prompt"], ["compact", "builtin"], ["ab-cycle", "builtin"]]);
+  // Where no playbooks run, every playbook row goes, the server's included; the chat's own stay.
+  assert.deepEqual(withoutPlaybookRows(merged).map((r) => r.name), ["broken", "compact"]);
 });
 
 test("playbook cards run in ordinary chats only: never the Overseer, a project overseer or a baton chat", () => {

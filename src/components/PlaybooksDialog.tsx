@@ -19,6 +19,7 @@ import { scheduleLine } from "../lib/schedules";
 import { ScheduleCard } from "./ScheduleCard";
 import { Banner, Icon, trapFocus } from "./ui";
 import { hostOf } from "../lib/mesh";
+import { playbookCardError, playbookHasCard } from "../lib/playbook-card";
 
 /** Same rule as everywhere else: a skeleton only after the fetch has actually been slow. */
 const SKELETON_MS = 300;
@@ -52,6 +53,9 @@ export function PlaybooksDialog(props: {
   onSend(text: string): boolean;
   onClose(sent: boolean): void;
   onOrphan?(text: string): void;
+  /** A playbook with a description opens its card above the message box instead of the text step.
+      False: it didn't open (said in a toast); the dialog stays. */
+  onOpenCard?(playbook: PlaybookInfo): Promise<boolean>;
 }) {
   const [catalog, setCatalog] = createSignal<PlaybookCatalog | null>(null);
   const [error, setError] = createSignal<string | null>(null);
@@ -177,6 +181,18 @@ export function PlaybooksDialog(props: {
     props.onClose(false);
   };
   const choose = (p: PlaybookInfo) => {
+    if (playbookHasCard(p) && props.onOpenCard) {
+      void props.onOpenCard(p).then((opened) => {
+        if (!opened) return;
+        // What was typed for other playbooks stays for the next opening, as a close keeps it.
+        leaving = true;
+        const d = drafts();
+        if (playbookDraftsEmpty(d)) kept.delete(props.path);
+        else kept.set(props.path, d);
+        props.onClose(true);
+      });
+      return;
+    }
     lastKey = playbookKey(p);
     setActive(lastKey);
     setDrafts((d) => ({ ...d, last: lastKey }));
@@ -284,6 +300,16 @@ export function PlaybooksDialog(props: {
                                         <span class="list-line list-meta-row">
                                           <span class="list-meta">{p.description}</span>
                                         </span>
+                                      </Show>
+                                      {/* A description that doesn't parse: its exact fault. */}
+                                      <Show when={playbookCardError(p)}>
+                                        {(err) => (
+                                          <span class="list-line list-meta-row">
+                                            <span class="list-meta playbook-card-error">
+                                              <Icon name="attention" small /> {err()}
+                                            </span>
+                                          </span>
+                                        )}
                                       </Show>
                                       {/* Its schedule and state (§chat.schedules/where-shown). */}
                                       <Show when={p.schedule}>

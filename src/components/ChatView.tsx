@@ -153,6 +153,9 @@ import { triageKey, triageOf } from "../lib/align-triage";
 import { Composer, type ComposerReason } from "./Composer";
 import { ShellCard } from "./ShellCard";
 import { ShellDock } from "./ShellDock";
+import { PlaybookDock, showPlaybookCard } from "./PlaybookCard";
+import { isPlaybookRunEvent, playbookRunEvent, usePlaybookRuns } from "../lib/playbook-runs";
+import type { PlaybookRunView } from "../../shared/playbook-run";
 import { answersAtHello, cardOfRun, nextShellRuns, runShell, SHELL_DROPPED, shellAnswerOf, shellOffered, stopOnClose } from "../lib/shell-runs";
 import { createShellBar } from "../lib/shell-bar";
 import type { ShellAnswer, ShellControl } from "../lib/shell-mode";
@@ -638,6 +641,23 @@ export function ChatView(props: {
   /** The host holding this chat can't take sends from this page (§mesh.compatibility/states): the chat
       stays open and live, and nothing goes out of it, reads included (a socket frame is a writing request). */
   const hostGate = createMemo(() => sendingOff(props.path));
+  /** This chat's playbook cards: the drafts it opened, the runs it started
+      or conducts. Not the Overseers': no playbook runs there. */
+  const playbookRuns = props.overseer || props.projectOverseer ? null : usePlaybookRuns(props.path, () => props.summary?.()?.cwd ?? null, hostOf(props.path));
+  /** Opens (or finds) this chat's card for a playbook with a description, with the words typed after
+      its name, and brings it into view open. False: it couldn't, said in a toast. */
+  const openPlaybookCard = async (playbook: Pick<PlaybookRunView["playbook"], "source" | "id">, text?: string): Promise<boolean> => {
+    if (!playbookRuns) return false;
+    try {
+      const run = await playbookRuns.open(playbook, text);
+      showPlaybookCard(run.id);
+      announce(`${run.playbook.title}: its card is open above the message box.`);
+      return true;
+    } catch (e) {
+      toast(`The playbook's card didn't open: ${e instanceof Error ? e.message : String(e)}`);
+      return false;
+    }
+  };
   /** This chat process's code (WS "code", §app.chat-processes/code-pickup); null: current, or no message since the hello. */
   const [code, setCode] = createSignal<CodeView | null>(null);
   /** Reload Now, and the failed banner's Try Again: the chat reloads at once if quiet, else when it is. */
@@ -1242,6 +1262,11 @@ export function ChatView(props: {
           // A design's page and state go to its card and the Gallery, never into the turn's rows.
           if (isDesignEvent(msg.event)) {
             designEvent(props.path, hostOf(props.path), msg.event);
+            break;
+          }
+          // A playbook run's new state goes to its docked card, never into the turn's rows.
+          if (isPlaybookRunEvent(msg.event)) {
+            playbookRunEvent(props.path, hostOf(props.path), msg.event.run);
             break;
           }
           // Wire 1 or 2 alike (an older server never sends 2): in the contract's words, the entry a
@@ -2795,6 +2820,7 @@ export function ChatView(props: {
         <ProfileSwitchLine path={props.path} state={chatProfile()} />
       </ThreadScroller>
       </ToolSourceContext.Provider>
+      <Show when={playbookRuns}>{(store) => <PlaybookDock store={store()} host={hostOf(props.path)} />}</Show>
       <ShellDock bar={shellBar} />
       <Show when={!hostGate()} fallback={<HostSendNotice host={hostOf(props.path)!} reading={hostGate()!} />}>
       <Composer
@@ -2883,6 +2909,7 @@ export function ChatView(props: {
         shell={shellAllowed() ? shellControl : null}
         shellUnknown={shellMode() === null && !props.overseer && !props.projectOverseer}
         onPlaybooks={() => setShowPlaybooks(true)}
+        onPlaybookCard={playbookRuns ? (playbook, words) => openPlaybookCard(playbook, words) : undefined}
         undo={undoControl}
         onSend={(text, running, attachments) => send(text, running, attachments, undefined, true)}
         picks={composerPicks()}
@@ -2907,6 +2934,7 @@ export function ChatView(props: {
           // Never a steer: a whole playbook mid-turn goes in as a follow-up the server queues
           // behind the running turn (a removable queue row), not into the turn it would derail.
           onSend={(text) => send(text, false, [])}
+          onOpenCard={playbookRuns ? (p) => openPlaybookCard({ source: p.source, id: p.id }) : undefined}
           onClose={(sent) => {
             setShowPlaybooks(false);
             // After a send the next thing is the conversation; otherwise back to the "+" button

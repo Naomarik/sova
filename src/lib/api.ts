@@ -159,6 +159,7 @@ import { upgradeLegacyRows } from "./legacy-rows";
 import { COMPOSER_QUERY } from "./wire-stamp";
 import { onAuthorized, onUnauthorized } from "./auth";
 import type { PreviewList, PreviewMint, PreviewMinted, PreviewView } from "../../shared/preview-links";
+import type { PlaybookCardEdits, PlaybookRunOpenBody, PlaybookRunView } from "../../shared/playbook-run";
 
 /**
  * What a batch send can come back as. The refusal is a VALUE, not a throw: it is the route's
@@ -552,6 +553,21 @@ export const fetchFileIndex = (cwd: string, host?: string | null) =>
     Never an error for a cwd it can't list — `project.state` says why instead. */
 export const fetchPlaybooks = (cwd: string | null, host?: string | null) =>
   request<PlaybookCatalog>(hostUrl(host, cwd ? `/api/playbooks?cwd=${encodeURIComponent(cwd)}` : "/api/playbooks"));
+
+/** A playbook run's card routes (the run store, keyed by run id). Start is a your-click door: only a
+    click on the card calls it, with the revision the card shows. */
+export function playbookRunsApi(host: string | null) {
+  const post = <T>(url: string, body: unknown, method = "POST") => request<T>(hostUrl(host, url), { method, body: JSON.stringify(body) });
+  const one = (id: string) => `/api/playbook-runs/${encodeURIComponent(id)}`;
+  return {
+    list: (path: string) => request<{ runs: PlaybookRunView[] }>(hostUrl(host, `/api/playbook-runs?path=${encodeURIComponent(path)}`), { cache: "no-store" }),
+    open: (body: PlaybookRunOpenBody) => post<PlaybookRunView>("/api/playbook-runs", body),
+    edit: (id: string, revision: number, edits: PlaybookCardEdits) => post<PlaybookRunView>(one(id), { revision, edits }, "PATCH"),
+    start: (id: string, revision: number) => post<PlaybookRunView>(`${one(id)}/start`, { revision }),
+    defaults: (id: string, revision: number) => post<{ ok: true }>(`${one(id)}/defaults`, { revision }),
+    close: (id: string) => request<{ ok: true }>(hostUrl(host, one(id)), { method: "DELETE" }),
+  };
+}
 
 /** Approve a playbook's schedule (§chat.schedules/approval): `pin` is what the user was shown; a
     changed file refuses (409). Only a click in Sova calls this. */

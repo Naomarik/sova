@@ -107,6 +107,8 @@ import { waitingWords } from "../lib/working-hours";
 import { groupHref } from "../lib/group-route";
 import { GroupNameField } from "./Groups";
 import { draggingPath, dragSuppressesClick, DropOverlay, openNewGroupFor, startRowDrag } from "./DropOverlay";
+import { contextPointerKind, holdOwns, pressHeld, rowContextAction } from "../lib/session-context-menu";
+import { openSessionMenu, SessionContextMenu } from "./SessionContextMenu";
 import { GroupPicker } from "./GroupPicker";
 import { EMPTY_GROUP_REASON, NO_GROUPS_NOTE } from "../lib/group-picker";
 import { RemoteGroupDot } from "./RemoteStatus";
@@ -324,7 +326,7 @@ export function SessionRow(props: {
   };
   /**
    * Press-and-hold — a mouse button held down, a thumb held on the row — lifts the row; letting go
-   * in place does nothing. A lifted row that moves, or a mouse press that moves 6px, is a drag: it
+   * in place does nothing for a mouse, and opens the row's menu for a finger or a pen. A lifted row that moves, or a mouse press that moves 6px, is a drag: it
    * opens the drop overlay (§app.session-list/drop-overlay), which owns the gesture from then on.
    * The press is off the moment it stops being a press in place: a scroll (the list moving under a
    * still finger is `pointercancel` on touch and a `scroll` event on a mouse wheel), or the row
@@ -332,6 +334,8 @@ export function SessionRow(props: {
    * swallowed below, or the row would navigate on top of what the gesture just did.
    */
   let shell: HTMLLIElement | undefined;
+  /** The row's link: where focus goes back when its menu closes. */
+  let link: HTMLAnchorElement | undefined;
   let pointerId = 0;
   let pointerKind = "mouse";
   /** The row is held: it rises off the list, and the list stops scrolling under it. */
@@ -371,15 +375,21 @@ export function SessionRow(props: {
     setLifted(false);
     watchPress(false);
   };
-  /** The press ended in place: a lifted row settles back, and nothing else happens. */
-  const releasePress = () => {
-    press.finish();
+  /** The press ended in place: a lifted row settles back. A finger's or pen's lifted row opens the
+      row's menu where it was let go, on a later task (past the release's own events); a mouse's
+      does nothing. The click the release leaves is the hold's echo, swallowed below. */
+  const releasePress = (at?: { x: number; y: number }) => {
+    const wasLifted = press.finish();
     setLifted(false);
     watchPress(false);
+    if (wasLifted && pointerKind !== "mouse" && at) {
+      const ask = { path: s().path, at, kind: pointerKind === "pen" ? ("pen" as const) : ("touch" as const), returnTo: link ?? null };
+      setTimeout(() => openSessionMenu(ask, false), 0);
+    }
   };
   const movePress = (e: PointerEvent) => e.pointerId === pointerId && press.move({ x: e.clientX, y: e.clientY });
   const cancelOwn = (e: PointerEvent) => e.pointerId === pointerId && cancelPress();
-  const releaseOwn = (e: PointerEvent) => e.pointerId === pointerId && releasePress();
+  const releaseOwn = (e: PointerEvent) => e.pointerId === pointerId && releasePress({ x: e.clientX, y: e.clientY });
   /**
    * Only while a press is in flight: one set of listeners per PRESSED row, never one per row on
    * screen. The moves are watched on the window, so a mouse that leaves the row on its way to 6px
@@ -436,8 +446,20 @@ export function SessionRow(props: {
       // belonging to this press will never arrive. A drag that took the capture has already
       // ended the press, so this changes nothing for it.
       onLostPointerCapture={() => press.phase() !== "idle" && cancelPress()}
-      // The long-press context menu belongs to the hold, not to the browser.
-      onContextMenu={(e) => (press.suppressed() || draggingPath()) && e.preventDefault()}
+      // The long-press context menu belongs to the hold, not to the browser. A mouse's right-click
+      // (or the Menu key) opens the row's own menu, once its button is up; Shift keeps the browser's.
+      onContextMenu={(e) => {
+        const kind = contextPointerKind(e as MouseEvent & { pointerType?: unknown }, pointerKind);
+        const owned = holdOwns({ suppressed: press.suppressed(), dragging: !!draggingPath(), phase: press.phase(), pointerKind });
+        const act = rowContextAction({ owned, kind, shiftKey: e.shiftKey });
+        if (act === "native") return;
+        e.preventDefault();
+        if (act !== "open") return;
+        // A key's event has no pointer: the menu hangs from the row's link instead.
+        const box = (link ?? e.currentTarget).getBoundingClientRect();
+        const at = kind === "keyboard" || (e.clientX === 0 && e.clientY === 0) ? { x: box.left + 16, y: box.bottom } : { x: e.clientX, y: e.clientY };
+        openSessionMenu({ path: s().path, at, kind, returnTo: link ?? null }, pressHeld(kind, e.buttons));
+      }}
     >
       <div class="session-rail">
         {/* At most one state: live wins over busy. TUI is a static word; Busy is a pulsing dot. */}
@@ -483,6 +505,7 @@ export function SessionRow(props: {
         </Show>
       </div>
       <a
+        ref={link}
         class="list-row list-row-interactive session-row"
         href={sessionHref(s().path)}
         draggable={false}
@@ -3063,6 +3086,16 @@ export function Sidebar(props: {
         </nav>
         {/* Portalled: the full-screen overlay a dragged row opens, and its New group dialog. */}
         <DropOverlay groups={sessionGroups()} counts={groupCounts()} onDrop={onOverlayDrop} onCreate={(d, name) => void createAndMove(d, name)} />
+        {/* Portalled too: a session row's own menu (right-click, or a finger's hold let go in place). */}
+        <SessionContextMenu
+          rows={all()}
+          counts={groupCounts()}
+          onRefresh={props.onRefresh}
+          onArchive={(d) => void archiveByDrag(d)}
+          onUnarchive={(path, project) => void undoArchive(path, project)}
+          onMove={(d, groupId) => void applyDrop(d, groupId).then((changed) => changed && props.onRefresh())}
+          onNewGroup={openNewGroupFor}
+        />
         {/* Portalled too: Open Groups' picker, the same shell with only the group tiles. */}
         <Show when={pickerOpen()}>
           <GroupPicker groups={sessionGroups()} counts={groupCounts()} onClose={() => setPickerOpen(false)} />

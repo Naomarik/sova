@@ -41,6 +41,8 @@ export function designApi(path: string, host: string | null) {
   return {
     view: () => json<DesignChatView>(url("")),
     setup: (runId: string, setup: DesignSetup) => json<unknown>(url(`${run(runId)}/setup`), { method: "PATCH", body: JSON.stringify(setup) }),
+    /** Hide or show a provider's section on this card, remembered for later cards (a section id, designSectionOf). */
+    hidden: (runId: string, section: string, hidden: boolean) => json<unknown>(url(`${run(runId)}/hidden`), post({ section, hidden })),
     /** Start Coordinator: asks for no money, that's Start on the brief. */
     start: (runId: string) => json<unknown>(url(`${run(runId)}/start`), post({})),
     /** Start on the brief, on the version you read: a spend ask comes back as a value, any other refusal throws. */

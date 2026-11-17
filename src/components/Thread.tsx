@@ -831,6 +831,11 @@ const HOLD_MS = 600;
 /** How long after the reader's last input, or the last scroll that was theirs, a scroll is still
     theirs: a wheel's or a key's smooth scroll and a fling go on in scroll events a frame apart. */
 const INPUT_MS = 300;
+/** How long after the reader last opened, closed or typed into something in the rows the view stays where it is
+    (ThreadScroller `markToggle`): what that draws, even a moment later, is theirs to look at. */
+const OPENED_MS = 1500;
+/** Keys that scroll a view, pressed outside a text field: the reader taking the view. */
+const SCROLL_KEYS = new Set(["ArrowUp", "ArrowDown", "PageUp", "PageDown", "Home", "End", " "]);
 /** Sent on a transcript right before its streamed rows give way to the saved rows of the same turn. */
 const SWAP_EVENT = "sova-swap";
 
@@ -910,6 +915,7 @@ export function ThreadScroller(props: {
     lowSince = null;
   };
   const resumeFollowing = () => {
+    endToggle();
     follow = true;
     setAway(null);
     toBottom();
@@ -1092,28 +1098,37 @@ export function ThreadScroller(props: {
   };
 
   /**
-   * A disclosure the user just opened or closed (a tool card, thinking, a report): what it adds or
-   * removes is theirs to look at, so the view stays where it is and following is re-read from the
-   * new position instead of pulling the bottom back into view. Marked at the summary's click, which
-   * comes before the open state changes (the `toggle` event is queued and may come after the frame
-   * that lays the growth out), and again at `toggle`, where a lazy body is built; held for two
-   * frames after the later of the two. Only a click starts it (a key on a summary clicks it too),
-   * and only the clicked disclosure's `toggle` marks it again: one drawn open (an alignment's
-   * approach) fires `toggle` as its row is built, and that is new content, not the user's.
+   * Something the reader just opened, closed or typed into in the rows (a tool card, thinking, a report, a card's
+   * row that opens below itself, a search box narrowing a list): what it adds or removes is theirs to look at, so the
+   * view stays where it is and following is re-read from the new position instead of pulling the bottom back into
+   * view. If it runs past the bottom of the view, following stops and Jump to Latest shows; new content is followed
+   * again once the reader is back at the end. Marked at the click, which comes before the open state changes (a
+   * disclosure's `toggle` event is queued and may come after the frame that lays the growth out), and again at
+   * `toggle`, where a lazy body is built. Held for OPENED_MS after the latest mark, so a list drawn a moment later
+   * (a card drawn again with the server's answer) stays put too, or until the reader's own scroll. What marks it:
+   * a press on a `<summary>`, on a control that says it opens something (`aria-expanded`) or that it changes the
+   * rows around itself (`data-holds-view`), and typing or picking in a field in the rows. Only the clicked
+   * disclosure's `toggle` marks it again: one drawn open (an alignment's approach) fires `toggle` as its row is
+   * built, and that is new content, not the reader's.
    */
   let toggled = false;
-  let toggleFrame = 0;
+  let toggleTimer: ReturnType<typeof setTimeout> | undefined;
   const markToggle = () => {
     toggled = true;
-    cancelAnimationFrame(toggleFrame);
-    toggleFrame = requestAnimationFrame(() => (toggleFrame = requestAnimationFrame(() => (toggled = false))));
+    clearTimeout(toggleTimer);
+    toggleTimer = setTimeout(() => (toggled = false), OPENED_MS);
+  };
+  /** The reader takes the view (their scroll, Jump to Latest): what they opened is no longer held. */
+  const endToggle = () => {
+    clearTimeout(toggleTimer);
+    toggled = false;
   };
   /** The disclosure whose summary was clicked last: its `toggle`, whenever it comes, is the reader's. */
   let clicked: Element | null = null;
   const onClick = (e: MouseEvent) => {
-    const summary = (e.target as Element | null)?.closest?.("summary");
-    if (!summary) return;
-    clicked = summary.parentElement;
+    const target = (e.target as Element | null)?.closest?.("summary, [aria-expanded], [data-holds-view]");
+    if (!target) return;
+    if (target.matches("summary")) clicked = target.parentElement;
     markToggle();
   };
   const onToggle = (e: Event) => {
@@ -1121,7 +1136,11 @@ export function ThreadScroller(props: {
     clicked = null;
     markToggle();
   };
-  onCleanup(() => cancelAnimationFrame(toggleFrame));
+  /** Typing into a field in the rows, or picking in one: a search narrowing a list, a box that grows. */
+  const onField = (e: Event) => {
+    if ((e.target as Element | null)?.closest?.("input, textarea, select")) markToggle();
+  };
+  onCleanup(() => clearTimeout(toggleTimer));
   /**
    * The last row read, for a view left at the end (`props.restore`), until this visit's rows have
    * come: rows that land after it were added while the reader was away, so the view stops on it
@@ -1152,6 +1171,15 @@ export function ThreadScroller(props: {
     // A jump's row is corrected before each paint, so the view they saw is where it is; a
     // correction now would undo the scroll their input may already have started.
     endJumpHold();
+    // Their own scroll takes the view from what they opened: a wheel, a swipe, a scroll key outside a field, a press
+    // on the scrollbar (on the transcript itself, not a row).
+    if (
+      e.type === "wheel" ||
+      e.type === "touchmove" ||
+      (e.type === "keydown" && SCROLL_KEYS.has((e as KeyboardEvent).key) && !(e.target as Element | null)?.closest?.("input, textarea, select, [contenteditable]")) ||
+      (e.type === "pointerdown" && e.target === el)
+    )
+      endToggle();
     if (e.type === "pointerdown") pressing = true;
     // A wheel down at the end (of the rows as they stood) scrolls nothing, so no scroll event says
     // the reader is back there.
@@ -1485,6 +1513,8 @@ export function ThreadScroller(props: {
           observer.observe(node, { childList: true, subtree: true, characterData: true });
           node.addEventListener("click", onClick, true);
           node.addEventListener("toggle", onToggle, true);
+          node.addEventListener("input", onField, true);
+          node.addEventListener("change", onField, true);
           viewResized?.observe(node);
           node.addEventListener(SWAP_EVENT, holdAcrossSwap);
           // A jump (lib/jump) lands here: cancelled, to tell it so.

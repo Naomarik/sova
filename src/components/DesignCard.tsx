@@ -63,6 +63,7 @@ import { Markdown } from "./Markdown";
 import {
   createSetupDraft,
   DesignLinkRow,
+  DesignRequestField,
   DesignSetupPickers,
 } from "./DesignSetupControls";
 import {
@@ -77,7 +78,6 @@ import { DesignSkillsLine } from "./DesignSkills";
 import { DesignSetupImages } from "./DesignBriefImages";
 import { useDesignOpen } from "../lib/design-history";
 import { hostOf } from "../lib/mesh";
-import { TextArea } from "./form";
 import { Chip, Icon } from "./ui";
 import "./DesignCard.css";
 
@@ -251,6 +251,11 @@ function DesignSetupCard(props: { run: DesignRunView; store: DesignStore }) {
       setBusy(false);
     }
   };
+  // Why Start can't be pressed, or a save that failed: under the count, only when there is one.
+  const reason = () =>
+    setup.saving() === "error"
+      ? "This selection couldn't be saved. Your clicks are still here."
+      : error() || blocked() || "";
   // Rows are keyed by address, so choosing a use keeps its row.
   const linkUrls = () => setupLinks(draft()).map((l) => l.url);
   return (
@@ -260,53 +265,43 @@ function DesignSetupCard(props: { run: DesignRunView; store: DesignStore }) {
         <Chip>Setup</Chip>
       </div>
       <div class="design-card-body design-setup">
-        <TextArea
-          label="What Do You Want to Design"
-          rows="2"
-          value={draft().brief}
-          onInput={(brief) => setup.change({ ...draft(), brief })}
-        />
-        <div class="design-setup-links" aria-label="Links">
-          <Show when={linkUrls().length > 0} fallback={<p class="text-caption text-muted">Paste a link to use a page's images or its feel.</p>}>
-            <For each={linkUrls()}>
-              {(url) => (
-                <DesignLinkRow
-                  url={url}
-                  use={
-                    setupLinks(draft()).find((l) => l.url === url)?.use ??
-                    null
-                  }
-                  onUse={(use) =>
-                    setup.change(withLinkUse(draft(), url, use))
-                  }
-                />
-              )}
-            </For>
+        <div class="design-request-group">
+          <DesignRequestField setup={setup} openKey={`${props.run.id}:setup`} />
+          {/* The links in the request, each with how it's used, and the run's design skills, under its preview. */}
+          <Show when={linkUrls().length > 0}>
+            <div class="design-setup-links" aria-label="Links">
+              <For each={linkUrls()}>
+                {(url) => (
+                  <DesignLinkRow
+                    url={url}
+                    use={setupLinks(draft()).find((l) => l.url === url)?.use ?? null}
+                    onUse={(use) => setup.change(withLinkUse(draft(), url, use))}
+                  />
+                )}
+              </For>
+            </div>
           </Show>
+          <DesignSkillsLine run={props.run} />
         </div>
-        <DesignSkillsLine run={props.run} />
         <DesignSetupImages run={props.run} store={props.store} />
-        <DesignSetupPickers setup={setup} currentCoordinator={props.store.view()?.coordinator?.model} />
+        <DesignSetupPickers setup={setup} run={props.run} store={props.store} openKey={`${props.run.id}:setup`} currentCoordinator={props.store.view()?.coordinator?.model} />
       </div>
       <DesignCardFoot class="design-setup-foot">
         <div class="design-setup-summary">
-          <span>{setupSummary(count())}</span>
-          <span
-            class={
-              setup.saving() === "error" || error()
-                ? "field-error"
-                : "text-muted"
-            }
-            role={error() ? "alert" : undefined}
-          >
-            {setup.saving() === "error"
-              ? "This selection couldn't be saved. Your clicks are still here."
-              : error() || blocked() || ""}
-          </span>
+          <span class="design-setup-count">{setupSummary(count())}</span>
+          <Show when={reason()}>
+            <span
+              class={`design-setup-reason ${setup.saving() === "error" || error() ? "field-error" : "text-muted"}`}
+              title={reason()}
+              role={error() ? "alert" : undefined}
+            >
+              {reason()}
+            </span>
+          </Show>
         </div>
         <button
           type="button"
-          class="button button-primary"
+          class="button button-primary design-setup-start"
           disabled={busy() || !!blocked()}
           onClick={() => void start()}
         >

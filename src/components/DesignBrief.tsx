@@ -532,7 +532,7 @@ export function DesignBriefStep(props: { run: DesignRunView; store: DesignStore;
               <p class="text-caption text-muted design-sect-sub">{setupSummary(setupCount(setup.draft()))}</p>
             </div>
             <div class="design-sect-main design-setup">
-              <DesignSetupPickers setup={setup} />
+              <DesignSetupPickers setup={setup} run={props.run} store={props.store} openKey={`${props.run.id}:brief`} modelsOpen />
               <div class="design-brief-change-foot">
                 <button type="button" class="button button-primary" onClick={() => setChanging(false)}>
                   Done

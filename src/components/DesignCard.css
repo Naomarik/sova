@@ -51,6 +51,7 @@
 .design-request-dialog::backdrop { background: var(--scrim); }
 .design-request-dialog .modal-head, .design-request-dialog .modal-foot { flex: none; }
 .design-request-dialog-body { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-4); }
+.design-request-field { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
 .design-request-area { flex: 1 1 auto; min-height: 0; height: auto; resize: none; line-height: var(--lh-body); }
 .design-request-hint { margin: 0; }
 @media (max-width: 480px) {
@@ -148,9 +149,9 @@
 .design-model-effort { flex: none; display: flex; align-items: center; gap: var(--space-1); margin-left: auto; color: var(--color-ink-muted); }
 .design-model-effort[hidden] { display: none; }
 .design-effort-bolt { width: 16px; height: 16px; flex: none; }
-.design-effort-wrap { width: 112px; }
+.design-effort-field { width: 112px; margin: 0; gap: 0; }
 .design-effort-select { height: var(--control-sm); padding: 0 var(--space-5) 0 var(--space-2); font-size: var(--fs-caption); }
-.design-effort-wrap .select-caret { right: var(--space-2); }
+.design-effort-field .select-caret { right: var(--space-2); }
 .design-provider-foot { display: flex; justify-content: flex-end; padding: 0 var(--space-2) var(--space-2); }
 .design-model-name { display: block; font-weight: var(--fw-medium); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .design-model-note { font-weight: var(--fw-regular); font-size: var(--fs-caption); }

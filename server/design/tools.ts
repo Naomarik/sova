@@ -21,7 +21,7 @@ import type { TourSize } from "../../shared/tour";
 import { changeDesigns, designOf, pendingPage, readPage, viewOf } from "./store";
 import { applyEdits, type Edit } from "./edits";
 import { pageSize, pickVersions, versionCount, versionHeading } from "./versions";
-import { pagePathFor, type PageReader } from "./page-paths";
+import { chatTmpDir, pagePathFor, type PageReader } from "./page-paths";
 import { lookAtDesignPage, recheckViews, viewsLineFor } from "./views";
 
 export { applyEdits };
@@ -42,7 +42,7 @@ export function mainDesignTools(parent: () => DesignParent, cwd: () => string): 
     {
       name: "lookbook",
       label: "lookbook",
-      description: `The Lookbook: one page designed by several models side by side. op "start" puts a Lookbook Setup card in the chat (the user finishes it there, up to ${DESIGN_BATCH_MAX} designs), only when the user asked for a Lookbook. op "edit" changes the open Setup card when the user asks for a change after it is up: send only what they asked to change (it never opens a second card and never starts anything); until Start Creative Director anything on it, then until Start on the brief only designers, efforts, styles, layouts and Pair Up/Every Mix (the request's words, images and skills then go to the Creative Director with tell). It answers with what the card now holds and anything that couldn't change, and why. op "read" without label: while the newest card is still in Setup, what it holds; else the Creative Director's card (the coordinator) and each design's version count. With label, where a design's page is: its latest version, unless label names one ("A11"); several at once with commas ("A11, A16"). Each comes as a header naming the version returned, when it was made and the versions that exist, its size, its views (the screens the page names: tabs, other pages, menus, dialogs), and the path of its saved file; the page itself isn't in the reply, so read the file (with offset and limit, or grep it). op "look" returns one picture of one design: label (and version, or "A11"), view (one of its views by name; none: its first screen) and size ("desktop" or "phone"). op "tell" passes text word for word to the Creative Director. images: paths of pictures to add (a screenshot, a logo), each a PNG, JPEG, WebP or GIF up to 8 MB, from one of three places: directly in /tmp (Sova's; with your sandbox on, your /tmp is your own), Sova's attachments folder, or your own shared folder (any folder below it); a picture elsewhere is refused, so copy it into your shared folder first. On start and edit they join the run itself; on tell they go to the Creative Director. Call vis_guide with kind "lookbook" first.`,
+      description: `The Lookbook: one page designed by several models side by side. op "start" puts a Lookbook Setup card in the chat (the user finishes it there, up to ${DESIGN_BATCH_MAX} designs), only when the user asked for a Lookbook. op "edit" changes the open Setup card when the user asks for a change after it is up: send only what they asked to change (it never opens a second card and never starts anything); until Start Creative Director anything on it, then until Start on the brief only designers, efforts, styles, layouts and Pair Up/Every Mix (the request's words, images and skills then go to the Creative Director with tell). It answers with what the card now holds and anything that couldn't change, and why. op "read" without label: while the newest card is still in Setup, what it holds; else the Creative Director's card (the coordinator) and each design's version count. With label, where a design's page is: its latest version, unless label names one ("A11"); several at once with commas ("A11, A16"). Each comes as a header naming the version returned, when it was made and the versions that exist, its size, its views (the screens the page names: tabs, other pages, menus, dialogs), and the path of its saved file; the page itself isn't in the reply, so read the file (with offset and limit, or grep it). op "look" returns one picture of one design: label (and version, or "A11"), view (one of its views by name; none: its first screen) and size ("desktop" or "phone"). op "tell" passes text word for word to the Creative Director. images: paths of pictures to add (a screenshot, a logo), each a PNG, JPEG, WebP or GIF up to 8 MB, from one of three places: directly in /tmp (yours, sandbox or not), Sova's attachments folder, or your own shared folder (any folder below it); a picture elsewhere is refused, so copy it into your shared folder first. On start and edit they join the run itself; on tell they go to the Creative Director. Call vis_guide with kind "lookbook" first.`,
       parameters: {
         type: "object",
         properties: {
@@ -76,6 +76,8 @@ export function mainDesignTools(parent: () => DesignParent, cwd: () => string): 
         const p = parent();
         const shared = sharedFolderFor(p.sessionId);
         const places = imagePlacesLine(shared);
+        // A /tmp path is read where this chat's own tools wrote it: its sandbox's tmp when it has one.
+        const pictures = { shared, chatTmp: await chatTmpDir(p.sessionId) };
         if (params?.op === "start") {
           const run = await createRun(p, cwd(), { ...params, skills: skillNamesOf(params.skills) });
           // The user's attached images join this run's own images: Setup shows them, and the Creative Director sees them first.
@@ -85,7 +87,7 @@ export function mainDesignTools(parent: () => DesignParent, cwd: () => string): 
           let failed = "";
           if (paths.length) {
             try {
-              added = await ownImages(p, paths, { shared });
+              added = await ownImages(p, paths, pictures);
               // On the run itself, so one the chat already had belongs to it too, and Setup has them from its first frame.
               if (added.names.length) changeDesigns(p.sessionId, (s) => void (s.runs.find((r) => r.id === run.id)!.images = added!.names));
             } catch (err) {
@@ -97,7 +99,7 @@ export function mainDesignTools(parent: () => DesignParent, cwd: () => string): 
           const efforts = effortsOf(params.efforts);
           if (efforts) {
             try {
-              effortNotes = editNotes((await editSetup(p.sessionId, run.id, { efforts }, editDeps(p, shared, cwd()))).text);
+              effortNotes = editNotes((await editSetup(p.sessionId, run.id, { efforts }, editDeps(p, pictures, cwd()))).text);
             } catch (err) {
               effortNotes = [err instanceof Error ? err.message : String(err)];
             }
@@ -115,7 +117,7 @@ export function mainDesignTools(parent: () => DesignParent, cwd: () => string): 
           if (!Object.keys(delta).length) throw new Error("edit needs what to change: only what the user asked to change.");
           let out;
           try {
-            out = await editSetup(p.sessionId, typeof params.run === "string" && params.run ? params.run : undefined, delta, editDeps(p, shared, cwd()));
+            out = await editSetup(p.sessionId, typeof params.run === "string" && params.run ? params.run : undefined, delta, editDeps(p, pictures, cwd()));
           } catch (err) {
             if (err instanceof SetupRefused) throw new Error(err.message);
             throw err;
@@ -137,7 +139,7 @@ export function mainDesignTools(parent: () => DesignParent, cwd: () => string): 
           const paths = pathsOf(params.images);
           if (!params.text?.trim() && !paths.length) throw new Error("tell needs the text to pass on, or images.");
           // By reference: the pictures go straight into the chat's set, and only their names reach anyone's memory.
-          const added = paths.length ? await ownImages(p, paths, { shared }) : { line: "", names: [], refused: [] };
+          const added = paths.length ? await ownImages(p, paths, pictures) : { line: "", names: [], refused: [] };
           await tellCoordinator(p, [params.text?.trim(), added.line].filter(Boolean).join("\n\n"), `tell:${toolCallId}`, added.names);
           return say(added.line ? `Passed on. ${added.line}${added.refused.length ? `\n${places}` : ""}` : "Passed on.");
         }
@@ -189,10 +191,10 @@ function sharedFolderFor(sessionId: string): string | undefined {
   }
 }
 
-function editDeps(p: DesignParent, shared: string | undefined, cwd: string): EditDeps {
+function editDeps(p: DesignParent, pictures: { shared?: string | undefined; chatTmp: string | null }, cwd: string): EditDeps {
   const chatModel = chatHandle(p.path)?.mirror.model?.ref;
   return {
-    addImages: (paths) => ownImages(p, paths, { shared }),
+    addImages: (paths) => ownImages(p, paths, pictures),
     findSkills: (names) => runSkills(cwd, names),
     runs: () => viewOf(p.sessionId).runs,
     ...(chatModel ? { chatModel } : {}),

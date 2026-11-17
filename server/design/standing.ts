@@ -6,6 +6,7 @@ import { dirname, join } from "node:path";
 import type { DesignLeftOutWhy } from "../../shared/design";
 import type { UsageInsight, UsageProvider } from "../../shared/protocol";
 import { agentRoot, stateRoot } from "../state-root";
+import { openAiSignInStopped, tokenTimedOut } from "../../shared/sign-in-standing";
 
 /** What one reading says about a provider: it can't run, and why; or null (it runs, or nobody can tell). */
 export type Standing = DesignLeftOutWhy | null;
@@ -29,13 +30,18 @@ function usageIdOf(provider: string): UsageProvider["id"] | null {
   return null;
 }
 
-/** One usage reading's word on a sign-in or key: only states that say it can't run count. */
-function usageStanding(p: UsageProvider | undefined): Standing {
+/** One usage reading's word on a sign-in or key: only states that say it can't run count. OpenAI's by the rule the Usage
+    page and Settings → Accounts use: a token that only timed out renews by itself, and the Codex app's own sign-in says
+    nothing about pi's. */
+function usageStanding(p: UsageProvider | undefined, now: number): Standing {
   if (!p) return null;
-  if (p.auth?.refreshExpired) return "signed-out";
+  if (p.id === "openai") {
+    if (p.auth?.source === "codex-cli") return null;
+    if (openAiSignInStopped(p, now)) return "signed-out";
+    return p.state === "nologin" ? "signed-out" : p.state === "badkey" ? "bad-key" : null;
+  }
   if (p.state === "nologin") return "signed-out";
-  // An expired access token is renewed by itself while its refresh token holds.
-  if (p.state === "expired") return p.auth?.refreshExpired === false ? null : "signed-out";
+  if (p.state === "expired") return tokenTimedOut(p.auth, now) ? null : "signed-out";
   if (p.state === "badkey") return "bad-key";
   if (p.state === "nokey") return "no-key";
   return null;
@@ -52,7 +58,7 @@ function claudeCliStanding(usage: StandingReadings["usage"]): Standing {
  * Whether the model `ref` can run, by the readings: local Ollama by the probe (not running; running without this model
  * downloaded), the others by their sign-in or key. A stale, missing or unreadable reading never leaves anything out.
  */
-export function modelStanding(ref: string, readings: StandingReadings): Standing {
+export function modelStanding(ref: string, readings: StandingReadings, now = Date.now()): Standing {
   const slash = ref.indexOf("/");
   const provider = ref.slice(0, slash).toLowerCase();
   const id = ref.slice(slash + 1);
@@ -66,7 +72,7 @@ export function modelStanding(ref: string, readings: StandingReadings): Standing
   if (!usage || !usage.available || usage.stale) return null;
   if (provider === "claude-code-cli") return claudeCliStanding(usage);
   const uid = usageIdOf(provider);
-  return uid ? usageStanding(usage.providers.find((p) => p.id === uid)) : null;
+  return uid ? usageStanding(usage.providers.find((p) => p.id === uid), now) : null;
 }
 
 /** Local Ollama's address, from the agent's models.json (`providers.ollama.baseUrl`), else its default. */

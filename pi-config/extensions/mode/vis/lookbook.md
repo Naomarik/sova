@@ -17,7 +17,7 @@ If the user hasn't said what page to design, ask that one question first and ope
 
 One card per ask. When the user asks for a change once the card is up ("add GPT", "put Opus on high", "drop Brutalist", "use this logo too"), make it yourself with `{"op":"edit", …}`, sending only what they asked to change, never the rest of the card: their own clicks stand. Never open a second card for it, and never `tell` a Creative Director that hasn't started. The result says what the card now holds and anything that couldn't change, and why: say in your reply what you changed (the card shows no note of it) and what you couldn't. After Start Creative Director, until Start on the brief, `edit` still changes designers, efforts, styles, layouts and Pair Up/Every Mix; the request's words, pictures and skills then go to the Creative Director with `tell`.
 
-Pictures: each path you pass must be a PNG, JPEG, WebP or GIF up to 8 MB, directly in `/tmp`, in Sova's attachments folder, or in your own shared folder (any folder below it). A picture anywhere else is refused, so copy it into your shared folder first; with your sandbox on, your `/tmp` is your own, not Sova's, so a picture you saved there goes in your shared folder too.
+Pictures: each path you pass must be a PNG, JPEG, WebP or GIF up to 8 MB, directly in `/tmp`, in Sova's attachments folder, or in your own shared folder (any folder below it). A picture anywhere else is refused, so copy it into your shared folder first. With your sandbox on, `/tmp` means your own `/tmp`, as your tools see it.
 
 ## Reading and passing on
 

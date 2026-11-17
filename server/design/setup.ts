@@ -81,7 +81,7 @@ export function resolveDesignModel(listed: readonly ModelInfo[], policy: ModelPo
     // On the card but no longer listed (its provider is offline): the card's own record still names it.
     const refusal = designModelRefusal(policy, onCard.ref, retired);
     if (refusal) return refusal;
-    return { ref: onCard.ref, name: onCard.name, vision: onCard.vision, route: onCard.route, ...(effort ? { effort } : {}) };
+    return { ref: onCard.ref, name: onCard.name, vision: onCard.vision, route: onCard.route, ...(effort ? { effort } : launchEffortField(onCard)) };
   }
   const refusal = designModelRefusal(policy, known.ref, retired);
   if (refusal) return refusal;
@@ -275,10 +275,10 @@ export function cleanSetup(previous: DesignSetup, next: unknown, briefOpen = fal
   const models = previous.models.map((m) => {
     const sent = (n.models as unknown[]).find((x) => (x as { ref?: unknown })?.ref === m.ref) as { design?: unknown; coordinator?: unknown; effort?: unknown } | undefined;
     if (!sent) return m;
+    // A hidden section's rows aren't drawn, so a save can't mean them: they stay as the server has them.
     const isHidden = hidden.includes(designSectionOf(m.ref).id);
-    if (isHidden && ((!!sent.design && !m.design) || (!briefOpen && !!sent.coordinator && !m.coordinator))) refused ??= "That model's provider is hidden.";
     // The coordinator is already running by then: its seat stays where it is.
-    const row: DesignModelChoice = { ...m, design: !!sent.design, coordinator: briefOpen ? m.coordinator : !!sent.coordinator };
+    const row: DesignModelChoice = { ...m, design: isHidden ? m.design : !!sent.design, coordinator: briefOpen || isHidden ? m.coordinator : !!sent.coordinator };
     // Absent: as it was; null: back to the default; a level: one the model offers.
     if (sent.effort === null) delete row.effort;
     else if (sent.effort !== undefined) {
@@ -290,6 +290,8 @@ export function cleanSetup(previous: DesignSetup, next: unknown, briefOpen = fal
     return row;
   });
   if (refused) return refused;
+  // A save made before a Hide moved the Creative Director names none that is shown: the seat stays where the server put it.
+  if (!models.some((m) => m.coordinator)) for (const [i, m] of models.entries()) m.coordinator = previous.models[i]!.coordinator;
   if (n.models.some((x) => !offered.has((x as { ref?: string })?.ref ?? ""))) return "That model isn't on this card.";
   if (models.filter((m) => m.coordinator).length > 1) return "Only one model can be the Creative Director.";
   const ticks = (offered: readonly { name: string; on: boolean }[], sentList: unknown) =>

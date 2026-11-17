@@ -210,3 +210,36 @@ test("the chat's edit adds pictures from its shared folder to the run and takes 
   assert.equal(viewOf(sid).runs.at(-1)!.imagesLeftOut, undefined);
   assert.equal(runOwnImage(asset, viewOf(sid).runs.at(-1)!), true);
 });
+
+test("a sandboxed chat's /tmp picture is read from its own tmp, by the same rules; one not there falls back to Sova's /tmp", async () => {
+  const { readAttachedImages, IMAGE_REFUSALS } = await import("./own-images");
+  const { chatTmpDir, installPageReaderSandbox } = await import("./page-paths");
+  const { symlinkSync } = await import("node:fs");
+  const chatTmp = join(agentDir, "chat-tmp");
+  mkdirSync(join(chatTmp, "shots"), { recursive: true });
+  writeFileSync(join(chatTmp, "shot.png"), original);
+  writeFileSync(join(chatTmp, "shots", "deep.png"), original);
+  writeFileSync(join(chatTmp, "words.png"), "no picture here");
+  symlinkSync(join(agentDir, "outside.png"), join(chatTmp, "out.png"));
+  const r = await readAttachedImages(["/tmp/shot.png", "/tmp/shots/deep.png", "/tmp/words.png", "/tmp/out.png", "/tmp/../etc/x.png"], { chatTmp });
+  assert.deepEqual(r.names, ["/tmp/shot.png", "/tmp/shots/deep.png"]);
+  assert.deepEqual(r.unreadable.map((u) => [u.what, u.reason]), [["/tmp/words.png", IMAGE_REFUSALS.notImage], ["/tmp/out.png", IMAGE_REFUSALS.outside], ["/tmp/../etc/x.png", IMAGE_REFUSALS.place]]);
+  const missing = `/tmp/sova-test-${process.pid}-nowhere.png`;
+  assert.deepEqual((await readAttachedImages([missing], { chatTmp })).unreadable.map((u) => u.reason), [IMAGE_REFUSALS.missing], "looked for in both: plainly missing");
+  // Which tmp is the chat's: its sandbox's, on Linux only; none without one.
+  installPageReaderSandbox(async (id) => (id === "boxed" ? ({ on: true, policy: { tmpDir: chatTmp } } as never) : ({ on: false } as never)));
+  after(() => installPageReaderSandbox(null));
+  assert.equal(await chatTmpDir("boxed", "linux"), chatTmp);
+  assert.equal(await chatTmpDir("boxed", "darwin"), null);
+  assert.equal(await chatTmpDir("open", "linux"), null);
+});
+
+test("a link in /tmp to a file beside it that isn't an image says so, not that it leads outside", async () => {
+  const { readAttachedImages, IMAGE_REFUSALS } = await import("./own-images");
+  const { symlinkSync, rmSync: rm } = await import("node:fs");
+  const name = `sova-test-${process.pid}`;
+  writeFileSync(`/tmp/${name}-notes.txt`, "words");
+  symlinkSync(`/tmp/${name}-notes.txt`, `/tmp/${name}-link.png`);
+  after(() => { rm(`/tmp/${name}-notes.txt`, { force: true }); rm(`/tmp/${name}-link.png`, { force: true }); });
+  assert.deepEqual((await readAttachedImages([`/tmp/${name}-link.png`])).unreadable.map((u) => u.reason), [IMAGE_REFUSALS.notImage]);
+});

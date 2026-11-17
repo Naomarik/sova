@@ -183,6 +183,7 @@ test("a provider is left out only when a reading says it can't run: one case per
   assert.equal(off("openai-codex/gpt-6-luna", { usage: usage([reading("openai", "expired")]), ollama: null }), "signed-out");
   assert.equal(off("openai-codex/gpt-6-luna", { usage: usage([reading("openai", "nologin")]), ollama: null }), "signed-out");
   assert.equal(off("openai-codex/gpt-6-luna", { usage: usage([reading("openai", "ok", { kind: "oauth", refreshExpired: true })]), ollama: null }), "signed-out");
+  assert.equal(off("openai-codex/gpt-6-luna", { usage: usage([reading("openai", "expired", { kind: "oauth", source: "pi", expiresAt: Date.now() - 60_000, refreshExpiresAt: Date.now() - 1 })]), ollama: null }), "signed-out", "its renewal ran out too");
   assert.equal(off("zai/glm-5.3", { usage: usage([reading("zai", "badkey")]), ollama: null }), "bad-key");
   assert.equal(off("deepseek/deepseek-v4-pro", { usage: usage([reading("deepseek", "nokey")]), ollama: null }), "no-key");
   assert.equal(off("ollama-cloud/kimi-k3", { usage: usage([reading("ollama", "badkey")]), ollama: null }), "bad-key");
@@ -197,7 +198,9 @@ test("unknown never hides: a stale or missing reading, an unread state, can't te
   assert.equal(off("zai/glm-5.3", { usage: { available: false, stale: false, providers: [] } as never, ollama: null }), null);
   assert.equal(off("zai/glm-5.3", { usage: null, ollama: null }), null);
   for (const state of ["ok", "na", "error"]) assert.equal(off("zai/glm-5.3", { usage: usage([reading("zai", state)]), ollama: null }), null, state);
-  assert.equal(off("openai-codex/gpt-6-luna", { usage: usage([reading("openai", "expired", { kind: "oauth", refreshExpired: false })]), ollama: null }), null);
+  const past = Date.now() - 60_000;
+  assert.equal(off("openai-codex/gpt-6-luna", { usage: usage([reading("openai", "expired", { kind: "oauth", source: "pi", expiresAt: past })]), ollama: null }), null, "a token that only timed out renews by itself");
+  assert.equal(off("openai-codex/gpt-6-luna", { usage: usage([reading("openai", "expired", { kind: "oauth", source: "codex-cli", expiresAt: past, refreshExpired: true })]), ollama: null }), null, "the Codex app's own sign-in says nothing about pi's");
   assert.equal(off("ollama/gemma3:270m", { usage: null, ollama: { state: "unknown" } }), null);
   assert.equal(off("anthropic/claude-sonnet-4-5", { usage: usage([reading("claude", "nologin")]), ollama: null }), null, "no reading speaks for it");
   assert.equal(off("claude-code-cli/claude-opus-5-5", { usage: usage([]), ollama: null }), null, "no logins listed");

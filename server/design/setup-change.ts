@@ -42,7 +42,8 @@ export function commitSetup(sessionId: string, runId: string, make: (run: Design
     const briefOpen = r.phase !== "setup";
     const change = make(r, briefOpen);
     if (typeof change === "string") throw new SetupRefused(change);
-    const next = cleanSetup(r.setup, change.setup, briefOpen, change.run?.hiddenSections ?? r.hiddenSections ?? []);
+    // Hidden as the card stood before this change: a Hide itself unticks its rows and moves the seat.
+    const next = cleanSetup(r.setup, change.setup, briefOpen, r.hiddenSections ?? []);
     if (typeof next === "string") throw new SetupRefused(next);
     r.setup = next;
     Object.assign(r, change.run ?? {});

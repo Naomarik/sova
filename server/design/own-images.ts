@@ -4,7 +4,8 @@
 import { fileURLToPath } from "node:url";
 import { createInterface } from "node:readline";
 import { DESIGN_ASSET_LIMITS, type DesignAsset, type DesignAssetSkipped } from "../../shared/design-assets";
-import { dirname, isAbsolute, normalize } from "node:path";
+import { realpathSync } from "node:fs";
+import { dirname, isAbsolute, join, normalize, relative } from "node:path";
 import { attachmentsRoot, checkTmpImage, readTmpImage } from "../attachments";
 import { chooseTourBrowser } from "../tours/browser";
 import { resolveTourContext, tourCallerBySession } from "../tours/context";
@@ -109,7 +110,7 @@ export const IMAGE_REFUSALS = {
   place: "It isn't in a place images are taken from.",
   missing: "There's no file there.",
   /** A sandboxed chat's /tmp is its own, not the one Sova reads. */
-  missingTmp: "There's no file there in Sova's /tmp (a sandboxed chat's /tmp is its own: put the picture in your shared folder instead).",
+  missingTmp: "There's no file there in Sova's /tmp (if your /tmp is your sandbox's own, put the picture in your shared folder instead).",
   notImage: "It isn't an image (a PNG, JPEG, WebP or GIF).",
   tooBig: "It's over the 8 MB limit.",
   outside: "It leads outside the place it's in (a link elsewhere isn't followed).",
@@ -159,19 +160,29 @@ async function readSharedImage(p: string, shared: string): Promise<{ bytes: Uint
 }
 
 /** Why checkTmpImage refused a path that is in /tmp or the attachments folder, in IMAGE_REFUSALS' words. */
-function tmpRefusal(check: Extract<ReturnType<typeof checkTmpImage>, { ok: false }>, inTmp: boolean): string {
-  if (check.status === 404) return inTmp ? IMAGE_REFUSALS.missingTmp : IMAGE_REFUSALS.missing;
+function tmpRefusal(check: Extract<ReturnType<typeof checkTmpImage>, { ok: false }>, hintShared: boolean, p: string): string {
+  if (check.status === 404) return hintShared ? IMAGE_REFUSALS.missingTmp : IMAGE_REFUSALS.missing;
   if (check.status === 400) return IMAGE_REFUSALS.notImage;
   if (check.size !== undefined) return IMAGE_REFUSALS.tooBig;
-  return IMAGE_REFUSALS.outside;
+  // Refused where it resolves: a link to a file in the same folder that isn't an image is no image; anywhere else is outside.
+  try {
+    return dirname(realpathSync(p)) === realpathSync(dirname(p)) ? IMAGE_REFUSALS.notImage : IMAGE_REFUSALS.outside;
+  } catch {
+    return IMAGE_REFUSALS.outside;
+  }
 }
+
+const exists = async (p: string): Promise<boolean> => {
+  const { lstat } = await import("node:fs/promises");
+  return lstat(p).then(() => true, () => false);
+};
 
 /**
  * Read images named by path: a file directly in /tmp or in Sova's attachments folder, by the rule the attachment route
  * itself follows, or (`shared`, for the main chat's own hand-off) one in the chat's shared folder. An unreadable one is
  * listed by the path as given, with why; it is never fatal. `names`: each read image's path as given, in order.
  */
-export async function readAttachedImages(paths: readonly string[], opts: { shared?: string } = {}): Promise<{ images: Uint8Array[]; names: string[]; unreadable: DesignAssetSkipped[] }> {
+export async function readAttachedImages(paths: readonly string[], opts: { shared?: string; chatTmp?: string | null } = {}): Promise<{ images: Uint8Array[]; names: string[]; unreadable: DesignAssetSkipped[] }> {
   const images: Uint8Array[] = [];
   const names: string[] = [];
   const unreadable: DesignAssetSkipped[] = [];
@@ -181,6 +192,16 @@ export async function readAttachedImages(paths: readonly string[], opts: { share
     const p = raw.trim();
     const inTmp = isAbsolute(p) && dirname(p) === "/tmp";
     const inAttachments = inside(attachmentsRoot(), p);
+    // A sandboxed chat's /tmp is its own session tmp: a picture it saved there is read from that folder, by the same rules.
+    if (opts.chatTmp && isAbsolute(p) && inside("/tmp", normalize(p))) {
+      const own = join(opts.chatTmp, relative("/tmp", normalize(p)));
+      if (await exists(own)) {
+        const got = await readSharedImage(own, opts.chatTmp);
+        if ("bytes" in got) images.push(got.bytes), names.push(what);
+        else unreadable.push({ what, reason: got.reason });
+        continue;
+      }
+    }
     if (shared && isAbsolute(p) && inside(shared, normalize(p)) && !inTmp && !inAttachments) {
       const got = await readSharedImage(normalize(p), shared);
       if ("bytes" in got) images.push(got.bytes), names.push(what);
@@ -189,7 +210,7 @@ export async function readAttachedImages(paths: readonly string[], opts: { share
     }
     const check = checkTmpImage(p);
     if (!check.ok) {
-      unreadable.push({ what, reason: inTmp || inAttachments ? tmpRefusal(check, inTmp) : IMAGE_REFUSALS.place });
+      unreadable.push({ what, reason: inTmp || inAttachments ? tmpRefusal(check, inTmp && !opts.chatTmp, p) : IMAGE_REFUSALS.place });
       continue;
     }
     const bytes = await readTmpImage(check.realPath);

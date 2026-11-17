@@ -138,7 +138,12 @@ test("Hide takes a provider off the card and every later card; the Creative Dire
   assert.equal(run.setup.models.find((m) => m.ref === "anthropic/claude-sonnet-4-5")!.design, false, "unticked, its row kept");
   assert.equal(run.setup.models.find((m) => m.coordinator)!.ref, "zai/glm-5.3", "the Creative Director moves to the first ticked shown model");
   assert.deepEqual(readHiddenSections(), ["claude"], "remembered for later cards");
-  assert.throws(() => commitSetup(c.sessionId, c.run.id, (r) => ({ setup: { ...r.setup, models: r.setup.models.map((m) => ({ ...m, design: m.ref.startsWith("anthropic/") || m.design })) } })), /That model's provider is hidden/);
+  // A save from a draft made before the Hide (its hidden row still ticked, the Creative Director still on it) goes through:
+  // the hidden row stays as the server has it, and so does the seat.
+  const stale = c.now().setup.models.map((m) => ({ ...m, design: m.ref.startsWith("anthropic/") || m.design, coordinator: m.ref.startsWith("anthropic/") }));
+  commitSetup(c.sessionId, c.run.id, (r) => ({ setup: { ...r.setup, models: stale } }));
+  assert.equal(c.now().setup.models.find((m) => m.ref.startsWith("anthropic/"))!.design, false);
+  assert.equal(c.now().setup.models.find((m) => m.coordinator)!.ref, "zai/glm-5.3");
   hideSection(c.sessionId, c.run.id, "zai", true);
   hideSection(c.sessionId, c.run.id, "gpt", true);
   assert.throws(() => hideSection(c.sessionId, c.run.id, "deepseek", true), /Keep at least one provider on the card/);

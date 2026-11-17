@@ -20,7 +20,7 @@ let ownImageDeps: Parameters<typeof addOwnImages>[2] = {};
 export const setOwnImageDepsForTest = (d: Parameters<typeof addOwnImages>[2] | null): void => void (ownImageDeps = d ?? {});
 
 /** Bring images named by path into the chat's set. Shared by the coordinator's box and the main chat's hand-off. */
-export async function addAttachedImages(p: BrowseParent, paths: readonly string[], opts: { shared?: string } = {}): Promise<OwnImagesResult> {
+export async function addAttachedImages(p: BrowseParent, paths: readonly string[], opts: { shared?: string; chatTmp?: string | null } = {}): Promise<OwnImagesResult> {
   const { images, names, unreadable } = await readAttachedImages(paths, opts);
   const out = images.length ? await addOwnImages(p, images, ownImageDeps, names) : { added: [], known: [], refused: [] };
   if (out.added.length) describeAssets(p, out.added.map((x) => x.name));
@@ -43,8 +43,9 @@ export async function ownImagesLine(p: BrowseParent, paths: readonly string[]): 
 }
 
 /** Images brought in, with their names: the Creative Director that reads pictures is shown them with the line. `refused`:
-    each path that wasn't added, named as given, with why. `shared`: the calling chat's shared folder, taken from too. */
-export async function ownImages(p: BrowseParent, paths: readonly string[], opts: { shared?: string } = {}): Promise<{ line: string; names: string[]; refused: string[] }> {
+    each path that wasn't added, named as given, with why. `shared`: the calling chat's shared folder, taken from too;
+    `chatTmp`: the folder its sandbox shows it as /tmp, read for a /tmp path first. */
+export async function ownImages(p: BrowseParent, paths: readonly string[], opts: { shared?: string; chatTmp?: string | null } = {}): Promise<{ line: string; names: string[]; refused: string[] }> {
   const out = await addAttachedImages(p, paths, opts);
   const names = [...out.added, ...out.known].map((a) => a.name);
   const refused = out.refused.map((r) => `${r.what} wasn't added: ${r.reason}`);

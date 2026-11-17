@@ -73,9 +73,11 @@ styles"). It changes only what you asked and tells you what the card now holds. 
 the whole card: your click saves the card as you see it, and a change from the chat after it replaces
 it. Words you're typing in the request's editor are never replaced while you type. After **Start
 Creative Director** the chat can still change the designers, their efforts, styles and layouts until
-you press **Start** on the brief. Your chat can add pictures to the card from three places only: its
-temporary folder, the chat's attachments folder, or the chat's shared folder; it tells you which
-picture it couldn't add and why.
+you press **Start** on the brief; what you want changed in the request, its pictures or its skills
+then goes to the Creative Director instead. Before that, your chat can add pictures to the card from
+three places only: a file directly in `/tmp`, the chat's attachments folder, or the chat's shared
+folder. A picture it can't add (somewhere else, not an image, over 8 MB, or missing) is named, with
+why.
 
 ### Design skills
 
@@ -156,7 +158,8 @@ once; others say "Waiting for a free preview". A page loads only Google Fonts fr
 - **Open** (or **Chat**) shows a design full size with its own conversation beside it, even while
   its first page is being written. To change a design, tell it in its chat; every version is kept
   (A, A2). **Hide Chat** gives the page the room. On a phone the chat starts folded to a bar showing
-  its latest message, one tap away, so the design has the screen. A session that has shut down
+  its latest message, one tap away, so the design has the screen; the Creative Director's view folds
+  the same way. A session that has shut down
   starts again from its saved page when you message it.
 - **More** on a design (on its tile or in the open view) holds **Stop** and **Remove**. A stopped
   design keeps what it had written as a still picture, reads Stopped, and offers **Start Again**.

@@ -923,6 +923,14 @@ virtualized.
 - **Opening a disclosure keeps the view.** Opening or closing a tool card, thinking, a report or
   the hidden-rows disclosure never scrolls the transcript, even while following. Following is
   re-read from where the view now is, so Jump to Latest appears if the end has gone out of view.
+  The same holds for any control in a row that the reader presses or types into (a button that
+  opens a section, such as the Lookbook Setup card's rows, its Hide and Show, a search box or a menu
+  that changes the list under it, §chat.design-mode/steady-cards), and for what that row draws a
+  moment later: while the hold lasts, the row the reader acted in growing or shrinking never moves
+  the view; following is re-read from where the view is, so if the row now runs 80px or more past
+  the bottom, following stops and Jump to Latest shows. Growth anywhere else (a reply streaming in)
+  and the view being resized are followed as ever. The hold ends on the reader's own scroll, on Jump
+  to Latest, or 1.5 s after their last press.
   While following, the transcript also returns to the end when the view gets shorter (the
   composer's status row appearing) or a row below changes height with no new content (an image
   decoding). It keeps following when the view gets narrower or wider (a panel opening beside

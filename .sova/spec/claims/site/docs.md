@@ -136,10 +136,14 @@ The Lookbook (§chat/design-mode), part of vis, in the order a person meets it: 
 one-page prototypes from hidden sessions on several models, drawn live on a card and in the Gallery
 tab, the main chat staying out of the work and reading a page only when asked); how to get one: with
 vis on, ask for a Lookbook, by name or in words that plainly mean it (an ordinary ask to sketch or mock up gets a quick drawing
-instead), never for workers; a run, from Lookbook · Setup (what to design, models by
-provider with the Creative Director dropdown, styles in their 5 families and the 12 layouts, Pair Up or
-Every Mix, the batch size and its limits) through Start Creative Director and
-Lookbook · Brief to Start; how a link is used; how skills reach a run (only the skills you name, by
+instead), never for workers; a run, from Lookbook · Setup (what to design, shown in two lines and
+changed in its editor with Save; models under one closed Models row, by provider with the Creative
+Director dropdown, only providers that can run now, Hide and Show for providers you keep off, and
+each designer's effort, Low unless changed and counted in the estimate; styles in their 5 families
+and the 12 layouts, Pair Up or Every Mix, the batch size and its limits; asking the main chat to
+change the open card, the latest change winning the whole card, and which pictures it may add from
+where, §chat.design-mode/setup-card, §chat.design-mode/model-picker, §chat.design-mode/own-images)
+through Start Creative Director and Lookbook · Brief to Start; how a link is used; how skills reach a run (only the skills you name, by
 name or by folder, with nothing loaded by itself; shown on Setup and, when you named some, on the
 brief's Design skills line; the Creative Director choosing which reach the designers and reading
 files you point it to, and designers reading only inside those skills, §chat.design-mode/skills); a Screenshots section on pasted screenshots (only your own
@@ -150,7 +154,8 @@ pictures a design with Rebuild screenshots first and the rest as words only; eve
 the words, and a screenshot is never put in the page, §chat.design-mode/own-images,
 §chat.design-mode/brief-start); and working with designs: statuses and cost, a page
 being written, Google Fonts only, Open and Chat (changing a design by telling it in its chat, an
-ended session starting again from its saved page), More with Stop and Remove (a stopped design's
+ended session starting again from its saved page; on a phone the chat folded to a bar with its
+latest message, one tap away, §chat.design-mode/chat-placement), More with Stop and Remove (a stopped design's
 still and Start Again, the folded Removed section and Restore, §chat.design-mode/stop-remove), the
 Creative Director (its section's Chat with the Creative Director, designs made from others on any
 allowed model, stopping or removing only when asked, its chat listing what each design was told,

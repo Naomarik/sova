@@ -4,7 +4,8 @@
 These are the exact strings to use. `{…}` is a value. Machine facts (paths, pids, model ids,
 times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths. The merge queue's
 words, in the composer, the session pane, the chat's queue cards and the project page, are one table
-(§design.copy-deck/merge-queue).
+(§design.copy-deck/merge-queue). The Lookbook's Setup card and its open view on a phone have theirs in
+§design.copy-deck/lookbook-setup.
 
 ## §design.copy-deck/sidebar — Sidebar
 
@@ -1712,3 +1713,19 @@ Sova's merge thread's own note.
 | The chat's card | title "Setup · {project}" · chips `Working` · "{n} questions for you" · "Waiting on you" (no questions) · `Proposed` · "Started {when}. It reads the project and asks what it can't tell; nothing it proposes changes {target} until you land it." · `Open Setup Chat` · `Start Fresh…`, confirm with an open proposal "This chat is archived and a new one starts now; what it learned goes with it. Its proposal on {branch} stays open, and the new chat carries on in that branch.", with none "This chat is archived and a new one starts now, on a new branch; what it learned goes with it.", with `Cancel` / `Start Fresh`, done "Started a fresh setup chat." and the new chat opens |
 | The proposal card | heading "Proposed setup" with the branch and {sha} · "The setup chat proposes this on its branch. Read it, then land it: nothing changes on {target} until you do." · sections `Services` · `Merge checks` · `Releases` · `Deploy`, each absent one said ("No merge queue in this proposal.") · "Tag, push, publish and after-publish steps are drawn only; the trial never runs them." · "Trial of {sha}: passed" (failed, running) " · {when}", with ", an older commit than the branch's head" when it is · none: "No trial yet. A trial runs the proposed checks on the branch in the merge copy; it saves and merges nothing." · check chips `Passed` · `Failed` · `Running` · `Waiting` · `Skipped` (a check that skipped itself) · `Not run (unchanged)` (a release check left out) · `Not tried` · a refused Merge Branch shows the server's words under it and reads the proposal again · Run Trial: "Started a trial of {sha}." |
 | The banner and the toasts | banner "Project setup proposes the project's setup on {branch}." (as the Needs-you item and push) with "Read it before it reaches {target}." (a trial needed), "Read it, then land it: it's checked on {target} first." (served) or "Read it, then merge it into {target}." (not served), `Read Report` and the card's button · Needs-you item "Project setup proposes the project's setup on {branch}." with "Read it, then merge it into {target}." · toasts "Queued {branch} to land on {target}." · "Merged the setup into {target}." · refused from anywhere but the user's page: "Only the user merges the Setup chat's proposal. Ask them to press Merge Branch or Land on its card. Nothing was merged." · on an unserved repo, worktree land and merge: "This branch changes the project's setup: press Merge Branch on its Setup card, which needs a passing trial first. Nothing was merged." |
+
+## §design.copy-deck/lookbook-setup — Lookbook Setup card and the open view on a phone (§chat.design-mode/setup-card, §chat.design-mode/model-picker, §chat.design-mode/chat-placement)
+
+`{n}` is a count, `{label}` a design's letter, `{model}` a model as Sova names it everywhere.
+
+| Where | Copy |
+|---|---|
+| The request | heading What Do You Want to Design · its first two lines (empty: Say what to design.) · button `Edit` · the editor: title What Do You Want to Design, hint Paste a link to use a page's images or its feel., buttons `Cancel` · `Save` |
+| The Models row | heading Models · designers "{model} {effort}" joined with " · " (a model with no efforts: its name alone; none: None designing) · second line "Creative Director: {model}" · count "{n} models" ("1 model"; dropped on a phone) |
+| A provider's closed row | designers with an effort other than Low as "{model} · {effort}" · None designing · `All` |
+| A model's row | its name · " · text only" where it applies · effort menu (while it designs): the levels the model takes, as Off · Minimal · Low · Medium · High · Extra High · Max; Its Own (a model that takes efforts but has no Low, none set); `aria-label` "Effort for {model}" |
+| A provider's opened section | `Hide {provider}`, `title` "Leave {provider} off this card and later ones. Show brings it back." |
+| Search | placeholder Find a model · no match: No model matches “{q}”. |
+| The left-out line | not running: "{provider} isn't running, so it isn't listed." ("Ollama on this computer isn't running, so it isn't listed.") · signed out: "{provider}'s sign-in has expired, so it isn't listed." · key refused: "{provider} refused its key, so it isn't listed." · no key: "{provider} has no key, so it isn't listed." · not downloaded: "{provider}'s models that aren't downloaded aren't listed.", or naming them: "{models} isn't downloaded in {provider}, so it isn't listed." (several: "… aren't downloaded …, so they aren't listed.") · with models the chat asked for: "…, so {models} isn't listed." ("aren't") · asked for from a hidden provider: "{models} is in a provider you hid." ("are") · hidden by you: "{n} hidden · `Show`" · Hide or Show failing: That couldn't be changed. Try again. |
+| The bottom bar | count line (§chat.design-mode/setup-card) · `Start Creative Director` · reason, only when there is one: Pick at least 1 model to design. |
+| The open view on a phone | folded chat bar: "{label}  {its latest message}" (its author first: the label, You or Creative Director) · none yet: "Message {label}" (the Creative Director: "Message the Creative Director") · the bar's accessible name "Show Chat: {author} {line}", `title` Show Chat · in the chat's title row: `Hide Chat` |

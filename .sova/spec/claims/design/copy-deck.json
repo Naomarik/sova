@@ -126,6 +126,23 @@
     "authority": "migrated",
     "evidence": "unreviewed"
   },
+  "§design.copy-deck/lookbook-setup": {
+    "kind": "note",
+    "authority": "accepted",
+    "evidence": "reviewed",
+    "code": [
+      "src/components/DesignSetupControls.tsx",
+      "src/components/DesignCard.tsx",
+      "src/lib/design-ui.ts",
+      "src/components/DesignOpen.tsx",
+      "src/lib/design-chat-bar.ts"
+    ],
+    "about": [
+      "§chat.design-mode/setup-card",
+      "§chat.design-mode/model-picker",
+      "§chat.design-mode/chat-placement"
+    ]
+  },
   "§design.copy-deck/main-pane": {
     "kind": "note",
     "authority": "accepted",

@@ -2,9 +2,9 @@
 //
 // Each row is one chord with the rules for where it fires. The first four rules are exactly what
 // each key did before this table existed (Alt+O in App, Ctrl/⌘+P in ComposerMenu, Ctrl/⌘+B and "/"
-// in Sidebar). Ctrl/⌘+K (the command palette) and "?" (the shortcut sheet) came after, both owned
-// by App (§app/command-palette). A typed character (compose.type) came last, owned by App too: it
-// starts the message in the chat's message box (lib/type-anywhere). Keys scoped to a widget
+// in Sidebar). "?" (the shortcut sheet) came after, owned by App. Ctrl/⌘+K is Sova's no more: it
+// stays the browser's. A typed character (compose.type) came last, owned by App too: it starts the
+// message in the chat's message box (lib/type-anywhere). Keys scoped to a widget
 // (GroupView, ChangesViewer, InsightStrip, VoiceInput, a chart's Escape, the message box's Escape in
 // Composer) stay with their widget and
 // are not here.
@@ -28,7 +28,7 @@ import { isOverseerShortcut } from "../lib/overseer";
 import { isTextEntry } from "../lib/text-entry";
 import { typesCharacter } from "../lib/type-anywhere";
 
-export type KeyId = "overseer.open" | "model.picker" | "sidebar.toggle" | "sidebar.search" | "palette.open" | "shortcuts.open" | "compose.type";
+export type KeyId = "overseer.open" | "model.picker" | "sidebar.toggle" | "sidebar.search" | "shortcuts.open" | "compose.type";
 
 export interface KeyLike {
   key: string;
@@ -102,16 +102,6 @@ export const KEYS: readonly KeyRow[] = [
     chord: (e) => e.key === "/" && !e.metaKey && !e.ctrlKey && !e.altKey,
   },
   {
-    id: "palette.open",
-    label: "Ctrl/⌘+K",
-    does: "Opens or closes the command palette, instead of the browser's search. On a Mac, Ctrl+K in a text field stays the field's own.",
-    target: "document",
-    textEntry: "fires",
-    composing: "fires",
-    modal: "fires",
-    chord: (e) => ctrlOrMeta(e, "k"),
-  },
-  {
     id: "shortcuts.open",
     label: "?",
     does: "Opens this list of keyboard shortcuts.",
@@ -183,29 +173,6 @@ function sync() {
     else document.removeEventListener("keydown", onDocument);
   }
   attached = want;
-}
-
-/**
- * Runs a key's owners as its chord would, for a row that does the same thing from the command
- * palette ("Collapse Sessions Pane" runs Ctrl/⌘+B's owner). True when one acted.
- */
-export function runKey(id: KeyId): boolean {
-  const e = new Event("keydown") as KeyboardEvent; // no chord: owners act on their own condition
-  let acted = false;
-  for (const run of [...(bound.get(id) ?? [])]) if (run(e)) acted = true;
-  return acted;
-}
-
-/**
- * What Ctrl/⌘+K's owner does with one keydown (§app.command-palette/opening): `field` leaves it to
- * the browser (a Mac's Ctrl+K in a text field is the field's own delete-to-end, held or not),
- * `repeat` swallows an auto-repeat (a held key toggles once), `toggle` opens or closes the palette.
- * Pure: the order of the checks is the rule.
- */
-export function paletteKeyAction(e: KeyLike & { repeat?: boolean }, mac: boolean): "field" | "repeat" | "toggle" {
-  if (mac && e.ctrlKey && !e.metaKey && isTextEntry(e.target as Parameters<typeof isTextEntry>[0])) return "field";
-  if (e.repeat) return "repeat";
-  return "toggle";
 }
 
 /** Binds an owner to a row; returns the unbind (idempotent). */

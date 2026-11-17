@@ -1,5 +1,5 @@
 // Run: pnpm test -- src/commands/palette-lazy.test.ts
-// The palette and the shortcut sheet cost the page nothing until they're opened
+// The Commands dialog and the shortcut sheet cost the page nothing until they're opened
 // (§app.command-palette/opening): App reaches them only through `import()`, and no file the page
 // loads at start imports their code statically, so the bundler keeps them in files of their own.
 import assert from "node:assert/strict";
@@ -12,7 +12,7 @@ import ts from "typescript";
 const SRC = fileURLToPath(new URL("../", import.meta.url));
 
 /** The palette's own files: they may import each other; nothing else may import them statically. */
-const LAZY = ["components/CommandPalette", "components/ShortcutSheet", "commands/view", "lib/palette", "command-palette.css"];
+const LAZY = ["components/CommandPalette", "components/ShortcutSheet", "lib/palette", "command-palette.css"];
 
 function walk(dir: string): string[] {
   const out: string[] = [];

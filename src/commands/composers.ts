@@ -1,21 +1,13 @@
-// The chat composers on screen, by session path, for the command palette's This chat and Slash
-// commands rows (§app.command-palette/rows): what the slash menu would list there, the composer's
-// own way to put "/name " in its textarea, and its file picker, Playbooks and Undo last turn. A
-// composer registers while mounted; the palette only reads and asks.
+// The chat composers on screen, by session path: for the Commands dialog's This chat rows
+// (§app.command-palette/rows: the composer's file picker and Playbooks, and why it takes nothing
+// now) and for a character typed outside any text field (lib/type-anywhere). A composer registers
+// while mounted; the others only read and ask.
 //
-// Kept tiny and DOM-free: Composer is in the main bundle, the palette is not.
-
-import type { SlashCommand } from "../../shared/protocol";
+// Kept tiny and DOM-free: Composer is in the main bundle, the Commands dialog is not.
 
 export interface ComposerHandle {
-  /** The commands the slash menu lists here (already without the menu's hidden ones). */
-  commands(): SlashCommand[];
   /** Why the composer takes nothing now, or null. */
   off(): string | null;
-  /** Whether the draft holds anything (text or an attachment). */
-  hasDraft(): boolean;
-  /** Puts `/name ` in the textarea and focuses it; sends nothing. */
-  insert(name: string): void;
   /** Focuses the textarea, its caret where it was, for a character typed outside any text field
       (lib/type-anywhere), ending Focus if Focus hides it. False when it takes no typing (read-only,
       not on screen). */
@@ -26,10 +18,6 @@ export interface ComposerHandle {
   /** A Sova chat holds it, so `playbooks()` opens the Playbooks dialog (a watch view can't). */
   canPlaybooks(): boolean;
   playbooks(): void;
-  /** Why Undo last turn can't run: null when it can, "" when not yet with nothing to say;
-      undefined where no Sova chat holds it (a watch view). */
-  undoBlocked(): string | null | undefined;
-  undo(): void;
 }
 
 const handles = new Map<string, ComposerHandle[]>();

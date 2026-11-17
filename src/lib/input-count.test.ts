@@ -33,7 +33,7 @@ test("the trigger's copy is plural-correct", () => {
 test("inputCount leaves out a fired wake nudge: an input, but not one the user typed", () => {
   const items = [item("a", "user"), item("b", "assistant-text"), item("c", "wake"), item("d", "tool-call")];
   assert.equal(inputCount(items), 1);
-  assert.equal(isInput(item("c", "wake")), true, "still an input: Undo last turn and the rewind targets read isInput");
+  assert.equal(isInput(item("c", "wake")), true, "still an input: the rewind targets read isInput");
 });
 
 test("a link message starts a turn but is never an input; a wake nudge is an input the count leaves out", () => {

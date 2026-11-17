@@ -28,7 +28,6 @@ const CHORD: Record<KeyId, KeyLike[]> = {
   "model.picker": [ev({ key: "p", code: "KeyP", ctrlKey: true }), ev({ key: "p", code: "KeyP", metaKey: true }), ev({ key: "P", code: "KeyP", ctrlKey: true })],
   "sidebar.toggle": [ev({ key: "b", code: "KeyB", ctrlKey: true }), ev({ key: "b", code: "KeyB", metaKey: true }), ev({ key: "B", code: "KeyB", metaKey: true })],
   "sidebar.search": [ev({ key: "/", code: "Slash" }), ev({ key: "/", code: "Digit7", shiftKey: true })], // shift+7 on a German layout
-  "palette.open": [ev({ key: "k", code: "KeyK", ctrlKey: true }), ev({ key: "k", code: "KeyK", metaKey: true }), ev({ key: "K", code: "KeyK", ctrlKey: true })],
   "shortcuts.open": [ev({ key: "?", code: "Slash", shiftKey: true }), ev({ key: "?", code: "Minus", shiftKey: true })], // shift+ß on a German layout
   "compose.type": [ev({ key: "a", code: "KeyA" }), ev({ key: "A", code: "KeyA", shiftKey: true }), ev({ key: "7", code: "Digit7" }), ev({ key: "@", code: "Digit2", shiftKey: true })],
 };
@@ -39,7 +38,6 @@ const TODAY: Record<KeyId, { inField: boolean; composingStops?: true }> = {
   "model.picker": { inField: true },
   "sidebar.toggle": { inField: true },
   "sidebar.search": { inField: false },
-  "palette.open": { inField: true }, // fires in text entry (the composer opens the palette, as Ctrl/⌘+P opens the picker there); composing: fires (a composing keydown is "Process"); modal: fires
   "shortcuts.open": { inField: false }, // ignored in text entry ("?" types in a field); composing: fires (a composing keydown is "Process"); modal: fires
   "compose.type": { inField: false, composingStops: true }, // new: a character in a field is the field's, and an input method's keys are its own
 };
@@ -76,7 +74,7 @@ for (const row of KEYS) {
 test("keys stay where they were: Alt+O on the window, the rest on the document; a typed character on the window, after every widget", () => {
   assert.deepEqual(
     KEYS.map((r) => [r.id, r.target]),
-    [["overseer.open", "window"], ["model.picker", "document"], ["sidebar.toggle", "document"], ["sidebar.search", "document"], ["palette.open", "document"], ["shortcuts.open", "document"], ["compose.type", "window"]],
+    [["overseer.open", "window"], ["model.picker", "document"], ["sidebar.toggle", "document"], ["sidebar.search", "document"], ["shortcuts.open", "document"], ["compose.type", "window"]],
   );
 });
 
@@ -103,6 +101,20 @@ test("conflict: no keydown fires two rows, in any target, on a Mac or not", () =
       assert.ok(typed.has("a") && typed.has("A") && typed.has("@") && typed.has("Dead"), `mac=${mac}: the sweep reached typed characters`);
       for (const own of ["/", "?", " ", "Tab", "ArrowLeft", "Enter", "Escape", "Process"]) assert.equal(typed.has(own), false, `mac=${mac}: ${own} is not a typed character`);
     });
+});
+
+test("Ctrl/⌘+K is the browser's: no row fires on it, in any target, on a Mac or not", () => {
+  for (const mac of [false, true])
+    onPlatform(mac, () => {
+      for (const mod of [{ ctrlKey: true }, { metaKey: true }])
+        for (const key of ["k", "K"])
+          for (const target of [button, field, input, editable, null]) {
+            const e = ev({ key, code: "KeyK", ...mod, target });
+            assert.deepEqual([...firingRows("window", e), ...firingRows("document", e)].map((r) => r.id), [], `mac=${mac} ${JSON.stringify(e)}`);
+          }
+    });
+  // the check can fail: Ctrl/⌘+P, a bound chord, is found by the same sweep
+  assert.deepEqual(firingRows("document", ev({ key: "p", code: "KeyP", ctrlKey: true })).map((r) => r.id), ["model.picker"]);
 });
 
 test("compose.type: /, ? and Alt+O keep their own rows, on a Mac or not", () => {
@@ -184,7 +196,7 @@ test("dispatch: a typed character reaches its owner on the window, which decline
   assert.equal(typed.defaultPrevented, false);
 });
 
-test("the six keys before a typed character have exactly their old scope", () => {
+test("the keys before a typed character have exactly their old scope", () => {
   const before = KEYS.filter((r) => r.id !== "compose.type").map(({ chord: _c, ...r }) => r);
   assert.deepEqual(
     before.map((r) => [r.id, r.target, r.textEntry, r.composing, r.modal]),
@@ -193,7 +205,6 @@ test("the six keys before a typed character have exactly their old scope", () =>
       ["model.picker", "document", "fires", "fires", "fires"],
       ["sidebar.toggle", "document", "fires", "fires", "fires"],
       ["sidebar.search", "document", "ignored", "fires", "fires"],
-      ["palette.open", "document", "fires", "fires", "fires"],
       ["shortcuts.open", "document", "ignored", "fires", "fires"],
     ],
   );

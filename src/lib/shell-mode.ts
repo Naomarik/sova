@@ -145,7 +145,7 @@ export function codeSpans(text: string): { text: string; code: boolean }[] {
   return parts.map((t, i) => ({ text: t, code: i % 2 === 1 })).filter((p) => p.text !== "");
 }
 
-/** The shortcut sheet's shell-mode rows, after the palette's keys (§app.command-palette/shortcut-sheet). */
+/** The shortcut sheet's shell-mode rows, after the app-wide keys (§app.command-palette/shortcut-sheet). */
 export const SHELL_KEYS: readonly { keys: string; does: string }[] = [
   { keys: "!", does: "In an empty message box: runs a command in this chat's folder." },
   { keys: "!!", does: "In an empty message box: runs a command the model never sees." },

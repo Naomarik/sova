@@ -62,7 +62,7 @@ import { runStatusEnd } from "../lib/run-status";
 import { openSettings } from "../lib/settings-nav";
 import { showInputsOnTimelineLabel } from "../lib/timeline";
 import { teamNote, type WorkerTally, type WorkingSplit, workersRunningLabel, workersTrigger } from "../lib/workers";
-import { ComposerMenu, type ComposerMenuApi, type LoginControl, type SandboxControl, type ThinkingControl, type UndoControl } from "./ComposerMenu";
+import { ComposerMenu, type ComposerMenuApi, type LoginControl, type SandboxControl, type ThinkingControl } from "./ComposerMenu";
 import { sandboxBadge } from "../lib/sandbox";
 import type { ModelControl } from "./ModelMenu";
 import { ModeMenu, type ModeControl } from "./ModeMenu";
@@ -225,10 +225,8 @@ export function Composer(props: {
   thinking?: ThinkingControl | null;
   /** Chat sessions only: this chat's mode switch, at the right end of the foot. */
   mode?: ModeControl | null;
-  /** Chat sessions only: opens the Playbooks dialog (the palette's Playbooks row). */
+  /** Chat sessions only: opens the Playbooks dialog (the Commands dialog's Playbooks row). */
   onPlaybooks?: () => void;
-  /** Chat sessions only: the palette's "Undo last turn" row. */
-  undo?: UndoControl | null;
   /** Chat sessions with the sandbox extension: the flyout's Sandbox row and the foot's shield. */
   sandbox?: SandboxControl | null;
   /** Shell mode (§chat.shell-mode/box): only a chat with its own agent and folder gives it. Absent,
@@ -356,7 +354,6 @@ export function Composer(props: {
     },
   });
   const setDraft = (v: string) => box.setDraft(v);
-  const switchMode = (next: ShellMode, say?: string) => box.switchMode(next, say);
   let disposed = false;
   /** Listeners Solid can't delegate (paste), added by hand so closing can take them off. */
   const listening = new AbortController();
@@ -701,24 +698,11 @@ export function Composer(props: {
           : null
         : null;
 
-  // The command palette's rows for this chat (commands/composers): the menu's commands, "/name "
-  // put in this textarea exactly as the menu's Enter on an empty draft leaves it (nothing is sent),
-  // and the This chat actions: the file picker, Playbooks and Undo last turn.
+  // This chat's composer for the Commands dialog's rows (the file picker, Playbooks) and for
+  // typing from outside a text field (commands/composers).
   createEffect(() => {
     const off = registerComposer(props.path, {
-      commands: () => menuCommands(props.commands ?? []),
       off: () => reason()?.text ?? null,
-      hasDraft: () => text().trim().length > 0 || images().length > 0,
-      insert: (name) => {
-        if (disabled()) return;
-        const next = `/${name} `;
-        switchMode("off"); // "/name " is a message's, never a command
-        setDraft(next);
-        input.value = next;
-        input.focus();
-        input.setSelectionRange(next.length, next.length);
-        updateSlash();
-      },
       // Focus hides only the single view's composer (the footer's inert, below).
       take: () => {
         // The browser types the key into the box in this same keydown, as if typed there: a "!"
@@ -738,10 +722,6 @@ export function Composer(props: {
       canPlaybooks: () => !!props.onPlaybooks,
       playbooks: () => {
         if (!disabled()) props.onPlaybooks?.();
-      },
-      undoBlocked: () => (props.undo ? props.undo.blocked() : undefined),
-      undo: () => {
-        if (!disabled() && props.undo?.blocked() === null) props.undo.run();
       },
     });
     onCleanup(off);
@@ -1293,7 +1273,7 @@ export function Composer(props: {
           <Show when={!props.readOnly}>
             <VoiceButton voice={voice} />
           </Show>
-          {/* The plus opens the Commands palette on this chat (§app.command-palette/opening); the
+          {/* The plus opens the Commands dialog on this chat (§app.command-palette/opening); the
               flyout it sits with holds the model, login and sandbox panels. */}
           <ComposerMenu
             disabled={disabled()}

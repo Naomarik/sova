@@ -68,9 +68,11 @@ export function mountDesignRoutes(app: Hono): void {
     if (typeof sent.brief !== "string" || !Array.isArray(sent.models) || !Array.isArray(sent.directions)) return c.json({ error: "Expected a whole Setup { brief, models, directions }." }, 400);
     // The whole card as the user sees it: the latest change wins.
     try {
-      commitSetup(p.sessionId, c.req.param("run"), () => ({ setup: sent }));
+      // baseSetupAt: the card the save was made from; absent (a script), the save applies as it is.
+      if (sent.baseSetupAt !== undefined && typeof sent.baseSetupAt !== "string") return c.json({ error: "baseSetupAt is the run's setupAt (else createdAt) the card was made from." }, 400);
+      commitSetup(p.sessionId, c.req.param("run"), () => ({ setup: sent }), typeof sent.baseSetupAt === "string" ? { base: sent.baseSetupAt } : {});
     } catch (err) {
-      if (err instanceof SetupRefused) return c.json({ error: err.message }, err.status);
+      if (err instanceof SetupRefused) return c.json({ error: err.message, ...(err.stale ? { stale: true, run: err.stale, view: designView(p.sessionId) } : {}) }, err.status);
       throw err;
     }
     return c.json(designView(p.sessionId));

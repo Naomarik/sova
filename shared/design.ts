@@ -291,6 +291,9 @@ export interface DesignRun {
   hiddenSections?: string[];
   /** Names the main chat asked for that sit in a hidden section. */
   hiddenAsked?: string[];
+  /** When the Setup last changed (the user's save, the chat's edit, Hide or Show): a save names the stamp of the card it
+      was made from (setupAt, else createdAt) and is refused when a newer change came first. Absent: never changed. */
+  setupAt?: string;
   createdAt: string;
   updatedAt: string;
 }

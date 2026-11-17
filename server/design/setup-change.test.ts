@@ -206,3 +206,39 @@ test("skills: edit adds one by its folder and takes one off by name before Start
   assert.deepEqual(c.now().skills ?? [], []);
   assert.match(removed.text, /brand: there's no skill by that name on this card\./);
 });
+
+test("a save from a card older than the newest change is refused, and the run is unchanged; one from the current card applies", async () => {
+  const { Hono } = await import("hono");
+  const { mountDesignRoutes } = await import("./routes");
+  const { SESSIONS_DIR } = await import("../paths");
+  const { mkdirSync, writeFileSync } = await import("node:fs");
+  const c = chat();
+  const dir = join(SESSIONS_DIR, "--work--");
+  mkdirSync(dir, { recursive: true });
+  const file = join(dir, `2026-01-01T00-00-00-000Z_${c.sessionId}.jsonl`);
+  writeFileSync(file, "");
+  const app = new Hono();
+  mountDesignRoutes(app);
+  const patch = (body: unknown) => app.request(`/api/design/runs/${c.run.id}/setup?path=${encodeURIComponent(file)}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+  // The user's draft took the card as it was; then the chat adds a designer within the save's delay.
+  const seen = structuredClone(c.now());
+  const base = seen.setupAt ?? seen.createdAt;
+  await c.call({ op: "edit", models: ["gpt-6-luna"] });
+  const after = structuredClone(c.now());
+  const userDraft = { ...seen.setup, directions: seen.setup.directions.map((d) => ({ ...d, on: d.name === "Minimalist" })) };
+  const stale = await patch({ ...userDraft, baseSetupAt: base });
+  assert.equal(stale.status, 409);
+  const body = (await stale.json()) as { stale?: boolean; run?: { id: string; setup: { models: { ref: string; design: boolean }[] } }; view?: { runs: { id: string; setupAt?: string }[] } };
+  assert.equal(body.stale, true);
+  assert.equal(body.view!.runs.find((r) => r.id === c.run.id)!.setupAt, after.setupAt, "and the whole view, to draw at once");
+  assert.equal(body.run!.id, c.run.id);
+  assert.ok(body.run!.setup.models.find((m) => m.ref === "openai-codex/gpt-6-luna")!.design, "the answer carries the card as the server has it");
+  assert.deepEqual(c.now(), after, "the run is unchanged: the chat's later change stands");
+  // From the current card it applies, and the stamp moves on.
+  const fresh = await patch({ ...after.setup, directions: after.setup.directions.map((d) => ({ ...d, on: d.name === "Minimalist" })), baseSetupAt: after.setupAt });
+  assert.equal(fresh.status, 200);
+  assert.deepEqual(c.now().setup.directions.filter((d) => d.on).map((d) => d.name), ["Minimalist"]);
+  assert.ok(c.now().setupAt! > after.setupAt!, "a new stamp for the next save's base");
+  // No base (a script): applies as before.
+  assert.equal((await patch({ ...c.now().setup })).status, 200);
+});

@@ -14,10 +14,15 @@ export class SetupRefused extends Error {
   constructor(
     message: string,
     readonly status: 400 | 404 | 409 = 400,
+    /** A save made from a card older than the newest change: the run as it is now, for the card to take. */
+    readonly stale?: DesignRun,
   ) {
     super(message);
   }
 }
+
+/** The stamp a save names as the card it was made from: the newest Setup change, else the run's making. */
+export const setupBase = (run: Pick<DesignRun, "setupAt" | "createdAt">): string => run.setupAt ?? run.createdAt;
 
 /** The phases a Setup may still change in: setup (all of it), and until Start on the brief (the smaller set). */
 export const setupOpen = (run: Pick<DesignRun, "phase">): boolean => run.phase === "setup" || run.phase === "researching" || run.phase === "brief";
@@ -34,11 +39,13 @@ export interface SetupChange {
  * the Creative Director started, only models, efforts, styles and layouts), its links re-read from its words, and with
  * the brief on the card its version raised and its estimate redone. Throws SetupRefused.
  */
-export function commitSetup(sessionId: string, runId: string, make: (run: DesignRun, briefOpen: boolean) => SetupChange | string): DesignRun {
+export function commitSetup(sessionId: string, runId: string, make: (run: DesignRun, briefOpen: boolean) => SetupChange | string, opts: { base?: string } = {}): DesignRun {
   return changeDesigns(sessionId, (s) => {
     const r = s.runs.find((x) => x.id === runId);
     if (!r) throw new SetupRefused("No such design run.", 404);
     if (!setupOpen(r)) throw new SetupRefused("This run has started, so its Setup is closed.", 409);
+    // The latest change wins: a save made from an older card (the chat changed it meanwhile) changes nothing.
+    if (opts.base !== undefined && opts.base !== setupBase(r)) throw new SetupRefused("The card changed since this save was made.", 409, structuredClone(r));
     const briefOpen = r.phase !== "setup";
     const change = make(r, briefOpen);
     if (typeof change === "string") throw new SetupRefused(change);
@@ -48,7 +55,10 @@ export function commitSetup(sessionId: string, runId: string, make: (run: Design
     r.setup = next;
     Object.assign(r, change.run ?? {});
     for (const k of ["images", "imagesLeftOut", "skills", "skillsMissing", "hiddenSections", "hiddenAsked"] as const) if (Array.isArray(r[k]) && !r[k]!.length) delete r[k];
-    r.updatedAt = new Date().toISOString();
+    // Always later than the stamp before, even within one millisecond: it is the next save's base.
+    const at = new Date(Math.max(Date.now(), r.setupAt ? Date.parse(r.setupAt) + 1 : 0)).toISOString();
+    r.setupAt = at;
+    r.updatedAt = at;
     if (r.phase === "brief" && r.brief && r.brief.startedRev === undefined) {
       // On the card, so what Start starts from has moved; and so has what it should cost.
       r.brief.rev++;

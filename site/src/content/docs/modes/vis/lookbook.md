@@ -36,16 +36,27 @@ from the start changes nothing when a Lookbook begins.
 Ask for a Lookbook in your chat: "a Lookbook of a pricing page for my tea shop, all Claude models".
 The card opens as **Lookbook · Setup**, with what you said filled in. Change anything on it. Your clicks don't go through the chat.
 
-- **What Do You Want to Design**: your request, in your words. Paste a link here to use a page's
-  images or its feel.
-- **Models**: one section per provider, all closed at first. Each section's row shows how many of its
-  models are designing and names them; **All** ticks or unticks the whole section, and the arrow opens
-  it to tick single models. Ollama on this computer and Ollama Cloud are separate sections. Your
-  favorites from the model menu come first in each section, then the most capable models. **Find a
-  model** searches every section. The **Creative Director** dropdown above them picks the one model that
-  coordinates; it can coordinate without designing. On a later run, picking a different Creative Director
-  starts a new one on that model. It keeps the notes, not the conversation, and Setup says so. A
-  model marked "text only" can't read pictures and works from a written outline instead.
+- **What Do You Want to Design**: your request, in your words. The card shows its first two lines;
+  press **Edit** (or the text) to change it in an editor of its own, and **Save** to put it on the card
+  (**Cancel** leaves the card as it is). Paste a link in it to use a page's images or its feel.
+- **Models**: one closed row naming the models that design, each with its effort, and the Creative
+  Director. Open it for the **Creative Director** dropdown, which picks the one model that coordinates
+  (it can coordinate without designing), **Find a model**, which searches every provider, and one
+  closed section per provider. Each section's row shows how many of its models are designing and
+  names them; **All** ticks or unticks the whole section, and the arrow opens it to tick single models.
+  Ollama on this computer and Ollama Cloud are separate sections. Your favorites from the model menu
+  come first in each section, then the most capable models. On a later run, picking a different
+  Creative Director starts a new one on that model. It keeps the notes, not the conversation, and
+  Setup says so. A model marked "text only" can't read pictures and works from a written outline
+  instead.
+- **Only providers that can run now are listed.** A provider whose sign-in has expired, whose key was
+  refused or is missing, or Ollama on this computer when it isn't running (or a local model that isn't
+  downloaded) is left off, and one line under the providers names it and why. When Sova can't tell,
+  the provider stays. **Hide** in an opened provider keeps it off this card and every later one; the
+  same line counts what you hid, and **Show** brings them back.
+- **Effort**: each designing model has an effort menu at the end of its row, **Low** unless you change
+  it, offering only the levels that model takes. Its designs think at that effort, and the estimate
+  before Start counts it: more effort costs more.
 - **Directions**: pick from 20.
 - **Links**: each link gets a row to choose how it's used:
   - **Use Its Images**: the Creative Director opens the page once and brings back its images, with notes
@@ -56,6 +67,15 @@ The card opens as **Lookbook · Setup**, with what you said filled in. Change an
     is never opened.
 
 Press **Start Creative Director**. Nothing is designed yet.
+
+You can also ask your chat to change the open card ("add GLM 5.3 at high effort", "drop the Dark
+styles"). It changes only what you asked and tells you what the card now holds. The latest change wins
+the whole card: your click saves the card as you see it, and a change from the chat after it replaces
+it. Words you're typing in the request's editor are never replaced while you type. After **Start
+Creative Director** the chat can still change the designers, their efforts, styles and layouts until
+you press **Start** on the brief. Your chat can add pictures to the card from three places only: its
+temporary folder, the chat's attachments folder, or the chat's shared folder; it tells you which
+picture it couldn't add and why.
 
 ### Design skills
 
@@ -135,8 +155,9 @@ once; others say "Waiting for a free preview". A page loads only Google Fonts fr
 
 - **Open** (or **Chat**) shows a design full size with its own conversation beside it, even while
   its first page is being written. To change a design, tell it in its chat; every version is kept
-  (A, A2). **Hide Chat** gives the page the room. A session that has shut down starts again from its
-  saved page when you message it.
+  (A, A2). **Hide Chat** gives the page the room. On a phone the chat starts folded to a bar showing
+  its latest message, one tap away, so the design has the screen. A session that has shut down
+  starts again from its saved page when you message it.
 - **More** on a design (on its tile or in the open view) holds **Stop** and **Remove**. A stopped
   design keeps what it had written as a still picture, reads Stopped, and offers **Start Again**.
   A removed one moves to a folded **Removed** section, where you can still open it, read its chat

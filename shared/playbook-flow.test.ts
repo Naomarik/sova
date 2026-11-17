@@ -110,6 +110,8 @@ test("progress colours what is known; a run that knows only started or stopped s
   const bare = drawn(playbookFlowSource(STEPS, { progress: { state: "stopped" } }));
   assert.deepEqual([bare.caption, bare.nodes.map((n) => n.tone ?? "")], ["Stopped", ["", "", "", ""]]);
   assert.equal(drawn(playbookFlowSource(STEPS, { progress: { state: "running", cycle: 2 } })).caption, "Running · cycle 2");
+  const started = drawn(playbookFlowSource(STEPS, { progress: { state: "started" } }));
+  assert.deepEqual([started.caption, started.nodes.map((n) => n.tone ?? "")], ["Started · which step it's on isn't tracked yet", ["", "", "", ""]], "a run known only to have started says what the drawing can't show");
   assert.deepEqual(drawn(playbookFlowSource(MACHINE, { progress: { current: "research", done: ["find"] } })).nodes.filter((n) => n.tone).map((n) => [n.label, n.tone]), [["Find the version", "ok"], ["Research", "accent"]]);
 });
 

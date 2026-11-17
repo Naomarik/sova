@@ -19,8 +19,9 @@ export interface FlowProgress {
   current?: string;
   /** Steps (or states) already taken, in any order. */
   done?: readonly string[];
-  /** The run as a whole. */
-  state?: "draft" | "running" | "waiting" | "stopped" | "finished";
+  /** The run as a whole. "started": all that is known is that Start was pressed (no step is tracked),
+      so the caption says so rather than claiming the run is running. */
+  state?: "draft" | "started" | "running" | "waiting" | "stopped" | "finished";
   /** The cycle the run is in, from 1. */
   cycle?: number;
 }
@@ -43,6 +44,7 @@ export interface FlowSource {
 
 const RUN_STATE: Record<NonNullable<FlowProgress["state"]>, string> = {
   draft: "Not started",
+  started: "Started · which step it's on isn't tracked yet",
   running: "Running",
   waiting: "Waiting for you",
   stopped: "Stopped",

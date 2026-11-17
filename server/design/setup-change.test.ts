@@ -191,3 +191,18 @@ test("the routes: a whole-card save and Hide go through the same change, and ans
   assert.equal((await send("PATCH", `/api/design/runs/${c.run.id}/setup`, card)).status, 409);
   assert.equal((await send("POST", `/api/design/runs/${c.run.id}/hidden`, { section: "deepseek", hidden: true })).status, 409);
 });
+
+test("skills: edit adds one by its folder and takes one off by name before Start Creative Director; one not found is named with why", async () => {
+  const { mkdirSync, writeFileSync } = await import("node:fs");
+  const c = chat();
+  const dir = join(agentDir, "kits", "acme");
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, "SKILL.md"), "---\nname: acme\ndescription: The Acme house look.\n---\nUse --acme.");
+  const added = await c.call({ op: "edit", skills: [dir, join(agentDir, "kits", "nowhere")] });
+  assert.deepEqual(c.now().skills!.map((k) => [k.name, k.dir]), [["acme", dir]]);
+  assert.match(added.text, /Skills: acme, .*nowhere \(not found\)\./);
+  assert.match(added.text, /nowhere: There is no such folder\./);
+  const removed = await c.call({ op: "edit", removeSkills: ["acme", "brand"] });
+  assert.deepEqual(c.now().skills ?? [], []);
+  assert.match(removed.text, /brand: there's no skill by that name on this card\./);
+});

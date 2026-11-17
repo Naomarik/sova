@@ -105,7 +105,10 @@
   flex-direction: column;
   background: var(--color-surface);
   box-shadow: var(--shadow-2);
+  /* clip, not hidden: a hidden box still scrolls programmatically, so focus or a scrollIntoView
+     landing on it (Start pressed while the card still rises) would scroll its head out of view. */
   overflow: hidden;
+  overflow: clip;
   container: pb-card / inline-size;
   animation: pb-rise var(--dur-base) var(--ease-standard);
 }
@@ -150,6 +153,9 @@
 }
 
 .pb-body {
+  /* `relative`: the form kit's visually hidden labels (absolute, no insets) belong to this
+     scroller, not to the card, so they never make the card's own box taller than it is. */
+  position: relative;
   flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;

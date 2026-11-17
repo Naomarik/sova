@@ -1083,7 +1083,7 @@ export function ThreadScroller(props: {
     // and the browser's scroll anchoring can move the view down meanwhile: that event finds the
     // end far below, and is not the reader leaving it. Back to the end instead. A disclosure the
     // reader just opened is theirs to look at, so following is re-read from where the view is.
-    if (follow && !near && !up && !toggled) return settleSoon();
+    if (follow && !near && !up && !openedChanged()) return settleSoon();
     if (near === follow) return;
     // Following comes back only by the reader's hand (§chat.transcript/turn-end-keeps-reader): their
     // own scroll reaching the end of the rows as they stood (`endAt`), a disclosure they
@@ -1102,26 +1102,40 @@ export function ThreadScroller(props: {
    * row that opens below itself, a search box narrowing a list): what it adds or removes is theirs to look at, so the
    * view stays where it is and following is re-read from the new position instead of pulling the bottom back into
    * view. If it runs past the bottom of the view, following stops and Jump to Latest shows; new content is followed
-   * again once the reader is back at the end. Marked at the click, which comes before the open state changes (a
-   * disclosure's `toggle` event is queued and may come after the frame that lays the growth out), and again at
-   * `toggle`, where a lazy body is built. Held for OPENED_MS after the latest mark, so a list drawn a moment later
-   * (a card drawn again with the server's answer) stays put too, or until the reader's own scroll. What marks it:
-   * a press on a `<summary>`, on a control that says it opens something (`aria-expanded`) or that it changes the
-   * rows around itself (`data-holds-view`), and typing or picking in a field in the rows. Only the clicked
+   * again once the reader is back at the end. Only the row they acted in counts: while it holds its height, growth
+   * anywhere else (a reply streaming below) is followed as ever. Marked at the click, which comes before the open
+   * state changes (a disclosure's `toggle` event is queued and may come after the frame that lays the growth out),
+   * and again at `toggle`, where a lazy body is built. Held for OPENED_MS after the latest mark, so a list drawn a
+   * moment later (a card drawn again with the server's answer) stays put too, or until the reader's own scroll. What
+   * marks it: a press on a `<summary>`, on a control that says it opens something (`aria-expanded`) or that it
+   * changes the rows around itself (`data-holds-view`), and typing or picking in a field in the rows. Only the clicked
    * disclosure's `toggle` marks it again: one drawn open (an alignment's approach) fires `toggle` as its row is
    * built, and that is new content, not the reader's.
    */
   let toggled = false;
   let toggleTimer: ReturnType<typeof setTimeout> | undefined;
-  const markToggle = () => {
+  /** The row the reader acted in, and its height when last read. */
+  let opened: { row: Element; h: number } | null = null;
+  const heightOf = (row: Element) => (row.isConnected ? row.getBoundingClientRect().height : -1);
+  const markToggle = (at: Element) => {
+    const row = at.closest(".thread > *") ?? at;
+    if (opened?.row !== row) opened = { row, h: heightOf(row) };
     toggled = true;
     clearTimeout(toggleTimer);
-    toggleTimer = setTimeout(() => (toggled = false), OPENED_MS);
+    toggleTimer = setTimeout(endToggle, OPENED_MS);
   };
-  /** The reader takes the view (their scroll, Jump to Latest): what they opened is no longer held. */
+  /** The reader takes the view (their scroll, Jump to Latest), or the hold has run out. */
   const endToggle = () => {
     clearTimeout(toggleTimer);
     toggled = false;
+    opened = null;
+  };
+  /** While held: whether the row the reader acted in changed height since last read (then following is theirs to
+      re-read); growth elsewhere is followed as ever. */
+  const openedChanged = () => !!opened && toggled && Math.abs(heightOf(opened.row) - opened.h) >= 1;
+  /** Following was re-read for that row as it now is. */
+  const openedRead = () => {
+    if (opened) opened.h = heightOf(opened.row);
   };
   /** The disclosure whose summary was clicked last: its `toggle`, whenever it comes, is the reader's. */
   let clicked: Element | null = null;
@@ -1129,16 +1143,17 @@ export function ThreadScroller(props: {
     const target = (e.target as Element | null)?.closest?.("summary, [aria-expanded], [data-holds-view]");
     if (!target) return;
     if (target.matches("summary")) clicked = target.parentElement;
-    markToggle();
+    markToggle(target);
   };
   const onToggle = (e: Event) => {
     if (e.target !== clicked) return;
     clicked = null;
-    markToggle();
+    markToggle(e.target as Element);
   };
   /** Typing into a field in the rows, or picking in one: a search narrowing a list, a box that grows. */
   const onField = (e: Event) => {
-    if ((e.target as Element | null)?.closest?.("input, textarea, select")) markToggle();
+    const field = (e.target as Element | null)?.closest?.("input, textarea, select");
+    if (field) markToggle(field);
   };
   onCleanup(() => clearTimeout(toggleTimer));
   /**
@@ -1307,7 +1322,10 @@ export function ThreadScroller(props: {
     // view they grew as the reader's own.
     if (holdAtRead()) return;
     if (!follow) return;
-    if (toggled) return onScroll();
+    if (openedChanged()) {
+      onScroll();
+      return openedRead();
+    }
     if (grownOnly) {
       const gap = el.scrollHeight - el.scrollTop - el.clientHeight;
       if (gap > 2 && gap - lastGap < 1) return;
@@ -1343,7 +1361,7 @@ export function ThreadScroller(props: {
   // The view itself changing height (the composer's status row appearing, a keyboard) never moves
   // a scroll under way, so while following it always goes back to the end. A scroll event can read
   // the new, shorter view before this runs, so it can't wait for `lastGap`.
-  const viewResized = typeof ResizeObserver === "function" ? new ResizeObserver(() => follow && !toggled && toBottom()) : null;
+  const viewResized = typeof ResizeObserver === "function" ? new ResizeObserver(() => follow && !openedChanged() && toBottom()) : null;
   onCleanup(() => viewResized?.disconnect());
   // The characters a message line holds, for the rows' estimates (lib/tail-render `lineCols`), from
   // a probe as wide as a message: set only when it changes, since every row reads it. A new
@@ -1358,7 +1376,7 @@ export function ThreadScroller(props: {
           if (width <= 0 || lineCols(width) === cols) return;
           cols = lastCols = lineCols(width);
           el.style.setProperty("--entry-cols-measured", String(cols));
-          if (follow && !toggled) toBottom();
+          if (follow && !openedChanged()) toBottom();
         })
       : null;
   onCleanup(() => measured?.disconnect());

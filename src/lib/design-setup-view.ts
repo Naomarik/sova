@@ -1,6 +1,92 @@
 /** What a Setup card holds that isn't the run: which of its rows are open, and the request's editor. No DOM, so the
     browser-conditions tests drive it. */
-import { createSignal, type Accessor } from "solid-js";
+import { createEffect, createSignal, on, onCleanup, untrack, type Accessor } from "solid-js";
+import type { DesignChatView, DesignSetup } from "../../shared/design";
+import type { DesignStore } from "./design-store";
+import type { DesignRunView } from "./design-ui";
+
+export interface SetupDraft {
+  draft: Accessor<DesignSetup>;
+  saving: Accessor<"" | "saving" | "error">;
+  change(next: DesignSetup): void;
+  /** Saves what's waiting now, for a press that needs the server to have it. */
+  flush(): Promise<void>;
+  /** Takes the card back from a server answer (a design view), unless a newer click is waiting to be saved. */
+  adopt(answer: unknown): void;
+}
+
+/**
+ * The Setup card's choices as you make them: saved shortly after each click (the whole card, so the latest change
+ * wins), and never replaced by an update while unsaved. Once a save is answered with nothing newer waiting, the card
+ * shows what the server holds: the newer of that answer and the last update, so a chat's change that came in while
+ * the click was being saved shows, and the next click doesn't undo it.
+ */
+export function createSetupDraft(run: Accessor<DesignRunView>, store: Pick<DesignStore, "api">): SetupDraft {
+  const [draft, setDraft] = createSignal<DesignSetup>(untrack(() => run().setup));
+  const [saving, setSaving] = createSignal<"" | "saving" | "error">("");
+  let dirty = false;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  /** When the server's card the draft shows was made: an update older than it (one sent before a save's answer
+      that came first) never takes the card back. */
+  let shownAt = untrack(run).updatedAt;
+  const show = (r: Pick<DesignRunView, "updatedAt" | "setup">) => {
+    if (r.updatedAt < shownAt) return;
+    shownAt = r.updatedAt;
+    setDraft(r.setup);
+  };
+  createEffect(
+    on(
+      () => run().setup,
+      () => {
+        if (!dirty) show(untrack(run));
+      },
+    ),
+  );
+  /** Nothing waits to be saved: the card is the server's, from its answer or the last update, whichever is newer. */
+  const settle = (answer: unknown) => {
+    dirty = false;
+    const now = untrack(run);
+    const answered = (answer as Partial<DesignChatView> | null | undefined)?.runs?.find((r) => r.id === now.id);
+    show(answered && answered.updatedAt > now.updatedAt ? answered : now);
+  };
+  /** The save on its way, for a press that must come after it. */
+  let inflight: Promise<unknown> = Promise.resolve();
+  const save = () => {
+    timer = undefined;
+    const sent = draft();
+    setSaving("saving");
+    const sending = store.api.setup(untrack(run).id, sent).then((answer) => {
+      if (sent === draft() && !timer) settle(answer);
+      setSaving("");
+    });
+    inflight = sending.catch(() => setSaving("error"));
+    return sending;
+  };
+  onCleanup(() => {
+    if (timer) {
+      clearTimeout(timer);
+      void save().catch(() => {});
+    }
+  });
+  return {
+    draft,
+    saving,
+    change: (next) => {
+      setDraft(next);
+      dirty = true;
+      clearTimeout(timer);
+      timer = setTimeout(save, 300);
+    },
+    flush: async () => {
+      if (!timer) return void (await inflight);
+      clearTimeout(timer);
+      await save();
+    },
+    adopt: (answer) => {
+      if (!timer) settle(answer);
+    },
+  };
+}
 
 /** Which rows of a card are open: the Models row, each provider's row, Style and Layout. */
 export interface SetupOpenState {

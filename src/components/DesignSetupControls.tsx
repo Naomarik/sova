@@ -1,73 +1,15 @@
-import { createEffect, createMemo, createSignal, createUniqueId, For, on, onCleanup, onMount, Show, untrack, type Accessor, type JSX } from "solid-js";
+import { createMemo, createSignal, createUniqueId, For, onMount, Show, type JSX } from "solid-js";
 import { designEffortOf, designHasEfforts, type DesignLinkUse, type DesignSetup } from "../../shared/design";
 import type { DesignStore } from "../lib/design-store";
 import { coordinatorChangeLine } from "../lib/design-brief";
 import { designSectionOf } from "../../shared/design-models";
 import { canShuffle, designSections, effortLabel, leftOutLine, modelsSummary, moveCoordinator, pairsLine, searchModels, setCombine, setEffort, shufflePairs, tickedLine, toggleDirection, toggleGroup, toggleLayout, toggleModel, type DesignRunView } from "../lib/design-ui";
-import { createRequestEditor, setupOpenState, type RequestEditor, type SetupOpenState } from "../lib/design-setup-view";
+import { createRequestEditor, setupOpenState, type RequestEditor, type SetupDraft, type SetupOpenState } from "../lib/design-setup-view";
 import { ActionMenu } from "./ActionMenu";
 import { Icon } from "./ui";
 import { SearchField, Select, TextArea, Toggle } from "./form";
 
-export interface SetupDraft {
-  draft: Accessor<DesignSetup>;
-  saving: Accessor<"" | "saving" | "error">;
-  change(next: DesignSetup): void;
-  /** Saves what's waiting now, for a press that needs the server to have it. */
-  flush(): Promise<void>;
-}
-
-/** The Setup card's choices as you make them: saved shortly after each click, and never replaced by an update while unsaved. */
-export function createSetupDraft(run: Accessor<DesignRunView>, store: DesignStore): SetupDraft {
-  const [draft, setDraft] = createSignal<DesignSetup>(untrack(() => run().setup));
-  const [saving, setSaving] = createSignal<"" | "saving" | "error">("");
-  let dirty = false;
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  createEffect(
-    on(
-      () => run().setup,
-      (s) => {
-        if (!dirty) setDraft(s);
-      },
-    ),
-  );
-  const save = () => {
-    timer = undefined;
-    const sent = draft();
-    setSaving("saving");
-    store.api
-      .setup(run().id, sent)
-      .then(() => {
-        if (sent === draft()) dirty = false;
-        setSaving("");
-      })
-      .catch(() => setSaving("error"));
-  };
-  onCleanup(() => {
-    if (timer) {
-      clearTimeout(timer);
-      save();
-    }
-  });
-  return {
-    draft,
-    saving,
-    change: (next) => {
-      setDraft(next);
-      dirty = true;
-      clearTimeout(timer);
-      timer = setTimeout(save, 300);
-    },
-    flush: async () => {
-      if (timer) {
-        clearTimeout(timer);
-        timer = undefined;
-        await store.api.setup(run().id, draft());
-      }
-      dirty = false;
-    },
-  };
-}
+export { createSetupDraft, type SetupDraft } from "../lib/design-setup-view";
 
 /** The models and directions, on Setup and behind the brief's Change: the same controls in both places. `openKey` keeps
     which rows are open while the card is drawn again (a run and the place); `modelsOpen` is where Models starts. */
@@ -331,8 +273,11 @@ function DesignModelPicker(props: { setup: SetupDraft; run: DesignRunView; store
     try {
       // Your clicks first, so the card the server changes is the one you see.
       await props.setup.flush();
-      for (const section of change.hide ?? []) await props.store.api.hidden(props.run.id, section, true);
-      for (const section of change.show ?? []) await props.store.api.hidden(props.run.id, section, false);
+      let answer: unknown;
+      for (const section of change.hide ?? []) answer = await props.store.api.hidden(props.run.id, section, true);
+      for (const section of change.show ?? []) answer = await props.store.api.hidden(props.run.id, section, false);
+      // The card as the server now holds it (a hidden provider's rows unticked, the Creative Director moved).
+      props.setup.adopt(answer);
       props.store.refresh();
     } catch (e) {
       setHideError(e instanceof Error ? e.message : "That couldn't be changed. Try again.");

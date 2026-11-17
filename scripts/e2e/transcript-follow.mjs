@@ -17,6 +17,8 @@
 // switch back caught between its rows and its chat's hello (the hello held with routeWebSocket) is
 // scrolled up 40px, or 300px in 10px trackpad steps with the hello landing mid-gesture, and the view
 // stays where the reader put it with Jump to Latest; so does a 30px scroll up while a reply streams.
+// A press on a control in an earlier row (one that opens something, or a field) all through a streaming reply
+// still follows the reply to its end: only the row the reader acted in is held.
 // A change in the rows that adds no height never moves a following view short of the end, while
 // growth below it still takes it there. These run real turns, on scripts/fake-claude.mjs (the Claude Code
 // provider is always on; agents/extensions/claude-code/overview.md, "Testing Claude logins without
@@ -460,6 +462,7 @@ try {
     "a small scroll up while the chat connects stops following; its hello lands and the view stays where the reader put it",
     "a slow trackpad scroll up while the chat connects ends where the reader scrolled, the hello landing mid-gesture",
     "a small scroll up while a reply streams stops following; the reply's end doesn't pull the view back",
+    "presses on a control in an earlier row, all through a streaming reply, keep the view following to the reply's end",
   ];
   if (!/fake/i.test(fake.version ?? "")) {
     const why = `the server's claude isn't scripts/fake-claude.mjs (${JSON.stringify(fake)})`;
@@ -674,6 +677,51 @@ try {
       await ctx.close();
       assert(before.pill && Math.abs(before.gap - 30) <= 3, `a 30px scroll up while it streams didn't stop following: ${JSON.stringify(before)}`);
       assert(after.pill && after.gap >= before.gap - 1, `the reply's end pulled the view back: ${JSON.stringify({ before, after })}`);
+    });
+
+    // A press on something that opens (aria-expanded) or a pick in a field holds the view only for the row it is in
+    // (a Lookbook card's provider row): a reply streaming below meanwhile is followed as ever. The control sits in an
+    // earlier row and changes nothing there; it's pressed every 400 ms, so all of the reply's growth lands inside the
+    // hold, and a hold that stopped following on any growth would end with Jump to Latest.
+    await check(LIVE[6], async () => {
+      const { ctx, page } = await newPage();
+      const [mine, other] = [await liveSession(), await liveSession()];
+      await openPath(page, other);
+      await openPath(page, mine);
+      await still(page);
+      await page.evaluate(() => {
+        const t = document.getElementById("transcript");
+        const rows = [...t.querySelectorAll(".thread > .entry")].filter((r) => r.getBoundingClientRect().height > 0);
+        const b = document.createElement("button");
+        b.type = "button";
+        b.id = "e2e-opener";
+        b.setAttribute("aria-expanded", "false");
+        b.textContent = "Opener";
+        rows.at(-2).append(b);
+        const f = document.createElement("input");
+        f.id = "e2e-field";
+        rows.at(-2).append(f);
+      });
+      await toEnd(page);
+      await sleep(300);
+      const h0 = await page.evaluate(() => document.getElementById("transcript").scrollHeight);
+      await sendSure(page, `[fake-slow 6000] ${lines(4, "streaming")}`);
+      let ended = false;
+      const done = page.waitForFunction(() => document.getElementById("transcript")?.textContent.includes("Fake answer from login"), null, { timeout: 45000 }).then(() => (ended = true));
+      for (let k = 0; !ended && k < 120; k++) {
+        await page.evaluate((k) => {
+          if (k % 2) document.getElementById("e2e-opener").click();
+          else document.getElementById("e2e-field").dispatchEvent(new Event("input", { bubbles: true }));
+        }, k);
+        await sleep(400);
+      }
+      await done;
+      await still(page);
+      const after = await view(page);
+      const grew = (await page.evaluate(() => document.getElementById("transcript").scrollHeight)) - h0;
+      await ctx.close();
+      assert(grew > 80, `the reply grew the rows by ${grew}px only: the check compared nothing`);
+      assert(after.gap < 2 && !after.pill, `the reply's growth during the presses stopped following: ${JSON.stringify(after)}`);
     });
 
     await check(LIVE[0], async () => {

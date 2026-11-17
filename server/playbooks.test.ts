@@ -245,23 +245,21 @@ test("a playbook.json beside the entry is read strictly: its description, or its
       writeFileSync(join(deps.shippedDir, id, f), t);
     }
   };
-  const helper = { version: 1, roles: { r: { label: "R", prompt: "roles/r.md" } }, steps: [{ id: "s", label: "S", roles: ["r"] }] };
-  pb("good", helper, { "roles/r.md": "brief" });
+  const helper = { version: 1, teams: { t: { goal: "Do it", members: { r: { label: "R", brief: "Does it", notes: "references/roles/r.md" } } } }, steps: [{ id: "s", label: "S", teams: ["t"] }] };
+  pb("good", helper, { "references/roles/r.md": "how" });
   pb("no-page", helper);
   pb("bad-key", { version: 1, colour: "red" });
   pb("not-json", "{ version: 1");
-  pb("bad-slot", helper, { "roles/r.md": "Write to {{run}} about {{nope}}" });
   drop(deps.shippedDir, "plain", fm({ title: "plain" }, "b"));
   const by = Object.fromEntries((await listPlaybooks(undefined, deps)).playbooks.map((p) => [p.id, p]));
-  assert.deepEqual(Object.keys(by).sort(), ["bad-key", "bad-slot", "good", "no-page", "not-json", "plain"], "a refused description hides nothing");
-  assert.deepEqual(by.good!.spec?.roles.map((r) => r.id), ["main", "r"]);
+  assert.deepEqual(Object.keys(by).sort(), ["bad-key", "good", "no-page", "not-json", "plain"], "a refused description hides nothing");
+  assert.deepEqual(by.good!.spec?.teams.map((t) => [t.id, t.members.map((m) => m.id)]), [["t", ["r"]]]);
   assert.equal(by.good!.specError, undefined);
   assert.deepEqual([by.plain!.spec, by.plain!.specError], [undefined, undefined], "no playbook.json: a plain playbook");
-  assert.equal(by["no-page"]!.specError, `roles.r.prompt: "roles/r.md" isn't in the playbook's folder.`);
-  assert.equal(by["bad-key"]!.specError, `playbook.json: unknown key "colour". Known: version, listed, run, inputs, facts, roles, steps, machine, commands.`);
+  assert.equal(by["no-page"]!.specError, `teams.t.members.r.notes: "references/roles/r.md" isn't in the playbook's folder.`);
+  assert.equal(by["bad-key"]!.specError, `playbook.json: unknown key "colour". Known: version, listed, run, inputs, facts, teams, steps, machine, commands.`);
   assert.match(by["not-json"]!.specError!, /^playbook\.json: isn't valid JSON \(/);
-  assert.equal(by["bad-slot"]!.specError, `roles.r.prompt: "{{nope}}" isn't an input or fact ("run", "folder", "note").`);
-  for (const id of ["no-page", "bad-key", "not-json", "bad-slot"]) assert.equal(by[id]!.spec, undefined);
+  for (const id of ["no-page", "bad-key", "not-json"]) assert.equal(by[id]!.spec, undefined);
 });
 
 test("listed: false leaves a playbook out of the list in every folder, unless Sova's own caller asks for it", async () => {

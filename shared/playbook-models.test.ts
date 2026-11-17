@@ -56,18 +56,17 @@ test("the reason says what couldn't run and what runs instead", () => {
   assert.deepEqual([none.use, none.reason], [C, "Your profile has no model for routine work, so this chat's model"]);
 });
 
-test("a whole cast: each role resolved from the description, your picks applied by role", () => {
+test("a whole cast: each required member resolved from the description, your picks applied by member; the main chat is never resolved", () => {
   const spec = parsePlaybookSpec({
     version: 1,
-    roles: {
-      grader: { label: "Grader", prompt: "roles/grader.md", only: true, models: [{ model: "list/a", effort: "high" }] },
-      writer: { label: "Writer", prompt: "roles/writer.md", kind: "planning" },
-    },
-    steps: [{ id: "s", label: "S", roles: ["grader", "writer"] }],
+    teams: { bench: { goal: "Grade the replies", members: {
+      grader: { label: "Grader", brief: "Grades blind", only: true, models: [{ model: "list/a", effort: "high" }] },
+      writer: { label: "Writer", brief: "Writes the report", kind: "planning" },
+    } } },
+    steps: [{ id: "s", label: "S", teams: ["bench"] }],
   }) as PlaybookSpec;
   const cast = resolveCast(spec, { writer: B }, ctx(new Set(["list/a"])));
-  assert.deepEqual(Object.keys(cast), ["main", "grader", "writer"]);
-  assert.deepEqual([cast.main!.use, cast.main!.source], [C, "chat"]);
+  assert.deepEqual(Object.keys(cast), ["grader", "writer"]);
   assert.equal(cast.grader!.use, null);
   assert.deepEqual([cast.writer!.use, cast.writer!.source], [B, "pick"]);
 });

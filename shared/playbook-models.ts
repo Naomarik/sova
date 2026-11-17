@@ -1,5 +1,5 @@
 /**
- * Which model each playbook role gets: one pure resolver, used by the card, by
+ * Which model each playbook member gets: one pure resolver, used by the card, by
  * Start (the frozen plan) and later by every scheduled fire. The order, first usable wins:
  *
  *   1. your pick on the card (or your saved default for this playbook);
@@ -16,7 +16,7 @@
  * how a model is named in words (`name`).
  */
 import type { DelegateProfileId, WorkerChoice } from "./protocol";
-import type { PlaybookSpec } from "./playbook-format";
+import { membersOf, type PlaybookSpec } from "./playbook-format";
 
 /** Your profile's route for one kind of work (Delegate's settings shape). */
 export interface KindRoute {
@@ -120,11 +120,11 @@ function reasonText(skipped: ChainEntry[], use: ChainEntry, name: (c: WorkerChoi
   return `${cap(parts.join(", and "))}, so ${who}`;
 }
 
-/** Every role of a playbook, resolved: `picks` are your card picks (or saved defaults) by role id. */
-export function resolveCast(spec: Pick<PlaybookSpec, "roles">, picks: Readonly<Record<string, WorkerChoice | null | undefined>>, ctx: ResolveContext): Record<string, ResolvedRoleModel> {
+/** Every required member of a playbook's teams, resolved: `picks` are your card picks (or saved defaults) by member id. */
+export function resolveCast(spec: Pick<PlaybookSpec, "teams">, picks: Readonly<Record<string, WorkerChoice | null | undefined>>, ctx: ResolveContext): Record<string, ResolvedRoleModel> {
   const out: Record<string, ResolvedRoleModel> = {};
-  for (const r of spec.roles) {
-    out[r.id] = resolveRoleModel({ pick: picks[r.id] ?? null, list: r.models.map((m) => m.choice), only: r.only, ...(r.kind ? { kind: r.kind } : {}) }, ctx);
+  for (const m of membersOf(spec)) {
+    out[m.id] = resolveRoleModel({ pick: picks[m.id] ?? null, list: m.models.map((x) => x.choice), only: m.only, ...(m.kind ? { kind: m.kind } : {}) }, ctx);
   }
   return out;
 }

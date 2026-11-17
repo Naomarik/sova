@@ -3,7 +3,7 @@ import { isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { PLAYBOOK_ENTRIES, PLAYBOOK_PROPOSES, type PlaybookProposes, type PlaybookCatalog, type PlaybookEntry, type PlaybookInfo, type PlaybookSchedule } from "../shared/protocol";
 import { scheduleOf, scheduleText } from "../shared/schedules";
-import { PLAYBOOK_JSON, pagesOf, parsePlaybookSpec, validatePlaybookFiles, validatePromptSlots, type PlaybookSpec } from "../shared/playbook-format";
+import { PLAYBOOK_JSON, pagesOf, parsePlaybookSpec, validatePlaybookFiles, type PlaybookSpec } from "../shared/playbook-format";
 import { defaultRemoteOf, type RemoteCwd } from "./files";
 import { projectOf } from "./project-root";
 import { stateRoot } from "./state-root";
@@ -129,7 +129,7 @@ export async function playbookProposes(dir: string): Promise<boolean> {
 /**
  * A playbook folder's `playbook.json`, read strictly: null when the
  * folder has none (a plain playbook), else the description or the exact fault. A page it names that
- * isn't in the folder is a fault too, and so is a role prompt's `{{slot}}` that names nothing.
+ * isn't in the folder (a phase, a stop rule, a member's notes) is a fault too.
  */
 export async function readPlaybookSpec(dir: string): Promise<{ spec: PlaybookSpec } | { error: string } | null> {
   let text: string;
@@ -157,11 +157,7 @@ export async function readPlaybookSpec(dir: string): Promise<{ spec: PlaybookSpe
     }
   }
   const [missing] = validatePlaybookFiles(spec, present);
-  if (missing) return { error: missing };
-  const prompts: Record<string, string> = {};
-  for (const r of spec.roles) if (r.prompt && r.id !== "main") prompts[r.prompt] ??= await readFile(join(dir, r.prompt), "utf8").catch(() => "");
-  const [slot] = validatePromptSlots(spec, prompts);
-  return slot ? { error: slot } : { spec };
+  return missing ? { error: missing } : { spec };
 }
 
 async function readOne(dir: string, id: string, source: Source): Promise<{ info: PlaybookInfo; fields: Record<string, string> }> {

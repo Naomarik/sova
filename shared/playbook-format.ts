@@ -3,9 +3,11 @@
  * strictly parsed like an automation file (shared/automations.ts parseAutomation): every key known,
  * every type right, or the exact error. A playbook without one works exactly as before (text only).
  *
- * It declares four things: your choices (`inputs`, plus `facts` a look-up may fill), the cast
- * (`roles`, each with an ordered model chain), the flow (`steps` with stop points and at most one
- * repeating group, or an optional `machine`, never both), and how it runs (`run`). Plus `listed`
+ * It declares four things: your choices (`inputs`, plus `facts` a look-up may fill), who runs it
+ * (`teams`: each a goal and the members it must have, each member a one-line brief and an ordered
+ * model chain; the main chat is the one you chose and is never declared), the flow (`steps` with
+ * stop points and at most one repeating group, or an optional `machine`, never both), and how it
+ * runs (`run`). Plus `listed`
  * (false: only Sova starts it; hidden from the Playbooks list and the / rows) and `commands` (the
  * catalogue ids of the Sova commands that change things which the run may use).
  *
@@ -24,7 +26,7 @@ export const PLAYBOOK_FORMAT_VERSION = 1;
 export const ROLE_KINDS = ["planning", "investigation", "routine", "complex"] as const satisfies readonly DelegateProfileId[];
 export type RoleKind = (typeof ROLE_KINDS)[number];
 
-/** The main chat's role id: always present, declared or not. */
+/** The main chat's name, reserved: a playbook never declares it (the main chat is the one you chose). */
 export const MAIN_ROLE = "main";
 
 // ── run ──────────────────────────────────────────────────────────────────────────────────────────
@@ -126,35 +128,55 @@ export interface PlaybookFact {
   help?: string;
 }
 
-// ── roles (the cast) ─────────────────────────────────────────────────────────────────────────────
+// ── teams (who runs it) ──────────────────────────────────────────────────────────────────────────
 
-/** How many helpers of a role: a fixed number, or the value of a number input. */
+/** How many helpers of a member: a fixed number, or the value of a number input. */
 export type RoleCount = { n: number } | { input: string };
 
-export interface PlaybookRole {
+/** A member a team must have: why it is picked (its brief) and which models it runs on. The team's
+    coordinator writes its actual instructions; Sova never writes a prompt for it. */
+export interface PlaybookMember {
+  /** Unique across the playbook (the card's edits are keyed by it). */
   id: string;
+  /** The team it belongs to. */
+  team: string;
   label: string;
-  /** The role's prompt file, relative to the playbook folder (roles/<id>.md), with {{input}} slots.
-      Required for every helper; for main, absent = the PLAYBOOK.md body. */
-  prompt?: string;
+  /** One line: what this member is for, so you see why it is picked for the team. */
+  brief: string;
+  /** Its working notes, a page in the folder (references/roles/<id>.md) the coordinator reads. */
+  notes?: string;
   /** Your profile's model for this kind of work is the fallback once `models` runs out. */
   kind?: RoleKind;
-  /** The preferred order. Empty: the role follows your profile (or the chat's own model). */
+  /** The preferred order. Empty: the member follows your profile (or the chat's own model). */
   models: PlaybookModel[];
-  /** "Only these models": one of `models` or the role doesn't run (blocks Start). */
+  /** "Only these models": one of `models` or the member doesn't run (blocks Start). */
   only: boolean;
-  /** One helper per… `count` (a number or a number input) or `per` (one per item of a multi, list
+  /** How many of it: `count` (a number or a number input) or `per` (one per item of a multi, list
       or models input). Neither: one. Never both. */
   count?: RoleCount;
   per?: { input: string };
-  /** You may turn the role off on the card. `startsOff`: it is off unless you turn it on. */
+  /** You may turn it off on the card. `startsOff`: it is off unless you turn it on. */
   optional: boolean;
   startsOff: boolean;
-  /** "blind": the role must not see which arm is which (a blind grader); its brief says so. */
+  /** "blind": it must not see which arm is which (a blind grader). */
   sees: "all" | "blind";
   /** "cycle": started anew each cycle; "run" (default): kept for the whole run. */
   fresh: "run" | "cycle";
 }
+
+/** A team: its goal, and the members it must have. The team adds anyone else it needs; a lone
+    helper is a team of one. Every team gets Sova's coordinator and monitor (never declared). */
+export interface PlaybookTeam {
+  id: string;
+  label: string;
+  /** One line: what the team is for. */
+  goal: string;
+  /** Its required members, in declaration order; may be none. */
+  members: PlaybookMember[];
+}
+
+/** @deprecated The cast is now teams of members (PlaybookMember). */
+export type PlaybookRole = PlaybookMember;
 
 // ── flow: steps ──────────────────────────────────────────────────────────────────────────────────
 
@@ -164,12 +186,10 @@ export type StepReport = (typeof STEP_REPORTS)[number];
 export interface PlaybookStep {
   id: string;
   label: string;
-  /** Role ids that work in this step; "main" may be named without being declared. */
-  roles: string[];
-  /** How the step's helpers run: as one team (Sova adds a coordinator and a monitor) or as
-      separate helpers. A team is two or more helper ROLES (not one role with a count): derived so,
-      and `team: true` on a step with fewer is refused; `team: false` splits a multi-role step. */
-  team: boolean;
+  /** One line: what this step achieves. */
+  goal?: string;
+  /** The teams that work in this step, by id; none: the main chat alone. */
+  teams: string[];
   /** "always": the run waits for you here; "optional": a tick on the card; absent: runs through. */
   stop?: "always" | "optional";
   /** For an optional stop: off unless you turn it on. */
@@ -229,8 +249,9 @@ export interface MachineTransition {
 export interface MachineState {
   id: string;
   label: string;
-  roles: string[];
-  team: boolean;
+  goal?: string;
+  /** The teams that work in this state; none: the main chat alone. */
+  teams: string[];
   stop?: "always" | "optional";
   startsOff: boolean;
   report?: StepReport;
@@ -255,10 +276,10 @@ export interface PlaybookSpec {
   run: PlaybookRun;
   inputs: PlaybookInput[];
   facts: PlaybookFact[];
-  /** In declaration order. Always has `main` (declared, or the default main: no prompt, no models). */
-  roles: PlaybookRole[];
-  /** Exactly one of `steps` and `machine` is non-empty/present; neither is allowed only with no roles
-      beyond main (a declaration that only sets listed or run). */
+  /** In declaration order. The main chat is never one of them. */
+  teams: PlaybookTeam[];
+  /** At most one of `steps` and `machine`; neither only with no teams (a declaration that only sets
+      listed or run). */
   steps: PlaybookFlowItem[];
   machine?: PlaybookMachine;
   /** Catalogue ids (shared/commands-ids.json) of the Sova commands the run uses. Those that change
@@ -276,7 +297,7 @@ const fail = (path: string, fault: string): never => {
   throw new Fault(`${path}: ${fault}`);
 };
 
-const TOP_KEYS = ["version", "listed", "run", "inputs", "facts", "roles", "steps", "machine", "commands"];
+const TOP_KEYS = ["version", "listed", "run", "inputs", "facts", "teams", "steps", "machine", "commands"];
 const RUN_KEYS = ["where", "worktree", "mode", "minorModes", "permissions", "needs"];
 const INPUT_BASE_KEYS = ["id", "label", "help", "type", "ask", "required", "each", "default"];
 const INPUT_TYPE_KEYS: Record<InputType, string[]> = {
@@ -288,12 +309,20 @@ const INPUT_TYPE_KEYS: Record<InputType, string[]> = {
   list: [],
   models: [],
 };
-const MAIN_KEYS = ["label", "prompt", "kind", "models", "only"];
-const ROLE_KEYS = [...MAIN_KEYS, "count", "per", "optional", "startsOff", "sees", "fresh"];
-const STEP_KEYS = ["id", "label", "roles", "team", "stop", "startsOff", "asks", "report", "phase"];
+const TEAM_KEYS = ["label", "goal", "members"];
+const MEMBER_KEYS = ["label", "brief", "notes", "kind", "models", "only", "count", "per", "optional", "startsOff", "sees", "fresh"];
+const STEP_KEYS = ["id", "label", "goal", "teams", "stop", "startsOff", "asks", "report", "phase"];
 const GROUP_KEYS = ["id", "label", "repeat", "steps"];
 const REPEAT_KEYS = ["max", "askEvery", "until", "rule", "carry"];
-const STATE_KEYS = ["label", "roles", "team", "stop", "startsOff", "report", "phase", "on", "quiet"];
+const STATE_KEYS = ["label", "goal", "teams", "stop", "startsOff", "report", "phase", "on", "quiet"];
+/** What an old key became, said with the unknown-key fault. */
+const MOVED: Record<string, string> = {
+  roles: `"roles" is now "teams": each team has a goal and the members it must have`,
+  team: `a step names the "teams" that work in it`,
+  prompt: `a member has a one-line "brief", not a prompt page; working detail goes in a "notes" page under references/`,
+};
+const GOAL_MAX = 200;
+const BRIEF_MAX = 160;
 const MODEL_KEYS = ["model", "effort"];
 
 /** An input, fact, role, step or state id: also its `{{slot}}` name in prompts. */
@@ -310,7 +339,19 @@ const list = (xs: readonly string[]) => xs.map((x) => `"${x}"`).join(", ");
 
 function keysOnly(o: Record<string, unknown>, known: readonly string[], path: string): void {
   const bad = Object.keys(o).filter((k) => !known.includes(k));
-  if (bad.length) fail(path, `unknown key ${list(bad)}. Known: ${known.join(", ")}.`);
+  const moved = bad.map((k) => MOVED[k]).find(Boolean);
+  if (bad.length) fail(path, `unknown key ${list(bad)}${moved ? ` (${moved})` : ""}. Known: ${known.join(", ")}.`);
+}
+/** A goal or brief may show your choices as `{{inputId}}` / `{{factId}}`; any other slot is a fault. */
+function slotted(t: string, path: string, known: readonly string[]): string {
+  for (const slot of slotsIn(t)) if (!known.includes(slot)) fail(path, `"{{${slot}}}" isn't an input or fact (${list(known) || "none declared"}).`);
+  return t;
+}
+/** One line of words: no line breaks. */
+function line(v: unknown, path: string, max: number): string {
+  const t = text(v, path, max);
+  if (/[\r\n]/.test(t)) fail(path, "is one line.");
+  return t;
 }
 function obj(v: unknown, path: string): Record<string, unknown> {
   if (!isObj(v)) fail(path, "must be an object.");
@@ -348,7 +389,7 @@ function id(v: unknown, path: string): string {
 function page(v: unknown, path: string): string {
   const p = text(v, path, 200);
   if (p.startsWith("/") || p.includes("\\") || p.split("/").some((s) => s === ".." || s === "." || s === "") || !p.endsWith(".md"))
-    fail(path, `must be a markdown file inside the playbook's folder, like "roles/grader.md".`);
+    fail(path, `must be a markdown file inside the playbook's folder, like "phases/measure.md".`);
   return p;
 }
 
@@ -493,22 +534,22 @@ function parseFact(v: unknown, i: number): PlaybookFact {
   return { id: id(o.id, `${path}.id`), label: text(o.label, `${path}.label`, 80), ...(help ? { help } : {}) };
 }
 
-function parseRole(roleId: string, v: unknown, inputs: PlaybookInput[]): PlaybookRole {
-  const path = `roles.${roleId}`;
+function parseMember(teamId: string, memberId: string, v: unknown, inputs: PlaybookInput[], slots: string[]): PlaybookMember {
+  const path = `teams.${teamId}.members.${memberId}`;
+  id(memberId, path);
+  if (memberId === MAIN_ROLE) fail(path, "the main chat is the one you chose; a playbook doesn't declare it.");
   const o = obj(v, path);
-  const main = roleId === MAIN_ROLE;
-  if (main) {
-    const extra = Object.keys(o).filter((k) => ROLE_KEYS.includes(k) && !MAIN_KEYS.includes(k));
-    if (extra.length) fail(path, `${list(extra)} is for helper roles only; the main chat is always one.`);
-  }
-  keysOnly(o, main ? MAIN_KEYS : ROLE_KEYS, path);
+  keysOnly(o, MEMBER_KEYS, path);
   const ms = models(o.models, `${path}.models`);
   const only = bool(o.only, `${path}.only`, false);
   if (only && !ms.length) fail(`${path}.only`, `"only these models" needs a "models" list.`);
-  const role: PlaybookRole = {
-    id: roleId,
-    label: main ? (optText(o.label, `${path}.label`, 60) ?? "Main chat") : text(o.label, `${path}.label`, 60),
-    ...(o.prompt !== undefined ? { prompt: page(o.prompt, `${path}.prompt`) } : {}),
+  if (o.brief === undefined) fail(`${path}.brief`, "is required: one line saying what this member is for.");
+  const m: PlaybookMember = {
+    id: memberId,
+    team: teamId,
+    label: line(o.label, `${path}.label`, 60),
+    brief: slotted(line(o.brief, `${path}.brief`, BRIEF_MAX), `${path}.brief`, slots),
+    ...(o.notes !== undefined ? { notes: page(o.notes, `${path}.notes`) } : {}),
     ...(o.kind !== undefined ? { kind: oneOf(o.kind, ROLE_KINDS, `${path}.kind`) } : {}),
     models: ms,
     only,
@@ -517,17 +558,16 @@ function parseRole(roleId: string, v: unknown, inputs: PlaybookInput[]): Playboo
     sees: o.sees === undefined ? "all" : oneOf(o.sees, ["all", "blind"] as const, `${path}.sees`),
     fresh: o.fresh === undefined ? "run" : oneOf(o.fresh, ["run", "cycle"] as const, `${path}.fresh`),
   };
-  if (!main && role.prompt === undefined) fail(`${path}.prompt`, `is required: a helper's prompt page, like "roles/${roleId}.md".`);
-  if (role.startsOff && !role.optional) fail(`${path}.startsOff`, `needs "optional": true (only a role you may turn off can start off).`);
+  if (m.startsOff && !m.optional) fail(`${path}.startsOff`, `needs "optional": true (only a member you may turn off can start off).`);
   if (o.count !== undefined && o.per !== undefined) fail(path, `has "count" and "per"; use one.`);
   if (o.count !== undefined) {
-    if (typeof o.count === "number") role.count = { n: int(o.count, `${path}.count`, 1, MAX_HELPERS) };
+    if (typeof o.count === "number") m.count = { n: int(o.count, `${path}.count`, 1, MAX_HELPERS) };
     else {
       const c = obj(o.count, `${path}.count`);
       keysOnly(c, ["input"], `${path}.count`);
       const inp = inputs.find((x) => x.id === c.input);
       if (!inp || inp.type !== "number") fail(`${path}.count.input`, `must name a number input (${list(inputs.filter((x) => x.type === "number").map((x) => x.id)) || "none declared"}).`);
-      role.count = { input: c.input as string };
+      m.count = { input: c.input as string };
     }
   }
   if (o.per !== undefined) {
@@ -536,23 +576,53 @@ function parseRole(roleId: string, v: unknown, inputs: PlaybookInput[]): Playboo
     const kinds: InputType[] = ["multi", "list", "models"];
     const inp = inputs.find((x) => x.id === c.input);
     if (!inp || !kinds.includes(inp.type)) fail(`${path}.per.input`, `must name a multi, list or models input (${list(inputs.filter((x) => kinds.includes(x.type)).map((x) => x.id)) || "none declared"}).`);
-    role.per = { input: c.input as string };
+    m.per = { input: c.input as string };
   }
-  return role;
+  return m;
 }
 
-function parseStepFields(o: Record<string, unknown>, path: string, roles: PlaybookRole[]): PlaybookStep {
-  const sid = id(o.id, `${path}.id`);
-  const rs = arr(o.roles, `${path}.roles`);
-  if (!rs.length) fail(`${path}.roles`, "names at least one role.");
-  const known = roles.map((r) => r.id);
-  rs.forEach((r, j) => {
-    if (typeof r !== "string" || !known.includes(r)) fail(`${path}.roles[${j}]`, `must be a declared role: ${list(known)}.`);
-    if (rs.indexOf(r) !== j) fail(`${path}.roles[${j}]`, `"${r as string}" is named twice.`);
+function parseTeams(v: unknown, inputs: PlaybookInput[], slots: string[]): PlaybookTeam[] {
+  if (v === undefined) return [];
+  const to = obj(v, "teams");
+  const teams = Object.entries(to).map(([tid, t]): PlaybookTeam => {
+    const path = `teams.${tid}`;
+    id(tid, path);
+    if (tid === MAIN_ROLE) fail(path, "the main chat is the one you chose; a playbook doesn't declare it.");
+    const o = obj(t, path);
+    keysOnly(o, TEAM_KEYS, path);
+    if (o.goal === undefined) fail(`${path}.goal`, "is required: one line saying what the team is for.");
+    const mo = o.members === undefined ? {} : obj(o.members, `${path}.members`);
+    return {
+      id: tid,
+      label: o.label === undefined ? tid : line(o.label, `${path}.label`, 60),
+      goal: slotted(line(o.goal, `${path}.goal`, GOAL_MAX), `${path}.goal`, slots),
+      members: Object.entries(mo).map(([mid, m]) => parseMember(tid, mid, m, inputs, slots)),
+    };
   });
-  const helpers = (rs as string[]).filter((r) => r !== MAIN_ROLE).length;
-  const team = bool(o.team, `${path}.team`, helpers >= 2);
-  if (team && helpers < 2) fail(`${path}.team`, "a team is two or more helper roles; one role's helpers (however many) run as separate helpers.");
+  const seen = new Map<string, string>();
+  for (const t of teams)
+    for (const m of t.members) {
+      const other = seen.get(m.id) ?? (teams.some((x) => x.id === m.id) ? "" : undefined);
+      if (other !== undefined) fail(`teams.${t.id}.members.${m.id}`, other ? `"${m.id}" is already a member of team "${other}"; a member's name is unique in the playbook.` : `"${m.id}" is a team's name; a member's name is unique in the playbook.`);
+      seen.set(m.id, t.id);
+    }
+  return teams;
+}
+
+/** A step's or state's `teams`: declared team ids, each once. */
+function teamRefs(v: unknown, path: string, teams: PlaybookTeam[]): string[] {
+  if (v === undefined) return [];
+  const xs = arr(v, path);
+  const known = teams.map((t) => t.id);
+  xs.forEach((t, j) => {
+    if (typeof t !== "string" || !known.includes(t)) fail(`${path}[${j}]`, `must be a declared team: ${list(known) || "none declared"}.`);
+    if (xs.indexOf(t) !== j) fail(`${path}[${j}]`, `"${t as string}" is named twice.`);
+  });
+  return xs as string[];
+}
+
+function parseStepFields(o: Record<string, unknown>, path: string, teams: PlaybookTeam[], slots: string[]): PlaybookStep {
+  const sid = id(o.id, `${path}.id`);
   const stop = o.stop === undefined ? undefined : oneOf(o.stop, ["always", "optional"] as const, `${path}.stop`);
   const startsOff = bool(o.startsOff, `${path}.startsOff`, false);
   if (startsOff && stop !== "optional") fail(`${path}.startsOff`, `needs "stop": "optional" (only an optional stop can start off).`);
@@ -560,8 +630,8 @@ function parseStepFields(o: Record<string, unknown>, path: string, roles: Playbo
   return {
     id: sid,
     label: text(o.label, `${path}.label`, 80),
-    roles: rs as string[],
-    team,
+    ...(o.goal !== undefined ? { goal: slotted(line(o.goal, `${path}.goal`, GOAL_MAX), `${path}.goal`, slots) } : {}),
+    teams: teamRefs(o.teams, `${path}.teams`, teams),
     ...(stop ? { stop } : {}),
     startsOff,
     asks,
@@ -583,7 +653,7 @@ function parseRepeat(v: unknown, path: string): { settings: CycleSettings; rule?
   return { settings: { max, askEvery, until }, ...(rule ? { rule } : {}), ...(carry ? { carry } : {}) };
 }
 
-function parseSteps(v: unknown, roles: PlaybookRole[]): PlaybookFlowItem[] {
+function parseSteps(v: unknown, teams: PlaybookTeam[], slots: string[]): PlaybookFlowItem[] {
   const xs = arr(v, "steps");
   if (!xs.length) fail("steps", "lists at least one step.");
   let group: string | null = null;
@@ -592,7 +662,7 @@ function parseSteps(v: unknown, roles: PlaybookRole[]): PlaybookFlowItem[] {
     const o = obj(x, path);
     if (o.repeat === undefined && o.steps === undefined) {
       keysOnly(o, STEP_KEYS, path);
-      return { kind: "step" as const, ...parseStepFields(o, path, roles) };
+      return { kind: "step" as const, ...parseStepFields(o, path, teams, slots) };
     }
     keysOnly(o, GROUP_KEYS, path);
     if (group !== null) fail(path, `a playbook has at most one repeating group ("${group}" is one).`);
@@ -605,7 +675,7 @@ function parseSteps(v: unknown, roles: PlaybookRole[]): PlaybookFlowItem[] {
       const s = obj(y, p);
       if (s.repeat !== undefined || s.steps !== undefined) fail(p, "a repeating group holds plain steps only.");
       keysOnly(s, STEP_KEYS, p);
-      return parseStepFields(s, p, roles);
+      return parseStepFields(s, p, teams, slots);
     });
     group = id(o.id, `${path}.id`);
     return { kind: "cycle" as const, id: group, label: text(o.label, `${path}.label`, 80), ...cycle, steps };
@@ -618,25 +688,18 @@ function parseSteps(v: unknown, roles: PlaybookRole[]): PlaybookFlowItem[] {
   return out;
 }
 
-function parseMachine(v: unknown, roles: PlaybookRole[]): PlaybookMachine {
+function parseMachine(v: unknown, teams: PlaybookTeam[], slots: string[]): PlaybookMachine {
   const o = obj(v, "machine");
   keysOnly(o, ["initial", "states"], "machine");
   const so = obj(o.states, "machine.states");
   const names = Object.keys(so);
   if (names.length < 2) fail("machine.states", "declares at least two states.");
-  const known = roles.map((r) => r.id);
   const states: MachineState[] = names.map((sid) => {
     const path = `machine.states.${sid}`;
     id(sid, path);
     const s = obj(so[sid], path);
     keysOnly(s, STATE_KEYS, path);
-    const rs = s.roles === undefined ? [MAIN_ROLE] : arr(s.roles, `${path}.roles`);
-    rs.forEach((r, j) => {
-      if (typeof r !== "string" || !known.includes(r)) fail(`${path}.roles[${j}]`, `must be a declared role: ${list(known)}.`);
-    });
-    const helpers = (rs as string[]).filter((r) => r !== MAIN_ROLE).length;
-    const team = bool(s.team, `${path}.team`, helpers >= 2);
-    if (team && helpers < 2) fail(`${path}.team`, "a team is two or more helper roles; one role's helpers (however many) run as separate helpers.");
+    const stateTeams = teamRefs(s.teams, `${path}.teams`, teams);
     const stop = s.stop === undefined ? undefined : oneOf(s.stop, ["always", "optional"] as const, `${path}.stop`);
     const startsOff = bool(s.startsOff, `${path}.startsOff`, false);
     if (startsOff && stop !== "optional") fail(`${path}.startsOff`, `needs "stop": "optional".`);
@@ -660,8 +723,8 @@ function parseMachine(v: unknown, roles: PlaybookRole[]): PlaybookMachine {
     return {
       id: sid,
       label: text(s.label, `${path}.label`, 80),
-      roles: rs as string[],
-      team,
+      ...(s.goal !== undefined ? { goal: slotted(line(s.goal, `${path}.goal`, GOAL_MAX), `${path}.goal`, slots) } : {}),
+      teams: stateTeams,
       ...(stop ? { stop } : {}),
       startsOff,
       ...(s.report !== undefined ? { report: oneOf(s.report, STEP_REPORTS, `${path}.report`) } : {}),
@@ -716,30 +779,26 @@ export function parsePlaybookSpec(raw: unknown): ParseResult<PlaybookSpec> {
     slots.forEach((s, i) => {
       if (slots.indexOf(s) !== i) fail(i < inputs.length ? `inputs[${i}].id` : `facts[${i - inputs.length}].id`, `"${s}" is used twice (inputs and facts share their names).`);
     });
-    const ro = o.roles === undefined ? {} : obj(o.roles, "roles");
-    const roles = Object.entries(ro).map(([rid, v]) => (id(rid, `roles.${rid}`), parseRole(rid, v, inputs)));
-    if (!roles.some((r) => r.id === MAIN_ROLE)) roles.unshift({ id: MAIN_ROLE, label: "Main chat", models: [], only: false, optional: false, startsOff: false, sees: "all", fresh: "run" });
+    const teams = parseTeams(o.teams, inputs, slots);
     if (o.steps !== undefined && o.machine !== undefined) fail("playbook.json", `has both "steps" and "machine"; use one.`);
-    const steps = o.steps === undefined ? [] : parseSteps(o.steps, roles);
-    const machine = o.machine === undefined ? undefined : parseMachine(o.machine, roles);
-    const helpers = roles.filter((r) => r.id !== MAIN_ROLE);
-    if (helpers.length && !steps.length && !machine) fail("playbook.json", `declares helper roles but no "steps" (or "machine") that use them.`);
-    const used = new Set([...stepsOf(steps).flatMap((s) => s.roles), ...(machine?.states.flatMap((s) => s.roles) ?? [])]);
-    for (const r of helpers) if (!used.has(r.id)) fail(`roles.${r.id}`, `no step names it.`);
+    const steps = o.steps === undefined ? [] : parseSteps(o.steps, teams, slots);
+    const machine = o.machine === undefined ? undefined : parseMachine(o.machine, teams, slots);
+    if (teams.length && !steps.length && !machine) fail("playbook.json", `declares teams but no "steps" (or "machine") that use them.`);
+    const used = new Set([...stepsOf(steps).flatMap((s) => s.teams), ...(machine?.states.flatMap((s) => s.teams) ?? [])]);
+    for (const t of teams) if (!used.has(t.id)) fail(`teams.${t.id}`, `no step names it.`);
     const hasCycle = steps.some((s) => s.kind === "cycle");
     inputs.forEach((x, i) => {
       if (x.each === "cycle" && !hasCycle) fail(`inputs[${i}].each`, `"cycle" needs a repeating group in "steps".`);
     });
-    roles.forEach((r) => {
-      if (r.fresh === "cycle" && !hasCycle) fail(`roles.${r.id}.fresh`, `"cycle" needs a repeating group in "steps".`);
-    });
+    for (const m of membersOf({ teams }))
+      if (m.fresh === "cycle" && !hasCycle) fail(`teams.${m.team}.members.${m.id}.fresh`, `"cycle" needs a repeating group in "steps".`);
     return {
       version: 1,
       listed: bool(o.listed, "listed", true),
       run,
       inputs,
       facts,
-      roles,
+      teams,
       steps,
       ...(machine ? { machine } : {}),
       commands: parseCommands(o.commands),
@@ -789,7 +848,7 @@ export function validatePlaybookFiles(spec: PlaybookSpec, files: readonly string
 /** Every page in the folder the description points at, with where it says so; in file order. */
 export function pagesOf(spec: PlaybookSpec): { path: string; file: string }[] {
   const out: { path: string; file: string }[] = [];
-  for (const r of spec.roles) if (r.prompt) out.push({ path: `roles.${r.id}.prompt`, file: r.prompt });
+  for (const m of membersOf(spec)) if (m.notes) out.push({ path: `teams.${m.team}.members.${m.id}.notes`, file: m.notes });
   spec.steps.forEach((it, i) => {
     if (it.kind === "step") {
       if (it.phase) out.push({ path: `steps[${i}].phase`, file: it.phase });
@@ -809,42 +868,21 @@ export const isPageRef = (rule: string): boolean => rule.endsWith(".md") && !/\s
 
 // ── slots ────────────────────────────────────────────────────────────────────────────────────────
 
-/** Slots every role prompt may use besides its inputs and facts, filled at Start: `run`, the run's
-    folder (where a helper writes); `folder`, the playbook's own folder (its scripts and references:
-    helpers get no playbook block); `note`, your note for the role on the card (empty when none). */
-export const RUN_SLOTS = ["run", "folder", "note"] as const;
-/** The slot a role with `count` or `per` may use: which one it is (the item of `per`'s input, as
-    inputValueText words it, or "2 of 3" for `count`). */
-export const EACH_SLOT = "each";
 const SLOT_RE = /\{\{\s*([^{}\s]+)\s*\}\}/g;
 
-/** The `{{slot}}` names a page uses, each once, in order. */
+/** The `{{slot}}` names a text uses, each once, in order. */
 export function slotsIn(text: string): string[] {
   return [...new Set([...text.matchAll(SLOT_RE)].map((m) => m[1]!))];
 }
 
-/**
- * Every `{{slot}}` in a helper's prompt names an input, a fact or a built-in slot (
- * a broken reference is a fault). `pages` maps each prompt page (relative) to its text; a page not in
- * it is skipped. Returns the faults, first first.
- */
-export function validatePromptSlots(spec: PlaybookSpec, pages: Readonly<Record<string, string>>): string[] {
-  const known = new Set<string>([...spec.inputs.map((x) => x.id), ...spec.facts.map((x) => x.id), ...RUN_SLOTS]);
-  const out: string[] = [];
-  for (const r of spec.roles) {
-    // The main chat's page is its own text, not a brief Sova fills: it gets your choices in the run's message.
-    if (r.id === MAIN_ROLE || !r.prompt || pages[r.prompt] === undefined) continue;
-    const many = r.count !== undefined || r.per !== undefined;
-    for (const slot of slotsIn(pages[r.prompt]!)) {
-      if (known.has(slot) || (many && slot === EACH_SLOT)) continue;
-      out.push(
-        slot === EACH_SLOT
-          ? `roles.${r.id}.prompt: "{{each}}" is only for a role with "count" or "per".`
-          : `roles.${r.id}.prompt: "{{${slot}}}" isn't an input or fact (${[...known].map((k) => `"${k}"`).join(", ")}${many ? `, "each"` : ""}).`,
-      );
-    }
-  }
-  return out;
+/** Every required member, team by team, in declaration order. */
+export function membersOf(spec: Pick<PlaybookSpec, "teams">): PlaybookMember[] {
+  return spec.teams.flatMap((t) => t.members);
+}
+
+/** A goal or brief with its `{{slots}}` filled from your choices (inputValueText words; a fact not looked up: as given). */
+export function fillSlots(text: string, words: Readonly<Record<string, string>>): string {
+  return text.replace(SLOT_RE, (whole, name: string) => words[name] ?? whole);
 }
 
 // ── values ───────────────────────────────────────────────────────────────────────────────────────

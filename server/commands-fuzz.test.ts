@@ -275,6 +275,7 @@ const TYPE_ACCEPTS: Record<string, string> = {
 /** Why an entry is validate-only: its valid call starts a process the unit tier may not start. */
 const VALIDATE_ONLY: Record<string, string> = {
   "design.setup.set": "acts on a run only a main chat's design tool makes; server/design/batch.test.ts drives runs",
+  "design.setup.hide": "acts on a run only a main chat's design tool makes; server/design/setup-change.test.ts drives it",
   "design.start": "starts a model session on the coordinator's model",
   "design.message": "drives a design's model session",
   "design.refine": "drives a design's model session",

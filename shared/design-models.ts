@@ -35,6 +35,11 @@ export function designSectionOf(ref: string): DesignSection {
   return { id: p, name: p ? `${p[0]!.toUpperCase()}${p.slice(1)}` : "Other" };
 }
 
+/** A section's name by its id ("ollama" → "Ollama on this computer"). */
+export function designSectionName(id: string): string {
+  return SECTION_BY_ID.get(id)?.name ?? (id ? `${id[0]!.toUpperCase()}${id.slice(1)}` : "Other");
+}
+
 /** The words the main chat may use for a whole section, each naming exactly one. */
 const SECTION_WORDS: Record<string, string> = {
   claude: "claude",

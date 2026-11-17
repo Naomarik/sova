@@ -4,7 +4,8 @@
 import { fileURLToPath } from "node:url";
 import { createInterface } from "node:readline";
 import { DESIGN_ASSET_LIMITS, type DesignAsset, type DesignAssetSkipped } from "../../shared/design-assets";
-import { checkTmpImage, readTmpImage } from "../attachments";
+import { dirname, isAbsolute, normalize } from "node:path";
+import { attachmentsRoot, checkTmpImage, readTmpImage } from "../attachments";
 import { chooseTourBrowser } from "../tours/browser";
 import { resolveTourContext, tourCallerBySession } from "../tours/context";
 import { sniffImage, sniffRaster } from "../tours/page-capture";
@@ -75,21 +76,22 @@ const contextOf = async (parent: BrowseParent): Promise<TourRecordingContext> =>
 };
 
 /** Bring in pictures you pasted. Each is refused or kept by itself; one bad image never costs the others. */
-export async function addOwnImages(parent: BrowseParent, images: readonly Uint8Array[], deps: { draw?: OwnImageDrawer; context?: (p: BrowseParent) => Promise<TourRecordingContext> } = {}): Promise<OwnImagesResult> {
+export async function addOwnImages(parent: BrowseParent, images: readonly Uint8Array[], deps: { draw?: OwnImageDrawer; context?: (p: BrowseParent) => Promise<TourRecordingContext> } = {}, names: readonly string[] = []): Promise<OwnImagesResult> {
   const out: OwnImagesResult = { added: [], known: [], refused: [] };
   const usable: Uint8Array[] = [];
+  const usableNames: string[] = [];
   for (const [i, bytes] of images.entries()) {
-    const what = `Image ${i + 1}`;
+    const what = names[i] ?? `Image ${i + 1}`;
     if (bytes.length > DESIGN_ASSET_LIMITS.eachBytes) out.refused.push({ what, reason: "It's over the 8 MB limit." });
     else if (!sniffImage(bytes)) out.refused.push({ what, reason: "It isn't an image." });
-    else usable.push(bytes);
+    else usable.push(bytes), usableNames.push(what);
   }
   if (!usable.length) return out;
   const context = await (deps.context ?? contextOf)(parent);
   const drawn = await (deps.draw ?? drawInDarkroom)(context, usable);
   for (const [i, bytes] of usable.entries()) {
     const d = drawn[i];
-    const what = `Image ${i + 1}`;
+    const what = usableNames[i]!;
     if (!d || "error" in d) { out.refused.push({ what, reason: d && "error" in d ? d.error : "It couldn't be drawn." }); continue; }
     if (!sniffRaster(d.full.bytes) || !sniffRaster(d.small.bytes) || sniffRaster(d.describe.bytes) !== "png") { out.refused.push({ what, reason: "It couldn't be drawn." }); continue; }
     const kept = keepAsset(parent.sessionId, { source: "yours", original: bytes, ...d, context: {} });
@@ -99,17 +101,102 @@ export async function addOwnImages(parent: BrowseParent, images: readonly Uint8A
   return out;
 }
 
-/** Read attachments named by path, by the rule the attachment route itself follows. An unreadable one is listed, not fatal. */
-export async function readAttachedImages(paths: readonly string[]): Promise<{ images: Uint8Array[]; unreadable: DesignAssetSkipped[] }> {
-  const images: Uint8Array[] = [];
-  const unreadable: DesignAssetSkipped[] = [];
-  for (const [i, p] of paths.entries()) {
-    const check = checkTmpImage(p);
-    const bytes = check.ok ? await readTmpImage(check.realPath) : null;
-    if (bytes) images.push(new Uint8Array(bytes));
-    else unreadable.push({ what: `Image ${i + 1}`, reason: "It couldn't be read." });
+/** A path as a refusal names it: as given, cut short when long. */
+const named = (raw: string): string => (raw.length > 200 ? `${raw.slice(0, 199)}…` : raw);
+
+/** Why a path given as an image wasn't taken, in words: one per reason. */
+export const IMAGE_REFUSALS = {
+  place: "It isn't in a place images are taken from.",
+  missing: "There's no file there.",
+  /** A sandboxed chat's /tmp is its own, not the one Sova reads. */
+  missingTmp: "There's no file there in Sova's /tmp (a sandboxed chat's /tmp is its own: put the picture in your shared folder instead).",
+  notImage: "It isn't an image (a PNG, JPEG, WebP or GIF).",
+  tooBig: "It's over the 8 MB limit.",
+  outside: "It leads outside the place it's in (a link elsewhere isn't followed).",
+  unreadable: "It couldn't be read.",
+} as const;
+
+/** The places a chat's image paths are taken from, in words for a refusal's end. `shared`: the chat's own shared folder. */
+export function imagePlacesLine(shared?: string): string {
+  return `Images are taken from: a file directly in /tmp; Sova's attachments folder (${attachmentsRoot()}/<chat id>/)${shared ? `; and your shared folder (${shared}/, any folder below it)` : ""}.`;
+}
+
+const inside = (root: string, p: string): boolean => p.startsWith(`${root}/`);
+
+/** A file in the chat's shared folder: a regular file whose real path stays inside the folder's real path, within the limit. */
+async function readSharedImage(p: string, shared: string): Promise<{ bytes: Uint8Array } | { reason: string }> {
+  const { realpath, open } = await import("node:fs/promises");
+  const { constants } = await import("node:fs");
+  let root: string;
+  let real: string;
+  try {
+    root = await realpath(shared);
+  } catch {
+    return { reason: IMAGE_REFUSALS.missing };
   }
-  return { images, unreadable };
+  try {
+    real = await realpath(p);
+  } catch {
+    return { reason: IMAGE_REFUSALS.missing };
+  }
+  if (!inside(root, real)) return { reason: IMAGE_REFUSALS.outside };
+  let fh;
+  try {
+    // Opened without following a link, and checked on the open handle: a swap after the check widens nothing.
+    fh = await open(real, constants.O_RDONLY | constants.O_NOFOLLOW);
+  } catch {
+    return { reason: IMAGE_REFUSALS.unreadable };
+  }
+  try {
+    const st = await fh.stat();
+    if (!st.isFile()) return { reason: IMAGE_REFUSALS.notImage };
+    if (st.size > DESIGN_ASSET_LIMITS.eachBytes) return { reason: IMAGE_REFUSALS.tooBig };
+    const bytes = new Uint8Array(await fh.readFile());
+    return sniffImage(bytes) ? { bytes } : { reason: IMAGE_REFUSALS.notImage };
+  } finally {
+    await fh.close();
+  }
+}
+
+/** Why checkTmpImage refused a path that is in /tmp or the attachments folder, in IMAGE_REFUSALS' words. */
+function tmpRefusal(check: Extract<ReturnType<typeof checkTmpImage>, { ok: false }>, inTmp: boolean): string {
+  if (check.status === 404) return inTmp ? IMAGE_REFUSALS.missingTmp : IMAGE_REFUSALS.missing;
+  if (check.status === 400) return IMAGE_REFUSALS.notImage;
+  if (check.size !== undefined) return IMAGE_REFUSALS.tooBig;
+  return IMAGE_REFUSALS.outside;
+}
+
+/**
+ * Read images named by path: a file directly in /tmp or in Sova's attachments folder, by the rule the attachment route
+ * itself follows, or (`shared`, for the main chat's own hand-off) one in the chat's shared folder. An unreadable one is
+ * listed by the path as given, with why; it is never fatal. `names`: each read image's path as given, in order.
+ */
+export async function readAttachedImages(paths: readonly string[], opts: { shared?: string } = {}): Promise<{ images: Uint8Array[]; names: string[]; unreadable: DesignAssetSkipped[] }> {
+  const images: Uint8Array[] = [];
+  const names: string[] = [];
+  const unreadable: DesignAssetSkipped[] = [];
+  const shared = opts.shared?.replace(/\/+$/, "");
+  for (const raw of paths) {
+    const what = named(raw);
+    const p = raw.trim();
+    const inTmp = isAbsolute(p) && dirname(p) === "/tmp";
+    const inAttachments = inside(attachmentsRoot(), p);
+    if (shared && isAbsolute(p) && inside(shared, normalize(p)) && !inTmp && !inAttachments) {
+      const got = await readSharedImage(normalize(p), shared);
+      if ("bytes" in got) images.push(got.bytes), names.push(what);
+      else unreadable.push({ what, reason: got.reason });
+      continue;
+    }
+    const check = checkTmpImage(p);
+    if (!check.ok) {
+      unreadable.push({ what, reason: inTmp || inAttachments ? tmpRefusal(check, inTmp) : IMAGE_REFUSALS.place });
+      continue;
+    }
+    const bytes = await readTmpImage(check.realPath);
+    if (bytes) images.push(new Uint8Array(bytes)), names.push(what);
+    else unreadable.push({ what, reason: IMAGE_REFUSALS.unreadable });
+  }
+  return { images, names, unreadable };
 }
 
 /** Read images the Creative Director names by path on disk (a logo it found with its read): each an image file within the

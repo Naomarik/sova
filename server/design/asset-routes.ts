@@ -20,9 +20,9 @@ let ownImageDeps: Parameters<typeof addOwnImages>[2] = {};
 export const setOwnImageDepsForTest = (d: Parameters<typeof addOwnImages>[2] | null): void => void (ownImageDeps = d ?? {});
 
 /** Bring images named by path into the chat's set. Shared by the coordinator's box and the main chat's hand-off. */
-export async function addAttachedImages(p: BrowseParent, paths: readonly string[]): Promise<OwnImagesResult> {
-  const { images, unreadable } = await readAttachedImages(paths);
-  const out = await addOwnImages(p, images, ownImageDeps);
+export async function addAttachedImages(p: BrowseParent, paths: readonly string[], opts: { shared?: string } = {}): Promise<OwnImagesResult> {
+  const { images, names, unreadable } = await readAttachedImages(paths, opts);
+  const out = images.length ? await addOwnImages(p, images, ownImageDeps, names) : { added: [], known: [], refused: [] };
   if (out.added.length) describeAssets(p, out.added.map((x) => x.name));
   return { ...out, refused: [...unreadable, ...out.refused] };
 }
@@ -42,11 +42,13 @@ export async function ownImagesLine(p: BrowseParent, paths: readonly string[]): 
   return (await ownImages(p, paths)).line;
 }
 
-/** Images brought in, with their names: the Creative Director that reads pictures is shown them with the line. */
-export async function ownImages(p: BrowseParent, paths: readonly string[]): Promise<{ line: string; names: string[] }> {
-  const out = await addAttachedImages(p, paths);
+/** Images brought in, with their names: the Creative Director that reads pictures is shown them with the line. `refused`:
+    each path that wasn't added, named as given, with why. `shared`: the calling chat's shared folder, taken from too. */
+export async function ownImages(p: BrowseParent, paths: readonly string[], opts: { shared?: string } = {}): Promise<{ line: string; names: string[]; refused: string[] }> {
+  const out = await addAttachedImages(p, paths, opts);
   const names = [...out.added, ...out.known].map((a) => a.name);
-  return { names, line: [names.length ? `[The user added ${names.length === 1 ? "an image" : `${names.length} images`} of their own: ${names.join(", ")}. Their descriptions follow when they're ready.]` : "", ...out.refused.map((r) => `[${r.what} wasn't added: ${r.reason}]`)].filter(Boolean).join("\n") };
+  const refused = out.refused.map((r) => `${r.what} wasn't added: ${r.reason}`);
+  return { names, refused, line: [names.length ? `[The user added ${names.length === 1 ? "an image" : `${names.length} images`} of their own: ${names.join(", ")}. Their descriptions follow when they're ready.]` : "", ...refused.map((r) => `[${r}]`)].filter(Boolean).join("\n") };
 }
 
 export function mountDesignAssetRoutes(app: Hono, parentOf: (c: Context) => BrowseParent | null): void {

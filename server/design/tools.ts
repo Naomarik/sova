@@ -6,9 +6,15 @@ import type { HEntry, ToolResult, ToolSpec } from "../../shared/harness";
 import { DESIGN_ASK_ABOVE, DESIGN_BATCH_MAX, DESIGN_TOOL, designDirectionLine, isDesignLabel, type DesignNote } from "../../shared/design";
 import { coordinatorCard, tellCoordinator } from "./coordinator";
 import { createRun } from "./setup";
+import { editSetup, leftOutWords, SetupRefused, setupSummary, type EditDeps, type SetupDelta } from "./setup-change";
 import { ownImages } from "./asset-routes";
+import { imagePlacesLine } from "./own-images";
+import { chatHandle } from "../chat-handle";
+import { sharedFolderOf } from "../../pi-config/extensions/sandbox/shared-folder.ts";
+import { designSectionName } from "../../shared/design-models";
+import type { DesignRun } from "../../shared/design";
 import { assertTakesPages, DESIGN_HAND_IN_TOOL, editBase, handIn, pageProblem, readingSkill, refusedPage, replyPageThisTurn, savePage, takeLook, type DesignParent } from "./batch";
-import { listSkillFiles, readSkillFile, SKILL_LIMITS, SkillReadRefused, skillNamesOf } from "./skills";
+import { listSkillFiles, readSkillFile, runSkills, SKILL_LIMITS, SkillReadRefused, skillNamesOf } from "./skills";
 import { livePage } from "./live";
 import { lookAtDesign } from "./look";
 import type { TourSize } from "../../shared/tour";
@@ -36,19 +42,28 @@ export function mainDesignTools(parent: () => DesignParent, cwd: () => string): 
     {
       name: "lookbook",
       label: "lookbook",
-      description: `The Lookbook: one page designed by several models side by side. op "start" puts a Lookbook Setup card in the chat (the user finishes it there, up to ${DESIGN_BATCH_MAX} designs), only when the user asked for a Lookbook. op "read" gets the Creative Director's card (the coordinator) and each design's version count, or with label where a design's page is: its latest version, unless label names one ("A11"); several at once with commas ("A11, A16"). Each comes as a header naming the version returned, when it was made and the versions that exist, its size, its views (the screens the page names: tabs, other pages, menus, dialogs), and the path of its saved file; the page itself isn't in the reply, so read the file (with offset and limit, or grep it). op "look" returns one picture of one design: label (and version, or "A11"), view (one of its views by name; none: its first screen) and size ("desktop" or "phone"). op "tell" passes text word for word to the Creative Director. images (the paths of images the user attached) join the Lookbook's images, on start as on tell. Call vis_guide with kind "lookbook" first.`,
+      description: `The Lookbook: one page designed by several models side by side. op "start" puts a Lookbook Setup card in the chat (the user finishes it there, up to ${DESIGN_BATCH_MAX} designs), only when the user asked for a Lookbook. op "edit" changes the open Setup card when the user asks for a change after it is up: send only what they asked to change (it never opens a second card and never starts anything); until Start Creative Director anything on it, then until Start on the brief only designers, efforts, styles, layouts and Pair Up/Every Mix (the request's words, images and skills then go to the Creative Director with tell). It answers with what the card now holds and anything that couldn't change, and why. op "read" without label: while the newest card is still in Setup, what it holds; else the Creative Director's card (the coordinator) and each design's version count. With label, where a design's page is: its latest version, unless label names one ("A11"); several at once with commas ("A11, A16"). Each comes as a header naming the version returned, when it was made and the versions that exist, its size, its views (the screens the page names: tabs, other pages, menus, dialogs), and the path of its saved file; the page itself isn't in the reply, so read the file (with offset and limit, or grep it). op "look" returns one picture of one design: label (and version, or "A11"), view (one of its views by name; none: its first screen) and size ("desktop" or "phone"). op "tell" passes text word for word to the Creative Director. images: paths of pictures to add (a screenshot, a logo), each a PNG, JPEG, WebP or GIF up to 8 MB, from one of three places: directly in /tmp (Sova's; with your sandbox on, your /tmp is your own), Sova's attachments folder, or your own shared folder (any folder below it); a picture elsewhere is refused, so copy it into your shared folder first. On start and edit they join the run itself; on tell they go to the Creative Director. Call vis_guide with kind "lookbook" first.`,
       parameters: {
         type: "object",
         properties: {
-          op: str("What to do.", { enum: ["start", "read", "look", "tell"] }),
-          brief: str("start: what to design, in the user's words."),
-          models: list("start: particular models the user named, as provider/modelId."),
-          modelGroups: list('start: whole groups the user named, one picker section each: "claude", "gpt", "glm" (Z.ai), "deepseek", "ollama-cloud" (Ollama Cloud) or "ollama" (Ollama on this computer only).'),
-          directions: list("start: style names the user named."),
-          layouts: list('start: layout names the user named ("a compact and a bento version"); none unless they named some.'),
-          coordinator: str("start: the model id for the Creative Director (the coordinator), only when the user named one."),
-          skills: list("start: design skills the user named for this Lookbook, each a skill's name (this project's skills are found by name) or a folder holding SKILL.md (an absolute or ~ path). None loads by itself: with none named, pass none."),
-          images: list("start or tell: the paths of images the user attached (a screenshot, a logo), to add to this Lookbook's images. On start they join the run itself."),
+          op: str("What to do.", { enum: ["start", "edit", "read", "look", "tell"] }),
+          run: str("edit: the run whose card to change; none: this chat's newest."),
+          brief: str("start: what to design, in the user's words. edit: the request's new words, whole (only before Start Creative Director)."),
+          models: list("start: particular models the user named, as provider/modelId. edit: designers to add."),
+          removeModels: list("edit: designers to take off, as provider/modelId or the name on the card."),
+          modelGroups: list('start: whole groups the user named, one picker section each: "claude", "gpt", "glm" (Z.ai), "deepseek", "ollama-cloud" (Ollama Cloud) or "ollama" (Ollama on this computer only). edit: groups to add.'),
+          removeModelGroups: list("edit: groups to take off."),
+          efforts: { type: "object", additionalProperties: { type: "string" }, description: 'start or edit: the thinking level the user named per designer, by model ("anthropic/claude-opus-5-5": "high"); "all" for every ticked designer. Only levels they named; none: each designs at low.' },
+          directions: list("start: style names the user named. edit: styles to tick."),
+          removeDirections: list("edit: styles to untick."),
+          layouts: list('start: layout names the user named ("a compact and a bento version"); none unless they named some. edit: layouts to tick.'),
+          removeLayouts: list("edit: layouts to untick."),
+          combine: str("edit: how styles and layouts mix: pair (Pair Up) or every (Every Mix).", { enum: ["pair", "every"] }),
+          coordinator: str("start or edit: the model id for the Creative Director (the coordinator), only when the user named one. edit: only before Start Creative Director."),
+          skills: list("start: design skills the user named for this Lookbook, each a skill's name (this project's skills are found by name) or a folder holding SKILL.md (an absolute or ~ path). None loads by itself: with none named, pass none. edit: skills to add."),
+          removeSkills: list("edit: skills to take off, by name."),
+          images: list("start, edit or tell: the paths of pictures to add (see the allowed places above)."),
+          removeImages: list("edit: images to take off this run, by their names (img-1); they stay in the chat's images."),
           label: str('read: the page to locate: a design\'s label ("A") for its latest version, a label with a version number ("A11") for that version, or several separated by commas ("A11, A16"). You get each page\'s file path and size, not its text. look: one design\'s label ("A"), or with a version number ("A11").'),
           version: { type: "integer", description: "look: the version to picture, when label doesn't name one; none: the latest." },
           view: str("look: one of the page's views, by the name a read lists (\"Deploy\"); none: the screen it opens on."),
@@ -57,49 +72,145 @@ export function mainDesignTools(parent: () => DesignParent, cwd: () => string): 
         },
         required: ["op"],
       },
-      async execute(toolCallId, params: { op?: string; brief?: string; models?: string[]; modelGroups?: string[]; directions?: string[]; layouts?: string[]; coordinator?: string; skills?: unknown; label?: string; version?: unknown; view?: unknown; size?: unknown; text?: string; images?: unknown }, _signal, _update, ctx) {
+      async execute(toolCallId, params: LookbookParams, _signal, _update, ctx) {
         const p = parent();
+        const shared = sharedFolderFor(p.sessionId);
+        const places = imagePlacesLine(shared);
         if (params?.op === "start") {
           const run = await createRun(p, cwd(), { ...params, skills: skillNamesOf(params.skills) });
           // The user's attached images join this run's own images: Setup shows them, and the Creative Director sees them first.
-          const paths = Array.isArray(params.images) ? params.images.filter((x): x is string => typeof x === "string").slice(0, 20) : [];
+          const paths = pathsOf(params.images);
           // Never fails the call: the card is already up, and a retry would open a second one.
-          let added: { line: string; names: string[] } | null = null;
+          let added: { names: string[]; refused: string[] } | null = null;
           let failed = "";
           if (paths.length) {
             try {
-              added = await ownImages(p, paths);
+              added = await ownImages(p, paths, { shared });
               // On the run itself, so one the chat already had belongs to it too, and Setup has them from its first frame.
               if (added.names.length) changeDesigns(p.sessionId, (s) => void (s.runs.find((r) => r.id === run.id)!.images = added!.names));
             } catch (err) {
               failed = ` The card is up, but the attached images couldn't be added (${err instanceof Error ? err.message : String(err)}): ask the user to paste them into the Creative Director's box. Don't start another card.`;
             }
           }
+          // Efforts the user named: through the same change every later edit makes.
+          let effortNotes: string[] = [];
+          const efforts = effortsOf(params.efforts);
+          if (efforts) {
+            try {
+              effortNotes = editNotes((await editSetup(p.sessionId, run.id, { efforts }, editDeps(p, shared, cwd()))).text);
+            } catch (err) {
+              effortNotes = [err instanceof Error ? err.message : String(err)];
+            }
+          }
           const picked = run.setup.models.filter((m) => m.design).length;
           const skills = run.skills?.length ? ` Design skills: ${run.skills.map((k) => k.name).join(", ")}.` : "";
           const missing = run.skillsMissing?.length ? ` Not found: ${run.skillsMissing.map((m) => m.asked).join(", ")}; the Creative Director asks the user about ${run.skillsMissing.length === 1 ? "it" : "them"} on the brief.` : "";
-          const imagesLine = added ? (added.names.length ? ` Images: ${added.names.join(", ")} joined the run.` : "") + (added.line.includes("wasn't added") ? ` ${added.line.split("\n").filter((l) => l.includes("wasn't added")).join(" ")}` : "") : "";
-          return say(`The Setup card is on screen (run ${run.id}${picked ? `, ${picked} models ticked` : ""}).${skills}${missing}${imagesLine}${failed} The user finishes it there and starts the run; above ${DESIGN_ASK_ABOVE} designs Sova asks them first. Nothing more is needed from you, and nothing about it will reach you.`, { designCard: { runId: run.id } });
+          const imagesLine = added ? (added.names.length ? ` Images: ${added.names.join(", ")} joined the run.` : "") + (added.refused.length ? ` ${added.refused.join(" ")} ${places}` : "") : "";
+          const left = leftOutLine(run);
+          const effortLine = effortNotes.length ? ` Effort not set: ${effortNotes.join(" ")}` : "";
+          return say(`The Setup card is on screen (run ${run.id}${picked ? `, ${picked} models ticked` : ""}).${skills}${missing}${imagesLine}${effortLine}${left}${failed} The user finishes it there and starts the run; above ${DESIGN_ASK_ABOVE} designs Sova asks them first. If they ask you for a change while it is up, make it with op edit; otherwise nothing more is needed from you.`, { designCard: { runId: run.id } });
+        }
+        if (params?.op === "edit") {
+          const delta = deltaOf(params);
+          if (!Object.keys(delta).length) throw new Error("edit needs what to change: only what the user asked to change.");
+          let out;
+          try {
+            out = await editSetup(p.sessionId, typeof params.run === "string" && params.run ? params.run : undefined, delta, editDeps(p, shared, cwd()));
+          } catch (err) {
+            if (err instanceof SetupRefused) throw new Error(err.message);
+            throw err;
+          }
+          const refusedImages = out.text.includes("wasn't added:") ? `\n\n${places}` : "";
+          // Its result names the card, so the card moves down to this call, under the chat's change.
+          return say(`${out.text}${refusedImages}`, { designCard: { runId: out.run.id } });
         }
         if (params?.op === "read") {
           if (params.label) return say(await readDesignPages(p.sessionId, params.label, ctx ? { sessionId: ctx.sessionId } : undefined, p));
+          const newest = viewOf(p.sessionId).runs.at(-1);
+          if (newest?.phase === "setup") return say(setupSummary(p.sessionId, newest));
           const card = coordinatorCard(p.sessionId);
           const lines = viewOf(p.sessionId).designs.map((d) => `${d.label} · ${designDirectionLine(d)} · ${d.model} · ${d.status}${d.removed ? " (removed)" : ""} · ${versionCount(d)}`);
           return say([card?.card || "The Creative Director has no card yet.", lines.length ? `Designs:\n${lines.join("\n")}` : ""].filter(Boolean).join("\n\n"));
         }
         if (params?.op === "look") return lookAtOne(p, params);
         if (params?.op === "tell") {
-          const paths = Array.isArray(params.images) ? params.images.filter((x): x is string => typeof x === "string").slice(0, 20) : [];
+          const paths = pathsOf(params.images);
           if (!params.text?.trim() && !paths.length) throw new Error("tell needs the text to pass on, or images.");
           // By reference: the pictures go straight into the chat's set, and only their names reach anyone's memory.
-          const added = paths.length ? await ownImages(p, paths) : { line: "", names: [] };
+          const added = paths.length ? await ownImages(p, paths, { shared }) : { line: "", names: [], refused: [] };
           await tellCoordinator(p, [params.text?.trim(), added.line].filter(Boolean).join("\n\n"), `tell:${toolCallId}`, added.names);
-          return say(added.line ? `Passed on. ${added.line}` : "Passed on.");
+          return say(added.line ? `Passed on. ${added.line}${added.refused.length ? `\n${places}` : ""}` : "Passed on.");
         }
-        throw new Error('op must be "start", "read", "look" or "tell".');
+        throw new Error('op must be "start", "edit", "read", "look" or "tell".');
       },
     },
   ];
+}
+
+type LookbookParams = { op?: string; run?: unknown; brief?: string; models?: string[]; removeModels?: unknown; modelGroups?: string[]; removeModelGroups?: unknown; efforts?: unknown; directions?: string[]; removeDirections?: unknown; layouts?: string[]; removeLayouts?: unknown; combine?: unknown; coordinator?: string; skills?: unknown; removeSkills?: unknown; images?: unknown; removeImages?: unknown; label?: string; version?: unknown; view?: unknown; size?: unknown; text?: string };
+
+const pathsOf = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string").slice(0, 20) : []);
+const namesOf = (v: unknown): string[] | undefined => {
+  const out = Array.isArray(v) ? v.filter((x): x is string => typeof x === "string" && !!x.trim() && x.length <= 300).slice(0, 40) : [];
+  return out.length ? out : undefined;
+};
+const effortsOf = (v: unknown): Record<string, string> | undefined => {
+  if (!v || typeof v !== "object" || Array.isArray(v)) return undefined;
+  const out = Object.fromEntries(Object.entries(v as Record<string, unknown>).filter((e): e is [string, string] => typeof e[1] === "string" && !!e[1].trim()).slice(0, 40));
+  return Object.keys(out).length ? out : undefined;
+};
+
+/** The edit's delta from the call: only the fields it sent. */
+function deltaOf(params: LookbookParams): SetupDelta & { images?: string[]; skills?: string[] } {
+  const d: SetupDelta & { images?: string[]; skills?: string[] } = {};
+  if (typeof params.brief === "string") d.brief = params.brief;
+  const lists = { models: params.models, removeModels: params.removeModels, modelGroups: params.modelGroups, removeModelGroups: params.removeModelGroups, directions: params.directions, removeDirections: params.removeDirections, layouts: params.layouts, removeLayouts: params.removeLayouts, removeImages: params.removeImages, removeSkills: params.removeSkills } as const;
+  for (const [k, v] of Object.entries(lists)) {
+    const names = namesOf(v);
+    if (names) (d as Record<string, unknown>)[k] = names;
+  }
+  const efforts = effortsOf(params.efforts);
+  if (efforts) d.efforts = efforts;
+  if (typeof params.coordinator === "string" && params.coordinator.trim()) d.coordinator = params.coordinator;
+  if (params.combine === "pair" || params.combine === "every") d.combine = params.combine;
+  const images = pathsOf(params.images);
+  if (images.length) d.images = images;
+  const skills = skillNamesOf(params.skills);
+  if (skills.length) d.skills = skills;
+  return d;
+}
+
+/** The chat's own shared folder: a third place its pictures are taken from. */
+function sharedFolderFor(sessionId: string): string | undefined {
+  try {
+    return sharedFolderOf({ sessionId });
+  } catch {
+    return undefined;
+  }
+}
+
+function editDeps(p: DesignParent, shared: string | undefined, cwd: string): EditDeps {
+  const chatModel = chatHandle(p.path)?.mirror.model?.ref;
+  return {
+    addImages: (paths) => ownImages(p, paths, { shared }),
+    findSkills: (names) => runSkills(cwd, names),
+    runs: () => viewOf(p.sessionId).runs,
+    ...(chatModel ? { chatModel } : {}),
+  };
+}
+
+/** The lines of an edit's "Not changed" list. */
+const editNotes = (text: string): string[] => {
+  const at = text.indexOf("Not changed:\n");
+  return at < 0 ? [] : text.slice(at + "Not changed:\n".length).split("\n").map((l) => l.replace(/^- /, "")).filter(Boolean);
+};
+
+/** What the card leaves out, for the chat to say if the user asks: providers that can't run, sections the user hid. */
+function leftOutLine(run: DesignRun): string {
+  const out = (run.leftOut ?? []).map((l) => `${l.name} isn't on the card: ${leftOutWords(l.why)}${l.models?.length ? ` (you asked for ${l.models.join(", ")})` : ""}.`);
+  const hidden = run.hiddenSections?.length ? [`Hidden by the user: ${run.hiddenSections.map((s) => designSectionName(s)).join(", ")}${run.hiddenAsked?.length ? ` (you asked for ${run.hiddenAsked.join(", ")}; they can bring it back with Show)` : ""}.`] : [];
+  const all = [...out, ...hidden];
+  return all.length ? ` ${all.join(" ")}` : "";
 }
 
 /** The pages the main chat's read names (server/design/versions.ts): for each, a header saying which version it is and

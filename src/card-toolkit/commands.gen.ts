@@ -272,6 +272,7 @@ export type CommandId =
   | "design.list"
   | "design.page"
   | "design.setup.set"
+  | "design.setup.hide"
   | "design.start"
   | "design.message"
   | "design.refine"
@@ -4524,6 +4525,17 @@ export interface CommandParams {
     /** The whole setup: brief, models, directions */
     "setup": unknown;
   };
+  /** Hide or show one provider's models on a run's open Setup card. Remembered for later cards; hidden models are unticked. (changes something; needs the card's owner trusted) */
+  "design.setup.hide": {
+    /** The chat the designs belong to, by id or by path */
+    "session"?: string;
+    /** The design run's id */
+    "run": string;
+    /** The provider's section id on the card: claude, gpt, zai, deepseek, google, ollama-cloud, ollama, … */
+    "section": string;
+    /** true hides it, false shows it again */
+    "hidden": boolean;
+  };
   /** Start a Lookbook run's Creative Director, which writes its Design Brief. The designs start from the brief, by the user's click. (changes something; needs the card's owner trusted) */
   "design.start": {
     /** The chat the designs belong to, by id or by path */
@@ -4877,6 +4889,7 @@ export const COMMAND_EFFECTS: Record<CommandId, "looks" | "changes"> = {
   "design.list": "looks",
   "design.page": "looks",
   "design.setup.set": "changes",
+  "design.setup.hide": "changes",
   "design.start": "changes",
   "design.message": "changes",
   "design.refine": "changes",

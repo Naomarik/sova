@@ -1597,8 +1597,11 @@ The files pi puts into the prompt, in the order it loads them.
   it, because pi doesn't load it.
 - **Load order, and each row's role.** A `SYSTEM.md` that replaces the default prompt comes
   first, marked "replaces the system prompt", because it is the prompt the rest is added to. The
-  context files follow in the order pi layers them (global, then ancestors, then the folder),
-  with no role. The APPEND_SYSTEM.md sources come last, in the order they are appended, each
+  context files follow in the order pi layers them (pi's settings folder's, then the folders
+  above the session's folder that it loads from, outermost first, then the folder itself), with
+  no role. The folders above are only those up to its repository's top folder, never the home
+  folder or above it, and none outside a repository (§chat/context-scope), so a file pi finds in
+  any other folder is no row: the session can never load it. The APPEND_SYSTEM.md sources come last, in the order they are appended, each
   marked "appended to the system prompt". The role is muted caption text after the path, not a
   chip.
 - **The row.** A file inside the session's own folder is named by its path from that folder, with
@@ -1608,7 +1611,11 @@ The files pi puts into the prompt, in the order it loads them.
   path is in the row's `title`. Then the role, if any, then its token estimate
   (/setup-card-figures).
 - **Where the list comes from.** The same read as Skills (/setup-card-skills): the session's own
-  chat when this server holds it, otherwise pi's loader for the folder. Sizes are measured on disk
+  chat when this server holds it, otherwise pi's loader for the folder, in both cases after the
+  folder rule (§chat/context-scope). The folder's scan adds the files of folders inside the
+  session's folder (§chat.context-approval/list); a scanned file that isn't inside the session's
+  folder (one in a folder beside it in the repository) is not listed, since the session can't
+  load it. Sizes are measured on disk
   when the server reads, never taken from the loader. A file the loader names but Sova can't read
   (gone since, a directory, a permission bit) is left out of the list rather than shown empty.
 - **The note.** "Loaded into the prompt." The token sentence joins it exactly when at least one
@@ -1853,7 +1860,7 @@ The MCP Servers group's switches are this session's own.
 </li>
 ```
 
-- **Which rows switch.** Every context file pi lists, the global `~/.pi/agent/AGENTS.md` (or
+- **Which rows switch.** Every context file the card lists, the global `~/.pi/agent/AGENTS.md` (or
   `CLAUDE.md`) included, and every skill, a manual-only one in its Slash commands part
   (/setup-card-skills). A
   SYSTEM.md that replaces the prompt and the APPEND_SYSTEM.md sources get no switch: they are always
@@ -1925,16 +1932,16 @@ The MCP Servers group's switches are this session's own.
   and restarting the server, rebuild the runtime from the same entry, so the choice holds.
 - **What it does not change.** A TUI that opens the session loads its own context files and
   skills: it does not read this entry. A remote session's card has no rows, so it has no switches.
-- **Workers and subfolders.** A worker the session starts gets exactly the session's fixed list and
-  mode, context files included (§chat.context-approval/fixed). The instruction files and skills of
+- **Workers and subfolders.** A worker the session starts gets the session's fixed list and mode
+  (§chat.context-approval/fixed). The instruction files and skills of
   folders inside the session's folder follow the entry too: a file or skill it has off never attaches
   (§chat.subfolder-instructions/loading, §chat.subfolder-skills/offering).
 - **Off rows and the totals.** A row that is off stays listed, dimmed, with its switch off. The
   Context and Skills headings still count every row listed, but each group's total and the
   `System context` line add up only the rows that are on, so they say what this session loads and
   is offered.
-- **The card's read.** Rows come from the runtime's unfiltered lists, so an off row can be switched
-  back on. The folder's cached read is shared as before; whether each row is off, and whether the
+- **The card's read.** Rows come from the runtime's lists before these switches, so an off row can
+  be switched back on. The folder's cached read is shared as before; whether each row is off, and whether the
   switches show, is worked out for each session on every read.
 - **Accessibility.** Each switch is a checkbox labelled "Load {path}" (the path as the row shows
   it) for a file and "Offer {name}" for a skill, checked when on, reachable by keyboard; a group

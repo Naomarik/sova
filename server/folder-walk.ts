@@ -14,6 +14,8 @@ import { execFile } from "node:child_process";
 import type { Dirent } from "node:fs";
 import { readdir, stat } from "node:fs/promises";
 import { dirname, join, relative, resolve, sep } from "node:path";
+import { homedir } from "node:os";
+import { projectFileKeeper } from "./context-scope";
 import { INSTRUCTION_NAMES, skippedSegment, SUBFOLDER_SCAN_CAP } from "./deeper-context";
 import { SKILL_FOLDERS, type SkillsIn, type SubfolderSkill } from "./subfolder-skills";
 
@@ -138,6 +140,8 @@ export async function walkSubfolders(top: string, o: WalkOptions): Promise<Subfo
   const cap = o.cap ?? SUBFOLDER_SCAN_CAP;
   const root = resolve(top);
   const out: SubfolderWalk = { files: [], skills: [], incomplete: false };
+  // Real files of the project only, as the loaders take them (server/context-scope.ts).
+  const real = projectFileKeeper(root, { home: homedir() });
   const queue: string[] = [root];
   let seen = 0;
   while (queue.length) {
@@ -147,8 +151,8 @@ export async function walkSubfolders(top: string, o: WalkOptions): Promise<Subfo
     walk: for (let k = 0; k < batch.length; k++) {
       const dir = batch[k]!;
       const p = probes[k]!;
-      if (p.instruction) out.files.push({ abs: p.instruction, dir: posix(relative(root, dir)) });
-      out.skills.push(...p.skills);
+      if (p.instruction && real(p.instruction)) out.files.push({ abs: p.instruction, dir: posix(relative(root, dir)) });
+      out.skills.push(...p.skills.filter((s) => real(s.filePath)));
       for (const n of p.children) {
         if (++seen > cap) {
           out.incomplete = true;

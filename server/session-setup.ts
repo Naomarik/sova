@@ -40,8 +40,10 @@ import type { ApprovalLookup } from "./approvals-lookup";
 import type { FolderScan } from "./approvals";
 import { sameRuleEffect, type FolderRule } from "../shared/folder-rule";
 import type { ApprovalFolder, SetupApproval } from "../shared/approvals";
-import { dirname, join } from "node:path";
+import { dirname, isAbsolute, join, relative } from "node:path";
 import { candidateDirs, instructionFileIn } from "./deeper-context";
+import { projectFileKeeper } from "./context-scope";
+import { homedir } from "node:os";
 import { inProjectHere, skillDescentAllowed } from "./skill-descent";
 import { getSessionSummary } from "./sessions-index";
 import { agentRoot } from "./state-root";
@@ -215,9 +217,13 @@ export function withApprovals(setup: Loaded, a: SetupApprovals | null, sw: Sessi
   const skills: SessionSetupSkill[] = setup.skills.map((k) => ({ ...k, approval: approvalOf(a, "skill", k.path, places) }));
   if (pristine && a.scan && checkout) {
     const have = new Set([...context, ...skills].map((r) => `${r.approval!.key}`));
+    // Only what it may meet as it works: a row of the folder's list outside the chat's own folder (a sibling's, the
+    // checkout's top for a chat in a folder inside it) never loads into it, at its start or later.
+    const own = m.real(setup.cwd);
     for (const i of a.scan.items) {
       if (have.has(i.key) || i.key.startsWith("/")) continue;
       const path = join(checkout, i.key);
+      if (!strictlyBelow(own, path)) continue;
       const size = measureFile(path);
       if (!size) continue;
       have.add(i.key);
@@ -231,6 +237,12 @@ export function withApprovals(setup: Loaded, a: SetupApprovals | null, sw: Sessi
     }
   }
   return { ...setup, context, skills, approvals: { folder: a.folder, asking } };
+}
+
+/** `p` lies in a folder inside `dir` or in `dir` itself, but is not `dir`. */
+function strictlyBelow(dir: string, p: string): boolean {
+  const rel = relative(dir, p);
+  return !!rel && !rel.startsWith("..") && !isAbsolute(rel);
 }
 
 /** The folder's answer as one session sees it: its off rows marked, and whether it can switch them.
@@ -415,7 +427,7 @@ export async function readSetupFile(sessionPath: string, file: string, deps: Set
   // Context tab opens those too, gated on the engine's own rule for one (its folder's first instruction file).
   // A skill of such a folder too (server/subfolder-skills.ts): it is listed there before it is offered.
   // Neither where the chat doesn't look below its folder (server/skill-descent.ts).
-  const below = () => (instructionFileIn(dirname(file)) === file && candidateDirs(setup.cwd, file).includes(dirname(file))) || isSubfolderSkillFile(setup.cwd, file, piSkillsIn);
+  const below = () => (instructionFileIn(dirname(file)) === file && candidateDirs(setup.cwd, file).includes(dirname(file)) && projectFileKeeper(setup.cwd, { home: homedir() })(file)) || isSubfolderSkillFile(setup.cwd, file, piSkillsIn);
   const descends = async () => skillDescentAllowed(setup.cwd, { home: (await import("node:os")).homedir(), inProject: await inProjectHere(setup.cwd) });
   if (!listedPaths(setup).has(file) && !(below() && (await descends())))
     return { ok: false, status: 404, error: "That file isn't in this session's system context." };

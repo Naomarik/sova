@@ -7,10 +7,10 @@
     "authority": "accepted",
     "agreed": {
       "by": "user",
-      "at": "2026-11-12T16:52Z",
-      "source": "pi-session:ec6da819-fb0b-454b-9ba9-97db0affcbfb#723cbddc"
+      "at": "2026-11-17T18:13Z",
+      "source": "pi-session:4e642b8d-a7ef-468d-b331-0c649395fd26#66b3316c"
     },
-    "evidence": "unreviewed",
+    "evidence": "verified",
     "code": [
       "server/deeper-context.ts",
       "server/deeper-context.test.ts",
@@ -24,7 +24,8 @@
       "server/project-overseer.test.ts",
       "server/project-services/worker-verbs.test.ts",
       "server/skill-descent.ts",
-      "server/subfolder-skills.integration.test.ts"
+      "server/subfolder-skills.integration.test.ts",
+      "server/context-scope.ts"
     ]
   },
   "§chat/subfolder-instructions": {
@@ -32,14 +33,15 @@
     "authority": "accepted",
     "agreed": {
       "by": "user",
-      "at": "2026-11-12T16:08Z",
-      "source": "pi-session:ec6da819-fb0b-454b-9ba9-97db0affcbfb#723cbddc"
+      "at": "2026-11-17T18:13Z",
+      "source": "pi-session:4e642b8d-a7ef-468d-b331-0c649395fd26#66b3316c"
     },
-    "evidence": "unreviewed",
+    "evidence": "verified",
     "code": [
       "server/deeper-context.ts",
       "server/harness/pi/deeper-context.ts",
-      "server/skill-descent.ts"
+      "server/skill-descent.ts",
+      "server/context-scope.ts"
     ]
   }
 }

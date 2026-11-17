@@ -63,7 +63,8 @@ new or changed item is a mark on its row; nothing ever waits for a decision.
   Skills heading, labelled "All context files" and "All skills". The project's Context Files and
   Skills cards and the two lists of a folder's dialog are split by where the items come from, **In
   the project** (**In this folder**), **In folders inside it**, **Above the project** (**Above this
-  folder**), **Yours** and **Claude folder** (each shown only when it has rows), and each part's
+  folder**; only a project kept in a folder inside a larger repository has rows there, /list), **Yours**
+  and **Claude folder** (each shown only when it has rows), and each part's
   heading says "{on} of {n} on" and carries its own switch, labelled "All {context files | skills}
   {the part's name, lowercased}". Manual-only skills have no group switch
   (§chat.transcript/setup-card-skills). A group switch is on when every row of its group is on, off
@@ -202,33 +203,38 @@ new or changed item is a mark on its row; nothing ever waits for a decision.
 - **How an item is known.** By its key in that folder: its path relative to the checkout it is in, so
   the project's main folder and its worktrees share one decision for the same file; outside every
   checkout (the user's own files and skills, the Claude folder, files above the project) its absolute
-  path. A file that is a link (a `SKILL.md` shared from elsewhere, a `CLAUDE.md` pointing at `AGENTS.md`)
-  is known where it sits, never by what it points at; an item inside a folder reached through a link
-  (a skill folder that is a link) is known by that folder's real place and its own name, and a chat's
-  list names it the same way whichever path the loader gives it. A skill is known by its place, never by its name
+  path. A file that is a link (a `CLAUDE.md` pointing at `AGENTS.md`, a `SKILL.md` of yours shared
+  from elsewhere) is known where it sits, never by what it points at; an item inside a folder reached
+  through a link (a skill folder that is a link) is known by that folder's real place and its own name,
+  and a chat's list names it the same way whichever path the loader gives it. A skill is known by its place, never by its name
   alone: a project skill named like one of yours is a row of its own, and a skill that moves asks
   again. An approval records the item's fingerprint (sha256): a context file's content, a skill's whole
   folder (/fingerprint).
-- **Above the project.** Instruction files in the folders between the home folder and the project's
-  root (the folder holding its worktrees, say) are listed as **Above the project** and are decided
-  like the project's own.
+- **Above the project, and outside it.** A project inside a larger repository lists the files
+  between its root and the repository's top as **Above the project**. Files above a repository's top,
+  at or above home, and a project's item linked out of it never load (§chat.context-scope/folders), so
+  aren't listed; a decision kept for one drops off as any item no longer found does.
 - **Your own files and skills.** The user's own context files and skills (pi's settings folder, the
-  Claude folder, an `AGENTS.md` in the home folder) are decided per folder like the folder's own;
-  nothing trusts them by itself.
+  Claude folder, and an `AGENTS.md` in the home folder, listed only for a project or folder that is
+  the home folder itself) are decided per folder like the folder's own; nothing trusts them by
+  itself.
 - **Changed since you turned it on.** When an approved item's content no longer matches its
   fingerprint, it stays loaded and its row is marked "Changed since you turned it on", with **Accept
   Change** (which records the new fingerprint) (/marks). It doesn't hold Send. An approval with no
   fingerprint, or an item that can't be read now, reads as changed.
 - **Which files.** Context files are the instruction files pi loads (`AGENTS.override.md`, `AGENTS.md`,
-  `AGENTS.MD`, `CLAUDE.md`, `CLAUDE.MD`): pi's settings folder's, the chat's folder's and every folder's
-  above it, and those inside it (§chat/subfolder-instructions). A project's prompt files
+  `AGENTS.MD`, `CLAUDE.md`, `CLAUDE.MD`): pi's settings folder's, the chat's folder's and, inside a
+  git repository, those of the folders above it up to the repository's top (§chat/context-scope),
+  and those inside it (§chat/subfolder-instructions). A project's prompt files
   (`.pi/SYSTEM.md`, `APPEND_SYSTEM.md`) and its extensions are not on the list.
 - **The scan.** Everything a chat in the folder could load is found by one scan of each checkout, the
   root first: pi's own context files and skills, then the subfolder walk's, each walk bounded as the
   subfolder walk is. A project's scan walks below unless its root is the home folder or a folder above
   it; a folder that is no project walks below only where its chats look below
-  (§chat.subfolder-skills/offering), never at the home folder or above it. A new chat's setup card
-  drops the scan's subfolder rows when the chat's own folder fails that rule.
+  (§chat.subfolder-skills/offering), never at the home folder or above it. pi's own context files
+  are only those of the folders a chat there may load from (§chat/context-scope). A new chat's setup
+  card drops the scan's subfolder rows when the chat's own folder fails that rule, and lists no scan
+  row outside the chat's own folder (a folder beside it in the checkout): only files it could load.
   One row per key, the first found. A scan that stopped early (a walk at its limit,
   a checkout that couldn't be read) says so on the cards: "The search stopped early, so this list may
   miss some {context files | skills}."
@@ -275,7 +281,8 @@ new or changed item is a mark on its row; nothing ever waits for a decision.
   Files** row next to the Skills row (§app.project-overseer/settings). A peer's project (opened with
   `?host=`) shows neither.
 - **What it lists.** Every context file a chat in the project could load (/list), each row with the
-  file's name, where it comes from (the project, a folder inside it, **Above the project**, your own),
+  file's name, where it comes from (the project, a folder inside it, **Above the project** for a
+  project kept inside a larger repository, your own; never a file the chat can't load, §chat/context-scope),
   its size and one switch (/modes), with its New or Changed mark (/marks). Its heading carries the
   group switch and its Undo line (/group). Its line reads "New chats load the context files you turn
   on. Open chats keep theirs." With none found: "No context files found. A chat here would load
@@ -334,7 +341,8 @@ The merge thread, reviewers, Create flows, the Overseer and project overseers, s
 a chat started on another computer by a program, and messages sent by a script or the API start as
 every chat does: with what is off for their folder off, New items included, and nothing to wait
 for. A project overseer loads only the project's own context files its list lets a new chat load.
-The global Overseer follows its folder's list (§chat.context-approval/folders).
+The global Overseer follows its folder's list (§chat.context-approval/folders). Each of them loads
+context files only from the folders its own folder allows (§chat/context-scope), as every chat does.
 
 ## §chat.context-approval/live — A flip reaches open new chats at once
 
@@ -375,5 +383,9 @@ card again. A started chat is never touched.
   §chat.subfolder-skills/offering), a typed `/skill:name` and the composer's slash list. The one write
   to a fixed list after the first message is a Turn On on a "wasn't loaded" line (/mid-chat).
 - **Workers.** A worker gets exactly its parent chat's fixed list and mode, context files included,
-  set by Sova from the parent chat, never from the request.
+  set by Sova from the parent chat, never from the request, laid over what its own folder allows
+  (§chat/context-scope).
+- **The folder rule comes first.** No list brings back a context file the folder rule leaves out
+  (§chat/context-scope). A chat whose list was fixed before the rule keeps that list, unchanged, and
+  from its next rebuild loads only the files of it the rule allows.
 - **Claude Code chats too.** A Claude Code chat runs on pi's prompt, so the same list covers it.

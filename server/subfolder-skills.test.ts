@@ -1,7 +1,7 @@
 // A subfolder's skills: which offer themselves, the block, the branch's record, the walk (§chat/subfolder-skills).
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { after, test } from "node:test";
@@ -35,6 +35,19 @@ test("a touch offers each folder's skills on the way down, outermost first, Clau
   assert.equal(blocks[0], skillsBlock("svc", [{ name: "a", description: "a does things", filePath: join(cwd, "svc/.claude/skills/a/SKILL.md") }]));
   assert.ok(blocks[1]!.startsWith(`<sova-skills dir="svc/deep">`));
   assert.ok(blocks[1]!.includes(`<location>${join(cwd, "svc/deep/.agents/skills/b/SKILL.md")}</location>`));
+});
+
+test("a subfolder's skill linked out of the project is never offered nor listed; one linked inside it is", () => {
+  const cwd = project({ "lib/kept/SKILL.md": skill("kept"), "svc/x.ts": "" });
+  const outside = project({ "away/SKILL.md": skill("away") });
+  mkdirSync(join(cwd, "svc/.agents/skills"), { recursive: true });
+  symlinkSync(join(outside, "away"), join(cwd, "svc/.agents/skills/away"));
+  symlinkSync(join(cwd, "lib/kept"), join(cwd, "svc/.agents/skills/kept"));
+  const blocks = attach(cwd, "svc/x.ts");
+  assert.equal(blocks.length, 1);
+  assert.ok(blocks[0]!.includes("<name>kept</name>") && !blocks[0]!.includes("<name>away</name>"), blocks[0]);
+  assert.deepEqual(listSubfolderSkills(cwd, piSkillsIn).skills.map((s) => s.name), ["kept"]);
+  assert.equal(isSubfolderSkillFile(cwd, join(cwd, "svc/.agents/skills/away/SKILL.md"), piSkillsIn), false, "nor opened from the tab");
 });
 
 test("the chat's own folder, a file outside it, a hidden folder and a dependency folder offer nothing", () => {

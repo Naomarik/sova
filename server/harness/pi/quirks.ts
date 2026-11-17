@@ -618,6 +618,34 @@ export const PI_QUIRKS: readonly PiQuirk[] = [
   },
   {
     id: "P44",
+    name: "context-file-walk",
+    kind: "semantic",
+    relies: "Sova cuts pi's starting context files to the chat's own folder and repository by folder (an allowlist), through agentsFilesOverride: it relies on pi listing the agent dir's file first, then one file per folder from the typed cwd up to `/` (outermost first), each path being join(<that folder as walked>, <file name>), the first of AGENTS.override.md, AGENTS.md, AGENTS.MD, CLAUDE.md, CLAUDE.MD; on the override getting that whole list at every reload; and on pi dropping a nested linked worktree's main-checkout file only when the worktree has its own.",
+    pi: ["DefaultResourceLoader", "ResourceLoaderOptions.agentsFilesOverride", "loadProjectContextFiles", "DefaultResourceLoader.reload"],
+    where: [
+      { file: "server/harness/pi/resources.ts", symbol: "withContextScope" },
+      { file: "server/harness/pi/open.ts", symbol: "servicesForCwd" },
+      { file: "server/harness/pi/resources.ts", symbol: "folderResources" },
+      { file: "server/context-scope.ts", symbol: "contextFileKeeper" },
+    ],
+    canary: "P44 context-file-walk: pi lists the agent dir's file first, then each folder's first context file from the typed cwd up to the root as join(folder, name), hands the override the whole list at every reload, and shadows a nested worktree's main-checkout file",
+    retireWhen: "pi stops its context-file walk at the repository's top (or lets Sova name where it stops)",
+  },
+  {
+    id: "P45",
+    name: "project-skill-paths",
+    kind: "semantic",
+    relies: "Sova drops a project's skill whose real place leaves the project (a link out of it) in skillsOverride, before any override of its own: it relies on pi naming each skill (and each warning about a SKILL.md it couldn't load) by the path it walked, join(<skills folder as given or found>, <entry>), following a linked skill folder without resolving it, so a skill found in the project is told by its place in the project and its real place by realpath; and on skillsOverride getting every skill, the additional paths' included, at every reload.",
+    pi: ["DefaultResourceLoader", "ResourceLoaderOptions.skillsOverride", "ResourceLoaderOptions.additionalSkillPaths", "loadSkillsFromDir"],
+    where: [
+      { file: "server/harness/pi/resources.ts", symbol: "withContextScope" },
+      { file: "server/context-scope.ts", symbol: "projectFileKeeper" },
+    ],
+    canary: "P45 project-skill-paths: a skill pi finds through a linked skill folder (an ancestor .agents/skills up to the repository's top, an additional path) is listed and handed to skillsOverride by the path it walked, never its real one, and a dropped one's warning names that path",
+    retireWhen: "pi resolves skill paths to their real place, or lets a caller refuse a linked skill folder",
+  },
+  {
+    id: "P46",
     name: "own-code-pi-rules",
     kind: "semantic",
     relies:
@@ -628,7 +656,7 @@ export const PI_QUIRKS: readonly PiQuirk[] = [
       { file: "server/harness/pi/own-code.ts", symbol: "enabledByOverrides" },
       { file: "server/harness/pi/own-code.ts", symbol: "piMinimatch" },
     ],
-    canary: "P44 own-code-pi-rules: own-code's copies answer as pi does: a directory's extension entries, and each entry on or off by the user's patterns, over a table of shapes and patterns",
+    canary: "P46 own-code-pi-rules: own-code's copies answer as pi does: a directory's extension entries, and each entry on or off by the user's patterns, over a table of shapes and patterns",
     retireWhen: "pi exports its extension-entry and override rules, or resolves an extension it was not given as if it were linked",
   },
   {

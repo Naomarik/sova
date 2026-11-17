@@ -116,7 +116,7 @@ export function shippedOwn(path: string, own: string = OWN_ROOT): string | null 
 
 /** pi's own rule for a directory's extension entries (package-manager.js resolveExtensionEntries): its
     package.json `pi.extensions` that exist, else index.ts, else index.js; null when none. A copy of pi's
-    rule: quirk P44 (QUIRKS.md) pins it against pi's. */
+    rule: quirk P46 (QUIRKS.md) pins it against pi's. */
 export function extensionEntries(dir: string): string[] | null {
   try {
     const manifest = JSON.parse(readFileSync(join(dir, "package.json"), "utf8"))?.pi?.extensions;
@@ -264,7 +264,7 @@ interface PmFacts {
 }
 
 /** pi's own glob matcher: the minimatch its package manager matches extension patterns with, taken from pi's own
-    dependencies so a pattern means here what it means to pi (quirk P44). Loaded at the first pattern. */
+    dependencies so a pattern means here what it means to pi (quirk P46). Loaded at the first pattern. */
 let piGlob: ((path: string, pattern: string) => boolean) | undefined;
 function piMinimatch(): (path: string, pattern: string) => boolean {
   piGlob ??= (requireFromPi("minimatch") as { minimatch: (path: string, pattern: string) => boolean }).minimatch;
@@ -279,7 +279,7 @@ const posixOf = (p: string) => p.split(sep).join("/");
  * patterns (settings.json `extensions`): pi's override rule (package-manager.js isEnabledByOverrides) to the
  * letter. `!glob` (pi's minimatch, against the path relative to `baseDir`, its file name, or the whole path) turns
  * it off; `+path` (exact: relative or whole, a leading `./` dropped) back on; `-path` (the same) off over both.
- * Anything else in the list doesn't count here. A copy of pi's rule: quirk P44 pins it against pi's.
+ * Anything else in the list doesn't count here. A copy of pi's rule: quirk P46 pins it against pi's.
  */
 export function enabledByOverrides(path: string, patterns: readonly unknown[], baseDir: string): boolean {
   const of = (kind: string) => patterns.filter((p): p is string => typeof p === "string" && p.startsWith(kind)).map((p) => posixOf(p.slice(1)));

@@ -557,12 +557,15 @@
       "src/lib/session-setup.test.ts",
       "src/components/ApprovalSwitches.tsx",
       "src/components/approval-switches.css",
-      "src/components/SessionSetup.tsx"
+      "src/components/SessionSetup.tsx",
+      "server/context-scope.ts",
+      "server/harness/pi/resources.ts",
+      "server/context-scope.integration.test.ts"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-11-17T12:59Z",
-      "source": "pi-session:a6acd616-a231-459f-bd68-f5bb4a996942#b4f08727"
+      "by": "user",
+      "at": "2026-11-17T18:12Z",
+      "source": "pi-session:4e642b8d-a7ef-468d-b331-0c649395fd26#66b3316c"
     }
   },
   "§chat.transcript/setup-card-figures": {
@@ -698,7 +701,10 @@
       "server/harness/pi/session.ts",
       "server/harness/pi/deeper-context.ts",
       "src/components/ApprovalSwitches.tsx",
-      "src/components/approval-switches.css"
+      "src/components/approval-switches.css",
+      "server/context-scope.ts",
+      "server/harness/pi/open.ts",
+      "server/harness/pi/resources.ts"
     ],
     "requires": [
       "§chat.transcript/setup-card",
@@ -708,9 +714,9 @@
       "§app.mcp/tool-list"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-11-17T12:59Z",
-      "source": "pi-session:a6acd616-a231-459f-bd68-f5bb4a996942#b4f08727"
+      "by": "user",
+      "at": "2026-11-17T18:13Z",
+      "source": "pi-session:4e642b8d-a7ef-468d-b331-0c649395fd26#66b3316c"
     }
   },
   "§chat.transcript/slim-rows": {

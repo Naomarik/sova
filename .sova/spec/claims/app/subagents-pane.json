@@ -69,7 +69,7 @@
       "§chat/subfolder-instructions"
     ],
     "authority": "accepted",
-    "evidence": "reviewed",
+    "evidence": "verified",
     "code": [
       "src/components/ContextTab.tsx",
       "src/components/ContextTab.css",
@@ -101,12 +101,16 @@
       "src/lib/skills-overview.ts",
       "src/lib/skills-overview.test.ts",
       "server/skill-descent.ts",
-      "server/session-setup.ts"
+      "server/session-setup.ts",
+      "server/deeper-context.ts",
+      "server/context-scope.ts",
+      "server/deeper-context.test.ts",
+      "server/subfolder-skills.test.ts"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-11-17T12:59Z",
-      "source": "pi-session:a6acd616-a231-459f-bd68-f5bb4a996942#b4f08727"
+      "by": "user",
+      "at": "2026-11-17T19:10Z",
+      "source": "pi-session:4e642b8d-a7ef-468d-b331-0c649395fd26#66b3316c"
     }
   },
   "§app.subagents-pane/context-tab-skill-loads": {

@@ -5233,6 +5233,8 @@ async function openLocked(path: string, onDisposed: () => void, onStep: (step: s
         return {
           ...b,
           promptNotes: [...(b.promptNotes ?? []), cwdFallbackNote(fallback)],
+          // Its context files are its stored folder's to decide, never the home folder's (server/context-scope.ts).
+          contextScopeCwd: fallback.original,
           ...(worker ? {} : { flags: () => ({ ...b.flags(), cwdNotWritable: true }) }),
         };
       }

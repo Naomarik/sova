@@ -5,7 +5,7 @@
 // faux provider, registered through the public ModelRuntime API: no network, no private fields.
 // C1 the session manager's append* methods (the entry union), C2 the custom entry's line, C3 the event
 // names and fields chat-manager's bind() reads, C5 image content as prompt/steer take and store it.
-// P1-P44 and T1 are the quirk canaries (QUIRKS.md, quirks.ts): each asserts that a pi behaviour a Sova
+// P1-P46 and T1 are the quirk canaries (QUIRKS.md, quirks.ts): each asserts that a pi behaviour a Sova
 // workaround or assumption rests on still holds. Their turns run on testing/scripted-model.ts (a held
 // reply makes the mid-turn windows deterministic). When one fails, triage it by its QUIRKS.md row.
 import assert from "node:assert/strict";
@@ -784,6 +784,78 @@ describe("pi contract", () => {
     assert.equal(writes, 0, "a reload writes no settings");
   });
 
+  test("P44 context-file-walk: pi lists the agent dir's file first, then each folder's first context file from the typed cwd up to the root as join(folder, name), hands the override the whole list at every reload, and shadows a nested worktree's main-checkout file", async () => {
+    const at = join(dir, `p44-${Math.random().toString(36).slice(2)}`);
+    const put = (rel: string, text = rel) => {
+      mkdirSync(dirname(join(at, rel)), { recursive: true });
+      writeFileSync(join(at, rel), text);
+    };
+    put("agent/AGENTS.md");
+    put("AGENTS.md");
+    put("repo/CLAUDE.md");
+    put("repo/AGENTS.MD");
+    put("repo/sub/CLAUDE.md");
+    put("repo/sub/AGENTS.override.md");
+    symlinkSync(join(at, "repo"), join(at, "link"));
+    const listed = async (cwd: string) => {
+      const seen: string[][] = [];
+      const loader = new DefaultResourceLoader({ cwd, agentDir: join(at, "agent"), noExtensions: true, noSkills: true, agentsFilesOverride: (base: { agentsFiles: { path: string }[] }) => (seen.push(base.agentsFiles.map((f) => f.path)), base) } as never);
+      await loader.reload();
+      await loader.reload();
+      const paths = loader.getAgentsFiles().agentsFiles.map((f: { path: string }) => f.path);
+      assert.equal(seen.length, 2, "the override runs at every reload");
+      assert.deepEqual(seen[1], paths, "the override gets the whole list");
+      return paths.filter((p: string) => p.startsWith(at + "/"));
+    };
+    assert.deepEqual(
+      await listed(join(at, "repo", "sub")),
+      [join(at, "agent", "AGENTS.md"), join(at, "AGENTS.md"), join(at, "repo", "AGENTS.MD"), join(at, "repo", "sub", "AGENTS.override.md")],
+      "the agent dir's first, then every folder up to the root, outermost first, each its first name",
+    );
+    assert.deepEqual(
+      await listed(join(at, "link", "sub")),
+      [join(at, "agent", "AGENTS.md"), join(at, "AGENTS.md"), join(at, "link", "AGENTS.MD"), join(at, "link", "sub", "AGENTS.override.md")],
+      "a linked cwd is walked as typed, never by its real path",
+    );
+    // A nested linked worktree, as git writes it: its .git file names a git dir whose commondir is the main checkout's.
+    put("main/.git/HEAD", "ref: refs/heads/main\n");
+    put("main/.git/worktrees/wt/HEAD", "ref: refs/heads/wt\n");
+    put("main/.git/worktrees/wt/commondir", "../..\n");
+    put("main/wt/.git", `gitdir: ${join(at, "main", ".git", "worktrees", "wt")}\n`);
+    put("main/AGENTS.md");
+    assert.ok((await listed(join(at, "main", "wt"))).includes(join(at, "main", "AGENTS.md")), "a worktree with no file of its own inherits the main checkout's");
+    put("main/wt/AGENTS.md");
+    assert.deepEqual(await listed(join(at, "main", "wt")), [join(at, "agent", "AGENTS.md"), join(at, "AGENTS.md"), join(at, "main", "wt", "AGENTS.md")], "its own file shadows the main checkout's");
+  });
+
+  test("P45 project-skill-paths: a skill pi finds through a linked skill folder (an ancestor .agents/skills up to the repository's top, an additional path) is listed and handed to skillsOverride by the path it walked, never its real one, and a dropped one's warning names that path", async () => {
+    const at = join(dir, `p45-${Math.random().toString(36).slice(2)}`);
+    const skill = (rel: string, name: string, description = `The ${name} skill.`) => {
+      mkdirSync(join(at, rel), { recursive: true });
+      writeFileSync(join(at, rel, "SKILL.md"), `---\nname: ${name}\ndescription: ${description}\n---\nbody\n`);
+    };
+    skill("outside/away", "away");
+    skill("outside/bad", "bad", "bad: colon");
+    skill("outside/extra/far", "far");
+    mkdirSync(join(at, "repo", ".git"), { recursive: true });
+    mkdirSync(join(at, "repo", ".agents", "skills"), { recursive: true });
+    mkdirSync(join(at, "repo", "sub", ".claude"), { recursive: true });
+    mkdirSync(join(at, "agent"), { recursive: true });
+    symlinkSync(join(at, "outside", "away"), join(at, "repo", ".agents", "skills", "away"));
+    symlinkSync(join(at, "outside", "bad"), join(at, "repo", ".agents", "skills", "bad"));
+    symlinkSync(join(at, "outside", "extra"), join(at, "repo", "sub", ".claude", "skills"));
+    let seen: { skills: { name: string; filePath: string }[]; diagnostics: { type: string; path?: string }[] } | undefined;
+    let calls = 0;
+    const loader = new DefaultResourceLoader({ cwd: join(at, "repo", "sub"), agentDir: join(at, "agent"), noExtensions: true, additionalSkillPaths: [join(at, "repo", "sub", ".claude", "skills")], skillsOverride: (base: never) => ((seen = base), calls++, base) } as never);
+    await loader.reload();
+    await loader.reload();
+    assert.equal(calls, 2, "the override runs at every reload");
+    const byName = Object.fromEntries(seen!.skills.map((s) => [s.name, s.filePath]));
+    assert.equal(byName.away, join(at, "repo", ".agents", "skills", "away", "SKILL.md"), "an ancestor .agents/skills skill through a link, by the walked path");
+    assert.equal(byName.far, join(at, "repo", "sub", ".claude", "skills", "far", "SKILL.md"), "an additional path's skill through a link, by the walked path");
+    assert.ok(seen!.diagnostics.some((d) => d.type === "warning" && d.path === join(at, "repo", ".agents", "skills", "bad", "SKILL.md")), "a dropped one's warning names the walked path");
+  });
+
   test("P39 base-prompt-sections: a command context's getSystemPromptOptions() is the live base options, whose sections build the prompt, and a tool change replaces it", async () => {
     let get: (() => any) | undefined;
     const ext = (api: any) =>
@@ -1037,7 +1109,7 @@ describe("pi contract", () => {
     }
   });
 
-  test("P44 own-code-pi-rules: own-code's copies answer as pi does: a directory's extension entries, and each entry on or off by the user's patterns, over a table of shapes and patterns", async () => {
+  test("P46 own-code-pi-rules: own-code's copies answer as pi does: a directory's extension entries, and each entry on or off by the user's patterns, over a table of shapes and patterns", async () => {
     const { DefaultPackageManager } = pi.agent;
     const t = join(dir, "p43");
     const agentDir = join(t, "agent");

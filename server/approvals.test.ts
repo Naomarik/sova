@@ -523,11 +523,27 @@ describe("a folder's lists", () => {
     assert.equal(d.skills[".agents/skills/tidy/SKILL.md"]?.state, "disallowed", "the hand's later change stands: Undo restores only what it judged");
     assert.equal((await A.folderApprovalsView(f, w.deps)).files.find((x) => x.key === "AGENTS.md")?.changed, true);
     await assert.rejects(A.undoFolderApprovals(f, off.undo!), (e: Error & { status?: number; code?: string }) => e.status === 409 && e.code === "undo-gone" && e.message === A.UNDO_GONE);
-    // A newer group save takes the place of the older one's token.
-    const a = await A.writeFolderApprovals(f, { context: { "svc/AGENTS.md": "waiting", "AGENTS.md": "disallowed" }, skills: {} }, w.deps, { group: true });
-    const b = await A.writeFolderApprovals(f, { context: {}, skills: { tidy: "disallowed", deploy: "disallowed" } }, w.deps, { group: true });
+    // A newer save of the same group takes the place of its token; another group's never does.
+    const skills = await A.writeFolderApprovals(f, { context: {}, skills: { tidy: "waiting", deploy: "disallowed" } }, w.deps, { group: "setup:skill" });
+    const a = await A.writeFolderApprovals(f, { context: { "svc/AGENTS.md": "waiting", "AGENTS.md": "disallowed" }, skills: {} }, w.deps, { group: "setup:context" });
+    const b = await A.writeFolderApprovals(f, { context: { "svc/AGENTS.md": "disallowed", "AGENTS.md": "waiting" }, skills: {} }, w.deps, { group: "setup:context" });
     assert.equal(A.undoPlan(f, a.undo!), null);
     assert.ok(A.undoPlan(f, b.undo!));
+    assert.ok(A.undoPlan(f, skills.undo!), "the Skills group's Undo outlives the Context files group's saves");
+    const u2 = await A.undoFolderApprovals(f, skills.undo!);
+    assert.equal(u2.undone, 2);
+    assert.deepEqual([store.folderDecisions(f.key).skills[".agents/skills/tidy/SKILL.md"]?.state, store.folderDecisions(f.key).skills["svc/.agents/skills/deploy/SKILL.md"]], ["disallowed", undefined]);
+    assert.ok(A.undoPlan(f, b.undo!), "and undoing it leaves the other group's");
+    // A folder keeps its newest UNDO_SLOTS groups' Undo: ids are the caller's word, and turning off is anyone's.
+    const first = await A.writeFolderApprovals(f, { context: { "AGENTS.md": "waiting" }, skills: {} }, w.deps, { group: "g0" });
+    let last = first;
+    for (let i = 1; i <= A.UNDO_SLOTS; i++) last = await A.writeFolderApprovals(f, { context: { "AGENTS.md": i % 2 ? "disallowed" : "waiting" }, skills: {} }, w.deps, { group: `g${i}` });
+    assert.equal(A.undoPlan(f, first.undo!), null, "the oldest group's went");
+    assert.ok(A.undoPlan(f, last.undo!));
+    // `true` names the group by what it saves: a files-only save and a skills-only one are two groups.
+    const files = await A.writeFolderApprovals(f, { context: { "svc/AGENTS.md": "waiting", "AGENTS.md": "disallowed" }, skills: {} }, w.deps, { group: true });
+    const sk = await A.writeFolderApprovals(f, { context: {}, skills: { tidy: "waiting", deploy: "disallowed" } }, w.deps, { group: true });
+    assert.ok(A.undoPlan(f, files.undo!) && A.undoPlan(f, sk.undo!));
     setting.setAllowWithoutAsking(true);
   });
 
@@ -573,14 +589,21 @@ test("a PUT body is strict: one or more keys (a skill also by name), each approv
   for (const bad of [{ files: {} }, { files: { "../x/AGENTS.md": "approved" } }, { files: { "a\nb": "approved" } }]) assert.throws(() => parseContextChanges(bad), /Expected/);
 });
 
-test("the All settings row: waiting counts only while asking; changed ones are named", () => {
+test("the All settings row reads as its switches: on of all, and new and changed ones only while new ones start off", () => {
   const c = (approved: number, disallowed: number, waiting: number, changed = 0) => ({ approved, disallowed, waiting, changed });
-  assert.equal(skillsRowState(c(0, 0, 4)), "No preference");
-  assert.equal(skillsRowState(c(0, 0, 4), true), "4 waiting");
-  assert.equal(skillsRowState(c(1, 2, 1)), "2 disallowed");
-  assert.equal(skillsRowState(c(1, 2, 1), true), "2 disallowed · 1 waiting");
-  assert.equal(skillsRowState(c(3, 0, 0)), "3 approved");
-  assert.equal(skillsRowState(c(3, 0, 0, 1)), "1 changed");
+  // New items start on: an unset item is on, and nothing is new.
+  assert.equal(skillsRowState(c(0, 0, 4)), "4 of 4 on");
+  assert.equal(skillsRowState(c(1, 2, 1)), "2 of 4 on");
+  // New items start off: only what was turned on is on; the unset ones are new.
+  assert.equal(skillsRowState(c(0, 0, 4), true), "0 of 4 on · 4 new");
+  assert.equal(skillsRowState(c(1, 2, 1), true), "1 of 4 on · 1 new");
+  // Changed ones (approved, so still on) are named too; no "· 0 new" or "· 0 changed".
+  assert.equal(skillsRowState(c(3, 0, 2, 1), true), "3 of 5 on · 2 new · 1 changed");
+  assert.equal(skillsRowState(c(3, 0, 0, 1), true), "3 of 3 on · 1 changed");
+  assert.equal(skillsRowState(c(3, 0, 0), true), "3 of 3 on");
+  assert.equal(skillsRowState(c(0, 0, 0), true), "0 of 0 on");
+  // New items start on: no marks, so neither new nor changed is named.
+  assert.equal(skillsRowState(c(3, 1, 2, 1)), "5 of 6 on");
 });
 
 test("the Sova-wide setting: no file is the default (allow); a file that can't be read or understood keeps asking on", () => {

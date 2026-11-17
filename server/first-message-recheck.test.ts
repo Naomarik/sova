@@ -19,7 +19,7 @@ after(() => {
   rmSync(base, { recursive: true, force: true });
 });
 
-const { recheckBeforeFirst } = await import("./session-setup");
+const { FIRST_MESSAGE_NOT_APPLIED, recheckBeforeFirst, recheckReads } = await import("./session-setup");
 const { folderRuleForSession } = await import("./projects/folder-rule");
 const { pristineLoadout } = await import("./session-loadout");
 const A = await import("./approvals");
@@ -79,4 +79,61 @@ test("only a new ordinary chat is checked: a started one, or a special one, neve
   assert.equal(await recheckBeforeFirst(started), false);
   assert.equal(await recheckBeforeFirst(special), false);
   assert.deepEqual([started.reopened, special.reopened], [[], []]);
+});
+
+test("a rebuild that fails refuses the first message, and the next one checks again", async () => {
+  setting.setAllowWithoutAsking(false);
+  try {
+    const h = await chatBuiltNow();
+    let fail = true;
+    let tries = 0;
+    h.reopenHere = async (args: { folderRule?: Rule }) => {
+      tries++;
+      if (fail) throw new Error("the process didn't answer");
+      h.reopened.push(args.folderRule!);
+    };
+    // Built with AGENTS.md off (the test before left it disallowed); turned on after.
+    assert.deepEqual(h.mirror.loadout.off?.onlyContext, []);
+    await A.writeFolderApprovals(A.folderForCwd(repo), { context: { "AGENTS.md": "approved" }, skills: {} });
+    await assert.rejects(recheckBeforeFirst(h), (e: Error) => e.message === FIRST_MESSAGE_NOT_APPLIED);
+    assert.deepEqual(h.reopened, [], "not rebuilt: the message isn't sent on the old list");
+    fail = false;
+    assert.equal(await recheckBeforeFirst(h), true, "the next Send tries the rebuild again");
+    assert.equal(tries, 2);
+    assert.equal(h.reopened.length, 1);
+  } finally {
+    setting.setAllowWithoutAsking(true);
+  }
+});
+
+test("a read that fails refuses the first message too, never letting it go on an old list; the next one reads again", async () => {
+  const h = await chatBuiltNow();
+  const real = { ...recheckReads };
+  try {
+    for (const which of ["rule", "entry"] as const) {
+      let reads = 0;
+      recheckReads[which] = (async () => {
+        reads++;
+        throw new Error(`the ${which} couldn't be read`);
+      }) as never;
+      // The rule read fails first; the entry read is only reached once the rule says something differs.
+      if (which === "entry") await A.writeFolderApprovals(A.folderForCwd(repo), { context: { "AGENTS.md": "disallowed" }, skills: {} });
+      await assert.rejects(recheckBeforeFirst(h), (e: Error) => e.message === FIRST_MESSAGE_NOT_APPLIED, which);
+      assert.equal(reads, 1, which);
+      assert.deepEqual(h.reopened, [], `${which}: nothing rebuilt, nothing let through`);
+      recheckReads[which] = real[which] as never;
+    }
+    // Readable again: the next message checks and goes (rebuilt here, since the folder changed meanwhile).
+    assert.equal(await recheckBeforeFirst(h), true);
+    assert.equal(h.reopened.length, 1);
+  } finally {
+    Object.assign(recheckReads, real);
+  }
+});
+
+test("a session file with no folder in its header can't be checked: refused", async () => {
+  const bare = join(sessionDir, "2026-11-17T00-00-01-000Z_01a5c444-0000-7000-8000-000000000002.jsonl");
+  writeFileSync(bare, `${JSON.stringify({ type: "session", version: 3, id: "01a5c444-0000-7000-8000-000000000002", timestamp: "2026-11-17T00:00:00.000Z" })}\n`);
+  const h = { ...(await chatBuiltNow()), path: bare };
+  await assert.rejects(recheckBeforeFirst(h), (e: Error) => e.message === FIRST_MESSAGE_NOT_APPLIED);
 });

@@ -459,13 +459,23 @@ export interface UndoItem {
   before?: Decision;
   wrote?: Decision;
 }
-/** Each folder's latest group save, by its token: kept in memory only, so a restart forgets it. */
+/** The latest save of each group switch of each folder (by `<folder key>\0<group id>`), with its token: kept in memory
+    only, so a restart forgets it. A newer save of the same group takes its place; another group's never does. */
 const undoSaves = new Map<string, { token: string; items: UndoItem[] }>();
+const undoSlot = (folder: FolderRef, group: string) => `${folder.key}\0${group}`;
+/** How many groups' Undo a folder keeps (the oldest goes first). */
+export const UNDO_SLOTS = 32;
+/** The slot and save a token names in a folder, or null when it is no group's latest there. */
+function savedFor(folder: FolderRef, token: string): { slot: string; token: string; items: UndoItem[] } | null {
+  const prefix = `${folder.key}\0`;
+  for (const [slot, saved] of undoSaves) if (slot.startsWith(prefix) && saved.token === token) return { slot, ...saved };
+  return null;
+}
 
 export const UNDO_GONE = "Undo is no longer available. Nothing was changed.";
 
 /** What an Undo would restore: for each key of that save whose record is still what it wrote, its record before
-    (verbatim), and the states that means, for changesNeedPage. Null for a token that isn't the folder's latest. */
+    (verbatim), and the states that means, for changesNeedPage. Null for a token that isn't its group's latest save. */
 export interface UndoPlan {
   token: string;
   changes: ApprovalChanges;
@@ -473,8 +483,8 @@ export interface UndoPlan {
   kept: number;
 }
 export function undoPlan(folder: FolderRef, token: string): UndoPlan | null {
-  const saved = undoSaves.get(folder.key);
-  if (!saved || saved.token !== token) return null;
+  const saved = savedFor(folder, token);
+  if (!saved) return null;
   const d = folderDecisions(folder.key);
   const changes: ApprovalChanges = { context: {}, skills: {} };
   const items: UndoItem[] = [];
@@ -489,14 +499,15 @@ export function undoPlan(folder: FolderRef, token: string): UndoPlan | null {
 /**
  * Undo a group save: each key whose record is still what that save wrote gets its record from before it back,
  * exactly (an approval with the fingerprint it had, so a change made since is never accepted by it); the others
- * are left as they are. The caller has judged the plan's changes (changesNeedPage). A 409 for a token that isn't
- * the folder's latest group save (a newer one, a restart, used already).
+ * are left as they are. The caller has judged the plan's changes (changesNeedPage). A 409 for a token that isn't its
+ * group's latest save in the folder (a newer save of that group, a restart, used already).
  */
 export async function undoFolderApprovals(folder: FolderRef, token: string, judged?: UndoPlan): Promise<{ changed: ApprovalWrite["changed"]; undone: number; kept: number }> {
-  // The plan its caller judged (who may: changesNeedPage), so nothing it didn't judge is restored; still the folder's latest.
-  const plan = undoSaves.get(folder.key)?.token === token ? (judged?.token === token ? judged : undoPlan(folder, token)) : null;
-  if (!plan) throw new OrgError(UNDO_GONE, 409, "undo-gone");
-  undoSaves.delete(folder.key);
+  // The plan its caller judged (who may: changesNeedPage), so nothing it didn't judge is restored; still its group's latest.
+  const saved = savedFor(folder, token);
+  const plan = saved ? (judged?.token === token ? judged : undoPlan(folder, token)) : null;
+  if (!saved || !plan) throw new OrgError(UNDO_GONE, 409, "undo-gone");
+  undoSaves.delete(saved.slot);
   const asking = askingFirst();
   const changed: ApprovalWrite["changed"] = [];
   let undone = 0;
@@ -532,9 +543,10 @@ async function tellNewChats(folderKey: string, rebuild: boolean): Promise<void> 
 export interface WriteOptions {
   /** The scan to resolve against (the route's, already judged); default scanForSave. */
   scan?: FolderScan;
-  /** A group switch's save (its caller says so, `group: true`): an item already approved is left as it is, so a
-      Changed one's fingerprint is never rewritten unseen; and when it changed anything it answers an Undo token. */
-  group?: boolean;
+  /** A group switch's save (its caller says so: `group: "<group id>"`, or `true` for the group its lists name): an
+      item already approved is left as it is, so a Changed one's fingerprint is never rewritten unseen; and when it
+      changed anything it answers an Undo token, that group's latest in the folder. */
+  group?: boolean | string;
 }
 
 /**
@@ -593,7 +605,15 @@ export async function writeFolderApprovals(folder: FolderRef, raw: ApprovalChang
   let token: string | undefined;
   if (opts.group && undo.length) {
     token = randomUUID();
-    undoSaves.set(folder.key, { token, items: undo });
+    const named = (["context", "skills"] as const).filter((k) => Object.keys(resolved[k]).length);
+    const group = typeof opts.group === "string" ? opts.group : named.length === 1 ? named[0]! : "both";
+    const slot = undoSlot(folder, group);
+    undoSaves.delete(slot); // a newer save of the group goes to the end: the newest are kept
+    undoSaves.set(slot, { token, items: undo });
+    // A group id is the caller's word, and a turn-off is anyone's: a folder keeps its UNDO_SLOTS newest groups.
+    const prefix = `${folder.key}\0`;
+    const mine = [...undoSaves.keys()].filter((k) => k.startsWith(prefix));
+    for (const k of mine.slice(0, Math.max(0, mine.length - UNDO_SLOTS))) undoSaves.delete(k);
   }
   await tellNewChats(folder.key, flips);
   return { scan: after, changed, ...(token ? { undo: token } : {}) };

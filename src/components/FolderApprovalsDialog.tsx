@@ -14,7 +14,7 @@ import { Icon, trapFocus } from "./ui";
 export function FolderApprovalsDialog(props: { cwd: string; name: string; onClose(): void; onChanged?(): void }) {
   const id = createUniqueId();
   const [view, { mutate }] = createResource(() => props.cwd, getFolderApprovals);
-  const decide = (kind: "files" | "skills") => async (change: Record<string, ApprovalState>, group?: true) => {
+  const decide = (kind: "files" | "skills") => async (change: Record<string, ApprovalState>, group?: string) => {
     const next: FolderApprovalsView = await setFolderApprovals(props.cwd, { [kind]: change, ...(group ? { group } : {}) });
     mutate(next);
     props.onChanged?.();

@@ -502,7 +502,8 @@ describe("the project's skill defaults: a Sova-kept setting with history, Undo a
     assert.ok(params.properties.edits.items.properties.setting.enum.includes("skills"), "the model can name it");
     assert.match(tool(pid, true).description, /\{setting: "skills", skills: \{<skill key or name>: "approved" \| "disallowed" \| "waiting"\}\}/);
     const got = await run(pid, true, { op: "get" });
-    assert.match(got.content[0]!.text, /- skills: No preference/);
+    // New items start on here: every skill is on, and none is new.
+    assert.match(got.content[0]!.text, /- skills: (\d+) of \1 on(?! ·)/);
     assert.match(got.content[0]!.text, /- context-approval: New ones start on \(Sova-wide\)/);
     assert.match(got.content[0]!.text, new RegExp(`- a-skill \\(${A.replace(/\./g, "\\.")}\\): waiting · project`));
     assert.match((await run(pid, true, { op: "reference", setting: "skills" })).content[0]!.text, /Skills \(skills\)/);
@@ -596,6 +597,6 @@ describe("the project's skill defaults: a Sova-kept setting with history, Undo a
     assert.equal((await skillsPut({ "a-skill": "approved", "b-skill": "approved" })).status, 200, "the page may");
     assert.equal(state("b-skill"), "approved");
     const skillsRow = (await settings.settingsInfo(pid)).rows.find((x) => x.setting === "skills")!;
-    assert.deepEqual([skillsRow.label, skillsRow.state, skillsRow.anchor], ["Skills", "2 approved", "project-skills"]);
+    assert.deepEqual([skillsRow.label, skillsRow.state, skillsRow.anchor], ["Skills", "2 of 2 on", "project-skills"]);
   });
 });

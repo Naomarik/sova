@@ -9,19 +9,21 @@
 // place, never by its name alone: a skill that moves asks again.
 //
 // GET /api/projects/:pid/context-files -> ContextFilesView
-// PUT /api/projects/:pid/context-files { files: Record<key, ApprovalState>, group?: true } | { undo } -> ContextFilesView
+// PUT /api/projects/:pid/context-files { files: Record<key, ApprovalState>, group?: string | true } | { undo } -> ContextFilesView
 // GET /api/projects/:pid/skills -> ProjectSkillsView (shared/project-skills.ts)
-// PUT /api/projects/:pid/skills { skills: Record<key | name, ApprovalState>, group?: true } | { undo } -> ProjectSkillsView
+// PUT /api/projects/:pid/skills { skills: Record<key | name, ApprovalState>, group?: string | true } | { undo } -> ProjectSkillsView
 // GET /api/folder-approvals?cwd=<absolute folder> -> FolderApprovalsView (a project's folder, or one a recorded chat runs in; else 404)
-// PUT /api/folder-approvals { cwd, files?: Record<key, ApprovalState>, skills?: Record<key, ApprovalState>, group?: true } | { cwd, undo } -> FolderApprovalsView
+// PUT /api/folder-approvals { cwd, files?: Record<key, ApprovalState>, skills?: Record<key, ApprovalState>, group?: string | true } | { cwd, undo } -> FolderApprovalsView
 //
-// A group switch's save says so with `group: true` beside its changes: an item already approved is left as it is (a
-// Changed one is never approved unseen, even when it is the only key named), and when it changed anything its answer
-// carries `undo`, a token for the folder's latest group save. Any other save (a row's switch, Accept Change, New
-// items left off after a first message) never takes the folder's token. The same PUT with `{ undo: <token> }` (and `cwd` on the folder route) in place of the
-// changes puts back each record that save wrote, exactly as it was before (an approval with its old fingerprint),
-// where the record is still what the save wrote: `undone` restored, `kept` left as they were. A token that isn't
-// the folder's latest group save (a newer one, a restart, used already): 409 `{ error, code: "undo-gone" }`.
+// A group switch's save says so with `group: "<group id>"` (the switch's own id, 1-100 of A-Za-z0-9:_./-; `true`
+// names the group by what it saves: "context", "skills" or "both") beside its changes: an item already approved is left
+// as it is (a Changed one is never approved unseen, even when it is the only key named), and when it changed anything
+// its answer carries `undo`, a token for that group's latest save in the folder. Any other save (a row's switch, Accept
+// Change, New items left off after a first message) never takes or drops a token. The same PUT with `{ undo: <token> }`
+// (and `cwd` on the folder route) in place of the changes puts back each record that save wrote, exactly as it was
+// before (an approval with its old fingerprint), where the record is still what the save wrote: `undone` restored,
+// `kept` left as they were. A token that isn't its group's latest save in the folder (a newer save of that group, a
+// restart, used already): 409 `{ error, code: "undo-gone" }`; another group's save never retires it.
 // Every save and Undo answers once the folder's chats not yet started have been rebuilt with it.
 // GET /api/settings/context-approval -> ContextApprovalSetting
 // PUT /api/settings/context-approval ContextApprovalSetting -> ContextApprovalSetting

@@ -138,7 +138,9 @@ describe("the group switch and its Undo", () => {
     assert.equal(again.status, 409);
     assert.deepEqual(await again.json(), { error: "Undo is no longer available. Nothing was changed.", code: "undo-gone" });
     assert.equal((await call("PUT", url, { undo: 5 }, pageHeaders())).status, 400);
-    assert.equal((await call("PUT", url, { files: { "AGENTS.md": "disallowed" }, group: "yes" }, pageHeaders())).status, 400);
+    assert.equal((await call("PUT", url, { files: { "AGENTS.md": "disallowed" }, group: "no spaces" }, pageHeaders())).status, 400);
+    assert.equal((await call("PUT", url, { files: { "AGENTS.md": "disallowed" }, group: 1 }, pageHeaders())).status, 400);
+    assert.equal((await call("PUT", url, { files: { "AGENTS.md": "disallowed" }, groupId: "x" }, pageHeaders())).status, 400, "groupId only beside group: true");
   });
 
   test("through the folder route: all on leaves an approved row as it is, even alone, and the Undo that turns them off again is anyone's", async () => {
@@ -163,6 +165,24 @@ describe("the group switch and its Undo", () => {
     assert.deepEqual(store.folderDecisions(p.key).context, { "AGENTS.md": kept });
     assert.deepEqual(store.folderDecisions(p.key).skills, {});
   });
+});
+
+test("Undo is kept per group: a Skills group flip, then a Context files one in the same folder; the Skills Undo still restores the skills", async () => {
+  const p = await project("undo-groups");
+  // The id in `group`, or as `groupId` beside `group: true`: the same.
+  const sk = await call("PUT", `/api/projects/${p.id}/skills`, { skills: { tidy: "disallowed" }, group: true, groupId: "card:skills:project" }, pageHeaders());
+  const skillsToken = ((await sk.json()) as { undo?: string }).undo!;
+  assert.ok(skillsToken);
+  const cx = await call("PUT", "/api/folder-approvals", { cwd: p.dir, files: { "AGENTS.md": "disallowed", "svc/AGENTS.md": "disallowed" }, group: "card:context:project" }, pageHeaders());
+  const contextToken = ((await cx.json()) as { undo?: string }).undo!;
+  assert.ok(contextToken);
+  const u = await call("PUT", `/api/projects/${p.id}/skills`, { undo: skillsToken }, pageHeaders());
+  assert.equal(u.status, 200, await u.clone().text());
+  assert.equal(((await u.json()) as { undone?: number }).undone, 1);
+  assert.deepEqual(store.folderDecisions(p.key).skills, {}, "the skills are back");
+  assert.equal(store.folderDecisions(p.key).context["AGENTS.md"]?.state, "disallowed", "the files' flip stands");
+  assert.equal((await call("PUT", "/api/folder-approvals", { cwd: p.dir, undo: contextToken }, pageHeaders())).status, 200, "and its own Undo is still there");
+  assert.deepEqual(store.folderDecisions(p.key).context, {});
 });
 
 describe("another computer's page", () => {

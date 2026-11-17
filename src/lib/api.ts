@@ -1883,17 +1883,20 @@ export const getMcpServers = () => request<McpServers>("/api/mcp/servers");
 /** A project's skill defaults for new chats, kept on this computer. */
 export const getProjectSkills = (projectId: string) => request<ProjectSkillsView>(`${projectPath(projectId)}/skills`, { cache: "no-store" });
 /** Approve or disallow skills (only the names given); answers the fresh view. */
-export const setProjectSkills = (projectId: string, skills: Record<string, ApprovalState>, opts: { group?: true } = {}) =>
-  request<ProjectSkillsView>(`${projectPath(projectId)}/skills`, jsonInit("PUT", { skills, ...opts }));
+/** A group switch's press on the wire: `group` is the group's id (the server keeps one Undo per folder and id). */
+const groupBody = (group: string | undefined): { group?: string } => (group ? { group } : {});
+export const setProjectSkills = (projectId: string, skills: Record<string, ApprovalState>, opts: { group?: string } = {}) =>
+  request<ProjectSkillsView>(`${projectPath(projectId)}/skills`, jsonInit("PUT", { skills, ...groupBody(opts.group) }));
 /** A project's context files for new chats, kept on this computer (shared/approvals.ts). */
 export const getProjectContextFiles = (projectId: string) => request<ContextFilesView>(`${projectPath(projectId)}/context-files`, { cache: "no-store" });
-export const setProjectContextFiles = (projectId: string, files: Record<string, ApprovalState>, opts: { group?: true } = {}) =>
-  request<ContextFilesView>(`${projectPath(projectId)}/context-files`, jsonInit("PUT", { files, ...opts }));
+export const setProjectContextFiles = (projectId: string, files: Record<string, ApprovalState>, opts: { group?: string } = {}) =>
+  request<ContextFilesView>(`${projectPath(projectId)}/context-files`, jsonInit("PUT", { files, ...groupBody(opts.group) }));
 /** Any folder's list, a project's or not: what the new chat's card decides through. */
 export const getFolderApprovals = (cwd: string) => request<FolderApprovalsView>(`/api/folder-approvals?cwd=${encodeURIComponent(cwd)}`, { cache: "no-store" });
-/** `group`: a group switch's press, the only save that skips rows already on and answers an Undo token. */
-export const setFolderApprovals = (cwd: string, change: { files?: Record<string, ApprovalState>; skills?: Record<string, ApprovalState>; group?: true }) =>
-  request<FolderApprovalsView>("/api/folder-approvals", jsonInit("PUT", { cwd, ...change }));
+/** `group`: a group switch's press, by its group's id (lib/approval-undo): the only save that skips rows already
+    on and answers an Undo token, kept by the server per folder and group. */
+export const setFolderApprovals = (cwd: string, change: { files?: Record<string, ApprovalState>; skills?: Record<string, ApprovalState>; group?: string }) =>
+  request<FolderApprovalsView>("/api/folder-approvals", jsonInit("PUT", { cwd, ...(change.files ? { files: change.files } : {}), ...(change.skills ? { skills: change.skills } : {}), ...groupBody(change.group) }));
 /** Undo of a group switch's save (the answer's `undo` token): every record that save wrote back as it was. */
 export const undoFolderApprovals = (cwd: string, undo: string) => request<FolderApprovalsView>("/api/folder-approvals", jsonInit("PUT", { cwd, undo }));
 export const undoProjectContextFiles = (projectId: string, undo: string) => request<ContextFilesView>(`${projectPath(projectId)}/context-files`, jsonInit("PUT", { undo }));

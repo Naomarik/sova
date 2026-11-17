@@ -6,7 +6,7 @@ import { acked, begin, EMPTY, failed, inOrder, queueOf, setupHold, readLanded, t
 import { keptLine, MCP_THIS_CHAT, rowApproval, SLASH_NOTE, slashHeading, type Row } from "../lib/setup-approvals";
 import { ChangedLine, GroupHead, GroupSwitch, NewChip, PartialNote, RowSwitch, showsChanged, showsNew, SizeButton, UndoLine } from "./ApprovalSwitches";
 import { askReread, noteSeenNew, rereadAsked, setHold } from "../lib/approval-hold";
-import { dropUndo, setUndoLine, undoFor } from "../lib/approval-undo";
+import { dropUndo, setUndoLine, setupGroup, undoFor } from "../lib/approval-undo";
 import { FolderApprovalsDialog } from "./FolderApprovalsDialog";
 import { mcpFlips, NOT_PROJECT, setupLine, setupOffLine, setupShows, setupSwitchLabel, setupTokens, SETUP_LABEL } from "../lib/mcp";
 import { openMarkdown } from "../lib/markdown-viewer";
@@ -229,7 +229,7 @@ export function SessionSetupCard(props: { path: string; editable?: boolean; tool
   // that group drops it.
   const undoOf = (kind: ItemKind) => {
     const a = approvals();
-    return a ? undoFor(queueOf(a.folder), `setup:${kind}`) : null;
+    return a ? undoFor(queueOf(a.folder), setupGroup(kind)) : null;
   };
   const [undoing, setUndoing] = createSignal(false);
   /**
@@ -247,15 +247,15 @@ export function SessionSetupCard(props: { path: string; editable?: boolean; tool
     const id = ++saves;
     const cwd = s.ok.cwd;
     const queue = queueOf(a.folder);
-    // Any change in a group drops its Undo line; a group save's answer replaces the folder's one Undo.
-    for (const kind of new Set(rows.map((r) => r.kind))) dropUndo(queue, `setup:${kind}`);
+    // Any change in a group drops its Undo line; a group save's answer puts its own in place.
+    for (const kind of new Set(rows.map((r) => r.kind))) dropUndo(queue, setupGroup(kind));
     setOverlay((o) => begin(o, rows.map((r) => r.f.approval!.key), to, id));
     const pick = (kind: ItemKind) => decideAll(rows.filter((r) => r.kind === kind).map((r) => ({ key: r.f.approval!.key })), to);
     // An answer after its time (its rows went back): the setup is read again to show what the server did.
     const p = path();
-    inOrder(queue, () => setFolderApprovals(cwd, { files: pick("context"), skills: pick("skill"), ...(group ? { group: true as const } : {}) }), { late: () => askReread(p) })
+    inOrder(queue, () => setFolderApprovals(cwd, { files: pick("context"), skills: pick("skill"), ...(group ? { group: setupGroup(group.kind) } : {}) }), { late: () => askReread(p) })
       .then((answer) => {
-        if (group && answer.undo) setUndoLine({ queue, group: `setup:${group.kind}`, text: group.text, token: answer.undo });
+        if (group && answer.undo) setUndoLine({ queue, group: setupGroup(group.kind), text: group.text, token: answer.undo });
         if (mine !== run) return;
         setOverlay((o) => acked(o, id, reads));
         return rereadAfterSave(mine);
@@ -300,13 +300,13 @@ export function SessionSetupCard(props: { path: string; editable?: boolean; tool
     setUndoing(true);
     inOrder(u.queue, () => undoFolderApprovals(cwd, u.token), { late: () => askReread(path()) })
       .then(() => {
-        dropUndo(u.queue);
+        dropUndo(u.queue, u.group);
         if (mine !== run) return;
         return rereadAfterSave(mine);
       })
       .catch((err: Error) => {
-        // Gone (a newer group save, a restart): the line goes, the toast says nothing changed.
-        dropUndo(u.queue);
+        // Gone (a newer press of that group, a restart): its line goes, the toast says nothing changed.
+        dropUndo(u.queue, u.group);
         toast(err.message);
         if (mine === run) askReread(path());
       })

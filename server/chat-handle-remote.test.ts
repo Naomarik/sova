@@ -244,6 +244,28 @@ test("mirrorListedKey: a mirror differing only in its LLM count starts no new li
   assert.notEqual(mirrorListedKey({ ...base, busy: true, llm: { tokens: { end: 1 } } }), a);
 });
 
+test("a first send whose check refuses it never reaches the chat: the pane gets the sentence with its clientId, and the next send is checked again", async () => {
+  const link = new FakeLink();
+  const path = sessionFile();
+  let checks = 0;
+  const h = new RemoteChatHandle(path, path, { unit: "u", pid: 1 }, link as never, mirror({ pristine: true, loadout: { off: null, toggleable: true } }), 7, {
+    needsBeforeMessage: () => true,
+    beforeMessage: async () => {
+      if (++checks === 1) throw new Error("Couldn't apply.");
+    },
+  });
+  const heard: Record<string, unknown>[] = [];
+  const client = { send: (m: unknown) => void heard.push(m as Record<string, unknown>) };
+  h.attach(client as never);
+  h.clientMessage(client as never, { type: "prompt", text: "hi", clientId: "c1" } as never);
+  await tick(5);
+  assert.equal(link.sent.filter((f) => f.t === "client.msg").length, 0);
+  assert.deepEqual(heard.find((m) => m.type === "error"), { type: "error", code: "refused", message: "Couldn't apply.", clientId: "c1" });
+  h.clientMessage(client as never, { type: "prompt", text: "hi", clientId: "c2" } as never);
+  await tick(5);
+  assert.deepEqual([checks, link.sent.filter((f) => f.t === "client.msg").length], [2, 1]);
+});
+
 test("a new chat's first send is never refused: it waits for the check before it (its folder's decisions read again), then reaches the chat", async () => {
   const link = new FakeLink();
   const path = sessionFile();

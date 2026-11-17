@@ -4,7 +4,7 @@ import type { ProjectSkillRow } from "../../shared/project-skills";
 import { getProjectContextFiles, getProjectSkills, setProjectContextFiles, setProjectSkills, undoProjectContextFiles, undoProjectSkills } from "../lib/api";
 import { cardLine, decideAll, flipTo, groupDoneLine, groupFlip, groupState, isOn, itemsPhrase, markOf, type Approval, type Decision, type ItemKind } from "../lib/approvals";
 import { begin, EMPTY, failed, inOrder, projectQueue, settled, type Overlay } from "../lib/approval-overlay";
-import { dropUndo, setUndoLine, undoFor } from "../lib/approval-undo";
+import { cardGroup, dropUndo, setUndoLine, undoFor } from "../lib/approval-undo";
 import { createPoll } from "../lib/poll";
 import { shortDescription } from "../lib/project-skills";
 import { contextSwitchLabel, skillSwitchLabel, tokenFacts } from "../lib/session-setup";
@@ -48,7 +48,7 @@ export function ApprovalsCard(props: {
   list: ApprovalsList | undefined;
   error: string | null;
   /** Saves these changes; answers the save's view (its `undo` token after a group save). */
-  decide(change: Record<string, ApprovalState>, group?: true): Promise<ApprovalSaveAnswer>;
+  decide(change: Record<string, ApprovalState>, group?: string): Promise<ApprovalSaveAnswer>;
   /** Undo of a group save, by its token. */
   undo(token: string): Promise<void>;
   extra?: JSX.Element;
@@ -61,7 +61,7 @@ export function ApprovalsCard(props: {
   const [undoing, setUndoing] = createSignal(false);
   const kind = (): ItemKind => (props.what === "skills" ? "skill" : "context");
   let saves = 0;
-  const groupId = (source: string) => `card:${props.what}:${source}`;
+  const groupId = (source: string) => cardGroup(kind(), source);
   /** Saves rows at one decision, shown at once; `group` names the group switch pressed, and its done line. */
   const save = (rows: ApprovalRow[], to: Decision, what: string, group?: { source: string; text: string }) => {
     if (!rows.length) return;
@@ -69,7 +69,7 @@ export function ApprovalsCard(props: {
     for (const source of new Set(rows.map((r) => r.source.kind))) dropUndo(props.queue, groupId(source));
     setOverlay((o) => begin(o, rows.map((r) => r.key), to, id));
     // The PUT answers with the whole list, which then carries the decision: the row is the server's again.
-    inOrder(props.queue, () => props.decide(decideAll(rows, to), group ? true : undefined))
+    inOrder(props.queue, () => props.decide(decideAll(rows, to), group ? groupId(group.source) : undefined))
       .then((answer) => {
         setOverlay((o) => settled(o, id));
         if (group && answer.undo) setUndoLine({ queue: props.queue, group: groupId(group.source), text: group.text, token: answer.undo });
@@ -86,7 +86,7 @@ export function ApprovalsCard(props: {
     inOrder(props.queue, () => props.undo(u.token))
       .catch((err: Error) => toast(err.message))
       .finally(() => {
-        dropUndo(props.queue);
+        dropUndo(u.queue, u.group);
         setUndoing(false);
       });
   };

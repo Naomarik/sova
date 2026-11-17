@@ -50,23 +50,27 @@ export function fallbackRule(): FolderRule {
   return { ...OPEN_RULE, asking };
 }
 
-/** The rule for a new chat in `cwd`, read now (fallbackRule when the list can't be read). */
-export async function folderRuleForCwd(cwd: string): Promise<FolderRule> {
+/** The rule for a new chat in `cwd`, read now (fallbackRule when the list can't be read; `strict`: thrown instead). */
+export async function folderRuleForCwd(cwd: string, opts: { strict?: boolean } = {}): Promise<FolderRule> {
   try {
     const approvals = await import("../approvals");
     return folderRuleOf(await approvals.approvalLookupForCwd(cwd), cwd);
   } catch (err) {
+    if (opts.strict) throw err;
     console.warn(`[approvals] the list for ${cwd}: ${err instanceof Error ? err.message : String(err)}`);
     return fallbackRule();
   }
 }
 
-/** The rule for a new chat of session file `path` (its header's folder); fallbackRule when it can't be read. */
-export async function folderRuleForSession(path: string): Promise<FolderRule> {
+/** The rule for a new chat of session file `path` (its header's folder); fallbackRule when it can't be read
+    (`strict`: thrown instead, a header with no folder included). */
+export async function folderRuleForSession(path: string, opts: { strict?: boolean } = {}): Promise<FolderRule> {
   try {
     const cwd = await (await import("../git-summary")).readStoredCwd(path);
-    return cwd ? await folderRuleForCwd(cwd) : fallbackRule();
-  } catch {
+    if (!cwd && opts.strict) throw new Error(`${path} has no folder in its header`);
+    return cwd ? await folderRuleForCwd(cwd, opts) : fallbackRule();
+  } catch (err) {
+    if (opts.strict) throw err;
     return fallbackRule();
   }
 }

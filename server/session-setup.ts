@@ -33,7 +33,7 @@ import { existsSync, readFileSync, statSync } from "node:fs";
 import type { HarnessResources } from "../shared/harness";
 import type { SetupMcp } from "../shared/mcp";
 import { CHARS_PER_TOKEN, SETUP_FILE_MAX_BYTES, type SessionSetup, type SessionSetupFileText, type SessionSetupFile, type SessionSetupSkill } from "../shared/protocol";
-import { acquireChatHandle, assertNotLive, chatHandle, closeChat } from "./chat-handle";
+import { acquireChatHandle, assertNotLive, chatHandle, closeChat, RefusedError } from "./chat-handle";
 import { plan, readStoredCwd, type Plan } from "./git-summary";
 import { flipsAgainstProject, isContextOff, isSkillOff, normalizeLoadout, pristineLoadout, sameLoadout, type LoadoutEntryData } from "./session-loadout";
 import type { ApprovalLookup } from "./approvals-lookup";
@@ -476,37 +476,52 @@ export interface FirstMessageChat {
   reopenHere(args: { folderRule?: FolderRule; message?: string }): Promise<unknown>;
 }
 
+/** The refusal of a first message whose chat couldn't be rebuilt with its folder's decisions: it isn't sent, and the
+    next Send tries again. */
+export const FIRST_MESSAGE_NOT_APPLIED = "Sova couldn't apply your context file and skill switches to this chat, so your message wasn't sent. Send it again to retry.";
+
 /** The rule each chat was last rebuilt with by the re-check (its mirror may not have said so yet). */
 const recheckedWith = new WeakMap<object, FolderRule>();
 
 const NOTHING_OFF: LoadoutEntryData = { v: 1, offContext: [], offSkills: [] };
 
+/** The reads a re-check makes (tests replace them). */
+export const recheckReads = {
+  rule: async (path: string): Promise<FolderRule> => (await import("./projects/folder-rule")).folderRuleForSession(path, { strict: true }),
+  entry: async (path: string): Promise<LoadoutEntryData | null> => stateView(await readBranch(path)).latest(LOADOUT)?.data ?? null,
+};
+
 /**
  * Just before a new chat's first message goes in (§chat.context-approval/at-once): its folder's decisions are read
  * again and laid over its own entry as its build does (pristineLoadout); when that differs from what it was built
  * with, it is rebuilt in its own process with them first, so no first message goes out on an old list. True when it
- * was rebuilt. In the switches' one order, so it never interleaves with a save's rebuild. Never throws.
+ * was rebuilt. In the switches' one order, so it never interleaves with a save's rebuild. It never fails open: when
+ * the decisions or the chat's file can't be read, or the rebuild fails, it throws a RefusedError
+ * (FIRST_MESSAGE_NOT_APPLIED): the message is refused, and the next one checks again.
  */
 export function recheckBeforeFirst(h: FirstMessageChat): Promise<boolean> {
+  const refuse = (what: string, err: unknown): never => {
+    console.warn(`[setup] ${what} for a first message failed: ${err instanceof Error ? err.message : String(err)}`);
+    throw new RefusedError(FIRST_MESSAGE_NOT_APPLIED);
+  };
   return inLoadoutOrder(async () => {
     const m = h.mirror;
     if (!m.pristine || m.special || !m.loadout) return false;
-    const rule = await (await import("./projects/folder-rule")).folderRuleForSession(h.path);
+    const rule = await recheckReads.rule(h.path).catch((err) => refuse("reading its folder's decisions", err));
     const last = recheckedWith.get(h);
     if (last && sameRuleEffect(last, rule)) return false;
-    const entry = await readBranch(h.path)
-      .then((branch) => stateView(branch).latest(LOADOUT)?.data ?? null)
-      .catch(() => null);
+    const entry = await recheckReads.entry(h.path).catch((err) => refuse("reading the chat's file", err));
     const want = pristineLoadout(entry, rule) ?? NOTHING_OFF;
     const { offMcp: _a, onMcp: _b, ...built } = m.loadout.off ?? NOTHING_OFF;
     const { offMcp: _c, onMcp: _d, ...wanted } = want;
     if (sameLoadout(built, wanted)) return false;
+    await h.reopenHere({ folderRule: rule, message: "Applying the context files and skills; reconnect" }).catch((err) => refuse("rebuilding the chat", err));
+    // Only once it is rebuilt: a failed rebuild is tried again at the next message.
     recheckedWith.set(h, rule);
-    await h.reopenHere({ folderRule: rule, message: "Applying the context files and skills; reconnect" });
     return true;
   }).catch((err) => {
-    console.warn(`[setup] the first message's re-check failed: ${err instanceof Error ? err.message : String(err)}`);
-    return false;
+    if (err instanceof RefusedError) throw err;
+    return refuse("the re-check", err);
   });
 }
 

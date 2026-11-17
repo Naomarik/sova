@@ -129,12 +129,18 @@ function viewOf(scan: import("./approvals").FolderScan): FolderApprovalsView {
 /** The folder's lists after a write, from its kept scan: no second walk. */
 const keptView = async (folder: FolderRef): Promise<FolderApprovalsView> => viewOf(await keptScanFor(folder));
 
-/** A group switch's save says so (`group: true`, shared/approvals.ts): it never re-approves, and it answers an Undo token. */
-function isGroup(body: Record<string, unknown>): boolean {
+/** A group switch's save says so (`group: "<group id>"`, or `true`, shared/approvals.ts): it never re-approves, and it
+    answers an Undo token, its group's latest. */
+function isGroup(body: Record<string, unknown>): boolean | string {
+  const bad = () => new OrgError("group must be the group switch's id (up to 100 letters, digits and :_./-) or absent.");
+  // The id may also come as `groupId` beside `group: true`.
+  if (body.groupId !== undefined && (body.group !== true || typeof body.groupId !== "string" || !GROUP_ID.test(body.groupId))) throw bad();
   if (body.group === undefined || body.group === false) return false;
-  if (body.group !== true) throw new OrgError("group must be true (a group switch's save) or absent.");
-  return true;
+  if (body.group === true) return typeof body.groupId === "string" ? body.groupId : true;
+  if (typeof body.group === "string" && GROUP_ID.test(body.group)) return body.group;
+  throw bad();
 }
+const GROUP_ID = /^[A-Za-z0-9:_./-]{1,100}$/;
 
 /** An Undo's refusal, or the plan that was judged when it may go ahead (the write restores only what this judged): a 409 for a token that isn't the folder's latest group save;
     a 403 when it would turn anything on (an approval back, a disallow lifted) and this isn't the page's click. */

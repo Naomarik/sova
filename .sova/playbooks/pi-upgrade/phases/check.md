@@ -9,4 +9,4 @@ Thorough, not overextended: this list and no more. The merge queue runs the full
 5. Only if "Measure speed before and after" is on, or speed was a win or a risk: `scripts/perf-pi/README.md`, before and after.
 6. Each risk in the report: show it is fixed, or say why it doesn't apply.
 
-Compare every failure with master under the same conditions before calling it the upgrade's. Report the table (`roles/verifier.md`), then stop: say what still blocks landing (Sova's note names it), or that the user can press Land or type "land it" in this chat. Only their Land lands it, through the merge queue.
+Compare every failure with master under the same conditions before calling it the upgrade's. Report the table (`references/roles/verifier.md`), then stop: say what still blocks landing (Sova's note names it), or that the user can press Land or type "land it" in this chat. Only their Land lands it, through the merge queue.

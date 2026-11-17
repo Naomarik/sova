@@ -5,8 +5,8 @@
 | Key | What |
 |---|---|
 | `id`, `label` | its name, and its words on the card |
-| `roles` | who works in it; `main` may be named without being declared |
-| `team` | run its helpers as one team or separately (default: a team when two or more helpers) |
+| `goal` | one line: what the step achieves |
+| `teams` | the teams that work on it, by id; none: the main chat alone |
 | `stop` | `always`: the run waits for the person here; `optional`: a tick on the card (`startsOff`: off unless ticked) |
 | `asks` | more things it stops for, a few words each ("the baseline would have to grow") |
 | `report` | what it shows before it's done: `chart`, `table` or `verdict` |
@@ -30,7 +30,7 @@ How it goes round is the person's to set on the card, from these defaults: `max`
 ```json
 { "initial": "find",
   "states": { "find": { "label": "Find the target", "on": { "nothing-to-do": "done", "found": "research" } },
-              "research": { "label": "Research", "roles": ["reader"], "on": { "done": { "to": "report", "when": "the judge says complete" } } },
+              "research": { "label": "Research", "teams": ["research"], "on": { "done": { "to": "report", "when": "the judge says complete" } } },
               "report": { "label": "Report", "stop": "always", "on": {} },
               "done": { "label": "Nothing to do", "quiet": true, "on": {} } } }
 ```

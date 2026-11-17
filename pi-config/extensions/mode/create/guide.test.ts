@@ -186,7 +186,7 @@ test("every entry stands alone: it depends on no project, no checkout and no spe
 
 /** §chat.playbooks/contents-page, word for word: the playbook know-how's contents, shared by Create and a run. */
 const PROMISED_SECTIONS = `- \`what\`: what a playbook is, and the files in its folder
-- \`cast\`: who runs it, their prompts, and which models
+- \`cast\`: who runs it: teams, their goals, and the members they must have
 - \`choices\`: what the person picks on the card
 - \`steps\`: steps, stop points, cycles and flows
 - \`card\`: what the person sees before Start, and after

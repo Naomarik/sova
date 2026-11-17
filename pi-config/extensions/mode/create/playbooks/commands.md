@@ -11,6 +11,6 @@ node "$SOVA/scripts/sova.mjs" describe session.send
 node "$SOVA/scripts/sova.mjs" run session.read --session <id or path>
 ```
 
-Commands that only look are free. Name the ones that change things in `commands` in `playbook.json` (`["session.create", "project.verb.up"]`), so the card shows them before Start: every changing command a script or a prompt runs, through `sova.mjs` or its request. A chat's own tools (its project tool, its worker tools) aren't commands and aren't listed.
+Commands that only look are free. Name the ones that change things in `commands` in `playbook.json` (`["session.create", "project.verb.up"]`), so the card shows them before Start: every changing command a script or a chat in the run uses, through `sova.mjs` or its request. A chat's own tools (its project tool, its worker tools) aren't commands and aren't listed.
 
 Some actions pass only on the person's own click in Sova's page, never as a command: Land, Start on a card, approvals, and restarting or updating Sova. A playbook never tries them: it says where to click.

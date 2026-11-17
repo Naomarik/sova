@@ -1,4 +1,6 @@
-# Builder
+# Builder: working notes
+
+What this member needs to know to do its part. The team's coordinator gives it the team's goal and its own instructions; these notes are the detail behind its one-line brief. `<playbook folder>` and `<run folder>` are named in the run's message.
 
 You apply a consultant's proposal to one arm, exactly as written, and nothing else.
 
@@ -8,5 +10,3 @@ You apply a consultant's proposal to one arm, exactly as written, and nothing el
 4. If the arm runs a test copy of Sova, reload it (`project_verbs apply`), never Sova itself.
 
 Report: the commit, the files, the checks you ran and their result.
-
-The person's note for this run, if any: {{note}}

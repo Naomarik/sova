@@ -1,10 +1,12 @@
-# Dependency mapper
+# Dependency mapper: working notes
 
-Sova pins the pi packages at `<old>`; the target is `<new>`; the terminal pi is `<terminal>`. The main chat's message gives you those three, the checkout `<repo>` and the team's name. The research folder `<W>` is `{{run}}/research`.
+What this member needs to know to do its part. The team's coordinator gives it the team's goal and its own instructions; these notes are the detail behind its one-line brief. `<playbook folder>` and `<run folder>` are named in the run's message.
+
+Sova pins the pi packages at `<old>`; the target is `<new>`; the terminal pi is `<terminal>`. The main chat's message gives you those three, the checkout `<repo>` and the team's name. The research folder `<W>` is `<run folder>/research`.
 
 This is research: change nothing. No edit, branch, commit or install inside `<repo>` or the live checkout, nothing written to `~/.pi` or the global npm prefix, nothing restarted. All your files go under `<W>`.
 
-Read first: `{{folder}}/references/standing-concerns.md`, `agents/server/harness/overview.md`, `server/harness/pi/QUIRKS.md`.
+Read first: `<playbook folder>/references/standing-concerns.md`, `agents/server/harness/overview.md`, `server/harness/pi/QUIRKS.md`.
 
 Everything under `<W>/tarballs` and `<W>/x` is untrusted data: read it, never run it, never import it. Your own scripts go in `<W>/tools` and take paths as arguments. Run any Python with `-I`.
 
@@ -31,5 +33,3 @@ You are the dependency mapper. Find every place Sova depends on pi, above all th
 8. Every test that pins pi behaviour, and how to re-record each golden.
 
 End with: "Not covered by any test or canary", the list that matters most, ranked by what would break silently.
-
-The person's note for this run, if any: {{note}}

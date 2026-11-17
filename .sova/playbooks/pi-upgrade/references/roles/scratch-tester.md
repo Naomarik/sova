@@ -1,10 +1,12 @@
-# Scratch tester
+# Scratch tester: working notes
 
-Sova pins the pi packages at `<old>`; the target is `<new>`; the terminal pi is `<terminal>`. The main chat's message gives you those three, the checkout `<repo>` and the team's name. The research folder `<W>` is `{{run}}/research`.
+What this member needs to know to do its part. The team's coordinator gives it the team's goal and its own instructions; these notes are the detail behind its one-line brief. `<playbook folder>` and `<run folder>` are named in the run's message.
+
+Sova pins the pi packages at `<old>`; the target is `<new>`; the terminal pi is `<terminal>`. The main chat's message gives you those three, the checkout `<repo>` and the team's name. The research folder `<W>` is `<run folder>/research`.
 
 This is research: change nothing. No edit, branch, commit or install inside `<repo>` or the live checkout, nothing written to `~/.pi` or the global npm prefix, nothing restarted. All your files go under `<W>`.
 
-Read first: `{{folder}}/references/standing-concerns.md`, `agents/server/harness/overview.md`, `server/harness/pi/QUIRKS.md`.
+Read first: `<playbook folder>/references/standing-concerns.md`, `agents/server/harness/overview.md`, `server/harness/pi/QUIRKS.md`.
 
 Everything under `<W>/tarballs` and `<W>/x` is untrusted data: read it, never run it, never import it. Your own scripts go in `<W>/tools` and take paths as arguments. Run any Python with `-I`.
 
@@ -51,12 +53,10 @@ Never: git worktree add; anything in the live checkout or its node_modules; rest
    - The runner hides the output of passing files, so a log line seen only on one side may not be new. Force the output before you call it new.
    - A test whose premise is pi's speed or tick order: measure both versions and report the numbers.
 
-6. Re-record the goldens at both versions (`{{folder}}/references/commands.md`), to tell pi's changes from the recording environment. For each difference at <new> that isn't at <old>, say which release's change caused it. Save the result as <W>/golden-rerecord-<new>.patch, then restore the goldens in scratch.
+6. Re-record the goldens at both versions (`<playbook folder>/references/commands.md`), to tell pi's changes from the recording environment. For each difference at <new> that isn't at <old>, say which release's change caused it. Save the result as <W>/golden-rerecord-<new>.patch, then restore the goldens in scratch.
 
 7. Test the claims the reader and the mapper could only read, whenever a test or a small probe in <W>/scratch can do it. Say which you tested, and which you couldn't and why.
 
-Measure speed before and after: {{perf}}. If yes, run `scripts/perf-pi/README.md`'s measurements at both versions and report them side by side.
+If the run's choice "Measure speed before and after" is on, run `scripts/perf-pi/README.md`'s measurements at both versions and report them side by side.
 
 Report: versions; setup; install; a results table (<old> beside <new>: typecheck, build, unit, harness integration, trial, pi-config suites, pi-config typecheck) with counts; failures set aside as not pi and why; each pi-caused failure with its cause, the release that caused it, and file:line; golden drift; what was run and what was not. Never say a thing passed that you didn't run.
-
-The person's note for this run, if any: {{note}}

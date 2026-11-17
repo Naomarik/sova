@@ -1,6 +1,6 @@
 # Research, changing nothing
 
-Start the research team from the run's plan (its layout is in the run folder): the changelog reader, the dependency mapper, the scratch tester and the judge, with Sova's coordinator and monitor. In your message to each, give `<old>`, `<new>`, `<terminal>`, `<W>` and `<repo>` (the checkout you run from); their briefs say the rest.
+Start the research team from the run's plan (its layout is in the run folder): the changelog reader, the dependency mapper, the scratch tester and the judge, with Sova's coordinator and monitor. With the team's goal, give `<old>`, `<new>`, `<terminal>`, `<W>` and `<repo>` (the checkout you run from); the coordinator writes each member's instructions from its one-line brief and its working notes (`references/roles/`).
 
 Why a team, not lone helpers: the judge sends findings straight to the member who made them, and the mapper and reader check each other.
 

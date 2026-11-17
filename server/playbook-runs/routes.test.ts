@@ -189,6 +189,61 @@ describe("a playbook card", () => {
     assert.equal((await app.request(`/api/playbook-runs/${draft.id}`)).status, 404);
   });
 
+  describe("a chat runs one playbook", () => {
+    const other = join(scratchAgentDir, "sova", "playbooks", "other");
+    mkdirSync(other, { recursive: true });
+    writeFileSync(join(other, "PLAYBOOK.md"), "---\ntitle: Other\ndescription: Another playbook\n---\nConduct the other.\n");
+    writeFileSync(join(other, "playbook.json"), JSON.stringify({ version: 1, roles: { main: { label: "Main chat", models: [{ model: "zai/glm-5.3", effort: "low" }] } }, steps: [{ id: "go", label: "Go", roles: ["main"] }] }));
+    let n = 0;
+    const chat = () => {
+      const id = `chat-one-${++n}`;
+      const path = join(scratchAgentDir, "sessions", "--proj--", `2026-11-16T00-01-0${n}-000Z_${id}.jsonl`);
+      writeFileSync(path, `${JSON.stringify({ type: "session", version: 3, id, timestamp: "2026-11-16T00:01:00.000Z", cwd: scratchAgentDir })}\n`);
+      return { id, path };
+    };
+    const openIn = (path: string, id: string) => app.request("/api/playbook-runs", json({ playbook: { source: "user", id }, cwd: scratchAgentDir, path }));
+    const listed = async (path: string) => ((await (await app.request(`/api/playbook-runs?path=${encodeURIComponent(path)}`)).json()) as { runs: PlaybookRunView[] }).runs.map((r) => r.id);
+    const started = (id: string, conducting: { id: string; path: string }) =>
+      store.changeRun(id, (x) => {
+        x.state = "started";
+        x.started = { at: new Date().toISOString(), revision: x.revision, chat: conducting, newChat: false, folder: scratchAgentDir };
+      });
+
+    test("a card of another playbook replaces the chat's card not yet started", async () => {
+      const c = chat();
+      const first = (await (await openIn(c.path, "trial")).json()) as PlaybookRunView;
+      const second = (await (await openIn(c.path, "other")).json()) as PlaybookRunView;
+      assert.notEqual(second.id, first.id);
+      assert.equal(store.runById(first.id)!.closed, true);
+      assert.deepEqual(await listed(c.path), [second.id]);
+    });
+
+    test("a chat that conducts a run opens no other card, its card put away or not", async () => {
+      const c = chat();
+      const run = (await (await openIn(c.path, "trial")).json()) as PlaybookRunView;
+      started(run.id, c);
+      for (const id of ["other", "trial"]) {
+        const res = await openIn(c.path, id);
+        assert.equal(res.status, 409);
+        assert.deepEqual(await res.json(), { error: "This chat already runs the playbook Trial, and a chat runs one playbook. Start this one in a new chat.", holding: run.id });
+      }
+      assert.equal((await asPage(`/api/playbook-runs/${run.id}`, { method: "DELETE" })).status, 200);
+      assert.equal((await openIn(c.path, "other")).status, 409, "put away, the run still runs in this chat");
+      assert.deepEqual(await listed(c.path), []);
+    });
+
+    test("a chat whose card started a run in another chat opens no other card until that card is put away", async () => {
+      const c = chat();
+      const elsewhere = chat();
+      const run = (await (await openIn(c.path, "trial")).json()) as PlaybookRunView;
+      started(run.id, elsewhere);
+      assert.equal((await openIn(c.path, "other")).status, 409);
+      assert.equal((await openIn(elsewhere.path, "other")).status, 409, "the chat conducting it");
+      assert.equal((await asPage(`/api/playbook-runs/${run.id}`, { method: "DELETE" })).status, 200);
+      assert.equal((await openIn(c.path, "other")).status, 201);
+    });
+  });
+
   test("Save as My Defaults gives the next card those values, marked as your standing answer", async () => {
     const v = await open();
     const edited = (await (await app.request(`/api/playbook-runs/${v.id}`, patch({ revision: v.revision, edits: { choices: { level: "hi" } } }))).json()) as PlaybookRunView;

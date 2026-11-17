@@ -146,6 +146,25 @@ export function runsOfChat(sessionId: string): PlaybookRunRecord[] {
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 }
 
+/**
+ * The run that holds a chat, if one does: a chat runs one playbook at most. It holds the chat it conducts, put
+ * away or not, and the chat whose card started it while that card is still shown there. `except` leaves one run out.
+ */
+export function runHolding(sessionId: string, except?: string): PlaybookRunRecord | undefined {
+  return [...all().values()].find(
+    (r) =>
+      r.id !== except &&
+      (r.state === "started" || r.state === "starting") &&
+      ((r.started?.chat.id === sessionId) || (r.state === "starting" && r.halfMade?.id === sessionId) || (!r.closed && r.shownIn?.id === sessionId)),
+  );
+}
+
+/** Why a chat a run holds starts no other. */
+export const oneRunRefusal = (holding: PlaybookRunRecord): string => `This chat already runs the playbook ${holding.playbook.title}, and a chat runs one playbook. Start this one in a new chat.`;
+
+/** The chat's open drafts, any playbook's. */
+export const draftsOf = (sessionId: string): PlaybookRunRecord[] => runsOfChat(sessionId).filter((r) => r.state === "draft");
+
 /** The chat's open draft of one playbook, if it has one. */
 export function openDraftOf(sessionId: string, playbook: { source: string; id: string }): PlaybookRunRecord | undefined {
   return runsOfChat(sessionId).find((r) => r.state === "draft" && r.playbook.source === playbook.source && r.playbook.id === playbook.id);

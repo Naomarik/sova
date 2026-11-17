@@ -25,7 +25,7 @@ import { answersKey, saveAnswers } from "./answers";
 import { chatRefOf, liveEnv, loadPlaybook, SOVA_SCRIPT } from "./env";
 import { runBlock, runMessage, type ContentsSection } from "./message";
 import { effectiveEdits, freezePlan, runCard, runsInNewChat, type CardEnv } from "./plan";
-import { changeRun, runById, type PlaybookRunRecord } from "./store";
+import { changeRun, oneRunRefusal, runById, runHolding, type PlaybookRunRecord } from "./store";
 import { runView } from "./view";
 
 export class RunRefused extends Error {
@@ -177,6 +177,11 @@ export async function startRun(runId: string, revision: number, deps: StartDeps)
   if (!r || r.closed) throw new RunRefused(404, "No such playbook run.");
   if (r.state !== "draft") throw new RunRefused(409, r.state === "starting" ? "This run is starting." : "This run has already started.", { run: await runView(r) });
   if (revision !== r.revision) throw new RunRefused(409, "The card changed since you saw it. Here it is as it is now: check it and press Start again.", { run: await runView(r) });
+  // A chat runs one playbook at most: neither the card's chat nor a chat an earlier Start made may hold another.
+  for (const chat of [r.shownIn, r.halfMade]) {
+    const holding = chat ? runHolding(chat.id, r.id) : undefined;
+    if (holding) throw new RunRefused(409, oneRunRefusal(holding), { run: await runView(r), holding: holding.id });
+  }
   // Claimed before the first wait, so a second click (or a second tab) finds it starting and starts nothing.
   changeRun(r.id, (x) => {
     x.state = "starting";

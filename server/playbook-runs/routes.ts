@@ -16,7 +16,7 @@ import { loadPlaybook, refOf } from "./env";
 import type { ContentsSection } from "./message";
 import { effectiveEdits } from "./plan";
 import { projectKeyOf, RunRefused, startRun } from "./start";
-import { changeRun, createRun, openDraftOf, runById, runsOfChat } from "./store";
+import { changeRun, createRun, draftsOf, oneRunRefusal, openDraftOf, runById, runHolding, runsOfChat } from "./store";
 import { runView } from "./view";
 
 const SOURCES = ["sova", "user", "project"] as const;
@@ -134,7 +134,8 @@ export interface PlaybookRunRouteDeps {
 export function mountPlaybookRunRoutes(app: Hono, deps: PlaybookRunRouteDeps): void {
   const request = statingOwnNumber(app);
 
-  // Open a card: a new draft, or this chat's open draft of that playbook.
+  // Open a card: this chat's open draft of that playbook, or a new draft in place of its draft of another one;
+  // a chat a run holds opens none (one playbook per chat).
   app.post("/api/playbook-runs", async (c) => {
     const b = await body(c);
     if (b.cwd !== undefined && typeof b.cwd !== "string") return c.json({ error: "cwd must be an absolute folder." }, 400);
@@ -152,6 +153,9 @@ export function mountPlaybookRunRoutes(app: Hono, deps: PlaybookRunRouteDeps): v
     if (!cwd.startsWith("/")) return c.json({ error: "cwd must be an absolute folder." }, 400);
     const ref = { source: p.source as string, id: p.id };
     const text = typeof b.text === "string" && b.text.trim() ? b.text.trim() : undefined;
+    // A chat runs one playbook at most: one that already runs one opens no other card.
+    const holding = shownIn ? runHolding(shownIn.id) : undefined;
+    if (holding) return c.json({ error: oneRunRefusal(holding), holding: holding.id }, 409);
     const open = shownIn ? openDraftOf(shownIn.id, ref) : undefined;
     if (open) {
       if (text !== undefined && text !== open.text)
@@ -167,6 +171,11 @@ export function mountPlaybookRunRoutes(app: Hono, deps: PlaybookRunRouteDeps): v
     if (!loaded.spec) return c.json({ error: loaded.error ? `The playbook's description can't be read: ${loaded.error}` : "This playbook has no description, so it has no card: send it from the Playbooks dialog." }, 400);
     const tLoad = Date.now();
     const first = firstValues(loaded.spec, readAnswers(answersKey(ref, await projectKeyOf(cwd))));
+    // The chat's card of another playbook, not started, gives way to this one.
+    for (const old of shownIn ? draftsOf(shownIn.id) : [])
+      changeRun(old.id, (x) => {
+        x.closed = true;
+      });
     const run = createRun({ playbook: refOf(loaded.info), cwd, ...(shownIn ? { shownIn } : {}), ...(text ? { text } : {}), initial: first });
     const tMade = Date.now();
     const view = await runView(run);

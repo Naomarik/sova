@@ -233,6 +233,23 @@ describe("Start", () => {
     assert.equal(store.runById(run.id)!.state, "draft");
   });
 
+  test("a chat that already runs a playbook starts no other, in it or in a new chat: nothing is sent, made or changed", async () => {
+    const chats = new Chats();
+    const first = await draft("trial");
+    const here = await draft("delegated", first.shownIn);
+    const elsewhere = await draft("powered", first.shownIn);
+    await startRun(first.run.id, first.run.revision, { request: chats.request, contents: () => [], host: chats.host() });
+    chats.sent = [];
+    chats.set = [];
+    for (const { run } of [here, elsewhere])
+      await assert.rejects(
+        startRun(run.id, run.revision, { request: chats.request, contents: () => [], host: chats.host() }),
+        (e: unknown) => e instanceof RunRefused && e.status === 409 && e.message === "This chat already runs the playbook trial, and a chat runs one playbook. Start this one in a new chat.",
+      );
+    assert.deepEqual([chats.sent.length, chats.made.length, chats.set.length], [0, 0, 0]);
+    assert.deepEqual([store.runById(here.run.id)!.state, store.runById(elsewhere.run.id)!.state], ["draft", "draft"]);
+  });
+
   test("a chat that already has a message keeps its name", async () => {
     const chats = new Chats();
     const { run, shownIn } = await draft("trial");

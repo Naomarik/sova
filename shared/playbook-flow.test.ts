@@ -3,7 +3,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
-import { parsePlaybookSpec, type PlaybookSpec } from "./playbook-format";
+import { cycleOf, parsePlaybookSpec, stepsOf, type PlaybookSpec } from "./playbook-format";
 import { playbookFlowSource, type FlowOptions, type FlowSource } from "./playbook-flow";
 import { parseVis } from "../src/vis/parse";
 
@@ -117,6 +117,9 @@ test("the shipped playbooks draw cleanly: A/B cycle and Pi upgrade", () => {
   for (const file of ["../playbooks/ab-cycle/playbook.json", "../.sova/playbooks/pi-upgrade/playbook.json"]) {
     const spec = ok(JSON.parse(readFileSync(new URL(file, import.meta.url), "utf8")));
     const d = drawn(playbookFlowSource(spec, { title: file }));
-    assert.ok(d.nodes.length >= 3, `${file}: ${d.nodes.length} nodes`);
+    const want = spec.machine ? spec.machine.states.map((x) => x.label) : stepsOf(spec.steps).map((x) => x.label);
+    assert.deepEqual(d.nodes.filter((n) => n.shape !== "start" && n.shape !== "end").map((n) => n.label), want, `${file}: every step drawn, in order`);
+    const c = cycleOf(spec);
+    if (c) assert.ok(d.groups?.some((g) => g.label === `${c.label} (repeats)` && g.nodes.length === c.steps.length), `${file}: its repeating group is framed`);
   }
 });

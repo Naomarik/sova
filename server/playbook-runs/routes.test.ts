@@ -211,11 +211,18 @@ describe("a playbook card", () => {
 
     test("a card of another playbook replaces the chat's card not yet started", async () => {
       const c = chat();
+      const heard: { sessionId: string; id: string; closed?: boolean }[] = [];
+      const off = onPlaybookRunNews((m) => heard.push({ sessionId: m.sessionId, id: (m.event.run as PlaybookRunView).id, ...((m.event.run as PlaybookRunView).closed ? { closed: true } : {}) }));
       const first = (await (await openIn(c.path, "trial")).json()) as PlaybookRunView;
       const second = (await (await openIn(c.path, "other")).json()) as PlaybookRunView;
       assert.notEqual(second.id, first.id);
       assert.equal(store.runById(first.id)!.closed, true);
       assert.deepEqual(await listed(c.path), [second.id]);
+      await new Promise((r) => setTimeout(r, 300));
+      off();
+      assert.ok(heard.some((h) => h.sessionId === c.id && h.id === first.id && h.closed), "the chat hears the replaced card closed");
+      const list = (await (await app.request(`/api/playbook-runs?path=${encodeURIComponent(c.path)}`)).json()) as { holding: unknown };
+      assert.equal(list.holding, null, "a draft holds no chat");
     });
 
     test("a chat that conducts a run opens no other card, its card put away or not", async () => {
@@ -230,6 +237,8 @@ describe("a playbook card", () => {
       assert.equal((await asPage(`/api/playbook-runs/${run.id}`, { method: "DELETE" })).status, 200);
       assert.equal((await openIn(c.path, "other")).status, 409, "put away, the run still runs in this chat");
       assert.deepEqual(await listed(c.path), []);
+      const list = (await (await app.request(`/api/playbook-runs?path=${encodeURIComponent(c.path)}`)).json()) as { holding: unknown };
+      assert.deepEqual(list.holding, { id: run.id, title: "Trial" }, "the chat's list still says which run holds it");
     });
 
     test("a chat whose card started a run in another chat opens no other card until that card is put away", async () => {

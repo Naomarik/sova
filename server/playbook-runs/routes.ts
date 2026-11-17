@@ -188,7 +188,10 @@ export function mountPlaybookRunRoutes(app: Hono, deps: PlaybookRunRouteDeps): v
     const chat = chatOf(c.req.query("path"));
     if (!chat) return c.json({ error: "Invalid or missing ?path= (must be a .jsonl under the pi sessions dir)" }, 400);
     const runs = await Promise.all(runsOfChat(chat.id).map((r) => runView(r)));
-    return c.json({ runs }, 200, { "Cache-Control": "no-store" });
+    // The run that holds this chat, its card put away or not: the chat opens no other playbook.
+    const held = runHolding(chat.id);
+    const holding = held ? { id: held.id, title: held.playbook.title } : null;
+    return c.json({ runs, holding }, 200, { "Cache-Control": "no-store" });
   });
 
   app.get("/api/playbook-runs/:run", async (c) => {

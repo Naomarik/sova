@@ -188,7 +188,7 @@ links". When nothing answers in time, it replies with the state as it stands.
     screen say "Sharing is off." with **Open Settings** (Settings → Public links). Links already
     made stay listed without their Copy buttons: Copy Link and Copy {name}'s Link are hidden (on the
     Shares page an organization link's too, whichever host it lives on), while Delete, Revoke and
-    Open stay. The command palette keeps its Shares entry.
+    Open stay.
 - No tunnel runs while it is off. Settings → Public links still shows the whole list, and picking any
   other option there turns sharing on again.
 

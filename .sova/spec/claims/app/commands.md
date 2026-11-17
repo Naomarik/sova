@@ -26,8 +26,7 @@ terminal has the session open, `new` makes a new one) and a `meshNeed`.
   word for word: archiving a session open in a terminal still answers "This session is open in a
   TUI, so it stays on top while live. Nothing was archived." A value that travels in the path is
   never `.` or `..` (nor a `%2e` spelling of one): those would take the request off the entry's own
-  route, so the request is never made, wherever the entry runs (`sova run` exits 3, the palette
-  says why, a peer's run is refused as off the command's route).
+  route, so the request is never made, wherever the entry runs (`sova run` exits 3, a peer's run is refused as off the command's route).
 - **The entries**, every id in `shared/commands-ids.json`'s `ids`, in the order they were added:
   `session.list`, `session.get`, `session.read`, `session.create`, `session.title.set`,
   `session.title.reset`, `session.tags.set`, `session.archive`, `session.unarchive`,

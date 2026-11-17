@@ -280,7 +280,7 @@ gateway only routes by hash (§mesh/public). Wire shapes: `shared/session-share.
   the link left (§mesh.public/broken-links). While sharing is off on this computer
   (§mesh.public/sharing-off) the line reads "Sharing is off." with **Open Settings**, and the rows
   of its links (and every organization link row) show no Copy Link or Copy {name}'s Link; Delete,
-  Stop Sharing and Manage stay. The command palette's Shares entry still opens the page.
+  Stop Sharing and Manage stay.
 - A session share row: its public title (a link to the session), its slice line or mode line (as
   the Sharing section), its recipients
   with presence and opened lines (each live one whose link is kept with **Copy Link**), and **Manage** (the Share sheet on it) and **Stop Sharing**

@@ -288,8 +288,8 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-16T13:19Z",
-      "source": "pi-session:5068e8f9-2d24-48d8-abd8-090a2bcad97b#905b1a76"
+      "at": "2026-11-17T18:25Z",
+      "source": "pi-session:db324931-6073-4928-bbcb-6efe7088a6cc#cd3727c2"
     }
   },
   "§app.session-list/group-picker": {
@@ -572,8 +572,8 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-06T01:40Z",
-      "source": "pi-session:01a1ac4a-4cc0-77e8-b78d-580fabeebc2e#f924065b"
+      "at": "2026-11-17T18:25Z",
+      "source": "pi-session:db324931-6073-4928-bbcb-6efe7088a6cc#cd3727c2"
     }
   },
   "§app.session-list/recent": {
@@ -633,8 +633,8 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-11T14:09Z",
-      "source": "pi-session:01a1ca84-b3de-7601-9d6d-7e61cbb746c9#a4b61b34"
+      "at": "2026-11-17T18:25Z",
+      "source": "pi-session:db324931-6073-4928-bbcb-6efe7088a6cc#cd3727c2"
     }
   },
   "§app.session-list/row-menu": {

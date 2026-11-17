@@ -199,11 +199,10 @@ words, in the composer, the session pane, the chat's queue cards and the project
 | Where | Copy |
 |---|---|
 | Trigger | `aria-label` / `title`: More Actions |
-| Trigger opens | the Commands palette (§app.command-palette/opening); `aria-haspopup="dialog"` |
+| Trigger opens | the Commands dialog: title Commands, search "Type a command", the four This chat rows (§app.command-palette/opening); `aria-haspopup="dialog"` |
 | Palette's This chat group label | This chat |
-| This chat rows | Attach images · Hide tool calls (hidden: Show tool calls) · Hide thinking (hidden: Show thinking) · Playbooks · Undo last turn (in this order; Undo's copy is §design.copy-deck/timeline-tab) |
+| This chat rows | Attach images · Hide tool calls (hidden: Show tool calls) · Hide thinking (hidden: Show thinking) · Playbooks (in this order, and nothing else) |
 | This chat rows, off | the composer's own reason · Playbooks with no Sova chat: Only a chat open in Sova can send a playbook. |
-| Palette's slash commands group label | Slash commands |
 | Model panel `aria-label` | Model and thinking |
 | Model panel summary (its first line) | {model} · {backend} · {effort}, e.g. Opus 5.5 · claude-code-cli · high (no effort choice: {model} · {backend}) |
 | Model panel rows | Model · the Thinking group |
@@ -995,8 +994,6 @@ en-US separators ("from 0 to 1,000", "at most 8,000 characters").
 | Off: TUI-live | This session is open in a terminal, so Sova won't write to it. |
 | Off: watching, or no chat open here | Only a chat open in Sova can rewind. |
 | Refused: not on the branch | That input is not on this chat's current branch anymore. |
-| Palette row (This chat) | Undo last turn · description: Rewind to before your last message; its text comes back to the composer · armed: `Confirm: undo last turn`, description: Pick it again to rewind. |
-| Palette row, off | the composer's own reason · Stop the turn first, then undo. · Wait for compaction to finish, then undo. · A rewind is already in progress. · Nothing to undo yet. · This chat is still loading. · Only a chat open in Sova can rewind. |
 | Density line | `{n} replies · {n} tools · {duration}` — e.g. `3 replies · 14 tools · 6m`; 1: `1 reply` / `1 tool`; a clause at 0 is dropped, and the row with it |
 | Idle gap | `idle {duration}` — e.g. `idle 38m` (`duration()` in `src/lib/format.ts`, the one the density line uses) |
 | Chapter fallback | `summary time` (after the topic, in the row's meta; the clock dims with it) |

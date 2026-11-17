@@ -302,7 +302,9 @@
       "src/lib/message-reveal.ts",
       "src/lib/inputs.ts",
       "src/components/LiveKinds.tsx",
-      "src/lib/work-run-handover.test.ts"
+      "src/lib/work-run-handover.test.ts",
+      "src/lib/confirm-step.ts",
+      "src/lib/confirm-step.test.ts"
     ],
     "agreed": {
       "by": "naomarik",
@@ -455,8 +457,8 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-06T13:59Z",
-      "source": "pi-session:01a1b07d-be49-727f-8989-d4d0378c61bb#0056bb79"
+      "at": "2026-11-17T18:25Z",
+      "source": "pi-session:db324931-6073-4928-bbcb-6efe7088a6cc#cd3727c2"
     }
   },
   "§chat.transcript/runaway-stream": {
@@ -824,9 +826,9 @@
       "server/transcript-shell.test.ts"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-11-07T12:39Z",
-      "source": "pi-session:01a1b2ec-ac6a-73d4-9fe9-b83cb85cdc7f#008f8e00"
+      "by": "user",
+      "at": "2026-11-17T18:25Z",
+      "source": "pi-session:db324931-6073-4928-bbcb-6efe7088a6cc#cd3727c2"
     }
   },
   "§chat.transcript/turn-end-keeps-reader": {

@@ -45,11 +45,6 @@ only verb, and it lives on exactly one kind of row: a message on the active bran
 - **The composer's inputs row**, below. It is the discoverable door: the tab strip only helps
   someone who already opened the pane, and `/tree` only helps someone who knows pi. It opens the
   Timeline with the filter **on**.
-- **The Commands palette's `Undo last turn`**, the last row of its This chat group (the
-  composer's `plus` opens it, §app.command-palette/rows), rewinds to just before the newest
-  message **without opening the pane**. It is a
-  different gesture — one step back, from where you are typing — and it stays.
-
 Each door **sets** the filter, even on a pane already showing the tab: `/tree` on an unfiltered
 Timeline turns it on, and `/timeline` on a filtered one turns it off. A door that promised your
 messages and showed everything, or the reverse, would be lying about where it goes.
@@ -76,7 +71,7 @@ parts sit together, and the first of them takes the one `margin-left:auto` (§ap
   (one own-input rule, `isOwnInput` in `shared/senders.ts`, used by the filter and the count
   alike). It drops the moment a rewind lands, because the branch is what it counts. For the rows
   the chat doesn't hold, the hello's summary lists the ones typed by the user apart from its list
-  of every input (`OlderSummary.ownInputs`; Undo last turn still reads the list of every input),
+  of every input (`OlderSummary.ownInputs`),
   and a sender marker the chat holds for one of those rows takes it out of the count. The count stays visible: it is a fact about the session, whether or not the pane is open.
   While a turn runs it also counts each message you typed that the agent has already taken in it,
   a steer included, the moment it lands rather than when the turn ends; a message still waiting to
@@ -454,8 +449,8 @@ and the boundary and abandoned rows after a rewind (`viewRows`, `rewoundAt`, `se
 Rewind is two steps, in the row, with no modal. The first press turns the row's button into
 **Rewind Here** (destructive, focused) beside **Cancel** (ghost), and an `.input-row-note` says
 "This message and every reply after it leave the branch. The session file keeps them." Esc
-cancels without closing the pane. The palette's Undo last turn works the same way: the first
-pick relabels it "Confirm: undo last turn" and the palette stays open; closing it disarms.
+cancels without closing the pane. The Timeline is the one place to rewind from the browser: the
+composer's Commands dialog has no Undo last turn (§app.command-palette/rows).
 
 While one rewind is in flight its button reads "Rewinding…" with `aria-busy`, and every other
 row is disabled ("A rewind is already in progress.").
@@ -476,9 +471,7 @@ hidden**:
 Streaming refuses; it never auto-aborts. Stopping is the user's call, and a rewind that silently
 killed a running turn and its workers would be the surprise. The server enforces all of this
 again (below), so a stale pane can't get past it: a refusal's message shows inline under its row
-(a `.text-error` span inside an `.input-row-note`, hung off the button's `aria-describedby`), and
-the palette's Undo last turn toasts it. Until the chat's `hello` has said where its last input is,
-the palette's Undo last turn is disabled with "This chat is still loading." as its description.
+(a `.text-error` span inside an `.input-row-note`, hung off the button's `aria-describedby`).
 
 ### After a rewind
 
@@ -503,12 +496,12 @@ A shadow row still jumps (it toasts "That message isn't in the transcript on scr
 transcript has reloaded without it), and it has no density line: the replies it drew left the
 branch with it. The rewind marker for this rewind lands at its own time, after them.
 
-**Any successful rewind refreshes the axis once, whoever started it** — a row, the palette's Undo
-last turn. The chat tells the app each time the server says `rewound`; the app mints a counter
+**Any successful rewind refreshes the axis once, whoever started it** — a Timeline row or the
+transcript's Rewind. The chat tells the app each time the server says `rewound`; the app mints a counter
 and hands it to the pane for that session path only, and the pane re-reads the transcript and
 draws the boundary and the shadow. A rewind in one session never refreshes another's. **A refusal
 refreshes nothing and changes nothing**: the rows are still true, so they stay as they are and
-only the note under the row appears. Without this the rows went stale after a flyout undo — they
+only the note under the row appears. Without this the rows went stale after an undo from outside the pane — they
 kept offering Rewind on messages that had already left the branch, and the press came back "That
 input is not on this chat's current branch anymore."
 
@@ -520,7 +513,7 @@ a second copy of it.
 
 A refusal is **announced as well as shown**. The inline note is easy to miss for a screen-reader
 user who just heard "Rewound.", so the polite region (§chat/transcript) gets the refusal's own words. **The
-chat owns the announcement** — every refusal, whether a row asked for it, the flyout did, or the
+chat owns the announcement** — every refusal, whether a row asked for it, the transcript's Rewind did, or the
 chat turned it down without asking the server — and the row owns the note. One owner, because two
 code paths saying the same sentence is how the live region ends up reading it twice.
 

@@ -1748,8 +1748,7 @@ the chat (cleared, pruned, or kept under another state root) does it read the ge
   sentence: "An overseer keeps its own name.", "The merge queue's chats keep the names Sova gives
   them.", "A release chat keeps the name Sova gives it." or "A gathering session keeps its public
   title as its name." That covers the Overseer's `sova_set_session` with a title or an alias (the
-  sentence, then "Nothing was changed.") and the command palette's Rename Session, which still
-  lists them and is refused by the server. The automatic-title route skips one as `not-listed`.
+  sentence, then "Nothing was changed."). The automatic-title route skips one as `not-listed`.
 - **Names set before.** A title or alias already stored for such a chat stops showing: the fixed
   name takes its place, with nothing for the user to clear. A merge thread, reviewer, release chat
   or gathering session someone renamed reads its Sova name again.
@@ -1867,7 +1866,7 @@ rest." The archive is also forced open (case 1 below).
 the whole summary row toggles it and the chevron rotates. A collapse is remembered for the tab in
 `sessionStorage["sova:top-open"]` through `writeKey`, `"0"` collapsed and anything else open. It is
 **forced open**, without changing the stored choice, while a search has matches in it. When you
-move to a session inside it (a click, a link, a notification, the palette, or loading the page on
+move to a session inside it (a click, a link, a notification, or loading the page on
 it) it opens for that visit, without changing the stored choice, so its `aria-current` row is
 visible, then it is yours to close: a collapse you make while on that session stays shut through
 every refresh, running agent and new message until you open it or move to a session again. When
@@ -1883,7 +1882,7 @@ key (prefix `t`, §app.session-list/content-rules).
   load and written on `toggle`. It lasts for the browser session, not across restarts.
 - It opens automatically, **without** changing the stored choice, when:
   1. Folders is empty (otherwise the sidebar would show nothing but a closed strip);
-  2. you move to a session in the archive (a click, a link, a notification, the palette, or
+  2. you move to a session in the archive (a click, a link, a notification, or
      loading the page on it), or the open session moves into it (archived while open), so its
      `aria-current` row is visible: opened once for that visit, then yours to close, and a
      collapse you make while on that session stays shut through every refresh until you open it
@@ -2256,7 +2255,7 @@ projects (§app.projects/list).
   through `writeKey`, `"0"` collapsed and anything else open (the Needs you pattern). Orgs open by
   default and every Done stays closed, both in memory only. **Forced open**, without changing the stored
   choice, while a search is on (with every org and Done that holds a hit). When you move to a
-  session inside it (a click, a link, a notification, the palette, or loading the page on it) the
+  session inside it (a click, a link, a notification, or loading the page on it) the
   region, its org and, if needed, its Done open for that visit without changing any choice, so its
   `aria-current` row, or its project's `aria-current` eye, is visible; then each is yours to close
   (the Archive's case 2): a collapse you make while on that session stays shut through every

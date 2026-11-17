@@ -100,7 +100,7 @@ written before (a bookmark, a server's sentence, a card) keep working.
   arrow that folds and unfolds its sessions, set on its rows' rail axis, and the guide line
   running from it down that rail folds an unfolded project too (§app.session-list/guide-lines): open by default, the choice kept in memory for the
   page's life (as each Done is), and forced open while a search is on. When you move to a session
-  among its rows (a click, a link, a notification, the palette, or loading the page on it) a
+  among its rows (a click, a link, a notification, or loading the page on it) a
   folded project, and its Done if the session is there, opens for that visit without changing the
   choice, then it is yours to close: a fold you make while on that session stays folded through
   every refresh, running agent and new message until you unfold it or move to a session again.

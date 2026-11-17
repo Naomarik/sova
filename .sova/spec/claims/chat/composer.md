@@ -452,12 +452,11 @@ Everything you do to a session that isn't typing starts at one ghost `plus` butt
 Commands) and took the model trigger and the session's own facts out of the head (§chat/transcript): the
 composer is where the session is acted on, and the head is for reading.
 
-**The `plus` button opens the Commands palette** (§app.command-palette/opening), at every width,
-on the chat it belongs to. The palette leads with this chat's actions — Attach images, Hide tool
-calls, Hide thinking, Playbooks and Undo last turn (§app.command-palette/rows) — and lists the
-slash commands, the views and the server's commands after them, so there is no Commands row. The
-button has no popover of its own: `aria-haspopup="dialog"`, and `aria-expanded` true while the
-palette it opened is open. Its `aria-label` and `title` stay "More Actions".
+**The `plus` button opens the Commands dialog** (§app.command-palette/opening), at every width,
+on the chat it belongs to. It lists this chat's four actions and nothing else — Attach images, Hide
+tool calls, Hide thinking and Playbooks (§app.command-palette/rows); undoing the last turn is the
+Timeline's Rewind (§chat.timeline/rewind). The button has no popover of its own:
+`aria-haspopup="dialog"`, and `aria-expanded` true while the dialog it opened is open. Its `aria-label` and `title` stay "More Actions".
 
 **One popover, up to three triggers and four panels.** The sandbox shield (§chat.composer/sandbox-shield)
 opens the **sandbox** panel: the Sandbox group alone, its one place. The model indicator in `.composer-foot` (§chat/composer) opens the **model**
@@ -472,7 +471,7 @@ measured on whichever element opened it, and closing returns focus there. The co
 flyout's handle (`show(panel, anchor)` · `close()` · `open` · `anchor`, handed over once on
 mount), so the indicator can toggle the menu it opened and mirror its state in `aria-expanded`.
 
-The model row and the ladder live in the panel the indicator names, not in the palette:
+The model row and the ladder live in the panel the indicator names, not in the Commands dialog:
 one control, one way in, and the thing that says what the session runs is the thing that changes
 it.
 
@@ -529,7 +528,7 @@ it.
   bound in chat sessions only; watch sessions print as usual.
 - **Rows.** The panels' rows; §design.copy-deck/composer-flyout is the inventory. Model and
   Thinking are the model panel's, the Sandbox group the sandbox panel's. Attach images, Playbooks,
-  Hide tool calls, Hide thinking and Undo last turn are the palette's This chat rows
+  Hide tool calls and Hide thinking are the Commands dialog's rows
   (§app.command-palette/rows), not the flyout's.
   - **Model** is the model panel's first row: the current id in mono with its provider, and a
     chevron. It's the picker's trigger: `aria-haspopup="true"`, and while a switch is pending it's `aria-busy` with a

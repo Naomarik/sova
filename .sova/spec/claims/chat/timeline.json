@@ -109,14 +109,13 @@
       "shared/senders.ts",
       "src/lib/older-rows.test.ts",
       "shared/protocol.ts",
-      "src/components/CommandPalette.tsx",
       "src/lib/live.ts",
       "src/lib/live.test.ts"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-10-22T15:11Z",
-      "source": "pi-session:613b2094-a178-4b88-86c9-c8c2460a3bad#049c9fe2"
+      "by": "user",
+      "at": "2026-11-17T18:25Z",
+      "source": "pi-session:db324931-6073-4928-bbcb-6efe7088a6cc#cd3727c2"
     }
   },
   "§chat.timeline/rejected": {
@@ -134,16 +133,14 @@
     "code": [
       "server/chat-manager.ts",
       "src/components/ChatView.tsx",
-      "src/components/ComposerMenu.tsx",
       "src/lib/inputs.ts",
       "src/lib/inputs.test.ts",
-      "src/lib/timeline.ts",
-      "src/components/CommandPalette.tsx"
+      "src/lib/timeline.ts"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-10-22T15:11Z",
-      "source": "pi-session:613b2094-a178-4b88-86c9-c8c2460a3bad#049c9fe2"
+      "by": "user",
+      "at": "2026-11-17T18:25Z",
+      "source": "pi-session:db324931-6073-4928-bbcb-6efe7088a6cc#cd3727c2"
     }
   },
   "§chat.timeline/rows": {

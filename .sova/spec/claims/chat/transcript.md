@@ -250,8 +250,7 @@ a machine event fired the turn, not the person. Same `.toolcard` shell as tool-c
 - **Open.** The whole message exactly as it was sent — all four lines (the fire line, the optional
   overdue line, the reason line, the standing instruction) — in mono, never rewritten or hidden.
 - **An input, never one you typed.** A wake row is a Timeline input row (where it shows the
-  reason, or "Wake nudge n1" with none — §chat/timeline), a rewind target, the newest message Undo
-  last turn may take back, and a turn start for the "calls after the last user message" scan that
+  reason, or "Wake nudge n1" with none — §chat/timeline), a rewind target, and a turn start for the "calls after the last user message" scan that
   decides whether an open tool call may still be running. It is not in what counts the messages
   you typed: the composer's "N inputs" trigger and the Timeline's Inputs Only view leave it out
   (§chat.timeline/inputs-only).
@@ -917,7 +916,7 @@ virtualized.
   the rows they don't carry: the ids of their inputs and, apart, of those the user typed, how many messages they hold, whether
   any is a reply, and the alignments still open among them (each one's newest revision there,
   and its row); so does each fetch, of the rows above what it returns. The inputs count, Fan
-  Out's "up to message {n}", Undo last turn and the composer's waiting badge
+  Out's "up to message {n}" and the composer's waiting badge
   (§chat.alignment/chip) count the rows held plus those, so they're right from the first `hello`
   on, with no older row fetched. A newer revision among the rows held, or live, takes an
   alignment's place: one done or dropped there is no longer open.

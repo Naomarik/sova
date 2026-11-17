@@ -1257,6 +1257,37 @@ export function Composer(props: {
           </ul>
         </Show>
 
+        {/* The composer's notice (a reason Send waits, or can't send): a slim strip just above the
+            message box, never in the foot beside the model's name. A reason said only to the ear
+            stays visually hidden here. */}
+        <div
+          class="composer-reason composer-notice"
+          id={paneId("composer-reason")}
+          data-soft={shownReason()?.soft && !shownReason()?.quiet ? "" : undefined}
+          data-quiet={shownReason()?.quiet ? "" : undefined}
+          data-wide={shownReason()?.wide ? "" : undefined}
+        >
+          <Show when={shownReason()}>
+            {(r) => (
+              <Show when={!r().quiet} fallback={<span class="visually-hidden">{r().text}</span>}>
+                <Icon name={r().icon} small />
+                <Show when={r().code} fallback={<span class="composer-notice-text">{r().text}</span>}>
+                  <span class="composer-notice-text">
+                    <For each={codeSpans(r().text)}>{(s) => (s.code ? <code>{s.text}</code> : s.text)}</For>
+                  </span>
+                </Show>
+                <Show when={r().action}>
+                  {(act) => (
+                    <button type="button" class="button button-sm button-ghost composer-reason-action" onClick={() => act().run()}>
+                      {act().label}
+                    </button>
+                  )}
+                </Show>
+              </Show>
+            )}
+          </Show>
+        </div>
+
         <div class="composer-row">
           {/* The mic first, left of the plus; gone with the textarea's writability (§chat.voice/button). */}
           <Show when={!props.readOnly}>
@@ -1475,7 +1506,6 @@ export function Composer(props: {
 
         <div
           class="composer-foot"
-          data-reason-wide={shownReason()?.wide ? "" : undefined}
           ref={(foot) => {
             // The model's short name is the foot's last part to shrink:
             // where the row doesn't fit once its gaps narrow, the mode switch's icons fold first.
@@ -1553,27 +1583,6 @@ export function Composer(props: {
               Shell mode
             </span>
           </Show>
-          <span class="composer-reason" id={paneId("composer-reason")} data-soft={shownReason()?.soft && !shownReason()?.quiet ? "" : undefined}>
-            <Show when={shownReason()}>
-              {(r) => (
-                <Show when={!r().quiet} fallback={<span class="visually-hidden">{r().text}</span>}>
-                  <Icon name={r().icon} small />
-                  <Show when={r().code} fallback={r().text}>
-                    <span>
-                      <For each={codeSpans(r().text)}>{(s) => (s.code ? <code>{s.text}</code> : s.text)}</For>
-                    </span>
-                  </Show>
-                  <Show when={r().action}>
-                    {(act) => (
-                      <button type="button" class="button button-sm button-ghost composer-reason-action" onClick={() => act().run()}>
-                        {act().label}
-                      </button>
-                    )}
-                  </Show>
-                </Show>
-              )}
-            </Show>
-          </span>
           <Show when={sandboxBadge(props.sandbox?.state() ?? null)}>
             {(b) => (
               <button

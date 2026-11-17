@@ -182,10 +182,10 @@ import { Banner, Icon } from "./ui";
 import { UiDialog } from "./UiDialog";
 import type { QueueWorktree } from "./WorktreesModal";
 import { heldAskLine, heldComposerLine, heldDecisionOf } from "../lib/merge-standing";
-import { askReread, askReview, holdOf } from "../lib/approval-hold";
+import { askReread, holdOf, settleSeenNew } from "../lib/approval-hold";
 import { createProfileHold } from "../lib/hello-steady";
 import { noteChatFolder } from "../lib/approval-overlay";
-import { holdLine, REVIEW, SAVING_LINE } from "../lib/approvals";
+import { SAVING_LINE } from "../lib/approvals";
 import { clearPick, pickedDecision } from "../lib/merge-decision-pick";
 import { mergeChanged, mergeFeed, readQueue } from "../lib/merge-queue-client";
 
@@ -1055,6 +1055,8 @@ export function ChatView(props: {
         // "Sending…" and offers no Remove — nothing is known to hold it.
         case "send_ack":
           unacked.settled(msg.clientId);
+          // The first message went in: the New rows its list showed count as left off.
+          settleSeenNew(props.path);
           owner.ack(msg.clientId, msg.queued);
           if (msg.queued) markQueued(setLive, msg.clientId);
           break;
@@ -1284,8 +1286,6 @@ export function ChatView(props: {
             // turn failure. The composer's own blocked reason says the same once the list catches up.
             case "refused":
             {
-              // Held for decisions (asking mode): the setup card reads again, so the hold shows.
-              if (msg.decide === "first") askReread(props.path);
               // A command it names makes no user row: its text comes back from here (a click: its card).
               const taken = handBackSends([unacked.take(msg.clientId, handedBack)].filter((u): u is Unsent => u !== null));
               // Refused before the hello, the chat never had it: its row goes, as the text is back.
@@ -1880,13 +1880,9 @@ export function ChatView(props: {
     // server in order, behind what woke it (a model switch, then Send), and the server applies each
     // before the next (§chat.transcript/send-while-starting). The note still floats (`waitNote`).
     const waking = !!wait().waking;
-    // Asking mode: a new chat sends once every context file and skill it could load is decided. The
-    // draft stays and typing goes on; Review opens the setup card's list. The server holds it too.
-    const hold = holdOf(props.path);
-    if (hold && hold.context + hold.skills > 0) return { icon: "attention", text: holdLine(hold.context, hold.skills), action: { label: REVIEW, run: () => askReview(props.path) } };
-    // Every waiting item is decided here, and the last decisions are still being saved: Send waits
-    // for the server to have them, so a message never bounces.
-    if (hold?.saving) return { icon: "clock", text: SAVING_LINE };
+    // A flip on the new chat's list is still being saved (and the chat rebuilt with it): Send waits,
+    // so a first message never goes out on the list before it. Nothing else about the list holds Send.
+    if (holdOf(props.path)?.saving) return { icon: "clock", text: SAVING_LINE };
     // Connecting, starting or reconnecting: the words float over the transcript's end (`waitNote`),
     // the composer's reason carries them for assistive technology only (§chat.transcript/instant-open).
     const waiting = composerWait(wait(), waitingReason());

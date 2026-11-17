@@ -5,9 +5,9 @@
 // skill (the server hands the list over with the open: the build can't ask it mid-open), and a save of
 // the defaults answers only once that not-yet-started chat was rebuilt, so the card's next read shows it.
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { after, before, test } from "node:test";
 import { WebSocket } from "ws";
 import type { SessionSetup } from "../shared/protocol";
@@ -99,62 +99,71 @@ test("a new chat in its own process starts without the project's disallowed skil
   assert.deepEqual(await offOf(path), { "block-skill": { off: true, project: "disallowed" }, "keep-skill": { off: true, project: "disallowed" } }, "the read right after the save");
 });
 
-test("asking first: a page's first message into a new chat in its own process is held with its draft; a program's goes through", async () => {
+/** The `sova-loadout` entries in a session file, oldest first. */
+const loadoutEntries = async (path: string) => {
+  const { LOADOUT_ENTRY } = await import("./session-loadout");
+  return readFileSync(path, "utf8")
+    .trim()
+    .split("\n")
+    .map((l) => JSON.parse(l))
+    .filter((e) => e.type === "custom" && e.customType === LOADOUT_ENTRY)
+    .map((e) => e.data as { asking?: true; onlySkills?: string[] });
+};
+const stampOf = async (path: string) => {
+  for (let i = 0; i < 1500; i++) {
+    const e = (await loadoutEntries(path)).at(-1);
+    if (e) return e;
+    await new Promise((r) => setTimeout(r, 20));
+  }
+  assert.fail("no stamp: the first message never went in");
+};
+
+/** A page's socket on a new chat; its frames as they come, and its hello. */
+async function pageSocket(path: string) {
+  const { pageHeaders } = await import("./testing/page");
+  const page = new WebSocket(`ws://${host}/ws/chat?path=${encodeURIComponent(path)}&force=1`, { headers: pageHeaders() });
+  sockets.push(page);
+  const frames: Record<string, unknown>[] = [];
+  page.on("message", (d) => void frames.push(JSON.parse(String(d)) as Record<string, unknown>));
+  return { page, frames };
+}
+
+test("asking first: nothing waits, and a page's first message into a chat built on an older list rebuilds it in its own process first", async () => {
   const { setAllowWithoutAsking } = await import("./context-approval-setting");
   const { notifySetupChanged } = await import("./projects/skills-chats");
-  const { pageHeaders } = await import("./testing/page");
+  const store = await import("./project-skills-store");
   setAllowWithoutAsking(false);
   await notifySetupChanged(null);
   try {
     // A folder that isn't a project, nothing decided in it.
     const folder = join(tmp, "adhoc");
-    mkdirSync(join(folder, ".agents", "skills", "wait-skill"), { recursive: true });
-    writeFileSync(join(folder, ".agents", "skills", "wait-skill", "SKILL.md"), "---\nname: wait-skill\ndescription: Waits.\n---\n\nbody\n");
+    const skill = join(folder, ".agents", "skills", "wait-skill", "SKILL.md");
+    mkdirSync(dirname(skill), { recursive: true });
+    writeFileSync(skill, "---\nname: wait-skill\ndescription: Waits.\n---\n\nbody\n");
     writeFileSync(join(folder, "AGENTS.md"), "RULES\n");
     const path = newSession(folder);
-    // The page's own socket: the install's cookie, no token.
-    const page = new WebSocket(`ws://${host}/ws/chat?path=${encodeURIComponent(path)}&force=1`, { headers: pageHeaders() });
-    sockets.push(page);
-    const frames: Record<string, unknown>[] = [];
+    const { page, frames } = await pageSocket(path);
     await new Promise<void>((done, fail) => {
       const t = setTimeout(() => fail(new Error("no hello")), 60_000);
-      page.on("message", (d) => {
-        const f = JSON.parse(String(d)) as Record<string, unknown>;
-        frames.push(f);
-        if (f.type === "hello") {
-          clearTimeout(t);
-          done();
-        }
-      });
-      page.on("error", fail);
-    });
-    page.send(JSON.stringify({ type: "prompt", text: "hello", clientId: "c1" }));
-    const refused = await new Promise<Record<string, unknown>>((done, fail) => {
-      const t = setTimeout(() => fail(new Error(`no refusal: ${JSON.stringify(frames.map((f) => f.type))}`)), 30_000);
-      const look = () => {
-        const f = frames.find((x) => x.type === "error" && x.clientId === "c1");
-        if (f) {
-          clearTimeout(t);
-          done(f);
-        } else setTimeout(look, 20);
-      };
+      const look = () => (frames.some((f) => f.type === "hello") ? (clearTimeout(t), done()) : setTimeout(look, 20));
       look();
     });
-    assert.equal(refused.code, "refused");
-    assert.equal(refused.decide, "first");
-    assert.ok(typeof refused.waiting === "number" && refused.waiting >= 2, JSON.stringify(refused));
-    // A program's message (the token: not the page) is never held: the chat starts with the waiting ones off.
-    await api("POST", "/api/sessions/prompt", { path, text: "from a script" });
+    // Turned on after the chat was built, with no rebuild of it (the quick first send's window).
+    store.setDecisions(`d:${folder}`, "skills", { ".agents/skills/wait-skill/SKILL.md": { state: "approved", sha256: "0".repeat(64), name: "wait-skill" } });
+    page.send(JSON.stringify({ type: "prompt", text: "hello", clientId: "c1" }));
+    const stamp = await stampOf(path);
+    assert.equal(stamp.asking, true);
+    assert.deepEqual(stamp.onlySkills, [skill], "it went in on the list as saved, not the one it was built with");
+    assert.equal(frames.find((f) => f.type === "error" && (f as { decide?: unknown }).decide !== undefined), undefined, "nothing held it");
   } finally {
     setAllowWithoutAsking(true);
     await notifySetupChanged(null);
   }
 });
 
-test("asking first: a page's first message sent before the chat has opened is held too", async () => {
+test("asking first: a page's first message sent before the chat has opened goes in, with the waiting skill off", async () => {
   const { setAllowWithoutAsking } = await import("./context-approval-setting");
   const { notifySetupChanged } = await import("./projects/skills-chats");
-  const { pageHeaders } = await import("./testing/page");
   setAllowWithoutAsking(false);
   await notifySetupChanged(null);
   try {
@@ -162,10 +171,7 @@ test("asking first: a page's first message sent before the chat has opened is he
     mkdirSync(join(folder, ".agents", "skills", "early-skill"), { recursive: true });
     writeFileSync(join(folder, ".agents", "skills", "early-skill", "SKILL.md"), "---\nname: early-skill\ndescription: Waits.\n---\n\nbody\n");
     const path = newSession(folder);
-    const page = new WebSocket(`ws://${host}/ws/chat?path=${encodeURIComponent(path)}&force=1`, { headers: pageHeaders() });
-    sockets.push(page);
-    const frames: Record<string, unknown>[] = [];
-    page.on("message", (d) => void frames.push(JSON.parse(String(d)) as Record<string, unknown>));
+    const { page } = await pageSocket(path);
     // Sent the moment the socket opens: the chat's process is still starting (send-while-starting).
     await new Promise<void>((done, fail) => {
       page.once("open", () => {
@@ -174,18 +180,8 @@ test("asking first: a page's first message sent before the chat has opened is he
       });
       page.once("error", fail);
     });
-    const refused = await new Promise<Record<string, unknown>>((done, fail) => {
-      const t = setTimeout(() => fail(new Error(`no refusal: ${JSON.stringify(frames.map((f) => f.type))}`)), 60_000);
-      const look = () => {
-        const f = frames.find((x) => x.type === "error" && x.clientId === "e1");
-        if (f) {
-          clearTimeout(t);
-          done(f);
-        } else setTimeout(look, 20);
-      };
-      look();
-    });
-    assert.equal(refused.decide, "first", JSON.stringify(refused));
+    const stamp = await stampOf(path);
+    assert.deepEqual([stamp.asking, stamp.onlySkills], [true, []]);
   } finally {
     setAllowWithoutAsking(true);
     await notifySetupChanged(null);

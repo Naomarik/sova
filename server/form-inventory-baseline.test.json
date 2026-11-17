@@ -42,7 +42,7 @@
   "src/components/ProjectOverseerPanel.tsx": 12,
   "src/components/ProjectServicesTab.tsx": 3,
   "src/components/ReleasesTab.tsx": 3,
-  "src/components/SessionSetup.tsx": 3,
+  "src/components/SessionSetup.tsx": 1,
   "src/components/SettingsChangeCard.tsx": 1,
   "src/components/SharePage.tsx": 5,
   "src/components/ShareSheet.tsx": 4,

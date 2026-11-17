@@ -13,3 +13,13 @@ export interface FolderRule {
 
 /** No decisions, the default mode: everything on. */
 export const OPEN_RULE: FolderRule = { asking: false, context: { approved: [], disallowed: [] }, skills: { approved: [], disallowed: [] } };
+
+const sameSet = (a: readonly string[], b: readonly string[]) => a.length === b.length && [...a].sort().join("\0") === [...b].sort().join("\0");
+
+/** Whether two rules build a new chat the same: the same mode, and asking first the same approved items (only they
+    load), else the same disallowed ones (only they stay off). What the first-message re-check compares. */
+export function sameRuleEffect(a: FolderRule, b: FolderRule): boolean {
+  if (a.asking !== b.asking) return false;
+  const kind = a.asking ? "approved" : "disallowed";
+  return sameSet(a.context[kind], b.context[kind]) && sameSet(a.skills[kind], b.skills[kind]);
+}

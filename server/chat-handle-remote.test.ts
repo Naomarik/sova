@@ -244,33 +244,49 @@ test("mirrorListedKey: a mirror differing only in its LLM count starts no new li
   assert.notEqual(mirrorListedKey({ ...base, busy: true, llm: { tokens: { end: 1 } } }), a);
 });
 
-test("a page's first send before the chat has reported its loadout waits on the folder's count; one built without asking goes at once", async () => {
-  const sendFirst = async (loadout: ChatRuntimeMirror["loadout"] | undefined, waiting: number) => {
-    const link = new FakeLink();
-    const path = sessionFile();
-    let asked = 0;
-    const h = new RemoteChatHandle(path, path, { unit: "u", pid: 1 }, link as never, mirror({ pristine: true, ...(loadout !== undefined ? { loadout } : { loadout: null }) }), 7, {
-      waitingBeforeFirst: async () => (asked++, waiting),
-    });
-    const heard: Record<string, unknown>[] = [];
-    const client = { send: (m: unknown) => void heard.push(m as Record<string, unknown>) };
-    h.attach(client as never);
-    h.clientMessage(client as never, { type: "prompt", text: "hi", clientId: "c1" } as never);
-    await tick(5);
-    const delivered = link.sent.filter((f) => f.t === "client.msg").length;
-    return { asked, delivered, refusal: heard.find((m) => m.type === "error") };
-  };
-  // Not loaded yet: the count is asked, never taken as none.
-  const early = await sendFirst(undefined, 1);
-  assert.equal(early.asked, 1);
-  assert.equal(early.delivered, 0, "nothing reached the chat");
-  assert.equal(early.refusal?.decide, "first");
-  assert.equal(early.refusal?.clientId, "c1");
-  // Not loaded yet with nothing waiting: it goes.
-  assert.deepEqual([(await sendFirst(undefined, 0)).delivered], [1]);
-  // Built asking first: held the same.
-  assert.equal((await sendFirst({ off: { v: 1, offContext: [], offSkills: [], asking: true } as never, toggleable: true }, 2)).refusal?.waiting, 2);
-  // Built without asking: never asked, it goes.
-  const open = await sendFirst({ off: null, toggleable: true }, 3);
-  assert.deepEqual([open.asked, open.delivered], [0, 1]);
+test("a first send whose check refuses it never reaches the chat: the pane gets the sentence with its clientId, and the next send is checked again", async () => {
+  const link = new FakeLink();
+  const path = sessionFile();
+  let checks = 0;
+  const h = new RemoteChatHandle(path, path, { unit: "u", pid: 1 }, link as never, mirror({ pristine: true, loadout: { off: null, toggleable: true } }), 7, {
+    needsBeforeMessage: () => true,
+    beforeMessage: async () => {
+      if (++checks === 1) throw new Error("Couldn't apply.");
+    },
+  });
+  const heard: Record<string, unknown>[] = [];
+  const client = { send: (m: unknown) => void heard.push(m as Record<string, unknown>) };
+  h.attach(client as never);
+  h.clientMessage(client as never, { type: "prompt", text: "hi", clientId: "c1" } as never);
+  await tick(5);
+  assert.equal(link.sent.filter((f) => f.t === "client.msg").length, 0);
+  assert.deepEqual(heard.find((m) => m.type === "error"), { type: "error", code: "refused", message: "Couldn't apply.", clientId: "c1" });
+  h.clientMessage(client as never, { type: "prompt", text: "hi", clientId: "c2" } as never);
+  await tick(5);
+  assert.deepEqual([checks, link.sent.filter((f) => f.t === "client.msg").length], [2, 1]);
+});
+
+test("a new chat's first send is never refused: it waits for the check before it (its folder's decisions read again), then reaches the chat", async () => {
+  const link = new FakeLink();
+  const path = sessionFile();
+  let release!: () => void;
+  const gate = new Promise<void>((go) => (release = go));
+  let checked = 0;
+  const h = new RemoteChatHandle(path, path, { unit: "u", pid: 1 }, link as never, mirror({ pristine: true, loadout: { off: { v: 1, offContext: [], offSkills: [], asking: true } as never, toggleable: true } }), 7, {
+    needsBeforeMessage: () => checked === 0,
+    beforeMessage: async () => {
+      checked++;
+      await gate;
+    },
+  });
+  const heard: Record<string, unknown>[] = [];
+  const client = { send: (m: unknown) => void heard.push(m as Record<string, unknown>) };
+  h.attach(client as never);
+  h.clientMessage(client as never, { type: "prompt", text: "hi", clientId: "c1" } as never);
+  await tick(5);
+  assert.equal(link.sent.filter((f) => f.t === "client.msg").length, 0, "held while the check runs");
+  release();
+  await tick(5);
+  assert.deepEqual([checked, link.sent.filter((f) => f.t === "client.msg").length], [1, 1]);
+  assert.equal(heard.find((m) => m.type === "error"), undefined, "nothing waits for a decision any more");
 });

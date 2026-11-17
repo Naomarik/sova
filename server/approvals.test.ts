@@ -172,6 +172,18 @@ describe("a folder's lists", () => {
     assert.deepEqual(tidy, [[".agents/skills/tidy/SKILL.md", "project"], [join(agent, "skills", "tidy", "SKILL.md"), "user"]]);
     assert.ok(v.skills.some((s) => s.key === "svc/.agents/skills/deploy/SKILL.md" && s.source.kind === "subfolder"));
     assert.equal(v.counts.waiting, v.files.length + v.skills.length);
+    // Sizes: a context file its whole text ("# repo\n", 7 characters); a skill its listing, what a new chat carries, and
+    // its SKILL.md beside it.
+    assert.deepEqual([v.files.find((f) => f.key === "AGENTS.md")?.tokens, v.files.find((f) => f.key === "AGENTS.md")?.fileTokens], [2, undefined]);
+    const tidyRow = v.skills.find((s) => s.key === ".agents/skills/tidy/SKILL.md")!;
+    const listing = `  <skill>\n    <name>tidy</name>\n    <description>The tidy skill.</description>\n    <location>${tidyRow.path}</location>\n  </skill>`;
+    assert.deepEqual([tidyRow.tokens, tidyRow.fileTokens], [Math.ceil(listing.length / 4), Math.ceil("---\nname: tidy\ndescription: The tidy skill.\n---\nBody.\n".length / 4)]);
+    assert.equal(tidyRow.manualOnly, undefined);
+    // A manual-only skill (only /skill:name runs it) is never listed to the model: marked, and sized by its whole file.
+    const hand = `---\nname: hand\ndescription: By hand.\ndisable-model-invocation: true\n---\n${"Step.\n".repeat(40)}`;
+    put(join(w.repo, ".agents", "skills", "hand", "SKILL.md"), hand);
+    const handRow = (await A.folderApprovalsView(join(w.repo, "svc"), { ...w.deps, fresh: true })).skills.find((s) => s.name === "hand");
+    assert.deepEqual([handRow?.manualOnly, handRow?.tokens, handRow?.fileTokens], [true, Math.ceil(hand.length / 4), Math.ceil(hand.length / 4)]);
     // The plain folder above it: its chats don't look below it (server/skill-descent.ts), so no subfolder's row is listed.
     const plain = await A.folderApprovalsView(w.above, w.deps);
     assert.deepEqual([...plain.files, ...plain.skills].filter((r) => r.source.kind === "subfolder"), []);
@@ -414,6 +426,127 @@ describe("a folder's lists", () => {
     assert.equal((await A.folderApprovalsView(f, deps)).files.find((x) => x.key === "new/AGENTS.md")?.state, "approved");
   });
 
+  test("a save goes item by item: against the folder's kept scan (no walk, no pi read), the item turned on read now; a key it lacks costs one fresh scan", async () => {
+    const w = world("itemwise");
+    const { folderResources } = await import("./harness/pi/resources");
+    const { walkIo } = await import("./folder-walk");
+    let piReads = 0;
+    const deps = { ...w.deps, loader: ((cwd, dir) => (piReads++, folderResources(cwd, dir))) as typeof folderResources };
+    const f = A.folderForCwd(w.repo);
+    await A.folderApprovalsView(f, deps); // the card's read: the kept scan
+    // Edited after the card was drawn: what the approval keeps is the content as it is at the click.
+    writeFileSync(join(w.repo, "AGENTS.md"), "# repo, as approved\n");
+    const [reads, walks] = [piReads, walkIo.walks];
+    const s = await A.writeFolderApprovals(f, { context: { "AGENTS.md": "approved", "svc/AGENTS.md": "disallowed" }, skills: { tidy: "disallowed" } }, deps);
+    assert.deepEqual([piReads - reads, walkIo.walks - walks], [0, 0], "no pi read and no walk for keys the kept scan has");
+    assert.equal(store.folderDecisions(f.key).context["AGENTS.md"]?.sha256, A.fileSha256(readFileSync(join(w.repo, "AGENTS.md"))));
+    assert.equal(s.scan.items.find((i) => i.key === "AGENTS.md")?.sha256, store.folderDecisions(f.key).context["AGENTS.md"]?.sha256, "the answer's row is drawn with it: not Changed");
+    // An item that appeared after the kept scan: one fresh scan finds it.
+    put(join(w.repo, "late", "AGENTS.md"), "# late\n");
+    await A.writeFolderApprovals(f, { context: { "late/AGENTS.md": "approved" }, skills: {} }, deps);
+    assert.ok(piReads > reads, "the key the kept scan lacked was looked for again");
+    const d = store.folderDecisions(f.key);
+    assert.equal(d.context["late/AGENTS.md"]?.sha256, A.fileSha256(readFileSync(join(w.repo, "late", "AGENTS.md"))));
+    assert.deepEqual([d.context["AGENTS.md"]?.state, d.context["svc/AGENTS.md"]?.state, d.skills[".agents/skills/tidy/SKILL.md"]?.state], ["approved", "disallowed", "disallowed"], "and kept every other decision");
+    // A kept item gone since can't be approved: nothing to fingerprint.
+    rmSync(join(w.repo, "svc", "AGENTS.md"));
+    await assert.rejects(A.writeFolderApprovals(f, { context: { "svc/AGENTS.md": "approved" }, skills: {} }, deps), /can't be approved: it couldn't be read/);
+    assert.equal(store.folderDecisions(f.key).context["svc/AGENTS.md"]?.state, "disallowed");
+  });
+
+  test("two checkouts: turning on an item only a worktree has saves its worktree copy's fingerprint, and keeps the other decisions", async () => {
+    const w = world("wt-only");
+    const wt = join(w.above, "wt");
+    put(join(wt, "AGENTS.md"), "# wt\n");
+    put(join(wt, "only", "AGENTS.md"), "# only in the worktree\n");
+    const deps = { checkouts: async () => ({ dirs: [w.repo, wt], complete: true }) };
+    const f = A.folderForCwd(w.repo);
+    await A.writeFolderApprovals(f, { context: { "AGENTS.md": "disallowed" }, skills: { tidy: "approved" } }, deps);
+    await A.folderApprovalsView(f, deps);
+    const s = await A.writeFolderApprovals(f, { context: { "only/AGENTS.md": "approved" }, skills: {} }, deps);
+    assert.deepEqual(s.changed.map((c) => [c.key, c.from, c.to]), [["only/AGENTS.md", "waiting", "approved"]]);
+    const d = store.folderDecisions(f.key);
+    assert.equal(d.context["only/AGENTS.md"]?.sha256, A.fileSha256(readFileSync(join(wt, "only", "AGENTS.md"))));
+    assert.deepEqual([d.context["AGENTS.md"]?.state, d.skills[".agents/skills/tidy/SKILL.md"]?.state], ["disallowed", "approved"]);
+    const v = await A.folderApprovalsView(f, deps);
+    assert.deepEqual(
+      [v.files.find((x) => x.key === "only/AGENTS.md")?.state, v.files.find((x) => x.key === "only/AGENTS.md")?.changed],
+      ["approved", undefined],
+      "read back as on, not Changed",
+    );
+  });
+
+  test("a group save never re-approves: a Changed item keeps its old fingerprint; it answers an Undo token, the folder's latest", async () => {
+    const w = world("group");
+    const f = A.folderForCwd(w.repo);
+    await A.writeFolderApprovals(f, { context: { "AGENTS.md": "approved" }, skills: {} }, w.deps);
+    const old = store.folderDecisions(f.key).context["AGENTS.md"]?.sha256;
+    writeFileSync(join(w.repo, "AGENTS.md"), "# repo, changed since\n");
+    await A.folderApprovalsView(f, w.deps);
+    const on = await A.writeFolderApprovals(f, { context: { "AGENTS.md": "approved", "svc/AGENTS.md": "approved" }, skills: {} }, w.deps, { group: true });
+    assert.deepEqual(on.changed.map((c) => c.key), ["svc/AGENTS.md"]);
+    assert.equal(store.folderDecisions(f.key).context["AGENTS.md"]?.sha256, old, "the Changed row is still Changed");
+    assert.ok(on.undo);
+    // One key is no group save: Accept Change re-approves.
+    const one = await A.writeFolderApprovals(f, { context: { "AGENTS.md": "approved" }, skills: {} }, w.deps);
+    assert.equal(one.undo, undefined);
+    assert.notEqual(store.folderDecisions(f.key).context["AGENTS.md"]?.sha256, old);
+    // A group save that changes nothing answers no token, and leaves the latest one standing.
+    const none = await A.writeFolderApprovals(f, { context: { "AGENTS.md": "approved", "svc/AGENTS.md": "approved" }, skills: {} }, w.deps, { group: true });
+    assert.deepEqual([none.changed, none.undo], [[], undefined]);
+    assert.ok(A.undoPlan(f, on.undo!));
+  });
+
+  test("Undo puts back each record exactly as it was, Changed ones included; a key changed since is left; a token is the folder's latest group save, used once", async () => {
+    const w = world("undo");
+    setting.setAllowWithoutAsking(false);
+    const f = A.folderForCwd(w.repo);
+    await A.writeFolderApprovals(f, { context: { "AGENTS.md": "approved", "svc/AGENTS.md": "disallowed" }, skills: {} }, w.deps);
+    writeFileSync(join(w.repo, "AGENTS.md"), "# repo, changed since\n");
+    const before = store.folderDecisions(f.key);
+    // All off: the Changed approval, a waiting (New) one and a disallowed one left out.
+    const off = await A.writeFolderApprovals(f, { context: { "AGENTS.md": "disallowed", [join(w.above, "AGENTS.md")]: "disallowed" }, skills: { tidy: "disallowed" } }, w.deps, { group: true });
+    assert.equal(off.changed.length, 3);
+    // Turned on again by hand since: Undo leaves it.
+    await A.writeFolderApprovals(f, { context: {}, skills: { tidy: "approved" } }, w.deps);
+    const plan = A.undoPlan(f, off.undo!)!;
+    assert.deepEqual(plan.changes, { context: { "AGENTS.md": "approved", [join(w.above, "AGENTS.md")]: "waiting" }, skills: {} });
+    assert.equal(A.changesNeedPage(f.key, plan.changes), true, "putting an approval back is the page's");
+    // Turned off again after Undo was judged: back to what the group save wrote, but never judged, so never restored.
+    await A.writeFolderApprovals(f, { context: {}, skills: { tidy: "disallowed" } }, w.deps);
+    const u = await A.undoFolderApprovals(f, off.undo!, plan);
+    assert.deepEqual([u.undone, u.kept], [2, 1]);
+    const d = store.folderDecisions(f.key);
+    assert.deepEqual(d.context["AGENTS.md"], before.context["AGENTS.md"], "verbatim: the old fingerprint, so it reads Changed again, never accepted");
+    assert.equal(d.context[join(w.above, "AGENTS.md")], undefined, "New again");
+    assert.deepEqual(d.context["svc/AGENTS.md"], before.context["svc/AGENTS.md"]);
+    assert.equal(d.skills[".agents/skills/tidy/SKILL.md"]?.state, "disallowed", "the hand's later change stands: Undo restores only what it judged");
+    assert.equal((await A.folderApprovalsView(f, w.deps)).files.find((x) => x.key === "AGENTS.md")?.changed, true);
+    await assert.rejects(A.undoFolderApprovals(f, off.undo!), (e: Error & { status?: number; code?: string }) => e.status === 409 && e.code === "undo-gone" && e.message === A.UNDO_GONE);
+    // A newer save of the same group takes the place of its token; another group's never does.
+    const skills = await A.writeFolderApprovals(f, { context: {}, skills: { tidy: "waiting", deploy: "disallowed" } }, w.deps, { group: "setup:skill" });
+    const a = await A.writeFolderApprovals(f, { context: { "svc/AGENTS.md": "waiting", "AGENTS.md": "disallowed" }, skills: {} }, w.deps, { group: "setup:context" });
+    const b = await A.writeFolderApprovals(f, { context: { "svc/AGENTS.md": "disallowed", "AGENTS.md": "waiting" }, skills: {} }, w.deps, { group: "setup:context" });
+    assert.equal(A.undoPlan(f, a.undo!), null);
+    assert.ok(A.undoPlan(f, b.undo!));
+    assert.ok(A.undoPlan(f, skills.undo!), "the Skills group's Undo outlives the Context files group's saves");
+    const u2 = await A.undoFolderApprovals(f, skills.undo!);
+    assert.equal(u2.undone, 2);
+    assert.deepEqual([store.folderDecisions(f.key).skills[".agents/skills/tidy/SKILL.md"]?.state, store.folderDecisions(f.key).skills["svc/.agents/skills/deploy/SKILL.md"]], ["disallowed", undefined]);
+    assert.ok(A.undoPlan(f, b.undo!), "and undoing it leaves the other group's");
+    // A folder keeps its newest UNDO_SLOTS groups' Undo: ids are the caller's word, and turning off is anyone's.
+    const first = await A.writeFolderApprovals(f, { context: { "AGENTS.md": "waiting" }, skills: {} }, w.deps, { group: "g0" });
+    let last = first;
+    for (let i = 1; i <= A.UNDO_SLOTS; i++) last = await A.writeFolderApprovals(f, { context: { "AGENTS.md": i % 2 ? "disallowed" : "waiting" }, skills: {} }, w.deps, { group: `g${i}` });
+    assert.equal(A.undoPlan(f, first.undo!), null, "the oldest group's went");
+    assert.ok(A.undoPlan(f, last.undo!));
+    // `true` names the group by what it saves: a files-only save and a skills-only one are two groups.
+    const files = await A.writeFolderApprovals(f, { context: { "svc/AGENTS.md": "waiting", "AGENTS.md": "disallowed" }, skills: {} }, w.deps, { group: true });
+    const sk = await A.writeFolderApprovals(f, { context: {}, skills: { tidy: "waiting", deploy: "disallowed" } }, w.deps, { group: true });
+    assert.ok(A.undoPlan(f, files.undo!) && A.undoPlan(f, sk.undo!));
+    setting.setAllowWithoutAsking(true);
+  });
+
   test("a Disallowed by name (version 1) goes to the first skill of that name at the next scan; asking on, nothing is approved by it", async () => {
     const w = world("legacy");
     const key = `d:${w.repo}`;
@@ -456,14 +589,21 @@ test("a PUT body is strict: one or more keys (a skill also by name), each approv
   for (const bad of [{ files: {} }, { files: { "../x/AGENTS.md": "approved" } }, { files: { "a\nb": "approved" } }]) assert.throws(() => parseContextChanges(bad), /Expected/);
 });
 
-test("the All settings row: waiting counts only while asking; changed ones are named", () => {
+test("the All settings row reads as its switches: on of all, and new and changed ones only while new ones start off", () => {
   const c = (approved: number, disallowed: number, waiting: number, changed = 0) => ({ approved, disallowed, waiting, changed });
-  assert.equal(skillsRowState(c(0, 0, 4)), "No preference");
-  assert.equal(skillsRowState(c(0, 0, 4), true), "4 waiting");
-  assert.equal(skillsRowState(c(1, 2, 1)), "2 disallowed");
-  assert.equal(skillsRowState(c(1, 2, 1), true), "2 disallowed · 1 waiting");
-  assert.equal(skillsRowState(c(3, 0, 0)), "3 approved");
-  assert.equal(skillsRowState(c(3, 0, 0, 1)), "1 changed");
+  // New items start on: an unset item is on, and nothing is new.
+  assert.equal(skillsRowState(c(0, 0, 4)), "4 of 4 on");
+  assert.equal(skillsRowState(c(1, 2, 1)), "2 of 4 on");
+  // New items start off: only what was turned on is on; the unset ones are new.
+  assert.equal(skillsRowState(c(0, 0, 4), true), "0 of 4 on · 4 new");
+  assert.equal(skillsRowState(c(1, 2, 1), true), "1 of 4 on · 1 new");
+  // Changed ones (approved, so still on) are named too; no "· 0 new" or "· 0 changed".
+  assert.equal(skillsRowState(c(3, 0, 2, 1), true), "3 of 5 on · 2 new · 1 changed");
+  assert.equal(skillsRowState(c(3, 0, 0, 1), true), "3 of 3 on · 1 changed");
+  assert.equal(skillsRowState(c(3, 0, 0), true), "3 of 3 on");
+  assert.equal(skillsRowState(c(0, 0, 0), true), "0 of 0 on");
+  // New items start on: no marks, so neither new nor changed is named.
+  assert.equal(skillsRowState(c(3, 1, 2, 1)), "5 of 6 on");
 });
 
 test("the Sova-wide setting: no file is the default (allow); a file that can't be read or understood keeps asking on", () => {

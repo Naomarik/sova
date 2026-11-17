@@ -1,10 +1,12 @@
 import { batch, createEffect, createMemo, createSignal, For, Index, Match, on, onCleanup, Show, Switch, untrack } from "solid-js";
-import type { GitSummary, SessionSetup, SessionSetupFile } from "../../shared/protocol";
-import { fetchSessionSetup, fetchSessionTools, fetchSetupFile, setFolderApprovals, setSessionLoadout } from "../lib/api";
-import { ABOVE_PROJECT, ACTION_DECISION, ACTION_WORD, APPROVE_ALL, approveNotice, CHANGED_LINE, PARTIAL_FINGERPRINT_LINE, decideAll, DISALLOW_ALL, itemsPhrase, REVIEW, rowActions, WAITING_LINE, type Approval, type Decision } from "../lib/approvals";
-import { acked, begin, EMPTY, failed, inOrder, pendingAny, queueOf, setupHold, readLanded, type Overlay } from "../lib/approval-overlay";
-import { offWords, rowApproval, type Row } from "../lib/setup-approvals";
-import { askReread, rereadAsked, reviewAsked, setHold } from "../lib/approval-hold";
+import type { GitSummary, SessionSetup, SessionSetupFile, SessionSetupSkill } from "../../shared/protocol";
+import { fetchSessionSetup, fetchSessionTools, fetchSetupFile, setFolderApprovals, setSessionLoadout, undoFolderApprovals } from "../lib/api";
+import { ABOVE_PROJECT, changedPhrase, decideAll, flipTo, groupDoneLine, groupFlip, groupState, isOn, itemsPhrase, markOf, newOffPhrase, onPhrase, type Approval, type Decidable, type Decision, type ItemKind, type Mark } from "../lib/approvals";
+import { acked, begin, EMPTY, failed, inOrder, queueOf, setupHold, readLanded, type Overlay } from "../lib/approval-overlay";
+import { keptLine, MCP_THIS_CHAT, rowApproval, SLASH_NOTE, slashHeading, type Row } from "../lib/setup-approvals";
+import { ChangedLine, GroupHead, GroupSwitch, NewChip, PartialNote, RowSwitch, showsChanged, showsNew, SizeButton, UndoLine } from "./ApprovalSwitches";
+import { askReread, noteSeenNew, rereadAsked, setHold } from "../lib/approval-hold";
+import { dropUndo, setUndoLine, setupGroup, undoFor } from "../lib/approval-undo";
 import { FolderApprovalsDialog } from "./FolderApprovalsDialog";
 import { mcpFlips, NOT_PROJECT, setupLine, setupOffLine, setupShows, setupSwitchLabel, setupTokens, SETUP_LABEL } from "../lib/mcp";
 import { openMarkdown } from "../lib/markdown-viewer";
@@ -17,7 +19,6 @@ import {
   contextSum,
   contextSwitchLabel,
   fileFacts,
-  flipped,
   gitView,
   isOff,
   isSumEmpty,
@@ -28,10 +29,12 @@ import {
   skillProblemsLine,
   skillsHeading,
   skillsNone,
+  skillFacts,
   skillsNote,
   skillsSum,
   skillSwitchLabel,
   sumFacts,
+  tokenFacts,
   SYSTEM_CONTEXT_LABEL,
   SYSTEM_CONTEXT_TITLE,
   systemContextSum,
@@ -166,25 +169,16 @@ export function SessionSetupCard(props: { path: string; editable?: boolean; tool
       toast(`${OPEN_FILE_FAILED} ${(err as Error).message}`);
     }
   };
-  const flip = (kind: "context" | "skill", key: string, input: HTMLInputElement) => {
-    const on = input.checked;
-    const s = setup();
-    if (!s || !("ok" in s) || s.ok.state !== "ok" || applying()) return;
-    const set = flipped(s.ok, kind, key, on);
-    send(set.offContext, set.offSkills, mcpFlips(s.ok.mcp), input, on, kind === "context" ? "file" : "skill");
-  };
-  /** A server's switch (§chat.transcript/setup-card-toggles): the same window, and the same whole set. */
+  /** A server's switch (§chat.transcript/setup-card-toggles): this chat's only. It sends the whole set, the
+      context files and skills as they stand (none of them flipped for this chat). */
   const flipMcp = (name: string, input: HTMLInputElement) => {
     const on = input.checked;
     const s = setup();
     if (!s || !("ok" in s) || s.ok.state !== "ok" || applying()) return;
     const set = offSets(s.ok);
-    send(set.offContext, set.offSkills, mcpFlips(s.ok.mcp, { name, on }), input, on, "server");
-  };
-  const send = (offContext: string[], offSkills: string[], mcp: { offMcp: string[]; onMcp: string[] }, input: HTMLInputElement, on: boolean, what: string) => {
     const mine = run;
     setApplying(true);
-    setSessionLoadout(path(), offContext, offSkills, mcp)
+    setSessionLoadout(path(), set.offContext, set.offSkills, mcpFlips(s.ok.mcp, { name, on }))
       .then((next) => {
         if (mine !== run) return;
         rev++;
@@ -193,7 +187,7 @@ export function SessionSetupCard(props: { path: string; editable?: boolean; tool
       .catch((err: Error) => {
         // Nothing was written: the switch goes back to what the server has.
         input.checked = !on;
-        toast(`Couldn't switch that ${what}. ${err.message}`);
+        toast(`Couldn't switch that server. ${err.message}`);
       })
       .finally(() => setApplying(false));
   };
@@ -207,6 +201,7 @@ export function SessionSetupCard(props: { path: string; editable?: boolean; tool
     const s = setup();
     return switchable() && s && "ok" in s && s.ok.state === "ok" ? (s.ok.approvals ?? null) : null;
   };
+  /** New items start off (the Sova-wide setting): marks are drawn, and turning on approves. */
   const asking = () => !!approvals()?.asking;
   /** The folder whose list this chat's rows belong to, before or after its first message. */
   const listFolder = () => {
@@ -214,63 +209,56 @@ export function SessionSetupCard(props: { path: string; editable?: boolean; tool
     return s && "ok" in s && s.ok.state === "ok" ? (s.ok.approvals?.folder ?? null) : null;
   };
   const [folderOpen, setFolderOpen] = createSignal(false);
-  /** Every decidable row, context files then skills. */
-  const decidable = (): Row[] => {
-    const s = setup();
-    if (!approvals() || !s || !("ok" in s) || s.ok.state !== "ok") return [];
-    return [...s.ok.context.map((f) => ({ kind: "context" as const, f })), ...s.ok.skills.map((f) => ({ kind: "skill" as const, f }))].filter((r) => !!r.f.approval);
-  };
-  /** A row's decision as shown: the one clicked here while it saves, else the server's. */
+  /** A row's decision as shown: the one flipped here while it saves, else the server's. */
   const shownApproval = (f: SessionSetupFile): Approval => {
     const p = f.approval ? overlay()[f.approval.key] : undefined;
     return p ? p.to : rowApproval(f);
   };
-  /** Whether a row reads as off: what it will be once its decision is saved, else the server's. */
-  const shownOff = (f: SessionSetupFile): boolean => {
+  /** Whether a row reads as on: what it will be once its flip is saved, else what this chat loads. */
+  const shownOn = (f: SessionSetupFile): boolean => {
     const p = f.approval ? overlay()[f.approval.key] : undefined;
-    return p ? p.to === "disallowed" || (p.to === "waiting" && asking()) : isOff(f);
+    return p ? isOn(p.to, asking()) : !isOff(f);
   };
-  /** What waits for a decision: asking mode only; a changed item stays loaded and never waits. */
-  const waiting = () => (asking() ? decidable().filter((r) => shownApproval(r.f) === "waiting") : []);
-  /** A decision shown here isn't read back yet: the switches wait (they send the off set the last read drew). */
-  const saving = () => pendingAny(overlay());
-  /** One row's decision, into the folder's list. */
-  const decide = (r: Row, to: Decision, label: string) => save([r], to, label);
-  /** Approve All / Disallow All: every waiting row in one save. */
-  const decideWaiting = (to: Decision) => {
-    const rows = waiting();
-    if (rows.length) save(rows, to, itemsPhrase(rows.filter((r) => r.kind === "context").length, rows.filter((r) => r.kind === "skill").length));
+  const markShown = (f: SessionSetupFile): Mark | null => (approvals() && f.approval ? markOf(shownApproval(f), asking()) : null);
+  /** The rows a group switch covers: each with a decision in the folder's list. */
+  const decidable = (rows: Row[]) => rows.filter((r) => !!r.f.approval);
+  const asDecidable = (rows: Row[]): (Decidable & { row: Row })[] =>
+    decidable(rows).map((r) => ({ kind: r.kind, key: r.f.approval!.key, approval: shownOn(r.f) ? ("approved" as const) : ("disallowed" as const), row: r }));
+
+  // The line a group press leaves (lib/approval-undo, one per folder), with its Undo; the next change in
+  // that group drops it.
+  const undoOf = (kind: ItemKind) => {
+    const a = approvals();
+    return a ? undoFor(queueOf(a.folder), setupGroup(kind)) : null;
   };
+  const [undoing, setUndoing] = createSignal(false);
   /**
-   * The rows show the decision at once (lib/approval-overlay) and the save runs behind them, in
-   * click order with the folder's other saves; every row stays clickable meanwhile. The server's answer, then a read of the setup, retire them; a refusal or failure
-   * puts them back with its toast. Nothing loads on the overlay: the server decides what loads.
+   * The rows show the flip at once (lib/approval-overlay) and the save runs behind them, in click
+   * order with the folder's other saves; every row stays clickable meanwhile. Send says "Saving…"
+   * until the server has it and a read started after its answer is back (the save answers once this
+   * chat is rebuilt with it). A refusal or failure puts the rows back with its toast. Nothing loads
+   * on the overlay: the server decides what loads.
    */
-  const save = (rows: Row[], to: Decision, what: string) => {
+  const save = (rows: Row[], to: Decision, what: string, group?: { kind: ItemKind; text: string }) => {
     const s = setup();
     const a = approvals();
-    if (!a || !s || !("ok" in s)) return;
+    if (!a || !s || !("ok" in s) || !rows.length) return;
     const mine = run;
     const id = ++saves;
     const cwd = s.ok.cwd;
+    const queue = queueOf(a.folder);
+    // Any change in a group drops its Undo line; a group save's answer puts its own in place.
+    for (const kind of new Set(rows.map((r) => r.kind))) dropUndo(queue, setupGroup(kind));
     setOverlay((o) => begin(o, rows.map((r) => r.f.approval!.key), to, id));
-    const pick = (kind: "context" | "skill") => decideAll(rows.filter((r) => r.kind === kind).map((r) => ({ key: r.f.approval!.key })), to);
+    const pick = (kind: ItemKind) => decideAll(rows.filter((r) => r.kind === kind).map((r) => ({ key: r.f.approval!.key })), to);
     // An answer after its time (its rows went back): the setup is read again to show what the server did.
     const p = path();
-    inOrder(queueOf(a.folder), () => setFolderApprovals(cwd, { files: pick("context"), skills: pick("skill") }), { late: () => askReread(p) })
-      .then(() => {
+    inOrder(queue, () => setFolderApprovals(cwd, { files: pick("context"), skills: pick("skill"), ...(group ? { group: setupGroup(group.kind) } : {}) }), { late: () => askReread(p) })
+      .then((answer) => {
+        if (group && answer.undo) setUndoLine({ queue, group: setupGroup(group.kind), text: group.text, token: answer.undo });
         if (mine !== run) return;
         setOverlay((o) => acked(o, id, reads));
-        // Saved: Send no longer waits for it (setupHold), and the rows keep the decision until a
-        // read after the answer lands (a failed read leaves them for the next one: once more here,
-        // then the rebuild's own broadcast and each hello read it again).
-        const reread = (again: boolean): Promise<void> =>
-          readSetup(path(), true).then(({ answer: next, n }) => {
-            if (mine !== run) return;
-            if ("ok" in next) draw(next, n);
-            else if (again) setTimeout(() => void reread(false), REREAD_MS);
-          });
-        return reread(true);
+        return rereadAfterSave(mine);
       })
       .catch((err: Error) => {
         if (mine !== run) return;
@@ -278,11 +266,56 @@ export function SessionSetupCard(props: { path: string; editable?: boolean; tool
         toast(`Couldn't save ${what} for ${a.folder.name}. ${err.message}`);
       });
   };
-  // The composer's hold (lib/approval-hold): what waits, by kind, while this chat can't send yet,
-  // and while a decision made here is still being saved.
-  createEffect(() => setHold(path(), setupHold(waiting(), overlay())));
+  /** After a save the setup is read again; a failed read is tried once more here, then the rebuild's
+      own broadcast and each hello read it again. */
+  const rereadAfterSave = (mine: number) => {
+    const reread = (again: boolean): Promise<void> =>
+      readSetup(path(), true).then(({ answer: next, n }) => {
+        if (mine !== run) return;
+        if ("ok" in next) draw(next, n);
+        else if (again) setTimeout(() => void reread(false), REREAD_MS);
+      });
+    return reread(true);
+  };
+  /** One row's switch: the folder's decision for its new chats. */
+  const flip = (r: Row, on: boolean, label: string) => save([r], flipTo(on, asking()), label);
+  /** A group's switch: from off or mixed every row on, from on every row off; only the rows that change are saved. */
+  const flipGroup = (kind: ItemKind, rows: Row[]) => {
+    const g = groupFlip(asDecidable(rows), asking());
+    if (!g.rows.length) return;
+    save(
+      g.rows.map((d) => d.row),
+      g.to,
+      itemsPhrase(kind === "context" ? g.rows.length : 0, kind === "skill" ? g.rows.length : 0),
+      { kind, text: groupDoneLine(g.rows.length, kind, g.on) },
+    );
+  };
+  /** Undo: every switch of that group press back exactly as it was (the server keeps what it was). */
+  const runUndo = (kind: ItemKind) => {
+    const u = undoOf(kind);
+    const s = setup();
+    if (!u || !s || !("ok" in s) || undoing()) return;
+    const mine = run;
+    const cwd = s.ok.cwd;
+    setUndoing(true);
+    inOrder(u.queue, () => undoFolderApprovals(cwd, u.token), { late: () => askReread(path()) })
+      .then(() => {
+        dropUndo(u.queue, u.group);
+        if (mine !== run) return;
+        return rereadAfterSave(mine);
+      })
+      .catch((err: Error) => {
+        // Gone (a newer press of that group, a restart): its line goes, the toast says nothing changed.
+        dropUndo(u.queue, u.group);
+        toast(err.message);
+        if (mine === run) askReread(path());
+      })
+      .finally(() => setUndoing(false));
+  };
+  // The composer's "Saving…" (lib/approval-hold) while a flip made here isn't saved and read back.
+  createEffect(() => setHold(path(), setupHold(overlay())));
   onCleanup(() => setHold(untrack(path), null));
-  // A decision made elsewhere (another tab, the project page) or a send refused for decisions: read again.
+  // A decision made elsewhere (another tab, the project page) or a send refused: read again.
   createEffect(
     on(rereadAsked, (ask) => {
       if (!ask || ask.path !== untrack(path)) return;
@@ -294,52 +327,23 @@ export function SessionSetupCard(props: { path: string; editable?: boolean; tool
     }, { defer: true }),
   );
   let card: HTMLElement | undefined;
-  // The composer's Review: open the list and bring the card into view.
-  createEffect(
-    on(reviewAsked, (ask) => {
-      if (!ask || ask.path !== untrack(path)) return;
-      setSetupContextOpen(ask.path, true);
-      setFoldOpen(true);
-      requestAnimationFrame(() => card?.scrollIntoView({ block: "start", behavior: "smooth" }));
-    }, { defer: true }),
+  /** The marks and the one button under a row's name. */
+  const RowMarks = (rp: { r: Row; label: string }) => (
+    <>
+      <Show when={showsChanged(markShown(rp.r.f)) && shownOn(rp.r.f)}>
+        <ChangedLine name={rp.label} onAccept={() => save([rp.r], "approved", rp.label)} />
+      </Show>
+      <Show when={approvals() && rp.r.f.approval?.fingerprintPartial}>
+        <PartialNote />
+      </Show>
+    </>
   );
-  /** The lines and buttons under a row's name: its decision, in the words this mode uses. */
-  const RowDecision = (rp: { r: Row; label: string }) => {
-    const a = () => shownApproval(rp.r.f);
-    const acts = () => (approvals() ? rowActions(a(), asking(), "setup") : []);
-    return (
-      <>
-        <Show when={approvals() && a() === "disallowed"}>
-          <span class="setup-manual">{offWords(approvals()!.folder, shownOff(rp.r.f))}</span>
-        </Show>
-        <Show when={approvals() && a() === "changed"}>
-          <span class="setup-manual">{CHANGED_LINE}</span>
-        </Show>
-        <Show when={approvals() && a() === "waiting" && asking()}>
-          <span class="setup-manual">{WAITING_LINE}</span>
-        </Show>
-        <Show when={approvals() && rp.r.f.approval?.fingerprintPartial}>
-          <span class="setup-manual">{PARTIAL_FINGERPRINT_LINE}</span>
-        </Show>
-        <Show when={acts().length}>
-          <span class="setup-decide">
-            <For each={acts()}>
-              {(act) => (
-                <button
-                  type="button"
-                  class="button button-sm"
-                  aria-label={`${ACTION_WORD[act]} ${rp.label}`}
-                  onClick={() => decide(rp.r, ACTION_DECISION[act], rp.label)}
-                >
-                  {ACTION_WORD[act]}
-                </button>
-              )}
-            </For>
-          </span>
-        </Show>
-      </>
-    );
-  };
+  /** A row's switch, while this chat's list can still change. */
+  const RowToggle = (rp: { r: Row; label: string; switchLabel: string }) => (
+    <Show when={approvals() && rp.r.f.approval}>
+      <RowSwitch class="setup-toggle" label={rp.switchLabel} on={shownOn(rp.r.f)} onFlip={(on) => flip(rp.r, on, rp.label)} />
+    </Show>
+  );
 
   const view = () => {
     const s = setup();
@@ -363,47 +367,35 @@ export function SessionSetupCard(props: { path: string; editable?: boolean; tool
   });
   const [foldOpen, setFoldOpen] = createSignal(setupContextOpen(props.path));
   createEffect(on(path, (p) => setFoldOpen(setupContextOpen(p)), { defer: true }));
+  /** The folded line's words: what a new chat starts with, then how many new items stay off and how
+      many changed (marks only while new items start off). */
+  const folded = createMemo(() => {
+    const g = groups();
+    if (!g) return null;
+    const all = [...g.context, ...g.skills];
+    return {
+      files: g.context.filter((f) => shownOn(f)).length,
+      skills: g.skills.filter((k) => !k.manualOnly && shownOn(k)).length,
+      fresh: all.filter((f) => showsNew(markShown(f)) && !shownOn(f)).length,
+      changed: all.filter((f) => showsChanged(markShown(f)) && shownOn(f)).length,
+    };
+  });
+  // The New rows the open list showed: once this chat's first message goes in, each still New counts
+  // as left off (lib/approval-hold settles them). Rows no longer New drop out.
+  createEffect(() => {
+    const g = groups();
+    const a = approvals();
+    const s = setup();
+    if (!g || !a || !s || !("ok" in s)) return;
+    const fresh = [...g.context.map((f) => ({ kind: "context" as const, f })), ...g.skills.map((f) => ({ kind: "skill" as const, f }))]
+      .filter((r) => r.f.approval && showsNew(markShown(r.f)) && !shownOn(r.f))
+      .map((r) => ({ kind: r.kind, key: r.f.approval!.key }));
+    noteSeenNew(path(), { cwd: s.ok.cwd, queue: queueOf(a.folder), fresh, open: foldOpen() });
+  });
 
   return (
     <Show when={landed()}>
       <section ref={card} class="setup-card" aria-label="Session setup">
-        <Show when={approvals() && approveNotice(waiting().length, approvals()!.folder.kind === "project" ? "project" : "adhoc")}>
-          {(line) => (
-            <div class="setup-group setup-waiting">
-              <p class="setup-note" role="status">
-                {line()}
-              </p>
-              <span class="setup-waiting-actions">
-                <Show when={!foldOpen()}>
-                  <button
-                    type="button"
-                    class="button button-sm button-ghost"
-                    onClick={() => {
-                      setSetupContextOpen(path(), true);
-                      setFoldOpen(true);
-                    }}
-                  >
-                    {REVIEW}
-                  </button>
-                </Show>
-                <button
-                  type="button"
-                  class="button button-sm"
-                  onClick={() => decideWaiting("disallowed")}
-                >
-                  {DISALLOW_ALL}
-                </button>
-                <button
-                  type="button"
-                  class="button button-sm button-primary"
-                  onClick={() => decideWaiting("approved")}
-                >
-                  {APPROVE_ALL}
-                </button>
-              </span>
-            </div>
-          )}
-        </Show>
         <details
           class="setup-context"
           open={foldOpen()}
@@ -418,8 +410,36 @@ export function SessionSetupCard(props: { path: string; editable?: boolean; tool
               <span class="setup-context-title">
                 <Icon name="chevron-right" small class="icon-twist" />
                 <span class="setup-sum-label">{SYSTEM_CONTEXT_LABEL}</span>
+              <Show when={folded()}>
+                {(f) => (
+                  <span class="setup-sum-parts">
+                    <span class="setup-sum-sep" aria-hidden="true">
+                      ·
+                    </span>
+                    <span>{onPhrase(f().files, f().skills)}</span>
+                    <Show when={f().fresh > 0}>
+                      <span class="setup-sum-sep" aria-hidden="true">
+                        ·
+                      </span>
+                      <span class="setup-sum-new">
+                        <i class="chip-dot" />
+                        {newOffPhrase(f().fresh)}
+                      </span>
+                    </Show>
+                    <Show when={f().changed > 0}>
+                      <span class="setup-sum-sep" aria-hidden="true">
+                        ·
+                      </span>
+                      <span class="setup-sum-changed">
+                        <span aria-hidden="true">◆</span>
+                        {changedPhrase(f().changed)}
+                      </span>
+                    </Show>
+                  </span>
+                )}
+              </Show>
               </span>
-              <Show when={whole()}>{(w) => <span class="setup-sum-facts">{sumFacts(w())}</span>}</Show>
+              <Show when={whole()}>{(w) => <span class="setup-sum-facts">{w().tokens !== null ? tokenFacts(w().tokens!) : sumFacts(w())}</span>}</Show>
             </span>
           </summary>
           <Switch>
@@ -435,82 +455,74 @@ export function SessionSetupCard(props: { path: string; editable?: boolean; tool
                 const rows = createMemo(() => contextRows(s(), home()));
                 const context = createMemo(() => contextSum(s()));
                 const skills = createMemo(() => skillsSum(s()));
+                const offered = createMemo(() => s().skills.filter((k) => !k.manualOnly));
+                const slash = createMemo(() => s().skills.filter((k) => k.manualOnly));
+                const contextItems = createMemo((): Row[] => rows().filter((r) => r.switchable).map((r) => ({ kind: "context" as const, f: r.file })));
+                const skillItems = createMemo((): Row[] => offered().map((k) => ({ kind: "skill" as const, f: k })));
+                const groupOf = (items: Row[]) => groupState(asDecidable(items), asking());
+                const skillsOn = () => offered().filter((k) => shownOn(k)).length;
                 return (
                   <>
-                    <div class="setup-group">
-                      <div class="setup-head">
-                        <h2 class="text-eyebrow setup-label">{contextHeading(rows().length)}</h2>
-                        <Show when={!isSumEmpty(context())}>
-                          <span class="setup-total">{sumFacts(context())}</span>
-                        </Show>
-                      </div>
+                    <GroupHead title={contextHeading(rows().length)} facts={!isSumEmpty(context()) ? sumFacts(context()) : undefined}>
+                      <Show when={approvals() && decidable(contextItems()).length > 0}>
+                        <GroupSwitch label="All context files" state={groupOf(contextItems())} onPress={() => flipGroup("context", contextItems())} />
+                      </Show>
+                    </GroupHead>
+                    <Show when={undoOf("context")}>{(u) => <UndoLine text={u().text} busy={undoing()} onUndo={() => runUndo("context")} />}</Show>
+                    <div class="setup-group setup-group-rows">
                       <Show when={rows().length > 0} fallback={<p class="setup-note">{CONTEXT_NONE}</p>}>
                         <p class="setup-note">{contextNote(s())}</p>
                         <ul class="setup-list">
                           <Index each={rows()}>
                             {(r) => (
-                              <li class="setup-row" classList={{ "setup-row-off": shownOff(r().file) }} title={r().file.path}>
+                              <li class="setup-row" classList={{ "setup-row-off": !shownOn(r().file) }} title={r().file.path}>
                                 <span class="setup-name">
                                   <button class="setup-path setup-open" type="button" aria-label={openFileLabel(r().label)} onClick={() => void openFile(r().label, r().file.path)}>
                                     {r().label}
                                   </button>
+                                  <Show when={showsNew(markShown(r().file))}>
+                                    <NewChip />
+                                  </Show>
                                   <Show when={r().role ?? (r().file.approval?.group === "above" ? ABOVE_PROJECT : undefined)}>{(role) => <span class="setup-role">{role()}</span>}</Show>
-                                  <RowDecision r={{ kind: "context", f: r().file }} label={r().label} />
                                 </span>
                                 <span class="setup-facts">{fileFacts(r().file)}</span>
-                                <Show when={switchable() && r().switchable && !r().file.scanOnly}>
-                                  <label class="toggle toggle-switch setup-toggle">
-                                    <input
-                                      type="checkbox"
-                                      aria-label={contextSwitchLabel(r().label)}
-                                      checked={!shownOff(r().file)}
-                                      disabled={applying() || saving()}
-                                      onChange={(e) => flip("context", r().file.path, e.currentTarget)}
-                                    />
-                                    <span class="toggle-box" />
-                                  </label>
+                                <Show when={r().switchable}>
+                                  <RowToggle r={{ kind: "context", f: r().file }} label={r().label} switchLabel={contextSwitchLabel(r().label)} />
                                 </Show>
+                                <RowMarks r={{ kind: "context", f: r().file }} label={r().label} />
                               </li>
                             )}
                           </Index>
                         </ul>
                       </Show>
                     </div>
-                    <div class="setup-group">
-                      <div class="setup-head">
-                        <h2 class="text-eyebrow setup-label">{skillsHeading(s().skills.length)}</h2>
-                        <Show when={!isSumEmpty(skills())}>
-                          <span class="setup-total">{sumFacts(skills())}</span>
-                        </Show>
-                      </div>
-                      <Show when={s().skills.length > 0} fallback={<p class="setup-note">{skillsNone(s())}</p>}>
+                    <GroupHead
+                      title={skillsHeading(offered().length)}
+                      facts={offered().length > 0 ? [`${skillsOn()} of ${offered().length} on`, ...(skills().tokens ? [`${tokenFacts(skills().tokens!)} of descriptions`] : [])].join(" · ") : undefined}
+                    >
+                      <Show when={approvals() && decidable(skillItems()).length > 0}>
+                        <GroupSwitch label="All skills" state={groupOf(skillItems())} onPress={() => flipGroup("skill", skillItems())} />
+                      </Show>
+                    </GroupHead>
+                    <Show when={undoOf("skill")}>{(u) => <UndoLine text={u().text} busy={undoing()} onUndo={() => runUndo("skill")} />}</Show>
+                    <div class="setup-group setup-group-rows">
+                      <Show when={offered().length > 0} fallback={<p class="setup-note">{skillsNone(s())}</p>}>
                         <p class="setup-note">{skillsNote(s())}</p>
                         <ul class="setup-list">
-                          <Index each={s().skills}>
+                          <Index each={offered()}>
                             {(k) => (
-                              <li class="setup-row" classList={{ "setup-row-off": shownOff(k()) }} title={k().description ? `${k().path}\n${k().description}` : k().path}>
+                              <li class="setup-row" classList={{ "setup-row-off": !shownOn(k()) }} title={k().description ? `${k().path}\n${k().description}` : k().path}>
                                 <span class="setup-name">
                                   <button class="setup-path setup-open" type="button" aria-label={openFileLabel(k().name)} onClick={() => void openFile(k().name, k().path)}>
                                     {k().name}
                                   </button>
-                                  <Show when={k().manualOnly}>
-                                    <span class="setup-manual">Manual only</span>
+                                  <Show when={showsNew(markShown(k()))}>
+                                    <NewChip />
                                   </Show>
-                                  <RowDecision r={{ kind: "skill", f: k() }} label={k().name} />
                                 </span>
-                                <span class="setup-facts">{fileFacts(k())}</span>
-                                <Show when={switchable() && !k().scanOnly}>
-                                  <label class="toggle toggle-switch setup-toggle">
-                                    <input
-                                      type="checkbox"
-                                      aria-label={skillSwitchLabel(k().name)}
-                                      checked={!shownOff(k())}
-                                      disabled={applying() || saving()}
-                                      onChange={(e) => flip("skill", k().path, e.currentTarget)}
-                                    />
-                                    <span class="toggle-box" />
-                                  </label>
-                                </Show>
+                                <SkillFigure skill={k()} />
+                                <RowToggle r={{ kind: "skill", f: k() }} label={k().name} switchLabel={skillSwitchLabel(k().name)} />
+                                <RowMarks r={{ kind: "skill", f: k() }} label={k().name} />
                               </li>
                             )}
                           </Index>
@@ -518,10 +530,37 @@ export function SessionSetupCard(props: { path: string; editable?: boolean; tool
                       </Show>
                       <Show when={skillProblemsLine(s())}>{(line) => <p class="setup-note">{line()}</p>}</Show>
                     </div>
+                    <Show when={slash().length > 0}>
+                      <div class="setup-group setup-group-rows setup-slash">
+                        <p class="setup-slash-head">
+                          <span class="text-eyebrow">{slashHeading(slash().length)}</span>
+                          <span class="setup-note">{SLASH_NOTE}</span>
+                        </p>
+                        <ul class="setup-list">
+                          <Index each={slash()}>
+                            {(k) => (
+                              <li class="setup-row" classList={{ "setup-row-off": !shownOn(k()) }} title={k().path}>
+                                <span class="setup-name">
+                                  <button class="setup-path setup-open" type="button" aria-label={openFileLabel(k().name)} onClick={() => void openFile(k().name, k().path)}>
+                                    /skill:{k().name}
+                                  </button>
+                                  <Show when={showsNew(markShown(k()))}>
+                                    <NewChip />
+                                  </Show>
+                                  <Show when={k().description}>{(d) => <span class="setup-slash-desc">{d()}</span>}</Show>
+                                </span>
+                                <RowToggle r={{ kind: "skill", f: k() }} label={k().name} switchLabel={skillSwitchLabel(k().name)} />
+                                <RowMarks r={{ kind: "skill", f: k() }} label={k().name} />
+                              </li>
+                            )}
+                          </Index>
+                        </ul>
+                      </div>
+                    </Show>
                     <Show when={listFolder()}>
                       {(f) => (
                         <div class="setup-group setup-list-link">
-                          <p class="setup-note">{f().kind === "project" ? "Kept for this project on this computer." : "Kept for this folder on this computer."}</p>
+                          <p class="setup-note">{keptLine(f().kind, approvals()?.asking)}</p>
                           <Show
                             when={f().kind === "project" && (f() as { id: string })}
                             fallback={
@@ -584,6 +623,25 @@ export function SessionSetupCard(props: { path: string; editable?: boolean; tool
           }}
         </Show>
       </section>
+    </Show>
+  );
+}
+
+/** A skill row's figure: its listing, what every chat carries. With a listing size its detail opens
+    as the design system's popover (description and SKILL.md); without one, the figure alone. */
+function SkillFigure(props: { skill: SessionSetupSkill }) {
+  return (
+    <Show when={typeof props.skill.listingTokens === "number" && props.skill} fallback={<span class="setup-facts">{skillFacts(props.skill)}</span>}>
+      {(k) => (
+        <SizeButton
+          text={skillFacts(k())}
+          title={k().name}
+          facts={[
+            { label: "Description", when: "in every chat", value: tokenFacts(k().listingTokens!) },
+            ...(typeof k().tokens === "number" ? [{ label: "SKILL.md", when: "when used", value: tokenFacts(k().tokens!) }] : []),
+          ]}
+        />
+      )}
     </Show>
   );
 }
@@ -651,6 +709,10 @@ function McpGroup(props: { mcp: SetupMcp; switchable: boolean; applying: boolean
   return (
     <>
       <h2 class="text-eyebrow setup-label">{SETUP_LABEL}</h2>
+      {/* Unlike context files and skills (kept for the folder), a server's switch is this chat's own. */}
+      <Show when={props.switchable && !setupLine(props.mcp) && props.mcp.rows.some((r) => !r.off)}>
+        <p class="setup-note">{MCP_THIS_CHAT}</p>
+      </Show>
       <Show
         when={setupLine(props.mcp)}
         fallback={

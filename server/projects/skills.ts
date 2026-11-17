@@ -54,10 +54,14 @@ export function parseContextChanges(body: unknown): Record<string, ApprovalState
 
 const parseErr = (what: string) => new OrgError(`Expected { ${what}: { <key>: "approved" | "disallowed" | "waiting" } }`);
 
-/** The All settings row's words for a list: "2 disallowed · 1 waiting" (asking), "2 disallowed" (not asking),
-    "1 changed" when one changed since approved, or "No preference" with no decision at all. */
+/** The All settings row's words for a list, as its switches read: "4 of 6 on · 2 new". On is what new chats load:
+    while new items start off (`asking`) only what was turned on (a changed item stays on), else everything but
+    what was turned off. While new items start off, "· N new" counts items nobody has set and "· N changed" the
+    ones changed since they were turned on, each only when there are some: "4 of 6 on · 2 new · 1 changed". */
 export function skillsRowState(counts: ApprovalCounts, asking = false): string {
-  if (!counts.approved && !counts.disallowed) return asking && counts.waiting ? `${counts.waiting} waiting` : "No preference";
-  const parts = [counts.disallowed ? `${counts.disallowed} disallowed` : "", asking && counts.waiting ? `${counts.waiting} waiting` : "", counts.changed ? `${counts.changed} changed` : ""].filter(Boolean);
-  return parts.length ? parts.join(" · ") : `${counts.approved} approved`;
+  const total = counts.approved + counts.disallowed + counts.waiting;
+  const on = asking ? counts.approved : counts.approved + counts.waiting;
+  const fresh = asking ? counts.waiting : 0;
+  const changed = asking ? counts.changed : 0;
+  return `${on} of ${total} on${fresh ? ` · ${fresh} new` : ""}${changed ? ` · ${changed} changed` : ""}`;
 }

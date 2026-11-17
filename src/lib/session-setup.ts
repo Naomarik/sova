@@ -1,4 +1,4 @@
-import { CHARS_PER_TOKEN, type GitCommit, type GitFolderReading, type GitRepoSummary, type GitSummary, type SessionSetup, type SessionSetupFile } from "../../shared/protocol";
+import { CHARS_PER_TOKEN, type GitCommit, type GitFolderReading, type GitRepoSummary, type GitSummary, type SessionSetup, type SessionSetupFile, type SessionSetupSkill } from "../../shared/protocol";
 import { formatTokens } from "./context";
 import { relativeTime, thousands, tildePath } from "./format";
 import { changesLabel, headLabel, linesNote, placeLabel, upstreamLabel } from "./git-summary";
@@ -37,6 +37,19 @@ export const TOKEN_NOTE = `Token counts are estimates: ${CHARS_PER_TOKEN} charac
     a row's; a row with no estimate shows nothing rather than falling back to its size. */
 export function fileFacts(f: SessionSetupFile): string {
   return typeof f.tokens === "number" ? tokenFacts(f.tokens) : "";
+}
+
+/** A skill row's figure: what a chat carries for it before using it, its listing (name and description).
+    A manual-only skill is never listed, so its whole SKILL.md; so is any skill from an older server that
+    sends no listing size. undefined when there is no estimate at all. */
+export function skillRowTokens(k: SessionSetupSkill): number | undefined {
+  return k.manualOnly ? k.tokens : (k.listingTokens ?? k.tokens);
+}
+
+/** A skill row's one figure, "≈160 tokens" (skillRowTokens); "" with no estimate. */
+export function skillFacts(k: SessionSetupSkill): string {
+  const t = skillRowTokens(k);
+  return typeof t === "number" ? tokenFacts(t) : "";
 }
 
 /** Whether a figure carries a token estimate at all — what decides whether the section says what the
@@ -122,10 +135,16 @@ function sumFiles(files: readonly SessionSetupFile[]): LoadoutSum {
   };
 }
 
+/** Offered skills as a total counts them: by their listing, which is no file on disk, so no bytes or lines.
+    A skill from an older server (no listing size) counts as its file, as it always did. */
+const asListed = (k: SessionSetupSkill): SessionSetupFile =>
+  typeof k.listingTokens === "number" ? { path: k.path, bytes: 0, lines: 0, tokens: k.listingTokens } : k;
+
 /** The figures an aggregate line carries: "40 KB · 1,940 lines · ≈9.7k tokens" — the token estimate
     last, where a file row shows its own and only figure, so the two read as one column. */
 export function sumFacts(s: LoadoutSum): string {
-  const facts = [sizeLabel(s.bytes), linesLabel(s.lines)];
+  // Skill descriptions alone have tokens and no file figures: "≈160 tokens", never "0 B · 0 lines".
+  const facts = s.bytes === 0 && s.lines === 0 && s.tokens ? [] : [sizeLabel(s.bytes), linesLabel(s.lines)];
   if (s.tokens !== null) facts.push(tokenFacts(s.tokens));
   return facts.join(" · ");
 }
@@ -133,7 +152,7 @@ export function sumFacts(s: LoadoutSum): string {
 /** Nothing to add up: empty files sum to zero, and a zero total is never shown (gitView never
     draws "+0 −0" either). */
 export function isSumEmpty(s: LoadoutSum): boolean {
-  return s.bytes === 0 && s.lines === 0;
+  return s.bytes === 0 && s.lines === 0 && !s.tokens;
 }
 
 /** Everything pi loads into the prompt, added up. A row this session switched off is not loaded,
@@ -143,9 +162,9 @@ export function contextSum(s: Loaded): LoadoutSum {
 }
 
 /** Everything this session is offered, added up — offered, not loaded: see skillsNote. Off rows
-    are not offered. */
+    are not offered. Each counts its listing (skillRowTokens), what a chat carries before using it. */
 export function skillsSum(s: Loaded): LoadoutSum {
-  return sumFiles(onOnly(offeredSkills(s)));
+  return sumFiles(onOnly(offeredSkills(s)).map(asListed));
 }
 
 /** The skills the model is offered, off rows aside: a manual-only one never is. */
@@ -169,10 +188,10 @@ export function skillProblemsLine(s: Loaded, home?: string): string | null {
   return `Not loaded: ${problems.map((p) => `${p.name} (${why(p)})`).join(" · ")}`;
 }
 
-/** What this session costs at rest: the files pi loads into the prompt, plus the skills it offers.
-    The card's one aggregate line, above the two sections that add up to it. */
+/** What this session costs at rest: the files pi loads into the prompt, plus the skills it offers by
+    their listing. The card's one aggregate line, above the two sections that add up to it. */
 export function systemContextSum(s: Loaded): LoadoutSum {
-  return sumFiles(onOnly([...layered(s).map((l) => l.file), ...offeredSkills(s)]));
+  return sumFiles([...onOnly(layered(s).map((l) => l.file)), ...onOnly(offeredSkills(s)).map(asListed)]);
 }
 
 export const contextHeading = (n: number) => `Context · ${n}`;

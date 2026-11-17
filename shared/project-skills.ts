@@ -8,7 +8,7 @@
 // PUT /api/projects/:pid/skills  { skills: Record<key | name, "approved" | "disallowed" | "waiting"> } -> ProjectSkillsView
 //   Only the items given change; saved at once. A bare name means the first row of that name.
 
-import type { ApprovalCounts, ApprovalRow, ApprovalState } from "./approvals";
+import type { ApprovalCounts, ApprovalRow, ApprovalSaveAnswer, ApprovalState } from "./approvals";
 
 export type ProjectSkillState = ApprovalState;
 
@@ -16,7 +16,8 @@ export interface ProjectSkillRow extends ApprovalRow {
   description?: string;
 }
 
-export interface ProjectSkillsView {
+/** A save's answer adds ApprovalSaveAnswer's fields (shared/approvals.ts: group saves and Undo). */
+export interface ProjectSkillsView extends ApprovalSaveAnswer {
   skills: ProjectSkillRow[];
   counts: ApprovalCounts;
   asking: boolean;

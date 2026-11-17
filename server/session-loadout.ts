@@ -2,6 +2,8 @@ import type { PiResourceDiagnostic, PiSkill } from "./harness/pi/extension-types
 import { stateViewOf } from "./harness/pi/state-view-of";
 import { LOADOUT } from "./harness/state-kinds";
 import type { FolderRule } from "../shared/folder-rule";
+import { realpathSync } from "node:fs";
+import { basename, dirname, isAbsolute, join } from "node:path";
 
 /**
  * A session's own context files and skills (§chat.transcript/setup-card-toggles): the hidden
@@ -95,24 +97,55 @@ export function loadoutOnBranch(branch: readonly unknown[]): LoadoutEntryData | 
 
 type Readable = Pick<LoadoutEntryData, "offSkills"> & Partial<Pick<LoadoutEntryData, "onSkills" | "asking" | "onlySkills" | "offContext" | "onContext" | "onlyContext">>;
 
+/** An item's place as the folder's list keys it (server/approvals.ts placePath): its folder's real path and its own
+    name. pi lists a skill or file reached through a linked folder (a skill folder that is a link) by the link's path;
+    the folder's decisions name it where it really is. Kept PLACE_TTL_MS per path, so a link pointed elsewhere while a
+    process runs is followed within seconds; a path that can't be resolved is itself. */
+const places = new Map<string, { place: string; at: number }>();
+const PLACE_TTL_MS = 5_000;
+export function placeOf(p: string): string {
+  if (!isAbsolute(p)) return p;
+  const now = Date.now();
+  const hit = places.get(p);
+  if (hit && now - hit.at < PLACE_TTL_MS) return hit.place;
+  let place: string;
+  try {
+    place = join(realpathSync(dirname(p)), basename(p));
+  } catch {
+    place = p;
+  }
+  if (places.size > 5000) places.clear();
+  places.set(p, { place, at: now });
+  return place;
+}
+
+/** Whether a list names an item: by the path pi gives it, or by its place (placeOf). */
+export function listsItem(list: readonly string[] | undefined, path: string): boolean {
+  if (!list?.length || !path) return false;
+  if (list.includes(path)) return true;
+  const place = placeOf(path);
+  return place !== path && list.includes(place);
+}
+
 /** Whether a chat's entry keeps a skill out: the one reading of an off skill, for the loader's list, a
-    subfolder's skills and a typed `/skill:name` alike, by its SKILL.md: one of the same name from another
-    place is another skill. A flip on stays on; then the off list (a name there is an entry from before
-    skills were told apart by place); then, asking, only the allowlist loads. No entry: every skill on. */
+    subfolder's skills and a typed `/skill:name` alike, by its SKILL.md (by the path pi gives it or its place:
+    listsItem): one of the same name from another place is another skill. A flip on stays on; then the off list
+    (a name there is an entry from before skills were told apart by place); then, asking, only the allowlist
+    loads. No entry: every skill on. */
 export function isSkillOff(d: Readable | null | undefined, skill: { name: string; filePath: string }): boolean {
   if (!d) return false;
-  if (skill.filePath && d.onSkills?.includes(skill.filePath)) return false;
-  if (d.offSkills.includes(skill.filePath) || d.offSkills.includes(skill.name)) return true;
-  return !!d.asking && !(skill.filePath && d.onlySkills?.includes(skill.filePath));
+  if (listsItem(d.onSkills, skill.filePath)) return false;
+  if (listsItem(d.offSkills, skill.filePath) || d.offSkills.includes(skill.name)) return true;
+  return !!d.asking && !listsItem(d.onlySkills, skill.filePath);
 }
 
 /** Whether a chat's entry keeps a context file (absolute path) out: the one reading, for the prompt's files
-    and a subfolder's alike. */
+    and a subfolder's alike (by its path or its place: listsItem). */
 export function isContextOff(d: Readable | null | undefined, path: string): boolean {
   if (!d) return false;
-  if (d.onContext?.includes(path)) return false;
-  if (d.offContext?.includes(path)) return true;
-  return !!d.asking && !d.onlyContext?.includes(path);
+  if (listsItem(d.onContext, path)) return false;
+  if (listsItem(d.offContext, path)) return true;
+  return !!d.asking && !listsItem(d.onlyContext, path);
 }
 
 /**

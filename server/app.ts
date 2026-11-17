@@ -96,7 +96,7 @@ import { realRetireDeps, removeFinished, restoreRetired } from "./worktree-retir
 import { retirementViewOf } from "./worktree-retire-view";
 import { cleanupAnswer, pendingWhileOff, removeGate, summaryWhileOff, viewWhileOff } from "./cleanup-switch";
 import type { WorktreeRestoreRequest } from "../shared/protocol";
-import { applyLoadout, getSessionSetup, readSetupFile, waitingForSession } from "./session-setup";
+import { applyLoadout, getSessionSetup, readSetupFile } from "./session-setup";
 import { notPageNorProven } from "./mesh/click-proof";
 import { OrgError } from "./org-error";
 import { getContextView } from "./context-tab";
@@ -687,7 +687,7 @@ export function buildApp(deps: AppDeps) {
     if (typeof body.text !== "string") return c.json({ error: "text must be a string" }, 400);
     if (body.members !== undefined && (!Array.isArray(body.members) || body.members.some((m) => typeof m !== "string")))
       return c.json({ error: "members must be an array of session ids" }, 400);
-    const r = await promptGroup(c.req.param("id"), body.text, body.members as string[] | undefined, undefined, personWatching(c));
+    const r = await promptGroup(c.req.param("id"), body.text, body.members as string[] | undefined);
     if (r.ok) return c.json(r.result);
     return r.status === 409 ? c.json({ refused: r.refused }, 409) : c.json({ error: r.error }, r.status);
   });
@@ -2101,12 +2101,6 @@ export function buildApp(deps: AppDeps) {
       const got = await chatFor(path);
       if ("error" in got) return c.json({ error: got.error }, got.status);
       if (sandboxLowers((await got.chat.sandboxInfo())?.state, asked)) return c.json(yourClickBody("sandbox", notPage(c) ?? "script"), 403);
-    }
-    // A watched page's first message (this computer's or another's) into a chat that asks first waits until nothing is left to decide; a program's never
-    // does (§chat.context-approval/held-send).
-    if (personWatching(c)) {
-      const waiting = await waitingForSession(path).catch(() => 0);
-      if (waiting > 0) return c.json({ error: `Approve or disallow ${waiting === 1 ? "1 context file or skill" : `${waiting} context files and skills`} to send.`, code: "decide-first", waiting }, 409);
     }
     const r = await promptSession(path, body.text, overseerSender(c.req.header(OVERSEER_SENDER_HEADER)), body.delivery, undefined, undefined, extensionSenderOf(c));
     return r.ok ? c.json({ ok: true, queued: r.queued, kind: r.kind, ...(r.compacting ? { compacting: true } : {}) }) : c.json({ error: r.error }, r.status);

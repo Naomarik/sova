@@ -3,7 +3,7 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 import { headerOf, historyOf } from "./harness/pi/reader";
-import { claudeSkillLines, collectSkillLoads, collectSkills, hasSkills, parseSkillSection, skillLinesOf, skillNameFromPath } from "./skills";
+import { claudeSkillLines, collectFileReads, collectSkillLoads, collectSkills, hasSkills, parseSkillSection, skillLinesOf, skillNameFromPath } from "./skills";
 
 /** Skills of pi entries written raw: read as neutral history, the header's cwd as the session's. */
 const skillsOf = (entries: unknown[]) => collectSkills(skillLinesOf(historyOf(entries), entries.map(headerOf).find((h) => h)?.cwd));
@@ -263,5 +263,36 @@ describe("collectSkills", () => {
       assert.deepEqual(skills, { offered: [], used: [] });
       assert.equal(hasSkills(skills), false);
     }
+  });
+});
+
+describe("collectFileReads", () => {
+  const reads = (entries: unknown[]) => collectFileReads(skillLinesOf(historyOf(entries), "/w"));
+
+  test("every file a read or a printing shell command reached, with its lines, in order; mentions and runs aren't reads", () => {
+    const got = reads([
+      call("a1", "t1", "read", { path: "/s/pdf/references/api.md", offset: 10, limit: 20 }),
+      call("a2", "t2", "bash", { command: "cat /s/pdf/forms.md && sed -n 1,5p /s/pdf/forms.md" }),
+      call("a3", "t3", "bash", { command: "python3 /s/pdf/scripts/fill.py in.pdf" }),
+      call("a4", "t4", "bash", { command: "grep -n field /s/pdf/forms.md" }),
+      call("a5", "t5", "mcp__sova__read", { file_path: "notes/x.md" }, 1),
+    ]);
+    assert.deepEqual(got.map((r) => [r.path, r.how, r.entryId, r.chains.length, r.cwd]), [
+      ["/s/pdf/references/api.md", "read", "a1:0", 1, "/w"],
+      ["/s/pdf/forms.md", "shell", "a2:0", 2, "/w"],
+      ["notes/x.md", "read", "a5:1", 1, "/w"],
+    ]);
+    // A read's own window: lines 10 to 29, then pi's cap.
+    assert.deepEqual(got[0]!.chains[0]![0], { kind: "pick", ranges: [{ from: 10, to: 29 }] });
+  });
+
+  test("a Claude Code transcript's Read and Bash count the same way", () => {
+    const got = collectFileReads(
+      claudeSkillLines([
+        { type: "assistant", uuid: "u1", cwd: "/c", timestamp: "t", message: { role: "assistant", content: [{ type: "tool_use", name: "Read", input: { file_path: "/s/x/a.md" } }] } },
+        { type: "assistant", uuid: "u2", cwd: "/c", timestamp: "t", message: { role: "assistant", content: [{ type: "tool_use", name: "Bash", input: { command: "head -n 3 b.md" } }] } },
+      ]),
+    );
+    assert.deepEqual(got.map((r) => [r.path, r.how, r.cwd]), [["/s/x/a.md", "read", "/c"], ["b.md", "shell", "/c"]]);
   });
 });

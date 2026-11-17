@@ -3,7 +3,7 @@
 // don't explain (total minus the groups, floored at 0); the room left is the headline's and the fill bar's
 // empty end, never a line. Pure (no DOM, no Solid), so it tests under tsx.
 
-import type { SessionContextView, WorkerInfo } from "../../shared/protocol";
+import type { SessionContextLoadedFile, SessionContextView, WorkerInfo } from "../../shared/protocol";
 import { formatPercent, formatTokens } from "./context";
 import { languageForPath } from "./markdown";
 
@@ -32,6 +32,11 @@ export interface ContextPart {
   offered?: boolean;
   linesRead?: number;
   lines?: number;
+  /** Skills: ≈ tokens this chat loaded from the skill's folder since the latest compaction, and those files. */
+  loadedTokens?: number;
+  loadedFiles?: SessionContextLoadedFile[];
+  /** Skills: ≈ tokens of its whole SKILL.md (what using it loads), beside `tokens`, its listing. */
+  fileTokens?: number;
   /** Skills: not read in the window, but opened before the latest compaction (the chat's whole-history record). */
   readBefore?: boolean;
   /** Conversation counts: how many messages of that kind. */
@@ -45,7 +50,23 @@ export interface ContextPart {
 export function flatParts(v: Extract<SessionContextView, { state: "ok" }>): ContextPart[] {
   const of = (
     group: ContextPartGroup,
-    ps: readonly { id: string; label: string; tokens: number; path?: string; text?: string; detail?: string; read?: boolean; manualOnly?: boolean; folder?: string; offered?: boolean; linesRead?: number; lines?: number }[],
+    ps: readonly {
+      id: string;
+      label: string;
+      tokens: number;
+      path?: string;
+      text?: string;
+      detail?: string;
+      read?: boolean;
+      manualOnly?: boolean;
+      folder?: string;
+      offered?: boolean;
+      linesRead?: number;
+      lines?: number;
+      loadedTokens?: number;
+      loadedFiles?: SessionContextLoadedFile[];
+      fileTokens?: number;
+    }[],
   ): ContextPart[] =>
     ps.map((p) => ({
       id: `${group}:${p.id}`,
@@ -61,6 +82,9 @@ export function flatParts(v: Extract<SessionContextView, { state: "ok" }>): Cont
       ...(p.offered !== undefined ? { offered: p.offered } : {}),
       ...(p.linesRead ? { linesRead: p.linesRead } : {}),
       ...(p.linesRead && p.lines ? { lines: p.lines } : {}),
+      ...(p.loadedTokens ? { loadedTokens: p.loadedTokens } : {}),
+      ...(p.loadedFiles?.length ? { loadedFiles: p.loadedFiles } : {}),
+      ...(typeof p.fileTokens === "number" ? { fileTokens: p.fileTokens } : {}),
     }));
   const t = v.talk;
   const tallies: ContextPart[] = t
@@ -314,6 +338,26 @@ export function skillChip(p: Pick<ContextPart, "read" | "linesRead" | "lines" | 
   return { chip: { word: "Not read yet", done: false } };
 }
 
+/** What a chat loaded from a skill's folder since the latest compaction: "loaded ≈14.6k tokens from 5 files", or
+    null when it loaded none. A note on the row, never added to a total. Pure. */
+export function skillLoadedLine(p: Pick<ContextPart, "loadedTokens" | "loadedFiles">): string | null {
+  if (!p.loadedTokens) return null;
+  const n = p.loadedFiles?.length ?? 0;
+  return n > 0 ? `loaded ${approxTokens(p.loadedTokens)} tokens from ${counted(n, "file", "files")}` : `loaded ${approxTokens(p.loadedTokens)} tokens`;
+}
+
+/** A skill's size detail in its sheet: its listing (in every chat), its SKILL.md (when used), and what this
+    chat loaded from its folder, each a figure. Pure. */
+export function skillSizeFacts(p: Pick<ContextPart, "tokens" | "fileTokens" | "loadedTokens" | "loadedFiles" | "manualOnly">): { label: string; when: string; value: string; sub?: string }[] {
+  const facts: { label: string; when: string; value: string; sub?: string }[] = [];
+  if (!p.manualOnly) facts.push({ label: "Description", when: "in every chat", value: `${approxTokens(p.tokens)} tokens` });
+  const file = p.manualOnly ? p.tokens : p.fileTokens;
+  if (typeof file === "number") facts.push({ label: "SKILL.md", when: "when used", value: `${approxTokens(file)} tokens` });
+  const n = p.loadedFiles?.length ?? 0;
+  facts.push({ label: "Loaded", when: "in this chat", value: p.loadedTokens ? `${approxTokens(p.loadedTokens)} tokens` : "not used", ...(p.loadedTokens && n ? { sub: `from ${counted(n, "file", "files")}` } : {}) });
+  return facts;
+}
+
 /** A part's short line: a chip (Loaded, Read, Partly read, Not read yet), a count beside it, and the words after. Pure. */
 export function partMeta(p: ContextPart): { chip?: { word: string; done: boolean }; beside?: string; text: string } {
   switch (p.group) {
@@ -325,7 +369,13 @@ export function partMeta(p: ContextPart): { chip?: { word: string; done: boolean
     {
       // A subfolder's skill names its folder, so two of one name can be told apart.
       const text = p.folder !== undefined ? [`${p.folder}/`, p.detail].filter(Boolean).join(" · ") : (p.detail ?? "");
-      if (p.read || p.linesRead) return { ...skillChip(p), text };
+      const loaded = skillLoadedLine(p);
+      if (p.read || p.linesRead) {
+        const c = skillChip(p);
+        const beside = [c.beside, loaded].filter(Boolean).join(" · ");
+        return { chip: c.chip, ...(beside ? { beside } : {}), text };
+      }
+      if (loaded) return { chip: { word: "Used", done: true }, beside: loaded, text };
       if (p.manualOnly) return { chip: { word: "Manual only", done: false }, text };
       return inWindow(p) ? { ...skillChip(p), text } : { text };
     }

@@ -20,6 +20,7 @@ import { applyModelLevels, type ComposedModel, modelFetchEnabled, onLevelsUpdate
 import { installWorkerNice, lowerToolCommands } from "../../process-priority";
 import { steerAllAtOnce } from "./queue-modes";
 import { agentRoot } from "../../state-root";
+import { withContextScope } from "./resources";
 import type { PiExtensionFactory, PiLoaderOptions, PiToolDefinition } from "./extension-types";
 import { installOwnCode, ownCodeLoader } from "./own-code";
 import { sandboxBus } from "./shell";
@@ -178,7 +179,7 @@ export function getModelRuntime(): Promise<ModelRuntime> {
  * no extension gets no flag at all (a flag nobody registered only logs "Unknown option"), and its
  * `flags` are never read.
  */
-async function servicesForCwd(cwd: string, modelRuntime: ModelRuntime, flags: () => OpenFlags, loader: PiLoaderOptions) {
+async function servicesForCwd(cwd: string, modelRuntime: ModelRuntime, flags: () => OpenFlags, loader: PiLoaderOptions, scopeCwd: string = cwd) {
   // Its workers and tool commands start below the server (§app.load-priority/workers).
   installWorkerNice();
   // Every Sova extension from this process's own copy, discovered and listed alike, and Sova's mode
@@ -187,7 +188,8 @@ async function servicesForCwd(cwd: string, modelRuntime: ModelRuntime, flags: ()
   // A worker's and an ordinary chat's alike; the same as the setup card's read of a folder (resources.ts).
   // The extensions' bus is Sova's, so the user's own commands see the sandbox's state (shell.ts, P40).
   const sandbox = sandboxBus();
-  const resourceLoaderOptions = { ...ownCodeLoader(withSkillSources(cwd, loader)), eventBus: sandbox.bus };
+  // Its starting context files cut to its own folder and repository first, whatever the build asked (P44).
+  const resourceLoaderOptions = { ...ownCodeLoader(withContextScope(withSkillSources(cwd, loader), scopeCwd, agentRoot())), eventBus: sandbox.bus };
   const services = await createAgentSessionServices({
     cwd,
     modelRuntime,
@@ -405,6 +407,9 @@ export interface PiBuild {
   /** Notes appended to the system prompt after every other append (the user's APPEND_SYSTEM.md and the
       loadout's own parts), each as given. */
   promptNotes?: string[];
+  /** The folder its starting context files are scoped from (server/context-scope.ts), when it isn't the runtime's
+      own: a chat opened in the home folder because its folder is gone is scoped by its stored one. */
+  contextScopeCwd?: string;
 }
 
 /** The loader with `notes` appended to its system prompt appends, after whatever its own override keeps
@@ -462,7 +467,7 @@ export async function openPiSession(path: string, cwdOverride: string | undefine
       onStep("loadout");
       const plan = await build({ cwd, read: openRead(sessionManager) });
       onStep("extensions load");
-      const services = await servicesForCwd(cwd, modelRuntime, plan.flags, plan.promptNotes?.length ? withPromptNotes(plan.loader, plan.promptNotes) : plan.loader);
+      const services = await servicesForCwd(cwd, modelRuntime, plan.flags, plan.promptNotes?.length ? withPromptNotes(plan.loader, plan.promptNotes) : plan.loader, plan.contextScopeCwd ?? cwd);
       const present = services.resourceLoader.getExtensions().extensions.flatMap((e) => [...e.tools.keys()]);
       const excluded = plan.exclude(present);
       for (const d of services.diagnostics) console.warn(`[chat] runtime ${d.type}: ${d.message}`);

@@ -3,9 +3,9 @@
 // `/skill:name` that names a subfolder's skill, and every walk that lists them (the Context tab, the
 // approval list's scan, the setup file read). Decided from the chat's own folder alone, never the file a
 // call touched. Harness-neutral and from the disk alone: no git program, so a tool result's hook can ask.
-import { existsSync } from "node:fs";
-import { dirname, join, relative, resolve, isAbsolute } from "node:path";
+import { resolve } from "node:path";
 import { real } from "./mcp/folder";
+import { gitTopBelowHome, homeOrAbove, homesOf } from "./context-scope";
 
 export interface DescentFacts {
   /** The home folder (handed in: Bun's homedir() ignores a later HOME change). */
@@ -13,12 +13,6 @@ export interface DescentFacts {
   /** The folder belongs to a project added to Sova (its root, a folder inside it, or a worktree of it). */
   inProject: boolean;
 }
-
-/** `dir` is `of` itself or a folder above it. */
-const atOrAbove = (dir: string, of: string): boolean => {
-  const rel = relative(dir, of);
-  return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
-};
 
 /**
  * Descent is on for a chat in `cwd` only when its folder is inside a git repository whose top is below the home
@@ -32,15 +26,10 @@ export function skillDescentAllowed(cwd: string, facts: DescentFacts): boolean {
   if (!cwd) return false;
   const typed = resolve(cwd);
   const actual = real(typed);
-  const homes = [...new Set([resolve(facts.home), real(resolve(facts.home))])];
-  const homeOrAbove = (dir: string) => homes.some((h) => atOrAbove(dir, h));
-  if (homeOrAbove(typed) || homeOrAbove(actual)) return false;
+  const homes = homesOf(facts.home);
+  if (homeOrAbove(typed, homes) || homeOrAbove(actual, homes)) return false;
   if (facts.inProject) return true;
-  for (let dir = actual; !homeOrAbove(dir); dir = dirname(dir)) {
-    if (existsSync(join(dir, ".git"))) return true;
-    if (dirname(dir) === dir) return false;
-  }
-  return false;
+  return gitTopBelowHome(actual, homes) !== null;
 }
 
 /** Whether a chat in `cwd` is in a project added to Sova, read in this process: the server's engines (a chat's

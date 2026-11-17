@@ -27,7 +27,7 @@ export { allowWithoutAsking, askingFirst, setAllowWithoutAsking } from "./contex
 /**
  * The approval list's folder layer (shared/approvals.ts has the keys and rules): which folder a chat's
  * cwd belongs to, the bounded scan of everything a chat there could load (context files and skills,
- * the user's own and those above the project included), the views the cards draw, and the one write.
+ * the user's own and those above the project within its repository included), the views the cards draw, and the one write.
  * A decision on an item no longer found drops off, but only after a complete scan.
  */
 
@@ -197,7 +197,8 @@ const homeShort = (dir: string) => {
 
 /**
  * Everything a chat in the folder could load at its start or meet in its folders: for each checkout (the root
- * first), pi's own context files (pi's settings folder's, then the checkout's and every folder above it) and
+ * first), pi's own context files (pi's settings folder's, then the checkout's and those above it up to its repository's
+ * top: server/context-scope.ts) and
  * skills, and the subfolder walk's instruction files and skills, each walk bounded as the deeper-context walk is.
  * One row per key, the first found. pi's lists and the subfolder walks are kept per checkout and read again in the
  * background (server/folder-walk.ts has the freshness rule; `deps.fresh` reads them now). No subfolder walk for a folder whose chats don't look below it (server/skill-descent.ts:

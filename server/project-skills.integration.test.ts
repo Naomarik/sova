@@ -42,7 +42,8 @@ writeFileSync(join(root, "sub", ".agents", "skills", "sub-skill", "SKILL.md"), "
 writeFileSync(join(root, "sub", "x.ts"), "x\n");
 writeFileSync(join(root, "AGENTS.md"), "ROOT-RULES\n");
 writeFileSync(join(root, "sub", "AGENTS.md"), "SUB-RULES\n");
-// An instruction file in the folder above the project (between home and the project): "Above the project".
+// An instruction file in the folder above the project (between home and the project): the project is no repository,
+// so its chats start with its own folder's file only, and no list names this one.
 writeFileSync(join(tmp, "AGENTS.md"), "ABOVE-RULES\n");
 
 await import("./testing/in-process-chats"); // chats open in this process (the server hosts none)
@@ -112,7 +113,7 @@ async function asking(on: boolean): Promise<void> {
 
 /** Every context file of the project back to Waiting, then these decisions (by key). */
 async function decideContext(files: Record<string, string>): Promise<void> {
-  const all = { "AGENTS.md": "waiting", "sub/AGENTS.md": "waiting", [join(tmp, "AGENTS.md")]: "waiting", ...files };
+  const all = { "AGENTS.md": "waiting", "sub/AGENTS.md": "waiting", ...files };
   const res = await app.request(`/api/projects/${pid}/context-files`, { method: "PUT", headers: { "content-type": "application/json", ...pageHeaders() }, body: JSON.stringify({ files: all }) });
   assert.equal(res.status, 200, await res.clone().text());
 }
@@ -162,7 +163,8 @@ test("default mode: a new chat of the project, in a folder inside it too, starts
     const path = sessionFile(cwd);
     const chat = await cm.acquireChat(path);
     assert.deepEqual(offered(chat), ["keep-skill", "late-skill"], cwd);
-    assert.ok(prompts(chat, "ROOT-RULES"), "a waiting context file loads, as before");
+    // The project is no repository: a chat in a folder inside it starts with that folder's file only.
+    assert.deepEqual([prompts(chat, "ROOT-RULES"), prompts(chat, "SUB-RULES")], cwd === root ? [true, false] : [false, true], `a waiting context file loads, as before (${cwd})`);
     clearSetupCache();
     const setup = await getSessionSetup(path, { fresh: true });
     assert.equal(setup.state, "ok");
@@ -188,7 +190,8 @@ test("default mode with nothing decided: a new chat builds and stamps nothing, e
   const path = sessionFile();
   const chat = await cm.acquireChat(path);
   assert.deepEqual(offered(chat), SKILLS);
-  assert.ok(prompts(chat, "ROOT-RULES") && prompts(chat, "ABOVE-RULES"));
+  assert.ok(prompts(chat, "ROOT-RULES"));
+  assert.equal(prompts(chat, "ABOVE-RULES"), false, "a folder above the project never loads, with no entry at all");
   await turn(chat);
   assert.deepEqual(loadoutEntries(path), [], "no entry written");
 });
@@ -265,7 +268,7 @@ test("the per-chat route switches no context file or skill, from anyone: a disal
 
 // ---- asking mode (the switch off) ----------------------------------------------------------------
 
-test("asking: a new chat starts with every waiting context file and skill off, the user's and the files above the project included", async () => {
+test("asking: a new chat starts with every waiting context file and skill off, the user's included; a file above the project is no row at all", async () => {
   await decide({});
   await decideContext({});
   await asking(true);
@@ -280,19 +283,17 @@ test("asking: a new chat starts with every waiting context file and skill off, t
     assert.equal(setup.state, "ok");
     if (setup.state !== "ok") return;
     assert.equal(setup.approvals?.asking, true);
-    const above = setup.context.find((f) => f.path === join(tmp, "AGENTS.md"));
-    assert.equal(above?.approval?.group, "above");
-    assert.equal(above?.approval?.key, join(tmp, "AGENTS.md"));
-    assert.equal(above?.off, true);
+    assert.equal(setup.context.find((f) => f.path === join(tmp, "AGENTS.md")), undefined, "a file above the project can never load: no row");
     const sub = setup.context.find((f) => f.path === join(root, "sub", "AGENTS.md"));
     assert.equal(sub?.scanOnly, true, "a subfolder's file is listed before the first message");
     assert.equal(sub?.approval?.state, "waiting");
     assert.ok(setup.skills.some((k) => k.name === "sub-skill" && k.scanOnly && k.off), "a subfolder's skill too");
     // Approving rebuilds the chat with it on.
-    await decideContext({ "AGENTS.md": "approved", [join(tmp, "AGENTS.md")]: "approved" });
+    await decideContext({ "AGENTS.md": "approved" });
     await decide({ "keep-skill": "approved" });
     const now = cm.heldChat(path)!;
-    assert.ok(prompts(now, "ROOT-RULES") && prompts(now, "ABOVE-RULES"));
+    assert.ok(prompts(now, "ROOT-RULES"));
+    assert.equal(prompts(now, "ABOVE-RULES"), false);
     assert.deepEqual(offered(now), ["keep-skill"]);
   } finally {
     await asking(false);
@@ -424,7 +425,7 @@ test("asking: a worker gets its parent's fixed list and mode, context files incl
       const worker = await cm.acquireChat(workerPath);
       assert.deepEqual(offered(worker), ["keep-skill"]);
       assert.ok(prompts(worker, "ROOT-RULES"));
-      assert.equal(prompts(worker, "ABOVE-RULES"), false, "a waiting one stays off in the worker too");
+      assert.equal(prompts(worker, "ABOVE-RULES"), false, "never the folder above the project's, in the worker either");
       assert.equal(loadoutOnBranch(piSession(worker).sessionManager.getBranch())?.asking, true, "its own entry");
     } finally {
       await cm.disposeHeldChat(workerPath, "test done");
@@ -603,7 +604,8 @@ test("the setup card's Changed mark reads a skill's whole folder, as the folder'
   const script = join(root, ".agents", "skills", "keep-skill", "run.sh");
   const dangling = join(root, ".agents", "skills", "late-skill", "gone");
   const linked = join(root, ".agents", "skills", "link-skill");
-  const target = join(tmp, "elsewhere", "SKILL.md");
+  // Inside the project (no skills folder of its own): a project's skill is a real file in the project.
+  const target = join(root, "lib", "link-skill.md");
   const rows = async () => {
     clearSetupCache();
     const path = sessionFile();
@@ -639,6 +641,7 @@ test("the setup card's Changed mark reads a skill's whole folder, as the folder'
     assert.equal(res.status, 200, await res.clone().text());
     assert.equal(((await res.json()) as { key: string }).key, ".agents/skills/link-skill/SKILL.md");
   } finally {
+    rmSync(target, { force: true });
     rmSync(script, { force: true });
     rmSync(dangling, { force: true });
     rmSync(linked, { recursive: true, force: true });

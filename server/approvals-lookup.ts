@@ -89,6 +89,8 @@ export interface GroupPlaces {
 /** Where an item comes from, by its real path. */
 export function groupOf(kind: LookupKind, realPath: string, p: GroupPlaces): ApprovalSource {
   if (p.claudeDirs.some((d) => inside(d, realPath))) return "claude";
+  // The home folder's own file is yours, in the home folder's own list too (the only one that loads it).
+  if (kind === "context" && dirname(realPath) === p.home) return "user";
   if (p.checkout && inside(p.checkout, realPath)) {
     const rel = posix(relative(p.checkout, realPath));
     if (kind === "skill" && rel.startsWith(".claude/")) return "claude";
@@ -98,7 +100,7 @@ export function groupOf(kind: LookupKind, realPath: string, p: GroupPlaces): App
     return /^(?:\.agents|\.pi|\.claude)\/skills\//.test(rel) || !rel.includes("/") ? "project" : "subfolder";
   }
   if (inside(p.agentDir, realPath)) return "user";
-  if (kind === "context" && dirname(realPath) === p.home) return "user";
+  // Context files above the checkout load only within its repository (a project kept in a folder inside one).
   if (kind === "skill" && inside(p.home, realPath) && /^\.(?:agents|pi)\//.test(posix(relative(p.home, realPath)))) return "user";
   return kind === "context" ? "above" : "user";
 }

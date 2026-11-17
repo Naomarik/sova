@@ -61,18 +61,15 @@ const userMessages = (path: string) =>
     .map((l) => JSON.parse(l))
     .filter((e) => e.type === "message" && e.message?.role === "user");
 
-test("asking: a to-do's Start from the page waits as the new chat's draft while anything is left to decide; an unwatched start never waits", async () => {
+test("asking: a to-do's Start sends at once, from the page or not: nothing waits, and the waiting skill stays off", async () => {
   const todos = projectOverseerPaths(project.id).todos;
-  const page = await po.codeItem(project.id, { todoId: addTodo({ text: "Fix the held start" }, todos).id }, undefined, true);
+  const page = await po.codeItem(project.id, { todoId: addTodo({ text: "Fix the started chat" }, todos).id }, undefined, true);
   assert.equal(page.notPrompted, undefined, JSON.stringify(page));
-  assert.ok((page.decideFirst ?? 0) > 0, `the page's start is held (${JSON.stringify(page)})`);
-  assert.equal(getDraft(page.sessionId)?.text, "Fix the held start", "its message is the chat's draft");
-  assert.deepEqual(userMessages(page.path), [], "nothing was sent");
-  assert.deepEqual(loadoutEntries(page.path), [], "nothing was stamped");
-
+  assert.equal(getDraft(page.sessionId), null, "no message is kept back as a draft");
+  for (let i = 0; i < 200 && !loadoutEntries(page.path).length; i++) await new Promise((r) => setTimeout(r, 25));
+  assert.deepEqual(loadoutEntries(page.path).at(-1)?.onlySkills, [], "sent, with the waiting skill off");
   // The same start from no page sends at once, with the waiting skill off.
   const prog = await po.codeItem(project.id, { todoId: addTodo({ text: "Unwatched start" }, todos).id });
-  assert.equal(prog.decideFirst, undefined);
   assert.equal(getDraft(prog.sessionId), null);
   // Sent, not answered: the stamp goes in with the send (no model auth here, so the turn itself fails).
   for (let i = 0; i < 200 && !loadoutEntries(prog.path).length; i++) await new Promise((r) => setTimeout(r, 25));

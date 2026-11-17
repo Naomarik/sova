@@ -182,3 +182,14 @@
 .context-sheet-eyebrow { margin-top: var(--space-2); }
 /* A part reads at the sheet's width: the document is the sheet, not a centred column in it. */
 .context-sheet-body .md-viewer-doc { margin: 0; max-width: 72ch; }
+/* A skill's sheet: its size detail (listing, SKILL.md, what this chat loaded) and the files it loaded. */
+.context-skill-size { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-3); border: 1px solid var(--color-border); border-radius: var(--r-md); background: var(--color-surface); }
+.context-skill-size-row { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-5); font-size: var(--fs-caption); line-height: var(--lh-caption); }
+.context-skill-size-k, .context-skill-size-v { display: flex; flex-direction: column; }
+.context-skill-size-k { color: var(--color-ink-2); }
+.context-skill-size-v { align-items: flex-end; font-family: var(--font-mono); font-size: var(--fs-mono); color: var(--color-ink); white-space: nowrap; }
+.context-skill-size-k small, .context-skill-size-v small { font-family: var(--font-body); font-size: var(--fs-micro); line-height: var(--lh-micro); color: var(--color-ink-muted); }
+.context-skill-files { list-style: none; margin: 0; padding: var(--space-2) 0 0; border-top: 1px solid var(--color-border); display: flex; flex-direction: column; gap: var(--space-1); }
+.context-skill-files > li { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-3); font-size: var(--fs-caption); min-width: 0; }
+.context-skill-files .text-mono { min-width: 0; overflow-wrap: anywhere; }
+.context-skill-file-size { flex: none; font-family: var(--font-mono); font-size: var(--fs-mono); color: var(--color-ink-muted); white-space: nowrap; }

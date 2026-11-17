@@ -37,13 +37,11 @@ const STARTS_WORK: ReadonlySet<ChatMethod> = new Set<ChatMethod>(["send", "deliv
 
 /** What the server does with what a chat process tells it, beyond the handle itself. */
 export interface RemoteHooks {
-  /** Before a message or a worker's start reaches the chat: its retired folder comes back, if it has one (server/worktree-retire-notes.ts). Never throws, and reading a chat never gets here. */
+  /** Before a message or a worker's start reaches the chat: its retired folder comes back, if it has one (server/worktree-retire-notes.ts),
+      and a new chat's first message is checked against its folder's decisions (rebuilt first when they changed). Never throws, and reading a chat never gets here. */
   beforeMessage?(h: RemoteChatHandle): Promise<void>;
   /** Cheap and sync: whether beforeMessage has anything to do for this chat now. */
   needsBeforeMessage?(h: RemoteChatHandle): boolean;
-  /** A page's first message into a chat that asks first: how many context files and skills still wait for a
-      decision (§chat.context-approval/held-send). Above 0 the message is refused and goes back as the draft. */
-  waitingBeforeFirst?(h: RemoteChatHandle): Promise<number>;
   /** A `state` frame arrived (idle stop, the Claude cap, the resource monitor). */
   state?(h: RemoteChatHandle): void;
   /** The chat said it exits on purpose. */
@@ -393,42 +391,9 @@ export class RemoteChatHandle extends ChatHandle {
       },
     });
   }
-  /** Whether a page's message is a first send that must wait for the folder's decisions: the chat is ordinary,
-      before its first message, and was built asking first, or hasn't said yet how it was built (then the count, from
-      the folder's rule, decides: "not loaded yet" is never "nothing waiting"). A program's (notUser) never waits. */
-  holdsFirst(client: Pick<ChatClient, "notUser" | "unwatched">, msg: ChatClientMessage): boolean {
-    const m = this.mirror;
-    return msg.type === "prompt" && !client.notUser && !client.unwatched && !!this.hooks.waitingBeforeFirst && !!m.pristine && !m.special && (!m.loadout || !!m.loadout.off?.asking);
-  }
   clientMessage(client: ChatClient, msg: ChatClientMessage): void {
-    if (this.holdsFirst(client, msg)) {
-      this.gating++;
-      this.messageGate = this.messageGate
-        .then(() => this.hooks.waitingBeforeFirst!(this))
-        .catch(() => 0)
-        .then((waiting) => {
-          this.gating--;
-          if (waiting > 0) {
-            const clientId = (msg as { clientId?: unknown }).clientId;
-            client.send({
-              type: "error",
-              code: "refused",
-              decide: "first",
-              waiting,
-              message: `Approve or disallow ${waiting === 1 ? "1 context file or skill" : `${waiting} context files and skills`} to send.`,
-              ...(typeof clientId === "string" ? { clientId } : {}),
-            });
-            return;
-          }
-          this.clientMessageOn(client, msg);
-        });
-      return;
-    }
-    this.clientMessageOn(client, msg);
-  }
-  private clientMessageOn(client: ChatClient, msg: ChatClientMessage): void {
     if ((msg.type === "prompt" || msg.type === "steer") && (this.gating > 0 || this.hooks.needsBeforeMessage?.(this))) {
-      // In order, each after the folder is back; a chat whose folder is there costs one stat.
+      // In order, each after the folder is back and a first message's re-check; a chat whose folder is there costs one stat.
       this.gating++;
       this.messageGate = this.gateOnce().then(() => {
         this.gating--;
@@ -456,10 +421,11 @@ export class RemoteChatHandle extends ChatHandle {
     }
     this.deliverClientMessage(client, msg);
   }
-  /** Reopen the chat in this same process, its folder back: every pane reconnects. */
-  async reopenHere(): Promise<void> {
+  /** Reopen the chat in this same process (its folder back, or its folder's decisions changed before its first
+      message: `folderRule`): every pane reconnects. */
+  async reopenHere(args: ChatMethods["reopenHere"]["args"] = {}): Promise<void> {
     for (const id of this.clients.keys()) this.reopened.add(id);
-    await this.call("reopenHere", {});
+    await this.call("reopenHere", args);
   }
   private deliverClientMessage(client: ChatClient, msg: ChatClientMessage): void {
     const clientId = this.ids.get(client);

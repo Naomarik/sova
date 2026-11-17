@@ -22,6 +22,8 @@ import {
   skillsHeading,
   skillsNone,
   skillsNote,
+  skillFacts,
+  skillRowTokens,
   skillsSum,
   sumFacts,
   sumHasTokens,
@@ -165,6 +167,27 @@ test("sums: one aggregate line, and the two sections below add up to it to the b
   assert.equal(drawn.reduce((n, f) => n + f.bytes, 0), systemContextSum(s).bytes);
   assert.equal(drawn.reduce((n, f) => n + f.lines, 0), systemContextSum(s).lines);
   assert.equal(drawn.reduce((n, f) => n + (f.tokens ?? 0), 0), systemContextSum(s).tokens);
+});
+
+test("sizes: a skill counts its listing, the part every chat carries; its file only when manual-only or from an older server", () => {
+  const k = (name: string, extra = {}) => ({ name, path: `/s/${name}/SKILL.md`, bytes: 36_000, lines: 400, tokens: 9_000, ...extra });
+  const s = setup({
+    context: [{ path: "/p/AGENTS.md", bytes: 2048, lines: 20, tokens: 512 }],
+    skills: [k("design", { listingTokens: 60 }), k("pdf", { listingTokens: 40 }), k("hand", { manualOnly: true }), k("off", { listingTokens: 50, off: true }), k("old")],
+  });
+  assert.deepEqual(s.skills.map(skillRowTokens), [60, 40, 9_000, 50, 9_000]);
+  assert.equal(skillFacts(s.skills[0]!), "≈60 tokens");
+  assert.equal(skillFacts(s.skills[2]!), "≈9k tokens", "a manual-only skill keeps its whole figure on its row");
+  // On, model-offered rows only; a listing is no file, so it adds tokens and no bytes or lines.
+  assert.deepEqual(skillsSum(s), { bytes: 36_000, lines: 400, tokens: 60 + 40 + 9_000 });
+  const listedOnly = setup({ skills: [k("design", { listingTokens: 60 }), k("hand", { manualOnly: true })] });
+  assert.deepEqual(skillsSum(listedOnly), { bytes: 0, lines: 0, tokens: 60 });
+  assert.equal(sumFacts(skillsSum(listedOnly)), "≈60 tokens");
+  assert.equal(isSumEmpty(skillsSum(listedOnly)), false);
+  assert.deepEqual(systemContextSum(listedOnly), { bytes: 0, lines: 0, tokens: 60 });
+  const withFile = setup({ context: [{ path: "/p/AGENTS.md", bytes: 2048, lines: 20, tokens: 512 }], skills: listedOnly.skills });
+  assert.deepEqual(systemContextSum(withFile), { bytes: 2048, lines: 20, tokens: 572 });
+  assert.equal(sumFacts(systemContextSum(withFile)), "2.0 KB · 20 lines · ≈572 tokens");
 });
 
 test("sums: a zero total is never drawn, and an empty file still gets its row", () => {

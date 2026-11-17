@@ -400,12 +400,20 @@ export class ChatHostRouter {
     setRemoteHosted(path, null);
   }
 
+  /** An ordinary chat (not special, not a worker, its loadout reported) before its first message: its next message is re-checked. */
+  private firstCheckDue(h: RemoteChatHandle): boolean {
+    const m = h.mirror;
+    return !!m.pristine && !m.special && !!m.loadout && !this.workerPaths.has(h.path);
+  }
+
   private readonly hooks: RemoteHooks = {
-    // A chat's retired folder comes back before a message reaches it (§chat.worktrees/retirement).
-    needsBeforeMessage: (h) => needsBringBack(h.mirror),
-    beforeMessage: async (h) => void (await bringBackForChat(h)),
-    // A page's first message into a chat that asks first waits until nothing is left to decide (§chat.context-approval/held-send).
-    waitingBeforeFirst: async (h) => (await import("./session-setup")).waitingForSession(h.path),
+    // A chat's retired folder comes back before a message reaches it (§chat.worktrees/retirement), and a new chat's
+    // first message is checked against its folder's decisions, rebuilt first when they changed (§chat.context-approval/at-once).
+    needsBeforeMessage: (h) => needsBringBack(h.mirror) || this.firstCheckDue(h),
+    beforeMessage: async (h) => {
+      if (needsBringBack(h.mirror)) await bringBackForChat(h);
+      if (this.firstCheckDue(h)) await (await import("./session-setup")).recheckBeforeFirst(h);
+    },
     state: (h) => {
       const m = h.mirror;
       const sup = this.sup;

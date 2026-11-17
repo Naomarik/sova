@@ -1,13 +1,15 @@
 import { createResource, createSignal, Show } from "solid-js";
 import { fetchSessionSetup } from "../lib/api";
+import { overseerButtonWords } from "../lib/approvals";
 import { rowApproval } from "../lib/setup-approvals";
 import { FolderApprovalsDialog } from "./FolderApprovalsDialog";
 import { Icon } from "./ui";
 
 /**
- * The global Overseer runs in a folder that isn't a project, and with asking on it follows that
- * folder's list: what waits stays off and it never waits for you. This head button says how many
- * wait and opens the list (the same one a chat in that folder edits). Without asking it isn't shown.
+ * The global Overseer runs in a folder that isn't a project, and follows that folder's list. While
+ * new items start off, what nobody has turned on stays off and it never waits for you: this head
+ * button says how many new items are off and opens the list (the same one a chat in that folder
+ * edits). While new items start on it isn't shown.
  */
 export function OverseerApprovalsButton(props: { path: string }) {
   const [setup, { refetch }] = createResource(
@@ -27,11 +29,11 @@ export function OverseerApprovalsButton(props: { path: string }) {
           <button
             type="button"
             class="button button-sm button-ghost overseer-approvals"
-            title="Context files and skills the Overseer may load. With asking on, what you haven't approved stays off."
+            title="Context files and skills the Overseer loads. A new one stays off until you turn it on."
             onClick={() => setOpen(true)}
           >
             <Icon name={waiting() ? "attention" : "file"} small />
-            {waiting() ? `${waiting()} to approve` : "Context Files and Skills"}
+            {overseerButtonWords(waiting())}
           </button>
           <Show when={open() && l().folder.kind === "folder" && (l().folder as { path: string; name: string })}>
             {(f) => (

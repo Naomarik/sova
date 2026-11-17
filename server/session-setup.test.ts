@@ -99,8 +99,29 @@ test("an open chat's own loader is the answer, and the fallback is never asked",
   assert.equal(setup.fromRuntime, true);
   assert.equal(loaderCalls, 0);
   assert.deepEqual(setup.context, [{ path: join(dir, "AGENTS.md"), bytes: 4, lines: 1, tokens: 1 }]);
-  assert.deepEqual(setup.skills, [{ name: "a", path: join(cwd, "SKILL.md"), description: "does a", bytes: 8, lines: 2, tokens: 2 }]);
+  // bytes, lines and tokens are the whole SKILL.md; listingTokens what pi offers the model (name, description, location).
+  const listing = `  <skill>\n    <name>a</name>\n    <description>does a</description>\n    <location>${join(cwd, "SKILL.md")}</location>\n  </skill>`;
+  assert.deepEqual(setup.skills, [{ name: "a", path: join(cwd, "SKILL.md"), description: "does a", bytes: 8, lines: 2, tokens: 2, listingTokens: Math.ceil(listing.length / 4) }]);
   assert.equal(setup.cwd, cwd);
+});
+
+test("a skill's listing is far smaller than its file; a manual-only skill is never listed, so it has no listing size", async () => {
+  const dir = fresh({ "big/SKILL.md": "x\n".repeat(4000), "hand/SKILL.md": "y\n".repeat(400) });
+  const runtime: Loadout = loadout({
+    skills: [
+      { name: "big", filePath: join(dir, "big", "SKILL.md"), description: "Big." },
+      { name: "hand", filePath: join(dir, "hand", "SKILL.md"), description: "By hand.", manualOnly: true },
+    ],
+  });
+  const setup = await S.getSessionSetup(sessionFile(dir), {}, { approvals: () => null, runtime: () => runtime, loader: () => Promise.resolve(loadout()) });
+  assert.ok(setup.state === "ok");
+  if (setup.state !== "ok") return;
+  const [big, hand] = setup.skills;
+  assert.equal(big?.tokens, 2000);
+  assert.ok(big?.listingTokens && big.listingTokens < 100, `listing ${big?.listingTokens}`);
+  assert.equal(hand?.manualOnly, true);
+  assert.equal(hand?.listingTokens, undefined);
+  assert.equal(hand?.tokens, 200);
 });
 
 test("with nothing open, pi's loader answers — and says it is the lower bound", async () => {

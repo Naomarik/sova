@@ -733,7 +733,7 @@ a.pipeline-link:hover, button.pipeline-link:hover, summary.pipeline-link:hover {
 /* The page's title takes focus on opening a project (for screen readers); it is no keyboard stop, so it shows no ring. */
 .project-page .session-head-title[tabindex="-1"]:focus { outline: none; }
 
-/* The Settings tab's Skills card: one row per skill, its state chip, then Approve and Disallow. */
+/* The Settings tab's Context Files and Skills cards: one row per item, its figure, then its switch (approval-switches.css). */
 .project-skills-rows { margin: var(--space-2) 0 0; padding: 0; }
 .project-skill-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-3); }
 .project-skill-row .list-main { flex: 1 1 240px; min-width: 0; display: flex; flex-direction: column; gap: 2px; }

@@ -1,7 +1,7 @@
 import { createResource, createUniqueId, onCleanup } from "solid-js";
 import { Portal } from "solid-js/web";
 import type { ApprovalState, FolderApprovalsView } from "../../shared/approvals";
-import { getFolderApprovals, setFolderApprovals } from "../lib/api";
+import { getFolderApprovals, setFolderApprovals, undoFolderApprovals } from "../lib/api";
 import { folderQueue, projectQueue } from "../lib/approval-overlay";
 import { ApprovalsCard } from "./ProjectSkillsCard";
 import { Icon, trapFocus } from "./ui";
@@ -14,9 +14,14 @@ import { Icon, trapFocus } from "./ui";
 export function FolderApprovalsDialog(props: { cwd: string; name: string; onClose(): void; onChanged?(): void }) {
   const id = createUniqueId();
   const [view, { mutate }] = createResource(() => props.cwd, getFolderApprovals);
-  const decide = (kind: "files" | "skills") => async (change: Record<string, ApprovalState>) => {
-    const next: FolderApprovalsView = await setFolderApprovals(props.cwd, { [kind]: change });
+  const decide = (kind: "files" | "skills") => async (change: Record<string, ApprovalState>, group?: true) => {
+    const next: FolderApprovalsView = await setFolderApprovals(props.cwd, { [kind]: change, ...(group ? { group } : {}) });
     mutate(next);
+    props.onChanged?.();
+    return next;
+  };
+  const undo = async (token: string) => {
+    mutate(await undoFolderApprovals(props.cwd, token));
     props.onChanged?.();
   };
   const err = () => (view.error ? (view.error as Error).message : null);
@@ -61,6 +66,7 @@ export function FolderApprovalsDialog(props: { cwd: string; name: string; onClos
             list={view() ? { rows: view()!.files, asking: view()!.asking, complete: view()!.complete } : undefined}
             error={err()}
             decide={decide("files")}
+            undo={undo}
             queue={queue()}
             folder={view()?.folder.kind ?? "folder"}
           />
@@ -71,6 +77,7 @@ export function FolderApprovalsDialog(props: { cwd: string; name: string; onClos
             list={view() ? { rows: view()!.skills, asking: view()!.asking, complete: view()!.complete } : undefined}
             error={err()}
             decide={decide("skills")}
+            undo={undo}
             queue={queue()}
             folder={view()?.folder.kind ?? "folder"}
           />

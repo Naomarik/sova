@@ -1,8 +1,9 @@
 import type { Context, Hono } from "hono";
-import type { ApprovalState, ContextApprovalSetting } from "../shared/approvals";
+import type { ApprovalState, ContextApprovalSetting, FolderApprovalsView } from "../shared/approvals";
 import type { SettingsBy } from "../shared/project-settings";
 import { resolve } from "node:path";
-import { changesNeedPage, folderApprovalsView, folderForCwd, folderQuickScan, parseItemChanges, projectFolder, projectForCwd, resolveChanges, writeFolderApprovals, type ApprovalChanges, type FolderRef } from "./approvals";
+import { changesNeedPage, folderApprovalsView, folderForCwd, parseItemChanges, projectFolder, projectForCwd, resolveChanges, keptScanFor, scanForSave, undoFolderApprovals, undoPlan, UNDO_GONE, viewOfScan, writeFolderApprovals, type ApprovalChanges, type FolderRef, type UndoPlan } from "./approvals";
+import { UNDO_GONE_CODE } from "../shared/approvals";
 import { real } from "./mcp/folder";
 import { allowWithoutAsking, setAllowWithoutAsking } from "./context-approval-setting";
 import { notPageNorProven } from "./mesh/click-proof";
@@ -24,19 +25,19 @@ import { readProject } from "./projects/spaces";
 const NO_STORE = { "Cache-Control": "no-store" };
 
 const APPROVE_WORDS: Record<NotPage, string> = {
-  overseer: "Only you approve context files and skills, or turn a disallowed one back on: the Overseer can't. Nothing was changed.",
-  local: "This computer couldn't confirm your click with the one the list is on. Try again, or decide on that computer's page. Nothing was changed.",
-  chat: "A chat can't approve context files or skills, or turn a disallowed one back on: its project overseer proposes it through sova_settings, on a card you apply. Nothing was changed.",
-  script: "A script can't approve context files or skills, or turn a disallowed one back on: use the project's Context Files or Skills card, or the new chat's card. Nothing was changed.",
-  extension: "An extension can't approve context files or skills, or turn a disallowed one back on. Nothing was changed.",
+  overseer: "Only you turn on context files and skills: the Overseer can't. Nothing was changed.",
+  local: "This computer couldn't confirm your click with the one the list is on. Try again, or turn it on in that computer's page. Nothing was changed.",
+  chat: "A chat can't turn on context files or skills: its project overseer proposes it through sova_settings, on a card you apply. Nothing was changed.",
+  script: "A script can't turn on context files or skills: use the project's Context Files or Skills card, or the new chat's list. Nothing was changed.",
+  extension: "An extension can't turn on context files or skills. Nothing was changed.",
 };
 
 const LOOSEN_WORDS: Record<NotPage, string> = {
-  overseer: "Only you let context files and skills load without asking again: the Overseer can't. Nothing was changed.",
-  local: "This computer couldn't confirm your click with the one the setting is on. Try again, or turn it on that computer's page. Nothing was changed.",
-  chat: "A chat can't let context files and skills load without asking again: only you turn it on, in Settings → General. Nothing was changed.",
-  script: "A script can't let context files and skills load without asking again: turn it on in Settings → General. Nothing was changed.",
-  extension: "An extension can't let context files and skills load without asking again. Nothing was changed.",
+  overseer: "Only you let new context files and skills start on: the Overseer can't. Nothing was changed.",
+  local: "This computer couldn't confirm your click with the one the setting is on. Try again, or turn it on in that computer's page. Nothing was changed.",
+  chat: "A chat can't let new context files and skills start on: only you turn it on, in Settings → General. Nothing was changed.",
+  script: "A script can't let new context files and skills start on: turn it on in Settings → General. Nothing was changed.",
+  extension: "An extension can't let new context files and skills start on. Nothing was changed.",
 };
 
 /** The 403 of a page-only change, or null when this is the page or a proven click from another of the operator's. */
@@ -61,7 +62,8 @@ const handle =
     try {
       return await fn(c);
     } catch (err) {
-      if (err instanceof OrgError || err instanceof RegistryError) return c.json({ error: err.message }, err.status);
+      if (err instanceof OrgError) return c.json({ error: err.message, ...(err.code ? { code: err.code } : {}) }, err.status);
+      if (err instanceof RegistryError) return c.json({ error: err.message }, err.status);
       throw err;
     }
   };
@@ -114,9 +116,34 @@ async function sessionFolders(): Promise<Set<string>> {
 }
 
 /** A project's save: through the settings' one write (history, then its chats not yet started rebuilt). */
-async function saveProject(pid: string, changes: ApprovalChanges, by: SettingsBy) {
+async function saveProject(pid: string, changes: ApprovalChanges, by: SettingsBy, opts: import("./approvals").WriteOptions) {
   const { setProjectApprovalStates } = await import("./project-settings");
-  return setProjectApprovalStates(pid, changes, by);
+  return setProjectApprovalStates(pid, changes, by, {}, opts);
+}
+
+/** A folder's both lists from a scan (the counts by list left out). */
+function viewOf(scan: import("./approvals").FolderScan): FolderApprovalsView {
+  const { fileCounts: _f, skillCounts: _s, ...view } = viewOfScan(scan);
+  return view;
+}
+/** The folder's lists after a write, from its kept scan: no second walk. */
+const keptView = async (folder: FolderRef): Promise<FolderApprovalsView> => viewOf(await keptScanFor(folder));
+
+/** A group switch's save says so (`group: true`, shared/approvals.ts): it never re-approves, and it answers an Undo token. */
+function isGroup(body: Record<string, unknown>): boolean {
+  if (body.group === undefined || body.group === false) return false;
+  if (body.group !== true) throw new OrgError("group must be true (a group switch's save) or absent.");
+  return true;
+}
+
+/** An Undo's refusal, or the plan that was judged when it may go ahead (the write restores only what this judged): a 409 for a token that isn't the folder's latest group save;
+    a 403 when it would turn anything on (an approval back, a disallow lifted) and this isn't the page's click. */
+async function undoRefusal(c: Context, raw: string, folder: FolderRef, token: unknown): Promise<Response | UndoPlan> {
+  if (typeof token !== "string" || !token || token.length > 100) throw new OrgError("undo must be the token a group save answered with.");
+  const plan = undoPlan(folder, token);
+  if (!plan) return c.json({ error: UNDO_GONE, code: UNDO_GONE_CODE }, 409);
+  const no = changesNeedPage(folder.key, plan.changes) ? await pageRefusal(c, raw, APPROVE_WORDS) : null;
+  return no ?? plan;
 }
 
 export function registerApprovalRoutes(app: Hono<any>): void {
@@ -144,15 +171,23 @@ export function registerApprovalRoutes(app: Hono<any>): void {
       handle(async (c) => {
         const pid = readProject(pidOf(c)).id;
         const { raw, body } = await rawBody(c);
+        const folder = projectFolder(pid);
+        if (body.undo !== undefined) {
+          const plan = await undoRefusal(c, raw, folder, body.undo);
+          if (plan instanceof Response) return plan;
+          const { undoProjectApprovals } = await import("./project-settings");
+          const r = await undoProjectApprovals(pid, body.undo as string, byOf(c), plan);
+          return c.json({ ...(kind === "context" ? r.context : r.skills), undone: r.undone, kept: r.kept }, 200, NO_STORE);
+        }
         const { parseContextChanges, parseSkillChanges } = await import("./projects/skills");
         const asked: ApprovalChanges = kind === "context" ? { context: parseContextChanges(body), skills: {} } : { context: {}, skills: parseSkillChanges(body) };
         // By key before who may is judged: a skill named by its name is the decision on its place.
-        const folder = projectFolder(pid);
-        const changes = resolveChanges(await folderQuickScan(folder, { fresh: true }), asked);
+        const scan = await scanForSave(folder, asked);
+        const changes = resolveChanges(scan, asked);
         const no = changesNeedPage(folder.key, changes) ? await pageRefusal(c, raw, APPROVE_WORDS) : null;
         if (no) return no;
-        const r = await saveProject(pid, changes, byOf(c));
-        return c.json(kind === "context" ? r.context : r.skills, 200, NO_STORE);
+        const r = await saveProject(pid, changes, byOf(c), { scan, group: isGroup(body) });
+        return c.json({ ...(kind === "context" ? r.context : r.skills), ...(r.undo ? { undo: r.undo } : {}) }, 200, NO_STORE);
       }),
     );
   }
@@ -167,18 +202,30 @@ export function registerApprovalRoutes(app: Hono<any>): void {
     handle(async (c) => {
       const { raw, body } = await rawBody(c);
       const folder = await knownFolder(cwdOf(body.cwd));
+      if (body.undo !== undefined) {
+        const plan = await undoRefusal(c, raw, folder, body.undo);
+        if (plan instanceof Response) return plan;
+        if (folder.kind === "project") {
+          const { undoProjectApprovals } = await import("./project-settings");
+          const r = await undoProjectApprovals(folder.projectId!, body.undo as string, byOf(c), plan);
+          return c.json({ ...(await keptView(folder)), undone: r.undone, kept: r.kept }, 200, NO_STORE);
+        }
+        const u = await undoFolderApprovals(folder, body.undo as string, plan);
+        return c.json({ ...(await keptView(folder)), undone: u.undone, kept: u.kept }, 200, NO_STORE);
+      }
       const asked: ApprovalChanges = {
         context: body.files === undefined ? {} : parseItemChanges(body.files, "context", "files"),
         skills: body.skills === undefined ? {} : parseItemChanges(body.skills, "skills", "skills"),
       };
       if (!Object.keys(asked.context).length && !Object.keys(asked.skills).length) throw new OrgError('Expected { cwd, files?: { <key>: "approved" | "disallowed" | "waiting" }, skills?: { … } } with at least one change');
-      const scan = await folderQuickScan(folder, { fresh: true });
+      const scan = await scanForSave(folder, asked);
       const changes = resolveChanges(scan, asked);
       const no = changesNeedPage(folder.key, changes) ? await pageRefusal(c, raw, APPROVE_WORDS) : null;
       if (no) return no;
-      if (folder.kind === "project") await saveProject(folder.projectId!, changes, byOf(c));
-      else await writeFolderApprovals(folder, changes, {}, { scan });
-      return c.json(await folderApprovalsView(folder), 200, NO_STORE);
+      const opts = { scan, group: isGroup(body) };
+      const w = folder.kind === "project" ? await saveProject(folder.projectId!, changes, byOf(c), opts) : await writeFolderApprovals(folder, changes, {}, opts);
+      // Drawn from the scan the save used (its approvals' fingerprints read now): no second scan.
+      return c.json({ ...("scan" in w ? viewOf(w.scan) : await keptView(folder)), ...(w.undo ? { undo: w.undo } : {}) }, 200, NO_STORE);
     }),
   );
 

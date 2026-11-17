@@ -173,13 +173,12 @@ test("default mode: a new chat of the project, in a folder inside it too, starts
     assert.equal(block.approval?.state, "disallowed");
     assert.equal(setup.skills.find((k) => k.name === "keep-skill")!.approval?.state, "waiting");
   }
-  // The per-chat switch overrides the folder for this chat alone (the page's).
+  // No per-chat switch for context files and skills: one that names them, even the page's, changes nothing.
   const path = sessionFile();
   await cm.acquireChat(path);
   const r = await applyLoadout(path, { offContext: [], offSkills: [] }, { page: true });
   assert.equal(r.ok, true);
-  assert.deepEqual(offered(cm.heldChat(path)!), SKILLS);
-  assert.deepEqual(offered(await cm.acquireChat(sessionFile())), ["keep-skill", "late-skill"], "another new chat still follows the project");
+  assert.deepEqual(offered(cm.heldChat(path)!), ["keep-skill", "late-skill"]);
 });
 
 test("default mode with nothing decided: a new chat builds and stamps nothing, exactly as before", async () => {
@@ -249,37 +248,19 @@ test("a change rebuilds a new chat before its first message, and its panes are t
   assert.deepEqual(offered(now), ["keep-skill", "block-skill"]);
 });
 
-test("a switch on the card never turns on a disallowed skill the card doesn't list", async () => {
-  await asking(false);
-  await decideContext({});
-  await decide({ "sub-skill": "disallowed" });
-  const path = sessionFile();
-  await cm.acquireChat(path);
-  // The card flips a context file only: it sends the skills it lists, none of them off.
-  const r = await applyLoadout(path, { offContext: [join(root, "AGENTS.md")], offSkills: [] }, { page: true });
-  assert.equal(r.ok, true);
-  const chat = cm.heldChat(path)!;
-  await turn(chat);
-  assert.ok(loadoutEntries(path).at(-1)?.offSkills.includes(join(root, "sub", ".agents", "skills", "sub-skill", "SKILL.md")), "fixed off at the first message");
-});
-
-test("only the page turns on, from the card, a row its folder keeps off; turning one off stays open", async () => {
+test("the per-chat route switches no context file or skill, from anyone: a disallowed one stays off and nothing is written", async () => {
   await asking(false);
   await decideContext({});
   await decide({ "block-skill": "disallowed" });
   const path = sessionFile();
   await cm.acquireChat(path);
   const post = (body: unknown, headers: Record<string, string>) => app.request("/api/sessions/loadout", { method: "POST", headers: { "content-type": "application/json", ...headers }, body: JSON.stringify(body) });
-  const on = await post({ path, offContext: [], offSkills: [] }, {});
-  assert.equal(on.status, 403, "a script can't switch a disallowed skill on for itself");
-  assert.equal(((await on.json()) as { yourClick?: boolean }).yourClick, true);
-  assert.deepEqual(offered(cm.heldChat(path)!), ["keep-skill", "late-skill"], "nothing changed");
-  const off = await post({ path, offContext: [], offSkills: ["block-skill", "keep-skill"] }, {});
-  assert.equal(off.status, 200, await off.clone().text());
-  assert.deepEqual(offered(cm.heldChat(path)!), ["late-skill"]);
-  const page = await post({ path, offContext: [], offSkills: [] }, pageHeaders());
-  assert.equal(page.status, 200, await page.clone().text());
-  assert.deepEqual(offered(cm.heldChat(path)!), SKILLS);
+  for (const headers of [{}, pageHeaders()]) {
+    const r = await post({ path, offContext: [], offSkills: ["keep-skill"] }, headers);
+    assert.equal(r.status, 200, await r.clone().text());
+    assert.deepEqual(offered(cm.heldChat(path)!), ["keep-skill", "late-skill"]);
+  }
+  assert.deepEqual(loadoutEntries(path), []);
 });
 
 // ---- asking mode (the switch off) ----------------------------------------------------------------
@@ -318,39 +299,20 @@ test("asking: a new chat starts with every waiting context file and skill off, t
   }
 });
 
-test("asking: the page's first send waits until nothing is left to decide; a program's never does", async () => {
+test("asking: nothing waits: the page's first send goes in with every waiting item off, as a program's does", async () => {
   await decide({});
   await decideContext({});
   await asking(true);
   try {
     const path = sessionFile();
     await cm.acquireChat(path);
-    const send = (headers: Record<string, string>, text = "hello") =>
-      app.request("/api/sessions/prompt", { method: "POST", headers: { "content-type": "application/json", ...headers }, body: JSON.stringify({ path, text }) });
-    const held = await send(pageHeaders());
-    assert.equal(held.status, 409);
-    const body = (await held.json()) as { code?: string; waiting?: number };
-    assert.equal(body.code, "decide-first");
-    assert.ok((body.waiting ?? 0) >= 6, `every waiting file and skill counts (${body.waiting})`);
-    assert.deepEqual(loadoutEntries(path), [], "nothing was sent");
-    // The operator's page on another computer, relayed by its /peer/<id>/ proxy (which marks it), has a person watching: held the same.
-    const remote = await app.request("/api/sessions/prompt", { method: "POST", headers: { "content-type": "application/json", "X-Sova-Relayed": "1" }, body: JSON.stringify({ path, text: "hello" }) }, { incoming: {}, meshPeer: { id: "peer" } });
-    assert.equal(remote.status, 409, await remote.clone().text());
-    assert.equal(((await remote.json()) as { code?: string }).code, "decide-first");
-    assert.deepEqual(loadoutEntries(path), [], "nothing was sent");
-    // Disallow All (open to everyone) decides the rest: the page's send goes through.
-    await decide(Object.fromEntries([...SKILLS, "sub-skill"].map((n) => [n, "disallowed"])));
-    await decideContext({ "AGENTS.md": "disallowed", "sub/AGENTS.md": "disallowed", [join(tmp, "AGENTS.md")]: "disallowed" });
-    clearSetupCache();
-    const left = (await getSessionSetup(path, { fresh: true })) as Extract<Awaited<ReturnType<typeof getSessionSetup>>, { state: "ok" }>;
-    const still = [...left.context, ...left.skills].filter((r) => r.approval?.state === "waiting").map((r) => r.path);
-    // Anything else on this machine pi loads (none in this sandbox) is decided too.
-    if (still.length) await decideContext(Object.fromEntries(still.map((p) => [p, "disallowed"])));
     const settled = settledOnce(path);
-    const ok = await send(pageHeaders());
+    const ok = await app.request("/api/sessions/prompt", { method: "POST", headers: { "content-type": "application/json", ...pageHeaders() }, body: JSON.stringify({ path, text: "hello" }) });
     assert.equal(ok.status, 200, await ok.clone().text());
     await settled;
-    // A program's send into another new chat is never held: it starts with the waiting items off.
+    assert.equal(loadoutEntries(path).at(-1)?.asking, true);
+    assert.deepEqual(loadoutEntries(path).at(-1)?.onlySkills, [], "the page's: its waiting skills stay off");
+    // A program's send into another new chat: it starts with the waiting items off too.
     await decide({});
     const other = sessionFile();
     await cm.acquireChat(other);
@@ -594,39 +556,6 @@ test("asking: a list that can't be read fails closed: the new chat starts withou
   }
 });
 
-test("asking: the page's group send keeps the message as a new member's draft while it has items to decide; the other member gets it", async () => {
-  await decide({});
-  await decideContext({});
-  await asking(true);
-  const { getDraft } = await import("./drafts");
-  const { idOf } = await import("./sessions-index");
-  try {
-    const fresh = sessionFile();
-    const talked = sessionFile(root, true);
-    await cm.acquireChat(fresh);
-    const other = await cm.acquireChat(talked);
-    const json = { "content-type": "application/json", ...pageHeaders() };
-    const group = (await (await app.request("/api/session-groups", { method: "POST", headers: json, body: JSON.stringify({ name: "Pair" }) })).json()) as { id: string };
-    for (const path of [fresh, talked]) {
-      const res = await app.request("/api/session-groups/assign", { method: "POST", headers: json, body: JSON.stringify({ path, groupId: group.id }) });
-      assert.equal(res.status, 200, await res.clone().text());
-    }
-    new ScriptedModel().attach(piSession(other)).reply({ text: "done" });
-    const settled = settledOnce(talked);
-    const res = await app.request(`/api/session-groups/${group.id}/prompt`, { method: "POST", headers: json, body: JSON.stringify({ text: "both of you" }) });
-    assert.equal(res.status, 200, await res.clone().text());
-    const body = (await res.json()) as { sent: string[]; held?: { id: string; code: string }[] };
-    assert.deepEqual(body.sent, [idOf(talked)]);
-    assert.deepEqual(body.held?.map((h) => [h.id, h.code]), [[idOf(fresh), "decide-first"]]);
-    await settled;
-    assert.equal(getDraft(idOf(fresh))?.text, "both of you", "the held member keeps it as its draft");
-    assert.deepEqual(loadoutEntries(fresh), [], "nothing reached the held member");
-    assert.ok(!readFileSync(fresh, "utf8").includes("both of you"));
-  } finally {
-    await asking(false);
-  }
-});
-
 test("asking: a skill approved mid-chat in a folder whose other skill was already offered is offered at the next touch there", async () => {
   await decideContext({});
   await decide({});
@@ -663,31 +592,6 @@ test("asking: a skill approved mid-chat in a folder whose other skill was alread
     assert.doesNotMatch(lastResult(), /pair-a/, "the one offered before isn't offered again");
   } finally {
     rmSync(join(root, "pair"), { recursive: true, force: true });
-    await asking(false);
-  }
-});
-
-test("asking: a held chat that hasn't reported its loadout yet is counted from its folder's rule, never as nothing waiting", async () => {
-  await decide({});
-  await decideContext({});
-  await asking(true);
-  const { waitingForSession } = await import("./session-setup");
-  try {
-    const path = sessionFile();
-    const chat = await cm.acquireChat(path);
-    const before = await waitingForSession(path);
-    assert.ok(before > 0, `waiting once loaded (${before})`);
-    // As a chat's mirror reads before its build has said how it was built.
-    const was = chat.loadoutState;
-    chat.loadoutState = null;
-    try {
-      assert.equal((await import("./chat-handle")).chatHandle(path)?.mirror.loadout, null);
-      const early = await waitingForSession(path);
-      assert.ok(early > 0, `counted from the folder's rule, not as none (${early})`);
-    } finally {
-      chat.loadoutState = was;
-    }
-  } finally {
     await asking(false);
   }
 });

@@ -10,7 +10,7 @@ import { homedir } from "node:os";
 import { dirname, relative, sep } from "node:path";
 import { blocksToAttach, loadedInstructions, LOADING_TOOLS } from "../../deeper-context";
 import { APPROVAL_PENDING, type ApprovalPendingData } from "../state-kinds";
-import { isContextOff, isSkillOff, loadoutOnBranch, type LoadoutEntryData } from "../../session-loadout";
+import { isContextOff, isSkillOff, listsItem, loadoutOnBranch, type LoadoutEntryData } from "../../session-loadout";
 import { expandedSkill, fillPlaceholders, skillBody, skillCommand } from "../../skill-sources";
 import { skillDescentAllowed } from "../../skill-descent";
 import { nestedSkillFile, offeredDirs, offeredSkills, skillBlocksToAttach } from "../../subfolder-skills";
@@ -43,7 +43,7 @@ export function deeperContextExtension(opts: { allow?: (abs: string) => boolean;
       /** An item an asking chat's fixed list doesn't name (and the chat never switched off): kept out, with
           one transcript line offering Approve and Disallow, never sent to the model. */
       const unlisted = (d: LoadoutEntryData | null, kind: ApprovalPendingData["kind"], path: string) =>
-        !!d?.asking && (kind === "context" ? !d.offContext.includes(path) && !d.onlyContext?.includes(path) : !d.offSkills.includes(path) && !d.onlySkills?.includes(path));
+        !!d?.asking && (kind === "context" ? !listsItem(d.offContext, path) && !listsItem(d.onlyContext, path) : !listsItem(d.offSkills, path) && !listsItem(d.onlySkills, path));
       const note = (branch: readonly unknown[], item: ApprovalPendingData) => {
         if (noted.size === 0) for (const e of stateViewOf(branch).list(APPROVAL_PENDING)) noted.add(e.data.path);
         if (noted.has(item.path)) return;

@@ -1,6 +1,6 @@
 // A new chat's screen holds still through a decision (§chat.context-approval), in a real browser against a
-// throwaway server: a project with several skills waiting (asking mode), a new chat, System context open
-// and scrolled down to a row. Approve on it saves to the folder's list, which rebuilds the chat: its socket
+// throwaway server: a project with several new skills (new items start off), a new chat, System context open
+// and scrolled down to a row. Its switch turned on saves to the folder's list, which rebuilds the chat: its socket
 // says hello again and the page reads the setup again. Afterwards the clicked row is the same element at
 // the same place on screen, and the view didn't move. Before the fix the hello cleared the chat's profile
 // (the page lost its height) and the empty screen's "read from the top" ran again: the view went to the
@@ -39,7 +39,7 @@ async function project(): Promise<string> {
 }
 
 describe("a new chat's decision in a browser", { timeout: 240_000, skip: h.skip }, () => {
-  test("Approve while scrolled down: the clicked row stays the same element, where it was, through the hello and the re-read", async () => {
+  test("a switch turned on while scrolled down: the clicked row stays the same element, where it was, through the hello and the re-read", async () => {
     const { page, s } = h;
     const root = await project();
     assert.equal((await api("PUT", "/api/settings/context-approval", { allowWithoutAsking: false })).status, 200);
@@ -56,7 +56,8 @@ describe("a new chat's decision in a browser", { timeout: 240_000, skip: h.skip 
       throw new Error(`${e}\nURL ${page.url()}\n${(await page.locator("body").innerText()).slice(0, 1500)}`);
     });
     // By its label: inside the closed System context fold it isn't in the accessibility tree yet.
-    const button = page.locator('button[aria-label="Approve delta"]');
+    const input = page.locator('input[aria-label="Offer delta"]');
+    const button = page.locator("label", { has: input });
     await button.waitFor({ state: "attached", timeout: 30_000 });
     if (!(await page.locator("details.setup-context").evaluate((d) => (d as HTMLDetailsElement).open))) await page.locator("summary.setup-context-head").click();
     await button.waitFor({ timeout: 15_000 });
@@ -79,11 +80,11 @@ describe("a new chat's decision in a browser", { timeout: 240_000, skip: h.skip 
       const hello = after.indexOf("hello");
       return hello >= 0 && after.indexOf("read", hello) > hello;
     }, 30_000, async () => JSON.stringify(seen.slice(mark)));
-    await until("the decision saved: its buttons gone, Saving… cleared", async () => (await button.count()) === 0 && !(await page.locator(".composer-reason").innerText()).includes("Saving"), 30_000);
+    await until("the switch saved: on, its New mark gone, Saving… cleared", async () => (await input.isChecked()) && (await row.evaluate((r) => !r.querySelector(".approval-new"))) && !(await page.locator(".composer-reason").innerText()).includes("Saving"), 30_000);
     await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
 
     const [topAfter, rowAfter] = await read();
-    // Measured 1019 → 1026: the composer's line under the pane changes the pane's height, and the
+    // Measured 1019 → 1026: the composer's notice strip changes the pane's height, and the
     // browser keeps what is on screen in place. The jump was to 0; the row's place on screen is exact.
     assert.ok(Math.abs(topAfter - topBefore) <= 16, `the view jumped: scrollTop ${topBefore} → ${topAfter}`);
     const now = await page.locator("li.setup-row", { has: page.locator(".setup-open", { hasText: /^delta$/ }) }).evaluate((r) => Math.round(r.getBoundingClientRect().top));

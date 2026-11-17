@@ -3,8 +3,8 @@ import type { BatchRefusal, SessionSummary } from "../../shared/protocol";
 import { promptSessionGroup } from "../lib/api";
 import { createTouchMode, enterSends } from "../lib/input-mode";
 import { fitPlaceholderNow, type FittedPlaceholder } from "../lib/placeholder-fit";
-import { composerParts, heldBody, heldTitle, partialAfterRetry, partialBody, partialRetries, refusalBody, refusalSentence, targetsLine, targetsOf, withGone, type Targets } from "../lib/group-prompt";
-import { announce, flushDrafts, heldMessageBack, toast } from "../lib/ui-state";
+import { composerParts, partialAfterRetry, partialBody, partialRetries, refusalBody, refusalSentence, targetsLine, targetsOf, withGone, type Targets } from "../lib/group-prompt";
+import { announce, toast } from "../lib/ui-state";
 import { Banner, Icon } from "./ui";
 import { createVoiceInput, VoiceButton, VoiceStrip } from "./VoiceInput";
 
@@ -58,7 +58,6 @@ export function GroupComposer(props: {
    */
   const [partial, setPartial] = createSignal<{ failed: BatchRefusal[]; sent: number; text: string } | null>(null);
   /** Members a send left waiting for decisions (asking first): the message is each one's draft. */
-  const [held, setHeld] = createSignal<{ ids: string[]; sent: number } | null>(null);
   /** Tapped, Enter adds a line and Send to All sends; the placeholder drops its key hint. */
   const { touch, onPointerDown } = createTouchMode();
   /** The placeholder in reading order: the ask, then the key hint a narrow box can spare. */
@@ -114,8 +113,6 @@ export function GroupComposer(props: {
     const sent = (body ?? text()).trim();
     if (!sent || sending() || noone()) return;
     setSending(true);
-    // A member held for decisions keeps the message ahead of its stored draft: store what was typed first.
-    flushDrafts();
     const out = await promptSessionGroup(props.groupId, sent, subset);
     setSending(false);
     if (out.ok) {
@@ -133,8 +130,6 @@ export function GroupComposer(props: {
             ? { failed: out.result.failed, sent: n, text: sent }
             : null;
       setPartial(next);
-      setHeld(out.result.held?.length ? { ids: out.result.held.map((r) => r.id), sent: n } : null);
-      for (const r of out.result.held ?? []) if (r.path) heldMessageBack(r.path, sent);
       // The roll-up's anchor: this is the set the workspace counts "replied" against, from the
       // moment the server accepted — accepted, not answered (the route never waits for turns).
       props.onSent?.(out.result.sent, body === undefined ? "send" : "retry");
@@ -144,9 +139,7 @@ export function GroupComposer(props: {
         edit("");
         input.value = "";
       }
-      const k = out.result.held?.length ?? 0;
-      const said = k ? heldTitle(k, n) : `Sent to ${n} ${n === 1 ? "member" : "members"}.`;
-      announce(said);
+      announce(`Sent to ${n} ${n === 1 ? "member" : "members"}.`);
       props.onRefresh();
       return;
     }
@@ -208,20 +201,6 @@ export function GroupComposer(props: {
             />
           )}
         </Show>
-        <Show when={held()}>
-          {(hd) => (
-            <Banner
-              tone="info"
-              title={heldTitle(hd().ids.length, hd().sent)}
-              body={heldBody(hd().ids.map((id) => props.nameOf(id)))}
-              action={
-                <button type="button" class="button button-sm button-ghost" onClick={() => setHeld(null)}>
-                  Dismiss
-                </button>
-              }
-            />
-          )}
-        </Show>
         <Show when={partial()}>
           {(p) => (
             <Banner
@@ -251,6 +230,13 @@ export function GroupComposer(props: {
         </Show>
 
         <VoiceStrip voice={voice} />
+        {/* The notice strip just above the box (as a chat's composer), never in the foot. */}
+        <div class="composer-reason composer-notice" id="group-composer-reason">
+          <Show when={noone()}>
+            <Icon name="attention" small />
+            <span class="composer-notice-text">No member can take a message right now.</span>
+          </Show>
+        </div>
         <div class="composer-row">
           <button type="button" class="button button-icon button-ghost" aria-label="Back to One Member" title="Back to One Member" onClick={() => props.onClose()}>
             <Icon name="close" />
@@ -295,12 +281,6 @@ export function GroupComposer(props: {
 
         <div class="composer-foot">
           <span class="group-composer-targets">{targetsLine(targets())}</span>
-          <span class="composer-reason" id="group-composer-reason">
-            <Show when={noone()}>
-              <Icon name="attention" small />
-              No member can take a message right now.
-            </Show>
-          </span>
         </div>
       </form>
     </footer>

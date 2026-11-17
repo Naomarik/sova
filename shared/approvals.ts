@@ -9,11 +9,20 @@
 // place, never by its name alone: a skill that moves asks again.
 //
 // GET /api/projects/:pid/context-files -> ContextFilesView
-// PUT /api/projects/:pid/context-files { files: Record<key, ApprovalState> } -> ContextFilesView
+// PUT /api/projects/:pid/context-files { files: Record<key, ApprovalState>, group?: true } | { undo } -> ContextFilesView
 // GET /api/projects/:pid/skills -> ProjectSkillsView (shared/project-skills.ts)
-// PUT /api/projects/:pid/skills { skills: Record<key | name, ApprovalState> } -> ProjectSkillsView
+// PUT /api/projects/:pid/skills { skills: Record<key | name, ApprovalState>, group?: true } | { undo } -> ProjectSkillsView
 // GET /api/folder-approvals?cwd=<absolute folder> -> FolderApprovalsView (a project's folder, or one a recorded chat runs in; else 404)
-// PUT /api/folder-approvals { cwd, files?: Record<key, ApprovalState>, skills?: Record<key, ApprovalState> } -> FolderApprovalsView
+// PUT /api/folder-approvals { cwd, files?: Record<key, ApprovalState>, skills?: Record<key, ApprovalState>, group?: true } | { cwd, undo } -> FolderApprovalsView
+//
+// A group switch's save says so with `group: true` beside its changes: an item already approved is left as it is (a
+// Changed one is never approved unseen, even when it is the only key named), and when it changed anything its answer
+// carries `undo`, a token for the folder's latest group save. Any other save (a row's switch, Accept Change, New
+// items left off after a first message) never takes the folder's token. The same PUT with `{ undo: <token> }` (and `cwd` on the folder route) in place of the
+// changes puts back each record that save wrote, exactly as it was before (an approval with its old fingerprint),
+// where the record is still what the save wrote: `undone` restored, `kept` left as they were. A token that isn't
+// the folder's latest group save (a newer one, a restart, used already): 409 `{ error, code: "undo-gone" }`.
+// Every save and Undo answers once the folder's chats not yet started have been rebuilt with it.
 // GET /api/settings/context-approval -> ContextApprovalSetting
 // PUT /api/settings/context-approval ContextApprovalSetting -> ContextApprovalSetting
 //
@@ -48,6 +57,15 @@ export interface ApprovalRow {
       listing, paths, sizes and times), or a part of it can't be covered (a link to a folder, a dangling link, an
       unreadable folder or file). */
   fingerprintPartial?: true;
+  /** ≈ tokens a new chat carries for it: a context file's whole text; a skill's listing, its name and description
+      as pi offers it (the skill's file loads only when it is used). Absent when the file can't be read, or from an
+      older server. */
+  tokens?: number;
+  /** Skills only: ≈ tokens of the whole SKILL.md, what using it loads. */
+  fileTokens?: number;
+  /** Skills only: only `/skill:name` runs it (disable-model-invocation), so it is never listed to the model and
+      `tokens` is its whole file. Listed apart ("Slash commands"); absent from an older server. */
+  manualOnly?: true;
 }
 
 export type ContextFileRow = ApprovalRow;
@@ -60,7 +78,19 @@ export interface ApprovalCounts {
   changed: number;
 }
 
-export interface ContextFilesView {
+/** What a save's or an Undo's answer adds to its view (PUT only; a GET never carries them). */
+export interface ApprovalSaveAnswer {
+  /** A group save that changed something: the token its Undo names. */
+  undo?: string;
+  /** An Undo: how many keys were put back, and how many were left because they changed since. */
+  undone?: number;
+  kept?: number;
+}
+
+/** The refusal code of an Undo whose token is no longer the folder's latest group save. */
+export const UNDO_GONE_CODE = "undo-gone";
+
+export interface ContextFilesView extends ApprovalSaveAnswer {
   files: ContextFileRow[];
   counts: ApprovalCounts;
   /** The Sova-wide setting asks first (allowWithoutAsking is off). */
@@ -69,7 +99,7 @@ export interface ContextFilesView {
   complete: boolean;
 }
 
-export interface FolderApprovalsView {
+export interface FolderApprovalsView extends ApprovalSaveAnswer {
   folder: { key: string; kind: "project" | "folder"; projectId?: string; name: string; root: string };
   asking: boolean;
   files: ContextFileRow[];

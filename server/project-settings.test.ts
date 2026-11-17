@@ -503,7 +503,7 @@ describe("the project's skill defaults: a Sova-kept setting with history, Undo a
     assert.match(tool(pid, true).description, /\{setting: "skills", skills: \{<skill key or name>: "approved" \| "disallowed" \| "waiting"\}\}/);
     const got = await run(pid, true, { op: "get" });
     assert.match(got.content[0]!.text, /- skills: No preference/);
-    assert.match(got.content[0]!.text, /- context-approval: Allowed without asking \(Sova-wide\)/);
+    assert.match(got.content[0]!.text, /- context-approval: New ones start on \(Sova-wide\)/);
     assert.match(got.content[0]!.text, new RegExp(`- a-skill \\(${A.replace(/\./g, "\\.")}\\): waiting · project`));
     assert.match((await run(pid, true, { op: "reference", setting: "skills" })).content[0]!.text, /Skills \(skills\)/);
     assert.match((await run(pid, true, { op: "reference", setting: "context-files" })).content[0]!.text, /Context Files \(context-files\)/);

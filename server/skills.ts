@@ -329,6 +329,50 @@ export function collectSkillLoads(lines: readonly SkillLine[]): { offered: Sessi
   return { offered, used };
 }
 
+/** One file a tool call put in front of the model, whatever file it is: a `read` of it, or a shell command
+    printing it (`shellReads`, the same narrow forms as a SKILL.md's). `chains` say which of its lines; `cwd`
+    is the folder its path resolves against, when one is known. Running a file (a script) is not reading it:
+    what a script prints is never counted as the file. */
+export type FileRead = { path: string; entryId: string; at: string; how: "read" | "shell"; chains: readonly LineChain[]; cwd?: string };
+
+/**
+ * Every file the assistant's tool calls read, in order: the Context tab attributes those under a skill's
+ * folder to that skill (server/context-tab.ts). A command printing one file twice is one read of it, with
+ * both chains.
+ */
+export function collectFileReads(lines: readonly SkillLine[]): FileRead[] {
+  const out: FileRead[] = [];
+  let cwd: string | undefined;
+  for (const line of lines) {
+    if (line.cwd) cwd = line.cwd;
+    if (line.kind !== "assistant") continue;
+    const at = line.at ?? "";
+    line.blocks.forEach((block, i) => {
+      if (!isRec(block)) return;
+      const blockType = str(block.type);
+      if (blockType !== "toolCall" && blockType !== "tool_use") return;
+      const tool = bareToolName(str(block.name) ?? "");
+      const a = isRec(block.arguments) ? block.arguments : isRec(block.input) ? block.input : {};
+      const entryId = `${line.id}:${i}`;
+      const base = { entryId, at, ...(cwd ? { cwd } : {}) };
+      if (tool === "read") {
+        const path = str(a.path) ?? str(a.file_path);
+        if (path) out.push({ ...base, path, how: "read", chains: [readToolChain(a)] });
+      } else if (tool === "bash") {
+        const byPath = new Map<string, FileRead>();
+        for (const { path, chain } of shellReads(str(a.command) ?? str(a.cmd) ?? "")) {
+          const c = [...chain, BASH_CAP];
+          const seen = byPath.get(path);
+          if (seen) seen.chains = [...seen.chains, c];
+          else byPath.set(path, { ...base, path, how: "shell", chains: [c] });
+        }
+        out.push(...byPath.values());
+      }
+    });
+  }
+  return out;
+}
+
 /** Whether anything about skills is known: an empty result is left off the insight entirely. */
 export function hasSkills(skills: SessionSkills): boolean {
   return skills.offered.length > 0 || skills.used.length > 0;

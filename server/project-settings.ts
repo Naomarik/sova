@@ -316,16 +316,40 @@ function approvalChange(projectId: string, kind: ApprovalKind, key: string, to: 
  * load is a 404), then every chat of the project not yet started is rebuilt; a started chat keeps its list.
  * Who may make them is the caller's check.
  */
-export async function setProjectApprovalStates(projectId: string, changes: { context?: Record<string, SkillState>; skills?: Record<string, SkillState> }, by: SettingsBy, meta: { card?: string; revertOf?: string } = {}): Promise<{ skills: ProjectSkillsView; context: ContextFilesView; rows: SettingsHistoryRow[] }> {
+export async function setProjectApprovalStates(
+  projectId: string,
+  changes: { context?: Record<string, SkillState>; skills?: Record<string, SkillState> },
+  by: SettingsBy,
+  meta: { card?: string; revertOf?: string } = {},
+  opts: import("./approvals").WriteOptions = {},
+): Promise<{ skills: ProjectSkillsView; context: ContextFilesView; rows: SettingsHistoryRow[]; undo?: string }> {
   const { projectFolder, writeFolderApprovals } = await import("./approvals");
   const { contextViewOfScan, skillsViewOfScan } = await import("./projects/skills");
-  const w = await writeFolderApprovals(projectFolder(projectId), { context: changes.context ?? {}, skills: changes.skills ?? {} });
+  const w = await writeFolderApprovals(projectFolder(projectId), { context: changes.context ?? {}, skills: changes.skills ?? {} }, {}, opts);
   // Recorded as soon as it is saved. A Re-approve (approved again over changed content) is no change of state.
   const rows = appendHistory(
     projectId,
     w.changed.flatMap((c) => (c.from === c.to ? [] : [{ field: fieldOfApproval(c.kind, c.key), from: c.from, to: c.to, by, ...(meta.card ? { card: meta.card } : {}), ...(meta.revertOf ? { revertOf: meta.revertOf } : {}) }])),
   );
-  return { skills: skillsViewOfScan(w.scan), context: contextViewOfScan(w.scan), rows };
+  return { skills: skillsViewOfScan(w.scan), context: contextViewOfScan(w.scan), rows, ...(w.undo ? { undo: w.undo } : {}) };
+}
+
+/**
+ * Undo the project's latest group save (server/approvals.ts undoFolderApprovals): each record it wrote that is
+ * still as written goes back exactly as it was, with a history line for each state that changes. Who may is the
+ * caller's check (undoPlan, changesNeedPage).
+ */
+export async function undoProjectApprovals(projectId: string, token: string, by: SettingsBy, judged?: import("./approvals").UndoPlan): Promise<{ skills: ProjectSkillsView; context: ContextFilesView; rows: SettingsHistoryRow[]; undone: number; kept: number }> {
+  const { projectFolder, undoFolderApprovals, keptScanFor } = await import("./approvals");
+  const { contextViewOfScan, skillsViewOfScan } = await import("./projects/skills");
+  const folder = projectFolder(projectId);
+  const u = await undoFolderApprovals(folder, token, judged);
+  const rows = appendHistory(
+    projectId,
+    u.changed.flatMap((c) => (c.from === c.to ? [] : [{ field: fieldOfApproval(c.kind, c.key), from: c.from, to: c.to, by }])),
+  );
+  const scan = await keptScanFor(folder);
+  return { skills: skillsViewOfScan(scan), context: contextViewOfScan(scan), rows, undone: u.undone, kept: u.kept };
 }
 
 /** The skills' part alone (al_1's callers). */
@@ -1706,7 +1730,7 @@ export async function settingsInfo(projectId: string): Promise<ProjectSettingsIn
     const scan = await projectScan(projectId);
     const ctx = contextViewOfScan(scan);
     const view = skillsViewOfScan(scan);
-    rows.push({ setting: "context-approval", label: SETTINGS_REFERENCE["context-approval"].label, state: asking ? "Ask first (Sova-wide)" : "Allowed without asking (Sova-wide)", where: "sova", href: "#/settings/general", hrefLabel: "Settings → General", detail: "kept on this computer" });
+    rows.push({ setting: "context-approval", label: SETTINGS_REFERENCE["context-approval"].label, state: asking ? "New ones start off (Sova-wide)" : "New ones start on (Sova-wide)", where: "sova", href: "#/settings/general", hrefLabel: "Settings → General", detail: "kept on this computer" });
     rows.push({ setting: "context-files", label: SETTINGS_REFERENCE["context-files"].label, state: skillsRowState(ctx.counts, asking), where: "sova", href: tab, anchor: "project-context", hrefLabel: "Show Context Files", detail: "kept on this computer; new chats start with these" });
     rows.push({ setting: "skills", label: SETTINGS_REFERENCE.skills.label, state: skillsRowState(view.counts, asking), where: "sova", href: tab, anchor: "project-skills", hrefLabel: "Show Skills", detail: "kept on this computer; new chats start with these" });
   } catch {

@@ -10,7 +10,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
 import { DefaultResourceLoader } from "@earendil-works/pi-coding-agent";
-import { LOADOUT_ENTRY, leavesOut, loadoutOnBranch, loadoutOverrides, normalizeLoadout, type LoadoutState } from "./session-loadout";
+import { isContextOff, isSkillOff, LOADOUT_ENTRY, leavesOut, loadoutOnBranch, loadoutOverrides, normalizeLoadout, type LoadoutState } from "./session-loadout";
+import { symlinkSync } from "node:fs";
 
 const root = realpathSync(mkdtempSync(join(tmpdir(), "sova-loadout-test-")));
 after(() => rmSync(root, { recursive: true, force: true }));
@@ -74,4 +75,33 @@ test("pi's loader with the overrides: off files and skills are gone, extension-a
   loader.extendResources({ skillPaths: [{ path: extDir, metadata: { source: "test", scope: "temporary", origin: "top-level" } as never }] });
   assert.deepEqual(loader.getSkills().skills.map((s) => s.name).sort(), ["alpha"], "the extension's off skill is filtered too");
   assert.deepEqual(state.baseSkills?.map((s) => s.name).sort(), ["alpha", "beta", "gamma"], "and still listed for the card");
+});
+
+test("an item reached through a linked folder is told by its place too: the folder's list names it where it really is", () => {
+  const where = realpathSync(mkdtempSync(join(tmpdir(), "sova-loadout-link-")));
+  try {
+    const realDir = join(where, "real", "omarchy-skill");
+    mkdirSync(realDir, { recursive: true });
+    writeFileSync(join(realDir, "SKILL.md"), "---\nname: omarchy\ndescription: x\n---\n");
+    writeFileSync(join(where, "real", "AGENTS.md"), "x\n");
+    mkdirSync(join(where, "skills"), { recursive: true });
+    symlinkSync(realDir, join(where, "skills", "omarchy"));
+    symlinkSync(join(where, "real"), join(where, "linked"));
+    const listed = { name: "omarchy", filePath: join(where, "skills", "omarchy", "SKILL.md") };
+    const place = join(realDir, "SKILL.md");
+    // Asking first, approved by its place: on. Disallowed by its place (new ones start on): off.
+    assert.equal(isSkillOff({ offSkills: [], asking: true, onlySkills: [place] }, listed), false);
+    assert.equal(isSkillOff({ offSkills: [], asking: true, onlySkills: [] }, listed), true);
+    assert.equal(isSkillOff({ offSkills: [place] }, listed), true);
+    assert.equal(isSkillOff({ offSkills: [] }, listed), false);
+    // A context file in a linked folder alike.
+    const file = join(where, "linked", "AGENTS.md");
+    assert.equal(isContextOff({ offSkills: [], offContext: [join(where, "real", "AGENTS.md")] }, file), true);
+    assert.equal(isContextOff({ offSkills: [], asking: true, onlyContext: [join(where, "real", "AGENTS.md")] }, file), false);
+    // A file that is itself a link keeps its own place: never what it points at.
+    symlinkSync(join(where, "real", "AGENTS.md"), join(where, "CLAUDE.md"));
+    assert.equal(isContextOff({ offSkills: [], offContext: [join(where, "real", "AGENTS.md")] }, join(where, "CLAUDE.md")), false);
+  } finally {
+    rmSync(where, { recursive: true, force: true });
+  }
 });

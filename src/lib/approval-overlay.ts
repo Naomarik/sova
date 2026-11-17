@@ -56,14 +56,13 @@ export const pendingAny = (o: Overlay): boolean => Object.keys(o).length > 0;
 export const unanswered = (o: Overlay): boolean => Object.values(o).some((p) => p.ackedAt === undefined);
 
 /**
- * The new chat's hold on Send (lib/approval-hold), from what still waits (by kind) and the saves
- * not yet answered ("Saving…"): null when nothing holds it. A save once answered never holds it,
- * even while the read after it fails.
+ * The new chat's hold on Send (lib/approval-hold): "Saving…" while a flip made here isn't answered.
+ * A save answers once the folder's chats not yet started are rebuilt with it, so an answered save
+ * never holds Send, even while the read after it fails (the server checks a first message against
+ * the saved switches once more anyway). null when nothing holds it.
  */
-export function setupHold(waiting: readonly { kind: "context" | "skill" }[], o: Overlay): { context: number; skills: number; saving?: true } | null {
-  const busy = unanswered(o);
-  if (!waiting.length && !busy) return null;
-  return { context: waiting.filter((r) => r.kind === "context").length, skills: waiting.filter((r) => r.kind === "skill").length, ...(busy ? { saving: true as const } : {}) };
+export function setupHold(o: Overlay): { saving: true } | null {
+  return unanswered(o) ? { saving: true } : null;
 }
 
 /** The queue a folder's saves share, from the folder as each surface knows it (shared/approvals keys). */

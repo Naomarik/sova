@@ -1662,6 +1662,12 @@ export interface SessionSetupSkill extends SessionSetupFile {
   description?: string;
   /** Only `/skill:name` runs it: the model is never offered it. */
   manualOnly?: true;
+  /** ≈ tokens of its listing, the name, description and location pi offers the model (pi
+      formatSkillsForPrompt): what a chat carries before it uses the skill. A row's figure and the
+      Skills and System context totals use it; `bytes`, `lines` and `tokens` stay its whole SKILL.md,
+      which loads only when the skill is used. Absent on a manual-only skill (never listed: its figure
+      is `tokens`, and no total counts it) and from an older server (the reader falls back to `tokens`). */
+  listingTokens?: number;
   /** The project's state for this skill (shared/project-skills), sent only when the chat belongs to a
       project. Before the first message `off` is already the effective value: the project's default,
       then the chat's own flip. */
@@ -1763,6 +1769,30 @@ export interface SessionContextPart {
   /** Skills only, when the agent loaded part of its SKILL.md: how many of its lines (a union of every
       read since the latest compaction), and `lines`, the file's length now. Absent when it read none or
       all; `lines` is absent too when the file couldn't be measured. */
+  linesRead?: number;
+  lines?: number;
+  /** Skills only: ≈ tokens this chat loaded from the skill's folder since the latest compaction: its
+      SKILL.md and any other file under that folder the agent read, each sized by the lines its reads
+      reached (`loadedFiles`). A note on the row, never added to a total: what it loaded is in the
+      conversation already. Output of a script the skill runs is not counted. Absent when it loaded none
+      or the server is older. */
+  loadedTokens?: number;
+  /** Skills only, not manual-only ones: ≈ tokens of its whole SKILL.md as it is now (what using it loads),
+      beside `tokens`, its listing. Absent when the file can't be measured, or from an older server. */
+  fileTokens?: number;
+  /** Skills only: the files `loadedTokens` adds up, in the order first read. */
+  loadedFiles?: SessionContextLoadedFile[];
+}
+
+/** One file of a skill's folder a chat loaded (SessionContextPart.loadedFiles). */
+export interface SessionContextLoadedFile {
+  /** Absolute. */
+  path: string;
+  /** Its path inside the skill's folder (`SKILL.md`, `references/api.md`). */
+  label: string;
+  /** ≈ tokens of the lines loaded, against the file as it is now. */
+  tokens: number;
+  /** When only part of it was loaded: how many of its lines, of `lines`. */
   linesRead?: number;
   lines?: number;
 }
@@ -2032,9 +2062,6 @@ export type BatchRefusalCode =
   | "config"
   | "busy"
   | "missing"
-  /** A new chat that asks first still has context files or skills to decide (the operator's page only): never a
-      refusal, a member `held` with the message as its draft. */
-  | "decide-first"
   | "internal";
 
 /** One member the batch could not take, named four ways: `id` joins against `GroupMember.id` and
@@ -2056,9 +2083,6 @@ export interface BatchRefusal {
 export interface BatchPromptResult {
   sent: string[]; // session ids, in the order they were accepted
   failed: BatchRefusal[];
-  /** Members held from the operator's page: a new chat that asks first with context files or skills still to decide.
-      Each kept the message as its composer draft, and its Send waits for the decisions (code "decide-first"). */
-  held?: BatchRefusal[];
 }
 
 /** The mode extension's settings (pi-config/extensions/mode). One major mode, any set of minor
@@ -3094,10 +3118,6 @@ export type ChatServerMessage =
       message: string;
       code?: "busy" | "recent" | "reloaded" | "config" | "refused" | "internal";
       clientId?: string;
-      /** With code "refused": a new chat's first message held while context files or skills wait for a
-          decision (§chat.context-approval/held-send): the draft comes back, and `waiting` says how many. */
-      decide?: "first";
-      waiting?: number;
       /** A One at a time profile's first message was refused: the session that holds it (§chat.profiles/singleton). */
       profileRunning?: { id: string; path: string; title: string };
       /** The provider of the model whose turn failed, when the error IS the turn's failure (never a worker's or a guessed one); absent otherwise. */

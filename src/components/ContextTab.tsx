@@ -16,6 +16,7 @@ import {
   partLang,
   partMeta,
   partNote,
+  skillSizeFacts,
   partOpens,
   partSubtitle,
   shareOf,
@@ -370,6 +371,41 @@ export function ContextTab(props: {
         </p>
         <Show when={note()}>
           <p class="usage-note text-muted">{note()}</p>
+        </Show>
+        <Show when={l.level.part.group === "skills" && l.level.part}>
+          {(p) => (
+            <div class="context-skill-size">
+              <For each={skillSizeFacts(p())}>
+                {(f) => (
+                  <div class="context-skill-size-row">
+                    <span class="context-skill-size-k">
+                      {f.label}
+                      <small>{f.when}</small>
+                    </span>
+                    <span class="context-skill-size-v">
+                      {f.value}
+                      <Show when={f.sub}>{(sub) => <small>{sub()}</small>}</Show>
+                    </span>
+                  </div>
+                )}
+              </For>
+              <Show when={p().loadedFiles?.length}>
+                <ul class="context-skill-files" aria-label="Files this chat loaded">
+                  <For each={p().loadedFiles}>
+                    {(f) => (
+                      <li title={f.path}>
+                        <span class="text-mono">{f.label}</span>
+                        <span class="context-skill-file-size">
+                          {f.linesRead && f.lines ? `${f.linesRead} of ${f.lines} lines · ` : ""}
+                          {approxTokens(f.tokens)} tokens
+                        </span>
+                      </li>
+                    )}
+                  </For>
+                </ul>
+              </Show>
+            </div>
+          )}
         </Show>
         <Show when={l.level.doc.shape.kind !== "note"}>
           <div class="context-sheet-actions">

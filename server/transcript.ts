@@ -739,13 +739,13 @@ function mcpNoteRow(id: string, h: StateEntry): TranscriptItem[] {
   return [it];
 }
 
-/** An item found after the first message that this chat's list keeps out (§chat.context-approval/mid-chat):
-    the page draws its Approve and Disallow from `approvalPending`. */
+/** An item found after the first message that this chat's list keeps out, because it is off for the folder
+    (§chat.context-approval/mid-chat): the page draws its Turn On from `approvalPending`. */
 function approvalPendingRow(id: string, h: StateEntry): TranscriptItem[] {
   const d = APPROVAL_PENDING.parse(h.data);
   if (!d) return [];
   const what = d.kind === "skill" ? `The skill ${d.name ?? d.path}` : (d.name ?? d.path);
-  const it = item(id, "info", h, `${what} wasn't loaded: it isn't approved for this folder.`.slice(0, 300));
+  const it = item(id, "info", h, `${what} wasn't loaded: it is off for this folder.`.slice(0, 300));
   it.approvalPending = d;
   return [it];
 }

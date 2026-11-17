@@ -151,6 +151,9 @@ export interface PlaybookRunView {
   who: { teams: number; members: number };
   steps: PlaybookStepView[];
   cycle: PlaybookCycleView | null;
+  /** The playbook's flow as a vis source (shared/playbook-flow.ts), following the card's cycle settings and
+      optional stops; draw it as a ```vis <kind> fence. Absent when the playbook can't be read. */
+  flow?: { kind: "flow" | "state"; body: string };
   howItRuns: string;
   /** The changing Sova commands the playbook lists, by label. */
   commands: string[];

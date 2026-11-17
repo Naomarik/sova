@@ -2,6 +2,7 @@
 // playbook's description, the run's draft and what this computer can run now. Pure: the environment (which
 // models can run, their names, your profile's routes, team defaults) comes in as `CardEnv`.
 import { choiceOfRef, CYCLE_MAX, fillSlots, isPageRef, refOfChoice, type InputValue, type PlaybookFlowItem, type PlaybookInput, type PlaybookMember, type PlaybookModel, type PlaybookSpec, type PlaybookStep, type PlaybookTeam } from "../../shared/playbook-format";
+import { playbookFlowSource } from "../../shared/playbook-flow";
 import type { ChainEntry, KindRoute, ResolvedRoleModel } from "../../shared/playbook-models";
 import { HELPER_LIMIT, mergeEdits, type PlaybookCardEdits, type PlaybookChoiceView, type PlaybookModelPick, type PlaybookModelSource, type PlaybookMemberView, type PlaybookModelView, type PlaybookRunView, type PlaybookStepView, type PlaybookTeamView } from "../../shared/playbook-run";
 import type { DelegateProfileId, WorkerChoice } from "../../shared/protocol";
@@ -217,6 +218,11 @@ export function runCard(r: PlaybookRunRecord, spec: PlaybookSpec, env: CardEnv):
       }
     : null;
 
+  // The drawing follows the card: its cycle settings and its optional stops as they stand. The run's progress
+  // isn't known to the record in this release, so nothing is coloured.
+  const stops = Object.fromEntries(steps.filter(({ step }) => step.stop === "optional").map(({ step }) => [step.id, stopOn(step, edits)]));
+  const flow = playbookFlowSource(spec, { ...(cycle ? { cycle: { max: cycle.max, askEvery: cycle.askEvery, until: cycle.until } } : {}), stops });
+
   // Every helper the plan starts, once each, plus each team's coordinator and monitor (never shown as rows).
   const on = teams.flatMap((t) => t.members.filter((m) => m.on));
   const helperTotal = on.reduce((n, m) => n + m.count, 0) + 2 * teams.length;
@@ -230,6 +236,7 @@ export function runCard(r: PlaybookRunRecord, spec: PlaybookSpec, env: CardEnv):
     who: { teams: teams.length, members: on.length },
     steps: stepViews,
     cycle,
+    flow,
     howItRuns: howItRuns(spec, r),
     commands: spec.commands.filter((id) => env.commandChanges(id)).map((id) => env.commandLabel(id)),
     helpers: { total: helperTotal, limit: HELPER_LIMIT },

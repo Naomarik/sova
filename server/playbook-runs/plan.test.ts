@@ -166,6 +166,15 @@ describe("the card a run draws", () => {
     assert.equal(runCard(record(over, { choices: { subject: "x" } }), over, env()).view.startBlocked, "The plan needs 25 helpers, and one chat runs at most 24 at once.");
   });
 
+  test("the flow drawing follows the card: its cycle settings and optional stops as they stand", () => {
+    const s = spec();
+    const before = runCard(record(s, { choices: { subject: "x" } }), s, env()).view.flow!;
+    assert.equal(before.kind, "flow");
+    assert.ok(before.body.includes("Review · optional stop: on") && before.body.includes("at most 3"), before.body);
+    const after = runCard(record(s, { choices: { subject: "x" }, stops: { review: false }, cycle: { max: 2 } }), s, env()).view.flow!;
+    assert.ok(after.body.includes("Review · optional stop: off") && after.body.includes("at most 2") && !after.body.includes("at most 3"), after.body);
+  });
+
   test("a stop rule kept on a page reads as that page's first paragraph", () => {
     const s = spec((r) => {
       (r.steps[2] as { repeat: { rule: string } }).repeat.rule = "phases/stop.md";

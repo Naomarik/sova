@@ -3,7 +3,7 @@
 // (and each one between it and the cwd, outermost first) goes along at the end of the tool result, as
 // its own text block. The branch itself records what loaded: a compaction or a rewind that removes a
 // block lets the file load again. Harness-neutral; the pi hook is server/harness/pi/deeper-context.ts.
-import { readdirSync, readFileSync, statSync } from "node:fs";
+import { readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import type { HEntry } from "../shared/harness";
@@ -35,16 +35,35 @@ export function resolveToolPath(cwd: string, p: string): string {
   return isAbsolute(s) ? resolve(s) : resolve(cwd, s);
 }
 
+/** A folder's real path, or null when it can't be resolved (not there). */
+const realDir = (dir: string): string | null => {
+  try {
+    return realpathSync(dir);
+  } catch {
+    return null;
+  }
+};
+
+/** `p` is strictly inside `dir`. */
+const strictlyInside = (dir: string, p: string): boolean => {
+  const rel = relative(dir, p);
+  return !!rel && !rel.startsWith("..") && !isAbsolute(rel);
+};
+
 /** The folders strictly below `cwd` down to `file`'s folder, outermost first, less any with a skipped
-    segment; none when `file` isn't inside `cwd`. */
+    segment; none when `file` isn't inside `cwd`. The walk stops at a folder whose real path leaves the cwd's
+    (a link to the home folder or outside the chat's folder); one that isn't there yet holds nothing to load. */
 export function candidateDirs(cwd: string, file: string): string[] {
   const rel = relative(resolve(cwd), dirname(resolve(file)));
   if (!rel || rel.startsWith("..") || isAbsolute(rel)) return [];
   const out: string[] = [];
   let at = resolve(cwd);
+  const root = realDir(at) ?? at;
   for (const seg of rel.split(sep)) {
     if (skippedSegment(seg)) break;
     at = join(at, seg);
+    const actual = realDir(at);
+    if (actual && !strictlyInside(root, actual)) break;
     out.push(at);
   }
   return out;

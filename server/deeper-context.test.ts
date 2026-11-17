@@ -1,6 +1,6 @@
 // The subfolder instruction loader: which files count, the marker, the branch scan, and the pi hook.
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { after, test } from "node:test";
@@ -52,6 +52,18 @@ test("the folders run strictly below cwd to the file's own, outermost first; hid
   assert.deepEqual(candidateDirs(cwd, "/p/a/.git/x"), ["/p/a"]);
   assert.deepEqual(candidateDirs(cwd, "/p/a/node_modules/m/x.js"), ["/p/a"]);
   assert.deepEqual(candidateDirs(cwd, "/p/.sova/spec/x.md"), []);
+});
+
+test("the folders stop at one whose real place leaves the chat's folder: a link to home or outside is never walked through", () => {
+  const cwd = project({ "a/b/f.ts": "" });
+  const outside = project({ "AGENTS.md": "elsewhere" });
+  symlinkSync(dirname(cwd), join(cwd, "a/up-link"));
+  symlinkSync(outside, join(cwd, "a/out-link"));
+  symlinkSync(join(cwd, "a/b"), join(cwd, "inner-link"));
+  assert.deepEqual(candidateDirs(cwd, join(cwd, "a/up-link/x/f.ts")), [join(cwd, "a")], "a link above the chat's folder (its home) is refused");
+  assert.deepEqual(candidateDirs(cwd, join(cwd, "a/out-link/f.ts")), [join(cwd, "a")], "a link outside the chat's folder is refused");
+  assert.deepEqual(candidateDirs(cwd, join(cwd, "inner-link/f.ts")), [join(cwd, "inner-link")], "a link that stays inside is followed");
+  assert.deepEqual(pathsOf(attach(cwd, "a/out-link/f.ts")), [], "so its file never loads");
 });
 
 test("a touch attaches each unloaded file on its way, outermost first, with relative paths; once loaded, nothing", () => {

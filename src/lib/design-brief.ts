@@ -4,6 +4,7 @@ import type { DesignAsset, DesignAssetCatalogue, DesignShotWords } from "../../s
 import { DESIGN_ASSET_KINDS, kindAllowed, screenshotsInUse, SHOT_COLORS_LIMIT } from "../../shared/design-assets";
 import { designBriefBlock, designLinksIn, runOwnImage } from "../../shared/design";
 import { recommendedOption } from "./align";
+import { claudeModelName } from "./format";
 
 /** An answer picked on the card and not yet sent: an option, or words where a question has no options. */
 export interface StagedPick {
@@ -129,7 +130,7 @@ export function assetStateLine(a: DesignAsset): string {
 export function coordinatorChangeLine(setup: Pick<DesignSetup, "models">, current: string): string {
   const picked = setup.models.find((m) => m.coordinator);
   if (!picked || picked.ref === current) return "";
-  return `This starts a new Creative Director on ${picked.name}; it keeps the notes, not the conversation.`;
+  return `This starts a new Creative Director on ${claudeModelName(picked.ref) ?? picked.name}; it keeps the notes, not the conversation.`;
 }
 
 /** A screenshot's words for designers as one editable text: its feel, then a `#hex role` line per colour. */

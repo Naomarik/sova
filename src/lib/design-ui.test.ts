@@ -4,7 +4,7 @@ import type { TranscriptItem } from "../../shared/protocol";
 import type { DesignRecord, DesignSetup } from "../../shared/design";
 import type { LiveTool } from "./live";
 import { designFold, liveDesignCalls, newestDesignRows, normalizeDesignCard } from "./design-rows";
-import { effortLabel, leftOutLine, leftOutSentence, modelsSummary, setEffort } from "./design-ui";
+import { designModelName, effortLabel, leftOutLine, leftOutSentence, modelsSummary, setEffort } from "./design-ui";
 import { batchLine, briefTitle, lookbookTitle, canShuffle, designSections, pairsLine, setCombine, shufflePairs, tickedLine, toggleLayout, searchModels, sectionSummary, designFixLine, designCanOpen, designHoldEnds, designIsBusy, designMeta, designOpenFollowsLive, designNoteLine, designUnchangedLine, designStatusWord, designQueuedLine, designCanStop, designCanStartAgain, designsShown, designsRemoved, moveCoordinator, parentsLine, setupBlocked, setupCount, setupSummary, statusCounts, toggleDirection, toggleGroup, toggleModel } from "./design-ui";
 
 const caps = { batchDefault: 6, askAbove: 12, batchMax: 24, concurrent: 6 };
@@ -64,16 +64,27 @@ test("an effort is named in a summary only where it isn't Low, by its menu's wor
   const s = setup({ models: [n("claude-code/opus"), { ...n("claude-code/sonnet"), efforts: L, effort: "xhigh" }, { ...n("claude-code/haiku"), efforts: L }, { ...n("claude-code/fable", false), efforts: L, effort: "high" }] });
   // opus: no levels offered (no menu): its name alone; haiku: Low by default; fable doesn't design.
   // In the picker's order (unranked ids go alphabetically here).
-  assert.equal(designSections(s.models).find((x) => x.id === "claude")!.summary, "haiku, opus, sonnet · Extra High");
+  // Claude models read by their catalog names, whatever alias the card holds.
+  assert.equal(designSections(s.models).find((x) => x.id === "claude")!.summary, "Haiku 4.5, Opus 5.5, Sonnet 5.5 · Extra High");
   assert.deepEqual(["off", "low", "medium", "high", "xhigh", "max"].map(effortLabel), ["Off", "Low", "Medium", "High", "Extra High", "Max"]);
 });
 
 test("the closed Models row names every designer with its effort, the Creative Director and the count", () => {
   const s = setup({ models: [{ ...n("claude-code/opus", false, true), efforts: L }, { ...n("claude-code/sonnet"), efforts: L, effort: "high" }, { ...n("ollama-cloud/glm"), efforts: L }, n("zai/glm-5.3")] });
   // In the picker's order (Z.ai's section before Ollama Cloud's); glm-5.3 offers no levels, so it has no effort to name.
-  assert.deepEqual(modelsSummary(s), { designers: "sonnet High · glm-5.3 · glm Low", designerList: ["sonnet High", "glm-5.3", "glm Low"], coordinator: "Creative Director: opus", count: "3 models" });
-  assert.deepEqual(modelsSummary(setup({ models: [n("claude-code/opus", false, true)] })), { designers: "None designing", designerList: [], coordinator: "Creative Director: opus", count: "0 models" });
+  assert.deepEqual(modelsSummary(s), { designers: "Sonnet 5.5 High · glm-5.3 · glm Low", designerList: ["Sonnet 5.5 High", "glm-5.3", "glm Low"], coordinator: "Creative Director: Opus 5.5", count: "3 models" });
+  assert.deepEqual(modelsSummary(setup({ models: [n("claude-code/opus", false, true)] })), { designers: "None designing", designerList: [], coordinator: "Creative Director: Opus 5.5", count: "0 models" });
   assert.equal(modelsSummary(setup({ models: [m("claude-code/opus", true)] })).count, "1 model");
+});
+
+test("a Claude model reads by its catalog name on the card, any other by the name the card holds", () => {
+  const card = setup({ models: [{ ...m("claude-code-cli/claude-opus-5-5", true, true), name: "claude-opus-5-5", efforts: L, effort: "high" }, { ...m("ollama-cloud/deepseek-v4.1-flash"), name: "deepseek-v4.1-flash" }] });
+  assert.deepEqual(card.models.map(designModelName), ["Opus 5.5", "deepseek-v4.1-flash"]);
+  assert.deepEqual(modelsSummary(card), { designers: "Opus 5.5 High · deepseek-v4.1-flash", designerList: ["Opus 5.5 High", "deepseek-v4.1-flash"], coordinator: "Creative Director: Opus 5.5", count: "2 models" });
+  assert.equal(designSections(card.models).find((x) => x.id === "claude")!.summary, "Opus 5.5 · High");
+  // Found by either: the name shown or the id it stands for.
+  assert.deepEqual(searchModels(card.models, "opus 5.5").map((x) => x.ref), ["claude-code-cli/claude-opus-5-5"]);
+  assert.deepEqual(searchModels(card.models, "claude-opus").map((x) => x.ref), ["claude-code-cli/claude-opus-5-5"]);
 });
 
 test("setting one model's effort changes that row only", () => {

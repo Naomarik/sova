@@ -3,7 +3,7 @@ import { designEffortOf, designHasEfforts, type DesignLinkUse, type DesignSetup 
 import type { DesignStore } from "../lib/design-store";
 import { coordinatorChangeLine } from "../lib/design-brief";
 import { designSectionOf } from "../../shared/design-models";
-import { canShuffle, designSections, effortLabel, leftOutLine, modelsSummary, moveCoordinator, pairsLine, searchModels, setCombine, setEffort, shufflePairs, tickedLine, toggleDirection, toggleGroup, toggleLayout, toggleModel, type DesignRunView } from "../lib/design-ui";
+import { canShuffle, designModelName, designSections, effortLabel, leftOutLine, modelsSummary, moveCoordinator, pairsLine, searchModels, setCombine, setEffort, shufflePairs, tickedLine, toggleDirection, toggleGroup, toggleLayout, toggleModel, type DesignRunView } from "../lib/design-ui";
 import { createRequestEditor, setupOpenState, type RequestEditor, type SetupDraft, type SetupOpenState } from "../lib/design-setup-view";
 import { ActionMenu } from "./ActionMenu";
 import { Icon } from "./ui";
@@ -295,7 +295,7 @@ function DesignModelPicker(props: { setup: SetupDraft; run: DesignRunView; store
               class="design-model-toggle"
               label={
                 <span class="design-model-name" title={model().ref}>
-                  {model().name}
+                  {designModelName(model())}
                   <Show when={!model().vision}>
                     <span class="text-muted design-model-note" title="This model can't read images. It works from a text outline of the page.">
                       {" "}
@@ -304,7 +304,7 @@ function DesignModelPicker(props: { setup: SetupDraft; run: DesignRunView; store
                   </Show>
                 </span>
               }
-              ariaLabel={`${model().name}: design`}
+              ariaLabel={`${designModelName(model())}: design`}
               checked={model().design}
               onChange={(on) => change(toggleModel(draft(), p.model, on))}
             />
@@ -314,7 +314,7 @@ function DesignModelPicker(props: { setup: SetupDraft; run: DesignRunView; store
                 <Select
                   class="design-effort-field"
                   selectClass="design-effort-select"
-                  label={`Effort for ${model().name}`}
+                  label={`Effort for ${designModelName(model())}`}
                   hideLabel
                   value={designEffortOf(model()) ?? ""}
                   options={[
@@ -361,9 +361,9 @@ function DesignModelPicker(props: { setup: SetupDraft; run: DesignRunView; store
               <div class="design-pick-coord">
                 <span class="design-pick-coord-label">Creative Director</span>
                 <ActionMenu
-                  label={`Creative Director: ${coordinator()?.name ?? "none"}`}
+                  label={`Creative Director: ${coordinator() ? designModelName(coordinator()!) : "none"}`}
                   title="1 model coordinates the team. It can coordinate without designing."
-                  text={coordinator()?.name ?? "Pick a Model"}
+                  text={coordinator() ? designModelName(coordinator()!) : "Pick a Model"}
                   icon={null}
                   align="start"
                   ghost={false}
@@ -384,8 +384,8 @@ function DesignModelPicker(props: { setup: SetupDraft; run: DesignRunView; store
                               const m = () => byRef().get(ref)!;
                               return (
                                 <api.Item
-                                  label={m().name}
-                                  aria={`${m().name}${m().design ? ", designing" : ""}`}
+                                  label={designModelName(m())}
+                                  aria={`${designModelName(m())}${m().design ? ", designing" : ""}`}
                                   checked={m().coordinator}
                                   end={m().design ? "Designing" : undefined}
                                   onRun={() => change(moveCoordinator(draft(), ref))}

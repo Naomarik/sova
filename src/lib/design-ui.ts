@@ -1,9 +1,14 @@
 /** Pure derivations behind the Design card and the Gallery: no DOM, no Solid, so they are unit-tested. */
 import { designModelOrder, designSectionOf, type DesignSection } from "../../shared/design-models";
 import { designEffortOf, designHasEfforts, DESIGN_DEFAULT_EFFORT, designPlan, type DesignCaps, type DesignLeftOut, type DesignChatView, type DesignCombine, type DesignCoordinatorView, type DesignModelChoice, type DesignPlan, type DesignRecord, type DesignRun, type DesignSetup, type DesignStatus } from "../../shared/design";
+import { claudeModelName } from "./format";
 
 export type DesignRunView = DesignRun;
 export type DesignCoordinatorInfo = DesignCoordinatorView;
+
+/** A model's name on the Lookbook's cards, as everywhere in Sova: a Claude model by its catalog name ("Opus 5.5"), any
+    other by the name the card holds (its id). */
+export const designModelName = (m: { ref: string; name: string }): string => claudeModelName(m.ref) ?? m.name;
 
 export const coordinatorOf = (view: DesignChatView | null): DesignCoordinatorInfo | null => view?.coordinator ?? null;
 
@@ -53,7 +58,7 @@ export function designSections(models: readonly DesignModelChoice[], hidden: rea
     if (m.design) {
       held.on++;
       const effort = namedEffort(m);
-      held.designing.push(effort ? `${m.name} · ${effort}` : m.name);
+      held.designing.push(effort ? `${designModelName(m)} · ${effort}` : designModelName(m));
     }
     out.set(sec.id, held);
   }
@@ -67,14 +72,14 @@ export function modelsSummary(setup: Pick<DesignSetup, "models">): { designers: 
     .filter((m) => m.design)
     .map((m) => {
       const level = designHasEfforts(m) ? designEffortOf(m) : null;
-      return level ? `${m.name} ${effortLabel(level)}` : m.name;
+      return level ? `${designModelName(m)} ${effortLabel(level)}` : designModelName(m);
     });
   const coordinator = setup.models.find((m) => m.coordinator);
   return {
     designers: designers.join(" · ") || "None designing",
     // One entry per designer with its effort, so a line breaks only between them, never inside a name.
     designerList: designers,
-    coordinator: `Creative Director: ${coordinator?.name ?? "none"}`,
+    coordinator: `Creative Director: ${coordinator ? designModelName(coordinator) : "none"}`,
     count: plural(designers.length, "model"),
   };
 }
@@ -119,7 +124,7 @@ export function searchModels(models: readonly DesignModelChoice[], query: string
   const words = query.toLowerCase().split(/\s+/).filter(Boolean);
   if (!words.length) return [];
   return orderedModels(models).filter((m) => {
-    const hay = `${m.name} ${m.ref} ${designSectionOf(m.ref).name}`.toLowerCase();
+    const hay = `${designModelName(m)} ${m.name} ${m.ref} ${designSectionOf(m.ref).name}`.toLowerCase();
     return words.every((w) => hay.includes(w));
   });
 }
@@ -200,7 +205,7 @@ export function pairsLine(setup: DesignSetup): { text: string; full: string } {
   const per = pairsByModel(setup);
   const seen = new Set<string>();
   const unique = per.flatMap((m) => m.pairs).filter((p) => !seen.has(p) && !!seen.add(p));
-  const names = new Map(setup.models.map((m) => [m.ref, m.name]));
+  const names = new Map(setup.models.map((m) => [m.ref, designModelName(m)]));
   const full = per.length > 1 ? per.map((m) => `${names.get(m.model) ?? m.model}: ${m.pairs.join(" · ")}`).join("\n") : unique.join(" · ");
   return { text: unique.join(" · "), full };
 }
@@ -327,7 +332,7 @@ function shortCount(n: number): string {
 /** The line under a card's title: model, tokens so far, what it has cost. */
 export function designMeta(d: DesignRecord, liveChars?: number): string {
   const tokens = d.usage?.output || (liveChars ? Math.round(liveChars / 3.6) : 0);
-  const parts = [d.modelName || d.model];
+  const parts = [claudeModelName(d.model) ?? (d.modelName || d.model)];
   if (tokens) parts.push(`${shortCount(tokens)} tokens`);
   // While a page is written its cost is an estimate; a model with no price shows none, never $0.
   if (d.live?.estimateUsd) parts.push(d.live.estimateUsd < 0.005 ? "under $0.01" : `about ${dollars(d.live.estimateUsd)}`);

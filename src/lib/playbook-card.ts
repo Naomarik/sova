@@ -146,9 +146,18 @@ const listed = (items: readonly (string | number)[]): string =>
  * run three times counts once, one turned off doesn't count); a team may have a goal and no required
  * member. Members that are on with no model that can run are said here too, since they keep Start off
  * and the section is folded.
+ *
+ * A run started before teams had goals had no required members, only the roles it listed, in the
+ * groups it made: "Who runs · 8 groups · 12 roles · started before teams". The count is of rows, so a
+ * role run three times is one role, never "helpers".
  */
-export function whoSummary(who: PlaybookRunView["who"], cantRun = 0): string {
+export function whoSummary(who: PlaybookRunView["who"], cantRun = 0, legacy = false): string {
   if (who.teams === 0) return "Who runs · the main chat alone";
+  if (legacy) {
+    const groups = `${who.teams} ${who.teams === 1 ? "group" : "groups"}`;
+    const roles = who.members === 0 ? "no roles" : `${who.members} ${who.members === 1 ? "role" : "roles"}`;
+    return `Who runs · ${groups} · ${roles} · started before teams`;
+  }
   const teams = `${who.teams} ${who.teams === 1 ? "team" : "teams"}`;
   const members = who.members === 0 ? "no required members" : `${who.members} required ${who.members === 1 ? "member" : "members"}`;
   return `Who runs · ${teams} · ${members}${cantRun > 0 ? ` · ${cantRun} can't run` : ""}`;

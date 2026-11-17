@@ -584,7 +584,7 @@ export function PlaybookCard(props: {
           <details class="pb-section pb-who" open={untrack(() => cantRunCount(run().teams) > 0)}>
             <summary class="pb-more-summary pb-section-label">
               <Icon name="chevron-right" small class="icon-twist" />
-              {whoSummary(run().who, cantRunCount(run().teams))}
+              {whoSummary(run().who, cantRunCount(run().teams), !!run().legacy)}
             </summary>
             <Show when={run().teams.length > 0} fallback={<p class="pb-note">No helpers: this chat does every step itself.</p>}>
               <Show when={run().legacy}>

@@ -110,6 +110,12 @@ test("a run started before teams had goals: its blocks are headed by the old tea
   assert.equal(teamEyebrow(team({ steps: [] }), steps, true), "");
   assert.equal(teamAddsLine(team(), true), null);
   assert.equal(teamAddsLine(team({ members: [] }), true), null);
+  // Its folded line counts groups and roles, never "required members", and says when it is from.
+  assert.equal(whoSummary({ teams: 8, members: 12 }, 0, true), "Who runs · 8 groups · 12 roles · started before teams");
+  assert.equal(whoSummary({ teams: 1, members: 1 }, 0, true), "Who runs · 1 group · 1 role · started before teams");
+  assert.equal(whoSummary({ teams: 2, members: 0 }, 0, true), "Who runs · 2 groups · no roles · started before teams");
+  assert.equal(whoSummary({ teams: 0, members: 0 }, 0, true), "Who runs · the main chat alone");
+  assert.equal(whoSummary({ teams: 8, members: 12 }, 0, false), "Who runs · 8 teams · 12 required members");
   assert.equal(LEGACY_WHO_NOTE, "Started before teams had goals: these are the helpers it ran with, grouped as that run grouped them.");
 });
 

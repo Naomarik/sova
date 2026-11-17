@@ -81,7 +81,7 @@ const { createSetupDraft } = await import("./design-setup-view");
 type Run = Parameters<typeof createSetupDraft>[0] extends () => infer R ? R : never;
 const model = (ref: string, design: boolean) => ({ ref, name: ref, design, coordinator: ref === "a/x", vision: true, route: "tool" as const });
 const runAt = (updatedAt: string, designing: string[], brief = "A page"): Run =>
-  ({ id: "r9", phase: "setup", labels: [], createdAt: "t0", updatedAt, setup: { brief, models: ["a/x", "a/y", "b/z"].map((r) => model(r, designing.includes(r))), directions: [{ name: "Calm", on: true }] } }) as Run;
+  ({ id: "r9", phase: "setup", labels: [], createdAt: "t0", updatedAt, setupAt: updatedAt, setup: { brief, models: ["a/x", "a/y", "b/z"].map((r) => model(r, designing.includes(r))), directions: [{ name: "Calm", on: true }] } }) as Run;
 const designing = (s: { models: { ref: string; design: boolean }[] }) => s.models.filter((m) => m.design).map((m) => m.ref);
 const later = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -154,5 +154,62 @@ test("Hide's answer is taken back into the card, so the next save sends the prov
   assert.deepEqual(designing(setup.draft()), ["a/x"]);
   setup.adopt({ runs: [runAt("t0", ["a/x", "a/y"])] });
   assert.deepEqual(designing(setup.draft()), ["a/x"], "an answer older than what the card shows doesn't replace it");
+  dispose();
+});
+
+/** A store that answers saves at once: like the server, it refuses (409, with the run as it is) a card made from
+    another version of the card than its own (setupAt). */
+function serverStore(held: { run: Run }) {
+  const sent: { setup: Run["setup"]; base?: string }[] = [];
+  const api = {
+    setup: async (_id: string, setup: Run["setup"], base?: string) => {
+      sent.push({ setup, base });
+      if (base !== undefined && (held.run.setupAt ?? held.run.createdAt) !== base)
+        throw Object.assign(new Error("The card changed since this save was made."), { status: 409, body: { error: "The card changed since this save was made.", stale: true, run: held.run } });
+      const at = `${held.run.setupAt ?? held.run.createdAt}+`;
+      held.run = { ...held.run, updatedAt: at, setupAt: at, setup };
+      return { runs: [held.run] };
+    },
+  };
+  return { sent, store: { api } as unknown as Parameters<typeof createSetupDraft>[1] };
+}
+
+test("a chat's change that lands while your click waits to be saved wins: the click isn't sent and the card shows the change", async () => {
+  const held = { run: runAt("t1", ["a/x"]) };
+  const [run, setRun] = solid.createSignal(held.run);
+  const { sent, store } = serverStore(held);
+  const { setup, dispose } = solid.createRoot((dispose) => ({ setup: createSetupDraft(run, store), dispose }));
+  setup.change({ ...setup.draft(), models: setup.draft().models.map((m) => (m.ref === "a/y" ? { ...m, design: true } : m)) });
+  await later(100);
+  // The chat's edit, made on the server after the click and before its save.
+  held.run = runAt("t2", ["b/z"], "The chat's request");
+  setRun(held.run);
+  await later(350);
+  assert.deepEqual(designing(held.run.setup), ["b/z"], "the server keeps the chat's change");
+  assert.equal(held.run.setup.brief, "The chat's request");
+  assert.deepEqual(designing(setup.draft()), ["b/z"], "the card shows it");
+  assert.equal(setup.saving(), "");
+  dispose();
+});
+
+test("a save refused because the card changed since the click (409) takes the server's card", async () => {
+  const held = { run: runAt("t1", ["a/x"]) };
+  const [run] = solid.createSignal(held.run);
+  const { sent, store } = serverStore(held);
+  const { setup, dispose } = solid.createRoot((dispose) => ({ setup: createSetupDraft(run, store), dispose }));
+  setup.change({ ...setup.draft(), models: setup.draft().models.map((m) => (m.ref === "a/y" ? { ...m, design: true } : m)) });
+  // The chat's change lands on the server, but its update hasn't reached this card when the save goes.
+  held.run = runAt("t2", ["b/z"]);
+  await later(350);
+  assert.equal(sent.length, 1);
+  assert.equal(sent[0]!.base, "t1", "the save names the card it was made from");
+  assert.deepEqual(designing(held.run.setup), ["b/z"], "the server kept the chat's change");
+  assert.deepEqual(designing(setup.draft()), ["b/z"], "the card shows the server's card");
+  assert.equal(setup.saving(), "", "a refusal for a newer card isn't a failed save");
+  // The next click is made from the newer card, and goes through.
+  setup.change({ ...setup.draft(), models: setup.draft().models.map((m) => (m.ref === "a/x" ? { ...m, design: true } : m)) });
+  await later(350);
+  assert.equal(sent[1]!.base, "t2");
+  assert.deepEqual(designing(held.run.setup), ["a/x", "b/z"]);
   dispose();
 });

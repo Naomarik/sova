@@ -15,39 +15,72 @@ export interface SetupDraft {
   adopt(answer: unknown): void;
 }
 
+/** A save the server refused because the run changed after the card it was made from (409, `stale`), with the
+    server's view when it sent one. */
+function staleRefusal(e: unknown): { view?: unknown } | null {
+  const err = e as { status?: unknown; body?: unknown } | null;
+  if (err?.status !== 409) return null;
+  const body = err.body as { stale?: unknown; view?: unknown; run?: unknown } | null | undefined;
+  if (!body?.stale) return null;
+  return { view: body.view ?? (body.run ? { runs: [body.run] } : undefined) };
+}
+
+/** Which version of a run's card it is: its last Setup change (yours, the chat's, Hide or Show), else when it was
+    made. Nothing else moves it (a phase change, the brief being written). */
+export const cardAt = (r: Pick<DesignRunView, "setupAt" | "createdAt">): string => r.setupAt ?? r.createdAt;
+
 /**
- * The Setup card's choices as you make them: saved shortly after each click (the whole card, so the latest change
- * wins), and never replaced by an update while unsaved. Once a save is answered with nothing newer waiting, the card
- * shows what the server holds: the newer of that answer and the last update, so a chat's change that came in while
- * the click was being saved shows, and the next click doesn't undo it.
+ * The Setup card's choices as you make them: saved whole shortly after each click, so the latest change wins, and
+ * never replaced by an update while unsaved, with one exception: a newer card from the server (the chat's change)
+ * arriving while your click still waits to be sent wins, and the click isn't sent. Each save names the card it was
+ * made from (`baseSetupAt`, its cardAt); one the server refuses because the run changed since then takes the server's
+ * card. Once a save is answered with nothing newer waiting, the card shows what the server holds: the newer of that
+ * answer and the last update. Text in the request's editor is its own, so none of this touches it.
  */
 export function createSetupDraft(run: Accessor<DesignRunView>, store: Pick<DesignStore, "api">): SetupDraft {
   const [draft, setDraft] = createSignal<DesignSetup>(untrack(() => run().setup));
   const [saving, setSaving] = createSignal<"" | "saving" | "error">("");
   let dirty = false;
   let timer: ReturnType<typeof setTimeout> | undefined;
-  /** When the server's card the draft shows was made: an update older than it (one sent before a save's answer
-      that came first) never takes the card back. */
-  let shownAt = untrack(run).updatedAt;
-  const show = (r: Pick<DesignRunView, "updatedAt" | "setup">) => {
-    if (r.updatedAt < shownAt) return;
-    shownAt = r.updatedAt;
+  /** Saves sent and not yet answered: an update meanwhile may be one of them coming back, so it waits for the answer. */
+  let sending = 0;
+  /** The version (cardAt) of the server's card the draft is made from: the base each save names, and an update older
+      than it (one sent before a save's answer that came first) never takes the card back. */
+  let shownAt = cardAt(untrack(run));
+  type Card = Pick<DesignRunView, "setupAt" | "createdAt" | "setup">;
+  const show = (r: Card) => {
+    if (cardAt(r) < shownAt) return;
+    shownAt = cardAt(r);
     setDraft(r.setup);
+  };
+  /** A newer card from the server wins over clicks not yet sent: they're dropped and it shows. */
+  const yieldTo = (r: Card) => {
+    clearTimeout(timer);
+    timer = undefined;
+    dirty = false;
+    show(r);
   };
   createEffect(
     on(
       () => run().setup,
       () => {
-        if (!dirty) show(untrack(run));
+        const r = untrack(run);
+        if (!dirty) show(r);
+        else if (!sending && cardAt(r) > shownAt) yieldTo(r);
       },
     ),
   );
+  const answeredRun = (answer: unknown) => (answer as Partial<DesignChatView> | null | undefined)?.runs?.find((r) => r.id === untrack(run).id);
+  /** The newer of an answer's run and the last update. */
+  const newest = (answer: unknown) => {
+    const now = untrack(run);
+    const answered = answeredRun(answer);
+    return answered && cardAt(answered) > cardAt(now) ? answered : now;
+  };
   /** Nothing waits to be saved: the card is the server's, from its answer or the last update, whichever is newer. */
   const settle = (answer: unknown) => {
     dirty = false;
-    const now = untrack(run);
-    const answered = (answer as Partial<DesignChatView> | null | undefined)?.runs?.find((r) => r.id === now.id);
-    show(answered && answered.updatedAt > now.updatedAt ? answered : now);
+    show(newest(answer));
   };
   /** The save on its way, for a press that must come after it. */
   let inflight: Promise<unknown> = Promise.resolve();
@@ -55,12 +88,29 @@ export function createSetupDraft(run: Accessor<DesignRunView>, store: Pick<Desig
     timer = undefined;
     const sent = draft();
     setSaving("saving");
-    const sending = store.api.setup(untrack(run).id, sent).then((answer) => {
-      if (sent === draft() && !timer) settle(answer);
-      setSaving("");
-    });
-    inflight = sending.catch(() => setSaving("error"));
-    return sending;
+    sending++;
+    const done = store.api.setup(untrack(run).id, sent, shownAt).then(
+      (answer) => {
+        sending--;
+        setSaving("");
+        if (sent === draft() && !timer) return settle(answer);
+        // A newer click waits: it was made on top of this one, so its base is this save's card; a change the
+        // server made after that wins over it.
+        const answered = answeredRun(answer);
+        if (answered && cardAt(answered) > shownAt) shownAt = cardAt(answered);
+        const now = untrack(run);
+        if (!sending && cardAt(now) > shownAt) yieldTo(now);
+      },
+      (e) => {
+        sending--;
+        const stale = staleRefusal(e);
+        if (!stale) throw e;
+        setSaving("");
+        yieldTo(newest(stale.view));
+      },
+    );
+    inflight = done.catch(() => setSaving("error"));
+    return done;
   };
   onCleanup(() => {
     if (timer) {

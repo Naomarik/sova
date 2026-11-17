@@ -24,6 +24,8 @@ import {
   withoutPlaybookRows,
   roleWhy,
   splitChoices,
+  isFreeText,
+  answerFoldLabel,
   stackEdits,
   stepRunsLine,
   stepsSummary,
@@ -98,6 +100,13 @@ test("optional choices go under More Options unless a required one is empty", ()
   const { shown, more } = splitChoices([c("a", "always"), c("b", "once"), c("c", "optional"), c("d", "optional", true, null)]);
   assert.deepEqual(shown.map((x) => x.id), ["a", "b", "d"]);
   assert.deepEqual(more.map((x) => x.id), ["c"]);
+});
+
+test("only an answer in the person's own words folds: a text or a list, never a pick, a number, a switch or a set of models", () => {
+  const folds = (["text", "number", "toggle", "choice", "multi", "list", "models"] as const).filter((type) => isFreeText({ type }));
+  assert.deepEqual(folds, ["text", "list"]);
+  assert.equal(answerFoldLabel(false), "Show All");
+  assert.equal(answerFoldLabel(true), "Show Less");
 });
 
 test("the chip: ready, blocked, or started", () => {

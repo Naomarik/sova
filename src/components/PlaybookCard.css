@@ -198,6 +198,22 @@
 .pb-row-value { min-width: 0; display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1) var(--space-2); }
 .pb-row-origin { color: var(--color-ink-muted); font-size: var(--fs-caption); text-align: end; }
 .pb-row-help { color: var(--color-ink-muted); font-size: var(--fs-caption); font-weight: var(--fw-regular); }
+/* What a choice asks, always on its own line under the answer, whatever the answer's length. */
+.pb-row-value > .pb-row-help { flex-basis: 100%; }
+/* A free-text answer on the record: its first 2 lines, then Show All (LongAnswer). */
+.pb-answer { flex: 1 1 100%; min-width: 0; display: flex; flex-direction: column; align-items: flex-start; }
+.pb-answer-text {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+.pb-answer-text[data-all] { display: block; -webkit-line-clamp: none; line-clamp: none; overflow: visible; }
+/* The button's words start at the answer's edge. */
+.pb-answer-more { margin-inline-start: calc(-1 * var(--space-3)); }
 .pb-row[data-empty] .pb-row-origin { color: var(--status-warn); font-weight: var(--fw-medium); }
 .pb-row-standing .pb-row-label { font-weight: var(--fw-regular); color: var(--color-ink-2); padding-left: var(--space-3); }
 .pb-role[data-off] .pb-model { color: var(--color-ink-muted); }

@@ -217,6 +217,15 @@ export function isEmpty(value: unknown): boolean {
   return value === null || value === undefined || value === "" || (Array.isArray(value) && value.length === 0);
 }
 
+/** A choice whose answer is the person's own words (a text, or a list of lines): the record folds a
+    long one to its first 2 lines. A pick, a number, a switch or a set of models is never folded. */
+export function isFreeText(c: Pick<PlaybookChoiceView, "type">): boolean {
+  return c.type === "text" || c.type === "list";
+}
+
+/** The button under a folded answer, and under the same answer shown whole. */
+export const answerFoldLabel = (all: boolean): string => (all ? "Show Less" : "Show All");
+
 /** A playbook model pick as the model picker holds it (effort is pi's thinking level). */
 export function toPick(p: PlaybookModelPick | null | undefined): ModelPick | null {
   return p ? { model: p.model, ...(p.effort ? { thinking: p.effort as ThinkingLevel } : {}) } : null;

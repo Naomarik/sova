@@ -9,6 +9,8 @@ import {
   shortClock,
   fromPick,
   hasEdits,
+  answerFoldLabel,
+  isFreeText,
   helpersLine,
   isEmpty,
   listValue,
@@ -869,13 +871,70 @@ function ChoiceRow(props: { choice: PlaybookChoiceView; value: unknown; editable
         {c().label}
       </span>
       <span class="pb-row-value">
-        <Show when={props.editable} fallback={<span>{valueText(c(), props.value)}</span>}>
+        <Show
+          when={props.editable}
+          fallback={
+            <Show when={isFreeText(c()) && !isEmpty(props.value)} fallback={<span>{valueText(c(), props.value)}</span>}>
+              <LongAnswer text={valueText(c(), props.value)} label={c().label} />
+            </Show>
+          }
+        >
           {control()}
         </Show>
         <Show when={c().help}>{(h) => <span class="pb-row-help">{h()}</span>}</Show>
       </span>
       <span class="pb-row-origin">{empty() ? "Needed" : ORIGIN_LABEL[c().origin]}</span>
     </div>
+  );
+}
+
+/**
+ * A free-text answer as the record shows it: its first 2 lines, and Show All when there is more
+ * (a pasted paragraph would otherwise push every other choice off the card). Whether there is more
+ * is measured, not guessed from its length: the same answer fits at one width and not at another.
+ */
+function LongAnswer(props: { text: string; label: string }) {
+  const aid = `pba-${createUniqueId()}`;
+  let text!: HTMLSpanElement;
+  const [all, setAll] = createSignal(false);
+  const [more, setMore] = createSignal(false);
+  // Measured while folded only: shown whole nothing overflows, and Show Less must stay to fold it.
+  const measure = () => {
+    if (text && !all()) setMore(text.scrollHeight > text.clientHeight + 1);
+  };
+  onMount(() => {
+    measure();
+    if (typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(measure);
+    ro.observe(text);
+    onCleanup(() => ro.disconnect());
+  });
+  // An answer that changed under the same two lines changes no box: measure it again once drawn.
+  createEffect(() => {
+    void props.text;
+    queueMicrotask(measure);
+  });
+  return (
+    <span class="pb-answer">
+      <span class="pb-answer-text" id={aid} ref={text} data-all={all() ? "" : undefined}>
+        {props.text}
+      </span>
+      <Show when={more() || all()}>
+        <button
+          type="button"
+          class="button button-sm button-ghost pb-answer-more"
+          aria-expanded={all()}
+          aria-controls={aid}
+          aria-label={`${answerFoldLabel(all())}: ${props.label}`}
+          onClick={() => {
+            setAll(!all());
+            queueMicrotask(measure);
+          }}
+        >
+          {answerFoldLabel(all())}
+        </button>
+      </Show>
+    </span>
   );
 }
 

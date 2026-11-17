@@ -3,6 +3,7 @@ import { PLAYBOOK_RUN_EVENT, type PlaybookCardEdits, type PlaybookRunView } from
 import { ApiError, playbookRunsApi } from "./api";
 import { withoutOtherDrafts, type HeldBy } from "./playbook-card";
 import { socketReconnects } from "./socket";
+import { normalizeRunView } from "./playbook-run-view";
 
 /**
  * A chat's playbook runs, as its docked cards show them: the drafts it opened, the runs started from
@@ -57,7 +58,10 @@ function make(path: string, cwd: () => string | null, host: string | null): Entr
     const [runs, setRuns] = createSignal<PlaybookRunView[]>([]);
     const [error, setError] = createSignal<string | null>(null);
     const [holding, setHolding] = createSignal<HeldBy | null>(null);
-    const put = (run: PlaybookRunView) =>
+    /** Every view comes in whole, an older run's included (its missing lists read as empty). */
+    const whole = normalizeRunView;
+    const put = (raw: PlaybookRunView) => {
+      const run = whole(raw);
       setRuns((list) => {
         // A closed draft's news: its card goes away.
         if (run.closed) return list.filter((r) => r.id !== run.id);
@@ -69,6 +73,8 @@ function make(path: string, cwd: () => string | null, host: string | null): Entr
         next[i] = kept;
         return next;
       });
+      return run;
+    };
     const drop = (id: string) => setRuns((list) => list.filter((r) => r.id !== id));
     /** A refusal that carries the run as the server now holds it (a stale revision): take that view. */
     const keepRun = (err: unknown) => {
@@ -82,7 +88,7 @@ function make(path: string, cwd: () => string | null, host: string | null): Entr
       try {
         const got = await api.list(path);
         if (mine !== reads) return;
-        setRuns((list) => got.runs.map((r) => newer(list.find((x) => x.id === r.id), r)).sort(order));
+        setRuns((list) => got.runs.map((r) => newer(list.find((x) => x.id === r.id), whole(r))).sort(order));
         setHolding(got.holding ?? null);
         setError(null);
       } catch (e) {
@@ -98,16 +104,15 @@ function make(path: string, cwd: () => string | null, host: string | null): Entr
       holding,
       put,
       open: async (playbook, text) => {
-        const run = await api.open({ playbook: { source: playbook.source, id: playbook.id }, cwd: cwd() ?? "", path, ...(text ? { text } : {}) });
-        put(run);
+        const run = put(await api.open({ playbook: { source: playbook.source, id: playbook.id }, cwd: cwd() ?? "", path, ...(text ? { text } : {}) }));
         setRuns((list) => withoutOtherDrafts(list, run.id));
         return run;
       },
-      edit: (id, revision, edits) => api.edit(id, revision, edits).then((r) => (put(r), r), keepRun),
-      start: (id, revision) => api.start(id, revision).then((r) => (put(r), r), keepRun),
+      edit: (id, revision, edits) => api.edit(id, revision, edits).then(put, keepRun),
+      start: (id, revision) => api.start(id, revision).then(put, keepRun),
       saveDefaults: (id, revision) => api.defaults(id, revision).then(() => undefined, keepRun),
       close: (id) => api.close(id).then(() => void drop(id)),
-      record: (id) => api.get(id),
+      record: (id) => api.get(id).then(whole),
       refresh: () => void load(),
     };
     return { store, refs: 0, dispose };

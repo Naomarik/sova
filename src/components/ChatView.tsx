@@ -156,7 +156,7 @@ import { ShellDock } from "./ShellDock";
 import { openCardOnArrival, PlaybookFloat, PlaybookRunsContext, showPlaybookCard, type PlaybookChatNow } from "./PlaybookCard";
 import { isPlaybookRunEvent, playbookRunEvent, usePlaybookRuns } from "../lib/playbook-runs";
 import { boardState } from "../lib/agents-board";
-import { chatHolding, heldRows, NO_PLAYBOOKS_HERE, playbookRows, playbooksRunHere, withoutPlaybookRows, withPlaybookRows, type HeldBy } from "../lib/playbook-card";
+import { chatHolding, chatNowOf, heldRows, NO_PLAYBOOKS_HERE, playbookRows, playbooksRunHere, withoutPlaybookRows, withPlaybookRows, type HeldBy } from "../lib/playbook-card";
 import { socketReconnects } from "../lib/socket";
 import type { PlaybookRunView } from "../../shared/playbook-run";
 import { answersAtHello, cardOfRun, nextShellRuns, runShell, SHELL_DROPPED, shellAnswerOf, shellOffered, stopOnClose } from "../lib/shell-runs";
@@ -718,13 +718,7 @@ export function ChatView(props: {
     path: props.path,
     now: createMemo(() => {
       const s = props.summary?.();
-      const board = s ? boardState(s, null, live.running) : null;
-      return {
-        working: live.running,
-        helpersWorking: workersWorking(),
-        needsYou: board?.state === "needs-you" ? board.reason : null,
-        done: board?.state === "idle" && board.word === "Done",
-      };
+      return chatNowOf(s ? boardState(s, null, live.running) : null, live.running, workersWorking());
     }),
   };
   /** Reload Now, and the failed banner's Try Again: the chat reloads at once if quiet, else when it is. */

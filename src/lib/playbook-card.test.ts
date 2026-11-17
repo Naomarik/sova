@@ -18,6 +18,7 @@ import {
   playbooksRunHere,
   revealStep,
   runStatus,
+  chatNowOf,
   controlLabel,
   type RunChatNow,
   withPlaybookRows,
@@ -197,16 +198,14 @@ test("the chip: ready, blocked, or started", () => {
 
 test("a started run's state is its conducting chat's: a question wins over nothing going on, work over both, and only a chat with nothing running takes an answer", () => {
   const started = { state: "started", startBlocked: "This run has started." } as PlaybookRunView;
-  const now = (extra: Partial<RunChatNow> = {}): RunChatNow => ({ working: false, helpersWorking: 0, needsYou: null, done: false, ...extra });
+  const now = (extra: Partial<RunChatNow> = {}): RunChatNow => ({ working: false, helpersWorking: 0, needsYou: null, ...extra });
   // Every reading of the chat, by what it holds: the label and whether the card takes an answer.
   const rows: [Partial<RunChatNow>, string, boolean][] = [
     [{ working: true }, "Running", false],
-    [{ working: true, needsYou: "A question waits.", done: true }, "Running", false],
+    [{ working: true, needsYou: "A question waits." }, "Running", false],
     [{ helpersWorking: 2 }, "Running", false],
     [{ helpersWorking: 1, needsYou: "A question waits." }, "Running", false],
     [{ needsYou: "A question waits." }, "Needs you", true],
-    [{ needsYou: "A question waits.", done: true }, "Needs you", true],
-    [{ done: true }, "Done", false],
     [{}, "Idle", true],
   ];
   for (const [chat, label, answer] of rows) {
@@ -220,9 +219,23 @@ test("a started run's state is its conducting chat's: a question wins over nothi
   assert.equal(runStatus(started, now({ needsYou: "A dialog is waiting on you." })).detail, "A dialog is waiting on you.");
 });
 
+test("a finished-looking chat reads Idle, never Done", () => {
+  const started = { state: "started", startBlocked: "This run has started." } as PlaybookRunView;
+  // The session list reads a chat whose last turn said the work is finished as Idle · Done. Phase 1
+  // can't tell a finished run from one waiting at a stop, so the strip never claims Done.
+  const now = chatNowOf({ state: "idle", reason: null, word: "Done" }, false, 0);
+  assert.deepEqual(Object.keys(now).sort(), ["helpersWorking", "needsYou", "working"]);
+  const s = runStatus(started, now);
+  assert.equal(s.label, "Idle");
+  assert.equal(s.answer, true, "it still takes Continue or Stop Here");
+  assert.doesNotMatch(s.detail ?? "", /done/i);
+  // An older reading that still says done changes nothing.
+  assert.equal(runStatus(started, { ...now, done: true } as typeof now).label, "Idle");
+});
+
 test("a run with no reading of its chat says only what the run itself knows: its draft state, starting, or started", () => {
   const v = (extra: Partial<PlaybookRunView>) => ({ state: "draft", startBlocked: null, ...extra }) as PlaybookRunView;
-  const busy: RunChatNow = { working: true, helpersWorking: 2, needsYou: null, done: false };
+  const busy: RunChatNow = { working: true, helpersWorking: 2, needsYou: null };
   // A draft's state never reads the chat, whatever the chat is doing.
   for (const now of [null, busy]) {
     assert.equal(runStatus(v({}), now).label, "Ready to start");
@@ -272,9 +285,9 @@ test("a draft's folded line: what keeps Start off, else its teams (one, several,
 test("a strip's second line is how the conducting chat stands when the page reads it, else the run's own folded line", () => {
   const clock = () => "00:27";
   const started = { state: "started", startBlocked: "This run has started.", started: { at: "2026-11-17T00:27:00Z", revision: 3, chat: { id: "c", path: "/a.jsonl" }, newChat: false, folder: "/f" } } as unknown as PlaybookRunView;
-  const now = (extra: Partial<RunChatNow> = {}): RunChatNow => ({ working: false, helpersWorking: 0, needsYou: null, done: false, ...extra });
+  const now = (extra: Partial<RunChatNow> = {}): RunChatNow => ({ working: false, helpersWorking: 0, needsYou: null, ...extra });
   // Every reading of the conducting chat has a sentence, and the strip says exactly that sentence.
-  for (const chat of [now({ working: true }), now({ helpersWorking: 2 }), now({ needsYou: "A question waits." }), now({ done: true }), now()]) {
+  for (const chat of [now({ working: true }), now({ helpersWorking: 2 }), now({ needsYou: "A question waits." }), now()]) {
     const status = runStatus(started, chat);
     assert.ok(status.detail, JSON.stringify(chat));
     assert.equal(stripLine(started, status, "/a.jsonl", clock), status.detail, JSON.stringify(chat));

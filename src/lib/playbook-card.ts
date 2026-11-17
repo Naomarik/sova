@@ -55,8 +55,13 @@ export interface RunChatNow {
   helpersWorking: number;
   /** Why the chat needs you, in the session list's words; null when it doesn't. */
   needsYou: string | null;
-  /** Its last turn said the work is done. */
-  done: boolean;
+}
+
+/** The conducting chat's reading, from the session list's own (`boardState`) and the chat's live turn
+    and helpers. A last turn that said the work is finished is not passed on: in this release a run
+    can't tell finished from waiting at a stop, so its strip never says Done. */
+export function chatNowOf(board: { state: string; reason: string | null; word: string } | null, running: boolean, helpersWorking: number): RunChatNow {
+  return { working: running, helpersWorking, needsYou: board?.state === "needs-you" ? board.reason : null };
 }
 
 export interface RunStatus {
@@ -75,8 +80,8 @@ const helpersWorkingWords = (n: number): string => `${n} ${n === 1 ? "helper" : 
  * A run's state, dot and word, on its strip and its card. A draft: ready, or what blocks Start.
  * A started run: how its conducting chat stands (`now`); with no reading of that chat (the card is
  * in another chat), only that it started. A question the chat is blocked on wins over work, as in
- * the session list; a chat with nothing going on waits for your answer unless its last turn said
- * it was done.
+ * the session list; a chat with nothing going on waits for your answer (Idle), even when its last
+ * turn sounded finished: this release never claims a run is done.
  */
 export function runStatus(view: PlaybookRunView, now: RunChatNow | null, pressed = false): RunStatus {
   // Start pressed and not answered yet (the card is saving and sending): the run is still a draft.
@@ -86,7 +91,6 @@ export function runStatus(view: PlaybookRunView, now: RunChatNow | null, pressed
   if (now.working) return { label: "Running", tone: "accent", live: true, detail: now.helpersWorking > 0 ? `This chat is working, with ${helpersWorkingWords(now.helpersWorking)}.` : "This chat is working." };
   if (now.helpersWorking > 0) return { label: "Running", tone: "accent", live: true, detail: `${helpersWorkingWords(now.helpersWorking)}; this chat picks up when they report.` };
   if (now.needsYou) return { label: "Needs you", tone: "warn", detail: now.needsYou, answer: true };
-  if (now.done) return { label: "Done", tone: "success", detail: "This chat's last turn said the work is done." };
   return { label: "Idle", tone: undefined, detail: "This chat's turn ended and no helper is working. The run goes on when you answer.", answer: true };
 }
 

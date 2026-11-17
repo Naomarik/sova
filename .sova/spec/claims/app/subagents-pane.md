@@ -500,7 +500,7 @@ sent. Each part is read as the chat's folder and the chat hold it now (`GET
   for this chat (§chat.transcript/setup-card-toggles) isn't listed. Files in folders below the
   chat's folder that haven't loaded yet come last, under **Not yet loaded · not counted**: each shows
   what it would cost (`+≈{n}`), draws no share bar and isn't in any total. The folder walk follows
-  the loading's skip rule and stops after 5,000 folders; then the group says "This list may be
+  the loading's rules and stops after 5,000 folders; then the group says "This list may be
   incomplete." A chat Sova doesn't look below (§chat.subfolder-skills/offering) lists no file of a
   folder below its own, and says nothing about it.
 - **Skills offered** lists each skill by its name, its description under it, and a chip that tells

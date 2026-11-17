@@ -5,7 +5,7 @@
       "§chat.skill-sources/arguments"
     ],
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "code": [
       "server/subfolder-skills.ts",
       "server/subfolder-skills.test.ts",
@@ -15,12 +15,13 @@
       "server/chat-manager.ts",
       "server/skill-descent.ts",
       "server/deeper-context.test.ts",
-      "shared/harness-session.ts"
+      "shared/harness-session.ts",
+      "server/context-scope.ts"
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-12T16:08Z",
-      "source": "pi-session:ec6da819-fb0b-454b-9ba9-97db0affcbfb#723cbddc"
+      "at": "2026-11-17T19:10Z",
+      "source": "pi-session:4e642b8d-a7ef-468d-b331-0c649395fd26#66b3316c"
     }
   },
   "§chat.subfolder-skills/offering": {
@@ -32,7 +33,7 @@
       "§app/projects"
     ],
     "authority": "accepted",
-    "evidence": "unreviewed",
+    "evidence": "verified",
     "code": [
       "server/subfolder-skills.ts",
       "server/subfolder-skills.test.ts",
@@ -48,12 +49,13 @@
       "shared/chat-runtime-wire.ts",
       "server/skill-descent.ts",
       "server/skill-descent.test.ts",
-      "server/chat-host.test.ts"
+      "server/chat-host.test.ts",
+      "server/context-scope.ts"
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-12T16:08Z",
-      "source": "pi-session:ec6da819-fb0b-454b-9ba9-97db0affcbfb#723cbddc"
+      "at": "2026-11-17T18:17Z",
+      "source": "pi-session:4e642b8d-a7ef-468d-b331-0c649395fd26#66b3316c"
     }
   },
   "§chat/subfolder-skills": {

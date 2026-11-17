@@ -1,0 +1,47 @@
+{
+  "§chat.context-scope/folders": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "server/context-scope.ts",
+      "server/skill-descent.ts",
+      "server/harness/pi/open.ts",
+      "server/harness/pi/resources.ts",
+      "server/session-loadout.ts",
+      "server/context-scope.test.ts",
+      "server/context-scope.integration.test.ts",
+      "server/harness/pi/contract.test.ts",
+      "server/harness/pi/quirks.ts",
+      "server/harness/pi/QUIRKS.md",
+      "server/chat-manager.ts",
+      "server/deeper-context.ts",
+      "server/subfolder-skills.ts",
+      "server/folder-walk.ts"
+    ],
+    "requires": [
+      "§app.shell/missing-folder-home",
+      "§chat/subfolder-instructions"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-17T18:12Z",
+      "source": "pi-session:4e642b8d-a7ef-468d-b331-0c649395fd26#66b3316c"
+    }
+  },
+  "§chat/context-scope": {
+    "kind": "surface",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "server/context-scope.ts",
+      "server/harness/pi/open.ts",
+      "server/harness/pi/resources.ts"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-17T18:12Z",
+      "source": "pi-session:4e642b8d-a7ef-468d-b331-0c649395fd26#66b3316c"
+    }
+  }
+}

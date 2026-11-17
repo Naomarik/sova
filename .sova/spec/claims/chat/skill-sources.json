@@ -169,12 +169,14 @@
       "server/harness/pi/contract.test.ts",
       "server/harness/pi/QUIRKS.md",
       "server/harness/pi/quirks.ts",
-      "server/harness/pi/skill-sources.test.ts"
+      "server/harness/pi/skill-sources.test.ts",
+      "server/context-scope.ts",
+      "server/context-scope.test.ts"
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-06T18:26Z",
-      "source": "pi-session:01a1b07d-be49-727f-8989-d4d0378c61bb#55377061"
+      "at": "2026-11-17T18:17Z",
+      "source": "pi-session:4e642b8d-a7ef-468d-b331-0c649395fd26#66b3316c"
     }
   },
   "§chat/skill-sources": {

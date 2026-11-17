@@ -78,8 +78,9 @@ const helpersWorkingWords = (n: number): string => `${n} ${n === 1 ? "helper" : 
  * the session list; a chat with nothing going on waits for your answer unless its last turn said
  * it was done.
  */
-export function runStatus(view: PlaybookRunView, now: RunChatNow | null): RunStatus {
-  if (view.state === "starting") return { label: "Starting", tone: "accent" };
+export function runStatus(view: PlaybookRunView, now: RunChatNow | null, pressed = false): RunStatus {
+  // Start pressed and not answered yet (the card is saving and sending): the run is still a draft.
+  if (view.state === "starting" || (pressed && view.state === "draft")) return { label: "Starting", tone: "accent" };
   if (view.state !== "started") return cardChip(view);
   if (!now) return { label: "Started", tone: "accent" };
   if (now.working) return { label: "Running", tone: "accent", live: true, detail: now.helpersWorking > 0 ? `This chat is working, with ${helpersWorkingWords(now.helpersWorking)}.` : "This chat is working." };

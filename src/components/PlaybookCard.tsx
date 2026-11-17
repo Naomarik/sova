@@ -131,10 +131,10 @@ function sendAnswer(answer: PlaybookAnswer | undefined, text: string): boolean {
  * whole strip opens the card; while the run waits for you it also carries the two answers, which
  * are buttons of their own beside the opener, never inside it.
  */
-function RunStrip(props: { run: PlaybookRunView; chat: PlaybookChatNow; answer?: PlaybookAnswer; onOpen(): void }) {
+function RunStrip(props: { run: PlaybookRunView; chat: PlaybookChatNow; answer?: PlaybookAnswer; /** Start pressed, not answered yet. */ pressed: boolean; onOpen(): void }) {
   const lineId = `pb-strip-line-${createUniqueId()}`;
   const run = () => props.run;
-  const status = createMemo(() => runStatus(run(), nowFor(run(), props.chat)));
+  const status = createMemo(() => runStatus(run(), nowFor(run(), props.chat), props.pressed));
   const line = () => stripLine(run(), status(), props.chat.path);
   return (
     <div class="pb-strip" data-run={run().id} data-state={run().state}>
@@ -318,7 +318,7 @@ export function PlaybookFloat(props: { store: PlaybookRunsStore; host: string | 
       <div class="pb-layer">
         {/* Always mounted (empty: no box), so its height is measured from one element. */}
         <div class="pb-strips" ref={strips} role="group" aria-label="Playbook" data-covered={covered() ? "" : undefined}>
-          <For each={ids()}>{(id) => <Show when={runOf(id)}>{(run) => <RunStrip run={run()} chat={props.chat} answer={props.answer} onOpen={() => open(id)} />}</Show>}</For>
+          <For each={ids()}>{(id) => <Show when={runOf(id)}>{(run) => <RunStrip run={run()} chat={props.chat} answer={props.answer} pressed={props.store.starting(id)} onOpen={() => open(id)} />}</Show>}</For>
         </div>
         <For each={mounted()}>
           {(id) => (
@@ -330,7 +330,7 @@ export function PlaybookFloat(props: { store: PlaybookRunsStore; host: string | 
                   host={props.host}
                   here={props.chat.path}
                   shown={float.open() === id}
-                  status={runStatus(run(), nowFor(run(), props.chat))}
+                  status={runStatus(run(), nowFor(run(), props.chat), props.store.starting(id))}
                   answer={props.answer}
                   onMinimize={() => minimize(id)}
                 />
@@ -450,6 +450,9 @@ export function PlaybookCard(props: {
   const start = async () => {
     if (!editable() || busy()) return;
     setBusy("start");
+    // The state says Starting from the press, as the button does, on the card and its strip alike.
+    const id = run().id;
+    props.store.setStarting(id, true);
     try {
       await flush();
       if (run().startBlocked) return;
@@ -459,6 +462,7 @@ export function PlaybookCard(props: {
     } catch (e) {
       setSaveError(e instanceof Error ? e.message : String(e));
     } finally {
+      props.store.setStarting(id, false);
       setBusy(null);
     }
   };

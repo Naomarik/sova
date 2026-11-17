@@ -76,3 +76,14 @@ test("an older run read by its id (a put-away record) comes in whole too", async
   assert.deepEqual(record.teams[0]!.members, []);
   assert.deepEqual(record.steps[0]!.teams, []);
 });
+
+test("Start pressed on a run's card is the chat's to know until it's answered, and only for that run", async () => {
+  fakeServer();
+  const store = await chatStore();
+  assert.equal(store.starting(oldRun.id), false);
+  store.setStarting(oldRun.id, true);
+  assert.equal(store.starting(oldRun.id), true);
+  assert.equal(store.starting("pr_bbbbbbbbbbbb"), false);
+  store.setStarting(oldRun.id, false);
+  assert.equal(store.starting(oldRun.id), false);
+});

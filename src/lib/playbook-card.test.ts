@@ -233,6 +233,17 @@ test("a run with no reading of its chat says only what the run itself knows: its
   assert.equal(controlLabel("A/B cycle", { label: "Needs you" }), "A/B cycle: Needs you. Open its card.");
 });
 
+test("once Start is pressed the state says Starting, as the button does, until the server's answer", () => {
+  const v = (extra: Partial<PlaybookRunView>) => ({ state: "draft", startBlocked: null, ...extra }) as PlaybookRunView;
+  // Pressed: the card saves what you changed and sends Start; the run is still a draft meanwhile.
+  assert.equal(runStatus(v({}), null, true).label, "Starting");
+  assert.equal(runStatus(v({}), null, true).tone, "accent");
+  // Not pressed, the same draft reads as before; the server's own starting and started win either way.
+  assert.equal(runStatus(v({}), null, false).label, "Ready to start");
+  assert.equal(runStatus(v({ state: "starting" }), null, false).label, "Starting");
+  assert.equal(runStatus(v({ state: "started" }), null, true).label, "Started");
+});
+
 test("a typed playbook command is the whole message's start, by a name that has a card", () => {
   const names = new Set(["ab-cycle"]);
   assert.deepEqual(playbookCommandIn("/ab-cycle", names), { name: "ab-cycle", words: "" });

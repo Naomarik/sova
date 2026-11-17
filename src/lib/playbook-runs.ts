@@ -28,6 +28,9 @@ export interface PlaybookRunsStore {
   /** One run by its id, in the chat's cards or not: a started run that was put away, as its record. */
   record(id: string): Promise<PlaybookRunView>;
   refresh(): void;
+  /** Start was pressed on this run's card and isn't answered yet: its state says Starting meanwhile. */
+  starting(id: string): boolean;
+  setStarting(id: string, on: boolean): void;
 }
 
 export const isPlaybookRunEvent = (e: unknown): e is { type: typeof PLAYBOOK_RUN_EVENT; run: PlaybookRunView } =>
@@ -58,6 +61,7 @@ function make(path: string, cwd: () => string | null, host: string | null): Entr
     const [runs, setRuns] = createSignal<PlaybookRunView[]>([]);
     const [error, setError] = createSignal<string | null>(null);
     const [holding, setHolding] = createSignal<HeldBy | null>(null);
+    const [pressed, setPressed] = createSignal<ReadonlySet<string>>(new Set());
     /** Every view comes in whole, an older run's included (its missing lists read as empty). */
     const whole = normalizeRunView;
     const put = (raw: PlaybookRunView) => {
@@ -114,6 +118,15 @@ function make(path: string, cwd: () => string | null, host: string | null): Entr
       close: (id) => api.close(id).then(() => void drop(id)),
       record: (id) => api.get(id).then(whole),
       refresh: () => void load(),
+      starting: (id) => pressed().has(id),
+      setStarting: (id, on) =>
+        setPressed((now) => {
+          if (now.has(id) === on) return now;
+          const next = new Set(now);
+          if (on) next.add(id);
+          else next.delete(id);
+          return next;
+        }),
     };
     return { store, refs: 0, dispose };
   });

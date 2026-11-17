@@ -3,9 +3,12 @@
 // without extensions for a folder no runtime holds (server/session-setup.ts). Paths only: the contents are
 // pi's business.
 import { readFileSync } from "node:fs";
+import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { CONFIG_DIR_NAME, DefaultResourceLoader, SettingsManager } from "@earendil-works/pi-coding-agent";
 import type { HarnessResources } from "../../../shared/harness";
+import { contextFileKeeper } from "../../context-scope";
+import type { PiLoaderOptions } from "./extension-types";
 import { skillProblemsOf, withSkillSources } from "./skill-sources";
 
 /** The four loader reads this needs, structurally: the SDK's `ResourceLoader` and `DefaultResourceLoader`
@@ -28,9 +31,28 @@ export function resourcesOf(loader: Loader): HarnessResources {
     session_start is invisible to it). */
 export async function folderResources(cwd: string, agentDir: string): Promise<HarnessResources> {
   const settingsManager = settingsWithoutLock(cwd, agentDir);
-  const loader = new DefaultResourceLoader({ cwd, agentDir, ...(settingsManager ? { settingsManager } : {}), ...withSkillSources(cwd, { noExtensions: true }) });
+  const loader = new DefaultResourceLoader({ cwd, agentDir, ...(settingsManager ? { settingsManager } : {}), ...withContextScope(withSkillSources(cwd, { noExtensions: true }), cwd, agentDir) });
   await loader.reload();
   return resourcesOf(loader);
+}
+
+/**
+ * The loader with a chat's context-file scope laid under its own override (server/context-scope.ts, P44): pi's list
+ * is first cut to the files a chat in `scopeCwd` may start with, and only that list reaches the caller's
+ * `agentsFilesOverride` (a loadout's switches, a project overseer's confinement), whose base it is. Every loader a
+ * chat's runtime or a folder's read builds passes through here, so no caller can skip it. `scopeCwd` is the runtime's
+ * own folder, or the stored one for a chat opened in the home folder because its folder is gone.
+ */
+export function withContextScope(loader: PiLoaderOptions, scopeCwd: string, agentDir: string): PiLoaderOptions {
+  const keep = contextFileKeeper(scopeCwd, { home: homedir(), agentDir });
+  const own = loader.agentsFilesOverride;
+  return {
+    ...loader,
+    agentsFilesOverride: (base) => {
+      const scoped = { ...base, agentsFiles: base.agentsFiles.filter((f) => keep(f.path)) };
+      return own ? own(scoped) : scoped;
+    },
+  };
 }
 
 /** Reads of pi's settings files that skipped pi's lock, for tests. */

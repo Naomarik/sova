@@ -233,6 +233,8 @@ export interface LoadoutState {
   data: LoadoutEntryData | null;
   /** The folder's decisions this build read (before the first message only; else absent). */
   rule?: FolderRule | null;
+  /** pi's context files as the chat's scope leaves them (server/context-scope.ts, laid under every override in the
+      pi adapter), before the entry's switches: a file the scope drops is never a row to switch back on. */
   baseContext?: string[];
   baseSkills?: { name: string; filePath: string; description?: string; manualOnly?: boolean }[];
 }

@@ -5,7 +5,7 @@
 // faux provider, registered through the public ModelRuntime API: no network, no private fields.
 // C1 the session manager's append* methods (the entry union), C2 the custom entry's line, C3 the event
 // names and fields chat-manager's bind() reads, C5 image content as prompt/steer take and store it.
-// P1-P43 and T1 are the quirk canaries (QUIRKS.md, quirks.ts): each asserts that a pi behaviour a Sova
+// P1-P44 and T1 are the quirk canaries (QUIRKS.md, quirks.ts): each asserts that a pi behaviour a Sova
 // workaround or assumption rests on still holds. Their turns run on testing/scripted-model.ts (a held
 // reply makes the mid-turn windows deterministic). When one fails, triage it by its QUIRKS.md row.
 import assert from "node:assert/strict";
@@ -782,6 +782,50 @@ describe("pi contract", () => {
     assert.deepEqual(loader.getSkills().skills.map((s: { name: string }) => s.name).sort(), ["g", "p"], "the loader takes both scopes from the storage");
     assert.ok(reads.includes("global") && reads.includes("project"), "each scope is read through withLock");
     assert.equal(writes, 0, "a reload writes no settings");
+  });
+
+  test("P44 context-file-walk: pi lists the agent dir's file first, then each folder's first context file from the typed cwd up to the root as join(folder, name), hands the override the whole list at every reload, and shadows a nested worktree's main-checkout file", async () => {
+    const at = join(dir, `p44-${Math.random().toString(36).slice(2)}`);
+    const put = (rel: string, text = rel) => {
+      mkdirSync(dirname(join(at, rel)), { recursive: true });
+      writeFileSync(join(at, rel), text);
+    };
+    put("agent/AGENTS.md");
+    put("AGENTS.md");
+    put("repo/CLAUDE.md");
+    put("repo/AGENTS.MD");
+    put("repo/sub/CLAUDE.md");
+    put("repo/sub/AGENTS.override.md");
+    symlinkSync(join(at, "repo"), join(at, "link"));
+    const listed = async (cwd: string) => {
+      const seen: string[][] = [];
+      const loader = new DefaultResourceLoader({ cwd, agentDir: join(at, "agent"), noExtensions: true, noSkills: true, agentsFilesOverride: (base: { agentsFiles: { path: string }[] }) => (seen.push(base.agentsFiles.map((f) => f.path)), base) } as never);
+      await loader.reload();
+      await loader.reload();
+      const paths = loader.getAgentsFiles().agentsFiles.map((f: { path: string }) => f.path);
+      assert.equal(seen.length, 2, "the override runs at every reload");
+      assert.deepEqual(seen[1], paths, "the override gets the whole list");
+      return paths.filter((p: string) => p.startsWith(at + "/"));
+    };
+    assert.deepEqual(
+      await listed(join(at, "repo", "sub")),
+      [join(at, "agent", "AGENTS.md"), join(at, "AGENTS.md"), join(at, "repo", "AGENTS.MD"), join(at, "repo", "sub", "AGENTS.override.md")],
+      "the agent dir's first, then every folder up to the root, outermost first, each its first name",
+    );
+    assert.deepEqual(
+      await listed(join(at, "link", "sub")),
+      [join(at, "agent", "AGENTS.md"), join(at, "AGENTS.md"), join(at, "link", "AGENTS.MD"), join(at, "link", "sub", "AGENTS.override.md")],
+      "a linked cwd is walked as typed, never by its real path",
+    );
+    // A nested linked worktree, as git writes it: its .git file names a git dir whose commondir is the main checkout's.
+    put("main/.git/HEAD", "ref: refs/heads/main\n");
+    put("main/.git/worktrees/wt/HEAD", "ref: refs/heads/wt\n");
+    put("main/.git/worktrees/wt/commondir", "../..\n");
+    put("main/wt/.git", `gitdir: ${join(at, "main", ".git", "worktrees", "wt")}\n`);
+    put("main/AGENTS.md");
+    assert.ok((await listed(join(at, "main", "wt"))).includes(join(at, "main", "AGENTS.md")), "a worktree with no file of its own inherits the main checkout's");
+    put("main/wt/AGENTS.md");
+    assert.deepEqual(await listed(join(at, "main", "wt")), [join(at, "agent", "AGENTS.md"), join(at, "AGENTS.md"), join(at, "main", "wt", "AGENTS.md")], "its own file shadows the main checkout's");
   });
 
   test("P39 base-prompt-sections: a command context's getSystemPromptOptions() is the live base options, whose sections build the prompt, and a tool change replaces it", async () => {

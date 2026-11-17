@@ -617,6 +617,21 @@ export const PI_QUIRKS: readonly PiQuirk[] = [
     retireWhen: "pi reads settings without a lock, or offers a read-only settings load",
   },
   {
+    id: "P44",
+    name: "context-file-walk",
+    kind: "semantic",
+    relies: "Sova cuts pi's starting context files to the chat's own folder and repository by folder (an allowlist), through agentsFilesOverride: it relies on pi listing the agent dir's file first, then one file per folder from the typed cwd up to `/` (outermost first), each path being join(<that folder as walked>, <file name>), the first of AGENTS.override.md, AGENTS.md, AGENTS.MD, CLAUDE.md, CLAUDE.MD; on the override getting that whole list at every reload; and on pi dropping a nested linked worktree's main-checkout file only when the worktree has its own.",
+    pi: ["DefaultResourceLoader", "ResourceLoaderOptions.agentsFilesOverride", "loadProjectContextFiles", "DefaultResourceLoader.reload"],
+    where: [
+      { file: "server/harness/pi/resources.ts", symbol: "withContextScope" },
+      { file: "server/harness/pi/open.ts", symbol: "servicesForCwd" },
+      { file: "server/harness/pi/resources.ts", symbol: "folderResources" },
+      { file: "server/context-scope.ts", symbol: "contextFileKeeper" },
+    ],
+    canary: "P44 context-file-walk: pi lists the agent dir's file first, then each folder's first context file from the typed cwd up to the root as join(folder, name), hands the override the whole list at every reload, and shadows a nested worktree's main-checkout file",
+    retireWhen: "pi stops its context-file walk at the repository's top (or lets Sova name where it stops)",
+  },
+  {
     id: "T1",
     name: "scripted-model (test-only)",
     kind: "private-write",

@@ -159,7 +159,7 @@ describe("pullFields: the inputs the user typed above the cut", () => {
       row("m4", "info", { batonMark: { kind: "sent", targetId: "k1", by: "p_kim" } }),
     ];
     const { olderSummary } = pullFields(items, 10, false);
-    assert.deepEqual(olderSummary.inputs, ["u1", "s1", "w1", "o1", "t1", "k1", "u2"], "Undo last turn's list is unchanged");
+    assert.deepEqual(olderSummary.inputs, ["u1", "s1", "w1", "o1", "t1", "k1", "u2"], "the inputs list is unchanged");
     assert.deepEqual(olderSummary.ownInputs, ["u1", "t1", "k1", "u2"]);
   });
 });

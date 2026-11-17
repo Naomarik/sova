@@ -3148,7 +3148,7 @@ export type WatchContext = ContextInfo | "compacted" | null;
     this one; 0 = the list is whole. Sent only to a client that asked with `?tail=1`, in one step
     with its hello or snapshot, so nothing else comes between the chunks. */
 /**
- * What the complete-list readers (the inputs count, Undo last turn)
+ * What the complete-list readers (the inputs count)
  * need of the rows before a list's first row, which the client doesn't hold: sent with a
  * `?tail=rest` hello or snapshot, and with every TranscriptRows response, always about the rows
  * before that message's first row. Counted by the client's own rules (shared/row-counts.ts), so the

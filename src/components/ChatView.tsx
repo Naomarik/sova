@@ -141,10 +141,9 @@ import {
 import { shareHref } from "../lib/share-slice";
 import type { MessageActionItem } from "./MessageActions";
 import { queueRemoveFrame, queueRowActions } from "../lib/queue-actions";
-import { isInput } from "../lib/turn";
 import { noteLinks } from "../lib/links-live";
 import { jumpToEntry, jumpWhenArrived, landExplainJump, transcriptRoot } from "../lib/jump";
-import { ownInputTotal, keptBehind, lastInput as lastInputOf, newestOnly, newRows, withHave } from "../lib/older-rows";
+import { ownInputTotal, keptBehind, newestOnly, newRows, withHave } from "../lib/older-rows";
 import { createOlderRows } from "../lib/older-rows-view";
 import { liveTourCalls } from "../lib/tour-rows";
 import { liveDesignCalls } from "../lib/design-rows";
@@ -160,7 +159,7 @@ import type { ShellAnswer, ShellControl } from "../lib/shell-mode";
 import type { ShellRun } from "../../shared/protocol";
 import { HostSendNotice } from "./HostStateNotices";
 import { OverseerMemoryMenu, projectOverseerMemory } from "./OverseerMemoryMenu";
-import { type LoginControl, type SandboxControl, type ThinkingControl, type UndoControl } from "./ComposerMenu";
+import { type LoginControl, type SandboxControl, type ThinkingControl } from "./ComposerMenu";
 import { ConnectionBanner } from "./ConnectionBanner";
 import { SessionSetupCard } from "./SessionSetup";
 import { toolsKeyOf } from "../lib/session-tools";
@@ -276,9 +275,8 @@ export function ChatView(props: {
   onShowTimeline?(inputsOnly?: boolean): void;
   /** Hands the Timeline this chat's rewind (sent over this socket); null when this view goes away. */
   onRewindControl?(control: RewindControl | null): void;
-  /** A rewind landed on this chat, whoever asked (a Timeline row, or the palette's "Undo last
-      turn"): the Timeline must re-read the branch, or it keeps offering the abandoned rows.
-      Success only — a refusal changed nothing. App mints the generation counter the pane watches.
+  /** A rewind landed on this chat: the Timeline must re-read the branch, or it keeps offering the
+      abandoned rows. Success only — a refusal changed nothing. App mints the generation counter the pane watches.
       No text: this view prefills the composer itself, and the pane rebuilds its shadow from the id. */
   onRewound?(info: { path: string; entryId: string }): void;
   /** This session's teams (polled insight), so the status row can name team members as such. */
@@ -1516,8 +1514,7 @@ export function ChatView(props: {
   type ActionResult = { ok: true; text?: string; tokensBefore?: number } | { ok: false; reason: string; message: string };
   const requests = new Map<string, { kind: RequestKind; resolve: (result: ActionResult) => void }>();
   let requestSeq = 0;
-  /** How many of each kind are waiting, reactively: a strip greys its own action while one is out,
-      and the palette's Undo row greys out while a rewind is. */
+  /** How many of each kind are waiting, reactively: a strip greys its own action while one is out. */
   const [pending, setPending] = createSignal<Record<RequestKind, number>>({ rewind: 0, regenerate: 0, queue_remove: 0, compact: 0 });
   const countPending = () => {
     const n: Record<RequestKind, number> = { rewind: 0, regenerate: 0, queue_remove: 0, compact: 0 };
@@ -1570,8 +1567,6 @@ export function ChatView(props: {
       countPending();
     });
   };
-  /** How many rewinds are out — the palette's Undo row reads this. */
-  const rewindsPending = () => pending().rewind;
   /**
    * A refusal code from a server that may be newer than this build: anything it doesn't know is
    * "internal", which is what the copy for an unrecognized failure already says.
@@ -1615,34 +1610,6 @@ export function ChatView(props: {
   onCleanup(() => noteLinks(props.path, null));
   props.onRewindControl?.({ path: props.path, blocked: rewindBlocked, rewind });
   onCleanup(() => props.onRewindControl?.(null));
-  /** The palette's "Undo last turn": a rewind to just before the newest user message on the branch
-      (never a link message: a partner's words are no rewind target). */
-  const lastInput = () => {
-    const list = items() ?? [];
-    const o = older();
-    // The hello's summary names the newest input above the list when the list holds none.
-    if (o) return lastInputOf(list, o);
-    for (let i = list.length - 1; i >= 0; i--) if (isInput(list[i]!)) return list[i]!.id;
-    return null;
-  };
-  const undoControl: UndoControl = {
-    blocked: () => {
-      const reason = blocked();
-      if (reason) return reason.text;
-      const block = rewindBlocked();
-      if (block === "streaming") return "Stop the turn first, then undo.";
-      if (block === "compacting") return "Wait for compaction to finish, then undo.";
-      if (rewindsPending() > 0) return "A rewind is already in progress.";
-      // Before this connection's hello nothing says where the last input is: can't run yet, and
-      // nothing to say about it.
-      return lastInput() ? null : older() ? "Nothing to undo yet." : "";
-    },
-    run: () => {
-      const id = lastInput();
-      // One rewind at a time: a second confirm before the reply would abandon two turns.
-      if (id && rewindsPending() === 0) void rewind(id).then((r) => !r.ok && toast(r.message));
-    },
-  };
 
   // ---- Per-message actions ------------------------
   /**
@@ -2881,7 +2848,6 @@ export function ChatView(props: {
         shell={shellAllowed() ? shellControl : null}
         shellUnknown={shellMode() === null && !props.overseer && !props.projectOverseer}
         onPlaybooks={() => setShowPlaybooks(true)}
-        undo={undoControl}
         onSend={(text, running, attachments) => send(text, running, attachments, undefined, true)}
         picks={composerPicks()}
         onDraft={(has) => {
@@ -2908,7 +2874,7 @@ export function ChatView(props: {
           onClose={(sent) => {
             setShowPlaybooks(false);
             // After a send the next thing is the conversation; otherwise back to the "+" button
-            // (the palette's Playbooks row is opened from it, §chat.playbooks/the-modal).
+            // (the Commands dialog's Playbooks row is opened from it, §chat.playbooks/the-modal).
             if (sent) focusComposerAfter(presses.take());
             else queueMicrotask(() => document.getElementById(paneId("composer-menu-trigger"))?.focus());
           }}

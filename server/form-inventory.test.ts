@@ -19,7 +19,7 @@ const BASELINE = join(import.meta.dirname, "form-inventory-baseline.test.json");
 const EXEMPT: { why: string; is(file: string, kind: string, tag: string): boolean }[] = [
   { why: "the chat message box: its own growing textarea, paste and drop", is: (f, k, t) => f === "src/components/Composer.tsx" && k === "textarea" && t.includes("composer-input") },
   { why: "file and image pickers: hidden, opened by a button", is: (_f, k, t) => k === "input" && /type="file"/.test(t) },
-  { why: "the command palette's query line: a combobox over its own list", is: (f, k, t) => f === "src/components/CommandPalette.tsx" && k === "input" && t.includes('role="combobox"') },
+  { why: "the Commands dialog's query line: a combobox over its own list", is: (f, k, t) => f === "src/components/CommandPalette.tsx" && k === "input" && t.includes('role="combobox"') },
 ];
 
 function files(dir: string): string[] {

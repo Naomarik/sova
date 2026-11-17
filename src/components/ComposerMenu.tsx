@@ -25,15 +25,6 @@ export interface ThinkingControl {
   choose(level: string): void;
 }
 
-/** What the chat view exposes so the palette's Undo last turn can rewind to just before the last
-    user message (§app.command-palette/picking). */
-export interface UndoControl {
-  /** Why it can't run now ("Stop first…", nothing to undo, composer disabled), else null; "" when
-      it can't run yet with nothing to say (the chat's transcript hasn't said where its last input is). */
-  blocked: Accessor<string | null>;
-  run(): void;
-}
-
 /** What the chat view exposes so the flyout (and the shield) can set this chat's sandbox state
     (§chat.sandbox/states). */
 export interface SandboxControl {
@@ -66,7 +57,7 @@ export interface LoginControl {
 
 /** The flyout's panels: the indicator's model panel, the model menu's picker the model panel
     opens, the login label's login panel, and the sandbox shield's panel. The "+" button opens the
-    Commands palette instead (§app.command-palette/opening). */
+    Commands dialog instead (§app.command-palette/opening). */
 export type FlyoutPanel = "model" | "picker" | "login" | "sandbox";
 
 /** What the composer gets on mount so a second trigger — the model indicator — can open
@@ -86,7 +77,7 @@ type Row = FlyoutRow;
 
 /**
  * The composer's `plus` button and its flyout: one native popover anchored ABOVE whatever opened
- * it, in the model menu's visual family. The ghost `plus` button opens the Commands palette on this
+ * it, in the model menu's visual family. The ghost `plus` button opens the Commands dialog on this
  * chat, not the flyout (§chat.composer/composer-flyout). The composer's model indicator opens the
  * **model** panel (the Model row and this model's Thinking ladder); the Model row opens the model
  * menu's **picker**, which comes back to the model panel. The Claude login label, where shown, opens
@@ -95,7 +86,7 @@ type Row = FlyoutRow;
 export function ComposerMenu(props: {
   /** The composer is disabled (TUI-live, connecting, reconnecting): nothing here acts. */
   disabled: boolean;
-  /** The `plus` button pressed: opens the Commands palette on this chat, anchored to nothing. */
+  /** The `plus` button pressed: opens the Commands dialog on this chat, anchored to nothing. */
   onPlus(trigger: HTMLButtonElement): void;
   /** Chat sessions only: the model picker's controls. */
   model?: ModelControl | null;
@@ -378,7 +369,7 @@ export function ComposerMenu(props: {
         aria-haspopup="dialog"
         aria-expanded={paletteRequest()?.trigger === trigger ? "true" : "false"}
         onClick={() => {
-          close(true); // the palette takes focus; nothing goes back to a flyout trigger
+          close(true); // the Commands dialog takes focus; nothing goes back to a flyout trigger
           props.onPlus(trigger);
         }}
       >

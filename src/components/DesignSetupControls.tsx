@@ -339,7 +339,15 @@ function DesignModelPicker(props: { setup: SetupDraft; run: DesignRunView; store
           <button type="button" class="design-section-open design-models-open" aria-expanded={props.open.models() ? "true" : "false"} aria-controls={panelId} onClick={() => props.open.setModels(!props.open.models())}>
             <span class="design-models-sum">
               <span class="design-section-name design-models-names" title={summary().designers}>
-                {summary().designers}
+                {/* Each designer kept whole, its separator held to it, so a phone's second line starts with a name. */}
+                <For each={summary().designerList} fallback={summary().designers}>
+                  {(name, i) => (
+                    <>
+                      {i() > 0 ? "\u00a0· " : ""}
+                      <span class="design-models-one">{name}</span>
+                    </>
+                  )}
+                </For>
               </span>
               <span class="text-caption text-muted design-models-coord">{summary().coordinator}</span>
             </span>

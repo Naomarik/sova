@@ -62,7 +62,7 @@ export function designSections(models: readonly DesignModelChoice[], hidden: rea
 
 /** The closed Models row: the designers by name, each with its effort ("Opus 5.5 High · glm-5.3 Low"; a model with no
     effort to pick by name alone), the Creative Director, and the count. */
-export function modelsSummary(setup: Pick<DesignSetup, "models">): { designers: string; coordinator: string; count: string } {
+export function modelsSummary(setup: Pick<DesignSetup, "models">): { designers: string; designerList: string[]; coordinator: string; count: string } {
   const designers = orderedModels(setup.models)
     .filter((m) => m.design)
     .map((m) => {
@@ -72,6 +72,8 @@ export function modelsSummary(setup: Pick<DesignSetup, "models">): { designers: 
   const coordinator = setup.models.find((m) => m.coordinator);
   return {
     designers: designers.join(" · ") || "None designing",
+    // One entry per designer with its effort, so a line breaks only between them, never inside a name.
+    designerList: designers,
     coordinator: `Creative Director: ${coordinator?.name ?? "none"}`,
     count: plural(designers.length, "model"),
   };

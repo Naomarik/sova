@@ -98,6 +98,7 @@
 .design-section-open.design-models-open { grid-template-columns: minmax(0, 1fr) max-content 16px; padding-block: var(--space-2); }
 .design-models-sum { display: flex; flex-direction: column; min-width: 0; }
 .design-models-names, .design-models-coord { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.design-models-one { white-space: nowrap; }
 .design-models-panel { border-top: 1px solid var(--color-border); }
 .design-models-panel > .design-pick-bar { box-sizing: content-box; padding: var(--space-3); background: var(--color-bg); }
 .design-models-panel > .design-setup-coord-note { margin: 0; padding: var(--space-2) var(--space-3); border-top: 1px solid var(--color-border); }
@@ -113,16 +114,19 @@
 .design-model-search { min-width: 0; margin: 0; gap: 0; }
 @container design-card (max-width: 480px) {
   .design-pick-bar { grid-template-columns: minmax(0, 1fr); grid-template-rows: var(--control-md) var(--control-md); height: calc(2 * var(--control-md) + var(--space-2)); gap: var(--space-2); }
-  /* A phone keeps the names and drops the count, and lets the names take 2 lines. */
+  /* A phone keeps the names and drops the count, and lets the names take up to 3 lines, each designer whole. */
   .design-models-count { display: none; }
   .design-section-open.design-models-open { grid-template-columns: minmax(0, 1fr) 16px; }
-  .design-section-name.design-models-names { white-space: normal; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+  .design-section-name.design-models-names { white-space: normal; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; }
 }
 .design-sections { border: 1px solid var(--color-border); border-radius: var(--r-md); overflow: hidden; }
 .design-section + .design-section { border-top: 1px solid var(--color-border); }
 .design-section-head { display: flex; align-items: center; height: 48px; box-sizing: border-box; padding-right: var(--space-3); }
 .design-section-open { flex: 1 1 0; min-width: 0; height: 100%; display: grid; grid-template-columns: minmax(0, max-content) minmax(0, 1fr) 7ch 16px; align-items: center; gap: var(--space-3); padding: 0 var(--space-2) 0 var(--space-3); border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
 .design-section-open:hover:not(:disabled) { background: var(--color-sunken); }
+/* A row with no All cell (Models, Style, Layout): its button reaches the right edge, so its hover fills the row. */
+.design-section-head:not(:has(> .design-section-all)) { padding-right: 0; }
+.design-section-head:not(:has(> .design-section-all)) > .design-section-open { padding-right: calc(var(--space-2) + var(--space-3)); }
 .design-section-open:disabled { cursor: default; color: inherit; }
 .design-section-open:focus-visible { outline: var(--focus-width, 2px) solid var(--focus-color, var(--color-accent)); outline-offset: calc(-1 * var(--focus-width, 2px)); }
 .design-section-name { font-weight: var(--fw-medium); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

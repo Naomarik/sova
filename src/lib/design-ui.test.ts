@@ -71,8 +71,8 @@ test("an effort is named in a summary only where it isn't Low, by its menu's wor
 test("the closed Models row names every designer with its effort, the Creative Director and the count", () => {
   const s = setup({ models: [{ ...n("claude-code/opus", false, true), efforts: L }, { ...n("claude-code/sonnet"), efforts: L, effort: "high" }, { ...n("ollama-cloud/glm"), efforts: L }, n("zai/glm-5.3")] });
   // In the picker's order (Z.ai's section before Ollama Cloud's); glm-5.3 offers no levels, so it has no effort to name.
-  assert.deepEqual(modelsSummary(s), { designers: "sonnet High · glm-5.3 · glm Low", coordinator: "Creative Director: opus", count: "3 models" });
-  assert.deepEqual(modelsSummary(setup({ models: [n("claude-code/opus", false, true)] })), { designers: "None designing", coordinator: "Creative Director: opus", count: "0 models" });
+  assert.deepEqual(modelsSummary(s), { designers: "sonnet High · glm-5.3 · glm Low", designerList: ["sonnet High", "glm-5.3", "glm Low"], coordinator: "Creative Director: opus", count: "3 models" });
+  assert.deepEqual(modelsSummary(setup({ models: [n("claude-code/opus", false, true)] })), { designers: "None designing", designerList: [], coordinator: "Creative Director: opus", count: "0 models" });
   assert.equal(modelsSummary(setup({ models: [m("claude-code/opus", true)] })).count, "1 model");
 });
 

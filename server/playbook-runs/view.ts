@@ -2,6 +2,7 @@
 // computer; a started run from the plan Start froze, never drawn again.
 import type { PlaybookRunView } from "../../shared/playbook-run";
 import { liveEnv, loadPlaybook } from "./env";
+import { isLegacyView, upgradeLegacyView } from "./legacy-view";
 import { runCard } from "./plan";
 import type { PlaybookRunRecord } from "./store";
 
@@ -28,7 +29,11 @@ function bare(r: PlaybookRunRecord, error: string): PlaybookRunView {
 }
 
 export async function runView(r: PlaybookRunRecord): Promise<PlaybookRunView> {
-  if (r.plan && r.started) return { ...r.plan.view, id: r.id, revision: r.revision, state: r.state, started: r.started, startBlocked: "This run has started." };
+  if (r.plan && r.started) {
+    // A record frozen before teams had goals reads as today's card (legacy-view.ts).
+    const frozen = isLegacyView(r.plan.view) ? upgradeLegacyView(r.plan.view) : r.plan.view;
+    return { ...frozen, id: r.id, revision: r.revision, state: r.state, started: r.started, startBlocked: "This run has started." };
+  }
   const loaded = await loadPlaybook(r.playbook, r.cwd).catch(() => null);
   if (!loaded) return bare(r, "The playbook is gone.");
   if (!loaded.spec) return bare(r, loaded.error ? `The playbook's description can't be read: ${loaded.error}` : "The playbook has no description.");

@@ -165,6 +165,9 @@ export interface PlaybookRunView {
   startError?: string;
   /** The playbook's description can't be read now (a draft whose playbook.json broke). */
   error?: string;
+  /** A run started before teams had goals: its record was read from the old shape (its roles as team members,
+      with no briefs), so the card may say the record predates teams. */
+  legacy?: true;
   /** The person closed the card: a draft's is gone (only a socket's news says so); a started run's was put away,
    * so it leaves the chat's cards, while reading it by its id still answers its record, marked closed. */
   closed?: true;

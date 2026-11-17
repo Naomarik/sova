@@ -160,22 +160,33 @@ export function cantRunCount(teams: readonly Pick<PlaybookTeamView, "members">[]
 }
 
 /** Over a team's goal: its short name and the steps it works in, by their numbers on the card
-    ("Grading team · steps 4, 7, and 8"); a team no step names says only its name. */
-export function teamEyebrow(team: Pick<PlaybookTeamView, "label" | "steps">, steps: readonly Pick<PlaybookStepView, "id">[]): string {
+    ("Grading team · steps 4, 7, and 8"); a team no step names says only its name. In a run started
+    before teams had goals the block's heading is already the team's old name, so only its steps are said
+    ("Steps 1 and 3"), or nothing. */
+export function teamEyebrow(team: Pick<PlaybookTeamView, "label" | "steps">, steps: readonly Pick<PlaybookStepView, "id">[], legacy = false): string {
   const numbers = team.steps.map((id) => steps.findIndex((s) => s.id === id) + 1).filter((n) => n > 0);
   const where = numbers.length === 0 ? null : `${numbers.length === 1 ? "step" : "steps"} ${listed(numbers)}`;
+  if (legacy) return where ? where.replace(/^s/, "S") : "";
   return [`${team.label} team`, where].filter(Boolean).join(" · ");
 }
 
-/** Under a team's members: it isn't limited to them. A team with none says so first. */
-export function teamAddsLine(team: Pick<PlaybookTeamView, "members">): string {
+/** Under a team's members: it isn't limited to them. A team with none says so first. A run started
+    before teams had goals listed every helper it ran, so its blocks have no such line. */
+export function teamAddsLine(team: Pick<PlaybookTeamView, "members">, legacy = false): string | null {
+  if (legacy) return null;
   return team.members.length === 0 ? "No required members: the team adds whoever it needs." : "The team adds anyone else it needs.";
 }
 
-/** A step says who works in it: the main chat alone, or its teams by name ("Run and Grading teams"). */
-export function stepRunsLine(step: Pick<PlaybookStepView, "teams">, teams: readonly Pick<PlaybookTeamView, "id" | "label">[]): string {
+/** The first line of Who runs in a run started before teams had goals. */
+export const LEGACY_WHO_NOTE = "Started before teams had goals: these are the helpers it ran with, grouped as that run grouped them.";
+
+/** A step says who works in it: the main chat alone, or its teams by name ("Run and Grading teams").
+    A team named exactly as the step (an older run made one team per step) is "Its own team": the
+    step's title isn't said twice. */
+export function stepRunsLine(step: Pick<PlaybookStepView, "teams" | "title">, teams: readonly Pick<PlaybookTeamView, "id" | "label">[]): string {
   const names = step.teams.map((id) => teams.find((t) => t.id === id)?.label).filter((l): l is string => !!l);
   if (names.length === 0) return "The main chat";
+  if (names.length === 1 && names[0] === step.title) return "Its own team";
   return `${listed(names)} ${names.length === 1 ? "team" : "teams"}`;
 }
 

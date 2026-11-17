@@ -18,6 +18,7 @@ import {
   isEmpty,
   listValue,
   stackEdits,
+  LEGACY_WHO_NOTE,
   ORIGIN_LABEL,
   pickLine,
   memberModelLine,
@@ -586,12 +587,16 @@ export function PlaybookCard(props: {
               {whoSummary(run().who, cantRunCount(run().teams))}
             </summary>
             <Show when={run().teams.length > 0} fallback={<p class="pb-note">No helpers: this chat does every step itself.</p>}>
+              <Show when={run().legacy}>
+                <p class="pb-note pb-who-legacy">{LEGACY_WHO_NOTE}</p>
+              </Show>
               <div class="pb-teams">
                 <Index each={run().teams}>
                   {(t) => (
                     <TeamBlock
                       team={t()}
-                      eyebrow={teamEyebrow(t(), run().steps)}
+                      eyebrow={teamEyebrow(t(), run().steps, !!run().legacy)}
+                      adds={teamAddsLine(t(), !!run().legacy)}
                       note={teamNote(t())}
                       editable={editable()}
                       onNote={(note) => queue({ teams: { [t().id]: { note } } }, TYPE_SAVE_MS)}
@@ -1043,25 +1048,32 @@ const NoteSaid = (props: { record: string; note: string }) => (
 
 /** One team in Who runs: its name and steps over its goal, its required members, the line saying it
     isn't limited to them, and your note for the team. */
-function TeamBlock(props: { team: PlaybookTeamView; eyebrow: string; note: string; editable: boolean; onNote(note: string): void; children: JSX.Element }) {
+function TeamBlock(props: { team: PlaybookTeamView; eyebrow: string; adds: string | null; note: string; editable: boolean; onNote(note: string): void; children: JSX.Element }) {
   const tid = `pbt-${createUniqueId()}`;
   const t = () => props.team;
   const note = runNote(() => props.note);
   return (
     <div class="pb-team" role="group" aria-labelledby={tid}>
       <div class="pb-team-head" id={tid}>
-        <span class="pb-team-eyebrow">{props.eyebrow}</span>
+        <Show when={props.eyebrow}>
+          <span class="pb-team-eyebrow">{props.eyebrow}</span>
+        </Show>
         <span class="pb-team-goal">{t().goal}</span>
       </div>
       {props.children}
-      <div class="pb-team-foot">
-        <span class="pb-team-adds">{teamAddsLine(t())}</span>
-        <Show when={props.editable} fallback={<NoteSaid record="Your note for the team" note={props.note} />}>
-          <Show when={note.open()} fallback={<NoteAdd label="Add Team Note" spoken={`Add a note for the ${t().label} team`} onClick={note.reveal} />}>
-            <NoteField id={note.id} label={`Note for the ${t().label} team`} record="Your note for the team" note={props.note} onNote={props.onNote} />
+      {/* A record with neither line (an older run's team with no note) has no foot. */}
+      <Show when={props.adds || props.editable || props.note}>
+        <div class="pb-team-foot">
+          <Show when={props.adds}>
+            <span class="pb-team-adds">{props.adds}</span>
           </Show>
-        </Show>
-      </div>
+          <Show when={props.editable} fallback={<NoteSaid record="Your note for the team" note={props.note} />}>
+            <Show when={note.open()} fallback={<NoteAdd label="Add Team Note" spoken={`Add a note for the ${t().label} team`} onClick={note.reveal} />}>
+              <NoteField id={note.id} label={`Note for the ${t().label} team`} record="Your note for the team" note={props.note} onNote={props.onNote} />
+            </Show>
+          </Show>
+        </div>
+      </Show>
     </div>
   );
 }
@@ -1133,7 +1145,9 @@ function MemberRow(props: {
           </Show>
         </Show>
         <Show when={!off() && memberWhy(r())}>{(why) => <span class="pb-row-why">{why()}</span>}</Show>
-        <span class="pb-member-brief">{r().brief}</span>
+        <Show when={r().brief}>
+          <span class="pb-member-brief">{r().brief}</span>
+        </Show>
         <Show when={!off()}>
           <Show when={props.editable} fallback={<NoteSaid record="Your note" note={props.note} />}>
             <Show when={note.open()}>

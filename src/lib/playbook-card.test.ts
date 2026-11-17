@@ -23,6 +23,7 @@ import {
   withPlaybookRows,
   withoutPlaybookRows,
   cantRunCount,
+  LEGACY_WHO_NOTE,
   flowNote,
   flowSummary,
   helpersLine,
@@ -68,6 +69,10 @@ test("a step says who works in it: the main chat alone, one team, or its teams b
   assert.equal(stepRunsLine(step({ teams: ["fix", "run", "grade"] }), teams), "Fix, Run, and Grading teams");
   assert.equal(stepRunsLine(step({ teams: ["gone", "grade"] }), teams), "Grading team");
   assert.equal(stepRunsLine(step({ teams: ["gone"] }), teams), "The main chat");
+  // An older run's team per step carries the step's own title: it isn't said twice.
+  const own = [team({ id: "s1", label: "Find what fails" })];
+  assert.equal(stepRunsLine(step({ title: "Find what fails", teams: ["s1"] }), own), "Its own team");
+  assert.equal(stepRunsLine(step({ title: "Score the round", teams: ["s1"] }), own), "Find what fails team");
 });
 
 test("Who runs, folded: the teams and the required members as the server counted them, each singular at 1, no members said in words, no team the main chat alone; members that can't run are said", () => {
@@ -96,6 +101,16 @@ test("a team's block: its name and the steps it works in by their numbers over i
   assert.equal(teamEyebrow(team({ steps: ["gone"] }), steps), "Run team");
   assert.equal(teamAddsLine(team()), "The team adds anyone else it needs.");
   assert.equal(teamAddsLine(team({ members: [] })), "No required members: the team adds whoever it needs.");
+});
+
+test("a run started before teams had goals: its blocks are headed by the old team's name, so the line over it says only its steps, and no block says the team adds anyone", () => {
+  const steps = [step({ id: "a" }), step({ id: "b" }), step({ id: "c" })];
+  assert.equal(teamEyebrow(team({ steps: ["a", "c"] }), steps, true), "Steps 1 and 3");
+  assert.equal(teamEyebrow(team({ steps: ["b"] }), steps, true), "Step 2");
+  assert.equal(teamEyebrow(team({ steps: [] }), steps, true), "");
+  assert.equal(teamAddsLine(team(), true), null);
+  assert.equal(teamAddsLine(team({ members: [] }), true), null);
+  assert.equal(LEGACY_WHO_NOTE, "Started before teams had goals: these are the helpers it ran with, grouped as that run grouped them.");
 });
 
 test("a member run several times says how many; the helpers line counts where the run starts and says the coordinators and monitors are in it", () => {
